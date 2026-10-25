@@ -1296,6 +1296,7 @@ _xclip_procs: dict[int, asyncio.subprocess.Process] = {}
 @app.post("/api/profiles/{profile_id}/clipboard")
 async def set_clipboard(profile_id: str, body: ClipboardRequest):
     """Push text into the VNC session's X clipboard via xclip."""
+    logger.info("Clipboard SET for %s: text_len=%d preview=%r", profile_id, len(body.text), body.text[:60])
     running = browser_mgr.running.get(profile_id)
     if not running:
         raise HTTPException(status_code=404, detail="Profile not running")
@@ -1329,6 +1330,43 @@ async def set_clipboard(profile_id: str, body: ClipboardRequest):
     return {"ok": True}
 
 
+@app.post("/api/profiles/{profile_id}/center-window")
+async def center_window(profile_id: str):
+    """Reset Chromium window position to (0, 0) and restore bounds via CDP."""
+    running = browser_mgr.running.get(profile_id)
+    if not running:
+        raise HTTPException(status_code=404, detail="Profile not running")
+    if not running.cdp_port:
+        raise HTTPException(status_code=409, detail="CDP is not available")
+    try:
+        import websockets
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(f"http://127.0.0.1:{running.cdp_port}/json")
+            targets = resp.json()
+            ws_url = targets[0]["webSocketDebuggerUrl"]
+        async with websockets.connect(ws_url) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Browser.getWindowForTarget"}))
+            win_info = json.loads(await ws.recv())
+            win_id = win_info.get("result", {}).get("windowId")
+            if win_id:
+                profile = db.get_profile(profile_id) or {}
+                sw = profile.get("screen_width", 1920)
+                sh = profile.get("screen_height", 1080)
+                await ws.send(json.dumps({
+                    "id": 2,
+                    "method": "Browser.setWindowBounds",
+                    "params": {
+                        "windowId": win_id,
+                        "bounds": {"left": 0, "top": 0, "width": sw, "height": sh, "windowState": "normal"}
+                    }
+                }))
+                await ws.recv()
+        return {"ok": True}
+    except Exception as exc:
+        logger.warning("Failed to center window for %s: %s", profile_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/profiles/{profile_id}/clipboard")
 async def get_clipboard(profile_id: str):
     """Read the VNC session's clipboard.
@@ -1356,6 +1394,7 @@ async def get_clipboard(profile_id: str):
             try:
                 text = await page.evaluate("window.__clipboardText || ''")
                 if text:
+                    logger.info("Clipboard GET for %s (CDP): len=%d preview=%r", profile_id, len(text), text[:60])
                     return {"text": text[:_CLIPBOARD_MAX_READ]}
             except Exception as exc:
                 logger.debug("Clipboard read failed on page: %s", exc)

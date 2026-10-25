@@ -309,6 +309,11 @@ export const api = {
       body: JSON.stringify({ text }),
     }),
 
+  centerWindow: (id: string) =>
+    request<{ ok: boolean }>(`/api/profiles/${id}/center-window`, {
+      method: "POST",
+    }),
+
   getClipboard: (id: string) =>
     request<{ text: string }>(`/api/profiles/${id}/clipboard`),
 };
