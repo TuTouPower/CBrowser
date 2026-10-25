@@ -204,6 +204,10 @@ const en: MessageDict = {
   enableClipboardSync: "Enable clipboard sync",
   exitFullscreen: "Exit fullscreen",
   fullscreen: "Fullscreen",
+  centerWindow: "Center / reset window",
+  sendToBrowser: "Send clipboard text to browser",
+  sendTextPlaceholder: "Paste or type text to send to remote browser...",
+  send: "Send",
   uploadingToProfile: "Uploading to this profile...",
   inProfileFilesHint:
     "In profile files — pick it from Uploads — {name} in the page's file dialog",
@@ -429,6 +433,10 @@ const zh: MessageDict = {
   enableClipboardSync: "开启剪贴板同步",
   exitFullscreen: "退出全屏",
   fullscreen: "全屏",
+  centerWindow: "居中复位窗口",
+  sendToBrowser: "发送剪贴板文本到浏览器",
+  sendTextPlaceholder: "在此输入或粘贴文本，直接推送到远程浏览器...",
+  send: "发送",
   uploadingToProfile: "正在上传到此配置...",
   inProfileFilesHint:
     "已在配置文件中 — 请在页面文件对话框的「上传 — {name}」中选择",

@@ -513,20 +513,29 @@ class BrowserManager:
                     + ", ".join(conflicting_debug_args)
                 )
 
-            extra_args = self._build_fingerprint_args(profile)
-            extra_args += user_launch_args
-            extra_args.append("--remote-debugging-address=127.0.0.1")
-            # Reopen the tabs the user had open when the profile was last stopped.
-            # Chrome's persistent session is saved on disk but only restored when told to.
-            if profile.get("restore_session", True):
-                extra_args.append("--restore-last-session")
-
             raw_proxy = profile.get("proxy") or None
             proxy = _normalize_proxy(raw_proxy) if raw_proxy else None
             if proxy:
                 _validate_proxy(proxy)
             if profile.get("transparent_proxy"):
                 _validate_transparent_proxy(proxy)
+
+            extra_args = self._build_fingerprint_args(profile)
+            if proxy:
+                extra_args.append(
+                    "--proxy-bypass-list=<-loopback>;localhost;127.0.0.1;host.docker.internal;*.local;192.168.*;10.*;172.16.*"
+                )
+            extra_args += user_launch_args
+            extra_args.append("--remote-debugging-address=127.0.0.1")
+            if display is not None:
+                sw = profile.get("screen_width", 1920)
+                sh = profile.get("screen_height", 1080)
+                extra_args.append("--window-position=0,0")
+                extra_args.append(f"--window-size={sw},{sh}")
+            # Reopen the tabs the user had open when the profile was last stopped.
+            # Chrome's persistent session is saved on disk but only restored when told to.
+            if profile.get("restore_session", True):
+                extra_args.append("--restore-last-session")
 
             launch_options: dict[str, Any] = {
                 "user_data_dir": profile["user_data_dir"],
@@ -616,16 +625,26 @@ class BrowserManager:
                 # Capture copied text so the Manager clipboard endpoint can read it.
                 clipboard_init_js = """
                     window.__clipboardText = '';
-                    document.addEventListener('copy', () => {
-                        const sel = window.getSelection();
-                        if (sel) window.__clipboardText = sel.toString();
-                    });
-                    document.addEventListener('keydown', (e) => {
-                        if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !e.altKey && !e.shiftKey) {
-                            const sel = window.getSelection();
-                            if (sel && sel.toString()) window.__clipboardText = sel.toString();
+                    function __updateClipboardText() {
+                        let text = window.getSelection ? window.getSelection().toString() : '';
+                        if (!text && document.activeElement) {
+                            const el = document.activeElement;
+                            if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                                const s = el.selectionStart;
+                                const e = el.selectionEnd;
+                                if (typeof s === 'number' && typeof e === 'number' && s !== e) {
+                                    text = el.value.substring(s, e);
+                                }
+                            }
                         }
-                    });
+                        if (text) window.__clipboardText = text;
+                    }
+                    document.addEventListener('copy', __updateClipboardText, true);
+                    document.addEventListener('keydown', (e) => {
+                        if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && !e.altKey && !e.shiftKey) {
+                            setTimeout(__updateClipboardText, 20);
+                        }
+                    }, true);
                 """
                 await context.add_init_script(clipboard_init_js)
                 for page in context.pages:
