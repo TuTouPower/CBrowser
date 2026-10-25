@@ -289,6 +289,9 @@ function AppContent({ authRequired, onLogout }: AppContentProps) {
             >
               {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
             </button>
+            {!sidebarOpen && (
+              <img src="/menubar-icon.svg" alt="CBrowser" className="h-4 w-4 shrink-0 opacity-80" />
+            )}
             {selected && (
               <div className="flex items-center gap-2">
                 <StatusIndicator status={selected.status} size="md" />

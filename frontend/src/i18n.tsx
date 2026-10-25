@@ -51,8 +51,8 @@ const en: MessageDict = {
   showSidebar: "Show sidebar",
   quitManager: "Quit Manager (stops the server)",
   quitConfirm:
-    "Quit CloakBrowser Manager? This stops the server and closes all running profiles.",
-  managerStopped: "CloakBrowser Manager has stopped",
+    "Quit CBrowser? This stops the server and closes all running profiles.",
+  managerStopped: "CBrowser has stopped",
   managerStoppedHint: "The server is no longer running. You can close this tab.",
   managerStoppedRelaunch: "Relaunch the app to start it again.",
   selectOrCreateProfile: "Select a profile or create a new one",
@@ -81,7 +81,7 @@ const en: MessageDict = {
   launch: "Launch",
   upgradePlan: "Upgrade your plan",
   dismissLaunchError: "Dismiss launch error",
-  updateAvailable: "CloakBrowser Manager {version} is available.",
+  updateAvailable: "CBrowser {version} is available.",
   download: "Download",
   dismissUpdate: "Dismiss update notification",
 
@@ -97,7 +97,7 @@ const en: MessageDict = {
     "Windows persona fonts incomplete: {present}/{required} found",
 
   // Settings
-  licenseKey: "CloakBrowser license key",
+  licenseKey: "CBrowser license key",
   licenseKeyPlaceholderSet: "Current: {masked} — type to replace",
   licenseKeyPlaceholderEmpty: "cb_… (leave empty to run the free keyless build)",
   licenseKeyHelp:
@@ -215,7 +215,7 @@ const en: MessageDict = {
   dropToUploadHint: "Then pick it from Uploads — {name} in the page's file dialog",
   openedInNativeWindow: "Opened in a native window",
   nativeWindowHint:
-    "{name} is running directly on this computer. Use its CloakBrowser window to browse.",
+    "{name} is running directly on this computer. Use its CBrowser window to browse.",
   automationViaCdp: "Automation remains available through Manager CDP",
   liveBrowserPreview: "Live browser preview",
 
@@ -294,8 +294,8 @@ const zh: MessageDict = {
   showSidebar: "显示侧边栏",
   quitManager: "退出管理器（会停止服务）",
   quitConfirm:
-    "退出 CloakBrowser Manager？这将停止服务并关闭所有正在运行的配置。",
-  managerStopped: "CloakBrowser Manager 已停止",
+    "退出 CBrowser？这将停止服务并关闭所有正在运行的配置。",
+  managerStopped: "CBrowser 已停止",
   managerStoppedHint: "服务已不再运行，可以关闭此标签页。",
   managerStoppedRelaunch: "重新启动应用即可再次使用。",
   selectOrCreateProfile: "请选择一个配置，或新建配置",
@@ -322,7 +322,7 @@ const zh: MessageDict = {
   launch: "启动",
   upgradePlan: "升级方案",
   dismissLaunchError: "关闭启动错误",
-  updateAvailable: "CloakBrowser Manager {version} 已可用。",
+  updateAvailable: "CBrowser {version} 已可用。",
   download: "下载",
   dismissUpdate: "关闭更新提示",
 
@@ -335,7 +335,7 @@ const zh: MessageDict = {
   fontsIncomplete: "字体不完整",
   fontsIncompleteTitle: "Windows 人设字体不完整：已找到 {present}/{required}",
 
-  licenseKey: "CloakBrowser 许可证密钥",
+  licenseKey: "CBrowser 许可证密钥",
   licenseKeyPlaceholderSet: "当前：{masked} — 输入以替换",
   licenseKeyPlaceholderEmpty: "cb_…（留空则使用免费无密钥构建）",
   licenseKeyHelp: "每个管理器实例一把密钥 — 所有配置共享席位池。",
@@ -444,7 +444,7 @@ const zh: MessageDict = {
   dropToUploadHint: "然后在页面文件对话框的「上传 — {name}」中选择",
   openedInNativeWindow: "已在原生窗口中打开",
   nativeWindowHint:
-    "{name} 正在本机直接运行。请使用其 CloakBrowser 窗口浏览。",
+    "{name} 正在本机直接运行。请使用其 CBrowser 窗口浏览。",
   automationViaCdp: "仍可通过管理器 CDP 进行自动化",
   liveBrowserPreview: "实时浏览器预览",
 

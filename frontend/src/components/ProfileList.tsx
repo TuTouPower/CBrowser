@@ -1,4 +1,4 @@
-import { Plus, Search, Monitor } from "lucide-react";
+import { Plus, Search } from "lucide-react";
 import { useState } from "react";
 import {
   DndContext,
@@ -107,8 +107,8 @@ export function ProfileList({ profiles, selectedId, onSelect, onNew, onReorder }
     <div className="flex flex-col h-full">
       <div className="p-4 border-b border-border">
         <div className="flex items-center gap-2 mb-3">
-          <Monitor className="h-4 w-4 text-accent" />
-          <h1 className="text-sm font-semibold tracking-tight">CloakBrowser Manager</h1>
+          <img src="/logo.svg" alt="CBrowser" className="h-4 w-4 shrink-0" />
+          <h1 className="text-sm font-semibold tracking-tight">CBrowser</h1>
         </div>
         {runningCount > 0 && (
           <div className="text-xs text-gray-500 mb-3">

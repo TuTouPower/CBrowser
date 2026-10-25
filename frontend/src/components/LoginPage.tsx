@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { Lock } from "lucide-react";
 import { api } from "../lib/api";
 import { useI18n } from "../i18n";
 import { LanguageToggle } from "./LanguageToggle";
@@ -35,11 +34,9 @@ export function LoginPage({ onSuccess }: LoginPageProps) {
       </div>
       <div className="w-80">
         <div className="flex flex-col items-center mb-6">
-          <div className="h-10 w-10 rounded-lg bg-accent/10 flex items-center justify-center mb-3">
-            <Lock className="h-5 w-5 text-accent" />
-          </div>
+          <img src="/logo.svg" alt="CBrowser" className="h-12 w-12 mb-3" />
           <h1 className="text-lg font-semibold text-gray-100">
-            CloakBrowser Manager
+            CBrowser
           </h1>
           <p className="text-xs text-gray-500 mt-1">{t("enterAccessToken")}</p>
         </div>
