@@ -13,9 +13,10 @@ HostOS = Literal["windows", "macos", "linux"]
 RuntimeMode = Literal["native", "docker"]
 ViewerMode = Literal["native-window", "vnc"]
 
-_RUNTIME_ENV = "CLOAKBROWSER_MANAGER_RUNTIME"
-_DATA_DIR_ENV = "CLOAKBROWSER_MANAGER_DATA_DIR"
-_LEGACY_DATA_DIR_ENVS = ("CLOAKBROWSER_DATA_DIR",)
+_RUNTIME_ENV = "CBROWSER_RUNTIME"
+_LEGACY_RUNTIME_ENVS = ("CLOAKBROWSER_MANAGER_RUNTIME",)
+_DATA_DIR_ENV = "CBROWSER_DATA_DIR"
+_LEGACY_DATA_DIR_ENVS = ("CLOAKBROWSER_MANAGER_DATA_DIR", "CLOAKBROWSER_DATA_DIR")
 
 
 @dataclass(frozen=True)
@@ -77,9 +78,9 @@ def default_data_dir(
     if host_os == "windows":
         local_app_data = env.get("LOCALAPPDATA")
         base = Path(local_app_data) if local_app_data else user_home / "AppData" / "Local"
-        return base / "CloakBrowser Manager"
+        return base / "CBrowser"
     if host_os == "macos":
-        return user_home / "Library" / "Application Support" / "CloakBrowser Manager"
+        return user_home / "Library" / "Application Support" / "CBrowser"
     return Path("/data")
 
 
@@ -92,7 +93,15 @@ def resolve_runtime(
     env = os.environ if environ is None else environ
     host_os = detect_host_os(platform_name)
     default_mode: RuntimeMode = "docker" if host_os == "linux" else "native"
-    requested_mode = env.get(_RUNTIME_ENV, default_mode).strip().lower()
+    requested_mode = env.get(_RUNTIME_ENV)
+    if not requested_mode:
+        for legacy in _LEGACY_RUNTIME_ENVS:
+            if legacy in env:
+                requested_mode = env[legacy]
+                break
+    if not requested_mode:
+        requested_mode = default_mode
+    requested_mode = requested_mode.strip().lower()
     if requested_mode not in {"native", "docker"}:
         raise RuntimeError(
             f"{_RUNTIME_ENV} must be 'native' or 'docker', got {requested_mode!r}"

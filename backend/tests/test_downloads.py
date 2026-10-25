@@ -479,7 +479,7 @@ async def test_a_cancel_the_browser_refuses_is_reported(profile: dict, caplog):
             raise RuntimeError("Browser.cancelDownload refused: no such download")
 
     cancel = downloads._cancel_via(Refusing(), profile["id"])
-    with caplog.at_level(logging.WARNING, logger="cloakbrowser.manager.downloads"):
+    with caplog.at_level(logging.WARNING, logger="cbrowser.downloads"):
         cancel("guid-9")
         for _ in range(3):
             await asyncio.sleep(0)

@@ -1,4 +1,4 @@
-"""Start CloakBrowser Manager natively on Windows or macOS."""
+"""Start CBrowser natively on Windows or macOS."""
 
 from __future__ import annotations
 
@@ -111,8 +111,12 @@ def main() -> int:
         print(f"[error] {exc}", file=sys.stderr, flush=True)
         return 1
 
-    env = {**os.environ, "CLOAKBROWSER_MANAGER_RUNTIME": "native"}
-    print(f"[start] CloakBrowser Manager: {SERVER_URL}", flush=True)
+    env = {
+        **os.environ,
+        "CBROWSER_RUNTIME": "native",
+        "CLOAKBROWSER_MANAGER_RUNTIME": "native",
+    }
+    print(f"[start] CBrowser: {SERVER_URL}", flush=True)
     # Replace this bootstrap process with app_entry.py under the venv python.
     # os.execve hands off entirely — no lingering parent, no wrapper-of-wrapper —
     # so a dev run becomes the exact same in-process server + native webview

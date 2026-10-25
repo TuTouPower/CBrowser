@@ -1,4 +1,4 @@
-"""CloakBrowser Manager — FastAPI application.
+"""CBrowser — FastAPI application.
 
 Serves the React dashboard (static files) and provides a REST API
 for browser profile management with live VNC viewing.
@@ -71,7 +71,7 @@ from .models import (
 from .runtime import bundle_dir
 from .settings_store import load_settings, save_settings
 
-logger = logging.getLogger("cloakbrowser.manager")
+logger = logging.getLogger("cbrowser")
 
 # Log to the console AND to a rotating file in the data dir. The native frozen
 # app has no visible terminal, so the file is the only way a user (or we, for
@@ -129,10 +129,12 @@ def _resolve_setting(env_key: str, settings_key: str) -> str | None:
     return os.environ.get(env_key) or _STORED_SETTINGS.get(settings_key) or None
 
 
-LICENSE_KEY: str | None = _resolve_setting("CLOAKBROWSER_LICENSE_KEY", "license_key")
+LICENSE_KEY: str | None = _resolve_setting(
+    "CBROWSER_LICENSE_KEY", "license_key"
+) or _resolve_setting("CLOAKBROWSER_LICENSE_KEY", "license_key")
 RELEASE_CHANNEL: str | None = _resolve_setting(
-    "CLOAKBROWSER_RELEASE_CHANNEL", "release_channel"
-)
+    "CBROWSER_RELEASE_CHANNEL", "release_channel"
+) or _resolve_setting("CLOAKBROWSER_RELEASE_CHANNEL", "release_channel")
 
 # Paths that bypass authentication even when AUTH_TOKEN is set
 _AUTH_EXEMPT = frozenset({"/api/auth/status", "/api/auth/login", "/api/health"})
@@ -412,7 +414,7 @@ def _rfb_msg_length(data: bytes, offset: int) -> int | None:
 
 def _rewrite_set_encodings(data: bytes, offset: int, msg_len: int) -> bytes:
     """Keep only whitelisted encodings in a SetEncodings message."""
-    _log = logging.getLogger("cloakbrowser.manager")
+    _log = logging.getLogger("cbrowser")
     num_enc = struct.unpack_from(">H", data, offset + 2)[0]
     kept = []
     stripped = []
@@ -453,7 +455,7 @@ def _filter_rfb_client_messages(data: bytes) -> bytes:
     Rewrites PointerEvents from 6-byte standard to 11-byte KasmVNC format
     and strips unsupported pseudo-encodings from SetEncodings.
     """
-    _log = logging.getLogger("cloakbrowser.manager")
+    _log = logging.getLogger("cbrowser")
     result = bytearray()
     offset = 0
     msg_idx = 0
@@ -509,7 +511,7 @@ async def lifespan(app: FastAPI):
     diagnostics.install_asyncio_handler(asyncio.get_running_loop(), logger)
     logger.info(diagnostics.startup_line(browser_mgr))
     browser_mgr._auto_launch_task = asyncio.create_task(browser_mgr.auto_launch_all())
-    logger.info("CloakBrowser Manager started")
+    logger.info("CBrowser started")
     yield
     logger.info("Shutting down — stopping all browsers...")
     if browser_mgr._auto_launch_task and not browser_mgr._auto_launch_task.done():
@@ -518,7 +520,7 @@ async def lifespan(app: FastAPI):
     await browser_mgr.cleanup_all()
 
 
-app = FastAPI(title="CloakBrowser Manager", lifespan=lifespan)
+app = FastAPI(title="CBrowser", lifespan=lifespan)
 app.add_middleware(AuthMiddleware)
 
 
@@ -1114,7 +1116,7 @@ async def get_system_status():
 # GitHub API allows 60 req/hr/IP, so the result is cached to fetch at most once
 # per TTL regardless of how many clients/reloads hit the endpoint.
 _GITHUB_LATEST_RELEASE_URL = (
-    "https://api.github.com/repos/CloakHQ/CloakBrowser-Manager/releases/latest"
+    "https://api.github.com/repos/TuTouPower/CBrowser/releases/latest"
 )
 _UPDATE_CACHE_TTL_SECONDS = 6 * 60 * 60
 _update_cache: tuple[float, UpdateCheckResponse] | None = None
@@ -1243,7 +1245,7 @@ async def shutdown_manager(request: Request):
             os.kill(os.getpid(), signal.SIGINT)
 
         asyncio.create_task(_signal_self())
-    return {"ok": True, "message": "CloakBrowser Manager is shutting down"}
+    return {"ok": True, "message": "CBrowser is shutting down"}
 
 
 @app.get("/api/settings", response_model=SettingsResponse)

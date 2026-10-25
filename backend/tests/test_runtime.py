@@ -26,7 +26,7 @@ def test_windows_defaults_to_native(tmp_path: Path):
     )
     assert config.runtime_mode == "native"
     assert config.viewer_mode == "native-window"
-    assert config.data_dir == tmp_path / "CloakBrowser Manager"
+    assert config.data_dir == tmp_path / "CBrowser"
 
 
 def test_macos_defaults_to_native(tmp_path: Path):
@@ -34,7 +34,7 @@ def test_macos_defaults_to_native(tmp_path: Path):
     assert config.runtime_mode == "native"
     assert config.viewer_mode == "native-window"
     assert config.data_dir == (
-        tmp_path / "Library" / "Application Support" / "CloakBrowser Manager"
+        tmp_path / "Library" / "Application Support" / "CBrowser"
     )
 
 
@@ -47,12 +47,12 @@ def test_linux_defaults_to_docker():
 
 def test_native_linux_is_rejected():
     with pytest.raises(RuntimeError, match="Native Linux desktop mode is not supported"):
-        resolve_runtime("linux", {"CLOAKBROWSER_MANAGER_RUNTIME": "native"})
+        resolve_runtime("linux", {"CBROWSER_RUNTIME": "native"})
 
 
 def test_docker_on_desktop_host_is_rejected():
     with pytest.raises(RuntimeError, match="Docker runtime is supported only on Linux"):
-        resolve_runtime("darwin", {"CLOAKBROWSER_MANAGER_RUNTIME": "docker"})
+        resolve_runtime("darwin", {"CBROWSER_RUNTIME": "docker"})
 
 
 def test_canonical_data_dir_override_wins(tmp_path: Path):
@@ -60,7 +60,7 @@ def test_canonical_data_dir_override_wins(tmp_path: Path):
     assert default_data_dir(
         "macos",
         {
-            "CLOAKBROWSER_MANAGER_DATA_DIR": str(configured),
+            "CBROWSER_DATA_DIR": str(configured),
             "DATA_DIR": "/legacy",
         },
         home=tmp_path,
@@ -69,6 +69,11 @@ def test_canonical_data_dir_override_wins(tmp_path: Path):
 
 def test_legacy_data_dir_override_is_honored(tmp_path: Path):
     configured = tmp_path / "legacy-data"
+    assert default_data_dir(
+        "windows",
+        {"CLOAKBROWSER_MANAGER_DATA_DIR": str(configured)},
+        home=tmp_path,
+    ) == configured
     assert default_data_dir(
         "windows",
         {"CLOAKBROWSER_DATA_DIR": str(configured)},

@@ -25,7 +25,7 @@ from . import downloads
 from .runtime import RuntimeConfig, resolve_runtime
 from .vnc_manager import VNCManager
 
-logger = logging.getLogger("cloakbrowser.manager.browser")
+logger = logging.getLogger("cbrowser.browser")
 
 
 UPGRADE_URL = "https://cloakbrowser.dev/#pricing"

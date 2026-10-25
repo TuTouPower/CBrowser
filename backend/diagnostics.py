@@ -1,4 +1,4 @@
-"""Startup + crash diagnostics for CloakBrowser Manager.
+"""Startup + crash diagnostics for CBrowser.
 
 Everything here aims at one goal: make an arbitrary FUTURE crash diagnosable
 from the rotating manager.log alone, without a repro. Three layers:
@@ -120,11 +120,11 @@ def startup_line(browser_mgr) -> str:
     except Exception:
         data_dir = "?"
     return (
-        f"diag: manager={app_version()} py={platform.python_version()} "
+        f"diag: cbrowser={app_version()} py={platform.python_version()} "
         f"os={platform.system()}-{platform.release()} arch={platform.machine()} "
         f"frozen={bool(getattr(sys, 'frozen', False))} | "
         f"streams: {_stream_state or _read_stream_state()} | "
-        f"ui={os.environ.get('CLOAKBROWSER_MANAGER_UI', 'auto')} "
+        f"ui={os.environ.get('CBROWSER_UI', os.environ.get('CLOAKBROWSER_MANAGER_UI', 'auto'))} "
         f"runtime={getattr(rt, 'runtime_mode', '?')} "
         f"host_os={getattr(rt, 'host_os', '?')} data_dir={data_dir} | "
         f"tier={getattr(browser_mgr, 'license_tier', '?')} "
@@ -186,7 +186,7 @@ class _StderrTee:
     Loop-safe: logging's own StreamHandler captured the ORIGINAL stderr at
     construction (before this tee is installed), so formatted log records bypass
     the tee — only genuine direct writes are mirrored. Records go to a distinct
-    'cloakbrowser.console' logger to keep them visually separate.
+    'cbrowser.console' logger to keep them visually separate.
     """
 
     def __init__(self, real, logger: logging.Logger):
@@ -227,4 +227,4 @@ def install_stderr_tee() -> None:
     if _tee_installed or sys.stderr is None:
         return
     _tee_installed = True
-    sys.stderr = _StderrTee(sys.stderr, logging.getLogger("cloakbrowser.console"))
+    sys.stderr = _StderrTee(sys.stderr, logging.getLogger("cbrowser.console"))

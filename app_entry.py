@@ -1,11 +1,11 @@
-"""Native/frozen entry point for CloakBrowser Manager.
+"""Native/frozen entry point for CBrowser.
 
 This is the PyInstaller target. Unlike run.py (the dev-from-source launcher,
 which shells out to `uvicorn backend.main:app`), a frozen bundle cannot resolve
 the "backend.main:app" import string, so uvicorn is run in-process here.
 
 Serves on 127.0.0.1:8080. The UI is shown in one of two shells, chosen by the
-CLOAKBROWSER_MANAGER_UI env var:
+CBROWSER_UI env var:
   - "webview" — a dedicated native app window (WKWebView on macOS, WebView2 on
     Windows) via pywebview. No browser chrome, its own Dock/taskbar entry.
   - "browser" — the user's default browser at the server URL (the original
@@ -28,7 +28,7 @@ import webbrowser
 SERVER_URL = "http://127.0.0.1:8080"
 HOST = "127.0.0.1"
 PORT = 8080
-WINDOW_TITLE = "CloakBrowser Manager"
+WINDOW_TITLE = "CBrowser"
 
 
 def _port_available() -> bool:
@@ -99,7 +99,10 @@ def _save_window_geometry(state: dict) -> None:
 
 
 def _ui_mode() -> str:
-    mode = os.environ.get("CLOAKBROWSER_MANAGER_UI", "auto").strip().lower()
+    mode = (
+        os.environ.get("CBROWSER_UI")
+        or os.environ.get("CLOAKBROWSER_MANAGER_UI", "auto")
+    ).strip().lower()
     if mode not in {"auto", "webview", "browser"}:
         mode = "auto"
     if mode == "auto":
@@ -109,6 +112,18 @@ def _ui_mode() -> str:
             return "browser"
         return "webview"
     return mode
+
+
+_status_item = None
+
+
+def _packaging_dir():
+    from backend.runtime import bundle_dir
+
+    bundled = bundle_dir() / "packaging"
+    if bundled.exists():
+        return bundled
+    return Path(__file__).resolve().parent / "packaging"
 
 
 def _set_app_icon() -> None:
@@ -125,7 +140,7 @@ def _set_app_icon() -> None:
 
     if getattr(sys, "frozen", False):
         return
-    packaging = Path(__file__).resolve().parent / "packaging"
+    packaging = _packaging_dir()
 
     if sys.platform == "darwin":
         # The rounded squircle (icon.icns), NOT icon.png (the square master).
@@ -166,6 +181,60 @@ def _set_app_icon() -> None:
                     user32.SendMessageW(hwnd, wm_seticon, icon_big, hicon)
         except Exception:
             pass
+
+
+def _setup_menubar_icon() -> None:
+    """Show pure-white icon in the macOS Menu Bar (NSStatusBar)."""
+    import sys
+
+    if sys.platform != "darwin":
+        return
+
+    global _status_item
+    packaging = _packaging_dir()
+    icon = packaging / "menubar-icon.png"
+    if not icon.exists():
+        icon = packaging / "menubar-icon.svg"
+    if not icon.exists():
+        return
+
+    try:
+        from AppKit import (
+            NSApplication,
+            NSImage,
+            NSMenu,
+            NSMenuItem,
+            NSStatusBar,
+            NSVariableStatusItemLength,
+        )
+
+        status_bar = NSStatusBar.systemStatusBar()
+        _status_item = status_bar.statusItemWithLength_(NSVariableStatusItemLength)
+
+        image = NSImage.alloc().initWithContentsOfFile_(str(icon))
+        if image is not None:
+            image.setSize_((18.0, 18.0))
+            image.setTemplate_(True)
+            button = _status_item.button()
+            if button is not None:
+                button.setImage_(image)
+
+        menu = NSMenu.alloc().init()
+        show_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Show CBrowser", "unhide:", ""
+        )
+        show_item.setTarget_(NSApplication.sharedApplication())
+        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Quit CBrowser", "terminate:", "q"
+        )
+        quit_item.setTarget_(NSApplication.sharedApplication())
+
+        menu.addItem_(show_item)
+        menu.addItem_(NSMenuItem.separatorItem())
+        menu.addItem_(quit_item)
+        _status_item.setMenu_(menu)
+    except Exception:
+        pass
 
 
 def _focus_existing_window() -> bool:
@@ -215,7 +284,7 @@ def _run_webview(server) -> int:
             import ctypes
 
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-                "dev.cloakbrowser.manager"
+                "dev.cbrowser"
             )
         except Exception:
             pass
@@ -254,9 +323,9 @@ def _run_webview(server) -> int:
 
     window.events.resized += _on_resized
     window.events.moved += _on_moved
-    # Set the Dock/taskbar icon once the window exists, on the main thread.
-    # Dev-only nicety; the frozen build already shows the icon.
+    # Set the Dock/taskbar and macOS Menu Bar icons once the window exists.
     window.events.shown += _set_app_icon
+    window.events.shown += _setup_menubar_icon
 
     webview.start()  # blocks on the main thread until the window is closed
 
@@ -303,6 +372,7 @@ def _harden_std_streams() -> None:
 
 def main() -> int:
     _harden_std_streams()
+    os.environ.setdefault("CBROWSER_RUNTIME", "native")
     os.environ.setdefault("CLOAKBROWSER_MANAGER_RUNTIME", "native")
 
     if not _port_available():

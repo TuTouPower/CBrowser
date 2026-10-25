@@ -19,7 +19,7 @@ import httpx
 from . import artifacts
 from . import database as db
 
-logger = logging.getLogger("cloakbrowser.manager.downloads")
+logger = logging.getLogger("cbrowser.downloads")
 
 STAGING_DIRNAME = artifacts.STAGING_DIRNAME
 

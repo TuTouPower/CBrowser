@@ -2,7 +2,7 @@
 
 Dependency-free. Values already present in the environment win (so Docker's
 injected container env, or a real shell export, overrides the file). Used for
-the app-wide CloakBrowser license key and release channel — see README.
+the app-wide CBrowser license key and release channel — see README.
 """
 
 from __future__ import annotations
