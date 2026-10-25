@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for CloakBrowser Manager (native Mac/Windows).
+"""PyInstaller spec for CBrowser (native Mac/Windows).
 
 Onedir build wrapped by the platform installer (.dmg / Inno Setup). Run from
 the manager repo root:  pyinstaller packaging/manager.spec
@@ -16,7 +16,7 @@ from PyInstaller.utils.hooks import collect_all, collect_submodules
 # spec files don't get __file__; SPECPATH is injected by PyInstaller.
 ROOT = Path(SPECPATH).resolve().parent  # noqa: F821  (SPECPATH is a spec global)
 
-APP_NAME = "CloakBrowser Manager"
+APP_NAME = "CBrowser"
 IS_MAC = sys.platform == "darwin"
 IS_WIN = sys.platform == "win32"
 
@@ -41,6 +41,13 @@ datas.append((str(frontend_dist), "frontend/dist"))
 version_file = ROOT / "backend" / "version.txt"
 if version_file.exists():
     datas.append((str(version_file), "backend"))
+
+# Menubar & app icon assets
+packaging_dir = ROOT / "packaging"
+for icon_name in ("menubar-icon.png", "menubar-icon.svg", "logo.svg", "icon.png"):
+    icon_file = packaging_dir / icon_name
+    if icon_file.exists():
+        datas.append((str(icon_file), "packaging"))
 
 # Our own backend package (main.py lazy-imports several cloakbrowser modules).
 hiddenimports += collect_submodules("backend")
@@ -111,7 +118,7 @@ if IS_MAC:
         coll,
         name=f"{APP_NAME}.app",
         icon=ICON_ICNS,
-        bundle_identifier="dev.cloakbrowser.manager",
+        bundle_identifier="dev.cbrowser",
         info_plist={
             "CFBundleName": APP_NAME,
             "CFBundleDisplayName": APP_NAME,
