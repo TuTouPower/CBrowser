@@ -1,6 +1,6 @@
-# CloakBrowser Manager 容器部署与运行架构说明
+# CBrowser 容器部署与运行架构说明
 
-本文档记录当前 CloakBrowser Manager 的容器化部署架构、网络配置、数据持久化机制以及针对指纹防关联与局域网接管的专项优化。
+本文档记录当前 CBrowser 的容器化部署架构、网络配置、数据持久化机制以及针对指纹防关联与局域网接管的专项优化。
 
 ---
 
@@ -8,7 +8,7 @@
 
 当前服务已通过 Docker Compose 容器化部署在 macOS（OrbStack Docker Backend / arm64）上：
 
-* **容器名称**：`cloakbrowser-manager-manager-1`
+* **容器名称**：`cbrowser`
 * **宿主机监听端口**：`56661`（映射至容器内部 `8080`）
 * **网络监听绑定**：`0.0.0.0:56661`（已开启局域网共享）
 * **访问入口**：
@@ -40,7 +40,7 @@
                                             │
                              (卷挂载持久化 /data)
                                             ▼
-                           宿主机目录：~/.cloakbrowser-manager/
+                           宿主机目录：~/.cbrowser/
                            ├── profiles.db   (SQLite 数据库)
                            ├── settings.json (全局配置与 License)
                            └── profiles/     (各浏览器会话 Session/Cookies 数据)
@@ -83,7 +83,7 @@
 
 ## 4. 常用运维与管理命令
 
-所有命令均在项目根目录（`/Users/karson/kar/code/CloakBrowser-Manager`）下执行：
+所有命令均在项目根目录（`/Users/karson/kar/code/CBrowser`）下执行：
 
 ### 4.1 容器启停
 ```bash
@@ -96,7 +96,7 @@ docker compose stop
 # 重启容器
 docker compose restart
 
-# 销毁容器（数据保存在宿主机 ~/.cloakbrowser-manager，不受影响）
+# 销毁容器（数据保存在宿主机 ~/.cbrowser，不受影响）
 docker compose down
 ```
 
@@ -112,6 +112,6 @@ docker compose logs -f | grep Clipboard
 ### 4.3 数据备份与恢复
 所有浏览器数据、Cookie、插件、配置文件均存放在宿主机目录：
 ```bash
-~/.cloakbrowser-manager/
+~/.cbrowser/
 ```
 若需备份环境，只需在停止容器后完整复制该目录即可。

@@ -23,6 +23,6 @@ SOFTWARE.
 ---
 
 IMPORTANT: This license covers the GUI application source code only.
-CloakBrowser Manager requires the CloakBrowser Chromium binary to function,
+CBrowser requires the CloakBrowser Chromium binary to function,
 which is separately licensed under the CloakBrowser Binary License.
 See BINARY-LICENSE.md in this repository for the full binary license terms.

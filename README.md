@@ -2,7 +2,7 @@
 <img src="https://i.imgur.com/cqkp6fG.png" width="500" alt="CloakBrowser">
 </p>
 
-<h3 align="center">Browser Profile Manager for CloakBrowser</h3>
+<h3 align="center">Browser Profile Manager: CBrowser</h3>
 
 <p align="center">
 A self-hosted browser for managing unlimited accounts and profiles,<br>
@@ -17,20 +17,19 @@ Start free with one concurrent browser, scale to more on a paid plan.
 </p>
 
 <p align="center">
-<a href="https://github.com/CloakHQ/CloakBrowser"><img src="https://img.shields.io/github/stars/cloakhq/cloakbrowser?label=CloakBrowser" alt="Stars"></a>
-<a href="https://hub.docker.com/r/cloakhq/cloakbrowser-manager"><img src="https://img.shields.io/docker/pulls/cloakhq/cloakbrowser-manager?label=docker&logo=docker&logoColor=white" alt="Docker Pulls"></a>
+<a href="https://github.com/TuTouPower/CBrowser"><img src="https://img.shields.io/github/stars/TuTouPower/CBrowser?label=CBrowser" alt="Stars"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
 </p>
 
 ---
 
-> **Community fork (TuTouPower)** — UI language: English / 中文. Click **EN / 中文** in the top bar or Settings to switch. Preference is saved in `localStorage`. Default follows the browser language (`zh*` → 中文, otherwise English). Upstream: [CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager). This fork focuses on i18n only; auth, license, binary download, and CDP/VNC are unchanged.
+> **Community fork (TuTouPower)** — UI language: English / 中文. Click **EN / 中文** in the top bar or Settings to switch. Preference is saved in `localStorage`. Default follows the browser language (`zh*` → 中文, otherwise English). Repository: [TuTouPower/CBrowser](https://github.com/TuTouPower/CBrowser). Upstream: [CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager).
 >
-> **社区分支（TuTouPower）** — 支持界面 **中英文切换**。点击顶栏或设置中的 **EN / 中文** 即可切换，选择会保存在 `localStorage`。默认跟随浏览器语言（`zh*` 为中文，否则英文）。上游仓库：[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)。本分支仅增加界面多语言，不改动鉴权、许可证、二进制下载与 CDP/VNC。
+> **社区分支（TuTouPower）** — 支持界面 **中英文切换**。点击顶栏或设置中的 **EN / 中文** 即可切换，选择会保存在 `localStorage`。默认跟随浏览器语言（`zh*` 为中文，否则英文）。仓库：[TuTouPower/CBrowser](https://github.com/TuTouPower/CBrowser)，上游：[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)。
 
 
 <p align="center">
-<img src="https://raw.githubusercontent.com/CloakHQ/CloakBrowser-Manager/main/assets/manager-macos.png" width="800" alt="CloakBrowser Manager on macOS">
+<img src="https://raw.githubusercontent.com/TuTouPower/CBrowser/main/assets/manager-macos.png" width="800" alt="CBrowser on macOS">
 </p>
 
 Open a profile and you don't get a new tab, you get a different computer: its own browser fingerprint, GPU, screen, timezone, proxy, cookies, and history. Nothing bleeds between profiles, so your accounts never link back to each other, or to you. Close a profile and reopen it next day, it's the same person, warmed up and ready.
@@ -39,20 +38,20 @@ Windows and macOS launch browsers directly in native desktop windows; Linux keep
 
 ### Windows and macOS
 
-Download the installer from the [latest release](https://github.com/CloakHQ/CloakBrowser-Manager/releases) and run it:
+Download the installer from the [latest release](https://github.com/TuTouPower/CBrowser/releases) and run it:
 
-- **macOS** — open the `.dmg` and drag **CloakBrowser Manager** into Applications. (Unsigned during early access — on first launch, run `xattr -rc "/Applications/CloakBrowser Manager.app"` in Terminal, or approve it under **System Settings → Privacy & Security → Open Anyway**.)
+- **macOS** — open the `.dmg` and drag **CBrowser** into Applications. (Unsigned during early access — on first launch, run `xattr -rc "/Applications/CBrowser.app"` in Terminal, or approve it under **System Settings → Privacy & Security → Open Anyway**.)
 - **Windows** — run the setup `.exe`. (Unsigned during early access — if SmartScreen warns, click **More info → Run anyway**.)
 
-No Python, Node, or git required. The Manager starts on `127.0.0.1:8080` and opens in your default browser. On first launch it downloads the CloakBrowser engine. Profiles are stored in `%LOCALAPPDATA%\CloakBrowser Manager` on Windows and `~/Library/Application Support/CloakBrowser Manager` on macOS; a `logs/manager.log` in that folder records what happened if you need it.
+No Python, Node, or git required. The Manager starts on `127.0.0.1:8080` and opens in your default browser. On first launch it downloads the CloakBrowser engine. Profiles are stored in `%LOCALAPPDATA%\CBrowser` on Windows and `~/Library/Application Support/CBrowser` on macOS; a `logs/manager.log` in that folder records what happened if you need it.
 
 Open **Settings** (gear icon, top right) to add your license key and pick the Stable or Preview channel.
 
 #### Run from source (developers)
 
 ```bash
-git clone https://github.com/CloakHQ/CloakBrowser-Manager.git
-cd CloakBrowser-Manager
+git clone https://github.com/TuTouPower/CBrowser.git
+cd CBrowser
 ./run-macos.sh      # macOS  (or run-windows.bat on Windows)
 ```
 
@@ -61,22 +60,22 @@ This path requires Python 3.10+ and Node 18+; the first run creates a local Pyth
 ### Linux server
 
 ```bash
-docker run -p 127.0.0.1:8080:8080 -v cloakprofiles:/data cloakhq/cloakbrowser-manager
+docker run -p 127.0.0.1:8080:8080 -v cloakprofiles:/data tutoupower/cbrowser
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/CloakHQ/CloakBrowser-Manager.git
-cd CloakBrowser-Manager
+git clone https://github.com/TuTouPower/CBrowser.git
+cd CBrowser
 docker compose up --build
 ```
 
 Open [http://localhost:8080](http://localhost:8080), create a profile, and click Launch.
 
-> **Early alpha** — this project is under active development. Expect bugs. If you find one, please [open an issue](https://github.com/CloakHQ/CloakBrowser-Manager/issues) and attach the log so we can help. On Windows/macOS it's `logs/manager.log` in the data folder (`%LOCALAPPDATA%\CloakBrowser Manager` / `~/Library/Application Support/CloakBrowser Manager`); on Linux/Docker use `docker logs <container>`.
+> **Early alpha** — this project is under active development. Expect bugs. If you find one, please [open an issue](https://github.com/TuTouPower/CBrowser/issues) and attach the log so we can help. On Windows/macOS it's `logs/manager.log` in the data folder (`%LOCALAPPDATA%\CBrowser` / `~/Library/Application Support/CBrowser`); on Linux/Docker use `docker logs <container>`.
 
-## CloakBrowser license key
+## License key
 
 The Manager runs on the CloakBrowser engine, so it needs a key.<br>
 [Get a free one with GitHub](https://cloakbrowser.dev/free) to run one profile at a time on the current build.<br>
@@ -90,9 +89,9 @@ Add your key once and every profile uses it.
 
 ```bash
 docker run -p 127.0.0.1:8080:8080 -v cloakprofiles:/data \
-  -e CLOAKBROWSER_LICENSE_KEY=cb_your_key_here \
-  -e CLOAKBROWSER_RELEASE_CHANNEL=preview \
-  cloakhq/cloakbrowser-manager
+  -e CBROWSER_LICENSE_KEY=cb_your_key_here \
+  -e CBROWSER_RELEASE_CHANNEL=preview \
+  tutoupower/cbrowser
 ```
 
 **Run from source (or `docker compose`):** set it in a manager-root `.env`:
@@ -103,8 +102,8 @@ cp .env.example .env
 
 ```bash
 # .env
-CLOAKBROWSER_LICENSE_KEY=cb_your_key_here
-CLOAKBROWSER_RELEASE_CHANNEL=stable   # or: preview
+CBROWSER_LICENSE_KEY=cb_your_key_here
+CBROWSER_RELEASE_CHANNEL=stable   # or: preview
 ```
 
 The file is loaded automatically at startup (`docker compose` reads it too); restart the Manager after changing it. An environment variable overrides the in-app setting.
@@ -113,9 +112,9 @@ The file is loaded automatically at startup (`docker compose` reads it too); res
 
 The popular anti-detect browsers solve the fingerprint, then hand you a new problem: every account you own, every cookie, every session, sits on someone else's servers. And the disguise increasingly doesn't survive real detection, shortcuts in how fingerprints are faked, GPU and WebGL values that don't add up, identities that pass a test page and fail the real site.
 
-CloakBrowser Manager runs on your own machine, and every profile inherits the CloakBrowser engine, so the identities actually hold up.
+CBrowser runs on your own machine, and every profile inherits the CloakBrowser engine, so the identities actually hold up.
 
-| | Typical cloud anti-detect browser | **CloakBrowser Manager** |
+| | Typical cloud anti-detect browser | **CBrowser** |
 |---|---|---|
 | Pricing model | Per profile + per seat, forced up-tiering | **Flat by concurrency, unlimited profiles** |
 | Where profiles live | Their cloud | **Your machine** |
@@ -203,10 +202,10 @@ macOS:   ./run-macos.sh
 Pull the latest image and recreate the container:
 
 ```bash
-docker pull cloakhq/cloakbrowser-manager
+docker pull tutoupower/cbrowser
 docker stop <container-id>
 docker rm <container-id>
-docker run -p 127.0.0.1:8080:8080 -v cloakprofiles:/data cloakhq/cloakbrowser-manager
+docker run -p 127.0.0.1:8080:8080 -v cbrowserprofiles:/data tutoupower/cbrowser
 ```
 
 Profiles and session data remain in the native application-data directory or the `cloakprofiles` Docker volume across updates.
@@ -309,7 +308,7 @@ Then open `http://localhost:8080`.
 By default, there is no authentication (ideal for local use). To protect the web UI and API when hosting on a network, set the `AUTH_TOKEN` environment variable:
 
 ```bash
-docker run -p 127.0.0.1:8080:8080 -v cloakprofiles:/data -e AUTH_TOKEN=your-secret-token cloakhq/cloakbrowser-manager
+docker run -p 127.0.0.1:8080:8080 -v cbrowserprofiles:/data -e AUTH_TOKEN=your-secret-token tutoupower/cbrowser
 ```
 
 Or in `docker-compose.yml`:
@@ -337,7 +336,7 @@ The GUI application requires the CloakBrowser Chromium binary to function. The b
 
 ## Contributing
 
-Contributions are welcome. Please [open an issue](https://github.com/CloakHQ/CloakBrowser-Manager/issues) first to discuss what you'd like to change.
+Contributions are welcome. Please [open an issue](https://github.com/TuTouPower/CBrowser/issues) first to discuss what you'd like to change.
 
 ### Contributors
 
@@ -349,7 +348,7 @@ Contributions are welcome. Please [open an issue](https://github.com/CloakHQ/Clo
 
 ## Links
 
-- **CloakBrowser** — [github.com/CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser)
+- **CloakBrowser Engine** — [github.com/CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser)
 - **Website** — [cloakbrowser.dev](https://cloakbrowser.dev)
-- **Bug reports** — [GitHub Issues](https://github.com/CloakHQ/CloakBrowser-Manager/issues)
+- **Bug reports** — [GitHub Issues](https://github.com/TuTouPower/CBrowser/issues)
 - **Contact** — cloakhq@pm.me
