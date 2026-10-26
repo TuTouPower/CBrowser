@@ -762,7 +762,7 @@ ______________________________________________________________________
 ## 13.2 前端目录
 
 ```text
-frontend/src/
+src/frontend/src/
 ├── app/
 │   ├── router.tsx
 │   └── providers.tsx
@@ -956,25 +956,25 @@ ______________________________________________________________________
 
 |现有文件|最终处理|
 |---|---|
-|`backend/main.py`|拆分 API、鉴权和服务层，删除 RFB 代理|
-|`backend/browser_manager.py`|拆分 Profile、Browser Agent、运行时协调、下载捕获|
-|`backend/database.py`|SQLAlchemy 2、Repository、Alembic|
-|`backend/vnc_manager.py`|删除|
-|`backend/artifacts.py`|重构为 Artifact Service|
-|`backend/downloads.py`|下载监听迁移到 Browser Agent|
-|`backend/runtime.py`|删除 native-window 运行路径|
-|`backend/models.py`|拆分 Domain Model、API Schema 和运行时协议|
-|`backend/diagnostics.py`|保留，增加结构化运行时日志|
-|`frontend/src/App.tsx`|Router + Provider|
-|`frontend/src/components/ProfileViewer.tsx`|改为 Selkies WebRTC 适配组件|
-|`frontend/src/hooks/useProfiles.ts`|TanStack Query hooks|
-|`frontend/src/lib/api.ts`|OpenAPI 生成类型与统一 API client|
-|`frontend/src/components/ProfileFiles.tsx`|保留，迁移到 Artifact 模块|
-|`frontend/src/components/CdpEndpointButton.tsx`|保留，迁移到 Automation 模块|
-|`frontend/src/components/NativeWindowStatus.tsx`|删除|
-|`Dockerfile`|拆分 API、Supervisor、Browser Runtime、Stream Runtime|
-|`docker-compose.yml`|改为 `compose.yaml`|
-|`entrypoint.sh`|删除旧 VNC 和进程清理逻辑|
+|`src/backend/main.py`|拆分 API、鉴权和服务层，删除 RFB 代理|
+|`src/backend/browser_manager.py`|拆分 Profile、Browser Agent、运行时协调、下载捕获|
+|`src/backend/database.py`|SQLAlchemy 2、Repository、Alembic|
+|`src/backend/vnc_manager.py`|删除|
+|`src/backend/artifacts.py`|重构为 Artifact Service|
+|`src/backend/downloads.py`|下载监听迁移到 Browser Agent|
+|`src/backend/runtime.py`|删除 native-window 运行路径|
+|`src/backend/models.py`|拆分 Domain Model、API Schema 和运行时协议|
+|`src/backend/diagnostics.py`|保留，增加结构化运行时日志|
+|`src/frontend/src/App.tsx`|Router + Provider|
+|`src/frontend/src/components/ProfileViewer.tsx`|改为 Selkies WebRTC 适配组件|
+|`src/frontend/src/hooks/useProfiles.ts`|TanStack Query hooks|
+|`src/frontend/src/lib/api.ts`|OpenAPI 生成类型与统一 API client|
+|`src/frontend/src/components/ProfileFiles.tsx`|保留，迁移到 Artifact 模块|
+|`src/frontend/src/components/CdpEndpointButton.tsx`|保留，迁移到 Automation 模块|
+|`src/frontend/src/components/NativeWindowStatus.tsx`|删除|
+|`config/docker/Dockerfile`|拆分 API、Supervisor、Browser Runtime、Stream Runtime|
+|`compose.yaml`|改为 `compose.yaml`|
+|`config/docker/entrypoint.sh`|删除旧 VNC 和进程清理逻辑|
 |`app_entry.py`|删除原生应用入口|
 |`run-macos.sh`、`run-windows.bat`|删除|
 |`packaging/`|删除原生安装包构建流程|
