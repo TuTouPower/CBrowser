@@ -18,6 +18,54 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t001_v2_runtime_validation"
+        },
+        {
+            "tid": "t002",
+            "slug": "v2_backend_foundation",
+            "title": "建立 v2 Profile 与运行状态持久化骨架",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t001",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/tasks/t002_v2_backend_foundation"
+        },
+        {
+            "tid": "t003",
+            "slug": "v2_browser_runtime",
+            "title": "实现隔离 Browser Runtime 与受控 UDS Agent",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t001",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/tasks/t003_v2_browser_runtime"
+        },
+        {
+            "tid": "t004",
+            "slug": "v2_stream_runtime",
+            "title": "实现 Selkies Stream Runtime 与 Profile 级媒体控制",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t003",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/tasks/t004_v2_stream_runtime"
         }
     ]
 }
