@@ -1,12 +1,24 @@
+# 运行时数据与产物
+/artifacts/
+/data/
+.scratch/
+*.log
+
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.pytest_cache/
 
 # Node
 node_modules/
-frontend/dist/
+src/frontend/dist/
+
+# 本地密钥
+.env
+.env.*
+!.env.example
 
 # Native packaging build output
 dist_native/
@@ -14,24 +26,29 @@ build_native/
 dist_arm/
 .venv-build/
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 
-# Secrets (license key, auth token) — keep .env.example, never .env
-.env
+# 多路 review 会话的过程文件（报告 review_*.md 本身入库）
+docs/reviews/review_*/_meta/
+docs/archive/reviews/review_*/_meta/
 
-# Deploy
+# 并行调度账本，运行态不入库
+docs/runtime/
+
+# 模板同步状态，运行态不入库
+.repo_template/sync_state.json
+
+# CommandCode local runtime state
+.commandcode/
+
+# 项目专属临时项
 deploy.sh
-
-# Claude Code
-.claude/
-CLAUDE.md
 publish-docker.sh
 .beads
 debug
-backend/version.txt
 .plans
+src/backend/version.txt
+

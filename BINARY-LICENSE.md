@@ -116,10 +116,10 @@ You are solely responsible for how you use the Binary, including any harm, loss,
 
 Without limiting the above, the following uses are expressly prohibited:
 
-* Unauthorized access to financial, banking, healthcare, or government authentication systems
-* Credential stuffing, brute-force login attempts, or automated account creation
-* Circumventing authentication on systems you do not own or have authorization to test
-* Any activity that constitutes fraud, identity theft, or unauthorized data collection
+- Unauthorized access to financial, banking, healthcare, or government authentication systems
+- Credential stuffing, brute-force login attempts, or automated account creation
+- Circumventing authentication on systems you do not own or have authorization to test
+- Any activity that constitutes fraud, identity theft, or unauthorized data collection
 
 ## Indemnification
 

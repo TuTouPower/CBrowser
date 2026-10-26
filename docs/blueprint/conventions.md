@@ -1,0 +1,38 @@
+# 约定（项目级）
+
+模板流程的编号与 Markdown 格式见 `.repo_template/docs/usage.md`「命名与格式」。本文定义 CBrowser 项目特有的技术栈约定、代码规范与 schema 落点。
+
+## 1. 技术栈与工具链约定
+
+- **后端**：Python 3.12+，使用 `uv` 管理虚拟环境与依赖；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.0 异步/强类型语法；数据库迁移使用 Alembic。
+- **前端**：TypeScript + React 19，构建工具使用 Vite；状态管理采用 TanStack Query 5，路由采用 React Router 7；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。
+- **远程显示**：固定 Selkies 2.1.0 官方稳定发布版本，纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路。
+- **容器与部署**：生产运行平台为 Linux Docker；本地开发验证支持 macOS (OrbStack)。
+
+## 2. schema 类型落点
+
+按消费方决定落点，`schemas/` 只放跨服务契约。
+
+|类型|例子|落点|
+|---|---|---|
+|**跨服务接口契约**|OpenAPI 规范导出、WebRTC 信令协议|`schemas/openapi/`、`schemas/webrtc/`|
+|**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`backend/cbrowser/domain/`、`backend/cbrowser/api/schemas/`|
+|**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`frontend/src/shared/api/generated/`|
+|**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`backend/cbrowser/adapters/database/models.py`、`backend/migrations/`|
+|**配置 schema**|运行时配置验证、环境变量定义|`backend/cbrowser/config.py`、`config/schemas/`|
+|**文档/元数据 schema**|task front matter、状态机 JSON 校验|`.repo_template/docs/task_template/`|
+
+## 3. 编码与安全规范
+
+1. **凭证保护**：禁止在代码、日志、数据库或 Docker 镜像中硬编码密码、JWT 密钥、CloakBrowser 许可证或代理账密。
+2. **只读挂载**：容器沙箱内根文件系统必须为只读，仅对 `/tmp`、`/dev/shm` 以及 Profile 的挂载目录授予写权限。
+3. **日志输出**：禁止使用 `print` / `console.log`，强制使用结构化日志组件；严禁记录剪贴板内容、输入法拼音、Cookie 或网页私密数据。
+4. **代码格式化**：
+    - Python 代码遵循 Ruff 规范，强制使用空格缩进（4 空格）。
+    - 前端代码遵循 ESLint & Prettier 规范（2 空格）。
+    - Markdown 文档统一使用 `md_kx` 格式化，表格使用 compact 格式。
+
+## 4. 原子写原则
+
+写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
+公共 helper：`from repo_task.documents import atomic_write_text`。

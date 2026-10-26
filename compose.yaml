@@ -1,0 +1,23 @@
+name: cbrowser
+
+services:
+  cbrowser:
+    container_name: cbrowser
+    image: cbrowser:latest
+    build:
+      context: .
+      dockerfile: config/docker/Dockerfile
+    ports:
+      - "0.0.0.0:${CBROWSER_PORT:-56661}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${CBROWSER_DATA_DIR:-~/.cbrowser}:/data
+    environment:
+      - AUTH_TOKEN=${AUTH_TOKEN:-}
+      - CBROWSER_LICENSE_KEY=${CBROWSER_LICENSE_KEY:-${CLOAKBROWSER_LICENSE_KEY:-}}
+      - CBROWSER_RELEASE_CHANNEL=${CBROWSER_RELEASE_CHANNEL:-${CLOAKBROWSER_RELEASE_CHANNEL:-stable}}
+      - ARTIFACT_MAX_BYTES=${ARTIFACT_MAX_BYTES:-}
+      - ARTIFACT_MAX_COUNT=${ARTIFACT_MAX_COUNT:-}
+      - ARTIFACT_MAX_TOTAL_BYTES=${ARTIFACT_MAX_TOTAL_BYTES:-}
+    restart: unless-stopped

@@ -1,0 +1,6 @@
+{
+    "generated_by": ".repo_template/scripts/task.py",
+    "authority": "docs/archive/tasks/{tid}_{slug}/note.md front matter",
+    "workspace": ".",
+    "tasks": []
+}

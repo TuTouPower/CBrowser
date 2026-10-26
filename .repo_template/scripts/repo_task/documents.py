@@ -1,0 +1,571 @@
+"""Canonical documents implementation for the task toolchain."""
+
+from __future__ import annotations
+
+import os
+import re
+import secrets
+import tempfile
+from pathlib import Path
+
+import repo_task.context as ctx
+
+
+def _quote(value: str) -> str:
+    """YAML 双引号标量：转义反斜杠、双引号与换行符。"""
+    escaped = (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
+    return f'"{escaped}"'
+
+def _unquote(value: str) -> str:
+    """还原 _quote 的转义；未加引号的值原样返回。"""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("\"", "'"):
+        inner = value[1:-1]
+        if value[0] == "'":
+            return inner
+        out, i = [], 0
+        while i < len(inner):
+            if inner[i] == "\\" and i + 1 < len(inner):
+                nxt = inner[i + 1]
+                if nxt == "n":
+                    out.append("\n")
+                elif nxt == "r":
+                    out.append("\r")
+                elif nxt == "t":
+                    out.append("\t")
+                elif nxt == "\\":
+                    out.append("\\")
+                elif nxt == '"':
+                    out.append('"')
+                else:
+                    out.append(nxt)
+                i += 2
+            else:
+                out.append(inner[i])
+                i += 1
+        return "".join(out)
+    return value
+
+def parse_front_matter_text(text: str, *, source: str) -> tuple[dict, str]:
+    """从文本返回 (front matter dict, 正文)。"""
+    if not text.startswith("---"):
+        raise ctx.TaskDataError(f"{source}: note.md 必须以 YAML front matter (---) 开头")
+    end = text.find("\n---", 3)
+    if end == -1:
+        raise ctx.TaskDataError(f"{source}: front matter 未闭合（缺结束的 ---）")
+    body = text[end + 4:].lstrip("\n")
+    fm = {}
+    for line in text[3:end].splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        val = val.strip()
+        # 未加引号的值剥掉行内注释（# 前须有空格），防照搬文档示例后值被污染
+        if val and val[0] not in ("\"", "'"):
+            val = val.split(" #", 1)[0].rstrip()
+        fm[key.strip()] = _unquote(val)
+    return fm, body
+
+def parse_front_matter(path: Path) -> tuple[dict, str]:
+    """返回 (front matter dict, 正文)。缺失或不合法抛 ctx.TaskDataError。
+
+    本模块是唯一真相源；render_review_prompts.py / check_review_status.py 直接
+    委托本实现，各自只在 CLI 边界转换错误语义。
+    """
+    return parse_front_matter_text(
+        path.read_text(encoding="utf-8"),
+        source=ctx._rel(path),
+    )
+
+def dump_front_matter(fm: dict) -> str:
+    """所有值一律双引号包裹并转义，避免特殊字符破坏 YAML。"""
+    keys = list(ctx.FRONT_MATTER_KEYS) + [k for k in fm if k not in ctx.FRONT_MATTER_KEYS]
+    lines = ["---"]
+    lines += [f"{key}: {_quote(fm[key])}" for key in keys if key in fm]
+    lines.append("---")
+    return "\n".join(lines) + "\n"
+
+def _create_temporary_file(path: Path, *, encoding: str = "utf-8"):
+    prefix = f".{path.name}."
+    suffix = ".tmp"
+    for _ in range(100):
+        candidate = path.parent / f"{prefix}{secrets.token_hex(8)}{suffix}"
+        try:
+            fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+            f = open(fd, mode="w", encoding=encoding, newline="\n")
+            return f, candidate
+        except FileExistsError:
+            continue
+    raise OSError(f"Failed to create unique temporary file for {path}")
+
+
+def atomic_write_text(path: Path | str, content: str, *, encoding: str = "utf-8") -> None:
+    """tmp 文件 + fsync + os.replace 原子写，防掉电/中断产生半写状态。
+
+    使用同目录唯一临时文件，防止并发写入相互覆盖；保留已有目标权限或应用系统 umask，
+    写完后 os.replace 原子替换。不支持向软链路径写入。
+    """
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError(f"atomic_write_text does not support writing to symlink: {path}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = (path.stat().st_mode & 0o7777) if path.exists() else None
+
+    temporary_file, temporary = _create_temporary_file(path, encoding=encoding)
+    try:
+        with temporary_file:
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if existing_mode is not None:
+            try:
+                os.chmod(temporary, existing_mode)
+            except OSError:
+                pass
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def write_front_matter(path: Path, fm: dict, body: str) -> None:
+    text = dump_front_matter(fm) + "\n" + body
+    atomic_write_text(path, text)
+
+def write_front_matter_many(files: list[tuple[Path, dict, str]]) -> None:
+    """批量写 front matter：先全部写唯一 .tmp，再逐个 os.replace（调用方保证 owner 最后）。
+
+    单个 write_front_matter 已原子，但多个文件顺序写中途崩溃仍可能只更新一部分；
+    两阶段把 conflict 关系清理等批量写的「部分更新」窗口缩到 replace 循环（RT-008）。
+    """
+    staged: list[tuple[Path, Path, int | None]] = []
+
+    for path, _fm, _body in files:
+        if Path(path).is_symlink():
+            raise ValueError(f"write_front_matter_many does not support writing to symlink: {path}")
+
+    try:
+        for path, fm, body in files:
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            existing_mode = (path.stat().st_mode & 0o7777) if path.exists() else None
+            temporary_file, temporary = _create_temporary_file(path, encoding="utf-8")
+            # 在写入前登记清理对象，防止写入/fsync 异常导致临时文件残留（P3）
+            staged.append((path, temporary, existing_mode))
+            with temporary_file:
+                temporary_file.write(dump_front_matter(fm) + "\n" + body)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+        for path, temporary, existing_mode in staged:
+            if existing_mode is not None:
+                try:
+                    os.chmod(temporary, existing_mode)
+                except OSError:
+                    pass
+            os.replace(temporary, path)
+    except BaseException:
+        for _, temporary, _ in staged:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+def tid_sort_key(tid: str) -> int:
+    match = ctx.TID_RE.fullmatch(tid)
+    if not match:
+        raise ctx.TaskDataError(f"tid 非法：{tid!r}")
+    return int(match.group(1))
+
+def tid_sort_key_or_zero(tid: str) -> int:
+    """排序键；非规范 tid 排 0，避免 tid_sort_key raise（plan 容错用）。"""
+    return tid_sort_key(tid) if ctx.TID_RE.fullmatch(tid) else 0
+
+def parse_tid_list(value: str, *, field: str, allow_empty: bool = True) -> list[str]:
+    """解析 front matter/严格 CLI 使用的逗号分隔规范 tid。"""
+    if value == "" and allow_empty:
+        return []
+    items = [item.strip() for item in value.split(",")]
+    if not items or any(not item for item in items):
+        raise ctx.TaskDataError(f"{field} 格式非法：{value!r}（须为逗号分隔 tid）")
+    invalid = [item for item in items if not ctx.TID_RE.fullmatch(item)]
+    if invalid:
+        raise ctx.TaskDataError(f"{field} 含非法 tid：{', '.join(invalid)}")
+    return sorted(set(items), key=tid_sort_key)
+
+def dump_tid_list(tids) -> str:
+    return ",".join(sorted(set(tids), key=tid_sort_key))
+
+def validate_tid_references(
+    tids: list[str],
+    *,
+    field: str,
+    owner_tid: str,
+    tasks_by_tid: dict[str, dict],
+) -> None:
+    if owner_tid in tids:
+        raise ctx.TaskDataError(f"{field} 不可引用自身 {owner_tid}")
+    missing = [tid for tid in tids if tid not in tasks_by_tid]
+    if missing:
+        raise ctx.TaskDataError(f"{field} 引用不存在 task：{', '.join(missing)}")
+
+def parse_unverified_contracts(spec_text: str) -> dict[str, list[str]]:
+    """分类「未知契约清单」直接列表项中的未核实标记。"""
+    entries = []
+    collecting = False
+    fence_marker = None
+
+    for line in spec_text.splitlines():
+        if fence_marker is not None:
+            fence = ctx.FENCE_CLOSE_RE.match(line)
+            if (
+                fence
+                and fence.group(1)[0] == fence_marker[0]
+                and len(fence.group(1)) >= fence_marker[1]
+            ):
+                fence_marker = None
+            continue
+
+        fence = ctx.FENCE_RE.match(line)
+        if fence:
+            fence_marker = (fence.group(1)[0], len(fence.group(1)))
+            continue
+
+        heading = ctx.H3_RE.fullmatch(line)
+        if heading:
+            if collecting:
+                break
+            collecting = heading.group(1).strip() == ctx.UNKNOWN_CONTRACT_HEADING
+            continue
+
+        if collecting:
+            item = ctx.LIST_ITEM_RE.match(line)
+            if item:
+                entries.append(item.group(1).strip())
+
+    classified = {"blocking": [], "spike": [], "ambiguous": []}
+    for entry in entries:
+        kinds = {marker.group(1) for marker in ctx.UNVERIFIED_RE.finditer(entry)}
+        if "BLOCKING" in kinds:
+            classified["blocking"].append(entry)
+        if "SPIKE" in kinds:
+            classified["spike"].append(entry)
+        if None in kinds:
+            classified["ambiguous"].append(entry)
+    return classified
+
+def unverified_contract_gate(
+    spec_text: str,
+    *,
+    require_verified: bool = False,
+    creation: bool = False,
+) -> tuple[list[str], list[str]]:
+    """返回未知契约的 (阻塞项, 警告项)。"""
+    contracts = parse_unverified_contracts(spec_text)
+    problems, warnings = [], []
+
+    if contracts["ambiguous"]:
+        problems.append(
+            f"未知契约清单有 {len(contracts['ambiguous'])} 项裸 UNVERIFIED；"
+            "须明确改为 UNVERIFIED-BLOCKING 或 UNVERIFIED-SPIKE"
+        )
+    if contracts["blocking"]:
+        (warnings if creation and not require_verified else problems).append(
+            f"未知契约清单有 {len(contracts['blocking'])} 项 UNVERIFIED-BLOCKING；"
+            "须由用户或外部环境核实并改写结论"
+        )
+    if contracts["spike"]:
+        message = (
+            f"未知契约清单有 {len(contracts['spike'])} 项 UNVERIFIED-SPIKE；"
+            "须完成实验并替换为验证结论"
+        )
+        if require_verified:
+            problems.append(message)
+        else:
+            warnings.append(f"{message}；当前只能先完成实验并回填结论")
+
+    return problems, warnings
+
+def _visible_markdown_lines(text: str) -> list[str]:
+    """返回 fenced code 外的 Markdown 行。"""
+    lines = []
+    fence_marker = None
+    for line in text.splitlines():
+        if fence_marker is not None:
+            fence = ctx.FENCE_CLOSE_RE.match(line)
+            if (
+                fence
+                and fence.group(1)[0] == fence_marker[0]
+                and len(fence.group(1)) >= fence_marker[1]
+            ):
+                fence_marker = None
+            continue
+        fence = ctx.FENCE_RE.match(line)
+        if fence:
+            fence_marker = (fence.group(1)[0], len(fence.group(1)))
+            continue
+        lines.append(line)
+    return lines
+
+def _strip_inline_code(text: str) -> str:
+    """剥除 inline code 片段（一对反引号包裹的内容）。
+
+    占位符扫描专用：真实 spec 里的 API 契约 `{ code:"未登录" }`、JSX
+    `{author.name + " 头像"}` 常包在 inline code 内，剥除后不再误判为模板占位符。
+    """
+    return ctx.INLINE_CODE_RE.sub("", text)
+
+def _markdown_headings(text: str) -> list[tuple[int, str]]:
+    headings = []
+    for line in _visible_markdown_lines(text):
+        match = ctx.HEADING_RE.fullmatch(line)
+        if match:
+            headings.append((len(match.group(1)), match.group(2).strip()))
+    return headings
+
+def _missing_heading_sequence(
+    text: str,
+    required: tuple[tuple[int, str], ...],
+) -> list[str]:
+    """返回缺失、错层级或乱序的必需标题。"""
+    headings = _markdown_headings(text)
+    position = 0
+    missing = []
+    for expected in required:
+        try:
+            position = headings.index(expected, position) + 1
+        except ValueError:
+            missing.append(f"{'#' * expected[0]} {expected[1]}")
+    return missing
+
+def _extract_markdown_section(text: str, level: int, title: str) -> str | None:
+    """提取指定标题到下一个同级或更高层级标题之间的正文。"""
+    lines = text.splitlines()
+    start = None
+    fence_marker = None
+    for index, line in enumerate(lines):
+        if fence_marker is not None:
+            fence = ctx.FENCE_CLOSE_RE.match(line)
+            if (
+                fence
+                and fence.group(1)[0] == fence_marker[0]
+                and len(fence.group(1)) >= fence_marker[1]
+            ):
+                fence_marker = None
+            continue
+        fence = ctx.FENCE_RE.match(line)
+        if fence:
+            fence_marker = (fence.group(1)[0], len(fence.group(1)))
+            continue
+        heading = ctx.HEADING_RE.fullmatch(line)
+        if not heading:
+            continue
+        heading_level = len(heading.group(1))
+        heading_title = heading.group(2).strip()
+        if start is None:
+            if heading_level == level and heading_title == title:
+                start = index + 1
+        elif heading_level <= level:
+            return "\n".join(lines[start:index])
+    if start is None:
+        return None
+    return "\n".join(lines[start:])
+
+AC_ID_RE = re.compile(r"AC-\d{3}")
+
+
+def _strip_fenced_code(text: str) -> str:
+    """去除 Markdown 中围栏代码块（``` 或 ~~~），避免代码块内的示例内容被误解析。"""
+    lines = []
+    in_fence = False
+    fence_char = ""
+    fence_len = 0
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not in_fence:
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                in_fence = True
+                fence_char = stripped[0]
+                fence_len = len(stripped) - len(stripped.lstrip(fence_char))
+                continue
+            lines.append(line)
+        else:
+            if stripped.startswith(fence_char * fence_len):
+                in_fence = False
+    return "\n".join(lines)
+
+
+def extract_ac_ids(spec_text: str) -> list[str]:
+    """从 spec 验收标准节提取 AC-NNN 编号，按出现顺序去重。跳过代码块示例（Issue #31）。"""
+    acceptance = _extract_markdown_section(spec_text, 3, "验收标准")
+    if not acceptance:
+        return []
+    cleaned = _strip_fenced_code(acceptance)
+    seen: list[str] = []
+    for line in cleaned.splitlines():
+        for match in AC_ID_RE.findall(line):
+            if match not in seen:
+                seen.append(match)
+    return seen
+
+
+def extract_ac_statuses(spec_text: str) -> list[tuple[str, bool]]:
+    """从 task.md(spec) 验收标准节提取 (AC-NNN, is_checked) 列表。
+
+    跳过代码块示例（Issue #31）。按行扫描 `- [ ]` 或 `- [x]` / `- [X]`。
+    """
+    acceptance = _extract_markdown_section(spec_text, 3, "验收标准")
+    if not acceptance:
+        return []
+    cleaned = _strip_fenced_code(acceptance)
+    results: list[tuple[str, bool]] = []
+    seen: set[str] = set()
+    for line in cleaned.splitlines():
+        match = re.match(r"^\s*-\s*\[([ xX])\]\s*(?:\[deploy\]\s*)?(AC-\d{3})", line)
+        if match:
+            box = match.group(1)
+            ac_id = match.group(2)
+            if ac_id not in seen:
+                seen.add(ac_id)
+                results.append((ac_id, box in ("x", "X")))
+    return results
+
+
+def _extract_guide_blocks(text: str) -> list[str]:
+    """提取 spec 中所有 `<!-- 规范（门禁必留，不得删除） -->...<!-- /规范 -->` 块。
+
+    返回按出现顺序排列的块列表，每块含标记行与正文（行级 strip，跳过空行）。
+    规范块是门禁必留的就近规范，agent 只能替换块外占位符。
+    空行由格式器（prettier 等）控制，属格式噪音，不参与逐字比对。
+    """
+    blocks = []
+    current = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == ctx.SPEC_GUIDE_OPEN:
+            current = [stripped]
+        elif current is not None:
+            if stripped == ctx.SPEC_GUIDE_CLOSE:
+                current.append(stripped)
+                blocks.append("\n".join(current))
+                current = None
+            elif stripped:
+                current.append(stripped)
+    return blocks
+
+
+def validate_task_documents(
+    spec_text: str,
+    task_body: str,
+    *,
+    require_verified: bool = False,
+    allow_template_placeholders: bool = False,
+    creation: bool = False,
+) -> tuple[list[str], list[str]]:
+    """校验 task 创建骨架与未知契约门禁，返回 (阻塞项, 警告项)。"""
+    problems, warnings = [], []
+
+    missing_spec_headings = _missing_heading_sequence(spec_text, ctx.SPEC_REQUIRED_HEADINGS)
+    if missing_spec_headings:
+        problems.append(
+            "task.md 缺必需标题、标题层级错误或顺序错误："
+            + "、".join(missing_spec_headings)
+        )
+
+    # 规范块属于严格模板契约；repo-template-sync 负责先强制迁移存量 task。
+    template_spec_path = ctx.TEMPLATE_DIR / "task.md"
+    if template_spec_path.is_file():
+        template_blocks = _extract_guide_blocks(
+            template_spec_path.read_text(encoding="utf-8")
+        )
+        if template_blocks:
+            spec_blocks = set(_extract_guide_blocks(spec_text))
+            missing_blocks = [item for item in template_blocks if item not in spec_blocks]
+            if missing_blocks:
+                problems.append(
+                    f"task.md 缺或被改 {len(missing_blocks)} 个当前规范块；"
+                    "先运行 repo-template-sync 强制迁移，规范块不得手改"
+                )
+
+    acceptance = _extract_markdown_section(spec_text, 3, "验收标准")
+    cleaned_acceptance = _strip_fenced_code(acceptance) if acceptance else ""
+    if not cleaned_acceptance or not re.search(
+        r"^\s*-\s*\[[ xX]\]\s*\S", cleaned_acceptance, re.MULTILINE
+    ):
+        problems.append("task.md 验收标准为空")
+
+    if cleaned_acceptance:
+        ac_ids: list[str] = []
+        for line in cleaned_acceptance.splitlines():
+            stripped = line.strip()
+            if not (stripped.startswith("- [ ]") or stripped.startswith("- [x]") or stripped.startswith("- [X]")):
+                continue
+            match = re.match(
+                r"^-\s*\[([ xX])\]\s*(?:\[deploy\]\s*)?(AC-\d{3})", stripped
+            )
+            if not match:
+                problems.append(
+                    "task.md 验收标准条目缺 AC 编号（格式 `- [ ] AC-NNN：`，"
+                    f"[deploy] 位于编号前）：{stripped[:60]}"
+                )
+                continue
+            box, ac_id = match.group(1), match.group(2)
+            if creation and box in ("x", "X"):
+                problems.append(f"task.md AC 创建期不得提前勾选：{ac_id}")
+            if ac_id in ac_ids:
+                problems.append(f"task.md AC 编号重复：{ac_id}")
+            ac_ids.append(ac_id)
+
+    missing_task_headings = _missing_heading_sequence(task_body, ctx.TASK_REQUIRED_HEADINGS)
+    if missing_task_headings:
+        problems.append(
+            "note.md 缺必需标题、标题层级错误或顺序错误："
+            + "、".join(missing_task_headings)
+        )
+
+
+    visible_task_lines = {line.strip() for line in _visible_markdown_lines(task_body)}
+    missing_guidance = [
+        line for line in ctx.IMPLEMENTATION_NOTE_GUIDANCE if line not in visible_task_lines
+    ]
+    if missing_guidance:
+        problems.append("note.md 实施笔记缺当前模板固定说明；先运行 repo-template-sync 强制迁移")
+
+    notes = _extract_markdown_section(task_body, 2, "实施笔记")
+    if notes is not None:
+        payload_lines = [
+            line.strip()
+            for line in _visible_markdown_lines(notes)
+            if line.strip() and line.strip() not in ctx.IMPLEMENTATION_NOTE_GUIDANCE
+        ]
+        if not payload_lines:
+            problems.append("note.md 实施笔记为空；无事项时写「无」")
+
+    if not allow_template_placeholders:
+        visible_text = "\n".join(_visible_markdown_lines(spec_text + "\n" + task_body))
+        placeholders = ctx.TEMPLATE_PLACEHOLDER_RE.findall(_strip_inline_code(visible_text))
+        if placeholders:
+            problems.append(
+                f"task.md / note.md 残留 {len(placeholders)} 个模板占位符："
+                + "、".join(sorted(set(placeholders))[:3])
+            )
+
+    contract_problems, contract_warnings = unverified_contract_gate(
+        spec_text,
+        require_verified=require_verified,
+        creation=creation,
+    )
+    problems.extend(contract_problems)
+    warnings.extend(contract_warnings)
+    return problems, warnings

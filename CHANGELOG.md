@@ -7,73 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.9] - 2026-10-16
 
 ### Added
+
 - **Community fork: English / 中文 UI language switch.** Top-bar EN/中文 toggle and a Language setting; preference is stored locally. Default follows the browser locale (`zh*` → Chinese, otherwise English). Based on upstream CloakBrowser Manager 0.1.8, rebranded to CBrowser.
 
 ### Notes
+
 - Windows and macOS installers are published on this GitHub Release. Docker Hub image publish is skipped on this fork (no Docker Hub credentials). A workflow patch to skip Docker automatically is prepared but requires the GitHub `workflow` OAuth scope to push `.github/workflows/release.yml`.
 
 ## [0.1.8] - 2026-10-14
 
 ### Added
+
 - **Transparent proxy and portable cookies, per profile.** Two new checkboxes under Compatibility, both off by default. **Transparent proxy connection** turns on the browser's stronger proxy connection mode. It needs one `http://` proxy with a username and password, so any other proxy is refused at launch with a clear message (HTTP 400) instead of starting a browser with no network. **Portable cookies** lets a profile move to another machine with its logins. Only cookies saved while it is on are portable, so turn it on before logging in. Existing profiles get both settings switched off, and duplicating a profile copies them.
 
 ### Changed
+
 - **Bundles the CloakBrowser 0.6.3 engine.** Humanized typing, mouse moves and scrolling follow measured human timing, humanized clicks reach popups inside scrolling panels, and humanized actions work on Playwright 1.64. A proxy exit in a country with no mapped language no longer fails the launch.
 
 ## [0.1.7] - 2026-10-11
 
 ### Fixed
+
 - **Profiles stayed stopped after booting without internet.** On a host with no internet uplink (e.g. after a power cut), the display server exited at startup, so auto-launched profiles never came up. It now starts offline too.
 
 ### Changed
+
 - **Bundles the CloakBrowser 0.6.1 engine.** Profiles with humanize on now humanize the page they open with; on 0.6.0 that first page could run without it.
 
 ## [0.1.6] - 2026-10-08
 
 ### Added
+
 - **Duplicate a profile together with its browser state.** `POST /api/profiles/{id}/duplicate` now accepts `{"include_browser_state": true}`, which copies the source profile's cookies, logged-in sessions, history and local storage into the clone alongside its settings and fingerprint — so the copy launches as the same identity *and* the same session. The source is held stopped for the whole copy — a launch, reset or delete of it is refused with 409 until the copy finishes, and a source that is still launching or closing is refused too — and the clone only appears in the list once its directory is complete, so a half-built clone can never be launched or deleted. Chromium's single-instance lock files and the source's preview frame are left behind; a failed copy leaves nothing behind. Reset and Delete now also refuse (409) a profile whose browser is still launching or closing, instead of touching a directory Chrome is using, and Launch refuses (409) a profile whose previous browser is still closing instead of starting a second Chrome on the same directory. In the profile editor, **Duplicate** becomes a split button: the button itself still makes a config-only copy, and its menu offers **With browser state** (disabled until the profile is stopped). Without the flag the endpoint behaves exactly as before.
 - **Send files to a profile, and keep what it downloads.** A profile now has files of its own: `POST /api/profiles/{id}/files` uploads one, `GET` lists them or fetches the bytes, `DELETE` removes one. Under Docker the browser cannot see your filesystem, so an upload also appears in the guest's own file dialog under **Uploads — <profile>**, letting a website's "Choose file" button reach it, and files the browser downloads are captured automatically instead of being trapped in the container — published only once the transfer completes, so a half-written download is never served. The live viewer gains a files button: upload, drop a file onto the screen, fetch one back, or remove one. Files are stored beside the profile rather than inside it, so duplicating a profile's browser state never copies its documents, and deleting a profile deletes them with it. Per-profile limits are configurable (`ARTIFACT_MAX_BYTES`, `ARTIFACT_MAX_COUNT`, `ARTIFACT_MAX_TOTAL_BYTES`). On the native macOS and Windows builds the browser already shares your filesystem and its own Downloads folder, so download capture and the sidebar shortcut do not apply there.
 
 ### Changed
+
 - **Bundles the CloakBrowser 0.6.0 engine.**
 
 ## [0.1.5] - 2026-08-30
 
 ### Fixed
+
 - **Profiles failed to launch on some Windows systems with a "Failed to launch browser" error.** On a Windows console using a non-Unicode (legacy) codepage, a status message printed while fetching the stealth binary could abort every launch. This build bundles the updated CloakBrowser engine (0.5.10), which makes that output safe so the launch always proceeds.
 
 ## [0.1.4] - 2026-08-21
 
 ### Fixed
+
 - **Memory leak when a browser closed on its own.** If a browser exited outside the Stop button (a crash, or closing Chrome from inside the profile window), a helper process was left running and holding around 130 MB. These built up over time on a long-running manager. The manager now releases it on that path as well.
 
 ### Added
+
 - **License and seat limits now surface in a banner.** When a profile fails to launch because the plan's concurrent-session limit is reached or the license key is invalid, the Manager shows a dismissible top banner with an Upgrade link instead of failing silently.
 - **Automated multi-architecture Docker releases.** Version tags now build Linux AMD64 and ARM64 images on native GitHub-hosted runners, combine them under one Docker tag, and publish both the release version and `latest` alongside the Windows and macOS installers.
 
 ### Changed
+
 - **Safer release validation.** Docker architecture digests, provenance, and the combined manifest are validated before publication, and `latest` is promoted only from a complete verified release. Release tags are validated as canonical semantic versions, and workflow dependencies are pinned to immutable revisions.
 
 ## [0.1.3] - 2026-08-19
 
 ### Fixed
+
 - **macOS app failed to launch profiles on a fresh machine.** On a Mac that had never run CloakBrowser before, launching a profile with a license key set could fail with an internal library-loading error while the app fetched the stealth binary. The macOS build now bundles a self-contained TLS library, so the download works on a clean machine and profiles launch as expected. (Intel and Apple Silicon.)
 
 ### Changed
+
 - **Dropped a redundant browser launch flag.** The Manager no longer passes an extra Chromium flag at launch; the CloakBrowser engine already handles that behavior internally, so the flag added nothing.
 
 ## [0.1.2] - 2026-08-19
 
 ### Fixed
+
 - **First launch on a fresh Windows machine no longer fails.** The packaged app has no console, so a status message printed during the first stealth-binary download could abort the launch on some systems. Startup output is now handled safely and the launch proceeds.
 
 ### Added
+
 - **Update notification.** When a newer Manager release is available, a dismissible banner appears at the top of the app; clicking Download opens the release page in your default browser. The check is fail-soft and cached, so it never delays or interferes with normal use.
 - **Richer diagnostics in `manager.log`.** Startup now records a one-line environment fingerprint (app version, OS, architecture, packaged-vs-source, license tier/plan, binary version, data directory). Uncaught errors from any background thread or task, and each profile launch's context (with proxy credentials redacted), are now logged with full detail, and output from the underlying CloakBrowser engine is mirrored into the log. This makes crash reports diagnosable from the log alone.
 
 ## [0.1.1] - 2026-08-19
 
 ### Added
+
 - **Restore previous tabs on launch.** Each profile can reopen the tabs that were open when it was last stopped. Enabled by default; toggle it off per profile in the Behavior section.
 - **Clone / duplicate a profile.** Copy an existing profile's full configuration and fingerprint into a fresh profile with its own `user_data_dir`, ready to launch independently.
 - **Proxy test button.** Test a profile's proxy from the form and see the exit IP, geolocation, and latency before launching.
@@ -83,11 +100,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Transient confirmation on form buttons.** Save and Reset now show an inline "Saved" / "Reset done" confirmation.
 
 ### Changed
+
 - README: restored the "Browser Profile Manager" headline and tightened the tagline.
 
 ## [0.1.0] - 2026-08-19
 
 ### Added
+
 - **Native desktop app for macOS and Windows.** Installers bundle the Manager and stealth Chromium binary into a single application, so end users no longer need Python, Node, git, or a build step. Runs the browser directly on the host while the existing Linux Docker/KasmVNC server mode is preserved. Run-from-source (`run.py`) stays available for developers. The builds are unsigned for now — on first launch macOS needs a one-time Gatekeeper approval and Windows a SmartScreen click-through (see the README).
 - **Standalone application window.** The native app now opens in its own dedicated window (WKWebView on macOS, WebView2 on Windows) carrying the app icon, instead of a tab in your default browser. The window remembers its size and position between launches, and closing it cleanly stops the server and all running browsers. Relaunching the app focuses the existing window instead of starting a second copy. Both the packaged app and `run.py` share the same window code path.
 - **In-app Settings panel.** A gear-icon panel lets you set the CloakBrowser Pro license key and release channel from inside the app; changes are hot-applied with no restart.
@@ -101,10 +120,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GeoIP enabled by default for new profiles.
 
 ### Changed
+
 - **`/api/status` now requires authentication.** It previously leaked running-session count, binary version, and profile totals to unauthenticated scanners; health checks now use the new `/api/health` probe instead.
 - **Simplified profile configuration.** Removed obsolete override fields and moved unrestricted Chromium arguments under an Advanced section. Existing profiles are migrated automatically to the new schema.
 - **Clipboard sync is now limited to the Linux VNC mode.** Clipboard controls are hidden and injection is skipped in the native macOS and Windows apps.
 - Per-profile clipboard preferences are now persisted.
 
 ### Fixed
+
 - Native launcher readiness poll now targets `/api/health`, fixing a startup hang where the app never opened the browser when an auth token was set.

@@ -1,0 +1,14 @@
+# 模板侧豁免路径
+.repo_template/scripts/package.json
+.repo_template/tests/package.json
+.repo_template/scripts/repo_task/view_static/
+.repo_template/tests/test_chain_plan_cases.js
+.repo_template/sync_state.json
+.repo_template/sync_manifest.json
+.repo_template/sync_policy.json
+.repo_template/skills/registry.json
+docs/tasks_index.json
+docs/archive/tasks_index.json
+docs/**/handoff.json
+.opencode/package.json
+.opencode/package-lock.json
