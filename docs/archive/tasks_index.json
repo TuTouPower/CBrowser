@@ -18,6 +18,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t001_v2_runtime_validation"
+        },
+        {
+            "tid": "t002",
+            "slug": "v2_backend_foundation",
+            "title": "建立 v2 Profile 与运行状态持久化骨架",
+            "status": "done",
+            "branch": "t002_v2_backend_foundation",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "d3ca80b0141c19a715a90c71ba2f5862c1c79711",
+            "depends_on": "t001",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t002_v2_backend_foundation"
         }
     ]
 }

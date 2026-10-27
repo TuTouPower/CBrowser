@@ -39,20 +39,26 @@ command -v md_kx
 
 ## test_cmd
 
-日常测试（红/绿）：模板契约测试与后端业务测试全部跑通。
+日常测试（红/绿）：模板契约、旧后端基线与 v2 单元测试；真实 HTTP 集成在 blackbox_verify 单独运行。
 
 ```bash
-export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t001_contract_tmp"
-mkdir -p "$TMPDIR"
+export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
+export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
-PYTHONPATH=src uv run --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with "cloakbrowser>=0.6.3" pytest src/backend/tests -q
+PYTHONPATH=src uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with "cloakbrowser>=0.6.3" pytest src/backend/tests -q
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/unit -q
 ```
 
 ## blackbox_verify
 
-服务存活探针与任务状态自检：
+真实 v2 API 黑盒通过独立 uvicorn 进程、临时 SQLite、HTTP 重启/并发/锁竞争与导出 JSON schema 验证；随后检查既有服务存活与任务控制面。集成测试与 test_cmd 单元测试分开运行。
 
 ```bash
+export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
+export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/integration -q
 curl -sf http://127.0.0.1:56661/api/health
 uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status
@@ -81,11 +87,11 @@ uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py
 
 项目涉及 OpenAPI 导出及前端类型。
 
-- 触发路径：`src/backend/api/`
-- 生成命令：无
-- 验证命令：无
-- 合并后动作：无
-- migration 窗口：无
+- 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
+- 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --with fastapi --with pydantic --with sqlalchemy --with aiosqlite --with alembic python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
+- 验证命令：test_cmd 中 `tests/unit` 的 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；blackbox_verify 中 `tests/integration` 使用导出 JSON schema 校验真实 HTTP 响应。
+- 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。前端类型生成由 t007 实施，本 task 不生成前端代码。
+- migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
 
 ## 门禁类别清单
 
