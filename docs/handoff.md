@@ -30,7 +30,7 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini实施进程session5920；独立验收设计session10625在control worktree运行。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志为主仓scratch下t002_implementation.jsonl、t002_acceptance_design.jsonl。
+- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini初轮session5920因主控真实DB复现而主动SIGINT，已确认exit130；同OpenCode session恢复为执行handle4188，日志t002_implementation_correctness.jsonl。独立验收设计10625已terminal0，仅准备稿；t003只读准备64619在protocol worktree运行，未start t003。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志均在主仓 .scratch/v2_orchestration/，另有 t003_runtime_readiness.jsonl；中间版本真实DB/HTTP复现位于 t002_root_audit/，不能当最终验收。
 
 ### 下一步与边界
 
