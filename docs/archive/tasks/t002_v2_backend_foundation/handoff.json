@@ -1,0 +1,15 @@
+{
+  "tid": "t002",
+  "attempt": 1,
+  "execution_id": "13f1211c2c0046629e9f68c9741d2514",
+  "status": "done",
+  "branch": "t002_v2_backend_foundation",
+  "base_sha": "d3ca80b0141c19a715a90c71ba2f5862c1c79711",
+  "tests": "169 template contract +384 legacy backend +19 v2 unit +9 real subprocess HTTP PASS. Four keyword-classification cases confirmed red503 then green409. Full code/test reviewers independently reran19+9; Ruff14newfiles PASS,13 preexisting diagnostics warnings preserved; original legacy tests unchanged.",
+  "blackbox": "Independent VerifyRound4/5 nine-case frozen real HTTP/SQLite harness PASS9/9, SQL privacy negative PASS. Manifest c7e1228803978178adff71a7075f4de17226ea4bfa52c0a487600c07cd6c93ef matches delivery source. WAL reads while writer held,1.5s wait/>5s503/recovery,disjoint PATCH,idempotent replay,CAS/versions,duplicate exits,2 actual process restarts,full config/tag/snapshot persistence,keyword constraints409/no halfwrite all verified. No production userdata or Docker topology switched.",
+  "review": "Full Round2 code/test PASS, reviewed_scope bfeffb3d43a6d56d,0 findings,7views+6AC disclosed.409-file guard unchanged. Round1 invalid readonly incident retained; schema restored from verified frozen source. Report timestamp/evidence corrections only, no source delta.",
+  "pending": [],
+  "findings": [
+    "d015"
+  ]
+}
