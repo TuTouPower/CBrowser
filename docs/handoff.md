@@ -30,11 +30,11 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- 当前主仓干净；下一task t002尚待start。读取effective status/recovery再开工，未知契约以已合入的t001 findings为依据。
+- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini实施进程session5920；独立验收设计session10625在control worktree运行。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志为主仓scratch下t002_implementation.jsonl、t002_acceptance_design.jsonl。
 
 ### 下一步与边界
 
-1. 从当前主干启动t002，在登记worktree claim新exact identity；OpenCode Gemini实施后端骨架、真实SQLite/HTTP/进程重启测试和文档。
+1. t002已启动并claim；等待Gemini完成后端骨架、真实SQLite/HTTP/进程重启测试和文档，主控复核后派最终独立review与黑盒。
 2. 每个阶段保留实际证据、完成独立审查与门禁，再写task级handoff.json、唯一执行commit、exact cleanup与获准本地集成。不push。
 3. t002只读准备稿不等于已实施；其猜测字段/行号/语义必须按源码与计划复核。
 4. 各task合入、验收及本机部署完成后立即更新本文件。项目级交接与工具链task级handoff.json不能互相替代。
