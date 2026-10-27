@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T03:21:56+08:00 v2 架构计划执行交接
+## 2026-10-28T03:31:48+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：15f4ea6（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
+- head_commit：4562926（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
 
@@ -35,7 +35,9 @@
 - Verify Round3已实际执行：冻结manifest=3459bd7d3659e1d6528fc2f4c12d587a98c3124abd5d67bf6b764b85d5f6461f，8/8通过且无finding，主控核验冻结文件与当前源码一致。报告worker31492正在收尾；前两轮失败证据保留，上限仍5轮。
 - 正式审查尚无有效报告：首次46906/61687新会话被OpenCode归主仓，worktree读命令权限拒绝，两CLI已terminal0，无PASS。显式--dir重派3742/42349后目录正确，但code审查违反只读边界、运行导出后git checkout --把intent-to-add的schema清成0字节。主控中断两路（-2），保存t002_review\_\*\_r1_readonly_violation.json。manifest核验仅该文件变化，已从candidate3校验哈希恢复61401字节。由污染引发的测试失败不算产品缺陷。
 - 主控新增真实HTTP诊断确认错误分类缺陷：重复tag含busy/locked导致约束错误被误判可重试503，普通重复tag为409；原因为搜索带SQL参数的异常字符串。证据t002_error_classification_probe/；R3的8/8不覆盖该分支，不能据此finish。
-- 当前唯一模型writer：修复进程64859/PID99297，原实现session ses_e82dd5473ffeX6ZEkqtLVe1bBD，写域仅服务异常分类和新增真实回归测试。其读取主仓外部证据曾获权限拒绝，主控已把自有证据复制到本task.scratch/t002_gates/root_error_classification_probe/，不修改权限规则。模型未终态，不能重复派发。
+- 错误分类修复已完成：64859读取主仓外部证据被拒绝后自然terminal0，未实施；改用task内证据恢复9131，已自然terminal0且持久finish=stop。新增4例真实HTTP先红后绿，19单元+9集成+169契约+384旧后端通过，Ruff两修改文件check/format通过。完整红绿消息t002_error_classification_tdd_trace.json，最终答复t002_error_classification_fix_local.final.json。不得再次恢复已结束的9131。
+- Verify Round4/5：候选manifest=c7e1228803978178adff71a7075f4de17226ea4bfa52c0a487600c07cd6c93ef，独立33729/PID4444运行9项harness+SQL隐私；保留原8项，第9项验证5类约束文本不改变错误分类且无半写/参数日志。
+- 正式Round2/5已派发且会话目录核验正确：code进程27727/PID5848/session ses_e8127c49bffel1Meac3IM5hTtG；test进程8520/PID5990/session ses_e8127a8c3ffeoxxqEUMTbcRK3S。两路使用仅限当前子进程的命令白名单、对应report/独立scratch编辑规则与409个交付文件哈希监视；不改全局配置。固定独立复验入口为各自scratch/verify.sh。源码/测试/长期文档冻结，等待结果。
 - t003只读准备64619/纠正29622均terminal0，未start t003。日志在主仓.scratch/v2_orchestration/；恢复先查实际进程、checkpoint与task.py recovery。
 
 ### t002 第一轮候选验证结果
@@ -71,8 +73,8 @@
 
 ### 下一步与边界
 
-1. 观察64859实际进程与持久会话，完成真实红绿测试、SQLite类型/错误码分类修复与回归；禁止搜索含用户参数的异常全文识别锁。源码改变后冻结candidate4，执行Verify Round4/5，不删除此前轮次。
-2. 正式下一轮编号Round2/5：显式--dir且核对会话目录，子进程权限白名单限制对应report与专属scratch写，禁止checkout/reset/restore及导出，观察器检查交付哈希；不改全局配置。前轮异常原始记录保留，审查者不得恢复源码或自改测试。回收报告后核对最终scope、全部7视角和finding处置。
+1. 观察现有33729黑盒与27727/8520审查的实际进程/持久会话终态，不重复派发；回收Verify Round4/5实际9项结果及完整物理日志，核验源码manifest与当前文件一致。
+2. 回收正式Round2/5报告，核对最终scope、7视角、AC复验和finding处置。保持源码哈希监视与受限权限；发现审查越界立即中断并保留记录，不允许审查者回退源码。不以旧8/8或作者绿灯替代当前验收。
 3. 通过后写task级handoff.json、唯一执行commit、exact cleanup与已获授权的本地main集成。不push。t002完成前不start t003。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
 5. 管理员密码文件路径已异步询问，供t006/t012使用；当前不因此暂停后端工作，不自设生产默认密码。
