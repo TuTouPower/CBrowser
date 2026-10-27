@@ -8,7 +8,7 @@ v2.3 Browser Runtime 负责真实 CloakBrowser、显示、音频和受控本地 
 
 ### 范围
 
-- config/docker/browser_runtime/ 独立镜像与启动配置、src/backend/cbrowser/runtime_agent/ Browser Agent、独立运行时协议 schemas/runtime/ 及本 task 新测试。运行真实浏览器、Xvfb、Openbox、Profile 音频、agent.sock 与退出事件。主写域不包含 API、数据库、Stream Runtime、共享 pyproject.toml 或正式 compose。
+- config/docker/browser_runtime/ 独立镜像与启动配置、src/backend/cbrowser/runtime_agent/ Browser Agent、独立运行时协议 schemas/runtime/ 及本 task 新测试；引擎缓存遵循统一数据根 /data/engine-cache/，与用户数据分离，缓存初始化/访问权限通过 Supervisor 挂载契约明确，不把镜像内调试路径视为正式数据布局。运行真实浏览器、Xvfb、Openbox、Profile 音频、agent.sock 与退出事件。主写域不包含 API、数据库、Stream Runtime、共享 pyproject.toml 或正式 compose。
 
 ### 非范围
 
@@ -68,7 +68,7 @@ v2.3 Browser Runtime 负责真实 CloakBrowser、显示、音频和受控本地 
 
 ### 依赖与约束
 
-- t001 全部通过并冻结技术结论后才能 start。公共索引与跨模块总览由主控在各 task 收尾阶段串行更新，实现 agent 只写本模块，不并发改公共控制面。
+- t001 全部通过并冻结技术结论，且t002提供已验证配置版本快照/字段契约后才能start；Browser Agent消费该快照，不另建配置真相。实现约束：Browser独立shareable IPC、/dev/shm为1GiB，Stream使用container:<browser-id> IPC；Xvfb显式启用MIT-SHM/XTEST/XFIXES且不监听TCP，测试实际查询扩展并捕获XShm，不以启动参数代替证据。公共索引与跨模块总览由主控在各 task 收尾阶段串行更新，实现 agent 只写本模块，不并发改公共控制面。
 
 ### Finalization 时更新的 blueprint
 

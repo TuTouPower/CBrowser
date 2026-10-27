@@ -8,7 +8,7 @@
 
 ### 范围
 
-- src/frontend/src/app、features/profiles、features/browser_session、features/settings、shared/api、shared/components/i18n；Router/Provider、生成 API 类型、TanStack Query、SSE 与官方 Selkies 薄适配。文件与自动化业务由 t008 完成。
+- src/frontend/src/app、features/profiles、features/browser_session、features/settings、shared/api、shared/components/i18n；Router/Provider、生成 API 类型、TanStack Query、SSE 与官方 Selkies 薄适配。文件与自动化业务由t008完成，复制/重置由t013、剪贴板桥接与完整输入场景由t014交付；本task保留基本多页面媒体/键盘输入。
 
 ### 非范围
 

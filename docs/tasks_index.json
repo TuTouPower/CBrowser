@@ -46,7 +46,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t001",
+            "depends_on": "t002",
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t003_v2_browser_runtime"
@@ -78,7 +78,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t002,t004",
+            "depends_on": "t004",
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t005_v2_supervisor"
@@ -142,7 +142,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t008",
+            "depends_on": "t013,t014",
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t009_v2_full_acceptance"
@@ -194,6 +194,38 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t012_v2_docker_release"
+        },
+        {
+            "tid": "t013",
+            "slug": "v2_profile_copy_reset",
+            "title": "实现 Profile 配置复制、状态复制与重置",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t008",
+            "conflicts_with": "t014",
+            "note": "",
+            "dir": "docs/tasks/t013_v2_profile_copy_reset"
+        },
+        {
+            "tid": "t014",
+            "slug": "v2_clipboard_input",
+            "title": "实现受控剪贴板桥接与完整输入场景",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t008",
+            "conflicts_with": "t013",
+            "note": "",
+            "dir": "docs/tasks/t014_v2_clipboard_input"
         }
     ]
 }

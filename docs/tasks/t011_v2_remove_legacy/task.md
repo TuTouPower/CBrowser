@@ -8,7 +8,7 @@
 
 ### 范围
 
-- 按计划17逐项删除旧VNC/RFB、租约、native-window、原生入口/脚本/packaging及失效依赖；正式切换到新API/前端/五服务拓扑，保留明确要求旧CDP薄适配。
+- 按计划17逐项删除旧VNC/RFB、租约、native-window、原生入口/脚本/packaging、config/docker/entrypoint.sh旧VNC与遗留进程清理逻辑及失效依赖；正式切换到新API/前端/五服务拓扑，保留明确要求旧CDP薄适配。
 
 ### 非范围
 
@@ -23,7 +23,7 @@
 <!-- /规范 -->
 
 - [ ] AC-001：正式入口仅提供 /api/v1 和新WebRTC架构；旧内部ProfileCRUD和可选AUTH_TOKEN正式模式移除，旧CDP入口只转发新授权代理，不发布旧CDP端口。
-- [ ] AC-002：vnc_manager/RFB代理/native-window/app_entry/原生启动脚本/packaging及相关依赖配置均移除，源码、构建和文档不再引用失效运行链路，实际Docker+Chrome完整路径仍通过。
+- [ ] AC-002：vnc_manager/RFB代理/native-window/app_entry/原生启动脚本/packaging及相关依赖配置均移除，config/docker/entrypoint.sh不再包含旧VNC与遗留进程清理逻辑，源码、构建和文档不再引用失效运行链路，实际Docker+Chrome完整路径仍通过。
 - [ ] AC-003：旧语义测试整项移除并逐项说明替代覆盖，新Runtime/媒体/输入/鉴权/恢复测试保持通过；不就地改旧测试预期来迁就实现。
 - [ ] AC-004：全新环境与迁移fixture均可由正式入口启动/停止Profile、双页面WebRTC、文件/CDP自动化；无失效资源路径/路由，旧数据备份保留且可恢复。
 

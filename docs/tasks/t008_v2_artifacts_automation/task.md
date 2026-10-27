@@ -8,7 +8,7 @@
 
 ### 范围
 
-- Artifact Service/Repository/API、Supervisor Browser Agent UDS 转发、下载事件入库、frontend artifacts/automation/ClipboardBridge 与对应测试；浏览器用户数据和 Artifact 存储分离。
+- Artifact Service/Repository/API、Supervisor Browser Agent UDS 转发、下载事件入库、frontend artifacts/automation 与对应测试；浏览器用户数据和 Artifact 存储分离。原AC-003/004转t014，原AC-005转t013；本task保留文件/CDP闭环，不重复承载剪贴板输入与复制重置。
 
 ### 非范围
 
@@ -22,11 +22,8 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：真实上传校验文件名/MIME/配额/磁盘空间并写对应 Profile Artifact，失败不留下半文件；下载经 Agent 事件可见且内容/大小正确，UI 可列出/下载/删除获授权文件，路径穿越与跨 Profile 请求拒绝。
-- [ ] AC-002：外部自动化经独立认证入口到 Supervisor/UDS/loopback CDP，完整双向协议可用；无公网 CDP TCP 映射，旧 CDP 入口仅薄转发新代理；自动化断开后下载捕获恢复，随后真实下载完整入库。
-- [ ] AC-003：Viewer 的纯文本剪贴板上传/下载遵从权限与用户操作，拒绝权限时明确提示；保留本机原内容，后台不自动覆盖，本机剪贴板与远端内容不入日志，IME 走键盘提交而非粘贴。
-- [ ] AC-004：在地址栏、普通/受控输入框、富文本编辑器通过真实中文组合输入和纯文本粘贴；双页面输入均到达目标浏览器，失败有可观察提示，无静默截断或重复提交。
-- [ ] AC-005：Profile 复制配置不复制用户数据/Artifact；复制浏览器状态仅源停止后进行并校验，新 Profile Artifact 独立；重置保留既有指纹种子重新生成语义并明确待清数据，不误删其他 Profile。
+- [ ] AC-001：真实上传校验文件名/MIME/配额/磁盘空间并写对应 Profile Artifact，失败不留下半文件；下载经 Agent 事件可见且内容/大小正确，UI 可列出/下载/删除获授权文件，路径穿越与跨 Profile 请求拒绝；上传返回Artifact ID和容器内container_path（/exchange/uploads/...），不泄露宿主路径；/profiles/:profileId/files页面可实际上传/管理文件。
+- [ ] AC-002：外部自动化经独立认证入口到 Supervisor/UDS/loopback CDP，完整双向协议可用；无公网 CDP TCP 映射，旧 CDP 入口仅薄转发新代理；自动化断开后下载捕获恢复，随后真实下载完整入库；/automation/:profileId页面展示获授权端点和状态，独立路由加载/刷新保持正常会话。
 
 ### 可测试性声明
 
@@ -48,7 +45,7 @@
 
 ### 测试策略
 
-- 真实本地HTTP上传/下载、容器CDP/UDS、授权正负例、真实Chrome clipboard permission/context及受控fixture；文件hash与数据库事件校验，禁止以临时fake文件替代实际下载。1000次专项由t009验收。
+- 真实本地HTTP上传/下载、容器CDP/UDS、授权正负例、真实Chrome文件/自动化页面及受控fixture；文件hash与数据库事件校验，禁止以临时fake文件替代实际下载。剪贴板/IME由t014、复制重置由t013独立交付，1000次专项由t009验收。
 
 ### 未知契约清单
 

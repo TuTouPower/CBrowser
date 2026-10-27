@@ -8,7 +8,7 @@
 
 ### 范围
 
-- src/backend/cbrowser/supervisor、schemas/runtime 和对应 Docker 集成测试；对接正式 Browser/Stream Runtime，分配网络、挂载、端口及实例，认证 RPC 协调期望/实际状态，持久事件重放与异常重试。
+- src/backend/cbrowser/supervisor、schemas/runtime 和对应 Docker 集成测试；对接正式 Browser/Stream Runtime，分配网络、挂载、端口及实例，认证 RPC 协调期望/实际状态，持久事件重放与异常重试；统一数据根包含engine-cache，明确缓存/用户数据/Artifact/事件各目录的初始化及挂载权限；采集真实主机/容器CPU负载，向Stream下发Profile级过载限制。
 
 ### 非范围
 
@@ -23,11 +23,18 @@
 <!-- /规范 -->
 
 - [ ] AC-001：真实启动两个 Profile，各有独立 Browser/Stream 容器、Xauthority/Pulse/IPC 和受限挂载；Stream 复用对应 Browser IPC，跨 Profile 访问失败，所有挂载规范化后位于允许数据根目录，路径穿越及符号链接逃逸被拒绝。
+
 - [ ] AC-002：并发生命周期请求幂等执行，Profile 使用独立且内外一致的 UDP mux 端口；端口耗尽明确报错、不重复分配；停止先标不可用并断 Viewer，再停 Stream/Browser，确认释放后回收端口。
+
 - [ ] AC-003：Supervisor 是唯一持有 Docker Socket 的服务，不挂载 SQLite；通过认证 RPC 获取配置和上报事件，未授权控制请求失败；事务内不等待容器启动。
+
 - [ ] AC-004：API 离线期间事件落盘，恢复后按 event_id 去重并校验 runtime_instance_id；Supervisor SIGKILL 重启扫描现存容器，等待 API 期望状态后协调，正常浏览器关闭在双方重启后仍不误启动。
+
 - [ ] AC-005：异常退出保留运行意愿，真实失败按2/10/30秒重试，三次失败后阻断，手动重试清除阻断；正常退出与主动停止不重试，Browser restart policy 为 no。
+
 - [ ] AC-006：Stream 仅接入对应媒体网络，Gateway/coturn 动态接入且实际网络地址明确下发；重复创建/失败回滚不残留孤立容器、端口和网络，不影响其他 Profile。
+
+- [ ] AC-007：真实CPU过载触发Profile级资源限制，Stream实际降帧且恢复负载后回归活动目标；低负载和全后台对照不误触发，调度决策可查询并关联测量窗口，不将Viewer心跳当控制租约。
 
 ### 可测试性声明
 

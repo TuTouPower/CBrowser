@@ -8,7 +8,7 @@ v2.3 需要把 Profile、运行期状态与页面连接分开，以持久配置�
 
 ### 范围
 
-- 新 Domain、Service、Repository、/api/v1 应用入口及空数据库初始化迁移；Profile 配置版本、标签、运行状态、Artifact 元数据、设置、运行事件和审计存储。保留计划15.2中仍有效的配置字段。不建立租约或持久 ViewerConnection。主写域为 src/backend/cbrowser/domain、services、adapters/database、api 与 src/backend/migrations、schemas/openapi，以及本 task 新测试；不改 Runtime Agent、Stream Runtime 或旧正式入口。
+- 新 Domain、Service、Repository、/api/v1 应用入口及空数据库初始化迁移；Profile 配置版本、标签、运行状态、Artifact 元数据、设置、运行事件和审计存储。保留计划15.2中仍有效的配置字段。不建立租约或持久 ViewerConnection。主写域为 src/backend/cbrowser/domain、services、adapters/database、api 与 src/backend/migrations、schemas/openapi，以及本 task 新测试；保留并扩展 src/backend/diagnostics.py 的结构化运行时诊断；运行状态模型包含 desired_state、observed_state、runtime_instance_id、config_version、failure_count、restart_blocked、last_exit_event_id。不改 Runtime Agent、Stream Runtime 或旧正式入口。
 
 ### 非范围
 
@@ -23,10 +23,16 @@ v2.3 需要把 Profile、运行期状态与页面连接分开，以持久配置�
 <!-- /规范 -->
 
 - [ ] AC-001：通过新 API 创建、读取、修改和删除 Profile；配置字段及标签在真实服务进程重启后完整保留，非法更新不改变已保存配置。
+
 - [ ] AC-002：配置修改产生可查询的不可变版本快照；重复幂等操作不产生重复 Profile 或重复状态转换，失败事务不留下半写数据。
+
 - [ ] AC-003：正常退出事件将目标与实际状态收敛为停止，异常退出保留运行意愿；重复事件不再转换状态，旧 runtime_instance_id 事件不能覆盖新实例状态。
+
 - [ ] AC-004：多个真实并发请求在数据库锁竞争时按忙等待策略完成或返回明确可重试错误，不丢配置、不留下未提交事务；事务期间不等待 Docker 或浏览器启动。
+
 - [ ] AC-005：新数据库可从空目录初始化并由独立 API 进程读取；通过导出的接口契约调用新接口并验证响应，正式现有数据目录与旧服务不被写入。
+
+- [ ] AC-006：独立 API 进程处理运行时事件时，诊断日志可机器解析并关联 Profile、实例和事件；保留既有诊断查询能力，不输出密码、Token、Cookie、剪贴板或输入文本。
 
 ### 可测试性声明
 
@@ -67,7 +73,7 @@ v2.3 需要把 Profile、运行期状态与页面连接分开，以持久配置�
 
 ### 依赖与约束
 
-- t001 全部通过并冻结技术结论后才能 start。公共索引与跨模块总览由主控在各 task 收尾阶段串行更新，实现 agent 只写本模块，不并发改公共控制面。
+- t001 全部通过并冻结技术结论后才能 start。持久化约束按计划12.1显式启用 SQLite WAL 与 busy_timeout=5000；测试实际读取PRAGMA并结合并发HTTP验证，配置值不替代行为验收。公共索引与跨模块总览由主控在各 task 收尾阶段串行更新，实现 agent 只写本模块，不并发改公共控制面。
 
 ### Finalization 时更新的 blueprint
 

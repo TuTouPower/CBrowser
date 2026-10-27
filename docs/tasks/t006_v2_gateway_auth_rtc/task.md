@@ -8,7 +8,7 @@
 
 ### 范围
 
-- src/backend/cbrowser/gateway、auth、rtc_config 与对应 API/内部 RPC；Agent 注册表、每 Viewer 独立隧道、登录/CSRF/Origin/Profile 授权、独立自动化凭证基础和客户端/Stream RTC 配置。
+- src/backend/cbrowser/gateway、auth、rtc_config 与对应 API/内部 RPC；Agent 注册表、每 Viewer 独立隧道、连接活动表与Profile聚合需求下发协议、登录/CSRF/Origin/Profile 授权、独立自动化凭证基础和客户端/Stream RTC 配置。
 
 ### 非范围
 
@@ -23,11 +23,18 @@
 <!-- /规范 -->
 
 - [ ] AC-001：首次启动使用用户提供管理员密码，Argon2id 保存；真实 HTTPS 登录 Cookie 含 HttpOnly/Secure/SameSite=Strict，写请求缺 CSRF 拒绝；未登录、错误 Origin、跨 Profile 未授权 Viewer 无法建立信令，master token 不返回前端。
+
 - [ ] AC-002：Agent 专属凭证注册包含计划7.2字段，健康消息每10秒，连接丢失按1/2/4/8/16/30秒退避；过期实例不覆盖当前注册，未就绪 Profile 明确拒绝连接。
+
 - [ ] AC-003：两个真实 Chrome 页面各经独立 Agent/Gateway 隧道协商并解码音视频，关闭一条不影响另一条；Gateway SIGKILL 后浏览器进程不变，Agent 重注册，页面恢复连接；媒体不经 Gateway。
+
 - [ ] AC-004：客户端与 Stream 分别取得可达 TURN URL 和各自凭证；新连接总取当前有效配置，24小时凭证每12小时更新并在旧凭证到期前6小时执行已验证 ICE restart；失败显式记录并重试，不静默用过期凭证。
+
 - [ ] AC-005：真实 relay-only 双端选中 relay candidate，并以新代接管、旧代退役后的新音视频增量证明两次凭证切换，同一 PeerConnection/媒体对象保持；无效凭证负例不能由旧媒体判成功。
+
 - [ ] AC-006：CDP 自动化独立 Bearer Token 或 mTLS，合法非浏览器客户端可无 Origin；登录 Cookie 不能代替自动化凭证；认证失败、撤销与权限越界可观察且审计不泄漏秘密。
+
+- [ ] AC-007：记录各Viewer的connection_id、visible、last_activity、last_heartbeat，将Profile聚合状态通知Stream Agent；真实一前台一后台、后台冻结/失去心跳、恢复及断开时，另一活跃前台需求不被降低。心跳仅作存活与资源统计，不形成所有权或输入锁。
 
 ### 可测试性声明
 
