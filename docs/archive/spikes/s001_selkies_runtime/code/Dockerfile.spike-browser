@@ -1,0 +1,16 @@
+FROM cbrowser:latest
+
+USER root
+# Install pulse-audio, openbox, xdotool, x11-utils if needed
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    openbox \
+    pulseaudio \
+    pulseaudio-utils \
+    x11-utils \
+    xdotool \
+    procps \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Add dummy audio / X11 test script
+WORKDIR /app

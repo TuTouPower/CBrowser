@@ -2,5 +2,22 @@
     "generated_by": ".repo_template/scripts/task.py",
     "authority": "docs/archive/tasks/{tid}_{slug}/note.md front matter",
     "workspace": ".",
-    "tasks": []
+    "tasks": [
+        {
+            "tid": "t001",
+            "slug": "v2_runtime_validation",
+            "title": "验证 v2 双容器媒体与控制通道架构",
+            "status": "done",
+            "branch": "t001_v2_runtime_validation",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "3c8bdbc55570e85aaeb6365a3d512da9c0ce180c",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t001_v2_runtime_validation"
+        }
+    ]
 }

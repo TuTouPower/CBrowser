@@ -1,0 +1,30 @@
+FROM cbrowser-spike-runtime-browser:test
+
+USER root
+
+# Create nonroot user 'cbrowser' with UID 1000, GID 1000
+RUN groupadd -g 1000 cbrowser && \
+    useradd -u 1000 -g 1000 -m -s /bin/bash cbrowser
+
+# Make CloakBrowser available to cbrowser user in /opt/cloakbrowser
+RUN mkdir -p /opt/cloakbrowser && \
+    cp -a /root/.cloakbrowser/* /opt/cloakbrowser/ && \
+    chmod -R 755 /opt/cloakbrowser
+
+# Configure environment for nonroot & read-only execution
+ENV HOME=/home/cbrowser \
+    USER=cbrowser \
+    CLOAKBROWSER_BINARY_PATH=/opt/cloakbrowser/chromium-146.0.7680.177.3/chrome \
+    XDG_CACHE_HOME=/tmp/.cache \
+    XDG_CONFIG_HOME=/tmp/.config \
+    XDG_DATA_HOME=/tmp/.local/share \
+    PULSE_RUNTIME_PATH=/tmp/pulse-runtime
+
+# Ensure /tmp, /home/cbrowser, /pulse, /data have base directories
+RUN mkdir -p /home/cbrowser/.config /tmp /pulse /data/profile && \
+    chown -R cbrowser:cbrowser /home/cbrowser /pulse /data
+
+USER cbrowser
+WORKDIR /home/cbrowser
+ENTRYPOINT []
+CMD ["/bin/bash"]

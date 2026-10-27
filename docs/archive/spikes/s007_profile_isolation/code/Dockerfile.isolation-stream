@@ -1,0 +1,23 @@
+FROM cbrowser-spike-runtime-stream:test
+
+USER root
+
+# Install xauth if missing
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create nonroot stream user with UID 1001, GID 1000
+RUN groupadd -g 1000 cbrowser && \
+    useradd -u 1001 -g 1000 -m -s /bin/bash streamuser
+
+# Copy test_mitshm source and compile into /usr/local/bin/test_mitshm
+COPY fixture/test_mitshm.c /tmp/test_mitshm.c
+RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /usr/local/bin/test_mitshm && \
+    chmod 755 /usr/local/bin/test_mitshm && \
+    rm -f /tmp/test_mitshm.c
+
+USER streamuser
+WORKDIR /home/streamuser
+ENTRYPOINT []
+CMD ["/bin/bash"]

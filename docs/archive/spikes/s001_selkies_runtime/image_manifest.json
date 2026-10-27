@@ -1,0 +1,78 @@
+{
+  "captured_at": "2026-10-27T15:51:42+08:00",
+  "scope": "Local observed image identities only; not proof of reproducible build provenance or native x86_64 validation",
+  "images": [
+    {
+      "id": "sha256:4f94d385d8cd0dd72372f0532b2032f0253f8a8b076d576478920075a55beb75",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "cbrowser:latest"
+      ],
+      "repo_digests": [
+        "cbrowser@sha256:4f94d385d8cd0dd72372f0532b2032f0253f8a8b076d576478920075a55beb75"
+      ],
+      "requested_tag": "cbrowser:latest"
+    },
+    {
+      "id": "sha256:eb3ae6498eca7f3ab60af105f1e6355076bf83a334b7b41d56a5e0b841ec1660",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "cbrowser-spike-runtime-browser:test"
+      ],
+      "repo_digests": [
+        "cbrowser-spike-runtime-browser@sha256:eb3ae6498eca7f3ab60af105f1e6355076bf83a334b7b41d56a5e0b841ec1660"
+      ],
+      "requested_tag": "cbrowser-spike-runtime-browser:test"
+    },
+    {
+      "id": "sha256:0c1b926f0be93d69be27fad81248f781bf77ae72353921e52044e0334920717b",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "cbrowser-spike-runtime-stream:test"
+      ],
+      "repo_digests": [
+        "cbrowser-spike-runtime-stream@sha256:0c1b926f0be93d69be27fad81248f781bf77ae72353921e52044e0334920717b"
+      ],
+      "requested_tag": "cbrowser-spike-runtime-stream:test"
+    },
+    {
+      "id": "sha256:b4d2c5b7f6f49153deb57f4a3da617b4b4554feed532f2b293c61f81785e4e6e",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "cbrowser-spike-isolation-browser:test"
+      ],
+      "repo_digests": [
+        "cbrowser-spike-isolation-browser@sha256:b4d2c5b7f6f49153deb57f4a3da617b4b4554feed532f2b293c61f81785e4e6e"
+      ],
+      "requested_tag": "cbrowser-spike-isolation-browser:test"
+    },
+    {
+      "id": "sha256:b993d92c5d6e81416e072a0d0210a60b94c17f1214aa3307631651b7b71beefb",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "cbrowser-spike-isolation-stream:test"
+      ],
+      "repo_digests": [
+        "cbrowser-spike-isolation-stream@sha256:b993d92c5d6e81416e072a0d0210a60b94c17f1214aa3307631651b7b71beefb"
+      ],
+      "requested_tag": "cbrowser-spike-isolation-stream:test"
+    },
+    {
+      "id": "sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3",
+      "architecture": "arm64",
+      "os": "linux",
+      "repo_tags": [
+        "coturn/coturn:latest"
+      ],
+      "repo_digests": [
+        "coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3"
+      ],
+      "requested_tag": "coturn/coturn:latest"
+    }
+  ]
+}
