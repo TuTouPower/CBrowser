@@ -2,12 +2,12 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T03:44:51+08:00 v2 架构计划执行交接
+## 2026-10-28T03:49:46+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：cfc18ff（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
+- head_commit：914dde5fb9d4（更新本交接前主干HEAD；最新业务集成为t002）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
-- 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
+- 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
 ### 最新用户决定
 
@@ -30,10 +30,11 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- t002：done / committed / cleanup完成，待本地main集成。唯一执行提交ee2aa47155848a775a15c1ec94c26ad77b4c2021，分支t002_v2_backend_foundation保留；原登记/Users/karson/kar/code/CBrowser_t002已exact cleanup移除，不再作为现场。权威交付暂在该分支docs/archive/tasks/t002_v2_backend_foundation/；不得据主干旧backlog重复start。
-- exact identity：attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027；主仓ledger已有terminal completed/report done(SHA同执行提交)/cleanup。base=d3ca80b0141c19a715a90c71ba2f5862c1c79711。
-- 最终验收：169契约+384旧后端+19单元+9真实HTTP通过；独立Verify Round4/5为9/9 PASS+SQL隐私PASS，manifest=c7e1228803978178adff71a7075f4de17226ea4bfa52c0a487600c07cd6c93ef与交付源码一致。正式full Round2 code/test均PASS、0finding、scope=bfeffb3d43a6d56d、7视角/6AC已独立复验。全部模型进程已终态，409文件监控无变化。
-- 过程证据：t002_evidence_before_cleanup.tar.gz（6556763字节、0600，排除缓存/临时目录，包含固定候选和实际日志）；完整TDD与两轴审查消息另外保存在主仓.scratch/v2_orchestration/。前轮CWD错误、只读越界/checkout污染及恢复记录均保留，不计有效PASS；schema已按冻结哈希恢复。CLI自然0与持久finish=stop分别核对。
+- t002：done / integrated，唯一执行提交ee2aa47155848a775a15c1ec94c26ad77b4c2021，merge=914dde5fb9d4。原登记/Users/karson/kar/code/CBrowser_t002已exact cleanup，分支t002_v2_backend_foundation由集成脚本删除。权威交付现为main的docs/archive/tasks/t002_v2_backend_foundation/，不得恢复旧路径或重复start。
+- 已闭环identity：attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027；ledger已有terminal completed/report done/cleanup/integrated。
+- 最终验收：工作副本169契约+384旧后端+19单元+9真实HTTP通过；独立Verify Round4/5为9/9 PASS+SQL隐私PASS，manifest=c7e1228803978178adff71a7075f4de17226ea4bfa52c0a487600c07cd6c93ef。正式full Round2 code/test均PASS、0finding、scope=bfeffb3d43a6d56d，7视角/6AC独立复验；409文件监控无源变更。所有模型进程已终态。
+- 合并后全部声明命令块退出0：168契约通过/1按主仓既有sync_state条件跳过、384旧后端、19单元、9真实HTTP通过，旧健康ok，task list及repo_sync status正常。日志.scratch/v2_orchestration/merge_t002/gates.log。跳过条件与t001主仓相同，未改测试；不把主仓配置状态与工作副本未初始化混淆。
+- 过程证据：t002_evidence_before_cleanup.tar.gz（6556763字节、0600，排除缓存/临时目录，含固定候选和实际日志）；完整TDD及两轴审查消息保存在主仓.scratch/v2_orchestration/。前轮CWD错误、只读越界/checkout污染及恢复记录保留，不计有效PASS；schema已按冻结哈希恢复。CLI自然0与持久finish=stop分别核对。
 - t003只读准备64619/纠正29622均terminal0，未start t003。日志在主仓.scratch/v2_orchestration/；恢复先查实际进程、checkpoint与task.py recovery。
 
 ### t002 第一轮候选验证结果
@@ -60,7 +61,7 @@
 - 本轮主控模板契约169通过（.scratch/t002_gates/contract_latest.log）。补齐testing.md的实际OpenAPI导出/校验命令，修正task可测试性及t001已完成上下文；未改AC业务范围。
 - 本节与第一轮记录中“等待新候选执行”等描述是历史阶段状态；当前恢复入口以下方下一步为准。
 
-### 最新阶段结果
+### 第三轮候选历史结果（最新以当前现场为准）
 
 - 主控最新完整门禁退出0：169契约、384旧后端、19新单元、5真实HTTP集成通过；旧健康ok，task list正常，工作副本repo_sync仍未初始化（退出0，不是配置成功）。日志CBrowser_t002/.scratch/t002_gates/project_gates_candidate3.log。
 - candidate3独立8项黑盒：持写锁GET返回200约11ms且锁仍持有；短锁写等待1.61秒成功，长锁约5.22秒返回503/Retry-After，释放后恢复；重复tag返回409且物理DB无半写。3个不同uvicorn PID均已终止，真实两次重启后完整配置/标签颜色、不可变快照、幂等、删除状态留存。
@@ -69,9 +70,9 @@
 
 ### 下一步与边界
 
-1. 已获用户多次本地main合入授权；下一步integrate t002，目标main，不push。先核主仓干净、exact identity与done交付，按脚本准备merge，再运行合并后声明的全部命令块，通过才continue。
-2. 合并阶段不额外修改非冲突文件；门禁失败先核实际状态，不盲目重试或改模板。集成完成后更新本handoff与checkpoint，删除分支由集成脚本负责。
-3. t003尚未start。t002真实集成后，依据已完成t001 findings和最终t002配置契约解除t003过时未知标记，在其登记worktree实施Browser Runtime；不得再恢复已清理t002路径。
+1. t002已真实集成，main干净；下一步按固定队列start t003，reserve/claim新exact identity，登记独立worktree。t001/t002不得重复执行。
+2. 在t003登记worktree依据d002/d004/d006/d011及最终t002配置快照契约清除过时未知标记，严格preflight --require-verified通过后才实施。所有t003真实Docker实验用独立数据根/前缀，不触及用户正式数据。
+3. OpenCode启动必须显式--dir并核对持久会话目录；实现者按本task写域，审查者使用对应report/scratch权限白名单和交付哈希监视。保持一个执行commit、exact cleanup、已获授权的本地main集成，不push。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
 5. 管理员密码文件路径已异步询问，供t006/t012使用；当前不因此暂停后端工作，不自设生产默认密码。
 
