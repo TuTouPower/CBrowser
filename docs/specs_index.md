@@ -8,3 +8,4 @@
 |webrtc_remote_display|baseline|2026-10-26|
 |chrome_external_tabs|baseline|2026-10-26|
 |storage_and_artifacts|baseline|2026-10-26|
+|v2_runtime_validation|t001|2026-10-27T18:56:37+08:00|

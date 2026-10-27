@@ -1,0 +1,29 @@
+{
+  "tid": "t001",
+  "attempt": 1,
+  "execution_id": "f5cd74fec7234b418c76206a08cff06b",
+  "status": "done",
+  "branch": "t001_v2_runtime_validation",
+  "base_sha": "3c8bdbc55570e85aaeb6365a3d512da9c0ce180c",
+  "tests": "169 template contract + 384 legacy backend + 49 frontend PASS (Node26 explicit WebStorage flag). Original tests unchanged; outside-Git TMPDIR. Actual doctor/test blocks exit0.",
+  "blackbox": "Independent real Docker/CloakBrowser/Mac Chrome IPC/Xauth/Pulse48000, dual-tab1080p/input, Core9+Native7, gateway SIGKILL, split RTC TURN normal0/auth-negative1, cross-container UDS/download and true separate-process recovery PASS. Public/native Linux x86 NOT_RUN/USER_WAIVED. No P95/8h/1000-case production acceptance claimed.",
+  "review": "Full Round2 code/test PASS, reviewed_scope bdaea2ca98d286a6. Root verified/corrected two factually false code findings; note dispositions withdraw f001/f002, minor f003 follow-up t006. Supplemental Native7 actually replayed; both subprocesses terminal0. Round2 scope changed only by removing generated untracked uv.lock; both final subprocesses terminal0.",
+  "pending": [],
+  "findings": [
+    "d001",
+    "d002",
+    "d003",
+    "d004",
+    "d005",
+    "d006",
+    "d007",
+    "d008",
+    "d009",
+    "d010",
+    "d011",
+    "d012",
+    "d013",
+    "d014"
+  ],
+  "spike_archive_manifest_sha256": "2933d01167d32e591ff825fdcc71bd615da78ea764a5ac70010a4154449593cb"
+}

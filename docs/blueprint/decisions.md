@@ -57,3 +57,18 @@
     2. 操控页面无边框铺满显示真实 CloakBrowser 窗口。
 - 结论：采用选项 2。所有配置与管理收纳在 `/manage`，操控页纯净显示远程画面。
 - 替代：无
+
+## 007 冻结 v2 双容器 WebRTC 目标架构、废弃排他控制租约与定案本地运行基准（2026-10-27T18:50:00+08:00）
+
+- 背景：早期设计中预设单 Profile 单容器运行、排他控制租约（`ControlSession`、心跳超时、抢占接管等待）、60 FPS 恒定帧率、未经验证的 300ms 画面恢复指标，并假设 Selkies 2.1.0 具备原生公共 ICE restart API 及以远端 Linux x86_64 服务器为基准。t001 技术验证（s001–s009, d001–d014）与 2026-10-27 用户执行调整（跳过公网/Linux x86 验证，基准改为当前电脑 Docker + 本机 Chrome 访问）提供了确定性事实与调整依据。
+- 选项：
+    1. 维持旧设计的单容器与独占控制租约模型，继续假设无 GPU 下恒定 60 FPS 并等待远端 Linux 服务器验证。
+    2. 冻结经验证的 v2 目标架构：
+        - 采用同 Profile 双容器（Browser Runtime 显式 `shareable` IPC 与 Stream Runtime 加入），基于专属卷 X11 Socket 与 MIT-SHM 零拷贝捕获，彻底切断媒体容器对浏览器用户数据的直接挂载；
+        - 彻底废弃独占控制租约与接管锁，多外部页面（ViewerConnection）以 `controller` 角色并发解码与输入，依靠官方 `client_tab_id`、Web Locks 与 `resume_key` 维持页面身份与重连；
+        - 采用单 Profile 单一共享编码管线，执行 8/30 FPS 自适应仲裁与全后台暂停捕获；
+        - API 为唯一 SQLite 写入者，Supervisor 为唯一 Docker Socket 持有者，经受控 UDS 隔离代理 CDP 与事件；
+        - 明确 Selkies 2.1.0（commit `6ee68a7a`）同 PC 凭证轮换依赖进程内私有接口适配器（属于内部维护约束，非官方原生 public API）；
+        - 将目标部署基准定案为当前 MacBook Pro M1 Max 上的 OrbStack Docker（10 CPU / ~15.66 GiB RAM，CPU 纯软件编码无 GPU 预算）配合本机 Chrome 访问；公网与原生 Linux x86_64 验证明确记为 `NOT_RUN / USER_WAIVED`。
+- 结论：采用选项 2。正式冻结 v2 目标架构。明确当前生产代码尚未实现该目标（当前生产代码仍保持旧基线），后续任务（t002+）据此实施。
+- 替代：001（细化并替代单容器沙箱假设为双容器 shareable IPC 隔离）；明确废弃早期计划中关于独占控制租约、恒定 60 FPS 及 300ms 恢复假设。

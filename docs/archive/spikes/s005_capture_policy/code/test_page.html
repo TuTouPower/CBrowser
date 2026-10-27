@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Benchmark Test Page</title>
+  <style>
+    body { background: #111; color: #fff; font-family: sans-serif; text-align: center; margin-top: 50px; }
+    #box { width: 400px; height: 300px; margin: 0 auto; background: #222; border: 2px solid #555; position: relative; }
+    #canvas { width: 400px; height: 300px; display: none; }
+    #static-text { position: absolute; top: 120px; width: 100%; font-size: 24px; color: #00ffcc; }
+  </style>
+</head>
+<body>
+    <h1>CBrowser Capture Policy Benchmark Page</h1>
+  <div id="status">Mode: STATIC</div>
+  <div id="input-stats" style="margin: 10px; font-size: 16px; color: #ffaa00;">Input Events: 0 (Last: none)</div>
+  <div id="box">
+    <div id="static-text">STATIC SCENE</div>
+    <canvas id="canvas" width="400" height="300"></canvas>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const staticText = document.getElementById('static-text');
+    const statusText = document.getElementById('status');
+    const inputStats = document.getElementById('input-stats');
+    let inputCount = 0;
+    let lastInputType = 'none';
+    let lastInputX = -1;
+    let lastInputY = -1;
+
+    window.addEventListener('mousemove', (e) => {
+      inputCount++;
+      lastInputType = 'mousemove';
+      lastInputX = e.clientX;
+      lastInputY = e.clientY;
+      inputStats.innerText = `Input Events: ${inputCount} (Last: mousemove at ${e.clientX},${e.clientY})`;
+    });
+    window.addEventListener('mousedown', (e) => {
+      inputCount++;
+      lastInputType = 'mousedown';
+      inputStats.innerText = `Input Events: ${inputCount} (Last: mousedown button=${e.button})`;
+    });
+    window.addEventListener('keydown', (e) => {
+      inputCount++;
+      lastInputType = 'keydown';
+      inputStats.innerText = `Input Events: ${inputCount} (Last: keydown key=${e.key})`;
+    });
+
+    window.getInputOracleState = function() {
+      return {
+        inputCount: inputCount,
+        lastInputType: lastInputType,
+        lastInputX: lastInputX,
+        lastInputY: lastInputY
+      };
+    };
+    let mode = 'static';
+    let animId = null;
+    let timerId = null;
+    let x = 0;
+    let blink = false;
+
+    function renderAnimation() {
+      if (mode !== 'animation') return;
+      ctx.clearRect(0, 0, 400, 300);
+      x = (x + 5) % 360;
+      ctx.fillStyle = '#ff0055';
+      ctx.fillRect(x, 50, 40, 40);
+      ctx.fillStyle = '#ffff00';
+      ctx.beginPath();
+      ctx.arc(200, 150 + Math.sin(x * 0.05) * 50, 30, 0, Math.PI * 2);
+      ctx.fill();
+      animId = requestAnimationFrame(renderAnimation);
+    }
+
+    function renderLowBlink() {
+      if (mode !== 'low_blink') return;
+      ctx.clearRect(0, 0, 400, 300);
+      blink = !blink;
+      ctx.fillStyle = blink ? '#00ff00' : '#003300';
+      ctx.fillRect(100, 100, 200, 100);
+      statusText.innerText = "Mode: LOW_BLINK (" + (blink ? "ON" : "OFF") + ")";
+      timerId = setTimeout(renderLowBlink, 2000); // 0.5 Hz low-frequency blink
+    }
+
+    window.setPageMode = function(newMode) {
+      if (animId) cancelAnimationFrame(animId);
+      if (timerId) clearTimeout(timerId);
+      mode = newMode;
+      if (newMode === 'animation') {
+        staticText.style.display = 'none';
+        canvas.style.display = 'block';
+        statusText.innerText = "Mode: ANIMATION (60fps Canvas)";
+        renderAnimation();
+      } else if (newMode === 'low_blink') {
+        staticText.style.display = 'none';
+        canvas.style.display = 'block';
+        renderLowBlink();
+      } else {
+        canvas.style.display = 'none';
+        staticText.style.display = 'block';
+        statusText.innerText = "Mode: STATIC";
+      }
+      return mode;
+    };
+  </script>
+</body>
+</html>
