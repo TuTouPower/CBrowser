@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-27T22:24:49+08:00 v2 架构计划执行交接
+## 2026-10-28T03:11:40+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：0b8f1d8（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
+- head_commit：e76e860（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
 
@@ -31,8 +31,9 @@
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
 - t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。沿用当前attempt，不重复start/reserve。
-- OpenCode实现session：ses_e82dd5473ffeX6ZEkqtLVe1bBD。96159（SQL隐私修复）、33841（读写事务与导出契约修复）均已terminal0；主控Ruff初查102项，其中diagnostics.py的14项有13项为既有基线，仅1项为新增。当前90433实现worker（PID66191）正在处理新增代码lint/format与回归，JSON输出为空不代表未执行；源码mtime与OpenCode会话记录证实已实际修改。先查进程与持久会话终态，不重复派发。
-- 独立黑盒7395已terminal0，但产品Verify Round2为FAIL；不能把agent退出0当产品通过。下一次新候选是Round3，上限5轮。
+- OpenCode实现session：ses_e82dd5473ffeX6ZEkqtLVe1bBD。96159、33841及最新lint90433均已完成。90433持久会话finish=stop，保存t002_lint_final.json后中断残留CLI PID66191，terminal子进程-2；不冒充自然exit0。14新增Python文件Ruff check/format均通过；diagnostics新增问题已修，13项既有基线保留。
+- Verify Round3已实际执行：冻结manifest=3459bd7d3659e1d6528fc2f4c12d587a98c3124abd5d67bf6b764b85d5f6461f，8/8通过且无finding，主控核验冻结文件与当前源码一致。报告worker31492正在收尾；前两轮失败证据保留，上限仍5轮。
+- 正式full code/test Round1已按实际最终范围完整提示派发：code进程46906/PID95420/session=ses_e813a6e91ffecjvQTYnIF2wNuY；test进程61687/PID95529/session=ses_e813a3ddfffeo3WagRl7MAmvtg。两者只读源码，各写对应review和专属scratch，最终报告尚未回收，不finish/集成。
 - t003只读准备64619/纠正29622均terminal0，未start t003。日志在主仓.scratch/v2_orchestration/；恢复先查实际进程、checkpoint与task.py recovery。
 
 ### t002 第一轮候选验证结果
@@ -59,13 +60,20 @@
 - 本轮主控模板契约169通过（.scratch/t002_gates/contract_latest.log）。补齐testing.md的实际OpenAPI导出/校验命令，修正task可测试性及t001已完成上下文；未改AC业务范围。
 - 本节与第一轮记录中“等待新候选执行”等描述是历史阶段状态；当前恢复入口以下方下一步为准。
 
+### 最新阶段结果
+
+- 主控最新完整门禁退出0：169契约、384旧后端、19新单元、5真实HTTP集成通过；旧健康ok，task list正常，工作副本repo_sync仍未初始化（退出0，不是配置成功）。日志CBrowser_t002/.scratch/t002_gates/project_gates_candidate3.log。
+- candidate3独立8项黑盒：持写锁GET返回200约11ms且锁仍持有；短锁写等待1.61秒成功，长锁约5.22秒返回503/Retry-After，释放后恢复；重复tag返回409且物理DB无半写。3个不同uvicorn PID均已终止，真实两次重启后完整配置/标签颜色、不可变快照、幂等、删除状态留存。
+- 独立SQL日志探针：422响应无私密值回显，约束409，物理日志无注入敏感值泄漏。该测试覆盖边界见d015，不宣称所有未知Python异常绝不泄漏。
+- 已补齐OpenAPI生成/校验文档、修正t002不依赖Docker/Chrome的可测试性，并在架构文档区分已新增后端基础与未切换的旧正式入口。全部AC由主控真实门禁暂勾，正式review须独立复核。
+
 ### 下一步与边界
 
-1. 完成t002新增代码lint/format，保留既有无关代码；重跑相关检查，再冻结独立candidate3。
-2. 用修正后的harness执行Verify Round3，包含幂等重放、并发写、CAS/代际、完整OpenAPI、SQL日志隐私及持写锁读并发。保留每轮独立目录与失败记录。
-3. 验收通过后更新AC和note，派正式full code/test独立review；通过后写task级handoff.json、唯一执行commit、exact cleanup及已获授权的本地main集成。不push。t002完成前不start t003。
-4. 每个阶段完成即更新本文件，包含实际分支、交出时HEAD、结果、未完成项和恢复入口。失败验证阶段同样记录FAIL及下一步；项目级handoff与task级handoff.json各自保留。
-5. 后续管理员密码文件路径已异步询问，供t006/t012使用；当前不因此暂停后端工作，不自设生产默认密码。
+1. 观察三项现有worker（31492、46906、61687）实际终态和持久会话，不重复派发；OpenCode CLI存在任务结束后不退出/JSON为空问题，观察器run_opencode_observed.py仅在持久最终答复finish=stop后保存证据、中断残留CLI，绝不杀仍在运行的模型任务。未修改全局配置。
+2. 回收正式code/test报告，核对最终reviewed_scope和finding处置。失败则按原5轮上限修复重审，不以静态预审代正式通过。
+3. 通过后写task级handoff.json、唯一执行commit、exact cleanup与已获授权的本地main集成。不push。t002完成前不start t003。
+4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
+5. 管理员密码文件路径已异步询问，供t006/t012使用；当前不因此暂停后端工作，不自设生产默认密码。
 
 - 工作区保护：主干写交接前干净。各task用户改动保留；临时uv.lock先核实来源和进程状态，避免将reviewer生成文件纳入交付指纹/提交。已完成t001未提交资产均已提交或备份，没有遗失清理。
 - 全局约束：只写 `~/kar/code` 内；保持用户改动；使用 OpenCode 指定模型执行已授权子任务；不修改 `.repo_template` 绕过门禁，不把技术原型当成正式生产组件。
