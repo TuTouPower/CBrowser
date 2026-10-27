@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-27T22:14:30+08:00 v2 架构计划执行交接
+## 2026-10-27T22:24:49+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：3d026de（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
+- head_commit：0b8f1d8（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
 
@@ -31,7 +31,7 @@
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
 - t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。沿用当前attempt，不重复start/reserve。
-- OpenCode实现session：ses_e82dd5473ffeX6ZEkqtLVe1bBD。96159（SQL隐私修复）、33841（读写事务与导出契约修复）均已terminal0；当前无运行中的模型worker。主控Ruff检查已结束，结果102项待分辨新增与既有问题，尚未完成lint门禁。
+- OpenCode实现session：ses_e82dd5473ffeX6ZEkqtLVe1bBD。96159（SQL隐私修复）、33841（读写事务与导出契约修复）均已terminal0；主控Ruff初查102项，其中diagnostics.py的14项有13项为既有基线，仅1项为新增。当前90433实现worker（PID66191）正在处理新增代码lint/format与回归，JSON输出为空不代表未执行；源码mtime与OpenCode会话记录证实已实际修改。先查进程与持久会话终态，不重复派发。
 - 独立黑盒7395已terminal0，但产品Verify Round2为FAIL；不能把agent退出0当产品通过。下一次新候选是Round3，上限5轮。
 - t003只读准备64619/纠正29622均terminal0，未start t003。日志在主仓.scratch/v2_orchestration/；恢复先查实际进程、checkpoint与task.py recovery。
 
@@ -54,6 +54,9 @@
 - 33841已terminal0：普通读取改BEGIN，7类写操作使用BEGIN IMMEDIATE；移除无效IntegrityError重试和重复索引，重导OpenAPI，并增加live/export深度一致性与持写锁并发读测试。作者报告169契约+384旧后端+19单元+5真实HTTP通过；尚未完成最终独立复核，不勾选剩余AC。
 - 新增已验证发现d015（SQL异常日志边界）、runtime_persistence spec及索引，均在t002工作副本，未合入main。t002仍active，尚无执行commit，未finish、cleanup或集成。
 - 最新主控Ruff结果：CBrowser_t002/.scratch/t002_gates/ruff_check.json，共102项。先区分新增代码问题与既有diagnostics问题，再精准处理；完成格式和相关回归后冻结candidate3，避免冻结后再次变更交付源码。
+- 新阶段完成：candidate3独立harness准备，目录control/.scratch/t002_blackbox_candidate_3/。原7项业务用例保留，第6项新增持写锁期间真实GET低于1秒且锁未释放；第8项新增真实服务两次重启、完整字段/标签颜色持久化、幂等重放、非法PATCH完整响应不变与旧快照不变。主控补强所有输入字段比较、持锁Event成功断言、PID/退出码记录与追加物理日志。仅语法/准备，未执行产品验收。
+- OpenCode CLI异常：87336测试准备任务的持久会话已finish=stop并保存最终答复，但CLI继续存活且JSONL为空。主控先以只读数据库查证并保存t002_blackbox3_prepare_final.json，再仅SIGINT已完成任务的PID66364；包装进程terminal，子进程返回-2，不冒充自然exit0。未修改全局配置。90433仍未完成，不能按同法提前中断。
+- 本轮主控模板契约169通过（.scratch/t002_gates/contract_latest.log）。补齐testing.md的实际OpenAPI导出/校验命令，修正task可测试性及t001已完成上下文；未改AC业务范围。
 - 本节与第一轮记录中“等待新候选执行”等描述是历史阶段状态；当前恢复入口以下方下一步为准。
 
 ### 下一步与边界
