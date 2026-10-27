@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-27T19:32:37+08:00 v2 架构计划执行交接
+## 2026-10-27T20:15:11+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：2fb32ba4bf98（本阶段集成提交；更新本交接前主干 HEAD）
+- head_commit：d94be8e（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
 
@@ -30,7 +30,18 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini初轮session5920因主控真实DB复现而主动SIGINT，已确认exit130；同OpenCode session恢复为执行handle4188，日志t002_implementation_correctness.jsonl。独立验收设计10625已terminal0，仅准备稿；t003只读准备64619在protocol worktree运行，未start t003。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志均在主仓 .scratch/v2_orchestration/，另有 t003_runtime_readiness.jsonl；中间版本真实DB/HTTP复现位于 t002_root_audit/，不能当最终验收。
+- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini初轮session5920因主控真实DB复现而主动SIGINT，已确认exit130；同OpenCode session恢复4188已terminal0，作者15项新增测试与384项基线通过，但独立候选黑盒FAIL；当前同session执行98321修复并发与状态一致性，日志t002_implementation_concurrency.jsonl。独立验收设计10625及候选黑盒89822均terminal0，当前41513补强独立harness；t003只读准备64619/纠正29622均terminal0，未start t003。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志均在主仓 .scratch/v2_orchestration/，另有 t003_runtime_readiness.jsonl；中间版本真实DB/HTTP复现位于 t002_root_audit/，不能当最终验收。
+
+### t002 第一轮候选验证结果
+
+- 作者新增单元/独立HTTP测试15通过、旧后端384通过；未完成正式独立review，不能据此收尾。
+- Verify Round1候选黑盒：最终7项中3通过/4失败，进程89822已terminal。实际发现并发不相交PATCH丢失已确认修改、跨Profile复用幂等键静默跳过、错误绑定/配置代际、ID形状的敏感字符串进入事件日志。另一次中途运行出现并发重复exit的500，最终重跑未再出现，按竞态记录，不能当已闭环。
+- 已验证正例：真实SQLite持锁1.5秒后请求成功、超过5秒返回可重试503、释放后恢复；重复tag导致SQL约束失败后无半写数据。完整原始stdout与有限保留的物理日志见control/.scratch/t002_blackbox_candidate；早期失败运行日志被harness覆盖，后续必须每轮独立目录保存。
+- 主控另以真实独立HTTP复现旧启动意愿重放清除failure_count、迟到bind覆盖新实例，证据在主仓.scratch/t002_replay_audit/。
+- harness也存在待纠正口径：stale_instance优先返回且未改状态并非错误；最初OpenAPI仅比较path集合，不足以证明完整响应契约；原生进程启动日志不证明迁移后logger仍有效。41513正在同一冻结候选上修正测试口径，不改业务预期、不冒充新候选通过。
+- 生产修正98321与独立harness41513各写自身worktree/scratch，源码冻结副本互不干扰。下次生产候选复验记Verify Round2；正式review尚未派发。当前不finish、不cleanup、不合入t002。
+- t003准备稿经主控纠正SDK缓存环境变量、导入副作用、Xauth长度和事件落盘等失实项；仅为条件化准备，使用前仍按实际源码与t002最终契约核对。
+- 后续本地管理员密码文件路径已异步询问，供t006/t012使用；当前不因该信息暂停后端工作，不自设生产默认密码。
 
 ### 下一步与边界
 
