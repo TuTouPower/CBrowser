@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-27T20:15:11+08:00 v2 架构计划执行交接
+## 2026-10-27T22:14:30+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：abecbd5（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
+- head_commit：3d026de（更新本交接前主干HEAD；最新业务集成仍为t001的2fb32ba）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证已完成并合入；正式 v2 业务实现尚未合入，下一阶段 t002。
 
@@ -30,7 +30,10 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。Gemini初轮session5920因主控真实DB复现而主动SIGINT，已确认exit130；同OpenCode session恢复4188已terminal0，作者15项新增测试与384项基线通过，但独立候选黑盒FAIL；第二轮修正98321已terminal0，新增单元/HTTP测试19通过、模板169通过、旧后端384通过；最终契约60324因主控真实SQL日志泄漏复现而主动SIGINT，已确认exit130；当前同session执行96159修复异常出口并完成契约，日志t002_sql_privacy.jsonl。独立验收设计10625及候选黑盒89822均terminal0，41513已terminal0并完成独立harness补强；t003只读准备64619/纠正29622均terminal0，未start t003。先检查实际进程/日志及task.py recovery，不重复start/reserve。日志均在主仓 .scratch/v2_orchestration/，另有 t003_runtime_readiness.jsonl；中间版本真实DB/HTTP复现位于 t002_root_audit/，不能当最终验收。
+- t002已active：/Users/karson/kar/code/CBrowser_t002，branch=t002_v2_backend_foundation，diff_anchor=d3ca80b0141c19a715a90c71ba2f5862c1c79711；attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027。沿用当前attempt，不重复start/reserve。
+- OpenCode实现session：ses_e82dd5473ffeX6ZEkqtLVe1bBD。96159（SQL隐私修复）、33841（读写事务与导出契约修复）均已terminal0；当前无运行中的模型worker。主控Ruff检查已结束，结果102项待分辨新增与既有问题，尚未完成lint门禁。
+- 独立黑盒7395已terminal0，但产品Verify Round2为FAIL；不能把agent退出0当产品通过。下一次新候选是Round3，上限5轮。
+- t003只读准备64619/纠正29622均terminal0，未start t003。日志在主仓.scratch/v2_orchestration/；恢复先查实际进程、checkpoint与task.py recovery。
 
 ### t002 第一轮候选验证结果
 
@@ -43,20 +46,23 @@
 - t003准备稿经主控纠正SDK缓存环境变量、导入副作用、Xauth长度和事件落盘等失实项；仅为条件化准备，使用前仍按实际源码与t002最终契约核对。
 - 后续本地管理员密码文件路径已异步询问，供t006/t012使用；当前不因该信息暂停后端工作，不自设生产默认密码。
 
-### t002 第二轮自测与收尾契约
+### t002 第二轮验证与最新修复
 
-- 98321已terminal0，自测19项新测试、169项模板、384项旧后端通过；作者复制的旧harness 7/7汇总因判定遗漏及未冻结源码，不作最终独立通过证据。
-- 最终契约补充范围：浏览器用户数据路径须为 /data/profiles/{id}/profile；同实例观测/重绑不能冒充已应用新配置；OpenAPI补齐实际错误响应结构与状态，增加按导出JSON schema校验的真实响应测试。
-- 主控对最终契约中间快照新增真实HTTP/SQLite约束异常探针：422响应已不回显私密输入，但重复tag触发500后，Uvicorn traceback仍输出SQL绑定参数，测试私密字符串出现2次。证据位于主仓.scratch/t002_logging_probe/，仅隔离测试数据，未部署到旧服务。必须修复typed DB异常出口，保留logging，不能只清洗JSON响应或禁用日志。
-- 96159结束后，主控更新specs_index及测试/黑盒机械章节，固定源文件与完整schema后派独立Verify Round2，再派正式full code/test review。t002仍active，未有执行commit，不finish、不cleanup、不合入。
-- 恢复前先查96159实际状态和t002_sql_privacy.jsonl，不因观察超时重复派发；同OpenCode session为ses_e82dd5473ffeX6ZEkqtLVe1bBD。
+- Verify Round2冻结快照：control/.scratch/t002_blackbox_candidate_2/，manifest=f3c76c2b0b266586b60746d87added4ed56824b443e278558e2117110b771118。独立黑盒6/7通过，唯一失败为静态OpenAPI导出未同步实际RuntimeEventResponse；完整响应schema校验8项通过。真实SQL约束异常返回409，物理日志未出现测试私密字符串。该结论只适用于该冻结快照。
+- 96159修复typed DB异常出口后，作者自测15单元+5独立HTTP通过；主控完整门禁169契约+384旧后端+15单元+5独立HTTP通过。主控门禁早于33841后续改动，不能替代最终候选验收。日志：CBrowser_t002/.scratch/t002_gates/project_gates_fixed.log；最初遗漏jsonschema依赖导致的失败日志保留。
+- 独立静态预审42071结束，采纳普通读取误用BEGIN IMMEDIATE、不可达404、无效重试和重复索引等问题；其中“导出完全一致”“Profile删除级联删除事件”等失实结论已在t002_pre_audit_disposition.md驳回。预审不替代正式canonical review。
+- 33841已terminal0：普通读取改BEGIN，7类写操作使用BEGIN IMMEDIATE；移除无效IntegrityError重试和重复索引，重导OpenAPI，并增加live/export深度一致性与持写锁并发读测试。作者报告169契约+384旧后端+19单元+5真实HTTP通过；尚未完成最终独立复核，不勾选剩余AC。
+- 新增已验证发现d015（SQL异常日志边界）、runtime_persistence spec及索引，均在t002工作副本，未合入main。t002仍active，尚无执行commit，未finish、cleanup或集成。
+- 最新主控Ruff结果：CBrowser_t002/.scratch/t002_gates/ruff_check.json，共102项。先区分新增代码问题与既有diagnostics问题，再精准处理；完成格式和相关回归后冻结candidate3，避免冻结后再次变更交付源码。
+- 本节与第一轮记录中“等待新候选执行”等描述是历史阶段状态；当前恢复入口以下方下一步为准。
 
 ### 下一步与边界
 
-1. t002已启动并claim；等待Gemini完成后端骨架、真实SQLite/HTTP/进程重启测试和文档，主控复核后派最终独立review与黑盒。
-2. 每个阶段保留实际证据、完成独立审查与门禁，再写task级handoff.json、唯一执行commit、exact cleanup与获准本地集成。不push。
-3. t002只读准备稿不等于已实施；其猜测字段/行号/语义必须按源码与计划复核。
-4. 各task合入、验收及本机部署完成后立即更新本文件。项目级交接与工具链task级handoff.json不能互相替代。
+1. 完成t002新增代码lint/format，保留既有无关代码；重跑相关检查，再冻结独立candidate3。
+2. 用修正后的harness执行Verify Round3，包含幂等重放、并发写、CAS/代际、完整OpenAPI、SQL日志隐私及持写锁读并发。保留每轮独立目录与失败记录。
+3. 验收通过后更新AC和note，派正式full code/test独立review；通过后写task级handoff.json、唯一执行commit、exact cleanup及已获授权的本地main集成。不push。t002完成前不start t003。
+4. 每个阶段完成即更新本文件，包含实际分支、交出时HEAD、结果、未完成项和恢复入口。失败验证阶段同样记录FAIL及下一步；项目级handoff与task级handoff.json各自保留。
+5. 后续管理员密码文件路径已异步询问，供t006/t012使用；当前不因此暂停后端工作，不自设生产默认密码。
 
 - 工作区保护：主干写交接前干净。各task用户改动保留；临时uv.lock先核实来源和进程状态，避免将reviewer生成文件纳入交付指纹/提交。已完成t001未提交资产均已提交或备份，没有遗失清理。
 - 全局约束：只写 `~/kar/code` 内；保持用户改动；使用 OpenCode 指定模型执行已授权子任务；不修改 `.repo_template` 绕过门禁，不把技术原型当成正式生产组件。
