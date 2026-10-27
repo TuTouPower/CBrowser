@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T04:01:26+08:00 v2 架构计划执行交接
+## 2026-10-28T04:05:48+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：226c8453097f（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：ccc1b166ac17（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
@@ -36,8 +36,9 @@
 - 合并后全部声明命令块退出0：168契约通过/1按主仓既有sync_state条件跳过、384旧后端、19单元、9真实HTTP通过，旧健康ok，task list及repo_sync status正常。日志.scratch/v2_orchestration/merge_t002/gates.log。跳过条件与t001主仓相同，未改测试；不把主仓配置状态与工作副本未初始化混淆。
 - 过程证据：t002_evidence_before_cleanup.tar.gz（6556763字节、0600，排除缓存/临时目录，含固定候选和实际日志）；完整TDD及两轴审查消息保存在主仓.scratch/v2_orchestration/。前轮CWD错误、只读越界/checkout污染及恢复记录保留，不计有效PASS；schema已按冻结哈希恢复。CLI自然0与持久finish=stop分别核对。
 - t003已active：登记worktree=/Users/karson/kar/code/CBrowser_t003，branch=t003_v2_browser_runtime，base/diff_anchor=226c8453097fb982835ccb254cea8a3f26d131b3；attempt=1，execution_id=57e21d93a87e4ab1baf4f96f652bca99，owner_id=root_v2_20261027，start/reserve/claim均完成。根据已验证d002/d004/d006/d011及t002最终快照消除过时未知标记，require-verified preflight PASS；六项业务AC未改、尚未勾。
-- t003实现OpenCode进程83192/PID15182，session=ses_e810e7d58ffeMoFlVkIFfwFIuG，目录核验为登记worktree，日志t003_implementation.jsonl；写域Browser镜像/Agent/runtime契约/本task新测试及专属文档，不改共享pyproject/正式compose/API/数据库/旧入口。Root已提供完整六AC与真实Docker验证要求；未有候选、执行commit或正式验收。
+- t003实现OpenCode进程83130/PID16525，session=ses_e810e7d58ffeMoFlVkIFfwFIuG，目录核验为登记worktree，日志t003_implementation_probe_fix.jsonl（原t003_implementation.jsonl保留）；写域Browser镜像/Agent/runtime契约/本task新测试及专属文档，不改共享pyproject/正式compose/API/数据库/旧入口。Root已提供完整六AC与真实Docker验证要求；未有候选、执行commit或正式验收。
 - 独立验收准备另在.scratch/v2_orchestration/t003_validation，branch=spike/t003_validation，OpenCode进程50346/PID15705，session=ses_e810ce64effe5r9OxcJOiLo6Rz，目录已核验。仅写其.scratch/t003_blackbox设计/骨架；待生产协议/镜像ID冻结才实际黑盒，不计当前通过证据。Docker资源将使用独立cbrowser-t003-bb-前缀，与实现cbrowser-t003-impl-隔离。
+- SDK探针纠错：原83192因研究命令未覆盖cbrowser:latest的/entrypoint.sh而启动匿名临时旧服务，Root核实该容器无PortBindings/host bind，主动SIGINT实现CLI（terminal-2），仅按ID停止新临时容器1d795a7ab237；原正式cbrowser容器43c1cd552aae保持healthy。Root显式--entrypoint python3/无网络/只读/最小权限重新检查成功，实际SDK0.6.4与launch源码已存t003工作副本.scratch/t003_implementation/root_sdk_probe.json。新实现83130沿原session/attempt继续；尚无生产候选或正式Verify轮次。
 - 两模型当前均实际存活，恢复先查具体进程/持久会话/日志与task.py recovery t003，不因观察超时重启、不依据main旧backlog重复start。新启动必须显式--dir；全过程仅写~/kar/code内（Docker受控运行资源按授权实验），禁止source .env/触及正式用户数据。
 
 ### t002 第一轮候选验证结果
@@ -73,7 +74,7 @@
 
 ### 下一步与边界
 
-1. t003已start并claim，先观察83192实现与50346验收设计；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
+1. t003已start并claim，先观察83130实现与50346验收设计；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
 2. 复核SDK真实进程退出观测、统一只读Linux引擎cache及Mac bind-root UID权限、完整Chrome UI/DPR1、UDS安全边界、下载覆盖恢复ACK及持久事件；未知外部契约须实证，不把原型或容器alive当正式AC通过。
 3. 独立黑盒后完整code/test七视角审查，使用对应report/scratch权限白名单和交付哈希监视；一个执行commit、exact cleanup、已获授权的本地main集成，不push。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
