@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T10:12:46+08:00 v2 架构计划执行交接
+## 2026-10-28T10:36:05+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：650e8ae（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：b793397（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
@@ -36,7 +36,11 @@
 - 合并后全部声明命令块退出0：168契约通过/1按主仓既有sync_state条件跳过、384旧后端、19单元、9真实HTTP通过，旧健康ok，task list及repo_sync status正常。日志.scratch/v2_orchestration/merge_t002/gates.log。跳过条件与t001主仓相同，未改测试；不把主仓配置状态与工作副本未初始化混淆。
 - 过程证据：t002_evidence_before_cleanup.tar.gz（6556763字节、0600，排除缓存/临时目录，含固定候选和实际日志）；完整TDD及两轴审查消息保存在主仓.scratch/v2_orchestration/。前轮CWD错误、只读越界/checkout污染及恢复记录保留，不计有效PASS；schema已按冻结哈希恢复。CLI自然0与持久finish=stop分别核对。
 - t003已active：登记worktree=/Users/karson/kar/code/CBrowser_t003，branch=t003_v2_browser_runtime，base/diff_anchor=226c8453097fb982835ccb254cea8a3f26d131b3；attempt=1，execution_id=57e21d93a87e4ab1baf4f96f652bca99，owner_id=root_v2_20261027，start/reserve/claim均完成。根据已验证d002/d004/d006/d011及t002最终快照消除过时未知标记，require-verified preflight PASS；六项业务AC未改、尚未勾。
-- t003当前唯一实施进程77168/PID44278，fresh OpenCode Gemini session=ses_e7fbd2a96ffeyMAddPaIRGbucs，日志t003_fresh_runtime_correction.jsonl。前任86758/PID43700因再次执行旧镜像默认entrypoint探针被主控SIGINT（-2），旧进程已终止；临时匿名容器7c2cbf1b3e17核实仅匿名卷、无hostbind/portbindings后exactstop，后续inspect确认已自动删除，正式cbrowser healthy。新子进程权限明确拒绝旧镜像命令与prune/Git回退，未改全局配置。
+- t003实施写域已拆分：Root独占Runner/参数安全/事件存储/模块入口及新增test_runtime_persistence_guards.py；Gemini进程48410/PID47419（session=ses_e7fbd2a96ffeyMAddPaIRGbucs，日志t003_split_uds_e2e.jsonl）仅改Agent/CDP/health、entrypoint/Dockerfile和真实E2E。77168因持久化失败被catch后仍宣称saved等具体偏差主动SIGINT（-2），确认旧进程结束后按新写域恢复；对子进程edit权限明确deny Root核心，禁止全目录格式化，避免重叠写。
+- 旧86758误用旧镜像默认entrypoint的临时容器7c2cbf1b3e17已核实仅匿名卷、无hostbind/portbindings后exactstop并确认自动删除；正式cbrowser healthy。新子进程权限拒绝旧镜像命令/prune/Git回退，全局配置未改。
+- Root核心阶段完成：先复现9项失败（另5通过），新增引擎两项失败和模块入口import失败，保留完整red日志。修复目录fsync所有错误failclosed、危险CSV feature过滤/私密输入不入日志、ID/版本前置校验、终态事件防误重启、持久化失败传播和主协程等待、过时run_agent入口。当前全tests/unit55 PASS，核心Ruff E/F/W/I与format通过；未改旧测试预期。
+- Root真实Docker验证：只读统一cache按SDK当前Linux平台精确版本选择，ELF/架构与实际--version核查PASS；真实Browser.close=exit0、Chrome SIGKILL=exit137、SDKdriver SIGKILL引发Chrome0但记录lifecycle(None)/state error且Runner失败，三组均PASS，无mock。退出观察不把基础设施零退出交t002清意愿（t002拒绝exit_codeNone）。证据t003/.scratch/t003_root_checks/runner_lifecycle/\*\_r2.log、manifest_r2.json与core_delivery_manifest.json；均为固定旧镜像+Root当前核心只读overlay，不冒充新完整镜像/六AC，测试容器已自动清理。
+- 新增独立Gemini进程49643/PID52073（session=ses_e7fa421cbffeGe5SkpRfEHP4Lm，日志t003_profile_defaults.jsonl），仅写新profile_defaults.py及独立真实E2E，补set_google_default功能、英文/中文设置UI与一次性不覆盖用户偏好；Root后续接线，其他writer不碰该两文件。没有读用户.env或启动新第二浏览器路径。
 - 60738作者17单元与6个Docker测试函数通过，但主控逐行发现缺多Profile真实音频/XShm、健康负例、外部下载覆盖真实生效、Chrome异常退出等关键步骤；窗口高度断言改成root屏幕几何亦不足以证明Chrome窗口。候选被拒，6AC恢复未勾，正式Verify0/review0，不commit/finish。
 - 之前实现83192因旧镜像默认entrypoint探针错误被Root主动SIGINT（-2），仅其新临时容器按ID停止，正式cbrowser保持healthy；83130因创建worktree外契约TMPDIR获权限拒绝后自然terminal0，公共跨目录契约测试改由Root执行，本登记worktree169 PASS（root_contract_gate.log）；61864因已确认的路径/进程/SDK语义偏差主动SIGINT（-2），保留草稿后同session恢复74490。上述均未重置attempt/轮次，正式Verify尚未开始。
 - 独立验收位于.scratch/v2_orchestration/t003_validation（spike/t003_validation），session=ses_e810ce64effe5r9OxcJOiLo6Rz。UDS实验已完成；45609在主控提供哈希副本后terminal0/持久finishstop，声称FULL_HARNESS_IMPLEMENTED，但实际六函数缺大量主体（包括未启动B、无PCM、手动rearm冒充自动、未测SIGKILL），主控拒绝该声明。真实状态PARTIAL_BODIES，不计正式验收；87163已terminal0/持久finishstop，虽新增真实A/B音频和若干用例，仍将无socket容器内xwininfo失败错误宣称XShmAttach BadAccess，主控再次拒绝完整覆盖声明。当前fresh独立Gemini进程68647/PID45544、session=ses_e7fb8651bffe6Xm7yXVHRAeDHp补齐实际IPC成功/拒绝探针与所有剩余body，日志t003_blackbox_soundness.jsonl；状态仍PARTIAL_BODIES，未执行正式六AC。早期跨目录读取权限拒绝记录保留，未改全局权限。
@@ -46,9 +50,9 @@
 - UDS运输实测：非root Linux server能在Mac bind目录创建socket；Mac原生connect返回errno61；第二Linux peer通过同bind目录与独立named volume均完成echo。正式黑盒客户端采用Linux peer，持久Profile/cache/artifact/event仍用真实Mac bind根。未实测底层共享文件系统实现/零拷贝/性能，不能据此归因。原始源码与日志在validation/.scratch/t003_blackbox/transport_probe/，不计产品AC。
 - 独立草稿预审20178已terminal0，末尾读取host/tmp获权限拒绝；主控审源码发现其脚本已写宿主/tmp/.X11-unix/X88，违反写域，已报告用户，文件保留不擅删。fsync结果为定向故障注入而非真实EIO；字段未引用仅候选语义风险；控制字符日志需精确canary判据，不能以换行计泄漏。57105已terminal0/持久finishstop，仅在专属runtime_pre_audit scratch完成有界报告，未再运行旧越界脚本，不计正式review。主控逐项复核并驳回同步fsync之间存在协程抢占等错误因果，报告及处置已复制到新实施者本地packet。
 - 主控另实测不可变镜像4a76ae021ec3：UID1000、RO根、cap-drop ALL、network none，在全新Mac bind数据目录实际atomic写/readback、显式Linux目录fsync及坏JSON拒绝均PASS，容器已自动移除；storage_bind_probe.log保留。不代表掉电恢复/六AC；该平台具备成功目录fsync路径，不能以一般不支持为由吞错。
-- 主控新无mock实证：冻结源码构造Runner时，version0、version-1与../escape_profile均在启动前获接受；精确危险flag获允许、唯一敏感canary进入日志。完整哈希、脚本、结果在t003/.scratch/t003_root_checks/snapshot_probe_manifest.json及snapshot_and_log_probe.log；未实际启动子系统，不能当完整攻击/六AC证明，已交实施修正Runtime边界。
+- 主控新无mock实证：冻结源码构造Runner时，version0、version-1与../escape_profile均在启动前获接受；精确危险flag获允许、唯一敏感canary进入日志。完整哈希、脚本、结果在t003/.scratch/t003_root_checks/snapshot_probe_manifest.json及snapshot_and_log_probe.log；这是旧草稿红证据，现已由Root新回归修复；未实际启动子系统，不当完整攻击/六AC证明。
 - 主控草稿回归：Python3.14运行tests/unit共36 PASS（unit_draft_python314_20261028_0509.log），范围含已集成t002单元及t003当前单元；实现仍变化，非最终冻结门禁/六AC。首次命令误用系统Python3.9收集失败，原日志保留；未改代码迎合旧解释器。两个独立agent的跨目录权限拒绝通过主控提供受限本地源码快照解决，未修改全局权限/模板。
-- 当前唯一生产模型writer为77168；恢复先核具体进程/持久会话/task.py recovery t003，不重复start/reserve。Docker实现资源cbrowser-t003-impl-、验收cbrowser-t003-bb-、SDK研究cbrowser-t003-sdk-各自具体IDs隔离；禁止全局清理、source .env或触及正式用户数据。
+- 当前生产写域以Root核心、48410 UDS/E2E和49643新搜索初始化模块为准；各文件无重叠；恢复先核具体进程/持久会话/task.py recovery t003，不重复start/reserve。Docker实现资源cbrowser-t003-impl-、验收cbrowser-t003-bb-、SDK研究cbrowser-t003-sdk-各自具体IDs隔离；禁止全局清理、source .env或触及正式用户数据。
 
 ### t002 第一轮候选验证结果
 
@@ -83,7 +87,7 @@
 
 ### 下一步与边界
 
-1. t003已start并claim，先观察77168完整契约修正与68647独立黑盒真实性修正；57105已完成有界报告；不重复启动仍存活进程；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
+1. t003已start并claim，先观察48410 UDS/E2E、49643搜索初始化与68647独立黑盒真实性修正；Root核心已验证但整体尚未freeze；57105已完成有界报告；不重复启动仍存活进程；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
 2. 复核SDK真实进程退出观测、统一只读Linux引擎cache及Mac bind-root UID权限、完整Chrome UI/DPR1、UDS安全边界、下载覆盖恢复ACK及持久事件；未知外部契约须实证，不把原型或容器alive当正式AC通过。
 3. 独立黑盒后完整code/test七视角审查，使用对应report/scratch权限白名单和交付哈希监视；一个执行commit、exact cleanup、已获授权的本地main集成，不push。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
