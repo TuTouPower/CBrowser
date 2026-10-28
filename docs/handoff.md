@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T10:05:10+08:00 v2 架构计划执行交接
+## 2026-10-28T10:12:46+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：ac85b8c（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：650e8ae（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
@@ -39,7 +39,7 @@
 - t003当前唯一实施进程77168/PID44278，fresh OpenCode Gemini session=ses_e7fbd2a96ffeyMAddPaIRGbucs，日志t003_fresh_runtime_correction.jsonl。前任86758/PID43700因再次执行旧镜像默认entrypoint探针被主控SIGINT（-2），旧进程已终止；临时匿名容器7c2cbf1b3e17核实仅匿名卷、无hostbind/portbindings后exactstop，后续inspect确认已自动删除，正式cbrowser healthy。新子进程权限明确拒绝旧镜像命令与prune/Git回退，未改全局配置。
 - 60738作者17单元与6个Docker测试函数通过，但主控逐行发现缺多Profile真实音频/XShm、健康负例、外部下载覆盖真实生效、Chrome异常退出等关键步骤；窗口高度断言改成root屏幕几何亦不足以证明Chrome窗口。候选被拒，6AC恢复未勾，正式Verify0/review0，不commit/finish。
 - 之前实现83192因旧镜像默认entrypoint探针错误被Root主动SIGINT（-2），仅其新临时容器按ID停止，正式cbrowser保持healthy；83130因创建worktree外契约TMPDIR获权限拒绝后自然terminal0，公共跨目录契约测试改由Root执行，本登记worktree169 PASS（root_contract_gate.log）；61864因已确认的路径/进程/SDK语义偏差主动SIGINT（-2），保留草稿后同session恢复74490。上述均未重置attempt/轮次，正式Verify尚未开始。
-- 独立验收位于.scratch/v2_orchestration/t003_validation（spike/t003_validation），session=ses_e810ce64effe5r9OxcJOiLo6Rz。UDS实验已完成；45609在主控提供哈希副本后terminal0/持久finishstop，声称FULL_HARNESS_IMPLEMENTED，但实际六函数缺大量主体（包括未启动B、无PCM、手动rearm冒充自动、未测SIGKILL），主控拒绝该声明。真实状态PARTIAL_BODIES，不计正式验收；当前87163/PID43780补齐实际函数体，日志t003_blackbox_missing_bodies.jsonl。早期跨目录读取权限拒绝记录保留，未改全局权限。
+- 独立验收位于.scratch/v2_orchestration/t003_validation（spike/t003_validation），session=ses_e810ce64effe5r9OxcJOiLo6Rz。UDS实验已完成；45609在主控提供哈希副本后terminal0/持久finishstop，声称FULL_HARNESS_IMPLEMENTED，但实际六函数缺大量主体（包括未启动B、无PCM、手动rearm冒充自动、未测SIGKILL），主控拒绝该声明。真实状态PARTIAL_BODIES，不计正式验收；87163已terminal0/持久finishstop，虽新增真实A/B音频和若干用例，仍将无socket容器内xwininfo失败错误宣称XShmAttach BadAccess，主控再次拒绝完整覆盖声明。当前fresh独立Gemini进程68647/PID45544、session=ses_e7fb8651bffe6Xm7yXVHRAeDHp补齐实际IPC成功/拒绝探针与所有剩余body，日志t003_blackbox_soundness.jsonl；状态仍PARTIAL_BODIES，未执行正式六AC。早期跨目录读取权限拒绝记录保留，未改全局权限。
 - 独立SDK机制研究session=ses_e810542c9ffeEj0GHmgVLeriFQ（同t003_validation的独占.scratch/t003_sdk_exit），78283首稿与29822严谨版均已terminal0/持久finishstop。主控独立重跑冻结原版和格式化正式代码，五项严格检查均exit0；仅headless机制实验，不是正式镜像/六AC。已在t003登记worktree通过脚本创建d016和s010并归档：docs/archive/spikes/s010_cloakbrowser_exit_observation/，code SHA=ef1bee2847c96e30ff4542ddf3f888bce332c414774086a08a272462dda36d5c；暂未合入main。
 - d016关键实证：真实Chrome正常关闭raw0、SIGKILL raw-9/规范化137可观测；仅杀SDK Python owner时，Chrome因pipe EOF在0.5秒内以0退出，清理前5秒记录保持。因此UDS Agent与SDK owner/Chrome监控生命周期必须分离，不能据Chrome0单独清running意愿。未证明全部代理/扩展/DRM/humanize等价，原型状态没有fsync，不当生产持久化。正式源码与Root输出已复制到实现worktree .scratch/t003_implementation/peer_sdk_exit_v2/供消费。
 - s010归档首次write因新目录未入Git索引而git mv报empty；核对源完整/目标不存在后只对本spike/finding git add -N，再用原归档命令成功，源码哈希不变；未改模板或手动搬运。原始工具失败、旧过度声明和宽泛负例判据均保留于scratch，不冒充通过。
@@ -83,7 +83,7 @@
 
 ### 下一步与边界
 
-1. t003已start并claim，先观察77168完整契约修正与87163黑盒缺失主体实作；57105已完成有界报告；不重复启动仍存活进程；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
+1. t003已start并claim，先观察77168完整契约修正与68647独立黑盒真实性修正；57105已完成有界报告；不重复启动仍存活进程；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
 2. 复核SDK真实进程退出观测、统一只读Linux引擎cache及Mac bind-root UID权限、完整Chrome UI/DPR1、UDS安全边界、下载覆盖恢复ACK及持久事件；未知外部契约须实证，不把原型或容器alive当正式AC通过。
 3. 独立黑盒后完整code/test七视角审查，使用对应report/scratch权限白名单和交付哈希监视；一个执行commit、exact cleanup、已获授权的本地main集成，不push。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
