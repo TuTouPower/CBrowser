@@ -4,7 +4,7 @@
 
 |slug|task 清单|最后更新时间|
 |---|---|---|
-|browser_isolation|baseline|2026-10-26|
+|browser_isolation|baseline, t003|2026-10-28T17:06:00+08:00|
 |webrtc_remote_display|baseline|2026-10-26|
 |chrome_external_tabs|baseline|2026-10-26|
 |storage_and_artifacts|baseline|2026-10-26|

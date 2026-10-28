@@ -43,22 +43,25 @@ command -v md_kx
 
 ```bash
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
-export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
 PYTHONPATH=src uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with "cloakbrowser>=0.6.3" pytest src/backend/tests -q
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/unit -q
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser pytest tests/unit -q
 ```
 
 ## blackbox_verify
 
-真实 v2 API 黑盒通过独立 uvicorn 进程、临时 SQLite、HTTP 重启/并发/锁竞争与导出 JSON schema 验证；随后检查既有服务存活与任务控制面。集成测试与 test_cmd 单元测试分开运行。
+真实 v2 API 黑盒通过独立 uvicorn 进程、临时 SQLite、HTTP 重启/并发/锁竞争与导出 JSON schema 验证；Browser Runtime 使用构建后的不可变镜像及已初始化只读 Linux 引擎缓存执行真实容器 E2E。最后检查既有服务与任务控制面。运行前按 docs/guides/browser_runtime_validation.md 设置镜像与缓存环境变量，禁止使用旧镜像加源码覆盖冒充完整镜像验证。
 
 ```bash
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
-export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/integration -q
+: "${CBROWSER_RUNTIME_TEST_IMAGE:?Provide an immutable built runtime image ID}"
+: "${CBROWSER_RUNTIME_ENGINE_CACHE:?Provide an initialized Linux engine cache path}"
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
 curl -sf http://127.0.0.1:56661/api/health
 uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status
