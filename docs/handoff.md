@@ -2,23 +2,24 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T12:15:20+08:00 v2 架构计划执行交接
+## 2026-10-28T17:07:52+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：8c9b5d6（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：c92f686（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
 
-- t001、t002 已集成；t003 仍 active，登记 worktree `/Users/karson/kar/code/CBrowser_t003`，branch `t003_v2_browser_runtime`，base `226c8453097fb982835ccb254cea8a3f26d131b3`，attempt=1，execution_id=`57e21d93a87e4ab1baf4f96f652bca99`，owner_id=`root_v2_20261027`。不重复 start/reserve。无执行 commit、无 finish，六项 AC 均未勾选，正式 Verify/review 均为0。
-- 实施进程48410、49643以及独立量具77115、预审4535、t004准备74019均已退出；本轮进程清单确认无存活 OpenCode writer。当前 t003 生产文件由 Root 独占维护。t004 仅完成只读准备，未开工。
-- 最新完整单元测试71 PASS，日志 `CBrowser_t003/.scratch/t003_root_checks/instance_and_supervision_units.log`。新增实例独立状态 journal 与终态恢复，防止迟到旧代状态覆盖当前代；目录创建和文件替换均严格 fsync，错误不吞。UDS 预绑定后设置0660再监听；Runner 收到停止信号正常关闭 SDK 浏览器。
-- Google 默认搜索已接入真实 Runner；之前5项 Docker 实测通过（含用户 Bing 选择跨实例保留及真实 PID/starttime 不变），日志 `profile_defaults_root_wiring.log`。该结果早于最新实例 journal，须在当前镜像复验，不等同最终六 AC。
-- 真实 headful 三种退出观测已通过：正常0、Chrome SIGKILL137、SDK driver 丢失导致 Chrome0但上报 lifecycle/error。日志 `runner_lifecycle/*_r2.log`，范围受该次源码 manifest 限定。
-- 诊断镜像01已构建：`sha256:8ba3c99e8258d825b8485a5a9fade3c2cd753fdf165c3d93c4d8a0462a569200`。02正在构建，包含当前实例 journal、Google wiring 与 Playwright1.64.1；构建目录 `.scratch/t003_root_checks/diagnostic_build_02/`，工具 session9024。均非最终验收冻结版本。
-- 下一步：确认02构建结果，执行完整镜像真实 Docker 六 AC 与 Google5项；处理实际失败，再冻结最终源码/镜像交给独立黑盒与 canonical full review。量具已移除旧镜像源码覆盖与手工启动重复 Agent，下载/IPC/音频安全仍须实际验证。阶段完成即更新 handoff。
-- 预审发现须区分生产缺陷与缺失快照：审查副本遗漏正式 C fixture 不证明生产 Dockerfile 缺文件；entrypoint 已 export 实例身份，不能按未 export 判定。测试相对工程根路径按既定项目执行方式通过；独立验证脚本应在其完整源码根运行。预审不替代最终 full review。
+- t001、t002 已集成；t003 active，worktree `/Users/karson/kar/code/CBrowser_t003`、branch `t003_v2_browser_runtime`、base `226c8453097fb982835ccb254cea8a3f26d131b3`，attempt=1，execution_id=`57e21d93a87e4ab1baf4f96f652bca99`，owner_id=`root_v2_20261027`。不重复 start/reserve。尚无执行 commit/finish。
+- 完整镜像03已构建：`sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346`，Linux arm64；构建 manifest 在 t003/.scratch/t003_root_checks/diagnostic_build_03/。使用完整源码构建，无宿主源码覆盖。
+- 项目 doctor/test/blackbox 声明命令 exit0：169 contract、384 旧后端、71 当前单元、9真实 HTTP 集成、13 Runtime Docker E2E（含8核心/异常生命周期和5搜索初始化）。日志 project_doctor_test_03.log、project_blackbox_03_final.log。旧服务健康ok；task工作副本 repo_sync 未初始化，不计配置成功。
+- 真实Chrome正常0、SIGKILL137、SDK driver 丢失导致Chrome0但生命周期error均覆盖；Agent运行中/终态SIGKILL由supervisord自动恢复，真实Chrome PID/starttime与页面保持、稳定事件ID跨重启不变。XShm同IPC成功/跨IPC BadAccess、不同UID错误Pulse凭据拒绝都有实际容器对照。
+- 02镜像启动失败归因为Bash重复身份正则拒绝合法ID；已统一由Python在目录创建前校验，03通过。下载量具原按列表首条误取begin，修为按GUID匹配completed并核验物理文件/字节数，失败原日志保留。未弱化为in_progress通过。
+- 新独立Gemini E2E作者78953/PID63927已持久finishstop并自然退出0；定向4项65.12秒PASS，当前所有生产writer已退出。六项AC由Root完整门禁暂勾，待full reviewer独立复核。
+- 独立初次诊断6项PASS/144.36秒；Root发现其几何范围及顺序杀子系统量具不足，不当正式Verify通过。正式Verify Round1已派发12497/PID86091，同session ses_e7fb8651bffe6Xm7yXVHRAeDHp，要求实际Chrome窗口1920×1080、三故障各自全新实例、Mac宿主真实CDP负例；日志t003_independent_formal_round1.jsonl。
+- Canonical full Round1 code/test 两路已派发：29810/PID87133、82820/PID87148；各自仅报告/专属scratch写权，全部交付SHA guard冻结。先观察进程/持久会话，不重复启动。task目录review_code.md/review_test.md为正式报告权威，preaudit不替代。
+- 下一步：处理formal黑盒及full review真实finding，重跑受影响门禁后完成handoff.json/finish/单执行commit/exact cleanup/已授权本地main集成。不push、不部署、不动正式用户数据。t004只读准备已完成但未start。
 
 ### 最新用户决定
 
