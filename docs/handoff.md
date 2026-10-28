@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T18:41:58+08:00 v2 架构计划执行交接
+## 2026-10-28T18:52:53+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：62413fe（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：202877d（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
@@ -19,6 +19,7 @@
 - t004主体当前唯一实现进程99316/PID872，OpenCode session=ses_e7dfee378ffeyRFj6tt50WDSqi，日志t004_implementation_real_media_fresh.jsonl；拥有Stream主体/镜像/协议/新媒体测试，不碰Root既有Runtime音频测试及ICE helper。原83636/PID95869已terminal0但草稿缺真实SDK服务/桥接，被拒；续行91724/PID99324遭provider HTTP400 INVALID_ARGUMENT后terminal1，保留日志，新会话仍用指定Gemini模型，未修改全局配置。当前源仍在变化，不能据初稿单元声称媒体通过。
 - ICE原作者27506/PID95881已terminal0，Root接管ice_transport.py及其测试。错误URI回显私密值先2FAIL后修复，9单元PASS；真实SDK连续3次relay准备失败原先socket4→7且旧monitor被取消，修复后direct/sharedUDPmux两路均socket4→4、旧monitor保留、旧DataChannel可传输，随后同PC/DTLS/DataChannel正常重启至generation2。证据t004/.scratch/t004_root_checks/ice\_{error_privacy\_*,failure_real\_*,recovery_direct,recovery_mux}.log。诊断采用固定SDK镜像+明确helper挂载，尚不算完整Stream镜像或三代TURN媒体通过。新增正式fixture及E2E等待最终完整镜像复跑；5个Root所属ICE文件Ruff E/F/W/I、format通过。
 - 独立验证worktree main/.scratch/v2_orchestration/t004_validation（spike/t004_validation），原6677/PID97202及续行86431/PID2968均已terminal0；后者持久JSONL含finish=stop，包装器CLI自然退出观测race标durable_finished=false，原始记录保留。独立校准音频工具正例440/880Hz、错频/错采样/缺失/空文件拒绝，并在全新独立cwd重放真实双Profile音频+Cookie重建AC001：1PASS/7deselected23.29秒，日志candidate_ac001_85395414.log。SHA已在报告记录；该证明只闭环共享fixture可移植性，不代指t004媒体。六AC量具仍PENDING_PRODUCER_BINDING，准备阶段原夸大结论已要求限定。
+- ICE独立诊断65674/PID7490（session ses_e7de48ea8ffeQsJD02hDearHrX）已terminal0，确认pending关闭仅关新连接，以及真实TURN分配超时/取消泄漏。Root正式新增pending-close与TURN-timeout/cancel fixture，修复active连接清理及固定SDK TURN分配取消清理、gather drain。只读UID1000诊断direct/mux关闭后socket2→2；四种TURN失败/取消socket5→5且旧通道/monitor存活。9单元+8真实Docker正式测试入口全部PASS47.53秒，镜像sha256:8df3f4e20625d244556747ac33b22fb77be760eb4ffe26b9bfd819526b0aa8bd（集成package诊断镜像，非最终可复现Stream交付/媒体六AC）。日志t004/.scratch/t004_root_checks/ice_integrated_17_tests.log，首次失败及局部修复未完全解决cancel的日志均保留。独立新绿复验61854/PID9847仍在运行，只读该镜像与自身fixture；原审计报告nonroot宣称因原命令缺--user已要求勘误，新复验显式UID1000。TURN三代媒体尚未执行。
 - t004当前六AC未勾、正式Verify/review均0；下一步先观察以上进程/持久会话，不重复start/reserve。源接口及整镜像冻结后才派正式独立验收/full review，一个执行commit、exact cleanup、链尾主干验证，禁止push/正式部署。
 - 测试引擎缓存已保存在main/.scratch/v2_orchestration/t003_engine_cache，671文件SHA逐一相等；t003原始证据备份t003_evidence_before_cleanup.tar.gz，444文件、0600、SHA256=908d0ac8ff9d206d810eab594a44ebc3504ce35a015f0c6bb74897600003f86d。验证worktree和日志仍在，不依赖已删除t003worktree。
 - 后续必须闭环：t005只读引擎缓存初始化同时准备所需GeoIP资产，lifecycle/error不得清running意愿；t012统一Runner/Agent CLI日志ISO8601带时区格式（当前logging asctime仍旧格式，记录待修，不据此停媒体实施）。后续P95/8h/1000输入性能验收仍必做，未新增豁免。
