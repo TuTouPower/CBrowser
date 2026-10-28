@@ -11,6 +11,10 @@
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
 
+- **2026-10-29T04:41:27+08:00 中文定位与整链诊断阶段完成**：旧core Binding候选整镜像42bd99381efe...，45单元PASS；当前v2 wire真实Chrome整体仍FAIL34.77秒在中文，Linux平台新鲜Profile对照也FAIL34.74秒，Trixie同业务源镜像076d90... FAIL43.59秒，故未修改Browser03/隐私平台。Root直接读服务端XKB已更新而活跃Chrome仍按旧映射；单纯XkbSetMap不生效，xkbcomp重新加载完整相同map后收到正确可信中文输入。Root诊断Stream镜像8fd4318299b5...仅增加x11-xkb-utils与Native prebind映射更新通知，真实双Chrome完整 **1PASS42.46秒**：两页中文composition/official co,end、X11剪贴板哨兵不变、刷新ID稳定且另一页同PC音视频增长、独立静音/关闭、生存页输入与Browser PID/start_ticks不变。证据t004/.scratch/t004_root_checks/ime_reload_complete_proof/与ime_reload_media_round1.log。不是六AC完整通过，尚无最终源镜像/正式review。
+
+- Root正将Native映射刷新收进stream_agent/x11_keymap.py：固定SDK ABI、仅新overlay时使用有界xkbcomp双子进程，不记录map或中文，不使用剪贴板/DOM插入；生产Docker仅增x11-xkb-utils。未改Browser Runtime生产源。正式候选镜像keymap构建/实测待完成。旧独立IME43440与base52217因实验已超原时间范围由Root核PID argv后SIGINT，进程均已结束，非正常完整报告；原JSONL与全部失败保留。诊断容器291e72cf15d3当前由Root接管作最后XKB对照，后续仅exact cleanup；不再按下文旧running叙述重复启动。
+
 - **最新完成阶段：t004身份/回收修复**。transport98387/PID45726已terminal0，交付候选整镜像c27b18ce9352...；Root接管全部生产源。Root另发现四项真实回归：空session被接受、tab/resume任一匹配误绑、旧SDK映射残留可删替代viewer、stop未等待worker/reader finalizer。新增测试4FAIL后逐项修复，增加无注册拒绝control；当前相关六组单元 **45PASS1.28秒**，日志t004/.scratch/t004_root_checks/stream_unit_binding_round{1,2}.log，第一轮两项旧草稿缺必填runtime_instance_id已补合法输入、原断言保留。去除PC别名猜测；连接任务登记Native tasks以随服务shutdown取消/等待。源已变化，c27b镜像不代表最新修复，须重建后实际Chrome复验；六AC仍全未勾，正式Verify/review仍0。
 
 - **私有bridge媒体阶段部分实证**：Stream已改独立bridge、仅localhost发布30096/UDP；Native HTTP只在容器loopback，测试fixture用限定Docker exec取静态资源（非生产Gateway实现）。真实inspect确认UID1000/只读根/cap-drop ALL/独立PID、共享指定Browser IPC，仅XSocket/Xauthority/Pulse/secret挂载，无userdata/agent.sock/Docker socket。双页视频8→63帧、音频44265→143157字节且能量增长；整体测试仍在中文处FAIL33.98秒，不计PASS。证据t004/.scratch/t004_root_checks/private_bridge_media_proof.json及media_private_bridge_round1.log。修复fixture关闭WebSocket顺序，排除原60秒cleanup等待，旧耗时不作首帧性能值。
