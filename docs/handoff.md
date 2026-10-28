@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T03:24:34+08:00 v2 架构计划执行交接
+## 2026-10-29T03:48:56+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：dad2197（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：30d3abc（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
@@ -24,6 +24,9 @@
 - Root修复Web Locks同文档并发HELLO竞态：先真实Chrome同步发送两注册触发Timeout FAIL，再共享pending acquisition修复；原始HELLO保持逐字转发，复制文档只重映射自身ID，不踢原页面，重载保留ID。移除生产shim中测试专用PC/audio挂钩与无界日志。真实Chrome回归PASS，源/测试Ruff通过；它仍是身份机制测试，不代指媒体六AC。媒体E2E下一步补真实远端Canvas/WebAudio、严格帧和音频能量增长、刷新/关闭、原生IME及隔离。
 - Root首次严格真实音视频阶段PASS76.63秒：新远端Canvas/WebAudio页面，双Google Chrome视频8→66/1→58帧（测量窗口2秒）、接收音频字节45249→144141/16725→116109且能量持续增加；首页面静音/关闭后另页149帧、音频264691字节且能量继续。Browser03与不可变Stream初版镜像477c51b32d35...（非新transport/policy最终交付）运行，无mock媒体。保存media_audio_first\_{source.py,proof.json,manifest.json,real.log}，不依赖轮转pytest tmp。该阶段只证明音视频/静音/关闭，尚不覆盖完整AC001输入/刷新、AC003策略或AC004 Chrome三代relay。
 - policy首轮84524/PID35471已terminal0，19单元PASS；所谓Native检查仅构造真实SDK类、rtc_app=None，无真正pipeline/callback/FPS实证，Root已要求勘误。续行75821/PID40377/session仍ses_e7c17b3f2ffeWwUZC2iyPTuv4z，独占policy写域，使用18361/30361独立端口补实际XShm capture。Root媒体保留18096/18097/30096。Root当前7028在跑扩展媒体测试：真实双页键盘/中文组合、X11剪贴板哨兵、刷新与生存页输入，尚未判定通过。transport84130/PID35472继续。
+- Root扩展中文IME实测仍FAIL：两页物理数字输入分别/交错到同一DOM均通过；原生可信compositionstart/textInput、官方co,end,中文均存在，但远端DOM为空。补外部激活/焦点和0.2秒预编辑停顿仍FAIL80.84秒；增加远端原生事件观测后看到pinyin/Backspace，再收到NUL key的F24/IntlRo，定位至X11 Unicode键映射/浏览器解释边界。未用粘贴或写DOM中文绕过。原始失败及定向复跑76.29秒均保留，ime_round2/备份不依赖tmp轮转。独立23802/PID43440在验证worktree仅.scratch/t004_ime_audit定位；Root已补NUL事件证据与Windows指纹平台/文字spare keycode差异假说，尚未定根因。
+- policy75821/PID40377已terminal0；policy SHA e356e43f9c09b1daaaa8026e7560ec508b81d5f0a4b52d1483033d97897361a5，20单元与Ruff通过。实际原生capture机制probe使用旧spike Browser/Stream+自身测试控制UDS（不算Browser03默认生产入口/认证全链路）：静止damage0且配置8、持续motion检测后原生配置30、后台不降前台、cap15解除回30、全隐藏capture=False且计数停止、恢复set8先于resume。30为原生配置值，未据此声称Chrome实际30FPS或P95。报告勘误初轮rtc_app=None已记录。Root接管policy所有权，最终完整镜像与Chrome仍需复验。
+- transport84130/PID35472已terminal0，public Python/Debian镜像556ef91da0a1aa0b2870e90f956362b50d860855ae3c3bf9cddc1a3a994f2068构建、29单元及缺Socket拒绝/UID1000 import通过；Root发现wire Pydantic未接入、可缺identity/version、SDK ws对象比较无效且sole-peer fallback可能误选、旧worker reader仍发close、Gateway失联留visibility、instance默认随机等未闭环点，不能收尾。续行98387/PID45726同session ses_e7c17b3f5ffe1McuB8n4ncIdu0修实际绑定/严格wire/真实WS回归及白名单构建上下文；不修改Root政策/IME/ICE文件。
 - t004当前六AC未勾、正式Verify/review均0；下一步先观察以上进程/持久会话，不重复start/reserve。源接口及整镜像冻结后才派正式独立验收/full review，一个执行commit、exact cleanup、链尾主干验证，禁止push/正式部署。
 - 测试引擎缓存已保存在main/.scratch/v2_orchestration/t003_engine_cache，671文件SHA逐一相等；t003原始证据备份t003_evidence_before_cleanup.tar.gz，444文件、0600、SHA256=908d0ac8ff9d206d810eab594a44ebc3504ce35a015f0c6bb74897600003f86d。验证worktree和日志仍在，不依赖已删除t003worktree。
 - 后续必须闭环：t005只读引擎缓存初始化同时准备所需GeoIP资产，lifecycle/error不得清running意愿；t012统一Runner/Agent CLI日志ISO8601带时区格式（当前logging asctime仍旧格式，记录待修，不据此停媒体实施）。后续P95/8h/1000输入性能验收仍必做，未新增豁免。
