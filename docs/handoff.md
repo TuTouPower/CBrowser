@@ -2,33 +2,57 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T03:48:56+08:00 v2 架构计划执行交接
+## 2026-10-29T04:32:39+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：30d3abc（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：285ca3c（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
 
+- **最新完成阶段：t004身份/回收修复**。transport98387/PID45726已terminal0，交付候选整镜像c27b18ce9352...；Root接管全部生产源。Root另发现四项真实回归：空session被接受、tab/resume任一匹配误绑、旧SDK映射残留可删替代viewer、stop未等待worker/reader finalizer。新增测试4FAIL后逐项修复，增加无注册拒绝control；当前相关六组单元 **45PASS1.28秒**，日志t004/.scratch/t004_root_checks/stream_unit_binding_round{1,2}.log，第一轮两项旧草稿缺必填runtime_instance_id已补合法输入、原断言保留。去除PC别名猜测；连接任务登记Native tasks以随服务shutdown取消/等待。源已变化，c27b镜像不代表最新修复，须重建后实际Chrome复验；六AC仍全未勾，正式Verify/review仍0。
+
+- **私有bridge媒体阶段部分实证**：Stream已改独立bridge、仅localhost发布30096/UDP；Native HTTP只在容器loopback，测试fixture用限定Docker exec取静态资源（非生产Gateway实现）。真实inspect确认UID1000/只读根/cap-drop ALL/独立PID、共享指定Browser IPC，仅XSocket/Xauthority/Pulse/secret挂载，无userdata/agent.sock/Docker socket。双页视频8→63帧、音频44265→143157字节且能量增长；整体测试仍在中文处FAIL33.98秒，不计PASS。证据t004/.scratch/t004_root_checks/private_bridge_media_proof.json及media_private_bridge_round1.log。修复fixture关闭WebSocket顺序，排除原60秒cleanup等待，旧耗时不作首帧性能值。
+
+- 中文定位：Root低spare/小fingerprint seed诊断均FAIL，未采纳生产修改；Linux平台诊断因自有复用Profile遗留SingletonLock启动失败，无有效中文结论，未改隐私平台。独立IME23802/PID43440仍仅validation/.scratch/t004_ime_audit实验；新base37807/PID52217仅t004/.scratch/t004_base_diagnostic比较Bookworm/Trixie XKB栈（同引擎/包/业务源），尚无定根因/通过报告。恢复先核进程与JSONL，不重复启动、不把诊断当六AC通过。
+
 - **main 仍仅业务集成 t001/t002**。t003 执行 commit 为 8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6，branch=t003_v2_browser_runtime；已done/terminal completed/report done/exact cleanup，分支保留，尚未集成。原执行attempt1/execution57e21d93a87e4ab1baf4f96f652bca99/ownerroot_v2_20261027，不重复执行。
+
 - t003完整镜像03：sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346，arm64。独立正式VerifyRound2六项PASS178.67秒；Full Round2 code/test PASS，scope=e934e9a6bcba7ff4，零finding、报告勘误保留。各reviewer独立80单元/HTTP通过。Root Mac宿主HTTP正例/CDP errno61拒绝/容器内正例+loopback监听通过。
+
 - **t003合并后验证失败并已撤销合并**：doctor exit0；168 contract+1原有条件skip、384旧后端、71单元、9HTTP通过；Runtime E2E为1FAIL12PASS。唯一失败：tests/e2e/test_browser_runtime_e2e.py引用未入库.scratch/t003_implementation/audio_tools/audio_analyzer.py，原worktree现场掩盖依赖，清理后暴露。失败原日志.scratch/t003_integration_gates/declared_gates.log/result.json保留；main无pending merge，不恢复临时脚本伪造通过。
+
 - **当前t004 active**：worktree /Users/karson/kar/code/CBrowser_t004，branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6；attempt1，execution_id=c738656d4a2144cc9643f66c1b4831e9，owner_id=root_v2_t004_20261028，已reserve/claim，strict preflight PASS。固定队列未增加成员；按task-run后继以已完成前一分支为base，计划t003→t004链尾一起验收集成，保留t003历史。
+
 - Root已在t004补正式共享tests/fixtures/runtime_probe/audio_analyzer.py（复用已验证s007算法），原Runtime E2E按文件定位并用sys.executable，不再引用历史scratch。全新worktree无audio_tools目录下，13项真实Runtime E2E全部PASS161.53秒；Ruff E/F/W/I和format通过，最后只做AST等价字符串换行。未提交，归入t004单次执行commit。证据t004/.scratch/t004_root_checks/runtime_clean_fixture_e2e.log/provenance；源归档未修改。
+
 - t004首轮主体99316/PID872已terminal0且持久finish=stop；最后实际Chrome双页固定1920×1080视频解码PASS73.04秒，但audio=None、帧增长断言仅>=，不当完整媒体通过。Root已接管client_shim.py与媒体E2E；当前两名指定模型新会话并行且写域不重叠：transport84130/PID35472/session ses_e7c17b3f5ffe1McuB8n4ncIdu0仅Agent/config/protocol/boundary/Docker/schema及新严格测试；policy84524/PID35471/session ses_e7c17b3f2ffeWwUZC2iyPTuv4z仅policy.py/新策略测试。两者legacy Runtime/API/domain/compose有SHA guard，Root ICE/媒体/shim测试不归作者。当前主体仍需认证消息绑定、真正可复现镜像和完整捕获/输入实证。旧provider400及草稿失败日志保留，未修改全局配置。
+
 - ICE原作者27506/PID95881已terminal0，Root接管ice_transport.py及其测试。错误URI回显私密值先2FAIL后修复，9单元PASS；真实SDK连续3次relay准备失败原先socket4→7且旧monitor被取消，修复后direct/sharedUDPmux两路均socket4→4、旧monitor保留、旧DataChannel可传输，随后同PC/DTLS/DataChannel正常重启至generation2。证据t004/.scratch/t004_root_checks/ice\_{error_privacy\_*,failure_real\_*,recovery_direct,recovery_mux}.log。诊断采用固定SDK镜像+明确helper挂载，尚不算完整Stream镜像或三代TURN媒体通过。新增正式fixture及E2E等待最终完整镜像复跑；5个Root所属ICE文件Ruff E/F/W/I、format通过。
+
 - 独立验证worktree main/.scratch/v2_orchestration/t004_validation（spike/t004_validation），原6677/PID97202及续行86431/PID2968均已terminal0；后者持久JSONL含finish=stop，包装器CLI自然退出观测race标durable_finished=false，原始记录保留。独立校准音频工具正例440/880Hz、错频/错采样/缺失/空文件拒绝，并在全新独立cwd重放真实双Profile音频+Cookie重建AC001：1PASS/7deselected23.29秒，日志candidate_ac001_85395414.log。SHA已在报告记录；该证明只闭环共享fixture可移植性，不代指t004媒体。六AC量具仍PENDING_PRODUCER_BINDING，准备阶段原夸大结论已要求限定。
+
 - ICE独立诊断65674/PID7490（session ses_e7de48ea8ffeQsJD02hDearHrX）已terminal0，确认pending关闭仅关新连接，以及真实TURN分配超时/取消泄漏。Root正式新增pending-close与TURN-timeout/cancel fixture，修复active连接清理及固定SDK TURN分配取消清理、gather drain。只读UID1000诊断direct/mux关闭后socket2→2；四种TURN失败/取消socket5→5且旧通道/monitor存活。9单元+8真实Docker正式测试入口全部PASS47.53秒，镜像sha256:8df3f4e20625d244556747ac33b22fb77be760eb4ffe26b9bfd819526b0aa8bd（集成package诊断镜像，非最终可复现Stream交付/媒体六AC）。日志t004/.scratch/t004_root_checks/ice_integrated_17_tests.log，首次失败及局部修复未完全解决cancel的日志均保留。独立新绿复验61854/PID9847已terminal0/持久finish=stop：UID/GID1000、镜像内helper SHA一致，direct关闭回基线2、mux附件0且关后回基线2、TURN失败/取消增量0且旧通道继续；原报告nonroot错误已勘误。TURN三代真实Chrome音视频仍未执行。
+
 - Root补真实三代TURN机制：UID1000只读cap-drop全禁的两Selkies原生PC/DataChannel，经本地隔离coturn完成relay generations2/3/4；每代server/client不同HMAC凭证及relay端口、同PC/DTLS/DataChannel/mux、旧send拒绝。初次coturn禁全部cap导致二进制exec EPERM，证据保留；只对coturn加入NET_BIND_SERVICE后实际通过（本地镜像4.18.0），不代表正式依赖版本或Chrome媒体通过。正式新增fixture/E2E后与Chrome身份并发回归合跑2PASS3.98秒，日志client_identity_and_relay_formal.log。
+
 - Root修复Web Locks同文档并发HELLO竞态：先真实Chrome同步发送两注册触发Timeout FAIL，再共享pending acquisition修复；原始HELLO保持逐字转发，复制文档只重映射自身ID，不踢原页面，重载保留ID。移除生产shim中测试专用PC/audio挂钩与无界日志。真实Chrome回归PASS，源/测试Ruff通过；它仍是身份机制测试，不代指媒体六AC。媒体E2E下一步补真实远端Canvas/WebAudio、严格帧和音频能量增长、刷新/关闭、原生IME及隔离。
+
 - Root首次严格真实音视频阶段PASS76.63秒：新远端Canvas/WebAudio页面，双Google Chrome视频8→66/1→58帧（测量窗口2秒）、接收音频字节45249→144141/16725→116109且能量持续增加；首页面静音/关闭后另页149帧、音频264691字节且能量继续。Browser03与不可变Stream初版镜像477c51b32d35...（非新transport/policy最终交付）运行，无mock媒体。保存media_audio_first\_{source.py,proof.json,manifest.json,real.log}，不依赖轮转pytest tmp。该阶段只证明音视频/静音/关闭，尚不覆盖完整AC001输入/刷新、AC003策略或AC004 Chrome三代relay。
+
 - policy首轮84524/PID35471已terminal0，19单元PASS；所谓Native检查仅构造真实SDK类、rtc_app=None，无真正pipeline/callback/FPS实证，Root已要求勘误。续行75821/PID40377/session仍ses_e7c17b3f2ffeWwUZC2iyPTuv4z，独占policy写域，使用18361/30361独立端口补实际XShm capture。Root媒体保留18096/18097/30096。Root当前7028在跑扩展媒体测试：真实双页键盘/中文组合、X11剪贴板哨兵、刷新与生存页输入，尚未判定通过。transport84130/PID35472继续。
+
 - Root扩展中文IME实测仍FAIL：两页物理数字输入分别/交错到同一DOM均通过；原生可信compositionstart/textInput、官方co,end,中文均存在，但远端DOM为空。补外部激活/焦点和0.2秒预编辑停顿仍FAIL80.84秒；增加远端原生事件观测后看到pinyin/Backspace，再收到NUL key的F24/IntlRo，定位至X11 Unicode键映射/浏览器解释边界。未用粘贴或写DOM中文绕过。原始失败及定向复跑76.29秒均保留，ime_round2/备份不依赖tmp轮转。独立23802/PID43440在验证worktree仅.scratch/t004_ime_audit定位；Root已补NUL事件证据与Windows指纹平台/文字spare keycode差异假说，尚未定根因。
+
 - policy75821/PID40377已terminal0；policy SHA e356e43f9c09b1daaaa8026e7560ec508b81d5f0a4b52d1483033d97897361a5，20单元与Ruff通过。实际原生capture机制probe使用旧spike Browser/Stream+自身测试控制UDS（不算Browser03默认生产入口/认证全链路）：静止damage0且配置8、持续motion检测后原生配置30、后台不降前台、cap15解除回30、全隐藏capture=False且计数停止、恢复set8先于resume。30为原生配置值，未据此声称Chrome实际30FPS或P95。报告勘误初轮rtc_app=None已记录。Root接管policy所有权，最终完整镜像与Chrome仍需复验。
+
 - transport84130/PID35472已terminal0，public Python/Debian镜像556ef91da0a1aa0b2870e90f956362b50d860855ae3c3bf9cddc1a3a994f2068构建、29单元及缺Socket拒绝/UID1000 import通过；Root发现wire Pydantic未接入、可缺identity/version、SDK ws对象比较无效且sole-peer fallback可能误选、旧worker reader仍发close、Gateway失联留visibility、instance默认随机等未闭环点，不能收尾。续行98387/PID45726同session ses_e7c17b3f5ffe1McuB8n4ncIdu0修实际绑定/严格wire/真实WS回归及白名单构建上下文；不修改Root政策/IME/ICE文件。
+
 - t004当前六AC未勾、正式Verify/review均0；下一步先观察以上进程/持久会话，不重复start/reserve。源接口及整镜像冻结后才派正式独立验收/full review，一个执行commit、exact cleanup、链尾主干验证，禁止push/正式部署。
+
 - 测试引擎缓存已保存在main/.scratch/v2_orchestration/t003_engine_cache，671文件SHA逐一相等；t003原始证据备份t003_evidence_before_cleanup.tar.gz，444文件、0600、SHA256=908d0ac8ff9d206d810eab594a44ebc3504ce35a015f0c6bb74897600003f86d。验证worktree和日志仍在，不依赖已删除t003worktree。
+
 - 后续必须闭环：t005只读引擎缓存初始化同时准备所需GeoIP资产，lifecycle/error不得清running意愿；t012统一Runner/Agent CLI日志ISO8601带时区格式（当前logging asctime仍旧格式，记录待修，不据此停媒体实施）。后续P95/8h/1000输入性能验收仍必做，未新增豁免。
 
 ### 最新用户决定
