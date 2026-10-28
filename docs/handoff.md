@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T17:07:52+08:00 v2 架构计划执行交接
+## 2026-10-28T17:18:32+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：c92f686（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：9dece2c（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
@@ -17,8 +17,8 @@
 - 真实Chrome正常0、SIGKILL137、SDK driver 丢失导致Chrome0但生命周期error均覆盖；Agent运行中/终态SIGKILL由supervisord自动恢复，真实Chrome PID/starttime与页面保持、稳定事件ID跨重启不变。XShm同IPC成功/跨IPC BadAccess、不同UID错误Pulse凭据拒绝都有实际容器对照。
 - 02镜像启动失败归因为Bash重复身份正则拒绝合法ID；已统一由Python在目录创建前校验，03通过。下载量具原按列表首条误取begin，修为按GUID匹配completed并核验物理文件/字节数，失败原日志保留。未弱化为in_progress通过。
 - 新独立Gemini E2E作者78953/PID63927已持久finishstop并自然退出0；定向4项65.12秒PASS，当前所有生产writer已退出。六项AC由Root完整门禁暂勾，待full reviewer独立复核。
-- 独立初次诊断6项PASS/144.36秒；Root发现其几何范围及顺序杀子系统量具不足，不当正式Verify通过。正式Verify Round1已派发12497/PID86091，同session ses_e7fb8651bffe6Xm7yXVHRAeDHp，要求实际Chrome窗口1920×1080、三故障各自全新实例、Mac宿主真实CDP负例；日志t003_independent_formal_round1.jsonl。
-- Canonical full Round1 code/test 两路已派发：29810/PID87133、82820/PID87148；各自仅报告/专属scratch写权，全部交付SHA guard冻结。先观察进程/持久会话，不重复启动。task目录review_code.md/review_test.md为正式报告权威，preaudit不替代。
+- 独立初次诊断6项PASS/144.36秒；Root发现其几何范围及顺序杀子系统量具不足，不当正式Verify通过。正式Verify Round1完整六项4PASS/2FAIL；定向修正后仍1PASS/1FAIL。Root核对新负例Profile引用旧快照、多个浏览器并发复用同一用户数据目录，属于量具绑定缺陷，生产镜像未变。原日志formal_round1_20261028_170554保留；PID86091无活动测试容器时由Root SIGINT，12497 terminal-2。正式Round2已派发67930/PID90053，同session ses_e7fb8651bffe6Xm7yXVHRAeDHp，要求每种故障独立Profile数据/匹配快照/Socket及实例，失败保留dockerlogs+inspect；上限5不变，不将首轮失败改标诊断。
+- Canonical full Round1 code/test 两路已派发：29810/PID87133、82820/PID87148；两路各自已真实复验71单元+9HTTP共80PASS，最终review报告尚未生成。各自仅报告/专属scratch写权，全部交付SHA guard冻结。先观察进程/持久会话，不重复启动。task目录review_code.md/review_test.md为正式报告权威，preaudit不替代。
 - 下一步：处理formal黑盒及full review真实finding，重跑受影响门禁后完成handoff.json/finish/单执行commit/exact cleanup/已授权本地main集成。不push、不部署、不动正式用户数据。t004只读准备已完成但未start。
 
 ### 最新用户决定
