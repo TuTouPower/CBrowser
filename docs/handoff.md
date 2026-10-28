@@ -2,12 +2,23 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T10:36:05+08:00 v2 架构计划执行交接
+## 2026-10-28T12:15:20+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：b793397（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：8c9b5d6（更新本交接前主干HEAD；最新业务集成t002=914dde5）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
+
+### 当前恢复入口（覆盖下文历史阶段状态）
+
+- t001、t002 已集成；t003 仍 active，登记 worktree `/Users/karson/kar/code/CBrowser_t003`，branch `t003_v2_browser_runtime`，base `226c8453097fb982835ccb254cea8a3f26d131b3`，attempt=1，execution_id=`57e21d93a87e4ab1baf4f96f652bca99`，owner_id=`root_v2_20261027`。不重复 start/reserve。无执行 commit、无 finish，六项 AC 均未勾选，正式 Verify/review 均为0。
+- 实施进程48410、49643以及独立量具77115、预审4535、t004准备74019均已退出；本轮进程清单确认无存活 OpenCode writer。当前 t003 生产文件由 Root 独占维护。t004 仅完成只读准备，未开工。
+- 最新完整单元测试71 PASS，日志 `CBrowser_t003/.scratch/t003_root_checks/instance_and_supervision_units.log`。新增实例独立状态 journal 与终态恢复，防止迟到旧代状态覆盖当前代；目录创建和文件替换均严格 fsync，错误不吞。UDS 预绑定后设置0660再监听；Runner 收到停止信号正常关闭 SDK 浏览器。
+- Google 默认搜索已接入真实 Runner；之前5项 Docker 实测通过（含用户 Bing 选择跨实例保留及真实 PID/starttime 不变），日志 `profile_defaults_root_wiring.log`。该结果早于最新实例 journal，须在当前镜像复验，不等同最终六 AC。
+- 真实 headful 三种退出观测已通过：正常0、Chrome SIGKILL137、SDK driver 丢失导致 Chrome0但上报 lifecycle/error。日志 `runner_lifecycle/*_r2.log`，范围受该次源码 manifest 限定。
+- 诊断镜像01已构建：`sha256:8ba3c99e8258d825b8485a5a9fade3c2cd753fdf165c3d93c4d8a0462a569200`。02正在构建，包含当前实例 journal、Google wiring 与 Playwright1.64.1；构建目录 `.scratch/t003_root_checks/diagnostic_build_02/`，工具 session9024。均非最终验收冻结版本。
+- 下一步：确认02构建结果，执行完整镜像真实 Docker 六 AC 与 Google5项；处理实际失败，再冻结最终源码/镜像交给独立黑盒与 canonical full review。量具已移除旧镜像源码覆盖与手工启动重复 Agent，下载/IPC/音频安全仍须实际验证。阶段完成即更新 handoff。
+- 预审发现须区分生产缺陷与缺失快照：审查副本遗漏正式 C fixture 不证明生产 Dockerfile 缺文件；entrypoint 已 export 实例身份，不能按未 export 判定。测试相对工程根路径按既定项目执行方式通过；独立验证脚本应在其完整源码根运行。预审不替代最终 full review。
 
 ### 最新用户决定
 
@@ -87,7 +98,7 @@
 
 ### 下一步与边界
 
-1. t003已start并claim，先观察48410 UDS/E2E、49643搜索初始化与68647独立黑盒真实性修正；Root核心已验证但整体尚未freeze；57105已完成有界报告；不重复启动仍存活进程；原t001/t002已集成，不重复执行。以登记worktree当前task/note为实施权威，最新manifest/镜像ID冻结后才派正式候选黑盒。
+1. 以本节顶部「当前恢复入口」为准，历史进程均已退出。确认02构建及实际 E2E 结果，再冻结最终候选；t001/t002 不重复执行。
 2. 复核SDK真实进程退出观测、统一只读Linux引擎cache及Mac bind-root UID权限、完整Chrome UI/DPR1、UDS安全边界、下载覆盖恢复ACK及持久事件；未知外部契约须实证，不把原型或容器alive当正式AC通过。
 3. 独立黑盒后完整code/test七视角审查，使用对应report/scratch权限白名单和交付哈希监视；一个执行commit、exact cleanup、已获授权的本地main集成，不push。
 4. 每阶段完成立即更新本文件，失败阶段也记FAIL与恢复入口；项目级handoff不能替代task级handoff.json。
