@@ -2,24 +2,25 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-28T17:18:32+08:00 v2 架构计划执行交接
+## 2026-10-28T18:05:25+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：9dece2c（更新本交接前主干HEAD；最新业务集成t002=914dde5）
+- head_commit：db1cd57517e095ee10d9689d85527e806d1086de（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换，下一阶段t003 Browser Runtime。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
 
-- t001、t002 已集成；t003 active，worktree `/Users/karson/kar/code/CBrowser_t003`、branch `t003_v2_browser_runtime`、base `226c8453097fb982835ccb254cea8a3f26d131b3`，attempt=1，execution_id=`57e21d93a87e4ab1baf4f96f652bca99`，owner_id=`root_v2_20261027`。不重复 start/reserve。尚无执行 commit/finish。
-- 完整镜像03已构建：`sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346`，Linux arm64；构建 manifest 在 t003/.scratch/t003_root_checks/diagnostic_build_03/。使用完整源码构建，无宿主源码覆盖。
-- 项目 doctor/test/blackbox 声明命令 exit0：169 contract、384 旧后端、71 当前单元、9真实 HTTP 集成、13 Runtime Docker E2E（含8核心/异常生命周期和5搜索初始化）。日志 project_doctor_test_03.log、project_blackbox_03_final.log。旧服务健康ok；task工作副本 repo_sync 未初始化，不计配置成功。
-- 真实Chrome正常0、SIGKILL137、SDK driver 丢失导致Chrome0但生命周期error均覆盖；Agent运行中/终态SIGKILL由supervisord自动恢复，真实Chrome PID/starttime与页面保持、稳定事件ID跨重启不变。XShm同IPC成功/跨IPC BadAccess、不同UID错误Pulse凭据拒绝都有实际容器对照。
-- 02镜像启动失败归因为Bash重复身份正则拒绝合法ID；已统一由Python在目录创建前校验，03通过。下载量具原按列表首条误取begin，修为按GUID匹配completed并核验物理文件/字节数，失败原日志保留。未弱化为in_progress通过。
-- 新独立Gemini E2E作者78953/PID63927已持久finishstop并自然退出0；定向4项65.12秒PASS，当前所有生产writer已退出。六项AC由Root完整门禁暂勾，待full reviewer独立复核。
-- 独立初次诊断6项PASS/144.36秒；Root发现其几何范围及顺序杀子系统量具不足，不当正式Verify通过。正式Verify Round1完整六项4PASS/2FAIL；定向修正后仍1PASS/1FAIL。Root核对新负例Profile引用旧快照、多个浏览器并发复用同一用户数据目录，属于量具绑定缺陷，生产镜像未变。原日志formal_round1_20261028_170554保留；PID86091无活动测试容器时由Root SIGINT，12497 terminal-2。正式Round2已派发67930/PID90053，同session ses_e7fb8651bffe6Xm7yXVHRAeDHp，要求每种故障独立Profile数据/匹配快照/Socket及实例，失败保留dockerlogs+inspect；上限5不变，不将首轮失败改标诊断。
-- Canonical full Round1 code/test 两路已派发：29810/PID87133、82820/PID87148；两路各自已真实复验71单元+9HTTP共80PASS，最终review报告尚未生成。各自仅报告/专属scratch写权，全部交付SHA guard冻结。先观察进程/持久会话，不重复启动。task目录review_code.md/review_test.md为正式报告权威，preaudit不替代。
-- 下一步：处理formal黑盒及full review真实finding，重跑受影响门禁后完成handoff.json/finish/单执行commit/exact cleanup/已授权本地main集成。不push、不部署、不动正式用户数据。t004只读准备已完成但未start。
+- **main 仍仅业务集成 t001/t002**。t003 执行 commit 为 8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6，branch=t003_v2_browser_runtime；已done/terminal completed/report done/exact cleanup，分支保留，尚未集成。原执行attempt1/execution57e21d93a87e4ab1baf4f96f652bca99/ownerroot_v2_20261027，不重复执行。
+- t003完整镜像03：sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346，arm64。独立正式VerifyRound2六项PASS178.67秒；Full Round2 code/test PASS，scope=e934e9a6bcba7ff4，零finding、报告勘误保留。各reviewer独立80单元/HTTP通过。Root Mac宿主HTTP正例/CDP errno61拒绝/容器内正例+loopback监听通过。
+- **t003合并后验证失败并已撤销合并**：doctor exit0；168 contract+1原有条件skip、384旧后端、71单元、9HTTP通过；Runtime E2E为1FAIL12PASS。唯一失败：tests/e2e/test_browser_runtime_e2e.py引用未入库.scratch/t003_implementation/audio_tools/audio_analyzer.py，原worktree现场掩盖依赖，清理后暴露。失败原日志.scratch/t003_integration_gates/declared_gates.log/result.json保留；main无pending merge，不恢复临时脚本伪造通过。
+- **当前t004 active**：worktree /Users/karson/kar/code/CBrowser_t004，branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6；attempt1，execution_id=c738656d4a2144cc9643f66c1b4831e9，owner_id=root_v2_t004_20261028，已reserve/claim，strict preflight PASS。固定队列未增加成员；按task-run后继以已完成前一分支为base，计划t003→t004链尾一起验收集成，保留t003历史。
+- Root已在t004补正式共享tests/fixtures/runtime_probe/audio_analyzer.py（复用已验证s007算法），原Runtime E2E按文件定位并用sys.executable，不再引用历史scratch。全新worktree无audio_tools目录下，13项真实Runtime E2E全部PASS161.53秒；Ruff E/F/W/I和format通过，最后只做AST等价字符串换行。未提交，归入t004单次执行commit。证据t004/.scratch/t004_root_checks/runtime_clean_fixture_e2e.log/provenance；源归档未修改。
+- t004写域并行且不重叠：83636/PID95869为Stream主体，拥有stream_agent除ice_transport.py、stream镜像/协议/新媒体测试；27506/PID95881仅ice_transport.py及其新测试；Root独占共享audio fixture/原Runtime E2E对接/任务与通用文档。两作者都有对既有Runtime/API/domain/compose/Root测试的SHA guard，禁止互改文件。日志t004_implementation.jsonl、t004_ice_generation.jsonl。
+- 独立验证worktree main/.scratch/v2_orchestration/t004_validation（spike/t004_validation），6677/PID97202，仅自有.scratch/t004_blackbox；准备真实Chrome双页/音视频/身份/FPS/UDP/TURN/原生IME与隔离量具，不把参考镜像或占位body当t004六AC通过。原有t004只读readiness已结束，其auto_null.monitor已被正式cbrowser_sink.monitor替换。
+- t004当前六AC未勾、正式Verify/review均0；下一步先观察以上进程/持久会话，不重复start/reserve。源接口及整镜像冻结后才派正式独立验收/full review，一个执行commit、exact cleanup、链尾主干验证，禁止push/正式部署。
+- 测试引擎缓存已保存在main/.scratch/v2_orchestration/t003_engine_cache，671文件SHA逐一相等；t003原始证据备份t003_evidence_before_cleanup.tar.gz，444文件、0600、SHA256=908d0ac8ff9d206d810eab594a44ebc3504ce35a015f0c6bb74897600003f86d。验证worktree和日志仍在，不依赖已删除t003worktree。
+- 后续必须闭环：t005只读引擎缓存初始化同时准备所需GeoIP资产，lifecycle/error不得清running意愿；t012统一Runner/Agent CLI日志ISO8601带时区格式（当前logging asctime仍旧格式，记录待修，不据此停媒体实施）。后续P95/8h/1000输入性能验收仍必做，未新增豁免。
 
 ### 最新用户决定
 
