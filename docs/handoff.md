@@ -2,14 +2,22 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T09:54:00+08:00 v2 架构计划执行交接
+## 2026-10-29T10:07:00+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：05eaeb8（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：6c291ac（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T10:07:00+08:00 正式三代Chrome TURN/项目门禁阶段完成，进入Full Round1**：正式chrome_relay.py已入库路径，三代gen2/3/4精确commit和旧代closed+sendreject后，才核新ufrag双relay/重新采样帧、音频、pair字节/同PC、DTLS、Track，保留全部复制标签/策略/IME/隔离断言。计划固定coturn4.6-alpine拉取为arm64实际4.6.3、ID **sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be**；首次因旧版loopback+空CLI密码启动拒绝，隔离fixture补no-cli后完整 **PASS96.13秒**。当前镜像07其余11项真实E2E **PASS52.10秒**；9个Stream源SHA与07逐文件一致。无生产源码变更，不借4.18测试替代计划固定版本。
+
+- 指定模型独立真实matrix session **ses_e7a9f67c6ffeEXhpqZCBKERrEW** 已terminal0/持久stop（观察器durable=false自然race已核最终JSONL）。冻结候选51文件SHA全部不变：正例完整 **PASS96.58秒**；server错误HMAC真实401/无freshOffer **预期exit1/47.41秒**，client错误HMAC真实401/无新代commit **预期exit1/65.26秒**。原connected/旧媒体不使负例假绿。报告metadata的Darwin24.x未经核实不采纳；核心JSON、401日志已Root复核。证据validation/.scratch/t004_relay_independent/；完整source/正式量具/独立proof已追加保护到main/.scratch/v2_orchestration/t004_evidence_live/，manifest含SHA，避免cleanup丢失。
+
+- **项目门禁全PASS**：169contract、384legacy、120unit、9实际HTTP，t004/.scratch/t004_project_gates/results.json。全部新Stream源/测试Ruff E/F/W/I通过；新增schema导出与nullable注册/ACK/tunnel契约测试通过。蓝图stream_runtime、webrtc_remote_display、testing、验证指南/specs_index已更新，d019记录真实TURN映射与版本边界。六AC已按实证打勾，task仍active，未执行finish/commit/cleanup/集成。
+
+- **下一步正式独立Full Round1/5**：两路OpenCode均只写各自review报告和自有scratch。code wrapper52743/PID86136/title t004-final-full-code-round1-20261029；test wrapper39548/PID86155/title t004-final-full-test-round1-20261029。日志main/.scratch/v2_orchestration/t004_final\_{code,test}\_review_r1.jsonl；审查scope **740fe6627e7735db**，覆盖当前全部交付。Root冻结源码，待报告复核/处置和checker；不得直接跳到done。后续一个执行commit、exact cleanup及已授权t003→t004链尾集成，再继续固定队列。P95/首帧/容量/8h/1000输入仍未实测，未豁免。
 
 - **2026-10-29T09:54:00+08:00 复制标签真实媒体阶段完成**：独立OpenCode指定模型会话ses_e7aae040fffe4e87xAIEhzHtjm已terminal，冻结candidate完整真实E2E PASS86.25秒，Chrome原生window.open确实复制sessionStorage（无手工适配），新页自动独立ID并解码1920×1080；原两Peer引用/PC数量不变且音视频增长，关闭新页后恢复2viewer。Root已移入正式tests/e2e/test_stream_runtime_e2e.py，删除未使用的手工存储回退，完整正式复跑 **1PASS84.58秒**（镜像07），后续策略/8IME/剪贴板/刷新/独立静音/Agent重连与Stream暂停断言均保留。日志t004/.scratch/t004_root_checks/full_duplicate_policy_media.log，独立证据validation/.scratch/t004_duplicate_media/retained_evidence/。
 
