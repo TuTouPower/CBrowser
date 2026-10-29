@@ -2,14 +2,20 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T09:39:10+08:00 v2 架构计划执行交接
+## 2026-10-29T09:54:00+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：f08dd71（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：05eaeb8（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T09:54:00+08:00 复制标签真实媒体阶段完成**：独立OpenCode指定模型会话ses_e7aae040fffe4e87xAIEhzHtjm已terminal，冻结candidate完整真实E2E PASS86.25秒，Chrome原生window.open确实复制sessionStorage（无手工适配），新页自动独立ID并解码1920×1080；原两Peer引用/PC数量不变且音视频增长，关闭新页后恢复2viewer。Root已移入正式tests/e2e/test_stream_runtime_e2e.py，删除未使用的手工存储回退，完整正式复跑 **1PASS84.58秒**（镜像07），后续策略/8IME/剪贴板/刷新/独立静音/Agent重连与Stream暂停断言均保留。日志t004/.scratch/t004_root_checks/full_duplicate_policy_media.log，独立证据validation/.scratch/t004_duplicate_media/retained_evidence/。
+
+- **TURN首轮403已定位测试地址映射并通过三次实际提交诊断**：补coturn原始日志复现403；将relay-ip从0.0.0.0改为真实容器172.30.0.10，并明确external-ip=127.0.0.1/172.30.0.10后同镜像07无生产源修改成功。Root新诊断连续generation2/3/4均出现精确commit+旧代closed/rejected，随后Chrome选中local/remote均relay、新ufrag匹配、真实视频帧/音频能量增长，同PC/DTLS/Track不变。证据t004/.scratch/t004_ice_media_gateway_diagnostic/run/28843ea0/relay_generations.json与root_relay_generations.log。只是诊断，尚须入库正式ICE量具、独立复验及单侧失效；不把首次commit瞬间旧stats算通过。旧报告所谓no-ip-check并非实际选项，未采纳。
+
+- **schema同步阶段**：新增scripts/export_stream_protocol.py，从实际四种Pydantic wire envelope生成2020-12 schema，覆盖nullable注册/ACK/tunnel/control；两个契约测试PASS1.39秒。尚需相关门禁/Ruff收尾与协议边界文档；六AC未勾，正式Verify/full review仍0。Root仍独占生产源，当前无活跃OpenCode作者。
 
 - **2026-10-29T09:39:10+08:00 完成帧率仲裁、隔离与真实Peer查找阶段**：当前源镜像 **sha256:072e86762d2f1810e86a2d20169d4be451b5a19e0ebabc880e882de63ac0d531**（cbrowser-t004-root-peer:20261029_07）。Native适配定向审查68638已terminal0/持久finish=stop，发现DISPLAY KeyError与全部spare按住仍可重绑；Root两项均先真实RED后修复：缺DISPLAY转安全RuntimeError，prebind先保护真实pressed槽和当前batch已绑定槽、无容量即拒绝；Xvfb真实按住全部槽不再被覆盖。相关 **47单元PASS0.72秒**；镜像06的XKB/ICE失败回收/三代Native DC relay/Chrome身份/完整媒体合跑 **12PASS100.83秒**（不是Chrome三代TURN）。
 
