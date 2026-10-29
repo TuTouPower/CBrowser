@@ -4,38 +4,6 @@
     "workspace": ".",
     "tasks": [
         {
-            "tid": "t003",
-            "slug": "v2_browser_runtime",
-            "title": "实现隔离 Browser Runtime 与受控 UDS Agent",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t002",
-            "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t003_v2_browser_runtime"
-        },
-        {
-            "tid": "t004",
-            "slug": "v2_stream_runtime",
-            "title": "实现 Selkies Stream Runtime 与 Profile 级媒体控制",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t003",
-            "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t004_v2_stream_runtime"
-        },
-        {
             "tid": "t005",
             "slug": "v2_supervisor",
             "title": "实现唯一 Docker 协调者与运行事件恢复",

@@ -34,6 +34,38 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t002_v2_backend_foundation"
+        },
+        {
+            "tid": "t003",
+            "slug": "v2_browser_runtime",
+            "title": "实现隔离 Browser Runtime 与受控 UDS Agent",
+            "status": "done",
+            "branch": "t003_v2_browser_runtime",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "226c8453097fb982835ccb254cea8a3f26d131b3",
+            "depends_on": "t002",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t003_v2_browser_runtime"
+        },
+        {
+            "tid": "t004",
+            "slug": "v2_stream_runtime",
+            "title": "实现 Selkies Stream Runtime 与 Profile 级媒体控制",
+            "status": "done",
+            "branch": "t004_v2_stream_runtime",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6",
+            "depends_on": "t003",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t004_v2_stream_runtime"
         }
     ]
 }

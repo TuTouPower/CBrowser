@@ -43,26 +43,41 @@ command -v md_kx
 
 ```bash
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
-export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
 PYTHONPATH=src uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with "cloakbrowser>=0.6.3" pytest src/backend/tests -q
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/unit -q
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser pytest tests/unit -q
 ```
 
 ## blackbox_verify
 
-真实 v2 API 黑盒通过独立 uvicorn 进程、临时 SQLite、HTTP 重启/并发/锁竞争与导出 JSON schema 验证；随后检查既有服务存活与任务控制面。集成测试与 test_cmd 单元测试分开运行。
+真实 v2 API 黑盒通过独立 uvicorn 进程、临时 SQLite、HTTP 重启/并发/锁竞争与导出 JSON schema 验证；Browser Runtime 使用构建后的不可变镜像及已初始化只读 Linux 引擎缓存执行真实容器 E2E。最后检查既有服务与任务控制面。运行前按 docs/guides/browser_runtime_validation.md 设置镜像与缓存环境变量，禁止使用旧镜像加源码覆盖冒充完整镜像验证。
 
 ```bash
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
-export UV_CACHE_DIR="$PWD/.scratch/t002_gates/uv_cache"
+export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/integration -q
+: "${CBROWSER_RUNTIME_TEST_IMAGE:?Provide an immutable built runtime image ID}"
+: "${CBROWSER_RUNTIME_ENGINE_CACHE:?Provide an initialized Linux engine cache path}"
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
 curl -sf http://127.0.0.1:56661/api/health
 uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status
 ```
+
+## Stream Runtime 组件验证
+
+运行 t004 组件验收前，按照 docs/guides/stream_runtime_validation.md 提供三个不可变镜像 ID 和只读引擎缓存。完整媒体测试通过官方 Mac Google Chrome，包含双 Peer、复制标签、共享策略、真实组合输入、三代 relay 与 Browser 生存性；不能以 Native DataChannel 探针代替 Chrome RTP。
+
+```bash
+: "${CBROWSER_STREAM_TEST_IMAGE:?Provide an immutable Stream image ID}"
+: "${CBROWSER_TURN_TEST_IMAGE:?Provide an immutable coturn 4.6 image ID}"
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
+```
+
+先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。单侧 TURN 错误凭证负例通过测试专用 CBROWSER_STREAM_TURN_REJECT_SIDE=server 或 client 注入；期望完整媒体测试非零且 coturn 拒绝认证/新代无 commit，启动失败或缺镜像不算有效负例。正常门禁不得设置该变量。
 
 ## 专项技术验证探针
 

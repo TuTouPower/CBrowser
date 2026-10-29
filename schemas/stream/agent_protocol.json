@@ -1,0 +1,319 @@
+{
+  "$defs": {
+    "AgentAction": {
+      "enum": [
+        "register",
+        "registered",
+        "viewer_joined",
+        "viewer_left",
+        "signal",
+        "visibility_update",
+        "supervisor_quota",
+        "ice_restart",
+        "ice_restart_offer",
+        "ice_restart_answer",
+        "heartbeat",
+        "error"
+      ],
+      "title": "AgentAction",
+      "type": "string"
+    },
+    "GatewayControlEnvelope": {
+      "additionalProperties": false,
+      "description": "Wire envelope for control plane packets from Gateway to StreamAgent.",
+      "properties": {
+        "version": {
+          "const": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/AgentAction"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "title": "Agent Session Id",
+          "type": "string"
+        },
+        "conn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conn Id"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        }
+      },
+      "required": [
+        "version",
+        "action",
+        "profile_id",
+        "runtime_instance_id",
+        "agent_session_id"
+      ],
+      "title": "GatewayControlEnvelope",
+      "type": "object"
+    },
+    "GatewayRegisterResponse": {
+      "additionalProperties": false,
+      "description": "Registration ACK from Gateway to StreamAgent.",
+      "properties": {
+        "version": {
+          "const": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "title": "Agent Session Id",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error"
+        }
+      },
+      "required": [
+        "version",
+        "status",
+        "profile_id",
+        "runtime_instance_id",
+        "agent_session_id"
+      ],
+      "title": "GatewayRegisterResponse",
+      "type": "object"
+    },
+    "GatewayTunnelEnvelope": {
+      "additionalProperties": false,
+      "description": "Wire envelope for tunnel stream packets between Gateway and StreamAgent.",
+      "properties": {
+        "version": {
+          "const": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "open",
+            "msg",
+            "close"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-zA-Z0-9_.:-]+$",
+          "title": "Agent Session Id",
+          "type": "string"
+        },
+        "conn_id": {
+          "title": "Conn Id",
+          "type": "string"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data"
+        },
+        "code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "version",
+        "type",
+        "profile_id",
+        "runtime_instance_id",
+        "agent_session_id",
+        "conn_id"
+      ],
+      "title": "GatewayTunnelEnvelope",
+      "type": "object"
+    },
+    "ProtocolEnvelope": {
+      "additionalProperties": false,
+      "description": "Outbound protocol envelope sent by StreamAgent to Gateway.",
+      "properties": {
+        "version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/AgentAction"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Session Id"
+        },
+        "conn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conn Id"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        }
+      },
+      "required": [
+        "action",
+        "profile_id",
+        "runtime_instance_id"
+      ],
+      "title": "ProtocolEnvelope",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/ProtocolEnvelope"
+    },
+    {
+      "$ref": "#/$defs/GatewayRegisterResponse"
+    },
+    {
+      "$ref": "#/$defs/GatewayTunnelEnvelope"
+    },
+    {
+      "$ref": "#/$defs/GatewayControlEnvelope"
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StreamAgentGatewayWireProtocol"
+}

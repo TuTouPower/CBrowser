@@ -1,0 +1,18 @@
+{
+  "tid": "t004",
+  "attempt": 1,
+  "execution_id": "c738656d4a2144cc9643f66c1b4831e9",
+  "status": "done",
+  "branch": "t004_v2_stream_runtime",
+  "base_sha": "8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6",
+  "tests": "169 template contract,384 legacy backend,120 unit,9 actual HTTP PASS. Stream07+Browser03+fixed arm64 coturn4.6.3: complete real Mac Chrome media/identity/policy/IME/isolation/three-relay-generation E2E PASS96.13s; remaining11 actual Stream E2E PASS52.10s. Portable shared audio fixture original13 Docker Runtime E2E PASS161.53s, no later semantic changes. Both independent full reviewers each49 Stream unit PASS0.95s. Ruff E/F/W/I,format,Markdown,active diff check,strict owner preflight PASS. Nine Stream source SHA match immutable image07.",
+  "blackbox": "Formal independent VerifyRound1/5 PASS: frozen51-file candidate,only pre-adapted ports/prefix,full real Chrome/Docker E2E PASS96.58s. Three generations2/3/4 each exact commit+old close/send-rejection fence before new-ufrag relay/relay selected pair and newly sampled video/audio/pair-byte growth; same PC/DTLS/Track and other peer continues. Independent server/client bad HMAC actual coturn401 rejected,expected exit1/47.41s and65.26s,no offer/no commit respectively; old connected/media did not false-pass. Native composition8 commits124chars and unchanged real X11 clipboard,duplicate tab native storage clone,quota/static/motion/visibility/geometry,Agent reconnect and Stream pause Browser survival. Protected55-file evidence main/.scratch/v2_orchestration/t004_evidence_live/manifest.json plus retained independent validation WT. Public/nativeX86 USER_WAIVED only;capacity/P95/first-frame/8h/1000-input later still required.",
+  "review": "FullRound1 code/test PASS,scope740fe6627e7735db,three minor disposition rows deferred to existing t009/t012. Seven code views and actual49-unit validation each;3/6 re_verified via code/unit and3/6 trust_prior real Docker evidence supplemented by separate formal independent blackbox. Original cwd-dispatch failure not accepted; metadata errata retained. Corrupted code-report shell expansion recovered from exact author text by same reviewer,report references verified;no production delta. Quantitative CPU/GPU performance claims are not accepted without t009/t012 measurements.",
+  "pending": [],
+  "findings": [
+    "d014",
+    "d017",
+    "d018",
+    "d019"
+  ]
+}

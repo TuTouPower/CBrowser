@@ -1,0 +1,15 @@
+{
+  "tid": "t003",
+  "attempt": 1,
+  "execution_id": "57e21d93a87e4ab1baf4f96f652bca99",
+  "status": "done",
+  "branch": "t003_v2_browser_runtime",
+  "base_sha": "226c8453097fb982835ccb254cea8a3f26d131b3",
+  "tests": "Project declared doctor/test/blackbox exit0:169 contract,384 legacy backend,71 unit (52 new Runtime+19 existing),9 real HTTP,13 whole-image Docker E2E (8core+5Google). Both full reviewers independently80 unit/HTTP PASS. Ruff E/F/W/I+format,Markdown,active diff checks and strict owner preflight PASS. Existing legacy test expectations unchanged.",
+  "blackbox": "Formal independent VerifyRound2/5 ALL6PASS178.67s on immutable arm64 image sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346, exact build03 production-source SHA matches. Real dualProfile persistence/audio,physical1920x1080,DPR1,independent subsystem failures,UDS/CDP/download override/rearm,Chrome137/Node-loss/Agent autorestart replay,XShm positive/BadAccess negative. Round1 4PASS2FAIL fixture-binding errors retained. Root supplemental actual Mac HTTP positive/CDP errno61 refusal/internalCDP positive+loopback kernel listener PASS. Evidence main .scratch/v2_orchestration/t003_evidence_before_cleanup.tar.gz. Public/nativeX86 USER_WAIVED only; actualPro/performance/8h/1000 stress NOTRUN, later required.",
+  "review": "Canonical full Round2 code/test PASS,reviewed_scope e934e9a6bcba7ff4,zero findings,seven code views disclosed. Metadata errata retained to distinguish52new/71total unit,13E2E,correct names/UID/fault-injection/skip/schema limits andtimestamps. Test reviewer83.3%own re_verified plusAC001trust_prior; separate independent formalblackbox provesALL6. No source or tests changed after wholeimage03; docPulse-path correction reviewedRound2.",
+  "pending": [],
+  "findings": [
+    "d016"
+  ]
+}
