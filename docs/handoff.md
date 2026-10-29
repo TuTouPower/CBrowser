@@ -2,14 +2,16 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T13:30:32+08:00 v2 架构计划执行交接
+## 2026-10-29T13:34:59+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：84f84311815bff330a51bcd35da150fc8b4990b3（本次交接更新前main；t001–t004已集成）
+- head_commit：268ba585c331f947f607003eac9fe59641178bb9（本次交接更新前main；t001–t004已集成，t005未提交）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T13:34:59+08:00 t005首批实现恢复点**：core PID99949与resource PID99965仍活跃（各自20分钟首批检查点，不因观察超时重启）。两方接口稿已落.scratch/t005\_{core,resource}/{core,resource}_contract.md；核心已落path_validator/port_allocator/retry_policy/event_forwarder/docker_adapter/protocol等源码，CPU作者已落resource_policy与单元/真实Docker资源测试，但尚未由Root复核通过。Root已在t005 WT完成api/internal_supervisor.py与api/app.py内部认证首批TDD：真实HTTP先404 RED，再外部文件凭证/Bearer常量时间校验GREEN，**1PASS2.11秒**，日志.scratch/t005_api/auth_{red,green}.log；未经授权/错误凭证401，正确凭证200、不回显。Root新测试fixture setup也在finally精确回收。尚无完整生命周期/事件RPC通过，需统一core接口稿中的旧公共API路径与认证内部RPC，OpenAPI待路由稳定统一生成；七AC仍未勾，正式Verify/full review均0。禁止据源码文件存在或burner采样宣称AC通过；t005一个执行commit尚未创建。
 
 - **2026-10-29T13:30:32+08:00 t003/t004集成阶段完成**：t004单执行commit **f0cbd452b9cf5c1bdc45ae220a11c6573f13be21**，first-parent为t003执行8ff9fd2；done/terminal completed/report done/exact cleanup全部完成。t003与t004链尾通过原生Git门禁合入main，merge **84f84311815bff330a51bcd35da150fc8b4990b3**，原t003/t004分支已由脚本删除，旧worktree已清理。正式Full Round1 code/test PASS，scope740fe6627e7735db，3minor关联t009/t012；报告原时间/引用及shell转义损坏均已由作者勘误恢复，未改生产源。
 
