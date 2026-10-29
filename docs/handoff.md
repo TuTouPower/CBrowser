@@ -2,14 +2,22 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T08:15:13+08:00 v2 架构计划执行交接
+## 2026-10-29T08:37:27+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：93ef80b（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：6bd0847（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T08:37:27+08:00 原生多字中文/媒体阶段完成并获独立复验**：确定性错序真实根因不是等待不足，而是Native spare池含无XKB名称槽，xkbcomp序列化为重复key \<>并合并；19原始绑定前正确后损坏，只排除8仍损93。按实际xkbcomp keycodes非空名字过滤后17绑定前后全一致，保留preferred语义、evdev按有限容量分批；删除无效额外50ms等待/私有deadline，保留原SDK25ms settle于真实map替换后。生产修改仅Stream x11_keymap.py与x11-xkb-utils，未动Browser03。Root源镜像f1b136a1ff3a...真实双GoogleChrome扩大8次跨页提交124字、剪贴板不变、固定1920×1080双音视频增长、实际UDP候选、刷新/独立静音/关闭/生存页输入、Browser PID/start_ticks不变 **1PASS45.60秒**；真实Xvfb5轮17键位复用 **1PASS1.18秒**。证据t004/.scratch/t004_root_checks/keymap_named_complete_proof/与native_prebind_probe/，并保留此前各失败，不据此宣称P95/1000/8h。
+
+- 当前完整公共基镜像 **sha256:a9fc26cf5d6d4d828dc9d5978d442e386ff48e8e940b39c9320b358a5087f1df**（tag cbrowser-t004-root-keymap:20261029_05），相对f1仅清除入口尾空行；9个Stream package源SHA全部与当前源一致（keymap_clean_image_source_provenance.json），x11_keymap SHA=5e106f99de12b69a7112eb7e32ceb1c54108e2aad2b7ed7bbb1fc96734eeb264。新增31交付文件已explicit git add -N，未提交实现。Root相关46单元/Ruff通过，新增XKB测试与媒体测试已格式化/移除未用读取并通过Ruff E/F/W/I、git diff --check。
+
+- 独立冻结黑盒91434/PID68621/session ses_e7aefd9f2ffeiVy0p1S7wlP5zP已terminal0/JSONL持久finish=stop（wrapper自然退出race durable=false不等于未完成）。在独立validation WT仅替SDK18521/GW18522/UDP30521/资源前缀，无断言变化，candidate全部SHA复核未变；当前a9fc整镜像连续 **2PASS47.69秒+2PASS46.25秒**，均全新Profile。两轮8IME/剪贴板/刷新/PID与双remote candidate127.0.0.1:30521/UDP真实JSON一致，证据固化validation/.scratch/t004_keymap_frozen_blackbox/retained_evidence/run{1,2}/。原报告将续流Page2数字接到Page1、将纯map一致性称按键释放，Root在root_qualification.md勘误；不扩大为完整六AC或held-modifier/无丢帧证明。
+
+- 最新定向源review35722/PID68638/session ses_e7aefd590ffeZYahXV1ndYwSDM仍活跃，仅validation/.scratch/t004_keymap_scoped_review_final读冻结Native适配，尚无结论；旧57233的PASS已被新修复/Root限定取代，不能复用。新AC003真实认证Gateway+捕获仲裁诊断9195/PID70222（log t004_policy_gateway_diagnostic.jsonl）仅t004/.scratch/t004_policy_gateway_diagnostic写自有候选，使用SDK18361/GW18362/UDP30361+Browser03+a9fc完整Stream，禁止生产源改动。Root持有全部生产源，接下来闭环策略/三代Chrome TURN/失联与暂停隔离。六AC当前仍全未勾、正式Verify/review均0，不重复start/reserve，t003→t004未集成。
 
 - **2026-10-29T08:15:13+08:00 队列溢出回收阶段完成**：新增真实协调器测试先FAIL（worker已删但Gateway没close），修复后6项身份/回收单元PASS，全组六文件 **46PASS0.79秒**，Ruff E/F/W/I通过。关闭消息含当前v2 profile/instance/session与1013，bounded send。最新生产源候选镜像 **41a7f0f90556afd7fdf974598fc39d4e63356b46ce56b294733af2eaf27c97de**，public Python/Debian基底，未改Browser03。前一完整源镜像38c86e...的8实际ICE失败/取消/关闭、3代Native TURN机制及Chrome身份回归共 **10PASS50.39秒**（keymap_source_ice_identity.log）；不是3代Chrome媒体通过，源后改必须最终复验。
 
