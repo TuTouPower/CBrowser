@@ -2,14 +2,32 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T19:55:18+08:00 v2 架构计划执行交接
+## 2026-10-29T21:45:37+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：7f2459d8de7af47410210e38b5cc06aa33c692ca（本次交接更新前main；t001–t004已集成，t005实施中未提交；task分支head仍84f84311815bff330a51bcd35da150fc8b4990b3）
+- head_commit：562635873bfe9dcb5d78dfe3b66aba86f5430b81（本次handoff更新前main；t005未提交，分支head仍84f84311815bff330a51bcd35da150fc8b4990b3）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+#### 2026-10-29T21:45:37+08:00 t005恢复接线与容器拓扑检查点
+
+- 当前t005仍attempt1/execution8c2fd5e26cdc49f4bd8008edecd1d36e/ownerroot_v2_t005_20261029，branch=t005_v2_supervisor，head_commit=84f84311815bff330a51bcd35da150fc8b4990b3；尚无执行commit/finish，七AC未勾、正式Verify/full review0。此前恢复入口中的PID27347与candidate_02均已过时。
+
+- 独立真实API离线黑盒已PASS39.35秒：实际停止API、UDS正常关闭、事件落盘、Supervisor SIGKILL、同DB恢复及无误重启；公共Gateway fixture改为Bearer鉴权和实例fence，三个host E2E与相关unit共8PASS136.13秒。fixture不代表t006正式Gateway完成。
+
+- 新Supervisor容器+独立API/Gateway/coturn+双Profile完整拓扑PASS21.79秒（.scratch/t005_api/container_graph_round3.log）：仅Supervisor挂Docker Socket、无SQLite/SQLAlchemy，Browser独立egress网络、Stream仅媒体网络，实际infra IP下发，Viewer关闭握手先于Runtime删除、旧stop重放不杀新实例，Supervisor实际SIGKILL后恢复。该PASS使用Supervisor06=sha256:76ed6bb2733533fa52a84f9c39c93b47a979d3b3b7222cfabb2c1079c19415ec；之后源已变，且新增Browser PID/容器ID不变断言，必须重建重跑，不能冒充当前候选PASS。冷启动API fixture需sqlalchemy[asyncio]补greenlet；正式交付依赖检查留t012。
+
+- 按明确架构计划“异常后自动重试三次2/10/30”收敛为首次异常+三次重试，failure_count记录异常总数4时阻断；不再等待旧计数问题答复。共享domain/runtime_policy用于API与Supervisor，无DB结构迁移。新真实SQLite四项生命周期语义+调度测试5PASS0.89秒，相关repo/core回归25PASS1.91秒。旧test_runtime_events_convergence_and_exit_contract及test_retry_policy_three_strikes整体删除，分别由新正常/异常/迟到/重放/heartbeat属性覆盖，未就地改旧预期制造绿。
+
+- Root补原子快照/派生凭证写入（替换symlink而非跟随）、Profile目录别名和跨Profile特殊挂载拒绝，13PASS0.56秒；事件journal路径与内部profile/instance须一致，4PASS0.43秒。API无本地session状态改读权威running意愿，真实HTTP先RED后1PASS2.12秒。
+
+- 恢复协调器首稿close锁死锁与快照RPC失败猜配置均由Root真实RED复现；作者修复后Root复验10PASS0.38秒。Runner已接tick/close。旧retry E2E只重建同进程对象，不能证明SIGKILL，已退回改真实subprocess及Docker创建时间/持久due证据，2/10/30实际时间仍未通过。
+
+- 当前唯一生产writer为OpenCode恢复作者session ses_e78331402ffedLVqPXYz1O9UBW、PID41557/exec99923，独占recovery_coordinator.py、新retry E2E、新coordinator单元；日志main/.scratch/v2_orchestration/t005_recovery_actual_process.jsonl。另测试格式作者PID41730/exec17547独占其owned_files.json枚举的新test/fixture，日志t005_test_lint.jsonl；Root不触及上述写域。恢复前核PID及JSONL最终stop，不重复启动。Root拥有其余生产/文档。
+
+- 下一步：真实重试黑盒闭环、当前源镜像重建及加强容器拓扑复验、完整门禁/文档/schema、冻结候选后独立full review；再按原队列t006→t007→t008→t013→t014→t009→t010→t011→t012继续。公网ICE与原生x86仅两项USER_WAIVED；容量/P95/8h/1000输入均未测，不宣称通过。
 
 - **2026-10-29T19:55:18+08:00 t005真实CPU媒体子阶段完成**：实际Stream CPU配额压力经生产ResourceMonitor触发8FPS，官方Chrome 2秒解码 **60→16→56帧**，负载/配额恢复后解除限制。完整t004媒体用例含原三代TURN/IME等断言 **PASS107.48秒**；t005/.scratch/t005_api/stream_cpu_v6.log与其basetemp下supervisor_cpu_stream_proof.json保存5个精确raw窗口及派发记录。该证明当前为生产采样器→fixture Gateway WS→真实Stream/Chrome，不能充当Supervisor容器/Gateway HTTP全部接入完成；Root已开始服务接入但尚待完整重验。Docker SDK动态update不支持nano_cpus，真实用例改CFS；生产采样识别NanoCpus/CpuQuota+Period/CpusetCpus最紧实际预算，20单元通过。
 
