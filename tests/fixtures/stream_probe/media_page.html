@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CBrowser real media fixture</title>
+<style>body{margin:0;background:#eef}input{position:fixed;top:100px;left:20px;font:32px sans-serif;width:800px}canvas{position:fixed;top:180px;left:20px}</style>
+<input id="probe_input" autofocus aria-label="Remote input oracle">
+<canvas id="motion" width="1200" height="600"></canvas>
+<script>
+window.motionEnabled = true;
+window.remoteEvents = [];
+for (const type of ['keydown','keyup','beforeinput','input','focus','blur']) {
+    document.addEventListener(type, event => remoteEvents.push({
+        type, key:event.key, code:event.code, data:event.data,
+        trusted:event.isTrusted, target:event.target.id
+    }), true);
+}
+window.audioContext = new AudioContext({sampleRate:48000});
+window.oscillator = audioContext.createOscillator();
+oscillator.frequency.value = 440;
+const gain = audioContext.createGain();
+gain.gain.value = 0.1;
+oscillator.connect(gain).connect(audioContext.destination);
+oscillator.start();
+const context = document.getElementById('motion').getContext('2d');
+let index = 0;
+function draw() {
+    if (window.motionEnabled) {
+        index++;
+        context.fillStyle = `hsl(${index % 360},80%,55%)`;
+        context.fillRect(0,0,1200,600);
+        context.fillStyle = 'black';
+        context.fillRect((index * 17) % 1100,100,100,200);
+    }
+    requestAnimationFrame(draw);
+}
+draw();
+</script>

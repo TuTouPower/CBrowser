@@ -1,0 +1,211 @@
+"""
+Configuration loader and security validator for StreamAgent.
+Requires external secret file or explicit environment injection;
+enforces no hardcoded secrets.
+"""
+
+import math
+import os
+import re
+import urllib.parse
+from pathlib import Path
+from typing import List, Optional
+
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
+
+
+class StreamAgentConfig(BaseModel):
+    model_config = ConfigDict(hide_input_in_errors=True, extra="forbid")
+
+    profile_id: str
+    runtime_instance_id: str
+    gateway_url: str
+    agent_token: SecretStr
+    udp_mux_port: int = 30006
+    width: int = 1920
+    height: int = 1080
+    depth: int = 24
+    pulse_dir: str = "/pulse"
+    x11_socket: str = "/tmp/.X11-unix/X99"
+    xauthority_path: str = "/tmp/.Xauthority"
+    min_fps: float = 8.0
+    max_fps: float = 30.0
+    video_streaming_mode: bool = False
+    turn_servers: List[dict] = Field(default_factory=list)
+
+    @field_validator("profile_id")
+    @classmethod
+    def validate_profile_id(cls, v: str) -> str:
+        if not v or not re.match(r"^[a-zA-Z0-9_-]+$", v):
+            raise ValueError("Invalid profile_id: must match ^[a-zA-Z0-9_-]+$")
+        return v
+
+    @field_validator("runtime_instance_id")
+    @classmethod
+    def validate_runtime_instance_id(cls, v: str) -> str:
+        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
+            raise ValueError(
+                "Invalid runtime_instance_id: must match ^[a-zA-Z0-9_\\-\\.:]{1,128}$"
+            )
+        return v
+
+    @field_validator("gateway_url")
+    @classmethod
+    def validate_gateway_url(cls, v: str) -> str:
+        if not v or not isinstance(v, str):
+            raise ValueError("gateway_url must be a non-empty string")
+        parsed = urllib.parse.urlsplit(v)
+        if parsed.scheme not in ("ws", "wss"):
+            raise ValueError("gateway_url scheme must be ws or wss")
+        if not parsed.hostname:
+            raise ValueError("gateway_url must contain a valid hostname")
+        if parsed.username or parsed.password or "@" in parsed.netloc:
+            raise ValueError("gateway_url must not contain user credentials")
+        if parsed.query:
+            raise ValueError("gateway_url must not contain query parameters")
+        if parsed.fragment:
+            raise ValueError("gateway_url must not contain URL fragments")
+        try:
+            port = parsed.port
+            if port is not None and not (1 <= port <= 65535):
+                raise ValueError("gateway_url port must be between 1 and 65535")
+        except ValueError:
+            raise ValueError("Invalid gateway_url port: must be between 1 and 65535")
+        return v
+
+    @field_validator("agent_token")
+    @classmethod
+    def validate_agent_token(cls, v: SecretStr) -> SecretStr:
+        val = v.get_secret_value().strip()
+        if not val or len(val) < 8:
+            raise ValueError("agent_token must be at least 8 characters")
+        return v
+
+    @field_validator("udp_mux_port")
+    @classmethod
+    def validate_udp_mux_port(cls, v: int) -> int:
+        if v < 30000 or v > 30991:
+            raise ValueError("udp_mux_port must be in allocated range [30000, 30991]")
+        return v
+
+    @field_validator("width")
+    @classmethod
+    def validate_width(cls, v: int) -> int:
+        if v != 1920:
+            raise ValueError("Fixed geometry width must be 1920")
+        return v
+
+    @field_validator("height")
+    @classmethod
+    def validate_height(cls, v: int) -> int:
+        if v != 1080:
+            raise ValueError("Fixed geometry height must be 1080")
+        return v
+
+    @field_validator("depth")
+    @classmethod
+    def validate_depth(cls, v: int) -> int:
+        if v != 24:
+            raise ValueError("Fixed geometry depth must be 24")
+        return v
+
+    @field_validator("video_streaming_mode")
+    @classmethod
+    def validate_video_mode(cls, v: bool) -> bool:
+        if v is not False:
+            raise ValueError("video_streaming_mode must be False")
+        return v
+
+    @model_validator(mode="after")
+    def validate_fps_bounds(self) -> "StreamAgentConfig":
+        if not math.isfinite(self.min_fps) or not math.isfinite(self.max_fps):
+            raise ValueError("min_fps and max_fps must be finite numbers")
+        if self.min_fps < 8.0:
+            raise ValueError("min_fps cannot be lower than 8.0 FPS floor")
+        if self.max_fps > 30.0:
+            raise ValueError("max_fps cannot exceed 30.0 FPS cap")
+        if self.min_fps > self.max_fps:
+            raise ValueError("min_fps cannot exceed max_fps")
+        return self
+
+    def __repr__(self) -> str:
+        return (
+            f"StreamAgentConfig(profile_id={self.profile_id!r}, "
+            f"runtime_instance_id={self.runtime_instance_id!r}, "
+            f"gateway_url={self.gateway_url!r}, "
+            f"agent_token='***', "
+            f"udp_mux_port={self.udp_mux_port}, "
+            f"width={self.width}, "
+            f"height={self.height}, "
+            f"depth={self.depth}, "
+            f"min_fps={self.min_fps}, "
+            f"max_fps={self.max_fps}, "
+            f"video_streaming_mode={self.video_streaming_mode})"
+        )
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    @classmethod
+    def from_env(cls) -> "StreamAgentConfig":
+        profile_id = os.environ.get("CBROWSER_PROFILE_ID")
+        if not profile_id:
+            raise ValueError("CBROWSER_PROFILE_ID environment variable is required")
+
+        gateway_url = os.environ.get("CBROWSER_GATEWAY_URL")
+        if not gateway_url:
+            raise ValueError("CBROWSER_GATEWAY_URL environment variable is required")
+
+        runtime_instance_id = os.environ.get("CBROWSER_RUNTIME_INSTANCE_ID")
+        if not runtime_instance_id:
+            raise ValueError(
+                "CBROWSER_RUNTIME_INSTANCE_ID environment variable is required"
+            )
+
+        # Secret management: loading non-empty external file fail closed,
+        # no silent fallback when explicit file bad
+        token_str: Optional[str] = None
+        secret_file = os.environ.get("CBROWSER_AGENT_SECRET_FILE")
+        if secret_file:
+            path = Path(secret_file)
+            if not path.is_file():
+                raise ValueError("Secret file not found or not a regular file")
+            token_str = path.read_text().strip()
+            if not token_str:
+                raise ValueError("Secret file is empty")
+        else:
+            token_str = os.environ.get("CBROWSER_AGENT_TOKEN")
+
+        if not token_str:
+            raise ValueError(
+                "Authentication secret required: set CBROWSER_AGENT_SECRET_FILE "
+                "or CBROWSER_AGENT_TOKEN"
+            )
+
+        udp_port_raw = os.environ.get("CBROWSER_UDP_MUX_PORT", "30006")
+        try:
+            udp_port = int(udp_port_raw)
+        except ValueError:
+            raise ValueError("Invalid CBROWSER_UDP_MUX_PORT integer")
+
+        pulse_dir = os.environ.get("CBROWSER_PULSE_DIR", "/pulse")
+        x11_socket = os.environ.get("CBROWSER_X11_SOCKET", "/tmp/.X11-unix/X99")
+        xauth = os.environ.get("XAUTHORITY", "/tmp/.Xauthority")
+
+        return cls(
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            gateway_url=gateway_url,
+            agent_token=token_str,
+            udp_mux_port=udp_port,
+            pulse_dir=pulse_dir,
+            x11_socket=x11_socket,
+            xauthority_path=xauth,
+        )

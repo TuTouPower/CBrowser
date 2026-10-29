@@ -1,45 +1,31 @@
-# 需求规范：WebRTC 远程画面传输与输入 (webrtc_remote_display)
+# 需求规范：WebRTC 远程画面传输与输入
 
-## 1. 业务目标与适用范围
+## 适用范围
 
-本文档规定基于 Selkies 2.1.0 官方稳定版本的 WebRTC 画面捕获、网络穿透、输入事件及剪贴板同步契约。
-全面废弃原 noVNC 及 RFB 协议链路，提供 60 FPS、低延迟、支持中文输入法组合的远程操作体验。
+单机 Docker 中，每个 Profile 使用独立 Browser/Stream Runtime；外部官方 Google Chrome 页面通过 Selkies WebRTC 接收画面和音频、提交原生输入。t004 提供 Stream 组件；正式 Gateway、前端、Supervisor 和部署分别由后续 task 对接，旧入口尚未切换。
 
-## 2. 行为契约
+## 显示、页面与策略
 
-### 2.1 显示与视频编码
+- 远端显示固定1920×1080、DPR 1，Xvfb :99 / Openbox。不同页面尺寸、连接顺序和客户端 resize 不改变远端几何。
+- 每页独立 Peer、身份、输入与静音，共享 Profile 捕获和编码；复制标签冲突自动分离身份，关闭或刷新一页不影响其他页。
+- 活动前台30 FPS、静止前台8 FPS；持续变化画面保持活动目标。单个后台页不得降低其他前台需求；全部隐藏/断开才暂停捕获，Browser 继续运行。恢复可见先8 FPS并请求关键帧，再按活动升帧。
+- Supervisor 通过认证控制面下发8–30 FPS上限，解除后恢复目标；页面不能修改过载配额。
+- 当前 Mac/OrbStack 以 CPU 软件编码验收；1/3/10流容量、10 Profile中9后台1前台、P95≤100ms、首帧≤1秒与8小时稳定性由后续性能任务实测。
 
-- 容器内固定使用 Xvfb 显示编号 `:99`。
-- 窗口管理器固定使用 Openbox，只负责窗口自动最大化与定位（`0,0`），禁止显示 Linux 面板。
-- 视频分辨率默认 `1920x1080`，DPR 固定为 1，目标帧率 60 FPS。
-- 捕获层采用 Selkies 2.1.0，根据宿主硬件可用性优先启用硬件编码，降级使用软件编码。
+## 传输与信令
 
-### 2.2 端口与 WebRTC 穿透
+- Profile 的多个 Peer 共用该 Profile 分配的单个 UDP mux 发布端口；端口池30000–30991。Supervisor 负责独占分配、实际映射与回收。
+- WebRTC DTLS-SRTP 优先直连，必要时 TURN 中继。客户端与服务端配置分别使用可达地址和独立短期凭证；凭证轮换保持同 PC、DTLS 和 Track。
+- 新 ICE generation 必须实际接管，旧连接关闭并拒绝发送，然后按新 ufrag 的 selected relay pair 重新采样媒体增量；旧 relay 继续传流不能充当轮换通过。
+- 正式信令路径为 /stream/{profileId}/signal；StreamTicket、Gateway 注册表和用户认证由 t006 提供。Stream Agent 仅接受匹配 Profile、运行实例与当前 Agent session 的 v2 包，协议见 schemas/stream/agent_protocol.json。
+- 部署目标 coturn 的3478/5349与50000–50999中继端口由 t012 统一编排；t004 测试使用隔离端口，不代表部署完成。
 
-- 每个运行容器动态分配独立 UDP 媒体端口，端口池范围固定为 `30000–30999`。
-- Supervisor 负责端口的独占分配、向 Docker 映射及退出回收。
-- 媒体传输采用 WebRTC DTLS-SRTP 加密，优先建立直连 ICE 媒体连接；直连受阻时通过 coturn 提供的 TURN 中继。
-- coturn 中继端口为 UDP/TCP 3478、TLS/TCP 5349，媒体中继端口池为 `50000–50100`。
+## 输入与隔离
 
-### 2.3 信令与后台标签页策略
+中文沿官方 composition → co,end → Native X11 路径提交，组合期间不以剪贴板模拟文本。各页面输入均到达同一真实 Browser。剪贴板内容不得进入日志；完整前端剪贴板权限与1000次一致性验证由后续任务验收。
 
-- Chrome 客户端通过 API 鉴权后获取短期一次性 `StreamTicket`。
-- 客户端通过 WebSocket 连接 `/stream/{sessionId}/signal` 完成 SDP 交换与 ICE Candidate 传递。
-- 当外部 Chrome 标签页进入后台（`visibilityState === 'hidden'`）：
-    - 前端发送画面暂停控制指令；
-    - 容器内暂停画面捕获与视频编码，保持远程浏览器继续运行与网络心跳；
-- 当外部标签页恢复前台（`visible`）：
-    - 触发关键帧请求，快速恢复画面渲染并重新确认控制租约。
+Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，不挂载用户数据或 Docker Socket。Agent 失联重连、无 viewer 或媒体暂停不停止 Browser。Stream 私有版本适配与测试约束见 docs/blueprint/stream_runtime.md。
 
-### 2.4 输入代理与剪贴板
+## 验收与剩余边界
 
-- 中文组合输入法代理：操控页面内嵌透明代理输入区，接收 `compositionstart` / `compositionupdate` / `compositionend` 事件，组合期间不转发拼音按键，组合完成后一次性提交完整 Unicode 文本。
-- 剪贴板隔离：每个控制会话拥有独立的剪贴板数据通道，后台标签页禁止篡改本机剪贴板，日志严格禁止输出剪贴板敏感明文。
-
-## 3. 验收标准
-
-- [ ] AC-001：外部 Chrome 操控页面能稳定建立 WebRTC 媒体通道并流畅渲染远程 60 FPS 画面。
-- [ ] AC-002：运行时分配的 UDP 媒体端口在 `30000-30999` 范围内且无冲突。
-- [ ] AC-003：标签页切至后台时容器停止视频流编码，切回前台 300ms 内恢复最新画面。
-- [ ] AC-004：通过本地 macOS 中文输入法连续输入汉字无丢字、乱码或残留拼音字母。
-- [ ] AC-005：宿主机与容器内浏览器的文本复制粘贴准确一致，且后台会话无法覆盖宿主机剪贴板。
+组件行为以 t004 的逐项 AC 和真实 E2E 为准，不能用 Mock Peer、编码器或合成音频替代。当前测试的外部 Chrome CDP composition 验证原生客户端路径；桌面输入法候选窗口、1000次输入/剪贴板与最终整机容量仍需后续验收。公网和原生 Linux x86 执行仅按用户明确豁免记 NOT_RUN / USER_WAIVED，不计实测 PASS。

@@ -67,6 +67,18 @@ uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status
 ```
 
+## Stream Runtime 组件验证
+
+运行 t004 组件验收前，按照 docs/guides/stream_runtime_validation.md 提供三个不可变镜像 ID 和只读引擎缓存。完整媒体测试通过官方 Mac Google Chrome，包含双 Peer、复制标签、共享策略、真实组合输入、三代 relay 与 Browser 生存性；不能以 Native DataChannel 探针代替 Chrome RTP。
+
+```bash
+: "${CBROWSER_STREAM_TEST_IMAGE:?Provide an immutable Stream image ID}"
+: "${CBROWSER_TURN_TEST_IMAGE:?Provide an immutable coturn 4.6 image ID}"
+PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
+```
+
+先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。单侧 TURN 错误凭证负例通过测试专用 CBROWSER_STREAM_TURN_REJECT_SIDE=server 或 client 注入；期望完整媒体测试非零且 coturn 拒绝认证/新代无 commit，启动失败或缺镜像不算有效负例。正常门禁不得设置该变量。
+
 ## 专项技术验证探针
 
 代码为不可变归档快照，先完整复制到专属scratch再运行；下表列出入口和依赖，具体正负例与清理契约见各spike报告。固定前缀/端口同一时刻只能运行一份，不能只改容器名忽略脚本内部引用。归档历史报告里的旧docs/spikes路径按docs/archive/spikes读取。

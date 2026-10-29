@@ -15,6 +15,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler
@@ -655,14 +656,17 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
             )
 
         # Analyze using audio_analyzer.py
-        analyzer_py = Path(
-            ".scratch/t003_implementation/audio_tools/audio_analyzer.py"
-        ).resolve()
+        analyzer_py = (
+            Path(__file__).resolve().parents[1]
+            / "fixtures"
+            / "runtime_probe"
+            / "audio_analyzer.py"
+        )
 
         # 3a. Profile A: Positive 440Hz test + Crosstalk check against 880Hz
         res_pcm_a = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(analyzer_py),
                 str(raw_a),
                 "440.0",
@@ -685,7 +689,7 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         # 3b. Profile A: Negative test (must reject 880Hz target on 440Hz signal)
         res_neg_a = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(analyzer_py),
                 str(raw_a),
                 "880.0",
@@ -707,7 +711,7 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         # 3c. Profile B: Positive 880Hz test + Crosstalk check against 440Hz
         res_pcm_b = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(analyzer_py),
                 str(raw_b),
                 "880.0",
@@ -731,7 +735,7 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         # be rejected
         res_rate_mismatch = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(analyzer_py),
                 str(raw_a),
                 "440.0",
