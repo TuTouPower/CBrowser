@@ -2,14 +2,20 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T13:34:59+08:00 v2 架构计划执行交接
+## 2026-10-29T13:51:52+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：268ba585c331f947f607003eac9fe59641178bb9（本次交接更新前main；t001–t004已集成，t005未提交）
+- head_commit：ce9c400d705d34d53bf866d9701f38b95463a97f（本次交接更新前main；t001–t004已集成，t005实施中未提交）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T13:51:52+08:00 t005 API白名单与子域复核阶段**：Root在登记t005 WT完成内部配置/快照/绑定/观测/事件受限路由，统一前缀 **/api/v1/internal/supervisor**、**Authorization Bearer外部文件token**，复用t002规范handler/事务，不授予Profile CRUD。真实HTTP与OpenAPI一致性合跑 **3PASS4.76秒**，导出schema已更新；新API模块/新HTTP测试Ruff通过，app.py两项原有E501未顺手修改。重放相同事件不能取消后续新的running意愿。Root接口真相文件main/.scratch/t005_preparation/root_api_contract.md，core_contract首稿旧公共路径/X-header与ignored_duplicate枚举不能直接当正式接口。
+
+- **首轮作者已terminal，现为同会话续行，不能按旧PID恢复**：core首轮session **ses_e79dd4703ffe7lMlEknoXSms3l**/99949已terminal0stop；4unit+1Docker探针只有对象/IPC配置，API是MockTransport且created也计通过，Root不采纳为真实Runtime验收。已续行 **exec45995/PID4654**，log t005_core_followup.jsonl，要求真实uvicorn API与Browser/Stream ready/认证注册、停止/恢复，不能改弱断言。resource首轮session **ses_e79dd430bffepsQhMtOCJRaRmI**/99965已terminal0stop，6项burner/单测不证明真实Stream限帧；Root发现host busy缺失、无配额一核误归整机压力、采样窗口未实施/重复与跨容器counter等缺口，已续行 **exec92577/PID4192**，log t005_resource_followup.jsonl，补真实host/配额/窗口与机器JSON、精确自有清理/不可变镜像。初报精确数值缺原始JSON暂不采纳。两个续行仍需核实际PID/JSONL，观察超时不可重复启动。
+
+- 当前t005仍 **attempt1/execution8c2fd5e26cdc49f4bd8008edecd1d36e/ownerroot_v2_t005_20261029**，WT/branch/base不变，strict preflight PASS；七AC全未勾、正式Verify/full review均0，未commit/finish。Root下步审真实API认证映射、统一数据根（草稿engine_cache外部resolve不能绕路径校验）、GeoIP与Runtime ready/事件重启闭环，再整合真实CPU到Stream降帧。完整目标保持active，t005后继续原队列。
 
 - **2026-10-29T13:34:59+08:00 t005首批实现恢复点**：core PID99949与resource PID99965仍活跃（各自20分钟首批检查点，不因观察超时重启）。两方接口稿已落.scratch/t005\_{core,resource}/{core,resource}_contract.md；核心已落path_validator/port_allocator/retry_policy/event_forwarder/docker_adapter/protocol等源码，CPU作者已落resource_policy与单元/真实Docker资源测试，但尚未由Root复核通过。Root已在t005 WT完成api/internal_supervisor.py与api/app.py内部认证首批TDD：真实HTTP先404 RED，再外部文件凭证/Bearer常量时间校验GREEN，**1PASS2.11秒**，日志.scratch/t005_api/auth_{red,green}.log；未经授权/错误凭证401，正确凭证200、不回显。Root新测试fixture setup也在finally精确回收。尚无完整生命周期/事件RPC通过，需统一core接口稿中的旧公共API路径与认证内部RPC，OpenAPI待路由稳定统一生成；七AC仍未勾，正式Verify/full review均0。禁止据源码文件存在或burner采样宣称AC通过；t005一个执行commit尚未创建。
 
