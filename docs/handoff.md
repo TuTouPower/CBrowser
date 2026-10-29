@@ -2,14 +2,20 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T04:32:39+08:00 v2 架构计划执行交接
+## 2026-10-29T08:15:13+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：285ca3c（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：93ef80b（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T08:15:13+08:00 队列溢出回收阶段完成**：新增真实协调器测试先FAIL（worker已删但Gateway没close），修复后6项身份/回收单元PASS，全组六文件 **46PASS0.79秒**，Ruff E/F/W/I通过。关闭消息含当前v2 profile/instance/session与1013，bounded send。最新生产源候选镜像 **41a7f0f90556afd7fdf974598fc39d4e63356b46ce56b294733af2eaf27c97de**，public Python/Debian基底，未改Browser03。前一完整源镜像38c86e...的8实际ICE失败/取消/关闭、3代Native TURN机制及Chrome身份回归共 **10PASS50.39秒**（keymap_source_ice_identity.log）；不是3代Chrome媒体通过，源后改必须最终复验。
+
+- **中文扩大验收尚FAIL，不能凭短文本绿收尾**：新加跨页6×20不同CJK（加最初中文/输入，共8次提交）及两真实Chrome选中remote ICE candidate固定127.0.0.1:30096/UDP。38c86e...首个20字因Native evdev text_room=0不分批而触发缺xdotool fallback，整体FAIL35.79秒；补有限spare容量镜像8f7500...后20字变为错误重排，FAIL37.63秒。再加重绑定settle候选41a7...仍同错序，FAIL36.19秒，不能认为延迟修复有效。定向review57233已terminal0/PASS，但Root另写root_qualification.md拒绝其未测10–20ms/无丢帧/1000次等泛化，报告不算正式full review。
+
+- 新鲜Profile的fixture在Target.createTarget/close原页后两次Runtime.evaluate启动超时（21.16/20.06秒），原失败保留；测试改复用SDK初始页并Page/Runtime.enable，初轮X11窗口未激活导致ASCII失败32.18秒；加Page.bringToFront与外部页面激活后ASCII恢复，仍在20字错序，故未降低文本断言。当前Root运行独立诊断镜像dcb9eaff8bc8...（仅测试sitecustomize计数/map trace，含fixture字符，绝不交付生产），exec句柄以主控工具返回核对，日志keymap_batch_trace_media.log；下一步查Native真实room、分批和overlay映射，不再猜延迟。sixAC全未勾/正式Verify与review仍0。
 
 - **2026-10-29T04:41:27+08:00 中文定位与整链诊断阶段完成**：旧core Binding候选整镜像42bd99381efe...，45单元PASS；当前v2 wire真实Chrome整体仍FAIL34.77秒在中文，Linux平台新鲜Profile对照也FAIL34.74秒，Trixie同业务源镜像076d90... FAIL43.59秒，故未修改Browser03/隐私平台。Root直接读服务端XKB已更新而活跃Chrome仍按旧映射；单纯XkbSetMap不生效，xkbcomp重新加载完整相同map后收到正确可信中文输入。Root诊断Stream镜像8fd4318299b5...仅增加x11-xkb-utils与Native prebind映射更新通知，真实双Chrome完整 **1PASS42.46秒**：两页中文composition/official co,end、X11剪贴板哨兵不变、刷新ID稳定且另一页同PC音视频增长、独立静音/关闭、生存页输入与Browser PID/start_ticks不变。证据t004/.scratch/t004_root_checks/ime_reload_complete_proof/与ime_reload_media_round1.log。不是六AC完整通过，尚无最终源镜像/正式review。
 
