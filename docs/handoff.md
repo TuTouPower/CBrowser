@@ -2,14 +2,27 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-30T01:06:55+08:00 v2 架构计划执行交接
+## 2026-10-30T02:38:00+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：05c8a52f4badb46893154d360e1d8ff4320e94ba（本次更新前main；t005实施中未提交）
+- head_commit：978a53a（本次更新前main；t005实施中未提交）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+#### 2026-10-30T02:38:00+08:00 t005 内核隔离与异常恢复检查点
+
+- branch=main，head_commit=978a53a（本次交接更新前）；t005 branch=t005_v2_supervisor、head=84f84311815bff330a51bcd35da150fc8b4990b3，attempt1/execution8c2fd5e26cdc49f4bd8008edecd1d36e/ownerroot_v2_t005_20261029。尚无执行commit/finish，七AC未勾、正式Verify/full review0，目标与固定后续队列不变。
+- 已采用 Runtime 自有 netns IPv4/IPv6 filter + 业务启动 gate，不更改 OrbStack 全局设置。临时 helper 仅授 NET_ADMIN、无 Docker Socket；Browser/Stream 保持 UID1000、只读根、cap-drop ALL。原代理排除许可不再是实施前提，代理因果仍未证实。旧按来源过滤的应用负例已移除，普通 bridge 跨网可达事实保留为 d020。
+- 定向实证：Supervisor12=sha256:805aff11a1b2e3d3f846a6fe9f19b4556a4bae11a54cf7adf96f6641f9fb09b5，无过滤网络组合7PASS13.46秒、命名空间黑盒3PASS26.80秒；IPv6 私有 echo 原宽泛 ICMPv6 规则先红，收窄邻居发现后绿，允许 TCP 仍 PONG，重复安装拒绝且原策略保留。公网 IPv6 GUA 未测，不能泛化。
+- Supervisor13=sha256:aab6a25bb7c0c36c910c82895b8281469fa295fe30386edc4a214b084c030cfd，容器图 Round7 1PASS30.44秒：真实双 Profile 的 Browser/Stream 四种跨 Profile TCP 访问拒绝、目标 loopback 正例；Viewer ACK 后停止、旧停止重放不杀新实例、实际 SIGKILL 重启保持容器 ID/Browser PID/端口。源之后变化，13不是最终镜像，必须重建复验。
+- 已移除未使用的本地 RetryPolicyManager 及仅测试该缓存的原型测试，API 仍为唯一失败计数/阻断权威。真实 HTTP 复现并修复旧手动操作重放绕过新阻断、bind 后端口耗尽遗留实例、旧本地会话覆盖 API 当前代际状态。资源采样/RPC故障按 Profile 隔离，不把不可采样当低负载。定向日志保留红绿，最新完整unit+integration为232PASS43.93秒（当时恢复作者仍修改，非冻结最终门禁）。
+- 新启动锁内孤立 helper 清理已真实 Docker 红绿1PASS3.23秒，核 prefix/managed-by/角色/随机名称后只移除 cache-init/network-policy；Runtime/Gateway/非本方对象均保留，名称不符拒绝。只接启动阶段，周期扫描不调用。
+- 当前唯一生产writer：OpenCode cpa/gemini-3.8-flash session ses_e77162b3cffeN67GwOZxxgVal7，续行PID72897/exec80334；独占 recovery_coordinator.py、新startup_recovery unit/E2E，自有scratch。原PID71093已SIGINT结束，原因是加入了明确禁止的Mock兼容getattr分支，已要求删除并直接使用Core真实接口。Root更新其余旧fixture输入，持有Core/Adapter/runner/其他文件。日志main/.scratch/v2_orchestration/t005_startup_recovery_corrected.jsonl；恢复先核实际PID与finish，不重复启动。
+- 该writer闭环API已bind但Browser尚未创建即SIGKILL的恢复，以及Native正常退出首次POST503时优先于合成异常；Core提供has_native_exit提示，真实HTTP故障代理与Docker空扫描证明尚待结果。旧55415/58944/60597/63400/66325作者均terminal，Root已接管其文件。
+- namespace作者曾漏--no-project生成uv.lock，已按JSONL命令/mtime确认后移入t005/.scratch/t005_api/generated_namespace_uv_lock_backup；不提交。自有历史namespace helper泄漏d176653eda66/c7a21f75b91c已按证据精确回收，未知pensive_satoshi与既有cbrowser未动。
+- 最新日志已复制main/.scratch/v2_orchestration/t005_evidence_live/kernel_recovery_checkpoint，0700/0600与SHA256 manifest。下一步：完成startup recovery真实证明、重建当前Supervisor镜像、最终单元/HTTP/Host恢复/重试/CPU到Chrome/容器图门禁、文档spec、冻结后独立full review、单次执行commit及授权本地集成。公网/原生x86仅两项USER_WAIVED，容量/P95/8h/1000输入仍未测。
 
 #### 2026-10-30T01:06:55+08:00 t005真实网络证据纠偏与启动竞态修复
 
