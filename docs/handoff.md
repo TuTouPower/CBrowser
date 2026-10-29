@@ -2,14 +2,26 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T21:45:37+08:00 v2 架构计划执行交接
+## 2026-10-30T01:06:55+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：562635873bfe9dcb5d78dfe3b66aba86f5430b81（本次handoff更新前main；t005未提交，分支head仍84f84311815bff330a51bcd35da150fc8b4990b3）
+- head_commit：05c8a52f4badb46893154d360e1d8ff4320e94ba（本次更新前main；t005实施中未提交）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+#### 2026-10-30T01:06:55+08:00 t005真实网络证据纠偏与启动竞态修复
+
+- branch=main，head_commit=05c8a52f4badb46893154d360e1d8ff4320e94ba（本次交接更新前）；t005仍branch=t005_v2_supervisor、head=84f84311815bff330a51bcd35da150fc8b4990b3、attempt1/execution8c2fd5e26cdc49f4bd8008edecd1d36e/ownerroot_v2_t005_20261029。未执行commit/finish，七AC未勾，正式Verify/full review0；独立预审不充当正式review。
+- 真实重试作者已terminal：三档Docker Created-API updated_at为3.04/11.59/31.21秒，真实Supervisor进程SIGKILL returncode=-9、换PID、failure_count4阻断、手动恢复/正常关闭，87.02秒PASS。Root后续发现并修复API非200仍合成exit、cleanup上限仅记录不执行、singleton路径跟随其他Profile；3项真实逻辑RED后相关14PASS2.52秒。控制HTTP错误不再回显/记录完整异常，敏感canary先红后8PASS0.72秒。该87秒结果早于上述修复，当前源重试E2E仍须复验。
+- 容器图Round4新增Browser PID断言真实失败：旧runner_info/socket令替换实例提前ready；Root补profile/instance/config_version/PID核对，相关16PASS2.31秒。当前整镜像Supervisor10=sha256:51075e9c19990b8d247fae63f5ee25eb8330d36f002652354056b84230f447a6，API03=b53bca10263588b8c364b697984c69630d239573ab8b1a70c28782756c50c785，Gateway02=dac21afe70d77cab6e55c2dfbb10d41f1785e5cf55cdc0c30466b3fc483ebf28；加强后的容器图Round5 PASS25.37秒（container_graph_round5.log），无源码overlay。新增导出脚本同步Supervisor JSON schema，stop两种fence必需；schema检查1PASS。
+- **网络隔离证据纠正，不能略过**：Root发现旧RUNTIME_SERVER_SCRIPT主动过滤gateway来源，先前“普通bridge隔离已证明”结论无效。独立无过滤server同网/跨网均PONG；internal=True对照同网成功、跨网ENETUNREACH。已经工具创建d020_orbstack_bridge_reachability.md，当前AC-001/006网络部分未通过。普通bridge不能当强隔离；internal对照不能证明Browser上网与媒体都满足。透明代理是待证假设，不写成根因。
+- 用户授权问题已通过异步问题发出，尚未收到答案：只临时把新测试网段198.19.254.0/24加入OrbStack network.proxy.exclude，实验后恢复原值空。原network_proxy=auto，macOS HTTP/HTTPS/SOCKS启用；该网段与现有Docker IPAM无重叠。方案.scratch/t005_api/proxy_exclusion_proposal.md，尚未写任何OrbStack设置。仓库外写入须明确授权，不因goal自动放宽。官方资料https://docs.orbstack.dev/docker/network#proxies；ego任务space0已正常finish，不复用已结束space。
+- **当前两个验证lane及一个测试writer**：测试配置作者PID55415/exec62939/session ses_e7819b695ffeNbrwEZ2hzQaFsj，仅owned_files.json新测试/fixture及retry E2E，日志main/.scratch/v2_orchestration/t005_test_config.jsonl；Root不改其文件。独立源码预审PID58944/exec10629/session ses_e77666b69ffe3WdRC251TK9O4v，仅validation/.scratch/t005_pre_audit报告/实验，已给冻结生产副本；真实namespace网络策略研究PID60597/exec52723/session ses_e776180a5ffeJysDs9jL57L3hM，仅validation/.scratch/t005_net_policy，自有t005-nsp资源，不许host namespace/Socket/全局设置。恢复先核PID和最终stop，不因观察超时重启。
+- 最新门禁未全绿：17真实HTTP PASS33.47秒；unit_checkpoint_3为192PASS/1FAIL（MockDockerAdapter仍写旧位置/缺代际runner_info导致严格ready超时，测试writer正在核fixture；不可把200预期改500制造绿）。全组合full_checkpoint_2为205PASS/1FAIL，后者是cleanup测试脆弱RPC响应序列，Root仅改按路径供响应的fixture，保留断言。当前生产Root Ruff E/F/W/I通过；全部最终门禁还未运行。旧uv.lock核明由恢复作者漏--no-project命令生成，已移.scratch/t005_recovery/generated_uv_lock_backup，未提交/删除用户资产。
+- 自有泄漏be981097b0b4已由旧network_finalization JSONL精确确认是t005-net-9e0a2e91失败前登记异常遗留，核labels/无网络后仅删除此ID。未知pensive_satoshi42bbb06167ec与既有cbrowser/其他服务均未动。网络/竞态/重试证据已复制main/.scratch/v2_orchestration/t005_evidence_live/network_readiness_checkpoint，含SHA256 manifest，0700/0600。
+- 下步：真实隔离修复及无过滤正负复验、当前重试/离线E2E重跑、预审处置、全门禁及最终文档/spec、冻结后正式独立review与一个执行commit。后续固定队列不变；公网/原生x86仅两项USER_WAIVED，容量/P95/8h/1000输入均仍未测。
 
 #### 2026-10-29T21:45:37+08:00 t005恢复接线与容器拓扑检查点
 
