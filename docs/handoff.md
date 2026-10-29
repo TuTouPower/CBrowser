@@ -2,14 +2,22 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T13:51:52+08:00 v2 架构计划执行交接
+## 2026-10-29T15:13:48+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：ce9c400d705d34d53bf866d9701f38b95463a97f（本次交接更新前main；t001–t004已集成，t005实施中未提交）
+- head_commit：c4a017f（本次交接更新前main；t001–t004已集成，t005实施中未提交；task分支head仍84f84311815bff330a51bcd35da150fc8b4990b3）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T15:13:48+08:00 t005安全与采样子阶段检查点**：Root已接管Adapter/path/port/resource及Agent凭证，production不再有dev-secret-token；外部Agent主密钥派生profile+runtime作用域HMAC，独立于API凭证。真实双Profile认证用例先PASS25.96秒，缓存约束修改后最新 **PASS25.06秒**（t005/.scratch/t005_api/cache_green_v3.log）：预置引擎/GeoIP物理复制到允许数据根内，所有bind源实际inspect均在根内，Browser缓存/GeoIP只读。缓存初始化由临时helper完成再交Runtime；首两轮失败日志保留，不将旧PASS冒充最新全门禁。
+
+- 网络所有权实测：原同名网络会被直接复用/删除；新增实际Docker碰撞用例RED，改精确名称+managed-by/profile/prefix标签校验后2PASS。清理/扫描失败现在传播，不能吞错后回收端口；cache-init排除Runtime扫描。Root资源TDD修复host恢复不解限、前后台状态丢失、冷热容器互相覆盖、重复/缺失counter假窗口及counter重置假恢复。最新路径/凭证/资源单元+实际网络 **26PASS0.45秒**；独立实际NanoCpus采样1PASS3.73秒；ResourceMonitor异步采集、串行组合/实例派发与实际0.5CPU负载→空闲，加19资源单元 **20PASS11.25秒**。尚未接正式Gateway控制面/实际Stream降帧，AC007未通过；raw测量JSON持久化刚补，需重验新版本。
+
+- **仅核心Round3作者当前活跃**：原core followup4654与recovery9212均已terminal；最新 **OpenCode PID11752/exec97786/session ses_e79dd4703ffe7lMlEknoXSms3l**，日志main/.scratch/v2_orchestration/t005_core_recovery_round3.jsonl。先核PID/最终stop再恢复，不能因观察超时重复启动。写域core/runner/control/event/retry/protocol与专属recovery测试/Dockerfile；Root独占Adapter/resource/AgentCredentials/API/原core_e2e。资源作者4192已terminal，Root接管其文件。上轮SIGKILL测试真实存活/重建通过，但正常退出直接POST、Gateway未鉴权且runner无持续循环，不能证明完整AC004；Root已补测试凭证/数据根，要求作者真实Chrome关闭、API离线持续重放、多Profile原端口恢复、全程finally和单协调者锁。两次失败泄漏自有Supervisor PID11335/11506已核argv后TERM；不动未知/既有容器。
+
+- 执行边界问题已告知用户：核心旧子进程未遵守指定UV缓存，实际使用~/.cache/uv；外部缓存保留未删。私有OpenCode父包装器新增--env-root，强制uv/pip/python缓存、TMP/TEMP和禁写字节码均在code内，后续调用已使用；未改模板/全局配置。重试语义异步问题仍待答复：首次异常后完整2/10/30三次重试，或首次异常计入三失败而只两次重试；依赖计数暂不擅改，不声称30秒已实测。七AC仍未勾、Verify/full review0、无执行commit，原固定后续队列继续。
 
 - **2026-10-29T13:51:52+08:00 t005 API白名单与子域复核阶段**：Root在登记t005 WT完成内部配置/快照/绑定/观测/事件受限路由，统一前缀 **/api/v1/internal/supervisor**、**Authorization Bearer外部文件token**，复用t002规范handler/事务，不授予Profile CRUD。真实HTTP与OpenAPI一致性合跑 **3PASS4.76秒**，导出schema已更新；新API模块/新HTTP测试Ruff通过，app.py两项原有E501未顺手修改。重放相同事件不能取消后续新的running意愿。Root接口真相文件main/.scratch/t005_preparation/root_api_contract.md，core_contract首稿旧公共路径/X-header与ignored_duplicate枚举不能直接当正式接口。
 
