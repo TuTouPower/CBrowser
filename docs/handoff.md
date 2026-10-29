@@ -2,14 +2,24 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T10:07:00+08:00 v2 架构计划执行交接
+## 2026-10-29T13:30:32+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：6c291ac（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：84f84311815bff330a51bcd35da150fc8b4990b3（本次交接更新前main；t001–t004已集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
-- 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
+- 执行目标：完成 docs/v2_architecture_plan.md，最终部署到当前Mac的OrbStack Docker，由同机官方Chrome访问。t001–t004已完成并合入main，旧正式入口尚未切换；当前实施t005 Supervisor，按固定队列继续后续全部任务。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T13:30:32+08:00 t003/t004集成阶段完成**：t004单执行commit **f0cbd452b9cf5c1bdc45ae220a11c6573f13be21**，first-parent为t003执行8ff9fd2；done/terminal completed/report done/exact cleanup全部完成。t003与t004链尾通过原生Git门禁合入main，merge **84f84311815bff330a51bcd35da150fc8b4990b3**，原t003/t004分支已由脚本删除，旧worktree已清理。正式Full Round1 code/test PASS，scope740fe6627e7735db，3minor关联t009/t012；报告原时间/引用及shell转义损坏均已由作者勘误恢复，未改生产源。
+
+- **main合并后全门禁PASS**：doctor、169contract、384legacy、120unit、9HTTP、**13实际Runtime E2E/167.97秒**、**12实际Stream E2E/151.56秒**；既有服务health仍ok。原t003隐藏scratch音频依赖已在worktree清理后的main真实复验关闭。日志与稳定可读解释器保留main/.scratch/t004_integration_gates/；project_venv/media_venv是原已验证依赖环境的硬链接副本，prefix已核，不依赖被清理路径。首轮HTTP因继承SOCKS代理且缺socksio在初始化失败，按流程merge abort后重新准备；只清本机测试进程代理变量重验，前后merge tree同为6bc7644285dde28cba3e0e5f119231c3c9d4c3a4，失败日志保留。该次失败留下的9个自有API子进程已核精确路径/PID后SIGTERM回收，未动其他服务；旧fixture setup异常清理缺口由后续t009测试整理时处理。
+
+- **当前t005已开工且strict preflight PASS**：worktree **/Users/karson/kar/code/CBrowser_t005**，branch=t005_v2_supervisor，base/diff_anchor=84f84311815bff330a51bcd35da150fc8b4990b3；**attempt1/execution_id=8c2fd5e26cdc49f4bd8008edecd1d36e/owner_id=root_v2_t005_20261029**。已reserve/claim，不重复start或reserve。task上下文已替换过时t001 active/通用UNVERIFIED-SPIKE为已验证002/003/004契约；认证RPC与CPU策略是本task自有实现，七AC尚全未勾。只读新validation WT=main/.scratch/v2_orchestration/t005_validation，branch=spike/t005_validation。
+
+- **两个指定模型作者并行，写域互斥**：core wrapper42591/PID99949/session ses_e79dd4703ffe7lMlEknoXSms3l，仅Supervisor核心包（排除resource_policy.py）、supervisor Dockerfile/协议及专属core测试；resource wrapper77898/PID99965/session ses_e79dd430bffepsQhMtOCJRaRmI，仅resource_policy.py及专属resource测试。日志main/.scratch/v2_orchestration/t005\_{core,resource}\_implementation.jsonl。Root独占API内部RPC适配、API应用注册/OpenAPI、公共文档/Task/索引。作者先落core_contract.md/resource_contract.md并继续TDD/真实Docker，不将fixture或burner采样当全AC通过；20分钟首批可运行检查点。Root接下来收敛两接口并实现真实API侧RPC。禁止读.env软链、禁止改既有cbrowser/全局代理，写域仅~/kar/code。Docker资源再次实测10CPU/16819609600bytes，未扩大配额。
+
+- 固定后续队列仍为 **t005→t006→t007→t008→t013→t014→t009→t010→t011→t012**。部署/性能/压力与最终旧链路移除都尚未完成，目标保持active；每完成阶段继续更新handoff。公网与原生x86执行仅两项USER_WAIVED，支持保留；其他验收不能缩减。
 
 - **2026-10-29T10:07:00+08:00 正式三代Chrome TURN/项目门禁阶段完成，进入Full Round1**：正式chrome_relay.py已入库路径，三代gen2/3/4精确commit和旧代closed+sendreject后，才核新ufrag双relay/重新采样帧、音频、pair字节/同PC、DTLS、Track，保留全部复制标签/策略/IME/隔离断言。计划固定coturn4.6-alpine拉取为arm64实际4.6.3、ID **sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be**；首次因旧版loopback+空CLI密码启动拒绝，隔离fixture补no-cli后完整 **PASS96.13秒**。当前镜像07其余11项真实E2E **PASS52.10秒**；9个Stream源SHA与07逐文件一致。无生产源码变更，不借4.18测试替代计划固定版本。
 
