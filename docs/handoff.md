@@ -2,14 +2,28 @@
 
 本文件只保留当前有效一节。过时段落由 `repo-hygiene` 迁入 `docs/archive/handoff.md`。
 
-## 2026-10-29T08:37:27+08:00 v2 架构计划执行交接
+## 2026-10-29T09:39:10+08:00 v2 架构计划执行交接
 
 - branch：main
-- head_commit：6bd0847（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
+- head_commit：f08dd71（本次交接更新前main；业务仅t001/t002，t003→t004待链尾集成）
 - 交接更新约定：每完成一个阶段立即更新本文件（用户最新明确要求），包含该阶段提交、实际验证、遗留项及下一步。
 - 执行目标：完成 `docs/v2_architecture_plan.md`，最终部署到当前 Mac 的 OrbStack Docker，由同机 Chrome 访问。t001 技术验证、t002 后端持久化基础均已完成并合入；旧正式Docker入口尚未切换；当前实施t004 Stream Runtime，t003待链尾集成。
 
 ### 当前恢复入口（覆盖下文历史阶段状态）
+
+- **2026-10-29T09:39:10+08:00 完成帧率仲裁、隔离与真实Peer查找阶段**：当前源镜像 **sha256:072e86762d2f1810e86a2d20169d4be451b5a19e0ebabc880e882de63ac0d531**（cbrowser-t004-root-peer:20261029_07）。Native适配定向审查68638已terminal0/持久finish=stop，发现DISPLAY KeyError与全部spare按住仍可重绑；Root两项均先真实RED后修复：缺DISPLAY转安全RuntimeError，prebind先保护真实pressed槽和当前batch已绑定槽、无容量即拒绝；Xvfb真实按住全部槽不再被覆盖。相关 **47单元PASS0.72秒**；镜像06的XKB/ICE失败回收/三代Native DC relay/Chrome身份/完整媒体合跑 **12PASS100.83秒**（不是Chrome三代TURN）。
+
+- Root新增真实Agent WS断线后新session重新注册、暂停整个自有Stream容器时Browser动画仍递增且PID/start_ticks不变，完整媒体 **PASS48.53秒**。AC003旧研究70222在15分钟未执行后由Root核PID中断，随后Root给具体focus并续行18927/PID75741/session ses_e7aec05d9ffel5yrQL5P0efRak，已terminal0/持久finish=stop：当前镜像06真实Gateway包→Native setter→两Chrome媒体 **PASS47.54秒**，cap15=30帧/2秒、解除=60帧/2秒，一连接hidden仍60帧/2秒、allhidden0、恢复收到新关键帧，Browser PID不变。报告对未知tab排序和底层捕获计数不能泛化，Root后续正式用例已改按HELLO tab_id映射、双页停增校验。
+
+- **正式入库用例已覆盖真实客户端越权与隔离**：Root把策略阶段移入tests/e2e/test_stream_runtime_e2e.py，实际input DataChannel尝试_arg_fps,30与r,640,480不能突破cap15；两个外部viewport改640×480/1600×900后远端仍1920×1080；按真实TabID隐藏Page1时Page2继续、两页全隐藏都停增、未知viewer不得恢复、恢复先8+新关键帧。随后仍完成8IME/124字、剪贴板、刷新/静音/关闭/输入与Agent重连/Stream暂停。另将旧\_\_pcs[0]自比较改为实际connected PC引用+总数检查。当前镜像07该完整正式E2E **1PASS73.83秒**，日志full_capture_policy_and_media.log。正式Verify/full review仍0，AC暂未勾。
+
+- **SDK真实字段错误已修**：诊断13193/PID72927/session ses_e7ae00ad7ffetpJTnWAeC6rI0n只做SDK源+MagicMock复现，不能当多Peer黑盒；Root实际两Chrome向生产Agent发ICE控制，镜像06为action=error **FAIL25.90秒**。真实SDK RTCApp metadata键是peer_conn；Root仅改精确读取，无pc兼容，整体删除伪造pc键的旧单元用例并记录理由、保留/新增严格错误形状拒绝测试。镜像07两个真实Peer均生成Offer **PASS26.41秒**（只证明准备/查找，不是完成ICE或relay）；47相关单元通过。证据native_peer_lookup_chrome_red2.log/green.log与peer_lookup_proof.json。
+
+- 新发现按脚本创建 **d017_native_xkb_named_spares、d018_selkies_native_peer_entry**，并补d014边界。核心证据32文件已复制到**main/.scratch/v2_orchestration/t004_evidence_live/**（目录0700、文件0600、manifest含SHA），避免task cleanup后消失；完整独立Native双轮证据仍在validation WT，不依赖t004 scratch运行。
+
+- **下一步仅推进剩余真实场景，不宣称整task完成**：TURN续行43977/PID77403同session已terminal0/持久finish=stop，真实新offer/Chrome同PC答复及两端TURN allocation成功，但CHANNEL_BIND **403**、generation2无officially committed，因此零relay轮换通过。原报告建议重新加allow-loopback-peers/使用no-ip-check不采纳：Root核脚本已含allow-loopback-peers，实际coturn4.18 --help无no-ip-check；须查真实TURN日志/路由，不盲加未知选项。脚本.scratch/t004_ice_media_gateway_diagnostic/run_relay_diag.py与report_relay_replay.md保留，端口18961/18962/30961、TURN34861/42100–42140；所有CLI目前terminal，Root独占生产源。仍需真实复制标签媒体不误踢、三代Chrome relay及d012代栅栏、入库正式ICE量具、schema同步（现JSON未表达实际nullable/多种v2 envelope）、完整项目门禁/正式独立Verify/full review/一个执行commit/cleanup/链尾集成。
+
+- **执行失误已告知用户**：首次Root ICE焦点漏mkdir TMPDIR，pytest回退写入 **/private/tmp/pytest-of-karson/pytest-0/test_gateway_ice_lookup_focus0/**，随后Chrome mkdtemp失败，该次不作ICE证据；自有测试容器已清理，外部目录保留未动。以后预建本lane tmp并显式--basetemp、cache_dir在code内，禁止未经授权清外部目录。原失败日志native_peer_lookup_chrome_red.log保留。
 
 - **2026-10-29T08:37:27+08:00 原生多字中文/媒体阶段完成并获独立复验**：确定性错序真实根因不是等待不足，而是Native spare池含无XKB名称槽，xkbcomp序列化为重复key \<>并合并；19原始绑定前正确后损坏，只排除8仍损93。按实际xkbcomp keycodes非空名字过滤后17绑定前后全一致，保留preferred语义、evdev按有限容量分批；删除无效额外50ms等待/私有deadline，保留原SDK25ms settle于真实map替换后。生产修改仅Stream x11_keymap.py与x11-xkb-utils，未动Browser03。Root源镜像f1b136a1ff3a...真实双GoogleChrome扩大8次跨页提交124字、剪贴板不变、固定1920×1080双音视频增长、实际UDP候选、刷新/独立静音/关闭/生存页输入、Browser PID/start_ticks不变 **1PASS45.60秒**；真实Xvfb5轮17键位复用 **1PASS1.18秒**。证据t004/.scratch/t004_root_checks/keymap_named_complete_proof/与native_prebind_probe/，并保留此前各失败，不据此宣称P95/1000/8h。
 
