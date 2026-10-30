@@ -1,0 +1,8 @@
+**
+!src/
+!src/backend/
+!src/backend/cbrowser/
+!src/backend/cbrowser/supervisor/
+!src/backend/cbrowser/supervisor/*.py
+!src/backend/cbrowser/domain/
+!src/backend/cbrowser/domain/*.py

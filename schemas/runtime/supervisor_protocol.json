@@ -1,0 +1,313 @@
+{
+  "$defs": {
+    "ProfileRuntimeStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "observed_state": {
+          "default": "stopped",
+          "enum": [
+            "stopped",
+            "starting",
+            "running",
+            "stopping",
+            "error"
+          ],
+          "title": "Observed State",
+          "type": "string"
+        },
+        "desired_state": {
+          "default": "stopped",
+          "enum": [
+            "stopped",
+            "running"
+          ],
+          "title": "Desired State",
+          "type": "string"
+        },
+        "udp_mux_port": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Udp Mux Port"
+        },
+        "browser_container_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Browser Container Id"
+        },
+        "stream_container_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stream Container Id"
+        },
+        "restart_blocked": {
+          "default": false,
+          "title": "Restart Blocked",
+          "type": "boolean"
+        },
+        "failure_count": {
+          "default": 0,
+          "title": "Failure Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "ProfileRuntimeStatus",
+      "type": "object"
+    },
+    "ResetBlockedRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "ResetBlockedRequest",
+      "type": "object"
+    },
+    "ResetBlockedResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "status": {
+          "default": "ok",
+          "title": "Status",
+          "type": "string"
+        },
+        "message": {
+          "default": "Restart block cleared",
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "ResetBlockedResponse",
+      "type": "object"
+    },
+    "StartProfileRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "config_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
+        },
+        "force": {
+          "default": false,
+          "title": "Force",
+          "type": "boolean"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operation Id"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "StartProfileRequest",
+      "type": "object"
+    },
+    "StartProfileResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "starting",
+            "running"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "udp_mux_port": {
+          "maximum": 30991,
+          "minimum": 30000,
+          "title": "Udp Mux Port",
+          "type": "integer"
+        },
+        "browser_container": {
+          "title": "Browser Container",
+          "type": "string"
+        },
+        "stream_container": {
+          "title": "Stream Container",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "status",
+        "runtime_instance_id",
+        "udp_mux_port",
+        "browser_container",
+        "stream_container"
+      ],
+      "title": "StartProfileResponse",
+      "type": "object"
+    },
+    "StopProfileRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "operation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Operation Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "operation_id"
+      ],
+      "title": "StopProfileRequest",
+      "type": "object"
+    },
+    "StopProfileResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "status": {
+          "enum": [
+            "stopped",
+            "stopping"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "status"
+      ],
+      "title": "StopProfileResponse",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/StartProfileRequest"
+    },
+    {
+      "$ref": "#/$defs/StartProfileResponse"
+    },
+    {
+      "$ref": "#/$defs/StopProfileRequest"
+    },
+    {
+      "$ref": "#/$defs/StopProfileResponse"
+    },
+    {
+      "$ref": "#/$defs/ResetBlockedRequest"
+    },
+    {
+      "$ref": "#/$defs/ResetBlockedResponse"
+    },
+    {
+      "$ref": "#/$defs/ProfileRuntimeStatus"
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SupervisorControlProtocol"
+}

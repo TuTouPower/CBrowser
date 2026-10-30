@@ -740,7 +740,7 @@ Browser Runtime 的 Docker restart policy 固定为 `no`。所有浏览器重启
 - 正常退出：设置 `desired_state=stopped`。
 - 异常退出：保留 `desired_state=running`。
 - 异常退出后自动重试 3 次，间隔 2、10、30 秒。
-- 连续 3 次失败后设置 `restart_blocked=true`。
+- 三次自动重试均失败后设置 `restart_blocked=true`；`failure_count` 记录实际异常总数，含首次异常，此时为 4。
 - 用户手动重试后清除失败计数和阻断标记。
 
 ______________________________________________________________________

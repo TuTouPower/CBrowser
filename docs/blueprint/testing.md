@@ -46,8 +46,8 @@ export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
 export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
-PYTHONPATH=src uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with "cloakbrowser>=0.6.3" pytest src/backend/tests -q
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser pytest tests/unit -q
+PYTHONPATH=src uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser>=0.6.3" python -m pytest src/backend/tests -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser --with docker --with aiohttp python -m pytest tests/unit -q
 ```
 
 ## blackbox_verify
@@ -58,10 +58,10 @@ PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio -
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
 export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/integration -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with docker --with aiohttp python -m pytest tests/integration -q
 : "${CBROWSER_RUNTIME_TEST_IMAGE:?Provide an immutable built runtime image ID}"
 : "${CBROWSER_RUNTIME_ENGINE_CACHE:?Provide an initialized Linux engine cache path}"
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser python -m pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
 curl -sf http://127.0.0.1:56661/api/health
 uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status
@@ -74,7 +74,7 @@ uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py
 ```bash
 : "${CBROWSER_STREAM_TEST_IMAGE:?Provide an immutable Stream image ID}"
 : "${CBROWSER_TURN_TEST_IMAGE:?Provide an immutable coturn 4.6 image ID}"
-PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright --with docker --with httpx python -m pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
 ```
 
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。单侧 TURN 错误凭证负例通过测试专用 CBROWSER_STREAM_TURN_REJECT_SIDE=server 或 client 注入；期望完整媒体测试非零且 coturn 拒绝认证/新代无 commit，启动失败或缺镜像不算有效负例。正常门禁不得设置该变量。
@@ -103,7 +103,7 @@ PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio -
 项目涉及 OpenAPI 导出及前端类型。
 
 - 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
-- 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --with fastapi --with pydantic --with sqlalchemy --with aiosqlite --with alembic python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
+- 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
 - 验证命令：test_cmd 中 `tests/unit` 的 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；blackbox_verify 中 `tests/integration` 使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。前端类型生成由 t007 实施，本 task 不生成前端代码。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
@@ -116,3 +116,29 @@ PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio -
 |**契约测试**|pytest 模板轻量契约测试（当前169项，`-m contract`）|路径或状态机格式不匹配、specs_index 缺失条目|
 |**文档格式**|`python3 .repo_template/scripts/md_format.py --check`|Markdown 表格未 compact 或标题语法错误|
 |**容器黑盒**|容器健康检查探针与本地技术验证专项探针|只看进程存活、未验证实际双向媒体与数据完整性|
+
+## Supervisor 阶段验证
+
+按照 [Supervisor 验证](../guides/supervisor_validation.md) 提供当前源构建的不可变镜像及缓存。新单元/HTTP 测试还需要 Docker SDK 与 aiohttp。使用明确 Python 3.12+ 解释器执行 `python -m pytest`，不使用可能指向其他虚拟环境的裸 pytest。
+
+生命周期与恢复组件分别运行，避免以单个容器图用例替代全部异常路径：
+
+```bash
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/unit tests/integration -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/e2e/test_supervisor_core_e2e.py tests/e2e/test_supervisor_recovery_e2e.py tests/e2e/test_supervisor_offline_recovery_e2e.py tests/e2e/test_supervisor_retry_e2e.py -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/e2e/test_supervisor_container_graph_e2e.py tests/e2e/test_supervisor_infrastructure_network_e2e.py tests/e2e/test_supervisor_network_ownership_e2e.py tests/e2e/test_supervisor_browser_network_e2e.py tests/e2e/test_supervisor_cache_initialization_e2e.py -q
+```
+
+上述命令同样必须先设置允许写域内 TMPDIR、UV_CACHE_DIR、pytest basetemp/cache_dir，并仅为本地测试进程清除代理环境；这不会关闭 OrbStack 透明代理。测试前提存在但无效须失败，不能把镜像拉取/进程启动失败作为网络拒绝证据。跨 Profile 网络负例必须使用不做对端地址过滤的服务，同网正例成功；普通桥未隔离事实见 d020；Runtime 内核策略须通过无过滤监听器正负对照，不能以应用按来源拒绝连接冒充网络隔离。
+
+网络与启动清理专项还须运行 `test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`、`test_supervisor_policy_failure_e2e.py` 和 `test_supervisor_orphan_helpers_e2e.py`。仅在持有 CoordinatorLock 的启动阶段回收遗留 helper，周期扫描不得调用该清理。
+
+资源压力验证继续运行 `test_supervisor_resource_policy_e2e.py`、`test_supervisor_resource_capacity_e2e.py`、`test_supervisor_resource_monitor_e2e.py`，以及 Stream Runtime 的真实 Chrome CPU 降帧用例。保存实际 CPU counter、quota、采样窗口、配额下发与 Chrome 帧数；资源算法、真实采样、实际画面各自证据不互相替代。
+
+Supervisor 控制契约导出使用：
+
+```bash
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pydantic python scripts/export_supervisor_protocol.py
+```
+
+导出 `schemas/runtime/supervisor_protocol.json` 必须随 DTO 更新；停止请求必须包含目标实例与操作 ID，不允许旧 schema 继续宣称二者可省略。API 内部白名单路由继续通过原 OpenAPI 导出及真实 HTTP schema 验证。

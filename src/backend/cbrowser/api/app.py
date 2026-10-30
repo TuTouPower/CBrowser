@@ -16,6 +16,7 @@ from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
 from cbrowser.adapters.database.session import create_engine_and_maker
+from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
@@ -33,11 +34,15 @@ logger = logging.getLogger("cbrowser.api")
 def create_app(
     db_path: Path | str | None = None,
     service: ProfileService | None = None,
+    supervisor_token_file: Path | str | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal service
         engine = None
+        app.state.supervisor_token = read_supervisor_token(
+            supervisor_token_file or os.environ.get("CBROWSER_SUPERVISOR_TOKEN_FILE")
+        )
 
         # Configure event logger to output to stderr
         event_logger = logging.getLogger("cbrowser.events")
@@ -232,4 +237,5 @@ def create_app(
         )
 
     app.include_router(v1_router)
+    app.include_router(supervisor_router)
     return app
