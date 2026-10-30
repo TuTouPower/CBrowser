@@ -1147,6 +1147,21 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 in (await native_logs())[len(before_static_logs) :]
             )
 
+            resource_spec = importlib.util.spec_from_file_location(
+                "supervisor_stream_monitor",
+                Path(__file__).resolve().parents[1]
+                / "fixtures/supervisor_resource_probe/stream_monitor.py",
+            )
+            resource_module = importlib.util.module_from_spec(resource_spec)
+            resource_spec.loader.exec_module(resource_module)
+            await resource_module.verify_stream_cpu_policy(
+                stream_cname,
+                profile_id,
+                gateway,
+                frame_window,
+                work_dir,
+            )
+
             connections = [by_tab[tab1], by_tab[tab2]]
             assert set(connections) == gateway.profile_viewers[profile_id]
             await policy_packet(

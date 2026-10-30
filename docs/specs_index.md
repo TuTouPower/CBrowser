@@ -10,3 +10,4 @@
 |storage_and_artifacts|baseline|2026-10-26|
 |v2_runtime_validation|t001|2026-10-27T18:56:37+08:00|
 |runtime_persistence|t002|2026-10-27T21:46:56+08:00|
+|runtime_lifecycle|t005|2026-10-30T05:40:00+08:00|

@@ -1,0 +1,17 @@
+{
+  "tid": "t005",
+  "attempt": 1,
+  "execution_id": "8c2fd5e26cdc49f4bd8008edecd1d36e",
+  "status": "done",
+  "branch": "t005_v2_supervisor",
+  "base_sha": "84f84311815bff330a51bcd35da150fc8b4990b3",
+  "tests": "Controller frozen-candidate round1 (.scratch/t005_final/round1): 169 contract, 384 legacy backend, 211 unit, 21 real HTTP integration, 13 Runtime E2E, 12 Stream media E2E (official Chrome 2s frames 59->16->60 under real CPU quota, quota None->8->None), 6 Supervisor lifecycle E2E (SIGKILL, real API offline spool/replay, 2/10/30 retry with failure_count=4 and manual unblock), 2 startup recovery, 8 container graph/infra/ownership/browser network/cache, 5 kernel network policy, 5 resource E2E all passed; container graph rerun after port assertions 1 passed. Images built from current source: Supervisor sha256:9cfd93d9dbe3, API fixture sha256:2396ed5cffc5, Gateway fixture sha256:8e7946aea2e0; Browser03 f2a8d42810c1, Stream07 072e86762d2f, coturn4.6.3 e2bca2f79a42. OpenAPI and Supervisor protocol exports byte-identical; Ruff E/F/W/I, md_format, git diff --check passed.",
+  "blackbox": "Independent OpenCode blackbox (ses_e7663e0e0ffesEOxpy2HrEDCB1) in validation WT byte-identical to candidate (588 files), self-built images Supervisor sha256:90a77d2feb26, API sha256:c68e11f94908, Gateway sha256:8a6af8c48f24: all documented gates passed with identical counts; own probes: path traversal/symlink/cross-profile alias rejected with zero containers, port pool exhaustion 503 and reuse, three concurrent same-profile starts -> one Browser/Stream pair with matching inside/outside UDP port and RestartPolicy=no, unauthorized API/Supervisor control 401, retry Docker-create intervals 3.45/12.53/31.82s across real Supervisor SIGKILL, failure_count=4 block and manual clear. No residual resources. Controller verified raw logs and JSON. Public ICE and native Linux x86_64 USER_WAIVED only; capacity/P95/8h/1000-input belong to t009.",
+  "review": "Full Round1 code/test PASS (scope fc9c501c863e0460): t005_code_f001 minor deferred to p001; t005_test_f001 minor fixed (unconditional asserts, real E2E rerun 1 passed). Round2 re-review covers md_kx formatting of a fixture doc and the p002 fix. Controller corrected one misattributed log citation in the code report; conclusions unchanged.",
+  "pending": [
+    "p001"
+  ],
+  "findings": [
+    "d020"
+  ]
+}

@@ -1213,6 +1213,481 @@
           }
         }
       }
+    },
+    "/api/v1/internal/supervisor/health": {
+      "get": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Supervisor Rpc Health",
+        "operationId": "supervisor_rpc_health_api_v1_internal_supervisor_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Supervisor Rpc Health Api V1 Internal Supervisor Health Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/supervisor/profiles": {
+      "get": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "List Profiles",
+        "operationId": "list_profiles_api_v1_internal_supervisor_profiles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProfileResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Profiles Api V1 Internal Supervisor Profiles Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/supervisor/profiles/{profile_id}": {
+      "get": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Get Profile",
+        "operationId": "get_profile_api_v1_internal_supervisor_profiles__profile_id__get",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/profiles/{profile_id}/versions/{version}": {
+      "get": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Get Version",
+        "operationId": "get_version_api_v1_internal_supervisor_profiles__profile_id__versions__version__get",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigVersionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/profiles/{profile_id}/runtime": {
+      "get": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Get Profile Runtime",
+        "operationId": "get_profile_runtime_api_v1_internal_supervisor_profiles__profile_id__runtime_get",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/profiles/{profile_id}/runtime/desired-state": {
+      "patch": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Set Desired State",
+        "operationId": "set_desired_state_api_v1_internal_supervisor_profiles__profile_id__runtime_desired_state_patch",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "operation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Operation Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-Operation-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Operation-Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeDesiredStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/runtimes/bind": {
+      "post": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Bind Runtime",
+        "operationId": "bind_runtime_api_v1_internal_supervisor_runtimes_bind_post",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeInstanceBindRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/runtimes/observed": {
+      "post": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Report Observed State",
+        "operationId": "report_observed_state_api_v1_internal_supervisor_runtimes_observed_post",
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeObservedReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/internal/supervisor/runtimes/events": {
+      "post": {
+        "tags": [
+          "internal-supervisor"
+        ],
+        "summary": "Report Runtime Event",
+        "operationId": "report_runtime_event_api_v1_internal_supervisor_runtimes_events_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeEventReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeEventResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "SupervisorServiceBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2420,6 +2895,12 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ValidationErrorResponse"
+      }
+    },
+    "securitySchemes": {
+      "SupervisorServiceBearer": {
+        "type": "http",
+        "scheme": "bearer"
       }
     }
   }

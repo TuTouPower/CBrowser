@@ -25,6 +25,7 @@ from cbrowser.domain.models import (
     Tag,
     utc_now_iso,
 )
+from cbrowser.domain.runtime_policy import BLOCK_AFTER_RUNTIME_FAILURES
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -675,7 +676,7 @@ class ProfileRepository:
                     rt.runtime_instance_id = None
                     rt.failure_count += 1
                     rt.last_exit_event_id = event.event_id
-                    if rt.failure_count >= 3:
+                    if rt.failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
                         rt.restart_blocked = True
                     rt.updated_at = now
 

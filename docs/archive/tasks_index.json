@@ -66,6 +66,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t004_v2_stream_runtime"
+        },
+        {
+            "tid": "t005",
+            "slug": "v2_supervisor",
+            "title": "实现唯一 Docker 协调者与运行事件恢复",
+            "status": "done",
+            "branch": "t005_v2_supervisor",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "84f84311815bff330a51bcd35da150fc8b4990b3",
+            "depends_on": "t004",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t005_v2_supervisor"
         }
     ]
 }

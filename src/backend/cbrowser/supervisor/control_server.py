@@ -1,0 +1,222 @@
+"""FastAPI Internal Control Server for CBrowser Supervisor.
+
+AC-003:
+- Authenticated HTTP control plane using Bearer token from external token file.
+- Unauthorized requests rejected with 401.
+- Endpoints:
+  - GET /supervisor/v1/health
+  - POST /supervisor/v1/profiles/start
+  - POST /supervisor/v1/profiles/stop
+  - GET /supervisor/v1/profiles/{profile_id}/status
+  - POST /supervisor/v1/profiles/reset-blocked
+"""
+
+from __future__ import annotations
+
+import hmac
+import logging
+from pathlib import Path
+from typing import Annotated
+
+from cbrowser.domain.models import ProfileConfig
+from cbrowser.supervisor.core import SupervisorCore
+from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
+from cbrowser.supervisor.protocol import (
+    ProfileRuntimeStatus,
+    ResetBlockedRequest,
+    ResetBlockedResponse,
+    StartProfileRequest,
+    StartProfileResponse,
+    StopProfileRequest,
+    StopProfileResponse,
+)
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from pydantic import SecretStr
+
+logger = logging.getLogger("cbrowser.supervisor.control_server")
+
+
+def create_control_app(
+    core: SupervisorCore,
+    token_file: Path | str,
+) -> FastAPI:
+    app = FastAPI(title="CBrowser Supervisor Control API", version="1.0.0")
+
+    token_path = Path(token_file)
+    expected_token = SecretStr(token_path.read_text(encoding="utf-8").strip())
+    if len(expected_token.get_secret_value().encode("utf-8")) < 32:
+        raise ValueError("Supervisor authentication requires at least 32 bytes")
+
+    def verify_token(authorization: Annotated[str | None, Header()] = None) -> None:
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid Bearer authorization header",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        provided_token = authorization[len("Bearer ") :].strip()
+        if not hmac.compare_digest(
+            provided_token.encode("utf-8"),
+            expected_token.get_secret_value().encode("utf-8"),
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized supervisor token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    @app.get("/supervisor/v1/health", dependencies=[Depends(verify_token)])
+    async def health():
+        return {"status": "ok", "role": "supervisor"}
+
+    @app.post(
+        "/supervisor/v1/profiles/start",
+        response_model=StartProfileResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def start_profile(req: StartProfileRequest):
+        # Fetch profile configuration from API
+        try:
+            cfg_resp = await core.api.get(
+                f"/api/v1/internal/supervisor/profiles/{req.profile_id}/versions/{req.config_version}",
+                headers=core._auth_headers(),
+            )
+            if cfg_resp.status_code != 200:
+                raise HTTPException(
+                    status_code=cfg_resp.status_code,
+                    detail="Immutable configuration is unavailable",
+                )
+            snapshot = cfg_resp.json()
+            if (
+                snapshot["profile_id"] != req.profile_id
+                or snapshot["version"] != req.config_version
+            ):
+                raise ValueError("Immutable configuration identity mismatch")
+            cfg_data = snapshot["config"]
+            cfg = ProfileConfig(**cfg_data)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Configuration query failed: error_type=%s", type(e).__name__)
+            raise HTTPException(502, "Configuration query failed") from None
+
+        try:
+            session = await core.start_profile(
+                profile_id=req.profile_id,
+                config=cfg,
+                config_version=req.config_version,
+                force=req.force,
+                operation_id=req.operation_id,
+            )
+            b_container = core.docker.get_browser_container_name(req.profile_id)
+            s_container = core.docker.get_stream_container_name(req.profile_id)
+            return StartProfileResponse(
+                profile_id=req.profile_id,
+                status="running",
+                runtime_instance_id=session.runtime_instance_id,
+                udp_mux_port=session.udp_mux_port,
+                browser_container=b_container,
+                stream_container=s_container,
+            )
+        except PortPoolExhaustedError:
+            raise HTTPException(503, "UDP mux port pool exhausted") from None
+        except Exception as e:
+            logger.error("Runtime start failed: error_type=%s", type(e).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Runtime start failed",
+            ) from None
+
+    @app.post(
+        "/supervisor/v1/profiles/stop",
+        response_model=StopProfileResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def stop_profile(req: StopProfileRequest):
+        try:
+            result = await core.stop_profile(
+                req.profile_id,
+                expected_instance=req.runtime_instance_id,
+                operation_id=req.operation_id,
+            )
+            return StopProfileResponse(**result)
+        except ValueError:
+            raise HTTPException(409, "Conflicting lifecycle operation") from None
+        except Exception as e:
+            logger.error("Runtime stop failed: error_type=%s", type(e).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Runtime stop failed",
+            ) from None
+
+    @app.get(
+        "/supervisor/v1/profiles/{profile_id}/status",
+        response_model=ProfileRuntimeStatus,
+        dependencies=[Depends(verify_token)],
+    )
+    async def get_status(profile_id: str):
+        session = core._sessions.get(profile_id)
+        try:
+            response = await core.api.get(
+                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                headers=core._auth_headers(),
+            )
+            response.raise_for_status()
+            runtime = response.json()
+        except Exception:
+            raise HTTPException(503, "Persisted runtime state is unavailable") from None
+        if session and session.runtime_instance_id == runtime["runtime_instance_id"]:
+            return ProfileRuntimeStatus(
+                profile_id=profile_id,
+                runtime_instance_id=session.runtime_instance_id,
+                observed_state=session.observed_state,
+                desired_state=runtime["desired_state"],
+                udp_mux_port=session.udp_mux_port,
+                browser_container_id=session.browser_container_id,
+                stream_container_id=session.stream_container_id,
+                restart_blocked=runtime["restart_blocked"],
+                failure_count=runtime["failure_count"],
+            )
+        else:
+            return ProfileRuntimeStatus(
+                profile_id=profile_id,
+                runtime_instance_id=runtime["runtime_instance_id"],
+                observed_state=runtime["observed_state"],
+                desired_state=runtime["desired_state"],
+                udp_mux_port=None,
+                browser_container_id=None,
+                stream_container_id=None,
+                restart_blocked=runtime["restart_blocked"],
+                failure_count=runtime["failure_count"],
+            )
+
+    @app.post(
+        "/supervisor/v1/profiles/reset-blocked",
+        response_model=ResetBlockedResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def reset_blocked(
+        req: ResetBlockedRequest,
+        operation_id: Annotated[str, Header(alias="Idempotency-Key", min_length=1)],
+    ):
+        await core.reset_blocked(req.profile_id, operation_id)
+        return ResetBlockedResponse(profile_id=req.profile_id)
+
+    @app.get(
+        "/supervisor/v1/profiles/{profile_id}/resources",
+        dependencies=[Depends(verify_token)],
+    )
+    async def resources(profile_id: str):
+        from dataclasses import asdict
+
+        decision = (
+            core.resource_monitor.policy.get_decision(profile_id)
+            if core.resource_monitor is not None
+            else None
+        )
+        return {
+            "profile_id": profile_id,
+            "decision": asdict(decision) if decision else None,
+        }
+
+    return app
