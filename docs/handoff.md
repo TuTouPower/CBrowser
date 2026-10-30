@@ -2,10 +2,10 @@
 
 本文件只保留当前有效一节。过时段落迁入 `docs/archive/handoff.md`（Codex 主控时期的 t001–t005 过程记录已整体迁档）。
 
-## 2026-10-30T10:30:00+08:00 v2 架构计划执行交接（t005 完成，t006 开工）
+## 2026-10-30T20:32:00+08:00 v2 架构计划执行交接（t005 完成，t006 实施中，用户要求暂停记录）
 
 - branch：main
-- head_commit：2743ed7（t005 merge，本次 docs commit 前）
+- head_commit：724f788（本次 docs commit 前；t005 merge 为 2743ed7）
 - 执行目标：完成 docs/v2_architecture_plan.md 剩余 task t005→t006→t007→t008→t013→t014→t009→t010→t011→t012，每 task 一个执行 commit，逐个合入本地 main；最终部署到本机 OrbStack，由本机官方 Chrome 访问。禁止 push 与外部发布。
 - 已定决策：重试为首次异常后 2/10/30 秒三次重试、failure_count=4 阻断、手动重试清除（ADR 008）；管理员密码在 data/secrets/admin_password（只在生产首次启动读取，测试一律随机密码）；公网 WebRTC/TURN 穿透与原生 Linux x86_64 执行为 USER_WAIVED（不能写成通过）；性能按本机 OrbStack + Chrome 实跑。
 - 子 agent：OpenCode `cpa/gemini-3.8-flash --variant high`，经 `.scratch/v2_orchestration/dispatch.py`（权限白名单 + 全交付文件 SHA 守卫）→ `run_opencode_observed.py`（已补 `--variant high`，保留 `--env-root`）。主控 owner_id 记录在 `.scratch/v2_orchestration/claude_owner_id.txt`。
@@ -19,22 +19,30 @@
 - 遗留：p001（RecoveryCoordinator.tick 复杂度，minor）；p002 已修并归档。Round2 两路 wrapper 因派发时未互相排除对方报告文件被 SHA 守卫中断（报告均已写完），今后 reviewer 派发需同时 unguard 两份报告。
 - 证据备份：`.scratch/v2_orchestration/retired_worktrees/CBrowser_t005/scratch/`（日志/JSON/报告 28M）、`retired_worktrees/t005_validation/scratch/`（黑盒 1.6G）；GeoIP 缓存 `.scratch/v2_orchestration/geoip_cache/`；通用门禁 runner `.scratch/v2_orchestration/gates/run_gates_template.sh`（GATE_ROOT/GATE_LANE，按轮复制执行）。validation worktree 与 spike/t005_validation 已移除。
 
-#### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f，worktree=/Users/karson/kar/code/CBrowser_t006）
+#### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f，worktree=/Users/karson/kar/code/CBrowser_t006）——用户要求暂停记录点 2026-10-30T20:32:00+08:00
 
-- identity：attempt1 / execution_id=79fa47d2f34e42f8b31f43ceb8cb52a9 / owner_id=claude_v2_14b38abc09f2（已 reserve+claim，不得重复 start/reserve）。UNVERIFIED-SPIKE 已改写为已验证结论（前置协议、d003/d007/d008/d009/d010/d012/d018/d019、argon2id 实测），strict preflight PASS。
-- 主控预置（t006 WT 未提交）：stream_agent/protocol.py 新增 AgentAction.RTC_CONFIG、注册字段 selkies_version/runtime_state/config_version、AgentHeartbeatPayload、IceServer/RtcConfigPayload（凭证 SecretStr）；schemas/stream/agent_protocol.json 重新导出；tests/unit/test_stream_agent_protocol_v2.py 先 RED 后 GREEN 6 passed。此时 agent.py 尚未补新字段，由 agent lane 完成。
-- 接口契约 `.scratch/v2_orchestration/t006/contract_draft.md`。三个实现 lane（各自独立 worktree，lane 分支 lane/<name> 仅含种子 commit，不进 task 分支；完成后由主控 `lane_worktrees.py diff` 取增量合入 t006 WT，再 retire）：
-    - auth：WT /Users/karson/kar/code/CBrowser_t006_auth，session ses_e755e1089ffevyCMuhxHWWKCqJ，续行 wrapper PID 9366 / opencode PID 9379，日志 `.scratch/v2_orchestration/t006_auth_r1b.jsonl`（首启 t006_auth_r1.jsonl 因主控守卫配置错误被中断，未改文件）。
-    - gateway（含 rtc_config 与轮换）：WT /Users/karson/kar/code/CBrowser_t006_gateway，session ses_e755e10f0ffe14kMcwhDaswpM2，wrapper PID 3022 / opencode PID 3041，日志 `t006_gateway_r1.jsonl`。
-    - agent：WT /Users/karson/kar/code/CBrowser_t006_agent，session ses_e755e10fbffeSIS9q3Yy3T509N，续行 wrapper PID 9367 / opencode PID 9378，日志 `t006_agent_r1b.jsonl`。
-- 2026-10-30T15:20:00+08:00 进度：agent lane 已完成并 retire（证据 `retired_worktrees/CBrowser_t006_agent/`），增量已合入 t006 WT；主控补 4 处修正：恢复被改成 importorskip 的 schema 测试、心跳默认 10 秒断言、`resolve_selkies_version` 只读安装元数据（先 RED 后 GREEN）、Supervisor 向 Stream 传 `CBROWSER_CONFIG_VERSION`（新 Stream 镜像 9489b9d4 下容器图先真实 RED「Runtime start failed」后 GREEN 1 passed，Supervisor 临时镜像 a2943b3a）。gateway lane 已完成（报告本 lane 22 passed，镜像 761dcc30），增量已合入 t006 WT 但尚未 retire、尚未逐项复核。auth lane 仍在运行（opencode PID 9379）。合入后 unit+integration 复跑 269 passed / 1 failed（`test_v2_api_subprocess::test_ac004_sqlite_busy_timeout_contention_and_recovery` 计时断言，单跑时两个方向均失败，判定为主机过载导致，非 t006 改动；需在负载正常后复验）。两个由主控中断测试遗留的孤儿 uvicorn（cwd=CBrowser_t006）已核实后终止。
-- **环境阻塞（2026-10-30 约 13:00 起）**：OrbStack Docker 引擎无响应超过 2 小时（`docker ps`/`docker info` 不返回，kkmail 的 docker compose 调用同样卡住），主机负载 100–135、CPU 空闲约 0.6%（contactsd 100%、两个非本项目 `opencode --yolo` 会话各约 50–80%）。所有 Docker E2E 暂停；未重启 OrbStack（会中断 kkmail/new-api/旧 cbrowser 等其他服务），等待用户决定。
-- 2026-10-30T20:05:00+08:00：Docker 引擎约 19:46 自行恢复（`docker ps`/`docker info` 0 秒返回），用户已授权重启 OrbStack 但因已恢复未执行。负载主要来自 kkmail-mail-core-pg/api 容器与宿主进程（非本项目，不处理），计时类测试与后续 t009 性能基准需记录负载。gateway lane 已 retire（证据 `retired_worktrees/CBrowser_t006_gateway/`）。主控审查 gateway 发现 4 个设计/实现缺口：Stream 侧 TURN 使用全局 `turn:coturn` 默认值而非本 Profile 实际 coturn 地址；Agent 回传 tunnel 包未核对身份/归属；同实例重注册不关闭旧会话 Viewer；新代凭证未同步给 Agent。已派 gwfix lane：WT /Users/karson/kar/code/CBrowser_t006_gwfix（种子=t006 WT 整合态），session ses_e735ae9c0ffe0bqKm7jxhGsAPY，wrapper PID 71155 / opencode PID 71199，日志 `t006_gwfix_r1.jsonl`。auth lane 曾因模型服务超时（ProviderHeaderTimeoutError）退出，已续行：wrapper PID 69532，日志 `t006_auth_r1c.jsonl`。
-- 2026-10-30T20:40:00+08:00：auth、gateway、agent、gwfix 四路均已完成、增量合入 t006 WT 并 retire（证据 `retired_worktrees/CBrowser_t006_{agent,gateway,auth,gwfix}/`）。auth 两次续行：一次模型服务超时，一次主控守卫误纳入其新建文件（dispatch.py 已加 `--unguard-changed`）。主控在整合态补：未配置 `CBROWSER_ALLOWED_ORIGINS` 启动即失败（先 RED 后 GREEN）、新模块 ruff format、超长行折行。t006 WT 合并态：unit+integration 294 passed、contract 169、legacy 384、ruff 无新增问题（剩余 16 项与 main 基线一致）、diff --check 通过。尚未跑 Docker E2E。
-- 正在运行：t006 E2E lane，WT /Users/karson/kar/code/CBrowser_t006_e2e（种子=当前整合态），session ses_e733b1808ffeyFmkKxFu4mzr3n，wrapper PID 96887 / opencode PID 97029，日志 `t006_e2e_r1.jsonl`；目标为真实 Caddy HTTPS + API/Supervisor/Gateway/coturn 容器 + 官方 Chrome，覆盖 AC-001/003/005/007。
-- 恢复规则：先核 PID 与 JSONL 最终 stop、各 lane `.scratch/<lane>/report.md`；不采信 lane 自述，主控复跑。之后：整合三路增量 → 真实 E2E lane（两 Chrome 页独立隧道、Gateway SIGKILL 恢复、relay-only 两次凭证切换、TLS 登录 Cookie）→ 全门禁 → 独立黑盒 + full review → 一个执行 commit → 合入。
+- identity：attempt1 / execution_id=79fa47d2f34e42f8b31f43ceb8cb52a9 / owner_id=claude_v2_14b38abc09f2（已 reserve+claim；不得重复 start/reserve；恢复会话若换 owner 须 `attempt claim --replace-owner claude_v2_14b38abc09f2 --confirm-stopped`）。strict preflight PASS（UNVERIFIED-SPIKE 已改写为已验证结论）。尚无执行 commit，七 AC 均未勾，正式 Verify/full review 0。
+- **未提交工作保存在 t006 WT**：67 个路径（+8127/-81），新文件均已 `git add -N`。安全快照 `.scratch/v2_orchestration/t006/t006_wt_snapshot_20261030T2032.patch`（`git diff --binary c33e55f`，sha256 前缀 6e09291e82610b1c），可在干净的 c33e55f 上 `git apply` 复原。
+- 已合入 t006 WT 的内容：
+    - 主控预置：stream_agent/protocol.py（RTC_CONFIG、注册字段 selkies_version/runtime_state/config_version/turn_host/turn_port、AgentHeartbeatPayload、IceServer/RtcConfigPayload）、schemas/stream/agent_protocol.json、tests/unit/test_stream_agent_protocol_v2.py；task.md 未知契约结论。
+    - agent lane：Stream Agent 注册字段、10 秒 HEARTBEAT、1/2/4/8/16/30 退避、rtc_config 应用；entrypoint 要求 CBROWSER_CONFIG_VERSION。主控修正：恢复 schema 测试导入、selkies 版本只读安装元数据、心跳默认 10 秒断言、Supervisor docker_adapter 向 Stream 传 CBROWSER_CONFIG_VERSION（容器图 RED「Runtime start failed」→ GREEN 1 passed）。
+    - gateway lane：src/backend/cbrowser/{gateway,rtc_config}、config/docker/gateway_runtime/、docs/blueprint/gateway.md 及单元/集成测试。
+    - gwfix lane：Stream 侧 TURN 用 Agent 上报的 coturn 实际地址（删除 turn:coturn 默认，ADR 010）、Agent 回传包身份与 Viewer 归属核对、重注册关闭旧 session Viewer、新代凭证同步给 Agent、控制帧异常记录。
+    - auth lane：src/backend/cbrowser/auth/、api/v1/auth_router.py、api/internal_gateway.py、迁移 0002_auth、OpenAPI 重导出、tests/fixtures/api_auth.py；12 个启动 API 的既有测试只加登录夹具（断言未改，已逐文件核对删除行）。主控修正：未配置 CBROWSER_ALLOWED_ORIGINS 启动失败（RED→GREEN）、新模块 ruff format、超长行折行、两个文件 EOF 空行。
+    - 主控文档：docs/blueprint/security.md（新）、docs/specs/access_control.md（新）、ADR 010、webrtc_remote_display spec 信令/轮换/活动聚合段、architecture.md 现状、specs_index（webrtc_remote_display 增 t006，新增 access_control）、testing.md unit/integration 命令补 argon2-cffi（及 integration 的 sqlalchemy[asyncio]/websockets）、note.md 实施笔记。
+- 已验证（合并态，Docker E2E 之前）：unit+integration 294 passed（`.scratch/t006_root/full_all_lanes.log`）、contract 169、legacy 384、Ruff 无新增（剩余 16 项与 main 基线相同）、diff --check 与 md_format 通过。auth 修正后又跑 285 passed（origins_green_full.log）。
+- 已 retire 的 lane worktree（证据备份在 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_{agent,gateway,auth,gwfix}/`，lane 分支已删）：agent、gateway、auth、gwfix。
+- **仍在运行**：t006 E2E lane，WT /Users/karson/kar/code/CBrowser_t006_e2e（分支 lane/t006_e2e，种子=当前整合态），session ses_e733b1808ffeyFmkKxFu4mzr3n，wrapper PID 96887 / opencode PID 97029，日志 `.scratch/v2_orchestration/t006_e2e_r1.jsonl`，prompt `t006_dispatch/t006_e2e_prompt.md`；写域仅 tests/e2e/test_gateway\_\*\_e2e.py 与 tests/fixtures/gateway_probe/\*\*，Docker 前缀 t006-e2e。暂停时（20:32）尚在读代码阶段、未写文件、无 t006-e2e 容器。如需停止：先对 opencode PID 发 SIGINT，必要时 SIGTERM；不要重复派发。
+- **下一步（恢复顺序）**：
+    1. 核 E2E lane 是否结束（wrapper 输出 cli_exit、`CBrowser_t006_e2e/.scratch/t006_e2e/report.md`），读报告后主控亲自复跑其 E2E 并核原始 JSON 证据（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性）；发现生产缺陷先 RED 后修。
+    2. 取 E2E 增量合入 t006 WT（`python3 .scratch/v2_orchestration/lane_worktrees.py diff ...`），retire E2E lane。
+    3. 用 `.scratch/v2_orchestration/gates/run_gates_template.sh` 复制一份快照跑全套门禁（需补 Gateway 镜像构建与 Gateway E2E 步骤；Stream 镜像必须用当前源重建，因 entrypoint 与 Agent 已变）。testing.md 补 Gateway E2E 命令。
+    4. 七 AC 按实证打勾 → `git add -N` → 渲染 review prompt → 派独立黑盒（validation worktree 复制候选）+ code/test full review（reviewer 派发需同时 unguard 两份报告）→ 处置 → handoff.json → finish → 一个执行 commit → attempt terminal/report → cleanup → integrate（合并后门禁）。
+- 工具改进（本阶段）：dispatch.py 新增 `--unguard-changed`（lane 续行时排除其已改/新建文件）与 uv 缓存硬链接预灌；lane_worktrees.py（create/diff/retire，retire 不用 --force）；gates/run_gates_template.sh（GATE_ROOT/GATE_LANE，已加 argon2-cffi）。注意 zsh 不对未加引号变量分词，多参数派发用 bash -c。
+- 已知风险：主机负载受 kkmail 等其他项目容器影响（13:00–19:46 曾致 Docker 引擎无响应），计时类测试与后续 t009 性能基准需记录负载；用户已授权必要时重启 OrbStack（本次因自行恢复未执行）。
 
 #### 后续队列
 
 - 通用工具：prompt 外壳 `.scratch/v2_orchestration/prompts/{implementer,reviewer,blackbox}_preamble.md`；lane 状态摘要 `python3 .scratch/v2_orchestration/lane_status.py <jsonl> --text`。门禁 runner 每轮复制快照执行，禁止在运行中修改（round1 曾因此重复一步）。
 - 容量/P95/8 小时/1000 次输入等压力验收属 t009，尚未执行，不得宣称通过。
+- 剩余队列：t006（实施中）→ t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012。t007 前端契约草案 `.scratch/v2_orchestration/t007/contract_draft.md`（含 Selkies Web 资源构建期从固定 wheel 提取并校验哈希的定案与 lane 拆分）；Selkies 2.1.0 Web 客户端参考副本 `.scratch/v2_orchestration/selkies_web_ref/`（含 sha256_manifest.txt）。
