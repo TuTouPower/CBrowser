@@ -15,14 +15,17 @@
 ### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f）
 
 - identity：attempt1 / execution_id=79fa47d2f34e42f8b31f43ceb8cb52a9 / owner_id=claude_v2_6e1f7a8e7a46（2026-10-30T20:50:19+08:00 `attempt claim --replace-owner claude_v2_14b38abc09f2 --confirm-stopped`）。不得重复 start/reserve；再换会话须 `--replace-owner claude_v2_6e1f7a8e7a46 --confirm-stopped`。
-- 未提交工作在 t006 WT：74 个路径（新文件均 `git add -N`）。最新快照 `.scratch/v2_orchestration/t006/t006_wt_snapshot_20261030T2116.patch`（`git diff --binary c33e55f`，可在干净 c33e55f 上 `git apply` 复原；旧快照 2032/2046 保留）。
+- 未提交工作在 t006 WT：75 个路径（新文件均 `git add -N`）。最新快照 `.scratch/v2_orchestration/t006/t006_wt_snapshot_20261030T2116.patch`（`git diff --binary c33e55f`，可在干净 c33e55f 上 `git apply` 复原；旧快照 2032/2046 保留）。
 - 已完成（截至本节）：
     - 前期 lane（agent/gateway/gwfix/auth）整合与主控修正，详见 t006 note.md「开工、lane 拆分与整合」。
     - 计划修订 9.3 实施（先 RED 8 项、后 GREEN）：删除 Gateway 活动聚合（`gateway/activity.py`、页面 activity 帧、`VISIBILITY_UPDATE` 下发与 Agent 分支、协议动作与载荷，schema 重导出）；Agent 心跳新增取自 Selkies 的 `unpaused_video_consumers` / `capture_running`，注册后立即发送首个心跳；Gateway visibility 端点改读最近上报值（未上报 503，新注册不继承）；Supervisor gateway_client 契约不变。gateway.md、stream_runtime.md、webrtc_remote_display spec 已同步。旧语义测试整项删除并在 note 写明理由（含 t004 遗留 schema/hardening 用例与 stream E2E 的 Gateway visibility 段）。
     - 主控审查修正 auth lane 遗留：`test_supervisor_recovery_e2e.py` 两个用例引用未定义 `stack`（运行即 NameError）；`test_supervisor_core_e2e.py` E402；两文件 format。
     - 主控审查发现并修复（21:16 记入 note）：Gateway 原把“answer 已转发”当成迁移成功并提交本代；现 Agent 等新 ICE 代真实接管（`ice_transport.wait_restart_commit`，20 秒）后回报新动作 `ice_restart_committed`，失败回报 error，Gateway 收到同代确认才提交，否则退避重试。RED→GREEN：Gateway 集成 2 项；真实 SDK `tests/e2e/test_stream_ice_commit_e2e.py`（修复后 Stream 镜像 sha256:a624db24… 1 passed，t004 ICE 失败回归 8 passed）。E2E lane 的 seed 早于此修复，合入后必须用当前源重建镜像复跑其 E2E。
 - 已验证（WT 当前态，Docker E2E 前）：unit+integration 296 passed（`CBrowser_t006/.scratch/t006_commit/green_unit_integration.log`）；Ruff E,F,W,I 16 项（均为 main 基线 test_v2_api_subprocess E501）；ruff format、`git diff --check`、md_format 通过。
-- 运行中的子 agent（2026-10-30T21:07:06+08:00 派发）：E2E lane `t006_e2e2`，opencode_pid 30580，session ses_e73140c3bffezl2ty40n3Td8YL，日志 `.scratch/v2_orchestration/t006_e2e2_r1.jsonl`（状态摘要 `python3 .scratch/v2_orchestration/lane_status.py <该文件> --text`），prompt `.scratch/v2_orchestration/t006_dispatch/t006_e2e2_prompt.md`（按 9.3 改写；镜像全部当前源重建；Docker 前缀 t006-e2e2；AC-005 负例用 coturn total-quota）。中断后续行用 `dispatch.py --session ses_e73140c3bffezl2ty40n3Td8YL --unguard-changed`，不得新开重复 lane。
+- E2E lane `t006_e2e2`（session ses_e73140c3bffezl2ty40n3Td8YL，WT /Users/karson/kar/code/CBrowser_t006_e2e2，分支 lane/t006_e2e2）：
+    - r1（2026-10-30T21:07:06+08:00 派发，pid 30580，日志 `.scratch/v2_orchestration/t006_e2e2_r1.jsonl`）：交付 `tests/e2e/test_gateway_ac001_auth_e2e.py`（lane 自报 GREEN 1 passed，待主控复跑）、`test_gateway_ac003_media_e2e.py`（最后一次 FAILED：页面 25 秒无视频帧）、`tests/fixtures/gateway_probe/**`。2026-10-31T00:22:37 有一条外部消息进入该 opencode 会话（“你把那些容器都关了吗？那些用于开发测试使用的容器”），lane 答复其前缀对象已清理后，00:23:29 因模型服务端 400（Requests ending with a model turn are not supported）退出（cli_exit 1）。
+    - 主控 2026-10-31T01:15:01+08:00 前后处理：删除 lane 遗留的无名容器 jovial_brattain（Docker SDK `caddy version` 探针未 remove，创建于 21:35，已核对命令来源）；同时观察到 pensive_satoshi 已不存在、new-api-local 约 00:19 停止，均非本会话操作。把 t006 WT 新增修复同步进 lane WT 并在 lane 分支记基线提交 3f19371。
+    - r2（同 session 续行，pid 53017，日志 `.scratch/v2_orchestration/t006_e2e2_r2.jsonl`，prompt `.scratch/v2_orchestration/t006_dispatch/t006_e2e2_resume1.md`）：要求用当前源重建 Stream/Gateway 镜像、测试设施容器去掉冒用的 `com.cbrowser.managed-by=supervisor` 标签、AC-003 失败路径留存诊断后定位，继续 AC-003/005/007。中断后续行仍用 `dispatch.py --session ses_e73140c3bffezl2ty40n3Td8YL --unguard-changed`，不得新开重复 lane。
 - 下一步：
     1. 等 E2E lane 交付；主控逐行审查并亲自复跑，核原始 JSON（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性、visibility 端点原始响应），增量合入 t006 WT 后 retire。
     2. 复制 `.scratch/v2_orchestration/gates/run_gates_template.sh` 快照跑全套门禁，补 Gateway 镜像构建与 Gateway E2E；Stream/Gateway/Supervisor/API 镜像用当前源重建（不得复用下方临时镜像）；testing.md 补 Gateway E2E 命令。
@@ -32,7 +35,7 @@
 ### 遗留与环境
 
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（无标签，来源不明）、容器 pensive_satoshi、test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。上一节记录的 `cbrowser-t003-bb-aece4d57-net` 在 21:00 核对时已不存在（非本会话删除）。
-- p001（RecoveryCoordinator.tick 复杂度，minor）待办。
+- p001（RecoveryCoordinator.tick 复杂度，minor）待办。p003（新增）：API 写入运行意愿后无代码调用 Supervisor 启动/停止 RPC，现有 E2E 均由测试直调 Supervisor RPC；须在 t007 或 t012 前补齐 API→Supervisor 协调并真实验证。
 - 主机负载受 kkmail 等容器影响（曾致 Docker 引擎无响应），计时类测试与 t009 基准须记录负载；用户已授权引擎无响应时重启 OrbStack。
 - 通用工具：prompt 外壳 `.scratch/v2_orchestration/prompts/`；lane 状态 `python3 .scratch/v2_orchestration/lane_status.py <jsonl> --text`；lane 管理 `lane_worktrees.py create/diff/retire`；门禁 runner 每轮复制快照，zsh 不对未加引号变量分词（多参数用 bash -c）。
 - 后续 task 关键约束已写入各 task.md：t007 AC-008 `SELKIES_ENABLE_DUAL_MODE=false`；t008 AC-003 `SELKIES_FILE_TRANSFERS=none`；t014 AC-005 剪贴板策略锁定（二进制关闭）；每项须真实负例。Selkies 2.1.0 源码参考 `.scratch/v2_orchestration/t004_start_packet/upstream_selkies_2_1_0/`，Web 客户端参考 `.scratch/v2_orchestration/selkies_web_ref/`，t007 契约草案 `.scratch/v2_orchestration/t007/contract_draft.md`（可见性/活动上报内容按 9.3 改写）。容量/P95/8 小时/1000 次压力属 t009，未跑不得宣称通过。
