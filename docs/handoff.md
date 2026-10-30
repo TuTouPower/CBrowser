@@ -19,8 +19,17 @@
 - 遗留：p001（RecoveryCoordinator.tick 复杂度，minor）；p002 已修并归档。Round2 两路 wrapper 因派发时未互相排除对方报告文件被 SHA 守卫中断（报告均已写完），今后 reviewer 派发需同时 unguard 两份报告。
 - 证据备份：`.scratch/v2_orchestration/retired_worktrees/CBrowser_t005/scratch/`（日志/JSON/报告 28M）、`retired_worktrees/t005_validation/scratch/`（黑盒 1.6G）；GeoIP 缓存 `.scratch/v2_orchestration/geoip_cache/`；通用门禁 runner `.scratch/v2_orchestration/gates/run_gates_template.sh`（GATE_ROOT/GATE_LANE，按轮复制执行）。validation worktree 与 spike/t005_validation 已移除。
 
+#### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f，worktree=/Users/karson/kar/code/CBrowser_t006）
+
+- identity：attempt1 / execution_id=79fa47d2f34e42f8b31f43ceb8cb52a9 / owner_id=claude_v2_14b38abc09f2（已 reserve+claim，不得重复 start/reserve）。UNVERIFIED-SPIKE 已改写为已验证结论（前置协议、d003/d007/d008/d009/d010/d012/d018/d019、argon2id 实测），strict preflight PASS。
+- 主控预置（t006 WT 未提交）：stream_agent/protocol.py 新增 AgentAction.RTC_CONFIG、注册字段 selkies_version/runtime_state/config_version、AgentHeartbeatPayload、IceServer/RtcConfigPayload（凭证 SecretStr）；schemas/stream/agent_protocol.json 重新导出；tests/unit/test_stream_agent_protocol_v2.py 先 RED 后 GREEN 6 passed。此时 agent.py 尚未补新字段，由 agent lane 完成。
+- 接口契约 `.scratch/v2_orchestration/t006/contract_draft.md`。三个实现 lane（各自独立 worktree，lane 分支 lane/<name> 仅含种子 commit，不进 task 分支；完成后由主控 `lane_worktrees.py diff` 取增量合入 t006 WT，再 retire）：
+    - auth：WT /Users/karson/kar/code/CBrowser_t006_auth，session ses_e755e1089ffevyCMuhxHWWKCqJ，续行 wrapper PID 9366 / opencode PID 9379，日志 `.scratch/v2_orchestration/t006_auth_r1b.jsonl`（首启 t006_auth_r1.jsonl 因主控守卫配置错误被中断，未改文件）。
+    - gateway（含 rtc_config 与轮换）：WT /Users/karson/kar/code/CBrowser_t006_gateway，session ses_e755e10f0ffe14kMcwhDaswpM2，wrapper PID 3022 / opencode PID 3041，日志 `t006_gateway_r1.jsonl`。
+    - agent：WT /Users/karson/kar/code/CBrowser_t006_agent，session ses_e755e10fbffeSIS9q3Yy3T509N，续行 wrapper PID 9367 / opencode PID 9378，日志 `t006_agent_r1b.jsonl`。
+- 恢复规则：先核 PID 与 JSONL 最终 stop、各 lane `.scratch/<lane>/report.md`；不采信 lane 自述，主控复跑。之后：整合三路增量 → 真实 E2E lane（两 Chrome 页独立隧道、Gateway SIGKILL 恢复、relay-only 两次凭证切换、TLS 登录 Cookie）→ 全门禁 → 独立黑盒 + full review → 一个执行 commit → 合入。
+
 #### 后续队列
 
-- t006 接口契约草案：`.scratch/v2_orchestration/t006/contract_draft.md`（auth / gateway〔含 rtc_config 与轮换调度〕/ agent / e2e 四 lane；Gateway 以 API 内部 runtime 绑定判定当前实例，RTC 配置由 Gateway 连接时下发，不新增 API rtc-config 路由）。auth lane prompt 已写 `.scratch/v2_orchestration/t006/lane_auth_body.md`（含现有 12 个启动 API 的测试迁移到共享登录夹具），gateway/agent lane prompt 未写。派发前主控先在 t006 WT 改 `stream_agent/protocol.py`（RTC_CONFIG、注册字段 selkies_version/runtime_state/config_version、HEARTBEAT 载荷）并导出 schema。t006 task.md 含 UNVERIFIED-SPIKE，开工前需改写为已验证结论。
 - 通用工具：prompt 外壳 `.scratch/v2_orchestration/prompts/{implementer,reviewer,blackbox}_preamble.md`；lane 状态摘要 `python3 .scratch/v2_orchestration/lane_status.py <jsonl> --text`。门禁 runner 每轮复制快照执行，禁止在运行中修改（round1 曾因此重复一步）。
 - 容量/P95/8 小时/1000 次输入等压力验收属 t009，尚未执行，不得宣称通过。
