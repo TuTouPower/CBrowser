@@ -35,7 +35,7 @@
 ### 遗留与环境
 
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（无标签，来源不明）、容器 pensive_satoshi、test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。上一节记录的 `cbrowser-t003-bb-aece4d57-net` 在 21:00 核对时已不存在（非本会话删除）。
-- p001（RecoveryCoordinator.tick 复杂度，minor）待办。p003（新增）：API 写入运行意愿后无代码调用 Supervisor 启动/停止 RPC，现有 E2E 均由测试直调 Supervisor RPC；须在 t007 或 t012 前补齐 API→Supervisor 协调并真实验证。
+- p001（RecoveryCoordinator.tick 复杂度，minor）待办。p003（新增）：API 写入运行意愿后无代码调用 Supervisor 启动/停止 RPC，现有 E2E 均由测试直调 Supervisor RPC；须在 t007 或 t012 前补齐 API→Supervisor 协调并真实验证。p004（新增）：Stream 未配置计划 8.1 的每 Profile Selkies master/controller token（Selkies 仅 loopback、经认证隧道接入），t006 AC-001 的“master token 不返回前端”为空满足；须在 t007 前决定补齐 token 或以 ADR 记录取舍并经用户确认。
 - 主机负载受 kkmail 等容器影响（曾致 Docker 引擎无响应），计时类测试与 t009 基准须记录负载；用户已授权引擎无响应时重启 OrbStack。
 - 通用工具：prompt 外壳 `.scratch/v2_orchestration/prompts/`；lane 状态 `python3 .scratch/v2_orchestration/lane_status.py <jsonl> --text`；lane 管理 `lane_worktrees.py create/diff/retire`；门禁 runner 每轮复制快照，zsh 不对未加引号变量分词（多参数用 bash -c）。
 - 后续 task 关键约束已写入各 task.md：t007 AC-008 `SELKIES_ENABLE_DUAL_MODE=false`；t008 AC-003 `SELKIES_FILE_TRANSFERS=none`；t014 AC-005 剪贴板策略锁定（二进制关闭）；每项须真实负例。Selkies 2.1.0 源码参考 `.scratch/v2_orchestration/t004_start_packet/upstream_selkies_2_1_0/`，Web 客户端参考 `.scratch/v2_orchestration/selkies_web_ref/`，t007 契约草案 `.scratch/v2_orchestration/t007/contract_draft.md`（可见性/活动上报内容按 9.3 改写）。容量/P95/8 小时/1000 次压力属 t009，未跑不得宣称通过。
