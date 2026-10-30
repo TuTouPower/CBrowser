@@ -32,6 +32,8 @@
     - r4 结果（06:11 核对）：AC-001、AC-003（双页各 +45 帧/2s、音频非零、selected pair 127.0.0.1:30000 直连 UDP mux、并发输入 "12"、Gateway SIGKILL 后 Browser PID 不变并 1s/2s 退避重注册）、AC-007（页面内可见性覆盖触发，端点 1/true→0/false→恢复）lane 自报 GREEN，待主控复跑；AC-005 暴露生产缺陷后停在该项。
     - 生产缺陷（主控核实并修复，见 t006 note）：Agent 以错误签名调用 Selkies `RTCApp.update_rtc_config` 且吞异常，`rtc_app` 未就绪时配置被静默跳过，relay-only 下 Stream 侧无 TURN。修复后真实 SDK `tests/e2e/test_stream_rtc_config_e2e.py` 通过（镜像 sha256:e3bb980a…），unit+integration 296 passed。lane 的 Mock 复现用例不采纳。同步工具改为 `.scratch/v2_orchestration/lane_resync.py`（lane 分支基线提交 31a30b3）。
     - r5（2026-10-31T06:17:00+08:00，同 session，pid 72835，日志 `t006_e2e2_r5.jsonl`，prompt `t006_e2e2_resume4.md`）：完成 AC-005（含 total-quota 负例）并用当前镜像复跑 AC-001/003/007。
+    - r5 结果：修复后 relay-only 初始连接与第 2 代 Agent 侧提交已通，同 PC/Track 保持；卡在 Chrome 选中对新 ufrag 判据、初始连接偶发失败（疑为短轮换参数下初始 checking 期间即触发重启）与负例退避日志读取。主控 07:20 中断。
+    - r6（2026-10-31T07:20:54+08:00，同 session，pid 89598，日志 `t006_e2e2_r6.jsonl`，prompt `t006_e2e2_resume5.md`）：按 t004 chrome_relay 流程从 restart offer 取 ufrag 判定新代选中对、首轮换到期安排在出帧之后、核对退避日志输出。
 - 下一步：
     1. 等 E2E lane 交付；主控逐行审查并亲自复跑，核原始 JSON（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性、visibility 端点原始响应），增量合入 t006 WT 后 retire。
     2. 复制 `.scratch/v2_orchestration/gates/run_gates_template.sh` 快照跑全套门禁，补 Gateway 镜像构建与 Gateway E2E；Stream/Gateway/Supervisor/API 镜像用当前源重建（不得复用下方临时镜像）；testing.md 补 Gateway E2E 命令。
