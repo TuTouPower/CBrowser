@@ -25,9 +25,11 @@
 - [ ] AC-001：计划13.1全部页面可导航，/?profileId= 恢复当前目标；两个真实 Chrome 标签页各自切换 Profile，不改另一页目标或连接，不使用共享 localStorage.currentProfileId。
 - [ ] AC-002：同 Profile 两页面使用不同官方 client_tab_id，刷新和重连保留 resume_key/身份，复制页冲突重新连接且不踢原页；新标签页 noopener，不重写官方 HELLO。
 - [ ] AC-003：页面切换或关闭仅关闭自身 PeerConnection/信令，不调用 Profile stop；页面恢复查询真实运行状态并恢复 Viewer；只有明确停止 Profile 才关闭真实浏览器。
-- [ ] AC-004：真实后台可见性驱动每连接解码暂停及 Profile 聚合捕获，前台持续视频保持目标帧率；显示尺寸/DPR由 Profile 配置控制，外部窗口 resize 不改变远端，设置变更须明确应用。
+- [ ] AC-004：真实后台可见性经 Selkies 官方 STOP_VIDEO/START_VIDEO 只暂停该连接视频，全部后台时捕获暂停，前台持续视频保持目标帧率；页面不向 Gateway 上报可见性或活动；显示尺寸/DPR由 Profile 配置控制，外部窗口 resize 不改变远端，设置变更须明确应用。
 - [ ] AC-005：两个页面都能真实输入且独立静音，无租约/唯一控制者状态；内部浏览器标签页变化同步显示，运行/媒体/音频故障分别给出可理解状态，初次画面和操作延迟可测。
 - [ ] AC-006：Profile 列表/创建/编辑/标签/设置通过 /api/v1 生成类型客户端完成；后端状态经 SSE 更新，断线恢复无陈旧控制状态；旧 UI 测试语义失效时整项删除并说明，新增真实新语义测试。
+- [ ] AC-007：页面冻结/恢复（Page Lifecycle freeze/resume、bfcache pageshow）后检测失效连接并以原 client_tab_id/resume_key 重建；运行时未就绪、信令失败、ICE 失败、媒体无帧分别显示阶段与可执行操作，诊断取自 RTCPeerConnection 状态与 getStats，不出现无解释黑屏、不新增媒体回退通道。
+- [ ] AC-008：Stream Runtime 显式关闭 Selkies 模式切换（enable_dual_mode=false），客户端无法切换到 WebSocket 模式。
 
 ### 可测试性声明
 
@@ -41,7 +43,8 @@
 
 ## 上下文区
 
-- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001在登记worktree仍active，尚未通过全部技术门禁
+- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001 已完成并归档（docs/archive/tasks/t001_v2_runtime_validation），技术门禁已通过
+- 2026-10-30 计划修订同步：9.3 可见性只走 Selkies 原生、8.1 显式 Selkies 设置、13.4 冻结恢复与连接诊断；AC-004 改写，新增 AC-007/008。
 
 ### 有意不测
 

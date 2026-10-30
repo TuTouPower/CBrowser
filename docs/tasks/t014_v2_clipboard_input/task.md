@@ -8,7 +8,7 @@
 
 ### 范围
 
-- 从t008原AC-003/004拆出ClipboardBridge、浏览器会话权限/状态提示、必要受控Agent输入/clipboard RPC与OpenAPI生成类型；保留官方IME键盘提交路径，不改变Profile复制重置与文件/CDP服务。
+- 从t008原AC-003/004拆出ClipboardBridge（只处理本机剪贴板权限、页面焦点和拒绝提示，传输沿用 Selkies 官方剪贴板消息，不自建同步协议或 Agent clipboard RPC）、Profile clipboard_sync 到 Selkies 剪贴板策略的映射与服务端锁定、浏览器会话权限/状态提示与OpenAPI生成类型；保留官方IME键盘提交路径，不改变Profile复制重置与文件/CDP服务。
 
 ### 非范围
 
@@ -26,6 +26,7 @@
 - [ ] AC-002：真实中文组合输入经键盘消息而非剪贴板粘贴；地址栏、普通输入框、受控输入框、富文本中提交/预编辑取消/标点均精确到达目标浏览器，失败明确提示。
 - [ ] AC-003：两个页面同时向同Profile输入均能到达，切换或关闭一个页面不丢另一页输入；纯文本粘贴无静默截断/重复，容器与宿主剪贴板各自仅发生获授权变更。
 - [ ] AC-004：真实Chrome页面在获得权限、权限拒绝、后台/恢复与切换Profile场景保持各自输入和剪贴板状态，其他Profile不读到对应剪贴板数据；所有测试使用独立已知fixture，不读取用户实际私人剪贴板。
+- [ ] AC-005：Profile clipboard_sync 开启时 Selkies enable_clipboard=true、关闭时为 false，enable_binary_clipboard=false，均服务端锁定；客户端改写设置不生效，关闭后双向均无剪贴板传输，图片等二进制剪贴板不传输。
 
 ### 可测试性声明
 
@@ -40,6 +41,7 @@
 ## 上下文区
 
 - 来源：docs/v2_architecture_plan.md、t008原AC-003/004/005（2026-10-27拆分，保持原需求，不复用t008被移出编号）
+- 2026-10-30 计划修订同步：8.4 剪贴板策略（Selkies 2.1.0 enable_clipboard 为 true/in/out/false，enable_binary_clipboard 默认 true，`|locked` 禁止客户端修改；main 当前均未设置）；范围收窄 ClipboardBridge，新增 AC-005。
 
 ### 有意不测
 

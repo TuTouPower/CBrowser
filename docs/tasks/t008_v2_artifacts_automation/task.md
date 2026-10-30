@@ -24,6 +24,8 @@
 
 - [ ] AC-001：真实上传校验文件名/MIME/配额/磁盘空间并写对应 Profile Artifact，失败不留下半文件；下载经 Agent 事件可见且内容/大小正确，UI 可列出/下载/删除获授权文件，路径穿越与跨 Profile 请求拒绝；上传返回Artifact ID和容器内container_path（/exchange/uploads/...），不泄露宿主路径；/profiles/:profileId/files页面可实际上传/管理文件。
 - [ ] AC-002：外部自动化经独立认证入口到 Supervisor/UDS/loopback CDP，完整双向协议可用；无公网 CDP TCP 映射，旧 CDP 入口仅薄转发新代理；自动化断开后下载捕获恢复，随后真实下载完整入库；/automation/:profileId页面展示获授权端点和状态，独立路由加载/刷新保持正常会话。
+- [ ] AC-003：Selkies 会话内文件上传/下载显式关闭（file_transfers=none），客户端无入口，数据通道文件请求被拒；文件只能经 Artifact Service 进出 Profile。
+- [ ] AC-004：Browser Agent 重启或 CDP 会话重建后扫描 /exchange/downloads 一次，为缺少完成事件的已完成文件补登 Artifact，排除 .crdownload 等临时文件；与 CDP 事件重复时按路径与校验和去重，不重复入库。
 
 ### 可测试性声明
 
@@ -37,7 +39,8 @@
 
 ## 上下文区
 
-- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001在登记worktree仍active，尚未通过全部技术门禁
+- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001 已完成并归档（docs/archive/tasks/t001_v2_runtime_validation），技术门禁已通过
+- 2026-10-30 计划修订同步：8.1 关闭 Selkies 会话内文件传输（2.1.0 默认 upload,download，main 未设置）、11.3 下载目录对账兜底；新增 AC-003/004。
 
 ### 有意不测
 

@@ -25,7 +25,7 @@
 - [ ] AC-001：按当前Mac/OrbStack实际配额逐级运行1/3/10活跃流及10Profile九后台一前台，记录真实硬件、成功容量和资源限制；10流不预设全路1080p30，不静默丢连接或OOM，记录实际CPU/内存/FPS/容量；单活跃流1080p30，同机Chrome输入至画面P95≤100ms并记录RTT/负载，就绪后首帧P95≤1秒，过载按规则降低Profile级FPS。
 - [ ] AC-002：连续8小时真实媒体/生命周期压力无数据损坏、会话串线和不可恢复退出；保存带时间与环境版本的原始指标和错误，不把短测或容器存活替代8小时验收。
 - [ ] AC-003：完成1000次中文组合输入和1000次纯文本剪贴板，覆盖地址栏/普通输入框/受控输入框/富文本与双页面；逐例核对真实结果，保护原剪贴板、权限拒绝提示和后台不覆盖均有实际正负证据。
-- [ ] AC-004：正式五服务/双Runtime拓扑逐项通过计划16与19.4安全矩阵，含唯一DockerSocket持有者、API唯一DB写者、Profile卷/网络/IPC隔离、非root/只读/最小权限、CDP无公网暴露、路径逃逸拒绝。
+- [ ] AC-004：正式五服务/双Runtime拓扑逐项通过计划16与19.4安全矩阵，含唯一DockerSocket持有者、API唯一DB写者、Profile卷/网络/IPC隔离、非root/只读/最小权限、CDP无公网暴露、路径逃逸拒绝；Selkies 会话内文件传输与 WebSocket 模式切换不可用，剪贴板方向/二进制设置不能被客户端覆盖。
 - [ ] AC-005：通过真实本机/容器网络验证UDP映射、候选、coturn UDP/TCP/TLS和relay-to-relay凭证切换；公网穿透验证记NOT_RUN/USER_WAIVED；API/Supervisor/Gateway重启、重复迟到事件、正常退出不误自启及标签页全部19.2行为通过独立黑盒。
 
 ### 可测试性声明
@@ -40,7 +40,7 @@
 
 ## 上下文区
 
-- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001在登记worktree仍active，尚未通过全部技术门禁
+- 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001 已完成并归档（docs/archive/tasks/t001_v2_runtime_validation），技术门禁已通过
 
 ### 有意不测
 
