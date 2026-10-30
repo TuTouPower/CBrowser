@@ -32,13 +32,16 @@
     - 主控文档：docs/blueprint/security.md（新）、docs/specs/access_control.md（新）、ADR 010、webrtc_remote_display spec 信令/轮换/活动聚合段、architecture.md 现状、specs_index（webrtc_remote_display 增 t006，新增 access_control）、testing.md unit/integration 命令补 argon2-cffi（及 integration 的 sqlalchemy[asyncio]/websockets）、note.md 实施笔记。
 - 已验证（合并态，Docker E2E 之前）：unit+integration 294 passed（`.scratch/t006_root/full_all_lanes.log`）、contract 169、legacy 384、Ruff 无新增（剩余 16 项与 main 基线相同）、diff --check 与 md_format 通过。auth 修正后又跑 285 passed（origins_green_full.log）。
 - 已 retire 的 lane worktree（证据备份在 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_{agent,gateway,auth,gwfix}/`，lane 分支已删）：agent、gateway、auth、gwfix。
-- **仍在运行**：t006 E2E lane，WT /Users/karson/kar/code/CBrowser_t006_e2e（分支 lane/t006_e2e，种子=当前整合态），session ses_e733b1808ffeyFmkKxFu4mzr3n，wrapper PID 96887 / opencode PID 97029，日志 `.scratch/v2_orchestration/t006_e2e_r1.jsonl`，prompt `t006_dispatch/t006_e2e_prompt.md`；写域仅 tests/e2e/test_gateway\_\*\_e2e.py 与 tests/fixtures/gateway_probe/\*\*，Docker 前缀 t006-e2e。暂停时（20:32）尚在读代码阶段、未写文件、无 t006-e2e 容器。如需停止：先对 opencode PID 发 SIGINT，必要时 SIGTERM；不要重复派发。
+- **已按用户要求停止**（2026-10-30T20:41:00+08:00）：t006 E2E lane（WT /Users/karson/kar/code/CBrowser_t006_e2e，分支 lane/t006_e2e，session ses_e733b1808ffeyFmkKxFu4mzr3n，原 wrapper PID 96887 / opencode PID 97029，日志 `.scratch/v2_orchestration/t006_e2e_r1.jsonl`，prompt `.scratch/v2_orchestration/t006_dispatch/t006_e2e_prompt.md`）已 SIGINT 终止（cli_exit -2）。停止时只读过代码：WT 无任何改动，无 t006-e2e 容器。该 WT 保留未删；恢复时可 `dispatch.py --session ses_e733b1808ffeyFmkKxFu4mzr3n --unguard-changed` 续行，或 retire 后重建。当前无任何运行中的子 agent。
 - **下一步（恢复顺序）**：
     1. 核 E2E lane 是否结束（wrapper 输出 cli_exit、`CBrowser_t006_e2e/.scratch/t006_e2e/report.md`），读报告后主控亲自复跑其 E2E 并核原始 JSON 证据（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性）；发现生产缺陷先 RED 后修。
     2. 取 E2E 增量合入 t006 WT（`python3 .scratch/v2_orchestration/lane_worktrees.py diff ...`），retire E2E lane。
     3. 用 `.scratch/v2_orchestration/gates/run_gates_template.sh` 复制一份快照跑全套门禁（需补 Gateway 镜像构建与 Gateway E2E 步骤；Stream 镜像必须用当前源重建，因 entrypoint 与 Agent 已变）。testing.md 补 Gateway E2E 命令。
     4. 七 AC 按实证打勾 → `git add -N` → 渲染 review prompt → 派独立黑盒（validation worktree 复制候选）+ code/test full review（reviewer 派发需同时 unguard 两份报告）→ 处置 → handoff.json → finish → 一个执行 commit → attempt terminal/report → cleanup → integrate（合并后门禁）。
 - 工具改进（本阶段）：dispatch.py 新增 `--unguard-changed`（lane 续行时排除其已改/新建文件）与 uv 缓存硬链接预灌；lane_worktrees.py（create/diff/retire，retire 不用 --force）；gates/run_gates_template.sh（GATE_ROOT/GATE_LANE，已加 argon2-cffi）。注意 zsh 不对未加引号变量分词，多参数派发用 bash -c。
+- 本阶段构建的本地镜像（均可由源码重建，未清理）：t006-agent-stream:1（sha256:9489b9d4…）、t006-gateway-gateway:1（761dcc30…）、t006-gwfix-gateway:1（3ef22490…）、t006-gwfix-stream:1（9b37deea…）、t006-root-supervisor:cfgver（a2943b3a…）、cbrowser-gate-*:r1（t005 合并后门禁）、cbrowser-t005-*:final_round1。注意 t006 门禁须用当前源重建 Stream/Gateway/Supervisor/API 镜像，不能复用上述临时镜像冒充。
+- 未触碰的既有对象：Docker 网络 cbrowser-t003-bb-aece4d57-net（带 t003 黑盒 run_id 标签、0 容器）与 net_9335ab04/net_d876dc01/net_e5052de6（无标签，来源不明）、容器 pensive_satoshi、test-shm-srv；旧 cbrowser 容器在 t011/t012 前不动。主仓根目录有未跟踪文件 `123.md`（2026-10-30T20:32 新建的开源项目调研文档，非本工作产物），未修改、未提交。
+- 会话目标：本会话的 /goal 仍为 active，停止时需由用户 `/goal clear` 或指示恢复。
 - 已知风险：主机负载受 kkmail 等其他项目容器影响（13:00–19:46 曾致 Docker 引擎无响应），计时类测试与后续 t009 性能基准需记录负载；用户已授权必要时重启 OrbStack（本次因自行恢复未执行）。
 
 #### 后续队列
