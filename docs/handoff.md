@@ -29,6 +29,9 @@
     - 用户反馈（2026-10-31T01:2x）：测试反复弹出 Chrome 窗口抢前台，要求无头或后台运行。主控中断 r2（pid 53017）并实测：无头官方 Chrome 156 切标签/最小化不改变 `document.visibilityState`，后台 `open -g` + CDP 方案的 `bring_to_front` 会抢前台，均不可用。定案：所有 E2E 一律 `headless=True`，禁止开窗/切前台/最小化；AC-007 可见性改为页面内覆盖 `document.visibilityState`/`hidden` 并派发 `visibilitychange`，由官方客户端自身发 STOP_VIDEO/START_VIDEO，服务端链路真实；“浏览器真实标签切换发出可见性事件”本次不重证，沿用 d013/s005（headful 实证），须在 note、评审与最终汇报中写明。
     - r3（2026-10-31T01:35:57+08:00 前派发，同 session，pid 59047，日志 `.scratch/v2_orchestration/t006_e2e2_r3.jsonl`，prompt `t006_dispatch/t006_e2e2_resume2.md`）。主控监控每 5 秒查杀非无头的测试 Chrome（`--remote-debugging-pipe` 且无 `--headless`）。
     - r4（2026-10-31T01:51:48+08:00，同 session，pid 69984，日志 `t006_e2e2_r4.jsonl`，prompt `t006_e2e2_resume3.md`）：主控中断 r3 并提示改用 t004 已验证的 `#overlayInput` 聚焦输入写法。注意：中断后须确认旧 opencode 进程已退出再续行（r3 的 59047 对 SIGINT 未及时退出，曾与 r4 重叠约 15 秒，经核对 session 消息无交叉写入，已 TERM 结束）。
+    - r4 结果（06:11 核对）：AC-001、AC-003（双页各 +45 帧/2s、音频非零、selected pair 127.0.0.1:30000 直连 UDP mux、并发输入 "12"、Gateway SIGKILL 后 Browser PID 不变并 1s/2s 退避重注册）、AC-007（页面内可见性覆盖触发，端点 1/true→0/false→恢复）lane 自报 GREEN，待主控复跑；AC-005 暴露生产缺陷后停在该项。
+    - 生产缺陷（主控核实并修复，见 t006 note）：Agent 以错误签名调用 Selkies `RTCApp.update_rtc_config` 且吞异常，`rtc_app` 未就绪时配置被静默跳过，relay-only 下 Stream 侧无 TURN。修复后真实 SDK `tests/e2e/test_stream_rtc_config_e2e.py` 通过（镜像 sha256:e3bb980a…），unit+integration 296 passed。lane 的 Mock 复现用例不采纳。同步工具改为 `.scratch/v2_orchestration/lane_resync.py`（lane 分支基线提交 31a30b3）。
+    - r5（2026-10-31T06:17:00+08:00，同 session，pid 72835，日志 `t006_e2e2_r5.jsonl`，prompt `t006_e2e2_resume4.md`）：完成 AC-005（含 total-quota 负例）并用当前镜像复跑 AC-001/003/007。
 - 下一步：
     1. 等 E2E lane 交付；主控逐行审查并亲自复跑，核原始 JSON（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性、visibility 端点原始响应），增量合入 t006 WT 后 retire。
     2. 复制 `.scratch/v2_orchestration/gates/run_gates_template.sh` 快照跑全套门禁，补 Gateway 镜像构建与 Gateway E2E；Stream/Gateway/Supervisor/API 镜像用当前源重建（不得复用下方临时镜像）；testing.md 补 Gateway E2E 命令。
