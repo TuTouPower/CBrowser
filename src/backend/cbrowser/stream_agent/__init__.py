@@ -72,7 +72,6 @@ def __getattr__(name: str):
         "GatewayRegisterResponse",
         "AgentRegisterPayload",
         "SupervisorQuotaPayload",
-        "VisibilityUpdatePayload",
     ):
         from . import protocol
 

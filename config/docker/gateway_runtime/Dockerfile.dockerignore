@@ -1,0 +1,15 @@
+**
+!src/
+!src/backend/
+!src/backend/cbrowser/
+!src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/gateway/
+!src/backend/cbrowser/gateway/*.py
+!src/backend/cbrowser/rtc_config/
+!src/backend/cbrowser/rtc_config/*.py
+!src/backend/cbrowser/stream_agent/
+!src/backend/cbrowser/stream_agent/__init__.py
+!src/backend/cbrowser/stream_agent/protocol.py
+!src/backend/cbrowser/supervisor/
+!src/backend/cbrowser/supervisor/__init__.py
+!src/backend/cbrowser/supervisor/agent_credentials.py

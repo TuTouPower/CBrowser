@@ -305,6 +305,22 @@ class LiveCapturePolicyAgent:
         """Return True if any authenticated viewer is currently visible."""
         return any(st.get("active", False) for st in self.peers.values())
 
+    def selkies_video_state(self) -> Tuple[int, bool]:
+        """Unpaused primary video consumers and capture state, read from Selkies.
+
+        Peer pause flags are set only by Selkies STOP_VIDEO/START_VIDEO handling.
+        """
+        consumers_of = getattr(self.service, "_display_consumers", None)
+        consumers = consumers_of("primary") if consumers_of else []
+        unpaused = sum(1 for peer in consumers if not peer.get("video_paused", False))
+        p = self.pipeline
+        capturing = bool(
+            p is not None
+            and hasattr(p, "is_screen_capturing")
+            and p.is_screen_capturing()
+        )
+        return unpaused, capturing
+
     def log_action(self, action: str, details: Dict[str, Any]) -> None:
         """Log pipeline action to bounded ring buffer with ISO8601 timestamp."""
         entry = {
@@ -551,9 +567,24 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
         def __init__(self, supervisor: Any):
             super().__init__(supervisor)
             self.policy_agent: Optional[LiveCapturePolicyAgent] = None
+            # Set by StreamAgent; pushes Gateway RTC config once RTCApp exists.
+            self.rtc_ready_hook: Optional[Any] = None
             self._action_history: collections.deque = collections.deque(
                 maxlen=MAX_HISTORY_SIZE
             )
+
+        async def initialize_components(self) -> None:
+            await super().initialize_components()
+            # Stream-side TURN comes only from Gateway through the Agent;
+            # Selkies' own RTC config monitors must not start or replace it.
+            self.monitoring_utils_used = {}
+            if self.rtc_ready_hook is not None:
+                self.rtc_ready_hook()
+
+        def mon_rtc_config(
+            self, stun_servers: Any, turn_servers: Any, rtc_config: Any
+        ) -> None:
+            logger.debug("[%s] Ignored Selkies RTC config monitor update", _iso_now())
 
         def log_pipeline_action(self, action: str, details: Dict[str, Any]) -> None:
             entry = {
@@ -614,7 +645,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
         ) -> None:
             """
             SDK session start: registers the peer connection with base service.
-            Does NOT invent ghost viewers if Gateway already manages visibility.
+            Does NOT invent ghost viewers; visibility comes from mapped Selkies peers.
             Updates pipeline reference when display_pipelines becomes available.
             """
             await super().handle_session_start(

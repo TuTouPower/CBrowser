@@ -4,6 +4,7 @@ Requires external secret file or explicit environment injection;
 enforces no hardcoded secrets.
 """
 
+import ipaddress
 import math
 import os
 import re
@@ -28,6 +29,8 @@ class StreamAgentConfig(BaseModel):
     runtime_instance_id: str
     gateway_url: str
     agent_token: SecretStr
+    turn_host: str = "127.0.0.1"
+    turn_port: int = Field(default=3478, ge=1, le=65535)
     udp_mux_port: int = 30006
     width: int = 1920
     height: int = 1080
@@ -39,6 +42,17 @@ class StreamAgentConfig(BaseModel):
     max_fps: float = 30.0
     video_streaming_mode: bool = False
     turn_servers: List[dict] = Field(default_factory=list)
+    config_version: int = Field(default=1, ge=1)
+    selkies_version: Optional[str] = None
+
+    @field_validator("turn_host")
+    @classmethod
+    def validate_turn_host(cls, v: str) -> str:
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError("turn_host must be a valid IPv4 or IPv6 address")
+        return v
 
     @field_validator("profile_id")
     @classmethod
@@ -141,13 +155,16 @@ class StreamAgentConfig(BaseModel):
             f"runtime_instance_id={self.runtime_instance_id!r}, "
             f"gateway_url={self.gateway_url!r}, "
             f"agent_token='***', "
+            f"turn_host={self.turn_host!r}, "
+            f"turn_port={self.turn_port}, "
             f"udp_mux_port={self.udp_mux_port}, "
             f"width={self.width}, "
             f"height={self.height}, "
             f"depth={self.depth}, "
             f"min_fps={self.min_fps}, "
             f"max_fps={self.max_fps}, "
-            f"video_streaming_mode={self.video_streaming_mode})"
+            f"video_streaming_mode={self.video_streaming_mode}, "
+            f"config_version={self.config_version})"
         )
 
     def __str__(self) -> str:
@@ -168,6 +185,16 @@ class StreamAgentConfig(BaseModel):
             raise ValueError(
                 "CBROWSER_RUNTIME_INSTANCE_ID environment variable is required"
             )
+
+        config_version_raw = os.environ.get("CBROWSER_CONFIG_VERSION")
+        if not config_version_raw:
+            raise ValueError("CBROWSER_CONFIG_VERSION environment variable is required")
+        try:
+            config_version = int(config_version_raw)
+        except ValueError:
+            raise ValueError("Invalid CBROWSER_CONFIG_VERSION integer")
+        if config_version < 1:
+            raise ValueError("CBROWSER_CONFIG_VERSION must be >= 1")
 
         # Secret management: loading non-empty external file fail closed,
         # no silent fallback when explicit file bad
@@ -195,6 +222,25 @@ class StreamAgentConfig(BaseModel):
         except ValueError:
             raise ValueError("Invalid CBROWSER_UDP_MUX_PORT integer")
 
+        turn_host = os.environ.get("SELKIES_TURN_HOST")
+        if not turn_host or not turn_host.strip():
+            raise ValueError("SELKIES_TURN_HOST environment variable is required")
+        turn_host = turn_host.strip()
+        try:
+            ipaddress.ip_address(turn_host)
+        except ValueError:
+            raise ValueError("SELKIES_TURN_HOST must be a valid IPv4 or IPv6 address")
+
+        turn_port_raw = os.environ.get("SELKIES_TURN_PORT")
+        if not turn_port_raw or not turn_port_raw.strip():
+            raise ValueError("SELKIES_TURN_PORT environment variable is required")
+        try:
+            turn_port = int(turn_port_raw.strip())
+        except ValueError:
+            raise ValueError("Invalid SELKIES_TURN_PORT integer")
+        if not (1 <= turn_port <= 65535):
+            raise ValueError("SELKIES_TURN_PORT must be between 1 and 65535")
+
         pulse_dir = os.environ.get("CBROWSER_PULSE_DIR", "/pulse")
         x11_socket = os.environ.get("CBROWSER_X11_SOCKET", "/tmp/.X11-unix/X99")
         xauth = os.environ.get("XAUTHORITY", "/tmp/.Xauthority")
@@ -204,8 +250,11 @@ class StreamAgentConfig(BaseModel):
             runtime_instance_id=runtime_instance_id,
             gateway_url=gateway_url,
             agent_token=token_str,
+            turn_host=turn_host,
+            turn_port=turn_port,
             udp_mux_port=udp_port,
             pulse_dir=pulse_dir,
             x11_socket=x11_socket,
             xauthority_path=xauth,
+            config_version=config_version,
         )

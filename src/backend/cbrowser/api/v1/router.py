@@ -8,6 +8,7 @@ from cbrowser.adapters.database.repository import (
     InstanceConflictError,
     InvalidConfigVersionError,
 )
+from cbrowser.auth.dependencies import require_csrf_and_origin
 from cbrowser.domain.models import (
     ConfigVersionResponse,
     ErrorResponse,
@@ -33,6 +34,7 @@ from cbrowser.services.profile_service import (
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 
 v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
+profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
 
 
 def get_profile_service() -> ProfileService:
@@ -44,7 +46,7 @@ async def health_check():
     return {"status": "ok", "version": "2.0.0"}
 
 
-@v1_router.post(
+@profile_router.post(
     "/profiles",
     response_model=ProfileResponse,
     status_code=status.HTTP_201_CREATED,
@@ -108,7 +110,7 @@ async def create_profile(
     return ProfileResponse.from_domain(profile)
 
 
-@v1_router.get(
+@profile_router.get(
     "/profiles",
     response_model=list[ProfileResponse],
     responses={
@@ -125,7 +127,7 @@ async def list_profiles(
     return [ProfileResponse.from_domain(p) for p in profiles]
 
 
-@v1_router.get(
+@profile_router.get(
     "/profiles/{profile_id}",
     response_model=ProfileResponse,
     responses={
@@ -153,7 +155,7 @@ async def get_profile(
         )
 
 
-@v1_router.put(
+@profile_router.put(
     "/profiles/{profile_id}",
     response_model=ProfileResponse,
     responses={
@@ -175,7 +177,7 @@ async def get_profile(
         },
     },
 )
-@v1_router.patch(
+@profile_router.patch(
     "/profiles/{profile_id}",
     response_model=ProfileResponse,
     responses={
@@ -225,7 +227,7 @@ async def update_profile(
         )
 
 
-@v1_router.delete(
+@profile_router.delete(
     "/profiles/{profile_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
@@ -253,7 +255,7 @@ async def delete_profile(
         )
 
 
-@v1_router.get(
+@profile_router.get(
     "/profiles/{profile_id}/versions",
     response_model=list[ConfigVersionResponse],
     responses={
@@ -291,7 +293,7 @@ async def list_versions(
         )
 
 
-@v1_router.get(
+@profile_router.get(
     "/profiles/{profile_id}/versions/{version}",
     response_model=ConfigVersionResponse,
     responses={
@@ -326,7 +328,7 @@ async def get_version(
         )
 
 
-@v1_router.get(
+@profile_router.get(
     "/profiles/{profile_id}/runtime",
     response_model=ProfileRuntimeResponse,
     responses={
@@ -364,7 +366,7 @@ async def get_profile_runtime(
         )
 
 
-@v1_router.patch(
+@profile_router.patch(
     "/profiles/{profile_id}/runtime/desired-state",
     response_model=ProfileRuntimeResponse,
     responses={
@@ -417,7 +419,7 @@ async def set_desired_state(
         )
 
 
-@v1_router.post(
+@profile_router.post(
     "/profiles/{profile_id}/stop",
     response_model=ProfileRuntimeResponse,
     responses={
@@ -463,7 +465,7 @@ async def stop_profile(
         )
 
 
-@v1_router.post(
+@profile_router.post(
     "/runtimes/bind",
     response_model=ProfileRuntimeResponse,
     responses={
@@ -521,7 +523,7 @@ async def bind_runtime(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
-@v1_router.post(
+@profile_router.post(
     "/runtimes/observed",
     response_model=ProfileRuntimeResponse,
     responses={
@@ -579,7 +581,7 @@ async def report_observed_state(
         )
 
 
-@v1_router.post(
+@profile_router.post(
     "/runtimes/events",
     response_model=RuntimeEventResponse,
     responses={
@@ -619,3 +621,6 @@ async def report_runtime_event(
     )
     res = await service.process_runtime_event(event)
     return res
+
+
+v1_router.include_router(profile_router)

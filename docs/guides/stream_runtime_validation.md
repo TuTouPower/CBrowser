@@ -15,7 +15,7 @@
 
 完整 E2E 启动全新 Browser、Stream、coturn 与独立 bridge，仅发布 localhost 测试端口。夹具不读已有 Profile，不接管现有 cbrowser 容器。测试资源按唯一名称在 finally 清理，不使用 prune。
 
-验证两页真实1920×1080视频、音频字节与能量增长；复制标签继承旧 sessionStorage 后独立重签，新页解码时原页保持原 PC；刷新、关闭与静音按页隔离。策略通过认证 Agent 连接发送，检查静止8/运动30、配额15/恢复、隐藏聚合、关键帧及客户端越权拒绝。
+验证两页真实1920×1080视频、音频字节与能量增长；复制标签继承旧 sessionStorage 后独立重签，新页解码时原页保持原 PC；刷新、关闭与静音按页隔离。策略通过认证 Agent 连接发送，检查静止8/运动30、配额15/恢复及客户端越权拒绝。页面隐藏暂停、全部后台停捕获与恢复关键帧只走 Selkies 官方 STOP_VIDEO/START_VIDEO（计划 9.3），由 t006 Gateway E2E 以真实 Chrome 页面可见性验证。
 
 TURN 测试使用不同客户端/服务端 URL 和 HMAC 短期凭证；coturn relay-ip 必须是实际容器地址，external-ip 明确 localhost/容器地址映射。loopback 放行与 no-cli 仅为隔离测试配置，不能直接复制到公网部署。连续新代接管与旧代关闭并拒绝发送后，才核对新 ufrag 的 selected pair、双 relay 类型、候选字节及重新采样的音视频增量。测试保留 PC/DTLS/Track 引用检查，旧代继续传流不能使测试假绿。
 

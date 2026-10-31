@@ -152,7 +152,7 @@ async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
 ):
     """Reconstruct interrupted startup via bind RPC and verify lock guards."""
     browser_image, stream_image, engine_src = check_e2e_images()
-    api_url, auth_token, token_file = real_api_server
+    api_url, auth_token, token_file, auth_headers = real_api_server
 
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-startup-{test_run_id}"
@@ -168,9 +168,12 @@ async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
 
     d_client = docker.from_env()
 
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    headers.update(auth_headers)
+
     api_client = httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers=headers,
         timeout=10.0,
         trust_env=False,
     )
@@ -305,7 +308,7 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
 ):
     """Preserve normal exit semantics through a real HTTP 503 and replay."""
     browser_image, stream_image, engine_src = check_e2e_images()
-    api_url, auth_token, token_file = real_api_server
+    api_url, auth_token, token_file, auth_headers = real_api_server
 
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-startup-{test_run_id}"
@@ -325,10 +328,13 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
 
     d_client = docker.from_env()
 
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    headers.update(auth_headers)
+
     # Direct client to real API for assertions and setup
     real_api_client = httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers=headers,
         timeout=10.0,
         trust_env=False,
     )
@@ -336,7 +342,7 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
     # Proxy-routed client for supervisor components
     proxy_api_client = httpx.AsyncClient(
         base_url=proxy_url,
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers=headers,
         timeout=10.0,
         trust_env=False,
     )

@@ -17,6 +17,14 @@ ______________________________________________________________________
 - 保留公网/TURN配置、Linux x86_64镜像构建和相关功能实现；仅跳过上述环境上的验证，不删除功能，也不授权外部部署、真实数据迁移或发布到未知目标。
 - 第18章其余实验、项目测试、独立review及本地真实黑盒仍须通过。原文“全部通过”按修订后的有效范围解释，被豁免项须始终单列。
 
+## 修订：开源项目调研意见复核（2026-10-30T20:46:00+08:00）
+
+外部调研意见（16 个远程桌面/WebRTC 项目对照）经 Selkies 2.1.0 固定源码与已验证发现（d007、d013、d014、d017）复核后，按以下范围修订本文：
+
+- 采纳：页面可见性只用 Selkies 原生每 Peer `STOP_VIDEO`/`START_VIDEO`，Gateway 不再聚合可见性与活动，Supervisor 前台状态改由 Agent 上报（第9章）；剪贴板与会话内文件传输改为显式配置 Selkies 策略，文件只走 Artifact Service（8.1、8.4）；CBrowser 自有内部协议独立 schema 与版本（7.5）；下载捕获增加目录对账兜底（11.3）；前端处理页面冻结/恢复并显示连接诊断，不显示无解释黑屏（13.4）。
+- 已在本文中、无需改动：Selkies 为核心、`client_tab_id` 多页面、每 Profile 共享编码管线、每 Profile 一个 UDP mux 端口、双容器 + 同 Profile IPC/X11/Pulse 卷、原生 IME 与 XTest、CDP 仅内部、不用 noVNC/KasmVNC。调研中“原计划 → 新决定”表的多数“原计划”项并非 v2.3 内容。
+- 不采纳：下载捕获改为文件系统监控优先（CDP 事件给出明确完成状态，d002 已验证，文件监控只作兜底）；`/dev/shm` 改为 2 GiB（1 GiB 已在 d004 及 t004/t005 实测通过，由 t009 压测记录峰值后再定）；启用 Selkies WebSocket 双模式备用（本次本机部署不需要，增加一倍测试矩阵）；Selkies 与 KasmVNC 对比基准（引擎已定案并实现，不再回头比选）。
+
 # 1. 最终技术决策
 
 ## 1.1 固定技术栈
@@ -65,6 +73,8 @@ Selkies 固定到官方 2.1.0 发布版本，对应提交 `6ee68a7a815956e6745e9
 10. 不允许 Browser Runtime 暴露公网 CDP 端口。
 11. 不使用 Docker 自动重启策略代替业务状态恢复。
 12. 不因外部标签页关闭而停止浏览器进程。
+13. 不在 Gateway 重复采集或聚合页面可见性与活动状态；不重新实现 Selkies 已提供的每 Peer 暂停、IME、键鼠输入和剪贴板传输。
+14. 不通过 Selkies 会话内文件传输上传或下载文件。
 
 ______________________________________________________________________
 
@@ -357,6 +367,8 @@ Gateway 执行以下流程：
 
 每个 ViewerConnection 使用自己的信令隧道。关闭其中一条连接不影响其他连接。
 
+信令 WebSocket 心跳只用于判断信令连接存活，不携带页面可见性或活动状态。
+
 ## 7.4 运行时停止
 
 Supervisor 停止 Profile 时：
@@ -369,6 +381,19 @@ Supervisor 停止 Profile 时：
 6. 更新实际运行状态。
 
 Gateway 重启不会停止浏览器。Agent 重新注册后，外部页面可以重建连接。
+
+## 7.5 内部协议边界
+
+CBrowser 只定义自己的内部协议，每种协议有独立 schema、版本字段和运行时校验，不合并为一个通用 WebSocket JSON 处理器：
+
+|协议|两端|职责|
+|---|---|---|
+|Agent 注册与信令隧道|Stream Agent ↔ Gateway|注册、健康、信令转发、运行时控制（TURN 配置、配额、ICE 轮换）|
+|Runtime RPC|Browser Agent ↔ Supervisor（UDS）|浏览器健康、CDP 流、下载与退出事件|
+|生命周期 RPC|API ↔ Supervisor|期望状态、实际状态、运行事件、配置快照|
+|会话授权|API ↔ Gateway|登录会话与 Profile 访问校验、运行时状态|
+
+媒体、输入、IME、剪贴板沿用 Selkies 2.1.0 官方协议，CBrowser 不另定义。文件内容只经 Artifact Service 的 HTTP 接口传输，不进入信令或 JSON 消息。
 
 ______________________________________________________________________
 
@@ -389,7 +414,10 @@ SELKIES_MODE=webrtc
 SELKIES_ENABLE_DUAL_MODE=false
 SELKIES_ENABLE_SHARING=true
 SELKIES_ENABLE_COLLAB=false
+SELKIES_FILE_TRANSFERS=none
 ```
+
+上述设置必须显式传入 Stream Runtime。Selkies 2.1.0 中 `enable_dual_mode` 默认 `true`、`file_transfers` 默认 `upload,download`，不显式设置即会开启 WebSocket 模式切换和绕过 Artifact Service 的会话内文件传输。
 
 不设置 `mk_control=true`。
 
@@ -419,6 +447,15 @@ CBrowser 的客户端适配层必须：
 
 不实现独占控制者、输入锁或接管等待。
 
+## 8.4 剪贴板策略
+
+剪贴板传输使用 Selkies 官方剪贴板消息，CBrowser 不实现自己的同步协议。
+
+- Profile 的 `clipboard_sync` 映射到 Selkies `enable_clipboard`：开启为 `true`，关闭为 `false`；`in`/`out` 单向模式保留为后续可选值，本次不暴露。
+- `enable_binary_clipboard=false`，本次只支持纯文本。
+- 上述值由服务端固定并锁定（Selkies `|locked` 语义），客户端设置不能覆盖。
+- 前端 `ClipboardBridge` 只处理本机剪贴板权限、页面焦点和权限拒绝提示，不改写 Selkies 剪贴板消息。
+
 ______________________________________________________________________
 
 # 9. 多连接共享编码器与帧率
@@ -429,14 +466,9 @@ ______________________________________________________________________
 
 ## 9.1 每连接与每 Profile 的设置分离
 
-每个 ViewerConnection 可以独立：
+每个 ViewerConnection 通过 Selkies 官方客户端在页面 `visibilitychange` 时发送 `STOP_VIDEO`/`START_VIDEO`（音频为 `STOP_AUDIO`/`START_AUDIO`）。Selkies 2.1.0 据此只开关该 Peer 的 RTP sender，其他 Peer 不受影响；恢复的 Peer 总是收到关键帧。
 
-- 暂停本地视频接收。
-- 暂停本地解码和绘制。
-- 记录当前页面可见状态。
-- 记录本地交互活动。
-
-但是不能直接修改该 Profile 的全局编码帧率。
+每个 ViewerConnection 不能直接修改该 Profile 的全局编码帧率。
 
 Profile 的服务端捕获和编码帧率由 Stream Agent 统一决定。
 
@@ -459,24 +491,25 @@ SELKIES_FRAMERATE=8,8-30
 - 所有连接均隐藏或断开后：暂停服务端画面捕获。
 - 任一连接恢复可见后：恢复捕获，先以 8 FPS 建立画面，再根据活动情况提升。
 
-### 9.3 连接活动聚合
+### 9.3 信号来源与单一仲裁
 
-Gateway 为每个 ViewerConnection 记录：
+帧率与捕获决策的全部输入都在 Stream Runtime 内取得，不经过 Gateway：
 
-```text
-connection_id
-visible
-last_activity
-last_heartbeat
-```
+|信号|来源|
+|---|---|
+|每 Peer 可见性|Selkies `STOP_VIDEO`/`START_VIDEO` 回调|
+|Peer 加入与离开|Selkies consumers 变化与 Peer 断开回调|
+|用户输入|Selkies 输入数据通道（键鼠、滚动、IME 提交）|
+|画面运动|捕获 damage 信号，不用 `encoded_fps`（d005）|
+|资源配额|Supervisor 经 Gateway 下发的 Profile 级 FPS 上限|
 
-Gateway 将当前 Profile 的所有连接状态聚合后通知 Stream Agent。
+Stream Agent 以单一串行仲裁器（d013）挂接上述 Selkies 回调，统一执行 pause/resume/set_framerate，避免 Selkies 内置的全部暂停规则与 Agent 帧率策略双头控制。仲裁器的暂停语义与 Selkies 2.1.0 原生规则一致：该显示的全部 consumer 都暂停时才停止捕获。
 
-只要存在一个活跃前台连接，就不能由另一个后台连接降低全局编码帧率。
+Gateway 不记录 `visible`、`last_activity`，也不向 Agent 发送可见性更新。只要存在一个未暂停的 Peer，后台页面就不能降低全局编码帧率。
 
-后台页面可以本地暂停视频解码。即使页面冻结导致状态消息丢失，也不能直接影响其他活跃页面。
+Supervisor 资源策略需要的“是否有前台 Viewer”由 Stream Agent 在健康消息中上报（未暂停视频 consumer 数、捕获是否运行，均取自 Selkies 状态）。Gateway 只保存 Agent 最近一次上报值，供 Supervisor 现有查询端点读取，不从页面采集。
 
-连接心跳仅用于判断连接是否存活和统计资源需求，不具有控制权管理含义。
+页面在可见状态下失去响应（主线程卡死、调试暂停）时不会发送 `STOP_VIDEO`，该 Peer 继续计为消费者，直到 PeerConnection 断开后由 Selkies 移除。这只多占用捕获资源，不影响其他页面，接受该代价。
 
 ## 9.4 固定屏幕尺寸
 
@@ -659,6 +692,8 @@ Agent 通过 Unix Socket 将事件发送给 Supervisor，Supervisor 再通过经
 
 外部 CDP 自动化客户端断开后，Browser Agent 恢复 CBrowser 的下载捕获设置，避免外部自动化改变下载策略后使 Artifact 管理失效。
 
+CDP 下载事件是主来源。Browser Agent 启动或 CDP 会话重建后扫描 `/exchange/downloads/` 一次，对没有完成事件的已完成文件（排除 `.crdownload` 等临时文件）补发下载事件，API 按路径与校验和去重。目录扫描只做对账兜底，不替代 CDP 事件。
+
 ______________________________________________________________________
 
 # 12. SQLite 单写者与运行状态恢复
@@ -812,6 +847,10 @@ TanStack Query 负责 Profile 和配置数据；SSE 推送运行状态；ViewerC
 页面恢复时，根据 `selectedProfileId` 重新查询运行状态，若浏览器仍在运行，就重新建立 ViewerConnection。
 
 任何 ViewerConnection 的关闭都不能调用 Profile stop API。
+
+页面被浏览器冻结后恢复（Page Lifecycle `freeze`/`resume`、bfcache 的 `pageshow`）时，检查信令与 PeerConnection 状态，已失效则按原 `client_tab_id` 与 `resume_key` 重建连接。
+
+连接失败不显示无解释黑屏。页面显示当前阶段（运行时未就绪、信令失败、ICE 失败、媒体无帧）及可执行操作（重连、查看运行状态）；诊断信息取自 `RTCPeerConnection` 状态与 `getStats()`（选中候选类型、RTT、丢包），不新增媒体回退通道。
 
 ______________________________________________________________________
 
@@ -1053,7 +1092,7 @@ ______________________________________________________________________
 |单活跃流|1080p30|
 |输入到画面反馈延迟|通过同机Chrome实际测量输入至画面反馈，P95不超过100ms；同时记录媒体路径RTT和负载|
 |运行时就绪后的首次画面|P95 不超过 1 秒|
-|后台标签页|停止本地解码，全部后台时暂停服务端捕获|
+|后台标签页|该 Peer 停止接收 RTP，全部后台时暂停服务端捕获|
 |多流资源调度|CPU超过阈值或容器资源受限时按规则降低Profile级FPS，并明确显示资源限制|
 |8 小时压力测试|无数据损坏、会话串线或不可恢复的运行时退出|
 
@@ -1089,6 +1128,8 @@ ______________________________________________________________________
 - 用户正常关闭浏览器后，服务重启不会重新打开浏览器。
 - Gateway 重启不会停止浏览器。
 - coturn、ICE 和 UDP 端口映射通过真实网络测试。
+- Selkies 会话内文件上传下载已关闭，WebSocket 模式切换不可用。
+- 剪贴板方向与二进制剪贴板设置不能被客户端覆盖。
 
 ______________________________________________________________________
 
@@ -1113,6 +1154,6 @@ ______________________________________________________________________
 
 CBrowser v2.3 继续采用 Profile、BrowserRuntime、ViewerConnection 三者独立的模型，不恢复独占租约，也不引入 Redis。
 
-正式架构保留两个运行容器，并通过同 Profile 的 IPC 命名空间和 X11 Socket 连接显示；Stream Gateway 通过 Agent 隧道路由信令；CDP 和下载捕获通过受控 Unix Domain Socket 与 Supervisor 连接；API 是唯一 SQLite 写入者；共享编码器按 Profile 聚合帧率需求。
+正式架构保留两个运行容器，并通过同 Profile 的 IPC 命名空间和 X11 Socket 连接显示；Stream Gateway 通过 Agent 隧道路由信令；CDP 和下载捕获通过受控 Unix Domain Socket 与 Supervisor 连接；API 是唯一 SQLite 写入者；共享编码器的捕获与帧率由 Stream Agent 依据 Selkies 原生每 Peer 暂停、本地输入和画面运动统一仲裁。Selkies 已实现的多页面、每 Peer 暂停、IME、输入和剪贴板传输直接复用，不重复开发。
 
 **先完成 Spike，后冻结架构，再重构、迁移和删除旧链路。** 这条顺序是正式实施的硬性要求，而不是可跳过的建议。

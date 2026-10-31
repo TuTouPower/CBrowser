@@ -674,6 +674,14 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             "CBROWSER_X11_SOCKET=/tmp/.X11-unix/X99",
             "-e",
             "SELKIES_PORT=18096",
+            # t006 Stream startup contract: config version and the coturn
+            # address reported at registration (this test sends no RTC config).
+            "-e",
+            "CBROWSER_CONFIG_VERSION=1",
+            "-e",
+            "SELKIES_TURN_HOST=127.0.0.1",
+            "-e",
+            "SELKIES_TURN_PORT=3478",
             STREAM_IMAGE,
         ]
         subprocess.run(stream_cmd, check=True)
@@ -1162,73 +1170,13 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 work_dir,
             )
 
-            connections = [by_tab[tab1], by_tab[tab2]]
-            assert set(connections) == gateway.profile_viewers[profile_id]
-            await policy_packet(
-                "visibility_update", {"viewer_id": connections[0], "visible": False}
-            )
-            await asyncio.sleep(1)
-            control_proof["one_hidden_frames_2s"] = await frame_window(page2)
-            assert control_proof["one_hidden_frames_2s"] > 0
-            await policy_packet(
-                "visibility_update", {"viewer_id": connections[1], "visible": False}
-            )
-            await asyncio.sleep(1)
-            before_hidden = await asyncio.gather(
-                page1.evaluate(stats_script), page2.evaluate(stats_script)
-            )
-            await asyncio.sleep(2)
-            after_hidden = await asyncio.gather(
-                page1.evaluate(stats_script), page2.evaluate(stats_script)
-            )
-            hidden_deltas = [
-                after["video"]["framesDecoded"] - before["video"]["framesDecoded"]
-                for before, after in zip(before_hidden, after_hidden, strict=True)
-            ]
-            assert hidden_deltas == [0, 0]
-            control_proof["all_hidden_frames_2s"] = hidden_deltas
-            await policy_packet(
-                "visibility_update", {"viewer_id": "unknown", "visible": True}
-            )
-            await asyncio.sleep(0.5)
-            assert await frame_window(page2) == 0
-
-            before_resume = await page1.evaluate(stats_script)
-            before_resume_logs = await native_logs()
-            await policy_packet(
-                "visibility_update", {"viewer_id": connections[0], "visible": True}
-            )
-            for _ in range(80):
-                restored = await page1.evaluate(stats_script)
-                if (
-                    restored["video"]["framesDecoded"]
-                    > before_resume["video"]["framesDecoded"]
-                ):
-                    break
-                await asyncio.sleep(0.1)
-            assert (
-                restored["video"]["framesDecoded"]
-                > before_resume["video"]["framesDecoded"]
-            )
-            assert (
-                restored["video"]["keyFramesDecoded"]
-                > before_resume["video"]["keyFramesDecoded"]
-            )
-            resume_logs = (await native_logs())[len(before_resume_logs) :]
-            assert "set_framerate(8.0) first, then resume" in resume_logs
             after_policy = await evaluate_remote("true")
             assert after_policy["identity"] == remote["identity"]
             control_proof["browser_identity"] = after_policy["identity"]
-            control_proof["key_frame_resumed"] = True
             (work_dir / "policy_proof.json").write_text(
                 json.dumps(control_proof, indent=2)
             )
             (work_dir / "native_policy.log").write_text(await native_logs())
-            for connection in connections:
-                await policy_packet(
-                    "visibility_update", {"viewer_id": connection, "visible": True}
-                )
-            await asyncio.sleep(1)
 
             async def prepare_remote_input():
                 await evaluate_remote("""(() => {

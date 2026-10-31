@@ -47,7 +47,7 @@ export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
 PYTHONPATH=src uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser>=0.6.3" python -m pytest src/backend/tests -q
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser --with docker --with aiohttp python -m pytest tests/unit -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser --with docker --with aiohttp --with argon2-cffi python -m pytest tests/unit -q
 ```
 
 ## blackbox_verify
@@ -58,7 +58,7 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
 export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with docker --with aiohttp python -m pytest tests/integration -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with "sqlalchemy[asyncio]" --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with docker --with aiohttp --with argon2-cffi --with websockets python -m pytest tests/integration -q
 : "${CBROWSER_RUNTIME_TEST_IMAGE:?Provide an immutable built runtime image ID}"
 : "${CBROWSER_RUNTIME_ENGINE_CACHE:?Provide an initialized Linux engine cache path}"
 PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser python -m pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
@@ -74,7 +74,7 @@ uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py
 ```bash
 : "${CBROWSER_STREAM_TEST_IMAGE:?Provide an immutable Stream image ID}"
 : "${CBROWSER_TURN_TEST_IMAGE:?Provide an immutable coturn 4.6 image ID}"
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright --with docker --with httpx python -m pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright --with docker --with httpx python -m pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py tests/e2e/test_stream_ice_commit_e2e.py tests/e2e/test_stream_rtc_config_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
 ```
 
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。单侧 TURN 错误凭证负例通过测试专用 CBROWSER_STREAM_TURN_REJECT_SIDE=server 或 client 注入；期望完整媒体测试非零且 coturn 拒绝认证/新代无 commit，启动失败或缺镜像不算有效负例。正常门禁不得设置该变量。
@@ -103,7 +103,7 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 项目涉及 OpenAPI 导出及前端类型。
 
 - 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
-- 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
+- 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
 - 验证命令：test_cmd 中 `tests/unit` 的 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；blackbox_verify 中 `tests/integration` 使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。前端类型生成由 t007 实施，本 task 不生成前端代码。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
@@ -116,6 +116,20 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 |**契约测试**|pytest 模板轻量契约测试（当前169项，`-m contract`）|路径或状态机格式不匹配、specs_index 缺失条目|
 |**文档格式**|`python3 .repo_template/scripts/md_format.py --check`|Markdown 表格未 compact 或标题语法错误|
 |**容器黑盒**|容器健康检查探针与本地技术验证专项探针|只看进程存活、未验证实际双向媒体与数据完整性|
+
+## Gateway 阶段验证
+
+t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS 入口、API、Supervisor 容器经 API 运行意愿创建 Browser/Stream、正式 Gateway 镜像、coturn，官方 Mac Google Chrome **无头**访问（禁止弹窗或抢前台）。镜像全部为当前源构建的不可变 sha256 ID：
+
+```bash
+: "${CBROWSER_RUNTIME_TEST_IMAGE:?Browser image ID}" "${CBROWSER_STREAM_TEST_IMAGE:?Stream image ID}"
+: "${CBROWSER_GATEWAY_IMAGE:?production Gateway image ID from config/docker/gateway_runtime/Dockerfile}"
+: "${CBROWSER_SUPERVISOR_TEST_IMAGE:?Supervisor image ID}" "${CBROWSER_API_TEST_IMAGE:?API image ID}"
+: "${CBROWSER_TURN_TEST_IMAGE:?coturn 4.6 image ID}" "${CBROWSER_CADDY_TEST_IMAGE:?local caddy image ID}"
+PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets python -m pytest tests/e2e/test_gateway_ac001_auth_e2e.py tests/e2e/test_gateway_ac003_media_e2e.py tests/e2e/test_gateway_ac005_relay_e2e.py tests/e2e/test_gateway_ac007_visibility_e2e.py -q --basetemp="$PWD/.scratch/gateway_e2e/basetemp" -o cache_dir="$PWD/.scratch/gateway_e2e/pytest_cache"
+```
+
+`test_ac005_negative_turn_failure_exit_code` 以子进程运行负例模式（新代客户端 TURN 凭证被 coturn 401 拒绝、旧代仍出帧），期望该子进程非零退出且 Gateway 未提交该代并记录退避。页面可见性在无头 Chrome 中不会因切标签变化，AC-007 用例在页面内覆盖 `document.visibilityState` 并派发 `visibilitychange` 触发官方客户端 STOP_VIDEO/START_VIDEO；浏览器真实标签切换的事件发出见 d013/s005，不在本用例重证。
 
 ## Supervisor 阶段验证
 

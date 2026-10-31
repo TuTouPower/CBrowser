@@ -144,6 +144,42 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-retry-e2e-{test_run_id}"
 
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
+
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
     for name in (
@@ -191,10 +227,11 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
         root=root,
         env=env,
         log_path=tmp_path / "supervisor.log",
+        coturn_container_id=coturn.id,
     )
 
     evidence_records: list[dict] = []
-    tracked_cids: list[str] = []
+    tracked_cids: list[str] = [coturn.id]
 
     try:
         # Start API, Gateway, and Supervisor subprocesses
@@ -203,6 +240,7 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
         sup_proc.start()
 
         api_headers = {"Authorization": f"Bearer {sup_token_val}"}
+        api_headers.update(api_proc.auth_headers)
         sup_headers = {"Authorization": f"Bearer {sup_token_val}"}
 
         async with (

@@ -3,16 +3,19 @@ Pydantic models and serialization schemas for StreamAgent <->
 Gateway/Supervisor communications.
 """
 
+import ipaddress
 import json
 import math
 import re
 from enum import Enum
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
+from urllib.parse import quote
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
     StrictBool,
     field_validator,
     model_validator,
@@ -25,12 +28,13 @@ class AgentAction(str, Enum):
     VIEWER_JOINED = "viewer_joined"
     VIEWER_LEFT = "viewer_left"
     SIGNAL = "signal"
-    VISIBILITY_UPDATE = "visibility_update"
     SUPERVISOR_QUOTA = "supervisor_quota"
     ICE_RESTART = "ice_restart"
     ICE_RESTART_OFFER = "ice_restart_offer"
     ICE_RESTART_ANSWER = "ice_restart_answer"
+    ICE_RESTART_COMMITTED = "ice_restart_committed"
     HEARTBEAT = "heartbeat"
+    RTC_CONFIG = "rtc_config"
     ERROR = "error"
 
 
@@ -178,6 +182,9 @@ class ProtocolEnvelope(BaseModel):
         return v
 
 
+RuntimeState = Literal["starting", "ready"]
+
+
 class AgentRegisterPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -185,11 +192,25 @@ class AgentRegisterPayload(BaseModel):
     profile_id: str
     runtime_instance_id: str
     udp_port: int
+    selkies_version: str = Field(min_length=1, max_length=64)
+    runtime_state: RuntimeState
+    config_version: int = Field(ge=1)
+    turn_host: str
+    turn_port: int = Field(ge=1, le=65535)
     video_streaming_mode: bool = False
     max_fps: int = 30
     min_fps: int = 8
     width: int = 1920
     height: int = 1080
+
+    @field_validator("turn_host")
+    @classmethod
+    def validate_turn_host(cls, v: str) -> str:
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError("turn_host must be a valid IPv4 or IPv6 address")
+        return v
 
     @field_validator("udp_port")
     @classmethod
@@ -237,20 +258,6 @@ class SupervisorQuotaPayload(BaseModel):
         return v
 
 
-class VisibilityUpdatePayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    viewer_id: str
-    visible: StrictBool
-
-    @field_validator("viewer_id")
-    @classmethod
-    def validate_viewer_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
-            raise ValueError("Invalid viewer_id")
-        return v
-
-
 class ICERestartOfferPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -267,3 +274,77 @@ class ICERestartAnswerPayload(BaseModel):
     sdp: str
     type: str = "answer"
     generation: int
+
+
+class AgentHeartbeatPayload(BaseModel):
+    """Application-level health message sent every 10 seconds.
+
+    The video fields come from Selkies peer state, not from page reports.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    runtime_state: RuntimeState
+    viewer_count: int = Field(ge=0)
+    unpaused_video_consumers: int = Field(ge=0)
+    capture_running: StrictBool
+
+
+class IceServer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    urls: List[str] = Field(min_length=1)
+    username: Optional[str] = Field(default=None, max_length=256)
+    credential: Optional[SecretStr] = None
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, v: List[str]) -> List[str]:
+        for url in v:
+            if not url.startswith(("stun:", "turn:", "turns:")):
+                raise ValueError("ICE server URL must use stun, turn or turns")
+        return v
+
+
+class RtcConfigPayload(BaseModel):
+    """Stream-side ICE servers for new PeerConnections and restarts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    generation: int = Field(ge=1)
+    ice_servers: List[IceServer] = Field(min_length=1)
+    relay_only: StrictBool = False
+
+    def selkies_server_urls(self) -> Tuple[List[str], List[str]]:
+        """STUN and TURN URL lists as Selkies RTCApp.update_rtc_config takes them.
+
+        Selkies parses TURN entries as turn://user:pass@host:port?query and
+        unquotes the credentials, so they are percent-encoded here.
+        """
+        stun: List[str] = []
+        turn: List[str] = []
+        for server in self.ice_servers:
+            for url in server.urls:
+                scheme, rest = url.split(":", 1)
+                if scheme == "stun":
+                    stun.append(url)
+                    continue
+                auth = ""
+                if server.username is not None and server.credential is not None:
+                    secret = server.credential.get_secret_value()
+                    auth = (
+                        f"{quote(server.username, safe='')}:{quote(secret, safe='')}@"
+                    )
+                turn.append(f"{scheme}://{auth}{rest}")
+        return stun, turn
+
+    def wire_ice_servers(self) -> List[Dict[str, Any]]:
+        servers = []
+        for server in self.ice_servers:
+            entry: Dict[str, Any] = {"urls": list(server.urls)}
+            if server.username is not None:
+                entry["username"] = server.username
+            if server.credential is not None:
+                entry["credential"] = server.credential.get_secret_value()
+            servers.append(entry)
+        return servers

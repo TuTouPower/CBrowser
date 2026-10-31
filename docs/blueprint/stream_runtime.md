@@ -12,7 +12,7 @@ config/docker/stream_runtime/Dockerfile 构建独立镜像。入口读取配置�
 
 每个 Viewer 有独立 Peer、输入与静音状态，共享 Profile 捕获及编码管线。固定远端几何为1920×1080、DPR 1，页面 viewport、连接顺序和客户端 resize 指令不得修改远端尺寸。保留官方客户端，Web Locks shim 在复制 sessionStorage 造成身份冲突时重签新页，原页继续运行；重连同时绑定 tab_id 与 resume_key。
 
-共享策略由认证 Gateway 消息驱动：活动前台目标30 FPS，静止前台8 FPS；持续画面变化保持活动目标。一个页面隐藏不能降低其他前台需求；全部隐藏或断开后暂停捕获。恢复可见先恢复8 FPS并请求关键帧，再按活动提高。Supervisor 提供8–30 FPS配额上限，解除后恢复正常目标；客户端数据通道不能覆盖配额或远端几何。
+共享策略的输入全部在 Stream 内取得（计划 9.3）：页面可见性只来自 Selkies 官方每 Peer STOP_VIDEO/START_VIDEO 回调，Peer 加入/离开来自 consumers 变化与断开回调，输入来自数据通道，运动来自捕获 damage；Gateway 不下发可见性。活动前台目标30 FPS，静止前台8 FPS；持续画面变化保持活动目标。一个页面隐藏不能降低其他前台需求；全部隐藏或断开后暂停捕获。恢复可见先恢复8 FPS并请求关键帧，再按活动提高。Supervisor 提供8–30 FPS配额上限，解除后恢复正常目标；客户端数据通道不能覆盖配额或远端几何。
 
 ## Gateway wire 协议
 
@@ -20,7 +20,8 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 - 注册与 ACK：ProtocolEnvelope(action=register) / GatewayRegisterResponse；注册时 session 可为 null。
 - 隧道：GatewayTunnelEnvelope(type=open/msg/close)，conn_id 标识独立连接，msg 的 data 承载官方信令。
-- 控制：GatewayControlEnvelope，支持 visibility_update、supervisor_quota、ice_restart、ice_restart_answer；返回 ice_restart_offer 或 error。
+- 控制：GatewayControlEnvelope，支持 rtc_config、supervisor_quota、ice_restart、ice_restart_answer；返回 ice_restart_offer、ice_restart_committed（新代真实接管后）或 error。
+- 健康：注册后立即及每 10 秒发送 heartbeat，载荷含 runtime_state、viewer_count 及取自 Selkies 的未暂停视频 consumer 数与捕获是否运行，供 Supervisor 经 Gateway 查询前台状态。
 - schemas/stream/agent_protocol.json 从四种 Pydantic envelope 生成；运行 PYTHONPATH=src/backend python scripts/export_stream_protocol.py。JSON Schema 描述 wire 形状，跨字段约束和动作 payload 仍由实际 Agent/Pydantic 执行，不能只依赖 JSON Schema 做授权。
 
 连接任务与有界队列按 viewer 回收；溢出通知 Gateway 关闭对应连接。断线重注册与 Stream 暂停不改变 Browser 运行意愿。
@@ -37,6 +38,8 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 - tests/e2e/test_stream_runtime_e2e.py：官方 Mac Chrome、真实 Browser/Stream 整镜像、双音视频、复制标签、三代 TURN、策略、组合输入和运行隔离。
 - tests/e2e/test_stream_ice_failure_e2e.py / test_stream_ice_relay_e2e.py：真实 SDK socket 回收、失败/取消与三代 DataChannel 中继机制；不能替代 Chrome RTP 证明。
+- tests/e2e/test_stream_ice_commit_e2e.py：真实 SDK 下提交等待只在新代接管后返回，新代连通失败时报错且提交代不变。
+- tests/e2e/test_stream_rtc_config_e2e.py：Gateway 下发的 Stream 侧 TURN 以 Selkies URL 格式进入真实 RTCApp，RTCApp 晚于配置创建时补推。
 - tests/e2e/test_stream_x11_keymap_e2e.py：真实 Xvfb 键位复用、按住槽保护。
 - tests/e2e/test_stream_client_identity_e2e.py：Chrome Web Locks 身份与重连。
 

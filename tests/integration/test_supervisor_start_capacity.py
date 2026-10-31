@@ -43,7 +43,14 @@ async def test_exhausted_port_after_binding_records_one_start_failure(
         trust_env=False,
     ) as api:
         events = EventForwarder(str(api.base_url), tmp_path / "spool", client=api)
-        core = SupervisorCore(adapter, ports, events, api, agent_key_file=key_file)
+        core = SupervisorCore(
+            adapter,
+            ports,
+            events,
+            api,
+            agent_key_file=key_file,
+            coturn_container_id="coturn_test_id",
+        )
         with pytest.raises(PortPoolExhaustedError):
             await core.start_profile(profile, ProfileConfig(name="capacity"))
         runtime = server.get(f"/api/v1/profiles/{profile}/runtime").json()

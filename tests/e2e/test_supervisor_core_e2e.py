@@ -41,6 +41,13 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 
+_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
+
 _gw_spec = importlib.util.spec_from_file_location(
     "supervisor_gateway_fixture",
     Path(__file__).resolve().parents[1]
@@ -65,6 +72,7 @@ def real_api_server(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
+    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
     env = dict(os.environ)
     for name in (
         "HTTP_PROXY",
@@ -83,6 +91,7 @@ def real_api_server(tmp_path: Path):
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(token_file),
+        **auth_ctx.env,
     )
 
     log_path = tmp_path / "api_server.log"
@@ -122,7 +131,8 @@ def real_api_server(tmp_path: Path):
                 pytest.fail(
                     f"Real API process failed to become ready: {log_path.read_text()}"
                 )
-        yield api_url, token, token_file
+            auth_headers = auth_ctx.login_sync(api_url, client)
+        yield api_url, token, token_file, auth_headers
     finally:
         proc.terminate()
         try:
@@ -166,7 +176,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     assert engine_src.is_dir(), f"Engine cache missing at {engine_cache_val}"
     assert geoip_src.is_dir(), f"GeoIP cache missing at {geoip_cache_val}"
 
-    api_url, auth_token, token_file = real_api_server
+    api_url, auth_token, token_file, auth_headers = real_api_server
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-{test_run_id}"
     data_root = tmp_path / "data_root"
@@ -178,6 +188,41 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     d_client = docker.from_env()
     d_client.images.get(browser_image)
     d_client.images.get(stream_image)
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
 
     # Find free port for Gateway mock
     with socket.socket() as s:
@@ -201,9 +246,12 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
 
     gateway_control = GatewayControlClient(f"http://127.0.0.1:{gw_port}", gw_token_file)
 
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    headers.update(auth_headers)
+
     api_client = httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers=headers,
         timeout=10.0,
         trust_env=False,
     )
@@ -235,6 +283,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         token_file=token_file,
         agent_key_file=agent_key_file,
         gateway_control=gateway_control,
+        coturn_container_id=coturn.id,
     )
 
     # 1. Create Profile A and Profile B in real API
@@ -363,8 +412,13 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         await gateway_control.close()
         await gateway.stop()
         await api_client.aclose()
-        d_client.close()
+        if coturn is not None:
+            try:
+                coturn.remove(force=True)
+            except Exception:
+                pass
 
         # Strict assert: zero orphan containers left
         active_final = docker_adapter.scan_active_containers()
         assert len(active_final) == 0, f"Leaked containers: {active_final}"
+        d_client.close()

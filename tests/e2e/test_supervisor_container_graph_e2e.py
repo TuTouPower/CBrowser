@@ -1,10 +1,13 @@
 """Run the actual Supervisor, API and sandbox topology as isolated containers."""
 
 import asyncio
+import importlib.util
 import json
 import os
 import secrets
 import shutil
+import socket
+import sys
 import uuid
 from pathlib import Path
 
@@ -12,6 +15,13 @@ import aiohttp
 import docker
 import httpx
 import pytest
+
+_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
 
 
 def endpoint(container, port):
@@ -97,18 +107,31 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
         edge = client.networks.create(
             prefix + "-edge", labels={"com.cbrowser.prefix": prefix}
         )
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            api_host_port = s.getsockname()[1]
+
+        auth_ctx = create_auth_context(
+            control, origin=f"http://127.0.0.1:{api_host_port}"
+        )
         api = run(
             "api",
             image("CBROWSER_API_TEST_IMAGE"),
             environment={
                 "CBROWSER_DB_PATH": "/metadata/control.db",
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/key",
+                "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_pass",
+                "CBROWSER_ALLOWED_ORIGINS": auth_ctx.allowed_origin,
             },
             volumes={
                 str(metadata): {"bind": "/metadata", "mode": "rw"},
                 str(keys["supervisor"]): {"bind": "/run/secrets/key", "mode": "ro"},
+                str(auth_ctx.admin_password_file): {
+                    "bind": "/run/secrets/admin_pass",
+                    "mode": "ro",
+                },
             },
-            ports={"8000/tcp": ("127.0.0.1", None)},
+            ports={"8000/tcp": ("127.0.0.1", api_host_port)},
         )
         gateway = run(
             "gateway",
@@ -206,9 +229,10 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
         )
         sup_url = endpoint(supervisor, 8005)
         await ready(sup_url, "/supervisor/v1/health", headers)
+        auth_headers = auth_ctx.login_sync(endpoint(api, 8000))
         async with (
             httpx.AsyncClient(
-                base_url=endpoint(api, 8000), trust_env=False
+                base_url=endpoint(api, 8000), headers=auth_headers, trust_env=False
             ) as api_http,
             httpx.AsyncClient(
                 base_url=sup_url, headers=headers, timeout=90, trust_env=False
@@ -286,6 +310,7 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
                     entry.split("=", 1) for entry in stream.attrs["Config"]["Env"]
                 )
                 port = session["udp_mux_port"]
+                assert runtime_env["CBROWSER_CONFIG_VERSION"] == "1"
                 assert runtime_env["CBROWSER_UDP_MUX_PORT"] == str(port)
                 assert stream.attrs["HostConfig"]["PortBindings"] == {
                     f"{port}/udp": [{"HostIp": "127.0.0.1", "HostPort": str(port)}]

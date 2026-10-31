@@ -47,6 +47,13 @@ sys.modules["gateway_fixture"] = _gw_mod
 _gw_spec.loader.exec_module(_gw_mod)
 SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
 
+_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,6 +129,7 @@ def real_api_and_sup(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         gw_port = s.getsockname()[1]
 
+    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{api_port}")
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
     for name in (
@@ -139,6 +147,7 @@ def real_api_and_sup(tmp_path: Path):
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(sup_token_file),
+        **auth_ctx.env,
     )
 
     api_log = tmp_path / "api.log"
@@ -168,6 +177,7 @@ def real_api_and_sup(tmp_path: Path):
             except httpx.TransportError:
                 pass
             time.sleep(0.1)
+        auth_headers = auth_ctx.login_sync(api_url, c)
 
     yield {
         "api_url": api_url,
@@ -179,6 +189,7 @@ def real_api_and_sup(tmp_path: Path):
         "gw_token_file": gw_token_file,
         "root": root,
         "env": env,
+        "auth_headers": auth_headers,
     }
 
     api_proc.terminate()
@@ -227,10 +238,49 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
 
     d_client = docker.from_env()
 
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
+
+    api_headers = {"Authorization": f"Bearer {sup_token}"}
+    api_headers.update(real_api_and_sup["auth_headers"])
+
     # 1. Create Profile in API
     async with httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {sup_token}"},
+        headers=api_headers,
         trust_env=False,
     ) as api_client:
         r_create = await api_client.post(
@@ -268,6 +318,8 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         f"http://127.0.0.1:{gw_port}",
         "--gateway-token-file",
         str(gw_token_file),
+        "--coturn-container-id",
+        coturn.id,
         "--prefix",
         prefix,
         "--host",
@@ -411,6 +463,11 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         except subprocess.TimeoutExpired:
             sup_proc2.kill()
         await gateway.stop()
+        if coturn is not None:
+            try:
+                coturn.remove(force=True)
+            except Exception:
+                pass
         # Clean containers
         for c in (b_cname, s_cname):
             try:
@@ -467,10 +524,49 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
     prefix = f"t005-inv-{test_run_id}"
     d_client = docker.from_env()
 
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
+
+    api_headers = {"Authorization": f"Bearer {sup_token}"}
+    api_headers.update(real_api_and_sup["auth_headers"])
+
     # 1. Create two Profiles in API and set desired_state = running
     async with httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {sup_token}"},
+        headers=api_headers,
         trust_env=False,
     ) as api_client:
         r_a = await api_client.post(
@@ -516,6 +612,8 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         f"http://127.0.0.1:{gw_port}",
         "--gateway-token-file",
         str(gw_token_file),
+        "--coturn-container-id",
+        coturn.id,
         "--prefix",
         prefix,
         "--host",
@@ -639,6 +737,11 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             except subprocess.TimeoutExpired:
                 sup_proc2.kill()
         await gateway.stop()
+        if "coturn" in locals() and coturn is not None:
+            try:
+                coturn.remove(force=True)
+            except Exception:
+                pass
         for c in created_containers:
             try:
                 d_client.containers.get(c).remove(force=True)
@@ -694,10 +797,49 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
     prefix = f"t005-off-{test_run_id}"
     d_client = docker.from_env()
 
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
+
+    api_headers = {"Authorization": f"Bearer {sup_token}"}
+    api_headers.update(real_api_and_sup["auth_headers"])
+
     # 1. Create Profile in API
     async with httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {sup_token}"},
+        headers=api_headers,
         trust_env=False,
     ) as api_client:
         r_create = await api_client.post(
@@ -733,6 +875,8 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
         f"http://127.0.0.1:{gw_port}",
         "--gateway-token-file",
         str(gw_token_file),
+        "--coturn-container-id",
+        coturn.id,
         "--prefix",
         prefix,
         "--host",
@@ -794,7 +938,7 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
         # the spooled event to API
         async with httpx.AsyncClient(
             base_url=api_url,
-            headers={"Authorization": f"Bearer {sup_token}"},
+            headers=api_headers,
             trust_env=False,
         ) as api_client:
             for _ in range(30):
@@ -842,6 +986,11 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
         except subprocess.TimeoutExpired:
             sup_proc.kill()
         await gateway.stop()
+        if "coturn" in locals() and coturn is not None:
+            try:
+                coturn.remove(force=True)
+            except Exception:
+                pass
         for c in created_containers:
             try:
                 d_client.containers.get(c).remove(force=True)

@@ -37,6 +37,13 @@ import pytest
 _gw_fixture_path = Path(__file__).resolve().parent / "gateway_fixture.py"
 _gw_spec = importlib.util.spec_from_file_location("gateway_fixture", _gw_fixture_path)
 _gw_mod = importlib.util.module_from_spec(_gw_spec)
+
+_auth_path = Path(__file__).resolve().parents[1] / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
 sys.modules["gateway_fixture"] = _gw_mod
 _gw_spec.loader.exec_module(_gw_mod)
 SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
@@ -180,6 +187,10 @@ class RealApiProcess:
         self.root = root
         self.env = env
         self.log_path = log_path
+        self.auth_context = create_auth_context(
+            log_path.parent, origin=f"http://127.0.0.1:{port}"
+        )
+        self.auth_headers: dict[str, str] = {}
         self.proc: Optional[subprocess.Popen] = None
         self._log_file_handle: Optional[Any] = None
 
@@ -209,6 +220,7 @@ class RealApiProcess:
             CBROWSER_SUPERVISOR_TOKEN_FILE=str(self.token_file),
             PYTHONPATH=str(self.root / "src/backend"),
             PYTHONDONTWRITEBYTECODE="1",
+            **self.auth_context.env,
         )
         self._log_file_handle = open(self.log_path, "a", encoding="utf-8")
         self.proc = subprocess.Popen(
@@ -230,6 +242,7 @@ class RealApiProcess:
                 try:
                     resp = client.get("/api/v1/health", timeout=1.0)
                     if resp.status_code == 200:
+                        self.auth_headers = self.auth_context.login_sync(self.url)
                         logger.info(
                             f"Real API process online on port {self.port} "
                             f"(PID {self.proc.pid})"
@@ -292,6 +305,7 @@ class RealSupervisorProcess:
         root: Path,
         env: dict[str, str],
         log_path: Path,
+        coturn_container_id: Optional[str] = None,
     ) -> None:
         self.api_url = api_url
         self.data_root = data_root
@@ -307,6 +321,7 @@ class RealSupervisorProcess:
         self.root = root
         self.env = env
         self.log_path = log_path
+        self.coturn_container_id = coturn_container_id
         self.proc: Optional[subprocess.Popen] = None
         self._log_file_handle: Optional[Any] = None
 
@@ -355,6 +370,8 @@ class RealSupervisorProcess:
             "--port",
             str(self.port),
         ]
+        if self.coturn_container_id:
+            cmd.extend(["--coturn-container-id", self.coturn_container_id])
         sup_env = dict(self.env)
         sup_env.update(
             PYTHONPATH=str(self.root / "src/backend"),

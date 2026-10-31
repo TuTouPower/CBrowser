@@ -16,8 +16,12 @@ from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
 from cbrowser.adapters.database.session import create_engine_and_maker
+from cbrowser.api.internal_gateway import gateway_router, read_gateway_token
 from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
+from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
+from cbrowser.auth.dependencies import get_auth_service
+from cbrowser.auth.service import AuthService
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
@@ -35,6 +39,9 @@ def create_app(
     db_path: Path | str | None = None,
     service: ProfileService | None = None,
     supervisor_token_file: Path | str | None = None,
+    admin_password_file: Path | str | None = None,
+    gateway_token_file: Path | str | None = None,
+    allowed_origins: list[str] | str | None = None,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -43,6 +50,25 @@ def create_app(
         app.state.supervisor_token = read_supervisor_token(
             supervisor_token_file or os.environ.get("CBROWSER_SUPERVISOR_TOKEN_FILE")
         )
+        app.state.gateway_token = read_gateway_token(
+            gateway_token_file or os.environ.get("CBROWSER_GATEWAY_API_TOKEN_FILE")
+        )
+
+        raw_origins = allowed_origins or os.environ.get("CBROWSER_ALLOWED_ORIGINS")
+        if isinstance(raw_origins, str):
+            app.state.allowed_origins = [
+                o.strip().rstrip("/") for o in raw_origins.split(",") if o.strip()
+            ]
+        elif isinstance(raw_origins, (list, tuple)):
+            app.state.allowed_origins = [
+                str(o).strip().rstrip("/") for o in raw_origins if str(o).strip()
+            ]
+        else:
+            app.state.allowed_origins = []
+        if not app.state.allowed_origins:
+            raise RuntimeError(
+                "CBROWSER_ALLOWED_ORIGINS must list at least one browser origin"
+            )
 
         # Configure event logger to output to stderr
         event_logger = logging.getLogger("cbrowser.events")
@@ -52,17 +78,27 @@ def create_app(
             h.setFormatter(logging.Formatter("%(message)s"))
             event_logger.addHandler(h)
 
+        resolved_db = Path(
+            db_path or os.environ.get("CBROWSER_DB_PATH", "/data/cbrowser.db")
+        ).resolve()
+        resolved_db.parent.mkdir(parents=True, exist_ok=True)
+        run_database_migrations(resolved_db)
+        engine, session_maker = create_engine_and_maker(resolved_db)
+
         if service is None:
-            resolved_db = Path(
-                db_path or os.environ.get("CBROWSER_DB_PATH", "/data/cbrowser.db")
-            ).resolve()
-            resolved_db.parent.mkdir(parents=True, exist_ok=True)
-            run_database_migrations(resolved_db)
-            engine, session_maker = create_engine_and_maker(resolved_db)
             repo = ProfileRepository(session_maker)
             service = ProfileService(repo)
 
+        auth_service = AuthService(session_maker)
+        app.state.auth_service = auth_service
+        app.dependency_overrides[get_auth_service] = lambda: auth_service
         app.dependency_overrides[get_profile_service] = lambda: service
+
+        resolved_admin_pwd_file = admin_password_file or os.environ.get(
+            "CBROWSER_ADMIN_PASSWORD_FILE"
+        )
+        await auth_service.init_admin_password(resolved_admin_pwd_file)
+
         yield
         if engine:
             await engine.dispose()
@@ -70,7 +106,10 @@ def create_app(
     app = FastAPI(
         title="CBrowser Control API",
         version="2.0.0",
-        description="Minimal coherent v2 Control API for profile lifecycle and runtime convergence.",
+        description=(
+            "Minimal coherent v2 Control API for profile lifecycle and runtime "
+            "convergence."
+        ),
         lifespan=lifespan,
     )
 
@@ -173,7 +212,7 @@ def create_app(
     async def validation_exception_handler(
         request: Request, exc: RequestValidationError
     ):
-        # Sanitize validation errors: omit raw input values to avoid leaking injected secrets in error bodies
+        # Sanitize validation errors: omit raw input values to avoid leaking secrets
         sanitized_errors = []
         for err in exc.errors():
             sanitized_errors.append(
@@ -237,5 +276,7 @@ def create_app(
         )
 
     app.include_router(v1_router)
+    app.include_router(auth_router)
     app.include_router(supervisor_router)
+    app.include_router(gateway_router)
     return app

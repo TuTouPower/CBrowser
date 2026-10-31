@@ -5,6 +5,7 @@ and delegates ICE restarts to GenerationIceTransport helper.
 """
 
 import asyncio
+import importlib.metadata
 import json
 import logging
 import os
@@ -12,7 +13,7 @@ import socket
 import sys
 import urllib.parse
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 from aiohttp import WSMsgType
@@ -24,13 +25,14 @@ from .policy import (
 )
 from .protocol import (
     AgentAction,
+    AgentHeartbeatPayload,
     AgentRegisterPayload,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
     ProtocolEnvelope,
+    RtcConfigPayload,
     SupervisorQuotaPayload,
-    VisibilityUpdatePayload,
 )
 
 logger = logging.getLogger("stream_agent.core")
@@ -40,6 +42,8 @@ MAX_FRAME_SIZE = 1024 * 1024 * 6 + 64 * 1024
 IO_TIMEOUT = 10.0
 QUEUE_MAX_SIZE = 100
 HEARTBEAT_INTERVAL = 30.0
+# Bound for a new ICE generation to take over before Gateway is told it failed.
+ICE_RESTART_COMMIT_TIMEOUT = 20.0
 
 
 class ISO8601Formatter(logging.Formatter):
@@ -84,7 +88,14 @@ def _sanitize_url(url: str) -> str:
 
 
 def _sanitize_packet(packet: dict) -> dict:
-    forbidden = {"token", "agent_token", "secret", "authorization", "password"}
+    forbidden = {
+        "token",
+        "agent_token",
+        "secret",
+        "authorization",
+        "password",
+        "credential",
+    }
     sanitized = {}
     for k, v in packet.items():
         if k.lower() in forbidden:
@@ -94,6 +105,52 @@ def _sanitize_packet(packet: dict) -> dict:
         else:
             sanitized[k] = v
     return sanitized
+
+
+class GatewayRegistrationError(RuntimeError):
+    """Raised when registration handshake with Gateway fails or is rejected."""
+
+
+BACKOFF_SCHEDULE: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
+
+
+class ReconnectBackoff:
+    """Manages reconnect backoff delay: 1, 2, 4, 8, 16, 30, 30... seconds."""
+
+    def __init__(
+        self,
+        steps: tuple[float, ...] = BACKOFF_SCHEDULE,
+        max_delay: float = 30.0,
+    ):
+        self.steps = steps
+        self.max_delay = max_delay
+        self._index = 0
+
+    def current(self) -> float:
+        if self._index < len(self.steps):
+            return self.steps[self._index]
+        return self.max_delay
+
+    def step(self) -> float:
+        delay = self.current()
+        if self._index < len(self.steps) - 1:
+            self._index += 1
+        else:
+            self._index = len(self.steps) - 1
+        return delay
+
+    def reset(self) -> None:
+        self._index = 0
+
+
+def resolve_selkies_version(configured_version: Optional[str] = None) -> str:
+    """Report the installed Selkies distribution; tests may inject a version."""
+    if configured_version:
+        return configured_version
+    try:
+        return importlib.metadata.version("selkies")
+    except importlib.metadata.PackageNotFoundError:
+        raise RuntimeError("selkies distribution is not installed") from None
 
 
 class ViewerWorkerEntry:
@@ -140,6 +197,14 @@ class StreamAgent:
         self._generation_counter = 0
         self.viewer_workers: Dict[str, ViewerWorkerEntry] = {}
         self.conn_id_to_sdk_peer_id: Dict[str, str] = {}
+        self._backoff = ReconnectBackoff()
+        self.heartbeat_interval: float = 10.0
+        self._heartbeat_task: Optional[asyncio.Task] = None
+        # ICE takeover waits run beside the Gateway pump so other viewers' signaling
+        # is not stalled while one restart completes.
+        self._restart_tasks: set[asyncio.Task] = set()
+        self._sleep_fn = asyncio.sleep
+        self.active_rtc_config: Optional[RtcConfigPayload] = None
 
     @property
     def viewer_queues(self) -> Dict[str, asyncio.Queue]:
@@ -153,6 +218,9 @@ class StreamAgent:
         """Binds WebRTCService and explicitly registers with policy_agent."""
         self._webrtc_service = service
         self.policy.bind_service(service)
+        # Selkies creates its RTCApp only in initialize_components(); config that
+        # arrived from Gateway earlier is pushed once it exists.
+        service.rtc_ready_hook = self._push_rtc_config
 
     @property
     def peer_connections(self) -> Dict[str, Any]:
@@ -209,11 +277,19 @@ class StreamAgent:
                             _iso_now(),
                         )
 
+                        selkies_ver = resolve_selkies_version(
+                            self.config.selkies_version
+                        )
                         reg_payload = AgentRegisterPayload(
                             hostname=socket.gethostname(),
                             profile_id=self.config.profile_id,
                             runtime_instance_id=self.config.runtime_instance_id,
                             udp_port=self.config.udp_mux_port,
+                            selkies_version=selkies_ver,
+                            runtime_state="ready",
+                            config_version=self.config.config_version,
+                            turn_host=self.config.turn_host,
+                            turn_port=self.config.turn_port,
                             video_streaming_mode=self.config.video_streaming_mode,
                             max_fps=int(self.config.max_fps),
                             min_fps=int(self.config.min_fps),
@@ -233,39 +309,40 @@ class StreamAgent:
                         )
                         resp = await asyncio.wait_for(ws.receive(), timeout=IO_TIMEOUT)
                         if resp.type != WSMsgType.TEXT:
-                            logger.error(
-                                "[%s] Gateway registration: expected text response",
-                                _iso_now(),
+                            raise GatewayRegistrationError(
+                                "Gateway registration: expected text response"
                             )
-                            break
 
                         if len(resp.data.encode("utf-8")) > MAX_PAYLOAD_SIZE:
-                            logger.error("[%s] Registration ACK oversized", _iso_now())
-                            break
+                            raise GatewayRegistrationError("Registration ACK oversized")
 
                         raw_ack = json.loads(resp.data)
                         ack = GatewayRegisterResponse.model_validate(raw_ack)
                         if ack.status != "ok":
-                            logger.error(
-                                "[%s] Gateway registration rejected", _iso_now()
+                            err_detail = ack.error or "unknown"
+                            raise GatewayRegistrationError(
+                                f"Gateway registration rejected: {err_detail}"
                             )
-                            break
 
                         if (
                             ack.profile_id != self.config.profile_id
                             or ack.runtime_instance_id
                             != self.config.runtime_instance_id
                         ):
-                            logger.error(
-                                "[%s] Registration ACK identity mismatch",
-                                _iso_now(),
+                            raise GatewayRegistrationError(
+                                "Registration ACK identity mismatch"
                             )
-                            break
 
                         self.agent_session_id = ack.agent_session_id
+                        self._backoff.reset()
                         logger.info(
                             "[%s] StreamAgent registered with Gateway",
                             _iso_now(),
+                        )
+
+                        # Start application heartbeat task
+                        self._heartbeat_task = asyncio.create_task(
+                            self._heartbeat_loop(ws)
                         )
 
                         # Message pump
@@ -282,19 +359,60 @@ class StreamAgent:
                                 break
             except asyncio.CancelledError:
                 break
+            except GatewayRegistrationError as e:
+                logger.error("[%s] %s", _iso_now(), e)
             except Exception as e:
                 logger.warning(
-                    "[%s] Gateway connection error (%s); retrying in 2s...",
+                    "[%s] Gateway connection error (%s)",
                     _iso_now(),
                     type(e).__name__,
                 )
             finally:
+                if self._heartbeat_task and not self._heartbeat_task.done():
+                    self._heartbeat_task.cancel()
+                    self._heartbeat_task = None
                 self.agent_session_id = None
                 await self._cleanup_all_viewers(caller="gateway_disconnect")
 
             if not self._running:
                 break
-            await asyncio.sleep(2.0)
+            delay = self._backoff.step()
+            logger.info("[%s] Reconnecting in %.1fs (backoff)...", _iso_now(), delay)
+            await self._sleep_fn(delay)
+
+    async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+        """Send HEARTBEAT right after registration, then every 10 seconds.
+
+        Supervisor readiness reads the reported Selkies video state through
+        Gateway, so the first report must not wait a full interval.
+        """
+        try:
+            while self._running and self.agent_session_id and not ws.closed:
+                unpaused, capturing = self.policy.selkies_video_state()
+                hb_payload = AgentHeartbeatPayload(
+                    runtime_state="ready",
+                    viewer_count=len(self.viewer_workers),
+                    unpaused_video_consumers=unpaused,
+                    capture_running=capturing,
+                )
+                hb_envelope = ProtocolEnvelope(
+                    action=AgentAction.HEARTBEAT,
+                    profile_id=self.config.profile_id,
+                    runtime_instance_id=self.config.runtime_instance_id,
+                    agent_session_id=self.agent_session_id,
+                    payload=hb_payload.model_dump(),
+                    timestamp=_iso_now(),
+                )
+                await ws.send_str(hb_envelope.model_dump_json())
+                await self._sleep_fn(self.heartbeat_interval)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            logger.warning(
+                "[%s] Heartbeat send failed (%s)",
+                _iso_now(),
+                type(e).__name__,
+            )
 
     async def _drain_workers(self, workers: list[ViewerWorkerEntry]) -> None:
         """Await owned tasks and sockets after invalidating their generations."""
@@ -458,17 +576,6 @@ class StreamAgent:
         if action == AgentAction.REGISTERED:
             self.agent_session_id = envelope.agent_session_id
 
-        elif action == AgentAction.VISIBILITY_UPDATE:
-            payload = VisibilityUpdatePayload.model_validate(envelope.payload)
-            # Existing viewer only: cannot invent foreground via forged unknown viewer
-            if payload.viewer_id not in self.viewer_workers:
-                logger.warning(
-                    "[%s] Visibility update rejected: unknown viewer", _iso_now()
-                )
-                return
-            self.policy.set_viewer_visibility(payload.viewer_id, payload.visible)
-            await self.policy.reconcile_capture_state(caller="visibility_update")
-
         elif action == AgentAction.SUPERVISOR_QUOTA:
             quota = SupervisorQuotaPayload.model_validate(envelope.payload)
             self.policy.set_supervisor_quota(quota.max_fps_cap)
@@ -478,12 +585,98 @@ class StreamAgent:
             if not conn_id or conn_id not in self.viewer_workers:
                 logger.warning("[%s] ICE restart rejected: unknown conn_id", _iso_now())
                 return
+            if "ice_servers" in envelope.payload and envelope.payload["ice_servers"]:
+                try:
+                    gen_num = envelope.payload.get("generation")
+                    if gen_num is None:
+                        gen_num = (
+                            self.active_rtc_config.generation
+                            if self.active_rtc_config
+                            else 1
+                        )
+                    rtc_payload = RtcConfigPayload(
+                        generation=gen_num,
+                        ice_servers=envelope.payload["ice_servers"],
+                        relay_only=bool(
+                            envelope.payload.get("relay_only")
+                            or envelope.payload.get("force_relay")
+                            or (
+                                self.active_rtc_config
+                                and self.active_rtc_config.relay_only
+                            )
+                        ),
+                    )
+                    self.apply_rtc_config(rtc_payload)
+                except Exception as e:
+                    logger.warning(
+                        "[%s] Failed to update active_rtc_config from ice_restart (%s)",
+                        _iso_now(),
+                        type(e).__name__,
+                    )
             await self._trigger_ice_restart(conn_id, envelope.payload)
 
         elif action == AgentAction.ICE_RESTART_ANSWER:
             if not conn_id or conn_id not in self.viewer_workers:
                 return
-            await self._handle_ice_restart_answer(conn_id, envelope.payload)
+            task = asyncio.create_task(
+                self._handle_ice_restart_answer(conn_id, envelope.payload)
+            )
+            self._restart_tasks.add(task)
+            task.add_done_callback(self._restart_tasks.discard)
+
+        elif action == AgentAction.RTC_CONFIG:
+            try:
+                rtc_payload = RtcConfigPayload.model_validate(envelope.payload)
+            except Exception as e:
+                logger.warning(
+                    "[%s] Invalid rtc_config payload rejected (%s)",
+                    _iso_now(),
+                    type(e).__name__,
+                )
+                return
+            try:
+                self.apply_rtc_config(rtc_payload)
+            except Exception as e:
+                logger.error(
+                    "[%s] Applying rtc_config generation %d failed (%s)",
+                    _iso_now(),
+                    rtc_payload.generation,
+                    type(e).__name__,
+                )
+                return
+            logger.info(
+                "[%s] Applied rtc_config generation %d with %d ICE servers",
+                _iso_now(),
+                rtc_payload.generation,
+                len(rtc_payload.ice_servers),
+            )
+
+    def apply_rtc_config(self, payload: RtcConfigPayload) -> None:
+        """Apply new stream-side RTC configuration from Gateway."""
+        self.active_rtc_config = payload
+        self.config.turn_servers = payload.wire_ice_servers()
+        from .ice_transport import set_relay_only
+
+        set_relay_only(payload.relay_only)
+        self._push_rtc_config()
+
+    def _push_rtc_config(self) -> None:
+        """Give Selkies the current stream-side servers for new PeerConnections."""
+        rtc_app = getattr(self._webrtc_service, "rtc_app", None)
+        if rtc_app is None or self.active_rtc_config is None:
+            return
+        stun, turn = self.active_rtc_config.selkies_server_urls()
+        rtc_app.update_rtc_config(stun, turn)
+
+    def _resolve_ice_servers_for_restart(self, payload: Dict[str, Any]) -> List[Any]:
+        """Resolve ICE servers for restart: payload overrides active rtc_config."""
+        server_turn = payload.get("ice_servers")
+        if not server_turn:
+            if self.active_rtc_config is not None:
+                server_turn = self.active_rtc_config.wire_ice_servers()
+            else:
+                server_turn = self.config.turn_servers
+        return server_turn
 
     async def _terminate_viewer(self, conn_id: str, caller: str = "close") -> None:
         """Terminates viewer worker, cleans up peer mapping and notifies policy."""
@@ -728,23 +921,26 @@ class StreamAgent:
         pc = self.get_peer_connection(conn_id)
         if not pc:
             logger.warning("[%s] PeerConnection not found for conn_id", _iso_now())
-            if self._gw_ws and not self._gw_ws.closed:
-                err_env = ProtocolEnvelope(
-                    action=AgentAction.ERROR,
-                    profile_id=self.config.profile_id,
-                    runtime_instance_id=self.config.runtime_instance_id,
-                    agent_session_id=self.agent_session_id,
-                    conn_id=conn_id,
-                    payload={"error": "peer_connection_not_found"},
-                    timestamp=_iso_now(),
-                )
-                await self._gw_ws.send_str(err_env.model_dump_json())
+            await self._report_restart(
+                AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
+            )
+            return
+        # A restart offer while the initial offer/answer or ICE run is still in
+        # flight would replace it; Gateway retries after backoff instead.
+        if pc.signalingState != "stable" or pc.iceConnectionState not in (
+            "connected",
+            "completed",
+        ):
+            logger.warning("[%s] ICE restart deferred: peer not connected", _iso_now())
+            await self._report_restart(
+                AgentAction.ERROR, conn_id, {"error": "peer_not_ready"}
+            )
             return
 
         try:
             from .ice_transport import create_restart_offer
 
-            server_turn = payload.get("ice_servers", self.config.turn_servers)
+            server_turn = self._resolve_ice_servers_for_restart(payload)
             force_relay = payload.get("force_relay", False)
             local_desc = await create_restart_offer(
                 pc, server_turn, force_relay=force_relay
@@ -761,46 +957,82 @@ class StreamAgent:
                     timestamp=_iso_now(),
                 )
                 await self._gw_ws.send_str(envelope.model_dump_json())
-        except ImportError:
-            logger.error("[%s] ice_transport helper not available", _iso_now())
         except Exception as e:
             logger.error(
                 "[%s] Failed to create ICE restart offer: %s",
                 _iso_now(),
                 type(e).__name__,
             )
+            await self._report_restart(
+                AgentAction.ERROR, conn_id, {"error": "ice_restart_offer_failed"}
+            )
 
     async def _handle_ice_restart_answer(
         self, conn_id: Optional[str], payload: Dict[str, Any]
     ) -> None:
+        """Apply the Viewer answer and confirm to Gateway only after real takeover."""
         if not conn_id:
             return
         pc = self.get_peer_connection(conn_id)
         if not pc:
             logger.warning("[%s] PeerConnection not found on answer", _iso_now())
+            await self._report_restart(
+                AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
+            )
             return
-        sdp = payload.get("sdp")
-        if sdp and hasattr(pc, "setRemoteDescription"):
-            try:
-                from selkies.webrtc.rtcsessiondescription import RTCSessionDescription
+        try:
+            from selkies.webrtc.rtcsessiondescription import RTCSessionDescription
 
-                await pc.setRemoteDescription(
-                    RTCSessionDescription(sdp=sdp, type="answer")
-                )
-                logger.info(
-                    "[%s] Successfully set remote answer for ICE restart",
-                    _iso_now(),
-                )
-            except Exception as e:
-                logger.error(
-                    "[%s] Failed to set remote answer for ICE restart: %s",
-                    _iso_now(),
-                    type(e).__name__,
-                )
+            from .ice_transport import wait_restart_commit
+
+            await pc.setRemoteDescription(
+                RTCSessionDescription(sdp=payload.get("sdp"), type="answer")
+            )
+            ice_generation = await wait_restart_commit(pc, ICE_RESTART_COMMIT_TIMEOUT)
+        except Exception as e:
+            logger.error(
+                "[%s] ICE restart not committed: %s", _iso_now(), type(e).__name__
+            )
+            await self._report_restart(
+                AgentAction.ERROR, conn_id, {"error": "ice_restart_not_committed"}
+            )
+            return
+        logger.info(
+            "[%s] ICE restart committed (ice generation %d)",
+            _iso_now(),
+            ice_generation,
+        )
+        await self._report_restart(
+            AgentAction.ICE_RESTART_COMMITTED,
+            conn_id,
+            {"generation": payload.get("generation"), "ice_generation": ice_generation},
+        )
+
+    async def _report_restart(
+        self, action: AgentAction, conn_id: str, payload: Dict[str, Any]
+    ) -> None:
+        if self._gw_ws and not self._gw_ws.closed:
+            envelope = ProtocolEnvelope(
+                action=action,
+                profile_id=self.config.profile_id,
+                runtime_instance_id=self.config.runtime_instance_id,
+                agent_session_id=self.agent_session_id,
+                conn_id=conn_id,
+                payload=payload,
+                timestamp=_iso_now(),
+            )
+            await self._gw_ws.send_str(envelope.model_dump_json())
 
     async def stop(self) -> None:
         """Deterministic drain and shutdown of all workers, readers, WS, and policy."""
         self._running = False
+        if self._heartbeat_task and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+        restarts = list(self._restart_tasks)
+        for task in restarts:
+            task.cancel()
+        await asyncio.gather(*restarts, return_exceptions=True)
         if self._gw_ws and not self._gw_ws.closed:
             try:
                 await self._gw_ws.close()

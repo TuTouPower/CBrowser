@@ -81,7 +81,7 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
         pytest.skip("CBROWSER_RUNTIME_ENGINE_CACHE is not set")
     assert Path(engine_cache_val).is_dir(), "Invalid runtime engine cache directory"
 
-    api_url, auth_token, token_file = real_api_server
+    api_url, auth_token, token_file, auth_headers = real_api_server
     test_run_id = uuid.uuid4().hex[:8]
     prefix = f"t005-nsbb-{test_run_id}"
 
@@ -103,9 +103,12 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
     agent_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
     agent_key_file.chmod(0o600)
 
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    headers.update(auth_headers)
+
     api_client = httpx.AsyncClient(
         base_url=api_url,
-        headers={"Authorization": f"Bearer {auth_token}"},
+        headers=headers,
         timeout=10.0,
         trust_env=False,
     )

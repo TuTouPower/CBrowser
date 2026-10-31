@@ -34,7 +34,6 @@ from cbrowser.stream_agent.config import StreamAgentConfig
 from cbrowser.stream_agent.protocol import (
     GatewayTunnelEnvelope,
     SupervisorQuotaPayload,
-    VisibilityUpdatePayload,
 )
 from pydantic import ValidationError
 
@@ -47,6 +46,8 @@ def test_config_secret_protection_and_repr():
         runtime_instance_id="inst_12345",
         gateway_url="ws://gateway.local:8080",
         agent_token=secret,
+        turn_host="10.0.0.1",
+        turn_port=3478,
         udp_mux_port=30006,
     )
     assert secret not in repr(cfg)
@@ -64,6 +65,8 @@ def test_config_requires_runtime_instance_id():
             profile_id="p1",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
         )
 
     with pytest.raises(ValidationError, match="Invalid runtime_instance_id"):
@@ -72,6 +75,8 @@ def test_config_requires_runtime_instance_id():
             runtime_instance_id="../bad_instance",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
         )
 
 
@@ -83,6 +88,8 @@ def test_config_fps_finite_bounds_and_video_mode():
             runtime_instance_id="inst_1",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
             min_fps=float("nan"),
         )
 
@@ -92,6 +99,8 @@ def test_config_fps_finite_bounds_and_video_mode():
             runtime_instance_id="inst_1",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
             max_fps=float("inf"),
         )
 
@@ -101,6 +110,8 @@ def test_config_fps_finite_bounds_and_video_mode():
             runtime_instance_id="inst_1",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
             video_streaming_mode=True,
         )
 
@@ -113,6 +124,8 @@ def test_config_rejects_extra_fields():
             runtime_instance_id="inst_1",
             gateway_url="ws://127.0.0.1:8080",
             agent_token="valid_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
             injected_unknown="evil",
         )
 
@@ -123,6 +136,8 @@ def test_config_gateway_url_strictness():
         "profile_id": "p1",
         "runtime_instance_id": "inst_1",
         "agent_token": "valid_secret_123",
+        "turn_host": "10.0.0.1",
+        "turn_port": 3478,
     }
 
     # Query string rejected
@@ -153,6 +168,9 @@ def test_config_from_env_fail_closed(tmp_path):
         "CBROWSER_PROFILE_ID": "p1",
         "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:8080",
         "CBROWSER_AGENT_TOKEN": "fallback_token_123",
+        "CBROWSER_CONFIG_VERSION": "1",
+        "SELKIES_TURN_HOST": "10.0.0.1",
+        "SELKIES_TURN_PORT": "3478",
     }
 
     # Missing runtime_instance_id
@@ -207,8 +225,10 @@ def test_boundary_security_verification(tmp_path):
             )
 
 
-def test_protocol_strict_wire_envelopes():
-    """Verify GatewayTunnelEnvelope enforces strict wire models."""
+def test_protocol_strict_wire_envelopes_without_visibility_payload():
+    """Verify strict wire models; Gateway visibility payloads no longer exist."""
+    import cbrowser.stream_agent.protocol as protocol
+
     # Valid tunnel packet
     t_env = GatewayTunnelEnvelope(
         version="v2",
@@ -241,13 +261,8 @@ def test_protocol_strict_wire_envelopes():
             conn_id="conn_1",
         )
 
-    # Strict visibility payload: rejects string coercion
-    with pytest.raises(ValidationError):
-        VisibilityUpdatePayload(viewer_id="v1", visible="false")  # string not bool
-
-    # Valid visibility
-    v_ok = VisibilityUpdatePayload(viewer_id="v1", visible=False)
-    assert v_ok.visible is False
+    # Page visibility reaches Selkies directly (plan 9.3), not via Gateway
+    assert not hasattr(protocol, "VisibilityUpdatePayload")
 
     # Quota payload rejects non-finite
     with pytest.raises(ValidationError, match="finite"):
@@ -309,7 +324,10 @@ async def test_real_ws_gateway_and_worker_generation():
             runtime_instance_id="inst_test",
             gateway_url="ws://127.0.0.1:18491",
             agent_token="valid_test_secret_123",
+            turn_host="10.0.0.1",
+            turn_port=3478,
             udp_mux_port=30006,
+            selkies_version="2.1.0",
         )
         agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:18491/fake")
 
