@@ -1,0 +1,156 @@
+import { useState, type FormEvent } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { useCreateProfileMutation } from "./useProfilesQuery";
+import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
+import { useI18n } from "../../i18n";
+
+export function ProfileNewPage() {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const createMutation = useCreateProfileMutation();
+
+  const [name, setName] = useState("");
+  const [proxy, setProxy] = useState("");
+  const [screenWidth, setScreenWidth] = useState(1920);
+  const [screenHeight, setScreenHeight] = useState(1080);
+  const [tagsInput, setTagsInput] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    setError(null);
+    try {
+      const tags = tagsInput
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+        .map((t) => ({ tag: t }));
+
+      const created = await createMutation.mutateAsync({
+        ...DEFAULT_PROFILE_CREATE_VALUES,
+        name: name.trim(),
+        proxy: proxy.trim() || null,
+        screen_width: screenWidth,
+        screen_height: screenHeight,
+        tags,
+      });
+
+      navigate(`/?profileId=${created.id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to create profile");
+    }
+  };
+
+  return (
+    <div data-testid="profile-new-page" className="p-8 max-w-2xl mx-auto">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Dashboard
+      </Link>
+
+      <div className="bg-surface-1 border border-border rounded-lg p-6">
+        <h1 className="text-lg font-bold text-gray-100 mb-4">{t("newProfile")}</h1>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded">
+            {error}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              {t("profileName")} *
+            </label>
+            <input
+              data-testid="profile-name-input"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Work Profile"
+              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              Proxy URL (optional)
+            </label>
+            <input
+              type="text"
+              value={proxy}
+              onChange={(e) => setProxy(e.target.value)}
+              placeholder="http://user:pass@host:port"
+              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1.5">
+                Width (px)
+              </label>
+              <input
+                data-testid="profile-width-input"
+                type="number"
+                value={screenWidth}
+                onChange={(e) => setScreenWidth(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1.5">
+                Height (px)
+              </label>
+              <input
+                data-testid="profile-height-input"
+                type="number"
+                value={screenHeight}
+                onChange={(e) => setScreenHeight(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              Tags (comma separated)
+            </label>
+            <input
+              data-testid="profile-tags-input"
+              type="text"
+              value={tagsInput}
+              onChange={(e) => setTagsInput(e.target.value)}
+              placeholder="dev, research, shopping"
+              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end gap-3">
+            <Link
+              to="/"
+              className="px-4 py-2 border border-border text-gray-300 rounded text-sm hover:bg-surface-2"
+            >
+              {t("cancel")}
+            </Link>
+            <button
+              data-testid="profile-create-submit"
+              type="submit"
+              disabled={createMutation.isPending || !name.trim()}
+              className="px-4 py-2 bg-primary text-primary-foreground font-medium rounded text-sm hover:opacity-90 disabled:opacity-50"
+            >
+              {createMutation.isPending ? t("saving") : t("create")}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

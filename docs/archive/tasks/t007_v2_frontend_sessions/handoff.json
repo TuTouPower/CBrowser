@@ -1,0 +1,25 @@
+{
+  "tid": "t007",
+  "attempt": 1,
+  "execution_id": "1a08cbc562094e73ae64c8039127ed0a",
+  "status": "done",
+  "branch": "t007_v2_frontend_sessions",
+  "base_sha": "077778fef84f22312e6b18583c547c8b5f418617",
+  "tests": "Final controller gate r5 (.scratch/project_gates/r5, all images rebuilt from current source; IDs in images.env): contract 169, legacy backend 384, unit 307, integration 55, Vitest 105 (13 files), frontend build + pinned Selkies vendor, Runtime E2E 13, Stream E2E 19, Supervisor lifecycle 6, startup recovery 2, container graph 8, network policy 5, resource 5, Gateway E2E 5, frontend E2E 21/22 (sole failure test_ac001_ac006 static-screen frame-growth flake, rerun 2/2 passed in r5_rerun, tracked p013); OpenAPI/stream/supervisor exports and generated frontend types identical; Ruff E/F/W/I baseline 0, ruff format, md_format, git diff --check passed. Token per-instance fix verified: supervisor retry E2E 2/2, supervisor core/recovery/offline + stream tokens + frontend app 14 passed.",
+  "blackbox": "Independent OpenCode DeepSeek blackbox r1 in a validation worktree (93 candidate files SHA-checked, all images self-built) on the Round-1 candidate: own headless-Chrome probes for AC-001..AC-010 all PASS (dual-tab independence, tab identity/clone/close, visibility STOP/START_VIDEO with Gateway consumer counts, display apply 1280x720, per-page mute byte growth, freeze/stage diagnostics, dual-mode 403, UI-driven Supervisor start/stop and outage convergence, token scans of DOM/network/WS/container logs and 4001 rejections). Its audio-diagnostics flapping finding was fixed and verified by the final gate frontend E2E. Evidence: .scratch/lane_evidence/blackbox_r1/. Public ICE and native Linux x86_64 USER_WAIVED.",
+  "review": "Full review 5 rounds; Round 5 code/test PASS with zero findings (reviewed_scope a006b995998b9c28); all important findings fixed; minor deferrals p007, p011.",
+  "pending": [
+    "p005",
+    "p006",
+    "p007",
+    "p008",
+    "p009",
+    "p010",
+    "p011",
+    "p012",
+    "p013"
+  ],
+  "findings": [
+    "d024"
+  ]
+}

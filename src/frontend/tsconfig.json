@@ -15,6 +15,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
+    "types": ["vite/client"],
     "forceConsistentCasingInFileNames": true
   },
   "include": ["src"],

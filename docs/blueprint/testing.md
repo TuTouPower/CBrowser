@@ -105,7 +105,7 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 - 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
 - 生成命令：在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
 - 验证命令：test_cmd 中 `tests/unit` 的 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；blackbox_verify 中 `tests/integration` 使用导出 JSON schema 校验真实 HTTP 响应。
-- 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。前端类型生成由 t007 实施，本 task 不生成前端代码。
+- 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。OpenAPI 变更后必须 `npm run generate:api --prefix src/frontend` 重生成 `src/frontend/src/shared/api/generated/cbrowser_v1.d.ts`，禁止手写补充类型。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
 
 ## 门禁类别清单
@@ -156,3 +156,19 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pydantic pyt
 ```
 
 导出 `schemas/runtime/supervisor_protocol.json` 必须随 DTO 更新；停止请求必须包含目标实例与操作 ID，不允许旧 schema 继续宣称二者可省略。API 内部白名单路由继续通过原 OpenAPI 导出及真实 HTTP schema 验证。
+
+## 前端阶段验证
+
+t007 前端门禁：先拉取并校验官方 Selkies 资源，再构建（构建同时产出 `dist/selkies/selkies_adapter.js`），然后跑 Vitest 与真实栈 E2E。构建会改写已入库的 `src/frontend/tsconfig.tsbuildinfo`，提交前还原。
+
+```bash
+npm ci --prefix src/frontend
+NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend
+python3 scripts/vendor_selkies_web.py
+npm run build --prefix src/frontend
+git show HEAD:src/frontend/tsconfig.tsbuildinfo > src/frontend/tsconfig.tsbuildinfo
+: "${CBROWSER_GATEWAY_TEST_IMAGE:?test Gateway image ID (test_runtime_coordinator_e2e)}"
+PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets --with uvicorn --with fastapi --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi --with jsonschema python -m pytest tests/e2e/test_frontend_session_vendor.py tests/e2e/test_frontend_adapter_build.py tests/e2e/test_frontend_session_e2e.py tests/e2e/test_frontend_app_e2e.py tests/e2e/test_frontend_app_auth_e2e.py tests/e2e/test_frontend_media_e2e.py tests/e2e/test_frontend_display_apply_e2e.py tests/e2e/test_frontend_ice_failure_e2e.py tests/e2e/test_runtime_coordinator_e2e.py -q
+```
+
+E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须用当前源重建（旧 API 镜像缺 `/api/v1/events` 与 Runtime Coordinator，旧 Supervisor 镜像不写 Selkies token 文件）。`test_frontend_app_*` 用构建产物经 Caddy 托管，API 启用 Runtime Coordinator（`CBROWSER_REQUIRE_SUPERVISOR=1`），Profile 启停只经界面/`/api/v1`。测试代码不得自带编排互斥锁或引用 `.scratch` 编排目录；多路并行跑 Docker E2E 时由外层调度互斥。

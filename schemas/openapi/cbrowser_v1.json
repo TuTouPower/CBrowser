@@ -25,6 +25,81 @@
         }
       }
     },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Subscribe Runtime Events",
+        "operationId": "subscribe_runtime_events_api_v1_events_get",
+        "parameters": [
+          {
+            "name": "last_event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last Event Id"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Last-Event-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream for profile runtime status updates",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeStatusEvent"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/profiles": {
       "post": {
         "tags": [
@@ -2778,6 +2853,17 @@
             ],
             "title": "Last Exit Event Id"
           },
+          "last_coordinator_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Coordinator Error"
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -2796,6 +2882,66 @@
           "updated_at"
         ],
         "title": "ProfileRuntimeResponse"
+      },
+      "ProfileRuntimeStatusEvent": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "desired_state": {
+            "type": "string",
+            "title": "Desired State"
+          },
+          "observed_state": {
+            "type": "string",
+            "title": "Observed State"
+          },
+          "runtime_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Instance Id"
+          },
+          "failure_count": {
+            "type": "integer",
+            "title": "Failure Count",
+            "default": 0
+          },
+          "restart_blocked": {
+            "type": "boolean",
+            "title": "Restart Blocked",
+            "default": false
+          },
+          "last_coordinator_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Coordinator Error"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "desired_state",
+          "observed_state",
+          "updated_at"
+        ],
+        "title": "ProfileRuntimeStatusEvent"
       },
       "ProfileUpdateRequest": {
         "properties": {

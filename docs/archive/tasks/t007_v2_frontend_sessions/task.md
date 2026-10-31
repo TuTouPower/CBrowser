@@ -22,25 +22,25 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：计划13.1全部页面可导航，/?profileId= 恢复当前目标；两个真实 Chrome 标签页各自切换 Profile，不改另一页目标或连接，不使用共享 localStorage.currentProfileId。
+- [x] AC-001：计划13.1全部页面可导航，/?profileId= 恢复当前目标；两个真实 Chrome 标签页各自切换 Profile，不改另一页目标或连接，不使用共享 localStorage.currentProfileId。
 
-- [ ] AC-002：同 Profile 两页面使用不同官方 client_tab_id，刷新和重连保留 resume_key/身份，复制页冲突重新连接且不踢原页；新标签页 noopener，不重写官方 HELLO。
+- [x] AC-002：同 Profile 两页面使用不同官方 client_tab_id，刷新保留 client_tab_id 身份、连接内重连保留 resume_key，复制页冲突重新连接且不踢原页；新标签页 noopener，不重写官方 HELLO。
 
-- [ ] AC-003：页面切换或关闭仅关闭自身 PeerConnection/信令，不调用 Profile stop；页面恢复查询真实运行状态并恢复 Viewer；只有明确停止 Profile 才关闭真实浏览器。
+- [x] AC-003：页面切换或关闭仅关闭自身 PeerConnection/信令，不调用 Profile stop；页面恢复查询真实运行状态并恢复 Viewer；只有明确停止 Profile 才关闭真实浏览器。
 
-- [ ] AC-004：真实后台可见性经 Selkies 官方 STOP_VIDEO/START_VIDEO 只暂停该连接视频，全部后台时捕获暂停，前台持续视频保持目标帧率；页面不向 Gateway 上报可见性或活动；显示尺寸/DPR由 Profile 配置控制，外部窗口 resize 不改变远端，设置变更须明确应用。
+- [x] AC-004：真实后台可见性经 Selkies 官方 STOP_VIDEO/START_VIDEO 只暂停该连接视频，全部后台时捕获暂停，前台持续视频保持目标帧率；页面不向 Gateway 上报可见性或活动；显示尺寸/DPR由 Profile 配置控制，外部窗口 resize 不改变远端，设置变更须明确应用。
 
-- [ ] AC-005：两个页面都能真实输入且独立静音，无租约/唯一控制者状态；内部浏览器标签页变化同步显示，运行/媒体/音频故障分别给出可理解状态，初次画面和操作延迟可测。
+- [x] AC-005：两个页面都能真实输入且独立静音，无租约/唯一控制者状态；内部浏览器标签页变化同步显示，运行/媒体/音频故障分别给出可理解状态，初次画面和操作延迟可测。
 
-- [ ] AC-006：Profile 列表/创建/编辑/标签/设置通过 /api/v1 生成类型客户端完成；后端状态经 SSE 更新，断线恢复无陈旧控制状态；旧 UI 测试语义失效时整项删除并说明，新增真实新语义测试。
+- [x] AC-006：Profile 列表/创建/编辑/标签/设置通过 /api/v1 生成类型客户端完成；后端状态经 SSE 更新，断线恢复无陈旧控制状态；旧 UI 测试语义失效时整项删除并说明，新增真实新语义测试。
 
-- [ ] AC-007：页面冻结/恢复（Page Lifecycle freeze/resume、bfcache pageshow）后检测失效连接并以原 client_tab_id/resume_key 重建；运行时未就绪、信令失败、ICE 失败、媒体无帧分别显示阶段与可执行操作，诊断取自 RTCPeerConnection 状态与 getStats，不出现无解释黑屏、不新增媒体回退通道。
+- [x] AC-007：页面冻结/恢复（Page Lifecycle freeze/resume、bfcache pageshow）后检测失效连接并以原 client_tab_id 重建（连接内重连保留 resume_key）；运行时未就绪、信令失败、ICE 失败、媒体无帧分别显示阶段与可执行操作，诊断取自 RTCPeerConnection 状态与 getStats，不出现无解释黑屏、不新增媒体回退通道。
 
-- [ ] AC-008：Stream Runtime 显式关闭 Selkies 模式切换（enable_dual_mode=false），客户端无法切换到 WebSocket 模式。
+- [x] AC-008：Stream Runtime 显式关闭 Selkies 模式切换（enable_dual_mode=false），客户端无法切换到 WebSocket 模式。
 
-- [ ] AC-009：用户经 /api/v1 设置 Profile 运行意愿为 running/stopped 后，API 经内部认证 RPC 驱动 Supervisor 真实启动/停止该 Profile 的 Browser/Stream，前端只经 API 操作；Supervisor 不可达时运行意愿保留并显式报告，恢复后收敛，不由测试直调 Supervisor 代替。
+- [x] AC-009：用户经 /api/v1 设置 Profile 运行意愿为 running/stopped 后，API 经内部认证 RPC 驱动 Supervisor 真实启动/停止该 Profile 的 Browser/Stream，前端只经 API 操作；Supervisor 不可达时运行意愿保留并显式报告，恢复后收敛，不由测试直调 Supervisor 代替。
 
-- [ ] AC-010：每个 Profile 的 Selkies master token 与 controller token 由服务端随机生成，master token 不出现在任何前端可见响应、页面或日志；外部页面无需持有 token 即可经认证 Gateway 隧道以 controller 身份连接，绕过隧道直连 Selkies 或使用错误 token 被拒。
+- [x] AC-010：每个 Profile 的 Selkies master token 与 controller token 由服务端随机生成，master token 不出现在任何前端可见响应、页面或日志；外部页面无需持有 token 即可经认证 Gateway 隧道以 controller 身份连接，绕过隧道直连 Selkies 或使用错误 token 被拒。
 
 ### 可测试性声明
 
@@ -56,6 +56,8 @@
 
 - 来源：docs/v2_architecture_plan.md（2026-10-27逐项核对）；t001 已完成并归档（docs/archive/tasks/t001_v2_runtime_validation），技术门禁已通过
 - 2026-10-30 计划修订同步：9.3 可见性只走 Selkies 原生、8.1 显式 Selkies 设置、13.4 冻结恢复与连接诊断；AC-004 改写，新增 AC-007/008。
+- 2026-10-31 Round 1 评审（t007_code_f008）：官方 Selkies 2.1.0 客户端每次实例化随机生成 `resume_key`，刷新必然产生新值，强行持久化需改写官方 HELLO 与同条“不重写官方 HELLO”冲突；AC-002 改为“刷新保留 client_tab_id 身份、连接内重连保留 resume_key”。AC-002/AC-007 因评审发现证据不足暂改回未勾，修复后复核再勾。
+- 2026-11-01 Round 1 修复后：AC-007 同理改为“以原 client_tab_id 重建（连接内重连保留 resume_key）”——失效后重建 iframe 会由官方客户端生成新 resume_key；连接内 WS 断开时官方客户端以原 resume_key 重连（`test_frontend_session_e2e.py`、`test_frontend_app_e2e.py` 断言）。AC-002/AC-007 证据补齐后重新勾选。
 
 ### 有意不测
 
@@ -74,7 +76,7 @@
 <!-- /规范 -->
 
 - 前置契约已核实（t006 merge ceb7f34）：Gateway 信令 `/stream/{profileId}/signal`、首帧 `rtc_config`、`ice_restart`/`ice_restart_answer` 控制帧、可见性只走官方 STOP_VIDEO/START_VIDEO（9.3，页面不得上报活动）、登录/CSRF/Origin 与会话 Cookie 见 docs/blueprint/gateway.md、security.md、schemas/openapi/cbrowser_v1.json；Selkies 2.1.0 RTC 配置与 relay-only 行为见 d021/d022；无头 Chrome 可见性限制见 d023；可复用真实栈拓扑夹具 tests/fixtures/gateway_probe/。
-- UNVERIFIED-SPIKE：Selkies 2.1.0 master/controller token 的配置入口（`master_token`、`tokens_file`、HELLO/URL 携带方式）与官方 Web 客户端在 token 模式下的连接行为，开工时以固定源码与真实 Stream 镜像实验核实后改写为结论。
+- Selkies 2.1.0 token 机制已核实（d024，spike lane 真实 Stream 镜像实验 + 主控复跑 5 passed）：安全模式由 `SELKIES_MASTER_TOKEN` 开启，`SELKIES_TOKENS_FILE` 提供 controller token，客户端在 HELLO 的 `client_token` 出示，缺失/错误 Close 4001；Agent 转发 HELLO 时代注入 controller token，页面不持有 token。
 
 ### 风险与回退
 

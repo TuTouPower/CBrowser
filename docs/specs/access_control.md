@@ -1,6 +1,6 @@
 # 需求规范：访问控制与自动化凭证
 
-本文描述 t006 交付的用户鉴权、Viewer 授权与自动化凭证行为。前端登录界面由 t007、CDP 代理入口由 t008 对接；生效状态以 specs_index 为准。
+本文描述 t006 交付的用户鉴权、Viewer 授权与自动化凭证行为。前端登录界面与登录守卫由 t007 交付（见 profile_management），CDP 代理入口由 t008 对接；生效状态以 specs_index 为准。
 
 ## 管理员与会话
 
@@ -11,7 +11,7 @@
 ## Viewer 信令授权
 
 - 打开 `/stream/{profileId}/signal` 前依次校验 Origin、登录会话与 Profile 存在性，再确认对应 Stream Agent 已注册且运行状态为 running；任一失败返回明确 HTTP 状态且不建立 WebSocket。
-- 前端可见响应不含 Selkies master token 或任何服务间凭证。
+- 前端可见响应、页面与日志不含 Selkies master/controller token 或任何服务间凭证；页面经认证隧道以 controller 接入，token 由 Stream Agent 代注入（d024）。
 
 ## 自动化凭证
 

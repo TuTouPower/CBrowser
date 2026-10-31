@@ -14,10 +14,18 @@ def generate_caddyfile(api_ip: str, gateway_ip: str) -> str:
 https://127.0.0.1 {{
     tls internal
 
-    reverse_proxy /api/* http://{api_ip}:8000
-    reverse_proxy /stream/* http://{gateway_ip}:18097
+    handle /api/* {{
+        reverse_proxy http://{api_ip}:8000
+    }}
 
-    root * /var/www/html
-    file_server
+    handle /stream/* {{
+        reverse_proxy http://{gateway_ip}:18097
+    }}
+
+    handle {{
+        root * /var/www/html
+        try_files {{path}} /index.html
+        file_server
+    }}
 }}
 """

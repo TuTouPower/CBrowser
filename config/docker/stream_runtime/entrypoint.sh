@@ -22,6 +22,15 @@ if [ -z "${CBROWSER_CONFIG_VERSION:-}" ]; then
     exit 1
 fi
 
+SCREEN_WIDTH="${CBROWSER_SCREEN_WIDTH:-}"
+SCREEN_HEIGHT="${CBROWSER_SCREEN_HEIGHT:-}"
+if [ -n "${CBROWSER_SELKIES_CREDENTIALS_FILE:-}" ]; then
+    if [ -z "$SCREEN_WIDTH" ] || [ -z "$SCREEN_HEIGHT" ]; then
+        echo "CONFIG_ERROR: CBROWSER_SCREEN_WIDTH and CBROWSER_SCREEN_HEIGHT are required" >&2
+        exit 1
+    fi
+fi
+
 SELKIES_WEBRTC_PUBLIC_IP="${CBROWSER_WEBRTC_PUBLIC_IP:-}"
 if [ -z "$SELKIES_WEBRTC_PUBLIC_IP" ]; then
     echo "CONFIG_ERROR: CBROWSER_WEBRTC_PUBLIC_IP is required by Supervisor" >&2
@@ -39,6 +48,56 @@ elif [ -z "${CBROWSER_AGENT_TOKEN:-}" ]; then
     exit 1
 fi
 
+# Selkies secure mode: Supervisor mounts a 0600 credentials file (master +
+# controller) per Profile. When none is mounted the entrypoint generates
+# per-start random tokens itself, so secure mode is never disabled.
+SELKIES_CRED_FILE="${CBROWSER_SELKIES_CREDENTIALS_FILE:-/tmp/selkies_credentials.json}"
+SELKIES_TOKENS_FILE="${SELKIES_TOKENS_FILE:-/tmp/selkies_tokens.json}"
+export SELKIES_TOKENS_FILE
+
+SELKIES_MASTER_TOKEN_FILE="$(mktemp /tmp/.selkies_master.XXXXXX)"
+SELKIES_CONTROLLER_TOKEN_FILE="$(mktemp /tmp/.selkies_ctrl.XXXXXX)"
+python3 - "$SELKIES_CRED_FILE" "$SELKIES_TOKENS_FILE" \
+    "$SELKIES_MASTER_TOKEN_FILE" "$SELKIES_CONTROLLER_TOKEN_FILE" <<'PY'
+import json
+import os
+import secrets
+import sys
+
+cred_path, tokens_path, master_path, controller_path = sys.argv[1:5]
+if os.path.isfile(cred_path) and os.path.getsize(cred_path) > 0:
+    with open(cred_path, encoding="utf-8") as handle:
+        credentials = json.load(handle)
+    master_token = credentials["master_token"]
+    controller_token = credentials["controller_token"]
+else:
+    master_token = secrets.token_urlsafe(32)
+    controller_token = secrets.token_urlsafe(32)
+
+table = {controller_token: {"role": "controller", "slot": None, "mk_control": False}}
+descriptor = os.open(tokens_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(descriptor, "w", encoding="utf-8") as tokens:
+    json.dump(table, tokens)
+os.chmod(tokens_path, 0o600)
+
+for path, value in (
+    (master_path, master_token),
+    (controller_path, controller_token),
+):
+    descriptor = os.open(path, os.O_WRONLY | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        output.write(value)
+    os.chmod(path, 0o600)
+PY
+SELKIES_MASTER_TOKEN="$(cat "$SELKIES_MASTER_TOKEN_FILE")"
+export SELKIES_MASTER_TOKEN
+rm -f "$SELKIES_MASTER_TOKEN_FILE"
+if [ ! -s "$SELKIES_CRED_FILE" ]; then
+    CBROWSER_CONTROLLER_TOKEN="$(cat "$SELKIES_CONTROLLER_TOKEN_FILE")"
+    export CBROWSER_CONTROLLER_TOKEN
+fi
+rm -f "$SELKIES_CONTROLLER_TOKEN_FILE"
+
 # Bounded wait for X11 socket
 X11_SOCK="${CBROWSER_X11_SOCKET:-/tmp/.X11-unix/X99}"
 X11_FOUND=0
@@ -51,6 +110,20 @@ for i in {1..50}; do
 done
 if [ "$X11_FOUND" -ne 1 ]; then
     echo "BOUNDARY_ERROR: X11 socket not detected after bounded wait" >&2
+    exit 1
+fi
+
+# Standalone/test launches without Supervisor-provided geometry read the real
+# Xvfb screen size instead of falling back to a hardcoded default.
+if [ -z "$SCREEN_WIDTH" ] || [ -z "$SCREEN_HEIGHT" ]; then
+    X11_DIMENSIONS="$(DISPLAY="${DISPLAY:-:99}" XAUTHORITY="${XAUTHORITY:-/tmp/.Xauthority}" xdpyinfo | awk '/dimensions:/ {if (!found) {print $2; found=1}}')"
+    SCREEN_WIDTH="${X11_DIMENSIONS%x*}"
+    SCREEN_HEIGHT="${X11_DIMENSIONS#*x}"
+fi
+if ! [[ "$SCREEN_WIDTH" =~ ^[0-9]+$ && "$SCREEN_HEIGHT" =~ ^[0-9]+$ ]] \
+    || [ "$SCREEN_WIDTH" -lt 100 ] || [ "$SCREEN_WIDTH" -gt 10000 ] \
+    || [ "$SCREEN_HEIGHT" -lt 100 ] || [ "$SCREEN_HEIGHT" -gt 10000 ]; then
+    echo "CONFIG_ERROR: valid screen geometry is required" >&2
     exit 1
 fi
 
@@ -98,9 +171,14 @@ export SELKIES_ENABLE_BASIC_AUTH=false
 export SELKIES_ENABLE_SHARING=true
 export SELKIES_ENABLE_COLLAB=false
 export SELKIES_ENABLE_RESIZE=false
+export SELKIES_ENABLE_DUAL_MODE=false
+export SELKIES_FILE_TRANSFERS=none
 export SELKIES_MANUAL_RESOLUTION=true
-export SELKIES_MANUAL_WIDTH=1920
-export SELKIES_MANUAL_HEIGHT=1080
+# The Agent registers the same geometry Selkies captures.
+export CBROWSER_SCREEN_WIDTH="$SCREEN_WIDTH"
+export CBROWSER_SCREEN_HEIGHT="$SCREEN_HEIGHT"
+export SELKIES_MANUAL_WIDTH="$SCREEN_WIDTH"
+export SELKIES_MANUAL_HEIGHT="$SCREEN_HEIGHT"
 export SELKIES_FRAMERATE="8,8-30"
 export SELKIES_VIDEO_STREAMING_MODE=false
 export SELKIES_WEBRTC_UDP_MUX_PORT="${CBROWSER_UDP_MUX_PORT:-30006}"
@@ -116,8 +194,11 @@ exec python3 -m cbrowser.stream_agent.agent \
   --enable-sharing=true \
   --enable-collab=false \
   --enable-resize=false \
-  --manual-width 1920 \
-  --manual-height 1080 \
+  --enable-dual-mode=false \
+  --file-transfers=none \
+  --tokens-file "$SELKIES_TOKENS_FILE" \
+  --manual-width "$SCREEN_WIDTH" \
+  --manual-height "$SCREEN_HEIGHT" \
   --audio-device-name "$SELKIES_AUDIO_DEVICE_NAME" \
   --webrtc-udp-mux-port "$SELKIES_WEBRTC_UDP_MUX_PORT" \
   --webrtc-public-ip "$SELKIES_WEBRTC_PUBLIC_IP" \
