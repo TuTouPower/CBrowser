@@ -4,22 +4,6 @@
     "workspace": ".",
     "tasks": [
         {
-            "tid": "t007",
-            "slug": "v2_frontend_sessions",
-            "title": "实现页面独立 Profile 选择与 WebRTC 浏览界面",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t006",
-            "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t007_v2_frontend_sessions"
-        },
-        {
             "tid": "t008",
             "slug": "v2_artifacts_automation",
             "title": "打通 Artifact 文件管理与受控 CDP 自动化",

@@ -88,6 +88,15 @@ class PathValidator:
             raise PathSecurityError("Runtime mount source escapes its Profile")
         return resolved
 
+    def validate_secret_source(
+        self, profile_id: str, path: Path, *, allow_create: bool = False
+    ) -> Path:
+        secret_dir = self.get_secret_dir(profile_id)
+        resolved = self.validate_safe_path(path, allow_create=allow_create)
+        if not resolved.is_relative_to(secret_dir):
+            raise PathSecurityError("Secret source escapes its Profile")
+        return resolved
+
     def get_profile_data_dir(self, profile_id: str) -> Path:
         """Return the canonical Profile user data directory."""
         if (
@@ -112,6 +121,18 @@ class PathValidator:
         ):
             raise PathSecurityError(f"Invalid profile_id: {profile_id}")
         target = self.data_root / "runtime" / profile_id
+        return self._fixed_profile_directory(target)
+
+    def get_secret_dir(self, profile_id: str) -> Path:
+        """Return the Profile secret dir, outside the Browser-mounted runtime dir."""
+        if (
+            not profile_id
+            or "/" in profile_id
+            or "\\" in profile_id
+            or ".." in profile_id
+        ):
+            raise PathSecurityError(f"Invalid profile_id: {profile_id}")
+        target = self.data_root / "runtime" / ".secrets" / profile_id
         return self._fixed_profile_directory(target)
 
     def get_events_dir(self, profile_id: str) -> Path:

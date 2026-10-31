@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 import docker
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
-from cbrowser.supervisor.path_validator import PathValidator
+from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
 from docker.errors import DockerException, NotFound
 
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
@@ -759,6 +759,34 @@ with path.open('w') as output:
                 f"Failed to run browser container {b_name}: {e}"
             ) from e
 
+    def _bound_snapshot_geometry(
+        self, profile_id: str, snapshot_json_path: Optional[Path]
+    ) -> tuple[int | None, int | None]:
+        if snapshot_json_path is None:
+            return None, None
+        try:
+            snapshot_path = self.validator.validate_runtime_source(
+                profile_id, snapshot_json_path
+            )
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, PathSecurityError) as exc:
+            raise DockerSandboxError(
+                f"Bound config snapshot is missing or invalid: {type(exc).__name__}"
+            ) from None
+        config = snapshot.get("config")
+        if not isinstance(config, dict):
+            raise DockerSandboxError(
+                "Bound config snapshot lacks a config object for screen geometry"
+            )
+        width = config.get("screen_width")
+        height = config.get("screen_height")
+        for name, value in (("screen_width", width), ("screen_height", height)):
+            if type(value) is not int or not 100 <= value <= 10000:
+                raise DockerSandboxError(
+                    f"Bound config snapshot {name} is missing or invalid"
+                )
+        return width, height
+
     async def start_stream_container(
         self,
         profile_id: str,
@@ -770,11 +798,25 @@ with path.open('w') as output:
         public_ip: str = "127.0.0.1",
         display: str = ":99",
         media_addresses: Optional[dict[str, str]] = None,
+        selkies_tokens_path: Optional[Path] = None,
+        snapshot_json_path: Optional[Path] = None,
     ) -> Any:
         if agent_secret_path is None or not agent_secret_path.is_file():
             raise DockerSandboxError(
                 "Explicit Stream Agent credential file is required"
             )
+        if selkies_tokens_path is None or not selkies_tokens_path.is_file():
+            raise DockerSandboxError(
+                "Explicit Stream Selkies token credential file is required"
+            )
+        token_stat = selkies_tokens_path.stat()
+        if (token_stat.st_mode & 0o077) != 0:
+            raise DockerSandboxError(
+                "Stream Selkies token credential file must have 0600 permissions"
+            )
+        screen_width, screen_height = self._bound_snapshot_geometry(
+            profile_id, snapshot_json_path
+        )
         s_name = self.get_stream_container_name(profile_id)
         net_name = self.get_network_name(profile_id)
         dirs = self.prepare_profile_directories(profile_id)
@@ -794,6 +836,9 @@ with path.open('w') as output:
         secret_file = self.validator.validate_runtime_source(
             profile_id, agent_secret_path
         )
+        selkies_file = self.validator.validate_secret_source(
+            profile_id, selkies_tokens_path
+        )
 
         gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "stream")
         allowed_tcp = []
@@ -810,6 +855,10 @@ with path.open('w') as output:
             str(xauth_file): {"bind": "/tmp/.Xauthority", "mode": "ro"},
             str(pulse_dir): {"bind": "/pulse", "mode": "ro"},
             str(secret_file): {"bind": "/tmp/secret.txt", "mode": "ro"},
+            str(selkies_file): {
+                "bind": "/tmp/selkies_credentials.json",
+                "mode": "ro",
+            },
         }
 
         env = {
@@ -824,12 +873,16 @@ with path.open('w') as output:
                 "com.cbrowser.config-version"
             ],
             "CBROWSER_AGENT_SECRET_FILE": "/tmp/secret.txt",
+            "CBROWSER_SELKIES_CREDENTIALS_FILE": "/tmp/selkies_credentials.json",
             "CBROWSER_UDP_MUX_PORT": str(udp_mux_port),
             "CBROWSER_AUDIO_DEVICE": "cbrowser_sink.monitor",
             "CBROWSER_PULSE_DIR": "/pulse",
             "CBROWSER_X11_SOCKET": "/tmp/.X11-unix/X99",
             "SELKIES_PORT": "18096",
         }
+        if screen_width is not None and screen_height is not None:
+            env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)
+            env["CBROWSER_SCREEN_HEIGHT"] = str(screen_height)
         if media_addresses is not None:
             env.update(
                 {

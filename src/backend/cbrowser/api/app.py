@@ -18,6 +18,7 @@ from cbrowser.adapters.database.repository import (
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.internal_gateway import gateway_router, read_gateway_token
 from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
+from cbrowser.api.runtime_coordinator import RuntimeCoordinator
 from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.auth.dependencies import get_auth_service
@@ -42,11 +43,14 @@ def create_app(
     admin_password_file: Path | str | None = None,
     gateway_token_file: Path | str | None = None,
     allowed_origins: list[str] | str | None = None,
+    supervisor_url: str | None = None,
+    require_supervisor: bool = False,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal service
         engine = None
+        coordinator = None
         app.state.supervisor_token = read_supervisor_token(
             supervisor_token_file or os.environ.get("CBROWSER_SUPERVISOR_TOKEN_FILE")
         )
@@ -94,12 +98,27 @@ def create_app(
         app.dependency_overrides[get_auth_service] = lambda: auth_service
         app.dependency_overrides[get_profile_service] = lambda: service
 
+        resolved_sup_url = supervisor_url or os.environ.get("CBROWSER_SUPERVISOR_URL")
+        resolved_require_sup = require_supervisor or os.environ.get(
+            "CBROWSER_REQUIRE_SUPERVISOR", ""
+        ).lower() in ("1", "true")
+        coordinator = RuntimeCoordinator(
+            supervisor_url=resolved_sup_url,
+            supervisor_token=app.state.supervisor_token,
+            profile_service=service,
+            require_supervisor=resolved_require_sup,
+        )
+        app.state.coordinator = coordinator
+        await coordinator.start()
+
         resolved_admin_pwd_file = admin_password_file or os.environ.get(
             "CBROWSER_ADMIN_PASSWORD_FILE"
         )
         await auth_service.init_admin_password(resolved_admin_pwd_file)
 
         yield
+        if coordinator:
+            await coordinator.stop()
         if engine:
             await engine.dispose()
 

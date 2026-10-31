@@ -32,6 +32,7 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
+from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from docker.errors import NotFound
 
 logger = logging.getLogger("cbrowser.supervisor.core")
@@ -494,6 +495,13 @@ class SupervisorCore:
                     self.agent_credentials.token_for(profile_id, runtime_instance_id),
                     mode=0o644,
                 )
+                selkies_tokens = SelkiesTokens.generate()
+                selkies_dir = self.docker.validator.get_secret_dir(profile_id)
+                selkies_dir.mkdir(parents=True, exist_ok=True)
+                selkies_dir.chmod(0o700)
+                selkies_tokens_file = selkies_tokens.provision_credentials_file(
+                    selkies_dir, runtime_instance_id
+                )
                 s_container = await self.docker.start_stream_container(
                     profile_id=profile_id,
                     runtime_instance_id=runtime_instance_id,
@@ -505,6 +513,8 @@ class SupervisorCore:
                     or self.gateway_url,
                     agent_secret_path=agent_secret,
                     media_addresses=media_addresses,
+                    selkies_tokens_path=selkies_tokens_file,
+                    snapshot_json_path=snap_path,
                 )
 
                 if self.gateway_control is None:

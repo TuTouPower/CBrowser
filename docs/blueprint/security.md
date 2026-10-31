@@ -22,6 +22,7 @@
 ## 服务间与媒体凭证
 
 - Stream Agent 凭证由主密钥按 Profile 与 runtime_instance_id 派生（HMAC-SHA256），每个 Stream 只拿到本实例凭证文件。Gateway 另以 API 持久绑定校验实例，过期实例不能覆盖当前注册。
+- 每 Profile 另有独立的 Selkies master 与 controller token，由 Supervisor 每次启动随机生成（`secrets.token_urlsafe(32)`），只经 0600 文件（`runtime/.secrets/<profile_id>/`，Browser 容器不挂载该目录）挂载给该 Profile 的 Stream 容器。controller token 由 Stream 入口写入 tmpfs 0600 tokens 文件，Agent 在转发上游 `HELLO client` 时代注入，页面不持有任何 Selkies token。master token 仅用于开启 Selkies 安全模式，不进入 Agent 配置、注册/心跳、Gateway 或 API 响应，也不写入日志；直连 Selkies 信令缺 token 或错 token 被 4001 拒绝。
 - TURN 采用 REST HMAC-SHA1 短期凭证：客户端与 Stream 分别签发、默认 24 小时有效、每 12 小时生成新代、旧代到期前 6 小时触发 ICE restart；新连接总取当前代。Stream 侧 URL 使用 Supervisor 下发的本 Profile 媒体网络内 coturn 实际地址，客户端使用公开可达地址。
 - 日志不记录密码、会话、CSRF、Bearer、TURN credential 或 SDP 全文；Agent 报文日志按字段名脱敏。
 

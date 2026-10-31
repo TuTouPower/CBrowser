@@ -5,6 +5,7 @@ enforces no hardcoded secrets.
 """
 
 import ipaddress
+import json
 import math
 import os
 import re
@@ -44,6 +45,7 @@ class StreamAgentConfig(BaseModel):
     turn_servers: List[dict] = Field(default_factory=list)
     config_version: int = Field(default=1, ge=1)
     selkies_version: Optional[str] = None
+    controller_token: Optional[SecretStr] = None
 
     @field_validator("turn_host")
     @classmethod
@@ -102,6 +104,15 @@ class StreamAgentConfig(BaseModel):
             raise ValueError("agent_token must be at least 8 characters")
         return v
 
+    @field_validator("controller_token")
+    @classmethod
+    def validate_controller_token(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
+        if v is not None:
+            val = v.get_secret_value().strip()
+            if not val or len(val) < 8:
+                raise ValueError("controller_token must be at least 8 characters")
+        return v
+
     @field_validator("udp_mux_port")
     @classmethod
     def validate_udp_mux_port(cls, v: int) -> int:
@@ -112,15 +123,15 @@ class StreamAgentConfig(BaseModel):
     @field_validator("width")
     @classmethod
     def validate_width(cls, v: int) -> int:
-        if v != 1920:
-            raise ValueError("Fixed geometry width must be 1920")
+        if not 100 <= v <= 10000:
+            raise ValueError("Geometry width must be between 100 and 10000")
         return v
 
     @field_validator("height")
     @classmethod
     def validate_height(cls, v: int) -> int:
-        if v != 1080:
-            raise ValueError("Fixed geometry height must be 1080")
+        if not 100 <= v <= 10000:
+            raise ValueError("Geometry height must be between 100 and 10000")
         return v
 
     @field_validator("depth")
@@ -150,11 +161,13 @@ class StreamAgentConfig(BaseModel):
         return self
 
     def __repr__(self) -> str:
+        ctrl_str = "'***'" if self.controller_token is not None else "None"
         return (
             f"StreamAgentConfig(profile_id={self.profile_id!r}, "
             f"runtime_instance_id={self.runtime_instance_id!r}, "
             f"gateway_url={self.gateway_url!r}, "
             f"agent_token='***', "
+            f"controller_token={ctrl_str}, "
             f"turn_host={self.turn_host!r}, "
             f"turn_port={self.turn_port}, "
             f"udp_mux_port={self.udp_mux_port}, "
@@ -216,6 +229,29 @@ class StreamAgentConfig(BaseModel):
                 "or CBROWSER_AGENT_TOKEN"
             )
 
+        width_raw = os.environ.get("CBROWSER_SCREEN_WIDTH")
+        height_raw = os.environ.get("CBROWSER_SCREEN_HEIGHT")
+        if width_raw is None and height_raw is None:
+            width, height = 1920, 1080
+        else:
+            if not width_raw:
+                raise ValueError(
+                    "CBROWSER_SCREEN_WIDTH environment variable is required"
+                )
+            if not height_raw:
+                raise ValueError(
+                    "CBROWSER_SCREEN_HEIGHT environment variable is required"
+                )
+            try:
+                width = int(width_raw)
+                height = int(height_raw)
+            except ValueError:
+                raise ValueError("Invalid CBROWSER_SCREEN_WIDTH/HEIGHT integer")
+            if not 100 <= width <= 10000 or not 100 <= height <= 10000:
+                raise ValueError(
+                    "CBROWSER_SCREEN_WIDTH/HEIGHT must be between 100 and 10000"
+                )
+
         udp_port_raw = os.environ.get("CBROWSER_UDP_MUX_PORT", "30006")
         try:
             udp_port = int(udp_port_raw)
@@ -245,6 +281,24 @@ class StreamAgentConfig(BaseModel):
         x11_socket = os.environ.get("CBROWSER_X11_SOCKET", "/tmp/.X11-unix/X99")
         xauth = os.environ.get("XAUTHORITY", "/tmp/.Xauthority")
 
+        controller_token_str: Optional[str] = None
+        selkies_cred_file = os.environ.get("CBROWSER_SELKIES_CREDENTIALS_FILE")
+        if selkies_cred_file:
+            path = Path(selkies_cred_file)
+            if not path.is_file():
+                raise ValueError(
+                    "Selkies credentials file not found or not a regular file"
+                )
+            try:
+                cred_data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                raise ValueError("Invalid Selkies credentials file") from None
+            controller_token_str = cred_data.get("controller_token")
+            if not controller_token_str:
+                raise ValueError("controller_token missing in Selkies credentials file")
+        elif "CBROWSER_CONTROLLER_TOKEN" in os.environ:
+            controller_token_str = os.environ["CBROWSER_CONTROLLER_TOKEN"]
+
         return cls(
             profile_id=profile_id,
             runtime_instance_id=runtime_instance_id,
@@ -253,8 +307,11 @@ class StreamAgentConfig(BaseModel):
             turn_host=turn_host,
             turn_port=turn_port,
             udp_mux_port=udp_port,
+            width=width,
+            height=height,
             pulse_dir=pulse_dir,
             x11_socket=x11_socket,
             xauthority_path=xauth,
             config_version=config_version,
+            controller_token=controller_token_str,
         )

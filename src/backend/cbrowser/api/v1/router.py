@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
+from cbrowser.adapters.database.models import SessionModel
 from cbrowser.adapters.database.repository import (
     InstanceConflictError,
     InvalidConfigVersionError,
 )
-from cbrowser.auth.dependencies import require_csrf_and_origin
+from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
+from cbrowser.auth.dependencies import require_csrf_and_origin, require_user_session
 from cbrowser.domain.models import (
     ConfigVersionResponse,
     ErrorResponse,
     ProfileConfig,
     ProfileCreateRequest,
     ProfileResponse,
+    ProfileRuntime,
+    ProfileRuntimeEventData,
     ProfileRuntimeResponse,
+    ProfileRuntimeStatusEvent,
     ProfileUpdateRequest,
     RuntimeDesiredStateRequest,
     RuntimeEvent,
@@ -31,7 +36,8 @@ from cbrowser.services.profile_service import (
     ProfileService,
     StaleInstanceError,
 )
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
 profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
@@ -41,9 +47,99 @@ def get_profile_service() -> ProfileService:
     raise NotImplementedError("ProfileService dependency must be provided")
 
 
+def _make_runtime_response(
+    rt: ProfileRuntime, coordinator: Any = None
+) -> ProfileRuntimeResponse:
+    last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
+    return ProfileRuntimeResponse(
+        profile_id=rt.profile_id,
+        desired_state=rt.desired_state,
+        observed_state=rt.observed_state,
+        runtime_instance_id=rt.runtime_instance_id,
+        config_version=rt.config_version,
+        failure_count=rt.failure_count,
+        restart_blocked=rt.restart_blocked,
+        last_exit_event_id=rt.last_exit_event_id,
+        last_coordinator_error=last_error,
+        updated_at=rt.updated_at,
+    )
+
+
 @v1_router.get("/health")
 async def health_check():
     return {"status": "ok", "version": "2.0.0"}
+
+
+@v1_router.get(
+    "/events",
+    response_model=ProfileRuntimeStatusEvent,
+    response_class=StreamingResponse,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "SSE stream for profile runtime status updates",
+            "content": {
+                "text/event-stream": {
+                    "schema": {"$ref": "#/components/schemas/ProfileRuntimeStatusEvent"}
+                }
+            },
+        },
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorResponse,
+            "description": "Authentication required",
+        },
+    },
+)
+async def subscribe_runtime_events(
+    request: Request,
+    session: Annotated[SessionModel, Depends(require_user_session)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+    last_event_id_query: Annotated[str | None, Query(alias="last_event_id")] = None,
+):
+    async def get_initial_snapshots() -> list[ProfileRuntimeEventData]:
+        profiles = await service.list_profiles()
+        coordinator = getattr(request.app.state, "coordinator", None)
+        snapshots = []
+        for p in profiles:
+            try:
+                rt = await service.get_runtime(p.id)
+                last_err = coordinator.get_last_error(p.id) if coordinator else None
+                snapshots.append(
+                    ProfileRuntimeEventData(
+                        profile_id=rt.profile_id,
+                        desired_state=rt.desired_state,
+                        observed_state=rt.observed_state,
+                        runtime_instance_id=rt.runtime_instance_id,
+                        failure_count=rt.failure_count,
+                        restart_blocked=rt.restart_blocked,
+                        last_coordinator_error=last_err,
+                        updated_at=rt.updated_at,
+                    )
+                )
+            except Exception:
+                pass
+        return snapshots
+
+    effective_last_event_id = last_event_id or last_event_id_query
+    coordinator = getattr(request.app.state, "coordinator", None)
+    broadcaster = (
+        coordinator.broadcaster
+        if coordinator is not None
+        else RuntimeEventBroadcaster()
+    )
+    generator = broadcaster.subscribe(
+        last_event_id=effective_last_event_id,
+        initial_snapshot_provider=get_initial_snapshots,
+    )
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @profile_router.post(
@@ -344,21 +440,13 @@ async def get_version(
 )
 async def get_profile_runtime(
     profile_id: str,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     try:
         rt = await service.get_runtime(profile_id)
-        return ProfileRuntimeResponse(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            runtime_instance_id=rt.runtime_instance_id,
-            config_version=rt.config_version,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_exit_event_id=rt.last_exit_event_id,
-            updated_at=rt.updated_at,
-        )
+        coord = getattr(request.app.state, "coordinator", None)
+        return _make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -391,6 +479,7 @@ async def get_profile_runtime(
 async def set_desired_state(
     profile_id: str,
     payload: RuntimeDesiredStateRequest,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
@@ -401,17 +490,11 @@ async def set_desired_state(
         rt = await service.set_desired_state(
             profile_id, payload.desired_state, operation_id=op_id
         )
-        return ProfileRuntimeResponse(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            runtime_instance_id=rt.runtime_instance_id,
-            config_version=rt.config_version,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_exit_event_id=rt.last_exit_event_id,
-            updated_at=rt.updated_at,
-        )
+        coord = getattr(request.app.state, "coordinator", None)
+        if coord:
+            coord.publish_profile_change_later(profile_id)
+            coord.trigger_reconcile(profile_id)
+        return _make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -439,6 +522,7 @@ async def set_desired_state(
 )
 async def stop_profile(
     profile_id: str,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
@@ -447,17 +531,11 @@ async def stop_profile(
     op_id = idempotency_key or x_operation_id or operation_id
     try:
         rt = await service.set_desired_state(profile_id, "stopped", operation_id=op_id)
-        return ProfileRuntimeResponse(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            runtime_instance_id=rt.runtime_instance_id,
-            config_version=rt.config_version,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_exit_event_id=rt.last_exit_event_id,
-            updated_at=rt.updated_at,
-        )
+        coord = getattr(request.app.state, "coordinator", None)
+        if coord:
+            coord.publish_profile_change_later(profile_id)
+            coord.trigger_reconcile(profile_id)
+        return _make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -490,6 +568,7 @@ async def stop_profile(
 async def bind_runtime(
     profile_id: Annotated[str, Query()],
     payload: RuntimeInstanceBindRequest,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     try:
@@ -499,17 +578,10 @@ async def bind_runtime(
             payload.config_version,
             payload.expected_current_instance,
         )
-        return ProfileRuntimeResponse(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            runtime_instance_id=rt.runtime_instance_id,
-            config_version=rt.config_version,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_exit_event_id=rt.last_exit_event_id,
-            updated_at=rt.updated_at,
-        )
+        coord = getattr(request.app.state, "coordinator", None)
+        if coord:
+            coord.publish_profile_change_later(profile_id)
+        return _make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -548,6 +620,7 @@ async def bind_runtime(
 async def report_observed_state(
     profile_id: Annotated[str, Query()],
     payload: RuntimeObservedReportRequest,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     try:
@@ -557,17 +630,10 @@ async def report_observed_state(
             payload.observed_state,
             payload.config_version,
         )
-        return ProfileRuntimeResponse(
-            profile_id=rt.profile_id,
-            desired_state=rt.desired_state,
-            observed_state=rt.observed_state,
-            runtime_instance_id=rt.runtime_instance_id,
-            config_version=rt.config_version,
-            failure_count=rt.failure_count,
-            restart_blocked=rt.restart_blocked,
-            last_exit_event_id=rt.last_exit_event_id,
-            updated_at=rt.updated_at,
-        )
+        coord = getattr(request.app.state, "coordinator", None)
+        if coord:
+            coord.publish_profile_change_later(profile_id)
+        return _make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -601,6 +667,7 @@ async def report_observed_state(
 )
 async def report_runtime_event(
     payload: RuntimeEventReportRequest,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     if payload.event_type == "exit" and payload.exit_code is None:
@@ -620,6 +687,9 @@ async def report_runtime_event(
         payload=payload.payload,
     )
     res = await service.process_runtime_event(event)
+    coord = getattr(request.app.state, "coordinator", None)
+    if coord:
+        coord.publish_profile_change_later(payload.profile_id)
     return res
 
 

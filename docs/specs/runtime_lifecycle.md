@@ -1,6 +1,6 @@
 # 需求规范：Runtime 生命周期协调
 
-本文描述 t005 实现行为。入口鉴权、正式 Gateway、最终 Compose 与用户数据迁移仍由后续 task 交付；生效状态以 specs_index 和最终 task 验收为准。
+本文描述 t005 实现行为，运行意愿协调由 t007 补充。入口鉴权、正式 Gateway、最终 Compose 与用户数据迁移仍由后续 task 交付；生效状态以 specs_index 和最终 task 验收为准。
 
 ## 权限与隔离
 
@@ -8,6 +8,12 @@
 - 每个 Profile 独立 Browser/Stream 容器、用户数据、Xauthority、Pulse 与网络；Stream 仅共享对应 Browser IPC，不挂用户数据或 Browser Agent Socket。挂载必须规范化并保持所属 Profile，路径穿越、链接逃逸和跨 Profile 别名被拒绝。
 - Runtime 保持非 root、只读根、cap-drop ALL、restart policy no。启动前由临时 helper 在自有网络命名空间安装 IPv4/IPv6 策略，gate 确认实例、角色与 ready 标记后才执行业务入口。失败封闭，不修改宿主网络策略。
 - Browser 公共目的地址可达，私有/保留地址默认拒绝，代理只按配置地址/端口例外；Stream 只允许实际 Gateway/coturn 端点及本实例 UDP mux。独立 bridge 本身不构成隔离证明。
+
+## 运行意愿协调
+
+- 用户只经 `/api/v1` 设置运行意愿；API 持久化后经内部认证 RPC 驱动 Supervisor 真实启动/停止该 Profile 的 Browser/Stream，前端与测试不直调 Supervisor。
+- Supervisor 不可达时运行意愿保留，错误经 API 响应与 SSE 显式报告；恢复后按退避重试收敛并清除错误。API 重启时对意愿与观测不一致的 Profile 重新收敛。
+- 未配置 Supervisor 时 API 默认显式禁用协调并报告；`CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置拒绝启动，生产部署必须启用。
 
 ## 生命周期与代际
 

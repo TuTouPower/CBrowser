@@ -98,6 +98,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t006_v2_gateway_auth_rtc"
+        },
+        {
+            "tid": "t007",
+            "slug": "v2_frontend_sessions",
+            "title": "实现页面独立 Profile 选择与 WebRTC 浏览界面",
+            "status": "done",
+            "branch": "t007_v2_frontend_sessions",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "077778fef84f22312e6b18583c547c8b5f418617",
+            "depends_on": "t006",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t007_v2_frontend_sessions"
         }
     ]
 }

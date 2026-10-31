@@ -95,6 +95,9 @@ def _sanitize_packet(packet: dict) -> dict:
         "authorization",
         "password",
         "credential",
+        "master_token",
+        "controller_token",
+        "client_token",
     }
     sanitized = {}
     for k, v in packet.items():
@@ -740,7 +743,7 @@ class StreamAgent:
                         )
                         break
 
-                    # Inspect HELLO metadata without rewriting official string
+                    # Inspect HELLO metadata and inject controller token if absent
                     if data.startswith("HELLO client "):
                         try:
                             parts = data.split(" ", 2)
@@ -755,6 +758,14 @@ class StreamAgent:
                                 ):
                                     self.viewer_workers[conn_id].tab_id = tab_id
                                     self.viewer_workers[conn_id].resume_key = resume_key
+                                if (
+                                    not meta.get("client_token")
+                                    and self.config.controller_token is not None
+                                ):
+                                    meta["client_token"] = (
+                                        self.config.controller_token.get_secret_value()
+                                    )
+                                    data = f"{parts[0]} {parts[1]} {json.dumps(meta)}"
                         except Exception:
                             pass
 

@@ -12,7 +12,9 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 
 - **冻结的 v2 目标架构（Frozen v2 Target Architecture）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、coturn、CDP UDS 等 9 大专题技术验证（s001–s009，d001–d014）后正式冻结的目标技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**后续任务（t002+）分步落地实施的目标契约**，**不代表上述完整拓扑已交付；当前已实现部分以本节任务状态为准**。
 
-- **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway 与 TURN 凭证轮换（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。正式前端、文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
+- **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway 与 TURN 凭证轮换（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
+
+- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.5）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件在 t011 移除。
 
 Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
 
@@ -120,7 +122,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
     - 画面静止且无交互时，目标帧率降为 8 FPS 以节省 CPU 开销；
     - 只要至少存在一个前台可见连接发生键鼠输入、滚动或画面检测到持续运动（视频/动画），帧率提升至 30 FPS；运动判定依据真实 damage 对照，不依赖 `StreamWatch.encoded_fps`（d005）；
 - **页面可见性仲裁**：
-    - 单个连接切入后台（`hidden`）时可在前端本地暂停解码，后台页面不得压低前台帧率；
+    - 单个连接切入后台（`hidden`）时由 Selkies 官方客户端发送每 Peer `STOP_VIDEO` 暂停该连接视频（计划 9.3），页面不向 Gateway 上报可见性或活动；后台页面不得压低前台帧率；
     - 当该 Profile 的所有连接均处于后台或断开时，Stream Agent 暂停服务端画面捕获与视频编码；
     - 任一连接切回前台（`visible`）时，立即恢复画面捕获，先以 8 FPS 重建画面，再根据实际运动自适应提升至 30 FPS（d013）。
 
@@ -135,6 +137,12 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
     - 用户在浏览器内直接点击关闭时，Browser Agent 将包含唯一 `event_id` 的退出事件持久化落盘至运行事件目录；
     - API 离线或 Supervisor 重启时，已落盘事件在恢复后由 API 消费并收敛为 `desired_state=stopped`；多轮 reconcile 不会误重新拉起已正常关闭的浏览器（d006）。
     - 浏览器容器的 Docker restart policy 固定为 `no`，所有自愈与重启均由 Supervisor 统一决策。
+
+### 5.5 运行意愿协调（Runtime Coordinator）
+
+- 用户只经 `/api/v1` 修改运行意愿（`PATCH /api/v1/profiles/{id}/runtime/desired-state` 或 stop）。API 先持久化意愿，再由进程内 Runtime Coordinator 经内部认证 RPC 请求 Supervisor 启动/停止该 Profile 的 Browser/Stream；前端与测试都不直调 Supervisor。
+- Supervisor 不可达或 RPC 失败时意愿保留，错误写入 `last_coordinator_error` 并经 API 响应与 SSE `runtime_state` 事件显式报告；Coordinator 按指数退避重试直至收敛，成功即清空错误；API 启动时对意愿与观测不一致的 Profile 同样发起收敛。
+- Coordinator 需显式配置 `CBROWSER_SUPERVISOR_URL` 与 `CBROWSER_SUPERVISOR_TOKEN_FILE`。缺失时 API 仍可启动但 Coordinator 显式禁用：启动警告一次，且每次意愿变更以 `last_coordinator_error="Supervisor is not configured"` 报告。设置 `CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置使 API 启动失败；生产部署（t012）必须启用该模式。
 
 ### 5.4 协议兼容与 API 演进
 

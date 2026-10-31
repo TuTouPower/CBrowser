@@ -345,7 +345,28 @@ class ProfileRuntimeResponse(BaseModel):
     failure_count: int
     restart_blocked: bool
     last_exit_event_id: str | None
+    last_coordinator_error: str | None = None
     updated_at: str
+
+
+class ProfileRuntimeStatusEvent(BaseModel):
+    profile_id: str
+    desired_state: str
+    observed_state: str
+    runtime_instance_id: str | None = None
+    failure_count: int = 0
+    restart_blocked: bool = False
+    last_coordinator_error: str | None = None
+    updated_at: str
+
+
+ProfileRuntimeEventData = ProfileRuntimeStatusEvent
+
+
+class ProfileRuntimeEvent(BaseModel):
+    id: str
+    event: str = "runtime_state"
+    data: ProfileRuntimeStatusEvent
 
 
 class RuntimeInstanceBindRequest(BaseModel):
