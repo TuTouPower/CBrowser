@@ -146,3 +146,12 @@ def test_diagnostics_sanitization():
         assert "SUPER_SECRET_LOCAL_PASS" not in repr_str
         assert "SUPER_SECRET_REMOTE_PASS" not in repr_str
         assert diag["local_ufrag"] == "user_frag_123"
+
+
+def test_relay_only_policy_flag():
+    from cbrowser.stream_agent.ice_transport import is_relay_only, set_relay_only
+
+    set_relay_only(True)
+    assert is_relay_only() is True
+    set_relay_only(False)
+    assert is_relay_only() is False

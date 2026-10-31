@@ -17,6 +17,7 @@ import asyncio
 import hmac
 import json
 import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
@@ -69,6 +70,8 @@ class SupervisorGatewayFixture:
         self._setup_routes()
         self._runner: Optional[web.AppRunner] = None
         self._site: Optional[web.TCPSite] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._thread: Optional[threading.Thread] = None
 
     def _setup_routes(self) -> None:
         self._app.router.add_get("/stream/agent/register", self._handle_agent_register)
@@ -386,41 +389,74 @@ class SupervisorGatewayFixture:
         return ws
 
     async def start(self) -> None:
-        self._runner = web.AppRunner(self._app)
-        await self._runner.setup()
-        self._site = web.TCPSite(self._runner, "127.0.0.1", self.port)
-        await self._site.start()
+        ready_event = threading.Event()
+        self._loop = asyncio.new_event_loop()
+
+        def _run() -> None:
+            assert self._loop is not None
+            asyncio.set_event_loop(self._loop)
+
+            async def _init() -> None:
+                self._runner = web.AppRunner(self._app)
+                await self._runner.setup()
+                self._site = web.TCPSite(self._runner, "127.0.0.1", self.port)
+                await self._site.start()
+                ready_event.set()
+
+            self._loop.create_task(_init())
+            self._loop.run_forever()
+
+        self._thread = threading.Thread(target=_run, daemon=True)
+        self._thread.start()
+        await asyncio.to_thread(ready_event.wait, 10.0)
         logger.info(f"SupervisorGatewayFixture running on 127.0.0.1:{self.port}")
 
     async def stop(self) -> None:
-        try:
-            # 1. Close all viewers
-            for ws_set in list(self._viewers.values()):
-                for ws in list(ws_set):
-                    if not ws.closed:
-                        await ws.close(code=1000, message=b"Gateway fixture stopping")
-            self._viewers.clear()
-            self._foreground_viewers.clear()
+        if self._loop and self._loop.is_running():
 
-            # 2. Close all agent sockets
-            for agent in list(self._agents.values()):
-                if not agent.ws.closed:
-                    await agent.ws.close(code=1000, message=b"Gateway fixture stopping")
-            self._agents.clear()
-            self.registered_agents.clear()
+            async def _cleanup() -> None:
+                try:
+                    # 1. Close all viewers
+                    for ws_set in list(self._viewers.values()):
+                        for ws in list(ws_set):
+                            if not ws.closed:
+                                await ws.close(
+                                    code=1000, message=b"Gateway fixture stopping"
+                                )
+                    self._viewers.clear()
+                    self._foreground_viewers.clear()
 
-            # 3. Close any lingering sockets
-            for ws in list(self._all_sockets):
-                if not ws.closed:
-                    await ws.close(code=1000, message=b"Gateway fixture stopping")
-            self._all_sockets.clear()
-        finally:
-            if self._site:
-                await self._site.stop()
-                self._site = None
-            if self._runner:
-                await self._runner.cleanup()
-                self._runner = None
+                    # 2. Close all agent sockets
+                    for agent in list(self._agents.values()):
+                        if not agent.ws.closed:
+                            await agent.ws.close(
+                                code=1000, message=b"Gateway fixture stopping"
+                            )
+                    self._agents.clear()
+                    self.registered_agents.clear()
+
+                    # 3. Close any lingering sockets
+                    for ws in list(self._all_sockets):
+                        if not ws.closed:
+                            await ws.close(
+                                code=1000, message=b"Gateway fixture stopping"
+                            )
+                    self._all_sockets.clear()
+                finally:
+                    if self._site:
+                        await self._site.stop()
+                        self._site = None
+                    if self._runner:
+                        await self._runner.cleanup()
+                        self._runner = None
+
+            fut = asyncio.run_coroutine_threadsafe(_cleanup(), self._loop)
+            await asyncio.to_thread(fut.result, 5.0)
+            self._loop.call_soon_threadsafe(self._loop.stop)
+            if self._thread:
+                await asyncio.to_thread(self._thread.join, 5.0)
+                self._thread = None
+            self._loop = None
         logger.info(f"SupervisorGatewayFixture stopped on port {self.port}")
 
     async def __aenter__(self) -> "SupervisorGatewayFixture":

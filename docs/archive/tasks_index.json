@@ -82,6 +82,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t005_v2_supervisor"
+        },
+        {
+            "tid": "t006",
+            "slug": "v2_gateway_auth_rtc",
+            "title": "实现认证信令 Gateway 与独立 RTC 凭证轮换",
+            "status": "done",
+            "branch": "t006_v2_gateway_auth_rtc",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "c33e55f77cb221510396628e792a08b905b2ebe0",
+            "depends_on": "t005",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t006_v2_gateway_auth_rtc"
         }
     ]
 }

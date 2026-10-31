@@ -237,3 +237,47 @@ class AuditEventModel(Base):
     created_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
     )
+
+
+class AdminModel(Base):
+    __tablename__ = "admins"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+
+class SessionModel(Base):
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    csrf_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (Index("idx_sessions_token_hash", "token_hash"),)
+
+
+class AutomationTokenModel(Base):
+    __tablename__ = "automation_tokens"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    profile_ids: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    revoked_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (Index("idx_automation_tokens_token_hash", "token_hash"),)

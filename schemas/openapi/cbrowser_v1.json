@@ -1214,6 +1214,186 @@
         }
       }
     },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Get Session",
+        "operationId": "get_session_api_v1_auth_session_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/tokens": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "List Automation Tokens",
+        "operationId": "list_automation_tokens_api_v1_automation_tokens_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AutomationTokenResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Automation Tokens Api V1 Automation Tokens Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Create Automation Token",
+        "operationId": "create_automation_token_api_v1_automation_tokens_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationTokenCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationTokenCreatedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/automation/tokens/{token_id}": {
+      "delete": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Revoke Automation Token",
+        "operationId": "revoke_automation_token_api_v1_automation_tokens__token_id__delete",
+        "parameters": [
+          {
+            "name": "token_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/internal/supervisor/health": {
       "get": {
         "tags": [
@@ -1688,10 +1868,313 @@
           }
         ]
       }
+    },
+    "/api/v1/internal/gateway/viewer-authorize": {
+      "post": {
+        "tags": [
+          "internal-gateway"
+        ],
+        "summary": "Viewer Authorize",
+        "operationId": "viewer_authorize_api_v1_internal_gateway_viewer_authorize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ViewerAuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewerAuthorizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/gateway/automation-authorize": {
+      "post": {
+        "tags": [
+          "internal-gateway"
+        ],
+        "summary": "Automation Authorize",
+        "operationId": "automation_authorize_api_v1_internal_gateway_automation_authorize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutomationAuthorizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutomationAuthorizeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/internal/gateway/profiles/{profile_id}/runtime": {
+      "get": {
+        "tags": [
+          "internal-gateway"
+        ],
+        "summary": "Get Gateway Profile Runtime",
+        "operationId": "get_gateway_profile_runtime_api_v1_internal_gateway_profiles__profile_id__runtime_get",
+        "security": [
+          {
+            "GatewayServiceBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayRuntimeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AutomationAuthorizeRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "profile_id"
+        ],
+        "title": "AutomationAuthorizeRequest"
+      },
+      "AutomationAuthorizeResponse": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "title": "AutomationAuthorizeResponse"
+      },
+      "AutomationTokenCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Profile Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "AutomationTokenCreateRequest"
+      },
+      "AutomationTokenCreatedResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Profile Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "revoked": {
+            "type": "boolean",
+            "title": "Revoked"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Plaintext token returned only once upon creation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "profile_ids",
+          "created_at",
+          "revoked",
+          "token"
+        ],
+        "title": "AutomationTokenCreatedResponse"
+      },
+      "AutomationTokenResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "profile_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Profile Ids"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "revoked": {
+            "type": "boolean",
+            "title": "Revoked"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "profile_ids",
+          "created_at",
+          "revoked"
+        ],
+        "title": "AutomationTokenResponse"
+      },
       "ConfigVersionResponse": {
         "properties": {
           "id": {
@@ -1757,6 +2240,45 @@
         ],
         "title": "ErrorResponse"
       },
+      "GatewayRuntimeResponse": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "runtime_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Instance Id"
+          },
+          "config_version": {
+            "type": "integer",
+            "title": "Config Version"
+          },
+          "desired_state": {
+            "type": "string",
+            "title": "Desired State"
+          },
+          "observed_state": {
+            "type": "string",
+            "title": "Observed State"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "config_version",
+          "desired_state",
+          "observed_state"
+        ],
+        "title": "GatewayRuntimeResponse"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1769,6 +2291,34 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LoginRequest": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "title": "Password",
+            "description": "Administrator password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "LoginRequest"
+      },
+      "LoginResponse": {
+        "properties": {
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token",
+            "description": "CSRF token for write requests"
+          }
+        },
+        "type": "object",
+        "required": [
+          "csrf_token"
+        ],
+        "title": "LoginResponse"
       },
       "ProfileCreateRequest": {
         "properties": {
@@ -2760,6 +3310,24 @@
         ],
         "title": "RuntimeObservedReportRequest"
       },
+      "SessionResponse": {
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "title": "Authenticated"
+          },
+          "csrf_token": {
+            "type": "string",
+            "title": "Csrf Token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authenticated",
+          "csrf_token"
+        ],
+        "title": "SessionResponse"
+      },
       "Tag": {
         "properties": {
           "tag": {
@@ -2895,10 +3463,78 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ValidationErrorResponse"
+      },
+      "ViewerAuthorizeRequest": {
+        "properties": {
+          "session_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Token"
+          },
+          "session_cookie": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Cookie"
+          },
+          "origin": {
+            "type": "string",
+            "title": "Origin"
+          },
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "origin",
+          "profile_id"
+        ],
+        "title": "ViewerAuthorizeRequest"
+      },
+      "ViewerAuthorizeResponse": {
+        "properties": {
+          "allowed": {
+            "type": "boolean",
+            "title": "Allowed"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "allowed"
+        ],
+        "title": "ViewerAuthorizeResponse"
       }
     },
     "securitySchemes": {
       "SupervisorServiceBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "GatewayServiceBearer": {
         "type": "http",
         "scheme": "bearer"
       }

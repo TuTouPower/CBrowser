@@ -1,0 +1,23 @@
+# 需求规范：访问控制与自动化凭证
+
+本文描述 t006 交付的用户鉴权、Viewer 授权与自动化凭证行为。前端登录界面由 t007、CDP 代理入口由 t008 对接；生效状态以 specs_index 为准。
+
+## 管理员与会话
+
+- 首次启动从外部文件读取管理员密码并以 Argon2id 保存；已有管理员时不覆盖。文件缺失、过短且库内无管理员时拒绝启动。
+- 登录成功设置 HttpOnly、Secure、SameSite=Strict 会话 Cookie 与 CSRF Cookie；错误密码 401，同一来源每分钟超过 5 次失败返回 429。登出与过期会话立即失效。
+- 未登录访问受保护 `/api/v1` 接口返回 401；写请求缺少或错误 CSRF、Origin 不在允许列表返回 403。允许 Origin 列表必须显式配置。
+
+## Viewer 信令授权
+
+- 打开 `/stream/{profileId}/signal` 前依次校验 Origin、登录会话与 Profile 存在性，再确认对应 Stream Agent 已注册且运行状态为 running；任一失败返回明确 HTTP 状态且不建立 WebSocket。
+- 前端可见响应不含 Selkies master token 或任何服务间凭证。
+
+## 自动化凭证
+
+- 登录用户可创建、列出、撤销自动化凭证；明文只在创建响应出现一次，列表不含明文。凭证限定 Profile 范围，撤销后立即失效。
+- 自动化授权允许无 Origin 的非浏览器客户端，但必须持有效凭证且 Profile 在授权范围内；登录 Cookie 不被接受。拒绝与生命周期事件写入审计，审计不泄漏秘密。
+
+## 验证
+
+真实 SQLite + HTTP 集成测试覆盖上述正负例；真实 HTTPS Cookie 属性、跨 Origin 与未授权 Profile 的信令拒绝由 Gateway E2E 在官方 Chrome 中验证。

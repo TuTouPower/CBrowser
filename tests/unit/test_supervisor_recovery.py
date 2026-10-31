@@ -172,6 +172,13 @@ def supervisor_setup(tmp_path: Path):
 
             return C()
 
+        def attach_profile_infrastructure(self, *args, **kwargs):
+            return {
+                "coturn_ip": "10.0.0.8",
+                "coturn_ice_address": "10.0.0.8:3478",
+                "ice_server": "turn:10.0.0.8:3478",
+            }
+
         async def teardown_profile(self, pid):
             pass
 
@@ -201,6 +208,7 @@ def supervisor_setup(tmp_path: Path):
         token_file=token_file,
         agent_key_file=agent_key_file,
         gateway_control=gw_control,
+        coturn_container_id="coturn_mock_id",
     )
 
     app = create_control_app(core, token_file)

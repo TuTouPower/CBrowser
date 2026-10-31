@@ -17,6 +17,11 @@ if [ -z "${CBROWSER_GATEWAY_URL:-}" ]; then
     exit 1
 fi
 
+if [ -z "${CBROWSER_CONFIG_VERSION:-}" ]; then
+    echo "CONFIG_ERROR: CBROWSER_CONFIG_VERSION is required" >&2
+    exit 1
+fi
+
 SELKIES_WEBRTC_PUBLIC_IP="${CBROWSER_WEBRTC_PUBLIC_IP:-}"
 if [ -z "$SELKIES_WEBRTC_PUBLIC_IP" ]; then
     echo "CONFIG_ERROR: CBROWSER_WEBRTC_PUBLIC_IP is required by Supervisor" >&2

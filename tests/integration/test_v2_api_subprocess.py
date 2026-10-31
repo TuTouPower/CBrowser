@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import socket
@@ -17,6 +18,13 @@ from typing import Any
 import httpx
 import jsonschema
 import pytest
+
+_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
 
 SCRATCH_DIR = (
     Path(__file__).resolve().parent.parent.parent / ".scratch" / "t002_implementation"
@@ -37,10 +45,18 @@ def find_free_port() -> int:
 
 
 class SubprocessServer:
-    def __init__(self, db_path: Path, port: int, log_path: Path):
+    def __init__(
+        self,
+        db_path: Path,
+        port: int,
+        log_path: Path,
+        auth_context: Any | None = None,
+    ):
         self.db_path = db_path
         self.port = port
         self.log_path = log_path
+        self.auth_context = auth_context
+        self.auth_headers: dict[str, str] = {}
         self.process: subprocess.Popen | None = None
         self._log_file = None
         self.base_url = f"http://127.0.0.1:{port}"
@@ -48,12 +64,26 @@ class SubprocessServer:
     def start(self):
         backend_dir = Path(__file__).resolve().parent.parent.parent / "src" / "backend"
         env = os.environ.copy()
+        for name in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ):
+            env.pop(name, None)
         env["PYTHONPATH"] = str(backend_dir)
         env["CBROWSER_DB_PATH"] = str(self.db_path)
         env["CBROWSER_PORT"] = str(self.port)
         env["CBROWSER_HOST"] = "127.0.0.1"
         env["UV_CACHE_DIR"] = str(SCRATCH_DIR / "uv_cache")
         env["TMPDIR"] = str(SCRATCH_DIR / "tmp")
+        if self.auth_context:
+            env["CBROWSER_ADMIN_PASSWORD_FILE"] = str(
+                self.auth_context.admin_password_file
+            )
+            env["CBROWSER_ALLOWED_ORIGINS"] = self.auth_context.allowed_origin
 
         self._log_file = self.log_path.open("a+", encoding="utf-8")
         python_bin = sys.executable
@@ -78,9 +108,13 @@ class SubprocessServer:
         deadline = time.time() + 10.0
         while time.time() < deadline:
             try:
-                with httpx.Client(timeout=1.0) as client:
+                with httpx.Client(timeout=1.0, trust_env=False) as client:
                     resp = client.get(f"{self.base_url}/api/v1/health")
                     if resp.status_code == 200:
+                        if self.auth_context:
+                            self.auth_headers = self.auth_context.login_sync(
+                                self.base_url
+                            )
                         return
             except (httpx.HTTPError, OSError):
                 time.sleep(0.1)
@@ -111,8 +145,9 @@ def server_harness() -> SubprocessServer:
     db_file = tmp_dir / "cbrowser_v2.db"
     log_file = tmp_dir / "server.log"
     port = find_free_port()
+    auth_ctx = create_auth_context(tmp_dir, origin=f"http://127.0.0.1:{port}")
 
-    server = SubprocessServer(db_file, port, log_file)
+    server = SubprocessServer(db_file, port, log_file, auth_context=auth_ctx)
     server.start()
     yield server
     server.stop()
@@ -137,7 +172,12 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
     AC-005: Database initialized from empty directory and accessed by independent process.
     """
     server = server_harness
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         # Verify empty dir DB initialized
         health = await client.get("/api/v1/health")
         assert health.status_code == 200
@@ -228,7 +268,12 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
     server.stop()
     server.start()
 
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         # Re-read profile after restart
         res_after_restart = await client.get(f"/api/v1/profiles/{pid}")
         assert res_after_restart.status_code == 200
@@ -264,7 +309,12 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
     and concurrent disjoint patches without lost updates.
     """
     server = server_harness
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         op_id = "op_idempotent_test_999"
         headers = {"Idempotency-Key": op_id}
 
@@ -357,7 +407,12 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
     server.stop()
     server.start()
 
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         versions = (await client.get(f"/api/v1/profiles/{pid}/versions")).json()
         assert len(versions) >= 3
 
@@ -394,7 +449,12 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
     secret_id_raw = "evt-SECRET_COOKIE_VAL_XYZ999"
 
     server = server_harness
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         # Create profile with injected secrets in config
         p_res = await client.post(
             "/api/v1/profiles",
@@ -696,7 +756,12 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
     lock_thread.start()
     await asyncio.sleep(0.1)  # Ensure lock is held
 
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         resp = await client.post(
             "/api/v1/profiles", json={"name": "Short Lock Profile"}
         )
@@ -719,7 +784,12 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
     await asyncio.sleep(0.1)
 
     t0 = time.time()
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=15.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=15.0,
+        trust_env=False,
+    ) as client:
         resp_timeout = await client.post(
             "/api/v1/profiles", json={"name": "Timeout Profile"}
         )
@@ -756,7 +826,12 @@ async def test_ac006_db_constraint_integrity_error_no_secret_leak_in_logs(
     server = server_harness
     secret = "ROOT_PRIVATE_SENTINEL_9b84"
 
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         # Trigger real SQLite IntegrityError (duplicate PK on profile_tags)
         failed = await client.post(
             "/api/v1/profiles",
@@ -799,7 +874,12 @@ async def test_ac006_duplicate_tags_with_busy_and_locked_keywords_return_409(
 ):
     """IntegrityError triggered by duplicate tags containing 'busy' or 'locked' must return 409, NOT 503."""
     server = server_harness
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url,
+        headers=server.auth_headers,
+        timeout=10.0,
+        trust_env=False,
+    ) as client:
         resp = await client.post(
             "/api/v1/profiles",
             json={

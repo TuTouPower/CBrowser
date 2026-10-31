@@ -7,8 +7,12 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 本文档明确区分系统当前代码实现与正式冻结的 v2 目标架构：
 
 - **现有运行基线（Existing Legacy Runtime）**：当前生产代码库（`src/backend`、`src/frontend`）仍维持旧单容器实现、KasmVNC/noVNC/RFB 协议代理、FastAPI WebSocket 逐帧处理与旧数据模型。在 t001 阶段，现有生产代码保持完全不变，不执行破坏性重构或代码删除。
+
 - **新增 v2 持久化基础（t002）**：`src/backend/cbrowser/api/main.py` 提供独立 `/api/v1` 入口，落实 Profile 配置/标签/不可变版本、运行意愿与观测状态、实例事件去重、SQLite WAL 与空库 Alembic 初始化。旧正式入口尚未切换；Docker 编排、认证、媒体与前端由后续 task 实施。该入口不得直接用于生产公开服务，正式鉴权与交付分别由 t006/t012 验收。
+
 - **冻结的 v2 目标架构（Frozen v2 Target Architecture）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、coturn、CDP UDS 等 9 大专题技术验证（s001–s009，d001–d014）后正式冻结的目标技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**后续任务（t002+）分步落地实施的目标契约**，**不代表上述完整拓扑已交付；当前已实现部分以本节任务状态为准**。
+
+- **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway 与 TURN 凭证轮换（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。正式前端、文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
 
 Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
 

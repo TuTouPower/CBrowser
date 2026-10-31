@@ -111,6 +111,43 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
     tracker = SandboxContainerTracker()
     d_client = docker.from_env()
 
+    turn_image = os.environ.get(
+        "CBROWSER_TURN_TEST_IMAGE",
+        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
+    )
+    d_client.images.get(turn_image)
+    turn_config = data_root / "turn.conf"
+    turn_config.write_text(
+        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
+        "no-cli\nno-tls\nno-dtls\n"
+        "static-auth-secret=" + secrets.token_hex(32) + "\n"
+    )
+    turn_config.chmod(0o644)
+    coturn = d_client.containers.run(
+        turn_image,
+        name=f"{prefix}-coturn",
+        detach=True,
+        read_only=True,
+        cap_drop=["ALL"],
+        cap_add=["NET_BIND_SERVICE"],
+        security_opt=["no-new-privileges:true"],
+        tmpfs={"/tmp": "rw,size=256m"},
+        entrypoint="/usr/bin/turnserver",
+        command=[
+            "-c",
+            "/etc/turnserver.conf",
+            "--relay-threads=1",
+            "--log-file=stdout",
+        ],
+        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
+        labels={
+            "com.cbrowser.prefix": prefix,
+            "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.role": "coturn",
+        },
+    )
+    tracker.track(coturn.id)
+
     gateway = OfflineGatewayMock(
         port=gw_port,
         credentials=AgentCredentials(agent_key_file),
@@ -144,6 +181,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         root=ROOT,
         env=clean_environ,
         log_path=sup_log,
+        coturn_container_id=coturn.id,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
@@ -153,6 +191,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         await gateway.start()
         api_proc.start()
         sup_proc.start()
+        api_headers.update(api_proc.auth_headers)
         async with httpx.AsyncClient(
             base_url=api_proc.url, headers=api_headers, trust_env=False
         ) as api_client:

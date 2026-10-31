@@ -1,0 +1,21 @@
+{
+  "tid": "t006",
+  "attempt": 1,
+  "execution_id": "79fa47d2f34e42f8b31f43ceb8cb52a9",
+  "status": "done",
+  "branch": "t006_v2_gateway_auth_rtc",
+  "base_sha": "c33e55f77cb221510396628e792a08b905b2ebe0",
+  "tests": "Controller gate round7 (.scratch/t006_gates/round7, all images rebuilt from current source; IDs in images.env) + round7b Gateway E2E rerun: contract 169, legacy backend 384, unit+integration 305, Runtime E2E 13, Stream E2E 14 (incl. real-SDK ICE commit wait, Selkies RTC config push, relay-only candidates), Supervisor lifecycle 6, startup recovery 2, container graph/infra 8, network policy 5, resource 5, Gateway E2E 5 (headless official Chrome via Caddy HTTPS: AC-001 cookie/CSRF/WS gates, AC-003 dual-page media/inputs/Gateway SIGKILL, AC-005 relay-only gen1 relay<->relay plus two rotations with new-ufrag relay pairs and fresh frames/audio, negative 401 subprocess, AC-007 per-peer STOP/START_VIDEO with reported visibility). OpenAPI/stream/supervisor schema exports identical; Ruff E/F/W/I at main baseline 16; ruff format, md_format, git diff --check passed.",
+  "blackbox": "Independent OpenCode Gemini blackbox in a validation worktree byte-identical to the candidate (98 files SHA-checked), self-built Browser/Stream/Gateway/Supervisor/API/Gateway-fixture images: documented gates passed with matching counts; own probes for AC-001..007 (cookie flags, CSRF 403, WS 401/403 with 503 control, secret scan; registration fields, immediate heartbeat, SIGKILL backoff 1.0/2.0s, stale instance close 1008; RTC credential format and retry; automation token revoke/scope/audit; visibility endpoint phases and commit ordering). No residual resources. Controller verified raw logs and JSON. Public ICE and native Linux x86_64 USER_WAIVED; capacity/P95/8h/1000-input belong to t009.",
+  "review": "Full Round1 code/test PASS (reviewed_scope 8a0b74f272c14c47); five minor findings (t006_code_f001..f004, t006_test_f001) deferred to p005; zero blocking.",
+  "pending": [
+    "p003",
+    "p004",
+    "p005"
+  ],
+  "findings": [
+    "d021",
+    "d022",
+    "d023"
+  ]
+}

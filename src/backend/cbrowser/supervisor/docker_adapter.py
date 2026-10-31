@@ -489,7 +489,7 @@ with path.open('w') as output:
     def attach_profile_infrastructure(
         self,
         profile_id: str,
-        gateway_container_id: str,
+        gateway_container_id: Optional[str],
         coturn_container_id: str,
         gateway_port: int = 18097,
         coturn_port: int = 3478,
@@ -504,7 +504,11 @@ with path.open('w') as output:
 
         self._require_network_ownership(net, net_name)
 
-        gw = self._validate_infra_container(gateway_container_id, "gateway")
+        gw = (
+            self._validate_infra_container(gateway_container_id, "gateway")
+            if gateway_container_id
+            else None
+        )
         coturn = self._validate_infra_container(coturn_container_id, "coturn")
 
         newly_connected: list[Any] = []
@@ -512,44 +516,58 @@ with path.open('w') as output:
             net.reload()
             connected_containers = net.attrs.get("Containers") or {}
 
-            for container in (gw, coturn):
+            targets = [c for c in (gw, coturn) if c is not None]
+            for container in targets:
                 if container.id not in connected_containers:
                     net.connect(container)
                     newly_connected.append(container)
                     net.reload()
                     connected_containers = net.attrs.get("Containers") or {}
 
-            gw.reload()
+            if gw:
+                gw.reload()
             coturn.reload()
-            gw_networks = gw.attrs.get("NetworkSettings", {}).get("Networks", {})
             coturn_networks = coturn.attrs.get("NetworkSettings", {}).get(
                 "Networks", {}
             )
-
-            gw_ip = gw_networks.get(net_name, {}).get("IPAddress")
             coturn_ip = coturn_networks.get(net_name, {}).get("IPAddress")
-
-            if not gw_ip or not coturn_ip:
+            if not coturn_ip:
                 net.reload()
                 c_map = net.attrs.get("Containers") or {}
-                if not gw_ip and gw.id in c_map:
-                    gw_ip = c_map[gw.id].get("IPv4Address", "").split("/")[0]
-                if not coturn_ip and coturn.id in c_map:
+                if coturn.id in c_map:
                     coturn_ip = c_map[coturn.id].get("IPv4Address", "").split("/")[0]
 
-            if not gw_ip or not coturn_ip:
+            if not coturn_ip:
                 raise DockerSandboxError(
-                    f"Failed to allocate or retrieve IPv4 addresses for "
-                    f"infrastructure on {net_name}"
+                    f"Failed to allocate or retrieve IPv4 address for "
+                    f"coturn on {net_name}"
                 )
 
-            return {
-                "gateway_ip": gw_ip,
+            gw_ip = None
+            if gw:
+                gw_networks = gw.attrs.get("NetworkSettings", {}).get("Networks", {})
+                gw_ip = gw_networks.get(net_name, {}).get("IPAddress")
+                if not gw_ip:
+                    net.reload()
+                    c_map = net.attrs.get("Containers") or {}
+                    if gw.id in c_map:
+                        gw_ip = c_map[gw.id].get("IPv4Address", "").split("/")[0]
+
+                if not gw_ip:
+                    raise DockerSandboxError(
+                        f"Failed to allocate or retrieve IPv4 address for "
+                        f"gateway on {net_name}"
+                    )
+
+            result = {
                 "coturn_ip": coturn_ip,
-                "gateway_url": f"ws://{gw_ip}:{gateway_port}",
                 "coturn_ice_address": f"{coturn_ip}:{coturn_port}",
                 "ice_server": f"turn:{coturn_ip}:{coturn_port}",
             }
+            if gw_ip:
+                result["gateway_ip"] = gw_ip
+                result["gateway_url"] = f"ws://{gw_ip}:{gateway_port}"
+            return result
         except Exception as exc:
             for c in newly_connected:
                 try:
@@ -802,6 +820,9 @@ with path.open('w') as output:
             "CBROWSER_PROFILE_ID": profile_id,
             "CBROWSER_RUNTIME_INSTANCE_ID": runtime_instance_id,
             "CBROWSER_GATEWAY_URL": gateway_url,
+            "CBROWSER_CONFIG_VERSION": b_inspect["Config"]["Labels"][
+                "com.cbrowser.config-version"
+            ],
             "CBROWSER_AGENT_SECRET_FILE": "/tmp/secret.txt",
             "CBROWSER_UDP_MUX_PORT": str(udp_mux_port),
             "CBROWSER_AUDIO_DEVICE": "cbrowser_sink.monitor",

@@ -1,5 +1,6 @@
 """Internal Supervisor RPC must authenticate over an actual HTTP process."""
 
+import importlib.util
 import os
 import secrets
 import socket
@@ -11,6 +12,13 @@ from pathlib import Path
 import httpx
 import pytest
 
+_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
+_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
+_auth_mod = importlib.util.module_from_spec(_auth_spec)
+sys.modules["api_auth"] = _auth_mod
+_auth_spec.loader.exec_module(_auth_mod)
+create_auth_context = _auth_mod.create_auth_context
+
 
 @pytest.fixture
 def supervisor_api(tmp_path: Path):
@@ -21,6 +29,7 @@ def supervisor_api(tmp_path: Path):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
+    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
     env = dict(os.environ)
     for name in (
         "HTTP_PROXY",
@@ -38,6 +47,7 @@ def supervisor_api(tmp_path: Path):
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(token_file),
+        **auth_ctx.env,
     )
     with (tmp_path / "server.log").open("w") as log:
         process = subprocess.Popen(
@@ -71,6 +81,8 @@ def supervisor_api(tmp_path: Path):
                     time.sleep(0.1)
                 else:
                     pytest.fail("isolated API process did not become ready")
+                auth_headers = auth_ctx.login_sync(f"http://127.0.0.1:{port}", client)
+                client.headers.update(auth_headers)
                 yield client, token
         finally:
             process.terminate()

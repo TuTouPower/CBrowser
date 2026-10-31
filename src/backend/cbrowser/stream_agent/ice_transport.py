@@ -55,6 +55,20 @@ EXPECTED_SELKIES_VERSION = "2.1.0"
 EXPECTED_WEBRTC_VERSION = "1.15.0"
 EXPECTED_ICE_VERSION = "0.10.2"
 
+_RELAY_ONLY: bool = False
+
+
+def set_relay_only(enabled: bool) -> None:
+    """Set whether new PeerConnections must only gather and use relay candidates."""
+    global _RELAY_ONLY
+    _RELAY_ONLY = bool(enabled)
+    logger.info("ICE transport relay_only policy set to: %s", _RELAY_ONLY)
+
+
+def is_relay_only() -> bool:
+    """Check whether relay_only ICE policy is active."""
+    return _RELAY_ONLY
+
 
 class UnsupportedSelkiesVersionError(RuntimeError):
     """Raised when runtime versions differ from the pinned Selkies ABI."""
@@ -246,9 +260,44 @@ class GenerationIceTransport(
         self.current_remote_ufrag: Optional[str] = None
         self.last_error: Optional[str] = None
 
+        self.relay_only: bool = _RELAY_ONLY
+        if self.relay_only:
+            if hasattr(gatherer, "_connection") and gatherer._connection is not None:
+                gatherer._connection._transport_policy = TransportPolicy.RELAY
+            self._wrap_gatherer_for_relay_only(gatherer)
+
         # Intercept before DTLS and Pacer capture them
         self._recv = self.receive_packet
         self._send = self.send_packet
+
+    def _wrap_gatherer_for_relay_only(self, gatherer: Any) -> None:
+        orig_gather = getattr(gatherer, "gather", None)
+        if orig_gather is None:
+            return
+
+        async def _relay_gather() -> None:
+            await orig_gather()
+            conn = getattr(gatherer, "_connection", None)
+            if conn is not None:
+                relay_cands = [
+                    c
+                    for c in getattr(conn, "local_candidates", [])
+                    if getattr(c, "type", None) == "relay"
+                ]
+                if not relay_cands:
+                    logger.error(
+                        "No relay candidates gathered in relay-only mode "
+                        "(gathered %d candidates)",
+                        len(getattr(conn, "local_candidates", [])),
+                    )
+                    raise RuntimeError("Relay candidates unavailable")
+                conn._local_candidates = relay_cands
+                logger.info(
+                    "Restricted peer candidates to %d relay candidates",
+                    len(relay_cands),
+                )
+
+        gatherer.gather = _relay_gather
 
     def __repr__(self) -> str:
         return (
@@ -300,10 +349,11 @@ class GenerationIceTransport(
 
             old_conn = self._connection
             next_generation = self.generation + 1
+            effective_force_relay = force_relay or self.relay_only or _RELAY_ONLY
             logger.info(
                 "Preparing ICE restart generation %d (force_relay=%s)",
                 next_generation,
-                force_relay,
+                effective_force_relay,
             )
 
             parsed_servers = validate_ice_servers(ice_servers)
@@ -324,7 +374,7 @@ class GenerationIceTransport(
             )
             new_gatherer._connection.ice_controlling = old_conn.ice_controlling
 
-            if force_relay:
+            if effective_force_relay:
                 new_gatherer._connection._transport_policy = TransportPolicy.RELAY
 
             # Candidate preparation is provisional. On failure or cancellation,
@@ -334,7 +384,7 @@ class GenerationIceTransport(
                 # Native gather owns provisional endpoints before registering
                 # them on Connection. Drain it before disposing after cancellation.
                 await asyncio.shield(gather_task)
-                if force_relay:
+                if effective_force_relay:
                     relay_cands = [
                         candidate
                         for candidate in new_gatherer._connection.local_candidates
@@ -517,17 +567,8 @@ def install_ice_transport() -> None:
     )
 
 
-async def create_restart_offer(
-    peer_connection: Any,
-    server_ice_servers: Optional[List[Union[dict, Any]]] = None,
-    force_relay: bool = False,
-) -> Any:
-    """Prepares the main existing transport on peer_connection for an ICE restart
-    generation,
-    creates an SDP offer on the existing RTCPeerConnection, sets localDescription,
-    and returns pc.localDescription.
-    Does NOT send network RPC (the caller handles forwarding to Gateway/Viewer).
-    """
+def _main_transport(peer_connection: Any) -> "GenerationIceTransport":
+    """Return the generation-aware ICE transport carrying the peer's bundle."""
     verify_selkies_abi_guard()
 
     if not hasattr(peer_connection, "_RTCPeerConnection__iceTransports"):
@@ -555,6 +596,21 @@ async def create_restart_offer(
             f" GenerationIceTransport. "
             "install_ice_transport() must be called before peer connection creation."
         )
+    return main_transport
+
+
+async def create_restart_offer(
+    peer_connection: Any,
+    server_ice_servers: Optional[List[Union[dict, Any]]] = None,
+    force_relay: bool = False,
+) -> Any:
+    """Prepares the main existing transport on peer_connection for an ICE restart
+    generation,
+    creates an SDP offer on the existing RTCPeerConnection, sets localDescription,
+    and returns pc.localDescription.
+    Does NOT send network RPC (the caller handles forwarding to Gateway/Viewer).
+    """
+    main_transport = _main_transport(peer_connection)
 
     # Prepare next generation on the existing transport
     await main_transport.prepare_restart(
@@ -571,13 +627,41 @@ async def create_restart_offer(
     return peer_connection.localDescription
 
 
+async def wait_restart_commit(peer_connection: Any, timeout: float) -> int:
+    """Wait until the pending ICE generation on peer_connection is committed.
+
+    Selkies runs connectivity checks for a remote answer in a background task,
+    so setRemoteDescription returning does not mean the new generation took
+    over. Returns the committed generation; raises ConnectionError when the
+    transport fails or the generation is not committed within timeout.
+    """
+    transport = _main_transport(peer_connection)
+    target = transport.generation
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while transport.restart_pending or transport.committed_generation < target:
+        if transport.state in ("failed", "closed"):
+            raise ConnectionError(
+                f"ICE generation {target} failed (state={transport.state})"
+            )
+        if loop.time() >= deadline:
+            raise ConnectionError(
+                f"ICE generation {target} not committed within {timeout:.0f}s"
+            )
+        await asyncio.sleep(0.05)
+    return transport.committed_generation
+
+
 __all__ = [
     "GenerationIceTransport",
     "install_ice_transport",
     "create_restart_offer",
+    "wait_restart_commit",
     "verify_selkies_abi_guard",
     "validate_ice_servers",
     "parse_ice_server",
+    "set_relay_only",
+    "is_relay_only",
     "UnsupportedSelkiesVersionError",
     "SelkiesABIGuardError",
 ]

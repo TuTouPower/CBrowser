@@ -22,7 +22,7 @@ def test_exported_stream_schema_matches_models():
     )
 
 
-def test_stream_schema_accepts_registration_ack_and_tunnel():
+def test_stream_schema_accepts_protocol_packets_without_visibility_update():
     schema = json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
     validator = Draft202012Validator(schema)
     identity = dict(
@@ -42,13 +42,22 @@ def test_stream_schema_accepts_registration_ack_and_tunnel():
         ),
         dict(
             identity,
-            action="visibility_update",
+            action="supervisor_quota",
             agent_session_id="session:1",
-            payload={"viewer_id": "viewer:1", "visible": True},
+            payload={"max_fps_cap": 15.0},
         ),
     ]
     for packet in packets:
         validator.validate(packet)
-    for invalid in [dict(packets[0], version="v1"), dict(packets[2], unexpected=True)]:
+    visibility = dict(
+        packets[3],
+        action="visibility_update",
+        payload={"viewer_id": "viewer:1", "visible": True},
+    )
+    for invalid in [
+        dict(packets[0], version="v1"),
+        dict(packets[2], unexpected=True),
+        visibility,
+    ]:
         with pytest.raises(ValidationError):
             validator.validate(invalid)

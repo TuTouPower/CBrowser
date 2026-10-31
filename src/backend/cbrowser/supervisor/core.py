@@ -94,10 +94,6 @@ class SupervisorCore:
         )
         self.gateway_control = gateway_control
         self.resource_monitor: ResourceMonitor | None = None
-        if bool(gateway_container_id) != bool(coturn_container_id):
-            raise ValueError(
-                "Gateway and coturn container IDs must be configured together"
-            )
         self.gateway_container_id = gateway_container_id
         self.coturn_container_id = coturn_container_id
 
@@ -454,10 +450,14 @@ class SupervisorCore:
 
             try:
                 # A bound attempt must report failure even before Docker creation.
+                if not self.coturn_container_id:
+                    raise DockerSandboxError(
+                        "coturn infrastructure container is required to start runtime"
+                    )
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
                 media_addresses = None
-                if self.gateway_container_id and self.coturn_container_id:
+                if self.coturn_container_id:
                     media_addresses = await asyncio.to_thread(
                         self.docker.attach_profile_infrastructure,
                         profile_id,
@@ -500,10 +500,9 @@ class SupervisorCore:
                     browser_container_name=b_container.name,
                     udp_mux_port=port,
                     gateway_url=(
-                        media_addresses["gateway_url"]
-                        if media_addresses
-                        else self.gateway_url
-                    ),
+                        media_addresses.get("gateway_url") if media_addresses else None
+                    )
+                    or self.gateway_url,
                     agent_secret_path=agent_secret,
                     media_addresses=media_addresses,
                 )
