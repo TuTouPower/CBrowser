@@ -34,6 +34,9 @@
     - r5（2026-10-31T06:17:00+08:00，同 session，pid 72835，日志 `t006_e2e2_r5.jsonl`，prompt `t006_e2e2_resume4.md`）：完成 AC-005（含 total-quota 负例）并用当前镜像复跑 AC-001/003/007。
     - r5 结果：修复后 relay-only 初始连接与第 2 代 Agent 侧提交已通，同 PC/Track 保持；卡在 Chrome 选中对新 ufrag 判据、初始连接偶发失败（疑为短轮换参数下初始 checking 期间即触发重启）与负例退避日志读取。主控 07:20 中断。
     - r6（2026-10-31T07:20:54+08:00，同 session，pid 89598，日志 `t006_e2e2_r6.jsonl`，prompt `t006_e2e2_resume5.md`）：按 t004 chrome_relay 流程从 restart offer 取 ufrag 判定新代选中对、首轮换到期安排在出帧之后、核对退避日志输出。
+    - E2E lane 已收尾并 retire（交付合入 t006 WT，主控加强 AC-005/007 断言；证据 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_e2e2/`）。
+- 门禁：脚本 `.scratch/v2_orchestration/gates/run_gates_t006.sh`（每轮复制到 `CBrowser_t006/.scratch/t006_gates/run_roundN.sh`，环境 `GATE_ROOT/GATE_LANE/GATE_BASE=c33e55f/RUFF_BASELINE=16`）。round1–4 因 BuildKit 直连 Docker Hub 失败（已预拉前端与基础镜像、build 加重试）；round5 失败项与处置见 t006 note「门禁 round1–5 与修正」：stream_e2e 环境输入与 gateway 资源清单、OpenAPI 导出依赖已由主控修正，sup_lifecycle 6 项交 Gemini lane。
+- 运行中的子 agent：Gemini lane `t006_supfix`（2026-10-31T08:2x 派发，pid 10518，session ses_e70a63f01ffeR7qLMV1A8vV5Pl，WT /Users/karson/kar/code/CBrowser_t006_supfix，日志 `.scratch/v2_orchestration/t006_supfix_r1.jsonl`，prompt `t006_dispatch/t006_supfix_prompt.md`）：coturn 必需、gateway 基础设施可选、缺 coturn 启动前显式失败；t005 生命周期 E2E 提供真实 coturn 容器并补漏掉的登录头。用户 08:2x 提醒应多用 Gemini 子代理实现，主控只做派发与复核。
 - 下一步：
     1. 等 E2E lane 交付；主控逐行审查并亲自复跑，核原始 JSON（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性、visibility 端点原始响应），增量合入 t006 WT 后 retire。
     2. 复制 `.scratch/v2_orchestration/gates/run_gates_template.sh` 快照跑全套门禁，补 Gateway 镜像构建与 Gateway E2E；Stream/Gateway/Supervisor/API 镜像用当前源重建（不得复用下方临时镜像）；testing.md 补 Gateway E2E 命令。
