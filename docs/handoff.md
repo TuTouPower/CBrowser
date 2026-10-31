@@ -40,6 +40,8 @@
 
 - 2026-10-31T17:42:33+08:00：fe_e2e 完成（完整真实栈无头 E2E 5 passed，修复 PUT→PATCH、协调错误展示、诊断操作），已复核、合入 t007 WT 并 retire（证据 `CBrowser_t007/.scratch/lane_evidence/fe_e2e/`）；主控修正生成类型未重生成与硬编码文案。t007 全量门禁 r1 运行中（`.scratch/v2_orchestration/gates/run_gates_t007_r1.sh`，输出 `CBrowser_t007/.scratch/project_gates/r1/summary.txt`，持有 Docker 锁）。主控评审另发现两项 important，派 DeepSeek lane：adapter（opencode pid 30796，session ses_e6eac8d22ffeQBOIwi5BxNqCg6，WT `/Users/karson/kar/code/CBrowser_t007_adapter`，适配层收敛为 `adapter.ts` 单一来源）、auth（pid 32410，WT `/Users/karson/kar/code/CBrowser_t007_auth`，登录守卫/401 跳转/SSE 仅认证后运行）。t007 finalization 文档（frontend blueprint、profile_management spec、architecture 5.5、旧 chrome_external_tabs spec 归档）已写入 t007 WT。p005 不在 t007 契约内，保持开放。
 
+- 2026-10-31T20:41:00+08:00：adapter、auth lane 已合入 t007 WT 并 retire（Vitest 82 passed）。门禁 r2（`CBrowser_t007/.scratch/project_gates/r2/`）除 coordinator E2E 因门禁脚本缺依赖外全部通过，补依赖复跑 1 passed（`r2_rerun/`）；门禁模板已修 PYTHONPATH/依赖、调整 vendor→build 顺序、增加前端生成类型漂移检查。lane 曾把编排 Docker 锁写进测试导致门禁自锁，已删除。AC 复核发现阻断缺口，派 DeepSeek lane：display（opencode pid 13335，session ses_e6e060640ffeZ0Svj3UCKCKDSJ，AC-004 Stream 分辨率写死 1920×1080 与“明确应用”）、media（pid 13336，session ses_e6e060645ffe92qomNF97ILFR5，经完整应用的可见性、AC-005 独立静音/内部标签页同步/音频故障状态）。
+
 - 读 `docs/tasks/t007_v2_frontend_sessions/task.md` 与 `.scratch/v2_orchestration/t007/contract_draft.md`（已按 9.3/p003/p004 修订）。开工前定案 p004（Selkies token）与 p003 是否纳入 t007 范围；t007 AC-008 显式 `SELKIES_ENABLE_DUAL_MODE=false`；前端适配层须在官方 `setConfiguration` 后保持 Gateway 下发配置（d022）；可复用 `tests/fixtures/gateway_probe/` 拓扑做真实栈 E2E（无头）。
 
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（来源不明）、容器 test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。本地临时镜像（t006-*、cbrowser-gate-*、t005-\* 等）可由源码重建，未清理。
