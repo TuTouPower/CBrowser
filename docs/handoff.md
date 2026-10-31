@@ -2,7 +2,7 @@
 
 本文件只保留当前有效一节。过时段落迁入 `docs/archive/handoff.md`（Codex 主控时期的 t001–t005 过程记录已整体迁档）。
 
-## 2026-10-31T14:40:00+08:00 v2 架构计划执行交接（t006 已合入；下一步 t007）
+## 2026-10-31T14:38:15+08:00 v2 架构计划执行交接（t006 已合入；t007 已开工）
 
 - branch：main
 - head_commit：ceb7f34（merge(t006)；执行 commit 251fa0f）
@@ -24,7 +24,10 @@
 - 门禁脚本 `.scratch/v2_orchestration/gates/run_gates_t006.sh`（每轮复制到目标 WT `.scratch/` 后执行，环境 `GATE_ROOT/GATE_LANE/GATE_BASE/RUFF_BASELINE`；构建带退避重试；Gateway E2E 需 `CBROWSER_GATEWAY_IMAGE`、`CBROWSER_CADDY_TEST_IMAGE`）。本机 BuildKit 直连 Docker Hub 不稳：构建失败先 `docker pull` 对应基础镜像或 `docker/dockerfile:1.4`（守护进程走代理可用）。
 - lane 工具：`lane_worktrees.py create/diff/retire`、`lane_resync.py`（任务 WT → lane WT 同步并记 lane 基线提交）、`dispatch.py`（`--allow` 只给编辑权限，可写的既有文件必须同时 `--unguard`，否则 SHA 守卫会中断 lane；并行 reviewer 须互相 unguard 报告）。中断 lane 后须确认 opencode 进程已退出再续行。zsh 不对未加引号变量分词，多参数用 bash -c 或 Python。
 
-### 下一步：t007（前端会话）
+### t007（前端会话）
+
+- 2026-10-31T14:38:57+08:00 start + reserve：branch=t007_v2_frontend_sessions，worktree=/Users/karson/kar/code/CBrowser_t007，diff_anchor=077778f；attempt1 / execution_id=1a08cbc562094e73ae64c8039127ed0a / owner_id=claude_v2_6e1f7a8e7a46（14:39:02 claim）。不得重复 start/reserve。范围已扩展纳入 p003（API→Supervisor 启停，AC-009）与 p004（Selkies 每 Profile token，AC-010），见 077778f。
 
 - 读 `docs/tasks/t007_v2_frontend_sessions/task.md` 与 `.scratch/v2_orchestration/t007/contract_draft.md`（已按 9.3/p003/p004 修订）。开工前定案 p004（Selkies token）与 p003 是否纳入 t007 范围；t007 AC-008 显式 `SELKIES_ENABLE_DUAL_MODE=false`；前端适配层须在官方 `setConfiguration` 后保持 Gateway 下发配置（d022）；可复用 `tests/fixtures/gateway_probe/` 拓扑做真实栈 E2E（无头）。
+
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（来源不明）、容器 test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。本地临时镜像（t006-*、cbrowser-gate-*、t005-\* 等）可由源码重建，未清理。
