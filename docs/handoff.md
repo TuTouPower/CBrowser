@@ -9,7 +9,7 @@
 - 工作树：只剩主仓 main；无 task/lane 分支；无运行中的子 agent。
 - 执行目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`）完成 `docs/v2_architecture_plan.md`，每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Chrome 访问。禁止 push 与外部发布。`task.py goal-check`：GOAL_QUEUE_INCOMPLETE 1/9 closed。
 - 已定决策：重试 2/10/30 秒、failure_count=4 阻断（ADR 008）；管理员密码 `data/secrets/admin_password`（只在生产首次启动读取）；公网 WebRTC/TURN 与原生 Linux x86_64 为 NOT_RUN / USER_WAIVED；性能按本机 OrbStack + Chrome 实跑；计划修订 9.3 已获批。
-- 用户要求（2026-10-31）：所有浏览器测试一律无头、不得弹窗或抢前台（见 d023 与记忆）；实现工作交 Gemini 子代理（OpenCode `cpa/gemini-3.8-flash --variant high`），主控只做派发、整合、复核与门禁。
+- 用户要求（2026-10-31）：所有浏览器测试一律无头、不得弹窗或抢前台（见 d023 与记忆）；实现工作交 Gemini 子代理（OpenCode `cpa/gemini-3.8-flash --variant high`），主控只做派发、整合、复核与门禁。用户 2026-10-31 追加：Gemini 额度用尽时改用 `opencode-go/deepseek-v4.1-flash`（两者均获准；wrapper 读 `OPENCODE_LANE_MODEL`/`OPENCODE_LANE_VARIANT`，DeepSeek `--variant high` 冒烟通过）。
 - 主控会话 owner_id：`.scratch/v2_orchestration/claude_owner_id.txt`（claude_v2_6e1f7a8e7a46）。
 
 ### t006 结果
