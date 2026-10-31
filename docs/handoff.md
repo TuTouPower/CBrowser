@@ -38,6 +38,8 @@
 
 - 2026-10-31T16:5x：be_coord、stream_tokens 已复核并合入 t007 WT（后端 unit+integration 336 passed），全部 lane WT 已 retire；t007 WT 新文件已 `git add -N`（lane 种子只含已跟踪/意图添加的文件）。派发完整前端真实栈 E2E lane `t007_fe_e2e`（DeepSeek，opencode pid 14471，session ses_e6ed7fc48ffetsFEvPOyA6HQW9，WT /Users/karson/kar/code/CBrowser_t007_fe_e2e，日志 `t007_fe_e2e_r1.jsonl`）。待办：API Runtime Coordinator 为可选启用（`CBROWSER_SUPERVISOR_URL` + `CBROWSER_REQUIRE_SUPERVISOR=1`），t012 生产编排必须设置；`last_coordinator_error` 仅存内存。
 
+- 2026-10-31T17:42:33+08:00：fe_e2e 完成（完整真实栈无头 E2E 5 passed，修复 PUT→PATCH、协调错误展示、诊断操作），已复核、合入 t007 WT 并 retire（证据 `CBrowser_t007/.scratch/lane_evidence/fe_e2e/`）；主控修正生成类型未重生成与硬编码文案。t007 全量门禁 r1 运行中（`.scratch/v2_orchestration/gates/run_gates_t007_r1.sh`，输出 `CBrowser_t007/.scratch/project_gates/r1/summary.txt`，持有 Docker 锁）。主控评审另发现两项 important，派 DeepSeek lane：adapter（opencode pid 30796，session ses_e6eac8d22ffeQBOIwi5BxNqCg6，WT `/Users/karson/kar/code/CBrowser_t007_adapter`，适配层收敛为 `adapter.ts` 单一来源）、auth（pid 32410，WT `/Users/karson/kar/code/CBrowser_t007_auth`，登录守卫/401 跳转/SSE 仅认证后运行）。t007 finalization 文档（frontend blueprint、profile_management spec、architecture 5.5、旧 chrome_external_tabs spec 归档）已写入 t007 WT。p005 不在 t007 契约内，保持开放。
+
 - 读 `docs/tasks/t007_v2_frontend_sessions/task.md` 与 `.scratch/v2_orchestration/t007/contract_draft.md`（已按 9.3/p003/p004 修订）。开工前定案 p004（Selkies token）与 p003 是否纳入 t007 范围；t007 AC-008 显式 `SELKIES_ENABLE_DUAL_MODE=false`；前端适配层须在官方 `setConfiguration` 后保持 Gateway 下发配置（d022）；可复用 `tests/fixtures/gateway_probe/` 拓扑做真实栈 E2E（无头）。
 
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（来源不明）、容器 test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。本地临时镜像（t006-*、cbrowser-gate-*、t005-\* 等）可由源码重建，未清理。
