@@ -36,6 +36,8 @@
 
 - 2026-10-31T16:2x：fe_session 已合入 t007 WT 并 retire（合并前端 Vitest 72 passed、构建成功）。be_coord 与 stream_tokens 自约 15:37 起模型请求挂起（Gemini 额度耗尽），主控停止进程、按前缀清理两者遗留的 10 个测试容器与网络，改用 `opencode-go/deepseek-v4.1-flash` 在原会话续行：be_coord opencode pid 92666（session ses_e6f4e8ca8ffeBbx5Peyv4NJHR6，日志 `t007_be_coord_r2.jsonl`），stream_tokens pid 92665（session ses_e6f37c365ffeqir0wNKzeCRmLv，日志 `t007_stream_tokens_r2.jsonl`）。`watch_lanes.py` 已加日志 10 分钟无更新的 STALL 报警。
 
+- 2026-10-31T16:5x：be_coord、stream_tokens 已复核并合入 t007 WT（后端 unit+integration 336 passed），全部 lane WT 已 retire；t007 WT 新文件已 `git add -N`（lane 种子只含已跟踪/意图添加的文件）。派发完整前端真实栈 E2E lane `t007_fe_e2e`（DeepSeek，opencode pid 14471，session ses_e6ed7fc48ffetsFEvPOyA6HQW9，WT /Users/karson/kar/code/CBrowser_t007_fe_e2e，日志 `t007_fe_e2e_r1.jsonl`）。待办：API Runtime Coordinator 为可选启用（`CBROWSER_SUPERVISOR_URL` + `CBROWSER_REQUIRE_SUPERVISOR=1`），t012 生产编排必须设置；`last_coordinator_error` 仅存内存。
+
 - 读 `docs/tasks/t007_v2_frontend_sessions/task.md` 与 `.scratch/v2_orchestration/t007/contract_draft.md`（已按 9.3/p003/p004 修订）。开工前定案 p004（Selkies token）与 p003 是否纳入 t007 范围；t007 AC-008 显式 `SELKIES_ENABLE_DUAL_MODE=false`；前端适配层须在官方 `setConfiguration` 后保持 Gateway 下发配置（d022）；可复用 `tests/fixtures/gateway_probe/` 拓扑做真实栈 E2E（无头）。
 
 - 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（来源不明）、容器 test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。本地临时镜像（t006-*、cbrowser-gate-*、t005-\* 等）可由源码重建，未清理。
