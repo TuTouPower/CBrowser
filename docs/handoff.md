@@ -1,42 +1,27 @@
 # 项目交接记录（最新）
 
-本文件只保留当前有效一节。过时段落迁入 `docs/archive/handoff.md`（上一节 2026-10-31T14:38:15+08:00 已于本次交接追加归档）。
+本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-01T07:17:23+08:00 主控交接给下一位 coding agent（t007 已提交未合并；队列 2/9）
+## 2026-11-01T07:58:10+08:00 t007 已合入，准备 t001–t007 累计四模型审阅
 
-### 一、当前状态（接手先读，先核对再动手）
+### 一、当前状态
 
-- branch：main，工作区干净（本 handoff 提交之后）。t007 **尚未合入 main**：`task.py integrate` 曾把合并结果暂存，合并后门禁开跑后被用户叫停，主控按工具指引 `git merge --abort` 撤销，main 回到合并前状态。
-- t007 执行 commit：`faee1f3`，分支 `t007_v2_frontend_sessions`（first parent = diff_anchor `077778f`），已 finish（task 目录在该分支的 `docs/archive/tasks/t007_v2_frontend_sessions/`）。identity：attempt=1，execution_id=`1a08cbc562094e73ae64c8039127ed0a`，owner_id=`claude_v2_6e1f7a8e7a46`（`.scratch/v2_orchestration/claude_owner_id.txt`）。ledger 已有 terminal=completed、report=done（sha faee1f3）、worktree cleanup 完成；`task.py recovery t007` = phase closed。
-- 工作树：只剩主仓 main；t007 与全部 lane worktree 已 remove + prune；无运行中的子代理；Docker 锁 `.scratch/v2_orchestration/docker_e2e.lock` 已释放；无本任务残留容器/网络。
-- `task.py goal-check`：GOAL_QUEUE_INCOMPLETE 2/9 closed。
+- branch：main；head_commit：`f420d7fb0767d1768a22a57ce552b21d86d62a72`（t007 merge，本文另行提交）。
+- t001–t007 全部 done 且已合入 main。t007 执行 commit `faee1f3`，本次 merge commit `f420d7f`；`t007_v2_frontend_sessions` 已由 integrate 删除，仅剩 main 与主 worktree。
+- t007 exact identity：attempt=1，execution_id=`1a08cbc562094e73ae64c8039127ed0a`；原执行 owner_id=`claude_v2_6e1f7a8e7a46`。本次沿原 identity 完成集成，未创建新 attempt。
+- 合并后门禁：`.scratch/t007_postmerge/codex_pm1/summary.txt`，35 步全部 rc=0；六个镜像当前源码构建，ID 在同目录 `images.env`。契约 168 passed / 1 skipped，旧后端 384、unit 307、integration 55、Vitest 105；Runtime 13、Stream 19、Supervisor 生命周期 6 / 启动恢复 2 / 拓扑 8 / 网络策略 5 / 资源 5、Gateway 5、前端 E2E 22 全部通过。本轮无失败复跑；schema/codegen、Ruff、文档格式、diff、既有服务 health 与模板状态均通过。
+- 门禁 runner 快照：`.scratch/v2_orchestration/gates/run_gates_t007_codex_pm1.sh`；输出 `.scratch/v2_orchestration/gates/t007_codex_pm1.out`。Docker 测试锁已释放。
+- `task.py goal-check`：t006/t007 均 integrated，GOAL_QUEUE_INCOMPLETE 2/9 closed；后续七项无 attempt。
 
-### 二、立即要做的事（按顺序）
+### 二、本次后续工作
 
-1. 重新集成 t007（幂等重入）：`python3 .repo_template/scripts/task.py integrate --attempt 1 --execution-id 1a08cbc562094e73ae64c8039127ed0a t007`，输出“合并结果已准备但尚未 commit”。此时**不要改 main 上任何受控文件**（会混入 merge commit 或被 staged 范围校验拒绝）。
+1. 用户要求按 `/Users/karson/kar/code/my_file/coding_agent/skills_mine/my-review/SKILL.md` 将 t001–t007 **全部累计改动合在一起审阅，不按 task 拆分**。
+2. 四路：Codex `gpt-6.1-sol`、OpenCode `cpa/gemini-3.8-flash`、`opencode-go/deepseek-v4.1-flash`、`opencode-go/muse-spark-1.3-contributor`；思考强度全部 high。用户确认每路上限 60 分钟。
+3. 每路审同一冻结累计范围，以 t001 diff_anchor `3c8bdbc55570e85aaeb6365a3d512da9c0ce180c` 为基线，target 为本次交接提交后的 main。只读源码，仅写独立 review 报告；不做修复、不启动 t008、不 push。
+4. my-review 原脚本仅内置 Claude/Kimi/Grok 路由；已向用户说明按指定 Codex/OpenCode 派发，保留输出目录、独立报告与超时状态流程。
+5. 审阅完成后报告各路实际完成/超时情况与文件位置，不合并各路结论。审阅产物位置与运行状态以 `docs/reviews/review_*/_meta/_meta.json` 为准。
 
-2. 跑合并后门禁（约 35 分钟）：
-
-    ```bash
-    O=/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration
-    cp $O/gates/run_gates_t007.sh $O/gates/run_gates_t007_pm2.sh
-    until mkdir $O/docker_e2e.lock 2>/dev/null; do sleep 20; done
-    cd /Users/karson/kar/code/CBrowser && GATE_ROOT=/Users/karson/kar/code/CBrowser \
-      GATE_LANE=/Users/karson/kar/code/CBrowser/.scratch/t007_postmerge GATE_BASE=<integrate 前的 main HEAD> RUFF_BASELINE=0 \
-      bash $O/gates/run_gates_t007_pm2.sh pm2 > $O/gates/t007_pm2.out 2>&1
-    rmdir $O/docker_e2e.lock
-    grep -v " rc=0 " .scratch/t007_postmerge/pm2/summary.txt
-    ```
-
-    预期：主仓 contract 可能为 168 passed + 1 skipped（t006 合并后同样，属主仓预期）；`health` 检查旧 cbrowser 容器 56661 端口。已知偶发项见第六节，失败先单独复跑归因，不要放宽断言。
-
-3. 门禁通过：`python3 .repo_template/scripts/task.py integrate --attempt 1 --execution-id 1a08cbc562094e73ae64c8039127ed0a --continue t007`（生成 merge commit 并删除已合入分支）。出现真实失败：`git merge --abort`，按流程处理（已提交分支不得擅自 amend，需用户同意）。
-
-4. 合并后更新本文件并单独提交 docs；`task.py goal-check` 核对进度。
-
-5. 开 t008（见第四节）。
-
-### 三、执行目标与硬约束（用户原始要求，全部仍然有效）
+### 三、执行目标与硬约束（原升级目标；本次只授权合入 t007 与累计审阅）
 
 - 目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`，不得改成员与顺序；t013/t014 串行）完成 `docs/v2_architecture_plan.md`；每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Google Chrome 访问（登录 → 选 Profile → WebRTC 浏览）。完成判据：14 个 task 全部 done 并合入；只剩 main 分支与主 worktree；旧 VNC/RFB/原生桌面移除；生产构建本机可用；门禁与黑盒主控复核；`task.py goal-check` 输出 GOAL_QUEUE_COMPLETE。最终报告列每 task 的 commit、验证证据、USER_WAIVED 项与残余风险。
 - 只能写 `~/kar/code` 以内；临时文件写各 worktree 的 `.scratch/`，不写 /tmp、~/.cache。
