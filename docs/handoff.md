@@ -1,47 +1,88 @@
 # 项目交接记录（最新）
 
-本文件只保留当前有效一节。过时段落迁入 `docs/archive/handoff.md`（Codex 主控时期的 t001–t005 过程记录已整体迁档）。
+本文件只保留当前有效一节。过时段落迁入 `docs/archive/handoff.md`（上一节 2026-10-31T14:38:15+08:00 已于本次交接追加归档）。
 
-## 2026-10-31T14:38:15+08:00 v2 架构计划执行交接（t006 已合入；t007 已开工）
+## 2026-11-01T07:17:23+08:00 主控交接给下一位 coding agent（t007 已提交未合并；队列 2/9）
 
-- branch：main
-- head_commit：ceb7f34（merge(t006)；执行 commit 251fa0f）
-- 工作树：只剩主仓 main；无 task/lane 分支；无运行中的子 agent。
-- 执行目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`）完成 `docs/v2_architecture_plan.md`，每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Chrome 访问。禁止 push 与外部发布。`task.py goal-check`：GOAL_QUEUE_INCOMPLETE 1/9 closed。
-- 已定决策：重试 2/10/30 秒、failure_count=4 阻断（ADR 008）；管理员密码 `data/secrets/admin_password`（只在生产首次启动读取）；公网 WebRTC/TURN 与原生 Linux x86_64 为 NOT_RUN / USER_WAIVED；性能按本机 OrbStack + Chrome 实跑；计划修订 9.3 已获批。
-- 用户要求（2026-10-31）：所有浏览器测试一律无头、不得弹窗或抢前台（见 d023 与记忆）；实现工作交 Gemini 子代理（OpenCode `cpa/gemini-3.8-flash --variant high`），主控只做派发、整合、复核与门禁。用户 2026-10-31 追加：Gemini 额度用尽时改用 `opencode-go/deepseek-v4.1-flash`（两者均获准；wrapper 读 `OPENCODE_LANE_MODEL`/`OPENCODE_LANE_VARIANT`，DeepSeek `--variant high` 冒烟通过）。
-- 主控会话 owner_id：`.scratch/v2_orchestration/claude_owner_id.txt`（claude_v2_6e1f7a8e7a46）。
+### 一、当前状态（接手先读，先核对再动手）
 
-### t006 结果
+- branch：main，工作区干净（本 handoff 提交之后）。t007 **尚未合入 main**：`task.py integrate` 曾把合并结果暂存，合并后门禁开跑后被用户叫停，主控按工具指引 `git merge --abort` 撤销，main 回到合并前状态。
+- t007 执行 commit：`faee1f3`，分支 `t007_v2_frontend_sessions`（first parent = diff_anchor `077778f`），已 finish（task 目录在该分支的 `docs/archive/tasks/t007_v2_frontend_sessions/`）。identity：attempt=1，execution_id=`1a08cbc562094e73ae64c8039127ed0a`，owner_id=`claude_v2_6e1f7a8e7a46`（`.scratch/v2_orchestration/claude_owner_id.txt`）。ledger 已有 terminal=completed、report=done（sha faee1f3）、worktree cleanup 完成；`task.py recovery t007` = phase closed。
+- 工作树：只剩主仓 main；t007 与全部 lane worktree 已 remove + prune；无运行中的子代理；Docker 锁 `.scratch/v2_orchestration/docker_e2e.lock` 已释放；无本任务残留容器/网络。
+- `task.py goal-check`：GOAL_QUEUE_INCOMPLETE 2/9 closed。
 
-- attempt1 / execution 79fa47d2f34e42f8b31f43ceb8cb52a9：terminal=completed、report=done、执行 commit 251fa0f（first parent c33e55f）、merge ceb7f34；worktree exact cleanup，分支已删。
-- 验证：门禁 round7 + round7b（Gateway E2E 复跑）全部通过；独立 Gemini 黑盒在逐字节等同候选的 WT 自建镜像，文档门禁同数通过且 7 条 AC 自写探针正负例通过；Full Round1 code/test 两路 PASS（5 minor 遗留 p005），check_review_status overall=PASS。合并后门禁（`.scratch/t006_postmerge/pm1/`）29/29 通过（contract 168+1 skipped 为主仓预期）。证据备份 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006{,_e2e2,_supfix,_relay,_blackbox}/`。
-- 审查中发现并修复的生产缺陷：answer 转发即提交（d021）、Stream 侧 TURN 未进入 Selkies 且吞异常（d022）、对未建立 PC 发起重启、relay-only 初始连接非 relay、Supervisor 缺 coturn 时启动必然退出的 Stream（coturn 必需、gateway 基础设施可选）。
-- 遗留：p001、p003（API→Supervisor 启停协调，t007/t012 前必须补）、p004（Selkies 每 Profile token，t007 前定案）、p005（t006 评审 minor，t007 内处理 f001/f003）。
+### 二、立即要做的事（按顺序）
 
-### 门禁工具
+1. 重新集成 t007（幂等重入）：`python3 .repo_template/scripts/task.py integrate --attempt 1 --execution-id 1a08cbc562094e73ae64c8039127ed0a t007`，输出“合并结果已准备但尚未 commit”。此时**不要改 main 上任何受控文件**（会混入 merge commit 或被 staged 范围校验拒绝）。
 
-- 门禁脚本 `.scratch/v2_orchestration/gates/run_gates_t006.sh`（每轮复制到目标 WT `.scratch/` 后执行，环境 `GATE_ROOT/GATE_LANE/GATE_BASE/RUFF_BASELINE`；构建带退避重试；Gateway E2E 需 `CBROWSER_GATEWAY_IMAGE`、`CBROWSER_CADDY_TEST_IMAGE`）。本机 BuildKit 直连 Docker Hub 不稳：构建失败先 `docker pull` 对应基础镜像或 `docker/dockerfile:1.4`（守护进程走代理可用）。
-- lane 工具：`lane_worktrees.py create/diff/retire`、`lane_resync.py`（任务 WT → lane WT 同步并记 lane 基线提交）、`dispatch.py`（`--allow` 只给编辑权限，可写的既有文件必须同时 `--unguard`，否则 SHA 守卫会中断 lane；并行 reviewer 须互相 unguard 报告）。中断 lane 后须确认 opencode 进程已退出再续行。zsh 不对未加引号变量分词，多参数用 bash -c 或 Python。
+2. 跑合并后门禁（约 35 分钟）：
 
-### t007（前端会话）
+    ```bash
+    O=/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration
+    cp $O/gates/run_gates_t007.sh $O/gates/run_gates_t007_pm2.sh
+    until mkdir $O/docker_e2e.lock 2>/dev/null; do sleep 20; done
+    cd /Users/karson/kar/code/CBrowser && GATE_ROOT=/Users/karson/kar/code/CBrowser \
+      GATE_LANE=/Users/karson/kar/code/CBrowser/.scratch/t007_postmerge GATE_BASE=<integrate 前的 main HEAD> RUFF_BASELINE=0 \
+      bash $O/gates/run_gates_t007_pm2.sh pm2 > $O/gates/t007_pm2.out 2>&1
+    rmdir $O/docker_e2e.lock
+    grep -v " rc=0 " .scratch/t007_postmerge/pm2/summary.txt
+    ```
 
-- 2026-10-31T14:38:57+08:00 start + reserve：branch=t007_v2_frontend_sessions，worktree=/Users/karson/kar/code/CBrowser_t007，diff_anchor=077778f；attempt1 / execution_id=1a08cbc562094e73ae64c8039127ed0a / owner_id=claude_v2_6e1f7a8e7a46（14:39:02 claim）。不得重复 start/reserve。范围已扩展纳入 p003（API→Supervisor 启停，AC-009）与 p004（Selkies 每 Profile token，AC-010），见 077778f。
+    预期：主仓 contract 可能为 168 passed + 1 skipped（t006 合并后同样，属主仓预期）；`health` 检查旧 cbrowser 容器 56661 端口。已知偶发项见第六节，失败先单独复跑归因，不要放宽断言。
 
-- 2026-10-31T14:41 派发四个并行 Gemini lane（各自 WT `/Users/karson/kar/code/CBrowser_t007_<lane>`，分支 `lane/t007_<lane>`，日志 `.scratch/v2_orchestration/t007_<lane>_r1.jsonl`，prompt `.scratch/v2_orchestration/t007/t007_<lane>_prompt.md`，启动器 `.scratch/v2_orchestration/launch_lane.py`）：spike_token（opencode pid 24318，Selkies token 机制实验，只出报告）、be_coord（24319，AC-009 API→Supervisor 协调 + SSE）、fe_shell（24317，前端外壳与 Profile/设置页）、fe_session（24316，浏览会话/适配层/冻结恢复诊断）。Docker E2E 用 mkdir 锁 `.scratch/v2_orchestration/docker_e2e.lock` 互斥。镜像基线为 t006 合并后门禁 `.scratch/t006_postmerge/pm1/images.env`。
+3. 门禁通过：`python3 .repo_template/scripts/task.py integrate --attempt 1 --execution-id 1a08cbc562094e73ae64c8039127ed0a --continue t007`（生成 merge commit 并删除已合入分支）。出现真实失败：`git merge --abort`，按流程处理（已提交分支不得擅自 amend，需用户同意）。
 
-- 截至 2026-10-31T15:10：spike_token 完成并 retire（d024，主控复跑 5 passed，task.md 未知契约已改写）；fe_shell 完成、复核（Vitest 60 passed、构建成功）、合入 t007 WT 暂存区并 retire；运行中：be_coord（opencode pid 24319）、fe_session（56175，session ses_e6f4e8671ffe2gNTfGG7sXQ1zH，第 3 次续行）、stream_tokens（60155，AC-008/AC-010）。监控用 `python3 .scratch/v2_orchestration/watch_lanes.py`（读 `watch_pids.txt`）。镜像清单改名 `images_env.txt`（`*.env` 被 lane 读权限拒绝）。
+4. 合并后更新本文件并单独提交 docs；`task.py goal-check` 核对进度。
 
-- 编排事故（详见 t007 note）：首次批量派发重复启动导致 fe_shell/be_coord 双实例（已处理）；误在 t007 任务分支生成中间提交 acd3832，已 `git reset --soft 077778f` 撤销（改动保留、HEAD 回到 diff_anchor）。今后合入 lane 交付用 Python 逐文件复制，不对任务 WT 运行 lane_resync。
+5. 开 t008（见第四节）。
 
-- 2026-10-31T16:2x：fe_session 已合入 t007 WT 并 retire（合并前端 Vitest 72 passed、构建成功）。be_coord 与 stream_tokens 自约 15:37 起模型请求挂起（Gemini 额度耗尽），主控停止进程、按前缀清理两者遗留的 10 个测试容器与网络，改用 `opencode-go/deepseek-v4.1-flash` 在原会话续行：be_coord opencode pid 92666（session ses_e6f4e8ca8ffeBbx5Peyv4NJHR6，日志 `t007_be_coord_r2.jsonl`），stream_tokens pid 92665（session ses_e6f37c365ffeqir0wNKzeCRmLv，日志 `t007_stream_tokens_r2.jsonl`）。`watch_lanes.py` 已加日志 10 分钟无更新的 STALL 报警。
+### 三、执行目标与硬约束（用户原始要求，全部仍然有效）
 
-- 2026-10-31T16:5x：be_coord、stream_tokens 已复核并合入 t007 WT（后端 unit+integration 336 passed），全部 lane WT 已 retire；t007 WT 新文件已 `git add -N`（lane 种子只含已跟踪/意图添加的文件）。派发完整前端真实栈 E2E lane `t007_fe_e2e`（DeepSeek，opencode pid 14471，session ses_e6ed7fc48ffetsFEvPOyA6HQW9，WT /Users/karson/kar/code/CBrowser_t007_fe_e2e，日志 `t007_fe_e2e_r1.jsonl`）。待办：API Runtime Coordinator 为可选启用（`CBROWSER_SUPERVISOR_URL` + `CBROWSER_REQUIRE_SUPERVISOR=1`），t012 生产编排必须设置；`last_coordinator_error` 仅存内存。
+- 目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`，不得改成员与顺序；t013/t014 串行）完成 `docs/v2_architecture_plan.md`；每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Google Chrome 访问（登录 → 选 Profile → WebRTC 浏览）。完成判据：14 个 task 全部 done 并合入；只剩 main 分支与主 worktree；旧 VNC/RFB/原生桌面移除；生产构建本机可用；门禁与黑盒主控复核；`task.py goal-check` 输出 GOAL_QUEUE_COMPLETE。最终报告列每 task 的 commit、验证证据、USER_WAIVED 项与残余风险。
+- 只能写 `~/kar/code` 以内；临时文件写各 worktree 的 `.scratch/`，不写 /tmp、~/.cache。
+- 管理员密码 `/Users/karson/kar/code/CBrowser/data/secrets/admin_password`（0600，gitignore）：只在生产首次启动读取并以 Argon2id 保存；明文不得进日志、报告、测试快照；测试一律每次随机生成密码。缺其他 secret 停下来问用户，禁止自设默认值。
+- 公网 WebRTC/TURN 与原生 Linux x86_64 记 NOT_RUN / USER_WAIVED。只部署本机，禁止 git push 与任何外部发布。
+- task 状态只经 `.repo_template/scripts/task.py`；TDD 先红后绿；禁止就地改旧测试预期（旧语义失效整项删除并说明、另写新测试；本 task 新增的测试可补强）。`.repo_template` 工具链缺陷报告用户，不自行绕过或修改。
+- task 执行 commit 的 first parent 必须是 diff_anchor；禁止在 task worktree merge/rebase main。时间戳一律 `date -Iseconds` 实取。
+- Docker 只清理本任务前缀且标签核对过的对象；不碰其他项目容器（kkmail、new-api、haiwa-bot、lobechat 等）；来源不明网络 net_9335ab04/net_d876dc01/net_e5052de6、容器 test-shm-srv、旧 cbrowser 容器在 t011/t012 前不动。用户已授权 Docker 引擎无响应时重启 OrbStack。
+- worktree 用完必须 `git worktree remove` + `git worktree prune`；删除前备份 `.scratch` 证据。发现 commit/worktree 混入无关改动立即停止报告用户。
+- 每个阶段更新本文件（只留最新一节，旧节追加到 `docs/archive/handoff.md`）并在 main 提交 docs；记录子代理 PID/session。
+- 用户偏好（`~/.claude/projects/-Users-karson-kar-code-CBrowser/memory/`）：所有浏览器测试一律无头，不得弹窗或抢前台；实现交子代理，主控只派发、整合、复核、门禁；子代理模型 `cpa/gemini-3.8-flash --variant high`，额度用尽改 `opencode-go/deepseek-v4.1-flash --variant high`（两者均获批；Gemini 早已耗尽，t007 全程用 DeepSeek）。
+- 全局约定：中文简洁回复；不用 `git reset --hard` / `git checkout --` / 批量删除（除非用户确认）；新文件 snake_case；4 空格；日志不用 print；密钥不硬编码。
 
-- 2026-10-31T17:42:33+08:00：fe_e2e 完成（完整真实栈无头 E2E 5 passed，修复 PUT→PATCH、协调错误展示、诊断操作），已复核、合入 t007 WT 并 retire（证据 `CBrowser_t007/.scratch/lane_evidence/fe_e2e/`）；主控修正生成类型未重生成与硬编码文案。t007 全量门禁 r1 运行中（`.scratch/v2_orchestration/gates/run_gates_t007_r1.sh`，输出 `CBrowser_t007/.scratch/project_gates/r1/summary.txt`，持有 Docker 锁）。主控评审另发现两项 important，派 DeepSeek lane：adapter（opencode pid 30796，session ses_e6eac8d22ffeQBOIwi5BxNqCg6，WT `/Users/karson/kar/code/CBrowser_t007_adapter`，适配层收敛为 `adapter.ts` 单一来源）、auth（pid 32410，WT `/Users/karson/kar/code/CBrowser_t007_auth`，登录守卫/401 跳转/SSE 仅认证后运行）。t007 finalization 文档（frontend blueprint、profile_management spec、architecture 5.5、旧 chrome_external_tabs spec 归档）已写入 t007 WT。p005 不在 t007 契约内，保持开放。
+### 四、后续 task 要点
 
-- 2026-10-31T20:41:00+08:00：adapter、auth lane 已合入 t007 WT 并 retire（Vitest 82 passed）。门禁 r2（`CBrowser_t007/.scratch/project_gates/r2/`）除 coordinator E2E 因门禁脚本缺依赖外全部通过，补依赖复跑 1 passed（`r2_rerun/`）；门禁模板已修 PYTHONPATH/依赖、调整 vendor→build 顺序、增加前端生成类型漂移检查。lane 曾把编排 Docker 锁写进测试导致门禁自锁，已删除。AC 复核发现阻断缺口，派 DeepSeek lane：display（opencode pid 13335，session ses_e6e060640ffeZ0Svj3UCKCKDSJ，AC-004 Stream 分辨率写死 1920×1080 与“明确应用”）、media（pid 13336，session ses_e6e060645ffe92qomNF97ILFR5，经完整应用的可见性、AC-005 独立静音/内部标签页同步/音频故障状态）。
+- t008（Artifacts/CDP 自动化，`docs/tasks/t008_v2_artifacts_automation/task.md`，4 条 AC）：Artifact 上传/下载/删除与配额、外部自动化经认证入口 → Supervisor → UDS → loopback CDP、Selkies `file_transfers=none`（Stream 入口已设 `SELKIES_FILE_TRANSFERS=none`，需补测试证据）、Agent 重启后扫描补登下载。前端 `/profiles/:id/files` 与 `/automation/:id` 目前是占位页（`features/artifacts`、`features/automation`）；设置页与新建页残留硬编码文案见 p007 可顺带收口。t008 需以 t007 合入后的 main 为基线开工。
+- t013（复制/重置）、t014（剪贴板与完整输入）、t009（整机验收：容量/P95/8 小时/1000 次输入）、t010（旧数据迁移，先备份可恢复）、t011（移除旧 VNC/RFB/原生桌面与旧 UI 组件、旧测试）、t012（Compose 生产交付）。
+- t012 必须：API 设置 `CBROWSER_SUPERVISOR_URL` + `CBROWSER_SUPERVISOR_TOKEN_FILE` + `CBROWSER_REQUIRE_SUPERVISOR=1`（未配置时 API 只显式禁用协调）；生产镜像构建固定 `scripts/vendor_selkies_web.py` → `npm run build`（p010；清单现位于 tests/fixtures 下，宜迁出）；处理 p006（`agent_secret.txt` 仍在挂进 Browser 的 runtime 目录）。
 
-- 读 `docs/tasks/t007_v2_frontend_sessions/task.md` 与 `.scratch/v2_orchestration/t007/contract_draft.md`（已按 9.3/p003/p004 修订）。开工前定案 p004（Selkies token）与 p003 是否纳入 t007 范围；t007 AC-008 显式 `SELKIES_ENABLE_DUAL_MODE=false`；前端适配层须在官方 `setConfiguration` 后保持 Gateway 下发配置（d022）；可复用 `tests/fixtures/gateway_probe/` 拓扑做真实栈 E2E（无头）。
+### 五、t007 结果摘要（细节见 t007 分支 `docs/archive/tasks/t007_v2_frontend_sessions/note.md`）
 
-- 未触碰的既有对象：Docker 网络 net_9335ab04/net_d876dc01/net_e5052de6（来源不明）、容器 test-shm-srv、旧 cbrowser 容器（t011/t012 前不动）。本地临时镜像（t006-*、cbrowser-gate-*、t005-\* 等）可由源码重建，未清理。
+- 交付：React Router 7 外壳 + 登录守卫（`RequireAuth`、`/login?next=` 同源校验）、OpenAPI 生成类型（`npm run generate:api`，禁止手写）、TanStack Query + SSE（事件 id `<epoch>:<seq>`，跨进程发快照）、页面独立 `?profileId=`、官方 Selkies 2.1.0 iframe + 单一来源适配层（`features/browser-session/adapter.ts` 经 `vite.selkies.config.ts` 构建为 IIFE `dist/selkies/selkies_adapter.js`；vendor 脚本只注入标签）、会话阶段诊断与独立音频状态、冻结恢复重建、ICE disconnected 5 秒宽限、每页静音（官方 pipelineControl STOP/START_AUDIO）、显示尺寸“应用并重启”、API Runtime Coordinator 驱动 Supervisor（p003 闭环）、每 Profile Selkies token + 安全模式 + Agent HELLO 代注入（d024，p004 闭环）、token 文件只挂给 Stream 且每实例新文件名 `runtime/.secrets/<profile>/selkies_tokens_<instance>.json`、Stream 分辨率取自 Profile 配置。
+- 验证：最终门禁 r5 全绿（前端 E2E 21/22，唯一失败为 AC-001 静止画面出帧抖动，复跑 2/2，p013）；独立 DeepSeek 黑盒 r1 AC-001..010 自写探针全 PASS；Full review 5 轮，Round 5 两路 PASS 零 finding（reviewed_scope a006b995998b9c28）。
+- 遗留 pending（在 t007 分支，合入后进 main）：p005（t006 minor）、p006（agent_secret 挂进 Browser）、p007（前端残留硬编码文案）、p008（Agent 隧道未触发 Selkies RESUMED）、p009（multi_viewer 固定 sleep 抖动）、p010（生产构建 vendor 步骤，归 t012）、p011（评审 minor）、p012（同 tab 驱逐关闭码偶发 1006）、p013（AC-001 静止画面出帧抖动）。
+- 证据备份：`.scratch/v2_orchestration/retired_worktrees/CBrowser_t007/`（`project_gates/r1..r5`、`r*_rerun`、`r4_final`、`lane_evidence/<lane>/`、`t007_master/` 主控 RED/GREEN 与调试记录、黑盒 `lane_evidence/blackbox_r1/`）；lane 会话日志 `.scratch/v2_orchestration/t007_*_r*.jsonl`，prompt 在 `.scratch/v2_orchestration/t007/`。被叫停的合并后门禁残留输出 `.scratch/t007_postmerge/pm1/`（只到镜像构建，作废）。
+
+### 六、已知偶发与环境注意（复跑归因，不放宽断言）
+
+- `test_stream_runtime_e2e.py::test_stream_runtime_multi_viewer_e2e` 固定 sleep 2 秒（p009）；`test_browser_runtime_e2e.py::test_ac006_minimal_privileges_and_access_control` 偶发 Pulse 连接拒绝；`test_supervisor_namespace_policy_e2e.py` 偶发公网 IPv4 出站超时；`test_frontend_app_e2e.py::test_ac001_ac006...` 静止画面不出新帧（p013）；`test_stream_selkies_tokens_e2e.py` 同 tab 驱逐关闭码偶发 1006（p012）。
+- 验证 worktree 内跑模板 contract 会有 2 项 `.env` 链接用例失败（TMPDIR 位于已登记 worktree 内，环境差异）。
+- 本机 BuildKit 直连 Docker Hub 不稳：构建失败先 `docker pull` 基础镜像；用 sha256 当 FROM 会被当成远程仓库，需先 `docker tag`。
+- 本机 OrbStack 单文件 bind mount：同一宿主路径被原子替换后立刻启动的新容器可能看到失效条目（t007 已改为每实例新文件名规避）。
+
+### 七、编排工具与踩坑（`.scratch/v2_orchestration/`）
+
+- 门禁：`gates/run_gates_t007.sh`（每轮复制为 `_rN.sh` 再跑；环境 `GATE_ROOT/GATE_LANE/GATE_BASE/RUFF_BASELINE`；镜像 ID 写入 `<lane>/images.env`）。顺序：构建镜像 → npm ci → Vitest → vendor → build（随后还原 `src/frontend/tsconfig.tsbuildinfo`）→ contract/legacy/unit/integration → Runtime/Stream/Supervisor/Gateway/前端 E2E → schema 与前端生成类型漂移 → ruff → md_format → diff_check → health → task list。t008 起复制一份按需增删测试文件。
+- Docker 互斥：运行任何 Docker E2E 前 `mkdir docker_e2e.lock`（原子），结束 `rmdir`；**测试代码内不得自带锁或引用 `.scratch` 编排目录**（t007 曾因此门禁自锁）。
+- lane：`lane_worktrees.py create <task_wt> <lane>` / `retire <lane_wt> <backup_dir>`；`launch_lane.py LANE WT PROMPT LOG OUT [ALLOW_GLOB...]`（环境变量 `OPENCODE_LANE_MODEL=opencode-go/deepseek-v4.1-flash OPENCODE_LANE_VARIANT=high`）；续行用 `dispatch.py ... --session <ses_id> --unguard-changed`（**lane 自己新建的文件若不加 `--unguard-changed` 会被 SHA 守卫误杀**）；并行 reviewer 须互相 unguard 两份报告，门禁并发时还要 unguard `tsconfig.tsbuildinfo` 与 schema 导出文件。prompt 模板：`t007/t007_fe_e2e_prompt.md` 前 30 行（写域与质量规则）+ `t007/lane_*_body.md` + `t007/common_tail.md`。
+- 合入 lane：在 lane WT 比对 `git show HEAD:<f>` 与任务 WT 当前文件确认无冲突后 `cp -p`，新文件 `git add -N`；**不要对任务 WT 运行 `lane_resync.py`**。lane 常见问题：改测试夹具 Docker 前缀、未跑 ruff、模型连接 ECONNRESET（同会话续跑即可）。
+- review：`render_review_prompts.py --task-dir ... --out-dir ...` 渲染后前置主控约束；`check_review_status.py` 判 PASS。**审查指纹包含 `docs/specs_index.md` 等非过程文档**（排除 note/handoff/review 报告/pending/findings/archive/.scratch），PASS 后改这些会变 stale；review 上限 5 轮，超出需用户批准。处置表只接受 `tNNN_code_fNNN` / `tNNN_test_fNNN` 编号。
+- 收尾：handoff.json（task 目录）→ `preflight --require-verified --owner-id` → `finish` → 一个执行 commit → `attempt terminal --status completed` → `attempt report --status done --sha` → 备份 `.scratch` → `cleanup-worktree` → `integrate`（暂存）→ 合并后门禁 → `integrate --continue`。
+- 工具链缺陷（已报告用户，本次经用户同意由主控补完）：`cleanup-worktree` 调用 `git worktree remove` 60 秒超时（含 node_modules/public 的前端 worktree），留下半删目录与 prunable 登记并提示“数据不一致”。后续若再超时须报告用户。
+- zsh 不对未加引号变量分词，多参数循环用 `bash -c`；后台命令里用绝对路径（会话 cwd 可能变化）。
+
+### 八、本地临时对象（可按前缀清理）
+
+- 镜像：`t007-*`（lane 与门禁构建）、`cbrowser-gate-*`、`t007-master-dbg-stream:1`、`t007-master-dbg-stream-base:1`、`t007-master-supervisor:tokinst`、`t007-master-api:tokinst`、`t006-*`、`t005-*` 等，均可由源码重建，未清理。
+- `.scratch/selkies_wheels/`：固定 Selkies 2.1.0 wheel 缓存（vendor 脚本默认路径）。
+- `.scratch/v2_orchestration/handoff_backup/`：本次撤销合并前的 handoff 文件备份。
