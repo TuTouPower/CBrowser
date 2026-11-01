@@ -19,6 +19,7 @@ describe("useProfilesQuery & SSE Sync", () => {
   let mockSseClient: ProfileEventsClient;
   let sseCallback: ((event: ProfileRuntimeEvent) => void) | null = null;
   let listCallCount = 0;
+  let runtimeCallCount = 0;
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -31,6 +32,7 @@ describe("useProfilesQuery & SSE Sync", () => {
 
     mockApiClient = new ApiClient();
     listCallCount = 0;
+    runtimeCallCount = 0;
     mockApiClient.profiles.list = async () => {
       listCallCount += 1;
       return [
@@ -53,15 +55,18 @@ describe("useProfilesQuery & SSE Sync", () => {
       },
     ];
     };
-    mockApiClient.profiles.getRuntime = async (id: string) => ({
-      profile_id: id,
-      desired_state: "stopped",
-      observed_state: "stopped",
-      config_version: 1,
-      failure_count: 0,
-      restart_blocked: false,
-      updated_at: "2026-01-01T00:00:00Z",
-    });
+    mockApiClient.profiles.getRuntime = async (id: string) => {
+      runtimeCallCount += 1;
+      return {
+        profile_id: id,
+        desired_state: "stopped",
+        observed_state: "stopped",
+        config_version: 1,
+        failure_count: 0,
+        restart_blocked: false,
+        updated_at: "2026-01-01T00:00:00Z",
+      };
+    };
     mockApiClient.profiles.create = async (req) => ({
       id: "p2",
       name: req.name,
@@ -169,6 +174,33 @@ describe("useProfilesQuery & SSE Sync", () => {
       observed_state: "running",
       runtime_instance_id: "inst-999",
     });
+  });
+
+  it("invalidates the runtime query so an SSE event refetches authoritative state", async () => {
+    const { result } = renderHook(
+      () => ({
+        runtime: useProfileRuntimeQuery("p1", mockApiClient),
+        sse: useProfileEventsSync(mockSseClient),
+      }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.runtime.isSuccess).toBe(true));
+    const callsBeforeEvent = runtimeCallCount;
+
+    act(() => {
+      if (sseCallback) {
+        sseCallback({
+          profile_id: "p1",
+          desired_state: "running",
+          observed_state: "starting",
+          runtime_instance_id: "inst-42",
+        });
+      }
+    });
+
+    await waitFor(() => expect(runtimeCallCount).toBeGreaterThan(callsBeforeEvent));
+    expect(result.current.runtime.data?.observed_state).toBe("stopped");
   });
 
   it("does not fabricate runtime state for a profile without cached runtime data", async () => {

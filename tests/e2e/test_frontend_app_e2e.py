@@ -225,6 +225,18 @@ async def prepare_remote_input(container: str, target_id: str | None) -> None:
     )
 
 
+async def animate_remote_fixture(
+    harness: FrontendAppTopologyHarness, profile_id: str
+) -> None:
+    """Navigate the remote page to the animated media fixture.
+
+    Frame-growth assertions must not depend on a static screen being re-encoded
+    by damage-gated capture.
+    """
+    browser_container, _ = harness.container_names(profile_id)
+    await asyncio.to_thread(browser_eval, browser_container, "true")
+
+
 async def wait_runtime_containers_gone(
     harness: FrontendAppTopologyHarness, profile_id: str, timeout: float = 60.0
 ) -> None:
@@ -368,12 +380,14 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
         await page_a.wait_for_url(
             re.compile(rf"\?profileId={profile_b}"), timeout=15000
         )
-        await asyncio.sleep(2.0)
         assert parse_qs(urlparse(page_a.url).query)["profileId"] == [profile_b]
         assert parse_qs(urlparse(page_b.url).query)["profileId"] == [profile_b]
         header_b = await page_b.inner_text('[data-testid="active-profile-header"]')
         assert name_b in header_b
-        stats_b_after = await wait_iframe_stats(page_b, name="B after switch")
+        await animate_remote_fixture(harness, profile_b)
+        stats_b_after = await wait_iframe_stats(
+            page_b, name="B after switch", min_frames=frames_b_before + 1
+        )
         assert stats_b_after["video"]["framesDecoded"] > frames_b_before
         assert stats_b_after["tab_id"] == stats_b["tab_id"]
 
@@ -557,8 +571,12 @@ async def test_ac002_ac003_ac010_identity_copy_close_and_tokens(
         # Closing page A only closes its own connection; Runtime keeps running.
         browser_container, stream_container = harness.container_names(profile_id)
         await page_a.close()
-        await asyncio.sleep(2.0)
-        stats_b2 = await wait_iframe_stats(page_b, name="B after A closed")
+        await animate_remote_fixture(harness, profile_id)
+        stats_b2 = await wait_iframe_stats(
+            page_b,
+            name="B after A closed",
+            min_frames=stats_b["video"]["framesDecoded"] + 1,
+        )
         assert stats_b2["video"]["framesDecoded"] > stats_b["video"]["framesDecoded"]
         client = docker.from_env()
         assert client.containers.get(browser_container).status == "running"
