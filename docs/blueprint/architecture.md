@@ -6,7 +6,7 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 
 本文档明确区分系统当前代码实现与正式冻结的 v2 目标架构：
 
-- **现有运行基线（Existing Legacy Runtime）**：当前生产代码库（`src/backend`、`src/frontend`）仍维持旧单容器实现、KasmVNC/noVNC/RFB 协议代理、FastAPI WebSocket 逐帧处理与旧数据模型。在 t001 阶段，现有生产代码保持完全不变，不执行破坏性重构或代码删除。
+- **现有运行基线（Existing Legacy Runtime）**：当前生产代码库（`src/backend`、`src/frontend`）仍维持旧单容器实现、KasmVNC/noVNC/RFB 协议代理、FastAPI WebSocket 逐帧处理与旧数据模型。在 t001 阶段，现有生产代码保持完全不变（t001 时点陈述，后续 t005–t007 已新增 v2 链路），不执行破坏性重构或代码删除。
 
 - **新增 v2 持久化基础（t002）**：`src/backend/cbrowser/api/main.py` 提供独立 `/api/v1` 入口，落实 Profile 配置/标签/不可变版本、运行意愿与观测状态、实例事件去重、SQLite WAL 与空库 Alembic 初始化。旧正式入口尚未切换；Docker 编排、认证、媒体与前端由后续 task 实施。该入口不得直接用于生产公开服务，正式鉴权与交付分别由 t006/t012 验收。
 
@@ -161,7 +161,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |Supervisor|Docker Engine|Docker Engine API (`/var/run/docker.sock`)|**宿主机唯一持有 Docker Socket 的服务**；强制校验与规范化挂载路径|
 |Supervisor|Browser Agent|Unix Domain Socket (`agent.sock`)|健康检查、CDP 授权代理、下载事件与退出事件接收|
 |Stream Agent|Stream Gateway|长连接注册与信令隧道|动态注册运行时状态，双向透传 SDP/ICE 消息|
-|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`）；中继经 coturn|
+|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`；当前仅发布至宿主回环 `127.0.0.1`，跨机/公网直连需在 t012 调整绑定与网络策略）；中继经 coturn|
 |Stream Runtime|coturn|STUN / TURN 协议|UDP/TCP 3478、TLS/TCP 5349、媒体 50000–50999；REST HMAC-SHA1 短期凭证|
 |Browser Runtime A|Browser Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
 |Stream Runtime A|Stream Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
