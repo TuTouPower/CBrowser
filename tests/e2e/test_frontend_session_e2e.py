@@ -229,12 +229,12 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
             # Check runtime container status in Supervisor / Docker
             client = harness.docker_client
             browser_box = client.containers.get(profile["browser_container"])
-            assert browser_box.status in ("running", "created"), (
+            assert browser_box.status == "running", (
                 "Browser container must remain running after closing viewer: "
                 f"{browser_box.status}"
             )
             stream_box = client.containers.get(profile["stream_container"])
-            assert stream_box.status in ("running", "created"), (
+            assert stream_box.status == "running", (
                 "Stream container must remain running after closing viewer: "
                 f"{stream_box.status}"
             )
