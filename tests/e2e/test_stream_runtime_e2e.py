@@ -17,8 +17,14 @@ from pathlib import Path
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
-from cbrowser.stream_agent.client_shim import WEB_LOCK_SHIM_JS
 from playwright.async_api import async_playwright
+
+WEB_LOCK_SHIM_JS = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "stream_probe"
+    / "web_lock_shim.js"
+).read_text(encoding="utf-8")
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IMAGE = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")

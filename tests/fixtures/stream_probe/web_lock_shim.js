@@ -1,6 +1,4 @@
-"""Preserve official Selkies tab identity while isolating duplicated Chrome tabs."""
-
-WEB_LOCK_SHIM_JS = r"""(() => {
+(() => {
     if (window.__cbrowserIdentityGuard) return;
     window.__cbrowserIdentityGuard = true;
     window.__SELKIES_STREAMING_MODE__ = 'webrtc';
@@ -66,4 +64,3 @@ WEB_LOCK_SHIM_JS = r"""(() => {
         }
     });
 })();
-"""

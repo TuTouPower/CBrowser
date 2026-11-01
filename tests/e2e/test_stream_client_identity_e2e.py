@@ -6,8 +6,14 @@ from pathlib import Path
 
 import pytest
 from aiohttp import WSMsgType, web
-from cbrowser.stream_agent.client_shim import WEB_LOCK_SHIM_JS
 from playwright.async_api import async_playwright
+
+WEB_LOCK_SHIM_JS = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "stream_probe"
+    / "web_lock_shim.js"
+).read_text(encoding="utf-8")
 
 CHROME = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
