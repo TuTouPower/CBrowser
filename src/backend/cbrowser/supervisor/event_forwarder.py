@@ -18,6 +18,7 @@ from typing import Any, Optional
 
 import httpx
 from cbrowser.domain.models import RuntimeEventReportRequest
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.file_storage import atomic_write_text
 from pydantic import ValidationError
 
@@ -77,7 +78,9 @@ class EventForwarder:
 
     def _get_bearer_token(self) -> Optional[str]:
         if self._token_file and self._token_file.is_file():
-            return self._token_file.read_text(encoding="utf-8").strip()
+            return read_secret_file(
+                self._token_file, label="Supervisor service token"
+            )
         return None
 
     async def _get_client(self) -> httpx.AsyncClient:

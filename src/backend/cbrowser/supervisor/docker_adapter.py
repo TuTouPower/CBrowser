@@ -820,6 +820,13 @@ with path.open('w') as output:
             raise DockerSandboxError(
                 "Explicit Stream Selkies token credential file is required"
             )
+        secret_file = self.validator.validate_secret_source(
+            profile_id, agent_secret_path
+        )
+        if (secret_file.stat().st_mode & 0o077) != 0:
+            raise DockerSandboxError(
+                "Stream Agent credential file must have 0600 permissions"
+            )
         token_stat = selkies_tokens_path.stat()
         if (token_stat.st_mode & 0o077) != 0:
             raise DockerSandboxError(
@@ -844,9 +851,6 @@ with path.open('w') as output:
 
         self.cleanup_container_by_name(s_name)
 
-        secret_file = self.validator.validate_runtime_source(
-            profile_id, agent_secret_path
-        )
         selkies_file = self.validator.validate_secret_source(
             profile_id, selkies_tokens_path
         )

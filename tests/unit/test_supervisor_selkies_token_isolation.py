@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import docker.errors
 import pytest
 from cbrowser.supervisor.docker_adapter import DockerAdapter
+from cbrowser.supervisor.docker_adapter import DockerSandboxError
 from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 
@@ -103,12 +104,11 @@ async def test_stream_container_mounts_token_from_secret_directory(
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()
 
-    agent_secret = dirs["runtime"] / "agent_secret.txt"
-    agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o644)
-
     secret_dir = adapter.validator.get_secret_dir("p1")
     secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
+    agent_secret.write_text("agent_secret_test", encoding="utf-8")
+    agent_secret.chmod(0o600)
     tokens_path = secret_dir / "selkies_tokens.json"
     SelkiesTokens.generate().write_credentials_file(tokens_path)
 
@@ -143,4 +143,31 @@ async def test_stream_container_mounts_token_from_secret_directory(
         "bind": "/tmp/selkies_credentials.json",
         "mode": "ro",
     }
+    assert volumes[str(agent_secret)] == {"bind": "/tmp/secret.txt", "mode": "ro"}
     assert not tokens_path.is_relative_to(dirs["runtime"])
+    assert not agent_secret.is_relative_to(dirs["runtime"])
+
+
+@pytest.mark.asyncio
+async def test_stream_rejects_group_readable_agent_secret(tmp_path: Path) -> None:
+    adapter, mock_client, _ = _adapter(tmp_path)
+    dirs = adapter.prepare_profile_directories("p1")
+    (dirs["x11"] / "X99").touch()
+    (dirs["runtime"] / "Xauthority").touch()
+    secret_dir = adapter.validator.get_secret_dir("p1")
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
+    agent_secret.write_text("agent_secret_test", encoding="utf-8")
+    agent_secret.chmod(0o644)
+    tokens_path = secret_dir / "selkies_tokens.json"
+    SelkiesTokens.generate().write_credentials_file(tokens_path)
+
+    with pytest.raises(DockerSandboxError, match="must have 0600"):
+        await adapter.start_stream_container(
+            profile_id="p1",
+            runtime_instance_id="inst_1",
+            browser_container_name="cbrowser-p1-browser",
+            udp_mux_port=30006,
+            agent_secret_path=agent_secret,
+            selkies_tokens_path=tokens_path,
+        )

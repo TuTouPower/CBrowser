@@ -18,6 +18,7 @@ async def test_actual_http_delivery_resumes_after_listener_restart(tmp_path):
     token = secrets.token_urlsafe(32)
     token_file = tmp_path / "service_key"
     token_file.write_text(token)
+    token_file.chmod(0o600)
     received = []
 
     async def receive(request):

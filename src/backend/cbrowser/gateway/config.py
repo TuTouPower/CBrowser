@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from cbrowser.secret_files import read_secret_file
 from cbrowser.gateway.endpoint import (
     DEFAULT_GATEWAY_PORT,
     normalize_origins,
@@ -15,11 +16,9 @@ from pydantic import BaseModel, ConfigDict
 def _read_and_verify_key_file(env_var_name: str, path_str: str) -> Path:
     p = Path(path_str)
     try:
-        content = p.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        raise ValueError(f"Cannot read file for {env_var_name} at {p}") from None
-    if len(content.encode("utf-8")) < 32:
-        raise ValueError(f"{env_var_name} key file must contain at least 32 bytes")
+        read_secret_file(p, label=f"{env_var_name} key file", minimum_bytes=32)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from None
     return p
 
 

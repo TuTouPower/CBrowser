@@ -71,12 +71,12 @@ async def _start(
     dirs: dict[str, Path],
     snapshot: Path | None,
 ) -> dict:
-    agent_secret = dirs["runtime"] / "agent_secret.txt"
-    agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o644)
-    tokens = SelkiesTokens.generate()
     secret_dir = adapter.validator.get_secret_dir("p2")
     secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
+    agent_secret.write_text("agent_secret_test", encoding="utf-8")
+    agent_secret.chmod(0o600)
+    tokens = SelkiesTokens.generate()
     tokens_path = secret_dir / "selkies_tokens.json"
     tokens.write_credentials_file(tokens_path)
 

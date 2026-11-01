@@ -27,6 +27,7 @@ import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.protocol import RuntimeEventRecord
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.event_forwarder import EventForwarder
@@ -133,7 +134,9 @@ class SupervisorCore:
 
     def _get_bearer_token(self) -> Optional[str]:
         if self._token_file and self._token_file.is_file():
-            return self._token_file.read_text(encoding="utf-8").strip()
+            return read_secret_file(
+                self._token_file, label="Supervisor service token"
+            )
         return None
 
     def _auth_headers(self) -> dict[str, str]:
@@ -635,17 +638,20 @@ class SupervisorCore:
                         "Timed out waiting for current Browser instance readiness"
                     )
 
-                # Launch Stream
-                agent_secret = dirs["runtime"] / "agent_secret.txt"
+                # Launch Stream. Agent credentials live outside the Browser
+                # runtime mount and are readable only by the Stream container.
+                (dirs["runtime"] / "agent_secret.txt").unlink(missing_ok=True)
+                secret_dir = self.docker.validator.get_secret_dir(profile_id)
+                secret_dir.mkdir(parents=True, exist_ok=True)
+                secret_dir.chmod(0o700)
+                agent_secret = secret_dir / "agent_secret.txt"
                 atomic_write_text(
                     agent_secret,
                     self.agent_credentials.token_for(profile_id, runtime_instance_id),
-                    mode=0o644,
+                    mode=0o600,
                 )
                 selkies_tokens = SelkiesTokens.generate()
-                selkies_dir = self.docker.validator.get_secret_dir(profile_id)
-                selkies_dir.mkdir(parents=True, exist_ok=True)
-                selkies_dir.chmod(0o700)
+                selkies_dir = secret_dir
                 selkies_tokens_file = selkies_tokens.provision_credentials_file(
                     selkies_dir, runtime_instance_id
                 )

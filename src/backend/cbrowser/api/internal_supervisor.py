@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cbrowser.api.v1 import router as runtime_api
+from cbrowser.secret_files import read_secret_file
 from cbrowser.domain.models import (
     ConfigVersionResponse,
     ProfileResponse,
@@ -21,13 +22,9 @@ bearer = HTTPBearer(auto_error=False, scheme_name="SupervisorServiceBearer")
 def read_supervisor_token(path: Path | str | None) -> SecretStr | None:
     if path is None:
         return None
-    try:
-        token = Path(path).read_text().strip()
-    except (OSError, UnicodeError):
-        raise RuntimeError("Cannot read Supervisor service token file") from None
-    if len(token.encode("utf-8")) < 32:
-        raise RuntimeError("Supervisor service token must contain at least 32 bytes")
-    return SecretStr(token)
+    return SecretStr(
+        read_secret_file(path, label="Supervisor service token", minimum_bytes=32)
+    )
 
 
 def require_supervisor(

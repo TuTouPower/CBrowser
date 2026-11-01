@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cbrowser.domain.models import ProfileConfig
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
@@ -42,10 +43,16 @@ def create_control_app(
 ) -> FastAPI:
     app = FastAPI(title="CBrowser Supervisor Control API", version="1.0.0")
 
-    token_path = Path(token_file)
-    expected_token = SecretStr(token_path.read_text(encoding="utf-8").strip())
-    if len(expected_token.get_secret_value().encode("utf-8")) < 32:
-        raise ValueError("Supervisor authentication requires at least 32 bytes")
+    try:
+        expected_token = SecretStr(
+            read_secret_file(
+                token_file,
+                label="Supervisor control token",
+                minimum_bytes=32,
+            )
+        )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from None
 
     def verify_token(authorization: Annotated[str | None, Header()] = None) -> None:
         if not authorization or not authorization.startswith("Bearer "):

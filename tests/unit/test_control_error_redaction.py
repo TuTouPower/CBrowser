@@ -16,6 +16,7 @@ async def test_upstream_failure_redacts_response_and_logs(tmp_path, caplog, acti
     token = secrets.token_urlsafe(32)
     key = tmp_path / "key"
     key.write_text(token)
+    key.chmod(0o600)
 
     async def fail(*args, **kwargs):
         raise RuntimeError(canary)
