@@ -428,3 +428,31 @@ async def test_error_observation_with_live_containers_schedules_retry(mock_core)
 
     assert "p1" in coordinator._in_flight_tasks
     await coordinator.close()
+
+
+@pytest.mark.asyncio
+async def test_dead_instance_tracking_is_pruned_after_generation_ends(mock_core):
+    mock_core.api.get.side_effect = [
+        DummyResponse(200, [{"id": "p1", "name": "Profile 1"}]),
+        DummyResponse(
+            200,
+            {
+                "profile_id": "p1",
+                "desired_state": "stopped",
+                "observed_state": "stopped",
+                "runtime_instance_id": None,
+                "config_version": 1,
+                "failure_count": 0,
+                "restart_blocked": False,
+                "last_exit_event_id": None,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        ),
+    ]
+    mock_core.docker.scan_active_containers.return_value = []
+    coordinator = RecoveryCoordinator(mock_core)
+    coordinator._reported_dead_instances.update({"old_instance", "live_instance"})
+
+    await coordinator.tick()
+
+    assert coordinator._reported_dead_instances == set()

@@ -14,6 +14,8 @@ from .security import validate_runtime_id
 
 logger = logging.getLogger("cbrowser.runtime_agent.event_storage")
 
+MAX_RUNTIME_EVENTS_PER_INSTANCE = 100
+
 
 class StorageError(RuntimeError):
     """Base exception for runtime storage failures."""
@@ -96,9 +98,22 @@ class EventStorage:
         instance = validate_runtime_id(event.runtime_instance_id)
         target = self.runtime_events_dir / instance / f"{event.event_id}.json"
         atomic_write_json(target, event.model_dump())
+        self._prune_runtime_events(target.parent)
         logger.info(
             "Persisted runtime event: %s (type=%s)", event.event_id, event.event_type
         )
+
+    @staticmethod
+    def _prune_runtime_events(directory: Path) -> None:
+        """Keep only the newest events; status queries never need full history."""
+        try:
+            files = sorted(
+                directory.glob("*.json"), key=lambda p: p.stat().st_mtime_ns
+            )
+        except OSError:
+            return
+        for stale in files[:-MAX_RUNTIME_EVENTS_PER_INSTANCE]:
+            stale.unlink(missing_ok=True)
 
     def get_runtime_events(self) -> list[RuntimeEventRecord]:
         """Read and return all persisted runtime event records."""

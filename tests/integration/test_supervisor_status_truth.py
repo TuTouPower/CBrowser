@@ -30,6 +30,7 @@ async def test_status_without_local_session_keeps_persisted_running_intent(
     )
     key = tmp_path / "key"
     key.write_text(token)
+    key.chmod(0o600)
     headers = {"Authorization": "Bearer " + token}
     async with httpx.AsyncClient(
         base_url=str(server.base_url), headers=headers, trust_env=False
@@ -105,6 +106,7 @@ async def test_status_reflects_observation_not_disk_events(supervisor_api, tmp_p
 
     key = tmp_path / "key"
     key.write_text(token)
+    key.chmod(0o600)
     async with httpx.AsyncClient(
         base_url=str(server.base_url), headers=headers, trust_env=False
     ) as api:

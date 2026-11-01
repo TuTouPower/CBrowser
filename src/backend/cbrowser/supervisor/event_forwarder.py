@@ -47,10 +47,6 @@ class EventForwarder:
         self._client: Optional[httpx.AsyncClient] = None
         self._replay_lock = asyncio.Lock()
         self._spool_lock = asyncio.Lock()
-        self._ack_file = self.events_spool_dir / "acknowledged.log"
-        self._acknowledged = set(
-            self._ack_file.read_text().splitlines() if self._ack_file.exists() else []
-        )
 
     @staticmethod
     def _event_key(event_id: str) -> str:
@@ -64,15 +60,8 @@ class EventForwarder:
             os.close(descriptor)
 
     async def _acknowledge(self, event_data: dict[str, Any], event_file: Path) -> None:
-        key = self._event_key(event_data["event_id"])
+        """Delete a delivered spool file; API event_id is the durable dedupe."""
         async with self._spool_lock:
-            if key not in self._acknowledged:
-                with self._ack_file.open("a", encoding="utf-8") as output:
-                    output.write(key + "\n")
-                    output.flush()
-                    os.fsync(output.fileno())
-                self._sync_directory()
-                self._acknowledged.add(key)
             event_file.unlink(missing_ok=True)
             self._sync_directory()
 
@@ -130,8 +119,6 @@ class EventForwarder:
         key = self._event_key(event_id)
         event_file = self.events_spool_dir / f"{key}.json"
         async with self._spool_lock:
-            if key in self._acknowledged:
-                return True
             atomic_write_text(event_file, json.dumps(event_data))
 
         # 2. Try sending to API
@@ -216,10 +203,6 @@ class EventForwarder:
                 validated = self._validate_spooled_event(data)
                 if validated is None:
                     self._quarantine_event_file(f, "schema")
-                    continue
-                if self._event_key(validated["event_id"]) in self._acknowledged:
-                    await self._acknowledge(validated, f)
-                    delivered_count += 1
                     continue
                 outcome = await self._send_to_api(validated)
                 if outcome == DELIVERED:

@@ -125,6 +125,10 @@ class SupervisorCore:
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
         self._terminal_observations: set[tuple[str, str, int]] = set()
+        self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
+        self._event_cursor_file = (
+            self.docker.validator.data_root / "control" / "event_cursors.json"
+        )
         self.operations = OperationJournal(
             self.docker.validator.validate_safe_path(
                 self.docker.validator.data_root / "control" / "operations",
@@ -397,9 +401,97 @@ class SupervisorCore:
             return "missing_exit_code"
         return None
 
+    def _load_event_cursors(self) -> dict[str, dict[str, list]]:
+        path = self.docker.validator.data_root / "control" / "event_cursors.json"
+        if not path.is_file():
+            return {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return {}
+            cursors: dict[str, dict[str, list]] = {}
+            for profile_id, instances in raw.items():
+                if not isinstance(instances, dict):
+                    continue
+                for instance_id, marker in instances.items():
+                    if (
+                        isinstance(marker, list)
+                        and len(marker) == 2
+                        and type(marker[0]) is int
+                        and isinstance(marker[1], str)
+                    ):
+                        cursors.setdefault(str(profile_id), {})[
+                            str(instance_id)
+                        ] = marker
+            return cursors
+        except (OSError, ValueError, UnicodeError):
+            logger.warning("Event cursor file unreadable; rebuilding from archives")
+            return {}
+
+    def _save_event_cursors(self) -> None:
+        try:
+            atomic_write_text(
+                self._event_cursor_file,
+                json.dumps(self._event_cursors),
+                mode=0o600,
+            )
+        except OSError as exc:
+            logger.warning(
+                "Event cursor persistence failed: error_type=%s", type(exc).__name__
+            )
+
+    def _advance_event_cursor(
+        self, profile_id: str, instance_id: str, marker: tuple[int, str]
+    ) -> None:
+        self._event_cursors.setdefault(profile_id, {})[instance_id] = list(marker)
+
+    def _archive_event_file(
+        self, event_file: Path, profile_id: str, instance_id: str
+    ) -> None:
+        """Move handled journals into a bounded per-instance archive."""
+        try:
+            archive = self.docker.validator.validate_safe_path(
+                self.docker.validator.data_root
+                / "runtime-events"
+                / profile_id
+                / "archive"
+                / instance_id,
+                allow_create=True,
+            )
+            archive.mkdir(parents=True, exist_ok=True)
+            os.replace(event_file, archive / event_file.name)
+            archived = sorted(
+                archive.glob("*.json"), key=lambda p: p.stat().st_mtime_ns
+            )
+            for stale in archived[:-200]:
+                stale.unlink(missing_ok=True)
+        except (OSError, PathSecurityError) as exc:
+            logger.warning(
+                "Event archive failed: error_type=%s", type(exc).__name__
+            )
+
+    def forget_instance_events(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> None:
+        """Drop per-instance memory when a runtime generation ends."""
+        self._native_exit_instances = {
+            item for item in self._native_exit_instances if item[0] != profile_id
+        }
+        self._terminal_observations = {
+            item
+            for item in self._terminal_observations
+            if not (item[0] == profile_id and item[1] == runtime_instance_id)
+        }
+        instances = self._event_cursors.get(profile_id)
+        if instances is not None:
+            instances.pop(runtime_instance_id, None)
+            if not instances:
+                self._event_cursors.pop(profile_id, None)
+
     async def consume_disk_events(self) -> int:
-        """Forward validated instance-fenced journals and report terminal facts."""
+        """Forward validated journals newer than the per-instance cursor."""
         total_forwarded = 0
+        changed = False
         events_root = self.docker.validator.data_root / "runtime-events"
         if not events_root.is_dir():
             return 0
@@ -408,8 +500,23 @@ class SupervisorCore:
                 continue
             profile_id = p_dir.name
             runtime_events = p_dir / "events" / "runtime"
-            for evt_file in runtime_events.glob("*/*.json"):
+
+            def _marker(path: Path) -> tuple[int, str]:
+                try:
+                    return (path.stat().st_mtime_ns, path.name)
+                except OSError:
+                    return (0, path.name)
+
+            for evt_file in sorted(runtime_events.glob("*/*.json"), key=_marker):
                 instance_id = evt_file.parent.name
+                try:
+                    stat = evt_file.stat()
+                except OSError:
+                    continue
+                marker = (stat.st_mtime_ns, evt_file.name)
+                cursor = self._event_cursors.get(profile_id, {}).get(instance_id)
+                if cursor is not None and marker <= (cursor[0], cursor[1]):
+                    continue
                 try:
                     self.docker.validator.validate_safe_path(evt_file)
                     data = json.loads(evt_file.read_text(encoding="utf-8"))
@@ -421,6 +528,8 @@ class SupervisorCore:
                     self._quarantine_event_file(
                         evt_file, profile_id, instance_id, "unreadable"
                     )
+                    self._advance_event_cursor(profile_id, instance_id, marker)
+                    changed = True
                     continue
 
                 invalid_reason = self._parse_disk_event(
@@ -430,6 +539,8 @@ class SupervisorCore:
                     self._quarantine_event_file(
                         evt_file, profile_id, instance_id, invalid_reason
                     )
+                    self._advance_event_cursor(profile_id, instance_id, marker)
+                    changed = True
                     continue
 
                 etype = data["event_type"]
@@ -474,8 +585,7 @@ class SupervisorCore:
                             profile_id,
                             instance_id,
                         )
-                        continue
-                    if ecode == 0 and data.get("exit_reason") == "normal":
+                    elif ecode == 0 and data.get("exit_reason") == "normal":
                         logger.info("Normal Chrome exit: profile=%s", profile_id)
                         await self.report_terminal_observation(
                             profile_id,
@@ -492,6 +602,11 @@ class SupervisorCore:
                             observed_state="error",
                             reason="agent_exit",
                         )
+                self._archive_event_file(evt_file, profile_id, instance_id)
+                self._advance_event_cursor(profile_id, instance_id, marker)
+                changed = True
+        if changed:
+            self._save_event_cursors()
         return total_forwarded
 
     async def _browser_container_stopped(
@@ -568,6 +683,9 @@ class SupervisorCore:
                 raise RuntimeError("Automatic retries exhausted; manual retry required")
 
             runtime_instance_id = f"inst_{uuid.uuid4().hex[:12]}"
+            self._native_exit_instances = {
+                item for item in self._native_exit_instances if item[0] != profile_id
+            }
             dirs = self.docker.prepare_profile_directories(profile_id)
 
             snap_path = dirs["runtime"] / "snapshot.json"
@@ -843,6 +961,7 @@ class SupervisorCore:
                     self._terminal_observations.discard(
                         (profile_id, curr_inst, cfg_ver)
                     )
+                    self.forget_instance_events(profile_id, curr_inst)
             if teardown_error is not None:
                 raise DockerSandboxError(
                     "Sandbox teardown failed; residual containers require cleanup"

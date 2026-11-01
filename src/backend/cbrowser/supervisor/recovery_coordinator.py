@@ -234,8 +234,16 @@ class RecoveryCoordinator:
                     self._reported_dead_instances.add(b_inst)
 
         # 4. Check API runtime state for each profile and schedule retries if due
+        live_instances: set[str] = {
+            c.get("instance_id")
+            for roles in docker_by_profile.values()
+            for c in roles.values()
+            if c.get("instance_id")
+        }
+        known_profiles: set[str] = set()
         for p_info in profiles_list:
             pid = p_info["id"]
+            known_profiles.add(pid)
             if self.core._get_profile_lock(pid).locked():
                 continue
 
@@ -257,6 +265,8 @@ class RecoveryCoordinator:
 
             desired_state = rt.get("desired_state")
             observed_state = rt.get("observed_state")
+            if rt.get("runtime_instance_id"):
+                live_instances.add(rt["runtime_instance_id"])
             restart_blocked = rt.get("restart_blocked", False)
             failure_count = rt.get("failure_count", 0)
             last_exit_event_id = rt.get("last_exit_event_id")
@@ -396,6 +406,12 @@ class RecoveryCoordinator:
                     self._execute_retry(pid, remaining, rt, p_info)
                 )
                 self._in_flight_tasks[pid] = task
+
+        self._reported_dead_instances.intersection_update(live_instances)
+        for stale_pid in set(self._cleanup_attempt_keys) - known_profiles:
+            self._cleanup_attempt_keys.pop(stale_pid, None)
+            self._cleanup_failures.pop(stale_pid, None)
+            self._cleanup_cooldown_until.pop(stale_pid, None)
 
     async def _execute_retry(
         self,

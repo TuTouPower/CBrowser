@@ -50,8 +50,10 @@ async def test_actual_http_delivery_resumes_after_listener_restart(tmp_path):
         restarted = EventForwarder(
             f"http://127.0.0.1:{port}", tmp_path / "spool", token_file=token_file
         )
+        # Files are not a durable dedupe ledger: a restarted Supervisor may
+        # resend the same event_id, and API event_id uniqueness absorbs it.
         assert await restarted.emit_event("event", "profile", "runtime", "exit", 137)
-        assert len(received) == 1
+        assert len(received) == 2
         await restarted.close()
     finally:
         await forwarder.close()
