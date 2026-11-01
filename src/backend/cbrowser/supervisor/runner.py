@@ -59,6 +59,9 @@ async def run_supervisor(
     coturn_container_id: str | None = None,
     webrtc_mode: str = "public",
     gateway_port: int | None = None,
+    runtime_uid: int = 1000,
+    runtime_gid: int = 1000,
+    manage_ownership: bool | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -87,6 +90,11 @@ async def run_supervisor(
         docker_client=d_client,
         resource_prefix=resource_prefix,
         geoip_cache_dir=geoip_cache,
+        runtime_uid=runtime_uid,
+        runtime_gid=runtime_gid,
+        manage_ownership=(
+            os.geteuid() == 0 if manage_ownership is None else manage_ownership
+        ),
     )
     port_allocator = PortAllocator()
     event_forwarder = EventForwarder(
@@ -281,6 +289,21 @@ def main():
         default=os.getenv("CBROWSER_WEBRTC_MODE", "public"),
         choices=["local", "lan", "public", "relay-only"],
     )
+    parser.add_argument(
+        "--runtime-uid",
+        type=int,
+        default=int(os.getenv("CBROWSER_RUNTIME_UID", "1000")),
+    )
+    parser.add_argument(
+        "--runtime-gid",
+        type=int,
+        default=int(os.getenv("CBROWSER_RUNTIME_GID", "1000")),
+    )
+    parser.add_argument(
+        "--manage-ownership",
+        choices=["auto", "1", "0"],
+        default=os.getenv("CBROWSER_MANAGE_OWNERSHIP", "auto"),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8005)
 
@@ -314,6 +337,13 @@ def main():
                 coturn_container_id=args.coturn_container_id,
                 webrtc_mode=args.webrtc_mode,
                 gateway_port=args.gateway_port,
+                runtime_uid=args.runtime_uid,
+                runtime_gid=args.runtime_gid,
+                manage_ownership=(
+                    None
+                    if args.manage_ownership == "auto"
+                    else args.manage_ownership == "1"
+                ),
             )
         )
 

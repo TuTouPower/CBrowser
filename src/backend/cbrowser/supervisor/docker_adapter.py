@@ -38,6 +38,9 @@ class DockerAdapter:
         resource_prefix: str = "cbrowser-t005",
         geoip_cache_dir: Optional[Path | str] = None,
         policy_image: str | None = None,
+        runtime_uid: int = 1000,
+        runtime_gid: int = 1000,
+        manage_ownership: bool = False,
     ):
         self.validator = path_validator
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
@@ -56,6 +59,9 @@ class DockerAdapter:
                     "Explicit immutable Browser and Stream images are required"
                 )
         self.resource_prefix = resource_prefix
+        self.runtime_uid = runtime_uid
+        self.runtime_gid = runtime_gid
+        self.manage_ownership = manage_ownership
         self.policy_image = policy_image or os.environ.get(
             "CBROWSER_NETWORK_POLICY_IMAGE"
         )
@@ -359,11 +365,7 @@ with path.open('w') as output:
         exchange_dir = self.validator.get_exchange_dir(profile_id)
 
         for d in (profile_dir, runtime_dir, events_dir, exchange_dir):
-            d.mkdir(parents=True, exist_ok=True)
-            try:
-                os.chmod(d, 0o777)
-            except Exception:
-                pass
+            self._secure_directory(d, 0o750)
 
         x11_dir = self.validator.validate_runtime_source(
             profile_id, runtime_dir / "x11", allow_create=True
@@ -371,13 +373,8 @@ with path.open('w') as output:
         pulse_dir = self.validator.validate_runtime_source(
             profile_id, runtime_dir / "pulse", allow_create=True
         )
-        x11_dir.mkdir(parents=True, exist_ok=True)
-        pulse_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(x11_dir, 0o777)
-            os.chmod(pulse_dir, 0o777)
-        except Exception:
-            pass
+        self._secure_directory(x11_dir, 0o1777)
+        self._secure_directory(pulse_dir, 0o750)
 
         return {
             "profile": profile_dir,
@@ -387,6 +384,24 @@ with path.open('w') as output:
             "x11": x11_dir,
             "pulse": pulse_dir,
         }
+
+    def _secure_directory(self, directory: Path, mode: int) -> None:
+        """Own Profile data by the runtime UID or fall back to legacy world mode.
+
+        Host-direct development runs cannot chown user files; managed
+        deployment (the Supervisor container) must own them by uid/gid 1000.
+        """
+        directory.mkdir(parents=True, exist_ok=True)
+        if self.manage_ownership:
+            try:
+                os.chown(directory, self.runtime_uid, self.runtime_gid)
+            except OSError as exc:
+                raise DockerSandboxError(
+                    f"Cannot assign Profile directory ownership: {type(exc).__name__}"
+                ) from None
+            os.chmod(directory, mode)
+        else:
+            os.chmod(directory, 0o1777 if mode & 0o1000 else 0o777)
 
     def setup_x11_permissions(self, x11_dir: Path) -> None:
         try:
