@@ -1,11 +1,11 @@
 # Independent, reproducible Browser Runtime image for CBrowser v2
-FROM debian:bookworm-slim AS xshm_probe_builder
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS xshm_probe_builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libx11-dev libxext-dev libc6-dev && rm -rf /var/lib/apt/lists/*
 COPY tests/fixtures/runtime_probe/test_mitshm.c /tmp/test_mitshm.c
 RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /test_mitshm
 
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
@@ -43,15 +43,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages required for Browser Agent and CloakBrowser SDK
-RUN pip install --no-cache-dir \
-    "fastapi>=0.115.0" \
-    "uvicorn>=0.30.0" \
-    "websockets>=13.0" \
-    "httpx>=0.27.0" \
-    "pydantic>=2.8.0" \
-    "playwright==1.64.1" \
-    "cloakbrowser[geoip]==0.6.4"
+# Install locked Python packages required for Browser Agent and CloakBrowser SDK
+COPY config/docker/browser_runtime/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
 
 # Create non-root user 'cbrowser' with UID 1000 and GID 1000
 RUN groupadd -g 1000 cbrowser && \
