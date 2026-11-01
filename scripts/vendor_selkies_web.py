@@ -13,6 +13,9 @@ from pathlib import Path
 
 logger = logging.getLogger("cbrowser.vendor_selkies_web")
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_MANIFEST_PATH = REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
+
 PINNED_SELKIES_VERSION = "2.1.0"
 PINNED_WHEEL_SHA256 = "8bde6207ca921cb2f38c3204fafe18d40b5578165894818ae1ca9e46fca7b966"
 PINNED_WHEEL_FILENAME = f"selkies-{PINNED_SELKIES_VERSION}-py3-none-any.whl"
@@ -138,13 +141,7 @@ def vendor_selkies_web(
     """Extracts, verifies, and optionally injects Selkies web client."""
     repo_root = Path(__file__).resolve().parent.parent
     if manifest_path is None:
-        manifest_path = (
-            repo_root
-            / "tests"
-            / "fixtures"
-            / "gateway_probe"
-            / "selkies_web_sha256.txt"
-        )
+        manifest_path = DEFAULT_MANIFEST_PATH
     if cache_dir is None:
         cache_dir = repo_root / ".scratch" / "selkies_wheels"
 
@@ -232,11 +229,7 @@ def main() -> None:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=repo_root
-        / "tests"
-        / "fixtures"
-        / "gateway_probe"
-        / "selkies_web_sha256.txt",
+        default=DEFAULT_MANIFEST_PATH,
         help="Path to reference sha256 manifest file",
     )
     parser.add_argument(

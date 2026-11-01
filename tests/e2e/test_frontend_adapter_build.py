@@ -68,7 +68,7 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
     dest_dir = tmp_path / "selkies"
     cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
     manifest_path = (
-        REPO_ROOT / "tests" / "fixtures" / "gateway_probe" / "selkies_web_sha256.txt"
+        REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
 
     vendor_selkies_web(
@@ -98,7 +98,7 @@ def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
     dest_dir = tmp_path / "selkies"
     cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
     manifest_path = (
-        REPO_ROOT / "tests" / "fixtures" / "gateway_probe" / "selkies_web_sha256.txt"
+        REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
 
     vendor_selkies_web(
@@ -126,9 +126,8 @@ def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
         dest_dir=dest_dir,
         cache_dir=REPO_ROOT / ".scratch" / "selkies_wheels",
         manifest_path=REPO_ROOT
-        / "tests"
-        / "fixtures"
-        / "gateway_probe"
+        / "config"
+        / "selkies"
         / "selkies_web_sha256.txt",
     )
 
