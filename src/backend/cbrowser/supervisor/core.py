@@ -17,6 +17,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -42,6 +43,8 @@ from docker.errors import NotFound
 from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.core")
+
+UNPROTECTED_SANDBOX_GRACE_SEC = 60.0
 
 
 def browser_runtime_ready(
@@ -125,6 +128,7 @@ class SupervisorCore:
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
         self._terminal_observations: set[tuple[str, str, int]] = set()
+        self._unprotected_since: dict[str, float] = {}
         self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
         self._event_cursor_file = (
             self.docker.validator.data_root / "control" / "event_cursors.json"
@@ -281,9 +285,49 @@ class SupervisorCore:
                     await self.stop_profile(pid)
                 else:
                     if not all(item.get("policy_ready") is True for item in (b_c, s_c)):
-                        logger.warning(
-                            "Unprotected sandbox not adopted: profile=%s", pid
+                        first_seen = self._unprotected_since.setdefault(
+                            pid, time.monotonic()
                         )
+                        age = time.monotonic() - first_seen
+                        if age < UNPROTECTED_SANDBOX_GRACE_SEC:
+                            logger.warning(
+                                "Unprotected sandbox awaiting policy: profile=%s "
+                                "age=%.1fs",
+                                pid,
+                                age,
+                            )
+                            continue
+                        logger.error(
+                            "Unprotected sandbox exceeded grace; tearing down: "
+                            "profile=%s age=%.1fs",
+                            pid,
+                            age,
+                        )
+                        self._unprotected_since.pop(pid, None)
+                        await self.disconnect_viewers(pid)
+                        teardown_failed = False
+                        try:
+                            await self.docker.teardown_profile(pid)
+                        except Exception as exc:
+                            teardown_failed = True
+                            logger.error(
+                                "Unprotected sandbox teardown failed: profile=%s "
+                                "error_type=%s",
+                                pid,
+                                type(exc).__name__,
+                            )
+                        finally:
+                            await self.ports.release(pid)
+                            self._sessions.pop(pid, None)
+                            self.forget_instance_events(pid, b_inst)
+                        if not teardown_failed:
+                            await self._report_observed(
+                                pid,
+                                b_inst,
+                                "error",
+                                int(rt.get("config_version", 1)),
+                                reason="unprotected_sandbox",
+                            )
                         continue
                     if self.gateway_control is None:
                         raise RuntimeError(
@@ -322,6 +366,7 @@ class SupervisorCore:
 
                     if self._get_profile_lock(pid).locked():
                         continue
+                    self._unprotected_since.pop(pid, None)
                     logger.info(
                         "Restoring running session: profile=%s port=%s",
                         pid,
