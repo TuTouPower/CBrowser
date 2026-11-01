@@ -13,6 +13,7 @@ from pathlib import Path
 import docker
 import httpx
 import uvicorn
+from cbrowser.gateway.endpoint import gateway_port_from_env
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 from cbrowser.supervisor.core import SupervisorCore
@@ -48,7 +49,7 @@ async def run_supervisor(
     geoip_cache: Path | None = None,
     token_file: Path | None = None,
     agent_key_file: Path | None = None,
-    gateway_url: str = "ws://host.docker.internal:18097",
+    gateway_url: str | None = None,
     resource_prefix: str = "cbrowser-t005",
     host: str = "127.0.0.1",
     port: int = 8005,
@@ -57,6 +58,7 @@ async def run_supervisor(
     gateway_container_id: str | None = None,
     coturn_container_id: str | None = None,
     webrtc_mode: str = "public",
+    gateway_port: int | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -106,6 +108,7 @@ async def run_supervisor(
         gateway_container_id=gateway_container_id,
         coturn_container_id=coturn_container_id,
         webrtc_mode=webrtc_mode,
+        gateway_port=gateway_port,
     )
 
     async def send_quota(target, decision):
@@ -251,8 +254,12 @@ def main():
         "--agent-key-file", default=os.getenv("CBROWSER_AGENT_KEY_FILE")
     )
     parser.add_argument(
-        "--gateway-url",
-        default=os.getenv("CBROWSER_GATEWAY_URL", "ws://host.docker.internal:18097"),
+        "--gateway-url", default=os.getenv("CBROWSER_GATEWAY_URL") or None
+    )
+    parser.add_argument(
+        "--gateway-port",
+        type=int,
+        default=gateway_port_from_env(),
     )
     parser.add_argument(
         "--gateway-control-url", default=os.getenv("CBROWSER_GATEWAY_CONTROL_URL")
@@ -306,6 +313,7 @@ def main():
                 gateway_container_id=args.gateway_container_id,
                 coturn_container_id=args.coturn_container_id,
                 webrtc_mode=args.webrtc_mode,
+                gateway_port=args.gateway_port,
             )
         )
 

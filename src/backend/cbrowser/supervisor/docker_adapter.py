@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 import docker
 from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
 from docker.errors import DockerException, NotFound
@@ -491,7 +492,7 @@ with path.open('w') as output:
         profile_id: str,
         gateway_container_id: Optional[str],
         coturn_container_id: str,
-        gateway_port: int = 18097,
+        gateway_port: int = DEFAULT_GATEWAY_PORT,
         coturn_port: int = 3478,
     ) -> dict[str, Any]:
         net_name = self.get_network_name(profile_id)
@@ -793,7 +794,7 @@ with path.open('w') as output:
         runtime_instance_id: str,
         browser_container_name: str,
         udp_mux_port: int,
-        gateway_url: str = "ws://host.docker.internal:18097",
+        gateway_url: Optional[str] = None,
         agent_secret_path: Optional[Path] = None,
         public_ip: str = "127.0.0.1",
         display: str = ":99",
@@ -801,7 +802,16 @@ with path.open('w') as output:
         selkies_tokens_path: Optional[Path] = None,
         snapshot_json_path: Optional[Path] = None,
         webrtc_mode: str = "public",
+        gateway_port: int = DEFAULT_GATEWAY_PORT,
     ) -> Any:
+        endpoint = GatewayEndpoint.from_url(
+            gateway_url or GatewayEndpoint(port=gateway_port).ws_url
+        )
+        if endpoint.port != gateway_port:
+            raise DockerSandboxError(
+                "Gateway URL port does not match the configured Gateway port"
+            )
+        resolved_gateway_url = gateway_url or endpoint.ws_url
         if agent_secret_path is None or not agent_secret_path.is_file():
             raise DockerSandboxError(
                 "Explicit Stream Agent credential file is required"
@@ -869,7 +879,7 @@ with path.open('w') as output:
             "XAUTHORITY": "/tmp/.Xauthority",
             "CBROWSER_PROFILE_ID": profile_id,
             "CBROWSER_RUNTIME_INSTANCE_ID": runtime_instance_id,
-            "CBROWSER_GATEWAY_URL": gateway_url,
+            "CBROWSER_GATEWAY_URL": resolved_gateway_url,
             "CBROWSER_CONFIG_VERSION": b_inspect["Config"]["Labels"][
                 "com.cbrowser.config-version"
             ],
@@ -927,7 +937,9 @@ with path.open('w') as output:
                 },
             )
             allowed_tcp.extend(
-                await asyncio.to_thread(self._resolved_endpoint, container, gateway_url)
+                await asyncio.to_thread(
+                    self._resolved_endpoint, container, resolved_gateway_url
+                )
             )
             await asyncio.to_thread(
                 self._install_network_policy,

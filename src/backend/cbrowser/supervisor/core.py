@@ -25,6 +25,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.protocol import RuntimeEventRecord
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
@@ -81,19 +82,33 @@ class SupervisorCore:
         port_allocator: PortAllocator,
         event_forwarder: EventForwarder,
         api_client: httpx.AsyncClient,
-        gateway_url: str = "ws://host.docker.internal:18097",
+        gateway_url: Optional[str] = None,
         token_file: Optional[Path | str] = None,
         agent_key_file: Optional[Path | str] = None,
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
         coturn_container_id: str | None = None,
         webrtc_mode: str = "public",
+        gateway_port: int | None = None,
     ):
         self.docker = docker_adapter
         self.ports = port_allocator
         self.events = event_forwarder
         self.api = api_client
-        self.gateway_url = gateway_url
+        configured_port = (
+            gateway_port if gateway_port is not None else DEFAULT_GATEWAY_PORT
+        )
+        endpoint = GatewayEndpoint.from_url(
+            gateway_url or GatewayEndpoint(port=configured_port).ws_url
+        )
+        if gateway_port is not None and endpoint.port != gateway_port:
+            raise ValueError(
+                "Gateway URL port does not match the configured Gateway port"
+            )
+        self.gateway_endpoint = GatewayEndpoint(
+            host=endpoint.host, port=endpoint.port, secure=endpoint.secure
+        )
+        self.gateway_url = gateway_url or self.gateway_endpoint.ws_url
         self._token_file = Path(token_file) if token_file else None
         self.agent_credentials = (
             AgentCredentials(agent_key_file) if agent_key_file else None
@@ -595,6 +610,7 @@ class SupervisorCore:
                         profile_id,
                         self.gateway_container_id,
                         self.coturn_container_id,
+                        gateway_port=self.gateway_endpoint.port,
                     )
                 await self._report_observed(
                     profile_id, runtime_instance_id, "starting", config_version
@@ -647,6 +663,7 @@ class SupervisorCore:
                     selkies_tokens_path=selkies_tokens_file,
                     snapshot_json_path=snap_path,
                     webrtc_mode=self.webrtc_mode,
+                    gateway_port=self.gateway_endpoint.port,
                 )
 
                 if self.gateway_control is None:

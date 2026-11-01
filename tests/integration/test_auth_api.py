@@ -421,3 +421,35 @@ def test_startup_requires_explicit_allowed_origins(tmp_path, monkeypatch):
         with pytest.raises(RuntimeError, match="CBROWSER_ALLOWED_ORIGINS"):
             with TestClient(app):
                 pass
+
+
+def test_allowed_origin_with_trailing_slash_is_accepted(tmp_path: Path) -> None:
+    db_file = tmp_path / "origin_slash.db"
+    run_database_migrations(db_file)
+    admin_pass = secrets.token_urlsafe(32)
+    admin_pwd_file = tmp_path / "admin_pass.txt"
+    admin_pwd_file.write_text(admin_pass, encoding="utf-8")
+    admin_pwd_file.chmod(0o600)
+    gateway_token = secrets.token_urlsafe(32)
+    gateway_token_file = tmp_path / "gateway_token.txt"
+    gateway_token_file.write_text(gateway_token, encoding="utf-8")
+    gateway_token_file.chmod(0o600)
+
+    app = create_app(
+        db_path=db_file,
+        admin_password_file=admin_pwd_file,
+        gateway_token_file=gateway_token_file,
+        allowed_origins=["https://app.cbrowser.local/"],
+    )
+    with TestClient(app, base_url="https://app.cbrowser.local") as client:
+        login = client.post("/api/v1/auth/login", json={"password": admin_pass})
+        assert login.status_code == 200
+        csrf = login.json()["csrf_token"]
+        logout = client.post(
+            "/api/v1/auth/logout",
+            headers={
+                "X-CSRF-Token": csrf,
+                "Origin": "https://app.cbrowser.local/",
+            },
+        )
+        assert logout.status_code == 200

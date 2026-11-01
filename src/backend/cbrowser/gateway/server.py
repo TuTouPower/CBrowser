@@ -475,8 +475,12 @@ def create_gateway_app(
     async def handle_viewer_signal(request: web.Request) -> web.WebSocketResponse:
         profile_id = request.match_info["profile_id"]
 
-        # 1. Origin verification
-        origin = request.headers.get("Origin", "")
+        # 1. Origin verification (normalized scheme/host/port)
+        raw_origin = request.headers.get("Origin", "")
+        try:
+            origin = normalize_origin(raw_origin)
+        except ValueError:
+            return web.Response(status=403, text="Origin not allowed")
         if origin not in config.allowed_origins:
             return web.Response(status=403, text="Origin not allowed")
 

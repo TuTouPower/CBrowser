@@ -96,3 +96,29 @@ def test_gateway_config_short_secret_fails(
 
     with pytest.raises(ValueError, match="at least 32 bytes"):
         GatewayConfig.from_env()
+
+
+def test_gateway_config_normalizes_trailing_slash_origins(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    agent_key_file = tmp_path / "agent_key.txt"
+    agent_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    gw_token_file = tmp_path / "gw_token.txt"
+    gw_token_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    api_token_file = tmp_path / "api_token.txt"
+    api_token_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    turn_secret_file = tmp_path / "turn_secret.txt"
+    turn_secret_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+
+    monkeypatch.setenv("CBROWSER_AGENT_KEY_FILE", str(agent_key_file))
+    monkeypatch.setenv("CBROWSER_GATEWAY_TOKEN_FILE", str(gw_token_file))
+    monkeypatch.setenv("CBROWSER_GATEWAY_API_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("CBROWSER_GATEWAY_API_TOKEN_FILE", str(api_token_file))
+    monkeypatch.setenv("CBROWSER_ALLOWED_ORIGINS", "https://app.example.com/")
+    monkeypatch.setenv("CBROWSER_TURN_SECRET_FILE", str(turn_secret_file))
+    monkeypatch.setenv("CBROWSER_WEBRTC_MODE", "public")
+    monkeypatch.setenv("CBROWSER_TURN_PUBLIC_URLS", "turn:turn.example.com:3478")
+
+    cfg = GatewayConfig.from_env()
+    assert cfg.port == 18080
+    assert cfg.allowed_origins == ["https://app.example.com"]

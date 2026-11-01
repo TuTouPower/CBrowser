@@ -23,6 +23,7 @@ from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
+from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
@@ -59,14 +60,8 @@ def create_app(
         )
 
         raw_origins = allowed_origins or os.environ.get("CBROWSER_ALLOWED_ORIGINS")
-        if isinstance(raw_origins, str):
-            app.state.allowed_origins = [
-                o.strip().rstrip("/") for o in raw_origins.split(",") if o.strip()
-            ]
-        elif isinstance(raw_origins, (list, tuple)):
-            app.state.allowed_origins = [
-                str(o).strip().rstrip("/") for o in raw_origins if str(o).strip()
-            ]
+        if raw_origins:
+            app.state.allowed_origins = normalize_origins(raw_origins)
         else:
             app.state.allowed_origins = []
         if not app.state.allowed_origins:
