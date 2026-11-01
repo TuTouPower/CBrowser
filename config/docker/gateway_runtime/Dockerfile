@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 WORKDIR /app
 
@@ -9,10 +9,9 @@ ENV PYTHONUNBUFFERED=1 \
 RUN groupadd -g 1000 appgroup && \
     useradd -u 1000 -g appgroup -s /bin/sh -m appuser
 
-RUN pip install --no-cache-dir \
-    "aiohttp>=3.9.0" \
-    "pydantic>=2.0.0" \
-    "httpx>=0.27.0"
+COPY config/docker/gateway_runtime/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
 
 COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
 COPY src/backend/cbrowser/gateway /app/cbrowser/gateway

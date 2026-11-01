@@ -2,7 +2,12 @@
 !src/
 !src/backend/
 !src/backend/cbrowser/
+!src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/supervisor/
 !src/backend/cbrowser/supervisor/*.py
 !src/backend/cbrowser/domain/
 !src/backend/cbrowser/domain/*.py
+!config/
+!config/docker/
+!config/docker/supervisor_runtime/
+!config/docker/supervisor_runtime/requirements.txt

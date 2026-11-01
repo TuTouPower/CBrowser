@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.4
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 USER root
 
@@ -33,8 +33,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     tini \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pinned Python packages
-RUN pip install --no-cache-dir selkies==2.1.0 pydantic==2.14.1 aiohttp==3.14.5
+# Install locked Python packages
+COPY config/docker/stream_runtime/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
+    rm -f /tmp/requirements.txt
 
 # Ensure non-root cbrowser user (UID 1000, GID 1000) exists
 RUN if ! id -u cbrowser >/dev/null 2>&1; then \
