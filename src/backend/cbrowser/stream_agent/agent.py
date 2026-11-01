@@ -54,6 +54,11 @@ QUEUE_MAX_SIZE = 100
 HEARTBEAT_INTERVAL = 30.0
 # Bound for a new ICE generation to take over before Gateway is told it failed.
 ICE_RESTART_COMMIT_TIMEOUT = 20.0
+# Keep the loopback Selkies session alive after a viewer tunnel closes so the
+# official client can resume it with the same resume_key. The server-side hold
+# is only 3s and is skipped entirely on a clean close; 10s covers the frontend's
+# 5s reconnect window with margin without keeping abandoned sessions forever.
+RESUME_GRACE_SECONDS = 10.0
 
 
 class ISO8601Formatter(logging.Formatter):
@@ -161,12 +166,27 @@ class ViewerWorkerEntry:
         self.resume_key = resume_key
 
 
+class DetachedUpstream:
+    """Selkies session kept open briefly after its viewer tunnel closed."""
+
+    def __init__(
+        self,
+        upstream_ws: aiohttp.ClientWebSocketResponse,
+        reader_task: asyncio.Task,
+        timer_task: asyncio.Task,
+    ):
+        self.upstream_ws = upstream_ws
+        self.reader_task = reader_task
+        self.timer_task = timer_task
+
+
 class StreamAgent:
     def __init__(
         self,
         config: StreamAgentConfig,
         policy_agent: Optional[LiveCapturePolicyAgent] = None,
         upstream_url: str = "ws://127.0.0.1:18081",
+        resume_grace_seconds: float = RESUME_GRACE_SECONDS,
     ):
         self.config = config
         self.policy = policy_agent or LiveCapturePolicyAgent(
@@ -183,6 +203,9 @@ class StreamAgent:
         self._generation_counter = 0
         self.viewer_workers: Dict[str, ViewerWorkerEntry] = {}
         self.conn_id_to_sdk_peer_id: Dict[str, str] = {}
+        self._detached_upstreams: Dict[tuple[str, str], DetachedUpstream] = {}
+        self._detached_generations: set[tuple[str, int]] = set()
+        self._resume_grace_seconds = resume_grace_seconds
         self._backoff = ReconnectBackoff()
         self.heartbeat_interval: float = 10.0
         self._heartbeat_task: Optional[asyncio.Task] = None
@@ -403,17 +426,140 @@ class StreamAgent:
             return_exceptions=True,
         )
 
-    async def _cleanup_all_viewers(self, caller: str = "disconnect") -> None:
-        """Invalidate generations before draining workers and their readers."""
-        workers = list(self.viewer_workers.values())
-        conn_ids = list(self.viewer_workers)
-        self.viewer_workers.clear()
-        for conn_id in conn_ids:
-            sdk_id = self.conn_id_to_sdk_peer_id.pop(conn_id, None)
-            self.policy.unregister_peer_mapping(sdk_peer_id=sdk_id, conn_id=conn_id)
-            self.policy.remove_viewer(conn_id)
-        await self._drain_workers(workers)
+    async def _cleanup_all_viewers(
+        self, caller: str = "disconnect", *, detach: bool = True
+    ) -> None:
+        """Invalidate generations before draining or detaching viewers.
+
+        A Gateway disconnect is exactly the reconnect case this path serves:
+        the page's signaling socket dropped and the official client is about to
+        come back with the same resume_key. Keep those Selkies sessions alive
+        for the resume grace window. Agent shutdown closes them immediately.
+        """
+        if detach:
+            for conn_id in list(self.viewer_workers):
+                await self._detach_viewer(conn_id, caller=caller, reconcile=False)
+        else:
+            workers = list(self.viewer_workers.values())
+            conn_ids = list(self.viewer_workers)
+            self.viewer_workers.clear()
+            for conn_id in conn_ids:
+                sdk_id = self.conn_id_to_sdk_peer_id.pop(conn_id, None)
+                self.policy.unregister_peer_mapping(
+                    sdk_peer_id=sdk_id, conn_id=conn_id
+                )
+                self.policy.remove_viewer(conn_id)
+            await self._drain_workers(workers)
         await self.policy.reconcile_capture_state(caller=caller)
+
+    async def _detach_viewer(
+        self,
+        conn_id: str,
+        *,
+        caller: str = "viewer_tunnel_close",
+        reconcile: bool = True,
+    ) -> None:
+        """Drop the viewer but keep its Selkies upstream open for resume."""
+        worker = self.viewer_workers.pop(conn_id, None)
+        sdk_id = self.conn_id_to_sdk_peer_id.pop(conn_id, None)
+        if sdk_id:
+            self.policy.unregister_peer_mapping(
+                sdk_peer_id=sdk_id, conn_id=conn_id
+            )
+        self.policy.remove_viewer(conn_id)
+
+        keep = bool(
+            worker
+            and worker.tab_id
+            and worker.resume_key
+            and worker.upstream_ws
+            and not worker.upstream_ws.closed
+            and worker.reader_task
+            and not worker.reader_task.done()
+        )
+        if not keep:
+            if worker:
+                await self._drain_workers([worker])
+            if reconcile:
+                await self.policy.reconcile_capture_state(caller=caller)
+            return
+
+        assert worker is not None
+        assert worker.upstream_ws is not None
+        assert worker.reader_task is not None
+        assert worker.tab_id is not None and worker.resume_key is not None
+        key = (worker.tab_id, worker.resume_key)
+        previous = self._detached_upstreams.pop(key, None)
+        if previous is not None:
+            await self._close_detached(previous)
+
+        self._detached_generations.add((conn_id, worker.generation))
+        if worker.task and not worker.task.done():
+            worker.task.cancel()
+            await asyncio.gather(worker.task, return_exceptions=True)
+        else:
+            self._detached_generations.discard((conn_id, worker.generation))
+
+        timer = asyncio.create_task(
+            self._expire_detached(key, worker.upstream_ws, worker.reader_task)
+        )
+        self._detached_upstreams[key] = DetachedUpstream(
+            worker.upstream_ws, worker.reader_task, timer
+        )
+        logger.info(
+            "Viewer tunnel closed; holding Selkies session for %.0fs resume",
+            self._resume_grace_seconds,
+        )
+        if reconcile:
+            await self.policy.reconcile_capture_state(caller=caller)
+
+    async def _expire_detached(
+        self,
+        key: tuple[str, str],
+        upstream_ws: aiohttp.ClientWebSocketResponse,
+        reader_task: asyncio.Task,
+    ) -> None:
+        try:
+            await asyncio.sleep(self._resume_grace_seconds)
+            entry = self._detached_upstreams.get(key)
+            if entry is None or entry.upstream_ws is not upstream_ws:
+                return
+            self._detached_upstreams.pop(key, None)
+            await self._close_detached(entry, cancel_timer=False)
+        except asyncio.CancelledError:
+            pass
+
+    async def _close_detached(
+        self, entry: DetachedUpstream, *, cancel_timer: bool = True
+    ) -> None:
+        if cancel_timer and entry.timer_task and not entry.timer_task.done():
+            entry.timer_task.cancel()
+        if not entry.upstream_ws.closed:
+            try:
+                await entry.upstream_ws.close()
+            except Exception:
+                pass
+        if entry.reader_task and not entry.reader_task.done():
+            entry.reader_task.cancel()
+            await asyncio.gather(entry.reader_task, return_exceptions=True)
+
+    async def _close_all_detached_upstreams(self) -> None:
+        entries = list(self._detached_upstreams.values())
+        self._detached_upstreams.clear()
+        await asyncio.gather(
+            *(self._close_detached(entry) for entry in entries),
+            return_exceptions=True,
+        )
+
+    def _release_detached_upstream(
+        self, upstream_ws: aiohttp.ClientWebSocketResponse
+    ) -> None:
+        for key, entry in list(self._detached_upstreams.items()):
+            if entry.upstream_ws is upstream_ws:
+                self._detached_upstreams.pop(key, None)
+                if entry.timer_task and not entry.timer_task.done():
+                    entry.timer_task.cancel()
+                break
 
     async def _handle_gateway_envelope(
         self,
@@ -513,7 +659,7 @@ class StreamAgent:
                     )
 
         elif pkt_type == "close":
-            await self._terminate_viewer(conn_id, caller="viewer_tunnel_close")
+            await self._detach_viewer(conn_id)
 
     async def _handle_control_packet(
         self,
@@ -768,24 +914,30 @@ class StreamAgent:
                 except Exception:
                     pass
         finally:
-            if upstream_reader_task and not upstream_reader_task.done():
-                upstream_reader_task.cancel()
-            if upstream_ws and not upstream_ws.closed:
-                try:
-                    await upstream_ws.close()
-                except Exception:
-                    pass
-            # Generation check: superseded worker must not delete replacement
-            active = self.viewer_workers.get(conn_id)
-            if active and active.generation == generation:
-                self.viewer_workers.pop(conn_id, None)
-                sdk_id = self.conn_id_to_sdk_peer_id.pop(conn_id, None)
-                if sdk_id:
-                    self.policy.unregister_peer_mapping(
-                        sdk_peer_id=sdk_id, conn_id=conn_id
+            detached = (conn_id, generation) in self._detached_generations
+            if detached:
+                self._detached_generations.discard((conn_id, generation))
+            else:
+                if upstream_reader_task and not upstream_reader_task.done():
+                    upstream_reader_task.cancel()
+                if upstream_ws and not upstream_ws.closed:
+                    try:
+                        await upstream_ws.close()
+                    except Exception:
+                        pass
+                # Generation check: superseded worker must not delete replacement
+                active = self.viewer_workers.get(conn_id)
+                if active and active.generation == generation:
+                    self.viewer_workers.pop(conn_id, None)
+                    sdk_id = self.conn_id_to_sdk_peer_id.pop(conn_id, None)
+                    if sdk_id:
+                        self.policy.unregister_peer_mapping(
+                            sdk_peer_id=sdk_id, conn_id=conn_id
+                        )
+                    self.policy.remove_viewer(conn_id)
+                    await self.policy.reconcile_capture_state(
+                        caller="viewer_worker_exit"
                     )
-                self.policy.remove_viewer(conn_id)
-                await self.policy.reconcile_capture_state(caller="viewer_worker_exit")
 
     def _correlate_sdk_peer(
         self,
@@ -879,6 +1031,7 @@ class StreamAgent:
                     )
                 except Exception:
                     pass
+            self._release_detached_upstream(upstream_ws)
 
     async def _trigger_ice_restart(
         self, conn_id: Optional[str], payload: Dict[str, Any]
@@ -1004,7 +1157,8 @@ class StreamAgent:
                 await self._gw_ws.close()
             except Exception:
                 pass
-        await self._cleanup_all_viewers(caller="agent_stop")
+        await self._cleanup_all_viewers(caller="agent_stop", detach=False)
+        await self._close_all_detached_upstreams()
         await self.policy.stop()
 
     def close(self) -> None:

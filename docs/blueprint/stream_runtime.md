@@ -20,6 +20,8 @@ Stream Agent 在转发上游 `HELLO client` 时，若页面未自带 `client_tok
 
 每个 Viewer 有独立 Peer、输入与静音状态，共享 Profile 捕获及编码管线。远端几何取自本次启动绑定的 Profile 不可变配置版本（默认 1920×1080，DPR 固定 1）：Supervisor 从绑定快照读取 `screen_width/screen_height` 注入 Stream（`CBROWSER_SCREEN_WIDTH/HEIGHT`），受管启动缺失或非法即失败；独立启动无注入时入口读取真实 Xvfb 尺寸。页面 viewport、连接顺序和客户端 resize 指令不得修改远端尺寸。保留官方客户端，Web Locks shim 在复制 sessionStorage 造成身份冲突时重签新页，原页继续运行；重连同时绑定 tab_id 与 resume_key。
 
+Viewer 信令隧道关闭或 Gateway 断线时，Agent 不立即关闭该 Viewer 的 loopback Selkies upstream，而是保留会话至 10 秒 resume 窗口；同 `tab_id`/`resume_key` 的重连由 Selkies `RESUMED` 接管，窗口到期或 Agent 停止时才关闭 upstream。Selkies 自身的 `SESSION_HOLD_S=3s` 只覆盖无 close 帧的异常断开，不能覆盖干净关闭；Agent 侧保留窗口覆盖前端 5 秒重连等待，避免把应当恢复的会话误判为新会话。
+
 共享策略的输入全部在 Stream 内取得（计划 9.3）：页面可见性只来自 Selkies 官方每 Peer STOP_VIDEO/START_VIDEO 回调，Peer 加入/离开来自 consumers 变化与断开回调，输入来自数据通道，运动来自捕获 damage；Gateway 不下发可见性。活动前台目标30 FPS，静止前台8 FPS；持续画面变化保持活动目标。一个页面隐藏不能降低其他前台需求；全部隐藏或断开后暂停捕获。恢复可见先恢复8 FPS并请求关键帧，再按活动提高。Supervisor 提供8–30 FPS配额上限，解除后恢复正常目标；客户端数据通道不能覆盖配额或远端几何。
 
 ## Gateway wire 协议
