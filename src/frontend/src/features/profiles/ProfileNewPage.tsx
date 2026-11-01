@@ -40,7 +40,7 @@ export function ProfileNewPage() {
 
       navigate(`/?profileId=${created.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to create profile");
+      setError(err instanceof Error ? err.message : t("failedToCreateProfile"));
     }
   };
 
@@ -51,7 +51,7 @@ export function ProfileNewPage() {
         className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to Dashboard
+        {t("backToDashboard")}
       </Link>
 
       <div className="bg-surface-1 border border-border rounded-lg p-6">
@@ -74,14 +74,14 @@ export function ProfileNewPage() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Work Profile"
+              placeholder={t("profileNameExample")}
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              Proxy URL (optional)
+              {t("proxyUrlOptional")}
             </label>
             <input
               type="text"
@@ -95,7 +95,7 @@ export function ProfileNewPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
-                Width (px)
+                {t("widthPx")}
               </label>
               <input
                 data-testid="profile-width-input"
@@ -107,7 +107,7 @@ export function ProfileNewPage() {
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
-                Height (px)
+                {t("heightPx")}
               </label>
               <input
                 data-testid="profile-height-input"
@@ -121,14 +121,14 @@ export function ProfileNewPage() {
 
           <div>
             <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              Tags (comma separated)
+              {t("tagsCommaSeparated")}
             </label>
             <input
               data-testid="profile-tags-input"
               type="text"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
-              placeholder="dev, research, shopping"
+              placeholder={t("tagsPlaceholder")}
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
           </div>

@@ -77,7 +77,7 @@ export function ProfileDetailPage() {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 2000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to update profile");
+      setError(err instanceof Error ? err.message : t("failedToUpdateProfile"));
     }
   };
 
@@ -89,7 +89,7 @@ export function ProfileDetailPage() {
       await deleteMutation.mutateAsync(profileId);
       navigate("/");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to delete profile");
+      setError(err instanceof Error ? err.message : t("failedToDeleteProfile"));
     }
   };
 

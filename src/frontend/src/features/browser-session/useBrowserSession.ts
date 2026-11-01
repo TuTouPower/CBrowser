@@ -6,6 +6,7 @@ import {
 } from "./audio_status";
 import { sendAudioPipelineControl } from "./audio_control";
 import { SessionDiagnosticsData, SessionStage } from "./types";
+import { useI18n } from "../../i18n";
 
 interface UseBrowserSessionOptions {
   initialStage?: SessionStage;
@@ -24,6 +25,7 @@ export function useBrowserSession(
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
   options: UseBrowserSessionOptions = {}
 ) {
+  const { t } = useI18n();
   const [stage, setStage] = useState<SessionStage>(
     options.initialStage || "checking_runtime"
   );
@@ -131,9 +133,7 @@ export function useBrowserSession(
         if (!active) return;
         if (!resp.ok) {
           setStage("runtime_not_ready");
-          setErrorMessage(
-            `Profile runtime check failed (HTTP ${resp.status})`
-          );
+          setErrorMessage(t("runtimeCheckFailed", { status: resp.status }));
           return;
         }
         const data = await resp.json();
@@ -144,12 +144,16 @@ export function useBrowserSession(
         } else if (observed === "error" || observed === "failed") {
           setStage("error");
           setErrorMessage(
-            `Profile runtime reported an error (state: ${observed})`
+            t("runtimeReportedError", {
+              state: observed || t("runtimeStateUnknown"),
+            })
           );
         } else if (observed !== "running" && observed !== "ready") {
           setStage("runtime_not_ready");
           setErrorMessage(
-            `Profile runtime is not running (state: ${observed || "unknown"})`
+            t("runtimeNotRunning", {
+              state: observed || t("runtimeStateUnknown"),
+            })
           );
         } else {
           setStage("connecting_signaling");
@@ -200,13 +204,13 @@ export function useBrowserSession(
           connectionState === "failed"
         ) {
           setStage("ice_failed");
-          setErrorMessage("WebRTC ICE connectivity check failed");
+          setErrorMessage(t("iceConnectivityCheckFailed"));
         } else if (disconnected) {
           if (!iceDisconnectTimerRef.current) {
             iceDisconnectTimerRef.current = setTimeout(() => {
               iceDisconnectTimerRef.current = null;
               setStage("ice_failed");
-              setErrorMessage("WebRTC ICE connectivity was lost");
+              setErrorMessage(t("iceConnectivityLost"));
             }, options.iceDisconnectGraceMs ?? DEFAULT_ICE_DISCONNECT_GRACE_MS);
           }
         } else if (
@@ -239,7 +243,7 @@ export function useBrowserSession(
             }, 5000);
           } else {
             setStage("signaling_failed");
-            setErrorMessage(`Signaling WebSocket disconnected (code ${code})`);
+            setErrorMessage(t("signalingDisconnected", { code }));
           }
         }
       } else if (type === "CBROWSER_LIFECYCLE_STALE") {
@@ -254,7 +258,7 @@ export function useBrowserSession(
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [reconnect, iframeRef, options.iceDisconnectGraceMs]);
+  }, [reconnect, iframeRef, options.iceDisconnectGraceMs, t]);
 
   // Once the session is live, align the official audio pipeline with this page's
   // own mute state (START_AUDIO/STOP_AUDIO), never with another page.
@@ -353,7 +357,7 @@ export function useBrowserSession(
           setStage((curr) =>
             curr === "media_waiting" ? "media_no_frames" : curr
           );
-          setErrorMessage("媒体流超时未收到解码画面 (No frames decoded)");
+          setErrorMessage(t("mediaFramesTimeout"));
         }
       }, timeoutMs);
 
@@ -363,7 +367,7 @@ export function useBrowserSession(
         }
       };
     }
-  }, [stage, options.mediaTimeoutMs]);
+  }, [stage, options.mediaTimeoutMs, t]);
 
   // Page Lifecycle & bfcache reactivation (AC-007)
   useEffect(() => {
