@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { installSelkiesClientAdapter } from "./adapter";
+import {
+  DATA_CHANNEL_HISTORY_LIMIT,
+  RESTART_OFFER_HISTORY_LIMIT,
+  installSelkiesClientAdapter,
+} from "./adapter";
 
 class MockWebSocket {
   static OPEN = 1;
@@ -106,5 +110,63 @@ describe("SelkiesClientAdapter ice_restart parity", () => {
       cbrowser: "ice_restart_answer",
       generation: 3,
     });
+  });
+});
+
+describe("SelkiesClientAdapter bounded diagnostics", () => {
+  it("keeps the sent DataChannel history bounded", () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+
+    const total = DATA_CHANNEL_HISTORY_LIMIT + 25;
+    for (let i = 0; i < total; i += 1) {
+      win.RTCDataChannel.prototype.send(`k,${i}`);
+    }
+
+    expect(win.__sentDataChannelMessages).toHaveLength(
+      DATA_CHANNEL_HISTORY_LIMIT
+    );
+    expect(win.__sentDataChannelMessages[0]).toBe(
+      `k,${total - DATA_CHANNEL_HISTORY_LIMIT}`
+    );
+    expect(win.__sentDataChannelMessages.at(-1)).toBe(`k,${total - 1}`);
+  });
+
+  it("retains only the active peer connection", () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+
+    const first = new win.RTCPeerConnection();
+    const second = new win.RTCPeerConnection();
+
+    expect(win.__pcs).toHaveLength(1);
+    expect(win.__pcs[0]).toBe(second);
+    expect(win.__activePC).toBe(second);
+    expect(win.__pcs).not.toContain(first);
+  });
+
+  it("caps recorded ICE restart offers", async () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+    new win.RTCPeerConnection();
+
+    const ws = new win.WebSocket("/api/webrtc/signaling");
+    const handler = ((ws as any).handlers.get("message") || [])[0];
+    const total = RESTART_OFFER_HISTORY_LIMIT + 5;
+    for (let generation = 1; generation <= total; generation += 1) {
+      await handler({
+        data: JSON.stringify({
+          cbrowser: "ice_restart",
+          generation,
+          offer: { type: "offer", sdp: "v=0\r\n" },
+        }),
+      });
+    }
+
+    expect(win.__restartOffers).toHaveLength(RESTART_OFFER_HISTORY_LIMIT);
+    expect(win.__restartOffers[0].generation).toBe(
+      total - RESTART_OFFER_HISTORY_LIMIT + 1
+    );
+    expect(win.__restartOffers.at(-1).generation).toBe(total);
   });
 });

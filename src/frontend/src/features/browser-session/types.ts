@@ -7,17 +7,17 @@ import type { AudioStatus } from "./audio_status";
 export type { AudioStatus };
 
 export type SessionStage =
-  | "idle"
   | "checking_runtime"
   | "runtime_not_ready"
+  | "stopping"
   | "connecting_signaling"
   | "signaling_failed"
-  | "connecting_ice"
   | "ice_failed"
   | "media_waiting"
   | "media_no_frames"
   | "connected"
-  | "reconnecting";
+  | "reconnecting"
+  | "error";
 
 export interface CandidatePairDiagnostics {
   localType: string | null;

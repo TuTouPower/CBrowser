@@ -13,6 +13,16 @@
  * - Report diagnostic metrics and lifecycle state changes
  */
 
+export const DATA_CHANNEL_HISTORY_LIMIT = 500;
+export const RESTART_OFFER_HISTORY_LIMIT = 20;
+
+function pushBounded(target: any[], value: unknown, limit: number): void {
+  target.push(value);
+  if (target.length > limit) {
+    target.splice(0, target.length - limit);
+  }
+}
+
 export function installSelkiesClientAdapter(
   targetWindow: Window = window,
   profileId: string = "default"
@@ -72,8 +82,12 @@ export function installSelkiesClientAdapter(
       if (typeof data === "string" && data.startsWith("r,")) {
         return;
       }
-      if (win.__sentDataChannelMessages) {
-        win.__sentDataChannelMessages.push(data);
+      if (Array.isArray(win.__sentDataChannelMessages)) {
+        pushBounded(
+          win.__sentDataChannelMessages,
+          data,
+          DATA_CHANNEL_HISTORY_LIMIT
+        );
       }
       if (NativeDataChannelSend) {
         return NativeDataChannelSend.call(this, data);
@@ -154,8 +168,9 @@ export function installSelkiesClientAdapter(
       const pc = new NativeRTCPeerConnection(config);
       activePC = pc;
       win.__activePC = pc;
-      win.__pcs = win.__pcs || [];
-      win.__pcs.push(pc);
+      // Only the live peer connection is retained; stale PCs are not
+      // reachable from diagnostics and must not accumulate on reconnects.
+      win.__pcs = [pc];
 
       if (typeof pc.addEventListener === "function") {
         pc.addEventListener("datachannel", (event: any) => {
@@ -351,7 +366,8 @@ export function installSelkiesClientAdapter(
               if (parsed.cbrowser === "rtc_config") {
                 win.__applyGatewayRtcConfig(parsed.rtc_config);
               } else if (parsed.cbrowser === "ice_restart") {
-                win.__restartOffers = win.__restartOffers || [];
+                const restartOffers =
+                  win.__restartOffers || (win.__restartOffers = []);
                 let offerUfrag: string | null = null;
                 if (parsed.offer && parsed.offer.sdp) {
                   for (const line of parsed.offer.sdp.split("\n")) {
@@ -362,11 +378,15 @@ export function installSelkiesClientAdapter(
                     }
                   }
                 }
-                win.__restartOffers.push({
-                  generation: parsed.generation,
-                  ufrag: offerUfrag,
-                  offer: parsed.offer,
-                });
+                pushBounded(
+                  restartOffers,
+                  {
+                    generation: parsed.generation,
+                    ufrag: offerUfrag,
+                    offer: parsed.offer,
+                  },
+                  RESTART_OFFER_HISTORY_LIMIT
+                );
 
                 if (parsed.rtc_config) {
                   win.__applyGatewayRtcConfig(parsed.rtc_config);

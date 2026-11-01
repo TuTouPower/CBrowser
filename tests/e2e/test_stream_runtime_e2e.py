@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import subprocess
+import time
 import uuid
 from pathlib import Path
 
@@ -26,6 +27,43 @@ ENGINE_CACHE = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")
 
 RUN_LABEL = "cbrowser-t004-e2e"
 SCRATCH_BASE = Path(os.path.abspath(".scratch/t004_implementation/e2e_work"))
+
+
+async def wait_for_viewer_count(gateway: "GatewayMockServer", expected: int,
+                                timeout: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if len(gateway.viewers) == expected:
+            return
+        await asyncio.sleep(0.1)
+    raise AssertionError(
+        f"Expected {expected} active viewers, got {len(gateway.viewers)}"
+    )
+
+
+async def wait_for_page_stats(page, stats_script: str, predicate, *,
+                              timeout: float = 15.0,
+                              description: str = "page stats"):
+    deadline = time.monotonic() + timeout
+    last = None
+    while time.monotonic() < deadline:
+        last = await page.evaluate(stats_script)
+        if last and predicate(last):
+            return last
+        await asyncio.sleep(0.1)
+    raise AssertionError(f"Timed out waiting for {description}: {last}")
+
+
+async def wait_for_log(log_reader, needle: str, *, offset: int = 0,
+                       timeout: float = 15.0) -> str:
+    deadline = time.monotonic() + timeout
+    last = ""
+    while time.monotonic() < deadline:
+        last = (await log_reader())[offset:]
+        if needle in last:
+            return last
+        await asyncio.sleep(0.2)
+    raise AssertionError(f"Timed out waiting for log {needle!r}: {last[-500:]}")
 
 
 class GatewayMockServer:
@@ -794,10 +832,7 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             await page2.goto(f"http://127.0.0.1:{gw_port}/#primary", wait_until="load")
 
             # Check both viewers connected
-            await asyncio.sleep(2.0)
-            assert len(gateway.viewers) == 2, (
-                f"Expected 2 active viewers, got {len(gateway.viewers)}"
-            )
+            await wait_for_viewer_count(gateway, 2)
 
             # Wait for WebRTC media decoding on Tab 1 and Tab 2
             stats1 = None
@@ -851,9 +886,28 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             frames1_initial = stats1["video"]["framesDecoded"]
             frames2_initial = stats2["video"]["framesDecoded"]
 
-            await asyncio.sleep(2.0)
-            stats1_later = await page1.evaluate(stats_script)
-            stats2_later = await page2.evaluate(stats_script)
+            def _media_grew(stats, initial) -> bool:
+                return (
+                    stats["video"]["framesDecoded"]
+                    > initial["video"]["framesDecoded"]
+                    and stats["audio"]["bytesReceived"]
+                    > initial["audio"]["bytesReceived"]
+                    and stats["audio"]["totalAudioEnergy"]
+                    > initial["audio"]["totalAudioEnergy"]
+                )
+
+            stats1_later = await wait_for_page_stats(
+                page1,
+                stats_script,
+                lambda st: _media_grew(st, stats1),
+                description="Tab 1 media growth",
+            )
+            stats2_later = await wait_for_page_stats(
+                page2,
+                stats_script,
+                lambda st: _media_grew(st, stats2),
+                description="Tab 2 media growth",
+            )
 
             for stats in (stats1_later, stats2_later):
                 candidate = stats["selectedRemoteCandidate"]
@@ -975,9 +1029,28 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             )
 
             # Original peers retain their connections and keep playing.
-            await asyncio.sleep(2.0)
-            stats1_post_dup = await page1.evaluate(stats_script)
-            stats2_post_dup = await page2.evaluate(stats_script)
+            stats1_post_dup = await wait_for_page_stats(
+                page1,
+                stats_script,
+                lambda st: (
+                    st["video"]["framesDecoded"]
+                    > stats1_pre_dup["video"]["framesDecoded"]
+                    and st["audio"]["totalAudioEnergy"]
+                    > stats1_pre_dup["audio"]["totalAudioEnergy"]
+                ),
+                description="Page 1 media growth after duplicate tab",
+            )
+            stats2_post_dup = await wait_for_page_stats(
+                page2,
+                stats_script,
+                lambda st: (
+                    st["video"]["framesDecoded"]
+                    > stats2_pre_dup["video"]["framesDecoded"]
+                    and st["audio"]["totalAudioEnergy"]
+                    > stats2_pre_dup["audio"]["totalAudioEnergy"]
+                ),
+                description="Page 2 media growth after duplicate tab",
+            )
             assert (
                 stats1_post_dup["video"]["framesDecoded"]
                 > stats1_pre_dup["video"]["framesDecoded"]
@@ -1117,10 +1190,12 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             assert tab1 != tab2 and tab1 in by_tab and tab2 in by_tab
             before_cap_logs = await native_logs()
             await policy_packet("supervisor_quota", {"max_fps_cap": 15})
-            await asyncio.sleep(1)
+            await wait_for_log(
+                native_logs,
+                "Updated framerate to 15 fps",
+                offset=len(before_cap_logs),
+            )
             control_proof["capped_frames_2s"] = await frame_window()
-            cap_logs = (await native_logs())[len(before_cap_logs) :]
-            assert "Updated framerate to 15 fps" in cap_logs
             assert 0 < control_proof["capped_frames_2s"] <= 40
             # Client input must not override Supervisor cap or profile geometry.
             await page1.evaluate("""() => {
@@ -1139,20 +1214,26 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 geometry = (await page.evaluate(stats_script))["video"]
                 assert (geometry["frameWidth"], geometry["frameHeight"]) == (1920, 1080)
             await policy_packet("supervisor_quota", {"max_fps_cap": None})
-            await asyncio.sleep(1)
+            await wait_for_log(
+                native_logs,
+                "Updated framerate to 30 fps",
+                offset=len(before_cap_logs),
+            )
             control_proof["restored_frames_2s"] = await frame_window()
             assert control_proof["restored_frames_2s"] > 0
 
             before_static_logs = await native_logs()
             await evaluate_remote("motionEnabled=false; true")
-            await asyncio.sleep(4)
-            static_logs = (await native_logs())[len(before_static_logs) :]
-            assert "Updated framerate to 8 fps" in static_logs
+            await wait_for_log(
+                native_logs,
+                "Updated framerate to 8 fps",
+                offset=len(before_static_logs),
+            )
             await evaluate_remote("motionEnabled=true; true")
-            await asyncio.sleep(3)
-            assert (
-                "Updated framerate to 30 fps"
-                in (await native_logs())[len(before_static_logs) :]
+            await wait_for_log(
+                native_logs,
+                "Updated framerate to 30 fps",
+                offset=len(before_static_logs),
             )
 
             resource_spec = importlib.util.spec_from_file_location(
@@ -1387,10 +1468,18 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
 
             # Close Tab 1, ensure Tab 2 remains active and continues receiving media
             await page1.close()
-            await asyncio.sleep(2.0)
-            assert len(gateway.viewers) == 1, "Expected 1 viewer after closing Tab 1"
-
-            stats2_after_close = await page2.evaluate(stats_script)
+            await wait_for_viewer_count(gateway, 1)
+            stats2_after_close = await wait_for_page_stats(
+                page2,
+                stats_script,
+                lambda st: (
+                    st["video"]["framesDecoded"]
+                    > stats2_later["video"]["framesDecoded"]
+                    and st["audio"]["totalAudioEnergy"]
+                    > stats2_later["audio"]["totalAudioEnergy"]
+                ),
+                description="Tab 2 media growth after closing Tab 1",
+            )
             assert stats2_after_close["connectionState"] == "connected", (
                 "Tab 2 dropped connection"
             )

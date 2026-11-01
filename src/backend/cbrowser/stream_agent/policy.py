@@ -114,6 +114,9 @@ class LiveCapturePolicyAgent:
         self._is_paused = False
         self._current_fps = self.min_fps
         self._last_input_time: float = 0.0
+        # Input events only mark this flag; the periodic reconciler applies it.
+        # Creating one task per mouse move would flood the loop during drags.
+        self._reconcile_pending: bool = False
         self._last_motion_time: float = 0.0
         self._resume_time: float = 0.0
 
@@ -213,13 +216,13 @@ class LiveCapturePolicyAgent:
                 self._sdk_peer_to_conn.pop(p_id, None)
 
     def record_input(self) -> None:
-        """Mark that a user input event (keyboard, mouse, IME) just occurred."""
+        """Mark that a user input event (keyboard, mouse, IME) just occurred.
+
+        The periodic reconciler consumes the pending flag, so high-frequency
+        mouse input never creates one asyncio task per message.
+        """
         self._last_input_time = time.monotonic()
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self.reconcile_capture_state(caller="record_input"))
-        except RuntimeError:
-            pass
+        self._reconcile_pending = True
 
     def set_peer_active(
         self,
@@ -426,6 +429,7 @@ class LiveCapturePolicyAgent:
         Unified, idempotent, serialized capture state controller.
         Protected by asyncio.Lock to eliminate dual-controller race conditions.
         """
+        self._reconcile_pending = False
         safe_caller = _sanitize_caller(caller)
         async with self._control_lock:
             p = self.pipeline

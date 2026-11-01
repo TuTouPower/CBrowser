@@ -13,6 +13,9 @@ function samples(
     present: value.present ?? true,
     bytesReceived: value.bytesReceived ?? 0,
     packetsReceived: value.packetsReceived ?? 0,
+    ...(value.totalAudioEnergy !== undefined
+      ? { totalAudioEnergy: value.totalAudioEnergy }
+      : {}),
   }));
 }
 

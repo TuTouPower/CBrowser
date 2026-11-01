@@ -21,17 +21,17 @@ const AUDIO_STATUS_KEYS: Record<AudioStatus, TranslationKey> = {
 };
 
 const STAGE_TITLE_KEYS: Record<SessionStage, TranslationKey> = {
-  idle: "sessionStageIdle",
   checking_runtime: "sessionStageCheckingRuntime",
   runtime_not_ready: "sessionStageRuntimeNotReady",
+  stopping: "sessionStageStopping",
   connecting_signaling: "sessionStageConnectingSignaling",
   signaling_failed: "sessionStageSignalingFailed",
-  connecting_ice: "sessionStageConnectingIce",
   ice_failed: "sessionStageIceFailed",
   media_waiting: "sessionStageMediaWaiting",
   media_no_frames: "sessionStageMediaNoFrames",
   connected: "sessionStageConnected",
   reconnecting: "sessionStageReconnecting",
+  error: "sessionStageError",
 };
 
 export const SessionDiagnostics: React.FC<SessionDiagnosticsProps> = ({
@@ -42,12 +42,13 @@ export const SessionDiagnostics: React.FC<SessionDiagnosticsProps> = ({
   onCheckStatus,
 }) => {
   const { t } = useI18n();
-  const title = t(STAGE_TITLE_KEYS[stage] ?? "sessionStageIdle");
+  const title = t(STAGE_TITLE_KEYS[stage] ?? "sessionStageCheckingRuntime");
   const isErrorStage = [
     "runtime_not_ready",
     "signaling_failed",
     "ice_failed",
     "media_no_frames",
+    "error",
   ].includes(stage);
 
   const selectedPair = diagnostics?.selectedPair;

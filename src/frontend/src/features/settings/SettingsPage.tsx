@@ -22,7 +22,7 @@ export function SettingsPage() {
         className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
       >
         <ArrowLeft className="h-4 w-4" />
-        Back to Dashboard
+        {t("backToDashboard")}
       </Link>
 
       <div className="flex items-center gap-3 mb-6">
@@ -74,24 +74,28 @@ export function SettingsPage() {
             <div className="flex items-center gap-3">
               <ShieldCheck className="h-5 w-5 text-gray-400" />
               <div>
-                <h3 className="text-sm font-medium text-gray-200">System Gateway & Control API</h3>
-                <p className="text-xs text-gray-400">Status of v2 API services</p>
+                <h3 className="text-sm font-medium text-gray-200">
+                  {t("systemGatewayControlApi")}
+                </h3>
+                <p className="text-xs text-gray-400">
+                  {t("systemApiServicesStatus")}
+                </p>
               </div>
             </div>
             <div>
               {healthStatus === "healthy" && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  Healthy
+                  {t("healthHealthy")}
                 </span>
               )}
               {healthStatus === "checking" && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  Checking...
+                  {t("healthChecking")}
                 </span>
               )}
               {healthStatus === "error" && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-                  Unreachable
+                  {t("healthUnreachable")}
                 </span>
               )}
             </div>

@@ -96,6 +96,38 @@ describe("BrowserSessionView (AC-003, AC-007, AC-004)", () => {
     expect(onCheckStatus).toHaveBeenCalledTimes(1);
   });
 
+  it("A10: stopping stage is explicit and offers status without reconnecting", () => {
+    const onCheckStatus = vi.fn();
+    renderView({
+      profileId,
+      initialStage: "stopping",
+      onCheckRuntimeStatus: onCheckStatus,
+    });
+
+    expect(screen.getByTestId("session-stage-title").textContent).toContain(
+      "正在停止会话"
+    );
+    expect(screen.queryByTestId("session-reconnect-btn")).toBeNull();
+    fireEvent.click(screen.getByTestId("session-view-status-btn"));
+    expect(onCheckStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("A10: error stage is explicit and offers reconnect plus status", () => {
+    renderView({
+      profileId,
+      initialStage: "error",
+      errorMessage: "Runtime failed",
+    });
+
+    expect(screen.getByTestId("session-stage-title").textContent).toContain(
+      "会话错误"
+    );
+    expect(screen.getByTestId("session-error-message").textContent).toContain(
+      "Runtime failed"
+    );
+    expect(screen.getByTestId("session-reconnect-btn")).toBeDefined();
+  });
+
   it("AC-007: displays signaling_failed stage with diagnostics and reconnect action", () => {
     renderView({
       profileId,
