@@ -51,3 +51,26 @@ def test_engine_cache_symlink_escape_is_rejected(tmp_path):
             browser_image=BROWSER,
             stream_image=STREAM,
         )
+
+
+@pytest.mark.parametrize(
+    "profile_id",
+    ["", ".secrets", ".hidden", "secrets", "archive", "..", "a/b", "a\\b"],
+)
+def test_profile_id_rejects_reserved_and_escaping_names(tmp_path, profile_id) -> None:
+    validator = PathValidator(tmp_path)
+    for getter in (
+        validator.get_profile_data_dir,
+        validator.get_runtime_dir,
+        validator.get_secret_dir,
+        validator.get_events_dir,
+        validator.get_exchange_dir,
+    ):
+        with pytest.raises(PathSecurityError):
+            getter(profile_id)
+
+
+def test_uuid_shaped_profile_id_remains_valid(tmp_path) -> None:
+    validator = PathValidator(tmp_path)
+    profile_id = "8f14e45f-ceea-467f-a8d4-0c1e3b2a9f10"
+    assert validator.get_runtime_dir(profile_id).name == profile_id
