@@ -138,6 +138,7 @@ async def test_upstream_4001_close_code_is_forwarded() -> None:
     agent.config = SimpleNamespace(profile_id="p1", runtime_instance_id="i1")
     agent.agent_session_id = "s1"
     agent.viewer_workers = {"c1": SimpleNamespace(generation=1)}
+    agent._detached_upstreams = {}
     gateway = _FakeGatewayWs()
 
     await agent._upstream_reader(gateway, "c1", _FakeUpstream(), 1)
