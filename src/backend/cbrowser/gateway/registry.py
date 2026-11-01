@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,8 +29,12 @@ class RegisteredAgent:
 class AgentRegistry:
     """Manages active StreamAgent connections and detects lost heartbeats (>30s)."""
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._agents: dict[str, RegisteredAgent] = {}
+        self._clock = clock
+
+    def now(self) -> float:
+        return self._clock()
 
     def register(self, agent: RegisteredAgent) -> RegisteredAgent | None:
         """Registers agent for profile, returning previous agent if replaced."""
@@ -63,14 +68,14 @@ class AgentRegistry:
             agent.agent_session_id != agent_session_id
         ):
             return False
-        agent.last_heartbeat = time.time() if now is None else now
+        agent.last_heartbeat = self.now() if now is None else now
         return True
 
     def check_heartbeat_timeouts(
         self, now: float | None = None, timeout_sec: float = 30.0
     ) -> list[RegisteredAgent]:
         """Identifies and evicts agents that exceeded heartbeat timeout_sec."""
-        t = time.time() if now is None else now
+        t = self.now() if now is None else now
         timed_out: list[RegisteredAgent] = []
         for pid, agent in list(self._agents.items()):
             if (t - agent.last_heartbeat) > timeout_sec:

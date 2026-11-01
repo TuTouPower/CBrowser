@@ -110,3 +110,34 @@ def test_registration_throttle_is_bounded_per_source() -> None:
     assert not throttle.allow("10.0.0.1", now=2.0)
     assert throttle.allow("10.0.0.2", now=2.0)
     assert throttle.allow("10.0.0.1", now=90.0)
+
+
+def test_liveness_uses_injected_monotonic_clock() -> None:
+    from cbrowser.gateway.registry import AgentRegistry, RegisteredAgent
+
+    clock = [1000.0]
+
+    def now() -> float:
+        return clock[0]
+
+    registry = AgentRegistry(clock=now)
+    agent = RegisteredAgent(
+        profile_id="p1",
+        instance_id="i1",
+        agent_session_id="s1",
+        selkies_version="2.1.0",
+        runtime_state="ready",
+        udp_port=30001,
+        config_version=1,
+        turn_host="127.0.0.1",
+        turn_port=3478,
+        ws=object(),
+        last_heartbeat=registry.now(),
+    )
+    registry.register(agent)
+
+    # Wall-clock jumps do not affect liveness, only the injected clock does.
+    clock[0] = 1029.0
+    assert registry.check_heartbeat_timeouts(timeout_sec=30.0) == []
+    clock[0] = 1031.0
+    assert len(registry.check_heartbeat_timeouts(timeout_sec=30.0)) == 1

@@ -352,7 +352,7 @@ def create_gateway_app(
             turn_host=payload.turn_host,
             turn_port=payload.turn_port,
             ws=ws,
-            last_heartbeat=time.time(),
+            last_heartbeat=registry.now(),
         )
 
         old_agent = registry.register(agent)
@@ -685,9 +685,10 @@ def create_gateway_app(
                         1.0, max(0.2, config.agent_heartbeat_timeout_sec / 4.0)
                     )
                     await asyncio.sleep(sleep_interval)
-                    now = time.time()
+                    wall_now = time.time()
                     timed_out = registry.check_heartbeat_timeouts(
-                        now=now, timeout_sec=config.agent_heartbeat_timeout_sec
+                        now=registry.now(),
+                        timeout_sec=config.agent_heartbeat_timeout_sec,
                     )
                     for agent in timed_out:
                         logger.warning(
@@ -706,7 +707,7 @@ def create_gateway_app(
                         )
 
                     # Tick rotation coordinator
-                    await rotation.tick(now=now)
+                    await rotation.tick(now=wall_now)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
