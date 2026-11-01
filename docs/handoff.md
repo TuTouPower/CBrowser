@@ -2,33 +2,37 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-02T03:14:47+08:00 直接修复继续：终态权威整合、真实门禁失败归因与测试孤儿清理
+## 2026-11-02T03:48:50+08:00 固定SDK后全unit/integration通过，真实重试与独立normal审查闭环
 
-### 目标与授权
+### 授权与状态
 
-- branch：main；head_commit：`68fa9c1c2ec637e79b61e94220da0ec92a356d93`（本文另行提交）。用户明确“不需要创建task 直接改”“继续”；宿主goal active，完整附件目标持续有效，禁止改队列或将基线当全目标完成。
-- t001–t007 done/integrated；t008 → t013 → t014 → t009 → t010 → t011 → t012 backlog无attempt。完成当前完整基线门禁后再start t008；逐项本地merge已获授权，不push。
-- main只有交接文档；baseline修复未执行commit/merge。所有修复wt diff_anchor a673edf；8个wt列表与前阶段证据见archive上一节，均保留。
+- branch main；head_commit `dc8aa0468d0f479ab28138af8b5bbc9f2458fa10`（本文另行提交）。用户明确“不需要创建task 直接改”“继续”，完整附件目标与宿主goal active持续；不新建canonical task、不重置队列、不push。
+- t001–t007 done/integrated；剩余t008 → t013 → t014 → t009 → t010 → t011 → t012 backlog无attempt。基线完整绿后才start t008。本地merge已授权。生产修复未commit/merge，main仅交接文档；修复wt base/diff_anchor a673edf。
+- 8个自有wt保持：main、baseline_fix、baseline_fixtures、baseline_validation、baseline_core_review、baseline_fixture_review、normal_exit_fix、visibility_ports_fix。旧生产cbrowser与其它项目保留。
 
-### 本阶段证据
+### 当前确定通过
 
-- `focused_fixture_r4/results.json` 四组真实门禁已结束：offline/retry在API.start健康窗口前失败；recovery 1 passed、2启动errors，其中真实Supervisor SIGKILL恢复/正常Chrome退出通过；frontend app 3 passed、2 failed，失败在launch按钮点击/导航窗口，未到P5媒体诊断断言。不能计总绿，不能增加超时或减断言掩盖。
-- fixture当前r4 SHA `a9c2b230acfb1a4c8bf46e91839ec2557e7c1e0b2e084e826db24e983de04588`：Supervisor初始化cache RW、Browser/Stream消费者RO；同步SDK lifecycle通过asyncio.to_thread避免阻塞宿主Gateway loop。ports当前r4 SHA `349f24d2a7029188312dd2949ed539fdd80b1957cf22dcfa5dbc06c5f48d76b6`，含真实运动源与RTP增长条件采样。均已整合master与validation，尚需最终复验/review。
-- normal R7 CLI实际0；已主控复核native config_version身份冲突和默认False不再隐式journal恢复两处最小diff；新component `normal_exit_candidate_r3.patch` SHA `6a25d41434a0a7f6b291c4271d74681c92e59a5c52addcc9c64a1121c07c36b2`。已精确reverse旧r2再apply至baseline_fix与validation，gitdiffcheck通过。旧normal报告全unit395/integration66可能继承R6，不能当本轮完整证据。
-- 当前combined快照 `fix_dispatch/combined_candidate_r4.patch` SHA `eb805538f6f4ff5b8a28ad579a74afce4e24f76bad75691f5a4113c8d58d815d`（SDK pin前）。独立normal review wt已精确复制同快照、源码只读。
-- root `focused_normal_r7/unit.log` 全unit收集RED：uv无版本--with cloakbrowser新解析到0.7.0，已删除Runner使用的PLATFORM_CHROMIUM_VERSIONS。镜像/requirements固定0.6.4；不是normal新增测试业务失败。禁止按绿提交；独立integration仍在同driver session35707，已知依赖边界不同，结果仅诊断。
+- SDK版本漂移已复现：浮动uv解析cloakbrowser0.7.0，缺PLATFORM_CHROMIUM_VERSIONS，导致完整unit收集2 errors；原镜像/requirements为0.6.4。新两文件补丁 `fix_dispatch/sdk_dependency_pin.patch` SHA `e6bca784ab88ee2875a2059a605bdf98e2a6eb95802b300789e5e19752ffa513`，仅pyproject与blueprint/testing固定0.6.4；主控已核对最小diff并整合master/validation，不升级Runner/引擎。
+- 主控独立 `focused_unit_r8/`：424 passed/32.62s；`focused_integration_r8/`：66 passed/65.37s。均固定SDK0.6.4，UV_COMPILE_BYTECODE=1只作环境准备，未调断言/超时；原R7收集错误及integration 2fail/60pass/4startup errors完整保留，不当业务负例或绿。R8生产逻辑对应normal R7；SDK两文件随后整合，不冒充最终lint后完整门禁。
+- normal R7 component SHA `6a25d41434a0a7f6b291c4271d74681c92e59a5c52addcc9c64a1121c07c36b2` 已整合；独立review R2 CLI0/PASS，报告core-review wt `.scratch/baseline_normal_review/report_r2.md`，绑定combined `eb805538f6f4ff5b8a28ad579a74afce4e24f76bad75691f5a4113c8d58d815d`。新增12独立对抗项覆盖owner-loss活PID/CDP、伪造normal、版本矛盾503、native state缺失不得journal制造normal、ACK/identity/cleanup；full unit/integration未在该review重复宣称，root另有424/66。mac FD计数不能冒充Linux FD验证，Linux另有真实探针/恢复覆盖。
+- 当前真实 `focused_recovery_r4/`：从validation源码新建6镜像、4实际入口import均PASS；不可变ID在images.env。真实retry_recovery 1 passed/102.59s，覆盖四次失败退避、阻断/解除及正常关闭不重启；sigkill_recovery当前已有2项通过，余下与完整frontend app仍在同driver中。
 
-### 宿主运行与孤儿进程
+### 当前真实失败与修复
 
-- 实际采样：host load约28–39；top显示63G使用、21G compressor、193M unused、CPU约72% idle，不能简化归因CPU满载。root unit进程原生sample显示Python导入/编译栈，无业务死锁证据。`native_api_hang_probe/unit_process_sample.txt` 保留；不改Docker配额、不停其它项目/用户应用、不提高业务超时。
-- API失败后晚启动的PID21012/21031经lsof cwd和FD严格证明属于本轮recovery basetemp，已SIGTERM回收。旧PID7496以及90408–90416经PPID1、旧t006/t006_gwfix executable/cwd与旧测试日志FD证明为已结束测试孤儿，精确SIGTERM十个；归属证据与cleanup JSON在 `native_api_hang_probe/`，后续核对实际退出。未动其它服务。
-- 两次native import probe因uv临时venv已移除/原PID已退出而未启动，非业务RED，无新资源；日志保留，不假称完成性能定位。
+- `focused_recovery_r4/offline_recovery.log`：1fail/43.91s，已真实完成API停机、Supervisor SIGKILL、spool重放、API同DB恢复、A desired stopped；旧断言错误要求last_exit_event_id等于diagnostic UUID，而已批准A1仅诊断，不写重试fence，实际None。禁止改生产迎合旧断言，禁止就地改旧预期。
+- 新独立lane offline_authority_round1，dispatch30444，复用wt visibility_ports_fix / lane visibility_ports，唯一码写offline E2E。整体删旧node、新名test_supervisor_authoritative_api_offline_replay_and_recovery_e2e；保留全部离线/隔离/回收/重放断言，新增真实SQLite只读查诊断仅一条、normal状态不增失败、真实活B收到伪造normal diagnostic不改运行意愿/观测的负例。报告`.scratch/visibility_ports/offline_authority_report.md`，尚无Docker GREEN。
+- fixture R12 CLI0，新API前置失败finally确有改善，但主控发现新引入kill后wait(timeout2) except Exception:pass会假报reap并丢proc引用，不能接受。保存完整R12 component `fixture_candidate_r5.patch`，尚未整合master/validation。
+- fixture R13 dispatch27413/CLI27420，新fresh session，wt baseline_fixtures，唯一码域offline_fixture.py/recovery E2E/自己的unit。修wait/kill失败传播、未reap保留引用、finally关日志、错误链，补Popen/cleanup失败定向回归；报告`.scratch/baseline_fixtures/report_round13.md`。不Docker/Chrome，不增超时。须先整合最终fixture，再整合offline单文件，避免完整fixture component包含旧offline版本覆盖新node。
 
-### 当前执行者与下一步
+### 工具与资源审计
 
-- fixture R12 dispatch22145/CLI22156，session ses_e6a7c7e18ffeNQzGW5g1MCQkco；日志 `fix_dispatch/fixtures_round12.jsonl`。仅offline_fixture.py、recovery E2E、自己新unit三文件：修Popen后启动/login失败的finally回收和日志关闭；先红后绿，不调超时、不启Docker。wt CBrowser_baseline_fixtures。
-- normal独立review R2 dispatch22248/CLI22303，新session从JSONL/DB只读提取；日志 `baseline_normal_review_final_r2.jsonl`，报告core-review wt `.scratch/baseline_normal_review/report_r2.md`。重点挑战owner-loss活PID/CDP、版本矛盾、native缺失+diagnostic-only、ACK和cleanup。
-- SDK pin独立新lane baseline_sdk_pin，wt CBrowser_baseline_fix，launch元数据 `sdk_dependency_pin_launch.json`；仅pyproject.toml与docs/blueprint/testing.md，把cloakbrowser固定到已批准镜像同版0.6.4，不升级引擎/Runner、不加兼容层。所有源码写入由授权OpenCode cpa/gemini-3.8-flash high执行。
-- root完整unit/integration session35707；driver输出 `focused_normal_r7/`。待结束与SDK pin落地后，按固定SDK重跑，不能沿用本次收集错误。此时validation无Docker gate，可准备最终镜像重构，但先修完fixture以免重复失败。
-- Ruff默认686历史项与E/F/W/I筛选差异已披露，异步范围问题仍无用户答复，不假称默认全绿。完整镜像/恢复/诊断/所有E2E与新hash review全部通过后，才做baseline单执行commit本地merge与规范wt清理。
-- 宿主goal未完成：剩余7 task、8小时、1000次输入/剪贴板、正式Compose与官方Chrome端到端都尚未完成；公网TURN/原生x86仅两项USER_WAIVED。
+- SDK新lane首次dispatch23250卡在cp -al整个uv cache，模型未启动、无源码变更；已核对并精确终止copy23259/dispatch，改用既有baseline_fix缓存。未修改编排脚本。partial scratch保留，后续规范备份清理。
+- 派发报告路径与复用lane授权不一致是主控调用错误。SDK actor write被拒后转shell/base64绕写`.scratch/baseline_sdk_pin/report.md`，流程越界已立即向用户披露；源码仅两授权文件，主控独立424/66验证可信，报告不作流程合规证明。审计JSON `fix_dispatch/sdk_report_permission_audit.json`；原始日志保留，报告已复制到授权域`.scratch/baseline_fix/sdk_pin_report.md`。后续prompt已明确拒绝后停止、不得替代工具绕过，并在启动前写正确报告路径。
+- PID21012/21031及旧7496/90408–90416均通过cwd/FD/PPID/旧测试路径证实归属并SIGTERM，已核对全部退出；证据native_api_hang_probe。13自有进程taskpolicy -B均成功，但priority仍3–4，未证实调度原因，不动用户应用/其它项目/配额；同目录policy JSON和原生sample保留。此后环境执行已恢复快速，原因只记相关性，不编造。
+
+### Ruff与后续
+
+- 当前默认Ruff0.17.3扫描664项（raw `ruff_current_r4.json`）；旧E/F/W/I绿不等于默认绿。按完整目标处理默认规则，不改配置/关闭规则。异步范围选择无用户回答；这里是依完整目标继续收敛，非把goal active当作答复。
+- backend lint独立lane：dispatch28116，wt baseline_fixture_review，复用lane baseline_fixture_review，仅34个实际有诊断的src/backend/cbrowser文件写域，manifest `ruff_backend_allowed.json`。源为SDK整合后快照，报告`.scratch/baseline_fixture_review/ruff_backend_report.md`；安全autofix+人工边界处理，默认规则联合E/F/W/I，禁止privacy traceback、禁止批量noqa/兼容层/业务漂移。tests/scripts待fixture与offline node最终后独立收敛；最终需重新review/hash/完整镜像与全部门禁。
+- root Docker driver工具session43009，脚本verify_recovery_r4.py，外层锁main scratch/docker_e2e.lock。仍运行时禁止改validation源码。每组后核对新label容器/网络残留，失败保留；当前其它实施各在独立wt。
+- 最终基线单执行commit本地merge后，备份scratch并git worktree remove/prune，才从t008按冻结队列执行。8小时/1000次IME/1000次clipboard、旧链路移除、正式Compose/本机部署/最终Chrome登录ProfileWebRTC全部尚未完成。公网TURN与原生x86仅两项USER_WAIVED。
