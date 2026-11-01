@@ -132,6 +132,7 @@ class RuntimeCoordinator:
         profile_service: ProfileService,
         require_supervisor: bool = False,
         max_retries: int | None = None,
+        stop_max_retries: int = 5,
         initial_backoff: float = 0.5,
         max_backoff: float = 10.0,
         backoff_factor: float = 2.0,
@@ -155,6 +156,7 @@ class RuntimeCoordinator:
         self.profile_service = profile_service
         self.require_supervisor = require_supervisor
         self.max_retries = max_retries
+        self.stop_max_retries = stop_max_retries
         self.initial_backoff = initial_backoff
         self.max_backoff = max_backoff
         self.backoff_factor = backoff_factor
@@ -466,10 +468,27 @@ class RuntimeCoordinator:
                 if success:
                     break
                 retries += 1
-                if self.max_retries is not None and retries >= self.max_retries:
+                limit = self.max_retries
+                if limit is None and self.stop_max_retries is not None:
+                    try:
+                        rt = await self.profile_service.get_runtime(profile_id)
+                        if rt.desired_state == "stopped":
+                            limit = self.stop_max_retries
+                    except Exception:
+                        pass
+                if limit is not None and retries >= limit:
                     logger.warning(
-                        "Max retries reached for profile %s reconciliation", profile_id
+                        "Reconciliation retry limit reached: profile=%s limit=%s",
+                        profile_id,
+                        limit,
                     )
+                    previous = self.get_last_error(profile_id)
+                    self.set_last_error(
+                        profile_id,
+                        (previous + "; " if previous else "")
+                        + "Reconciliation retry limit reached; manual retry required",
+                    )
+                    await self.publish_profile_change(profile_id)
                     break
                 await asyncio.sleep(min(backoff, self.max_backoff))
                 backoff *= self.backoff_factor

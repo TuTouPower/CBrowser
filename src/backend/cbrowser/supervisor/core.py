@@ -702,8 +702,16 @@ class SupervisorCore:
                     reason="startup_failure",
                 )
                 try:
-                    await self.docker.teardown_profile(profile_id)
-                    await self.ports.release(profile_id)
+                    try:
+                        await self.docker.teardown_profile(profile_id)
+                    except Exception as cleanup_exc:
+                        logger.error(
+                            "Launch cleanup failed: profile=%s error_type=%s",
+                            profile_id,
+                            type(cleanup_exc).__name__,
+                        )
+                    finally:
+                        await self.ports.release(profile_id)
                 finally:
                     await self.events.emit_event(
                         event_id=f"startup_failure:{runtime_instance_id}",
@@ -793,10 +801,29 @@ class SupervisorCore:
 
             await self.disconnect_viewers(profile_id)
 
-            await self.docker.teardown_profile(profile_id)
-            await self.ports.release(profile_id)
-            self._sessions.pop(profile_id, None)
-            self._terminal_observations.discard((profile_id, curr_inst, cfg_ver))
+            teardown_error: Exception | None = None
+            try:
+                await self.docker.teardown_profile(profile_id)
+            except Exception as exc:
+                teardown_error = exc
+                logger.error(
+                    "Sandbox teardown failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+            finally:
+                # Port ownership ends with this operation regardless of teardown.
+                # Any residue is reconciled by the pre-start orphan cleanup.
+                if self._sessions.get(profile_id) is session:
+                    await self.ports.release(profile_id)
+                    self._sessions.pop(profile_id, None)
+                    self._terminal_observations.discard(
+                        (profile_id, curr_inst, cfg_ver)
+                    )
+            if teardown_error is not None:
+                raise DockerSandboxError(
+                    "Sandbox teardown failed; residual containers require cleanup"
+                ) from teardown_error
 
             await self._report_observed(
                 profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
@@ -808,39 +835,29 @@ class SupervisorCore:
             return result
 
     async def disconnect_viewers(self, profile_id: str) -> None:
+        """Best-effort viewer closure; teardown never depends on signaling."""
         session = self._sessions.get(profile_id)
         if session is None:
             return
         if self.gateway_control is None:
-            raise RuntimeError("Gateway control RPC is not configured")
-        try:
-            await self.gateway_control.disconnect_viewers(
-                profile_id, session.runtime_instance_id
+            logger.warning(
+                "Viewer disconnect skipped: Gateway control is not configured "
+                "(profile=%s)",
+                profile_id,
             )
-        except (httpx.HTTPStatusError, httpx.TransportError) as exc:
-            if (
-                isinstance(exc, httpx.HTTPStatusError)
-                and exc.response.status_code != 503
-            ):
-                raise
-            # With no live Stream there is no surviving RTC media/input channel.
-            # Authorization and instance-fence failures never use this path.
-            try:
-                stream = await asyncio.to_thread(
-                    self.docker.client.containers.get,
-                    self.docker.get_stream_container_name(profile_id),
+            return
+        try:
+            async with asyncio.timeout(2.0):
+                await self.gateway_control.disconnect_viewers(
+                    profile_id, session.runtime_instance_id
                 )
-            except NotFound:
-                return
-            if stream.status != "running":
-                return
-            if self.gateway_container_id:
-                gateway = await asyncio.to_thread(
-                    self.docker.client.containers.get, self.gateway_container_id
-                )
-                if gateway.status != "running":
-                    return
-            raise
+        except (httpx.HTTPError, OSError, TimeoutError) as exc:
+            logger.warning(
+                "Viewer disconnect failed; continuing teardown: profile=%s "
+                "error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
 
     async def reset_blocked(self, profile_id: str, operation_id: str) -> None:
         response = await self.api.patch(

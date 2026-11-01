@@ -229,3 +229,40 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
     finally:
         loop_logger.removeHandler(capture)
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stop_reconciliation_is_bounded_and_surfaces_error(tmp_path: Path) -> None:
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_stop_limit"))
+        await service.bind_runtime_instance(profile.id, "inst_stop", config_version=1)
+        await service.report_observed_state(profile.id, "inst_stop", "running")
+        await service.set_desired_state(profile.id, "stopped")
+
+        stop_attempts: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/stop"):
+                stop_attempts.append(request.url.path)
+            return httpx.Response(503, json={"detail": "supervisor unavailable"})
+
+        coordinator = _make_coordinator(
+            service,
+            handler,
+            stop_max_retries=2,
+            initial_backoff=0.0,
+            max_backoff=0.0,
+        )
+        coordinator._running = True
+        try:
+            await coordinator._reconcile_profile_loop(profile.id)
+        finally:
+            await coordinator.stop()
+
+        assert len(stop_attempts) == 2
+        error = coordinator.get_last_error(profile.id)
+        assert error is not None
+        assert "retry limit reached" in error
+    finally:
+        await engine.dispose()
