@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,16 +25,19 @@ from typing import Any, Dict, Optional
 
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.runtime_agent.protocol import RuntimeEventRecord
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
+from cbrowser.supervisor.path_validator import PathSecurityError
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from docker.errors import NotFound
+from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.core")
 
@@ -102,6 +106,7 @@ class SupervisorCore:
         self._locks: Dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
+        self._terminal_observations: set[tuple[str, str, int]] = set()
         self.operations = OperationJournal(
             self.docker.validator.validate_safe_path(
                 self.docker.validator.data_root / "control" / "operations",
@@ -194,12 +199,44 @@ class SupervisorCore:
                     )
                     continue
 
+                session = self._sessions.get(pid)
+                if session is not None and session.runtime_instance_id == b_inst:
+                    # Same generation is already tracked. Docker "running" must
+                    # never overwrite an error observation from the Agent.
+                    if desired == "running" and any(
+                        item["status"] != "running" for item in (b_c, s_c)
+                    ):
+                        if session.observed_state != "error":
+                            session.observed_state = "error"
+                            await self.report_terminal_observation(
+                                pid,
+                                b_inst,
+                                int(rt.get("config_version", session.config_version)),
+                                observed_state="error",
+                                reason="container_exit",
+                            )
+                    elif (
+                        session.observed_state != "error"
+                        and rt.get("observed_state") != "running"
+                    ):
+                        await self._report_observed(
+                            pid,
+                            b_inst,
+                            "running",
+                            int(rt.get("config_version", session.config_version)),
+                        )
+                    continue
+
                 if desired == "running" and any(
                     item["status"] != "running" for item in (b_c, s_c)
                 ):
-                    session = self._sessions.get(pid)
-                    if session is not None and session.runtime_instance_id == b_inst:
-                        session.observed_state = "error"
+                    await self.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        int(rt.get("config_version", b_c.get("config_version", 1))),
+                        observed_state="error",
+                        reason="container_exit",
+                    )
                     continue
 
                 if desired == "stopped":
@@ -274,7 +311,7 @@ class SupervisorCore:
                         desired_state="running",
                         observed_state="running",
                     )
-                    if rt.get("observed_state") != "running":
+                    if rt.get("observed_state") == "starting":
                         await self._report_observed(
                             pid, b_inst, "running", rt["config_version"]
                         )
@@ -295,8 +332,53 @@ class SupervisorCore:
                     resp.status_code,
                 )
 
+    def _quarantine_event_file(
+        self, event_file: Path, profile_id: str, instance_id: str, reason: str
+    ) -> None:
+        """Move an invalid journal file aside without blocking later events."""
+        try:
+            target_dir = self.docker.validator.validate_safe_path(
+                self.docker.validator.data_root
+                / "quarantine"
+                / "runtime-events"
+                / profile_id
+                / instance_id,
+                allow_create=True,
+            )
+            target_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(event_file, target_dir / event_file.name)
+            logger.warning(
+                "Quarantined runtime event: profile=%s instance=%s reason=%s",
+                profile_id,
+                instance_id,
+                reason,
+            )
+        except (OSError, PathSecurityError) as exc:
+            logger.warning(
+                "Runtime event quarantine failed: reason=%s error_type=%s",
+                reason,
+                type(exc).__name__,
+            )
+
+    @staticmethod
+    def _parse_disk_event(data: Any, profile_id: str, instance_id: str) -> str | None:
+        """Return a quarantine reason when the journal entry is not trustworthy."""
+        if not isinstance(data, dict):
+            return "not_object"
+        try:
+            record = RuntimeEventRecord.model_validate(data)
+        except ValidationError:
+            return "schema"
+        if record.profile_id != profile_id:
+            return "profile_mismatch"
+        if record.runtime_instance_id != instance_id:
+            return "instance_mismatch"
+        if record.event_type == "exit" and record.exit_code is None:
+            return "missing_exit_code"
+        return None
+
     async def consume_disk_events(self) -> int:
-        """Forward instance-fenced native runtime journals to the API."""
+        """Forward validated instance-fenced journals and report terminal facts."""
         total_forwarded = 0
         events_root = self.docker.validator.data_root / "runtime-events"
         if not events_root.is_dir():
@@ -307,66 +389,113 @@ class SupervisorCore:
             profile_id = p_dir.name
             runtime_events = p_dir / "events" / "runtime"
             for evt_file in runtime_events.glob("*/*.json"):
+                instance_id = evt_file.parent.name
                 try:
                     self.docker.validator.validate_safe_path(evt_file)
                     data = json.loads(evt_file.read_text(encoding="utf-8"))
-                    if (
-                        data.get("profile_id") != profile_id
-                        or data.get("runtime_instance_id") != evt_file.parent.name
+                except (OSError, ValueError, PathSecurityError, UnicodeError) as exc:
+                    logger.warning(
+                        "Disk event processing failed: error_type=%s",
+                        type(exc).__name__,
+                    )
+                    self._quarantine_event_file(
+                        evt_file, profile_id, instance_id, "unreadable"
+                    )
+                    continue
+
+                invalid_reason = self._parse_disk_event(
+                    data, profile_id, instance_id
+                )
+                if invalid_reason is not None:
+                    self._quarantine_event_file(
+                        evt_file, profile_id, instance_id, invalid_reason
+                    )
+                    continue
+
+                etype = data["event_type"]
+                ecode = data.get("exit_code")
+                config_version = int(data.get("config_version", 1))
+                if etype == "exit":
+                    self._native_exit_instances.add(
+                        (profile_id, instance_id, config_version)
+                    )
+
+                evt_id = data.get("event_id", evt_file.stem)
+                delivered = await self.events.emit_event(
+                    event_id=evt_id,
+                    profile_id=profile_id,
+                    runtime_instance_id=instance_id,
+                    event_type=etype,
+                    exit_code=ecode,
+                    exit_reason=data.get("exit_reason"),
+                    config_version=config_version,
+                    payload=data.get("payload", {}),
+                )
+                if not delivered:
+                    continue
+                total_forwarded += 1
+                if etype == "lifecycle":
+                    await self.report_terminal_observation(
+                        profile_id,
+                        instance_id,
+                        config_version,
+                        observed_state="error",
+                        reason="process_lost",
+                    )
+                elif etype == "exit":
+                    # An exit journal while Docker still reports the Browser
+                    # running is not an authoritative lifecycle fact.
+                    if not await self._browser_container_stopped(
+                        profile_id, instance_id
                     ):
                         logger.warning(
-                            "Rejected runtime event with mismatched directory identity"
+                            "Exit journal ignored while Browser container runs: "
+                            "profile=%s instance=%s",
+                            profile_id,
+                            instance_id,
                         )
                         continue
-                    etype = data.get("event_type")
-                    ecode = data.get("exit_code")
-                    if not etype:
-                        continue
-                    if etype == "exit" and ecode is None:
-                        continue
-
-                    config_version = data.get("config_version")
-                    if (
-                        etype == "exit"
-                        and type(ecode) is int
-                        and type(config_version) is int
-                        and config_version >= 1
-                    ):
-                        self._native_exit_instances.add(
-                            (profile_id, data["runtime_instance_id"], config_version)
+                    if ecode == 0 and data.get("exit_reason") == "normal":
+                        logger.info("Normal Chrome exit: profile=%s", profile_id)
+                        await self.report_terminal_observation(
+                            profile_id,
+                            instance_id,
+                            config_version,
+                            observed_state="stopped",
+                            reason="normal_exit",
                         )
-
-                    evt_id = data.get("event_id", evt_file.stem)
-                    delivered = await self.events.emit_event(
-                        event_id=evt_id,
-                        profile_id=data.get("profile_id", profile_id),
-                        runtime_instance_id=data.get("runtime_instance_id", "unknown"),
-                        event_type=etype,
-                        exit_code=ecode,
-                        exit_reason=data.get("exit_reason"),
-                        config_version=data.get("config_version", 1),
-                        payload=data.get("payload", {}),
-                    )
-                    if delivered:
-                        session = self._sessions.get(profile_id)
-                        if (
-                            ecode == 0
-                            and data.get("exit_reason") == "normal"
-                            and session is not None
-                            and session.runtime_instance_id
-                            == data.get("runtime_instance_id")
-                        ):
-                            logger.info(
-                                "Normal Chrome exit: profile=%s",
-                                profile_id,
-                            )
-                            session.observed_state = "stopped"
-                        total_forwarded += 1
-                except Exception as e:
-                    logger.warning(
-                        "Disk event processing failed: error_type=%s", type(e).__name__
-                    )
+                    else:
+                        await self.report_terminal_observation(
+                            profile_id,
+                            instance_id,
+                            config_version,
+                            observed_state="error",
+                            reason="agent_exit",
+                        )
         return total_forwarded
+
+    async def _browser_container_stopped(
+        self, profile_id: str, instance_id: str
+    ) -> bool:
+        """Docker container state confirms the Agent journal before state changes."""
+        try:
+            container = await asyncio.to_thread(
+                self.docker.client.containers.get,
+                self.docker.get_browser_container_name(profile_id),
+            )
+        except NotFound:
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Browser container lookup failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            return False
+        labels = getattr(container, "labels", None) or {}
+        if labels.get("com.cbrowser.instance-id") != instance_id:
+            return False
+        return container.status in ("exited", "dead")
 
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
@@ -562,6 +691,13 @@ class SupervisorCore:
                     profile_id,
                     type(err).__name__,
                 )
+                await self.report_terminal_observation(
+                    profile_id,
+                    runtime_instance_id,
+                    config_version,
+                    observed_state="error",
+                    reason="startup_failure",
+                )
                 try:
                     await self.docker.teardown_profile(profile_id)
                     await self.ports.release(profile_id)
@@ -646,7 +782,9 @@ class SupervisorCore:
             curr_inst = session.runtime_instance_id if session else "unknown"
             cfg_ver = session.config_version if session else 1
 
-            await self._report_observed(profile_id, curr_inst, "stopping", cfg_ver)
+            await self._report_observed(
+                profile_id, curr_inst, "stopping", cfg_ver, reason="stop_requested"
+            )
             if session is not None:
                 session.observed_state = "stopping"
 
@@ -655,8 +793,11 @@ class SupervisorCore:
             await self.docker.teardown_profile(profile_id)
             await self.ports.release(profile_id)
             self._sessions.pop(profile_id, None)
+            self._terminal_observations.discard((profile_id, curr_inst, cfg_ver))
 
-            await self._report_observed(profile_id, curr_inst, "stopped", cfg_ver)
+            await self._report_observed(
+                profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
+            )
             self.operations.complete(command_id, request, result)
             logger.info(
                 f"Profile {profile_id} cleanly stopped and resources reclaimed."
@@ -752,8 +893,40 @@ class SupervisorCore:
             )
         await self.resource_monitor.sample(targets)
 
+    async def report_terminal_observation(
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        config_version: int,
+        *,
+        observed_state: str,
+        reason: str,
+    ) -> bool:
+        """Report a terminal Agent/Docker fact once per runtime generation."""
+        key = (profile_id, runtime_instance_id, config_version)
+        if key in self._terminal_observations:
+            return False
+        self._terminal_observations.add(key)
+        session = self._sessions.get(profile_id)
+        if session is not None and session.runtime_instance_id == runtime_instance_id:
+            session.observed_state = observed_state
+        await self._report_observed(
+            profile_id,
+            runtime_instance_id,
+            observed_state,
+            config_version,
+            reason=reason,
+        )
+        return True
+
     async def _report_observed(
-        self, profile_id: str, runtime_instance_id: str, state: str, config_version: int
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        state: str,
+        config_version: int,
+        *,
+        reason: str | None = None,
     ) -> None:
         try:
             await self.api.post(
@@ -763,6 +936,7 @@ class SupervisorCore:
                     "runtime_instance_id": runtime_instance_id,
                     "observed_state": state,
                     "config_version": config_version,
+                    "reason": reason,
                 },
             )
         except Exception as e:

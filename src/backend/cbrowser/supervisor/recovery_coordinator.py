@@ -207,30 +207,30 @@ class RecoveryCoordinator:
                         type(exc).__name__,
                     )
 
-                if exit_code == 0:
-                    exit_code = 1
-
-                stable_event_id = f"docker_exit:{b_c['id'][:12]}:{b_inst}"
-
                 logger.warning(
-                    "Docker exit detected: container=%s profile=%s code=%s event=%s",
+                    "Docker exit detected: container=%s profile=%s code=%s",
                     b_c["id"],
                     pid,
                     exit_code,
-                    stable_event_id,
                 )
 
-                delivered = await self.core.events.emit_event(
-                    event_id=stable_event_id,
-                    profile_id=pid,
-                    runtime_instance_id=b_inst,
-                    event_type="exit",
-                    exit_code=exit_code,
-                    exit_reason="container_terminated",
-                    config_version=cfg_ver,
-                    payload={"source": "docker_recovery_scan", "exit_code": exit_code},
-                )
-                if delivered:
+                if exit_code == 0:
+                    reported = await self.core.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        cfg_ver,
+                        observed_state="stopped",
+                        reason="normal_exit",
+                    )
+                else:
+                    reported = await self.core.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        cfg_ver,
+                        observed_state="error",
+                        reason="container_exit",
+                    )
+                if reported:
                     self._reported_dead_instances.add(b_inst)
 
         # 4. Check API runtime state for each profile and schedule retries if due
@@ -256,6 +256,7 @@ class RecoveryCoordinator:
                 continue
 
             desired_state = rt.get("desired_state")
+            observed_state = rt.get("observed_state")
             restart_blocked = rt.get("restart_blocked", False)
             failure_count = rt.get("failure_count", 0)
             last_exit_event_id = rt.get("last_exit_event_id")
@@ -286,27 +287,20 @@ class RecoveryCoordinator:
                             cfg_ver,
                         )
                     elif runtime_instance_id not in self._reported_dead_instances:
-                        missing_event_id = f"missing_runtime:{runtime_instance_id}"
                         logger.warning(
                             "Missing runtime: profile=%s instance=%s cfg_version=%s",
                             pid,
                             runtime_instance_id,
                             cfg_ver,
                         )
-                        delivered = await self.core.events.emit_event(
-                            event_id=missing_event_id,
-                            profile_id=pid,
-                            runtime_instance_id=runtime_instance_id,
-                            event_type="exit",
-                            exit_code=1,
-                            exit_reason="missing_runtime",
-                            config_version=cfg_ver,
-                            payload={
-                                "source": "missing_runtime_recovery_scan",
-                                "instance_id": runtime_instance_id,
-                            },
+                        reported = await self.core.report_terminal_observation(
+                            pid,
+                            runtime_instance_id,
+                            cfg_ver,
+                            observed_state="error",
+                            reason="missing_runtime",
                         )
-                        if delivered:
+                        if reported:
                             self._reported_dead_instances.add(runtime_instance_id)
                         # Re-read runtime from API after emitting missing event
                         try:
@@ -358,7 +352,8 @@ class RecoveryCoordinator:
                 b_c = roles.get("browser")
                 s_c = roles.get("stream")
                 if (
-                    b_c
+                    observed_state != "error"
+                    and b_c
                     and s_c
                     and b_c.get("status") == "running"
                     and s_c.get("status") == "running"
@@ -478,7 +473,9 @@ class RecoveryCoordinator:
                 logger.info("Retry for %s aborted: failure count changed.", profile_id)
                 return
 
-            if current_rt.get("runtime_instance_id") is not None:
+            if current_rt.get("runtime_instance_id") is not None and current_rt.get(
+                "observed_state"
+            ) not in ("error", "stopped"):
                 logger.info(
                     "Retry for %s aborted: instance already active (%s).",
                     profile_id,

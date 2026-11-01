@@ -53,15 +53,13 @@ async def test_status_without_local_session_keeps_persisted_running_intent(
 
 
 @pytest.mark.asyncio
-async def test_status_reports_authoritative_runtime_generation(
-    supervisor_api, tmp_path
-):
+async def test_status_reflects_observation_not_disk_events(supervisor_api, tmp_path):
     from cbrowser.supervisor.core import ActiveSession
 
     server, token = supervisor_api
     profile = server.post("/api/v1/profiles", json={"name": "exit status"}).json()["id"]
     prefix = "/api/v1/internal/supervisor"
-    headers = {"Authorization": "Bearer " + token}
+    headers = {"Authorization": f"Bearer {token}"}
     server.patch(
         f"/api/v1/profiles/{profile}/runtime/desired-state",
         json={"desired_state": "running"},
@@ -85,6 +83,26 @@ async def test_status_reports_authoritative_runtime_generation(
             "config_version": 1,
         },
     ).raise_for_status()
+
+    # Disk events are diagnostics: they cannot terminate the bound instance.
+    persisted = server.get(f"/api/v1/profiles/{profile}/runtime").json()
+    assert persisted["runtime_instance_id"] == "old"
+    assert persisted["desired_state"] == "running"
+    assert persisted["observed_state"] == "starting"
+    assert persisted["failure_count"] == 0
+
+    server.post(
+        prefix + "/runtimes/observed",
+        params={"profile_id": profile},
+        headers=headers,
+        json={
+            "runtime_instance_id": "old",
+            "observed_state": "error",
+            "config_version": 1,
+            "reason": "process_lost",
+        },
+    ).raise_for_status()
+
     key = tmp_path / "key"
     key.write_text(token)
     async with httpx.AsyncClient(
@@ -96,7 +114,9 @@ async def test_status_reports_authoritative_runtime_generation(
             EventForwarder(str(api.base_url), tmp_path / "spool", client=api),
             api,
         )
-        core._sessions[profile] = ActiveSession(profile, "old", 1, 30000, "b", "s")
+        core._sessions[profile] = ActiveSession(
+            profile, "old", 1, 30000, "b", "s", observed_state="error"
+        )
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=create_control_app(core, key)),
             base_url="http://supervisor",
@@ -108,6 +128,7 @@ async def test_status_reports_authoritative_runtime_generation(
             persisted = server.get(f"/api/v1/profiles/{profile}/runtime").json()
             assert persisted["runtime_instance_id"] is None
             assert persisted["desired_state"] == "running"
+            assert persisted["observed_state"] == "error"
             assert persisted["failure_count"] == 1
             for field in (
                 "runtime_instance_id",

@@ -385,6 +385,7 @@ class RuntimeObservedReportRequest(BaseModel):
     )
     observed_state: ObservedState
     config_version: int | None = None
+    reason: str | None = Field(default=None, max_length=64)
 
 
 class RuntimeDesiredStateRequest(BaseModel):

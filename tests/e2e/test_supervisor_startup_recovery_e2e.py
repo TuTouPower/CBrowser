@@ -455,26 +455,22 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
         assert rt_after_tick["last_exit_event_id"] is None
         assert native_inst not in coordinator._reported_dead_instances
 
-        # Now replay spooled events (proxy will forward normally now)
+        # Now replay spooled events (proxy will forward normally now). Disk
+        # events are diagnostics and must not converge lifecycle state.
         replayed = await event_forwarder.replay_spooled_events()
         assert replayed == 1
 
-        # API state must now converge to stopped with 0 failure count (normal exit)
         rt_final = (
             await real_api_client.get(
                 f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
                 headers={"Authorization": f"Bearer {auth_token}"},
             )
         ).json()
-        assert rt_final["desired_state"] == "stopped"
-        assert rt_final["observed_state"] == "stopped"
-        assert rt_final["runtime_instance_id"] is None
+        assert rt_final["desired_state"] == "running"
+        assert rt_final["observed_state"] == "starting"
+        assert rt_final["runtime_instance_id"] == native_inst
         assert rt_final["failure_count"] == 0
-        assert rt_final["last_exit_event_id"] == f"native_exit:{native_inst}"
-
-        # Additional tick: desired_state is stopped, no retry should be scheduled
-        await coordinator.tick()
-        assert profile_id not in coordinator._in_flight_tasks
+        assert rt_final["last_exit_event_id"] is None
 
     finally:
         await coordinator.close()

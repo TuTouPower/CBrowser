@@ -629,6 +629,7 @@ async def report_observed_state(
             payload.runtime_instance_id,
             payload.observed_state,
             payload.config_version,
+            payload.reason,
         )
         coord = getattr(request.app.state, "coordinator", None)
         if coord:

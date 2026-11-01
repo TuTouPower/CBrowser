@@ -427,18 +427,10 @@ async def test_desired_state_idempotent_replay_does_not_clear_failure_count(db_c
     rt1 = await repo.set_desired_state(p.id, "running", operation_id=start_op_id)
     assert rt1.desired_state == "running"
 
-    # Bind and crash
+    # Bind and crash; the failure is an authoritative Supervisor observation.
     await repo.bind_runtime_instance(p.id, "inst_crash_1", config_version=1)
-    await repo.consume_runtime_event(
-        RuntimeEvent(
-            event_id="evt_crash_fail1",
-            profile_id=p.id,
-            runtime_instance_id="inst_crash_1",
-            event_type="exit",
-            exit_code=1,
-            exit_reason="crash",
-            config_version=1,
-        )
+    await repo.report_observed_state(
+        p.id, "inst_crash_1", "error", reason="process_lost"
     )
 
     rt_after_crash = await repo.get_runtime(p.id)

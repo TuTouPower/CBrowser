@@ -48,6 +48,7 @@ def mock_core():
     core.docker.client = MagicMock()
     core.events = MagicMock()
     core.events.emit_event = AsyncMock(return_value=True)
+    core.report_terminal_observation = AsyncMock(return_value=True)
     core.stop_profile = AsyncMock()
     core.start_profile = AsyncMock()
     return core
@@ -199,7 +200,7 @@ async def test_desired_stopped_does_not_retry(mock_core):
 
 
 @pytest.mark.asyncio
-async def test_browser_exit_synthesizes_stable_event_with_api_fencing(mock_core):
+async def test_browser_exit_reports_error_observation_with_api_fencing(mock_core):
     mock_core.docker.scan_active_containers.return_value = [
         {
             "id": "container_b_1234567890ab",
@@ -230,13 +231,11 @@ async def test_browser_exit_synthesizes_stable_event_with_api_fencing(mock_core)
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
-    assert mock_core.events.emit_event.call_count == 1
-    call_kwargs = mock_core.events.emit_event.call_args.kwargs
-    assert call_kwargs["event_id"] == "docker_exit:container_b_:inst_xyz"
-    assert call_kwargs["profile_id"] == "p1"
-    assert call_kwargs["runtime_instance_id"] == "inst_xyz"
-    assert call_kwargs["exit_code"] == 137
-    assert call_kwargs["event_type"] == "exit"
+    mock_core.report_terminal_observation.assert_awaited_once_with(
+        "p1", "inst_xyz", 1, observed_state="error", reason="container_exit"
+    )
+    assert mock_core.events.emit_event.call_count == 0
+    assert "inst_xyz" in coordinator._reported_dead_instances
 
 
 @pytest.mark.asyncio
@@ -267,7 +266,8 @@ async def test_browser_exit_fencing_ignores_already_stopped_or_exited(mock_core)
     coordinator = RecoveryCoordinator(mock_core)
     await coordinator.tick()
 
-    # Must NOT emit any event
+    # Must NOT report or emit anything
+    assert mock_core.report_terminal_observation.call_count == 0
     assert mock_core.events.emit_event.call_count == 0
 
 
@@ -378,3 +378,53 @@ async def test_close_cancels_in_flight_tasks_without_killing_runtime(mock_core):
     assert task.cancelled()
     assert len(coordinator._in_flight_tasks) == 0
     assert mock_core.stop_profile.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_error_observation_with_live_containers_schedules_retry(mock_core):
+    """Chrome died inside a still-running container -> error observation retries."""
+    mock_core.docker.scan_active_containers.return_value = [
+        {
+            "id": "container_b_live",
+            "name": "browser_live",
+            "status": "running",
+            "profile_id": "p1",
+            "instance_id": "inst_dead_browser",
+            "role": "browser",
+            "config_version": 1,
+        },
+        {
+            "id": "container_s_live",
+            "name": "stream_live",
+            "status": "running",
+            "profile_id": "p1",
+            "instance_id": "inst_dead_browser",
+            "role": "stream",
+            "config_version": 1,
+        },
+    ]
+    mock_core.api.get.side_effect = [
+        DummyResponse(
+            200, [{"id": "p1", "name": "Profile 1", "current_config_version": 1}]
+        ),
+        DummyResponse(
+            200,
+            {
+                "profile_id": "p1",
+                "desired_state": "running",
+                "observed_state": "error",
+                "runtime_instance_id": None,
+                "config_version": 1,
+                "failure_count": 1,
+                "restart_blocked": False,
+                "last_exit_event_id": "observed_error:inst_dead_browser",
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+        ),
+    ]
+
+    coordinator = RecoveryCoordinator(mock_core)
+    await coordinator.tick()
+
+    assert "p1" in coordinator._in_flight_tasks
+    await coordinator.close()
