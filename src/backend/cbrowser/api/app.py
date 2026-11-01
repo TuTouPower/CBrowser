@@ -21,6 +21,7 @@ from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_r
 from cbrowser.api.runtime_coordinator import RuntimeCoordinator
 from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
+from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
 from cbrowser.gateway.endpoint import normalize_origins
@@ -88,6 +89,9 @@ def create_app(
             repo = ProfileRepository(session_maker)
             service = ProfileService(repo)
 
+        app.state.trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
+            os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
+        )
         auth_service = AuthService(session_maker)
         app.state.auth_service = auth_service
         app.dependency_overrides[get_auth_service] = lambda: auth_service

@@ -11,6 +11,7 @@ from cbrowser.auth.dependencies import (
     require_csrf_and_origin,
     require_user_session,
 )
+from cbrowser.auth.client_ip import resolve_client_ip
 from cbrowser.auth.service import AuthService
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
@@ -62,13 +63,20 @@ async def login(
     response: Response,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
-    client_ip = request.client.host if request.client else "127.0.0.1"
+    client_ip = resolve_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("x-forwarded-for"),
+        getattr(request.app.state, "trusted_proxy_cidrs", []),
+    )
     ok, reason = await auth_service.authenticate_admin(payload.password, client_ip)
     if not ok:
         if reason == "rate_limited":
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail="Too many failed login attempts, please try again later",
+                headers={
+                    "Retry-After": str(auth_service.rate_limit_retry_after(client_ip))
+                },
             )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
