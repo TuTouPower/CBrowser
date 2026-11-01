@@ -296,7 +296,9 @@ class SupervisorCore:
                     # Restore UDP port from Stream container HostConfig port bindings
                     actual_port = None
                     try:
-                        s_inspect = self.docker.client.api.inspect_container(s_c["id"])
+                        s_inspect = await asyncio.to_thread(
+                            self.docker.client.api.inspect_container, s_c["id"]
+                        )
                         port_bindings = s_inspect.get("HostConfig", {}).get(
                             "PortBindings", {}
                         )
@@ -794,7 +796,7 @@ class SupervisorCore:
                     raise RuntimeError("Gateway control RPC is required for readiness")
                 async with asyncio.timeout(15):
                     while True:
-                        s_container.reload()
+                        await asyncio.to_thread(s_container.reload)
                         if s_container.status != "running":
                             raise DockerSandboxError(
                                 "Stream exited before registration"

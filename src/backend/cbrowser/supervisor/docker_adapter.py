@@ -663,7 +663,7 @@ with path.open('w') as output:
         )
         snapshot = json.loads(snapshot_json_path.read_text(encoding="utf-8"))
         await self.ensure_runtime_cache(snapshot.get("config", {}).get("geoip", True))
-        self.setup_x11_permissions(dirs["x11"])
+        await asyncio.to_thread(self.setup_x11_permissions, dirs["x11"])
 
         target_snap = dirs["runtime"] / "snapshot.json"
         if snapshot_json_path != target_snap:
@@ -671,7 +671,7 @@ with path.open('w') as output:
                 target_snap, snapshot_json_path.read_text(encoding="utf-8"), mode=0o644
             )
 
-        self.cleanup_container_by_name(b_name)
+        await asyncio.to_thread(self.cleanup_container_by_name, b_name)
 
         # The prior owned Browser has been removed. Chromium's singleton links
         # refer to its old hostname/PID and cannot be reused in a new container.
@@ -727,7 +727,8 @@ with path.open('w') as output:
         ]
 
         try:
-            container = self.client.containers.run(
+            container = await asyncio.to_thread(
+                self.client.containers.run,
                 self.browser_image,
                 command=command,
                 entrypoint=self._gated_entrypoint(runtime_instance_id, "browser"),
@@ -861,10 +862,12 @@ with path.open('w') as output:
         )
         pulse_dir = dirs["pulse"]
 
-        b_inspect = self.client.api.inspect_container(browser_container_name)
+        b_inspect = await asyncio.to_thread(
+            self.client.api.inspect_container, browser_container_name
+        )
         browser_hostname = b_inspect.get("Config", {}).get("Hostname", "")
 
-        self.cleanup_container_by_name(s_name)
+        await asyncio.to_thread(self.cleanup_container_by_name, s_name)
 
         selkies_file = self.validator.validate_secret_source(
             profile_id, selkies_tokens_path
@@ -926,7 +929,8 @@ with path.open('w') as output:
         ports = {f"{udp_mux_port}/udp": ("127.0.0.1", udp_mux_port)}
 
         try:
-            container = self.client.containers.run(
+            container = await asyncio.to_thread(
+                self.client.containers.run,
                 self.stream_image,
                 entrypoint=self._gated_entrypoint(runtime_instance_id, "stream"),
                 name=s_name,
@@ -1059,6 +1063,9 @@ with path.open('w') as output:
             ) from None
 
     async def teardown_profile(self, profile_id: str) -> None:
+        await asyncio.to_thread(self._teardown_profile_sync, profile_id)
+
+    def _teardown_profile_sync(self, profile_id: str) -> None:
         s_name = self.get_stream_container_name(profile_id)
         b_name = self.get_browser_container_name(profile_id)
         net_name = self.get_network_name(profile_id)
@@ -1066,7 +1073,6 @@ with path.open('w') as output:
         self.cleanup_container_by_name(s_name)
         self.cleanup_container_by_name(b_name)
         self.cleanup_network_by_name(net_name)
-
         self.cleanup_network_by_name(self.get_browser_network_name(profile_id))
 
     def _runtime_policy_ready(self, container: Any) -> bool:
