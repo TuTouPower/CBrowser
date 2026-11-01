@@ -5,7 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "vendor:selkies": "python3 ../../scripts/vendor_selkies_web.py",
+    "verify:selkies": "python3 ../../scripts/verify_frontend_dist.py",
+    "prebuild": "npm run vendor:selkies",
     "build": "tsc -b && vite build && vite build --config vite.selkies.config.ts",
+    "postbuild": "npm run verify:selkies",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

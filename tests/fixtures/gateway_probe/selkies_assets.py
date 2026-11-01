@@ -12,7 +12,12 @@ import docker
 
 # SHA-256 of every Selkies 2.1.0 web asset (selkies_web/, bytecode excluded),
 # taken from the pinned wheel installed in the Stream image.
-REF_MANIFEST = Path(__file__).with_name("selkies_web_sha256.txt")
+REF_MANIFEST = (
+    Path(__file__).resolve().parents[3]
+    / "config"
+    / "selkies"
+    / "selkies_web_sha256.txt"
+)
 
 CLIENT_SHIM_SCRIPT = r"""<script>
 (() => {

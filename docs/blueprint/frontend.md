@@ -18,7 +18,7 @@ v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作�
 
 ## 3. Selkies 官方客户端薄适配
 
-- 官方 Selkies 2.1.0 Web 客户端由 `scripts/vendor_selkies_web.py` 从固定 wheel（SHA-256 固定）解出并校验文件清单，放到 `src/frontend/public/selkies/`（gitignore；必须先于 `npm run build` 运行，构建把它复制进 `dist/selkies/`），会话页以同源 iframe `/selkies/index.html?profileId=` 加载。
+- 官方 Selkies 2.1.0 Web 客户端由 `scripts/vendor_selkies_web.py` 从固定 wheel（SHA-256 固定）解出并校验文件清单（`config/selkies/selkies_web_sha256.txt`，不依赖测试目录），放到 `src/frontend/public/selkies/`（gitignore）。`npm run build` 的 `prebuild` 自动执行 vendor，`postbuild` 自动执行 `scripts/verify_frontend_dist.py`，校验 `dist/selkies/index.html` 的 adapter tag 顺序、`selkies_adapter.js` 的经典 IIFE 形态与全部官方资源哈希；生产镜像在 COPY `dist/` 后必须再次运行同一校验，禁止绕过。会话页以同源 iframe `/selkies/index.html?profileId=` 加载。
 - 适配层唯一实现为 `features/browser-session/adapter.ts`，经 `vite.selkies.config.ts`（入口 `selkies_adapter_entry.ts`）构建为经典 IIFE 脚本 `dist/selkies/selkies_adapter.js`，vendor 脚本只在官方 `index.html` 的 module bundle 之前注入 `<script src="./selkies_adapter.js">`，不携带任何适配代码。职责：信令改写到 `/stream/{profileId}/signal`；处理 Gateway `rtc_config`、`ice_restart` 控制帧并在 `setConfiguration` 时保留 Gateway 下发的 iceServers 与 iceTransportPolicy（d022）；不改写官方 HELLO、`client_tab_id`、`resume_key`；复制标签页经 Web Locks 探测冲突并重映射身份，不踢原页（d007）；锁定远端分辨率/DPR，外部 resize 不改变远端；新窗口强制 `noopener`。
 - 页面可见性只由官方客户端每 Peer `STOP_VIDEO`/`START_VIDEO` 处理（计划 9.3），适配层拦截任何 activity/visibility 帧，不向 Gateway 上报。
 - 页面不持有任何 Selkies token；controller token 由 Stream Agent 在转发 HELLO 时代注入（d024）。

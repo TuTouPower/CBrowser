@@ -159,12 +159,11 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pydantic pyt
 
 ## 前端阶段验证
 
-t007 前端门禁：先拉取并校验官方 Selkies 资源，再构建（构建同时产出 `dist/selkies/selkies_adapter.js`），然后跑 Vitest 与真实栈 E2E。构建会改写已入库的 `src/frontend/tsconfig.tsbuildinfo`，提交前还原。
+t007 前端门禁：`npm run build` 的 `prebuild` 自动拉取并校验官方 Selkies 资源（清单 `config/selkies/selkies_web_sha256.txt`），构建同时产出 `dist/selkies/selkies_adapter.js`，`postbuild` 校验 dist 的 adapter、资源哈希与加载顺序。构建会改写已入库的 `src/frontend/tsconfig.tsbuildinfo`，提交前还原。
 
 ```bash
 npm ci --prefix src/frontend
 NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend
-python3 scripts/vendor_selkies_web.py
 npm run build --prefix src/frontend
 git show HEAD:src/frontend/tsconfig.tsbuildinfo > src/frontend/tsconfig.tsbuildinfo
 : "${CBROWSER_GATEWAY_TEST_IMAGE:?test Gateway image ID (test_runtime_coordinator_e2e)}"
