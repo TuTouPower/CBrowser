@@ -242,8 +242,7 @@ class LiveCapturePolicyAgent:
             if tab_id:
                 self.peers[viewer_id]["tab_id"] = tab_id
         logger.info(
-            "[%s] PolicyAgent: Viewer %s active -> %s (Total registered=%d)",
-            _iso_now(),
+            "PolicyAgent: Viewer %s active -> %s (Total registered=%d)",
             viewer_id,
             active,
             len(self.peers),
@@ -259,8 +258,7 @@ class LiveCapturePolicyAgent:
         self.peers.pop(viewer_id, None)
         self.unregister_peer_mapping(sdk_peer_id=peer_id, conn_id=viewer_id)
         logger.info(
-            "[%s] PolicyAgent: Viewer %s departed (Remaining registered=%d)",
-            _iso_now(),
+            "PolicyAgent: Viewer %s departed (Remaining registered=%d)",
             viewer_id,
             len(self.peers),
         )
@@ -279,16 +277,14 @@ class LiveCapturePolicyAgent:
                 cap_val = float(fps_cap)
             except (ValueError, TypeError):
                 logger.warning(
-                    "[%s] PolicyAgent: Ignored invalid supervisor quota: %s",
-                    _iso_now(),
+                    "PolicyAgent: Ignored invalid supervisor quota: %s",
                     fps_cap,
                 )
                 return
 
             if math.isnan(cap_val) or math.isinf(cap_val) or cap_val <= 0:
                 logger.warning(
-                    "[%s] PolicyAgent: Ignored non-positive/NaN supervisor quota: %s",
-                    _iso_now(),
+                    "PolicyAgent: Ignored non-positive/NaN supervisor quota: %s",
                     cap_val,
                 )
                 return
@@ -296,13 +292,12 @@ class LiveCapturePolicyAgent:
             bounded_cap = min(cap_val, self.max_fps)
             self._supervisor_fps_cap = bounded_cap
             logger.info(
-                "[%s] PolicyAgent: Supervisor quota cap set to %.1f FPS",
-                _iso_now(),
+                "PolicyAgent: Supervisor quota cap set to %.1f FPS",
                 self._supervisor_fps_cap,
             )
         else:
             self._supervisor_fps_cap = None
-            logger.info("[%s] PolicyAgent: Supervisor quota cap cleared", _iso_now())
+            logger.info("PolicyAgent: Supervisor quota cap cleared")
 
     def has_active_visible_viewers(self) -> bool:
         """Return True if any authenticated viewer is currently visible."""
@@ -333,7 +328,7 @@ class LiveCapturePolicyAgent:
             "details": details,
         }
         self._action_history.append(entry)
-        logger.info("[%s] [POLICY_ACTION] %s: %s", _iso_now(), action, details)
+        logger.info("[POLICY_ACTION] %s: %s", action, details)
 
     @property
     def action_history(self) -> List[Dict[str, Any]]:
@@ -342,17 +337,13 @@ class LiveCapturePolicyAgent:
 
     async def start(self) -> None:
         """Start background reconciliation and damage monitoring loops."""
-        logger.info(
-            "[%s] Starting LiveCapturePolicyAgent background tasks...", _iso_now()
-        )
+        logger.info("Starting LiveCapturePolicyAgent background tasks...")
         self._loop_task = asyncio.create_task(self._reconciliation_loop())
         self._motion_task = asyncio.create_task(self._motion_monitor_loop())
 
     async def stop(self) -> None:
         """Gracefully cancel and drain all background tasks."""
-        logger.info(
-            "[%s] Stopping LiveCapturePolicyAgent background tasks...", _iso_now()
-        )
+        logger.info("Stopping LiveCapturePolicyAgent background tasks...")
         tasks_to_cancel = []
         if self._loop_task and not self._loop_task.done():
             self._loop_task.cancel()
@@ -407,7 +398,7 @@ class LiveCapturePolicyAgent:
                             else:
                                 self._has_screen_motion = False
                 except Exception as e:
-                    logger.debug("[%s] Motion check exception: %s", _iso_now(), e)
+                    logger.debug("Motion check exception: %s", e)
         except asyncio.CancelledError:
             pass
 
@@ -460,8 +451,7 @@ class LiveCapturePolicyAgent:
                         await p.pause_screen_capture()
                     self._is_paused = True
                     logger.info(
-                        "[%s] [SingleController] Capture safely paused (caller=%s)",
-                        _iso_now(),
+                        "[SingleController] Capture safely paused (caller=%s)",
                         safe_caller,
                     )
                 return
@@ -469,9 +459,8 @@ class LiveCapturePolicyAgent:
             # Rule 2: Has active peers, but capture is paused -> Resume capture
             if not is_capturing or self._is_paused:
                 logger.info(
-                    "[%s] [SingleController] Resuming capture: set_framerate(8.0) "
+                    "[SingleController] Resuming capture: set_framerate(8.0) "
                     "first, then resume (caller=%s)",
-                    _iso_now(),
                     safe_caller,
                 )
                 self.log_action(
@@ -504,9 +493,8 @@ class LiveCapturePolicyAgent:
                     p.request_idr_frame()
 
                 logger.info(
-                    "[%s] [SingleController] Capture safely resumed at %.1f FPS "
+                    "[SingleController] Capture safely resumed at %.1f FPS "
                     "(caller=%s)",
-                    _iso_now(),
                     self.min_fps,
                     safe_caller,
                 )
@@ -552,9 +540,8 @@ class LiveCapturePolicyAgent:
                     await p.set_framerate(desired_fps)
                 self._current_fps = desired_fps
                 logger.info(
-                    "[%s] [SingleController] Policy Framerate update: %.1f FPS "
+                    "[SingleController] Policy Framerate update: %.1f FPS "
                     "(caller=%s, input=%s, motion=%s)",
-                    _iso_now(),
                     desired_fps,
                     safe_caller,
                     has_input,
@@ -588,7 +575,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
         def mon_rtc_config(
             self, stun_servers: Any, turn_servers: Any, rtc_config: Any
         ) -> None:
-            logger.debug("[%s] Ignored Selkies RTC config monitor update", _iso_now())
+            logger.debug("Ignored Selkies RTC config monitor update")
 
         def log_pipeline_action(self, action: str, details: Dict[str, Any]) -> None:
             entry = {
@@ -598,7 +585,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 "details": details,
             }
             self._action_history.append(entry)
-            logger.info("[%s] [ACTION_AUDIT] %s: %s", _iso_now(), action, details)
+            logger.info("[ACTION_AUDIT] %s: %s", action, details)
 
         def _on_peer_data_message(
             self,
@@ -686,8 +673,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             Does NOT invent SDK ghost viewers in Policy Agent without mapping.
             """
             logger.info(
-                "[%s] Hooked handle_video_consumer_active: peer=%s, active=%s",
-                _iso_now(),
+                "Hooked handle_video_consumer_active: peer=%s, active=%s",
                 peer_id,
                 active,
             )
@@ -711,8 +697,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 and pipeline.is_screen_capturing()
             ):
                 logger.info(
-                    "[%s] Peer %s resumed while capture is active; requesting IDR",
-                    _iso_now(),
+                    "Peer %s resumed while capture is active; requesting IDR",
                     peer_id,
                 )
                 await self.request_idr_for_display(display_id)
@@ -750,7 +735,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             self, peer_id: str, peer: Optional[Dict[str, Any]] = None
         ) -> None:
             """Hook into peer departure."""
-            logger.info("[%s] Hooked handle_peer_gone: peer=%s", _iso_now(), peer_id)
+            logger.info("Hooked handle_peer_gone: peer=%s", peer_id)
             if self.policy_agent:
                 mapped_conn = self.policy_agent._sdk_peer_to_conn.get(peer_id)
                 if mapped_conn:
