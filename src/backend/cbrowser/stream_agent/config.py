@@ -296,8 +296,6 @@ class StreamAgentConfig(BaseModel):
             controller_token_str = cred_data.get("controller_token")
             if not controller_token_str:
                 raise ValueError("controller_token missing in Selkies credentials file")
-        elif "CBROWSER_CONTROLLER_TOKEN" in os.environ:
-            controller_token_str = os.environ["CBROWSER_CONTROLLER_TOKEN"]
 
         return cls(
             profile_id=profile_id,

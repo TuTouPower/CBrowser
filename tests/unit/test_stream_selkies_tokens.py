@@ -65,7 +65,7 @@ def test_stream_agent_config_controller_token_from_credentials_file(
     assert master_token not in repr_str
 
 
-def test_stream_agent_config_controller_token_from_env_var(tmp_path: Path) -> None:
+def test_stream_agent_config_ignores_controller_token_env_var(tmp_path: Path) -> None:
     ctrl_token = secrets.token_urlsafe(32)
     secret_file = tmp_path / "agent_secret.txt"
     secret_file.write_text("agent_secret_value", encoding="utf-8")
@@ -87,8 +87,7 @@ def test_stream_agent_config_controller_token_from_env_var(tmp_path: Path) -> No
     with patch.dict(os.environ, env, clear=True):
         cfg = StreamAgentConfig.from_env()
 
-    assert cfg.controller_token is not None
-    assert cfg.controller_token.get_secret_value() == ctrl_token
+    assert cfg.controller_token is None
 
 
 @pytest.mark.asyncio

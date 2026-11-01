@@ -471,6 +471,17 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
     agent_token = f"tok_{uuid.uuid4().hex}"
     secret_file = work_dir / "agent_secret.txt"
     secret_file.write_text(agent_token)
+    selkies_cred_file = work_dir / "selkies_credentials.json"
+    selkies_cred_file.write_text(
+        json.dumps(
+            {
+                "master_token": uuid.uuid4().hex,
+                "controller_token": uuid.uuid4().hex,
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(selkies_cred_file, 0o600)
 
     # Directories
     host_profile_dir = work_dir / "profile"
@@ -686,6 +697,8 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             f"{pulse_dir}:/pulse:ro",
             "-v",
             f"{secret_file}:/tmp/secret.txt:ro",
+            "-v",
+            f"{selkies_cred_file}:/tmp/selkies_credentials.json:ro",
             "-e",
             "PYTHONDONTWRITEBYTECODE=1",
             "-e",
@@ -702,6 +715,12 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             f"CBROWSER_GATEWAY_URL=ws://host.docker.internal:{gw_port}",
             "-e",
             "CBROWSER_AGENT_SECRET_FILE=/tmp/secret.txt",
+            "-e",
+            "CBROWSER_SELKIES_CREDENTIALS_FILE=/tmp/selkies_credentials.json",
+            "-e",
+            "CBROWSER_SCREEN_WIDTH=1920",
+            "-e",
+            "CBROWSER_SCREEN_HEIGHT=1080",
             "-e",
             f"CBROWSER_UDP_MUX_PORT={udp_mux_port}",
             "-e",

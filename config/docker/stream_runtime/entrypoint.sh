@@ -56,15 +56,14 @@ SELKIES_TOKENS_FILE="${SELKIES_TOKENS_FILE:-/tmp/selkies_tokens.json}"
 export SELKIES_TOKENS_FILE
 
 SELKIES_MASTER_TOKEN_FILE="$(mktemp /tmp/.selkies_master.XXXXXX)"
-SELKIES_CONTROLLER_TOKEN_FILE="$(mktemp /tmp/.selkies_ctrl.XXXXXX)"
 python3 - "$SELKIES_CRED_FILE" "$SELKIES_TOKENS_FILE" \
-    "$SELKIES_MASTER_TOKEN_FILE" "$SELKIES_CONTROLLER_TOKEN_FILE" <<'PY'
+    "$SELKIES_MASTER_TOKEN_FILE" <<'PY'
 import json
 import os
 import secrets
 import sys
 
-cred_path, tokens_path, master_path, controller_path = sys.argv[1:5]
+cred_path, tokens_path, master_path = sys.argv[1:4]
 if os.path.isfile(cred_path) and os.path.getsize(cred_path) > 0:
     with open(cred_path, encoding="utf-8") as handle:
         credentials = json.load(handle)
@@ -73,6 +72,16 @@ if os.path.isfile(cred_path) and os.path.getsize(cred_path) > 0:
 else:
     master_token = secrets.token_urlsafe(32)
     controller_token = secrets.token_urlsafe(32)
+    descriptor = os.open(cred_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        json.dump(
+            {
+                "master_token": master_token,
+                "controller_token": controller_token,
+            },
+            output,
+        )
+    os.chmod(cred_path, 0o600)
 
 table = {controller_token: {"role": "controller", "slot": None, "mk_control": False}}
 descriptor = os.open(tokens_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -80,23 +89,15 @@ with os.fdopen(descriptor, "w", encoding="utf-8") as tokens:
     json.dump(table, tokens)
 os.chmod(tokens_path, 0o600)
 
-for path, value in (
-    (master_path, master_token),
-    (controller_path, controller_token),
-):
-    descriptor = os.open(path, os.O_WRONLY | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-        output.write(value)
-    os.chmod(path, 0o600)
+descriptor = os.open(master_path, os.O_WRONLY | os.O_TRUNC, 0o600)
+with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+    output.write(master_token)
+os.chmod(master_path, 0o600)
 PY
 SELKIES_MASTER_TOKEN="$(cat "$SELKIES_MASTER_TOKEN_FILE")"
 export SELKIES_MASTER_TOKEN
 rm -f "$SELKIES_MASTER_TOKEN_FILE"
-if [ ! -s "$SELKIES_CRED_FILE" ]; then
-    CBROWSER_CONTROLLER_TOKEN="$(cat "$SELKIES_CONTROLLER_TOKEN_FILE")"
-    export CBROWSER_CONTROLLER_TOKEN
-fi
-rm -f "$SELKIES_CONTROLLER_TOKEN_FILE"
+export CBROWSER_SELKIES_CREDENTIALS_FILE="$SELKIES_CRED_FILE"
 
 # Bounded wait for X11 socket
 X11_SOCK="${CBROWSER_X11_SOCKET:-/tmp/.X11-unix/X99}"
