@@ -2,4 +2,4 @@
 
 - 来源：t007 黑盒观察（`.scratch/lane_evidence` 外的黑盒 WT 日志 `stream_tokens_e2e.log`）
 - 内容：`tests/e2e/test_stream_selkies_tokens_e2e.py::test_e2e_ac010_agent_controller_token_injection_and_coexistence` 首跑在“同 `client_tab_id` 新连接驱逐旧连接”处收到 `close_code=1006` 而非 Selkies 的 `4001`；单跑与整文件复跑均通过。疑为 Agent 隧道关闭旧 upstream 与 Selkies 发送关闭帧的竞态，导致页面侧只看到异常断开。需核实 Agent 在 upstream 收到 4001 时是否先转发关闭码再拆隧道，修复后去掉抖动。
-- 处理：未开
+- 处理：review_20261101_075819/A8；resolution=resolved；reason=Agent 上行 close_code/reason 透传（4001 不再改写成 1000），Gateway 原样下发给 Viewer；新增 4001 单元测试。闭环 A8/p012。

@@ -374,6 +374,12 @@ class StreamAgent:
                 if self._heartbeat_task and not self._heartbeat_task.done():
                     self._heartbeat_task.cancel()
                     self._heartbeat_task = None
+                restarts = list(self._restart_tasks)
+                self._restart_tasks.clear()
+                for task in restarts:
+                    task.cancel()
+                if restarts:
+                    await asyncio.gather(*restarts, return_exceptions=True)
                 self.agent_session_id = None
                 await self._cleanup_all_viewers(caller="gateway_disconnect")
 
@@ -902,7 +908,11 @@ class StreamAgent:
                 "[%s] Upstream reader error (%s)", _iso_now(), type(e).__name__
             )
         finally:
-            # Gate ALL outgoing old close by matching active generation
+            # Gate ALL outgoing old close by matching active generation.
+            # Preserve Selkies/upstream close semantics instead of faking 1000.
+            upstream_code = upstream_ws.close_code
+            if type(upstream_code) is not int or not 1000 <= upstream_code <= 4999:
+                upstream_code = 1000
             active = self.viewer_workers.get(conn_id)
             if active and active.generation == generation and not gw_ws.closed:
                 try:
@@ -913,8 +923,8 @@ class StreamAgent:
                         runtime_instance_id=self.config.runtime_instance_id,
                         agent_session_id=self.agent_session_id or "",
                         conn_id=conn_id,
-                        code=1000,
-                        reason="Upstream closed",
+                        code=upstream_code,
+                        reason=f"Upstream closed ({upstream_code})",
                     )
                     await asyncio.wait_for(
                         gw_ws.send_str(close_env.model_dump_json()),
