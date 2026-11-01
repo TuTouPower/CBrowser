@@ -25,6 +25,25 @@ ______________________________________________________________________
 - 已在本文中、无需改动：Selkies 为核心、`client_tab_id` 多页面、每 Profile 共享编码管线、每 Profile 一个 UDP mux 端口、双容器 + 同 Profile IPC/X11/Pulse 卷、原生 IME 与 XTest、CDP 仅内部、不用 noVNC/KasmVNC。调研中“原计划 → 新决定”表的多数“原计划”项并非 v2.3 内容。
 - 不采纳：下载捕获改为文件系统监控优先（CDP 事件给出明确完成状态，d002 已验证，文件监控只作兜底）；`/dev/shm` 改为 2 GiB（1 GiB 已在 d004 及 t004/t005 实测通过，由 t009 压测记录峰值后再定）；启用 Selkies WebSocket 双模式备用（本次本机部署不需要，增加一倍测试矩阵）；Selkies 与 KasmVNC 对比基准（引擎已定案并实现，不再回头比选）。
 
+## 修订：t001–t007 累计审阅与 p008/p010 闭环（2026-11-01）
+
+t001–t007 累计三路审阅的采纳项已全部落地并合入 main。以下是相对本文原方案的架构级修订；当前实现细节以 `docs/blueprint/` 与 `docs/specs/` 为准。
+
+- 运行观测权威：Supervisor 以 Docker 容器状态/退出码与 Runtime Agent 进程监督为权威观测；磁盘事件只作诊断补充，不再直接驱动 `observed_state`/`desired_state`；`lifecycle/error` 收敛为 `observed_state=error` 且保留 `desired_state=running`；扫描对同实例会话短路；事件使用游标与 quarantine。
+- Stream 出站策略按 `CBROWSER_WEBRTC_MODE` 分档：relay-only 仅放行 Gateway/coturn/本实例 UDP mux；local/lan/public 允许公共目的地址；私有/保留段始终 DROP。修订本文“Stream 只允许实际 Gateway/coturn”的单档表述。
+- 停止/清理与信令面解耦：Gateway 不可达时降级 teardown；端口释放在 finally 中执行；停止协调有显式上限并暴露错误。
+- Gateway 端点单一配置源，默认 18080；Origin 统一归一；删除 18097 硬编码。
+- 凭证与权限：`agent_secret` 迁至 `secrets/<profile>/agent_secret.txt`（0600，仅挂 Stream）；内部 Supervisor/Gateway/Control token 强制 0600；宿主目录 chown 1000 + 0700/0750，x11 保持 1777。
+- 认证限速：受信代理 XFF + 每来源滑动窗口 + 全局预算；429 返回 Retry-After。
+- TURN 轮换：future 校验 generation；current 过期 fail-closed；disconnect/stop 取消轮换任务与 pending future；upstream 关闭码透传。
+- 事件 spool：每实例游标、投递后回收、有界 ACK；`runtime_events` 随 Profile 删除，`audit_events` 保留作为审计总账。
+- 数据与输入契约：tags 使用三态（缺席不改 / null 清空 / `[]` 清空）；`failure_count` 第 4 次异常阻断；`name` 等非空字段显式 null 返回 422。
+- 前端：诊断数组有界、输入合并、死阶段清理、i18n 补全、测试去固定 sleep。
+- 构建：`npm run build` 的 prebuild 自动 vendor、postbuild 自动校验；Selkies 清单迁至 `config/selkies/selkies_web_sha256.txt`；生产 Dockerfile 对 COPY 的 `dist/` 运行同一校验。
+- Selkies resume：viewer 隧道关闭/Gateway 断线后 Agent 保留 loopback upstream 10 秒，同 `tab_id`/`resume_key` 重连由 `RESUMED` 接管；窗口到期或 Agent 停止时关闭（d025）。
+- 结构：RecoveryCoordinator tick、docker_adapter、stream_agent 拆分为更小模块；p001/p005 闭环。
+- 待办：p001、p005–p013 全部闭环，`docs/pending/todo/` 为空。t008、t013、t014、t009、t010、t011、t012 仍按 goal queue 实施。
+
 # 1. 最终技术决策
 
 ## 1.1 固定技术栈
