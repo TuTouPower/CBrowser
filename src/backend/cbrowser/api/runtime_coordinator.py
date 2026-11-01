@@ -109,10 +109,12 @@ class RuntimeEventBroadcaster:
                     snapshot_data_list = await raw_res
                 else:
                     snapshot_data_list = raw_res
-                snap_id = self._format_event_id(max(0, self._next_event_id - 1))
                 for data in snapshot_data_list:
+                    async with self._lock:
+                        event_id = self._format_event_id(self._next_event_id)
+                        self._next_event_id += 1
                     event = ProfileRuntimeEvent(
-                        id=snap_id, event="runtime_state", data=data
+                        id=event_id, event="runtime_state", data=data
                     )
                     payload = event.data.model_dump_json()
                     yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"

@@ -127,7 +127,8 @@ class RecoveryCoordinator:
             if b_status == "running" and (not s_c or s_c.get("status") != "running"):
                 logger.warning(
                     "Profile %s has healthy Browser %s but missing/failed Stream %s. "
-                    "Retaining healthy browser.",
+                    "Keeping the Browser for this pass; the automatic retry "
+                    "rebuilds the whole pair.",
                     pid,
                     b_c.get("id"),
                     s_c.get("id") if s_c else "none",

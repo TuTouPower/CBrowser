@@ -23,6 +23,8 @@ crashes frozen Windows apps.
 from __future__ import annotations
 
 import hashlib
+
+from cbrowser.domain.runtime_policy import ExitReason
 import logging
 import os
 import platform
@@ -244,9 +246,7 @@ _CANONICAL_UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
 _CANONICAL_SYS_RE = re.compile(r"^(?:inst|evt|prof|op)_[0-9a-zA-Z]{4,32}$")
-_SAFE_EXIT_REASONS = {
-    "normal_exit", "crash", "sigterm", "sigkill", "oom", "unknown", "error", "browser_segfault"
-}
+_SAFE_EXIT_REASONS = {reason.value for reason in ExitReason}
 
 
 def _sanitize_id(val: str) -> str:

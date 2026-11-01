@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from cbrowser.adapters.database.models import SessionModel
@@ -38,6 +39,8 @@ from cbrowser.services.profile_service import (
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger("cbrowser.api.v1.router")
 
 v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
 profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
@@ -116,8 +119,12 @@ async def subscribe_runtime_events(
                         updated_at=rt.updated_at,
                     )
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "SSE snapshot unavailable: profile=%s error_type=%s",
+                    p.id,
+                    type(exc).__name__,
+                )
         return snapshots
 
     effective_last_event_id = last_event_id or last_event_id_query

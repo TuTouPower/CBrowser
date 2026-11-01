@@ -262,8 +262,7 @@ class StreamAgent:
         while self._running:
             try:
                 logger.info(
-                    "[%s] Connecting to Gateway at %s...",
-                    _iso_now(),
+                    "Connecting to Gateway at %s...",
                     _sanitize_url(url),
                 )
                 async with aiohttp.ClientSession() as session:
@@ -276,8 +275,7 @@ class StreamAgent:
                     ) as ws:
                         self._gw_ws = ws
                         logger.info(
-                            "[%s] Connected to Gateway. Registering profile...",
-                            _iso_now(),
+                            "Connected to Gateway. Registering profile...",
                         )
 
                         selkies_ver = resolve_selkies_version(
@@ -339,8 +337,7 @@ class StreamAgent:
                         self.agent_session_id = ack.agent_session_id
                         self._backoff.reset()
                         logger.info(
-                            "[%s] StreamAgent registered with Gateway",
-                            _iso_now(),
+                            "StreamAgent registered with Gateway",
                         )
 
                         # Start application heartbeat task
@@ -356,18 +353,16 @@ class StreamAgent:
                                 )
                             elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                                 logger.warning(
-                                    "[%s] Gateway connection closed or errored",
-                                    _iso_now(),
+                                    "Gateway connection closed or errored",
                                 )
                                 break
             except asyncio.CancelledError:
                 break
             except GatewayRegistrationError as e:
-                logger.error("[%s] %s", _iso_now(), e)
+                logger.error("%s", e)
             except Exception as e:
                 logger.warning(
-                    "[%s] Gateway connection error (%s)",
-                    _iso_now(),
+                    "Gateway connection error (%s)",
                     type(e).__name__,
                 )
             finally:
@@ -386,7 +381,7 @@ class StreamAgent:
             if not self._running:
                 break
             delay = self._backoff.step()
-            logger.info("[%s] Reconnecting in %.1fs (backoff)...", _iso_now(), delay)
+            logger.info("Reconnecting in %.1fs (backoff)...", delay)
             await self._sleep_fn(delay)
 
     async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
@@ -418,8 +413,7 @@ class StreamAgent:
             pass
         except Exception as e:
             logger.warning(
-                "[%s] Heartbeat send failed (%s)",
-                _iso_now(),
+                "Heartbeat send failed (%s)",
                 type(e).__name__,
             )
 
@@ -468,12 +462,12 @@ class StreamAgent:
             # 1. Size boundary check before JSON parse
             raw_bytes = raw_data.encode("utf-8")
             if len(raw_bytes) > MAX_PAYLOAD_SIZE:
-                logger.warning("[%s] Incoming envelope exceeded size limit", _iso_now())
+                logger.warning("Incoming envelope exceeded size limit")
                 return
 
             raw_dict = json.loads(raw_data)
             if not isinstance(raw_dict, dict):
-                logger.warning("[%s] Invalid envelope format", _iso_now())
+                logger.warning("Invalid envelope format")
                 return
 
             # 2. Strict model validation
@@ -484,12 +478,11 @@ class StreamAgent:
                 envelope = GatewayControlEnvelope.model_validate(raw_dict)
                 await self._handle_control_packet(envelope)
             else:
-                logger.warning("[%s] Unknown envelope structure", _iso_now())
+                logger.warning("Unknown envelope structure")
 
         except Exception as e:
             logger.error(
-                "[%s] Error processing gateway message: %s",
-                _iso_now(),
+                "Error processing gateway message: %s",
                 type(e).__name__,
             )
 
@@ -501,16 +494,16 @@ class StreamAgent:
     ) -> None:
         # Validate profile, instance, and session matching
         if envelope.profile_id != self.config.profile_id:
-            logger.warning("[%s] Profile mismatch in tunnel envelope", _iso_now())
+            logger.warning("Profile mismatch in tunnel envelope")
             return
         if envelope.runtime_instance_id != self.config.runtime_instance_id:
-            logger.warning("[%s] Instance mismatch in tunnel envelope", _iso_now())
+            logger.warning("Instance mismatch in tunnel envelope")
             return
         if (
             not self.agent_session_id
             or envelope.agent_session_id != self.agent_session_id
         ):
-            logger.warning("[%s] Stale agent_session_id in tunnel envelope", _iso_now())
+            logger.warning("Stale agent_session_id in tunnel envelope")
             return
 
         conn_id = envelope.conn_id
@@ -541,7 +534,7 @@ class StreamAgent:
                 try:
                     worker.queue.put_nowait(envelope)
                 except asyncio.QueueFull:
-                    logger.warning("[%s] Viewer queue full, terminating", _iso_now())
+                    logger.warning("Viewer queue full, terminating")
                     await self._terminate_viewer(conn_id, caller="queue_full")
                     close = GatewayTunnelEnvelope(
                         version="v2",
@@ -565,17 +558,17 @@ class StreamAgent:
         envelope: GatewayControlEnvelope,
     ) -> None:
         if envelope.profile_id != self.config.profile_id:
-            logger.warning("[%s] Profile mismatch in control envelope", _iso_now())
+            logger.warning("Profile mismatch in control envelope")
             return
         if envelope.runtime_instance_id != self.config.runtime_instance_id:
-            logger.warning("[%s] Instance mismatch in control envelope", _iso_now())
+            logger.warning("Instance mismatch in control envelope")
             return
         if (
             not self.agent_session_id
             or envelope.agent_session_id != self.agent_session_id
         ):
             logger.warning(
-                "[%s] Stale agent_session_id in control envelope", _iso_now()
+                "Stale agent_session_id in control envelope"
             )
             return
 
@@ -592,7 +585,7 @@ class StreamAgent:
 
         elif action == AgentAction.ICE_RESTART:
             if not conn_id or conn_id not in self.viewer_workers:
-                logger.warning("[%s] ICE restart rejected: unknown conn_id", _iso_now())
+                logger.warning("ICE restart rejected: unknown conn_id")
                 return
             if "ice_servers" in envelope.payload and envelope.payload["ice_servers"]:
                 try:
@@ -618,8 +611,7 @@ class StreamAgent:
                     self.apply_rtc_config(rtc_payload)
                 except Exception as e:
                     logger.warning(
-                        "[%s] Failed to update active_rtc_config from ice_restart (%s)",
-                        _iso_now(),
+                        "Failed to update active_rtc_config from ice_restart (%s)",
                         type(e).__name__,
                     )
             await self._trigger_ice_restart(conn_id, envelope.payload)
@@ -638,8 +630,7 @@ class StreamAgent:
                 rtc_payload = RtcConfigPayload.model_validate(envelope.payload)
             except Exception as e:
                 logger.warning(
-                    "[%s] Invalid rtc_config payload rejected (%s)",
-                    _iso_now(),
+                    "Invalid rtc_config payload rejected (%s)",
                     type(e).__name__,
                 )
                 return
@@ -647,15 +638,13 @@ class StreamAgent:
                 self.apply_rtc_config(rtc_payload)
             except Exception as e:
                 logger.error(
-                    "[%s] Applying rtc_config generation %d failed (%s)",
-                    _iso_now(),
+                    "Applying rtc_config generation %d failed (%s)",
                     rtc_payload.generation,
                     type(e).__name__,
                 )
                 return
             logger.info(
-                "[%s] Applied rtc_config generation %d with %d ICE servers",
-                _iso_now(),
+                "Applied rtc_config generation %d with %d ICE servers",
                 rtc_payload.generation,
                 len(rtc_payload.ice_servers),
             )
@@ -714,7 +703,7 @@ class StreamAgent:
 
         try:
             logger.info(
-                "[%s] Worker starting loopback upstream connection...", _iso_now()
+                "Worker starting loopback upstream connection..."
             )
             upstream_ws = await session.ws_connect(
                 self.upstream_url,
@@ -745,7 +734,7 @@ class StreamAgent:
                 if pkt_type == "msg":
                     if len(data.encode("utf-8")) > MAX_PAYLOAD_SIZE:
                         logger.warning(
-                            "[%s] Outbound payload exceeded limit", _iso_now()
+                            "Outbound payload exceeded limit"
                         )
                         break
 
@@ -792,7 +781,7 @@ class StreamAgent:
             pass
         except Exception as e:
             logger.warning(
-                "[%s] Upstream worker error (%s)", _iso_now(), type(e).__name__
+                "Upstream worker error (%s)", type(e).__name__
             )
             # Only send close to Gateway if this worker generation is still active
             active = self.viewer_workers.get(conn_id)
@@ -866,7 +855,7 @@ class StreamAgent:
             self.conn_id_to_sdk_peer_id[conn_id] = sdk_id
             self.policy.register_peer_mapping(sdk_id, conn_id)
         elif len(matching_pids) > 1:
-            logger.warning("[%s] Ambiguous SDK peer mapping, rejecting", _iso_now())
+            logger.warning("Ambiguous SDK peer mapping, rejecting")
 
     async def _upstream_reader(
         self,
@@ -880,7 +869,7 @@ class StreamAgent:
                 if msg.type == WSMsgType.TEXT:
                     if len(msg.data.encode("utf-8")) > MAX_PAYLOAD_SIZE:
                         logger.warning(
-                            "[%s] Upstream sent oversized payload", _iso_now()
+                            "Upstream sent oversized payload"
                         )
                         break
                     # Only relay if this reader is from the currently active generation
@@ -905,7 +894,7 @@ class StreamAgent:
             pass
         except Exception as e:
             logger.warning(
-                "[%s] Upstream reader error (%s)", _iso_now(), type(e).__name__
+                "Upstream reader error (%s)", type(e).__name__
             )
         finally:
             # Gate ALL outgoing old close by matching active generation.
@@ -941,7 +930,7 @@ class StreamAgent:
             return
         pc = self.get_peer_connection(conn_id)
         if not pc:
-            logger.warning("[%s] PeerConnection not found for conn_id", _iso_now())
+            logger.warning("PeerConnection not found for conn_id")
             await self._report_restart(
                 AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
             )
@@ -952,7 +941,7 @@ class StreamAgent:
             "connected",
             "completed",
         ):
-            logger.warning("[%s] ICE restart deferred: peer not connected", _iso_now())
+            logger.warning("ICE restart deferred: peer not connected")
             await self._report_restart(
                 AgentAction.ERROR, conn_id, {"error": "peer_not_ready"}
             )
@@ -980,8 +969,7 @@ class StreamAgent:
                 await self._gw_ws.send_str(envelope.model_dump_json())
         except Exception as e:
             logger.error(
-                "[%s] Failed to create ICE restart offer: %s",
-                _iso_now(),
+                "Failed to create ICE restart offer: %s",
                 type(e).__name__,
             )
             await self._report_restart(
@@ -996,7 +984,7 @@ class StreamAgent:
             return
         pc = self.get_peer_connection(conn_id)
         if not pc:
-            logger.warning("[%s] PeerConnection not found on answer", _iso_now())
+            logger.warning("PeerConnection not found on answer")
             await self._report_restart(
                 AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
             )
@@ -1012,15 +1000,14 @@ class StreamAgent:
             ice_generation = await wait_restart_commit(pc, ICE_RESTART_COMMIT_TIMEOUT)
         except Exception as e:
             logger.error(
-                "[%s] ICE restart not committed: %s", _iso_now(), type(e).__name__
+                "ICE restart not committed: %s", type(e).__name__
             )
             await self._report_restart(
                 AgentAction.ERROR, conn_id, {"error": "ice_restart_not_committed"}
             )
             return
         logger.info(
-            "[%s] ICE restart committed (ice generation %d)",
-            _iso_now(),
+            "ICE restart committed (ice generation %d)",
             ice_generation,
         )
         await self._report_restart(
