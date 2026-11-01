@@ -87,6 +87,7 @@ class SupervisorCore:
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
         coturn_container_id: str | None = None,
+        webrtc_mode: str = "public",
     ):
         self.docker = docker_adapter
         self.ports = port_allocator
@@ -101,6 +102,7 @@ class SupervisorCore:
         self.resource_monitor: ResourceMonitor | None = None
         self.gateway_container_id = gateway_container_id
         self.coturn_container_id = coturn_container_id
+        self.webrtc_mode = webrtc_mode
 
         self._sessions: Dict[str, ActiveSession] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
@@ -644,6 +646,7 @@ class SupervisorCore:
                     media_addresses=media_addresses,
                     selkies_tokens_path=selkies_tokens_file,
                     snapshot_json_path=snap_path,
+                    webrtc_mode=self.webrtc_mode,
                 )
 
                 if self.gateway_control is None:

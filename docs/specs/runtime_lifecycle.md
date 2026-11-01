@@ -7,7 +7,7 @@
 - API 是唯一 SQLite 写入者。Supervisor 经内部 Bearer RPC 获取不可变配置、绑定实例、上报观测和持久事件，不挂载数据库。只有 Supervisor 持有 Docker Socket。
 - 每个 Profile 独立 Browser/Stream 容器、用户数据、Xauthority、Pulse 与网络；Stream 仅共享对应 Browser IPC，不挂用户数据或 Browser Agent Socket。挂载必须规范化并保持所属 Profile，路径穿越、链接逃逸和跨 Profile 别名被拒绝。
 - Runtime 保持非 root、只读根、cap-drop ALL、restart policy no。启动前由临时 helper 在自有网络命名空间安装 IPv4/IPv6 策略，gate 确认实例、角色与 ready 标记后才执行业务入口。失败封闭，不修改宿主网络策略。
-- Browser 公共目的地址可达，私有/保留地址默认拒绝，代理只按配置地址/端口例外；Stream 只允许实际 Gateway/coturn 端点及本实例 UDP mux。独立 bridge 本身不构成隔离证明。
+- Browser 公共目的地址可达，私有/保留地址默认拒绝，代理只按配置地址/端口例外；Stream 按 `CBROWSER_WEBRTC_MODE` 分档：`relay-only` 只允许实际 Gateway/coturn 端点、本实例 UDP mux 及显式白名单，不保留最终公共 `OUTPUT ACCEPT`；`local`/`lan`/`public` 允许公共目的地址以建立 Viewer 直连，私有/保留地址仍默认拒绝。独立 bridge 本身不构成隔离证明。
 
 ## 运行意愿协调
 

@@ -56,6 +56,7 @@ async def run_supervisor(
     gateway_token_file: Path | None = None,
     gateway_container_id: str | None = None,
     coturn_container_id: str | None = None,
+    webrtc_mode: str = "public",
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -104,6 +105,7 @@ async def run_supervisor(
         gateway_control=GatewayControlClient(gateway_control_url, gateway_token_file),
         gateway_container_id=gateway_container_id,
         coturn_container_id=coturn_container_id,
+        webrtc_mode=webrtc_mode,
     )
 
     async def send_quota(target, decision):
@@ -267,6 +269,11 @@ def main():
     parser.add_argument(
         "--prefix", default=os.getenv("CBROWSER_PREFIX", "cbrowser-t005")
     )
+    parser.add_argument(
+        "--webrtc-mode",
+        default=os.getenv("CBROWSER_WEBRTC_MODE", "public"),
+        choices=["local", "lan", "public", "relay-only"],
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8005)
 
@@ -298,6 +305,7 @@ def main():
                 else None,
                 gateway_container_id=args.gateway_container_id,
                 coturn_container_id=args.coturn_container_id,
+                webrtc_mode=args.webrtc_mode,
             )
         )
 

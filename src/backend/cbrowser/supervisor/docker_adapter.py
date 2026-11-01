@@ -800,6 +800,7 @@ with path.open('w') as output:
         media_addresses: Optional[dict[str, str]] = None,
         selkies_tokens_path: Optional[Path] = None,
         snapshot_json_path: Optional[Path] = None,
+        webrtc_mode: str = "public",
     ) -> Any:
         if agent_secret_path is None or not agent_secret_path.is_file():
             raise DockerSandboxError(
@@ -933,6 +934,7 @@ with path.open('w') as output:
                 container,
                 {
                     "role": "stream",
+                    "webrtc_mode": webrtc_mode,
                     "udp_mux_port": udp_mux_port,
                     "allowed_tcp": allowed_tcp,
                     "allowed_udp": allowed_udp,
