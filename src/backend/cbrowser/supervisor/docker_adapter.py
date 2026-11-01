@@ -14,10 +14,34 @@ from typing import Any, Optional
 from urllib.parse import urlsplit
 
 import docker
+from cbrowser.supervisor.container_spec import (
+    browser_command,
+    browser_labels,
+    cache_init_environment,
+    cache_init_labels,
+    gated_entrypoint,
+    policy_helper_labels,
+    stream_environment,
+    stream_labels,
+    stream_ports,
+)
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
+from cbrowser.supervisor.network_spec import (
+    browser_network_name,
+    endpoint_port,
+    network_labels,
+    network_ownership_matches,
+    profile_network_name,
+)
 from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
+from cbrowser.supervisor.volume_spec import (
+    SINGLETON_LOCK_NAMES,
+    browser_volumes,
+    cache_init_volumes,
+    stream_volumes,
+)
 from docker.errors import DockerException, NotFound
 
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
@@ -99,32 +123,13 @@ class DockerAdapter:
 
     @staticmethod
     def _gated_entrypoint(instance_id: str, role: str) -> list[str]:
-        return [
-            "/usr/bin/tini",
-            "-g",
-            "--",
-            "python3",
-            "/run/cbrowser_policy/startup_gate.py",
-            "--instance-id",
-            instance_id,
-            "--role",
-            role,
-            "--",
-            "/app/entrypoint.sh",
-        ]
+        return gated_entrypoint(instance_id, role)
 
     def _resolved_endpoint(self, container: Any, url: str) -> list[tuple[str, int]]:
         parsed = urlsplit(url if "://" in url else "http://" + url)
         if not parsed.hostname:
             raise DockerSandboxError("Network endpoint hostname is required")
-        port = parsed.port or {
-            "http": 80,
-            "https": 443,
-            "ws": 80,
-            "wss": 443,
-            "socks5": 1080,
-            "socks5h": 1080,
-        }.get(parsed.scheme)
+        port = parsed.port or endpoint_port(parsed.scheme)
         if port is None:
             raise DockerSandboxError("Network endpoint requires an explicit port")
         try:
@@ -180,12 +185,7 @@ class DockerAdapter:
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",
                 },
-                labels={
-                    "com.cbrowser.prefix": self.resource_prefix,
-                    "com.cbrowser.managed-by": "supervisor",
-                    "com.cbrowser.role": "network-policy",
-                    "com.cbrowser.instance-id": instance_id,
-                },
+                labels=policy_helper_labels(self.resource_prefix, instance_id),
             )
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
@@ -304,28 +304,14 @@ with path.open('w') as output:
                 cap_add=["DAC_OVERRIDE", "FOWNER"],
                 security_opt=["no-new-privileges:true"],
                 tmpfs={"/tmp": "rw,size=512m", "/home/cbrowser": "rw,size=64m"},
-                volumes={
-                    str(self.engine_cache): {
-                        "bind": "/data/engine-cache",
-                        "mode": "rw",
-                    },
-                    str(self.geoip_cache): {
-                        "bind": "/data/engine-cache/geoip",
-                        "mode": "rw",
-                    },
-                },
-                environment={
-                    "PYTHONDONTWRITEBYTECODE": "1",
-                    "CLOAKBROWSER_CACHE_DIR": "/data/engine-cache",
-                    "CBROWSER_INIT_GEOIP": "1" if need_geoip else "0",
-                    "CBROWSER_INIT_MARKER": marker_name,
-                    "CBROWSER_INIT_RUN_ID": run_id,
-                },
-                labels={
-                    "com.cbrowser.prefix": self.resource_prefix,
-                    "com.cbrowser.role": "cache-init",
-                    "com.cbrowser.managed-by": "supervisor",
-                },
+                volumes=cache_init_volumes(
+                    engine_cache=self.engine_cache,
+                    geoip_cache=self.geoip_cache,
+                ),
+                environment=cache_init_environment(
+                    need_geoip, marker_name, run_id
+                ),
+                labels=cache_init_labels(self.resource_prefix),
             )
             result = helper.wait(timeout=600)
             if result.get("StatusCode") != 0:
@@ -353,10 +339,10 @@ with path.open('w') as output:
         return f"{self.resource_prefix}-stream-{profile_id}"
 
     def get_network_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-net-{profile_id}"
+        return profile_network_name(self.resource_prefix, profile_id)
 
     def get_browser_network_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-browser-net-{profile_id}"
+        return browser_network_name(self.resource_prefix, profile_id)
 
     def prepare_profile_directories(self, profile_id: str) -> dict[str, Path]:
         profile_dir = self.validator.get_profile_data_dir(profile_id)
@@ -441,29 +427,15 @@ with path.open('w') as output:
             return self.client.networks.create(
                 net_name,
                 driver="bridge",
-                labels={
-                    "com.cbrowser.managed-by": "supervisor",
-                    "com.cbrowser.profile-id": profile_id,
-                    "com.cbrowser.prefix": self.resource_prefix,
-                },
+                labels=network_labels(self.resource_prefix, profile_id),
             )
         except DockerException as e:
             raise DockerSandboxError(f"Failed to create network {net_name}: {e}") from e
 
     def _require_network_ownership(self, network: Any, name: str) -> None:
         labels = network.attrs.get("Labels") or {}
-        profile_id = labels.get("com.cbrowser.profile-id")
-        if (
-            network.name != name
-            or not isinstance(profile_id, str)
-            or name
-            not in {
-                self.get_network_name(profile_id),
-                self.get_browser_network_name(profile_id),
-            }
-            or labels.get("com.cbrowser.prefix") != self.resource_prefix
-            or labels.get("com.cbrowser.managed-by") != "supervisor"
-            or labels.get("com.cbrowser.profile-id") != profile_id
+        if network.name != name or not network_ownership_matches(
+            self.resource_prefix, name, labels
         ):
             raise DockerSandboxError("Docker network ownership mismatch")
 
@@ -676,55 +648,22 @@ with path.open('w') as output:
         # The prior owned Browser has been removed. Chromium's singleton links
         # refer to its old hostname/PID and cannot be reused in a new container.
         # Unlink the entries themselves; never follow a stale socket/cookie link.
-        for filename in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+        for filename in SINGLETON_LOCK_NAMES:
             lock_path = dirs["profile"] / filename
             if lock_path.is_symlink() or lock_path.exists():
                 lock_path.unlink()
 
         gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "browser")
         proxy = snapshot.get("config", {}).get("proxy")
-        volumes = {
-            str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
-            str(dirs["profile"]): {
-                "bind": f"/data/profiles/{profile_id}/profile",
-                "mode": "rw",
-            },
-            str(dirs["events"]): {
-                "bind": f"/data/runtime-events/{profile_id}",
-                "mode": "rw",
-            },
-            str(dirs["exchange"]): {"bind": "/exchange/downloads", "mode": "rw"},
-            str(dirs["runtime"]): {"bind": "/run/cbrowser/runtime", "mode": "rw"},
-            str(dirs["x11"]): {"bind": "/tmp/.X11-unix", "mode": "rw"},
-            str(dirs["pulse"]): {"bind": "/pulse", "mode": "rw"},
-        }
         self._validate_cache_paths()
-        volumes[str(self.engine_cache)] = {"bind": "/data/engine-cache", "mode": "ro"}
-        volumes[str(self.geoip_cache)] = {
-            "bind": "/data/engine-cache/geoip",
-            "mode": "ro",
-        }
-
-        command = [
-            "--profile-id",
-            profile_id,
-            "--runtime-instance-id",
-            runtime_instance_id,
-            "--config-snapshot",
-            "/run/cbrowser/runtime/snapshot.json",
-            "--run-dir",
-            "/run/cbrowser/runtime",
-            "--user-data-dir",
-            f"/data/profiles/{profile_id}/profile",
-            "--events-dir",
-            f"/data/runtime-events/{profile_id}",
-            "--engine-cache-dir",
-            "/data/engine-cache",
-            "--download-dir",
-            "/exchange/downloads",
-            "--display",
-            display,
-        ]
+        volumes = browser_volumes(
+            profile_id=profile_id,
+            dirs=dirs,
+            gate=gate,
+            engine_cache=self.engine_cache,
+            geoip_cache=self.geoip_cache,
+        )
+        command = browser_command(profile_id, runtime_instance_id, display)
 
         try:
             container = await asyncio.to_thread(
@@ -747,15 +686,12 @@ with path.open('w') as output:
                     "/home/cbrowser": "rw,mode=0755,size=64m",
                 },
                 volumes=volumes,
-                labels={
-                    "com.cbrowser.managed-by": "supervisor",
-                    "com.cbrowser.profile-id": profile_id,
-                    "com.cbrowser.instance-id": runtime_instance_id,
-                    "com.cbrowser.role": "browser",
-                    "com.cbrowser.network-policy": "v1",
-                    "com.cbrowser.config-version": str(snapshot["version"]),
-                    "com.cbrowser.prefix": self.resource_prefix,
-                },
+                labels=browser_labels(
+                    self.resource_prefix,
+                    profile_id,
+                    runtime_instance_id,
+                    snapshot["version"],
+                ),
             )
             allowed_tcp = (
                 await asyncio.to_thread(self._resolved_endpoint, container, proxy)
@@ -882,51 +818,30 @@ with path.open('w') as output:
             allowed_udp.extend(
                 (coturn_ip, port) for port in [3478, *range(50000, 51000)]
             )
-        volumes = {
-            str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
-            str(x11_socket): {"bind": "/tmp/.X11-unix/X99", "mode": "ro"},
-            str(xauth_file): {"bind": "/tmp/.Xauthority", "mode": "ro"},
-            str(pulse_dir): {"bind": "/pulse", "mode": "ro"},
-            str(secret_file): {"bind": "/tmp/secret.txt", "mode": "ro"},
-            str(selkies_file): {
-                "bind": "/tmp/selkies_credentials.json",
-                "mode": "ro",
-            },
-        }
-
-        env = {
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "CBROWSER_WEBRTC_PUBLIC_IP": public_ip,
-            "DISPLAY": display,
-            "XAUTHORITY": "/tmp/.Xauthority",
-            "CBROWSER_PROFILE_ID": profile_id,
-            "CBROWSER_RUNTIME_INSTANCE_ID": runtime_instance_id,
-            "CBROWSER_GATEWAY_URL": resolved_gateway_url,
-            "CBROWSER_CONFIG_VERSION": b_inspect["Config"]["Labels"][
-                "com.cbrowser.config-version"
-            ],
-            "CBROWSER_AGENT_SECRET_FILE": "/tmp/secret.txt",
-            "CBROWSER_SELKIES_CREDENTIALS_FILE": "/tmp/selkies_credentials.json",
-            "CBROWSER_UDP_MUX_PORT": str(udp_mux_port),
-            "CBROWSER_AUDIO_DEVICE": "cbrowser_sink.monitor",
-            "CBROWSER_PULSE_DIR": "/pulse",
-            "CBROWSER_X11_SOCKET": "/tmp/.X11-unix/X99",
-            "SELKIES_PORT": "18096",
-        }
-        if screen_width is not None and screen_height is not None:
-            env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)
-            env["CBROWSER_SCREEN_HEIGHT"] = str(screen_height)
-        if media_addresses is not None:
-            env.update(
-                {
-                    "SELKIES_STUN_HOST": media_addresses["coturn_ip"],
-                    "SELKIES_STUN_PORT": "3478",
-                    "SELKIES_TURN_HOST": media_addresses["coturn_ip"],
-                    "SELKIES_TURN_PORT": "3478",
-                }
-            )
-
-        ports = {f"{udp_mux_port}/udp": ("127.0.0.1", udp_mux_port)}
+        volumes = stream_volumes(
+            gate=gate,
+            x11_socket=x11_socket,
+            xauth_file=xauth_file,
+            pulse_dir=pulse_dir,
+            secret_file=secret_file,
+            selkies_file=selkies_file,
+        )
+        config_version = b_inspect["Config"]["Labels"][
+            "com.cbrowser.config-version"
+        ]
+        env = stream_environment(
+            public_ip=public_ip,
+            display=display,
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            gateway_url=resolved_gateway_url,
+            config_version=config_version,
+            udp_mux_port=udp_mux_port,
+            media_addresses=media_addresses,
+            screen_width=screen_width,
+            screen_height=screen_height,
+        )
+        ports = stream_ports(udp_mux_port)
 
         try:
             container = await asyncio.to_thread(
@@ -947,17 +862,12 @@ with path.open('w') as output:
                 tmpfs={"/tmp": "rw,exec,nosuid,nodev,size=256m"},
                 volumes=volumes,
                 environment=env,
-                labels={
-                    "com.cbrowser.managed-by": "supervisor",
-                    "com.cbrowser.profile-id": profile_id,
-                    "com.cbrowser.instance-id": runtime_instance_id,
-                    "com.cbrowser.role": "stream",
-                    "com.cbrowser.network-policy": "v1",
-                    "com.cbrowser.config-version": b_inspect["Config"]["Labels"][
-                        "com.cbrowser.config-version"
-                    ],
-                    "com.cbrowser.prefix": self.resource_prefix,
-                },
+                labels=stream_labels(
+                    self.resource_prefix,
+                    profile_id,
+                    runtime_instance_id,
+                    config_version,
+                ),
             )
             allowed_tcp.extend(
                 await asyncio.to_thread(

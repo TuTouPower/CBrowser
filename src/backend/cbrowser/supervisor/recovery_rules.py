@@ -1,0 +1,109 @@
+"""Pure recovery decisions shared by the supervisor recovery coordinator."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Any
+
+from cbrowser.domain.runtime_policy import AUTO_RETRY_DELAYS
+
+TERMINATED_CONTAINER_STATUSES = frozenset({"exited", "dead"})
+
+
+def index_containers_by_profile(
+    containers: list[dict[str, Any]],
+) -> dict[str, dict[str, dict[str, Any]]]:
+    indexed: dict[str, dict[str, dict[str, Any]]] = {}
+    for container in containers:
+        profile_id = container.get("profile_id")
+        role = container.get("role")
+        if profile_id and role:
+            indexed.setdefault(profile_id, {})[role] = container
+    return indexed
+
+
+def live_instance_ids(
+    docker_by_profile: dict[str, dict[str, dict[str, Any]]],
+) -> set[str]:
+    return {
+        container.get("instance_id")
+        for roles in docker_by_profile.values()
+        for container in roles.values()
+        if container.get("instance_id")
+    }
+
+
+def stream_missing(
+    browser_status: Any, stream_container: dict[str, Any] | None
+) -> bool:
+    return browser_status == "running" and (
+        not stream_container or stream_container.get("status") != "running"
+    )
+
+
+def browser_terminated(
+    status: Any, instance_id: str, reported_instances: set[str]
+) -> bool:
+    return (
+        status in TERMINATED_CONTAINER_STATUSES
+        and instance_id not in reported_instances
+    )
+
+
+def exit_event_superseded(runtime: dict[str, Any], instance_id: str) -> bool:
+    return (
+        runtime.get("desired_state") == "stopped"
+        or runtime.get("runtime_instance_id") is None
+        or runtime.get("runtime_instance_id") != instance_id
+    )
+
+
+def terminal_observation(exit_code: int) -> tuple[str, str]:
+    if exit_code == 0:
+        return "stopped", "normal_exit"
+    return "error", "container_exit"
+
+
+def retry_delay_for_failure(failure_count: int) -> float:
+    if failure_count == 0:
+        return 0.0
+    return AUTO_RETRY_DELAYS[failure_count - 1]
+
+
+def remaining_retry_seconds(updated_at: Any, delay_sec: float) -> float:
+    if not updated_at or delay_sec <= 0.0:
+        return 0.0
+    try:
+        updated_dt = datetime.fromisoformat(updated_at)
+        if updated_dt.tzinfo is None:
+            updated_dt = updated_dt.replace(tzinfo=UTC)
+        elapsed = (datetime.now(UTC) - updated_dt).total_seconds()
+        return max(0.0, delay_sec - elapsed)
+    except (ValueError, TypeError):
+        return delay_sec
+
+
+def is_brand_new_runtime(
+    failure_count: int, last_exit_event_id: str | None
+) -> bool:
+    return failure_count == 0 and last_exit_event_id is None
+
+
+def runtime_pair_active(
+    observed_state: Any,
+    runtime_instance_id: str,
+    browser: dict[str, Any] | None,
+    stream: dict[str, Any] | None,
+) -> bool:
+    return (
+        observed_state != "error"
+        and browser is not None
+        and stream is not None
+        and browser.get("status") == "running"
+        and stream.get("status") == "running"
+        and browser.get("instance_id") == runtime_instance_id
+    )
+
+
+def failure_budget_exhausted(failure_count: int, limit: int) -> bool:
+    return failure_count >= limit

@@ -1,0 +1,33 @@
+"""Pure helpers for API runtime response construction."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from cbrowser.domain.models import ProfileRuntime, ProfileRuntimeResponse
+
+
+def make_runtime_response(
+    rt: ProfileRuntime, coordinator: Any = None
+) -> ProfileRuntimeResponse:
+    last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
+    return ProfileRuntimeResponse(
+        profile_id=rt.profile_id,
+        desired_state=rt.desired_state,
+        observed_state=rt.observed_state,
+        runtime_instance_id=rt.runtime_instance_id,
+        config_version=rt.config_version,
+        failure_count=rt.failure_count,
+        restart_blocked=rt.restart_blocked,
+        last_exit_event_id=rt.last_exit_event_id,
+        last_coordinator_error=last_error,
+        updated_at=rt.updated_at,
+    )
+
+
+def resolve_operation_id(
+    idempotency_key: str | None,
+    x_operation_id: str | None,
+    operation_id: str | None,
+) -> str | None:
+    return idempotency_key or x_operation_id or operation_id
