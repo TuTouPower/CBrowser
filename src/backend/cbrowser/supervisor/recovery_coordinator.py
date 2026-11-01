@@ -554,10 +554,11 @@ class RecoveryCoordinator:
                     type(exc).__name__,
                 )
 
-            # Resolve current immutable config version strictly from API
-            config_version = profile_info.get("current_config_version")
+            # Recover with the geometry the failed instance was actually bound
+            # to; an unapplied edit must not silently take effect on restart.
+            config_version = current_rt.get("config_version")
             if config_version is None:
-                config_version = current_rt.get("config_version")
+                config_version = profile_info.get("current_config_version")
             if config_version is None:
                 raise ValueError(
                     f"Profile {profile_id} lacks authoritative config_version"

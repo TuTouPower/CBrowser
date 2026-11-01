@@ -456,3 +456,34 @@ async def test_dead_instance_tracking_is_pruned_after_generation_ends(mock_core)
     await coordinator.tick()
 
     assert coordinator._reported_dead_instances == set()
+
+
+@pytest.mark.asyncio
+async def test_recovery_uses_failed_instance_bound_config_version(mock_core):
+    runtime_state = {
+        "profile_id": "p1",
+        "desired_state": "running",
+        "observed_state": "error",
+        "runtime_instance_id": None,
+        "config_version": 1,
+        "failure_count": 1,
+        "restart_blocked": False,
+        "last_exit_event_id": "observed_error:inst_failed",
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    mock_core.api.get.return_value = DummyResponse(200, runtime_state)
+    mock_core.docker.scan_active_containers.return_value = []
+    coordinator = RecoveryCoordinator(mock_core)
+    coordinator._load_profile_config = AsyncMock(
+        return_value=ProfileConfig(name="recovery")
+    )
+
+    await coordinator._execute_retry(
+        "p1",
+        0.0,
+        runtime_state,
+        {"id": "p1", "name": "Profile", "current_config_version": 2},
+    )
+
+    coordinator._load_profile_config.assert_awaited_once_with("p1", 1)
+    assert mock_core.start_profile.await_args.kwargs["config_version"] == 1
