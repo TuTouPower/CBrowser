@@ -10,13 +10,18 @@
 ### 2.1 容器生命周期与双容器拓扑
 
 - 每个 Profile 启动时由 Supervisor 编排为一对专属沙箱容器：
-    - `browser-runtime-{profile_id}`：核心运行沙箱，以 `HostConfig.IpcMode=shareable` 和 1 GiB `/dev/shm` 运行真实 CloakBrowser、Xvfb、PulseAudio（48000Hz）与 UDS Agent。
-    - `stream-runtime-{profile_id}`：远程显示沙箱，以 `IpcMode=container:browser-runtime-{profile_id}` 加入同 Profile IPC 命名空间，通过 MIT-SHM 共享内存捕获画面并进行 WebRTC 编码。
+    - `{prefix}-browser-{profile_id}`：核心运行沙箱，以 `HostConfig.IpcMode=shareable` 和 1 GiB `/dev/shm` 运行真实 CloakBrowser、Xvfb、PulseAudio（48000Hz）与 UDS Agent。
+    - `{prefix}-stream-{profile_id}`：远程显示沙箱，以 `IpcMode=container:{prefix}-browser-{profile_id}` 加入同 Profile IPC 命名空间，通过 MIT-SHM 共享内存捕获画面并进行 WebRTC 编码。
+- `{prefix}` 由 Supervisor 的 `--prefix` / `CBROWSER_PREFIX` 配置提供（默认 `cbrowser-t005`），用于隔离不同部署或测试栈的容器、网络与端口所有权。
 - 容器标签必须包含：
-    - `com.cbrowser.managed=true`
+    - `com.cbrowser.managed-by=supervisor`
     - `com.cbrowser.profile-id={profile_id}`
+    - `com.cbrowser.instance-id={runtime_instance_id}`
+    - `com.cbrowser.role=browser` 或 `stream`（Supervisor 的 cache-init / network-policy 辅助容器使用各自角色值）
+    - `com.cbrowser.network-policy={policy_version}`（当前 `v1`）
     - `com.cbrowser.config-version={version}`
-    - `com.cbrowser.runtime-image={digest}`
+    - `com.cbrowser.prefix={prefix}`
+- Stream Runtime 的 UDP mux 端口当前仅发布到宿主回环 `127.0.0.1`；本机 Chrome 可直连，跨机或公网直连需在部署阶段调整绑定与网络策略。
 - 容器只能由特权受限的 `cbrowser-supervisor` 创建与管理，外部客户端无法传入自定义镜像、宿主机挂载或容器命令。
 
 ### 2.2 宿主机数据目录隔离

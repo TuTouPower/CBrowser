@@ -20,10 +20,11 @@
     - `GET /api/v1/profiles`：获取 Profile 列表。
     - `GET /api/v1/profiles/{id}`：获取单个 Profile 详情及标签。
     - `PUT /api/v1/profiles/{id}` 或 `PATCH /api/v1/profiles/{id}`：修改 Profile。
-    - `DELETE /api/v1/profiles/{id}`：级联删除 Profile 及其关联标签、版本快照与运行时状态；历史运行事件与审计记录保留在数据库作为去重凭据与历史审计总账。
+    - `DELETE /api/v1/profiles/{id}`：级联删除 Profile 及其关联标签、版本快照、运行时状态与运行事件（`runtime_events`）；`audit_events` 无外键关联，保留作为生命周期操作审计总账。
 - **空值更新与校验边界**：
     - 可空字段（`notes`, `proxy`, `timezone`, `locale`, `color_scheme`）传入 `null` 时成功置空；
     - 非空字段（`gpu_family`, `name`, `screen_width`, `screen_height`）传入 `null`、空字符串或非法负数范围时，返回 HTTP 422 拒绝，已保存数据完全未受破坏。
+    - `tags` 三态：字段缺席表示不修改现有标签；显式 `null` 与空数组 `[]` 均表示清空标签，并生成新的配置快照。
 - **物理重启持久化**：
     - 经由独立 `uvicorn` 子进程启动服务，完成写入后终止该进程并重新拉起新实例加载同 SQLite 数据库文件，所有字段、版本号与标签内容完整保留。
 
@@ -48,7 +49,7 @@
     - `runtime_instance_id`: 实例标识符
     - `config_version`: 当前实际绑定的配置快照版本
     - `failure_count`: 连续失败次数计数器
-    - `restart_blocked`: 连续 3 次失败后的熔断标记
+    - `restart_blocked`: 连续失败达到 4 次后的熔断标记（ADR 008：首次异常 + 三次自动重试）
     - `last_exit_event_id`: 最近处理的退出事件 ID
 - **意图与观测解耦**：
     - 设置 `desired_state=running` 不会臆造 `observed_state=running`（保持实际的 `stopped` 直至容器绑定启动）。
@@ -56,7 +57,7 @@
     - Profile 配置修改后，`profile_runtimes.config_version` 保持当前运行实例已绑定的快照版本，不随 Profile 配置修改自动跳跃。
 - **事件消费收敛规则**：
     - **正常退出**（以 `exit_code=0` 为准）：`desired_state` 与 `observed_state` 均收敛为 `stopped`，`runtime_instance_id` 清空。
-    - **异常退出**（`exit_code != 0`）：保留已有的 `desired_state`（若已为 `running` 则保持 `running`，若用户已主动发起停止置为 `stopped` 则严格保持 `stopped`，绝不翻转为 `running`）；`observed_state` 设为 `stopped`；`failure_count` 加 1；达到 3 次时触发 `restart_blocked=true`。
+    - **异常退出**（`exit_code != 0`）：保留已有的 `desired_state`（若已为 `running` 则保持 `running`，若用户已主动发起停止置为 `stopped` 则严格保持 `stopped`，绝不翻转为 `running`）；`observed_state` 设为 `stopped`；`failure_count` 加 1；累计达到 4 次时触发 `restart_blocked=true`（ADR 008：failure_count 1/2/3 分别等待 2/10/30 秒重试，第 4 次失败阻断）。
     - **重复与晚到事件**：重复 `event_id` 被幂等丢弃并不二次转换状态；晚到达的旧实例事件（`runtime_instance_id` 不符）以及未在数据库建立有效快照的非法 `config_version`（如 999）均被安全拦截并记录，绝不破坏新实例的运行状态。
     - **非退出事件**：心跳事件（`heartbeat`）不触发退出或停机状态流转。
 
@@ -118,11 +119,9 @@ CBROWSER_DB_PATH="/path/to/cbrowser.db" CBROWSER_PORT=56661 PYTHONPATH=src/backe
 PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/ -s -v
 ```
 
-## 4. 验收记录
+## 4. 验收证据
 
-- [x] AC-001：通过新 API 创建、读取、修改和删除 Profile；配置字段及标签在真实服务进程重启后完整保留，非法更新不改变已保存配置。
-- [ ] AC-002：配置修改产生可查询的不可变版本快照；重复幂等操作不产生重复 Profile 或重复状态转换，失败事务不留下半写数据。
-- [ ] AC-003：正常退出事件将目标与实际状态收敛为停止，异常退出保留运行意愿；重复事件不再转换状态，旧 runtime_instance_id 事件不能覆盖新实例状态。
-- [ ] AC-004：多个真实并发请求在数据库锁竞争时按忙等待策略完成或返回明确可重试错误，不丢配置、不留下未提交事务；事务期间不等待 Docker 或浏览器启动。
-- [x] AC-005：新数据库可从空目录初始化并由独立 API 进程读取；通过导出的接口契约调用新接口并验证响应，正式现有数据目录与旧服务不被写入。
-- [ ] AC-006：独立 API 进程处理运行时事件时，诊断日志可机器解析并关联 Profile、实例和事件；保留既有诊断查询能力，不输出密码、Token、Cookie、剪贴板或输入文本。
+本节不复制验收状态，避免与历史记录产生第二份可漂移的勾选。AC-001 ~ AC-006 的验收证据以已归档 task 与独立 review 为准：
+
+- t002 的六项 AC 在 `docs/archive/tasks/t002_v2_backend_foundation/task.md` 中由实施与独立 review 复核后勾选；正式 review 结论见同目录 `review_code.md` 与 `review_test.md`。
+- 本 spec 的后续修订（`failure_count=4`、`tags` 三态、删除 Profile 时级联删除 `runtime_events` 而保留 `audit_events`）属于 review `review_20261101_075819` 的 A12/A26/D1 契约同步，实现与验收由对应修复 task 及其 review 证据承担，不回填为 t002 历史通过。

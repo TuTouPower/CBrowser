@@ -10,11 +10,11 @@ project_configured
 
 当前项目采用多层验证体系与专项技术探针机制：
 
-1. **模板与工作流工具链契约**：通过运行 `.repo_template/tests`（带 `-m contract` 标记）验证 task 状态机、文档解析及仓库整洁度（当前169 passed；历史基线168 passed/1 skipped）；
-2. **业务后端单元测试基线**：通过 `uv` 运行 `src/backend/tests`，涵盖现有 API 接口、鉴权、下载捕获、数据库及生命周期（384 passed）；
+1. **模板与工作流工具链契约**：通过运行 `.repo_template/tests`（带 `-m contract` 标记）验证 task 状态机、文档解析及仓库整洁度，通过数量以实际输出为准；
+2. **业务后端单元测试基线**：通过 `uv` 运行 `src/backend/tests`，涵盖现有 API 接口、鉴权、下载捕获、数据库及生命周期，通过数量以实际输出为准；
 3. **前端测试基线与 Node 26 环境标记**：
-    - 在 Node v26+ 环境下，运行前端测试因 Node 默认开启的实验性 WebStorage 会在 `localStorage.getItem` 处抛出异常（参见 d001，直接运行会导致 28 failed / 21 passed）；
-    - 运行前端测试必须显式设置环境变量：`NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend`（49 passed，全部通过）；
+    - 在 Node v26+ 环境下，运行前端测试因 Node 默认开启的实验性 WebStorage 会在 `localStorage.getItem` 处抛出异常（参见 d001，直接运行会导致大量失败）；
+    - 运行前端测试必须显式设置环境变量：`NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend`，通过数量以实际输出为准；
     - 严格禁止在业务代码或测试中就地弱化断言，禁止引入隐式不可见的环境改动；
 4. **容器黑盒与健康检查**：通过 curl 检查运行中的容器健康探针 `http://127.0.0.1:56661/api/health`，并支持通过 ego-browser 执行端到端网页交互自动化验证；
 5. **专项运行时技术验证探针规范**：
@@ -112,8 +112,8 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 
 |类别|必须覆盖|常见盲区|
 |---|---|---|
-|**单元测试**|pytest 后端业务测试（384 tests）与前端 Vitest（`NODE_OPTIONS=--no-experimental-webstorage`，49 tests）|mock 掉真实逻辑、在业务代码中弱化测试断言|
-|**契约测试**|pytest 模板轻量契约测试（当前169项，`-m contract`）|路径或状态机格式不匹配、specs_index 缺失条目|
+|**单元测试**|pytest 后端业务测试与前端 Vitest（`NODE_OPTIONS=--no-experimental-webstorage`）；数量以实际输出为准|mock 掉真实逻辑、在业务代码中弱化测试断言|
+|**契约测试**|pytest 模板轻量契约测试（`-m contract`）；数量以实际输出为准|路径或状态机格式不匹配、specs_index 缺失条目|
 |**文档格式**|`python3 .repo_template/scripts/md_format.py --check`|Markdown 表格未 compact 或标题语法错误|
 |**容器黑盒**|容器健康检查探针与本地技术验证专项探针|只看进程存活、未验证实际双向媒体与数据完整性|
 
