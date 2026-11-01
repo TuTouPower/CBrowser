@@ -295,6 +295,6 @@ def create_app(
 
     app.include_router(v1_router)
     app.include_router(auth_router)
-    app.include_router(supervisor_router)
-    app.include_router(gateway_router)
+    app.include_router(supervisor_router, include_in_schema=False)
+    app.include_router(gateway_router, include_in_schema=False)
     return app

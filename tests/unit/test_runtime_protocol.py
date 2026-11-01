@@ -25,7 +25,7 @@ def test_schema_json_file_validity() -> None:
     with open(schema_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     assert data["title"] == "BrowserAgentProtocol"
-    defs = data.get("definitions", {})
+    defs = data.get("$defs", {})
     assert "HealthResponse" in defs
     assert "ConfigVersionResponse" in defs
     assert "ControlRequest" in defs
