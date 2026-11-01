@@ -17,9 +17,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 import httpx
+from cbrowser.domain.models import RuntimeEventReportRequest
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.file_storage import atomic_write_text
+from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.event_forwarder")
+
+DELIVERED = "delivered"
+REJECTED = "rejected"
+UNAVAILABLE = "unavailable"
 
 
 class EventForwarder:
@@ -40,10 +47,6 @@ class EventForwarder:
         self._client: Optional[httpx.AsyncClient] = None
         self._replay_lock = asyncio.Lock()
         self._spool_lock = asyncio.Lock()
-        self._ack_file = self.events_spool_dir / "acknowledged.log"
-        self._acknowledged = set(
-            self._ack_file.read_text().splitlines() if self._ack_file.exists() else []
-        )
 
     @staticmethod
     def _event_key(event_id: str) -> str:
@@ -57,21 +60,16 @@ class EventForwarder:
             os.close(descriptor)
 
     async def _acknowledge(self, event_data: dict[str, Any], event_file: Path) -> None:
-        key = self._event_key(event_data["event_id"])
+        """Delete a delivered spool file; API event_id is the durable dedupe."""
         async with self._spool_lock:
-            if key not in self._acknowledged:
-                with self._ack_file.open("a", encoding="utf-8") as output:
-                    output.write(key + "\n")
-                    output.flush()
-                    os.fsync(output.fileno())
-                self._sync_directory()
-                self._acknowledged.add(key)
             event_file.unlink(missing_ok=True)
             self._sync_directory()
 
     def _get_bearer_token(self) -> Optional[str]:
         if self._token_file and self._token_file.is_file():
-            return self._token_file.read_text(encoding="utf-8").strip()
+            return read_secret_file(
+                self._token_file, label="Supervisor service token"
+            )
         return None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -121,20 +119,46 @@ class EventForwarder:
         key = self._event_key(event_id)
         event_file = self.events_spool_dir / f"{key}.json"
         async with self._spool_lock:
-            if key in self._acknowledged:
-                return True
             atomic_write_text(event_file, json.dumps(event_data))
 
         # 2. Try sending to API
-        delivered = await self._send_to_api(event_data)
-        if delivered:
+        outcome = await self._send_to_api(event_data)
+        if outcome == DELIVERED:
             await self._acknowledge(event_data, event_file)
             return True
-        else:
-            logger.info(f"API unavailable or failed. Event {event_id} queued in spool.")
+        if outcome == REJECTED:
+            self._quarantine_event_file(event_file, "rejected")
             return False
+        logger.info(f"API unavailable or failed. Event {event_id} queued in spool.")
+        return False
 
-    async def _send_to_api(self, event_data: dict[str, Any]) -> bool:
+    def _quarantine_event_file(self, event_file: Path, reason: str) -> None:
+        target_dir = self.events_spool_dir / "quarantine"
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(event_file, target_dir / event_file.name)
+        except OSError as exc:
+            logger.warning(
+                "Spool quarantine failed: reason=%s error_type=%s",
+                reason,
+                type(exc).__name__,
+            )
+            return
+        logger.warning("Quarantined spooled runtime event: reason=%s", reason)
+
+    @staticmethod
+    def _validate_spooled_event(data: Any) -> dict[str, Any] | None:
+        if not isinstance(data, dict):
+            return None
+        try:
+            record = RuntimeEventReportRequest.model_validate(data)
+        except ValidationError:
+            return None
+        if record.event_type == "exit" and record.exit_code is None:
+            return None
+        return record.model_dump()
+
+    async def _send_to_api(self, event_data: dict[str, Any]) -> str:
         try:
             client = await self._get_client()
             resp = await client.post(
@@ -144,18 +168,19 @@ class EventForwarder:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                return data.get("status") == "ok" and data.get("outcome") in {
+                accepted = data.get("status") == "ok" and data.get("outcome") in {
                     "applied",
                     "duplicate",
                     "stale_instance",
                     "invalid_config_version",
                     "profile_not_found",
                 }
+                return DELIVERED if accepted else REJECTED
             logger.warning("API rejected runtime event: status=%s", resp.status_code)
-            return False
+            return REJECTED if resp.status_code < 500 else UNAVAILABLE
         except Exception as e:
             logger.debug(f"Network error forwarding event to API: {e}")
-            return False
+            return UNAVAILABLE
 
     async def replay_spooled_events(self) -> int:
         """Scan spool dir and replay all undelivered events in deterministic order."""
@@ -168,18 +193,25 @@ class EventForwarder:
             for f in spooled_files:
                 try:
                     data = json.loads(f.read_text(encoding="utf-8"))
-                    delivered = self._event_key(
-                        data["event_id"]
-                    ) in self._acknowledged or await self._send_to_api(data)
-                    if delivered:
-                        await self._acknowledge(data, f)
-                        delivered_count += 1
-                    else:
-                        break  # API still down, stop replaying
-                except Exception as e:
-                    logger.error(
-                        f"Error reading or replaying spooled event file {f}: {e}"
+                except (OSError, ValueError, UnicodeError) as exc:
+                    logger.warning(
+                        "Unreadable spooled event quarantined: error_type=%s",
+                        type(exc).__name__,
                     )
+                    self._quarantine_event_file(f, "unreadable")
+                    continue
+                validated = self._validate_spooled_event(data)
+                if validated is None:
+                    self._quarantine_event_file(f, "schema")
+                    continue
+                outcome = await self._send_to_api(validated)
+                if outcome == DELIVERED:
+                    await self._acknowledge(validated, f)
+                    delivered_count += 1
+                elif outcome == REJECTED:
+                    self._quarantine_event_file(f, "rejected")
+                else:
+                    break  # API still down, stop replaying
             return delivered_count
 
     async def close(self) -> None:

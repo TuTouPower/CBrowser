@@ -5,17 +5,20 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from cbrowser.secret_files import read_secret_file
+from cbrowser.gateway.endpoint import (
+    DEFAULT_GATEWAY_PORT,
+    normalize_origins,
+)
 from pydantic import BaseModel, ConfigDict
 
 
 def _read_and_verify_key_file(env_var_name: str, path_str: str) -> Path:
     p = Path(path_str)
     try:
-        content = p.read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        raise ValueError(f"Cannot read file for {env_var_name} at {p}") from None
-    if len(content.encode("utf-8")) < 32:
-        raise ValueError(f"{env_var_name} key file must contain at least 32 bytes")
+        read_secret_file(p, label=f"{env_var_name} key file", minimum_bytes=32)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from None
     return p
 
 
@@ -25,7 +28,7 @@ class GatewayConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     host: str = "0.0.0.0"
-    port: int = 18080
+    port: int = DEFAULT_GATEWAY_PORT
     agent_key_file: Path
     gateway_token_file: Path
     api_url: str
@@ -66,7 +69,10 @@ class GatewayConfig(BaseModel):
         api_url = get_required("CBROWSER_GATEWAY_API_URL").rstrip("/")
 
         raw_origins = get_required("CBROWSER_ALLOWED_ORIGINS")
-        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+        try:
+            allowed_origins = normalize_origins(raw_origins)
+        except ValueError as exc:
+            raise ValueError(f"Invalid CBROWSER_ALLOWED_ORIGINS: {exc}") from None
         if not allowed_origins:
             raise ValueError("CBROWSER_ALLOWED_ORIGINS cannot be empty")
 
@@ -83,7 +89,9 @@ class GatewayConfig(BaseModel):
             raise ValueError("CBROWSER_TURN_PUBLIC_URLS cannot be empty")
 
         host = os.environ.get("CBROWSER_GATEWAY_HOST", "0.0.0.0").strip()
-        port = int(os.environ.get("CBROWSER_GATEWAY_PORT", "18080").strip())
+        port = int(
+            os.environ.get("CBROWSER_GATEWAY_PORT", str(DEFAULT_GATEWAY_PORT)).strip()
+        )
 
         lifetime = float(
             os.environ.get("CBROWSER_RTC_CREDENTIAL_LIFETIME_SEC", str(24 * 3600.0))

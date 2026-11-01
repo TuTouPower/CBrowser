@@ -1,0 +1,98 @@
+"""Stopping never depends on the signaling plane or on teardown success."""
+
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from cbrowser.supervisor.core import ActiveSession, SupervisorCore
+from cbrowser.supervisor.docker_adapter import DockerSandboxError
+from cbrowser.supervisor.event_forwarder import EventForwarder
+from cbrowser.supervisor.path_validator import PathValidator
+from cbrowser.supervisor.port_allocator import PortAllocator
+
+
+class _Docker:
+    def __init__(self, data_root, *, teardown_fails: bool = False) -> None:
+        self.validator = PathValidator(data_root)
+        self.teardown_fails = teardown_fails
+        self.teardown_calls = 0
+
+    async def teardown_profile(self, profile_id: str) -> None:
+        self.teardown_calls += 1
+        if self.teardown_fails:
+            raise RuntimeError("docker daemon unavailable")
+
+    def scan_active_containers(self):
+        return []
+
+
+def _core(tmp_path, docker, gateway):
+    return SupervisorCore(
+        docker,
+        PortAllocator(),
+        EventForwarder(str(tmp_path / "unused"), tmp_path / "spool"),
+        httpx.AsyncClient(base_url="http://127.0.0.1:1", trust_env=False),
+        gateway_control=gateway,
+        gateway_container_id=None,
+        coturn_container_id=None,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("gateway_error", ["status", "transport", "timeout"])
+async def test_stop_continues_after_gateway_disconnect_failure(
+    tmp_path, gateway_error
+):
+    calls = []
+
+    class _Gateway:
+        async def disconnect_viewers(self, profile_id, instance):
+            if gateway_error == "status":
+                raise httpx.HTTPStatusError(
+                    "503",
+                    request=httpx.Request("POST", "http://gateway"),
+                    response=httpx.Response(503, request=httpx.Request("POST", "http://gateway")),
+                )
+            if gateway_error == "transport":
+                raise httpx.TransportError("connection refused")
+            raise TimeoutError("gateway hung")
+
+    docker = _Docker(tmp_path / "data")
+    core = _core(tmp_path, docker, _Gateway())
+    await core.ports.allocate("profile")
+    core._sessions["profile"] = ActiveSession(
+        "profile", "inst", 1, 30000, "browser", "stream"
+    )
+    result = await core.stop_profile("profile")
+    await core.api.aclose()
+
+    assert result == {
+        "profile_id": "profile",
+        "runtime_instance_id": "inst",
+        "status": "stopped",
+    }
+    assert docker.teardown_calls == 1
+    assert core.ports.get_port("profile") is None
+    assert "profile" not in core._sessions
+
+
+@pytest.mark.asyncio
+async def test_teardown_failure_still_releases_port_and_reports_error(tmp_path):
+    class _Gateway:
+        async def disconnect_viewers(self, profile_id, instance):
+            return None
+
+    docker = _Docker(tmp_path / "data", teardown_fails=True)
+    core = _core(tmp_path, docker, _Gateway())
+    await core.ports.allocate("profile")
+    core._sessions["profile"] = ActiveSession(
+        "profile", "inst", 1, 30001, "browser", "stream"
+    )
+
+    with pytest.raises(DockerSandboxError):
+        await core.stop_profile("profile")
+    await core.api.aclose()
+
+    assert docker.teardown_calls == 1
+    assert core.ports.get_port("profile") is None
+    assert "profile" not in core._sessions

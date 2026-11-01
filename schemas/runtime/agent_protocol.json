@@ -1,11 +1,234 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "BrowserAgentProtocol",
-  "description": "Cross-service Unix Domain Socket contract for CBrowser Runtime Agent",
-  "version": "2.0.0",
-  "definitions": {
+  "$defs": {
+    "ConfigVersionResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "config_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id"
+      ],
+      "title": "ConfigVersionResponse",
+      "type": "object"
+    },
+    "ControlRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "close",
+            "rearm_downloads"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "ControlRequest",
+      "type": "object"
+    },
+    "ControlResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        }
+      },
+      "required": [
+        "status",
+        "action"
+      ],
+      "title": "ControlResponse",
+      "type": "object"
+    },
+    "DownloadEventRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Event Id",
+          "type": "string"
+        },
+        "profile_id": {
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "guid": {
+          "title": "Guid",
+          "type": "string"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "suggested_filename": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Suggested Filename"
+        },
+        "download_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Download Path"
+        },
+        "state": {
+          "default": "in_progress",
+          "enum": [
+            "in_progress",
+            "completed",
+            "canceled"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "received_bytes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Received Bytes",
+          "type": "integer"
+        },
+        "total_bytes": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Bytes",
+          "type": "integer"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "profile_id",
+        "runtime_instance_id",
+        "guid"
+      ],
+      "title": "DownloadEventRecord",
+      "type": "object"
+    },
     "HealthResponse": {
-      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "ok",
+            "degraded",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "ready": {
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "display_ready": {
+          "title": "Display Ready",
+          "type": "boolean"
+        },
+        "browser_ready": {
+          "title": "Browser Ready",
+          "type": "boolean"
+        },
+        "audio_ready": {
+          "title": "Audio Ready",
+          "type": "boolean"
+        },
+        "cdp_ready": {
+          "title": "Cdp Ready",
+          "type": "boolean"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "config_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        }
+      },
       "required": [
         "status",
         "ready",
@@ -14,199 +237,190 @@
         "audio_ready",
         "cdp_ready",
         "profile_id",
-        "runtime_instance_id",
-        "config_version"
+        "runtime_instance_id"
       ],
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "type": "string",
-          "enum": ["ok", "degraded", "error"]
-        },
-        "ready": {
-          "type": "boolean"
-        },
-        "display_ready": {
-          "type": "boolean"
-        },
-        "browser_ready": {
-          "type": "boolean"
-        },
-        "audio_ready": {
-          "type": "boolean"
-        },
-        "cdp_ready": {
-          "type": "boolean"
-        },
-        "profile_id": {
-          "type": "string"
-        },
-        "runtime_instance_id": {
-          "type": "string"
-        },
-        "config_version": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "details": {
-          "type": "object",
-          "additionalProperties": true
-        }
-      }
-    },
-    "ConfigVersionResponse": {
-      "type": "object",
-      "required": [
-        "profile_id",
-        "runtime_instance_id",
-        "config_version"
-      ],
-      "additionalProperties": false,
-      "properties": {
-        "profile_id": {
-          "type": "string"
-        },
-        "runtime_instance_id": {
-          "type": "string"
-        },
-        "config_version": {
-          "type": "integer",
-          "minimum": 1
-        }
-      }
-    },
-    "ControlRequest": {
-      "type": "object",
-      "required": ["action"],
-      "additionalProperties": false,
-      "properties": {
-        "action": {
-          "type": "string",
-          "enum": ["close", "rearm_downloads"]
-        },
-        "params": {
-          "type": "object",
-          "additionalProperties": true
-        }
-      }
-    },
-    "ControlResponse": {
-      "type": "object",
-      "required": ["status", "action"],
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "type": "string",
-          "enum": ["ok", "error"]
-        },
-        "action": {
-          "type": "string"
-        },
-        "message": {
-          "type": ["string", "null"]
-        }
-      }
+      "title": "HealthResponse",
+      "type": "object"
     },
     "RuntimeEventRecord": {
-      "type": "object",
-      "required": [
-        "event_id",
-        "profile_id",
-        "runtime_instance_id",
-        "event_type",
-        "config_version",
-        "created_at"
-      ],
       "additionalProperties": false,
       "properties": {
         "event_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Event Id",
+          "type": "string"
         },
         "profile_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Profile Id",
+          "type": "string"
         },
         "runtime_instance_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
+          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
+          "title": "Runtime Instance Id",
+          "type": "string"
         },
         "event_type": {
-          "type": "string",
-          "enum": ["exit", "heartbeat", "lifecycle"]
+          "default": "exit",
+          "enum": [
+            "exit",
+            "heartbeat",
+            "lifecycle"
+          ],
+          "title": "Event Type",
+          "type": "string"
         },
         "exit_code": {
-          "type": ["integer", "null"]
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
         },
         "exit_reason": {
-          "type": ["string", "null"],
-          "maxLength": 128
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Reason"
         },
         "config_version": {
-          "type": "integer",
-          "minimum": 1
+          "default": 1,
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
         },
         "payload": {
-          "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
         },
         "created_at": {
+          "title": "Created At",
           "type": "string"
         }
-      }
-    },
-    "DownloadEventRecord": {
-      "type": "object",
+      },
       "required": [
         "event_id",
         "profile_id",
-        "runtime_instance_id",
-        "guid",
-        "state",
-        "created_at"
+        "runtime_instance_id"
       ],
+      "title": "RuntimeEventRecord",
+      "type": "object"
+    },
+    "RuntimeStateRecord": {
       "additionalProperties": false,
       "properties": {
-        "event_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
-        },
         "profile_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
+          "title": "Profile Id",
+          "type": "string"
         },
         "runtime_instance_id": {
-          "type": "string",
-          "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$"
-        },
-        "guid": {
+          "title": "Runtime Instance Id",
           "type": "string"
         },
-        "url": {
-          "type": ["string", "null"]
-        },
-        "suggested_filename": {
-          "type": ["string", "null"]
-        },
-        "download_path": {
-          "type": ["string", "null"]
+        "config_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
         },
         "state": {
-          "type": "string",
-          "enum": ["in_progress", "completed", "canceled"]
+          "enum": [
+            "starting",
+            "running",
+            "stopped",
+            "error"
+          ],
+          "title": "State",
+          "type": "string"
         },
-        "received_bytes": {
-          "type": "integer",
-          "minimum": 0
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
         },
-        "total_bytes": {
-          "type": "integer",
-          "minimum": 0
+        "exit_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Reason"
         },
-        "created_at": {
+        "browser_pid": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Browser Pid"
+        },
+        "updated_at": {
+          "title": "Updated At",
           "type": "string"
         }
-      }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "state"
+      ],
+      "title": "RuntimeStateRecord",
+      "type": "object"
     }
-  }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/HealthResponse"
+    },
+    {
+      "$ref": "#/$defs/ConfigVersionResponse"
+    },
+    {
+      "$ref": "#/$defs/ControlRequest"
+    },
+    {
+      "$ref": "#/$defs/ControlResponse"
+    },
+    {
+      "$ref": "#/$defs/RuntimeEventRecord"
+    },
+    {
+      "$ref": "#/$defs/DownloadEventRecord"
+    },
+    {
+      "$ref": "#/$defs/RuntimeStateRecord"
+    }
+  ],
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BrowserAgentProtocol",
+  "description": "Cross-service Unix Domain Socket contract for CBrowser Runtime Agent",
+  "version": "2.0.0"
 }

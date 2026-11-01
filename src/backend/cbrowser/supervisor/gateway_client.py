@@ -6,17 +6,20 @@ from pathlib import Path
 from urllib.parse import quote
 
 import httpx
+from cbrowser.secret_files import read_secret_file
 from pydantic import SecretStr
 
 
 class GatewayControlClient:
     def __init__(self, base_url: str, token_file: Path) -> None:
-        token = token_file.read_text(encoding="utf-8").strip()
-        if len(token.encode("utf-8")) < 32:
-            raise ValueError(
-                "Gateway control authentication requires an external key "
-                "of at least 32 bytes"
+        try:
+            token = read_secret_file(
+                token_file,
+                label="Gateway control token",
+                minimum_bytes=32,
             )
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from None
         self._token = SecretStr(token)
         self._client = httpx.AsyncClient(base_url=base_url, timeout=5, trust_env=False)
 

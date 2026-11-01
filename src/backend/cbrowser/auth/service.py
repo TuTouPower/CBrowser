@@ -98,8 +98,13 @@ class AuthService:
         self, password: str, client_ip: str
     ) -> tuple[bool, str | None]:
         """Authenticate admin with rate limiting and Argon2 verification."""
-        if self.rate_limiter.is_rate_limited(client_ip):
-            logger.warning("Admin login rate limited for source")
+        limited_layer = self.rate_limiter.rate_limit_layer(client_ip)
+        if limited_layer is not None:
+            logger.warning(
+                "Admin login rate limited: source=%s layer=%s",
+                client_ip,
+                limited_layer,
+            )
             return False, "rate_limited"
 
         async with self._session_maker() as session:
@@ -131,6 +136,9 @@ class AuthService:
             except (VerifyMismatchError, VerificationError):
                 self.rate_limiter.record_failure(client_ip)
                 return False, "invalid_credentials"
+
+    def rate_limit_retry_after(self, client_ip: str) -> int:
+        return self.rate_limiter.retry_after_seconds(client_ip)
 
     async def create_session(
         self, expire_hours: int = 12

@@ -9,7 +9,9 @@ AC / Implementation Contract:
   Browser: incoming new connections denied (loopback & established permitted).
   Browser: public egress permitted; private/CGNAT/multicast denied except allowed.
   Stream: incoming permits loopback, established, and its own UDP mux port.
-  Stream: outgoing permits trusted Gateway/coturn IPs and public ICE.
+  Stream: outgoing permits trusted Gateway/coturn IPs and explicit endpoints.
+  Stream relay-only: no final public ACCEPT; only the mux and allowlist.
+  Stream local/lan/public: public ICE egress permitted for direct viewers.
 - Atomic restore per address family using iptables-restore / ip6tables-restore.
 """
 
@@ -61,6 +63,8 @@ BLOCKED_IPV6_RANGES = [
 UDP_MUX_MIN = 30000
 UDP_MUX_MAX = 30991
 
+WebRTCMode = Literal["local", "lan", "public", "relay-only"]
+
 
 def _validate_ip_port(v: tuple[str, int]) -> tuple[str, int]:
     if not (isinstance(v, (tuple, list)) and len(v) == 2):
@@ -83,6 +87,7 @@ class NetworkPolicySpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["browser", "stream"]
+    webrtc_mode: WebRTCMode = "public"
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
     udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
@@ -144,8 +149,9 @@ def render_iptables_rules(spec: NetworkPolicySpec) -> str:
     for net in BLOCKED_IPV4_RANGES:
         lines.append(f"-A OUTPUT -d {net} -j DROP")
 
-    # Public internet egress (or ICE candidates), permitted
-    lines.append("-A OUTPUT -j ACCEPT")
+    # Relay-only Stream must not reach arbitrary public destinations.
+    if spec.role == "browser" or spec.webrtc_mode != "relay-only":
+        lines.append("-A OUTPUT -j ACCEPT")
     lines.append("COMMIT\n")
 
     return "\n".join(lines)
@@ -192,8 +198,9 @@ def render_ip6tables_rules(spec: NetworkPolicySpec) -> str:
     for net6 in BLOCKED_IPV6_RANGES:
         lines.append(f"-A OUTPUT -d {net6} -j DROP")
 
-    # Public IPv6 egress allowed
-    lines.append("-A OUTPUT -j ACCEPT")
+    # Relay-only Stream must not reach arbitrary public destinations.
+    if spec.role == "browser" or spec.webrtc_mode != "relay-only":
+        lines.append("-A OUTPUT -j ACCEPT")
     lines.append("COMMIT\n")
 
     return "\n".join(lines)

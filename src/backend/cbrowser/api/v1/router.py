@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated, Any
 
 from cbrowser.adapters.database.models import SessionModel
@@ -38,6 +39,8 @@ from cbrowser.services.profile_service import (
 )
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+
+logger = logging.getLogger("cbrowser.api.v1.router")
 
 v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
 profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
@@ -116,8 +119,12 @@ async def subscribe_runtime_events(
                         updated_at=rt.updated_at,
                     )
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "SSE snapshot unavailable: profile=%s error_type=%s",
+                    p.id,
+                    type(exc).__name__,
+                )
         return snapshots
 
     effective_last_event_id = last_event_id or last_event_id_query
@@ -306,8 +313,12 @@ async def update_profile(
     op_id = idempotency_key or x_operation_id or operation_id
     try:
         patch_data = payload.model_dump(exclude_unset=True)
+        tags_provided = "tags" in payload.model_fields_set
         tags_update = patch_data.pop("tags", None)
-        tags_val = [Tag(**t) for t in tags_update] if tags_update is not None else None
+        # Tri-state: absent = unchanged, null or [] = clear, list = replace.
+        tags_val = (
+            [Tag(**t) for t in (tags_update or [])] if tags_provided else None
+        )
 
         p = await service.update_profile(
             profile_id=profile_id,
@@ -629,6 +640,7 @@ async def report_observed_state(
             payload.runtime_instance_id,
             payload.observed_state,
             payload.config_version,
+            payload.reason,
         )
         coord = getattr(request.app.state, "coordinator", None)
         if coord:

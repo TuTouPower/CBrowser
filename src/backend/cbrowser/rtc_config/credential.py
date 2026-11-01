@@ -23,15 +23,3 @@ def generate_turn_credentials(
     mac = hmac.new(secret_bytes, username.encode("utf-8"), hashlib.sha1).digest()
     credential = base64.b64encode(mac).decode("utf-8")
     return username, credential
-
-
-def verify_turn_credentials(
-    secret: str | bytes,
-    username: str,
-    credential: str,
-) -> bool:
-    """Verifies TURN REST credential in constant time."""
-    secret_bytes = secret.encode("utf-8") if isinstance(secret, str) else secret
-    mac = hmac.new(secret_bytes, username.encode("utf-8"), hashlib.sha1).digest()
-    expected = base64.b64encode(mac).decode("utf-8")
-    return hmac.compare_digest(credential.encode("utf-8"), expected.encode("utf-8"))

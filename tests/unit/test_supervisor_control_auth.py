@@ -12,6 +12,7 @@ from cbrowser.supervisor.control_server import create_control_app
 def test_unusable_service_key_prevents_startup(tmp_path, content):
     key = tmp_path / "key"
     key.write_text(content)
+    key.chmod(0o600)
     with pytest.raises(ValueError, match="32 bytes"):
         create_control_app(SimpleNamespace(), key)
 
@@ -21,6 +22,7 @@ async def test_control_authentication_rejects_empty_and_foreign_tokens(tmp_path)
     token = secrets.token_urlsafe(32)
     key = tmp_path / "key"
     key.write_text(token)
+    key.chmod(0o600)
     app = create_control_app(SimpleNamespace(), key)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://supervisor"

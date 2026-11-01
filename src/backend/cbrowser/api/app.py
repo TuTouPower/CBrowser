@@ -21,8 +21,10 @@ from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_r
 from cbrowser.api.runtime_coordinator import RuntimeCoordinator
 from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
+from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
+from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
@@ -59,14 +61,8 @@ def create_app(
         )
 
         raw_origins = allowed_origins or os.environ.get("CBROWSER_ALLOWED_ORIGINS")
-        if isinstance(raw_origins, str):
-            app.state.allowed_origins = [
-                o.strip().rstrip("/") for o in raw_origins.split(",") if o.strip()
-            ]
-        elif isinstance(raw_origins, (list, tuple)):
-            app.state.allowed_origins = [
-                str(o).strip().rstrip("/") for o in raw_origins if str(o).strip()
-            ]
+        if raw_origins:
+            app.state.allowed_origins = normalize_origins(raw_origins)
         else:
             app.state.allowed_origins = []
         if not app.state.allowed_origins:
@@ -93,6 +89,9 @@ def create_app(
             repo = ProfileRepository(session_maker)
             service = ProfileService(repo)
 
+        app.state.trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
+            os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
+        )
         auth_service = AuthService(session_maker)
         app.state.auth_service = auth_service
         app.dependency_overrides[get_auth_service] = lambda: auth_service
@@ -296,6 +295,6 @@ def create_app(
 
     app.include_router(v1_router)
     app.include_router(auth_router)
-    app.include_router(supervisor_router)
-    app.include_router(gateway_router)
+    app.include_router(supervisor_router, include_in_schema=False)
+    app.include_router(gateway_router, include_in_schema=False)
     return app

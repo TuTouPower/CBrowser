@@ -60,8 +60,14 @@ class RecoveryCoordinator:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def tick(self) -> None:
-        """Detect exits and schedule retries from persisted API state."""
+    async def tick(
+        self, *, containers: list[dict[str, Any]] | None = None
+    ) -> None:
+        """Detect exits and schedule retries from persisted API state.
+
+        ``containers`` may carry the event-driven scan snapshot so the recovery
+        loop does not rescan Docker every second.
+        """
         if self._closing:
             return
 
@@ -88,17 +94,18 @@ class RecoveryCoordinator:
             )
             return
 
-        # 2. Scan active Docker containers
-        try:
-            containers = await asyncio.to_thread(
-                self.core.docker.scan_active_containers
-            )
-        except Exception as exc:
-            logger.warning(
-                "Recovery paused: Docker scan error_type=%s",
-                type(exc).__name__,
-            )
-            return
+        # 2. Scan active Docker containers unless a fresh snapshot was supplied
+        if containers is None:
+            try:
+                containers = await asyncio.to_thread(
+                    self.core.docker.scan_active_containers
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Recovery paused: Docker scan error_type=%s",
+                    type(exc).__name__,
+                )
+                return
 
         docker_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
         for c in containers:
@@ -127,7 +134,8 @@ class RecoveryCoordinator:
             if b_status == "running" and (not s_c or s_c.get("status") != "running"):
                 logger.warning(
                     "Profile %s has healthy Browser %s but missing/failed Stream %s. "
-                    "Retaining healthy browser.",
+                    "Keeping the Browser for this pass; the automatic retry "
+                    "rebuilds the whole pair.",
                     pid,
                     b_c.get("id"),
                     s_c.get("id") if s_c else "none",
@@ -207,35 +215,43 @@ class RecoveryCoordinator:
                         type(exc).__name__,
                     )
 
-                if exit_code == 0:
-                    exit_code = 1
-
-                stable_event_id = f"docker_exit:{b_c['id'][:12]}:{b_inst}"
-
                 logger.warning(
-                    "Docker exit detected: container=%s profile=%s code=%s event=%s",
+                    "Docker exit detected: container=%s profile=%s code=%s",
                     b_c["id"],
                     pid,
                     exit_code,
-                    stable_event_id,
                 )
 
-                delivered = await self.core.events.emit_event(
-                    event_id=stable_event_id,
-                    profile_id=pid,
-                    runtime_instance_id=b_inst,
-                    event_type="exit",
-                    exit_code=exit_code,
-                    exit_reason="container_terminated",
-                    config_version=cfg_ver,
-                    payload={"source": "docker_recovery_scan", "exit_code": exit_code},
-                )
-                if delivered:
+                if exit_code == 0:
+                    reported = await self.core.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        cfg_ver,
+                        observed_state="stopped",
+                        reason="normal_exit",
+                    )
+                else:
+                    reported = await self.core.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        cfg_ver,
+                        observed_state="error",
+                        reason="container_exit",
+                    )
+                if reported:
                     self._reported_dead_instances.add(b_inst)
 
         # 4. Check API runtime state for each profile and schedule retries if due
+        live_instances: set[str] = {
+            c.get("instance_id")
+            for roles in docker_by_profile.values()
+            for c in roles.values()
+            if c.get("instance_id")
+        }
+        known_profiles: set[str] = set()
         for p_info in profiles_list:
             pid = p_info["id"]
+            known_profiles.add(pid)
             if self.core._get_profile_lock(pid).locked():
                 continue
 
@@ -256,6 +272,9 @@ class RecoveryCoordinator:
                 continue
 
             desired_state = rt.get("desired_state")
+            observed_state = rt.get("observed_state")
+            if rt.get("runtime_instance_id"):
+                live_instances.add(rt["runtime_instance_id"])
             restart_blocked = rt.get("restart_blocked", False)
             failure_count = rt.get("failure_count", 0)
             last_exit_event_id = rt.get("last_exit_event_id")
@@ -286,27 +305,20 @@ class RecoveryCoordinator:
                             cfg_ver,
                         )
                     elif runtime_instance_id not in self._reported_dead_instances:
-                        missing_event_id = f"missing_runtime:{runtime_instance_id}"
                         logger.warning(
                             "Missing runtime: profile=%s instance=%s cfg_version=%s",
                             pid,
                             runtime_instance_id,
                             cfg_ver,
                         )
-                        delivered = await self.core.events.emit_event(
-                            event_id=missing_event_id,
-                            profile_id=pid,
-                            runtime_instance_id=runtime_instance_id,
-                            event_type="exit",
-                            exit_code=1,
-                            exit_reason="missing_runtime",
-                            config_version=cfg_ver,
-                            payload={
-                                "source": "missing_runtime_recovery_scan",
-                                "instance_id": runtime_instance_id,
-                            },
+                        reported = await self.core.report_terminal_observation(
+                            pid,
+                            runtime_instance_id,
+                            cfg_ver,
+                            observed_state="error",
+                            reason="missing_runtime",
                         )
-                        if delivered:
+                        if reported:
                             self._reported_dead_instances.add(runtime_instance_id)
                         # Re-read runtime from API after emitting missing event
                         try:
@@ -358,7 +370,8 @@ class RecoveryCoordinator:
                 b_c = roles.get("browser")
                 s_c = roles.get("stream")
                 if (
-                    b_c
+                    observed_state != "error"
+                    and b_c
                     and s_c
                     and b_c.get("status") == "running"
                     and s_c.get("status") == "running"
@@ -401,6 +414,12 @@ class RecoveryCoordinator:
                     self._execute_retry(pid, remaining, rt, p_info)
                 )
                 self._in_flight_tasks[pid] = task
+
+        self._reported_dead_instances.intersection_update(live_instances)
+        for stale_pid in set(self._cleanup_attempt_keys) - known_profiles:
+            self._cleanup_attempt_keys.pop(stale_pid, None)
+            self._cleanup_failures.pop(stale_pid, None)
+            self._cleanup_cooldown_until.pop(stale_pid, None)
 
     async def _execute_retry(
         self,
@@ -478,7 +497,9 @@ class RecoveryCoordinator:
                 logger.info("Retry for %s aborted: failure count changed.", profile_id)
                 return
 
-            if current_rt.get("runtime_instance_id") is not None:
+            if current_rt.get("runtime_instance_id") is not None and current_rt.get(
+                "observed_state"
+            ) not in ("error", "stopped"):
                 logger.info(
                     "Retry for %s aborted: instance already active (%s).",
                     profile_id,
@@ -541,10 +562,11 @@ class RecoveryCoordinator:
                     type(exc).__name__,
                 )
 
-            # Resolve current immutable config version strictly from API
-            config_version = profile_info.get("current_config_version")
+            # Recover with the geometry the failed instance was actually bound
+            # to; an unapplied edit must not silently take effect on restart.
+            config_version = current_rt.get("config_version")
             if config_version is None:
-                config_version = current_rt.get("config_version")
+                config_version = profile_info.get("current_config_version")
             if config_version is None:
                 raise ValueError(
                     f"Profile {profile_id} lacks authoritative config_version"

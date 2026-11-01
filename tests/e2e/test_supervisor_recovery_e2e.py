@@ -951,19 +951,16 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
                 "API delivery"
             )
 
-            # Check that API processed the event and updated desired_state to stopped
+            # Disk events are diagnostics: a synthetic exit while the real
+            # Browser container keeps running must not clear running intent.
             r_rt = await api_client.get(
                 f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
             )
             assert r_rt.status_code == 200
-            assert r_rt.json()["desired_state"] == "stopped"
-            assert r_rt.json()["last_exit_event_id"] == evt_id
+            assert r_rt.json()["desired_state"] == "running"
+            assert r_rt.json()["runtime_instance_id"] == inst_id
 
-            # 4. Idempotency test: Replay the identical event after a new running intent
-            await api_client.patch(
-                f"/api/v1/profiles/{profile_id}/runtime/desired-state",
-                json={"desired_state": "running"},
-            )
+            # 4. Idempotency test: Replay the identical event
             r_dup = await api_client.post(
                 "/api/v1/internal/supervisor/runtimes/events", json=event_payload
             )

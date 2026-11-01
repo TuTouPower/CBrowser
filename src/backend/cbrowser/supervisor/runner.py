@@ -7,18 +7,21 @@ import asyncio
 import logging
 import os
 import signal
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 import docker
 import httpx
 import uvicorn
+from cbrowser.gateway.endpoint import gateway_port_from_env
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.gateway_client import GatewayControlClient
+from cbrowser.supervisor.metrics import StageMetrics
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
@@ -48,7 +51,7 @@ async def run_supervisor(
     geoip_cache: Path | None = None,
     token_file: Path | None = None,
     agent_key_file: Path | None = None,
-    gateway_url: str = "ws://host.docker.internal:18097",
+    gateway_url: str | None = None,
     resource_prefix: str = "cbrowser-t005",
     host: str = "127.0.0.1",
     port: int = 8005,
@@ -56,6 +59,11 @@ async def run_supervisor(
     gateway_token_file: Path | None = None,
     gateway_container_id: str | None = None,
     coturn_container_id: str | None = None,
+    webrtc_mode: str = "public",
+    gateway_port: int | None = None,
+    runtime_uid: int = 1000,
+    runtime_gid: int = 1000,
+    manage_ownership: bool | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -84,6 +92,11 @@ async def run_supervisor(
         docker_client=d_client,
         resource_prefix=resource_prefix,
         geoip_cache_dir=geoip_cache,
+        runtime_uid=runtime_uid,
+        runtime_gid=runtime_gid,
+        manage_ownership=(
+            os.geteuid() == 0 if manage_ownership is None else manage_ownership
+        ),
     )
     port_allocator = PortAllocator()
     event_forwarder = EventForwarder(
@@ -104,6 +117,8 @@ async def run_supervisor(
         gateway_control=GatewayControlClient(gateway_control_url, gateway_token_file),
         gateway_container_id=gateway_container_id,
         coturn_container_id=coturn_container_id,
+        webrtc_mode=webrtc_mode,
+        gateway_port=gateway_port,
     )
 
     async def send_quota(target, decision):
@@ -164,14 +179,55 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         except NotImplementedError:
             pass
 
-    # Background continuous reconciliation and event spool replay loop
+    metrics = StageMetrics()
+    scan_wakeup = asyncio.Event()
+
+    def watch_docker_events() -> None:
+        try:
+            for _event in d_client.events(
+                decode=True,
+                filters={
+                    "type": "container",
+                    "label": (
+                        f"com.cbrowser.prefix={docker_adapter.resource_prefix}"
+                    ),
+                },
+            ):
+                loop.call_soon_threadsafe(scan_wakeup.set)
+                if stop_event.is_set():
+                    break
+        except Exception as exc:
+            logger.warning(
+                "Docker event stream stopped: error_type=%s", type(exc).__name__
+            )
+
+    docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))
+
+    # Background continuous event consumption; Docker scans are event-driven
+    # with a 30 s fallback so state changes always converge.
     async def background_monitoring_loop():
+        last_scan = 0.0
+        container_snapshot: list[dict] | None = None
         while not stop_event.is_set():
             try:
+                started = time.monotonic()
                 await core.consume_disk_events()
+                metrics.record("events", time.monotonic() - started)
+                started = time.monotonic()
                 await event_forwarder.replay_spooled_events()
-                await core.scan_and_reconcile_existing()
-                await recovery.tick()
+                metrics.record("spool", time.monotonic() - started)
+                now = time.monotonic()
+                if scan_wakeup.is_set() or now - last_scan >= 30.0:
+                    scan_wakeup.clear()
+                    last_scan = now
+                    started = time.monotonic()
+                    container_snapshot = await core.scan_and_reconcile_existing()
+                    metrics.record("scan", time.monotonic() - started)
+                started = time.monotonic()
+                await recovery.tick(containers=container_snapshot)
+                metrics.record("recovery", time.monotonic() - started)
+                if metrics.should_report():
+                    logger.info("Supervisor stage metrics: %s", metrics.snapshot())
             except Exception as exc:
                 logger.warning(
                     "Reconciliation failed: error_type=%s", type(exc).__name__
@@ -184,13 +240,20 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     monitor_task = asyncio.create_task(background_monitoring_loop())
 
     async def resource_loop():
+        # Independent, low-frequency and staggered away from the scan loop.
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
         while not stop_event.is_set():
+            started = time.monotonic()
             try:
                 await core.sample_resources()
+                metrics.record("resources", time.monotonic() - started)
             except Exception as exc:
                 logger.warning("Resource monitoring failed: %s", type(exc).__name__)
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                await asyncio.wait_for(stop_event.wait(), timeout=5.0)
             except asyncio.TimeoutError:
                 pass
 
@@ -213,6 +276,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         stopped.cancel()
         monitor_task.cancel()
         resource_task.cancel()
+        docker_events_task.cancel()
         await recovery.close()
         try:
             await asyncio.wait_for(
@@ -249,8 +313,12 @@ def main():
         "--agent-key-file", default=os.getenv("CBROWSER_AGENT_KEY_FILE")
     )
     parser.add_argument(
-        "--gateway-url",
-        default=os.getenv("CBROWSER_GATEWAY_URL", "ws://host.docker.internal:18097"),
+        "--gateway-url", default=os.getenv("CBROWSER_GATEWAY_URL") or None
+    )
+    parser.add_argument(
+        "--gateway-port",
+        type=int,
+        default=gateway_port_from_env(),
     )
     parser.add_argument(
         "--gateway-control-url", default=os.getenv("CBROWSER_GATEWAY_CONTROL_URL")
@@ -266,6 +334,26 @@ def main():
     )
     parser.add_argument(
         "--prefix", default=os.getenv("CBROWSER_PREFIX", "cbrowser-t005")
+    )
+    parser.add_argument(
+        "--webrtc-mode",
+        default=os.getenv("CBROWSER_WEBRTC_MODE", "public"),
+        choices=["local", "lan", "public", "relay-only"],
+    )
+    parser.add_argument(
+        "--runtime-uid",
+        type=int,
+        default=int(os.getenv("CBROWSER_RUNTIME_UID", "1000")),
+    )
+    parser.add_argument(
+        "--runtime-gid",
+        type=int,
+        default=int(os.getenv("CBROWSER_RUNTIME_GID", "1000")),
+    )
+    parser.add_argument(
+        "--manage-ownership",
+        choices=["auto", "1", "0"],
+        default=os.getenv("CBROWSER_MANAGE_OWNERSHIP", "auto"),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8005)
@@ -298,6 +386,15 @@ def main():
                 else None,
                 gateway_container_id=args.gateway_container_id,
                 coturn_container_id=args.coturn_container_id,
+                webrtc_mode=args.webrtc_mode,
+                gateway_port=args.gateway_port,
+                runtime_uid=args.runtime_uid,
+                runtime_gid=args.runtime_gid,
+                manage_ownership=(
+                    None
+                    if args.manage_ownership == "auto"
+                    else args.manage_ownership == "1"
+                ),
             )
         )
 

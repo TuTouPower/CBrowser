@@ -16,6 +16,26 @@ class PathSecurityError(Exception):
     pass
 
 
+RESERVED_PROFILE_IDS = frozenset({".secrets", "secrets", "archive", "quarantine"})
+
+
+def validate_profile_id(profile_id: str) -> str:
+    """Reject identifiers that could alias control, secret or archive roots."""
+    if not isinstance(profile_id, str) or not profile_id:
+        raise PathSecurityError(
+            f"Invalid profile_id for path generation: {profile_id!r}"
+        )
+    if "/" in profile_id or "\\" in profile_id or ".." in profile_id:
+        raise PathSecurityError(f"Invalid profile_id: {profile_id!r}")
+    if profile_id.startswith("."):
+        raise PathSecurityError(
+            f"Reserved profile_id cannot start with a dot: {profile_id!r}"
+        )
+    if profile_id in RESERVED_PROFILE_IDS:
+        raise PathSecurityError(f"Reserved profile_id: {profile_id!r}")
+    return profile_id
+
+
 class PathValidator:
     """Validates and resolves paths under designated root directories."""
 
@@ -99,62 +119,30 @@ class PathValidator:
 
     def get_profile_data_dir(self, profile_id: str) -> Path:
         """Return the canonical Profile user data directory."""
-        if (
-            not profile_id
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ".." in profile_id
-        ):
-            raise PathSecurityError(
-                f"Invalid profile_id for path generation: {profile_id}"
-            )
+        validate_profile_id(profile_id)
         target = self.data_root / "profiles" / profile_id / "profile"
         return self._fixed_profile_directory(target)
 
     def get_runtime_dir(self, profile_id: str) -> Path:
         """Return canonical runtime dir: data_root/runtime/{profile_id}."""
-        if (
-            not profile_id
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ".." in profile_id
-        ):
-            raise PathSecurityError(f"Invalid profile_id: {profile_id}")
+        validate_profile_id(profile_id)
         target = self.data_root / "runtime" / profile_id
         return self._fixed_profile_directory(target)
 
     def get_secret_dir(self, profile_id: str) -> Path:
         """Return the Profile secret dir, outside the Browser-mounted runtime dir."""
-        if (
-            not profile_id
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ".." in profile_id
-        ):
-            raise PathSecurityError(f"Invalid profile_id: {profile_id}")
+        validate_profile_id(profile_id)
         target = self.data_root / "runtime" / ".secrets" / profile_id
         return self._fixed_profile_directory(target)
 
     def get_events_dir(self, profile_id: str) -> Path:
         """Return the canonical Profile runtime event directory."""
-        if (
-            not profile_id
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ".." in profile_id
-        ):
-            raise PathSecurityError(f"Invalid profile_id: {profile_id}")
+        validate_profile_id(profile_id)
         target = self.data_root / "runtime-events" / profile_id
         return self._fixed_profile_directory(target)
 
     def get_exchange_dir(self, profile_id: str) -> Path:
         """Return the canonical Profile download directory."""
-        if (
-            not profile_id
-            or "/" in profile_id
-            or "\\" in profile_id
-            or ".." in profile_id
-        ):
-            raise PathSecurityError(f"Invalid profile_id: {profile_id}")
+        validate_profile_id(profile_id)
         target = self.data_root / "artifacts" / profile_id / "downloads"
         return self._fixed_profile_directory(target)

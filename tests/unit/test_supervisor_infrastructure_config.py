@@ -328,7 +328,7 @@ async def test_start_profile_stream_gateway_url_selection(tmp_path: Path):
 
         # Verify attach_profile_infrastructure called with gateway=None
         adapter_coturn_only.attach_profile_infrastructure.assert_called_once_with(
-            "prof_test", None, "turn_only_id"
+            "prof_test", None, "turn_only_id", gateway_port=18097
         )
         # Verify start_stream_container got SupervisorCore.gateway_url
         call_kwargs = adapter_coturn_only.start_stream_container.call_args.kwargs
@@ -377,7 +377,7 @@ async def test_start_profile_stream_gateway_url_selection(tmp_path: Path):
         assert session2.observed_state == "running"
 
     adapter_paired.attach_profile_infrastructure.assert_called_once_with(
-        "prof_test2", "gw_paired_id", "turn_paired_id"
+        "prof_test2", "gw_paired_id", "turn_paired_id", gateway_port=18097
     )
     call_kwargs2 = adapter_paired.start_stream_container.call_args.kwargs
     assert call_kwargs2["gateway_url"] == "ws://10.42.0.3:18097"

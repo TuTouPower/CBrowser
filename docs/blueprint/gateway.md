@@ -123,3 +123,7 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 - 严格禁止记录 token、cookie、password、coturn HMAC secret、TURN credential 明文。
 - 严格禁止在普通日志中输出 SDP 全文。
 - 错误与告警日志仅包含关键事件、profile_id、connection_id 与错误类型。
+
+## 公共 API 面边界
+
+公开 OpenAPI（`schemas/openapi/cbrowser_v1.json`）与前端生成类型只包含 `/api/v1` 用户面路由。`/api/v1/internal/supervisor/*` 与 `/api/v1/internal/gateway/*` 使用 `include_in_schema=False`，仅供持有独立 Bearer 凭证的 Supervisor/Gateway 服务调用，不进入公共契约。Runtime Agent UDS 协议由 `scripts/export_runtime_agent_protocol.py` 生成 `schemas/runtime/agent_protocol.json`，与 Supervisor 协议导出脚本保持同一逐字节校验模式；禁止手改生成文件。

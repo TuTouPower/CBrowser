@@ -28,8 +28,9 @@ from pydantic import ValidationError
 
 from .api_client import GatewayApiClient
 from .config import GatewayConfig
-from .registry import AgentRegistry, RegisteredAgent
-from .rotation import RotationCoordinator
+from .endpoint import normalize_origin
+from .registry import AgentRegistry, RegisteredAgent, RegistrationThrottle
+from .rotation import NoActiveGenerationError, RotationCoordinator
 
 logger = logging.getLogger("cbrowser.gateway.server")
 
@@ -100,6 +101,8 @@ def create_gateway_app(
         if viewer_entry is not None:
             if not viewer_entry.ws.closed:
                 await viewer_entry.ws.send_str(json.dumps(frame))
+
+    registration_throttle = RegistrationThrottle()
 
     rotation = RotationCoordinator(
         rtc_service=rtc_service,
@@ -273,6 +276,7 @@ def create_gateway_app(
                 )
                 await agent.ws.send_str(close_env.model_dump_json())
 
+        await rotation.cancel_profile(profile_id)
         return web.json_response({"status": "ok"})
 
     # ---------------- Agent Register Route ----------------
@@ -281,11 +285,19 @@ def create_gateway_app(
         if not auth.startswith("Bearer "):
             return web.Response(status=401, text="Unauthorized Agent")
         raw_token = auth.removeprefix("Bearer ").strip()
+        if not registration_throttle.allow(request.remote):
+            logger.warning("Agent registration rate limited for source")
+            return web.Response(status=429, text="Too many registration attempts")
 
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
-        msg = await ws.receive()
+        try:
+            msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+        except (asyncio.TimeoutError, ConnectionError):
+            logger.warning("Agent registration timed out before first packet")
+            await ws.close(code=1008, message=b"Registration timeout")
+            return ws
         if msg.type != WSMsgType.TEXT:
             await ws.close(code=1003, message=b"Expected text registration packet")
             return ws
@@ -340,7 +352,7 @@ def create_gateway_app(
             turn_host=payload.turn_host,
             turn_port=payload.turn_port,
             ws=ws,
-            last_heartbeat=time.time(),
+            last_heartbeat=registry.now(),
         )
 
         old_agent = registry.register(agent)
@@ -369,7 +381,12 @@ def create_gateway_app(
         await ws.send_str(ack.model_dump_json())
 
         # Send Agent RTC_CONFIG
-        eff_gen = rotation.get_effective_generation(pid)
+        try:
+            eff_gen = rotation.get_effective_generation(pid)
+        except NoActiveGenerationError:
+            logger.error("Refusing Agent registration: no active TURN generation")
+            await ws.close(code=1011, message=b"TURN credentials expired")
+            return ws
         rtc_ctrl = GatewayControlEnvelope(
             version="v2",
             action=AgentAction.RTC_CONFIG,
@@ -446,7 +463,7 @@ def create_gateway_app(
                                 beat = AgentHeartbeatPayload.model_validate(
                                     proto_env.payload
                                 )
-                                registry.update_heartbeat(pid, iid)
+                                registry.update_heartbeat(pid, iid, session_id)
                                 agent.unpaused_video_consumers = (
                                     beat.unpaused_video_consumers
                                 )
@@ -467,6 +484,7 @@ def create_gateway_app(
             await close_viewers_for_session(
                 session_id, code=1001, message=b"Stream Agent disconnected"
             )
+            await rotation.cancel_profile(pid)
             registry.remove(pid, ws=ws)
 
         return ws
@@ -475,8 +493,12 @@ def create_gateway_app(
     async def handle_viewer_signal(request: web.Request) -> web.WebSocketResponse:
         profile_id = request.match_info["profile_id"]
 
-        # 1. Origin verification
-        origin = request.headers.get("Origin", "")
+        # 1. Origin verification (normalized scheme/host/port)
+        raw_origin = request.headers.get("Origin", "")
+        try:
+            origin = normalize_origin(raw_origin)
+        except ValueError:
+            return web.Response(status=403, text="Origin not allowed")
         if origin not in config.allowed_origins:
             return web.Response(status=403, text="Origin not allowed")
 
@@ -522,26 +544,64 @@ def create_gateway_app(
             ws=ws,
         )
 
-        eff_gen = rotation.get_effective_generation(profile_id)
+        try:
+            eff_gen = rotation.get_effective_generation(profile_id)
+        except NoActiveGenerationError:
+            logger.error(
+                "Refusing Viewer connection: no active TURN generation (profile=%s)",
+                profile_id,
+            )
+            return web.Response(
+                status=503, text="TURN credentials expired; retry after rotation"
+            )
+        rotation.register_connection(profile_id, conn_id, eff_gen)
 
-        # 4. First frame to Viewer: rtc_config
-        rtc_frame = {
-            "cbrowser": "rtc_config",
-            "generation": eff_gen.generation,
-            "rtc_config": eff_gen.client_rtc_config,
-        }
-        await ws.send_str(json.dumps(rtc_frame))
+        try:
+            # 4. First frame to Viewer: rtc_config
+            rtc_frame = {
+                "cbrowser": "rtc_config",
+                "generation": eff_gen.generation,
+                "rtc_config": eff_gen.client_rtc_config,
+            }
+            await ws.send_str(json.dumps(rtc_frame))
 
-        # 5. Open tunnel to Agent
-        open_env = GatewayTunnelEnvelope(
-            version="v2",
-            type="open",
-            profile_id=profile_id,
-            runtime_instance_id=agent.instance_id,
-            agent_session_id=agent.agent_session_id,
-            conn_id=conn_id,
-        )
-        await agent.ws.send_str(open_env.model_dump_json())
+            # 5. Open tunnel to Agent
+            open_env = GatewayTunnelEnvelope(
+                version="v2",
+                type="open",
+                profile_id=profile_id,
+                runtime_instance_id=agent.instance_id,
+                agent_session_id=agent.agent_session_id,
+                conn_id=conn_id,
+            )
+            await agent.ws.send_str(open_env.model_dump_json())
+        except Exception as exc:
+            logger.warning(
+                "Viewer initialization failed: error_type=%s", type(exc).__name__
+            )
+            viewers.pop(conn_id, None)
+            if not ws.closed:
+                try:
+                    await ws.close(code=1011, message=b"Viewer initialization failed")
+                except Exception:
+                    pass
+            if not agent.ws.closed:
+                try:
+                    await agent.ws.send_str(
+                        GatewayTunnelEnvelope(
+                            version="v2",
+                            type="close",
+                            profile_id=profile_id,
+                            runtime_instance_id=agent.instance_id,
+                            agent_session_id=agent.agent_session_id,
+                            conn_id=conn_id,
+                            code=1011,
+                            reason="Viewer initialization failed",
+                        ).model_dump_json()
+                    )
+                except Exception:
+                    pass
+            return ws
 
         try:
             async for m in ws:
@@ -625,9 +685,10 @@ def create_gateway_app(
                         1.0, max(0.2, config.agent_heartbeat_timeout_sec / 4.0)
                     )
                     await asyncio.sleep(sleep_interval)
-                    now = time.time()
+                    wall_now = time.time()
                     timed_out = registry.check_heartbeat_timeouts(
-                        now=now, timeout_sec=config.agent_heartbeat_timeout_sec
+                        now=registry.now(),
+                        timeout_sec=config.agent_heartbeat_timeout_sec,
                     )
                     for agent in timed_out:
                         logger.warning(
@@ -646,7 +707,7 @@ def create_gateway_app(
                         )
 
                     # Tick rotation coordinator
-                    await rotation.tick(now=now)
+                    await rotation.tick(now=wall_now)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:

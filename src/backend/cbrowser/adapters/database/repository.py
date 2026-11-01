@@ -530,8 +530,15 @@ class ProfileRepository:
         runtime_instance_id: str,
         observed_state: str,
         config_version: int | None = None,
+        reason: str | None = None,
     ) -> ProfileRuntime | None:
-        """Supervisor reports actual observed state for an instance."""
+        """Supervisor reports authoritative observed state for an instance.
+
+        Observation is the only lifecycle authority: a terminal error keeps the
+        user's running intent, counts one failure and releases the instance so
+        the recovery coordinator can start a fresh generation. A clean browser
+        close (``reason="normal_exit"``) clears running intent like a user stop.
+        """
         now = utc_now_iso()
         async with self._session_maker() as session, write_transaction(session):
             m = await session.get(ProfileRuntimeModel, profile_id)
@@ -541,7 +548,38 @@ class ProfileRepository:
                 raise InvalidConfigVersionError(
                     f"Reported config_version {config_version} does not match instance's bound version {m.config_version}"
                 )
+            previous = m.observed_state
             m.observed_state = observed_state
+            observation_id = f"observed_error:{runtime_instance_id}"
+            already_counted = (
+                previous == "error" or m.last_exit_event_id == observation_id
+            )
+            if observed_state == "error" and not already_counted:
+                m.failure_count += 1
+                m.last_exit_event_id = f"observed_error:{runtime_instance_id}"
+                if m.failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
+                    m.restart_blocked = True
+                m.runtime_instance_id = None
+                session.add(
+                    RuntimeEventModel(
+                        event_id=f"observed_error:{runtime_instance_id}",
+                        profile_id=profile_id,
+                        runtime_instance_id=runtime_instance_id,
+                        event_type="lifecycle",
+                        exit_code=None,
+                        exit_reason=reason,
+                        config_version=m.config_version,
+                        payload=json.dumps(
+                            {"source": "supervisor_observation", "reason": reason}
+                        ),
+                        created_at=now,
+                    )
+                )
+            elif observed_state == "stopped":
+                m.runtime_instance_id = None
+                if reason == "normal_exit" and m.desired_state == "running":
+                    m.desired_state = "stopped"
+                    m.failure_count = 0
             m.updated_at = now
             return self._to_domain_runtime(m)
 
@@ -645,41 +683,9 @@ class ProfileRepository:
                     )
                     return "invalid_config_version"
 
-                # 5. Non-exit event dispatch (heartbeat, lifecycle)
-                if event.event_type in ("heartbeat", "lifecycle"):
-                    session.add(
-                        RuntimeEventModel(
-                            event_id=event.event_id,
-                            profile_id=event.profile_id,
-                            runtime_instance_id=event.runtime_instance_id,
-                            event_type=event.event_type,
-                            exit_code=event.exit_code,
-                            exit_reason=event.exit_reason,
-                            config_version=event.config_version,
-                            payload=json.dumps(event.payload),
-                            created_at=now,
-                        )
-                    )
-                    return "applied"
-
-                # 6. Exit event state convergence
-                is_normal = event.exit_code == 0
-                if is_normal:
-                    rt.desired_state = "stopped"
-                    rt.observed_state = "stopped"
-                    rt.runtime_instance_id = None
-                    rt.last_exit_event_id = event.event_id
-                    rt.failure_count = 0
-                    rt.updated_at = now
-                else:
-                    rt.observed_state = "stopped"
-                    rt.runtime_instance_id = None
-                    rt.failure_count += 1
-                    rt.last_exit_event_id = event.event_id
-                    if rt.failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
-                        rt.restart_blocked = True
-                    rt.updated_at = now
-
+                # 5. Events are diagnostics only. Lifecycle authority comes from
+                # the Supervisor's Docker/Agent observations, never from files
+                # writable by the sandboxed Profile.
                 session.add(
                     RuntimeEventModel(
                         event_id=event.event_id,
@@ -693,7 +699,6 @@ class ProfileRepository:
                         created_at=now,
                     )
                 )
-
                 return "applied"
         except IntegrityError:
             # Concurrent race on duplicate event_id PK: check if already committed

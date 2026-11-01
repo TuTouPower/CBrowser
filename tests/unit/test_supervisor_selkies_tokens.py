@@ -74,9 +74,11 @@ async def test_start_stream_container_requires_selkies_tokens_file(
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()
-    agent_secret = dirs["runtime"] / "agent_secret.txt"
+    secret_dir = adapter.validator.get_secret_dir("p1")
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
     agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o644)
+    agent_secret.chmod(0o600)
 
     expected_msg = "Explicit Stream Selkies token credential file is required"
     # 1. Missing selkies_tokens_path argument -> raises DockerSandboxError
@@ -122,9 +124,11 @@ async def test_start_stream_container_enforces_0600_permissions(tmp_path: Path) 
     )
 
     dirs = adapter.prepare_profile_directories("p1")
-    agent_secret = dirs["runtime"] / "agent_secret.txt"
+    secret_dir = adapter.validator.get_secret_dir("p1")
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
     agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o644)
+    agent_secret.chmod(0o600)
 
     tokens_path = dirs["runtime"] / "selkies_tokens.json"
     tokens_path.write_text("{}", encoding="utf-8")
@@ -190,13 +194,13 @@ async def test_start_stream_container_mounts_tokens_file_readonly(
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()
-    agent_secret = dirs["runtime"] / "agent_secret.txt"
-    agent_secret.write_text("agent_secret_test", encoding="utf-8")
-    agent_secret.chmod(0o644)
-
-    tokens = SelkiesTokens.generate()
     secret_dir = adapter.validator.get_secret_dir("p1")
     secret_dir.mkdir(parents=True, exist_ok=True)
+    agent_secret = secret_dir / "agent_secret.txt"
+    agent_secret.write_text("agent_secret_test", encoding="utf-8")
+    agent_secret.chmod(0o600)
+
+    tokens = SelkiesTokens.generate()
     tokens_path = secret_dir / "selkies_tokens.json"
     tokens.write_credentials_file(tokens_path)
 

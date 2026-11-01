@@ -16,6 +16,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from cbrowser.domain.runtime_policy import ExitReason
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cloakbrowser import launch_persistent_context_async
 from cloakbrowser.browser import seed_widevine_hint
@@ -556,7 +557,11 @@ class BrowserRunner:
             if exit_code_file.exists():
                 try:
                     exit_code = int(exit_code_file.read_text().strip())
-                    exit_reason = "normal" if exit_code == 0 else "abnormal"
+                    exit_reason = (
+                        ExitReason.NORMAL.value
+                        if exit_code == 0
+                        else ExitReason.ABNORMAL.value
+                    )
                     break
                 except Exception:
                     pass
@@ -571,7 +576,11 @@ class BrowserRunner:
                         if exit_code_file.exists():
                             try:
                                 exit_code = int(exit_code_file.read_text().strip())
-                                exit_reason = "normal" if exit_code == 0 else "abnormal"
+                                exit_reason = (
+                                    ExitReason.NORMAL.value
+                                    if exit_code == 0
+                                    else ExitReason.ABNORMAL.value
+                                )
                                 break
                             except Exception:
                                 pass
@@ -581,12 +590,12 @@ class BrowserRunner:
                             "Chrome process disappeared without exit code from wrapper"
                         )
                         exit_code = None
-                        exit_reason = "abnormal_lost"
+                        exit_reason = ExitReason.ABNORMAL_LOST.value
                     break
             await asyncio.sleep(0.2)
 
         if exit_code is None and exit_reason is None:
-            exit_reason = "abnormal_lost"
+            exit_reason = ExitReason.ABNORMAL_LOST.value
 
         # The pinned SDK owns a Playwright driver process. Losing that control
         # pipe can make Chrome exit zero (d016); zero alone is not a user close.
@@ -598,7 +607,7 @@ class BrowserRunner:
             )
         )
         if infrastructure_failure:
-            exit_reason = "process_observation_lost"
+            exit_reason = ExitReason.PROCESS_OBSERVATION_LOST.value
 
         logger.info(
             "Chrome process terminated with exit code %s (reason=%s)",

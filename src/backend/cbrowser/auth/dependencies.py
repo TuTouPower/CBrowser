@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 from cbrowser.adapters.database.models import SessionModel
 from cbrowser.auth.service import AuthService
+from cbrowser.gateway.endpoint import normalize_origin
 from fastapi import Depends, HTTPException, Request, status
 
 
@@ -65,7 +66,10 @@ async def require_csrf_and_origin(
                     origin = f"{parsed.scheme}://{parsed.netloc}"
 
         allowed_origins = getattr(request.app.state, "allowed_origins", [])
-        clean_origin = origin.rstrip("/") if origin else ""
+        try:
+            clean_origin = normalize_origin(origin) if origin else ""
+        except ValueError:
+            clean_origin = ""
         if not clean_origin or clean_origin not in allowed_origins:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

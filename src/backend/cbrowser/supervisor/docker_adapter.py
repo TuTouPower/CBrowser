@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 
 import docker
 from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
 from docker.errors import DockerException, NotFound
@@ -37,6 +38,9 @@ class DockerAdapter:
         resource_prefix: str = "cbrowser-t005",
         geoip_cache_dir: Optional[Path | str] = None,
         policy_image: str | None = None,
+        runtime_uid: int = 1000,
+        runtime_gid: int = 1000,
+        manage_ownership: bool = False,
     ):
         self.validator = path_validator
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
@@ -55,6 +59,9 @@ class DockerAdapter:
                     "Explicit immutable Browser and Stream images are required"
                 )
         self.resource_prefix = resource_prefix
+        self.runtime_uid = runtime_uid
+        self.runtime_gid = runtime_gid
+        self.manage_ownership = manage_ownership
         self.policy_image = policy_image or os.environ.get(
             "CBROWSER_NETWORK_POLICY_IMAGE"
         )
@@ -358,11 +365,7 @@ with path.open('w') as output:
         exchange_dir = self.validator.get_exchange_dir(profile_id)
 
         for d in (profile_dir, runtime_dir, events_dir, exchange_dir):
-            d.mkdir(parents=True, exist_ok=True)
-            try:
-                os.chmod(d, 0o777)
-            except Exception:
-                pass
+            self._secure_directory(d, 0o750)
 
         x11_dir = self.validator.validate_runtime_source(
             profile_id, runtime_dir / "x11", allow_create=True
@@ -370,13 +373,8 @@ with path.open('w') as output:
         pulse_dir = self.validator.validate_runtime_source(
             profile_id, runtime_dir / "pulse", allow_create=True
         )
-        x11_dir.mkdir(parents=True, exist_ok=True)
-        pulse_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(x11_dir, 0o777)
-            os.chmod(pulse_dir, 0o777)
-        except Exception:
-            pass
+        self._secure_directory(x11_dir, 0o1777)
+        self._secure_directory(pulse_dir, 0o750)
 
         return {
             "profile": profile_dir,
@@ -386,6 +384,24 @@ with path.open('w') as output:
             "x11": x11_dir,
             "pulse": pulse_dir,
         }
+
+    def _secure_directory(self, directory: Path, mode: int) -> None:
+        """Own Profile data by the runtime UID or fall back to legacy world mode.
+
+        Host-direct development runs cannot chown user files; managed
+        deployment (the Supervisor container) must own them by uid/gid 1000.
+        """
+        directory.mkdir(parents=True, exist_ok=True)
+        if self.manage_ownership:
+            try:
+                os.chown(directory, self.runtime_uid, self.runtime_gid)
+            except OSError as exc:
+                raise DockerSandboxError(
+                    f"Cannot assign Profile directory ownership: {type(exc).__name__}"
+                ) from None
+            os.chmod(directory, mode)
+        else:
+            os.chmod(directory, 0o1777 if mode & 0o1000 else 0o777)
 
     def setup_x11_permissions(self, x11_dir: Path) -> None:
         try:
@@ -491,7 +507,7 @@ with path.open('w') as output:
         profile_id: str,
         gateway_container_id: Optional[str],
         coturn_container_id: str,
-        gateway_port: int = 18097,
+        gateway_port: int = DEFAULT_GATEWAY_PORT,
         coturn_port: int = 3478,
     ) -> dict[str, Any]:
         net_name = self.get_network_name(profile_id)
@@ -647,7 +663,7 @@ with path.open('w') as output:
         )
         snapshot = json.loads(snapshot_json_path.read_text(encoding="utf-8"))
         await self.ensure_runtime_cache(snapshot.get("config", {}).get("geoip", True))
-        self.setup_x11_permissions(dirs["x11"])
+        await asyncio.to_thread(self.setup_x11_permissions, dirs["x11"])
 
         target_snap = dirs["runtime"] / "snapshot.json"
         if snapshot_json_path != target_snap:
@@ -655,7 +671,7 @@ with path.open('w') as output:
                 target_snap, snapshot_json_path.read_text(encoding="utf-8"), mode=0o644
             )
 
-        self.cleanup_container_by_name(b_name)
+        await asyncio.to_thread(self.cleanup_container_by_name, b_name)
 
         # The prior owned Browser has been removed. Chromium's singleton links
         # refer to its old hostname/PID and cannot be reused in a new container.
@@ -711,7 +727,8 @@ with path.open('w') as output:
         ]
 
         try:
-            container = self.client.containers.run(
+            container = await asyncio.to_thread(
+                self.client.containers.run,
                 self.browser_image,
                 command=command,
                 entrypoint=self._gated_entrypoint(runtime_instance_id, "browser"),
@@ -793,14 +810,24 @@ with path.open('w') as output:
         runtime_instance_id: str,
         browser_container_name: str,
         udp_mux_port: int,
-        gateway_url: str = "ws://host.docker.internal:18097",
+        gateway_url: Optional[str] = None,
         agent_secret_path: Optional[Path] = None,
         public_ip: str = "127.0.0.1",
         display: str = ":99",
         media_addresses: Optional[dict[str, str]] = None,
         selkies_tokens_path: Optional[Path] = None,
         snapshot_json_path: Optional[Path] = None,
+        webrtc_mode: str = "public",
+        gateway_port: int = DEFAULT_GATEWAY_PORT,
     ) -> Any:
+        endpoint = GatewayEndpoint.from_url(
+            gateway_url or GatewayEndpoint(port=gateway_port).ws_url
+        )
+        if endpoint.port != gateway_port:
+            raise DockerSandboxError(
+                "Gateway URL port does not match the configured Gateway port"
+            )
+        resolved_gateway_url = gateway_url or endpoint.ws_url
         if agent_secret_path is None or not agent_secret_path.is_file():
             raise DockerSandboxError(
                 "Explicit Stream Agent credential file is required"
@@ -808,6 +835,13 @@ with path.open('w') as output:
         if selkies_tokens_path is None or not selkies_tokens_path.is_file():
             raise DockerSandboxError(
                 "Explicit Stream Selkies token credential file is required"
+            )
+        secret_file = self.validator.validate_secret_source(
+            profile_id, agent_secret_path
+        )
+        if (secret_file.stat().st_mode & 0o077) != 0:
+            raise DockerSandboxError(
+                "Stream Agent credential file must have 0600 permissions"
             )
         token_stat = selkies_tokens_path.stat()
         if (token_stat.st_mode & 0o077) != 0:
@@ -828,14 +862,13 @@ with path.open('w') as output:
         )
         pulse_dir = dirs["pulse"]
 
-        b_inspect = self.client.api.inspect_container(browser_container_name)
+        b_inspect = await asyncio.to_thread(
+            self.client.api.inspect_container, browser_container_name
+        )
         browser_hostname = b_inspect.get("Config", {}).get("Hostname", "")
 
-        self.cleanup_container_by_name(s_name)
+        await asyncio.to_thread(self.cleanup_container_by_name, s_name)
 
-        secret_file = self.validator.validate_runtime_source(
-            profile_id, agent_secret_path
-        )
         selkies_file = self.validator.validate_secret_source(
             profile_id, selkies_tokens_path
         )
@@ -868,7 +901,7 @@ with path.open('w') as output:
             "XAUTHORITY": "/tmp/.Xauthority",
             "CBROWSER_PROFILE_ID": profile_id,
             "CBROWSER_RUNTIME_INSTANCE_ID": runtime_instance_id,
-            "CBROWSER_GATEWAY_URL": gateway_url,
+            "CBROWSER_GATEWAY_URL": resolved_gateway_url,
             "CBROWSER_CONFIG_VERSION": b_inspect["Config"]["Labels"][
                 "com.cbrowser.config-version"
             ],
@@ -896,7 +929,8 @@ with path.open('w') as output:
         ports = {f"{udp_mux_port}/udp": ("127.0.0.1", udp_mux_port)}
 
         try:
-            container = self.client.containers.run(
+            container = await asyncio.to_thread(
+                self.client.containers.run,
                 self.stream_image,
                 entrypoint=self._gated_entrypoint(runtime_instance_id, "stream"),
                 name=s_name,
@@ -926,13 +960,16 @@ with path.open('w') as output:
                 },
             )
             allowed_tcp.extend(
-                await asyncio.to_thread(self._resolved_endpoint, container, gateway_url)
+                await asyncio.to_thread(
+                    self._resolved_endpoint, container, resolved_gateway_url
+                )
             )
             await asyncio.to_thread(
                 self._install_network_policy,
                 container,
                 {
                     "role": "stream",
+                    "webrtc_mode": webrtc_mode,
                     "udp_mux_port": udp_mux_port,
                     "allowed_tcp": allowed_tcp,
                     "allowed_udp": allowed_udp,
@@ -1026,6 +1063,9 @@ with path.open('w') as output:
             ) from None
 
     async def teardown_profile(self, profile_id: str) -> None:
+        await asyncio.to_thread(self._teardown_profile_sync, profile_id)
+
+    def _teardown_profile_sync(self, profile_id: str) -> None:
         s_name = self.get_stream_container_name(profile_id)
         b_name = self.get_browser_container_name(profile_id)
         net_name = self.get_network_name(profile_id)
@@ -1033,7 +1073,6 @@ with path.open('w') as output:
         self.cleanup_container_by_name(s_name)
         self.cleanup_container_by_name(b_name)
         self.cleanup_network_by_name(net_name)
-
         self.cleanup_network_by_name(self.get_browser_network_name(profile_id))
 
     def _runtime_policy_ready(self, container: Any) -> bool:

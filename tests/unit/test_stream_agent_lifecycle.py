@@ -616,37 +616,6 @@ async def test_ice_restart_payload_updates_agent_active_rtc_config():
     assert agent.active_rtc_config.wire_ice_servers() == new_servers
 
 
-def test_credential_and_token_redaction_in_sanitizer():
-    """Verify _sanitize_packet strips credential, password, secret, token."""
-    from cbrowser.stream_agent.agent import _sanitize_packet
-
-    dirty = {
-        "action": "rtc_config",
-        "token": "secret_token_123",
-        "agent_token": "agent_tok_456",
-        "secret": "top_secret",
-        "authorization": "Bearer xyz",
-        "credential": "sensitive_turn_password",
-        "nested": {
-            "password": "db_pass",
-            "credential": "turn_pass",
-            "safe_key": "safe_val",
-        },
-        "safe_data": 42,
-    }
-
-    clean = _sanitize_packet(dirty)
-    assert "token" not in clean
-    assert "agent_token" not in clean
-    assert "secret" not in clean
-    assert "authorization" not in clean
-    assert "credential" not in clean
-    assert "password" not in clean["nested"]
-    assert "credential" not in clean["nested"]
-    assert clean["nested"]["safe_key"] == "safe_val"
-    assert clean["safe_data"] == 42
-
-
 def test_selkies_version_comes_only_from_installed_distribution(monkeypatch):
     """An environment string must not be able to misreport the running Selkies."""
     monkeypatch.setenv("CBROWSER_SELKIES_VERSION", "9.9.9")

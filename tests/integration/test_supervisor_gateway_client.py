@@ -13,6 +13,7 @@ async def test_gateway_control_uses_service_auth_and_instance_fence(tmp_path):
     token = secrets.token_urlsafe(32)
     key = tmp_path / "gateway_key"
     key.write_text(token)
+    key.chmod(0o600)
     received = []
 
     async def control(request):
@@ -58,5 +59,6 @@ async def test_gateway_control_uses_service_auth_and_instance_fence(tmp_path):
 def test_gateway_control_requires_nonempty_external_key(tmp_path):
     key = tmp_path / "empty_key"
     key.write_text("")
-    with pytest.raises(ValueError, match="external key"):
+    key.chmod(0o600)
+    with pytest.raises(ValueError, match="at least 32 bytes"):
         GatewayControlClient("http://127.0.0.1:1", key)

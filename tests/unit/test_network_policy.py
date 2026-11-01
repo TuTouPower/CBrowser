@@ -148,3 +148,42 @@ def test_startup_gate_logic(tmp_path: Path) -> None:
         timeout=0.2,
         poll_interval=0.05,
     )
+
+
+def test_stream_relay_only_has_no_public_accept_but_keeps_allowlist() -> None:
+    from cbrowser.supervisor.network_policy import render_ip6tables_rules
+
+    spec = NetworkPolicySpec(
+        role="stream",
+        webrtc_mode="relay-only",
+        allowed_tcp=[("203.0.113.10", 18080)],
+        allowed_udp=[("203.0.113.10", 3478)],
+        udp_mux_port=30022,
+    )
+    rules = render_iptables_rules(spec)
+    assert "-A INPUT -p udp --dport 30022 -j ACCEPT" in rules
+    assert "-A OUTPUT -p tcp -d 203.0.113.10 --dport 18080 -j ACCEPT" in rules
+    assert "-A OUTPUT -p udp -d 203.0.113.10 --dport 3478 -j ACCEPT" in rules
+    assert "-A OUTPUT -d 10.0.0.0/8 -j DROP" in rules
+    assert "-A OUTPUT -j ACCEPT" not in rules
+    assert "-A OUTPUT -j ACCEPT" not in render_ip6tables_rules(spec)
+
+
+def test_stream_public_modes_allow_public_ice_candidates() -> None:
+    for mode in ("local", "lan", "public"):
+        spec = NetworkPolicySpec(
+            role="stream",
+            webrtc_mode=mode,
+            allowed_tcp=[],
+            allowed_udp=[],
+            udp_mux_port=30022,
+        )
+        rules = render_iptables_rules(spec)
+        assert rules.rstrip().endswith("COMMIT")
+        assert "-A OUTPUT -j ACCEPT" in rules
+
+
+def test_browser_ignores_relay_only_mode_and_keeps_public_egress() -> None:
+    spec = NetworkPolicySpec(role="browser", webrtc_mode="relay-only")
+    rules = render_iptables_rules(spec)
+    assert "-A OUTPUT -j ACCEPT" in rules

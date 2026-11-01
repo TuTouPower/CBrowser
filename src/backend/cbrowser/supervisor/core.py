@@ -16,6 +16,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,18 +26,25 @@ from typing import Any, Dict, Optional
 
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.runtime_agent.protocol import RuntimeEventRecord
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
+from cbrowser.supervisor.path_validator import PathSecurityError
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from docker.errors import NotFound
+from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.core")
+
+UNPROTECTED_SANDBOX_GRACE_SEC = 60.0
 
 
 def browser_runtime_ready(
@@ -77,18 +86,33 @@ class SupervisorCore:
         port_allocator: PortAllocator,
         event_forwarder: EventForwarder,
         api_client: httpx.AsyncClient,
-        gateway_url: str = "ws://host.docker.internal:18097",
+        gateway_url: Optional[str] = None,
         token_file: Optional[Path | str] = None,
         agent_key_file: Optional[Path | str] = None,
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
         coturn_container_id: str | None = None,
+        webrtc_mode: str = "public",
+        gateway_port: int | None = None,
     ):
         self.docker = docker_adapter
         self.ports = port_allocator
         self.events = event_forwarder
         self.api = api_client
-        self.gateway_url = gateway_url
+        configured_port = (
+            gateway_port if gateway_port is not None else DEFAULT_GATEWAY_PORT
+        )
+        endpoint = GatewayEndpoint.from_url(
+            gateway_url or GatewayEndpoint(port=configured_port).ws_url
+        )
+        if gateway_port is not None and endpoint.port != gateway_port:
+            raise ValueError(
+                "Gateway URL port does not match the configured Gateway port"
+            )
+        self.gateway_endpoint = GatewayEndpoint(
+            host=endpoint.host, port=endpoint.port, secure=endpoint.secure
+        )
+        self.gateway_url = gateway_url or self.gateway_endpoint.ws_url
         self._token_file = Path(token_file) if token_file else None
         self.agent_credentials = (
             AgentCredentials(agent_key_file) if agent_key_file else None
@@ -97,11 +121,18 @@ class SupervisorCore:
         self.resource_monitor: ResourceMonitor | None = None
         self.gateway_container_id = gateway_container_id
         self.coturn_container_id = coturn_container_id
+        self.webrtc_mode = webrtc_mode
 
         self._sessions: Dict[str, ActiveSession] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
+        self._terminal_observations: set[tuple[str, str, int]] = set()
+        self._unprotected_since: dict[str, float] = {}
+        self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
+        self._event_cursor_file = (
+            self.docker.validator.data_root / "control" / "event_cursors.json"
+        )
         self.operations = OperationJournal(
             self.docker.validator.validate_safe_path(
                 self.docker.validator.data_root / "control" / "operations",
@@ -111,7 +142,9 @@ class SupervisorCore:
 
     def _get_bearer_token(self) -> Optional[str]:
         if self._token_file and self._token_file.is_file():
-            return self._token_file.read_text(encoding="utf-8").strip()
+            return read_secret_file(
+                self._token_file, label="Supervisor service token"
+            )
         return None
 
     def _auth_headers(self) -> dict[str, str]:
@@ -123,7 +156,7 @@ class SupervisorCore:
             self._locks[profile_id] = asyncio.Lock()
         return self._locks[profile_id]
 
-    async def scan_and_reconcile_existing(self) -> None:
+    async def scan_and_reconcile_existing(self) -> list[dict[str, Any]]:
         """Reconcile Docker labels and ports with authenticated API state."""
         containers = await asyncio.to_thread(self.docker.scan_active_containers)
         logger.info(f"Container scan found {len(containers)} containers.")
@@ -194,12 +227,44 @@ class SupervisorCore:
                     )
                     continue
 
+                session = self._sessions.get(pid)
+                if session is not None and session.runtime_instance_id == b_inst:
+                    # Same generation is already tracked. Docker "running" must
+                    # never overwrite an error observation from the Agent.
+                    if desired == "running" and any(
+                        item["status"] != "running" for item in (b_c, s_c)
+                    ):
+                        if session.observed_state != "error":
+                            session.observed_state = "error"
+                            await self.report_terminal_observation(
+                                pid,
+                                b_inst,
+                                int(rt.get("config_version", session.config_version)),
+                                observed_state="error",
+                                reason="container_exit",
+                            )
+                    elif (
+                        session.observed_state != "error"
+                        and rt.get("observed_state") != "running"
+                    ):
+                        await self._report_observed(
+                            pid,
+                            b_inst,
+                            "running",
+                            int(rt.get("config_version", session.config_version)),
+                        )
+                    continue
+
                 if desired == "running" and any(
                     item["status"] != "running" for item in (b_c, s_c)
                 ):
-                    session = self._sessions.get(pid)
-                    if session is not None and session.runtime_instance_id == b_inst:
-                        session.observed_state = "error"
+                    await self.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        int(rt.get("config_version", b_c.get("config_version", 1))),
+                        observed_state="error",
+                        reason="container_exit",
+                    )
                     continue
 
                 if desired == "stopped":
@@ -220,9 +285,49 @@ class SupervisorCore:
                     await self.stop_profile(pid)
                 else:
                     if not all(item.get("policy_ready") is True for item in (b_c, s_c)):
-                        logger.warning(
-                            "Unprotected sandbox not adopted: profile=%s", pid
+                        first_seen = self._unprotected_since.setdefault(
+                            pid, time.monotonic()
                         )
+                        age = time.monotonic() - first_seen
+                        if age < UNPROTECTED_SANDBOX_GRACE_SEC:
+                            logger.warning(
+                                "Unprotected sandbox awaiting policy: profile=%s "
+                                "age=%.1fs",
+                                pid,
+                                age,
+                            )
+                            continue
+                        logger.error(
+                            "Unprotected sandbox exceeded grace; tearing down: "
+                            "profile=%s age=%.1fs",
+                            pid,
+                            age,
+                        )
+                        self._unprotected_since.pop(pid, None)
+                        await self.disconnect_viewers(pid)
+                        teardown_failed = False
+                        try:
+                            await self.docker.teardown_profile(pid)
+                        except Exception as exc:
+                            teardown_failed = True
+                            logger.error(
+                                "Unprotected sandbox teardown failed: profile=%s "
+                                "error_type=%s",
+                                pid,
+                                type(exc).__name__,
+                            )
+                        finally:
+                            await self.ports.release(pid)
+                            self._sessions.pop(pid, None)
+                            self.forget_instance_events(pid, b_inst)
+                        if not teardown_failed:
+                            await self._report_observed(
+                                pid,
+                                b_inst,
+                                "error",
+                                int(rt.get("config_version", 1)),
+                                reason="unprotected_sandbox",
+                            )
                         continue
                     if self.gateway_control is None:
                         raise RuntimeError(
@@ -235,7 +340,9 @@ class SupervisorCore:
                     # Restore UDP port from Stream container HostConfig port bindings
                     actual_port = None
                     try:
-                        s_inspect = self.docker.client.api.inspect_container(s_c["id"])
+                        s_inspect = await asyncio.to_thread(
+                            self.docker.client.api.inspect_container, s_c["id"]
+                        )
                         port_bindings = s_inspect.get("HostConfig", {}).get(
                             "PortBindings", {}
                         )
@@ -259,6 +366,7 @@ class SupervisorCore:
 
                     if self._get_profile_lock(pid).locked():
                         continue
+                    self._unprotected_since.pop(pid, None)
                     logger.info(
                         "Restoring running session: profile=%s port=%s",
                         pid,
@@ -274,7 +382,7 @@ class SupervisorCore:
                         desired_state="running",
                         observed_state="running",
                     )
-                    if rt.get("observed_state") != "running":
+                    if rt.get("observed_state") == "starting":
                         await self._report_observed(
                             pid, b_inst, "running", rt["config_version"]
                         )
@@ -294,10 +402,144 @@ class SupervisorCore:
                     pid,
                     resp.status_code,
                 )
+        return containers
+
+    def _quarantine_event_file(
+        self, event_file: Path, profile_id: str, instance_id: str, reason: str
+    ) -> None:
+        """Move an invalid journal file aside without blocking later events."""
+        try:
+            target_dir = self.docker.validator.validate_safe_path(
+                self.docker.validator.data_root
+                / "quarantine"
+                / "runtime-events"
+                / profile_id
+                / instance_id,
+                allow_create=True,
+            )
+            target_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(event_file, target_dir / event_file.name)
+            logger.warning(
+                "Quarantined runtime event: profile=%s instance=%s reason=%s",
+                profile_id,
+                instance_id,
+                reason,
+            )
+        except (OSError, PathSecurityError) as exc:
+            logger.warning(
+                "Runtime event quarantine failed: reason=%s error_type=%s",
+                reason,
+                type(exc).__name__,
+            )
+
+    @staticmethod
+    def _parse_disk_event(data: Any, profile_id: str, instance_id: str) -> str | None:
+        """Return a quarantine reason when the journal entry is not trustworthy."""
+        if not isinstance(data, dict):
+            return "not_object"
+        try:
+            record = RuntimeEventRecord.model_validate(data)
+        except ValidationError:
+            return "schema"
+        if record.profile_id != profile_id:
+            return "profile_mismatch"
+        if record.runtime_instance_id != instance_id:
+            return "instance_mismatch"
+        if record.event_type == "exit" and record.exit_code is None:
+            return "missing_exit_code"
+        return None
+
+    def _load_event_cursors(self) -> dict[str, dict[str, list]]:
+        path = self.docker.validator.data_root / "control" / "event_cursors.json"
+        if not path.is_file():
+            return {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return {}
+            cursors: dict[str, dict[str, list]] = {}
+            for profile_id, instances in raw.items():
+                if not isinstance(instances, dict):
+                    continue
+                for instance_id, marker in instances.items():
+                    if (
+                        isinstance(marker, list)
+                        and len(marker) == 2
+                        and type(marker[0]) is int
+                        and isinstance(marker[1], str)
+                    ):
+                        cursors.setdefault(str(profile_id), {})[
+                            str(instance_id)
+                        ] = marker
+            return cursors
+        except (OSError, ValueError, UnicodeError):
+            logger.warning("Event cursor file unreadable; rebuilding from archives")
+            return {}
+
+    def _save_event_cursors(self) -> None:
+        try:
+            atomic_write_text(
+                self._event_cursor_file,
+                json.dumps(self._event_cursors),
+                mode=0o600,
+            )
+        except OSError as exc:
+            logger.warning(
+                "Event cursor persistence failed: error_type=%s", type(exc).__name__
+            )
+
+    def _advance_event_cursor(
+        self, profile_id: str, instance_id: str, marker: tuple[int, str]
+    ) -> None:
+        self._event_cursors.setdefault(profile_id, {})[instance_id] = list(marker)
+
+    def _archive_event_file(
+        self, event_file: Path, profile_id: str, instance_id: str
+    ) -> None:
+        """Move handled journals into a bounded per-instance archive."""
+        try:
+            archive = self.docker.validator.validate_safe_path(
+                self.docker.validator.data_root
+                / "runtime-events"
+                / profile_id
+                / "archive"
+                / instance_id,
+                allow_create=True,
+            )
+            archive.mkdir(parents=True, exist_ok=True)
+            os.replace(event_file, archive / event_file.name)
+            archived = sorted(
+                archive.glob("*.json"), key=lambda p: p.stat().st_mtime_ns
+            )
+            for stale in archived[:-200]:
+                stale.unlink(missing_ok=True)
+        except (OSError, PathSecurityError) as exc:
+            logger.warning(
+                "Event archive failed: error_type=%s", type(exc).__name__
+            )
+
+    def forget_instance_events(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> None:
+        """Drop per-instance memory when a runtime generation ends."""
+        self._native_exit_instances = {
+            item for item in self._native_exit_instances if item[0] != profile_id
+        }
+        self._terminal_observations = {
+            item
+            for item in self._terminal_observations
+            if not (item[0] == profile_id and item[1] == runtime_instance_id)
+        }
+        instances = self._event_cursors.get(profile_id)
+        if instances is not None:
+            instances.pop(runtime_instance_id, None)
+            if not instances:
+                self._event_cursors.pop(profile_id, None)
 
     async def consume_disk_events(self) -> int:
-        """Forward instance-fenced native runtime journals to the API."""
+        """Forward validated journals newer than the per-instance cursor."""
         total_forwarded = 0
+        changed = False
         events_root = self.docker.validator.data_root / "runtime-events"
         if not events_root.is_dir():
             return 0
@@ -306,67 +548,137 @@ class SupervisorCore:
                 continue
             profile_id = p_dir.name
             runtime_events = p_dir / "events" / "runtime"
-            for evt_file in runtime_events.glob("*/*.json"):
+
+            def _marker(path: Path) -> tuple[int, str]:
+                try:
+                    return (path.stat().st_mtime_ns, path.name)
+                except OSError:
+                    return (0, path.name)
+
+            for evt_file in sorted(runtime_events.glob("*/*.json"), key=_marker):
+                instance_id = evt_file.parent.name
+                try:
+                    stat = evt_file.stat()
+                except OSError:
+                    continue
+                marker = (stat.st_mtime_ns, evt_file.name)
+                cursor = self._event_cursors.get(profile_id, {}).get(instance_id)
+                if cursor is not None and marker <= (cursor[0], cursor[1]):
+                    continue
                 try:
                     self.docker.validator.validate_safe_path(evt_file)
                     data = json.loads(evt_file.read_text(encoding="utf-8"))
-                    if (
-                        data.get("profile_id") != profile_id
-                        or data.get("runtime_instance_id") != evt_file.parent.name
+                except (OSError, ValueError, PathSecurityError, UnicodeError) as exc:
+                    logger.warning(
+                        "Disk event processing failed: error_type=%s",
+                        type(exc).__name__,
+                    )
+                    self._quarantine_event_file(
+                        evt_file, profile_id, instance_id, "unreadable"
+                    )
+                    self._advance_event_cursor(profile_id, instance_id, marker)
+                    changed = True
+                    continue
+
+                invalid_reason = self._parse_disk_event(
+                    data, profile_id, instance_id
+                )
+                if invalid_reason is not None:
+                    self._quarantine_event_file(
+                        evt_file, profile_id, instance_id, invalid_reason
+                    )
+                    self._advance_event_cursor(profile_id, instance_id, marker)
+                    changed = True
+                    continue
+
+                etype = data["event_type"]
+                ecode = data.get("exit_code")
+                config_version = int(data.get("config_version", 1))
+                if etype == "exit":
+                    self._native_exit_instances.add(
+                        (profile_id, instance_id, config_version)
+                    )
+
+                evt_id = data.get("event_id", evt_file.stem)
+                delivered = await self.events.emit_event(
+                    event_id=evt_id,
+                    profile_id=profile_id,
+                    runtime_instance_id=instance_id,
+                    event_type=etype,
+                    exit_code=ecode,
+                    exit_reason=data.get("exit_reason"),
+                    config_version=config_version,
+                    payload=data.get("payload", {}),
+                )
+                if not delivered:
+                    continue
+                total_forwarded += 1
+                if etype == "lifecycle":
+                    await self.report_terminal_observation(
+                        profile_id,
+                        instance_id,
+                        config_version,
+                        observed_state="error",
+                        reason="process_lost",
+                    )
+                elif etype == "exit":
+                    # An exit journal while Docker still reports the Browser
+                    # running is not an authoritative lifecycle fact.
+                    if not await self._browser_container_stopped(
+                        profile_id, instance_id
                     ):
                         logger.warning(
-                            "Rejected runtime event with mismatched directory identity"
+                            "Exit journal ignored while Browser container runs: "
+                            "profile=%s instance=%s",
+                            profile_id,
+                            instance_id,
                         )
-                        continue
-                    etype = data.get("event_type")
-                    ecode = data.get("exit_code")
-                    if not etype:
-                        continue
-                    if etype == "exit" and ecode is None:
-                        continue
-
-                    config_version = data.get("config_version")
-                    if (
-                        etype == "exit"
-                        and type(ecode) is int
-                        and type(config_version) is int
-                        and config_version >= 1
-                    ):
-                        self._native_exit_instances.add(
-                            (profile_id, data["runtime_instance_id"], config_version)
+                    elif ecode == 0 and data.get("exit_reason") == "normal":
+                        logger.info("Normal Chrome exit: profile=%s", profile_id)
+                        await self.report_terminal_observation(
+                            profile_id,
+                            instance_id,
+                            config_version,
+                            observed_state="stopped",
+                            reason="normal_exit",
                         )
-
-                    evt_id = data.get("event_id", evt_file.stem)
-                    delivered = await self.events.emit_event(
-                        event_id=evt_id,
-                        profile_id=data.get("profile_id", profile_id),
-                        runtime_instance_id=data.get("runtime_instance_id", "unknown"),
-                        event_type=etype,
-                        exit_code=ecode,
-                        exit_reason=data.get("exit_reason"),
-                        config_version=data.get("config_version", 1),
-                        payload=data.get("payload", {}),
-                    )
-                    if delivered:
-                        session = self._sessions.get(profile_id)
-                        if (
-                            ecode == 0
-                            and data.get("exit_reason") == "normal"
-                            and session is not None
-                            and session.runtime_instance_id
-                            == data.get("runtime_instance_id")
-                        ):
-                            logger.info(
-                                "Normal Chrome exit: profile=%s",
-                                profile_id,
-                            )
-                            session.observed_state = "stopped"
-                        total_forwarded += 1
-                except Exception as e:
-                    logger.warning(
-                        "Disk event processing failed: error_type=%s", type(e).__name__
-                    )
+                    else:
+                        await self.report_terminal_observation(
+                            profile_id,
+                            instance_id,
+                            config_version,
+                            observed_state="error",
+                            reason="agent_exit",
+                        )
+                self._archive_event_file(evt_file, profile_id, instance_id)
+                self._advance_event_cursor(profile_id, instance_id, marker)
+                changed = True
+        if changed:
+            self._save_event_cursors()
         return total_forwarded
+
+    async def _browser_container_stopped(
+        self, profile_id: str, instance_id: str
+    ) -> bool:
+        """Docker container state confirms the Agent journal before state changes."""
+        try:
+            container = await asyncio.to_thread(
+                self.docker.client.containers.get,
+                self.docker.get_browser_container_name(profile_id),
+            )
+        except NotFound:
+            return False
+        except Exception as exc:
+            logger.warning(
+                "Browser container lookup failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            return False
+        labels = getattr(container, "labels", None) or {}
+        if labels.get("com.cbrowser.instance-id") != instance_id:
+            return False
+        return container.status in ("exited", "dead")
 
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
@@ -419,6 +731,9 @@ class SupervisorCore:
                 raise RuntimeError("Automatic retries exhausted; manual retry required")
 
             runtime_instance_id = f"inst_{uuid.uuid4().hex[:12]}"
+            self._native_exit_instances = {
+                item for item in self._native_exit_instances if item[0] != profile_id
+            }
             dirs = self.docker.prepare_profile_directories(profile_id)
 
             snap_path = dirs["runtime"] / "snapshot.json"
@@ -464,6 +779,7 @@ class SupervisorCore:
                         profile_id,
                         self.gateway_container_id,
                         self.coturn_container_id,
+                        gateway_port=self.gateway_endpoint.port,
                     )
                 await self._report_observed(
                     profile_id, runtime_instance_id, "starting", config_version
@@ -488,17 +804,20 @@ class SupervisorCore:
                         "Timed out waiting for current Browser instance readiness"
                     )
 
-                # Launch Stream
-                agent_secret = dirs["runtime"] / "agent_secret.txt"
+                # Launch Stream. Agent credentials live outside the Browser
+                # runtime mount and are readable only by the Stream container.
+                (dirs["runtime"] / "agent_secret.txt").unlink(missing_ok=True)
+                secret_dir = self.docker.validator.get_secret_dir(profile_id)
+                secret_dir.mkdir(parents=True, exist_ok=True)
+                secret_dir.chmod(0o700)
+                agent_secret = secret_dir / "agent_secret.txt"
                 atomic_write_text(
                     agent_secret,
                     self.agent_credentials.token_for(profile_id, runtime_instance_id),
-                    mode=0o644,
+                    mode=0o600,
                 )
                 selkies_tokens = SelkiesTokens.generate()
-                selkies_dir = self.docker.validator.get_secret_dir(profile_id)
-                selkies_dir.mkdir(parents=True, exist_ok=True)
-                selkies_dir.chmod(0o700)
+                selkies_dir = secret_dir
                 selkies_tokens_file = selkies_tokens.provision_credentials_file(
                     selkies_dir, runtime_instance_id
                 )
@@ -515,13 +834,15 @@ class SupervisorCore:
                     media_addresses=media_addresses,
                     selkies_tokens_path=selkies_tokens_file,
                     snapshot_json_path=snap_path,
+                    webrtc_mode=self.webrtc_mode,
+                    gateway_port=self.gateway_endpoint.port,
                 )
 
                 if self.gateway_control is None:
                     raise RuntimeError("Gateway control RPC is required for readiness")
                 async with asyncio.timeout(15):
                     while True:
-                        s_container.reload()
+                        await asyncio.to_thread(s_container.reload)
                         if s_container.status != "running":
                             raise DockerSandboxError(
                                 "Stream exited before registration"
@@ -562,9 +883,24 @@ class SupervisorCore:
                     profile_id,
                     type(err).__name__,
                 )
+                await self.report_terminal_observation(
+                    profile_id,
+                    runtime_instance_id,
+                    config_version,
+                    observed_state="error",
+                    reason="startup_failure",
+                )
                 try:
-                    await self.docker.teardown_profile(profile_id)
-                    await self.ports.release(profile_id)
+                    try:
+                        await self.docker.teardown_profile(profile_id)
+                    except Exception as cleanup_exc:
+                        logger.error(
+                            "Launch cleanup failed: profile=%s error_type=%s",
+                            profile_id,
+                            type(cleanup_exc).__name__,
+                        )
+                    finally:
+                        await self.ports.release(profile_id)
                 finally:
                     await self.events.emit_event(
                         event_id=f"startup_failure:{runtime_instance_id}",
@@ -646,17 +982,42 @@ class SupervisorCore:
             curr_inst = session.runtime_instance_id if session else "unknown"
             cfg_ver = session.config_version if session else 1
 
-            await self._report_observed(profile_id, curr_inst, "stopping", cfg_ver)
+            await self._report_observed(
+                profile_id, curr_inst, "stopping", cfg_ver, reason="stop_requested"
+            )
             if session is not None:
                 session.observed_state = "stopping"
 
             await self.disconnect_viewers(profile_id)
 
-            await self.docker.teardown_profile(profile_id)
-            await self.ports.release(profile_id)
-            self._sessions.pop(profile_id, None)
+            teardown_error: Exception | None = None
+            try:
+                await self.docker.teardown_profile(profile_id)
+            except Exception as exc:
+                teardown_error = exc
+                logger.error(
+                    "Sandbox teardown failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+            finally:
+                # Port ownership ends with this operation regardless of teardown.
+                # Any residue is reconciled by the pre-start orphan cleanup.
+                if self._sessions.get(profile_id) is session:
+                    await self.ports.release(profile_id)
+                    self._sessions.pop(profile_id, None)
+                    self._terminal_observations.discard(
+                        (profile_id, curr_inst, cfg_ver)
+                    )
+                    self.forget_instance_events(profile_id, curr_inst)
+            if teardown_error is not None:
+                raise DockerSandboxError(
+                    "Sandbox teardown failed; residual containers require cleanup"
+                ) from teardown_error
 
-            await self._report_observed(profile_id, curr_inst, "stopped", cfg_ver)
+            await self._report_observed(
+                profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
+            )
             self.operations.complete(command_id, request, result)
             logger.info(
                 f"Profile {profile_id} cleanly stopped and resources reclaimed."
@@ -664,39 +1025,29 @@ class SupervisorCore:
             return result
 
     async def disconnect_viewers(self, profile_id: str) -> None:
+        """Best-effort viewer closure; teardown never depends on signaling."""
         session = self._sessions.get(profile_id)
         if session is None:
             return
         if self.gateway_control is None:
-            raise RuntimeError("Gateway control RPC is not configured")
-        try:
-            await self.gateway_control.disconnect_viewers(
-                profile_id, session.runtime_instance_id
+            logger.warning(
+                "Viewer disconnect skipped: Gateway control is not configured "
+                "(profile=%s)",
+                profile_id,
             )
-        except (httpx.HTTPStatusError, httpx.TransportError) as exc:
-            if (
-                isinstance(exc, httpx.HTTPStatusError)
-                and exc.response.status_code != 503
-            ):
-                raise
-            # With no live Stream there is no surviving RTC media/input channel.
-            # Authorization and instance-fence failures never use this path.
-            try:
-                stream = await asyncio.to_thread(
-                    self.docker.client.containers.get,
-                    self.docker.get_stream_container_name(profile_id),
+            return
+        try:
+            async with asyncio.timeout(2.0):
+                await self.gateway_control.disconnect_viewers(
+                    profile_id, session.runtime_instance_id
                 )
-            except NotFound:
-                return
-            if stream.status != "running":
-                return
-            if self.gateway_container_id:
-                gateway = await asyncio.to_thread(
-                    self.docker.client.containers.get, self.gateway_container_id
-                )
-                if gateway.status != "running":
-                    return
-            raise
+        except (httpx.HTTPError, OSError, TimeoutError) as exc:
+            logger.warning(
+                "Viewer disconnect failed; continuing teardown: profile=%s "
+                "error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
 
     async def reset_blocked(self, profile_id: str, operation_id: str) -> None:
         response = await self.api.patch(
@@ -752,8 +1103,40 @@ class SupervisorCore:
             )
         await self.resource_monitor.sample(targets)
 
+    async def report_terminal_observation(
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        config_version: int,
+        *,
+        observed_state: str,
+        reason: str,
+    ) -> bool:
+        """Report a terminal Agent/Docker fact once per runtime generation."""
+        key = (profile_id, runtime_instance_id, config_version)
+        if key in self._terminal_observations:
+            return False
+        self._terminal_observations.add(key)
+        session = self._sessions.get(profile_id)
+        if session is not None and session.runtime_instance_id == runtime_instance_id:
+            session.observed_state = observed_state
+        await self._report_observed(
+            profile_id,
+            runtime_instance_id,
+            observed_state,
+            config_version,
+            reason=reason,
+        )
+        return True
+
     async def _report_observed(
-        self, profile_id: str, runtime_instance_id: str, state: str, config_version: int
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        state: str,
+        config_version: int,
+        *,
+        reason: str | None = None,
     ) -> None:
         try:
             await self.api.post(
@@ -763,6 +1146,7 @@ class SupervisorCore:
                     "runtime_instance_id": runtime_instance_id,
                     "observed_state": state,
                     "config_version": config_version,
+                    "reason": reason,
                 },
             )
         except Exception as e:

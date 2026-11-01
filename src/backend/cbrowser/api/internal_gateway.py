@@ -9,6 +9,7 @@ from typing import Annotated
 from cbrowser.api.v1.router import get_profile_service
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
+from cbrowser.secret_files import read_secret_file
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -20,13 +21,9 @@ bearer = HTTPBearer(auto_error=False, scheme_name="GatewayServiceBearer")
 def read_gateway_token(path: Path | str | None) -> SecretStr | None:
     if path is None:
         return None
-    try:
-        token = Path(path).read_text(encoding="utf-8").strip()
-    except (OSError, UnicodeError):
-        raise RuntimeError("Cannot read Gateway service token file") from None
-    if len(token.encode("utf-8")) < 32:
-        raise RuntimeError("Gateway service token must contain at least 32 bytes")
-    return SecretStr(token)
+    return SecretStr(
+        read_secret_file(path, label="Gateway service token", minimum_bytes=32)
+    )
 
 
 def require_gateway(

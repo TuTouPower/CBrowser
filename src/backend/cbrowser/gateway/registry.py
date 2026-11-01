@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,8 +29,12 @@ class RegisteredAgent:
 class AgentRegistry:
     """Manages active StreamAgent connections and detects lost heartbeats (>30s)."""
 
-    def __init__(self) -> None:
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._agents: dict[str, RegisteredAgent] = {}
+        self._clock = clock
+
+    def now(self) -> float:
+        return self._clock()
 
     def register(self, agent: RegisteredAgent) -> RegisteredAgent | None:
         """Registers agent for profile, returning previous agent if replaced."""
@@ -49,19 +54,28 @@ class AgentRegistry:
         return None
 
     def update_heartbeat(
-        self, profile_id: str, instance_id: str, now: float | None = None
+        self,
+        profile_id: str,
+        instance_id: str,
+        agent_session_id: str | None = None,
+        now: float | None = None,
     ) -> bool:
+        """Only the registered session may extend liveness."""
         agent = self._agents.get(profile_id)
-        if agent and agent.instance_id == instance_id:
-            agent.last_heartbeat = time.time() if now is None else now
-            return True
-        return False
+        if agent is None or agent.instance_id != instance_id:
+            return False
+        if agent_session_id is not None and (
+            agent.agent_session_id != agent_session_id
+        ):
+            return False
+        agent.last_heartbeat = self.now() if now is None else now
+        return True
 
     def check_heartbeat_timeouts(
         self, now: float | None = None, timeout_sec: float = 30.0
     ) -> list[RegisteredAgent]:
         """Identifies and evicts agents that exceeded heartbeat timeout_sec."""
-        t = time.time() if now is None else now
+        t = self.now() if now is None else now
         timed_out: list[RegisteredAgent] = []
         for pid, agent in list(self._agents.items()):
             if (t - agent.last_heartbeat) > timeout_sec:
@@ -71,3 +85,31 @@ class AgentRegistry:
 
     def all_agents(self) -> list[RegisteredAgent]:
         return list(self._agents.values())
+
+
+class RegistrationThrottle:
+    """Bounded per-source registration attempts for the Agent handshake."""
+
+    def __init__(self, max_attempts: int = 20, window_seconds: float = 60.0) -> None:
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._attempts: dict[str, list[float]] = {}
+
+    def allow(self, peer: str | None, now: float | None = None) -> bool:
+        clock = time.monotonic() if now is None else now
+        key = peer or "unknown"
+        attempts = self._attempts.setdefault(key, [])
+        cutoff = clock - self.window_seconds
+        while attempts and attempts[0] < cutoff:
+            attempts.pop(0)
+        if len(attempts) >= self.max_attempts:
+            return False
+        attempts.append(clock)
+        if len(self._attempts) > 1024:
+            for stale in [
+                source
+                for source, values in self._attempts.items()
+                if not values or values[-1] < cutoff
+            ]:
+                self._attempts.pop(stale, None)
+        return True

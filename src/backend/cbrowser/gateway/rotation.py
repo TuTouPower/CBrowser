@@ -23,6 +23,17 @@ logger = logging.getLogger("cbrowser.gateway.rotation")
 COMMIT_TIMEOUT_SEC = 30.0
 
 
+class NoActiveGenerationError(RuntimeError):
+    """No unexpired TURN generation exists for new connections."""
+
+
+@dataclass(frozen=True)
+class PendingHandshake:
+    future: asyncio.Future
+    generation: int
+    profile_id: str
+
+
 @dataclass
 class ProfileRotationState:
     profile_id: str
@@ -54,10 +65,10 @@ class RotationCoordinator:
         self._get_agent_info = get_agent_info
 
         self._states: dict[str, ProfileRotationState] = {}
-        # Pending futures for offer/answer handshakes: conn_id -> Future
-        self._pending_offers: dict[str, asyncio.Future[ProtocolEnvelope]] = {}
-        self._pending_answers: dict[str, asyncio.Future[dict[str, Any]]] = {}
-        self._pending_commits: dict[str, asyncio.Future[ProtocolEnvelope]] = {}
+        # Pending futures for offer/answer handshakes, pinned to a generation.
+        self._pending_offers: dict[str, PendingHandshake] = {}
+        self._pending_answers: dict[str, PendingHandshake] = {}
+        self._pending_commits: dict[str, PendingHandshake] = {}
 
     def get_or_create_state(
         self, profile_id: str, now: float | None = None
@@ -81,38 +92,119 @@ class RotationCoordinator:
         if state.in_progress_generation is not None:
             if not self.rtc_service.is_expired(state.in_progress_generation, t):
                 return state.in_progress_generation
-        return state.current_generation
+        if not self.rtc_service.is_expired(state.current_generation, t):
+            return state.current_generation
+        raise NoActiveGenerationError(
+            "TURN credentials expired before rotation completed"
+        )
+
+    def register_connection(
+        self, profile_id: str, conn_id: str, generation: RtcGeneration
+    ) -> None:
+        """A new connection already uses the in-progress generation."""
+        state = self._states.get(profile_id)
+        if (
+            state is not None
+            and state.in_progress_generation is not None
+            and generation.generation == state.in_progress_generation.generation
+        ):
+            state.migrated_connections.add(conn_id)
+
+    @staticmethod
+    def _resolve_pending(
+        pending: dict[str, PendingHandshake],
+        conn_id: str | None,
+        generation: int | None,
+        value: Any,
+        kind: str,
+    ) -> None:
+        entry = pending.get(conn_id or "")
+        if entry is None:
+            return
+        if generation is not None and generation != entry.generation:
+            logger.warning(
+                "Dropped stale %s for conn=%s: expected generation %s, got %s",
+                kind,
+                conn_id,
+                entry.generation,
+                generation,
+            )
+            return
+        if not entry.future.done():
+            entry.future.set_result(value)
 
     def handle_agent_restart_offer(self, envelope: ProtocolEnvelope) -> None:
         """Called when an ICE_RESTART_OFFER is received from an Agent."""
-        conn_id = envelope.conn_id
-        if conn_id and conn_id in self._pending_offers:
-            fut = self._pending_offers[conn_id]
-            if not fut.done():
-                fut.set_result(envelope)
+        generation = envelope.payload.get("generation")
+        self._resolve_pending(
+            self._pending_offers,
+            envelope.conn_id,
+            generation if type(generation) is int else None,
+            envelope,
+            "ICE restart offer",
+        )
 
     def handle_agent_restart_committed(self, envelope: ProtocolEnvelope) -> None:
         """Called when the Agent confirms the new ICE generation took over."""
-        fut = self._pending_commits.get(envelope.conn_id or "")
-        if fut is not None and not fut.done():
-            fut.set_result(envelope)
+        generation = envelope.payload.get("generation")
+        self._resolve_pending(
+            self._pending_commits,
+            envelope.conn_id,
+            generation if type(generation) is int else None,
+            envelope,
+            "ICE restart commit",
+        )
 
     def handle_agent_error(self, envelope: ProtocolEnvelope) -> None:
         """Called when an ERROR action is received from an Agent."""
         conn_id = envelope.conn_id
+        generation = envelope.payload.get("generation")
+        generation = generation if type(generation) is int else None
         for pending in (self._pending_offers, self._pending_commits):
-            fut = pending.get(conn_id or "")
-            if fut is not None and not fut.done():
-                fut.set_exception(
+            entry = pending.get(conn_id or "")
+            if entry is None:
+                continue
+            if generation is not None and generation != entry.generation:
+                continue
+            if not entry.future.done():
+                entry.future.set_exception(
                     RuntimeError(f"Agent reported error for restart on {conn_id}")
                 )
 
     def handle_viewer_restart_answer(self, conn_id: str, frame: dict[str, Any]) -> None:
         """Called when an ice_restart_answer control frame is received from a Viewer."""
-        if conn_id in self._pending_answers:
-            fut = self._pending_answers[conn_id]
-            if not fut.done():
-                fut.set_result(frame)
+        generation = frame.get("generation")
+        self._resolve_pending(
+            self._pending_answers,
+            conn_id,
+            generation if type(generation) is int else None,
+            frame,
+            "viewer ICE restart answer",
+        )
+
+    async def cancel_profile(self, profile_id: str) -> None:
+        """Abort in-flight rotation work when the Profile's viewers go away."""
+        state = self._states.get(profile_id)
+        tasks: list[asyncio.Task[None]] = []
+        if state is not None:
+            tasks = list(state.active_restarts.values())
+            state.active_restarts.clear()
+            state.migrated_connections.clear()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for pending in (
+            self._pending_offers,
+            self._pending_answers,
+            self._pending_commits,
+        ):
+            for conn_id, entry in list(pending.items()):
+                if entry.profile_id != profile_id:
+                    continue
+                pending.pop(conn_id, None)
+                if not entry.future.done():
+                    entry.future.cancel()
 
     async def tick(self, now: float | None = None) -> None:
         """Periodic check called by background rotation loop."""
@@ -151,7 +243,14 @@ class RotationCoordinator:
                                 agent.turn_host, agent.turn_port
                             ),
                         )
-                        await self._send_agent_control(env)
+                        try:
+                            await self._send_agent_control(env)
+                        except Exception as exc:
+                            logger.warning(
+                                "RTC config delivery failed: profile=%s error_type=%s",
+                                profile_id,
+                                type(exc).__name__,
+                            )
 
             # 2. Check if ICE restart should be triggered
             if state.in_progress_generation is not None:
@@ -216,9 +315,17 @@ class RotationCoordinator:
         offer_fut: asyncio.Future[ProtocolEnvelope] = loop.create_future()
         answer_fut: asyncio.Future[dict[str, Any]] = loop.create_future()
         commit_fut: asyncio.Future[ProtocolEnvelope] = loop.create_future()
-        self._pending_offers[conn_id] = offer_fut
-        self._pending_answers[conn_id] = answer_fut
-        self._pending_commits[conn_id] = commit_fut
+        generation = target_gen.generation
+        profile_id = state.profile_id
+        self._pending_offers[conn_id] = PendingHandshake(
+            offer_fut, generation, profile_id
+        )
+        self._pending_answers[conn_id] = PendingHandshake(
+            answer_fut, generation, profile_id
+        )
+        self._pending_commits[conn_id] = PendingHandshake(
+            commit_fut, generation, profile_id
+        )
 
         try:
             # 1. Send ICE_RESTART to Agent

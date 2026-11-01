@@ -193,11 +193,12 @@ class ProfileService:
         runtime_instance_id: str,
         observed_state: str,
         config_version: int | None = None,
+        reason: str | None = None,
     ) -> ProfileRuntime:
         try:
             await self.get_profile(profile_id)
             rt = await self._repo.report_observed_state(
-                profile_id, runtime_instance_id, observed_state, config_version
+                profile_id, runtime_instance_id, observed_state, config_version, reason
             )
             if not rt:
                 raise StaleInstanceError(profile_id, runtime_instance_id)

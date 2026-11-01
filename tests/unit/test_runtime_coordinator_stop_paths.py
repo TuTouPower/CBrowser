@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -12,7 +13,7 @@ import pytest
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.api.runtime_coordinator import RuntimeCoordinator
+from cbrowser.api.runtime_coordinator import ReconcileOutcome, RuntimeCoordinator
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.services.profile_service import ProfileService
 from pydantic import SecretStr
@@ -67,7 +68,7 @@ async def test_unreachable_supervisor_status_records_error_and_retries(
         finally:
             await coordinator.stop()
 
-        assert result is False
+        assert result is ReconcileOutcome.RETRYABLE
         error = coordinator.get_last_error(profile.id)
         assert error is not None
         assert "Supervisor unreachable" in error
@@ -101,7 +102,7 @@ async def test_supervisor_without_instance_converges_without_fake_instance(
         finally:
             await coordinator.stop()
 
-        assert result is True
+        assert result is ReconcileOutcome.CONVERGED
         assert coordinator.get_last_error(profile.id) is None
         assert all(not path.endswith("/stop") for _, path in requests)
     finally:
@@ -146,7 +147,7 @@ async def test_supervisor_reported_instance_is_used_for_stop_rpc(
         finally:
             await coordinator.stop()
 
-        assert result is True
+        assert result is ReconcileOutcome.CONVERGED
         assert len(stop_requests) == 1
         assert stop_bodies[0]["runtime_instance_id"] == "inst_from_supervisor"
     finally:
@@ -171,7 +172,7 @@ async def test_supervisor_status_server_error_records_error_and_retries(
         finally:
             await coordinator.stop()
 
-        assert result is False
+        assert result is ReconcileOutcome.RETRYABLE
         error = coordinator.get_last_error(profile.id)
         assert error is not None
         assert "Supervisor status failed (500)" in error
@@ -205,7 +206,7 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
 
         calls = 0
 
-        async def flaky_reconcile(profile_id: str) -> bool:
+        async def flaky_reconcile(profile_id: str, **_kwargs) -> bool:
             nonlocal calls
             calls += 1
             if calls == 1:
@@ -228,4 +229,126 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
             await coordinator.stop()
     finally:
         loop_logger.removeHandler(capture)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stop_reconciliation_is_bounded_and_surfaces_error(tmp_path: Path) -> None:
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_stop_limit"))
+        await service.bind_runtime_instance(profile.id, "inst_stop", config_version=1)
+        await service.report_observed_state(profile.id, "inst_stop", "running")
+        await service.set_desired_state(profile.id, "stopped")
+
+        stop_attempts: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/stop"):
+                stop_attempts.append(request.url.path)
+            return httpx.Response(503, json={"detail": "supervisor unavailable"})
+
+        coordinator = _make_coordinator(
+            service,
+            handler,
+            stop_max_retries=2,
+            initial_backoff=0.0,
+            max_backoff=0.0,
+        )
+        coordinator._running = True
+        try:
+            await coordinator._reconcile_profile_loop(profile.id)
+        finally:
+            await coordinator.stop()
+
+        assert len(stop_attempts) == 2
+        error = coordinator.get_last_error(profile.id)
+        assert error is not None
+        assert "retry limit reached" in error
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_restart_blocked_terminates_round_without_retry(tmp_path: Path) -> None:
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_blocked"))
+        await service.bind_runtime_instance(profile.id, "inst_blocked", config_version=1)
+        await service.report_observed_state(profile.id, "inst_blocked", "error")
+        await service.set_desired_state(profile.id, "running")
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE profile_runtimes SET restart_blocked=1, failure_count=4, "
+                "observed_state='error', runtime_instance_id=NULL WHERE profile_id=?",
+                (profile.id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        supervisor_calls: list[str] = []
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            supervisor_calls.append(request.url.path)
+            return httpx.Response(500)
+
+        coordinator = _make_coordinator(
+            service, handler, initial_backoff=0.0, max_backoff=0.0
+        )
+        coordinator._running = True
+        try:
+            await asyncio.wait_for(
+                coordinator._reconcile_profile_loop(profile.id), timeout=5
+            )
+        finally:
+            await coordinator.stop()
+
+        assert supervisor_calls == []
+        error = coordinator.get_last_error(profile.id)
+        assert error is not None and "Restart blocked" in error
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retries_reuse_stable_operation_id(tmp_path: Path) -> None:
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_stable_op"))
+        await service.set_desired_state(profile.id, "running")
+
+        bodies: list[dict] = []
+        attempts = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            if request.url.path.endswith("/start"):
+                attempts += 1
+                bodies.append(json.loads(request.content))
+                if attempts == 1:
+                    return httpx.Response(503, json={"detail": "retry"})
+                return httpx.Response(200, json={"runtime_instance_id": "inst"})
+            return httpx.Response(200, json={})
+
+        coordinator = _make_coordinator(
+            service,
+            handler,
+            initial_backoff=0.0,
+            max_backoff=0.0,
+            max_retries=3,
+        )
+        coordinator._running = True
+        try:
+            await asyncio.wait_for(
+                coordinator._reconcile_profile_loop(profile.id), timeout=5
+            )
+        finally:
+            await coordinator.stop()
+
+        assert attempts == 2
+        assert bodies[0]["operation_id"] == bodies[1]["operation_id"]
+        assert bodies[0]["operation_id"].startswith("coord_round_")
+    finally:
         await engine.dispose()
