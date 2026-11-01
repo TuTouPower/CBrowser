@@ -130,15 +130,19 @@ class GatewayHarness:
 
         self.agent_key_file = tmp_path / "agent_key.txt"
         self.agent_key_file.write_text(self.agent_key_bytes, encoding="utf-8")
+        self.agent_key_file.chmod(0o600)
 
         self.gw_token_file = tmp_path / "gw_token.txt"
         self.gw_token_file.write_text(self.gw_token_str, encoding="utf-8")
+        self.gw_token_file.chmod(0o600)
 
         self.api_token_file = tmp_path / "api_token.txt"
         self.api_token_file.write_text(self.api_token_str, encoding="utf-8")
+        self.api_token_file.chmod(0o600)
 
         self.turn_secret_file = tmp_path / "turn_secret.txt"
         self.turn_secret_file.write_text(self.turn_secret_str, encoding="utf-8")
+        self.turn_secret_file.chmod(0o600)
 
         self.agent_credentials = AgentCredentials(self.agent_key_file)
 

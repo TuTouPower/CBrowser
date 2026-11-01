@@ -121,6 +121,7 @@ async def test_supervisor_control_auth_fence_quota_and_reported_visibility(
 
         invalid_token_file = tmp_path / "invalid_token.txt"
         invalid_token_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+        invalid_token_file.chmod(0o600)
         client_bad_auth = GatewayControlClient(
             base_url=harness.base_url, token_file=invalid_token_file
         )
