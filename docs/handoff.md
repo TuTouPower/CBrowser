@@ -2,46 +2,35 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-01T12:41:21+08:00 Runtime 门禁通过，Stream 门禁失败待闭环
+## 2026-11-01T12:44:25+08:00 main 前置门禁首轮结束，基线缺陷待修复授权
 
-### 当前状态
+### 状态与范围
 
-- branch：main；head_commit：`7819d3aefd66be3920f3b08a9faa7ac2e27bb656`（本文另行提交）。接手时工作区干净；当前另有一个独立只读审核 worktree。
-- t001–t007 done 并已合入；冻结队列未修改，t006/t007 integrated，goal-check 为 GOAL_QUEUE_INCOMPLETE（2/9 closed）。
-- 无 active attempt；t008 尚未 start/reserve/claim。剩余顺序：t008 → t013 → t014 → t009 → t010 → t011 → t012。
-- 用户附件明确授权队列逐项本地合并；禁止 push 与外部发布。最终目标仍为完整 v2 本机 OrbStack + 官方 Chrome 交付。
+- branch：main；head_commit：`b80f72a30385c2758a3ebfc67e0bd43dcb888484`（本文另行提交）；生产源码、测试与冻结队列均未改动。
+- t001–t007 done/integrated；goal-check 为 GOAL_QUEUE_INCOMPLETE（2/9 closed）。剩余 t008 → t013 → t014 → t009 → t010 → t011 → t012，均无 attempt。本地逐项合并已获附件授权；禁止 push。
+- 已向用户异步请求独立基线修复授权：AGENTS.md 限定源码/测试只在 task 执行期修改，但附件要求完整门禁先于 t008；不擅自新增或改变冻结队列。用户尚未答复，不据自动 continuation 推定批准。
 
-### 本轮验证证据
+### 本轮证据与结果
 
-- 证据目录：`.scratch/v2_baseline_20261101/`；源版本见 `source_commit.txt`，不可变镜像见 `images.env` 与六个 `.iid`。
-- Browser、Stream、Supervisor、API fixture、正式 Gateway 与 Gateway fixture 均由当前源码重建成功；日志 `build_*.log`，汇总 `build_results.json`。
-- 后端 unit：`unit_r2.log`，383 passed。旧后端 + integration：`backend_r2.log`，446 passed。
-- Vitest：`vitest.log`，退出码 0。前端生产构建：`frontend_build.log`，退出码 0，prebuild vendor 与 postbuild verify 均执行；tsconfig.tsbuildinfo 已恢复到原 HEAD 字节。
-- 模板契约：`contract.log`，168 passed、1 skipped、477 deselected。文档格式：`md_format.log`，格式一致。
-- 五项生成契约：`schema_results.json`，OpenAPI、Stream/Supervisor/Runtime Agent 协议、前端生成类型均退出 0 且字节不变。
-- Ruff 全量检查非零；`ruff_efwi.log` 在 E/F/W/I 范围为 90 errors，未修复或豁免；扩大默认规则检查另见 `ruff.log`。不得声称全门禁通过。
-- 初始 unit/integration 因 basetemp 父目录未准备失败；已保留 `unit_initial_setup_failure.log` 等日志，补建目录后重跑通过。旧后端原 PYTHONPATH=src 缺 v2 包，补用 src:src/backend 后通过，未改业务代码或断言。
+- 目录 `.scratch/v2_baseline_20261101/`；实际生产源 `4be9ee2`，后续仅交接文档提交。镜像由该源构建；不可变 ID 为 `images.env`、六个 `.iid`，构建日志及 `build_results.json` 均保留。
+- 后端 unit：383 passed（`unit_r2.log`）；旧后端 + integration：446 passed（`backend_r2.log`）。最初运行器目录/PYTHONPATH失误原日志保留，修正 scratch 环境后复跑，未改代码或断言。
+- 模板 contract：168 passed、1 skipped；Vitest exit 0；生产前端构建含 vendor/postbuild verify exit 0；md_format 格式一致；五项 schema/codegen 重生成字节一致。tsconfig.tsbuildinfo 已恢复，工作区干净。
+- Runtime Docker E2E：13 passed（167.80 秒）。Stream：17 passed、2 failed（142.13 秒）。Supervisor：17 passed、9 failed（161.28 秒）。Gateway：5 failed（27.80 秒）。前端：14 passed、4 failed、13 errors（21.68 秒）。旧生产健康检查 exit 0，不代表 v2 已交付。
+- Ruff E/F/W/I：90 errors（`ruff_efwi.log`），全默认规则报告另见 `ruff.log`；未修复或豁免。
+- 完整首轮 runner session 82335/PID73111 已结束，退出 0 仅代表脚本跑完，逐项失败见 `check_results.json`，不能计全门禁 PASS。
 
-### 在运行与恢复入口
+### 已确认缺陷
 
-- 主控验证 runner：PID 73111，工具 session 82335，脚本 `.scratch/v2_baseline_20261101/run_checks.py`；外层 flock 为 `.scratch/docker_e2e.lock`，已实查由该 PID 持有。
-- runner 串行运行 Runtime、Stream、Supervisor、Gateway 与前端真实 E2E；按 `check_results.json`、当前日志、实际 PID/session 判断状态。不要因观察超时重启；旧 unit/integration/legacy 失败项以上述 r2 日志为补跑证据。
-- 独立后端补跑 session 49772 已 exit 0；unit 补跑 session 25178 已 exit 0。无实现子 agent。
-- 旧生产 cbrowser、其他项目与来源不明容器/网络保留，未清理、未重启 OrbStack、未扩大 Docker 配额。
+- 镜像实际 import 冒烟 `image_import_smoke.py` 在同一外层锁下执行，session21030 已结束：API 与测试 Gateway 缺 `cbrowser.gateway`；正式 Supervisor/Gateway 缺 `cbrowser.secret_files`。四镜像均 exit1，原始 `import_*.log` 与 `import_smoke_results.json` 已保存，实际 Docker 整镜像执行，无源码覆盖。
+- Supervisor recovery 夹具仍用旧 Gateway 端口，真实子进程 ValueError `Gateway URL port does not match the configured Gateway port`；resource monitor fixture token 权限不符合0600；旧基础设施测试期待18097，实际18080；旧启动恢复测试期待missing_runtime而实际observed_error。
+- Stream旧精确挂载断言漏新增凭证文件；修复须保留旧测试或整体删除注明替代覆盖，禁止就地改预期迁就实现。
+- 拓扑初始化失败泄漏容器，coturn占用50000导致后续前端级联失败；不能计作网络安全负例或产品媒体失败。
+- 初步归因与证据索引 `root_failure_triage.json`，独立审核报告待出。
 
-### 下一步
+### 资源、审核与下一步
 
-- 继续观察 session 82335，复核真实 E2E 正负例与当前候选镜像；失败先归因。补齐 lint 门禁结论后才能启动 t008。
-- OpenCode 实际模型列表已确认存在 `cpa/gemini-3.8-flash`；后续实现按用户指定 OpenCode 模型派发独立 lane。
-- 已读编排脚本；已知 observed wrapper 不能以外层退出码证明成功，须读 JSON error、cli_exit 与交付证据。未修改编排工具或 `.repo_template`。
-- 公网穿透与原生 Linux x86_64 执行始终单列 NOT_RUN / USER_WAIVED；8小时与1000次输入/剪贴板尚未运行，不预先计通过。
-
-### 最新失败阶段与独立审核
-
-- Runtime：`runtime.log`，13 passed（167.80 秒），对应本轮当前源码镜像。
-- Stream：`stream.log`，17 passed、2 failed（142.13 秒）。失败：`test_stream_runtime_multi_viewer_e2e` 的精确挂载清单漏新增 `/tmp/selkies_credentials.json`；`test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome` 在 API 容器端口查询出现 KeyError `8000/tcp`。不得以放宽旧断言、缺镜像或未就绪充当有效负例。
-- root 初步归因：`root_failure_triage.json`。Supervisor/Gateway/API Dockerfile 白名单未复制已被导入的根模块 `cbrowser.secret_files`（API 还导入 Gateway endpoint）；静态缺口已核对，实际 import/退出日志尚待独占 Docker 验证，不能宣称实测根因。
-- Supervisor 门禁在 session 82335 中继续，已出现失败但尚未结束；后续 Gateway/前端 E2E 由同 runner 串行推进。当前未修改生产文件。
-- 独立只读 lane：`/Users/karson/kar/code/CBrowser_baseline_audit`（detached HEAD 7819d3a），OpenCode `cpa/gemini-3.8-flash --variant high`；dispatch PID 76042、wrapper PID 76237、CLI PID 76238，工具 session 59258。
-- lane 输出：主仓 `.scratch/v2_baseline_20261101/audit.jsonl`、`audit_wrapper.log`；报告目标为审核 worktree `.scratch/baseline_audit/report.md`。原 tracked 文件已 SHA 守卫，只允许写 lane scratch。XDG data/cache/state 重定向主仓 scratch，未改 observed wrapper；它只读全局 DB，因此仍以 JSON、CLI 实际退出与报告判定，不据外层 exit 0 采信成功。
-- 无新增 task、无 attempt identity；未变更冻结队列。审核 worktree 用完须先备份 scratch，再 worktree remove/prune；不得遗留到最终交付。
+- 主控已核对并清理本轮16个残留容器、6个空网络；精确清单 `cleanup_plan.json`，关键异常行 `cleanup_error_*.txt`。旧生产cbrowser、kkmail/haiwa及来源不明历史对象保留。
+- 独立审核worktree：`/Users/karson/kar/code/CBrowser_baseline_audit`（detached HEAD 7819d3a），SHA守卫785文件，仅准写 `.scratch/baseline_audit/`；无tracked改动。
+- 模型 `cpa/gemini-3.8-flash --variant high`，CLI PID76238、wrapper76237、dispatch76042，工具session59258仍活跃。日志主仓 `audit.jsonl` / `audit_wrapper.log`；目标报告审核worktree `.scratch/baseline_audit/report.md`。XDG运行数据/缓存重定向主仓scratch；不改observed wrapper，成功以JSON、CLI实际退出和报告判定，非外层exit0。
+- 下一步：读取并复核独立审核，等待基线修复授权；获授权后独立worktree最小修复、review、重建并补跑全门禁，之后才start t008。审核结束备份scratch再worktree remove/prune。
+- 本轮未改 `.repo_template`，未重启OrbStack或扩大配额。公网/原生Linux x86_64为NOT_RUN / USER_WAIVED；8小时与1000次IME/剪贴板未执行，不预计通过。
