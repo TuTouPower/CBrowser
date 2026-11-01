@@ -243,7 +243,14 @@ class RotationCoordinator:
                                 agent.turn_host, agent.turn_port
                             ),
                         )
-                        await self._send_agent_control(env)
+                        try:
+                            await self._send_agent_control(env)
+                        except Exception as exc:
+                            logger.warning(
+                                "RTC config delivery failed: profile=%s error_type=%s",
+                                profile_id,
+                                type(exc).__name__,
+                            )
 
             # 2. Check if ICE restart should be triggered
             if state.in_progress_generation is not None:

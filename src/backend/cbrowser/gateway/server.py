@@ -29,7 +29,7 @@ from pydantic import ValidationError
 from .api_client import GatewayApiClient
 from .config import GatewayConfig
 from .endpoint import normalize_origin
-from .registry import AgentRegistry, RegisteredAgent
+from .registry import AgentRegistry, RegisteredAgent, RegistrationThrottle
 from .rotation import NoActiveGenerationError, RotationCoordinator
 
 logger = logging.getLogger("cbrowser.gateway.server")
@@ -101,6 +101,8 @@ def create_gateway_app(
         if viewer_entry is not None:
             if not viewer_entry.ws.closed:
                 await viewer_entry.ws.send_str(json.dumps(frame))
+
+    registration_throttle = RegistrationThrottle()
 
     rotation = RotationCoordinator(
         rtc_service=rtc_service,
@@ -283,11 +285,19 @@ def create_gateway_app(
         if not auth.startswith("Bearer "):
             return web.Response(status=401, text="Unauthorized Agent")
         raw_token = auth.removeprefix("Bearer ").strip()
+        if not registration_throttle.allow(request.remote):
+            logger.warning("Agent registration rate limited for source")
+            return web.Response(status=429, text="Too many registration attempts")
 
         ws = web.WebSocketResponse()
         await ws.prepare(request)
 
-        msg = await ws.receive()
+        try:
+            msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+        except (asyncio.TimeoutError, ConnectionError):
+            logger.warning("Agent registration timed out before first packet")
+            await ws.close(code=1008, message=b"Registration timeout")
+            return ws
         if msg.type != WSMsgType.TEXT:
             await ws.close(code=1003, message=b"Expected text registration packet")
             return ws
@@ -453,7 +463,7 @@ def create_gateway_app(
                                 beat = AgentHeartbeatPayload.model_validate(
                                     proto_env.payload
                                 )
-                                registry.update_heartbeat(pid, iid)
+                                registry.update_heartbeat(pid, iid, session_id)
                                 agent.unpaused_video_consumers = (
                                     beat.unpaused_video_consumers
                                 )
@@ -546,24 +556,52 @@ def create_gateway_app(
             )
         rotation.register_connection(profile_id, conn_id, eff_gen)
 
-        # 4. First frame to Viewer: rtc_config
-        rtc_frame = {
-            "cbrowser": "rtc_config",
-            "generation": eff_gen.generation,
-            "rtc_config": eff_gen.client_rtc_config,
-        }
-        await ws.send_str(json.dumps(rtc_frame))
+        try:
+            # 4. First frame to Viewer: rtc_config
+            rtc_frame = {
+                "cbrowser": "rtc_config",
+                "generation": eff_gen.generation,
+                "rtc_config": eff_gen.client_rtc_config,
+            }
+            await ws.send_str(json.dumps(rtc_frame))
 
-        # 5. Open tunnel to Agent
-        open_env = GatewayTunnelEnvelope(
-            version="v2",
-            type="open",
-            profile_id=profile_id,
-            runtime_instance_id=agent.instance_id,
-            agent_session_id=agent.agent_session_id,
-            conn_id=conn_id,
-        )
-        await agent.ws.send_str(open_env.model_dump_json())
+            # 5. Open tunnel to Agent
+            open_env = GatewayTunnelEnvelope(
+                version="v2",
+                type="open",
+                profile_id=profile_id,
+                runtime_instance_id=agent.instance_id,
+                agent_session_id=agent.agent_session_id,
+                conn_id=conn_id,
+            )
+            await agent.ws.send_str(open_env.model_dump_json())
+        except Exception as exc:
+            logger.warning(
+                "Viewer initialization failed: error_type=%s", type(exc).__name__
+            )
+            viewers.pop(conn_id, None)
+            if not ws.closed:
+                try:
+                    await ws.close(code=1011, message=b"Viewer initialization failed")
+                except Exception:
+                    pass
+            if not agent.ws.closed:
+                try:
+                    await agent.ws.send_str(
+                        GatewayTunnelEnvelope(
+                            version="v2",
+                            type="close",
+                            profile_id=profile_id,
+                            runtime_instance_id=agent.instance_id,
+                            agent_session_id=agent.agent_session_id,
+                            conn_id=conn_id,
+                            code=1011,
+                            reason="Viewer initialization failed",
+                        ).model_dump_json()
+                    )
+                except Exception:
+                    pass
+            return ws
 
         try:
             async for m in ws:

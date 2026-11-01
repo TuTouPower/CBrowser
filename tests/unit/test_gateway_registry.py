@@ -74,3 +74,39 @@ def test_agent_registry_lifecycle_and_heartbeats() -> None:
     old = registry.register(agent3)
     assert old is agent2
     assert registry.get("p1") is agent3
+
+
+def test_old_session_heartbeat_cannot_extend_new_session_liveness() -> None:
+    from cbrowser.gateway.registry import AgentRegistry, RegisteredAgent
+
+    registry = AgentRegistry()
+    agent = RegisteredAgent(
+        profile_id="p1",
+        instance_id="i1",
+        agent_session_id="new-session",
+        selkies_version="2.1.0",
+        runtime_state="ready",
+        udp_port=30001,
+        config_version=1,
+        turn_host="127.0.0.1",
+        turn_port=3478,
+        ws=object(),
+        last_heartbeat=100.0,
+    )
+    registry.register(agent)
+
+    assert registry.update_heartbeat("p1", "i1", "old-session", now=200.0) is False
+    assert registry.get("p1").last_heartbeat == 100.0
+    assert registry.update_heartbeat("p1", "i1", "new-session", now=200.0) is True
+    assert registry.get("p1").last_heartbeat == 200.0
+
+
+def test_registration_throttle_is_bounded_per_source() -> None:
+    from cbrowser.gateway.registry import RegistrationThrottle
+
+    throttle = RegistrationThrottle(max_attempts=2, window_seconds=60.0)
+    assert throttle.allow("10.0.0.1", now=0.0)
+    assert throttle.allow("10.0.0.1", now=1.0)
+    assert not throttle.allow("10.0.0.1", now=2.0)
+    assert throttle.allow("10.0.0.2", now=2.0)
+    assert throttle.allow("10.0.0.1", now=90.0)

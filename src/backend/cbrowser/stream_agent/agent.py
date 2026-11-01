@@ -761,8 +761,11 @@ class StreamAgent:
                                         self.config.controller_token.get_secret_value()
                                     )
                                     data = f"{parts[0]} {parts[1]} {json.dumps(meta)}"
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.warning(
+                                "HELLO metadata parse failed: error_type=%s",
+                                type(exc).__name__,
+                            )
 
                     if not upstream_ws.closed:
                         await asyncio.wait_for(

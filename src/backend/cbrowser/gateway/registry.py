@@ -49,13 +49,22 @@ class AgentRegistry:
         return None
 
     def update_heartbeat(
-        self, profile_id: str, instance_id: str, now: float | None = None
+        self,
+        profile_id: str,
+        instance_id: str,
+        agent_session_id: str | None = None,
+        now: float | None = None,
     ) -> bool:
+        """Only the registered session may extend liveness."""
         agent = self._agents.get(profile_id)
-        if agent and agent.instance_id == instance_id:
-            agent.last_heartbeat = time.time() if now is None else now
-            return True
-        return False
+        if agent is None or agent.instance_id != instance_id:
+            return False
+        if agent_session_id is not None and (
+            agent.agent_session_id != agent_session_id
+        ):
+            return False
+        agent.last_heartbeat = time.time() if now is None else now
+        return True
 
     def check_heartbeat_timeouts(
         self, now: float | None = None, timeout_sec: float = 30.0
@@ -71,3 +80,31 @@ class AgentRegistry:
 
     def all_agents(self) -> list[RegisteredAgent]:
         return list(self._agents.values())
+
+
+class RegistrationThrottle:
+    """Bounded per-source registration attempts for the Agent handshake."""
+
+    def __init__(self, max_attempts: int = 20, window_seconds: float = 60.0) -> None:
+        self.max_attempts = max_attempts
+        self.window_seconds = window_seconds
+        self._attempts: dict[str, list[float]] = {}
+
+    def allow(self, peer: str | None, now: float | None = None) -> bool:
+        clock = time.monotonic() if now is None else now
+        key = peer or "unknown"
+        attempts = self._attempts.setdefault(key, [])
+        cutoff = clock - self.window_seconds
+        while attempts and attempts[0] < cutoff:
+            attempts.pop(0)
+        if len(attempts) >= self.max_attempts:
+            return False
+        attempts.append(clock)
+        if len(self._attempts) > 1024:
+            for stale in [
+                source
+                for source, values in self._attempts.items()
+                if not values or values[-1] < cutoff
+            ]:
+                self._attempts.pop(stale, None)
+        return True
