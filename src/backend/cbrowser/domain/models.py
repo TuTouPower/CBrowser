@@ -232,6 +232,13 @@ class ProfileUpdateRequest(BaseModel):
     sort_order: int | None = None
     tags: list[Tag] | None = None
 
+    @field_validator("name", mode="before")
+    @classmethod
+    def reject_null_name(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("name cannot be null")
+        return value
+
     @field_validator("name")
     @classmethod
     def validate_name(cls, v: str | None) -> str | None:

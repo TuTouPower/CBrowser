@@ -306,8 +306,12 @@ async def update_profile(
     op_id = idempotency_key or x_operation_id or operation_id
     try:
         patch_data = payload.model_dump(exclude_unset=True)
+        tags_provided = "tags" in payload.model_fields_set
         tags_update = patch_data.pop("tags", None)
-        tags_val = [Tag(**t) for t in tags_update] if tags_update is not None else None
+        # Tri-state: absent = unchanged, null or [] = clear, list = replace.
+        tags_val = (
+            [Tag(**t) for t in (tags_update or [])] if tags_provided else None
+        )
 
         p = await service.update_profile(
             profile_id=profile_id,
