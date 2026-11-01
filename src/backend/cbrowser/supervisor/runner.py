@@ -7,6 +7,7 @@ import asyncio
 import logging
 import os
 import signal
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.gateway_client import GatewayControlClient
+from cbrowser.supervisor.metrics import StageMetrics
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
@@ -177,14 +179,55 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         except NotImplementedError:
             pass
 
-    # Background continuous reconciliation and event spool replay loop
+    metrics = StageMetrics()
+    scan_wakeup = asyncio.Event()
+
+    def watch_docker_events() -> None:
+        try:
+            for _event in d_client.events(
+                decode=True,
+                filters={
+                    "type": "container",
+                    "label": (
+                        f"com.cbrowser.prefix={docker_adapter.resource_prefix}"
+                    ),
+                },
+            ):
+                loop.call_soon_threadsafe(scan_wakeup.set)
+                if stop_event.is_set():
+                    break
+        except Exception as exc:
+            logger.warning(
+                "Docker event stream stopped: error_type=%s", type(exc).__name__
+            )
+
+    docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))
+
+    # Background continuous event consumption; Docker scans are event-driven
+    # with a 30 s fallback so state changes always converge.
     async def background_monitoring_loop():
+        last_scan = 0.0
+        container_snapshot: list[dict] | None = None
         while not stop_event.is_set():
             try:
+                started = time.monotonic()
                 await core.consume_disk_events()
+                metrics.record("events", time.monotonic() - started)
+                started = time.monotonic()
                 await event_forwarder.replay_spooled_events()
-                await core.scan_and_reconcile_existing()
-                await recovery.tick()
+                metrics.record("spool", time.monotonic() - started)
+                now = time.monotonic()
+                if scan_wakeup.is_set() or now - last_scan >= 30.0:
+                    scan_wakeup.clear()
+                    last_scan = now
+                    started = time.monotonic()
+                    container_snapshot = await core.scan_and_reconcile_existing()
+                    metrics.record("scan", time.monotonic() - started)
+                started = time.monotonic()
+                await recovery.tick(containers=container_snapshot)
+                metrics.record("recovery", time.monotonic() - started)
+                if metrics.should_report():
+                    logger.info("Supervisor stage metrics: %s", metrics.snapshot())
             except Exception as exc:
                 logger.warning(
                     "Reconciliation failed: error_type=%s", type(exc).__name__
@@ -197,13 +240,20 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     monitor_task = asyncio.create_task(background_monitoring_loop())
 
     async def resource_loop():
+        # Independent, low-frequency and staggered away from the scan loop.
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=2.0)
+        except asyncio.TimeoutError:
+            pass
         while not stop_event.is_set():
+            started = time.monotonic()
             try:
                 await core.sample_resources()
+                metrics.record("resources", time.monotonic() - started)
             except Exception as exc:
                 logger.warning("Resource monitoring failed: %s", type(exc).__name__)
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+                await asyncio.wait_for(stop_event.wait(), timeout=5.0)
             except asyncio.TimeoutError:
                 pass
 
@@ -226,6 +276,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         stopped.cancel()
         monitor_task.cancel()
         resource_task.cancel()
+        docker_events_task.cancel()
         await recovery.close()
         try:
             await asyncio.wait_for(

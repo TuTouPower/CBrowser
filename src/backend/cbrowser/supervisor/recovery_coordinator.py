@@ -60,8 +60,14 @@ class RecoveryCoordinator:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
 
-    async def tick(self) -> None:
-        """Detect exits and schedule retries from persisted API state."""
+    async def tick(
+        self, *, containers: list[dict[str, Any]] | None = None
+    ) -> None:
+        """Detect exits and schedule retries from persisted API state.
+
+        ``containers`` may carry the event-driven scan snapshot so the recovery
+        loop does not rescan Docker every second.
+        """
         if self._closing:
             return
 
@@ -88,17 +94,18 @@ class RecoveryCoordinator:
             )
             return
 
-        # 2. Scan active Docker containers
-        try:
-            containers = await asyncio.to_thread(
-                self.core.docker.scan_active_containers
-            )
-        except Exception as exc:
-            logger.warning(
-                "Recovery paused: Docker scan error_type=%s",
-                type(exc).__name__,
-            )
-            return
+        # 2. Scan active Docker containers unless a fresh snapshot was supplied
+        if containers is None:
+            try:
+                containers = await asyncio.to_thread(
+                    self.core.docker.scan_active_containers
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Recovery paused: Docker scan error_type=%s",
+                    type(exc).__name__,
+                )
+                return
 
         docker_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
         for c in containers:

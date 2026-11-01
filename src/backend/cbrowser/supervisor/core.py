@@ -152,7 +152,7 @@ class SupervisorCore:
             self._locks[profile_id] = asyncio.Lock()
         return self._locks[profile_id]
 
-    async def scan_and_reconcile_existing(self) -> None:
+    async def scan_and_reconcile_existing(self) -> list[dict[str, Any]]:
         """Reconcile Docker labels and ports with authenticated API state."""
         containers = await asyncio.to_thread(self.docker.scan_active_containers)
         logger.info(f"Container scan found {len(containers)} containers.")
@@ -357,6 +357,7 @@ class SupervisorCore:
                     pid,
                     resp.status_code,
                 )
+        return containers
 
     def _quarantine_event_file(
         self, event_file: Path, profile_id: str, instance_id: str, reason: str
