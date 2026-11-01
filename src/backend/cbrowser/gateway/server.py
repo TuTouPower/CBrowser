@@ -28,8 +28,9 @@ from pydantic import ValidationError
 
 from .api_client import GatewayApiClient
 from .config import GatewayConfig
+from .endpoint import normalize_origin
 from .registry import AgentRegistry, RegisteredAgent
-from .rotation import RotationCoordinator
+from .rotation import NoActiveGenerationError, RotationCoordinator
 
 logger = logging.getLogger("cbrowser.gateway.server")
 
@@ -273,6 +274,7 @@ def create_gateway_app(
                 )
                 await agent.ws.send_str(close_env.model_dump_json())
 
+        await rotation.cancel_profile(profile_id)
         return web.json_response({"status": "ok"})
 
     # ---------------- Agent Register Route ----------------
@@ -369,7 +371,12 @@ def create_gateway_app(
         await ws.send_str(ack.model_dump_json())
 
         # Send Agent RTC_CONFIG
-        eff_gen = rotation.get_effective_generation(pid)
+        try:
+            eff_gen = rotation.get_effective_generation(pid)
+        except NoActiveGenerationError:
+            logger.error("Refusing Agent registration: no active TURN generation")
+            await ws.close(code=1011, message=b"TURN credentials expired")
+            return ws
         rtc_ctrl = GatewayControlEnvelope(
             version="v2",
             action=AgentAction.RTC_CONFIG,
@@ -467,6 +474,7 @@ def create_gateway_app(
             await close_viewers_for_session(
                 session_id, code=1001, message=b"Stream Agent disconnected"
             )
+            await rotation.cancel_profile(pid)
             registry.remove(pid, ws=ws)
 
         return ws
@@ -526,7 +534,17 @@ def create_gateway_app(
             ws=ws,
         )
 
-        eff_gen = rotation.get_effective_generation(profile_id)
+        try:
+            eff_gen = rotation.get_effective_generation(profile_id)
+        except NoActiveGenerationError:
+            logger.error(
+                "Refusing Viewer connection: no active TURN generation (profile=%s)",
+                profile_id,
+            )
+            return web.Response(
+                status=503, text="TURN credentials expired; retry after rotation"
+            )
+        rotation.register_connection(profile_id, conn_id, eff_gen)
 
         # 4. First frame to Viewer: rtc_config
         rtc_frame = {
