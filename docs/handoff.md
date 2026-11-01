@@ -2,13 +2,13 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-01T12:45:06+08:00 前置失败与独立审核闭环，等待基线修复授权
+## 2026-11-01T12:48:22+08:00 已获直接基线修复授权，实现lane运行中
 
 ### 状态与范围
 
-- branch：main；head_commit：`79011e8026d6895170b9ee83afdd3dbe39a270a0`（本文另行提交）；生产源码、测试与冻结队列均未改动。
+- branch：main；head_commit：`a673edfac30f7394d70f79ffe7945101f8bfcfd1`（本文另行提交）；生产源码、测试与冻结队列均未改动。
 - t001–t007 done/integrated；goal-check 为 GOAL_QUEUE_INCOMPLETE（2/9 closed）。剩余 t008 → t013 → t014 → t009 → t010 → t011 → t012，均无 attempt。本地逐项合并已获附件授权；禁止 push。
-- 已向用户异步请求独立基线修复授权：AGENTS.md 限定源码/测试只在 task 执行期修改，但附件要求完整门禁先于 t008；不擅自新增或改变冻结队列。用户尚未答复，不据自动 continuation 推定批准。
+- 用户最新明确授权：“不需要创建task 直接改”。基线修复不创建task，不变更冻结队列；独立worktree实施、review与主控门禁后合入main，再继续t008。此授权覆盖前置门禁发现缺陷，无需重复询问。
 
 ### 本轮证据与结果
 
@@ -34,5 +34,8 @@
 - 证据备份 `.scratch/v2_baseline_20261101/audit_evidence/`（report.md、guard.json、permission.json）；JSON与wrapper日志留主仓。审核worktree tracked文件无变化，已git worktree remove + prune；最终仅main和主worktree，无新增分支。
 - 主控确认审核新增发现：supervisor/runner.py:187/192引用当前函数作用域不存在的d_client/docker_adapter，Ruff F821与源码对应；需补触达真实事件监听任务的RED测试后修复。policy.py中should_block_client_verb被动态重导出，禁止盲目ruff --fix删除。
 - 审核报告部分计数与主控原始日志矛盾（Runtime应13通过、Vitest应112通过、Supervisor应17通过9失败、前端应14通过4失败13错误），均以本交接及原始日志为准。共享pytest缓存导致污染的因果未经证实，不采信；单独执行build/contract/schema等证据有效，不以未集成同一个runner否定。
-- 下一步：等待基线修复授权；获授权后独立worktree最小修复、review、重建并补跑完整门禁，之后才start t008。无在飞测试/子代理；不得重复重启已结束句柄。
+- 当前实现lane：worktree `/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
+- lane证据主仓 `.scratch/v2_baseline_20261101/fix_dispatch/`：prompt.md、allowed_paths.json、implementation.jsonl、wrapper.log、launch.json。只给已确认缺陷具体文件写权；lane报告 `.scratch/baseline_fix/report.md`。XDG data/cache/state在主仓scratch。
+- 主控已准备 `fix_dispatch/verify_candidate.py`（尚未运行）：先重建六镜像/实际import，再unit/integration/legacy、前端安装测试构建、schema/codegen、Ruff、文档及逐文件Docker/Chrome E2E。先修正运行器目录和PYTHONPATH准备；前端buildinfo还原原字节。
+- 下一步：观察同一CLI实际状态，待实现报告后审diff并主控复跑、独立review；完整门禁通过才启动t008。不得复用已结束的82335/59258等旧句柄。
 - 本轮未改 `.repo_template`，未重启OrbStack或扩大配额。公网/原生Linux x86_64为NOT_RUN / USER_WAIVED；8小时与1000次IME/剪贴板未执行，不预计通过。
