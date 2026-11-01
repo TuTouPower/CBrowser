@@ -7,6 +7,7 @@ import logging
 import secrets
 import uuid
 from collections import deque
+from enum import Enum
 from typing import TYPE_CHECKING, AsyncGenerator, Callable
 
 if TYPE_CHECKING:
@@ -17,6 +18,12 @@ from cbrowser.services.profile_service import ProfileNotFoundError, ProfileServi
 from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.api.runtime_coordinator")
+
+
+class ReconcileOutcome(Enum):
+    CONVERGED = "converged"
+    RETRYABLE = "retryable"
+    TERMINATED = "terminated"
 
 
 class RuntimeEventBroadcaster:
@@ -297,11 +304,11 @@ class RuntimeCoordinator:
         task = asyncio.create_task(self._reconcile_profile_loop(profile_id))
         self._active_tasks[profile_id] = task
 
-    async def reconcile_profile_now(self, profile_id: str) -> bool:
+    async def reconcile_profile_now(self, profile_id: str) -> ReconcileOutcome:
         if not self.is_enabled():
             self.set_last_error(profile_id, "Supervisor is not configured")
             await self.publish_profile_change(profile_id)
-            return False
+            return ReconcileOutcome.RETRYABLE
 
         import httpx
 
@@ -316,28 +323,30 @@ class RuntimeCoordinator:
             runtime = await self.profile_service.get_runtime(profile_id)
         except ProfileNotFoundError:
             self.clear_last_error(profile_id)
-            return True
+            return ReconcileOutcome.CONVERGED
 
         if runtime.desired_state == "running":
             return await self._reconcile_running(profile_id, runtime)
         if runtime.desired_state == "stopped":
             return await self._reconcile_stopped(profile_id, runtime)
-        return True
+        return ReconcileOutcome.CONVERGED
 
-    async def _reconcile_running(self, profile_id: str, runtime) -> bool:
+    async def _reconcile_running(
+        self, profile_id: str, runtime
+    ) -> ReconcileOutcome:
         import httpx
 
         if runtime.restart_blocked:
             self.set_last_error(profile_id, "Restart blocked; manual retry required")
             await self.publish_profile_change(profile_id)
-            return False
+            return ReconcileOutcome.TERMINATED
 
         if (
             runtime.observed_state == "running"
             and runtime.runtime_instance_id is not None
         ):
             self.clear_last_error(profile_id)
-            return True
+            return ReconcileOutcome.CONVERGED
 
         try:
             versions = await self.profile_service.list_config_versions(profile_id)
@@ -362,12 +371,12 @@ class RuntimeCoordinator:
             err_msg = f"Supervisor unreachable: {type(e).__name__}"
             self.set_last_error(profile_id, err_msg)
             await self.publish_profile_change(profile_id)
-            return False
+            return ReconcileOutcome.RETRYABLE
 
         if resp.status_code == 200:
             self.clear_last_error(profile_id)
             await self.publish_profile_change(profile_id)
-            return True
+            return ReconcileOutcome.CONVERGED
 
         detail = ""
         try:
@@ -377,14 +386,16 @@ class RuntimeCoordinator:
         err_msg = f"Supervisor start failed ({resp.status_code}): {detail}"
         self.set_last_error(profile_id, err_msg)
         await self.publish_profile_change(profile_id)
-        return False
+        return ReconcileOutcome.RETRYABLE
 
-    async def _reconcile_stopped(self, profile_id: str, runtime) -> bool:
+    async def _reconcile_stopped(
+        self, profile_id: str, runtime
+    ) -> ReconcileOutcome:
         import httpx
 
         if runtime.observed_state == "stopped" and runtime.runtime_instance_id is None:
             self.clear_last_error(profile_id)
-            return True
+            return ReconcileOutcome.CONVERGED
 
         target_instance = runtime.runtime_instance_id
         if not target_instance:
@@ -401,7 +412,7 @@ class RuntimeCoordinator:
                 err_msg = f"Supervisor unreachable: {type(e).__name__}"
                 self.set_last_error(profile_id, err_msg)
                 await self.publish_profile_change(profile_id)
-                return False
+                return ReconcileOutcome.RETRYABLE
 
             if st_resp.status_code == 200:
                 target_instance = st_resp.json().get("runtime_instance_id")
@@ -409,12 +420,12 @@ class RuntimeCoordinator:
                 err_msg = f"Supervisor status failed ({st_resp.status_code})"
                 self.set_last_error(profile_id, err_msg)
                 await self.publish_profile_change(profile_id)
-                return False
+                return ReconcileOutcome.RETRYABLE
 
             if not target_instance:
                 self.clear_last_error(profile_id)
                 await self.publish_profile_change(profile_id)
-                return True
+                return ReconcileOutcome.CONVERGED
 
         req_body = {
             "profile_id": profile_id,
@@ -430,12 +441,12 @@ class RuntimeCoordinator:
             err_msg = f"Supervisor unreachable: {type(e).__name__}"
             self.set_last_error(profile_id, err_msg)
             await self.publish_profile_change(profile_id)
-            return False
+            return ReconcileOutcome.RETRYABLE
 
         if resp.status_code == 200:
             self.clear_last_error(profile_id)
             await self.publish_profile_change(profile_id)
-            return True
+            return ReconcileOutcome.CONVERGED
 
         detail = ""
         try:
@@ -445,7 +456,7 @@ class RuntimeCoordinator:
         err_msg = f"Supervisor stop failed ({resp.status_code}): {detail}"
         self.set_last_error(profile_id, err_msg)
         await self.publish_profile_change(profile_id)
-        return False
+        return ReconcileOutcome.RETRYABLE
 
     async def _reconcile_profile_loop(self, profile_id: str) -> None:
         backoff = self.initial_backoff
@@ -465,7 +476,19 @@ class RuntimeCoordinator:
                     )
                     await self.publish_profile_change(profile_id)
                     success = False
-                if success:
+                if isinstance(success, ReconcileOutcome):
+                    outcome = success
+                else:
+                    outcome = (
+                        ReconcileOutcome.CONVERGED
+                        if success
+                        else ReconcileOutcome.RETRYABLE
+                    )
+                if outcome is ReconcileOutcome.CONVERGED:
+                    break
+                if outcome is ReconcileOutcome.TERMINATED:
+                    # Blocked intent keeps its last error; a manual reset creates
+                    # a new reconciliation round instead of a silent retry loop.
                     break
                 retries += 1
                 limit = self.max_retries

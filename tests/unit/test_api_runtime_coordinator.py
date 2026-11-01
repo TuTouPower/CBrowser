@@ -8,7 +8,7 @@ import pytest
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.api.runtime_coordinator import RuntimeCoordinator, RuntimeEventBroadcaster
+from cbrowser.api.runtime_coordinator import ReconcileOutcome, RuntimeCoordinator, RuntimeEventBroadcaster
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.services.profile_service import ProfileService
 from pydantic import SecretStr
@@ -89,7 +89,7 @@ async def test_coordinator_start_rpc_success(profile_service):
     recorded_requests.clear()
     try:
         success = await coord.reconcile_profile_now(p.id)
-        assert success is True
+        assert success is ReconcileOutcome.CONVERGED
         assert len(recorded_requests) == 1
         assert recorded_requests[0].url.path == "/supervisor/v1/profiles/start"
         assert coord.get_last_error(p.id) is None
@@ -134,7 +134,7 @@ async def test_coordinator_unreachable_sets_error_and_recovers(profile_service):
     try:
         # 1. First attempt fails: error should be recorded
         success = await coord.reconcile_profile_now(p.id)
-        assert success is False
+        assert success is ReconcileOutcome.RETRYABLE
         err = coord.get_last_error(p.id)
         assert "Supervisor unreachable" in err
 
@@ -145,7 +145,7 @@ async def test_coordinator_unreachable_sets_error_and_recovers(profile_service):
         # 2. Supervisor recovers: second attempt succeeds
         should_fail = False
         success2 = await coord.reconcile_profile_now(p.id)
-        assert success2 is True
+        assert success2 is ReconcileOutcome.CONVERGED
         assert coord.get_last_error(p.id) is None
     finally:
         await coord.stop()
@@ -185,7 +185,7 @@ async def test_coordinator_stop_rpc_success(profile_service):
     recorded_requests.clear()
     try:
         success = await coord.reconcile_profile_now(p.id)
-        assert success is True
+        assert success is ReconcileOutcome.CONVERGED
         assert len(recorded_requests) == 1
         assert recorded_requests[0].url.path == "/supervisor/v1/profiles/stop"
         assert coord.get_last_error(p.id) is None
