@@ -232,6 +232,7 @@ async def coord_test_env(tmp_path: Path):
     sup_token_file = tmp_path / "supervisor_token.txt"
     sup_token_file.write_text(sup_token, encoding="utf-8")
     sup_token_file.chmod(0o600)
+    sup_token_file.chmod(0o600)
 
     api_url_holder: dict[str, str] = {"url": ""}
     sup_mock = MockSupervisorServer(
@@ -484,6 +485,7 @@ async def test_api_restart_converges_preserved_running_intent(tmp_path):
     sup_token = secrets.token_urlsafe(32)
     sup_token_file = tmp_path / "sup_restart_token.txt"
     sup_token_file.write_text(sup_token, encoding="utf-8")
+    sup_token_file.chmod(0o600)
 
     api_url_holder: dict[str, str] = {"url": ""}
     sup_mock = MockSupervisorServer(

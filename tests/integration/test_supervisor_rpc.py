@@ -128,15 +128,13 @@ def test_authenticated_manual_retry_resets_persistent_failure_once(supervisor_ap
         )
         assert bound.status_code == 200
         response = client.post(
-            prefix + "/runtimes/events",
+            prefix + "/runtimes/observed",
+            params={"profile_id": profile},
             headers=headers,
             json={
-                "event_id": "failure_" + instance,
-                "profile_id": profile,
                 "runtime_instance_id": instance,
-                "event_type": "exit",
-                "exit_code": 137,
-                "exit_reason": "crash",
+                "observed_state": "error",
+                "reason": "container_exit",
                 "config_version": 1,
             },
         )
@@ -197,8 +195,18 @@ def test_authenticated_rpc_replay_does_not_cancel_new_running_intent(supervisor_
         "exit_reason": "normal",
         "config_version": 1,
     }
-    first = client.post(prefix + "/runtimes/events", headers=headers, json=event)
-    assert first.status_code == 200
+    observed = client.post(
+        prefix + "/runtimes/observed",
+        params={"profile_id": profile_id},
+        headers=headers,
+        json={
+            "runtime_instance_id": "rpc_instance_1",
+            "observed_state": "stopped",
+            "reason": "normal_exit",
+            "config_version": 1,
+        },
+    )
+    assert observed.status_code == 200
     stopped = client.get(prefix + f"/profiles/{profile_id}/runtime", headers=headers)
     assert stopped.json()["desired_state"] == "stopped"
     restarted = client.patch(
@@ -212,4 +220,3 @@ def test_authenticated_rpc_replay_does_not_cancel_new_running_intent(supervisor_
     runtime = client.get(prefix + f"/profiles/{profile_id}/runtime", headers=headers)
     assert runtime.status_code == 200
     assert runtime.json()["desired_state"] == "running"
-    assert runtime.json()["last_exit_event_id"] == "rpc_event_1"

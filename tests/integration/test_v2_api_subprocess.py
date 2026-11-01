@@ -605,9 +605,22 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         for r in dup_responses:
             assert r.status_code == 200
 
+        # Disk events are diagnostics only; the Supervisor observation is the
+        # authoritative terminal fact and counts exactly one failure.
+        observed_ab = await client.post(
+            f"/api/v1/runtimes/observed?profile_id={pid}",
+            json={
+                "runtime_instance_id": inst_1,
+                "observed_state": "error",
+                "reason": "container_exit",
+                "config_version": 1,
+            },
+        )
+        assert observed_ab.status_code == 200
         rt_after_ab = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
         assert rt_after_ab["desired_state"] == "running"  # Preserved!
-        assert rt_after_ab["observed_state"] == "stopped"
+        assert rt_after_ab["observed_state"] == "error"
+        assert rt_after_ab["runtime_instance_id"] is None
         assert rt_after_ab["failure_count"] == 1  # Not double counted!
 
         # 7. Replaying exact initial start intent with same Idempotency-Key does NOT reset failure_count
@@ -682,7 +695,6 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         await client.post("/api/v1/runtimes/events", json=late_crash)
         rt_after_late = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
         assert rt_after_late["desired_state"] == "stopped"  # MUST NOT become running!
-        assert rt_after_late["observed_state"] == "stopped"
 
         # 10. Trigger validation 422 with secret in invalid field to verify error body sanitization
         bad_req = await client.put(

@@ -33,15 +33,13 @@ async def test_manual_reset_preempts_old_backoff_over_real_api(
             json={"runtime_instance_id": instance, "config_version": 1},
         ).raise_for_status()
         server.post(
-            prefix + "/runtimes/events",
+            prefix + "/runtimes/observed",
+            params={"profile_id": profile},
             headers=headers,
             json={
-                "profile_id": profile,
                 "runtime_instance_id": instance,
-                "event_id": f"exit{number}",
-                "event_type": "exit",
-                "exit_code": 137,
-                "exit_reason": "test_abnormal",
+                "observed_state": "error",
+                "reason": "container_exit",
                 "config_version": 1,
             },
         ).raise_for_status()
@@ -117,20 +115,19 @@ async def test_replayed_manual_operation_cannot_bypass_new_block(
             json={"runtime_instance_id": instance, "config_version": 1},
         ).raise_for_status()
         server.post(
-            prefix + "/runtimes/events",
+            prefix + "/runtimes/observed",
+            params={"profile_id": profile},
             headers=headers,
             json={
-                "profile_id": profile,
                 "runtime_instance_id": instance,
-                "event_id": f"exit{number}",
-                "event_type": "exit",
-                "exit_code": 137,
-                "exit_reason": "test_abnormal",
+                "observed_state": "error",
+                "reason": "container_exit",
                 "config_version": 1,
             },
         ).raise_for_status()
     key = tmp_path / "agent_key"
     key.write_text(secrets.token_urlsafe(32))
+    key.chmod(0o600)
     ports = PortAllocator()
     async with httpx.AsyncClient(
         base_url=str(server.base_url), headers=headers, trust_env=False
