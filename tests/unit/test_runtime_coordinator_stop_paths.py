@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 from pathlib import Path
@@ -205,7 +206,7 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
 
         calls = 0
 
-        async def flaky_reconcile(profile_id: str) -> bool:
+        async def flaky_reconcile(profile_id: str, **_kwargs) -> bool:
             nonlocal calls
             calls += 1
             if calls == 1:
@@ -307,5 +308,47 @@ async def test_restart_blocked_terminates_round_without_retry(tmp_path: Path) ->
         assert supervisor_calls == []
         error = coordinator.get_last_error(profile.id)
         assert error is not None and "Restart blocked" in error
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retries_reuse_stable_operation_id(tmp_path: Path) -> None:
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_stable_op"))
+        await service.set_desired_state(profile.id, "running")
+
+        bodies: list[dict] = []
+        attempts = 0
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            if request.url.path.endswith("/start"):
+                attempts += 1
+                bodies.append(json.loads(request.content))
+                if attempts == 1:
+                    return httpx.Response(503, json={"detail": "retry"})
+                return httpx.Response(200, json={"runtime_instance_id": "inst"})
+            return httpx.Response(200, json={})
+
+        coordinator = _make_coordinator(
+            service,
+            handler,
+            initial_backoff=0.0,
+            max_backoff=0.0,
+            max_retries=3,
+        )
+        coordinator._running = True
+        try:
+            await asyncio.wait_for(
+                coordinator._reconcile_profile_loop(profile.id), timeout=5
+            )
+        finally:
+            await coordinator.stop()
+
+        assert attempts == 2
+        assert bodies[0]["operation_id"] == bodies[1]["operation_id"]
+        assert bodies[0]["operation_id"].startswith("coord_round_")
     finally:
         await engine.dispose()

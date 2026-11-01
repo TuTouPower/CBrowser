@@ -306,7 +306,9 @@ class RuntimeCoordinator:
         task = asyncio.create_task(self._reconcile_profile_loop(profile_id))
         self._active_tasks[profile_id] = task
 
-    async def reconcile_profile_now(self, profile_id: str) -> ReconcileOutcome:
+    async def reconcile_profile_now(
+        self, profile_id: str, *, operation_id: str | None = None
+    ) -> ReconcileOutcome:
         if not self.is_enabled():
             self.set_last_error(profile_id, "Supervisor is not configured")
             await self.publish_profile_change(profile_id)
@@ -328,13 +330,17 @@ class RuntimeCoordinator:
             return ReconcileOutcome.CONVERGED
 
         if runtime.desired_state == "running":
-            return await self._reconcile_running(profile_id, runtime)
+            return await self._reconcile_running(
+                profile_id, runtime, operation_id=operation_id
+            )
         if runtime.desired_state == "stopped":
-            return await self._reconcile_stopped(profile_id, runtime)
+            return await self._reconcile_stopped(
+                profile_id, runtime, operation_id=operation_id
+            )
         return ReconcileOutcome.CONVERGED
 
     async def _reconcile_running(
-        self, profile_id: str, runtime
+        self, profile_id: str, runtime, *, operation_id: str | None = None
     ) -> ReconcileOutcome:
         import httpx
 
@@ -362,7 +368,8 @@ class RuntimeCoordinator:
             "profile_id": profile_id,
             "config_version": latest_v,
             "force": False,
-            "operation_id": f"coord_start_{profile_id}_{uuid.uuid4().hex[:8]}",
+            "operation_id": operation_id
+            or f"coord_start_{profile_id}_{uuid.uuid4().hex[:8]}",
         }
         url = f"{self.supervisor_url}/supervisor/v1/profiles/start"
         headers = {"Authorization": f"Bearer {self._token_str}"}
@@ -391,7 +398,7 @@ class RuntimeCoordinator:
         return ReconcileOutcome.RETRYABLE
 
     async def _reconcile_stopped(
-        self, profile_id: str, runtime
+        self, profile_id: str, runtime, *, operation_id: str | None = None
     ) -> ReconcileOutcome:
         import httpx
 
@@ -432,7 +439,8 @@ class RuntimeCoordinator:
         req_body = {
             "profile_id": profile_id,
             "runtime_instance_id": target_instance,
-            "operation_id": f"coord_stop_{profile_id}_{uuid.uuid4().hex[:8]}",
+            "operation_id": operation_id
+            or f"coord_stop_{profile_id}_{uuid.uuid4().hex[:8]}",
         }
         url = f"{self.supervisor_url}/supervisor/v1/profiles/stop"
         headers = {"Authorization": f"Bearer {self._token_str}"}
@@ -463,10 +471,13 @@ class RuntimeCoordinator:
     async def _reconcile_profile_loop(self, profile_id: str) -> None:
         backoff = self.initial_backoff
         retries = 0
+        round_operation_id = f"coord_round_{uuid.uuid4().hex}"
         try:
             while self._running:
                 try:
-                    success = await self.reconcile_profile_now(profile_id)
+                    success = await self.reconcile_profile_now(
+                        profile_id, operation_id=round_operation_id
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
