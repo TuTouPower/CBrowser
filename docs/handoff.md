@@ -2,50 +2,46 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-01T13:02:24+08:00 基线修复候选进行中，事件监听回归已GREEN
+## 2026-11-01T20:59:12+08:00 基线候选已整合，独立完整门禁运行中
 
-### 状态与范围
+### 授权与队列
 
-- branch：main；head_commit：`9132263d4d4aab853d17367782accdce26604dda`（本文另行提交）；生产源码、测试与冻结队列均未改动。
-- t001–t007 done/integrated；goal-check 为 GOAL_QUEUE_INCOMPLETE（2/9 closed）。剩余 t008 → t013 → t014 → t009 → t010 → t011 → t012，均无 attempt。本地逐项合并已获附件授权；禁止 push。
-- 用户最新明确授权：“不需要创建task 直接改”。基线修复不创建task，不变更冻结队列；独立worktree实施、review与主控门禁后合入main，再继续t008。此授权覆盖前置门禁发现缺陷，无需重复询问。
+- branch：main；head_commit：`9f9de5d47a853e0941751d5459a1a0d05e71b0b5`（本文另行提交）。用户已明确“不需要创建task 直接改”，并再次“继续”；基线修复不建task、不改冻结队列、不push，无需重复询问。
+- t001–t007 done/integrated；冻结队列仍2/9 closed，剩余t008 → t013 → t014 → t009 → t010 → t011 → t012，无attempt。须先通过当前基线门禁才start t008。
+- main仅交接文档推进；生产修复尚未commit/merge，全部位于独立worktree。
 
-### 本轮证据与结果
+### 当前候选与工作区
 
-- 目录 `.scratch/v2_baseline_20261101/`；实际生产源 `4be9ee2`，后续仅交接文档提交。镜像由该源构建；不可变 ID 为 `images.env`、六个 `.iid`，构建日志及 `build_results.json` 均保留。
-- 后端 unit：383 passed（`unit_r2.log`）；旧后端 + integration：446 passed（`backend_r2.log`）。最初运行器目录/PYTHONPATH失误原日志保留，修正 scratch 环境后复跑，未改代码或断言。
-- 模板 contract：168 passed、1 skipped；Vitest exit 0；生产前端构建含 vendor/postbuild verify exit 0；md_format 格式一致；五项 schema/codegen 重生成字节一致。tsconfig.tsbuildinfo 已恢复，工作区干净。
-- Runtime Docker E2E：13 passed（167.80 秒）。Stream：17 passed、2 failed（142.13 秒）。Supervisor：17 passed、9 failed（161.28 秒）。Gateway：5 failed（27.80 秒）。前端：14 passed、4 failed、13 errors（21.68 秒）。旧生产健康检查 exit 0，不代表 v2 已交付。
-- Ruff E/F/W/I：90 errors（`ruff_efwi.log`），全默认规则报告另见 `ruff.log`；未修复或豁免。
-- 完整首轮 runner session 82335/PID73111 已结束，退出 0 仅代表脚本跑完，逐项失败见 `check_results.json`，不能计全门禁 PASS。
+- 基准/diff_anchor：`a673edf`。core实现：`/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`；fixture实现：`/Users/karson/kar/code/CBrowser_baseline_fixtures`，branch `fix/v2_baseline_fixtures`。两路原始写域无重叠，fixture patch已经git apply --check后整合进core实现worktree。
+- 联合候选：主仓 `.scratch/v2_baseline_20261101/fix_dispatch/combined_candidate.patch`，SHA256 `6f36cb5c8bff5876df38ca132653bcc41be464cc79ea481557e6dbe3e303a49a`。
+- 独立validation：`/Users/karson/kar/code/CBrowser_baseline_validation`（detached a673edf），完整patch哈希已与联合候选核对一致；3个新增测试已git add -N纳入diff。主控验证使用独立数据/进程/容器，不复用实现lane环境证据。
+- review worktree：`CBrowser_baseline_core_review`（core最终快照）、`CBrowser_baseline_fixture_review`（fixture最终快照）。均只读源码，报告写自身scratch；源码patch副本在主仓保存，最终清理前须备份证据并核对所有权。
 
-### 已确认缺陷
+### 已修复与实际证据
 
-- 镜像实际 import 冒烟 `image_import_smoke.py` 在同一外层锁下执行，session21030 已结束：API 与测试 Gateway 缺 `cbrowser.gateway`；正式 Supervisor/Gateway 缺 `cbrowser.secret_files`。四镜像均 exit1，原始 `import_*.log` 与 `import_smoke_results.json` 已保存，实际 Docker 整镜像执行，无源码覆盖。
-- Supervisor recovery 夹具仍用旧 Gateway 端口，真实子进程 ValueError `Gateway URL port does not match the configured Gateway port`；resource monitor fixture token 权限不符合0600；旧基础设施测试期待18097，实际18080；旧启动恢复测试期待missing_runtime而实际observed_error。
-- Stream旧精确挂载断言漏新增凭证文件；修复须保留旧测试或整体删除注明替代覆盖，禁止就地改预期迁就实现。
-- 拓扑初始化失败泄漏容器，coturn占用50000导致后续前端级联失败；不能计作网络安全负例或产品媒体失败。
-- 初步归因与证据索引 `root_failure_triage.json`，独立审核已结束，报告及主控复核见下文。
+- core/build：补齐Supervisor/Gateway/API/测试Gateway模块COPY及对应Docker ignore清单；Gateway包顶层lazy导出避免endpoint引入整个服务依赖；API fixture固定版本沿本轮旧镜像实测版本，无无理由降级。
+- 90项E/F/W/I问题修复；AST检查5个核心文件运行时字符串完全不变，保留原错误脱敏信息。
+- Supervisor watcher作用域NameError已修复；进一步主控真实CLI探针发现SIGTERM后20秒挂起（`shutdown_probe_r4/result.json`，ready=true，SIGKILL仅用于结束该测试PID）。显式关闭Docker事件流并把同步close移出loop后，真实probe R5为ready=true、SIGTERM后0.2387秒、rc0，源runner SHA `64d835dd24e6584ead8309b6fa9fa6592602e645f5dcfe5694eab66e03c40f5f`。
+- probe早期Python发现、缓存路径、缺镜像参数是准备错误，原始日志保留，不计业务RED；R4/R5为有效真实API+Supervisor CLI+Docker证据，无用户Profile数据。
+- fixture：统一权威/动态Gateway端口显式一致、token0600、启动失败/取消清理、精确标签保护、非空网络拒删及清理失败传播；原只检查手工Docker配置的低价值新测试已删除，安全断言置于真实媒体/实际Supervisor容器图。
+- 旧Stream/恢复/基础设施测试按新语义node替换并加强覆盖，替代映射在fixture报告；未通过就地弱化旧断言假绿。
+- core前轮390 unit、62 integration、E/F/W/I、schema与字符串比对通过；新增shutdown回归另有RED/GREEN，联合候选所有检查以当前主控全门禁为最终依据。
+- fixture最终组件回归8 passed、原基准全unit391 passed（383+8）、E/F/W/I通过；未执行Docker/Chrome，报告明确NOT_RUN/PENDING_CONTROLLER。
+- 主控core整镜像6构建+API/Supervisor/生产Gateway/测试Gateway实际import全部exit0：证据`.scratch/v2_baseline_20261101/core_images/`。该轮镜像早于shutdown最后修复，不能冒充最终镜像，当前全门禁重新构建。
+- 主控实际Gateway UID1000读取0600测试bind文件成功（OrbStack映射file_uid1000）：`core_images/secret_owner_probe/result.json`，随机测试key已删除，无秘密输出。
 
-### 资源、审核与下一步
+### 独立review与在飞进程
 
-- 主控已核对并清理本轮16个残留容器、6个空网络；精确清单 `cleanup_plan.json`，关键异常行 `cleanup_error_*.txt`。旧生产cbrowser、kkmail/haiwa及来源不明历史对象保留。
-- 独立审核已结束：session59258、CLI PID76238已终止，实际cli_exit=0，durable_finished=False（wrapper只读全局DB，XDG隔离后的会话不在该DB中），不据外层退出码判断完成。最终report存在且已主控读取。
-- 证据备份 `.scratch/v2_baseline_20261101/audit_evidence/`（report.md、guard.json、permission.json）；JSON与wrapper日志留主仓。审核worktree tracked文件无变化，已git worktree remove + prune；最终仅main和主worktree，无新增分支。
-- 主控确认审核新增发现：supervisor/runner.py:187/192引用当前函数作用域不存在的d_client/docker_adapter，Ruff F821与源码对应；需补触达真实事件监听任务的RED测试后修复。policy.py中should_block_client_verb被动态重导出，禁止盲目ruff --fix删除。
-- 审核报告部分计数与主控原始日志矛盾（Runtime应13通过、Vitest应112通过、Supervisor应17通过9失败、前端应14通过4失败13错误），均以本交接及原始日志为准。共享pytest缓存导致污染的因果未经证实，不采信；单独执行build/contract/schema等证据有效，不以未集成同一个runner否定。
-- 当前实现lane：worktree `/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
-- lane证据主仓 `.scratch/v2_baseline_20261101/fix_dispatch/`：prompt.md、allowed_paths.json、implementation.jsonl、wrapper.log、launch.json。只给已确认缺陷具体文件写权；lane报告 `.scratch/baseline_fix/report.md`。XDG data/cache/state在主仓scratch。
-- 主控已准备 `fix_dispatch/verify_candidate.py`（尚未运行）：先重建六镜像/实际import，再unit/integration/legacy、前端安装测试构建、schema/codegen、Ruff、文档及逐文件Docker/Chrome E2E。先修正运行器目录和PYTHONPATH准备；前端buildinfo还原原字节。
-- 下一步：观察同一CLI实际状态，待实现报告后审diff并主控复跑、独立review；完整门禁通过才启动t008。不得复用已结束的82335/59258等旧句柄。
-- 本轮未改 `.repo_template`，未重启OrbStack或扩大配额。公网/原生Linux x86_64为NOT_RUN / USER_WAIVED；8小时与1000次IME/剪贴板未执行，不预计通过。
+- 所有OpenCode均使用已授权cpa/gemini-3.8-flash high，XDG data/cache/state位于主仓scratch；不改.repo_template或观察wrapper。wrapper的外层exit0不作成功依据，以cli_exit、JSON错误与报告核对。
+- core session `ses_e6a911a65ffe3Y0VZs5R3JTF9x`已完成，原始日志`fix_dispatch/core_round3..6.jsonl`；后续不复用旧PID。core报告实现wt `.scratch/baseline_fix/report.md`。
+- fixture session `ses_e6a7c7e18ffeNQzGW5g1MCQkco`已完成，原始日志`fixtures_round1..3.jsonl`，报告实现wt `.scratch/baseline_fixtures/report.md`。
+- fixture独立review：PASS，scope `46b544e4b5f92c7f4decd1354034c51fc18fcf0212d5b06d0dd9d06be73ba9ae`，报告fixture-review wt `.scratch/baseline_fixture_review/report.md`，实际cli_exit0。
+- core旧review：PASS+EOF Minor，但仅对应旧4bac快照，不能冒充最新scope。最新core review R2运行中，dispatch25471，session与实际CLI看`fix_dispatch/core_review_r2_launch.json`及wrapper日志；新scope `c2ae3b3e027338ea0e5e8784084a3e2b1e4f613714f68faa416d337503642466`。
+- 主控完整门禁：工具session87188，命令`CBROWSER_GATE_ROOT=...CBrowser_baseline_validation python3 .../fix_dispatch/verify_candidate.py`，输出`fix_dispatch/verify_candidate_r2.out`，逐项日志/退出码与最终镜像在`.scratch/v2_baseline_20261101/fix_round2/`。
+- 门禁持`.scratch/docker_e2e.lock`外层互斥；模板basetemp在登记worktree外。每个Docker E2E文件后核对新建标签容器，发现残留立即停止后续套件，保留泄漏元数据，不将端口污染造成的失败算安全负例。
 
-### 当前实现会话恢复信息（优先于上文旧PID）
+### 下一步与限制
 
-- 初始CLI79669在主控SIGINT后已停止，wrapper确认cli_exit=-2，未提交；旧GREEN测试线程曾无界等待，不算通过。
-- 同一OpenCode session `ses_e6a911a65ffe3Y0VZs5R3JTF9x`继续：dispatch82538、wrapper82546、CLI82547（启动值，恢复须查实时进程）。日志 `fix_dispatch/implementation_followup.jsonl`、`wrapper_followup.log`、`launch_followup.json`；指令`followup.md`。
-- 主控对初始候选Supervisor实际Docker import发现新增间接依赖aiohttp缺失，日志在实现worktree `.scratch/baseline_fix/import_diagnostic/`；已反馈同一会话。当前候选gateway包入口改为按需加载，保留原公开导出，不在仅使用endpoint时加载整套服务。
-- 已新增具体写权：gateway/__init__.py及Supervisor/Gateway requirements.in/.txt（仅必要锁定流程重生成）；allow清单为`fix_dispatch/allowed_paths.json`。冻结队列仍不变，无新增task。
-- 事件监听与导入边界新回归7 passed/1.05秒，正常退出；RED确实触达生产serve_supervisor的NameError。主控读过原始JSON tool输出，不把早期缺依赖或测试挂起当业务RED/GREEN。
-- lint及旧E2E夹具修复仍在实施，尚未完成review/最终镜像门禁，未计基线闭环。主控的字符串语义检查脚本仅准备好，候选编辑过程中曾未能解析repository；待候选稳定后再正式运行，不将中间未完成源码当最终结果。
-- 工具限制：OpenCode grep多次报Ripgrep JSON record exceeded 65536 bytes；lane改用窄查询继续，未改工具链。保留原始错误，最终报告披露。
+- 观察当前同一session87188与core-review R2实际状态，不能因观察超时重启。失败先归因，不放宽断言；新修改则重算候选/review范围并重跑相关门禁。
+- 全门禁与review完成后，主控复核最终源码/镜像一致，基线修复独立commit并本地合入main；备份各wt证据后规范清理，只留main，再从t008继续冻结队列。
+- 旧生产cbrowser及kkmail/haiwa等服务保留，未扩大Docker配额、未重启OrbStack、未改生产secret。公网穿透与原生Linux x86_64始终NOT_RUN / USER_WAIVED；8小时和1000次输入/剪贴板仍待后续task真实运行。
