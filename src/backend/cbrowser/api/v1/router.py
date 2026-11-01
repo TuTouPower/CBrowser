@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any
+from typing import Annotated
 
 from cbrowser.adapters.database.models import SessionModel
 from cbrowser.adapters.database.repository import (
@@ -11,6 +11,10 @@ from cbrowser.adapters.database.repository import (
     InvalidConfigVersionError,
 )
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
+from cbrowser.api.v1.runtime_views import (
+    make_runtime_response,
+    resolve_operation_id,
+)
 from cbrowser.auth.dependencies import require_csrf_and_origin, require_user_session
 from cbrowser.domain.models import (
     ConfigVersionResponse,
@@ -18,7 +22,6 @@ from cbrowser.domain.models import (
     ProfileConfig,
     ProfileCreateRequest,
     ProfileResponse,
-    ProfileRuntime,
     ProfileRuntimeEventData,
     ProfileRuntimeResponse,
     ProfileRuntimeStatusEvent,
@@ -48,24 +51,6 @@ profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
 
 def get_profile_service() -> ProfileService:
     raise NotImplementedError("ProfileService dependency must be provided")
-
-
-def _make_runtime_response(
-    rt: ProfileRuntime, coordinator: Any = None
-) -> ProfileRuntimeResponse:
-    last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
-    return ProfileRuntimeResponse(
-        profile_id=rt.profile_id,
-        desired_state=rt.desired_state,
-        observed_state=rt.observed_state,
-        runtime_instance_id=rt.runtime_instance_id,
-        config_version=rt.config_version,
-        failure_count=rt.failure_count,
-        restart_blocked=rt.restart_blocked,
-        last_exit_event_id=rt.last_exit_event_id,
-        last_coordinator_error=last_error,
-        updated_at=rt.updated_at,
-    )
 
 
 @v1_router.get("/health")
@@ -175,7 +160,7 @@ async def create_profile(
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
     operation_id: Annotated[str | None, Query()] = None,
 ):
-    op_id = idempotency_key or x_operation_id or operation_id
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     config = ProfileConfig(
         name=payload.name,
         fingerprint_seed=payload.fingerprint_seed
@@ -310,7 +295,7 @@ async def update_profile(
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
     operation_id: Annotated[str | None, Query()] = None,
 ):
-    op_id = idempotency_key or x_operation_id or operation_id
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
         patch_data = payload.model_dump(exclude_unset=True)
         tags_provided = "tags" in payload.model_fields_set
@@ -457,7 +442,7 @@ async def get_profile_runtime(
     try:
         rt = await service.get_runtime(profile_id)
         coord = getattr(request.app.state, "coordinator", None)
-        return _make_runtime_response(rt, coord)
+        return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -496,7 +481,7 @@ async def set_desired_state(
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
     operation_id: Annotated[str | None, Query()] = None,
 ):
-    op_id = idempotency_key or x_operation_id or operation_id
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
         rt = await service.set_desired_state(
             profile_id, payload.desired_state, operation_id=op_id
@@ -505,7 +490,7 @@ async def set_desired_state(
         if coord:
             coord.publish_profile_change_later(profile_id)
             coord.trigger_reconcile(profile_id)
-        return _make_runtime_response(rt, coord)
+        return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -539,14 +524,14 @@ async def stop_profile(
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
     operation_id: Annotated[str | None, Query()] = None,
 ):
-    op_id = idempotency_key or x_operation_id or operation_id
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
         rt = await service.set_desired_state(profile_id, "stopped", operation_id=op_id)
         coord = getattr(request.app.state, "coordinator", None)
         if coord:
             coord.publish_profile_change_later(profile_id)
             coord.trigger_reconcile(profile_id)
-        return _make_runtime_response(rt, coord)
+        return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -592,7 +577,7 @@ async def bind_runtime(
         coord = getattr(request.app.state, "coordinator", None)
         if coord:
             coord.publish_profile_change_later(profile_id)
-        return _make_runtime_response(rt, coord)
+        return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -645,7 +630,7 @@ async def report_observed_state(
         coord = getattr(request.app.state, "coordinator", None)
         if coord:
             coord.publish_profile_change_later(profile_id)
-        return _make_runtime_response(rt, coord)
+        return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

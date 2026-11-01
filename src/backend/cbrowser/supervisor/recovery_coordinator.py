@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import UTC, datetime
 from typing import Any
 
 import docker.errors
@@ -21,6 +20,19 @@ from cbrowser.domain.runtime_policy import (
     BLOCK_AFTER_RUNTIME_FAILURES,
 )
 from cbrowser.supervisor.core import SupervisorCore
+from cbrowser.supervisor.recovery_rules import (
+    browser_terminated,
+    exit_event_superseded,
+    failure_budget_exhausted,
+    index_containers_by_profile,
+    is_brand_new_runtime,
+    live_instance_ids,
+    remaining_retry_seconds,
+    retry_delay_for_failure,
+    runtime_pair_active,
+    stream_missing,
+    terminal_observation,
+)
 
 logger = logging.getLogger("cbrowser.supervisor.recovery")
 
@@ -72,9 +84,23 @@ class RecoveryCoordinator:
             return
 
         now_mono = time.monotonic()
+        profiles_list = await self._observe_profiles()
+        if profiles_list is None:
+            return
+        if containers is None:
+            containers = await self._scan_containers()
+            if containers is None:
+                return
 
-        # 1. Verify API availability; on network/auth/HTTP failure, keep healthy
-        # containers
+        docker_by_profile = index_containers_by_profile(containers)
+        await self._classify_abnormal_exits(docker_by_profile)
+        live_instances = live_instance_ids(docker_by_profile)
+        known_profiles = await self._schedule_retries(
+            profiles_list, docker_by_profile, live_instances, now_mono
+        )
+        self._prune_recovery_state(live_instances, known_profiles)
+
+    async def _observe_profiles(self) -> list[dict[str, Any]] | None:
         try:
             resp = await self.core.api.get(
                 "/api/v1/internal/supervisor/profiles",
@@ -85,37 +111,30 @@ class RecoveryCoordinator:
                     "Recovery paused: API profiles status=%s",
                     resp.status_code,
                 )
-                return
-            profiles_list = resp.json()
+                return None
+            return resp.json()
         except Exception as exc:
             logger.warning(
                 "Recovery paused: API error_type=%s",
                 type(exc).__name__,
             )
-            return
+            return None
 
-        # 2. Scan active Docker containers unless a fresh snapshot was supplied
-        if containers is None:
-            try:
-                containers = await asyncio.to_thread(
-                    self.core.docker.scan_active_containers
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Recovery paused: Docker scan error_type=%s",
-                    type(exc).__name__,
-                )
-                return
+    async def _scan_containers(self) -> list[dict[str, Any]] | None:
+        try:
+            return await asyncio.to_thread(
+                self.core.docker.scan_active_containers
+            )
+        except Exception as exc:
+            logger.warning(
+                "Recovery paused: Docker scan error_type=%s",
+                type(exc).__name__,
+            )
+            return None
 
-        docker_by_profile: dict[str, dict[str, dict[str, Any]]] = {}
-        for c in containers:
-            pid = c.get("profile_id")
-            role = c.get("role")
-            if pid and role:
-                docker_by_profile.setdefault(pid, {})[role] = c
-
-        # 3. Detect abnormal terminations (with strict API fencing to prevent double
-        # reporting)
+    async def _classify_abnormal_exits(
+        self, docker_by_profile: dict[str, dict[str, dict[str, Any]]]
+    ) -> None:
         for pid, roles in docker_by_profile.items():
             if self.core._get_profile_lock(pid).locked():
                 continue
@@ -130,8 +149,7 @@ class RecoveryCoordinator:
             if not b_inst:
                 continue
 
-            # Stream dead while Browser healthy: isolate without killing Browser
-            if b_status == "running" and (not s_c or s_c.get("status") != "running"):
+            if stream_missing(b_status, s_c):
                 logger.warning(
                     "Profile %s has healthy Browser %s but missing/failed Stream %s. "
                     "Keeping the Browser for this pass; the automatic retry "
@@ -141,280 +159,256 @@ class RecoveryCoordinator:
                     s_c.get("id") if s_c else "none",
                 )
 
-            # Check if Browser container terminated abnormally (only
-            # exited/dead count as terminated)
-            if (
-                b_status in {"exited", "dead"}
-                and b_inst not in self._reported_dead_instances
-            ):
-                # Query authoritative API state before synthesizing exit event
-                try:
-                    rt_resp = await self.core.api.get(
-                        f"/api/v1/internal/supervisor/profiles/{pid}/runtime",
-                        headers=self.core._auth_headers(),
-                    )
-                except (httpx.HTTPError, OSError) as exc:
-                    logger.debug(
-                        "Failed to query runtime before exit synthesis: error_type=%s",
-                        type(exc).__name__,
-                    )
-                    continue
+            if browser_terminated(b_status, b_inst, self._reported_dead_instances):
+                await self._report_browser_exit(pid, b_c, b_inst)
 
-                if rt_resp.status_code != 200:
-                    continue
-                rt_data = rt_resp.json()
-                # Fencing checks:
-                # a) If API desired_state is stopped, normal termination already cleared
-                # intent
-                if rt_data.get("desired_state") == "stopped":
-                    continue
-                # b) If API runtime_instance_id is already None, native exit or prior
-                # event applied
-                if rt_data.get("runtime_instance_id") is None:
-                    continue
-                # c) If API runtime_instance_id is for a different instance, do not
-                # report stale event
-                if rt_data.get("runtime_instance_id") != b_inst:
-                    continue
-                cfg_ver_val = b_c.get("config_version")
-                if cfg_ver_val is None:
-                    cfg_ver_val = rt_data.get("config_version")
-                if cfg_ver_val is None:
-                    continue
-                cfg_ver = int(cfg_ver_val)
+    async def _report_browser_exit(
+        self, profile_id: str, browser: dict[str, Any], instance_id: str
+    ) -> None:
+        try:
+            rt_resp = await self.core.api.get(
+                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                headers=self.core._auth_headers(),
+            )
+        except (httpx.HTTPError, OSError) as exc:
+            logger.debug(
+                "Failed to query runtime before exit synthesis: error_type=%s",
+                type(exc).__name__,
+            )
+            return
 
-                # Prioritize native exit: if core recorded a native
-                # exit awaiting delivery, wait for replay
-                if self.core.has_native_exit(pid, b_inst, cfg_ver):
-                    logger.info(
-                        "Native exit pending: profile=%s instance=%s version=%s; "
-                        "skipping synthetic Docker exit",
-                        pid,
-                        b_inst,
-                        cfg_ver,
-                    )
-                    continue
+        if rt_resp.status_code != 200:
+            return
+        runtime = rt_resp.json()
+        if exit_event_superseded(runtime, instance_id):
+            return
 
-                # Query actual ExitCode from docker container inspect
-                exit_code = 137
-                try:
-                    c_obj = self.core.docker.client.containers.get(b_c["id"])
-                    inspect_state = c_obj.attrs.get("State", {})
-                    inspect_ec = inspect_state.get("ExitCode")
-                    if inspect_ec is not None:
-                        exit_code = int(inspect_ec)
-                except (
-                    docker.errors.DockerException,
-                    KeyError,
-                    TypeError,
-                    ValueError,
-                ) as exc:
-                    logger.debug(
-                        "Failed to inspect container %s for ExitCode: error_type=%s",
-                        b_c["id"],
-                        type(exc).__name__,
-                    )
+        config_version_value = browser.get("config_version")
+        if config_version_value is None:
+            config_version_value = runtime.get("config_version")
+        if config_version_value is None:
+            return
+        config_version = int(config_version_value)
 
-                logger.warning(
-                    "Docker exit detected: container=%s profile=%s code=%s",
-                    b_c["id"],
-                    pid,
-                    exit_code,
-                )
+        if self.core.has_native_exit(profile_id, instance_id, config_version):
+            logger.info(
+                "Native exit pending: profile=%s instance=%s version=%s; "
+                "skipping synthetic Docker exit",
+                profile_id,
+                instance_id,
+                config_version,
+            )
+            return
 
-                if exit_code == 0:
-                    reported = await self.core.report_terminal_observation(
-                        pid,
-                        b_inst,
-                        cfg_ver,
-                        observed_state="stopped",
-                        reason="normal_exit",
-                    )
-                else:
-                    reported = await self.core.report_terminal_observation(
-                        pid,
-                        b_inst,
-                        cfg_ver,
-                        observed_state="error",
-                        reason="container_exit",
-                    )
-                if reported:
-                    self._reported_dead_instances.add(b_inst)
+        exit_code = self._inspect_exit_code(browser)
+        logger.warning(
+            "Docker exit detected: container=%s profile=%s code=%s",
+            browser["id"],
+            profile_id,
+            exit_code,
+        )
+        observed_state, reason = terminal_observation(exit_code)
+        reported = await self.core.report_terminal_observation(
+            profile_id,
+            instance_id,
+            config_version,
+            observed_state=observed_state,
+            reason=reason,
+        )
+        if reported:
+            self._reported_dead_instances.add(instance_id)
 
-        # 4. Check API runtime state for each profile and schedule retries if due
-        live_instances: set[str] = {
-            c.get("instance_id")
-            for roles in docker_by_profile.values()
-            for c in roles.values()
-            if c.get("instance_id")
-        }
+    def _inspect_exit_code(self, browser: dict[str, Any]) -> int:
+        exit_code = 137
+        try:
+            c_obj = self.core.docker.client.containers.get(browser["id"])
+            inspect_state = c_obj.attrs.get("State", {})
+            inspect_ec = inspect_state.get("ExitCode")
+            if inspect_ec is not None:
+                exit_code = int(inspect_ec)
+        except (
+            docker.errors.DockerException,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            logger.debug(
+                "Failed to inspect container %s for ExitCode: error_type=%s",
+                browser["id"],
+                type(exc).__name__,
+            )
+        return exit_code
+
+    async def _schedule_retries(
+        self,
+        profiles_list: list[dict[str, Any]],
+        docker_by_profile: dict[str, dict[str, dict[str, Any]]],
+        live_instances: set[str],
+        now_mono: float,
+    ) -> set[str]:
         known_profiles: set[str] = set()
         for p_info in profiles_list:
             pid = p_info["id"]
             known_profiles.add(pid)
             if self.core._get_profile_lock(pid).locked():
                 continue
-
-            try:
-                rt_resp = await self.core.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{pid}/runtime",
-                    headers=self.core._auth_headers(),
-                )
-                if rt_resp.status_code != 200:
-                    continue
-                rt = rt_resp.json()
-            except (httpx.HTTPError, OSError, ValueError) as exc:
-                logger.debug(
-                    "Failed to fetch runtime for profile %s: error_type=%s",
-                    pid,
-                    type(exc).__name__,
-                )
+            runtime = await self._fetch_runtime(pid)
+            if runtime is None:
                 continue
+            if runtime.get("runtime_instance_id"):
+                live_instances.add(runtime["runtime_instance_id"])
+            await self._schedule_profile_retry(
+                pid, p_info, runtime, docker_by_profile, now_mono
+            )
+        return known_profiles
 
-            desired_state = rt.get("desired_state")
-            observed_state = rt.get("observed_state")
-            if rt.get("runtime_instance_id"):
-                live_instances.add(rt["runtime_instance_id"])
-            restart_blocked = rt.get("restart_blocked", False)
-            failure_count = rt.get("failure_count", 0)
-            last_exit_event_id = rt.get("last_exit_event_id")
-            runtime_instance_id = rt.get("runtime_instance_id")
-            cfg_version_bound = rt.get("config_version")
-            roles = docker_by_profile.get(pid, {})
-            b_c = roles.get("browser")
-            s_c = roles.get("stream")
+    async def _fetch_runtime(self, profile_id: str) -> dict[str, Any] | None:
+        try:
+            rt_resp = await self.core.api.get(
+                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                headers=self.core._auth_headers(),
+            )
+            if rt_resp.status_code != 200:
+                return None
+            return rt_resp.json()
+        except (httpx.HTTPError, OSError, ValueError) as exc:
+            logger.debug(
+                "Failed to fetch runtime for profile %s: error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            return None
 
-            # Check for missing runtime container:
-            # API is bound to an active runtime_instance_id with running intent,
-            # but no Browser container exists for this profile or instance.
-            if (
-                desired_state == "running"
-                and not restart_blocked
-                and runtime_instance_id is not None
-                and (not b_c or b_c.get("instance_id") != runtime_instance_id)
-            ):
-                if cfg_version_bound is not None:
-                    cfg_ver = int(cfg_version_bound)
-                    # Check native exit first
-                    if self.core.has_native_exit(pid, runtime_instance_id, cfg_ver):
-                        logger.info(
-                            "Native exit pending: profile=%s instance=%s version=%s; "
-                            "skipping synthetic missing exit",
-                            pid,
-                            runtime_instance_id,
-                            cfg_ver,
-                        )
-                    elif runtime_instance_id not in self._reported_dead_instances:
-                        logger.warning(
-                            "Missing runtime: profile=%s instance=%s cfg_version=%s",
-                            pid,
-                            runtime_instance_id,
-                            cfg_ver,
-                        )
-                        reported = await self.core.report_terminal_observation(
-                            pid,
-                            runtime_instance_id,
-                            cfg_ver,
-                            observed_state="error",
-                            reason="missing_runtime",
-                        )
-                        if reported:
-                            self._reported_dead_instances.add(runtime_instance_id)
-                        # Re-read runtime from API after emitting missing event
-                        try:
-                            rt_resp = await self.core.api.get(
-                                f"/api/v1/internal/supervisor/profiles/{pid}/runtime",
-                                headers=self.core._auth_headers(),
-                            )
-                            if rt_resp.status_code == 200:
-                                rt = rt_resp.json()
-                                desired_state = rt.get("desired_state")
-                                restart_blocked = rt.get("restart_blocked", False)
-                                failure_count = rt.get("failure_count", 0)
-                                last_exit_event_id = rt.get("last_exit_event_id")
-                                runtime_instance_id = rt.get("runtime_instance_id")
-                        except (httpx.HTTPError, OSError):
-                            pass
-            restart_blocked = rt.get("restart_blocked", False)
-            failure_count = rt.get("failure_count", 0)
-            last_exit_event_id = rt.get("last_exit_event_id")
-            runtime_instance_id = rt.get("runtime_instance_id")
-            attempt_key = (last_exit_event_id, failure_count)
-            previous_key = self._cleanup_attempt_keys.get(pid)
-            if previous_key is not None and previous_key != attempt_key:
-                await self._cancel_waiting_retry(pid)
-                self._cleanup_failures.pop(pid, None)
-                self._cleanup_cooldown_until.pop(pid, None)
-            self._cleanup_attempt_keys[pid] = attempt_key
+    async def _schedule_profile_retry(
+        self,
+        profile_id: str,
+        profile_info: dict[str, Any],
+        runtime: dict[str, Any],
+        docker_by_profile: dict[str, dict[str, dict[str, Any]]],
+        now_mono: float,
+    ) -> None:
+        desired_state = runtime.get("desired_state")
+        observed_state = runtime.get("observed_state")
+        restart_blocked = runtime.get("restart_blocked", False)
+        failure_count = runtime.get("failure_count", 0)
+        last_exit_event_id = runtime.get("last_exit_event_id")
+        runtime_instance_id = runtime.get("runtime_instance_id")
+        config_version_bound = runtime.get("config_version")
+        roles = docker_by_profile.get(profile_id, {})
+        browser = roles.get("browser")
+        stream = roles.get("stream")
 
-            # Condition 0: Not desired running, or blocked -> cancel any pending task
-            if desired_state != "running" or restart_blocked:
-                await self._cancel_waiting_retry(pid)
-                self._cleanup_failures.pop(pid, None)
-                self._cleanup_cooldown_until.pop(pid, None)
-                continue
+        if (
+            desired_state == "running"
+            and not restart_blocked
+            and runtime_instance_id is not None
+            and (not browser or browser.get("instance_id") != runtime_instance_id)
+            and config_version_bound is not None
+        ):
+            runtime = await self._compensate_missing_runtime(
+                profile_id, runtime, runtime_instance_id, config_version_bound
+            )
+            desired_state = runtime.get("desired_state")
 
-            if self._cleanup_failures.get(pid, 0) >= MAX_CLEANUP_ATTEMPTS:
-                continue
-            if now_mono < self._cleanup_cooldown_until.get(pid, 0.0):
-                continue
+        restart_blocked = runtime.get("restart_blocked", False)
+        failure_count = runtime.get("failure_count", 0)
+        last_exit_event_id = runtime.get("last_exit_event_id")
+        runtime_instance_id = runtime.get("runtime_instance_id")
+        attempt_key = (last_exit_event_id, failure_count)
+        previous_key = self._cleanup_attempt_keys.get(profile_id)
+        if previous_key is not None and previous_key != attempt_key:
+            await self._cancel_waiting_retry(profile_id)
+            self._cleanup_failures.pop(profile_id, None)
+            self._cleanup_cooldown_until.pop(profile_id, None)
+        self._cleanup_attempt_keys[profile_id] = attempt_key
 
-            # Condition 1: Brand new profile (count=0 and no exit event) -> explicit RPC
-            # launch only
-            if failure_count == 0 and last_exit_event_id is None:
-                continue
+        if desired_state != "running" or restart_blocked:
+            await self._cancel_waiting_retry(profile_id)
+            self._cleanup_failures.pop(profile_id, None)
+            self._cleanup_cooldown_until.pop(profile_id, None)
+            return
 
-            # Condition 2: Already running and active according to API
-            if runtime_instance_id is not None:
-                roles = docker_by_profile.get(pid, {})
-                b_c = roles.get("browser")
-                s_c = roles.get("stream")
-                if (
-                    observed_state != "error"
-                    and b_c
-                    and s_c
-                    and b_c.get("status") == "running"
-                    and s_c.get("status") == "running"
-                    and b_c.get("instance_id") == runtime_instance_id
-                ):
-                    self._cleanup_failures.pop(pid, None)
-                    self._cleanup_cooldown_until.pop(pid, None)
-                    continue
+        if self._cleanup_failures.get(profile_id, 0) >= MAX_CLEANUP_ATTEMPTS:
+            return
+        if now_mono < self._cleanup_cooldown_until.get(profile_id, 0.0):
+            return
 
-            # Condition 3: Check failure count bounds
-            if failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
-                continue
+        if is_brand_new_runtime(failure_count, last_exit_event_id):
+            return
 
-            # Calculate retry delay and due timestamp based on API durable updated_at
-            if failure_count == 0:
-                delay_sec = 0.0
-            else:
-                delay_sec = AUTO_RETRY_DELAYS[failure_count - 1]
+        if runtime_instance_id is not None and runtime_pair_active(
+            observed_state, runtime_instance_id, browser, stream
+        ):
+            self._cleanup_failures.pop(profile_id, None)
+            self._cleanup_cooldown_until.pop(profile_id, None)
+            return
 
-            updated_at_str = rt.get("updated_at")
-            if updated_at_str and delay_sec > 0.0:
-                try:
-                    updated_dt = datetime.fromisoformat(updated_at_str)
-                    if updated_dt.tzinfo is None:
-                        updated_dt = updated_dt.replace(tzinfo=UTC)
-                    elapsed = (datetime.now(UTC) - updated_dt).total_seconds()
-                    remaining = max(0.0, delay_sec - elapsed)
-                except (ValueError, TypeError):
-                    remaining = delay_sec
-            else:
-                remaining = 0.0
+        if failure_budget_exhausted(failure_count, BLOCK_AFTER_RUNTIME_FAILURES):
+            return
 
-            # Schedule retry task if not already in flight
-            async with self._lock:
-                existing_task = self._in_flight_tasks.get(pid)
-                if existing_task is not None and not existing_task.done():
-                    continue
+        delay_sec = retry_delay_for_failure(failure_count)
+        remaining = remaining_retry_seconds(runtime.get("updated_at"), delay_sec)
 
-                task = asyncio.create_task(
-                    self._execute_retry(pid, remaining, rt, p_info)
-                )
-                self._in_flight_tasks[pid] = task
+        async with self._lock:
+            existing_task = self._in_flight_tasks.get(profile_id)
+            if existing_task is not None and not existing_task.done():
+                return
 
+            task = asyncio.create_task(
+                self._execute_retry(profile_id, remaining, runtime, profile_info)
+            )
+            self._in_flight_tasks[profile_id] = task
+
+    async def _compensate_missing_runtime(
+        self,
+        profile_id: str,
+        runtime: dict[str, Any],
+        instance_id: str,
+        config_version_bound: int,
+    ) -> dict[str, Any]:
+        config_version = int(config_version_bound)
+        if self.core.has_native_exit(profile_id, instance_id, config_version):
+            logger.info(
+                "Native exit pending: profile=%s instance=%s version=%s; "
+                "skipping synthetic missing exit",
+                profile_id,
+                instance_id,
+                config_version,
+            )
+            return runtime
+
+        if instance_id in self._reported_dead_instances:
+            return runtime
+
+        logger.warning(
+            "Missing runtime: profile=%s instance=%s cfg_version=%s",
+            profile_id,
+            instance_id,
+            config_version,
+        )
+        reported = await self.core.report_terminal_observation(
+            profile_id,
+            instance_id,
+            config_version,
+            observed_state="error",
+            reason="missing_runtime",
+        )
+        if reported:
+            self._reported_dead_instances.add(instance_id)
+        try:
+            rt_resp = await self.core.api.get(
+                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                headers=self.core._auth_headers(),
+            )
+            if rt_resp.status_code == 200:
+                return rt_resp.json()
+        except (httpx.HTTPError, OSError):
+            pass
+        return runtime
+
+    def _prune_recovery_state(
+        self, live_instances: set[str], known_profiles: set[str]
+    ) -> None:
         self._reported_dead_instances.intersection_update(live_instances)
         for stale_pid in set(self._cleanup_attempt_keys) - known_profiles:
             self._cleanup_attempt_keys.pop(stale_pid, None)

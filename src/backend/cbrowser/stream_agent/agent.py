@@ -19,6 +19,18 @@ import aiohttp
 from aiohttp import WSMsgType
 
 from .config import StreamAgentConfig
+from .messaging import (
+    build_action_envelope,
+    build_heartbeat_envelope,
+    build_register_envelope,
+    build_register_payload,
+    inject_controller_token,
+    iso_now,
+    normalize_close_code,
+    parse_hello_metadata,
+    tunnel_close_envelope,
+    tunnel_message_envelope,
+)
 from .policy import (
     LiveCapturePolicyAgent,
     create_policy_controlled_service_class,
@@ -26,11 +38,9 @@ from .policy import (
 from .protocol import (
     AgentAction,
     AgentHeartbeatPayload,
-    AgentRegisterPayload,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
-    ProtocolEnvelope,
     RtcConfigPayload,
     SupervisorQuotaPayload,
 )
@@ -68,10 +78,6 @@ def setup_service_logging(level: int = logging.INFO) -> None:
     root_logger.setLevel(level)
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _sanitize_url(url: str) -> str:
@@ -258,28 +264,11 @@ class StreamAgent:
                         selkies_ver = resolve_selkies_version(
                             self.config.selkies_version
                         )
-                        reg_payload = AgentRegisterPayload(
-                            hostname=socket.gethostname(),
-                            profile_id=self.config.profile_id,
-                            runtime_instance_id=self.config.runtime_instance_id,
-                            udp_port=self.config.udp_mux_port,
-                            selkies_version=selkies_ver,
-                            runtime_state="ready",
-                            config_version=self.config.config_version,
-                            turn_host=self.config.turn_host,
-                            turn_port=self.config.turn_port,
-                            video_streaming_mode=self.config.video_streaming_mode,
-                            max_fps=int(self.config.max_fps),
-                            min_fps=int(self.config.min_fps),
-                            width=self.config.width,
-                            height=self.config.height,
+                        reg_payload = build_register_payload(
+                            self.config, socket.gethostname(), selkies_ver
                         )
-                        reg_envelope = ProtocolEnvelope(
-                            action=AgentAction.REGISTER,
-                            profile_id=self.config.profile_id,
-                            runtime_instance_id=self.config.runtime_instance_id,
-                            payload=reg_payload.model_dump(),
-                            timestamp=_iso_now(),
+                        reg_envelope = build_register_envelope(
+                            self.config, reg_payload, iso_now()
                         )
                         await asyncio.wait_for(
                             ws.send_str(reg_envelope.model_dump_json()),
@@ -376,13 +365,11 @@ class StreamAgent:
                     unpaused_video_consumers=unpaused,
                     capture_running=capturing,
                 )
-                hb_envelope = ProtocolEnvelope(
-                    action=AgentAction.HEARTBEAT,
-                    profile_id=self.config.profile_id,
-                    runtime_instance_id=self.config.runtime_instance_id,
-                    agent_session_id=self.agent_session_id,
-                    payload=hb_payload.model_dump(),
-                    timestamp=_iso_now(),
+                hb_envelope = build_heartbeat_envelope(
+                    self.config,
+                    self.agent_session_id,
+                    hb_payload,
+                    iso_now(),
                 )
                 await ws.send_str(hb_envelope.model_dump_json())
                 await self._sleep_fn(self.heartbeat_interval)
@@ -513,12 +500,10 @@ class StreamAgent:
                 except asyncio.QueueFull:
                     logger.warning("Viewer queue full, terminating")
                     await self._terminate_viewer(conn_id, caller="queue_full")
-                    close = GatewayTunnelEnvelope(
-                        version="v2",
-                        type="close",
+                    close = tunnel_close_envelope(
                         profile_id=self.config.profile_id,
                         runtime_instance_id=self.config.runtime_instance_id,
-                        agent_session_id=self.agent_session_id,
+                        session_id=self.agent_session_id,
                         conn_id=conn_id,
                         code=1013,
                         reason="Viewer queue full",
@@ -718,9 +703,9 @@ class StreamAgent:
                     # Inspect HELLO metadata and inject controller token if absent
                     if data.startswith("HELLO client "):
                         try:
-                            parts = data.split(" ", 2)
-                            if len(parts) > 2:
-                                meta = json.loads(parts[2])
+                            hello = parse_hello_metadata(data)
+                            if hello is not None:
+                                parts, meta = hello
                                 tab_id = meta.get("client_tab_id")
                                 resume_key = meta.get("resume_key")
                                 if (
@@ -734,10 +719,11 @@ class StreamAgent:
                                     not meta.get("client_token")
                                     and self.config.controller_token is not None
                                 ):
-                                    meta["client_token"] = (
-                                        self.config.controller_token.get_secret_value()
+                                    data = inject_controller_token(
+                                        parts,
+                                        meta,
+                                        self.config.controller_token.get_secret_value(),
                                     )
-                                    data = f"{parts[0]} {parts[1]} {json.dumps(meta)}"
                         except Exception as exc:
                             logger.warning(
                                 "HELLO metadata parse failed: error_type=%s",
@@ -767,12 +753,10 @@ class StreamAgent:
             active = self.viewer_workers.get(conn_id)
             if active and active.generation == generation and not gw_ws.closed:
                 try:
-                    close_env = GatewayTunnelEnvelope(
-                        version="v2",
-                        type="close",
+                    close_env = tunnel_close_envelope(
                         profile_id=self.config.profile_id,
                         runtime_instance_id=self.config.runtime_instance_id,
-                        agent_session_id=self.agent_session_id or "",
+                        session_id=self.agent_session_id or "",
                         conn_id=conn_id,
                         code=1011,
                         reason="Upstream worker failure",
@@ -855,12 +839,10 @@ class StreamAgent:
                     # Only relay if this reader is from the currently active generation
                     active = self.viewer_workers.get(conn_id)
                     if active and active.generation == generation and not gw_ws.closed:
-                        tunnel_msg = GatewayTunnelEnvelope(
-                            version="v2",
-                            type="msg",
+                        tunnel_msg = tunnel_message_envelope(
                             profile_id=self.config.profile_id,
                             runtime_instance_id=self.config.runtime_instance_id,
-                            agent_session_id=self.agent_session_id or "",
+                            session_id=self.agent_session_id,
                             conn_id=conn_id,
                             data=msg.data,
                         )
@@ -879,18 +861,14 @@ class StreamAgent:
         finally:
             # Gate ALL outgoing old close by matching active generation.
             # Preserve Selkies/upstream close semantics instead of faking 1000.
-            upstream_code = upstream_ws.close_code
-            if type(upstream_code) is not int or not 1000 <= upstream_code <= 4999:
-                upstream_code = 1000
+            upstream_code = normalize_close_code(upstream_ws.close_code)
             active = self.viewer_workers.get(conn_id)
             if active and active.generation == generation and not gw_ws.closed:
                 try:
-                    close_env = GatewayTunnelEnvelope(
-                        version="v2",
-                        type="close",
+                    close_env = tunnel_close_envelope(
                         profile_id=self.config.profile_id,
                         runtime_instance_id=self.config.runtime_instance_id,
-                        agent_session_id=self.agent_session_id or "",
+                        session_id=self.agent_session_id or "",
                         conn_id=conn_id,
                         code=upstream_code,
                         reason=f"Upstream closed ({upstream_code})",
@@ -937,14 +915,14 @@ class StreamAgent:
             )
 
             if self._gw_ws and not self._gw_ws.closed:
-                envelope = ProtocolEnvelope(
-                    action=AgentAction.ICE_RESTART_OFFER,
+                envelope = build_action_envelope(
+                    AgentAction.ICE_RESTART_OFFER,
                     profile_id=self.config.profile_id,
                     runtime_instance_id=self.config.runtime_instance_id,
-                    agent_session_id=self.agent_session_id,
+                    session_id=self.agent_session_id,
                     conn_id=conn_id,
                     payload={"sdp": local_desc.sdp, "type": local_desc.type},
-                    timestamp=_iso_now(),
+                    timestamp=iso_now(),
                 )
                 await self._gw_ws.send_str(envelope.model_dump_json())
         except Exception as e:
@@ -1000,14 +978,14 @@ class StreamAgent:
         self, action: AgentAction, conn_id: str, payload: Dict[str, Any]
     ) -> None:
         if self._gw_ws and not self._gw_ws.closed:
-            envelope = ProtocolEnvelope(
-                action=action,
+            envelope = build_action_envelope(
+                action,
                 profile_id=self.config.profile_id,
                 runtime_instance_id=self.config.runtime_instance_id,
-                agent_session_id=self.agent_session_id,
+                session_id=self.agent_session_id,
                 conn_id=conn_id,
                 payload=payload,
-                timestamp=_iso_now(),
+                timestamp=iso_now(),
             )
             await self._gw_ws.send_str(envelope.model_dump_json())
 

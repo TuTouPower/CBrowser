@@ -6,82 +6,22 @@ blocks client mutations, damage motion detection, and supervisor quota.
 
 import asyncio
 import collections
-import json
 import logging
 import math
-import re
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-logger = logging.getLogger("cbrowser.stream_agent.policy")
-
-# Client control verbs that mutate profile framerate, geometry, bitrate
-FORBIDDEN_PEER_PREFIXES: Tuple[str, ...] = (
-    "_arg_fps,",
-    "r,",
-    "s,",
-    "_rc,",
-    "_crf,",
-    "vb,",
-    "ab,",
+from .policy_rules import (
+    DISALLOWED_SETTINGS_KEYS,
+    FORBIDDEN_PEER_PREFIXES,
+    MAX_HISTORY_SIZE,
+    iso_now as _iso_now,
+    sanitize_caller as _sanitize_caller,
+    sanitize_settings_message,
+    should_block_client_verb,
 )
 
-# SETTINGS keys that clients are prohibited from overriding
-DISALLOWED_SETTINGS_KEYS: Set[str] = {
-    "framerate",
-    "manual_width",
-    "manual_height",
-    "manual_resolution",
-    "scaling_dpi",
-    "video_streaming_mode",
-    "force_aligned_resolution",
-    "video_bitrate",
-    "rate_control_mode",
-    "video_crf",
-}
-
-# Maximum number of entries kept in action history ring buffer to prevent memory leak
-MAX_HISTORY_SIZE: int = 500
-
-_SAFE_CALLER_RE = re.compile(r"^[A-Za-z0-9_:\-]{1,64}$")
-
-
-def _iso_now() -> str:
-    """Return ISO8601 formatted timestamp with UTC timezone."""
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _sanitize_caller(caller: Any) -> str:
-    """Sanitize caller string to prevent log injection or arbitrary payloads."""
-    if not isinstance(caller, str):
-        return "unknown"
-    s = caller.strip()
-    if _SAFE_CALLER_RE.match(s):
-        return s
-    return "sanitized"
-
-
-def sanitize_settings_message(msg: str) -> Optional[str]:
-    """Strip framerate/geometry/bitrate overrides from client SETTINGS."""
-    if not isinstance(msg, str) or not msg.startswith("SETTINGS,"):
-        return msg
-    try:
-        payload = json.loads(msg.split(",", 1)[1])
-        if not isinstance(payload, dict):
-            return None
-        for k in DISALLOWED_SETTINGS_KEYS:
-            payload.pop(k, None)
-        return "SETTINGS," + json.dumps(payload)
-    except Exception:
-        return None
-
-
-def should_block_client_verb(msg: str) -> bool:
-    """Check if message starts with forbidden client control verb."""
-    if isinstance(msg, str):
-        return msg.startswith(FORBIDDEN_PEER_PREFIXES)
-    return False
+logger = logging.getLogger("cbrowser.stream_agent.policy")
 
 
 class LiveCapturePolicyAgent:
