@@ -6,4 +6,4 @@
     - t007_test_f012：`tests/e2e/test_frontend_session_e2e.py` 关闭页面后对 Browser/Stream 容器状态接受 `running` 或 `created`，宜收紧为 `running`（`test_frontend_app_e2e.py` 已严格断言）。
     - t007_test_f013：`audio_status.test.ts` 的 `samples()` 辅助函数丢弃 `totalAudioEnergy`，“静音不判故障”用例输入与名称不符（判定逻辑本身不读能量，结论不受影响），宜让辅助函数透传该字段。
         修复会改动已通过评审的审查范围，故不在 t007 收尾时处理；下次改前端会话或 SSE 的 task 内补齐。
-- 处理：未开
+- 处理：323efaa；resolution=resolved；reason=A28 补齐 useProfileEventsSync 失效重取 Vitest 与 audio_status samples totalAudioEnergy 透传；f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内
