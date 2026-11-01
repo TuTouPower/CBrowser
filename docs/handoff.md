@@ -2,11 +2,11 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-01T12:48:22+08:00 已获直接基线修复授权，实现lane运行中
+## 2026-11-01T13:02:24+08:00 基线修复候选进行中，事件监听回归已GREEN
 
 ### 状态与范围
 
-- branch：main；head_commit：`a673edfac30f7394d70f79ffe7945101f8bfcfd1`（本文另行提交）；生产源码、测试与冻结队列均未改动。
+- branch：main；head_commit：`9132263d4d4aab853d17367782accdce26604dda`（本文另行提交）；生产源码、测试与冻结队列均未改动。
 - t001–t007 done/integrated；goal-check 为 GOAL_QUEUE_INCOMPLETE（2/9 closed）。剩余 t008 → t013 → t014 → t009 → t010 → t011 → t012，均无 attempt。本地逐项合并已获附件授权；禁止 push。
 - 用户最新明确授权：“不需要创建task 直接改”。基线修复不创建task，不变更冻结队列；独立worktree实施、review与主控门禁后合入main，再继续t008。此授权覆盖前置门禁发现缺陷，无需重复询问。
 
@@ -39,3 +39,13 @@
 - 主控已准备 `fix_dispatch/verify_candidate.py`（尚未运行）：先重建六镜像/实际import，再unit/integration/legacy、前端安装测试构建、schema/codegen、Ruff、文档及逐文件Docker/Chrome E2E。先修正运行器目录和PYTHONPATH准备；前端buildinfo还原原字节。
 - 下一步：观察同一CLI实际状态，待实现报告后审diff并主控复跑、独立review；完整门禁通过才启动t008。不得复用已结束的82335/59258等旧句柄。
 - 本轮未改 `.repo_template`，未重启OrbStack或扩大配额。公网/原生Linux x86_64为NOT_RUN / USER_WAIVED；8小时与1000次IME/剪贴板未执行，不预计通过。
+
+### 当前实现会话恢复信息（优先于上文旧PID）
+
+- 初始CLI79669在主控SIGINT后已停止，wrapper确认cli_exit=-2，未提交；旧GREEN测试线程曾无界等待，不算通过。
+- 同一OpenCode session `ses_e6a911a65ffe3Y0VZs5R3JTF9x`继续：dispatch82538、wrapper82546、CLI82547（启动值，恢复须查实时进程）。日志 `fix_dispatch/implementation_followup.jsonl`、`wrapper_followup.log`、`launch_followup.json`；指令`followup.md`。
+- 主控对初始候选Supervisor实际Docker import发现新增间接依赖aiohttp缺失，日志在实现worktree `.scratch/baseline_fix/import_diagnostic/`；已反馈同一会话。当前候选gateway包入口改为按需加载，保留原公开导出，不在仅使用endpoint时加载整套服务。
+- 已新增具体写权：gateway/__init__.py及Supervisor/Gateway requirements.in/.txt（仅必要锁定流程重生成）；allow清单为`fix_dispatch/allowed_paths.json`。冻结队列仍不变，无新增task。
+- 事件监听与导入边界新回归7 passed/1.05秒，正常退出；RED确实触达生产serve_supervisor的NameError。主控读过原始JSON tool输出，不把早期缺依赖或测试挂起当业务RED/GREEN。
+- lint及旧E2E夹具修复仍在实施，尚未完成review/最终镜像门禁，未计基线闭环。主控的字符串语义检查脚本仅准备好，候选编辑过程中曾未能解析repository；待候选稳定后再正式运行，不将中间未完成源码当最终结果。
+- 工具限制：OpenCode grep多次报Ripgrep JSON record exceeded 65536 bytes；lane改用窄查询继续，未改工具链。保留原始错误，最终报告披露。
