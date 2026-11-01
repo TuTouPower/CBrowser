@@ -17,9 +17,10 @@
     - `profile_config_versions`：不可变运行参数版本快照
     - `profile_tags`：标签与分类
     - `profile_runtimes`：期望状态与真实观测状态
-    - `control_sessions` 与 `control_leases`：控制会话与租约
+    - `runtime_events`：运行事件去重与退出事件记录（随 Profile 级联删除）
     - `artifacts`：上传与下载文件元数据
-    - `audit_events`：生命周期操作审计
+    - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
+- 排他控制租约、控制会话与 StreamTicket 已废弃（ADR 007）；数据库不包含 `control_sessions`、`control_leases` 或 `stream_tickets` 表。
 
 ### 2.2 旧数据库迁移兼容
 

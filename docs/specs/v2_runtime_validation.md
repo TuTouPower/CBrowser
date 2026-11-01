@@ -31,7 +31,7 @@
 - **废弃独占控制租约**：系统不设立排他性控制租约、租约代次或抢占接管等待机制；所有正式客户端均为 `controller` 角色（s004, d007）。
 - **客户端身份薄适配**：
     - 外部 Chrome 页面基于 Selkies 官方 `sessionStorage` 的 `pageTabId()` 生成并在握手发送 `client_tab_id`；
-    - 页面刷新时在同 session 中保留原有 ID 与 `resume_key` 进行重连；
+    - 页面刷新时保留原有 `client_tab_id` 身份；官方客户端刷新或重建 iframe 会生成新的 `resume_key`，仅在连接内断线重连时以原 `resume_key` 恢复会话（t007 修订语义）；
     - 复制标签页时利用同 Origin 的 Web Locks 机制探测 ID 冲突，检测到冲突后重新生成独立 ID，防止将新页面误认为重连而踢掉原有活跃页面（s004）；
     - 外部 Chrome 通过 `target="_blank" rel="noopener"` 打开新页面。
 - **并发观看与并发输入**：
