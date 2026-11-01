@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiohttp
 import pytest
 from aiohttp import web
-from cbrowser.stream_agent.agent import StreamAgent, _sanitize_packet
+from cbrowser.stream_agent.agent import StreamAgent
 from cbrowser.stream_agent.config import StreamAgentConfig
 from cbrowser.stream_agent.policy import LiveCapturePolicyAgent
 from cbrowser.stream_agent.protocol import GatewayTunnelEnvelope
@@ -89,26 +89,6 @@ def test_stream_agent_config_controller_token_from_env_var(tmp_path: Path) -> No
 
     assert cfg.controller_token is not None
     assert cfg.controller_token.get_secret_value() == ctrl_token
-
-
-def test_stream_sanitizer_redacts_tokens() -> None:
-    packet = {
-        "action": "register",
-        "master_token": "secret_master_123",
-        "controller_token": "secret_ctrl_456",
-        "client_token": "secret_client_789",
-        "token": "token_abc",
-        "nested": {
-            "token": "nested_token",
-            "safe_field": "visible",
-        },
-    }
-    sanitized = _sanitize_packet(packet)
-    assert "master_token" not in sanitized
-    assert "controller_token" not in sanitized
-    assert "client_token" not in sanitized
-    assert "token" not in sanitized
-    assert sanitized["nested"] == {"safe_field": "visible"}
 
 
 @pytest.mark.asyncio

@@ -87,29 +87,6 @@ def _sanitize_url(url: str) -> str:
     return url
 
 
-def _sanitize_packet(packet: dict) -> dict:
-    forbidden = {
-        "token",
-        "agent_token",
-        "secret",
-        "authorization",
-        "password",
-        "credential",
-        "master_token",
-        "controller_token",
-        "client_token",
-    }
-    sanitized = {}
-    for k, v in packet.items():
-        if k.lower() in forbidden:
-            continue
-        if isinstance(v, dict):
-            sanitized[k] = _sanitize_packet(v)
-        else:
-            sanitized[k] = v
-    return sanitized
-
-
 class GatewayRegistrationError(RuntimeError):
     """Raised when registration handshake with Gateway fails or is rejected."""
 

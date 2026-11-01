@@ -23,7 +23,6 @@ from aiohttp import web
 from cbrowser.stream_agent.agent import (
     ISO8601Formatter,
     StreamAgent,
-    _sanitize_packet,
     _sanitize_url,
 )
 from cbrowser.stream_agent.boundary import (
@@ -463,9 +462,3 @@ def test_iso8601_logging_and_sanitization():
     assert "token" not in s_url
     assert "admin" not in s_url
 
-    # Packet sanitization
-    pkt = {"token": "secret", "nested": {"password": "pass", "ok": True}}
-    s_pkt = _sanitize_packet(pkt)
-    assert "token" not in s_pkt
-    assert "password" not in s_pkt["nested"]
-    assert s_pkt["nested"]["ok"] is True
