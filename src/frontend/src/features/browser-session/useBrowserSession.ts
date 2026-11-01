@@ -138,7 +138,15 @@ export function useBrowserSession(
         }
         const data = await resp.json();
         const observed = data.observed_state || data.state;
-        if (observed !== "running" && observed !== "ready") {
+        if (observed === "stopping") {
+          setStage("stopping");
+          setErrorMessage(null);
+        } else if (observed === "error" || observed === "failed") {
+          setStage("error");
+          setErrorMessage(
+            `Profile runtime reported an error (state: ${observed})`
+          );
+        } else if (observed !== "running" && observed !== "ready") {
           setStage("runtime_not_ready");
           setErrorMessage(
             `Profile runtime is not running (state: ${observed || "unknown"})`
@@ -258,7 +266,12 @@ export function useBrowserSession(
 
   // Poll WebRTC stats from iframe window
   useEffect(() => {
-    if (stage === "runtime_not_ready" || stage === "signaling_failed") {
+    if (
+      stage === "runtime_not_ready" ||
+      stage === "signaling_failed" ||
+      stage === "stopping" ||
+      stage === "error"
+    ) {
       return;
     }
 

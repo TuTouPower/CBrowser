@@ -37,7 +37,9 @@ export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
     "signaling_failed",
     "ice_failed",
     "media_no_frames",
+    "error",
   ].includes(stage);
+  const isBlockingStage = isErrorStage || stage === "stopping";
 
   const iframeSrc = `/selkies/index.html?profileId=${encodeURIComponent(
     profileId
@@ -60,12 +62,12 @@ export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
       />
 
       {/* Connection & Diagnostic Overlay (AC-007) */}
-      {(isErrorStage || showDiagnosticsOverlay) && (
+      {(isBlockingStage || showDiagnosticsOverlay) && (
         <SessionDiagnostics
           stage={stage}
           diagnostics={diagnostics}
           errorMessage={errorMessage || undefined}
-          onReconnect={reconnect}
+          onReconnect={stage === "stopping" ? undefined : reconnect}
           onCheckStatus={onCheckRuntimeStatus}
         />
       )}
