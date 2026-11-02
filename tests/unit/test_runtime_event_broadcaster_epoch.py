@@ -162,3 +162,27 @@ async def test_snapshot_events_use_unique_event_ids() -> None:
         if line.startswith("id: ")
     ]
     assert len(ids) == len(set(ids)) == 3
+
+
+@pytest.mark.asyncio
+async def test_snapshot_is_built_and_registered_atomically_before_live_events() -> None:
+    broadcaster = RuntimeEventBroadcaster(maxlen=10)
+
+    async def snapshot_provider():
+        await asyncio.sleep(0.05)
+        return [_event("snapshot")]
+
+    generator = broadcaster.subscribe(initial_snapshot_provider=snapshot_provider)
+    first_task = asyncio.create_task(generator.__anext__())
+    await asyncio.sleep(0.01)
+    publish_task = asyncio.create_task(broadcaster.publish(_event("live")))
+    first = await asyncio.wait_for(first_task, timeout=1.0)
+    second = await asyncio.wait_for(generator.__anext__(), timeout=1.0)
+    published = await publish_task
+    await generator.aclose()
+
+    assert "snapshot" in first
+    assert "live" in second
+    first_seq = _split(first.split("id: ", 1)[1].split("\n", 1)[0])[1]
+    second_seq = _split(second.split("id: ", 1)[1].split("\n", 1)[0])[1]
+    assert first_seq < second_seq <= _split(published.id)[1]

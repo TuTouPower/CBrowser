@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 import uuid
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,8 @@ from .security import validate_runtime_id
 logger = logging.getLogger("cbrowser.runtime_agent.event_storage")
 
 MAX_RUNTIME_EVENTS_PER_INSTANCE = 100
+MAX_DOWNLOAD_EVENTS_PER_INSTANCE = 100
+_DOWNLOAD_INDEX_VERSION = 1
 
 
 class StorageError(RuntimeError):
@@ -86,6 +90,9 @@ class EventStorage:
         self.run_dir = Path(run_dir)
         self.runtime_events_dir = self.run_dir / "events" / "runtime"
         self.download_events_dir = self.run_dir / "events" / "downloads"
+        self.download_index_file = self.run_dir / "events" / "download-index.json"
+        self._download_index: dict[str, dict[str, Any]] | None = None
+        self._download_index_lock = threading.RLock()
         self.state_file = self.run_dir / "state.json"
         try:
             _ensure_directory(self.runtime_events_dir)
@@ -136,29 +143,171 @@ class EventStorage:
                 raise StorageError(f"Corrupt runtime event file: {item.name}") from e
         return events
 
+    def _download_files(self) -> set[str]:
+        try:
+            return {item.name for item in self.download_events_dir.glob("*.json")}
+        except OSError:
+            return set()
+
+    def _read_download_index(self) -> dict[str, dict[str, Any]] | None:
+        try:
+            raw = json.loads(self.download_index_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            return None
+        if not isinstance(raw, dict) or raw.get("version") != _DOWNLOAD_INDEX_VERSION:
+            return None
+        events = raw.get("events")
+        if not isinstance(events, dict):
+            return None
+        index: dict[str, dict[str, Any]] = {}
+        for event_id, entry in events.items():
+            if (
+                isinstance(event_id, str)
+                and isinstance(entry, dict)
+                and isinstance(entry.get("file"), str)
+                and isinstance(entry.get("instance"), str)
+                and isinstance(entry.get("created_at"), str)
+            ):
+                index[event_id] = {
+                    "file": entry["file"],
+                    "instance": entry["instance"],
+                    "created_at": entry["created_at"],
+                }
+        return index
+
+    def _write_download_index(self, index: dict[str, dict[str, Any]]) -> None:
+        atomic_write_json(
+            self.download_index_file,
+            {"version": _DOWNLOAD_INDEX_VERSION, "events": index},
+        )
+
+    def _prune_download_index(self, index: dict[str, dict[str, Any]]) -> None:
+        by_instance: dict[str, list[str]] = defaultdict(list)
+        for event_id, entry in index.items():
+            by_instance[entry["instance"]].append(event_id)
+        for event_ids in by_instance.values():
+            if len(event_ids) <= MAX_DOWNLOAD_EVENTS_PER_INSTANCE:
+                continue
+            event_ids.sort(
+                key=lambda event_id: (index[event_id]["created_at"], event_id)
+            )
+            for event_id in event_ids[:-MAX_DOWNLOAD_EVENTS_PER_INSTANCE]:
+                entry = index.pop(event_id)
+                try:
+                    (self.download_events_dir / entry["file"]).unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.warning(
+                        "Failed to prune download event %s: %s",
+                        entry["file"],
+                        type(exc).__name__,
+                    )
+
+    def _quarantine_download_event(self, item: Path) -> None:
+        quarantine = self.download_events_dir / "quarantine"
+        try:
+            quarantine.mkdir(parents=True, exist_ok=True)
+            os.replace(item, quarantine / item.name)
+        except OSError as exc:
+            logger.warning(
+                "Download event quarantine failed: %s", type(exc).__name__
+            )
+
+    def _rebuild_download_index(self) -> dict[str, dict[str, Any]]:
+        index: dict[str, dict[str, Any]] = {}
+        try:
+            files = sorted(self.download_events_dir.glob("*.json"))
+        except OSError:
+            files = []
+        for item in files:
+            try:
+                data = json.loads(item.read_text(encoding="utf-8"))
+                event = DownloadEventRecord.model_validate(data)
+            except Exception as exc:
+                logger.error(
+                    "Corrupt download event file %s: %s",
+                    item.name,
+                    type(exc).__name__,
+                )
+                self._quarantine_download_event(item)
+                continue
+            index[event.event_id] = {
+                "file": item.name,
+                "instance": event.runtime_instance_id,
+                "created_at": event.created_at,
+            }
+        self._prune_download_index(index)
+        self._write_download_index(index)
+        return index
+
+    def _get_download_index(self, *, reconcile: bool) -> dict[str, dict[str, Any]]:
+        if self._download_index is None:
+            index = self._read_download_index()
+            if index is None or {
+                entry["file"] for entry in index.values()
+            } != self._download_files():
+                index = self._rebuild_download_index()
+            self._download_index = index
+        elif reconcile and {
+            entry["file"] for entry in self._download_index.values()
+        } != self._download_files():
+            self._download_index = self._rebuild_download_index()
+        return self._download_index
+
     def save_download_event(self, event: DownloadEventRecord) -> None:
-        """Atomically persist a download event record."""
+        """Atomically persist a download event and incrementally update its index."""
         target = self.download_events_dir / f"{event.event_id}.json"
         atomic_write_json(target, event.model_dump())
+        with self._download_index_lock:
+            index = self._get_download_index(reconcile=False)
+            index[event.event_id] = {
+                "file": target.name,
+                "instance": event.runtime_instance_id,
+                "created_at": event.created_at,
+            }
+            self._prune_download_index(index)
+            self._write_download_index(index)
+            self._download_index = index
         logger.info(
             "Persisted download event: %s (state=%s)", event.event_id, event.state
         )
 
-    def get_download_events(self) -> list[DownloadEventRecord]:
-        """Read and return all persisted download event records."""
-        events: list[DownloadEventRecord] = []
-        if not self.download_events_dir.exists():
-            return events
-        for item in sorted(self.download_events_dir.glob("*.json")):
-            try:
-                with open(item, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                events.append(DownloadEventRecord.model_validate(data))
-            except Exception as e:
-                logger.error(
-                    "Corrupt download event file %s: %s", item.name, type(e).__name__
-                )
-                raise StorageError(f"Corrupt download event file: {item.name}") from e
+    def get_download_events(
+        self, *, limit: int | None = None, offset: int = 0
+    ) -> list[DownloadEventRecord]:
+        """Return indexed download events, oldest first, with bounded pagination."""
+        if offset < 0 or (limit is not None and limit < 0):
+            raise ValueError("Invalid download event pagination")
+        with self._download_index_lock:
+            index = self._get_download_index(reconcile=True)
+            ordered = sorted(
+                index.items(), key=lambda item: (item[1]["created_at"], item[0])
+            )
+            upper = None if limit is None else offset + limit
+            selected = ordered[offset:upper]
+            events: list[DownloadEventRecord] = []
+            missing: list[str] = []
+            for event_id, entry in selected:
+                item = self.download_events_dir / entry["file"]
+                try:
+                    with open(item, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    events.append(DownloadEventRecord.model_validate(data))
+                except FileNotFoundError:
+                    missing.append(event_id)
+                except Exception as e:
+                    logger.error(
+                        "Corrupt download event file %s: %s",
+                        item.name,
+                        type(e).__name__,
+                    )
+                    self._quarantine_download_event(item)
+                    missing.append(event_id)
+                    continue
+            if missing:
+                for event_id in missing:
+                    index.pop(event_id, None)
+                self._write_download_index(index)
+                self._download_index = index
         return events
 
     def save_state(self, state: RuntimeStateRecord) -> None:

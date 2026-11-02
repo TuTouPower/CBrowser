@@ -25,7 +25,9 @@ from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 from .event_storage import EventStorage, atomic_write_json
 from .profile_defaults import initialize_profile_defaults
 from .protocol import RuntimeEventRecord, RuntimeStateRecord
-from .security import sanitize_launch_args, validate_runtime_id
+from cbrowser.launch_args import validate_launch_args
+
+from .security import validate_runtime_id
 
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
@@ -96,7 +98,9 @@ class BrowserRunner:
 
         self.event_storage = EventStorage(self.events_dir)
         self.pulse_dir = self.run_dir / "pulse"
+        self.openbox_dir = self.run_dir / "openbox"
         self.x11_dir = Path("/tmp/.X11-unix")
+        self.x11_config_dir = self.run_dir / "x11-config"
         self.xauth_path = self.run_dir / "Xauthority"
         self.runner_info_file = self.run_dir / "runner_info.json"
 
@@ -141,6 +145,7 @@ class BrowserRunner:
                 raise ValueError("Engine ELF architecture mismatch")
             result = subprocess.run(
                 [str(binary), "--version"],
+                env=dict(os.environ),
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -159,22 +164,26 @@ class BrowserRunner:
 
     def setup_pulse(self) -> tuple[Path, Path]:
         """Configure and start PulseAudio daemon with 48000Hz null sink."""
-        self.pulse_dir.mkdir(parents=True, exist_ok=True)
+        self.pulse_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.pulse_dir.chmod(0o700)
         cookie_path = self.pulse_dir / "pulse.cookie"
         sock_path = self.pulse_dir / "pulse.sock"
 
         if not cookie_path.exists() or cookie_path.stat().st_size != 256:
             cookie_path.write_bytes(os.urandom(256))
-        cookie_path.chmod(0o644)
+        cookie_path.chmod(0o600)
 
-        config_dir = Path("/tmp/pulse-config")
-        config_dir.mkdir(parents=True, exist_ok=True)
-        (config_dir / "daemon.conf").write_text(
+        config_dir = self.pulse_dir / "config"
+        config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        config_dir.chmod(0o700)
+        daemon_conf = config_dir / "daemon.conf"
+        daemon_conf.write_text(
             "default-sample-rate = 48000\nalternate-sample-rate = 48000\n",
             encoding="utf-8",
         )
+        daemon_conf.chmod(0o600)
 
-        pulse_pa = Path("/tmp/pulse.pa")
+        pulse_pa = self.pulse_dir / "pulse.pa"
         pulse_pa.write_text(
             f"load-module module-native-protocol-unix auth-anonymous=0 "
             f"auth-cookie={cookie_path} socket={sock_path}\n"
@@ -183,9 +192,11 @@ class BrowserRunner:
             f"set-default-sink cbrowser_sink\n",
             encoding="utf-8",
         )
+        pulse_pa.chmod(0o600)
 
         env = dict(os.environ)
         env["PULSE_CONFIG_PATH"] = str(config_dir)
+        env["PULSE_COOKIE"] = str(cookie_path)
 
         proc = subprocess.run(
             [
@@ -208,13 +219,39 @@ class BrowserRunner:
         logger.info("PulseAudio initialized at 48000Hz (socket=%s)", sock_path)
         return sock_path, cookie_path
 
+    @staticmethod
+    def _clear_stale_x11_state(lock_path: Path, sock_path: Path) -> None:
+        """Drop X11 leftovers only when their recorded owner no longer exists."""
+        if lock_path.exists():
+            try:
+                holder = int(lock_path.read_text(encoding="utf-8").strip())
+            except (OSError, ValueError):
+                holder = None
+            if holder is not None:
+                try:
+                    os.kill(holder, 0)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    raise RuntimeError(
+                        "X display is held by another process"
+                    ) from None
+                else:
+                    raise RuntimeError("X display is already in use")
+        lock_path.unlink(missing_ok=True)
+        sock_path.unlink(missing_ok=True)
+
     def setup_display(self, width: int = 1920, height: int = 1080) -> Path:
         """Configure Xauthority, start Xvfb, and launch Openbox."""
         self.x11_dir.mkdir(parents=True, exist_ok=True)
+        self.x11_config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.x11_config_dir.chmod(0o700)
+        cookie_file = self.x11_config_dir / "cookie.hex"
         mcookie = os.urandom(16).hex()
-        (self.x11_dir / "cookie.hex").write_text(mcookie, encoding="utf-8")
+        cookie_file.write_text(mcookie, encoding="utf-8")
+        cookie_file.chmod(0o600)
 
-        self.xauth_path.touch(mode=0o644, exist_ok=True)
+        self.xauth_path.touch(mode=0o600, exist_ok=True)
         subprocess.run(
             [
                 "xauth",
@@ -226,9 +263,10 @@ class BrowserRunner:
                 ".",
                 mcookie,
             ],
+            env=dict(os.environ),
             check=True,
         )
-        self.xauth_path.chmod(0o644)
+        self.xauth_path.chmod(0o600)
 
         xvfb_cmd = [
             "Xvfb",
@@ -253,12 +291,12 @@ class BrowserRunner:
         sock_path = self.x11_dir / f"X{display_num}"
         lock_path = Path(f"/tmp/.X{display_num}-lock")
 
-        # Clean up stale X11 lock and socket from previous unclean container exits
-        lock_path.unlink(missing_ok=True)
-        sock_path.unlink(missing_ok=True)
+        # Remove only a stale lock whose owner is gone; a live display is an error.
+        self._clear_stale_x11_state(lock_path, sock_path)
 
         self.xvfb_proc = subprocess.Popen(
             xvfb_cmd,
+            env=dict(os.environ),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
         )
@@ -280,9 +318,10 @@ class BrowserRunner:
                 f"Xvfb failed to create X11 socket at {sock_path}: {xvfb_err}"
             )
 
-        openbox_dir = Path("/tmp/openbox")
-        openbox_dir.mkdir(parents=True, exist_ok=True)
-        (openbox_dir / "rc.xml").write_text(
+        self.openbox_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.openbox_dir.chmod(0o700)
+        rc_file = self.openbox_dir / "rc.xml"
+        rc_file.write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<openbox_config xmlns="http://openbox.org/3.4/rc">\n'
             "  <applications>\n"
@@ -294,11 +333,12 @@ class BrowserRunner:
             "</openbox_config>\n",
             encoding="utf-8",
         )
+        rc_file.chmod(0o600)
         env = dict(os.environ)
         env["DISPLAY"] = self.display
         env["XAUTHORITY"] = str(self.xauth_path)
         self.openbox_proc = subprocess.Popen(
-            ["openbox", "--config-file", str(openbox_dir / "rc.xml")],
+            ["openbox", "--config-file", str(rc_file)],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -307,6 +347,28 @@ class BrowserRunner:
             "Started Openbox on %s (pid %d)", self.display, self.openbox_proc.pid
         )
         return self.xauth_path
+
+    def _browser_environment(
+        self, pulse_sock: Path, pulse_cookie: Path, wrapper_path: Path
+    ) -> dict[str, str]:
+        """Build an explicit child environment instead of mutating ``os.environ``."""
+        env = dict(os.environ)
+        env.update(
+            {
+                "DISPLAY": self.display,
+                "XAUTHORITY": str(self.xauth_path),
+                "PULSE_SERVER": f"unix:{pulse_sock}",
+                "PULSE_COOKIE": str(pulse_cookie),
+                "CLOAKBROWSER_BINARY_PATH": str(wrapper_path),
+                "CLOAKBROWSER_CACHE_DIR": str(self.engine_cache_dir),
+            }
+        )
+        return env
+
+    @staticmethod
+    def validate_launch_arguments(args: list[str] | None) -> list[str]:
+        """Second launch-argument gate applied immediately before launch."""
+        return validate_launch_args(args)
 
     async def start(self) -> None:
         """Initialize all subsystems and launch CloakBrowser."""
@@ -368,16 +430,10 @@ class BrowserRunner:
         wrapper_path.write_text(wrapper_script, encoding="utf-8")
         wrapper_path.chmod(0o755)
 
-        # Export environment variables for the launched browser
-        os.environ["DISPLAY"] = self.display
-        os.environ["XAUTHORITY"] = str(self.xauth_path)
-        os.environ["PULSE_SERVER"] = f"unix:{pulse_sock}"
-        os.environ["PULSE_COOKIE"] = str(pulse_cookie)
-        os.environ["CLOAKBROWSER_BINARY_PATH"] = str(wrapper_path)
-        os.environ["CLOAKBROWSER_CACHE_DIR"] = str(self.engine_cache_dir)
+        browser_env = self._browser_environment(pulse_sock, pulse_cookie, wrapper_path)
 
-        # Assemble sanitized launch arguments
-        safe_user_args = sanitize_launch_args(cfg.launch_args)
+        # Second validation gate: the API already rejects non-whitelisted args.
+        safe_user_args = validate_launch_args(cfg.launch_args)
 
         extra_args: list[str] = [
             "--no-sandbox",
@@ -421,21 +477,39 @@ class BrowserRunner:
             self.runtime_instance_id,
         )
 
-        self.browser_context = await launch_persistent_context_async(
-            user_data_dir=str(self.user_data_dir),
-            headless=False,
-            proxy=cfg.proxy,
-            args=extra_args,
-            timezone=cfg.timezone,
-            locale=cfg.locale,
-            humanize=cfg.humanize,
-            human_preset=cfg.human_preset,
-            geoip=cfg.geoip,
-            color_scheme=cfg.color_scheme,
-            extension_paths=cfg.extension_paths or None,
-            no_viewport=True,
-            browser_version=self.browser_version,
-        )
+        # CloakBrowser resolves the binary/cache from process environment before
+        # spawning Playwright. Scope the mutation to this launch and restore it,
+        # so no other subsystem observes runner-specific paths.
+        previous_binary = os.environ.get("CLOAKBROWSER_BINARY_PATH")
+        previous_cache = os.environ.get("CLOAKBROWSER_CACHE_DIR")
+        os.environ["CLOAKBROWSER_BINARY_PATH"] = str(wrapper_path)
+        os.environ["CLOAKBROWSER_CACHE_DIR"] = str(self.engine_cache_dir)
+        try:
+            self.browser_context = await launch_persistent_context_async(
+                user_data_dir=str(self.user_data_dir),
+                headless=False,
+                proxy=cfg.proxy,
+                args=extra_args,
+                timezone=cfg.timezone,
+                locale=cfg.locale,
+                humanize=cfg.humanize,
+                human_preset=cfg.human_preset,
+                geoip=cfg.geoip,
+                color_scheme=cfg.color_scheme,
+                extension_paths=cfg.extension_paths or None,
+                no_viewport=True,
+                browser_version=self.browser_version,
+                env=browser_env,
+            )
+        finally:
+            if previous_binary is None:
+                os.environ.pop("CLOAKBROWSER_BINARY_PATH", None)
+            else:
+                os.environ["CLOAKBROWSER_BINARY_PATH"] = previous_binary
+            if previous_cache is None:
+                os.environ.pop("CLOAKBROWSER_CACHE_DIR", None)
+            else:
+                os.environ["CLOAKBROWSER_CACHE_DIR"] = previous_cache
         logger.info("CloakBrowser persistent context initialized")
 
         # Discover true Chrome PID from wrapper
@@ -526,7 +600,11 @@ class BrowserRunner:
 
     async def _configure_window(self, width: int, height: int) -> None:
         """Resize the actual Chrome window before publishing readiness."""
-        env = dict(os.environ, DISPLAY=self.display)
+        env = dict(
+            os.environ,
+            DISPLAY=self.display,
+            XAUTHORITY=str(self.xauth_path),
+        )
 
         def _do_configure() -> bool:
             result = subprocess.run(

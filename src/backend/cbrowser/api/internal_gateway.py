@@ -120,6 +120,7 @@ async def automation_authorize(
     allowed, reason = await auth_service.authorize_automation(
         token=payload.token,
         profile_id=payload.profile_id,
+        client_ip="internal-gateway",
     )
     return AutomationAuthorizeResponse(allowed=allowed, reason=reason)
 

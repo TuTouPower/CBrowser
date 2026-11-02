@@ -1,3 +1,5 @@
+> 与代码冲突时以代码与生效 spec 为准，并须同步修正本文。
+
 # 持久化架构与单写者契约 (persistence)
 
 本文定义 CBrowser v2 系统的持久化架构、数据库写入归属、8 张核心数据表模型、配置版本不可变快照及运行状态收敛契约。
@@ -19,7 +21,7 @@
 系统数据库包含 8 张核心业务与状态表，不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
 1. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `runtime_mode`, `viewer_mode`, `current_config_version`, `created_at`, `updated_at`。
+    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
     - 完整覆盖计划 15.2 中有效配置字段；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；旧 native 运行模式映射为 `docker`，旧 vnc 模式映射为 `webrtc`。
 2. `profile_config_versions`：
     - 字段：`id`, `profile_id`, `version`, `snapshot`, `created_at`。
@@ -39,7 +41,7 @@
     - 存储系统级键值配置。
 7. `runtime_events`：
     - 字段：`event_id` (PK), `profile_id`, `runtime_instance_id`, `event_type`, `exit_code`, `exit_reason`, `config_version`, `payload`, `created_at`。
-    - 持久化运行期退出/生命周期事件，通过 `event_id` 主键执行物理去重；历史事件与审计记录保留在数据库作为去重凭证与历史审计总账，不随单个 Profile 物理删除而级联销毁。
+    - 持久化运行期退出/生命周期事件，通过 `event_id` 主键执行物理去重；`runtime_events` 随 Profile 级联删除，审计总账由独立 `audit_events` 承担。
 8. `audit_events`：
     - 字段：`id` (PK), `entity_type`, `entity_id`, `action`, `actor`, `details`, `created_at`。
     - 记录关键操作审计与幂等性校验签名。
@@ -70,7 +72,7 @@
 - **异常退出**（`exit_code != 0`）：
     - 保留已有的 `desired_state`（若原本为 running 则仍为 running，若用户已主动发起停止置为 stopped 则严格保持 stopped，绝不被晚到的异常崩溃推翻为 running）。
     - `observed_state = stopped`, `runtime_instance_id = None`。
-    - `failure_count` 递增 1；若 `failure_count >= 3`，设置 `restart_blocked = True` 触发熔断保护。
+    - `failure_count` 递增 1；第 4 次异常（首次异常后三次重试均失败）设置 `restart_blocked = True` 触发熔断保护（ADR 008）。
 - **配置版本与跨实例严格比对**：
     - 退出事件所声明的 `config_version` 必须与该实例实际绑定的 `config_version` 完全一致；若试图以上报未实际应用到容器的配置版本触发退出，API 识别为 `invalid_config_version` 并拒绝，不改变状态机。
     - 重复的 `event_id` 被物理去重，返回 duplicate，不再重复转换状态机或累加计数；多并发重复事件安全仲裁，不抛出未捕获 500。

@@ -19,6 +19,7 @@ import os
 import secrets
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -2307,6 +2308,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         assert pulse_cookie.exists()
         assert x11_sock.exists()
         assert pulse_sock.exists()
+        assert stat.S_IMODE(xauth_file.stat().st_mode) == 0o600
+        assert stat.S_IMODE(pulse_cookie.stat().st_mode) == 0o600
 
         inspect_hn_proc = await asyncio.to_thread(
             subprocess.run,

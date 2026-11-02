@@ -15,7 +15,10 @@ from fastapi import Depends, HTTPException, Request, status
 def get_auth_service(request: Request) -> AuthService:
     service = getattr(request.app.state, "auth_service", None)
     if service is None:
-        raise RuntimeError("AuthService is not initialized on app.state")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service is not configured",
+        )
     return service
 
 

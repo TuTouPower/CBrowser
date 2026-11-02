@@ -172,7 +172,7 @@ async def test_tunnel_disconnect_drains_tasks_without_logging_close_payload(
 
 
 @pytest.mark.asyncio
-async def test_listener_fault_is_not_healthy_and_does_not_log_payload(
+async def test_listener_isolates_malformed_frame_and_keeps_running(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -187,7 +187,19 @@ async def test_listener_fault_is_not_healthy_and_does_not_log_payload(
                 }
             )
         )
-        await connection.wait_closed()
+        await connection.send(
+            json.dumps(
+                {
+                    "method": "Browser.downloadWillBegin",
+                    "params": {
+                        "guid": "download_after_bad",
+                        "url": "https://example.test/file",
+                        "suggestedFilename": "file.bin",
+                    },
+                }
+            )
+        )
+        await asyncio.sleep(1.0)
 
     async with websockets.serve(malformed_peer, "127.0.0.1", 0) as server:
         port = server.sockets[0].getsockname()[1]
@@ -204,8 +216,44 @@ async def test_listener_fault_is_not_healthy_and_does_not_log_payload(
                 manager._event_listener_task = asyncio.create_task(
                     manager._listen_events()
                 )
-                await asyncio.wait_for(manager._event_listener_task, timeout=2)
+                await asyncio.sleep(0.1)
             assert canary not in caplog.text
-            assert not manager.capture_alive
+            assert not manager._event_listener_task.done()
+            assert "download_after_bad" in manager.active_downloads
+        finally:
+            await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_cdp_listener_reconnects_and_rearms_after_disconnect(
+    tmp_path: Path,
+) -> None:
+    connections = {"count": 0}
+
+    async def closing_peer(connection):
+        connections["count"] += 1
+        await asyncio.sleep(0.05)
+        await connection.close()
+
+    async with websockets.serve(closing_peer, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        manager = CdpProxyManager(
+            f"ws://127.0.0.1:{port}",
+            tmp_path / "downloads",
+            "profile_a",
+            "instance_a",
+            EventStorage(tmp_path / "events"),
+        )
+        manager.agent_ws = await websockets.connect(manager.browser_ws_url)
+        try:
+            manager._event_listener_task = asyncio.create_task(
+                manager._listen_events()
+            )
+            for _ in range(100):
+                if manager.rearm_count > 0:
+                    break
+                await asyncio.sleep(0.02)
+            assert manager.rearm_count > 0
+            assert not manager._event_listener_task.done()
         finally:
             await manager.close()

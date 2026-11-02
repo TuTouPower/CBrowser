@@ -15,6 +15,8 @@ class AuthTestContext:
     admin_password_file: Path
     allowed_origin: str
     env: dict[str, str]
+    supervisor_token: str
+    supervisor_token_file: Path
 
     def login_sync(
         self, base_url: str, client: httpx.Client | None = None
@@ -97,6 +99,10 @@ def create_auth_context(
     pwd_file.write_text(admin_password, encoding="utf-8")
     pwd_file.chmod(0o600)
 
+    supervisor_token = secrets.token_urlsafe(32)
+    supervisor_token_file = dir_path / f"supervisor_token_{secrets.token_hex(6)}.txt"
+    supervisor_token_file.write_text(supervisor_token, encoding="utf-8")
+    supervisor_token_file.chmod(0o600)
     env = {
         "CBROWSER_ADMIN_PASSWORD_FILE": str(pwd_file),
         "CBROWSER_ALLOWED_ORIGINS": origin,
@@ -107,4 +113,6 @@ def create_auth_context(
         admin_password_file=pwd_file,
         allowed_origin=origin,
         env=env,
+        supervisor_token=supervisor_token,
+        supervisor_token_file=supervisor_token_file,
     )

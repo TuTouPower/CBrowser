@@ -68,14 +68,14 @@ def stream_labels(
     profile_id: str,
     runtime_instance_id: str,
     config_version: Any,
-) -> dict[str, Any]:
+) -> dict[str, str]:
     return {
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.profile-id": profile_id,
         "com.cbrowser.instance-id": runtime_instance_id,
         "com.cbrowser.role": "stream",
         "com.cbrowser.network-policy": "v1",
-        "com.cbrowser.config-version": config_version,
+        "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.prefix": prefix,
     }
 

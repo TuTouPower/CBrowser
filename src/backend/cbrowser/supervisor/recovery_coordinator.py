@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import quote
 import time
 from typing import Any
 
@@ -176,7 +177,7 @@ class RecoveryCoordinator:
     ) -> None:
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
         except (httpx.HTTPError, OSError) as exc:
@@ -274,7 +275,7 @@ class RecoveryCoordinator:
     async def _fetch_runtime(self, profile_id: str) -> dict[str, Any] | None:
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
             if rt_resp.status_code != 200:
@@ -406,7 +407,7 @@ class RecoveryCoordinator:
             self._reported_dead_instances.add(instance_id)
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
             if rt_resp.status_code == 200:
@@ -455,7 +456,7 @@ class RecoveryCoordinator:
             # intent
             try:
                 rt_resp = await self.core.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                    f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                     headers=self.core._auth_headers(),
                 )
                 if rt_resp.status_code != 200:
@@ -616,7 +617,7 @@ class RecoveryCoordinator:
     ) -> ProfileConfig:
         """Fetch and verify the immutable configuration snapshot."""
         ver_resp = await self.core.api.get(
-            f"/api/v1/internal/supervisor/profiles/{profile_id}/versions/{config_version}",
+            f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/versions/{config_version}",
             headers=self.core._auth_headers(),
         )
         ver_resp.raise_for_status()

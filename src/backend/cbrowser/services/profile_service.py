@@ -9,6 +9,8 @@ import logging
 import os
 import shutil
 import uuid
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -74,6 +76,27 @@ class ProfileRunningError(ProfileServiceError):
         self.operation = operation
 
 
+class ProfileLockRegistry:
+    """Per-profile locks whose entries disappear once no task uses them."""
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    @asynccontextmanager
+    async def lock(self, profile_id: str) -> AsyncIterator[None]:
+        lock = self._locks.setdefault(profile_id, asyncio.Lock())
+        try:
+            async with lock:
+                yield
+        finally:
+            if (
+                self._locks.get(profile_id) is lock
+                and not lock.locked()
+                and not getattr(lock, "_waiters", None)
+            ):
+                self._locks.pop(profile_id, None)
+
+
 _SKIP_COPY_FILES = frozenset({"SingletonLock", "SingletonCookie", "SingletonSocket"})
 
 
@@ -96,21 +119,17 @@ def _manifest(root: Path) -> dict[str, tuple[str, int | str]]:
     return entries
 
 
-def _apply_copy_ownership(root: Path) -> None:
-    uid = 1000
-    gid = 1000
-
+def _apply_copy_ownership(root: Path, uid: int, gid: int) -> None:
     def _own(path: Path, *, directory: bool) -> None:
         if path.is_symlink():
             return
-        try:
-            os.chown(path, uid, gid, follow_symlinks=False)
-        except OSError:
-            return
-        try:
-            os.chmod(path, 0o750 if directory else 0o640)
-        except OSError:
-            pass
+        stat = path.stat()
+        if stat.st_uid != uid or stat.st_gid != gid:
+            # Host-direct development cannot chown to another uid; it keeps the
+            # developer owner but never falls back to world-writable modes.
+            if os.geteuid() == 0 or os.geteuid() == uid:
+                os.chown(path, uid, gid, follow_symlinks=False)
+        os.chmod(path, 0o700 if directory else 0o600)
 
     for directory, dirnames, filenames in os.walk(root, followlinks=False):
         base = Path(directory)
@@ -119,15 +138,6 @@ def _apply_copy_ownership(root: Path) -> None:
             _own(base / name, directory=True)
         for name in filenames:
             _own(base / name, directory=False)
-    if os.geteuid() != 0 and os.getuid() != uid:
-        for directory, dirnames, filenames in os.walk(root, followlinks=False):
-            base = Path(directory)
-            if not base.is_symlink():
-                os.chmod(base, 0o777)
-            for name in filenames:
-                path = base / name
-                if not path.is_symlink():
-                    os.chmod(path, 0o666)
 
 
 def _cleanup_copy(path: Path, profile_id: str) -> None:
@@ -144,10 +154,12 @@ def _cleanup_copy(path: Path, profile_id: str) -> None:
         )
 
 
-def _copy_user_data(source: Path, target: Path) -> None:
+def _copy_user_data(
+    source: Path, target: Path, *, uid: int = 1000, gid: int = 1000
+) -> None:
     target.mkdir(parents=True, exist_ok=True)
     if not source.is_dir():
-        _apply_copy_ownership(target)
+        _apply_copy_ownership(target, uid, gid)
         return
     shutil.copytree(
         source,
@@ -158,11 +170,15 @@ def _copy_user_data(source: Path, target: Path) -> None:
             name for name in names if name in _SKIP_COPY_FILES
         ],
     )
-    _apply_copy_ownership(target)
+    _apply_copy_ownership(target, uid, gid)
 
 
-async def _copy_user_data_to_completion(source: Path, target: Path) -> None:
-    worker = asyncio.ensure_future(asyncio.to_thread(_copy_user_data, source, target))
+async def _copy_user_data_to_completion(
+    source: Path, target: Path, *, uid: int = 1000, gid: int = 1000
+) -> None:
+    worker = asyncio.ensure_future(
+        asyncio.to_thread(_copy_user_data, source, target, uid=uid, gid=gid)
+    )
     cancelled: asyncio.CancelledError | None = None
     while not worker.done():
         try:
@@ -177,12 +193,53 @@ async def _copy_user_data_to_completion(source: Path, target: Path) -> None:
 
 
 class ProfileService:
-    def __init__(self, repo: ProfileRepository):
+    def __init__(
+        self,
+        repo: ProfileRepository,
+        *,
+        runtime_uid: int = 1000,
+        runtime_gid: int = 1000,
+    ):
         self._repo = repo
-        self._locks: dict[str, asyncio.Lock] = {}
+        self.runtime_uid = runtime_uid
+        self.runtime_gid = runtime_gid
+        self._locks = ProfileLockRegistry()
 
-    def _lock(self, profile_id: str) -> asyncio.Lock:
-        return self._locks.setdefault(profile_id, asyncio.Lock())
+    async def _replay_if_committed(
+        self,
+        operation_id: str | None,
+        *,
+        expected_action: str,
+        expected_entity_id: str | None,
+        details_match: Callable[[dict[str, Any]], bool],
+        conflict_message: str,
+    ) -> Profile | None:
+        """Return the committed result for a replayed operation, else None."""
+        if not operation_id:
+            return None
+        audit = await self._repo.get_audit_event(operation_id)
+        if audit is None:
+            return None
+        try:
+            details = json.loads(audit["details"])
+        except (TypeError, ValueError):
+            raise ProfileOperationConflictError(conflict_message) from None
+        if (
+            audit["action"] != expected_action
+            or (
+                expected_entity_id is not None
+                and audit["entity_id"] != expected_entity_id
+            )
+            or not isinstance(details, dict)
+            or not details_match(details)
+        ):
+            raise ProfileOperationConflictError(conflict_message)
+        existing = await self._repo.get_profile(audit["entity_id"])
+        if existing is None:
+            raise ProfileOperationConflictError(
+                "Operation ID references a missing profile"
+            )
+        return existing
 
     @staticmethod
     def _clone_dir(source: Profile, clone_id: str) -> Path:
@@ -266,10 +323,11 @@ class ProfileService:
 
     async def delete_profile(self, profile_id: str) -> bool:
         try:
-            deleted = await self._repo.delete_profile(profile_id)
-            if not deleted:
-                raise ProfileNotFoundError(profile_id)
-            return True
+            async with self._locks.lock(profile_id):
+                deleted = await self._repo.delete_profile(profile_id)
+                if not deleted:
+                    raise ProfileNotFoundError(profile_id)
+                return True
         except DBAPIError as e:
             self._handle_db_error(e)
 
@@ -312,7 +370,7 @@ class ProfileService:
         expected_current_instance: str | None = None,
     ) -> ProfileRuntime:
         try:
-            async with self._lock(profile_id):
+            async with self._locks.lock(profile_id):
                 await self.get_profile(profile_id)
                 rt = await self._repo.bind_runtime_instance(
                     profile_id,
@@ -349,7 +407,7 @@ class ProfileService:
         self, profile_id: str, desired_state: str, *, operation_id: str | None = None
     ) -> ProfileRuntime:
         try:
-            async with self._lock(profile_id):
+            async with self._locks.lock(profile_id):
                 await self.get_profile(profile_id)
                 rt = await self._repo.set_desired_state(
                     profile_id, desired_state, operation_id=operation_id
@@ -392,30 +450,24 @@ class ProfileService:
         operation_id: str | None = None,
     ) -> Profile:
         try:
-            async with self._lock(profile_id):
+            async with self._locks.lock(profile_id):
                 source = await self.get_profile(profile_id)
-                if operation_id:
-                    audit = await self._repo.get_audit_event(operation_id)
-                    if audit is not None:
-                        details = json.loads(audit["details"])
-                        expected_source = (
-                            f"duplicate:{profile_id}:"
-                            f"{int(include_browser_state)}:"
-                            f"{self._validated_clone_name(source, name)}"
-                        )
-                        if (
-                            audit["action"] != "create_profile"
-                            or details.get("source") != expected_source
-                        ):
-                            raise ProfileOperationConflictError(
-                                "Operation ID was used for a different action"
-                            )
-                        existing = await self._repo.get_profile(audit["entity_id"])
-                        if existing is not None:
-                            return existing
-                        raise ProfileOperationConflictError(
-                            "Operation ID references a missing profile"
-                        )
+                clone_name = self._validated_clone_name(source, name)
+                expected_source = (
+                    f"duplicate:{profile_id}:"
+                    f"{int(include_browser_state)}:"
+                    f"{clone_name}"
+                )
+                replayed = await self._replay_if_committed(
+                    operation_id,
+                    expected_action="create_profile",
+                    expected_entity_id=None,
+                    details_match=lambda details: details.get("source")
+                    == expected_source,
+                    conflict_message="Operation ID was used for a different action",
+                )
+                if replayed is not None:
+                    return replayed
                 if include_browser_state:
                     runtime = await self.get_runtime(profile_id)
                     if not (
@@ -424,13 +476,15 @@ class ProfileService:
                     ):
                         raise ProfileRunningError(profile_id, "copying browser state")
 
-                clone_name = self._validated_clone_name(source, name)
                 clone_id = str(uuid.uuid4())
                 clone_dir = self._clone_dir(source, clone_id)
                 try:
                     if include_browser_state:
                         await _copy_user_data_to_completion(
-                            Path(source.user_data_dir), clone_dir
+                            Path(source.user_data_dir),
+                            clone_dir,
+                            uid=self.runtime_uid,
+                            gid=self.runtime_gid,
                         )
                         source_manifest = await asyncio.to_thread(
                             _manifest, Path(source.user_data_dir)
@@ -502,21 +556,17 @@ class ProfileService:
         operation_id: str | None = None,
     ) -> Profile:
         try:
-            async with self._lock(profile_id):
+            async with self._locks.lock(profile_id):
                 source = await self.get_profile(profile_id)
-                if operation_id:
-                    audit = await self._repo.get_audit_event(operation_id)
-                    if audit is not None:
-                        if (
-                            audit["action"] != "reset_profile"
-                            or audit["entity_id"] != profile_id
-                        ):
-                            raise ProfileOperationConflictError(
-                                "Operation ID was used for a different action"
-                            )
-                        existing = await self._repo.get_profile(profile_id)
-                        if existing is not None:
-                            return existing
+                replayed = await self._replay_if_committed(
+                    operation_id,
+                    expected_action="reset_profile",
+                    expected_entity_id=profile_id,
+                    details_match=lambda _details: True,
+                    conflict_message="Operation ID was used for a different action",
+                )
+                if replayed is not None:
+                    return replayed
                 runtime = await self.get_runtime(profile_id)
                 if not (
                     runtime.desired_state == "stopped"
@@ -533,6 +583,12 @@ class ProfileService:
                 try:
                     await asyncio.to_thread(
                         source_dir.mkdir, parents=True, exist_ok=True
+                    )
+                    await asyncio.to_thread(
+                        _apply_copy_ownership,
+                        source_dir,
+                        self.runtime_uid,
+                        self.runtime_gid,
                     )
                     runtime = await self.get_runtime(profile_id)
                     if not (

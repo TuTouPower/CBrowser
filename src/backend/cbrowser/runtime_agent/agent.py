@@ -190,15 +190,19 @@ def create_agent_app(
 
         display = r_info.get("display", ":99")
         xauth_path = r_info.get("xauth_path")
-        display_ok, disp_msg = check_display(display, xauth_path)
-
         pulse_sock = r_info.get("pulse_sock", str(r_dir / "pulse" / "pulse.sock"))
         pulse_cookie = r_info.get("pulse_cookie", str(r_dir / "pulse" / "pulse.cookie"))
-        audio_ok, audio_msg = check_audio(pulse_sock, pulse_cookie)
-
         cdp_port = int(r_info.get("cdp_port", 0))
         browser_pid = r_info.get("browser_pid")
-        browser_ok, browser_msg = check_browser(cdp_port, browser_pid)
+
+        display_result, audio_result, browser_result = await asyncio.gather(
+            asyncio.to_thread(check_display, display, xauth_path),
+            asyncio.to_thread(check_audio, pulse_sock, pulse_cookie),
+            asyncio.to_thread(check_browser, cdp_port, browser_pid),
+        )
+        display_ok, disp_msg = display_result
+        audio_ok, audio_msg = audio_result
+        browser_ok, browser_msg = browser_result
         cdp_ok = bool(
             browser_ok
             and "browser_ws_url" in r_info

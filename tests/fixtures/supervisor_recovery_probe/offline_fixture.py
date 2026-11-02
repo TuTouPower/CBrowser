@@ -229,7 +229,11 @@ class RealApiProcess:
             CBROWSER_SUPERVISOR_TOKEN_FILE=str(self.token_file),
             PYTHONPATH=str(self.root / "src/backend"),
             PYTHONDONTWRITEBYTECODE="1",
-            **self.auth_context.env,
+            **{
+                key: value
+                for key, value in self.auth_context.env.items()
+                if key != "CBROWSER_SUPERVISOR_TOKEN_FILE"
+            },
         )
         self._log_file_handle = open(  # noqa: SIM115 - managed log handle closed in stop()
             self.log_path, "a", encoding="utf-8"

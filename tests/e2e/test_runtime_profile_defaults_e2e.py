@@ -99,8 +99,6 @@ async def run_scenario():
             "locale": locale,
             "geoip": False,
             "set_google_default": scenario == "runtime_startup_defaults",
-            "runtime_mode": "docker",
-            "viewer_mode": "webrtc",
         },
         "created_at": "2026-10-28T00:00:00Z",
     }

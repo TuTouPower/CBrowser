@@ -24,6 +24,7 @@ _WINDOWS_RESERVED = {
     *(f"LPT{n}" for n in range(1, 10)),
 }
 _PROFILE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_ARTIFACT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHUNK_SIZE = 1024 * 1024
 RESERVE_BYTES = 16 * 1024 * 1024
 
@@ -134,17 +135,25 @@ class ArtifactStore:
         self.runtime_gid = runtime_gid
 
     def _apply_runtime_permissions(self, path: Path, *, directory: bool) -> None:
-        """Make an artifact entry usable by the Browser runtime user."""
-        owned = False
-        try:
-            os.chown(path, self.runtime_uid, self.runtime_gid)
-            owned = True
-        except OSError:
-            pass
-        if owned or os.geteuid() == 0 or os.getuid() == self.runtime_uid:
-            os.chmod(path, 0o750 if directory else 0o640)
-        else:
-            os.chmod(path, 0o755 if directory else 0o644)
+        """Make an artifact entry usable only by the Browser runtime user."""
+        stat = path.stat()
+        if stat.st_uid != self.runtime_uid or stat.st_gid != self.runtime_gid:
+            if os.geteuid() == 0 or os.geteuid() == self.runtime_uid:
+                try:
+                    os.chown(
+                        path, self.runtime_uid, self.runtime_gid, follow_symlinks=False
+                    )
+                except OSError as exc:
+                    raise ArtifactError(
+                        f"Cannot assign artifact ownership: {type(exc).__name__}"
+                    ) from None
+        os.chmod(path, 0o750 if directory else 0o640)
+
+    @staticmethod
+    def validate_artifact_id(artifact_id: str) -> str:
+        if not _ARTIFACT_ID.fullmatch(artifact_id) or ".." in artifact_id:
+            raise ArtifactInvalidName("Invalid artifact id")
+        return artifact_id
 
     def profile_dir(self, profile_id: str) -> Path:
         if not _PROFILE_ID.fullmatch(profile_id) or ".." in profile_id:
@@ -176,14 +185,17 @@ class ArtifactStore:
             raise ArtifactInsufficientStorage("Insufficient disk space")
 
     def upload_target(self, profile_id: str, artifact_id: str, name: str) -> Path:
+        self.validate_artifact_id(artifact_id)
         return self.uploads_dir(profile_id) / artifact_id / safe_filename(name)
 
     def download_target(self, profile_id: str, artifact_id: str, name: str) -> Path:
+        self.validate_artifact_id(artifact_id)
         return self.downloads_dir(profile_id) / artifact_id / safe_filename(name)
 
     def container_path(
         self, profile_id: str, artifact_id: str, name: str, kind: str
     ) -> str:
+        self.validate_artifact_id(artifact_id)
         safe = safe_filename(name)
         if kind == "download":
             return f"/exchange/downloads/{artifact_id}/{safe}"

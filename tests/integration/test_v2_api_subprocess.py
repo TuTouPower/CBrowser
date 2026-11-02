@@ -57,6 +57,7 @@ class SubprocessServer:
         self.log_path = log_path
         self.auth_context = auth_context
         self.auth_headers: dict[str, str] = {}
+        self.supervisor_token: str = ""
         self.process: subprocess.Popen | None = None
         self._log_file = None
         self.base_url = f"http://127.0.0.1:{port}"
@@ -84,6 +85,9 @@ class SubprocessServer:
                 self.auth_context.admin_password_file
             )
             env["CBROWSER_ALLOWED_ORIGINS"] = self.auth_context.allowed_origin
+            env["CBROWSER_SUPERVISOR_TOKEN_FILE"] = str(
+                self.auth_context.supervisor_token_file
+            )
 
         self._log_file = self.log_path.open("a+", encoding="utf-8")
         python_bin = sys.executable
@@ -114,6 +118,9 @@ class SubprocessServer:
                         if self.auth_context:
                             self.auth_headers = self.auth_context.login_sync(
                                 self.base_url
+                            )
+                            self.supervisor_token = (
+                                self.auth_context.supervisor_token
                             )
                         return
             except (httpx.HTTPError, OSError):
@@ -183,6 +190,14 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert health.status_code == 200
         assert health.json()["status"] == "ok"
 
+        before = (await client.get("/api/v1/profiles")).json()
+        invalid_args = await client.post(
+            "/api/v1/profiles",
+            json={"name": "Bad Args", "launch_args": ["--load-extension=/tmp/evil"]},
+        )
+        assert invalid_args.status_code == 422
+        assert len((await client.get("/api/v1/profiles")).json()) == len(before)
+
         # 1. Create Profile with full valid legacy fields and tags
         payload = {
             "name": "Alpha Production Profile",
@@ -225,8 +240,6 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert created["fingerprint_seed"] >= 100000
         assert created["proxy"] == "http://user:secretpassword@proxy.example.com:8080"
         assert created["sort_order"] == 12
-        assert created["runtime_mode"] == "docker"
-        assert created["viewer_mode"] == "webrtc"
         assert len(created["tags"]) == 2
         assert created["current_config_version"] == 1
 
@@ -455,6 +468,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         timeout=10.0,
         trust_env=False,
     ) as client:
+        client.headers["Authorization"] = f"Bearer {server.supervisor_token}"
         # Create profile with injected secrets in config
         p_res = await client.post(
             "/api/v1/profiles",
@@ -482,7 +496,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         # 2. Supervisor binds inst_1 with config_version 1
         inst_1 = "inst_run_001"
         bind_res = await client.post(
-            f"/api/v1/runtimes/bind?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "config_version": 1},
         )
         assert bind_res.status_code == 200
@@ -492,7 +506,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # Supervisor reports observed_state = running
         obs_res = await client.post(
-            f"/api/v1/runtimes/observed?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/observed?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "observed_state": "running"},
         )
         assert obs_res.status_code == 200
@@ -501,7 +515,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         # Re-binding same instance + same version is idempotent
         # and does NOT regress observed running to starting
         rebind_res = await client.post(
-            f"/api/v1/runtimes/bind?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "config_version": 1},
         )
         assert rebind_res.status_code == 200
@@ -509,7 +523,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # Re-binding same instance with a DIFFERENT config_version is rejected!
         rebind_diff_cfg = await client.post(
-            f"/api/v1/runtimes/bind?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "config_version": 2},
         )
         assert rebind_diff_cfg.status_code == 422
@@ -529,7 +543,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         # Observation report claiming unapplied config_version 2 on bound instance
         # is rejected!
         obs_bad_cfg = await client.post(
-            f"/api/v1/runtimes/observed?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/observed?profile_id={pid}",
             json={
                 "runtime_instance_id": inst_1,
                 "observed_state": "running",
@@ -541,7 +555,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # 4. Heartbeat event does NOT alter state or stop runtime
         hb_res = await client.post(
-            "/api/v1/runtimes/events",
+            "/api/v1/internal/supervisor/runtimes/events",
             json={
                 "event_id": "evt_hb_inst1",
                 "profile_id": pid,
@@ -558,7 +572,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # 5. Invalid config_version (999) rejected
         inv_res = await client.post(
-            "/api/v1/runtimes/events",
+            "/api/v1/internal/supervisor/runtimes/events",
             json={
                 "event_id": "evt_inv_999",
                 "profile_id": pid,
@@ -574,7 +588,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # Event with unapplied config version 2 on instance bound with 1 is rejected
         mismatched_cfg_res = await client.post(
-            "/api/v1/runtimes/events",
+            "/api/v1/internal/supervisor/runtimes/events",
             json={
                 "event_id": "evt_mismatch_cfg",
                 "profile_id": pid,
@@ -602,7 +616,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
 
         # Parallel duplicate exit events (5 concurrent requests) return 200 without 500
         dup_tasks = [
-            client.post("/api/v1/runtimes/events", json=evt_ab) for _ in range(5)
+            client.post("/api/v1/internal/supervisor/runtimes/events", json=evt_ab) for _ in range(5)
         ]
         dup_responses = await asyncio.gather(*dup_tasks)
         for r in dup_responses:
@@ -611,7 +625,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         # Disk events are diagnostics only; the Supervisor observation is the
         # authoritative terminal fact and counts exactly one failure.
         observed_ab = await client.post(
-            f"/api/v1/runtimes/observed?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/observed?profile_id={pid}",
             json={
                 "runtime_instance_id": inst_1,
                 "observed_state": "error",
@@ -641,17 +655,17 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         # 8. Supervisor binds inst_2 with applied config_version 2
         inst_2 = "inst_run_002"
         await client.post(
-            f"/api/v1/runtimes/bind?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_2, "config_version": 2},
         )
         await client.post(
-            f"/api/v1/runtimes/observed?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/observed?profile_id={pid}",
             json={"runtime_instance_id": inst_2, "observed_state": "running"},
         )
 
         # Late bind of old inst_1 while inst_2 is active is rejected with 409 Conflict
         late_bind = await client.post(
-            f"/api/v1/runtimes/bind?profile_id={pid}",
+            f"/api/v1/internal/supervisor/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "config_version": 1},
         )
         assert late_bind.status_code == 409
@@ -671,7 +685,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
             "exit_reason": "oom",
             "config_version": 1,
         }
-        res_stale = await client.post("/api/v1/runtimes/events", json=evt_stale)
+        res_stale = await client.post("/api/v1/internal/supervisor/runtimes/events", json=evt_stale)
         assert res_stale.status_code == 200
         assert res_stale.json()["outcome"] == "stale_instance"
         assert (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()[
@@ -695,7 +709,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
             "exit_reason": "sigkill",
             "config_version": 2,
         }
-        await client.post("/api/v1/runtimes/events", json=late_crash)
+        await client.post("/api/v1/internal/supervisor/runtimes/events", json=late_crash)
         rt_after_late = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
         assert rt_after_late["desired_state"] == "stopped"  # MUST NOT become running!
 

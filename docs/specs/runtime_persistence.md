@@ -16,7 +16,7 @@
 ### 2.1 Profile CRUD 与数据完整性 (AC-001)
 
 - **接口契约**：
-    - `POST /api/v1/profiles`：创建新 Profile。配置字段保留计划 15.2 中有效字段；未提供指纹种子时随机生成整数；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；`sort_order` 正确持久化；`runtime_mode` 统一为 `docker`，`viewer_mode` 统一为 `webrtc`。
+    - `POST /api/v1/profiles`：创建新 Profile。配置字段保留计划 15.2 中有效字段；未提供指纹种子时随机生成整数；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；`sort_order` 正确持久化。
     - `GET /api/v1/profiles`：获取 Profile 列表。
     - `GET /api/v1/profiles/{id}`：获取单个 Profile 详情及标签。
     - `PUT /api/v1/profiles/{id}` 或 `PATCH /api/v1/profiles/{id}`：修改 Profile。

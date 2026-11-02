@@ -127,8 +127,6 @@ class ProfileRepository:
                     notes=config.notes,
                     user_data_dir=udd,
                     sort_order=config.sort_order,
-                    runtime_mode=config.runtime_mode,
-                    viewer_mode=config.viewer_mode,
                     current_config_version=1,
                     created_at=now,
                     updated_at=now,
@@ -317,8 +315,6 @@ class ProfileRepository:
                     "portable_cookies": p_model.portable_cookies,
                     "notes": p_model.notes,
                     "sort_order": p_model.sort_order,
-                    "runtime_mode": p_model.runtime_mode,
-                    "viewer_mode": p_model.viewer_mode,
                 }
 
                 # Merge ONLY the supplied patch fields
@@ -810,8 +806,6 @@ class ProfileRepository:
             portable_cookies=m.portable_cookies,
             notes=m.notes,
             sort_order=m.sort_order,
-            runtime_mode="docker",
-            viewer_mode="webrtc",
         )
         tags = [Tag(tag=t.tag, color=t.color) for t in m.tags]
         return Profile(

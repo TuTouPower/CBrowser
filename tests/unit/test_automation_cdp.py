@@ -108,9 +108,9 @@ def test_supervisor_cdp_rejects_missing_or_foreign_token(tmp_path: Path) -> None
     with TestClient(app, base_url="http://supervisor") as client:
         for auth in (None, f"Bearer {secrets.token_urlsafe(32)}"):
             headers = {"Authorization": auth} if auth else {}
-            with client.websocket_connect(
-                "/supervisor/v1/profiles/p1/cdp", headers=headers
-            ) as websocket:
-                with pytest.raises(WebSocketDisconnect) as close:
-                    websocket.receive_text()
+            with pytest.raises(WebSocketDisconnect) as close:
+                with client.websocket_connect(
+                    "/supervisor/v1/profiles/p1/cdp", headers=headers
+                ):
+                    pass
             assert close.value.code == 4401

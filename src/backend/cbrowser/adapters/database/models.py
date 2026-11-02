@@ -63,12 +63,6 @@ class ProfileModel(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_data_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    runtime_mode: Mapped[str] = mapped_column(
-        String(32), default="docker", nullable=False
-    )
-    viewer_mode: Mapped[str] = mapped_column(
-        String(32), default="webrtc", nullable=False
-    )
     current_config_version: Mapped[int] = mapped_column(
         Integer, default=1, nullable=False
     )
@@ -191,7 +185,10 @@ class ArtifactModel(Base):
         "ProfileModel", back_populates="artifacts"
     )
 
-    __table_args__ = (Index("idx_artifacts_profile_id", "profile_id"),)
+    __table_args__ = (
+        Index("idx_artifacts_profile_id", "profile_id"),
+        Index("idx_artifacts_profile_sha256", "profile_id", "sha256"),
+    )
 
 
 class SettingModel(Base):
@@ -281,5 +278,6 @@ class AutomationTokenModel(Base):
         String(64), default=utc_now_iso, nullable=False
     )
     revoked_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expires_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (Index("idx_automation_tokens_token_hash", "token_hash"),)

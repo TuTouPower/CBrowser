@@ -195,8 +195,6 @@ async def create_profile(
         portable_cookies=payload.portable_cookies,
         notes=payload.notes,
         sort_order=payload.sort_order,
-        runtime_mode="docker",
-        viewer_mode="webrtc",
     )
     tags = payload.tags or []
     profile = await service.create_profile(
@@ -681,28 +679,6 @@ async def stop_profile(
         )
 
 
-@profile_router.post(
-    "/runtimes/bind",
-    response_model=ProfileRuntimeResponse,
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Profile not found",
-        },
-        status.HTTP_409_CONFLICT: {
-            "model": ErrorResponse,
-            "description": "Active instance conflict",
-        },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "model": ValidationErrorResponse,
-            "description": "Invalid config version or payload",
-        },
-        status.HTTP_503_SERVICE_UNAVAILABLE: {
-            "model": ErrorResponse,
-            "description": "Database busy (retryable)",
-        },
-    },
-)
 async def bind_runtime(
     profile_id: Annotated[str, Query()],
     payload: RuntimeInstanceBindRequest,
@@ -733,28 +709,6 @@ async def bind_runtime(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
 
 
-@profile_router.post(
-    "/runtimes/observed",
-    response_model=ProfileRuntimeResponse,
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Profile not found",
-        },
-        status.HTTP_409_CONFLICT: {
-            "model": ErrorResponse,
-            "description": "Stale instance conflict",
-        },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "model": ValidationErrorResponse,
-            "description": "Invalid config version or payload",
-        },
-        status.HTTP_503_SERVICE_UNAVAILABLE: {
-            "model": ErrorResponse,
-            "description": "Database busy (retryable)",
-        },
-    },
-)
 async def report_observed_state(
     profile_id: Annotated[str, Query()],
     payload: RuntimeObservedReportRequest,
@@ -786,24 +740,6 @@ async def report_observed_state(
         )
 
 
-@profile_router.post(
-    "/runtimes/events",
-    response_model=RuntimeEventResponse,
-    responses={
-        status.HTTP_404_NOT_FOUND: {
-            "model": ErrorResponse,
-            "description": "Profile not found",
-        },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
-            "model": ValidationErrorResponse,
-            "description": "Invalid event payload or null exit code",
-        },
-        status.HTTP_503_SERVICE_UNAVAILABLE: {
-            "model": ErrorResponse,
-            "description": "Database busy (retryable)",
-        },
-    },
-)
 async def report_runtime_event(
     payload: RuntimeEventReportRequest,
     request: Request,

@@ -1,3 +1,5 @@
+> 与代码冲突时以代码与生效 spec 为准，并须同步修正本文。
+
 # 约定（项目级）
 
 模板流程的编号与 Markdown 格式见 `.repo_template/docs/usage.md`「命名与格式」。本文定义 CBrowser 项目特有的技术栈约定、代码规范与 schema 落点。
@@ -15,11 +17,11 @@
 
 |类型|例子|落点|
 |---|---|---|
-|**跨服务接口契约**|OpenAPI 规范导出、WebRTC 信令协议|`schemas/openapi/`、`schemas/webrtc/`|
-|**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`backend/cbrowser/domain/`、`backend/cbrowser/api/schemas/`|
-|**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`frontend/src/shared/api/generated/`|
-|**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`backend/cbrowser/adapters/database/models.py`、`backend/migrations/`|
-|**配置 schema**|运行时配置验证、环境变量定义|`backend/cbrowser/config.py`、`config/schemas/`|
+|**跨服务接口契约**|OpenAPI 规范导出、Stream Gateway 信令协议|`schemas/openapi/`、`schemas/stream/`、`schemas/runtime/`|
+|**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`src/backend/cbrowser/domain/`|
+|**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`src/frontend/src/shared/api/generated/`|
+|**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`src/backend/cbrowser/adapters/database/models.py`、`src/backend/migrations/versions/`|
+|**配置 schema**|运行时配置验证、环境变量定义|`src/backend/cbrowser/*/config.py`、`config/`|
 |**文档/元数据 schema**|task front matter、状态机 JSON 校验|`.repo_template/docs/task_template/`|
 
 ## 3. 编码与安全规范

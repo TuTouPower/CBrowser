@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from cbrowser.launch_args import filter_launch_args, validate_launch_args
+
 
 def utc_now_iso() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
@@ -76,8 +78,6 @@ class ProfileConfig(BaseModel):
     portable_cookies: bool = False
     notes: str | None = None
     sort_order: int = 0
-    runtime_mode: Literal["docker"] = "docker"
-    viewer_mode: Literal["webrtc"] = "webrtc"
 
     @field_validator("name")
     @classmethod
@@ -85,6 +85,11 @@ class ProfileConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Profile name cannot be blank")
         return v.strip()
+
+    @field_validator("launch_args")
+    @classmethod
+    def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
+        return filter_launch_args(v)
 
     @field_validator("gpu_family", mode="before")
     @classmethod
@@ -243,6 +248,12 @@ class AuditEvent(BaseModel):
 # API DTOs
 class ProfileCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("launch_args")
+    @classmethod
+    def validate_new_launch_arguments(cls, v: list[str]) -> list[str]:
+        return validate_launch_args(v)
+
     name: str = Field(min_length=1, max_length=255)
     fingerprint_seed: int | None = None
     proxy: str | None = Field(default=None, max_length=512)
@@ -290,6 +301,11 @@ class ProfileResetRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @field_validator("launch_args")
+    @classmethod
+    def validate_updated_launch_arguments(cls, v: list[str] | None) -> list[str] | None:
+        return None if v is None else validate_launch_args(v)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     fingerprint_seed: int | None = None
     proxy: str | None = Field(default=None, max_length=512)
@@ -329,6 +345,13 @@ class ProfileUpdateRequest(BaseModel):
         if v is not None and (not v or not v.strip()):
             raise ValueError("name cannot be blank")
         return v.strip() if v is not None else None
+
+    @field_validator("launch_args")
+    @classmethod
+    def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
+        # Older rows may contain arguments outside the current whitelist; they
+        # are dropped on read. New API writes are validated by request DTOs.
+        return filter_launch_args(v)
 
     @field_validator("gpu_family", mode="before")
     @classmethod
@@ -372,8 +395,6 @@ class ProfileResponse(BaseModel):
     notes: str | None = None
     user_data_dir: str
     sort_order: int = 0
-    runtime_mode: str = "docker"
-    viewer_mode: str = "webrtc"
     tags: list[Tag] = Field(default_factory=list)
     current_config_version: int = 1
     created_at: str
@@ -409,8 +430,6 @@ class ProfileResponse(BaseModel):
             notes=cfg.notes,
             user_data_dir=p.user_data_dir,
             sort_order=p.sort_order,
-            runtime_mode=cfg.runtime_mode,
-            viewer_mode=cfg.viewer_mode,
             tags=p.tags,
             current_config_version=p.current_config_version,
             created_at=p.created_at,

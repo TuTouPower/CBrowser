@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import secrets
 from pathlib import Path
 
@@ -32,6 +33,9 @@ def artifact_env(tmp_path: Path):
         max_artifact_bytes=1024 * 1024,
     )
     with TestClient(app, base_url=origin) as client:
+        store = app.state.artifact_service.store
+        store.runtime_uid = os.getuid()
+        store.runtime_gid = os.getgid()
         login = client.post("/api/v1/auth/login", json={"password": admin_password})
         assert login.status_code == 200
         csrf = login.json()["csrf_token"]

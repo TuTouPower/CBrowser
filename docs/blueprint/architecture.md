@@ -1,3 +1,5 @@
+> 与代码冲突时以代码与生效 spec 为准，并须同步修正本文。
+
 # 架构
 
 CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.1.0 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。

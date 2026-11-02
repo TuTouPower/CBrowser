@@ -16,7 +16,7 @@ import pytest
 from cbrowser.runtime_agent.event_storage import StorageError, atomic_write_json
 from cbrowser.runtime_agent.protocol import RuntimeEventRecord
 from cbrowser.runtime_agent.runner import BrowserRunner
-from cbrowser.runtime_agent.security import is_flag_safe
+from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 
@@ -71,19 +71,22 @@ def test_rejected_launch_argument_does_not_enter_logs(
 ) -> None:
     canary = "private_proxy_argument_canary_726f1d"
     with caplog.at_level(logging.WARNING):
-        assert not is_flag_safe(f"--proxy-server={canary}\x01tail")
+        with pytest.raises(InvalidLaunchArgument):
+            validate_launch_args([f"--proxy-server={canary}\x01tail"])
     assert canary not in caplog.text
 
 
 @pytest.mark.parametrize(
     "features", ["IsolateOrigins", "Other,IsolateOrigins", "IsolateOrigins,Other"]
 )
-def test_unsafe_feature_is_rejected_in_any_csv_position(features: str) -> None:
-    assert not is_flag_safe(f"--disable-features={features}")
+def test_disable_features_override_is_rejected(features: str) -> None:
+    with pytest.raises(InvalidLaunchArgument):
+        validate_launch_args([f"--disable-features={features}"])
 
 
-def test_unrelated_feature_option_remains_available() -> None:
-    assert is_flag_safe("--disable-features=UnrelatedFeature")
+def test_non_whitelisted_feature_option_is_rejected() -> None:
+    with pytest.raises(InvalidLaunchArgument):
+        validate_launch_args(["--disable-features=UnrelatedFeature"])
 
 
 @pytest.mark.parametrize(
@@ -194,3 +197,61 @@ def test_module_entrypoint_exposes_standalone_agent_cli() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "--events-dir" in result.stdout
+
+
+def test_runner_support_paths_live_inside_the_run_directory(tmp_path: Path) -> None:
+    runner = make_runner(tmp_path)
+    run_dir = tmp_path / "runtime"
+    assert runner.pulse_dir == run_dir / "pulse"
+    assert runner.openbox_dir == run_dir / "openbox"
+    assert runner.x11_config_dir == run_dir / "x11-config"
+
+
+def test_browser_environment_is_explicit_and_does_not_mutate_process(
+    tmp_path: Path,
+) -> None:
+    runner = make_runner(tmp_path)
+    before = dict(os.environ)
+    run_dir = tmp_path / "runtime"
+    env = runner._browser_environment(
+        run_dir / "pulse" / "pulse.sock",
+        run_dir / "pulse" / "pulse.cookie",
+        run_dir / "chrome_wrapper.sh",
+    )
+
+    assert dict(os.environ) == before
+    assert env["DISPLAY"] == runner.display
+    assert env["XAUTHORITY"] == str(runner.xauth_path)
+    assert env["PULSE_SERVER"] == f"unix:{run_dir / 'pulse' / 'pulse.sock'}"
+    assert env["PULSE_COOKIE"] == str(run_dir / "pulse" / "pulse.cookie")
+    assert env["CLOAKBROWSER_BINARY_PATH"] == str(run_dir / "chrome_wrapper.sh")
+    assert env["CLOAKBROWSER_CACHE_DIR"] == str(tmp_path / "engine_cache")
+
+
+def test_x11_lock_owned_by_a_live_process_is_not_removed(tmp_path: Path) -> None:
+    lock = tmp_path / ".X99-lock"
+    sock = tmp_path / "X99"
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    sock.touch()
+
+    with pytest.raises(RuntimeError, match="already in use"):
+        BrowserRunner._clear_stale_x11_state(lock, sock)
+    assert lock.exists()
+    assert sock.exists()
+
+
+def test_stale_x11_lock_is_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / ".X99-lock"
+    sock = tmp_path / "X99"
+    lock.write_text("4242", encoding="utf-8")
+    sock.touch()
+
+    def gone(_pid: int, _signal: int) -> None:
+        raise ProcessLookupError
+
+    monkeypatch.setattr(os, "kill", gone)
+    BrowserRunner._clear_stale_x11_state(lock, sock)
+    assert not lock.exists()
+    assert not sock.exists()

@@ -262,8 +262,6 @@ class DockerAdapter:
     def _initialize_cache(self, need_geoip: bool) -> None:
         # Only the initializer receives writable cache mounts. Runtime consumers
         # see the completed cache read-only, including GeoIP data.
-        self.engine_cache.chmod(0o777)
-        self.geoip_cache.chmod(0o777)
         (self.engine_cache / "geoip").mkdir(exist_ok=True)
         run_id = uuid.uuid4().hex
         marker_name = f"cache_init_{run_id}.json"
@@ -280,10 +278,6 @@ if os.environ['CBROWSER_INIT_GEOIP'] == '1':
     database = _ensure_geoip_db()
     if database is None or not database.is_file():
         raise RuntimeError('GeoIP initialization did not complete')
-for root in (Path('/data/engine-cache'), Path('/data/engine-cache/geoip')):
-    for directory in [root, *root.rglob('*')]:
-        if directory.is_dir() and not directory.is_symlink():
-            directory.chmod(0o777)
 path = Path('/data/engine-cache') / os.environ['CBROWSER_INIT_MARKER']
 with path.open('w') as output:
     json.dump({'run_id':os.environ['CBROWSER_INIT_RUN_ID']},output)
@@ -329,6 +323,37 @@ with path.open('w') as output:
             marker.unlink(missing_ok=True)
             if helper is not None:
                 helper.remove(force=True)
+        self._apply_cache_permissions()
+
+    def _apply_cache_permissions(self) -> None:
+        """Give the read-only runtime user access without world-writable modes."""
+        for root in (self.engine_cache, self.geoip_cache):
+            for path in [root, *root.rglob("*")]:
+                if path.is_symlink():
+                    continue
+                if self.manage_ownership:
+                    stat = path.stat()
+                    if (
+                        stat.st_uid != self.runtime_uid
+                        or stat.st_gid != self.runtime_gid
+                    ):
+                        try:
+                            os.chown(
+                                path,
+                                self.runtime_uid,
+                                self.runtime_gid,
+                                follow_symlinks=False,
+                            )
+                        except OSError as exc:
+                            raise DockerSandboxError(
+                                "Cannot assign runtime cache ownership: "
+                                f"{type(exc).__name__}"
+                            ) from None
+                if path.is_dir() or path.stat().st_mode & 0o111:
+                    mode = 0o750
+                else:
+                    mode = 0o640
+                path.chmod(mode)
 
     def get_browser_container_name(self, profile_id: str) -> str:
         return f"{self.resource_prefix}-browser-{profile_id}"
@@ -358,7 +383,7 @@ with path.open('w') as output:
         pulse_dir = self.validator.validate_runtime_source(
             profile_id, runtime_dir / "pulse", allow_create=True
         )
-        self._secure_directory(x11_dir, 0o1777)
+        self._secure_directory(x11_dir, 0o750)
         self._secure_directory(pulse_dir, 0o750)
 
         return {
@@ -372,10 +397,11 @@ with path.open('w') as output:
         }
 
     def _secure_directory(self, directory: Path, mode: int) -> None:
-        """Own Profile data by the runtime UID or fall back to legacy world mode.
+        """Own Profile data by the runtime UID with exact non-world modes.
 
-        Host-direct development runs cannot chown user files; managed
-        deployment (the Supervisor container) must own them by uid/gid 1000.
+        Managed deployment (the Supervisor container) must own the entries by
+        uid/gid 1000; host-direct development runs keep the developer as owner
+        but never fall back to globally writable modes.
         """
         directory.mkdir(parents=True, exist_ok=True)
         if self.manage_ownership:
@@ -385,16 +411,14 @@ with path.open('w') as output:
                 raise DockerSandboxError(
                     f"Cannot assign Profile directory ownership: {type(exc).__name__}"
                 ) from None
-            os.chmod(directory, mode)
-        else:
-            os.chmod(directory, 0o1777 if mode & 0o1000 else 0o777)
+        os.chmod(directory, mode)
 
     def setup_x11_permissions(self, x11_dir: Path) -> None:
         try:
             self.client.containers.run(
                 self.browser_image,
                 entrypoint="chmod",
-                command=["1777", "/x11"],
+                command=["0750", "/x11"],
                 volumes={str(x11_dir): {"bind": "/x11", "mode": "rw"}},
                 user="0:0",
                 remove=True,
@@ -613,8 +637,10 @@ with path.open('w') as output:
         target_snap = dirs["runtime"] / "snapshot.json"
         if snapshot_json_path != target_snap:
             atomic_write_text(
-                target_snap, snapshot_json_path.read_text(encoding="utf-8"), mode=0o644
+                target_snap, snapshot_json_path.read_text(encoding="utf-8"), mode=0o600
             )
+            if self.manage_ownership:
+                os.chown(target_snap, self.runtime_uid, self.runtime_gid)
 
         await asyncio.to_thread(self.cleanup_container_by_name, b_name)
 

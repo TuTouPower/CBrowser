@@ -6,7 +6,7 @@ import asyncio
 import inspect
 import logging
 from typing import Annotated
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import websockets
 from cbrowser.adapters.database.models import SessionModel
@@ -58,7 +58,7 @@ async def automation_status(
 def _supervisor_ws_url(base_url: str, profile_id: str) -> str:
     parsed = urlsplit(base_url)
     scheme = "wss" if parsed.scheme == "https" else "ws"
-    return f"{scheme}://{parsed.netloc}/supervisor/v1/profiles/{profile_id}/cdp"
+    return f"{scheme}://{parsed.netloc}/supervisor/v1/profiles/{quote(profile_id, safe='')}/cdp"
 
 
 def _websocket_kwargs() -> dict:
@@ -80,12 +80,21 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
         logger.warning("Automation CDP rejected: missing token")
         await websocket.close(code=4401)
         return
-    allowed, reason = await auth_service.authorize_automation(token, profile_id)
+    from cbrowser.auth.client_ip import resolve_client_ip
+
+    client_ip = resolve_client_ip(
+        websocket.client.host if websocket.client else None,
+        websocket.headers.get("x-forwarded-for"),
+        getattr(websocket.app.state, "trusted_proxy_cidrs", []),
+    )
+    allowed, reason = await auth_service.authorize_automation(
+        token, profile_id, client_ip=client_ip
+    )
     if not allowed:
         logger.warning(
             "Automation CDP rejected: profile=%s reason=%s", profile_id, reason
         )
-        await websocket.close(code=4401)
+        await websocket.close(code=4408 if reason == "rate_limited" else 4401)
         return
 
     coordinator = getattr(websocket.app.state, "coordinator", None)

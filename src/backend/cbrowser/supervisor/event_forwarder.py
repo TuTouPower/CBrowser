@@ -27,6 +27,7 @@ logger = logging.getLogger("cbrowser.supervisor.event_forwarder")
 DELIVERED = "delivered"
 REJECTED = "rejected"
 UNAVAILABLE = "unavailable"
+EVENT_ENVELOPE_VERSION = 1
 
 
 class EventForwarder:
@@ -118,8 +119,9 @@ class EventForwarder:
         # External event identifiers never become filesystem path components.
         key = self._event_key(event_id)
         event_file = self.events_spool_dir / f"{key}.json"
+        envelope = {"version": EVENT_ENVELOPE_VERSION, **event_data}
         async with self._spool_lock:
-            atomic_write_text(event_file, json.dumps(event_data))
+            atomic_write_text(event_file, json.dumps(envelope))
 
         # 2. Try sending to API
         outcome = await self._send_to_api(event_data)
@@ -147,16 +149,24 @@ class EventForwarder:
         logger.warning("Quarantined spooled runtime event: reason=%s", reason)
 
     @staticmethod
-    def _validate_spooled_event(data: Any) -> dict[str, Any] | None:
+    def _validate_spooled_event(data: Any) -> tuple[dict[str, Any] | None, str]:
         if not isinstance(data, dict):
-            return None
+            return None, "schema"
+        version = data.get("version", EVENT_ENVELOPE_VERSION)
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version != EVENT_ENVELOPE_VERSION
+        ):
+            return None, "unsupported_version"
+        body = {key: value for key, value in data.items() if key != "version"}
         try:
-            record = RuntimeEventReportRequest.model_validate(data)
+            record = RuntimeEventReportRequest.model_validate(body)
         except ValidationError:
-            return None
+            return None, "schema"
         if record.event_type == "exit" and record.exit_code is None:
-            return None
-        return record.model_dump()
+            return None, "schema"
+        return record.model_dump(), ""
 
     async def _send_to_api(self, event_data: dict[str, Any]) -> str:
         try:
@@ -200,9 +210,9 @@ class EventForwarder:
                     )
                     self._quarantine_event_file(f, "unreadable")
                     continue
-                validated = self._validate_spooled_event(data)
+                validated, invalid_reason = self._validate_spooled_event(data)
                 if validated is None:
-                    self._quarantine_event_file(f, "schema")
+                    self._quarantine_event_file(f, invalid_reason)
                     continue
                 outcome = await self._send_to_api(validated)
                 if outcome == DELIVERED:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.app import create_app
+from cbrowser.api.v1.router import get_profile_service
 from cbrowser.domain.models import ProfileConfig
 from fastapi.testclient import TestClient
 
@@ -49,6 +51,9 @@ def profile_env(tmp_path: Path):
         allowed_origins=[origin],
     )
     with TestClient(app, base_url=origin) as client:
+        profile_service = app.dependency_overrides[get_profile_service]()
+        profile_service.runtime_uid = os.getuid()
+        profile_service.runtime_gid = os.getgid()
         login = client.post("/api/v1/auth/login", json={"password": password})
         assert login.status_code == 200
         headers = {

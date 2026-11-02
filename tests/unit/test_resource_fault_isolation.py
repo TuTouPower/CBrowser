@@ -76,6 +76,33 @@ async def test_missing_stats_and_failed_delivery_do_not_stop_healthy_profile(tmp
 
 
 @pytest.mark.asyncio
+async def test_malformed_stats_are_isolated_per_profile(tmp_path):
+    class MalformedContainers:
+        def get(self, container_id):
+            if container_id == "ca":
+                return SimpleNamespace(
+                    attrs={"HostConfig": {}},
+                    stats=lambda **_: (_ for _ in ()).throw(ValueError("bad stats")),
+                )
+            return SimpleNamespace(attrs={"HostConfig": {}}, stats=lambda **_: {})
+
+    sent = []
+
+    async def send(target, decision):
+        sent.append(target.profile_id)
+
+    monitor = ResourceMonitor(
+        ResourcePolicyService(SimpleNamespace(containers=MalformedContainers())),
+        send,
+        host_stat_path=tmp_path / "absent_proc_stat",
+    )
+    targets = [ProfileResourceTarget(p, "i", ("c" + p,), True) for p in ("a", "b")]
+    result = await monitor.sample(targets)
+    assert sent == ["b"]
+    assert result["failed_profiles"] == ["a"]
+
+
+@pytest.mark.asyncio
 async def test_unknown_visibility_or_missing_stats_cannot_clear_overload(tmp_path):
     from cbrowser.supervisor.resource_policy import ResourcePolicyConfig
 

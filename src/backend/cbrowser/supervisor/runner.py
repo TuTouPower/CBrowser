@@ -156,7 +156,13 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     recovery = RecoveryCoordinator(core)
 
     logger.info("Supervisor initialized. Starting existing container reconciliation...")
-    await core.scan_and_reconcile_existing()
+    try:
+        await core.scan_and_reconcile_existing()
+    except Exception as exc:  # noqa: BLE001 - control plane starts and retries reconciliation in background
+        logger.warning(
+            "Initial reconciliation failed; control plane will retry: error_type=%s",
+            type(exc).__name__,
+        )
     await event_forwarder.replay_spooled_events()
     await core.consume_disk_events()
     await download_forwarder.forward_pending()

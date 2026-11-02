@@ -20,11 +20,12 @@
     - `runtime_events`：运行事件去重与退出事件记录（随 Profile 级联删除）
     - `artifacts`：上传与下载文件元数据
     - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
+    - `settings`：系统级键值配置
 - 排他控制租约、控制会话与 StreamTicket 已废弃（ADR 007）；数据库不包含 `control_sessions`、`control_leases` 或 `stream_tickets` 表。
 
 ### 2.2 旧数据库迁移兼容
 
-- 升级工具支持对已有旧版 `profiles.db` 进行安全迁移。
+- 旧版 `profiles.db` 迁移工具归 t010，当前未实施；本节描述的是 t010 的交付契约，不代表已交付。
 - 迁移工具支持 `--dry-run` 模式，提前校验数据完整性。
 - 迁移必须保留现有 Profile UUID、名称、标签、指纹配置以及用户历史目录（Cookies, 网站存储），严禁重新生成指纹或清除登录态。
 
@@ -44,7 +45,7 @@
 ## 3. 验收标准
 
 - [x] AC-001：新数据库成功生成 WAL 文件，并发读取和写入不产生数据库锁表异常。
-- [x] AC-002：通过 Alembic 成功将数据库 schema 从旧版升级至新版，现有 Profile 与 Cookie 数据完好无损。
+- [ ] AC-002：通过 Alembic 成功将数据库 schema 从旧版升级至新版，现有 Profile 与 Cookie 数据完好无损（旧库迁移工具归 t010，当前未交付）。
 - [x] AC-003：用户通过 API 上传的文件原子写入对应 Profile Artifact 存储，返回 Artifact ID 与 `/exchange/uploads/...` 容器路径，失败不留半文件。远程页面点击文件输入框弹出 GTK 文件选择对话框，侧栏 `Uploads` 书签直达 `/exchange/uploads`（p014，真实容器 E2E `test_p014_file_input_opens_chooser_with_uploads_bookmark`）。
 - [x] AC-004：浏览器中下载的文件能被 Runtime Agent 捕获（含校验和），Agent 重启后对账补登，重复事件不重复入库。
 - [x] AC-005：外部自动化经独立凭证进入 Supervisor/UDS/loopback CDP，旧 CDP 入口仅转发新授权代理，不暴露公网 CDP 端口。

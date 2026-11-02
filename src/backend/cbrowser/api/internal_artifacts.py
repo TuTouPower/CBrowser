@@ -44,11 +44,10 @@ async def report_download(
         raise HTTPException(404, "Profile not found") from None
     except ArtifactError:
         return ArtifactDownloadResponse(outcome="rejected", event_id=payload.event_id)
-    if result is None:
+    if result.artifact is None:
         return ArtifactDownloadResponse(outcome="ignored", event_id=payload.event_id)
-    artifact, created = result
     return ArtifactDownloadResponse(
-        outcome="created" if created else "duplicate",
-        artifact_id=artifact.id,
+        outcome="created" if result.created else "duplicate",
+        artifact_id=result.artifact.id,
         event_id=payload.event_id,
     )
