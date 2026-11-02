@@ -60,6 +60,7 @@ export function BrowserSessionPage() {
     return (
       <BrowserSessionMount
         profileId={profileId}
+        clipboardSync={profile.clipboard_sync}
         onCheckRuntimeStatus={() => navigate(`/profiles/${profileId}`)}
       />
     );

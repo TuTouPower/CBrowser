@@ -299,6 +299,12 @@ const en: MessageDict = {
   audioStatusNoData: "No audio data",
   audioStatusUnknown: "Audio status unknown",
   audioStatusMuted: "Audio muted",
+  clipboardPermissionDenied: "Clipboard access is blocked",
+  clipboardPermissionDeniedHint:
+    "Click the session and allow clipboard access in your browser, then use the clipboard box in the Selkies sidebar explicitly.",
+  clipboardPermissionPrompt: "Clipboard access will be requested",
+  clipboardPermissionPromptHint:
+    "Clipboard content moves only through the sidebar clipboard box; this page never overwrites it automatically.",
   audioMute: "Mute this page",
   audioUnmute: "Unmute this page",
   runtimeCheckFailed: "Profile runtime check failed (HTTP {status})",
@@ -621,6 +627,12 @@ const zh: MessageDict = {
   audioStatusNoData: "音频无数据",
   audioStatusUnknown: "音频状态未知",
   audioStatusMuted: "已静音",
+  clipboardPermissionDenied: "剪贴板权限被拒绝",
+  clipboardPermissionDeniedHint:
+    "点击会话页面并在浏览器中允许剪贴板访问，然后显式使用 Selkies 侧栏的剪贴板输入框。",
+  clipboardPermissionPrompt: "剪贴板访问将按需请求",
+  clipboardPermissionPromptHint:
+    "只有通过侧栏剪贴板输入框才会传输内容；本页面不会自动覆盖本机剪贴板。",
   audioMute: "静音本页",
   audioUnmute: "取消本页静音",
   runtimeCheckFailed: "配置运行时检查失败（HTTP {status}）",
