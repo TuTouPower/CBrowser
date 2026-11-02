@@ -2,22 +2,30 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-02T20:50:00+08:00 p014 闭环（页面文件选择对话框）；下一步 t009
+## 2026-11-02T21:55:00+08:00 全仓审阅 adoption 定稿，剩余 v2 队列重排；下一步 t015
 
 ### 主仓
 
-- branch `main`，交出时 head_commit `8ccb9ae`（本交接单独提交）。仅 main 分支，无 task worktree。origin/main 在 `5136766`；`8ccb9ae` 与本交接 commit 未 push。
-- 今日 main 直接修改（用户指示小改动不走 task 流程）：`856757d` t014 drop 与 t009 AC-003 降级；`7535802` 剪贴板 seamless 同步（decisions 012）；`8ccb9ae` 页面文件选择对话框。
+- branch `main`，交出时 head_commit `fc38a1d`（本交接单独提交）。仅 main 分支，无 task worktree。origin/main 在 `38c40c8`；`4e6a4fa`、`4970596`、`fc38a1d` 与本交接 commit 未 push。
+- 本节 commit：`4e6a4fa` 审阅决策归档；`4970596` legacy compose 端口绑定 127.0.0.1、AUTH_TOKEN 标为必填；`fc38a1d` 新建 t015–t018 并重排 t009/t010/t012。
 
-### p014 结论
+### 审阅与决策
 
-- 实测原 Browser Runtime 镜像无 GTK/xdg portal，页面 `<input type=file>` 点击无反应，网站上传完全不可用。镜像加 `libgtk-3-0`；入口写 `$XDG_CONFIG_HOME/gtk-3.0/bookmarks`（`Uploads` -> `/exchange/uploads`）。
-- 加 GTK 后 Chromium 按键走 GTK IME，Selkies 组合输入重映射键码后读到过期键表，提交错误汉字（stream composition E2E 实测“一丁丂”变“一丒专”）。Runtime Agent 固定注入 `--disable-gtk-ime` 修复。
-- 验证：新增 `test_p014_file_input_opens_chooser_with_uploads_bookmark`（旧镜像红、新镜像绿）；browser runtime E2E 16 passed；stream runtime/keymap E2E 2 passed；unit 491 passed；截图确认侧栏 Uploads 可用。测试镜像 `cbrowser-p014-browser:e2e`（`sha256:b9f74092…`）仅本地验证用，正式交付由 t012 重建。
-- 上传文件位于 `/exchange/uploads/<UUID>/<文件名>`，对话框中需先进 UUID 文件夹；未做扁平视图。
+- intensive review `docs/reviews/review_20261102_201727`：362 条 finding（Critical 1 / High 32）全部处置，决策文档 `adoption_decision.md`：采纳 A1–A48、不采纳 R1–R6，附逐条映射。
+- 用户决策标准：最好的架构与设计、最少技术债，不考虑开发时间与改动大小；单机单人是需求范围，不降低质量标准。t014 drop 与 t009 AC-003 手动清单两项降级不恢复。
+- 关键用户决策：D2=A（CI 改现行布局跑可移植层、`scripts/run_gates.sh` 统一本地门禁、删除 release.yml）；D3=B（先 spike 验证同机直连，通过则删除 coturn/TURN 轮换/ICE 代次接管/Selkies 私有 ABI 补丁）；D4=A（模板缺陷向模板仓提 issue）；D5=A（路径隐私约定 + 守卫测试）；D6=A（启动参数白名单）；D7=A（提前删除 v1 前端）；D8=A（生产 adapter 删除测试钩子）；D1=A（见下）。
+
+### 现场
+
+- 旧版 legacy 容器 `cbrowser`：审阅实测 SPA 路由存在无认证路径穿越且发布在 0.0.0.0；已改为 127.0.0.1 绑定后，用户决定直接停用（`docker compose stop`，未删除）。数据根 `~/.cbrowser` 保留，供 t010 迁移。注意：仓库 `.env` 的 `AUTH_TOKEN` 与旧容器原用值不同，legacy 已停用且将由 t010 删除，无需处理。
+- 模板工具链缺陷（59 条，按组件归并）由 sub agent 按 template-issue-report 向 `TuTouPower/repo_template` 提交；本地报告在 `.scratch/repo_template_issues/`（gitignored）。交出时该 sub agent 仍在运行，issue 编号以其报告为准。
+- 已知 skill 缺陷（用户自有 my-adoption skill，非模板）：第 1 步 `ls -d docs/reviews/review_* | sort -V | tail -1` 在目录命名混用时会选中旧目录 `review_v2_scope_20261027`，已报告用户，未修改。
 
 ### 队列
 
-- t009 → t010 → t011 → t012；`docs/pending/todo/` 为空。
-- `docs/runtime/goal_queue.json`（gitignored）冻结快照仍含 t014，`goal-check` 输出 `GOAL_QUEUE_STOPPED: t014=dropped`；走 /goal 前须 `task.py goal --reset` 或按新成员重建。
-- t009 其余 AC（8 小时压测、1/3/10 路性能、完整安全矩阵、网络/重启黑盒）对单人使用偏重，开工前与用户确认是否降级。
+- goal 快照已重新冻结：t015 → t016 → t017 → t018 → t012 → t009 → t010（`docs/runtime/goal_queue.json`，gitignored）。全部 full review，创建期 preflight PASS。
+- t015 媒体链路收敛：AC-001 依赖 UNVERIFIED-SPIKE（同机 Chrome local 直连全场景）；spike 不通过须停下请用户批准改写 AC（改为保留并冻结 TURN 机制，落实 A10/A11/A12/A30 的 TURN 部分）。t016 与 t015 只有冲突标记无硬依赖，t015 阻塞时可先做 t016。
+- t012 已改为“v2 正式部署产物与部署文档”，排在 t009 之前；原 AC-004 移入 t010。
+- t009 依赖改为 t012；AC-005 的 coturn/凭证切换项待 t015 结论后改写。
+- t010 已合并原 t011（AC-006~009）与原 t012 AC-004（AC-010）：迁移真实数据、停用 legacy 并删除其代码、正式部署到本机。真实数据操作与本机部署需用户单独授权。
+- `docs/pending/todo/` 为空。
