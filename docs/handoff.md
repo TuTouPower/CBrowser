@@ -2,38 +2,22 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-02T08:45:33+08:00 用户恢复队列，t008已开工，DeepSeek high实施中
+## 2026-11-02T14:50:00+08:00 t008/t013完成并合入；t014因AC-002/003/004证据缺口阻塞
 
-### 授权与队列
+### 主仓与已合入
 
-- 用户最新指令“现在开工，继续执行后续任务；Gemini额度已用完，用OpenCode Go DS high做sub agent”。实际模型列表已核对，采用 `opencode-go/deepseek-v4.1-flash`、variant high。
-- 既有冻结顺序不变：t008 → t013 → t014 → t009 → t010 → t011 → t012。t001–t007均done/integrated，不重复执行；各项本地merge沿用原附件明确授权，不push。
-- 两处旧测试清理失败继续按用户要求暂不处理、不阻塞；不再扩大全库lint/基线测试。t008只做四项AC相关实施与必要验证，完整容量/压力等留t009。
+- main 在本交接提交前为 `c629fe5`。t008 `a448db7`、t013 `c629fe5` 已本地合入，未 push；两条 task 分支执行 commit 分别为 `986d3e2`、`6d28f59`，分支已删除。
+- t008：Artifact Service/Store/API、下载校验和与 Agent 重启对账、认证 CDP 入口、Selkies file_transfers=none、`/profiles/:id/files` 与 `/automation/:id` 页面；unit 469、integration 79、frontend 116、真实 Chrome E2E 1、两轴 full review Round 3 PASS。
+- t013：配置复制/状态复制/重置、幂等键、前端确认面板；unit 489、integration 85、frontend 117、真实 API+容器 Cookie E2E 1、两轴 full review Round 5 PASS。
 
-### 主仓与exact identity
+### t014 当前阻塞
 
-- main，交出时head_commit `63cbd08e40e5b0448829d06d1faed5851ce973ca`（本文单独提交）；此前有用基线执行18f1d6d、merge28f630c。七个旧worktree及临时分支已清除，完整diff/证据留 `.scratch/pre_t008_archive_20261102/`，不得整包重放。
-- 现有唯一task worktree `/Users/karson/kar/code/CBrowser_t008`，branch `t008_v2_artifacts_automation`，diff_anchor `63cbd08e40e5b0448829d06d1faed5851ce973ca`。未merge/rebase main进入task分支。
-- t008 status active；attempt 1；execution_id `4fa03b7185dd48399174522182fc4c4d`；owner_id `codex_t008_e066017f083d41fb`。主控持有owner与控制面，模型不运行task.py/finish/commit/merge。
-- exact identity与启动参数 `.scratch/v2_orchestration/t008/identity.json`。恢复必须核对现有attempt/owner/PID，不重复start/reserve。
-
-### 实施进展与本轮范围
-
-- 在task worktree引用d002已有真实容器UDS/CDP/下载恢复实验，闭合原泛化SPIKE提示；正式鉴权转发/持久Artifact链路仍由四AC实现验证，不冒充已交付。主控strict require-verified preflight本轮PASS。
-- task finalization残留的剪贴板/复制重置文案已纠正，分别属于t014/t013；t008仍只含Artifact文件管理、独立认证CDP、禁Selkies文件传输、下载对账。
-- 部分实现已写入domain/ORM、0003_artifact_storage迁移、Artifact Repository/Service/API及文件存储Adapter；新增tests/unit/test_artifact_service.py、tests/integration/test_artifacts_api.py。当前均为WIP，尚无四AC完成或黑盒PASS声明。
-- 主控已要求先完成定向红绿与生产链路，再集中做t008黑盒；子agent本轮不启动Docker/Chrome、不修旧夹具、不做全库lint。真实黑盒由主控外层Docker互斥运行，测试代码不得加编排锁。
-
-### 活跃子agent与权限审计
-
-- lane t008_implementation，session ses_e6650dcf9ffeb7CidkS2B16NpF；当前implementation_r2 wrapper PID77413，实际CLI PID77417，模型DS/high。
-- 日志 `.scratch/v2_orchestration/t008/implementation_r2.jsonl` / wrapper.log；交付报告必须位于task worktree `.scratch/t008_implementation/report.md`。不能以wrapper外层exit0当成功。
-- R1实际CLI=-2：写ArtifactStore路径因初始写域漏列被拒；随后Bash修改未列入写域的supervisor/container_spec.py，SHA守卫自动停止。未伪称交付，部分源码与审计已保存 implementation_partial_r1.patch、implementation_r1_scope_audit.json。
-- 主控只补充当前任务必要的ArtifactStore、container_spec/volume_spec与下载对账文件权限，scope_r2与permission_r2/guard_r2均留档，未改工具链脚本。R2禁止用Bash/Python/sed/tee写交付源码，只允许write/edit及正规codegen；新增文件另查untracked。当前无域外新文件。
-- R1先写部分源码未跑RED，不能声明其TDD通过；R2已明确纠正：保留真实现状测试结果，尚未实现功能先RED再实现，不倒造历史。
-- 缓存/TMPDIR在task自身scratch；未再硬链接复制整套巨大缓存。所有uv run含--no-project，不生成uv.lock、不读真实.env或secret。
+- worktree `/Users/karson/kar/code/CBrowser_t014`，branch `t014_v2_clipboard_input`，base `6d28f59`；attempt 1，execution_id `5c4ef9fdabd5406bb58816597111d2a1`，owner `opencode_t014_2f32e2581975`。attempt 已 terminal stopped、report blocked，worktree 保留。
+- 已实现并通过：Profile `clipboard_sync` -> Selkies `enable_clipboard=true/false`、`enable_binary_clipboard=false|locked`、`clipboard_seamless=false|locked`；Stream 入口 CLI；前端只读权限提示（denied/prompt、监听权限变化、不读写剪贴板、按 Profile 关闭隐藏）。
+- 未完成：AC-002/003/004 未勾选。缺少本 task 真实 Chrome 证据：地址栏/普通输入框/受控输入框/富文本四类 composition/预编辑取消/标点/失败提示；纯文本粘贴无截断/重复；真实权限拒绝/后台恢复/切换 Profile 的剪贴板隔离。已登记 `docs/pending/todo/p015_t014_input_clipboard_e2e.md`。
+- review：两轴 Round 2 FAIL，缺上述证据；t014 不能 finish/merge。
 
 ### 后续行动
 
-- 持续推进当前DS实现与定向测试，核查原始运行输出、写域和四AC代码完整性。交付后主控独立review、必要黑盒、schema/type/build及相关静态检查；不得恢复旧基线补修长循环。
-- 完成后依task-work/task-run处理最终review、finish、一个执行commit、terminal/report、exact cleanup与本地集成，再按冻结顺序t013。队列范围不缩减，不以t008代码完成代替最终正式部署验收。
+- 先按 p015 补真实 Chrome E2E，或在用户明确接受范围收缩后调整 AC；完成后重新 reserve attempt、实施、review、finish、cleanup、合入。
+- 队列保持 t014 → t009 → t010 → t011 → t012；t009 的 1000 次输入/剪贴板压力不替代 p015 的场景覆盖。
