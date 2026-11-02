@@ -173,17 +173,19 @@ def test_config_from_env_fail_closed(tmp_path):
     }
 
     # Missing runtime_instance_id
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValueError, match="CBROWSER_RUNTIME_INSTANCE_ID"):
-            StreamAgentConfig.from_env()
+    with patch.dict(os.environ, env, clear=True), pytest.raises(
+        ValueError, match="CBROWSER_RUNTIME_INSTANCE_ID"
+    ):
+        StreamAgentConfig.from_env()
 
     env["CBROWSER_RUNTIME_INSTANCE_ID"] = "inst_999"
 
     # Bad secret file
     env["CBROWSER_AGENT_SECRET_FILE"] = str(tmp_path / "missing")
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValueError, match="Secret file not found"):
-            StreamAgentConfig.from_env()
+    with patch.dict(os.environ, env, clear=True), pytest.raises(
+        ValueError, match="Secret file not found"
+    ):
+        StreamAgentConfig.from_env()
 
     # Success with explicit env
     del env["CBROWSER_AGENT_SECRET_FILE"]
@@ -215,18 +217,20 @@ def test_boundary_security_verification(tmp_path):
 
     bad_docker = tmp_path / "exposed_docker.sock"
     bad_docker.touch()
-    with patch("cbrowser.stream_agent.boundary.PROHIBITED_PATHS", (str(bad_docker),)):
-        with pytest.raises(SecurityError, match="Prohibited path"):
-            verify_stream_runtime_boundaries(
-                pulse_dir=str(pulse_mock),
-                x11_socket=str(x11_mock),
-                xauthority_path=str(xauth_mock),
-            )
+    with (
+        patch("cbrowser.stream_agent.boundary.PROHIBITED_PATHS", (str(bad_docker),)),
+        pytest.raises(SecurityError, match="Prohibited path"),
+    ):
+        verify_stream_runtime_boundaries(
+            pulse_dir=str(pulse_mock),
+            x11_socket=str(x11_mock),
+            xauthority_path=str(xauth_mock),
+        )
 
 
 def test_protocol_strict_wire_envelopes_without_visibility_payload():
     """Verify strict wire models; Gateway visibility payloads no longer exist."""
-    import cbrowser.stream_agent.protocol as protocol
+    from cbrowser.stream_agent import protocol
 
     # Valid tunnel packet
     t_env = GatewayTunnelEnvelope(

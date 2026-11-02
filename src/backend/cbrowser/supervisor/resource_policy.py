@@ -1,13 +1,14 @@
 import logging
 import math
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
-def container_cpu_limit(host_config: Dict[str, Any]) -> int:
+def container_cpu_limit(host_config: dict[str, Any]) -> int:
     """Return the tightest Docker CPU constraint in NanoCPU units."""
     limits = []
     nano = host_config.get("NanoCpus", 0)
@@ -74,7 +75,7 @@ def calculate_quota_normalized_percent(
     previous_system_ns: int,
     online_cpus: int,
     nano_cpus_limit: int = 0,
-) -> Tuple[float, str]:
+) -> tuple[float, str]:
     """Calculate percentage of container quota or total host capacity.
 
     When nano_cpus_limit > 0:
@@ -186,7 +187,7 @@ class ContainerCpuSample:
 @dataclass(frozen=True)
 class ProfileQuotaDecision:
     profile_id: str
-    max_fps_cap: Optional[float]
+    max_fps_cap: float | None
     is_throttled: bool
     reason: str
     observed_cpu_pct: float
@@ -242,13 +243,13 @@ class ContainerTrackedState:
 
     def __init__(self, container_id: str) -> None:
         self.container_id = container_id
-        self.samples: List[ContainerCpuSample] = []
+        self.samples: list[ContainerCpuSample] = []
         self.last_monotonic: float = 0.0
         self.last_total_usage_ns: int = -1
         self.is_throttled = False
         self.consecutive_overload_count = 0
         self.consecutive_recovery_count = 0
-        self.last_decision: Optional[ProfileQuotaDecision] = None
+        self.last_decision: ProfileQuotaDecision | None = None
 
 
 class ProfileResourceState:
@@ -256,11 +257,11 @@ class ProfileResourceState:
 
     def __init__(self, profile_id: str) -> None:
         self.profile_id = profile_id
-        self.containers: Dict[str, ContainerTrackedState] = {}
+        self.containers: dict[str, ContainerTrackedState] = {}
         self.is_throttled: bool = False
         self.consecutive_overload_count: int = 0
         self.consecutive_recovery_count: int = 0
-        self.last_decision: Optional[ProfileQuotaDecision] = None
+        self.last_decision: ProfileQuotaDecision | None = None
         self.last_observed_scope: str = "container"
         self.foreground_viewers = True
 
@@ -271,14 +272,14 @@ class ResourcePolicyService:
     def __init__(
         self,
         docker_client: Any = None,
-        config: Optional[ResourcePolicyConfig] = None,
-        host_stat_reader: Optional[Callable[[], str]] = None,
+        config: ResourcePolicyConfig | None = None,
+        host_stat_reader: Callable[[], str] | None = None,
     ) -> None:
         self.docker_client = docker_client
         self.config = config or ResourcePolicyConfig()
         self.host_stat_reader = host_stat_reader
-        self._profiles: Dict[str, ProfileResourceState] = {}
-        self._host_samples: List[HostCpuSample] = []
+        self._profiles: dict[str, ProfileResourceState] = {}
+        self._host_samples: list[HostCpuSample] = []
         self._host_overload_consecutive: int = 0
         self._host_recovery_consecutive: int = 0
         self._host_is_throttled: bool = False
@@ -291,7 +292,7 @@ class ResourcePolicyService:
 
     def record_host_sample(
         self, sample: HostCpuSample
-    ) -> Dict[str, ProfileQuotaDecision]:
+    ) -> dict[str, ProfileQuotaDecision]:
         """Advance host pressure only for a new, sufficiently separated window."""
         if self._host_samples:
             previous = self._host_samples[-1]
@@ -340,10 +341,10 @@ class ResourcePolicyService:
         self,
         profile_id: str,
         container_id: str,
-        stats: Dict[str, Any],
+        stats: dict[str, Any],
         nano_cpus_limit: int = 0,
         has_foreground_viewers: bool = True,
-        current_monotonic: Optional[float] = None,
+        current_monotonic: float | None = None,
     ) -> ProfileQuotaDecision:
         """Process Docker container stats dict and evaluate quota decision."""
         profile_state = self.get_profile_state(profile_id)
@@ -390,9 +391,8 @@ class ResourcePolicyService:
         # Enforce min_measurement_interval_sec
         if c_state.samples:
             dt = now_mono - c_state.last_monotonic
-            if dt < self.config.min_measurement_interval_sec:
-                if state.last_decision:
-                    return self.evaluate_profile(profile_id)
+            if dt < self.config.min_measurement_interval_sec and state.last_decision:
+                return self.evaluate_profile(profile_id)
 
         if c_state.samples:
             previous = c_state.samples[-1]
@@ -562,7 +562,7 @@ class ResourcePolicyService:
     def evaluate_profile(
         self,
         profile_id: str,
-        has_foreground_viewers: Optional[bool] = None,
+        has_foreground_viewers: bool | None = None,
     ) -> ProfileQuotaDecision:
         """Compose independent container/host pressure using current visibility."""
         state = self.get_profile_state(profile_id)
@@ -630,7 +630,7 @@ class ResourcePolicyService:
         container_id: str,
         nano_cpus_limit: int = 0,
         has_foreground_viewers: bool = True,
-    ) -> Optional[ProfileQuotaDecision]:
+    ) -> ProfileQuotaDecision | None:
         """Query and evaluate real Docker stats with one_shot=True."""
         if not self.docker_client:
             raise RuntimeError(
@@ -654,14 +654,14 @@ class ResourcePolicyService:
                 nano_cpus_limit=nano_cpus_limit,
                 has_foreground_viewers=has_foreground_viewers,
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - docker stats query failure logged and returns None
             logger.error(
                 "Failed to query Docker stats for container: error_type=%s",
                 type(exc).__name__,
             )
             return None
 
-    def sample_host_proc_stat(self) -> Optional[Dict[str, ProfileQuotaDecision]]:
+    def sample_host_proc_stat(self) -> dict[str, ProfileQuotaDecision] | None:
         """Sample host /proc/stat using injected reader."""
         if not self.host_stat_reader:
             return None
@@ -669,13 +669,13 @@ class ResourcePolicyService:
             content = self.host_stat_reader()
             sample = parse_linux_proc_stat_cpu(content)
             return self.record_host_sample(sample)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - host proc stat sampling failure logged and returns None
             logger.error(
                 "Failed to sample host /proc/stat: error_type=%s", type(exc).__name__
             )
             return None
 
-    def get_decision(self, profile_id: str) -> Optional[ProfileQuotaDecision]:
+    def get_decision(self, profile_id: str) -> ProfileQuotaDecision | None:
         state = self._profiles.get(profile_id)
         return state.last_decision if state else None
 

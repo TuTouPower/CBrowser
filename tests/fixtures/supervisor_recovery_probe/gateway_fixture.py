@@ -20,7 +20,7 @@ import logging
 import threading
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Self
 
 from aiohttp import WSMsgType, web
 from cbrowser.supervisor.agent_credentials import AgentCredentials
@@ -59,19 +59,19 @@ class SupervisorGatewayFixture:
             raise ValueError("Gateway control token must contain at least 32 bytes")
         self._token = token_val.encode("utf-8")
 
-        self.registered_agents: Set[str] = set()
-        self._agents: Dict[str, RegisteredAgentInfo] = {}
-        self._viewers: Dict[str, Set[web.WebSocketResponse]] = {}
-        self._foreground_viewers: Dict[str, Set[web.WebSocketResponse]] = {}
+        self.registered_agents: set[str] = set()
+        self._agents: dict[str, RegisteredAgentInfo] = {}
+        self._viewers: dict[str, set[web.WebSocketResponse]] = {}
+        self._foreground_viewers: dict[str, set[web.WebSocketResponse]] = {}
         self._quota_messages: list[dict[str, Any]] = []
         self._all_sockets: list[web.WebSocketResponse] = []
 
         self._app = web.Application()
         self._setup_routes()
-        self._runner: Optional[web.AppRunner] = None
-        self._site: Optional[web.TCPSite] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._thread: Optional[threading.Thread] = None
+        self._runner: web.AppRunner | None = None
+        self._site: web.TCPSite | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
 
     def _setup_routes(self) -> None:
         self._app.router.add_get("/stream/agent/register", self._handle_agent_register)
@@ -97,7 +97,7 @@ class SupervisorGatewayFixture:
     def gateway_url(self) -> str:
         return f"ws://host.docker.internal:{self.port}"
 
-    def get_agent(self, profile_id: str) -> Optional[RegisteredAgentInfo]:
+    def get_agent(self, profile_id: str) -> RegisteredAgentInfo | None:
         return self._agents.get(profile_id)
 
     async def wait_for_agent(
@@ -113,7 +113,7 @@ class SupervisorGatewayFixture:
             f"Agent for profile {profile_id} did not register within {timeout_sec}s"
         )
 
-    def _check_control_auth(self, request: web.Request) -> Optional[web.Response]:
+    def _check_control_auth(self, request: web.Request) -> web.Response | None:
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
             return web.json_response(
@@ -170,7 +170,7 @@ class SupervisorGatewayFixture:
         profile_id = request.match_info["profile_id"]
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
         runtime_instance_id = body.get("runtime_instance_id")
@@ -223,7 +223,7 @@ class SupervisorGatewayFixture:
         profile_id = request.match_info["profile_id"]
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
         runtime_instance_id = body.get("runtime_instance_id")
@@ -293,8 +293,10 @@ class SupervisorGatewayFixture:
                                 self._foreground_viewers.get(profile_id, set()).discard(
                                     ws
                                 )
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001 - isolate viewer frame errors to keep connection alive
+                        logger.debug(
+                            "Failed to process viewer message: %s", type(exc).__name__
+                        )
         finally:
             self._viewers.get(profile_id, set()).discard(ws)
             self._foreground_viewers.get(profile_id, set()).discard(ws)
@@ -322,7 +324,7 @@ class SupervisorGatewayFixture:
 
         try:
             reg_data = json.loads(msg.data)
-        except Exception:
+        except (json.JSONDecodeError, UnicodeDecodeError):
             await ws.close(code=1003, message=b"Malformed JSON registration packet")
             return ws
 
@@ -352,8 +354,10 @@ class SupervisorGatewayFixture:
                 await old_agent.ws.close(
                     code=1000, message=b"Superceded by new registration"
                 )
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best effort close superseded socket
+                logger.debug(
+                    "Closing superseded agent socket failed: %s", type(exc).__name__
+                )
 
         self._agents[pid] = agent_info
         self.registered_agents.add(pid)
@@ -459,7 +463,7 @@ class SupervisorGatewayFixture:
             self._loop = None
         logger.info(f"SupervisorGatewayFixture stopped on port {self.port}")
 
-    async def __aenter__(self) -> "SupervisorGatewayFixture":
+    async def __aenter__(self) -> Self:
         await self.start()
         return self
 

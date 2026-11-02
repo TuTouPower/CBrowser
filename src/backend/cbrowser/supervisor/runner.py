@@ -7,9 +7,11 @@ import asyncio
 import logging
 import os
 import signal
+import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import docker
 import httpx
@@ -167,6 +169,21 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     server_task = asyncio.create_task(server.serve())
 
     stop_event = asyncio.Event()
+    events_stream: Any = None
+    stream_lock = threading.Lock()
+
+    def _close_stream_sync() -> None:
+        nonlocal events_stream
+        with stream_lock:
+            target = events_stream
+            events_stream = None
+        if target is not None and hasattr(target, "close"):
+            try:
+                target.close()
+            except Exception as exc:  # noqa: BLE001 - docker event stream close failure during cleanup logged
+                logger.warning(
+                    "Docker event stream close failed: %s", type(exc).__name__
+                )
 
     def handle_signal():
         logger.info("Received shutdown signal.")
@@ -183,23 +200,41 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     scan_wakeup = asyncio.Event()
 
     def watch_docker_events() -> None:
+        nonlocal events_stream
         try:
-            for _event in d_client.events(
+            prefix = core.docker.resource_prefix
+            stream = core.docker.client.events(
                 decode=True,
                 filters={
                     "type": "container",
-                    "label": (
-                        f"com.cbrowser.prefix={docker_adapter.resource_prefix}"
-                    ),
+                    "label": f"com.cbrowser.prefix={prefix}",
                 },
-            ):
+            )
+            with stream_lock:
+                if stop_event.is_set():
+                    if hasattr(stream, "close"):
+                        try:
+                            stream.close()
+                        except Exception as exc:  # noqa: BLE001 - docker event stream close failure on early abort logged
+                            logger.warning(
+                                "Docker event stream close failed: %s",
+                                type(exc).__name__,
+                            )
+                    return
+                events_stream = stream
+
+            logger.info("Docker events stream subscribed for prefix=%s", prefix)
+
+            for _event in stream:
                 loop.call_soon_threadsafe(scan_wakeup.set)
                 if stop_event.is_set():
                     break
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - docker events watching loop error isolated and logged
             logger.warning(
                 "Docker event stream stopped: error_type=%s", type(exc).__name__
             )
+        finally:
+            _close_stream_sync()
 
     docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))
 
@@ -228,13 +263,13 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                 metrics.record("recovery", time.monotonic() - started)
                 if metrics.should_report():
                     logger.info("Supervisor stage metrics: %s", metrics.snapshot())
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - periodic reconciliation iteration error logged without crashing loop
                 logger.warning(
                     "Reconciliation failed: error_type=%s", type(exc).__name__
                 )
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     monitor_task = asyncio.create_task(background_monitoring_loop())
@@ -243,18 +278,18 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         # Independent, low-frequency and staggered away from the scan loop.
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=2.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         while not stop_event.is_set():
             started = time.monotonic()
             try:
                 await core.sample_resources()
                 metrics.record("resources", time.monotonic() - started)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - resource monitoring sampling failure logged without crashing loop
                 logger.warning("Resource monitoring failed: %s", type(exc).__name__)
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
 
     resource_task = asyncio.create_task(resource_loop())
@@ -272,6 +307,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
             raise RuntimeError("Supervisor service task exited unexpectedly")
     finally:
         stop_event.set()
+        await asyncio.to_thread(_close_stream_sync)
         server.should_exit = True
         stopped.cancel()
         monitor_task.cancel()
@@ -285,13 +321,16 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                     monitor_task,
                     resource_task,
                     server_task,
+                    docker_events_task,
                     return_exceptions=True,
                 ),
                 timeout=15,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             server_task.cancel()
-            await asyncio.gather(server_task, return_exceptions=True)
+            await asyncio.gather(
+                server_task, docker_events_task, return_exceptions=True
+            )
     logger.info("Supervisor terminated gracefully without killing containers.")
 
 

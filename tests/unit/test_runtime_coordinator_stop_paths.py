@@ -184,7 +184,7 @@ async def test_supervisor_status_server_error_records_error_and_retries(
 async def test_reconcile_loop_survives_unexpected_exception_and_retries(
     tmp_path: Path,
 ) -> None:
-    db_path, engine, service = await _make_service(tmp_path)
+    _db_path, engine, service = await _make_service(tmp_path)
     records: list[str] = []
 
     class _Capture(logging.Handler):
@@ -233,8 +233,10 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
 
 
 @pytest.mark.asyncio
-async def test_stop_reconciliation_is_bounded_and_surfaces_error(tmp_path: Path) -> None:
-    db_path, engine, service = await _make_service(tmp_path)
+async def test_stop_reconciliation_is_bounded_and_surfaces_error(
+    tmp_path: Path,
+) -> None:
+    _db_path, engine, service = await _make_service(tmp_path)
     try:
         profile = await service.create_profile(ProfileConfig(name="p_stop_limit"))
         await service.bind_runtime_instance(profile.id, "inst_stop", config_version=1)
@@ -274,7 +276,9 @@ async def test_restart_blocked_terminates_round_without_retry(tmp_path: Path) ->
     db_path, engine, service = await _make_service(tmp_path)
     try:
         profile = await service.create_profile(ProfileConfig(name="p_blocked"))
-        await service.bind_runtime_instance(profile.id, "inst_blocked", config_version=1)
+        await service.bind_runtime_instance(
+            profile.id, "inst_blocked", config_version=1
+        )
         await service.report_observed_state(profile.id, "inst_blocked", "error")
         await service.set_desired_state(profile.id, "running")
         conn = sqlite3.connect(db_path)
@@ -314,7 +318,7 @@ async def test_restart_blocked_terminates_round_without_retry(tmp_path: Path) ->
 
 @pytest.mark.asyncio
 async def test_retries_reuse_stable_operation_id(tmp_path: Path) -> None:
-    db_path, engine, service = await _make_service(tmp_path)
+    _db_path, engine, service = await _make_service(tmp_path)
     try:
         profile = await service.create_profile(ProfileConfig(name="p_stable_op"))
         await service.set_desired_state(profile.id, "running")

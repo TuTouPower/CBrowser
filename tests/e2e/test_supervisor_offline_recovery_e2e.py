@@ -1,6 +1,7 @@
 """True API Process Offline & Supervisor Event Spool Recovery E2E Suite.
 
-Validates AC-004 under genuine multi-process failure scenarios:
+Validates AC-004 under genuine multi-process failure scenarios with A1
+Authoritative Observation Architecture:
 1. Real API process (SQLite WAL fresh DB + dynamic Bearer token file)
    + Real Supervisor process + Real Gateway.
 2. Dual real profile sandboxes running (Profile A target for exit,
@@ -17,17 +18,26 @@ Validates AC-004 under genuine multi-process failure scenarios:
 8. API process is restarted on same port with same DB.
 9. Supervisor continuously re-evaluates and automatically replays the spooled
    event to API without test direct POST.
-10. Spool file is unlinked upon delivery, API desired_state converges to
-    stopped, and replay does not clear new intent.
+10. Spool file is unlinked upon delivery; authoritative observation converges
+    Profile A to desired_state=stopped and observed_state=stopped, failure_count=0,
+    restart_blocked=False, and last_exit_event_id=None (fence separation).
+11. Diagnostic UUID verified in API SQLite runtime_events via read-only query.
+12. Negative diagnostic probe against active Profile B proves diagnostic event
+    payloads cannot alter business state (desired/observed running intact).
+13. Second Supervisor restart preserves stopped profile; duplicate old exit event
+    does not overwrite new user intent.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import importlib.util
+import json
 import logging
 import os
 import secrets
+import sqlite3
 import sys
 import uuid
 from pathlib import Path
@@ -48,7 +58,7 @@ _spec.loader.exec_module(offline_fixture)
 OfflineGatewayMock = offline_fixture.OfflineGatewayMock
 RealApiProcess = offline_fixture.RealApiProcess
 RealBrowserActionProbe = offline_fixture.RealBrowserActionProbe
-RealSupervisorProcess = offline_fixture.RealSupervisorProcess
+RealSupervisorContainer = offline_fixture.RealSupervisorContainer
 SandboxContainerTracker = offline_fixture.SandboxContainerTracker
 SpoolDirectoryWatcher = offline_fixture.SpoolDirectoryWatcher
 get_free_port = offline_fixture.get_free_port
@@ -58,10 +68,13 @@ logger = logging.getLogger("cbrowser.tests.e2e.offline_recovery")
 
 
 @pytest.mark.asyncio
-async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Path):
-    """AC-004: True API process termination, disk spooling, SIGKILL survival.
+async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
+    tmp_path: Path,
+):
+    """AC-004 & A1: Authoritative observation recovery and event replay E2E.
 
-    Replays events to convergence.
+    Replaces legacy test_supervisor_true_api_offline_event_spool_and_recovery.
+    Verifies spool survival, authoritative convergence, and payload isolation.
     """
     browser_image, stream_image, _, _ = offline_fixture.get_e2e_prerequisites()
     sup_token = secrets.token_urlsafe(32)
@@ -166,15 +179,15 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
     )
 
     sup_log = tmp_path / "supervisor.log"
-    sup_proc = RealSupervisorProcess(
-        api_url=api_proc.url,
+    sup_proc = RealSupervisorContainer(
+        api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
         engine_cache=engine_cache,
         geoip_cache=geoip_cache,
         token_file=sup_token_file,
         agent_key_file=agent_key_file,
         gateway_url=f"ws://host.docker.internal:{gw_port}",
-        gateway_control_url=f"http://127.0.0.1:{gw_port}",
+        gateway_control_url=f"http://host.docker.internal:{gw_port}",
         gateway_token_file=gw_token_file,
         prefix=prefix,
         port=sup_port,
@@ -182,6 +195,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         env=clean_environ,
         log_path=sup_log,
         coturn_container_id=coturn.id,
+        docker_client=d_client,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
@@ -189,8 +203,8 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
 
     try:
         await gateway.start()
-        api_proc.start()
-        sup_proc.start()
+        await asyncio.to_thread(api_proc.start)
+        await asyncio.to_thread(sup_proc.start)
         api_headers.update(api_proc.auth_headers)
         async with httpx.AsyncClient(
             base_url=api_proc.url, headers=api_headers, trust_env=False
@@ -264,7 +278,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         assert s_c_b.status == "running"
 
         logger.info("Taking API process genuinely offline...")
-        api_proc.stop()
+        await asyncio.to_thread(api_proc.stop)
         assert api_proc.verify_offline(), (
             "API process MUST be genuinely offline and refusing HTTP connections"
         )
@@ -316,7 +330,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         assert s_c_b.status == "running"
 
         logger.info("Executing SIGKILL on Supervisor...")
-        sup_proc.sigkill()
+        await asyncio.to_thread(sup_proc.sigkill)
         assert api_proc.verify_offline(), (
             "API must remain offline during Supervisor kill"
         )
@@ -325,7 +339,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         logger.info(
             "Restarting Supervisor with same data_root while API is still offline..."
         )
-        sup_proc.start()
+        await asyncio.to_thread(sup_proc.start)
 
         assert api_proc.verify_offline(), "API is still offline"
         await asyncio.sleep(2.0)
@@ -340,7 +354,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
         assert s_c_b.status == "running"
 
         logger.info(f"Restarting API process on port {api_port} with same database...")
-        api_proc.start()
+        await asyncio.to_thread(api_proc.start)
 
         logger.info(
             "Waiting for Supervisor background monitoring loop to automatically "
@@ -361,6 +375,7 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
                 if (
                     r_rt_a.status_code == 200
                     and r_rt_a.json()["desired_state"] == "stopped"
+                    and r_rt_a.json()["observed_state"] == "stopped"
                 ):
                     break
                 await asyncio.sleep(0.5)
@@ -370,19 +385,180 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
             assert data_rt_a["desired_state"] == "stopped", (
                 f"Profile A desired_state did not converge: {data_rt_a}"
             )
-            assert data_rt_a["last_exit_event_id"] == recorded_event_id
+            assert data_rt_a["observed_state"] == "stopped", (
+                f"Profile A observed_state did not converge to stopped: {data_rt_a}"
+            )
+            assert data_rt_a["failure_count"] == 0, (
+                f"Profile A failure_count must not increment on clean exit: {data_rt_a}"
+            )
+            assert data_rt_a["restart_blocked"] is False, (
+                f"Profile A must not be restart blocked on clean exit: {data_rt_a}"
+            )
+            # A1 Authoritative Observation: last_exit_event_id is strictly an
+            # abnormal retry fence, never written from normal diagnostic exit events.
+            assert data_rt_a["last_exit_event_id"] is None, (
+                "Profile A last_exit_event_id must remain None for normal exit: "
+                f"{data_rt_a}"
+            )
+
+            # Authoritative read-only SQLite inspection: verify diagnostic UUID was
+            # durably ingested into runtime_events exactly once without test writing DB.
+            db_ro_uri = f"{api_db_path.resolve().as_uri()}?mode=ro"
+            with contextlib.closing(sqlite3.connect(db_ro_uri, uri=True)) as conn:
+                cursor = conn.cursor()
+                rows = cursor.execute(
+                    "SELECT event_id, profile_id, runtime_instance_id, "
+                    "event_type, exit_code, exit_reason FROM runtime_events "
+                    "WHERE event_id = ?",
+                    (recorded_event_id,),
+                ).fetchall()
+            assert len(rows) == 1, (
+                f"Expected exactly 1 diagnostic event for {recorded_event_id}, "
+                f"found {len(rows)}"
+            )
+            evt_row = rows[0]
+            assert evt_row[0] == recorded_event_id
+            assert evt_row[1] == profile_a_id
+            assert evt_row[2] == inst_a
+            assert evt_row[3] == "exit"
+            assert evt_row[4] == 0
+            assert evt_row[5] == "normal"
 
             r_rt_b = await api_client.get(
                 f"/api/v1/internal/supervisor/profiles/{profile_b_id}/runtime"
             )
             assert r_rt_b.status_code == 200
-            assert r_rt_b.json()["desired_state"] == "running"
+            data_rt_b = r_rt_b.json()
+            assert data_rt_b["desired_state"] == "running"
+            assert data_rt_b["observed_state"] == "running"
+            assert data_rt_b["failure_count"] == 0
+            assert data_rt_b["last_exit_event_id"] is None
+
+            # A1 Negative Probe: With Profile B still running live Browser and Stream
+            # containers, probe Agent/Chrome liveness via container UDS /health before
+            # and after injecting a fake normal diagnostic exit event.
+            cfg_b = int(data_rt_b["config_version"])
+
+            async def _probe_b_agent_health() -> dict:
+                script = (
+                    "import httpx, json; "
+                    "t = httpx.HTTPTransport(uds='/run/cbrowser/runtime/agent.sock'); "
+                    "c = httpx.Client(transport=t, base_url='http://uds'); "
+                    "r = c.get('/health'); "
+                    "assert r.status_code == 200, f'HTTP {r.status_code}: {r.text}'; "
+                    "print(json.dumps(r.json())); "
+                    "c.close()"
+                )
+                exec_res = await asyncio.to_thread(
+                    b_c_b.exec_run,
+                    ["python3", "-c", script],
+                )
+                assert exec_res.exit_code == 0, (
+                    "Profile B Browser Agent health exec failed "
+                    f"(code {exec_res.exit_code}): "
+                    f"{exec_res.output.decode('utf-8', errors='replace')}"
+                )
+                health = json.loads(exec_res.output.decode("utf-8").strip())
+                assert health.get("ready") is True, f"Agent B not ready: {health}"
+                assert health.get("browser_ready") is True, (
+                    f"Browser B not ready: {health}"
+                )
+                assert health.get("profile_id") == profile_b_id, (
+                    f"Profile mismatch: expected {profile_b_id}, "
+                    f"got {health.get('profile_id')}"
+                )
+                assert health.get("runtime_instance_id") == inst_b, (
+                    f"Instance mismatch: expected {inst_b}, "
+                    f"got {health.get('runtime_instance_id')}"
+                )
+                assert health.get("config_version") == cfg_b, (
+                    f"Version mismatch: expected {cfg_b}, "
+                    f"got {health.get('config_version')}"
+                )
+                return health
+
+            await _probe_b_agent_health()
+
+            fake_b_event_id = f"diag-b-{uuid.uuid4().hex}"
+            fake_b_exit_payload = {
+                "event_id": fake_b_event_id,
+                "profile_id": profile_b_id,
+                "runtime_instance_id": inst_b,
+                "event_type": "exit",
+                "exit_code": 0,
+                "exit_reason": "normal",
+                "config_version": cfg_b,
+                "payload": {"source": "negative_diagnostic_probe"},
+            }
+            r_diag_b = await api_client.post(
+                "/api/v1/internal/supervisor/runtimes/events",
+                json=fake_b_exit_payload,
+            )
+            assert r_diag_b.status_code == 200
+            diag_b_res = r_diag_b.json()
+            assert diag_b_res["status"] == "ok"
+            assert diag_b_res["outcome"] == "applied"
+
+            # Verify event was received and stored in runtime_events
+            with contextlib.closing(sqlite3.connect(db_ro_uri, uri=True)) as conn:
+                b_rows = (
+                    conn.cursor()
+                    .execute(
+                        "SELECT event_id, profile_id FROM runtime_events "
+                        "WHERE event_id = ?",
+                        (fake_b_event_id,),
+                    )
+                    .fetchall()
+                )
+            assert len(b_rows) == 1, (
+                f"Expected exactly 1 diagnostic event for {fake_b_event_id}, "
+                f"found {len(b_rows)}"
+            )
+
+            # Authoritative State Proof: diagnostic event payload CANNOT alter
+            # business runtime state!
+            r_rt_b_after = await api_client.get(
+                f"/api/v1/internal/supervisor/profiles/{profile_b_id}/runtime"
+            )
+            assert r_rt_b_after.status_code == 200
+            data_rt_b_after = r_rt_b_after.json()
+            assert data_rt_b_after["desired_state"] == "running", (
+                "Profile B desired_state mutated by diagnostic event: "
+                f"{data_rt_b_after}"
+            )
+            assert data_rt_b_after["observed_state"] == "running", (
+                "Profile B observed_state mutated by diagnostic event: "
+                f"{data_rt_b_after}"
+            )
+            assert data_rt_b_after["failure_count"] == 0, (
+                "Profile B failure_count mutated by diagnostic event: "
+                f"{data_rt_b_after}"
+            )
+            assert data_rt_b_after["last_exit_event_id"] is None, (
+                "Profile B last_exit_event_id mutated by diagnostic event: "
+                f"{data_rt_b_after}"
+            )
+
+            # Verify Agent/Chrome inside Profile B browser container remains active
+            await _probe_b_agent_health()
+
+            # Verify Docker containers for Profile B are genuinely still running
+            b_c_b.reload()
+            s_c_b.reload()
+            assert b_c_b.status == "running", (
+                "Profile B browser container must remain running after "
+                "diagnostic negative probe"
+            )
+            assert s_c_b.status == "running", (
+                "Profile B stream container must remain running after "
+                "diagnostic negative probe"
+            )
 
         logger.info(
             "Restarting Supervisor again to verify closed profile is not "
             "erroneously restarted..."
         )
-        sup_proc.restart()
+        await asyncio.to_thread(sup_proc.restart)
 
         async with httpx.AsyncClient(
             base_url=sup_proc.url, headers=sup_headers, timeout=20.0, trust_env=False
@@ -442,6 +618,21 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
                 "Duplicate old exit event must NOT overwrite new running intent"
             )
 
+            # Ensure duplicate replay did not create second entry in runtime_events
+            with contextlib.closing(sqlite3.connect(db_ro_uri, uri=True)) as conn:
+                rows_after_dup = (
+                    conn.cursor()
+                    .execute(
+                        "SELECT COUNT(*) FROM runtime_events WHERE event_id = ?",
+                        (recorded_event_id,),
+                    )
+                    .fetchone()[0]
+                )
+            assert rows_after_dup == 1, (
+                "Duplicate event replay must not duplicate row in runtime_events, "
+                f"count={rows_after_dup}"
+            )
+
         logger.info(
             "All offline recovery & event spool replay verification phases "
             "passed successfully!"
@@ -450,9 +641,9 @@ async def test_supervisor_true_api_offline_event_spool_and_recovery(tmp_path: Pa
     finally:
         logger.info("Executing safe teardown of test processes and owned containers...")
         if sup_proc:
-            sup_proc.stop()
+            await asyncio.to_thread(sup_proc.stop)
         if api_proc:
-            api_proc.stop()
+            await asyncio.to_thread(api_proc.stop)
         await gateway.stop()
         # Discover remaining resources after Supervisor has stopped, including
         # failures before a start response could register individual IDs.

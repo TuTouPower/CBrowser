@@ -71,7 +71,9 @@ class LoginRateLimiter:
             if len(queue) >= self.max_failures:
                 wait = max(wait, self.window_seconds - (now - queue[0]))
         if len(self._global_failures) >= self.global_max_failures:
-            wait = max(wait, self.global_window_seconds - (now - self._global_failures[0]))
+            wait = max(
+                wait, self.global_window_seconds - (now - self._global_failures[0])
+            )
         return max(1, int(wait) + (1 if wait % 1 else 0))
 
     def record_failure(self, client_ip: str) -> None:

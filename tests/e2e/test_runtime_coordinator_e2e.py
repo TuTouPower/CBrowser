@@ -24,6 +24,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 _auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
 _auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
@@ -85,7 +86,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
     for name in ("supervisor", "agent", "gateway"):
         k = control / f"{name}_key"
         k.write_text(secrets.token_urlsafe(32), encoding="utf-8")
-        k.chmod(0o644)
+        k.chmod(0o600)
         keys[name] = k
 
     sup_headers = {"Authorization": f"Bearer {keys['supervisor'].read_text().strip()}"}
@@ -162,7 +163,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                     "mode": "ro",
                 },
             },
-            ports={"18097/tcp": ("127.0.0.1", None)},
+            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
             labels={
                 "com.cbrowser.prefix": prefix,
                 "com.cbrowser.managed-by": "supervisor",
@@ -171,7 +172,8 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         )
         containers.append(gateway)
         gateway.reload()
-        gw_port = gateway.attrs["NetworkSettings"]["Ports"]["18097/tcp"][0]["HostPort"]
+        gw_ports = gateway.attrs["NetworkSettings"]["Ports"]
+        gw_port = gw_ports[f"{DEFAULT_GATEWAY_PORT}/tcp"][0]["HostPort"]
         await wait_until_ready(f"http://127.0.0.1:{gw_port}", "/healthz", timeout=30.0)
         gateway_ip = gateway.attrs["NetworkSettings"]["Networks"][edge_network.name][
             "IPAddress"
@@ -253,7 +255,9 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 "--gateway-token-file",
                 str(keys["gateway"]),
                 "--gateway-control-url",
-                f"http://{gateway_ip}:18097",
+                f"http://{gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+                "--gateway-port",
+                str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 gateway.id,
                 "--coturn-container-id",
@@ -456,27 +460,83 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             uv_server.should_exit = True
             await server_task
 
-        # Cleanup all containers created with this prefix
+        cleanup_errors: list[str] = []
+        # Cleanup all containers strictly labeled with this prefix
         try:
-            for c in client.containers.list(all=True, filters={"name": prefix}):
-                try:
-                    c.remove(force=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+            owned_containers = client.containers.list(
+                all=True, filters={"label": f"com.cbrowser.prefix={prefix}"}
+            )
+        except Exception as exc:  # noqa: BLE001 - robust container query cleanup
+            owned_containers = []
+            cleanup_errors.append(f"containers_list: {type(exc).__name__}")
 
-        # Cleanup networks
+        for c in owned_containers:
+            lbls = getattr(c, "labels", None)
+            if lbls is None and hasattr(c, "attrs"):
+                lbls = c.attrs.get("Config", {}).get("Labels", {}) or {}
+            lbls = lbls or {}
+            if lbls.get("com.cbrowser.prefix") != prefix:
+                continue
+
+            c_name = getattr(c, "name", "unnamed")
+            try:
+                c.stop(timeout=1)
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001 - robust container stop cleanup
+                logger.warning(
+                    "Container stop error for %s: %s", c_name, type(exc).__name__
+                )
+
+            try:
+                c.remove(force=True, v=True)
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
+                err_t = type(exc).__name__
+                logger.error("Container remove error for %s: %s", c_name, err_t)
+                cleanup_errors.append(f"container_remove({c_name}): {err_t}")
+
+        # Cleanup networks strictly labeled with this prefix
         try:
-            for net in client.networks.list():
-                lbls = net.attrs.get("Labels", {}) or {}
-                if (
-                    net.name.startswith(prefix)
-                    or lbls.get("com.cbrowser.prefix") == prefix
-                ):
-                    try:
-                        net.remove()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+            owned_networks = client.networks.list(
+                filters={"label": f"com.cbrowser.prefix={prefix}"}
+            )
+        except Exception as exc:  # noqa: BLE001 - robust network query cleanup
+            owned_networks = []
+            cleanup_errors.append(f"networks_list: {type(exc).__name__}")
+
+        for net in owned_networks:
+            n_lbls = getattr(net, "attrs", {}).get("Labels") or {}
+            if n_lbls.get("com.cbrowser.prefix") != prefix:
+                continue
+
+            n_name = getattr(net, "name", "unnamed")
+            try:
+                if hasattr(net, "reload"):
+                    net.reload()
+            except docker.errors.NotFound:
+                continue
+            except Exception as exc:  # noqa: BLE001 - robust network reload cleanup
+                cleanup_errors.append(
+                    f"network_reload({n_name}): {type(exc).__name__}"
+                )
+                continue
+
+            containers_attached = getattr(net, "attrs", {}).get("Containers") or {}
+            if containers_attached:
+                cleanup_errors.append(f"network_not_empty({n_name})")
+                continue
+
+            try:
+                net.remove()
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001 - robust network remove cleanup
+                err_t = type(exc).__name__
+                logger.error("Network remove error for %s: %s", n_name, err_t)
+                cleanup_errors.append(f"network_remove({n_name}): {err_t}")
+
+        if cleanup_errors:
+            msg = ", ".join(cleanup_errors)
+            raise RuntimeError(f"Cleanup encountered failures: {msg}")

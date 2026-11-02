@@ -6,13 +6,15 @@ import signal
 from pathlib import Path
 
 from aiohttp import web
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from gateway_fixture import SupervisorGatewayFixture
 
 
 async def main():
+    port = int(os.environ.get("CBROWSER_GATEWAY_PORT", str(DEFAULT_GATEWAY_PORT)))
     gateway = SupervisorGatewayFixture(
-        18097,
+        port,
         AgentCredentials(Path(os.environ["PROBE_AGENT_KEY_FILE"])),
         Path(os.environ["PROBE_GATEWAY_KEY_FILE"]),
     )
@@ -21,7 +23,7 @@ async def main():
     )
     gateway._runner = web.AppRunner(gateway._app)
     await gateway._runner.setup()
-    gateway._site = web.TCPSite(gateway._runner, "0.0.0.0", 18097)
+    gateway._site = web.TCPSite(gateway._runner, "0.0.0.0", port)
     await gateway._site.start()
     stopped = asyncio.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):

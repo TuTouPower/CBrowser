@@ -34,6 +34,7 @@ def check_display(
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=1.5,
+            check=False,
         )
         if proc.returncode == 0:
             return True, "xdpyinfo succeeded"
@@ -45,7 +46,7 @@ def check_display(
             False,
             "xdpyinfo tool missing; cannot verify X11 display readiness (fail-closed)",
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - unexpected X11 probe exception returns failure tuple
         return False, f"X11 probe error: {e}"
 
 
@@ -73,9 +74,9 @@ def check_audio(pulse_sock: Path | str, pulse_cookie: Path | str) -> tuple[bool,
         proc_info = subprocess.run(
             ["pactl", "info"],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=1.5,
+            check=False,
         )
         if proc_info.returncode != 0:
             err = proc_info.stderr.decode().strip()
@@ -85,9 +86,9 @@ def check_audio(pulse_sock: Path | str, pulse_cookie: Path | str) -> tuple[bool,
         proc_sinks = subprocess.run(
             ["pactl", "list", "sinks"],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=1.5,
+            check=False,
         )
         if proc_sinks.returncode != 0:
             err = proc_sinks.stderr.decode().strip()
@@ -125,7 +126,7 @@ def check_audio(pulse_sock: Path | str, pulse_cookie: Path | str) -> tuple[bool,
             False,
             "pactl tool missing; cannot verify PulseAudio virtual sink (fail-closed)",
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - unexpected pactl probe exception returns failure tuple
         return False, f"PulseAudio probe error: {e}"
 
 
@@ -149,5 +150,5 @@ def check_browser(cdp_port: int, browser_pid: int | None = None) -> tuple[bool, 
             if "Browser" not in data:
                 return False, "CDP response missing 'Browser' metadata"
             return True, f"CDP active: {data.get('Browser')}"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - unexpected CDP probe exception returns failure tuple
         return False, f"Failed to reach CDP HTTP endpoint {url}: {e}"

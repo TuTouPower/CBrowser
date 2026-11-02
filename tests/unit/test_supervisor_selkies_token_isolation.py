@@ -8,8 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import docker.errors
 import pytest
-from cbrowser.supervisor.docker_adapter import DockerAdapter
-from cbrowser.supervisor.docker_adapter import DockerSandboxError
+from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 
@@ -150,7 +149,7 @@ async def test_stream_container_mounts_token_from_secret_directory(
 
 @pytest.mark.asyncio
 async def test_stream_rejects_group_readable_agent_secret(tmp_path: Path) -> None:
-    adapter, mock_client, _ = _adapter(tmp_path)
+    adapter, _mock_client, _ = _adapter(tmp_path)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()

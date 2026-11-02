@@ -34,10 +34,12 @@ from playwright.async_api import (
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
+BACKEND_DIR = REPO_ROOT / "src" / "backend"
+for p in (str(REPO_ROOT), str(FIXTURES_DIR), str(BACKEND_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
 logger = logging.getLogger("cbrowser.frontend_media.e2e")
@@ -243,9 +245,9 @@ async def gateway_visibility(
     profile_id: str,
     runtime_instance_id: str,
 ) -> dict[str, Any]:
-    port = harness.gateway_container.attrs["NetworkSettings"]["Ports"]["18097/tcp"][0][
-        "HostPort"
-    ]
+    port = harness.gateway_container.attrs["NetworkSettings"]["Ports"][
+        f"{DEFAULT_GATEWAY_PORT}/tcp"
+    ][0]["HostPort"]
     async with httpx.AsyncClient(
         base_url=f"http://127.0.0.1:{port}",
         headers={"Authorization": f"Bearer {harness.keys['gateway']}"},

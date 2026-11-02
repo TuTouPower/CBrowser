@@ -10,10 +10,12 @@ from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 
 def test_only_one_process_can_coordinate_a_data_root(tmp_path):
     path = tmp_path / "supervisor.lock"
-    with CoordinatorLock(path):
-        with pytest.raises(RuntimeError, match="Another Supervisor"):
-            with CoordinatorLock(path):
-                pytest.fail("second coordinator acquired an owned root")
+    with (
+        CoordinatorLock(path),
+        pytest.raises(RuntimeError, match="Another Supervisor"),
+        CoordinatorLock(path),
+    ):
+        pytest.fail("second coordinator acquired an owned root")
     with CoordinatorLock(path):
         assert path.is_file()
 
@@ -34,9 +36,10 @@ def test_sigkill_releases_lock_without_deleting_lock_file(tmp_path):
             assert child.poll() is None
             time.sleep(0.02)
         assert ready.exists()
-        with pytest.raises(RuntimeError, match="Another Supervisor"):
-            with CoordinatorLock(path):
-                pytest.fail("owned lock acquired")
+        with pytest.raises(RuntimeError, match="Another Supervisor"), CoordinatorLock(
+            path
+        ):
+            pytest.fail("owned lock acquired")
         child.kill()
         child.wait(timeout=5)
         with CoordinatorLock(path):

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
-from test_supervisor_rpc import supervisor_api as supervisor_api
+from test_supervisor_rpc import supervisor_api as supervisor_api  # noqa: PLC0414
 
 
 @pytest.mark.asyncio
@@ -59,7 +59,7 @@ async def test_manual_reset_preempts_old_backoff_over_real_api(
             api=api,
             _auth_headers=lambda: headers,
             docker=SimpleNamespace(
-                validator=PathValidator(tmp_path), scan_active_containers=lambda: []
+                validator=PathValidator(tmp_path), scan_active_containers=list
             ),
             start_profile=start_profile,
         )

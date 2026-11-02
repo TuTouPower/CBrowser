@@ -96,13 +96,13 @@ class NetworkPolicySpec(BaseModel):
     @classmethod
     def validate_endpoints(cls, v: list[Any]) -> list[tuple[str, int]]:
         if not isinstance(v, list):
-            raise ValueError("Endpoint list must be a list")
+            raise ValueError("Endpoint list must be a list")  # noqa: TRY004
         validated: list[tuple[str, int]] = []
         for item in v:
             if isinstance(item, (tuple, list)):
                 validated.append(_validate_ip_port(item))
             else:
-                raise ValueError(f"Invalid endpoint format: {item}")
+                raise ValueError(f"Invalid endpoint format: {item}")  # noqa: TRY004
         return validated
 
     @model_validator(mode="after")
@@ -253,13 +253,13 @@ def main(argv: list[str] | None = None) -> None:
         raw_json = argv[0]
         data = json.loads(raw_json)
         spec = NetworkPolicySpec.model_validate(data)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI argument json decode or schema validation error exits with code 2
         logger.error("Invalid policy spec: error_type=%s", type(exc).__name__)
         sys.exit(2)
 
     try:
         apply_policy(spec)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - iptables policy installation failure exits with code 3
         logger.error("Policy installation failed: error_type=%s", type(exc).__name__)
         sys.exit(3)
 

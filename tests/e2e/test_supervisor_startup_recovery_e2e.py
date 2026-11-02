@@ -113,14 +113,17 @@ class HttpFaultProxy:
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
         path = request.path
-        if request.method == "POST" and path.endswith("/runtimes/events"):
-            if not self.first_post_503_done:
-                self.first_post_503_done = True
-                return web.Response(
-                    status=503,
-                    text=json.dumps({"detail": "Database busy (injected 503)"}),
-                    content_type="application/json",
-                )
+        if (
+            request.method == "POST"
+            and path.endswith("/runtimes/events")
+            and not self.first_post_503_done
+        ):
+            self.first_post_503_done = True
+            return web.Response(
+                status=503,
+                text=json.dumps({"detail": "Database busy (injected 503)"}),
+                content_type="application/json",
+            )
 
         target_url = f"{self.target_base}{request.rel_url}"
         body = await request.read()
@@ -147,10 +150,17 @@ class HttpFaultProxy:
 
 
 @pytest.mark.asyncio
-async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
+async def test_supervisor_authoritative_observation_and_retry_e2e(
     tmp_path: Path, real_api_server
 ):
-    """Reconstruct interrupted startup via bind RPC and verify lock guards."""
+    """Authoritative Supervisor observation and retry deduplication:
+    1. Lock guard: while profile lock is held, tick() skips errors.
+    2. Authoritative observation: missing container converges error,
+       preserving desired_state=running and incrementing failure_count to 1.
+    3. Error identification: last_exit_event_id tagged observed_error.
+    4. Retry scheduling: backoff task is scheduled in coordinator.
+    5. Deduplication: repeated immediate tick() does not duplicate exit.
+    """
     browser_image, stream_image, engine_src = check_e2e_images()
     api_url, auth_token, token_file, auth_headers = real_api_server
 
@@ -268,7 +278,8 @@ async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
         # Case 1: With lock released, run tick()
         await coordinator.tick()
 
-        # Authoritative API state must now reflect missing_runtime exit
+        # Authoritative API state must reflect observed_error exit
+        # with desired_state=running preserved
         rt_after = (
             await api_client.get(
                 f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
@@ -276,15 +287,16 @@ async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
             )
         ).json()
         assert rt_after["runtime_instance_id"] is None
+        assert rt_after["desired_state"] == "running"
+        assert rt_after["observed_state"] == "error"
         assert rt_after["failure_count"] == 1
-        assert rt_after["last_exit_event_id"] == f"missing_runtime:{active_inst}"
-        assert rt_after["observed_state"] == "stopped"
+        assert rt_after["last_exit_event_id"] == f"observed_error:{active_inst}"
 
         # Verify retry task was scheduled for 2s backoff
         assert profile_id in coordinator._in_flight_tasks
 
         # Repeat tick immediately: must NOT synthesize duplicate exit or
-        # increase failure count
+        # increase failure count (deduplication check)
         await coordinator.tick()
         rt_repeat = (
             await api_client.get(
@@ -293,7 +305,9 @@ async def test_supervisor_missing_runtime_recovery_and_lock_guards_e2e(
             )
         ).json()
         assert rt_repeat["failure_count"] == 1
-        assert rt_repeat["last_exit_event_id"] == f"missing_runtime:{active_inst}"
+        assert rt_repeat["desired_state"] == "running"
+        assert rt_repeat["observed_state"] == "error"
+        assert rt_repeat["last_exit_event_id"] == f"observed_error:{active_inst}"
 
     finally:
         await coordinator.close()

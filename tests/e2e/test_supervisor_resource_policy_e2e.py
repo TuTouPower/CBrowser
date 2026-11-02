@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 import uuid
@@ -9,6 +10,8 @@ from cbrowser.supervisor.resource_policy import (
     ResourcePolicyConfig,
     ResourcePolicyService,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_stream_test_image(client: docker.DockerClient) -> str:
@@ -217,8 +220,12 @@ def test_docker_real_cpu_sampling_and_overload_e2e(docker_client):
             try:
                 c = docker_client.containers.get(cid)
                 c.remove(force=True)
-            except Exception:
+            except docker.errors.NotFound:
                 pass
+            except Exception as exc:  # noqa: BLE001 - robust container cleanup
+                logger.warning(
+                    "Container remove failed for %s: %s", cid, type(exc).__name__
+                )
 
 
 def test_docker_real_host_proc_stat_sampling(docker_client):
@@ -322,5 +329,9 @@ def test_docker_background_profile_with_high_cpu_not_throttled(docker_client):
             try:
                 c = docker_client.containers.get(cid)
                 c.remove(force=True)
-            except Exception:
+            except docker.errors.NotFound:
                 pass
+            except Exception as exc:  # noqa: BLE001 - robust container cleanup
+                logger.warning(
+                    "Container remove failed for %s: %s", cid, type(exc).__name__
+                )

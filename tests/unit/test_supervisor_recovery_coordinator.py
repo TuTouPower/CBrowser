@@ -51,6 +51,7 @@ def mock_core():
     core.report_terminal_observation = AsyncMock(return_value=True)
     core.stop_profile = AsyncMock()
     core.start_profile = AsyncMock()
+    core._reconcile_instance_observation = AsyncMock(return_value=None)
     return core
 
 

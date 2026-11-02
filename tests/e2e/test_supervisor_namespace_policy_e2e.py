@@ -107,18 +107,24 @@ def resource_tracker():
     for c in reversed(containers):
         try:
             c.stop(timeout=2)
-        except Exception as exc:
-            logger.debug("Container stop error: %s", exc)
+        except docker.errors.NotFound:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Container stop error: %s", type(exc).__name__)
         try:
             c.remove(force=True)
-        except Exception as exc:
-            logger.debug("Container remove error: %s", exc)
+        except docker.errors.NotFound:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Container remove error: %s", type(exc).__name__)
 
     for n in reversed(networks):
         try:
             n.remove()
-        except Exception as exc:
-            logger.debug("Network remove error: %s", exc)
+        except docker.errors.NotFound:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Network remove error: %s", type(exc).__name__)
 
 
 def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:

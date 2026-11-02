@@ -418,9 +418,10 @@ def test_startup_requires_explicit_allowed_origins(tmp_path, monkeypatch):
             admin_password_file=admin_pwd_file,
             allowed_origins=origins,
         )
-        with pytest.raises(RuntimeError, match="CBROWSER_ALLOWED_ORIGINS"):
-            with TestClient(app):
-                pass
+        with pytest.raises(RuntimeError, match="CBROWSER_ALLOWED_ORIGINS"), TestClient(
+            app
+        ):
+            pass
 
 
 def test_allowed_origin_with_trailing_slash_is_accepted(tmp_path: Path) -> None:

@@ -16,7 +16,10 @@ from sqlalchemy.ext.asyncio import (
 
 @asynccontextmanager
 async def write_transaction(session: AsyncSession):
-    """Context manager for write transactions that explicitly executes BEGIN IMMEDIATE."""
+    """Context manager for write transactions.
+
+    Explicitly executes BEGIN IMMEDIATE.
+    """
     await session.connection(execution_options={"sqlite_write": True})
     try:
         yield session
@@ -31,7 +34,10 @@ def create_engine_and_maker(
     *,
     echo: bool = False,
 ) -> tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
-    """Create async SQLAlchemy engine and sessionmaker with WAL and busy_timeout=5000."""
+    """Create async SQLAlchemy engine and sessionmaker.
+
+    Configured with WAL mode and busy_timeout=5000.
+    """
     db_path_obj = Path(db_path).resolve()
     db_path_obj.parent.mkdir(parents=True, exist_ok=True)
     db_url = f"sqlite+aiosqlite:///{db_path_obj}"

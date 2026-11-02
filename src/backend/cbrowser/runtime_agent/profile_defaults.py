@@ -176,7 +176,7 @@ def _read_marker(marker_path: Path) -> dict[str, Any] | None:
         raw = marker_path.read_text(encoding="utf-8")
         data = json.loads(raw)
         if not isinstance(data, dict):
-            raise ValueError("Marker payload is not a JSON object")
+            raise ValueError("Marker payload is not a JSON object")  # noqa: TRY004
         if type(data.get("version")) is not int or data["version"] != MARKER_VERSION:
             raise ValueError("Unsupported marker version")
         if type(data.get("google_default_applied")) is not bool:
@@ -184,7 +184,7 @@ def _read_marker(marker_path: Path) -> dict[str, Any] | None:
         if data.get("engine_keyword") != SEARCH_ENGINE_KEYWORD:
             raise ValueError("Invalid marker engine")
         return data
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - marker read or format failure wrapped into ProfileDefaultsError
         logger.error(
             "Corrupt or invalid search engine marker in %s: %s",
             marker_path.parent.name,
@@ -253,7 +253,7 @@ async def initialize_profile_defaults(
                 SEARCH_ENGINE_KEYWORD
             )
             await page.locator("cr-input#queryUrl input").first.fill(SEARCH_ENGINE_URL)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - Playwright input fill error wrapped into ProfileDefaultsError
             logger.error("Failed filling search engine inputs: %s", type(exc).__name__)
             raise ProfileDefaultsError(
                 "Failed to fill Add search engine dialog fields"
@@ -305,7 +305,7 @@ async def initialize_profile_defaults(
 
     except ProfileDefaultsError:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - unexpected Playwright execution error mapped to ProfileDefaultsError
         logger.error(
             "Default search engine initialization failed: %s", type(exc).__name__
         )
@@ -314,5 +314,8 @@ async def initialize_profile_defaults(
         if page is not None:
             try:
                 await page.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - page close cleanup failure logged without masking primary error
+                logger.debug(
+                    "Failed closing Playwright page during cleanup: %s",
+                    type(exc).__name__,
+                )

@@ -103,7 +103,7 @@ def create_control_app(
             cfg = ProfileConfig(**cfg_data)
         except HTTPException:
             raise
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - config fetch/decode error mapped to 502 Bad Gateway
             logger.error("Configuration query failed: error_type=%s", type(e).__name__)
             raise HTTPException(502, "Configuration query failed") from None
 
@@ -127,7 +127,7 @@ def create_control_app(
             )
         except PortPoolExhaustedError:
             raise HTTPException(503, "UDP mux port pool exhausted") from None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - runtime start failure mapped to 500 Internal Server Error
             logger.error("Runtime start failed: error_type=%s", type(e).__name__)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -149,7 +149,7 @@ def create_control_app(
             return StopProfileResponse(**result)
         except ValueError:
             raise HTTPException(409, "Conflicting lifecycle operation") from None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - runtime stop failure mapped to 500 Internal Server Error
             logger.error("Runtime stop failed: error_type=%s", type(e).__name__)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -170,7 +170,7 @@ def create_control_app(
             )
             response.raise_for_status()
             runtime = response.json()
-        except Exception:
+        except Exception:  # noqa: BLE001 - runtime state query failure mapped to 503 Service Unavailable
             raise HTTPException(503, "Persisted runtime state is unavailable") from None
         if session and session.runtime_instance_id == runtime["runtime_instance_id"]:
             return ProfileRuntimeStatus(

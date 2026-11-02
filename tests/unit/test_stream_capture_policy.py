@@ -6,7 +6,7 @@ Verifies all AC-003 requirements without requiring native GStreamer/WebRTC binar
 
 import asyncio
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pytest
 from cbrowser.stream_agent.policy import (
@@ -22,7 +22,7 @@ class MockCaptureModule:
     def __init__(self):
         self.frames = 0
 
-    def stream_stats(self) -> Dict[str, Any]:
+    def stream_stats(self) -> dict[str, Any]:
         return {
             "frames": self.frames,
             "encode_ns": 1000000,
@@ -35,7 +35,7 @@ class MockMediaPipeline:
         self.framerate: float = framerate
         self._capturing: bool = capturing
         self.capture_module = MockCaptureModule()
-        self.history: List[tuple] = []
+        self.history: list[tuple] = []
         self.idr_requested: int = 0
 
     def is_screen_capturing(self) -> bool:
@@ -63,12 +63,12 @@ class MockMediaPipeline:
 class MockWebRTCBaseService:
     def __init__(self, supervisor: Any = None):
         self.supervisor = supervisor
-        self.display_pipelines: Dict[str, Any] = {}
-        self.media_pipeline: Optional[Any] = None
+        self.display_pipelines: dict[str, Any] = {}
+        self.media_pipeline: Any | None = None
         self.rtc_app: Any = None
         self.input_handler: Any = None
-        self.idr_calls: List[str] = []
-        self.forwarded_messages: List[tuple] = []
+        self.idr_calls: list[str] = []
+        self.forwarded_messages: list[tuple] = []
 
     def setup_callbacks(self) -> None:
         pass
@@ -80,7 +80,7 @@ class MockWebRTCBaseService:
         self,
         msg: Any,
         display_id: str = "primary",
-        conn_id: Optional[str] = None,
+        conn_id: str | None = None,
     ) -> Any:
         self.forwarded_messages.append((msg, display_id, conn_id))
         return "forwarded"
@@ -89,18 +89,18 @@ class MockWebRTCBaseService:
         self,
         session_peer_id: str,
         client_type: str,
-        client_token: Optional[str] = None,
+        client_token: str | None = None,
         display_id: str = "primary",
         display_position: str = "right",
-        fullcolor_codecs: Optional[list] = None,
-        tenbit_codecs: Optional[list] = None,
+        fullcolor_codecs: list | None = None,
+        tenbit_codecs: list | None = None,
     ) -> None:
         pass
 
     async def handle_peer_gone(
         self,
         peer_id: str,
-        peer: Optional[Dict[str, Any]] = None,
+        peer: dict[str, Any] | None = None,
     ) -> None:
         pass
 

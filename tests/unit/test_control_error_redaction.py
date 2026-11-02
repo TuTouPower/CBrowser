@@ -23,7 +23,7 @@ async def test_upstream_failure_redacts_response_and_logs(tmp_path, caplog, acti
 
     core = SimpleNamespace(
         api=SimpleNamespace(get=fail),
-        _auth_headers=lambda: {},
+        _auth_headers=dict,
         stop_profile=fail,
     )
     app = create_control_app(core, key)

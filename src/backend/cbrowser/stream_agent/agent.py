@@ -12,8 +12,8 @@ import os
 import socket
 import sys
 import urllib.parse
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 import aiohttp
 from aiohttp import WSMsgType
@@ -65,9 +65,9 @@ class ISO8601Formatter(logging.Formatter):
     """Formats log record timestamps as strict ISO 8601 with UTC timezone."""
 
     def formatTime(
-        self, record: logging.LogRecord, datefmt: Optional[str] = None
+        self, record: logging.LogRecord, datefmt: str | None = None
     ) -> str:
-        dt = datetime.fromtimestamp(record.created, timezone.utc)
+        dt = datetime.fromtimestamp(record.created, UTC)
         return dt.isoformat()
 
 
@@ -93,7 +93,7 @@ def _sanitize_url(url: str) -> str:
             if parsed.port:
                 netloc += f":{parsed.port}"
             return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
-    except Exception:
+    except ValueError:
         pass
     return url
 
@@ -134,7 +134,7 @@ class ReconnectBackoff:
         self._index = 0
 
 
-def resolve_selkies_version(configured_version: Optional[str] = None) -> str:
+def resolve_selkies_version(configured_version: str | None = None) -> str:
     """Report the installed Selkies distribution; tests may inject a version."""
     if configured_version:
         return configured_version
@@ -152,10 +152,10 @@ class ViewerWorkerEntry:
         generation: int,
         task: asyncio.Task,
         queue: asyncio.Queue,
-        reader_task: Optional[asyncio.Task] = None,
-        upstream_ws: Optional[aiohttp.ClientWebSocketResponse] = None,
-        tab_id: Optional[str] = None,
-        resume_key: Optional[str] = None,
+        reader_task: asyncio.Task | None = None,
+        upstream_ws: aiohttp.ClientWebSocketResponse | None = None,
+        tab_id: str | None = None,
+        resume_key: str | None = None,
     ):
         self.generation = generation
         self.task = task
@@ -184,7 +184,7 @@ class StreamAgent:
     def __init__(
         self,
         config: StreamAgentConfig,
-        policy_agent: Optional[LiveCapturePolicyAgent] = None,
+        policy_agent: LiveCapturePolicyAgent | None = None,
         upstream_url: str = "ws://127.0.0.1:18081",
         resume_grace_seconds: float = RESUME_GRACE_SECONDS,
     ):
@@ -194,33 +194,33 @@ class StreamAgent:
             max_fps=config.max_fps,
         )
         self.upstream_url = upstream_url
-        self.agent_session_id: Optional[str] = None
+        self.agent_session_id: str | None = None
         self._running = False
-        self._gw_ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._gw_ws: aiohttp.ClientWebSocketResponse | None = None
         self._webrtc_service: Any = None
 
         # Monotonic generation counter preventing stale worker identity collision
         self._generation_counter = 0
-        self.viewer_workers: Dict[str, ViewerWorkerEntry] = {}
-        self.conn_id_to_sdk_peer_id: Dict[str, str] = {}
-        self._detached_upstreams: Dict[tuple[str, str], DetachedUpstream] = {}
+        self.viewer_workers: dict[str, ViewerWorkerEntry] = {}
+        self.conn_id_to_sdk_peer_id: dict[str, str] = {}
+        self._detached_upstreams: dict[tuple[str, str], DetachedUpstream] = {}
         self._detached_generations: set[tuple[str, int]] = set()
         self._resume_grace_seconds = resume_grace_seconds
         self._backoff = ReconnectBackoff()
         self.heartbeat_interval: float = 10.0
-        self._heartbeat_task: Optional[asyncio.Task] = None
+        self._heartbeat_task: asyncio.Task | None = None
         # ICE takeover waits run beside the Gateway pump so other viewers' signaling
         # is not stalled while one restart completes.
         self._restart_tasks: set[asyncio.Task] = set()
         self._sleep_fn = asyncio.sleep
-        self.active_rtc_config: Optional[RtcConfigPayload] = None
+        self.active_rtc_config: RtcConfigPayload | None = None
 
     @property
-    def viewer_queues(self) -> Dict[str, asyncio.Queue]:
+    def viewer_queues(self) -> dict[str, asyncio.Queue]:
         return {k: v.queue for k, v in self.viewer_workers.items()}
 
     @property
-    def viewer_tasks(self) -> Dict[str, asyncio.Task]:
+    def viewer_tasks(self) -> dict[str, asyncio.Task]:
         return {k: v.task for k, v in self.viewer_workers.items()}
 
     def bind_webrtc_service(self, service: Any) -> None:
@@ -232,7 +232,7 @@ class StreamAgent:
         service.rtc_ready_hook = self._push_rtc_config
 
     @property
-    def peer_connections(self) -> Dict[str, Any]:
+    def peer_connections(self) -> dict[str, Any]:
         """Lookup peer_connections directly from Selkies service if available."""
         if (
             self._webrtc_service
@@ -242,7 +242,7 @@ class StreamAgent:
             return getattr(self._webrtc_service.rtc_app, "peer_connections", {})
         return {}
 
-    def get_peer_connection(self, conn_id: str) -> Optional[Any]:
+    def get_peer_connection(self, conn_id: str) -> Any | None:
         """Lookup RTCPeerConnection by gateway conn_id via mapped SDK peer ID."""
         sdk_peer_id = self.conn_id_to_sdk_peer_id.get(conn_id)
         if not sdk_peer_id:
@@ -271,85 +271,87 @@ class StreamAgent:
                     "Connecting to Gateway at %s...",
                     _sanitize_url(url),
                 )
-                async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.ws_connect(
                         url,
                         headers=headers,
                         max_msg_size=MAX_FRAME_SIZE,
                         timeout=IO_TIMEOUT,
                         heartbeat=HEARTBEAT_INTERVAL,
-                    ) as ws:
-                        self._gw_ws = ws
-                        logger.info(
-                            "Connected to Gateway. Registering profile...",
+                    ) as ws,
+                ):
+                    self._gw_ws = ws
+                    logger.info(
+                        "Connected to Gateway. Registering profile...",
+                    )
+
+                    selkies_ver = resolve_selkies_version(
+                        self.config.selkies_version
+                    )
+                    reg_payload = build_register_payload(
+                        self.config, socket.gethostname(), selkies_ver
+                    )
+                    reg_envelope = build_register_envelope(
+                        self.config, reg_payload, iso_now()
+                    )
+                    await asyncio.wait_for(
+                        ws.send_str(reg_envelope.model_dump_json()),
+                        timeout=IO_TIMEOUT,
+                    )
+                    resp = await asyncio.wait_for(ws.receive(), timeout=IO_TIMEOUT)
+                    if resp.type != WSMsgType.TEXT:
+                        raise GatewayRegistrationError(
+                            "Gateway registration: expected text response"
                         )
 
-                        selkies_ver = resolve_selkies_version(
-                            self.config.selkies_version
+                    if len(resp.data.encode("utf-8")) > MAX_PAYLOAD_SIZE:
+                        raise GatewayRegistrationError("Registration ACK oversized")
+
+                    raw_ack = json.loads(resp.data)
+                    ack = GatewayRegisterResponse.model_validate(raw_ack)
+                    if ack.status != "ok":
+                        err_detail = ack.error or "unknown"
+                        raise GatewayRegistrationError(
+                            f"Gateway registration rejected: {err_detail}"
                         )
-                        reg_payload = build_register_payload(
-                            self.config, socket.gethostname(), selkies_ver
+
+                    if (
+                        ack.profile_id != self.config.profile_id
+                        or ack.runtime_instance_id
+                        != self.config.runtime_instance_id
+                    ):
+                        raise GatewayRegistrationError(
+                            "Registration ACK identity mismatch"
                         )
-                        reg_envelope = build_register_envelope(
-                            self.config, reg_payload, iso_now()
-                        )
-                        await asyncio.wait_for(
-                            ws.send_str(reg_envelope.model_dump_json()),
-                            timeout=IO_TIMEOUT,
-                        )
-                        resp = await asyncio.wait_for(ws.receive(), timeout=IO_TIMEOUT)
-                        if resp.type != WSMsgType.TEXT:
-                            raise GatewayRegistrationError(
-                                "Gateway registration: expected text response"
+
+                    self.agent_session_id = ack.agent_session_id
+                    self._backoff.reset()
+                    logger.info(
+                        "StreamAgent registered with Gateway",
+                    )
+
+                    # Start application heartbeat task
+                    self._heartbeat_task = asyncio.create_task(
+                        self._heartbeat_loop(ws)
+                    )
+
+                    # Message pump
+                    async for msg in ws:
+                        if msg.type == WSMsgType.TEXT:
+                            await self._handle_gateway_envelope(
+                                session, ws, msg.data
                             )
-
-                        if len(resp.data.encode("utf-8")) > MAX_PAYLOAD_SIZE:
-                            raise GatewayRegistrationError("Registration ACK oversized")
-
-                        raw_ack = json.loads(resp.data)
-                        ack = GatewayRegisterResponse.model_validate(raw_ack)
-                        if ack.status != "ok":
-                            err_detail = ack.error or "unknown"
-                            raise GatewayRegistrationError(
-                                f"Gateway registration rejected: {err_detail}"
+                        elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
+                            logger.warning(
+                                "Gateway connection closed or errored",
                             )
-
-                        if (
-                            ack.profile_id != self.config.profile_id
-                            or ack.runtime_instance_id
-                            != self.config.runtime_instance_id
-                        ):
-                            raise GatewayRegistrationError(
-                                "Registration ACK identity mismatch"
-                            )
-
-                        self.agent_session_id = ack.agent_session_id
-                        self._backoff.reset()
-                        logger.info(
-                            "StreamAgent registered with Gateway",
-                        )
-
-                        # Start application heartbeat task
-                        self._heartbeat_task = asyncio.create_task(
-                            self._heartbeat_loop(ws)
-                        )
-
-                        # Message pump
-                        async for msg in ws:
-                            if msg.type == WSMsgType.TEXT:
-                                await self._handle_gateway_envelope(
-                                    session, ws, msg.data
-                                )
-                            elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
-                                logger.warning(
-                                    "Gateway connection closed or errored",
-                                )
-                                break
+                            break
             except asyncio.CancelledError:
                 break
             except GatewayRegistrationError as e:
                 logger.error("%s", e)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - gateway connection or registration transport failure retried via backoff
                 logger.warning(
                     "Gateway connection error (%s)",
                     type(e).__name__,
@@ -398,7 +400,7 @@ class StreamAgent:
                 await self._sleep_fn(self.heartbeat_interval)
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - heartbeat loop error logged without crashing agent
             logger.warning(
                 "Heartbeat send failed (%s)",
                 type(e).__name__,
@@ -537,8 +539,10 @@ class StreamAgent:
         if not entry.upstream_ws.closed:
             try:
                 await entry.upstream_ws.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort closing of detached upstream websocket
+                logger.debug(
+                    "Failed closing detached upstream ws: %s", type(exc).__name__
+                )
         if entry.reader_task and not entry.reader_task.done():
             entry.reader_task.cancel()
             await asyncio.gather(entry.reader_task, return_exceptions=True)
@@ -590,7 +594,7 @@ class StreamAgent:
             else:
                 logger.warning("Unknown envelope structure")
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - gateway message dispatch error isolated from websocket loop
             logger.error(
                 "Error processing gateway message: %s",
                 type(e).__name__,
@@ -695,7 +699,7 @@ class StreamAgent:
             if not conn_id or conn_id not in self.viewer_workers:
                 logger.warning("ICE restart rejected: unknown conn_id")
                 return
-            if "ice_servers" in envelope.payload and envelope.payload["ice_servers"]:
+            if envelope.payload.get("ice_servers"):
                 try:
                     gen_num = envelope.payload.get("generation")
                     if gen_num is None:
@@ -717,7 +721,7 @@ class StreamAgent:
                         ),
                     )
                     self.apply_rtc_config(rtc_payload)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - non-critical active_rtc_config sync failure from restart payload
                     logger.warning(
                         "Failed to update active_rtc_config from ice_restart (%s)",
                         type(e).__name__,
@@ -736,7 +740,7 @@ class StreamAgent:
         elif action == AgentAction.RTC_CONFIG:
             try:
                 rtc_payload = RtcConfigPayload.model_validate(envelope.payload)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - invalid rtc_config payload validation error rejected cleanly
                 logger.warning(
                     "Invalid rtc_config payload rejected (%s)",
                     type(e).__name__,
@@ -744,7 +748,7 @@ class StreamAgent:
                 return
             try:
                 self.apply_rtc_config(rtc_payload)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - rtc_config application error logged without crashing agent
                 logger.error(
                     "Applying rtc_config generation %d failed (%s)",
                     rtc_payload.generation,
@@ -774,7 +778,7 @@ class StreamAgent:
         stun, turn = self.active_rtc_config.selkies_server_urls()
         rtc_app.update_rtc_config(stun, turn)
 
-    def _resolve_ice_servers_for_restart(self, payload: Dict[str, Any]) -> List[Any]:
+    def _resolve_ice_servers_for_restart(self, payload: dict[str, Any]) -> list[Any]:
         """Resolve ICE servers for restart: payload overrides active rtc_config."""
         server_turn = payload.get("ice_servers")
         if not server_turn:
@@ -806,8 +810,8 @@ class StreamAgent:
         """Dedicated per-viewer worker: connects to loopback Selkies WebSocket."""
         upstream_ws = None
         upstream_reader_task = None
-        tab_id: Optional[str] = None
-        resume_key: Optional[str] = None
+        tab_id: str | None = None
+        resume_key: str | None = None
 
         try:
             logger.info(
@@ -870,7 +874,7 @@ class StreamAgent:
                                         meta,
                                         self.config.controller_token.get_secret_value(),
                                     )
-                        except Exception as exc:
+                        except Exception as exc:  # noqa: BLE001 - non-critical HELLO message metadata parse failure logged
                             logger.warning(
                                 "HELLO metadata parse failed: error_type=%s",
                                 type(exc).__name__,
@@ -891,7 +895,7 @@ class StreamAgent:
                     break
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - upstream worker task failure isolated per-viewer
             logger.warning(
                 "Upstream worker error (%s)", type(e).__name__
             )
@@ -911,8 +915,11 @@ class StreamAgent:
                         gw_ws.send_str(close_env.model_dump_json()),
                         timeout=IO_TIMEOUT,
                     )
-                except Exception:
-                    pass
+                except Exception as exc_close:  # noqa: BLE001 - best-effort notify gateway of worker close failure
+                    logger.debug(
+                        "Failed notifying gateway of worker failure: %s",
+                        type(exc_close).__name__,
+                    )
         finally:
             detached = (conn_id, generation) in self._detached_generations
             if detached:
@@ -923,8 +930,11 @@ class StreamAgent:
                 if upstream_ws and not upstream_ws.closed:
                     try:
                         await upstream_ws.close()
-                    except Exception:
-                        pass
+                    except Exception as exc_ws:  # noqa: BLE001 - best-effort closing of upstream websocket
+                        logger.debug(
+                            "Failed closing upstream_ws in worker cleanup: %s",
+                            type(exc_ws).__name__,
+                        )
                 # Generation check: superseded worker must not delete replacement
                 active = self.viewer_workers.get(conn_id)
                 if active and active.generation == generation:
@@ -942,8 +952,8 @@ class StreamAgent:
     def _correlate_sdk_peer(
         self,
         conn_id: str,
-        tab_id: Optional[str],
-        resume_key: Optional[str],
+        tab_id: str | None,
+        resume_key: str | None,
         upstream_ws: aiohttp.ClientWebSocketResponse,
     ) -> None:
         """Correlates native SDK client ID with Gateway conn_id unambiguously."""
@@ -1006,7 +1016,7 @@ class StreamAgent:
                     break
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - upstream reader task failure isolated per-viewer
             logger.warning(
                 "Upstream reader error (%s)", type(e).__name__
             )
@@ -1029,12 +1039,15 @@ class StreamAgent:
                         gw_ws.send_str(close_env.model_dump_json()),
                         timeout=IO_TIMEOUT,
                     )
-                except Exception:
-                    pass
+                except Exception as exc_notify:  # noqa: BLE001 - best-effort notify gateway of upstream close
+                    logger.debug(
+                        "Failed notifying gateway of upstream close: %s",
+                        type(exc_notify).__name__,
+                    )
             self._release_detached_upstream(upstream_ws)
 
     async def _trigger_ice_restart(
-        self, conn_id: Optional[str], payload: Dict[str, Any]
+        self, conn_id: str | None, payload: dict[str, Any]
     ) -> None:
         """Invoke ice_transport helper to create restart offer on existing PC."""
         if not conn_id:
@@ -1078,7 +1091,7 @@ class StreamAgent:
                     timestamp=iso_now(),
                 )
                 await self._gw_ws.send_str(envelope.model_dump_json())
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - ICE restart offer creation error reported to Gateway
             logger.error(
                 "Failed to create ICE restart offer: %s",
                 type(e).__name__,
@@ -1088,7 +1101,7 @@ class StreamAgent:
             )
 
     async def _handle_ice_restart_answer(
-        self, conn_id: Optional[str], payload: Dict[str, Any]
+        self, conn_id: str | None, payload: dict[str, Any]
     ) -> None:
         """Apply the Viewer answer and confirm to Gateway only after real takeover."""
         if not conn_id:
@@ -1109,7 +1122,7 @@ class StreamAgent:
                 RTCSessionDescription(sdp=payload.get("sdp"), type="answer")
             )
             ice_generation = await wait_restart_commit(pc, ICE_RESTART_COMMIT_TIMEOUT)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - ICE restart answer application failure reported to Gateway
             logger.error(
                 "ICE restart not committed: %s", type(e).__name__
             )
@@ -1128,7 +1141,7 @@ class StreamAgent:
         )
 
     async def _report_restart(
-        self, action: AgentAction, conn_id: str, payload: Dict[str, Any]
+        self, action: AgentAction, conn_id: str, payload: dict[str, Any]
     ) -> None:
         if self._gw_ws and not self._gw_ws.closed:
             envelope = build_action_envelope(
@@ -1155,8 +1168,10 @@ class StreamAgent:
         if self._gw_ws and not self._gw_ws.closed:
             try:
                 await self._gw_ws.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort closing of gateway websocket during stop
+                logger.debug(
+                    "Failed closing _gw_ws during stop: %s", type(exc).__name__
+                )
         await self._cleanup_all_viewers(caller="agent_stop", detach=False)
         await self._close_all_detached_upstreams()
         await self.policy.stop()
@@ -1175,7 +1190,7 @@ def run_standalone_service() -> None:
     # Load configuration
     try:
         config = StreamAgentConfig.from_env()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - configuration validation failure on service startup
         logger.error(
             "CONFIG_ERROR: Configuration loading failed (%s)", type(e).__name__
         )
@@ -1190,7 +1205,7 @@ def run_standalone_service() -> None:
             x11_socket=config.x11_socket,
             xauthority_path=config.xauthority_path,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - security boundary validation failure on service startup
         logger.error(
             "BOUNDARY_ERROR: Security boundary validation failed (%s)", type(e).__name__
         )
@@ -1205,7 +1220,7 @@ def run_standalone_service() -> None:
 
         install_x11_keymap_refresh()
         logger.info("GenerationIceTransport installed into Selkies.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - ICE ABI adapter installation failure on service startup
         logger.error(
             "ICE_ABI_ERROR: Failed to install GenerationIceTransport (%s).",
             type(e).__name__,
@@ -1250,7 +1265,7 @@ def run_standalone_service() -> None:
 
         # 3. Launch official selkies.main()
         selkies_main.main()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Selkies service launch failure on service startup
         logger.error(
             "SERVICE_STARTUP_ERROR: Failed to start Selkies service (%s)",
             type(e).__name__,

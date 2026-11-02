@@ -81,7 +81,7 @@ def create_agent_app(
                 if key in data and (type(data[key]) is not int or data[key] < 1):
                     raise ValueError("Invalid runner process metadata")
             return data | identity.model_dump()
-        except Exception:
+        except Exception:  # noqa: BLE001 - corrupt or missing metadata converted to StorageError
             raise StorageError("Invalid runner metadata") from None
 
     def _state_for_context(info: dict[str, Any] | None):
@@ -102,56 +102,108 @@ def create_agent_app(
         if state is None and runner_info is None:
             raise HTTPException(status_code=503, detail="Runtime is not initialized")
 
+        r_info = runner_info or {}
+        if runner_info and state:
+            if (
+                runner_info.get("profile_id") != state.profile_id
+                or runner_info.get("runtime_instance_id")
+                != state.runtime_instance_id
+            ):
+                raise StorageError("Runtime state identity mismatch")
+            if int(runner_info.get("config_version", 1)) != state.config_version:
+                raise StorageError("Runtime state version mismatch")
+
         profile_id = (
-            runner_info.get("profile_id")
+            r_info.get("profile_id")
             if runner_info
             else (state.profile_id if state else "unknown")
         )
         runtime_instance_id = (
-            runner_info.get("runtime_instance_id")
+            r_info.get("runtime_instance_id")
             if runner_info
             else (state.runtime_instance_id if state else "unknown")
         )
         config_version = (
-            int(runner_info.get("config_version", 1))
+            int(r_info.get("config_version", 1))
             if runner_info
             else (state.config_version if state else 1)
         )
 
         if state and state.state in ("stopped", "error"):
-            return HealthResponse(
-                status="error",
-                ready=False,
-                display_ready=False,
-                browser_ready=False,
-                audio_ready=False,
-                cdp_ready=False,
-                profile_id=profile_id,
-                runtime_instance_id=runtime_instance_id,
-                config_version=config_version,
-                details={
-                    "state": state.state,
-                    "exit_code": state.exit_code,
-                    "exit_reason": state.exit_reason,
-                },
-            )
+            # Cross-verify only for stopped: live process contradicts normal exit.
+            # Errors (e.g. owner-loss with orphan Chrome alive) must never be masked.
+            contradicted = False
+            if state.state == "stopped":
+                cdp_port = int(r_info.get("cdp_port", 0))
+                browser_pid = r_info.get("browser_pid")
+                if browser_pid is None and state.browser_pid is not None:
+                    browser_pid = state.browser_pid
 
-        display = runner_info.get("display", ":99")
-        xauth_path = runner_info.get("xauth_path")
+                pid_alive = False
+                if browser_pid is not None:
+                    try:
+                        os.kill(browser_pid, 0)
+                        pid_alive = True
+                    except (ProcessLookupError, PermissionError) as exc:
+                        pid_alive = isinstance(exc, PermissionError)
+                    except OSError:
+                        # Probe error / permission anomaly cannot be normal exit
+                        pid_alive = True
+
+                # Independently check CDP endpoint without early return on PID
+                cdp_alive = False
+                if cdp_port > 0:
+                    try:
+                        cdp_ok, _ = check_browser(cdp_port, browser_pid=None)
+                        cdp_alive = cdp_ok
+                    except Exception:  # noqa: BLE001 - probe anomaly defaults to alive to avoid falsely trusting terminal state
+                        cdp_alive = True
+
+                if pid_alive or cdp_alive:
+                    contradicted = True
+                    logger.warning(
+                        "Terminal state contradicted by live browser process: "
+                        "pid=%s (alive=%s) cdp_port=%s (alive=%s)",
+                        browser_pid,
+                        pid_alive,
+                        cdp_port,
+                        cdp_alive,
+                    )
+
+            if not contradicted:
+                return HealthResponse(
+                    status="error",
+                    ready=False,
+                    display_ready=False,
+                    browser_ready=False,
+                    audio_ready=False,
+                    cdp_ready=False,
+                    profile_id=profile_id,
+                    runtime_instance_id=runtime_instance_id,
+                    config_version=config_version,
+                    details={
+                        "state": state.state,
+                        "exit_code": state.exit_code,
+                        "exit_reason": state.exit_reason,
+                    },
+                )
+
+        display = r_info.get("display", ":99")
+        xauth_path = r_info.get("xauth_path")
         display_ok, disp_msg = check_display(display, xauth_path)
 
-        pulse_sock = runner_info.get("pulse_sock", str(r_dir / "pulse" / "pulse.sock"))
-        pulse_cookie = runner_info.get(
+        pulse_sock = r_info.get("pulse_sock", str(r_dir / "pulse" / "pulse.sock"))
+        pulse_cookie = r_info.get(
             "pulse_cookie", str(r_dir / "pulse" / "pulse.cookie")
         )
         audio_ok, audio_msg = check_audio(pulse_sock, pulse_cookie)
 
-        cdp_port = int(runner_info.get("cdp_port", 0))
-        browser_pid = runner_info.get("browser_pid")
+        cdp_port = int(r_info.get("cdp_port", 0))
+        browser_pid = r_info.get("browser_pid")
         browser_ok, browser_msg = check_browser(cdp_port, browser_pid)
         cdp_ok = bool(
             browser_ok
-            and "browser_ws_url" in runner_info
+            and "browser_ws_url" in r_info
             and active_cdp_proxy is not None
             and active_cdp_proxy.capture_alive
         )
@@ -246,10 +298,15 @@ def create_agent_app(
         if not runner_info or "cdp_port" not in runner_info:
             raise HTTPException(status_code=503, detail="CDP port not yet available")
         url = f"http://127.0.0.1:{runner_info['cdp_port']}/json/version"
-        try:
+
+        def _fetch_version() -> dict[str, Any]:
             with urllib.request.urlopen(url, timeout=2.0) as resp:
-                return JSONResponse(content=json.loads(resp.read().decode()))
-        except Exception:
+                return json.loads(resp.read().decode())
+
+        try:
+            content = await asyncio.to_thread(_fetch_version)
+            return JSONResponse(content=content)
+        except Exception:  # noqa: BLE001 - CDP HTTP probe failure maps to 502 Bad Gateway
             raise HTTPException(
                 status_code=502, detail="CDP version unavailable"
             ) from None
@@ -304,7 +361,7 @@ def create_agent_app(
                 task.result()
         except WebSocketDisconnect:
             logger.info("External client disconnected from /cdp")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - WebSocket tunnel worker isolation prevents process exit
             logger.warning("CDP proxy tunnel error (%s)", type(e).__name__)
         finally:
             for task in tunnel_tasks:
@@ -315,8 +372,10 @@ def create_agent_app(
                 await chrome_ws.close()
             try:
                 await client_ws.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort closing of client websocket on tunnel teardown
+                logger.debug(
+                    "Failed closing client_ws: %s", type(exc).__name__
+                )
 
             # AUTOMATIC REARM TRIGGERED BY CLIENT DISCONNECT (only if commands were
             # actually sent)
@@ -325,7 +384,7 @@ def create_agent_app(
                 try:
                     await active_cdp_proxy.rearm_download_capture()
                     logger.info("Automatic download behavior rearm succeeded")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - automatic download rearm failure logged without raising
                     logger.error(
                         "Failed to rearm download behavior (%s)", type(e).__name__
                     )
@@ -376,12 +435,16 @@ async def run_uds_agent(
         for _ in range(100):
             if runner_info_file.exists():
                 try:
-                    with open(runner_info_file, "r", encoding="utf-8") as f:
-                        runner_info = json.load(f)
-                        if "browser_ws_url" in runner_info:
-                            break
-                except Exception:
-                    pass
+                    content = await asyncio.to_thread(
+                        runner_info_file.read_text, encoding="utf-8"
+                    )
+                    runner_info = json.loads(content)
+                    if "browser_ws_url" in runner_info:
+                        break
+                except Exception as poll_exc:  # noqa: BLE001 - wait for valid metadata
+                    logger.debug(
+                        "Runner info poll pending: %s", type(poll_exc).__name__
+                    )
             await asyncio.sleep(0.2)
 
         if not runner_info:
@@ -470,7 +533,7 @@ def main() -> None:
                 uds_path=args.uds_path,
             )
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI top-level exception handler exits cleanly with status 1
         logger.error("UDS Agent failed (%s)", type(exc).__name__)
         raise SystemExit(1) from None
 

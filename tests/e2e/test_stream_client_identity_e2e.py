@@ -81,8 +81,10 @@ async def test_same_document_concurrent_hello_and_duplicate_document() -> None:
                 assert (
                     received
                     == [
-                        'HELLO client {"client_tab_id":"original_tab",'
-                        '"resume_key":"ephemeral"}'
+                        (
+                            'HELLO client {"client_tab_id":"original_tab",'
+                            '"resume_key":"ephemeral"}'
+                        )
                     ]
                     * 2
                 )

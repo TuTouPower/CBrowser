@@ -10,10 +10,11 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 import docker
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -26,7 +27,6 @@ from cbrowser.supervisor.container_spec import (
     stream_ports,
 )
 from cbrowser.supervisor.file_storage import atomic_write_text
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.network_spec import (
     browser_network_name,
@@ -56,11 +56,11 @@ class DockerAdapter:
         self,
         path_validator: PathValidator,
         engine_cache_dir: Path | str,
-        docker_client: Optional[docker.DockerClient] = None,
-        browser_image: Optional[str] = None,
-        stream_image: Optional[str] = None,
+        docker_client: docker.DockerClient | None = None,
+        browser_image: str | None = None,
+        stream_image: str | None = None,
         resource_prefix: str = "cbrowser-t005",
-        geoip_cache_dir: Optional[Path | str] = None,
+        geoip_cache_dir: Path | str | None = None,
         policy_image: str | None = None,
         runtime_uid: int = 1000,
         runtime_gid: int = 1000,
@@ -477,7 +477,7 @@ with path.open('w') as output:
     def attach_profile_infrastructure(
         self,
         profile_id: str,
-        gateway_container_id: Optional[str],
+        gateway_container_id: str | None,
         coturn_container_id: str,
         gateway_port: int = DEFAULT_GATEWAY_PORT,
         coturn_port: int = 3478,
@@ -560,8 +560,11 @@ with path.open('w') as output:
             for c in newly_connected:
                 try:
                     net.disconnect(c)
-                except Exception:
-                    pass
+                except Exception as disconnect_exc:  # noqa: BLE001 - rollback disconnect failure logged before raising primary error
+                    logger.debug(
+                        "Rollback disconnect failed: %s",
+                        type(disconnect_exc).__name__,
+                    )
             if isinstance(exc, DockerSandboxError):
                 raise
             raise DockerSandboxError(
@@ -571,8 +574,8 @@ with path.open('w') as output:
     def disconnect_profile_infrastructure(
         self,
         profile_id: str,
-        gateway_container_id: Optional[str] = None,
-        coturn_container_id: Optional[str] = None,
+        gateway_container_id: str | None = None,
+        coturn_container_id: str | None = None,
     ) -> None:
         net_name = self.get_network_name(profile_id)
         try:
@@ -713,7 +716,7 @@ with path.open('w') as output:
             ) from e
 
     def _bound_snapshot_geometry(
-        self, profile_id: str, snapshot_json_path: Optional[Path]
+        self, profile_id: str, snapshot_json_path: Path | None
     ) -> tuple[int | None, int | None]:
         if snapshot_json_path is None:
             return None, None
@@ -746,13 +749,13 @@ with path.open('w') as output:
         runtime_instance_id: str,
         browser_container_name: str,
         udp_mux_port: int,
-        gateway_url: Optional[str] = None,
-        agent_secret_path: Optional[Path] = None,
+        gateway_url: str | None = None,
+        agent_secret_path: Path | None = None,
         public_ip: str = "127.0.0.1",
         display: str = ":99",
-        media_addresses: Optional[dict[str, str]] = None,
-        selkies_tokens_path: Optional[Path] = None,
-        snapshot_json_path: Optional[Path] = None,
+        media_addresses: dict[str, str] | None = None,
+        selkies_tokens_path: Path | None = None,
+        snapshot_json_path: Path | None = None,
         webrtc_mode: str = "public",
         gateway_port: int = DEFAULT_GATEWAY_PORT,
     ) -> Any:

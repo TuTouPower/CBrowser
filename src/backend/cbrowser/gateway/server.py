@@ -84,12 +84,13 @@ def create_gateway_app(
         ]
         for cid in target_cids:
             v_entry = viewers.pop(cid, None)
-            if v_entry:
-                if not v_entry.ws.closed:
-                    try:
-                        await v_entry.ws.close(code=code, message=message)
-                    except Exception:
-                        pass
+            if v_entry and not v_entry.ws.closed:
+                try:
+                    await v_entry.ws.close(code=code, message=message)
+                except Exception as exc:  # noqa: BLE001 - best-effort viewer socket cleanup on agent disconnect
+                    logger.debug(
+                        "Failed closing viewer ws %s: %s", cid, type(exc).__name__
+                    )
 
     async def send_agent_control(env: GatewayControlEnvelope) -> None:
         agent = registry.get(env.profile_id)
@@ -98,9 +99,8 @@ def create_gateway_app(
 
     async def send_viewer_control(conn_id: str, frame: dict[str, Any]) -> None:
         viewer_entry = viewers.get(conn_id)
-        if viewer_entry is not None:
-            if not viewer_entry.ws.closed:
-                await viewer_entry.ws.send_str(json.dumps(frame))
+        if viewer_entry is not None and not viewer_entry.ws.closed:
+            await viewer_entry.ws.send_str(json.dumps(frame))
 
     registration_throttle = RegistrationThrottle()
 
@@ -180,7 +180,7 @@ def create_gateway_app(
         profile_id = request.match_info["profile_id"]
         try:
             body = await request.json()
-        except Exception:
+        except (ValueError, json.JSONDecodeError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
         runtime_instance_id = body.get("runtime_instance_id")
@@ -227,7 +227,7 @@ def create_gateway_app(
         profile_id = request.match_info["profile_id"]
         try:
             body = await request.json()
-        except Exception:
+        except (ValueError, json.JSONDecodeError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
         runtime_instance_id = body.get("runtime_instance_id")
@@ -257,11 +257,10 @@ def create_gateway_app(
         # Disconnect viewer WebSockets only; do NOT disconnect Agent WS
         for cid in profile_connections(profile_id):
             v_entry = viewers.pop(cid, None)
-            if v_entry:
-                if not v_entry.ws.closed:
-                    await v_entry.ws.close(
-                        code=1000, message=b"Supervisor disconnected viewers"
-                    )
+            if v_entry and not v_entry.ws.closed:
+                await v_entry.ws.close(
+                    code=1000, message=b"Supervisor disconnected viewers"
+                )
             # Notify agent of close
             if not agent.ws.closed:
                 close_env = GatewayTunnelEnvelope(
@@ -294,7 +293,7 @@ def create_gateway_app(
 
         try:
             msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
-        except (asyncio.TimeoutError, ConnectionError):
+        except (TimeoutError, ConnectionError):
             logger.warning("Agent registration timed out before first packet")
             await ws.close(code=1008, message=b"Registration timeout")
             return ws
@@ -311,7 +310,7 @@ def create_gateway_app(
                 )
                 return ws
             payload = AgentRegisterPayload.model_validate(envelope.payload)
-        except (ValidationError, Exception) as e:
+        except (ValidationError, Exception) as e:  # noqa: BLE001 - agent registration packet decoding boundary
             logger.warning("Agent registration payload invalid: %s", type(e).__name__)
             await ws.close(code=1008, message=b"Invalid registration payload")
             return ws
@@ -367,8 +366,11 @@ def create_gateway_app(
                     await old_agent.ws.close(
                         code=1000, message=b"Superceded by new registration"
                     )
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort closing of superseded agent connection
+                    logger.debug(
+                        "Failed closing superseded agent ws: %s",
+                        type(exc).__name__,
+                    )
 
         # Send ACK
         ack = GatewayRegisterResponse(
@@ -474,7 +476,7 @@ def create_gateway_app(
                                 rotation.handle_agent_restart_committed(proto_env)
                             elif proto_env.action == AgentAction.ERROR:
                                 rotation.handle_agent_error(proto_env)
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - agent message handling loop isolation prevents gateway drop
                         logger.warning(
                             "Error processing packet from Agent: %s", type(e).__name__
                         )
@@ -575,7 +577,7 @@ def create_gateway_app(
                 conn_id=conn_id,
             )
             await agent.ws.send_str(open_env.model_dump_json())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - viewer connection handshake error triggers clean teardown
             logger.warning(
                 "Viewer initialization failed: error_type=%s", type(exc).__name__
             )
@@ -583,8 +585,10 @@ def create_gateway_app(
             if not ws.closed:
                 try:
                     await ws.close(code=1011, message=b"Viewer initialization failed")
-                except Exception:
-                    pass
+                except Exception as exc_close:  # noqa: BLE001 - best-effort viewer socket close
+                    logger.debug(
+                        "Failed closing viewer ws: %s", type(exc_close).__name__
+                    )
             if not agent.ws.closed:
                 try:
                     await agent.ws.send_str(
@@ -599,8 +603,11 @@ def create_gateway_app(
                             reason="Viewer initialization failed",
                         ).model_dump_json()
                     )
-                except Exception:
-                    pass
+                except Exception as exc_notify:  # noqa: BLE001 - best-effort agent notification on handshake failure
+                    logger.debug(
+                        "Failed notifying agent of viewer failure: %s",
+                        type(exc_notify).__name__,
+                    )
             return ws
 
         try:
@@ -619,25 +626,24 @@ def create_gateway_app(
                                     rotation.handle_viewer_restart_answer(
                                         conn_id, parsed
                                     )
-                        except Exception as e:
+                        except Exception as e:  # noqa: BLE001 - viewer control frame parse error must not abort tunnel
                             logger.warning(
                                 "Error processing viewer control frame: %s",
                                 type(e).__name__,
                             )
 
-                    if not is_control:
+                    if not is_control and not agent.ws.closed:
                         # Forward to Agent as tunnel msg
-                        if not agent.ws.closed:
-                            msg_env = GatewayTunnelEnvelope(
-                                version="v2",
-                                type="msg",
-                                profile_id=profile_id,
-                                runtime_instance_id=agent.instance_id,
-                                agent_session_id=agent.agent_session_id,
-                                conn_id=conn_id,
-                                data=text,
-                            )
-                            await agent.ws.send_str(msg_env.model_dump_json())
+                        msg_env = GatewayTunnelEnvelope(
+                            version="v2",
+                            type="msg",
+                            profile_id=profile_id,
+                            runtime_instance_id=agent.instance_id,
+                            agent_session_id=agent.agent_session_id,
+                            conn_id=conn_id,
+                            data=text,
+                        )
+                        await agent.ws.send_str(msg_env.model_dump_json())
                 elif m.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
         finally:
@@ -655,8 +661,11 @@ def create_gateway_app(
                         reason="Viewer disconnected",
                     )
                     await agent.ws.send_str(close_env.model_dump_json())
-                except Exception:
-                    pass
+                except Exception as exc_close:  # noqa: BLE001 - best-effort close notification to agent on viewer exit
+                    logger.debug(
+                        "Failed notifying agent of viewer disconnect: %s",
+                        type(exc_close).__name__,
+                    )
 
         return ws
 
@@ -710,7 +719,7 @@ def create_gateway_app(
                     await rotation.tick(now=wall_now)
                 except asyncio.CancelledError:
                     break
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - background monitor loop isolation prevents gateway exit
                     logger.error(
                         "Error in Gateway background loop: %s", type(e).__name__
                     )

@@ -6,12 +6,12 @@ import json
 from typing import Annotated
 
 from cbrowser.adapters.database.models import SessionModel
+from cbrowser.auth.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
     get_auth_service,
     require_csrf_and_origin,
     require_user_session,
 )
-from cbrowser.auth.client_ip import resolve_client_ip
 from cbrowser.auth.service import AuthService
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field

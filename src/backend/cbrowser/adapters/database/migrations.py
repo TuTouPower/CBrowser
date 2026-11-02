@@ -23,7 +23,10 @@ def get_alembic_config(db_path: Path | str) -> Config:
 
 
 def run_database_migrations(db_path: Path | str) -> None:
-    """Run alembic upgrade head on the target SQLite database path with WAL & busy_timeout."""
+    """Run alembic upgrade head on the target SQLite database path.
+
+    Configures database with WAL and busy_timeout=5000.
+    """
     resolved_db = Path(db_path).resolve()
     resolved_db.parent.mkdir(parents=True, exist_ok=True)
 

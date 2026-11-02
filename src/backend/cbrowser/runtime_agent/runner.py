@@ -16,8 +16,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from cbrowser.domain.runtime_policy import ExitReason
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.domain.runtime_policy import ExitReason
 from cloakbrowser import launch_persistent_context_async
 from cloakbrowser.browser import seed_widevine_hint
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
@@ -42,7 +42,7 @@ def load_config_snapshot(
         snapshot = ConfigVersionSnapshot.model_validate(
             json.loads(config_snapshot_path.read_text(encoding="utf-8"))
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - corrupted config snapshot file wrapped into ValueError
         logger.error("Failed to parse config snapshot (%s)", type(exc).__name__)
         raise ValueError("Invalid config snapshot format") from None
     validate_runtime_id(snapshot.profile_id)
@@ -52,7 +52,7 @@ def load_config_snapshot(
         raise ValueError("profile_id mismatch")
     try:
         config = ProfileConfig.model_validate(snapshot.config)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - config schema validation error wrapped into ValueError
         logger.error("Invalid ProfileConfig (%s)", type(exc).__name__)
         raise ValueError("ProfileConfig validation failed") from None
     return snapshot, config
@@ -197,8 +197,8 @@ class BrowserRunner:
                 "-n",
             ],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
+            check=False,
         )
         if proc.returncode != 0 and not sock_path.exists():
             err = proc.stderr.decode().strip()
@@ -441,7 +441,7 @@ class BrowserRunner:
                 try:
                     self.chrome_pid = int(pid_file.read_text().strip())
                     break
-                except Exception:
+                except (OSError, ValueError):
                     pass
             await asyncio.sleep(0.1)
 
@@ -457,7 +457,7 @@ class BrowserRunner:
                     if lines:
                         self.cdp_port = int(lines[0])
                         break
-                except Exception:
+                except (OSError, ValueError, IndexError):
                     pass
             await asyncio.sleep(0.1)
 
@@ -466,14 +466,18 @@ class BrowserRunner:
 
         # Discover webSocketDebuggerUrl
         url = f"http://127.0.0.1:{self.cdp_port}/json/version"
+
+        def _get_ws_url() -> str | None:
+            with urllib.request.urlopen(url, timeout=1.0) as resp:
+                data = json.loads(resp.read().decode())
+                return data.get("webSocketDebuggerUrl")
+
         for _ in range(50):
             try:
-                with urllib.request.urlopen(url, timeout=1.0) as resp:
-                    data = json.loads(resp.read().decode())
-                    self.browser_ws_url = data.get("webSocketDebuggerUrl")
-                    if self.browser_ws_url:
-                        break
-            except Exception:
+                self.browser_ws_url = await asyncio.to_thread(_get_ws_url)
+                if self.browser_ws_url:
+                    break
+            except Exception:  # noqa: BLE001 - CDP HTTP discovery poll catches connection error until ready
                 await asyncio.sleep(0.1)
 
         if not self.browser_ws_url:
@@ -520,13 +524,15 @@ class BrowserRunner:
     async def _configure_window(self, width: int, height: int) -> None:
         """Resize the actual Chrome window before publishing readiness."""
         env = dict(os.environ, DISPLAY=self.display)
-        for _ in range(30):
+
+        def _do_configure() -> bool:
             result = subprocess.run(
                 ["xdotool", "search", "--onlyvisible", "--pid", str(self.chrome_pid)],
                 env=env,
                 capture_output=True,
                 text=True,
                 timeout=2,
+                check=False,
             )
             windows = result.stdout.splitlines()
             if result.returncode == 0 and windows:
@@ -545,6 +551,11 @@ class BrowserRunner:
                         check=True,
                         timeout=2,
                     )
+                return True
+            return False
+
+        for _ in range(30):
+            if await asyncio.to_thread(_do_configure):
                 return
             await asyncio.sleep(0.2)
         raise RuntimeError("Chrome window did not become available")
@@ -563,7 +574,7 @@ class BrowserRunner:
                         else ExitReason.ABNORMAL.value
                     )
                     break
-                except Exception:
+                except (OSError, ValueError):
                     pass
             # Also check if chrome_pid is alive
             if self.chrome_pid:
@@ -582,7 +593,7 @@ class BrowserRunner:
                                     else ExitReason.ABNORMAL.value
                                 )
                                 break
-                            except Exception:
+                            except (OSError, ValueError):
                                 pass
                     if exit_code is None:
                         # Missing status is an observation failure.
@@ -671,22 +682,29 @@ class BrowserRunner:
         if self.browser_context:
             try:
                 await self.browser_context.close()
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - browser context cleanup failure logged without masking teardown
+                logger.debug(
+                    "Browser context close failed during stop: %s",
+                    type(exc).__name__,
+                )
 
         if self.openbox_proc and self.openbox_proc.poll() is None:
             self.openbox_proc.terminate()
             try:
                 self.openbox_proc.wait(timeout=1)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - openbox process wait timeout during stop logged
+                logger.debug(
+                    "Openbox wait failed during stop: %s", type(exc).__name__
+                )
 
         if self.xvfb_proc and self.xvfb_proc.poll() is None:
             self.xvfb_proc.terminate()
             try:
                 self.xvfb_proc.wait(timeout=1)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - xvfb process wait timeout during stop logged
+                logger.debug(
+                    "Xvfb wait failed during stop: %s", type(exc).__name__
+                )
         self.is_running = False
         logger.info("Runner stopped cleanly")
 
@@ -753,7 +771,7 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - CLI top-level exception handler redacts credentials and exits status 1
         # SDK exceptions can embed launch arguments and proxy credentials.
         logger.error("Browser Runner failed (%s)", type(exc).__name__)
         raise SystemExit(1) from None

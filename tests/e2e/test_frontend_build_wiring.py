@@ -13,11 +13,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.vendor_selkies_web import DEFAULT_MANIFEST_PATH  # noqa: E402
 from scripts.verify_frontend_dist import (  # noqa: E402
     DEFAULT_MANIFEST,
     verify_frontend_dist,
 )
-from scripts.vendor_selkies_web import DEFAULT_MANIFEST_PATH  # noqa: E402
 
 ADAPTER_TAG = '<script src="./selkies_adapter.js"></script>'
 MODULE_TAG = '<script type="module" crossorigin src="./assets/index.js"></script>'

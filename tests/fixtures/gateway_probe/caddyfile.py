@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
-def generate_caddyfile(api_ip: str, gateway_ip: str) -> str:
+
+def generate_caddyfile(
+    api_ip: str, gateway_ip: str, gateway_port: int = DEFAULT_GATEWAY_PORT
+) -> str:
     """Generates internal TLS Caddy config routing API, Gateway and static client."""
     return f"""{{
     admin off
@@ -19,7 +23,7 @@ https://127.0.0.1 {{
     }}
 
     handle /stream/* {{
-        reverse_proxy http://{gateway_ip}:18097
+        reverse_proxy http://{gateway_ip}:{gateway_port}
     }}
 
     handle {{

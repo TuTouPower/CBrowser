@@ -6,10 +6,9 @@ import json
 import aiohttp
 import pytest
 from aiohttp import WSMsgType, web
-from pydantic import SecretStr
-
 from cbrowser.stream_agent.agent import StreamAgent, ViewerWorkerEntry
 from cbrowser.stream_agent.config import StreamAgentConfig
+from pydantic import SecretStr
 
 HELLO = (
     'HELLO client {"client_tab_id":"tab-1","resume_key":"resume-1"}'
@@ -139,7 +138,7 @@ async def test_viewer_close_keeps_selkies_session_for_resume() -> None:
     agent.agent_session_id = "sess_test"
     session = aiohttp.ClientSession()
     try:
-        gateway_one, _ = await _start_worker(agent, session, "conn-1", 1)
+        _gateway_one, _ = await _start_worker(agent, session, "conn-1", 1)
         await _wait_for(upstream.hello_seen.is_set)
 
         await agent._detach_viewer("conn-1")

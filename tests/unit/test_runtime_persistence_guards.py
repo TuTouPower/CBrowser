@@ -190,6 +190,7 @@ def test_module_entrypoint_exposes_standalone_agent_cli() -> None:
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     assert "--events-dir" in result.stdout

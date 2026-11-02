@@ -3,6 +3,10 @@
 !src/backend/
 !src/backend/diagnostics.py
 !src/backend/cbrowser/
+!src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/secret_files.py
+!src/backend/cbrowser/gateway/
+!src/backend/cbrowser/gateway/**
 !src/backend/cbrowser/api/
 !src/backend/cbrowser/api/**
 !src/backend/cbrowser/domain/

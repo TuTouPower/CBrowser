@@ -108,7 +108,7 @@ async def test_sse_endpoint_streams_events_and_recovers_with_last_event_id(
             assert profile_id in raw_event
 
             # Verify all 8 required fields in SSE payload
-            data_line = [ln for ln in lines if ln.startswith("data: ")][0]
+            data_line = next(ln for ln in lines if ln.startswith("data: "))
             payload = json.loads(data_line[len("data: ") :])
             for field in [
                 "profile_id",
@@ -124,7 +124,7 @@ async def test_sse_endpoint_streams_events_and_recovers_with_last_event_id(
                     f"Missing required field {field} in SSE payload"
                 )
 
-            last_id_line = [ln for ln in lines if ln.startswith("id: ")][0]
+            last_id_line = next(ln for ln in lines if ln.startswith("id: "))
             last_event_id = last_id_line[len("id: ") :]
 
         # 4. Update desired-state while disconnected

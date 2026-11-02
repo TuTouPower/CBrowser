@@ -8,7 +8,7 @@ import json
 import math
 import re
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 from urllib.parse import quote
 
 from pydantic import (
@@ -51,9 +51,9 @@ class GatewayTunnelEnvelope(BaseModel):
         min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
     conn_id: str
-    data: Optional[str] = None
-    code: Optional[int] = None
-    reason: Optional[str] = None
+    data: str | None = None
+    code: int | None = None
+    reason: str | None = None
 
     @field_validator("profile_id")
     @classmethod
@@ -78,7 +78,7 @@ class GatewayTunnelEnvelope(BaseModel):
 
     @field_validator("data")
     @classmethod
-    def validate_data(cls, v: Optional[str]) -> Optional[str]:
+    def validate_data(cls, v: str | None) -> str | None:
         if v is not None and len(v.encode("utf-8")) > 1024 * 1024:
             raise ValueError("data exceeds 1MB limit")
         return v
@@ -102,9 +102,9 @@ class GatewayControlEnvelope(BaseModel):
     agent_session_id: str = Field(
         min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
-    conn_id: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: Optional[str] = None
+    conn_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    timestamp: str | None = None
 
     @field_validator("profile_id")
     @classmethod
@@ -122,14 +122,14 @@ class GatewayControlEnvelope(BaseModel):
 
     @field_validator("conn_id")
     @classmethod
-    def validate_conn_id(cls, v: Optional[str]) -> Optional[str]:
+    def validate_conn_id(cls, v: str | None) -> str | None:
         if v is not None and (not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v)):
             raise ValueError("Invalid conn_id")
         return v
 
     @field_validator("payload")
     @classmethod
-    def validate_payload_bound(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+    def validate_payload_bound(cls, v: dict[str, Any]) -> dict[str, Any]:
         dumped = json.dumps(v)
         if len(dumped.encode("utf-8")) > 1024 * 1024:
             raise ValueError("Payload size exceeds 1MB limit")
@@ -148,7 +148,7 @@ class GatewayRegisterResponse(BaseModel):
     agent_session_id: str = Field(
         min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class ProtocolEnvelope(BaseModel):
@@ -160,12 +160,12 @@ class ProtocolEnvelope(BaseModel):
     action: AgentAction
     profile_id: str
     runtime_instance_id: str
-    agent_session_id: Optional[str] = Field(
+    agent_session_id: str | None = Field(
         default=None, min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
-    conn_id: Optional[str] = None
-    payload: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: Optional[str] = None
+    conn_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    timestamp: str | None = None
 
     @field_validator("profile_id")
     @classmethod
@@ -244,17 +244,16 @@ class AgentRegisterPayload(BaseModel):
 class SupervisorQuotaPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    max_fps_cap: Optional[float] = None
-    reason: Optional[str] = None
+    max_fps_cap: float | None = None
+    reason: str | None = None
 
     @field_validator("max_fps_cap")
     @classmethod
-    def validate_quota_cap(cls, v: Optional[float]) -> Optional[float]:
-        if v is not None:
-            if not math.isfinite(v) or v < 8.0 or v > 30.0:
-                raise ValueError(
-                    "Supervisor quota must be finite and within [8.0, 30.0]"
-                )
+    def validate_quota_cap(cls, v: float | None) -> float | None:
+        if v is not None and (not math.isfinite(v) or v < 8.0 or v > 30.0):
+            raise ValueError(
+                "Supervisor quota must be finite and within [8.0, 30.0]"
+            )
         return v
 
 
@@ -293,13 +292,13 @@ class AgentHeartbeatPayload(BaseModel):
 class IceServer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    urls: List[str] = Field(min_length=1)
-    username: Optional[str] = Field(default=None, max_length=256)
-    credential: Optional[SecretStr] = None
+    urls: list[str] = Field(min_length=1)
+    username: str | None = Field(default=None, max_length=256)
+    credential: SecretStr | None = None
 
     @field_validator("urls")
     @classmethod
-    def validate_urls(cls, v: List[str]) -> List[str]:
+    def validate_urls(cls, v: list[str]) -> list[str]:
         for url in v:
             if not url.startswith(("stun:", "turn:", "turns:")):
                 raise ValueError("ICE server URL must use stun, turn or turns")
@@ -312,17 +311,17 @@ class RtcConfigPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     generation: int = Field(ge=1)
-    ice_servers: List[IceServer] = Field(min_length=1)
+    ice_servers: list[IceServer] = Field(min_length=1)
     relay_only: StrictBool = False
 
-    def selkies_server_urls(self) -> Tuple[List[str], List[str]]:
+    def selkies_server_urls(self) -> tuple[list[str], list[str]]:
         """STUN and TURN URL lists as Selkies RTCApp.update_rtc_config takes them.
 
         Selkies parses TURN entries as turn://user:pass@host:port?query and
         unquotes the credentials, so they are percent-encoded here.
         """
-        stun: List[str] = []
-        turn: List[str] = []
+        stun: list[str] = []
+        turn: list[str] = []
         for server in self.ice_servers:
             for url in server.urls:
                 scheme, rest = url.split(":", 1)
@@ -338,10 +337,10 @@ class RtcConfigPayload(BaseModel):
                 turn.append(f"{scheme}://{auth}{rest}")
         return stun, turn
 
-    def wire_ice_servers(self) -> List[Dict[str, Any]]:
+    def wire_ice_servers(self) -> list[dict[str, Any]]:
         servers = []
         for server in self.ice_servers:
-            entry: Dict[str, Any] = {"urls": list(server.urls)}
+            entry: dict[str, Any] = {"urls": list(server.urls)}
             if server.username is not None:
                 entry["username"] = server.username
             if server.credential is not None:

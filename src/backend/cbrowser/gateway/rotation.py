@@ -89,9 +89,11 @@ class RotationCoordinator:
         """Returns the latest valid generation for new connections."""
         state = self.get_or_create_state(profile_id, now=now)
         t = time.time() if now is None else now
-        if state.in_progress_generation is not None:
-            if not self.rtc_service.is_expired(state.in_progress_generation, t):
-                return state.in_progress_generation
+        if (
+            state.in_progress_generation is not None
+            and not self.rtc_service.is_expired(state.in_progress_generation, t)
+        ):
+            return state.in_progress_generation
         if not self.rtc_service.is_expired(state.current_generation, t):
             return state.current_generation
         raise NoActiveGenerationError(
@@ -213,50 +215,55 @@ class RotationCoordinator:
             state = self._states[profile_id]
 
             # 1. Check if next generation should be generated
-            if state.in_progress_generation is None:
-                if self.rtc_service.should_generate_next(state.current_generation, t):
-                    next_gen_num = state.current_generation.generation + 1
-                    next_gen = self.rtc_service.generate_generation(
-                        profile_id=profile_id, generation_num=next_gen_num, now=t
-                    )
-                    state.in_progress_generation = next_gen
-                    state.migrated_connections.clear()
-                    state.retry_count = 0
-                    state.next_retry_at = 0.0
-                    logger.info(
-                        "Generated new RTC generation %d for profile %s",
-                        next_gen_num,
-                        profile_id,
-                    )
+            if (
+                state.in_progress_generation is None
+                and self.rtc_service.should_generate_next(state.current_generation, t)
+            ):
+                next_gen_num = state.current_generation.generation + 1
+                next_gen = self.rtc_service.generate_generation(
+                    profile_id=profile_id, generation_num=next_gen_num, now=t
+                )
+                state.in_progress_generation = next_gen
+                state.migrated_connections.clear()
+                state.retry_count = 0
+                state.next_retry_at = 0.0
+                logger.info(
+                    "Generated new RTC generation %d for profile %s",
+                    next_gen_num,
+                    profile_id,
+                )
 
-                    # AC-004: Immediately sync new stream-side configuration
-                    # to registered Agent
-                    agent = self._get_agent_info(profile_id)
-                    if agent is not None and not agent.ws.closed:
-                        env = GatewayControlEnvelope(
-                            version="v2",
-                            action=AgentAction.RTC_CONFIG,
-                            profile_id=profile_id,
-                            runtime_instance_id=agent.instance_id,
-                            agent_session_id=agent.agent_session_id,
-                            payload=next_gen.build_stream_rtc_config(
-                                agent.turn_host, agent.turn_port
-                            ),
+                # AC-004: Immediately sync new stream-side configuration
+                # to registered Agent
+                agent = self._get_agent_info(profile_id)
+                if agent is not None and not agent.ws.closed:
+                    env = GatewayControlEnvelope(
+                        version="v2",
+                        action=AgentAction.RTC_CONFIG,
+                        profile_id=profile_id,
+                        runtime_instance_id=agent.instance_id,
+                        agent_session_id=agent.agent_session_id,
+                        payload=next_gen.build_stream_rtc_config(
+                            agent.turn_host, agent.turn_port
+                        ),
+                    )
+                    try:
+                        await self._send_agent_control(env)
+                    except Exception as exc:  # noqa: BLE001 - control message delivery failure retried on next loop
+                        logger.warning(
+                            "RTC config delivery failed: profile=%s error_type=%s",
+                            profile_id,
+                            type(exc).__name__,
                         )
-                        try:
-                            await self._send_agent_control(env)
-                        except Exception as exc:
-                            logger.warning(
-                                "RTC config delivery failed: profile=%s error_type=%s",
-                                profile_id,
-                                type(exc).__name__,
-                            )
 
             # 2. Check if ICE restart should be triggered
             if state.in_progress_generation is not None:
-                if self.rtc_service.should_trigger_restart(state.current_generation, t):
-                    if t >= state.next_retry_at and not state.active_restarts:
-                        await self._start_restart_round(state, t)
+                if (
+                    self.rtc_service.should_trigger_restart(state.current_generation, t)
+                    and t >= state.next_retry_at
+                    and not state.active_restarts
+                ):
+                    await self._start_restart_round(state, t)
 
                 # Check if old generation has expired while restart is still uncommitted
                 if self.rtc_service.is_expired(state.current_generation, t):
@@ -399,7 +406,7 @@ class RotationCoordinator:
                 target_gen.generation,
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - single connection failure backs off without crashing rotation
             logger.warning(
                 "ICE restart failed on connection %s: %s", conn_id, type(e).__name__
             )
@@ -415,8 +422,10 @@ class RotationCoordinator:
 
             # Check if all migrated now
             active = self._get_active_connections(state.profile_id)
-            if all(c in state.migrated_connections for c in active):
-                if state.in_progress_generation is not None:
+            if (
+                all(c in state.migrated_connections for c in active)
+                and state.in_progress_generation is not None
+            ):
                     committed_gen = state.in_progress_generation
                     state.current_generation = committed_gen
                     state.in_progress_generation = None

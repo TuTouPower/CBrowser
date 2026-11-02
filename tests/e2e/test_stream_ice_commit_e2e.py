@@ -48,7 +48,9 @@ def test_restart_commit_wait_reports_real_ice_outcome() -> None:
         "/probe.py",
     ]
     try:
-        result = subprocess.run(args, text=True, capture_output=True, timeout=60)
+        result = subprocess.run(
+            args, text=True, capture_output=True, timeout=60, check=False
+        )
         assert result.returncode == 0, result.stdout + result.stderr
         proof = json.loads(result.stdout.strip().splitlines()[-1])
     finally:

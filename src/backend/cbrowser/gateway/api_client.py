@@ -39,7 +39,7 @@ class GatewayApiClient:
                 return None
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - transport or decode failure returns None safely
             logger.warning(
                 "Failed to query runtime state for profile %s: %s",
                 profile_id,
@@ -66,7 +66,7 @@ class GatewayApiClient:
                 data = resp.json()
                 return bool(data.get("allowed", False)), data.get("reason")
             return False, f"API authorization error ({resp.status_code})"
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - transport failure fail-closes authorization
             logger.warning(
                 "Viewer authorization call failed for profile %s: %s",
                 profile_id,

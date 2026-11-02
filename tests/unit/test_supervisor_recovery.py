@@ -291,9 +291,10 @@ async def test_offline_reconciliation_preserves_containers_on_api_error(
 
     # Mock container in docker_adapter
     class MockC:
-        id = "test_c_id"
-        name = "test_c_name"
-        labels = {"com.cbrowser.prefix": "test-prefix"}
+        def __init__(self) -> None:
+            self.id = "test_c_id"
+            self.name = "test_c_name"
+            self.labels = {"com.cbrowser.prefix": "test-prefix"}
 
     core.docker.scan_active_containers = lambda: [
         {

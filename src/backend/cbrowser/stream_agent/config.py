@@ -11,7 +11,6 @@ import os
 import re
 import urllib.parse
 from pathlib import Path
-from typing import List, Optional
 
 from pydantic import (
     BaseModel,
@@ -42,10 +41,10 @@ class StreamAgentConfig(BaseModel):
     min_fps: float = 8.0
     max_fps: float = 30.0
     video_streaming_mode: bool = False
-    turn_servers: List[dict] = Field(default_factory=list)
+    turn_servers: list[dict] = Field(default_factory=list)
     config_version: int = Field(default=1, ge=1)
-    selkies_version: Optional[str] = None
-    controller_token: Optional[SecretStr] = None
+    selkies_version: str | None = None
+    controller_token: SecretStr | None = None
 
     @field_validator("turn_host")
     @classmethod
@@ -106,7 +105,7 @@ class StreamAgentConfig(BaseModel):
 
     @field_validator("controller_token")
     @classmethod
-    def validate_controller_token(cls, v: Optional[SecretStr]) -> Optional[SecretStr]:
+    def validate_controller_token(cls, v: SecretStr | None) -> SecretStr | None:
         if v is not None:
             val = v.get_secret_value().strip()
             if not val or len(val) < 8:
@@ -211,7 +210,7 @@ class StreamAgentConfig(BaseModel):
 
         # Secret management: loading non-empty external file fail closed,
         # no silent fallback when explicit file bad
-        token_str: Optional[str] = None
+        token_str: str | None = None
         secret_file = os.environ.get("CBROWSER_AGENT_SECRET_FILE")
         if secret_file:
             path = Path(secret_file)
@@ -281,7 +280,7 @@ class StreamAgentConfig(BaseModel):
         x11_socket = os.environ.get("CBROWSER_X11_SOCKET", "/tmp/.X11-unix/X99")
         xauth = os.environ.get("XAUTHORITY", "/tmp/.Xauthority")
 
-        controller_token_str: Optional[str] = None
+        controller_token_str: str | None = None
         selkies_cred_file = os.environ.get("CBROWSER_SELKIES_CREDENTIALS_FILE")
         if selkies_cred_file:
             path = Path(selkies_cred_file)

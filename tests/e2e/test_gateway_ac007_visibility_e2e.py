@@ -8,6 +8,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from gateway_probe.topology import GatewayTopologyHarness
@@ -33,7 +34,7 @@ async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(
         await asyncio.to_thread(browser_eval, browser_cname, "true")
 
         gw_port = harness.gateway_container.attrs["NetworkSettings"]["Ports"][
-            "18097/tcp"
+            f"{DEFAULT_GATEWAY_PORT}/tcp"
         ][0]["HostPort"]
         gw_internal_url = f"http://127.0.0.1:{gw_port}"
         gw_headers = {"Authorization": f"Bearer {harness.keys['gateway']}"}

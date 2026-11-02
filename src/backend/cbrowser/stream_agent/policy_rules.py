@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
-from typing import Any, Optional, Set, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
-FORBIDDEN_PEER_PREFIXES: Tuple[str, ...] = (
+FORBIDDEN_PEER_PREFIXES: tuple[str, ...] = (
     "_arg_fps,",
     "r,",
     "s,",
@@ -17,7 +17,7 @@ FORBIDDEN_PEER_PREFIXES: Tuple[str, ...] = (
     "ab,",
 )
 
-DISALLOWED_SETTINGS_KEYS: Set[str] = {
+DISALLOWED_SETTINGS_KEYS: set[str] = {
     "framerate",
     "manual_width",
     "manual_height",
@@ -36,7 +36,7 @@ _SAFE_CALLER_RE = re.compile(r"^[A-Za-z0-9_:\-]{1,64}$")
 
 
 def iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def sanitize_caller(caller: Any) -> str:
@@ -48,7 +48,7 @@ def sanitize_caller(caller: Any) -> str:
     return "sanitized"
 
 
-def sanitize_settings_message(msg: str) -> Optional[str]:
+def sanitize_settings_message(msg: str) -> str | None:
     if not isinstance(msg, str) or not msg.startswith("SETTINGS,"):
         return msg
     try:
@@ -58,7 +58,7 @@ def sanitize_settings_message(msg: str) -> Optional[str]:
         for k in DISALLOWED_SETTINGS_KEYS:
             payload.pop(k, None)
         return "SETTINGS," + json.dumps(payload)
-    except Exception:
+    except (ValueError, json.JSONDecodeError):
         return None
 
 

@@ -1,8 +1,8 @@
 """Private IPv6 echo must be denied while an allowed TCP peer stays reachable."""
 
+import asyncio
 import json
 import os
-import time
 import uuid
 
 import docker
@@ -79,7 +79,7 @@ sys.stdout.write(json.dumps(result))
         for _ in range(50):
             if b"READY" in peer.logs():
                 break
-            time.sleep(0.1)
+            await asyncio.sleep(0.1)
         else:
             pytest.fail("IPv6 TCP server did not become ready")
         peer.reload()

@@ -3,10 +3,15 @@
 !src/backend/
 !src/backend/cbrowser/
 !src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/supervisor/
 !src/backend/cbrowser/supervisor/*.py
 !src/backend/cbrowser/domain/
 !src/backend/cbrowser/domain/*.py
+!src/backend/cbrowser/gateway/
+!src/backend/cbrowser/gateway/*.py
+!src/backend/cbrowser/runtime_agent/
+!src/backend/cbrowser/runtime_agent/*.py
 !config/
 !config/docker/
 !config/docker/supervisor_runtime/

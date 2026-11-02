@@ -24,7 +24,9 @@ def parse_trusted_proxy_cidrs(raw: str | Iterable[str] | None) -> list[IPNetwork
     return networks
 
 
-def _is_trusted(address: str | ipaddress._BaseAddress, networks: list[IPNetwork]) -> bool:
+def _is_trusted(
+    address: str | ipaddress._BaseAddress, networks: list[IPNetwork]
+) -> bool:
     try:
         parsed = ipaddress.ip_address(address)
     except ValueError:

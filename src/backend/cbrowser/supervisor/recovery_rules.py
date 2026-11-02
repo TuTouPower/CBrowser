@@ -107,3 +107,24 @@ def runtime_pair_active(
 
 def failure_budget_exhausted(failure_count: int, limit: int) -> bool:
     return failure_count >= limit
+
+
+def is_normal_exit_health(details: dict[str, Any]) -> bool:
+    """Return True only if Agent supervision details confirm a clean exit.
+
+    Requires exit code 0 and exit reason normal.
+    """
+    return (
+        details.get("state") == "stopped"
+        and details.get("exit_code") == 0
+        and details.get("exit_reason") == "normal"
+    )
+
+
+def is_error_exit_health(details: dict[str, Any]) -> bool:
+    """Return True if Agent supervision details confirm an error or owner-loss exit."""
+    return (
+        details.get("state") == "error"
+        or details.get("exit_reason") == "process_observation_lost"
+        or (details.get("state") == "stopped" and details.get("exit_code") != 0)
+    )

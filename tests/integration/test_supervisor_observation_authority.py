@@ -186,7 +186,9 @@ async def test_forged_normal_exit_journal_does_not_change_running_intent(
 
 
 @pytest.mark.asyncio
-async def test_invalid_journal_is_quarantined_without_blocking(supervisor_api, tmp_path):
+async def test_invalid_journal_is_quarantined_without_blocking(
+    supervisor_api, tmp_path
+):
     server, token = supervisor_api
     profile = server.post("/api/v1/profiles", json={"name": "bad-event"}).json()["id"]
     data_root = tmp_path / "supervisor-data"

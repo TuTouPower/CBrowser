@@ -113,7 +113,7 @@ class RecoveryCoordinator:
                 )
                 return None
             return resp.json()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - API availability probe error pauses recovery iteration
             logger.warning(
                 "Recovery paused: API error_type=%s",
                 type(exc).__name__,
@@ -125,7 +125,7 @@ class RecoveryCoordinator:
             return await asyncio.to_thread(
                 self.core.docker.scan_active_containers
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - docker scan failure pauses recovery iteration
             logger.warning(
                 "Recovery paused: Docker scan error_type=%s",
                 type(exc).__name__,
@@ -161,6 +161,15 @@ class RecoveryCoordinator:
 
             if browser_terminated(b_status, b_inst, self._reported_dead_instances):
                 await self._report_browser_exit(pid, b_c, b_inst)
+            elif b_status == "running" and b_inst not in self._reported_dead_instances:
+                obs = await self.core._reconcile_instance_observation(
+                    pid,
+                    b_inst,
+                    int(b_c.get("config_version", 1)),
+                    container_status=b_status,
+                )
+                if obs in ("stopped", "error"):
+                    self._reported_dead_instances.add(b_inst)
 
     async def _report_browser_exit(
         self, profile_id: str, browser: dict[str, Any], instance_id: str
@@ -517,7 +526,7 @@ class RecoveryCoordinator:
                     )
                     self._cleanup_failures.pop(profile_id, None)
                     self._cleanup_cooldown_until.pop(profile_id, None)
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - retry cleanup failure records cooldown backoff
                     curr_fail = self._cleanup_failures.get(profile_id, 0) + 1
                     self._cleanup_failures[profile_id] = curr_fail
                     cooldown = min(30.0, INITIAL_CLEANUP_COOLDOWN * curr_fail)
@@ -588,7 +597,7 @@ class RecoveryCoordinator:
         except asyncio.CancelledError:
             logger.info("Retry task for profile %s cancelled.", profile_id)
             raise
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - background recovery retry task failure isolated per profile
             logger.error(
                 "Recovery retry execution failed for profile %s: error_type=%s",
                 profile_id,

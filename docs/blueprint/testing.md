@@ -46,8 +46,8 @@ export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
 export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
-PYTHONPATH=src uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser>=0.6.3" python -m pytest src/backend/tests -q
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with cloakbrowser --with docker --with aiohttp --with argon2-cffi python -m pytest tests/unit -q
+PYTHONPATH=src uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser==0.6.4" python -m pytest src/backend/tests -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with "cloakbrowser==0.6.4" --with docker --with aiohttp --with argon2-cffi python -m pytest tests/unit -q
 ```
 
 ## blackbox_verify
@@ -61,7 +61,7 @@ mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with "sqlalchemy[asyncio]" --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with docker --with aiohttp --with argon2-cffi --with websockets python -m pytest tests/integration -q
 : "${CBROWSER_RUNTIME_TEST_IMAGE:?Provide an immutable built runtime image ID}"
 : "${CBROWSER_RUNTIME_ENGINE_CACHE:?Provide an initialized Linux engine cache path}"
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with cloakbrowser python -m pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with uvicorn --with httpx --with websockets --with "cloakbrowser==0.6.4" python -m pytest tests/e2e/test_browser_runtime_e2e.py tests/e2e/test_runtime_profile_defaults_e2e.py -q
 curl -sf http://127.0.0.1:56661/api/health
 uv run --no-project --python ">=3.12" python .repo_template/scripts/task.py list
 uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py status

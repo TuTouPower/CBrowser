@@ -57,6 +57,7 @@ def test_from_env_rejects_invalid_profile_geometry(width: str, height: str) -> N
         "CBROWSER_SCREEN_WIDTH": width,
         "CBROWSER_SCREEN_HEIGHT": height,
     }
-    with patch.dict(os.environ, env, clear=True):
-        with pytest.raises(ValueError, match="CBROWSER_SCREEN"):
-            StreamAgentConfig.from_env()
+    with patch.dict(os.environ, env, clear=True), pytest.raises(
+        ValueError, match="CBROWSER_SCREEN"
+    ):
+        StreamAgentConfig.from_env()

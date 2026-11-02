@@ -90,7 +90,8 @@ class ProfileRepository:
                         audit_details = json.loads(existing_audit.details)
                         if audit_details.get("sig_hash") != sig_hash:
                             raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with different request payload"
+                                f"Operation ID {operation_id} reused with "
+                                "different request payload"
                             )
                         existing = await session.get(
                             ProfileModel, existing_audit.entity_id
@@ -189,7 +190,8 @@ class ProfileRepository:
                         audit_details = json.loads(existing_audit.details)
                         if audit_details.get("sig_hash") != sig_hash:
                             raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with different request payload"
+                                f"Operation ID {operation_id} reused with "
+                                "different request payload"
                             )
                         existing = await session.get(
                             ProfileModel, existing_audit.entity_id
@@ -224,7 +226,10 @@ class ProfileRepository:
         *,
         operation_id: str | None = None,
     ) -> Profile | None:
-        """Atomically merge supplied patch fields into latest profile state under write_transaction."""
+        """Atomically merge supplied patch fields into latest profile state.
+
+        Performs update under write_transaction.
+        """
         if isinstance(patch_data, ProfileConfig):
             patch_dict = patch_data.model_dump()
         else:
@@ -251,7 +256,8 @@ class ProfileRepository:
                         audit_details = json.loads(existing_audit.details)
                         if audit_details.get("sig_hash") != sig_hash:
                             raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with different request payload"
+                                f"Operation ID {operation_id} reused with "
+                                "different request payload"
                             )
                         existing = await session.get(ProfileModel, profile_id)
                         if existing:
@@ -389,7 +395,8 @@ class ProfileRepository:
                         audit_details = json.loads(existing_audit.details)
                         if audit_details.get("sig_hash") != sig_hash:
                             raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with different request payload"
+                                f"Operation ID {operation_id} reused with "
+                                "different request payload"
                             )
                         existing = await session.get(ProfileModel, profile_id)
                         if existing:
@@ -445,7 +452,10 @@ class ProfileRepository:
         config_version: int = 1,
         expected_current_instance: str | None = None,
     ) -> ProfileRuntime | None:
-        """Supervisor binds container instance with applied config version and marks observed starting."""
+        """Supervisor binds container instance with applied config version.
+
+        Marks observed starting under write_transaction.
+        """
         now = utc_now_iso()
         async with self._session_maker() as session, write_transaction(session):
             m = await session.get(ProfileRuntimeModel, profile_id)
@@ -463,19 +473,22 @@ class ProfileRepository:
             ).scalar()
             if not v_exists:
                 raise InvalidConfigVersionError(
-                    f"Config version {config_version} does not exist for profile {profile_id}"
+                    f"Config version {config_version} does not exist "
+                    f"for profile {profile_id}"
                 )
 
             # Idempotent re-bind of same instance
             if m.runtime_instance_id == runtime_instance_id:
                 if m.config_version != config_version:
                     raise InvalidConfigVersionError(
-                        f"Cannot change bound config_version for existing instance {runtime_instance_id} from {m.config_version} to {config_version}"
+                        f"Cannot change bound config_version for existing "
+                        f"instance {runtime_instance_id} from {m.config_version} "
+                        f"to {config_version}"
                     )
                 # MUST NOT regress observed_state from running back to starting!
                 return self._to_domain_runtime(m)
 
-            # Check if runtime_instance_id was previously bound or exited for this profile
+            # Check if runtime_instance_id was previously bound or exited
             prev_seen = (
                 await session.execute(
                     select(1).where(
@@ -486,10 +499,12 @@ class ProfileRepository:
             ).scalar()
             if prev_seen:
                 raise InstanceConflictError(
-                    f"Cannot bind stale instance {runtime_instance_id}: instance was already superseded"
+                    f"Cannot bind stale instance {runtime_instance_id}: "
+                    "instance was already superseded"
                 )
 
-            # Active instance guard: cannot overwrite an already active instance unless expected_current_instance matches!
+            # Active instance guard: cannot overwrite an already active instance
+            # unless expected_current_instance matches!
             if (
                 m.runtime_instance_id is not None
                 and m.observed_state in ("starting", "running")
@@ -499,7 +514,8 @@ class ProfileRepository:
                 )
             ):
                 raise InstanceConflictError(
-                    f"Cannot bind instance {runtime_instance_id}: profile currently has active instance {m.runtime_instance_id}"
+                    f"Cannot bind instance {runtime_instance_id}: profile "
+                    f"currently has active instance {m.runtime_instance_id}"
                 )
 
             m.runtime_instance_id = runtime_instance_id
@@ -546,7 +562,8 @@ class ProfileRepository:
                 return None
             if config_version is not None and config_version != m.config_version:
                 raise InvalidConfigVersionError(
-                    f"Reported config_version {config_version} does not match instance's bound version {m.config_version}"
+                    f"Reported config_version {config_version} does not "
+                    f"match instance's bound version {m.config_version}"
                 )
             previous = m.observed_state
             m.observed_state = observed_state
@@ -586,7 +603,10 @@ class ProfileRepository:
     async def set_desired_state(
         self, profile_id: str, desired_state: str, *, operation_id: str | None = None
     ) -> ProfileRuntime | None:
-        """User sets intent. Replay of same operation_id returns state without resetting failures."""
+        """User sets intent.
+
+        Replay of same operation_id returns state without resetting failures.
+        """
         now = utc_now_iso()
         sig_hash = _hash_request(
             "set_desired_state", profile_id, {"desired_state": desired_state}
@@ -605,7 +625,7 @@ class ProfileRepository:
                         raise IdempotencyConflictError(
                             "Operation ID reused with different request payload"
                         )
-                    # Idempotent replay: return current state WITHOUT resetting failure_count!
+                    # Idempotent replay: return current state without resetting failures
                     return self._to_domain_runtime(m)
 
                 session.add(
@@ -631,7 +651,10 @@ class ProfileRepository:
         return await self.get_runtime(profile_id)
 
     async def consume_runtime_event(self, event: RuntimeEvent) -> str:
-        """Process runtime event atomically with bound config version matching and parallel duplicate handling."""
+        """Process runtime event atomically.
+
+        Matches bound config version and handles parallel duplicates.
+        """
         now = utc_now_iso()
 
         if event.event_type == "exit" and event.exit_code is None:
@@ -666,7 +689,7 @@ class ProfileRepository:
                     )
                     return "stale_instance"
 
-                # 4. Bound config version match: event must match instance's actual bound version!
+                # 4. Bound config version match: event must match bound version!
                 if event.config_version != rt.config_version:
                     session.add(
                         RuntimeEventModel(

@@ -46,7 +46,10 @@ def test_per_source_window_and_global_budget(monkeypatch: pytest.MonkeyPatch) ->
     now = [1000.0]
     monkeypatch.setattr(time, "time", lambda: now[0])
     limiter = LoginRateLimiter(
-        max_failures=2, window_seconds=60, global_max_failures=3, global_window_seconds=900
+        max_failures=2,
+        window_seconds=60,
+        global_max_failures=3,
+        global_window_seconds=900,
     )
     limiter.record_failure("a")
     limiter.record_failure("a")

@@ -11,19 +11,24 @@ Validates AC-003 & AC-004:
 6. Normal exit event persistence & API reconciliation: when normal exit occurs,
    API state updates to stopped and neither restart nor duplicate replay clears
    stopped state.
+7. Diagnostic spool replay without stopping live runtime: spooled exit events
+   replay as diagnostics to API without terminating or altering live healthy containers,
+   confirming observation authority over sandboxed exit files.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import importlib.util
 import json
 import logging
 import os
 import secrets
 import shutil
-import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -33,7 +38,10 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from cbrowser.domain.models import RuntimeEventReportRequest
+from cbrowser.runtime_agent.event_storage import atomic_write_json
 from cbrowser.supervisor.agent_credentials import AgentCredentials
+from gateway_probe.topology import cleanup_prefixed_resources
 
 _gw_fixture_path = (
     Path(__file__).resolve().parents[1]
@@ -46,6 +54,18 @@ _gw_mod = importlib.util.module_from_spec(_gw_spec)
 sys.modules["gateway_fixture"] = _gw_mod
 _gw_spec.loader.exec_module(_gw_mod)
 SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
+
+_off_path = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "supervisor_recovery_probe"
+    / "offline_fixture.py"
+)
+_off_spec = importlib.util.spec_from_file_location("offline_fixture", _off_path)
+_off_mod = importlib.util.module_from_spec(_off_spec)
+sys.modules["offline_fixture"] = _off_mod
+_off_spec.loader.exec_module(_off_mod)
+RealSupervisorContainer = _off_mod.RealSupervisorContainer
 
 _auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
 _auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
@@ -151,59 +171,97 @@ def real_api_and_sup(tmp_path: Path):
     )
 
     api_log = tmp_path / "api.log"
-    api_proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "cbrowser.api.main:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(api_port),
-        ],
-        cwd=root,
-        env=env,
-        stdout=open(api_log, "w"),
-        stderr=subprocess.STDOUT,
-    )
+    api_proc = None
+    managed_procs: list[subprocess.Popen] = []
 
-    api_url = f"http://127.0.0.1:{api_port}"
-    with httpx.Client(base_url=api_url, trust_env=False) as c:
-        for _ in range(100):
-            try:
-                if c.get("/api/v1/health").status_code == 200:
-                    break
-            except httpx.TransportError:
-                pass
-            time.sleep(0.1)
-        auth_headers = auth_ctx.login_sync(api_url, c)
+    with open(api_log, "w", encoding="utf-8") as api_log_handle:
+        try:
+            api_proc = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    "cbrowser.api.main:app",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(api_port),
+                ],
+                cwd=root,
+                env=env,
+                stdout=api_log_handle,
+                stderr=subprocess.STDOUT,
+            )
 
-    yield {
-        "api_url": api_url,
-        "sup_port": sup_port,
-        "gw_port": gw_port,
-        "sup_token": sup_token,
-        "sup_token_file": sup_token_file,
-        "agent_key_file": agent_key_file,
-        "gw_token_file": gw_token_file,
-        "root": root,
-        "env": env,
-        "auth_headers": auth_headers,
-    }
+            api_url = f"http://127.0.0.1:{api_port}"
+            with httpx.Client(base_url=api_url, trust_env=False) as c:
+                for _ in range(100):
+                    try:
+                        if c.get("/api/v1/health").status_code == 200:
+                            break
+                    except httpx.TransportError:
+                        pass
+                    time.sleep(0.1)
+                auth_headers = auth_ctx.login_sync(api_url, c)
 
-    api_proc.terminate()
-    try:
-        api_proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        api_proc.kill()
+            yield {
+                "api_url": api_url,
+                "api_port": api_port,
+                "sup_port": sup_port,
+                "gw_port": gw_port,
+                "sup_token": sup_token,
+                "sup_token_file": sup_token_file,
+                "agent_key_file": agent_key_file,
+                "gw_token_file": gw_token_file,
+                "root": root,
+                "env": env,
+                "auth_headers": auth_headers,
+                "managed_procs": managed_procs,
+            }
+        finally:
+            cleanup_errors: list[BaseException] = []
+            for p in managed_procs:
+                if p is not None and p.poll() is None:
+                    try:
+                        p.terminate()
+                        try:
+                            p.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            p.kill()
+                            p.wait(timeout=2)
+                    except BaseException as exc:  # noqa: BLE001 - Best-effort termination of managed subprocesses
+                        logger.warning(
+                            "Error terminating managed process: error_type=%s",
+                            type(exc).__name__,
+                        )
+                        cleanup_errors.append(exc)
+            if api_proc is not None and api_proc.poll() is None:
+                try:
+                    api_proc.terminate()
+                    try:
+                        api_proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        api_proc.kill()
+                        api_proc.wait(timeout=2)
+                except BaseException as exc:  # noqa: BLE001 - Best-effort termination of real api process
+                    logger.warning(
+                        "Error terminating api process: error_type=%s",
+                        type(exc).__name__,
+                    )
+                    cleanup_errors.append(exc)
+
+            if cleanup_errors:
+                if len(cleanup_errors) == 1:
+                    raise cleanup_errors[0]
+                raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
 
 
 @pytest.mark.asyncio
 async def test_supervisor_sigkill_reconciliation_and_event_persistence(
-    tmp_path: Path, real_api_and_sup
+    tmp_path: Path, real_api_and_sup, request: pytest.FixtureRequest
 ):
     api_url = real_api_and_sup["api_url"]
+    api_port = real_api_and_sup["api_port"]
     sup_port = real_api_and_sup["sup_port"]
     gw_port = real_api_and_sup["gw_port"]
     sup_token = real_api_and_sup["sup_token"]
@@ -237,6 +295,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
     prefix = f"t005-rec-{test_run_id}"
 
     d_client = docker.from_env()
+    request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
     turn_image = os.environ.get(
         "CBROWSER_TURN_TEST_IMAGE",
@@ -294,45 +353,31 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         )
         assert r_des.status_code == 200
 
-    # 2. Spawn Supervisor process
+    # 2. Spawn Supervisor container
     sup_log = tmp_path / "supervisor.log"
-    sup_cmd = [
-        sys.executable,
-        "-m",
-        "cbrowser.supervisor.runner",
-        "--api-url",
-        api_url,
-        "--data-root",
-        str(data_root),
-        "--engine-cache",
-        str(engine_cache),
-        "--geoip-cache",
-        str(engine_cache / "geoip"),
-        "--token-file",
-        str(sup_token_file),
-        "--agent-key-file",
-        str(agent_key_file),
-        "--gateway-url",
-        f"ws://host.docker.internal:{gw_port}",
-        "--gateway-control-url",
-        f"http://127.0.0.1:{gw_port}",
-        "--gateway-token-file",
-        str(gw_token_file),
-        "--coturn-container-id",
-        coturn.id,
-        "--prefix",
-        prefix,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(sup_port),
-    ]
-
-    sup_proc = subprocess.Popen(
-        sup_cmd, cwd=root, env=env, stdout=open(sup_log, "w"), stderr=subprocess.STDOUT
+    sup = RealSupervisorContainer(
+        api_url=f"http://host.docker.internal:{api_port}",
+        data_root=data_root,
+        engine_cache=engine_cache,
+        geoip_cache=engine_cache / "geoip",
+        token_file=sup_token_file,
+        agent_key_file=agent_key_file,
+        gateway_url=f"ws://host.docker.internal:{gw_port}",
+        gateway_port=gw_port,
+        gateway_control_url=f"http://host.docker.internal:{gw_port}",
+        gateway_token_file=gw_token_file,
+        prefix=prefix,
+        port=sup_port,
+        root=root,
+        env=env,
+        log_path=sup_log,
+        coturn_container_id=coturn.id,
+        docker_client=d_client,
     )
+    await asyncio.to_thread(sup.start)
+    c1_id = sup.container_id
 
-    sup_url = f"http://127.0.0.1:{sup_port}"
+    sup_url = sup.url
     sup_headers = {"Authorization": f"Bearer {sup_token}"}
 
     async with httpx.AsyncClient(
@@ -364,9 +409,8 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
     assert b_c.status == "running"
     assert s_c.status == "running"
 
-    # 3. SIGKILL the Supervisor process!
-    sup_proc.send_signal(signal.SIGKILL)
-    sup_proc.wait()
+    # 3. SIGKILL the Supervisor container!
+    await asyncio.to_thread(sup.sigkill)
 
     # Assert Browser and Stream containers STILL running during Supervisor absence
     b_c.reload()
@@ -378,10 +422,10 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         "Stream container must NOT die on supervisor SIGKILL"
     )
 
-    # 4. Restart Supervisor process
-    sup_proc2 = subprocess.Popen(
-        sup_cmd, cwd=root, env=env, stdout=open(sup_log, "a"), stderr=subprocess.STDOUT
-    )
+    # 4. Restart Supervisor container
+    await asyncio.to_thread(sup.restart)
+    c2_id = sup.container_id
+    assert c2_id != c1_id, "Supervisor container identity must be renewed"
 
     try:
         async with httpx.AsyncClient(
@@ -416,21 +460,26 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
                 "assert r.status_code == 200, r.text; "
                 "client.close()"
             )
-            close_cmd = ["docker", "exec", b_cname, "python3", "-c", script]
-            res_close = subprocess.run(
-                close_cmd, capture_output=True, text=True, check=True
+            res = await asyncio.to_thread(
+                subprocess.run,
+                ["docker", "exec", b_cname, "python3", "-c", script],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
             )
-            logger.info(f"Triggered real browser close: {res_close.stdout}")
+            assert res.returncode == 0
 
-            # Wait for background monitoring loop in supervisor to consume real disk
-            # exit event and sync API
+            # Wait for exit event persistence and API reconcile
+            # Give supervisor time to read event and push to API
+            await asyncio.sleep(1.0)
             async with httpx.AsyncClient(
                 base_url=api_url,
-                headers={"Authorization": f"Bearer {sup_token}"},
+                headers=api_headers,
                 trust_env=False,
-            ) as api_client2:
-                for _ in range(50):
-                    r_rt = await api_client2.get(
+            ) as api_client_check:
+                for _ in range(120):
+                    r_rt = await api_client_check.get(
                         f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
                     )
                     if (
@@ -457,40 +506,18 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             assert r_stop.status_code == 200
 
     finally:
-        sup_proc2.terminate()
-        try:
-            sup_proc2.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            sup_proc2.kill()
+        await asyncio.to_thread(sup.stop)
         await gateway.stop()
-        if coturn is not None:
-            try:
-                coturn.remove(force=True)
-            except Exception:
-                pass
-        # Clean containers
-        for c in (b_cname, s_cname):
-            try:
-                d_client.containers.get(c).remove(force=True)
-            except docker.errors.NotFound:
-                pass
-        for network in d_client.networks.list(
-            filters={
-                "label": [
-                    f"com.cbrowser.prefix={prefix}",
-                    "com.cbrowser.managed-by=supervisor",
-                ]
-            },
-        ):
-            network.remove()
+        cleanup_prefixed_resources(d_client, prefix)
         d_client.close()
 
 
 @pytest.mark.asyncio
 async def test_supervisor_dual_profile_port_invariance_on_sigkill(
-    tmp_path: Path, real_api_and_sup
+    tmp_path: Path, real_api_and_sup, request: pytest.FixtureRequest
 ):
     api_url = real_api_and_sup["api_url"]
+    api_port = real_api_and_sup["api_port"]
     sup_port = real_api_and_sup["sup_port"]
     gw_port = real_api_and_sup["gw_port"]
     sup_token = real_api_and_sup["sup_token"]
@@ -523,6 +550,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-inv-{test_run_id}"
     d_client = docker.from_env()
+    request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
     turn_image = os.environ.get(
         "CBROWSER_TURN_TEST_IMAGE",
@@ -590,42 +618,28 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         )
 
     sup_log = tmp_path / "supervisor_inv.log"
-    sup_cmd = [
-        sys.executable,
-        "-m",
-        "cbrowser.supervisor.runner",
-        "--api-url",
-        api_url,
-        "--data-root",
-        str(data_root),
-        "--engine-cache",
-        str(engine_cache),
-        "--geoip-cache",
-        str(engine_cache / "geoip"),
-        "--token-file",
-        str(sup_token_file),
-        "--agent-key-file",
-        str(agent_key_file),
-        "--gateway-url",
-        f"ws://host.docker.internal:{gw_port}",
-        "--gateway-control-url",
-        f"http://127.0.0.1:{gw_port}",
-        "--gateway-token-file",
-        str(gw_token_file),
-        "--coturn-container-id",
-        coturn.id,
-        "--prefix",
-        prefix,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(sup_port),
-    ]
-
-    sup_proc = subprocess.Popen(
-        sup_cmd, cwd=root, env=env, stdout=open(sup_log, "w"), stderr=subprocess.STDOUT
+    sup = RealSupervisorContainer(
+        api_url=f"http://host.docker.internal:{api_port}",
+        data_root=data_root,
+        engine_cache=engine_cache,
+        geoip_cache=engine_cache / "geoip",
+        token_file=sup_token_file,
+        agent_key_file=agent_key_file,
+        gateway_url=f"ws://host.docker.internal:{gw_port}",
+        gateway_port=gw_port,
+        gateway_control_url=f"http://host.docker.internal:{gw_port}",
+        gateway_token_file=gw_token_file,
+        prefix=prefix,
+        port=sup_port,
+        root=root,
+        env=env,
+        log_path=sup_log,
+        coturn_container_id=coturn.id,
+        docker_client=d_client,
     )
-    sup_url = f"http://127.0.0.1:{sup_port}"
+    await asyncio.to_thread(sup.start)
+    c1_id = sup.container_id
+    sup_url = sup.url
     sup_headers = {"Authorization": f"Bearer {sup_token}"}
 
     created_containers = []
@@ -671,18 +685,13 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 [start_b["browser_container"], start_b["stream_container"]]
             )
 
-        # 2. SIGKILL the Supervisor process
-        sup_proc.send_signal(signal.SIGKILL)
-        sup_proc.wait()
+        # SIGKILL supervisor container!
+        await asyncio.to_thread(sup.sigkill)
 
-        # 3. Restart Supervisor process
-        sup_proc2 = subprocess.Popen(
-            sup_cmd,
-            cwd=root,
-            env=env,
-            stdout=open(sup_log, "a"),
-            stderr=subprocess.STDOUT,
-        )
+        # Restart supervisor container
+        await asyncio.to_thread(sup.restart)
+        c2_id = sup.container_id
+        assert c2_id != c1_id, "Supervisor container identity must be renewed"
 
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
@@ -697,15 +706,14 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                     pass
                 await asyncio.sleep(0.1)
 
-            # Query status of both profiles: verify port invariance from HostConfig
-            # (not scan order!)
+            # Query status from resurrected supervisor: ports MUST be identical
+            # (30000, 30001)
             stat_a = (
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_a}/status")
             ).json()
             stat_b = (
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_b}/status")
             ).json()
-
             assert stat_a["observed_state"] == "running"
             assert stat_a["udp_mux_port"] == 30000
             assert stat_b["observed_state"] == "running"
@@ -730,40 +738,68 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             )
 
     finally:
-        if "sup_proc2" in locals():
-            sup_proc2.terminate()
-            try:
-                sup_proc2.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                sup_proc2.kill()
+        await asyncio.to_thread(sup.stop)
         await gateway.stop()
-        if "coturn" in locals() and coturn is not None:
-            try:
-                coturn.remove(force=True)
-            except Exception:
-                pass
-        for c in created_containers:
-            try:
-                d_client.containers.get(c).remove(force=True)
-            except docker.errors.NotFound:
-                pass
-        for network in d_client.networks.list(
-            filters={
-                "label": [
-                    f"com.cbrowser.prefix={prefix}",
-                    "com.cbrowser.managed-by=supervisor",
-                ]
-            },
-        ):
-            network.remove()
+        cleanup_prefixed_resources(d_client, prefix)
         d_client.close()
 
 
+def _probe_in_container_agent_health(container_name: str) -> dict:
+    probe_script = (
+        "import httpx, json, sys\n"
+        "try:\n"
+        "    sock = '/run/cbrowser/runtime/agent.sock'\n"
+        "    transport = httpx.HTTPTransport(uds=sock)\n"
+        "    with httpx.Client(\n"
+        "        transport=transport, base_url='http://uds', timeout=5.0\n"
+        "    ) as client:\n"
+        "        resp = client.get('/health')\n"
+        "        assert resp.status_code == 200, (\n"
+        "            f'Status {resp.status_code}: {resp.text}'\n"
+        "        )\n"
+        "        data = resp.json()\n"
+        "        assert data.get('ready') is True, f'Agent not ready: {data}'\n"
+        "        assert data.get('browser_ready') is True, (\n"
+        "            f'Browser not ready: {data}'\n"
+        "        )\n"
+        "        assert data.get('cdp_ready') is True, f'CDP not ready: {data}'\n"
+        "        print(json.dumps(data))\n"
+        "except Exception as exc:\n"
+        "    print(f'ERROR: {exc}', file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+    )
+    res = subprocess.run(
+        ["docker", "exec", container_name, "python3", "-c", probe_script],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    assert res.returncode == 0, f"probe failed: {res.stderr}"
+    return json.loads(res.stdout.strip())
+
+
+def _query_runtime_events_ro(db_path: Path, event_id: str) -> list[tuple]:
+    db_uri = f"{db_path.resolve().as_uri()}?mode=ro"
+    with (
+        contextlib.closing(sqlite3.connect(db_uri, uri=True)) as conn,
+        contextlib.closing(conn.cursor()) as cursor,
+    ):
+        cursor.execute(
+            "SELECT event_id, profile_id, runtime_instance_id, event_type, "
+            "exit_code, exit_reason, config_version, payload "
+            "FROM runtime_events WHERE event_id = ?",
+            (event_id,),
+        )
+        return cursor.fetchall()
+
+
 @pytest.mark.asyncio
-async def test_api_offline_event_spool_and_reconciliation_replay(
-    tmp_path: Path, real_api_and_sup
+async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime(
+    tmp_path: Path, real_api_and_sup, request: pytest.FixtureRequest
 ):
     api_url = real_api_and_sup["api_url"]
+    api_port = real_api_and_sup["api_port"]
     sup_port = real_api_and_sup["sup_port"]
     gw_port = real_api_and_sup["gw_port"]
     sup_token = real_api_and_sup["sup_token"]
@@ -794,8 +830,9 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
     await gateway.start()
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-off-{test_run_id}"
+    prefix = f"t005-dsp-{test_run_id}"
     d_client = docker.from_env()
+    request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
     turn_image = os.environ.get(
         "CBROWSER_TURN_TEST_IMAGE",
@@ -836,14 +873,15 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
     api_headers = {"Authorization": f"Bearer {sup_token}"}
     api_headers.update(real_api_and_sup["auth_headers"])
 
-    # 1. Create Profile in API
+    # 1. Create Profile in API and set desired_state = running
     async with httpx.AsyncClient(
         base_url=api_url,
         headers=api_headers,
         trust_env=False,
     ) as api_client:
         r_create = await api_client.post(
-            "/api/v1/profiles", json={"name": "Offline Spool Profile", "geoip": True}
+            "/api/v1/profiles",
+            json={"name": "Diagnostic Spool Authority Profile", "geoip": True},
         )
         assert r_create.status_code == 201
         profile_id = r_create.json()["id"]
@@ -852,46 +890,31 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
             json={"desired_state": "running"},
         )
 
-    sup_log = tmp_path / "supervisor_offline.log"
-    sup_cmd = [
-        sys.executable,
-        "-m",
-        "cbrowser.supervisor.runner",
-        "--api-url",
-        api_url,
-        "--data-root",
-        str(data_root),
-        "--engine-cache",
-        str(engine_cache),
-        "--geoip-cache",
-        str(engine_cache / "geoip"),
-        "--token-file",
-        str(sup_token_file),
-        "--agent-key-file",
-        str(agent_key_file),
-        "--gateway-url",
-        f"ws://host.docker.internal:{gw_port}",
-        "--gateway-control-url",
-        f"http://127.0.0.1:{gw_port}",
-        "--gateway-token-file",
-        str(gw_token_file),
-        "--coturn-container-id",
-        coturn.id,
-        "--prefix",
-        prefix,
-        "--host",
-        "127.0.0.1",
-        "--port",
-        str(sup_port),
-    ]
-
-    sup_proc = subprocess.Popen(
-        sup_cmd, cwd=root, env=env, stdout=open(sup_log, "w"), stderr=subprocess.STDOUT
+    sup_log = tmp_path / "supervisor_spool_authority.log"
+    sup = RealSupervisorContainer(
+        api_url=f"http://host.docker.internal:{api_port}",
+        data_root=data_root,
+        engine_cache=engine_cache,
+        geoip_cache=engine_cache / "geoip",
+        token_file=sup_token_file,
+        agent_key_file=agent_key_file,
+        gateway_url=f"ws://host.docker.internal:{gw_port}",
+        gateway_port=gw_port,
+        gateway_control_url=f"http://host.docker.internal:{gw_port}",
+        gateway_token_file=gw_token_file,
+        prefix=prefix,
+        port=sup_port,
+        root=root,
+        env=env,
+        log_path=sup_log,
+        coturn_container_id=coturn.id,
+        docker_client=d_client,
     )
-    sup_url = f"http://127.0.0.1:{sup_port}"
+    await asyncio.to_thread(sup.start)
+    c1_id = sup.container_id
+    sup_url = sup.url
     sup_headers = {"Authorization": f"Bearer {sup_token}"}
 
-    created_containers = []
     try:
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
@@ -906,61 +929,177 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
                     pass
                 await asyncio.sleep(0.1)
 
-            # Start Profile
+            # Start Profile via Supervisor control server
             res = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": profile_id, "config_version": 1},
             )
             assert res.status_code == 200
-            b_cname = res.json()["browser_container"]
-            s_cname = res.json()["stream_container"]
-            inst_id = res.json()["runtime_instance_id"]
-            created_containers.extend([b_cname, s_cname])
+            start_payload = res.json()
+            b_cname = start_payload["browser_container"]
+            s_cname = start_payload["stream_container"]
+            inst_id = start_payload["runtime_instance_id"]
+            initial_udp_mux_port = start_payload["udp_mux_port"]
+            assert initial_udp_mux_port is not None
 
-        # 2. Simulate offline event queueing in spool directory
+        b_c = d_client.containers.get(b_cname)
+        s_c = d_client.containers.get(s_cname)
+        assert b_c.status == "running"
+        assert s_c.status == "running"
+        b_c_initial_id = b_c.id
+        s_c_initial_id = s_c.id
+
+        # 2. Verify live browser PID, CDP and Agent readiness before writing spool
+        health_pre = await asyncio.to_thread(_probe_in_container_agent_health, b_cname)
+        assert health_pre["ready"] is True
+        assert health_pre["browser_ready"] is True
+        assert health_pre["cdp_ready"] is True
+        assert health_pre["profile_id"] == profile_id
+        assert health_pre["runtime_instance_id"] == inst_id
+        assert health_pre["config_version"] == 1
+        browser_pid_pre = health_pre["details"]["browser_pid"]
+        cdp_port_pre = health_pre["details"]["cdp_port"]
+        assert browser_pid_pre is not None and browser_pid_pre > 0
+        assert cdp_port_pre is not None and cdp_port_pre > 0
+
+        # 3. Simulate durable diagnostic event queued in spool directory.
+        # Uses production RuntimeEventReportRequest schema (exit_type=exit,
+        # normal reason, bound config_version=1, valid ISO/Unix fields).
         spool_dir = data_root / "spool"
         spool_dir.mkdir(parents=True, exist_ok=True)
-        evt_id = f"evt_offline_{uuid.uuid4().hex[:8]}"
-        spool_file = spool_dir / f"{evt_id}.json"
-        event_payload = {
-            "event_id": evt_id,
-            "profile_id": profile_id,
-            "runtime_instance_id": inst_id,
-            "event_type": "exit",
-            "exit_code": 0,
-            "exit_reason": "normal",
-            "config_version": 1,
-            "payload": {},
-        }
-        spool_file.write_text(json.dumps(event_payload), encoding="utf-8")
+        evt_id = f"evt_diag_{uuid.uuid4().hex[:8]}"
 
-        # 3. Wait for supervisor background monitoring loop to pick up and forward
-        # the spooled event to API
+        event_model = RuntimeEventReportRequest(
+            event_id=evt_id,
+            profile_id=profile_id,
+            runtime_instance_id=inst_id,
+            event_type="exit",
+            exit_code=0,
+            exit_reason="normal",
+            config_version=1,
+            payload={"source": "diagnostic_spool_authority_e2e"},
+        )
+        event_payload = event_model.model_dump()
+        spool_key = hashlib.sha256(evt_id.encode("utf-8")).hexdigest()
+        spool_file = spool_dir / f"{spool_key}.json"
+        await asyncio.to_thread(atomic_write_json, spool_file, event_payload)
+        assert spool_file.exists()
+
+        # Check health again after spool write: living browser unaffected
+        health_post_write = await asyncio.to_thread(
+            _probe_in_container_agent_health, b_cname
+        )
+        assert health_post_write["ready"] is True
+        assert health_post_write["browser_ready"] is True
+        assert health_post_write["cdp_ready"] is True
+        assert health_post_write["profile_id"] == profile_id
+        assert health_post_write["runtime_instance_id"] == inst_id
+        assert health_post_write["config_version"] == 1
+        assert health_post_write["details"]["browser_pid"] == browser_pid_pre
+
+        # 4. SIGKILL Supervisor container while event is spooled!
+        await asyncio.to_thread(sup.sigkill)
+
+        # Assert Browser and Stream containers STILL running during Supervisor absence
+        b_c.reload()
+        s_c.reload()
+        assert b_c.status == "running"
+        assert s_c.status == "running"
+
+        # 5. Restart Supervisor container: on startup, spool replayer delivers event
+        # to API, while ActiveSession reconciles running Docker containers.
+        await asyncio.to_thread(sup.restart)
+        c2_id = sup.container_id
+        assert c2_id != c1_id, "Supervisor container identity must be renewed"
+
+        async with httpx.AsyncClient(
+            base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
+        ) as sup_client2:
+            for _ in range(100):
+                try:
+                    if (
+                        await sup_client2.get("/supervisor/v1/health")
+                    ).status_code == 200:
+                        break
+                except httpx.TransportError:
+                    pass
+                await asyncio.sleep(0.1)
+
+            # Wait for spool forwarder to deliver and unlink the event file
+            for _ in range(60):
+                if not spool_file.exists():
+                    break
+                await asyncio.sleep(0.5)
+            assert not spool_file.exists(), (
+                "Delivered spool event file must be unlinked after delivery"
+            )
+
+            # Quarantine directory must not have captured this event as invalid
+            quarantine_file = spool_dir / "quarantine" / spool_file.name
+            assert not quarantine_file.exists(), (
+                f"Valid event was unexpectedly quarantined: {quarantine_file}"
+            )
+
+            # Verify resurrected supervisor reports running state and
+            # preserved UDP mux port
+            r_stat = await sup_client2.get(
+                f"/supervisor/v1/profiles/{profile_id}/status"
+            )
+            assert r_stat.status_code == 200
+            stat_data = r_stat.json()
+            assert stat_data["observed_state"] == "running"
+            assert stat_data["udp_mux_port"] == initial_udp_mux_port
+
+        # 6. Verify real API diagnostic persistence via read-only SQLite mode=ro
+        db_path = tmp_path / "control.db"
+        db_records = await asyncio.to_thread(
+            _query_runtime_events_ro, db_path, evt_id
+        )
+        assert len(db_records) == 1, (
+            f"Expected exactly 1 diagnostic event record in DB for {evt_id}, "
+            f"got {db_records}"
+        )
+        rec = db_records[0]
+        assert rec[0] == evt_id
+        assert rec[1] == profile_id
+        assert rec[2] == inst_id
+        assert rec[3] == "exit"
+        assert rec[4] == 0
+        assert rec[5] == "normal"
+        assert rec[6] == 1
+
+        # 7. A1 Observation Authority assertions:
+        # Diagnostic events must NOT alter live running intent or observed state!
         async with httpx.AsyncClient(
             base_url=api_url,
             headers=api_headers,
             trust_env=False,
         ) as api_client:
-            for _ in range(30):
-                if not spool_file.exists():
+            for _ in range(60):
+                r_rt = await api_client.get(
+                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
+                )
+                if (
+                    r_rt.status_code == 200
+                    and r_rt.json().get("observed_state") == "running"
+                ):
                     break
                 await asyncio.sleep(0.5)
 
-            assert not spool_file.exists(), (
-                "Spooled event must be consumed and deleted upon successful "
-                "API delivery"
-            )
-
-            # Disk events are diagnostics: a synthetic exit while the real
-            # Browser container keeps running must not clear running intent.
-            r_rt = await api_client.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
-            )
             assert r_rt.status_code == 200
-            assert r_rt.json()["desired_state"] == "running"
-            assert r_rt.json()["runtime_instance_id"] == inst_id
+            rt_data = r_rt.json()
+            assert rt_data["desired_state"] == "running", (
+                f"Diagnostic event must NOT clear desired_state: {rt_data}"
+            )
+            assert rt_data["observed_state"] == "running", (
+                f"Observed state must remain running: {rt_data}"
+            )
+            assert rt_data["runtime_instance_id"] == inst_id
+            assert rt_data["failure_count"] == 0
+            assert rt_data["restart_blocked"] is False
 
-            # 4. Idempotency test: Replay the identical event
+            # 8. Idempotency & duplicate replay test:
+            # Replaying the identical event returns outcome="duplicate"
             r_dup = await api_client.post(
                 "/api/v1/internal/supervisor/runtimes/events", json=event_payload
             )
@@ -968,38 +1107,96 @@ async def test_api_offline_event_spool_and_reconciliation_replay(
             dup_data = r_dup.json()
             assert dup_data["status"] == "ok"
             assert dup_data["outcome"] == "duplicate"
+            assert dup_data["event_id"] == evt_id
 
-            # Verify that replaying duplicate event does NOT clear the new running
-            # intent!
-            r_rt2 = await api_client.get(
+            # Verify DB still has exactly 1 record for this event_id
+            db_records_after_dup = await asyncio.to_thread(
+                _query_runtime_events_ro, db_path, evt_id
+            )
+            assert len(db_records_after_dup) == 1
+
+            # Duplicate replay must still NOT clear running intent
+            r_rt_after_dup = await api_client.get(
                 f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
             )
-            assert r_rt2.json()["desired_state"] == "running"
+            assert r_rt_after_dup.status_code == 200
+            rt_data_after_dup = r_rt_after_dup.json()
+            assert rt_data_after_dup["desired_state"] == "running"
+            assert rt_data_after_dup["observed_state"] == "running"
+            assert rt_data_after_dup["runtime_instance_id"] == inst_id
+            assert rt_data_after_dup["failure_count"] == 0
+            assert rt_data_after_dup["restart_blocked"] is False
+
+        # 9. Verify container identity and in-container Agent health preserved
+        b_c.reload()
+        s_c.reload()
+        assert b_c.id == b_c_initial_id
+        assert s_c.id == s_c_initial_id
+        assert b_c.status == "running"
+        assert s_c.status == "running"
+
+        health_final = await asyncio.to_thread(
+            _probe_in_container_agent_health, b_cname
+        )
+        assert health_final["ready"] is True
+        assert health_final["browser_ready"] is True
+        assert health_final["cdp_ready"] is True
+        assert health_final["profile_id"] == profile_id
+        assert health_final["runtime_instance_id"] == inst_id
+        assert health_final["config_version"] == 1
+        assert health_final["details"]["browser_pid"] == browser_pid_pre
+        assert health_final["details"]["cdp_port"] == cdp_port_pre
+
+        # 10. Cleanly stop Profile via resurrected supervisor
+        async with httpx.AsyncClient(
+            base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
+        ) as sup_client_stop:
+            r_stop = await sup_client_stop.post(
+                "/supervisor/v1/profiles/stop",
+                json={
+                    "profile_id": profile_id,
+                    "runtime_instance_id": inst_id,
+                    "operation_id": f"stop-{profile_id}",
+                },
+            )
+            assert r_stop.status_code == 200
 
     finally:
-        sup_proc.terminate()
+        cleanup_errors: list[BaseException] = []
         try:
-            sup_proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            sup_proc.kill()
-        await gateway.stop()
-        if "coturn" in locals() and coturn is not None:
-            try:
-                coturn.remove(force=True)
-            except Exception:
-                pass
-        for c in created_containers:
-            try:
-                d_client.containers.get(c).remove(force=True)
-            except docker.errors.NotFound:
-                pass
-        for network in d_client.networks.list(
-            filters={
-                "label": [
-                    f"com.cbrowser.prefix={prefix}",
-                    "com.cbrowser.managed-by=supervisor",
-                ]
-            },
-        ):
-            network.remove()
-        d_client.close()
+            await asyncio.to_thread(sup.stop)
+        except BaseException as exc:  # noqa: BLE001 - Best-effort supervisor stop during teardown
+            logger.warning(
+                "Teardown error stopping supervisor: error_type=%s",
+                type(exc).__name__,
+            )
+            cleanup_errors.append(exc)
+        try:
+            await gateway.stop()
+        except BaseException as exc:  # noqa: BLE001 - Best-effort gateway fixture stop during teardown
+            logger.warning(
+                "Teardown error stopping gateway: error_type=%s",
+                type(exc).__name__,
+            )
+            cleanup_errors.append(exc)
+        try:
+            cleanup_prefixed_resources(d_client, prefix)
+        except BaseException as exc:  # noqa: BLE001 - Best-effort prefixed resource cleanup
+            logger.warning(
+                "Teardown error cleaning resources: error_type=%s",
+                type(exc).__name__,
+            )
+            cleanup_errors.append(exc)
+        try:
+            d_client.close()
+        except BaseException as exc:  # noqa: BLE001 - Best-effort docker client close
+            logger.warning(
+                "Teardown error closing docker client: error_type=%s",
+                type(exc).__name__,
+            )
+            cleanup_errors.append(exc)
+
+        if cleanup_errors:
+            if len(cleanup_errors) == 1:
+                raise cleanup_errors[0]
+            raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")

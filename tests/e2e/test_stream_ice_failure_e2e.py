@@ -49,7 +49,9 @@ def _run_probe(fixture_name: str, use_mux: bool, cancel: bool = False) -> dict:
     if cancel:
         args.append("--cancel")
     try:
-        result = subprocess.run(args, text=True, capture_output=True, timeout=40)
+        result = subprocess.run(
+            args, text=True, capture_output=True, timeout=40, check=False
+        )
         assert result.returncode == 0, result.stdout + result.stderr
         proof = json.loads(result.stdout.strip().splitlines()[-1])
         return proof

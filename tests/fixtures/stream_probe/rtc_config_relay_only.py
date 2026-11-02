@@ -93,7 +93,7 @@ async def main():
 
     pc_relay_ok = pc_mod.RTCPeerConnection(RTCConfiguration(iceServers=[]))
     pc_relay_ok.addTransceiver("video")
-    transport = list(pc_relay_ok._RTCPeerConnection__iceTransports)[0]
+    transport = next(iter(pc_relay_ok._RTCPeerConnection__iceTransports))
     gatherer = transport.iceGatherer
 
     # Intercept native gather on Connection to inject candidates (one host, one relay)

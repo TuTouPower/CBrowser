@@ -41,7 +41,9 @@ def get_engine_cache_dir() -> Path:
 
 def check_prerequisites() -> tuple[bool, str]:
     """Verify Docker, immutable image, and engine cache exist."""
-    res = subprocess.run(["which", "docker"], capture_output=True, text=True)
+    res = subprocess.run(
+        ["which", "docker"], capture_output=True, text=True, check=False
+    )
     if res.returncode != 0:
         return False, "Docker CLI not found on host"
 
@@ -51,7 +53,10 @@ def check_prerequisites() -> tuple[bool, str]:
 
     image = get_docker_image()
     insp = subprocess.run(
-        ["docker", "image", "inspect", image], capture_output=True, text=True
+        ["docker", "image", "inspect", image],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if insp.returncode != 0:
         return False, f"Docker image {image} not present locally"
@@ -401,7 +406,9 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
     ]
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120, check=False
+        )
         output = proc.stdout + "\n" + proc.stderr
         (scratch_run / "container.log").write_text(output, encoding="utf-8")
         last_json = None

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import docker
 import pytest
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from gateway_probe.topology import GatewayTopologyHarness
@@ -14,7 +15,7 @@ from playwright.async_api import async_playwright
 
 
 @pytest.mark.asyncio
-async def test_ac003_dual_chrome_independent_media_inputs_and_gateway_recovery(
+async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
     tmp_path: Path,
 ) -> None:
     harness = GatewayTopologyHarness(tmp_path, webrtc_mode="lan")
@@ -130,8 +131,11 @@ async def test_ac003_dual_chrome_independent_media_inputs_and_gateway_recovery(
                     try:
                         box = client.containers.get(c_name)
                         diag_data[f"{c_role}_logs"] = box.logs(tail=50).decode("utf-8")
-                    except Exception as ex:
-                        diag_data[f"{c_role}_logs"] = f"Failed to get logs: {ex}"
+                    except (
+                        Exception  # noqa: BLE001 - failure diagnosis container log dump
+                    ) as ex:
+                        err_type = type(ex).__name__
+                        diag_data[f"{c_role}_logs"] = f"Failed to get logs: {err_type}"
                 save_evidence(
                     "ac003_failure_diag", diag_data, target_dir=tmp_path / "evidence"
                 )
@@ -196,8 +200,8 @@ async def test_ac003_dual_chrome_independent_media_inputs_and_gateway_recovery(
             assert remote_A != harness.gateway_ip, (
                 f"Selected remote candidate must not be Gateway IP {harness.gateway_ip}"
             )
-            assert remote_port_A != 18097, (
-                "Selected remote port must not be Gateway port 18097"
+            assert remote_port_A != DEFAULT_GATEWAY_PORT, (
+                f"Selected remote port must not be Gateway port {DEFAULT_GATEWAY_PORT}"
             )
 
             evidence["dual_page_media"] = {
