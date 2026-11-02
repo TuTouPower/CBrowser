@@ -82,6 +82,8 @@ class DownloadEventRecord(BaseModel):
     state: DownloadState = "in_progress"
     received_bytes: int = Field(default=0, ge=0)
     total_bytes: int = Field(default=0, ge=0)
+    size_bytes: int = Field(default=0, ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     created_at: str = Field(default_factory=utc_now_iso)
 
 

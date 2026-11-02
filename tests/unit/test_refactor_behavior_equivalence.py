@@ -145,7 +145,15 @@ def test_container_spec_entrypoint_and_browser_arguments() -> None:
 def test_container_spec_browser_volumes_and_labels(tmp_path: Path) -> None:
     dirs = {
         name: tmp_path / name
-        for name in ("profile", "events", "exchange", "runtime", "x11", "pulse")
+        for name in (
+            "profile",
+            "events",
+            "exchange",
+            "uploads",
+            "runtime",
+            "x11",
+            "pulse",
+        )
     }
     gate = tmp_path / "gate"
     engine = tmp_path / "engine"
@@ -162,6 +170,14 @@ def test_container_spec_browser_volumes_and_labels(tmp_path: Path) -> None:
     assert volumes[str(gate)] == {"bind": "/run/cbrowser_policy", "mode": "ro"}
     assert volumes[str(dirs["profile"])] == {
         "bind": "/data/profiles/p1/profile",
+        "mode": "rw",
+    }
+    assert volumes[str(dirs["exchange"])] == {
+        "bind": "/exchange/downloads",
+        "mode": "rw",
+    }
+    assert volumes[str(dirs["uploads"])] == {
+        "bind": "/exchange/uploads",
         "mode": "rw",
     }
     assert volumes[str(engine)] == {"bind": "/data/engine-cache", "mode": "ro"}
@@ -227,9 +243,10 @@ def test_container_spec_cache_specs() -> None:
         "CBROWSER_INIT_MARKER": "marker.json",
         "CBROWSER_INIT_RUN_ID": "run1",
     }
-    assert cache_init_environment(False, "marker.json", "run1")[
-        "CBROWSER_INIT_GEOIP"
-    ] == "0"
+    assert (
+        cache_init_environment(False, "marker.json", "run1")["CBROWSER_INIT_GEOIP"]
+        == "0"
+    )
 
 
 def test_network_spec_names_labels_and_ownership() -> None:

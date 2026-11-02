@@ -138,6 +138,11 @@ def stream_environment(
         "CBROWSER_PULSE_DIR": "/pulse",
         "CBROWSER_X11_SOCKET": "/tmp/.X11-unix/X99",
         "SELKIES_PORT": "18096",
+        "SELKIES_MODE": "webrtc",
+        "SELKIES_ENABLE_DUAL_MODE": "false",
+        "SELKIES_ENABLE_SHARING": "true",
+        "SELKIES_ENABLE_COLLAB": "false",
+        "SELKIES_FILE_TRANSFERS": "none",
     }
     if screen_width is not None and screen_height is not None:
         env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)

@@ -16,6 +16,7 @@ def browser_volumes(
     engine_cache: Path,
     geoip_cache: Path,
 ) -> dict[str, dict[str, Any]]:
+    upload_dir = dirs.get("uploads") or dirs["exchange"].parent / "uploads"
     return {
         str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
         str(dirs["profile"]): {
@@ -27,6 +28,7 @@ def browser_volumes(
             "mode": "rw",
         },
         str(dirs["exchange"]): {"bind": "/exchange/downloads", "mode": "rw"},
+        str(upload_dir): {"bind": "/exchange/uploads", "mode": "rw"},
         str(dirs["runtime"]): {"bind": "/run/cbrowser/runtime", "mode": "rw"},
         str(dirs["x11"]): {"bind": "/tmp/.X11-unix", "mode": "rw"},
         str(dirs["pulse"]): {"bind": "/pulse", "mode": "rw"},

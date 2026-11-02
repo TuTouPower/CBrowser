@@ -81,7 +81,8 @@ async def test_command_timeout_releases_pending_request(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("inside", [True, False])
-def test_completed_download_path_reflects_actual_capture_boundary(
+@pytest.mark.asyncio
+async def test_completed_download_path_reflects_actual_capture_boundary(
     tmp_path: Path, inside: bool
 ) -> None:
     downloads = tmp_path / "downloads"
@@ -99,7 +100,7 @@ def test_completed_download_path_reflects_actual_capture_boundary(
             "suggestedFilename": "result.txt",
         }
     )
-    manager._handle_download_progress(
+    await manager._handle_download_progress(
         {
             "guid": "download_a",
             "state": "completed",

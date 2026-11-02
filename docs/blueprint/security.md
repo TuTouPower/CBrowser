@@ -29,7 +29,8 @@
 
 ## 宿主目录权限与威胁模型
 
-- 受管部署中 Supervisor 以 root 创建 Profile 数据目录后立即 `chown 1000:1000`：`profiles/<id>/profile`、`runtime/<id>`、`runtime-events/<id>`、`artifacts/<id>/downloads`、`runtime/<id>/pulse` 为 0750；`runtime/<id>/x11` 为 1777（X11 socket 需要跨进程连接，保留 sticky 位）。engine-cache/geoip 只读挂载且由宿主维护，不随 Profile 写入。
+- 受管部署中 Supervisor 以 root 创建 Profile 数据目录后立即 `chown 1000:1000`：`profiles/<id>/profile`、`runtime/<id>`、`runtime-events/<id>`、`artifacts/<id>/downloads`、`artifacts/<id>/uploads`、`runtime/<id>/pulse` 为 0750；`runtime/<id>/x11` 为 1777（X11 socket 需要跨进程连接，保留 sticky 位）。engine-cache/geoip 只读挂载且由宿主维护，不随 Profile 写入。
+- Artifact Service 发布的上传/下载子目录与文件同样收敛到 UID/GID 1000：目录 0750、文件 0640；宿主开发环境无法 chown 时回退 0755/0644，保证 Browser 容器 UID 1000 可读。
 - Browser/Stream 以 uid/gid 1000 运行，只能访问本 Profile 目录；其他宿主 UID 无读写权。跨 Profile 读取不依赖网络命名空间。
 - 宿主直跑 Supervisor（开发/测试）默认跳过 chown 并保留 0777 兼容模式，可用 `CBROWSER_MANAGE_OWNERSHIP=1` 强制受管权限、`CBROWSER_RUNTIME_UID/GID` 指定属主。非 root 宿主进程不会修改用户文件属主。
 - 威胁模型假设：能控制本 Profile 网页的进程已处于该 Profile 信任域，可读本 Profile 的 Browser 可写目录；目标是阻止跨 Profile 访问、阻止 Browser 读取 Agent/Selkies 凭证、阻止未受策略保护的沙箱长期运行。事件伪造不改变生命周期权威（见 [Supervisor](supervisor.md) 与 d016）。

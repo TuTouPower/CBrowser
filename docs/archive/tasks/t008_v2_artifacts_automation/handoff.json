@@ -1,0 +1,17 @@
+{
+  "tid": "t008",
+  "attempt": 1,
+  "execution_id": "4fa03b7185dd48399174522182fc4c4d",
+  "status": "done",
+  "branch": "t008_v2_artifacts_automation",
+  "base_sha": "63cbd08e40e5b0448829d06d1faed5851ce973ca",
+  "tests": "unit 469 passed; integration 79 passed; frontend Vitest 116 passed (16 files); tsc -b passed; Ruff E/F/W/I and format passed on changed files; OpenAPI and runtime agent protocol re-exported and schema tests passed; contract 167 passed plus two pre-existing test_task_archive_dir failures explicitly parked by the user; legacy src/backend/tests collection errors pre-exist on main due to PYTHONPATH.",
+  "blackbox": "Real uvicorn API + temp SQLite + Supervisor control app + real Agent app/fake Chrome integration passed. Real Chrome Browser Runtime E2E test_t008_download_reconcile_after_agent_restart passed with image cbrowser-t008-browser:e2e: real download -> Supervisor forwarder -> real API Artifact DB, real Agent restart scan backfill, no duplicate on second restart, and container /exchange/uploads readable. Existing real download/recovery E2E re-passed. Supervisor image rebuilt and imports websockets 17.4 + control_server successfully.",
+  "review": "Full code/test review 3 rounds; Round 3 both axes PASS, zero blocking findings (reviewed_scope 80bdf0894cda099f); all Round 1/2 critical/important fixed; minor t008_test_f009 withdrawn with rationale.",
+  "pending": [
+    "p014"
+  ],
+  "findings": [
+    "d002"
+  ]
+}

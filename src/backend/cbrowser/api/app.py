@@ -8,6 +8,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from cbrowser.adapters.database.artifact_repository import ArtifactRepository
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import (
     IdempotencyConflictError,
@@ -16,15 +17,22 @@ from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
 from cbrowser.adapters.database.session import create_engine_and_maker
+from cbrowser.api.internal_artifacts import internal_artifact_router
 from cbrowser.api.internal_gateway import gateway_router, read_gateway_token
 from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
 from cbrowser.api.runtime_coordinator import RuntimeCoordinator
+from cbrowser.api.v1.artifact_router import artifact_router
 from cbrowser.api.v1.auth_router import auth_router
+from cbrowser.api.v1.automation_router import (
+    automation_router,
+    legacy_cdp_router,
+)
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
 from cbrowser.gateway.endpoint import normalize_origins
+from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
@@ -38,6 +46,17 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 logger = logging.getLogger("cbrowser.api")
 
 
+def _env_int(name: str, fallback: int) -> int:
+    raw = os.environ.get(name)
+    if not raw:
+        return fallback
+    try:
+        value = int(raw)
+    except ValueError:
+        return fallback
+    return value if value > 0 else fallback
+
+
 def create_app(
     db_path: Path | str | None = None,
     service: ProfileService | None = None,
@@ -47,6 +66,10 @@ def create_app(
     allowed_origins: list[str] | str | None = None,
     supervisor_url: str | None = None,
     require_supervisor: bool = False,
+    artifacts_root: Path | str | None = None,
+    max_artifact_bytes: int = 256 * 1024 * 1024,
+    max_artifacts_per_profile: int = 200,
+    max_profile_artifact_bytes: int = 2 * 1024 * 1024 * 1024,
 ) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -88,6 +111,20 @@ def create_app(
         if service is None:
             repo = ProfileRepository(session_maker)
             service = ProfileService(repo)
+        resolved_artifacts_root = Path(
+            artifacts_root or resolved_db.parent / "artifacts"
+        )
+        app.state.artifact_service = ArtifactService(
+            ArtifactRepository(session_maker),
+            ArtifactStore(resolved_artifacts_root),
+            max_artifact_bytes=_env_int("ARTIFACT_MAX_BYTES", max_artifact_bytes),
+            max_artifacts_per_profile=_env_int(
+                "ARTIFACT_MAX_COUNT", max_artifacts_per_profile
+            ),
+            max_profile_bytes=_env_int(
+                "ARTIFACT_MAX_TOTAL_BYTES", max_profile_artifact_bytes
+            ),
+        )
 
         app.state.trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
             os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
@@ -294,7 +331,11 @@ def create_app(
         )
 
     app.include_router(v1_router)
+    app.include_router(artifact_router)
+    app.include_router(automation_router)
+    app.include_router(legacy_cdp_router, include_in_schema=False)
     app.include_router(auth_router)
     app.include_router(supervisor_router, include_in_schema=False)
+    app.include_router(internal_artifact_router, include_in_schema=False)
     app.include_router(gateway_router, include_in_schema=False)
     return app

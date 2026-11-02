@@ -1,4 +1,6 @@
 import type {
+  ArtifactResponse,
+  AutomationEndpointResponse,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -173,6 +175,46 @@ export class ApiClient {
         {
           method: "POST",
         },
+      );
+    },
+  };
+
+  readonly artifacts = {
+    list: async (profileId: string): Promise<ArtifactResponse[]> => {
+      return this.request<ArtifactResponse[]>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts`,
+      );
+    },
+    upload: async (
+      profileId: string,
+      file: File,
+    ): Promise<ArtifactResponse> => {
+      return this.request<ArtifactResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts?filename=${encodeURIComponent(file.name)}`,
+        {
+          method: "POST",
+          body: file,
+          headers: {
+            "Content-Type": file.type || "application/octet-stream",
+          },
+        },
+      );
+    },
+    delete: async (profileId: string, artifactId: string): Promise<void> => {
+      await this.request<void>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts/${encodeURIComponent(artifactId)}`,
+        { method: "DELETE" },
+      );
+    },
+    downloadUrl: (profileId: string, artifactId: string): string => {
+      return `${this.baseUrl}/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts/${encodeURIComponent(artifactId)}`;
+    },
+  };
+
+  readonly automation = {
+    status: async (profileId: string): Promise<AutomationEndpointResponse> => {
+      return this.request<AutomationEndpointResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/automation`,
       );
     },
   };

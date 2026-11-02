@@ -12,6 +12,11 @@ from typing import Any
 import websockets
 from websockets.protocol import State
 
+from .download_reconciler import (
+    _sha256_file,
+    installed_download_keys,
+    scan_completed_downloads,
+)
 from .event_storage import EventStorage
 from .protocol import DownloadEventRecord
 
@@ -39,6 +44,9 @@ class CdpProxyManager:
         self._next_cmd_id = 10000
         self.pending_cmd_futures: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self.active_downloads: dict[str, dict[str, Any]] = {}
+        self._reconciled_keys: set[tuple[str, str]] = installed_download_keys(
+            event_storage
+        )
         self.rearm_count = 0
         self.shutting_down = False
         self._event_listener_task: asyncio.Task[None] | None = None
@@ -139,7 +147,7 @@ class CdpProxyManager:
                 if method == "Browser.downloadWillBegin":
                     self._handle_download_will_begin(msg.get("params", {}))
                 elif method == "Browser.downloadProgress":
-                    self._handle_download_progress(msg.get("params", {}))
+                    await self._handle_download_progress(msg.get("params", {}))
         except asyncio.CancelledError:
             pass
         except Exception as e:  # noqa: BLE001 - background CDP listener error isolated from manager lifecycle
@@ -178,10 +186,11 @@ class CdpProxyManager:
             state="in_progress",
             received_bytes=0,
             total_bytes=0,
+            size_bytes=0,
         )
         self.event_storage.save_download_event(event)
 
-    def _handle_download_progress(self, params: dict[str, Any]) -> None:
+    async def _handle_download_progress(self, params: dict[str, Any]) -> None:
         guid = params.get("guid", "")
         state = params.get("state", "in_progress")
         received = int(params.get("receivedBytes", 0))
@@ -210,6 +219,14 @@ class CdpProxyManager:
                         captured_path = str(path)
                 except (OSError, ValueError):
                     pass
+            size_bytes = 0
+            sha256 = None
+            if captured_path is not None:
+                try:
+                    size_bytes = Path(captured_path).stat().st_size
+                    sha256 = await asyncio.to_thread(_sha256_file, Path(captured_path))
+                except OSError:
+                    captured_path = None
             event = DownloadEventRecord(
                 event_id=f"dl_{state}_{uuid.uuid4().hex[:16]}",
                 profile_id=self.profile_id,
@@ -221,9 +238,23 @@ class CdpProxyManager:
                 state="completed" if state == "completed" else "canceled",
                 received_bytes=received,
                 total_bytes=total,
+                size_bytes=size_bytes,
+                sha256=sha256,
             )
             self.event_storage.save_download_event(event)
+            if captured_path and sha256:
+                self._reconciled_keys.add((captured_path, sha256))
             self.active_downloads.pop(guid, None)
+
+    async def reconcile_downloads(self) -> None:
+        """Backfill completed files that have no matching CDP completion event."""
+        await scan_completed_downloads(
+            self.default_download_dir,
+            self.profile_id,
+            self.runtime_instance_id,
+            self.event_storage,
+            existing_keys=self._reconciled_keys,
+        )
 
     async def close(self) -> None:
         """Clean shutdown of CDP manager."""

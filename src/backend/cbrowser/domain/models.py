@@ -148,7 +148,80 @@ class Artifact(BaseModel):
     state: str = "ready"
     content_type: str | None = None
     picker_name: str | None = None
+    sha256: str | None = None
+    storage_path: str | None = None
     created_at: str
+
+
+class ArtifactResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    profile_id: str
+    name: str
+    size: int
+    kind: Literal["upload", "download"]
+    state: Literal["pending", "ready", "failed"]
+    content_type: str | None = None
+    sha256: str | None = None
+    container_path: str | None = None
+    created_at: str
+
+    @classmethod
+    def from_domain(
+        cls, artifact: "Artifact", container_path: str | None
+    ) -> "ArtifactResponse":
+        return cls(
+            id=artifact.id,
+            profile_id=artifact.profile_id,
+            name=artifact.name,
+            size=artifact.size,
+            kind=artifact.kind,  # type: ignore[arg-type]
+            state=artifact.state,  # type: ignore[arg-type]
+            content_type=artifact.content_type,
+            sha256=artifact.sha256,
+            container_path=container_path,
+            created_at=artifact.created_at,
+        )
+
+
+class ArtifactDownloadReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$"
+    )
+    profile_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$"
+    )
+    runtime_instance_id: str = Field(
+        min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$"
+    )
+    path: str = Field(min_length=1, max_length=4096)
+    name: str = Field(min_length=1, max_length=255)
+    size: int = Field(ge=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    content_type: str | None = Field(default=None, max_length=128)
+
+
+class ArtifactDownloadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = "ok"
+    outcome: Literal["created", "duplicate", "ignored", "rejected"]
+    artifact_id: str | None = None
+    event_id: str
+
+
+class AutomationEndpointResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str
+    cdp_ws_path: str
+    supervisor_configured: bool
+    runtime_observed_state: str
+    runtime_instance_id: str | None = None
+    token_header: str = "Authorization: Bearer <cbat_...>"
 
 
 class Setting(BaseModel):

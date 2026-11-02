@@ -181,6 +181,8 @@ class ArtifactModel(Base):
     state: Mapped[str] = mapped_column(String(32), default="ready", nullable=False)
     content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
     picker_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(String(4096), nullable=True)
     created_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
     )

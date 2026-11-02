@@ -22,10 +22,10 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：真实上传校验文件名/MIME/配额/磁盘空间并写对应 Profile Artifact，失败不留下半文件；下载经 Agent 事件可见且内容/大小正确，UI 可列出/下载/删除获授权文件，路径穿越与跨 Profile 请求拒绝；上传返回Artifact ID和容器内container_path（/exchange/uploads/...），不泄露宿主路径；/profiles/:profileId/files页面可实际上传/管理文件。
-- [ ] AC-002：外部自动化经独立认证入口到 Supervisor/UDS/loopback CDP，完整双向协议可用；无公网 CDP TCP 映射，旧 CDP 入口仅薄转发新代理；自动化断开后下载捕获恢复，随后真实下载完整入库；/automation/:profileId页面展示获授权端点和状态，独立路由加载/刷新保持正常会话。
-- [ ] AC-003：Selkies 会话内文件上传/下载显式关闭（file_transfers=none），客户端无入口，数据通道文件请求被拒；文件只能经 Artifact Service 进出 Profile。
-- [ ] AC-004：Browser Agent 重启或 CDP 会话重建后扫描 /exchange/downloads 一次，为缺少完成事件的已完成文件补登 Artifact，排除 .crdownload 等临时文件；与 CDP 事件重复时按路径与校验和去重，不重复入库。
+- [x] AC-001：真实上传校验文件名/MIME/配额/磁盘空间并写对应 Profile Artifact，失败不留下半文件；下载经 Agent 事件可见且内容/大小正确，UI 可列出/下载/删除获授权文件，路径穿越与跨 Profile 请求拒绝；上传返回Artifact ID和容器内container_path（/exchange/uploads/...），不泄露宿主路径；/profiles/:profileId/files页面可实际上传/管理文件。
+- [x] AC-002：外部自动化经独立认证入口到 Supervisor/UDS/loopback CDP，完整双向协议可用；无公网 CDP TCP 映射，旧 CDP 入口仅薄转发新代理；自动化断开后下载捕获恢复，随后真实下载完整入库；/automation/:profileId页面展示获授权端点和状态，独立路由加载/刷新保持正常会话。
+- [x] AC-003：Selkies 会话内文件上传/下载显式关闭（file_transfers=none），客户端无入口，数据通道文件请求被拒；文件只能经 Artifact Service 进出 Profile。
+- [x] AC-004：Browser Agent 重启或 CDP 会话重建后扫描 /exchange/downloads 一次，为缺少完成事件的已完成文件补登 Artifact，排除 .crdownload 等临时文件；与 CDP 事件重复时按路径与校验和去重，不重复入库。
 
 ### 可测试性声明
 
@@ -58,7 +58,7 @@
 
 <!-- /规范 -->
 
-- UNVERIFIED-SPIKE：以前置task最终已验证协议/模型/镜像为准；现有原型不得直接视为正式契约。涉及原生Linux/公网/实际数据/外部发布时必须核实入口与授权。
+- 已验证基础：d002（docs/findings/d002_cdp_uds_download_recovery.md）已完成真实Chrome、容器共享UDS、下载与外部CDP断开后恢复实验；t003/t005已有正式Agent与Supervisor边界。正式认证转发、Artifact入库及下载对账由本task四项AC实施验证，不将原型视为完整产品链路。无新增外部未知契约。
 
 ### 风险与回退
 
@@ -71,4 +71,4 @@
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/artifacts.md、docs/blueprint/automation.md：文件/CDP/剪贴板；docs/specs/profile_management.md：复制重置行为。
+- docs/blueprint/artifacts.md、docs/blueprint/automation.md：文件管理、受控CDP与下载对账；同步相应spec和索引。剪贴板、复制重置分别由t014、t013负责。

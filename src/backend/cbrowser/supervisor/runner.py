@@ -17,6 +17,7 @@ import docker
 import httpx
 import uvicorn
 from cbrowser.gateway.endpoint import gateway_port_from_env
+from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 from cbrowser.supervisor.core import SupervisorCore
@@ -147,12 +148,16 @@ async def run_supervisor(
 
 async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     event_forwarder = core.events
+    download_forwarder = DownloadArtifactForwarder(
+        core.docker.validator.data_root, core.api
+    )
     recovery = RecoveryCoordinator(core)
 
     logger.info("Supervisor initialized. Starting existing container reconciliation...")
     await core.scan_and_reconcile_existing()
     await event_forwarder.replay_spooled_events()
     await core.consume_disk_events()
+    await download_forwarder.forward_pending()
 
     # Start FastAPI control server
     if core._token_file is None:
@@ -251,6 +256,9 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                 started = time.monotonic()
                 await event_forwarder.replay_spooled_events()
                 metrics.record("spool", time.monotonic() - started)
+                started = time.monotonic()
+                await download_forwarder.forward_pending()
+                metrics.record("downloads", time.monotonic() - started)
                 now = time.monotonic()
                 if scan_wakeup.is_set() or now - last_scan >= 30.0:
                     scan_wakeup.clear()

@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
+from .download_reconciler import scan_completed_downloads
 from .event_storage import EventStorage, StorageError
 from .protocol import (
     ConfigVersionResponse,
@@ -106,8 +107,7 @@ def create_agent_app(
         if runner_info and state:
             if (
                 runner_info.get("profile_id") != state.profile_id
-                or runner_info.get("runtime_instance_id")
-                != state.runtime_instance_id
+                or runner_info.get("runtime_instance_id") != state.runtime_instance_id
             ):
                 raise StorageError("Runtime state identity mismatch")
             if int(runner_info.get("config_version", 1)) != state.config_version:
@@ -193,9 +193,7 @@ def create_agent_app(
         display_ok, disp_msg = check_display(display, xauth_path)
 
         pulse_sock = r_info.get("pulse_sock", str(r_dir / "pulse" / "pulse.sock"))
-        pulse_cookie = r_info.get(
-            "pulse_cookie", str(r_dir / "pulse" / "pulse.cookie")
-        )
+        pulse_cookie = r_info.get("pulse_cookie", str(r_dir / "pulse" / "pulse.cookie"))
         audio_ok, audio_msg = check_audio(pulse_sock, pulse_cookie)
 
         cdp_port = int(r_info.get("cdp_port", 0))
@@ -373,9 +371,7 @@ def create_agent_app(
             try:
                 await client_ws.close()
             except Exception as exc:  # noqa: BLE001 - best-effort closing of client websocket on tunnel teardown
-                logger.debug(
-                    "Failed closing client_ws: %s", type(exc).__name__
-                )
+                logger.debug("Failed closing client_ws: %s", type(exc).__name__)
 
             # AUTOMATIC REARM TRIGGERED BY CLIENT DISCONNECT (only if commands were
             # actually sent)
@@ -383,6 +379,7 @@ def create_agent_app(
                 logger.info("Triggering automatic download behavior rearm...")
                 try:
                     await active_cdp_proxy.rearm_download_capture()
+                    await active_cdp_proxy.reconcile_downloads()
                     logger.info("Automatic download behavior rearm succeeded")
                 except Exception as e:  # noqa: BLE001 - automatic download rearm failure logged without raising
                     logger.error(
@@ -462,11 +459,19 @@ async def run_uds_agent(
             event_storage=storage,
         )
         await cdp_proxy.start()
+        await cdp_proxy.reconcile_downloads()
     else:
         logger.info(
             "Starting terminal Agent replay (state=%s)",
             prior_state.state if prior_state else "unknown",
         )
+        if expected_profile and expected_instance:
+            await scan_completed_downloads(
+                default_download_dir,
+                expected_profile,
+                expected_instance,
+                storage,
+            )
 
     app = create_agent_app(
         run_dir=r_dir,
