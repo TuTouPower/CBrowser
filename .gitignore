@@ -53,3 +53,5 @@ debug
 .plans
 src/backend/version.txt
 
+
+*.tsbuildinfo

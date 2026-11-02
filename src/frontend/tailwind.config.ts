@@ -21,6 +21,11 @@ export default {
           DEFAULT: "#6366f1",
           hover: "#818cf8",
         },
+        primary: {
+          DEFAULT: "#6366f1",
+          hover: "#818cf8",
+        },
+        "primary-foreground": "#ffffff",
       },
     },
   },

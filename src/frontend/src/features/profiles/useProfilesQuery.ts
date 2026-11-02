@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import {
   useQuery,
   useMutation,
@@ -6,7 +6,7 @@ import {
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query";
-import { defaultApiClient, ApiClient } from "../../shared/api/client";
+import { defaultApiClient, ApiClient, newIdempotencyKey } from "../../shared/api/client";
 import type {
   ProfileResponse,
   ProfileCreateRequest,
@@ -57,8 +57,13 @@ export function useCreateProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileResponse, Error, ProfileCreateRequest> {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
-    mutationFn: (data: ProfileCreateRequest) => client.profiles.create(data),
+    mutationFn: (data: ProfileCreateRequest) =>
+      client.profiles.create(data, (actionKey.current ??= newIdempotencyKey())),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     },
@@ -69,9 +74,13 @@ export function useUpdateProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileResponse, Error, { id: string; data: ProfileUpdateRequest }> {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ProfileUpdateRequest }) =>
-      client.profiles.update(id, data),
+      client.profiles.update(id, data, (actionKey.current ??= newIdempotencyKey())),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(variables.id) });
@@ -84,8 +93,13 @@ export function useDeleteProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<void, Error, string> {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
-    mutationFn: (id: string) => client.profiles.delete(id),
+    mutationFn: (id: string) =>
+      client.profiles.delete(id, (actionKey.current ??= newIdempotencyKey())),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     },
@@ -100,12 +114,17 @@ export function useDuplicateProfileMutation(
   { id: string; includeBrowserState: boolean; name?: string }
 > {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
     mutationFn: ({ id, includeBrowserState, name }) =>
-      client.profiles.duplicate(id, {
-        include_browser_state: includeBrowserState,
-        name,
-      }),
+      client.profiles.duplicate(
+        id,
+        { include_browser_state: includeBrowserState, name },
+        (actionKey.current ??= newIdempotencyKey()),
+      ),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     },
@@ -116,8 +135,13 @@ export function useResetProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileResponse, Error, string> {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
-    mutationFn: (id: string) => client.profiles.reset(id),
+    mutationFn: (id: string) =>
+      client.profiles.reset(id, (actionKey.current ??= newIdempotencyKey())),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(data.id) });
@@ -134,9 +158,17 @@ export function useSetDesiredStateMutation(
   { id: string; state: "running" | "stopped" }
 > {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
     mutationFn: ({ id, state }: { id: string; state: "running" | "stopped" }) =>
-      client.profiles.setDesiredState(id, state),
+      client.profiles.setDesiredState(
+        id,
+        state,
+        (actionKey.current ??= newIdempotencyKey()),
+      ),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: (data, variables) => {
       queryClient.setQueryData(profileKeys.runtime(variables.id), data);
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
@@ -148,8 +180,13 @@ export function useStopProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileRuntimeResponse, Error, string> {
   const queryClient = useQueryClient();
+  const actionKey = useRef<string | null>(null);
   return useMutation({
-    mutationFn: (id: string) => client.profiles.stop(id),
+    mutationFn: (id: string) =>
+      client.profiles.stop(id, (actionKey.current ??= newIdempotencyKey())),
+    onSettled: () => {
+      actionKey.current = null;
+    },
     onSuccess: (data, id) => {
       queryClient.setQueryData(profileKeys.runtime(id), data);
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
@@ -165,7 +202,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForRuntimeState(
+export async function waitForRuntimeState(
   client: ApiClient,
   profileId: string,
   predicate: (runtime: ProfileRuntimeResponse) => boolean,
@@ -173,30 +210,45 @@ async function waitForRuntimeState(
 ): Promise<ProfileRuntimeResponse> {
   const deadline = Date.now() + timeoutMs;
   let last: ProfileRuntimeResponse | null = null;
+  let consecutiveFailures = 0;
   while (Date.now() < deadline) {
-    last = await client.profiles.getRuntime(profileId);
-    if (predicate(last)) {
-      return last;
+    try {
+      last = await client.profiles.getRuntime(profileId);
+      consecutiveFailures = 0;
+      if (predicate(last)) {
+        return last;
+      }
+    } catch (err) {
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 3) {
+        throw new Error(
+          `Runtime polling failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
     await sleep(APPLY_POLL_INTERVAL_MS);
   }
-  throw new Error(`Profile runtime did not converge: ${JSON.stringify(last)}`);
+  throw new Error(`Profile runtime did not converge before timeout: ${JSON.stringify(last)}`);
 }
 
 export function useApplyDisplaySettingsMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileRuntimeResponse, Error, string> {
   const queryClient = useQueryClient();
+  const stopKey = useRef<string | null>(null);
+  const startKey = useRef<string | null>(null);
   return useMutation({
     mutationFn: async (id: string) => {
-      await client.profiles.stop(id);
+      const stopOperationKey = (stopKey.current ??= newIdempotencyKey());
+      const startOperationKey = (startKey.current ??= newIdempotencyKey());
+      await client.profiles.stop(id, stopOperationKey);
       await waitForRuntimeState(
         client,
         id,
         (runtime) => runtime.observed_state === "stopped",
         APPLY_STOP_TIMEOUT_MS,
       );
-      await client.profiles.setDesiredState(id, "running");
+      await client.profiles.setDesiredState(id, "running", startOperationKey);
       return waitForRuntimeState(
         client,
         id,
@@ -205,6 +257,10 @@ export function useApplyDisplaySettingsMutation(
           runtime.observed_state === "running",
         APPLY_START_TIMEOUT_MS,
       );
+    },
+    onSettled: () => {
+      stopKey.current = null;
+      startKey.current = null;
     },
     onSuccess: (data, id) => {
       queryClient.setQueryData(profileKeys.runtime(id), data);
@@ -250,6 +306,7 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
 
     return () => {
       unsubscribe();
+      sseClient.stop();
     };
   }, [sseClient, queryClient]);
 }

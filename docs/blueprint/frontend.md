@@ -1,17 +1,17 @@
 # 前端
 
-v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。旧 UI 组件与旧测试保留到 t011 统一移除，新路由不再引用它们。
+v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。t017 已删除 v1 前端树、旧测试、noVNC 类型与仅其使用的依赖；路由只保留 `react-router-dom` 单一实现。
 
 ## 1. 外壳与数据
 
 - 路由（React Router 7，`app/router.tsx`）：`/login`、`/`（`?profileId=` 指定当前页面的操控目标）、`/settings`、`/profiles/new`、`/profiles/:profileId`、`/profiles/:profileId/files`、`/automation/:profileId`；会话失效（401）或登出时跳转 `/login`。
-- API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。
+- API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；绝对 URL 只允许同源；`ApiError` 携带 `errorCode`、`retryable` 与 `detail`。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。
 - 运行协调错误（Supervisor 未配置或不可达）在页头与会话页以 `runtime-coordinator-error` 显式展示，运行意愿保持不变。
 - `/profiles/:profileId/files` 为 Artifact 管理页：经 `shared/api/client.ts` 的 `artifacts` 方法列出、上传、下载、删除文件，展示 `container_path`，写操作带 CSRF。
 - `/automation/:profileId` 为自动化页：经 `automation.status()` 展示授权 WS 端点、运行状态、运行实例、Supervisor 配置状态与 `Authorization: Bearer <cbat_...>` 头格式；不展示任何明文凭证。
 - Profile 详情页提供复制与重置面板：复制可选仅配置或含浏览器状态（运行中禁用状态复制并提示停止）；重置面板明确列出将清除的 Cookie、站点数据、缓存、登录状态与指纹身份，并说明保留设置与 Artifact。
-- 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；设置页等残留硬编码见 p007，语言由 `localStorage` 偏好或 `navigator.language` 决定。
+- 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；语言偏好存储键为 `cbrowser.locale`（迁移旧 `cbm.locale`），切换时同步 `document.documentElement.lang`。
 
 ## 2. 页面独立状态
 

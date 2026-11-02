@@ -54,6 +54,14 @@ def verify_frontend_dist(dist_dir: Path, manifest_path: Path) -> None:
         raise RuntimeError("Selkies adapter must load before the module bundle")
 
     verify_manifest(selkies_dir, manifest_path=manifest_path, allow_patched=True)
+
+    css_text = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore")
+        for path in (dist_dir / "assets").glob("*.css")
+    )
+    for utility in (".bg-primary", ".text-primary-foreground"):
+        if utility not in css_text:
+            raise RuntimeError(f"Generated CSS is missing {utility}")
     print(f"Verified frontend dist: {selkies_dir}")
 
 

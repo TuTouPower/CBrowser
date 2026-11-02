@@ -16,6 +16,7 @@ export interface ProfileEventsClientOptions {
   url?: string;
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
+  onUnauthorized?: () => void;
 }
 
 export class ProfileEventsClient {
@@ -23,6 +24,7 @@ export class ProfileEventsClient {
   private reconnectIntervalMs: number;
   private maxReconnectIntervalMs: number;
   private currentReconnectInterval: number;
+  private onUnauthorized?: () => void;
   private lastEventId: string | null = null;
   private isClosed = false;
   private abortController: AbortController | null = null;
@@ -35,11 +37,16 @@ export class ProfileEventsClient {
     this.reconnectIntervalMs = options.reconnectIntervalMs ?? 1000;
     this.maxReconnectIntervalMs = options.maxReconnectIntervalMs ?? 30000;
     this.currentReconnectInterval = this.reconnectIntervalMs;
+    this.onUnauthorized = options.onUnauthorized;
   }
 
   onEvent(listener: ProfileEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  setOnUnauthorized(callback?: () => void): void {
+    this.onUnauthorized = callback;
   }
 
   onError(listener: ProfileErrorListener): () => void {
@@ -93,6 +100,11 @@ export class ProfileEventsClient {
         signal: this.abortController.signal,
       });
 
+      if (response.status === 401) {
+        this.onUnauthorized?.();
+        this.stop();
+        return;
+      }
       if (!response.ok) {
         throw new Error(`SSE HTTP error: ${response.status} ${response.statusText}`);
       }
@@ -144,6 +156,25 @@ export class ProfileEventsClient {
             }
             currentDataLines.push(data);
           }
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer) {
+        const lines = buffer.split(/\r?\n/);
+        for (const line of lines) {
+          if (line.startsWith("id:")) {
+            currentId = line.slice(3).trim();
+          } else if (line.startsWith("data:")) {
+            currentDataLines.push(line.slice(5).replace(/^ /, ""));
+          }
+        }
+      }
+      if (currentDataLines.length > 0) {
+        if (currentId !== null) this.lastEventId = currentId;
+        try {
+          this.dispatchEvent(JSON.parse(currentDataLines.join("\n")) as ProfileRuntimeEvent);
+        } catch (parseErr) {
+          this.dispatchError(parseErr);
         }
       }
     } catch (err: unknown) {

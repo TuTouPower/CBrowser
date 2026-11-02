@@ -16,15 +16,10 @@
     "generate:api": "openapi-typescript ../../schemas/openapi/cbrowser_v1.json -o src/shared/api/generated/cbrowser_v1.d.ts"
   },
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
-    "@novnc/novnc": "^1.4.0",
     "@tanstack/react-query": "^5.105.0",
     "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router": "^7.3.0",
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
