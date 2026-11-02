@@ -146,7 +146,7 @@ def stream_environment(
         "SELKIES_FILE_TRANSFERS": "none",
         "SELKIES_ENABLE_CLIPBOARD": "true" if clipboard_sync else "false",
         "SELKIES_ENABLE_BINARY_CLIPBOARD": "false|locked",
-        "SELKIES_CLIPBOARD_SEAMLESS": "false|locked",
+        "SELKIES_CLIPBOARD_SEAMLESS": "true|locked",
     }
     if screen_width is not None and screen_height is not None:
         env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)

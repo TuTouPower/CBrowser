@@ -107,3 +107,12 @@
     2. 继续使用 `--no-sandbox`，把隔离责任交给容器边界。
 - 结论：采用选项 2。容器边界补偿：非 root UID 1000、只读根文件系统、`cap-drop ALL`、`no-new-privileges`、禁止挂载 Docker Socket、每 Profile 独立容器/网络/卷，且仅 Supervisor 可创建容器。残余风险：Chrome renderer 逃逸不再由浏览器沙箱拦截，可影响同容器内的 Xvfb、PulseAudio、Browser Agent 及本 Profile 挂载数据；跨 Profile 仍由容器、网络与卷边界阻断。`--no-sandbox` 只允许由 Runtime Agent 在受管容器内注入，严禁在宿主机或容器外运行 Chrome 时使用。
 - 替代：无
+
+## 012 剪贴板开启时采用 Selkies seamless 双向自动同步（2026-11-02T20:09:33+08:00）
+
+- 背景：t014 为保护本机原剪贴板锁定 `clipboard_seamless=false|locked`，结果本机与远程浏览器之间不能直接 Cmd+C/V，只能经 Selkies 侧栏剪贴板框手动搬运。CBrowser 仅供单一用户在本机使用。
+- 选项：
+    1. 保持 seamless 关闭，只经侧栏剪贴板框显式传输。
+    2. Profile `clipboard_sync` 开启时使用 Selkies seamless 双向自动同步，服务端锁定。
+- 结论：采用选项 2（用户决定）。`SELKIES_CLIPBOARD_SEAMLESS=true|locked`；`clipboard_sync` 关闭时 `enable_clipboard=false`，双向仍无传输；二进制剪贴板保持 `false|locked`。接受的代价：会话页获得焦点时本机剪贴板内容会发往该 Profile 的远程浏览器，远端复制会覆盖本机剪贴板；需要隔离的 Profile 关闭 `clipboard_sync`。原计划 19.3「用户剪贴板原内容保护」「后台页面不自动覆盖本机剪贴板」作废。
+- 替代：t014 的 seamless 关闭策略。

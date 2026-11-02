@@ -1,4 +1,4 @@
-"""Profile clipboard_sync must map to locked Selkies clipboard policy."""
+"""Profile clipboard_sync must map to locked, seamless Selkies clipboard policy."""
 
 from __future__ import annotations
 
@@ -23,15 +23,15 @@ def _env(clipboard_sync: bool):
     )
 
 
-def test_clipboard_sync_maps_to_locked_text_only_policy() -> None:
+def test_clipboard_sync_maps_to_locked_seamless_text_only_policy() -> None:
     assert _env(True)["SELKIES_ENABLE_CLIPBOARD"] == "true"
     assert _env(False)["SELKIES_ENABLE_CLIPBOARD"] == "false"
     for value in (True, False):
         assert _env(value)["SELKIES_ENABLE_BINARY_CLIPBOARD"] == "false|locked"
-        assert _env(value)["SELKIES_CLIPBOARD_SEAMLESS"] == "false|locked"
+        assert _env(value)["SELKIES_CLIPBOARD_SEAMLESS"] == "true|locked"
 
 
-def test_entrypoint_passes_locked_clipboard_settings_to_official_selkies() -> None:
+def test_entrypoint_defaults_to_locked_seamless_clipboard_for_official_selkies() -> None:
     entrypoint = (
         Path(__file__).resolve().parents[2]
         / "config/docker/stream_runtime/entrypoint.sh"
@@ -52,15 +52,15 @@ def test_entrypoint_passes_locked_clipboard_settings_to_official_selkies() -> No
         for line in active
     )
     assert any(
+        "export SELKIES_CLIPBOARD_SEAMLESS="
+        '"${SELKIES_CLIPBOARD_SEAMLESS:-true|locked}"' in line
+        for line in active
+    )
+    assert any(
         '--enable-clipboard "$SELKIES_ENABLE_CLIPBOARD"' in line for line in active
     )
     assert any(
         '--enable-binary-clipboard "$SELKIES_ENABLE_BINARY_CLIPBOARD"' in line
-        for line in active
-    )
-    assert any(
-        "export SELKIES_CLIPBOARD_SEAMLESS="
-        '"${SELKIES_CLIPBOARD_SEAMLESS:-false|locked}"' in line
         for line in active
     )
     assert any(

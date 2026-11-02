@@ -44,6 +44,13 @@ t001–t007 累计三路审阅的采纳项已全部落地并合入 main。以下
 - 结构：RecoveryCoordinator tick、docker_adapter、stream_agent 拆分为更小模块；p001/p005 闭环。
 - 待办：p001、p005–p013 全部闭环，`docs/pending/todo/` 为空。t008、t013、t014、t009、t010、t011、t012 仍按 goal queue 实施。
 
+## 修订：单人使用的剪贴板与输入验收（2026-11-02）
+
+用户决定，优先于 8.4 与 19.3 原文：
+
+- 8.4：Profile `clipboard_sync` 开启时 Selkies `clipboard_seamless=true|locked`，纯文本双向自动同步（直接 Cmd+C/V）；关闭时 `enable_clipboard=false`，双向无传输；二进制剪贴板仍关闭。19.3「用户剪贴板原内容保护」「后台页面不自动覆盖本机剪贴板」作废（decisions 012）。
+- 19.3：1000 次中文组合输入与 1000 次剪贴板改为 t009 手动清单验收（四类输入框、双页面、复制粘贴同步）；t014 剩余自动化 E2E（p015）不做，t014 以 AC-001/005 已合入状态 drop。
+
 # 1. 最终技术决策
 
 ## 1.1 固定技术栈

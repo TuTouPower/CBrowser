@@ -301,10 +301,10 @@ const en: MessageDict = {
   audioStatusMuted: "Audio muted",
   clipboardPermissionDenied: "Clipboard access is blocked",
   clipboardPermissionDeniedHint:
-    "Click the session and allow clipboard access in your browser, then use the clipboard box in the Selkies sidebar explicitly.",
+    "Click the session and allow clipboard access in your browser so copy and paste sync automatically with the remote browser.",
   clipboardPermissionPrompt: "Clipboard access will be requested",
   clipboardPermissionPromptHint:
-    "Clipboard content moves only through the sidebar clipboard box; this page never overwrites it automatically.",
+    "When the session gets focus, the browser asks for clipboard access; allow it so copied text syncs both ways automatically.",
   audioMute: "Mute this page",
   audioUnmute: "Unmute this page",
   runtimeCheckFailed: "Profile runtime check failed (HTTP {status})",
@@ -629,10 +629,10 @@ const zh: MessageDict = {
   audioStatusMuted: "已静音",
   clipboardPermissionDenied: "剪贴板权限被拒绝",
   clipboardPermissionDeniedHint:
-    "点击会话页面并在浏览器中允许剪贴板访问，然后显式使用 Selkies 侧栏的剪贴板输入框。",
+    "点击会话页面并在浏览器中允许剪贴板访问，本机与远程浏览器之间的复制粘贴才会自动同步。",
   clipboardPermissionPrompt: "剪贴板访问将按需请求",
   clipboardPermissionPromptHint:
-    "只有通过侧栏剪贴板输入框才会传输内容；本页面不会自动覆盖本机剪贴板。",
+    "会话页面获得焦点时浏览器会请求剪贴板权限；允许后复制的文本双向自动同步。",
   audioMute: "静音本页",
   audioUnmute: "取消本页静音",
   runtimeCheckFailed: "配置运行时检查失败（HTTP {status}）",

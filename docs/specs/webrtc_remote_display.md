@@ -37,12 +37,12 @@
 
 中文沿官方 composition → co,end → Native X11 路径提交，组合期间不以剪贴板模拟文本。各页面输入均到达同一真实 Browser。剪贴板内容不得进入日志。
 
-- Profile `clipboard_sync` 映射为 Selkies `enable_clipboard=true` 或 `false`；`enable_binary_clipboard=false|locked`、`clipboard_seamless=false|locked`。`enable_clipboard` 是字符串策略，`|locked` 不参与解析；其客户端改写由 Selkies WebRTC settings allowlist 拒绝。关闭后双向均无传输，图片等二进制内容不传输，seamless 自动同步关闭。
-- 前端 ClipboardBridge 只探测 `clipboard-read`/`clipboard-write` 权限并展示拒绝/按需提示，不读取或写入本机剪贴板；传输仍由官方 Selkies 显式复制/粘贴触发，后台页面不自动覆盖本机剪贴板。
-- 会话页不新增剪贴板同步协议或 Agent RPC；多页面各自通过官方 Peer 保持独立剪贴板与输入状态，其他 Profile 不共享剪贴板。1000 次输入/剪贴板一致性由 t009 验收。
+- Profile `clipboard_sync` 映射为 Selkies `enable_clipboard=true` 或 `false`；`enable_binary_clipboard=false|locked`、`clipboard_seamless=true|locked`。`enable_clipboard` 是字符串策略，`|locked` 不参与解析；其客户端改写由 Selkies WebRTC settings allowlist 拒绝。开启时纯文本双向自动同步：会话页获得焦点时官方客户端读取本机剪贴板发往远端，远端复制后写回本机剪贴板，无需侧栏剪贴板框；关闭后双向均无传输；图片等二进制内容不传输。
+- 前端 ClipboardBridge 只探测 `clipboard-read`/`clipboard-write` 权限并展示拒绝/按需提示，自身不读取或写入本机剪贴板；同步由官方 Selkies seamless 客户端完成。
+- 会话页不新增剪贴板同步协议或 Agent RPC；其他 Profile 不共享远端剪贴板。输入/剪贴板手动清单由 t009 验收。
 
 Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，不挂载用户数据或 Docker Socket。Agent 失联重连、无 viewer 或媒体暂停不停止 Browser。Stream 私有版本适配与测试约束见 docs/blueprint/stream_runtime.md。
 
 ## 验收与剩余边界
 
-组件行为以 t004 的逐项 AC 和真实 E2E 为准，不能用 Mock Peer、编码器或合成音频替代。当前测试的外部 Chrome CDP composition 验证原生客户端路径；桌面输入法候选窗口、1000次输入/剪贴板与最终整机容量仍需后续验收。公网和原生 Linux x86 执行仅按用户明确豁免记 NOT_RUN / USER_WAIVED，不计实测 PASS。
+组件行为以 t004 的逐项 AC 和真实 E2E 为准，不能用 Mock Peer、编码器或合成音频替代。当前测试的外部 Chrome CDP composition 验证原生客户端路径；桌面输入法候选窗口、输入/剪贴板手动清单与最终整机容量仍需后续验收。公网和原生 Linux x86 执行仅按用户明确豁免记 NOT_RUN / USER_WAIVED，不计实测 PASS。
