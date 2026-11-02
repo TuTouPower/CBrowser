@@ -1,12 +1,14 @@
 import { useState, useEffect, type FormEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Trash2, FolderArchive, Cpu } from "lucide-react";
+import { ArrowLeft, Copy, Cpu, FolderArchive, RotateCcw, Trash2 } from "lucide-react";
 import {
   useProfileQuery,
   useProfileRuntimeQuery,
   useUpdateProfileMutation,
   useDeleteProfileMutation,
   useApplyDisplaySettingsMutation,
+  useDuplicateProfileMutation,
+  useResetProfileMutation,
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
 
@@ -20,7 +22,11 @@ export function ProfileDetailPage() {
   const updateMutation = useUpdateProfileMutation();
   const deleteMutation = useDeleteProfileMutation();
   const applyDisplayMutation = useApplyDisplaySettingsMutation();
+  const duplicateMutation = useDuplicateProfileMutation();
+  const resetMutation = useResetProfileMutation();
 
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [name, setName] = useState("");
   const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
@@ -42,6 +48,37 @@ export function ProfileDetailPage() {
       );
     }
   }, [profile]);
+
+  const runtimeRunning = runtime
+    ? !(runtime.desired_state === "stopped" && runtime.observed_state === "stopped")
+    : false;
+
+  const handleDuplicate = async (includeBrowserState: boolean) => {
+    if (!profileId) return;
+    setError(null);
+    try {
+      const clone = await duplicateMutation.mutateAsync({
+        id: profileId,
+        includeBrowserState,
+      });
+      navigate(`/profiles/${clone.id}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("failedToDuplicateProfile"));
+    }
+  };
+
+  const handleReset = async () => {
+    if (!profileId) return;
+    setError(null);
+    try {
+      await resetMutation.mutateAsync(profileId);
+      setResetOpen(false);
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 2000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : t("failedToResetProfile"));
+    }
+  };
 
   const displayPending = Boolean(
     profile &&
@@ -140,8 +177,104 @@ export function ProfileDetailPage() {
             <Cpu className="h-3.5 w-3.5" />
             {t("automation")}
           </Link>
+          <button
+            type="button"
+            data-testid="profile-duplicate-button"
+            onClick={() => {
+              setDuplicateOpen((open) => !open);
+              setResetOpen(false);
+            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 border border-border"
+          >
+            <Copy className="h-3.5 w-3.5" />
+            {t("duplicate")}
+          </button>
+          <button
+            type="button"
+            data-testid="profile-reset-button"
+            onClick={() => {
+              setResetOpen((open) => !open);
+              setDuplicateOpen(false);
+            }}
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 border border-border"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t("reset")}
+          </button>
         </div>
       </div>
+
+      {duplicateOpen && (
+        <div
+          data-testid="profile-duplicate-panel"
+          className="mb-4 bg-surface-1 border border-border rounded-lg p-4"
+        >
+          <h2 className="text-sm font-semibold text-gray-100 mb-1">
+            {t("duplicateProfileTitle")}
+          </h2>
+          <p className="text-xs text-gray-400 mb-3">{t("duplicateProfileHint")}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleDuplicate(false)}
+              disabled={duplicateMutation.isPending}
+              className="px-3 py-1.5 rounded text-xs bg-primary text-white disabled:opacity-50"
+            >
+              {t("duplicateSettingsOnly")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDuplicate(true)}
+              disabled={duplicateMutation.isPending || runtimeRunning}
+              className="px-3 py-1.5 rounded text-xs bg-surface-2 border border-border text-gray-200 disabled:opacity-50"
+              title={runtimeRunning ? t("stopProfileFirst") : undefined}
+            >
+              {t("duplicateWithStateTitle")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDuplicateOpen(false)}
+              className="px-3 py-1.5 rounded text-xs text-gray-400 hover:text-gray-200"
+            >
+              {t("cancel")}
+            </button>
+          </div>
+          {runtimeRunning && (
+            <p className="text-[11px] text-yellow-400 mt-2">{t("stopProfileFirst")}</p>
+          )}
+        </div>
+      )}
+
+      {resetOpen && (
+        <div
+          data-testid="profile-reset-panel"
+          className="mb-4 bg-red-500/5 border border-red-500/30 rounded-lg p-4"
+        >
+          <h2 className="text-sm font-semibold text-red-300 mb-1">{t("resetProfileTitle")}</h2>
+          <p className="text-xs text-gray-300 mb-1">{t("resetProfileDataList")}</p>
+          <p className="text-xs text-gray-400 mb-3">{t("resetProfileKeeps")}</p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void handleReset()}
+              disabled={resetMutation.isPending || runtimeRunning}
+              className="px-3 py-1.5 rounded text-xs bg-red-500 text-white disabled:opacity-50"
+            >
+              {resetMutation.isPending ? t("resetting") : t("reset")}
+            </button>
+            <button
+              type="button"
+              onClick={() => setResetOpen(false)}
+              className="px-3 py-1.5 rounded text-xs text-gray-400 hover:text-gray-200"
+            >
+              {t("cancel")}
+            </button>
+          </div>
+          {runtimeRunning && (
+            <p className="text-[11px] text-yellow-400 mt-2">{t("stopProfileFirst")}</p>
+          )}
+        </div>
+      )}
 
       <div className="bg-surface-1 border border-border rounded-lg p-6">
         <div className="flex items-center justify-between mb-4">

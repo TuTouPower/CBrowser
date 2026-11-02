@@ -1,0 +1,13 @@
+{
+  "tid": "t013",
+  "attempt": 1,
+  "execution_id": "5ad8c70c1adf4e12a7bfb44f451323ef",
+  "status": "done",
+  "branch": "t013_v2_profile_copy_reset",
+  "base_sha": "986d3e2c1ff7783b6b66606e6591998e449f8b68",
+  "tests": "unit 489 passed; integration 85 passed; frontend Vitest 117 passed (16 files); tsc -b passed; Ruff E/F/W/I and format passed on changed files; OpenAPI and generated frontend types updated; contract 167 passed plus two pre-existing test_task_archive_dir failures parked by the user.",
+  "blackbox": "Real uvicorn API + temp SQLite + real HTTP duplicate/reset + real Chrome E2E test_t013_state_copy_restores_cookies_in_clone passed: source cookie, graceful stop, state duplicate via API, clone container reads cookie, reset via API clears source dir and re-rolls seed. Runtime coordinator/Supervisor not used for copy; source stopped enforced.",
+  "review": "Full code/test review 4 rounds; Round 4 both axes PASS, zero blocking findings (reviewed_scope 68994e2bb7fa7d48); all Round 1/2/3 critical/important closed; minor f014 deferred to t009, test f012/f017 withdrawn as coverage extensions.",
+  "pending": [],
+  "findings": []
+}

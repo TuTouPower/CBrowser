@@ -10,6 +10,7 @@ v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作�
 - 运行协调错误（Supervisor 未配置或不可达）在页头与会话页以 `runtime-coordinator-error` 显式展示，运行意愿保持不变。
 - `/profiles/:profileId/files` 为 Artifact 管理页：经 `shared/api/client.ts` 的 `artifacts` 方法列出、上传、下载、删除文件，展示 `container_path`，写操作带 CSRF。
 - `/automation/:profileId` 为自动化页：经 `automation.status()` 展示授权 WS 端点、运行状态、运行实例、Supervisor 配置状态与 `Authorization: Bearer <cbat_...>` 头格式；不展示任何明文凭证。
+- Profile 详情页提供复制与重置面板：复制可选仅配置或含浏览器状态（运行中禁用状态复制并提示停止）；重置面板明确列出将清除的 Cookie、站点数据、缓存、登录状态与指纹身份，并说明保留设置与 Artifact。
 - 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；设置页等残留硬编码见 p007，语言由 `localStorage` 偏好或 `navigator.language` 决定。
 
 ## 2. 页面独立状态

@@ -177,6 +177,39 @@ export class ApiClient {
         },
       );
     },
+    duplicate: async (
+      profileId: string,
+      data: { include_browser_state: boolean; name?: string },
+    ): Promise<ProfileResponse> => {
+      return this.request<ProfileResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/duplicate`,
+        {
+          method: "POST",
+          body: JSON.stringify(data),
+          headers: {
+            "Idempotency-Key":
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          },
+        },
+      );
+    },
+    reset: async (profileId: string): Promise<ProfileResponse> => {
+      return this.request<ProfileResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/reset`,
+        {
+          method: "POST",
+          body: JSON.stringify({ confirm: true }),
+          headers: {
+            "Idempotency-Key":
+              typeof crypto !== "undefined" && "randomUUID" in crypto
+                ? crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          },
+        },
+      );
+    },
   };
 
   readonly artifacts = {

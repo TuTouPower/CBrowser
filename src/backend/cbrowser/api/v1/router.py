@@ -21,6 +21,8 @@ from cbrowser.domain.models import (
     ErrorResponse,
     ProfileConfig,
     ProfileCreateRequest,
+    ProfileDuplicateRequest,
+    ProfileResetRequest,
     ProfileResponse,
     ProfileRuntimeEventData,
     ProfileRuntimeResponse,
@@ -36,7 +38,12 @@ from cbrowser.domain.models import (
     ValidationErrorResponse,
 )
 from cbrowser.services.profile_service import (
+    ConstraintViolationError,
+    DatabaseLockError,
+    InvalidProfileNameError,
     ProfileNotFoundError,
+    ProfileOperationConflictError,
+    ProfileRunningError,
     ProfileService,
     StaleInstanceError,
 )
@@ -355,6 +362,131 @@ async def delete_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
         )
+
+
+@profile_router.post(
+    "/profiles/{profile_id}/duplicate",
+    response_model=ProfileResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Invalid duplicate name",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "Profile not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "Profile is running or operation conflicts",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Database busy (retryable)",
+        },
+    },
+)
+async def duplicate_profile(
+    profile_id: str,
+    payload: ProfileDuplicateRequest,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
+    operation_id: Annotated[str | None, Query()] = None,
+):
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
+    try:
+        profile = await service.duplicate_profile(
+            profile_id,
+            include_browser_state=payload.include_browser_state,
+            name=payload.name,
+            operation_id=op_id,
+        )
+    except ProfileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile {profile_id} not found",
+        ) from None
+    except InvalidProfileNameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from None
+    except ProfileOperationConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    except ProfileRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    except ConstraintViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    except DatabaseLockError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from None
+    return ProfileResponse.from_domain(profile)
+
+
+@profile_router.post(
+    "/profiles/{profile_id}/reset",
+    response_model=ProfileResponse,
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Confirmation required",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "Profile not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "Profile is running",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Database busy (retryable)",
+        },
+    },
+)
+async def reset_profile(
+    profile_id: str,
+    payload: ProfileResetRequest,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
+    operation_id: Annotated[str | None, Query()] = None,
+):
+    if not payload.confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset requires explicit confirmation",
+        )
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
+    try:
+        profile = await service.reset_profile(profile_id, operation_id=op_id)
+    except ProfileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile {profile_id} not found",
+        ) from None
+    except ProfileOperationConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    except ProfileRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from None
+    except DatabaseLockError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from None
+    return ProfileResponse.from_domain(profile)
 
 
 @profile_router.get(

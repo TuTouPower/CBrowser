@@ -135,6 +135,16 @@ const en: MessageDict = {
   duplicate: "Duplicate",
   duplicating: "Duplicating...",
   duplicateSettingsOnly: "Duplicate settings and fingerprint only",
+  failedToDuplicateProfile: "Failed to duplicate profile",
+  failedToResetProfile: "Failed to reset profile",
+  duplicateProfileTitle: "Duplicate profile",
+  duplicateProfileHint:
+    "Settings and fingerprint are copied. Browser state is only copied while the source is stopped; Artifacts are never copied.",
+  resetProfileTitle: "Reset browser state",
+  resetProfileDataList:
+    "Deletes this profile's entire browser data, including cookies, site data, cache, history, bookmarks, saved passwords, extensions and logged-in sessions, and re-rolls the fingerprint identity.",
+  resetProfileKeeps:
+    "Keeps settings, tags, notes and Artifacts. Other profiles are untouched.",
   duplicateOptions: "Duplicate options",
   duplicateSettingsOnlyTitle: "Settings and fingerprint only",
   duplicateSettingsOnlyHint: "Starts with empty browser state",
@@ -349,8 +359,6 @@ const en: MessageDict = {
   failedToReorderProfiles: "Failed to reorder profiles",
   failedToDeleteProfile: "Failed to delete profile",
   failedToStopProfile: "Failed to stop profile",
-  failedToResetProfile: "Failed to reset profile",
-  failedToDuplicateProfile: "Failed to duplicate profile",
 };
 
 const zh: MessageDict = {
@@ -462,6 +470,15 @@ const zh: MessageDict = {
   duplicate: "复制",
   duplicating: "复制中...",
   duplicateSettingsOnly: "仅复制设置与指纹",
+  failedToDuplicateProfile: "复制配置失败",
+  failedToResetProfile: "重置配置失败",
+  duplicateProfileTitle: "复制配置",
+  duplicateProfileHint:
+    "复制设置与指纹。仅在源已停止时复制浏览器状态；不复制 Artifact。",
+  resetProfileTitle: "重置浏览器状态",
+  resetProfileDataList:
+    "将清除此配置的全部浏览器数据，包括 Cookie、站点数据、缓存、历史、书签、保存的密码、扩展与登录状态，并重新生成指纹身份。",
+  resetProfileKeeps: "保留设置、标签、备注与 Artifact；不影响其他配置。",
   duplicateOptions: "复制选项",
   duplicateSettingsOnlyTitle: "仅设置与指纹",
   duplicateSettingsOnlyHint: "以空的浏览器状态开始",
@@ -663,8 +680,6 @@ const zh: MessageDict = {
   failedToReorderProfiles: "调整配置顺序失败",
   failedToDeleteProfile: "删除配置失败",
   failedToStopProfile: "停止配置失败",
-  failedToResetProfile: "重置配置失败",
-  failedToDuplicateProfile: "复制配置失败",
 };
 
 export type TranslationKey = keyof typeof en;

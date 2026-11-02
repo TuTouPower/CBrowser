@@ -130,6 +130,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t008_v2_artifacts_automation"
+        },
+        {
+            "tid": "t013",
+            "slug": "v2_profile_copy_reset",
+            "title": "实现 Profile 配置复制、状态复制与重置",
+            "status": "done",
+            "branch": "t013_v2_profile_copy_reset",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "986d3e2c1ff7783b6b66606e6591998e449f8b68",
+            "depends_on": "t008",
+            "conflicts_with": "t014",
+            "note": "",
+            "dir": "docs/archive/tasks/t013_v2_profile_copy_reset"
         }
     ]
 }

@@ -205,6 +205,51 @@ describe("Application Router & AC-001 Target Independence", () => {
     instanceB.unmount();
   });
 
+  it("offers duplicate and reset confirmations on the profile detail page", async () => {
+    let resetCalled = false;
+    defaultApiClient.profiles.getRuntime = async (id: string) => ({
+      profile_id: id,
+      desired_state: "stopped",
+      observed_state: "stopped",
+      config_version: 1,
+      failure_count: 0,
+      restart_blocked: false,
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    defaultApiClient.profiles.reset = async () => {
+      resetCalled = true;
+      return (await defaultApiClient.profiles.get("p1"));
+    };
+    const view = renderWithRouter(["/profiles/p1"]);
+    await view.findByTestId("profile-detail-page");
+
+    let duplicatePayload: unknown = null;
+    defaultApiClient.profiles.duplicate = async (_id, payload) => {
+      duplicatePayload = payload;
+      return await defaultApiClient.profiles.get("p1");
+    };
+    fireEvent.click(view.getByTestId("profile-duplicate-button"));
+    expect(view.getByTestId("profile-duplicate-panel")).toHaveTextContent(
+      "Duplicate profile",
+    );
+    fireEvent.click(view.getByRole("button", { name: "Duplicate settings and fingerprint only" }));
+    await waitFor(() =>
+      expect(duplicatePayload).toEqual({ include_browser_state: false }),
+    );
+    fireEvent.click(view.getByTestId("profile-reset-button"));
+    expect(view.getByTestId("profile-reset-panel")).toHaveTextContent(/cookies/i);
+    expect(view.getByTestId("profile-reset-panel")).toHaveTextContent(/history|bookmarks/i);
+    expect(view.getByTestId("profile-reset-panel")).toHaveTextContent(/passwords|extensions/i);
+    expect(resetCalled).toBe(false);
+    fireEvent.click(
+      within(view.getByTestId("profile-reset-panel")).getByRole("button", {
+        name: "Reset",
+      }),
+    );
+    await waitFor(() => expect(resetCalled).toBe(true));
+    view.unmount();
+  });
+
   it("AC-001: selecting a profile from a sub-route navigates to the session page", async () => {
     const settingsRender = renderWithRouter(["/settings"]);
     await settingsRender.findByTestId("settings-page");

@@ -99,3 +99,10 @@
     - 退出原因（`exit_reason`）通过安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`，阻止注入任意私密载荷。
     - 全局异常处理器不向日志或响应体泄漏 SQL 绑定参数或堆栈细节。
     - 请求校验失败（HTTP 422）响应体剔除原始输入反射，防止日志和错误体回显敏感密码、Token、Cookie 或剪贴板字符串。
+
+## Profile 复制与重置的目录一致性
+
+- 配置复制只写数据库：新 Profile ID、配置版本、标签与同一指纹种子；`user_data_dir` 指向新 ID 的空目录，不复制源用户数据或 Artifact。
+- 状态复制在源 `desired_state` 与 `observed_state` 均为 stopped 时执行；跳过 `SingletonLock`、`SingletonCookie`、`SingletonSocket`，按符号链接原样复制，并用相对路径 + SHA-256 + 大小清单逐项比对源与副本。复制后再次校验源未启动，失败或并发启动时删除未发布副本。
+- 重置先把源 `user_data_dir` 原子重命名为同目录 `.reset-backup-<uuid>`，再更新指纹种子并生成新配置版本；成功后删除备份，数据库或文件操作失败时删除新目录并把备份改名回原位。Artifact 存储独立，不随重置删除。
+- 复制/重置操作使用 `Idempotency-Key` 复用审计记录；重复请求返回已有结果，不产生重复 Profile。
