@@ -4,13 +4,14 @@ Requires external secret file or explicit environment injection;
 enforces no hardcoded secrets.
 """
 
-import ipaddress
 import json
 import math
 import os
 import re
 import urllib.parse
 from pathlib import Path
+
+from cbrowser.secret_files import read_secret_file
 
 from pydantic import (
     BaseModel,
@@ -29,8 +30,6 @@ class StreamAgentConfig(BaseModel):
     runtime_instance_id: str
     gateway_url: str
     agent_token: SecretStr
-    turn_host: str = "127.0.0.1"
-    turn_port: int = Field(default=3478, ge=1, le=65535)
     udp_mux_port: int = 30006
     width: int = 1920
     height: int = 1080
@@ -41,19 +40,9 @@ class StreamAgentConfig(BaseModel):
     min_fps: float = 8.0
     max_fps: float = 30.0
     video_streaming_mode: bool = False
-    turn_servers: list[dict] = Field(default_factory=list)
     config_version: int = Field(default=1, ge=1)
     selkies_version: str | None = None
     controller_token: SecretStr | None = None
-
-    @field_validator("turn_host")
-    @classmethod
-    def validate_turn_host(cls, v: str) -> str:
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("turn_host must be a valid IPv4 or IPv6 address")
-        return v
 
     @field_validator("profile_id")
     @classmethod
@@ -167,8 +156,6 @@ class StreamAgentConfig(BaseModel):
             f"gateway_url={self.gateway_url!r}, "
             f"agent_token='***', "
             f"controller_token={ctrl_str}, "
-            f"turn_host={self.turn_host!r}, "
-            f"turn_port={self.turn_port}, "
             f"udp_mux_port={self.udp_mux_port}, "
             f"width={self.width}, "
             f"height={self.height}, "
@@ -213,12 +200,12 @@ class StreamAgentConfig(BaseModel):
         token_str: str | None = None
         secret_file = os.environ.get("CBROWSER_AGENT_SECRET_FILE")
         if secret_file:
-            path = Path(secret_file)
-            if not path.is_file():
-                raise ValueError("Secret file not found or not a regular file")
-            token_str = path.read_text().strip()
-            if not token_str:
-                raise ValueError("Secret file is empty")
+            try:
+                token_str = read_secret_file(
+                    Path(secret_file), label="Agent secret", minimum_bytes=32
+                )
+            except RuntimeError as exc:
+                raise ValueError(str(exc)) from None
         else:
             token_str = os.environ.get("CBROWSER_AGENT_TOKEN")
 
@@ -257,25 +244,6 @@ class StreamAgentConfig(BaseModel):
         except ValueError:
             raise ValueError("Invalid CBROWSER_UDP_MUX_PORT integer")
 
-        turn_host = os.environ.get("SELKIES_TURN_HOST")
-        if not turn_host or not turn_host.strip():
-            raise ValueError("SELKIES_TURN_HOST environment variable is required")
-        turn_host = turn_host.strip()
-        try:
-            ipaddress.ip_address(turn_host)
-        except ValueError:
-            raise ValueError("SELKIES_TURN_HOST must be a valid IPv4 or IPv6 address")
-
-        turn_port_raw = os.environ.get("SELKIES_TURN_PORT")
-        if not turn_port_raw or not turn_port_raw.strip():
-            raise ValueError("SELKIES_TURN_PORT environment variable is required")
-        try:
-            turn_port = int(turn_port_raw.strip())
-        except ValueError:
-            raise ValueError("Invalid SELKIES_TURN_PORT integer")
-        if not (1 <= turn_port <= 65535):
-            raise ValueError("SELKIES_TURN_PORT must be between 1 and 65535")
-
         pulse_dir = os.environ.get("CBROWSER_PULSE_DIR", "/pulse")
         x11_socket = os.environ.get("CBROWSER_X11_SOCKET", "/tmp/.X11-unix/X99")
         xauth = os.environ.get("XAUTHORITY", "/tmp/.Xauthority")
@@ -301,8 +269,6 @@ class StreamAgentConfig(BaseModel):
             runtime_instance_id=runtime_instance_id,
             gateway_url=gateway_url,
             agent_token=token_str,
-            turn_host=turn_host,
-            turn_port=turn_port,
             udp_mux_port=udp_port,
             width=width,
             height=height,

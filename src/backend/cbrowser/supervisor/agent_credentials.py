@@ -5,17 +5,18 @@ import hmac
 import json
 from pathlib import Path
 
+from cbrowser.secret_files import read_secret_file
 from pydantic import SecretStr
 
 
 class AgentCredentials:
     def __init__(self, key_file: Path | str):
         try:
-            key = Path(key_file).read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeError):
-            raise ValueError("Cannot read Agent authentication key file") from None
-        if len(key.encode("utf-8")) < 32:
-            raise ValueError("Agent authentication key must contain at least 32 bytes")
+            key = read_secret_file(
+                Path(key_file), label="Agent authentication key", minimum_bytes=32
+            )
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from None
         self._key = SecretStr(key)
 
     def token_for(self, profile_id: str, runtime_instance_id: str) -> str:

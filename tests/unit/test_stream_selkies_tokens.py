@@ -35,7 +35,8 @@ def test_stream_agent_config_controller_token_from_credentials_file(
     )
 
     secret_file = tmp_path / "agent_secret.txt"
-    secret_file.write_text("agent_secret_value", encoding="utf-8")
+    secret_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    secret_file.chmod(0o600)
 
     env = {
         "CBROWSER_PROFILE_ID": "p1",
@@ -43,8 +44,6 @@ def test_stream_agent_config_controller_token_from_credentials_file(
         "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:18097",
         "CBROWSER_CONFIG_VERSION": "1",
         "CBROWSER_AGENT_SECRET_FILE": str(secret_file),
-        "SELKIES_TURN_HOST": "127.0.0.1",
-        "SELKIES_TURN_PORT": "3478",
         "CBROWSER_SELKIES_CREDENTIALS_FILE": str(cred_file),
     }
 
@@ -68,7 +67,8 @@ def test_stream_agent_config_controller_token_from_credentials_file(
 def test_stream_agent_config_ignores_controller_token_env_var(tmp_path: Path) -> None:
     ctrl_token = secrets.token_urlsafe(32)
     secret_file = tmp_path / "agent_secret.txt"
-    secret_file.write_text("agent_secret_value", encoding="utf-8")
+    secret_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    secret_file.chmod(0o600)
 
     env = {
         "CBROWSER_PROFILE_ID": "p1",
@@ -76,8 +76,6 @@ def test_stream_agent_config_ignores_controller_token_env_var(tmp_path: Path) ->
         "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:18097",
         "CBROWSER_CONFIG_VERSION": "1",
         "CBROWSER_AGENT_SECRET_FILE": str(secret_file),
-        "SELKIES_TURN_HOST": "127.0.0.1",
-        "SELKIES_TURN_PORT": "3478",
         "CBROWSER_CONTROLLER_TOKEN": ctrl_token,
     }
 
@@ -101,8 +99,6 @@ async def test_agent_hello_token_injection_preserves_tab_id_and_resume_key(
         runtime_instance_id="r1",
         gateway_url="ws://127.0.0.1:18097",
         agent_token=SecretStr("agent_secret_test"),
-        turn_host="127.0.0.1",
-        turn_port=3478,
         controller_token=SecretStr(ctrl_token),
     )
 

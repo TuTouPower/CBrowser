@@ -1,7 +1,7 @@
 """Real Docker E2E test for AC-009 Runtime Coordinator.
 
 Tests:
-1. API process + Supervisor container + Gateway + coturn.
+1. API process + Supervisor container + Gateway.
 2. Setting running intent via API causes Browser & Stream to appear.
 3. Setting stopped intent via API causes Browser & Stream to disappear.
 4. Outage of Supervisor preserves intent, which converges upon recovery.
@@ -109,40 +109,6 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             labels={"com.cbrowser.prefix": prefix},
         )
         networks.append(edge_network)
-
-        # 2. Coturn container
-        turn_config = control / "turn.conf"
-        turn_config.write_text(
-            "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-            "no-cli\nno-tls\nno-dtls\nstatic-auth-secret="
-            + secrets.token_hex(32)
-            + "\n",
-            encoding="utf-8",
-        )
-        turn_config.chmod(0o644)
-
-        coturn = client.containers.run(
-            image("CBROWSER_TURN_TEST_IMAGE"),
-            name=f"{prefix}-coturn",
-            detach=True,
-            read_only=True,
-            cap_add=["NET_BIND_SERVICE"],
-            network=edge_network.name,
-            entrypoint="/usr/bin/turnserver",
-            command=[
-                "-c",
-                "/etc/turnserver.conf",
-                "--relay-threads=1",
-                "--log-file=stdout",
-            ],
-            volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-            labels={
-                "com.cbrowser.prefix": prefix,
-                "com.cbrowser.managed-by": "supervisor",
-                "com.cbrowser.role": "coturn",
-            },
-        )
-        containers.append(coturn)
 
         # 3. Gateway container
         gateway = client.containers.run(
@@ -260,8 +226,6 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 gateway.id,
-                "--coturn-container-id",
-                coturn.id,
                 "--prefix",
                 prefix,
                 "--host",

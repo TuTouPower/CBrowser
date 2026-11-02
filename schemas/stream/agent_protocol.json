@@ -1,23 +1,254 @@
 {
   "$defs": {
-    "AgentAction": {
-      "enum": [
-        "register",
-        "registered",
-        "viewer_joined",
-        "viewer_left",
-        "signal",
-        "supervisor_quota",
-        "ice_restart",
-        "ice_restart_offer",
-        "ice_restart_answer",
-        "ice_restart_committed",
-        "heartbeat",
-        "rtc_config",
-        "error"
+    "AgentHeartbeatEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Session Id"
+        },
+        "conn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conn Id"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        },
+        "action": {
+          "const": "heartbeat",
+          "default": "heartbeat",
+          "title": "Action",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AgentHeartbeatPayload"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "payload"
       ],
-      "title": "AgentAction",
-      "type": "string"
+      "title": "AgentHeartbeatEnvelope",
+      "type": "object"
+    },
+    "AgentHeartbeatPayload": {
+      "additionalProperties": false,
+      "description": "Application-level health message sent every 10 seconds.\n\nThe video fields come from Selkies peer state, not from page reports.",
+      "properties": {
+        "runtime_state": {
+          "enum": [
+            "starting",
+            "ready"
+          ],
+          "title": "Runtime State",
+          "type": "string"
+        },
+        "viewer_count": {
+          "minimum": 0,
+          "title": "Viewer Count",
+          "type": "integer"
+        },
+        "unpaused_video_consumers": {
+          "minimum": 0,
+          "title": "Unpaused Video Consumers",
+          "type": "integer"
+        },
+        "capture_running": {
+          "title": "Capture Running",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "runtime_state",
+        "viewer_count",
+        "unpaused_video_consumers",
+        "capture_running"
+      ],
+      "title": "AgentHeartbeatPayload",
+      "type": "object"
+    },
+    "AgentRegisterEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Session Id"
+        },
+        "conn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conn Id"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        },
+        "action": {
+          "const": "register",
+          "default": "register",
+          "title": "Action",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/AgentRegisterPayload"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "payload"
+      ],
+      "title": "AgentRegisterEnvelope",
+      "type": "object"
+    },
+    "AgentRegisterPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "title": "Hostname",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "udp_port": {
+          "title": "Udp Port",
+          "type": "integer"
+        },
+        "selkies_version": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Selkies Version",
+          "type": "string"
+        },
+        "runtime_state": {
+          "enum": [
+            "starting",
+            "ready"
+          ],
+          "title": "Runtime State",
+          "type": "string"
+        },
+        "config_version": {
+          "minimum": 1,
+          "title": "Config Version",
+          "type": "integer"
+        },
+        "video_streaming_mode": {
+          "default": false,
+          "title": "Video Streaming Mode",
+          "type": "boolean"
+        },
+        "width": {
+          "default": 1920,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 1080,
+          "title": "Height",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hostname",
+        "profile_id",
+        "runtime_instance_id",
+        "udp_port",
+        "selkies_version",
+        "runtime_state",
+        "config_version"
+      ],
+      "title": "AgentRegisterPayload",
+      "type": "object"
     },
     "GatewayControlEnvelope": {
       "additionalProperties": false,
@@ -29,7 +260,9 @@
           "type": "string"
         },
         "action": {
-          "$ref": "#/$defs/AgentAction"
+          "const": "supervisor_quota",
+          "title": "Action",
+          "type": "string"
         },
         "profile_id": {
           "title": "Profile Id",
@@ -59,9 +292,7 @@
           "title": "Conn Id"
         },
         "payload": {
-          "additionalProperties": true,
-          "title": "Payload",
-          "type": "object"
+          "$ref": "#/$defs/SupervisorQuotaPayload"
         },
         "timestamp": {
           "anyOf": [
@@ -226,43 +457,22 @@
       "title": "GatewayTunnelEnvelope",
       "type": "object"
     },
-    "ProtocolEnvelope": {
+    "SupervisorQuotaPayload": {
       "additionalProperties": false,
-      "description": "Outbound protocol envelope sent by StreamAgent to Gateway.",
       "properties": {
-        "version": {
-          "const": "v2",
-          "default": "v2",
-          "title": "Version",
-          "type": "string"
-        },
-        "action": {
-          "$ref": "#/$defs/AgentAction"
-        },
-        "profile_id": {
-          "title": "Profile Id",
-          "type": "string"
-        },
-        "runtime_instance_id": {
-          "title": "Runtime Instance Id",
-          "type": "string"
-        },
-        "agent_session_id": {
+        "max_fps_cap": {
           "anyOf": [
             {
-              "maxLength": 128,
-              "minLength": 1,
-              "pattern": "^[a-zA-Z0-9_.:-]+$",
-              "type": "string"
+              "type": "number"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Agent Session Id"
+          "title": "Max Fps Cap"
         },
-        "conn_id": {
+        "reason": {
           "anyOf": [
             {
               "type": "string"
@@ -272,38 +482,19 @@
             }
           ],
           "default": null,
-          "title": "Conn Id"
-        },
-        "payload": {
-          "additionalProperties": true,
-          "title": "Payload",
-          "type": "object"
-        },
-        "timestamp": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Timestamp"
+          "title": "Reason"
         }
       },
-      "required": [
-        "action",
-        "profile_id",
-        "runtime_instance_id"
-      ],
-      "title": "ProtocolEnvelope",
+      "title": "SupervisorQuotaPayload",
       "type": "object"
     }
   },
   "anyOf": [
     {
-      "$ref": "#/$defs/ProtocolEnvelope"
+      "$ref": "#/$defs/AgentRegisterEnvelope"
+    },
+    {
+      "$ref": "#/$defs/AgentHeartbeatEnvelope"
     },
     {
       "$ref": "#/$defs/GatewayRegisterResponse"

@@ -307,13 +307,15 @@ const en: MessageDict = {
     "When the session gets focus, the browser asks for clipboard access; allow it so copied text syncs both ways automatically.",
   audioMute: "Mute this page",
   audioUnmute: "Unmute this page",
-  runtimeCheckFailed: "Profile runtime check failed (HTTP {status})",
+  runtimeCheckUnavailable: "Profile runtime status unavailable: {reason}",
   runtimeNotRunning: "Profile runtime is not running (state: {state})",
   runtimeReportedError: "Profile runtime reported an error (state: {state})",
   runtimeStateUnknown: "unknown",
   iceConnectivityCheckFailed: "WebRTC ICE connectivity check failed",
   iceConnectivityLost: "WebRTC ICE connectivity was lost",
   signalingDisconnected: "Signaling WebSocket disconnected (code {code})",
+  webLocksUnavailable:
+    "This browser does not provide Web Locks, so tab identity cannot be kept safe.",
   mediaFramesTimeout: "No media frames decoded within the timeout window",
 
   // Browser session diagnostics & actions
@@ -322,6 +324,7 @@ const en: MessageDict = {
   sessionStageStopping: "Stopping Session",
   sessionStageConnectingSignaling: "Connecting Signaling",
   sessionStageSignalingFailed: "Signaling Failed",
+  sessionStageWebLocksUnavailable: "Web Locks Unavailable",
   sessionStageIceFailed: "ICE Connection Failed",
   sessionStageMediaWaiting: "Waiting for Media",
   sessionStageMediaNoFrames: "No Media Frames Received",
@@ -635,13 +638,15 @@ const zh: MessageDict = {
     "会话页面获得焦点时浏览器会请求剪贴板权限；允许后复制的文本双向自动同步。",
   audioMute: "静音本页",
   audioUnmute: "取消本页静音",
-  runtimeCheckFailed: "配置运行时检查失败（HTTP {status}）",
+  runtimeCheckUnavailable: "无法获取运行时状态：{reason}",
   runtimeNotRunning: "配置运行时未运行（状态：{state}）",
   runtimeReportedError: "配置运行时报告错误（状态：{state}）",
   runtimeStateUnknown: "未知",
   iceConnectivityCheckFailed: "WebRTC ICE 连接检查失败",
   iceConnectivityLost: "WebRTC ICE 连接已丢失",
   signalingDisconnected: "信令 WebSocket 已断开（代码 {code}）",
+  webLocksUnavailable:
+    "当前浏览器不支持 Web Locks，无法安全保持标签页身份。",
   mediaFramesTimeout: "超时未收到解码画面",
 
   // Browser session diagnostics & actions
@@ -650,6 +655,7 @@ const zh: MessageDict = {
   sessionStageStopping: "正在停止会话",
   sessionStageConnectingSignaling: "正在连接信令服务器",
   sessionStageSignalingFailed: "信令连接失败",
+  sessionStageWebLocksUnavailable: "Web Locks 不可用",
   sessionStageIceFailed: "ICE 协商失败",
   sessionStageMediaWaiting: "等待媒体流渲染",
   sessionStageMediaNoFrames: "媒体未产生画面",

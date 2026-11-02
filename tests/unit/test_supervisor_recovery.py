@@ -33,6 +33,7 @@ def supervisor_setup(tmp_path: Path):
     agent_key_file = tmp_path / "agent_key"
     agent_key_file.write_text(secrets.token_urlsafe(32))
     agent_key_file.chmod(0o600)
+    agent_key_file.chmod(0o600)
 
     gw_token_file = tmp_path / "gw_token"
     gw_token_file.write_text(secrets.token_urlsafe(32))
@@ -173,11 +174,7 @@ def supervisor_setup(tmp_path: Path):
             return C()
 
         def attach_profile_infrastructure(self, *args, **kwargs):
-            return {
-                "coturn_ip": "10.0.0.8",
-                "coturn_ice_address": "10.0.0.8:3478",
-                "ice_server": "turn:10.0.0.8:3478",
-            }
+            return {"gateway_ip": "10.0.0.8", "gateway_url": "ws://10.0.0.8:18080"}
 
         async def teardown_profile(self, pid):
             pass
@@ -208,7 +205,6 @@ def supervisor_setup(tmp_path: Path):
         token_file=token_file,
         agent_key_file=agent_key_file,
         gateway_control=gw_control,
-        coturn_container_id="coturn_mock_id",
     )
 
     app = create_control_app(core, token_file)
@@ -406,6 +402,7 @@ async def test_supervisor_gateway_fixture_contract(tmp_path: Path):
 
     agent_key_file = tmp_path / "gw_agent_key"
     agent_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    agent_key_file.chmod(0o600)
     gw_token_file = tmp_path / "gw_token"
     gw_token = secrets.token_urlsafe(32)
     gw_token_file.write_text(gw_token, encoding="utf-8")

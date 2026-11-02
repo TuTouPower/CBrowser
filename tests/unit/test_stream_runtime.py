@@ -3,6 +3,8 @@ Unit tests for StreamAgent policy, protocol, config, and security boundary.
 Does not require GStreamer or WebRTC native binaries on host.
 """
 
+import asyncio
+
 import pytest
 from cbrowser.stream_agent.config import StreamAgentConfig
 from cbrowser.stream_agent.policy import (
@@ -10,7 +12,7 @@ from cbrowser.stream_agent.policy import (
     sanitize_settings_message,
     should_block_client_verb,
 )
-from cbrowser.stream_agent.protocol import AgentAction, ProtocolEnvelope
+from cbrowser.stream_agent.protocol import AgentAction, AgentRegisterEnvelope
 
 
 class MockMediaPipeline:
@@ -113,15 +115,22 @@ def test_sanitize_settings_packet():
 
 
 def test_protocol_envelope_serialization():
-    env = ProtocolEnvelope(
-        action=AgentAction.REGISTER,
+    env = AgentRegisterEnvelope(
         profile_id="test_profile",
         runtime_instance_id="instance_test",
-        payload={"udp_port": 30006},
+        payload={
+            "hostname": "stream-a",
+            "profile_id": "test_profile",
+            "runtime_instance_id": "instance_test",
+            "udp_port": 30006,
+            "selkies_version": "2.1.0",
+            "runtime_state": "ready",
+            "config_version": 1,
+        },
     )
     dumped = env.model_dump_json()
     assert "test_profile" in dumped
-    assert "register" in dumped
+    assert AgentAction.REGISTER.value in dumped
 
 
 def test_config_validation_and_repr():
@@ -156,3 +165,59 @@ def test_config_validation_and_repr():
             agent_token="token",
             udp_mux_port=80,  # Below 1024
         )
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_loop_survives_a_single_tick_exception(monkeypatch):
+    pipeline = MockMediaPipeline()
+    agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
+    calls = {"count": 0}
+    original = agent.reconcile_capture_state
+
+    async def flaky_tick(*args, **kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("tick failed")
+        return await original(*args, **kwargs)
+
+    agent.reconcile_capture_state = flaky_tick
+    task = asyncio.create_task(agent._reconciliation_loop())
+    try:
+        for _ in range(100):
+            if calls["count"] >= 2:
+                break
+            await asyncio.sleep(0.01)
+        assert calls["count"] >= 2
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_supervised_policy_loop_restarts_after_fatal_exit():
+    agent = LiveCapturePolicyAgent(media_pipeline=MockMediaPipeline())
+    attempts = {"count": 0}
+    delays: list[float] = []
+    blocker = asyncio.Event()
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    async def factory() -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("fatal loop escape")
+        await blocker.wait()
+
+    agent._loop_sleep = fake_sleep
+    task = agent._start_supervised_loop("test", factory)
+    try:
+        for _ in range(100):
+            if attempts["count"] >= 2:
+                break
+            await asyncio.sleep(0.01)
+        assert attempts["count"] >= 2
+        assert delays == [1.0]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

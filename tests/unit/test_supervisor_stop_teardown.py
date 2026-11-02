@@ -32,7 +32,6 @@ def _core(tmp_path, docker, gateway):
         httpx.AsyncClient(base_url="http://127.0.0.1:1", trust_env=False),
         gateway_control=gateway,
         gateway_container_id=None,
-        coturn_container_id=None,
     )
 
 

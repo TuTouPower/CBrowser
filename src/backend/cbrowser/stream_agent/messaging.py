@@ -7,11 +7,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .protocol import (
-    AgentAction,
+    AgentHeartbeatEnvelope,
     AgentHeartbeatPayload,
+    AgentRegisterEnvelope,
     AgentRegisterPayload,
     GatewayTunnelEnvelope,
-    ProtocolEnvelope,
 )
 
 
@@ -30,11 +30,7 @@ def build_register_payload(
         selkies_version=selkies_version,
         runtime_state="ready",
         config_version=config.config_version,
-        turn_host=config.turn_host,
-        turn_port=config.turn_port,
         video_streaming_mode=config.video_streaming_mode,
-        max_fps=int(config.max_fps),
-        min_fps=int(config.min_fps),
         width=config.width,
         height=config.height,
     )
@@ -42,12 +38,11 @@ def build_register_payload(
 
 def build_register_envelope(
     config: Any, payload: AgentRegisterPayload, timestamp: str
-) -> ProtocolEnvelope:
-    return ProtocolEnvelope(
-        action=AgentAction.REGISTER,
+) -> AgentRegisterEnvelope:
+    return AgentRegisterEnvelope(
         profile_id=config.profile_id,
         runtime_instance_id=config.runtime_instance_id,
-        payload=payload.model_dump(),
+        payload=payload,
         timestamp=timestamp,
     )
 
@@ -57,33 +52,11 @@ def build_heartbeat_envelope(
     session_id: str,
     payload: AgentHeartbeatPayload,
     timestamp: str,
-) -> ProtocolEnvelope:
-    return ProtocolEnvelope(
-        action=AgentAction.HEARTBEAT,
+) -> AgentHeartbeatEnvelope:
+    return AgentHeartbeatEnvelope(
         profile_id=config.profile_id,
         runtime_instance_id=config.runtime_instance_id,
         agent_session_id=session_id,
-        payload=payload.model_dump(),
-        timestamp=timestamp,
-    )
-
-
-def build_action_envelope(
-    action: Any,
-    *,
-    profile_id: str,
-    runtime_instance_id: str,
-    session_id: str | None,
-    conn_id: str | None,
-    payload: dict[str, Any],
-    timestamp: str,
-) -> ProtocolEnvelope:
-    return ProtocolEnvelope(
-        action=action,
-        profile_id=profile_id,
-        runtime_instance_id=runtime_instance_id,
-        agent_session_id=session_id,
-        conn_id=conn_id,
         payload=payload,
         timestamp=timestamp,
     )

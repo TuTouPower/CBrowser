@@ -44,7 +44,7 @@ IFRAME_SELECTOR = 'iframe[data-testid="browser-session-iframe"]'
 
 @pytest.fixture(scope="module")
 def harness(tmp_path_factory: pytest.TempPathFactory):
-    h = FrontendAppTopologyHarness(tmp_path_factory.mktemp("fe_app"), webrtc_mode="lan")
+    h = FrontendAppTopologyHarness(tmp_path_factory.mktemp("fe_app"))
     asyncio.run(h.start())
     try:
         yield h

@@ -97,8 +97,6 @@ def _config() -> StreamAgentConfig:
         runtime_instance_id="r1",
         gateway_url="ws://127.0.0.1:1/register",
         agent_token=SecretStr("agent-secret"),
-        turn_host="127.0.0.1",
-        turn_port=3478,
         controller_token=SecretStr("controller-token"),
     )
 

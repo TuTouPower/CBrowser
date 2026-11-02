@@ -4,17 +4,19 @@ import json
 from pathlib import Path
 
 from cbrowser.stream_agent.protocol import (
+    AgentHeartbeatEnvelope,
+    AgentRegisterEnvelope,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
-    ProtocolEnvelope,
 )
 from pydantic import TypeAdapter
 
 
 def stream_protocol_schema() -> dict:
     schema = TypeAdapter(
-        ProtocolEnvelope
+        AgentRegisterEnvelope
+        | AgentHeartbeatEnvelope
         | GatewayRegisterResponse
         | GatewayTunnelEnvelope
         | GatewayControlEnvelope

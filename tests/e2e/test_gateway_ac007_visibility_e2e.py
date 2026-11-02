@@ -19,7 +19,7 @@ from playwright.async_api import async_playwright
 async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(
     tmp_path: Path,
 ) -> None:
-    harness = GatewayTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = GatewayTopologyHarness(tmp_path)
     evidence: dict = {}
     try:
         await harness.start()

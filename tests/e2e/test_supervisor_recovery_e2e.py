@@ -297,41 +297,6 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
     api_headers.update(real_api_and_sup["auth_headers"])
@@ -371,7 +336,6 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         root=root,
         env=env,
         log_path=sup_log,
-        coturn_container_id=coturn.id,
         docker_client=d_client,
     )
     await asyncio.to_thread(sup.start)
@@ -552,41 +516,6 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
     api_headers.update(real_api_and_sup["auth_headers"])
@@ -634,7 +563,6 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         root=root,
         env=env,
         log_path=sup_log,
-        coturn_container_id=coturn.id,
         docker_client=d_client,
     )
     await asyncio.to_thread(sup.start)
@@ -834,41 +762,6 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}
     api_headers.update(real_api_and_sup["auth_headers"])
@@ -907,7 +800,6 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         root=root,
         env=env,
         log_path=sup_log,
-        coturn_container_id=coturn.id,
         docker_client=d_client,
     )
     await asyncio.to_thread(sup.start)

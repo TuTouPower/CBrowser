@@ -7,12 +7,13 @@ import {
 import { sendAudioPipelineControl } from "./audio_control";
 import { SessionDiagnosticsData, SessionStage } from "./types";
 import { useI18n } from "../../i18n";
+import { ApiClient, ApiError, defaultApiClient } from "../../shared/api/client";
 
 interface UseBrowserSessionOptions {
   initialStage?: SessionStage;
   errorMessage?: string;
   diagnostics?: Partial<SessionDiagnosticsData>;
-  runtimeStatusUrl?: string;
+  apiClient?: ApiClient;
   mediaTimeoutMs?: number;
   iceDisconnectGraceMs?: number;
 }
@@ -53,6 +54,7 @@ export function useBrowserSession(
   const wasConnectedRef = useRef<boolean>(
     (options.initialStage || "checking_runtime") === "connected"
   );
+  const webLocksUnavailableRef = useRef<boolean>(false);
 
   // Sync prop changes
   useEffect(() => {
@@ -111,6 +113,7 @@ export function useBrowserSession(
     if (iceDisconnectTimerRef.current) clearTimeout(iceDisconnectTimerRef.current);
 
     setErrorMessage(null);
+    webLocksUnavailableRef.current = false;
     setStage("reconnecting");
     setReloadKey((k) => k + 1);
     audioSamplesRef.current = [];
@@ -124,20 +127,12 @@ export function useBrowserSession(
     }
 
     let active = true;
+    const client = options.apiClient || defaultApiClient;
     const checkRuntime = async () => {
       try {
-        const url =
-          options.runtimeStatusUrl ||
-          `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime`;
-        const resp = await fetch(url, { credentials: "include" });
+        const data = await client.profiles.getRuntime(profileId);
         if (!active) return;
-        if (!resp.ok) {
-          setStage("runtime_not_ready");
-          setErrorMessage(t("runtimeCheckFailed", { status: resp.status }));
-          return;
-        }
-        const data = await resp.json();
-        const observed = data.observed_state || data.state;
+        const observed = data.observed_state;
         if (observed === "stopping") {
           setStage("stopping");
           setErrorMessage(null);
@@ -158,10 +153,20 @@ export function useBrowserSession(
         } else {
           setStage("connecting_signaling");
         }
-      } catch (err: any) {
+      } catch (err) {
         if (!active) return;
-        // In local mock or direct view tests, ignore fetch failure
-        setStage("connecting_signaling");
+        if (err instanceof ApiError && err.status === 401) {
+          // The auth provider handles the redirect to login.
+          return;
+        }
+        const reason =
+          err instanceof ApiError
+            ? `${err.status} ${err.message}`
+            : err instanceof Error && err.message
+              ? err.message
+              : t("runtimeStateUnknown");
+        setStage("runtime_not_ready");
+        setErrorMessage(t("runtimeCheckUnavailable", { reason }));
       }
     };
 
@@ -170,7 +175,13 @@ export function useBrowserSession(
       active = false;
       mountedRef.current = false;
     };
-  }, [profileId, options.runtimeStatusUrl, options.initialStage, reloadKey]);
+  }, [
+    profileId,
+    options.apiClient,
+    options.initialStage,
+    reloadKey,
+    t,
+  ]);
 
   // Handle postMessage events from iframe adapter
   useEffect(() => {
@@ -203,6 +214,10 @@ export function useBrowserSession(
           iceConnectionState === "failed" ||
           connectionState === "failed"
         ) {
+          if (iceDisconnectTimerRef.current) {
+            clearTimeout(iceDisconnectTimerRef.current);
+            iceDisconnectTimerRef.current = null;
+          }
           setStage("ice_failed");
           setErrorMessage(t("iceConnectivityCheckFailed"));
         } else if (disconnected) {
@@ -219,7 +234,14 @@ export function useBrowserSession(
         ) {
           setStage((prev) => (prev !== "connected" ? "media_waiting" : prev));
         }
+      } else if (type === "CBROWSER_WEB_LOCKS_UNAVAILABLE") {
+        webLocksUnavailableRef.current = true;
+        setStage("web_locks_unavailable");
+        setErrorMessage(t("webLocksUnavailable"));
       } else if (type === "CBROWSER_WS_CLOSE") {
+        if (webLocksUnavailableRef.current) {
+          return;
+        }
         if (code && code !== 1000) {
           if (wasConnectedRef.current) {
             // Give the official client a chance to resume the session with its
@@ -273,6 +295,7 @@ export function useBrowserSession(
     if (
       stage === "runtime_not_ready" ||
       stage === "signaling_failed" ||
+      stage === "web_locks_unavailable" ||
       stage === "stopping" ||
       stage === "error"
     ) {

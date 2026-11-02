@@ -18,7 +18,7 @@ from playwright.async_api import async_playwright
 async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
     tmp_path: Path,
 ) -> None:
-    harness = GatewayTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = GatewayTopologyHarness(tmp_path)
     evidence: dict = {}
     try:
         await harness.start()
@@ -125,7 +125,6 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
                     ("browser", browser_cname),
                     ("gateway", harness.gateway_container.name),
                     ("supervisor", harness.supervisor_container.name),
-                    ("coturn", harness.coturn_container.name),
                     ("caddy", harness.caddy_container.name),
                 ]:
                     try:

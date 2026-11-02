@@ -21,7 +21,7 @@ from scripts.verify_frontend_dist import (  # noqa: E402
 
 ADAPTER_TAG = '<script src="./selkies_adapter.js"></script>'
 MODULE_TAG = '<script type="module" crossorigin src="./assets/index.js"></script>'
-ADAPTER_JS = "__cbrowserAdapterSource\n__cbrowserShimInstalled\n(() => {})();\n"
+ADAPTER_JS = "window.__SELKIES_STREAMING_MODE__ = 'webrtc';\nwindow.__getWebRTCStats = async () => null;\n(() => {})();\n"
 
 
 def _write_dist(

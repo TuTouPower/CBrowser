@@ -334,7 +334,6 @@ class RealSupervisorContainer:
         root: Path,
         env: dict[str, str],
         log_path: Path,
-        coturn_container_id: str | None = None,
         gateway_port: int | None = None,
         docker_client: docker.DockerClient | None = None,
         supervisor_image: str | None = None,
@@ -354,7 +353,6 @@ class RealSupervisorContainer:
         self.root = root
         self.env = env
         self.log_path = log_path
-        self.coturn_container_id = coturn_container_id
         if gateway_port is not None:
             self.gateway_port = gateway_port
         elif self.gateway_url:
@@ -472,8 +470,6 @@ class RealSupervisorContainer:
             "--port",
             "8005",
         ]
-        if self.coturn_container_id:
-            cmd.extend(["--coturn-container-id", self.coturn_container_id])
         return cmd
 
     def start(self, timeout_sec: float = 30.0) -> None:

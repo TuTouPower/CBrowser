@@ -40,7 +40,7 @@ from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 @pytest.fixture(scope="module")
 def harness(tmp_path_factory: pytest.TempPathFactory):
     h = FrontendAppTopologyHarness(
-        tmp_path_factory.mktemp("fe_display"), webrtc_mode="lan"
+        tmp_path_factory.mktemp("fe_display")
     )
     asyncio.run(h.start())
     try:

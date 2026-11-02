@@ -16,8 +16,6 @@ def test_agent_registry_lifecycle_and_heartbeats() -> None:
         runtime_state="ready",
         udp_port=30005,
         config_version=1,
-        turn_host="10.0.0.1",
-        turn_port=3478,
         ws=None,  # type: ignore[arg-type]
         last_heartbeat=t0,
     )
@@ -48,8 +46,6 @@ def test_agent_registry_lifecycle_and_heartbeats() -> None:
         runtime_state="ready",
         udp_port=30005,
         config_version=2,
-        turn_host="10.0.0.1",
-        turn_port=3478,
         ws=None,  # type: ignore[arg-type]
         last_heartbeat=t0 + 50.0,
     )
@@ -66,8 +62,6 @@ def test_agent_registry_lifecycle_and_heartbeats() -> None:
         runtime_state="ready",
         udp_port=30005,
         config_version=2,
-        turn_host="10.0.0.1",
-        turn_port=3478,
         ws=None,  # type: ignore[arg-type]
         last_heartbeat=t0 + 55.0,
     )
@@ -88,8 +82,6 @@ def test_old_session_heartbeat_cannot_extend_new_session_liveness() -> None:
         runtime_state="ready",
         udp_port=30001,
         config_version=1,
-        turn_host="127.0.0.1",
-        turn_port=3478,
         ws=object(),
         last_heartbeat=100.0,
     )
@@ -129,8 +121,6 @@ def test_liveness_uses_injected_monotonic_clock() -> None:
         runtime_state="ready",
         udp_port=30001,
         config_version=1,
-        turn_host="127.0.0.1",
-        turn_port=3478,
         ws=object(),
         last_heartbeat=registry.now(),
     )

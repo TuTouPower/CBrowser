@@ -1,0 +1,17 @@
+{
+  "tid": "t015",
+  "attempt": 1,
+  "execution_id": "fceeccb055b44e61a3befdf87982448a",
+  "status": "done",
+  "branch": "t015_v2_media_link_simplification",
+  "base_sha": "9ee4a1146be8e42bc552f1150beb8063582ab466",
+  "tests": "unit 473 passed; integration 79 passed; frontend Vitest 126 passed; legacy src/backend/tests 384 passed; contract 169 passed; tsc -b and npm run build/verify_frontend_dist passed; rebuilt current-source Stream image (including secret_files.py) and tests/e2e/test_stream_runtime_e2e.py direct-media matrix passed; frontend session/app/media probe E2E passed on real topology (one transient container-remove APIError during app teardown, containers cleaned).",
+  "blackbox": "s011/d026 real Chrome + OrbStack no-coturn direct matrix passed (multi-page, duplicate/refresh, first-tab close, visibility pause/resume, viewer resume, audio/video/input/IME). Real Gateway integration tests passed; Browser Runtime E2E passed with p014 browser image.",
+  "review": "Full code/test review Round 2 PASS both axes; all Round 1 critical/important findings fixed; remaining minors fixed or transferred to p016.",
+  "pending": [
+    "p016"
+  ],
+  "findings": [
+    "d026"
+  ]
+}

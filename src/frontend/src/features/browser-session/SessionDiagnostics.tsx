@@ -26,6 +26,7 @@ const STAGE_TITLE_KEYS: Record<SessionStage, TranslationKey> = {
   stopping: "sessionStageStopping",
   connecting_signaling: "sessionStageConnectingSignaling",
   signaling_failed: "sessionStageSignalingFailed",
+  web_locks_unavailable: "sessionStageWebLocksUnavailable",
   ice_failed: "sessionStageIceFailed",
   media_waiting: "sessionStageMediaWaiting",
   media_no_frames: "sessionStageMediaNoFrames",
@@ -46,6 +47,7 @@ export const SessionDiagnostics: React.FC<SessionDiagnosticsProps> = ({
   const isErrorStage = [
     "runtime_not_ready",
     "signaling_failed",
+    "web_locks_unavailable",
     "ice_failed",
     "media_no_frames",
     "error",

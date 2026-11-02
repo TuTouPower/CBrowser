@@ -17,8 +17,6 @@ class RegisteredAgent:
     runtime_state: str
     udp_port: int
     config_version: int
-    turn_host: str
-    turn_port: int
     ws: Any
     last_heartbeat: float
     # Last Selkies video state reported in an Agent HEARTBEAT; None until then.
@@ -27,7 +25,7 @@ class RegisteredAgent:
 
 
 class AgentRegistry:
-    """Manages active StreamAgent connections and detects lost heartbeats (>30s)."""
+    """Manages active StreamAgent connections and detects lost heartbeats."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._agents: dict[str, RegisteredAgent] = {}
@@ -112,3 +110,43 @@ class RegistrationThrottle:
             ]:
                 self._attempts.pop(stale, None)
         return True
+
+
+class AuthorizationThrottle:
+    """Bounded failed Viewer authorization attempts per source and Profile."""
+
+    def __init__(self, max_failures: int = 10, window_seconds: float = 60.0) -> None:
+        self.max_failures = max_failures
+        self.window_seconds = window_seconds
+        self._failures: dict[tuple[str, str], list[float]] = {}
+
+    def allow(
+        self, source: str | None, profile_id: str, now: float | None = None
+    ) -> bool:
+        clock = time.monotonic() if now is None else now
+        key = (source or "unknown", profile_id)
+        failures = self._failures.get(key, [])
+        cutoff = clock - self.window_seconds
+        while failures and failures[0] < cutoff:
+            failures.pop(0)
+        return len(failures) < self.max_failures
+
+    def record_failure(
+        self, source: str | None, profile_id: str, now: float | None = None
+    ) -> None:
+        clock = time.monotonic() if now is None else now
+        key = (source or "unknown", profile_id)
+        failures = self._failures.setdefault(key, [])
+        failures.append(clock)
+        cutoff = clock - self.window_seconds
+        while failures and failures[0] < cutoff:
+            failures.pop(0)
+        if len(self._failures) > 1024:
+            for stale in [
+                entry
+                for entry, values in self._failures.items()
+                if not values or values[-1] < cutoff
+            ]:
+                self._failures.pop(stale, None)
+        while len(self._failures) > 1024:
+            self._failures.pop(next(iter(self._failures)))

@@ -478,9 +478,7 @@ with path.open('w') as output:
         self,
         profile_id: str,
         gateway_container_id: str | None,
-        coturn_container_id: str,
         gateway_port: int = DEFAULT_GATEWAY_PORT,
-        coturn_port: int = 3478,
     ) -> dict[str, Any]:
         net_name = self.get_network_name(profile_id)
         try:
@@ -497,14 +495,13 @@ with path.open('w') as output:
             if gateway_container_id
             else None
         )
-        coturn = self._validate_infra_container(coturn_container_id, "coturn")
 
         newly_connected: list[Any] = []
         try:
             net.reload()
             connected_containers = net.attrs.get("Containers") or {}
 
-            targets = [c for c in (gw, coturn) if c is not None]
+            targets = [c for c in (gw,) if c is not None]
             for container in targets:
                 if container.id not in connected_containers:
                     net.connect(container)
@@ -514,23 +511,6 @@ with path.open('w') as output:
 
             if gw:
                 gw.reload()
-            coturn.reload()
-            coturn_networks = coturn.attrs.get("NetworkSettings", {}).get(
-                "Networks", {}
-            )
-            coturn_ip = coturn_networks.get(net_name, {}).get("IPAddress")
-            if not coturn_ip:
-                net.reload()
-                c_map = net.attrs.get("Containers") or {}
-                if coturn.id in c_map:
-                    coturn_ip = c_map[coturn.id].get("IPv4Address", "").split("/")[0]
-
-            if not coturn_ip:
-                raise DockerSandboxError(
-                    f"Failed to allocate or retrieve IPv4 address for "
-                    f"coturn on {net_name}"
-                )
-
             gw_ip = None
             if gw:
                 gw_networks = gw.attrs.get("NetworkSettings", {}).get("Networks", {})
@@ -547,11 +527,7 @@ with path.open('w') as output:
                         f"gateway on {net_name}"
                     )
 
-            result = {
-                "coturn_ip": coturn_ip,
-                "coturn_ice_address": f"{coturn_ip}:{coturn_port}",
-                "ice_server": f"turn:{coturn_ip}:{coturn_port}",
-            }
+            result: dict[str, Any] = {}
             if gw_ip:
                 result["gateway_ip"] = gw_ip
                 result["gateway_url"] = f"ws://{gw_ip}:{gateway_port}"
@@ -575,7 +551,6 @@ with path.open('w') as output:
         self,
         profile_id: str,
         gateway_container_id: str | None = None,
-        coturn_container_id: str | None = None,
     ) -> None:
         net_name = self.get_network_name(profile_id)
         try:
@@ -594,11 +569,6 @@ with path.open('w') as output:
             targets.append(
                 self._validate_infra_container(gateway_container_id, "gateway")
             )
-        if coturn_container_id:
-            targets.append(
-                self._validate_infra_container(coturn_container_id, "coturn")
-            )
-
         if not targets:
             for cid in list(connected.keys()):
                 try:
@@ -607,7 +577,7 @@ with path.open('w') as output:
                     if (
                         labels.get("com.cbrowser.prefix") == self.resource_prefix
                         and labels.get("com.cbrowser.managed-by") == "supervisor"
-                        and labels.get("com.cbrowser.role") in {"gateway", "coturn"}
+                        and labels.get("com.cbrowser.role") == "gateway"
                     ):
                         targets.append(c)
                 except DockerException:
@@ -753,10 +723,8 @@ with path.open('w') as output:
         agent_secret_path: Path | None = None,
         public_ip: str = "127.0.0.1",
         display: str = ":99",
-        media_addresses: dict[str, str] | None = None,
         selkies_tokens_path: Path | None = None,
         snapshot_json_path: Path | None = None,
-        webrtc_mode: str = "public",
         gateway_port: int = DEFAULT_GATEWAY_PORT,
     ) -> Any:
         endpoint = GatewayEndpoint.from_url(
@@ -813,14 +781,8 @@ with path.open('w') as output:
         )
 
         gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "stream")
-        allowed_tcp = []
-        allowed_udp = []
-        if media_addresses is not None:
-            coturn_ip = media_addresses["coturn_ip"]
-            allowed_tcp.extend([(coturn_ip, 3478), (coturn_ip, 5349)])
-            allowed_udp.extend(
-                (coturn_ip, port) for port in [3478, *range(50000, 51000)]
-            )
+        allowed_tcp: list[tuple[str, int]] = []
+        allowed_udp: list[tuple[str, int]] = []
         volumes = stream_volumes(
             gate=gate,
             x11_socket=x11_socket,
@@ -863,7 +825,6 @@ with path.open('w') as output:
             gateway_url=resolved_gateway_url,
             config_version=config_version,
             udp_mux_port=udp_mux_port,
-            media_addresses=media_addresses,
             screen_width=screen_width,
             screen_height=screen_height,
             clipboard_sync=clipboard_sync,
@@ -906,7 +867,6 @@ with path.open('w') as output:
                 container,
                 {
                     "role": "stream",
-                    "webrtc_mode": webrtc_mode,
                     "udp_mux_port": udp_mux_port,
                     "allowed_tcp": allowed_tcp,
                     "allowed_udp": allowed_udp,
@@ -974,7 +934,7 @@ with path.open('w') as output:
                         f"Cannot cleanup network {name}: runtime container "
                         f"{c.name} (role={role}) is still attached"
                     )
-                if role in {"gateway", "coturn"}:
+                if role == "gateway":
                     infra_to_disconnect.append(c)
                 else:
                     raise DockerSandboxError(

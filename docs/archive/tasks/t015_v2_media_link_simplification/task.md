@@ -26,15 +26,15 @@
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：在不运行 coturn、不下发任何 TURN 凭证的拓扑中，同机真实 Chrome 对同一 Profile 的多页面连接、刷新、复制标签、关闭首个页面、断线 resume、后台暂停与恢复、视频/音频/键鼠与中文输入全部正常，证据写入 findings。
-- [ ] AC-002：运行时配置、协议契约与仓库中不再存在 TURN 凭证、凭证轮换、ICE 代次接管与对 Selkies 私有接口的补丁；Gateway 只承担 Agent 注册、信令路由与可见性/配额控制；对应配置项、夹具、测试与文档同步移除。
-- [ ] AC-003：Gateway 对 Viewer 接入与 Agent 注册的所有拒绝都在升级 WebSocket 与改动注册表之前完成，客户端收到可识别的拒绝，Gateway 内无残留 viewer 或 agent 条目，已注册的健康 Agent 不受影响。
-- [ ] AC-004：Stream Agent 的心跳与捕获仲裁在单次异常后继续按节奏工作，Gateway 不误驱逐仍在推流的 Agent；循环任务意外退出时告警并按退避重启。
-- [ ] AC-005：Gateway 控制面与信令入口：非法配额请求返回 400 且不下发；Viewer 信令失败按来源与 Profile 限流返回 429；超限 WebSocket 帧在传输层被拒绝；所有密钥文件经统一的权限与长度校验读取；心跳超时等配置非法时进程启动即失败并给出明确错误。
-- [ ] AC-006：Stream 线协议契约覆盖全部实际收发的 payload（按 action 判别），Gateway 与 Agent 收发两侧按契约校验，契约导出有漂移守卫测试；FPS 只有一个权威配置来源。
-- [ ] AC-007：生产前端 adapter 不再记录 DataChannel/WebSocket 报文，不暴露测试用全局对象；宿主与 iframe 只经有文档的生产契约交换会话统计；E2E 与单元测试通过测试自身注入的探针获得同等证据。
-- [ ] AC-008：浏览器会话页的运行时检查经统一 API 客户端：会话过期跳转登录，API 不可达显示带原因的 runtime_not_ready，Web Locks 不可用显示专门诊断；所有事件监听在完成与超时路径上都被释放。
-- [ ] AC-009：ADR 记录单机单人部署包络与媒体链路决定；blueprint、spec、计划修订块与媒体相关指南同新架构一致（含 architecture.md 章节编号、计划 §8.4/§19.3 替代标记、隔离分析指南标为 Superseded、上一轮 adoption_decision 的 D1 标为已决策）。
+- [x] [deploy] AC-001：在不运行 coturn、不下发任何 TURN 凭证的拓扑中，同机真实 Chrome 对同一 Profile 的多页面连接、刷新、复制标签、关闭首个页面、断线 resume、后台暂停与恢复、视频/音频/键鼠与中文输入全部正常，证据写入 findings。
+- [x] AC-002：运行时配置、协议契约与仓库中不再存在 TURN 凭证、凭证轮换、ICE 代次接管与对 Selkies 私有接口的补丁；Gateway 只承担 Agent 注册、信令路由与可见性/配额控制；对应配置项、夹具、测试与文档同步移除。
+- [x] AC-003：Gateway 对 Viewer 接入与 Agent 注册的所有拒绝都在升级 WebSocket 与改动注册表之前完成，客户端收到可识别的拒绝，Gateway 内无残留 viewer 或 agent 条目，已注册的健康 Agent 不受影响。
+- [x] AC-004：Stream Agent 的心跳与捕获仲裁在单次异常后继续按节奏工作，Gateway 不误驱逐仍在推流的 Agent；循环任务意外退出时告警并按退避重启。
+- [x] AC-005：Gateway 控制面与信令入口：非法配额请求返回 400 且不下发；Viewer 信令失败按来源与 Profile 限流返回 429；超限 WebSocket 帧在传输层被拒绝；所有密钥文件经统一的权限与长度校验读取；心跳超时等配置非法时进程启动即失败并给出明确错误。
+- [x] AC-006：Stream 线协议契约覆盖全部实际收发的 payload（按 action 判别），Gateway 与 Agent 收发两侧按契约校验，契约导出有漂移守卫测试；FPS 只有一个权威配置来源。
+- [x] AC-007：生产前端 adapter 不再记录 DataChannel/WebSocket 报文，不暴露测试用全局对象；宿主与 iframe 只经有文档的生产契约交换会话统计；E2E 与单元测试通过测试自身注入的探针获得同等证据。
+- [x] AC-008：浏览器会话页的运行时检查经统一 API 客户端：会话过期跳转登录，API 不可达显示带原因的 runtime_not_ready，Web Locks 不可用显示专门诊断；所有事件监听在完成与超时路径上都被释放。
+- [x] AC-009：ADR 记录单机单人部署包络与媒体链路决定；blueprint、spec、计划修订块与媒体相关指南同新架构一致（含 architecture.md 章节编号、计划 §8.4/§19.3 替代标记、隔离分析指南标为 Superseded、上一轮 adoption_decision 的 D1 标为已决策）。
 
 ### 可测试性声明
 
@@ -60,7 +60,7 @@
 
 - spike 先行：在 .scratch 或正式 spike 目录用真实 Chrome（headless）+ OrbStack 跑完 AC-001 全部场景，结论入 findings 后再删除机制。
 - 删除后保留并改写现有媒体 E2E（多观看者、可见性、resume、输入），以直连拓扑运行；Gateway/Agent 缺陷先写失败测试再修复。
-- adapter 测试钩子迁移：E2E 用 Playwright add_init_script 注入探针，vitest 用测试内包装。
+- adapter 测试钩子迁移：E2E 由测试夹具在复制后的 Selkies index 中于 adapter 之前注入探针脚本，vitest 用测试内包装。
 
 ### 未知契约清单
 
@@ -70,7 +70,7 @@
 
 <!-- /规范 -->
 
-- 同机 Chrome 经 local 直连（UDP mux 发布到 127.0.0.1）在 AC-001 全部场景可替代 TURN：UNVERIFIED-SPIKE，以真实 Chrome + OrbStack 场景矩阵验证。若不成立，停止实施并请用户批准改写 AC：保留并冻结 TURN 机制，改为落实 A10（restart_pending 失败复位）、A11（时序参数校验）、A12 与 A30 的 TURN 部分。
+- 同机 Chrome 经 local 直连在 AC-001 全部场景可替代 TURN：已由 s011/d026 在真实 Chrome + OrbStack 验证通过，见 `docs/spikes/s011_direct_media_validation/` 与 `docs/findings/d026_direct_media_local_only.md`；据此删除 TURN/ICE 机制。
 
 ### 风险与回退
 

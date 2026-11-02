@@ -20,7 +20,7 @@ DEFAULT_DIST = REPO_ROOT / "src" / "frontend" / "dist"
 DEFAULT_MANIFEST = REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
 
 ADAPTER_TAG = '<script src="./selkies_adapter.js"></script>'
-ADAPTER_MARKERS = ("__cbrowserAdapterSource", "__cbrowserShimInstalled")
+ADAPTER_MARKERS = ("__SELKIES_STREAMING_MODE__", "__getWebRTCStats")
 MODULE_TAG = re.compile(r'<script[^>]+type="module"[^>]*>')
 
 

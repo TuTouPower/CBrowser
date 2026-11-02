@@ -15,12 +15,29 @@ if TYPE_CHECKING:
         sanitize_settings_message,
         should_block_client_verb,
     )
-    from .protocol import AgentAction, ProtocolEnvelope
+    from .protocol import (
+        AgentAction,
+        AgentHeartbeatEnvelope,
+        AgentHeartbeatPayload,
+        AgentRegisterEnvelope,
+        AgentRegisterPayload,
+        GatewayControlEnvelope,
+        GatewayRegisterResponse,
+        GatewayTunnelEnvelope,
+        SupervisorQuotaPayload,
+    )
 
 __all__ = [
     "AgentAction",
     "LiveCapturePolicyAgent",
-    "ProtocolEnvelope",
+    "AgentHeartbeatEnvelope",
+    "AgentHeartbeatPayload",
+    "AgentRegisterEnvelope",
+    "AgentRegisterPayload",
+    "GatewayControlEnvelope",
+    "GatewayRegisterResponse",
+    "GatewayTunnelEnvelope",
+    "SupervisorQuotaPayload",
     "SecurityError",
     "StreamAgent",
     "StreamAgentConfig",
@@ -66,11 +83,13 @@ def __getattr__(name: str):
         return verify_stream_runtime_boundaries
     if name in (
         "AgentAction",
-        "ProtocolEnvelope",
-        "GatewayTunnelEnvelope",
+        "AgentHeartbeatEnvelope",
+        "AgentHeartbeatPayload",
+        "AgentRegisterEnvelope",
+        "AgentRegisterPayload",
         "GatewayControlEnvelope",
         "GatewayRegisterResponse",
-        "AgentRegisterPayload",
+        "GatewayTunnelEnvelope",
         "SupervisorQuotaPayload",
     ):
         from . import protocol

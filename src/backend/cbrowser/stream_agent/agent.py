@@ -1,7 +1,6 @@
 """
 StreamAgent core coordinator and service runtime.
-Connects outbound to Stream Gateway, manages WebRTC signaling bridge,
-and delegates ICE restarts to GenerationIceTransport helper.
+Connects outbound to Stream Gateway and manages the WebRTC signaling bridge.
 """
 
 import asyncio
@@ -20,7 +19,6 @@ from aiohttp import WSMsgType
 
 from .config import StreamAgentConfig
 from .messaging import (
-    build_action_envelope,
     build_heartbeat_envelope,
     build_register_envelope,
     build_register_payload,
@@ -36,24 +34,20 @@ from .policy import (
     create_policy_controlled_service_class,
 )
 from .protocol import (
+    MAX_STREAM_FRAME_SIZE,
     AgentAction,
     AgentHeartbeatPayload,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
-    RtcConfigPayload,
-    SupervisorQuotaPayload,
 )
 
 logger = logging.getLogger("stream_agent.core")
 
 MAX_PAYLOAD_SIZE = 1024 * 1024
-MAX_FRAME_SIZE = 1024 * 1024 * 6 + 64 * 1024
 IO_TIMEOUT = 10.0
 QUEUE_MAX_SIZE = 100
 HEARTBEAT_INTERVAL = 30.0
-# Bound for a new ICE generation to take over before Gateway is told it failed.
-ICE_RESTART_COMMIT_TIMEOUT = 20.0
 # Keep the loopback Selkies session alive after a viewer tunnel closes so the
 # official client can resume it with the same resume_key. The server-side hold
 # is only 3s and is skipped entirely on a clean close; 10s covers the frontend's
@@ -209,11 +203,7 @@ class StreamAgent:
         self._backoff = ReconnectBackoff()
         self.heartbeat_interval: float = 10.0
         self._heartbeat_task: asyncio.Task | None = None
-        # ICE takeover waits run beside the Gateway pump so other viewers' signaling
-        # is not stalled while one restart completes.
-        self._restart_tasks: set[asyncio.Task] = set()
         self._sleep_fn = asyncio.sleep
-        self.active_rtc_config: RtcConfigPayload | None = None
 
     @property
     def viewer_queues(self) -> dict[str, asyncio.Queue]:
@@ -227,9 +217,6 @@ class StreamAgent:
         """Binds WebRTCService and explicitly registers with policy_agent."""
         self._webrtc_service = service
         self.policy.bind_service(service)
-        # Selkies creates its RTCApp only in initialize_components(); config that
-        # arrived from Gateway earlier is pushed once it exists.
-        service.rtc_ready_hook = self._push_rtc_config
 
     @property
     def peer_connections(self) -> dict[str, Any]:
@@ -257,7 +244,13 @@ class StreamAgent:
     async def connect_and_run(self) -> None:
         """Outbound registration loop to Stream Gateway."""
         self._running = True
-        url = f"{self.config.gateway_url}/stream/agent/register"
+        query = urllib.parse.urlencode(
+            {
+                "profile_id": self.config.profile_id,
+                "runtime_instance_id": self.config.runtime_instance_id,
+            }
+        )
+        url = f"{self.config.gateway_url}/stream/agent/register?{query}"
         headers = {
             "Authorization": f"Bearer {self.config.agent_token.get_secret_value()}"
         }
@@ -276,7 +269,7 @@ class StreamAgent:
                     session.ws_connect(
                         url,
                         headers=headers,
-                        max_msg_size=MAX_FRAME_SIZE,
+                        max_msg_size=MAX_STREAM_FRAME_SIZE,
                         timeout=IO_TIMEOUT,
                         heartbeat=HEARTBEAT_INTERVAL,
                     ) as ws,
@@ -332,9 +325,7 @@ class StreamAgent:
                     )
 
                     # Start application heartbeat task
-                    self._heartbeat_task = asyncio.create_task(
-                        self._heartbeat_loop(ws)
-                    )
+                    self._heartbeat_task = self._start_heartbeat_task(ws)
 
                     # Message pump
                     async for msg in ws:
@@ -360,12 +351,6 @@ class StreamAgent:
                 if self._heartbeat_task and not self._heartbeat_task.done():
                     self._heartbeat_task.cancel()
                     self._heartbeat_task = None
-                restarts = list(self._restart_tasks)
-                self._restart_tasks.clear()
-                for task in restarts:
-                    task.cancel()
-                if restarts:
-                    await asyncio.gather(*restarts, return_exceptions=True)
                 self.agent_session_id = None
                 await self._cleanup_all_viewers(caller="gateway_disconnect")
 
@@ -375,14 +360,54 @@ class StreamAgent:
             logger.info("Reconnecting in %.1fs (backoff)...", delay)
             await self._sleep_fn(delay)
 
+    def _start_heartbeat_task(
+        self, ws: aiohttp.ClientWebSocketResponse
+    ) -> asyncio.Task:
+        async def supervised() -> None:
+            delay = 1.0
+            while self._running and not ws.closed:
+                try:
+                    await self._heartbeat_loop(ws)
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:  # noqa: BLE001 - loop task restarts after any fatal iteration escape
+                    logger.error(
+                        "Heartbeat loop exited unexpectedly (%s); restarting in %.1fs",
+                        type(e).__name__,
+                        delay,
+                    )
+                    await self._sleep_fn(delay)
+                    delay = min(delay * 2.0, 30.0)
+
+        task = asyncio.create_task(supervised())
+        task.add_done_callback(self._on_loop_task_done("heartbeat"))
+        return task
+
+    def _on_loop_task_done(self, name: str):
+        def report(task: asyncio.Task) -> None:
+            if task.cancelled():
+                return
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "%s loop task terminated with %s",
+                    name,
+                    type(error).__name__,
+                )
+            elif self._running and self.agent_session_id:
+                logger.warning("%s loop task stopped while agent is running", name)
+
+        return report
+
     async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse) -> None:
         """Send HEARTBEAT right after registration, then every 10 seconds.
 
         Supervisor readiness reads the reported Selkies video state through
         Gateway, so the first report must not wait a full interval.
         """
-        try:
-            while self._running and self.agent_session_id and not ws.closed:
+        while self._running and self.agent_session_id and not ws.closed:
+            try:
                 unpaused, capturing = self.policy.selkies_video_state()
                 hb_payload = AgentHeartbeatPayload(
                     runtime_state="ready",
@@ -397,14 +422,14 @@ class StreamAgent:
                     iso_now(),
                 )
                 await ws.send_str(hb_envelope.model_dump_json())
-                await self._sleep_fn(self.heartbeat_interval)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:  # noqa: BLE001 - heartbeat loop error logged without crashing agent
-            logger.warning(
-                "Heartbeat send failed (%s)",
-                type(e).__name__,
-            )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001 - one failed heartbeat must not stop the schedule
+                logger.warning(
+                    "Heartbeat send failed (%s); retrying next interval",
+                    type(e).__name__,
+                )
+            await self._sleep_fn(self.heartbeat_interval)
 
     async def _drain_workers(self, workers: list[ViewerWorkerEntry]) -> None:
         """Await owned tasks and sockets after invalidating their generations."""
@@ -684,109 +709,10 @@ class StreamAgent:
             )
             return
 
-        action = envelope.action
-        conn_id = envelope.conn_id
-
-        if action == AgentAction.REGISTERED:
-            self.agent_session_id = envelope.agent_session_id
-
-        elif action == AgentAction.SUPERVISOR_QUOTA:
-            quota = SupervisorQuotaPayload.model_validate(envelope.payload)
+        if envelope.action == AgentAction.SUPERVISOR_QUOTA:
+            quota = envelope.payload
             self.policy.set_supervisor_quota(quota.max_fps_cap)
             await self.policy.reconcile_capture_state(caller="supervisor_quota")
-
-        elif action == AgentAction.ICE_RESTART:
-            if not conn_id or conn_id not in self.viewer_workers:
-                logger.warning("ICE restart rejected: unknown conn_id")
-                return
-            if envelope.payload.get("ice_servers"):
-                try:
-                    gen_num = envelope.payload.get("generation")
-                    if gen_num is None:
-                        gen_num = (
-                            self.active_rtc_config.generation
-                            if self.active_rtc_config
-                            else 1
-                        )
-                    rtc_payload = RtcConfigPayload(
-                        generation=gen_num,
-                        ice_servers=envelope.payload["ice_servers"],
-                        relay_only=bool(
-                            envelope.payload.get("relay_only")
-                            or envelope.payload.get("force_relay")
-                            or (
-                                self.active_rtc_config
-                                and self.active_rtc_config.relay_only
-                            )
-                        ),
-                    )
-                    self.apply_rtc_config(rtc_payload)
-                except Exception as e:  # noqa: BLE001 - non-critical active_rtc_config sync failure from restart payload
-                    logger.warning(
-                        "Failed to update active_rtc_config from ice_restart (%s)",
-                        type(e).__name__,
-                    )
-            await self._trigger_ice_restart(conn_id, envelope.payload)
-
-        elif action == AgentAction.ICE_RESTART_ANSWER:
-            if not conn_id or conn_id not in self.viewer_workers:
-                return
-            task = asyncio.create_task(
-                self._handle_ice_restart_answer(conn_id, envelope.payload)
-            )
-            self._restart_tasks.add(task)
-            task.add_done_callback(self._restart_tasks.discard)
-
-        elif action == AgentAction.RTC_CONFIG:
-            try:
-                rtc_payload = RtcConfigPayload.model_validate(envelope.payload)
-            except Exception as e:  # noqa: BLE001 - invalid rtc_config payload validation error rejected cleanly
-                logger.warning(
-                    "Invalid rtc_config payload rejected (%s)",
-                    type(e).__name__,
-                )
-                return
-            try:
-                self.apply_rtc_config(rtc_payload)
-            except Exception as e:  # noqa: BLE001 - rtc_config application error logged without crashing agent
-                logger.error(
-                    "Applying rtc_config generation %d failed (%s)",
-                    rtc_payload.generation,
-                    type(e).__name__,
-                )
-                return
-            logger.info(
-                "Applied rtc_config generation %d with %d ICE servers",
-                rtc_payload.generation,
-                len(rtc_payload.ice_servers),
-            )
-
-    def apply_rtc_config(self, payload: RtcConfigPayload) -> None:
-        """Apply new stream-side RTC configuration from Gateway."""
-        self.active_rtc_config = payload
-        self.config.turn_servers = payload.wire_ice_servers()
-        from .ice_transport import set_relay_only
-
-        set_relay_only(payload.relay_only)
-        self._push_rtc_config()
-
-    def _push_rtc_config(self) -> None:
-        """Give Selkies the current stream-side servers for new PeerConnections."""
-        rtc_app = getattr(self._webrtc_service, "rtc_app", None)
-        if rtc_app is None or self.active_rtc_config is None:
-            return
-        stun, turn = self.active_rtc_config.selkies_server_urls()
-        rtc_app.update_rtc_config(stun, turn)
-
-    def _resolve_ice_servers_for_restart(self, payload: dict[str, Any]) -> list[Any]:
-        """Resolve ICE servers for restart: payload overrides active rtc_config."""
-        server_turn = payload.get("ice_servers")
-        if not server_turn:
-            if self.active_rtc_config is not None:
-                server_turn = self.active_rtc_config.wire_ice_servers()
-            else:
-                server_turn = self.config.turn_servers
-        return server_turn
 
     async def _terminate_viewer(self, conn_id: str, caller: str = "close") -> None:
         """Terminates viewer worker, cleans up peer mapping and notifies policy."""
@@ -819,7 +745,7 @@ class StreamAgent:
             )
             upstream_ws = await session.ws_connect(
                 self.upstream_url,
-                max_msg_size=MAX_FRAME_SIZE,
+                max_msg_size=MAX_STREAM_FRAME_SIZE,
                 timeout=IO_TIMEOUT,
                 heartbeat=HEARTBEAT_INTERVAL,
             )
@@ -1046,125 +972,12 @@ class StreamAgent:
                     )
             self._release_detached_upstream(upstream_ws)
 
-    async def _trigger_ice_restart(
-        self, conn_id: str | None, payload: dict[str, Any]
-    ) -> None:
-        """Invoke ice_transport helper to create restart offer on existing PC."""
-        if not conn_id:
-            return
-        pc = self.get_peer_connection(conn_id)
-        if not pc:
-            logger.warning("PeerConnection not found for conn_id")
-            await self._report_restart(
-                AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
-            )
-            return
-        # A restart offer while the initial offer/answer or ICE run is still in
-        # flight would replace it; Gateway retries after backoff instead.
-        if pc.signalingState != "stable" or pc.iceConnectionState not in (
-            "connected",
-            "completed",
-        ):
-            logger.warning("ICE restart deferred: peer not connected")
-            await self._report_restart(
-                AgentAction.ERROR, conn_id, {"error": "peer_not_ready"}
-            )
-            return
-
-        try:
-            from .ice_transport import create_restart_offer
-
-            server_turn = self._resolve_ice_servers_for_restart(payload)
-            force_relay = payload.get("force_relay", False)
-            local_desc = await create_restart_offer(
-                pc, server_turn, force_relay=force_relay
-            )
-
-            if self._gw_ws and not self._gw_ws.closed:
-                envelope = build_action_envelope(
-                    AgentAction.ICE_RESTART_OFFER,
-                    profile_id=self.config.profile_id,
-                    runtime_instance_id=self.config.runtime_instance_id,
-                    session_id=self.agent_session_id,
-                    conn_id=conn_id,
-                    payload={"sdp": local_desc.sdp, "type": local_desc.type},
-                    timestamp=iso_now(),
-                )
-                await self._gw_ws.send_str(envelope.model_dump_json())
-        except Exception as e:  # noqa: BLE001 - ICE restart offer creation error reported to Gateway
-            logger.error(
-                "Failed to create ICE restart offer: %s",
-                type(e).__name__,
-            )
-            await self._report_restart(
-                AgentAction.ERROR, conn_id, {"error": "ice_restart_offer_failed"}
-            )
-
-    async def _handle_ice_restart_answer(
-        self, conn_id: str | None, payload: dict[str, Any]
-    ) -> None:
-        """Apply the Viewer answer and confirm to Gateway only after real takeover."""
-        if not conn_id:
-            return
-        pc = self.get_peer_connection(conn_id)
-        if not pc:
-            logger.warning("PeerConnection not found on answer")
-            await self._report_restart(
-                AgentAction.ERROR, conn_id, {"error": "peer_connection_not_found"}
-            )
-            return
-        try:
-            from selkies.webrtc.rtcsessiondescription import RTCSessionDescription
-
-            from .ice_transport import wait_restart_commit
-
-            await pc.setRemoteDescription(
-                RTCSessionDescription(sdp=payload.get("sdp"), type="answer")
-            )
-            ice_generation = await wait_restart_commit(pc, ICE_RESTART_COMMIT_TIMEOUT)
-        except Exception as e:  # noqa: BLE001 - ICE restart answer application failure reported to Gateway
-            logger.error(
-                "ICE restart not committed: %s", type(e).__name__
-            )
-            await self._report_restart(
-                AgentAction.ERROR, conn_id, {"error": "ice_restart_not_committed"}
-            )
-            return
-        logger.info(
-            "ICE restart committed (ice generation %d)",
-            ice_generation,
-        )
-        await self._report_restart(
-            AgentAction.ICE_RESTART_COMMITTED,
-            conn_id,
-            {"generation": payload.get("generation"), "ice_generation": ice_generation},
-        )
-
-    async def _report_restart(
-        self, action: AgentAction, conn_id: str, payload: dict[str, Any]
-    ) -> None:
-        if self._gw_ws and not self._gw_ws.closed:
-            envelope = build_action_envelope(
-                action,
-                profile_id=self.config.profile_id,
-                runtime_instance_id=self.config.runtime_instance_id,
-                session_id=self.agent_session_id,
-                conn_id=conn_id,
-                payload=payload,
-                timestamp=iso_now(),
-            )
-            await self._gw_ws.send_str(envelope.model_dump_json())
-
     async def stop(self) -> None:
         """Deterministic drain and shutdown of all workers, readers, WS, and policy."""
         self._running = False
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
             self._heartbeat_task = None
-        restarts = list(self._restart_tasks)
-        for task in restarts:
-            task.cancel()
-        await asyncio.gather(*restarts, return_exceptions=True)
         if self._gw_ws and not self._gw_ws.closed:
             try:
                 await self._gw_ws.close()
@@ -1211,18 +1024,14 @@ def run_standalone_service() -> None:
         )
         sys.exit(1)
 
-    # 1. Install ICE transport generation adapter (fail-closed, must abort on failure!)
+    # 1. Install the X11 keymap refresh hook required by native input.
     try:
-        from .ice_transport import install_ice_transport
-
-        install_ice_transport()
         from .x11_keymap import install_x11_keymap_refresh
 
         install_x11_keymap_refresh()
-        logger.info("GenerationIceTransport installed into Selkies.")
-    except Exception as e:  # noqa: BLE001 - ICE ABI adapter installation failure on service startup
+    except Exception as e:  # noqa: BLE001 - X11 keymap hook installation failure on service startup
         logger.error(
-            "ICE_ABI_ERROR: Failed to install GenerationIceTransport (%s).",
+            "X11_KEYMAP_ERROR: Failed to install X11 keymap refresh (%s).",
             type(e).__name__,
         )
         sys.exit(1)

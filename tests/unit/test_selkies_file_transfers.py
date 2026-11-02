@@ -16,7 +16,6 @@ def test_supervisor_explicitly_disables_selkies_file_transfers() -> None:
         gateway_url="ws://127.0.0.1:18080",
         config_version=1,
         udp_mux_port=30000,
-        media_addresses={"coturn_ip": "127.0.0.1"},
         screen_width=1920,
         screen_height=1080,
     )

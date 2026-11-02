@@ -7,6 +7,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .adapter_probe import inject_adapter_probe
+
 logger = logging.getLogger("cbrowser.frontend_probe.host_builder")
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -96,4 +98,5 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
 </html>
 """
     (dest_dir / "index.html").write_text(index_html_content, encoding="utf-8")
+    inject_adapter_probe(dest_dir / "selkies" / "index.html")
     return dest_dir

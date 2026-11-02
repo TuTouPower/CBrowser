@@ -22,6 +22,7 @@ async def test_fixture_rejects_foreign_control_credentials(tmp_path):
     spec.loader.exec_module(module)
     agent_key = tmp_path / "agent_key"
     agent_key.write_text(secrets.token_urlsafe(32))
+    agent_key.chmod(0o600)
     control_key = tmp_path / "control_key"
     token = secrets.token_urlsafe(32)
     control_key.write_text(token)

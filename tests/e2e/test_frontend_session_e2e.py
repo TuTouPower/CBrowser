@@ -126,7 +126,7 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
     tmp_path: Path,
 ) -> None:
     """AC-002, AC-003: tab identity, refresh, copy conflict and close isolation."""
-    harness = FrontendTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = FrontendTopologyHarness(tmp_path)
     try:
         await harness.start()
 
@@ -249,7 +249,7 @@ async def test_frontend_session_independent_input_and_mute(
     tmp_path: Path,
 ) -> None:
     """AC-004, AC-005: lease-free input, independent mute, no activity frames."""
-    harness = FrontendTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = FrontendTopologyHarness(tmp_path)
     try:
         await harness.start()
 
@@ -366,7 +366,7 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
     tmp_path: Path,
 ) -> None:
     """AC-007: freeze/resume via CDP and diagnostic overlay for unready profiles."""
-    harness = FrontendTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = FrontendTopologyHarness(tmp_path)
     try:
         await harness.start()
 

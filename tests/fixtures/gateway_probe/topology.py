@@ -1,10 +1,8 @@
-"""Real Docker container graph topology for Gateway, API, Supervisor, coturn, Caddy."""
+"""Real Docker container graph topology for Gateway, API, Supervisor and Caddy."""
 
 from __future__ import annotations
 
 import asyncio
-import ipaddress
-import json
 import logging
 import os
 import secrets
@@ -65,20 +63,10 @@ class GatewayTopologyHarness:
     def __init__(
         self,
         work_dir: Path,
-        webrtc_mode: str = "lan",
-        credential_lifetime_sec: float = 86400.0,
-        generation_interval_sec: float = 43200.0,
-        ice_restart_lead_time_sec: float = 21600.0,
         agent_heartbeat_timeout_sec: float = 30.0,
-        coturn_total_quota: int | None = None,
     ) -> None:
         self.work_dir = work_dir
-        self.webrtc_mode = webrtc_mode
-        self.credential_lifetime_sec = credential_lifetime_sec
-        self.generation_interval_sec = generation_interval_sec
-        self.ice_restart_lead_time_sec = ice_restart_lead_time_sec
         self.agent_heartbeat_timeout_sec = agent_heartbeat_timeout_sec
-        self.coturn_total_quota = coturn_total_quota
 
         self.docker_client = docker.from_env()
         self.prefix = f"t006-relay-{uuid.uuid4().hex[:8]}"
@@ -91,11 +79,6 @@ class GatewayTopologyHarness:
         self.gateway_image = self._get_image("CBROWSER_GATEWAY_IMAGE")
         self.supervisor_image = self._get_image("CBROWSER_SUPERVISOR_TEST_IMAGE")
         self.api_image = self._get_image("CBROWSER_API_TEST_IMAGE")
-        self.turn_image = os.environ.get(
-            "CBROWSER_TURN_TEST_IMAGE",
-            "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-        )
-        assert self.turn_image.startswith("sha256:")
         self.caddy_image = os.environ.get(
             "CBROWSER_CADDY_TEST_IMAGE",
             "sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b",
@@ -106,7 +89,6 @@ class GatewayTopologyHarness:
         self.geoip_cache_src = Path(os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
         self.caddy_host_port = find_free_port(35000, 35999)
-        self.coturn_host_port = find_free_port(34800, 34999)
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
 
         self.data_dir = self.work_dir / "data"
@@ -120,13 +102,11 @@ class GatewayTopologyHarness:
 
         self.edge_network: docker.models.networks.Network | None = None
         self.api_container: docker.models.containers.Container | None = None
-        self.coturn_container: docker.models.containers.Container | None = None
         self.gateway_container: docker.models.containers.Container | None = None
         self.supervisor_container: docker.models.containers.Container | None = None
         self.caddy_container: docker.models.containers.Container | None = None
 
         self.api_ip: str = ""
-        self.coturn_ip: str = ""
         self.gateway_ip: str = ""
         self.supervisor_url: str = ""
         self.api_internal_url: str = ""
@@ -137,6 +117,14 @@ class GatewayTopologyHarness:
             f"Missing or invalid immutable image ID in {var_name}"
         )
         return val
+
+    def prepare_static(self) -> None:
+        """Prepares the Caddy static root; subclasses may replace this."""
+        prepare_selkies_web_assets(self.stream_image, self.static_dir)
+
+    def api_environment_extra(self) -> dict[str, str]:
+        """Extra environment variables for the API container."""
+        return {}
 
     def _init_dirs_and_secrets(self) -> None:
         self.control_dir.mkdir(parents=True, exist_ok=True)
@@ -154,7 +142,7 @@ class GatewayTopologyHarness:
             shutil.copytree(self.engine_cache_src, cache)
             shutil.copytree(self.geoip_cache_src, cache / "geoip", dirs_exist_ok=True)
 
-        for name in ("supervisor", "agent", "gateway", "gateway_api", "turn"):
+        for name in ("supervisor", "agent", "gateway", "gateway_api"):
             val = secrets.token_urlsafe(32)
             f = self.control_dir / f"{name}_key"
             f.write_text(val, encoding="utf-8")
@@ -178,8 +166,8 @@ class GatewayTopologyHarness:
                 "com.cbrowser.role": role,
             }
         )
-        # Gateway and coturn require managed-by=supervisor for infra validation
-        if role in ("gateway", "coturn"):
+        # Gateway requires managed-by=supervisor for infra validation
+        if role == "gateway":
             labels["com.cbrowser.managed-by"] = "supervisor"
         container = self.docker_client.containers.run(
             image_id,
@@ -212,7 +200,7 @@ class GatewayTopologyHarness:
 
     async def _do_start(self) -> None:
         self._init_dirs_and_secrets()
-        prepare_selkies_web_assets(self.stream_image, self.static_dir)
+        self.prepare_static()
 
         self.edge_network = self.docker_client.networks.create(
             f"{self.prefix}-edge",
@@ -232,75 +220,13 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_password",
                 "CBROWSER_ALLOWED_ORIGINS": self.origin,
+                **self.api_environment_extra(),
             },
             volumes={
                 str(self.metadata_dir): {"bind": "/metadata", "mode": "rw"},
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
             ports={"8000/tcp": ("127.0.0.1", None)},
-        )
-
-        # 2. Coturn container
-        net_info = self.docker_client.api.inspect_network(self.edge_network.name)
-        if isinstance(net_info, (str, bytes)):
-            net_info = json.loads(net_info)
-        subnet = ipaddress.ip_network(net_info["IPAM"]["Config"][0]["Subnet"])
-        self.coturn_ip = str(subnet[10])
-
-        turn_conf_content = (
-            "listening-port=3478\n"
-            "listening-ip=0.0.0.0\n"
-            "realm=cbrowser.local\n"
-            "use-auth-secret\n"
-            "no-cli\n"
-            "no-tls\n"
-            "no-dtls\n"
-            "verbose\n"
-            f"static-auth-secret={self.keys['turn']}\n"
-            f"external-ip=127.0.0.1/{self.coturn_ip}\n"
-            "allow-loopback-peers\n"
-            "min-port=50000\n"
-            "max-port=50040\n"
-        )
-        if self.coturn_total_quota is not None:
-            turn_conf_content += f"total-quota={self.coturn_total_quota}\n"
-
-        turn_conf_path = self.control_dir / "turnserver.conf"
-        turn_conf_path.write_text(turn_conf_content, encoding="utf-8")
-        turn_conf_path.chmod(0o644)
-
-        endpoint_config = self.docker_client.api.create_endpoint_config(
-            ipv4_address=self.coturn_ip
-        )
-        networking_config = {self.edge_network.name: endpoint_config}
-
-        turn_ports = {
-            "3478/udp": ("127.0.0.1", self.coturn_host_port),
-            "3478/tcp": ("127.0.0.1", self.coturn_host_port),
-        }
-        for port_num in range(50000, 50041):
-            turn_ports[f"{port_num}/udp"] = ("127.0.0.1", port_num)
-
-        self.coturn_container = self._run_container(
-            "coturn",
-            self.turn_image,
-            read_only=True,
-            cap_drop=["ALL"],
-            cap_add=["NET_BIND_SERVICE"],
-            security_opt=["no-new-privileges:true"],
-            tmpfs={"/tmp": "rw,mode=1777"},
-            networking_config=networking_config,
-            volumes={
-                str(turn_conf_path): {"bind": "/etc/turnserver.conf", "mode": "ro"},
-            },
-            ports=turn_ports,
-            entrypoint="/usr/bin/turnserver",
-            command=[
-                "-c",
-                "/etc/turnserver.conf",
-                "--relay-threads=1",
-                "--log-file=stdout",
-            ],
         )
 
         self.api_container.reload()
@@ -322,21 +248,6 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ALLOWED_ORIGINS": self.origin,
-                "CBROWSER_TURN_SECRET_FILE": "/run/secrets/turn_key",
-                "CBROWSER_WEBRTC_MODE": self.webrtc_mode,
-                "CBROWSER_TURN_PUBLIC_URLS": (
-                    f"turn:127.0.0.1:{self.coturn_host_port}?transport=udp,"
-                    f"turn:127.0.0.1:{self.coturn_host_port}?transport=tcp"
-                ),
-                "CBROWSER_RTC_CREDENTIAL_LIFETIME_SEC": str(
-                    self.credential_lifetime_sec
-                ),
-                "CBROWSER_RTC_GENERATION_INTERVAL_SEC": str(
-                    self.generation_interval_sec
-                ),
-                "CBROWSER_RTC_ICE_RESTART_LEAD_TIME_SEC": str(
-                    self.ice_restart_lead_time_sec
-                ),
                 "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
                     self.agent_heartbeat_timeout_sec
                 ),
@@ -388,8 +299,6 @@ class GatewayTopologyHarness:
                 str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 self.gateway_container.id,
-                "--coturn-container-id",
-                self.coturn_container.id,
                 "--prefix",
                 self.prefix,
                 "--data-root",

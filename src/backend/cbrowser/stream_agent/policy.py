@@ -90,6 +90,7 @@ class LiveCapturePolicyAgent:
         # Async background tasks
         self._loop_task: asyncio.Task | None = None
         self._motion_task: asyncio.Task | None = None
+        self._loop_sleep = asyncio.sleep
 
         # Bounded action audit log
         self._action_history: collections.deque = collections.deque(
@@ -289,8 +290,49 @@ class LiveCapturePolicyAgent:
     async def start(self) -> None:
         """Start background reconciliation and damage monitoring loops."""
         logger.info("Starting LiveCapturePolicyAgent background tasks...")
-        self._loop_task = asyncio.create_task(self._reconciliation_loop())
-        self._motion_task = asyncio.create_task(self._motion_monitor_loop())
+        self._loop_task = self._start_supervised_loop(
+            "reconciliation", self._reconciliation_loop
+        )
+        self._motion_task = self._start_supervised_loop(
+            "motion", self._motion_monitor_loop
+        )
+
+    def _start_supervised_loop(self, name: str, loop_factory: Any) -> asyncio.Task:
+        """Run a loop; a fatal escape is logged and restarted with backoff."""
+
+        async def supervised() -> None:
+            delay = 1.0
+            while True:
+                try:
+                    await loop_factory()
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - loop task restarts after any fatal iteration escape
+                    logger.error(
+                        "%s loop exited unexpectedly (%s); restarting in %.1fs",
+                        name,
+                        type(exc).__name__,
+                        delay,
+                    )
+                    await self._loop_sleep(delay)
+                    delay = min(delay * 2.0, 30.0)
+
+        task = asyncio.create_task(supervised())
+        task.add_done_callback(self._report_loop_done(name))
+        return task
+
+    def _report_loop_done(self, name: str):
+        def report(task: asyncio.Task) -> None:
+            if task.cancelled():
+                return
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "%s loop task terminated with %s", name, type(error).__name__
+                )
+
+        return report
 
     async def stop(self) -> None:
         """Gracefully cancel and drain all background tasks."""
@@ -355,12 +397,17 @@ class LiveCapturePolicyAgent:
 
     async def _reconciliation_loop(self) -> None:
         """Periodic arbitration tick routing into single serialized controller."""
-        try:
-            while True:
-                await asyncio.sleep(0.2)
+        while True:
+            await asyncio.sleep(0.2)
+            try:
                 await self.reconcile_capture_state(caller="periodic_reconciliation")
-        except asyncio.CancelledError:
-            pass
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one failed arbitration tick must not stop the loop
+                logger.warning(
+                    "Reconciliation tick failed (%s); continuing",
+                    type(exc).__name__,
+                )
 
     async def reconcile_capture_state(
         self,
@@ -509,24 +556,9 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
         def __init__(self, supervisor: Any):
             super().__init__(supervisor)
             self.policy_agent: LiveCapturePolicyAgent | None = None
-            # Set by StreamAgent; pushes Gateway RTC config once RTCApp exists.
-            self.rtc_ready_hook: Any | None = None
             self._action_history: collections.deque = collections.deque(
                 maxlen=MAX_HISTORY_SIZE
             )
-
-        async def initialize_components(self) -> None:
-            await super().initialize_components()
-            # Stream-side TURN comes only from Gateway through the Agent;
-            # Selkies' own RTC config monitors must not start or replace it.
-            self.monitoring_utils_used = {}
-            if self.rtc_ready_hook is not None:
-                self.rtc_ready_hook()
-
-        def mon_rtc_config(
-            self, stun_servers: Any, turn_servers: Any, rtc_config: Any
-        ) -> None:
-            logger.debug("Ignored Selkies RTC config monitor update")
 
         def log_pipeline_action(self, action: str, details: dict[str, Any]) -> None:
             entry = {

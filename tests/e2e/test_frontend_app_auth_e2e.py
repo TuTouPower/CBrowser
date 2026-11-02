@@ -40,7 +40,7 @@ class AuthTopologyHarness(FrontendAppTopologyHarness):
 
 @pytest.fixture(scope="module")
 def harness(tmp_path_factory: pytest.TempPathFactory):
-    h = AuthTopologyHarness(tmp_path_factory.mktemp("fe_auth"), webrtc_mode="lan")
+    h = AuthTopologyHarness(tmp_path_factory.mktemp("fe_auth"))
     asyncio.run(h.start())
     try:
         yield h

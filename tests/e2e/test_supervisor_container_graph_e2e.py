@@ -165,26 +165,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
-        turn_config = control / "turn.conf"
-        turn_config.write_text(
-            "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-            "no-cli\nno-tls\nno-dtls\n"
-            "static-auth-secret=" + secrets.token_hex(32) + "\n"
-        )
-        turn_config.chmod(0o644)
-        coturn = run(
-            "coturn",
-            image("CBROWSER_TURN_TEST_IMAGE"),
-            cap_add=["NET_BIND_SERVICE"],
-            entrypoint="/usr/bin/turnserver",
-            command=[
-                "-c",
-                "/etc/turnserver.conf",
-                "--relay-threads=1",
-                "--log-file=stdout",
-            ],
-            volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        )
         await ready(endpoint(api, 8000), "/api/v1/health")
         await ready(endpoint(gateway, DEFAULT_GATEWAY_PORT), "/healthz")
         api.reload()
@@ -238,8 +218,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 gateway.id,
-                "--coturn-container-id",
-                coturn.id,
                 "--prefix",
                 prefix,
                 "--host",
@@ -326,7 +304,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 }
                 assert set(stream.attrs["NetworkSettings"]["Networks"]) == {media_net}
                 gateway.reload()
-                coturn.reload()
                 runtime_env = dict(
                     entry.split("=", 1) for entry in stream.attrs["Config"]["Env"]
                 )
@@ -344,12 +321,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                         "IPAddress"
                     ]
                     + f":{DEFAULT_GATEWAY_PORT}"
-                )
-                assert (
-                    runtime_env["SELKIES_STUN_HOST"]
-                    == coturn.attrs["NetworkSettings"]["Networks"][media_net][
-                        "IPAddress"
-                    ]
                 )
                 for box, role in ((browser, "browser"), (stream, "stream")):
                     assert box.attrs["HostConfig"]["RestartPolicy"]["Name"] == "no"

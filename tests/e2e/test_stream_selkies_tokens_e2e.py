@@ -420,7 +420,7 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
     from gateway_probe.topology import GatewayTopologyHarness
     from playwright.async_api import async_playwright
 
-    harness = GatewayTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = GatewayTopologyHarness(tmp_path)
     harness.prefix = f"t007-stream-tokens-gw-{secrets.token_hex(4)}"
     try:
         await harness.start()
@@ -581,7 +581,6 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
             harness.gateway_container.name,
             harness.supervisor_container.name,
             harness.api_container.name,
-            harness.coturn_container.name,
             harness.caddy_container.name,
         ]
         for name in container_names:

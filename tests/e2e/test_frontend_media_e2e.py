@@ -69,7 +69,7 @@ ACTIVE_SAMPLE_SECONDS = 3.0
 
 @pytest.fixture(scope="module")
 def harness(tmp_path_factory: pytest.TempPathFactory):
-    h = MediaTopologyHarness(tmp_path_factory.mktemp("fe_media"), webrtc_mode="lan")
+    h = MediaTopologyHarness(tmp_path_factory.mktemp("fe_media"))
     asyncio.run(h.start())
     try:
         yield h

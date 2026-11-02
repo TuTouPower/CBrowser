@@ -51,15 +51,14 @@ def test_production_adapter_artifact_is_built_from_typescript_adapter() -> None:
     )
 
     built = DIST_ADAPTER_JS.read_text(encoding="utf-8")
-    assert "__cbrowserAdapterSource" in built
-    assert "features/browser-session/adapter.ts" in built
+    assert "__getWebRTCStats" in built
+    assert "__SELKIES_STREAMING_MODE__" in built
 
     # The injected tag is a classic script that must execute before the official
     # module bundle; a module build would not run in the required order.
     assert not re.search(r"^\s*(import|export)\s", built, re.MULTILINE), (
         "adapter build must be a classic IIFE script"
     )
-    assert "__cbrowserShimInstalled" in built
 
 
 def test_vendor_script_injects_built_adapter_without_embedding_it(

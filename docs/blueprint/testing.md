@@ -46,7 +46,7 @@ export TMPDIR="$HOME/kar/code/.scratch/cbrowser_t002_contract_tmp"
 export UV_CACHE_DIR="$PWD/.scratch/project_gates/uv_cache"
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 pytest .repo_template/tests -q -m contract
-PYTHONPATH=src uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser==0.6.4" python -m pytest src/backend/tests -q
+PYTHONPATH=src:src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets --with "cloakbrowser==0.6.4" python -m pytest src/backend/tests -q
 PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema --with websockets --with "cloakbrowser==0.6.4" --with docker --with aiohttp --with argon2-cffi python -m pytest tests/unit -q
 ```
 
@@ -69,15 +69,14 @@ uv run --no-project --python ">=3.12" python .repo_template/scripts/repo_sync.py
 
 ## Stream Runtime 组件验证
 
-运行 t004 组件验收前，按照 docs/guides/stream_runtime_validation.md 提供三个不可变镜像 ID 和只读引擎缓存。完整媒体测试通过官方 Mac Google Chrome，包含双 Peer、复制标签、共享策略、真实组合输入、三代 relay 与 Browser 生存性；不能以 Native DataChannel 探针代替 Chrome RTP。
+运行 t004/t015 组件验收前，按照 docs/guides/stream_runtime_validation.md 提供 Browser/Stream 不可变镜像 ID 和只读引擎缓存。完整媒体测试通过官方 Mac Google Chrome，覆盖双 Peer、复制标签、刷新、关闭首 tab、可见性暂停/恢复、Viewer 断线 resume、共享策略、真实组合输入与 Browser 生存性；媒体为同机直连，无 coturn/TURN。
 
 ```bash
 : "${CBROWSER_STREAM_TEST_IMAGE:?Provide an immutable Stream image ID}"
-: "${CBROWSER_TURN_TEST_IMAGE:?Provide an immutable coturn 4.6 image ID}"
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright --with docker --with httpx python -m pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_ice_failure_e2e.py tests/e2e/test_stream_ice_relay_e2e.py tests/e2e/test_stream_ice_commit_e2e.py tests/e2e/test_stream_rtc_config_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with pydantic --with aiohttp --with playwright --with docker --with httpx python -m pytest tests/e2e/test_stream_runtime_e2e.py tests/e2e/test_stream_client_identity_e2e.py tests/e2e/test_stream_x11_keymap_e2e.py tests/e2e/test_stream_selkies_tokens_e2e.py -q --basetemp="$PWD/.scratch/stream_e2e/basetemp" -o cache_dir="$PWD/.scratch/stream_e2e/pytest_cache"
 ```
 
-先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。单侧 TURN 错误凭证负例通过测试专用 CBROWSER_STREAM_TURN_REJECT_SIDE=server 或 client 注入；期望完整媒体测试非零且 coturn 拒绝认证/新代无 commit，启动失败或缺镜像不算有效负例。正常门禁不得设置该变量。
+先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。
 
 ## 专项技术验证探针
 
@@ -91,7 +90,6 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 |捕获/真实visibility|s005_capture_policy/code|只复制当前六文件（包括html和sh），Core用playwright+websockets，Native用websockets；不运行revision_03旧用例|HTTP18084/UDP30008|
 |Gateway恢复|s006_gateway_media_recovery/code|完整复制probe及media_fixture，uv run --no-project --with aiohttp --with playwright python probe/run_verification.py|HTTP18082/18083、UDP30007|
 |IPC/认证/真实音频|s007_profile_isolation/code|完整复制含fixture，python3 run_isolation_probe.py|cbrowser-spike-isolation；finally清理|
-|独立RTC/ICE换代|s008_turn_generation_media/code|先start_coturn.sh和stage2_containers.sh；正常探针exit0、单侧失效探针预期exit1且fresh JSON必须证明拒绝|HTTP18091/18092、UDP30016；coturn13478及40000–40020|
 |IME/clipboard哨兵|s009_native_ime_input/code|start_containers.sh → uv run --no-project --with playwright python ime_native_probe.py及verify_extra_harness.py → stop_containers.sh|HTTP18095/UDP30018|
 
 这些探针需要s001构建的cbrowser-spike-runtime-browser:test和cbrowser-spike-runtime-stream:test镜像（身份见s001/image_manifest.json）；清理放finally/trap，不能因负例预期非零而漏清理。合成音频仅可用于测量器校准，不能充当真实浏览器媒体证明。公网和原生x86环境没有执行，不计实测PASS。
@@ -119,17 +117,17 @@ PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with pytest --wit
 
 ## Gateway 阶段验证
 
-t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS 入口、API、Supervisor 容器经 API 运行意愿创建 Browser/Stream、正式 Gateway 镜像、coturn，官方 Mac Google Chrome **无头**访问（禁止弹窗或抢前台）。镜像全部为当前源构建的不可变 sha256 ID：
+t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS 入口、API、Supervisor 容器经 API 运行意愿创建 Browser/Stream、正式 Gateway 镜像，官方 Mac Google Chrome **无头**访问（禁止弹窗或抢前台）；媒体同机直连，无 coturn。镜像全部为当前源构建的不可变 sha256 ID：
 
 ```bash
 : "${CBROWSER_RUNTIME_TEST_IMAGE:?Browser image ID}" "${CBROWSER_STREAM_TEST_IMAGE:?Stream image ID}"
 : "${CBROWSER_GATEWAY_IMAGE:?production Gateway image ID from config/docker/gateway_runtime/Dockerfile}"
 : "${CBROWSER_SUPERVISOR_TEST_IMAGE:?Supervisor image ID}" "${CBROWSER_API_TEST_IMAGE:?API image ID}"
-: "${CBROWSER_TURN_TEST_IMAGE:?coturn 4.6 image ID}" "${CBROWSER_CADDY_TEST_IMAGE:?local caddy image ID}"
-PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets python -m pytest tests/e2e/test_gateway_ac001_auth_e2e.py tests/e2e/test_gateway_ac003_media_e2e.py tests/e2e/test_gateway_ac005_relay_e2e.py tests/e2e/test_gateway_ac007_visibility_e2e.py -q --basetemp="$PWD/.scratch/gateway_e2e/basetemp" -o cache_dir="$PWD/.scratch/gateway_e2e/pytest_cache"
+: "${CBROWSER_CADDY_TEST_IMAGE:?local caddy image ID}"
+PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets python -m pytest tests/e2e/test_gateway_ac001_auth_e2e.py tests/e2e/test_gateway_ac003_media_e2e.py tests/e2e/test_gateway_ac007_visibility_e2e.py -q --basetemp="$PWD/.scratch/gateway_e2e/basetemp" -o cache_dir="$PWD/.scratch/gateway_e2e/pytest_cache"
 ```
 
-`test_ac005_negative_turn_failure_exit_code` 以子进程运行负例模式（新代客户端 TURN 凭证被 coturn 401 拒绝、旧代仍出帧），期望该子进程非零退出且 Gateway 未提交该代并记录退避。页面可见性在无头 Chrome 中不会因切标签变化，AC-007 用例在页面内覆盖 `document.visibilityState` 并派发 `visibilitychange` 触发官方客户端 STOP_VIDEO/START_VIDEO；浏览器真实标签切换的事件发出见 d013/s005，不在本用例重证。
+页面可见性在无头 Chrome 中不会因切标签变化，AC-007 用例在页面内覆盖 `document.visibilityState` 并派发 `visibilitychange` 触发官方客户端 STOP_VIDEO/START_VIDEO；浏览器真实标签切换的事件发出见 d013/s005，不在本用例重证。
 
 ## Supervisor 阶段验证
 
@@ -140,7 +138,7 @@ PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --wi
 ```bash
 PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/unit tests/integration -q
 PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/e2e/test_supervisor_core_e2e.py tests/e2e/test_supervisor_recovery_e2e.py tests/e2e/test_supervisor_offline_recovery_e2e.py tests/e2e/test_supervisor_retry_e2e.py -q
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/e2e/test_supervisor_container_graph_e2e.py tests/e2e/test_supervisor_infrastructure_network_e2e.py tests/e2e/test_supervisor_network_ownership_e2e.py tests/e2e/test_supervisor_browser_network_e2e.py tests/e2e/test_supervisor_cache_initialization_e2e.py -q
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with docker --with aiohttp python -m pytest tests/e2e/test_supervisor_container_graph_e2e.py tests/e2e/test_supervisor_network_ownership_e2e.py tests/e2e/test_supervisor_browser_network_e2e.py tests/e2e/test_supervisor_cache_initialization_e2e.py -q
 ```
 
 上述命令同样必须先设置允许写域内 TMPDIR、UV_CACHE_DIR、pytest basetemp/cache_dir，并仅为本地测试进程清除代理环境；这不会关闭 OrbStack 透明代理。测试前提存在但无效须失败，不能把镜像拉取/进程启动失败作为网络拒绝证据。跨 Profile 网络负例必须使用不做对端地址过滤的服务，同网正例成功；普通桥未隔离事实见 d020；Runtime 内核策略须通过无过滤监听器正负对照，不能以应用按来源拒绝连接冒充网络隔离。
@@ -167,7 +165,7 @@ NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend
 npm run build --prefix src/frontend
 git show HEAD:src/frontend/tsconfig.tsbuildinfo > src/frontend/tsconfig.tsbuildinfo
 : "${CBROWSER_GATEWAY_TEST_IMAGE:?test Gateway image ID (test_runtime_coordinator_e2e)}"
-PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets --with uvicorn --with fastapi --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi --with jsonschema python -m pytest tests/e2e/test_frontend_session_vendor.py tests/e2e/test_frontend_adapter_build.py tests/e2e/test_frontend_session_e2e.py tests/e2e/test_frontend_app_e2e.py tests/e2e/test_frontend_app_auth_e2e.py tests/e2e/test_frontend_media_e2e.py tests/e2e/test_frontend_display_apply_e2e.py tests/e2e/test_frontend_ice_failure_e2e.py tests/e2e/test_runtime_coordinator_e2e.py -q
+PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with playwright --with docker --with httpx --with aiohttp --with pydantic --with websockets --with uvicorn --with fastapi --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi --with jsonschema python -m pytest tests/e2e/test_frontend_session_vendor.py tests/e2e/test_frontend_adapter_build.py tests/e2e/test_frontend_session_e2e.py tests/e2e/test_frontend_app_e2e.py tests/e2e/test_frontend_app_auth_e2e.py tests/e2e/test_frontend_media_e2e.py tests/e2e/test_frontend_display_apply_e2e.py tests/e2e/test_runtime_coordinator_e2e.py -q
 ```
 
 E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须用当前源重建（旧 API 镜像缺 `/api/v1/events` 与 Runtime Coordinator，旧 Supervisor 镜像不写 Selkies token 文件）。`test_frontend_app_*` 用构建产物经 Caddy 托管，API 启用 Runtime Coordinator（`CBROWSER_REQUIRE_SUPERVISOR=1`），Profile 启停只经界面/`/api/v1`。测试代码不得自带编排互斥锁或引用 `.scratch` 编排目录；多路并行跑 Docker E2E 时由外层调度互斥。

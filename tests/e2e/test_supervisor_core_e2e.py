@@ -191,41 +191,6 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     d_client = docker.from_env()
     d_client.images.get(browser_image)
     d_client.images.get(stream_image)
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
 
     # Find free port for Gateway mock
     with socket.socket() as s:
@@ -286,7 +251,6 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         token_file=token_file,
         agent_key_file=agent_key_file,
         gateway_control=gateway_control,
-        coturn_container_id=coturn.id,
     )
 
     # 1. Create Profile A and Profile B in real API
@@ -415,13 +379,6 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         await gateway_control.close()
         await gateway.stop()
         await api_client.aclose()
-        if coturn is not None:
-            try:
-                coturn.remove(force=True)
-            except docker.errors.NotFound:
-                pass
-            except Exception as exc:  # noqa: BLE001 - best effort coturn teardown
-                logger.warning("coturn remove failed: %s", type(exc).__name__)
 
         # Strict assert: zero orphan containers left
         active_final = docker_adapter.scan_active_containers()

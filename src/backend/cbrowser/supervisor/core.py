@@ -95,8 +95,6 @@ class SupervisorCore:
         agent_key_file: Path | str | None = None,
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
-        coturn_container_id: str | None = None,
-        webrtc_mode: str = "public",
         gateway_port: int | None = None,
     ):
         self.docker = docker_adapter
@@ -124,8 +122,6 @@ class SupervisorCore:
         self.gateway_control = gateway_control
         self.resource_monitor: ResourceMonitor | None = None
         self.gateway_container_id = gateway_container_id
-        self.coturn_container_id = coturn_container_id
-        self.webrtc_mode = webrtc_mode
 
         self._sessions: dict[str, ActiveSession] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -860,20 +856,14 @@ class SupervisorCore:
                 raise
 
             try:
-                # A bound attempt must report failure even before Docker creation.
-                if not self.coturn_container_id:
-                    raise DockerSandboxError(
-                        "coturn infrastructure container is required to start runtime"
-                    )
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
                 media_addresses = None
-                if self.coturn_container_id:
+                if self.gateway_container_id:
                     media_addresses = await asyncio.to_thread(
                         self.docker.attach_profile_infrastructure,
                         profile_id,
                         self.gateway_container_id,
-                        self.coturn_container_id,
                         gateway_port=self.gateway_endpoint.port,
                     )
                 await self._report_observed(
@@ -926,10 +916,8 @@ class SupervisorCore:
                     )
                     or self.gateway_url,
                     agent_secret_path=agent_secret,
-                    media_addresses=media_addresses,
                     selkies_tokens_path=selkies_tokens_file,
                     snapshot_json_path=snap_path,
-                    webrtc_mode=self.webrtc_mode,
                     gateway_port=self.gateway_endpoint.port,
                 )
 

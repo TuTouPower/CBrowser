@@ -17,8 +17,6 @@ def _base_env() -> dict[str, str]:
         "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:18090",
         "CBROWSER_AGENT_TOKEN": secrets.token_urlsafe(32),
         "CBROWSER_CONFIG_VERSION": "1",
-        "SELKIES_TURN_HOST": "10.0.0.1",
-        "SELKIES_TURN_PORT": "3478",
     }
 
 

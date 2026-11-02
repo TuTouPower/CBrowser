@@ -81,7 +81,7 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
             login_json_str = json.dumps(login_resp["data"])
             assert harness.keys["agent"] not in login_json_str
             assert harness.keys["gateway"] not in login_json_str
-            assert harness.keys["turn"] not in login_json_str
+            assert "turn" not in harness.keys
             assert harness.admin_password not in login_json_str
 
             # 2. CSRF write protection: write request without CSRF is rejected

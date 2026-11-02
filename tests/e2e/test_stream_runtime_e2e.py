@@ -6,7 +6,6 @@ input forwarding, independent mute, and isolation with real Docker containers.
 
 import asyncio
 import base64
-import importlib.util
 import json
 import logging
 import os
@@ -24,12 +23,14 @@ from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
-WEB_LOCK_SHIM_JS = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "stream_probe"
-    / "web_lock_shim.js"
-).read_text(encoding="utf-8")
+REPO_ROOT = next(
+    parent for parent in Path(__file__).resolve().parents
+    if (parent / "tests" / "fixtures" / "stream_probe").is_dir()
+)
+FIXTURES = REPO_ROOT / "tests" / "fixtures"
+WEB_LOCK_SHIM_JS = (FIXTURES / "stream_probe" / "web_lock_shim.js").read_text(
+    encoding="utf-8"
+)
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 BROWSER_IMAGE = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
@@ -37,7 +38,7 @@ STREAM_IMAGE = os.environ.get("CBROWSER_STREAM_TEST_IMAGE", "")
 ENGINE_CACHE = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")
 
 RUN_LABEL = "cbrowser-t004-e2e"
-SCRATCH_BASE = Path(os.path.abspath(".scratch/t004_implementation/e2e_work"))
+
 
 
 async def wait_for_viewer_count(gateway: "GatewayMockServer", expected: int,
@@ -250,9 +251,6 @@ with urllib.request.urlopen(sys.argv[1], timeout=5) as response:
                     assert pkt["profile_id"] == profile_id
                     assert pkt["runtime_instance_id"] == instance_id
                     assert pkt["agent_session_id"] == session_id
-                    if pkt.get("action") in ("ice_restart_offer", "error"):
-                        self.control_packets.append(pkt)
-                        continue
                     conn_id = pkt.get("conn_id")
                     pkt_type = pkt.get("type")
                     if conn_id in self.viewers:
@@ -343,12 +341,7 @@ def dump_container_logs(c_name: str, out_path: Path):
 
 
 def browser_eval(container: str, expression: str, target_id: str | None = None) -> dict:
-    html = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "stream_probe"
-        / "media_page.html"
-    ).read_text()
+    html = (FIXTURES / "stream_probe" / "media_page.html").read_text()
     script = """import asyncio, json, urllib.parse, websockets
 
 
@@ -459,7 +452,7 @@ asyncio.run(main())
 
 
 @pytest.mark.asyncio
-async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
+async def test_stream_runtime_direct_media_matrix(
     tmp_path: Path,
 ):
     assert BROWSER_IMAGE.startswith("sha256:"), "Immutable Browser image required"
@@ -561,10 +554,10 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
         agent_token=agent_token,
         profile_id=profile_id,
         stream_container=stream_cname,
-        upstream_http="http://127.0.0.1:18096",
+        upstream_http="http://127.0.0.1:18097",
     )
     gw_port = DEFAULT_GATEWAY_PORT
-    udp_mux_port = 30096
+    udp_mux_port = 30097
 
     created_containers = []
     clipboard_process = None
@@ -753,15 +746,10 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
             "-e",
             "CBROWSER_X11_SOCKET=/tmp/.X11-unix/X99",
             "-e",
-            "SELKIES_PORT=18096",
-            # t006 Stream startup contract: config version and the coturn
-            # address reported at registration (this test sends no RTC config).
+            "SELKIES_PORT=18097",
+            # Direct mode: no coturn container and no TURN configuration.
             "-e",
             "CBROWSER_CONFIG_VERSION=1",
-            "-e",
-            "SELKIES_TURN_HOST=127.0.0.1",
-            "-e",
-            "SELKIES_TURN_PORT=3478",
             STREAM_IMAGE,
         ]
         await asyncio.to_thread(subprocess.run, stream_cmd, check=True)
@@ -975,6 +963,99 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
                     > initial["audio"]["totalAudioEnergy"]
                 )
 
+            # --- Background pause/resume: only the hidden page's video stops ---
+            async def set_visibility(page, state: str) -> None:
+                await page.evaluate("""state => {
+                    Object.defineProperty(document, 'visibilityState', {
+                        configurable: true, get: () => state,
+                    });
+                    Object.defineProperty(document, 'hidden', {
+                        configurable: true, get: () => state === 'hidden',
+                    });
+                    document.dispatchEvent(new Event('visibilitychange'));
+                }""", state)
+
+            await set_visibility(page2, "hidden")
+            await asyncio.sleep(1.5)
+            page2_hidden_start = (await page2.evaluate(stats_script))["video"][
+                "framesDecoded"
+            ]
+            stats1_before_hidden = await page1.evaluate(stats_script)
+            await asyncio.sleep(2.5)
+            page2_hidden_end = (await page2.evaluate(stats_script))["video"][
+                "framesDecoded"
+            ]
+            stats1_during_hidden = await page1.evaluate(stats_script)
+            assert page2_hidden_end == page2_hidden_start, (
+                "Hidden page kept decoding video"
+            )
+            assert (
+                stats1_during_hidden["video"]["framesDecoded"]
+                > stats1_before_hidden["video"]["framesDecoded"]
+            ), "Visible page stalled while the other page was hidden"
+
+            await set_visibility(page2, "visible")
+            stats2_resumed = await wait_for_page_stats(
+                page2,
+                stats_script,
+                lambda st: st["video"]["framesDecoded"] > page2_hidden_end,
+                description="Page 2 video resume after visibility",
+            )
+            assert stats2_resumed["connectionState"] == "connected"
+            stats2_later = stats2_resumed
+            visibility_proof = {
+                "hidden_frames_unchanged": page2_hidden_end == page2_hidden_start,
+                "visible_page_continued": (
+                    stats1_during_hidden["video"]["framesDecoded"]
+                    > stats1_before_hidden["video"]["framesDecoded"]
+                ),
+                "resumed_frames": stats2_resumed["video"]["framesDecoded"],
+            }
+
+            # --- Viewer websocket disconnect and same-identity resume ---
+            tab2_identity = await page2.evaluate(
+                "sessionStorage.getItem('selkies_tab_id')"
+            )
+            disconnect_conn = next(
+                (
+                    conn
+                    for conn, tab in gateway.viewer_tab_ids.items()
+                    if tab == tab2_identity
+                ),
+                None,
+            )
+            assert disconnect_conn, "Page 2 viewer tunnel not found"
+            _, disconnect_ws = gateway.viewers[disconnect_conn]
+            frames_before_disconnect = (
+                await page2.evaluate(stats_script)
+            )["video"]["framesDecoded"]
+            await disconnect_ws.close()
+            resumed_stats = None
+            for _ in range(150):
+                current = await page2.evaluate(stats_script)
+                if (
+                    current
+                    and current.get("video")
+                    and current["video"]["framesDecoded"]
+                    > frames_before_disconnect
+                    and len(gateway.viewers) == 2
+                ):
+                    resumed_stats = current
+                    break
+                await asyncio.sleep(0.2)
+            assert resumed_stats, "Page 2 did not resume after viewer disconnect"
+            assert (
+                await page2.evaluate("sessionStorage.getItem('selkies_tab_id')")
+                == tab2_identity
+            ), "Page 2 identity changed after resume"
+            stats2_later = resumed_stats
+            resume_proof = {
+                "tab_id_preserved": True,
+                "frames_before": frames_before_disconnect,
+                "frames_after": resumed_stats["video"]["framesDecoded"],
+                "active_viewers": len(gateway.viewers),
+            }
+
             inspections_raw = await asyncio.to_thread(
                 subprocess.check_output,
                 ["docker", "inspect", browser_cname, stream_cname],
@@ -1187,145 +1268,10 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
                 )
             )
 
-            relay_spec = importlib.util.spec_from_file_location(
-                "chrome_relay",
-                Path(__file__).resolve().parents[1]
-                / "fixtures/stream_probe/chrome_relay.py",
-            )
-            relay_module = importlib.util.module_from_spec(relay_spec)
-            relay_spec.loader.exec_module(relay_module)
-            await relay_module.verify_relay_rotations(
-                page1,
-                page2,
-                gateway,
-                profile_id,
-                net_name,
-                stream_cname,
-                work_dir,
-                created_containers,
-                stats_script,
-            )
-
             async def evaluate_remote(expression):
                 return await asyncio.to_thread(
                     browser_eval, browser_cname, expression, target_id
                 )
-
-            async def policy_packet(action, payload):
-                agent_session_id, agent_socket = gateway.registered_agents[profile_id]
-                await agent_socket.send_json(
-                    {
-                        "version": "v2",
-                        "action": action,
-                        "profile_id": profile_id,
-                        "runtime_instance_id": gateway.agent_instances[profile_id],
-                        "agent_session_id": agent_session_id,
-                        "payload": payload,
-                    }
-                )
-
-            async def native_logs():
-                result = await asyncio.to_thread(
-                    subprocess.run,
-                    ["docker", "logs", stream_cname],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    check=True,
-                    timeout=10,
-                )
-                return result.stdout
-
-            async def frame_window(page=page1, seconds=2):
-                before = await page.evaluate(stats_script)
-                await asyncio.sleep(seconds)
-                after = await page.evaluate(stats_script)
-                return (
-                    after["video"]["framesDecoded"] - before["video"]["framesDecoded"]
-                )
-
-            control_proof = {}
-            for page in (page1, page2):
-                await page.wait_for_function("""() => window.__inputChannels &&
-                    window.__inputChannels.some(
-                        channel => channel.readyState === 'open')
-                """)
-            tab1 = await page1.evaluate("sessionStorage.getItem('selkies_tab_id')")
-            tab2 = await page2.evaluate("sessionStorage.getItem('selkies_tab_id')")
-            by_tab = {
-                tab: connection for connection, tab in gateway.viewer_tab_ids.items()
-            }
-            assert tab1 != tab2 and tab1 in by_tab and tab2 in by_tab
-            before_cap_logs = await native_logs()
-            await policy_packet("supervisor_quota", {"max_fps_cap": 15})
-            await wait_for_log(
-                native_logs,
-                "Updated framerate to 15 fps",
-                offset=len(before_cap_logs),
-            )
-            control_proof["capped_frames_2s"] = await frame_window()
-            assert 0 < control_proof["capped_frames_2s"] <= 40
-            # Client input must not override Supervisor cap or profile geometry.
-            await page1.evaluate("""() => {
-                const channel = window.__inputChannels.find(
-                    c => c.readyState === 'open');
-                channel.send('_arg_fps,30');
-                channel.send('r,640,480');
-            }""")
-            await asyncio.sleep(0.5)
-            control_proof["client_cannot_escape_cap_frames_2s"] = await frame_window()
-            assert 0 < control_proof["client_cannot_escape_cap_frames_2s"] <= 40
-            await page1.set_viewport_size({"width": 640, "height": 480})
-            await page2.set_viewport_size({"width": 1600, "height": 900})
-            await asyncio.sleep(0.5)
-            for page in (page1, page2):
-                geometry = (await page.evaluate(stats_script))["video"]
-                assert (geometry["frameWidth"], geometry["frameHeight"]) == (1920, 1080)
-            await policy_packet("supervisor_quota", {"max_fps_cap": None})
-            await wait_for_log(
-                native_logs,
-                "Updated framerate to 30 fps",
-                offset=len(before_cap_logs),
-            )
-            control_proof["restored_frames_2s"] = await frame_window()
-            assert control_proof["restored_frames_2s"] > 0
-
-            before_static_logs = await native_logs()
-            await evaluate_remote("motionEnabled=false; true")
-            await wait_for_log(
-                native_logs,
-                "Updated framerate to 8 fps",
-                offset=len(before_static_logs),
-            )
-            await evaluate_remote("motionEnabled=true; true")
-            await wait_for_log(
-                native_logs,
-                "Updated framerate to 30 fps",
-                offset=len(before_static_logs),
-            )
-
-            resource_spec = importlib.util.spec_from_file_location(
-                "supervisor_stream_monitor",
-                Path(__file__).resolve().parents[1]
-                / "fixtures/supervisor_resource_probe/stream_monitor.py",
-            )
-            resource_module = importlib.util.module_from_spec(resource_spec)
-            resource_spec.loader.exec_module(resource_module)
-            await resource_module.verify_stream_cpu_policy(
-                stream_cname,
-                profile_id,
-                gateway,
-                frame_window,
-                work_dir,
-            )
-
-            after_policy = await evaluate_remote("true")
-            assert after_policy["identity"] == remote["identity"]
-            control_proof["browser_identity"] = after_policy["identity"]
-            (work_dir / "policy_proof.json").write_text(
-                json.dumps(control_proof, indent=2)
-            )
-            (work_dir / "native_policy.log").write_text(await native_logs())
 
             async def prepare_remote_input():
                 await evaluate_remote("""(() => {
@@ -1381,10 +1327,7 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
             )
 
             clipboard_script = (
-                Path(__file__).resolve().parents[1]
-                / "fixtures"
-                / "stream_probe"
-                / "clipboard_oracle.py"
+                FIXTURES / "stream_probe" / "clipboard_oracle.py"
             ).read_text()
             clipboard_process = await asyncio.to_thread(
                 subprocess.Popen,
@@ -1623,9 +1566,11 @@ async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
                 json.dumps(
                     {
                         "native_ime": ime_proofs,
-                        "capture_policy": control_proof,
                         "isolation": isolation_proof,
                         "clipboard": clipboard_proof,
+                        "visibility": visibility_proof,
+                        "viewer_resume": resume_proof,
+                        "no_turn_topology": True,
                         "browser_identity": final_browser["identity"],
                         "refresh_survived": True,
                         "initial": [stats1, stats2],
