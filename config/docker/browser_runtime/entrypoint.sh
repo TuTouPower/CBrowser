@@ -53,6 +53,11 @@ if [[ -z "$EVENTS_DIR" ]]; then
   EVENTS_DIR="/data/runtime-events/${PROFILE_ID}"
 fi
 
+# The page file chooser (GTK) shows uploaded artifacts as a sidebar shortcut.
+GTK_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/gtk-3.0"
+mkdir -p "$GTK_CONFIG_DIR"
+printf 'file:///exchange/uploads Uploads\n' > "$GTK_CONFIG_DIR/bookmarks"
+
 export PROFILE_ID RUNTIME_INSTANCE_ID CONFIG_SNAPSHOT RUN_DIR USER_DATA_DIR
 export EVENTS_DIR ENGINE_CACHE_DIR ENGINE_BUILD DOWNLOAD_DIR DISPLAY_NUM
 

@@ -11,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
 
 # Install system dependencies: X11, Openbox, PulseAudio, and Chromium runtime libraries
+# (GTK 3 is loaded by Chromium for the page file chooser dialog)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     supervisor \
@@ -41,6 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libpango-1.0-0 \
     libcairo2 \
+    libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install locked Python packages required for Browser Agent and CloakBrowser SDK

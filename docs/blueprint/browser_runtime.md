@@ -13,10 +13,13 @@ Browser Runtime 运行单个 Profile 的真实 CloakBrowser、Xvfb、Openbox、P
 |engine-cache|/data/engine-cache:ro|SDK 初始化完成的 Linux 引擎缓存|
 |profiles/{id}/profile|/data/profiles/{id}/profile|浏览器真实用户数据|
 |artifacts/{id}/downloads|/exchange/downloads|默认下载目录|
+|artifacts/{id}/uploads|/exchange/uploads|用户上传文件；页面文件选择对话框侧栏 `Uploads` 书签指向此目录|
 |runtime-events/{id}|/data/runtime-events/{id}|独立于用户数据的持久运行与下载事件|
 |专属运行卷|/run/cbrowser/runtime|agent.sock、runner_info.json、Xauthority、进程配置|
 |专属 X11 Socket 卷|/tmp/.X11-unix|Xvfb Socket，Linux sticky 权限1777|
 |专属 Pulse Socket 子目录|/run/cbrowser/runtime/pulse|Browser 生成 Pulse Socket/cookie；Stream 仅挂载该子目录到自己的 /pulse|
+
+镜像安装 GTK 3：Chromium 在 Linux 上只经 GTK 或 xdg portal 打开页面 `<input type=file>` 对话框，两者皆无时点击无任何反应（p014 实测）。Runtime Agent 固定注入 `--disable-gtk-ime`：GTK 输入法在 Selkies 为组合文本临时重映射键码后读取过期键表，会提交错误汉字（t004 composition E2E 实测）。入口在 tmpfs 的 `$XDG_CONFIG_HOME/gtk-3.0/bookmarks` 写入 `file:///exchange/uploads Uploads`，每次启动重建。
 
 运行卷与持久事件目录用途不同，不允许用瞬态运行卷代替事件持久化。初始化卷的所有权与 sticky 位由 Supervisor 负责；运行容器以非 root 消费。Mac bind 的 UID 映射须实际验证，不能按宿主 UID 数字推断容器权限。
 

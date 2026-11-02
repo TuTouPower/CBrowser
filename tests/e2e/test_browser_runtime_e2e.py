@@ -125,6 +125,12 @@ class MockE2EHttpHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)
+        elif self.path == "/file_input.html":
+            html = b'<html><body><input id="f" type="file"></body></html>'
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html)
         elif self.path == "/download_page.html":
             html = (
                 b"<html><body>"
@@ -2787,5 +2793,117 @@ async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> No
             api.stop()
         if "api_client" in locals():
             await api_client.aclose()
+        if dir_work.exists():
+            shutil.rmtree(dir_work, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_p014_file_input_opens_chooser_with_uploads_bookmark(
+    http_server: str,
+) -> None:
+    """p014: a page's file input opens the native chooser, bookmarked to uploads."""
+    run_id = uuid.uuid4().hex[:8]
+    c_name = f"cbrowser-p014-picker-{run_id}"
+    dir_work = SCRATCH_ROOT / f"p014_{run_id}"
+    uploads = dir_work / "uploads"
+    (uploads / f"artifact_{run_id}").mkdir(parents=True)
+    (uploads / f"artifact_{run_id}" / "demo.txt").write_text("p014", encoding="utf-8")
+    snap_file = dir_work / "snapshot.json"
+    create_snapshot_file(
+        snap_file,
+        profile_id="profile_picker",
+        version=1,
+        screen_width=1280,
+        screen_height=720,
+    )
+    disp = f":{160 + (int(run_id[:4], 16) % 300)}"
+    x_env = [
+        "-e",
+        f"DISPLAY={disp}",
+        "-e",
+        "XAUTHORITY=/run/cbrowser/runtime/Xauthority",
+    ]
+
+    def visible_window_names() -> list[str]:
+        ids = subprocess.run(
+            ["docker", "exec", *x_env, c_name, "xdotool", "search", "--onlyvisible",
+             "--name", "."],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        names = []
+        for wid in ids:
+            names.append(
+                subprocess.run(
+                    ["docker", "exec", *x_env, c_name, "xdotool", "getwindowname",
+                     wid],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout.strip()
+            )
+        return names
+
+    try:
+        run_docker_container(
+            name=c_name,
+            host_profile_dir=dir_work / "profile",
+            host_runtime_dir=dir_work / "runtime",
+            host_exchange_dir=dir_work / "downloads",
+            host_uploads_dir=uploads,
+            snapshot_path=snap_file,
+            profile_id="profile_picker",
+            runtime_instance_id=f"inst_picker_{run_id}",
+            display=disp,
+        )
+        wait_for_uds_ready(c_name, timeout=35.0)
+
+        bookmarks = subprocess.run(
+            ["docker", "exec", c_name, "sh", "-c",
+             'cat "$XDG_CONFIG_HOME/gtk-3.0/bookmarks"'],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert bookmarks.stdout.splitlines() == ["file:///exchange/uploads Uploads"], (
+            bookmarks
+        )
+
+        page_url = f"{http_server}/file_input.html"
+        exec_uds_cdp(
+            c_name,
+            f"""
+        targets = await send_cmd(ws, 1, "Target.getTargets")
+        target_id = targets["result"]["targetInfos"][0]["targetId"]
+        attach = await send_cmd(
+            ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}}
+        )
+        s = attach["result"]["sessionId"]
+        await send_cmd(ws, 3, "Page.navigate", {{"url": "{page_url}"}}, session_id=s)
+        await asyncio.sleep(1.0)
+        await send_cmd(
+            ws,
+            4,
+            "Runtime.evaluate",
+            {{"expression": "document.getElementById('f').click()",
+              "userGesture": True}},
+            session_id=s,
+        )
+        print("RESULT:" + json.dumps({{"status": "ok"}}))
+""",
+        )
+        names: list[str] = []
+        for _ in range(20):
+            names = await asyncio.to_thread(visible_window_names)
+            if any(name in ("Open File", "打开文件") for name in names):
+                break
+            await asyncio.sleep(0.5)
+        assert any(name in ("Open File", "打开文件") for name in names), names
+    except Exception:
+        save_container_failure_log(c_name, "p014_file_chooser")
+        raise
+    finally:
+        stop_and_rm_container(c_name)
         if dir_work.exists():
             shutil.rmtree(dir_work, ignore_errors=True)

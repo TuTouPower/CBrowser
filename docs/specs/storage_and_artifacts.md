@@ -45,7 +45,7 @@
 
 - [x] AC-001：新数据库成功生成 WAL 文件，并发读取和写入不产生数据库锁表异常。
 - [x] AC-002：通过 Alembic 成功将数据库 schema 从旧版升级至新版，现有 Profile 与 Cookie 数据完好无损。
-- [x] AC-003：用户通过 API 上传的文件原子写入对应 Profile Artifact 存储，返回 Artifact ID 与 `/exchange/uploads/...` 容器路径，失败不留半文件。容器内 GTK 文件选择器可达性待确认，见 p014。
+- [x] AC-003：用户通过 API 上传的文件原子写入对应 Profile Artifact 存储，返回 Artifact ID 与 `/exchange/uploads/...` 容器路径，失败不留半文件。远程页面点击文件输入框弹出 GTK 文件选择对话框，侧栏 `Uploads` 书签直达 `/exchange/uploads`（p014，真实容器 E2E `test_p014_file_input_opens_chooser_with_uploads_bookmark`）。
 - [x] AC-004：浏览器中下载的文件能被 Runtime Agent 捕获（含校验和），Agent 重启后对账补登，重复事件不重复入库。
 - [x] AC-005：外部自动化经独立凭证进入 Supervisor/UDS/loopback CDP，旧 CDP 入口仅转发新授权代理，不暴露公网 CDP 端口。
 - [x] AC-006：Selkies 会话内文件传输显式关闭，客户端无入口，文件只能经 Artifact Service 进出 Profile。

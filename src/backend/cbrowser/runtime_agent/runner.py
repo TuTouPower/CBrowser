@@ -391,6 +391,9 @@ class BrowserRunner:
             "--fingerprint-platform=windows",
             f"--fingerprint-screen-width={width}",
             f"--fingerprint-screen-height={height}",
+            # GTK is present only for the file chooser; its IME reads a stale
+            # keymap after Selkies remaps keycodes for composed text.
+            "--disable-gtk-ime",
         ]
         if cfg.fingerprint_seed:
             extra_args.append(f"--fingerprint={cfg.fingerprint_seed}")
