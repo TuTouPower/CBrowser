@@ -8,7 +8,9 @@ import asyncio
 import base64
 import importlib.util
 import json
+import logging
 import os
+import stat
 import subprocess
 import time
 import uuid
@@ -17,7 +19,10 @@ from pathlib import Path
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from playwright.async_api import async_playwright
+
+logger = logging.getLogger(__name__)
 
 WEB_LOCK_SHIM_JS = (
     Path(__file__).resolve().parents[1]
@@ -325,13 +330,15 @@ with urllib.request.urlopen(sys.argv[1], timeout=5) as response:
                             "reason": "Viewer closed",
                         }
                     )
-                except Exception:
-                    pass
+                except Exception as exc:  # noqa: BLE001 - best-effort close notification
+                    logger.debug("Close send to agent failed: %s", type(exc).__name__)
         return ws
 
 
 def dump_container_logs(c_name: str, out_path: Path):
-    res = subprocess.run(["docker", "logs", c_name], capture_output=True, text=True)
+    res = subprocess.run(
+        ["docker", "logs", c_name], capture_output=True, text=True, check=False
+    )
     out_path.write_text(res.stdout + "\n" + res.stderr)
 
 
@@ -445,23 +452,28 @@ asyncio.run(main())
         text=True,
         capture_output=True,
         timeout=25,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
 @pytest.mark.asyncio
-async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
+async def test_stream_runtime_multi_viewer_with_credentials_security_e2e(
+    tmp_path: Path,
+):
     assert BROWSER_IMAGE.startswith("sha256:"), "Immutable Browser image required"
     assert STREAM_IMAGE.startswith("sha256:"), "Immutable Stream image required"
     assert Path(ENGINE_CACHE).is_dir(), "Read-only Linux engine cache required"
     """
-    Validates AC-001 through AC-006:
+    Validates AC-001 through AC-006 with strengthened security contract:
     - Real Browser Runtime container + real Stream Runtime container.
     - Two real Google Chrome Stable pages connected over outbound Gateway bridge.
     - Frames decoded growth and audio bytesReceived growth.
     - 1920x1080 resolution invariance.
     - Closing first tab allows second tab to continue receiving media.
+    - Exact mount inspection covering /tmp/selkies_credentials.json.
+    - Credentials restricted exclusively to Stream Runtime with read-only permission.
     """
     assert Path(CHROME_PATH).exists(), f"Google Chrome Stable required at {CHROME_PATH}"
 
@@ -477,6 +489,7 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
     agent_token = f"tok_{uuid.uuid4().hex}"
     secret_file = work_dir / "agent_secret.txt"
     secret_file.write_text(agent_token)
+    secret_file.chmod(0o600)
     selkies_cred_file = work_dir / "selkies_credentials.json"
     selkies_cred_file.write_text(
         json.dumps(
@@ -507,7 +520,8 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
     os.chmod(pulse_dir, 0o777)
 
     # Make x11 sticky 1777 via container
-    subprocess.run(
+    await asyncio.to_thread(
+        subprocess.run,
         [
             "docker",
             "run",
@@ -549,7 +563,7 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
         stream_container=stream_cname,
         upstream_http="http://127.0.0.1:18096",
     )
-    gw_port = 18097
+    gw_port = DEFAULT_GATEWAY_PORT
     udp_mux_port = 30096
 
     created_containers = []
@@ -558,7 +572,9 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
         await gateway.start(port=gw_port)
 
         # 1. Network setup
-        subprocess.run(["docker", "network", "create", net_name], check=True)
+        await asyncio.to_thread(
+            subprocess.run, ["docker", "network", "create", net_name], check=True
+        )
 
         # 2. Start Browser Runtime
         browser_cmd = [
@@ -620,7 +636,7 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             "--display",
             ":99",
         ]
-        subprocess.run(browser_cmd, check=True)
+        await asyncio.to_thread(subprocess.run, browser_cmd, check=True)
         created_containers.append(browser_cname)
 
         # Wait for Browser sockets
@@ -642,7 +658,8 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
         assert xauth_file.exists(), "Browser Xauthority was not created"
 
         # Get Browser container hostname for Xauthority match
-        b_inspect = subprocess.run(
+        b_inspect = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "inspect", "-f", "{{.Config.Hostname}}", browser_cname],
             capture_output=True,
             text=True,
@@ -747,7 +764,7 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
             "SELKIES_TURN_PORT=3478",
             STREAM_IMAGE,
         ]
-        subprocess.run(stream_cmd, check=True)
+        await asyncio.to_thread(subprocess.run, stream_cmd, check=True)
         created_containers.append(stream_cname)
 
         # Wait for Stream Agent outbound registration with Gateway
@@ -866,12 +883,15 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 await asyncio.sleep(1.0)
                 stats1 = await page1.evaluate(stats_script)
                 stats2 = await page2.evaluate(stats_script)
-                if stats1 and stats1.get("video") and stats2 and stats2.get("video"):
-                    if (
-                        stats1["video"]["framesDecoded"] > 0
-                        and stats2["video"]["framesDecoded"] > 0
-                    ):
-                        break
+                if (
+                    stats1
+                    and stats1.get("video")
+                    and stats2
+                    and stats2.get("video")
+                    and stats1["video"]["framesDecoded"] > 0
+                    and stats2["video"]["framesDecoded"] > 0
+                ):
+                    break
 
             assert stats1 and stats1.get("video"), "Tab 1 video stats missing"
             assert stats2 and stats2.get("video"), "Tab 2 video stats missing"
@@ -955,11 +975,12 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                     > initial["audio"]["totalAudioEnergy"]
                 )
 
-            inspections = json.loads(
-                subprocess.check_output(
-                    ["docker", "inspect", browser_cname, stream_cname], text=True
-                )
+            inspections_raw = await asyncio.to_thread(
+                subprocess.check_output,
+                ["docker", "inspect", browser_cname, stream_cname],
+                text=True,
             )
+            inspections = json.loads(inspections_raw)
             browser_inspect, stream_inspect = inspections
             host_config = stream_inspect["HostConfig"]
             assert host_config["NetworkMode"] == net_name
@@ -973,7 +994,29 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 "/tmp/.Xauthority",
                 "/pulse",
                 "/tmp/secret.txt",
+                "/tmp/selkies_credentials.json",
             }
+            # Credentials must be read-only and restricted to Stream
+            stream_mount_map = {
+                m["Destination"]: m for m in stream_inspect["Mounts"]
+            }
+            assert stream_mount_map["/tmp/secret.txt"]["RW"] is False, (
+                "Agent secret must be mounted read-only"
+            )
+            assert stream_mount_map["/tmp/selkies_credentials.json"]["RW"] is False, (
+                "Selkies credentials must be mounted read-only"
+            )
+            browser_mount_targets = {
+                m["Destination"] for m in browser_inspect["Mounts"]
+            }
+            assert "/tmp/secret.txt" not in browser_mount_targets, (
+                "Agent secret must not be mounted in Browser container"
+            )
+            assert "/tmp/selkies_credentials.json" not in browser_mount_targets, (
+                "Selkies credentials must not be mounted in Browser container"
+            )
+            assert stat.S_IMODE(secret_file.stat().st_mode) == 0o600
+            assert stat.S_IMODE(selkies_cred_file.stat().st_mode) == 0o600
             (work_dir / "active_media_phase.json").write_text(
                 json.dumps(
                     {
@@ -1343,7 +1386,8 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                 / "stream_probe"
                 / "clipboard_oracle.py"
             ).read_text()
-            clipboard_process = subprocess.Popen(
+            clipboard_process = await asyncio.to_thread(
+                subprocess.Popen,
                 [
                     "docker",
                     "exec",
@@ -1595,11 +1639,11 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
 
             await browser.close()
 
-    except Exception as e:
+    except Exception:
         # Save docker logs on error
         for cname in created_containers:
             dump_container_logs(cname, work_dir / f"{cname}.log")
-        raise e
+        raise
     finally:
         if clipboard_process is not None:
             if clipboard_process.poll() is None:
@@ -1618,13 +1662,17 @@ async def test_stream_runtime_multi_viewer_e2e(tmp_path: Path):
                     pipe.close()
         await gateway.stop()
         for cname in created_containers:
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "rm", "-f", cname],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                check=False,
             )
-        subprocess.run(
+        await asyncio.to_thread(
+            subprocess.run,
             ["docker", "network", "rm", net_name],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            check=False,
         )

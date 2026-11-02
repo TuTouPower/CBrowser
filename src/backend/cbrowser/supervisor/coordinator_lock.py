@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import os
 from pathlib import Path
+from typing import Self
 
 
 class CoordinatorLock:
@@ -12,7 +13,7 @@ class CoordinatorLock:
         self.path = path
         self._descriptor: int | None = None
 
-    def __enter__(self) -> CoordinatorLock:
+    def __enter__(self) -> Self:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:

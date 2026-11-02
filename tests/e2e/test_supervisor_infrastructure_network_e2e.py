@@ -27,10 +27,11 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 
 import docker
 import pytest
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.path_validator import PathValidator
 from docker.errors import NotFound
@@ -227,8 +228,8 @@ def test_env(tmp_path: Path):
         geoip_cache_dir=geoip_cache,
     )
 
-    created_containers: List[docker.models.containers.Container] = []
-    created_networks: List[str] = []
+    created_containers: list[docker.models.containers.Container] = []
+    created_networks: list[str] = []
 
     try:
         yield {
@@ -256,13 +257,15 @@ def test_env(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env):
-    """AC006 Real Docker Verification:
+async def test_attach_profile_infra_authoritative_gateway_port_and_isolation_e2e(
+    test_env,
+):
+    """AC006 Real Docker Verification with Authoritative Gateway Port:
     1. Attach Gateway & Coturn to Profile A & Profile B networks.
-    2. Validate returned IP matches inspect.
+    2. Validate IP matches inspect; gateway_url uses DEFAULT_GATEWAY_PORT.
     3. Positive control: Probe B connects to Profile B 0.0.0.0:9222 -> SUCCEEDS.
     4. Negative control: Probe A on net_a connects to Profile B 0.0.0.0:9222 -> FAILS.
-    5. Profile A reaches Gateway & Coturn on its network.
+    5. Profile A reaches Gateway (DEFAULT_GATEWAY_PORT) & Coturn on its network.
     6. Auxiliary check: Loopback-bound service inside sandbox inaccessible externally.
     7. Cleanup Profile A does not disrupt Profile B.
     """
@@ -290,7 +293,7 @@ async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env)
         f"{prefix}-gw-fixture",
         prefix,
         "gateway",
-        18097,
+        DEFAULT_GATEWAY_PORT,
         mode="infra",
         network=net_a.name,
     )
@@ -310,15 +313,15 @@ async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env)
     test_env["created_containers"].append(coturn_container)
     _wait_container_ready(coturn_container)
 
-    # 3. Attach infrastructure to Profile A (idempotent reuse of net_a)
+    # 3. Attach infrastructure to Profile A (uses authoritative DEFAULT_GATEWAY_PORT)
     info_a = adapter.attach_profile_infrastructure(
         profile_id="prof_a",
         gateway_container_id=gw_container.id,
         coturn_container_id=coturn_container.id,
     )
-    assert "gateway_ip" in info_a and info_a["gateway_ip"]
-    assert "coturn_ip" in info_a and info_a["coturn_ip"]
-    assert info_a["gateway_url"] == f"ws://{info_a['gateway_ip']}:18097"
+    assert info_a.get("gateway_ip")
+    assert info_a.get("coturn_ip")
+    assert info_a["gateway_url"] == f"ws://{info_a['gateway_ip']}:{DEFAULT_GATEWAY_PORT}"
     assert info_a["coturn_ice_address"] == f"{info_a['coturn_ip']}:3478"
 
     gw_container.reload()
@@ -340,6 +343,7 @@ async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env)
     )
     assert info_b["gateway_ip"] != info_a["gateway_ip"]
     assert info_b["coturn_ip"] != info_a["coturn_ip"]
+    assert info_b["gateway_url"] == f"ws://{info_b['gateway_ip']}:{DEFAULT_GATEWAY_PORT}"
 
     gw_container.reload()
     actual_gw_ip_b = gw_container.attrs["NetworkSettings"]["Networks"][net_b.name][
@@ -357,9 +361,11 @@ async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env)
 
     # 6. Verify TCP connectivity from within Profile A to shared infrastructure
     reach_gw = _probe_tcp_connection(
-        client, browser_image, net_a.name, info_a["gateway_ip"], 18097
+        client, browser_image, net_a.name, info_a["gateway_ip"], DEFAULT_GATEWAY_PORT
     )
-    assert reach_gw is True, "Gateway TCP port 18097 unreachable from Profile A probe"
+    assert reach_gw is True, (
+        f"Gateway TCP port {DEFAULT_GATEWAY_PORT} unreachable from Profile A probe"
+    )
 
     reach_coturn = _probe_tcp_connection(
         client, browser_image, net_a.name, info_a["coturn_ip"], 3478
@@ -449,7 +455,7 @@ async def test_attach_profile_infrastructure_and_sandbox_isolation_e2e(test_env)
     gw_container.reload()
     assert net_b.name in gw_container.attrs["NetworkSettings"]["Networks"]
     reach_gw_b = _probe_tcp_connection(
-        client, browser_image, net_b.name, info_b["gateway_ip"], 18097
+        client, browser_image, net_b.name, info_b["gateway_ip"], DEFAULT_GATEWAY_PORT
     )
     assert reach_gw_b is True, (
         "Profile B Gateway connection broken after Profile A teardown"
@@ -481,7 +487,7 @@ async def test_midway_failure_atomic_rollback_and_error_propagation_e2e(test_env
         f"{prefix}-gw-rollback",
         prefix,
         "gateway",
-        18097,
+        DEFAULT_GATEWAY_PORT,
         network=net_d.name,
     )
     test_env["created_containers"].append(valid_gw)

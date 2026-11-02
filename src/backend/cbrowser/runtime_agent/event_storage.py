@@ -188,7 +188,7 @@ class EventStorage:
             return RuntimeStateRecord.model_validate(
                 json.loads(path.read_text(encoding="utf-8"))
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any state deserialization failure raises CorruptStateError
             logger.error("Corrupt runtime state (%s)", type(exc).__name__)
             raise CorruptStateError("Corrupt runtime state") from None
 
@@ -210,7 +210,7 @@ class EventStorage:
             state.profile_id != profile_id or state.runtime_instance_id != instance
         ):
             raise StorageError("Runtime state identity mismatch")
-        if recover_terminal or state is None:
+        if recover_terminal:
             events = self._read_runtime_events(self.runtime_events_dir / instance)
             terminal = []
             for event in events:

@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Annotated
 
 from cbrowser.api.v1 import router as runtime_api
-from cbrowser.secret_files import read_secret_file
 from cbrowser.domain.models import (
     ConfigVersionResponse,
     ProfileResponse,
     ProfileRuntimeResponse,
     RuntimeEventResponse,
 )
+from cbrowser.secret_files import read_secret_file
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import SecretStr

@@ -5,13 +5,12 @@ profile data or Docker socket.
 """
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 
 class SecurityError(RuntimeError):
     """Raised when runtime isolation boundary invariants are violated."""
 
-    pass
 
 
 PROHIBITED_PATHS = (
@@ -33,7 +32,7 @@ def verify_stream_runtime_boundaries(
     pulse_dir: str = "/pulse",
     x11_socket: str = "/tmp/.X11-unix/X99",
     xauthority_path: str = "/tmp/.Xauthority",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Verifies that Stream Runtime has access only to its authorized endpoints:
     - X11 socket and Xauthority
@@ -43,7 +42,7 @@ def verify_stream_runtime_boundaries(
     - NEVER browser agent socket (/run/cbrowser/runtime/agent.sock)
     - NEVER sqlite databases or whole runtime mounts
     """
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "x11_available": Path(x11_socket).exists(),
         "xauth_available": Path(xauthority_path).is_file(),
         "pulse_dir_available": Path(pulse_dir).is_dir(),

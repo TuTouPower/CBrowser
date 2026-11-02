@@ -135,13 +135,13 @@ async def verify_relay_rotations(
                 },
             )
             session, ws = gateway.registered_agents[profile_id]
-            identity = dict(
-                version="v2",
-                profile_id=profile_id,
-                runtime_instance_id=gateway.agent_instances[profile_id],
-                agent_session_id=session,
-                conn_id=conn_id,
-            )
+            identity = {
+                "version": "v2",
+                "profile_id": profile_id,
+                "runtime_instance_id": gateway.agent_instances[profile_id],
+                "agent_session_id": session,
+                "conn_id": conn_id,
+            }
             marker = len(gateway.control_packets)
             await ws.send_json(
                 dict(
@@ -211,11 +211,13 @@ async def verify_relay_rotations(
             for _ in range(100):
                 logs = docker("logs", stream_name)
                 # Docker logging may use stderr; retain both streams below.
-                captured = subprocess.run(
+                captured = await asyncio.to_thread(
+                    subprocess.run,
                     ["docker", "logs", stream_name],
                     capture_output=True,
                     text=True,
                     timeout=10,
+                    check=False,
                 )
                 logs += captured.stderr
                 if fence in logs:
@@ -256,14 +258,14 @@ async def verify_relay_rotations(
             })""")
             assert all(invariant.values()), invariant
             generations.append(
-                dict(
-                    generation=generation,
-                    ufrag=ufrag,
-                    pair=pair_after,
-                    before=before,
-                    after=after,
-                    invariant=invariant,
-                )
+                {
+                    "generation": generation,
+                    "ufrag": ufrag,
+                    "pair": pair_after,
+                    "before": before,
+                    "after": after,
+                    "invariant": invariant,
+                }
             )
             (work_dir / "relay_generations.json").write_text(
                 json.dumps(generations, indent=2)
@@ -273,7 +275,12 @@ async def verify_relay_rotations(
             (turn_name, "coturn.log"),
             (stream_name, "relay_stream.log"),
         ):
-            captured = subprocess.run(
-                ["docker", "logs", name], capture_output=True, text=True, timeout=10
+            captured = await asyncio.to_thread(
+                subprocess.run,
+                ["docker", "logs", name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
             )
             (work_dir / filename).write_text(captured.stdout + captured.stderr)

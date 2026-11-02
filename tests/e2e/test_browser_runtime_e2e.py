@@ -10,8 +10,10 @@ AC-006: Non-root UID 1000, read-only rootfs, cap-drop ALL, and stream auth.
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -24,6 +26,8 @@ from typing import Any
 
 import pytest
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+
+logger = logging.getLogger(__name__)
 
 IMAGE_TAG = os.environ.get(
     "CBROWSER_RUNTIME_TEST_IMAGE", "cbrowser-t003-impl-runtime:latest"
@@ -117,7 +121,7 @@ window.onload = async () => {{
   if (ctx.state !== 'running') {{ await ctx.resume(); }}
   window.__audioCtx = ctx;
 }};
-</script></body></html>""".encode("utf-8")
+</script></body></html>""".encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html")
             self.end_headers()
@@ -182,9 +186,14 @@ def http_server():
         yield f"http://{name}:8080"
     finally:
         ACTIVE_TEST_NETWORK = None
-        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=20)
         subprocess.run(
-            ["docker", "network", "rm", network], capture_output=True, timeout=20
+            ["docker", "rm", "-f", name], capture_output=True, timeout=20, check=False
+        )
+        subprocess.run(
+            ["docker", "network", "rm", network],
+            capture_output=True,
+            timeout=20,
+            check=False,
         )
 
 
@@ -402,8 +411,8 @@ def wait_for_uds_ready(container_name: str, timeout: float = 35.0) -> dict[str, 
             status_code, data = uds_http(container_name, "GET", "/health")
             if status_code == 200 and data.get("ready") is True:
                 return data
-        except Exception as e:
-            last_err = e
+        except Exception as e:  # noqa: BLE001 - polling health readiness
+            last_err = type(e).__name__
         time.sleep(0.5)
     logs_proc = subprocess.run(
         ["docker", "logs", container_name],
@@ -613,7 +622,7 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
             "filesink",
             "location=/tmp/recorded_a.raw",
         ]
-        subprocess.run(gst_cmd_a, check=True, timeout=15)
+        await asyncio.to_thread(subprocess.run, gst_cmd_a, check=True, timeout=15)
 
         gst_cmd_b = [
             "docker",
@@ -633,27 +642,25 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
             "filesink",
             "location=/tmp/recorded_b.raw",
         ]
-        subprocess.run(gst_cmd_b, check=True, timeout=15)
+        await asyncio.to_thread(subprocess.run, gst_cmd_b, check=True, timeout=15)
 
         # Copy PCM files to host scratch
         raw_a = dir_a / "recorded_a.raw"
         raw_b = dir_b / "recorded_b.raw"
-        with open(raw_a, "wb") as f:
-            f.write(
-                subprocess.run(
-                    ["docker", "exec", c_a_name, "cat", "/tmp/recorded_a.raw"],
-                    check=True,
-                    capture_output=True,
-                ).stdout
-            )
-        with open(raw_b, "wb") as f:
-            f.write(
-                subprocess.run(
-                    ["docker", "exec", c_b_name, "cat", "/tmp/recorded_b.raw"],
-                    check=True,
-                    capture_output=True,
-                ).stdout
-            )
+        proc_cat_a = await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_a_name, "cat", "/tmp/recorded_a.raw"],
+            check=True,
+            capture_output=True,
+        )
+        await asyncio.to_thread(raw_a.write_bytes, proc_cat_a.stdout)
+        proc_cat_b = await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_b_name, "cat", "/tmp/recorded_b.raw"],
+            check=True,
+            capture_output=True,
+        )
+        await asyncio.to_thread(raw_b.write_bytes, proc_cat_b.stdout)
 
         # Analyze using audio_analyzer.py
         analyzer_py = (
@@ -664,7 +671,8 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         )
 
         # 3a. Profile A: Positive 440Hz test + Crosstalk check against 880Hz
-        res_pcm_a = subprocess.run(
+        res_pcm_a = await asyncio.to_thread(
+            subprocess.run,
             [
                 sys.executable,
                 str(analyzer_py),
@@ -687,7 +695,8 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         )
 
         # 3b. Profile A: Negative test (must reject 880Hz target on 440Hz signal)
-        res_neg_a = subprocess.run(
+        res_neg_a = await asyncio.to_thread(
+            subprocess.run,
             [
                 sys.executable,
                 str(analyzer_py),
@@ -709,7 +718,8 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
         )
 
         # 3c. Profile B: Positive 880Hz test + Crosstalk check against 440Hz
-        res_pcm_b = subprocess.run(
+        res_pcm_b = await asyncio.to_thread(
+            subprocess.run,
             [
                 sys.executable,
                 str(analyzer_py),
@@ -733,7 +743,8 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
 
         # 3d. Rate mismatch negative calibration: declaring 48000Hz PCM as 44100Hz must
         # be rejected
-        res_rate_mismatch = subprocess.run(
+        res_rate_mismatch = await asyncio.to_thread(
+            subprocess.run,
             [
                 sys.executable,
                 str(analyzer_py),
@@ -761,7 +772,7 @@ async def test_ac001_persistence_and_dual_profile_isolation(http_server: str) ->
 
         # Gracefully close browser in Container A to flush Cookies SQLite database
         uds_http(c_a_name, "POST", "/control", {"action": "close"})
-        time.sleep(2.0)
+        await asyncio.sleep(2.0)
 
         # 4. RECREATION TEST: Stop Container A and restart with a new container
         stop_and_rm_container(c_a_name)
@@ -852,7 +863,8 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
         # 1. PHYSICAL X11 TOP-LEVEL WINDOW GEOMETRY CHECK via xdotool & xwininfo
         # Must discover Chrome top-level window/WM frame ID (NOT just -root screen)
         # and verify physical width=1920, height=1080 and DPR1
-        win_find_proc = subprocess.run(
+        win_find_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "exec",
@@ -875,7 +887,8 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
         assert len(wids) > 0, "No visible Chromium window found in X11!"
         chrome_wid = wids[0]
 
-        xwin_chrome_proc = subprocess.run(
+        xwin_chrome_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "exec",
@@ -951,10 +964,12 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
         # 3. SUBSYSTEM FAILURE NEGATIVE TESTS (Display, Pulse, Browser)
         # Sub-test 3a: Kill PulseAudio -> /health must immediately report ready: False
         # and audio_ready: False
-        subprocess.run(
-            ["docker", "exec", c_name, "pkill", "-9", "pulseaudio"], check=True
+        await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_name, "pkill", "-9", "pulseaudio"],
+            check=True,
         )
-        time.sleep(1.0)
+        await asyncio.sleep(1.0)
         h_pulse_fail_code, h_pulse_fail_data = uds_http(c_name, "GET", "/health")
         assert h_pulse_fail_code == 200
         assert h_pulse_fail_data["ready"] is False
@@ -962,8 +977,12 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
 
         # Sub-test 3b: Kill Xvfb -> /health must immediately report ready: False and
         # display_ready: False
-        subprocess.run(["docker", "exec", c_name, "pkill", "-9", "Xvfb"], check=True)
-        time.sleep(1.0)
+        await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_name, "pkill", "-9", "Xvfb"],
+            check=True,
+        )
+        await asyncio.sleep(1.0)
         h_disp_fail_code, h_disp_fail_data = uds_http(c_name, "GET", "/health")
         assert h_disp_fail_code == 200
         assert h_disp_fail_data["ready"] is False
@@ -1035,7 +1054,8 @@ async def test_ac003_controlled_uds_and_allowlist(http_server: str) -> None:
         )
         assert code_bad2 in (400, 422)
 
-        inspect_proc = subprocess.run(
+        inspect_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "inspect",
@@ -1055,7 +1075,8 @@ async def test_ac003_controlled_uds_and_allowlist(http_server: str) -> None:
         health_code, health = uds_http(c_name, "GET", "/health")
         assert health_code == 200
         cdp_port = health["details"]["cdp_port"]
-        inspect_network = subprocess.run(
+        inspect_network = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "inspect",
@@ -1088,7 +1109,8 @@ with socket.socket() as connection:
         raise AssertionError('CDP is directly reachable from the peer network')
 print(json.dumps({{'route_positive': True, 'cdp_refused': True}}))
 """
-        peer_proc = subprocess.run(
+        peer_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -1186,7 +1208,7 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
             if files:
                 found_file1 = files[0]
                 break
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
 
         assert found_file1 is not None, (
             "First download did not land in /exchange/downloads!"
@@ -1230,7 +1252,8 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
 
         # Confirm intermediate download landed in external override dir, and NOT in
         # default /exchange/downloads
-        mid_file_proc = subprocess.run(
+        mid_file_proc = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "ls", ext_override_dir],
             capture_output=True,
             text=True,
@@ -1248,7 +1271,7 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
         )
 
         # 3. Disconnection of external client automatically triggers rearm
-        time.sleep(1.5)
+        await asyncio.sleep(1.5)
 
         # 4. Trigger Second Formal Download (Proof of Automatic Recovery)
         dl2_script = """
@@ -1272,7 +1295,7 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
             if files:
                 found_file2 = files[0]
                 break
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
 
         assert found_file2 is not None, (
             "Second download did not recover to /exchange/downloads!"
@@ -1301,7 +1324,7 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
                 assert len(completed) == 1
                 second_event = completed[0]
                 break
-            time.sleep(0.2)
+            await asyncio.sleep(0.2)
         assert second_event is not None, "Second download completion was not persisted"
         assert (
             second_event["download_path"] == f"/exchange/downloads/{found_file2.name}"
@@ -1364,7 +1387,8 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         assert browser_pid is not None, "Missing browser PID"
 
         # Read Chrome start time from in-container /proc/<pid>/stat
-        stat_proc1 = subprocess.run(
+        stat_proc1 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "cat", f"/proc/{browser_pid}/stat"],
             capture_output=True,
             text=True,
@@ -1374,7 +1398,8 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         starttime_1 = stat_proc1.stdout.split()[21]
 
         # Read Agent PID
-        ps_agent = subprocess.run(
+        ps_agent = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "cbrowser.runtime_agent.agent"],
             capture_output=True,
             text=True,
@@ -1405,7 +1430,8 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         exec_uds_cdp(c_name, cookie_setup_script)
 
         # KILL AGENT PROCESS ONLY (SIGKILL)
-        subprocess.run(
+        await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "kill", "-9", agent_pid_1],
             check=True,
             timeout=15.0,
@@ -1423,7 +1449,8 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
             f"Chrome PID changed! {browser_pid_2} != {browser_pid}"
         )
 
-        stat_proc2 = subprocess.run(
+        stat_proc2 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "cat", f"/proc/{browser_pid}/stat"],
             capture_output=True,
             text=True,
@@ -1484,7 +1511,7 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
                         break
             if found_exit_evt:
                 break
-            time.sleep(0.5)
+            await asyncio.sleep(0.5)
 
         assert found_exit_evt is not None, "Normal exit event was not persisted!"
         assert found_exit_evt["exit_code"] == 0, (
@@ -1515,8 +1542,9 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         assert disc_state_data["exit_code"] == 0
 
         # Verify NO auto-restart of Chrome browser binary
-        time.sleep(2.0)
-        proc_check = subprocess.run(
+        await asyncio.sleep(2.0)
+        proc_check = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "chromium-.*/chrome"],
             check=False,
             capture_output=True,
@@ -1528,8 +1556,31 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         )
 
         # Kill the existing Agent and require supervisord to replace that PID.
-        old_pid = (
-            subprocess.check_output(
+        old_pid_raw = await asyncio.to_thread(
+            subprocess.check_output,
+            [
+                "docker",
+                "exec",
+                c_name,
+                "pgrep",
+                "-f",
+                "cbrowser.runtime_agent.agent",
+            ],
+            text=True,
+            timeout=15.0,
+        )
+        old_pid = old_pid_raw.strip().splitlines()[0]
+        await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_name, "kill", "-9", old_pid],
+            check=True,
+            timeout=15.0,
+        )
+        deadline = time.monotonic() + 20
+        term_health_data = None
+        while time.monotonic() < deadline:
+            current_res = await asyncio.to_thread(
+                subprocess.run,
                 [
                     "docker",
                     "exec",
@@ -1538,36 +1589,12 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
                     "-f",
                     "cbrowser.runtime_agent.agent",
                 ],
+                capture_output=True,
                 text=True,
+                check=False,
                 timeout=15.0,
             )
-            .strip()
-            .splitlines()[0]
-        )
-        subprocess.run(
-            ["docker", "exec", c_name, "kill", "-9", old_pid], check=True, timeout=15.0
-        )
-        deadline = time.monotonic() + 20
-        term_health_data = None
-        while time.monotonic() < deadline:
-            current = (
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        c_name,
-                        "pgrep",
-                        "-f",
-                        "cbrowser.runtime_agent.agent",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=15.0,
-                )
-                .stdout.strip()
-                .splitlines()
-            )
+            current = current_res.stdout.strip().splitlines()
             if current and old_pid not in current:
                 try:
                     term_health_code, term_health_data = uds_http(
@@ -1575,9 +1602,12 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
                     )
                     if term_health_code == 200:
                         break
-                except Exception:
-                    pass
-            time.sleep(0.3)
+                except Exception as exc:  # noqa: BLE001 - polling health during terminal agent restart
+                    logger.debug(
+                        "UDS health poll during restart failed: %s",
+                        type(exc).__name__,
+                    )
+            await asyncio.sleep(0.3)
         else:
             raise AssertionError("Terminal Agent did not restart under supervisord")
         assert term_health_data is not None
@@ -1585,7 +1615,8 @@ async def test_ac005_process_lifecycle_agent_restart_and_exit_events(
         assert term_health_data["details"]["state"] == "stopped"
 
         # Check that Chrome was not mistakenly restarted
-        proc_check2 = subprocess.run(
+        proc_check2 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "chromium-.*/chrome"],
             check=False,
             capture_output=True,
@@ -1669,7 +1700,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         assert browser_pid is not None, "Missing browser PID"
 
         # Read Chrome start time from in-container /proc/<pid>/stat
-        stat_proc1 = subprocess.run(
+        stat_proc1 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "cat", f"/proc/{browser_pid}/stat"],
             capture_output=True,
             text=True,
@@ -1680,7 +1712,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         assert starttime_1 is not None
 
         # Read Agent PID
-        ps_agent1 = subprocess.run(
+        ps_agent1 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "cbrowser.runtime_agent.agent"],
             capture_output=True,
             text=True,
@@ -1692,14 +1725,16 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         # Trigger target process termination
         if kill_target == "chrome":
             # Send SIGKILL to real Chrome PID
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "exec", c_name, "kill", "-9", str(browser_pid)],
                 check=True,
                 timeout=15.0,
             )
         elif kill_target == "driver":
             # Discover and kill the Playwright node driver process
-            ps_driver = subprocess.run(
+            ps_driver = await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "exec", c_name, "pgrep", "-f", "playwright/driver/node"],
                 capture_output=True,
                 text=True,
@@ -1707,7 +1742,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
                 timeout=15.0,
             )
             driver_pid = ps_driver.stdout.strip().splitlines()[0]
-            subprocess.run(
+            await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "exec", c_name, "kill", "-9", driver_pid],
                 check=True,
                 timeout=15.0,
@@ -1737,7 +1773,7 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
                             break
             if terminal_event:
                 break
-            time.sleep(0.3)
+            await asyncio.sleep(0.3)
 
         assert terminal_event is not None, (
             f"Terminal event of type {expected_event_type} not found"
@@ -1800,8 +1836,9 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         assert disc_state["exit_code"] == expected_state_exit_code
 
         # Verify NO automatic browser restart
-        time.sleep(2.0)
-        proc_check1 = subprocess.run(
+        await asyncio.sleep(2.0)
+        proc_check1 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "chromium-.*/chrome"],
             check=False,
             capture_output=True,
@@ -1821,7 +1858,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         assert pre_health["details"]["state"] == expected_state
 
         # KILL AGENT (SIGKILL) and verify supervisord autoAgent restart & replay
-        subprocess.run(
+        await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "kill", "-9", agent_pid_1],
             check=True,
             timeout=15.0,
@@ -1831,7 +1869,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         new_agent_pid = None
         replay_health = None
         while time.monotonic() < restart_deadline:
-            ps_new = subprocess.run(
+            ps_new = await asyncio.to_thread(
+                subprocess.run,
                 [
                     "docker",
                     "exec",
@@ -1853,9 +1892,12 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
                     if rep_code == 200:
                         replay_health = rep_data
                         break
-                except Exception:
-                    pass
-            time.sleep(0.3)
+                except Exception as exc:  # noqa: BLE001 - polling health during agent replay
+                    logger.debug(
+                        "UDS health poll during replay failed: %s",
+                        type(exc).__name__,
+                    )
+            await asyncio.sleep(0.3)
 
         assert new_agent_pid is not None, "supervisord failed to restart Agent process"
         assert new_agent_pid != agent_pid_1, "Agent PID did not change across restart"
@@ -1888,7 +1930,8 @@ async def test_ac005_abnormal_termination_lifecycle_and_agent_replay(
         assert matching[0]["exit_reason"] == expected_exit_reason
 
         # Final check that Chrome was not restarted during agent replay
-        proc_check2 = subprocess.run(
+        proc_check2 = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "pgrep", "-f", "chromium-.*/chrome"],
             check=False,
             capture_output=True,
@@ -1940,7 +1983,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         wait_for_uds_ready(c_name, timeout=35.0)
 
         # 1. Non-root user check (UID 1000, GID 1000)
-        id_proc = subprocess.run(
+        id_proc = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "id"],
             capture_output=True,
             text=True,
@@ -1950,7 +1994,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         assert "gid=1000(cbrowser)" in id_proc.stdout
 
         # 2. Read-only rootfs check
-        ro_proc = subprocess.run(
+        ro_proc = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "touch", "/test_read_only"],
             check=False,
             capture_output=True,
@@ -1960,7 +2005,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         assert "Read-only file system" in ro_proc.stderr
 
         # 3. No Docker socket check
-        sock_proc = subprocess.run(
+        sock_proc = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", c_name, "ls", "-la", "/var/run/docker.sock"],
             check=False,
             capture_output=True,
@@ -1980,7 +2026,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         assert x11_sock.exists()
         assert pulse_sock.exists()
 
-        inspect_hn_proc = subprocess.run(
+        inspect_hn_proc = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "inspect", "-f", "{{.Config.Hostname}}", c_name],
             capture_output=True,
             text=True,
@@ -1991,7 +2038,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
 
         auth_probe_name = f"cbrowser-t003-impl-auth-probe-{run_id}"
         created_containers.append(auth_probe_name)
-        auth_proc = subprocess.run(
+        auth_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -2031,7 +2079,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         created_containers.append(unauth_probe_name)
         fake_xauth = dir_work / "fake_xauth"
         fake_xauth.write_bytes(os.urandom(32))
-        unauth_proc = subprocess.run(
+        unauth_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -2074,7 +2123,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         # MIT-SHM successfully
         stream_shm_name = f"cbrowser-t003-impl-stream-shm-{run_id}"
         created_containers.append(stream_shm_name)
-        shm_pos_proc = subprocess.run(
+        shm_pos_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -2143,7 +2193,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
 
         cross_ipc_name = f"cbrowser-t003-impl-cross-ipc-{run_id}"
         created_containers.append(cross_ipc_name)
-        shm_neg_proc = subprocess.run(
+        shm_neg_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -2188,7 +2239,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         # 6a. POSITIVE: Authorized client with UID 1000 and valid cookie
         pulse_probe_uid1000 = f"cbrowser-t003-impl-pulse-pos-{run_id}"
         created_containers.append(pulse_probe_uid1000)
-        pulse_pos_proc = subprocess.run(
+        pulse_pos_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",
@@ -2230,7 +2282,8 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
         created_containers.append(pulse_probe_uid1001)
         fake_cookie_file = dir_work / "fake_pulse.cookie"
         fake_cookie_file.write_bytes(os.urandom(256))
-        pulse_neg_proc = subprocess.run(
+        pulse_neg_proc = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "run",

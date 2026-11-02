@@ -94,6 +94,7 @@ def test_three_relay_generations_preserve_live_peer(tmp_path: Path) -> None:
                 text=True,
                 capture_output=True,
                 timeout=2,
+                check=False,
             )
             if ":0D96 " in sockets.stdout:
                 break
@@ -133,6 +134,7 @@ def test_three_relay_generations_preserve_live_peer(tmp_path: Path) -> None:
             text=True,
             capture_output=True,
             timeout=90,
+            check=False,
         )
         (tmp_path / "peer.log").write_text(result.stdout + result.stderr)
         assert result.returncode == 0, result.stdout + result.stderr
@@ -146,7 +148,11 @@ def test_three_relay_generations_preserve_live_peer(tmp_path: Path) -> None:
     finally:
         if turn_id:
             logs = subprocess.run(
-                ["docker", "logs", turn_id], text=True, capture_output=True, timeout=10
+                ["docker", "logs", turn_id],
+                text=True,
+                capture_output=True,
+                timeout=10,
+                check=False,
             )
             log_file = tmp_path / "turn.log"
             log_file.write_text(logs.stdout + logs.stderr)
@@ -154,9 +160,15 @@ def test_three_relay_generations_preserve_live_peer(tmp_path: Path) -> None:
         for container in [peer, turn_id]:
             if container:
                 subprocess.run(
-                    ["docker", "rm", "-f", container], capture_output=True, timeout=10
+                    ["docker", "rm", "-f", container],
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
                 )
         if network_created:
             subprocess.run(
-                ["docker", "network", "rm", network], capture_output=True, timeout=10
+                ["docker", "network", "rm", network],
+                capture_output=True,
+                timeout=10,
+                check=False,
             )

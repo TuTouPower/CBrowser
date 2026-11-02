@@ -20,14 +20,14 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
-from cbrowser.runtime_agent.protocol import RuntimeEventRecord
+from cbrowser.runtime_agent.protocol import HealthResponse, RuntimeEventRecord
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
@@ -37,6 +37,10 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
 from cbrowser.supervisor.path_validator import PathSecurityError
 from cbrowser.supervisor.port_allocator import PortAllocator
+from cbrowser.supervisor.recovery_rules import (
+    is_error_exit_health,
+    is_normal_exit_health,
+)
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
 from docker.errors import NotFound
@@ -86,9 +90,9 @@ class SupervisorCore:
         port_allocator: PortAllocator,
         event_forwarder: EventForwarder,
         api_client: httpx.AsyncClient,
-        gateway_url: Optional[str] = None,
-        token_file: Optional[Path | str] = None,
-        agent_key_file: Optional[Path | str] = None,
+        gateway_url: str | None = None,
+        token_file: Path | str | None = None,
+        agent_key_file: Path | str | None = None,
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
         coturn_container_id: str | None = None,
@@ -123,8 +127,8 @@ class SupervisorCore:
         self.coturn_container_id = coturn_container_id
         self.webrtc_mode = webrtc_mode
 
-        self._sessions: Dict[str, ActiveSession] = {}
-        self._locks: Dict[str, asyncio.Lock] = {}
+        self._sessions: dict[str, ActiveSession] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
         self._terminal_observations: set[tuple[str, str, int]] = set()
@@ -140,7 +144,7 @@ class SupervisorCore:
             )
         )
 
-    def _get_bearer_token(self) -> Optional[str]:
+    def _get_bearer_token(self) -> str | None:
         if self._token_file and self._token_file.is_file():
             return read_secret_file(
                 self._token_file, label="Supervisor service token"
@@ -202,7 +206,7 @@ class SupervisorCore:
                     f"/api/v1/internal/supervisor/profiles/{pid}/runtime",
                     headers=self._auth_headers(),
                 )
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - API query transport failure safely retains profile without teardown
                 logger.warning(
                     "API unavailable; retaining profile=%s error_type=%s",
                     pid,
@@ -228,12 +232,24 @@ class SupervisorCore:
                     continue
 
                 session = self._sessions.get(pid)
-                if session is not None and session.runtime_instance_id == b_inst:
+                bound_version = int(
+                    rt.get("config_version", b_c.get("config_version", 1))
+                )
+                if desired == "running":
+                    obs = await self._reconcile_instance_observation(
+                        pid, b_inst, bound_version, container_status=b_c.get("status")
+                    )
+                    if obs in ("stopped", "error"):
+                        continue
+
+                if (
+                    desired == "running"
+                    and session is not None
+                    and session.runtime_instance_id == b_inst
+                ):
                     # Same generation is already tracked. Docker "running" must
                     # never overwrite an error observation from the Agent.
-                    if desired == "running" and any(
-                        item["status"] != "running" for item in (b_c, s_c)
-                    ):
+                    if any(item["status"] != "running" for item in (b_c, s_c)):
                         if session.observed_state != "error":
                             session.observed_state = "error"
                             await self.report_terminal_observation(
@@ -244,7 +260,7 @@ class SupervisorCore:
                                 reason="container_exit",
                             )
                     elif (
-                        session.observed_state != "error"
+                        session.observed_state == "running"
                         and rt.get("observed_state") != "running"
                     ):
                         await self._report_observed(
@@ -308,7 +324,7 @@ class SupervisorCore:
                         teardown_failed = False
                         try:
                             await self.docker.teardown_profile(pid)
-                        except Exception as exc:
+                        except Exception as exc:  # noqa: BLE001 - unprotected sandbox teardown error isolated and logged
                             teardown_failed = True
                             logger.error(
                                 "Unprotected sandbox teardown failed: profile=%s "
@@ -350,7 +366,7 @@ class SupervisorCore:
                             if k.endswith("/udp") and v:
                                 actual_port = int(v[0]["HostPort"])
                                 break
-                    except Exception as e:
+                    except Exception as e:  # noqa: BLE001 - stream port inspection failure logged before raising sandbox error
                         logger.warning(
                             "Stream port inspection failed: container=%s error_type=%s",
                             s_c["id"],
@@ -613,43 +629,9 @@ class SupervisorCore:
                 if not delivered:
                     continue
                 total_forwarded += 1
-                if etype == "lifecycle":
-                    await self.report_terminal_observation(
-                        profile_id,
-                        instance_id,
-                        config_version,
-                        observed_state="error",
-                        reason="process_lost",
-                    )
-                elif etype == "exit":
-                    # An exit journal while Docker still reports the Browser
-                    # running is not an authoritative lifecycle fact.
-                    if not await self._browser_container_stopped(
-                        profile_id, instance_id
-                    ):
-                        logger.warning(
-                            "Exit journal ignored while Browser container runs: "
-                            "profile=%s instance=%s",
-                            profile_id,
-                            instance_id,
-                        )
-                    elif ecode == 0 and data.get("exit_reason") == "normal":
-                        logger.info("Normal Chrome exit: profile=%s", profile_id)
-                        await self.report_terminal_observation(
-                            profile_id,
-                            instance_id,
-                            config_version,
-                            observed_state="stopped",
-                            reason="normal_exit",
-                        )
-                    else:
-                        await self.report_terminal_observation(
-                            profile_id,
-                            instance_id,
-                            config_version,
-                            observed_state="error",
-                            reason="agent_exit",
-                        )
+                await self._reconcile_instance_observation(
+                    profile_id, instance_id, config_version
+                )
                 self._archive_event_file(evt_file, profile_id, instance_id)
                 self._advance_event_cursor(profile_id, instance_id, marker)
                 changed = True
@@ -657,28 +639,141 @@ class SupervisorCore:
             self._save_event_cursors()
         return total_forwarded
 
-    async def _browser_container_stopped(
-        self, profile_id: str, instance_id: str
-    ) -> bool:
-        """Docker container state confirms the Agent journal before state changes."""
-        try:
-            container = await asyncio.to_thread(
-                self.docker.client.containers.get,
-                self.docker.get_browser_container_name(profile_id),
+    async def _reconcile_instance_observation(
+        self,
+        profile_id: str,
+        instance_id: str,
+        config_version: int,
+        *,
+        container_status: str | None = None,
+    ) -> str | None:
+        """Query actual Docker / Agent state and report authoritative observation.
+
+        Returns 'stopped', 'error', 'running', or None if unresolved / unacknowledged.
+        """
+        if container_status is None:
+            try:
+                container = await asyncio.to_thread(
+                    self.docker.client.containers.get,
+                    self.docker.get_browser_container_name(profile_id),
+                )
+                labels = getattr(container, "labels", None) or {}
+                if labels.get("com.cbrowser.instance-id") != instance_id:
+                    logger.warning(
+                        "Container instance mismatch: profile=%s docker=%s expected=%s",
+                        profile_id,
+                        labels.get("com.cbrowser.instance-id"),
+                        instance_id,
+                    )
+                    return None
+                container_status = getattr(container, "status", None)
+            except NotFound:
+                container_status = "not_found"
+            except Exception:  # noqa: BLE001 - unexpected docker inspection error safely defaults status to None
+                container_status = None
+
+        if container_status in ("exited", "dead", "not_found"):
+            delivered = await self.report_terminal_observation(
+                profile_id,
+                instance_id,
+                config_version,
+                observed_state="error",
+                reason="container_exit",
             )
-        except NotFound:
-            return False
-        except Exception as exc:
-            logger.warning(
-                "Browser container lookup failed: profile=%s error_type=%s",
+            return "error" if delivered else None
+
+        if container_status == "running":
+            health = await self._query_agent_health(profile_id)
+            if health is None:
+                return None
+            if not (
+                health.profile_id == profile_id
+                and health.runtime_instance_id == instance_id
+                and health.config_version == config_version
+            ):
+                logger.warning(
+                    "Agent identity mismatch: profile=%s (expected %s) "
+                    "instance=%s (expected %s) version=%s (expected %s)",
+                    health.profile_id,
+                    profile_id,
+                    health.runtime_instance_id,
+                    instance_id,
+                    health.config_version,
+                    config_version,
+                )
+                return None
+
+            if is_normal_exit_health(health.details):
+                logger.info(
+                    "Normal Chrome exit verified via Agent UDS: profile=%s",
+                    profile_id,
+                )
+                delivered = await self.report_terminal_observation(
+                    profile_id,
+                    instance_id,
+                    config_version,
+                    observed_state="stopped",
+                    reason="normal_exit",
+                )
+                return "stopped" if delivered else None
+            elif is_error_exit_health(health.details):
+                reason = (
+                    "process_lost"
+                    if health.details.get("exit_reason")
+                    == "process_observation_lost"
+                    else "agent_exit"
+                )
+                delivered = await self.report_terminal_observation(
+                    profile_id,
+                    instance_id,
+                    config_version,
+                    observed_state="error",
+                    reason=reason,
+                )
+                return "error" if delivered else None
+            return "running"
+
+        return None
+
+    async def _query_agent_health(self, profile_id: str) -> HealthResponse | None:
+        """Query Agent UDS /health; validate runtime path and reject if inaccessible."""
+        dir_fd: int | None = None
+        try:
+            runtime_dir = self.docker.validator.get_runtime_dir(profile_id)
+            sock_path = self.docker.validator.validate_runtime_source(
+                profile_id, runtime_dir / "agent.sock"
+            )
+            if not sock_path.is_socket():
+                return None
+
+            proc_fd_dir = Path("/proc/self/fd")
+            if proc_fd_dir.exists():
+                dir_fd = os.open(
+                    str(sock_path.parent),
+                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                )
+                uds_target = f"/proc/self/fd/{dir_fd}/{sock_path.name}"
+            else:
+                uds_target = os.path.relpath(sock_path, os.getcwd())
+
+            transport = httpx.AsyncHTTPTransport(uds=uds_target)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://uds", timeout=2.0
+            ) as client:
+                resp = await client.get("/health")
+                if resp.status_code == 200:
+                    return HealthResponse.model_validate(resp.json())
+                return None
+        except Exception as exc:  # noqa: BLE001 - agent UDS health query failure safely returns None
+            logger.debug(
+                "Agent health query failed: profile=%s error_type=%s",
                 profile_id,
                 type(exc).__name__,
             )
-            return False
-        labels = getattr(container, "labels", None) or {}
-        if labels.get("com.cbrowser.instance-id") != instance_id:
-            return False
-        return container.status in ("exited", "dead")
+            return None
+        finally:
+            if dir_fd is not None:
+                os.close(dir_fd)
 
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
@@ -742,7 +837,7 @@ class SupervisorCore:
                 profile_id=profile_id,
                 version=config_version,
                 config=config.model_dump(),
-                created_at=datetime.now(timezone.utc).isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
             )
             atomic_write_text(snap_path, snapshot.model_dump_json(indent=2), mode=0o644)
 
@@ -893,7 +988,7 @@ class SupervisorCore:
                 try:
                     try:
                         await self.docker.teardown_profile(profile_id)
-                    except Exception as cleanup_exc:
+                    except Exception as cleanup_exc:  # noqa: BLE001 - launch failure cleanup error logged without overriding original startup error
                         logger.error(
                             "Launch cleanup failed: profile=%s error_type=%s",
                             profile_id,
@@ -993,7 +1088,7 @@ class SupervisorCore:
             teardown_error: Exception | None = None
             try:
                 await self.docker.teardown_profile(profile_id)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - teardown failure recorded for controlled propagation
                 teardown_error = exc
                 logger.error(
                     "Sandbox teardown failed: profile=%s error_type=%s",
@@ -1116,18 +1211,25 @@ class SupervisorCore:
         key = (profile_id, runtime_instance_id, config_version)
         if key in self._terminal_observations:
             return False
-        self._terminal_observations.add(key)
-        session = self._sessions.get(profile_id)
-        if session is not None and session.runtime_instance_id == runtime_instance_id:
-            session.observed_state = observed_state
-        await self._report_observed(
+        delivered = await self._report_observed(
             profile_id,
             runtime_instance_id,
             observed_state,
             config_version,
             reason=reason,
         )
-        return True
+        if delivered:
+            self._terminal_observations.add(key)
+            session = self._sessions.get(profile_id)
+            if (
+                session is not None
+                and session.runtime_instance_id == runtime_instance_id
+            ):
+                session.observed_state = observed_state
+                if observed_state == "stopped" and reason == "normal_exit":
+                    session.desired_state = "stopped"
+            return True
+        return False
 
     async def _report_observed(
         self,
@@ -1137,9 +1239,9 @@ class SupervisorCore:
         config_version: int,
         *,
         reason: str | None = None,
-    ) -> None:
+    ) -> bool:
         try:
-            await self.api.post(
+            resp = await self.api.post(
                 f"/api/v1/internal/supervisor/runtimes/observed?profile_id={profile_id}",
                 headers=self._auth_headers(),
                 json={
@@ -1149,9 +1251,11 @@ class SupervisorCore:
                     "reason": reason,
                 },
             )
-        except Exception as e:
+            return resp.status_code == 200
+        except Exception as e:  # noqa: BLE001 - API state report network failure logged and returns False
             logger.warning(
                 "Observed state report failed: state=%s error_type=%s",
                 state,
                 type(e).__name__,
             )
+            return False

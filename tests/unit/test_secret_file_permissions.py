@@ -1,6 +1,7 @@
 """Internal credential files must not be group/other readable."""
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from cbrowser.api.internal_gateway import read_gateway_token
@@ -11,7 +12,6 @@ from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
-from types import SimpleNamespace
 
 
 def _secret(path: Path, mode: int, value: str = "a" * 32) -> Path:
@@ -49,7 +49,9 @@ def test_control_and_gateway_clients_reject_group_readable_tokens(
 
 
 @pytest.mark.asyncio
-async def test_supervisor_token_read_rejects_group_readable_file(tmp_path: Path) -> None:
+async def test_supervisor_token_read_rejects_group_readable_file(
+    tmp_path: Path,
+) -> None:
     import httpx
 
     async with httpx.AsyncClient(base_url="http://127.0.0.1:1", trust_env=False) as api:

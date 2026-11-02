@@ -5,11 +5,11 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from cbrowser.secret_files import read_secret_file
 from cbrowser.gateway.endpoint import (
     DEFAULT_GATEWAY_PORT,
     normalize_origins,
 )
+from cbrowser.secret_files import read_secret_file
 from pydantic import BaseModel, ConfigDict
 
 

@@ -20,7 +20,7 @@ def main() -> None:
 
     try:
         config = GatewayConfig.from_env()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - CLI entrypoint catches config errors to exit with status 1
         logger.error("Configuration error: %s", e)
         sys.exit(1)
 

@@ -13,7 +13,6 @@ from pathlib import Path
 class PathSecurityError(Exception):
     """Raised when a path violates security constraints or attempts escape."""
 
-    pass
 
 
 RESERVED_PROFILE_IDS = frozenset({".secrets", "secrets", "archive", "quarantine"})

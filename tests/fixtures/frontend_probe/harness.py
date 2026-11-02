@@ -18,6 +18,7 @@ for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
         sys.path.insert(0, p)
 
 import docker  # noqa: E402
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from gateway_probe.caddyfile import generate_caddyfile  # noqa: E402
 from gateway_probe.topology import (  # noqa: E402
     GatewayTopologyHarness,
@@ -107,23 +108,38 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
         return {}
 
     async def start(self) -> None:
-        self._init_dirs_and_secrets()
-        # Serve frontend build + BrowserSessionView host page as static directory
-        self.prepare_static()
+        try:
+            self._init_dirs_and_secrets()
+            # Serve frontend build + BrowserSessionView host page as static directory
+            self.prepare_static()
 
-        self.edge_network = self.docker_client.networks.create(
-            f"{self.prefix}-edge",
-            labels={
-                "com.cbrowser.prefix": self.prefix,
-                "com.cbrowser.test": self.test_label,
-            },
-        )
-        self.networks.append(self.edge_network)
+            self.edge_network = self.docker_client.networks.create(
+                f"{self.prefix}-edge",
+                labels={
+                    "com.cbrowser.prefix": self.prefix,
+                    "com.cbrowser.test": self.test_label,
+                },
+            )
+            self.networks.append(self.edge_network)
 
-        # Delegate container startup to parent start method (avoiding duplication):
-        # the parent start() would prepare different static assets and its own
-        # network, so container startup is invoked directly here.
-        await self._start_containers()
+            # Delegate container startup to parent start method (avoiding duplication):
+            # the parent start() would prepare different static assets and its own
+            # network, so container startup is invoked directly here.
+            await self._start_containers()
+        except BaseException as start_exc:
+            logger.error(
+                "FrontendTopologyHarness.start failed: %s; cleaning up topology",
+                type(start_exc).__name__,
+            )
+            try:
+                await self.cleanup()
+            except BaseException as cleanup_exc:
+                logger.error(
+                    "FrontendTopologyHarness.cleanup also failed during start: %s",
+                    type(cleanup_exc).__name__,
+                )
+                raise cleanup_exc from start_exc
+            raise
 
     async def _start_containers(self) -> None:
         """Starts all Docker containers in correct dependency order."""
@@ -224,7 +240,7 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
                 "CBROWSER_GATEWAY_HOST": "0.0.0.0",
-                "CBROWSER_GATEWAY_PORT": "18097",
+                "CBROWSER_GATEWAY_PORT": str(DEFAULT_GATEWAY_PORT),
                 "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent_key",
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
@@ -252,7 +268,7 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
-            ports={"18097/tcp": ("127.0.0.1", None)},
+            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
         self.gateway_container.reload()
         self.gateway_ip = self.gateway_container.attrs["NetworkSettings"]["Networks"][
@@ -291,7 +307,9 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
                 "--api-url",
                 f"http://{self.api_ip}:8000",
                 "--gateway-control-url",
-                f"http://{self.gateway_ip}:18097",
+                f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+                "--gateway-port",
+                str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 self.gateway_container.id,
                 "--coturn-container-id",
@@ -316,7 +334,9 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
         )
 
         # 5. Caddy container
-        caddyfile_content = generate_caddyfile(self.api_ip, self.gateway_ip)
+        caddyfile_content = generate_caddyfile(
+            self.api_ip, self.gateway_ip, DEFAULT_GATEWAY_PORT
+        )
         caddyfile_path = self.work_dir / "Caddyfile"
         caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
 
@@ -345,15 +365,19 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
         )
 
         self.supervisor_container.reload()
-        sup_port = self.supervisor_container.attrs["NetworkSettings"]["Ports"][
-            "8005/tcp"
-        ][0]["HostPort"]
+        sup_ports = self.supervisor_container.attrs["NetworkSettings"]["Ports"]
+        if "8005/tcp" not in sup_ports or not sup_ports["8005/tcp"]:
+            st = self.supervisor_container.status
+            raise RuntimeError(f"Supervisor container did not expose 8005/tcp ({st})")
+        sup_port = sup_ports["8005/tcp"][0]["HostPort"]
         self.supervisor_url = f"http://127.0.0.1:{sup_port}"
 
         self.api_container.reload()
-        api_port = self.api_container.attrs["NetworkSettings"]["Ports"]["8000/tcp"][0][
-            "HostPort"
-        ]
+        api_ports = self.api_container.attrs["NetworkSettings"]["Ports"]
+        if "8000/tcp" not in api_ports or not api_ports["8000/tcp"]:
+            st = self.api_container.status
+            raise RuntimeError(f"API container did not expose 8000/tcp ({st})")
+        api_port = api_ports["8000/tcp"][0]["HostPort"]
         self.api_internal_url = f"http://127.0.0.1:{api_port}"
 
         await wait_until_ready(self.api_internal_url, "/api/v1/health")

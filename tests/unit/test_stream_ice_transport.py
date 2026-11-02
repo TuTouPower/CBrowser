@@ -55,21 +55,25 @@ def test_verify_selkies_abi_guard_raises_on_wrong_version():
     with patch("cbrowser.stream_agent.ice_transport._SELKIES_AVAILABLE", True):
         mock_selkies = MagicMock()
         mock_selkies.__version__ = "2.0.9"
-        with patch(
-            "cbrowser.stream_agent.ice_transport.selkies", mock_selkies, create=True
-        ):
-            with pytest.raises(
+        with (
+            patch(
+                "cbrowser.stream_agent.ice_transport.selkies", mock_selkies, create=True
+            ),
+            pytest.raises(
                 UnsupportedSelkiesVersionError, match="Unsupported selkies version"
-            ):
-                verify_selkies_abi_guard()
+            ),
+        ):
+            verify_selkies_abi_guard()
 
 
 def test_verify_selkies_abi_guard_raises_when_sdk_missing():
-    with patch("cbrowser.stream_agent.ice_transport._SELKIES_AVAILABLE", False):
-        with pytest.raises(
+    with (
+        patch("cbrowser.stream_agent.ice_transport._SELKIES_AVAILABLE", False),
+        pytest.raises(
             UnsupportedSelkiesVersionError, match="not installed or importable"
-        ):
-            verify_selkies_abi_guard()
+        ),
+    ):
+        verify_selkies_abi_guard()
 
 
 def test_verify_selkies_abi_guard_raises_on_missing_private_attributes():
@@ -106,9 +110,9 @@ def test_verify_selkies_abi_guard_raises_on_missing_private_attributes():
             return_value=FakeTransport(),
             create=True,
         ),
+        pytest.raises(SelkiesABIGuardError),
     ):
-        with pytest.raises(SelkiesABIGuardError):
-            verify_selkies_abi_guard()
+        verify_selkies_abi_guard()
 
 
 @pytest.mark.asyncio

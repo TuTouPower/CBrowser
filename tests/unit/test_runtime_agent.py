@@ -195,9 +195,8 @@ def test_event_storage_dirfsync_failure_injection(
         exit_code=0,
         config_version=1,
     )
-    with patch("os.fsync", side_effect=mock_fsync):
-        with pytest.raises(StorageError):
-            storage.save_runtime_event(evt)
+    with patch("os.fsync", side_effect=mock_fsync), pytest.raises(StorageError):
+        storage.save_runtime_event(evt)
 
 
 def test_subsystem_checks_negative(tmp_path: Path) -> None:

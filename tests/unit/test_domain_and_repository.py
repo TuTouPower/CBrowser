@@ -1,4 +1,7 @@
-"""Unit tests for v2 backend foundation: domain, repository, 8 tables, and event convergence."""
+"""Unit tests for v2 backend foundation.
+
+Tests domain, repository, 8 tables, and event convergence.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +23,7 @@ from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.domain.models import Profile, ProfileConfig, RuntimeEvent, Tag
+from cbrowser.domain.models import Profile, ProfileConfig, Tag
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -221,7 +224,7 @@ async def test_actual_db_constraint_failure_rollback(db_context):
     config = ProfileConfig(name="Constraint Rollback Profile")
     p = await repo.create_profile(config, tags=[])
 
-    # Attempt a raw SQL insert that violates foreign key or unique constraint in a transaction
+    # Attempt a raw SQL insert that violates foreign key or constraint
     with pytest.raises(IntegrityError):
         async with session_maker() as session, session.begin():
             # Violate foreign key with invalid profile_id
@@ -242,7 +245,10 @@ async def test_actual_db_constraint_failure_rollback(db_context):
 
 @pytest.mark.asyncio
 async def test_desired_state_intent_does_not_invent_observed_runtime(db_context):
-    """User intent MUST NOT invent actual runtime. Setting desired=running leaves observed=stopped."""
+    """User intent MUST NOT invent actual runtime.
+
+    Setting desired=running leaves observed=stopped.
+    """
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -256,7 +262,7 @@ async def test_desired_state_intent_does_not_invent_observed_runtime(db_context)
 
 @pytest.mark.asyncio
 async def test_stopping_intent_does_not_claim_observed_stopped_before_event(db_context):
-    """Stopping intent must NOT immediately claim observed stopped before real exit event."""
+    """Stopping intent must NOT claim observed stopped before real exit event."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -267,14 +273,14 @@ async def test_stopping_intent_does_not_claim_observed_stopped_before_event(db_c
     # User expresses intent to stop
     rt = await repo.set_desired_state(profile.id, "stopped")
     assert rt.desired_state == "stopped"
-    # Container is still shutting down: observed_state remains running and live instance is preserved!
+    # Container is still shutting down: observed_state remains running!
     assert rt.observed_state == "running"
     assert rt.runtime_instance_id == "inst_live_1"
 
 
 @pytest.mark.asyncio
 async def test_profile_config_update_does_not_mutate_runtime_bound_version(db_context):
-    """Runtime.config_version means actual bound snapshot; profile update does not bump it."""
+    """Runtime.config_version is bound snapshot; profile update does not bump it."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -294,7 +300,7 @@ async def test_profile_config_update_does_not_mutate_runtime_bound_version(db_co
 
 @pytest.mark.asyncio
 async def test_idempotency_conflict_on_different_payload(db_context):
-    """Reusing same operation_id with different payload raises IdempotencyConflictError."""
+    """Reusing operation_id with different payload raises error."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -314,7 +320,7 @@ async def test_idempotency_conflict_on_different_payload(db_context):
 
 @pytest.mark.asyncio
 async def test_concurrent_updates_atomic_retry(db_context):
-    """Concurrent updates with different operation_ids succeed without version collision."""
+    """Concurrent updates with different operation_ids succeed."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -343,7 +349,7 @@ async def test_concurrent_updates_atomic_retry(db_context):
 
 @pytest.mark.asyncio
 async def test_disjoint_concurrent_patch_name_and_notes(db_context):
-    """Concurrent disjoint patches (name vs notes) in multiple rounds preserve both fields."""
+    """Concurrent disjoint patches in multiple rounds preserve both fields."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -370,7 +376,7 @@ async def test_disjoint_concurrent_patch_name_and_notes(db_context):
 
 @pytest.mark.asyncio
 async def test_operation_id_conflict_across_different_profiles(db_context):
-    """Same operation_id across different profile IDs raises IdempotencyConflictError."""
+    """Same operation_id across different profile IDs raises error."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -391,7 +397,7 @@ async def test_operation_id_conflict_across_different_profiles(db_context):
 
 @pytest.mark.asyncio
 async def test_late_bind_rejected_when_active_instance_exists(db_context):
-    """Late bind of old instance A cannot overwrite active instance B without CAS matching."""
+    """Late bind of old instance cannot overwrite active instance without CAS."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -408,7 +414,7 @@ async def test_late_bind_rejected_when_active_instance_exists(db_context):
     assert rt.runtime_instance_id == "inst_B"
     assert rt.observed_state == "running"
 
-    # Same instance re-bind is idempotent and does NOT regress observed_state to starting
+    # Same instance re-bind is idempotent; does not regress observed_state
     await repo.bind_runtime_instance(p.id, "inst_B", config_version=1)
     rt2 = await repo.get_runtime(p.id)
     assert rt2.observed_state == "running"
@@ -452,7 +458,7 @@ async def test_desired_state_idempotent_replay_does_not_clear_failure_count(db_c
 async def test_wal_reader_parallelism_while_write_lock_held(
     db_context, temp_db_path: Path
 ):
-    """Ordinary readers (get/list) do not block when an external connection holds BEGIN IMMEDIATE."""
+    """Ordinary readers do not block when connection holds BEGIN IMMEDIATE."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -465,7 +471,7 @@ async def test_wal_reader_parallelism_while_write_lock_held(
     import time
 
     t0 = time.time()
-    # Read profile while write lock is held: must return promptly without waiting for lock
+    # Read profile while write lock is held: must return promptly
     fetched = await repo.get_profile(p.id)
     elapsed = time.time() - t0
 
@@ -479,7 +485,7 @@ async def test_wal_reader_parallelism_while_write_lock_held(
 
 @pytest.mark.asyncio
 async def test_idempotent_create_tag_conflict_detected(db_context):
-    """Reusing operation_id on create with different tags raises IdempotencyConflictError."""
+    """Reusing operation_id on create with different tags raises error."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -494,7 +500,7 @@ async def test_idempotent_create_tag_conflict_detected(db_context):
 
 @pytest.mark.asyncio
 async def test_same_instance_rebind_and_observation_config_version_guard(db_context):
-    """Same instance rebind or observation with unapplied config_version is rejected."""
+    """Same instance rebind or observation with unapplied version is rejected."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
@@ -512,7 +518,7 @@ async def test_same_instance_rebind_and_observation_config_version_guard(db_cont
     with pytest.raises(InvalidConfigVersionError):
         await repo.bind_runtime_instance(p.id, "inst_X", config_version=2)
 
-    # 3. Legitimate new instance inst_Y bound to v2 with CAS expected_current_instance=inst_X -> succeeds
+    # 3. New instance inst_Y bound to v2 with CAS expected=inst_X -> succeeds
     rt_new = await repo.bind_runtime_instance(
         p.id, "inst_Y", config_version=2, expected_current_instance="inst_X"
     )

@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
 COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
+COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/gateway /app/cbrowser/gateway
 COPY src/backend/cbrowser/rtc_config /app/cbrowser/rtc_config
 COPY src/backend/cbrowser/stream_agent/__init__.py /app/cbrowser/stream_agent/__init__.py

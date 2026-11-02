@@ -82,14 +82,16 @@ async def main():
             await b.setLocalDescription(await b.createAnswer())
             await a.setRemoteDescription(b.localDescription)
             await wait(
-                lambda: ta.committed_generation == tb.committed_generation == generation
+                lambda gen=generation: ta.committed_generation
+                == tb.committed_generation
+                == gen
             )
             assert a.sctp.transport is dtls and a.sctp.transport.transport is ta
             assert ta._connection._udp_mux is mux
             assert dc.readyState == "open"
             marker = "relay-generation-" + str(generation)
             dc.send(marker)
-            await wait(lambda: marker in received)
+            await wait(lambda m=marker: m in received)
             paira = next(iter(ta.active_connection._nominated.values()))
             pairb = next(iter(tb.active_connection._nominated.values()))
             assert paira.local_candidate.type == paira.remote_candidate.type == "relay"
@@ -115,8 +117,8 @@ async def main():
                     "mux_preserved": ta._connection._udp_mux is mux,
                 }
             )
-        assert len(set(row["server_relay_port"] for row in rows)) == 3
-        assert len(set(row["client_relay_port"] for row in rows)) == 3
+        assert len({row["server_relay_port"] for row in rows}) == 3
+        assert len({row["client_relay_port"] for row in rows}) == 3
         print(
             json.dumps(
                 {

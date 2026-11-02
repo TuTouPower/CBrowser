@@ -16,6 +16,7 @@ from typing import Any
 
 import docker
 import httpx
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from .caddyfile import generate_caddyfile
 from .selkies_assets import prepare_selkies_web_assets
@@ -157,7 +158,7 @@ class GatewayTopologyHarness:
             val = secrets.token_urlsafe(32)
             f = self.control_dir / f"{name}_key"
             f.write_text(val, encoding="utf-8")
-            f.chmod(0o644)
+            f.chmod(0o600)
             self.keys[name] = val
             self.key_files[name] = f
 
@@ -192,6 +193,24 @@ class GatewayTopologyHarness:
         return container
 
     async def start(self) -> None:
+        try:
+            await self._do_start()
+        except BaseException as start_exc:
+            logger.error(
+                "GatewayTopologyHarness.start failed: %s; cleaning up topology",
+                type(start_exc).__name__,
+            )
+            try:
+                await self.cleanup()
+            except BaseException as cleanup_exc:
+                logger.error(
+                    "GatewayTopologyHarness.cleanup also failed during start: %s",
+                    type(cleanup_exc).__name__,
+                )
+                raise cleanup_exc from start_exc
+            raise
+
+    async def _do_start(self) -> None:
         self._init_dirs_and_secrets()
         prepare_selkies_web_assets(self.stream_image, self.static_dir)
 
@@ -297,7 +316,7 @@ class GatewayTopologyHarness:
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
                 "CBROWSER_GATEWAY_HOST": "0.0.0.0",
-                "CBROWSER_GATEWAY_PORT": "18097",
+                "CBROWSER_GATEWAY_PORT": str(DEFAULT_GATEWAY_PORT),
                 "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent_key",
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
@@ -325,7 +344,7 @@ class GatewayTopologyHarness:
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
-            ports={"18097/tcp": ("127.0.0.1", None)},
+            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
         self.gateway_container.reload()
         self.gateway_ip = self.gateway_container.attrs["NetworkSettings"]["Networks"][
@@ -364,7 +383,9 @@ class GatewayTopologyHarness:
                 "--api-url",
                 f"http://{self.api_ip}:8000",
                 "--gateway-control-url",
-                f"http://{self.gateway_ip}:18097",
+                f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+                "--gateway-port",
+                str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 self.gateway_container.id,
                 "--coturn-container-id",
@@ -389,7 +410,9 @@ class GatewayTopologyHarness:
         )
 
         # 5. Caddy container
-        caddyfile_content = generate_caddyfile(self.api_ip, self.gateway_ip)
+        caddyfile_content = generate_caddyfile(
+            self.api_ip, self.gateway_ip, DEFAULT_GATEWAY_PORT
+        )
         caddyfile_path = self.work_dir / "Caddyfile"
         caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
 
@@ -418,15 +441,19 @@ class GatewayTopologyHarness:
         )
 
         self.supervisor_container.reload()
-        sup_port = self.supervisor_container.attrs["NetworkSettings"]["Ports"][
-            "8005/tcp"
-        ][0]["HostPort"]
+        sup_ports = self.supervisor_container.attrs["NetworkSettings"]["Ports"]
+        if "8005/tcp" not in sup_ports or not sup_ports["8005/tcp"]:
+            st = self.supervisor_container.status
+            raise RuntimeError(f"Supervisor container did not expose 8005/tcp ({st})")
+        sup_port = sup_ports["8005/tcp"][0]["HostPort"]
         self.supervisor_url = f"http://127.0.0.1:{sup_port}"
 
         self.api_container.reload()
-        api_port = self.api_container.attrs["NetworkSettings"]["Ports"]["8000/tcp"][0][
-            "HostPort"
-        ]
+        api_ports = self.api_container.attrs["NetworkSettings"]["Ports"]
+        if "8000/tcp" not in api_ports or not api_ports["8000/tcp"]:
+            st = self.api_container.status
+            raise RuntimeError(f"API container did not expose 8000/tcp ({st})")
+        api_port = api_ports["8000/tcp"][0]["HostPort"]
         self.api_internal_url = f"http://127.0.0.1:{api_port}"
 
         await wait_until_ready(self.api_internal_url, "/api/v1/health")
@@ -516,9 +543,8 @@ class GatewayTopologyHarness:
         gw_headers = {"Authorization": f"Bearer {self.keys['gateway']}"}
         gw_api_headers = {"Authorization": f"Bearer {self.keys['gateway_api']}"}
         runtime_instance_id = start_data["runtime_instance_id"]
-        gw_port = self.gateway_container.attrs["NetworkSettings"]["Ports"]["18097/tcp"][
-            0
-        ]["HostPort"]
+        gw_ports = self.gateway_container.attrs["NetworkSettings"]["Ports"]
+        gw_port = gw_ports[f"{DEFAULT_GATEWAY_PORT}/tcp"][0]["HostPort"]
         gateway_internal_url = f"http://127.0.0.1:{gw_port}"
         deadline = asyncio.get_running_loop().time() + 30.0
         async with (
@@ -563,52 +589,87 @@ class GatewayTopologyHarness:
         }
 
     async def cleanup(self) -> None:
-        """Tears down and removes all Docker resources prefixed with self.prefix."""
-        try:
-            all_containers = self.docker_client.containers.list(
-                all=True,
-                filters={"label": f"com.cbrowser.prefix={self.prefix}"},
-            )
-            for c in all_containers:
-                try:
-                    c.reload()
-                    nets = list(
-                        c.attrs.get("NetworkSettings", {}).get("Networks", {}).keys()
-                    )
-                    for net_name in nets:
-                        try:
-                            net = self.docker_client.networks.get(net_name)
-                            net.disconnect(c, force=True)
-                        except Exception:
-                            pass
-                    c.stop(timeout=1)
-                except Exception:
-                    pass
-                try:
-                    c.remove(force=True, v=True)
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning("Error stopping containers during cleanup: %s", e)
+        """Tears down all Docker resources strictly labeled with self.prefix."""
+        cleanup_prefixed_resources(self.docker_client, self.prefix)
 
-        try:
-            all_networks = self.docker_client.networks.list(
-                filters={"label": f"com.cbrowser.prefix={self.prefix}"},
-            )
-            for n in all_networks:
-                try:
-                    n.remove()
-                except Exception:
-                    pass
-        except Exception as e:
-            logger.warning("Error removing networks during cleanup: %s", e)
 
+def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
+    """Core cleanup helper: removes resources strictly labeled with prefix."""
+    errors: list[str] = []
+
+    # 1. Containers: verify com.cbrowser.prefix label, remove owned containers
+    try:
+        owned_containers = docker_client.containers.list(
+            all=True,
+            filters={"label": f"com.cbrowser.prefix={prefix}"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        owned_containers = []
+        errors.append(f"containers_list: {type(exc).__name__}")
+
+    for c in owned_containers:
+        lbls = getattr(c, "labels", None)
+        if lbls is None and hasattr(c, "attrs"):
+            lbls = c.attrs.get("Config", {}).get("Labels", {}) or {}
+        lbls = lbls or {}
+        if lbls.get("com.cbrowser.prefix") != prefix:
+            continue
+
+        c_name = getattr(c, "name", "unnamed")
         try:
-            for net in self.docker_client.networks.list():
-                if net.name.startswith(self.prefix):
-                    try:
-                        net.remove()
-                    except Exception:
-                        pass
-        except Exception:
+            c.stop(timeout=1)
+        except docker.errors.NotFound:
             pass
+        except Exception as exc:  # noqa: BLE001
+            err_t = type(exc).__name__
+            logger.warning("Container stop error for %s: %s", c_name, err_t)
+
+        try:
+            c.remove(force=True, v=True)
+        except docker.errors.NotFound:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            err_t = type(exc).__name__
+            logger.error("Container remove error for %s: %s", c_name, err_t)
+            errors.append(f"container_remove({c_name}): {err_t}")
+
+    # 2. Networks: verify com.cbrowser.prefix label, delete empty owned networks
+    try:
+        owned_networks = docker_client.networks.list(
+            filters={"label": f"com.cbrowser.prefix={prefix}"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        owned_networks = []
+        errors.append(f"networks_list: {type(exc).__name__}")
+
+    for n in owned_networks:
+        n_lbls = getattr(n, "attrs", {}).get("Labels") or {}
+        if n_lbls.get("com.cbrowser.prefix") != prefix:
+            continue
+
+        n_name = getattr(n, "name", "unnamed")
+        try:
+            if hasattr(n, "reload"):
+                n.reload()
+        except docker.errors.NotFound:
+            continue
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"network_reload({n_name}): {type(exc).__name__}")
+            continue
+
+        containers_attached = getattr(n, "attrs", {}).get("Containers") or {}
+        if containers_attached:
+            errors.append(f"network_not_empty({n_name})")
+            continue
+
+        try:
+            n.remove()
+        except docker.errors.NotFound:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            err_t = type(exc).__name__
+            logger.error("Network remove error for %s: %s", n_name, err_t)
+            errors.append(f"network_remove({n_name}): {err_t}")
+
+    if errors:
+        raise RuntimeError(f"Cleanup encountered failures: {', '.join(errors)}")

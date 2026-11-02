@@ -7,13 +7,11 @@ Provides explicit exhaustion error, and re-use only after release (AC-002).
 from __future__ import annotations
 
 import asyncio
-from typing import Dict, Set
 
 
 class PortPoolExhaustedError(RuntimeError):
     """Raised when no UDP mux ports are available in [30000, 30991]."""
 
-    pass
 
 
 class PortAllocator:
@@ -26,8 +24,8 @@ class PortAllocator:
         self.min_port = min_port
         self.max_port = max_port
         self._lock = asyncio.Lock()
-        self._allocated: Dict[str, int] = {}  # profile_id -> port
-        self._used_ports: Set[int] = set()
+        self._allocated: dict[str, int] = {}  # profile_id -> port
+        self._used_ports: set[int] = set()
 
     async def allocate(self, profile_id: str) -> int:
         """Idempotently allocate a UDP mux port for profile_id."""

@@ -48,9 +48,8 @@ class AgentRegistry:
     def remove(self, profile_id: str, ws: Any | None = None) -> RegisteredAgent | None:
         """Removes the agent if currently registered (and matches ws if provided)."""
         current = self._agents.get(profile_id)
-        if current is not None:
-            if ws is None or current.ws is ws:
-                return self._agents.pop(profile_id)
+        if current is not None and (ws is None or current.ws is ws):
+            return self._agents.pop(profile_id)
         return None
 
     def update_heartbeat(

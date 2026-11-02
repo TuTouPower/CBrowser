@@ -155,5 +155,10 @@ async def test_snapshot_events_use_unique_event_ids() -> None:
     finally:
         await generator.aclose()
 
-    ids = [line.removeprefix("id: ") for chunk in chunks for line in chunk.splitlines() if line.startswith("id: ")]
+    ids = [
+        line.removeprefix("id: ")
+        for chunk in chunks
+        for line in chunk.splitlines()
+        if line.startswith("id: ")
+    ]
     assert len(ids) == len(set(ids)) == 3

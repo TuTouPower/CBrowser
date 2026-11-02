@@ -14,7 +14,6 @@ from cbrowser.runtime_agent.event_storage import (
 )
 from cbrowser.runtime_agent.protocol import RuntimeEventRecord
 from cbrowser.supervisor.core import SupervisorCore
-from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 
@@ -86,7 +85,10 @@ def test_agent_keeps_only_latest_events_per_instance(tmp_path) -> None:
     storage = EventStorage(tmp_path / "runtime-events" / "p1")
     for index in range(MAX_RUNTIME_EVENTS_PER_INSTANCE + 5):
         _event(storage, f"e{index:04d}")
-    files = list((tmp_path / "runtime-events" / "p1" / "events" / "runtime" / "inst_1").glob("*.json"))
+    files = list(
+        (tmp_path / "runtime-events" / "p1" / "events" / "runtime" / "inst_1")
+        .glob("*.json")
+    )
     assert len(files) == MAX_RUNTIME_EVENTS_PER_INSTANCE
     names = {p.stem for p in files}
     assert "e0000" not in names

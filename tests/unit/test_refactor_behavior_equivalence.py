@@ -137,8 +137,8 @@ def test_container_spec_entrypoint_and_browser_arguments() -> None:
         "/app/entrypoint.sh",
     ]
     command = browser_command("p1", "i1", ":99")
-    assert f"/data/profiles/p1/profile" in command
-    assert f"/data/runtime-events/p1" in command
+    assert "/data/profiles/p1/profile" in command
+    assert "/data/runtime-events/p1" in command
     assert command[-1] == ":99"
 
 

@@ -63,7 +63,11 @@ async def test_scan_inspect_offloads_blocking_docker_call(tmp_path) -> None:
     class _Api:
         def inspect_container(self, _cid):
             time.sleep(0.3)
-            return {"HostConfig": {"PortBindings": {"30000/udp": [{"HostPort": "30000"}]}}}
+            return {
+                "HostConfig": {
+                    "PortBindings": {"30000/udp": [{"HostPort": "30000"}]}
+                }
+            }
 
     docker = SimpleNamespace(
         validator=PathValidator(tmp_path),

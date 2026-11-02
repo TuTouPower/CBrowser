@@ -43,6 +43,7 @@ import docker
 import httpx
 import pytest
 from cbrowser.supervisor.agent_credentials import AgentCredentials
+from gateway_probe.topology import cleanup_prefixed_resources
 
 _offline_path = (
     Path(__file__).resolve().parents[1]
@@ -56,7 +57,7 @@ sys.modules["offline_fixture"] = _offline_mod
 _offline_spec.loader.exec_module(_offline_mod)
 
 RealApiProcess = _offline_mod.RealApiProcess
-RealSupervisorProcess = _offline_mod.RealSupervisorProcess
+RealSupervisorContainer = _offline_mod.RealSupervisorContainer
 RealBrowserActionProbe = _offline_mod.RealBrowserActionProbe
 SupervisorGatewayFixture = _offline_mod.SupervisorGatewayFixture
 get_free_port = _offline_mod.get_free_port
@@ -75,7 +76,7 @@ def parse_docker_timestamp(ts_str: str) -> datetime:
 
 
 @pytest.mark.asyncio
-async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
+async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
     missing = []
     browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
     stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
@@ -212,15 +213,15 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
         token_file=gw_token_file,
     )
 
-    sup_proc = RealSupervisorProcess(
-        api_url=api_proc.url,
+    sup_proc = RealSupervisorContainer(
+        api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
         engine_cache=engine_cache,
         geoip_cache=engine_cache / "geoip",
         token_file=sup_token_file,
         agent_key_file=agent_key_file,
         gateway_url=f"ws://host.docker.internal:{gw_port}",
-        gateway_control_url=f"http://127.0.0.1:{gw_port}",
+        gateway_control_url=f"http://host.docker.internal:{gw_port}",
         gateway_token_file=gw_token_file,
         prefix=prefix,
         port=sup_port,
@@ -228,6 +229,7 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
         env=env,
         log_path=tmp_path / "supervisor.log",
         coturn_container_id=coturn.id,
+        docker_client=d_client,
     )
 
     evidence_records: list[dict] = []
@@ -235,9 +237,9 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
 
     try:
         # Start API, Gateway, and Supervisor subprocesses
-        api_proc.start()
+        await asyncio.to_thread(api_proc.start)
         await gateway.start()
-        sup_proc.start()
+        await asyncio.to_thread(sup_proc.start)
 
         api_headers = {"Authorization": f"Bearer {sup_token_val}"}
         api_headers.update(api_proc.auth_headers)
@@ -390,23 +392,17 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
                     break
             assert updated_at_2_dt is not None, "API did not register failure 2"
 
-            # Sleep ~2.5s into the 10s delay, then SIGKILL Supervisor subprocess
+            # Sleep ~2.5s into the 10s delay, then SIGKILL Supervisor container
             await asyncio.sleep(2.5)
-            old_sup_pid = sup_proc.proc.pid
-            os.kill(old_sup_pid, signal.SIGKILL)
-            sup_proc.proc.wait()
-            assert sup_proc.proc.returncode == -signal.SIGKILL
-            logger.info(
-                "Verified Supervisor PID %s died with returncode=%s",
-                old_sup_pid,
-                sup_proc.proc.returncode,
-            )
+            old_sup_cid = sup_proc.container_id
+            await asyncio.to_thread(sup_proc.sigkill)
+            logger.info("Supervisor container %s killed with SIGKILL 137", old_sup_cid)
 
-            # Resurrect Supervisor with new PID
-            sup_proc.start()
-            new_sup_pid = sup_proc.proc.pid
-            logger.info("Supervisor restarted with new PID %s", new_sup_pid)
-            assert new_sup_pid != old_sup_pid
+            # Resurrect Supervisor with new container identity
+            await asyncio.to_thread(sup_proc.start)
+            new_sup_cid = sup_proc.container_id
+            logger.info("Supervisor restarted with new container ID %s", new_sup_cid)
+            assert new_sup_cid != old_sup_cid
 
             # Wait for instance 2 to be launched
             inst_2 = None
@@ -666,39 +662,8 @@ async def test_supervisor_real_subprocess_retry_e2e(tmp_path: Path):
         logger.info("Evidence successfully recorded to %s", scratch_evidence_path)
 
     finally:
-        sup_proc.stop()
+        await asyncio.to_thread(sup_proc.stop)
         await gateway.stop()
-        api_proc.stop()
-
-        # Clean tracked Docker containers
-        for cid in tracked_cids:
-            try:
-                c = d_client.containers.get(cid)
-                c.remove(force=True)
-            except docker.errors.NotFound:
-                pass
-
-        # No swallowing unexpected cleanup errors: a leaked bridge consumes
-        # Docker's finite default address pool and invalidates later tests.
-        try:
-            for container in d_client.containers.list(
-                all=True,
-                filters={
-                    "label": [
-                        f"com.cbrowser.prefix={prefix}",
-                        "com.cbrowser.managed-by=supervisor",
-                    ]
-                },
-            ):
-                container.remove(force=True)
-            for network in d_client.networks.list(
-                filters={
-                    "label": [
-                        f"com.cbrowser.prefix={prefix}",
-                        "com.cbrowser.managed-by=supervisor",
-                    ]
-                },
-            ):
-                network.remove()
-        finally:
-            d_client.close()
+        await asyncio.to_thread(api_proc.stop)
+        cleanup_prefixed_resources(d_client, prefix)
+        d_client.close()

@@ -25,7 +25,7 @@ async def test_failed_snapshot_rpc_aborts_instead_of_constructing_defaults():
             base_url=f"http://127.0.0.1:{port}", trust_env=False
         ) as api:
             coordinator = RecoveryCoordinator(
-                SimpleNamespace(api=api, _auth_headers=lambda: {})
+                SimpleNamespace(api=api, _auth_headers=dict)
             )
             with pytest.raises(httpx.HTTPStatusError):
                 await coordinator._load_profile_config(

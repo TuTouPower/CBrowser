@@ -14,7 +14,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 from cbrowser.domain.models import RuntimeEventReportRequest
@@ -36,15 +36,15 @@ class EventForwarder:
         self,
         api_base_url: str,
         events_spool_dir: Path,
-        token_file: Optional[Path | str] = None,
-        client: Optional[httpx.AsyncClient] = None,
+        token_file: Path | str | None = None,
+        client: httpx.AsyncClient | None = None,
     ):
         self.api_base_url = api_base_url.rstrip("/")
         self.events_spool_dir = Path(events_spool_dir)
         self.events_spool_dir.mkdir(parents=True, exist_ok=True)
         self._token_file = Path(token_file) if token_file else None
         self._external_client = client
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self._replay_lock = asyncio.Lock()
         self._spool_lock = asyncio.Lock()
 
@@ -65,7 +65,7 @@ class EventForwarder:
             event_file.unlink(missing_ok=True)
             self._sync_directory()
 
-    def _get_bearer_token(self) -> Optional[str]:
+    def _get_bearer_token(self) -> str | None:
         if self._token_file and self._token_file.is_file():
             return read_secret_file(
                 self._token_file, label="Supervisor service token"
@@ -178,7 +178,7 @@ class EventForwarder:
                 return DELIVERED if accepted else REJECTED
             logger.warning("API rejected runtime event: status=%s", resp.status_code)
             return REJECTED if resp.status_code < 500 else UNAVAILABLE
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - transport failure forwarding event marks destination UNAVAILABLE
             logger.debug(f"Network error forwarding event to API: {e}")
             return UNAVAILABLE
 

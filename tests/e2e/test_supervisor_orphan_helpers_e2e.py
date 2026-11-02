@@ -74,9 +74,11 @@ async def test_locked_startup_reaps_helpers_without_touching_other_containers(tm
             assert retained.status == "running"
         # Even matching ownership labels cannot authorize an unrelated name.
         mismatched = launch(prefix + "-unrelated", "cache-init")
-        with CoordinatorLock(tmp_path / "supervisor.lock"):
-            with pytest.raises(DockerSandboxError, match="helper ownership"):
-                await adapter.cleanup_orphan_helpers()
+        with (
+            CoordinatorLock(tmp_path / "supervisor.lock"),
+            pytest.raises(DockerSandboxError, match="helper ownership"),
+        ):
+            await adapter.cleanup_orphan_helpers()
         mismatched.reload()
         assert mismatched.status == "running"
     finally:

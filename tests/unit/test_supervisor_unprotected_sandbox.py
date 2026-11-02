@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import json
 import time
-from types import SimpleNamespace
 
+import cbrowser.supervisor.core as core_module
 import httpx
 import pytest
-import cbrowser.supervisor.core as core_module
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator

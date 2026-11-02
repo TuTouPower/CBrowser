@@ -46,7 +46,9 @@ async def test_supervisor_rejects_gateway_url_port_mismatch(tmp_path: Path) -> N
             SupervisorCore(
                 SimpleNamespace(validator=PathValidator(tmp_path)),
                 PortAllocator(),
-                EventForwarder(str(tmp_path / "unused"), tmp_path / "spool", client=api),
+                EventForwarder(
+                    str(tmp_path / "unused"), tmp_path / "spool", client=api
+                ),
                 api,
                 gateway_url="ws://host.docker.internal:18097",
                 gateway_port=18080,

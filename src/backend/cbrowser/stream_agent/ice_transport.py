@@ -21,7 +21,7 @@ environments.
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 try:
     import selkies
@@ -73,7 +73,6 @@ def is_relay_only() -> bool:
 class UnsupportedSelkiesVersionError(RuntimeError):
     """Raised when runtime versions differ from the pinned Selkies ABI."""
 
-    pass
 
 
 class SelkiesABIGuardError(RuntimeError):
@@ -81,7 +80,6 @@ class SelkiesABIGuardError(RuntimeError):
     missing.
     """
 
-    pass
 
 
 def verify_selkies_abi_guard() -> None:
@@ -144,7 +142,7 @@ def verify_selkies_abi_guard() -> None:
         ) from e
 
 
-def parse_ice_server(server_entry: Union[dict, Any]) -> Any:
+def parse_ice_server(server_entry: dict | Any) -> Any:
     """
     Validate and parse a single ICE server dictionary or RTCIceServer object.
     Fails closed on invalid formats or disallowed types.
@@ -153,7 +151,7 @@ def parse_ice_server(server_entry: Union[dict, Any]) -> Any:
         return server_entry
 
     if not isinstance(server_entry, dict):
-        raise ValueError(
+        raise ValueError(  # noqa: TRY004
             f"Invalid ice_server entry type: {type(server_entry).__name__}, expected"
             f" dict or RTCIceServer"
         )
@@ -167,14 +165,12 @@ def parse_ice_server(server_entry: Union[dict, Any]) -> Any:
     elif isinstance(urls, (list, tuple)):
         urls_list = list(urls)
     else:
-        raise ValueError(f"Invalid urls type: {type(urls).__name__}")
+        raise ValueError(f"Invalid urls type: {type(urls).__name__}")  # noqa: TRY004
 
     for u in urls_list:
         if not isinstance(u, str):
-            raise ValueError(f"URL entry must be string, got {type(u).__name__}")
-        if not (
-            u.startswith("stun:") or u.startswith("turn:") or u.startswith("turns:")
-        ):
+            raise ValueError(f"URL entry must be string, got {type(u).__name__}")  # noqa: TRY004
+        if not u.startswith(("stun:", "turn:", "turns:")):
             raise ValueError("Unsupported ICE server scheme")
 
     username = server_entry.get("username")
@@ -200,12 +196,12 @@ def parse_ice_server(server_entry: Union[dict, Any]) -> Any:
     )
 
 
-def validate_ice_servers(servers: Optional[List[Union[dict, Any]]]) -> List[Any]:
+def validate_ice_servers(servers: list[dict | Any] | None) -> list[Any]:
     """Parse and validate a list of ICE servers."""
     if not servers:
         return []
     if not isinstance(servers, (list, tuple)):
-        raise ValueError("ice_servers must be a list")
+        raise ValueError("ice_servers must be a list")  # noqa: TRY004
     return [parse_ice_server(s) for s in servers]
 
 
@@ -249,16 +245,16 @@ class GenerationIceTransport(
         self.active_generation: int = 1
         self.committed_generation: int = 1
         self.active_connection: Connection = self._connection
-        self.packets: asyncio.Queue[Optional[bytes]] = asyncio.Queue()
+        self.packets: asyncio.Queue[bytes | None] = asyncio.Queue()
         self.pumps: dict[Connection, asyncio.Task] = {}
         self.restart_pending: bool = False
         self.restart_lock: asyncio.Lock = asyncio.Lock()
-        self.previous_remote_credentials: Optional[Tuple[str, str]] = None
-        self.retired_generations: list[Dict[str, Any]] = []
+        self.previous_remote_credentials: tuple[str, str] | None = None
+        self.retired_generations: list[dict[str, Any]] = []
 
         self.current_local_ufrag: str = self._connection.local_username
-        self.current_remote_ufrag: Optional[str] = None
-        self.last_error: Optional[str] = None
+        self.current_remote_ufrag: str | None = None
+        self.last_error: str | None = None
 
         self.relay_only: bool = _RELAY_ONLY
         if self.relay_only:
@@ -325,7 +321,7 @@ class GenerationIceTransport(
                 self.packets.put_nowait(pkt)
         except (ConnectionError, asyncio.CancelledError):
             return
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - packet pump termination on connection failure returns cleanly
             logger.debug("Pump ended with %s", type(e).__name__)
             return
 
@@ -335,7 +331,7 @@ class GenerationIceTransport(
 
     async def prepare_restart(
         self,
-        ice_servers: Optional[List[Any]] = None,
+        ice_servers: list[Any] | None = None,
         force_relay: bool = False,
     ) -> None:
         """Prepare a new generation ICE gatherer before SDP renegotiation.
@@ -494,7 +490,7 @@ class GenerationIceTransport(
                     await previous_conn.send(b"retired-generation-must-reject")
                 except ConnectionError:
                     send_rejected = True
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - any send failure on retired connection confirms successful retirement
                     send_rejected = True
                     logger.debug(
                         "Old connection rejected send with %s", type(e).__name__
@@ -537,7 +533,7 @@ class GenerationIceTransport(
             if self.active_connection is not self._connection:
                 await self.active_connection.close()
 
-    def get_diagnostics(self) -> Dict[str, Any]:
+    def get_diagnostics(self) -> dict[str, Any]:
         """
         Return diagnostic state without leaking credentials or passwords.
         """
@@ -601,7 +597,7 @@ def _main_transport(peer_connection: Any) -> "GenerationIceTransport":
 
 async def create_restart_offer(
     peer_connection: Any,
-    server_ice_servers: Optional[List[Union[dict, Any]]] = None,
+    server_ice_servers: list[dict | Any] | None = None,
     force_relay: bool = False,
 ) -> Any:
     """Prepares the main existing transport on peer_connection for an ICE restart
@@ -654,14 +650,14 @@ async def wait_restart_commit(peer_connection: Any, timeout: float) -> int:
 
 __all__ = [
     "GenerationIceTransport",
-    "install_ice_transport",
+    "SelkiesABIGuardError",
+    "UnsupportedSelkiesVersionError",
     "create_restart_offer",
-    "wait_restart_commit",
-    "verify_selkies_abi_guard",
-    "validate_ice_servers",
+    "install_ice_transport",
+    "is_relay_only",
     "parse_ice_server",
     "set_relay_only",
-    "is_relay_only",
-    "UnsupportedSelkiesVersionError",
-    "SelkiesABIGuardError",
+    "validate_ice_servers",
+    "verify_selkies_abi_guard",
+    "wait_restart_commit",
 ]

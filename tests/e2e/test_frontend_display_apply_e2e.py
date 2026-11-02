@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
@@ -23,12 +24,16 @@ from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
+logger = logging.getLogger(__name__)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
+BACKEND_DIR = REPO_ROOT / "src" / "backend"
+for p in (str(REPO_ROOT), str(FIXTURES_DIR), str(BACKEND_DIR)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
 
@@ -113,8 +118,8 @@ async def wait_iframe_stats(
                     return await fn();
                 }"""
             )
-        except Exception as exc:
-            last = {"error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - page navigating / iframe swapped
+            last = {"error": type(exc).__name__}
         if (
             last
             and last.get("video")
@@ -269,8 +274,8 @@ async def test_display_profile_size_requires_explicit_apply(
             try:
                 async with await harness.api_client() as client:
                     await client.post(f"/api/v1/profiles/{profile_id}/stop")
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - best-effort profile stop cleanup
+                logger.debug("Profile stop cleanup skipped: %s", type(exc).__name__)
         await browser.close()
         await pw.stop()
 
@@ -282,7 +287,7 @@ def test_stream_entrypoint_rejects_missing_supervised_screen_config() -> None:
     env = {
         "CBROWSER_PROFILE_ID": "display_probe",
         "CBROWSER_RUNTIME_INSTANCE_ID": "inst_display_probe",
-        "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:18097",
+        "CBROWSER_GATEWAY_URL": f"ws://127.0.0.1:{DEFAULT_GATEWAY_PORT}",
         "CBROWSER_CONFIG_VERSION": "1",
         "CBROWSER_WEBRTC_PUBLIC_IP": "127.0.0.1",
         "CBROWSER_AGENT_TOKEN": secrets.token_urlsafe(32),
@@ -293,7 +298,9 @@ def test_stream_entrypoint_rejects_missing_supervised_screen_config() -> None:
         command.extend(["-e", f"{key}={value}"])
     command.append(image)
 
-    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=120, check=False
+    )
     output = f"{result.stdout}\n{result.stderr}"
     assert result.returncode != 0, output
     assert "CONFIG_ERROR" in output and "CBROWSER_SCREEN_WIDTH" in output, output

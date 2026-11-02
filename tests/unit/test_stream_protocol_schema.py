@@ -25,9 +25,11 @@ def test_exported_stream_schema_matches_models():
 def test_stream_schema_accepts_protocol_packets_without_visibility_update():
     schema = json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
     validator = Draft202012Validator(schema)
-    identity = dict(
-        version="v2", profile_id="profile_1", runtime_instance_id="runtime:1"
-    )
+    identity = {
+        "version": "v2",
+        "profile_id": "profile_1",
+        "runtime_instance_id": "runtime:1",
+    }
     packets = [
         dict(
             identity, action="register", agent_session_id=None, conn_id=None, payload={}

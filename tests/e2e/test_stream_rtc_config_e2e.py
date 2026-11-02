@@ -48,7 +48,9 @@ def test_gateway_rtc_config_reaches_selkies_rtc_app() -> None:
         "/probe.py",
     ]
     try:
-        result = subprocess.run(args, text=True, capture_output=True, timeout=60)
+        result = subprocess.run(
+            args, text=True, capture_output=True, timeout=60, check=False
+        )
         assert result.returncode == 0, result.stdout + result.stderr
         proof = json.loads(result.stdout.strip().splitlines()[-1])
     finally:
@@ -109,7 +111,9 @@ def test_gateway_rtc_config_relay_only_restricts_candidates() -> None:
         "/probe.py",
     ]
     try:
-        result = subprocess.run(args, text=True, capture_output=True, timeout=60)
+        result = subprocess.run(
+            args, text=True, capture_output=True, timeout=60, check=False
+        )
         assert result.returncode == 0, result.stdout + result.stderr
         proof = json.loads(result.stdout.strip().splitlines()[-1])
     finally:

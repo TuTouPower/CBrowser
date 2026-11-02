@@ -9,17 +9,28 @@ import collections
 import logging
 import math
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from .policy_rules import (
     DISALLOWED_SETTINGS_KEYS,
     FORBIDDEN_PEER_PREFIXES,
     MAX_HISTORY_SIZE,
-    iso_now as _iso_now,
-    sanitize_caller as _sanitize_caller,
     sanitize_settings_message,
     should_block_client_verb,
 )
+from .policy_rules import (
+    iso_now as _iso_now,
+)
+from .policy_rules import (
+    sanitize_caller as _sanitize_caller,
+)
+
+__all__ = [
+    "DISALLOWED_SETTINGS_KEYS",
+    "LiveCapturePolicyAgent",
+    "sanitize_settings_message",
+    "should_block_client_verb",
+]
 
 logger = logging.getLogger("cbrowser.stream_agent.policy")
 
@@ -61,14 +72,14 @@ class LiveCapturePolicyAgent:
         self._resume_time: float = 0.0
 
         # Gateway authenticated viewers: conn_id -> {"active": bool, "tab_id": str}
-        self.peers: Dict[str, Dict[str, Any]] = {}
+        self.peers: dict[str, dict[str, Any]] = {}
 
         # Mapping between SDK peer_id and Gateway conn_id
-        self._sdk_peer_to_conn: Dict[str, str] = {}
-        self._conn_to_sdk_peer: Dict[str, str] = {}
+        self._sdk_peer_to_conn: dict[str, str] = {}
+        self._conn_to_sdk_peer: dict[str, str] = {}
 
         # Supervisor quota cap
-        self._supervisor_fps_cap: Optional[float] = None
+        self._supervisor_fps_cap: float | None = None
 
         # Damage stats tracking
         self._last_frames_count: int = 0
@@ -77,8 +88,8 @@ class LiveCapturePolicyAgent:
         self.motion_fps_estimate: float = 0.0
 
         # Async background tasks
-        self._loop_task: Optional[asyncio.Task] = None
-        self._motion_task: Optional[asyncio.Task] = None
+        self._loop_task: asyncio.Task | None = None
+        self._motion_task: asyncio.Task | None = None
 
         # Bounded action audit log
         self._action_history: collections.deque = collections.deque(
@@ -142,8 +153,8 @@ class LiveCapturePolicyAgent:
 
     def unregister_peer_mapping(
         self,
-        sdk_peer_id: Optional[str] = None,
-        conn_id: Optional[str] = None,
+        sdk_peer_id: str | None = None,
+        conn_id: str | None = None,
     ) -> None:
         """Unmap SDK peer_id and Gateway conn_id."""
         if sdk_peer_id:
@@ -168,7 +179,7 @@ class LiveCapturePolicyAgent:
         self,
         peer_id: str,
         active: bool,
-        tab_id: Optional[str] = None,
+        tab_id: str | None = None,
     ) -> None:
         """
         Record viewer visibility. Gateway conn_id is the primary identity.
@@ -207,7 +218,7 @@ class LiveCapturePolicyAgent:
         """Remove viewer by authenticated Gateway conn_id."""
         self.remove_peer(viewer_id)
 
-    def set_supervisor_quota(self, fps_cap: Optional[float]) -> None:
+    def set_supervisor_quota(self, fps_cap: float | None) -> None:
         """
         Set or clear supervisor overload quota cap.
         Validates that quota is a positive, non-NaN finite number <= max_fps.
@@ -243,7 +254,7 @@ class LiveCapturePolicyAgent:
         """Return True if any authenticated viewer is currently visible."""
         return any(st.get("active", False) for st in self.peers.values())
 
-    def selkies_video_state(self) -> Tuple[int, bool]:
+    def selkies_video_state(self) -> tuple[int, bool]:
         """Unpaused primary video consumers and capture state, read from Selkies.
 
         Peer pause flags are set only by Selkies STOP_VIDEO/START_VIDEO handling.
@@ -259,7 +270,7 @@ class LiveCapturePolicyAgent:
         )
         return unpaused, capturing
 
-    def log_action(self, action: str, details: Dict[str, Any]) -> None:
+    def log_action(self, action: str, details: dict[str, Any]) -> None:
         """Log pipeline action to bounded ring buffer with ISO8601 timestamp."""
         entry = {
             "time": time.monotonic(),
@@ -271,7 +282,7 @@ class LiveCapturePolicyAgent:
         logger.info("[POLICY_ACTION] %s: %s", action, details)
 
     @property
-    def action_history(self) -> List[Dict[str, Any]]:
+    def action_history(self) -> list[dict[str, Any]]:
         """Return snapshot of action history."""
         return list(self._action_history)
 
@@ -337,7 +348,7 @@ class LiveCapturePolicyAgent:
                                 self._has_screen_motion = True
                             else:
                                 self._has_screen_motion = False
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - motion check query exception non-fatal to monitoring loop
                     logger.debug("Motion check exception: %s", e)
         except asyncio.CancelledError:
             pass
@@ -354,7 +365,7 @@ class LiveCapturePolicyAgent:
     async def reconcile_capture_state(
         self,
         caller: str = "",
-        damage_frame_count: Optional[int] = None,
+        damage_frame_count: int | None = None,
     ) -> None:
         """
         Unified, idempotent, serialized capture state controller.
@@ -497,9 +508,9 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
 
         def __init__(self, supervisor: Any):
             super().__init__(supervisor)
-            self.policy_agent: Optional[LiveCapturePolicyAgent] = None
+            self.policy_agent: LiveCapturePolicyAgent | None = None
             # Set by StreamAgent; pushes Gateway RTC config once RTCApp exists.
-            self.rtc_ready_hook: Optional[Any] = None
+            self.rtc_ready_hook: Any | None = None
             self._action_history: collections.deque = collections.deque(
                 maxlen=MAX_HISTORY_SIZE
             )
@@ -517,7 +528,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
         ) -> None:
             logger.debug("Ignored Selkies RTC config monitor update")
 
-        def log_pipeline_action(self, action: str, details: Dict[str, Any]) -> None:
+        def log_pipeline_action(self, action: str, details: dict[str, Any]) -> None:
             entry = {
                 "time": time.monotonic(),
                 "timestamp": _iso_now(),
@@ -531,7 +542,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             self,
             msg: Any,
             display_id: str = "primary",
-            conn_id: Optional[str] = None,
+            conn_id: str | None = None,
         ) -> Any:
             """
             Input handler and protocol armor:
@@ -555,11 +566,12 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                     msg = sanitized
 
             # Track user input activity (including native Chinese IME co,end)
-            if isinstance(msg, str) and msg.startswith(
-                ("kd,", "ku,", "m,", "m2,", "sf,", "sfe,", "co,")
+            if (
+                isinstance(msg, str)
+                and msg.startswith(("kd,", "ku,", "m,", "m2,", "sf,", "sfe,", "co,"))
+                and self.policy_agent
             ):
-                if self.policy_agent:
-                    self.policy_agent.record_input()
+                self.policy_agent.record_input()
 
             # Unconditionally pass through to X11 input handler (NO LEASE LOCK!)
             return super()._on_peer_data_message(msg, display_id, conn_id=conn_id)
@@ -568,11 +580,11 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             self,
             session_peer_id: str,
             client_type: str,
-            client_token: Optional[str] = None,
+            client_token: str | None = None,
             display_id: str = "primary",
             display_position: str = "right",
-            fullcolor_codecs: Optional[list] = None,
-            tenbit_codecs: Optional[list] = None,
+            fullcolor_codecs: list | None = None,
+            tenbit_codecs: list | None = None,
         ) -> None:
             """
             SDK session start: registers the peer connection with base service.
@@ -672,7 +684,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 )
 
         async def handle_peer_gone(
-            self, peer_id: str, peer: Optional[Dict[str, Any]] = None
+            self, peer_id: str, peer: dict[str, Any] | None = None
         ) -> None:
             """Hook into peer departure."""
             logger.info("Hooked handle_peer_gone: peer=%s", peer_id)

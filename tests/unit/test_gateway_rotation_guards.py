@@ -17,7 +17,6 @@ from cbrowser.rtc_config.service import RtcConfigService
 from cbrowser.stream_agent.agent import StreamAgent
 from cbrowser.stream_agent.protocol import (
     AgentAction,
-    GatewayControlEnvelope,
     ProtocolEnvelope,
 )
 
@@ -43,7 +42,13 @@ def _coordinator(service):
     async def send_viewer(_conn, _frame):
         return None
 
-    return RotationCoordinator(service, send_agent, send_viewer, lambda _pid: [], lambda _pid: None)
+    return RotationCoordinator(
+        service,
+        send_agent,
+        send_viewer,
+        lambda _pid: [],
+        lambda _pid: None,
+    )
 
 
 def test_expired_current_generation_fails_closed(tmp_path) -> None:

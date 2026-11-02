@@ -8,7 +8,11 @@ import pytest
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.api.runtime_coordinator import ReconcileOutcome, RuntimeCoordinator, RuntimeEventBroadcaster
+from cbrowser.api.runtime_coordinator import (
+    ReconcileOutcome,
+    RuntimeCoordinator,
+    RuntimeEventBroadcaster,
+)
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.services.profile_service import ProfileService
 from pydantic import SecretStr

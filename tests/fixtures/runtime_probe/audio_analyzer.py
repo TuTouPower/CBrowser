@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Derived from s007 audio_analyzer.py.
 # SHA256: a8337f5b446f40659fdd43c0f5a28d1921aaff381c93eb010e4d77937ff06e3b.
 """
@@ -165,7 +164,7 @@ def analyze_pcm(
     sample_rate: int = 48000,
     tolerance: float = 0.01,
     expect_fail: bool = False,
-    crosstalk_freq: float = None,
+    crosstalk_freq: float | None = None,
 ):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Audio file not found: {file_path}")

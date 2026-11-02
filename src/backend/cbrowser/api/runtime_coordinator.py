@@ -7,8 +7,9 @@ import logging
 import secrets
 import uuid
 from collections import deque
+from collections.abc import AsyncGenerator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, AsyncGenerator, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import httpx
@@ -125,7 +126,7 @@ class RuntimeEventBroadcaster:
                     event = await asyncio.wait_for(q.get(), timeout=15.0)
                     payload = event.data.model_dump_json()
                     yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     yield ": ping\n\n"
         finally:
             self._subscribers.discard(q)
@@ -230,11 +231,11 @@ class RuntimeCoordinator:
                             p.id,
                         )
                         self.trigger_reconcile(p.id)
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - startup scan must isolate per-profile inspection failure
                     logger.warning(
                         "Error checking runtime on startup for %s: %s", p.id, e
                     )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - top-level startup task boundary prevents worker crash
             logger.error("Failed to run startup reconciliation scan: %s", e)
 
     async def stop(self) -> None:
@@ -290,7 +291,7 @@ class RuntimeCoordinator:
             await self.broadcaster.publish(data)
         except ProfileNotFoundError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - event broadcaster boundary protects coordinator loop
             logger.warning("Error publishing profile runtime change: %s", e)
 
     def trigger_reconcile(self, profile_id: str) -> None:
@@ -361,7 +362,7 @@ class RuntimeCoordinator:
             latest_v = max(
                 (v.version for v in versions), default=runtime.config_version
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 - config version query failure safely falls back to current runtime version
             latest_v = runtime.config_version
 
         req_body = {
@@ -390,7 +391,7 @@ class RuntimeCoordinator:
         detail = ""
         try:
             detail = resp.json().get("detail", resp.text)
-        except Exception:
+        except Exception:  # noqa: BLE001 - non-dict or invalid JSON fallback to raw text
             detail = resp.text
         err_msg = f"Supervisor start failed ({resp.status_code}): {detail}"
         self.set_last_error(profile_id, err_msg)
@@ -461,7 +462,7 @@ class RuntimeCoordinator:
         detail = ""
         try:
             detail = resp.json().get("detail", resp.text)
-        except Exception:
+        except Exception:  # noqa: BLE001 - non-dict or invalid JSON fallback to raw text
             detail = resp.text
         err_msg = f"Supervisor stop failed ({resp.status_code}): {detail}"
         self.set_last_error(profile_id, err_msg)
@@ -482,7 +483,9 @@ class RuntimeCoordinator:
                     raise
                 except Exception as e:
                     logger.exception(
-                        "Unexpected error reconciling profile %s: %s", profile_id, e
+                        "Unexpected error reconciling profile %s: %s",
+                        profile_id,
+                        e,  # noqa: TRY401
                     )
                     self.set_last_error(
                         profile_id, f"Coordinator error: {type(e).__name__}"
@@ -501,7 +504,7 @@ class RuntimeCoordinator:
                     break
                 if outcome is ReconcileOutcome.TERMINATED:
                     # Blocked intent keeps its last error; a manual reset creates
-                    # a new reconciliation round instead of a silent retry loop.
+                    # a fresh reconcile round with cleared errors.
                     break
                 retries += 1
                 limit = self.max_retries
@@ -510,8 +513,11 @@ class RuntimeCoordinator:
                         rt = await self.profile_service.get_runtime(profile_id)
                         if rt.desired_state == "stopped":
                             limit = self.stop_max_retries
-                    except Exception:
-                        pass
+                    except Exception as exc:  # noqa: BLE001 - non-critical query failure falls back to default limit
+                        logger.debug(
+                            "Failed querying runtime for stop retries: %s",
+                            type(exc).__name__,
+                        )
                 if limit is not None and retries >= limit:
                     logger.warning(
                         "Reconciliation retry limit reached: profile=%s limit=%s",

@@ -18,16 +18,16 @@ if TYPE_CHECKING:
     from .protocol import AgentAction, ProtocolEnvelope
 
 __all__ = [
+    "AgentAction",
+    "LiveCapturePolicyAgent",
+    "ProtocolEnvelope",
+    "SecurityError",
     "StreamAgent",
     "StreamAgentConfig",
-    "LiveCapturePolicyAgent",
-    "SecurityError",
-    "verify_stream_runtime_boundaries",
     "sanitize_settings_message",
-    "should_block_client_verb",
-    "AgentAction",
-    "ProtocolEnvelope",
     "setup_service_logging",
+    "should_block_client_verb",
+    "verify_stream_runtime_boundaries",
 ]
 
 

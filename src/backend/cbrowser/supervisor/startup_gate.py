@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """CBrowser runtime startup gate.
 
 Waits boundedly for sibling ready.json matching instance_id and role,

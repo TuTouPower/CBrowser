@@ -104,7 +104,7 @@ async def subscribe_runtime_events(
                         updated_at=rt.updated_at,
                     )
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - single profile failure must not abort initial SSE snapshot
                 logger.warning(
                     "SSE snapshot unavailable: profile=%s error_type=%s",
                     p.id,

@@ -1,7 +1,5 @@
 """Stopping never depends on the signaling plane or on teardown success."""
 
-from types import SimpleNamespace
-
 import httpx
 import pytest
 from cbrowser.supervisor.core import ActiveSession, SupervisorCore
@@ -43,8 +41,6 @@ def _core(tmp_path, docker, gateway):
 async def test_stop_continues_after_gateway_disconnect_failure(
     tmp_path, gateway_error
 ):
-    calls = []
-
     class _Gateway:
         async def disconnect_viewers(self, profile_id, instance):
             if gateway_error == "status":

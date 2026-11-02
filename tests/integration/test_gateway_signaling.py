@@ -35,8 +35,10 @@ async def test_agent_register_rejects_invalid_token(tmp_path: Path) -> None:
         url = f"{harness.ws_url}/stream/agent/register"
         headers = {"Authorization": f"Bearer {invalid_token}"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(url, headers=headers) as ws:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.ws_connect(url, headers=headers) as ws,
+        ):
                 payload = AgentRegisterPayload(
                     hostname="host-1",
                     profile_id=profile_id,

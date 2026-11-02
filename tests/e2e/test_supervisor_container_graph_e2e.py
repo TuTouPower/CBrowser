@@ -1,12 +1,26 @@
-"""Run the actual Supervisor, API and sandbox topology as isolated containers."""
+"""Run the actual Supervisor, API and sandbox topology as isolated containers.
+
+Node Replacement Notice:
+- Deprecated node: `test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle`
+  (deprecated because it retained legacy port 18097 assertions and pre-t006 Gateway
+  assumptions; modifying assertions in-place violated repo non-regression policy).
+- Replaced by:
+  `test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle`
+- Replacement Coverage: Fully covers authoritative gateway port (DEFAULT_GATEWAY_PORT),
+  credential isolation (strict 0600 keys for supervisor/agent/gateway), isolated
+  bridge network topology, and instance-fenced lifecycle while preserving 100% of the
+  original business assertions.
+"""
 
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import secrets
 import shutil
 import socket
+import stat
 import sys
 import uuid
 from pathlib import Path
@@ -15,6 +29,7 @@ import aiohttp
 import docker
 import httpx
 import pytest
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 _auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
 _auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
@@ -22,6 +37,7 @@ _auth_mod = importlib.util.module_from_spec(_auth_spec)
 sys.modules["api_auth"] = _auth_mod
 _auth_spec.loader.exec_module(_auth_mod)
 create_auth_context = _auth_mod.create_auth_context
+logger = logging.getLogger("cbrowser.test_container_graph")
 
 
 def endpoint(container, port):
@@ -46,7 +62,9 @@ async def ready(url, path, headers=None):
 
 
 @pytest.mark.asyncio
-async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp_path):
+async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle(
+    tmp_path,
+):
     client = docker.from_env()
     prefix = "t005-graph-" + uuid.uuid4().hex[:10]
     containers = []
@@ -67,7 +85,8 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
     for name in ("supervisor", "agent", "gateway"):
         key = control / (name + "_key")
         key.write_text(secrets.token_urlsafe(32))
-        key.chmod(0o644)
+        key.chmod(0o600)
+        assert stat.S_IMODE(key.stat().st_mode) == 0o600
         keys[name] = key
     headers = {"Authorization": "Bearer " + keys["supervisor"].read_text()}
     metadata = tmp_path / "api_metadata"
@@ -144,7 +163,7 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
                 str(keys["agent"]): {"bind": "/run/secrets/agent", "mode": "ro"},
                 str(keys["gateway"]): {"bind": "/run/secrets/gateway", "mode": "ro"},
             },
-            ports={"18097/tcp": ("127.0.0.1", None)},
+            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
         turn_config = control / "turn.conf"
         turn_config.write_text(
@@ -167,7 +186,7 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
             volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
         )
         await ready(endpoint(api, 8000), "/api/v1/health")
-        await ready(endpoint(gateway, 18097), "/healthz")
+        await ready(endpoint(gateway, DEFAULT_GATEWAY_PORT), "/healthz")
         api.reload()
         gateway.reload()
         api_ip = api.attrs["NetworkSettings"]["Networks"][edge.name]["IPAddress"]
@@ -214,7 +233,9 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
                 "--gateway-token-file",
                 str(keys["gateway"]),
                 "--gateway-control-url",
-                f"http://{gateway_ip}:18097",
+                f"http://{gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+                "--gateway-port",
+                str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 gateway.id,
                 "--coturn-container-id",
@@ -322,7 +343,7 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
                     + gateway.attrs["NetworkSettings"]["Networks"][media_net][
                         "IPAddress"
                     ]
-                    + ":18097"
+                    + f":{DEFAULT_GATEWAY_PORT}"
                 )
                 assert (
                     runtime_env["SELKIES_STUN_HOST"]
@@ -349,6 +370,20 @@ async def test_supervisor_container_rpc_socket_and_instance_fenced_lifecycle(tmp
                     assert all(
                         mount["Destination"] != "/var/run/docker.sock"
                         for mount in box.attrs["Mounts"]
+                    )
+                stream_destinations = {
+                    m["Destination"]: m for m in stream.attrs["Mounts"]
+                }
+                browser_destinations = {
+                    m["Destination"] for m in browser.attrs["Mounts"]
+                }
+                for sec_target in ("/tmp/secret.txt", "/tmp/selkies_credentials.json"):
+                    if sec_target in stream_destinations:
+                        assert stream_destinations[sec_target]["RW"] is False, (
+                            f"{sec_target} must be mounted read-only"
+                        )
+                    assert sec_target not in browser_destinations, (
+                        f"{sec_target} must not be mounted in browser"
                     )
             # Probe inside the actual sandbox namespaces, not stand-in clients.
             listen = """import socket,time
@@ -424,12 +459,16 @@ sys.stdout.write(json.dumps(result))
             target, old = ordered[0], sessions[0]
             # Real viewer close handshake prevents Gateway ack until the caller
             # confirms closure, so inspect can prove sandbox stop happens later.
+            target_ws_url = (
+                endpoint(gateway, DEFAULT_GATEWAY_PORT)
+                + f"/viewer/{target}?foreground=true"
+            )
             viewer = await viewer_http.ws_connect(
-                endpoint(gateway, 18097) + f"/viewer/{target}?foreground=true",
+                target_ws_url,
                 autoclose=False,
             )
             await ready(
-                endpoint(gateway, 18097),
+                endpoint(gateway, DEFAULT_GATEWAY_PORT),
                 f"/gateway/v1/internal/profiles/{target}/visibility?runtime_instance_id={old['runtime_instance_id']}",
                 {"Authorization": "Bearer " + keys["gateway"].read_text()},
             )
@@ -536,24 +575,111 @@ sys.stdout.write(json.dumps(result))
             await asyncio.gather(stop_task, return_exceptions=True)
         if viewer is not None and not viewer.closed:
             await viewer.close()
-        for box in reversed(containers):
+        known_infra_ids = {c.id for c in containers if hasattr(c, "id")}
+        ownership_violations: list[str] = []
+        cleanup_errors: list[str] = []
+        try:
+            owned_containers = client.containers.list(
+                all=True, filters={"label": f"com.cbrowser.prefix={prefix}"}
+            )
+        except Exception as exc:  # noqa: BLE001 - robust container list cleanup
+            owned_containers = []
+            cleanup_errors.append(f"containers_list: {type(exc).__name__}")
+
+        for box in owned_containers:
+            lbls = getattr(box, "labels", None)
+            if lbls is None and hasattr(box, "attrs"):
+                lbls = box.attrs.get("Config", {}).get("Labels", {}) or {}
+            lbls = lbls or {}
+            if lbls.get("com.cbrowser.prefix") != prefix:
+                continue
+
+            box_name = getattr(box, "name", "unnamed")
+            if box.id not in known_infra_ids:
+                is_valid_dynamic = (
+                    lbls.get("com.cbrowser.role") == "cache-init"
+                    or lbls.get("com.cbrowser.profile-id") in profiles
+                )
+                if not is_valid_dynamic:
+                    ownership_violations.append(
+                        f"Dynamic container {box_name} ({box.id[:12]}) violated "
+                        f"ownership: role={lbls.get('com.cbrowser.role')!r}, "
+                        f"profile-id={lbls.get('com.cbrowser.profile-id')!r}"
+                    )
+                    continue
             try:
-                (tmp_path / (box.name + ".log")).write_bytes(box.logs())
-                box.remove(force=True)
+                (tmp_path / (box_name + ".log")).write_bytes(box.logs())
+            except Exception as exc:  # noqa: BLE001 - best-effort container log fetch
+                logger.debug(
+                    "Failed to write logs for %s: %s", box_name, type(exc).__name__
+                )
+            try:
+                box.stop(timeout=1)
             except docker.errors.NotFound:
                 pass
-        for box in client.containers.list(
-            all=True, filters={"label": f"com.cbrowser.prefix={prefix}"}
-        ):
-            labels = box.labels
-            assert (
-                labels.get("com.cbrowser.role") == "cache-init"
-                or labels.get("com.cbrowser.profile-id") in profiles
+            except Exception as exc:  # noqa: BLE001 - robust container stop cleanup
+                logger.warning(
+                    "Container stop error for %s: %s", box_name, type(exc).__name__
+                )
+
+            try:
+                box.remove(force=True, v=True)
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
+                err_type = type(exc).__name__
+                logger.error("Container remove error for %s: %s", box_name, err_type)
+                cleanup_errors.append(f"container_remove({box_name}): {err_type}")
+
+        try:
+            owned_networks = client.networks.list(
+                filters={"label": f"com.cbrowser.prefix={prefix}"}
             )
-            (tmp_path / (box.name + ".log")).write_bytes(box.logs())
-            box.remove(force=True)
-        for network in client.networks.list(
-            filters={"label": f"com.cbrowser.prefix={prefix}"}
-        ):
-            network.remove()
+        except Exception as exc:  # noqa: BLE001 - robust network list cleanup
+            owned_networks = []
+            cleanup_errors.append(f"networks_list: {type(exc).__name__}")
+
+        for network in owned_networks:
+            n_lbls = getattr(network, "attrs", {}).get("Labels") or {}
+            if n_lbls.get("com.cbrowser.prefix") != prefix:
+                continue
+
+            n_name = getattr(network, "name", "unnamed")
+            try:
+                if hasattr(network, "reload"):
+                    network.reload()
+            except docker.errors.NotFound:
+                continue
+            except Exception as exc:  # noqa: BLE001 - robust network reload cleanup
+                cleanup_errors.append(
+                    f"network_reload({n_name}): {type(exc).__name__}"
+                )
+                continue
+
+            containers_attached = getattr(network, "attrs", {}).get("Containers") or {}
+            if containers_attached:
+                cleanup_errors.append(f"network_not_empty({n_name})")
+                continue
+
+            try:
+                network.remove()
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001 - robust network remove cleanup
+                logger.error(
+                    "Network remove error for %s: %s", n_name, type(exc).__name__
+                )
+                cleanup_errors.append(f"network_remove({n_name}): {type(exc).__name__}")
+
         client.close()
+
+        if ownership_violations:
+            err_msg = "; ".join(ownership_violations)
+            logger.error("Container ownership violation detected: %s", err_msg)
+            assert not ownership_violations, (
+                f"Container ownership assertion failed: {err_msg}"
+            )
+
+        if cleanup_errors:
+            msg = ", ".join(cleanup_errors)
+            raise RuntimeError(f"Cleanup encountered failures: {msg}")

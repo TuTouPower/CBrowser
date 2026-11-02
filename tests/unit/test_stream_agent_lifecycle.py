@@ -6,6 +6,7 @@ reconnect backoff (1/2/4/8/16/30), RTC config push, and credential redaction.
 import asyncio
 import importlib.metadata
 import json
+import logging
 import os
 import secrets
 from unittest.mock import patch
@@ -25,6 +26,8 @@ from cbrowser.stream_agent.protocol import (
     GatewayControlEnvelope,
     GatewayRegisterResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -107,8 +110,8 @@ class MockGatewayServer:
                         await self.on_message_callback(parsed, ws)
                 elif in_msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - mock gateway pump disconnect tolerance
+            logger.debug("MockGateway message pump ended: %s", type(exc).__name__)
         return ws
 
     async def _handle_upstream(self, request: web.Request) -> web.WebSocketResponse:
@@ -136,22 +139,21 @@ async def test_config_requires_config_version(tmp_path):
     }
 
     # Missing CBROWSER_CONFIG_VERSION
-    with patch.dict(os.environ, base_env, clear=True):
-        with pytest.raises(ValueError, match="CBROWSER_CONFIG_VERSION"):
-            StreamAgentConfig.from_env()
+    with patch.dict(os.environ, base_env, clear=True), pytest.raises(
+        ValueError, match="CBROWSER_CONFIG_VERSION"
+    ):
+        StreamAgentConfig.from_env()
 
     # Invalid CBROWSER_CONFIG_VERSION
     with patch.dict(
         os.environ, {**base_env, "CBROWSER_CONFIG_VERSION": "not_int"}, clear=True
-    ):
-        with pytest.raises(ValueError, match="CBROWSER_CONFIG_VERSION"):
-            StreamAgentConfig.from_env()
+    ), pytest.raises(ValueError, match="CBROWSER_CONFIG_VERSION"):
+        StreamAgentConfig.from_env()
 
     with patch.dict(
         os.environ, {**base_env, "CBROWSER_CONFIG_VERSION": "0"}, clear=True
-    ):
-        with pytest.raises(ValueError, match="CBROWSER_CONFIG_VERSION"):
-            StreamAgentConfig.from_env()
+    ), pytest.raises(ValueError, match="CBROWSER_CONFIG_VERSION"):
+        StreamAgentConfig.from_env()
 
     # Valid CBROWSER_CONFIG_VERSION
     with patch.dict(
@@ -176,24 +178,25 @@ async def test_config_requires_turn_host_and_port(tmp_path):
     }
 
     # Missing SELKIES_TURN_HOST
-    with patch.dict(os.environ, {**base_env, "SELKIES_TURN_PORT": "3478"}, clear=True):
-        with pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
-            StreamAgentConfig.from_env()
+    with patch.dict(
+        os.environ, {**base_env, "SELKIES_TURN_PORT": "3478"}, clear=True
+    ), pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
+        StreamAgentConfig.from_env()
 
     # Invalid SELKIES_TURN_HOST (not a valid IP)
     with patch.dict(
         os.environ,
         {**base_env, "SELKIES_TURN_HOST": "coturn.local", "SELKIES_TURN_PORT": "3478"},
         clear=True,
-    ):
-        with pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
-            StreamAgentConfig.from_env()
+    ), pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
+        StreamAgentConfig.from_env()
 
     # Missing SELKIES_TURN_PORT
     missing_port = {**base_env, "SELKIES_TURN_HOST": "10.0.0.1"}
-    with patch.dict(os.environ, missing_port, clear=True):
-        with pytest.raises(ValueError, match="SELKIES_TURN_PORT"):
-            StreamAgentConfig.from_env()
+    with patch.dict(os.environ, missing_port, clear=True), pytest.raises(
+        ValueError, match="SELKIES_TURN_PORT"
+    ):
+        StreamAgentConfig.from_env()
 
     # Invalid SELKIES_TURN_PORT
     for bad_port in ("not_int", "0", "70000", "-5"):
@@ -202,9 +205,10 @@ async def test_config_requires_turn_host_and_port(tmp_path):
             "SELKIES_TURN_HOST": "10.0.0.1",
             "SELKIES_TURN_PORT": bad_port,
         }
-        with patch.dict(os.environ, bad_port_env, clear=True):
-            with pytest.raises(ValueError, match="SELKIES_TURN_PORT"):
-                StreamAgentConfig.from_env()
+        with patch.dict(os.environ, bad_port_env, clear=True), pytest.raises(
+            ValueError, match="SELKIES_TURN_PORT"
+        ):
+            StreamAgentConfig.from_env()
 
     # Valid IPv4
     with patch.dict(

@@ -120,7 +120,7 @@ class CdpProxyManager:
         logger.info("Sending CDP Browser.close command...")
         try:
             return await self.send_command("Browser.close", timeout=timeout)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - graceful browser close failure returns unconfirmed status safely
             logger.warning("Browser.close was not acknowledged (%s)", type(e).__name__)
             return {"error": "close_unconfirmed"}
 
@@ -142,7 +142,7 @@ class CdpProxyManager:
                     self._handle_download_progress(msg.get("params", {}))
         except asyncio.CancelledError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - background CDP listener error isolated from manager lifecycle
             if not self.shutting_down:
                 logger.error("CDP event listener error (%s)", type(e).__name__)
         finally:

@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -40,6 +41,8 @@ from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
+
+logger = logging.getLogger(__name__)
 
 _auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
 _auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
@@ -95,52 +98,52 @@ def real_api_server(tmp_path: Path):
     )
 
     log_path = tmp_path / "api_server.log"
-    log_f = open(log_path, "w")
-    proc = subprocess.Popen(
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "cbrowser.api.main:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-        ],
-        cwd=root,
-        env=env,
-        stdout=log_f,
-        stderr=subprocess.STDOUT,
-    )
+    with open(log_path, "w", encoding="utf-8") as log_f:
+        proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "cbrowser.api.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+            ],
+            cwd=root,
+            env=env,
+            stdout=log_f,
+            stderr=subprocess.STDOUT,
+        )
 
-    api_url = f"http://127.0.0.1:{port}"
-    try:
-        with httpx.Client(base_url=api_url, trust_env=False) as client:
-            ready = False
-            for _ in range(100):
-                try:
-                    if client.get("/api/v1/health").status_code == 200:
-                        ready = True
-                        break
-                except httpx.TransportError:
-                    pass
-                if proc.poll() is not None:
-                    break
-                time.sleep(0.1)
-            if not ready:
-                pytest.fail(
-                    f"Real API process failed to become ready: {log_path.read_text()}"
-                )
-            auth_headers = auth_ctx.login_sync(api_url, client)
-        yield api_url, token, token_file, auth_headers
-    finally:
-        proc.terminate()
+        api_url = f"http://127.0.0.1:{port}"
         try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
-        log_f.close()
+            with httpx.Client(base_url=api_url, trust_env=False) as client:
+                ready = False
+                for _ in range(100):
+                    try:
+                        if client.get("/api/v1/health").status_code == 200:
+                            ready = True
+                            break
+                    except httpx.TransportError:
+                        pass
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(0.1)
+                if not ready:
+                    pytest.fail(
+                        "Real API process failed to become ready: "
+                        f"{log_path.read_text()}"
+                    )
+                auth_headers = auth_ctx.login_sync(api_url, client)
+            yield api_url, token, token_file, auth_headers
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
 
 
 @pytest.mark.asyncio
@@ -415,8 +418,10 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         if coturn is not None:
             try:
                 coturn.remove(force=True)
-            except Exception:
+            except docker.errors.NotFound:
                 pass
+            except Exception as exc:  # noqa: BLE001 - best effort coturn teardown
+                logger.warning("coturn remove failed: %s", type(exc).__name__)
 
         # Strict assert: zero orphan containers left
         active_final = docker_adapter.scan_active_containers()

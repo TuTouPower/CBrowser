@@ -22,7 +22,7 @@ def core_for(tmp_path, api_get, containers=()):
         _get_profile_lock=lambda pid: locks.setdefault(pid, asyncio.Lock()),
         has_native_exit=lambda *_: False,
         api=SimpleNamespace(get=api_get),
-        _auth_headers=lambda: {},
+        _auth_headers=dict,
         docker=SimpleNamespace(
             validator=PathValidator(tmp_path),
             scan_active_containers=lambda: list(containers),

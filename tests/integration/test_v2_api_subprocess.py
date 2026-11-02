@@ -1,4 +1,4 @@
-"""Integration tests running independent uvicorn subprocess against real SQLite files."""
+"""Integration tests running independent uvicorn subprocess against real DB."""
 
 from __future__ import annotations
 
@@ -166,10 +166,10 @@ def _validate_schema(data: Any, schema_name: str):
 async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
     server_harness: SubprocessServer,
 ):
-    """AC-001: CRUD via API, canonical user_data_dir, full legacy fields & tags persist across process restart,
+    """AC-001: CRUD via API, canonical user_data_dir, legacy fields & tags persist.
 
-    nullable vs non-nullable updates, invalid inputs rejected.
-    AC-005: Database initialized from empty directory and accessed by independent process.
+    Nullable vs non-nullable updates, invalid inputs rejected.
+    AC-005: Database initialized from empty directory and accessed independently.
     """
     server = server_harness
     async with httpx.AsyncClient(
@@ -264,7 +264,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert patch_res.json()["notes"] is None
         assert patch_res.json()["proxy"] is None
 
-    # 3. Simulate real server restart: stop subprocess and start new subprocess on same DB
+    # 3. Simulate server restart: stop subprocess and start new on same DB
     server.stop()
     server.start()
 
@@ -436,10 +436,10 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
 async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
     server_harness: SubprocessServer,
 ):
-    """AC-003: Runtime state convergence, intent separation, stale instance protection,
+    """AC-003: Runtime state convergence, intent separation, stale protection.
 
-    parallel duplicate exit events, late crash after stop, replaying start intent.
-    AC-006: Structured JSON diagnostics log parsing, safe allowlisted metadata, secret redaction in IDs & payload.
+    Parallel duplicate exit events, late crash after stop, replaying start.
+    AC-006: Structured JSON diagnostics parsing, metadata, secret redaction.
     """
     secret_pass = "P@ssw0rd_Secret_999"
     secret_token = "SECRET_TOKEN_XYZ_123"
@@ -467,7 +467,8 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         assert p_res.status_code == 201
         pid = p_res.json()["id"]
 
-        # 1. User intent to start: desired=running, observed=stopped (intent does NOT invent actual runtime!)
+        # 1. User intent to start: desired=running, observed=stopped
+        # (intent does NOT invent actual runtime!)
         start_op_id = "op_start_run_001"
         start_res = await client.patch(
             f"/api/v1/profiles/{pid}/runtime/desired-state",
@@ -497,7 +498,8 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         assert obs_res.status_code == 200
         assert obs_res.json()["observed_state"] == "running"
 
-        # Re-binding same instance + same version is idempotent and does NOT regress observed running to starting
+        # Re-binding same instance + same version is idempotent
+        # and does NOT regress observed running to starting
         rebind_res = await client.post(
             f"/api/v1/runtimes/bind?profile_id={pid}",
             json={"runtime_instance_id": inst_1, "config_version": 1},
@@ -524,7 +526,8 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         rt_check = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
         assert rt_check["config_version"] == 1
 
-        # Observation report claiming unapplied config_version 2 on instance bound to 1 is rejected!
+        # Observation report claiming unapplied config_version 2 on bound instance
+        # is rejected!
         obs_bad_cfg = await client.post(
             f"/api/v1/runtimes/observed?profile_id={pid}",
             json={
@@ -623,7 +626,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         assert rt_after_ab["runtime_instance_id"] is None
         assert rt_after_ab["failure_count"] == 1  # Not double counted!
 
-        # 7. Replaying exact initial start intent with same Idempotency-Key does NOT reset failure_count
+        # 7. Replay start intent with same Idempotency-Key does NOT reset failures
         replay_start = await client.patch(
             f"/api/v1/profiles/{pid}/runtime/desired-state",
             json={"desired_state": "running"},
@@ -696,7 +699,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         rt_after_late = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
         assert rt_after_late["desired_state"] == "stopped"  # MUST NOT become running!
 
-        # 10. Trigger validation 422 with secret in invalid field to verify error body sanitization
+        # 10. Trigger 422 with secret in invalid field to verify sanitization
         bad_req = await client.put(
             f"/api/v1/profiles/{pid}",
             json={"screen_width": -999, "notes": secret_clipboard},
@@ -784,7 +787,7 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
         assert 1.4 <= elapsed < 4.5, f"Expected elapsed ~1.5s, got {elapsed:.2f}s"
         assert resp.json()["name"] == "Short Lock Profile"
 
-    # 3. Long Lock Contention (>5.0s): API request times out at ~5s and returns HTTP 503 Retry-After
+    # 3. Long Lock Contention (>5.0s): API request times out at ~5s and returns 503
     def hold_long_lock():
         with sqlite3.connect(str(server.db_path), timeout=1.0) as c:
             c.execute("BEGIN EXCLUSIVE;")
@@ -819,7 +822,7 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
         assert body["retryable"] is True
         assert "syntax error" not in str(body).lower()
 
-        # 4. Verify post-lock recovery: next request succeeds cleanly without transaction leak
+        # 4. Post-lock recovery: next request succeeds cleanly without transaction leak
         recover_resp = await client.post(
             "/api/v1/profiles", json={"name": "Recovered Profile"}
         )
@@ -831,9 +834,9 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
 async def test_ac006_db_constraint_integrity_error_no_secret_leak_in_logs(
     server_harness: SubprocessServer,
 ):
-    """AC-006: Real DB constraint violation (duplicate tags) rolls back cleanly,
+    """AC-006: Real DB constraint violation rolls back cleanly.
 
-    returns typed 409 Conflict, and DOES NOT leak SQL bind parameters or secret into server logs.
+    Returns typed 409 Conflict, and DOES NOT leak SQL parameters or secrets in logs.
     """
     server = server_harness
     secret = "ROOT_PRIVATE_SENTINEL_9b84"
@@ -866,7 +869,7 @@ async def test_ac006_db_constraint_integrity_error_no_secret_leak_in_logs(
         )
         assert succ.status_code == 201
 
-    # Verify physical server log contains zero occurrences of secret or SQL bind parameter dump
+    # Verify physical server log contains zero secret or SQL bind parameter dumps
     await asyncio.sleep(0.2)
     logs = server.read_logs()
     assert secret not in logs, (
@@ -884,7 +887,7 @@ async def test_ac006_db_constraint_integrity_error_no_secret_leak_in_logs(
 async def test_ac006_duplicate_tags_with_busy_and_locked_keywords_return_409(
     server_harness: SubprocessServer, keyword_tag: str
 ):
-    """IntegrityError triggered by duplicate tags containing 'busy' or 'locked' must return 409, NOT 503."""
+    """IntegrityError for tags with 'busy' or 'locked' must return 409, NOT 503."""
     server = server_harness
     async with httpx.AsyncClient(
         base_url=server.base_url,
@@ -900,7 +903,8 @@ async def test_ac006_duplicate_tags_with_busy_and_locked_keywords_return_409(
             },
         )
         assert resp.status_code == 409, (
-            f"Expected 409 for duplicate tag '{keyword_tag}', got {resp.status_code}: {resp.text}"
+            f"Expected 409 for duplicate tag '{keyword_tag}', "
+            f"got {resp.status_code}: {resp.text}"
         )
         body = resp.json()
         _validate_schema(body, "ErrorResponse")

@@ -110,15 +110,19 @@ asyncio.run(run_server())
             ]
         )
 
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        await asyncio.to_thread(
+            subprocess.run, cmd, capture_output=True, text=True, check=True
+        )
         # Bounded wait for SERVER_READY in logs
         for _ in range(60):
-            logs = subprocess.run(
+            res = await asyncio.to_thread(
+                subprocess.run,
                 ["docker", "logs", self.container_name],
                 capture_output=True,
                 text=True,
                 check=False,
-            ).stdout
+            )
+            logs = res.stdout
             if "SERVER_READY" in logs:
                 break
             await asyncio.sleep(0.2)
@@ -437,7 +441,8 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
         mounted_sources = {m["Source"] for m in browser_inspect["Mounts"]}
         assert str(tokens_path) not in mounted_sources
         assert str(tokens_path.parent) not in mounted_sources
-        denied = subprocess.run(
+        denied = await asyncio.to_thread(
+            subprocess.run,
             [
                 "docker",
                 "exec",
@@ -450,7 +455,8 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
             check=False,
         )
         assert denied.returncode != 0, "Browser sandbox could read Selkies tokens"
-        listing = subprocess.run(
+        listing = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "exec", browser_cname, "ls", "-a", "/run/cbrowser/runtime"],
             capture_output=True,
             text=True,

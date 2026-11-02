@@ -151,8 +151,8 @@ async def wait_iframe_stats(
                     return await fn();
                 }"""
             )
-        except Exception as exc:  # page navigating / iframe swapped
-            last = {"error": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - page navigating / iframe swapped
+            last = {"error": type(exc).__name__}
         if (
             last
             and last.get("video")
@@ -290,8 +290,8 @@ class WireRecorder:
     async def _capture(self, response: Any) -> None:
         try:
             self.bodies.append(await response.text())
-        except Exception as exc:  # body may be evicted/navigated
-            logger.debug("Response body unavailable: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - body may be evicted/navigated
+            logger.debug("Response body unavailable: %s", type(exc).__name__)
 
     async def settle(self) -> None:
         if self._tasks:
@@ -767,8 +767,50 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
 # --------------------------------------------------------------------------- #
 
 
+MEDIA_FAULT_INIT_SCRIPT = """(() => {
+    const workerCode = `
+        let count = 0;
+        self.onrtctransform = (e) => {
+            const stream = new TransformStream({
+                transform(frame, ctrl) {
+                    count++;
+                    self.postMessage({ type: 'DISCARDED', count });
+                }
+            });
+            e.transformer.readable.pipeThrough(stream).pipeTo(e.transformer.writable);
+        };
+    `;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    const worker = new Worker(blobUrl);
+    window.__mediaFaultWorker = worker;
+    window.__discardedFramesCount = 0;
+    worker.onmessage = (e) => {
+        if (e.data?.type === 'DISCARDED') window.__discardedFramesCount = e.data.count;
+    };
+    window.addEventListener('pagehide', () => {
+        worker.terminate();
+        URL.revokeObjectURL(blobUrl);
+    });
+
+    if (window.RTCPeerConnection) {
+        class FaultPC extends window.RTCPeerConnection {
+            constructor(...args) {
+                super(...args);
+                this.addEventListener('track', (e) => {
+                    if (e.track?.kind === 'video' && e.receiver) {
+                        e.receiver.transform = new RTCRtpScriptTransform(worker);
+                    }
+                });
+            }
+        }
+        window.RTCPeerConnection = FaultPC;
+    }
+})();"""
+
+
 @pytest.mark.asyncio
-async def test_ac007_freeze_resume_and_diagnostic_stages(
+async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
     harness: FrontendAppTopologyHarness, tmp_path: Path
 ) -> None:
     pw, browser, context = await launch_browser()
@@ -797,6 +839,7 @@ async def test_ac007_freeze_resume_and_diagnostic_stages(
         await wire.start()
         await open_session(page, harness, profile_id)
         await launch_profile_via_ui(page)
+        await animate_remote_fixture(harness, profile_id)
 
         def hellos() -> list[str]:
             return [f for f in wire.frames_sent if f.startswith("HELLO client ")]
@@ -889,27 +932,77 @@ async def test_ac007_freeze_resume_and_diagnostic_stages(
         assert rebuilt_meta["resume_key"] != initial_resume_key
         assert rebuilt["video"]["framesDecoded"] > 0
 
-        # Media no frames: freeze the Browser capture source (still-running Stream)
-        # while the DB still reports running, then require an explained stage.
-        browser_container, _ = harness.container_names(profile_id)
-        paused_box = harness.docker_client.containers.get(browser_container)
-        paused_box.pause()
+        # Media no frames: simulate genuine media decoding failure isolated to
+        # this viewer via RTCRtpScriptTransform, discarding incoming encoded
+        # video frames without enqueuing. Proves selected pair/connectionState
+        # connected, RTP bytes/packets flowing, framesDecoded == 0, and container
+        # remaining running, triggering the product's media_no_frames stage.
+        browser_cname, stream_cname = harness.container_names(profile_id)
+        b_box_before = harness.docker_client.containers.get(browser_cname)
+        s_box_before = harness.docker_client.containers.get(stream_cname)
+        browser_cid = b_box_before.id
+        stream_cid = s_box_before.id
+        assert b_box_before.status == "running"
+        assert s_box_before.status == "running"
+
+        rt_before = await harness.get_runtime(profile_id)
+        assert rt_before["desired_state"] == "running"
+        assert rt_before["observed_state"] == "running"
+        initial_instance_id = rt_before["runtime_instance_id"]
+
+        media_page = await context.new_page()
         try:
-            media_page = await context.new_page()
-            await open_session(media_page, harness, profile_id)
-            await media_page.wait_for_selector(
-                '[data-testid="session-stage-title"]', timeout=60000
+            has_transform = await media_page.evaluate(
+                "typeof RTCRtpScriptTransform === 'function' && "
+                "'transform' in RTCRtpReceiver.prototype"
             )
+            assert has_transform, (
+                "RTCRtpScriptTransform and RTCRtpReceiver.prototype.transform "
+                "must be available"
+            )
+
+            await media_page.add_init_script(MEDIA_FAULT_INIT_SCRIPT)
+            await open_session(media_page, harness, profile_id)
+
+            initial_fault_stats = await wait_iframe_stats(
+                media_page, min_frames=0, name="media fault initial"
+            )
+            assert initial_fault_stats["connected"] is True
+            assert initial_fault_stats["video"]["framesDecoded"] == 0
+            initial_bytes = initial_fault_stats["video"]["bytesReceived"]
+            initial_packets = initial_fault_stats["video"]["packetsReceived"]
+
             deadline = time.monotonic() + 45
             media_title = ""
+            final_fault_stats: dict[str, Any] | None = None
             while time.monotonic() < deadline:
-                media_title = await media_page.inner_text(
+                title_el = await media_page.query_selector(
                     '[data-testid="session-stage-title"]'
                 )
-                if "媒体未产生画面" in media_title:
+                if title_el:
+                    media_title = await title_el.inner_text()
+                stats = await wait_iframe_stats(
+                    media_page, min_frames=0, name="media fault poll"
+                )
+                if "媒体未产生画面" in media_title and (
+                    stats["video"]["bytesReceived"] > initial_bytes
+                    or stats["video"]["packetsReceived"] > initial_packets
+                ):
+                    final_fault_stats = stats
                     break
                 await asyncio.sleep(0.5)
+
+            assert final_fault_stats is not None, (
+                "media_no_frames or RTP growth not observed in 45s: "
+                f"title={media_title}"
+            )
             assert "媒体未产生画面" in media_title, media_title
+            assert final_fault_stats["connected"] is True
+            assert final_fault_stats["video"]["framesDecoded"] == 0
+            assert (
+                final_fault_stats["video"]["bytesReceived"] > initial_bytes
+                or final_fault_stats["video"]["packetsReceived"] > initial_packets
+            ), "RTP video bytes/packets must grow across media waiting interval"
             assert (
                 await media_page.query_selector('[data-testid="session-reconnect-btn"]')
                 is not None
@@ -920,13 +1013,36 @@ async def test_ac007_freeze_resume_and_diagnostic_stages(
                 )
                 is not None
             )
+
+            discarded_count = await iframe_eval(
+                media_page, "window.__discardedFramesCount || 0"
+            )
+            assert discarded_count > 0, (
+                f"Worker must have discarded encoded frames, got {discarded_count}"
+            )
+
             # The product action must route to the profile detail page.
             await media_page.click('[data-testid="session-view-status-btn"]')
             await media_page.wait_for_url(
                 re.compile(rf"/profiles/{profile_id}$"), timeout=15000
             )
         finally:
-            paused_box.unpause()
+            await media_page.close()
+
+        # Invariants: Browser & Stream CID, instance, and API runtime state unchanged.
+        b_box_after = harness.docker_client.containers.get(browser_cname)
+        s_box_after = harness.docker_client.containers.get(stream_cname)
+        assert b_box_after.id == browser_cid, "Browser container must not be recreated"
+        assert s_box_after.id == stream_cid, "Stream container must not be recreated"
+        assert b_box_after.status == "running"
+        assert s_box_after.status == "running"
+
+        rt_after = await harness.get_runtime(profile_id)
+        assert rt_after["desired_state"] == "running"
+        assert rt_after["observed_state"] == "running"
+        assert rt_after["runtime_instance_id"] == initial_instance_id, (
+            "runtime_instance_id changed (unexpected container recreation)"
+        )
 
         # Signaling failure: stop the Gateway, open a fresh viewer, require stage.
         harness.gateway_container.stop(timeout=5)
@@ -1089,7 +1205,7 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
             try:
                 async with await harness.api_client() as client_api:
                     await client_api.post(f"/api/v1/profiles/{profile_id}/stop")
-            except Exception as exc:
-                logger.debug("Final stop cleanup skipped: %s", exc)
+            except Exception as exc:  # noqa: BLE001 - best-effort final stop cleanup
+                logger.debug("Final stop cleanup skipped: %s", type(exc).__name__)
         await browser.close()
         await pw.stop()

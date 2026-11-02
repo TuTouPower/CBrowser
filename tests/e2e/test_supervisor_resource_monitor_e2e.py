@@ -84,9 +84,19 @@ async def test_monitor_samples_real_container_without_blocking_loop(tmp_path):
             policy, deliver, host_stat_path=tmp_path / "no_linux_host"
         )
         token = secrets.token_urlsafe(32)
-        (tmp_path / "control_key").write_text(token)
+        bad_key = tmp_path / "bad_control_key"
+        bad_key.write_text(token)
+        bad_key.chmod(0o644)
+        with pytest.raises(ValueError, match="group or others"):
+            create_control_app(
+                SimpleNamespace(resource_monitor=monitor), bad_key
+            )
+
+        control_key = tmp_path / "control_key"
+        control_key.write_text(token)
+        control_key.chmod(0o600)
         control = create_control_app(
-            SimpleNamespace(resource_monitor=monitor), tmp_path / "control_key"
+            SimpleNamespace(resource_monitor=monitor), control_key
         )
         target = ProfileResourceTarget("profile", "runtime_a", (container.id,), True)
         for _ in range(5):
