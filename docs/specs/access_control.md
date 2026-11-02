@@ -18,6 +18,13 @@
 - 登录用户可创建、列出、撤销自动化凭证；明文只在创建响应出现一次，列表不含明文。凭证限定 Profile 范围，撤销后立即失效。
 - 自动化授权允许无 Origin 的非浏览器客户端，但必须持有效凭证且 Profile 在授权范围内；登录 Cookie 不被接受。拒绝与生命周期事件写入审计，审计不泄漏秘密。
 
+## 自动化 CDP 入口
+
+- 新入口为 `WS /api/v1/automation/profiles/{profileId}/cdp`，要求 `Authorization: Bearer cbat_...`；无效、撤销或越权 Profile 关闭 4401。
+- 旧 `WS /api/profiles/{profileId}/cdp` 只薄转发新代理，使用同一凭证，不发布旧 CDP TCP 端口，不出现在 OpenAPI。
+- API 校验通过后经内部 Supervisor token 建立到 Supervisor 的 WebSocket，由 Supervisor 再经 Agent UDS 转发到浏览器 loopback CDP；所有转发均为双向原样透传。
+- `GET /api/v1/profiles/{profileId}/automation` 返回授权端点路径、运行状态与 Supervisor 配置状态，不返回明文凭证。
+
 ## 验证
 
-真实 SQLite + HTTP 集成测试覆盖上述正负例；真实 HTTPS Cookie 属性、跨 Origin 与未授权 Profile 的信令拒绝由 Gateway E2E 在官方 Chrome 中验证。
+真实 SQLite + HTTP 集成测试覆盖上述正负例；真实 HTTPS Cookie 属性、跨 Origin 与未授权 Profile 的信令拒绝由 Gateway E2E 在官方 Chrome 中验证。自动化 CDP 代理由单元（Supervisor→UDS）、集成（API→Supervisor→UDS）和真实浏览器 UDS CDP E2E 共同验证。

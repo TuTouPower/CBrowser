@@ -97,6 +97,16 @@ describe("Application Router & AC-001 Target Independence", () => {
       restart_blocked: false,
       updated_at: "2026-01-01T00:00:00Z",
     });
+
+    defaultApiClient.artifacts.list = async () => [];
+    defaultApiClient.automation.status = async (id: string) => ({
+      profile_id: id,
+      cdp_ws_path: `/api/v1/automation/profiles/${id}/cdp`,
+      supervisor_configured: true,
+      runtime_observed_state: "running",
+      runtime_instance_id: "i1",
+      token_header: "Authorization: Bearer <cbat_...>",
+    });
   });
 
   const renderWithRouter = (
@@ -149,14 +159,14 @@ describe("Application Router & AC-001 Target Independence", () => {
     expect(await editProfileRender.findByTestId("profile-detail-page")).toBeInTheDocument();
     editProfileRender.unmount();
 
-    // 5. /profiles/:profileId/files (placeholder)
+    // 5. /profiles/:profileId/files
     const filesRender = renderWithRouter(["/profiles/p1/files"]);
-    expect(await filesRender.findByTestId("profile-files-placeholder")).toBeInTheDocument();
+    expect(await filesRender.findByTestId("profile-files-page")).toBeInTheDocument();
     filesRender.unmount();
 
-    // 6. /automation/:profileId (placeholder)
+    // 6. /automation/:profileId
     const automationRender = renderWithRouter(["/automation/p1"]);
-    expect(await automationRender.findByTestId("profile-automation-placeholder")).toBeInTheDocument();
+    expect(await automationRender.findByTestId("profile-automation-page")).toBeInTheDocument();
     automationRender.unmount();
   });
 

@@ -11,21 +11,32 @@ AC-006: Non-root UID 1000, read-only rootfs, cap-drop ALL, and stream auth.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import inspect
 import json
 import logging
 import os
+import secrets
 import shutil
+import socket
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
+import uvicorn
+from cbrowser.adapters.database.migrations import run_database_migrations
+from cbrowser.adapters.database.repository import ProfileRepository
+from cbrowser.adapters.database.session import create_engine_and_maker
+from cbrowser.api.app import create_app
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +52,33 @@ ENGINE_CACHE = Path(
 ).resolve()
 LOGS_DIR = Path(os.path.abspath(".scratch/t003_implementation/tmp/logs"))
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _free_port() -> int:
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+class _UvicornThread:
+    def __init__(self, app, port: int):
+        self.server = uvicorn.Server(
+            uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+        )
+        self.thread = threading.Thread(target=self.server.run, daemon=True)
+
+    def start(self) -> None:
+        self.thread.start()
+        for _ in range(100):
+            if self.server.started:
+                return
+            time.sleep(0.05)
+        raise RuntimeError("uvicorn did not start")
+
+    def stop(self) -> None:
+        self.server.should_exit = True
+        self.thread.join(timeout=10)
 
 
 class MockE2EHttpHandler(BaseHTTPRequestHandler):
@@ -225,6 +263,7 @@ def run_docker_container(
     profile_id: str,
     runtime_instance_id: str,
     host_events_dir: Path | None = None,
+    host_uploads_dir: Path | None = None,
     display: str = ":99",
 ) -> str:
     """Run an isolated Browser Runtime container with canonical data layout."""
@@ -233,6 +272,8 @@ def run_docker_container(
     host_profile_dir.mkdir(parents=True, exist_ok=True)
     host_runtime_dir.mkdir(parents=True, exist_ok=True)
     host_exchange_dir.mkdir(parents=True, exist_ok=True)
+    uploads_dir = host_uploads_dir or host_exchange_dir.parent / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
     events_dir = (
         host_events_dir or host_runtime_dir.parent / "runtime-events" / profile_id
     )
@@ -245,6 +286,7 @@ def run_docker_container(
     os.chmod(host_profile_dir, 0o777)
     os.chmod(host_runtime_dir, 0o777)
     os.chmod(host_exchange_dir, 0o777)
+    os.chmod(uploads_dir, 0o777)
     os.chmod(events_dir, 0o777)
     os.chmod(host_runtime_dir / "x11", 0o777)
     os.chmod(host_runtime_dir / "pulse", 0o777)
@@ -313,6 +355,8 @@ def run_docker_container(
         f"{events_dir}:/data/runtime-events/{profile_id}",
         "-v",
         f"{host_exchange_dir}:/exchange/downloads",
+        "-v",
+        f"{uploads_dir}:/exchange/uploads",
         "-v",
         f"{host_runtime_dir}:/run/cbrowser/runtime",
         "-v",
@@ -1346,6 +1390,238 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
     finally:
         for cid in created_containers:
             stop_and_rm_container(cid)
+        if dir_work.exists():
+            shutil.rmtree(dir_work, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_t008_download_reconcile_after_agent_restart(
+    http_server: str,
+) -> None:
+    """t008 AC-002/AC-004: real download, Supervisor forwarder, API ingest, scan."""
+    run_id = uuid.uuid4().hex[:8]
+    c_name = f"cbrowser-t008-reconcile-{run_id}"
+    dir_work = Path(os.path.abspath(".scratch/t008_e2e")) / f"t008_{run_id}"
+    profile_id = "profile_reconcile"
+    artifact_root = dir_work / "artifacts"
+    downloads = artifact_root / profile_id / "downloads"
+    uploads = artifact_root / profile_id / "uploads"
+    uploads.mkdir(parents=True, exist_ok=True)
+    (uploads / "visible.txt").write_text("upload-visible", encoding="utf-8")
+    events_dir = dir_work / "runtime-events" / profile_id / "events" / "downloads"
+
+    snap_file = dir_work / "snapshot.json"
+    create_snapshot_file(
+        snap_file,
+        profile_id=profile_id,
+        version=1,
+        screen_width=1280,
+        screen_height=720,
+    )
+    disp = f":{140 + (int(run_id[:4], 16) % 300)}"
+    instance_generation = 0
+
+    api_db = dir_work / "api.db"
+    run_database_migrations(api_db)
+    engine, maker = create_engine_and_maker(api_db)
+    await ProfileRepository(maker).create_profile(
+        ProfileConfig(name="Reconcile", fingerprint_seed=1),
+        profile_id=profile_id,
+    )
+    await engine.dispose()
+
+    admin_password = secrets.token_urlsafe(24)
+    admin_file = dir_work / "admin.txt"
+    admin_file.write_text(admin_password, encoding="utf-8")
+    admin_file.chmod(0o600)
+    supervisor_token = secrets.token_urlsafe(32)
+    supervisor_token_file = dir_work / "supervisor.token"
+    supervisor_token_file.write_text(supervisor_token, encoding="utf-8")
+    supervisor_token_file.chmod(0o600)
+    control_port = _free_port()
+    api_port = _free_port()
+    origin = f"http://127.0.0.1:{api_port}"
+    api = _UvicornThread(
+        create_app(
+            db_path=api_db,
+            admin_password_file=admin_file,
+            supervisor_token_file=supervisor_token_file,
+            allowed_origins=[origin],
+            artifacts_root=artifact_root,
+            supervisor_url=f"http://127.0.0.1:{control_port}",
+        ),
+        api_port,
+    )
+    api.start()
+    api_url = f"http://127.0.0.1:{api_port}"
+    login_client = httpx.AsyncClient(base_url=api_url, trust_env=False, timeout=10)
+    forwarder_client = httpx.AsyncClient(
+        base_url=api_url,
+        trust_env=False,
+        timeout=10,
+        headers={"Authorization": f"Bearer {supervisor_token}"},
+    )
+    login = await login_client.post(
+        "/api/v1/auth/login", json={"password": admin_password}
+    )
+    assert login.status_code == 200, login.text
+    session_cookie = login.cookies.get("cbrowser_session")
+    assert session_cookie
+    login_client.headers["Cookie"] = f"cbrowser_session={session_cookie}"
+
+    def start() -> None:
+        nonlocal instance_generation
+        instance_generation += 1
+        profile_dir = dir_work / "profile"
+        for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            lock_path = profile_dir / lock_name
+            if lock_path.is_symlink() or lock_path.exists():
+                lock_path.unlink()
+        run_docker_container(
+            name=c_name,
+            host_profile_dir=profile_dir,
+            host_runtime_dir=dir_work / "runtime",
+            host_exchange_dir=downloads,
+            snapshot_path=snap_file,
+            profile_id=profile_id,
+            runtime_instance_id=f"inst_reconcile_{run_id}_{instance_generation}",
+            host_uploads_dir=uploads,
+            display=disp,
+        )
+        wait_for_uds_ready(c_name, timeout=35.0)
+        for _ in range(60):
+            try:
+                cdp_status, _ = uds_http(c_name, "GET", "/cdp/version")
+                if cdp_status == 200:
+                    break
+            except Exception:  # noqa: BLE001 - polling Agent CDP readiness
+                pass
+            time.sleep(0.5)
+        else:
+            raise TimeoutError("Agent CDP endpoint did not become ready")
+
+    def scan_events() -> list[dict[str, Any]]:
+        code, events = uds_http(c_name, "GET", "/events/downloads")
+        assert code == 200
+        return [event for event in events if event["event_id"].startswith("dl_scan_")]
+
+    async def artifact_list() -> list[dict[str, Any]]:
+        response = await login_client.get(f"/api/v1/profiles/{profile_id}/artifacts")
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    try:
+        start()
+        visible = subprocess.run(
+            ["docker", "exec", c_name, "cat", "/exchange/uploads/visible.txt"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        assert visible.stdout == "upload-visible"
+
+        exec_uds_cdp(
+            c_name,
+            f"""
+        targets = await send_cmd(ws, 1, "Target.getTargets")
+        target_id = targets["result"]["targetInfos"][0]["targetId"]
+        attach = await send_cmd(
+            ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}}
+        )
+        s = attach["result"]["sessionId"]
+        await send_cmd(
+            ws,
+            3,
+            "Page.navigate",
+            {{"url": "{http_server}/download_page.html"}},
+            session_id=s,
+        )
+        await asyncio.sleep(1.0)
+        await send_cmd(
+            ws, 4, "Runtime.evaluate",
+            {{"expression": "document.getElementById('dl1').click()"}}, session_id=s
+        )
+        print("RESULT:" + json.dumps({{"status": "ok"}}))
+""",
+        )
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if [f for f in downloads.glob("*") if f.is_file()]:
+                break
+            await asyncio.sleep(0.5)
+        downloaded = [f for f in downloads.glob("*") if f.is_file()]
+        assert downloaded, "download missing"
+
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            completed = [
+                json.loads(path.read_text(encoding="utf-8"))
+                for path in events_dir.glob("*.json")
+            ]
+            completed = [
+                event for event in completed if event.get("state") == "completed"
+            ]
+            if completed:
+                break
+            await asyncio.sleep(0.5)
+        assert completed, "completed download event missing"
+        forwarder = DownloadArtifactForwarder(dir_work, forwarder_client)
+        assert await forwarder.forward_pending() >= 1
+        artifacts = await artifact_list()
+        assert len(artifacts) == 1
+        assert artifacts[0]["name"] == "download-1.txt"
+        assert artifacts[0]["kind"] == "download"
+        assert (
+            artifacts[0]["sha256"]
+            == hashlib.sha256(
+                b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111"
+            ).hexdigest()
+        )
+        assert not downloaded[0].exists()
+
+        stop_and_rm_container(c_name)
+        manual_payload = b"manual-download-without-event"
+        (downloads / "manual.csv").write_bytes(manual_payload)
+
+        start()
+        deadline = time.monotonic() + 15
+        events: list[dict[str, Any]] = []
+        while time.monotonic() < deadline:
+            events = scan_events()
+            if events:
+                break
+            await asyncio.sleep(0.5)
+        manual_events = [
+            event for event in events if event["suggested_filename"] == "manual.csv"
+        ]
+        assert len(manual_events) == 1, f"expected one manual backfill, got {events}"
+        assert manual_events[0]["size_bytes"] == len(manual_payload)
+        assert manual_events[0]["sha256"] == hashlib.sha256(manual_payload).hexdigest()
+        assert manual_events[0]["download_path"] == "/exchange/downloads/manual.csv"
+        assert not any(event["download_path"].count("/") > 3 for event in events), (
+            f"nested artifact file was scanned: {events}"
+        )
+
+        assert await forwarder.forward_pending() >= 1
+        artifacts = await artifact_list()
+        assert sorted(item["name"] for item in artifacts) == [
+            "download-1.txt",
+            "manual.csv",
+        ]
+
+        stop_and_rm_container(c_name)
+        start()
+        await asyncio.sleep(2.0)
+        assert scan_events() == events, "Agent restart duplicated the backfill event"
+    except Exception:
+        save_container_failure_log(c_name, "test_t008_reconcile")
+        raise
+    finally:
+        stop_and_rm_container(c_name)
+        await login_client.aclose()
+        await forwarder_client.aclose()
+        api.stop()
         if dir_work.exists():
             shutil.rmtree(dir_work, ignore_errors=True)
 

@@ -308,9 +308,7 @@ with path.open('w') as output:
                     engine_cache=self.engine_cache,
                     geoip_cache=self.geoip_cache,
                 ),
-                environment=cache_init_environment(
-                    need_geoip, marker_name, run_id
-                ),
+                environment=cache_init_environment(need_geoip, marker_name, run_id),
                 labels=cache_init_labels(self.resource_prefix),
             )
             result = helper.wait(timeout=600)
@@ -349,8 +347,9 @@ with path.open('w') as output:
         runtime_dir = self.validator.get_runtime_dir(profile_id)
         events_dir = self.validator.get_events_dir(profile_id)
         exchange_dir = self.validator.get_exchange_dir(profile_id)
+        upload_dir = self.validator.get_upload_dir(profile_id)
 
-        for d in (profile_dir, runtime_dir, events_dir, exchange_dir):
+        for d in (profile_dir, runtime_dir, events_dir, exchange_dir, upload_dir):
             self._secure_directory(d, 0o750)
 
         x11_dir = self.validator.validate_runtime_source(
@@ -367,6 +366,7 @@ with path.open('w') as output:
             "runtime": runtime_dir,
             "events": events_dir,
             "exchange": exchange_dir,
+            "uploads": upload_dir,
             "x11": x11_dir,
             "pulse": pulse_dir,
         }
@@ -829,9 +829,7 @@ with path.open('w') as output:
             secret_file=secret_file,
             selkies_file=selkies_file,
         )
-        config_version = b_inspect["Config"]["Labels"][
-            "com.cbrowser.config-version"
-        ]
+        config_version = b_inspect["Config"]["Labels"]["com.cbrowser.config-version"]
         env = stream_environment(
             public_ip=public_ip,
             display=display,

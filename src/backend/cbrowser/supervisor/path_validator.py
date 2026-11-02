@@ -14,7 +14,6 @@ class PathSecurityError(Exception):
     """Raised when a path violates security constraints or attempts escape."""
 
 
-
 RESERVED_PROFILE_IDS = frozenset({".secrets", "secrets", "archive", "quarantine"})
 
 
@@ -144,4 +143,10 @@ class PathValidator:
         """Return the canonical Profile download directory."""
         validate_profile_id(profile_id)
         target = self.data_root / "artifacts" / profile_id / "downloads"
+        return self._fixed_profile_directory(target)
+
+    def get_upload_dir(self, profile_id: str) -> Path:
+        """Return the canonical Profile upload directory."""
+        validate_profile_id(profile_id)
+        target = self.data_root / "artifacts" / profile_id / "uploads"
         return self._fixed_profile_directory(target)

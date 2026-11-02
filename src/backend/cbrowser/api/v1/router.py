@@ -301,9 +301,7 @@ async def update_profile(
         tags_provided = "tags" in payload.model_fields_set
         tags_update = patch_data.pop("tags", None)
         # Tri-state: absent = unchanged, null or [] = clear, list = replace.
-        tags_val = (
-            [Tag(**t) for t in (tags_update or [])] if tags_provided else None
-        )
+        tags_val = [Tag(**t) for t in (tags_update or [])] if tags_provided else None
 
         p = await service.update_profile(
             profile_id=profile_id,
@@ -335,10 +333,22 @@ async def update_profile(
 )
 async def delete_profile(
     profile_id: str,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     try:
         await service.delete_profile(profile_id)
+        artifact_service = getattr(request.app.state, "artifact_service", None)
+        if artifact_service is not None:
+            try:
+                await artifact_service.remove_profile(profile_id)
+            except Exception as exc:  # noqa: BLE001 - profile is already deleted
+                logger.warning(
+                    "Artifact cleanup after profile deletion failed: "
+                    "profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
         return
     except ProfileNotFoundError:
         raise HTTPException(

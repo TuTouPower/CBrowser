@@ -2,6 +2,8 @@ import type { components, paths } from "./generated/cbrowser_v1";
 
 export type Schemas = components["schemas"];
 
+export type ArtifactResponse = Schemas["ArtifactResponse"];
+export type AutomationEndpointResponse = Schemas["AutomationEndpointResponse"];
 export type ProfileResponse = Schemas["ProfileResponse"];
 export type ProfileCreateRequest = Schemas["ProfileCreateRequest"];
 export type ProfileUpdateRequest = Schemas["ProfileUpdateRequest"];

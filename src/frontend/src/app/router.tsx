@@ -5,8 +5,8 @@ import { BrowserSessionPage } from "../features/profiles/BrowserSessionPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { ProfileNewPage } from "../features/profiles/ProfileNewPage";
 import { ProfileDetailPage } from "../features/profiles/ProfileDetailPage";
-import { ProfileFilesPlaceholder } from "../features/artifacts/ProfileFilesPlaceholder";
-import { ProfileAutomationPlaceholder } from "../features/automation/ProfileAutomationPlaceholder";
+import { ProfileFilesPage } from "../features/artifacts/ProfileFilesPage";
+import { ProfileAutomationPage } from "../features/automation/ProfileAutomationPage";
 import { LoginPage } from "../features/auth/LoginPage";
 
 export const routes: RouteObject[] = [
@@ -40,11 +40,11 @@ export const routes: RouteObject[] = [
       },
       {
         path: "profiles/:profileId/files",
-        element: <ProfileFilesPlaceholder />,
+        element: <ProfileFilesPage />,
       },
       {
         path: "automation/:profileId",
-        element: <ProfileAutomationPlaceholder />,
+        element: <ProfileAutomationPage />,
       },
     ],
   },

@@ -258,6 +258,24 @@ const en: MessageDict = {
   failedToListFiles: "Failed to list files",
   uploadFailed: "Upload failed",
   deleteFailed: "Delete failed",
+  profileFilesHint:
+    "Uploads and downloads are stored by the Artifact Service, never through Selkies.",
+  artifactsUploaded: "{count} file(s) uploaded",
+  deleteArtifactConfirm: "Delete this file from the profile?",
+  automationPageTitle: "CDP automation",
+  automationPageHint:
+    "Authorized endpoint for external automation through Supervisor and the Agent UDS.",
+  automationEndpoint: "Authorized WebSocket endpoint",
+  automationTokenHeader:
+    "Send this header with an automation token: {value}",
+  automationRuntimeState: "Runtime state",
+  automationRuntimeInstance: "Runtime instance",
+  automationSupervisor: "Supervisor",
+  automationSupervisorReady: "Configured",
+  automationSupervisorMissing: "Not configured",
+  failedToLoadAutomation: "Failed to load automation status",
+  copy: "Copy",
+  copyEndpoint: "Copy automation endpoint",
 
   // Status
   statusRunning: "running",
@@ -558,6 +576,23 @@ const zh: MessageDict = {
   failedToListFiles: "获取文件列表失败",
   uploadFailed: "上传失败",
   deleteFailed: "删除失败",
+  profileFilesHint:
+    "上传与下载均由 Artifact Service 管理，不经过 Selkies 文件传输。",
+  artifactsUploaded: "已上传 {count} 个文件",
+  deleteArtifactConfirm: "确定从此配置删除该文件？",
+  automationPageTitle: "CDP 自动化",
+  automationPageHint:
+    "经 Supervisor 与 Agent UDS 提供给外部自动化的授权端点。",
+  automationEndpoint: "授权 WebSocket 端点",
+  automationTokenHeader: "请求时携带自动化令牌：{value}",
+  automationRuntimeState: "运行状态",
+  automationRuntimeInstance: "运行实例",
+  automationSupervisor: "Supervisor",
+  automationSupervisorReady: "已配置",
+  automationSupervisorMissing: "未配置",
+  failedToLoadAutomation: "获取自动化状态失败",
+  copy: "复制",
+  copyEndpoint: "复制自动化端点",
 
   statusRunning: "运行中",
   statusStopped: "已停止",
