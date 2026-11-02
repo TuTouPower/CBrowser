@@ -2,7 +2,7 @@
 
 - 来源：t014 review（AC-002/003/004 未闭合）
 - 内容：补真实 Chrome E2E：地址栏、普通输入框、受控输入框、富文本中的 composition 提交/预编辑取消/标点/失败提示；纯文本粘贴无截断/重复及双页并发；真实权限授予/拒绝、后台/恢复、切换 Profile 的剪贴板隔离；使用本 task 新 entrypoint/镜像验证 `enable_clipboard`/`clipboard_seamless` 运行时语义。当前 t014 仅完成 AC-001/AC-005，AC-002/003/004 保持未勾选。
-- 处理：未开
+- 处理：t009；resolution=transferred；reason=用户决定（2026-11-02）：单人使用不做四类输入/粘贴/权限隔离自动化 E2E；改由 t009 手动清单验收；t014 已 drop
 
 ## 2026-11-02 attempt 2 记录
 

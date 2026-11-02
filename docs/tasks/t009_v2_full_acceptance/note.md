@@ -9,7 +9,7 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t013,t014"
+depends_on: "t013"
 conflicts_with: ""
 note: ""
 ---

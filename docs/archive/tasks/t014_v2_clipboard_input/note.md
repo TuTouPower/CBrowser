@@ -2,16 +2,16 @@
 tid: "t014"
 slug: "v2_clipboard_input"
 title: "实现受控剪贴板桥接与完整输入场景"
-status: "active"
-branch: "t014_v2_clipboard_input"
-worktree: "../CBrowser_t014"
+status: "dropped"
+branch: ""
+worktree: ""
 review_level: "full"
 review_limit: "5"
 verify_limit: "5"
-diff_anchor: "6d28f59bc554743fa7e4cd3c987173a4b1b41df7"
+diff_anchor: ""
 depends_on: "t008"
 conflicts_with: "t013"
-note: ""
+note: "rewound: active -> backlog; 用户决定（2026-11-02）：AC-001/005 已随 e7f58ce 合入 main；AC-002/003/004 不再做自动化 E2E，回退以便 drop; dropped: 用户决定（2026-11-02）：AC-001/005 已随 e7f58ce 合入 main；AC-002/003/004 单人使用不做自动化 E2E，改由 t009 手动清单验收；剪贴板改为 seamless 同步另行在 main 修改"
 ---
 
 # Task 过程总账
