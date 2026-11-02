@@ -92,6 +92,40 @@ export function useDeleteProfileMutation(
   });
 }
 
+export function useDuplicateProfileMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<
+  ProfileResponse,
+  Error,
+  { id: string; includeBrowserState: boolean; name?: string }
+> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, includeBrowserState, name }) =>
+      client.profiles.duplicate(id, {
+        include_browser_state: includeBrowserState,
+        name,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useResetProfileMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProfileResponse, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => client.profiles.reset(id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: profileKeys.runtime(data.id) });
+    },
+  });
+}
+
 export function useSetDesiredStateMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<

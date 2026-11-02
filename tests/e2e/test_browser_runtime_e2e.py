@@ -2605,3 +2605,187 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
             shutil.rmtree(dir_work, ignore_errors=True)
         if (SCRATCH_ROOT / f"ac006_peer_{run_id}").exists():
             shutil.rmtree(SCRATCH_ROOT / f"ac006_peer_{run_id}", ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> None:
+    """t013 AC-002/AC-004: stopped source state copy, clone launches with cookies."""
+    run_id = uuid.uuid4().hex[:8]
+    dir_work = Path(os.path.abspath(".scratch/t013_e2e")) / f"t013_{run_id}"
+    profiles_root = dir_work / "profiles"
+    source_dir = profiles_root / "source" / "profile"
+    source_dir.mkdir(parents=True)
+    db = dir_work / "profiles.db"
+    run_database_migrations(db)
+    engine, maker = create_engine_and_maker(db)
+    repo = ProfileRepository(maker)
+    await repo.create_profile(
+        ProfileConfig(name="Cookie Source", fingerprint_seed=999),
+        profile_id="source",
+        user_data_dir=str(source_dir),
+    )
+    admin_password = secrets.token_urlsafe(24)
+    admin_file = dir_work / "admin.txt"
+    admin_file.write_text(admin_password, encoding="utf-8")
+    admin_file.chmod(0o600)
+
+    source_name = f"cbrowser-t013-source-{run_id}"
+    clone_name = f"cbrowser-t013-clone-{run_id}"
+    snap = dir_work / "snapshot.json"
+    create_snapshot_file(
+        snap,
+        profile_id="source",
+        version=1,
+        screen_width=1280,
+        screen_height=720,
+    )
+    display_number = 140 + (int(run_id[:4], 16) % 300)
+    try:
+        run_docker_container(
+            name=source_name,
+            host_profile_dir=source_dir,
+            host_runtime_dir=dir_work / "source-runtime",
+            host_exchange_dir=dir_work / "source-downloads",
+            snapshot_path=snap,
+            profile_id="source",
+            runtime_instance_id=f"inst_source_{run_id}",
+            display=f":{display_number}",
+        )
+        wait_for_uds_ready(source_name, timeout=35.0)
+        exec_uds_cdp(
+            source_name,
+            f"""
+        targets = await send_cmd(ws, 1, "Target.getTargets")
+        target_id = targets["result"]["targetInfos"][0]["targetId"]
+        attach = await send_cmd(
+            ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}}
+        )
+        s = attach["result"]["sessionId"]
+        await send_cmd(
+            ws,
+            3,
+            "Network.setCookie",
+            {{
+                "name": "t013cookie",
+                "value": "yes",
+                "url": "{http_server}/",
+            }},
+            session_id=s,
+        )
+        print("RESULT:" + json.dumps({{"status": "ok"}}))
+""",
+        )
+        subprocess.run(
+            ["docker", "stop", "-t", "20", source_name],
+            capture_output=True,
+            timeout=30,
+            check=False,
+        )
+        stop_and_rm_container(source_name)
+
+        api_port = _free_port()
+        origin = f"http://127.0.0.1:{api_port}"
+        api = _UvicornThread(
+            create_app(
+                db_path=db,
+                admin_password_file=admin_file,
+                allowed_origins=[origin],
+                artifacts_root=dir_work / "artifacts",
+            ),
+            api_port,
+        )
+        api.start()
+        api_url = f"http://127.0.0.1:{api_port}"
+        api_client = httpx.AsyncClient(base_url=api_url, trust_env=False, timeout=10)
+        login = await api_client.post(
+            "/api/v1/auth/login", json={"password": admin_password}
+        )
+        assert login.status_code == 200, login.text
+        session_cookie = login.cookies.get("cbrowser_session")
+        assert session_cookie
+        api_headers = {
+            "X-CSRF-Token": login.json()["csrf_token"],
+            "Origin": origin,
+            "Cookie": f"cbrowser_session={session_cookie}",
+            "Idempotency-Key": f"duplicate-{run_id}",
+        }
+        duplicate_response = await api_client.post(
+            "/api/v1/profiles/source/duplicate",
+            json={"include_browser_state": True},
+            headers=api_headers,
+        )
+        assert duplicate_response.status_code == 201, duplicate_response.text
+        clone_payload = duplicate_response.json()
+        clone_id = clone_payload["id"]
+        assert clone_payload["current_config_version"] == 1
+        assert clone_payload["fingerprint_seed"] == 999
+        clone_dir = Path(clone_payload["user_data_dir"])
+        assert clone_dir.is_dir()
+        assert (clone_dir / "Cookies").is_file() or (
+            clone_dir / "Default" / "Cookies"
+        ).is_file()
+
+        clone_snap = dir_work / "clone-snapshot.json"
+        create_snapshot_file(
+            clone_snap,
+            profile_id=clone_id,
+            version=1,
+            screen_width=1280,
+            screen_height=720,
+        )
+        run_docker_container(
+            name=clone_name,
+            host_profile_dir=clone_dir,
+            host_runtime_dir=dir_work / "clone-runtime",
+            host_exchange_dir=dir_work / "clone-downloads",
+            snapshot_path=clone_snap,
+            profile_id=clone_id,
+            runtime_instance_id=f"inst_clone_{run_id}",
+            display=f":{display_number + 1}",
+        )
+        wait_for_uds_ready(clone_name, timeout=35.0)
+        result = exec_uds_cdp(
+            clone_name,
+            f"""
+        targets = await send_cmd(ws, 1, "Target.getTargets")
+        target_id = targets["result"]["targetInfos"][0]["targetId"]
+        attach = await send_cmd(
+            ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}}
+        )
+        s = attach["result"]["sessionId"]
+        cookies = await send_cmd(
+            ws,
+            3,
+            "Network.getCookies",
+            {{"urls": ["{http_server}/"]}},
+            session_id=s,
+        )
+        print("RESULT:" + json.dumps({{"cookies": cookies}}))
+""",
+        )
+        cookies = result["cookies"].get("result", {}).get("cookies", [])
+        assert any(
+            item.get("name") == "t013cookie" and item.get("value") == "yes"
+            for item in cookies
+        ), result["cookies"]
+        assert (source_dir / "Cookies").is_file() or (
+            source_dir / "Default" / "Cookies"
+        ).is_file()
+        reset_response = await api_client.post(
+            "/api/v1/profiles/source/reset",
+            json={"confirm": True},
+            headers={**api_headers, "Idempotency-Key": f"reset-{run_id}"},
+        )
+        assert reset_response.status_code == 200, reset_response.text
+        assert reset_response.json()["fingerprint_seed"] != 999
+        assert list(source_dir.iterdir()) == []
+    finally:
+        stop_and_rm_container(source_name)
+        stop_and_rm_container(clone_name)
+        await engine.dispose()
+        if "api" in locals():
+            api.stop()
+        if "api_client" in locals():
+            await api_client.aclose()
+        if dir_work.exists():
+            shutil.rmtree(dir_work, ignore_errors=True)

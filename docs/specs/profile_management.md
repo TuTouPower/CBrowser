@@ -25,6 +25,14 @@
 - 运行时未就绪时会话页显示“运行时未就绪”与启动操作，而不是空白画面。
 - 运行中修改屏幕尺寸只保存配置，页面显示“设置已保存，重启后生效”；用户点击“应用并重启”后才以新尺寸运行。
 
+## 复制与重置
+
+- 配置复制：`POST /api/v1/profiles/{id}/duplicate`（`include_browser_state=false`）创建新 Profile 与配置版本，保留全部有效配置字段、标签与同一指纹种子；不复制浏览器用户数据和 Artifact，源 Profile 不变。
+- 状态复制：同一接口 `include_browser_state=true` 仅在源 `desired_state` 与 `observed_state` 均为 stopped 时执行；复制用户数据目录（跳过 SingletonLock/Cookie/Socket），逐文件校验后创建新 Profile。源运行中返回 409，前端引导停止；Artifact 不复制。
+- 重置：`POST /api/v1/profiles/{id}/reset` 要求显式 `confirm=true`，且源已停止；将用户数据目录移动到备份、更新指纹种子并生成新配置版本，成功后删除备份，失败恢复原目录。保留设置、标签、备注与 Artifact，不影响其他 Profile。
+- 重复请求使用 `Idempotency-Key` 返回同一结果；并发状态复制或源启动通过停止检查与复制后复检拒绝，不发布半复制目录。
+- 前端 Profile 详情页提供复制（仅配置/含状态）与重置确认面板，重置明确列出将清除的浏览器数据。
+
 ## 验收与边界
 
 由 t007 真实栈 E2E（构建产物 + Caddy/API/Supervisor/Gateway/coturn/Browser/Stream + 无头 Google Chrome 双标签页）与 Vitest 验证。公网与原生 Linux x86_64 执行按用户豁免记 NOT_RUN / USER_WAIVED。

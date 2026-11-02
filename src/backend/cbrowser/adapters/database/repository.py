@@ -67,6 +67,7 @@ class ProfileRepository:
         user_data_dir: str | None = None,
         operation_id: str | None = None,
         req_payload: dict[str, Any] | None = None,
+        audit_source: str | None = None,
     ) -> Profile:
         pid = profile_id or str(uuid.uuid4())
         udd = user_data_dir or f"/data/profiles/{pid}/profile"
@@ -176,7 +177,13 @@ class ProfileRepository:
                         entity_id=pid,
                         action="create_profile",
                         actor="system",
-                        details=json.dumps({"sig_hash": sig_hash, "name": config.name}),
+                        details=json.dumps(
+                            {
+                                "sig_hash": sig_hash,
+                                "name": config.name,
+                                "source": audit_source,
+                            }
+                        ),
                         created_at=now,
                     )
                     session.add(audit)
@@ -199,6 +206,18 @@ class ProfileRepository:
                         if existing:
                             return self._to_domain_profile(existing)
             raise
+
+    async def get_audit_event(self, operation_id: str) -> dict | None:
+        async with self._session_maker() as session:
+            audit = await session.get(AuditEventModel, operation_id)
+            if audit is None:
+                return None
+            return {
+                "action": audit.action,
+                "entity_id": audit.entity_id,
+                "entity_type": audit.entity_type,
+                "details": audit.details,
+            }
 
     async def get_profile(self, profile_id: str) -> Profile | None:
         async with self._session_maker() as session:
@@ -225,6 +244,7 @@ class ProfileRepository:
         tags: list[Tag] | None = None,
         *,
         operation_id: str | None = None,
+        audit_action: str = "update_profile",
     ) -> Profile | None:
         """Atomically merge supplied patch fields into latest profile state.
 
@@ -237,7 +257,7 @@ class ProfileRepository:
 
         tag_list = tags if tags is not None else None
         sig_hash = _hash_request(
-            "update_profile",
+            audit_action,
             profile_id,
             {
                 "patch": patch_dict,
@@ -377,7 +397,7 @@ class ProfileRepository:
                             id=operation_id,
                             entity_type="profile",
                             entity_id=profile_id,
-                            action="update_profile",
+                            action=audit_action,
                             actor="system",
                             details=json.dumps(
                                 {"sig_hash": sig_hash, "version": new_version}

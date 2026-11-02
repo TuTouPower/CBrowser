@@ -277,6 +277,17 @@ class ProfileCreateRequest(BaseModel):
         return v.strip()
 
 
+class ProfileDuplicateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    include_browser_state: bool = False
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class ProfileResetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: bool = False
+
+
 class ProfileUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=255)
