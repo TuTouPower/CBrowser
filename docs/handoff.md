@@ -2,25 +2,27 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-02T20:00:00+08:00 t008/t013 已合入；t014 部分合入并保留阻塞
+## 2026-11-02T20:12:30+08:00 t014 已 drop；剪贴板改 seamless 同步；下一步 t009
 
 ### 主仓
 
-- 主分支最新：`e7f58ce`（t014 partial merge）在本交接提交前。已合入：t008 `a448db7`、t013 `c629fe5`、t014 部分 `e7f58ce`（执行 commit `ad39d63`）。未 push。
-- 仓库仅保留 main 分支；t008/t013/t014 工作分支已删除，worktree 已清理。
+- branch `main`，交出时 head_commit `7535802`（本交接单独提交）。仅 main 分支，无 task worktree。origin/main 停在 `60b5024`，本节 commit 未 push。
+- 本节 commit：`856757d` t014 drop 与 t009 AC-003 降级；`7535802` 剪贴板 seamless 同步。
 
-### 已完成
+### 用户决定（2026-11-02）
 
-- t008：Artifact/CDP 自动化，AC 全勾，full review Round 3 两轴 PASS。
-- t013：Profile 复制/状态复制/重置，AC 全勾，full review Round 5 两轴 PASS。
-- t014 已交付部分：Profile `clipboard_sync` → Selkies `enable_clipboard=true/false`、`enable_binary_clipboard=false|locked`、`clipboard_seamless=false|locked`；Stream 入口 CLI；前端只读权限提示（denied/prompt、权限变化监听、不读写剪贴板、Profile 关闭时隐藏）。AC-001/AC-005 已勾。
+- CBrowser 仅本人单机使用。t014 AC-001/005 已随 `e7f58ce` 合入；AC-002/003/004 自动化 E2E 不做。t014 原 branch/worktree 已删，active 状态无法在 main 直接 drop，经 `rewind --to backlog` 后 drop；p015 以 transferred 归档到 t009。
+- t009 依赖改为 t013；AC-003 改为真实 Chrome 手动清单（四类输入框中文提交/预编辑取消/标点、双页同时输入、剪贴板双向同步无截断、关闭时无传输）。
+- 剪贴板：`clipboard_sync` 开启时 `SELKIES_CLIPBOARD_SEAMLESS=true|locked`，纯文本双向自动同步（直接 Cmd+C/V，Selkies `mac_cmd_as_ctrl` 默认开启）；关闭时 `enable_clipboard=false`；二进制保持 `false|locked`。见 decisions 012；计划 8.4/19.3 原“剪贴板原内容保护/后台不覆盖”作废。按用户指示小改动直接在 main 修改，未走 task 流程。
 
-### t014 阻塞
+### 验证
 
-- AC-002/003/004 仍未勾选：缺独立真实 Chrome E2E（四类输入目标、预编辑取消/标点/失败提示、纯文本粘贴截断/重复、真实权限拒绝/后台恢复/跨 Profile 剪贴板隔离）。曾尝试扩展 t004 单体 E2E，IME 阶段后 CDP target 失效，实验已回滚。
-- 待办：`docs/pending/todo/p015_t014_input_clipboard_e2e.md`。恢复时建议从 main 新建独立 t014 worktree，先写独立 Browser+Stream+双 Profile E2E harness，再完成 review/finish。
-- t009–t012 仍 backlog，t009 依赖 t014 完成，不能提前开工。
+- unit 491 passed；frontend Vitest 17 files / 121 passed；md_kx check 与 `git diff --check` 通过。
+- 未跑 tsc 构建（仅改文案）与真实 Chrome 剪贴板 E2E；实际同步行为由 t009 AC-003 手动清单验收。
+- 正在运行的 `cbrowser:latest` 容器是旧版 VNC，不受影响；v2 栈未运行，下次构建 Stream 镜像并启动 v2 时生效。
 
-### 队列
+### 遗留与队列
 
-- t014（阻塞）→ t009 → t010 → t011 → t012。
+- `docs/pending/todo/p014_v2_upload_picker_access.md`：上传文件是否须在容器 GTK 文件选择器中可选，待用户决定范围。
+- 队列：t009 → t010 → t011 → t012。`docs/runtime/goal_queue.json`（gitignored）冻结快照仍含 t014，`goal-check` 输出 `GOAL_QUEUE_STOPPED: t014=dropped`；走 /goal 前须 `task.py goal --reset` 或按新成员重建。
+- t009 其余 AC（8 小时压测、1/3/10 路性能、完整安全矩阵、网络/重启黑盒）对单人使用偏重，开工前与用户确认是否降级。
