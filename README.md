@@ -37,7 +37,7 @@ docker compose up --build -d
 docker compose logs -f
 ```
 
-启动后访问 `http://localhost:56661`（若配置了 `AUTH_TOKEN`，在登录弹窗中输入配置的访问密码）。
+启动前必须在 `.env` 中把 `AUTH_TOKEN` 设为随机值（例如 `openssl rand -hex 32`），留空等于关闭认证。服务只监听本机回环地址，启动后访问 `http://localhost:56661`，在登录弹窗中输入该值。
 
 ## 工作流与任务管理
 
