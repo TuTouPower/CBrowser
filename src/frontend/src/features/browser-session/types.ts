@@ -50,6 +50,7 @@ export interface SessionDiagnosticsData {
 
 export interface BrowserSessionViewProps {
   profileId: string;
+  clipboardSync?: boolean;
   className?: string;
   initialStage?: SessionStage;
   diagnostics?: Partial<SessionDiagnosticsData>;

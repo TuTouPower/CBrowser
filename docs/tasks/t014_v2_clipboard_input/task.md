@@ -22,11 +22,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：纯文本剪贴板传输遵从权限和明确用户操作，权限拒绝提供可执行提示；保护用户原剪贴板内容，后台页面不自动覆盖本机剪贴板，剪贴板内容不进入日志。
+- [x] AC-001：纯文本剪贴板传输遵从权限和明确用户操作，权限拒绝提供可执行提示；保护用户原剪贴板内容，后台页面不自动覆盖本机剪贴板，剪贴板内容不进入日志。
 - [ ] AC-002：真实中文组合输入经键盘消息而非剪贴板粘贴；地址栏、普通输入框、受控输入框、富文本中提交/预编辑取消/标点均精确到达目标浏览器，失败明确提示。
 - [ ] AC-003：两个页面同时向同Profile输入均能到达，切换或关闭一个页面不丢另一页输入；纯文本粘贴无静默截断/重复，容器与宿主剪贴板各自仅发生获授权变更。
 - [ ] AC-004：真实Chrome页面在获得权限、权限拒绝、后台/恢复与切换Profile场景保持各自输入和剪贴板状态，其他Profile不读到对应剪贴板数据；所有测试使用独立已知fixture，不读取用户实际私人剪贴板。
-- [ ] AC-005：Profile clipboard_sync 开启时 Selkies enable_clipboard=true、关闭时为 false，enable_binary_clipboard=false，均服务端锁定；客户端改写设置不生效，关闭后双向均无剪贴板传输，图片等二进制剪贴板不传输。
+- [x] AC-005：Profile clipboard_sync 开启时 Selkies enable_clipboard=true、关闭时为 false，enable_binary_clipboard=false，均服务端锁定；客户端改写设置不生效，关闭后双向均无剪贴板传输，图片等二进制剪贴板不传输。
 
 ### 可测试性声明
 
@@ -59,7 +59,7 @@
 
 <!-- /规范 -->
 
-- UNVERIFIED-SPIKE：以前置task最终已验证协议/镜像为准；不能将当前技术原型直接当生产契约。
+- 无。Selkies 2.1.0 `enable_clipboard`/`enable_binary_clipboard` 与 `|locked` 语义已由固定 wheel 源码核实；输入/剪贴板传输沿用 t004 已验证的官方 composition/Native X11 与 DataChannel 路径，不新增协议。
 
 ### 风险与回退
 

@@ -174,6 +174,9 @@ export SELKIES_ENABLE_COLLAB=false
 export SELKIES_ENABLE_RESIZE=false
 export SELKIES_ENABLE_DUAL_MODE=false
 export SELKIES_FILE_TRANSFERS=none
+export SELKIES_ENABLE_CLIPBOARD="${SELKIES_ENABLE_CLIPBOARD:-true}"
+export SELKIES_ENABLE_BINARY_CLIPBOARD="${SELKIES_ENABLE_BINARY_CLIPBOARD:-false|locked}"
+export SELKIES_CLIPBOARD_SEAMLESS="${SELKIES_CLIPBOARD_SEAMLESS:-false|locked}"
 export SELKIES_MANUAL_RESOLUTION=true
 # The Agent registers the same geometry Selkies captures.
 export CBROWSER_SCREEN_WIDTH="$SCREEN_WIDTH"
@@ -197,6 +200,9 @@ exec python3 -m cbrowser.stream_agent.agent \
   --enable-resize=false \
   --enable-dual-mode=false \
   --file-transfers=none \
+  --enable-clipboard "$SELKIES_ENABLE_CLIPBOARD" \
+  --enable-binary-clipboard "$SELKIES_ENABLE_BINARY_CLIPBOARD" \
+  --clipboard-seamless "$SELKIES_CLIPBOARD_SEAMLESS" \
   --tokens-file "$SELKIES_TOKENS_FILE" \
   --manual-width "$SCREEN_WIDTH" \
   --manual-height "$SCREEN_HEIGHT" \

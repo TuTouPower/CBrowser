@@ -2,10 +2,12 @@ import React, { useRef, useState } from "react";
 import { BrowserSessionViewProps } from "./types";
 import { useBrowserSession } from "./useBrowserSession";
 import { SessionDiagnostics } from "./SessionDiagnostics";
+import { ClipboardPermissionHint } from "./ClipboardPermissionHint";
 import { useI18n } from "../../i18n";
 
 export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
   profileId,
+  clipboardSync = true,
   className = "",
   initialStage,
   diagnostics: overrideDiagnostics,
@@ -71,6 +73,8 @@ export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
           onCheckStatus={onCheckRuntimeStatus}
         />
       )}
+
+      {stage === "connected" && clipboardSync && <ClipboardPermissionHint />}
 
       {/* Per-page audio mute through the official Selkies pipelineControl */}
       {stage === "connected" && (

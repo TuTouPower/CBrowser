@@ -121,6 +121,7 @@ def stream_environment(
     media_addresses: dict[str, str] | None,
     screen_width: int | None,
     screen_height: int | None,
+    clipboard_sync: bool = True,
 ) -> dict[str, Any]:
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -143,6 +144,9 @@ def stream_environment(
         "SELKIES_ENABLE_SHARING": "true",
         "SELKIES_ENABLE_COLLAB": "false",
         "SELKIES_FILE_TRANSFERS": "none",
+        "SELKIES_ENABLE_CLIPBOARD": "true" if clipboard_sync else "false",
+        "SELKIES_ENABLE_BINARY_CLIPBOARD": "false|locked",
+        "SELKIES_CLIPBOARD_SEAMLESS": "false|locked",
     }
     if screen_width is not None and screen_height is not None:
         env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)

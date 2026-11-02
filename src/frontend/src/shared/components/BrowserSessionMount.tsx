@@ -2,11 +2,13 @@ import { BrowserSessionView } from "../../features/browser-session/BrowserSessio
 
 export interface BrowserSessionViewProps {
   profileId: string;
+  clipboardSync?: boolean;
   onCheckRuntimeStatus?: () => void;
 }
 
 export function BrowserSessionMount({
   profileId,
+  clipboardSync = true,
   onCheckRuntimeStatus,
 }: BrowserSessionViewProps) {
   return (
@@ -16,6 +18,7 @@ export function BrowserSessionMount({
     >
       <BrowserSessionView
         profileId={profileId}
+        clipboardSync={clipboardSync}
         onCheckRuntimeStatus={onCheckRuntimeStatus}
       />
     </div>

@@ -830,6 +830,31 @@ with path.open('w') as output:
             selkies_file=selkies_file,
         )
         config_version = b_inspect["Config"]["Labels"]["com.cbrowser.config-version"]
+        clipboard_sync = True
+        if snapshot_json_path is not None:
+            try:
+                snapshot_path = self.validator.validate_runtime_source(
+                    profile_id, snapshot_json_path
+                )
+                parsed_snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                config = (
+                    parsed_snapshot.get("config")
+                    if isinstance(parsed_snapshot, dict)
+                    else None
+                )
+                clipboard_sync = (
+                    bool(config.get("clipboard_sync", True))
+                    if isinstance(config, dict)
+                    else False
+                )
+            except (OSError, ValueError, PathSecurityError) as exc:
+                logger.warning(
+                    "Stream snapshot clipboard_sync unavailable: "
+                    "profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+                clipboard_sync = False
         env = stream_environment(
             public_ip=public_ip,
             display=display,
@@ -841,6 +866,7 @@ with path.open('w') as output:
             media_addresses=media_addresses,
             screen_width=screen_width,
             screen_height=screen_height,
+            clipboard_sync=clipboard_sync,
         )
         ports = stream_ports(udp_mux_port)
 
