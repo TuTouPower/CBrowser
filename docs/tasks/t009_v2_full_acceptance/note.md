@@ -9,7 +9,7 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t013"
+depends_on: "t012"
 conflicts_with: ""
 note: ""
 ---
@@ -24,7 +24,8 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-无
+- 2026-11-02（创建期补记，出处 docs/archive/handoff.md 对应节与 commit 856757d）：用户决定 t014 drop，依赖由 t013,t014 改为 t013；AC-003 由1000次自动化输入/剪贴板压测改为真实 Chrome 手动清单；p015 以 transferred 转入本 task；剪贴板改为 seamless 同步。用户确认不恢复上述降级。
+- 2026-11-02（审阅 adoption 重排，出处 docs/reviews/review_20261102_201727/adoption_decision.md）：依赖改为 t012（正式部署产物先于验收）；AC-005 中 coturn/凭证切换项待 t015 媒体链路结论确定后由 task 维护改写。
 
 ## Review 处置
 

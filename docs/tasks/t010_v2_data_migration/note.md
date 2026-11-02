@@ -1,7 +1,7 @@
 ---
 tid: "t010"
 slug: "v2_data_migration"
-title: "实现可回退完整数据迁移与备份恢复"
+title: "数据迁移、legacy 下线与正式切换"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: "t009"
 conflicts_with: ""
-note: ""
+note: "2026-11-02 合并 t011 与原 t012 AC-004（adoption review_20261102_201727）"
 ---
 
 # Task 过程总账

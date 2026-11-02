@@ -2,16 +2,16 @@
 tid: "t011"
 slug: "v2_remove_legacy"
 title: "完整验收后移除 VNC 与原生桌面旧路径"
-status: "backlog"
+status: "dropped"
 branch: ""
 worktree: ""
 review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t010"
+depends_on: ""
 conflicts_with: ""
-note: ""
+note: "merged into t010"
 ---
 
 # Task 过程总账

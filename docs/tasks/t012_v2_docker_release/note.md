@@ -1,7 +1,7 @@
 ---
 tid: "t012"
 slug: "v2_docker_release"
-title: "完成 Docker 与 Chrome 正式交付构建发布"
+title: "v2 正式部署产物与部署文档"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,7 +9,7 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t011"
+depends_on: "t018"
 conflicts_with: ""
 note: ""
 ---
