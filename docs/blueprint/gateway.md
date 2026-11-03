@@ -30,6 +30,8 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
     - tunnel 包的 `conn_id` 必须属于本 Profile 且由本 Agent 会话打开的 Viewer，否则丢弃。
     - 某 Agent WS 结束（含被同实例新注册替换）时，关闭所有绑定该 session 的 Viewer（Close 1001），不影响绑定新 session 的 Viewer。
 
+注册节流为双预算（t022）：在途握手预留（上限 4，按来源）与失败窗口（20 次/60 秒）分离，成功不消耗失败额度也不清除既有失败记录，超时/取消/失败等全部退出路径释放预留；预算耗尽返回 429。Agent 重连退避带可注入 jitter（缩放至 [50%,100%]，不超上限），避免多 Agent 同步重试。心跳同步更新 registry 的 `runtime_state`（仅已注册会话）。消息预算三层单一权威（stream 协议）：原始 data 1MiB、序列化 envelope 2MiB+64KiB、WS 帧 6MiB+64KiB；超限按 1009 受控关闭单个连接，不影响其他连接。
+
 ## Viewer 隧道与连接隔离 (`/stream/{profile_id}/signal`)
 
 外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`：
@@ -62,7 +64,7 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 |`/gateway/v1/internal/profiles/{profile_id}/quota`|POST|转发帧率配额 `max_fps_cap` 给 Agent|400（body/配额非法）、401（未授权）、503（Agent离线）、409（实例不符）|
 |`/gateway/v1/internal/profiles/{profile_id}/disconnect`|POST|关闭该 Profile 全部 Viewer 连接并通知 Agent|400（body 非法）、401（未授权）、503（Agent离线）、409（实例不符）|
 
-`disconnect` 只断开 Viewer 连接，保持 Agent 注册 WebSocket 存活。
+`disconnect` 只断开 Viewer 连接，保持 Agent 注册 WebSocket 存活。 断开按目标逐个隔离处理：单个 Viewer 关闭失败不跳过其余目标，Agent 通知失败在全部目标处理完后明确返回 503；`quota` 向 Agent 发送失败同样明确 503，不再冒泡未处理 500。三条控制端点的可用性与实例围栏共用同一判定（`supervisor_fence_failure`）。
 
 ## 配置项清单
 

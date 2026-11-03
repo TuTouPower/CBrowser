@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from wait import poll_until
 from aiohttp import ClientSession, WSMsgType
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.supervisor.agent_credentials import AgentCredentials
@@ -497,16 +498,22 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
                     iso_now(),
                 )
                 await agent_ws.send_str(heartbeat.model_dump_json())
-                for _ in range(50):
+
+                async def read_visible() -> bool | None:
                     try:
-                        visible = await control.has_foreground_viewers(
+                        return await control.has_foreground_viewers(
                             profile_id, runtime_instance_id
                         )
-                        break
                     except httpx.HTTPStatusError:
-                        await asyncio.sleep(0.05)
-                else:
-                    pytest.fail("Agent heartbeat was not observable through Gateway")
+                        return None
+
+                visible = await poll_until(
+                    read_visible,
+                    lambda value: value is not None,
+                    timeout=5.0,
+                    interval=0.05,
+                    description="Agent heartbeat observable through Gateway",
+                )
                 assert visible is True
 
                 # 5. Real viewer signaling: connect, tunnel both directions.

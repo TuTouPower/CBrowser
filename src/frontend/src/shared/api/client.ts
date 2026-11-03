@@ -113,11 +113,16 @@ export class ApiClient {
     }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
     const externalSignal = init.signal;
+    const onExternalAbort = () => controller.abort();
     if (externalSignal) {
       if (externalSignal.aborted) controller.abort();
-      else externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+      else externalSignal.addEventListener("abort", onExternalAbort, { once: true });
     }
     let response: Response;
     try {
@@ -128,68 +133,88 @@ export class ApiClient {
         credentials,
         signal: controller.signal,
       });
+
+      if (response.status === 401) {
+        if (this.onUnauthorized) {
+          this.onUnauthorized();
+        }
+      }
+
+      if (!response.ok) {
+        let errorMessage = response.statusText || `Request failed with status ${response.status}`;
+        let errorData: unknown = null;
+        try {
+          errorData = await response.json();
+          if (
+            errorData &&
+            typeof errorData === "object" &&
+            "detail" in errorData &&
+            typeof (errorData as { detail: unknown }).detail === "string"
+          ) {
+            errorMessage = (errorData as { detail: string }).detail;
+          } else if (
+            errorData &&
+            typeof errorData === "object" &&
+            "message" in errorData &&
+            typeof (errorData as { message: unknown }).message === "string"
+          ) {
+            errorMessage = (errorData as { message: string }).message;
+          }
+        } catch (err) {
+          // A body read aborted by the timeout/external signal is not a
+          // "non-JSON response": let the outer mapping classify it.
+          if (controller.signal.aborted) throw err;
+          // Non-JSON response
+        }
+        const payload =
+          errorData && typeof errorData === "object"
+            ? (errorData as Record<string, unknown>)
+            : undefined;
+        throw new ApiError(
+          errorMessage,
+          response.status,
+          errorData,
+          typeof payload?.error === "string" ? payload.error : undefined,
+          Boolean(payload?.retryable),
+          payload?.detail,
+        );
+      }
+
+      if (response.status === 204 || response.headers.get("content-length") === "0") {
+        return undefined as unknown as T;
+      }
+
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        return (await response.json()) as T;
+      }
+
+      return (await response.text()) as unknown as T;
     } catch (err) {
+      if (err instanceof ApiError) {
+        throw err;
+      }
+      if (timedOut) {
+        throw new ApiError("Request timed out", 0, undefined, "timeout", true);
+      }
+      if (externalSignal?.aborted) {
+        // Caller-initiated cancellation is not a timeout and must not be
+        // retried: the caller explicitly abandoned this request.
+        throw new ApiError("Request cancelled", 0, undefined, "cancelled", false);
+      }
       if (controller.signal.aborted) {
         throw new ApiError("Request timed out", 0, undefined, "timeout", true);
       }
       throw err;
     } finally {
+      // The request ends only when the response body has been fully read
+      // (or the operation failed): keep the timeout armed and the external
+      // abort listener attached until this outermost finally (A18).
       clearTimeout(timer);
-    }
-
-    if (response.status === 401) {
-      if (this.onUnauthorized) {
-        this.onUnauthorized();
+      if (externalSignal) {
+        externalSignal.removeEventListener("abort", onExternalAbort);
       }
     }
-
-    if (!response.ok) {
-      let errorMessage = response.statusText || `Request failed with status ${response.status}`;
-      let errorData: unknown = null;
-      try {
-        errorData = await response.json();
-        if (
-          errorData &&
-          typeof errorData === "object" &&
-          "detail" in errorData &&
-          typeof (errorData as { detail: unknown }).detail === "string"
-        ) {
-          errorMessage = (errorData as { detail: string }).detail;
-        } else if (
-          errorData &&
-          typeof errorData === "object" &&
-          "message" in errorData &&
-          typeof (errorData as { message: unknown }).message === "string"
-        ) {
-          errorMessage = (errorData as { message: string }).message;
-        }
-      } catch {
-        // Non-JSON response
-      }
-      const payload =
-        errorData && typeof errorData === "object"
-          ? (errorData as Record<string, unknown>)
-          : undefined;
-      throw new ApiError(
-        errorMessage,
-        response.status,
-        errorData,
-        typeof payload?.error === "string" ? payload.error : undefined,
-        Boolean(payload?.retryable),
-        payload?.detail,
-      );
-    }
-
-    if (response.status === 204 || response.headers.get("content-length") === "0") {
-      return undefined as unknown as T;
-    }
-
-    const contentType = response.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      return (await response.json()) as T;
-    }
-
-    return (await response.text()) as unknown as T;
   }
 
   readonly profiles = {
@@ -222,6 +247,21 @@ export class ApiClient {
     getRuntime: async (profileId: string): Promise<ProfileRuntimeResponse> => {
       return this.request<ProfileRuntimeResponse>(
         `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime`,
+      );
+    },
+    retrySearchDefaults: async (
+      profileId: string,
+      idempotencyKey?: string,
+    ): Promise<ProfileRuntimeResponse> => {
+      // The backend turns the caller's Idempotency-Key into the end-to-end
+      // request_id and deduplicates repeats; without a key every call is a
+      // fresh execution, so the mutation hook always supplies one (A19).
+      return this.request<ProfileRuntimeResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime/search-defaults/retry`,
+        {
+          method: "POST",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
       );
     },
     setDesiredState: async (

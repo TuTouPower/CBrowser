@@ -4,20 +4,29 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
 import { ProfileNewPage } from "../profiles/ProfileNewPage";
-import { defaultApiClient } from "../../shared/api/client";
+import type { ApiClient } from "../../shared/api/client";
+import { ApiClientContext } from "../../shared/api/client_context";
 import { I18nProvider } from "../../i18n";
 
 function renderPages() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // Per-test stub injected at the ApiClient boundary (A22); the production
+  // singleton is never mutated by tests.
+  const stubClient = {
+    health: { check: vi.fn(async () => undefined) },
+    profiles: { create: vi.fn(async () => ({ id: "p-new" })) },
+  } as unknown as ApiClient;
   return render(
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter>
-          <SettingsPage />
-          <ProfileNewPage />
-        </MemoryRouter>
+        <ApiClientContext.Provider value={stubClient}>
+          <MemoryRouter>
+            <SettingsPage />
+            <ProfileNewPage />
+          </MemoryRouter>
+        </ApiClientContext.Provider>
       </QueryClientProvider>
     </I18nProvider>
   );
@@ -26,7 +35,6 @@ function renderPages() {
 describe("settings and profile form i18n", () => {
   beforeEach(() => {
     localStorage.setItem("cbm.locale", "zh");
-    vi.spyOn(defaultApiClient.health, "check").mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -37,8 +45,8 @@ describe("settings and profile form i18n", () => {
   it("switches every previously hardcoded label and placeholder", async () => {
     renderPages();
 
-    expect(screen.getByText("系统网关与控制 API")).toBeTruthy();
-    expect(screen.getByText("v2 API 服务状态")).toBeTruthy();
+    expect(screen.getByText("控制 API")).toBeTruthy();
+    expect(screen.getByText("控制 API 健康检查")).toBeTruthy();
     expect(screen.getByPlaceholderText("例如：工作配置")).toBeTruthy();
     expect(screen.getByText("代理 URL（可选）")).toBeTruthy();
     expect(
@@ -48,8 +56,8 @@ describe("settings and profile form i18n", () => {
 
     fireEvent.click(screen.getByText("English"));
 
-    expect(screen.getByText("System Gateway & Control API")).toBeTruthy();
-    expect(screen.getByText("Status of v2 API services")).toBeTruthy();
+    expect(screen.getByText("Control API")).toBeTruthy();
+    expect(screen.getByText("Control API health check")).toBeTruthy();
     expect(screen.getByPlaceholderText("e.g. Work Profile")).toBeTruthy();
     expect(screen.getByText("Proxy URL (optional)")).toBeTruthy();
     expect(screen.getByText("Width (px)")).toBeTruthy();

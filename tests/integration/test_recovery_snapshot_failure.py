@@ -1,11 +1,22 @@
 """A failed immutable-version RPC must never fall back to guessed config."""
 
-from types import SimpleNamespace
-
 import httpx
 import pytest
 from aiohttp import web
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
+
+
+class _CoreStub:
+    """The exact SupervisorCore surface RecoveryCoordinator consumes here:
+    an ``api`` client plus an ``_auth_headers()`` call (t024 AC-014/A43 --
+    an explicit stub, not the builtin ``dict`` type standing in as the
+    headers callable)."""
+
+    def __init__(self, api: httpx.AsyncClient) -> None:
+        self.api = api
+
+    def _auth_headers(self) -> dict[str, str]:
+        return {}
 
 
 @pytest.mark.asyncio
@@ -24,9 +35,7 @@ async def test_failed_snapshot_rpc_aborts_instead_of_constructing_defaults():
         async with httpx.AsyncClient(
             base_url=f"http://127.0.0.1:{port}", trust_env=False
         ) as api:
-            coordinator = RecoveryCoordinator(
-                SimpleNamespace(api=api, _auth_headers=dict)
-            )
+            coordinator = RecoveryCoordinator(_CoreStub(api))
             with pytest.raises(httpx.HTTPStatusError):
                 await coordinator._load_profile_config(
                     "profile", 1, {"name": "must_not_launch"}

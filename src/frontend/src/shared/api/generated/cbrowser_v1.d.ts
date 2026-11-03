@@ -161,6 +161,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/{profile_id}/runtime/search-defaults/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Profile Search Defaults */
+        post: operations["retry_profile_search_defaults_api_v1_profiles__profile_id__runtime_search_defaults_retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/{profile_id}/runtime/desired-state": {
         parameters: {
             query?: never;
@@ -539,6 +556,12 @@ export interface components {
             auto_launch: boolean;
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
+            /**
+             * Font Bundle
+             * @default none
+             * @enum {string}
+             */
+            font_bundle: "none" | "wqy-microhei" | "wqy-zenhei";
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -657,6 +680,11 @@ export interface components {
             auto_launch: boolean;
             /** Color Scheme */
             color_scheme?: string | null;
+            /**
+             * Font Bundle
+             * @default none
+             */
+            font_bundle: string;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -716,10 +744,16 @@ export interface components {
         ProfileRuntimeResponse: {
             /** Profile Id */
             profile_id: string;
-            /** Desired State */
-            desired_state: string;
-            /** Observed State */
-            observed_state: string;
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
             /** Runtime Instance Id */
             runtime_instance_id: string | null;
             /** Config Version */
@@ -732,6 +766,7 @@ export interface components {
             last_exit_event_id: string | null;
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
+            search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -739,10 +774,16 @@ export interface components {
         ProfileRuntimeStatusEvent: {
             /** Profile Id */
             profile_id: string;
-            /** Desired State */
-            desired_state: string;
-            /** Observed State */
-            observed_state: string;
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
             /** Runtime Instance Id */
             runtime_instance_id?: string | null;
             /**
@@ -757,6 +798,7 @@ export interface components {
             restart_blocked: boolean;
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
+            search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -790,6 +832,8 @@ export interface components {
             auto_launch?: boolean | null;
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
+            /** Font Bundle */
+            font_bundle?: ("none" | "wqy-microhei" | "wqy-zenhei") | null;
             /** Launch Args */
             launch_args?: string[] | null;
             /** Extension Paths */
@@ -820,6 +864,29 @@ export interface components {
              * @enum {string}
              */
             desired_state: "stopped" | "running";
+        };
+        /**
+         * SearchDefaultsStatusData
+         * @description API view of the runtime agent's search-defaults outcome (t022 A55).
+         *
+         *     Mirrors the runtime agent protocol model; kept independent of browser
+         *     readiness: a failed initialization is reported here, never as a
+         *     runtime failure.
+         */
+        SearchDefaultsStatusData: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "applied" | "failed" | "disabled" | "pending";
+            /** Error Kind */
+            error_kind?: string | null;
+            /** Runtime Instance Id */
+            runtime_instance_id: string;
+            /** Request Id */
+            request_id?: string | null;
+            /** Updated At */
+            updated_at: string;
         };
         /** SessionResponse */
         SessionResponse: {
@@ -1793,6 +1860,84 @@ export interface operations {
                 };
             };
             /** @description Database busy (retryable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    retry_profile_search_defaults_api_v1_profiles__profile_id__runtime_search_defaults_retry_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Idempotency-Key"?: string | null;
+            };
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileRuntimeResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Profile not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Live instance changed; retry against the current instance */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Runtime or supervisor unavailable */
             503: {
                 headers: {
                     [name: string]: unknown;

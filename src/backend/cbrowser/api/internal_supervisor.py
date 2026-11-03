@@ -12,6 +12,7 @@ from cbrowser.domain.models import (
     RuntimeEventResponse,
 )
 from cbrowser.secret_files import read_secret_file
+from cbrowser.service_errors import ServiceNotConfiguredError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import SecretStr
@@ -33,7 +34,7 @@ def require_supervisor(
 ) -> None:
     token = getattr(request.app.state, "supervisor_token", None)
     if token is None:
-        raise HTTPException(503, "Supervisor RPC is not configured")
+        raise ServiceNotConfiguredError("Supervisor RPC is not configured")
     if credentials is None or not hmac.compare_digest(
         credentials.credentials.encode("utf-8"),
         token.get_secret_value().encode("utf-8"),

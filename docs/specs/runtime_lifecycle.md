@@ -33,6 +33,12 @@
 - 已读取的 Native 退出事件即使首次上传失败，也优先于 Docker/missing 合成事件，防止正常退出被误记异常并重启。
 - 启动独占锁内回收严格匹配归属的 cache-init/network-policy helper。周期扫描不回收临时 helper；网络清理遇未知端点失败，不强制断开其他对象。
 
+## 停止结果、事件投递与默认搜索（t022）
+
+- 停止命令的结果与观测分离：命令结果为 stopped（实际停止）/already_absent（确认不存在）/superseded_noop（目标已被新实例取代且不触碰新实例），同 operation 重放返回同一结果；消费方只按权威观测记录判定已停止，不把请求成功当作观测停止。生命周期冲突以类型化错误返回 409，端口耗尽 503。
+- 诊断事件投递三态：已接受才推进业务状态；永久语义拒绝只入死信一次并持久推进游标；认证/限流/网关类失败为暂不可用，保持待投递重试。
+- 默认搜索初始化与浏览器 readiness 分离（D1=B）：有界 best-effort 执行，结果以独立类型化状态呈现（applied/failed/disabled/pending）；失败不写成功 marker、不阻断启动。重试经 API→Supervisor→Agent UDS 的围栏通道（绑定当前实例、request_id 幂等），在 Runner 活 context 上执行，不重启浏览器；只有验证成功才记录成功，正常启动不覆盖用户后续手动选择。
+
 ## 资源策略
 
 Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预算计算压力，结合真实前台可见性下发 Profile 级 FPS cap。缺失或失败样本不能当低负载，单个 Profile 采样或 RPC 失败不阻断其他 Profile；解除限制后由 Stream 活动策略决定恢复 8/30 FPS。全后台不误触发前台 cap，Viewer 心跳不建立控制租约。

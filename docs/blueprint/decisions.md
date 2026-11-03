@@ -4,6 +4,11 @@
 
 每条结构：`## NNN 标题（YYYY-MM-DD）`，下接 `- 背景` / `- 选项` / `- 结论` / `- 替代` 四项；替代填旧编号，无则写「无」。
 
+## 产品历史勘误入口与 ADR 传播约定（t024）
+
+- 历史审阅/决策文档的事实勘误集中在独立勘误文件中，冻结原文不改：第一轮全仓审阅见 `docs/reviews/review_20261102_201727_errata.md`。跨轮引用一律使用「报告路径 + finding ID」，不使用裸编号。
+- ADR 传播清单约定：新增或替代 ADR 时，同一变更须同步核对并更新受影响的现行文档面 —— `docs/blueprint/` 对应主题文件、`docs/specs/` 生效 spec、`docs/v2_architecture_plan.md` 的对应节标注、相关 findings 的后续标注与 `docs/handoff.md` 现行一节；已归档 task 的原 AC 不改，只在勘误中指向替代关系。
+
 ## 001 采用独立 Docker 容器实现多 Profile 强隔离（2026-10-26）
 
 - 背景：单进程或单容器共享 X 显示服务容易出现环境污染、端口竞争、指纹泄露及崩溃连锁反应。
@@ -134,3 +139,17 @@
     2. API、Supervisor 写入的运行时数据与 Browser/Stream 容器统一归属 uid/gid 1000；目录 0700/0750、文件 0600/0640，chown 失败即报错；开发路径改为在匹配 uid 下运行。
 - 结论：采用选项 2。Supervisor 以特权完成 chown，X11 目录由 1777 改为 0750（Browser/Stream 同为 uid 1000）；engine cache 只读挂载前收敛为 0750/0640。真实 Browser/Stream 双容器 E2E 已验证媒体与输入正常。
 - 替代：无
+
+## 015 默认无中文字体 + per-profile 可选开源 CJK 字体包（2026-11-04T01:04:09+08:00）
+
+- 背景：历史提交 `0b4dc78` 曾 purge 全部 CJK 字体以降低中文字体指纹暴露，Browser 镜像因此对中文网页缺字或 fallback。用户要求改为按 Profile 配置：部分 Profile 保持无中文字体，部分可选不同中文字体包。2026-11-03 已在本地真实引擎验证：字体放在 fontconfig 默认扫描路径之外、按 Profile 生成 `FONTCONFIG_FILE`（include 系统配置并追加字体目录）可精确开关 Chrome 的中文字体可见性。
+- 选项：
+    1. 镜像全局安装中文字体，所有 Profile 一律可见（回到指纹暴露且不可按 Profile 区分）。
+    2. 镜像 staged 文泉驿微米黑/正黑到 `/opt/cbrowser-fonts/`（默认扫描路径之外），`ProfileConfig.font_bundle` 三档（`none` 默认、`wqy-microhei`、`wqy-zenhei`）经 Runner 生成专属 fontconfig 配置控制可见性。
+    3. 引入 Windows 专有中文字体（SimSun、Microsoft YaHei）以贴近 Windows 平台伪装。
+- 结论：采用选项 2。默认 `none` 保持既有反指纹基线；启用 bundle 的 Profile 明确接受 Linux 中文字体特征与 Windows 伪装不一致的取舍，镜像增大约 22MB。选项 3 因字体不可自由分发、授权风险明确不做。不挂载宿主字体目录、不在宿主数据目录预置字体文件；Stream 容器不涉及（画面渲染只发生在 Browser 容器）。
+- 替代：无（`0b4dc78` 的全局 purge 由本决定的 staged + 开关机制取代其效果面，默认行为保持一致）
+
+## 016 默认搜索初始化不作为浏览器就绪成功条件（D1=B，2026-11-04，t022）
+
+默认搜索引擎初始化（set_google_default）是 best-effort 增强，不是浏览器 readiness 的成功条件：初始化异常或超时后浏览器仍视为可用，其结果以独立类型化状态（applied/failed/disabled/pending）呈现到 Profile 页面，并提供受身份围栏保护、可幂等重试的操作；重试不重启浏览器、不干扰已有标签页，只有验证 Google 成为默认后才写成功 marker，正常启动不覆盖用户后续手动选择。原 D1 在 t022 立项时经用户选择 B 方案定案。

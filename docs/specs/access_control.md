@@ -25,6 +25,18 @@
 - API 校验通过后经内部 Supervisor token 建立到 Supervisor 的 WebSocket，由 Supervisor 再经 Agent UDS 转发到浏览器 loopback CDP；所有转发均为双向原样透传。
 - `GET /api/v1/profiles/{profileId}/automation` 返回授权端点路径、运行状态与 Supervisor 配置状态，不返回明文凭证。
 
+## 内部服务身份、Origin 与审计（t021）
+
+- 内部三面未配置统一返回 503 `service_not_configured`（`retryable=false`），与 503 `database_busy`（`retryable=true`）区分；OpenAPI 按路径标注 `SupervisorServiceBearer`（含 Artifact 面）/`GatewayServiceBearer`，两令牌互不通用。
+- Origin 全链统一 `normalize_origin`：Viewer 授权对入参与允许列表都先归一化再比对（尾斜杠/默认端口变体等价），畸形 Origin 返回 `invalid_origin`、畸形 Referer 返回 403，不抛 500。
+- 内部 Gateway 的 `automation-authorize` 面已删除（无生产消费者）；自动化授权只经 v1 入口的 `AuthService`。
+- 授权审计覆盖全部拒绝类别并带 reason 与来源：已知令牌逐条记录；未知/非法令牌按 `(reason, source)` 聚合计数，不存令牌/哈希；成功授权不清除限速失败记录。
+- 密码哈希/校验（含哑元）在线程池执行，不阻塞事件循环。
+
 ## 验证
 
 真实 SQLite + HTTP 集成测试覆盖上述正负例；真实 HTTPS Cookie 属性、跨 Origin 与未授权 Profile 的信令拒绝由 Gateway E2E 在官方 Chrome 中验证。自动化 CDP 代理由单元（Supervisor→UDS）、集成（API→Supervisor→UDS）和真实浏览器 UDS CDP E2E 共同验证。
+
+## 登录回跳约束（t023）
+
+- 登录后的 `next` 回跳只接受站内绝对路径；一切指向登录页本身的变体（大小写、尾斜杠、携带 query/hash）一律拒绝，避免登录后循环；协议相对、反斜杠与绝对 URL 等开放重定向形态继续拒绝。

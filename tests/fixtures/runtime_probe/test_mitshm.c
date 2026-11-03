@@ -65,7 +65,7 @@ int main(int argc, char **argv) {
         return 13;
     }
 
-    shminfo.shmid = shmget(IPC_PRIVATE, img->bytes_per_line * img->height, IPC_CREAT | 0777);
+    shminfo.shmid = shmget(IPC_PRIVATE, img->bytes_per_line * img->height, IPC_CREAT | 0600);
     if (shminfo.shmid < 0) {
         perror("FAIL: shmget failed");
         XDestroyImage(img);

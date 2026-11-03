@@ -26,7 +26,7 @@ from cbrowser.domain.models import (
     Tag,
     generate_fingerprint_seed,
 )
-from diagnostics import emit_runtime_event_log
+from cbrowser.runtime_event_log import emit_runtime_event_log
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 logger = logging.getLogger("cbrowser.services.profile_service")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import collections
 import time
+from collections.abc import Callable
 
 
 class LoginRateLimiter:
@@ -20,7 +21,11 @@ class LoginRateLimiter:
         window_seconds: float = 60.0,
         global_max_failures: int = 20,
         global_window_seconds: float = 15 * 60.0,
+        clock: Callable[[], float] = time.time,
     ):
+        # Injectable clock (t024 AC-014/A43): tests drive a local callable
+        # instead of patching the stdlib time module object.
+        self._clock = clock
         self.max_failures = max_failures
         self.window_seconds = window_seconds
         self.global_max_failures = global_max_failures
@@ -47,7 +52,7 @@ class LoginRateLimiter:
                 self._failures.pop(client_ip, None)
 
     def rate_limit_layer(self, client_ip: str) -> str | None:
-        now = time.time()
+        now = self._clock()
         self._prune(now)
         queue = self._failures.get(client_ip)
         if queue is not None:
@@ -63,7 +68,7 @@ class LoginRateLimiter:
         return self.rate_limit_layer(client_ip) is not None
 
     def retry_after_seconds(self, client_ip: str) -> int:
-        now = time.time()
+        now = self._clock()
         wait = 0.0
         queue = self._failures.get(client_ip)
         if queue:
@@ -78,7 +83,7 @@ class LoginRateLimiter:
         return max(1, int(wait) + (1 if wait % 1 else 0))
 
     def record_failure(self, client_ip: str) -> None:
-        now = time.time()
+        now = self._clock()
         self._prune(now)
         self._trim(self._failures[client_ip], now - self.window_seconds)
         self._failures[client_ip].append(now)

@@ -6,9 +6,10 @@ Tests the full lifecycle convergence across API, Supervisor, and Runtime Agent U
 2. Owner-loss abnormal exit: Agent reports process_observation_lost with Chrome exit 0;
    Supervisor validates Agent via UDS and API records failure_count=1 while
    desired_state remains "running".
-3. Offline API recovery: API is offline when clean exit occurs, Supervisor restarts,
-   API recovers; Supervisor converges Profile A to desired_state="stopped", while
-   healthy Profile B remains running.
+3. Dual Profile isolation: Profile A normally exits while Profile B is running;
+   Profile A converges to desired_state="stopped", Profile B remains running.
+4. Normal-exit acknowledgement: the API acknowledgement of a normal exit triggers
+   Supervisor scan cleanup and releases the instance port allocation.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ import os
 import secrets
 import shutil
 import sys
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -137,9 +140,29 @@ async def _run_uds_server(app, sock_path: Path):
     return server, task
 
 
+@pytest.fixture
+def short_data_root() -> Iterator[Path]:
+    """Short system-temp data root for the UDS-bound suites in this module.
+
+    Root cause of the p019 spike (t024 AC-006): the agent socket is bound
+    through a CWD-relative path (see _run_uds_server), and AF_UNIX sun_path
+    is capped near 104 bytes.  A pytest tmp_path makes
+    <root>/runtime/<profile-uuid>/agent.sock exceed the cap, so the agent
+    server fails to bind ("AF_UNIX path too long"), the Supervisor health
+    probe finds no socket, and the exit event never reconciles -- silently.
+    A short mkdtemp root keeps the socket path in range while the test state
+    lives outside the repository write domain; the finalizer removes it.
+    """
+    root = Path(tempfile.mkdtemp(prefix="cbx-ner-", dir="/tmp"))
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 @pytest.mark.asyncio
 async def test_normal_exit_converges_to_desired_stopped_while_container_running(
-    supervisor_api, tmp_path: Path
+    supervisor_api, short_data_root: Path
 ) -> None:
     """AC-001: Clean exit in running container observed via Agent UDS sets
     desired_state='stopped'.
@@ -157,9 +180,7 @@ async def test_normal_exit_converges_to_desired_stopped_while_container_running(
     config_version = 1
     _bind(server, token, profile_id, instance_id, config_version)
 
-    data_root = (
-        Path(".scratch/normal_exit_fix") / f"d_{secrets.token_hex(3)}"
-    ).resolve()
+    data_root = short_data_root / f"d_{secrets.token_hex(3)}"
     data_root.mkdir(parents=True, exist_ok=True)
     token_file = data_root / "control" / "supervisor_token"
     token_file.parent.mkdir(parents=True, exist_ok=True)
@@ -291,7 +312,7 @@ async def test_normal_exit_converges_to_desired_stopped_while_container_running(
 
 @pytest.mark.asyncio
 async def test_owner_loss_exit_preserves_running_intent_and_records_failure(
-    supervisor_api, tmp_path: Path
+    supervisor_api, short_data_root: Path
 ) -> None:
     """AC-002: SDK owner-loss exit (code 0, process_observation_lost) records failure
     and keeps desired running.
@@ -309,9 +330,7 @@ async def test_owner_loss_exit_preserves_running_intent_and_records_failure(
     config_version = 1
     _bind(server, token, profile_id, instance_id, config_version)
 
-    data_root = (
-        Path(".scratch/normal_exit_fix") / f"d_{secrets.token_hex(3)}"
-    ).resolve()
+    data_root = short_data_root / f"d_{secrets.token_hex(3)}"
     data_root.mkdir(parents=True, exist_ok=True)
     token_file = data_root / "control" / "supervisor_token"
     token_file.parent.mkdir(parents=True, exist_ok=True)
@@ -435,7 +454,7 @@ async def test_owner_loss_exit_preserves_running_intent_and_records_failure(
 
 @pytest.mark.asyncio
 async def test_offline_recovery_dual_profile_isolation(
-    supervisor_api, tmp_path: Path
+    supervisor_api, short_data_root: Path
 ) -> None:
     """AC-003: Profile A normally exits while Profile B is running; Profile A
     converges to stopped, Profile B stays running.
@@ -462,9 +481,7 @@ async def test_offline_recovery_dual_profile_isolation(
     inst_b = "inst_companion_b"
     _bind(server, token, profile_b, inst_b, 1)
 
-    data_root = (
-        Path(".scratch/normal_exit_fix") / f"d_{secrets.token_hex(3)}"
-    ).resolve()
+    data_root = short_data_root / f"d_{secrets.token_hex(3)}"
     data_root.mkdir(parents=True, exist_ok=True)
     token_file = data_root / "control" / "supervisor_token"
     token_file.parent.mkdir(parents=True, exist_ok=True)
@@ -631,7 +648,7 @@ async def test_offline_recovery_dual_profile_isolation(
 
 @pytest.mark.asyncio
 async def test_normal_exit_ack_triggers_scan_cleanup_and_port_release(
-    supervisor_api, tmp_path: Path
+    supervisor_api, short_data_root: Path
 ) -> None:
     """AC-004: Normal exit ACK sets desired stopped; next scan pass cleans up
     containers, releases port and clears session.
@@ -658,9 +675,7 @@ async def test_normal_exit_ack_triggers_scan_cleanup_and_port_release(
     inst_b = "inst_companion_scan"
     _bind(server, token, profile_b, inst_b, 1)
 
-    data_root = (
-        Path(".scratch/normal_exit_fix") / f"d_{secrets.token_hex(3)}"
-    ).resolve()
+    data_root = short_data_root / f"d_{secrets.token_hex(3)}"
     data_root.mkdir(parents=True, exist_ok=True)
     token_file = data_root / "control" / "supervisor_token"
     token_file.parent.mkdir(parents=True, exist_ok=True)

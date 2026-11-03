@@ -12,6 +12,7 @@ from cbrowser.adapters.database.repository import (
 )
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
 from cbrowser.api.v1.runtime_views import (
+    fence_search_defaults,
     make_runtime_response,
     resolve_operation_id,
 )
@@ -99,6 +100,13 @@ async def subscribe_runtime_events(
             try:
                 rt = await service.get_runtime(p.id)
                 last_err = coordinator.get_last_error(p.id) if coordinator else None
+                search_defaults = fence_search_defaults(
+                    coordinator.get_search_defaults(p.id)
+                    if coordinator is not None
+                    and hasattr(coordinator, "get_search_defaults")
+                    else None,
+                    rt.runtime_instance_id,
+                )
                 snapshots.append(
                     ProfileRuntimeEventData(
                         profile_id=rt.profile_id,
@@ -108,6 +116,7 @@ async def subscribe_runtime_events(
                         failure_count=rt.failure_count,
                         restart_blocked=rt.restart_blocked,
                         last_coordinator_error=last_err,
+                        search_defaults=search_defaults,
                         updated_at=rt.updated_at,
                     )
                 )
@@ -185,6 +194,7 @@ async def create_profile(
         clipboard_sync=payload.clipboard_sync,
         auto_launch=payload.auto_launch,
         color_scheme=payload.color_scheme,
+        font_bundle=payload.font_bundle,
         launch_args=payload.launch_args,
         extension_paths=payload.extension_paths,
         allow_3p_cookies=payload.allow_3p_cookies,
@@ -582,11 +592,74 @@ async def get_profile_runtime(
     try:
         rt = await service.get_runtime(profile_id)
         coord = getattr(request.app.state, "coordinator", None)
+        if coord is not None and hasattr(coord, "refresh_search_defaults"):
+            await coord.refresh_search_defaults(profile_id)
         return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
+        )
+
+
+@profile_router.post(
+    "/profiles/{profile_id}/runtime/search-defaults/retry",
+    response_model=ProfileRuntimeResponse,
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorResponse,
+            "description": "Profile not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorResponse,
+            "description": "Live instance changed; retry against the current instance",
+        },
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Runtime or supervisor unavailable",
+        },
+    },
+)
+async def retry_profile_search_defaults(
+    profile_id: str,
+    request: Request,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    from cbrowser.api.runtime_coordinator import (
+        SearchDefaultsConflictError,
+        SearchDefaultsUnavailableError,
+    )
+
+    coord = getattr(request.app.state, "coordinator", None)
+    if coord is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Runtime coordinator is unavailable",
+        )
+    try:
+        # The caller's idempotency key becomes the end-to-end request_id:
+        # repeating this call with the same key is deduplicated by the
+        # supervisor and the runtime agent instead of executing twice.
+        await coord.retry_search_defaults(
+            profile_id, request_id=idempotency_key or None
+        )
+        rt = await service.get_runtime(profile_id)
+        return make_runtime_response(rt, coord)
+    except ProfileNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile {profile_id} not found",
+        )
+    except SearchDefaultsConflictError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Live instance changed; retry against the current instance",
+        )
+    except SearchDefaultsUnavailableError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Search defaults retry is unavailable for this runtime",
         )
 
 

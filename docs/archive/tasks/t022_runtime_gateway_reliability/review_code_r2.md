@@ -1,0 +1,40 @@
+Verdict: PASS
+
+# t022 code review 第 2 轮（full review，code 路复审）
+
+- 基线：`d699e5b`（t021），分支 `t022_runtime_gateway_reliability`；复核对象为第 1 轮后执行侧处置清单 f001–f012 与两处新实现，逐项到当前工作区源码核实，不采信执行侧自述。
+- **快照与并发警告**：本轮审阅期间（2026-11-04 约 03:35–03:55 CST）执行侧仍在并发修改本工作区：`gateway/registry.py`（03:52:04）、`tests/unit/test_gateway_registry.py`（03:52:48）、`supervisor/docker_adapter.py`（03:52:59、03:54:32）、`supervisor/core.py`（03:53:55）均在本轮审阅开始后落盘。本报告结论绑定 **2026-11-04 03:55 CST 的磁盘快照**；其中 f003/f006/f009 的结论已按落盘后的最终版本重核（见各条）。若执行侧在此后仍有改动，须以最终门禁复跑为准。
+- 本轮实跑（单文件，非全量门禁）：`test_gateway_registry.py` 7 passed；`test_supervisor_cache_generations.py` + `test_gateway_registry.py` + `test_gateway_disconnect_targets.py` 合跑 17 passed；`test_supervisor_docker_boundaries.py` 与 cache 合跑 13 passed / 1 failed（失败项为范围外在途项，见「范围外观察」）。
+
+## 第 2 轮逐项复核表
+
+| 条目 | 执行侧声称 | 核实结论 |
+|---|---|---|
+| f001 | API retry 端点新增 Idempotency-Key 透传为 request_id；coordinator 无 key 时单次生成；schemas/openapi 两份重导出、前端 generated 类型重生成 | **属实**。`api/v1/router.py` 的 `retry_profile_search_defaults` 以 `Header(alias="Idempotency-Key")` 接收并以 `request_id=idempotency_key or None` 透传 coordinator（注释明示端到端去重语义）；`runtime_coordinator.retry_search_defaults(profile_id, request_id=None)` 仅在无 key 时以 `request_id or f"sd-retry-{uuid.uuid4().hex}"` 单次生成，Supervisor→Agent 链按同一 request_id 围栏+去重。两份 OpenAPI（`cbrowser_v1.json`、`cbrowser_internal.json`）的该端点均已含 `Idempotency-Key` header 参数（脚本解析确认）；前端 `shared/api/generated/cbrowser_v1.d.ts` 含该路径，`shared/api/types.ts` 暴露 `SearchDefaultsStatusData`。注：前端 `useRetrySearchDefaultsMutation`/`client.profiles.retrySearchDefaults` 目前未主动生成 key（后端在无 key 时单次生成，语义不破；前端复用同一 key 属后续增强，不在本条声称内）。 |
+| f002 | `useProfileEventsSync` 合并 search_defaults（undefined 保持旧值），有前端测试覆盖 | **属实**。`useProfilesQuery.ts` 的 `useProfileEventsSync` 对 `search_defaults` 用 `event.search_defaults !== undefined ? event.search_defaults : old.search_defaults`（与 `runtime_instance_id`、`last_coordinator_error` 同一口径，显式 null 仍可清除旧值）；`useProfilesQuery.test.tsx` 有对应用例（事件携带 status 时合并、且断言合并结果），覆盖成立。 |
+| f003 | docker_adapter 缓存指纹加入 st_mtime_ns；_CacheGeneration docstring 与 blueprint 写明信任边界（非内容哈希、独占写前提） | **属实，且最终快照超出声称**。`_cache_tree_fingerprint` 普通文件项为 `f"{st_size}:{st_mtime_ns}"`；`_CacheGeneration` docstring 明示「NOT a content hash」与独占写不变式前提；`docs/blueprint/supervisor.md` 同步成文（指纹覆盖路径/类型/大小/mtime/链接目标、非内容哈希、以独占写不变式为前提）。此外最终快照中快速路径已改为**重算树指纹并与封存记录比对**后才复用（漂移即全量校验重封），且 `_next_cache_generation` 读取磁盘 sidecar 使代次号跨进程单调——第 1 轮 code f001/f003 的核心缺陷（快速路径从不复验树、同尺寸替换不可见、代次号跨重启重置）在最终快照均已实质消除，不再是仅文档化处置。cache 代次测试全绿。 |
+| f004 | stream_agent/agent.py 配额分支 ValueError 后不再 return，仍执行 reconcile_capture_state | **属实**。`_handle_control_packet` 的 SUPERVISOR_QUOTA 分支：`set_supervisor_quota` 的 `except ValueError` 只记日志保留旧 cap，其后 `await self.policy.reconcile_capture_state(caller="supervisor_quota")` 无条件执行（无 return/skip 路径）。 |
+| f005 | registry 条目与 pump 变异对象同一性（执行侧未改语义，请独立核查） | **独立结论：同一性成立且为有意设计，未见缺陷**。`AgentRegistry.register/get` 存取同一 `RegisteredAgent` 对象、无拷贝；Gateway pump 闭包中的 `agent` 即注册对象，心跳路径直接写 `agent.unpaused_video_consumers/capture_running`、`registry.update_heartbeat` 同步写同一对象的 `last_heartbeat/runtime_state`，quota/disconnect 路由经 `registry.get` 读同一对象——全链单一对象、无副本漂移。安全性由三道围栏保证：替换注册时旧 ws 被关闭使旧 pump 退出；pump 收尾 `registry.remove(pid, ws=ws)` 以 ws 同一性防误删新注册；旧 pump 的隧道/动作包校验闭包内旧 `session_id` 且 viewer 条目已按旧 session 清理，不能污染新会话。故「不改语义」的处置可接受。 |
+| f006 | RegistrationThrottle 来源映射有界性（执行侧称未改实现、仅新增单测断言上界，请独立核查） | **声称与最终快照不符——实现实际已重写，且重写正确（优于声称）**。审阅开始时磁盘仍为第 1 轮原文（自带的新测试当时实测为红：victim 窗口内失败史被 `while` 逐出冲刷）；03:52 落盘的新实现：`_evict_sources(clock, *, protect)` 由 reserve/release 传入当前 key 永不自逐；仅逐出 `_inflight == 0` 的来源，在途计数永不被逐出销毁；`while` 逐出优先无失败史者、其余按最近失败时间 LRU，且同步 pop `_inflight`；全活时允许暂时超 cap（docstring 明示以实际并发为界）。重写后的测试（holder 在途保持 + victim 持续失败史保留）实测 7 passed；本人探针复验：受保护来源第 3 次 reserve 被 max_inflight 正确拒绝、持保留来源在洪泛下计数不丢。第 1 轮 code f002 两缺陷（自逐销毁在途计数、while 冲刷他人失败史）在最终快照均已消除。**注意**：本条结论绑定 03:52 后快照；若父级在更早快照看到旧实现，以本条为准。 |
+| f007(a) | gateway 注册处理器改为 registry.register 成功后先 release(success=True) 再发 ACK | **属实**。`handle_agent_register` 顺序为：`registry.register(agent)` → 关闭旧 session viewers/旧 ws → `registration_throttle.release(source, success=True)` 并置 `handshake_complete=True` → `ws.send_str(ack)`；finally 仅在未完成时 `release(success=False)`，ACK 发送失败不再把有效注册误记为节流失败。 |
+| f007(b) | 存量 AuthorizationThrottle 无界问题立 pending p025，不在本 task 改 | **可接受**。`docs/pending/todo/p025_gateway_preexisting_hardening.md` 已建，内容具体（按 RegistrationThrottle 同模式补上限与淘汰+单测）；该问题为存量（viewer 授权节流，非 t022 引入——registry.py 中 `AuthorizationThrottle._failures` 确以硬编码 1024 做事后清理但无 max_sources 式建模，与 p025 描述一致），隔离到 pending 不阻塞本 task。 |
+| f008 | pump tunnel 身份复检问题同入 p025 第 2 条（先裁决威胁模型） | **可接受**。p025 第 2 条准确记录了待裁决点（已认证 Agent 连接内伪造 conn_id 的影响面）。补充现状：当前 pump 隧道分支已逐消息校验 profile/instance/session 三元组且校验 viewer 条目的 profile/session 归属后才转发，join/leave 以外的主要路径已有复检；剩余问题属威胁模型裁决而非已知可利用缺陷，defer 成立。 |
+| f009 | supervisor/core.py get_search_defaults 对 status 自带 runtime_instance_id 二次围栏 | **属实**（03:53 core.py 再编辑后重核仍成立）。`get_search_defaults`：先以 `health.runtime_instance_id != session.runtime_instance_id` 围栏 health 本身，再对 `status.runtime_instance_id != session.runtime_instance_id` 时将 status 置 None 才返回，双层围栏齐全。 |
+| f010 | sidecar 写入改用 file_storage.atomic_write_text | **属实**。`docker_adapter._write_cache_sidecar` 调用 `atomic_write_text(root / CACHE_GENERATION_FILENAME, payload)`（自 `cbrowser.supervisor.file_storage` 导入），同文件 gate/ready.json 等写入亦已统一走该helper。 |
+| f011 | FORBIDDEN_PEER_PREFIXES 的 import 与类属性已删除（policy.py 现 grep 无该符号）、verb 拦截改调 should_block_client_verb；裁决第 1 轮该条是否误读 | **声称属实；第 1 轮该条（若指 policy.py 仍残留转发）为误读/已不成立**。当前 `stream_agent/policy.py` grep `FORBIDDEN` 零命中；基线 diff 显示删除的正是 `FORBIDDEN_PEER_PREFIXES` import 与 `FORBIDDEN_PEER_PREFIXES = FORBIDDEN_PEER_PREFIXES` 类属性转发，verb 拦截现为 `should_block_client_verb(msg)`（policy.py 内调用点在）；单一定义保留在 `policy_rules.py`（含 `should_block_client_verb` 本体）。当前树无残留转发，第 1 轮如有「仍残留」之说与最终代码不符。 |
+| f012 | core.py _query_agent_health 已使用 _agent_uds_client 上下文；裁决是否误读 | **声称属实；第 1 轮该条为误读/已不成立**。当前 `_query_agent_health` 以 `async with self._agent_uds_client(profile_id) as client` 取客户端（None 时返回 None、异常脱敏记日志返回 None）；`retry_search_defaults` 转发同样走该上下文。基线 d699e5b 无 `_agent_uds_client`（系 t022 新抽取），t022 实现自始即将 health 与 control 两路统一到该上下文，不存在「health 路径自建客户端未走上下文」的最终状态。 |
+
+## 两处第 1 轮后新实现复核
+
+1. **gateway `deliver_supervisor_quota` 模块级抽取**：属实且语义不变。函数以注册对象的 profile/instance/session 构造 `GatewayControlEnvelope(SUPERVISOR_QUOTA)` 后 `agent.ws.send_str`，任何发送异常记日志并返回 False；`handle_supervisor_quota` 在 `supervisor_fence_failure`（无 agent/已关闭 503、实例不符 409）之后以 `if not await deliver_supervisor_quota(...): 503` 映射，配额路由失败 503 语义与抽取前一致。单测 `test_gateway_disconnect_targets.py` 已覆盖发送失败/成功两路（第 1 轮 test 路 f005 缺口在此关闭）。
+2. **Gateway Agent pump 入站帧预算**：属实且位置/异常路径正确。检查位于 `handle_agent_register` 注册后 pump 循环的 TEXT 分支最前、JSON 解析与分发之前：`len(m.data.encode("utf-8")) > MAX_TUNNEL_ENVELOPE_SIZE` 时记日志、`ws.close(code=1009)` 并 break，随后 finally 统一清理 viewers 并 `registry.remove(pid, ws=ws)`——仅关闭该 Agent 连接、其余连接不受影响，AC-008 的 Agent→Gateway 方向就此补齐。心跳/注册后控制包等正常小帧远低于预算，不受影响；二进制帧不走此分支（由 WS 层 `max_msg_size=MAX_STREAM_FRAME_SIZE` 兜底），`m.data` 在 TEXT 分支恒为 str，`.encode` 无类型风险。
+
+## 范围外观察（不阻塞本 Verdict，供父级知悉）
+
+- **审阅期并发与一处在途红测**：快照时点 `test_supervisor_docker_boundaries.py::test_x11_orphan_helper_is_reaped_at_startup` 为红（该测试文件于 03:54 刚被编辑，属第 1 轮 code f006 的处置在途，不在本轮 code 路 f001–f012 清单内）。执行侧收尾后应以全量门禁复跑数字为准；本报告未采信任务简报中的门禁数字（unit 694 等），因其实测时点与最终快照不一致。
+- **publish 路径实例围栏（第 1 轮 code f010 残余）**：coordinator `publish_profile_change` 仍直接取缓存 `get_search_defaults` 广播，未在 publish 点复验实例；但缓存唯一写入口 `refresh_search_defaults` 已按 Supervisor 回报实例围栏后才写缓存，且 GET /runtime 在响应前主动 refresh 并经 `runtime_views` 再围栏，SSE 事件后前端亦 invalidate 触发 GET 收敛——残余仅为实例切换与下次 refresh 之间的一过性不一致、自愈，不构成虚报成功，记 minor 观察。
+- **ACK 发送失败的孤儿注册（第 1 轮 code f004 残余）**：f007(a) 修复后，ACK 发送抛错时新 agent 已落册而 pump 未启，仍须等 30s 心跳超时驱逐；窗口内该 profile 路由会视其在线。与第 1 轮定级一致（minor），本轮清单未要求处置，记录备查。
+
+## 最终 Verdict
+
+**PASS** —— f001–f012 处置在最终快照逐项属实（f006/f003 的实际实现且优于执行侧声称），f007(b)/f008 的 p025 deferral 可接受，f011/f012 裁决为第 1 轮误读，两处新实现（配额抽取、pump 入站帧预算）核实无误，无新发现的阻塞问题。上述范围外观察与并发快照警告请父级在合并前以执行侧收尾后的全量门禁复跑做最终确认。

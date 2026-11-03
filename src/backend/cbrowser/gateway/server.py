@@ -15,12 +15,15 @@ from aiohttp import WSMsgType, web
 from cbrowser.secret_files import read_secret_file
 from cbrowser.stream_agent.protocol import (
     MAX_STREAM_FRAME_SIZE,
+    MAX_TUNNEL_DATA_SIZE,
+    MAX_TUNNEL_ENVELOPE_SIZE,
     AgentAction,
     AgentRegisterEnvelope,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
     SupervisorQuotaPayload,
+    serialize_tunnel_envelope,
     validate_agent_envelope,
 )
 from cbrowser.supervisor.agent_credentials import AgentCredentials
@@ -61,6 +64,110 @@ class ViewerEntry:
     ws: web.WebSocketResponse
 
 
+async def deliver_supervisor_quota(agent: RegisteredAgent, payload: Any) -> bool:
+    """Send a quota envelope to the Agent; False when delivery fails.
+
+    Extracted so the failure mapping (explicit 503, never a bare 500) is
+    unit-testable without a live socket (t022 A16).
+    """
+    env = GatewayControlEnvelope(
+        version="v2",
+        action=AgentAction.SUPERVISOR_QUOTA,
+        profile_id=agent.profile_id,
+        runtime_instance_id=agent.instance_id,
+        agent_session_id=agent.agent_session_id,
+        payload=payload,
+    )
+    try:
+        await agent.ws.send_str(env.model_dump_json())
+    except Exception as exc:  # noqa: BLE001 - any send failure is a delivery failure
+        logger.warning(
+            "Failed delivering quota to Agent for profile %s: %s",
+            agent.profile_id,
+            type(exc).__name__,
+        )
+        return False
+    return True
+
+
+def supervisor_fence_failure(
+    agent: RegisteredAgent | None,
+    profile_id: str,
+    runtime_instance_id: str,
+) -> web.Response | None:
+    """Availability + instance fence shared by the supervisor routes.
+
+    Returns the failure response to send, or None when the caller may
+    proceed. Pure decision logic (t022 A48): handlers keep only the I/O.
+    """
+    if agent is None or agent.ws.closed:
+        return web.json_response(
+            {"detail": f"Agent for profile {profile_id} is unavailable"},
+            status=503,
+        )
+    if agent.instance_id != runtime_instance_id:
+        return web.json_response(
+            {
+                "detail": (
+                    f"Instance fence conflict: active instance is "
+                    f"{agent.instance_id}, requested {runtime_instance_id}"
+                )
+            },
+            status=409,
+        )
+    return None
+
+
+async def close_profile_viewers_and_notify(
+    viewers: dict[str, ViewerEntry],
+    profile_id: str,
+    agent: RegisteredAgent,
+) -> bool:
+    """Close every viewer of a profile and notify the Agent, per target.
+
+    Each viewer's close and each Agent notification is isolated: a failure
+    for one target never skips the remaining ones. Returns True when any
+    Agent notification failed (the caller reports an explicit 503).
+    """
+    send_failed = False
+    target_cids = [
+        cid for cid, entry in list(viewers.items()) if entry.profile_id == profile_id
+    ]
+    for cid in target_cids:
+        v_entry = viewers.pop(cid, None)
+        if v_entry and not v_entry.ws.closed:
+            try:
+                await v_entry.ws.close(
+                    code=1000, message=b"Supervisor disconnected viewers"
+                )
+            except Exception as exc:  # noqa: BLE001 - one viewer's failure must not skip the rest
+                logger.debug(
+                    "Failed closing viewer %s during disconnect: %s",
+                    cid,
+                    type(exc).__name__,
+                )
+        if not agent.ws.closed:
+            close_env = GatewayTunnelEnvelope(
+                version="v2",
+                type="close",
+                profile_id=profile_id,
+                runtime_instance_id=agent.instance_id,
+                agent_session_id=agent.agent_session_id,
+                conn_id=cid,
+                code=1000,
+                reason="Supervisor disconnected viewers",
+            )
+            try:
+                await agent.ws.send_str(close_env.model_dump_json())
+            except Exception as exc:  # noqa: BLE001 - record and continue with remaining targets
+                send_failed = True
+                logger.warning(
+                    "Failed notifying Agent of viewer disconnect: %s",
+                    type(exc).__name__,
+                )
+    return send_failed
+
+
 def create_gateway_app(
     config: GatewayConfig,
     api_client: GatewayApiClient | None = None,
@@ -81,9 +188,6 @@ def create_gateway_app(
 
     registry = AgentRegistry()
     viewers: dict[str, ViewerEntry] = {}
-
-    def profile_connections(profile_id: str) -> list[str]:
-        return [cid for cid, v in viewers.items() if v.profile_id == profile_id]
 
     async def close_viewers_for_session(
         session_id: str,
@@ -136,21 +240,11 @@ def create_gateway_app(
             )
 
         agent = registry.get(profile_id)
-        if agent is None or agent.ws.closed:
-            return web.json_response(
-                {"detail": f"Agent for profile {profile_id} is unavailable"},
-                status=503,
-            )
-        if agent.instance_id != runtime_instance_id:
-            return web.json_response(
-                {
-                    "detail": (
-                        f"Instance fence conflict: active instance is "
-                        f"{agent.instance_id}, requested {runtime_instance_id}"
-                    )
-                },
-                status=409,
-            )
+        fence_failure = supervisor_fence_failure(
+            agent, profile_id, runtime_instance_id
+        )
+        if fence_failure is not None:
+            return fence_failure
 
         # Only the Agent's last health report (Selkies peer state) is returned.
         if agent.unpaused_video_consumers is None or agent.capture_running is None:
@@ -192,31 +286,16 @@ def create_gateway_app(
         runtime_instance_id = quota_request.runtime_instance_id
 
         agent = registry.get(profile_id)
-        if agent is None or agent.ws.closed:
-            return web.json_response(
-                {"detail": f"Agent for profile {profile_id} is unavailable"},
-                status=503,
-            )
-        if agent.instance_id != runtime_instance_id:
-            return web.json_response(
-                {
-                    "detail": (
-                        f"Instance fence conflict: active instance is "
-                        f"{agent.instance_id}, requested {runtime_instance_id}"
-                    )
-                },
-                status=409,
-            )
-
-        env = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.SUPERVISOR_QUOTA,
-            profile_id=profile_id,
-            runtime_instance_id=agent.instance_id,
-            agent_session_id=agent.agent_session_id,
-            payload=payload,
+        fence_failure = supervisor_fence_failure(
+            agent, profile_id, runtime_instance_id
         )
-        await agent.ws.send_str(env.model_dump_json())
+        if fence_failure is not None:
+            return fence_failure
+
+        if not await deliver_supervisor_quota(agent, payload):
+            return web.json_response(
+                {"detail": "Failed to deliver quota to Agent"}, status=503
+            )
         return web.json_response({"status": "ok"})
 
     async def handle_supervisor_disconnect(request: web.Request) -> web.Response:
@@ -239,43 +318,21 @@ def create_gateway_app(
         runtime_instance_id = disconnect_request.runtime_instance_id
 
         agent = registry.get(profile_id)
-        if agent is None or agent.ws.closed:
+        fence_failure = supervisor_fence_failure(
+            agent, profile_id, runtime_instance_id
+        )
+        if fence_failure is not None:
+            return fence_failure
+
+        # Disconnect viewer WebSockets only; do NOT disconnect Agent WS.
+        send_failed = await close_profile_viewers_and_notify(
+            viewers, profile_id, agent
+        )
+        if send_failed:
             return web.json_response(
-                {"detail": f"Agent for profile {profile_id} is unavailable"},
+                {"detail": "Failed to notify Agent of viewer disconnect"},
                 status=503,
             )
-        if agent.instance_id != runtime_instance_id:
-            return web.json_response(
-                {
-                    "detail": (
-                        f"Instance fence conflict: active instance is "
-                        f"{agent.instance_id}, requested {runtime_instance_id}"
-                    )
-                },
-                status=409,
-            )
-
-        # Disconnect viewer WebSockets only; do NOT disconnect Agent WS
-        for cid in profile_connections(profile_id):
-            v_entry = viewers.pop(cid, None)
-            if v_entry and not v_entry.ws.closed:
-                await v_entry.ws.close(
-                    code=1000, message=b"Supervisor disconnected viewers"
-                )
-            # Notify agent of close
-            if not agent.ws.closed:
-                close_env = GatewayTunnelEnvelope(
-                    version="v2",
-                    type="close",
-                    profile_id=profile_id,
-                    runtime_instance_id=agent.instance_id,
-                    agent_session_id=agent.agent_session_id,
-                    conn_id=cid,
-                    code=1000,
-                    reason="Supervisor disconnected viewers",
-                )
-                await agent.ws.send_str(close_env.model_dump_json())
-
         return web.json_response({"status": "ok"})
 
     # ---------------- Agent Register Route ----------------
@@ -284,110 +341,151 @@ def create_gateway_app(
         if not auth.startswith("Bearer "):
             return web.Response(status=401, text="Unauthorized Agent")
         raw_token = auth.removeprefix("Bearer ").strip()
-        if not registration_throttle.allow(request.remote):
+        source = request.remote
+        if not registration_throttle.reserve(source):
             logger.warning("Agent registration rate limited for source")
             return web.Response(status=429, text="Too many registration attempts")
-
-        profile_id = request.query.get("profile_id", "")
-        instance_id = request.query.get("runtime_instance_id", "")
-        if (
-            not profile_id
-            or not instance_id
-            or not re.fullmatch(r"[a-zA-Z0-9_-]+", profile_id)
-            or not re.fullmatch(r"[a-zA-Z0-9_\-\.:]{1,128}", instance_id)
-        ):
-            return web.Response(status=400, text="Missing registration identity")
-        if not credentials.verify(raw_token, profile_id, instance_id):
-            return web.Response(status=401, text="Invalid Agent credentials")
-        runtime_info = await api.get_profile_runtime(profile_id)
-        if not runtime_info or runtime_info.get("runtime_instance_id") != instance_id:
-            return web.Response(
-                status=403, text="Instance not currently bound to profile"
-            )
-
-        ws = web.WebSocketResponse(max_msg_size=MAX_STREAM_FRAME_SIZE)
-        await ws.prepare(request)
-
+        handshake_complete = False
         try:
-            msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
-        except (TimeoutError, ConnectionError):
-            logger.warning("Agent registration timed out before first packet")
-            await ws.close(code=1008, message=b"Registration timeout")
-            return ws
-        if msg.type != WSMsgType.TEXT:
-            await ws.close(code=1003, message=b"Expected text registration packet")
-            return ws
 
-        try:
-            reg_raw = json.loads(msg.data)
-            envelope = AgentRegisterEnvelope.model_validate(reg_raw)
-        except (ValidationError, Exception) as e:  # noqa: BLE001 - agent registration packet decoding boundary
-            logger.warning("Agent registration payload invalid: %s", type(e).__name__)
-            await ws.close(code=1008, message=b"Invalid registration payload")
-            return ws
+            profile_id = request.query.get("profile_id", "")
+            instance_id = request.query.get("runtime_instance_id", "")
+            if (
+                not profile_id
+                or not instance_id
+                or not re.fullmatch(r"[a-zA-Z0-9_-]+", profile_id)
+                or not re.fullmatch(r"[a-zA-Z0-9_\-\.:]{1,128}", instance_id)
+            ):
+                return web.Response(status=400, text="Missing registration identity")
+            if not credentials.verify(raw_token, profile_id, instance_id):
+                return web.Response(status=401, text="Invalid Agent credentials")
+            runtime_info = await api.get_profile_runtime(profile_id)
+            if not runtime_info or runtime_info.get("runtime_instance_id") != instance_id:
+                return web.Response(
+                    status=403, text="Instance not currently bound to profile"
+                )
 
-        payload = envelope.payload
-        pid = payload.profile_id
-        iid = payload.runtime_instance_id
-        if pid != profile_id or iid != instance_id:
-            logger.warning(
-                "Agent registration identity mismatch: query=%s/%s payload=%s/%s",
-                profile_id,
-                instance_id,
-                pid,
-                iid,
+            ws = web.WebSocketResponse(max_msg_size=MAX_STREAM_FRAME_SIZE)
+            await ws.prepare(request)
+
+            try:
+                msg = await asyncio.wait_for(ws.receive(), timeout=10.0)
+            except (TimeoutError, ConnectionError):
+                logger.warning("Agent registration timed out before first packet")
+                await ws.close(code=1008, message=b"Registration timeout")
+                return ws
+            if msg.type != WSMsgType.TEXT:
+                await ws.close(code=1003, message=b"Expected text registration packet")
+                return ws
+
+            try:
+                reg_raw = json.loads(msg.data)
+                envelope = AgentRegisterEnvelope.model_validate(reg_raw)
+            except Exception as e:  # noqa: BLE001 - registration packet decoding boundary: any malformed packet closes the handshake, mirroring the other decode boundaries in this module
+                logger.warning("Agent registration payload invalid: %s", type(e).__name__)
+                await ws.close(code=1008, message=b"Invalid registration payload")
+                return ws
+
+            payload = envelope.payload
+            pid = payload.profile_id
+            iid = payload.runtime_instance_id
+            if pid != profile_id or iid != instance_id:
+                logger.warning(
+                    "Agent registration identity mismatch: query=%s/%s payload=%s/%s",
+                    profile_id,
+                    instance_id,
+                    pid,
+                    iid,
+                )
+                await ws.close(
+                    code=1008, message=b"Registration identity mismatch"
+                )
+                return ws
+
+            session_id = str(uuid.uuid4())
+            agent = RegisteredAgent(
+                profile_id=pid,
+                instance_id=iid,
+                agent_session_id=session_id,
+                selkies_version=payload.selkies_version,
+                runtime_state=payload.runtime_state,
+                udp_port=payload.udp_port,
+                config_version=payload.config_version,
+                ws=ws,
+                last_heartbeat=registry.now(),
             )
-            await ws.close(
-                code=1008, message=b"Registration identity mismatch"
-            )
-            return ws
 
-        session_id = str(uuid.uuid4())
-        agent = RegisteredAgent(
-            profile_id=pid,
-            instance_id=iid,
-            agent_session_id=session_id,
-            selkies_version=payload.selkies_version,
-            runtime_state=payload.runtime_state,
-            udp_port=payload.udp_port,
-            config_version=payload.config_version,
-            ws=ws,
-            last_heartbeat=registry.now(),
-        )
-
-        old_agent = registry.register(agent)
-        if old_agent:
-            await close_viewers_for_session(
-                old_agent.agent_session_id,
-                code=1001,
-                message=b"Stream Agent session replaced",
-            )
-            if not old_agent.ws.closed:
+            old_agent = registry.register(agent)
+            if old_agent:
+                # Post-registration cleanup is isolated: a failure here
+                # must not escape and strand the fresh registration
+                # without a message pump (review t022_code_f004).
                 try:
-                    await old_agent.ws.close(
-                        code=1000, message=b"Superceded by new registration"
+                    await close_viewers_for_session(
+                        old_agent.agent_session_id,
+                        code=1001,
+                        message=b"Stream Agent session replaced",
                     )
-                except Exception as exc:  # noqa: BLE001 - best-effort closing of superseded agent connection
+                except Exception as exc:  # noqa: BLE001 - superseded session cleanup is best-effort
                     logger.debug(
-                        "Failed closing superseded agent ws: %s",
+                        "Failed closing viewers of superseded session: %s",
                         type(exc).__name__,
                     )
+                if not old_agent.ws.closed:
+                    try:
+                        await old_agent.ws.close(
+                            code=1000, message=b"Superceded by new registration"
+                        )
+                    except Exception as exc:  # noqa: BLE001 - best-effort closing of superseded agent connection
+                        logger.debug(
+                            "Failed closing superseded agent ws: %s",
+                            type(exc).__name__,
+                        )
 
-        # Send ACK
-        ack = GatewayRegisterResponse(
-            version="v2",
-            status="ok",
-            profile_id=pid,
-            runtime_instance_id=iid,
-            agent_session_id=session_id,
-        )
-        await ws.send_str(ack.model_dump_json())
+            # The registration is complete once the registry accepts it:
+            # release the reservation as a success BEFORE sending the ACK,
+            # so a broken ACK send (dead socket) cannot misrecord a valid
+            # registration as a throttle failure (review t022_code_f007).
+            registration_throttle.release(source, success=True)
+            handshake_complete = True
+
+            # Send ACK (best-effort): if the socket is already dead the
+            # pump below observes the close immediately and reaps the
+            # registration; an exception here must not strand it.
+            ack = GatewayRegisterResponse(
+                version="v2",
+                status="ok",
+                profile_id=pid,
+                runtime_instance_id=iid,
+                agent_session_id=session_id,
+            )
+            try:
+                await ws.send_str(ack.model_dump_json())
+            except Exception as exc:  # noqa: BLE001 - dead socket is reaped by the pump
+                logger.debug(
+                    "Failed sending registration ACK: %s", type(exc).__name__
+                )
+        finally:
+            if not handshake_complete:
+                registration_throttle.release(source, success=False)
 
         # Pump messages from Agent
         try:
             async for m in ws:
                 if m.type == WSMsgType.TEXT:
                     try:
+                        if len(m.data.encode("utf-8")) > MAX_TUNNEL_ENVELOPE_SIZE:
+                            # Same envelope budget the Agent applies in the
+                            # opposite direction (t022 A15): an oversized
+                            # frame closes this connection with 1009; other
+                            # connections are unaffected.
+                            logger.warning(
+                                "Closing Agent connection: envelope over budget"
+                            )
+                            await ws.close(
+                                code=1009, message=b"Message too large"
+                            )
+                            break
                         pkt = json.loads(m.data)
                         if "type" in pkt:
                             # Tunnel envelope
@@ -445,7 +543,12 @@ def create_gateway_app(
 
                             if agent_env.action == AgentAction.HEARTBEAT:
                                 beat = agent_env.payload
-                                registry.update_heartbeat(pid, iid, session_id)
+                                registry.update_heartbeat(
+                                    pid,
+                                    iid,
+                                    session_id,
+                                    runtime_state=beat.runtime_state,
+                                )
                                 agent.unpaused_video_consumers = (
                                     beat.unpaused_video_consumers
                                 )
@@ -585,17 +688,33 @@ def create_gateway_app(
                         if isinstance(parsed, dict) and "cbrowser" in parsed:
                             continue
                     if not agent.ws.closed:
-                        # Forward to Agent as tunnel msg
-                        msg_env = GatewayTunnelEnvelope(
-                            version="v2",
-                            type="msg",
-                            profile_id=profile_id,
-                            runtime_instance_id=agent.instance_id,
-                            agent_session_id=agent.agent_session_id,
-                            conn_id=conn_id,
-                            data=text,
-                        )
-                        await agent.ws.send_str(msg_env.model_dump_json())
+                        # Forward to Agent as tunnel msg. Oversized viewer
+                        # data is a controlled 1009 close of this viewer
+                        # connection only (A15); the Gateway keeps serving
+                        # every other connection.
+                        try:
+                            if len(text.encode("utf-8")) > MAX_TUNNEL_DATA_SIZE:
+                                raise ValueError("Viewer data exceeds budget")
+                            msg_env = GatewayTunnelEnvelope(
+                                version="v2",
+                                type="msg",
+                                profile_id=profile_id,
+                                runtime_instance_id=agent.instance_id,
+                                agent_session_id=agent.agent_session_id,
+                                conn_id=conn_id,
+                                data=text,
+                            )
+                            payload = serialize_tunnel_envelope(msg_env)
+                        except (ValidationError, ValueError):
+                            logger.warning(
+                                "Viewer message exceeded the shared tunnel "
+                                "budget; closing with 1009"
+                            )
+                            await ws.close(
+                                code=1009, message=b"Message too large"
+                            )
+                            break
+                        await agent.ws.send_str(payload)
                 elif m.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
         finally:

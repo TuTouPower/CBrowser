@@ -1,4 +1,29 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "StreamAgentGatewayWireProtocol",
+  "version": "v2",
+  "messages": {
+    "AgentRegisterEnvelope": {
+      "$id": "#/$defs/AgentRegisterEnvelope",
+      "$ref": "#/$defs/AgentRegisterEnvelope"
+    },
+    "AgentHeartbeatEnvelope": {
+      "$id": "#/$defs/AgentHeartbeatEnvelope",
+      "$ref": "#/$defs/AgentHeartbeatEnvelope"
+    },
+    "GatewayRegisterResponse": {
+      "$id": "#/$defs/GatewayRegisterResponse",
+      "$ref": "#/$defs/GatewayRegisterResponse"
+    },
+    "GatewayTunnelEnvelope": {
+      "$id": "#/$defs/GatewayTunnelEnvelope",
+      "$ref": "#/$defs/GatewayTunnelEnvelope"
+    },
+    "GatewayControlEnvelope": {
+      "$id": "#/$defs/GatewayControlEnvelope",
+      "$ref": "#/$defs/GatewayControlEnvelope"
+    }
+  },
   "$defs": {
     "AgentHeartbeatEnvelope": {
       "additionalProperties": false,
@@ -488,24 +513,5 @@
       "title": "SupervisorQuotaPayload",
       "type": "object"
     }
-  },
-  "anyOf": [
-    {
-      "$ref": "#/$defs/AgentRegisterEnvelope"
-    },
-    {
-      "$ref": "#/$defs/AgentHeartbeatEnvelope"
-    },
-    {
-      "$ref": "#/$defs/GatewayRegisterResponse"
-    },
-    {
-      "$ref": "#/$defs/GatewayTunnelEnvelope"
-    },
-    {
-      "$ref": "#/$defs/GatewayControlEnvelope"
-    }
-  ],
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "StreamAgentGatewayWireProtocol"
+  }
 }

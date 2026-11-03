@@ -1430,6 +1430,120 @@
         ]
       }
     },
+    "/api/v1/profiles/{profile_id}/runtime/search-defaults/retry": {
+      "post": {
+        "tags": [
+          "v1"
+        ],
+        "summary": "Retry Profile Search Defaults",
+        "operationId": "retry_profile_search_defaults_api_v1_profiles__profile_id__runtime_search_defaults_retry_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileRuntimeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Profile not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Live instance changed; retry against the current instance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Runtime or supervisor unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
     "/api/v1/profiles/{profile_id}/runtime/desired-state": {
       "patch": {
         "tags": [
@@ -2785,7 +2899,7 @@
         },
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ]
       }
@@ -2845,7 +2959,7 @@
         },
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ]
       }
@@ -2859,7 +2973,7 @@
         "operationId": "get_profile_api_v1_internal_supervisor_profiles__profile_id__get",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -2946,7 +3060,7 @@
         "operationId": "get_version_api_v1_internal_supervisor_profiles__profile_id__versions__version__get",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -3042,7 +3156,7 @@
         "operationId": "get_profile_runtime_api_v1_internal_supervisor_profiles__profile_id__runtime_get",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -3129,7 +3243,7 @@
         "operationId": "set_desired_state_api_v1_internal_supervisor_profiles__profile_id__runtime_desired_state_patch",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -3284,7 +3398,7 @@
         "operationId": "bind_runtime_api_v1_internal_supervisor_runtimes_bind_post",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -3391,7 +3505,7 @@
         "operationId": "report_observed_state_api_v1_internal_supervisor_runtimes_observed_post",
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ],
         "parameters": [
@@ -3560,7 +3674,7 @@
         },
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ]
       }
@@ -3646,7 +3760,7 @@
         },
         "security": [
           {
-            "serviceBearer": []
+            "SupervisorServiceBearer": []
           }
         ]
       }
@@ -3722,83 +3836,7 @@
         },
         "security": [
           {
-            "serviceBearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/internal/gateway/automation-authorize": {
-      "post": {
-        "tags": [
-          "internal-gateway"
-        ],
-        "summary": "Automation Authorize",
-        "operationId": "automation_authorize_api_v1_internal_gateway_automation_authorize_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AutomationAuthorizeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AutomationAuthorizeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Service authorization denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "serviceBearer": []
+            "GatewayServiceBearer": []
           }
         ]
       }
@@ -3812,7 +3850,7 @@
         "operationId": "get_gateway_profile_runtime_api_v1_internal_gateway_profiles__profile_id__runtime_get",
         "security": [
           {
-            "serviceBearer": []
+            "GatewayServiceBearer": []
           }
         ],
         "parameters": [
@@ -4096,48 +4134,6 @@
           "created_at"
         ],
         "title": "ArtifactResponse"
-      },
-      "AutomationAuthorizeRequest": {
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "Token"
-          },
-          "profile_id": {
-            "type": "string",
-            "title": "Profile Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "token",
-          "profile_id"
-        ],
-        "title": "AutomationAuthorizeRequest"
-      },
-      "AutomationAuthorizeResponse": {
-        "properties": {
-          "allowed": {
-            "type": "boolean",
-            "title": "Allowed"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "allowed"
-        ],
-        "title": "AutomationAuthorizeResponse"
       },
       "AutomationEndpointResponse": {
         "properties": {
@@ -4429,10 +4425,21 @@
           },
           "desired_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
             "title": "Desired State"
           },
           "observed_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
             "title": "Observed State"
           }
         },
@@ -4609,6 +4616,16 @@
               }
             ],
             "title": "Color Scheme"
+          },
+          "font_bundle": {
+            "type": "string",
+            "enum": [
+              "none",
+              "wqy-microhei",
+              "wqy-zenhei"
+            ],
+            "title": "Font Bundle",
+            "default": "none"
           },
           "launch_args": {
             "items": {
@@ -4827,6 +4844,11 @@
             ],
             "title": "Color Scheme"
           },
+          "font_bundle": {
+            "type": "string",
+            "title": "Font Bundle",
+            "default": "none"
+          },
           "launch_args": {
             "items": {
               "type": "string"
@@ -4931,10 +4953,21 @@
           },
           "desired_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
             "title": "Desired State"
           },
           "observed_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
             "title": "Observed State"
           },
           "runtime_instance_id": {
@@ -4982,6 +5015,16 @@
             ],
             "title": "Last Coordinator Error"
           },
+          "search_defaults": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchDefaultsStatusData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -5009,10 +5052,21 @@
           },
           "desired_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
             "title": "Desired State"
           },
           "observed_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
             "title": "Observed State"
           },
           "runtime_instance_id": {
@@ -5046,6 +5100,16 @@
               }
             ],
             "title": "Last Coordinator Error"
+          },
+          "search_defaults": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchDefaultsStatusData"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "type": "string",
@@ -5239,6 +5303,22 @@
               }
             ],
             "title": "Color Scheme"
+          },
+          "font_bundle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "wqy-microhei",
+                  "wqy-zenhei"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Bundle"
           },
           "launch_args": {
             "anyOf": [
@@ -5586,6 +5666,61 @@
         ],
         "title": "RuntimeObservedReportRequest"
       },
+      "SearchDefaultsStatusData": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "failed",
+              "disabled",
+              "pending"
+            ],
+            "title": "State"
+          },
+          "error_kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Kind"
+          },
+          "runtime_instance_id": {
+            "type": "string",
+            "title": "Runtime Instance Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "runtime_instance_id",
+          "updated_at"
+        ],
+        "title": "SearchDefaultsStatusData",
+        "description": "API view of the runtime agent's search-defaults outcome (t022 A55).\n\nMirrors the runtime agent protocol model; kept independent of browser\nreadiness: a failed initialization is reported here, never as a\nruntime failure."
+      },
       "SessionResponse": {
         "properties": {
           "authenticated": {
@@ -5823,10 +5958,6 @@
         "type": "apiKey",
         "in": "header",
         "name": "X-CSRF-Token"
-      },
-      "serviceBearer": {
-        "type": "http",
-        "scheme": "bearer"
       }
     }
   }

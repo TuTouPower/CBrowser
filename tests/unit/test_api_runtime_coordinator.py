@@ -223,6 +223,14 @@ async def test_coordinator_stop_rpc_success(profile_service):
     async def mock_handler(request: httpx.Request) -> httpx.Response:
         recorded_requests.append(request)
         if request.url.path == "/supervisor/v1/profiles/stop":
+            # t022/A45 contract replacement: a stop 200 is a command result,
+            # not an observation. The real Supervisor reports the observed
+            # "stopped" state to the API before the stop RPC returns, and
+            # the coordinator now converges on that record — so the mock
+            # replays the same report-then-respond sequence.
+            await profile_service.report_observed_state(
+                p.id, "inst_test_99", "stopped", 1
+            )
             return httpx.Response(
                 200,
                 json={

@@ -16,6 +16,7 @@ from cbrowser.adapters.filesystem.artifact_store import (
 )
 from cbrowser.auth.dependencies import require_csrf_and_origin, require_user_session
 from cbrowser.domain.models import ArtifactResponse
+from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
@@ -26,10 +27,7 @@ artifact_router = APIRouter(prefix="/api/v1", tags=["artifacts"])
 def get_artifact_service(request: Request) -> ArtifactService:
     service = getattr(request.app.state, "artifact_service", None)
     if service is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Artifact service is not configured",
-        )
+        raise ServiceNotConfiguredError("Artifact service is not configured")
     return service
 
 

@@ -4,13 +4,39 @@ from __future__ import annotations
 
 from typing import Any
 
-from cbrowser.domain.models import ProfileRuntime, ProfileRuntimeResponse
+from cbrowser.domain.models import (
+    ProfileRuntime,
+    ProfileRuntimeResponse,
+    SearchDefaultsStatusData,
+)
+
+
+def fence_search_defaults(
+    status: SearchDefaultsStatusData | None,
+    runtime_instance_id: str | None,
+) -> SearchDefaultsStatusData | None:
+    """A status recorded for a previous instance is stale: never present
+    it as the current instance's outcome. Single implementation shared by
+    the REST view and the SSE snapshot assembly (the coordinator's live
+    publish path applies the same rule via its own fenced accessor)."""
+    if status is None:
+        return None
+    if status.runtime_instance_id != runtime_instance_id:
+        return None
+    return status
 
 
 def make_runtime_response(
     rt: ProfileRuntime, coordinator: Any = None
 ) -> ProfileRuntimeResponse:
     last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
+    search_defaults = fence_search_defaults(
+        coordinator.get_search_defaults(rt.profile_id)
+        if coordinator is not None
+        and hasattr(coordinator, "get_search_defaults")
+        else None,
+        rt.runtime_instance_id,
+    )
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
         desired_state=rt.desired_state,
@@ -21,6 +47,7 @@ def make_runtime_response(
         restart_blocked=rt.restart_blocked,
         last_exit_event_id=rt.last_exit_event_id,
         last_coordinator_error=last_error,
+        search_defaults=search_defaults,
         updated_at=rt.updated_at,
     )
 

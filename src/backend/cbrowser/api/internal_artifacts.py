@@ -7,6 +7,7 @@ from typing import Annotated
 from cbrowser.adapters.filesystem.artifact_store import ArtifactError, ArtifactNotFound
 from cbrowser.api.internal_supervisor import require_supervisor
 from cbrowser.domain.models import ArtifactDownloadReport, ArtifactDownloadResponse
+from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -20,7 +21,7 @@ internal_artifact_router = APIRouter(
 def get_artifact_service(request: Request) -> ArtifactService:
     service = getattr(request.app.state, "artifact_service", None)
     if service is None:
-        raise HTTPException(503, "Artifact service is not configured")
+        raise ServiceNotConfiguredError("Artifact service is not configured")
     return service
 
 
@@ -34,6 +35,7 @@ async def report_download(
     try:
         result = await service.ingest_download(
             payload.profile_id,
+            runtime_instance_id=payload.runtime_instance_id,
             path=payload.path,
             name=payload.name,
             sha256=payload.sha256,
@@ -45,6 +47,10 @@ async def report_download(
     except ArtifactError:
         return ArtifactDownloadResponse(outcome="rejected", event_id=payload.event_id)
     if result.artifact is None:
+        if result.reason == "unknown_instance":
+            return ArtifactDownloadResponse(
+                outcome="rejected", event_id=payload.event_id
+            )
         return ArtifactDownloadResponse(outcome="ignored", event_id=payload.event_id)
     return ArtifactDownloadResponse(
         outcome="created" if result.created else "duplicate",

@@ -3,8 +3,10 @@
 Tests:
 1. Path validation & symlink escape refusal (AC-001).
 2. UDP mux port allocator bounds, exhaustion, and reuse after release (AC-002).
-3. Retry policy 2/10/30 backoff and 3-strikes blocking (AC-005).
-4. Event forwarder offline spooling and recovery deduplication (AC-004).
+
+Retry backoff/blocking and event-forwarder spooling are covered by the
+recovery-coordinator and event-delivery suites, not by this file
+(t024 AC-008/A29: the docstring names only what this file implements).
 """
 
 from pathlib import Path

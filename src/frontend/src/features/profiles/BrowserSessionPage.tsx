@@ -5,18 +5,23 @@ import {
   useProfileRuntimeQuery,
   useSetDesiredStateMutation,
 } from "./useProfilesQuery";
-import { BrowserSessionMount } from "../../shared/components/BrowserSessionMount";
+import { BrowserSessionMount } from "../browser-session/BrowserSessionMount";
 import { useI18n } from "../../i18n";
+import { ApiError } from "../../shared/api/client";
+import { useApiClient } from "../../shared/api/client_context";
 
 export function BrowserSessionPage() {
   const [searchParams] = useSearchParams();
   const profileId = searchParams.get("profileId");
   const navigate = useNavigate();
   const { t } = useI18n();
+  const client = useApiClient();
 
-  const { data: profile, isLoading: isProfileLoading } = useProfileQuery(profileId);
-  const { data: runtime, isLoading: isRuntimeLoading } = useProfileRuntimeQuery(profileId);
-  const setDesiredStateMutation = useSetDesiredStateMutation();
+  const profileQuery = useProfileQuery(profileId, client);
+  const runtimeQuery = useProfileRuntimeQuery(profileId, client);
+  const { data: profile, isLoading: isProfileLoading } = profileQuery;
+  const { data: runtime, isLoading: isRuntimeLoading } = runtimeQuery;
+  const setDesiredStateMutation = useSetDesiredStateMutation(client);
 
   if (!profileId) {
     return (
@@ -46,11 +51,38 @@ export function BrowserSessionPage() {
     );
   }
 
+  // A failed load is not "stopped" and not "unknown": surface the error
+  // with a retry, and reserve profileNotFound for a real 404 (A17).
+  const profileErrorStatus =
+    profileQuery.error instanceof ApiError ? profileQuery.error.status : undefined;
+  if (profileQuery.isError && profileErrorStatus !== 404) {
+    return (
+      <SessionLoadError
+        message={profileQuery.error.message}
+        onRetry={() => {
+          void profileQuery.refetch();
+          void runtimeQuery.refetch();
+        }}
+      />
+    );
+  }
+
   if (!profile) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
         {t("profileNotFound")}
       </div>
+    );
+  }
+
+  if (runtimeQuery.isError) {
+    return (
+      <SessionLoadError
+        message={runtimeQuery.error.message}
+        onRetry={() => {
+          void runtimeQuery.refetch();
+        }}
+      />
     );
   }
 
@@ -62,6 +94,7 @@ export function BrowserSessionPage() {
         profileId={profileId}
         clipboardSync={profile.clipboard_sync}
         onCheckRuntimeStatus={() => navigate(`/profiles/${profileId}`)}
+        apiClient={client}
       />
     );
   }
@@ -178,6 +211,34 @@ export function BrowserSessionPage() {
           </Link>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SessionLoadError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <div
+      data-testid="session-load-error"
+      className="flex-1 flex flex-col items-center justify-center gap-3 p-8 text-center bg-surface-0"
+    >
+      <p className="text-sm text-red-300">
+        {t("sessionLoadFailed", { error: message })}
+      </p>
+      <button
+        type="button"
+        data-testid="session-load-retry"
+        onClick={onRetry}
+        className="px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded hover:opacity-90 transition-opacity"
+      >
+        {t("retryAction")}
+      </button>
     </div>
   );
 }

@@ -28,6 +28,9 @@ describe("ProfileEventsClient SSE", () => {
           profile_id: "p1",
           desired_state: "running",
           observed_state: "starting",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-01-01T00:00:00Z",
         })}\n\n`);
         setTimeout(() => {
           res.destroy();
@@ -38,6 +41,9 @@ describe("ProfileEventsClient SSE", () => {
           profile_id: "p1",
           desired_state: "running",
           observed_state: "running",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-01-01T00:00:00Z",
         })}\n\n`);
       }
     });
@@ -104,6 +110,6 @@ describe("ProfileEventsClient SSE", () => {
     // Check headers on second connection
     expect(receivedHeaders.length).toBeGreaterThanOrEqual(2);
     const reconnectHeaders = receivedHeaders[1];
-    expect(reconnectHeaders["last-event-id"]).toBe("evt-001");
+    expect(reconnectHeaders?.["last-event-id"]).toBe("evt-001");
   });
 });

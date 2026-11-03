@@ -28,6 +28,19 @@ DELIVERED = "delivered"
 REJECTED = "rejected"
 UNAVAILABLE = "unavailable"
 EVENT_ENVELOPE_VERSION = 1
+# Auth, throttling and transient gateway statuses must never be mistaken for
+# a permanent semantic rejection: the event stays queued for a later retry.
+# Shared with the artifact forwarder so both delivery paths classify alike.
+RETRYABLE_4XX = frozenset({401, 403, 408, 429})
+
+
+def classify_delivery_status(status_code: int) -> str:
+    """Map an HTTP status to the delivery outcome for a non-200 response."""
+    if status_code in RETRYABLE_4XX or status_code >= 500:
+        return UNAVAILABLE
+    if 400 <= status_code < 500:
+        return REJECTED
+    return UNAVAILABLE
 
 
 class EventForwarder:
@@ -104,7 +117,39 @@ class EventForwarder:
         config_version: int = 1,
         payload: dict[str, Any] | None = None,
     ) -> bool:
-        """Persist the event atomically before attempting API delivery."""
+        """Boolean view of :meth:`emit_event_with_outcome` (single path)."""
+        outcome = await self.emit_event_with_outcome(
+            event_id,
+            profile_id,
+            runtime_instance_id,
+            event_type,
+            exit_code=exit_code,
+            exit_reason=exit_reason,
+            config_version=config_version,
+            payload=payload,
+        )
+        return outcome == DELIVERED
+
+    async def emit_event_with_outcome(
+        self,
+        event_id: str,
+        profile_id: str,
+        runtime_instance_id: str,
+        event_type: str,
+        exit_code: int | None = None,
+        exit_reason: str | None = None,
+        config_version: int = 1,
+        payload: dict[str, Any] | None = None,
+        dead_letter_spool: bool = True,
+    ) -> str:
+        """Persist the event atomically, attempt delivery, report the outcome.
+
+        Returns DELIVERED, REJECTED (permanent semantic refusal) or
+        UNAVAILABLE (auth/throttling/gateway/transport trouble; the event
+        stays queued for retry). On REJECTED the spool copy is
+        dead-lettered exactly once, unless dead_letter_spool is False —
+        the caller then owns the single dead letter for the event.
+        """
         event_data = {
             "event_id": event_id,
             "profile_id": profile_id,
@@ -127,12 +172,19 @@ class EventForwarder:
         outcome = await self._send_to_api(event_data)
         if outcome == DELIVERED:
             await self._acknowledge(event_data, event_file)
-            return True
+            return DELIVERED
         if outcome == REJECTED:
-            self._quarantine_event_file(event_file, "rejected")
-            return False
+            if dead_letter_spool:
+                self._quarantine_event_file(event_file, "rejected")
+            else:
+                # The caller owns the single dead letter for this event
+                # (the on-disk journal original); the spool copy is a
+                # transport artifact and is discarded, never duplicated
+                # into a second quarantine (review t022_code_f013).
+                await self._acknowledge(event_data, event_file)
+            return REJECTED
         logger.info(f"API unavailable or failed. Event {event_id} queued in spool.")
-        return False
+        return UNAVAILABLE
 
     def _quarantine_event_file(self, event_file: Path, reason: str) -> None:
         target_dir = self.events_spool_dir / "quarantine"
@@ -187,7 +239,7 @@ class EventForwarder:
                 }
                 return DELIVERED if accepted else REJECTED
             logger.warning("API rejected runtime event: status=%s", resp.status_code)
-            return REJECTED if resp.status_code < 500 else UNAVAILABLE
+            return classify_delivery_status(resp.status_code)
         except Exception as e:  # noqa: BLE001 - transport failure forwarding event marks destination UNAVAILABLE
             logger.debug(f"Network error forwarding event to API: {e}")
             return UNAVAILABLE

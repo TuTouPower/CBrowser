@@ -38,6 +38,31 @@ def test_profile_config_filters_legacy_launch_args():
         ProfileCreateRequest(name="bad", launch_args=["--load-extension=/tmp/evil"])
 
 
+def test_update_request_rejects_out_of_whitelist_launch_args():
+    from cbrowser.domain.models import ProfileUpdateRequest
+
+    with pytest.raises(ValidationError):
+        ProfileUpdateRequest(launch_args=["--load-extension=/tmp/evil"])
+
+
+def test_update_request_keeps_whitelisted_launch_args_verbatim():
+    from cbrowser.domain.models import ProfileUpdateRequest
+
+    request = ProfileUpdateRequest(launch_args=["--mute-audio", "--lang=en-US"])
+    assert request.launch_args == ["--mute-audio", "--lang=en-US"]
+
+
+def test_update_request_null_launch_args_stays_null_for_patch_tri_state():
+    from cbrowser.domain.models import ProfileUpdateRequest
+
+    request = ProfileUpdateRequest(launch_args=None)
+    assert request.launch_args is None
+    assert "launch_args" in request.model_fields_set
+    absent = ProfileUpdateRequest()
+    assert absent.launch_args is None
+    assert "launch_args" not in absent.model_fields_set
+
+
 def test_runner_second_gate_rejects_non_whitelisted_arguments(tmp_path):
     with pytest.raises(InvalidLaunchArgument):
         BrowserRunner.validate_launch_arguments(["--js-flags=--noopt"])

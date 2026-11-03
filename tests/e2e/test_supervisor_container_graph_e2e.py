@@ -75,6 +75,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     containers = []
     profiles = set()
     data = tmp_path / "data"
+    data.mkdir(parents=True)
+    # The whole tree is confined under a 0o700 parent (t024 AC-014/A43):
+    # the data subdirectories are bind-mounted into containers running as
+    # other uids and therefore stay group/other-writable, but no path
+    # component above them is traversable by unrelated local users.
+    data.chmod(0o700)
     control = data / "control"
     control.mkdir(parents=True)
     control.chmod(0o700)
@@ -370,10 +376,14 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     m["Destination"] for m in browser.attrs["Mounts"]
                 }
                 for sec_target in ("/tmp/secret.txt", "/tmp/selkies_credentials.json"):
-                    if sec_target in stream_destinations:
-                        assert stream_destinations[sec_target]["RW"] is False, (
-                            f"{sec_target} must be mounted read-only"
-                        )
+                    # Presence is part of the contract (t024 AC-014/A43):
+                    # a disappeared mount must fail, not pass silently.
+                    assert sec_target in stream_destinations, (
+                        f"{sec_target} must be mounted in stream"
+                    )
+                    assert stream_destinations[sec_target]["RW"] is False, (
+                        f"{sec_target} must be mounted read-only"
+                    )
                     assert sec_target not in browser_destinations, (
                         f"{sec_target} must not be mounted in browser"
                     )

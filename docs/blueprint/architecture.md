@@ -16,7 +16,7 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 
 - **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。t015（ADR 013）已删除 coturn、TURN 凭证轮换与 ICE 代次接管，媒体改为同机直连；文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
 
-- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.4）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件在 t011 移除。
+- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.4）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件移除归 t017（原记 t011；t011 已并入 t010）。
 
 Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
 
@@ -28,7 +28,7 @@ Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](str
 |---|---|---|---|---|
 |**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；v2 架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
-|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.1.0` (`6ee68a7a815956e6745e916741f13335e0b3ff53`)|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003），同 PC 凭证轮换依赖显式私有接口适配器（d010, d012），该机制属于固定 SDK 版本下的内部维护约束，非官方原生 public API 承诺|
+|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.1.0` (`6ee68a7a815956e6745e916741f13335e0b3ff53`)|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
 |**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由（`/api/*`、`/stream/*`）反向代理入口|
 |**模板与工作流**|repo_template|本地 `../repo_template`|当前工作流基线|消费仓规范：task 状态机驱动、轻量契约门禁、specs/blueprint 规范|
 |**文档格式化**|md_kx|[TuTouPower/md_kx](https://github.com/TuTouPower/md_kx)|PyPI `md-kx`|Markdown 文档自动化规范与一致性门禁检查|

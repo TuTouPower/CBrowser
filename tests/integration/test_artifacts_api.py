@@ -99,19 +99,42 @@ def test_upload_list_download_delete_round_trip(artifact_env) -> None:
     assert not (env["root"] / pid / "uploads" / artifact["id"]).exists()
 
 
-def test_upload_rejects_bad_name_mime_and_oversize_without_partial_files(
-    artifact_env,
-) -> None:
+def test_upload_rejects_oversize_without_partial_files(artifact_env) -> None:
+    # The previous combined test also asserted application/x-sh uploads
+    # are rejected with 400; that MIME rejection policy was removed by
+    # A54 (user decision D2=A), so only the oversize case remains here.
     env = artifact_env
     pid = env["profile_id"]
-    assert _upload(env, pid, "bad.sh", b"x", "application/x-sh").status_code == 400
-
     env["client"].app.state.artifact_service.max_artifact_bytes = 8
     too_large = _upload(env, pid, "big.csv", b"x" * 9)
     assert too_large.status_code == 413
     assert env["client"].get(f"/api/v1/profiles/{pid}/artifacts").json() == []
     leftovers = list(Path(env["root"], pid).rglob("*"))
     assert [item for item in leftovers if item.is_file()] == []
+
+
+def test_executable_upload_round_trip_uses_attachment_download(
+    artifact_env,
+) -> None:
+    """AC-012 (A54): executable content uploads and downloads back with
+    its declared type recorded, while the user-facing download stays an
+    attachment with nosniff and an octet-stream media type."""
+    env = artifact_env
+    pid = env["profile_id"]
+    payload = b"#!/bin/sh\necho owned\n"
+    uploaded = _upload(env, pid, "bad.sh", payload, "application/x-sh")
+    assert uploaded.status_code == 201
+    artifact = uploaded.json()
+    assert artifact["content_type"] == "application/x-sh"
+
+    downloaded = env["client"].get(
+        f"/api/v1/profiles/{pid}/artifacts/{artifact['id']}"
+    )
+    assert downloaded.status_code == 200
+    assert downloaded.content == payload
+    assert downloaded.headers["content-type"] == "application/octet-stream"
+    assert downloaded.headers["x-content-type-options"] == "nosniff"
+    assert "attachment" in downloaded.headers["content-disposition"]
 
 
 def test_path_traversal_is_sanitised_inside_profile_storage(artifact_env) -> None:
@@ -155,6 +178,15 @@ def test_internal_supervisor_ingest_is_authenticated_and_deduplicated(
 ) -> None:
     env = artifact_env
     pid = env["profile_id"]
+    # A40: download reports are only accepted from instances trusted for
+    # the profile, so bind instance "i1" before reporting as it.
+    bound = env["client"].post(
+        "/api/v1/internal/supervisor/runtimes/bind",
+        params={"profile_id": pid},
+        headers={"Authorization": f"Bearer {env['supervisor_token']}"},
+        json={"runtime_instance_id": "i1", "config_version": 1},
+    )
+    assert bound.status_code == 200
     payload = b"downloaded-by-browser"
     digest = hashlib.sha256(payload).hexdigest()
     downloads = env["root"] / pid / "downloads"
@@ -202,6 +234,16 @@ def test_internal_supervisor_ingest_is_authenticated_and_deduplicated(
     rejected = env["client"].post(endpoint, json=traversal, headers=headers)
     assert rejected.status_code == 200
     assert rejected.json()["outcome"] == "rejected"
+
+    # A report from an instance that was never bound or recorded for the
+    # profile is rejected as forged, without registering an artifact.
+    forged = dict(body, event_id="dl_forged", runtime_instance_id="ghost")
+    forged_response = env["client"].post(endpoint, json=forged, headers=headers)
+    assert forged_response.status_code == 200
+    assert forged_response.json()["outcome"] == "rejected"
+    assert (
+        len(env["client"].get(f"/api/v1/profiles/{pid}/artifacts").json()) == 1
+    )
 
 
 def test_upload_requires_authentication_and_csrf(artifact_env) -> None:

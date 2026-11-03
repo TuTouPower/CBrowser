@@ -64,8 +64,11 @@ async def require_csrf_and_origin(
         if not origin:
             referer = request.headers.get("referer")
             if referer:
-                parsed = urlsplit(referer)
-                if parsed.scheme and parsed.netloc:
+                try:
+                    parsed = urlsplit(referer)
+                except ValueError:
+                    parsed = None
+                if parsed is not None and parsed.scheme and parsed.netloc:
                     origin = f"{parsed.scheme}://{parsed.netloc}"
 
         allowed_origins = getattr(request.app.state, "allowed_origins", [])

@@ -1,17 +1,17 @@
-"""Real Subprocess & Docker Container 3-Strikes Recovery E2E Integration Suite.
+"""Real API Subprocess & Docker Container 3-Strikes Recovery E2E Suite.
 
 Validates the complete recovery lifecycle with real independent processes:
 1. Real independent API subprocess (RealApiProcess).
 2. Production Gateway application with HMAC Bearer authentication
    (ProductionGatewayService).
-3. Real independent Supervisor subprocess (RealSupervisorProcess running
+3. Real Supervisor container (RealSupervisorContainer running
    cbrowser.supervisor.runner).
 4. Dual-container sandbox lifecycle (real Browser and Stream Docker containers).
 5. Strike 1: Kill Browser -> wait 2.0s retry backoff -> verify new container
    Created >= updated_at + 2.0s.
 6. Strike 2: Kill Browser -> 10.0s retry backoff.
-   During backoff, SIGKILL Supervisor subprocess (verifying returncode == -9),
-   restart with new PID.
+   During backoff, SIGKILL the Supervisor container, restart it and verify
+   it comes back with a new container identity.
    Verify new container Created >= updated_at + 10.0s (durable recovery does
    NOT reset timer).
 7. Strike 3: Kill Browser -> wait 30.0s retry backoff -> verify new container

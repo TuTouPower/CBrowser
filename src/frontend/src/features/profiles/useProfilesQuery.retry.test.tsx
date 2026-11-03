@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { ApiError, shouldRetryRequest, type ApiClient } from "../../shared/api/client";
 import { useCreateProfileMutation } from "./useProfilesQuery";
+import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
 
 describe("mutation idempotency retry", () => {
   it("reuses one action key across React Query retries", async () => {
@@ -32,7 +33,10 @@ describe("mutation idempotency retry", () => {
     const { result } = renderHook(() => useCreateProfileMutation(client), {
       wrapper,
     });
-    await result.current.mutateAsync({ name: "p1" });
+    await result.current.mutateAsync({
+      ...DEFAULT_PROFILE_CREATE_VALUES,
+      name: "p1",
+    });
     await waitFor(() => expect(keys).toHaveLength(2));
     expect(keys[0]).not.toBe("");
     expect(keys[0]).toBe(keys[1]);

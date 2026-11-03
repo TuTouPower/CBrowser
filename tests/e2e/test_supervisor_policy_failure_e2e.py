@@ -28,6 +28,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from wait import poll_until
 
 from e2e_env import free_udp_port_span, require_e2e_env
 from cbrowser.domain.models import ProfileConfig
@@ -56,7 +57,7 @@ def docker_client() -> docker.DockerClient:
 async def test_policy_installation_failure_fail_closed_and_cleanup(
     tmp_path: Path,
     docker_client: docker.DockerClient,
-    real_api_server: tuple[str, str, Path],
+    real_api_server: tuple[str, str, Path, dict],
 ) -> None:
     """Verify fail-closed behavior when policy installation fails."""
     browser_image = _get_required_env_image("CBROWSER_RUNTIME_TEST_IMAGE")
@@ -177,16 +178,27 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
 
         # 4. Drain any spooled events to ensure API receives startup_failure
         await event_forwarder.replay_spooled_events()
-        await asyncio.sleep(0.5)
 
-        # 5. Verify real API runtime state convergence
-        rt_resp = await api_client.get(
-            f"/api/v1/internal/supervisor/profiles/{created_pid}/runtime"
+        # 5. Verify real API runtime state convergence: poll the runtime
+        # fields with a deadline (t024 AC-007/A28) instead of sleeping a
+        # fixed interval and reading once.
+        async def read_runtime() -> dict:
+            resp = await api_client.get(
+                f"/api/v1/internal/supervisor/profiles/{created_pid}/runtime"
+            )
+            assert resp.status_code == 200, (
+                f"Failed to fetch runtime state: {resp.text}"
+            )
+            return resp.json()
+
+        rt_data = await poll_until(
+            read_runtime,
+            lambda data: data.get("failure_count") == 1
+            and data.get("runtime_instance_id") is None,
+            timeout=10.0,
+            interval=0.1,
+            description="API runtime convergence after policy failure",
         )
-        assert rt_resp.status_code == 200, (
-            f"Failed to fetch runtime state: {rt_resp.text}"
-        )
-        rt_data = rt_resp.json()
         assert rt_data.get("failure_count") == 1, (
             f"Expected failure_count == 1, got {rt_data.get('failure_count')}"
         )

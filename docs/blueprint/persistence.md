@@ -21,7 +21,8 @@
 系统数据库包含 8 张核心业务与状态表，不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
 1. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `font_bundle`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - `font_bundle` 由迁移 `0007_font_bundle` 以 `server_default='none'` 新增（`none`/`wqy-microhei`/`wqy-zenhei`），存量行迁移后均为 `none`，字体可见集合不变。
     - 完整覆盖计划 15.2 中有效配置字段；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；旧 native 运行模式映射为 `docker`，旧 vnc 模式映射为 `webrtc`。
 2. `profile_config_versions`：
     - 字段：`id`, `profile_id`, `version`, `snapshot`, `created_at`。
@@ -34,8 +35,9 @@
     - 字段：`profile_id` (PK), `desired_state`, `observed_state`, `runtime_instance_id`, `config_version`, `failure_count`, `restart_blocked`, `last_exit_event_id`, `updated_at`。
     - 维护 Profile 的用户意向状态与实际观测运行状态。`config_version` 严格代表当前运行实例实际绑定的配置快照版本。
 5. `artifacts`：
-    - 字段：`id`, `profile_id`, `name`, `size`, `kind`, `state`, `content_type`, `picker_name`, `created_at`。
+    - 字段：`id`, `profile_id`, `name`, `size`, `kind`, `state`, `content_type`, `picker_name`, `sha256`, `storage_path`, `delete_requested_at`, `created_at`。
     - 存储 Profile 关联文件的元数据索引，二进制文件存放在对应文件卷。
+    - `delete_requested_at`（迁移 0008，t021）是持久化删除意图：先落意图、再删文件、最后删行；服务启动时续跑未完成意图。删除目标是否已存在等标量判断走专用存在性查询，不整表加载实体。
 6. `settings`：
     - 字段：`key` (PK), `value`, `updated_at`。
     - 存储系统级键值配置。
@@ -87,13 +89,17 @@
     - 同一操作 ID 针对同一目标且载荷一致时，API 幂等重放既有处理结果，不产生重复实体或多余版本。
     - 若同一操作 ID 被复用于不同目标 Profile、不同动作或不同载荷，API 返回明确的 HTTP 409 Conflict（`idempotency_conflict`），阻止跨实体污染。
     - 重放启动意图（`desired_state=running`）的旧操作 ID 时，保持幂等重放语义，**严禁将崩溃累积的 `failure_count` 清零**；仅全新的手动启动请求可重置失败计数与阻断标记。
+    - 三个写入点（create/update/set_desired_state）的审计匹配共用单一 helper（t021）；目标已删除后的重放有确定性语义：update 重放返回已删除（None），create 重放按审计中的实体 ID 确定性重建同一身份，不生成新 ID。
+- **查询加载边界（t021）**：
+    - Profile 四个集合关系（tags/versions/runtime/artifacts）统一 `lazy="noload"` + `passive_deletes=True`：删除走数据库外键级联（`ON DELETE CASCADE` + `foreign_keys` pragma），普通读取不隐式整表加载集合；确需标签的读取由仓储显式 `selectinload`。
+    - 下载去重在 SQL 层按 `(profile, sha256, storage_path)` 精确过滤，不再把候选集拉回内存逐条比对。
 - **并发版本分配**：
     - Profile 采用仅传递修改字段并在 `BEGIN IMMEDIATE` 事务内就地合并的方式，杜绝了预读导致的更新丢失；更新版本号自动计算最新最大版本号递增，并在并发冲突时安全重试。
 
 ## 5. 结构化诊断与敏感数据脱敏
 
 - **安全结构化日志**：
-    - API 消费运行时事件时，通过标准 Python 日志组件（`cbrowser.events`）输出单行机器可读的 JSON 日志（`RUNTIME_EVENT_JSON: {...}`），禁止绕过日志体系使用底层 `sys.stderr.write`。
+    - API 消费运行时事件时，通过标准 Python 日志组件（`cbrowser.events`）输出单行机器可读的 JSON 日志（`RUNTIME_EVENT_JSON: {...}`），禁止绕过日志体系使用底层 `sys.stderr.write`。发射器位于包内 `cbrowser/runtime_event_log.py`（t021 自旧顶层 `diagnostics` 模块迁入，旧模块已删除）。
     - 启动阶段配置 Alembic `fileConfig(..., disable_existing_loggers=False)`，保障应用日志体系在迁移后不被静默注销。
     - 字段受严格白名单约束：`event_id`, `profile_id`, `runtime_instance_id`, `event_type`, `exit_code`, `exit_reason`, `config_version`, `outcome`, `timestamp`。
 - **严格脱敏与 ID 安全表示**：

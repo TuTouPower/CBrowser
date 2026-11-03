@@ -24,12 +24,18 @@ from urllib.parse import quote
 import websockets
 from cbrowser.domain.models import ProfileConfig, ProfileRuntimeResponse
 from cbrowser.secret_files import read_secret_file
-from cbrowser.supervisor.core import SupervisorCore
+from cbrowser.supervisor.core import (
+    LifecycleConflictError,
+    RuntimeUnavailableError,
+    SupervisorCore,
+)
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
     ProfileRuntimeStatus,
     ResetBlockedRequest,
     ResetBlockedResponse,
+    SearchDefaultsRetryRequest,
+    SearchDefaultsStatusResponse,
     StartProfileRequest,
     StartProfileResponse,
     StopProfileRequest,
@@ -136,6 +142,8 @@ def create_control_app(
             )
         except PortPoolExhaustedError:
             raise HTTPException(503, "UDP mux port pool exhausted") from None
+        except LifecycleConflictError:
+            raise HTTPException(409, "Conflicting lifecycle operation") from None
         except Exception as e:  # noqa: BLE001 - runtime start failure mapped to 500 Internal Server Error
             logger.error("Runtime start failed: error_type=%s", type(e).__name__)
             raise HTTPException(
@@ -205,6 +213,34 @@ def create_control_app(
                 restart_blocked=runtime.restart_blocked,
                 failure_count=runtime.failure_count,
             )
+
+    @app.get(
+        "/supervisor/v1/profiles/{profile_id}/search-defaults",
+        response_model=SearchDefaultsStatusResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def get_search_defaults(profile_id: str):
+        instance_id, search_defaults = await core.get_search_defaults(profile_id)
+        return SearchDefaultsStatusResponse(
+            profile_id=profile_id,
+            runtime_instance_id=instance_id,
+            search_defaults=search_defaults,
+        )
+
+    @app.post(
+        "/supervisor/v1/profiles/search-defaults/retry",
+        dependencies=[Depends(verify_token)],
+    )
+    async def retry_search_defaults(req: SearchDefaultsRetryRequest):
+        try:
+            await core.retry_search_defaults(
+                req.profile_id, req.runtime_instance_id, req.request_id
+            )
+        except LifecycleConflictError:
+            raise HTTPException(409, "Conflicting lifecycle operation") from None
+        except RuntimeUnavailableError:
+            raise HTTPException(503, "Runtime agent unavailable") from None
+        return {"status": "ok"}
 
     @app.post(
         "/supervisor/v1/profiles/reset-blocked",

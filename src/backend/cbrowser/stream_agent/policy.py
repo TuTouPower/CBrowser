@@ -4,6 +4,7 @@ Arbitrates framerate (8 static / 30 active), pause/resume on visibility,
 blocks client mutations, damage motion detection, and supervisor quota.
 """
 
+from collections.abc import Callable
 import asyncio
 import collections
 import logging
@@ -13,7 +14,6 @@ from typing import Any
 
 from .policy_rules import (
     DISALLOWED_SETTINGS_KEYS,
-    FORBIDDEN_PEER_PREFIXES,
     MAX_HISTORY_SIZE,
     sanitize_settings_message,
     should_block_client_verb,
@@ -54,7 +54,11 @@ class LiveCapturePolicyAgent:
         min_fps: float = 8.0,
         max_fps: float = 30.0,
         input_cooldown_sec: float = 2.0,
+        clock: Callable[[], float] = time.monotonic,
     ):
+        # Injectable clock (t024 AC-014/A43): tests pass a local callable
+        # instead of patching the stdlib time module object.
+        self._clock = clock
         self.service = service
         self._explicit_pipeline = media_pipeline
         self.min_fps = float(min_fps)
@@ -84,7 +88,7 @@ class LiveCapturePolicyAgent:
         # Damage stats tracking
         self._last_frames_count: int = 0
         self._has_screen_motion: bool = False
-        self._last_stats_time: float = time.monotonic()
+        self._last_stats_time: float = self._clock()
         self.motion_fps_estimate: float = 0.0
 
         # Async background tasks
@@ -191,7 +195,7 @@ class LiveCapturePolicyAgent:
         The periodic reconciler consumes the pending flag, so high-frequency
         mouse input never creates one asyncio task per message.
         """
-        self._last_input_time = time.monotonic()
+        self._last_input_time = self._clock()
         self._reconcile_pending = True
 
     def set_peer_active(
@@ -239,35 +243,37 @@ class LiveCapturePolicyAgent:
 
     def set_supervisor_quota(self, fps_cap: float | None) -> None:
         """
-        Set or clear supervisor overload quota cap.
-        Validates that quota is a positive, non-NaN finite number <= max_fps.
+        Set or clear the supervisor overload quota cap.
+
+        One FPS rule with the protocol layer (SupervisorQuotaPayload): a
+        cap must be finite and within [min_fps, max_fps]. Out-of-rule values
+        are strictly rejected with ValueError and leave the current cap
+        untouched; None is the only way to clear the cap.
         """
-        if fps_cap is not None:
-            try:
-                cap_val = float(fps_cap)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "PolicyAgent: Ignored invalid supervisor quota: %s",
-                    fps_cap,
-                )
-                return
-
-            if math.isnan(cap_val) or math.isinf(cap_val) or cap_val <= 0:
-                logger.warning(
-                    "PolicyAgent: Ignored non-positive/NaN supervisor quota: %s",
-                    cap_val,
-                )
-                return
-
-            bounded_cap = min(cap_val, self.max_fps)
-            self._supervisor_fps_cap = bounded_cap
-            logger.info(
-                "PolicyAgent: Supervisor quota cap set to %.1f FPS",
-                self._supervisor_fps_cap,
-            )
-        else:
+        if fps_cap is None:
             self._supervisor_fps_cap = None
             logger.info("PolicyAgent: Supervisor quota cap cleared")
+            return
+        try:
+            cap_val = float(fps_cap)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Supervisor quota must be a number, got {type(fps_cap).__name__}"
+            ) from None
+        if (
+            not math.isfinite(cap_val)
+            or cap_val < self.min_fps
+            or cap_val > self.max_fps
+        ):
+            raise ValueError(
+                "Supervisor quota must be finite and within "
+                f"[{self.min_fps}, {self.max_fps}] FPS"
+            )
+        self._supervisor_fps_cap = cap_val
+        logger.info(
+            "PolicyAgent: Supervisor quota cap set to %.1f FPS",
+            self._supervisor_fps_cap,
+        )
 
     def has_active_visible_viewers(self) -> bool:
         """Return True if any authenticated viewer is currently visible."""
@@ -292,7 +298,7 @@ class LiveCapturePolicyAgent:
     def log_action(self, action: str, details: dict[str, Any]) -> None:
         """Log pipeline action to bounded ring buffer with ISO8601 timestamp."""
         entry = {
-            "time": time.monotonic(),
+            "time": self._clock(),
             "timestamp": _iso_now(),
             "action": action,
             "details": details,
@@ -392,7 +398,7 @@ class LiveCapturePolicyAgent:
                     module = p.capture_module
                     if hasattr(module, "stream_stats"):
                         totals = module.stream_stats()
-                        now = time.monotonic()
+                        now = self._clock()
                         elapsed = now - self._last_stats_time
                         if totals and "frames" in totals and elapsed > 0.1:
                             cur_frames = totals["frames"]
@@ -440,7 +446,7 @@ class LiveCapturePolicyAgent:
         safe_caller = _sanitize_caller(caller)
         async with self._control_lock:
             p = self.pipeline
-            now = time.monotonic()
+            now = self._clock()
             active_peers = [pid for pid, st in self.peers.items() if st.get("active")]
             has_visible = len(active_peers) > 0
 
@@ -500,7 +506,7 @@ class LiveCapturePolicyAgent:
                 if p and hasattr(p, "resume_screen_capture"):
                     await p.resume_screen_capture()
                 self._is_paused = False
-                self._resume_time = time.monotonic()
+                self._resume_time = self._clock()
 
                 # Request IDR on resume
                 if self.service and hasattr(self.service, "request_idr_for_display"):
@@ -569,7 +575,6 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
     """Dynamically subclass WebRTCService to control policy."""
 
     class RealPolicyControlledWebRTCService(base_cls):
-        FORBIDDEN_PEER_PREFIXES = FORBIDDEN_PEER_PREFIXES
 
         def __init__(self, supervisor: Any):
             super().__init__(supervisor)
@@ -602,7 +607,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             4. Forward valid input unconditionally to input_handler.
             """
             if isinstance(msg, str):
-                if msg.startswith(self.FORBIDDEN_PEER_PREFIXES):
+                if should_block_client_verb(msg):
                     logger.debug(
                         "[%s] Policy Guard: Blocked client verb: %s",
                         _iso_now(),

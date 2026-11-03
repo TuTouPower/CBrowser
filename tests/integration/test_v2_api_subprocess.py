@@ -21,7 +21,10 @@ import pytest
 
 from api_auth import create_auth_context
 
-SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t002-", dir="/tmp"))
+# The subprocess scratch root is created by the module-scoped fixture
+# below, not at import time (t024 AC-006/A27): collection must not create
+# state, and the directory is removed when the module finishes.
+SCRATCH_DIR: Path | None = None
 OPENAPI_SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent.parent
     / "schemas"
@@ -70,6 +73,7 @@ class SubprocessServer:
         env["CBROWSER_DB_PATH"] = str(self.db_path)
         env["CBROWSER_PORT"] = str(self.port)
         env["CBROWSER_HOST"] = "127.0.0.1"
+        assert SCRATCH_DIR is not None, "scratch_dir fixture must run first"
         env["UV_CACHE_DIR"] = str(SCRATCH_DIR / "uv_cache")
         env["TMPDIR"] = str(SCRATCH_DIR / "tmp")
         if self.auth_context:
@@ -137,9 +141,21 @@ class SubprocessServer:
         return ""
 
 
+@pytest.fixture(scope="module")
+def scratch_dir() -> Path:
+    global SCRATCH_DIR
+    root = Path(tempfile.mkdtemp(prefix="cbrowser-t002-", dir="/tmp"))
+    SCRATCH_DIR = root
+    yield root
+    import shutil
+
+    shutil.rmtree(root, ignore_errors=True)
+    SCRATCH_DIR = None
+
+
 @pytest.fixture
-def server_harness() -> SubprocessServer:
-    tmp_dir = SCRATCH_DIR / f"test_run_{int(time.time() * 1000)}"
+def server_harness(scratch_dir: Path) -> SubprocessServer:
+    tmp_dir = scratch_dir / f"test_run_{int(time.time() * 1000)}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     db_file = tmp_dir / "cbrowser_v2.db"
     log_file = tmp_dir / "server.log"
@@ -152,9 +168,20 @@ def server_harness() -> SubprocessServer:
     server.stop()
 
 
+_OPENAPI_SPEC: dict[str, Any] | None = None
+
+
+def _openapi_spec() -> dict[str, Any]:
+    """Parse the published OpenAPI document once per module (A27)."""
+    global _OPENAPI_SPEC
+    if _OPENAPI_SPEC is None:
+        _OPENAPI_SPEC = json.loads(OPENAPI_SCHEMA_PATH.read_text(encoding="utf-8"))
+    return _OPENAPI_SPEC
+
+
 def _validate_schema(data: Any, schema_name: str):
     """Validate JSON response against published OpenAPI component schema."""
-    spec = json.loads(OPENAPI_SCHEMA_PATH.read_text(encoding="utf-8"))
+    spec = _openapi_spec()
     component_schema = spec["components"]["schemas"][schema_name]
     # Provide resolver/components context
     resolver = jsonschema.RefResolver.from_schema(spec)
@@ -819,6 +846,10 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
 
         assert resp_timeout.status_code == 503
         assert resp_timeout.headers.get("Retry-After") == "1"
+        # The 503 must arrive only after the ~5s busy_timeout is exhausted
+        # (lower bound), with a loose 3x-timeout ceiling (A53): failing fast
+        # would mean the timeout regressed, hanging far past it would mean
+        # the budget is not enforced.
         assert 4.5 <= elapsed_timeout <= 6.5, (
             f"Expected elapsed ~5.0s, got {elapsed_timeout:.2f}s"
         )

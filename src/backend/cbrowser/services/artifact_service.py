@@ -12,7 +12,6 @@ from pathlib import Path
 
 from cbrowser.adapters.database.artifact_repository import ArtifactRepository
 from cbrowser.adapters.filesystem.artifact_store import (
-    ArtifactInvalidContentType,
     ArtifactInvalidName,
     ArtifactNotFound,
     ArtifactQuotaExceeded,
@@ -84,7 +83,7 @@ class ArtifactService:
         size_hint: int = 0,
     ) -> Artifact:
         async with self._locks.lock(profile_id):
-            if await self.repository.get_profile(profile_id) is None:
+            if not await self.repository.profile_exists(profile_id):
                 raise ArtifactNotFound("Profile not found")
             safe_name = safe_filename(name)
             if not safe_name or safe_name in (".", ".."):
@@ -153,13 +152,69 @@ class ArtifactService:
         return artifact, path
 
     async def delete(self, profile_id: str, artifact_id: str) -> None:
+        """Delete an artifact as a resumable two-phase operation.
+
+        The intent is persisted in the database first; only then is the
+        file removed and the metadata row dropped. Any failure leaves the
+        intent in place so a retry or a post-restart resume can finish
+        the job: while the intent is pending, repeating the call is
+        idempotent. Once the deletion has completed, a further call
+        reports the artifact as not found (the API maps this to 404),
+        which is the defined end-state signal for callers.
+        """
         self.store.validate_artifact_id(artifact_id)
         async with self._locks.lock(profile_id):
-            artifact = await self.get(profile_id, artifact_id)
-            await self.repository.delete_artifact(profile_id, artifact_id)
-            await asyncio.to_thread(
-                self.store.delete, profile_id, artifact.storage_path
+            artifact = await self.repository.mark_delete_requested(
+                profile_id, artifact_id
             )
+            if artifact is None:
+                raise ArtifactNotFound("Artifact not found")
+            await self._complete_deletion(artifact)
+
+    async def _complete_deletion(self, artifact: Artifact) -> None:
+        await asyncio.to_thread(
+            self.store.delete, artifact.profile_id, artifact.storage_path
+        )
+        await self.repository.delete_artifact(artifact.profile_id, artifact.id)
+
+    async def resume_pending_deletions(self) -> int:
+        """Finish deletions whose intent survived a process restart.
+
+        Returns the number completed. A deletion that still fails keeps
+        its intent and is reported, never silently dropped. Even listing
+        the pending intents is best-effort: a transient storage failure
+        at startup must not abort the application — the intents remain
+        persisted and the next start retries them.
+        """
+        try:
+            pending = await self.repository.list_pending_deletions()
+        except Exception:  # noqa: BLE001 - startup resume is best-effort
+            logger.warning(
+                "Could not list pending artifact deletions; "
+                "they will be retried on the next start",
+                exc_info=True,
+            )
+            return 0
+        completed = 0
+        for artifact in pending:
+            try:
+                async with self._locks.lock(artifact.profile_id):
+                    fresh = await self.repository.get_artifact(
+                        artifact.profile_id, artifact.id
+                    )
+                    if fresh is None or fresh.delete_requested_at is None:
+                        continue
+                    await self._complete_deletion(fresh)
+                completed += 1
+            except Exception as exc:  # noqa: BLE001 - keep intent, continue others
+                logger.warning(
+                    "Pending artifact deletion not completed: profile=%s "
+                    "artifact=%s error_type=%s",
+                    artifact.profile_id,
+                    artifact.id,
+                    type(exc).__name__,
+                )
+        return completed
 
     async def remove_profile(self, profile_id: str) -> None:
         async with self._locks.lock(profile_id):
@@ -177,16 +232,31 @@ class ArtifactService:
         self,
         profile_id: str,
         *,
+        runtime_instance_id: str,
         path: str,
         name: str,
         sha256: str | None,
         size: int | None,
         content_type: str | None,
     ) -> IngestDownloadResult:
-        """Register a completed download, deduplicating by path and checksum."""
+        """Register a completed download, deduplicating by path and checksum.
+
+        The reporting instance must be trusted for the profile (currently
+        bound or present in its runtime history): a late report from a
+        terminated-but-legitimate instance is accepted, an unknown or
+        forged instance id is rejected before any file is touched.
+        """
         async with self._locks.lock(profile_id):
-            if await self.repository.get_profile(profile_id) is None:
+            if not await self.repository.profile_exists(profile_id):
                 raise ArtifactNotFound("Profile not found")
+            if not await self.repository.is_trusted_instance(
+                profile_id, runtime_instance_id
+            ):
+                logger.warning(
+                    "Download ingest rejected: profile=%s reason=unknown_instance",
+                    profile_id,
+                )
+                return IngestDownloadResult(None, "unknown_instance")
             source = self.store.resolve_download_source(profile_id, path)
             if not source.is_file():
                 logger.info(
@@ -213,10 +283,10 @@ class ArtifactService:
                 or mimetypes.guess_type(safe_name)[0]
                 or "application/octet-stream"
             )
-            try:
-                media_type = validate_content_type(raw_type)
-            except ArtifactInvalidContentType:
-                media_type = "application/octet-stream"
+            # Same normalization as uploads: declared types are kept as
+            # metadata (executables included); illegal header values reject
+            # the ingest instead of being silently re-marked.
+            media_type = validate_content_type(raw_type)
 
             duplicate = await self.repository.find_download_duplicate(
                 profile_id,

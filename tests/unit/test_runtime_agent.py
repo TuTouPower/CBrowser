@@ -299,21 +299,29 @@ async def test_agent_app_routes(
         bad_ctrl = await client.post("/control", json={"action": "rm -rf /"})
         assert bad_ctrl.status_code in (400, 422)
 
-        # Health probes run concurrently off the event loop.
+        # Health probes run concurrently off the event loop.  Concurrency
+        # is proven structurally (t024 AC-007/A28): the three probe
+        # intervals must overlap, which is impossible if they ran serially
+        # -- no wall-clock budget is asserted.
         from cbrowser.runtime_agent import agent as agent_module
 
+        intervals: list[tuple[float, float]] = []
+
         def slow_probe(*_args, **_kwargs):
+            start = time.monotonic()
             time.sleep(0.25)
+            intervals.append((start, time.monotonic()))
             return True, "ok"
 
         monkeypatch.setattr(agent_module, "check_display", slow_probe)
         monkeypatch.setattr(agent_module, "check_audio", slow_probe)
         monkeypatch.setattr(agent_module, "check_browser", slow_probe)
-        started = time.monotonic()
         fast_health = await client.get("/health")
-        elapsed = time.monotonic() - started
         assert fast_health.status_code == 200
-        assert elapsed < 0.6, elapsed
+        assert len(intervals) == 3
+        assert max(start for start, _end in intervals) < min(
+            end for _start, end in intervals
+        ), f"health probes did not overlap: {intervals}"
 
         # Events endpoints
         evts_resp = await client.get("/events/runtime")

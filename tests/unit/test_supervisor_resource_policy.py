@@ -3,36 +3,11 @@ from cbrowser.supervisor.resource_policy import (
     HostCpuSample,
     ResourcePolicyConfig,
     ResourcePolicyService,
-    calculate_cpu_percent,
     calculate_host_cpu_percent,
     parse_linux_proc_stat_cpu,
 )
 
 # --- 1. 保留旧测试原样语义 ---
-
-
-def test_calculate_cpu_percent_basic():
-    pct = calculate_cpu_percent(
-        current_usage_ns=2_000_000_000,
-        previous_usage_ns=1_000_000_000,
-        current_system_ns=20_000_000_000,
-        previous_system_ns=10_000_000_000,
-        online_cpus=10,
-        nano_cpus_limit=1_000_000_000,  # 1 core limit
-    )
-    assert pytest.approx(pct, 0.1) == 100.0
-
-
-def test_calculate_cpu_percent_zero_delta():
-    pct = calculate_cpu_percent(
-        current_usage_ns=1_000_000_000,
-        previous_usage_ns=1_000_000_000,
-        current_system_ns=20_000_000_000,
-        previous_system_ns=10_000_000_000,
-        online_cpus=10,
-        nano_cpus_limit=1_000_000_000,
-    )
-    assert pct == 0.0
 
 
 def test_resource_policy_overload_and_hysteresis():

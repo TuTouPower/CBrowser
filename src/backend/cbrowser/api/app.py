@@ -32,6 +32,7 @@ from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
 from cbrowser.gateway.endpoint import normalize_origins
+from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
@@ -128,6 +129,9 @@ def create_app(
                 "ARTIFACT_MAX_TOTAL_BYTES", max_profile_artifact_bytes
             ),
         )
+        # Finish artifact deletions whose durable intent survived a
+        # previous process exit; failures keep their intent for next time.
+        await app.state.artifact_service.resume_pending_deletions()
 
         app.state.trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
             os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
@@ -210,6 +214,19 @@ def create_app(
             content={
                 "error": "database_error",
                 "message": "A database error occurred",
+                "retryable": False,
+            },
+        )
+
+    @app.exception_handler(ServiceNotConfiguredError)
+    async def service_not_configured_handler(
+        request: Request, exc: ServiceNotConfiguredError
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": "service_not_configured",
+                "message": str(exc),
                 "retryable": False,
             },
         )
@@ -370,7 +387,11 @@ def create_app(
                     "in": "header",
                     "name": "X-CSRF-Token",
                 },
-                "serviceBearer": {
+                "SupervisorServiceBearer": {
+                    "type": "http",
+                    "scheme": "bearer",
+                },
+                "GatewayServiceBearer": {
                     "type": "http",
                     "scheme": "bearer",
                 },
@@ -383,8 +404,12 @@ def create_app(
                     continue
                 if path in {"/api/v1/health", "/api/v1/auth/login"}:
                     security = []
-                elif path.startswith("/api/v1/internal/"):
-                    security = [{"serviceBearer": []}]
+                elif path.startswith("/api/v1/internal/supervisor"):
+                    # Supervisor RPC and the Artifact ingest surface both
+                    # authenticate with the Supervisor service identity.
+                    security = [{"SupervisorServiceBearer": []}]
+                elif path.startswith("/api/v1/internal/gateway"):
+                    security = [{"GatewayServiceBearer": []}]
                 elif method in {"post", "put", "patch", "delete"}:
                     security = [{"sessionCookie": [], "csrfHeader": []}]
                 else:

@@ -17,6 +17,21 @@ DownloadState = Literal["in_progress", "completed", "canceled"]
 AgentStatus = Literal["ok", "degraded", "error"]
 
 
+SearchDefaultsState = Literal["applied", "failed", "disabled", "pending"]
+
+
+class SearchDefaultsStatus(BaseModel):
+    """Independent outcome of the best-effort default-search initialization."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: SearchDefaultsState
+    error_kind: str | None = Field(default=None, max_length=64)
+    runtime_instance_id: str
+    request_id: str | None = Field(default=None, max_length=128)
+    updated_at: str
+
+
 class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -30,6 +45,7 @@ class HealthResponse(BaseModel):
     runtime_instance_id: str
     config_version: int = Field(default=1, ge=1)
     details: dict[str, Any] = Field(default_factory=dict)
+    search_defaults: SearchDefaultsStatus | None = None
 
 
 class ConfigVersionResponse(BaseModel):
@@ -43,7 +59,7 @@ class ConfigVersionResponse(BaseModel):
 class ControlRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["close", "rearm_downloads"]
+    action: Literal["close", "rearm_downloads", "retry_search_defaults"]
     params: dict[str, Any] = Field(default_factory=dict)
 
 

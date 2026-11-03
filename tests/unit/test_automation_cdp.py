@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 import tempfile
+from collections.abc import Iterator
 import websockets
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.path_validator import PathValidator
@@ -52,15 +53,24 @@ class _UnixEchoServer:
         self.thread.join(timeout=5)
 
 
-def _short_root(tmp_path: Path) -> Path:
-    # AF_UNIX paths are capped near 104 bytes; pytest tmp paths exceed it here.
+@pytest.fixture
+def short_root() -> Iterator[Path]:
+    """Short /tmp data root with finalizer cleanup (t024 AC-006/A27).
+
+    AF_UNIX paths are capped near 104 bytes; pytest tmp paths exceed it
+    here, so the root is a short mkdtemp directory -- but unlike the former
+    hand-rolled helper it is created once, used as-is and always removed.
+    """
     root = Path(tempfile.mkdtemp(prefix="cbrowser-t008-uds-", dir="/tmp")) / "data"
-    shutil.rmtree(root.parent, ignore_errors=True)
-    return root
+    root.mkdir(parents=True)
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root.parent, ignore_errors=True)
 
 
-def test_supervisor_cdp_websocket_forwards_to_agent_uds(tmp_path: Path) -> None:
-    root = _short_root(tmp_path)
+def test_supervisor_cdp_websocket_forwards_to_agent_uds(short_root: Path) -> None:
+    root = short_root
     runtime = root / "runtime" / "p1"
     runtime.mkdir(parents=True)
     sock = runtime / "agent.sock"
@@ -93,8 +103,8 @@ def test_supervisor_cdp_websocket_forwards_to_agent_uds(tmp_path: Path) -> None:
         server.close()
 
 
-def test_supervisor_cdp_rejects_missing_or_foreign_token(tmp_path: Path) -> None:
-    root = _short_root(tmp_path)
+def test_supervisor_cdp_rejects_missing_or_foreign_token(short_root: Path) -> None:
+    root = short_root
     (root / "runtime" / "p1").mkdir(parents=True)
     token = secrets.token_urlsafe(32)
     token_file = root.parent / "token"

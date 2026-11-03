@@ -2,18 +2,19 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Settings, ShieldCheck, Globe } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { defaultApiClient } from "../../shared/api/client";
+import { useApiClient } from "../../shared/api/client_context";
 
 export function SettingsPage() {
   const { locale, setLocale, t } = useI18n();
+  const client = useApiClient();
   const [healthStatus, setHealthStatus] = useState<string>("checking");
 
   useEffect(() => {
-    defaultApiClient.health
+    client.health
       .check()
       .then(() => setHealthStatus("healthy"))
       .catch(() => setHealthStatus("error"));
-  }, []);
+  }, [client]);
 
   return (
     <div data-testid="settings-page" className="p-8 max-w-3xl mx-auto">
@@ -75,10 +76,10 @@ export function SettingsPage() {
               <ShieldCheck className="h-5 w-5 text-gray-400" />
               <div>
                 <h3 className="text-sm font-medium text-gray-200">
-                  {t("systemGatewayControlApi")}
+                  {t("controlApiStatusTitle")}
                 </h3>
                 <p className="text-xs text-gray-400">
-                  {t("systemApiServicesStatus")}
+                  {t("controlApiStatusHint")}
                 </p>
               </div>
             </div>

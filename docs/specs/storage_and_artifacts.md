@@ -42,6 +42,12 @@
 - 外部 CDP 自动化使用独立 `cbat_` Bearer 凭证，经 `/api/v1/automation/profiles/{profileId}/cdp` 进入 API，再经 Supervisor 转发到 Agent UDS，最终到浏览器 loopback CDP。
 - 旧 `/api/profiles/{profileId}/cdp` 仅作为薄适配转发同一授权入口；不发布旧 CDP 端口。
 
+### 2.5 内容类型、删除与实例信任（t021）
+
+- 内容类型统一规范化（上传与下载入库共用）：去参数、转小写、缺省 `application/octet-stream`，仅拒绝非法 header 值；不再拒绝可执行类型或把下载强制重标为 octet-stream，声明类型按元数据保存（用户决策 D2=A）。用户侧下载响应恒为 `application/octet-stream` 附件 + `nosniff`，与记录类型无关。
+- Artifact 删除为可恢复两阶段：先持久化 `delete_requested_at` 意图（迁移 0008），再删文件、删行；失败保留意图与文件，服务启动时续跑未完成意图；意图未完成期间重复调用幂等，完成后再次调用返回 404；记录路径逃逸时拒绝并保留意图，不递归删除异常目录。
+- 下载报告实例信任：报告的 `runtime_instance_id` 必须是该 Profile 当前绑定或 `runtime_events` 历史中出现过的实例，未知/伪造实例在触碰文件前被拒绝（`rejected`）。
+
 ## 3. 验收标准
 
 - [x] AC-001：新数据库成功生成 WAL 文件，并发读取和写入不产生数据库锁表异常。
@@ -50,3 +56,7 @@
 - [x] AC-004：浏览器中下载的文件能被 Runtime Agent 捕获（含校验和），Agent 重启后对账补登，重复事件不重复入库。
 - [x] AC-005：外部自动化经独立凭证进入 Supervisor/UDS/loopback CDP，旧 CDP 入口仅转发新授权代理，不暴露公网 CDP 端口。
 - [x] AC-006：Selkies 会话内文件传输显式关闭，客户端无入口，文件只能经 Artifact Service 进出 Profile。
+
+## 前端上传失败报告（t023）
+
+- 前端多文件上传顺序执行并在首个失败处停止；失败提示给出已成功数、失败文件名与未处理数，不输出文件内容。删除与上传等写操作携带每次调用独立生成的幂等键，自动重试复用同键。

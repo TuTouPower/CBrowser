@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -27,34 +28,123 @@ ADAPTER_MARKERS = ("__SELKIES_STREAMING_MODE__", "__getWebRTCStats")
 MODULE_TAG = re.compile(r'<script[^>]+type="module"[^>]*>')
 
 
-def frontend_source_hash(frontend_dir: Path = REPO_ROOT / "src" / "frontend") -> str:
-    """Hash all source inputs that must be reflected in a fresh dist build."""
-    digest = hashlib.sha256()
-    candidates = [frontend_dir / "index.html", frontend_dir / "package.json"]
-    for name in ("vite.config.ts", "vite.selkies.config.ts", "tailwind.config.ts", "postcss.config.js", "tsconfig.json"):
-        candidates.append(frontend_dir / name)
-    candidates.append(frontend_dir / "package-lock.json")
-    for root in (frontend_dir / "src", frontend_dir / "public"):
-        candidates.extend(
-            path for path in sorted(root.rglob("*")) if path.is_file()
-        )
-    for path in candidates:
+# Build-stamp input contract (t024 AC-016/A51).  The stamp records the exact
+# input set that produced dist; generation and verification share this one
+# definition so the two can never drift apart.
+#
+# - REQUIRED_INPUTS must exist or no stamp may be generated at all.
+# - CONFIG_INPUTS are recorded present-or-absent; adding one later makes an
+#   old dist stale.
+# - Everything under src/ and public/ is an input; adding or deleting a file
+#   changes the recorded set.
+# - Vite root env files (.env, .env.*) at the frontend root are inputs by
+#   Vite's own loading convention -- only files inside that declared
+#   boundary are read, never arbitrary environment files.
+# - Process environment values count only for names in ENV_VALUE_ALLOWLIST
+#   (empty today: the build consumes no VITE_* values); only their hashes
+#   are recorded.
+REQUIRED_INPUTS = ("index.html", "package.json", "package-lock.json")
+# Source directories that must exist for a stamp to be meaningful: a tree
+# without src/ is not a buildable frontend, and silently stamping it would
+# let an empty input set self-certify (t024 AC-016, review f008).
+REQUIRED_DIRS = ("src",)
+CONFIG_INPUTS = (
+    "vite.config.ts",
+    "vite.selkies.config.ts",
+    "tailwind.config.ts",
+    "postcss.config.js",
+    "tsconfig.json",
+)
+SOURCE_DIRS = ("src", "public")
+ENV_VALUE_ALLOWLIST: tuple[str, ...] = ()
+STAMP_VERSION = 2
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def frontend_input_manifest(
+    frontend_dir: Path = REPO_ROOT / "src" / "frontend",
+) -> dict:
+    """Compute the declared build-input set with per-file content hashes.
+
+    Raises RuntimeError when a required input is missing, so neither stamp
+    generation nor freshness verification can proceed on an incomplete
+    source tree.
+    """
+    files: dict[str, str] = {}
+    for name in REQUIRED_INPUTS:
+        path = frontend_dir / name
         if not path.is_file():
-            continue
-        digest.update(path.relative_to(frontend_dir).as_posix().encode())
+            raise RuntimeError(
+                f"Required frontend build input missing: {path}; cannot stamp or verify"
+            )
+        files[name] = _file_sha256(path)
+    for name in CONFIG_INPUTS:
+        path = frontend_dir / name
+        if path.is_file():
+            files[name] = _file_sha256(path)
+    for dirname in REQUIRED_DIRS:
+        if not (frontend_dir / dirname).is_dir():
+            raise RuntimeError(
+                f"Required frontend source directory missing: {frontend_dir / dirname}; "
+                "cannot stamp or verify"
+            )
+    for dirname in SOURCE_DIRS:
+        root = frontend_dir / dirname
+        if root.is_dir():
+            for path in sorted(root.rglob("*")):
+                if path.is_file():
+                    rel = path.relative_to(frontend_dir).as_posix()
+                    files[rel] = _file_sha256(path)
+    for path in sorted(frontend_dir.iterdir()):
+        if path.is_file() and (path.name == ".env" or path.name.startswith(".env.")):
+            files[path.name] = _file_sha256(path)
+    env: dict[str, str] = {}
+    for name in ENV_VALUE_ALLOWLIST:
+        if name in os.environ:
+            env[name] = hashlib.sha256(os.environ[name].encode()).hexdigest()
+    return {"files": files, "env": env}
+
+
+def _manifest_digest(manifest: dict) -> str:
+    digest = hashlib.sha256()
+    for rel in sorted(manifest["files"]):
+        digest.update(rel.encode())
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(manifest["files"][rel].encode())
+        digest.update(b"\0")
+    for name in sorted(manifest["env"]):
+        digest.update(f"env:{name}".encode())
+        digest.update(b"\0")
+        digest.update(manifest["env"][name].encode())
         digest.update(b"\0")
     return digest.hexdigest()
+
+
+def frontend_source_hash(frontend_dir: Path = REPO_ROOT / "src" / "frontend") -> str:
+    """Hash all source inputs that must be reflected in a fresh dist build."""
+    return _manifest_digest(frontend_input_manifest(frontend_dir))
 
 
 def write_frontend_build_stamp(
     dist_dir: Path, frontend_dir: Path = REPO_ROOT / "src" / "frontend"
 ) -> Path:
+    manifest = frontend_input_manifest(frontend_dir)
     stamp = dist_dir / STAMP_NAME
     stamp.parent.mkdir(parents=True, exist_ok=True)
     stamp.write_text(
-        json.dumps({"source_sha256": frontend_source_hash(frontend_dir)}) + "\n",
+        json.dumps(
+            {
+                "version": STAMP_VERSION,
+                "source_sha256": _manifest_digest(manifest),
+                "files": manifest["files"],
+                "env": manifest["env"],
+            },
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return stamp
@@ -69,11 +159,22 @@ def verify_frontend_build_freshness(
             f"Frontend build stamp missing at {stamp}; rebuild with npm run build"
         )
     try:
-        recorded = json.loads(stamp.read_text(encoding="utf-8"))["source_sha256"]
+        recorded = json.loads(stamp.read_text(encoding="utf-8"))
+        recorded_files = recorded["files"]
+        recorded_env = recorded["env"]
+        recorded_digest = recorded["source_sha256"]
+        if recorded["version"] != STAMP_VERSION or not isinstance(
+            recorded_files, dict
+        ) or not isinstance(recorded_env, dict):
+            raise ValueError("stamp shape")
     except (OSError, ValueError, KeyError, TypeError):
         raise RuntimeError("Frontend build stamp is unreadable; rebuild required") from None
-    current = frontend_source_hash(frontend_dir)
-    if recorded != current:
+    current = frontend_input_manifest(frontend_dir)
+    if (
+        recorded_files != current["files"]
+        or recorded_env != current["env"]
+        or recorded_digest != _manifest_digest(current)
+    ):
         raise RuntimeError(
             "Frontend dist is stale relative to current source; run npm run build"
         )

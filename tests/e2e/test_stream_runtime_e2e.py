@@ -57,7 +57,7 @@ def _free_udp_port(start: int = 30000, end: int = 30991) -> int:
 
 
 
-async def wait_for_viewer_count(gateway: "GatewayMockServer", expected: int,
+async def wait_for_viewer_count(gateway: "GatewayProtocolMockServer", expected: int,
                                 timeout: float = 15.0) -> None:
     await wait_until(
         lambda: len(gateway.viewers) == expected,
@@ -91,8 +91,14 @@ async def wait_for_log(log_reader, needle: str, *, offset: int = 0,
     raise AssertionError(f"Timed out waiting for log {needle!r}: {last[-500:]}")
 
 
-class GatewayMockServer:
-    """In-memory Gateway service for local E2E test fixture."""
+class GatewayProtocolMockServer:
+    """Protocol-level Gateway stand-in for this suite (t024 AC-004/A25).
+
+    It speaks the agent/viewer wire protocols so the Stream runtime can
+    be exercised without the full gateway topology; it is NOT the
+    production Gateway.  The production gateway chain is covered by the
+    gateway topology suites (tests/e2e/test_gateway_*,
+    tests/fixtures/gateway_probe)."""
 
     def __init__(
         self,
@@ -573,7 +579,7 @@ async def test_stream_runtime_direct_media_matrix(
 
     gw_port = _free_tcp_port()
     stream_http_port = _free_tcp_port()
-    gateway = GatewayMockServer(
+    gateway = GatewayProtocolMockServer(
         agent_token=agent_token,
         profile_id=profile_id,
         stream_container=stream_cname,

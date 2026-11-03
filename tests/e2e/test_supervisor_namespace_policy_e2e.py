@@ -525,7 +525,22 @@ def test_kernel_network_policy_real_netns(
     code_bench, _ = _run_python_probe(target_a, "198.18.1.1", 80, timeout=0.8)
     assert code_bench != 0, "Benchmark range was not blocked!"
 
-    # 6. Public IPv4 egress preserved
+    # 6. Public IPv4 egress preserved.  Same-condition baseline first
+    # (t024 AC-011/A33): if this host itself cannot reach the target, the
+    # environment -- not the namespace policy -- is what blocks egress,
+    # and the case fails as an environment failure instead of a policy
+    # verdict.  The negative cases above do not depend on Internet access
+    # and have already run.
+    import socket as _socket
+
+    try:
+        with _socket.create_connection(("1.1.1.1", 80), timeout=3.0):
+            pass
+    except OSError as exc:
+        pytest.fail(
+            f"environment has no public egress to 1.1.1.1:80 ({exc}); "
+            "the positive egress control cannot be evaluated"
+        )
     code_pub, out_pub = _run_python_probe(
         target_a, "1.1.1.1", 80, send_payload=b"HEAD / HTTP/1.0\r\n\r\n", timeout=3.0
     )

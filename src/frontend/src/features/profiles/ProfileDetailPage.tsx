@@ -9,21 +9,28 @@ import {
   useApplyDisplaySettingsMutation,
   useDuplicateProfileMutation,
   useResetProfileMutation,
+  useRetrySearchDefaultsMutation,
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
+import { useApiClient } from "../../shared/api/client_context";
+import type { ProfileUpdateRequest } from "../../shared/api/types";
+
+type FontBundle = NonNullable<ProfileUpdateRequest["font_bundle"]>;
 
 export function ProfileDetailPage() {
   const { profileId } = useParams<{ profileId: string }>();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const client = useApiClient();
 
-  const { data: profile, isLoading, error: loadError } = useProfileQuery(profileId);
-  const { data: runtime } = useProfileRuntimeQuery(profileId);
-  const updateMutation = useUpdateProfileMutation();
-  const deleteMutation = useDeleteProfileMutation();
-  const applyDisplayMutation = useApplyDisplaySettingsMutation();
-  const duplicateMutation = useDuplicateProfileMutation();
-  const resetMutation = useResetProfileMutation();
+  const { data: profile, isLoading, error: loadError } = useProfileQuery(profileId, client);
+  const { data: runtime } = useProfileRuntimeQuery(profileId, client);
+  const updateMutation = useUpdateProfileMutation(client);
+  const deleteMutation = useDeleteProfileMutation(client);
+  const applyDisplayMutation = useApplyDisplaySettingsMutation(client);
+  const duplicateMutation = useDuplicateProfileMutation(client);
+  const resetMutation = useResetProfileMutation(client);
+  const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation(client);
 
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -31,6 +38,7 @@ export function ProfileDetailPage() {
   const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
+  const [fontBundle, setFontBundle] = useState<FontBundle>("none");
   const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -48,6 +56,9 @@ export function ProfileDetailPage() {
     if (!dirty.has("geometry")) {
       setScreenWidth(profile.screen_width || 1920);
       setScreenHeight(profile.screen_height || 1080);
+    }
+    if (!dirty.has("fontBundle")) {
+      setFontBundle((profile.font_bundle as FontBundle) || "none");
     }
     if (!dirty.has("tags")) {
       setTagsInput(
@@ -93,6 +104,18 @@ export function ProfileDetailPage() {
     }
   };
 
+  const handleRetrySearchDefaults = async () => {
+    if (!profileId) return;
+    setError(null);
+    try {
+      await retrySearchDefaultsMutation.mutateAsync(profileId);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : t("failedToRetrySearchDefaults"),
+      );
+    }
+  };
+
   const displayPending = Boolean(
     profile &&
       runtime?.observed_state === "running" &&
@@ -120,6 +143,7 @@ export function ProfileDetailPage() {
           proxy: proxy.trim() || null,
           screen_width: screenWidth,
           screen_height: screenHeight,
+          font_bundle: fontBundle,
           tags,
         },
       });
@@ -319,6 +343,32 @@ export function ProfileDetailPage() {
           </div>
         )}
 
+        {runtime?.search_defaults?.state === "failed" && (
+          <div
+            data-testid="search-defaults-failed"
+            className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 text-xs rounded flex items-center justify-between gap-3"
+          >
+            <div>
+              <p className="text-amber-300 font-medium">
+                {t("searchDefaultsFailed")}
+              </p>
+              <p className="text-gray-400 mt-0.5">
+                {t("searchDefaultsFailedHint")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRetrySearchDefaults()}
+              disabled={retrySearchDefaultsMutation.isPending}
+              className="shrink-0 px-3 py-1.5 rounded text-xs bg-amber-500 text-white disabled:opacity-50"
+            >
+              {retrySearchDefaultsMutation.isPending
+                ? t("searchDefaultsRetrying")
+                : t("retrySearchDefaults")}
+            </button>
+          </div>
+        )}
+
         {displayPending && (
           <div
             data-testid="profile-display-pending"
@@ -404,6 +454,22 @@ export function ProfileDetailPage() {
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              {t("fontBundle")}
+            </label>
+            <select
+              data-testid="profile-font-bundle-select"
+              value={fontBundle}
+              onChange={(e) => { markDirty("fontBundle"); setFontBundle(e.target.value as FontBundle); }}
+              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+            >
+              <option value="none">{t("fontBundleNone")}</option>
+              <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
+              <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
+            </select>
           </div>
 
           <div>

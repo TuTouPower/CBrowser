@@ -45,6 +45,16 @@ Runner 接收 SIGTERM/SIGINT 后正常关闭 SDK context 与子系统；Supervis
 
 目录创建、文件写入及替换均要求 fsync；EIO/EINVAL/ENOTSUP 等错误失败关闭。先写终态事件，再写实例状态；进程在两步间消失时按该实例已落盘终态恢复。迟到旧实例可更新发现缓存，但不能覆盖新实例独立 journal。坏 JSON、身份/版本不一致、冲突终态或缺失已初始化状态均显式报错。该协议不等于实际断电测试已通过。
 
+## 默认搜索初始化与安全启动（t022）
+
+默认搜索初始化与浏览器 readiness 分离：有界超时内 best-effort 执行，结果写入 run_dir 内独立状态文件 `search_defaults_status.json`（applied/failed/disabled/pending + 脱敏 error_kind），失败不写成功 marker、不阻断启动、不影响已有标签页；`set_google_default=false` 不执行。Agent `/health` 以类型化 `search_defaults` 呈现该状态；重试经 `/control retry_search_defaults` 以 profile+instance 围栏 + request_id 幂等触发，Runner 在活 context 上消费，不重启浏览器。CDP 下载捕获 rearm 仅在唯一 reader 收到匹配命令 ID 的成功 ACK 后报告健康，错误/无 ACK/断线保持不健康。Agent 启动对 runner 元数据做完整字段与类型校验，非空但残缺/类型错误以脱敏错误拒绝启动；X11 锁仅在可解析且确认进程不存在时清理，不可读/损坏一律保留并明确报错。
+
+## 字体包与 fontconfig 开关
+
+镜像构建时从 Debian 官方包解出 `fonts-wqy-microhei` 与 `fonts-wqy-zenhei` 的 `.ttc`，只 staged 到 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`，最终镜像不安装这两个包（避免其 fontconfig snippet 与字体文件进入默认扫描路径）。默认状态下容器内 `sans-serif` 的中文解析不命中任何中文字体，这是默认档位的反指纹基线。
+
+Runner 消费的配置快照含 `font_bundle`（`none`/`wqy-microhei`/`wqy-zenhei`，默认 `none`）。非 `none` 时 Runner 在运行卷生成 `profile-fonts.conf`（include `/etc/fonts/fonts.conf` 并追加对应 bundle 目录），并仅为 Chrome 子进程环境设置 `FONTCONFIG_FILE` 指向它；`none` 时确保该变量不出现在 Chrome 环境中。生成失败时保持系统默认配置（其扫描路径不含 bundle，回到无 CJK 的安全状态），不让损坏的 fontconfig 配置扩散到整个浏览器。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
+
 ## 显示、音频与配置
 
 Xvfb 使用 Profile 分辨率、24位色深，启用 MIT-SHM/XTEST/XFIXES，关闭 TCP。启动实际 Chrome 后按其 PID 查找顶层窗口并设置尺寸、位置；只有显示、浏览器、PulseAudio 和 CDP 均就绪才发布 ready。DPR 固定1，不能用根窗口尺寸代替 Chrome 完整 UI 测量。

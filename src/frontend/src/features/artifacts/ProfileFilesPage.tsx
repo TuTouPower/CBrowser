@@ -8,7 +8,7 @@ import {
   useDeleteArtifactMutation,
   useUploadArtifactMutation,
 } from "./useArtifacts";
-import { defaultApiClient } from "../../shared/api/client";
+import { useApiClient } from "../../shared/api/client_context";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -25,14 +25,15 @@ function formatSize(bytes: number): string {
 export function ProfileFilesPage() {
   const { profileId } = useParams<{ profileId: string }>();
   const { t } = useI18n();
+  const client = useApiClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const { data: profile } = useProfileQuery(profileId);
-  const artifacts = useArtifactsQuery(profileId);
-  const uploadMutation = useUploadArtifactMutation(profileId);
-  const deleteMutation = useDeleteArtifactMutation(profileId);
+  const { data: profile } = useProfileQuery(profileId, client);
+  const artifacts = useArtifactsQuery(profileId, client);
+  const uploadMutation = useUploadArtifactMutation(profileId, client);
+  const deleteMutation = useDeleteArtifactMutation(profileId, client);
 
   const pickFiles = async (list: FileList | null) => {
     const files = list ? Array.from(list) : [];
@@ -40,11 +41,21 @@ export function ProfileFilesPage() {
     if (files.length === 0) return;
     setError(null);
     setNotice(null);
-    for (const file of files) {
+    // Sequential uploads stop at the first failure; the message reports
+    // how many succeeded, which file failed and how many were left
+    // unprocessed — never file contents (A20).
+    for (const [index, file] of files.entries()) {
       try {
         await uploadMutation.mutateAsync(file);
       } catch (err) {
-        setError(err instanceof Error ? err.message : t("uploadFailed"));
+        setError(
+          t("uploadPartialFailure", {
+            succeeded: index,
+            name: file.name,
+            remaining: files.length - index - 1,
+            error: err instanceof Error ? err.message : t("uploadFailed"),
+          }),
+        );
         return;
       }
     }
@@ -151,7 +162,7 @@ export function ProfileFilesPage() {
                   </div>
                 </div>
                 <a
-                  href={defaultApiClient.artifacts.downloadUrl(profileId, artifact.id)}
+                  href={client.artifacts.downloadUrl(profileId, artifact.id)}
                   download={artifact.name}
                   className="p-1.5 rounded text-gray-300 hover:text-primary hover:bg-surface-3"
                   aria-label={t("downloadToComputer")}

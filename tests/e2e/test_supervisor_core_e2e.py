@@ -28,6 +28,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from wait import poll_until
 
 from e2e_env import free_udp_port_span, require_e2e_env
 from cbrowser.domain.models import ProfileConfig
@@ -196,18 +197,23 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         assert r_info_a["browser_pid"] > 0
 
         # Wait for Stream Agent A to register and report through the production
-        # Gateway control surface.
-        agent_a_registered = False
-        for _ in range(50):
+        # Gateway control surface (deadline poll, t024 AC-007/A28).
+        async def _a_registered() -> bool:
             try:
                 await gateway_control.has_foreground_viewers(
                     profile_a, session_a.runtime_instance_id
                 )
-                agent_a_registered = True
-                break
+                return True
             except httpx.HTTPError:
-                await asyncio.sleep(0.2)
-        assert agent_a_registered, "Stream Agent A failed to register with Gateway"
+                return False
+
+        await poll_until(
+            _a_registered,
+            bool,
+            timeout=10.0,
+            interval=0.2,
+            description="Stream Agent A to register with Gateway",
+        )
 
         # 3. Start Profile B concurrently
         session_b = await core.start_profile(profile_b, cfg_b)
@@ -224,17 +230,22 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         assert r_info_b["browser_pid"] > 0
         assert b_c_b.id != b_c_a.id
 
-        agent_b_registered = False
-        for _ in range(50):
+        async def _b_registered() -> bool:
             try:
                 await gateway_control.has_foreground_viewers(
                     profile_b, session_b.runtime_instance_id
                 )
-                agent_b_registered = True
-                break
+                return True
             except httpx.HTTPError:
-                await asyncio.sleep(0.2)
-        assert agent_b_registered, "Stream Agent B failed to register with Gateway"
+                return False
+
+        await poll_until(
+            _b_registered,
+            bool,
+            timeout=10.0,
+            interval=0.2,
+            description="Stream Agent B to register with Gateway",
+        )
 
         # 4. Verify cross-profile isolation
         s_c_a = d_client.containers.get(session_a.stream_container_id)

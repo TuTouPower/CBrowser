@@ -36,6 +36,15 @@ def prepare_frontend_app(dest_dir: Path) -> Path:
         raise RuntimeError(
             "Built Selkies adapter missing; run `npm run build --prefix src/frontend`"
         )
+    # Refuse to serve a stale or unstamped build (t024 AC-003/A24): the
+    # freshness gate lives at the copy point, independent of suite naming.
+    import sys
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.verify_frontend_dist import verify_frontend_build_freshness
+
+    verify_frontend_build_freshness(DIST_DIR, REPO_ROOT / "src" / "frontend")
     if dest_dir.exists():
         shutil.rmtree(dest_dir)
     shutil.copytree(DIST_DIR, dest_dir)

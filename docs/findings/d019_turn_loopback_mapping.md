@@ -7,3 +7,5 @@
 - 负例：独立服务端错误HMAC导致真实401/无fresh offer，客户端错误HMAC导致真实401/无新代commit；pytest分别非零。旧connected不能使轮换假绿。
 - 证据：tests/fixtures/stream_probe/chrome_relay.py、tests/e2e/test_stream_runtime_e2e.py；独立validation worktree的.scratch/t004_relay_independent/results.json与retained_evidence/{positive,server,client}/。后续t006/t012沿实际可达地址与代栅栏复验，公网/原生x86未测。
 - 现状：有效。
+
+- 后续（t024 文档收敛）：本条所述 TURN/ICE 代次机制已由 ADR 013（同机直连，见 docs/blueprint/decisions.md）整体删除；本条仅作历史实验事实保留，不再构成现行实现或验收要求，文中指向未来 task 的指令已失效。
