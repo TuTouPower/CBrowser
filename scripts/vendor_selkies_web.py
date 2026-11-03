@@ -26,6 +26,13 @@ PINNED_WHEEL_URL = (
 )
 
 
+def _safe_relative_path(name: str) -> str:
+    rel = name.replace("\\", "/").lstrip("/")
+    if not rel or rel.startswith("../") or "/../" in f"/{rel}/" or rel in {".", ".."}:
+        raise RuntimeError("Unsafe archive member path")
+    return rel
+
+
 def verify_manifest(
     extracted_dir: Path,
     manifest_path: Path,
@@ -35,12 +42,14 @@ def verify_manifest(
     if not manifest_path.is_file():
         raise RuntimeError(f"Reference manifest not found at {manifest_path}")
     manifest_lines = manifest_path.read_text(encoding="utf-8").splitlines()
+    expected_files: set[str] = set()
     for line in manifest_lines:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         expected_hash, rel_path = line.split(None, 1)
-        clean_rel = rel_path.removeprefix("selkies_web/").strip()
+        clean_rel = _safe_relative_path(rel_path.removeprefix("selkies_web/").strip())
+        expected_files.add(clean_rel)
         file_path = extracted_dir / clean_rel
 
         # If patched index.html is allowed, check the backup if present
@@ -57,6 +66,23 @@ def verify_manifest(
             raise RuntimeError(
                 f"SHA256 mismatch for {clean_rel}: {expected_hash} != {actual_hash}"
             )
+    ignored = {"index.html.official", ".DS_Store", "build-stamp.json"}
+    if allow_patched:
+        ignored.add("selkies_adapter.js")
+    actual_files = {
+        path.relative_to(extracted_dir).as_posix()
+        for path in extracted_dir.rglob("*")
+        if path.is_file()
+        and path.name not in ignored
+        and "__pycache__" not in path.parts
+        and path.suffix != ".pyc"
+    }
+    unexpected = actual_files - expected_files
+    if unexpected:
+        raise RuntimeError(
+            "Extracted Selkies assets contain files outside the manifest: "
+            + ", ".join(sorted(unexpected))
+        )
 
 
 def download_wheel(cache_dir: Path) -> Path:
@@ -91,7 +117,7 @@ def extract_from_wheel(wheel_path: Path, dest_dir: Path) -> None:
         for info in z.infolist():
             if not info.filename.startswith(prefix) or info.is_dir():
                 continue
-            rel = info.filename.removeprefix(prefix)
+            rel = _safe_relative_path(info.filename.removeprefix(prefix))
             if "__pycache__" in rel or rel.endswith(".pyc"):
                 continue
             out_file = dest_dir / rel
@@ -116,9 +142,9 @@ def extract_from_stream_image(image_id: str, dest_dir: Path) -> None:
             for member in tar.getmembers():
                 if member.isdir():
                     continue
-                name = member.name.removeprefix("selkies_web/").removeprefix(
+                name = _safe_relative_path(member.name.removeprefix("selkies_web/").removeprefix(
                     "selkies_web"
-                )
+                ))
                 if not name or "__pycache__" in name or name.endswith(".pyc"):
                     continue
                 f = tar.extractfile(member)

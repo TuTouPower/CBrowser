@@ -3,11 +3,11 @@
 import json
 import os
 import subprocess
-import time
 import uuid
 from pathlib import Path
 
 import pytest
+from wait import wait_until_sync
 
 
 def test_native_keymap_reuse_preserves_every_binding(tmp_path: Path) -> None:
@@ -63,10 +63,11 @@ def test_native_keymap_reuse_preserves_every_binding(tmp_path: Path) -> None:
             timeout=20,
         )
         created = True
-        for _ in range(100):
-            if (socket_dir / "X99").exists():
-                break
-            time.sleep(0.05)
+        wait_until_sync(
+            lambda: (socket_dir / "X99").is_socket(),
+            timeout=5.0,
+            description="diagnostic Xvfb socket",
+        )
         assert (socket_dir / "X99").is_socket(), "Diagnostic Xvfb did not start"
         result = subprocess.run(
             [

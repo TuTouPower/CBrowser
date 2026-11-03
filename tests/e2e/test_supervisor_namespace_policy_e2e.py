@@ -544,16 +544,15 @@ def test_kernel_network_policy_real_netns(
     v6_c = target_c.attrs["NetworkSettings"]["Networks"][primary_net.name].get(
         "GlobalIPv6Address"
     )
-    if v6_c:
-        code_v6_c, out_v6_c = _run_python_probe(
-            target_a, v6_c, 8888, timeout=1.0, family=6
-        )
-        assert code_v6_c != 0, f"IPv6 ULA on peer C not blocked: {out_v6_c}"
-    if v6_b:
-        code_v6_b, out_v6_b = _run_python_probe(
-            target_a, v6_b, 8888, timeout=1.0, family=6
-        )
-        assert code_v6_b != 0, f"IPv6 ULA on peer B not blocked: {out_v6_b}"
+    assert v6_b and v6_c, "IPv6 ULA addresses must be present for fail-closed probe"
+    code_v6_c, out_v6_c = _run_python_probe(
+        target_a, v6_c, 8888, timeout=1.0, family=6
+    )
+    assert code_v6_c != 0, f"IPv6 ULA on peer C not blocked: {out_v6_c}"
+    code_v6_b, out_v6_b = _run_python_probe(
+        target_a, v6_b, 8888, timeout=1.0, family=6
+    )
+    assert code_v6_b != 0, f"IPv6 ULA on peer B not blocked: {out_v6_b}"
 
     # 8. Verify other namespace (Target B) was NOT modified
     code_b_to_c, out_b_to_c = _run_python_probe(target_b, ip_c, 9999, timeout=1.5)

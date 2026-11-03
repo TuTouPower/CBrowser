@@ -149,7 +149,8 @@ sys.stdout.write(json.dumps(result))
             container.remove(force=True)
         if network is not None:
             network.remove()
-        assert not client.containers.list(
-            all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
-        )
         client.close()
+
+    assert not client.containers.list(
+        all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
+    )

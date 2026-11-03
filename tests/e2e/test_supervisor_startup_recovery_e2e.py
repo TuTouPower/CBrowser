@@ -24,14 +24,12 @@ Case 3: Native exit priority with local HTTP proxy
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
 import os
 import secrets
 import shutil
 import socket
-import sys
 import uuid
 from pathlib import Path
 
@@ -46,16 +44,6 @@ from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
-
-_core_e2e_path = Path(__file__).with_name("test_supervisor_core_e2e.py")
-_core_spec = importlib.util.spec_from_file_location(
-    "supervisor_core_e2e_module", _core_e2e_path
-)
-assert _core_spec is not None and _core_spec.loader is not None
-_core_module = importlib.util.module_from_spec(_core_spec)
-sys.modules["supervisor_core_e2e_module"] = _core_module
-_core_spec.loader.exec_module(_core_module)
-real_api_server = _core_module.real_api_server
 
 logger = logging.getLogger(__name__)
 

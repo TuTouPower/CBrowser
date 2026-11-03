@@ -4,20 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 import pytest
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.vendor_selkies_web import DEFAULT_MANIFEST_PATH  # noqa: E402
 from scripts.verify_frontend_dist import (  # noqa: E402
     DEFAULT_MANIFEST,
     verify_frontend_dist,
 )
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ADAPTER_TAG = '<script src="./selkies_adapter.js"></script>'
 MODULE_TAG = '<script type="module" crossorigin src="./assets/index.js"></script>'
@@ -45,6 +42,13 @@ def _write_dist(
         )
     (selkies / "index.html").write_text(index_html, encoding="utf-8")
     (selkies / "selkies_adapter.js").write_text(adapter_js, encoding="utf-8")
+    assets = dist / "assets"
+    assets.mkdir()
+    (assets / "index.css").write_text(
+        ".bg-primary{background-color:var(--primary)}"
+        ".text-primary-foreground{color:var(--primary-foreground)}\n",
+        encoding="utf-8",
+    )
 
     digest = official_digest or hashlib.sha256(
         official_html.encode("utf-8")
@@ -60,7 +64,7 @@ def test_package_build_runs_vendor_and_verification() -> None:
     )
     scripts = package["scripts"]
     assert scripts["prebuild"] == "npm run vendor:selkies"
-    assert scripts["postbuild"] == "npm run verify:selkies"
+    assert scripts["postbuild"] == "python3 ../../scripts/write_frontend_build_stamp.py && npm run verify:selkies"
     assert "scripts/vendor_selkies_web.py" in scripts["vendor:selkies"]
     assert "scripts/verify_frontend_dist.py" in scripts["verify:selkies"]
 

@@ -31,12 +31,7 @@ import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from api_auth import create_auth_context
 logger = logging.getLogger("cbrowser.test_container_graph")
 
 
@@ -47,13 +42,13 @@ def endpoint(container, port):
     return f"http://127.0.0.1:{binding['HostPort']}"
 
 
-async def ready(url, path, headers=None):
+async def ready(url, path, headers=None, expected_status=200):
     async with httpx.AsyncClient(base_url=url, trust_env=False) as client:
         deadline = asyncio.get_running_loop().time() + 30
         while asyncio.get_running_loop().time() < deadline:
             try:
                 response = await client.get(path, headers=headers)
-                if response.status_code == 200:
+                if response.status_code == expected_status:
                     return
             except httpx.TransportError:
                 pass
@@ -82,7 +77,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"], cache / "geoip", dirs_exist_ok=True
     )
     keys = {}
-    for name in ("supervisor", "agent", "gateway"):
+    for name in ("supervisor", "agent", "gateway", "gateway_api"):
         key = control / (name + "_key")
         key.write_text(secrets.token_urlsafe(32))
         key.chmod(0o600)
@@ -139,12 +134,17 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             environment={
                 "CBROWSER_DB_PATH": "/metadata/control.db",
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/key",
+                "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_pass",
                 "CBROWSER_ALLOWED_ORIGINS": auth_ctx.allowed_origin,
             },
             volumes={
                 str(metadata): {"bind": "/metadata", "mode": "rw"},
                 str(keys["supervisor"]): {"bind": "/run/secrets/key", "mode": "ro"},
+                str(keys["gateway_api"]): {
+                    "bind": "/run/secrets/gateway_api",
+                    "mode": "ro",
+                },
                 str(auth_ctx.admin_password_file): {
                     "bind": "/run/secrets/admin_pass",
                     "mode": "ro",
@@ -154,19 +154,30 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         )
         gateway = run(
             "gateway",
-            image("CBROWSER_GATEWAY_TEST_IMAGE"),
+            image("CBROWSER_GATEWAY_IMAGE"),
             environment={
-                "PROBE_AGENT_KEY_FILE": "/run/secrets/agent",
-                "PROBE_GATEWAY_KEY_FILE": "/run/secrets/gateway",
+                "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent",
+                "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway",
+                "CBROWSER_GATEWAY_API_URL": f"http://{prefix}-api:8000",
+                "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
+                "CBROWSER_ALLOWED_ORIGINS": auth_ctx.allowed_origin,
             },
             volumes={
                 str(keys["agent"]): {"bind": "/run/secrets/agent", "mode": "ro"},
                 str(keys["gateway"]): {"bind": "/run/secrets/gateway", "mode": "ro"},
+                str(keys["gateway_api"]): {
+                    "bind": "/run/secrets/gateway_api",
+                    "mode": "ro",
+                },
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
         await ready(endpoint(api, 8000), "/api/v1/health")
-        await ready(endpoint(gateway, DEFAULT_GATEWAY_PORT), "/healthz")
+        await ready(
+            endpoint(gateway, DEFAULT_GATEWAY_PORT),
+            "/stream/agent/register",
+            expected_status=401,
+        )
         api.reload()
         gateway.reload()
         api_ip = api.attrs["NetworkSettings"]["Networks"][edge.name]["IPAddress"]
@@ -432,10 +443,14 @@ sys.stdout.write(json.dumps(result))
             # confirms closure, so inspect can prove sandbox stop happens later.
             target_ws_url = (
                 endpoint(gateway, DEFAULT_GATEWAY_PORT)
-                + f"/viewer/{target}?foreground=true"
+                + f"/stream/{target}/signal"
             )
             viewer = await viewer_http.ws_connect(
                 target_ws_url,
+                headers={
+                    "Origin": auth_ctx.allowed_origin,
+                    "Cookie": auth_headers["Cookie"],
+                },
                 autoclose=False,
             )
             await ready(
@@ -455,7 +470,17 @@ sys.stdout.write(json.dumps(result))
             stop_task = asyncio.create_task(
                 sup_http.post("/supervisor/v1/profiles/stop", json=stop_body)
             )
-            assert (await viewer.receive(timeout=15)).type == aiohttp.WSMsgType.CLOSE
+            close_received = False
+            for _ in range(150):
+                message = await viewer.receive(timeout=15)
+                if message.type == aiohttp.WSMsgType.CLOSE:
+                    close_received = True
+                    break
+                assert message.type not in (
+                    aiohttp.WSMsgType.ERROR,
+                    aiohttp.WSMsgType.CLOSED,
+                )
+            assert close_received, "Viewer did not receive Gateway close frame"
             for name in (old["browser_container"], old["stream_container"]):
                 assert client.containers.get(name).status == "running"
             await viewer.close()
@@ -644,13 +669,13 @@ sys.stdout.write(json.dumps(result))
 
         client.close()
 
-        if ownership_violations:
-            err_msg = "; ".join(ownership_violations)
-            logger.error("Container ownership violation detected: %s", err_msg)
-            assert not ownership_violations, (
-                f"Container ownership assertion failed: {err_msg}"
-            )
+    if ownership_violations:
+        err_msg = "; ".join(ownership_violations)
+        logger.error("Container ownership violation detected: %s", err_msg)
+        assert not ownership_violations, (
+            f"Container ownership assertion failed: {err_msg}"
+        )
 
-        if cleanup_errors:
-            msg = ", ".join(cleanup_errors)
-            raise RuntimeError(f"Cleanup encountered failures: {msg}")
+    if cleanup_errors:
+        msg = ", ".join(cleanup_errors)
+        raise RuntimeError(f"Cleanup encountered failures: {msg}")

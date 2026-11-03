@@ -113,7 +113,6 @@ async def test_policy_all_hidden_pauses_capture():
 
     # When no viewers are registered, reconcile pauses
     await agent.reconcile_capture_state(caller="test")
-    assert agent._is_paused is True
     assert pipeline.is_screen_capturing() is False
     assert ("pause_screen_capture",) in pipeline.history
 
@@ -123,13 +122,13 @@ async def test_policy_resume_sets_8fps_before_resume_and_requests_idr():
     """AC-003: Recovery sets 8 FPS first, then resumes, then requests IDR."""
     pipeline = MockMediaPipeline(framerate=30.0, capturing=False)
     agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
-    agent._is_paused = True
+    await agent.reconcile_capture_state(caller="pause_first")
+    assert pipeline.is_screen_capturing() is False
 
     # Register visible viewer
     agent.set_viewer_visibility("viewer_auth_1", True)
     await agent.reconcile_capture_state(caller="test_resume")
 
-    assert agent._is_paused is False
     assert pipeline.is_screen_capturing() is True
     assert pipeline.framerate == 8.0
 
@@ -141,7 +140,7 @@ async def test_policy_resume_sets_8fps_before_resume_and_requests_idr():
 
 
 @pytest.mark.asyncio
-async def test_policy_continuous_motion_elevates_to_30_fps():
+async def test_policy_continuous_motion_elevates_to_30_fps(monkeypatch):
     """AC-003: Damage > 6 fps elevates target to 30 FPS without mouse/keyboard input."""
     pipeline = MockMediaPipeline(framerate=8.0, capturing=True)
     agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
@@ -152,13 +151,17 @@ async def test_policy_continuous_motion_elevates_to_30_fps():
     assert pipeline.framerate == 8.0
 
     # Simulate fast animation: 10 frames advance over 0.1s -> 100 fps damage
-    await asyncio.sleep(0.1)
+    from cbrowser.stream_agent import policy as policy_module
+
+    now = {"value": policy_module.time.monotonic()}
+    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
+    now["value"] += 0.1
     await agent.reconcile_capture_state(damage_frame_count=10)
     assert pipeline.framerate == 30.0
 
 
 @pytest.mark.asyncio
-async def test_policy_static_relaxes_to_8_fps():
+async def test_policy_static_relaxes_to_8_fps(monkeypatch):
     """AC-003: Static screen relaxes back to 8 FPS when motion ceases."""
     pipeline = MockMediaPipeline(framerate=30.0, capturing=True)
     agent = LiveCapturePolicyAgent(
@@ -172,8 +175,12 @@ async def test_policy_static_relaxes_to_8_fps():
     await agent.reconcile_capture_state()
     assert pipeline.framerate == 30.0
 
-    # Wait for cooldown to expire and ensure static (no damage change)
-    await asyncio.sleep(0.15)
+    # Advance injected clock past cooldown; no damage change.
+    from cbrowser.stream_agent import policy as policy_module
+
+    now = {"value": policy_module.time.monotonic()}
+    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
+    now["value"] += 0.15
     await agent.reconcile_capture_state(caller="static_check")
     assert pipeline.framerate == 8.0
 
@@ -219,9 +226,9 @@ async def test_policy_supervisor_quota_enforcement_and_recovery():
 
     # Non-positive or NaN supervisor quota must be rejected
     agent.set_supervisor_quota(-1.0)
-    assert agent._supervisor_fps_cap == 5.0
+    assert agent.supervisor_fps_cap == 5.0
     agent.set_supervisor_quota(float("nan"))
-    assert agent._supervisor_fps_cap == 5.0
+    assert agent.supervisor_fps_cap == 5.0
 
     # Clear quota -> recovers back to active target 30
     agent.record_input()
@@ -330,12 +337,10 @@ async def test_policy_stop_drains_background_tasks():
     """Verify agent stop cleanly cancels and awaits background tasks."""
     agent = LiveCapturePolicyAgent()
     await agent.start()
-    assert agent._loop_task is not None
-    assert agent._motion_task is not None
+    assert agent.is_running is True
 
     await agent.stop()
-    assert agent._loop_task is None
-    assert agent._motion_task is None
+    assert agent.is_running is False
 
 
 def test_action_history_bounded():

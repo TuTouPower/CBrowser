@@ -4,19 +4,20 @@ Encapsulates:
 - RealApiProcess: Manages independent uvicorn Control API process with
   SQLite WAL database.
 - RealSupervisorProcess: Manages independent Supervisor process runner.
-- OfflineGatewayMock: Local aiohttp WebSocket Gateway verifying
-  AgentCredentials and GatewayControl.
 - RealBrowserActionProbe: Triggers in-container clean browser exit via
   UDS /run/cbrowser/runtime/agent.sock.
 - SpoolDirectoryWatcher: Watches data_root/spool for atomic event
   persistence and subsequent consumption.
 - SandboxContainerTracker: Exact, bounded cleanup of owned Docker containers.
+
+The Gateway counterparty is the production application in
+``supervisor_recovery_probe.gateway_service``; this module no longer ships a
+Gateway double.
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
 import os
@@ -33,21 +34,8 @@ import docker
 import docker.errors
 import httpx
 import pytest
+from api_auth import create_auth_context
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
-
-_gw_fixture_path = Path(__file__).resolve().parent / "gateway_fixture.py"
-_gw_spec = importlib.util.spec_from_file_location("gateway_fixture", _gw_fixture_path)
-_gw_mod = importlib.util.module_from_spec(_gw_spec)
-
-_auth_path = Path(__file__).resolve().parents[1] / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
-sys.modules["gateway_fixture"] = _gw_mod
-_gw_spec.loader.exec_module(_gw_mod)
-SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
 
 logger = logging.getLogger("cbrowser.tests.offline_recovery_probe")
 
@@ -686,9 +674,6 @@ class RealSupervisorContainer:
     def restart(self, timeout_sec: float = 30.0) -> None:
         self.stop()
         self.start(timeout_sec=timeout_sec)
-
-
-OfflineGatewayMock = SupervisorGatewayFixture
 
 
 class RealBrowserActionProbe:

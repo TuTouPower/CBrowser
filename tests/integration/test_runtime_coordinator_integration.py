@@ -18,12 +18,7 @@ import uvicorn
 from aiohttp import web
 from cbrowser.api.app import create_app
 
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from api_auth import create_auth_context
 
 
 def find_free_port() -> int:

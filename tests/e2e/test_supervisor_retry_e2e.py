@@ -2,8 +2,8 @@
 
 Validates the complete recovery lifecycle with real independent processes:
 1. Real independent API subprocess (RealApiProcess).
-2. Real independent Gateway fixture with HMAC Bearer authentication
-   (SupervisorGatewayFixture).
+2. Production Gateway application with HMAC Bearer authentication
+   (ProductionGatewayService).
 3. Real independent Supervisor subprocess (RealSupervisorProcess running
    cbrowser.supervisor.runner).
 4. Dual-container sandbox lifecycle (real Browser and Stream Docker containers).
@@ -26,14 +26,12 @@ Validates the complete recovery lifecycle with real independent processes:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
 import os
 import secrets
 import shutil
 import signal
-import sys
 import time
 import uuid
 from datetime import UTC, datetime
@@ -42,25 +40,17 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
 from gateway_probe.topology import cleanup_prefixed_resources
-
-_offline_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "offline_fixture.py"
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
 )
-_offline_spec = importlib.util.spec_from_file_location("offline_fixture", _offline_path)
-_offline_mod = importlib.util.module_from_spec(_offline_spec)
-sys.modules["offline_fixture"] = _offline_mod
-_offline_spec.loader.exec_module(_offline_mod)
-
-RealApiProcess = _offline_mod.RealApiProcess
-RealSupervisorContainer = _offline_mod.RealSupervisorContainer
-RealBrowserActionProbe = _offline_mod.RealBrowserActionProbe
-SupervisorGatewayFixture = _offline_mod.SupervisorGatewayFixture
-get_free_port = _offline_mod.get_free_port
+from supervisor_recovery_probe.offline_fixture import (
+    RealApiProcess,
+    RealBrowserActionProbe,
+    RealSupervisorContainer,
+    get_free_port,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +162,11 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         log_path=tmp_path / "api.log",
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_proc.url, sup_token_file),
     )
 
     sup_proc = RealSupervisorContainer(
@@ -316,8 +307,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b1_created_dt,
                 delay_1,
             )
-            assert delay_1 >= 2.0, (
-                f"Strike 1 restarted too early: {delay_1:.3f}s < 2.0s"
+            assert 2.0 <= delay_1 <= 2.0 + max(5.0, 2.0 * 0.5), (
+                f"Strike 1 delay outside tolerant window: {delay_1:.3f}s"
             )
             evidence_records.append(
                 {
@@ -410,8 +401,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b2_created_dt,
                 delay_2,
             )
-            assert delay_2 >= 10.0, (
-                f"Strike 2 restarted too early across crash: {delay_2:.3f}s < 10.0s"
+            assert 10.0 <= delay_2 <= 10.0 + max(5.0, 10.0 * 0.5), (
+                f"Strike 2 delay outside tolerant window: {delay_2:.3f}s"
             )
             evidence_records.append(
                 {
@@ -491,8 +482,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b3_created_dt,
                 delay_3,
             )
-            assert delay_3 >= 30.0, (
-                f"Strike 3 restarted too early: {delay_3:.3f}s < 30.0s"
+            assert 30.0 <= delay_3 <= 30.0 + max(5.0, 30.0 * 0.5), (
+                f"Strike 3 delay outside tolerant window: {delay_3:.3f}s"
             )
             evidence_records.append(
                 {

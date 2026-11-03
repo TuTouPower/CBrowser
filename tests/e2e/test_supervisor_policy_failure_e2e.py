@@ -19,12 +19,10 @@ Contract invariants:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import logging
 import os
 import secrets
 import shutil
-import sys
 import uuid
 from pathlib import Path
 
@@ -37,16 +35,6 @@ from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
-
-_core_e2e_path = Path(__file__).with_name("test_supervisor_core_e2e.py")
-_core_spec = importlib.util.spec_from_file_location(
-    "supervisor_core_e2e_module", _core_e2e_path
-)
-assert _core_spec is not None and _core_spec.loader is not None
-_core_module = importlib.util.module_from_spec(_core_spec)
-sys.modules["supervisor_core_e2e_module"] = _core_module
-_core_spec.loader.exec_module(_core_module)
-real_api_server = _core_module.real_api_server
 
 logger = logging.getLogger("cbrowser.test.policy_failure_e2e")
 
@@ -250,6 +238,7 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
             except docker.errors.DockerException as exc:
                 cleanup_errors.append(type(exc).__name__)
         docker_client.close()
-        assert not cleanup_errors, "Owned resource cleanup failed: " + ",".join(
-            cleanup_errors
-        )
+
+    assert not cleanup_errors, "Owned resource cleanup failed: " + ",".join(
+        cleanup_errors
+    )

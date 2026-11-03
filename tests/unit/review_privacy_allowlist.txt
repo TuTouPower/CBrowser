@@ -1,0 +1,9 @@
+# Historical review snapshots exempted by A44 (user decision: do not rewrite history).
+docs/reviews/review_20261101_075819/review_opencode_cpa_gemini_3_8_flash.md
+docs/reviews/review_20261102_201727/bundle_local_template_scripts_state.md
+docs/reviews/review_20261102_201727/bundle_local_docs_current.md
+docs/reviews/review_20261102_201727/review_intensive.md
+docs/reviews/review_20261102_201727/bundle_global_system_properties.md
+docs/reviews/review_20261102_201727/bundle_local_archive_tasks.md
+docs/tasks/t018_v2_test_gates_hygiene/review_code.md
+docs/tasks/t018_v2_test_gates_hygiene/review_test.md

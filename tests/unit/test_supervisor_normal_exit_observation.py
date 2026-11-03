@@ -365,8 +365,8 @@ async def test_supervisor_reconcile_normal_exit_via_uds(tmp_path: Path) -> None:
     assert obs == "stopped"
 
     # Verify session and API call
-    assert core._sessions[profile_id].observed_state == "stopped"
-    assert core._sessions[profile_id].desired_state == "stopped"
+    assert core.get_session(profile_id).observed_state == "stopped"
+    assert core.get_session(profile_id).desired_state == "stopped"
     api_client.post.assert_called_once()
     assert api_client.post.call_args.kwargs["json"]["observed_state"] == "stopped"
     assert api_client.post.call_args.kwargs["json"]["reason"] == "normal_exit"
@@ -451,9 +451,9 @@ async def test_supervisor_reconcile_owner_loss_reports_error(tmp_path: Path) -> 
         profile_id, instance_id, config_version, container_status="running"
     )
     assert obs == "error"
-    assert core._sessions[profile_id].observed_state == "error"
+    assert core.get_session(profile_id).observed_state == "error"
     assert (
-        core._sessions[profile_id].desired_state == "running"
+        core.get_session(profile_id).desired_state == "running"
     )  # running intent preserved!
     assert api_client.post.call_args.kwargs["json"]["observed_state"] == "error"
     assert api_client.post.call_args.kwargs["json"]["reason"] == "process_lost"
@@ -653,7 +653,7 @@ async def test_supervisor_query_agent_health_real_uds_transport() -> None:
             event_forwarder=MagicMock(spec=EventForwarder),
             api_client=AsyncMock(spec=httpx.AsyncClient),
         )
-        health = await core._query_agent_health(profile_id)
+        health = await core.query_agent_health(profile_id)
         assert health is not None
         assert health.profile_id == profile_id
         assert health.runtime_instance_id == instance_id
@@ -713,10 +713,10 @@ async def test_report_terminal_unacknowledged_does_not_dedup_or_modify_desired(
     )
     assert delivered is False
     # Must NOT have changed desired_state
-    assert core._sessions[profile_id].desired_state == "running"
-    # Must NOT have added to _terminal_observations
+    assert core.get_session(profile_id).desired_state == "running"
+    # Must NOT have acknowledged the terminal observation
     key = (profile_id, instance_id, config_version)
-    assert key not in core._terminal_observations
+    assert not core.terminal_observation_acknowledged(profile_id, instance_id, config_version)
 
     # Second attempt: API is back online (returns 200)
     api_client.post = AsyncMock(return_value=MagicMock(status_code=200))
@@ -728,9 +728,9 @@ async def test_report_terminal_unacknowledged_does_not_dedup_or_modify_desired(
         reason="normal_exit",
     )
     assert delivered2 is True
-    assert core._sessions[profile_id].desired_state == "stopped"
-    assert core._sessions[profile_id].observed_state == "stopped"
-    assert key in core._terminal_observations
+    assert core.get_session(profile_id).desired_state == "stopped"
+    assert core.get_session(profile_id).observed_state == "stopped"
+    assert core.terminal_observation_acknowledged(profile_id, instance_id, config_version)
 
     # Third attempt: already ACKed, deduplication returns False
     api_client.post.reset_mock()

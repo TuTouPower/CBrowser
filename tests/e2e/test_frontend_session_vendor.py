@@ -6,10 +6,6 @@ import sys
 from pathlib import Path
 
 # Ensure repo root is on sys.path so scripts can be imported
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
 from scripts.vendor_selkies_web import (  # noqa: E402
     PINNED_SELKIES_VERSION,
     PINNED_WHEEL_SHA256,

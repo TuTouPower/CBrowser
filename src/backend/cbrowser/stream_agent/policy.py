@@ -98,6 +98,16 @@ class LiveCapturePolicyAgent:
         )
 
     @property
+    def supervisor_fps_cap(self) -> float | None:
+        """Current supervisor-imposed FPS cap, if any."""
+        return self._supervisor_fps_cap
+
+    @property
+    def is_running(self) -> bool:
+        """Whether background policy loops are active."""
+        return self._loop_task is not None and self._motion_task is not None
+
+    @property
     def pipeline(self) -> Any:
         """
         Dynamically resolve active media pipeline.

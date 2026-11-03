@@ -8,8 +8,6 @@ running intent and count failures; a clean close clears running intent.
 import pytest
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.domain.models import ProfileConfig, RuntimeEvent
-from test_domain_and_repository import db_context as db_context  # noqa: PLC0414
-from test_domain_and_repository import temp_db_path as temp_db_path  # noqa: PLC0414
 
 
 async def live_profile(context):

@@ -1,39 +1,38 @@
-"""Verify the real HTTP fixture cannot silently bypass control authentication."""
+"""Verify the production Gateway cannot silently bypass control authentication."""
 
-import importlib.util
 import secrets
-from pathlib import Path
+import socket
 
 import httpx
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from supervisor_recovery_probe.gateway_service import ProductionGatewayService
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
 
 
 @pytest.mark.asyncio
-async def test_fixture_rejects_foreign_control_credentials(tmp_path):
-    fixture_path = (
-        Path(__file__).parents[1]
-        / "fixtures/supervisor_recovery_probe/gateway_fixture.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "gateway_fixture_auth_probe", fixture_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+async def test_gateway_rejects_foreign_control_credentials(tmp_path):
     agent_key = tmp_path / "agent_key"
     agent_key.write_text(secrets.token_urlsafe(32))
     agent_key.chmod(0o600)
     control_key = tmp_path / "control_key"
     token = secrets.token_urlsafe(32)
     control_key.write_text(token)
-    gateway = module.SupervisorGatewayFixture(
-        0, AgentCredentials(agent_key), control_key
+    control_key.chmod(0o600)
+
+    gateway = ProductionGatewayService(
+        port=_free_port(),
+        agent_key_file=agent_key,
+        gateway_token_file=control_key,
     )
     await gateway.start()
-    port = gateway._site._server.sockets[0].getsockname()[1]
     try:
         async with httpx.AsyncClient(
-            base_url=f"http://127.0.0.1:{port}", trust_env=False
+            base_url=gateway.control_url, trust_env=False
         ) as client:
             for operation, method in (
                 ("visibility", "GET"),
@@ -45,15 +44,12 @@ async def test_fixture_rejects_foreign_control_credentials(tmp_path):
                     if method == "GET"
                     else {"json": {"runtime_instance_id": "runtime", "max_fps_cap": 8}}
                 )
-                response = await client.request(
-                    method,
-                    f"/gateway/v1/internal/profiles/profile/{operation}",
-                    **kwargs,
-                )
+                path = f"/gateway/v1/internal/profiles/profile/{operation}"
+                response = await client.request(method, path, **kwargs)
                 assert response.status_code == 401
                 response = await client.request(
                     method,
-                    f"/gateway/v1/internal/profiles/profile/{operation}",
+                    path,
                     headers={"Authorization": "Bearer " + secrets.token_urlsafe(32)},
                     **kwargs,
                 )

@@ -152,6 +152,24 @@ class SupervisorCore:
         token = self._get_bearer_token()
         return {"Authorization": f"Bearer {token}"} if token else {}
 
+    def get_session(self, profile_id: str) -> ActiveSession | None:
+        """Read-only session lookup for health checks and tests."""
+        return self._sessions.get(profile_id)
+
+    def terminal_observation_acknowledged(
+        self, profile_id: str, runtime_instance_id: str, config_version: int
+    ) -> bool:
+        """Whether the API already acknowledged this terminal observation."""
+        return (
+            profile_id,
+            runtime_instance_id,
+            config_version,
+        ) in self._terminal_observations
+
+    async def query_agent_health(self, profile_id: str):
+        """Public health probe used by tests and diagnostics."""
+        return await self._query_agent_health(profile_id)
+
     def _get_profile_lock(self, profile_id: str) -> asyncio.Lock:
         if profile_id not in self._locks:
             self._locks[profile_id] = asyncio.Lock()

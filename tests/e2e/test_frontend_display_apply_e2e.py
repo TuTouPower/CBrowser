@@ -13,7 +13,6 @@ import os
 import re
 import secrets
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -29,10 +28,6 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 BACKEND_DIR = REPO_ROOT / "src" / "backend"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR), str(BACKEND_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
@@ -232,6 +227,8 @@ async def test_display_profile_size_requires_explicit_apply(
 
         # External viewport resize must never change remote geometry.
         await page.set_viewport_size({"width": 900, "height": 600})
+        # Fixed settle window for a negative assertion: remote geometry must
+        # stay unchanged after the resize has had time to propagate.
         await asyncio.sleep(1.0)
         assert await iframe_video_size(page) == [1280, 720]
         assert_remote_geometry(await remote_geometry(browser_container), 1280, 720)

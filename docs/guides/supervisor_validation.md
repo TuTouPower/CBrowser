@@ -1,6 +1,6 @@
 # Supervisor 验证
 
-验证使用隔离数据根、随机测试凭证、真实 Docker Engine 与独立 API/Gateway fixture。禁止读取本地 `.env`、覆盖用户 Profile 或停止既有服务。正式 Gateway、认证入口和 Docker Compose 交付由后续任务完成，测试 fixture 不能当作已交付服务。
+验证使用隔离数据根、随机测试凭证、真实 Docker Engine、独立 API fixture 与生产 Gateway。禁止读取本地 `.env`、覆盖用户 Profile 或停止既有服务。认证入口和 Docker Compose 交付由后续任务完成，测试 fixture 不能当作已交付服务。
 
 ## 环境
 
@@ -13,9 +13,10 @@
 - `CBROWSER_SUPERVISOR_TEST_IMAGE`：当前源构建后 Supervisor 镜像 ID。
 - `CBROWSER_NETWORK_POLICY_IMAGE`：与 Supervisor 相同的不可变镜像，提供 netns 策略安装入口。
 - `CBROWSER_INVALID_POLICY_TEST_IMAGE`：故意不含策略模块的不可变镜像，仅用于 gate 失败封闭负例。
-- `CBROWSER_API_TEST_IMAGE`、`CBROWSER_GATEWAY_TEST_IMAGE`：隔离容器拓扑 fixture 镜像 ID。
+- `CBROWSER_API_TEST_IMAGE`：隔离容器拓扑 API fixture 镜像 ID。
+- `CBROWSER_GATEWAY_IMAGE`：生产 Gateway 镜像 ID（`config/docker/gateway_runtime/Dockerfile`）。
 
-三个构建入口分别为 `config/docker/supervisor_runtime/Dockerfile`、`tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile` 和 `gateway_runtime.Dockerfile`。各有专属 Docker ignore，只发送必要源码。API fixture 的 SQLAlchemy asyncio extra 包含 arm64 冷启动所需 greenlet；Supervisor 镜像不安装 SQLAlchemy。
+镜像构建入口为 `config/docker/supervisor_runtime/Dockerfile` 与 `tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile`，各自带专属 Docker ignore，只发送必要源码；容器拓扑中的 Gateway 直接使用生产镜像。API fixture 的 SQLAlchemy asyncio extra 包含 arm64 冷启动所需 greenlet；Supervisor 镜像不安装 SQLAlchemy。
 
 所有缓存、TMPDIR、pytest basetemp/cache_dir 都应放在允许写域内。先创建 TMPDIR，再启动解释器；避免回退系统临时目录。为本地 HTTP 测试清除当前测试进程的代理环境，不修改宿主机全局配置。使用 Python 3.12+ 和 `python -m pytest`，避免调用 PATH 中其他环境的 pytest。
 

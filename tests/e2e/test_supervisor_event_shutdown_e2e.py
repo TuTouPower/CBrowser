@@ -17,11 +17,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-# Add fixtures directory to import path
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-if str(FIXTURES_DIR) not in sys.path:
-    sys.path.insert(0, str(FIXTURES_DIR))
 
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from supervisor_recovery_probe.offline_fixture import RealApiProcess  # noqa: E402

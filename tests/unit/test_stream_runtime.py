@@ -15,6 +15,46 @@ from cbrowser.stream_agent.policy import (
 from cbrowser.stream_agent.protocol import AgentAction, AgentRegisterEnvelope
 
 
+async def _wait_until(predicate, timeout: float = 2.0) -> None:
+    """Yield to the loop until predicate is true, without fixed sleeps."""
+
+    async def poll() -> None:
+        while not predicate():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+class ManualClock:
+    """Deterministic sleep seam injected into the policy module."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def sleep(self, delay: float) -> None:
+        self.delays.append(delay)
+        await asyncio.sleep(0)
+
+
+class _ClockAsyncio:
+    def __init__(self, clock: ManualClock) -> None:
+        self._clock = clock
+
+    def __getattr__(self, name: str):
+        return getattr(asyncio, name)
+
+    async def sleep(self, delay: float) -> None:
+        await self._clock.sleep(delay)
+
+
+def _inject_clock(monkeypatch) -> ManualClock:
+    import cbrowser.stream_agent.policy as policy_module
+
+    clock = ManualClock()
+    monkeypatch.setattr(policy_module, "asyncio", _ClockAsyncio(clock))
+    return clock
+
+
 class MockMediaPipeline:
     def __init__(self):
         self.framerate: float = 8.0
@@ -41,8 +81,9 @@ async def test_policy_initial_state_and_pause_when_no_viewers():
 
     # When no viewers are registered, reconcile should pause screen capture
     await agent.reconcile_capture_state()
-    assert agent._is_paused is True
+    assert agent.has_active_visible_viewers() is False
     assert pipeline.is_paused is True
+    assert agent.action_history[-1]["action"] == "pause_screen_capture"
 
 
 @pytest.mark.asyncio
@@ -58,11 +99,12 @@ async def test_policy_resume_sets_min_fps_before_resume():
     agent.set_viewer_visibility("viewer_1", True)
     await agent.reconcile_capture_state()
 
-    assert agent._is_paused is False
     assert pipeline.is_paused is False
 
     # Check order: set_fps(8.0) MUST come before resume
     actions = [h[0] for h in pipeline.history]
+    logged_actions = [entry["action"] for entry in agent.action_history[-2:]]
+    assert logged_actions == ["set_framerate", "resume_screen_capture"]
     assert "set_fps" in actions
     assert "resume" in actions
     assert actions.index("set_fps") < actions.index("resume")
@@ -169,6 +211,8 @@ def test_config_validation_and_repr():
 
 @pytest.mark.asyncio
 async def test_reconciliation_loop_survives_a_single_tick_exception(monkeypatch):
+    """A failed arbitration tick is isolated; later ticks still run."""
+    clock = _inject_clock(monkeypatch)
     pipeline = MockMediaPipeline()
     agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
     calls = {"count": 0}
@@ -180,44 +224,39 @@ async def test_reconciliation_loop_survives_a_single_tick_exception(monkeypatch)
             raise RuntimeError("tick failed")
         return await original(*args, **kwargs)
 
-    agent.reconcile_capture_state = flaky_tick
-    task = asyncio.create_task(agent._reconciliation_loop())
+    monkeypatch.setattr(agent, "reconcile_capture_state", flaky_tick)
+    await agent.start()
     try:
-        for _ in range(100):
-            if calls["count"] >= 2:
-                break
-            await asyncio.sleep(0.01)
+        await _wait_until(lambda: calls["count"] >= 2)
         assert calls["count"] >= 2
+        assert clock.delays
     finally:
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        await agent.stop()
 
 
 @pytest.mark.asyncio
-async def test_supervised_policy_loop_restarts_after_fatal_exit():
+async def test_supervised_policy_loop_restarts_after_fatal_exit(monkeypatch):
+    """A fatal loop escape is restarted by the public start lifecycle."""
+    clock = _inject_clock(monkeypatch)
     agent = LiveCapturePolicyAgent(media_pipeline=MockMediaPipeline())
     attempts = {"count": 0}
-    delays: list[float] = []
     blocker = asyncio.Event()
 
-    async def fake_sleep(delay: float) -> None:
-        delays.append(delay)
-
-    async def factory() -> None:
+    async def fatal_then_block() -> None:
         attempts["count"] += 1
         if attempts["count"] == 1:
             raise RuntimeError("fatal loop escape")
         await blocker.wait()
 
-    agent._loop_sleep = fake_sleep
-    task = agent._start_supervised_loop("test", factory)
+    async def quiet_motion_loop() -> None:
+        await blocker.wait()
+
+    monkeypatch.setattr(agent, "_reconciliation_loop", fatal_then_block)
+    monkeypatch.setattr(agent, "_motion_monitor_loop", quiet_motion_loop)
+    await agent.start()
     try:
-        for _ in range(100):
-            if attempts["count"] >= 2:
-                break
-            await asyncio.sleep(0.01)
+        await _wait_until(lambda: attempts["count"] >= 2)
         assert attempts["count"] >= 2
-        assert delays == [1.0]
+        assert clock.delays == [1.0]
     finally:
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        await agent.stop()

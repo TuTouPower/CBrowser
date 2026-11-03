@@ -12,7 +12,6 @@ import asyncio
 import json
 import logging
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -31,14 +30,11 @@ from playwright.async_api import (
 from playwright.async_api import (
     Error as PlaywrightError,
 )
+from wait import poll_until
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 BACKEND_DIR = REPO_ROOT / "src" / "backend"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR), str(BACKEND_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
@@ -229,7 +225,10 @@ async def set_iframe_visibility(page: Page, hidden: bool) -> None:
 async def frame_delta(
     page: Page, seconds: float
 ) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    """Measure frames decoded across a fixed sampling window."""
     before = await wait_iframe_stats(page)
+    # Genuine sampling window: frame growth is the measured quantity, so the
+    # interval cannot be replaced by polling for a settled value.
     await asyncio.sleep(seconds)
     after = await iframe_stats(page)
     assert after and after.get("video"), after
@@ -473,6 +472,8 @@ async def test_ac004_visibility_stop_start_through_full_app(
         # A goes to the background: official client sends STOP_VIDEO for A only.
         await set_iframe_visibility(page_a, True)
         await wait_data_channel_message(page_a, "STOP_VIDEO", timeout=10.0)
+        # Fixed settle window so the pause takes effect before sampling; the
+        # following frame_delta call is the actual measurement.
         await asyncio.sleep(1.0)
 
         delta_a, _, _ = await frame_delta(page_a, 2.0)
@@ -499,6 +500,7 @@ async def test_ac004_visibility_stop_start_through_full_app(
         # B also hidden: capture pauses only after every consumer paused.
         await set_iframe_visibility(page_b, True)
         await wait_data_channel_message(page_b, "STOP_VIDEO", timeout=10.0)
+        # Fixed settle window so the pause takes effect before sampling.
         await asyncio.sleep(1.0)
         delta_a_all, _, _ = await frame_delta(page_a, 2.0)
         delta_b_all, _, _ = await frame_delta(page_b, 2.0)
@@ -595,21 +597,20 @@ async def test_ac005_product_mute_is_independent_per_page(
         await wait_iframe_stats(page_b, name="B")
 
         # Wait for real audio from the remote WebAudio oscillator on both pages.
-        deadline = time.monotonic() + 30.0
-        audio_a = audio_b = None
-        while time.monotonic() < deadline:
-            s_a = await iframe_stats(page_a)
-            s_b = await iframe_stats(page_b)
-            audio_a = (s_a or {}).get("audio")
-            audio_b = (s_b or {}).get("audio")
-            if (
-                audio_a
-                and audio_b
-                and audio_a.get("bytesReceived", 0) > 0
-                and audio_b.get("bytesReceived", 0) > 0
-            ):
-                break
-            await asyncio.sleep(0.5)
+        audio_a, audio_b = await poll_until(
+            lambda: asyncio.gather(iframe_stats(page_a), iframe_stats(page_b)),
+            lambda stats: (
+                stats[0]
+                and stats[1]
+                and (stats[0].get("audio") or {}).get("bytesReceived", 0) > 0
+                and (stats[1].get("audio") or {}).get("bytesReceived", 0) > 0
+            ),
+            timeout=30.0,
+            interval=0.5,
+            description="audible audio on both pages",
+        )
+        audio_a = audio_a["audio"]
+        audio_b = audio_b["audio"]
         assert audio_a and audio_a["bytesReceived"] > 0, audio_a
         assert audio_b and audio_b["bytesReceived"] > 0, audio_b
 
@@ -623,10 +624,13 @@ async def test_ac005_product_mute_is_independent_per_page(
             == "true"
         )
         await wait_data_channel_message(page_a, "STOP_AUDIO", timeout=10.0)
+        # Fixed settle window so the mute takes effect before sampling.
         await asyncio.sleep(0.8)
 
         a_before = (await iframe_stats(page_a))["audio"]
         b_before = (await iframe_stats(page_b))["audio"]
+        # Fixed 2 s sampling window: audio byte growth is measured across an
+        # interval, not a settled state value.
         await asyncio.sleep(2.0)
         a_after = (await iframe_stats(page_a))["audio"]
         b_after = (await iframe_stats(page_b))["audio"]
@@ -654,6 +658,7 @@ async def test_ac005_product_mute_is_independent_per_page(
         )
         await wait_data_channel_message(page_a, "START_AUDIO", timeout=10.0)
         a_resume_before = (await iframe_stats(page_a))["audio"]
+        # Fixed 2 s sampling window: audio byte growth after unmute.
         await asyncio.sleep(2.0)
         a_resume_after = (await iframe_stats(page_a))["audio"]
         a_resume_growth = (
@@ -836,7 +841,9 @@ async def read_audio_status(page: Page) -> str:
         toggle = await page.query_selector('[data-testid="session-toggle-diag-btn"]')
         if toggle is not None:
             await toggle.click()
-            await asyncio.sleep(0.3)
+            await page.wait_for_selector(
+                '[data-testid="diag-audio-status"]', timeout=5000
+            )
             node = await page.query_selector('[data-testid="diag-audio-status"]')
     return (await node.inner_text()).strip() if node else ""
 
@@ -860,13 +867,13 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
         await wait_iframe_stats(page, name="audio diagnostics")
 
         # Positive: audible oscillator -> normal audio, video stage connected.
-        deadline = time.monotonic() + 30.0
-        normal_text = ""
-        while time.monotonic() < deadline:
-            normal_text = await read_audio_status(page)
-            if "音频正常" in normal_text:
-                break
-            await asyncio.sleep(0.5)
+        normal_text = await poll_until(
+            lambda: read_audio_status(page),
+            lambda text: "音频正常" in text,
+            timeout=30.0,
+            interval=0.5,
+            description="normal audio diagnostic",
+        )
         assert "音频正常" in normal_text, normal_text
 
         stage_title = await page.inner_text('[data-testid="session-stage-title"]')
@@ -883,6 +890,8 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
             "window.oscillator.frequency.setValueAtTime(0, 0); 'silent'",
             target_id,
         )
+        # Fixed 4 s sampling window: enough silent Opus packets must arrive to
+        # prove silence keeps the audio link alive.
         await asyncio.sleep(4.0)
         silence_text = await read_audio_status(page)
         silence_stats = await iframe_stats(page)
@@ -899,19 +908,21 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
             harness.docker_client.containers.get(container).exec_run,
             ["pkill", "-9", "pulseaudio"],
         )
-        failure_text = ""
-        deadline = time.monotonic() + 30.0
-        while time.monotonic() < deadline:
-            failure_text = await read_audio_status(page)
-            if "音频无数据" in failure_text:
-                break
-            await asyncio.sleep(0.5)
+        failure_text = await poll_until(
+            lambda: read_audio_status(page),
+            lambda text: "音频无数据" in text,
+            timeout=30.0,
+            interval=0.5,
+            description="audio link failure diagnostic",
+        )
         assert "音频无数据" in failure_text, failure_text
 
         stage_title = await page.inner_text('[data-testid="session-stage-title"]')
         conn_state = await page.inner_text('[data-testid="diag-conn-state"]')
         assert "已连接" in stage_title, stage_title
         assert conn_state == "connected", conn_state
+        # Fixed 1.5 s sampling window: frames must keep arriving after the audio
+        # link failure, proving video is unaffected.
         await asyncio.sleep(1.5)
         frames_after_failure = (await iframe_stats(page))["video"]["framesDecoded"]
         assert frames_after_failure > frames_before_failure

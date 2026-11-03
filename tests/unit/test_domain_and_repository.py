@@ -29,19 +29,6 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
 
-@pytest.fixture
-def temp_db_path(tmp_path: Path) -> Path:
-    return tmp_path / "test_v2.db"
-
-
-@pytest_asyncio.fixture
-async def db_context(temp_db_path: Path):
-    run_database_migrations(temp_db_path)
-    engine, session_maker = create_engine_and_maker(temp_db_path)
-    yield engine, session_maker
-    await engine.dispose()
-
-
 @pytest.mark.asyncio
 async def test_sqlite_pragmas_wal_and_busy_timeout(db_context):
     _engine, session_maker = db_context

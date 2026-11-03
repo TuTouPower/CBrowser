@@ -11,9 +11,6 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 import docker
 from gateway_probe.topology import GatewayTopologyHarness

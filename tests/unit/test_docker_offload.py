@@ -131,7 +131,7 @@ async def test_scan_inspect_offloads_blocking_docker_call(tmp_path) -> None:
 
     assert elapsed >= 0.25
     assert ticks >= 5
-    assert core._sessions["p1"].udp_mux_port == 30000
+    assert core.get_session("p1").udp_mux_port == 30000
 
 
 def async_none(value):

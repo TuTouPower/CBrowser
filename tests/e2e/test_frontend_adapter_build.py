@@ -9,15 +9,12 @@ only downloads/verifies official assets and injects the classic script tag.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import vendor_selkies_web as vendor_module  # noqa: E402
 from scripts.vendor_selkies_web import vendor_selkies_web  # noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ADAPTER_TS = (
     REPO_ROOT

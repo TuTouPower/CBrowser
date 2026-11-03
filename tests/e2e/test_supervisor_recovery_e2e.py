@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import importlib.util
 import json
 import logging
 import os
@@ -38,41 +37,15 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from api_auth import create_auth_context
 from cbrowser.domain.models import RuntimeEventReportRequest
 from cbrowser.runtime_agent.event_storage import atomic_write_json
-from cbrowser.supervisor.agent_credentials import AgentCredentials
 from gateway_probe.topology import cleanup_prefixed_resources
-
-_gw_fixture_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "gateway_fixture.py"
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
 )
-_gw_spec = importlib.util.spec_from_file_location("gateway_fixture", _gw_fixture_path)
-_gw_mod = importlib.util.module_from_spec(_gw_spec)
-sys.modules["gateway_fixture"] = _gw_mod
-_gw_spec.loader.exec_module(_gw_mod)
-SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
-
-_off_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "offline_fixture.py"
-)
-_off_spec = importlib.util.spec_from_file_location("offline_fixture", _off_path)
-_off_mod = importlib.util.module_from_spec(_off_spec)
-sys.modules["offline_fixture"] = _off_mod
-_off_spec.loader.exec_module(_off_mod)
-RealSupervisorContainer = _off_mod.RealSupervisorContainer
-
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
 
 logger = logging.getLogger(__name__)
 
@@ -284,10 +257,11 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -504,10 +478,11 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -750,10 +725,11 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -1065,7 +1041,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             cleanup_errors.append(exc)
         try:
             await gateway.stop()
-        except BaseException as exc:  # noqa: BLE001 - Best-effort gateway fixture stop during teardown
+        except BaseException as exc:  # noqa: BLE001 - Best-effort gateway stop during teardown
             logger.warning(
                 "Teardown error stopping gateway: error_type=%s",
                 type(exc).__name__,
@@ -1088,7 +1064,8 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             )
             cleanup_errors.append(exc)
 
-        if cleanup_errors:
-            if len(cleanup_errors) == 1:
-                raise cleanup_errors[0]
-            raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
+
+    if cleanup_errors:
+        if len(cleanup_errors) == 1:
+            raise cleanup_errors[0]
+        raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
