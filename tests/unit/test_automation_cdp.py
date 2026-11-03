@@ -10,6 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import tempfile
 import websockets
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.path_validator import PathValidator
@@ -53,7 +54,7 @@ class _UnixEchoServer:
 
 def _short_root(tmp_path: Path) -> Path:
     # AF_UNIX paths are capped near 104 bytes; pytest tmp paths exceed it here.
-    root = Path(".scratch/t008_uds") / tmp_path.name[-8:] / "data"
+    root = Path(tempfile.mkdtemp(prefix="cbrowser-t008-uds-", dir="/tmp")) / "data"
     shutil.rmtree(root.parent, ignore_errors=True)
     return root
 

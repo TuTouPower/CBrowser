@@ -68,7 +68,7 @@ async def test_stop_continues_after_gateway_disconnect_failure(
     }
     assert docker.teardown_calls == 1
     assert core.ports.get_port("profile") is None
-    assert "profile" not in core._sessions
+    assert core.get_session("profile") is None
 
 
 @pytest.mark.asyncio
@@ -90,4 +90,4 @@ async def test_teardown_failure_still_releases_port_and_reports_error(tmp_path):
 
     assert docker.teardown_calls == 1
     assert core.ports.get_port("profile") is None
-    assert "profile" not in core._sessions
+    assert core.get_session("profile") is None

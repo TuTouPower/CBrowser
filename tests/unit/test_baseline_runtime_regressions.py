@@ -88,29 +88,6 @@ def test_api_fixture_runtime_packaging_integrity():
     )
 
 
-def test_gateway_fixture_runtime_packaging_integrity():
-    dockerfile_path = (
-        "tests/fixtures/supervisor_container_probe/gateway_runtime.Dockerfile"
-    )
-    content = _read_dockerfile(dockerfile_path)
-    lines = content.splitlines()
-
-    from_line = next(line for line in lines if line.startswith("FROM "))
-    assert "@sha256:" in from_line, (
-        "Gateway fixture base image must be pinned by digest"
-    )
-
-    assert "COPY src/backend/cbrowser/__init__.py" in content, (
-        "Gateway fixture Dockerfile must copy cbrowser/__init__.py"
-    )
-    assert "COPY src/backend/cbrowser/secret_files.py" in content, (
-        "Gateway fixture Dockerfile must copy secret_files.py"
-    )
-    assert "COPY src/backend/cbrowser/gateway" in content, (
-        "Gateway fixture Dockerfile must copy gateway package"
-    )
-
-
 @pytest.mark.asyncio
 async def test_serve_supervisor_watch_docker_events_subscribes_prefix(
     tmp_path: Path, caplog: pytest.LogCaptureFixture

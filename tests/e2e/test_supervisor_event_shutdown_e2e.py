@@ -17,11 +17,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-# Add fixtures directory to import path
+from e2e_env import require_e2e_env
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-if str(FIXTURES_DIR) not in sys.path:
-    sys.path.insert(0, str(FIXTURES_DIR))
 
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from supervisor_recovery_probe.offline_fixture import RealApiProcess  # noqa: E402
@@ -45,26 +43,26 @@ def test_supervisor_cli_graceful_shutdown_on_sigterm(tmp_path: Path) -> None:
         finally:
             client.close()
     except Exception as exc:  # noqa: BLE001 - docker daemon availability check
-        pytest.fail(
-            f"Docker daemon required for graceful shutdown E2E: {type(exc).__name__}"
+        message = (
+            "Docker daemon required for graceful shutdown E2E: "
+            f"{type(exc).__name__}"
         )
+        if os.environ.get("CBROWSER_E2E_REQUIRED") == "1":
+            pytest.fail(message, pytrace=False)
+        pytest.skip(message)
 
     # Image mapping from gate environment
-    browser_image = os.environ.get("CBROWSER_BROWSER_IMAGE") or os.environ.get(
-        "CBROWSER_RUNTIME_TEST_IMAGE"
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
     )
-    stream_image = os.environ.get("CBROWSER_STREAM_IMAGE") or os.environ.get(
-        "CBROWSER_STREAM_TEST_IMAGE"
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    policy_image = (
+        os.environ.get("CBROWSER_NETWORK_POLICY_IMAGE")
+        or env["CBROWSER_SUPERVISOR_TEST_IMAGE"]
     )
-    policy_image = os.environ.get("CBROWSER_NETWORK_POLICY_IMAGE") or os.environ.get(
-        "CBROWSER_SUPERVISOR_TEST_IMAGE"
-    )
-
-    if not browser_image or not stream_image:
-        pytest.fail(
-            "Immutable Browser and Stream images are required for CLI test "
-            f"(got browser={browser_image!r}, stream={stream_image!r})"
-        )
 
     assert browser_image.startswith("sha256:"), (
         f"Immutable ID required: {browser_image}"

@@ -10,25 +10,27 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import docker.errors
 import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
+from cbrowser.stream_agent.messaging import (  # noqa: E402
+    build_register_envelope,
+    build_register_payload,
+    iso_now,
+)
 from cbrowser.supervisor.agent_credentials import AgentCredentials  # noqa: E402
 from gateway_probe.caddyfile import generate_caddyfile  # noqa: E402
 from gateway_probe.topology import GatewayTopologyHarness  # noqa: E402
-from supervisor_recovery_probe.gateway_fixture import (  # noqa: E402
-    SupervisorGatewayFixture,
+from supervisor_recovery_probe.gateway_service import (  # noqa: E402
+    FakeGatewayApiClient,
+    ProductionGatewayService,
 )
 from supervisor_recovery_probe.offline_fixture import (  # noqa: E402
     RealApiProcess,
@@ -44,6 +46,7 @@ def _set_test_images_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("CBROWSER_GATEWAY_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_SUPERVISOR_TEST_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_API_TEST_IMAGE", f"sha256:{h}")
+    monkeypatch.setenv("CBROWSER_CADDY_TEST_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_RUNTIME_ENGINE_CACHE", str(tmp_path / "engine"))
     monkeypatch.setenv("CBROWSER_RUNTIME_GEOIP_CACHE", str(tmp_path / "geoip"))
     (tmp_path / "engine").mkdir(parents=True, exist_ok=True)
@@ -530,17 +533,50 @@ def test_real_supervisor_container_start_failure_with_stop_failure_chains(
 async def test_gateway_topology_harness_secrets_permission_0600(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """GatewayTopologyHarness._init_dirs_and_secrets files must be 0600."""
+    """GatewayTopologyHarness.start must write every secret file as 0600."""
     _set_test_images_env(monkeypatch, tmp_path)
 
-    with patch("docker.from_env"):
+    mock_docker = MagicMock()
+    mock_docker.networks.create.return_value.name = "test-edge"
+    mock_docker.api.inspect_network.return_value = {
+        "IPAM": {"Config": [{"Subnet": "192.168.100.0/24"}]}
+    }
+
+    def fake_run(role, image_id, **kwargs):
+        container = MagicMock()
+        container.id = f"cid_{role}"
+        container.name = f"test-{role}"
+        container.status = "running"
+        container.attrs = {
+            "NetworkSettings": {
+                "Networks": {"test-edge": {"IPAddress": "192.168.100.5"}},
+                "Ports": {
+                    "8000/tcp": [{"HostPort": "38000"}],
+                    "8005/tcp": [{"HostPort": "38005"}],
+                    f"{DEFAULT_GATEWAY_PORT}/tcp": [{"HostPort": "38080"}],
+                },
+            }
+        }
+        return container
+
+    with (
+        patch("docker.from_env", return_value=mock_docker),
+        patch("gateway_probe.topology.prepare_selkies_web_assets"),
+        patch("gateway_probe.topology.wait_until_ready"),
+    ):
         harness = GatewayTopologyHarness(work_dir=tmp_path / "work")
-        harness._init_dirs_and_secrets()
-        for name, fpath in harness.key_files.items():
-            mode = stat.S_IMODE(fpath.stat().st_mode)
-            assert mode == 0o600, (
-                f"Secret file {name} ({fpath}) must have mode 0600, got {oct(mode)}"
-            )
+        monkeypatch.setattr(harness, "_run_container", fake_run)
+        await harness.start()
+
+    for name, fpath in harness.key_files.items():
+        mode = stat.S_IMODE(fpath.stat().st_mode)
+        assert mode == 0o600, (
+            f"Secret file {name} ({fpath}) must have mode 0600, got {oct(mode)}"
+        )
+    control_mode = stat.S_IMODE(harness.control_dir.stat().st_mode)
+    assert control_mode == 0o700, (
+        f"Secret directory must have mode 0700, got {oct(control_mode)}"
+    )
 
 
 @pytest.mark.asyncio
@@ -720,43 +756,6 @@ def test_caddyfile_generator_uses_authoritative_gateway_port() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_container_entrypoint_listens_on_authoritative_port(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """gateway_container.main must bind web.TCPSite on DEFAULT_GATEWAY_PORT."""
-    key_agent = tmp_path / "agent"
-    key_agent.write_text(secrets.token_hex(32))
-    key_agent.chmod(0o600)
-    key_gw = tmp_path / "gateway"
-    key_gw.write_text(secrets.token_hex(32))
-    key_gw.chmod(0o600)
-    monkeypatch.setenv("PROBE_AGENT_KEY_FILE", str(key_agent))
-    monkeypatch.setenv("PROBE_GATEWAY_KEY_FILE", str(key_gw))
-
-    import supervisor_container_probe.gateway_container as gw_mod
-
-    sites = []
-
-    def fake_tcp_site(runner, host, port):
-        sites.append((host, port))
-        mock_site = MagicMock()
-        mock_site.start = AsyncMock()
-        return mock_site
-
-    with (
-        patch("aiohttp.web.TCPSite", side_effect=fake_tcp_site),
-        patch("asyncio.Event.wait", side_effect=asyncio.CancelledError),
-    ):
-        try:
-            await gw_mod.main()
-        except asyncio.CancelledError:
-            pass
-
-    assert len(sites) == 1
-    assert sites[0][1] == DEFAULT_GATEWAY_PORT
-
-
-@pytest.mark.asyncio
 async def test_gateway_topology_harness_environment_and_ports_consistent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -797,9 +796,9 @@ async def test_gateway_topology_harness_environment_and_ports_consistent(
     ):
         harness = GatewayTopologyHarness(work_dir=tmp_path / "work")
         harness.prefix = "test-check"
-        harness._run_container = fake_run
+        monkeypatch.setattr(harness, "_run_container", fake_run)
 
-        await harness._do_start()
+        await harness.start()
 
         gw_kwargs = run_calls["gateway"]
         assert gw_kwargs["environment"]["CBROWSER_GATEWAY_PORT"] == str(
@@ -974,7 +973,7 @@ def test_real_api_process_start_failure_reaps_child_and_closes_log(
         assert len(spawned_procs) == 1
         reaped_proc = spawned_procs[0]
         assert reaped_proc.poll() is not None, "Child process must be reaped"
-        assert api._log_file_handle is None, "Log handle must be closed"
+        assert api.log_handle_closed, "Log handle must be closed"
         assert api.proc is None
     finally:
         for p in spawned_procs:
@@ -1010,7 +1009,7 @@ def test_real_api_process_popen_error_closes_log_and_propagates(
         api.start(timeout_sec=0.2)
 
     assert api.proc is None
-    assert api._log_file_handle is None
+    assert api.log_handle_closed
     assert log_path.exists()
 
 
@@ -1049,7 +1048,7 @@ def test_real_api_process_stop_kill_wait_failure_propagates_and_retains_proc(
             api.stop(timeout_sec=0.01)
 
         assert api.proc is proc, "Unreaped process reference must be retained"
-        assert api._log_file_handle is None, "Log handle must be closed in finally"
+        assert api.log_handle_closed, "Log handle must be closed in finally"
         assert log_handle.closed is True, "Underlying log handle must be closed"
     finally:
         monkeypatch.undo()
@@ -1111,81 +1110,7 @@ def test_real_api_process_start_failure_with_cleanup_failure_chains(
         assert api.proc is spawned_procs[0], (
             "Proc reference must be retained on cleanup error"
         )
-        assert api._log_file_handle is None, "Log handle must be closed in finally"
-    finally:
-        monkeypatch.undo()
-        for p in spawned_procs:
-            if p.poll() is None:
-                p.kill()
-                p.wait(timeout=2.0)
-
-
-def test_real_api_and_sup_finally_propagates_cleanup_error_and_reaps_remaining(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """recovery E2E real_api_and_sup propagates wait error and cleans resources."""
-    import importlib.util
-
-    e2e_path = REPO_ROOT / "tests" / "e2e" / "test_supervisor_recovery_e2e.py"
-    spec = importlib.util.spec_from_file_location(
-        "test_supervisor_recovery_e2e", e2e_path
-    )
-    assert spec and spec.loader
-    e2e_mod = importlib.util.module_from_spec(spec)
-
-    orig_popen = subprocess.Popen
-    sleep_cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
-    spawned_procs = []
-
-    def fake_popen(*args, **kwargs):
-        p = orig_popen(
-            sleep_cmd,
-            stdout=kwargs.get("stdout"),
-            stderr=kwargs.get("stderr"),
-        )
-        spawned_procs.append(p)
-        return p
-
-    monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setattr(
-        httpx.Client,
-        "get",
-        lambda self, url, *a, **kw: httpx.Response(
-            503, request=httpx.Request("GET", url)
-        ),
-    )
-
-    spec.loader.exec_module(e2e_mod)
-    fake_auth = MagicMock()
-    fake_auth.env = {}
-    fake_auth.login_sync.return_value = {"Authorization": "Bearer test"}
-    monkeypatch.setattr(e2e_mod, "create_auth_context", lambda *a, **kw: fake_auth)
-
-    fn = getattr(e2e_mod.real_api_and_sup, "__wrapped__", e2e_mod.real_api_and_sup)
-    gen = fn(tmp_path)
-    ctx = next(gen)
-
-    # Spawn two managed procs
-    p1 = orig_popen(sleep_cmd)
-    p2 = orig_popen(sleep_cmd)
-    spawned_procs.extend([p1, p2])
-
-    # p1 fails on wait
-    def failing_wait(timeout=None):
-        raise subprocess.TimeoutExpired(cmd=["p1"], timeout=timeout or 2.0)
-
-    monkeypatch.setattr(p1, "wait", failing_wait)
-    ctx["managed_procs"].extend([p1, p2])
-
-    try:
-        with pytest.raises(subprocess.TimeoutExpired):
-            try:
-                next(gen)
-            except StopIteration:
-                pass
-
-        # Verify p2 was still reaped (best-effort cleanup)
-        assert p2.poll() is not None, "p2 must be reaped despite p1 error"
+        assert api.log_handle_closed, "Log handle must be closed in finally"
     finally:
         monkeypatch.undo()
         for p in spawned_procs:
@@ -1196,10 +1121,10 @@ def test_real_api_and_sup_finally_propagates_cleanup_error_and_reaps_remaining(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad_payload", ["null", "[]", "123", "true"])
-async def test_supervisor_gateway_fixture_viewer_ws_recovers_after_non_dict_json(
+async def test_production_gateway_forwards_non_dict_viewer_json(
     tmp_path: Path, bad_payload: str
 ) -> None:
-    """Non-dict JSON frames (null/[]/int/bool) must not crash _handle_viewer_ws."""
+    """Non-dict viewer JSON is forwarded and the production tunnel stays open."""
     key_file = tmp_path / "gw_agent_key"
     key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
     key_file.chmod(0o600)
@@ -1207,33 +1132,68 @@ async def test_supervisor_gateway_fixture_viewer_ws_recovers_after_non_dict_json
     token_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
     token_file.chmod(0o600)
 
+    profile_id = "profile_signal"
+    runtime_instance_id = "inst_signal"
     credentials = AgentCredentials(key_file)
-    gateway = SupervisorGatewayFixture(
-        port=0, credentials=credentials, token_file=token_file
+    fake_api = FakeGatewayApiClient()
+    fake_api.set_profile_runtime(profile_id, runtime_instance_id)
+    fake_api.allow_all_viewers = True
+    gateway = ProductionGatewayService(
+        port=0,
+        agent_key_file=key_file,
+        gateway_token_file=token_file,
+        api_client=fake_api,
+        allowed_origins=["http://127.0.0.1"],
     )
-    server = TestServer(gateway._app)
+    server = TestServer(gateway.app)
     client = TestClient(server)
     await client.start_server()
     try:
-        profile_id = f"prof_{secrets.token_hex(4)}"
-        ws = await client.ws_connect(f"/viewer/{profile_id}")
-        assert not ws.closed
+        agent_token = credentials.token_for(profile_id, runtime_instance_id)
+        register_url = (
+            "/stream/agent/register"
+            f"?profile_id={profile_id}&runtime_instance_id={runtime_instance_id}"
+        )
+        async with client.ws_connect(
+            register_url, headers={"Authorization": f"Bearer {agent_token}"}
+        ) as agent_ws:
+            agent_config = SimpleNamespace(
+                profile_id=profile_id,
+                runtime_instance_id=runtime_instance_id,
+                udp_mux_port=30000,
+                selkies_version="2.1.0",
+                config_version=1,
+                video_streaming_mode=False,
+                width=1920,
+                height=1080,
+            )
+            register = build_register_envelope(
+                agent_config,
+                build_register_payload(agent_config, "test-host", "2.1.0"),
+                iso_now(),
+            )
+            await agent_ws.send_str(register.model_dump_json())
+            ack = await agent_ws.receive_json()
+            assert ack["status"] == "ok"
 
-        # Send non-dict JSON frame (null, [], int, bool)
-        await ws.send_str(bad_payload)
-        await asyncio.sleep(0.05)
+            async with client.ws_connect(
+                f"/stream/{profile_id}/signal",
+                headers={
+                    "Origin": "http://127.0.0.1",
+                    "Cookie": "cbrowser_session=test-session",
+                },
+            ) as viewer_ws:
+                opened = await agent_ws.receive_json()
+                assert opened["type"] == "open"
 
-        # Connection must survive and remain open
-        assert not ws.closed, f"Viewer WS closed after receiving {bad_payload}"
+                await viewer_ws.send_str(bad_payload)
+                forwarded = await agent_ws.receive_json()
+                assert forwarded["type"] == "msg"
+                assert forwarded["data"] == bad_payload
+                assert not viewer_ws.closed
 
-        # Subsequent valid visibility message must be processed
-        await ws.send_json({"action": "visibility", "foreground": True})
-        await asyncio.sleep(0.05)
-
-        assert not ws.closed, "Viewer WS closed after sending visibility update"
-        fg_viewers = gateway._foreground_viewers.get(profile_id, set())
-        assert any(not v.closed for v in fg_viewers) is True
-
-        await ws.close()
+                await viewer_ws.close()
+                close_env = await agent_ws.receive_json()
+                assert close_env["type"] == "close"
     finally:
         await client.close()

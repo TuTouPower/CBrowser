@@ -32,30 +32,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.util
 import json
 import logging
 import os
 import secrets
 import sqlite3
-import sys
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+
+from e2e_env import free_udp_port_span
+
+from supervisor_recovery_probe import offline_fixture
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
-_fixture_path = ROOT / "tests/fixtures/supervisor_recovery_probe/offline_fixture.py"
-_spec = importlib.util.spec_from_file_location("offline_fixture", _fixture_path)
-offline_fixture = importlib.util.module_from_spec(_spec)
-sys.modules["offline_fixture"] = offline_fixture
-_spec.loader.exec_module(offline_fixture)
-
-OfflineGatewayMock = offline_fixture.OfflineGatewayMock
 RealApiProcess = offline_fixture.RealApiProcess
 RealBrowserActionProbe = offline_fixture.RealBrowserActionProbe
 RealSupervisorContainer = offline_fixture.RealSupervisorContainer
@@ -125,10 +123,13 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     d_client = docker.from_env()
 
 
-    gateway = OfflineGatewayMock(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(
+            f"http://127.0.0.1:{api_port}", sup_token_file
+        ),
     )
 
     api_db_path = tmp_path / "control.db"
@@ -143,6 +144,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     )
 
     sup_log = tmp_path / "supervisor.log"
+    udp_base = free_udp_port_span(2)
     sup_proc = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
@@ -159,6 +161,8 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         env=clean_environ,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}

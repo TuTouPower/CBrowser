@@ -2,9 +2,9 @@
 
 Validates:
 1. Real isolated FastAPI Uvicorn process with SQLite WAL and external Bearer token file.
-2. Real Gateway WebSocket mock server for Stream Agent outbound registration.
+2. Production Gateway application for Stream Agent outbound registration.
 3. Dual-container sandbox for Profile A and Profile B concurrently.
-4. Browser 03 with default GeoIP cache & Stream 07 with UDP mux ports 30000 / 30001.
+4. Browser 03 with default GeoIP cache & Stream 07 with run-local UDP mux ports.
 5. Verification of Browser Agent ready (runner_info.json, agent.sock, PID > 0).
 6. Verification of Stream Agent authenticating and registering with Gateway.
 7. Verification of cross-profile isolation (non-shared IPC / independent network).
@@ -17,154 +17,49 @@ Validates:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
-import os
 import secrets
 import shutil
 import socket
-import subprocess
-import sys
-import time
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
+
+from e2e_env import free_udp_port_span, require_e2e_env
 from cbrowser.domain.models import ProfileConfig
-from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
+)
 
 logger = logging.getLogger(__name__)
 
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
 
-_gw_spec = importlib.util.spec_from_file_location(
-    "supervisor_gateway_fixture",
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "gateway_fixture.py",
-)
-_gw_module = importlib.util.module_from_spec(_gw_spec)
-sys.modules["supervisor_gateway_fixture"] = _gw_module
-_gw_spec.loader.exec_module(_gw_module)
-SupervisorGatewayFixture = _gw_module.SupervisorGatewayFixture
-
-
-@pytest.fixture
-def real_api_server(tmp_path: Path):
-    token = secrets.token_urlsafe(32)
-    token_file = tmp_path / "supervisor_token"
-    token_file.write_text(token, encoding="utf-8")
-    token_file.chmod(0o600)
-
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        port = s.getsockname()[1]
-
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
-    env = dict(os.environ)
-    for name in (
-        "HTTP_PROXY",
-        "HTTPS_PROXY",
-        "ALL_PROXY",
-        "http_proxy",
-        "https_proxy",
-        "all_proxy",
-    ):
-        env.pop(name, None)
-
-    root = Path(__file__).resolve().parents[2]
-    env.update(
-        PYTHONPATH=str(root / "src/backend"),
-        PYTHONDONTWRITEBYTECODE="1",
-        TMPDIR=str(tmp_path),
-        CBROWSER_DB_PATH=str(tmp_path / "control.db"),
-        CBROWSER_SUPERVISOR_TOKEN_FILE=str(token_file),
-        **auth_ctx.env,
-    )
-
-    log_path = tmp_path / "api_server.log"
-    with open(log_path, "w", encoding="utf-8") as log_f:
-        proc = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "cbrowser.api.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-            ],
-            cwd=root,
-            env=env,
-            stdout=log_f,
-            stderr=subprocess.STDOUT,
-        )
-
-        api_url = f"http://127.0.0.1:{port}"
-        try:
-            with httpx.Client(base_url=api_url, trust_env=False) as client:
-                ready = False
-                for _ in range(100):
-                    try:
-                        if client.get("/api/v1/health").status_code == 200:
-                            ready = True
-                            break
-                    except httpx.TransportError:
-                        pass
-                    if proc.poll() is not None:
-                        break
-                    time.sleep(0.1)
-                if not ready:
-                    pytest.fail(
-                        "Real API process failed to become ready: "
-                        f"{log_path.read_text()}"
-                    )
-                auth_headers = auth_ctx.login_sync(api_url, client)
-            yield api_url, token, token_file, auth_headers
-        finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=5)
 
 
 @pytest.mark.asyncio
 async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_server):
-    missing = []
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache_val = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_image:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_image:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache_val:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache_val:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache_val = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache_val = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_image.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -192,7 +87,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     d_client.images.get(browser_image)
     d_client.images.get(stream_image)
 
-    # Find free port for Gateway mock
+    # Find free port for the production Gateway
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         gw_port = s.getsockname()[1]
@@ -205,10 +100,11 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     gw_token_file.write_text(secrets.token_urlsafe(32))
     gw_token_file.chmod(0o600)
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, token_file),
     )
     await gateway.start()
 
@@ -234,7 +130,8 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         resource_prefix=prefix,
         geoip_cache_dir=engine_cache / "geoip",
     )
-    port_allocator = PortAllocator(min_port=30000, max_port=30010)
+    udp_base = free_udp_port_span(2)
+    port_allocator = PortAllocator(min_port=udp_base, max_port=udp_base + 10)
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -284,7 +181,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     try:
         # 2. Start Profile A in Supervisor
         session_a = await core.start_profile(profile_a, cfg_a)
-        assert session_a.udp_mux_port == 30000
+        assert session_a.udp_mux_port == udp_base
 
         # Reload & verify Browser container A
         b_c_a = d_client.containers.get(session_a.browser_container_id)
@@ -298,18 +195,23 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         )
         assert r_info_a["browser_pid"] > 0
 
-        # Wait for Stream Agent A to register with Gateway
+        # Wait for Stream Agent A to register and report through the production
+        # Gateway control surface.
+        agent_a_registered = False
         for _ in range(50):
-            if profile_a in gateway.registered_agents:
+            try:
+                await gateway_control.has_foreground_viewers(
+                    profile_a, session_a.runtime_instance_id
+                )
+                agent_a_registered = True
                 break
-            await asyncio.sleep(0.2)
-        assert profile_a in gateway.registered_agents, (
-            "Stream Agent A failed to register with Gateway"
-        )
+            except httpx.HTTPError:
+                await asyncio.sleep(0.2)
+        assert agent_a_registered, "Stream Agent A failed to register with Gateway"
 
         # 3. Start Profile B concurrently
         session_b = await core.start_profile(profile_b, cfg_b)
-        assert session_b.udp_mux_port == 30001
+        assert session_b.udp_mux_port == udp_base + 1
         assert session_b.browser_container_id != session_a.browser_container_id
 
         b_c_b = d_client.containers.get(session_b.browser_container_id)
@@ -322,13 +224,17 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         assert r_info_b["browser_pid"] > 0
         assert b_c_b.id != b_c_a.id
 
+        agent_b_registered = False
         for _ in range(50):
-            if profile_b in gateway.registered_agents:
+            try:
+                await gateway_control.has_foreground_viewers(
+                    profile_b, session_b.runtime_instance_id
+                )
+                agent_b_registered = True
                 break
-            await asyncio.sleep(0.2)
-        assert profile_b in gateway.registered_agents, (
-            "Stream Agent B failed to register with Gateway"
-        )
+            except httpx.HTTPError:
+                await asyncio.sleep(0.2)
+        assert agent_b_registered, "Stream Agent B failed to register with Gateway"
 
         # 4. Verify cross-profile isolation
         s_c_a = d_client.containers.get(session_a.stream_container_id)
@@ -362,8 +268,8 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         # 5. Orderly Stop Profile A
         await core.stop_profile(profile_a)
 
-        # Port 30000 released
-        assert not port_allocator.is_port_used(30000)
+        # Base port released
+        assert not port_allocator.is_port_used(udp_base)
 
         # Profile B remains running and intact
         b_c_b.reload()
@@ -380,7 +286,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         await gateway.stop()
         await api_client.aclose()
 
-        # Strict assert: zero orphan containers left
-        active_final = docker_adapter.scan_active_containers()
-        assert len(active_final) == 0, f"Leaked containers: {active_final}"
         d_client.close()
+
+    active_final = docker_adapter.scan_active_containers()
+    assert len(active_final) == 0, f"Leaked containers: {active_final}"

@@ -98,6 +98,16 @@ class LiveCapturePolicyAgent:
         )
 
     @property
+    def supervisor_fps_cap(self) -> float | None:
+        """Current supervisor-imposed FPS cap, if any."""
+        return self._supervisor_fps_cap
+
+    @property
+    def is_running(self) -> bool:
+        """Whether background policy loops are active."""
+        return self._loop_task is not None and self._motion_task is not None
+
+    @property
     def pipeline(self) -> Any:
         """
         Dynamically resolve active media pipeline.
@@ -151,6 +161,14 @@ class LiveCapturePolicyAgent:
         self.unregister_peer_mapping(conn_id=conn_id)
         self._sdk_peer_to_conn[sdk_peer_id] = conn_id
         self._conn_to_sdk_peer[conn_id] = sdk_peer_id
+
+    def has_sdk_peer_mapping(self, sdk_peer_id: str) -> bool:
+        """Whether an SDK peer is currently mapped to a Gateway connection."""
+        return sdk_peer_id in self._sdk_peer_to_conn
+
+    def sdk_peer_for_conn(self, conn_id: str) -> str | None:
+        """Return the SDK peer currently mapped to a Gateway connection."""
+        return self._conn_to_sdk_peer.get(conn_id)
 
     def unregister_peer_mapping(
         self,

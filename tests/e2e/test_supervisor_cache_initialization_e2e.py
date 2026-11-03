@@ -1,35 +1,29 @@
 """Fresh cache initialization must finish in one real helper process."""
 
-import os
 import shutil
 import uuid
 from pathlib import Path
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.path_validator import PathValidator
 
 
 @pytest.mark.asyncio
 async def test_fresh_pinned_engine_and_geoip_cache_complete_once(tmp_path):
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache_val = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache_val:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache_val:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache_val = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache_val = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "

@@ -2,20 +2,18 @@
 
 import asyncio
 import json
-import os
 import uuid
 
 import docker
 import pytest
 
+from e2e_env import require_e2e_env
+
 
 @pytest.mark.asyncio
 async def test_kernel_ipv6_echo_isolation_preserves_allowed_tcp(tmp_path):
     names = ("CBROWSER_RUNTIME_TEST_IMAGE", "CBROWSER_SUPERVISOR_TEST_IMAGE")
-    missing = [name for name in names if not os.environ.get(name)]
-    if missing:
-        pytest.skip("Missing E2E inputs: " + ", ".join(missing))
-    images = {name: os.environ[name] for name in names}
+    images = require_e2e_env(*names)
     client = docker.from_env()
     for image in images.values():
         assert image.startswith("sha256:")
@@ -149,7 +147,8 @@ sys.stdout.write(json.dumps(result))
             container.remove(force=True)
         if network is not None:
             network.remove()
-        assert not client.containers.list(
-            all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
-        )
         client.close()
+
+    assert not client.containers.list(
+        all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
+    )

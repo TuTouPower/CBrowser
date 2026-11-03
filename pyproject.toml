@@ -21,6 +21,7 @@ dependencies = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+pythonpath = [".", "tests/fixtures", "src/backend"]
 testpaths = [
     ".repo_template/tests",
     "src/backend/tests",

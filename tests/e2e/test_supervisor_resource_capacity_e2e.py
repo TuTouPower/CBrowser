@@ -1,11 +1,11 @@
 """Sampler must discover the actual container limit without caller hints."""
 
-import os
 import time
 import uuid
 
 import docker
-import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.resource_policy import (
     ResourcePolicyConfig,
     ResourcePolicyService,
@@ -13,11 +13,9 @@ from cbrowser.supervisor.resource_policy import (
 
 
 def test_sampler_discovers_real_container_cpu_limit():
-    image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    if not image:
-        pytest.skip(
-            "Missing required E2E environment variable: CBROWSER_STREAM_TEST_IMAGE"
-        )
+    image = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
     assert image.startswith("sha256:"), (
         f"CBROWSER_STREAM_TEST_IMAGE must be sha256 immutable digest, got {image}"
     )

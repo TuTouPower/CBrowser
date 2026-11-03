@@ -12,9 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import sys
 import time
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -22,11 +20,6 @@ import httpx
 import pytest
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
@@ -203,6 +196,8 @@ async def test_frontend_app_auth_guard_e2e(harness: AuthTopologyHarness) -> None
         assert await page.query_selector('[data-testid="login-page"]') is not None
 
         # SSE must not reconnect after the session expired.
+        # Fixed settle window for a negative assertion: absence of new
+        # /events requests must hold over an interval after the redirect.
         await asyncio.sleep(3.0)
         assert recorder.count("/api/v1/events") == events_before, recorder.paths
 

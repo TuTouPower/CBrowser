@@ -1,10 +1,11 @@
 """Startup reaps only positively owned transient helpers using real Docker."""
 
-import os
 import uuid
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
 from cbrowser.supervisor.path_validator import PathValidator
@@ -12,9 +13,9 @@ from cbrowser.supervisor.path_validator import PathValidator
 
 @pytest.mark.asyncio
 async def test_locked_startup_reaps_helpers_without_touching_other_containers(tmp_path):
-    image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not image:
-        pytest.skip("CBROWSER_RUNTIME_TEST_IMAGE is required")
+    image = require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")[
+        "CBROWSER_RUNTIME_TEST_IMAGE"
+    ]
     assert image.startswith("sha256:") or "@sha256:" in image
     client = docker.from_env()
     client.images.get(image)

@@ -55,6 +55,14 @@ class RecoveryCoordinator:
         self._cleanup_cooldown_until: dict[str, float] = {}
         self._cleanup_attempt_keys: dict[str, tuple[str | None, int]] = {}
 
+    def has_in_flight_task(self, profile_id: str) -> bool:
+        """Whether recovery is in flight for the profile."""
+        return profile_id in self._in_flight_tasks
+
+    def has_reported_dead_instance(self, instance_id: str) -> bool:
+        """Whether a dead instance was already reported."""
+        return instance_id in self._reported_dead_instances
+
     async def close(self) -> None:
         """Cancel pending retries without terminating healthy containers."""
         self._closing = True

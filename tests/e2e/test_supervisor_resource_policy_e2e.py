@@ -6,6 +6,8 @@ import uuid
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.resource_policy import (
     ResourcePolicyConfig,
     ResourcePolicyService,
@@ -15,11 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_stream_test_image(client: docker.DockerClient) -> str:
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    if not stream_img:
-        pytest.skip(
-            "Missing required E2E environment variable: CBROWSER_STREAM_TEST_IMAGE"
-        )
+    stream_img = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
     assert stream_img.startswith("sha256:"), (
         f"CBROWSER_STREAM_TEST_IMAGE must be sha256 immutable digest, got {stream_img}"
     )

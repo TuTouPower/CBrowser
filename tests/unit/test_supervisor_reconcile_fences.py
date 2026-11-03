@@ -62,7 +62,7 @@ async def test_reconcile_does_not_publish_inflight_or_unprotected_pair(
         await lock.acquire()
     try:
         await core.scan_and_reconcile_existing()
-        assert "p" not in core._sessions
+        assert core.get_session("p") is None
     finally:
         if in_flight:
             lock.release()
@@ -147,7 +147,7 @@ async def test_one_profile_failure_does_not_block_another_restore(
     monkeypatch.setattr(core, "_query_agent_health", health)
     try:
         await core.scan_and_reconcile_existing()
-        assert core._sessions["good"].udp_mux_port == 30001
-        assert "bad" not in core._sessions
+        assert core.get_session("good").udp_mux_port == 30001
+        assert core.get_session("bad") is None
     finally:
         await api.aclose()

@@ -11,7 +11,6 @@ import asyncio
 import json
 import logging
 import re
-import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -24,11 +23,6 @@ from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
@@ -401,11 +395,12 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             await route.abort()
 
         await page_b.route("**/api/v1/events", _abort_events)
+        # Fixed settle window: allow the page's event stream to be interrupted
+        # before the external stop mutation is issued.
         await asyncio.sleep(0.5)
         async with await harness.api_client() as client:
             resp = await client.post(f"/api/v1/profiles/{profile_b}/stop")
             resp.raise_for_status()
-        await asyncio.sleep(1.0)
         await page_b.unroute("**/api/v1/events")
         await page_b.wait_for_selector(
             '[data-testid="session-launch-btn"]', timeout=45000
@@ -631,6 +626,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
         first_frame_start = time.monotonic()
         await wait_iframe_stats(page_a, name="A")
         first_frame_ms = int((time.monotonic() - first_frame_start) * 1000)
+        assert first_frame_ms <= 8000, first_frame_ms
 
         page_b = await context.new_page()
         await open_session(page_b, harness, profile_id)
@@ -642,6 +638,8 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
 
         # Remote geometry stays 1920x1080 regardless of the external viewport.
         await page_a.set_viewport_size({"width": 900, "height": 600})
+        # Fixed settle window for a negative assertion: remote geometry must
+        # remain unchanged after the resize propagates.
         await asyncio.sleep(1.0)
         video_a = await iframe_eval(
             page_a,
@@ -652,6 +650,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
         )
         assert video_a == [1920, 1080], video_a
         await page_a.set_viewport_size({"width": 1500, "height": 950})
+        # Fixed settle window for the same negative geometry assertion.
         await asyncio.sleep(1.0)
         video_a2 = await iframe_eval(
             page_a,
@@ -683,6 +682,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
             await asyncio.sleep(0.02)
         input_latency_ms = int((time.monotonic() - t0) * 1000)
         assert value == "1", value
+        assert input_latency_ms <= 3000, input_latency_ms
 
         await prepare_remote_input(browser_container, target_id)
         await iframe_eval(page_a, "document.querySelector('#overlayInput')?.focus()")
@@ -733,6 +733,8 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
         assert "START_AUDIO" in messages_a2
 
         # No client activity/visibility frames are sent to the Gateway.
+        # Fixed settle window for a negative assertion: absence of activity
+        # frames must hold over an interval.
         await asyncio.sleep(1.5)
         sent_payloads = "\n".join(wire.frames_sent)
         assert '"cbrowser":"activity"' not in sent_payloads
@@ -854,11 +856,13 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
         )
         before = await wait_iframe_stats(page, name="before freeze")
         await cdp.send("Page.setWebLifecycleState", {"state": "frozen"})
+        # Fixed frozen dwell window: exercise the lifecycle transition. No
+        # assertion reads state during this interval.
         await asyncio.sleep(1.5)
         await cdp.send("Page.setWebLifecycleState", {"state": "active"})
         after = await wait_iframe_stats(page, name="after resume")
         assert after["tab_id"] == before["tab_id"]
-        assert after["video"]["framesDecoded"] > 0
+        assert after["video"]["framesDecoded"] > before["video"]["framesDecoded"]
 
         initial_hellos = hellos()
         assert initial_hellos, "session never sent an official HELLO"
@@ -1068,7 +1072,6 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
             )
         finally:
             harness.gateway_container.start()
-            await asyncio.sleep(1.0)
 
         _save(
             tmp_path,

@@ -18,6 +18,60 @@ from cbrowser.services.profile_service import ProfileService
 from pydantic import SecretStr
 
 
+async def _wait_until(predicate, timeout: float = 5.0) -> None:
+    """Yield to the loop until predicate is true, without fixed sleeps."""
+
+    async def poll() -> None:
+        while not predicate():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+class ManualClock:
+    """Deterministic sleep seam injected into the coordinator module."""
+
+    def __init__(self) -> None:
+        self.delays: list[float] = []
+
+    async def sleep(self, delay: float) -> None:
+        self.delays.append(delay)
+        await asyncio.sleep(0)
+
+
+class _ClockAsyncio:
+    def __init__(self, clock: ManualClock) -> None:
+        self._clock = clock
+
+    def __getattr__(self, name: str):
+        return getattr(asyncio, name)
+
+    async def sleep(self, delay: float) -> None:
+        await self._clock.sleep(delay)
+
+
+def _inject_clock(monkeypatch) -> ManualClock:
+    import cbrowser.api.runtime_coordinator as coordinator_module
+
+    clock = ManualClock()
+    monkeypatch.setattr(coordinator_module, "asyncio", _ClockAsyncio(clock))
+    return clock
+
+
+class RecordingBroadcaster(RuntimeEventBroadcaster):
+    """Signals publish completion through the public broadcaster contract."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.published = asyncio.Event()
+
+    async def publish(self, data):
+        try:
+            return await super().publish(data)
+        finally:
+            self.published.set()
+
+
 @pytest.fixture
 async def profile_service(tmp_path: Path):
     db_path = tmp_path / "coord_test.db"
@@ -31,18 +85,20 @@ async def profile_service(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_coordinator_disabled_when_unconfigured(profile_service):
+    broadcaster = RecordingBroadcaster()
     coord = RuntimeCoordinator(
         supervisor_url=None,
         supervisor_token=None,
         profile_service=profile_service,
         require_supervisor=False,
+        event_broadcaster=broadcaster,
     )
     assert not coord.is_enabled()
 
     p = await profile_service.create_profile(ProfileConfig(name="test_p"))
     coord.trigger_reconcile(p.id)
-    await asyncio.sleep(0.05)
     assert coord.get_last_error(p.id) == "Supervisor is not configured"
+    await asyncio.wait_for(broadcaster.published.wait(), timeout=2.0)
 
 
 @pytest.mark.asyncio
@@ -238,19 +294,24 @@ async def test_coordinator_startup_reconciliation(profile_service):
 
 
 @pytest.mark.asyncio
-async def test_reconcile_loop_keeps_retrying_until_convergence(profile_service):
+async def test_reconcile_loop_keeps_retrying_until_convergence(
+    profile_service, monkeypatch
+):
     """With the default (unbounded) retry policy, backoff is bounded but retries
     continue until the Supervisor converges, well past any fixed attempt count."""
+    clock = _inject_clock(monkeypatch)
     p = await profile_service.create_profile(ProfileConfig(name="p_unbounded"))
     await profile_service.set_desired_state(p.id, "running")
 
     attempts = 0
+    converged = asyncio.Event()
 
     async def mock_handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
         if attempts < 15:
             raise httpx.ConnectError("supervisor down")
+        converged.set()
         return httpx.Response(
             200,
             json={
@@ -275,19 +336,21 @@ async def test_reconcile_loop_keeps_retrying_until_convergence(profile_service):
     assert coord.max_retries is None
     await coord.start()
     try:
-        for _ in range(300):
-            if attempts >= 15 and coord.get_last_error(p.id) is None:
-                break
-            await asyncio.sleep(0.01)
+        await asyncio.wait_for(converged.wait(), timeout=5.0)
+        await _wait_until(lambda: coord.get_last_error(p.id) is None)
         assert attempts >= 15, f"expected continued retries, saw {attempts}"
         assert coord.get_last_error(p.id) is None
+        assert clock.delays
     finally:
         await coord.stop()
 
 
 @pytest.mark.asyncio
-async def test_reconcile_loop_respects_explicit_retry_cap(profile_service):
+async def test_reconcile_loop_respects_explicit_retry_cap(
+    profile_service, monkeypatch
+):
     """An explicitly configured cap stops retries after that many failures."""
+    clock = _inject_clock(monkeypatch)
     p = await profile_service.create_profile(ProfileConfig(name="p_capped"))
     await profile_service.set_desired_state(p.id, "running")
 
@@ -310,12 +373,14 @@ async def test_reconcile_loop_respects_explicit_retry_cap(profile_service):
     )
     await coord.start()
     try:
-        for _ in range(300):
-            if p.id not in coord._active_tasks:
-                break
-            await asyncio.sleep(0.01)
+        await _wait_until(
+            lambda: "Reconciliation retry limit reached"
+            in (coord.get_last_error(p.id) or "")
+        )
+        error = coord.get_last_error(p.id)
         assert attempts == 2, f"expected exactly 2 attempts, saw {attempts}"
-        assert p.id not in coord._active_tasks
-        assert coord.get_last_error(p.id) is not None
+        assert error is not None
+        assert "Reconciliation retry limit reached" in error
+        assert clock.delays
     finally:
         await coord.stop()

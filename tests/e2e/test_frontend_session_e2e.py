@@ -16,20 +16,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sys
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 import pytest  # noqa: E402
 from frontend_probe.harness import FrontendTopologyHarness  # noqa: E402
 from gateway_probe.browser_oracle import browser_eval  # noqa: E402
 from playwright.async_api import Page, async_playwright  # noqa: E402
+from wait import poll_until  # noqa: E402
 
 logger = logging.getLogger("cbrowser.frontend_session.e2e")
 
@@ -221,9 +216,14 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
             # 5. AC-003: Close Page A and verify runtime is NOT stopped
             await pageA.close()
 
-            # Wait a moment and check API runtime status
-            await asyncio.sleep(1.0)
-            statsB2 = await get_iframe_webrtc_stats(pageB)
+            # Poll for Page B to remain connected after Page A closes.
+            statsB2 = await poll_until(
+                lambda: get_iframe_webrtc_stats(pageB),
+                lambda stats: bool(stats and stats.get("connected")),
+                timeout=5.0,
+                interval=0.1,
+                description="Page B connected after Page A closes",
+            )
             assert statsB2 and statsB2.get("connected"), "Page B must remain connected"
 
             # Check runtime container status in Supervisor / Docker
@@ -233,11 +233,19 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
                 "Browser container must remain running after closing viewer: "
                 f"{browser_box.status}"
             )
+            assert (
+                browser_box.labels.get("com.cbrowser.instance-id")
+                == profile["runtime_instance_id"]
+            ), "Browser instance changed after closing viewer"
             stream_box = client.containers.get(profile["stream_container"])
             assert stream_box.status == "running", (
                 "Stream container must remain running after closing viewer: "
                 f"{stream_box.status}"
             )
+            assert (
+                stream_box.labels.get("com.cbrowser.instance-id")
+                == profile["runtime_instance_id"]
+            ), "Stream instance changed after closing viewer"
 
             await browser.close()
     finally:
@@ -336,12 +344,13 @@ async def test_frontend_session_independent_input_and_mute(
             await pageA.keyboard.press("Digit1")
             await iframe_eval(pageB, "document.querySelector('#overlayInput')?.focus()")
             await pageB.keyboard.press("Digit2")
-            value = None
-            for _ in range(300):
-                value = await remote_value(browser_container, target_id)
-                if value == "12":
-                    break
-                await asyncio.sleep(0.02)
+            value = await poll_until(
+                lambda: remote_value(browser_container, target_id),
+                lambda current: current == "12",
+                timeout=6.0,
+                interval=0.02,
+                description="remote input from both pages",
+            )
             assert value == "12", value
 
             # Verify remote resize is blocked (AC-004)
@@ -411,15 +420,32 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
             cdp = await context.new_cdp_session(pageA)
             await cdp.send("Page.enable")
             await cdp.send("Page.setWebLifecycleState", {"state": "frozen"})
+            # Fixed frozen dwell window: exercise the lifecycle transition.
+            # No assertion reads state during this interval.
             await asyncio.sleep(1.5)
             await cdp.send("Page.setWebLifecycleState", {"state": "active"})
 
-            # Wait for frames to advance after reactivation
-            await asyncio.sleep(1.0)
-            stats_after = await get_iframe_webrtc_stats(pageA)
+            # Wait for frames to advance after reactivation instead of assuming
+            # a fixed delay is enough.
+            stats_after = await poll_until(
+                lambda: get_iframe_webrtc_stats(pageA),
+                lambda stats: bool(
+                    stats
+                    and stats.get("connected")
+                    and stats.get("video", {}).get("framesDecoded", 0)
+                    > stats_before["video"]["framesDecoded"]
+                ),
+                timeout=15.0,
+                interval=0.2,
+                description="frames after Page Lifecycle resume",
+            )
             assert stats_after and stats_after.get("connected"), (
                 "Page A must remain connected after Page Lifecycle resume"
             )
+            assert (
+                stats_after["video"]["framesDecoded"]
+                > stats_before["video"]["framesDecoded"]
+            ), "Frames must grow after Page Lifecycle resume"
             assert stats_after["tab_id"] == tab_id_before, (
                 "Page A tab identity must be preserved across lifecycle resume"
             )

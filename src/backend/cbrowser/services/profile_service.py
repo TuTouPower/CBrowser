@@ -82,6 +82,11 @@ class ProfileLockRegistry:
     def __init__(self) -> None:
         self._locks: dict[str, asyncio.Lock] = {}
 
+    @property
+    def is_idle(self) -> bool:
+        """Whether no profile lock is currently registered."""
+        return not self._locks
+
     @asynccontextmanager
     async def lock(self, profile_id: str) -> AsyncIterator[None]:
         lock = self._locks.setdefault(profile_id, asyncio.Lock())
@@ -204,6 +209,11 @@ class ProfileService:
         self.runtime_uid = runtime_uid
         self.runtime_gid = runtime_gid
         self._locks = ProfileLockRegistry()
+
+    @property
+    def locks_idle(self) -> bool:
+        """Whether no per-profile lock is registered."""
+        return self._locks.is_idle
 
     async def _replay_if_committed(
         self,

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import socket
@@ -17,19 +16,12 @@ from typing import Any
 
 import httpx
 import jsonschema
+import tempfile
 import pytest
 
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from api_auth import create_auth_context
 
-SCRATCH_DIR = (
-    Path(__file__).resolve().parent.parent.parent / ".scratch" / "t002_implementation"
-)
-SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t002-", dir="/tmp"))
 OPENAPI_SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent.parent
     / "schemas"

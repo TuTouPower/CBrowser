@@ -9,29 +9,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import secrets
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+
+from e2e_env import require_e2e_env
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 logger = logging.getLogger(__name__)
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-BACKEND_DIR = REPO_ROOT / "src" / "backend"
-for p in (str(REPO_ROOT), str(FIXTURES_DIR), str(BACKEND_DIR)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
@@ -232,6 +225,8 @@ async def test_display_profile_size_requires_explicit_apply(
 
         # External viewport resize must never change remote geometry.
         await page.set_viewport_size({"width": 900, "height": 600})
+        # Fixed settle window for a negative assertion: remote geometry must
+        # stay unchanged after the resize has had time to propagate.
         await asyncio.sleep(1.0)
         assert await iframe_video_size(page) == [1280, 720]
         assert_remote_geometry(await remote_geometry(browser_container), 1280, 720)
@@ -281,8 +276,9 @@ async def test_display_profile_size_requires_explicit_apply(
 
 
 def test_stream_entrypoint_rejects_missing_supervised_screen_config() -> None:
-    image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    assert image, "CBROWSER_STREAM_TEST_IMAGE is required"
+    image = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
 
     env = {
         "CBROWSER_PROFILE_ID": "display_probe",

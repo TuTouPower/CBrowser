@@ -533,11 +533,11 @@ async def test_profile_locks_are_released_after_operations(tmp_path: Path) -> No
     _write_state(profile_dir)
     try:
         await service.set_desired_state("p1", "stopped")
-        assert service._locks._locks == {}
+        assert service.locks_idle
         await service.duplicate_profile("p1", include_browser_state=True)
-        assert service._locks._locks == {}
+        assert service.locks_idle
         await service.delete_profile("p1")
-        assert service._locks._locks == {}
+        assert service.locks_idle
     finally:
         await engine.dispose()
 

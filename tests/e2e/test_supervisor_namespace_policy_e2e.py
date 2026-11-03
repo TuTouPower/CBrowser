@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
@@ -43,15 +42,15 @@ from typing import Any
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 
 logger = logging.getLogger("cbrowser.test.namespace_policy_e2e")
 
 
 def _get_required_env_image(env_var: str) -> str:
-    val = os.environ.get(env_var)
-    if not val:
-        pytest.skip(f"Env var {env_var} not set; skipping policy e2e.")
+    val = require_e2e_env(env_var)[env_var]
     if not (val.startswith("sha256:") or "@sha256:" in val):
         pytest.fail(f"Env var {env_var} must be immutable digest, got: {val}")
     return val
@@ -171,7 +170,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.3)
     assert proc.poll() is None, "Gate exited prematurely while marker absent"
     assert not out_file.exists(), "Target app ran before marker appeared!"
 
@@ -190,7 +188,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps({"instance_id": "other-inst", "role": role, "status": "ready"}),
         encoding="utf-8",
@@ -207,7 +204,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps({"instance_id": instance_id, "role": "stream", "status": "ready"}),
         encoding="utf-8",
@@ -224,7 +220,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps(
             {"instance_id": instance_id, "role": role, "status": "initializing"}
@@ -243,7 +238,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.2)
     assert proc_valid.poll() is None
     assert not out_file.exists()
 
@@ -267,7 +261,7 @@ def _wait_for_server_ready(container: docker.models.containers.Container) -> Non
         logs = container.logs().decode("utf-8", errors="replace")
         if "READY" in logs:
             return
-        time.sleep(0.1)
+        time.sleep(0.05)
     raise TimeoutError(f"Server {container.name} did not become READY in 10s")
 
 
@@ -544,19 +538,47 @@ def test_kernel_network_policy_real_netns(
     v6_c = target_c.attrs["NetworkSettings"]["Networks"][primary_net.name].get(
         "GlobalIPv6Address"
     )
-    if v6_c:
-        code_v6_c, out_v6_c = _run_python_probe(
-            target_a, v6_c, 8888, timeout=1.0, family=6
-        )
-        assert code_v6_c != 0, f"IPv6 ULA on peer C not blocked: {out_v6_c}"
-    if v6_b:
-        code_v6_b, out_v6_b = _run_python_probe(
-            target_a, v6_b, 8888, timeout=1.0, family=6
-        )
-        assert code_v6_b != 0, f"IPv6 ULA on peer B not blocked: {out_v6_b}"
+    assert v6_b and v6_c, "IPv6 ULA addresses must be present for fail-closed probe"
+    code_v6_c, out_v6_c = _run_python_probe(
+        target_a, v6_c, 8888, timeout=1.0, family=6
+    )
+    assert code_v6_c != 0, f"IPv6 ULA on peer C not blocked: {out_v6_c}"
+    code_v6_b, out_v6_b = _run_python_probe(
+        target_a, v6_b, 8888, timeout=1.0, family=6
+    )
+    assert code_v6_b != 0, f"IPv6 ULA on peer B not blocked: {out_v6_b}"
 
     # 8. Verify other namespace (Target B) was NOT modified
     code_b_to_c, out_b_to_c = _run_python_probe(target_b, ip_c, 9999, timeout=1.5)
     assert code_b_to_c == 0 and "OTHER_PONG" in out_b_to_c, (
         f"Target B namespace was modified by helper! Out: {out_b_to_c}"
     )
+
+
+def test_wait_for_server_ready_polls_until_log_marker() -> None:
+    class FakeContainer:
+        name = "fake-ready-container"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def logs(self) -> bytes:
+            self.calls += 1
+            return b"" if self.calls == 1 else b"READY\n"
+
+    container = FakeContainer()
+    _wait_for_server_ready(container)  # type: ignore[arg-type]
+    assert container.calls == 2
+
+
+def test_wait_for_server_ready_times_out(monkeypatch) -> None:
+    class SilentContainer:
+        name = "silent-container"
+
+        def logs(self) -> bytes:
+            return b""
+
+    clock = iter([0.0, 11.0])
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    with pytest.raises(TimeoutError, match="did not become READY"):
+        _wait_for_server_ready(SilentContainer())  # type: ignore[arg-type]

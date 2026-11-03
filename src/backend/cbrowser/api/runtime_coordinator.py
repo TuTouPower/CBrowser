@@ -242,6 +242,15 @@ class RuntimeCoordinator:
         except Exception as e:  # noqa: BLE001 - top-level startup task boundary prevents worker crash
             logger.error("Failed to run startup reconciliation scan: %s", e)
 
+    def has_active_task(self, profile_id: str) -> bool:
+        """Whether a runtime task is active for the profile."""
+        return profile_id in self._active_tasks
+
+    @property
+    def publish_task_count(self) -> int:
+        """Number of in-flight publish tasks."""
+        return len(self._publish_tasks)
+
     async def stop(self) -> None:
         self._running = False
         tasks = list(self._active_tasks.values())

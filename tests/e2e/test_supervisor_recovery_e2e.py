@@ -21,7 +21,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
-import importlib.util
 import json
 import logging
 import os
@@ -38,63 +37,33 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from unittest.mock import MagicMock
+
+from e2e_env import free_udp_port_span, require_e2e_env
+from api_auth import create_auth_context
 from cbrowser.domain.models import RuntimeEventReportRequest
 from cbrowser.runtime_agent.event_storage import atomic_write_json
-from cbrowser.supervisor.agent_credentials import AgentCredentials
 from gateway_probe.topology import cleanup_prefixed_resources
-
-_gw_fixture_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "gateway_fixture.py"
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
 )
-_gw_spec = importlib.util.spec_from_file_location("gateway_fixture", _gw_fixture_path)
-_gw_mod = importlib.util.module_from_spec(_gw_spec)
-sys.modules["gateway_fixture"] = _gw_mod
-_gw_spec.loader.exec_module(_gw_mod)
-SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
-
-_off_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "offline_fixture.py"
-)
-_off_spec = importlib.util.spec_from_file_location("offline_fixture", _off_path)
-_off_mod = importlib.util.module_from_spec(_off_spec)
-sys.modules["offline_fixture"] = _off_mod
-_off_spec.loader.exec_module(_off_mod)
-RealSupervisorContainer = _off_mod.RealSupervisorContainer
-
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
 
 logger = logging.getLogger(__name__)
 
 
 def get_e2e_prerequisites() -> tuple[str, str, Path, Path]:
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -284,10 +253,11 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -319,6 +289,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         assert r_des.status_code == 200
 
     # 2. Spawn Supervisor container
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -337,6 +308,8 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -411,7 +384,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             assert r_stat.status_code == 200
             stat_data = r_stat.json()
             assert stat_data["observed_state"] == "running"
-            assert stat_data["udp_mux_port"] == 30000
+            assert stat_data["udp_mux_port"] == udp_base
 
             # 5. Real Browser Normal Exit via in-container Agent UDS /control RPC
             # Execute python inside browser container to trigger graceful close
@@ -504,10 +477,11 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -546,6 +520,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             json={"desired_state": "running"},
         )
 
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor_inv.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -564,6 +539,8 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -585,7 +562,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                     pass
                 await asyncio.sleep(0.1)
 
-            # Start Profile A (allocates 30000)
+            # Start Profile A (allocates the run-local base port)
             res_a = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": p_a, "config_version": 1},
@@ -594,12 +571,12 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             start_a = res_a.json()
             port_a = start_a["udp_mux_port"]
             inst_a = start_a["runtime_instance_id"]
-            assert port_a == 30000
+            assert port_a == udp_base
             created_containers.extend(
                 [start_a["browser_container"], start_a["stream_container"]]
             )
 
-            # Start Profile B (allocates 30001)
+            # Start Profile B (allocates base + 1)
             res_b = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": p_b, "config_version": 1},
@@ -608,7 +585,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             start_b = res_b.json()
             port_b = start_b["udp_mux_port"]
             inst_b = start_b["runtime_instance_id"]
-            assert port_b == 30001
+            assert port_b == udp_base + 1
             created_containers.extend(
                 [start_b["browser_container"], start_b["stream_container"]]
             )
@@ -635,7 +612,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 await asyncio.sleep(0.1)
 
             # Query status from resurrected supervisor: ports MUST be identical
-            # (30000, 30001)
+            # (base, base + 1)
             stat_a = (
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_a}/status")
             ).json()
@@ -643,9 +620,9 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_b}/status")
             ).json()
             assert stat_a["observed_state"] == "running"
-            assert stat_a["udp_mux_port"] == 30000
+            assert stat_a["udp_mux_port"] == udp_base
             assert stat_b["observed_state"] == "running"
-            assert stat_b["udp_mux_port"] == 30001
+            assert stat_b["udp_mux_port"] == udp_base + 1
 
             # Stop both cleanly
             await sup_client2.post(
@@ -750,10 +727,11 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         CBROWSER_STREAM_IMAGE=stream_image,
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_url, sup_token_file),
     )
     await gateway.start()
 
@@ -783,6 +761,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             json={"desired_state": "running"},
         )
 
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor_spool_authority.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -801,6 +780,8 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -1065,7 +1046,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             cleanup_errors.append(exc)
         try:
             await gateway.stop()
-        except BaseException as exc:  # noqa: BLE001 - Best-effort gateway fixture stop during teardown
+        except BaseException as exc:  # noqa: BLE001 - Best-effort gateway stop during teardown
             logger.warning(
                 "Teardown error stopping gateway: error_type=%s",
                 type(exc).__name__,
@@ -1088,7 +1069,74 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             )
             cleanup_errors.append(exc)
 
-        if cleanup_errors:
-            if len(cleanup_errors) == 1:
-                raise cleanup_errors[0]
-            raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
+
+    if cleanup_errors:
+        if len(cleanup_errors) == 1:
+            raise cleanup_errors[0]
+        raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
+
+
+def test_real_api_and_sup_finally_propagates_cleanup_error_and_reaps_remaining(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """recovery E2E real_api_and_sup propagates wait error and cleans resources."""
+    e2e_mod = sys.modules[__name__]
+
+    orig_popen = subprocess.Popen
+    sleep_cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
+    spawned_procs = []
+
+    def fake_popen(*args, **kwargs):
+        p = orig_popen(
+            sleep_cmd,
+            stdout=kwargs.get("stdout"),
+            stderr=kwargs.get("stderr"),
+        )
+        spawned_procs.append(p)
+        return p
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        httpx.Client,
+        "get",
+        lambda self, url, *a, **kw: httpx.Response(
+            503, request=httpx.Request("GET", url)
+        ),
+    )
+
+    fake_auth = MagicMock()
+    fake_auth.env = {}
+    fake_auth.login_sync.return_value = {"Authorization": "Bearer test"}
+    monkeypatch.setattr(e2e_mod, "create_auth_context", lambda *a, **kw: fake_auth)
+
+    fn = getattr(real_api_and_sup, "__wrapped__", real_api_and_sup)
+    gen = fn(tmp_path)
+    ctx = next(gen)
+
+    # Spawn two managed procs
+    p1 = orig_popen(sleep_cmd)
+    p2 = orig_popen(sleep_cmd)
+    spawned_procs.extend([p1, p2])
+
+    # p1 fails on wait
+    def failing_wait(timeout=None):
+        raise subprocess.TimeoutExpired(cmd=["p1"], timeout=timeout or 2.0)
+
+    monkeypatch.setattr(p1, "wait", failing_wait)
+    ctx["managed_procs"].extend([p1, p2])
+
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            try:
+                next(gen)
+            except StopIteration:
+                pass
+
+        # Verify p2 was still reaped (best-effort cleanup)
+        assert p2.poll() is not None, "p2 must be reaped despite p1 error"
+    finally:
+        monkeypatch.undo()
+        for p in spawned_procs:
+            if p.poll() is None:
+                p.kill()
+                p.wait(timeout=2.0)

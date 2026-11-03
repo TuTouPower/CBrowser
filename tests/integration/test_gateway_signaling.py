@@ -2,7 +2,6 @@
 
 import asyncio
 import secrets
-import sys
 from pathlib import Path
 
 import aiohttp
@@ -15,7 +14,6 @@ from cbrowser.stream_agent.protocol import (
     GatewayTunnelEnvelope,
 )
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_gateway_fixtures import GatewayHarness
 
 

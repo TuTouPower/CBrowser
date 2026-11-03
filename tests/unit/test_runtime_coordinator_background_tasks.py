@@ -44,14 +44,14 @@ async def test_publish_change_later_tracks_task_and_logs_failure(
     coordinator.publish_profile_change = failing_publish
     coordinator.publish_profile_change_later(profile.id)
 
-    assert len(coordinator._publish_tasks) == 1
+    assert coordinator.publish_task_count == 1
     for _ in range(100):
         if not coordinator._publish_tasks:
             break
         await asyncio.sleep(0.01)
 
     assert attempts == [profile.id]
-    assert coordinator._publish_tasks == set()
+    assert coordinator.publish_task_count == 0
     assert "background publish exploded" in caplog.text
 
 
@@ -68,8 +68,8 @@ async def test_stop_cancels_pending_publish_tasks(profile_service) -> None:
 
     coordinator.publish_profile_change = slow_publish
     coordinator.publish_profile_change_later("p_slow")
-    assert len(coordinator._publish_tasks) == 1
+    assert coordinator.publish_task_count == 1
 
     await coordinator.stop()
 
-    assert coordinator._publish_tasks == set()
+    assert coordinator.publish_task_count == 0

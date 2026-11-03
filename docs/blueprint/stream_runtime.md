@@ -46,7 +46,6 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 - tests/e2e/test_stream_runtime_e2e.py：官方 Mac Chrome、真实 Browser/Stream 整镜像、双音视频、复制标签、刷新、关闭首 tab、可见性暂停/恢复、Viewer 断线 resume、组合输入和运行隔离；拓扑无 coturn。
 - tests/e2e/test_stream_x11_keymap_e2e.py：真实 Xvfb 键位复用、按住槽保护。
-- tests/e2e/test_stream_client_identity_e2e.py：Chrome Web Locks 身份与重连。
 - tests/e2e/test_stream_selkies_tokens_e2e.py：真实 Stream 镜像验证双模式关闭（403 负例 + WebRTC 正例）、直连信令无/错 token 4001、Agent 注入 controller token 后页面以 controller 接入、双 tab 共存与同名 tab 驱逐、resume 保持；并以真实 Gateway 拓扑（无头 Chrome）验证安全模式下出帧与输入、页面与所有容器日志不含 master token。
 
 镜像参数必须是不可变 sha256 ID，完整媒体测试还需已初始化只读 Linux 引擎缓存。临时目录预先创建，pytest 显式 --basetemp 与 cache_dir 位于允许写域。公网候选与原生 Linux x86 执行记为 NOT_RUN / USER_WAIVED；容量、延迟和压力验证不在本阶段结果中提前打勾。

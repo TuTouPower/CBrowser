@@ -17,15 +17,23 @@ from typing import Any
 
 import aiohttp
 import pytest
+
+from e2e_env import require_e2e_env
 from aiohttp import WSMsgType
+from wait import poll_until
 
 logger = logging.getLogger("t007_stream_tokens")
 
 # Read immutable image ID from environment
-STREAM_IMAGE = os.environ.get(
-    "CBROWSER_STREAM_TEST_IMAGE",
-    "sha256:d54a03b61f9d156ffff950f7a9a3aa0a00a2666daf27a7d69f3f35698610a726",
-)
+STREAM_IMAGE = os.environ.get("CBROWSER_STREAM_TEST_IMAGE", "")
+
+
+@pytest.fixture(autouse=True)
+def _require_stream_image():
+    global STREAM_IMAGE
+    STREAM_IMAGE = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
 
 
 def find_free_port() -> int:
@@ -94,7 +102,7 @@ asyncio.run(run_server())
             "--name",
             self.container_name,
             "-p",
-            f"{self.port}:{self.port}",
+            f"127.0.0.1:{self.port}:{self.port}",
             "--read-only",
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=64m",
@@ -114,7 +122,7 @@ asyncio.run(run_server())
             subprocess.run, cmd, capture_output=True, text=True, check=True
         )
         # Bounded wait for SERVER_READY in logs
-        for _ in range(60):
+        async def read_logs() -> str:
             res = await asyncio.to_thread(
                 subprocess.run,
                 ["docker", "logs", self.container_name],
@@ -122,11 +130,17 @@ asyncio.run(run_server())
                 text=True,
                 check=False,
             )
-            logs = res.stdout
-            if "SERVER_READY" in logs:
-                break
-            await asyncio.sleep(0.2)
-        else:
+            return res.stdout
+
+        try:
+            await poll_until(
+                read_logs,
+                lambda logs: "SERVER_READY" in logs,
+                timeout=12.0,
+                interval=0.2,
+                description=f"SERVER_READY in {self.container_name} logs",
+            )
+        except TimeoutError:
             self.stop()
             raise RuntimeError(f"Container {self.container_name} failed to reach ready")
 
@@ -521,21 +535,19 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
             await page.goto(stream_url, wait_until="domcontentloaded")
 
             # Wait for WebRTC decode
-            deadline = asyncio.get_running_loop().time() + 25.0
-            decoded = False
-            while asyncio.get_running_loop().time() < deadline:
-                stats = await page.evaluate(
+            await poll_until(
+                lambda: page.evaluate(
                     "window.__getWebRTCStats ? window.__getWebRTCStats() : null"
-                )
-                if (
+                ),
+                lambda stats: bool(
                     stats
                     and stats.get("video")
                     and stats["video"].get("framesDecoded", 0) > 0
-                ):
-                    decoded = True
-                    break
-                await asyncio.sleep(0.3)
-            assert decoded, "Page failed to decode WebRTC video frames"
+                ),
+                timeout=25.0,
+                interval=0.3,
+                description="WebRTC video decode",
+            )
 
             # Verify input through overlayInput to remote browser probe_input
             async def prepare_remote_input() -> None:
@@ -559,12 +571,18 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
             await prepare_remote_input()
             await page.locator("#overlayInput").focus()
             await page.keyboard.press("Digit1")
-            for _ in range(30):
-                if await remote_value() == "1":
-                    break
-                await asyncio.sleep(0.1)
+            try:
+                value = await poll_until(
+                    remote_value,
+                    lambda current: current == "1",
+                    timeout=3.0,
+                    interval=0.1,
+                    description="remote key input",
+                )
+            except TimeoutError:
+                value = await remote_value()
 
-            assert await remote_value() == "1", "Key input did not reach remote browser"
+            assert value == "1", "Key input did not reach remote browser"
 
             # Check page visible content and responses do not leak master_token
             page_content = await page.content()

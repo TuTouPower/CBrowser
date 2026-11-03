@@ -16,6 +16,7 @@ import inspect
 import json
 import logging
 import os
+import tempfile
 import secrets
 import shutil
 import socket
@@ -31,6 +32,8 @@ from typing import Any
 
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 import uvicorn
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
@@ -41,18 +44,24 @@ from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
 logger = logging.getLogger(__name__)
 
-IMAGE_TAG = os.environ.get(
-    "CBROWSER_RUNTIME_TEST_IMAGE", "cbrowser-t003-impl-runtime:latest"
-)
+IMAGE_TAG = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
 ACTIVE_TEST_NETWORK: str | None = None
-SCRATCH_ROOT = Path(os.path.abspath(".scratch/t003_implementation/tmp/e"))
-ENGINE_CACHE = Path(
-    os.environ.get(
-        "CBROWSER_RUNTIME_ENGINE_CACHE", ".scratch/t003_implementation/tmp/engine-cache"
+SCRATCH_ROOT = Path(tempfile.mkdtemp(prefix="cbrowser-t003-e2e-", dir="/tmp"))
+ENGINE_CACHE = Path(os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")).resolve()
+LOGS_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t003-logs-", dir="/tmp"))
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_runtime_prerequisites():
+    global IMAGE_TAG, ENGINE_CACHE
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
     )
-).resolve()
-LOGS_DIR = Path(os.path.abspath(".scratch/t003_implementation/tmp/logs"))
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    IMAGE_TAG = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    ENGINE_CACHE = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _free_port() -> int:
@@ -180,7 +189,7 @@ window.onload = async () => {{
 
 
 @pytest.fixture(scope="session")
-def http_server():
+def http_server(_require_runtime_prerequisites):
     """Serve synthetic fixtures on a dedicated Docker bridge, without host ports."""
     global ACTIVE_TEST_NETWORK
     run_id = uuid.uuid4().hex[:10]
@@ -1408,7 +1417,7 @@ async def test_t008_download_reconcile_after_agent_restart(
     """t008 AC-002/AC-004: real download, Supervisor forwarder, API ingest, scan."""
     run_id = uuid.uuid4().hex[:8]
     c_name = f"cbrowser-t008-reconcile-{run_id}"
-    dir_work = Path(os.path.abspath(".scratch/t008_e2e")) / f"t008_{run_id}"
+    dir_work = SCRATCH_ROOT / f"t008_{run_id}"
     profile_id = "profile_reconcile"
     artifact_root = dir_work / "artifacts"
     downloads = artifact_root / profile_id / "downloads"
@@ -2620,7 +2629,7 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
 async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> None:
     """t013 AC-002/AC-004: stopped source state copy, clone launches with cookies."""
     run_id = uuid.uuid4().hex[:8]
-    dir_work = Path(os.path.abspath(".scratch/t013_e2e")) / f"t013_{run_id}"
+    dir_work = SCRATCH_ROOT / f"t013_{run_id}"
     profiles_root = dir_work / "profiles"
     source_dir = profiles_root / "source" / "profile"
     source_dir.mkdir(parents=True)

@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import secrets
 import uuid
 from dataclasses import asdict, is_dataclass
@@ -11,6 +10,8 @@ from types import SimpleNamespace
 import docker
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.resource_policy import (
@@ -35,11 +36,9 @@ async def query_decision(app, token):
 
 @pytest.mark.asyncio
 async def test_monitor_samples_real_container_without_blocking_loop(tmp_path):
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    if not stream_img:
-        pytest.skip(
-            "Missing required E2E environment variable: CBROWSER_STREAM_TEST_IMAGE"
-        )
+    stream_img = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
     assert stream_img.startswith("sha256:"), (
         f"CBROWSER_STREAM_TEST_IMAGE must be sha256 immutable digest, got {stream_img}"
     )

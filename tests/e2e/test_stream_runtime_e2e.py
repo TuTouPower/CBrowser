@@ -9,6 +9,7 @@ import base64
 import json
 import logging
 import os
+import socket
 import stat
 import subprocess
 import time
@@ -18,8 +19,9 @@ from pathlib import Path
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from playwright.async_api import async_playwright
+from e2e_env import require_e2e_env
+from wait import poll_until, wait_until
 
 logger = logging.getLogger(__name__)
 
@@ -33,37 +35,48 @@ WEB_LOCK_SHIM_JS = (FIXTURES / "stream_probe" / "web_lock_shim.js").read_text(
 )
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-BROWSER_IMAGE = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
-STREAM_IMAGE = os.environ.get("CBROWSER_STREAM_TEST_IMAGE", "")
-ENGINE_CACHE = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")
 
 RUN_LABEL = "cbrowser-t004-e2e"
+
+
+def _free_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+def _free_udp_port(start: int = 30000, end: int = 30991) -> int:
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError("No free UDP mux port")
 
 
 
 async def wait_for_viewer_count(gateway: "GatewayMockServer", expected: int,
                                 timeout: float = 15.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if len(gateway.viewers) == expected:
-            return
-        await asyncio.sleep(0.1)
-    raise AssertionError(
-        f"Expected {expected} active viewers, got {len(gateway.viewers)}"
+    await wait_until(
+        lambda: len(gateway.viewers) == expected,
+        timeout=timeout,
+        interval=0.1,
+        description=f"{expected} active viewers",
     )
 
 
 async def wait_for_page_stats(page, stats_script: str, predicate, *,
                               timeout: float = 15.0,
                               description: str = "page stats"):
-    deadline = time.monotonic() + timeout
-    last = None
-    while time.monotonic() < deadline:
-        last = await page.evaluate(stats_script)
-        if last and predicate(last):
-            return last
-        await asyncio.sleep(0.1)
-    raise AssertionError(f"Timed out waiting for {description}: {last}")
+    return await poll_until(
+        lambda: page.evaluate(stats_script),
+        lambda value: bool(value) and predicate(value),
+        timeout=timeout,
+        interval=0.1,
+        description=description,
+    )
 
 
 async def wait_for_log(log_reader, needle: str, *, offset: int = 0,
@@ -455,9 +468,17 @@ asyncio.run(main())
 async def test_stream_runtime_direct_media_matrix(
     tmp_path: Path,
 ):
-    assert BROWSER_IMAGE.startswith("sha256:"), "Immutable Browser image required"
-    assert STREAM_IMAGE.startswith("sha256:"), "Immutable Stream image required"
-    assert Path(ENGINE_CACHE).is_dir(), "Read-only Linux engine cache required"
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    assert browser_image.startswith("sha256:"), "Immutable Browser image required"
+    assert stream_image.startswith("sha256:"), "Immutable Stream image required"
     """
     Validates AC-001 through AC-006 with strengthened security contract:
     - Real Browser Runtime container + real Stream Runtime container.
@@ -525,7 +546,7 @@ async def test_stream_runtime_direct_media_matrix(
             "chmod",
             "-v",
             f"{x11_dir}:/x11",
-            BROWSER_IMAGE,
+            browser_image,
             "1777",
             "/x11",
         ],
@@ -550,14 +571,15 @@ async def test_stream_runtime_direct_media_matrix(
     snap_path.write_text(json.dumps(snapshot.model_dump(), indent=2))
     os.chmod(snap_path, 0o644)
 
+    gw_port = _free_tcp_port()
+    stream_http_port = _free_tcp_port()
     gateway = GatewayMockServer(
         agent_token=agent_token,
         profile_id=profile_id,
         stream_container=stream_cname,
-        upstream_http="http://127.0.0.1:18097",
+        upstream_http=f"http://127.0.0.1:{stream_http_port}",
     )
-    gw_port = DEFAULT_GATEWAY_PORT
-    udp_mux_port = 30097
+    udp_mux_port = _free_udp_port()
 
     created_containers = []
     clipboard_process = None
@@ -596,7 +618,7 @@ async def test_stream_runtime_direct_media_matrix(
             "--tmpfs",
             "/home/cbrowser:rw,mode=0755,size=64m",
             "-v",
-            f"{ENGINE_CACHE}:/data/engine-cache:ro",
+            f"{engine_cache}:/data/engine-cache:ro",
             "-v",
             f"{host_profile_dir}:/data/profiles/{profile_id}/profile",
             "-v",
@@ -609,7 +631,7 @@ async def test_stream_runtime_direct_media_matrix(
             f"{x11_dir}:/tmp/.X11-unix",
             "-v",
             f"{pulse_dir}:/pulse",
-            BROWSER_IMAGE,
+            browser_image,
             "--profile-id",
             profile_id,
             "--runtime-instance-id",
@@ -637,14 +659,16 @@ async def test_stream_runtime_direct_media_matrix(
         pulse_socket_file = pulse_dir / "pulse.sock"
         xauth_file = host_runtime_dir / "Xauthority"
 
-        for _ in range(50):
-            if (
+        await wait_until(
+            lambda: (
                 x11_socket_file.exists()
                 and pulse_socket_file.exists()
                 and xauth_file.exists()
-            ):
-                break
-            await asyncio.sleep(0.2)
+            ),
+            timeout=10.0,
+            interval=0.2,
+            description="Browser X11, PulseAudio and Xauthority sockets",
+        )
 
         assert x11_socket_file.exists(), "Browser X11 socket was not created"
         assert pulse_socket_file.exists(), "Browser PulseAudio socket was not created"
@@ -660,12 +684,13 @@ async def test_stream_runtime_direct_media_matrix(
         )
         browser_hostname = b_inspect.stdout.strip()
 
-        for _ in range(150):
-            if (host_runtime_dir / "agent.sock").exists() and (
-                host_runtime_dir / "runner_info.json"
-            ).is_file():
-                break
-            await asyncio.sleep(0.2)
+        await wait_until(
+            lambda: (host_runtime_dir / "agent.sock").exists()
+            and (host_runtime_dir / "runner_info.json").is_file(),
+            timeout=30.0,
+            interval=0.2,
+            description="Browser runner_info.json",
+        )
         assert (host_runtime_dir / "runner_info.json").is_file(), (
             "Runner did not become ready"
         )
@@ -746,20 +771,22 @@ async def test_stream_runtime_direct_media_matrix(
             "-e",
             "CBROWSER_X11_SOCKET=/tmp/.X11-unix/X99",
             "-e",
-            "SELKIES_PORT=18097",
+            f"SELKIES_PORT={stream_http_port}",
             # Direct mode: no coturn container and no TURN configuration.
             "-e",
             "CBROWSER_CONFIG_VERSION=1",
-            STREAM_IMAGE,
+            stream_image,
         ]
         await asyncio.to_thread(subprocess.run, stream_cmd, check=True)
         created_containers.append(stream_cname)
 
         # Wait for Stream Agent outbound registration with Gateway
-        for _ in range(50):
-            if profile_id in gateway.registered_agents:
-                break
-            await asyncio.sleep(0.2)
+        await wait_until(
+            lambda: profile_id in gateway.registered_agents,
+            timeout=10.0,
+            interval=0.2,
+            description="StreamAgent Gateway registration",
+        )
 
         assert profile_id in gateway.registered_agents, (
             "StreamAgent failed to register with Gateway"
@@ -865,21 +892,21 @@ async def test_stream_runtime_direct_media_matrix(
             await wait_for_viewer_count(gateway, 2)
 
             # Wait for WebRTC media decoding on Tab 1 and Tab 2
-            stats1 = None
-            stats2 = None
-            for _ in range(30):
-                await asyncio.sleep(1.0)
-                stats1 = await page1.evaluate(stats_script)
-                stats2 = await page2.evaluate(stats_script)
-                if (
-                    stats1
-                    and stats1.get("video")
-                    and stats2
-                    and stats2.get("video")
-                    and stats1["video"]["framesDecoded"] > 0
-                    and stats2["video"]["framesDecoded"] > 0
-                ):
-                    break
+            stats1, stats2 = await poll_until(
+                lambda: asyncio.gather(
+                    page1.evaluate(stats_script),
+                    page2.evaluate(stats_script),
+                ),
+                lambda pair: (
+                    bool(pair[0] and pair[0].get("video"))
+                    and bool(pair[1] and pair[1].get("video"))
+                    and pair[0]["video"]["framesDecoded"] > 0
+                    and pair[1]["video"]["framesDecoded"] > 0
+                ),
+                timeout=30.0,
+                interval=1.0,
+                description="both tabs decoding video",
+            )
 
             assert stats1 and stats1.get("video"), "Tab 1 video stats missing"
             assert stats2 and stats2.get("video"), "Tab 2 video stats missing"
@@ -901,15 +928,19 @@ async def test_stream_runtime_direct_media_matrix(
                 await page.evaluate("""() => window.postMessage({
                     type:'pipelineControl', pipeline:'audio', enabled:true
                 }, location.origin)""")
-            for _ in range(50):
-                stats1 = await page1.evaluate(stats_script)
-                stats2 = await page2.evaluate(stats_script)
-                if all(
+            stats1, stats2 = await poll_until(
+                lambda: asyncio.gather(
+                    page1.evaluate(stats_script),
+                    page2.evaluate(stats_script),
+                ),
+                lambda pair: all(
                     st and st.get("audio") and st["audio"]["totalAudioEnergy"] > 0
-                    for st in (stats1, stats2)
-                ):
-                    break
-                await asyncio.sleep(0.1)
+                    for st in pair
+                ),
+                timeout=5.0,
+                interval=0.1,
+                description="non-silent audio on both tabs",
+            )
             assert all(
                 st and st.get("audio") and st["audio"]["totalAudioEnergy"] > 0
                 for st in (stats1, stats2)
@@ -976,11 +1007,14 @@ async def test_stream_runtime_direct_media_matrix(
                 }""", state)
 
             await set_visibility(page2, "hidden")
+            # Fixed settle window so the hidden view stops its pipeline before
+            # the frame deltas are measured.
             await asyncio.sleep(1.5)
             page2_hidden_start = (await page2.evaluate(stats_script))["video"][
                 "framesDecoded"
             ]
             stats1_before_hidden = await page1.evaluate(stats_script)
+            # Fixed 2.5 s sampling window: frame growth is the measured value.
             await asyncio.sleep(2.5)
             page2_hidden_end = (await page2.evaluate(stats_script))["video"][
                 "framesDecoded"
@@ -1030,19 +1064,17 @@ async def test_stream_runtime_direct_media_matrix(
                 await page2.evaluate(stats_script)
             )["video"]["framesDecoded"]
             await disconnect_ws.close()
-            resumed_stats = None
-            for _ in range(150):
-                current = await page2.evaluate(stats_script)
-                if (
-                    current
-                    and current.get("video")
-                    and current["video"]["framesDecoded"]
-                    > frames_before_disconnect
+            resumed_stats = await poll_until(
+                lambda: page2.evaluate(stats_script),
+                lambda current: (
+                    bool(current and current.get("video"))
+                    and current["video"]["framesDecoded"] > frames_before_disconnect
                     and len(gateway.viewers) == 2
-                ):
-                    resumed_stats = current
-                    break
-                await asyncio.sleep(0.2)
+                ),
+                timeout=30.0,
+                interval=0.2,
+                description="Page 2 resumed after viewer disconnect",
+            )
             assert resumed_stats, "Page 2 did not resume after viewer disconnect"
             assert (
                 await page2.evaluate("sessionStorage.getItem('selkies_tab_id')")
@@ -1145,16 +1177,17 @@ async def test_stream_runtime_direct_media_matrix(
             )
 
             # Wait for third page to connect and decode media
-            stats3 = None
-            for _ in range(30):
-                await asyncio.sleep(1.0)
-                stats3 = await page3.evaluate(stats_script)
-                if (
-                    stats3
-                    and stats3.get("video")
-                    and stats3["video"]["framesDecoded"] > 0
-                ):
-                    break
+            stats3 = await poll_until(
+                lambda: page3.evaluate(stats_script),
+                lambda stats: bool(
+                    stats
+                    and stats.get("video")
+                    and stats["video"]["framesDecoded"] > 0
+                ),
+                timeout=30.0,
+                interval=1.0,
+                description="third tab decoding video",
+            )
 
             assert stats3 and stats3.get("video"), "Tab 3 video stats missing"
             assert stats3["video"]["framesDecoded"] > 0, "Tab 3 frames not decoded"
@@ -1234,10 +1267,12 @@ async def test_stream_runtime_direct_media_matrix(
 
             # Closing the clone preserves both original viewers.
             await page3.close()
-            for _ in range(20):
-                if len(gateway.viewers) == 2:
-                    break
-                await asyncio.sleep(0.2)
+            await wait_until(
+                lambda: len(gateway.viewers) == 2,
+                timeout=4.0,
+                interval=0.2,
+                description="two viewers after closing Tab 3",
+            )
             assert len(gateway.viewers) == 2, (
                 f"Expected 2 viewers after closing Tab 3, got {len(gateway.viewers)}"
             )
@@ -1290,10 +1325,16 @@ async def test_stream_runtime_direct_media_matrix(
             await page1.bring_to_front()
             await page1.locator("#overlayInput").focus()
             await page1.keyboard.press("Digit1")
-            for _ in range(20):
-                if await remote_value() == "1":
-                    break
-                await asyncio.sleep(0.1)
+            try:
+                await poll_until(
+                    remote_value,
+                    lambda current: current == "1",
+                    timeout=2.0,
+                    interval=0.1,
+                    description="first-page-only remote input",
+                )
+            except TimeoutError:
+                pass
             (work_dir / "ascii_attempt.json").write_text(
                 json.dumps(
                     (
@@ -1318,10 +1359,16 @@ async def test_stream_runtime_direct_media_matrix(
             await page2.bring_to_front()
             await page2.locator("#overlayInput").focus()
             await page2.keyboard.press("Digit2")
-            for _ in range(20):
-                if await remote_value() == "12":
-                    break
-                await asyncio.sleep(0.1)
+            try:
+                await poll_until(
+                    remote_value,
+                    lambda current: current == "12",
+                    timeout=2.0,
+                    interval=0.1,
+                    description="concurrent remote input from both pages",
+                )
+            except TimeoutError:
+                pass
             assert await remote_value() == "12", (
                 "Both pages must reach the same browser"
             )
@@ -1386,12 +1433,20 @@ async def test_stream_runtime_direct_media_matrix(
                         "selectionEnd": len(composition),
                     },
                 )
+                # Fixed sequencing delay: deliver compositionstart to the page
+                # before committing text. This is not a state assertion wait.
                 await asyncio.sleep(0.2)
                 await external_cdp.send("Input.insertText", {"text": text})
-                for _ in range(20):
-                    if await remote_value() == text:
-                        break
-                    await asyncio.sleep(0.1)
+                try:
+                    await poll_until(
+                        remote_value,
+                        lambda current: current == text,
+                        timeout=2.0,
+                        interval=0.1,
+                        description=f"remote IME text {text!r}",
+                    )
+                except TimeoutError:
+                    pass
                 observed = await remote_value()
                 diagnostic = await page.evaluate("""() => ({
                     focused: document.hasFocus(), active:document.activeElement.id,
@@ -1438,15 +1493,17 @@ async def test_stream_runtime_direct_media_matrix(
                 await page1.evaluate("sessionStorage.getItem('selkies_tab_id')")
                 == tab_id
             )
-            for _ in range(100):
-                refreshed = await page1.evaluate(stats_script)
-                if (
-                    refreshed
-                    and refreshed.get("video")
-                    and refreshed["video"]["framesDecoded"] > 0
-                ):
-                    break
-                await asyncio.sleep(0.1)
+            refreshed = await poll_until(
+                lambda: page1.evaluate(stats_script),
+                lambda current: bool(
+                    current
+                    and current.get("video")
+                    and current["video"]["framesDecoded"] > 0
+                ),
+                timeout=10.0,
+                interval=0.1,
+                description="refreshed Tab 1 decoding video",
+            )
             assert (
                 refreshed
                 and refreshed.get("video")
@@ -1476,7 +1533,6 @@ async def test_stream_runtime_direct_media_matrix(
                 type:'pipelineControl', pipeline:'audio', enabled:false
             }, location.origin)""")
             await page1.wait_for_function("document.querySelector('video').muted")
-            await asyncio.sleep(1.0)
 
             # Close Tab 1, ensure Tab 2 remains active and continues receiving media
             await page1.close()
@@ -1511,23 +1567,29 @@ async def test_stream_runtime_direct_media_matrix(
             await page2.bring_to_front()
             await page2.locator("#overlayInput").focus()
             await page2.keyboard.press("Digit3")
-            for _ in range(20):
-                if await remote_value() == "3":
-                    break
-                await asyncio.sleep(0.1)
+            await poll_until(
+                remote_value,
+                lambda current: current == "3",
+                timeout=2.0,
+                interval=0.1,
+                description="surviving page remote input",
+            )
             assert await remote_value() == "3", "Surviving page lost input"
 
             # The agent must re-register without restarting its Browser donor.
             before_disconnect = await evaluate_remote("index")
             old_session, agent_socket = gateway.registered_agents[profile_id]
             await agent_socket.close()
-            reconnected = None
-            for _ in range(100):
-                current = gateway.registered_agents.get(profile_id)
-                if current and current[0] != old_session:
-                    reconnected = current[0]
-                    break
-                await asyncio.sleep(0.1)
+            await wait_until(
+                lambda: (
+                    (current := gateway.registered_agents.get(profile_id))
+                    and current[0] != old_session
+                ),
+                timeout=10.0,
+                interval=0.1,
+                description="Stream Agent re-registration after disconnect",
+            )
+            reconnected = gateway.registered_agents[profile_id][0]
             assert reconnected, "Stream Agent did not re-register after disconnect"
             after_disconnect = await evaluate_remote("index")
             assert after_disconnect["identity"] == remote["identity"]
@@ -1544,6 +1606,8 @@ async def test_stream_runtime_direct_media_matrix(
                 timeout=10,
             )
             try:
+                # Fixed 0.3 s sampling window: the remote animation must
+                # advance while only the Stream container is paused.
                 await asyncio.sleep(0.3)
                 during_pause = await evaluate_remote("index")
                 assert during_pause["identity"] == remote["identity"]

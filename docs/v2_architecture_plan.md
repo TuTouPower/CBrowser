@@ -1054,8 +1054,8 @@ ______________________________________________________________________
 |`app_entry.py`|删除原生应用入口|
 |`run-macos.sh`、`run-windows.bat`|删除|
 |`packaging/`|删除原生安装包构建流程|
-|`.github/workflows/ci.yml`|前后端、Chrome E2E、Docker 集成测试|
-|`.github/workflows/release.yml`|多架构容器镜像构建和发布|
+|`.github/workflows/ci.yml`|不使用 GitHub Actions CI；本地门禁统一走 `scripts/run_gates.sh`|
+|`.github/workflows/release.yml`|删除，不做 GitHub Release 自动发布|
 |`README.md`|重写为 Docker + Chrome 部署文档|
 |`DOCKER_DEPLOYMENT.md`|重写网络、数据迁移、备份和恢复|
 

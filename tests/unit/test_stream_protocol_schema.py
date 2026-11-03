@@ -1,24 +1,19 @@
 """Check exported wire schema against registration and tunnel traffic."""
 
-import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator, ValidationError
+from scripts.export_stream_protocol import stream_protocol_schema
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_exported_stream_schema_matches_models():
-    spec = importlib.util.spec_from_file_location(
-        "export_stream_protocol", ROOT / "scripts/export_stream_protocol.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
     assert (
         json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
-        == module.stream_protocol_schema()
+        == stream_protocol_schema()
     )
 
 

@@ -11,7 +11,6 @@ from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator, PortPoolExhaustedError
-from test_supervisor_rpc import supervisor_api as supervisor_api  # noqa: PLC0414
 
 
 @pytest.mark.asyncio
