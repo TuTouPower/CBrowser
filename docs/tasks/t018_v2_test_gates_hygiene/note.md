@@ -42,6 +42,8 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 第四轮：清理保留的 minor（conventions 编号、spec 重复措辞、过期 stream 文档引用、testing.md 命令描述、未使用常量/导入、postcss 纳入源码哈希、run_gates 契约步骤改用 uv；清除剩余 minor：仓库隐私扫描覆盖无后缀文本、vendor 穿越/清单外测试、freshness fail-closed 测试、evidence 脱敏落盘断言、E2E 不再写仓库 .scratch、namespace gate 固定 sleep 移除、过期注释清理。`t018_code_f029` 撤回：其 bind-close 竞态仅在并行双跑下成立，用户已删除并行要求。
 
+第五轮：补齐 vendor 绝对路径/反斜杠/真实 zip 解包负例、freshness 三态与 conftest 接线测试；E2E 输出目录迁至 /tmp；namespace gate READY 轮询恢复上下限。`t018_test_f021` 仅余 normal_exit_replay 的 `.scratch`：改用 /tmp 后 API 事件收敛测试失败，暂保留仓库内短路径并在 note 记录。
+
 ## Review 处置
 
 每个结构化 finding 一行。`已修` 表示本 task 已修复；`遗留` 必须指向 `pNNN` 或 follow-up tid；`撤回` 必须写清理由。critical/important 未解决时不得 PASS。

@@ -27,7 +27,9 @@ PINNED_WHEEL_URL = (
 
 
 def _safe_relative_path(name: str) -> str:
-    rel = name.replace("\\", "/").lstrip("/")
+    if name.startswith(("/", "\\")):
+        raise RuntimeError("Unsafe archive member path")
+    rel = name.replace("\\", "/")
     if not rel or rel.startswith("../") or "/../" in f"/{rel}/" or rel in {".", ".."}:
         raise RuntimeError("Unsafe archive member path")
     return rel

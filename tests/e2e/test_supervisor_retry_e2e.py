@@ -599,9 +599,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             assert r_rt_final.json().get("runtime_instance_id") is None
 
         # Write evidence JSON to scratch
-        scratch_evidence_path = (
-            root / ".scratch" / "t005_recovery" / "retry_timeline_evidence.json"
-        )
+        scratch_evidence_path = tmp_path / "retry_timeline_evidence.json"
         scratch_evidence_path.parent.mkdir(parents=True, exist_ok=True)
         scratch_evidence_path.write_text(
             json.dumps(

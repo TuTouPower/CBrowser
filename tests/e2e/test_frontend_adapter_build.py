@@ -9,6 +9,7 @@ only downloads/verifies official assets and injects the classic script tag.
 from __future__ import annotations
 
 import re
+import tempfile
 from pathlib import Path
 
 from scripts import vendor_selkies_web as vendor_module  # noqa: E402
@@ -62,7 +63,7 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
     tmp_path: Path,
 ) -> None:
     dest_dir = tmp_path / "selkies"
-    cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
+    cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
         REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
@@ -92,7 +93,7 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
 
 def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
     dest_dir = tmp_path / "selkies"
-    cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
+    cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
         REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
@@ -120,7 +121,7 @@ def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
 
     vendor_selkies_web(
         dest_dir=dest_dir,
-        cache_dir=REPO_ROOT / ".scratch" / "selkies_wheels",
+        cache_dir=Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp")),
         manifest_path=REPO_ROOT
         / "config"
         / "selkies"

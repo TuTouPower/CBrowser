@@ -261,7 +261,8 @@ def _wait_for_server_ready(container: docker.models.containers.Container) -> Non
         logs = container.logs().decode("utf-8", errors="replace")
         if "READY" in logs:
             return
-        raise TimeoutError(f"Server {container.name} did not become READY in 10s")
+        time.sleep(0.05)
+    raise TimeoutError(f"Server {container.name} did not become READY in 10s")
 
 
 def _run_python_probe(

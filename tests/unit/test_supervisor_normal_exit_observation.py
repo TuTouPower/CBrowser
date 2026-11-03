@@ -591,13 +591,13 @@ async def test_supervisor_reconcile_container_instance_mismatch_rejected(
 @pytest.mark.asyncio
 async def test_supervisor_query_agent_health_real_uds_transport() -> None:
     """Verify _query_agent_health reaches real UDS server over Unix domain socket."""
-    import secrets
+    import tempfile
     import shutil
 
     import uvicorn
 
     data_root = (
-        Path(".scratch/normal_exit_fix") / f"u_{secrets.token_hex(3)}"
+        Path(tempfile.mkdtemp(prefix="cbrowser-normal-exit-", dir="/tmp"))
     ).resolve()
     data_root.mkdir(parents=True, exist_ok=True)
     docker = _FakeDockerAdapter(data_root)
@@ -909,11 +909,11 @@ async def test_agent_health_config_version_mismatch_raises_storage_error() -> No
 
     /health must reject with 503 StorageError and not masquerade as version 1.
     """
-    import secrets
     import shutil
+    import tempfile
 
     data_root = (
-        Path(".scratch/normal_exit_fix") / f"u_{secrets.token_hex(3)}"
+        Path(tempfile.mkdtemp(prefix="cbrowser-normal-exit-", dir="/tmp"))
     ).resolve()
     data_root.mkdir(parents=True, exist_ok=True)
     docker = _FakeDockerAdapter(data_root)
@@ -991,11 +991,11 @@ async def test_agent_health_missing_state_does_not_manufacture_stopped() -> None
 
     manufacture stopped state when recover_terminal=False.
     """
-    import secrets
     import shutil
+    import tempfile
 
     data_root = (
-        Path(".scratch/normal_exit_fix") / f"u_{secrets.token_hex(3)}"
+        Path(tempfile.mkdtemp(prefix="cbrowser-normal-exit-", dir="/tmp"))
     ).resolve()
     data_root.mkdir(parents=True, exist_ok=True)
     docker = _FakeDockerAdapter(data_root)

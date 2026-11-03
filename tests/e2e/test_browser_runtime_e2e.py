@@ -1417,7 +1417,7 @@ async def test_t008_download_reconcile_after_agent_restart(
     """t008 AC-002/AC-004: real download, Supervisor forwarder, API ingest, scan."""
     run_id = uuid.uuid4().hex[:8]
     c_name = f"cbrowser-t008-reconcile-{run_id}"
-    dir_work = Path(os.path.abspath(".scratch/t008_e2e")) / f"t008_{run_id}"
+    dir_work = SCRATCH_ROOT / f"t008_{run_id}"
     profile_id = "profile_reconcile"
     artifact_root = dir_work / "artifacts"
     downloads = artifact_root / profile_id / "downloads"
@@ -2629,7 +2629,7 @@ async def test_ac006_minimal_privileges_and_access_control(http_server: str) -> 
 async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> None:
     """t013 AC-002/AC-004: stopped source state copy, clone launches with cookies."""
     run_id = uuid.uuid4().hex[:8]
-    dir_work = Path(os.path.abspath(".scratch/t013_e2e")) / f"t013_{run_id}"
+    dir_work = SCRATCH_ROOT / f"t013_{run_id}"
     profiles_root = dir_work / "profiles"
     source_dir = profiles_root / "source" / "profile"
     source_dir.mkdir(parents=True)

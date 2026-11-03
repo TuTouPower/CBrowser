@@ -8,7 +8,7 @@ import pytest
 from scripts.vendor_selkies_web import _safe_relative_path, verify_manifest
 
 
-@pytest.mark.parametrize("name", ["../escape", "a/../../b", "..", ""])
+@pytest.mark.parametrize("name", ["../escape", "a/../../b", "..", "", "/absolute", "..\\\\escape"])
 def test_archive_member_traversal_is_rejected(name: str) -> None:
     with pytest.raises(RuntimeError, match="Unsafe archive member path"):
         _safe_relative_path(name)
@@ -26,3 +26,15 @@ def test_manifest_rejects_unlisted_file(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="outside the manifest"):
         verify_manifest(extracted, manifest)
+
+
+def test_zip_extraction_rejects_traversal_member(tmp_path: Path) -> None:
+    import zipfile
+
+    from scripts.vendor_selkies_web import extract_from_wheel
+
+    wheel = tmp_path / "evil.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("selkies/selkies_web/../escape.js", "evil")
+    with pytest.raises(RuntimeError, match="Unsafe archive member path"):
+        extract_from_wheel(wheel, tmp_path / "out")

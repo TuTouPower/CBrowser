@@ -1111,3 +1111,92 @@ reviewed_scope: 027ac3d407446845
 coverage = 6 / 7
 
 verdict: PASS
+
+## Round 16 (2026-11-03T17:22:55+08:00)
+
+- round：16
+- reviewed_at：2026-11-03T17:22:55+08:00
+
+reviewed_scope: 1d1e069822000fd7
+
+本文件上一轮记录为 Round 13（review_test.md 有 Round 14）；Round 14/15 的代码审查记录未写入本文件，以下按当前 HEAD `0821e47` 全量复核 f001–f037 并续编。
+
+### 前轮 finding 复核
+
+- `t018_code_f001`：已消除。`tests/fixtures/e2e_env.py:10-20` 是单一 9 项必需清单；实跑 `CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only` 以 exit 2 列出 9 个缺项，默认模式 79 collected。
+- `t018_code_f002`：已消除。`grep -rn 'spec_from_file_location\|sys.path.insert' tests/` 无命中；共享 fixture 在 `tests/{unit,integration,e2e}/conftest.py`；Supervisor 恢复/重试测试驱动 `ProductionGatewayService`（`tests/fixtures/supervisor_recovery_probe/gateway_service.py:147`）。
+- `t018_code_f003`：已消除。`tests/e2e/test_frontend_app_e2e.py:631` 断言 `first_frame_ms <= 8000`，`:687` 断言 `input_latency_ms <= 3000`。
+- `t018_code_f004`：已消除。`tests/e2e/test_frontend_app_e2e.py:867` 比较冻结前帧数；`test_frontend_session_e2e.py:387` 为帧增长断言。
+- `t018_code_f005`：已消除。清理异常与所有权断言均在 `finally` 之后：`tests/e2e/test_runtime_coordinator_e2e.py:500-502`、`test_supervisor_container_graph_e2e.py:684-692`、`test_supervisor_recovery_e2e.py:1074-1076`。
+- `t018_code_f006`：已消除。`scripts/run_gates.sh:38-45` 的 E2E 依赖完整；本轮 `bash scripts/run_gates.sh` EXIT=0。
+- `t018_code_f007`：已消除。`git check-ignore -v docs/archive/spikes/s006_gateway_media_recovery/code/probe/agent_token.secret` 命中 `.gitignore:63` 的 `docs/archive/spikes/**/*.secret`。
+- `t018_code_f008`：已消除。`scripts/verify_frontend_dist.py:83` 默认 `check_freshness=False`；`config/docker/Dockerfile` 未传该开关，生产镜像不依赖源码树。
+- `t018_code_f009`：已消除。`tests/unit/test_repo_hygiene.py:22-39` 仅跳过 `docs/archive/` 与逐文件 allowlist，`docs/reviews` 其余文件受扫描；本轮该测试 3 passed。
+- `t018_code_f010`：已消除。`tests/fixtures/supervisor_recovery_probe/gateway_service.py:166` 的 `stop()` 先 `await self.api.close()`。
+- `t018_code_f011`：已消除。`uvx ruff check --select F401,F811,F821,F841 tests scripts` 输出 `All checks passed!`；`test_frontend_session_vendor.py` 的过期 sys.path 注释已删除。
+- `t018_code_f012`：已消除。allowlist 覆盖历史快照与两份 task review 报告；`pytest tests/unit/test_repo_hygiene.py tests/unit/test_frontend_build_freshness.py -q` 3 passed。
+- `t018_code_f013`：已消除。`tests/e2e/test_supervisor_event_shutdown_e2e.py:20` 定义 `REPO_ROOT` 并在测试体内使用；F821 为零。
+- `t018_code_f014`：已消除。`tests/e2e/test_stream_runtime_e2e.py:12` 已 `import socket`；F821 为零。
+- `t018_code_f015`：已消除。`docs/blueprint/stream_runtime.md` 不再引用已删除的 `test_stream_client_identity_e2e.py`。
+- `t018_code_f016`：已消除。主路径全部走 `require_e2e_env`；全仓仅剩 `test_runtime_profile_defaults_e2e.py:446` 与 `test_supervisor_event_shutdown_e2e.py:52` 两处 `pytest.skip`，均仅限非必需模式的运行时前置，必需模式改为 fail。
+- `t018_code_f017`：同意撤回。用户已删除 AC-004 的并行双跑条款。
+- `t018_code_f018`：已消除（断言层）。公开只读访问器与注入时钟落地；本轮 unit 547 passed，diff 未新增 `assert .*._` 私有断言。
+- `t018_code_f019`：已消除。`docs/blueprint/testing.md:40-55` 的 `test_cmd`/`blackbox_verify` 只引用 `scripts/run_gates.sh` 与模板契约标记行；contract 169 passed。
+- `t018_code_f020`：已消除。`scripts/run_gates.sh:5-12` 记录 `CLEAN_SCRATCH` 并在 EXIT trap 清理自建目录。
+- `t018_code_f021`：已消除。`docs/specs/runtime_persistence.md:90` 不再含重复「注入的」。
+- `t018_code_f022`：已消除。模板契约命令保留在 `testing.md`；`scripts/run_gates.sh` 全绿。
+- `t018_code_f023`：已消除。`git diff --check 5a3da22..HEAD` exit 0。
+- `t018_code_f024`：已消除。`scripts/verify_frontend_dist.py:34` 已把 `postcss.config.js` 纳入源码哈希。
+- `t018_code_f025`：已消除。所有 E2E `RealSupervisorContainer` 调用点均传 `udp_mux_min_port/max_port`。
+- `t018_code_f026`：已消除。`docs/blueprint/testing.md:90-91` 已改为引用 `scripts/run_gates.sh` 的 unit/integration 层，不再指向不存在的命令位置。
+- `t018_code_f027`：已消除。`tests/fixtures/e2e_env.py:40-56` 默认扫描 `[30000, 30990]`，与协议/网络策略范围一致。
+- `t018_code_f028`：已消除（字面）。`tests/e2e/test_supervisor_namespace_policy_e2e.py` 不再有 `time.sleep` 后断言；但修复引入 f038 并弱化了两个负断言，见结论段提示。
+- `t018_code_f029`：同意撤回。用户明确：不做并行双跑，bind-close 端口探测不再按此前提判定；本轮不重开。
+- `t018_code_f030`：已消除。`scripts/run_gates.sh:19` 契约步骤已用 `uv run --no-project --with pytest`。
+- `t018_code_f031`：已消除。`tests/e2e/test_stream_selkies_tokens_e2e.py:78` 容器内监听 `0.0.0.0`，宿主发布仍为 `127.0.0.1:{port}:{port}`。
+- `t018_code_f032`：已消除。`tests/e2e/test_runtime_profile_defaults_e2e.py` 的 `DEFAULT_IMAGE`/`DEFAULT_CACHE` 已删除。
+- `t018_code_f033`：已消除。`tests/e2e/test_stream_runtime_e2e.py:474-479` 三处均为 `CBROWSER_RUNTIME_ENGINE_CACHE`。
+- `t018_code_f034`：已消除。`tests/e2e/test_supervisor_event_shutdown_e2e.py:55-65` 的重复 `require_e2e_env`、`or` 死赋值与错误 policy 镜像回退已清除。
+- `t018_code_f035`：已消除。`tests/fixtures/gateway_probe/topology.py` 无 `import os`；ruff 通过。
+- `t018_code_f036`：已消除。`tests/e2e/test_browser_runtime_e2e.py:53-63` 的 `_require_runtime_prerequisites` 为 session 级 autouse，`:191-192` 的 `http_server` 显式依赖；实跑无环境时 11 skipped。
+- `t018_code_f037`：已消除。`docs/blueprint/conventions.md` 章节编号已顺延为 1–5。
+
+### 本轮新发现
+
+#### t018_code_f038 - 删除固定 sleep 时把超时抛出缩进进轮询循环，READY 等待退化为一次性检查
+
+- 严重度：important
+- 锚点：AC-006（本地全量门禁含 E2E 必需模式可执行）；行为缺陷：容器首次日志未含 READY 时门禁误报失败
+- 位置：`tests/e2e/test_supervisor_namespace_policy_e2e.py:260-264`
+- 问题：`0821e47` 删除 `time.sleep(0.1)` 时，把原本位于循环之后的 `raise TimeoutError(...)`（4 空格）误改为循环体内（8 空格）。当前函数在首轮 `container.logs()` 不含 `READY` 时立即抛错，声明的 10s 有界等待完全失效。最小复现：用首次 `logs()` 返回空字节的假容器调用该函数，0.000s 即抛 `TimeoutError` 且 `logs()` 只被调用 1 次。目标容器由 `python3 -u -c` 启动，`_wait_for_server_ready(target_b)` 在三次 `docker start()` 后调用；本轮用 t016 镜像实跑该用例 5/5 通过（含 CPU 过载一次），所以不是稳定红灯，但慢启动或 Docker 日志延迟时会得到假红，错误信息却声称已等 10s。该用例属于 `CBROWSER_RUN_E2E=1` 必经的 `tests/e2e` 集合，AC-006 的门禁可信度受影响。
+- 建议：把 `raise` 缩进退回函数级（循环之后），或改用 `tests/fixtures/wait.py` 的 `wait_until_sync` 实现有界轮询；同时复核该文件 `test_startup_gate_subprocess_sentinel` 中被删除采样窗口的两个 `proc.poll() is None` 负断言（断言强度归 test review 判定）。
+
+### 结论
+
+- 前轮 finding 复核：f001–f016、f018–f028、f030–f037 已逐条复核并确认修复；f017、f029 同意撤回（用户决策）。本文件 Round 14/15 无记录，无法核对对应编号；本轮以 HEAD 全量 diff 为准。
+- 本轮新发现：1 条（1 important）。
+- 未进表的提示：
+    - 文件过大：`tests/e2e/test_browser_runtime_e2e.py` 2921 行（本 task 净增 9）、`tests/e2e/test_stream_runtime_e2e.py` 1687 行（净增 64）、`tests/e2e/test_frontend_app_e2e.py` 1216 行（净增 5）超测试源码 1200 行阈值；`tests/e2e/test_supervisor_recovery_e2e.py` 1142 行（净增 48）、`tests/e2e/test_frontend_media_e2e.py` 948 行（净增 11）、`tests/unit/test_stream_agent_lifecycle.py` 713 行（净增 66）、`tests/e2e/test_supervisor_container_graph_e2e.py` 691 行（净增 35）超 600 行提示线；`tests/unit/test_baseline_fixture_regressions.py` 1201 行但净减 38，不符合「仍净增」，不列。按规则只提示。
+    - 复杂度：本轮新增/修改函数未发现 CC ≥ 15；`_wait_for_server_ready`、`require_e2e_env`、`free_udp_port_span` 分支简单。
+    - `0821e47` 同时删除了 `test_startup_gate_subprocess_sentinel` 中 5 处固定 sleep。进程启动后立即 `assert proc.poll() is None` 只剩近乎恒真的采样，gate 提前退出的负断言实际失效；若保留负断言，应改为有界等待/短采样窗口。该点属测试层，交 test review 判定，未重复计 finding。
+    - `tests/e2e/test_supervisor_container_graph_e2e.py:83,99` 与 `tests/e2e/test_runtime_coordinator_e2e.py:75` 的 data/metadata 子目录仍为 0777；这些目录不含本轮定义的控制密钥（密钥在 0700 的 `control`），父 `tmp_path` 为 0700，未作为 finding。
+    - `0821e47` 在 `tests/e2e/test_browser_runtime_e2e.py:49,51`、`tests/integration/test_v2_api_subprocess.py:24`、`tests/integration/test_automation_cdp_flow.py:89,245` 引入 mkdtemp；测试状态已移出仓库 `.scratch`，但模块导入即创建 /tmp 目录且不清理，属轻微资源残留。
+    - `src/backend/cbrowser/supervisor/runner.py:108-111` 的 `CBROWSER_UDP_MUX_MIN/MAX_PORT` 仍是测试专用生产开关，note 有记录；建议后续在 blueprint/decisions 明示语义。
+    - 完整 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 未执行（worktree 无 9 个镜像/缓存变量）；AC-004 的单次真实门禁仍依赖实施侧证据，本轮仅用 t016 镜像实跑 namespace E2E 一次/5 次以支撑 f038。
+    - 本轮实跑：`bash scripts/run_gates.sh` EXIT=0（contract 169、legacy 384、unit 547、integration 79、frontend Vitest 95 + build/verify）；`pytest tests/e2e -q` 17 passed / 62 skipped；required 模式 collection exit 2 列出 9 个缺项；`tests/e2e/test_frontend_build_wiring.py` 8 passed；ruff tests/scripts 全通过；`git diff --check` exit 0；`git ls-files --eol` 无 CRLF；写报告前工作树仅 review_test.md 被并发测试 review 修改（review 过程文件，排除于 scope 指纹）。
+- 总体判断：f038 是最后一轮清理引入的逻辑错误（首轮日志未含 READY 即立即失败，等待退化），在慢启动/日志延迟时会让 AC-006 的 E2E 必需门禁误红，属 important，当前树不能 PASS。
+- 系统性 follow-up：无新增跨 task 缺口；f038 属 t018 收尾范围，一行缩进即可修复。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。required 模式 collection exit 2 列出 9 个缺项（含 `CBROWSER_INVALID_POLICY_TEST_IMAGE`），默认模式 79 collected；`scripts/run_gates.sh` 的 postbuild `--check-freshness` 通过；`test_frontend_build_wiring.py` 8 passed。
+- AC-002：`re_verified`。检索 `tests/` 无 `spec_from_file_location`/`sys.path.insert`；共享 fixture 位于三层 conftest；重写 Gateway 替身已删除，恢复/重试测试驱动 `ProductionGatewayService`；`require_e2e_env` 为单一前置来源，非必需模式仅两处条件 skip。
+- AC-003：`re_verified`（代码层）。核对首帧 8000ms/输入 3000ms 上限、冻结恢复帧增长、IPv6 无条件下阻断（`after["tcp_response"] == "PONG"` 且 `after["echo_ok"] is False`）、退避 1→30 序列、清理断言在 finally 之后、会话关闭后容器 running 且 instance-id 不变；f038 是等待 helper 缺陷，不影响这些断言的语义。
+- AC-004：`trust_prior`。完整真实 Docker 单次门禁未执行（缺 9 个镜像/缓存变量）；静态核对端口按运行派生、秘密文件 0600/控制目录 0700、证据默认系统临时目录并脱敏、Selkies 宿主发布仅 `127.0.0.1`；另用 t016 镜像实跑 namespace E2E 验证容器/网络清理路径。
+- AC-005：`re_verified`。实跑 unit 547 passed；公开访问器/注入时钟已落地；本轮 diff 未新增私有状态断言。
+- AC-006：`re_verified`（本地非 E2E）。`scripts/run_gates.sh` EXIT=0（contract/legacy/unit/integration/frontend/build 全绿）；`.github/` 不存在；`docs/blueprint/testing.md` 只引用脚本与模板契约标记行；E2E 必需分支未全量执行，且 f038 影响该分支可靠性。
+- AC-007：`re_verified`。unit 547 passed（含 repo hygiene、vendor 穿越/清单外、freshness fail-closed、证据脱敏）；`git check-ignore` 命中归档秘密；`git ls-files --eol` 无 CRLF；`docs/specs` 扫描无凭据字面量。
+
+coverage = 6 / 7
+
+verdict: FAIL

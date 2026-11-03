@@ -16,6 +16,7 @@ import json
 import os
 import subprocess
 import uuid
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -365,7 +366,7 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
     image = get_docker_image()
     cache_dir = get_engine_cache_dir().resolve()
 
-    scratch_run = PROJECT_ROOT / f".scratch/t003_profile_defaults/{run_id}"
+    scratch_run = Path(tempfile.mkdtemp(prefix="cbrowser-t003-defaults-", dir="/tmp"))
     scratch_run.mkdir(parents=True, exist_ok=True)
     script_path = scratch_run / "e2e_runner.py"
     script_path.write_text(CONTAINER_SCRIPT, encoding="utf-8")
