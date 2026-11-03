@@ -4,7 +4,7 @@
     default_sni 127.0.0.1
 }
 
-https://127.0.0.1, https://192.168.31.76 {
+https://127.0.0.1, https://192.168.31.76, https://karsondemacbook-pro.local {
     tls internal
 
     handle /api/* {
