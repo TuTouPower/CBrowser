@@ -36,3 +36,7 @@
 ## 验证
 
 真实 SQLite + HTTP 集成测试覆盖上述正负例；真实 HTTPS Cookie 属性、跨 Origin 与未授权 Profile 的信令拒绝由 Gateway E2E 在官方 Chrome 中验证。自动化 CDP 代理由单元（Supervisor→UDS）、集成（API→Supervisor→UDS）和真实浏览器 UDS CDP E2E 共同验证。
+
+## 登录回跳约束（t023）
+
+- 登录后的 `next` 回跳只接受站内绝对路径；一切指向登录页本身的变体（大小写、尾斜杠、携带 query/hash）一律拒绝，避免登录后循环；协议相对、反斜杠与绝对 URL 等开放重定向形态继续拒绝。

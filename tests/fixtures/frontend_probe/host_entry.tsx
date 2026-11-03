@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserSessionView } from "./BrowserSessionView";
-import { I18nProvider } from "../../i18n";
+import { BrowserSessionView } from "../../../src/frontend/src/features/browser-session/BrowserSessionView";
+import { I18nProvider } from "../../../src/frontend/src/i18n";
 
 const params = new URLSearchParams(window.location.search);
 const profileId =

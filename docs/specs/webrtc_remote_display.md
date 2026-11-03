@@ -51,3 +51,8 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - 隧道预算单一权威：原始 data 1MiB、序列化 envelope 2MiB+64KiB、WS 帧 6MiB+64KiB；超限以 1009 受控关闭单个连接，服务继续处理其他连接。
 - FPS 配额协议与策略同规：有限且 ∈ [min_fps, max_fps]，越界严格拒绝，None 仅解除限制。StreamAgent 仅保留可 await 的完整 stop（取消并等待全部后台任务、释放 Viewer 与 detached upstream、幂等）。Selkies 私有 API 只经适配层访问，钉版 ABI 不符明确报 unsupported。
 - SSE 快照为订阅私有数据并携带 live 基点，不写共享历史；窗口不足显式重建。
+
+## 前端会话一致性（t023）
+
+- SSE 运行时事件以生成的 `ProfileRuntimeStatusEvent` 为唯一类型契约：投递前验证核心字段与状态枚举，畸形或未知事件只进错误通道、不投递给消费者。连接以代次隔离：重复 `start` 不新增连接，旧代次不得投递、报错或触发重连，`stop`（含登出）后不得重连。
+- 会话页严格区分加载中、加载失败（显式错误并可重试）、Profile 不存在（仅真实 404）与已停止待启动；请求失败不得呈现为已停止。切换界面语言只更新文案，不得重跑运行时检查或重置已连接会话。

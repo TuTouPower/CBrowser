@@ -12,6 +12,7 @@ import {
   useRetrySearchDefaultsMutation,
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
+import { useApiClient } from "../../shared/api/client_context";
 import type { ProfileUpdateRequest } from "../../shared/api/types";
 
 type FontBundle = NonNullable<ProfileUpdateRequest["font_bundle"]>;
@@ -20,15 +21,16 @@ export function ProfileDetailPage() {
   const { profileId } = useParams<{ profileId: string }>();
   const { t } = useI18n();
   const navigate = useNavigate();
+  const client = useApiClient();
 
-  const { data: profile, isLoading, error: loadError } = useProfileQuery(profileId);
-  const { data: runtime } = useProfileRuntimeQuery(profileId);
-  const updateMutation = useUpdateProfileMutation();
-  const deleteMutation = useDeleteProfileMutation();
-  const applyDisplayMutation = useApplyDisplaySettingsMutation();
-  const duplicateMutation = useDuplicateProfileMutation();
-  const resetMutation = useResetProfileMutation();
-  const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation();
+  const { data: profile, isLoading, error: loadError } = useProfileQuery(profileId, client);
+  const { data: runtime } = useProfileRuntimeQuery(profileId, client);
+  const updateMutation = useUpdateProfileMutation(client);
+  const deleteMutation = useDeleteProfileMutation(client);
+  const applyDisplayMutation = useApplyDisplaySettingsMutation(client);
+  const duplicateMutation = useDuplicateProfileMutation(client);
+  const resetMutation = useResetProfileMutation(client);
+  const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation(client);
 
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);

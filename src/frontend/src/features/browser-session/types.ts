@@ -59,5 +59,4 @@ export interface BrowserSessionViewProps {
   errorMessage?: string;
   onCheckRuntimeStatus?: () => void;
   apiClient?: ApiClient;
-  onSessionError?: (err: Error) => void;
 }

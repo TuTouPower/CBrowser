@@ -16,25 +16,6 @@ interface PermissionsLike {
   query?: (descriptor: { name: string }) => Promise<PermissionLike>;
 }
 
-export async function readClipboardPermission(): Promise<ClipboardPermissionState> {
-  const permissions = (navigator as Navigator & { permissions?: PermissionsLike })
-    .permissions;
-  if (!permissions?.query) return "unsupported";
-  try {
-    const states = await Promise.all(
-      ["clipboard-read", "clipboard-write"].map(
-        async (name) => (await permissions.query!({ name })).state,
-      ),
-    );
-    if (states.some((state) => state === "denied")) return "denied";
-    if (states.some((state) => state === "prompt")) return "prompt";
-    return "granted";
-  } catch {
-    return "unsupported";
-  }
-}
-
-
 export async function watchClipboardPermission(
   onChange: (state: ClipboardPermissionState) => void,
 ): Promise<() => void> {

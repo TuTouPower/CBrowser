@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Check, Copy, Cpu } from "lucide-react";
 import { useI18n } from "../../i18n";
+import { useApiClient } from "../../shared/api/client_context";
 import { useProfileQuery } from "../profiles/useProfilesQuery";
 import { useAutomationQuery } from "./useAutomation";
 
@@ -15,8 +16,9 @@ export function ProfileAutomationPage() {
   const { profileId } = useParams<{ profileId: string }>();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
-  const { data: profile } = useProfileQuery(profileId);
-  const automation = useAutomationQuery(profileId);
+  const client = useApiClient();
+  const { data: profile } = useProfileQuery(profileId, client);
+  const automation = useAutomationQuery(profileId, client);
 
   if (!profileId) {
     return <div className="p-8 text-gray-400 text-sm">{t("profileNotFoundOrFailed")}</div>;

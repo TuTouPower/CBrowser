@@ -1,6 +1,4 @@
-import { useRef } from "react";
 import {
-  useMutation,
   useQuery,
   useQueryClient,
   type UseMutationResult,
@@ -8,9 +6,9 @@ import {
 } from "@tanstack/react-query";
 import {
   defaultApiClient,
-  newIdempotencyKey,
   type ApiClient,
 } from "../../shared/api/client";
+import { useActionKeyMutation } from "../../shared/api/action_key_mutation";
 import type { ArtifactResponse } from "../../shared/api/types";
 
 export const artifactKeys = {
@@ -34,17 +32,9 @@ export function useUploadArtifactMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ArtifactResponse, Error, File> {
   const queryClient = useQueryClient();
-  const actionKey = useRef<string | null>(null);
-  return useMutation({
-    mutationFn: (file: File) =>
-      client.artifacts.upload(
-        profileId!,
-        file,
-        (actionKey.current ??= newIdempotencyKey()),
-      ),
-    onSettled: () => {
-      actionKey.current = null;
-    },
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.artifacts.upload(profileId!, input, actionKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: artifactKeys.list(profileId || "") });
     },
@@ -56,17 +46,9 @@ export function useDeleteArtifactMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<void, Error, string> {
   const queryClient = useQueryClient();
-  const actionKey = useRef<string | null>(null);
-  return useMutation({
-    mutationFn: (artifactId: string) =>
-      client.artifacts.delete(
-        profileId!,
-        artifactId,
-        (actionKey.current ??= newIdempotencyKey()),
-      ),
-    onSettled: () => {
-      actionKey.current = null;
-    },
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.artifacts.delete(profileId!, input, actionKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: artifactKeys.list(profileId || "") });
     },

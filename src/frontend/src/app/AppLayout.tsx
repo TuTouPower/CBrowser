@@ -20,10 +20,12 @@ import {
 } from "../features/profiles/useProfilesQuery";
 import { useAuth } from "../features/auth/useAuth";
 import { useI18n } from "../i18n";
+import { useApiClient } from "../shared/api/client_context";
 
 export function AppLayout() {
   const { t, locale, setLocale } = useI18n();
   const { logout } = useAuth();
+  const client = useApiClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const currentProfileId = searchParams.get("profileId");
@@ -31,13 +33,13 @@ export function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchFilter, setSearchFilter] = useState("");
 
-  const { data: profiles = [], isLoading: isProfilesLoading } = useProfilesQuery();
-  const { data: activeProfile } = useProfileQuery(currentProfileId);
-  const { data: activeRuntime } = useProfileRuntimeQuery(currentProfileId);
+  const { data: profiles = [], isLoading: isProfilesLoading } = useProfilesQuery(client);
+  const { data: activeProfile } = useProfileQuery(currentProfileId, client);
+  const { data: activeRuntime } = useProfileRuntimeQuery(currentProfileId, client);
 
-  const setDesiredStateMutation = useSetDesiredStateMutation();
-  const stopProfileMutation = useStopProfileMutation();
-  const applyDisplayMutation = useApplyDisplaySettingsMutation();
+  const setDesiredStateMutation = useSetDesiredStateMutation(client);
+  const stopProfileMutation = useStopProfileMutation(client);
+  const applyDisplayMutation = useApplyDisplaySettingsMutation(client);
 
   const handleSelectProfile = (id: string) => {
     // Always land on this page instance's session route (AC-001).
@@ -68,7 +70,7 @@ export function AppLayout() {
     const q = searchFilter.toLowerCase();
     return (
       p.name.toLowerCase().includes(q) ||
-      p.tags?.some((t) => (typeof t === "string" ? t : t.tag).toLowerCase().includes(q))
+      p.tags?.some((tag) => (typeof tag === "string" ? tag : tag.tag).toLowerCase().includes(q))
     );
   });
 
@@ -270,7 +272,7 @@ export function AppLayout() {
                         <div className="font-medium truncate">{p.name}</div>
                         {p.tags && p.tags.length > 0 && (
                           <div className="text-[10px] text-gray-500 truncate mt-0.5">
-                            {p.tags.map((t) => typeof t === "string" ? `#${t}` : `#${t.tag}`).join(" ")}
+                            {p.tags.map((tag) => typeof tag === "string" ? `#${tag}` : `#${tag.tag}`).join(" ")}
                           </div>
                         )}
                       </div>

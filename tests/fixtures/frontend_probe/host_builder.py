@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -51,8 +52,10 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
         if item.is_file() and item.name not in ("index.html", "session.js"):
             shutil.copy2(item, dest_dir / item.name)
 
-    # 2. Bundle host entry with esbuild from src/frontend
-    entry_tsx_path = "src/features/browser-session/host_entry.tsx"
+    # 2. Bundle host entry with esbuild from src/frontend. The entry lives
+    # in this fixture directory (test-only), so bare package imports resolve
+    # through NODE_PATH pointing at the frontend's node_modules.
+    entry_tsx_path = "../../tests/fixtures/frontend_probe/host_entry.tsx"
     out_bundle_path = dest_dir / "session.js"
     cmd = [
         "npx",
@@ -62,7 +65,12 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
         "--format=esm",
         f"--outfile={out_bundle_path}",
     ]
-    subprocess.run(cmd, check=True, cwd=str(FRONTEND_DIR))
+    env = dict(os.environ)
+    node_modules = str(FRONTEND_DIR / "node_modules")
+    env["NODE_PATH"] = (
+        f"{node_modules}{os.pathsep}{env['NODE_PATH']}" if env.get("NODE_PATH") else node_modules
+    )
+    subprocess.run(cmd, check=True, cwd=str(FRONTEND_DIR), env=env)
 
     # 3. Find CSS file
     css_files = list((dest_dir / "assets").glob("*.css"))

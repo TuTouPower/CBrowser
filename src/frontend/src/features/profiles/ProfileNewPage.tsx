@@ -7,13 +7,14 @@ import {
   type ProfileCreateRequest,
 } from "../../shared/api/types";
 import { useI18n } from "../../i18n";
+import { useApiClient } from "../../shared/api/client_context";
 
 type FontBundle = NonNullable<ProfileCreateRequest["font_bundle"]>;
 
 export function ProfileNewPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const createMutation = useCreateProfileMutation();
+  const createMutation = useCreateProfileMutation(useApiClient());
 
   const [name, setName] = useState("");
   const [proxy, setProxy] = useState("");

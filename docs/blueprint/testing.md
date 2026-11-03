@@ -15,6 +15,7 @@ project_configured
 3. **前端测试基线与 Node 26 环境标记**：
     - 在 Node v26+ 环境下，运行前端测试因 Node 默认开启的实验性 WebStorage 会在 `localStorage.getItem` 处抛出异常（参见 d001，直接运行会导致大量失败）；
     - 运行前端测试必须显式设置环境变量：`NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend`，通过数量以实际输出为准；
+    - `npm test` 内含 `test:types` 前置门禁：`tsconfig.test.json` 以与生产相同的严格选项（含 `noUncheckedIndexedAccess`）检查全部测试文件（node 内置模块类型来自 devDependency `@types/node`）；测试夹具、桩与事件字面量必须满足生成类型的完整线形状，不完整或名实不符的测试在该门禁下直接失败；
     - 严格禁止在业务代码或测试中就地弱化断言，禁止引入隐式不可见的环境改动；
 4. **容器黑盒与健康检查**：通过 curl 检查运行中的容器健康探针 `http://127.0.0.1:56661/api/health`，并支持通过 ego-browser 执行端到端网页交互自动化验证；
 5. **专项运行时技术验证探针规范**：

@@ -1,17 +1,86 @@
-export interface ProfileRuntimeEvent {
-  profile_id: string;
-  desired_state: string;
-  observed_state: string;
-  runtime_instance_id?: string | null;
-  failure_count?: number;
-  restart_blocked?: boolean;
-  last_coordinator_error?: string | null;
-  search_defaults?: import("./types").SearchDefaultsStatusData | null;
-  updated_at?: string;
-}
+import type { ProfileRuntimeStatusEvent } from "./types";
+
+/**
+ * The wire shape of `runtime_state` events is owned by the generated
+ * OpenAPI type; this alias keeps existing imports stable.
+ */
+export type ProfileRuntimeEvent = ProfileRuntimeStatusEvent;
 
 export type ProfileEventListener = (event: ProfileRuntimeEvent) => void;
 export type ProfileErrorListener = (error: unknown) => void;
+
+const DESIRED_STATES = new Set(["stopped", "running"]);
+const OBSERVED_STATES = new Set([
+  "stopped",
+  "starting",
+  "running",
+  "stopping",
+  "error",
+]);
+const SEARCH_DEFAULTS_STATES = new Set([
+  "applied",
+  "failed",
+  "disabled",
+  "pending",
+]);
+
+function isNullableString(value: unknown): boolean {
+  return value === undefined || value === null || typeof value === "string";
+}
+
+function isValidSearchDefaults(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const sd = value as Record<string, unknown>;
+  if (typeof sd.state !== "string" || !SEARCH_DEFAULTS_STATES.has(sd.state)) {
+    return false;
+  }
+  if (typeof sd.runtime_instance_id !== "string") return false;
+  if (typeof sd.updated_at !== "string") return false;
+  if (!isNullableString(sd.error_kind)) return false;
+  if (!isNullableString(sd.request_id)) return false;
+  return true;
+}
+
+function hasValidCoreFields(e: Record<string, unknown>): boolean {
+  if (typeof e.profile_id !== "string" || e.profile_id.length === 0) {
+    return false;
+  }
+  if (typeof e.desired_state !== "string" || !DESIRED_STATES.has(e.desired_state)) {
+    return false;
+  }
+  if (
+    typeof e.observed_state !== "string" ||
+    !OBSERVED_STATES.has(e.observed_state)
+  ) {
+    return false;
+  }
+  if (typeof e.failure_count !== "number") return false;
+  if (typeof e.restart_blocked !== "boolean") return false;
+  if (typeof e.updated_at !== "string") return false;
+  return true;
+}
+
+/**
+ * Validate a decoded SSE payload against the real event semantics of
+ * ProfileRuntimeStatusEvent. Returns the event when it is a legal runtime
+ * state, or null when it is malformed/unknown and must not be coerced into
+ * runtime state. Every field the generated type marks required
+ * (profile_id, desired_state, observed_state, failure_count,
+ * restart_blocked, updated_at) must be present with the right type;
+ * optional fields are type-checked when present.
+ */
+export function parseProfileRuntimeEvent(
+  raw: unknown,
+): ProfileRuntimeEvent | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const e = raw as Record<string, unknown>;
+  if (!hasValidCoreFields(e)) return null;
+  if (!isNullableString(e.runtime_instance_id)) return null;
+  if (!isNullableString(e.last_coordinator_error)) return null;
+  if (!isValidSearchDefaults(e.search_defaults)) return null;
+  return raw as ProfileRuntimeEvent;
+}
 
 export interface ProfileEventsClientOptions {
   url?: string;
@@ -27,7 +96,10 @@ export class ProfileEventsClient {
   private currentReconnectInterval: number;
   private onUnauthorized?: () => void;
   private lastEventId: string | null = null;
-  private isClosed = false;
+  private isClosed = true;
+  // Connection generation: every start/stop advances it, and only the
+  // current generation may deliver events, report errors, or reconnect.
+  private generation = 0;
   private abortController: AbortController | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: Set<ProfileEventListener> = new Set();
@@ -56,8 +128,10 @@ export class ProfileEventsClient {
   }
 
   start(): void {
+    if (!this.isClosed) return;
     this.isClosed = false;
-    this.connect();
+    const generation = ++this.generation;
+    void this.connect(generation);
   }
 
   close(): void {
@@ -66,6 +140,7 @@ export class ProfileEventsClient {
 
   stop(): void {
     this.isClosed = true;
+    this.generation += 1;
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
       this.reconnectTimeout = null;
@@ -80,8 +155,12 @@ export class ProfileEventsClient {
     return this.lastEventId;
   }
 
-  private async connect(): Promise<void> {
-    if (this.isClosed) return;
+  private isCurrent(generation: number): boolean {
+    return generation === this.generation && !this.isClosed;
+  }
+
+  private async connect(generation: number): Promise<void> {
+    if (!this.isCurrent(generation)) return;
 
     this.abortController = new AbortController();
     const headers: Record<string, string> = {
@@ -100,6 +179,8 @@ export class ProfileEventsClient {
         credentials: "include",
         signal: this.abortController.signal,
       });
+
+      if (!this.isCurrent(generation)) return;
 
       if (response.status === 401) {
         this.onUnauthorized?.();
@@ -123,7 +204,30 @@ export class ProfileEventsClient {
       let currentId: string | null = null;
       let currentDataLines: string[] = [];
 
-      while (!this.isClosed) {
+      const flushEvent = () => {
+        if (currentDataLines.length === 0) return;
+        const fullData = currentDataLines.join("\n");
+        if (currentId !== null) {
+          this.lastEventId = currentId;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(fullData);
+        } catch (parseErr) {
+          this.dispatchError(parseErr);
+          return;
+        }
+        const event = parseProfileRuntimeEvent(parsed);
+        if (event) {
+          this.dispatchEvent(event);
+        } else {
+          this.dispatchError(
+            new Error("Malformed runtime_state event payload"),
+          );
+        }
+      };
+
+      while (this.isCurrent(generation)) {
         const { value, done } = await reader.read();
         if (done) break;
 
@@ -134,17 +238,8 @@ export class ProfileEventsClient {
         for (const line of lines) {
           if (line === "") {
             // End of event
-            if (currentDataLines.length > 0) {
-              const fullData = currentDataLines.join("\n");
-              if (currentId !== null) {
-                this.lastEventId = currentId;
-              }
-              try {
-                const parsed = JSON.parse(fullData) as ProfileRuntimeEvent;
-                this.dispatchEvent(parsed);
-              } catch (parseErr) {
-                this.dispatchError(parseErr);
-              }
+            if (this.isCurrent(generation)) {
+              flushEvent();
             }
             currentId = null;
             currentDataLines = [];
@@ -159,6 +254,7 @@ export class ProfileEventsClient {
           }
         }
       }
+      if (!this.isCurrent(generation)) return;
       buffer += decoder.decode();
       if (buffer) {
         const lines = buffer.split(/\r?\n/);
@@ -170,20 +266,15 @@ export class ProfileEventsClient {
           }
         }
       }
-      if (currentDataLines.length > 0) {
-        if (currentId !== null) this.lastEventId = currentId;
-        try {
-          this.dispatchEvent(JSON.parse(currentDataLines.join("\n")) as ProfileRuntimeEvent);
-        } catch (parseErr) {
-          this.dispatchError(parseErr);
-        }
+      if (this.isCurrent(generation)) {
+        flushEvent();
       }
     } catch (err: unknown) {
-      if (this.isClosed) return;
+      if (!this.isCurrent(generation)) return;
       this.dispatchError(err);
     } finally {
-      if (!this.isClosed) {
-        this.scheduleReconnect();
+      if (this.isCurrent(generation)) {
+        this.scheduleReconnect(generation);
       }
     }
   }
@@ -208,12 +299,14 @@ export class ProfileEventsClient {
     }
   }
 
-  private scheduleReconnect(): void {
-    if (this.isClosed || this.reconnectTimeout) return;
+  private scheduleReconnect(generation: number): void {
+    if (!this.isCurrent(generation) || this.reconnectTimeout) return;
 
     this.reconnectTimeout = setTimeout(() => {
       this.reconnectTimeout = null;
-      this.connect();
+      if (this.isCurrent(generation)) {
+        void this.connect(generation);
+      }
     }, this.currentReconnectInterval);
 
     this.currentReconnectInterval = Math.min(
@@ -224,4 +317,3 @@ export class ProfileEventsClient {
 }
 
 export const defaultSseClient = new ProfileEventsClient();
-
