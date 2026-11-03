@@ -32,42 +32,8 @@ def container_cpu_limit(host_config: dict[str, Any]) -> int:
     return min(limits) if limits else 0
 
 
-def calculate_cpu_percent(
-    current_usage_ns: int,
-    previous_usage_ns: int,
-    current_system_ns: int,
-    previous_system_ns: int,
-    online_cpus: int,
-    nano_cpus_limit: int = 0,
-) -> float:
-    """Calculate CPU usage percentage based on Docker API container stats.
-
-    Preserves original mathematical contract:
-    - If nano_cpus_limit > 0: percentage of container's allocated quota.
-    - Without a limit: Docker CLI style; one fully busy core reports 100.0%.
-    """
-    cpu_delta = current_usage_ns - previous_usage_ns
-    system_delta = current_system_ns - previous_system_ns
-
-    if system_delta <= 0 or cpu_delta <= 0:
-        return 0.0
-
-    if online_cpus <= 0:
-        online_cpus = 1
-
-    if nano_cpus_limit > 0:
-        allocated_fraction = float(nano_cpus_limit) / (
-            float(online_cpus) * 1_000_000_000.0
-        )
-        if allocated_fraction <= 0.0:
-            return 0.0
-        pct = (float(cpu_delta) / float(system_delta)) / allocated_fraction * 100.0
-    else:
-        pct = (float(cpu_delta) / float(system_delta)) * float(online_cpus) * 100.0
-
-    return max(0.0, pct)
-
-
+# t022 A48: the unused calculate_cpu_percent helper was removed (its only
+# callers were its own tests); the CPU-to-quota mapping below is the live one.
 def calculate_quota_normalized_percent(
     current_usage_ns: int,
     previous_usage_ns: int,

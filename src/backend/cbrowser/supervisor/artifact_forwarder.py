@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 from cbrowser.runtime_agent.protocol import DownloadEventRecord
+from cbrowser.supervisor.event_forwarder import RETRYABLE_4XX
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.path_validator import PathSecurityError, validate_profile_id
 from pydantic import ValidationError
@@ -19,7 +20,6 @@ logger = logging.getLogger("cbrowser.supervisor.artifact_forwarder")
 
 CONTAINER_DOWNLOAD_PREFIX = "/exchange/downloads/"
 DOWNLOAD_EVENT_ENVELOPE_VERSION = 1
-RETRYABLE_4XX = frozenset({401, 403, 408, 429})
 
 
 def translate_download_path(

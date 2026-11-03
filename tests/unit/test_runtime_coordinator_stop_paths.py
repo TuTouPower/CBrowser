@@ -131,6 +131,16 @@ async def test_supervisor_reported_instance_is_used_for_stop_rpc(
                 import json
 
                 stop_bodies.append(json.loads(request.content))
+                # t022/A45 contract replacement: the coordinator converges
+                # on the authoritative observed record, which the real
+                # Supervisor updates via its observation report before the
+                # stop RPC responds; emulate that report here.
+                with sqlite3.connect(db_path) as conn:
+                    conn.execute(
+                        "UPDATE profile_runtimes SET observed_state='stopped', "
+                        "runtime_instance_id=NULL WHERE profile_id=?",
+                        (profile.id,),
+                    )
                 return httpx.Response(
                     200,
                     json={
@@ -354,5 +364,71 @@ async def test_retries_reuse_stable_operation_id(tmp_path: Path) -> None:
         assert attempts == 2
         assert bodies[0]["operation_id"] == bodies[1]["operation_id"]
         assert bodies[0]["operation_id"].startswith("coord_round_")
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stop_superseded_noop_does_not_converge(tmp_path: Path) -> None:
+    """A45: a superseded_noop command result means the recorded target was
+    replaced — the coordinator must keep reconciling by observation."""
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_superseded"))
+        _force_no_instance_stale_observed(db_path, profile.id)
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/status"):
+                return httpx.Response(
+                    200, json={"runtime_instance_id": "inst_old"}
+                )
+            if request.url.path.endswith("/stop"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "profile_id": profile.id,
+                        "runtime_instance_id": "inst_old",
+                        "status": "superseded_noop",
+                    },
+                )
+            return httpx.Response(404)
+
+        coordinator = _make_coordinator(service, handler)
+        try:
+            result = await coordinator.reconcile_profile_now(profile.id)
+        finally:
+            await coordinator.stop()
+        assert result is ReconcileOutcome.RETRYABLE
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_stop_response_without_command_result_is_not_convergence(
+    tmp_path: Path,
+) -> None:
+    """A45: HTTP 200 alone never proves a stop; a body without a valid
+    command result is a protocol failure, not convergence."""
+    db_path, engine, service = await _make_service(tmp_path)
+    try:
+        profile = await service.create_profile(ProfileConfig(name="p_no_result"))
+        _force_no_instance_stale_observed(db_path, profile.id)
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/status"):
+                return httpx.Response(
+                    200, json={"runtime_instance_id": "inst_old"}
+                )
+            if request.url.path.endswith("/stop"):
+                return httpx.Response(200, json={"profile_id": profile.id})
+            return httpx.Response(404)
+
+        coordinator = _make_coordinator(service, handler)
+        try:
+            result = await coordinator.reconcile_profile_now(profile.id)
+        finally:
+            await coordinator.stop()
+        assert result is ReconcileOutcome.RETRYABLE
+        assert coordinator.get_last_error(profile.id)
     finally:
         await engine.dispose()

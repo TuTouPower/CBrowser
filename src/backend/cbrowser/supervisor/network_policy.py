@@ -197,6 +197,80 @@ def render_ip6tables_rules(spec: NetworkPolicySpec) -> str:
     return "\n".join(lines)
 
 
+class NetworkPolicyError(RuntimeError):
+    """A network policy application failure with bounded diagnostics.
+
+    Carries the failing address family, tool and exit code plus a bounded,
+    sanitized excerpt of the tool's stderr — never the full raw output.
+    """
+
+    def __init__(
+        self, family: str, tool: str, exit_code: int | None, stderr: str
+    ) -> None:
+        self.family = family
+        self.tool = tool
+        self.exit_code = exit_code
+        self.stderr = stderr
+        super().__init__(
+            f"Network filter installation failed: family={family} "
+            f"tool={tool} exit_code={exit_code} stderr={stderr!r}"
+        )
+
+
+_MAX_STDERR_CHARS = 512
+
+
+def _bounded_stderr(raw: bytes) -> str:
+    """Sanitize tool stderr into a bounded single-line diagnostic."""
+    text = raw.decode("utf-8", errors="replace")
+    cleaned = "".join(ch if ch.isprintable() or ch == " " else " " for ch in text)
+    return " ".join(cleaned.split())[-_MAX_STDERR_CHARS:]
+
+
+def _fail_closed_rules() -> str:
+    """Minimal ruleset that drops everything except loopback."""
+    return "\n".join(
+        [
+            "*filter",
+            ":INPUT DROP [0:0]",
+            ":FORWARD DROP [0:0]",
+            ":OUTPUT DROP [0:0]",
+            "-A INPUT -i lo -j ACCEPT",
+            "-A OUTPUT -o lo -j ACCEPT",
+            "COMMIT",
+            "",
+        ]
+    )
+
+
+_FAMILY_TOOLS = {
+    "ipv4": "iptables-restore",
+    "ipv6": "ip6tables-restore",
+}
+
+
+def _install_fail_closed(family: str) -> None:
+    """Best-effort DROP-everything install for one family after a failure.
+
+    Unlike the normal path this restore deliberately omits --noflush:
+    the failed family's sibling may already carry the target policy's
+    ACCEPT rules, and a fail-closed state that leaves earlier ACCEPT
+    rules ahead of the DROP defaults is not closed. The restore replaces
+    the whole table with the minimal DROP ruleset (review
+    t022_code_f005).
+    """
+    try:
+        subprocess.run(
+            [_FAMILY_TOOLS[family], "-w", "5"],
+            input=_fail_closed_rules().encode("utf-8"),
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001 - fallback failure keeps the original diagnostic
+        logger.warning("Fail-closed fallback failed for family=%s", family)
+
+
 def apply_policy(spec: NetworkPolicySpec) -> None:
     """Install only in a fresh owned namespace, without replacing another policy."""
     for command in ("iptables-save", "ip6tables-save"):
@@ -216,19 +290,31 @@ def apply_policy(spec: NetworkPolicySpec) -> None:
                 and fields[1] != "ACCEPT"
             ):
                 raise RuntimeError("Network namespace already has a filter policy")
-    for command, rules in (
-        ("iptables-restore", render_iptables_rules(spec)),
-        ("ip6tables-restore", render_ip6tables_rules(spec)),
-    ):
+    rendered = {
+        "ipv4": render_iptables_rules(spec),
+        "ipv6": render_ip6tables_rules(spec),
+    }
+    for family in ("ipv4", "ipv6"):
+        tool = _FAMILY_TOOLS[family]
         result = subprocess.run(
-            [command, "-w", "5", "--noflush"],
-            input=rules.encode("utf-8"),
+            [tool, "-w", "5", "--noflush"],
+            input=rendered[family].encode("utf-8"),
             capture_output=True,
             timeout=10,
             check=False,
         )
         if result.returncode != 0:
-            raise RuntimeError("Network filter installation failed")
+            # Fail closed on every family: the failed one may be partially
+            # applied and the untouched one still has default ACCEPT chains.
+            # Existing teardown removes the namespace afterwards.
+            for fallback_family in ("ipv4", "ipv6"):
+                _install_fail_closed(fallback_family)
+            raise NetworkPolicyError(
+                family=family,
+                tool=tool,
+                exit_code=result.returncode,
+                stderr=_bounded_stderr(result.stderr or b""),
+            )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -250,6 +336,15 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         apply_policy(spec)
+    except NetworkPolicyError as exc:
+        logger.error(
+            "Policy installation failed: family=%s tool=%s exit_code=%s stderr=%s",
+            exc.family,
+            exc.tool,
+            exc.exit_code,
+            exc.stderr,
+        )
+        sys.exit(3)
     except Exception as exc:  # noqa: BLE001 - iptables policy installation failure exits with code 3
         logger.error("Policy installation failed: error_type=%s", type(exc).__name__)
         sys.exit(3)

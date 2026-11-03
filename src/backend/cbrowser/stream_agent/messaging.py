@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
+from .policy_rules import iso_now
 from .protocol import (
     AgentHeartbeatEnvelope,
     AgentHeartbeatPayload,
@@ -14,9 +14,10 @@ from .protocol import (
     GatewayTunnelEnvelope,
 )
 
-
-def iso_now() -> str:
-    return datetime.now(UTC).isoformat()
+# iso_now is re-exported from policy_rules (single definition, t022 A48);
+# consumers import it from here by name. No __all__ is declared: the
+# module's public surface is its builder functions plus this re-export,
+# and a partial __all__ would misstate it (review t022_code_f014).
 
 
 def build_register_payload(

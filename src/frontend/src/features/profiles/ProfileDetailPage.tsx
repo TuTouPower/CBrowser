@@ -9,6 +9,7 @@ import {
   useApplyDisplaySettingsMutation,
   useDuplicateProfileMutation,
   useResetProfileMutation,
+  useRetrySearchDefaultsMutation,
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
 import type { ProfileUpdateRequest } from "../../shared/api/types";
@@ -27,6 +28,7 @@ export function ProfileDetailPage() {
   const applyDisplayMutation = useApplyDisplaySettingsMutation();
   const duplicateMutation = useDuplicateProfileMutation();
   const resetMutation = useResetProfileMutation();
+  const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation();
 
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -97,6 +99,18 @@ export function ProfileDetailPage() {
       setTimeout(() => setSuccess(false), 2000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("failedToResetProfile"));
+    }
+  };
+
+  const handleRetrySearchDefaults = async () => {
+    if (!profileId) return;
+    setError(null);
+    try {
+      await retrySearchDefaultsMutation.mutateAsync(profileId);
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : t("failedToRetrySearchDefaults"),
+      );
     }
   };
 
@@ -324,6 +338,32 @@ export function ProfileDetailPage() {
             className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs rounded"
           >
             {t("profileUpdatedSuccessfully")}
+          </div>
+        )}
+
+        {runtime?.search_defaults?.state === "failed" && (
+          <div
+            data-testid="search-defaults-failed"
+            className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 text-xs rounded flex items-center justify-between gap-3"
+          >
+            <div>
+              <p className="text-amber-300 font-medium">
+                {t("searchDefaultsFailed")}
+              </p>
+              <p className="text-gray-400 mt-0.5">
+                {t("searchDefaultsFailedHint")}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRetrySearchDefaults()}
+              disabled={retrySearchDefaultsMutation.isPending}
+              className="shrink-0 px-3 py-1.5 rounded text-xs bg-amber-500 text-white disabled:opacity-50"
+            >
+              {retrySearchDefaultsMutation.isPending
+                ? t("searchDefaultsRetrying")
+                : t("retrySearchDefaults")}
+            </button>
           </div>
         )}
 

@@ -466,6 +466,23 @@ class ConfigVersionResponse(BaseModel):
     created_at: str
 
 
+class SearchDefaultsStatusData(BaseModel):
+    """API view of the runtime agent's search-defaults outcome (t022 A55).
+
+    Mirrors the runtime agent protocol model; kept independent of browser
+    readiness: a failed initialization is reported here, never as a
+    runtime failure.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["applied", "failed", "disabled", "pending"]
+    error_kind: str | None = Field(default=None, max_length=64)
+    runtime_instance_id: str
+    request_id: str | None = Field(default=None, max_length=128)
+    updated_at: str
+
+
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
     desired_state: DesiredState
@@ -476,6 +493,7 @@ class ProfileRuntimeResponse(BaseModel):
     restart_blocked: bool
     last_exit_event_id: str | None
     last_coordinator_error: str | None = None
+    search_defaults: SearchDefaultsStatusData | None = None
     updated_at: str
 
 
@@ -487,6 +505,7 @@ class ProfileRuntimeStatusEvent(BaseModel):
     failure_count: int = 0
     restart_blocked: bool = False
     last_coordinator_error: str | None = None
+    search_defaults: SearchDefaultsStatusData | None = None
     updated_at: str
 
 

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import ipaddress
 import json
 import logging
 import os
 import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -25,6 +27,7 @@ from cbrowser.supervisor.container_spec import (
     stream_environment,
     stream_labels,
     stream_ports,
+    x11_helper_labels,
 )
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
@@ -47,8 +50,47 @@ from docker.errors import DockerException, NotFound
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
 
 
+def _parse_config_version(raw: Any) -> int | None:
+    """Parse a config-version label; missing or malformed means unusable."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw if raw >= 1 else None
+    if isinstance(raw, str) and raw.isdigit():
+        value = int(raw)
+        return value if value >= 1 else None
+    return None
+
+
 class DockerSandboxError(Exception):
     pass
+
+
+CACHE_GENERATION_FILENAME = ".cbrowser-cache-generation.json"
+
+
+@dataclass(frozen=True)
+class _CacheGeneration:
+    """A fully validated, sealed cache tree generation (t022 A44).
+
+    Trust basis for reuse: the root's identity (resolved path + device +
+    inode) plus the sidecar record the Supervisor itself sealed after a
+    complete tree validation. Any mismatch — unknown root, missing or
+    altered sidecar, changed identity — falls back to full validation.
+
+    Scope of the seal: the fingerprint covers each entry's relative path,
+    kind, size and mtime, and symlink targets. It is NOT a content hash —
+    the model relies on the deployment invariant that only the Supervisor
+    writes these trees (runtime consumers mount them read-only). A writer
+    outside that invariant could alter file contents while preserving
+    size and mtime undetected; deployments that cannot hold the invariant
+    must not treat a sealed generation as content proof.
+    """
+
+    root_identity: tuple[str, int, int]
+    generation: int
+    fingerprint: str
+    entry_count: int
 
 
 class DockerAdapter:
@@ -73,6 +115,8 @@ class DockerAdapter:
         )
         self.engine_cache.mkdir(parents=True, exist_ok=True)
         self.geoip_cache.mkdir(parents=True, exist_ok=True)
+        self._cache_generations: dict[Path, _CacheGeneration] = {}
+        self._cache_generations_stale: set[Path] = set()
         self._validate_cache_paths()
         self.client = docker_client or docker.from_env()
         self.browser_image = browser_image or os.environ.get("CBROWSER_BROWSER_IMAGE")
@@ -205,9 +249,117 @@ class DockerAdapter:
 
     def _validate_cache_paths(self) -> None:
         for root in (self.engine_cache, self.geoip_cache):
-            self.validator.validate_safe_path(root)
-            for item in root.rglob("*"):
-                self.validator.validate_safe_path(item)
+            self._validate_cache_root(root)
+
+    def _validate_cache_root(self, root: Path) -> None:
+        """Reuse a sealed generation when possible; validate fully otherwise.
+
+        The fast path is a fingerprint check, not a blind trust: the tree
+        fingerprint (entry set, kinds, symlink targets, file size+mtime)
+        is recomputed and compared against the sealed record together
+        with the root identity and the sidecar contents. Any drift — a
+        file swapped for a symlink, entries added or removed — falls back
+        to the complete per-entry validation, after which the new
+        generation is sealed atomically. What the fast path saves is the
+        per-entry PathValidator rule evaluation, not the tree walk.
+        """
+        validated_root = self.validator.validate_safe_path(root)
+        stat = os.stat(validated_root)
+        identity = (str(validated_root), stat.st_dev, stat.st_ino)
+        record = self._cache_generations.get(root)
+        if (
+            record is not None
+            and root not in self._cache_generations_stale
+            and record.root_identity == identity
+            and self._cache_sidecar_matches(root, record)
+        ):
+            fingerprint, entry_count = self._cache_tree_fingerprint(root)
+            if fingerprint == record.fingerprint and entry_count == record.entry_count:
+                return
+        for item in root.rglob("*"):
+            self.validator.validate_safe_path(item)
+        fingerprint, entry_count = self._cache_tree_fingerprint(root)
+        generation = self._next_cache_generation(root, record)
+        sealed = _CacheGeneration(
+            root_identity=identity,
+            generation=generation,
+            fingerprint=fingerprint,
+            entry_count=entry_count,
+        )
+        self._write_cache_sidecar(root, sealed)
+        self._cache_generations[root] = sealed
+        self._cache_generations_stale.discard(root)
+
+    def _next_cache_generation(
+        self, root: Path, record: _CacheGeneration | None
+    ) -> int:
+        """Generation numbers stay monotonic across process restarts: a
+        fresh process continues from the sidecar it finds on disk instead
+        of restarting at 1 and overwriting the previous seal's number."""
+        candidates = [0]
+        if record is not None:
+            candidates.append(record.generation)
+        try:
+            payload = json.loads(
+                (root / CACHE_GENERATION_FILENAME).read_text(encoding="utf-8")
+            )
+            if isinstance(payload, dict) and isinstance(
+                payload.get("generation"), int
+            ):
+                candidates.append(payload["generation"])
+        except (OSError, ValueError):
+            pass
+        return max(candidates) + 1
+
+    def _cache_sidecar_matches(self, root: Path, record: _CacheGeneration) -> bool:
+        try:
+            payload = json.loads(
+                (root / CACHE_GENERATION_FILENAME).read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return False
+        return (
+            isinstance(payload, dict)
+            and payload.get("generation") == record.generation
+            and payload.get("fingerprint") == record.fingerprint
+            and payload.get("entry_count") == record.entry_count
+        )
+
+    def _write_cache_sidecar(self, root: Path, record: _CacheGeneration) -> None:
+        payload = json.dumps(
+            {
+                "generation": record.generation,
+                "fingerprint": record.fingerprint,
+                "entry_count": record.entry_count,
+            },
+            sort_keys=True,
+        )
+        # Atomic switch via the shared storage helper: the new generation
+        # becomes visible in one rename, never as a half-written record.
+        atomic_write_text(root / CACHE_GENERATION_FILENAME, payload)
+
+    @staticmethod
+    def _cache_tree_fingerprint(root: Path) -> tuple[str, int]:
+        digest = hashlib.sha256()
+        entries = []
+        for item in root.rglob("*"):
+            if item.name == CACHE_GENERATION_FILENAME:
+                continue
+            relative = item.relative_to(root).as_posix()
+            if item.is_symlink():
+                entries.append((relative, "link", os.readlink(item)))
+            elif item.is_dir():
+                entries.append((relative, "dir", ""))
+            elif item.is_file():
+                stat = item.stat()
+                entries.append(
+                    (relative, "file", f"{stat.st_size}:{stat.st_mtime_ns}")
+                )
+            else:
+                entries.append((relative, "other", ""))
+        for relative, kind, detail in sorted(entries):
+            digest.update(f"{relative}\0{kind}\0{detail}\n".encode())
+        return digest.hexdigest(), len(entries)
 
     async def cleanup_orphan_helpers(self) -> None:
         """Reap prior coordinator helpers once, under the startup coordinator lock.
@@ -231,9 +383,13 @@ class DockerAdapter:
         for container in candidates:
             labels = container.labels or {}
             role = labels.get("com.cbrowser.role")
-            if role not in {"cache-init", "network-policy"}:
+            if role not in {"cache-init", "network-policy", "x11-permissions"}:
                 continue
-            name_role = "cache" if role == "cache-init" else "policy"
+            name_role = {
+                "cache-init": "cache",
+                "network-policy": "policy",
+                "x11-permissions": "x11",
+            }[role]
             if (
                 labels.get("com.cbrowser.prefix") != self.resource_prefix
                 or labels.get("com.cbrowser.managed-by") != "supervisor"
@@ -255,6 +411,12 @@ class DockerAdapter:
             if self._binary_ready and (not need_geoip or self._geoip_ready):
                 return
             await asyncio.to_thread(self._initialize_cache, need_geoip)
+            # Initialization may have rewritten the trees: the sealed
+            # generations no longer describe them, so the next validation
+            # is a full one and seals a new generation.
+            self._cache_generations_stale.update(
+                (self.engine_cache, self.geoip_cache)
+            )
             self._validate_cache_paths()
             self._binary_ready = True
             self._geoip_ready = self._geoip_ready or need_geoip
@@ -414,20 +576,64 @@ with path.open('w') as output:
         os.chmod(directory, mode)
 
     def setup_x11_permissions(self, x11_dir: Path) -> None:
+        """Fix X11 socket directory permissions with a least-privilege helper.
+
+        The helper only chmods one mounted directory: it drops every
+        capability except FOWNER (required to chmod a directory owned by the
+        runtime uid), runs on a read-only rootfs with no-new-privileges, and
+        is always removed — success, failure and cancellation alike.
+        """
+        helper = None
         try:
-            self.client.containers.run(
+            helper = self.client.containers.run(
                 self.browser_image,
+                # Deterministic managed name so a Supervisor killed
+                # mid-helper leaves an orphan the startup reaper can
+                # recognize and remove (review t022_code_f006).
+                name=f"{self.resource_prefix}-x11-{uuid.uuid4().hex[:12]}",
                 entrypoint="chmod",
                 command=["0750", "/x11"],
                 volumes={str(x11_dir): {"bind": "/x11", "mode": "rw"}},
                 user="0:0",
-                remove=True,
+                detach=True,
+                read_only=True,
+                cap_drop=["ALL"],
+                cap_add=["FOWNER"],
+                security_opt=["no-new-privileges:true"],
+                labels=x11_helper_labels(self.resource_prefix),
             )
-        except DockerException as e:
-            logger.error(f"Failed to setup X11 permissions: {e}")
+            result = helper.wait(timeout=30)
+            if result.get("StatusCode") != 0:
+                raise DockerSandboxError(
+                    "X11 permission helper exited unsuccessfully"
+                )
+        except DockerSandboxError:
+            raise
+        except DockerException as exc:
+            logger.error(
+                "Failed to setup X11 permissions: error_type=%s",
+                type(exc).__name__,
+            )
             raise DockerSandboxError(
-                f"X11 permission initialization failed: {e}"
-            ) from e
+                f"X11 permission initialization failed: {type(exc).__name__}"
+            ) from None
+        except Exception as exc:  # noqa: BLE001 - wait/transport errors map to the same explicit outcome
+            logger.error(
+                "Failed to setup X11 permissions: error_type=%s",
+                type(exc).__name__,
+            )
+            raise DockerSandboxError(
+                f"X11 permission initialization failed: {type(exc).__name__}"
+            ) from None
+        finally:
+            if helper is not None:
+                try:
+                    helper.remove(force=True)
+                except Exception as exc:  # noqa: BLE001 - cleanup must never mask the helper outcome
+                    logger.warning(
+                        "Failed to remove X11 permission helper: error_type=%s",
+                        type(exc).__name__,
+                    )
 
     async def create_profile_network(self, profile_id: str) -> Any:
         return await asyncio.to_thread(
@@ -817,7 +1023,16 @@ with path.open('w') as output:
             secret_file=secret_file,
             selkies_file=selkies_file,
         )
-        config_version = b_inspect["Config"]["Labels"]["com.cbrowser.config-version"]
+        parsed_version = _parse_config_version(
+            b_inspect.get("Config", {}).get("Labels", {}).get(
+                "com.cbrowser.config-version"
+            )
+        )
+        if parsed_version is None:
+            raise DockerSandboxError(
+                "Browser container config-version label is unusable"
+            )
+        config_version = str(parsed_version)
         clipboard_sync = True
         if snapshot_json_path is not None:
             try:
@@ -1039,17 +1254,40 @@ with path.open('w') as output:
             result = []
             for c in containers:
                 labels = c.labels or {}
-                if labels.get("com.cbrowser.role") not in {"browser", "stream"}:
+                role = labels.get("com.cbrowser.role")
+                if role not in {"browser", "stream"}:
+                    continue
+                # Scan boundary: a resource whose identity or config-version
+                # labels are missing or malformed is rejected on its own —
+                # never adopted, never bulk-deleted, and never allowed to
+                # abort the scan of the remaining resources.
+                profile_id = labels.get("com.cbrowser.profile-id")
+                instance_id = labels.get("com.cbrowser.instance-id")
+                config_version = _parse_config_version(
+                    labels.get("com.cbrowser.config-version")
+                )
+                if (
+                    not isinstance(profile_id, str)
+                    or not profile_id
+                    or not isinstance(instance_id, str)
+                    or not instance_id
+                    or config_version is None
+                ):
+                    logger.warning(
+                        "Container scan rejected a resource with unusable "
+                        "identity labels: role=%s",
+                        role,
+                    )
                     continue
                 result.append(
                     {
                         "id": c.id,
                         "name": c.name,
                         "status": c.status,
-                        "profile_id": labels.get("com.cbrowser.profile-id"),
-                        "instance_id": labels.get("com.cbrowser.instance-id"),
-                        "role": labels.get("com.cbrowser.role"),
-                        "config_version": labels.get("com.cbrowser.config-version"),
+                        "profile_id": profile_id,
+                        "instance_id": instance_id,
+                        "role": role,
+                        "config_version": str(config_version),
                         "policy_ready": self._runtime_policy_ready(c),
                     }
                 )

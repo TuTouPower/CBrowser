@@ -221,4 +221,49 @@ describe("useProfilesQuery & SSE Sync", () => {
     // pending display settings for a profile it never loaded.
     expect(queryClient.getQueryData(profileKeys.runtime("uncached"))).toBeUndefined();
   });
+
+  it("merges search_defaults from runtime events into the cached runtime", async () => {
+    queryClient.setQueryData(profileKeys.runtime("p1"), {
+      profile_id: "p1",
+      desired_state: "running",
+      observed_state: "running",
+      runtime_instance_id: "inst-1",
+      config_version: 1,
+      failure_count: 0,
+      restart_blocked: false,
+      last_exit_event_id: null,
+      last_coordinator_error: null,
+      search_defaults: null,
+      updated_at: "2026-11-04T00:00:00Z",
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), { wrapper: createWrapper() });
+
+    const status = {
+      state: "failed" as const,
+      error_kind: "timeout",
+      runtime_instance_id: "inst-1",
+      request_id: null,
+      updated_at: "2026-11-04T00:01:00Z",
+    };
+    act(() => {
+      if (sseCallback) {
+        sseCallback({ profile_id: "p1", search_defaults: status });
+      }
+    });
+    const merged = queryClient.getQueryData<ProfileRuntimeResponse>(
+      profileKeys.runtime("p1"),
+    );
+    expect(merged?.search_defaults).toEqual(status);
+
+    // An event without the field leaves the cached status untouched.
+    act(() => {
+      if (sseCallback) {
+        sseCallback({ profile_id: "p1", observed_state: "running" });
+      }
+    });
+    expect(
+      queryClient.getQueryData<ProfileRuntimeResponse>(profileKeys.runtime("p1"))
+        ?.search_defaults,
+    ).toEqual(status);
+  });
 });

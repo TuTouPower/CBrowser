@@ -1,4 +1,11 @@
-"""An old stop operation cannot act on a replacement runtime."""
+"""An old stop operation cannot act on a replacement runtime.
+
+t022/A45 contract update: a completed journal entry still replays its
+recorded result verbatim, but an incomplete operation targeting a
+superseded instance now resolves to the explicit "superseded_noop"
+result instead of claiming "stopped" — the replacement session is
+protected either way.
+"""
 
 from types import SimpleNamespace
 
@@ -31,7 +38,10 @@ async def test_old_stop_replay_keeps_replacement_session(tmp_path, completed):
         replay = await core.stop_profile(
             "profile", expected_instance="old_runtime", operation_id="old_stop"
         )
-        assert replay == result
+        if completed:
+            assert replay == result
+        else:
+            assert replay == dict(request, status="superseded_noop")
         assert core.get_session("profile") is current
         with pytest.raises(ValueError, match="different request"):
             await core.stop_profile(

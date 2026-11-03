@@ -39,6 +39,8 @@ v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作�
 - 音频：每页静音按钮经官方 `pipelineControl` audio（`STOP_AUDIO`/`START_AUDIO`）；音频状态（`audio_status.ts`）由 getStats 推导，与视频阶段独立：`normal`/`muted`/`no_track`/`no_data`/`unknown`，内容静音不判故障。
 - 显示设置：运行时 `config_version` 与 Profile 当前配置版本不同即显示待应用提示与“应用并重启”（经 API stop → running）。
 
+SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点事件 id（快照时刻最后一条实时事件序号），不进入共享历史；重连以基点 id 经 Last-Event-ID 续传，服务端回放基点之后的实时事件，无缺口无倒退；窗口不足时服务端以全量快照显式重建。Profile 详情页呈现独立的默认搜索初始化状态：`search_defaults.state == "failed"` 时显示与浏览器可用性分离的失败提示与重试按钮（调用 `POST /profiles/{id}/runtime/search-defaults/retry`），不要求重启浏览器。
+
 ## 5. 测试
 
 - Vitest（`npm test --prefix src/frontend`，需 `NODE_OPTIONS=--no-experimental-webstorage`）覆盖 API 客户端、SSE、路由与会话组件。

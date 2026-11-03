@@ -144,3 +144,7 @@
     3. 引入 Windows 专有中文字体（SimSun、Microsoft YaHei）以贴近 Windows 平台伪装。
 - 结论：采用选项 2。默认 `none` 保持既有反指纹基线；启用 bundle 的 Profile 明确接受 Linux 中文字体特征与 Windows 伪装不一致的取舍，镜像增大约 22MB。选项 3 因字体不可自由分发、授权风险明确不做。不挂载宿主字体目录、不在宿主数据目录预置字体文件；Stream 容器不涉及（画面渲染只发生在 Browser 容器）。
 - 替代：无（`0b4dc78` 的全局 purge 由本决定的 staged + 开关机制取代其效果面，默认行为保持一致）
+
+## 016 默认搜索初始化不作为浏览器就绪成功条件（D1=B，2026-11-04，t022）
+
+默认搜索引擎初始化（set_google_default）是 best-effort 增强，不是浏览器 readiness 的成功条件：初始化异常或超时后浏览器仍视为可用，其结果以独立类型化状态（applied/failed/disabled/pending）呈现到 Profile 页面，并提供受身份围栏保护、可幂等重试的操作；重试不重启浏览器、不干扰已有标签页，只有验证 Google 成为默认后才写成功 marker，正常启动不覆盖用户后续手动选择。原 D1 在 t022 立项时经用户选择 B 方案定案。

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from cbrowser.runtime_agent.protocol import SearchDefaultsStatus
 from pydantic import BaseModel, ConfigDict, Field
 
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
@@ -39,7 +40,25 @@ class StopProfileResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_id: str
     runtime_instance_id: str | None = None
-    status: Literal["stopped", "stopping"]
+    # Command result, not an observation: "stopped" only when this command
+    # actually stopped the target, "already_absent" when the target was
+    # confirmed not to exist, and "superseded_noop" when a newer instance
+    # has replaced the target (which is left untouched).
+    status: Literal["stopped", "already_absent", "superseded_noop"]
+
+
+class SearchDefaultsRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str = Field(min_length=1, max_length=128)
+    runtime_instance_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+class SearchDefaultsStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    runtime_instance_id: str | None = None
+    search_defaults: SearchDefaultsStatus | None = None
 
 
 class ResetBlockedRequest(BaseModel):

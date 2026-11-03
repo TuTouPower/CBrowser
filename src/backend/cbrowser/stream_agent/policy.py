@@ -13,7 +13,6 @@ from typing import Any
 
 from .policy_rules import (
     DISALLOWED_SETTINGS_KEYS,
-    FORBIDDEN_PEER_PREFIXES,
     MAX_HISTORY_SIZE,
     sanitize_settings_message,
     should_block_client_verb,
@@ -239,35 +238,37 @@ class LiveCapturePolicyAgent:
 
     def set_supervisor_quota(self, fps_cap: float | None) -> None:
         """
-        Set or clear supervisor overload quota cap.
-        Validates that quota is a positive, non-NaN finite number <= max_fps.
+        Set or clear the supervisor overload quota cap.
+
+        One FPS rule with the protocol layer (SupervisorQuotaPayload): a
+        cap must be finite and within [min_fps, max_fps]. Out-of-rule values
+        are strictly rejected with ValueError and leave the current cap
+        untouched; None is the only way to clear the cap.
         """
-        if fps_cap is not None:
-            try:
-                cap_val = float(fps_cap)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "PolicyAgent: Ignored invalid supervisor quota: %s",
-                    fps_cap,
-                )
-                return
-
-            if math.isnan(cap_val) or math.isinf(cap_val) or cap_val <= 0:
-                logger.warning(
-                    "PolicyAgent: Ignored non-positive/NaN supervisor quota: %s",
-                    cap_val,
-                )
-                return
-
-            bounded_cap = min(cap_val, self.max_fps)
-            self._supervisor_fps_cap = bounded_cap
-            logger.info(
-                "PolicyAgent: Supervisor quota cap set to %.1f FPS",
-                self._supervisor_fps_cap,
-            )
-        else:
+        if fps_cap is None:
             self._supervisor_fps_cap = None
             logger.info("PolicyAgent: Supervisor quota cap cleared")
+            return
+        try:
+            cap_val = float(fps_cap)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Supervisor quota must be a number, got {type(fps_cap).__name__}"
+            ) from None
+        if (
+            not math.isfinite(cap_val)
+            or cap_val < self.min_fps
+            or cap_val > self.max_fps
+        ):
+            raise ValueError(
+                "Supervisor quota must be finite and within "
+                f"[{self.min_fps}, {self.max_fps}] FPS"
+            )
+        self._supervisor_fps_cap = cap_val
+        logger.info(
+            "PolicyAgent: Supervisor quota cap set to %.1f FPS",
+            self._supervisor_fps_cap,
+        )
 
     def has_active_visible_viewers(self) -> bool:
         """Return True if any authenticated viewer is currently visible."""
@@ -569,7 +570,6 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
     """Dynamically subclass WebRTCService to control policy."""
 
     class RealPolicyControlledWebRTCService(base_cls):
-        FORBIDDEN_PEER_PREFIXES = FORBIDDEN_PEER_PREFIXES
 
         def __init__(self, supervisor: Any):
             super().__init__(supervisor)
@@ -602,7 +602,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
             4. Forward valid input unconditionally to input_handler.
             """
             if isinstance(msg, str):
-                if msg.startswith(self.FORBIDDEN_PEER_PREFIXES):
+                if should_block_client_verb(msg):
                     logger.debug(
                         "[%s] Policy Guard: Blocked client verb: %s",
                         _iso_now(),

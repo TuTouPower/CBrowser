@@ -139,29 +139,12 @@ async def test_future_sequence_in_same_epoch_receives_full_snapshot() -> None:
     assert "p_snapshot" in chunk
 
 
-@pytest.mark.asyncio
-async def test_snapshot_events_use_unique_event_ids() -> None:
-    broadcaster = RuntimeEventBroadcaster(maxlen=10)
-
-    async def snapshot_provider():
-        return [_event("p1"), _event("p2"), _event("p3")]
-
-    generator = broadcaster.subscribe(initial_snapshot_provider=snapshot_provider)
-    try:
-        chunks = [
-            await asyncio.wait_for(generator.__anext__(), timeout=1.0)
-            for _ in range(3)
-        ]
-    finally:
-        await generator.aclose()
-
-    ids = [
-        line.removeprefix("id: ")
-        for chunk in chunks
-        for line in chunk.splitlines()
-        if line.startswith("id: ")
-    ]
-    assert len(ids) == len(set(ids)) == 3
+# t022/A44 contract replacement: test_snapshot_events_use_unique_event_ids
+# was removed wholesale. Snapshot frames no longer mint unique live
+# sequence ids (that mechanism polluted the shared history and consumed
+# the live sequence); they are private to the subscriber and all carry
+# the explicit live base point id. The new semantics are covered by
+# tests/unit/test_runtime_sse_snapshot_handoff.py.
 
 
 @pytest.mark.asyncio

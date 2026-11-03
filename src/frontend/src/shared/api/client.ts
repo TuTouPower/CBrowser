@@ -224,6 +224,14 @@ export class ApiClient {
         `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime`,
       );
     },
+    retrySearchDefaults: async (
+      profileId: string,
+    ): Promise<ProfileRuntimeResponse> => {
+      return this.request<ProfileRuntimeResponse>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime/search-defaults/retry`,
+        { method: "POST" },
+      );
+    },
     setDesiredState: async (
       profileId: string,
       desiredState: "running" | "stopped",

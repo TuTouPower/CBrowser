@@ -56,8 +56,14 @@ class AgentRegistry:
         instance_id: str,
         agent_session_id: str | None = None,
         now: float | None = None,
+        runtime_state: str | None = None,
     ) -> bool:
-        """Only the registered session may extend liveness."""
+        """Only the registered session may extend liveness.
+
+        A heartbeat also carries the Agent's current runtime_state; the
+        registry record is kept in sync so control-plane reads never serve
+        a stale registration-time state.
+        """
         agent = self._agents.get(profile_id)
         if agent is None or agent.instance_id != instance_id:
             return False
@@ -66,6 +72,8 @@ class AgentRegistry:
         ):
             return False
         agent.last_heartbeat = self.now() if now is None else now
+        if runtime_state is not None:
+            agent.runtime_state = runtime_state
         return True
 
     def check_heartbeat_timeouts(
@@ -85,31 +93,114 @@ class AgentRegistry:
 
 
 class RegistrationThrottle:
-    """Bounded per-source registration attempts for the Agent handshake."""
+    """Registration abuse control with two separately-modelled budgets.
 
-    def __init__(self, max_attempts: int = 20, window_seconds: float = 60.0) -> None:
-        self.max_attempts = max_attempts
+    - In-flight handshakes per source are bounded by a reservation that is
+      released on *every* exit path (success, rejection, timeout, cancel).
+    - Failed handshakes are recorded per source inside a sliding window;
+      only failures consume that budget. A success releases its reservation
+      and never erases other failures, so legitimate Agent recovery is not
+      starved by the failure budget it did not spend, and an attacker
+      cannot reset the window by succeeding once.
+
+    Keys are transport source addresses only — never an unauthenticated
+    claimed identity — and the number of tracked sources is bounded.
+    """
+
+    def __init__(
+        self,
+        max_inflight: int = 4,
+        max_failures: int = 20,
+        window_seconds: float = 60.0,
+        max_sources: int = 1024,
+    ) -> None:
+        self.max_inflight = max_inflight
+        self.max_failures = max_failures
         self.window_seconds = window_seconds
-        self._attempts: dict[str, list[float]] = {}
+        self.max_sources = max_sources
+        self._inflight: dict[str, int] = {}
+        self._failures: dict[str, list[float]] = {}
 
-    def allow(self, peer: str | None, now: float | None = None) -> bool:
+    def _prune_failures(self, key: str, clock: float) -> list[float]:
+        failures = self._failures.setdefault(key, [])
+        cutoff = clock - self.window_seconds
+        while failures and failures[0] < cutoff:
+            failures.pop(0)
+        return failures
+
+    def _evict_sources(self, clock: float, *, protect: str) -> None:
+        """Bound the tracked-source maps without breaking live state.
+
+        A source is evictable only when it holds no in-flight reservation
+        and is not the source of the operation in progress: evicting a
+        source with reservations would silently drop its in-flight count
+        (defeating max_inflight) and erasing its failure history would let
+        flooding reset the failure budget (review t022_code_f002). When
+        every tracked source is live, the cap is exceeded temporarily —
+        bounded by actual concurrency — rather than corrupting state.
+        """
+        if len(self._failures) <= self.max_sources:
+            return
+        cutoff = clock - self.window_seconds
+        for stale in [
+            source
+            for source, values in self._failures.items()
+            if source != protect
+            and self._inflight.get(source, 0) == 0
+            and (not values or values[-1] < cutoff)
+        ]:
+            self._failures.pop(stale, None)
+            self._inflight.pop(stale, None)
+        while len(self._failures) > self.max_sources:
+            # Prefer sources carrying no failure history at all; among the
+            # rest evict the least recently active, so a flood of fresh
+            # sources cannot flush the history of sources that are still
+            # actively failing.
+            candidates = [
+                source
+                for source in self._failures
+                if source != protect and self._inflight.get(source, 0) == 0
+            ]
+            if not candidates:
+                break
+            victim = min(
+                candidates,
+                key=lambda source: (
+                    bool(self._failures[source]),
+                    self._failures[source][-1] if self._failures[source] else 0.0,
+                ),
+            )
+            self._failures.pop(victim, None)
+            self._inflight.pop(victim, None)
+
+    def reserve(self, peer: str | None, now: float | None = None) -> bool:
+        """Reserve an in-flight handshake slot; False means refuse (429)."""
         clock = time.monotonic() if now is None else now
         key = peer or "unknown"
-        attempts = self._attempts.setdefault(key, [])
-        cutoff = clock - self.window_seconds
-        while attempts and attempts[0] < cutoff:
-            attempts.pop(0)
-        if len(attempts) >= self.max_attempts:
+        failures = self._prune_failures(key, clock)
+        if len(failures) >= self.max_failures:
             return False
-        attempts.append(clock)
-        if len(self._attempts) > 1024:
-            for stale in [
-                source
-                for source, values in self._attempts.items()
-                if not values or values[-1] < cutoff
-            ]:
-                self._attempts.pop(stale, None)
+        if self._inflight.get(key, 0) >= self.max_inflight:
+            return False
+        self._inflight[key] = self._inflight.get(key, 0) + 1
+        self._evict_sources(clock, protect=key)
         return True
+
+    def release(
+        self, peer: str | None, *, success: bool, now: float | None = None
+    ) -> None:
+        """Release a reservation; failures are recorded, successes are not."""
+        clock = time.monotonic() if now is None else now
+        key = peer or "unknown"
+        remaining = self._inflight.get(key, 0) - 1
+        if remaining > 0:
+            self._inflight[key] = remaining
+        else:
+            self._inflight.pop(key, None)
+        if not success:
+            failures = self._prune_failures(key, clock)
+            failures.append(clock)
+            self._evict_sources(clock, protect=key)
 
 
 class AuthorizationThrottle:

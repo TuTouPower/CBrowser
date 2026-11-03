@@ -157,6 +157,10 @@ class GatewayHarness:
 
     async def start(self) -> None:
         await self.api_service.start()
+        # A fresh app per start: aiohttp applications are single-use and the
+        # previous instance's cleanup closed its API client (gateway restart
+        # scenarios, t022/A39, rely on this).
+        self.app = create_gateway_app(self.config)
         self.gw_runner = web.AppRunner(self.app)
         await self.gw_runner.setup()
         self.gw_site = web.TCPSite(self.gw_runner, "127.0.0.1", self.gw_port)

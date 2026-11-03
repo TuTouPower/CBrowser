@@ -57,6 +57,8 @@ def test_profile_runtime_status_event_schema():
         "failure_count": 1,
         "restart_blocked": False,
         "last_coordinator_error": "Connection refused",
+        # t022/A55: typed search-defaults status rides the runtime event.
+        "search_defaults": None,
         "updated_at": "2026-10-31T00:00:00Z",
     }
 

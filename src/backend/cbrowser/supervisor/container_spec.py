@@ -89,6 +89,14 @@ def policy_helper_labels(prefix: str, instance_id: str) -> dict[str, str]:
     }
 
 
+def x11_helper_labels(prefix: str) -> dict[str, str]:
+    return {
+        "com.cbrowser.prefix": prefix,
+        "com.cbrowser.role": "x11-permissions",
+        "com.cbrowser.managed-by": "supervisor",
+    }
+
+
 def cache_init_labels(prefix: str) -> dict[str, str]:
     return {
         "com.cbrowser.prefix": prefix,

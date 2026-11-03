@@ -19,7 +19,11 @@ from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
 from .download_reconciler import scan_completed_downloads
-from .event_storage import EventStorage, StorageError
+from .event_storage import EventStorage, StorageError, atomic_write_json
+from .profile_defaults import (
+    SEARCH_DEFAULTS_RETRY_FILE,
+    read_search_defaults_status,
+)
 from .protocol import (
     ConfigVersionResponse,
     ControlRequest,
@@ -27,11 +31,46 @@ from .protocol import (
     DownloadEventRecord,
     HealthResponse,
     RuntimeEventRecord,
+    SearchDefaultsStatus,
 )
 from .security import validate_runtime_id
 from .subsystems import check_audio, check_browser, check_display
 
 logger = logging.getLogger("cbrowser.runtime_agent.agent")
+
+
+def _validated_runner_info(runner_info: dict[str, Any]) -> dict[str, Any]:
+    """Validate startup metadata before any CDP manager is constructed.
+
+    Non-empty metadata with a missing field or a wrong-typed field is a hard
+    startup failure with a redacted error; field values are never echoed.
+    """
+    try:
+        if not isinstance(runner_info, dict):
+            raise ValueError("Invalid runner metadata")
+        profile_id = validate_runtime_id(runner_info["profile_id"])
+        runtime_instance_id = validate_runtime_id(runner_info["runtime_instance_id"])
+        browser_ws_url = runner_info["browser_ws_url"]
+        if not isinstance(browser_ws_url, str) or not browser_ws_url.startswith(
+            ("ws://", "wss://")
+        ):
+            raise ValueError("Invalid runner metadata")
+        config_version = runner_info.get("config_version", 1)
+        if type(config_version) is not int or config_version < 1:
+            raise ValueError("Invalid runner metadata")
+        for key in ("cdp_port", "browser_pid", "runner_pid"):
+            if key in runner_info and (
+                type(runner_info[key]) is not int or runner_info[key] < 1
+            ):
+                raise ValueError("Invalid runner metadata")
+    except Exception:  # noqa: BLE001 - any malformed metadata becomes one safe error
+        raise StorageError("Invalid runner metadata") from None
+    return {
+        **runner_info,
+        "profile_id": profile_id,
+        "runtime_instance_id": runtime_instance_id,
+        "config_version": config_version,
+    }
 
 
 def create_agent_app(
@@ -95,6 +134,21 @@ def create_agent_app(
         if profile and instance:
             return storage.get_instance_state(profile, instance)
         return storage.get_state()
+
+    def _search_defaults_status() -> SearchDefaultsStatus | None:
+        raw = read_search_defaults_status(r_dir)
+        if raw is None:
+            return None
+        try:
+            return SearchDefaultsStatus(
+                state=raw["state"],
+                error_kind=raw.get("error_kind"),
+                runtime_instance_id=str(raw.get("runtime_instance_id") or ""),
+                request_id=raw.get("request_id"),
+                updated_at=str(raw.get("updated_at") or ""),
+            )
+        except Exception:  # noqa: BLE001 - malformed status is reported as unknown
+            return None
 
     @app.get("/health", response_model=HealthResponse)
     async def get_health() -> HealthResponse:
@@ -186,6 +240,7 @@ def create_agent_app(
                         "exit_code": state.exit_code,
                         "exit_reason": state.exit_reason,
                     },
+                    search_defaults=_search_defaults_status(),
                 )
 
         display = r_info.get("display", ":99")
@@ -233,6 +288,7 @@ def create_agent_app(
                 "cdp_port": cdp_port,
                 "rearm_count": active_cdp_proxy.rearm_count if active_cdp_proxy else 0,
             },
+            search_defaults=_search_defaults_status(),
         )
 
     @app.get("/config_version", response_model=ConfigVersionResponse)
@@ -270,6 +326,42 @@ def create_agent_app(
                 status="error" if "error" in res else "ok",
                 action="close",
                 message="close_unconfirmed" if "error" in res else "close_acknowledged",
+            )
+        elif req.action == "retry_search_defaults":
+            # Fenced, idempotent retry: the request must name the exact live
+            # instance from runner metadata; the runner consumes the request
+            # file against its live context without restarting the browser.
+            runner_info = _read_runner_info()
+            if runner_info is None:
+                raise HTTPException(
+                    status_code=503, detail="Runtime metadata unavailable"
+                )
+            profile_id = req.params.get("profile_id")
+            instance_id = req.params.get("runtime_instance_id")
+            request_id = req.params.get("request_id")
+            if (
+                profile_id != runner_info["profile_id"]
+                or instance_id != runner_info["runtime_instance_id"]
+                or not isinstance(request_id, str)
+                or not request_id
+                or len(request_id) > 128
+            ):
+                raise HTTPException(
+                    status_code=403, detail="Search defaults retry rejected"
+                )
+            atomic_write_json(
+                r_dir / SEARCH_DEFAULTS_RETRY_FILE,
+                {
+                    "profile_id": profile_id,
+                    "runtime_instance_id": instance_id,
+                    "request_id": request_id,
+                },
+            )
+            logger.info("Control action requested: retry_search_defaults")
+            return ControlResponse(
+                status="ok",
+                action="retry_search_defaults",
+                message=f"request_id={request_id}",
             )
         elif req.action == "rearm_downloads":
             logger.info("Control action requested: rearm_downloads")
@@ -439,9 +531,11 @@ async def run_uds_agent(
                     content = await asyncio.to_thread(
                         runner_info_file.read_text, encoding="utf-8"
                     )
-                    runner_info = json.loads(content)
-                    if "browser_ws_url" in runner_info:
-                        break
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict):
+                        runner_info = parsed
+                        if "browser_ws_url" in runner_info:
+                            break
                 except Exception as poll_exc:  # noqa: BLE001 - wait for valid metadata
                     logger.debug(
                         "Runner info poll pending: %s", type(poll_exc).__name__
@@ -454,6 +548,10 @@ async def run_uds_agent(
                 runner_info_file,
             )
             raise RuntimeError(f"Runner info missing at {runner_info_file}")
+
+        # Non-empty but incomplete or mistyped metadata is rejected with a
+        # redacted error instead of crashing on a raw key lookup.
+        runner_info = _validated_runner_info(runner_info)
 
         cdp_proxy = CdpProxyManager(
             browser_ws_url=runner_info["browser_ws_url"],

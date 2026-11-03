@@ -6,6 +6,7 @@ export interface ProfileRuntimeEvent {
   failure_count?: number;
   restart_blocked?: boolean;
   last_coordinator_error?: string | null;
+  search_defaults?: import("./types").SearchDefaultsStatusData | null;
   updated_at?: string;
 }
 

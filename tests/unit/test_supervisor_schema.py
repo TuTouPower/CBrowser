@@ -37,6 +37,9 @@ def test_supervisor_schema_uses_entry_index_convention():
         "ResetBlockedRequest",
         "ResetBlockedResponse",
         "ProfileRuntimeStatus",
+        # t022/A55: search-defaults observation + retry join the protocol.
+        "SearchDefaultsRetryRequest",
+        "SearchDefaultsStatusResponse",
     }
     for name in schema["messages"]:
         assert schema["messages"][name] == {
@@ -79,6 +82,13 @@ def test_supervisor_schema_uses_entry_index_convention():
             "operation_id": "o1",
         },
         "StopProfileResponse": {"profile_id": "p1", "status": "stopped"},
+        # t022/A55 messages.
+        "SearchDefaultsRetryRequest": {
+            "profile_id": "p1",
+            "runtime_instance_id": "i1",
+            "request_id": "r1",
+        },
+        "SearchDefaultsStatusResponse": {"profile_id": "p1"},
         "ResetBlockedRequest": {"profile_id": "p1"},
         "ResetBlockedResponse": {"profile_id": "p1"},
         "ProfileRuntimeStatus": {"profile_id": "p1"},

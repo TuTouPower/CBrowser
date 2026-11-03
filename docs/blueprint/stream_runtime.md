@@ -36,11 +36,15 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 连接任务与有界队列按 viewer 回收；溢出通知 Gateway 关闭对应连接。断线重注册与 Stream 暂停不改变 Browser 运行意愿。
 
+配额与关闭（t022）：策略层与协议层同一 FPS 规则——配额必须有限且 ∈ [min_fps, max_fps]，公开入口越界严格拒绝（ValueError）且不改变现值，None 仅表示解除限制。StreamAgent 只保留可 await 的完整 `stop()` 作为唯一关闭入口：取消并等待心跳等全部后台任务、释放全部 Viewer 与 detached upstream，重复调用安全。隧道预算以协议模块为单一权威（见 gateway 蓝图三层预算）。
+
 ## 直连媒体与原生输入适配
 
 媒体只使用同机 `127.0.0.1` host 候选直连（ADR 013）：Stream UDP mux 发布到宿主回环，客户端与服务端均不配置 STUN/TURN。已删除 coturn、TURN 凭证与轮换、ICE 代次接管及对 Selkies 私有 ABI 的补丁；Selkies 不再被要求提供 ICE restart。s011/d026 验证了多页面、复制标签、刷新、关闭首 tab、可见性暂停/恢复与 Viewer 断线 resume。「不配置 STUN/TURN」在 Stream 启动参数层由 ICE-lite 落实（t019）：Supervisor `stream_environment` 注入 `SELKIES_WEBRTC_ICE_LITE=true`，Stream entrypoint 同步 export 该变量并向 Selkies 传 `--webrtc-ice-lite`；否则 Selkies 2.1.0 会回退其默认外部 STUN/TURN（OpenRelay），其 TURN allocation 超时使每个新 PeerConnection 的 offer 固定延迟约 5 秒。unit 门禁 `tests/unit/test_stream_ice_config.py` 断言该参数存在且 entrypoint 不出现任何外部 STUN/TURN 配置。
 
 中文使用官方 composition/co,end → Native X11 输入，不使用剪贴板提交。x11_keymap.py 按运行时 XKB 非空名称过滤 spare，保留 Native 分配顺序；每次新绑定通过有界 xkbcomp reload 通知活跃 Chrome，并保留 SDK settle。按住的槽及当前 batch 已绑定槽不得重绑，无容量则拒绝。该路径有同步 subprocess 成本，P95、1000次输入与8小时稳定性须在 t009/t012 实测，当前不作性能承诺。细节见 d014/d017/d018。
+
+Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验钉版 2.1.0 的完整私有面（prebind/text_room/_find_spare_keycodes/_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。不自动升级 Selkies/CloakBrowser 版本。
 
 ## 验证入口
 

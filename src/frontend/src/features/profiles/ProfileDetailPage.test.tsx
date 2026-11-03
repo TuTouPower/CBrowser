@@ -27,6 +27,7 @@ vi.mock("./useProfilesQuery", () => ({
   useApplyDisplaySettingsMutation: () => ({ mutate: vi.fn(), isPending: false }),
   useDuplicateProfileMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useResetProfileMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRetrySearchDefaultsMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
 import { ProfileDetailPage } from "./ProfileDetailPage";

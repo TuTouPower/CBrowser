@@ -44,3 +44,10 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 ## 验收与剩余边界
 
 组件行为以 t004 的逐项 AC 和真实 E2E 为准，不能用 Mock Peer、编码器或合成音频替代。当前测试的外部 Chrome CDP composition 验证原生客户端路径；桌面输入法候选窗口、输入/剪贴板手动清单与最终整机容量仍需后续验收。公网和原生 Linux x86 执行仅按用户明确豁免记 NOT_RUN / USER_WAIVED，不计实测 PASS。
+
+## 注册恢复、消息预算与配额（t022）
+
+- Gateway 注册节流为双预算：在途握手预留与失败窗口分离，成功不消耗失败额度，全部退出路径释放预留；Agent 重连退避带 jitter 且不超上限，网关重启后合法 Agent 可恢复注册。心跳使 registry 的 runtime_state 与 Agent 上报一致。Supervisor 断开按目标逐个隔离清理，发送失败明确 503。
+- 隧道预算单一权威：原始 data 1MiB、序列化 envelope 2MiB+64KiB、WS 帧 6MiB+64KiB；超限以 1009 受控关闭单个连接，服务继续处理其他连接。
+- FPS 配额协议与策略同规：有限且 ∈ [min_fps, max_fps]，越界严格拒绝，None 仅解除限制。StreamAgent 仅保留可 await 的完整 stop（取消并等待全部后台任务、释放 Viewer 与 detached upstream、幂等）。Selkies 私有 API 只经适配层访问，钉版 ABI 不符明确报 unsupported。
+- SSE 快照为订阅私有数据并携带 live 基点，不写共享历史；窗口不足显式重建。

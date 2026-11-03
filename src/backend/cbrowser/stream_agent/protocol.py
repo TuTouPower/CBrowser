@@ -17,14 +17,62 @@ from pydantic import (
     model_validator,
 )
 
-# Shared transport frame ceiling for both Agent and Gateway WebSocket peers.
+# Shared size budgets for the Gateway <-> StreamAgent tunnel (A15). Three
+# layers, one authority, identical on both peers:
+#   1. raw data payload:        MAX_TUNNEL_DATA_SIZE bytes (UTF-8);
+#   2. serialized envelope JSON: MAX_TUNNEL_ENVELOPE_SIZE bytes — JSON string
+#      escaping can expand the data layer, so the envelope layer is checked
+#      on the actual serialized bytes, never estimated;
+#   3. WebSocket frame ceiling:  MAX_STREAM_FRAME_SIZE, which must stay >=
+#      the envelope budget so in-budget envelopes are never frame-dropped.
+MAX_TUNNEL_DATA_SIZE = 1024 * 1024
+MAX_TUNNEL_ENVELOPE_SIZE = 2 * 1024 * 1024 + 64 * 1024
 MAX_STREAM_FRAME_SIZE = 1024 * 1024 * 6 + 64 * 1024
+assert MAX_STREAM_FRAME_SIZE >= MAX_TUNNEL_ENVELOPE_SIZE
+
+
+def serialize_tunnel_envelope(envelope: "GatewayTunnelEnvelope") -> str:
+    """Serialize a tunnel envelope, enforcing the shared envelope budget."""
+    text = envelope.model_dump_json()
+    if len(text.encode("utf-8")) > MAX_TUNNEL_ENVELOPE_SIZE:
+        raise ValueError("Serialized tunnel envelope exceeds the shared budget")
+    return text
 
 
 class AgentAction(str, Enum):
     REGISTER = "register"
     SUPERVISOR_QUOTA = "supervisor_quota"
     HEARTBEAT = "heartbeat"
+
+
+# Shared identity validation for every envelope model (t022 A48): one
+# definition per identity shape so gateways/agents cannot drift apart.
+_PROFILE_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_INSTANCE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-\.:]{1,128}$")
+
+
+def _check_profile_id(v: str) -> str:
+    if not v or not _PROFILE_ID_RE.match(v):
+        raise ValueError("Invalid profile_id")
+    return v
+
+
+def _check_runtime_instance_id(v: str) -> str:
+    if not v or not _INSTANCE_ID_RE.match(v):
+        raise ValueError("Invalid runtime_instance_id")
+    return v
+
+
+def _check_conn_id(v: str) -> str:
+    if not v or not _INSTANCE_ID_RE.match(v):
+        raise ValueError("Invalid conn_id")
+    return v
+
+
+def _check_optional_conn_id(v: str | None) -> str | None:
+    if v is not None:
+        _check_conn_id(v)
+    return v
 
 
 class GatewayTunnelEnvelope(BaseModel):
@@ -47,29 +95,23 @@ class GatewayTunnelEnvelope(BaseModel):
     @field_validator("profile_id")
     @classmethod
     def validate_profile_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_-]+$", v):
-            raise ValueError("Invalid profile_id")
-        return v
+        return _check_profile_id(v)
 
     @field_validator("runtime_instance_id")
     @classmethod
     def validate_runtime_instance_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
-            raise ValueError("Invalid runtime_instance_id")
-        return v
+        return _check_runtime_instance_id(v)
 
     @field_validator("conn_id")
     @classmethod
     def validate_conn_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
-            raise ValueError("Invalid conn_id")
-        return v
+        return _check_conn_id(v)
 
     @field_validator("data")
     @classmethod
     def validate_data(cls, v: str | None) -> str | None:
-        if v is not None and len(v.encode("utf-8")) > 1024 * 1024:
-            raise ValueError("data exceeds 1MB limit")
+        if v is not None and len(v.encode("utf-8")) > MAX_TUNNEL_DATA_SIZE:
+            raise ValueError("data exceeds the shared tunnel data budget")
         return v
 
     @model_validator(mode="after")
@@ -114,23 +156,17 @@ class GatewayControlEnvelope(BaseModel):
     @field_validator("profile_id")
     @classmethod
     def validate_profile_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_-]+$", v):
-            raise ValueError("Invalid profile_id")
-        return v
+        return _check_profile_id(v)
 
     @field_validator("runtime_instance_id")
     @classmethod
     def validate_runtime_instance_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
-            raise ValueError("Invalid runtime_instance_id")
-        return v
+        return _check_runtime_instance_id(v)
 
     @field_validator("conn_id")
     @classmethod
     def validate_conn_id(cls, v: str | None) -> str | None:
-        if v is not None and (not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v)):
-            raise ValueError("Invalid conn_id")
-        return v
+        return _check_optional_conn_id(v)
 
 
 class GatewayRegisterResponse(BaseModel):
@@ -165,16 +201,12 @@ class _AgentEnvelope(BaseModel):
     @field_validator("profile_id")
     @classmethod
     def validate_profile_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_-]+$", v):
-            raise ValueError("Invalid profile_id")
-        return v
+        return _check_profile_id(v)
 
     @field_validator("runtime_instance_id")
     @classmethod
     def validate_runtime_instance_id(cls, v: str) -> str:
-        if not v or not re.match(r"^[a-zA-Z0-9_\-\.:]{1,128}$", v):
-            raise ValueError("Invalid runtime_instance_id")
-        return v
+        return _check_runtime_instance_id(v)
 
 
 RuntimeState = Literal["starting", "ready"]

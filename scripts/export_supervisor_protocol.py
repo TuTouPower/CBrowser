@@ -16,6 +16,8 @@ from cbrowser.supervisor.protocol import (
     ProfileRuntimeStatus,
     ResetBlockedRequest,
     ResetBlockedResponse,
+    SearchDefaultsRetryRequest,
+    SearchDefaultsStatusResponse,
     StartProfileRequest,
     StartProfileResponse,
     StopProfileRequest,
@@ -31,6 +33,8 @@ _MESSAGES = (
     ResetBlockedRequest,
     ResetBlockedResponse,
     ProfileRuntimeStatus,
+    SearchDefaultsRetryRequest,
+    SearchDefaultsStatusResponse,
 )
 
 
@@ -60,6 +64,8 @@ def supervisor_protocol_schema() -> dict:
         | ResetBlockedRequest
         | ResetBlockedResponse
         | ProfileRuntimeStatus
+        | SearchDefaultsRetryRequest
+        | SearchDefaultsStatusResponse
     ).json_schema()
     return _entry_index_document(schema, [model.__name__ for model in _MESSAGES])
 

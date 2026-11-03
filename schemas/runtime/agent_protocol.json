@@ -65,7 +65,8 @@
         "action": {
           "enum": [
             "close",
-            "rearm_downloads"
+            "rearm_downloads",
+            "retry_search_defaults"
           ],
           "title": "Action",
           "type": "string"
@@ -285,6 +286,17 @@
           "additionalProperties": true,
           "title": "Details",
           "type": "object"
+        },
+        "search_defaults": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SearchDefaultsStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -456,6 +468,63 @@
         "state"
       ],
       "title": "RuntimeStateRecord",
+      "type": "object"
+    },
+    "SearchDefaultsStatus": {
+      "additionalProperties": false,
+      "description": "Independent outcome of the best-effort default-search initialization.",
+      "properties": {
+        "state": {
+          "enum": [
+            "applied",
+            "failed",
+            "disabled",
+            "pending"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "error_kind": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Kind"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "runtime_instance_id",
+        "updated_at"
+      ],
+      "title": "SearchDefaultsStatus",
       "type": "object"
     }
   }

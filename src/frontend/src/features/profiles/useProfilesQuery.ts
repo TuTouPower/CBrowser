@@ -176,6 +176,18 @@ export function useSetDesiredStateMutation(
   });
 }
 
+export function useRetrySearchDefaultsMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProfileRuntimeResponse, Error, string> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => client.profiles.retrySearchDefaults(id),
+    onSuccess: (data, id) => {
+      queryClient.setQueryData(profileKeys.runtime(id), data);
+    },
+  });
+}
+
 export function useStopProfileMutation(
   client: ApiClient = defaultApiClient,
 ): UseMutationResult<ProfileRuntimeResponse, Error, string> {
@@ -294,6 +306,10 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
               event.last_coordinator_error !== undefined
                 ? event.last_coordinator_error
                 : old.last_coordinator_error,
+            search_defaults:
+              event.search_defaults !== undefined
+                ? event.search_defaults
+                : old.search_defaults,
             updated_at: event.updated_at ?? old.updated_at,
           };
         },
