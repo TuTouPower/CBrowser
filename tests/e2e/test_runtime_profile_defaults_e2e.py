@@ -23,10 +23,6 @@ import pytest
 
 from e2e_env import require_e2e_env
 
-DEFAULT_IMAGE = (
-    "sha256:4a76ae021ec38a40d674a50dc8fc569cb6da4dc7e24fc040f56141fdefeba7ce"
-)
-DEFAULT_CACHE = Path(".scratch/t003_implementation/tmp/engine-cache")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 

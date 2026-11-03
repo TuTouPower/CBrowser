@@ -16,7 +16,7 @@ mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 
 cd "$REPO_ROOT"
 
-pytest .repo_template/tests -q -m contract
+uv run --no-project --python ">=3.12" --with pytest python -m pytest .repo_template/tests -q -m contract
 PYTHONPATH=src:src/backend uv run --no-project --python ">=3.12" \
   --with pytest --with pytest-asyncio --with fastapi --with pydantic \
   --with httpx --with websockets --with "cloakbrowser==0.6.4" \

@@ -1,11 +1,7 @@
 """Internal Supervisor RPC must authenticate over an actual HTTP process."""
 
-import importlib.util
 import secrets
-from pathlib import Path
 
-import httpx
-import pytest
 
 
 

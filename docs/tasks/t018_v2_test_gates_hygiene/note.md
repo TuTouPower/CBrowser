@@ -40,6 +40,8 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 第三轮：端口范围收敛到协议允许的 30000-30990；Freshness 校验不再依赖必需模式；viewer close 只接受 CLOSE；Selkies token E2E 绑定 127.0.0.1；Gateway secret 目录 0700；docker offload 单测改为 event rendezvous；E2E 环境 helper 的格式错误统一 fail；Selkies 容器内服务保持 0.0.0.0 仅宿主发布绑定 127.0.0.1；offload 单测改为事件 rendezvous 并断言未阻塞；迁移 importlib fixture 借用、stream/event/defaults 前置条件。删除未到达生产 Gateway 的 activity 负向注入（测试包装层直接丢弃该帧，哨兵不存在）；required 模式下 defaults 的镜像/缓存前置缺失改为硬失败；修复 stream cache 变量名、event shutdown 重复检查与 policy 镜像回退；Topology/ContainerGraph/RuntimeCoordinator 统一走 e2e_env；移除 topology 硬编码 Caddy digest；browser runtime / stream selkies 的模块级镜像回退改为 autouse 前置；event shutdown 非必需模式缺 Docker 改为 skip；browser runtime 前置改为 session 级并作为 http_server 依赖；Supervisor 容器镜像统一经 e2e_env 获取。
 
+第四轮：清理保留的 minor（conventions 编号、spec 重复措辞、过期 stream 文档引用、testing.md 命令描述、未使用常量/导入、postcss 纳入源码哈希、run_gates 契约步骤改用 uv）。
+
 ## Review 处置
 
 每个结构化 finding 一行。`已修` 表示本 task 已修复；`遗留` 必须指向 `pNNN` 或 follow-up tid；`撤回` 必须写清理由。critical/important 未解决时不得 PASS。

@@ -964,3 +964,46 @@ coverage = 6 / 7
 建议合并前人工抽查 trust_prior 项。
 
 verdict: FAIL
+
+## Round 13 (2026-11-03T16:05:53+08:00)
+
+- round：13
+- reviewed_at：2026-11-03T16:05:53+08:00
+
+reviewed_scope: 027ac3d407446845
+
+### Findings
+
+本轮新发现 0 条。
+
+### 结论
+
+- 前轮 finding 复核（以当前 worktree 与实跑为准）：
+    - f029 已消除。`tests/fixtures/supervisor_recovery_probe/offline_fixture.py:360-362` 改为 `require_e2e_env("CBROWSER_SUPERVISOR_TEST_IMAGE")`，原 `start()` 中的空值 `assert` 已删除；默认模式实跑 `pytest tests/e2e/test_stream_selkies_tokens_e2e.py tests/e2e/test_supervisor_recovery_e2e.py tests/e2e/test_supervisor_retry_e2e.py tests/e2e/test_supervisor_offline_recovery_e2e.py -v` 得 1 passed / 9 skipped，三个 supervisor 用例均 SKIPPED 而非 AssertionError。
+    - f030 已消除。`tests/e2e/test_browser_runtime_e2e.py:53-63` 的 `_require_runtime_prerequisites` 提升为 `scope="session"` autouse，`:191` 的 `http_server` 显式依赖它；实跑 `pytest tests/e2e/test_browser_runtime_e2e.py -q` 得 11 skipped，无 setup error 与 Docker 调用。
+    - f012/f013/f014/f021/f022 仍存在（minor），本轮改动未触及：`tests/unit/test_repo_hygiene.py:12-19` 仍只扫描固定后缀；`scripts/vendor_selkies_web.py` 穿越/清单外分支无测试；`tests/unit/test_frontend_build_freshness.py:12-23` 只覆盖 stale；`.scratch` 写入与 evidence `_redact` 无落盘断言仍在。
+    - 其余前轮 important/critical finding 均维持前轮已消除结论，本轮抽查 e465691 的改动未发现回退。
+- 改测方向复核：无。e465691 只把前置检查提升到 session 夹具并让 offline fixture 走单一 `require_e2e_env`，属强化/统一方向；未发现删断言、反转断言、注释掉断言、`.skip`/`.only`、`# type: ignore`、弱化断言或把旧预期改成当前实现输出。
+- 本轮新发现：0 条。
+- 未进表的提示：
+    - AC-003 字面要求「测试中不存在固定 sleep 后断言状态」；`tests/e2e/test_supervisor_namespace_policy_e2e.py:173,192,209,226,245` 仍是 `time.sleep` 后断言进程状态，属前轮 code review `t018_code_f028` 已登记的 minor，本轮未新增影响。
+    - `tests/e2e/test_supervisor_recovery_e2e.py:262` 先启动 Gateway 再在 `:294` 构造 `RealSupervisorContainer`；默认模式仅缺 supervisor 镜像时 skip 会早于 `:445` 的 finally，Gateway/Docker client 依赖事件循环收尾。属既有提前失败清理边界，未观察到测试失败或端口冲突，不进 finding。
+    - 契约区 drift 与用户决策一致：AC-004 删除并行双跑、AC-006 删除 GitHub Actions CI，均为已确认需求变更，不计 finding。
+- 总体判断：f029/f030 均已真正修复，AC-002 的默认模式前置语义与单一来源恢复成立；其余仅剩已知 minor，本轮无新增 blocking finding。
+- 系统性 follow-up：无新增；既有 minors 属 t018 收尾范围。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。实跑 `CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only`（exit 2，列出 9 个缺项）与默认模式（79 tests collected）；`bash scripts/run_gates.sh` 的 build/verify 通过；`tests/unit/test_frontend_build_freshness.py` 通过。fail-closed 分支仍缺测试（f014 minor）。
+- AC-002：`re_verified`。检索 `tests/` 无 `spec_from_file_location`/`sys.path.insert`；Supervisor 测试均驱动 `ProductionGatewayService`；实跑默认模式 browser runtime 11 skipped、stream/supervisor 9 skipped，f029/f030 已修。
+- AC-003：`re_verified`。实跑 unit 539、integration 79；核对 IPv6 无条件阻断、退避双边窗口、冻结恢复帧增长、逐页静音、首帧/输入延迟上限（8000/3000ms）、viewer close 只接受 CLOSE、清理断言在 finally 之后、会话关闭后容器 running 且 instance-id 不变；namespace policy 固定 sleep 为已知 minor。
+- AC-004：`trust_prior`（真实 Docker 单次门禁）。静态核对 0700/0600、Selkies 宿主发布 127.0.0.1、证据默认系统临时目录、端口/显示号按 run 派生；`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本轮未执行；f021/f022 minor 仍在。
+- AC-005：`re_verified`。实跑 unit 539 passed；公开访问器/注入时钟落地，offload `unblocked_while_running` 可失败断言保留。
+- AC-006：`re_verified`（本地非 E2E）。实跑 contract 169、unit 539、integration 79、前端 Vitest 95、build/verify 均通过；`.github/` 不存在；`docs/blueprint/testing.md:40-55` 只引用 `scripts/run_gates.sh`。
+- AC-007：`re_verified`。unit 539 含 `test_repo_hygiene.py`；`git ls-files --eol` 无 CRLF；归档 spike README 与 `.gitignore` 规则存在；`docs/specs` 无凭据字面量；vendor 安全分支仍无测试（f013 minor）。
+
+coverage = 6 / 7
+
+建议合并前人工抽查 trust_prior 项。
+
+verdict: PASS

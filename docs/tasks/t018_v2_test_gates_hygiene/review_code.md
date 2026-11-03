@@ -1062,3 +1062,52 @@ reviewed_scope: c333b4c83e8133c2
 coverage = 6 / 7
 
 verdict: FAIL
+
+## Round 13 (2026-11-03T16:04:01+08:00)
+
+- round：13
+- reviewed_at：2026-11-03T16:04:01+08:00
+
+reviewed_scope: 027ac3d407446845
+
+### 前轮 finding 复核
+
+- `t018_code_f036`：已消除。e465691 把 `_require_runtime_prerequisites` 改为 `scope="session", autouse=True`（`tests/e2e/test_browser_runtime_e2e.py:53`），并让 `http_server` 显式依赖它（`:191`）。实跑无 `CBROWSER_*` 环境 `pytest tests/e2e/test_browser_runtime_e2e.py -q` → `11 skipped`；仅设 `CBROWSER_RUNTIME_TEST_IMAGE` 而不设缓存 → 仍 `11 skipped`；默认模式全量 `pytest tests/e2e -q` → `17 passed, 62 skipped`（无 error）；required 模式 `--collect-only` 仍 exit 2 列出 9 个缺项。Docker 报错路径不再触发。
+- `t018_code_f001`–`f035`：沿用 Round 12 结论并本轮抽查。仍存在（均 minor）：f011（ruff 对我 diff 触及的 py 文件仍报 9 处 F401，且 `tests/e2e/test_frontend_session_vendor.py:6` 过期 sys.path 注释仍在）、f015（`docs/blueprint/stream_runtime.md:49` 仍列已删除的 `test_stream_client_identity_e2e.py`）、f021（`docs/specs/runtime_persistence.md:90` 「注入的注入的」重复措辞）、f024（`scripts/verify_frontend_dist.py:29-36` 仍缺 `postcss.config.js`，该文件存在且参与构建）、f026（`docs/blueprint/testing.md:90-91` 仍描述 test_cmd/blackbox_verify 中不存在的命令位置）、f028（`tests/e2e/test_supervisor_namespace_policy_e2e.py:173,192,209,226,245` 固定 `time.sleep` 后断言状态）、f029（`tests/e2e/test_stream_runtime_e2e.py:48-56`、`tests/e2e/test_runtime_coordinator_e2e.py:35-38` 仍是 bind 后立即关闭的端口探测）、f030（`scripts/run_gates.sh:19-20` 契约步骤仍用裸 `pytest`）、f032（`tests/e2e/test_runtime_profile_defaults_e2e.py:26-30` 的 `DEFAULT_IMAGE`/`DEFAULT_CACHE` 仍零引用）。f016 残余（`tests/fixtures/supervisor_recovery_probe/offline_fixture.py:488-492` 仍直读 browser/stream 变量）继续由 review_test f029 跟踪，本层不重复登记；f017 维持撤回。f035 已消除（ruff 对 `gateway_probe/topology.py` 无 F401）。其余前轮已消除项本轮抽查（e2e_env 单清单、生产 Gateway、清理断言位置、freshness 开关、路径守卫、归档秘密忽略、行尾规则）未回退。
+
+### 本轮新发现
+
+#### t018_code_f037 - conventions.md 新增章节后保留重复的 `## 4` 编号
+
+- 严重度：minor
+- 锚点：文档与实现一致性（新增「路径与隐私规范」时未顺延编号，无运行时失败场景）
+- 位置：`docs/blueprint/conventions.md:32`、`docs/blueprint/conventions.md:42`
+- 问题：本 task 在 `:27` 新增 `## 3. 路径与隐私规范`，把原 `## 3. 编码与安全规范` 改为 `## 4`，但原 `## 4. 原子写原则`（`:42`）仍是 `## 4`，同一文档出现两个第 4 节。对照基线 `5a3da22` 为「3 编码与安全规范 / 4 原子写原则」，可确认是本 diff 引入。
+- 建议：把 `docs/blueprint/conventions.md:42` 改为 `## 5. 原子写原则`，或恢复原编号另编排新增章节。
+
+### 结论
+
+- 前轮 finding 复核汇总：f036 已消除；f001–f035 中已消除项抽查未回退；f011/f015/f021/f024/f026/f028/f029/f030/f032 仍为 minor；f016 残余并入 review_test f029；f017 撤回维持。
+- 本轮新发现：1 条（0 important + 1 minor）。
+- 未进表的提示：
+    - 文件过大：`tests/e2e/test_browser_runtime_e2e.py` 2920 行（本 task 净增 8）超测试源码 1200 行阈值且仍净增，前轮未列入，本轮补记；`tests/e2e/test_stream_runtime_e2e.py` 1687 行（净增 64）、`tests/e2e/test_frontend_app_e2e.py` 1216 行（净增 5）同样超阈值；`tests/e2e/test_supervisor_recovery_e2e.py` 1142 行（净增 48）、`tests/e2e/test_frontend_media_e2e.py` 948 行、`tests/unit/test_stream_agent_lifecycle.py` 713 行、`tests/e2e/test_supervisor_container_graph_e2e.py` 691 行超 600 行提示线。按规则只提示。
+    - 复杂度：e465691 delta 仅改 fixture scope/依赖与镜像取值；`require_e2e_env`、`ProductionGatewayService`、`_redact` 等新增函数人工估算 CC < 10，未发现 ≥ 15。
+    - 前轮已提示、本轮维持不计：`tests/e2e/test_supervisor_core_e2e.py:291` 与 `tests/e2e/test_supervisor_ipv6_policy_e2e.py:152` 在 `client.close()` 后用同一 client 做零泄漏查询（实测 docker-py 当前版本可继续发请求，属脆弱写法）。
+    - 真实 Docker E2E 未执行（worktree 无镜像/缓存变量），AC-004 仍依赖实施侧证据。
+    - 本轮实跑：`bash scripts/run_gates.sh` EXIT=0（contract 169、legacy 384、unit 539、integration 79、frontend 95 + build/verify）；required 模式 collection exit 2 列出 9 个缺项；默认模式 `pytest tests/e2e -q` → 17 passed / 62 skipped；`pytest tests/e2e/test_browser_runtime_e2e.py -q` 在无环境和仅设镜像两种情形均 11 skipped；ruff 在 diff 触及 py 文件仍 9 处 F401（无新增）；`git diff --check 5a3da22..HEAD` exit 0；`git ls-files --eol` 无 CRLF；写本报告前 `git status --porcelain` 为空。
+- 总体判断：e465691 修复了 f036 的 fixture 顺序缺陷（默认模式干净 skip、全量 e2e 无 error），未引入新 blocking；本轮仅一条文档编号 minor，代码轴可 PASS。
+- 系统性 follow-up：无新增。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。required 模式 collection exit 2 列出 9 个缺项；默认模式 e2e 全量 17 passed / 62 skipped；门禁 `npm run build` 的 `--check-freshness` 通过；`tests/unit/test_frontend_build_freshness.py` 通过。
+- AC-002：`re_verified`。f036 顺序缺陷已消除并实跑验证；`tests/` 无 `spec_from_file_location`/`sys.path` 注入；共享 fixture 位于三层 conftest；Supervisor 测试驱动 `ProductionGatewayService`；offline fixture 的 supervisor 镜像已统一走 `require_e2e_env`（browser/stream 直读残余见 review_test f029）。
+- AC-003：`re_verified`（代码层）。核对首帧 8000ms/输入 3000ms 上限、冻结恢复帧增长、IPv6 无条件下阻断、退避双边界、清理断言在 finally 之后、会话关闭后容器 running 且 instance-id 不变；f028 固定 sleep 的负断言仍在；完整 Docker E2E 未执行。
+- AC-004：`trust_prior`。无镜像/缓存变量，未执行真实 Docker 单次门禁；静态核对端口按运行派生、秘密文件 0600/控制目录 0700、证据默认系统临时目录、Selkies 宿主发布仅 127.0.0.1。建议合并前人工抽查。
+- AC-005：`re_verified`。实跑 unit 539 passed；公开访问器与注入时钟落地；e465691 未新增私有断言（diff 扫描 `+assert .*._` 零命中）。
+- AC-006：`re_verified`（本地非 E2E）。`scripts/run_gates.sh` EXIT=0；`.github/` 不存在；`docs/blueprint/testing.md:40-55` 只引用脚本与模板契约标记行。
+- AC-007：`re_verified`。unit 539 passed（含 repo hygiene）；`git check-ignore` 命中归档秘密；`git ls-files --eol` 无 CRLF；vendor 解包安全与目录集合校验静态核对；`docs/specs` 无凭据字面量。
+
+coverage = 6 / 7
+
+verdict: PASS

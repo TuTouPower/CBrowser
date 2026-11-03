@@ -5,10 +5,8 @@ using real uvicorn, real SQLite, and real aiohttp Supervisor mock.
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import secrets
 import socket
-import sys
 from pathlib import Path
 from typing import Any
 

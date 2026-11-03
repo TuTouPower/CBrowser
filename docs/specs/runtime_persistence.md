@@ -87,7 +87,7 @@
     - API 消费运行时事件时，向 stderr 输出机器可解析的 JSON 日志：`RUNTIME_EVENT_JSON: {"event_id": ..., "profile_id": ..., "runtime_instance_id": ..., "event_type": ..., "exit_code": ..., "exit_reason": ..., "config_version": ..., "outcome": ..., "timestamp": ...}`。
 - **数据脱敏与安全防御**：
     - 字段由严格白名单过滤，`exit_reason` 经由安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`；
-    - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的注入的密码、Token、Cookie、剪贴板文本或私密笔记文本；
+    - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的密码、Token、Cookie、剪贴板文本或私密笔记文本；
     - 全局异常处理器不输出带参数的 SQL 跟踪日志。
 
 ## 3. 运维与验证命令

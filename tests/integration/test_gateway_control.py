@@ -3,7 +3,6 @@
 import asyncio
 import json
 import secrets
-import sys
 from pathlib import Path
 
 import aiohttp

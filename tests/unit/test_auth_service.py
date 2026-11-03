@@ -258,10 +258,6 @@ async def test_viewer_and_automation_authorize(auth_db):
     assert ok is False
     assert reason == "token_expired"
 
-    async with session_maker() as session:
-        before_sessions = len(
-            (await session.execute(select(SessionModel))).scalars().all()
-        )
     await service.create_session(expire_hours=0)
     await service.create_session()
     async with session_maker() as session:

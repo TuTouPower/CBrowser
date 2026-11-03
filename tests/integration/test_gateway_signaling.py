@@ -2,7 +2,6 @@
 
 import asyncio
 import secrets
-import sys
 from pathlib import Path
 
 import aiohttp

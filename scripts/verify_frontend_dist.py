@@ -31,7 +31,7 @@ def frontend_source_hash(frontend_dir: Path = REPO_ROOT / "src" / "frontend") ->
     """Hash all source inputs that must be reflected in a fresh dist build."""
     digest = hashlib.sha256()
     candidates = [frontend_dir / "index.html", frontend_dir / "package.json"]
-    for name in ("vite.config.ts", "vite.selkies.config.ts", "tailwind.config.ts", "tsconfig.json"):
+    for name in ("vite.config.ts", "vite.selkies.config.ts", "tailwind.config.ts", "postcss.config.js", "tsconfig.json"):
         candidates.append(frontend_dir / name)
     candidates.append(frontend_dir / "package-lock.json")
     for root in (frontend_dir / "src", frontend_dir / "public"):

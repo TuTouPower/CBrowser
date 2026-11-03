@@ -39,7 +39,7 @@
     - 前端代码遵循 ESLint & Prettier 规范（2 空格）。
     - Markdown 文档统一使用 `md_kx` 格式化，表格使用 compact 格式。
 
-## 4. 原子写原则
+## 5. 原子写原则
 
 写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。
