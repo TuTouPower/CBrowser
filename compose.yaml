@@ -91,7 +91,7 @@ services:
     image: caddy:2.8-alpine
     container_name: cbrowser-caddy
     ports:
-      - "127.0.0.1:${CBROWSER_HTTPS_PORT:-8443}:443"
+      - "0.0.0.0:${CBROWSER_HTTPS_PORT:-56661}:443"
     volumes:
       - ./config/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./src/frontend/dist:/var/www/html:ro

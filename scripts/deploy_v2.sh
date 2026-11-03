@@ -2,9 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-HTTPS_PORT="${CBROWSER_HTTPS_PORT:-8443}"
+HTTPS_PORT="${CBROWSER_HTTPS_PORT:-56661}"
 export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
-export CBROWSER_PUBLIC_ORIGIN="${CBROWSER_PUBLIC_ORIGIN:-https://127.0.0.1:$HTTPS_PORT}"
+export CBROWSER_PUBLIC_ORIGIN="${CBROWSER_PUBLIC_ORIGIN:-https://127.0.0.1:$HTTPS_PORT,https://192.168.31.76:$HTTPS_PORT}"
 
 mkdir -p config/deploy/secrets data/v2/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache}
 for name in supervisor_key agent_key gateway_key gateway_api_key admin_password; do

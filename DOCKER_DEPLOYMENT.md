@@ -16,7 +16,7 @@ bash scripts/deploy_v2.sh
 
 脚本会生成 `config/deploy/secrets/{supervisor_key,agent_key,gateway_key,gateway_api_key,admin_password}`、创建 `data/v2` 数据根、构建 API/Browser/Stream/Supervisor/Gateway 镜像并启动 compose。
 
-访问 `https://127.0.0.1:8443`。Caddy 使用内部 CA，首次自签证书需在 Chrome 中确认或通过系统信任本地 CA。
+访问 `https://127.0.0.1:56661`。Caddy 使用内部 CA，首次自签证书需在 Chrome 中确认或通过系统信任本地 CA。
 
 ## 3. 配置
 

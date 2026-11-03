@@ -21,7 +21,7 @@ npm run build --prefix src/frontend
 bash scripts/deploy_v2.sh
 ```
 
-访问 `https://127.0.0.1:8443`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。
+访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。
 
 ## 停用与备份
 
