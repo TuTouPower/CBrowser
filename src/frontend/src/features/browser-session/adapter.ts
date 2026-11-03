@@ -60,6 +60,36 @@ export function installSelkiesClientAdapter(
     );
   }
 
+  // Guard against keyboard event interception when the iframe does not have active focus
+  if (typeof win.addEventListener === "function") {
+    const isIframeFocused = (): boolean => {
+      try {
+        if (win.parent && win.parent !== win && win.parent.document && win.frameElement) {
+          if (win.parent.document.activeElement !== win.frameElement) {
+            return false;
+          }
+        }
+      } catch {
+        // Cross-origin / sandbox access boundary: fall back to inner document check
+      }
+
+      try {
+        return Boolean(win.document && typeof win.document.hasFocus === "function" && win.document.hasFocus());
+      } catch {
+        return true;
+      }
+    };
+
+    const guardKeyEvent = (e: KeyboardEvent) => {
+      if (!isIframeFocused()) {
+        e.stopImmediatePropagation();
+      }
+    };
+
+    win.addEventListener("keydown", guardKeyEvent, true);
+    win.addEventListener("keyup", guardKeyEvent, true);
+  }
+
   const NativeWebSocket = win.WebSocket;
   const NativeRTCPeerConnection = win.RTCPeerConnection;
   const NativeDataChannelSend = win.RTCDataChannel?.prototype?.send;

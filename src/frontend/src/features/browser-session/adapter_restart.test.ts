@@ -150,4 +150,59 @@ describe("SelkiesClientAdapter production contract", () => {
     expect(stats.connected).toBe(true);
     expect(stats.tab_id).toBeNull();
   });
+
+  it("guards keyboard events when iframe does not have active focus", () => {
+    const win = makeWindow();
+    const listeners = new Map<string, Array<(event: any) => void>>();
+    win.addEventListener = vi.fn((type: string, fn: any) => {
+      const list = listeners.get(type) || [];
+      list.push(fn);
+      listeners.set(type, list);
+    });
+
+    // Case 1: hasFocus is false
+    win.document.hasFocus = vi.fn(() => false);
+    installSelkiesClientAdapter(win, "prof_456");
+
+    expect(listeners.has("keydown")).toBe(true);
+    const keydownHandler = listeners.get("keydown")![0];
+
+    const unfocusedEvent = {
+      type: "keydown",
+      key: "r",
+      metaKey: true,
+      shiftKey: true,
+      stopImmediatePropagation: vi.fn(),
+    };
+    keydownHandler(unfocusedEvent);
+    expect(unfocusedEvent.stopImmediatePropagation).toHaveBeenCalled();
+
+    // Case 2: parent activeElement is not this frame
+    const frameEl = {};
+    win.frameElement = frameEl;
+    win.parent.document = { activeElement: {} }; // not frameEl
+    win.document.hasFocus = vi.fn(() => true);
+
+    const unfocusedParentEvent = {
+      type: "keydown",
+      key: "r",
+      metaKey: true,
+      shiftKey: true,
+      stopImmediatePropagation: vi.fn(),
+    };
+    keydownHandler(unfocusedParentEvent);
+    expect(unfocusedParentEvent.stopImmediatePropagation).toHaveBeenCalled();
+
+    // Case 3: frame has active focus
+    win.parent.document.activeElement = frameEl;
+    const focusedEvent = {
+      type: "keydown",
+      key: "r",
+      metaKey: true,
+      shiftKey: true,
+      stopImmediatePropagation: vi.fn(),
+    };
+    keydownHandler(focusedEvent);
+    expect(focusedEvent.stopImmediatePropagation).not.toHaveBeenCalled();
+  });
 });

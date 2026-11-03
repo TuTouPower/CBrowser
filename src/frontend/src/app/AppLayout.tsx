@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
   Plus,
@@ -38,6 +38,23 @@ export function AppLayout() {
   const setDesiredStateMutation = useSetDesiredStateMutation();
   const stopProfileMutation = useStopProfileMutation();
   const applyDisplayMutation = useApplyDisplaySettingsMutation();
+
+  useEffect(() => {
+    const handleHostPointerDown = (e: MouseEvent | PointerEvent) => {
+      const active = document.activeElement;
+      if (active && active.tagName === "IFRAME" && e.target !== active) {
+        (active as HTMLElement).blur();
+        window.focus();
+      }
+    };
+
+    window.addEventListener("pointerdown", handleHostPointerDown, true);
+    window.addEventListener("mousedown", handleHostPointerDown, true);
+    return () => {
+      window.removeEventListener("pointerdown", handleHostPointerDown, true);
+      window.removeEventListener("mousedown", handleHostPointerDown, true);
+    };
+  }, []);
 
   const handleSelectProfile = (id: string) => {
     // Always land on this page instance's session route (AC-001).
