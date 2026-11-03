@@ -1,0 +1,23 @@
+{
+    admin off
+    auto_https disable_redirects
+    default_sni 127.0.0.1
+}
+
+https://127.0.0.1 {
+    tls internal
+
+    handle /api/* {
+        reverse_proxy http://api:8000
+    }
+
+    handle /stream/* {
+        reverse_proxy http://gateway:18080
+    }
+
+    handle {
+        root * /var/www/html
+        try_files {path} /index.html
+        file_server
+    }
+}

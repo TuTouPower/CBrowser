@@ -1,0 +1,3 @@
+*
+!src/backend
+!config/docker/api_runtime/requirements.txt

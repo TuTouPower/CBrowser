@@ -1019,9 +1019,10 @@ class SupervisorCore:
 
             except Exception as err:
                 logger.error(
-                    "Sandbox launch failed for %s: error_type=%s",
+                    "Sandbox launch failed for %s: error_type=%s error=%s",
                     profile_id,
                     type(err).__name__,
+                    err,
                 )
                 await self.report_terminal_observation(
                     profile_id,

@@ -61,3 +61,7 @@ docs/archive/spikes/**/probe_work/
 docs/archive/spikes/**/*secret*.txt
 docs/archive/spikes/**/*token*.txt
 docs/archive/spikes/**/*.secret
+
+config/deploy/secrets/
+data/v2/
+config/deploy/compose.env
