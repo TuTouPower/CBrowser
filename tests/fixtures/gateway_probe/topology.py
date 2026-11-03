@@ -16,6 +16,8 @@ import docker
 import httpx
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
+from e2e_env import require_e2e_env
+
 from .caddyfile import generate_caddyfile
 from .selkies_assets import prepare_selkies_web_assets
 
@@ -79,14 +81,15 @@ class GatewayTopologyHarness:
         self.gateway_image = self._get_image("CBROWSER_GATEWAY_IMAGE")
         self.supervisor_image = self._get_image("CBROWSER_SUPERVISOR_TEST_IMAGE")
         self.api_image = self._get_image("CBROWSER_API_TEST_IMAGE")
-        self.caddy_image = os.environ.get(
-            "CBROWSER_CADDY_TEST_IMAGE",
-            "sha256:6aeddd44c3078b0f9a35206472a11420648a79c184603ef95957d0a20044cb2b",
-        )
-        assert self.caddy_image.startswith("sha256:")
+        self.caddy_image = self._get_image("CBROWSER_CADDY_TEST_IMAGE")
 
-        self.engine_cache_src = Path(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"])
-        self.geoip_cache_src = Path(os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"])
+        env = require_e2e_env(
+            "CBROWSER_RUNTIME_ENGINE_CACHE",
+            "CBROWSER_RUNTIME_GEOIP_CACHE",
+            paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+        )
+        self.engine_cache_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
+        self.geoip_cache_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
         self.caddy_host_port = find_free_port(35000, 35999)
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
@@ -112,9 +115,9 @@ class GatewayTopologyHarness:
         self.api_internal_url: str = ""
 
     def _get_image(self, var_name: str) -> str:
-        val = os.environ.get(var_name)
-        assert val and val.startswith("sha256:"), (
-            f"Missing or invalid immutable image ID in {var_name}"
+        val = require_e2e_env(var_name)[var_name]
+        assert val.startswith("sha256:"), (
+            f"Invalid immutable image ID in {var_name}: {val}"
         )
         return val
 

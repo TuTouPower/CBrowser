@@ -48,6 +48,7 @@ def _set_test_images_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("CBROWSER_GATEWAY_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_SUPERVISOR_TEST_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_API_TEST_IMAGE", f"sha256:{h}")
+    monkeypatch.setenv("CBROWSER_CADDY_TEST_IMAGE", f"sha256:{h}")
     monkeypatch.setenv("CBROWSER_RUNTIME_ENGINE_CACHE", str(tmp_path / "engine"))
     monkeypatch.setenv("CBROWSER_RUNTIME_GEOIP_CACHE", str(tmp_path / "geoip"))
     (tmp_path / "engine").mkdir(parents=True, exist_ok=True)

@@ -27,6 +27,8 @@ import aiohttp
 import docker
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from api_auth import create_auth_context
@@ -58,6 +60,16 @@ async def ready(url, path, headers=None, expected_status=200):
 async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle(
     tmp_path,
 ):
+    require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_GATEWAY_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
+        "CBROWSER_API_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+    )
     client = docker.from_env()
     prefix = "t005-graph-" + uuid.uuid4().hex[:10]
     containers = []

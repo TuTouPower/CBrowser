@@ -471,12 +471,12 @@ async def test_stream_runtime_direct_media_matrix(
     env = require_e2e_env(
         "CBROWSER_RUNTIME_TEST_IMAGE",
         "CBROWSER_STREAM_TEST_IMAGE",
-        "CBROWSER_RUNTIME_engine_cache",
-        paths=("CBROWSER_RUNTIME_engine_cache",),
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
     )
     browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
     stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
-    engine_cache = env["CBROWSER_RUNTIME_engine_cache"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
     assert browser_image.startswith("sha256:"), "Immutable Browser image required"
     assert stream_image.startswith("sha256:"), "Immutable Stream image required"
     """

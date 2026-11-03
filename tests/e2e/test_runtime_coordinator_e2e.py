@@ -22,6 +22,8 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from wait import poll_until, wait_until
 
@@ -72,6 +74,16 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         d.mkdir()
         d.chmod(0o777)
 
+    require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_GATEWAY_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
+        "CBROWSER_API_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+    )
     cache = data / "engine_cache"
     shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
     shutil.copytree(
