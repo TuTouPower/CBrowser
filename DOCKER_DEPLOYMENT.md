@@ -1,108 +1,66 @@
 # CBrowser 容器化部署与运维手册
 
-本文档记录当前 CBrowser 的实际容器化部署架构、配置参数、网络端口以及数据备份与恢复流程。
+## 1. 当前拓扑
 
-______________________________________________________________________
+固定服务：`cbrowser-caddy`、`cbrowser-api`、`cbrowser-gateway`、`cbrowser-supervisor`。
 
-## 1. 运行现状与访问信息
+动态服务：每个 Profile 创建 `cbrowser-browser-{profileId}` 与 `cbrowser-stream-{profileId}`。Browser 持有 CloakBrowser/Xvfb/PulseAudio/Browser Agent；Stream 持有 Selkies/Stream Agent。媒体 UDP 端口发布到宿主 `127.0.0.1`，同机 Chrome 直连，不使用 TURN。
 
-当前服务已通过 Docker Compose 部署运行（支持 Linux 及 macOS OrbStack Docker 后端）：
-
-- **容器名称**：`cbrowser`
-- **宿主机监听端口**：`56661`（映射至容器内部 `8080`）
-- **网络监听绑定**：`0.0.0.0:56661`
-- **访问入口**：
-    - 本机访问：`http://127.0.0.1:56661`
-    - 局域网访问：`http://<宿主机IP>:56661`
-- **访问凭证**：若设置了 `AUTH_TOKEN`，系统启用令牌保护。初次打开前端页面时需在弹窗中输入配置的访问密码，API 请求需携带 `Authorization: Bearer <AUTH_TOKEN>` 请求头。
-
-______________________________________________________________________
-
-## 2. 容器架构与目录拓扑
-
-```text
-宿主机 Chrome / 局域网客户端
-         │
-         ▼
-  0.0.0.0:56661 (HTTP / WebSocket)
-         │
-         ▼
-  ┌───────────────────────────────────────────────────────────┐
-  │ Docker 容器: cbrowser (内部端口 8080)                     │
-  │                                                           │
-  │  FastAPI (Uvicorn)                                        │
-  │   ├── 前端静态产物托管 (React 19 SPA, /app/frontend/dist) │
-  │   ├── 控制与配置 API (/api/*)                             │
-  │   └── CloakBrowser 隐私指纹引擎进程生命周期管理           │
-  │                                                           │
-  │  运行沙箱支持:                                            │
-  │   ├── Xvfb / KasmVNC                                      │
-  │   └── 字体与环境防关联配置                               │
-  └─────────────────────────────┬─────────────────────────────┘
-                                │ 卷挂载: ~/.cbrowser -> /data
-                                ▼
-                       宿主机持久化目录:
-                       ~/.cbrowser/
-                       ├── profiles.db       (配置元数据)
-                       ├── settings.json     (运行时配置)
-                       └── profiles/         (各浏览器会话数据与 Cookies)
-```
-
-______________________________________________________________________
-
-## 3. 部署与启动命令
-
-所有命令在项目根目录下执行：
-
-### 3.1 构建并启动服务
+## 2. 首次部署
 
 ```bash
-# 拷贝环境配置
-cp config/.env.example .env
-
-# 构建并启动容器
-docker compose up --build -d
-
-# 查看容器日志
-docker compose logs -f
+npm ci --prefix src/frontend
+npm run build --prefix src/frontend
+bash scripts/deploy_v2.sh
 ```
 
-### 3.2 容器启停与检查
+脚本会生成 `config/deploy/secrets/{supervisor_key,agent_key,gateway_key,gateway_api_key,admin_password}`、创建 `data/v2` 数据根、构建 API/Browser/Stream/Supervisor/Gateway 镜像并启动 compose。
+
+访问 `https://127.0.0.1:8443`。Caddy 使用内部 CA，首次自签证书需在 Chrome 中确认或通过系统信任本地 CA。
+
+## 3. 配置
+
+- `.env.example`：入口端口与公开 origin
+- `config/deploy/compose.env`：由部署脚本生成，含镜像 ID 与端口，不入库
+- `config/deploy/secrets/`：不入库，权限 0600
+- `data/v2/cbrowser.db`：API SQLite
+- `data/v2/profiles/{profileId}/profile`：浏览器用户数据
+- `data/v2/artifacts/{profileId}`：Artifact 文件
+- `data/v2/engine-cache`：CloakBrowser/GeoIP 缓存
+
+## 4. 启停与升级
 
 ```bash
-# 检查运行状态与健康检查
-docker compose ps
-
-# 停止容器
-docker compose down
-
-# 检查健康接口
-curl -s http://127.0.0.1:56661/api/health
+bash scripts/deploy_v2.sh          # 构建并重启
+docker compose --env-file config/deploy/compose.env down
+docker compose --env-file config/deploy/compose.env up -d
 ```
 
-______________________________________________________________________
+升级前先备份；镜像标签 `*-deploy` 可回滚到上一份本地镜像，脚本会重写 `compose.env` 的镜像 ID。
 
-## 4. 数据备份与恢复
-
-所有浏览器持久化数据（Cookies, 本地缓存, Profile 配置）均存放在宿主机目录：
+## 5. 备份与恢复
 
 ```bash
-~/.cbrowser/
+tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
 ```
 
-### 备份
+恢复：停止 compose，解压备份覆盖 `data/v2`，再启动。迁移 legacy 数据使用：
 
 ```bash
-# 建议先停止服务确保写入完整
-docker compose stop
-tar -czvf cbrowser_backup_$(date +%Y%m%d_%H%M%S).tar.gz -C ~/.cbrowser .
-docker compose start
+PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with alembic --with sqlalchemy --with aiosqlite   python scripts/migrate_legacy.py --source ~/.cbrowser --target data/v2 --apply
 ```
 
-### 恢复
+## 6. 故障定位
 
 ```bash
-mkdir -p ~/.cbrowser
-tar -xzvf cbrowser_backup_XXXX.tar.gz -C ~/.cbrowser
-docker compose up -d
+docker compose --env-file config/deploy/compose.env ps
+docker logs --tail 200 cbrowser-api
+docker logs --tail 200 cbrowser-supervisor
+docker logs --tail 200 cbrowser-gateway
+docker logs --tail 200 cbrowser-caddy
+docker ps --filter 'label=com.cbrowser.prefix=cbrowser'
 ```
+
+- Profile 启动失败：先看 supervisor 日志中的 `Sandbox launch failed ... error=`，再检查镜像 ID、Docker 网络地址池和 `data/v2` 权限。
+- 媒体不通：检查 `docker ps` 中 Browser/Stream 是否 Up、Gateway 日志是否注册、宿主是否占用 UDP 30000-30991。
+- 登录失败：确认 `config/deploy/secrets/admin_password` 与 `data/v2/cbrowser.db` 同属一个数据根。

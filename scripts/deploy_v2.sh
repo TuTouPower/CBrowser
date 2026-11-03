@@ -20,6 +20,8 @@ docker build -t cbrowser-supervisor:deploy -f config/docker/supervisor_runtime/D
 docker build -t cbrowser-gateway:deploy -f config/docker/gateway_runtime/Dockerfile .
 docker build -t cbrowser-api:deploy -f config/docker/api_runtime/Dockerfile .
 
+docker build -t cbrowser-api:deploy -f config/docker/api_runtime/Dockerfile .
+
 export CBROWSER_BROWSER_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-browser:deploy)"
 export CBROWSER_STREAM_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-stream:deploy)"
 export CBROWSER_SUPERVISOR_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-supervisor:deploy)"
@@ -31,7 +33,7 @@ CBROWSER_BROWSER_IMAGE=$CBROWSER_BROWSER_IMAGE
 CBROWSER_STREAM_IMAGE=$CBROWSER_STREAM_IMAGE
 CBROWSER_SUPERVISOR_IMAGE=$CBROWSER_SUPERVISOR_IMAGE
 ENV
-docker compose --env-file config/deploy/compose.env -f compose.v2.yaml up -d --build
+docker compose --env-file config/deploy/compose.env -f compose.yaml up -d
 echo "CBrowser: https://127.0.0.1:$HTTPS_PORT"
 echo "Compose env: config/deploy/compose.env"
 echo "Admin password: $(cat config/deploy/secrets/admin_password)"

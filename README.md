@@ -1,55 +1,37 @@
 # CBrowser
 
-CBrowser 是多身份与隐私隔离的浏览器管理系统，用于管理独立的浏览器会话、指纹、代理、Cookies 与历史记录。
+CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统。以 Google Chrome 作为唯一外部客户端，通过 Selkies 2.1.0 WebRTC 传输画面，每个 Profile 由独立 Browser/Stream 容器沙箱隔离。
 
-本项目 Fork 自上游仓库 [CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)，底层核心依赖 [PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/) 隐私指纹对抗引擎（支持过 Cloudflare Turnstile、reCAPTCHA v3、BrowserScan 等指纹检测）。
+## 架构
 
-本项目遵循 `repo_template` 研发规范。工具链位于 `.repo_template/`，业务源码统一放置于 `src/`。
+- Caddy：HTTPS、SPA 静态资源、`/api/*` 与 `/stream/*` 反向代理
+- cbrowser-api：FastAPI、SQLite 唯一写者、Runtime Coordinator
+- cbrowser-supervisor：唯一 Docker Socket 持有者，创建和管理 Profile 容器
+- cbrowser-gateway：Stream Agent 注册与 Viewer 信令路由
+- Browser/Stream Runtime：每个 Profile 动态创建，媒体同机 `127.0.0.1` 直连，无 coturn/TURN
 
-## 目录结构
-
-```text
-.
-├── .repo_template/         # 模板工具链与契约门禁
-├── .opencode/commands/     # 工作流快捷命令
-├── config/                 # 配置文件（.env.example, Docker 构建配置）
-├── compose.yaml            # Docker 服务拓扑编排
-├── schemas/                # 跨服务接口契约
-├── src/
-│   ├── backend/            # FastAPI 服务端代码与测试
-│   └── frontend/           # React + Vite 前端管理界面
-├── tests/                  # 端到端与集成测试
-└── docs/                   # 研发文档与蓝图（blueprint, specs, tasks, pending, guides, archive）
-```
-
-## 快速上手
-
-### Docker 部署
+## 部署
 
 ```bash
-# 复制环境变量配置
-cp config/.env.example .env
+# 构建前端
+npm ci --prefix src/frontend
+npm run build --prefix src/frontend
 
-# 构建并启动服务
-docker compose up --build -d
-
-# 查看服务日志
-docker compose logs -f
+# 生成密钥、构建镜像并启动
+bash scripts/deploy_v2.sh
 ```
 
-启动前必须在 `.env` 中把 `AUTH_TOKEN` 设为随机值（例如 `openssl rand -hex 32`），留空等于关闭认证。服务只监听本机回环地址，启动后访问 `http://localhost:56661`，在登录弹窗中输入该值。
+访问 `https://127.0.0.1:8443`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。
 
-## 工作流与任务管理
+## 停用与备份
 
 ```bash
-# 查看任务状态
-python3 .repo_template/scripts/task.py list
-
-# 待办事项总账
-python3 .repo_template/scripts/pending.py list
-
-# 运行轻量契约测试
-pytest .repo_template/tests -q -m contract
+docker compose --env-file config/deploy/compose.env down
+tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
 ```
 
-详细规范请参阅 [`AGENTS.md`](AGENTS.md) 与 [`DOCKER_DEPLOYMENT.md`](DOCKER_DEPLOYMENT.md)。
+完整部署、升级、备份恢复与故障定位见 `DOCKER_DEPLOYMENT.md`。
+
+## 研发
+
+本项目遵循 `repo_template` 规范；测试入口为 `scripts/run_gates.sh`，任务状态在 `docs/tasks`。

@@ -4,6 +4,19 @@ All notable changes to CBrowser are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-11-03
+
+### Added
+
+- v2 五服务 Docker 拓扑：Caddy、API、Gateway、Supervisor 与双 Runtime。
+- 正式 API production image、compose 部署脚本、Caddy 配置与迁移 CLI。
+- 同机 WebRTC 直连，无 coturn/TURN。
+
+### Removed
+
+- legacy 单容器 VNC/RFB、native-window、旧 API 入口与旧测试。
+- GitHub Actions CI/release workflows。
+
 ## [0.1.9] - 2026-10-16
 
 ### Added
