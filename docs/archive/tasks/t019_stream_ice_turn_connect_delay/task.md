@@ -27,9 +27,9 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：Stream 运行时新建 WebRTC 会话的 ICE 配置不包含外部 STUN/TURN 服务器；其 SDP/ICE 候选仅出现 `127.0.0.1:<udp mux>` host 候选，不含 `srflx`、`relay` 或其他主机的候选。
-- [ ] AC-002：同机真实 Chrome 从点击侧边栏另一个已运行 profile 到媒体帧呈现的耗时不超过 2 秒；同一 profile 刷新重建会话也满足该上限。
-- [ ] AC-003：unit 门禁能阻止 Stream entrypoint 回退到 Selkies 默认外部 STUN/TURN 配置。
+- [x] AC-001：Stream 运行时新建 WebRTC 会话的 ICE 配置不包含外部 STUN/TURN 服务器；其 SDP/ICE 候选仅出现 `127.0.0.1:<udp mux>` host 候选，不含 `srflx`、`relay` 或其他主机的候选。
+- [x] AC-002：同机真实 Chrome 从点击侧边栏另一个已运行 profile 到媒体帧呈现的耗时不超过 2 秒；同一 profile 刷新重建会话也满足该上限。
+- [x] AC-003：unit 门禁能阻止 Stream entrypoint 回退到 Selkies 默认外部 STUN/TURN 配置。
 
 ### 可测试性声明
 

@@ -62,6 +62,8 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 # 统一入口：scripts/run_gates.sh；E2E 使用 CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 ```
 
+会话建立时延与候选类型（t019）：真实 Chrome 黑盒须断言新建会话的 ICE 候选集仅含 `host` 类型、远端候选地址恒为 `127.0.0.1`（不出现 `srflx`/`relay`/`prflx`），且侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均不超过 2 秒；用例在 `tests/e2e/test_frontend_app_e2e.py`（`test_t019_switch_and_refresh_first_frame_within_2s_host_only`），经 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 执行。Stream entrypoint 的 ICE-lite 启动参数由 unit 门禁 `tests/unit/test_stream_ice_config.py` 守护，防止回退 Selkies 默认外部 STUN/TURN。
+
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。
 
 ## 专项技术验证探针

@@ -139,6 +139,7 @@ def stream_environment(
         "CBROWSER_X11_SOCKET": "/tmp/.X11-unix/X99",
         "SELKIES_PORT": "18096",
         "SELKIES_MODE": "webrtc",
+        "SELKIES_WEBRTC_ICE_LITE": "true",
         "SELKIES_ENABLE_DUAL_MODE": "false",
         "SELKIES_ENABLE_SHARING": "true",
         "SELKIES_ENABLE_COLLAB": "false",

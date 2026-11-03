@@ -5,7 +5,7 @@
 |slug|task 清单|最后更新时间|
 |---|---|---|
 |browser_isolation|baseline, t003|2026-11-01T10:13:32+08:00|
-|webrtc_remote_display|baseline, t004, t006, t007, t014, t015|2026-11-02T23:30:00+08:00|
+|webrtc_remote_display|baseline, t004, t006, t007, t014, t015, t019|2026-11-03T22:34:01+08:00|
 |storage_and_artifacts|baseline, t008, t016|2026-11-03T03:00:00+08:00|
 |v2_runtime_validation|t001|2026-11-01T10:13:32+08:00|
 |runtime_persistence|t002, t016|2026-11-03T03:00:00+08:00|
