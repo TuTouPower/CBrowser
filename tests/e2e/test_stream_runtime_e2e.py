@@ -35,9 +35,6 @@ WEB_LOCK_SHIM_JS = (FIXTURES / "stream_probe" / "web_lock_shim.js").read_text(
 )
 
 CHROME_PATH = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-BROWSER_IMAGE = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
-STREAM_IMAGE = os.environ.get("CBROWSER_STREAM_TEST_IMAGE", "")
-ENGINE_CACHE = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")
 
 RUN_LABEL = "cbrowser-t004-e2e"
 
@@ -474,12 +471,14 @@ async def test_stream_runtime_direct_media_matrix(
     env = require_e2e_env(
         "CBROWSER_RUNTIME_TEST_IMAGE",
         "CBROWSER_STREAM_TEST_IMAGE",
-        "CBROWSER_RUNTIME_ENGINE_CACHE",
-        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
+        "CBROWSER_RUNTIME_engine_cache",
+        paths=("CBROWSER_RUNTIME_engine_cache",),
     )
-    globals().update(env)
-    assert BROWSER_IMAGE.startswith("sha256:"), "Immutable Browser image required"
-    assert STREAM_IMAGE.startswith("sha256:"), "Immutable Stream image required"
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_engine_cache"]
+    assert browser_image.startswith("sha256:"), "Immutable Browser image required"
+    assert stream_image.startswith("sha256:"), "Immutable Stream image required"
     """
     Validates AC-001 through AC-006 with strengthened security contract:
     - Real Browser Runtime container + real Stream Runtime container.
@@ -547,7 +546,7 @@ async def test_stream_runtime_direct_media_matrix(
             "chmod",
             "-v",
             f"{x11_dir}:/x11",
-            BROWSER_IMAGE,
+            browser_image,
             "1777",
             "/x11",
         ],
@@ -619,7 +618,7 @@ async def test_stream_runtime_direct_media_matrix(
             "--tmpfs",
             "/home/cbrowser:rw,mode=0755,size=64m",
             "-v",
-            f"{ENGINE_CACHE}:/data/engine-cache:ro",
+            f"{engine_cache}:/data/engine-cache:ro",
             "-v",
             f"{host_profile_dir}:/data/profiles/{profile_id}/profile",
             "-v",
@@ -632,7 +631,7 @@ async def test_stream_runtime_direct_media_matrix(
             f"{x11_dir}:/tmp/.X11-unix",
             "-v",
             f"{pulse_dir}:/pulse",
-            BROWSER_IMAGE,
+            browser_image,
             "--profile-id",
             profile_id,
             "--runtime-instance-id",
@@ -776,7 +775,7 @@ async def test_stream_runtime_direct_media_matrix(
             # Direct mode: no coturn container and no TURN configuration.
             "-e",
             "CBROWSER_CONFIG_VERSION=1",
-            STREAM_IMAGE,
+            stream_image,
         ]
         await asyncio.to_thread(subprocess.run, stream_cmd, check=True)
         created_containers.append(stream_cname)

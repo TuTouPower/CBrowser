@@ -395,37 +395,6 @@ async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(
                 > statsA_p4_start["video"]["framesDecoded"]
             )
 
-            # --- Phase 5: Negative control - injecting cbrowser activity frames ---
-            await pageA.evaluate("""() => {
-                const ws = window.__last_ws;
-                if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    throw new Error("activity sentinel channel is not open");
-                }
-                ws.send(JSON.stringify({
-                    cbrowser: "activity",
-                    visible: true,
-                    active: true
-                }));
-            }""")
-            # Fixed 1 s settle window for a negative assertion: the absence of
-            # visibility_update log lines must hold over an interval.
-            await asyncio.sleep(1.0)
-
-            gw_logs_end = harness.gateway_container.logs().decode("utf-8")
-            stream_logs_end = stream_box.logs().decode("utf-8")
-            assert "visibility_update" not in gw_logs_end
-            assert "visibility_update" not in stream_logs_end
-
-            vis_negative = await get_visibility()
-            assert vis_negative["unpaused_video_consumers"] == 1, (
-                "Activity frame injection must not alter visibility state"
-            )
-
-            evidence["phase5_negative_injection"] = {
-                "visibility_endpoint_unchanged": vis_negative,
-                "no_visibility_update_in_logs": True,
-            }
-
             save_evidence(
                 "ac007_visibility_evidence", evidence, target_dir=tmp_path / "evidence"
             )

@@ -674,3 +674,71 @@ coverage = 6 / 7
 建议合并前人工抽查 trust_prior 项。
 
 verdict: FAIL
+
+## Round 9 (2026-11-03T14:45:00+08:00)
+
+- round：9
+- reviewed_at：2026-11-03T14:45:00+08:00
+
+reviewed_scope: 06dd68eaa92d59b2
+
+### Findings
+
+本轮无新 finding；f020、f026 两个前轮 blocker 未修完，按原 ID 复核，证据见下。
+
+### 结论
+
+- 前轮 finding 复核（以当前 worktree 与实跑为准）：
+    - f001 已消除。`config/docker/Dockerfile:18-20` 未传 `--check-freshness`，`scripts/verify_frontend_dist.py:82-83` 默认 `check_freshness=False`。
+    - f002 已消除。`pytest tests/e2e/test_frontend_build_wiring.py tests/e2e/test_frontend_adapter_build.py -q` 得 12 passed；postbuild 精确等值断言仍在 `tests/e2e/test_frontend_build_wiring.py:67`。
+    - f003 已消除。默认模式 `pytest tests/e2e -q --collect-only` 得 79 tests collected，无 collection error。
+    - f004 门禁段落已消除。`docs/blueprint/testing.md:40-54` 的 `test_cmd`/`blackbox_verify` 只保留 `scripts/run_gates.sh` 入口；`docs/blueprint/stream_runtime.md:49` 仍引用已删除的 `tests/e2e/test_stream_client_identity_e2e.py`，该文档漂移归 code review `t018_code_f015`，不重复出表。
+    - f005 已消除。`tests/unit/test_baseline_fixture_regressions.py` 中 importlib 加载 E2E 模块并借用 `real_api_and_sup` 的用例已删除，测试整体迁入同模块 `tests/e2e/test_supervisor_recovery_e2e.py:1079`；全仓已无 `spec_from_file_location` 跨模块 fixture 借用，实跑该用例 1 passed。
+    - f006 已消除。`tests/e2e/test_stream_client_identity_e2e.py` 整体删除；身份/重映射由 `tests/e2e/test_frontend_app_e2e.py` 驱动构建产物中的生产 adapter。
+    - f007 已消除。`tests/e2e/conftest.py:31-39` 的新鲜度校验位于必需模式判断（:41-42）之前，默认 E2E 运行收集阶段即校验 `src/frontend/dist`。
+    - f008 已消除。实跑 `CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only` 以 exit 2 列出全部 9 个缺项。
+    - f009 已消除。IPv6 先 `assert v6_b and v6_c` 再无条件探针；退避有上下界；首帧/输入延迟上限为 8000/3000ms。
+    - f010 已消除。`tests/unit/test_supervisor_recovery.py:560` 已恢复精确 `WSMsgType.CLOSE`。
+    - f011 已消除。扫描 `docs/specs` 未命中四类凭据字面量。
+    - f012 仍存在（minor）。`tests/unit/test_repo_hygiene.py:12-19,32` 仍只扫描固定后缀（外加 `.gitattributes`），`Dockerfile`、`.gitignore` 等无后缀文本不在守卫范围。
+    - f013 仍存在（minor）。`scripts/vendor_selkies_web.py` 的穿越拒绝与清单外文件校验仍只有 happy path 覆盖。
+    - f014 仍存在（minor）。`tests/unit/test_frontend_build_freshness.py:12-23` 只覆盖 stale；stamp 缺失、不可读 JSON、字段缺失三个 fail-closed 分支与 conftest 实际接线仍无测试。
+    - f015 已消除。实跑 `tests/unit` 得 539 passed，路径隐私守卫转绿。
+    - f016 已消除。postbuild 断言仍为完整精确等值。
+    - f017 已消除。`tests/e2e/test_stream_selkies_tokens_e2e.py:98` 宿主发布仍为 `127.0.0.1:{port}:{port}`；f139540 把容器内 `settings.addr` 恢复为 `0.0.0.0`，容器内监听与宿主回环发布分工正确，宿主暴露面未变。
+    - f018 已消除。`tests/fixtures/gateway_probe/topology.py:131` 的 secret 目录 0700，`tests/unit/test_baseline_fixture_regressions.py:577-580` 断言目录模式。
+    - f019 已消除。A39 点名文件已改用公开接口/注入时钟，墙钟阈值断言已移除（f027 的 offload 断言修复见下）。
+    - f020 修不彻底。f139540 把 `if (ws && OPEN)` 改成不满足即抛出，注入不再可能被静默跳过；但 Phase 5 仍无「已处理」哨兵，且注入帧被测试夹具自身的 `WebSocket.send` 包装吞掉：`tests/fixtures/gateway_probe/selkies_assets.py:108` 的 `window.__last_ws` 指向 shim 包装后的 socket，`:131-133` 对 `"cbrowser"+"activity"` 直接 `return`，不调用 `nativeSend`。因此 `tests/e2e/test_gateway_ac007_visibility_e2e.py:399-419` 断言的是夹具 shim 的丢弃行为，生产 Gateway 的过滤（`src/backend/cbrowser/gateway/server.py:580-586`）从未被该 E2E 触达；`asyncio.sleep(1.0)` 后断言日志无 `visibility_update` 的负断言仍然恒绿。该契约另有 `tests/integration/test_gateway_control.py:302-345` 用 `REAL_SIGNALING_MSG` 哨兵覆盖真实 Gateway，故不计 critical，但 AC-003/A37 对这条 E2E 的要求未满足。
+    - f021 仍存在（minor）。集成/E2E 仍在仓库 `.scratch` 写状态，如 `tests/integration/test_v2_api_subprocess.py:24-27`。
+    - f022 仍存在（minor）。`tests/fixtures/gateway_probe/evidence.py` 的脱敏逻辑仍无落盘内容断言。
+    - f023 已消除。实跑 `pytest .repo_template/tests -q -m contract` 得 169 passed。
+    - f024 已消除。`tests/unit/test_stream_runtime.py` 的精确退避列表断言仍在。
+    - f025 已消除。清理断言均在 `finally` 之后。
+    - f026 修不彻底。`REQUIRED_E2E_ENV`/`require_e2e_env` 已集中到 `tests/fixtures/e2e_env.py:10-40`，但 `tests/e2e/test_runtime_profile_defaults_e2e.py:46-60,444-446` 仍维护第二套前置检查并整类 `pytest.skip`：实跑 `CBROWSER_E2E_REQUIRED=1`、9 个变量齐备但 engine cache 指向不存在目录时，该用例 `SKIPPED` 而非硬失败（零覆盖绿）。`tests/fixtures/supervisor_recovery_probe/offline_fixture.py:43-77` 也另维护一份 skip 语义。AC-002「测试前置条件由单一模块定义且语义一致」仍不成立。
+    - f027 已消除。把 `docker_adapter.asyncio` / `supervisor.core.asyncio` 分别替换为同步 `to_thread` 后重跑，`test_teardown_offloads_blocking_docker_cleanup` 与 `test_scan_inspect_offloads_blocking_docker_call` 均 AssertionError 失败；真实实现下通过，卸载行为已有可失败的证据。
+- 改测方向复核：无。f139540 的改动均为强化/纠正方向：不满足发送条件改为抛错、env 缺省值改为 `require_e2e_env`、offload 断言增加 `unblocked_while_running`、移除未使用 import；未发现把旧预期改成当前实现的输出。
+- 本轮新发现：0 条。
+- 未进表的提示：
+    - `tests/e2e/test_stream_runtime_e2e.py:480` 的 `globals().update(env)` 不会更新模块导入期读取的 `BROWSER_IMAGE`/`STREAM_IMAGE`/`ENGINE_CACHE`，实际仍依赖导入时环境；行同虚设，建议直接赋值。
+    - `tests/e2e/test_runtime_profile_defaults_e2e.py:25-28` 的 `DEFAULT_IMAGE`/`DEFAULT_CACHE` 已无引用（死常量）。
+    - `tests/e2e/test_supervisor_event_shutdown_e2e.py:37-48` 在非必需模式下 Docker daemon 不可达仍 `pytest.fail`，与 A36「缺失=skip」语义不完全一致，归入 f026 的系统性问题。
+    - `tests/integration/test_supervisor_rpc.py:3`、`tests/integration/test_runtime_coordinator_integration.py:8`、`tests/integration/test_v2_api_subprocess.py:6` 的 `importlib.util` 在迁移后已无使用（未使用 import，风格）。
+    - `tests/e2e/conftest.py:19-21` 有多余空行；`tests/e2e/test_supervisor_retry_e2e.py:43-46` 重复 import `e2e_env`。
+- 总体判断：f005/f027 已真正修复，但 f020 的 E2E 负向注入仍被夹具 shim 吞掉、f026 的 required 模式仍可整类 skip，AC-002/AC-003 打勾复核不成立，不能 PASS。
+- 系统性 follow-up：无新增跨 task 缺口；f020/f026 均属 t018 范围。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。实跑 `CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only`（exit 2，列出 9 个缺项）与默认模式（79 tests collected）；实跑 `python3 scripts/verify_frontend_dist.py --check-freshness` exit 0；`tests/unit/test_frontend_build_freshness.py` 通过。fail-closed 分支缺测试（f014 minor）。
+- AC-002：`re_verified`。检索确认无 `spec_from_file_location`/跨模块 fixture 借用、无 `sys.path.insert`；`tests/fixtures/supervisor_recovery_probe/gateway_service.py:147` 驱动生产 `create_gateway_app`；发现 f026 仍未满足。
+- AC-003：`re_verified`。实跑 unit 539 passed、integration 79 passed、legacy 384 passed；逐条核对 IPv6、退避上下限、冻结帧增长、逐页静音、首帧/输入延迟、会话关闭实例不变断言；发现 f020 未满足。
+- AC-004：`trust_prior`（真实 Docker 单次门禁）。静态核对 Selkies 宿主发布仅 127.0.0.1、control 目录 0700、证据脱敏与 `.scratch` 写入；f021/f022 minor 仍在；`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本轮未由 reviewer 执行。
+- AC-005：`re_verified`。实跑 unit 539 passed；A39 文件已用公开接口/注入时钟；用同步 `to_thread` 回归探针确认两个 offload 用例会红（f027 已修）。
+- AC-006：`re_verified`（本地非 E2E）。实跑 contract 169、legacy 384、unit 539、integration 79、前端 Vitest 95、`npm run build`（含 stamp 写入与 freshness verify）均通过；`.github/` 已不存在；`docs/blueprint/testing.md:40-54` 只引用 `scripts/run_gates.sh`。
+- AC-007：`re_verified`。实跑 `tests/unit` 539 passed（含 `test_repo_hygiene.py`）；扫描 `docs/specs` 无凭据字面量；`.gitattributes` 行尾规则生效且 `git ls-files --eol` 无 CRLF；vendor 解包安全分支仍无测试（f013 minor）。
+
+coverage = 6 / 7
+
+建议合并前人工抽查 trust_prior 项。
+
+verdict: FAIL

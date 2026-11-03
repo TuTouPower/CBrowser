@@ -13,6 +13,7 @@ Validates:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import uuid
 from pathlib import Path
@@ -443,7 +444,10 @@ class TestRuntimeProfileDefaultsE2E:
     def require_prerequisites(self):
         ready, reason = check_prerequisites()
         if not ready:
-            pytest.skip(f"E2E prerequisites missing: {reason}")
+            message = f"E2E prerequisites missing: {reason}"
+            if os.environ.get("CBROWSER_E2E_REQUIRED") == "1":
+                pytest.fail(message, pytrace=False)
+            pytest.skip(message)
 
     def test_profile_defaults_en_us(self):
         """Verify defaults initialization in en-US locale."""

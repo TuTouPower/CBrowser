@@ -48,14 +48,14 @@ def test_supervisor_cli_graceful_shutdown_on_sigterm(tmp_path: Path) -> None:
         )
 
     # Image mapping from gate environment
-    browser_image = os.environ.get("CBROWSER_BROWSER_IMAGE") or os.environ.get(
-        "CBROWSER_RUNTIME_TEST_IMAGE"
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE", "CBROWSER_STREAM_TEST_IMAGE"
     )
-    stream_image = os.environ.get("CBROWSER_STREAM_IMAGE") or os.environ.get(
-        "CBROWSER_STREAM_TEST_IMAGE"
-    )
-    policy_image = os.environ.get("CBROWSER_NETWORK_POLICY_IMAGE") or os.environ.get(
-        "CBROWSER_SUPERVISOR_TEST_IMAGE"
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    policy_image = os.environ.get(
+        "CBROWSER_NETWORK_POLICY_IMAGE",
+        env["CBROWSER_RUNTIME_TEST_IMAGE"],
     )
 
     env = require_e2e_env(

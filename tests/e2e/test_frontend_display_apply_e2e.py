@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import re
 import secrets
 import subprocess
@@ -19,6 +18,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+
+from e2e_env import require_e2e_env
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
@@ -278,8 +279,9 @@ async def test_display_profile_size_requires_explicit_apply(
 
 
 def test_stream_entrypoint_rejects_missing_supervised_screen_config() -> None:
-    image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    assert image, "CBROWSER_STREAM_TEST_IMAGE is required"
+    image = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
 
     env = {
         "CBROWSER_PROFILE_ID": "display_probe",

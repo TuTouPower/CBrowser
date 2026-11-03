@@ -33,7 +33,8 @@ from typing import Any
 import docker
 import docker.errors
 import httpx
-import pytest
+
+from e2e_env import require_e2e_env
 from api_auth import create_auth_context
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 
@@ -46,23 +47,16 @@ def get_e2e_prerequisites() -> tuple[str, str, Path, Path]:
     Skips the test if variables are missing. Fails if variables are present but
     invalid.
     """
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
