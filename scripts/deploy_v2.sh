@@ -34,6 +34,7 @@ CBROWSER_STREAM_IMAGE=$CBROWSER_STREAM_IMAGE
 CBROWSER_SUPERVISOR_IMAGE=$CBROWSER_SUPERVISOR_IMAGE
 ENV
 docker compose --env-file config/deploy/compose.env -f compose.yaml up -d
+docker compose --env-file config/deploy/compose.env -f compose.yaml restart caddy >/dev/null
 echo "CBrowser: https://127.0.0.1:$HTTPS_PORT"
 echo "Compose env: config/deploy/compose.env"
 echo "Admin password: $(cat config/deploy/secrets/admin_password)"
