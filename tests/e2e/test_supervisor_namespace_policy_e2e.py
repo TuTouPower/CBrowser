@@ -553,3 +553,19 @@ def test_kernel_network_policy_real_netns(
     assert code_b_to_c == 0 and "OTHER_PONG" in out_b_to_c, (
         f"Target B namespace was modified by helper! Out: {out_b_to_c}"
     )
+
+
+def test_wait_for_server_ready_polls_until_log_marker() -> None:
+    class FakeContainer:
+        name = "fake-ready-container"
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def logs(self) -> bytes:
+            self.calls += 1
+            return b"" if self.calls == 1 else b"READY\n"
+
+    container = FakeContainer()
+    _wait_for_server_ready(container)  # type: ignore[arg-type]
+    assert container.calls == 2

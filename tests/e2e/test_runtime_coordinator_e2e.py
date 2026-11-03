@@ -188,7 +188,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
 
         uv_config = uvicorn.Config(
             api_app,
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=api_host_port,
             log_level="warning",
         )
