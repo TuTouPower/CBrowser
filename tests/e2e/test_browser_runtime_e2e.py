@@ -31,6 +31,8 @@ from typing import Any
 
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 import uvicorn
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
@@ -41,18 +43,24 @@ from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
 logger = logging.getLogger(__name__)
 
-IMAGE_TAG = os.environ.get(
-    "CBROWSER_RUNTIME_TEST_IMAGE", "cbrowser-t003-impl-runtime:latest"
-)
+IMAGE_TAG = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
 ACTIVE_TEST_NETWORK: str | None = None
 SCRATCH_ROOT = Path(os.path.abspath(".scratch/t003_implementation/tmp/e"))
-ENGINE_CACHE = Path(
-    os.environ.get(
-        "CBROWSER_RUNTIME_ENGINE_CACHE", ".scratch/t003_implementation/tmp/engine-cache"
-    )
-).resolve()
+ENGINE_CACHE = Path(os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")).resolve()
 LOGS_DIR = Path(os.path.abspath(".scratch/t003_implementation/tmp/logs"))
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@pytest.fixture(autouse=True)
+def _require_runtime_prerequisites():
+    global IMAGE_TAG, ENGINE_CACHE
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
+    )
+    IMAGE_TAG = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    ENGINE_CACHE = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _free_port() -> int:

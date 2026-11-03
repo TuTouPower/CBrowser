@@ -17,16 +17,23 @@ from typing import Any
 
 import aiohttp
 import pytest
+
+from e2e_env import require_e2e_env
 from aiohttp import WSMsgType
 from wait import poll_until
 
 logger = logging.getLogger("t007_stream_tokens")
 
 # Read immutable image ID from environment
-STREAM_IMAGE = os.environ.get(
-    "CBROWSER_STREAM_TEST_IMAGE",
-    "sha256:d54a03b61f9d156ffff950f7a9a3aa0a00a2666daf27a7d69f3f35698610a726",
-)
+STREAM_IMAGE = os.environ.get("CBROWSER_STREAM_TEST_IMAGE", "")
+
+
+@pytest.fixture(autouse=True)
+def _require_stream_image():
+    global STREAM_IMAGE
+    STREAM_IMAGE = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
+        "CBROWSER_STREAM_TEST_IMAGE"
+    ]
 
 
 def find_free_port() -> int:

@@ -43,9 +43,13 @@ def test_supervisor_cli_graceful_shutdown_on_sigterm(tmp_path: Path) -> None:
         finally:
             client.close()
     except Exception as exc:  # noqa: BLE001 - docker daemon availability check
-        pytest.fail(
-            f"Docker daemon required for graceful shutdown E2E: {type(exc).__name__}"
+        message = (
+            "Docker daemon required for graceful shutdown E2E: "
+            f"{type(exc).__name__}"
         )
+        if os.environ.get("CBROWSER_E2E_REQUIRED") == "1":
+            pytest.fail(message, pytrace=False)
+        pytest.skip(message)
 
     # Image mapping from gate environment
     env = require_e2e_env(
