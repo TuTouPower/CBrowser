@@ -77,7 +77,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     data = tmp_path / "data"
     control = data / "control"
     control.mkdir(parents=True)
-    control.chmod(0o777)
+    control.chmod(0o700)
     for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
         (data / name).mkdir()
         (data / name).chmod(0o777)

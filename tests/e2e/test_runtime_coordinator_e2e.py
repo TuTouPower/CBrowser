@@ -68,7 +68,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
     data = tmp_path / "data"
     control = data / "control"
     control.mkdir(parents=True)
-    control.chmod(0o777)
+    control.chmod(0o700)
     for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
         d = data / name
         d.mkdir()

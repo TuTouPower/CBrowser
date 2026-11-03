@@ -1007,3 +1007,59 @@ coverage = 6 / 7
 建议合并前人工抽查 trust_prior 项。
 
 verdict: PASS
+
+## Round 14 (2026-11-03T16:37:17+08:00)
+
+- round：14
+- reviewed_at：2026-11-03T16:37:17+08:00
+
+reviewed_scope: 628bfcea67c7530a
+
+### Findings
+
+#### t018_test_f031 - AC-004 未完成：两个 E2E 的专用秘密目录仍为 0777
+
+- 严重度：important
+- 锚点：AC-004「夹具秘密文件与目录仅属主可访问」
+- 位置：`tests/e2e/test_runtime_coordinator_e2e.py:69-71`、`tests/e2e/test_supervisor_container_graph_e2e.py:79-80`
+- 问题：两处 `control` 目录被显式 `chmod(0o777)`，目录内写入全部秘密：`supervisor_key`/`agent_key`/`gateway_key`/`gateway_api_key`；`tests/e2e/test_runtime_coordinator_e2e.py:174` 还经 `create_auth_context(control, ...)` 写入 admin 密码与 supervisor token。秘密文件本身 0600，但目录可写允许同机其他用户替换或删除秘密文件，与 f018 已判 important 的 `tests/fixtures/gateway_probe/topology.py` 同类；Round 12/13 的「control 目录 0700」复验只覆盖拓扑夹具，未覆盖这两个 E2E 位点，AC-004 打勾复核不成立。父目录 `tmp_path` 当前为 0700，可利用性受限，但目录模式仍不满足 AC，工作目录一旦移出 `tmp_path` 即成实际暴露。
+- 建议：两处 `control` 目录改 0700（supervisor 容器以 root 运行且带 `DAC_OVERRIDE`，0700 可读）；若容器需非 root 写目录，把 secret 拆到 0700 子目录并只挂载文件；在权限测试中补断言。
+
+### 结论
+
+- 前轮 finding 复核（以当前 worktree 与实跑为准）：
+    - f029 已消除。`tests/fixtures/supervisor_recovery_probe/offline_fixture.py:360-362` 仍走 `require_e2e_env("CBROWSER_SUPERVISOR_TEST_IMAGE")`；默认模式实跑 `tests/e2e/test_supervisor_recovery_e2e.py tests/e2e/test_supervisor_retry_e2e.py tests/e2e/test_supervisor_offline_recovery_e2e.py tests/e2e/test_stream_selkies_tokens_e2e.py` 得 1 passed / 9 skipped。
+    - f030 已消除。`tests/e2e/test_browser_runtime_e2e.py:53-63` 的 `_require_runtime_prerequisites` 为 session 级 autouse 且被 `http_server` 依赖；实跑该文件 11 skipped，无 setup error。
+    - f018 清单内位点已修（`tests/fixtures/gateway_probe/topology.py:133` 0700），同类位点残留见 f031。
+    - f012 仍存在（minor）。`tests/unit/test_repo_hygiene.py:12-19,32` 仍只扫描固定后缀，`Dockerfile`、`.gitignore` 等无后缀文本不在守卫范围。
+    - f013 仍存在（minor）。`scripts/vendor_selkies_web.py:29-33,66-84` 的穿越拒绝与清单外文件校验仍只有 happy path 覆盖。
+    - f014 仍存在（minor）。`tests/unit/test_frontend_build_freshness.py:12-23` 只覆盖 stale；stamp 缺失、不可读 JSON、字段缺失分支无测试。
+    - f021 仍存在（minor）。集成/E2E 仍在仓库 `.scratch` 写状态：`tests/integration/test_v2_api_subprocess.py:24`、`tests/integration/test_automation_cdp_flow.py:88,244`、`tests/e2e/test_browser_runtime_e2e.py:48-50`。
+    - f022 仍存在（minor）。`tests/fixtures/gateway_probe/evidence.py:26-53` 的脱敏逻辑落盘内容仍无断言。
+    - 其余前轮 important/critical 维持已消除：本轮重跑 contract 169、unit 539、integration 79、前端 Vitest 95、默认 E2E 17 passed / 62 skipped、required 模式 collection exit 2、`--check-freshness` exit 0，并在全量 diff 中复核了生产 Gateway 替换、实例不变断言、IPv6 无条件阻断、退避双边窗口、首帧/输入延迟上限与清理断言位置，未发现回退。
+- 改测方向复核：无。c18c418 只删除未使用 import/常量、把 postcss 纳入源哈希、contract 步骤显式带 pytest，属清理；e465691 等提交将前置检查提升为 session 夹具、统一 `require_e2e_env`，属强化方向。未发现删断言、反转断言、注释掉断言、`.skip`/`.only`、`# type: ignore` 或把旧预期改成当前实现输出。
+- 本轮新发现：1 条（important 1）。
+- 未进表的提示：
+    - 契约区 drift 与用户决策一致：AC-004 删除并行双跑、AC-006 删除 GitHub Actions CI，均为已确认需求变更。
+    - `tests/e2e/test_supervisor_namespace_policy_e2e.py:173,192,209,226,245` 仍是固定 `time.sleep` 后断言进程状态（code review `t018_code_f028` 已登记，minor）。
+    - `tests/unit/test_stream_binding_guards.py:115` 仍以私有 `_supervisor_fps_cap` 作基线读取（其后断言已用公开访问器），证据强度弱，未作为 AC 证据。
+    - `tests/e2e/test_supervisor_retry_e2e.py:44-46` 重复两行 `from e2e_env import ...`，风格问题。
+    - 真实 Docker E2E 未执行（worktree 无镜像/缓存/Chrome 前置），AC-004 的单次运行依赖实施侧证据；f031 为静态核对结论。
+- 总体判断：全量 diff 与门禁复跑未见新红，但 AC-004 的专用秘密目录要求仍有 2 处未满足，f031 为 important，不能 PASS。
+- 系统性 follow-up：无新增；f031 属 t018 收尾范围。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。实跑 required 模式 collection（exit 2，列出 9 个缺项）与默认模式 79 collected；`python3 scripts/verify_frontend_dist.py --check-freshness` exit 0；`tests/unit/test_frontend_build_freshness.py` 通过。missing/corrupt stamp 分支无测试（f014 minor）。
+- AC-002：`re_verified`。检索 `tests/` 无 `spec_from_file_location`/`sys.path.insert`；共享 fixture 位于 `tests/{unit,integration,e2e}/conftest.py`；Supervisor 测试驱动 `ProductionGatewayService`/`create_gateway_app`，重写 Gateway 夹具已删除；实跑默认模式 browser runtime 11 skipped、相关 supervisor/stream 组 1 passed / 9 skipped。
+- AC-003：`re_verified`。实跑 unit 539、integration 79、默认 E2E 17 passed / 62 skipped；核对 IPv6 无条件阻断、退避双边窗口、冻结恢复帧增长、逐页静音、首帧/输入延迟上限（8000/3000ms）、viewer close 仅接受 CLOSE、清理断言在 finally 之后、会话关闭后容器 running 且 instance-id 不变。
+- AC-004：`trust_prior`（真实 Docker 单次门禁）。静态核对端口派生、回环绑定、证据默认写系统临时目录、明文 `.scratch` 写入（f021 minor）与脱敏实现（f022 minor），发现 f031；`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本轮未执行。
+- AC-005：`re_verified`。实跑 unit 539 passed；本轮改动的单元测试使用公开访问器与注入时钟（ManualClock/fake_clock），`tests/unit/test_docker_offload.py` 的 `unblocked_while_running` 可失败断言保留。
+- AC-006：`re_verified`（本地非 E2E）。实跑 contract 169、unit 539、integration 79、前端 Vitest 95、`--check-freshness` 通过；`.github/` 不存在；`docs/blueprint/testing.md` 的 `test_cmd`/`blackbox_verify` 只引用 `scripts/run_gates.sh`（含模板契约标记行）。
+- AC-007：`re_verified`。实跑 `tests/unit/test_repo_hygiene.py` 2 passed；`git ls-files --eol` 无 CRLF；`docs/specs` 无凭据形态字面量；归档 spike README 与 `.gitignore` 规则存在；vendor 穿越/清单外分支仍无测试（f013 minor）。
+
+coverage = 6 / 7
+
+建议合并前人工抽查 trust_prior 项。
+
+verdict: FAIL
