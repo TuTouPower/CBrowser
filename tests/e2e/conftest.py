@@ -13,20 +13,10 @@ from pathlib import Path
 import httpx
 import pytest
 from api_auth import create_auth_context
+from e2e_env import REQUIRED_E2E_ENV
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-REQUIRED_E2E_ENV = {
-    "CBROWSER_RUNTIME_TEST_IMAGE": "Browser Runtime image sha256",
-    "CBROWSER_STREAM_TEST_IMAGE": "Stream Runtime image sha256",
-    "CBROWSER_GATEWAY_IMAGE": "Gateway image sha256",
-    "CBROWSER_SUPERVISOR_TEST_IMAGE": "Supervisor image sha256",
-    "CBROWSER_API_TEST_IMAGE": "API image sha256",
-    "CBROWSER_CADDY_TEST_IMAGE": "Caddy image sha256",
-    "CBROWSER_RUNTIME_ENGINE_CACHE": "initialized Linux engine cache",
-    "CBROWSER_RUNTIME_GEOIP_CACHE": "GeoIP cache",
-    "CBROWSER_INVALID_POLICY_TEST_IMAGE": "invalid-policy test image",
-}
 
 
 def _missing_requirements() -> list[str]:
@@ -39,13 +29,6 @@ def _missing_requirements() -> list[str]:
 
 
 def pytest_collection_modifyitems(config, items):
-    if os.environ.get("CBROWSER_E2E_REQUIRED") != "1":
-        return
-    missing = _missing_requirements()
-    if missing:
-        details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
-        pytest.exit(f"E2E required mode is missing prerequisites:\n{details}", returncode=2)
-
     frontend_items = [item for item in items if "frontend" in Path(str(item.fspath)).name]
     if frontend_items:
         from scripts.verify_frontend_dist import verify_frontend_build_freshness
@@ -54,6 +37,13 @@ def pytest_collection_modifyitems(config, items):
             REPO_ROOT / "src" / "frontend" / "dist",
             REPO_ROOT / "src" / "frontend",
         )
+
+    if os.environ.get("CBROWSER_E2E_REQUIRED") != "1":
+        return
+    missing = _missing_requirements()
+    if missing:
+        details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
+        pytest.exit(f"E2E required mode is missing prerequisites:\n{details}", returncode=2)
 
 
 @pytest.fixture

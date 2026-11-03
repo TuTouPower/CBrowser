@@ -128,7 +128,7 @@ class GatewayTopologyHarness:
 
     def _init_dirs_and_secrets(self) -> None:
         self.control_dir.mkdir(parents=True, exist_ok=True)
-        self.control_dir.chmod(0o777)
+        self.control_dir.chmod(0o700)
         for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)

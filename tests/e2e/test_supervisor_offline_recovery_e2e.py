@@ -44,6 +44,8 @@ import docker
 import httpx
 import pytest
 
+from e2e_env import free_udp_port_span
+
 from supervisor_recovery_probe import offline_fixture
 from supervisor_recovery_probe.gateway_service import (
     ApiRuntimeLookup,
@@ -142,6 +144,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     )
 
     sup_log = tmp_path / "supervisor.log"
+    udp_base = free_udp_port_span(2)
     sup_proc = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
@@ -158,6 +161,8 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         env=clean_environ,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}

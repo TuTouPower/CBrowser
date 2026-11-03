@@ -574,6 +574,10 @@ async def test_gateway_topology_harness_secrets_permission_0600(
         assert mode == 0o600, (
             f"Secret file {name} ({fpath}) must have mode 0600, got {oct(mode)}"
         )
+    control_mode = stat.S_IMODE(harness.control_dir.stat().st_mode)
+    assert control_mode == 0o700, (
+        f"Secret directory must have mode 0700, got {oct(control_mode)}"
+    )
 
 
 @pytest.mark.asyncio

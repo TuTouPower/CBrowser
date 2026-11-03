@@ -546,3 +546,101 @@ reviewed_scope: 0bb96e6d2f5a5fcd
 coverage = 6 / 7
 
 verdict: FAIL
+
+## Round 7 (2026-11-03T13:47:27+08:00)
+
+reviewed_scope: 67b51ace6478e8ad
+
+### 前轮 finding 复核
+
+- `t018_code_f001`：已消除。`tests/e2e/conftest.py:19-29` 的 `REQUIRED_E2E_ENV` 含 9 个变量；实跑 `CBROWSER_E2E_REQUIRED=1 ... pytest tests/e2e --collect-only` 以 exit 2 列出 9 个缺项，含 `CBROWSER_INVALID_POLICY_TEST_IMAGE`。
+- `t018_code_f002`：仍存在。`tests/unit/test_baseline_fixture_regressions.py:1126-1140` 仍用 `importlib.util.spec_from_file_location` 加载 `tests/e2e/test_supervisor_recovery_e2e.py` 并直接驱动其 `real_api_and_sup` fixture；`tests/e2e/test_supervisor_recovery_e2e.py:92` 的 fixture 未移入 conftest。AC-002「不存在跨测试模块的 fixture 借用」不成立。`tests/conftest.py` 的 `sys.path.insert` 已删除，`pyproject.toml` 的 `pythonpath` 替代了该注入。
+- `t018_code_f003`：已消除。`tests/e2e/test_frontend_app_e2e.py:631` 断言 `first_frame_ms <= 8000`，`:687` 断言 `input_latency_ms <= 3000`。
+- `t018_code_f004`：已消除。`tests/e2e/test_frontend_app_e2e.py:867` 断言恢复后 `framesDecoded` 大于冻结前值；`test_frontend_session_e2e.py:432-450` 使用增长轮询。app E2E 仍为单次读取，见未进表提示。
+- `t018_code_f005`：已消除。`tests/e2e/test_runtime_coordinator_e2e.py:488-490`、`tests/e2e/test_supervisor_recovery_e2e.py:1067-1070`、`tests/e2e/test_supervisor_container_graph_e2e.py:675-681` 的清理异常与所有权断言已移出 `finally`，主体先失败时原始异常不再被替换。
+- `t018_code_f006`：已消除。`scripts/run_gates.sh:38-43` 含 E2E 依赖；本轮实跑 `scripts/run_gates.sh` 非 E2E 全绿（EXIT=0）。
+- `t018_code_f007`：已消除。`git check-ignore -v docs/archive/spikes/s006_gateway_media_recovery/code/probe/agent_token.secret` 命中 `.gitignore:63`。
+- `t018_code_f008`：已消除。`scripts/verify_frontend_dist.py:83` 默认 `check_freshness=False`，`config/docker/Dockerfile:18` 未传该开关。
+- `t018_code_f009`：已消除。`tests/unit/test_repo_hygiene.py:26-34` 只跳过 `docs/archive/` 与逐文件 allowlist，`docs/reviews` 其余文件受扫描。
+- `t018_code_f010`：已消除。`tests/fixtures/supervisor_recovery_probe/gateway_service.py:165-168` 的 `stop()` 先 `await self.api.close()`。
+- `t018_code_f011`：仍存在（minor）。`uv run --with ruff ruff check --select F401,F811,F821,F841 tests scripts` 仍命中本 task 触及文件：`tests/e2e/test_stream_x11_keymap_e2e.py:4,9`、`tests/e2e/test_supervisor_resource_capacity_e2e.py:3,8`、`tests/e2e/test_supervisor_resource_monitor_e2e.py:5`、`tests/integration/test_gateway_control.py:6`、`tests/integration/test_gateway_signaling.py:5`、`tests/integration/test_runtime_coordinator_integration.py:8,11`、`tests/integration/test_supervisor_rpc.py:3,5,7,8`、`tests/integration/test_v2_api_subprocess.py:6`。`tests/e2e/test_frontend_session_vendor.py:8` 的「Ensure repo root is on sys.path」过期注释仍在；`tests/fixtures/frontend_probe/harness.py:12` 的 `FIXTURES_DIR` 已无消费者。
+- `t018_code_f012`：已消除。`tests/unit/review_privacy_allowlist.txt` 覆盖历史文件与两份 task review 报告；实跑 `pytest tests/unit/test_repo_hygiene.py tests/unit/test_frontend_build_freshness.py -q` 3 passed。
+- `t018_code_f013`：已消除。`tests/e2e/test_supervisor_event_shutdown_e2e.py:20` 定义 `REPO_ROOT`；ruff F821 清零。
+- `t018_code_f014`：已消除。`tests/e2e/test_stream_runtime_e2e.py:12` 已 `import socket`；ruff F821 清零。
+- `t018_code_f015`：仍存在（minor）。`docs/blueprint/stream_runtime.md:49` 仍把已删除的 `tests/e2e/test_stream_client_identity_e2e.py` 列为身份/重连覆盖来源；`docs/blueprint/testing.md` 的对应命令已收敛。
+- `t018_code_f016`：仍存在。`tests/e2e/conftest.py:19-29` 的 `REQUIRED_E2E_ENV` 与 `tests/fixtures/e2e_env.py:11-26` 的 `require_e2e_env` 是两套定义；`tests/e2e/test_supervisor_event_shutdown_e2e.py:49-59`、`tests/e2e/test_frontend_display_apply_e2e.py:281`、`tests/e2e/test_stream_runtime_e2e.py:37-39` 仍各自读取/断言镜像变量，`tests/e2e/test_runtime_profile_defaults_e2e.py:442` 仍在必需模式下 `pytest.skip`。AC-002「测试前置条件由单一模块定义且语义一致」不成立。
+- `t018_code_f017`：同意撤回。AC-004 的「同一台机器上并行两次运行互不干扰」已由用户删除；本报告不再按并行前提判定 `_free_tcp_port`/`_free_udp_port` 的探测即释放竞态。
+- `t018_code_f018`：已消除（断言层）。`tests/unit/test_stream_capture_policy.py`、`test_supervisor_recovery_coordinator.py`、`test_stream_agent_lifecycle.py`、`test_runtime_agent_faults.py` 已改用公开访问器/注入时钟；`core.get_session`、`terminal_observation_acknowledged` 等公开接口已落地。残余私有读取只在轮询条件或测试 setup 中（`test_stream_resume.py:150,209`、`test_runtime_coordinator_background_tasks.py:49`、`test_runtime_coordinator_stop_paths.py:221`、`test_supervisor_startup_recovery.py:49-54`），见未进表提示。
+- `t018_code_f019`：已消除。`docs/blueprint/testing.md:40-55` 的 `test_cmd`/`blackbox_verify` 只引用 `scripts/run_gates.sh` 与模板契约标记行，各阶段章节也只保留统一入口。
+- `t018_code_f020`：已消除。`scripts/run_gates.sh:5-15` 记录 `CLEAN_SCRATCH` 并在 EXIT trap 清理自建目录。
+- `t018_code_f021`：仍存在（minor）。`docs/specs/runtime_persistence.md:90` 仍为「严禁泄漏注入的注入的密码……」。
+- `t018_code_f022`：已消除。`docs/blueprint/testing.md:45` 恢复模板契约命令；实跑 contract 169 passed，`scripts/run_gates.sh` 全绿。
+- `t018_code_f023`：已消除。`git diff --check 5a3da225... -- . ':(exclude)docs/archive/**'` exit 0。
+- `t018_code_f024`：仍存在（minor）。`scripts/verify_frontend_dist.py:30-36` 的 `frontend_source_hash` 候选仍缺 `src/frontend/postcss.config.js`。
+- `t018_code_f025`：仍存在。`tests/e2e/test_supervisor_offline_recovery_e2e.py:145` 与 `tests/e2e/test_supervisor_retry_e2e.py:167` 的 `RealSupervisorContainer` 仍未传 `udp_mux_min_port/max_port`，沿用 `tests/fixtures/supervisor_recovery_probe/offline_fixture.py:342-343` 的默认 30000-30991；宿主已有服务占用 30000 时单次门禁仍会冲突。其余 Supervisor E2E 已改为运行内空闲范围，但该范围本身越界，见 `t018_code_f027`。
+- `t018_code_f026`：仍存在（minor）。`docs/blueprint/testing.md:90-91` 仍写「在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下」「test_cmd 中 `tests/unit`……blackbox_verify 中 `tests/integration`」，对应章节已无这些命令。
+
+### 本轮新发现
+
+#### t018_code_f027 - free_udp_port_span 返回超出协议允许范围的端口，四个 Supervisor E2E 在创建 Stream 容器时必失败
+
+- 严重度：important
+- 锚点：AC-004「端口……按运行派生或由系统分配」+ AC-006「本地全量门禁可执行」；行为缺陷：`NetworkPolicySpec` 校验拒绝
+- 位置：`tests/fixtures/e2e_env.py:29-42`、`tests/e2e/test_supervisor_core_e2e.py:133`、`tests/e2e/test_supervisor_recovery_e2e.py:291,522,763`、`tests/e2e/test_supervisor_startup_recovery_e2e.py:182,357`、`tests/e2e/test_supervisor_policy_failure_e2e.py:113`、`src/backend/cbrowser/supervisor/network_policy.py:88`、`src/backend/cbrowser/supervisor/protocol.py:26`、`src/backend/cbrowser/stream_agent/config.py:107-108`
+- 问题：`free_udp_port_span()` 默认从 `start=32000` 扫描，但所有下游校验都把 UDP mux 端口限制在 `[30000, 30991]`。实跑 `PYTHONPATH=tests/fixtures:src/backend ... free_udp_port_span(2)` 返回 `32000`；`NetworkPolicySpec(role="stream", udp_mux_port=32000)` 抛 `ValidationError: Input should be less than or equal to 30991`。`SupervisorCore.start_profile` → `DockerAdapter.start_stream_container` → `_install_network_policy` 会对该 policy 做同样的 `model_validate`，因此上述四个 E2E 文件在创建 Stream 容器时直接失败；`StartProfileResponse` 与 `StreamAgentConfig` 也会拒绝同一端口。最新提交新增的 `CBROWSER_UDP_MUX_MIN/MAX_PORT` 只放宽了 `PortAllocator` 的范围，没有同步协议/网络策略/Agent 校验，属于用测试辅助函数引入的确定性红灯。
+- 建议：把 `free_udp_port_span()` 的默认扫描范围改为 `[30000, 30991]`（例如 `start=30000, end=30991`），并补一条单元测试断言返回的 `base` 与 `base+count-1` 都在协议允许范围内；若确实要扩大生产端口范围，则必须同时修改 `protocol.py`、`network_policy.py`、`stream_agent/config.py` 与文档，不能只改测试 helper。
+
+#### t018_code_f028 - namespace policy E2E 仍有固定 sleep 后断言进程状态的模式
+
+- 严重度：minor
+- 锚点：AC-003「测试中不存在固定 sleep 后断言状态的模式」
+- 位置：`tests/e2e/test_supervisor_namespace_policy_e2e.py:173-176,192-196,209-213,226-230,245-249`
+- 问题：`time.sleep(0.3); assert proc.poll() is None`、`time.sleep(0.1)` 后写 marker 再断言 gate 行为，仍是固定等待后读取状态；同 task 其他文件已用 `wait_until`/`poll_until` 或显式注释说明负断言采样窗口，本文件既无有界轮询也无注释。该模式在慢机器上可能把“gate 尚未退出”误判为“gate 接受了非法 marker”。
+- 建议：对负断言保留固定采样窗口时补注释说明其必要性，或改为在可控事件（子进程输出/文件出现）上做有界等待；至少不要无说明地 `sleep` 后直接断言。
+
+#### t018_code_f029 - 连续两次探测空闲 TCP 端口可能返回同一端口
+
+- 严重度：minor
+- 锚点：AC-004「单次门禁运行不与宿主已有资源冲突」
+- 位置：`tests/e2e/test_stream_runtime_e2e.py:44-48,568-569`、`tests/e2e/test_runtime_coordinator_e2e.py:33-37,97-98`
+- 问题：`_free_tcp_port()`/`find_free_port()` 绑定 `0` 后立即关闭 socket；同一轮紧接着再调用一次时，操作系统可能复用同一端口，导致 Gateway 与 Stream HTTP 服务、Supervisor 与 API 宿主端口相同并在绑定阶段冲突。单次运行不涉及并行双跑，但同轮内两次调用仍是竞态。
+- 建议：一次调用分配多个端口并保持监听 socket 到服务启动，或对重复端口做重试；至少在返回前确认两个端口不同。
+
+#### t018_code_f030 - run_gates.sh 第一步依赖未声明的全局 pytest
+
+- 严重度：minor
+- 锚点：AC-006「本地全量门禁由单一入口脚本执行」
+- 位置：`scripts/run_gates.sh:19`
+- 问题：契约步骤使用裸 `pytest`，其余步骤用 `uv run --no-project`；`pyproject.toml` 没有把 pytest 声明为运行依赖。干净环境/仅安装项目依赖的机器会在第一步 `pytest: command not found` 失败，无法作为可复现的单一入口。
+- 建议：第一步同样使用 `uv run --no-project --with pytest python -m pytest .repo_template/tests -q -m contract`，保留模板契约命令语义即可。
+
+### 结论
+
+- 前轮 finding 复核汇总：`f001/f003/f004/f005/f006/f007/f008/f009/f010/f012/f013/f014/f019/f020/f022/f023` 已消除；`f002/f016/f025` 仍为 important；`f011/f015/f021/f024/f026` 仍为 minor；`f017` 同意撤回；`f018` 断言层已消除，残余私有读取仅作提示。
+- 本轮新发现：4 条（1 important + 3 minor）。
+- 未进表的提示：
+    - 文件过大：`tests/e2e/test_stream_runtime_e2e.py` 1681 行、`tests/unit/test_baseline_fixture_regressions.py` 1270 行、`tests/e2e/test_frontend_app_e2e.py` 1216 行，均超测试源码 1200 行阈值；`tests/e2e/test_supervisor_recovery_e2e.py` 1075 行、`tests/e2e/test_frontend_media_e2e.py` 948 行、`tests/unit/test_stream_agent_lifecycle.py` 713 行、`tests/e2e/test_supervisor_container_graph_e2e.py` 679 行超 600 行提示线。按规则只提示。
+    - 复杂度：本轮人工扫描新增/修改函数未发现 CC ≥ 15；`free_udp_port_span`、`_redact`、`pytest_collection_modifyitems` 分支均低于 minor 阈值。
+    - AC-001 的前端新鲜度检查仍只在 `CBROWSER_E2E_REQUIRED=1` 时执行（`tests/e2e/conftest.py:41-50`）；普通本地前端 E2E 不校验陈旧 dist。
+    - `tests/e2e/test_frontend_app_e2e.py:864-867` 冻结恢复后只读一次统计再断言增长，未像 session E2E 那样轮询，存在偶发假红风险。
+    - `tests/e2e/test_supervisor_core_e2e.py:289-295` 在 `d_client.close()` 之后用同一 Docker client 做零泄漏查询；docker-py 7.2 可继续发请求，但属脆弱写法。
+    - `src/backend/cbrowser/supervisor/runner.py:108-111` 新增 `CBROWSER_UDP_MUX_MIN/MAX_PORT` 生产行为开关；note 有记录，但非范围只允许“为可观测性新增公开接口”，该开关不是可观测性接口，建议后续在 blueprint/decisions 或 spec 中明确其测试专用语义。
+    - `tests/e2e/test_runtime_profile_defaults_e2e.py:439-442` 仍在必需模式下 `pytest.skip`，且默认镜像/缓存路径指向 `.scratch`；该文件不在本 task diff，属既有测试前置条件缺口。
+    - `python3 .repo_template/scripts/md_format.py --check` 仍 exit 1，命中历史 `docs/reviews/` 快照；历史文件属既有状态，非本 task 实现可改。
+    - 本地实跑：`scripts/run_gates.sh` 非 E2E 全绿（contract 169、legacy 384、unit 540、integration 79、frontend Vitest 95 + build）；required 模式 collection exit 2 列出 9 个缺项；`python3 scripts/verify_frontend_dist.py --check-freshness` exit 0；`git diff --check` exit 0；ruff F821 清零。完整 Docker E2E 未执行（缺镜像/Chrome 前置），`t018_code_f027` 为静态+最小复现证据。
+- 总体判断：AC-004 的新端口隔离实现把四个 E2E 直接推入确定性失败（f027），且 AC-002 的 fixture 借用/前置条件单一来源（f002/f016）与离线/重试 E2E 固定端口（f025）仍未解决；当前树不能 PASS。
+- 系统性 follow-up：无新增跨 task 缺口；`f027` 的端口范围修复属 t018 收尾范围。历史 review 快照归档仍沿用 `archive_historical_reviews_home_paths` 建议。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。实跑 required 模式 collection（exit 2 列出 9 个缺项，含 `CBROWSER_INVALID_POLICY_TEST_IMAGE`）；`python3 scripts/verify_frontend_dist.py --check-freshness` exit 0；`scripts/run_gates.sh` 中前端 build/verify 通过。非 required 模式不校验新鲜度的残余见未进表提示。
+- AC-002：`re_verified`。grep/ruff 确认 `tests/conftest.py` 的 `sys.path.insert` 已删除，但 `test_baseline_fixture_regressions.py` 仍 importlib 借用 E2E fixture，且前置条件仍有两套定义；f002/f016 开放。
+- AC-003：`re_verified`（代码层）。核对首帧/输入延迟上限、冻结帧增长、IPv6 无条件下阻断、退避上下限、关闭页面后容器 running 且实例不变；f005 已消除；f028 的固定 sleep 负断言仍在；完整 Docker E2E 未执行。
+- AC-004：`trust_prior`。本轮未跑真实 Docker 门禁（缺镜像/Chrome 前置），依赖实施侧环境与静态检查；静态核对秘密权限、证据脱敏与回环绑定，复现 f027 的端口越界与 f025 的固定端口。建议合并前人工抽查该项。
+- AC-005：`re_verified`。实跑 `scripts/run_gates.sh` 的 unit 层 540 passed；grep 确认断言已改用公开访问器/注入时钟，残余私有读取仅在轮询与 setup；f018 按断言层视为已消除。
+- AC-006：`re_verified`（本地非 E2E）。`scripts/run_gates.sh` EXIT=0，`.github/workflows/` 已删除，required 模式生效；完整 E2E 未执行，f030 的裸 pytest 与 f027 的端口越界仍影响入口可复现性。
+- AC-007：`re_verified`。`pytest tests/unit/test_repo_hygiene.py tests/unit/test_frontend_build_freshness.py -q` 3 passed；`git check-ignore` 命中归档秘密；`git ls-files --eol` 无 CRLF；vendor 解包穿越拒绝/清单集合校验静态核对；spec 凭据字面量已抽象化。
+
+coverage = 6 / 7
+
+verdict: FAIL

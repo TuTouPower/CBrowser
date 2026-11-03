@@ -38,6 +38,8 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 第二轮：E2E 前置条件统一走 `tests/fixtures/e2e_env.py`（required 模式 fail、否则 skip）；单测私有状态断言清零并改用公开访问器；Supervisor E2E 端口改为运行内空闲范围，容器通过 `CBROWSER_UDP_MUX_MIN_PORT/MAX_PORT` 注入；`tests/conftest.py` sys.path 注入移除，改用 pyproject `pythonpath`，跨模块 fixture 移入 conftest。
 
+第三轮：端口范围收敛到协议允许的 30000-30990；Freshness 校验不再依赖必需模式；viewer close 只接受 CLOSE；Selkies token E2E 绑定 127.0.0.1；Gateway secret 目录 0700；docker offload 单测改为 event rendezvous；E2E 环境 helper 的格式错误统一 fail。
+
 ## Review 处置
 
 每个结构化 finding 一行。`已修` 表示本 task 已修复；`遗留` 必须指向 `pNNN` 或 follow-up tid；`撤回` 必须写清理由。critical/important 未解决时不得 PASS。

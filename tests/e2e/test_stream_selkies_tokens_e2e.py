@@ -68,7 +68,7 @@ from selkies.websockets_mode import DataStreamingServer
 async def run_server():
     settings.mode = "webrtc"
     settings.port = {self.port}
-    settings.addr = "0.0.0.0"
+    settings.addr = "127.0.0.1"
     settings.master_token = {self.master_token!r}
     settings.tokens_file = {self.tokens_file!r}
     settings.enable_basic_auth = (False, True)
@@ -95,7 +95,7 @@ asyncio.run(run_server())
             "--name",
             self.container_name,
             "-p",
-            f"{self.port}:{self.port}",
+            f"127.0.0.1:{self.port}:{self.port}",
             "--read-only",
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=64m",

@@ -557,11 +557,7 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
                         profile_id, runtime_instance_id
                     )
                     viewer_close = await viewer_ws.receive()
-                    assert viewer_close.type in (
-                        WSMsgType.CLOSE,
-                        WSMsgType.CLOSED,
-                        WSMsgType.CLOSING,
-                    )
+                    assert viewer_close.type == WSMsgType.CLOSE
                     close_env = await agent_ws.receive_json()
                     assert close_env["type"] == "close"
                     assert close_env["conn_id"] == conn_id

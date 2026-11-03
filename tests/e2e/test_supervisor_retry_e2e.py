@@ -41,6 +41,8 @@ import docker
 import httpx
 import pytest
 
+from e2e_env import free_udp_port_span
+
 from e2e_env import require_e2e_env
 from gateway_probe.topology import cleanup_prefixed_resources
 from supervisor_recovery_probe.gateway_service import (
@@ -164,6 +166,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         runtime_lookup=ApiRuntimeLookup(api_proc.url, sup_token_file),
     )
 
+    udp_base = free_udp_port_span(2)
     sup_proc = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
@@ -180,6 +183,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         env=env,
         log_path=tmp_path / "supervisor.log",
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
 
     evidence_records: list[dict] = []
