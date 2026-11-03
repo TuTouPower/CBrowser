@@ -569,3 +569,16 @@ def test_wait_for_server_ready_polls_until_log_marker() -> None:
     container = FakeContainer()
     _wait_for_server_ready(container)  # type: ignore[arg-type]
     assert container.calls == 2
+
+
+def test_wait_for_server_ready_times_out(monkeypatch) -> None:
+    class SilentContainer:
+        name = "silent-container"
+
+        def logs(self) -> bytes:
+            return b""
+
+    clock = iter([0.0, 11.0])
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    with pytest.raises(TimeoutError, match="did not become READY"):
+        _wait_for_server_ready(SilentContainer())  # type: ignore[arg-type]

@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 
 import docker
 from gateway_probe.topology import GatewayTopologyHarness

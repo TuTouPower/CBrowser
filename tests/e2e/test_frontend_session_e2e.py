@@ -19,8 +19,6 @@ import logging
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 
 import pytest  # noqa: E402
 from frontend_probe.harness import FrontendTopologyHarness  # noqa: E402

@@ -44,7 +44,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 第五轮：补齐 vendor 绝对路径/反斜杠/真实 zip 解包负例、freshness 三态与 conftest 接线测试；E2E 输出目录迁至 /tmp；namespace gate READY 轮询恢复上下限。`t018_test_f021` 仅余 normal_exit_replay 的 `.scratch`：改用 /tmp 后 API 事件收敛测试失败，暂保留仓库内短路径并在 note 记录。
 
-第六轮：测试 API 绑定回环；补 READY 轮询回归测试。
+第六轮：测试 API 绑定回环；补 READY 轮询回归测试；清理 dead path 常量、testing.md TMPDIR 措辞、补 READY timeout 分支。
 
 ## Review 处置
 

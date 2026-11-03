@@ -18,8 +18,6 @@ import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 from cbrowser.stream_agent.messaging import (  # noqa: E402

@@ -13,7 +13,6 @@ import asyncio
 import logging
 import re
 import time
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -21,8 +20,6 @@ import httpx
 import pytest
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 

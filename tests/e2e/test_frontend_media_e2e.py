@@ -32,9 +32,6 @@ from playwright.async_api import (
 )
 from wait import poll_until
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-FIXTURES_DIR = REPO_ROOT / "tests" / "fixtures"
-BACKEND_DIR = REPO_ROOT / "src" / "backend"
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
