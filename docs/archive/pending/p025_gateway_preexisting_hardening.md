@@ -4,4 +4,4 @@
 - 内容：
     1. `gateway/server.py` 查看器授权路径的 `AuthorizationThrottle`（viewer token 授权失败节流）来源映射无 max_sources 类上限：被伪造来源打满时映射可无界增长。t022 已为 `RegistrationThrottle` 建立双预算 + 来源淘汰模式，此处应按同一模式补齐上限与淘汰，并补对应单测。
     2. Agent pump 的 tunnel 分支在 `validate_agent_envelope` 之后是否需要对每条 tunnel 消息复检 profile/instance/session 身份（当前仅在部分分支校验，join/leave 路径主要依赖 envelope 校验与注册时身份）：需先裁决威胁模型（已认证 Agent 连接内伪造 conn_id 的影响面），再决定补每消息复检还是维持现状并成文。
-- 处理：未开
+- 处理：t022；resolution=resolved；reason=当前 AuthorizationThrottle 已在 record_failure 后强制保留最多 1024 项，4096 唯一来源探针验证上限；Agent tunnel/action 均复检 profile/instance/session，tunnel 另检 conn 归属；现有跨 Profile 身份伪造集成测试本轮通过。两项均已有实现，不重复加固。

@@ -2,7 +2,7 @@
 
 - 来源：t017 遗留（t017_code_f007-f010/f012-f015/f017/f018；t017_test_f007/f008/f012/f014/f015/f016）
 - 原始登记内容：处理 API 客户端外部取消/超时区分与监听释放、SSE stop/start 竞争、SSE 尾帧解析去重、Http 请求复杂度拆分、跨源 baseUrl 凭据、会话页错误条跨 Profile 残留、logout rejection、文档门禁引用、反斜杠同源绕过、应用并重启 start 超时重放；补齐对应测试与 AppProviders retry 配置测试。
-- 处理：未开
+- 处理：t025；resolution=transferred；reason=已核实范围并转交该 task：最终 URL 凭据边界、logout rejection、Profile mutation 归属、复合重试阶段及真实 Provider 接线。取消/SSE 代次等已完成子项不重复实现；纯结构重构不立项；真实拓扑执行关联 t032。
 
 ## 分析基线
 
@@ -56,3 +56,14 @@
 - [Profile mutations](../../../src/frontend/src/features/profiles/useProfilesQuery.ts)、[会话页](../../../src/frontend/src/features/profiles/BrowserSessionPage.tsx)。
 - [AuthProvider](../../../src/frontend/src/features/auth/useAuth.tsx)、[AppProviders](../../../src/frontend/src/app/providers.tsx)、[AppLayout](../../../src/frontend/src/app/AppLayout.tsx)。
 - src/frontend/src/shared/api/sse_hardening.test.ts、features/profiles/useProfilesQuery.apply.test.tsx、useProfilesQuery.retry.test.tsx 为现有测试入口，运行结果本轮未知。
+
+## 2026-11-04 转办前复核
+
+- 基线 main@c6a9322；原始旧分析所指 t023/t024 已 done，不再按 backlog 判定。
+- 已完成：取消/超时区分和监听释放、SSE 代次与尾帧公共解析、独立动作幂等键、既有文档门禁同步。纯 HTTP 结构拆分没有新增行为收益，不单独立项。
+- 已最小复现：生产 ApiClient 允许跨源 baseUrl 和反斜杠最终目标进入 fetch，携带 credentials=include 与 CSRF 哨兵；同类位点是对原 endpoint 而非最终 URL 的校验。只测试绝对/协议相对 URL 的旧用例未覆盖两类输入。
+- 已最小复现：生产 apply mutation 在 start 已生效但响应 timeout 后，再次执行 stop；幂等 stop 返回旧结果而 runtime 已 running，重试等待 stopped 直至超时。现有 apply 测试禁用 retry，只检查 stop/start 键不同，未覆盖响应丢失后的阶段恢复。
+- 源码确认仍需失败测试：BrowserSessionPage mutation 不随 Profile 切换隔离，SseSyncBridge 的 void logout() 不消费拒绝，AuthProvider.logout 的 finally 清认证状态后仍向外 reject。实施时用真实组件分别复现，不把源码观察冒充 UI 实跑。
+- 分层补测：ApiClient 最终 URL 矩阵；生产 AppProviders retry/unauthorized 接线；会话页 A→B 与迟到响应；生产 apply mutation 的 start 已生效、未生效与查询失败分支。已有取消/SSE 回归原样保留。
+- 临时线索：.scratch/pending_triage/api_client.mjs、frontend_probe.mjs；认证值仅用本地无效哨兵，无网络请求和生产修改。
+- 结论：残余行为统一转 t025；本轮不建设通用 HTTP 抽象或为去重而重构。目标环境回归集中到 t032。
