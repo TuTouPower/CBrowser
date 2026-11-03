@@ -1,4 +1,38 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BrowserAgentProtocol",
+  "description": "Cross-service Unix Domain Socket contract for CBrowser Runtime Agent",
+  "version": "2.0.0",
+  "messages": {
+    "HealthResponse": {
+      "$id": "#/$defs/HealthResponse",
+      "$ref": "#/$defs/HealthResponse"
+    },
+    "ConfigVersionResponse": {
+      "$id": "#/$defs/ConfigVersionResponse",
+      "$ref": "#/$defs/ConfigVersionResponse"
+    },
+    "ControlRequest": {
+      "$id": "#/$defs/ControlRequest",
+      "$ref": "#/$defs/ControlRequest"
+    },
+    "ControlResponse": {
+      "$id": "#/$defs/ControlResponse",
+      "$ref": "#/$defs/ControlResponse"
+    },
+    "RuntimeEventRecord": {
+      "$id": "#/$defs/RuntimeEventRecord",
+      "$ref": "#/$defs/RuntimeEventRecord"
+    },
+    "DownloadEventRecord": {
+      "$id": "#/$defs/DownloadEventRecord",
+      "$ref": "#/$defs/DownloadEventRecord"
+    },
+    "RuntimeStateRecord": {
+      "$id": "#/$defs/RuntimeStateRecord",
+      "$ref": "#/$defs/RuntimeStateRecord"
+    }
+  },
   "$defs": {
     "ConfigVersionResponse": {
       "additionalProperties": false,
@@ -424,32 +458,5 @@
       "title": "RuntimeStateRecord",
       "type": "object"
     }
-  },
-  "anyOf": [
-    {
-      "$ref": "#/$defs/HealthResponse"
-    },
-    {
-      "$ref": "#/$defs/ConfigVersionResponse"
-    },
-    {
-      "$ref": "#/$defs/ControlRequest"
-    },
-    {
-      "$ref": "#/$defs/ControlResponse"
-    },
-    {
-      "$ref": "#/$defs/RuntimeEventRecord"
-    },
-    {
-      "$ref": "#/$defs/DownloadEventRecord"
-    },
-    {
-      "$ref": "#/$defs/RuntimeStateRecord"
-    }
-  ],
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "BrowserAgentProtocol",
-  "description": "Cross-service Unix Domain Socket contract for CBrowser Runtime Agent",
-  "version": "2.0.0"
+  }
 }

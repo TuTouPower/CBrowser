@@ -28,17 +28,8 @@ _ARTIFACT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 CHUNK_SIZE = 1024 * 1024
 RESERVE_BYTES = 16 * 1024 * 1024
 
-DANGEROUS_CONTENT_TYPES = frozenset(
-    {
-        "application/x-msdownload",
-        "application/x-dosexec",
-        "application/x-executable",
-        "application/x-sh",
-        "application/x-shellscript",
-        "application/x-bat",
-        "application/x-msdos-program",
-        "application/x-msi",
-    }
+_CONTENT_TYPE_RE = re.compile(
+    r"^[a-z0-9][a-z0-9!#$&^_.+\-]*/[a-z0-9][a-z0-9!#$&^_.+\-]*$"
 )
 
 
@@ -94,12 +85,21 @@ def safe_filename(name: str | None, fallback: str = "file") -> str:
 
 
 def validate_content_type(content_type: str | None) -> str:
+    """Normalize a declared media type for either exchange entry point.
+
+    File exchange allows arbitrary content, including executables (user
+    decision D2=A): a declared type is metadata, never a safety proof, so
+    no type is rejected for what the bytes might be. Upload and download
+    ingest share this single normalization: parameters are dropped, the
+    value is lower-cased, a missing type defaults to
+    ``application/octet-stream``, and only values that are illegal as
+    header values (empty, control characters, not a ``type/subtype``
+    token pair) are rejected.
+    """
     normalized = (content_type or "application/octet-stream").split(";", 1)[0]
     normalized = normalized.strip().lower()
-    if not normalized or "\r" in normalized or "\n" in normalized:
+    if not _CONTENT_TYPE_RE.fullmatch(normalized):
         raise ArtifactInvalidContentType("Invalid content type")
-    if normalized in DANGEROUS_CONTENT_TYPES:
-        raise ArtifactInvalidContentType("Executable content type is not allowed")
     return normalized
 
 
@@ -292,12 +292,15 @@ class ArtifactStore:
         return resolved
 
     def delete(self, profile_id: str, storage_path: str | None) -> None:
+        """Remove one managed artifact file.
+
+        A recorded path that escapes the profile directory is an error the
+        caller must surface (the deletion intent stays pending), never a
+        silent skip and never a recursive directory removal.
+        """
         if not storage_path:
             return
-        try:
-            target = self.ensure_inside_profile(profile_id, Path(storage_path))
-        except ArtifactInvalidName:
-            return
+        target = self.ensure_inside_profile(profile_id, Path(storage_path))
         target.unlink(missing_ok=True)
         root = self.profile_dir(profile_id).resolve()
         if target.parent not in (

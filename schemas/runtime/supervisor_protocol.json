@@ -1,4 +1,37 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SupervisorControlProtocol",
+  "version": "1.0.0",
+  "messages": {
+    "StartProfileRequest": {
+      "$id": "#/$defs/StartProfileRequest",
+      "$ref": "#/$defs/StartProfileRequest"
+    },
+    "StartProfileResponse": {
+      "$id": "#/$defs/StartProfileResponse",
+      "$ref": "#/$defs/StartProfileResponse"
+    },
+    "StopProfileRequest": {
+      "$id": "#/$defs/StopProfileRequest",
+      "$ref": "#/$defs/StopProfileRequest"
+    },
+    "StopProfileResponse": {
+      "$id": "#/$defs/StopProfileResponse",
+      "$ref": "#/$defs/StopProfileResponse"
+    },
+    "ResetBlockedRequest": {
+      "$id": "#/$defs/ResetBlockedRequest",
+      "$ref": "#/$defs/ResetBlockedRequest"
+    },
+    "ResetBlockedResponse": {
+      "$id": "#/$defs/ResetBlockedResponse",
+      "$ref": "#/$defs/ResetBlockedResponse"
+    },
+    "ProfileRuntimeStatus": {
+      "$id": "#/$defs/ProfileRuntimeStatus",
+      "$ref": "#/$defs/ProfileRuntimeStatus"
+    }
+  },
   "$defs": {
     "ProfileRuntimeStatus": {
       "additionalProperties": false,
@@ -284,30 +317,5 @@
       "title": "StopProfileResponse",
       "type": "object"
     }
-  },
-  "anyOf": [
-    {
-      "$ref": "#/$defs/StartProfileRequest"
-    },
-    {
-      "$ref": "#/$defs/StartProfileResponse"
-    },
-    {
-      "$ref": "#/$defs/StopProfileRequest"
-    },
-    {
-      "$ref": "#/$defs/StopProfileResponse"
-    },
-    {
-      "$ref": "#/$defs/ResetBlockedRequest"
-    },
-    {
-      "$ref": "#/$defs/ResetBlockedResponse"
-    },
-    {
-      "$ref": "#/$defs/ProfileRuntimeStatus"
-    }
-  ],
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "SupervisorControlProtocol"
+  }
 }

@@ -727,10 +727,16 @@ export interface components {
         ProfileRuntimeResponse: {
             /** Profile Id */
             profile_id: string;
-            /** Desired State */
-            desired_state: string;
-            /** Observed State */
-            observed_state: string;
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
             /** Runtime Instance Id */
             runtime_instance_id: string | null;
             /** Config Version */
@@ -750,10 +756,16 @@ export interface components {
         ProfileRuntimeStatusEvent: {
             /** Profile Id */
             profile_id: string;
-            /** Desired State */
-            desired_state: string;
-            /** Observed State */
-            observed_state: string;
+            /**
+             * Desired State
+             * @enum {string}
+             */
+            desired_state: "stopped" | "running";
+            /**
+             * Observed State
+             * @enum {string}
+             */
+            observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
             /** Runtime Instance Id */
             runtime_instance_id?: string | null;
             /**

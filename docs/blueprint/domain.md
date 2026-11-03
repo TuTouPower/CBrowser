@@ -31,3 +31,10 @@
     - 不设排他控制租约、`ControlSession` 实体、租约代次或抢占接管等待；同一 Profile 可同时接纳多个 `ViewerConnection`。
     - 连接身份由官方 `client_tab_id` 维护，页面刷新保留该身份并生成新 `resume_key`；仅连接内断线重连复用原 `resume_key`。
     - 关闭任一外部标签页不影响同一 Profile 的其他连接，也不关闭底层浏览器进程。
+
+## 字段校验、null 与时间语义（t021）
+
+- **更新请求的校验时机**：Profile 更新 DTO（`ProfileUpdateRequest`）对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不在校验阶段过滤或改写合法条目；历史数据的读取侧过滤（`ProfileConfig`）保持不变，继续保证旧数据可读。
+- **PATCH 三态语义**：列表字段缺失（absent）表示不变；显式 `null` 表示清空为 `[]`；给出列表表示整体替换。`ProfileConfig` 对显式 null 的 `launch_args` / `extension_paths` 归一为 `[]`，仓储合并路径不得把 null 直接送入领域模型（曾导致 500）。
+- **时间语义**：全仓唯一的当前时间实现是 `cbrowser.domain.models.utc_now_iso`；适配层模型不得再定义同名本地实现，SQLAlchemy 列默认值直接引用领域实现。
+- **期望/观测状态词汇**：内部 runtime 响应与事件 DTO 的 `desired_state` / `observed_state` 使用领域枚举 `DesiredState` / `ObservedState`，OpenAPI 中呈现为封闭 enum，未知状态值在 DTO 边界即被拒绝，不再以自由文本透传。

@@ -19,6 +19,11 @@
 - Browser Runner 按快照中的 `font_bundle` 生成 Profile 专属 fontconfig 配置（include 系统配置并追加对应 bundle 目录），仅对非 `none` 档位为 Chrome 进程设置 `FONTCONFIG_FILE`；生成失败时不设置该变量、保持系统默认配置。修改 `font_bundle` 产生新配置版本，重建容器后生效，不影响其他 Profile。
 - 前端创建与编辑界面提供三档选择并回显 API 返回值；不提供 Windows 专有字体，不挂载宿主字体目录。
 
+## 启动参数校验与 PATCH 三态（t021）
+
+- 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取时的过滤保持不变。
+- PATCH 语义三态：字段缺失 = 不变；显式 `null` = 清空为 `[]`；给出列表 = 整体替换。`ProfileConfig` 把显式 null 的这两个列表归一为 `[]`，仓储合并不得因此 500；越界内容返回 422。
+
 ## 页面独立选择
 
 - 主界面以 `/?profileId=` 表示当前页面的操控目标，刷新恢复该目标。每个 Chrome 标签页独立切换 Profile，不改变其他标签页的目标或连接；不使用跨标签页共享的 `localStorage.currentProfileId`。

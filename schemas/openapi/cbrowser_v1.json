@@ -3587,10 +3587,21 @@
           },
           "desired_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
             "title": "Desired State"
           },
           "observed_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
             "title": "Observed State"
           },
           "runtime_instance_id": {
@@ -3665,10 +3676,21 @@
           },
           "desired_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "running"
+            ],
             "title": "Desired State"
           },
           "observed_state": {
             "type": "string",
+            "enum": [
+              "stopped",
+              "starting",
+              "running",
+              "stopping",
+              "error"
+            ],
             "title": "Observed State"
           },
           "runtime_instance_id": {
@@ -4231,7 +4253,11 @@
         "in": "header",
         "name": "X-CSRF-Token"
       },
-      "serviceBearer": {
+      "SupervisorServiceBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      },
+      "GatewayServiceBearer": {
         "type": "http",
         "scheme": "bearer"
       }

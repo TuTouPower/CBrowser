@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from cbrowser.adapters.database.models import ArtifactModel, ProfileModel
+from cbrowser.adapters.database.models import (
+    ArtifactModel,
+    ProfileModel,
+    ProfileRuntimeModel,
+    RuntimeEventModel,
+)
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import Artifact, utc_now_iso
 from sqlalchemy import delete, select
@@ -28,12 +33,21 @@ class ArtifactRepository:
             picker_name=model.picker_name,
             sha256=model.sha256,
             storage_path=model.storage_path,
+            delete_requested_at=model.delete_requested_at,
             created_at=model.created_at,
         )
 
-    async def get_profile(self, profile_id: str):
+    async def profile_exists(self, profile_id: str) -> bool:
+        """Scalar existence check; never materializes the profile aggregate."""
         async with self._session_maker() as session:
-            return await session.get(ProfileModel, profile_id)
+            found = (
+                await session.execute(
+                    select(ProfileModel.id)
+                    .where(ProfileModel.id == profile_id)
+                    .limit(1)
+                )
+            ).scalar()
+            return found is not None
 
     async def list_artifacts(self, profile_id: str) -> list[Artifact]:
         async with self._session_maker() as session:
@@ -64,24 +78,24 @@ class ArtifactRepository:
         sha256: str,
         storage_path: str,
     ) -> Artifact | None:
+        # The path predicate lives in SQL: checksum history must not be
+        # scanned in Python to answer a single duplicate lookup.
         async with self._session_maker() as session:
-            rows = (
+            row = (
                 (
                     await session.execute(
                         select(ArtifactModel).where(
                             ArtifactModel.profile_id == profile_id,
                             ArtifactModel.kind == "download",
                             ArtifactModel.sha256 == sha256,
+                            ArtifactModel.storage_path == storage_path,
                         )
                     )
                 )
                 .scalars()
-                .all()
+                .first()
             )
-            for row in rows:
-                if row.storage_path == storage_path:
-                    return self._to_domain(row)
-            return None
+            return self._to_domain(row) if row is not None else None
 
     async def create_artifact(
         self,
@@ -120,6 +134,71 @@ class ArtifactRepository:
                 return False
             await session.delete(row)
             return True
+
+    async def mark_delete_requested(
+        self, profile_id: str, artifact_id: str
+    ) -> Artifact | None:
+        """Persist the deletion intent before any file is touched.
+
+        Re-marking an already-marked artifact keeps the original timestamp
+        so retries and restarts observe one durable intent.
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            row = await session.get(ArtifactModel, artifact_id)
+            if row is None or row.profile_id != profile_id:
+                return None
+            if row.delete_requested_at is None:
+                row.delete_requested_at = utc_now_iso()
+            return self._to_domain(row)
+
+    async def list_pending_deletions(self) -> list[Artifact]:
+        async with self._session_maker() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(ArtifactModel).where(
+                            ArtifactModel.delete_requested_at.is_not(None)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return [self._to_domain(row) for row in rows]
+
+    async def is_trusted_instance(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> bool:
+        """Whether *runtime_instance_id* is a known instance of the profile.
+
+        Trusted means currently bound or present in the profile's recorded
+        runtime history; a late download report from such an instance is
+        legitimate, while an unknown/forged instance id is not.
+        """
+        async with self._session_maker() as session:
+            current = (
+                await session.execute(
+                    select(ProfileRuntimeModel.runtime_instance_id).where(
+                        ProfileRuntimeModel.profile_id == profile_id,
+                        ProfileRuntimeModel.runtime_instance_id
+                        == runtime_instance_id,
+                    )
+                )
+            ).scalar()
+            if current is not None:
+                return True
+            historical = (
+                await session.execute(
+                    select(RuntimeEventModel.event_id)
+                    .where(
+                        RuntimeEventModel.profile_id == profile_id,
+                        RuntimeEventModel.runtime_instance_id
+                        == runtime_instance_id,
+                    )
+                    .limit(1)
+                )
+            ).scalar()
+            return historical is not None
 
     async def delete_profile_artifacts(self, profile_id: str) -> None:
         async with self._session_maker() as session, write_transaction(session):

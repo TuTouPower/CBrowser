@@ -29,6 +29,7 @@ from cbrowser.domain.runtime_policy import BLOCK_AFTER_RUNTIME_FAILURES
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 
 class IdempotencyConflictError(Exception):
@@ -58,6 +59,47 @@ class ProfileRepository:
     def __init__(self, session_maker: async_sessionmaker[AsyncSession]):
         self._session_maker = session_maker
 
+    @staticmethod
+    async def _match_operation_audit(
+        session: AsyncSession,
+        operation_id: str | None,
+        sig_hash: str,
+    ) -> AuditEventModel | None:
+        """Return the recorded audit row for *operation_id*.
+
+        A reused operation id whose stored request signature differs is an
+        idempotency conflict, never a replay. This is the single place that
+        interprets audit signatures for create/update/desired-state.
+        """
+        if not operation_id:
+            return None
+        audit = await session.get(AuditEventModel, operation_id)
+        if audit is None:
+            return None
+        audit_details = json.loads(audit.details)
+        if audit_details.get("sig_hash") != sig_hash:
+            raise IdempotencyConflictError(
+                f"Operation ID {operation_id} reused with different request payload"
+            )
+        return audit
+
+    @staticmethod
+    async def _load_profile_model(
+        session: AsyncSession, profile_id: str
+    ) -> ProfileModel | None:
+        """Load one profile with only the tags collection attached.
+
+        Immutable config versions and artifact history are never loaded by
+        ordinary profile reads; dedicated repository methods query them.
+        """
+        stmt = (
+            select(ProfileModel)
+            .where(ProfileModel.id == profile_id)
+            .options(selectinload(ProfileModel.tags))
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create_profile(
         self,
         config: ProfileConfig,
@@ -83,22 +125,25 @@ class ProfileRepository:
             req_payload if req_payload is not None else fallback_payload,
         )
 
+        audit_recorded = False
         try:
             async with self._session_maker() as session, write_transaction(session):
-                if operation_id:
-                    existing_audit = await session.get(AuditEventModel, operation_id)
-                    if existing_audit:
-                        audit_details = json.loads(existing_audit.details)
-                        if audit_details.get("sig_hash") != sig_hash:
-                            raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with "
-                                "different request payload"
-                            )
-                        existing = await session.get(
-                            ProfileModel, existing_audit.entity_id
-                        )
-                        if existing:
-                            return self._to_domain_profile(existing)
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    audit_recorded = True
+                    existing = await self._load_profile_model(
+                        session, audit.entity_id
+                    )
+                    if existing is not None:
+                        return self._to_domain_profile(existing)
+                    # The recorded create's target was deleted afterwards.
+                    # Replaying the create deterministically restores the
+                    # same profile identity instead of leaking a PK conflict
+                    # for the already-recorded operation id.
+                    pid = audit.entity_id
+                    udd = user_data_dir or f"/data/profiles/{pid}/profile"
 
                 p_model = ProfileModel(
                     id=pid,
@@ -169,7 +214,7 @@ class ProfileRepository:
                 )
                 session.add(rt_model)
 
-                if operation_id:
+                if operation_id and not audit_recorded:
                     audit = AuditEventModel(
                         id=operation_id,
                         entity_type="profile",
@@ -189,21 +234,29 @@ class ProfileRepository:
 
             return await self.get_profile(pid)
         except IntegrityError:
-            if operation_id:
-                async with self._session_maker() as session:
-                    existing_audit = await session.get(AuditEventModel, operation_id)
-                    if existing_audit:
-                        audit_details = json.loads(existing_audit.details)
-                        if audit_details.get("sig_hash") != sig_hash:
-                            raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with "
-                                "different request payload"
-                            )
-                        existing = await session.get(
-                            ProfileModel, existing_audit.entity_id
-                        )
-                        if existing:
-                            return self._to_domain_profile(existing)
+            # A concurrent submission of the same operation won the commit
+            # race: resolve through the same audit contract as the pre-check.
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                existing = (
+                    await self._load_profile_model(session, audit.entity_id)
+                    if audit is not None
+                    else None
+                )
+            if audit is not None:
+                if existing is not None:
+                    return self._to_domain_profile(existing)
+                return await self.create_profile(
+                    config,
+                    tags,
+                    profile_id=audit.entity_id,
+                    user_data_dir=user_data_dir,
+                    operation_id=None,
+                    req_payload=req_payload,
+                    audit_source=audit_source,
+                )
             raise
 
     async def get_audit_event(self, operation_id: str) -> dict | None:
@@ -220,20 +273,22 @@ class ProfileRepository:
 
     async def get_profile(self, profile_id: str) -> Profile | None:
         async with self._session_maker() as session:
-            stmt = select(ProfileModel).where(ProfileModel.id == profile_id)
-            result = await session.execute(stmt)
-            model = result.scalar_one_or_none()
+            model = await self._load_profile_model(session, profile_id)
             if not model:
                 return None
             return self._to_domain_profile(model)
 
     async def list_profiles(self) -> list[Profile]:
         async with self._session_maker() as session:
-            stmt = select(ProfileModel).order_by(
-                ProfileModel.sort_order.asc(), ProfileModel.created_at.desc()
+            stmt = (
+                select(ProfileModel)
+                .options(selectinload(ProfileModel.tags))
+                .order_by(
+                    ProfileModel.sort_order.asc(), ProfileModel.created_at.desc()
+                )
             )
             result = await session.execute(stmt)
-            models = result.scalars().all()
+            models = result.scalars().unique().all()
             return [self._to_domain_profile(m) for m in models]
 
     async def update_profile(
@@ -269,20 +324,18 @@ class ProfileRepository:
 
         try:
             async with self._session_maker() as session, write_transaction(session):
-                if operation_id:
-                    existing_audit = await session.get(AuditEventModel, operation_id)
-                    if existing_audit:
-                        audit_details = json.loads(existing_audit.details)
-                        if audit_details.get("sig_hash") != sig_hash:
-                            raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with "
-                                "different request payload"
-                            )
-                        existing = await session.get(ProfileModel, profile_id)
-                        if existing:
-                            return self._to_domain_profile(existing)
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    existing = await self._load_profile_model(session, profile_id)
+                    if existing is not None:
+                        return self._to_domain_profile(existing)
+                    # Replay against a since-deleted target: the predictable
+                    # result is the same "not found" as a fresh update.
+                    return None
 
-                p_model = await session.get(ProfileModel, profile_id)
+                p_model = await self._load_profile_model(session, profile_id)
                 if not p_model:
                     return None
 
@@ -407,19 +460,15 @@ class ProfileRepository:
 
             return await self.get_profile(profile_id)
         except IntegrityError:
-            if operation_id:
-                async with self._session_maker() as session:
-                    existing_audit = await session.get(AuditEventModel, operation_id)
-                    if existing_audit:
-                        audit_details = json.loads(existing_audit.details)
-                        if audit_details.get("sig_hash") != sig_hash:
-                            raise IdempotencyConflictError(
-                                f"Operation ID {operation_id} reused with "
-                                "different request payload"
-                            )
-                        existing = await session.get(ProfileModel, profile_id)
-                        if existing:
-                            return self._to_domain_profile(existing)
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    existing = await self._load_profile_model(session, profile_id)
+                    if existing is not None:
+                        return self._to_domain_profile(existing)
+                    return None
             raise
 
     async def delete_profile(self, profile_id: str) -> bool:
@@ -637,13 +686,10 @@ class ProfileRepository:
                 return None
 
             if operation_id:
-                existing_audit = await session.get(AuditEventModel, operation_id)
-                if existing_audit:
-                    audit_details = json.loads(existing_audit.details)
-                    if audit_details.get("sig_hash") != sig_hash:
-                        raise IdempotencyConflictError(
-                            "Operation ID reused with different request payload"
-                        )
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
                     # Idempotent replay: return current state without resetting failures
                     return self._to_domain_runtime(m)
 

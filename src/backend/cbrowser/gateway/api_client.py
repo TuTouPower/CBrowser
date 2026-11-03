@@ -19,9 +19,11 @@ class GatewayApiClient:
 
     def __init__(self, base_url: str, token_file: Path | str) -> None:
         try:
+            # read_secret_file already returns the stripped secret; the
+            # extra strip here was redundant (A42).
             token = read_secret_file(
                 Path(token_file), label="Gateway API token", minimum_bytes=32
-            ).strip()
+            )
         except RuntimeError as exc:
             raise ValueError(str(exc)) from None
         self._token = SecretStr(token)

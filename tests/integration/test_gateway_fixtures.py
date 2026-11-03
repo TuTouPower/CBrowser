@@ -37,10 +37,6 @@ class FakeApiService:
             "/api/v1/internal/gateway/viewer-authorize",
             self.handle_viewer_authorize,
         )
-        self.app.router.add_post(
-            "/api/v1/internal/gateway/automation-authorize",
-            self.handle_automation_authorize,
-        )
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
 
@@ -89,12 +85,6 @@ class FakeApiService:
             (cookie, profile_id), (False, "Unauthorized session")
         )
         return web.json_response({"allowed": allowed, "reason": reason})
-
-    async def handle_automation_authorize(self, request: web.Request) -> web.Response:
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {self.token}":
-            return web.json_response({"detail": "Unauthorized API token"}, status=401)
-        return web.json_response({"allowed": True, "reason": None})
 
     async def start(self) -> None:
         self.runner = web.AppRunner(self.app)

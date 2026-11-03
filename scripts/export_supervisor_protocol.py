@@ -1,4 +1,13 @@
-"""Export Supervisor control RPC models as a reproducible JSON schema."""
+"""Export Supervisor control RPC models as a reproducible JSON schema.
+
+All protocol schema documents share one convention (A41): the canonical
+model definitions live under ``$defs`` (kept exactly as the union
+generates them), and consumers enter through the ``messages`` index,
+which maps each message name to a stable ``$id`` plus a ``$ref`` of
+its definition instead of relying on a fragile positional
+top-level ``anyOf``. The document ``version`` is maintained per protocol
+and does not claim to be a wire-negotiated version.
+"""
 
 import json
 from pathlib import Path
@@ -14,6 +23,33 @@ from cbrowser.supervisor.protocol import (
 )
 from pydantic import TypeAdapter
 
+_MESSAGES = (
+    StartProfileRequest,
+    StartProfileResponse,
+    StopProfileRequest,
+    StopProfileResponse,
+    ResetBlockedRequest,
+    ResetBlockedResponse,
+    ProfileRuntimeStatus,
+)
+
+
+def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
+    defs = union_schema.get("$defs", {})
+    missing = [name for name in message_names if name not in defs]
+    if missing:
+        raise ValueError(f"Union schema is missing message definitions: {missing}")
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "SupervisorControlProtocol",
+        "version": "1.0.0",
+        "messages": {
+            name: {"$id": f"#/$defs/{name}", "$ref": f"#/$defs/{name}"}
+            for name in message_names
+        },
+        "$defs": defs,
+    }
+
 
 def supervisor_protocol_schema() -> dict:
     schema = TypeAdapter(
@@ -25,9 +61,7 @@ def supervisor_protocol_schema() -> dict:
         | ResetBlockedResponse
         | ProfileRuntimeStatus
     ).json_schema()
-    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
-    schema["title"] = "SupervisorControlProtocol"
-    return schema
+    return _entry_index_document(schema, [model.__name__ for model in _MESSAGES])
 
 
 if __name__ == "__main__":

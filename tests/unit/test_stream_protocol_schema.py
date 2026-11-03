@@ -1,4 +1,9 @@
-"""Check exported wire schema against registration and tunnel traffic."""
+"""Check exported wire schema against registration and tunnel traffic.
+
+Packets are validated through the document's per-message entry points
+(``messages`` index -> ``$defs``) rather than the removed top-level
+``anyOf`` union entry (A41).
+"""
 
 import json
 from pathlib import Path
@@ -10,16 +15,44 @@ from scripts.export_stream_protocol import stream_protocol_schema
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_exported_stream_schema_matches_models():
-    assert (
-        json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
-        == stream_protocol_schema()
+def _load_schema() -> dict:
+    return json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
+
+
+def _entry_validator(schema: dict, message: str) -> Draft202012Validator:
+    assert schema["messages"][message] == {
+        "$id": f"#/$defs/{message}",
+        "$ref": f"#/$defs/{message}",
+    }
+    return Draft202012Validator(
+        {"$defs": schema["$defs"], "$ref": f"#/$defs/{message}"}
     )
 
 
+def test_exported_stream_schema_matches_models():
+    assert _load_schema() == stream_protocol_schema()
+
+
+def test_stream_schema_uses_entry_index_convention():
+    schema = _load_schema()
+    assert "anyOf" not in schema
+    assert schema["version"] == "v2"
+    assert set(schema["messages"]) == {
+        "AgentRegisterEnvelope",
+        "AgentHeartbeatEnvelope",
+        "GatewayRegisterResponse",
+        "GatewayTunnelEnvelope",
+        "GatewayControlEnvelope",
+    }
+    # $defs stay exactly as the union generates them (no injected $id,
+    # which would change nested $ref resolution); the stable $id lives on
+    # the message entries instead.
+    for definition in schema["$defs"].values():
+        assert "$id" not in definition
+
+
 def test_stream_schema_accepts_protocol_packets_without_visibility_update():
-    schema = json.loads((ROOT / "schemas/stream/agent_protocol.json").read_text())
-    validator = Draft202012Validator(schema)
+    schema = _load_schema()
     identity = {
         "version": "v2",
         "profile_id": "profile_1",
@@ -34,29 +67,31 @@ def test_stream_schema_accepts_protocol_packets_without_visibility_update():
         "runtime_state": "ready",
         "config_version": 1,
     }
-    packets = [
-        dict(
+    packets = {
+        "AgentRegisterEnvelope": dict(
             identity,
             action="register",
             agent_session_id=None,
             conn_id=None,
             payload=register_payload,
         ),
-        dict(identity, status="ok", agent_session_id="session:1"),
-        dict(
+        "GatewayRegisterResponse": dict(
+            identity, status="ok", agent_session_id="session:1"
+        ),
+        "GatewayTunnelEnvelope": dict(
             identity,
             type="msg",
             agent_session_id="session:1",
             conn_id="viewer:1",
             data="HELLO",
         ),
-        dict(
+        "GatewayControlEnvelope": dict(
             identity,
             action="supervisor_quota",
             agent_session_id="session:1",
             payload={"max_fps_cap": 15.0},
         ),
-        dict(
+        "AgentHeartbeatEnvelope": dict(
             identity,
             action="heartbeat",
             agent_session_id="session:1",
@@ -67,18 +102,20 @@ def test_stream_schema_accepts_protocol_packets_without_visibility_update():
                 "capture_running": True,
             },
         ),
-    ]
-    for packet in packets:
-        validator.validate(packet)
+    }
+    for message, packet in packets.items():
+        _entry_validator(schema, message).validate(packet)
+
     visibility = dict(
-        packets[3],
+        packets["GatewayControlEnvelope"],
         action="visibility_update",
         payload={"viewer_id": "viewer:1", "visible": True},
     )
-    for invalid in [
-        dict(packets[0], version="v1"),
-        dict(packets[2], unexpected=True),
-        visibility,
-    ]:
+    invalid = [
+        ("AgentRegisterEnvelope", dict(packets["AgentRegisterEnvelope"], version="v1")),
+        ("GatewayTunnelEnvelope", dict(packets["GatewayTunnelEnvelope"], unexpected=True)),
+        ("GatewayControlEnvelope", visibility),
+    ]
+    for message, packet in invalid:
         with pytest.raises(ValidationError):
-            validator.validate(invalid)
+            _entry_validator(schema, message).validate(packet)

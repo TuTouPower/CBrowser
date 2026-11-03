@@ -203,9 +203,29 @@ async def test_viewer_and_automation_authorize(auth_db):
     assert ok is True
     assert reason is None
 
+    # A42: origin variants of an allowed origin are the same origin after
+    # the shared normalization (trailing slash, default port, case).
+    for variant in (
+        "https://app.cbrowser.local/",
+        "https://app.cbrowser.local:443",
+        "HTTPS://APP.CBROWSER.LOCAL",
+    ):
+        ok, reason = await service.authorize_viewer(
+            session_token, variant, prof_id, allowed_origins
+        )
+        assert ok is True, (variant, reason)
+        assert reason is None
+
     # Invalid origin
     ok, reason = await service.authorize_viewer(
         session_token, "https://evil.com", prof_id, allowed_origins
+    )
+    assert ok is False
+    assert reason == "invalid_origin"
+
+    # A malformed origin is an invalid origin, not an exception.
+    ok, reason = await service.authorize_viewer(
+        session_token, "not a url", prof_id, allowed_origins
     )
     assert ok is False
     assert reason == "invalid_origin"
@@ -243,13 +263,32 @@ async def test_viewer_and_automation_authorize(auth_db):
 
     from cbrowser.adapters.database.models import AuditEventModel
 
+    # Policy change (A40): unknown/malformed tokens previously left no
+    # audit trace at all. They are now recorded in bounded (reason,
+    # source) aggregate rows that count attempts without storing any
+    # token material.
+    src = "198.51.100.7"
+    await service.authorize_automation("not-a-token", prof_id, client_ip=src)
+    await service.authorize_automation("cbat_unknown", prof_id, client_ip=src)
+    await service.authorize_automation("cbat_unknown", prof_id, client_ip=src)
     async with session_maker() as session:
-        before_audit = len((await session.execute(select(AuditEventModel))).scalars().all())
-    await service.authorize_automation("not-a-token", prof_id, client_ip="198.51.100.7")
-    await service.authorize_automation("cbat_unknown", prof_id, client_ip="198.51.100.7")
-    async with session_maker() as session:
-        after_audit = len((await session.execute(select(AuditEventModel))).scalars().all())
-    assert after_audit == before_audit
+        aggregates = [
+            row
+            for row in (
+                await session.execute(select(AuditEventModel))
+            )
+            .scalars()
+            .all()
+            if row.entity_id == "unknown_token"
+            and json.loads(row.details)["source"] == src
+        ]
+    assert len(aggregates) == 2  # one bucket per denial reason
+    by_reason = {json.loads(row.details)["reason"]: row for row in aggregates}
+    assert json.loads(by_reason["invalid_token"].details)["count"] == 1
+    assert json.loads(by_reason["token_not_found"].details)["count"] == 2
+    for row in aggregates:
+        assert "cbat_unknown" not in row.details
+        assert "not-a-token" not in row.details
 
     expired_token, _ = await service.create_automation_token(
         name="expired", profile_ids=[prof_id], expires_in_hours=-1
@@ -309,3 +348,157 @@ def test_missing_auth_service_returns_503():
     with pytest.raises(HTTPException) as exc_info:
         get_auth_service(request)
     assert exc_info.value.status_code == 503
+
+
+async def _count_loop_ticks(coro, minimum: int):
+    """Run *coro* while counting how far a 10ms ticker advances."""
+    import asyncio
+
+    ticks = 0
+
+    async def ticker() -> None:
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.01)
+
+    task = asyncio.create_task(ticker())
+    try:
+        result = await coro
+    finally:
+        task.cancel()
+    assert ticks >= minimum, f"event loop starved: only {ticks} ticks"
+    return result
+
+
+class _SlowHasher:
+    """PasswordHasher stand-in whose operations take 300ms of real time."""
+
+    def __init__(self, real, *, slow_verify: bool = True, slow_hash: bool = True):
+        import time
+
+        self._real = real
+        self._sleep = time.sleep
+        self._slow_verify = slow_verify
+        self._slow_hash = slow_hash
+
+    def verify(self, hash_: str, password: str) -> bool:
+        if self._slow_verify:
+            self._sleep(0.3)
+        return self._real.verify(hash_, password)
+
+    def hash(self, password: str) -> str:
+        if self._slow_hash:
+            self._sleep(0.3)
+        return self._real.hash(password)
+
+
+@pytest.mark.asyncio
+async def test_argon2_verify_does_not_block_event_loop(auth_db, tmp_path, monkeypatch):
+    """AC-003 (A5): real and dummy Argon2 verifies run off the event loop."""
+    service, _ = auth_db
+    valid_pass = "admin_secure_password_12345"
+    valid_file = tmp_path / "admin.pwd"
+    valid_file.write_text(valid_pass, encoding="utf-8")
+    await service.init_admin_password(valid_file)
+
+    monkeypatch.setattr(
+        service, "ph", _SlowHasher(service.ph, slow_hash=False)
+    )
+    ok, reason = await _count_loop_ticks(
+        service.authenticate_admin(valid_pass, "10.1.0.1"), minimum=5
+    )
+    assert ok is True
+
+    ok, reason = await service.authenticate_admin("wrong_password", "10.1.0.2")
+    assert ok is False
+    assert reason == "invalid_credentials"
+
+
+@pytest.mark.asyncio
+async def test_argon2_dummy_verify_and_hash_do_not_block_event_loop(
+    auth_db, tmp_path, monkeypatch
+):
+    """AC-003 (A5): the timing-defense dummy verify and bootstrap hash are
+    also offloaded; failure behaviour is unchanged when no admin exists."""
+    service, _ = auth_db
+    monkeypatch.setattr(service, "ph", _SlowHasher(service.ph))
+    ok, reason = await _count_loop_ticks(
+        service.authenticate_admin("anything", "10.2.0.1"), minimum=5
+    )
+    assert ok is False
+    assert reason == "invalid_credentials"
+
+    valid_file = tmp_path / "admin.pwd"
+    valid_file.write_text("admin_secure_password_12345", encoding="utf-8")
+    await _count_loop_ticks(service.init_admin_password(valid_file), minimum=5)
+    assert await service.has_admin() is True
+
+
+@pytest.mark.asyncio
+async def test_automation_success_does_not_erase_failure_history(
+    auth_db,
+) -> None:
+    """A40: rate-limit failures decay only by the time window.
+
+    Previously record_success wiped the source's failure list, letting a
+    valid token holder reset the guessing budget for its source address.
+    """
+    service, session_maker = auth_db
+    prof_id = "prof-999"
+    async with session_maker() as session, write_transaction(session):
+        session.add(
+            ProfileModel(
+                id=prof_id,
+                name="Test Profile",
+                fingerprint_seed=123456,
+                user_data_dir="/tmp/test",
+            )
+        )
+    raw, _model = await service.create_automation_token("t", [prof_id])
+    source = "203.0.113.55"
+
+    for _ in range(3):
+        ok, reason = await service.authorize_automation(
+            "cbat_wrong", prof_id, client_ip=source
+        )
+        assert (ok, reason) == (False, "token_not_found")
+    ok, _ = await service.authorize_automation(raw, prof_id, client_ip=source)
+    assert ok is True
+    # The earlier failures still count after the success: seven more
+    # failures reach the per-source budget of ten and throttle the source.
+    # Had the success wiped the failure history, this would not throttle.
+    for _ in range(7):
+        await service.authorize_automation(
+            "cbat_wrong", prof_id, client_ip=source
+        )
+    ok, reason = await service.authorize_automation(
+        raw, prof_id, client_ip=source
+    )
+    assert (ok, reason) == (False, "rate_limited")
+
+
+@pytest.mark.asyncio
+async def test_unknown_token_audit_failure_keeps_clean_denial(
+    auth_db, monkeypatch
+) -> None:
+    """Review f002: the aggregated audit write is best-effort. If it
+    fails (e.g. the DB is busy), the caller still gets the clean denial
+    reason instead of a propagated storage error, and the failure still
+    counts toward the rate limiter."""
+    service, session_maker = auth_db
+
+    async def broken_audit(reason: str, source: str) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(
+        service, "_record_unknown_token_denied", broken_audit
+    )
+    ok, reason = await service.authorize_automation(
+        "not-a-token", "prof-x", client_ip="198.51.100.23"
+    )
+    assert (ok, reason) == (False, "invalid_token")
+    ok, reason = await service.authorize_automation(
+        "cbat_missing", "prof-x", client_ip="198.51.100.24"
+    )
+    assert (ok, reason) == (False, "token_not_found")

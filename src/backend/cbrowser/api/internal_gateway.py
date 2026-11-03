@@ -9,7 +9,9 @@ from typing import Annotated
 from cbrowser.api.v1.router import get_profile_service
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
+from cbrowser.domain.models import DesiredState, ObservedState
 from cbrowser.secret_files import read_secret_file
+from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -32,10 +34,7 @@ def require_gateway(
 ) -> None:
     token = getattr(request.app.state, "gateway_token", None)
     if token is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Gateway RPC is not configured",
-        )
+        raise ServiceNotConfiguredError("Gateway RPC is not configured")
     if credentials is None or not hmac.compare_digest(
         credentials.credentials.encode("utf-8"),
         token.get_secret_value().encode("utf-8"),
@@ -66,22 +65,12 @@ class ViewerAuthorizeResponse(BaseModel):
     reason: str | None = None
 
 
-class AutomationAuthorizeRequest(BaseModel):
-    token: str
-    profile_id: str
-
-
-class AutomationAuthorizeResponse(BaseModel):
-    allowed: bool
-    reason: str | None = None
-
-
 class GatewayRuntimeResponse(BaseModel):
     profile_id: str
     runtime_instance_id: str | None = None
     config_version: int
-    desired_state: str
-    observed_state: str
+    desired_state: DesiredState
+    observed_state: ObservedState
 
 
 @gateway_router.post(
@@ -106,23 +95,6 @@ async def viewer_authorize(
         allowed_origins=allowed_origins,
     )
     return ViewerAuthorizeResponse(allowed=allowed, reason=reason)
-
-
-@gateway_router.post(
-    "/automation-authorize",
-    response_model=AutomationAuthorizeResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def automation_authorize(
-    payload: AutomationAuthorizeRequest,
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
-    allowed, reason = await auth_service.authorize_automation(
-        token=payload.token,
-        profile_id=payload.profile_id,
-        client_ip="internal-gateway",
-    )
-    return AutomationAuthorizeResponse(allowed=allowed, reason=reason)
 
 
 @gateway_router.get(

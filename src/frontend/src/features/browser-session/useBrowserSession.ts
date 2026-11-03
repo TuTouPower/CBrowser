@@ -136,14 +136,14 @@ export function useBrowserSession(
         if (observed === "stopping") {
           setStage("stopping");
           setErrorMessage(null);
-        } else if (observed === "error" || observed === "failed") {
+        } else if (observed === "error") {
           setStage("error");
           setErrorMessage(
             t("runtimeReportedError", {
               state: observed || t("runtimeStateUnknown"),
             })
           );
-        } else if (observed !== "running" && observed !== "ready") {
+        } else if (observed !== "running") {
           setStage("runtime_not_ready");
           setErrorMessage(
             t("runtimeNotRunning", {

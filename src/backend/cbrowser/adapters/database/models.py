@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import datetime
-
+from cbrowser.domain.models import utc_now_iso
 from sqlalchemy import (
     Boolean,
     ForeignKey,
@@ -14,10 +13,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
-
-def utc_now_iso() -> str:
-    return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 class Base(DeclarativeBase):
@@ -76,30 +71,39 @@ class ProfileModel(Base):
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )
 
+    # Relationships are never loaded implicitly: ordinary profile reads load
+    # only what their DTO needs (tags, via explicit selectinload in the
+    # repository); immutable version history and artifact collections are
+    # fetched by their dedicated queries. Profile deletion cascades at the
+    # database level (FK ON DELETE CASCADE + foreign_keys pragma).
     tags: Mapped[list[ProfileTagModel]] = relationship(
         "ProfileTagModel",
         back_populates="profile",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
+        passive_deletes=True,
     )
     versions: Mapped[list[ProfileConfigVersionModel]] = relationship(
         "ProfileConfigVersionModel",
         back_populates="profile",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
+        passive_deletes=True,
     )
     runtime: Mapped[ProfileRuntimeModel | None] = relationship(
         "ProfileRuntimeModel",
         back_populates="profile",
         uselist=False,
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
+        passive_deletes=True,
     )
     artifacts: Mapped[list[ArtifactModel]] = relationship(
         "ArtifactModel",
         back_populates="profile",
         cascade="all, delete-orphan",
-        lazy="selectin",
+        lazy="noload",
+        passive_deletes=True,
     )
 
 
@@ -180,6 +184,11 @@ class ArtifactModel(Base):
     picker_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_path: Mapped[str | None] = mapped_column(String(4096), nullable=True)
+    # Durable deletion intent: set before any file is touched so a failed
+    # or interrupted delete can be resumed after a restart (A40).
+    delete_requested_at: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     created_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, nullable=False
     )

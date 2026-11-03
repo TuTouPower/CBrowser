@@ -95,6 +95,12 @@ class ProfileConfig(BaseModel):
             raise ValueError("font_bundle cannot be null")
         return v
 
+    @field_validator("launch_args", "extension_paths", mode="before")
+    @classmethod
+    def coerce_null_lists(cls, v: Any) -> Any:
+        # PATCH tri-state: an explicit null list clears the stored value.
+        return [] if v is None else v
+
     @field_validator("launch_args")
     @classmethod
     def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
@@ -164,6 +170,7 @@ class Artifact(BaseModel):
     picker_name: str | None = None
     sha256: str | None = None
     storage_path: str | None = None
+    delete_requested_at: str | None = None
     created_at: str
 
 
@@ -357,13 +364,6 @@ class ProfileUpdateRequest(BaseModel):
             raise ValueError("name cannot be blank")
         return v.strip() if v is not None else None
 
-    @field_validator("launch_args")
-    @classmethod
-    def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
-        # Older rows may contain arguments outside the current whitelist; they
-        # are dropped on read. New API writes are validated by request DTOs.
-        return filter_launch_args(v)
-
     @field_validator("gpu_family", mode="before")
     @classmethod
     def reject_null_gpu_family(cls, value: object) -> object:
@@ -468,8 +468,8 @@ class ConfigVersionResponse(BaseModel):
 
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
-    desired_state: str
-    observed_state: str
+    desired_state: DesiredState
+    observed_state: ObservedState
     runtime_instance_id: str | None
     config_version: int
     failure_count: int
@@ -481,8 +481,8 @@ class ProfileRuntimeResponse(BaseModel):
 
 class ProfileRuntimeStatusEvent(BaseModel):
     profile_id: str
-    desired_state: str
-    observed_state: str
+    desired_state: DesiredState
+    observed_state: ObservedState
     runtime_instance_id: str | None = None
     failure_count: int = 0
     restart_blocked: bool = False

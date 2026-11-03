@@ -34,6 +34,7 @@ from cbrowser.supervisor.recovery_rules import (
     stream_missing,
     terminal_observation,
 )
+from cbrowser.supervisor.volume_spec import SINGLETON_LOCK_NAMES
 
 logger = logging.getLogger("cbrowser.supervisor.recovery")
 
@@ -559,11 +560,7 @@ class RecoveryCoordinator:
                     profile_id
                 )
                 if user_data_dir.is_dir():
-                    for lock_name in (
-                        "SingletonLock",
-                        "SingletonCookie",
-                        "SingletonSocket",
-                    ):
+                    for lock_name in SINGLETON_LOCK_NAMES:
                         lock_path = user_data_dir / lock_name
                         if lock_path.is_symlink() or lock_path.exists():
                             lock_path.unlink(missing_ok=True)

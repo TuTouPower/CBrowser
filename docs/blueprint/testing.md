@@ -93,6 +93,13 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 - 验证命令：`scripts/run_gates.sh` 的 unit 层运行 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；integration 层使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。OpenAPI 变更后必须 `npm run generate:api --prefix src/frontend` 重生成 `src/frontend/src/shared/api/generated/cbrowser_v1.d.ts`，禁止手写补充类型。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
+- 协议 schema 文档（t021）：`schemas/runtime/*.json` 与 `schemas/stream/*.json` 统一为「`$defs` 规范定义 + `messages` 按名索引（`$id` + `$ref`）+ 文档 `version`」约定，不再有顶层 `anyOf`；三个导出脚本（`export_supervisor_protocol.py`、`export_runtime_agent_protocol.py`、`export_stream_protocol.py`）同形生成，测试按消息入口逐条校验报文，不得退回整文档 union 校验。
+
+## 契约行为验证要求（t021）
+
+- 控制 API 与文件交换的验收必须走真实入口：内部面用真实 HTTP（服务令牌矩阵、未配置 503），协议用导出文档的消息入口逐条校验，文件用例覆盖故障注入（删除中途失败后意图保留、跨重启续跑）与幂等重放（同 operation_id 并发/删后重放）。
+- 密码等慢操作须有事件循环不阻塞探针（慢哈希期间 ticker 推进断言），不接受仅测返回值的覆盖。
+- 政策变更类断言（如内容类型由拒绝改为放行）必须整体替换旧测试并在测试内注明裁决来源，禁止就地把旧预期改成实现输出。
 
 ## 门禁类别清单
 
