@@ -5,6 +5,7 @@ Verifies all AC-003 requirements without requiring native GStreamer/WebRTC binar
 """
 
 import json
+import time
 from typing import Any
 
 import pytest
@@ -139,10 +140,13 @@ async def test_policy_resume_sets_8fps_before_resume_and_requests_idr():
 
 
 @pytest.mark.asyncio
-async def test_policy_continuous_motion_elevates_to_30_fps(monkeypatch):
+async def test_policy_continuous_motion_elevates_to_30_fps():
     """AC-003: Damage > 6 fps elevates target to 30 FPS without mouse/keyboard input."""
     pipeline = MockMediaPipeline(framerate=8.0, capturing=True)
-    agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
+    now = {"value": time.monotonic()}
+    agent = LiveCapturePolicyAgent(
+        media_pipeline=pipeline, min_fps=8.0, max_fps=30.0, clock=lambda: now["value"]
+    )
     agent.set_viewer_visibility("viewer_1", True)
 
     # Initialize stats baseline
@@ -150,24 +154,22 @@ async def test_policy_continuous_motion_elevates_to_30_fps(monkeypatch):
     assert pipeline.framerate == 8.0
 
     # Simulate fast animation: 10 frames advance over 0.1s -> 100 fps damage
-    from cbrowser.stream_agent import policy as policy_module
-
-    now = {"value": policy_module.time.monotonic()}
-    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
     now["value"] += 0.1
     await agent.reconcile_capture_state(damage_frame_count=10)
     assert pipeline.framerate == 30.0
 
 
 @pytest.mark.asyncio
-async def test_policy_static_relaxes_to_8_fps(monkeypatch):
+async def test_policy_static_relaxes_to_8_fps():
     """AC-003: Static screen relaxes back to 8 FPS when motion ceases."""
     pipeline = MockMediaPipeline(framerate=30.0, capturing=True)
+    now = {"value": time.monotonic()}
     agent = LiveCapturePolicyAgent(
         media_pipeline=pipeline,
         min_fps=8.0,
         max_fps=30.0,
         input_cooldown_sec=0.1,  # Short cooldown for test
+        clock=lambda: now["value"],
     )
     agent.set_viewer_visibility("viewer_1", True)
     agent.record_input()
@@ -175,10 +177,6 @@ async def test_policy_static_relaxes_to_8_fps(monkeypatch):
     assert pipeline.framerate == 30.0
 
     # Advance injected clock past cooldown; no damage change.
-    from cbrowser.stream_agent import policy as policy_module
-
-    now = {"value": policy_module.time.monotonic()}
-    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
     now["value"] += 0.15
     await agent.reconcile_capture_state(caller="static_check")
     assert pipeline.framerate == 8.0

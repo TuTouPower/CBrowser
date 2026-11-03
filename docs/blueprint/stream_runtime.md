@@ -44,7 +44,11 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 中文使用官方 composition/co,end → Native X11 输入，不使用剪贴板提交。x11_keymap.py 按运行时 XKB 非空名称过滤 spare，保留 Native 分配顺序；每次新绑定通过有界 xkbcomp reload 通知活跃 Chrome，并保留 SDK settle。按住的槽及当前 batch 已绑定槽不得重绑，无容量则拒绝。该路径有同步 subprocess 成本，P95、1000次输入与8小时稳定性须在 t009/t012 实测，当前不作性能承诺。细节见 d014/d017/d018。
 
-Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验钉版 2.1.0 的完整私有面（prebind/text_room/_find_spare_keycodes/_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。不自动升级 Selkies/CloakBrowser 版本。
+Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验钉版 2.1.0 的完整私有面（prebind/text_room/\_find_spare_keycodes/\_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。不自动升级 Selkies/CloakBrowser 版本。
+
+## 镜像构成（t024）
+
+Stream 镜像采用 builder/runtime 分阶构建：编译工具链与 -dev 头文件只存在于 builder 阶段，runtime 阶段只装运行时共享库、GStreamer 插件与程序本体，Python 依赖经 /opt/venv 整体复制。各 runtime 的 pydantic 家族版本对齐（2.14.2 / core 2.50.2）。静态守卫（tests/unit/test_runtime_image_hygiene.py、test_docker_build_contexts.py）只是预检；冷构建 + 动态库/导入 + 真实媒体/输入/剪贴板验收在 Docker 环境执行，未执行前记为未验收（追踪项 p027）。
 
 ## 验证入口
 

@@ -1,6 +1,8 @@
 """UDP Mux Port Allocator for WebRTC Stream Runtime (30000 - 30991).
 
-Thread-safe / asyncio-safe, idempotent, strictly within [30000, 30991].
+asyncio-safe (single event loop; not thread-safe), idempotent, strictly
+within [30000, 30991].  The synchronous get_port/is_port_used helpers are
+unsynchronized snapshots of allocator state.
 Provides explicit exhaustion error, and re-use only after release (AC-002).
 """
 

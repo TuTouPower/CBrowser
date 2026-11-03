@@ -12,8 +12,32 @@ ENGINE_BUILD=""
 DOWNLOAD_DIR="/exchange/downloads"
 DISPLAY_NUM=":99"
 
+usage() {
+  cat <<'EOF'
+Usage: entrypoint.sh --profile-id ID --runtime-instance-id ID \
+  --config-snapshot PATH [options]
+
+Required:
+  --profile-id ID           Profile identity (validated before any setup)
+  --runtime-instance-id ID  Runtime instance identity
+  --config-snapshot PATH    Path to the profile configuration snapshot
+
+Options:
+  --run-dir PATH            Runtime run directory (default /run/cbrowser/runtime)
+  --user-data-dir PATH      Browser user data directory (default /data/profiles/<id>/profile)
+  --events-dir PATH         Runtime events directory (default /data/runtime-events/<id>)
+  --engine-build ID         Engine build identifier to launch
+  --engine-cache-dir PATH   Engine cache directory (default /data/engine-cache)
+  --download-dir PATH       Download exchange directory (default /exchange/downloads)
+  --display NUM             X display number (default :99)
+  --help, -h                Print this usage and exit 0
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --help|-h)
+      usage; exit 0 ;;
     --profile-id)
       PROFILE_ID="$2"; shift 2 ;;
     --runtime-instance-id)

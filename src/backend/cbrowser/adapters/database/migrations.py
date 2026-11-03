@@ -25,7 +25,9 @@ def get_alembic_config(db_path: Path | str) -> Config:
 def run_database_migrations(db_path: Path | str) -> None:
     """Run alembic upgrade head on the target SQLite database path.
 
-    Configures database with WAL and busy_timeout=5000.
+    Sets WAL mode on the database file here (it persists in the file);
+    busy_timeout is NOT persisted and is applied per connection by the
+    engine factory in session.py.
     """
     resolved_db = Path(db_path).resolve()
     resolved_db.parent.mkdir(parents=True, exist_ok=True)

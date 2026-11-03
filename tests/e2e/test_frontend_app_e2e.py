@@ -668,6 +668,13 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
             isinstance(message, str) and message.startswith("r,")
             for message in datachannel_messages
         ), datachannel_messages
+        # Eviction-proof companion (t024 AC-018/A53): the probe's per-type
+        # counters survive the 500-entry rolling buffer, so the no-resize
+        # verdict does not depend on the buffer still holding the window.
+        datachannel_counts = await iframe_eval(
+            page_a, "window.__sentDataChannelCounts || {}"
+        )
+        assert datachannel_counts.get("r", 0) == 0, datachannel_counts
 
         # Both pages input into the same remote box (no lease / single controller).
         await prepare_remote_input(browser_container, target_id)
@@ -750,6 +757,15 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
                 "remote_video_size_after_second_resize": video_a2,
                 "first_frame_ms": first_frame_ms,
                 "input_to_remote_ms": input_latency_ms,
+                # Complete raw samples behind the budget verdicts in this
+                # run (t024 AC-018/A53): thresholds stay hard single-run
+                # limits (8000/3000ms); the samples are recorded so a
+                # failure shows the distribution, not just the verdict.
+                "perf_samples": {
+                    "first_frame_ms": [first_frame_ms],
+                    "input_to_remote_ms": [input_latency_ms],
+                },
+                "datachannel_counts": datachannel_counts,
                 "concurrent_remote_value": concurrent,
                 "mute_a": muted_a,
                 "unmuted_b": unmuted_b,

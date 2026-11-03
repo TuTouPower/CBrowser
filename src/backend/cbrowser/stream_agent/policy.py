@@ -4,6 +4,7 @@ Arbitrates framerate (8 static / 30 active), pause/resume on visibility,
 blocks client mutations, damage motion detection, and supervisor quota.
 """
 
+from collections.abc import Callable
 import asyncio
 import collections
 import logging
@@ -53,7 +54,11 @@ class LiveCapturePolicyAgent:
         min_fps: float = 8.0,
         max_fps: float = 30.0,
         input_cooldown_sec: float = 2.0,
+        clock: Callable[[], float] = time.monotonic,
     ):
+        # Injectable clock (t024 AC-014/A43): tests pass a local callable
+        # instead of patching the stdlib time module object.
+        self._clock = clock
         self.service = service
         self._explicit_pipeline = media_pipeline
         self.min_fps = float(min_fps)
@@ -83,7 +88,7 @@ class LiveCapturePolicyAgent:
         # Damage stats tracking
         self._last_frames_count: int = 0
         self._has_screen_motion: bool = False
-        self._last_stats_time: float = time.monotonic()
+        self._last_stats_time: float = self._clock()
         self.motion_fps_estimate: float = 0.0
 
         # Async background tasks
@@ -190,7 +195,7 @@ class LiveCapturePolicyAgent:
         The periodic reconciler consumes the pending flag, so high-frequency
         mouse input never creates one asyncio task per message.
         """
-        self._last_input_time = time.monotonic()
+        self._last_input_time = self._clock()
         self._reconcile_pending = True
 
     def set_peer_active(
@@ -293,7 +298,7 @@ class LiveCapturePolicyAgent:
     def log_action(self, action: str, details: dict[str, Any]) -> None:
         """Log pipeline action to bounded ring buffer with ISO8601 timestamp."""
         entry = {
-            "time": time.monotonic(),
+            "time": self._clock(),
             "timestamp": _iso_now(),
             "action": action,
             "details": details,
@@ -393,7 +398,7 @@ class LiveCapturePolicyAgent:
                     module = p.capture_module
                     if hasattr(module, "stream_stats"):
                         totals = module.stream_stats()
-                        now = time.monotonic()
+                        now = self._clock()
                         elapsed = now - self._last_stats_time
                         if totals and "frames" in totals and elapsed > 0.1:
                             cur_frames = totals["frames"]
@@ -441,7 +446,7 @@ class LiveCapturePolicyAgent:
         safe_caller = _sanitize_caller(caller)
         async with self._control_lock:
             p = self.pipeline
-            now = time.monotonic()
+            now = self._clock()
             active_peers = [pid for pid, st in self.peers.items() if st.get("active")]
             has_visible = len(active_peers) > 0
 
@@ -501,7 +506,7 @@ class LiveCapturePolicyAgent:
                 if p and hasattr(p, "resume_screen_capture"):
                     await p.resume_screen_capture()
                 self._is_paused = False
-                self._resume_time = time.monotonic()
+                self._resume_time = self._clock()
 
                 # Request IDR on resume
                 if self.service and hasattr(self.service, "request_idr_for_display"):

@@ -25,7 +25,7 @@
     stopped ──(start)──> starting ──(ready)──> running
                                │                  │
                                ▼                  ▼
-                            failed             stopping ──> stopped
+                            error              stopping ──> stopped
     ```
 2. **无租约并发控制（ADR 007）**：
     - 不设排他控制租约、`ControlSession` 实体、租约代次或抢占接管等待；同一 Profile 可同时接纳多个 `ViewerConnection`。

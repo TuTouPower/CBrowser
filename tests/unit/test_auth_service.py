@@ -177,28 +177,32 @@ async def test_automation_token_lifecycle_and_audit(auth_db):
         assert model.token_hash not in revoke_audit.details
 
 
-@pytest.mark.asyncio
-async def test_viewer_and_automation_authorize(auth_db):
-    service, session_maker = auth_db
+ALLOWED_ORIGINS = ["https://app.cbrowser.local", "http://localhost:3000"]
+PROF_ID = "prof-999"
 
-    # Create dummy profile in DB
-    prof_id = "prof-999"
+
+async def _profile_with_session(service, session_maker) -> str:
+    """Seed the shared profile row and return a fresh session token."""
     async with session_maker() as session, write_transaction(session):
         session.add(
             ProfileModel(
-                id=prof_id,
+                id=PROF_ID,
                 name="Test Profile",
                 fingerprint_seed=123456,
                 user_data_dir="/tmp/test",
             )
         )
-
-    # 1. Viewer authorization
     session_token, _, _ = await service.create_session()
-    allowed_origins = ["https://app.cbrowser.local", "http://localhost:3000"]
+    return session_token
+
+
+@pytest.mark.asyncio
+async def test_viewer_authorize_accepts_allowed_origin_and_variants(auth_db):
+    service, session_maker = auth_db
+    session_token = await _profile_with_session(service, session_maker)
 
     ok, reason = await service.authorize_viewer(
-        session_token, "https://app.cbrowser.local", prof_id, allowed_origins
+        session_token, "https://app.cbrowser.local", PROF_ID, ALLOWED_ORIGINS
     )
     assert ok is True
     assert reason is None
@@ -211,66 +215,80 @@ async def test_viewer_and_automation_authorize(auth_db):
         "HTTPS://APP.CBROWSER.LOCAL",
     ):
         ok, reason = await service.authorize_viewer(
-            session_token, variant, prof_id, allowed_origins
+            session_token, variant, PROF_ID, ALLOWED_ORIGINS
         )
         assert ok is True, (variant, reason)
         assert reason is None
 
-    # Invalid origin
+
+@pytest.mark.asyncio
+async def test_viewer_authorize_rejects_invalid_and_malformed_origins(auth_db):
+    service, session_maker = auth_db
+    session_token = await _profile_with_session(service, session_maker)
+
     ok, reason = await service.authorize_viewer(
-        session_token, "https://evil.com", prof_id, allowed_origins
+        session_token, "https://evil.com", PROF_ID, ALLOWED_ORIGINS
     )
     assert ok is False
     assert reason == "invalid_origin"
 
     # A malformed origin is an invalid origin, not an exception.
     ok, reason = await service.authorize_viewer(
-        session_token, "not a url", prof_id, allowed_origins
+        session_token, "not a url", PROF_ID, ALLOWED_ORIGINS
     )
     assert ok is False
     assert reason == "invalid_origin"
 
-    # Invalid session
+
+@pytest.mark.asyncio
+async def test_viewer_authorize_rejects_invalid_session_and_missing_profile(auth_db):
+    service, session_maker = auth_db
+    session_token = await _profile_with_session(service, session_maker)
+
     ok, reason = await service.authorize_viewer(
-        "bad_session", "https://app.cbrowser.local", prof_id, allowed_origins
+        "bad_session", "https://app.cbrowser.local", PROF_ID, ALLOWED_ORIGINS
     )
     assert ok is False
     assert reason == "invalid_session"
 
-    # Nonexistent profile
     ok, reason = await service.authorize_viewer(
-        session_token, "https://app.cbrowser.local", "prof-nonexistent", allowed_origins
+        session_token, "https://app.cbrowser.local", "prof-nonexistent", ALLOWED_ORIGINS
     )
     assert ok is False
     assert reason == "profile_not_found"
 
-    # 2. Automation authorization
-    raw_auto_token, auto_model = await service.create_automation_token(
-        name="cdp_bot", profile_ids=[prof_id]
+
+@pytest.mark.asyncio
+async def test_automation_authorize_accepts_scoped_token_rejects_session_cookie(auth_db):
+    service, session_maker = auth_db
+    session_token = await _profile_with_session(service, session_maker)
+    raw_auto_token, _auto_model = await service.create_automation_token(
+        name="cdp_bot", profile_ids=[PROF_ID]
     )
 
-    # Valid automation token for prof_id
-    ok, reason = await service.authorize_automation(raw_auto_token, prof_id)
+    ok, reason = await service.authorize_automation(raw_auto_token, PROF_ID)
     assert ok is True
     assert reason is None
 
     # Session cookie cannot be used as automation token
-    ok, reason = await service.authorize_automation(session_token, prof_id)
+    ok, reason = await service.authorize_automation(session_token, PROF_ID)
     assert ok is False
     assert reason == "invalid_token"
 
-    from sqlalchemy import select
 
-    from cbrowser.adapters.database.models import AuditEventModel
+@pytest.mark.asyncio
+async def test_automation_authorize_unknown_token_audit_aggregates(auth_db):
+    service, session_maker = auth_db
+    await _profile_with_session(service, session_maker)
 
     # Policy change (A40): unknown/malformed tokens previously left no
     # audit trace at all. They are now recorded in bounded (reason,
     # source) aggregate rows that count attempts without storing any
     # token material.
     src = "198.51.100.7"
-    await service.authorize_automation("not-a-token", prof_id, client_ip=src)
-    await service.authorize_automation("cbat_unknown", prof_id, client_ip=src)
-    await service.authorize_automation("cbat_unknown", prof_id, client_ip=src)
+    await service.authorize_automation("not-a-token", PROF_ID, client_ip=src)
+    await service.authorize_automation("cbat_unknown", PROF_ID, client_ip=src)
+    await service.authorize_automation("cbat_unknown", PROF_ID, client_ip=src)
     async with session_maker() as session:
         aggregates = [
             row
@@ -290,12 +308,24 @@ async def test_viewer_and_automation_authorize(auth_db):
         assert "cbat_unknown" not in row.details
         assert "not-a-token" not in row.details
 
+
+@pytest.mark.asyncio
+async def test_automation_authorize_expired_token(auth_db):
+    service, session_maker = auth_db
+    await _profile_with_session(service, session_maker)
+
     expired_token, _ = await service.create_automation_token(
-        name="expired", profile_ids=[prof_id], expires_in_hours=-1
+        name="expired", profile_ids=[PROF_ID], expires_in_hours=-1
     )
-    ok, reason = await service.authorize_automation(expired_token, prof_id)
+    ok, reason = await service.authorize_automation(expired_token, PROF_ID)
     assert ok is False
     assert reason == "token_expired"
+
+
+@pytest.mark.asyncio
+async def test_session_creation_prunes_expired_sessions(auth_db):
+    service, session_maker = auth_db
+    await _profile_with_session(service, session_maker)
 
     await service.create_session(expire_hours=0)
     await service.create_session()
@@ -304,16 +334,31 @@ async def test_viewer_and_automation_authorize(auth_db):
     assert all(row.expires_at > row.created_at for row in remaining)
     assert len(remaining) >= 1
 
+
+@pytest.mark.asyncio
+async def test_automation_authorize_forged_token_throttling(auth_db):
+    service, session_maker = auth_db
+    await _profile_with_session(service, session_maker)
+
     # Repeated forged tokens from one source are throttled.
     for _ in range(10):
         await service.authorize_automation(
-            "cbat_forged", prof_id, client_ip="203.0.113.99"
+            "cbat_forged", PROF_ID, client_ip="203.0.113.99"
         )
     ok, reason = await service.authorize_automation(
-        "cbat_forged", prof_id, client_ip="203.0.113.99"
+        "cbat_forged", PROF_ID, client_ip="203.0.113.99"
     )
     assert ok is False
     assert reason == "rate_limited"
+
+
+@pytest.mark.asyncio
+async def test_automation_authorize_unauthorized_profile_revocation_and_audit(auth_db):
+    service, session_maker = auth_db
+    await _profile_with_session(service, session_maker)
+    raw_auto_token, auto_model = await service.create_automation_token(
+        name="cdp_bot", profile_ids=[PROF_ID]
+    )
 
     # Unauthorized profile
     ok, reason = await service.authorize_automation(raw_auto_token, "prof-unauthorized")
@@ -322,7 +367,7 @@ async def test_viewer_and_automation_authorize(auth_db):
 
     # Revoked token
     await service.revoke_automation_token(auto_model.id)
-    ok, reason = await service.authorize_automation(raw_auto_token, prof_id)
+    ok, reason = await service.authorize_automation(raw_auto_token, PROF_ID)
     assert ok is False
     assert reason == "token_revoked"
 

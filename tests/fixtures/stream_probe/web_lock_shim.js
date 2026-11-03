@@ -44,10 +44,16 @@
                 if (typeof data !== 'string' || !data.startsWith('HELLO client ')) {
                     return nativeSend(data);
                 }
-                const id = sessionStorage.getItem('selkies_tab_id');
+                let id = sessionStorage.getItem('selkies_tab_id');
                 if (!id) {
-                    socket.close(1008, 'tab_identity_required');
-                    return;
+                    // Aligned with the production adapter
+                    // (src/frontend/src/features/browser-session/adapter.ts):
+                    // a missing tab identity is CREATED and persisted, not
+                    // refused (t024 AC-004/A25).  This shim is a signaling
+                    // protocol probe for the lock behavior, not coverage of
+                    // the production adapter itself.
+                    id = crypto.randomUUID();
+                    sessionStorage.setItem('selkies_tab_id', id);
                 }
                 acquire(id).then(acquired => {
                     if (socket.readyState !== NativeWebSocket.OPEN) return;

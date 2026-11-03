@@ -300,19 +300,20 @@ async def test_real_ws_gateway_and_worker_generation():
     app.router.add_get("/fake", upstream_handler)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "127.0.0.1", 18491)
+    site = web.TCPSite(runner, "127.0.0.1", 0)
     await site.start()
+    port = site._server.sockets[0].getsockname()[1]
 
     try:
         cfg = StreamAgentConfig(
             profile_id="prof_test",
             runtime_instance_id="inst_test",
-            gateway_url="ws://127.0.0.1:18491",
+            gateway_url=f"ws://127.0.0.1:{port}",
             agent_token="valid_test_secret_123",
             udp_mux_port=30006,
             selkies_version="2.1.0",
         )
-        agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:18491/fake")
+        agent = StreamAgent(config=cfg, upstream_url=f"ws://127.0.0.1:{port}/fake")
 
         agent_task = asyncio.create_task(agent.connect_and_run())
 

@@ -23,7 +23,7 @@
 
 ## 前端会话
 
-- 会话页以同源 iframe 加载固定版本官方 Selkies 2.1.0 Web 客户端，薄适配层只改写信令地址、处理 Gateway 控制帧与 RTC 配置、锁定远端尺寸/DPR，不改写官方 HELLO、`client_tab_id`、`resume_key`。复制标签页自动分离身份且不踢原页；刷新与重连保留身份。
+- 会话页以同源 iframe 加载固定版本官方 Selkies 2.1.0 Web 客户端，薄适配层只改写信令地址、处理 Gateway 控制帧、锁定远端尺寸/DPR（RTC 配置由 Gateway 下发，适配层不处理），不改写官方 HELLO、`client_tab_id`、`resume_key`。复制标签页自动分离身份且不踢原页；刷新与重连保留身份。
 - 页面不持有 Selkies token：每 Profile master/controller token 由服务端随机生成，master 只开启 Stream 内安全模式，controller 由 Stream Agent 代注入；经认证 Gateway 隧道的页面以 controller 接入，绕过隧道直连 Selkies 或使用错误 token 被拒。Stream 显式关闭 Selkies 模式切换，客户端无法切到 WebSocket 模式。
 - 连接显示阶段：运行时未就绪、信令失败、ICE 失败、媒体无帧分别给出说明与操作（重连、查看运行状态），诊断取自 RTCPeerConnection 状态与 getStats；不出现无解释黑屏、不新增媒体回退通道。
 - 页面冻结/恢复（Page Lifecycle freeze/resume、bfcache pageshow）后检测失效连接，以原身份重建。

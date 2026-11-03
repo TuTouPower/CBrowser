@@ -134,6 +134,32 @@ async def test_terminal_event_prevents_relaunch_even_if_state_write_was_lost(
 
 @pytest.mark.asyncio
 async def test_terminal_storage_failure_propagates_instead_of_reporting_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure is injected at the storage seam (t024 AC-005/A26): patching
+    the EventStorage write methods exercises the same propagation path in
+    every environment, unlike chmod, which UID 0 bypasses."""
+    runner = make_runner(tmp_path)
+    exit_status = tmp_path / "exit_code"
+    exit_status.write_text("0")
+    runner.is_running = True
+
+    def fail_write(*_args, **_kwargs):
+        raise StorageError("injected storage failure")
+
+    monkeypatch.setattr(runner.event_storage, "save_state", fail_write)
+    monkeypatch.setattr(runner.event_storage, "save_runtime_event", fail_write)
+    with pytest.raises(StorageError):
+        await runner._wait_for_chrome_exit(exit_status)
+    assert runner.event_storage.get_state() is None
+
+
+@pytest.mark.skipif(
+    os.geteuid() == 0,
+    reason="permission bits do not block UID 0; seam variant above covers it",
+)
+@pytest.mark.asyncio
+async def test_terminal_storage_failure_via_permissions_propagates(
     tmp_path: Path,
 ) -> None:
     runner = make_runner(tmp_path)

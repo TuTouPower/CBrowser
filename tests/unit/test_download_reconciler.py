@@ -33,8 +33,6 @@ def test_scan_backfills_completed_files_and_excludes_temporary(tmp_path: Path) -
         second = await scan_completed_downloads(downloads, "p1", "i1", storage)
         return first, second
 
-    import asyncio
-
     first, second = asyncio.run(run())
     assert len(first) == 1
     assert second == []
@@ -126,8 +124,6 @@ def test_supervisor_translates_container_path_and_forwards_once(
             first = await forwarder.forward_pending()
             second = await forwarder.forward_pending()
             return first, second
-
-    import asyncio
 
     first, second = asyncio.run(run())
     assert first == 1
@@ -335,8 +331,6 @@ def test_forwarder_does_not_skip_older_completed_events(tmp_path: Path) -> None:
             forwarder = DownloadArtifactForwarder(data_root, client)
             return await forwarder.forward_pending()
 
-    import asyncio
-
     assert asyncio.run(run()) == 1
     assert [call["event_id"] for call in calls] == ["dl_completed_old"]
 
@@ -427,8 +421,6 @@ def test_forwarder_retries_after_retryable_4xx(tmp_path: Path) -> None:
             first = await forwarder.forward_pending()
             second = await forwarder.forward_pending()
             return first, second
-
-    import asyncio
 
     assert asyncio.run(run()) == (0, 1)
     assert calls == [401, 200]

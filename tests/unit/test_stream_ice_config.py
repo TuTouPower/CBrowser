@@ -13,7 +13,10 @@ from pathlib import Path
 
 from cbrowser.supervisor.container_spec import stream_environment
 
-ENTRYPOINT = Path("config/docker/stream_runtime/entrypoint.sh")
+ENTRYPOINT = (
+    Path(__file__).resolve().parents[2]
+    / "config/docker/stream_runtime/entrypoint.sh"
+)
 
 
 def _active_lines() -> list[str]:

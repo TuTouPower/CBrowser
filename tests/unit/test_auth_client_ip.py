@@ -42,14 +42,14 @@ def test_malformed_trusted_cidr_is_rejected() -> None:
         parse_trusted_proxy_cidrs("not-a-cidr")
 
 
-def test_per_source_window_and_global_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_per_source_window_and_global_budget() -> None:
     now = [1000.0]
-    monkeypatch.setattr(time, "time", lambda: now[0])
     limiter = LoginRateLimiter(
         max_failures=2,
         window_seconds=60,
         global_max_failures=3,
         global_window_seconds=900,
+        clock=lambda: now[0],
     )
     limiter.record_failure("a")
     limiter.record_failure("a")

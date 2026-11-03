@@ -31,6 +31,7 @@ Authoritative Observation Architecture:
 from __future__ import annotations
 
 import asyncio
+import time
 import contextlib
 import json
 import logging
@@ -43,6 +44,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from wait import poll_until
 
 from e2e_env import free_udp_port_span
 
@@ -250,21 +252,25 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             "API process MUST be genuinely offline and refusing HTTP connections"
         )
 
-        await asyncio.sleep(2.0)
-
+        # Retention window (t024 AC-007/A28): companion Profile B must stay
+        # running for the whole window while the API is offline; sample the
+        # condition instead of sleeping blindly before a single check.
         async with httpx.AsyncClient(
             base_url=sup_proc.url, headers=sup_headers, timeout=10.0, trust_env=False
         ) as sup_client:
             r_sup_health = await sup_client.get("/supervisor/v1/health")
             assert r_sup_health.status_code == 200
-        b_c_b.reload()
-        s_c_b.reload()
-        assert b_c_b.status == "running", (
-            "Healthy companion Profile B browser must NOT be killed on API offline"
-        )
-        assert s_c_b.status == "running", (
-            "Healthy companion Profile B stream must NOT be killed on API offline"
-        )
+            window_end = time.monotonic() + 2.0
+            while time.monotonic() < window_end:
+                b_c_b.reload()
+                s_c_b.reload()
+                assert b_c_b.status == "running", (
+                    "Healthy companion Profile B browser must NOT be killed on API offline"
+                )
+                assert s_c_b.status == "running", (
+                    "Healthy companion Profile B stream must NOT be killed on API offline"
+                )
+                await asyncio.sleep(0.1)
 
         logger.info(
             f"Triggering clean Chrome close in container {b_cname_a} "
@@ -287,14 +293,18 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             f"Verified atomic on-disk spool event: {recorded_event_id} in {spool_file}"
         )
 
-        await asyncio.sleep(2.0)
-        assert spool_file.exists(), (
-            "Spooled event MUST remain on disk while API is offline"
-        )
-        b_c_b.reload()
-        s_c_b.reload()
-        assert b_c_b.status == "running"
-        assert s_c_b.status == "running"
+        # Retention window: sample spool presence and companion health
+        # across the window rather than sleeping then checking once.
+        window_end = time.monotonic() + 2.0
+        while time.monotonic() < window_end:
+            assert spool_file.exists(), (
+                "Spooled event MUST remain on disk while API is offline"
+            )
+            b_c_b.reload()
+            s_c_b.reload()
+            assert b_c_b.status == "running"
+            assert s_c_b.status == "running"
+            await asyncio.sleep(0.1)
 
         logger.info("Executing SIGKILL on Supervisor...")
         await asyncio.to_thread(sup_proc.sigkill)
@@ -309,15 +319,18 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         await asyncio.to_thread(sup_proc.start)
 
         assert api_proc.verify_offline(), "API is still offline"
-        await asyncio.sleep(2.0)
-        assert spool_file.exists(), (
-            "Resurrected Supervisor must retain spooled event while API remains down"
-        )
-        b_c_b.reload()
-        s_c_b.reload()
-        assert b_c_b.status == "running", (
-            "Supervisor resurrection while API is offline must NOT delete Profile B"
-        )
+        # Retention window, sampled as above.
+        window_end = time.monotonic() + 2.0
+        while time.monotonic() < window_end:
+            assert spool_file.exists(), (
+                "Resurrected Supervisor must retain spooled event while API remains down"
+            )
+            b_c_b.reload()
+            s_c_b.reload()
+            assert b_c_b.status == "running", (
+                "Supervisor resurrection while API is offline must NOT delete Profile B"
+            )
+            await asyncio.sleep(0.1)
         assert s_c_b.status == "running"
 
         logger.info(f"Restarting API process on port {api_port} with same database...")
@@ -335,17 +348,18 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         async with httpx.AsyncClient(
             base_url=api_proc.url, headers=api_headers, trust_env=False
         ) as api_client:
-            for _ in range(50):
-                r_rt_a = await api_client.get(
+            # Deadline poll (t024 AC-007/A28): 25s convergence bound.
+            r_rt_a = await poll_until(
+                lambda: api_client.get(
                     f"/api/v1/internal/supervisor/profiles/{profile_a_id}/runtime"
-                )
-                if (
-                    r_rt_a.status_code == 200
-                    and r_rt_a.json()["desired_state"] == "stopped"
-                    and r_rt_a.json()["observed_state"] == "stopped"
-                ):
-                    break
-                await asyncio.sleep(0.5)
+                ),
+                lambda r: r.status_code == 200
+                and r.json()["desired_state"] == "stopped"
+                and r.json()["observed_state"] == "stopped",
+                timeout=25.0,
+                interval=0.5,
+                description="Profile A runtime to converge to stopped",
+            )
 
             assert r_rt_a.status_code == 200
             data_rt_a = r_rt_a.json()

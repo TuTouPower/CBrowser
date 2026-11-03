@@ -22,12 +22,20 @@ def find_free_port() -> int:
 class FakeApiService:
     """Minimal fake API implementing /api/v1/internal/gateway/* for gateway tests."""
 
+    # The origin every viewer grant in this harness defaults to; it matches
+    # the GatewayHarness allowed_origins entry the suites connect with.
+    DEFAULT_VIEWER_ORIGIN = "https://localhost:8443"
+
     def __init__(self, port: int, token: str) -> None:
         self.port = port
         self.token = token
         self.app = web.Application()
         self.profile_runtimes: dict[str, dict[str, Any]] = {}
-        self.viewer_auths: dict[tuple[str, str], tuple[bool, str | None]] = {}
+        # Authorization is keyed by (cookie, origin, profile_id) and denied
+        # by default, mirroring the production internal API and the recovery
+        # lane's FakeGatewayApiClient (t024 AC-004/A25): a grant for one
+        # origin never authorizes another.
+        self.viewer_auths: dict[tuple[str, str, str], tuple[bool, str | None]] = {}
 
         self.app.router.add_get(
             "/api/v1/internal/gateway/profiles/{profile_id}/runtime",
@@ -61,8 +69,10 @@ class FakeApiService:
         profile_id: str,
         allowed: bool = True,
         reason: str | None = None,
+        *,
+        origin: str = DEFAULT_VIEWER_ORIGIN,
     ) -> None:
-        self.viewer_auths[(cookie, profile_id)] = (allowed, reason)
+        self.viewer_auths[(cookie, origin, profile_id)] = (allowed, reason)
 
     async def handle_profile_runtime(self, request: web.Request) -> web.Response:
         auth = request.headers.get("Authorization", "")
@@ -80,9 +90,10 @@ class FakeApiService:
             return web.json_response({"detail": "Unauthorized API token"}, status=401)
         body = await request.json()
         cookie = body.get("session_cookie", "")
+        origin = body.get("origin", "")
         profile_id = body.get("profile_id", "")
         allowed, reason = self.viewer_auths.get(
-            (cookie, profile_id), (False, "Unauthorized session")
+            (cookie, origin, profile_id), (False, "Unauthorized session")
         )
         return web.json_response({"allowed": allowed, "reason": reason})
 

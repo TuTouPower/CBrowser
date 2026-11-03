@@ -10,6 +10,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from wait import wait_until
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
@@ -227,10 +228,12 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
         try:
             await coordinator.start()
             coordinator.trigger_reconcile(profile.id)
-            for _ in range(300):
-                if calls >= 2 and profile.id not in coordinator._active_tasks:
-                    break
-                await asyncio.sleep(0.01)
+            await wait_until(
+                lambda: calls >= 2 and profile.id not in coordinator._active_tasks,
+                timeout=5.0,
+                interval=0.01,
+                description="flaky reconcile to complete",
+            )
 
             assert calls >= 2
             assert coordinator.has_active_task(profile.id) is False

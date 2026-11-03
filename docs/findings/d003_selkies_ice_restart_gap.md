@@ -11,3 +11,5 @@
 - 现状：有效
 
 - 补充：d010显式私有接口适配器已在同SDK PC/DTLS上完成三轮标准SDP与DataChannel连续性主控真测；不修改上述官方原生API缺口结论，Chrome/TURN/媒体完整路径仍未验证。
+
+- 后续（t024 文档收敛）：本条所述 TURN/ICE 代次机制已由 ADR 013（同机直连，见 docs/blueprint/decisions.md）整体删除；本条仅作历史实验事实保留，不再构成现行实现或验收要求，文中指向未来 task 的指令已失效。

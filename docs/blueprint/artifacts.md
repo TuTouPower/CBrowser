@@ -11,7 +11,7 @@ artifacts/{profileId}/
 ```
 
 - 上传与下载都先写入临时文件，成功后原子发布；失败或超限时删除临时文件，不留下半文件。
-- 发布后的目录与文件应用 Browser runtime UID/GID（默认 1000），目录 0750、文件 0640；无法 chown 的宿主开发环境回退到 0755/0644，保证容器 UID 1000 可读。
+- 发布后的目录与文件应用 Browser runtime UID/GID（默认 1000），目录 0750、文件 0640；chown 失败即报错，不存在 0755/0644 全局可写回退（ADR 014）。
 - 容器内路径固定为 `/exchange/uploads/{artifactId}/{name}` 与 `/exchange/downloads/{artifactId}/{name}`；API 响应不返回宿主路径。
 - 文件名经过单路径组件清洗（去掉目录、控制字符、Windows 保留名并截断到 255 字节）；Profile ID 限制为 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}`，`..` 与路径分隔符拒绝。
 - 删除 Profile 时经 Artifact Service 删除数据库记录与该 Profile 的 Artifact 目录。

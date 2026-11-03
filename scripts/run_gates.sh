@@ -16,26 +16,22 @@ mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
 
 cd "$REPO_ROOT"
 
-uv run --no-project --python ">=3.12" --with pytest python -m pytest .repo_template/tests -q -m contract
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" \
-  --with pytest --with pytest-asyncio --with httpx --with aiosqlite \
-  --with sqlalchemy --with alembic --with fastapi --with pydantic \
-  --with uvicorn --with jsonschema --with websockets --with "cloakbrowser==0.6.4" \
-  --with docker --with aiohttp --with argon2-cffi python -m pytest tests/unit -q
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" \
-  --with pytest --with pytest-asyncio --with httpx --with aiosqlite \
-  --with "sqlalchemy[asyncio]" --with alembic --with fastapi --with pydantic \
-  --with uvicorn --with jsonschema --with docker --with aiohttp \
-  --with argon2-cffi --with websockets python -m pytest tests/integration -q
+# Build the gate environment once from the pinned dependency lock
+# (scripts/gate-requirements.txt, t024 AC-009/A30).  Every suite below runs
+# in this single environment, so a gate run is reproducible from an empty
+# cache and no longer depends on live resolution of unpinned package sets.
+VENV="$SCRATCH/venv"
+uv venv --python 3.12 "$VENV"
+uv pip install --python "$VENV/bin/python" -r scripts/gate-requirements.txt
+PY="$VENV/bin/python"
+
+"$PY" -m pytest .repo_template/tests -q -m contract
+PYTHONPATH=src/backend "$PY" -m pytest tests/unit -q
+PYTHONPATH=src/backend "$PY" -m pytest tests/integration -q
 NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend
 npm run build --prefix src/frontend
 
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
   export CBROWSER_E2E_REQUIRED=1
-  PYTHONPATH=src/backend:tests/fixtures uv run --no-project --python ">=3.12" \
-    --with pytest --with pytest-asyncio --with playwright --with docker \
-    --with httpx --with aiohttp --with pydantic --with websockets \
-    --with fastapi --with uvicorn --with "sqlalchemy[asyncio]" --with aiosqlite \
-    --with alembic --with argon2-cffi --with jsonschema --with "cloakbrowser==0.6.4" \
-    python -m pytest tests/e2e -q --basetemp="$SCRATCH/e2e"
+  PYTHONPATH=src/backend:tests/fixtures "$PY" -m pytest tests/e2e -q --basetemp="$SCRATCH/e2e"
 fi

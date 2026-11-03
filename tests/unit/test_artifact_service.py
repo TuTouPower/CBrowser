@@ -18,6 +18,7 @@ from cbrowser.adapters.database.session import (
     write_transaction,
 )
 from cbrowser.adapters.filesystem.artifact_store import (
+    ArtifactError,
     ArtifactInsufficientStorage,
     ArtifactInvalidContentType,
     ArtifactInvalidName,
@@ -477,7 +478,7 @@ def test_artifact_ownership_failure_raises(
 
         monkeypatch.setattr(os, "chown", deny)
         try:
-            with pytest.raises(Exception, match="ownership"):
+            with pytest.raises(ArtifactError, match="Cannot assign artifact ownership"):
                 await service.upload(
                     profile_id, "denied.csv", "text/csv", _chunks(b"hello")
                 )

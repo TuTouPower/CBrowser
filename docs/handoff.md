@@ -2,30 +2,25 @@
 
 本文件只保留当前有效一节。上一节已追加到 `docs/archive/handoff.md`。
 
-## 2026-11-02T21:55:00+08:00 全仓审阅 adoption 定稿，剩余 v2 队列重排；下一步 t015
+## 2026-11-04T05:45:41+08:00 第二轮审阅 adoption 队列 t019–t024 执行中；下一步为整链 merge 决策
 
 ### 主仓
 
-- branch `main`，交出时 head_commit `fc38a1d`（本交接单独提交）。仅 main 分支，无 task worktree。origin/main 在 `38c40c8`；`4e6a4fa`、`4970596`、`fc38a1d` 与本交接 commit 未 push。
-- 本节 commit：`4e6a4fa` 审阅决策归档；`4970596` legacy compose 端口绑定 127.0.0.1、AUTH_TOKEN 标为必填；`fc38a1d` 新建 t015–t018 并重排 t009/t010/t012。
+- branch `main`，head_commit `c7ec89b`（含 v2 五服务部署与 legacy 数据迁移提交 `d591781`、t009–t012 归档与第二轮审阅 adoption 定稿）。
+- 第二轮 intensive review（`docs/reviews/review_20261103_185924`，300 条 finding，Verdict REQUEST CHANGES）的采纳项已立项为串行队列 t019 → t020 → t021 → t022 → t023 → t024，用户确认全串行执行；merge 不在执行授权内，整链完成后单独询问用户，merge 后不 push。
 
-### 审阅与决策
+### 队列与完成边界
 
-- intensive review `docs/reviews/review_20261102_201727`：362 条 finding（Critical 1 / High 32）全部处置，决策文档 `adoption_decision.md`：采纳 A1–A48、不采纳 R1–R6，附逐条映射。
-- 用户决策标准：最好的架构与设计、最少技术债，不考虑开发时间与改动大小；单机单人是需求范围，不降低质量标准。t014 drop 与 t009 AC-003 手动清单两项降级不恢复。
-- 关键用户决策：D2=A（CI 改现行布局跑可移植层、`scripts/run_gates.sh` 统一本地门禁、删除 release.yml）；D3=B（先 spike 验证同机直连，通过则删除 coturn/TURN 轮换/ICE 代次接管/Selkies 私有 ABI 补丁）；D4=A（模板缺陷向模板仓提 issue）；D5=A（路径隐私约定 + 守卫测试）；D6=A（启动参数白名单）；D7=A（提前删除 v1 前端）；D8=A（生产 adapter 删除测试钩子）；D1=A（见下）。
+- t019 已完成：分支 `t019_stream_ice_turn_connect_delay`，执行 commit `30f5078`（ICE-lite 双层启用、关闭默认外部 STUN/TURN，ADR 013）。真实环境验收未做，义务见 p021。
+- t020 已完成：分支 `t020_profile_font_bundles`，执行 commit `a644f7c`（per-profile `font_bundle` 三档）。真实字体渲染验收未做，义务见 p022。
+- t021 已完成：分支 `t021_control_api_artifact_contracts`，执行 commit `d699e5b`（控制 API 与文件交换契约统一）。真实拓扑子集未跑，义务见 p023。
+- t022 已完成：分支 `t022_runtime_gateway_reliability`，执行 commit `aca792e`（运行时恢复/隔离与信令状态修正）。全套黑盒未跑，义务见 p024。
+- t023 已完成：分支 `t023_frontend_session_consistency`，执行 commit `597c09a`（前端会话/请求与交互语义统一）。前端会话 E2E 未跑，义务见 p026。
+- t024 执行中：分支 `t024_delivery_verification_evidence`（交付与验证证据体系收敛）。本机可跑门禁（模板契约、unit、integration、前端 Vitest/types/build）在各 task 内实测；依赖 Docker、真实拓扑与用户局域网/Mac 环境的黑盒按用户口径跳过并以 pending 追踪，不构成已验收。
 
-### 现场
+### 未验收与遗留
 
-- 旧版 legacy 容器 `cbrowser`：审阅实测 SPA 路由存在无认证路径穿越且发布在 0.0.0.0；已改为 127.0.0.1 绑定后，用户决定直接停用（`docker compose stop`，未删除）。数据根 `~/.cbrowser` 保留，供 t010 迁移。注意：仓库 `.env` 的 `AUTH_TOKEN` 与旧容器原用值不同，legacy 已停用且将由 t010 删除，无需处理。
-- 模板工具链缺陷（59 条，按组件归并）由 sub agent 按 template-issue-report 向 `TuTouPower/repo_template` 提交；本地报告在 `.scratch/repo_template_issues/`（gitignored）。交出时该 sub agent 仍在运行，issue 编号以其报告为准。
-- 已知 skill 缺陷（用户自有 my-adoption skill，非模板）：第 1 步 `ls -d docs/reviews/review_* | sort -V | tail -1` 在目录命名混用时会选中旧目录 `review_v2_scope_20261027`，已报告用户，未修改。
-
-### 队列
-
-- goal 快照已重新冻结：t015 → t016 → t017 → t018 → t012 → t009 → t010（`docs/runtime/goal_queue.json`，gitignored）。全部 full review，创建期 preflight PASS。
-- t015 媒体链路收敛：AC-001 依赖 UNVERIFIED-SPIKE（同机 Chrome local 直连全场景）；spike 不通过须停下请用户批准改写 AC（改为保留并冻结 TURN 机制，落实 A10/A11/A12/A30 的 TURN 部分）。t016 与 t015 只有冲突标记无硬依赖，t015 阻塞时可先做 t016。
-- t012 已改为“v2 正式部署产物与部署文档”，排在 t009 之前；原 AC-004 移入 t010。
-- t009 依赖改为 t012；AC-005 的 coturn/凭证切换项待 t015 结论后改写。
-- t010 已合并原 t011（AC-006~009）与原 t012 AC-004（AC-010）：迁移真实数据、停用 legacy 并删除其代码、正式部署到本机。真实数据操作与本机部署需用户单独授权。
-- `docs/pending/todo/` 为空。
+- p016（Supervisor 网络与配额 E2E 恢复）、p017（t016 minor 清理；其中 domain.md 状态名与 artifacts.md 回退描述两项已由 t024 同步，其余两项代码清理仍未开）、p018（t017 minor 清理）仍未处理。
+- p019（normal-exit .scratch 路径）已由 t024 定位根因（AF_UNIX sun_path 长度上限）并修复，随 t024 关闭。
+- p025（Gateway 存量加固）未开。t019–t023 的真实环境执行义务分别为 p021、p022、p023、p024、p026，均未验收。
+- 已知基线：本机 root 身份与无 Docker 环境下个别测试的环境性失败以各 task 实施笔记的基线对照为准。

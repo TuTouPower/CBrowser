@@ -18,7 +18,12 @@ DIST_DIR = FRONTEND_DIR / "dist"
 
 
 def ensure_frontend_build() -> Path:
-    """Ensures Vite production build exists and is up to date."""
+    """Ensures the Vite production build exists and is up to date.
+
+    Existence alone is not enough: after ensuring a build is present, the
+    build stamp is verified against the current source tree and a stale or
+    unstamped dist fails loudly instead of being served (t024 AC-003/A24).
+    """
     if (
         not (DIST_DIR / "index.html").is_file()
         or not (DIST_DIR / "selkies").is_dir()
@@ -30,6 +35,13 @@ def ensure_frontend_build() -> Path:
             check=True,
             cwd=str(REPO_ROOT),
         )
+    import sys
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.verify_frontend_dist import verify_frontend_build_freshness
+
+    verify_frontend_build_freshness(DIST_DIR, FRONTEND_DIR)
     return DIST_DIR
 
 

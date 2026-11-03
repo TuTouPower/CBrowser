@@ -45,7 +45,7 @@ async def _context(tmp_path: Path):
     service = ProfileService(
         repo, runtime_uid=os.getuid(), runtime_gid=os.getgid()
     )
-    return engine, repo, service, source, profile_dir
+    return engine, repo, service, source, profile_dir, maker
 
 
 def _write_state(profile_dir: Path) -> None:
@@ -61,7 +61,7 @@ def _write_state(profile_dir: Path) -> None:
 async def test_config_only_duplicate_preserves_fields_and_skips_state(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     try:
         clone = await service.duplicate_profile("p1")
@@ -85,7 +85,7 @@ async def test_config_only_duplicate_preserves_fields_and_skips_state(
         assert (profile_dir / "Cookies").read_bytes() == b"cookie-data"
         assert await repo.list_config_versions(clone.id)
         assert (
-            await ArtifactRepository(repo._session_maker).list_artifacts(clone.id) == []
+            await ArtifactRepository(maker).list_artifacts(clone.id) == []
         )
     finally:
         await engine.dispose()
@@ -95,7 +95,7 @@ async def test_config_only_duplicate_preserves_fields_and_skips_state(
 async def test_state_duplicate_copies_files_and_skips_singleton(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     try:
         clone = await service.duplicate_profile("p1", include_browser_state=True)
@@ -114,7 +114,7 @@ async def test_state_duplicate_copies_files_and_skips_singleton(
 
         assert _manifest(clone_dir) == _manifest(profile_dir)
         assert (
-            await ArtifactRepository(repo._session_maker).list_artifacts(clone.id) == []
+            await ArtifactRepository(maker).list_artifacts(clone.id) == []
         )
     finally:
         await engine.dispose()
@@ -122,7 +122,7 @@ async def test_state_duplicate_copies_files_and_skips_singleton(
 
 @pytest.mark.asyncio
 async def test_state_duplicate_rejects_running_profile(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     try:
         await repo.set_desired_state("p1", "running")
         with pytest.raises(ProfileRunningError):
@@ -136,7 +136,7 @@ async def test_state_duplicate_rejects_running_profile(tmp_path: Path) -> None:
 async def test_reset_wipes_state_and_rerolls_seed_without_touching_other_profiles(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     other_dir = tmp_path / "profiles" / "p2" / "profile"
     other_dir.mkdir(parents=True)
     (other_dir / "Cookies").write_bytes(b"other")
@@ -169,7 +169,7 @@ async def test_reset_wipes_state_and_rerolls_seed_without_touching_other_profile
 async def test_reset_restores_source_when_database_update_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     original_seed = source.config.fingerprint_seed
 
@@ -193,7 +193,7 @@ async def test_reset_restores_source_when_database_update_fails(
 async def test_duplicate_and_reset_are_idempotent_with_operation_id(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     try:
         operation = secrets.token_hex(16)
         first = await service.duplicate_profile("p1", operation_id=operation)
@@ -215,7 +215,7 @@ async def test_duplicate_and_reset_are_idempotent_with_operation_id(
 async def test_duplicate_rejects_blank_name_and_caps_long_default_name(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     long_name = "x" * 255
     await repo.update_profile("p1", {"name": long_name})
     try:
@@ -232,7 +232,7 @@ async def test_duplicate_rejects_blank_name_and_caps_long_default_name(
 async def test_state_duplicate_of_unlaunched_profile_creates_empty_clone(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     import shutil
 
     shutil.rmtree(profile_dir)
@@ -248,7 +248,7 @@ async def test_state_duplicate_of_unlaunched_profile_creates_empty_clone(
 async def test_duplicate_failure_removes_staged_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
 
     async def fail_create(**kwargs):
@@ -265,7 +265,7 @@ async def test_duplicate_failure_removes_staged_directory(
 
 @pytest.mark.asyncio
 async def test_copy_permissions_are_exact_and_private(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     try:
         clone = await service.duplicate_profile("p1", include_browser_state=True)
@@ -288,7 +288,7 @@ async def test_copy_permissions_are_exact_and_private(tmp_path: Path) -> None:
 async def test_copy_ownership_failure_raises_and_cleans_up(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     service.runtime_uid = os.getuid() + 1
     service.runtime_gid = os.getgid() + 1
@@ -308,7 +308,7 @@ async def test_copy_ownership_failure_raises_and_cleans_up(
 
 @pytest.mark.asyncio
 async def test_operation_key_cannot_cross_actions_or_profiles(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     try:
         operation = secrets.token_hex(16)
         await repo.update_profile("p1", {"notes": "changed"}, operation_id=operation)
@@ -334,7 +334,7 @@ async def test_operation_key_cannot_cross_actions_or_profiles(tmp_path: Path) ->
 async def test_concurrent_reset_with_same_operation_is_idempotent(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     operation = secrets.token_hex(16)
     try:
@@ -352,7 +352,7 @@ async def test_concurrent_reset_with_same_operation_is_idempotent(
 async def test_copy_and_reset_reject_starting_or_stopping_source(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     try:
         await repo.bind_runtime_instance("p1", "i1")
         await repo.report_observed_state("p1", "i1", "stopping")
@@ -366,8 +366,8 @@ async def test_copy_and_reset_reject_starting_or_stopping_source(
 
 @pytest.mark.asyncio
 async def test_duplicate_does_not_copy_artifacts(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
-    artifacts = ArtifactRepository(repo._session_maker)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
+    artifacts = ArtifactRepository(maker)
     artifact_path = tmp_path / "artifacts" / "p1" / "a1" / "secret.csv"
     artifact_path.parent.mkdir(parents=True)
     artifact_path.write_bytes(b"secret")
@@ -399,7 +399,7 @@ async def test_duplicate_does_not_copy_artifacts(tmp_path: Path) -> None:
 async def test_copy_manifest_mismatch_removes_clone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     import cbrowser.services.profile_service as module
 
@@ -422,7 +422,7 @@ async def test_copy_manifest_mismatch_removes_clone(
 async def test_copy_failure_removes_partial_clone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     import cbrowser.services.profile_service as module
 
@@ -444,7 +444,7 @@ async def test_copy_failure_removes_partial_clone(
 async def test_running_after_copy_is_rejected_and_clone_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     original = service.get_runtime
     calls = {"count": 0}
@@ -470,7 +470,7 @@ async def test_running_after_copy_is_rejected_and_clone_removed(
 async def test_concurrent_state_duplicate_same_key_has_no_orphan(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     operation = secrets.token_hex(16)
     try:
@@ -493,7 +493,7 @@ async def test_concurrent_state_duplicate_same_key_has_no_orphan(
 
 @pytest.mark.asyncio
 async def test_same_key_different_duplicate_payload_conflicts(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     operation = secrets.token_hex(16)
     try:
         await service.duplicate_profile("p1", operation_id=operation)
@@ -513,7 +513,7 @@ async def test_same_key_different_duplicate_payload_conflicts(tmp_path: Path) ->
 async def test_copy_ownership_does_not_follow_directory_symlinks(
     tmp_path: Path,
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     victim = tmp_path / "victim"
     victim.mkdir()
     victim.chmod(0o755)
@@ -529,7 +529,7 @@ async def test_copy_ownership_does_not_follow_directory_symlinks(
 
 @pytest.mark.asyncio
 async def test_profile_locks_are_released_after_operations(tmp_path: Path) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     try:
         await service.set_desired_state("p1", "stopped")
@@ -546,7 +546,7 @@ async def test_profile_locks_are_released_after_operations(tmp_path: Path) -> No
 async def test_copy_ownership_targets_runtime_uid_1000_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
     _write_state(profile_dir)
     calls: list[tuple[Path, int, int]] = []
 

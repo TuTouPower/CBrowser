@@ -69,6 +69,13 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。
 
+## 门禁依赖与证据完整性（t024）
+
+- 门禁依赖由 `scripts/gate-requirements.txt` 全量锁定（pin 到具体版本），`scripts/run_gates.sh` 以固定 Python 3.12 建单一 venv 从锁安装后依次执行契约/unit/integration/前端/构建，不再运行时临时解析未 pin 的包组；锁的再生成命令写在该文件头部。
+- 前端构建戳为 v2 格式：必需输入（index.html、package.json、package-lock.json）缺失拒绝生成；配置五件套的 present/absent、src/ 与 public/ 全量文件哈希、声明的环境值（allowlist）共同决定新鲜度；所有实际消费 dist 的探针（浏览器 harness、frontend probe、E2E collection 钩子）在复制/托管前校验，dist 存在即校验、与测试文件命名无关。
+- 测试等待统一走 `tests/fixtures/wait.py` 的 deadline + 最后观测助手；时间敏感逻辑用注入 clock，不 patch 标准库 time 模块对象。共享 Docker 替身在 `tests/fixtures/docker_doubles.py`，与真实 DockerAdapter 的命名/集合契约由 `tests/unit/test_docker_doubles_contract.py` 对照。
+- E2E 证据目录每次运行私有（mkdtemp），证据脱敏覆盖 token/secret/password/cookie/resume_key/session；性能预算保持原硬阈值（首帧 8000ms、输入 3000ms、SQLite busy_timeout 原上界），证据记录完整样本而非仅判定。
+
 ## 专项技术验证探针
 
 代码为不可变归档快照，先完整复制到专属scratch再运行；下表列出入口和依赖，具体正负例与清理契约见各spike报告。固定前缀/端口同一时刻只能运行一份，不能只改容器名忽略脚本内部引用。归档历史报告里的旧docs/spikes路径按docs/archive/spikes读取。

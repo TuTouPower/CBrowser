@@ -39,11 +39,26 @@ PROBE_JS = r"""(() => {
 
     const NativeSend = window.RTCDataChannel.prototype.send;
     window.__sentDataChannelMessages = [];
+    // Per-type counters that survive buffer eviction (t024 AC-018/A53):
+    // control-class assertions must not depend on a message still being
+    // inside the 500-entry rolling buffer.
+    window.__sentDataChannelCounts = {};
+    window.__droppedDataChannelMessages = 0;
     window.RTCDataChannel.prototype.send = function(data) {
         if (typeof data === 'string') {
+            let key = 'text';
+            try {
+                const parsed = JSON.parse(data);
+                key = parsed.type || parsed.kind || 'json';
+            } catch (e) {
+                key = (data.split(/[\s,]/)[0] || 'text').slice(0, 32);
+            }
+            window.__sentDataChannelCounts[key] =
+                (window.__sentDataChannelCounts[key] || 0) + 1;
             window.__sentDataChannelMessages.push(data);
             if (window.__sentDataChannelMessages.length > 500) {
                 window.__sentDataChannelMessages.shift();
+                window.__droppedDataChannelMessages += 1;
             }
         }
         return NativeSend.call(this, data);
