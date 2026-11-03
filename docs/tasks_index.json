@@ -18,6 +18,22 @@
             "conflicts_with": "",
             "note": "来源 p020：Selkies 默认外部 TURN allocation 超时阻塞每个新 PeerConnection 约 5s",
             "dir": "docs/tasks/t019_stream_ice_turn_connect_delay"
+        },
+        {
+            "tid": "t020",
+            "slug": "profile_font_bundles",
+            "title": "按 Profile 配置中文字体包",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "来源用户需求：按 profile 差异化中文字体（none/wqy-microhei/wqy-zenhei）；2026-11-03 已验证 FONTCONFIG_FILE 运行时开关对真实引擎生效",
+            "dir": "docs/tasks/t020_profile_font_bundles"
         }
     ]
 }
