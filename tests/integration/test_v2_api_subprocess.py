@@ -16,14 +16,12 @@ from typing import Any
 
 import httpx
 import jsonschema
+import tempfile
 import pytest
 
 from api_auth import create_auth_context
 
-SCRATCH_DIR = (
-    Path(__file__).resolve().parent.parent.parent / ".scratch" / "t002_implementation"
-)
-SCRATCH_DIR.mkdir(parents=True, exist_ok=True)
+SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t002-", dir="/tmp"))
 OPENAPI_SCHEMA_PATH = (
     Path(__file__).resolve().parent.parent.parent
     / "schemas"

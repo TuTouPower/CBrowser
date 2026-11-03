@@ -21,3 +21,26 @@ def test_stamp_rejects_stale_source(tmp_path: Path):
     (frontend / "src" / "main.ts").write_text("two", encoding="utf-8")
     with pytest.raises(RuntimeError, match="stale"):
         verify_frontend_build_freshness(dist, frontend)
+
+
+def test_missing_stamp_fails_closed(tmp_path: Path):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    with pytest.raises(RuntimeError, match="stamp missing"):
+        verify_frontend_build_freshness(dist, frontend)
+
+
+def test_unreadable_or_incomplete_stamp_fails_closed(tmp_path: Path):
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    stamp = dist / "build-stamp.json"
+    stamp.write_text("not-json", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="unreadable"):
+        verify_frontend_build_freshness(dist, frontend)
+    stamp.write_text("{}", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="unreadable"):
+        verify_frontend_build_freshness(dist, frontend)

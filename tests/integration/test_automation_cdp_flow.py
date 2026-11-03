@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import secrets
+import tempfile
 import shutil
 import threading
 import time
@@ -85,7 +86,7 @@ class _UnixEchoServer:
 
 @pytest.mark.asyncio
 async def test_automation_token_reaches_agent_uds_through_supervisor() -> None:
-    short = Path(".scratch/t008_uds_flow") / secrets.token_hex(4)
+    short = Path(tempfile.mkdtemp(prefix="cbrowser-t008-uds-", dir="/tmp"))
     shutil.rmtree(short, ignore_errors=True)
     log_path = short / "supervisor.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -241,7 +242,7 @@ def test_supervisor_cdp_reaches_real_agent_app_and_fake_chrome() -> None:
     """Supervisor control WS -> real Agent app -> Chrome loopback WebSocket."""
     import secrets
 
-    short = Path(".scratch/t008_agent_flow") / secrets.token_hex(4)
+    short = Path(tempfile.mkdtemp(prefix="cbrowser-t008-agent-", dir="/tmp"))
     data_root = short / "data"
     run_dir = data_root / "runtime" / "p1"
     run_dir.mkdir(parents=True)

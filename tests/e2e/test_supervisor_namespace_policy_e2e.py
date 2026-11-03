@@ -170,7 +170,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.3)
     assert proc.poll() is None, "Gate exited prematurely while marker absent"
     assert not out_file.exists(), "Target app ran before marker appeared!"
 
@@ -189,7 +188,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps({"instance_id": "other-inst", "role": role, "status": "ready"}),
         encoding="utf-8",
@@ -206,7 +204,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps({"instance_id": instance_id, "role": "stream", "status": "ready"}),
         encoding="utf-8",
@@ -223,7 +220,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.1)
     marker_file.write_text(
         json.dumps(
             {"instance_id": instance_id, "role": role, "status": "initializing"}
@@ -242,7 +238,6 @@ def test_startup_gate_subprocess_sentinel(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
     )
-    time.sleep(0.2)
     assert proc_valid.poll() is None
     assert not out_file.exists()
 
@@ -266,8 +261,7 @@ def _wait_for_server_ready(container: docker.models.containers.Container) -> Non
         logs = container.logs().decode("utf-8", errors="replace")
         if "READY" in logs:
             return
-        time.sleep(0.1)
-    raise TimeoutError(f"Server {container.name} did not become READY in 10s")
+        raise TimeoutError(f"Server {container.name} did not become READY in 10s")
 
 
 def _run_python_probe(

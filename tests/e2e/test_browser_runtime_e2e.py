@@ -16,6 +16,7 @@ import inspect
 import json
 import logging
 import os
+import tempfile
 import secrets
 import shutil
 import socket
@@ -45,9 +46,9 @@ logger = logging.getLogger(__name__)
 
 IMAGE_TAG = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
 ACTIVE_TEST_NETWORK: str | None = None
-SCRATCH_ROOT = Path(os.path.abspath(".scratch/t003_implementation/tmp/e"))
+SCRATCH_ROOT = Path(tempfile.mkdtemp(prefix="cbrowser-t003-e2e-", dir="/tmp"))
 ENGINE_CACHE = Path(os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")).resolve()
-LOGS_DIR = Path(os.path.abspath(".scratch/t003_implementation/tmp/logs"))
+LOGS_DIR = Path(tempfile.mkdtemp(prefix="cbrowser-t003-logs-", dir="/tmp"))
 
 
 @pytest.fixture(scope="session", autouse=True)

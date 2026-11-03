@@ -9,10 +9,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HOME_PATH = re.compile(r"/(?:Users|home)/([A-Za-z0-9._-]+)/")
 CONTAINER_USERS = {"cbrowser", "appuser", "selkies", "pulse", "root", "runner", "docker"}
-TEXT_SUFFIXES = {
-    ".py", ".md", ".txt", ".json", ".yml", ".yaml", ".toml", ".sh", ".ts",
-    ".tsx", ".js", ".css", ".html", ".cfg", ".ini", ".env", ".example",
-}
 
 
 def tracked_text_files() -> list[Path]:
@@ -29,7 +25,13 @@ def tracked_text_files() -> list[Path]:
         if not name or name.startswith("docs/archive/") or name in allowlist:
             continue
         path = ROOT / name
-        if path.is_file() and (path.suffix in TEXT_SUFFIXES or path.name == ".gitattributes"):
+        if not path.is_file():
+            continue
+        try:
+            head = path.read_bytes()[:8192]
+        except OSError:
+            continue
+        if b"\0" not in head:
             files.append(path)
     return files
 

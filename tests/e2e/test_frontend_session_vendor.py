@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 
-# Ensure repo root is on sys.path so scripts can be imported
 from scripts.vendor_selkies_web import (  # noqa: E402
     PINNED_SELKIES_VERSION,
     PINNED_WHEEL_SHA256,
