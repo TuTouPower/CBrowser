@@ -33,8 +33,6 @@ def test_scan_backfills_completed_files_and_excludes_temporary(tmp_path: Path) -
         second = await scan_completed_downloads(downloads, "p1", "i1", storage)
         return first, second
 
-    import asyncio
-
     first, second = asyncio.run(run())
     assert len(first) == 1
     assert second == []
@@ -126,8 +124,6 @@ def test_supervisor_translates_container_path_and_forwards_once(
             first = await forwarder.forward_pending()
             second = await forwarder.forward_pending()
             return first, second
-
-    import asyncio
 
     first, second = asyncio.run(run())
     assert first == 1
@@ -335,8 +331,6 @@ def test_forwarder_does_not_skip_older_completed_events(tmp_path: Path) -> None:
             forwarder = DownloadArtifactForwarder(data_root, client)
             return await forwarder.forward_pending()
 
-    import asyncio
-
     assert asyncio.run(run()) == 1
     assert [call["event_id"] for call in calls] == ["dl_completed_old"]
 
@@ -428,7 +422,126 @@ def test_forwarder_retries_after_retryable_4xx(tmp_path: Path) -> None:
             second = await forwarder.forward_pending()
             return first, second
 
-    import asyncio
-
     assert asyncio.run(run()) == (0, 1)
     assert calls == [401, 200]
+
+
+def _write_download_event(
+    data_root: Path, profile_id: str, instance_id: str, event_id: str
+) -> Path:
+    downloads = data_root / "artifacts" / profile_id / "downloads"
+    downloads.mkdir(parents=True, exist_ok=True)
+    (downloads / f"guid-{event_id}").write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+    events = data_root / "runtime-events" / profile_id / "events" / "downloads"
+    events.mkdir(parents=True, exist_ok=True)
+    event = {
+        "event_id": event_id,
+        "profile_id": profile_id,
+        "runtime_instance_id": instance_id,
+        "guid": f"guid-{event_id}",
+        "suggested_filename": "report.csv",
+        "download_path": f"/exchange/downloads/guid-{event_id}",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+        "sha256": digest,
+    }
+    target = events / f"{event_id}.json"
+    target.write_text(json.dumps(event), encoding="utf-8")
+    return target
+
+
+def _ok_client() -> httpx.AsyncClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    return httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="http://api"
+    )
+
+
+def _cursor_file(data_root: Path) -> dict:
+    path = data_root / "control" / "download_cursors.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+
+
+def test_forwarder_prunes_cursors_for_vanished_instances(tmp_path: Path) -> None:
+    """AC-006 (A12): after one complete successful scan, cursors of
+    instances that disappeared from the event tree are cleared; instances
+    still present keep theirs, and a restart reloads the pruned state."""
+    data_root = tmp_path / "data"
+    gone_file = _write_download_event(data_root, "p1", "i-gone", "dl_gone")
+    _write_download_event(data_root, "p1", "i-stays", "dl_stays")
+
+    async def run(forwarder: DownloadArtifactForwarder) -> int:
+        return await forwarder.forward_pending()
+
+    async def first_pass() -> int:
+        async with _ok_client() as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(first_pass()) == 2
+    cursors = _cursor_file(data_root)
+    assert set(cursors["p1"]) == {"i-gone", "i-stays"}
+
+    gone_file.unlink()
+
+    async def second_pass() -> int:
+        async with _ok_client() as client:
+            # A fresh forwarder models a process restart reloading cursors.
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(second_pass()) == 0
+    cursors = _cursor_file(data_root)
+    assert set(cursors.get("p1", {})) == {"i-stays"}
+    assert cursors["p1"]["i-stays"] == ["dl_stays"]
+
+
+def test_forwarder_keeps_cursors_when_profile_scan_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AC-006 (A12): a read failure is not an empty tree — cursors of the
+    failed profile survive pruning while other profiles prune normally."""
+    data_root = tmp_path / "data"
+    _write_download_event(data_root, "p1", "i-keep", "dl_keep")
+    gone = _write_download_event(data_root, "p2", "i-gone", "dl_gone2")
+
+    async def first_pass() -> int:
+        async with _ok_client() as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(first_pass()) == 2
+    gone.unlink()
+
+    real_glob = Path.glob
+
+    def flaky_glob(self: Path, pattern: str):
+        if self.name == "downloads" and "p1" in self.parts:
+            raise OSError("simulated scan failure")
+        return real_glob(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", flaky_glob)
+
+    async def second_pass() -> int:
+        async with _ok_client() as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(second_pass()) == 0
+    cursors = _cursor_file(data_root)
+    assert cursors["p1"]["i-keep"] == ["dl_keep"]
+    assert "p2" not in cursors
+
+
+def test_recovery_coordinator_uses_shared_singleton_lock_names() -> None:
+    """AC-006 (A12): one lock-file identity for normal start and recovery."""
+    from cbrowser.supervisor import recovery_coordinator
+    from cbrowser.supervisor.volume_spec import SINGLETON_LOCK_NAMES
+
+    assert recovery_coordinator.SINGLETON_LOCK_NAMES is SINGLETON_LOCK_NAMES
+    assert SINGLETON_LOCK_NAMES == (
+        "SingletonLock",
+        "SingletonCookie",
+        "SingletonSocket",
+    )

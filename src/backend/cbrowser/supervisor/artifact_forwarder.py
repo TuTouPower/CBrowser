@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 from cbrowser.runtime_agent.protocol import DownloadEventRecord
+from cbrowser.supervisor.event_forwarder import RETRYABLE_4XX
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.path_validator import PathSecurityError, validate_profile_id
 from pydantic import ValidationError
@@ -19,7 +20,6 @@ logger = logging.getLogger("cbrowser.supervisor.artifact_forwarder")
 
 CONTAINER_DOWNLOAD_PREFIX = "/exchange/downloads/"
 DOWNLOAD_EVENT_ENVELOPE_VERSION = 1
-RETRYABLE_4XX = frozenset({401, 403, 408, 429})
 
 
 def translate_download_path(
@@ -158,6 +158,7 @@ class DownloadArtifactForwarder:
         forwarded = 0
         changed = False
         present: dict[tuple[str, str], set[str]] = {}
+        failed_profiles: set[str] = set()
         for profile_dir in sorted(self.events_root.iterdir()):
             if not profile_dir.is_dir():
                 continue
@@ -173,7 +174,19 @@ class DownloadArtifactForwarder:
             events_dir = profile_dir / "events" / "downloads"
             if not events_dir.is_dir():
                 continue
-            for event_file in sorted(events_dir.glob("*.json")):
+            try:
+                event_files = sorted(events_dir.glob("*.json"))
+            except OSError as exc:
+                # A failed scan must not be mistaken for an empty tree:
+                # this profile's cursors are exempt from pruning below.
+                failed_profiles.add(profile_id)
+                logger.warning(
+                    "Download event scan failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+                continue
+            for event_file in event_files:
                 try:
                     event_file.resolve().relative_to(self.events_root.resolve())
                 except (OSError, RuntimeError, ValueError):
@@ -269,13 +282,39 @@ class DownloadArtifactForwarder:
                     if changed:
                         self._save_processed()
                     return forwarded
-        if changed:
-            self._prune(present)
+        # Only a scan that ran to completion may prune: every early return
+        # above (transport error, retryable status) leaves cursors untouched.
+        if self._prune(present, failed_profiles) or changed:
             self._save_processed()
         return forwarded
 
-    def _prune(self, present: dict[tuple[str, str], set[str]]) -> None:
-        for (profile_id, instance_id), keys in present.items():
-            existing = self._processed.get(profile_id, {}).get(instance_id)
-            if existing is not None:
-                existing.intersection_update(keys)
+    def _prune(
+        self,
+        present: dict[tuple[str, str], set[str]],
+        failed_profiles: set[str],
+    ) -> bool:
+        """Drop cursors for instances absent from a complete scan.
+
+        Instances still present keep only the event ids seen this round.
+        Profiles whose scan failed keep their cursors verbatim: a read
+        failure is not evidence that the instance disappeared.
+        """
+        changed = False
+        for profile_id in list(self._processed):
+            if profile_id in failed_profiles:
+                continue
+            instances = self._processed[profile_id]
+            for instance_id in list(instances):
+                keys = present.get((profile_id, instance_id))
+                if keys is None:
+                    del instances[instance_id]
+                    changed = True
+                    continue
+                before = len(instances[instance_id])
+                instances[instance_id].intersection_update(keys)
+                if len(instances[instance_id]) != before:
+                    changed = True
+            if not instances:
+                del self._processed[profile_id]
+                changed = True
+        return changed

@@ -182,7 +182,11 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "body": text_bad_origin,
                 }
 
-            # 3c. Unauthorized Profile Viewer WS -> rejected 403/404/503
+            # 3c. Unauthorized Profile Viewer WS -> rejected exactly 403
+            # (t024 AC-005/A26): the session is authenticated and the
+            # origin valid, so the API's viewer-authorize denial maps to
+            # 403; 503 would mean gateway unavailability, not an
+            # authorization verdict, and must not satisfy this case.
             unauthorized_pid = "unauthorized_profile_id_xyz"
             unauth_ws_url = f"{base_ws}/stream/{unauthorized_pid}/signal"
             unauth_http_url = f"{base_http}/stream/{unauthorized_pid}/signal"
@@ -194,7 +198,7 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "Cookie": f"cbrowser_session={auth_cookie_val}",
                 },
             )
-            assert resp_unauth.status in (403, 404, 503)
+            assert resp_unauth.status == 403
             text_unauth = await resp_unauth.text()
 
             try:
@@ -207,7 +211,7 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                 ):
                     pytest.fail("Unauthorized profile WS unexpectedly connected")
             except aiohttp.WSServerHandshakeError as err:
-                assert err.status in (403, 404, 503)
+                assert err.status == 403
                 evidence["unauthorized_profile_ws_rejection"] = {
                     "status": err.status,
                     "body": text_unauth,

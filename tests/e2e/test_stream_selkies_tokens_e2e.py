@@ -104,6 +104,10 @@ asyncio.run(run_server())
             "-p",
             f"127.0.0.1:{self.port}:{self.port}",
             "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges:true",
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=64m",
         ]
@@ -194,14 +198,32 @@ async def test_e2e_ac008_dual_mode_disabled_negative_and_positive() -> None:
                 assert body["status"] == "error"
                 assert body["message"] == "Dual streaming mode disabled"
 
-            # 3. Positive test: WebRTC signaling remains functional
+            # 3. Positive test: WebRTC signaling remains functional.
+            # Complete a minimal valid HELLO exchange (t024 AC-005/A26):
+            # the previous assertion accepted CLOSE/CLOSED, which a server
+            # that refuses every signaling connection would also satisfy.
+            ctrl_token = "ac008-ctrl-token"
+            async with session.post(
+                f"{base_url}/api/tokens",
+                headers=headers,
+                json={
+                    ctrl_token: {"role": "controller", "slot": None, "mk_control": False}
+                },
+            ) as resp:
+                assert resp.status == 200
             ws_url = base_url.replace("http://", "ws://") + "/api/webrtc/signaling"
             async with session.ws_connect(ws_url) as ws:
-                # Reaching signaling validates WebRTC mode
-                await ws.send_str("INVALID PROTOCOL TEST")
+                hello = {
+                    "client_type": "controller",
+                    "client_slot": 1,
+                    "client_token": ctrl_token,
+                    "client_tab_id": "tab-ac008",
+                    "resume_key": "res-ac008",
+                }
+                await ws.send_str(f"HELLO client {json.dumps(hello)}")
                 msg = await ws.receive()
-                # WebSocket connected and handled message
-                assert msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.TEXT)
+                assert msg.type == WSMsgType.TEXT
+                assert msg.data.startswith("HELLO")
     finally:
         runner.stop()
 
@@ -306,8 +328,17 @@ async def test_e2e_ac010_direct_selkies_signaling_token_gates() -> None:
 
 
 @pytest.mark.asyncio
-async def test_e2e_ac010_agent_controller_token_injection_and_coexistence() -> None:
-    """AC-010: Agent injects token; tabs coexist; reconnects resume."""
+async def test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection() -> None:
+    """AC-010 (server-side semantics only): given an already-injected
+    controller token, the Selkies server accepts coexisting tabs and
+    resumes reconnects.
+
+    The HELLO token injection below is EMULATED in this test
+    (agent_forward_hello); it does not exercise the production Stream
+    Agent forwarding path.  Production agent forwarding is covered by the
+    gateway-topology test in this file and the stream runtime suites
+    (t024 AC-004/A25: this suite is a protocol probe, not adapter/agent
+    behavior coverage)."""
     master_token = secrets.token_urlsafe(32)
     ctrl_token = secrets.token_urlsafe(32)
 
@@ -339,7 +370,10 @@ async def test_e2e_ac010_agent_controller_token_injection_and_coexistence() -> N
                 assert resp.status == 200
 
             def agent_forward_hello(raw_client_hello: dict[str, Any]) -> str:
-                """Emulates StreamAgent upstream worker HELLO token injection."""
+                """Emulates StreamAgent upstream worker HELLO token injection.
+
+                Test-local emulation (see the test docstring): the real
+                agent's forwarding is covered elsewhere."""
                 meta = dict(raw_client_hello)
                 if not meta.get("client_token"):
                     meta["client_token"] = ctrl_token

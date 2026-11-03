@@ -51,6 +51,10 @@ t001–t007 累计三路审阅的采纳项已全部落地并合入 main。以下
 - 8.4：Profile `clipboard_sync` 开启时 Selkies `clipboard_seamless=true|locked`，纯文本双向自动同步（直接 Cmd+C/V）；关闭时 `enable_clipboard=false`，双向无传输；二进制剪贴板仍关闭。19.3「用户剪贴板原内容保护」「后台页面不自动覆盖本机剪贴板」作废（decisions 012）。
 - 19.3：1000 次中文组合输入与 1000 次剪贴板改为 t009 手动清单验收（四类输入框、双页面、复制粘贴同步）；t014 剩余自动化 E2E（p015）不做，t014 以 AC-001/005 已合入状态 drop。
 
+## 修订：ADR 013 同机直连替代 TURN 方案（t015 落地，t024 标注）
+
+ADR 013 已删除 coturn、TURN 凭证轮换与 ICE 代次接管，媒体改为同机直连。本文 §3（服务拓扑中的 coturn）、§7.5、§10.4–10.6、§16（安全与网络矩阵中 coturn 相关行）、§19.4 中与 TURN/凭证轮换/ICE 代次有关的内容已被 ADR 013 替代，仅作历史方案保留；现行口径以 docs/blueprint/decisions.md 的 ADR 013 与 docs/blueprint/stream_runtime.md 为准。相关节首已逐节标注。
+
 # 1. 最终技术决策
 
 ## 1.1 固定技术栈
@@ -172,6 +176,8 @@ Selkies 的 `client_tab_id` 用于区分不同外部页面及其重连身份。
 ______________________________________________________________________
 
 # 3. 最终服务拓扑
+
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
 
 固定常驻服务：
 
@@ -410,6 +416,8 @@ Gateway 重启不会停止浏览器。Agent 重新注册后，外部页面可以
 
 ## 7.5 内部协议边界
 
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
+
 CBrowser 只定义自己的内部协议，每种协议有独立 schema、版本字段和运行时校验，不合并为一个通用 WebSocket JSON 处理器：
 
 |协议|两端|职责|
@@ -616,6 +624,8 @@ Supervisor 将 Gateway 和 coturn 在该 Profile 网络中的实际地址传递�
 
 ## 10.4 coturn
 
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
+
 coturn 固定使用：
 
 - UDP/TCP 3478。
@@ -629,6 +639,8 @@ coturn 加入 `cbrowser-edge` 网络，并由 Supervisor 动态加入各 Profile
 Stream Runtime 通过自己所在的 Profile 网络访问 coturn。外部 Chrome 使用 coturn 的公开地址。
 
 ## 10.5 独立 RTC 配置
+
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
 
 Selkies 默认的 RTC 配置不能直接满足所有部署拓扑。
 
@@ -644,6 +656,8 @@ CBrowser 增加 `RtcConfigService`，分别为：
 不依赖 Selkies 默认 `/api/turn` 自动提供不同的客户端与服务端配置。
 
 ## 10.6 TURN 凭证刷新
+
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
 
 采用 TURN REST HMAC 短期凭证。
 
@@ -1006,6 +1020,8 @@ ______________________________________________________________________
 
 # 16. 安全与网络矩阵
 
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
+
 |来源|目标|允许操作|
 |---|---|---|
 |Chrome|Caddy|HTTPS 页面、API 和信令|
@@ -1148,6 +1164,8 @@ ______________________________________________________________________
 - 后台页面不自动覆盖本机剪贴板。
 
 ## 19.4 安全与恢复验收
+
+> **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
 
 - Profile 数据卷互相隔离。
 - CDP 端口不对公网开放。

@@ -14,8 +14,10 @@ from unittest.mock import patch
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.stream_agent.agent import (
+    DetachedUpstream,
     ReconnectBackoff,
     StreamAgent,
+    ViewerWorkerEntry,
     resolve_selkies_version,
 )
 from cbrowser.stream_agent.config import StreamAgentConfig
@@ -268,6 +270,8 @@ async def test_agent_registration_payload_fields(unique_port):
     agent = StreamAgent(
         config=cfg,
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+        # t022/A39: pin jitter to full scale so the exact schedule is asserted.
+        jitter_source=lambda: 1.0,
     )
 
     agent_task = asyncio.create_task(agent.connect_and_run())
@@ -327,6 +331,8 @@ async def test_agent_heartbeat_10s_rhythm(unique_port, monkeypatch):
     agent = StreamAgent(
         config=cfg,
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+        # t022/A39: pin jitter to full scale so the exact schedule is asserted.
+        jitter_source=lambda: 1.0,
     )
 
     agent_task = asyncio.create_task(agent.connect_and_run())
@@ -480,6 +486,8 @@ async def test_agent_reconnect_backoff_on_disconnect(unique_port, monkeypatch):
     agent = StreamAgent(
         config=cfg,
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+        # t022/A39: pin jitter to full scale so the exact schedule is asserted.
+        jitter_source=lambda: 1.0,
     )
 
     agent_task = asyncio.create_task(agent.connect_and_run())
@@ -520,6 +528,8 @@ async def test_agent_backoff_resets_after_successful_registration(
     agent = StreamAgent(
         config=cfg,
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+        # t022/A39: pin jitter to full scale so the exact schedule is asserted.
+        jitter_source=lambda: 1.0,
     )
 
     agent_task = asyncio.create_task(agent.connect_and_run())
@@ -711,3 +721,85 @@ async def test_supervised_heartbeat_task_restarts_after_fatal_exit(monkeypatch):
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+def test_reconnect_backoff_jitter_scales_within_bounds():
+    """A39: jitter scales the scheduled delay into [50%, 100%]; the source
+    is injectable so the behavior is deterministically testable."""
+    low = ReconnectBackoff(jitter_source=lambda: 0.0)
+    assert low.step() == 0.5
+    high = ReconnectBackoff(jitter_source=lambda: 1.0)
+    assert high.step() == 1.0
+    mid = ReconnectBackoff(jitter_source=lambda: 0.5)
+    assert mid.step() == 0.75
+    # The cap is never exceeded even at the top of the schedule.
+    capped = ReconnectBackoff(jitter_source=lambda: 1.0)
+    for _ in range(10):
+        delay = capped.step()
+    assert delay == 30.0
+
+
+@pytest.mark.asyncio
+async def test_agent_stop_is_the_only_shutdown_and_is_idempotent(unique_port):
+    """A48: StreamAgent exposes no fire-and-forget close(); the awaitable
+    stop() fully drains and can be called repeatedly."""
+    cfg = StreamAgentConfig(
+        profile_id="profile_stop_test",
+        runtime_instance_id="inst_stop_01",
+        gateway_url=f"ws://127.0.0.1:{unique_port}",
+        agent_token="test_token_value_at_least_32_chars_long",
+        udp_mux_port=30006,
+        config_version=1,
+        selkies_version="2.1.0",
+    )
+    agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:1/upstream")
+    assert not hasattr(agent, "close")
+    await agent.stop()
+    await agent.stop()
+    assert agent.policy.is_running is False
+
+
+@pytest.mark.asyncio
+async def test_agent_stop_releases_viewers_detached_and_tasks(unique_port):
+    """A48/F009: stop() cancels and awaits the heartbeat, drains viewer
+    workers, and closes detached upstreams — not just flips a flag."""
+    cfg = StreamAgentConfig(
+        profile_id="profile_stop_depth",
+        runtime_instance_id="inst_stop_depth",
+        gateway_url=f"ws://127.0.0.1:{unique_port}",
+        agent_token="test_token_value_at_least_32_chars_long",
+        udp_mux_port=30006,
+        config_version=1,
+        selkies_version="2.1.0",
+    )
+    agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:1/upstream")
+
+    heartbeat = asyncio.create_task(asyncio.sleep(60))
+    agent._heartbeat_task = heartbeat
+    worker_task = asyncio.create_task(asyncio.sleep(60))
+    agent.viewer_workers["conn_1"] = ViewerWorkerEntry(
+        generation=1, task=worker_task, queue=asyncio.Queue()
+    )
+
+    closed: list[str] = []
+
+    class _FakeUpstream:
+        closed = False
+
+        async def close(self) -> None:
+            closed.append("upstream")
+
+    reader = asyncio.create_task(asyncio.sleep(60))
+    timer = asyncio.create_task(asyncio.sleep(60))
+    agent._detached_upstreams[("tab_1", "resume_1")] = DetachedUpstream(
+        upstream_ws=_FakeUpstream(), reader_task=reader, timer_task=timer
+    )
+
+    await agent.stop()
+
+    assert heartbeat.done() and agent._heartbeat_task is None
+    assert worker_task.done() and agent.viewer_workers == {}
+    assert agent._detached_upstreams == {}
+    assert reader.done() and timer.done()
+    assert closed == ["upstream"]
+    await agent.stop()  # still idempotent with everything drained

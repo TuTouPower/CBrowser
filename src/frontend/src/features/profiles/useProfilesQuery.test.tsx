@@ -6,11 +6,14 @@ import {
   useProfilesQuery,
   useProfileRuntimeQuery,
   useCreateProfileMutation,
-  useSetDesiredStateMutation,
   useProfileEventsSync,
   profileKeys,
 } from "./useProfilesQuery";
 import { ApiClient } from "../../shared/api/client";
+import {
+  DEFAULT_PROFILE_CREATE_VALUES,
+  type ProfileRuntimeResponse,
+} from "../../shared/api/types";
 import { ProfileEventsClient, type ProfileRuntimeEvent } from "../../shared/api/sse";
 
 describe("useProfilesQuery & SSE Sync", () => {
@@ -49,7 +52,18 @@ describe("useProfilesQuery & SSE Sync", () => {
         auto_launch: false,
         launch_args: [],
         extension_paths: [],
-        tags: ["work"],
+        human_preset: "default",
+        font_bundle: "none",
+        allow_3p_cookies: true,
+        set_google_default: true,
+        capture_preview: true,
+        restore_session: true,
+        transparent_proxy: false,
+        portable_cookies: false,
+        user_data_dir: "/data/p1",
+        sort_order: 0,
+        tags: [{ tag: "work" }],
+        current_config_version: 1,
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       },
@@ -61,9 +75,11 @@ describe("useProfilesQuery & SSE Sync", () => {
         profile_id: id,
         desired_state: "stopped",
         observed_state: "stopped",
+        runtime_instance_id: null,
         config_version: 1,
         failure_count: 0,
         restart_blocked: false,
+        last_exit_event_id: null,
         updated_at: "2026-01-01T00:00:00Z",
       };
     };
@@ -80,7 +96,18 @@ describe("useProfilesQuery & SSE Sync", () => {
       auto_launch: false,
       launch_args: [],
       extension_paths: [],
+      human_preset: "default",
+      font_bundle: "none",
+      allow_3p_cookies: true,
+      set_google_default: true,
+      capture_preview: true,
+      restore_session: true,
+      transparent_proxy: false,
+      portable_cookies: false,
+      user_data_dir: "/data/p2",
+      sort_order: 0,
       tags: [],
+      current_config_version: 1,
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
     });
@@ -88,9 +115,11 @@ describe("useProfilesQuery & SSE Sync", () => {
       profile_id: id,
       desired_state: state,
       observed_state: "starting",
+      runtime_instance_id: null,
       config_version: 1,
       failure_count: 0,
       restart_blocked: false,
+      last_exit_event_id: null,
       updated_at: "2026-01-01T00:00:00Z",
     });
 
@@ -117,7 +146,7 @@ describe("useProfilesQuery & SSE Sync", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toHaveLength(1);
-    expect(result.current.data?.[0].name).toBe("Profile 1");
+    expect(result.current.data?.[0]?.name).toBe("Profile 1");
   });
 
   it("creates a profile and invalidates the profiles cache", async () => {
@@ -132,7 +161,10 @@ describe("useProfilesQuery & SSE Sync", () => {
     await waitFor(() => expect(result.current.list.isSuccess).toBe(true));
 
     await act(async () => {
-      await result.current.create.mutateAsync({ name: "Created via Mutation" });
+      await result.current.create.mutateAsync({
+        ...DEFAULT_PROFILE_CREATE_VALUES,
+        name: "Created via Mutation",
+      });
     });
 
     await waitFor(() => expect(result.current.create.isSuccess).toBe(true));
@@ -162,6 +194,9 @@ describe("useProfilesQuery & SSE Sync", () => {
           desired_state: "running",
           observed_state: "running",
           runtime_instance_id: "inst-999",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-01-01T00:00:00Z",
         });
       }
     });
@@ -195,6 +230,9 @@ describe("useProfilesQuery & SSE Sync", () => {
           desired_state: "running",
           observed_state: "starting",
           runtime_instance_id: "inst-42",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-01-01T00:00:00Z",
         });
       }
     });
@@ -213,6 +251,9 @@ describe("useProfilesQuery & SSE Sync", () => {
           desired_state: "running",
           observed_state: "running",
           runtime_instance_id: "inst-1",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-01-01T00:00:00Z",
         });
       }
     });
@@ -220,5 +261,65 @@ describe("useProfilesQuery & SSE Sync", () => {
     // Events carry no config_version; inventing one would make the page report
     // pending display settings for a profile it never loaded.
     expect(queryClient.getQueryData(profileKeys.runtime("uncached"))).toBeUndefined();
+  });
+
+  it("merges search_defaults from runtime events into the cached runtime", async () => {
+    queryClient.setQueryData(profileKeys.runtime("p1"), {
+      profile_id: "p1",
+      desired_state: "running",
+      observed_state: "running",
+      runtime_instance_id: "inst-1",
+      config_version: 1,
+      failure_count: 0,
+      restart_blocked: false,
+      last_exit_event_id: null,
+      last_coordinator_error: null,
+      search_defaults: null,
+      updated_at: "2026-11-04T00:00:00Z",
+    });
+    renderHook(() => useProfileEventsSync(mockSseClient), { wrapper: createWrapper() });
+
+    const status = {
+      state: "failed" as const,
+      error_kind: "timeout",
+      runtime_instance_id: "inst-1",
+      request_id: null,
+      updated_at: "2026-11-04T00:01:00Z",
+    };
+    act(() => {
+      if (sseCallback) {
+        sseCallback({
+          profile_id: "p1",
+          desired_state: "running",
+          observed_state: "running",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-11-04T00:01:00Z",
+          search_defaults: status,
+        });
+      }
+    });
+    const merged = queryClient.getQueryData<ProfileRuntimeResponse>(
+      profileKeys.runtime("p1"),
+    );
+    expect(merged?.search_defaults).toEqual(status);
+
+    // An event without the field leaves the cached status untouched.
+    act(() => {
+      if (sseCallback) {
+        sseCallback({
+          profile_id: "p1",
+          desired_state: "running",
+          observed_state: "running",
+          failure_count: 0,
+          restart_blocked: false,
+          updated_at: "2026-11-04T00:02:00Z",
+        });
+      }
+    });
+    expect(
+      queryClient.getQueryData<ProfileRuntimeResponse>(profileKeys.runtime("p1"))
+        ?.search_defaults,
+    ).toEqual(status);
   });
 });

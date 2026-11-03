@@ -8,9 +8,11 @@ import importlib.metadata
 import json
 import logging
 import os
+import random
 import socket
 import sys
 import urllib.parse
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,16 +37,19 @@ from .policy import (
 )
 from .protocol import (
     MAX_STREAM_FRAME_SIZE,
+    MAX_TUNNEL_DATA_SIZE,
+    MAX_TUNNEL_ENVELOPE_SIZE,
     AgentAction,
     AgentHeartbeatPayload,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
+    serialize_tunnel_envelope,
 )
 
 logger = logging.getLogger("stream_agent.core")
 
-MAX_PAYLOAD_SIZE = 1024 * 1024
+MAX_PAYLOAD_SIZE = MAX_TUNNEL_DATA_SIZE
 IO_TIMEOUT = 10.0
 QUEUE_MAX_SIZE = 100
 HEARTBEAT_INTERVAL = 30.0
@@ -100,15 +105,22 @@ BACKOFF_SCHEDULE: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 
 
 class ReconnectBackoff:
-    """Manages reconnect backoff delay: 1, 2, 4, 8, 16, 30, 30... seconds."""
+    """Manages reconnect backoff delay: 1, 2, 4, 8, 16, 30, 30... seconds.
+
+    With a jitter source, each stepped delay is scaled into [50%, 100%] of
+    the scheduled value so fleets of Agents do not retry in lockstep; the
+    scheduled cap is never exceeded. Without a source the schedule is exact.
+    """
 
     def __init__(
         self,
         steps: tuple[float, ...] = BACKOFF_SCHEDULE,
         max_delay: float = 30.0,
+        jitter_source: Callable[[], float] | None = None,
     ):
         self.steps = steps
         self.max_delay = max_delay
+        self._jitter_source = jitter_source
         self._index = 0
 
     def current(self) -> float:
@@ -122,6 +134,9 @@ class ReconnectBackoff:
             self._index += 1
         else:
             self._index = len(self.steps) - 1
+        if self._jitter_source is not None:
+            fraction = min(1.0, max(0.0, self._jitter_source()))
+            delay = delay * (0.5 + 0.5 * fraction)
         return delay
 
     def reset(self) -> None:
@@ -181,6 +196,7 @@ class StreamAgent:
         policy_agent: LiveCapturePolicyAgent | None = None,
         upstream_url: str = "ws://127.0.0.1:18081",
         resume_grace_seconds: float = RESUME_GRACE_SECONDS,
+        jitter_source: Callable[[], float] | None = None,
     ):
         self.config = config
         self.policy = policy_agent or LiveCapturePolicyAgent(
@@ -200,7 +216,9 @@ class StreamAgent:
         self._detached_upstreams: dict[tuple[str, str], DetachedUpstream] = {}
         self._detached_generations: set[tuple[str, int]] = set()
         self._resume_grace_seconds = resume_grace_seconds
-        self._backoff = ReconnectBackoff()
+        self._backoff = ReconnectBackoff(
+            jitter_source=jitter_source if jitter_source is not None else random.random
+        )
         self.heartbeat_interval: float = 10.0
         self._heartbeat_task: asyncio.Task | None = None
         self._sleep_fn = asyncio.sleep
@@ -607,10 +625,13 @@ class StreamAgent:
     ) -> None:
         """Parses and validates incoming envelope models before any state mutation."""
         try:
-            # 1. Size boundary check before JSON parse
+            # 1. Envelope-layer budget check before JSON parse (A15): the
+            # serialized envelope — after JSON escaping — is what this peer
+            # accepts; the raw data budget is enforced by the model itself.
             raw_bytes = raw_data.encode("utf-8")
-            if len(raw_bytes) > MAX_PAYLOAD_SIZE:
-                logger.warning("Incoming envelope exceeded size limit")
+            if len(raw_bytes) > MAX_TUNNEL_ENVELOPE_SIZE:
+                logger.warning("Incoming envelope exceeded the shared budget")
+                await gw_ws.close(code=1009, message=b"Message too large")
                 return
 
             raw_dict = json.loads(raw_data)
@@ -720,7 +741,15 @@ class StreamAgent:
 
         if envelope.action == AgentAction.SUPERVISOR_QUOTA:
             quota = envelope.payload
-            self.policy.set_supervisor_quota(quota.max_fps_cap)
+            try:
+                self.policy.set_supervisor_quota(quota.max_fps_cap)
+            except ValueError:
+                # The payload model enforces the protocol FPS range; the
+                # policy range can be narrower (per-profile min/max), so a
+                # rejection here is a real outcome: log it, keep the old
+                # cap, and still reconcile with the unchanged state rather
+                # than silently skipping the reconcile.
+                logger.warning("Rejected out-of-rule supervisor quota")
             await self.policy.reconcile_capture_state(caller="supervisor_quota")
 
     async def _terminate_viewer(self, conn_id: str, caller: str = "close") -> None:
@@ -944,7 +973,7 @@ class StreamAgent:
                             data=msg.data,
                         )
                         await asyncio.wait_for(
-                            gw_ws.send_str(tunnel_msg.model_dump_json()),
+                            gw_ws.send_str(serialize_tunnel_envelope(tunnel_msg)),
                             timeout=IO_TIMEOUT,
                         )
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
@@ -982,10 +1011,16 @@ class StreamAgent:
             self._release_detached_upstream(upstream_ws)
 
     async def stop(self) -> None:
-        """Deterministic drain and shutdown of all workers, readers, WS, and policy."""
+        """Deterministic drain and shutdown of all workers, readers, WS, and policy.
+
+        The only shutdown entry point (t022 A48): cancels and awaits every
+        background task, releases viewers and detached upstreams, and is
+        safe to call repeatedly.
+        """
         self._running = False
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
+            await asyncio.gather(self._heartbeat_task, return_exceptions=True)
             self._heartbeat_task = None
         if self._gw_ws and not self._gw_ws.closed:
             try:
@@ -997,11 +1032,6 @@ class StreamAgent:
         await self._cleanup_all_viewers(caller="agent_stop", detach=False)
         await self._close_all_detached_upstreams()
         await self.policy.stop()
-
-    def close(self) -> None:
-        self._running = False
-        if self._gw_ws and not self._gw_ws.closed:
-            asyncio.create_task(self._gw_ws.close())
 
 
 def run_standalone_service() -> None:

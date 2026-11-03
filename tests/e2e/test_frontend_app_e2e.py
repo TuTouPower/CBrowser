@@ -668,6 +668,13 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
             isinstance(message, str) and message.startswith("r,")
             for message in datachannel_messages
         ), datachannel_messages
+        # Eviction-proof companion (t024 AC-018/A53): the probe's per-type
+        # counters survive the 500-entry rolling buffer, so the no-resize
+        # verdict does not depend on the buffer still holding the window.
+        datachannel_counts = await iframe_eval(
+            page_a, "window.__sentDataChannelCounts || {}"
+        )
+        assert datachannel_counts.get("r", 0) == 0, datachannel_counts
 
         # Both pages input into the same remote box (no lease / single controller).
         await prepare_remote_input(browser_container, target_id)
@@ -750,6 +757,15 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
                 "remote_video_size_after_second_resize": video_a2,
                 "first_frame_ms": first_frame_ms,
                 "input_to_remote_ms": input_latency_ms,
+                # Complete raw samples behind the budget verdicts in this
+                # run (t024 AC-018/A53): thresholds stay hard single-run
+                # limits (8000/3000ms); the samples are recorded so a
+                # failure shows the distribution, not just the verdict.
+                "perf_samples": {
+                    "first_frame_ms": [first_frame_ms],
+                    "input_to_remote_ms": [input_latency_ms],
+                },
+                "datachannel_counts": datachannel_counts,
                 "concurrent_remote_value": concurrent,
                 "mute_a": muted_a,
                 "unmuted_b": unmuted_b,
@@ -1210,5 +1226,120 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
                     await client_api.post(f"/api/v1/profiles/{profile_id}/stop")
             except Exception as exc:  # noqa: BLE001 - best-effort final stop cleanup
                 logger.debug("Final stop cleanup skipped: %s", type(exc).__name__)
+        await browser.close()
+        await pw.stop()
+
+
+# --------------------------------------------------------------------------- #
+# t019: ICE-lite session setup — host-only candidates, <=2s to first frame
+# --------------------------------------------------------------------------- #
+
+_ALL_CANDIDATES_SCRIPT = """async () => {
+    const SEL = 'iframe[data-testid="browser-session-iframe"]';
+    const f = document.querySelector(SEL);
+    if (!f || !f.contentWindow) return null;
+    const pcs = f.contentWindow.__pcs || [];
+    if (!pcs.length) return null;
+    const pc = pcs[pcs.length - 1];
+    const report = await pc.getStats();
+    const candidates = [];
+    for (const entry of report.values()) {
+        if (entry.type === 'local-candidate' || entry.type === 'remote-candidate') {
+            candidates.push({
+                kind: entry.type,
+                candidateType: entry.candidateType,
+                address: entry.address || entry.ip || null,
+                port: entry.port || null,
+                protocol: entry.protocol || null,
+            });
+        }
+    }
+    return { candidates, connectionState: pc.connectionState };
+}"""
+
+
+def _assert_host_only_candidates(
+    snapshot: dict[str, Any], udp_mux_port: int
+) -> None:
+    candidates = snapshot["candidates"]
+    assert candidates, "no ICE candidates reported"
+    for cand in candidates:
+        assert cand["candidateType"] == "host", cand
+    remote = [c for c in candidates if c["kind"] == "remote-candidate"]
+    assert remote, "no remote candidates reported"
+    for cand in remote:
+        assert cand["address"] == "127.0.0.1", cand
+        assert cand["protocol"] == "udp", cand
+        assert cand["port"] == udp_mux_port, cand
+
+
+@pytest.mark.asyncio
+async def test_t019_switch_and_refresh_first_frame_within_2s_host_only(
+    harness: FrontendAppTopologyHarness, tmp_path: Path
+) -> None:
+    """t019 AC-001/AC-002: with ICE-lite, a new session exposes only
+    127.0.0.1 host candidates and reaches first frame within 2 seconds,
+    both when switching profiles in the sidebar and when refreshing."""
+    pw, browser, context = await launch_browser()
+    try:
+        page_a = await context.new_page()
+        await ui_login(page_a, harness)
+        profile_a = await create_profile_via_ui(page_a, harness, "Ice Alpha")
+        profile_b = await create_profile_via_ui(page_a, harness, "Ice Beta")
+
+        await open_session(page_a, harness, profile_a)
+        await launch_profile_via_ui(page_a)
+        await wait_iframe_stats(page_a, name="A initial")
+
+        page_b = await context.new_page()
+        await open_session(page_b, harness, profile_b)
+        await launch_profile_via_ui(page_b)
+        await wait_iframe_stats(page_b, name="B initial")
+        await page_b.close()
+
+        # B's allocated UDP mux port, read from its Stream container env.
+        _, stream_container_b = harness.container_names(profile_b)
+        stream_box_b = harness.docker_client.containers.get(stream_container_b)
+        runtime_env_b = dict(
+            entry.split("=", 1) for entry in stream_box_b.attrs["Config"]["Env"]
+        )
+        udp_mux_port_b = int(runtime_env_b["CBROWSER_UDP_MUX_PORT"])
+
+        # Switch A -> B from the sidebar: new PeerConnection, first frame <= 2s.
+        switch_start = time.monotonic()
+        await page_a.click(f'[data-testid="profile-item-{profile_b}"]')
+        await page_a.wait_for_url(
+            re.compile(rf"\?profileId={profile_b}"), timeout=15000
+        )
+        await wait_iframe_stats(page_a, name="B after switch")
+        switch_elapsed = time.monotonic() - switch_start
+        assert switch_elapsed <= 2.0, f"switch to first frame took {switch_elapsed:.3f}s"
+        switch_candidates = await page_a.evaluate(_ALL_CANDIDATES_SCRIPT)
+        _assert_host_only_candidates(switch_candidates, udp_mux_port_b)
+
+        # Refresh rebuilds the session: same budget, same candidate set.
+        refresh_start = time.monotonic()
+        await page_a.reload(wait_until="domcontentloaded")
+        await wait_iframe_stats(page_a, name="B after refresh")
+        refresh_elapsed = time.monotonic() - refresh_start
+        assert refresh_elapsed <= 2.0, (
+            f"refresh to first frame took {refresh_elapsed:.3f}s"
+        )
+        refresh_candidates = await page_a.evaluate(_ALL_CANDIDATES_SCRIPT)
+        _assert_host_only_candidates(refresh_candidates, udp_mux_port_b)
+
+        _save(
+            tmp_path,
+            "t019_ice_lite",
+            {
+                "profile_a": profile_a,
+                "profile_b": profile_b,
+                "switch_first_frame_s": round(switch_elapsed, 3),
+                "refresh_first_frame_s": round(refresh_elapsed, 3),
+                "switch_candidates": switch_candidates,
+                "refresh_candidates": refresh_candidates,
+            },
+        )
+    finally:
         await browser.close()
         await pw.stop()

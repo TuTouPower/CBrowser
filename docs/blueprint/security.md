@@ -13,11 +13,15 @@
 - `POST /api/v1/auth/login` 成功后下发 `cbrowser_session`（`HttpOnly; Secure; SameSite=Strict; Path=/`）与非 HttpOnly 的 `cbrowser_csrf`，响应体返回 `csrf_token`。会话令牌为 32 字节随机值，库内只存 SHA-256，默认 12 小时过期；登出立即失效。失败登录按来源 5 次/分钟限速（429）。
 - 除 health、login 与内部服务路由外，`/api/v1` 全部需要有效会话。写方法另需 `X-CSRF-Token` 与会话绑定值一致，且 `Origin`（缺失时取 `Referer` 的 origin）属于 `CBROWSER_ALLOWED_ORIGINS`。该允许列表必须显式配置，为空时 API 启动失败。
 - Viewer 信令 WebSocket 在升级前由 Gateway 校验 Origin、经 API `viewer-authorize` 校验会话与 Profile；拒绝时不升级连接。master token 与 Selkies token 永不返回前端。
+- Origin 比较全链使用同一规范化（`cbrowser.gateway.endpoint.normalize_origin`，t021）：Gateway 入口归一化后，API 侧 `authorize_viewer` 对入参与允许列表同样归一化再比对，尾斜杠/默认端口/大小写变体不产生假拒绝，畸形 Origin 归为 `invalid_origin`；CSRF 来源校验对畸形 `Referer`（如非法 IPv6 字面量）返回 403 而非 500。
+- 内部服务未配置时返回 503 `service_not_configured`（`retryable=false`），与数据库忙的 `database_busy`（`retryable=true`）严格区分（t021）：Supervisor/Gateway/Artifact 三个内部面经同一 `ServiceNotConfiguredError` 通道。OpenAPI 按路径标注真实服务身份：`/internal/supervisor*`（含 Artifact 面）为 `SupervisorServiceBearer`、`/internal/gateway*` 为 `GatewayServiceBearer`，两把令牌互不通用。
+- 密码校验（含哑元校验与 bootstrap 哈希）在线程池执行（t021），慢哈希不阻塞事件循环，限速顺序与失败行为不变。
 
 ## 自动化凭证
 
 - CDP 自动化使用独立 Bearer 凭证（`cbat_` 前缀，创建时只显示一次），库内只存 SHA-256，绑定可访问的 Profile 列表，可撤销。合法非浏览器客户端可不带 Origin，但必须通过该凭证与 Profile 授权；登录 Cookie 不能当自动化凭证。
 - 创建、撤销与授权拒绝写入审计表，审计详情不含令牌明文或哈希。
+- 授权审计覆盖全部拒绝类别并带 reason 与来源（t021）：已知令牌的拒绝（吊销/过期/Profile 未授权/Profile 不存在）逐条记录；未知/非法令牌（在线猜测路径）按 `(reason, source)` 聚合为有界计数行，不存令牌或其哈希，重复猜测只增计数不增行。限速失败记录只按时间窗衰减，成功授权不清除任何失败记录。
 
 ## 服务间与媒体凭证
 

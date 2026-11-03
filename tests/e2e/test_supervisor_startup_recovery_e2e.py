@@ -17,8 +17,11 @@ Case 3: Native exit priority with local HTTP proxy
   proxy causes the first POST /runtimes/events to return 503, queuing the event in
   spool while registering the native exit tuple in Core.has_native_exit.
   Subsequent tick() must NOT synthesize an abnormal Docker or missing exit ahead of it.
-  Once the proxy allows normal forwarding, spool replay delivers the normal exit,
-  converging the profile runtime to stopped with no restart.
+  Once the proxy allows normal forwarding, spool replay persists the native-exit
+  event as a diagnostic only: disk events never converge lifecycle state, so the
+  bound runtime is left untouched (no convergence to stopped, observed_state and
+  last_exit_event_id unchanged) and missing-runtime synthesis stays suppressed
+  while a native exit is registered.
 """
 
 from __future__ import annotations

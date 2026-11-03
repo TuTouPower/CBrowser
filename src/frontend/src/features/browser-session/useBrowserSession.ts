@@ -27,6 +27,11 @@ export function useBrowserSession(
   options: UseBrowserSessionOptions = {}
 ) {
   const { t } = useI18n();
+  // Effects always read the latest translator through this ref. Depending
+  // on the t function identity instead would re-run the runtime check (and
+  // reset an already connected session) whenever the language changes (A17).
+  const tRef = useRef(t);
+  tRef.current = t;
   const [stage, setStage] = useState<SessionStage>(
     options.initialStage || "checking_runtime"
   );
@@ -136,18 +141,18 @@ export function useBrowserSession(
         if (observed === "stopping") {
           setStage("stopping");
           setErrorMessage(null);
-        } else if (observed === "error" || observed === "failed") {
+        } else if (observed === "error") {
           setStage("error");
           setErrorMessage(
-            t("runtimeReportedError", {
-              state: observed || t("runtimeStateUnknown"),
+            tRef.current("runtimeReportedError", {
+              state: observed || tRef.current("runtimeStateUnknown"),
             })
           );
-        } else if (observed !== "running" && observed !== "ready") {
+        } else if (observed !== "running") {
           setStage("runtime_not_ready");
           setErrorMessage(
-            t("runtimeNotRunning", {
-              state: observed || t("runtimeStateUnknown"),
+            tRef.current("runtimeNotRunning", {
+              state: observed || tRef.current("runtimeStateUnknown"),
             })
           );
         } else {
@@ -164,9 +169,9 @@ export function useBrowserSession(
             ? `${err.status} ${err.message}`
             : err instanceof Error && err.message
               ? err.message
-              : t("runtimeStateUnknown");
+              : tRef.current("runtimeStateUnknown");
         setStage("runtime_not_ready");
-        setErrorMessage(t("runtimeCheckUnavailable", { reason }));
+        setErrorMessage(tRef.current("runtimeCheckUnavailable", { reason }));
       }
     };
 
@@ -180,7 +185,6 @@ export function useBrowserSession(
     options.apiClient,
     options.initialStage,
     reloadKey,
-    t,
   ]);
 
   // Handle postMessage events from iframe adapter
@@ -219,13 +223,13 @@ export function useBrowserSession(
             iceDisconnectTimerRef.current = null;
           }
           setStage("ice_failed");
-          setErrorMessage(t("iceConnectivityCheckFailed"));
+          setErrorMessage(tRef.current("iceConnectivityCheckFailed"));
         } else if (disconnected) {
           if (!iceDisconnectTimerRef.current) {
             iceDisconnectTimerRef.current = setTimeout(() => {
               iceDisconnectTimerRef.current = null;
               setStage("ice_failed");
-              setErrorMessage(t("iceConnectivityLost"));
+              setErrorMessage(tRef.current("iceConnectivityLost"));
             }, options.iceDisconnectGraceMs ?? DEFAULT_ICE_DISCONNECT_GRACE_MS);
           }
         } else if (
@@ -237,7 +241,7 @@ export function useBrowserSession(
       } else if (type === "CBROWSER_WEB_LOCKS_UNAVAILABLE") {
         webLocksUnavailableRef.current = true;
         setStage("web_locks_unavailable");
-        setErrorMessage(t("webLocksUnavailable"));
+        setErrorMessage(tRef.current("webLocksUnavailable"));
       } else if (type === "CBROWSER_WS_CLOSE") {
         if (webLocksUnavailableRef.current) {
           return;
@@ -265,7 +269,7 @@ export function useBrowserSession(
             }, 5000);
           } else {
             setStage("signaling_failed");
-            setErrorMessage(t("signalingDisconnected", { code }));
+            setErrorMessage(tRef.current("signalingDisconnected", { code }));
           }
         }
       } else if (type === "CBROWSER_LIFECYCLE_STALE") {
@@ -280,7 +284,7 @@ export function useBrowserSession(
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [reconnect, iframeRef, options.iceDisconnectGraceMs, t]);
+  }, [reconnect, iframeRef, options.iceDisconnectGraceMs]);
 
   // Once the session is live, align the official audio pipeline with this page's
   // own mute state (START_AUDIO/STOP_AUDIO), never with another page.
@@ -380,7 +384,7 @@ export function useBrowserSession(
           setStage((curr) =>
             curr === "media_waiting" ? "media_no_frames" : curr
           );
-          setErrorMessage(t("mediaFramesTimeout"));
+          setErrorMessage(tRef.current("mediaFramesTimeout"));
         }
       }, timeoutMs);
 
@@ -390,7 +394,7 @@ export function useBrowserSession(
         }
       };
     }
-  }, [stage, options.mediaTimeoutMs, t]);
+  }, [stage, options.mediaTimeoutMs]);
 
   // Page Lifecycle & bfcache reactivation (AC-007)
   useEffect(() => {

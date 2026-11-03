@@ -142,13 +142,20 @@ sys.stdout.write(json.dumps(result))
         )
         assert after["tcp_response"] == "PONG"
         assert after["echo_ok"] is False
+        # Zero-leak assertion runs on the live client (t024 AC-011/A33):
+        # after the finally block closes it, this check could not run.
+        for container in reversed(created):
+            container.remove(force=True)
+        created.clear()
+        if network is not None:
+            network.remove()
+            network = None
+        assert not client.containers.list(
+            all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
+        )
     finally:
         for container in reversed(created):
             container.remove(force=True)
         if network is not None:
             network.remove()
         client.close()
-
-    assert not client.containers.list(
-        all=True, filters={"label": "com.cbrowser.prefix=" + prefix}
-    )

@@ -15,6 +15,7 @@ project_configured
 3. **前端测试基线与 Node 26 环境标记**：
     - 在 Node v26+ 环境下，运行前端测试因 Node 默认开启的实验性 WebStorage 会在 `localStorage.getItem` 处抛出异常（参见 d001，直接运行会导致大量失败）；
     - 运行前端测试必须显式设置环境变量：`NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend`，通过数量以实际输出为准；
+    - `npm test` 内含 `test:types` 前置门禁：`tsconfig.test.json` 以与生产相同的严格选项（含 `noUncheckedIndexedAccess`）检查全部测试文件（node 内置模块类型来自 devDependency `@types/node`）；测试夹具、桩与事件字面量必须满足生成类型的完整线形状，不完整或名实不符的测试在该门禁下直接失败；
     - 严格禁止在业务代码或测试中就地弱化断言，禁止引入隐式不可见的环境改动；
 4. **容器黑盒与健康检查**：通过 curl 检查运行中的容器健康探针 `http://127.0.0.1:56661/api/health`，并支持通过 ego-browser 执行端到端网页交互自动化验证；
 5. **专项运行时技术验证探针规范**：
@@ -25,6 +26,8 @@ project_configured
     - 运行硬件基准：MacBook Pro M1 Max（10核 CPU，64 GiB 统一内存，macOS 26.5.2，arm64），OrbStack Docker 引擎（10 CPU，~15.66 GiB 内存配额，CPU 纯软件编码无 GPU 预算）；
     - 公网候选可达性与原生 Linux x86_64 环境验证正式记为 `NOT_RUN / USER_WAIVED`（用户明确指示豁免）；
     - 后续第 19 章 10 并发流容量、8 小时稳定性及 1000 次 IME/剪贴板压力测试属于后续任务验收范围，本文不做虚假的 P95 性能承诺。
+
+- t022 故障矩阵（本机已验，真实环境义务见 p024）：CDP rearm ACK 分类、事件投递三态与死信游标、生命周期冲突真实 HTTP 三态、双族网络策略失败 DROP 兜底、注册双预算（429/窗口恢复/在途释放/网关重启）、SSE 快照私有化与基点交接并发、缓存代次封存与篡改重验、Selkies ABI 适配层契约、配额严格拒绝与 stop 幂等、search-defaults 路由与围栏映射。真实 Docker/Chrome 拓扑、keymap 真实调用顺序与多 Agent 集群恢复为黑盒条款，按用户豁免口径跳过并立 p024 追踪，不以本机替代验证冒充真实运行证据。
 
 ## doctor_cmd
 
@@ -62,7 +65,16 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 # 统一入口：scripts/run_gates.sh；E2E 使用 CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 ```
 
+会话建立时延与候选类型（t019）：真实 Chrome 黑盒须断言新建会话的 ICE 候选集仅含 `host` 类型、远端候选地址恒为 `127.0.0.1`（不出现 `srflx`/`relay`/`prflx`），且侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均不超过 2 秒；用例在 `tests/e2e/test_frontend_app_e2e.py`（`test_t019_switch_and_refresh_first_frame_within_2s_host_only`），经 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 执行。Stream entrypoint 的 ICE-lite 启动参数由 unit 门禁 `tests/unit/test_stream_ice_config.py` 守护，防止回退 Selkies 默认外部 STUN/TURN。
+
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。
+
+## 门禁依赖与证据完整性（t024）
+
+- 门禁依赖由 `scripts/gate-requirements.txt` 全量锁定（pin 到具体版本），`scripts/run_gates.sh` 以固定 Python 3.12 建单一 venv 从锁安装后依次执行契约/unit/integration/前端/构建，不再运行时临时解析未 pin 的包组；锁的再生成命令写在该文件头部。
+- 前端构建戳为 v2 格式：必需输入（index.html、package.json、package-lock.json）缺失拒绝生成；配置五件套的 present/absent、src/ 与 public/ 全量文件哈希、声明的环境值（allowlist）共同决定新鲜度；所有实际消费 dist 的探针（浏览器 harness、frontend probe、E2E collection 钩子）在复制/托管前校验，dist 存在即校验、与测试文件命名无关。
+- 测试等待统一走 `tests/fixtures/wait.py` 的 deadline + 最后观测助手；时间敏感逻辑用注入 clock，不 patch 标准库 time 模块对象。共享 Docker 替身在 `tests/fixtures/docker_doubles.py`，与真实 DockerAdapter 的命名/集合契约由 `tests/unit/test_docker_doubles_contract.py` 对照。
+- E2E 证据目录每次运行私有（mkdtemp），证据脱敏覆盖 token/secret/password/cookie/resume_key/session；性能预算保持原硬阈值（首帧 8000ms、输入 3000ms、SQLite busy_timeout 原上界），证据记录完整样本而非仅判定。
 
 ## 专项技术验证探针
 
@@ -91,6 +103,13 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 - 验证命令：`scripts/run_gates.sh` 的 unit 层运行 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；integration 层使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。OpenAPI 变更后必须 `npm run generate:api --prefix src/frontend` 重生成 `src/frontend/src/shared/api/generated/cbrowser_v1.d.ts`，禁止手写补充类型。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
+- 协议 schema 文档（t021）：`schemas/runtime/*.json` 与 `schemas/stream/*.json` 统一为「`$defs` 规范定义 + `messages` 按名索引（`$id` + `$ref`）+ 文档 `version`」约定，不再有顶层 `anyOf`；三个导出脚本（`export_supervisor_protocol.py`、`export_runtime_agent_protocol.py`、`export_stream_protocol.py`）同形生成，测试按消息入口逐条校验报文，不得退回整文档 union 校验。
+
+## 契约行为验证要求（t021）
+
+- 控制 API 与文件交换的验收必须走真实入口：内部面用真实 HTTP（服务令牌矩阵、未配置 503），协议用导出文档的消息入口逐条校验，文件用例覆盖故障注入（删除中途失败后意图保留、跨重启续跑）与幂等重放（同 operation_id 并发/删后重放）。
+- 密码等慢操作须有事件循环不阻塞探针（慢哈希期间 ticker 推进断言），不接受仅测返回值的覆盖。
+- 政策变更类断言（如内容类型由拒绝改为放行）必须整体替换旧测试并在测试内注明裁决来源，禁止就地把旧预期改成实现输出。
 
 ## 门禁类别清单
 

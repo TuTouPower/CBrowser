@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,7 +18,12 @@ DIST_DIR = FRONTEND_DIR / "dist"
 
 
 def ensure_frontend_build() -> Path:
-    """Ensures Vite production build exists and is up to date."""
+    """Ensures the Vite production build exists and is up to date.
+
+    Existence alone is not enough: after ensuring a build is present, the
+    build stamp is verified against the current source tree and a stale or
+    unstamped dist fails loudly instead of being served (t024 AC-003/A24).
+    """
     if (
         not (DIST_DIR / "index.html").is_file()
         or not (DIST_DIR / "selkies").is_dir()
@@ -29,6 +35,13 @@ def ensure_frontend_build() -> Path:
             check=True,
             cwd=str(REPO_ROOT),
         )
+    import sys
+
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from scripts.verify_frontend_dist import verify_frontend_build_freshness
+
+    verify_frontend_build_freshness(DIST_DIR, FRONTEND_DIR)
     return DIST_DIR
 
 
@@ -51,8 +64,10 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
         if item.is_file() and item.name not in ("index.html", "session.js"):
             shutil.copy2(item, dest_dir / item.name)
 
-    # 2. Bundle host entry with esbuild from src/frontend
-    entry_tsx_path = "src/features/browser-session/host_entry.tsx"
+    # 2. Bundle host entry with esbuild from src/frontend. The entry lives
+    # in this fixture directory (test-only), so bare package imports resolve
+    # through NODE_PATH pointing at the frontend's node_modules.
+    entry_tsx_path = "../../tests/fixtures/frontend_probe/host_entry.tsx"
     out_bundle_path = dest_dir / "session.js"
     cmd = [
         "npx",
@@ -62,7 +77,12 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
         "--format=esm",
         f"--outfile={out_bundle_path}",
     ]
-    subprocess.run(cmd, check=True, cwd=str(FRONTEND_DIR))
+    env = dict(os.environ)
+    node_modules = str(FRONTEND_DIR / "node_modules")
+    env["NODE_PATH"] = (
+        f"{node_modules}{os.pathsep}{env['NODE_PATH']}" if env.get("NODE_PATH") else node_modules
+    )
+    subprocess.run(cmd, check=True, cwd=str(FRONTEND_DIR), env=env)
 
     # 3. Find CSS file
     css_files = list((dest_dir / "assets").glob("*.css"))

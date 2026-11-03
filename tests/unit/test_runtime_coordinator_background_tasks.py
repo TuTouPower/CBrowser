@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from wait import wait_until
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
@@ -45,10 +46,12 @@ async def test_publish_change_later_tracks_task_and_logs_failure(
     coordinator.publish_profile_change_later(profile.id)
 
     assert coordinator.publish_task_count == 1
-    for _ in range(100):
-        if not coordinator._publish_tasks:
-            break
-        await asyncio.sleep(0.01)
+    await wait_until(
+        lambda: not coordinator._publish_tasks,
+        timeout=5.0,
+        interval=0.01,
+        description="background publish tasks to drain",
+    )
 
     assert attempts == [profile.id]
     assert coordinator.publish_task_count == 0

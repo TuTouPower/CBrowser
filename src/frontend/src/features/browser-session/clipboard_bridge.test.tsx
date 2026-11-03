@@ -3,7 +3,6 @@ import "@testing-library/jest-dom/vitest";
 import { render } from "@testing-library/react";
 import { I18nProvider } from "../../i18n";
 import { ClipboardPermissionHint } from "./ClipboardPermissionHint";
-import { readClipboardPermission } from "./clipboard_bridge";
 
 function mockPermissions(states: Record<string, string>) {
   Object.defineProperty(navigator, "permissions", {
@@ -23,15 +22,9 @@ describe("clipboard bridge", () => {
     delete navigator.permissions;
   });
 
-  it("reports denied when either clipboard permission is denied", async () => {
-    mockPermissions({ "clipboard-read": "granted", "clipboard-write": "denied" });
-    await expect(readClipboardPermission()).resolves.toBe("denied");
-  });
-
-  it("reports granted only when both directions are granted", async () => {
-    mockPermissions({ "clipboard-read": "granted", "clipboard-write": "granted" });
-    await expect(readClipboardPermission()).resolves.toBe("granted");
-  });
+  // The one-shot readClipboardPermission export was deleted (A49): it had
+  // no production consumer — the hint below exercises the live
+  // watchClipboardPermission path instead.
 
   it("shows a prompt hint before the user grants access", async () => {
     mockPermissions({ "clipboard-read": "prompt", "clipboard-write": "granted" });

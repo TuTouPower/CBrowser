@@ -457,11 +457,24 @@ async def test_wal_reader_parallelism_while_write_lock_held(
     fetched = await repo.get_profile(p.id)
     elapsed = time.time() - t0
 
+    # The write lock must still be held now (t024 AC-007/A28): the reader
+    # returned while the writer lock was in force, which is the structural
+    # proof it never blocked on it.  A second immediate writer must fail.
+    probe_conn = sqlite3.connect(str(temp_db_path), timeout=0.1)
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            probe_conn.execute("BEGIN IMMEDIATE;")
+    finally:
+        probe_conn.close()
+
     ext_conn.rollback()
     ext_conn.close()
 
     assert fetched is not None
     assert fetched.config.name == "Parallel Read Profile"
+    # Original promptness bound (restored verbatim at review): the
+    # structural proof above is the primary evidence; this bound keeps a
+    # near-budget stall from passing as "prompt".
     assert elapsed < 1.0, f"Reader blocked on writer! Elapsed: {elapsed:.2f}s"
 
 

@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "../features/auth/useAuth";
 import { I18nProvider } from "../i18n";
 import { defaultApiClient, ApiClient, shouldRetryRequest } from "../shared/api/client";
+import { ApiClientContext } from "../shared/api/client_context";
 import { defaultSseClient, ProfileEventsClient } from "../shared/api/sse";
 import { useProfileEventsSync } from "../features/profiles/useProfilesQuery";
 
@@ -62,10 +63,12 @@ export function AppProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <AuthProvider client={apiClient}>
-          <AuthenticatedSseBridge sseClient={sseClient} />
-          {children}
-        </AuthProvider>
+        <ApiClientContext.Provider value={apiClient}>
+          <AuthProvider client={apiClient}>
+            <AuthenticatedSseBridge sseClient={sseClient} />
+            {children}
+          </AuthProvider>
+        </ApiClientContext.Provider>
       </I18nProvider>
     </QueryClientProvider>
   );

@@ -186,6 +186,11 @@ export SELKIES_MANUAL_HEIGHT="$SCREEN_HEIGHT"
 export SELKIES_FRAMERATE="8,8-30"
 export SELKIES_VIDEO_STREAMING_MODE=false
 export SELKIES_WEBRTC_UDP_MUX_PORT="${CBROWSER_UDP_MUX_PORT:-30006}"
+# ADR 013 / t019: same-machine media uses only 127.0.0.1 host candidates.
+# ICE-lite keeps Selkies from falling back to its default external
+# STUN/TURN (OpenRelay), whose allocation timeout stalled every new
+# PeerConnection for ~5s.
+export SELKIES_WEBRTC_ICE_LITE=true
 export SELKIES_WEBRTC_PUBLIC_IP="$SELKIES_WEBRTC_PUBLIC_IP"
 export SELKIES_AUDIO_DEVICE_NAME="${CBROWSER_AUDIO_DEVICE:-cbrowser_sink.monitor}"
 export SELKIES_PORT="${SELKIES_PORT:-18081}"
@@ -208,6 +213,7 @@ exec python3 -m cbrowser.stream_agent.agent \
   --manual-height "$SCREEN_HEIGHT" \
   --audio-device-name "$SELKIES_AUDIO_DEVICE_NAME" \
   --webrtc-udp-mux-port "$SELKIES_WEBRTC_UDP_MUX_PORT" \
+  --webrtc-ice-lite \
   --webrtc-public-ip "$SELKIES_WEBRTC_PUBLIC_IP" \
   --addr 127.0.0.1 \
   --port "$SELKIES_PORT" \

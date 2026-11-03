@@ -5,6 +5,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY tests/fixtures/runtime_probe/test_mitshm.c /tmp/test_mitshm.c
 RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /test_mitshm
 
+FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS font_bundle_builder
+# Stage the two open-source WenQuanYi CJK bundles (t020). Only the .ttc
+# payloads are copied into the final image, under /opt/cbrowser-fonts which
+# is outside fontconfig's default scan paths: a profile sees a bundle only
+# when the Browser Runner generates a per-profile FONTCONFIG_FILE for it.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fonts-wqy-microhei fonts-wqy-zenhei && rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /opt/cbrowser-fonts/wqy-microhei /opt/cbrowser-fonts/wqy-zenhei && \
+    cp /usr/share/fonts/truetype/wqy/wqy-microhei.ttc /opt/cbrowser-fonts/wqy-microhei/ && \
+    cp /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc /opt/cbrowser-fonts/wqy-zenhei/
+
 FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -87,6 +98,7 @@ ENV HOME=/home/cbrowser \
 COPY src/backend/cbrowser /app/src/backend/cbrowser
 COPY config/docker/browser_runtime/entrypoint.sh /app/entrypoint.sh
 COPY --from=xshm_probe_builder /test_mitshm /usr/local/bin/test_mitshm
+COPY --from=font_bundle_builder /opt/cbrowser-fonts /opt/cbrowser-fonts
 
 USER root
 RUN chmod 755 /usr/local/bin/test_mitshm /app/entrypoint.sh && \

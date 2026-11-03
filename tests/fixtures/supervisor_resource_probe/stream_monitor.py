@@ -6,6 +6,11 @@ import time
 from dataclasses import asdict, is_dataclass
 
 import docker
+from cbrowser.stream_agent.protocol import (
+    AgentAction,
+    GatewayControlEnvelope,
+    SupervisorQuotaPayload,
+)
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.resource_policy import (
     ResourcePolicyConfig,
@@ -30,20 +35,25 @@ async def verify_stream_cpu_policy(
     deliveries = []
 
     async def send_quota(current, decision):
+        # The gateway here is the stream suite's in-process mock: its
+        # registries are the connection table this delivery must use.
+        # The wire message itself is built with the PRODUCTION protocol
+        # type (t024 AC-004/A25) — the same GatewayControlEnvelope the
+        # real gateway constructs in gateway/server.py — so a protocol
+        # change breaks this probe instead of silently drifting.
         session, socket = gateway.registered_agents[current.profile_id]
         assert (
             gateway.agent_instances[current.profile_id] == current.runtime_instance_id
         )
-        await socket.send_json(
-            {
-                "version": "v2",
-                "action": "supervisor_quota",
-                "profile_id": current.profile_id,
-                "runtime_instance_id": current.runtime_instance_id,
-                "agent_session_id": session,
-                "payload": {"max_fps_cap": decision.max_fps_cap},
-            }
+        envelope = GatewayControlEnvelope(
+            version="v2",
+            action=AgentAction.SUPERVISOR_QUOTA,
+            profile_id=current.profile_id,
+            runtime_instance_id=current.runtime_instance_id,
+            agent_session_id=session,
+            payload=SupervisorQuotaPayload(max_fps_cap=decision.max_fps_cap),
         )
+        await socket.send_json(envelope.model_dump(mode="json"))
         deliveries.append(asdict(decision))
 
     policy = ResourcePolicyService(

@@ -22,13 +22,21 @@ async def wait_until(
     interval: float = 0.1,
     description: str = "condition",
 ) -> None:
-    """Poll a synchronous predicate until it is truthy or the deadline expires."""
+    """Poll a synchronous predicate until it is truthy or the deadline expires.
+
+    The predicate's last return value is included in the timeout error as
+    the last observation (same diagnosis contract as poll_until).
+    """
     deadline = time.monotonic() + timeout
+    last: Any = None
     while time.monotonic() < deadline:
-        if predicate():
+        last = predicate()
+        if last:
             return
         await asyncio.sleep(interval)
-    raise TimeoutError(f"Timed out after {timeout:g}s waiting for {description}")
+    raise TimeoutError(
+        f"Timed out after {timeout:g}s waiting for {description}: last={last!r}"
+    )
 
 
 async def poll_until(
@@ -85,8 +93,12 @@ def wait_until_sync(
 ) -> None:
     """Poll a synchronous predicate from synchronous tests."""
     deadline = time.monotonic() + timeout
+    last: Any = None
     while time.monotonic() < deadline:
-        if predicate():
+        last = predicate()
+        if last:
             return
         time.sleep(interval)
-    raise TimeoutError(f"Timed out after {timeout:g}s waiting for {description}")
+    raise TimeoutError(
+        f"Timed out after {timeout:g}s waiting for {description}: last={last!r}"
+    )

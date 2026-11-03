@@ -22,6 +22,7 @@ def generate_fingerprint_seed() -> int:
 DesiredState = Literal["stopped", "running"]
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
 RuntimeEventType = Literal["exit", "heartbeat", "lifecycle"]
+FontBundle = Literal["none", "wqy-microhei", "wqy-zenhei"]
 
 
 class ErrorResponse(BaseModel):
@@ -68,6 +69,7 @@ class ProfileConfig(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    font_bundle: FontBundle = "none"
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -85,6 +87,19 @@ class ProfileConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Profile name cannot be blank")
         return v.strip()
+
+    @field_validator("font_bundle", mode="before")
+    @classmethod
+    def validate_font_bundle(cls, v: Any) -> Any:
+        if v is None:
+            raise ValueError("font_bundle cannot be null")
+        return v
+
+    @field_validator("launch_args", "extension_paths", mode="before")
+    @classmethod
+    def coerce_null_lists(cls, v: Any) -> Any:
+        # PATCH tri-state: an explicit null list clears the stored value.
+        return [] if v is None else v
 
     @field_validator("launch_args")
     @classmethod
@@ -155,6 +170,7 @@ class Artifact(BaseModel):
     picker_name: str | None = None
     sha256: str | None = None
     storage_path: str | None = None
+    delete_requested_at: str | None = None
     created_at: str
 
 
@@ -268,6 +284,7 @@ class ProfileCreateRequest(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    font_bundle: FontBundle = "none"
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -320,6 +337,7 @@ class ProfileUpdateRequest(BaseModel):
     clipboard_sync: bool | None = None
     auto_launch: bool | None = None
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
+    font_bundle: FontBundle | None = None
     launch_args: list[str] | None = None
     extension_paths: list[str] | None = None
     allow_3p_cookies: bool | None = None
@@ -346,18 +364,18 @@ class ProfileUpdateRequest(BaseModel):
             raise ValueError("name cannot be blank")
         return v.strip() if v is not None else None
 
-    @field_validator("launch_args")
-    @classmethod
-    def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
-        # Older rows may contain arguments outside the current whitelist; they
-        # are dropped on read. New API writes are validated by request DTOs.
-        return filter_launch_args(v)
-
     @field_validator("gpu_family", mode="before")
     @classmethod
     def reject_null_gpu_family(cls, value: object) -> object:
         if value is None:
             raise ValueError("gpu_family cannot be null")
+        return value
+
+    @field_validator("font_bundle", mode="before")
+    @classmethod
+    def reject_null_font_bundle(cls, value: object) -> object:
+        if value is None:
+            raise ValueError("font_bundle cannot be null")
         return value
 
     @field_validator("screen_width", "screen_height", mode="before")
@@ -384,6 +402,7 @@ class ProfileResponse(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: str | None = None
+    font_bundle: str = "none"
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -419,6 +438,7 @@ class ProfileResponse(BaseModel):
             clipboard_sync=cfg.clipboard_sync,
             auto_launch=cfg.auto_launch,
             color_scheme=cfg.color_scheme,
+            font_bundle=cfg.font_bundle,
             launch_args=cfg.launch_args,
             extension_paths=cfg.extension_paths,
             allow_3p_cookies=cfg.allow_3p_cookies,
@@ -446,27 +466,46 @@ class ConfigVersionResponse(BaseModel):
     created_at: str
 
 
+class SearchDefaultsStatusData(BaseModel):
+    """API view of the runtime agent's search-defaults outcome (t022 A55).
+
+    Mirrors the runtime agent protocol model; kept independent of browser
+    readiness: a failed initialization is reported here, never as a
+    runtime failure.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    state: Literal["applied", "failed", "disabled", "pending"]
+    error_kind: str | None = Field(default=None, max_length=64)
+    runtime_instance_id: str
+    request_id: str | None = Field(default=None, max_length=128)
+    updated_at: str
+
+
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
-    desired_state: str
-    observed_state: str
+    desired_state: DesiredState
+    observed_state: ObservedState
     runtime_instance_id: str | None
     config_version: int
     failure_count: int
     restart_blocked: bool
     last_exit_event_id: str | None
     last_coordinator_error: str | None = None
+    search_defaults: SearchDefaultsStatusData | None = None
     updated_at: str
 
 
 class ProfileRuntimeStatusEvent(BaseModel):
     profile_id: str
-    desired_state: str
-    observed_state: str
+    desired_state: DesiredState
+    observed_state: ObservedState
     runtime_instance_id: str | None = None
     failure_count: int = 0
     restart_blocked: bool = False
     last_coordinator_error: str | None = None
+    search_defaults: SearchDefaultsStatusData | None = None
     updated_at: str
 
 

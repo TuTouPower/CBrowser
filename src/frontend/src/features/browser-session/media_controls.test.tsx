@@ -30,9 +30,11 @@ describe("per-page audio mute via official Selkies pipelineControl", () => {
 
     postMessage.mockClear();
     fireEvent.click(button);
+    // The target origin is pinned to this page's own origin (A22): a bare
+    // expect.any(String) would also accept "*" or a foreign origin.
     expect(postMessage).toHaveBeenCalledWith(
       { type: "pipelineControl", pipeline: "audio", enabled: false },
-      expect.any(String)
+      window.location.origin
     );
     expect(button.getAttribute("data-audio-muted")).toBe("true");
 
@@ -40,7 +42,7 @@ describe("per-page audio mute via official Selkies pipelineControl", () => {
     fireEvent.click(button);
     expect(postMessage).toHaveBeenCalledWith(
       { type: "pipelineControl", pipeline: "audio", enabled: true },
-      expect.any(String)
+      window.location.origin
     );
     expect(button.getAttribute("data-audio-muted")).toBe("false");
   });
@@ -55,9 +57,9 @@ describe("per-page audio mute via official Selkies pipelineControl", () => {
     const buttons = screen.getAllByTestId("session-audio-toggle-btn");
     expect(buttons).toHaveLength(2);
 
-    fireEvent.click(buttons[0]);
-    expect(buttons[0].getAttribute("data-audio-muted")).toBe("true");
-    expect(buttons[1].getAttribute("data-audio-muted")).toBe("false");
+    fireEvent.click(buttons[0]!);
+    expect(buttons[0]?.getAttribute("data-audio-muted")).toBe("true");
+    expect(buttons[1]?.getAttribute("data-audio-muted")).toBe("false");
   });
 });
 

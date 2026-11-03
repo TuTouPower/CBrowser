@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { ApiClient, ApiError } from "./client";
+import { ApiClient, ApiError, shouldRetryRequest } from "./client";
+import { DEFAULT_PROFILE_CREATE_VALUES } from "./types";
 
 describe("ApiClient", () => {
   let server: http.Server;
@@ -56,7 +57,7 @@ describe("ApiClient", () => {
     document.cookie = "";
   });
 
-  it("sends credentials: 'include' on GET requests", async () => {
+  it("lists profiles with a GET to the profiles endpoint", async () => {
     const client = new ApiClient({ baseUrl: serverUrl });
     mockHandler = (_req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
@@ -69,6 +70,29 @@ describe("ApiClient", () => {
     expect(lastRequest?.url).toBe("/api/v1/profiles");
   });
 
+  it("passes credentials: 'include' to fetch", async () => {
+    // The credentials mode is a fetch-init property; it cannot be observed
+    // at the HTTP server, so assert it on the fetch call itself.
+    const seen: RequestInit[] = [];
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (_url, init) => {
+        seen.push(init ?? {});
+        return new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      });
+    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    try {
+      await client.profiles.list();
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.credentials).toBe("include");
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("reads cbrowser_csrf cookie and sends X-CSRF-Token header on write requests", async () => {
     const client = new ApiClient({ baseUrl: serverUrl });
     document.cookie = "cbrowser_csrf=csrf_secret_token_12345; path=/";
@@ -78,11 +102,17 @@ describe("ApiClient", () => {
       res.end(JSON.stringify({ id: "p2", name: "New Profile" }));
     };
 
-    const newProfile = await client.profiles.create({ name: "New Profile" });
+    const newProfile = await client.profiles.create({
+      ...DEFAULT_PROFILE_CREATE_VALUES,
+      name: "New Profile",
+    });
     expect(newProfile.name).toBe("New Profile");
     expect(lastRequest?.method).toBe("POST");
     expect(lastRequest?.headers["x-csrf-token"]).toBe("csrf_secret_token_12345");
-    expect(JSON.parse(lastRequest?.body || "{}")).toEqual({ name: "New Profile" });
+    expect(JSON.parse(lastRequest?.body || "{}")).toEqual({
+      ...DEFAULT_PROFILE_CREATE_VALUES,
+      name: "New Profile",
+    });
   });
 
   it("sends X-CSRF-Token on writes including desired-state PATCH", async () => {
@@ -139,7 +169,9 @@ describe("ApiClient", () => {
       res.end(JSON.stringify({ detail: "Invalid profile name" }));
     };
 
-    await expect(client.profiles.create({ name: "" })).rejects.toThrow("Invalid profile name");
+    await expect(
+      client.profiles.create({ ...DEFAULT_PROFILE_CREATE_VALUES, name: "" }),
+    ).rejects.toThrow("Invalid profile name");
   });
 });
 
@@ -237,8 +269,23 @@ describe("ApiClient hardening", () => {
   });
 });
 
+describe("ApiClient artifacts", () => {
+  it("builds the artifact download URL from the configured base URL", () => {
+    const client = new ApiClient({ baseUrl: "http://host:8080" });
+    expect(client.artifacts.downloadUrl("p 1", "a/1")).toBe(
+      "http://host:8080/api/v1/profiles/p%201/artifacts/a%2F1",
+    );
+    const defaultClient = new ApiClient();
+    expect(defaultClient.artifacts.downloadUrl("p1", "a1")).toBe(
+      "/api/v1/profiles/p1/artifacts/a1",
+    );
+  });
+});
+
 describe("ApiClient idempotency", () => {
-  it("uses the caller-supplied action key for retries", async () => {
+  it("sends the caller-supplied action key as the Idempotency-Key header", async () => {
+    // Header pass-through only: the evidence that one key survives React
+    // Query retries lives in useProfilesQuery.retry.test.tsx (A22).
     const keys: string[] = [];
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
       keys.push(new Headers(init?.headers).get("Idempotency-Key") || "");
@@ -249,11 +296,163 @@ describe("ApiClient idempotency", () => {
     });
     const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
     try {
-      await client.profiles.create({ name: "same" }, "action-key-1");
-      await client.profiles.create({ name: "same" }, "action-key-1");
+      await client.profiles.create(
+        { ...DEFAULT_PROFILE_CREATE_VALUES, name: "same" },
+        "action-key-1",
+      );
+      await client.profiles.create(
+        { ...DEFAULT_PROFILE_CREATE_VALUES, name: "same" },
+        "action-key-1",
+      );
       expect(keys).toEqual(["action-key-1", "action-key-1"]);
     } finally {
       fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe("ApiClient cancellation", () => {
+  function abortingFetch() {
+    return vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_url, init) => {
+        return new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error("fetch called without a signal"));
+            return;
+          }
+          if (signal.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("Aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      });
+  }
+
+  it("distinguishes external cancellation from timeout: cancelled is not retryable", async () => {
+    const fetchSpy = abortingFetch();
+    const client = new ApiClient({
+      baseUrl: "http://127.0.0.1:1",
+      defaultTimeoutMs: 60_000,
+    });
+    const external = new AbortController();
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+    try {
+      const pending = client.request("/api/v1/profiles", {
+        signal: external.signal,
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        name: "ApiError",
+        errorCode: "cancelled",
+        retryable: false,
+      });
+      external.abort();
+      await assertion;
+      const err = await pending.catch((e: unknown) => e);
+      expect(shouldRetryRequest(0, err)).toBe(false);
+      expect(shouldRetryRequest(1, err)).toBe(false);
+      // The abort listener is released on the cancellation path too, not
+      // only after a successful settle (A18).
+      expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("times out with a retryable error and still removes the external listener", async () => {
+    const fetchSpy = abortingFetch();
+    const external = new AbortController();
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+    const client = new ApiClient({
+      baseUrl: "http://127.0.0.1:1",
+      defaultTimeoutMs: 30,
+    });
+    try {
+      const pending = client.request("/api/v1/profiles", {
+        signal: external.signal,
+      });
+      await expect(pending).rejects.toMatchObject({
+        name: "ApiError",
+        errorCode: "timeout",
+        retryable: true,
+      });
+      expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("cancels while the response body is still streaming (A18)", async () => {
+    // The response head arrives immediately but the body never completes;
+    // the external abort listener and the timeout must stay armed until
+    // the body has been read, not just until fetch resolves.
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((_url, init) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("Aborted", "AbortError"));
+            });
+          },
+        });
+        return Promise.resolve(
+          new Response(stream, {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      });
+    const external = new AbortController();
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+    const client = new ApiClient({
+      baseUrl: "http://127.0.0.1:1",
+      defaultTimeoutMs: 60_000,
+    });
+    try {
+      const pending = client.request("/api/v1/profiles", {
+        signal: external.signal,
+      });
+      const assertion = expect(pending).rejects.toMatchObject({
+        name: "ApiError",
+        errorCode: "cancelled",
+        retryable: false,
+      });
+      // Let fetch resolve and body reading begin before cancelling.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      external.abort();
+      await assertion;
+      expect(removeSpy).toHaveBeenCalledWith("abort", expect.any(Function));
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("removes the external abort listener once the request settles", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const external = new AbortController();
+    const removeSpy = vi.spyOn(external.signal, "removeEventListener");
+    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    try {
+      await client.request("/api/v1/profiles", { signal: external.signal });
+      expect(removeSpy).toHaveBeenCalledWith(
+        "abort",
+        expect.any(Function),
+      );
+    } finally {
+      fetchSpy.mockRestore();
+      removeSpy.mockRestore();
     }
   });
 });
@@ -271,7 +470,7 @@ describe("timeout policy wiring", () => {
     const file = new File(["x"], "x.txt", { type: "text/plain" });
     await client.artifacts.upload("p1", file, "key");
     await client.profiles.stop("p1", "key");
-    expect(requestSpy.mock.calls[0][2]).toBe(22);
-    expect(requestSpy.mock.calls[1][2]).toBe(33);
+    expect(requestSpy.mock.calls[0]?.[2]).toBe(22);
+    expect(requestSpy.mock.calls[1]?.[2]).toBe(33);
   });
 });

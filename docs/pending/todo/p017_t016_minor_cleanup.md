@@ -3,6 +3,7 @@
 - 来源：t016 遗留（t016_code_f010/f018/f019）
 - 原始登记内容：删除 `ProfileUpdateRequest` 中重复的 `launch_args` 归一化校验器，明确 explicit null 语义；把 `docs/blueprint/domain.md` 状态图中的 `failed` 改为 `error`，删除 `docs/blueprint/artifacts.md` 中 0755/0644 回退描述；校验 CDP 重连 rearm 的实际 `error` 响应后再置 `_last_rearm_ok=True`。
 - 处理：未开
+- t024 进展（2026-11-04）：四项中两项文档项已完成 —— domain.md 状态图 `failed` 已改 `error`；artifacts.md 的 0755/0644 回退描述已删除并改 ADR 014 口径。其余两项代码清理（ProfileUpdateRequest 重复校验器、CDP rearm 的 `_last_rearm_ok` 置位时机）仍未开，本条保持 todo。
 
 ## 分析基线
 
@@ -41,6 +42,6 @@
 
 ## 关联入口
 
-- [t021 控制 API 与 Artifact 契约](../../tasks/t021_control_api_artifact_contracts/task.md)：A2 / AC-001。
-- [t022 Runtime 与 Gateway 可靠性](../../tasks/t022_runtime_gateway_reliability/task.md)：A3 / AC-001。
-- [t024 交付验证与证据](../../tasks/t024_delivery_verification_evidence/task.md)：A23 / AC-002。
+- [t021 控制 API 与 Artifact 契约](../../archive/tasks/t021_control_api_artifact_contracts/task.md)：A2 / AC-001。
+- [t022 Runtime 与 Gateway 可靠性](../../archive/tasks/t022_runtime_gateway_reliability/task.md)：A3 / AC-001。
+- [t024 交付验证与证据](../../archive/tasks/t024_delivery_verification_evidence/task.md)：A23 / AC-002。

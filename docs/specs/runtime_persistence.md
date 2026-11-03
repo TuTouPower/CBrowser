@@ -83,8 +83,11 @@
 
 ### 2.6 结构化运行时诊断与敏感数据脱敏 (AC-006)
 
+- **幂等与加载边界（t021）**：
+    - create/update/set_desired_state 三个写入点的审计匹配收敛为单一 helper；目标已删除后的重放语义确定：update 重放返回已删除，create 重放按审计实体 ID 重建同一身份（含并发竞争恢复），异签名同 ID 仍 409。
+    - Profile 集合关系（tags/versions/runtime/artifacts）统一 `noload` + `passive_deletes`，删除依赖外键级联，普通读取只显式加载 tags；下载去重下推到 SQL 的 `(profile, sha256, storage_path)` 精确匹配；`utc_now_iso` 以领域层为唯一实现。
 - **结构化机器解析**：
-    - API 消费运行时事件时，向 stderr 输出机器可解析的 JSON 日志：`RUNTIME_EVENT_JSON: {"event_id": ..., "profile_id": ..., "runtime_instance_id": ..., "event_type": ..., "exit_code": ..., "exit_reason": ..., "config_version": ..., "outcome": ..., "timestamp": ...}`。
+    - API 消费运行时事件时，向 stderr 输出机器可解析的 JSON 日志：`RUNTIME_EVENT_JSON: {"event_id": ..., "profile_id": ..., "runtime_instance_id": ..., "event_type": ..., "exit_code": ..., "exit_reason": ..., "config_version": ..., "outcome": ..., "timestamp": ...}`。发射器位于包内 `cbrowser/runtime_event_log.py`（t021 迁入，旧顶层 `diagnostics` 模块已删除）。
 - **数据脱敏与安全防御**：
     - 字段由严格白名单过滤，`exit_reason` 经由安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`；
     - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的密码、Token、Cookie、剪贴板文本或私密笔记文本；

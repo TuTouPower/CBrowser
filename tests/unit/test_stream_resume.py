@@ -197,7 +197,6 @@ async def test_detached_session_expires_after_grace() -> None:
         resume_grace_seconds=0.2,
     )
     agent.agent_session_id = "sess_test"
-    agent.agent_session_id = "sess_test"
     session = aiohttp.ClientSession()
     try:
         await _start_worker(agent, session, "conn-1", 1)

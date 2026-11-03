@@ -129,6 +129,13 @@ class GatewayTopologyHarness:
         return {}
 
     def _init_dirs_and_secrets(self) -> None:
+        # Confine the whole harness tree under a 0o700 work root
+        # (t024 AC-011/A33): the data and metadata directories stay
+        # group/other-writable because they are bind-mounted into
+        # containers running as other uids, but no unrelated local user
+        # can traverse into the tree.
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        self.work_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
         self.control_dir.chmod(0o700)
         for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):

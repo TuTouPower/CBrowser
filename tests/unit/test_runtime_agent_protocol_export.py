@@ -29,7 +29,12 @@ def test_public_openapi_declares_security_and_reachable_errors():
 
     schema = create_app().openapi()
     schemes = schema["components"]["securitySchemes"]
-    assert {"sessionCookie", "csrfHeader", "serviceBearer"} <= set(schemes)
+    assert {
+        "sessionCookie",
+        "csrfHeader",
+        "SupervisorServiceBearer",
+        "GatewayServiceBearer",
+    } <= set(schemes)
     login = schema["paths"]["/api/v1/auth/login"]["post"]
     assert "security" not in login
     profiles = schema["paths"]["/api/v1/profiles"]["post"]
@@ -46,8 +51,12 @@ def test_internal_openapi_export_matches_checked_in_file():
     )
     assert live == checked_in
     internal = live["paths"]["/api/v1/internal/supervisor/runtimes/bind"]["post"]
-    assert internal["security"] == [{"serviceBearer": []}]
+    assert internal["security"] == [{"SupervisorServiceBearer": []}]
     assert {"401", "403", "503"} <= set(internal["responses"])
+    gateway = live["paths"]["/api/v1/internal/gateway/viewer-authorize"]["post"]
+    assert gateway["security"] == [{"GatewayServiceBearer": []}]
+    ingest = live["paths"]["/api/v1/internal/supervisor/artifacts/downloads"]["post"]
+    assert ingest["security"] == [{"SupervisorServiceBearer": []}]
 
 
 def test_supervisor_reporting_routes_are_service_plane_only():
@@ -96,6 +105,60 @@ def test_openapi_declares_rate_limit_and_internal_conflict_codes():
     assert {"404", "409"} <= set(bind["responses"])
 
 
+def test_runtime_state_fields_use_domain_enums():
+    """AC-007 (A31): HTTP and SSE runtime DTOs only admit domain states."""
+    import pytest
+    from cbrowser.api.app import create_app
+    from cbrowser.domain.models import (
+        ProfileRuntimeResponse,
+        ProfileRuntimeStatusEvent,
+    )
+    from pydantic import ValidationError
+
+    schema = create_app().openapi()
+    runtime = schema["components"]["schemas"]["ProfileRuntimeResponse"]
+    assert set(runtime["properties"]["desired_state"]["enum"]) == {
+        "stopped",
+        "running",
+    }
+    assert set(runtime["properties"]["observed_state"]["enum"]) == {
+        "stopped",
+        "starting",
+        "running",
+        "stopping",
+        "error",
+    }
+    event = schema["components"]["schemas"]["ProfileRuntimeStatusEvent"]
+    assert set(event["properties"]["observed_state"]["enum"]) == {
+        "stopped",
+        "starting",
+        "running",
+        "stopping",
+        "error",
+    }
+
+    base = {
+        "profile_id": "p1",
+        "desired_state": "stopped",
+        "observed_state": "stopped",
+        "runtime_instance_id": None,
+        "config_version": 1,
+        "failure_count": 0,
+        "restart_blocked": False,
+        "last_exit_event_id": None,
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    with pytest.raises(ValidationError):
+        ProfileRuntimeResponse(**{**base, "observed_state": "bogus"})
+    with pytest.raises(ValidationError):
+        ProfileRuntimeStatusEvent(
+            profile_id="p1",
+            desired_state="bogus",
+            observed_state="stopped",
+            updated_at="2026-01-01T00:00:00+00:00",
+        )
+
+
 def test_api_docs_are_closed_by_default(monkeypatch):
     from cbrowser.api.app import create_app
 
@@ -127,3 +190,87 @@ def test_openapi_all_operations_declare_structural_contract_codes():
                     assert "422" in responses, (path, method, responses)
                 if "/artifacts" in path and not path.startswith("/api/v1/internal/"):
                     assert {"400", "413", "507"} <= responses, (path, method, responses)
+
+
+def test_runtime_agent_schema_uses_entry_index_convention():
+    """A41: consumers enter via the messages index; no top-level anyOf."""
+    import jsonschema
+    import pytest
+
+    schema = json.loads((ROOT / "schemas/runtime/agent_protocol.json").read_text())
+    assert "anyOf" not in schema
+    assert schema["version"] == "2.0.0"
+    assert set(schema["messages"]) == {
+        "HealthResponse",
+        "ConfigVersionResponse",
+        "ControlRequest",
+        "ControlResponse",
+        "RuntimeEventRecord",
+        "DownloadEventRecord",
+        "RuntimeStateRecord",
+    }
+    for name in schema["messages"]:
+        assert schema["messages"][name] == {
+            "$id": f"#/$defs/{name}",
+            "$ref": f"#/$defs/{name}",
+        }
+    for definition in schema["$defs"].values():
+        assert "$id" not in definition
+
+    def entry(message: str) -> jsonschema.Draft202012Validator:
+        return jsonschema.Draft202012Validator(
+            {"$defs": schema["$defs"], "$ref": f"#/$defs/{message}"}
+        )
+
+    entry("ControlRequest").validate({"action": "close"})
+    with pytest.raises(jsonschema.ValidationError):
+        entry("ControlRequest").validate({"action": "explode"})
+
+    # Every message in the index accepts a minimal valid packet through
+    # its own entry point (full coverage, not a sample).
+    valid_packets = {
+        "HealthResponse": {
+            "status": "ok",
+            "ready": True,
+            "display_ready": True,
+            "browser_ready": True,
+            "audio_ready": True,
+            "cdp_ready": True,
+            "profile_id": "p1",
+            "runtime_instance_id": "i1",
+        },
+        "ConfigVersionResponse": {"profile_id": "p1", "runtime_instance_id": "i1"},
+        "ControlRequest": {"action": "close"},
+        "ControlResponse": {"status": "ok", "action": "close"},
+        "RuntimeEventRecord": {
+            "event_id": "e1",
+            "profile_id": "p1",
+            "runtime_instance_id": "i1",
+        },
+        "DownloadEventRecord": {
+            "event_id": "e1",
+            "profile_id": "p1",
+            "runtime_instance_id": "i1",
+            "guid": "g1",
+        },
+        "RuntimeStateRecord": {
+            "profile_id": "p1",
+            "runtime_instance_id": "i1",
+            "state": "running",
+        },
+    }
+    assert set(valid_packets) == set(schema["messages"])
+    for message, packet in valid_packets.items():
+        entry(message).validate(packet)
+
+
+def test_exported_schema_files_end_with_exactly_one_newline():
+    for relative in (
+        "schemas/runtime/supervisor_protocol.json",
+        "schemas/runtime/agent_protocol.json",
+        "schemas/stream/agent_protocol.json",
+        "schemas/openapi/cbrowser_v1.json",
+        "schemas/openapi/cbrowser_internal.json",
+    ):
+        raw = (ROOT / relative).read_bytes()
+        assert raw.endswith(b"\n") and not raw.endswith(b"\n\n"), relative

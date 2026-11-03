@@ -69,10 +69,16 @@ def test_gateway_config_short_secret_fails(
     agent_key_file.write_text("too_short", encoding="utf-8")
     agent_key_file.chmod(0o600)
 
+    # The two token files exist with valid-length secrets (t024 AC-005/
+    # A26): the short agent key must be the only invalid input, so the
+    # failure cannot depend on GatewayConfig's validation order.
+    dummy = tmp_path / "dummy.txt"
+    dummy.write_text("d" * 40, encoding="utf-8")
+    dummy.chmod(0o600)
     monkeypatch.setenv("CBROWSER_AGENT_KEY_FILE", str(agent_key_file))
-    monkeypatch.setenv("CBROWSER_GATEWAY_TOKEN_FILE", str(tmp_path / "dummy.txt"))
+    monkeypatch.setenv("CBROWSER_GATEWAY_TOKEN_FILE", str(dummy))
     monkeypatch.setenv("CBROWSER_GATEWAY_API_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("CBROWSER_GATEWAY_API_TOKEN_FILE", str(tmp_path / "dummy.txt"))
+    monkeypatch.setenv("CBROWSER_GATEWAY_API_TOKEN_FILE", str(dummy))
     monkeypatch.setenv("CBROWSER_ALLOWED_ORIGINS", "http://localhost:3000")
 
     with pytest.raises(ValueError, match="at least 32 bytes"):

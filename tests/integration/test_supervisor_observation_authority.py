@@ -22,6 +22,8 @@ from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from docker.errors import NotFound
 
+from docker_doubles import FakeContainer, FakeDockerAdapter
+
 pytest_plugins = ("test_supervisor_rpc",)
 
 WRITE_EVENT = """
@@ -38,33 +40,10 @@ EventStorage(Path(sys.argv[1])).save_runtime_event(
 """
 
 
-class _FakeContainer:
-    def __init__(self, instance_id: str, status: str) -> None:
-        self.labels = {"com.cbrowser.instance-id": instance_id}
-        self.status = status
-
-
-class _FakeContainers:
-    def __init__(self) -> None:
-        self.container: _FakeContainer | None = None
-
-    def get(self, _name: str) -> _FakeContainer:
-        if self.container is None:
-            raise NotFound("no browser container")
-        return self.container
-
-
-class _FakeDocker:
-    def __init__(self, data_root: Path) -> None:
-        self.validator = PathValidator(data_root)
-        self.containers = _FakeContainers()
-        self.client = SimpleNamespace(containers=self.containers)
-
-    def get_browser_container_name(self, profile_id: str) -> str:
-        return f"cbrowser-browser-{profile_id}"
-
-    def scan_active_containers(self) -> list[dict]:
-        return []
+# Supervisor-facing adapter double: the shared FakeDockerAdapter from
+# tests/fixtures/docker_doubles (t024 AC-014/A43), held to the production
+# naming contract by tests/unit/test_docker_doubles_contract.py.
+_FakeDocker = FakeDockerAdapter
 
 
 def _write_event(run_dir: Path, **fields) -> None:
@@ -151,7 +130,7 @@ async def test_forged_normal_exit_journal_does_not_change_running_intent(
     _bind(server, token, profile, "inst_alive")
     data_root = tmp_path / "supervisor-data"
     docker = _FakeDocker(data_root)
-    docker.containers.container = _FakeContainer("inst_alive", "running")
+    docker.containers.container = FakeContainer("inst_alive", "running")
     run_dir = docker.validator.data_root / "runtime-events" / profile
 
     _write_event(

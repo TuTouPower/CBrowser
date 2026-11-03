@@ -148,6 +148,61 @@ def test_session_check_and_logout(auth_env):
     assert resp_after.status_code == 401
 
 
+def _login(client, admin_pass):
+    resp = client.post("/api/v1/auth/login", json={"password": admin_pass})
+    assert resp.status_code == 200
+    return resp.json()["csrf_token"]
+
+
+def test_csrf_referer_fallback_allows_same_origin(auth_env):
+    """AC-005 (A7): no Origin + allow-listed Referer passes the source check.
+
+    The request carries a valid CSRF token, so it can only succeed by
+    entering the Referer fallback branch of require_csrf_and_origin.
+    """
+    client = auth_env["client"]
+    csrf_token = _login(client, auth_env["admin_pass"])
+    resp = client.post(
+        "/api/v1/auth/logout",
+        headers={
+            "X-CSRF-Token": csrf_token,
+            "Referer": "https://app.cbrowser.local/profiles?page=2",
+        },
+    )
+    assert resp.status_code == 200
+
+
+def test_csrf_referer_fallback_rejects_external_referer(auth_env):
+    client = auth_env["client"]
+    csrf_token = _login(client, auth_env["admin_pass"])
+    resp = client.post(
+        "/api/v1/auth/logout",
+        headers={
+            "X-CSRF-Token": csrf_token,
+            "Referer": "https://attacker.example/phish",
+        },
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "referer",
+    [
+        "not a url",
+        "http://[::1/broken-ipv6",
+        "/relative/path-only",
+    ],
+)
+def test_csrf_referer_fallback_rejects_malformed_referer(auth_env, referer):
+    client = auth_env["client"]
+    csrf_token = _login(client, auth_env["admin_pass"])
+    resp = client.post(
+        "/api/v1/auth/logout",
+        headers={"X-CSRF-Token": csrf_token, "Referer": referer},
+    )
+    assert resp.status_code == 403
+
+
 def test_automation_token_endpoints_and_audit(auth_env):
     client = auth_env["client"]
     admin_pass = auth_env["admin_pass"]
@@ -275,42 +330,15 @@ async def test_internal_gateway_endpoints(auth_env):
     assert v_bad_origin.json()["allowed"] is False
     assert v_bad_origin.json()["reason"] == "invalid_origin"
 
-    # 3. Create automation token
-    tok_resp = client.post(
-        "/api/v1/automation/tokens",
-        json={"name": "auto1", "profile_ids": [prof_id]},
-        headers={"X-CSRF-Token": csrf_token, "Origin": allowed_origin},
-    )
-    auto_token = tok_resp.json()["token"]
-
-    # automation-authorize: valid
-    a_ok = client.post(
+    # 3. The internal automation-authorize surface was removed (A42): it
+    # had no production consumer — the real CDP entry point is the v1
+    # automation router backed by AuthService. The route must be gone.
+    removed = client.post(
         "/api/v1/internal/gateway/automation-authorize",
-        json={"token": auto_token, "profile_id": prof_id},
+        json={"token": "cbat_whatever", "profile_id": prof_id},
         headers=gw_headers,
     )
-    assert a_ok.status_code == 200
-    assert a_ok.json()["allowed"] is True
-
-    # automation-authorize: session cookie as automation token -> rejected
-    a_bad_tok = client.post(
-        "/api/v1/internal/gateway/automation-authorize",
-        json={"token": session_token, "profile_id": prof_id},
-        headers=gw_headers,
-    )
-    assert a_bad_tok.status_code == 200
-    assert a_bad_tok.json()["allowed"] is False
-    assert a_bad_tok.json()["reason"] == "invalid_token"
-
-    # automation-authorize: unauthorized profile
-    a_unauth_prof = client.post(
-        "/api/v1/internal/gateway/automation-authorize",
-        json={"token": auto_token, "profile_id": "prof-unauthorized"},
-        headers=gw_headers,
-    )
-    assert a_unauth_prof.status_code == 200
-    assert a_unauth_prof.json()["allowed"] is False
-    assert a_unauth_prof.json()["reason"] == "profile_unauthorized"
+    assert removed.status_code == 404
 
     # 4. Gateway runtime inspection
     rt_res = client.get(

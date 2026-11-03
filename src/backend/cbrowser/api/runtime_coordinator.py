@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import secrets
+import time
 import uuid
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
@@ -15,7 +16,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import httpx
 
-from cbrowser.domain.models import ProfileRuntimeEvent, ProfileRuntimeEventData
+from cbrowser.domain.models import (
+    ProfileRuntimeEvent,
+    ProfileRuntimeEventData,
+    SearchDefaultsStatusData,
+)
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from pydantic import SecretStr
 
@@ -26,6 +31,14 @@ class ReconcileOutcome(Enum):
     CONVERGED = "converged"
     RETRYABLE = "retryable"
     TERMINATED = "terminated"
+
+
+class SearchDefaultsConflictError(RuntimeError):
+    """The search-defaults retry names a stale instance (HTTP 409)."""
+
+
+class SearchDefaultsUnavailableError(RuntimeError):
+    """The search-defaults operation cannot reach the runtime (HTTP 503)."""
 
 
 class RuntimeEventBroadcaster:
@@ -78,6 +91,7 @@ class RuntimeEventBroadcaster:
     ) -> AsyncGenerator[str, None]:
         q: asyncio.Queue[ProfileRuntimeEvent] = asyncio.Queue(maxsize=100)
         initial_events: list[ProfileRuntimeEvent] = []
+        resync_required = False
         async with self._lock:
             replayed = False
             if last_event_id:
@@ -87,40 +101,60 @@ class RuntimeEventBroadcaster:
                     history_sequences = [
                         int(event.id.rsplit(":", 1)[1]) for event in self._history
                     ]
-                    if (
-                        target_epoch == self._epoch
-                        and history_sequences
-                        and min(history_sequences)
-                        <= target_id
-                        <= max(history_sequences)
-                    ):
-                        initial_events = [
-                            event
-                            for event in self._history
-                            if int(event.id.rsplit(":", 1)[1]) > target_id
-                        ]
-                        replayed = True
+                    last_published = self._next_event_id - 1
+                    if target_epoch == self._epoch and target_id <= last_published:
+                        if not history_sequences or (
+                            min(history_sequences) - 1
+                            <= target_id
+                            <= max(history_sequences)
+                        ):
+                            # The shared history still covers the gap (or the
+                            # subscriber is already up to date): replay only
+                            # what is missing, nothing is rebuilt.
+                            initial_events = [
+                                event
+                                for event in self._history
+                                if int(event.id.rsplit(":", 1)[1]) > target_id
+                            ]
+                            replayed = True
+                        # else: the id fell out of the retained window; fall
+                        # through to an explicit snapshot rebuild below.
 
             if not replayed and initial_snapshot_provider is not None:
+                # One consistent read under the same lock publish() uses, so
+                # the snapshot, its live base point and the subscriber
+                # registration share a single ordering: no live event can be
+                # missed or delivered before older snapshot state. Snapshot
+                # frames are private to this subscriber — they never enter
+                # the shared history — and all carry the base point id (the
+                # last live sequence at snapshot time), so a later reconnect
+                # resumes replay exactly after the base point.
                 raw_res = initial_snapshot_provider()
                 if asyncio.iscoroutine(raw_res):
                     snapshot_data_list = await raw_res
                 else:
                     snapshot_data_list = raw_res
+                base_id = self._format_event_id(self._next_event_id - 1)
                 for data in snapshot_data_list:
-                    event_id = self._format_event_id(self._next_event_id)
-                    self._next_event_id += 1
-                    event = ProfileRuntimeEvent(
-                        id=event_id, event="runtime_state", data=data
+                    initial_events.append(
+                        ProfileRuntimeEvent(
+                            id=base_id, event="runtime_state", data=data
+                        )
                     )
-                    self._history.append(event)
-                    initial_events.append(event)
+            elif not replayed and last_event_id:
+                # The caller asked to resume from an id we cannot serve and
+                # no snapshot provider exists: say so explicitly instead of
+                # silently truncating the stream.
+                resync_required = True
 
-            # Register only after the snapshot/catch-up is built while holding the
-            # same lock as publish(), so no live event can fall into the gap.
+            # Register only after the snapshot/catch-up is built while holding
+            # the same lock as publish(), so no live event can fall into the
+            # gap between the snapshot base point and live delivery.
             self._subscribers.add(q)
 
         try:
+            if resync_required:
+                yield ": resync-required\n\n"
             for event in initial_events:
                 payload = event.data.model_dump_json()
                 yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
@@ -178,6 +212,7 @@ class RuntimeCoordinator:
         self.broadcaster = event_broadcaster or RuntimeEventBroadcaster()
 
         self._last_errors: dict[str, str | None] = {}
+        self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
@@ -197,6 +232,138 @@ class RuntimeCoordinator:
 
     def clear_last_error(self, profile_id: str) -> None:
         self._last_errors.pop(profile_id, None)
+
+    def get_search_defaults(
+        self, profile_id: str
+    ) -> SearchDefaultsStatusData | None:
+        return self._search_defaults.get(profile_id)
+
+    def fenced_search_defaults(
+        self, profile_id: str, runtime_instance_id: str | None
+    ) -> SearchDefaultsStatusData | None:
+        """Cached status only when it belongs to the given live instance.
+
+        Every surface that pairs a status with an instance id (REST view,
+        SSE snapshot, live publish) must apply this fence, or an instance
+        switch can briefly broadcast the old instance's status under the
+        new instance's id (review t022_code_f010).
+        """
+        status = self._search_defaults.get(profile_id)
+        if status is None:
+            return None
+        if status.runtime_instance_id != runtime_instance_id:
+            return None
+        return status
+
+    async def refresh_search_defaults(
+        self, profile_id: str
+    ) -> SearchDefaultsStatusData | None:
+        """Best-effort refresh of the cached search-defaults status.
+
+        Reads the supervisor's fenced observation of the live agent. Any
+        failure keeps the previously cached value; this status never
+        affects runtime readiness.
+        """
+        if not self.is_enabled():
+            return self.get_search_defaults(profile_id)
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/search-defaults"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        try:
+            resp = await self._client.get(url, headers=headers)
+        except Exception:  # noqa: BLE001 - status refresh is best-effort only
+            return self.get_search_defaults(profile_id)
+        if resp.status_code != 200:
+            return self.get_search_defaults(profile_id)
+        try:
+            payload = resp.json()
+            raw_status = payload.get("search_defaults")
+            status = (
+                SearchDefaultsStatusData.model_validate(raw_status)
+                if raw_status is not None
+                else None
+            )
+            # Only surface a status that belongs to the instance the
+            # supervisor currently fenced for this profile.
+            if status is not None and (
+                payload.get("runtime_instance_id") is None
+                or status.runtime_instance_id != payload.get("runtime_instance_id")
+            ):
+                status = None
+        except Exception:  # noqa: BLE001 - malformed supervisor payload keeps the cache
+            return self.get_search_defaults(profile_id)
+        self._search_defaults[profile_id] = status
+        return status
+
+    async def retry_search_defaults(
+        self, profile_id: str, request_id: str | None = None
+    ) -> SearchDefaultsStatusData | None:
+        """Ask the supervisor to retry search-defaults on the live instance.
+
+        Fenced to the instance recorded in the runtime state. The
+        request_id is the end-to-end idempotency key: callers repeating a
+        submission pass the same key (the router maps the Idempotency-Key
+        header), and the supervisor/agent deduplicate on it, so a retried
+        HTTP call cannot execute the initialization twice. Without a
+        caller key a fresh one is generated for this single call.
+        """
+        runtime = await self.profile_service.get_runtime(profile_id)
+        if not self.is_enabled():
+            raise SearchDefaultsUnavailableError("Supervisor is not configured")
+        if not runtime.runtime_instance_id:
+            raise SearchDefaultsUnavailableError("Profile runtime is not running")
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = f"{self.supervisor_url}/supervisor/v1/profiles/search-defaults/retry"
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        body = {
+            "profile_id": profile_id,
+            "runtime_instance_id": runtime.runtime_instance_id,
+            "request_id": request_id or f"sd-retry-{uuid.uuid4().hex}",
+        }
+        try:
+            resp = await self._client.post(url, json=body, headers=headers)
+        except httpx.TransportError as e:
+            raise SearchDefaultsUnavailableError(
+                f"Supervisor unreachable: {type(e).__name__}"
+            ) from None
+        if resp.status_code == 409:
+            raise SearchDefaultsConflictError(
+                "Search defaults retry conflicts with the live instance"
+            )
+        if resp.status_code != 200:
+            raise SearchDefaultsUnavailableError(
+                f"Supervisor search-defaults retry failed ({resp.status_code})"
+            )
+        # The retry is consumed asynchronously by the runner (request
+        # file + status file). Poll the status briefly until the runner
+        # reports an outcome stamped with THIS request_id, so the
+        # response and the SSE publish reflect this retry's terminal
+        # state instead of the stale pre-retry failure (review
+        # t022_code_f011). The wait is bounded; on timeout the latest
+        # known status is returned and later refreshes converge.
+        effective_request_id = body["request_id"]
+        status = await self.refresh_search_defaults(profile_id)
+        deadline = time.monotonic() + 5.0
+        while (
+            status is None or status.request_id != effective_request_id
+        ) and time.monotonic() < deadline:
+            await asyncio.sleep(0.25)
+            status = await self.refresh_search_defaults(profile_id)
+        await self.publish_profile_change(profile_id)
+        return status
 
     async def start(self) -> None:
         import httpx
@@ -299,6 +466,9 @@ class RuntimeCoordinator:
                 failure_count=rt.failure_count,
                 restart_blocked=rt.restart_blocked,
                 last_coordinator_error=err,
+                search_defaults=self.fenced_search_defaults(
+                    profile_id, rt.runtime_instance_id
+                ),
                 updated_at=rt.updated_at,
             )
             await self.broadcaster.publish(data)
@@ -468,9 +638,39 @@ class RuntimeCoordinator:
             return ReconcileOutcome.RETRYABLE
 
         if resp.status_code == 200:
-            self.clear_last_error(profile_id)
+            # The stop response is a command result, not an observation of
+            # stopped state. Consume it explicitly and converge only when
+            # the authoritative runtime record (fed by Supervisor reports)
+            # actually shows the stopped state.
+            try:
+                result_status = resp.json().get("status")
+            except Exception:  # noqa: BLE001 - non-JSON body has no command result
+                result_status = None
+            if result_status not in {
+                "stopped",
+                "already_absent",
+                "superseded_noop",
+            }:
+                self.set_last_error(
+                    profile_id,
+                    "Supervisor stop response omitted a valid command result",
+                )
+                await self.publish_profile_change(profile_id)
+                return ReconcileOutcome.RETRYABLE
+            try:
+                refreshed = await self.profile_service.get_runtime(profile_id)
+            except ProfileNotFoundError:
+                self.clear_last_error(profile_id)
+                return ReconcileOutcome.CONVERGED
+            if (
+                refreshed.observed_state == "stopped"
+                and refreshed.runtime_instance_id is None
+            ):
+                self.clear_last_error(profile_id)
+                await self.publish_profile_change(profile_id)
+                return ReconcileOutcome.CONVERGED
             await self.publish_profile_change(profile_id)
-            return ReconcileOutcome.CONVERGED
+            return ReconcileOutcome.RETRYABLE
 
         detail = ""
         try:

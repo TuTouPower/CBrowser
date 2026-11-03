@@ -27,7 +27,11 @@ def test_supervisor_explicitly_disables_selkies_file_transfers() -> None:
 
 
 def test_stream_entrypoint_passes_file_transfers_none_to_official_selkies() -> None:
-    content = Path("config/docker/stream_runtime/entrypoint.sh").read_text(
+    entrypoint = (
+        Path(__file__).resolve().parents[2]
+        / "config/docker/stream_runtime/entrypoint.sh"
+    )
+    content = entrypoint.read_text(
         encoding="utf-8"
     )
     active = [

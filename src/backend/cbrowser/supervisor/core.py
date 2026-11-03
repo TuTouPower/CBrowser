@@ -19,6 +19,8 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,11 +30,20 @@ from urllib.parse import quote
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
-from cbrowser.runtime_agent.protocol import HealthResponse, RuntimeEventRecord
+from cbrowser.runtime_agent.protocol import (
+    ControlRequest,
+    HealthResponse,
+    RuntimeEventRecord,
+    SearchDefaultsStatus,
+)
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
-from cbrowser.supervisor.event_forwarder import EventForwarder
+from cbrowser.supervisor.event_forwarder import (
+    DELIVERED,
+    REJECTED,
+    EventForwarder,
+)
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
@@ -70,6 +81,21 @@ def browser_runtime_ready(
         )
     except (OSError, ValueError, KeyError, TypeError):
         return False
+
+
+class LifecycleConflictError(RuntimeError):
+    """The requested lifecycle transition conflicts with current state.
+
+    Mapped to HTTP 409 by the control server based on this type alone —
+    never on exception message text — and carries no internal details.
+    """
+
+
+class RuntimeUnavailableError(RuntimeError):
+    """The runtime agent for a profile cannot be reached right now.
+
+    Mapped to HTTP 503 by the control server based on this type alone.
+    """
 
 
 @dataclass
@@ -458,8 +484,14 @@ class SupervisorCore:
 
     def _quarantine_event_file(
         self, event_file: Path, profile_id: str, instance_id: str, reason: str
-    ) -> None:
-        """Move an invalid journal file aside without blocking later events."""
+    ) -> bool:
+        """Move an invalid journal file aside; True only when it landed.
+
+        Callers advance the delivery cursor only on True: when the
+        dead-letter move itself fails, the event stays pending (and keeps
+        alarming on later scans) instead of being silently skipped past
+        (review t022_code_f013).
+        """
         try:
             target_dir = self.docker.validator.validate_safe_path(
                 self.docker.validator.data_root
@@ -477,12 +509,14 @@ class SupervisorCore:
                 instance_id,
                 reason,
             )
+            return True
         except (OSError, PathSecurityError) as exc:
             logger.warning(
                 "Runtime event quarantine failed: reason=%s error_type=%s",
                 reason,
                 type(exc).__name__,
             )
+            return False
 
     @staticmethod
     def _parse_disk_event(data: Any, profile_id: str, instance_id: str) -> str | None:
@@ -625,34 +659,30 @@ class SupervisorCore:
                         "Disk event processing failed: error_type=%s",
                         type(exc).__name__,
                     )
-                    self._quarantine_event_file(
+                    if self._quarantine_event_file(
                         evt_file, profile_id, instance_id, "unreadable"
-                    )
-                    self._advance_event_cursor(profile_id, instance_id, marker)
-                    changed = True
+                    ):
+                        self._advance_event_cursor(profile_id, instance_id, marker)
+                        changed = True
                     continue
 
                 invalid_reason = self._parse_disk_event(
                     data, profile_id, instance_id
                 )
                 if invalid_reason is not None:
-                    self._quarantine_event_file(
+                    if self._quarantine_event_file(
                         evt_file, profile_id, instance_id, invalid_reason
-                    )
-                    self._advance_event_cursor(profile_id, instance_id, marker)
-                    changed = True
+                    ):
+                        self._advance_event_cursor(profile_id, instance_id, marker)
+                        changed = True
                     continue
 
                 etype = data["event_type"]
                 ecode = data.get("exit_code")
                 config_version = int(data.get("config_version", 1))
-                if etype == "exit":
-                    self._native_exit_instances.add(
-                        (profile_id, instance_id, config_version)
-                    )
 
                 evt_id = data.get("event_id", evt_file.stem)
-                delivered = await self.events.emit_event(
+                outcome = await self.events.emit_event_with_outcome(
                     event_id=evt_id,
                     profile_id=profile_id,
                     runtime_instance_id=instance_id,
@@ -661,9 +691,32 @@ class SupervisorCore:
                     exit_reason=data.get("exit_reason"),
                     config_version=config_version,
                     payload=data.get("payload", {}),
+                    # Core owns the single dead letter (the journal
+                    # original); the forwarder must not quarantine a
+                    # second copy of the same event.
+                    dead_letter_spool=False,
                 )
-                if not delivered:
+                if outcome == REJECTED:
+                    # Permanent semantic refusal: dead-letter the original
+                    # file exactly once and persist the cursor past it, so it
+                    # is never re-delivered. Diagnostic delivery must not
+                    # advance business runtime state, so no observation
+                    # reconciliation happens on this path. If the
+                    # dead-letter move itself fails the cursor stays put
+                    # and the event remains pending.
+                    if self._quarantine_event_file(
+                        evt_file, profile_id, instance_id, "rejected"
+                    ):
+                        self._advance_event_cursor(profile_id, instance_id, marker)
+                        changed = True
                     continue
+                if outcome != DELIVERED:
+                    # Temporarily unavailable: stays pending for a later scan.
+                    continue
+                if etype == "exit":
+                    self._native_exit_instances.add(
+                        (profile_id, instance_id, config_version)
+                    )
                 total_forwarded += 1
                 await self._reconcile_instance_observation(
                     profile_id, instance_id, config_version
@@ -771,17 +824,24 @@ class SupervisorCore:
 
         return None
 
-    async def _query_agent_health(self, profile_id: str) -> HealthResponse | None:
-        """Query Agent UDS /health; validate runtime path and reject if inaccessible."""
+    @asynccontextmanager
+    async def _agent_uds_client(
+        self, profile_id: str
+    ) -> AsyncIterator[httpx.AsyncClient | None]:
+        """Yield an HTTP client bound to the runtime agent's UDS socket.
+
+        Yields None when the socket does not exist. The runtime path is
+        validated exactly like the health probe; callers own error mapping.
+        """
+        runtime_dir = self.docker.validator.get_runtime_dir(profile_id)
+        sock_path = self.docker.validator.validate_runtime_source(
+            profile_id, runtime_dir / "agent.sock"
+        )
+        if not sock_path.is_socket():
+            yield None
+            return
         dir_fd: int | None = None
         try:
-            runtime_dir = self.docker.validator.get_runtime_dir(profile_id)
-            sock_path = self.docker.validator.validate_runtime_source(
-                profile_id, runtime_dir / "agent.sock"
-            )
-            if not sock_path.is_socket():
-                return None
-
             proc_fd_dir = Path("/proc/self/fd")
             if proc_fd_dir.exists():
                 dir_fd = os.open(
@@ -791,11 +851,21 @@ class SupervisorCore:
                 uds_target = f"/proc/self/fd/{dir_fd}/{sock_path.name}"
             else:
                 uds_target = os.path.relpath(sock_path, os.getcwd())
-
             transport = httpx.AsyncHTTPTransport(uds=uds_target)
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://uds", timeout=2.0
             ) as client:
+                yield client
+        finally:
+            if dir_fd is not None:
+                os.close(dir_fd)
+
+    async def _query_agent_health(self, profile_id: str) -> HealthResponse | None:
+        """Query Agent UDS /health; validate runtime path and reject if inaccessible."""
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return None
                 resp = await client.get("/health")
                 if resp.status_code == 200:
                     return HealthResponse.model_validate(resp.json())
@@ -807,9 +877,66 @@ class SupervisorCore:
                 type(exc).__name__,
             )
             return None
-        finally:
-            if dir_fd is not None:
-                os.close(dir_fd)
+
+    async def get_search_defaults(
+        self, profile_id: str
+    ) -> tuple[str | None, SearchDefaultsStatus | None]:
+        """Current search-defaults status for the live instance, if any.
+
+        Returns (live runtime_instance_id, status). The status is only
+        surfaced when the agent's health identity matches the session's
+        instance; anything else yields (instance, None).
+        """
+        session = self.get_session(profile_id)
+        if session is None:
+            return None, None
+        health = await self._query_agent_health(profile_id)
+        if health is None or health.runtime_instance_id != session.runtime_instance_id:
+            return session.runtime_instance_id, None
+        status = health.search_defaults
+        # The status payload carries its own instance: only surface it when
+        # it belongs to the same live instance as the health report itself.
+        if status is not None and status.runtime_instance_id != session.runtime_instance_id:
+            status = None
+        return session.runtime_instance_id, status
+
+    async def retry_search_defaults(
+        self, profile_id: str, runtime_instance_id: str, request_id: str
+    ) -> None:
+        """Forward a fenced, idempotent search-defaults retry to the agent.
+
+        The supervisor fences against its own live session first; the
+        agent re-fences against its runner metadata and deduplicates by
+        request_id, so retries never restart or disturb the browser.
+        """
+        session = self.get_session(profile_id)
+        if session is None:
+            raise RuntimeUnavailableError("No live runtime session")
+        if session.runtime_instance_id != runtime_instance_id:
+            raise LifecycleConflictError("Search defaults retry instance fence")
+        request = ControlRequest(
+            action="retry_search_defaults",
+            params={
+                "profile_id": profile_id,
+                "runtime_instance_id": runtime_instance_id,
+                "request_id": request_id,
+            },
+        )
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    raise RuntimeUnavailableError("Runtime agent socket unavailable")
+                resp = await client.post("/control", json=request.model_dump())
+        except RuntimeUnavailableError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - transport failure maps to 503 without internals
+            raise RuntimeUnavailableError(
+                f"Runtime agent control failed: {type(exc).__name__}"
+            ) from None
+        if resp.status_code == 403:
+            raise LifecycleConflictError("Search defaults retry rejected by agent")
+        if resp.status_code != 200:
+            raise RuntimeUnavailableError("Runtime agent control unavailable")
 
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
@@ -856,7 +983,7 @@ class SupervisorCore:
                         session.runtime_instance_id,
                     )
                     return session
-                raise RuntimeError(
+                raise LifecycleConflictError(
                     "Existing runtime must finish cleanup before a new start"
                 )
 
@@ -871,12 +998,14 @@ class SupervisorCore:
             state_response.raise_for_status()
             runtime = state_response.json()
             if runtime["desired_state"] != "running":
-                raise RuntimeError(
+                raise LifecycleConflictError(
                     "API running intent is required before starting a runtime"
                 )
 
             if runtime["restart_blocked"]:
-                raise RuntimeError("Automatic retries exhausted; manual retry required")
+                raise LifecycleConflictError(
+                    "Automatic retries exhausted; manual retry required"
+                )
 
             runtime_instance_id = f"inst_{uuid.uuid4().hex[:12]}"
             self._native_exit_instances = {
@@ -1077,7 +1206,7 @@ class SupervisorCore:
             if target is None:
                 return {
                     "profile_id": profile_id,
-                    "status": "stopped",
+                    "status": "already_absent",
                     "runtime_instance_id": None,
                 }
             command_id = operation_id or f"reconcile_stop:{profile_id}:{target}"
@@ -1091,8 +1220,16 @@ class SupervisorCore:
                 "status": "stopped",
             }
             if session is not None and session.runtime_instance_id != target:
-                self.operations.complete(command_id, request, result)
-                return result
+                # The target instance was superseded by a newer one. The
+                # command is a no-op result: the replacement is protected
+                # and must not be reported as stopped.
+                superseded = {
+                    "profile_id": profile_id,
+                    "runtime_instance_id": target,
+                    "status": "superseded_noop",
+                }
+                self.operations.complete(command_id, request, superseded)
+                return superseded
             if session is None:
                 owned = [
                     item
@@ -1103,8 +1240,13 @@ class SupervisorCore:
                 ]
                 matching = [item for item in owned if item["instance_id"] == target]
                 if not matching:
-                    self.operations.complete(command_id, request, result)
-                    return result
+                    absent = {
+                        "profile_id": profile_id,
+                        "runtime_instance_id": target,
+                        "status": "already_absent",
+                    }
+                    self.operations.complete(command_id, request, absent)
+                    return absent
                 if len(matching) != len(owned):
                     raise DockerSandboxError(
                         "Mixed runtime instances require reconciliation"

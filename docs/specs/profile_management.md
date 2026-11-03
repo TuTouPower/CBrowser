@@ -12,6 +12,18 @@
 - Profile 列表、创建、编辑（名称、屏幕尺寸、标签）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
 
+## 中文字体包（t020）
+
+- Profile 配置含 `font_bundle`，取值 `none`、`wqy-microhei`、`wqy-zenhei`，默认 `none`；创建、更新、读取与配置版本快照均携带该字段，非法值与显式 null 被拒绝，存量 Profile 迁移后读为 `none`。
+- Browser 镜像把文泉驿微米黑与正黑的 `.ttc` staged 在 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`；默认容器内 `sans-serif` 的中文解析不命中任何中文字体。
+- Browser Runner 按快照中的 `font_bundle` 生成 Profile 专属 fontconfig 配置（include 系统配置并追加对应 bundle 目录），仅对非 `none` 档位为 Chrome 进程设置 `FONTCONFIG_FILE`；生成失败时不设置该变量、保持系统默认配置。修改 `font_bundle` 产生新配置版本，重建容器后生效，不影响其他 Profile。
+- 前端创建与编辑界面提供三档选择并回显 API 返回值；不提供 Windows 专有字体，不挂载宿主字体目录。
+
+## 启动参数校验与 PATCH 三态（t021）
+
+- 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取时的过滤保持不变。
+- PATCH 语义三态：字段缺失 = 不变；显式 `null` = 清空为 `[]`；给出列表 = 整体替换。`ProfileConfig` 把显式 null 的这两个列表归一为 `[]`，仓储合并不得因此 500；越界内容返回 422。
+
 ## 页面独立选择
 
 - 主界面以 `/?profileId=` 表示当前页面的操控目标，刷新恢复该目标。每个 Chrome 标签页独立切换 Profile，不改变其他标签页的目标或连接；不使用跨标签页共享的 `localStorage.currentProfileId`。
@@ -36,3 +48,9 @@
 ## 验收与边界
 
 由 t007 真实栈 E2E（构建产物 + Caddy/API/Supervisor/Gateway/Browser/Stream + 无头 Google Chrome 双标签页，无 coturn）与 Vitest 验证。公网与原生 Linux x86_64 执行按用户豁免记 NOT_RUN / USER_WAIVED。
+
+## 前端请求与文案一致性（t023）
+
+- 前端写操作的 `Idempotency-Key` 在每次调用边界生成：同一逻辑动作的自动重试复用同一键，并发或先后发生的独立动作必须使用不同键；复合动作（如应用显示设置的 stop→start）由单次动作键派生各步操作键。请求取消与超时可区分：外部取消不可重试，内部超时可重试。
+- 页面与布局经应用上下文下发的 ApiClient 实例工作；页面流程测试在 ApiClient 边界注入独立桩并走真实数据 hooks，不 mock hooks 模块、不改共享单例。
+- 界面文案键集以 en 字典为唯一来源派生，zh 字典编译期对齐同一键集；设置页健康状态只声称其真实探测的 Control API 状态。

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,108 @@ logger = logging.getLogger("cbrowser.runtime_agent.profile_defaults")
 
 SEARCH_ENGINE_MARKER_FILE = ".cbrowser_search_engine.json"
 MARKER_VERSION = 1
+
+# Independent, per-instance observability for the best-effort search defaults
+# initialization (A55 / D1=B). The success marker in the user data dir keeps
+# first-initialization semantics; this status file lives in the run dir and
+# only ever describes the latest attempt of the current instance.
+SEARCH_DEFAULTS_STATUS_FILE = "search_defaults_status.json"
+SEARCH_DEFAULTS_RETRY_FILE = "search_defaults_retry.json"
+SEARCH_DEFAULTS_STATES = ("applied", "failed", "disabled", "pending")
+DEFAULT_SEARCH_INIT_TIMEOUT_S = 20.0
+
+
+def write_search_defaults_status(
+    run_dir: Path | str,
+    *,
+    state: str,
+    runtime_instance_id: str,
+    error_kind: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Persist the latest search-defaults outcome for the current instance."""
+    if state not in SEARCH_DEFAULTS_STATES:
+        raise ValueError("Invalid search defaults state")
+    payload: dict[str, Any] = {
+        "version": MARKER_VERSION,
+        "state": state,
+        "error_kind": error_kind,
+        "runtime_instance_id": runtime_instance_id,
+        "request_id": request_id,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    atomic_write_json(Path(run_dir) / SEARCH_DEFAULTS_STATUS_FILE, payload)
+    return payload
+
+
+def read_search_defaults_status(run_dir: Path | str) -> dict[str, Any] | None:
+    """Read the persisted status; missing or malformed data means unknown."""
+    path = Path(run_dir) / SEARCH_DEFAULTS_STATUS_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("state") not in SEARCH_DEFAULTS_STATES:
+        return None
+    return data
+
+
+async def run_search_defaults_initialization(
+    context: Any,
+    user_data_dir: Path | str,
+    run_dir: Path | str,
+    *,
+    set_google_default: bool,
+    runtime_instance_id: str,
+    request_id: str | None = None,
+    timeout_s: float = DEFAULT_SEARCH_INIT_TIMEOUT_S,
+) -> str:
+    """Run the best-effort search defaults initialization with a hard bound.
+
+    Failure or timeout never propagates: the browser stays usable and the
+    outcome is recorded as an independent, observable status. Only a verified
+    success (inside :func:`initialize_profile_defaults`) writes the success
+    marker. Returns the resulting state string.
+    """
+    if not set_google_default:
+        write_search_defaults_status(
+            run_dir,
+            state="disabled",
+            runtime_instance_id=runtime_instance_id,
+            request_id=request_id,
+        )
+        return "disabled"
+    try:
+        await asyncio.wait_for(
+            initialize_profile_defaults(
+                context, user_data_dir, set_google_default=True
+            ),
+            timeout=timeout_s,
+        )
+    except Exception as exc:  # noqa: BLE001 - best-effort init must not block the browser
+        error_kind = (
+            "timeout" if isinstance(exc, TimeoutError) else type(exc).__name__
+        )
+        logger.warning(
+            "Search defaults initialization did not complete (%s); "
+            "browser remains usable",
+            error_kind,
+        )
+        write_search_defaults_status(
+            run_dir,
+            state="failed",
+            runtime_instance_id=runtime_instance_id,
+            error_kind=error_kind,
+            request_id=request_id,
+        )
+        return "failed"
+    write_search_defaults_status(
+        run_dir,
+        state="applied",
+        runtime_instance_id=runtime_instance_id,
+        request_id=request_id,
+    )
+    return "applied"
 
 SEARCH_ENGINE_NAME = "Google"
 SEARCH_ENGINE_KEYWORD = "google.com"

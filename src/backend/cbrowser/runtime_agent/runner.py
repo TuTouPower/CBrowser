@@ -13,6 +13,7 @@ import subprocess
 import time
 import urllib.request
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +24,11 @@ from cloakbrowser.browser import seed_widevine_hint
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
-from .profile_defaults import initialize_profile_defaults
+from .fontconfig import prepare_profile_fontconfig
+from .profile_defaults import (
+    SEARCH_DEFAULTS_RETRY_FILE,
+    run_search_defaults_initialization,
+)
 from .protocol import RuntimeEventRecord, RuntimeStateRecord
 from cbrowser.launch_args import validate_launch_args
 
@@ -104,6 +109,7 @@ class BrowserRunner:
         self.xauth_path = self.run_dir / "Xauthority"
         self.runner_info_file = self.run_dir / "runner_info.json"
 
+        self.fontconfig_path: Path | None = None
         self.xvfb_proc: subprocess.Popen[Any] | None = None
         self.openbox_proc: subprocess.Popen[Any] | None = None
         self.chrome_pid: int | None = None
@@ -113,6 +119,12 @@ class BrowserRunner:
         self.browser_version: str | None = None
         self.is_running = False
         self.exit_task: asyncio.Task[None] | None = None
+        self._search_defaults_retry_task: asyncio.Task[None] | None = None
+        # Bounded dedupe window for retry request ids (review
+        # t022_code_f015): only the most recent ids are remembered.
+        self._search_defaults_processed_requests: OrderedDict[str, None] = (
+            OrderedDict()
+        )
 
     def resolve_engine_binary(self) -> Path:
         """Use the SDK's exact Linux build and reject an incompatible cache."""
@@ -221,25 +233,52 @@ class BrowserRunner:
 
     @staticmethod
     def _clear_stale_x11_state(lock_path: Path, sock_path: Path) -> None:
-        """Drop X11 leftovers only when their recorded owner no longer exists."""
+        """Drop X11 leftovers only when staleness is actually proven.
+
+        Proven means one of: the lock names a PID that no longer exists,
+        or — with no lock at all — the socket refuses connections. A
+        missing lock alone proves nothing about the socket: a live X
+        server whose lock was removed externally keeps its socket
+        (review t022_code_f012).
+        """
         if lock_path.exists():
             try:
                 holder = int(lock_path.read_text(encoding="utf-8").strip())
             except (OSError, ValueError):
-                holder = None
-            if holder is not None:
-                try:
-                    os.kill(holder, 0)
-                except ProcessLookupError:
-                    pass
-                except PermissionError:
-                    raise RuntimeError(
-                        "X display is held by another process"
-                    ) from None
-                else:
-                    raise RuntimeError("X display is already in use")
-        lock_path.unlink(missing_ok=True)
-        sock_path.unlink(missing_ok=True)
+                # An unreadable or corrupt lock cannot prove the display is
+                # stale; keep the lock and its socket untouched.
+                raise RuntimeError(
+                    "X display lock cannot be verified as stale; refusing to remove it"
+                ) from None
+            try:
+                os.kill(holder, 0)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                raise RuntimeError("X display is held by another process") from None
+            else:
+                raise RuntimeError("X display is already in use")
+            lock_path.unlink(missing_ok=True)
+            sock_path.unlink(missing_ok=True)
+            return
+        if not sock_path.exists():
+            return
+        import socket as _socket
+
+        probe = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        try:
+            probe.settimeout(1.0)
+            probe.connect(str(sock_path))
+        except (ConnectionRefusedError, FileNotFoundError):
+            sock_path.unlink(missing_ok=True)
+        except OSError:
+            raise RuntimeError(
+                "X display socket cannot be verified as stale; refusing to remove it"
+            ) from None
+        else:
+            raise RuntimeError("X display is already in use") from None
+        finally:
+            probe.close()
 
     def setup_display(self, width: int = 1920, height: int = 1080) -> Path:
         """Configure Xauthority, start Xvfb, and launch Openbox."""
@@ -349,7 +388,11 @@ class BrowserRunner:
         return self.xauth_path
 
     def _browser_environment(
-        self, pulse_sock: Path, pulse_cookie: Path, wrapper_path: Path
+        self,
+        pulse_sock: Path,
+        pulse_cookie: Path,
+        wrapper_path: Path,
+        fontconfig_path: Path | None = None,
     ) -> dict[str, str]:
         """Build an explicit child environment instead of mutating ``os.environ``."""
         env = dict(os.environ)
@@ -363,6 +406,12 @@ class BrowserRunner:
                 "CLOAKBROWSER_CACHE_DIR": str(self.engine_cache_dir),
             }
         )
+        # A profile only sees its CJK bundle when a generated fontconfig file
+        # was prepared for it; otherwise the variable must not leak in from
+        # the runner's own environment.
+        env.pop("FONTCONFIG_FILE", None)
+        if fontconfig_path is not None:
+            env["FONTCONFIG_FILE"] = str(fontconfig_path)
         return env
 
     @staticmethod
@@ -405,6 +454,9 @@ class BrowserRunner:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.fontconfig_path = prepare_profile_fontconfig(
+            self.run_dir, cfg.font_bundle
+        )
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -430,7 +482,9 @@ class BrowserRunner:
         wrapper_path.write_text(wrapper_script, encoding="utf-8")
         wrapper_path.chmod(0o755)
 
-        browser_env = self._browser_environment(pulse_sock, pulse_cookie, wrapper_path)
+        browser_env = self._browser_environment(
+            pulse_sock, pulse_cookie, wrapper_path, self.fontconfig_path
+        )
 
         # Second validation gate: the API already rejects non-whitelisted args.
         safe_user_args = validate_launch_args(cfg.launch_args)
@@ -561,10 +615,14 @@ class BrowserRunner:
             raise RuntimeError("Failed to obtain webSocketDebuggerUrl from Chrome")
 
         await self._configure_window(width, height)
-        await initialize_profile_defaults(
+        # Default-search setup is best-effort (D1=B): a failure or timeout is
+        # recorded as an independent status and never blocks browser startup.
+        await run_search_defaults_initialization(
             self.browser_context,
             self.user_data_dir,
+            self.run_dir,
             set_google_default=cfg.set_google_default,
+            runtime_instance_id=self.runtime_instance_id,
         )
         self.is_running = True
 
@@ -597,6 +655,65 @@ class BrowserRunner:
 
         # Monitor Chrome process exit in background
         self.exit_task = asyncio.create_task(self._wait_for_chrome_exit(exit_code_file))
+        self._search_defaults_retry_task = asyncio.create_task(
+            self._watch_search_defaults_retries()
+        )
+
+    async def _process_search_defaults_retry(self) -> bool:
+        """Consume one fenced retry request against the live browser context.
+
+        Returns True when a request file was consumed. Requests naming another
+        profile or a stale instance are rejected; a repeated request_id is an
+        idempotent no-op. The browser is never restarted and existing tabs are
+        untouched (initialization only opens and closes its own page).
+        """
+        request_path = self.run_dir / SEARCH_DEFAULTS_RETRY_FILE
+        if not request_path.exists():
+            return False
+        try:
+            request = json.loads(request_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            request_path.unlink(missing_ok=True)
+            return True
+        request_path.unlink(missing_ok=True)
+        if (
+            not isinstance(request, dict)
+            or request.get("profile_id") != self.profile_id
+            or request.get("runtime_instance_id") != self.runtime_instance_id
+            or not isinstance(request.get("request_id"), str)
+            or not request["request_id"]
+        ):
+            logger.warning("Search defaults retry rejected: identity mismatch")
+            return True
+        request_id = request["request_id"]
+        if request_id in self._search_defaults_processed_requests:
+            self._search_defaults_processed_requests.move_to_end(request_id)
+            return True
+        self._search_defaults_processed_requests[request_id] = None
+        while len(self._search_defaults_processed_requests) > 64:
+            self._search_defaults_processed_requests.popitem(last=False)
+        await run_search_defaults_initialization(
+            self.browser_context,
+            self.user_data_dir,
+            self.run_dir,
+            set_google_default=self.profile_config.set_google_default,
+            runtime_instance_id=self.runtime_instance_id,
+            request_id=request_id,
+        )
+        return True
+
+    async def _watch_search_defaults_retries(self) -> None:
+        while True:
+            try:
+                await self._process_search_defaults_retry()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - watcher must survive bad requests
+                logger.warning(
+                    "Search defaults retry processing failed (%s)",
+                    type(exc).__name__,
+                )
+            await asyncio.sleep(0.5)
 
     async def _configure_window(self, width: int, height: int) -> None:
         """Resize the actual Chrome window before publishing readiness."""
@@ -754,6 +871,15 @@ class BrowserRunner:
 
     async def stop(self) -> None:
         """Gracefully stop browser context, Xvfb and Openbox."""
+        if (
+            self._search_defaults_retry_task is not None
+            and not self._search_defaults_retry_task.done()
+        ):
+            self._search_defaults_retry_task.cancel()
+            try:
+                await self._search_defaults_retry_task
+            except asyncio.CancelledError:
+                pass
         if self.exit_task is not None and not self.exit_task.done():
             self.exit_task.cancel()
             try:

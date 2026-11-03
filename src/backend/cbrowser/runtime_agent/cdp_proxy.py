@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,9 @@ class CdpProxyManager:
         )
         self.rearm_count = 0
         self._last_rearm_ok = False
+        self._rearm_pending_id: int | None = None
+        self._rearm_deadline: float | None = None
+        self._rearm_ack_timeout_s = 5.0
         self.shutting_down = False
         self._event_listener_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -79,6 +83,16 @@ class CdpProxyManager:
         self._last_rearm_ok = True
         logger.info("CDP proxy manager connected and armed default download capture")
 
+    def _allocate_cmd_id(self) -> int:
+        """Single allocation point for CDP command IDs.
+
+        Synchronous on purpose: no await can interleave between the read
+        and the increment, so the reconnect rearm path and send_command
+        can never hand out the same ID (review t022_code_f008).
+        """
+        self._next_cmd_id += 1
+        return self._next_cmd_id
+
     async def send_command(
         self, method: str, params: dict[str, Any] | None = None, timeout: float = 5.0
     ) -> dict[str, Any]:
@@ -87,8 +101,7 @@ class CdpProxyManager:
             raise RuntimeError("CDP proxy is not connected")
 
         async with self._lock:
-            self._next_cmd_id += 1
-            cid = self._next_cmd_id
+            cid = self._allocate_cmd_id()
 
         req = {"id": cid, "method": method, "params": params or {}}
         loop = asyncio.get_running_loop()
@@ -144,6 +157,40 @@ class CdpProxyManager:
                     try:
                         msg = json.loads(raw_msg)
                         msg_id = msg.get("id")
+                        if (
+                            self._rearm_pending_id is not None
+                            and self._rearm_deadline is not None
+                            and time.monotonic() > self._rearm_deadline
+                        ):
+                            # The rearm ACK window (aligned with the
+                            # initial path's 5s timeout) has closed: a
+                            # late ACK must not resurrect health for a
+                            # capture state nobody can date anymore.
+                            logger.warning(
+                                "Reconnect rearm ACK timed out; capture "
+                                "stays unhealthy"
+                            )
+                            self._rearm_pending_id = None
+                            self._rearm_deadline = None
+                        if (
+                            self._rearm_pending_id is not None
+                            and msg_id == self._rearm_pending_id
+                        ):
+                            self._rearm_pending_id = None
+                            self._rearm_deadline = None
+                            if "result" in msg and "error" not in msg:
+                                self.rearm_count += 1
+                                self._last_rearm_ok = True
+                                logger.info(
+                                    "Download capture rearmed after reconnect "
+                                    "(count=%d)",
+                                    self.rearm_count,
+                                )
+                            else:
+                                logger.warning(
+                                    "Reconnect rearm was not acknowledged "
+                                    "successfully; capture stays unhealthy"
+                                )
                         if msg_id in self.pending_cmd_futures:
                             fut = self.pending_cmd_futures.pop(msg_id)
                             if not fut.done():
@@ -183,6 +230,8 @@ class CdpProxyManager:
                                 RuntimeError("CDP event channel closed")
                             )
                 self.pending_cmd_futures.clear()
+                self._rearm_pending_id = None
+                self._rearm_deadline = None
 
             if self.shutting_down:
                 break
@@ -197,12 +246,16 @@ class CdpProxyManager:
                 )
                 # This coroutine is the only reader of CDP responses; sending
                 # the rearm without awaiting its ACK avoids self-deadlock. The
-                # next listener iterations consume the response.
-                self._next_cmd_id += 1
+                # command ID is recorded and health is only restored when this
+                # same reader consumes a matching successful ACK; an error
+                # ACK, a missing ACK or another disconnect keeps the capture
+                # unhealthy.
+                self._rearm_pending_id = self._allocate_cmd_id()
+                self._rearm_deadline = time.monotonic() + self._rearm_ack_timeout_s
                 await self.agent_ws.send(
                     json.dumps(
                         {
-                            "id": self._next_cmd_id,
+                            "id": self._rearm_pending_id,
                             "method": "Browser.setDownloadBehavior",
                             "params": {
                                 "behavior": "allowAndName",
@@ -212,8 +265,6 @@ class CdpProxyManager:
                         }
                     )
                 )
-                self.rearm_count += 1
-                self._last_rearm_ok = True
                 delay = 1.0
             except asyncio.CancelledError:
                 raise
@@ -333,5 +384,6 @@ class CdpProxyManager:
             if not fut.done():
                 fut.cancel()
         self.pending_cmd_futures.clear()
+        self._rearm_pending_id = None
         self._last_rearm_ok = False
         logger.info("CDP proxy manager closed")

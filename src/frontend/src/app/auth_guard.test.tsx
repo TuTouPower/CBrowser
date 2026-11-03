@@ -5,7 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
 import { AppProviders } from "./providers";
 import { routes } from "./router";
-import { ApiError, defaultApiClient } from "../shared/api/client";
+import { ApiError, type ApiClient } from "../shared/api/client";
 import type { ProfileEventsClient } from "../shared/api/sse";
 import type { ProfileResponse, ProfileRuntimeResponse } from "../shared/api/types";
 import { sanitizeNextPath } from "../features/auth/redirect";
@@ -23,7 +23,18 @@ const PROFILE: ProfileResponse = {
   auto_launch: false,
   launch_args: [],
   extension_paths: [],
-  tags: ["tag1"],
+  human_preset: "default",
+  font_bundle: "none",
+  allow_3p_cookies: true,
+  set_google_default: true,
+  capture_preview: true,
+  restore_session: true,
+  transparent_proxy: false,
+  portable_cookies: false,
+  user_data_dir: "/data/p1",
+  sort_order: 0,
+  tags: [{ tag: "tag1" }],
+  current_config_version: 1,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
@@ -32,14 +43,17 @@ const RUNTIME: ProfileRuntimeResponse = {
   profile_id: "p1",
   desired_state: "stopped",
   observed_state: "stopped",
+  runtime_instance_id: null,
   config_version: 1,
   failure_count: 0,
   restart_blocked: false,
+  last_exit_event_id: null,
   updated_at: "2026-01-01T00:00:00Z",
 };
 
 interface MockedApi {
   state: { authenticated: boolean };
+  client: ApiClient;
   expireOnNextMutation: () => void;
   triggerUnauthorized: () => void;
 }
@@ -59,52 +73,64 @@ function makeFakeSse(): ProfileEventsClient & {
   };
 }
 
+/**
+ * Builds a fresh stub client per scenario and hands it to AppProviders via
+ * its apiClient prop (A22). The production singleton is never mutated, so
+ * scenarios cannot leak into each other through shared client state.
+ */
+let currentApi: MockedApi;
+
 function mockApi(authenticated: boolean): MockedApi {
   const state = { authenticated };
   let unauthorized: (() => void) | undefined;
   let expireNextMutation = false;
 
-  defaultApiClient.setOnUnauthorized = (callback?: () => void) => {
-    unauthorized = callback;
-  };
+  const client = {
+    setOnUnauthorized: (callback?: () => void) => {
+      unauthorized = callback;
+    },
+    setCsrfToken: vi.fn(),
+    health: { check: vi.fn(async () => undefined) },
+    auth: {
+      session: vi.fn(async () => {
+        if (!state.authenticated) {
+          throw new ApiError("Authentication required", 401);
+        }
+        return { authenticated: true, csrf_token: "mock-csrf-token" };
+      }),
+      login: vi.fn(async () => {
+        state.authenticated = true;
+        return { csrf_token: "mock-csrf-token" };
+      }),
+      logout: vi.fn(async () => {
+        state.authenticated = false;
+      }),
+    },
+    profiles: {
+      list: vi.fn(async () => [PROFILE]),
+      get: vi.fn(async () => PROFILE),
+      getRuntime: vi.fn(async () => RUNTIME),
+      stop: vi.fn(async () => RUNTIME),
+      setDesiredState: vi.fn(async () => {
+        if (expireNextMutation) {
+          state.authenticated = false;
+          unauthorized?.();
+          throw new ApiError("Invalid or expired session", 401);
+        }
+        return RUNTIME;
+      }),
+    },
+  } as unknown as ApiClient;
 
-  defaultApiClient.auth.session = vi.fn(async () => {
-    if (!state.authenticated) {
-      throw new ApiError("Authentication required", 401);
-    }
-    return { authenticated: true, csrf_token: "mock-csrf-token" };
-  });
-
-  defaultApiClient.auth.login = vi.fn(async () => {
-    state.authenticated = true;
-    return { csrf_token: "mock-csrf-token" };
-  });
-
-  defaultApiClient.auth.logout = vi.fn(async () => {
-    state.authenticated = false;
-    defaultApiClient.setCsrfToken(null);
-  });
-
-  defaultApiClient.profiles.list = vi.fn(async () => [PROFILE]);
-  defaultApiClient.profiles.get = vi.fn(async () => PROFILE);
-  defaultApiClient.profiles.getRuntime = vi.fn(async () => RUNTIME);
-  defaultApiClient.profiles.stop = vi.fn(async () => RUNTIME);
-  defaultApiClient.profiles.setDesiredState = vi.fn(async () => {
-    if (expireNextMutation) {
-      state.authenticated = false;
-      unauthorized?.();
-      throw new ApiError("Invalid or expired session", 401);
-    }
-    return RUNTIME;
-  });
-
-  return {
+  currentApi = {
     state,
+    client,
     expireOnNextMutation: () => {
       expireNextMutation = true;
     },
     triggerUnauthorized: () => unauthorized?.(),
   };
+  return currentApi;
 }
 
 function renderApp(initialEntries: string[], sseClient = makeFakeSse()) {
@@ -113,7 +139,11 @@ function renderApp(initialEntries: string[], sseClient = makeFakeSse()) {
   });
   const router = createMemoryRouter(routes, { initialEntries });
   render(
-    <AppProviders queryClient={queryClient} sseClient={sseClient}>
+    <AppProviders
+      queryClient={queryClient}
+      apiClient={currentApi.client}
+      sseClient={sseClient}
+    >
       <RouterProvider router={router} />
     </AppProviders>,
   );
@@ -141,18 +171,19 @@ describe("auth guard and session expiry", () => {
     );
     expect(await screen.findByTestId("login-page")).toBeInTheDocument();
     expect(api.state.authenticated).toBe(false);
-    expect(defaultApiClient.profiles.list).not.toHaveBeenCalled();
+    expect(api.client.profiles.list).not.toHaveBeenCalled();
   });
 
   it("shows a loading state and issues no business requests while the session check is pending", async () => {
-    defaultApiClient.auth.session = () => new Promise(() => {});
+    const api = mockApi(false);
+    api.client.auth.session = () => new Promise(() => {});
     const sseClient = makeFakeSse();
     renderApp(["/?profileId=p1"], sseClient);
 
     expect(await screen.findByTestId("auth-loading")).toBeInTheDocument();
     expect(screen.queryByTestId("browser-session-mount")).not.toBeInTheDocument();
     expect(screen.queryByTestId("active-profile-header")).not.toBeInTheDocument();
-    expect(defaultApiClient.profiles.list).not.toHaveBeenCalled();
+    expect(api.client.profiles.list).not.toHaveBeenCalled();
     expect(sseClient.start).not.toHaveBeenCalled();
   });
 
@@ -196,7 +227,7 @@ describe("auth guard and session expiry", () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
     expect(api.state.authenticated).toBe(false);
-    expect(defaultApiClient.auth.logout).toHaveBeenCalled();
+    expect(api.client.auth.logout).toHaveBeenCalled();
     expect(sseClient.stop).toHaveBeenCalled();
   });
 
@@ -214,7 +245,7 @@ describe("auth guard and session expiry", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
     expect(router.state.location.search).toBe("?profileId=p1");
     expect(api.state.authenticated).toBe(true);
-    expect(defaultApiClient.auth.login).toHaveBeenCalledWith({ password });
+    expect(api.client.auth.login).toHaveBeenCalledWith({ password });
     expect(await screen.findByTestId("active-profile-header")).toHaveTextContent(
       "Profile Alpha",
     );

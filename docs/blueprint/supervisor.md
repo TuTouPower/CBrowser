@@ -32,6 +32,8 @@ Supervisor 控制目录持进程级 flock，SIGKILL 由内核释放。Supervisor
 
 API 已绑定但尚无对应 Browser 的启动中断，通过稳定 missing_runtime 事件收敛后进入正常退避。Profile 锁持有期间不合成退出；已读取 Native 退出 journal 时优先等待其送达，避免首次 API 503 后被合成异常抢先覆盖。手动重开先移除旧自有 Browser 容器，再清理指向旧 hostname/PID 的 Chromium singleton 链接；不跟随链接修改目标。
 
+停止命令的结果词汇与观测分离（t022）：结果为 `stopped`（本次实际停止）/ `already_absent`（确认不存在）/ `superseded_noop`（目标已被新实例取代，不触碰新实例），重放返回同一命令结果；API 只按权威观测记录判定收敛。生命周期冲突以类型化 `LifecycleConflictError` 映射 409（不依赖异常文案），端口耗尽 503。诊断事件投递区分已接受/永久拒绝/暂不可用：永久语义拒绝只入死信一次并持久推进游标，认证/限流/网关类失败按暂不可用重试，诊断投递不推进业务状态。X11 权限 helper 仅持 FOWNER 能力、只读根、无新特权并带受管标签，成败/取消均清理。容器扫描在边界校验身份与 config-version，异常资源逐个拒绝不中断整轮，未知身份不接纳不批量删除。网络策略任一地址族应用失败时先装双族 DROP 兜底再报错，诊断含 family/工具/退出码与有界脱敏 stderr。引擎/GeoIP 缓存按代次复用：全量校验后以树指纹 + 根身份封存 sidecar（原子切换），后续启动只验根与封存记录，未知/被改变/刷新后的代次重新全量校验；缓存初始化由 Supervisor 独占写，运行消费者只读挂载；封存指纹覆盖路径/类型/大小/mtime 与链接目标，不是内容哈希——其有效性以该独占写不变式为前提，不变式之外的写入方不在此信任模型内。Supervisor 另提供 search-defaults 观测与重试转发（UDS /control，session 围栏）。
+
 ## 资源限制
 
 `ResourcePolicyService` 使用 Linux `/proc/stat` 和 Docker CPU counter，识别 NanoCpus、CFS quota/period、cpuset 的最紧实际预算。缺失、重复和重置 counter 不能被当作新的低负载窗口。Profile 聚合 Browser/Stream 压力，结合真实前台连接状态决定是否下发 8 FPS cap；恢复后解除 cap，由 Stream 自身活动策略决定 8/30 FPS。全后台状态不因 CPU 高负载误触发前台限制。

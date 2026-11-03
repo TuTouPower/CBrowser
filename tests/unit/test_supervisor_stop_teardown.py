@@ -91,3 +91,55 @@ async def test_teardown_failure_still_releases_port_and_reports_error(tmp_path):
     assert docker.teardown_calls == 1
     assert core.ports.get_port("profile") is None
     assert core.get_session("profile") is None
+
+
+@pytest.mark.asyncio
+async def test_stop_of_superseded_instance_is_noop_and_protects_replacement(
+    tmp_path,
+):
+    """A45: stopping a superseded instance returns superseded_noop, never
+    touches the replacement session, and replays the same command result."""
+    docker = _Docker(tmp_path / "data")
+    core = _core(tmp_path, docker, gateway=None)
+    core._sessions["profile"] = ActiveSession(
+        "profile", "inst_new", 1, 30000, "browser", "stream"
+    )
+    result = await core.stop_profile(
+        "profile", expected_instance="inst_old", operation_id="op-supersede"
+    )
+    assert result == {
+        "profile_id": "profile",
+        "runtime_instance_id": "inst_old",
+        "status": "superseded_noop",
+    }
+    assert docker.teardown_calls == 0
+    session = core.get_session("profile")
+    assert session is not None and session.runtime_instance_id == "inst_new"
+
+    replay = await core.stop_profile(
+        "profile", expected_instance="inst_old", operation_id="op-supersede"
+    )
+    assert replay == result
+    await core.api.aclose()
+
+
+@pytest.mark.asyncio
+async def test_stop_without_any_instance_reports_already_absent(tmp_path):
+    """A45: a stop whose target provably does not exist is already_absent,
+    not a claim that this command stopped something."""
+    docker = _Docker(tmp_path / "data")
+    core = _core(tmp_path, docker, gateway=None)
+    result = await core.stop_profile(
+        "profile", expected_instance="inst_gone", operation_id="op-absent"
+    )
+    assert result == {
+        "profile_id": "profile",
+        "runtime_instance_id": "inst_gone",
+        "status": "already_absent",
+    }
+    assert docker.teardown_calls == 0
+    replay = await core.stop_profile(
+        "profile", expected_instance="inst_gone", operation_id="op-absent"
+    )
+    assert replay == result
+    await core.api.aclose()

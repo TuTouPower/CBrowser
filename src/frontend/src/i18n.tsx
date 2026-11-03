@@ -12,9 +12,10 @@ export type Locale = "en" | "zh";
 
 type Params = Record<string, string | number>;
 
-type MessageDict = Record<string, string>;
-
-const en: MessageDict = {
+// The en dictionary is the single source of the translation key set:
+// TranslationKey is derived from its exact keys, and zh must satisfy the
+// same key set at compile time (A21).
+export const en = {
   // Common
   loading: "Loading...",
   cancel: "Cancel",
@@ -55,8 +56,8 @@ const en: MessageDict = {
   displayApplyAndRestart: "Apply and restart",
   displayApplyingRestart: "Applying and restarting...",
   displayApplyFailed: "Failed to apply display size: {error}",
-  systemGatewayControlApi: "System Gateway & Control API",
-  systemApiServicesStatus: "Status of v2 API services",
+  controlApiStatusTitle: "Control API",
+  controlApiStatusHint: "Control API health check",
   healthHealthy: "Healthy",
   healthChecking: "Checking...",
   healthUnreachable: "Unreachable",
@@ -81,7 +82,17 @@ const en: MessageDict = {
   stopProfileFirst: "Stop the profile first",
   reset: "Reset",
   resetting: "Resetting...",
+  searchDefaultsFailed: "Default search engine setup failed",
+  searchDefaultsFailedHint:
+    "The browser is ready to use. You can retry setting the default search engine without restarting it.",
+  retrySearchDefaults: "Retry",
+  searchDefaultsRetrying: "Retrying...",
+  failedToRetrySearchDefaults: "Failed to retry default search engine setup",
   profileName: "Profile Name",
+  fontBundle: "Chinese Font Bundle",
+  fontBundleNone: "None (no Chinese fonts)",
+  fontBundleMicroHei: "WenQuanYi Micro Hei",
+  fontBundleZenHei: "WenQuanYi Zen Hei",
   profileNameExample: "e.g. Work Profile",
   proxyUrlOptional: "Proxy URL (optional)",
   tagsPlaceholder: "dev, research, shopping",
@@ -101,6 +112,8 @@ const en: MessageDict = {
   profileFilesHint:
     "Uploads and downloads are stored by the Artifact Service, never through Selkies.",
   artifactsUploaded: "{count} file(s) uploaded",
+  uploadPartialFailure:
+    "Uploaded {succeeded} file(s); failed on \"{name}\"; {remaining} file(s) were not uploaded. {error}",
   deleteArtifactConfirm: "Delete this file from the profile?",
   automationPageTitle: "CDP automation",
   automationPageHint:
@@ -136,6 +149,8 @@ const en: MessageDict = {
   runtimeCheckUnavailable: "Profile runtime status unavailable: {reason}",
   runtimeNotRunning: "Profile runtime is not running (state: {state})",
   sessionStartFailed: "Failed to start the session: {error}",
+  sessionLoadFailed: "Failed to load the session: {error}",
+  retryAction: "Retry",
   runtimeReportedError: "Profile runtime reported an error (state: {state})",
   runtimeStateUnknown: "unknown",
   iceConnectivityCheckFailed: "WebRTC ICE connectivity check failed",
@@ -195,7 +210,7 @@ const en: MessageDict = {
 
 };
 
-const zh: MessageDict = {
+export const zh = {
   loading: "加载中...",
   cancel: "取消",
   save: "保存",
@@ -231,8 +246,8 @@ const zh: MessageDict = {
   displayApplyAndRestart: "应用并重启",
   displayApplyingRestart: "正在应用并重启...",
   displayApplyFailed: "应用显示尺寸失败：{error}",
-  systemGatewayControlApi: "系统网关与控制 API",
-  systemApiServicesStatus: "v2 API 服务状态",
+  controlApiStatusTitle: "控制 API",
+  controlApiStatusHint: "控制 API 健康检查",
   healthHealthy: "正常",
   healthChecking: "检查中...",
   healthUnreachable: "无法访问",
@@ -254,7 +269,16 @@ const zh: MessageDict = {
   stopProfileFirst: "请先停止该配置",
   reset: "重置",
   resetting: "重置中...",
+  searchDefaultsFailed: "默认搜索引擎设置失败",
+  searchDefaultsFailedHint: "浏览器已可正常使用。可以重试设置默认搜索引擎，无需重启浏览器。",
+  retrySearchDefaults: "重试",
+  searchDefaultsRetrying: "重试中...",
+  failedToRetrySearchDefaults: "重试设置默认搜索引擎失败",
   profileName: "配置名称",
+  fontBundle: "中文字体包",
+  fontBundleNone: "无（不提供中文字体）",
+  fontBundleMicroHei: "文泉驿微米黑",
+  fontBundleZenHei: "文泉驿正黑",
   profileNameExample: "例如：工作配置",
   proxyUrlOptional: "代理 URL（可选）",
   tagsPlaceholder: "开发, 调研, 购物",
@@ -273,6 +297,8 @@ const zh: MessageDict = {
   profileFilesHint:
     "上传与下载均由 Artifact Service 管理，不经过 Selkies 文件传输。",
   artifactsUploaded: "已上传 {count} 个文件",
+  uploadPartialFailure:
+    "已上传 {succeeded} 个文件；在“{name}”处上传失败；还有 {remaining} 个文件未处理。{error}",
   deleteArtifactConfirm: "确定从此配置删除该文件？",
   automationPageTitle: "CDP 自动化",
   automationPageHint:
@@ -306,6 +332,8 @@ const zh: MessageDict = {
   runtimeCheckUnavailable: "无法获取运行时状态：{reason}",
   runtimeNotRunning: "配置运行时未运行（状态：{state}）",
   sessionStartFailed: "启动会话失败：{error}",
+  sessionLoadFailed: "加载会话失败：{error}",
+  retryAction: "重试",
   runtimeReportedError: "配置运行时报告错误（状态：{state}）",
   runtimeStateUnknown: "未知",
   iceConnectivityCheckFailed: "WebRTC ICE 连接检查失败",
@@ -362,7 +390,7 @@ const zh: MessageDict = {
   failedToUpdateProfile: "更新配置失败",
   failedToDeleteProfile: "删除配置失败",
 
-};
+} satisfies Record<TranslationKey, string>;
 
 export type TranslationKey = keyof typeof en;
 

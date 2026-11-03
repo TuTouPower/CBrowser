@@ -32,6 +32,7 @@ from typing import Any
 
 import httpx
 import pytest
+from wait import poll_until
 
 from e2e_env import require_e2e_env
 import uvicorn
@@ -1029,11 +1030,18 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
             ["docker", "exec", c_name, "pkill", "-9", "pulseaudio"],
             check=True,
         )
-        await asyncio.sleep(1.0)
-        h_pulse_fail_code, h_pulse_fail_data = uds_http(c_name, "GET", "/health")
-        assert h_pulse_fail_code == 200
-        assert h_pulse_fail_data["ready"] is False
-        assert h_pulse_fail_data["audio_ready"] is False
+        # Poll with a deadline (t024 AC-007/A28): "immediately" is the
+        # 5s bound; the state must actually arrive, not be assumed after
+        # a fixed sleep.
+        h_pulse_fail_code, h_pulse_fail_data = await poll_until(
+            lambda: asyncio.to_thread(uds_http, c_name, "GET", "/health"),
+            lambda result: result[0] == 200
+            and result[1]["ready"] is False
+            and result[1]["audio_ready"] is False,
+            timeout=5.0,
+            interval=0.1,
+            description="health to report PulseAudio failure",
+        )
 
         # Sub-test 3b: Kill Xvfb -> /health must immediately report ready: False and
         # display_ready: False
@@ -1042,11 +1050,15 @@ async def test_ac002_subsystem_readiness_and_geometry(http_server: str) -> None:
             ["docker", "exec", c_name, "pkill", "-9", "Xvfb"],
             check=True,
         )
-        await asyncio.sleep(1.0)
-        h_disp_fail_code, h_disp_fail_data = uds_http(c_name, "GET", "/health")
-        assert h_disp_fail_code == 200
-        assert h_disp_fail_data["ready"] is False
-        assert h_disp_fail_data["display_ready"] is False
+        h_disp_fail_code, h_disp_fail_data = await poll_until(
+            lambda: asyncio.to_thread(uds_http, c_name, "GET", "/health"),
+            lambda result: result[0] == 200
+            and result[1]["ready"] is False
+            and result[1]["display_ready"] is False,
+            timeout=5.0,
+            interval=0.1,
+            description="health to report Xvfb failure",
+        )
         assert h_disp_fail_data["status"] in ("degraded", "error")
     except Exception:
         save_container_failure_log(c_name, "test_ac002")
@@ -1330,8 +1342,10 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
             f"{current_default_files}"
         )
 
-        # 3. Disconnection of external client automatically triggers rearm
-        await asyncio.sleep(1.5)
+        # 3. Disconnection of external client automatically triggers rearm.
+        # No fixed sleep (t024 AC-007/A28): the rearm is proven by the
+        # recovery download below landing in the default directory; if the
+        # agent never rearmed, that assertion fails on its own evidence.
 
         # 4. Trigger Second Formal Download (Proof of Automatic Recovery)
         dl2_script = """

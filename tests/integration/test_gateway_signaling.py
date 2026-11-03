@@ -1,6 +1,7 @@
 """Integration tests for Gateway agent registration and viewer signaling."""
 
 import asyncio
+import json
 import secrets
 from pathlib import Path
 
@@ -535,5 +536,296 @@ async def test_oversized_viewer_frame_is_rejected_at_transport(tmp_path: Path) -
                     assert ws_viewer.close_code == 1009
             assert rejected
             await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_viewer_message_over_data_budget_closes_1009_only_that_viewer(
+    tmp_path: Path,
+) -> None:
+    """A15: a viewer message beyond the shared data budget (but below the
+    frame ceiling) closes that viewer with 1009; other viewers keep working
+    and in-budget messages pass unchanged."""
+    from cbrowser.stream_agent.protocol import MAX_TUNNEL_DATA_SIZE
+
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        cookie_1 = f"sess_1_{secrets.token_urlsafe(32)}"
+        cookie_2 = f"sess_2_{secrets.token_urlsafe(32)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        harness.api_service.set_viewer_auth(cookie_1, profile_id, allowed=True)
+        harness.api_service.set_viewer_auth(cookie_2, profile_id, allowed=True)
+
+        async with aiohttp.ClientSession() as session:
+            ws_agent, _session_id = await _register_agent(
+                session, harness, profile_id, instance_id
+            )
+            viewer_url = f"{harness.ws_url}/stream/{profile_id}/signal"
+            ws_viewer1 = await session.ws_connect(
+                viewer_url,
+                headers={
+                    "Origin": "https://localhost:8443",
+                    "Cookie": f"cbrowser_session={cookie_1}",
+                },
+            )
+            open1 = GatewayTunnelEnvelope.model_validate_json(
+                (await ws_agent.receive()).data
+            )
+            ws_viewer2 = await session.ws_connect(
+                viewer_url,
+                headers={
+                    "Origin": "https://localhost:8443",
+                    "Cookie": f"cbrowser_session={cookie_2}",
+                },
+            )
+            open2 = GatewayTunnelEnvelope.model_validate_json(
+                (await ws_agent.receive()).data
+            )
+
+            await ws_viewer1.send_str("x" * (MAX_TUNNEL_DATA_SIZE + 1))
+            closed = await asyncio.wait_for(ws_viewer1.receive(), timeout=5.0)
+            assert closed.type in (
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSED,
+            )
+            assert ws_viewer1.close_code == 1009
+
+            # The agent receives a close for viewer 1 only; viewer 2 is fine.
+            close_env = GatewayTunnelEnvelope.model_validate_json(
+                (await ws_agent.receive()).data
+            )
+            assert close_env.type == "close"
+            assert close_env.conn_id == open1.conn_id
+
+            await ws_viewer2.send_str("STILL_OPEN")
+            still = GatewayTunnelEnvelope.model_validate_json(
+                (await ws_agent.receive()).data
+            )
+            assert still.conn_id == open2.conn_id
+            assert still.data == "STILL_OPEN"
+            await ws_viewer2.close()
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_registration_failure_budget_blocks_after_repeated_bad_credentials(
+    tmp_path: Path,
+) -> None:
+    """A39: twenty failed handshakes from one source exhaust its failure
+    budget; a valid registration from that source is then refused with 429,
+    while successes never consume the budget (covered separately)."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            for _ in range(20):
+                with pytest.raises(aiohttp.ClientResponseError) as caught:
+                    await session.ws_connect(
+                        f"{harness.ws_url}/stream/agent/register"
+                        f"?profile_id={profile_id}&runtime_instance_id={instance_id}",
+                        headers={"Authorization": "Bearer invalid-token"},
+                    )
+                assert caught.value.status == 401
+            with pytest.raises(aiohttp.ClientResponseError) as caught:
+                await _register_agent(session, harness, profile_id, instance_id)
+            assert caught.value.status == 429
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_successful_registrations_never_consume_failure_budget(
+    tmp_path: Path,
+) -> None:
+    """A39: repeated successful register/close cycles release their
+    reservations and record no failures, so recovery stays possible."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            for _ in range(25):
+                ws_agent, _ = await _register_agent(
+                    session, harness, profile_id, instance_id
+                )
+                await ws_agent.close()
+            ws_agent, _ = await _register_agent(
+                session, harness, profile_id, instance_id
+            )
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_inflight_handshake_reservations_bound_and_release(
+    tmp_path: Path,
+) -> None:
+    """A39: handshakes that never complete hold bounded reservations; once
+    they are cancelled the source can register again."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            token = harness.agent_credentials.token_for(profile_id, instance_id)
+            held = []
+            for _ in range(4):
+                held.append(
+                    await session.ws_connect(
+                        f"{harness.ws_url}/stream/agent/register"
+                        f"?profile_id={profile_id}&runtime_instance_id={instance_id}",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                )
+            with pytest.raises(aiohttp.ClientResponseError) as caught:
+                await _register_agent(session, harness, profile_id, instance_id)
+            assert caught.value.status == 429
+            for ws in held:
+                await ws.close()
+            # Poll until the gateway observes the cancellations and the
+            # reservations are released (bounded, condition-based).
+            deadline = asyncio.get_running_loop().time() + 5.0
+            while True:
+                try:
+                    ws_agent, _ = await _register_agent(
+                        session, harness, profile_id, instance_id
+                    )
+                    break
+                except aiohttp.ClientResponseError as exc:
+                    if exc.status != 429 or (
+                        asyncio.get_running_loop().time() > deadline
+                    ):
+                        raise
+                    await asyncio.sleep(0.1)
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_agents_recover_after_gateway_restart(tmp_path: Path) -> None:
+    """A39: after a gateway restart, previously registered agents can
+    register again (fresh throttle state, no stale reservations)."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    profile_id = f"prof_{secrets.token_hex(4)}"
+    instance_id = f"inst_{secrets.token_hex(4)}"
+    harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+    try:
+        async with aiohttp.ClientSession() as session:
+            ws_agent, _ = await _register_agent(
+                session, harness, profile_id, instance_id
+            )
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+    await harness.start()
+    try:
+        # The fake API service restarts empty; rebind the runtime instance.
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            # Agents recover via bounded backoff while the restarted
+            # gateway/API pair settles; mirror that behavior here.
+            last_error: Exception | None = None
+            for _ in range(20):
+                try:
+                    ws_agent, _ = await _register_agent(
+                        session, harness, profile_id, instance_id
+                    )
+                    break
+                except aiohttp.ClientResponseError as exc:
+                    # Only a not-yet-settled API binding (403) or an
+                    # unavailable gateway (503) may be retried; anything
+                    # else (e.g. a 429 throttle regression) fails loudly.
+                    if exc.status not in (403, 503):
+                        raise
+                    last_error = exc
+                    await asyncio.sleep(0.25)
+            else:
+                raise AssertionError(
+                    f"agent did not recover after gateway restart: {last_error!r}"
+                )
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_handshake_timeout_releases_reservations(tmp_path: Path) -> None:
+    """A39: handshakes that never send a register packet are timed out by
+    the gateway (10s), and their in-flight reservations are released on
+    that exit path too — a legitimate registration succeeds afterwards."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            token = harness.agent_credentials.token_for(profile_id, instance_id)
+            held = []
+            for _ in range(4):
+                held.append(
+                    await session.ws_connect(
+                        f"{harness.ws_url}/stream/agent/register"
+                        f"?profile_id={profile_id}&runtime_instance_id={instance_id}",
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                )
+            # The gateway closes each silent handshake at its 10s timeout.
+            for ws in held:
+                await asyncio.wait_for(ws.receive(), timeout=20.0)
+                assert ws.close_code == 1008
+            ws_agent, _ = await _register_agent(
+                session, harness, profile_id, instance_id
+            )
+            await ws_agent.close()
+    finally:
+        await harness.stop()
+
+
+@pytest.mark.asyncio
+async def test_agent_oversized_envelope_closes_1009(tmp_path: Path) -> None:
+    """A15: an agent-to-gateway tunnel frame beyond the envelope budget is
+    closed with 1009 on that connection only."""
+    harness = GatewayHarness(tmp_path)
+    await harness.start()
+    try:
+        profile_id = f"prof_{secrets.token_hex(4)}"
+        instance_id = f"inst_{secrets.token_hex(4)}"
+        harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
+        async with aiohttp.ClientSession() as session:
+            ws_agent, agent_session_id = await _register_agent(
+                session, harness, profile_id, instance_id
+            )
+            oversized = json.dumps(
+                {
+                    "version": "v2",
+                    "type": "msg",
+                    "profile_id": profile_id,
+                    "runtime_instance_id": instance_id,
+                    "agent_session_id": agent_session_id,
+                    "conn_id": "conn_x",
+                    "data": "x" * (3 * 1024 * 1024),
+                }
+            )
+            await ws_agent.send_str(oversized)
+            msg = await asyncio.wait_for(ws_agent.receive(), timeout=5.0)
+            assert msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED)
+            assert ws_agent.close_code == 1009
     finally:
         await harness.stop()

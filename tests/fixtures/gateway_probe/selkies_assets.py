@@ -19,6 +19,11 @@ REF_MANIFEST = (
     / "selkies_web_sha256.txt"
 )
 
+# Protocol probe shim (t024 AC-004/A25): it reproduces the production
+# adapter's tab-identity semantics (create-on-missing) so gateway E2E can
+# drive the real signaling path from raw pages; it is NOT coverage of the
+# production adapter (src/frontend/src/features/browser-session/adapter.ts),
+# which the frontend suites own.
 CLIENT_SHIM_SCRIPT = r"""<script>
 (() => {
     if (window.__cbrowserShimInstalled) return;

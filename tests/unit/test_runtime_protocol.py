@@ -20,7 +20,9 @@ from pydantic import ValidationError
 
 def test_schema_json_file_validity() -> None:
     """Verify that schemas/runtime/agent_protocol.json is valid JSON."""
-    schema_path = Path("schemas/runtime/agent_protocol.json")
+    schema_path = (
+        Path(__file__).resolve().parents[2] / "schemas/runtime/agent_protocol.json"
+    )
     assert schema_path.exists(), "Schema file does not exist"
     with open(schema_path, "r", encoding="utf-8") as f:
         data = json.load(f)

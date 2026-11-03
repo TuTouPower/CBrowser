@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import hashlib
 import json
@@ -18,10 +19,11 @@ from cbrowser.adapters.database.models import (
     AutomationTokenModel,
     ProfileModel,
     SessionModel,
-    utc_now_iso,
 )
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.auth.rate_limiter import LoginRateLimiter
+from cbrowser.domain.models import utc_now_iso
+from cbrowser.gateway.endpoint import normalize_origin
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -84,7 +86,7 @@ class AuthService:
         if len(password.encode("utf-8")) < 12:
             raise RuntimeError("Admin password must contain at least 12 bytes")
 
-        password_hash = self.ph.hash(password)
+        password_hash = await asyncio.to_thread(self.ph.hash, password)
         admin_id = str(uuid.uuid4())
 
         async with self._session_maker() as session, write_transaction(session):
@@ -124,16 +126,22 @@ class AuthService:
             )
 
             if admin is None:
-                # Perform dummy verification to prevent timing attack
+                # Perform dummy verification to prevent timing attack. Argon2
+                # runs in a worker thread so the event loop keeps serving
+                # other requests during the deliberately expensive verify.
                 try:
-                    self.ph.verify(self._dummy_hash, password)
+                    await asyncio.to_thread(
+                        self.ph.verify, self._dummy_hash, password
+                    )
                 except VerificationError:
                     pass
                 self.rate_limiter.record_failure(client_ip)
                 return False, "invalid_credentials"
 
             try:
-                self.ph.verify(admin.password_hash, password)
+                await asyncio.to_thread(
+                    self.ph.verify, admin.password_hash, password
+                )
                 self.rate_limiter.record_success(client_ip)
                 return True, None
             except (VerifyMismatchError, VerificationError):
@@ -302,12 +310,24 @@ class AuthService:
         profile_id: str,
         allowed_origins: list[str],
     ) -> tuple[bool, str | None]:
-        """Authorize a Viewer connection."""
+        """Authorize a Viewer connection.
+
+        Both sides of the origin comparison pass through the shared
+        ``normalize_origin`` (A42): the Gateway entry already normalizes
+        browser origins, so the API side must not exact-match a raw
+        string against the configured list — a trailing slash or default
+        port variant of an allowed origin is the same origin.
+        """
         sess = await self.get_valid_session(session_token)
         if sess is None:
             return False, "invalid_session"
 
-        if origin not in allowed_origins:
+        try:
+            normalized_origin = normalize_origin(origin)
+            normalized_allowed = [normalize_origin(item) for item in allowed_origins]
+        except ValueError:
+            return False, "invalid_origin"
+        if normalized_origin not in normalized_allowed:
             return False, "invalid_origin"
 
         async with self._session_maker() as session:
@@ -320,13 +340,23 @@ class AuthService:
     async def authorize_automation(
         self, token: str, profile_id: str, client_ip: str = "unknown"
     ) -> tuple[bool, str | None]:
-        """Authorize an automation client with per-source throttling."""
+        """Authorize an automation client with per-source throttling.
+
+        Audit policy (A40): every denial category is recorded with its
+        reason and source. Denials for a *known* token are individual
+        audit rows; denials for unknown or malformed tokens — the online
+        guessing path — are aggregated into one bounded row per
+        (reason, source) bucket and never store the token or its hash.
+        A successful authorization does not erase recorded failures:
+        limiter history decays only by its time window.
+        """
         if self._automation_limiter.is_rate_limited(client_ip):
             return False, "rate_limited"
         if not token or not token.startswith("cbat_"):
             logger.warning(
                 "Automation authorization rejected: invalid token format"
             )
+            await self._audit_unknown_token_denied("invalid_token", client_ip)
             self._automation_limiter.record_failure(client_ip)
             return False, "invalid_token"
 
@@ -346,16 +376,23 @@ class AuthService:
 
             if row is None:
                 logger.warning("Automation authorization rejected: token not found")
+                await self._audit_unknown_token_denied(
+                    "token_not_found", client_ip
+                )
                 self._automation_limiter.record_failure(client_ip)
                 return False, "token_not_found"
 
             if row.revoked:
-                await self._record_auth_denied(row.id, profile_id, "token_revoked")
+                await self._record_auth_denied(
+                    row.id, profile_id, "token_revoked", client_ip
+                )
                 self._automation_limiter.record_failure(client_ip)
                 return False, "token_revoked"
 
             if row.expires_at is not None and row.expires_at <= utc_now_iso():
-                await self._record_auth_denied(row.id, profile_id, "token_expired")
+                await self._record_auth_denied(
+                    row.id, profile_id, "token_expired", client_ip
+                )
                 self._automation_limiter.record_failure(client_ip)
                 return False, "token_expired"
 
@@ -366,22 +403,23 @@ class AuthService:
 
             if profile_id not in allowed_pids:
                 await self._record_auth_denied(
-                    row.id, profile_id, "profile_unauthorized"
+                    row.id, profile_id, "profile_unauthorized", client_ip
                 )
                 self._automation_limiter.record_failure(client_ip)
                 return False, "profile_unauthorized"
 
             prof = await session.get(ProfileModel, profile_id)
             if prof is None:
-                await self._record_auth_denied(row.id, profile_id, "profile_not_found")
+                await self._record_auth_denied(
+                    row.id, profile_id, "profile_not_found", client_ip
+                )
                 self._automation_limiter.record_failure(client_ip)
                 return False, "profile_not_found"
 
-        self._automation_limiter.record_success(client_ip)
         return True, None
 
     async def _record_auth_denied(
-        self, entity_id: str, profile_id: str, reason: str
+        self, entity_id: str, profile_id: str, reason: str, source: str
     ) -> None:
         now = utc_now_iso()
         async with self._session_maker() as session, write_transaction(session):
@@ -391,7 +429,70 @@ class AuthService:
                 entity_id=entity_id,
                 action="authorize_denied",
                 actor="gateway",
-                details=json.dumps({"profile_id": profile_id, "reason": reason}),
+                details=json.dumps(
+                    {"profile_id": profile_id, "reason": reason, "source": source}
+                ),
                 created_at=now,
             )
             session.add(audit)
+
+    async def _audit_unknown_token_denied(
+        self, reason: str, source: str
+    ) -> None:
+        """Best-effort audit for the guessing path.
+
+        A storage failure while aggregating the denial must never change
+        the authorization outcome (a clean rejection must not degrade
+        into a retryable 503) or skip the limiter accounting, so write
+        errors are logged and swallowed here.
+        """
+        try:
+            await self._record_unknown_token_denied(reason, source)
+        except Exception:  # noqa: BLE001 - audit must not mask the denial
+            logger.warning(
+                "Automation denial audit write failed: reason=%s source=%s",
+                reason,
+                source,
+                exc_info=True,
+            )
+
+    async def _record_unknown_token_denied(
+        self, reason: str, source: str
+    ) -> None:
+        """Aggregate unknown/malformed-token denials into one bounded row.
+
+        The bucket id is derived from (reason, source) only — never from
+        the presented token — so repeated guessing increments a counter
+        instead of growing the audit table or persisting token material.
+        """
+        bucket_id = "agg_" + hashlib.sha256(
+            f"automation-denied:{reason}:{source}".encode("utf-8")
+        ).hexdigest()[:40]
+        now = utc_now_iso()
+        async with self._session_maker() as session, write_transaction(session):
+            row = await session.get(AuditEventModel, bucket_id)
+            if row is None:
+                session.add(
+                    AuditEventModel(
+                        id=bucket_id,
+                        entity_type="automation_token",
+                        entity_id="unknown_token",
+                        action="authorize_denied",
+                        actor="gateway",
+                        details=json.dumps(
+                            {
+                                "reason": reason,
+                                "source": source,
+                                "count": 1,
+                                "first_seen": now,
+                                "last_seen": now,
+                            }
+                        ),
+                        created_at=now,
+                    )
+                )
+                return
+            details = json.loads(row.details)
+            details["count"] = int(details.get("count", 1)) + 1
+            details["last_seen"] = now
+            row.details = json.dumps(details)

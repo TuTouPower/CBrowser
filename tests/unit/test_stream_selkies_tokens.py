@@ -250,7 +250,10 @@ async def test_agent_hello_token_injection_preserves_tab_id_and_resume_key(
 
 
 def test_entrypoint_script_ac008_and_ac010_directives() -> None:
-    entrypoint_path = Path("config/docker/stream_runtime/entrypoint.sh")
+    entrypoint_path = (
+        Path(__file__).resolve().parents[2]
+        / "config/docker/stream_runtime/entrypoint.sh"
+    )
     content = entrypoint_path.read_text(encoding="utf-8")
 
     # AC-008: Dual mode disabled

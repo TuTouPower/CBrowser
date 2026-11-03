@@ -1,4 +1,45 @@
 {
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SupervisorControlProtocol",
+  "version": "1.0.0",
+  "messages": {
+    "StartProfileRequest": {
+      "$id": "#/$defs/StartProfileRequest",
+      "$ref": "#/$defs/StartProfileRequest"
+    },
+    "StartProfileResponse": {
+      "$id": "#/$defs/StartProfileResponse",
+      "$ref": "#/$defs/StartProfileResponse"
+    },
+    "StopProfileRequest": {
+      "$id": "#/$defs/StopProfileRequest",
+      "$ref": "#/$defs/StopProfileRequest"
+    },
+    "StopProfileResponse": {
+      "$id": "#/$defs/StopProfileResponse",
+      "$ref": "#/$defs/StopProfileResponse"
+    },
+    "ResetBlockedRequest": {
+      "$id": "#/$defs/ResetBlockedRequest",
+      "$ref": "#/$defs/ResetBlockedRequest"
+    },
+    "ResetBlockedResponse": {
+      "$id": "#/$defs/ResetBlockedResponse",
+      "$ref": "#/$defs/ResetBlockedResponse"
+    },
+    "ProfileRuntimeStatus": {
+      "$id": "#/$defs/ProfileRuntimeStatus",
+      "$ref": "#/$defs/ProfileRuntimeStatus"
+    },
+    "SearchDefaultsRetryRequest": {
+      "$id": "#/$defs/SearchDefaultsRetryRequest",
+      "$ref": "#/$defs/SearchDefaultsRetryRequest"
+    },
+    "SearchDefaultsStatusResponse": {
+      "$id": "#/$defs/SearchDefaultsStatusResponse",
+      "$ref": "#/$defs/SearchDefaultsStatusResponse"
+    }
+  },
   "$defs": {
     "ProfileRuntimeStatus": {
       "additionalProperties": false,
@@ -131,6 +172,130 @@
         "profile_id"
       ],
       "title": "ResetBlockedResponse",
+      "type": "object"
+    },
+    "SearchDefaultsRetryRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "request_id"
+      ],
+      "title": "SearchDefaultsRetryRequest",
+      "type": "object"
+    },
+    "SearchDefaultsStatus": {
+      "additionalProperties": false,
+      "description": "Independent outcome of the best-effort default-search initialization.",
+      "properties": {
+        "state": {
+          "enum": [
+            "applied",
+            "failed",
+            "disabled",
+            "pending"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "error_kind": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Kind"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Request Id"
+        },
+        "updated_at": {
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "runtime_instance_id",
+        "updated_at"
+      ],
+      "title": "SearchDefaultsStatus",
+      "type": "object"
+    },
+    "SearchDefaultsStatusResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "search_defaults": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SearchDefaultsStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "SearchDefaultsStatusResponse",
       "type": "object"
     },
     "StartProfileRequest": {
@@ -271,7 +436,8 @@
         "status": {
           "enum": [
             "stopped",
-            "stopping"
+            "already_absent",
+            "superseded_noop"
           ],
           "title": "Status",
           "type": "string"
@@ -284,30 +450,5 @@
       "title": "StopProfileResponse",
       "type": "object"
     }
-  },
-  "anyOf": [
-    {
-      "$ref": "#/$defs/StartProfileRequest"
-    },
-    {
-      "$ref": "#/$defs/StartProfileResponse"
-    },
-    {
-      "$ref": "#/$defs/StopProfileRequest"
-    },
-    {
-      "$ref": "#/$defs/StopProfileResponse"
-    },
-    {
-      "$ref": "#/$defs/ResetBlockedRequest"
-    },
-    {
-      "$ref": "#/$defs/ResetBlockedResponse"
-    },
-    {
-      "$ref": "#/$defs/ProfileRuntimeStatus"
-    }
-  ],
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "SupervisorControlProtocol"
+  }
 }

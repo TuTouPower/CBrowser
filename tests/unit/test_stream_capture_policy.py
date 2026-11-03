@@ -5,6 +5,7 @@ Verifies all AC-003 requirements without requiring native GStreamer/WebRTC binar
 """
 
 import json
+import time
 from typing import Any
 
 import pytest
@@ -139,10 +140,13 @@ async def test_policy_resume_sets_8fps_before_resume_and_requests_idr():
 
 
 @pytest.mark.asyncio
-async def test_policy_continuous_motion_elevates_to_30_fps(monkeypatch):
+async def test_policy_continuous_motion_elevates_to_30_fps():
     """AC-003: Damage > 6 fps elevates target to 30 FPS without mouse/keyboard input."""
     pipeline = MockMediaPipeline(framerate=8.0, capturing=True)
-    agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
+    now = {"value": time.monotonic()}
+    agent = LiveCapturePolicyAgent(
+        media_pipeline=pipeline, min_fps=8.0, max_fps=30.0, clock=lambda: now["value"]
+    )
     agent.set_viewer_visibility("viewer_1", True)
 
     # Initialize stats baseline
@@ -150,24 +154,22 @@ async def test_policy_continuous_motion_elevates_to_30_fps(monkeypatch):
     assert pipeline.framerate == 8.0
 
     # Simulate fast animation: 10 frames advance over 0.1s -> 100 fps damage
-    from cbrowser.stream_agent import policy as policy_module
-
-    now = {"value": policy_module.time.monotonic()}
-    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
     now["value"] += 0.1
     await agent.reconcile_capture_state(damage_frame_count=10)
     assert pipeline.framerate == 30.0
 
 
 @pytest.mark.asyncio
-async def test_policy_static_relaxes_to_8_fps(monkeypatch):
+async def test_policy_static_relaxes_to_8_fps():
     """AC-003: Static screen relaxes back to 8 FPS when motion ceases."""
     pipeline = MockMediaPipeline(framerate=30.0, capturing=True)
+    now = {"value": time.monotonic()}
     agent = LiveCapturePolicyAgent(
         media_pipeline=pipeline,
         min_fps=8.0,
         max_fps=30.0,
         input_cooldown_sec=0.1,  # Short cooldown for test
+        clock=lambda: now["value"],
     )
     agent.set_viewer_visibility("viewer_1", True)
     agent.record_input()
@@ -175,10 +177,6 @@ async def test_policy_static_relaxes_to_8_fps(monkeypatch):
     assert pipeline.framerate == 30.0
 
     # Advance injected clock past cooldown; no damage change.
-    from cbrowser.stream_agent import policy as policy_module
-
-    now = {"value": policy_module.time.monotonic()}
-    monkeypatch.setattr(policy_module.time, "monotonic", lambda: now["value"])
     now["value"] += 0.15
     await agent.reconcile_capture_state(caller="static_check")
     assert pipeline.framerate == 8.0
@@ -207,7 +205,14 @@ async def test_policy_background_viewer_cannot_lower_foreground():
 
 @pytest.mark.asyncio
 async def test_policy_supervisor_quota_enforcement_and_recovery():
-    """AC-003: Supervisor quota bounds max FPS; removing quota recovers full rate."""
+    """AC-003/A48: the policy enforces the same FPS rule as the protocol:
+    caps must be finite and within [min_fps, max_fps]; out-of-rule values
+    are strictly rejected and leave the current cap untouched; None clears.
+
+    This replaces the earlier revision wholesale: it accepted a 5 FPS cap
+    below the 8 FPS floor and silently ignored invalid values, which is
+    exactly the drift f_backend_stream_gateway_04 reported.
+    """
     pipeline = MockMediaPipeline(framerate=8.0, capturing=True)
     agent = LiveCapturePolicyAgent(media_pipeline=pipeline, min_fps=8.0, max_fps=30.0)
     agent.set_viewer_visibility("viewer_1", True)
@@ -218,16 +223,16 @@ async def test_policy_supervisor_quota_enforcement_and_recovery():
     await agent.reconcile_capture_state()
     assert pipeline.framerate == 15.0
 
-    # Enforce severe supervisor cap to 5 FPS (cannot elevate above 5)
-    agent.set_supervisor_quota(5.0)
+    # A cap at the floor itself is valid.
+    agent.set_supervisor_quota(8.0)
     await agent.reconcile_capture_state()
-    assert pipeline.framerate == 5.0
+    assert pipeline.framerate == 8.0
 
-    # Non-positive or NaN supervisor quota must be rejected
-    agent.set_supervisor_quota(-1.0)
-    assert agent.supervisor_fps_cap == 5.0
-    agent.set_supervisor_quota(float("nan"))
-    assert agent.supervisor_fps_cap == 5.0
+    # Below the floor, above the cap, and non-finite values are rejected.
+    for invalid in (5.0, -1.0, 30.1, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            agent.set_supervisor_quota(invalid)
+        assert agent.supervisor_fps_cap == 8.0
 
     # Clear quota -> recovers back to active target 30
     agent.record_input()
