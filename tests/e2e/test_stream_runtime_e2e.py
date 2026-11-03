@@ -20,6 +20,7 @@ import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from playwright.async_api import async_playwright
+from e2e_env import require_e2e_env
 from wait import poll_until, wait_until
 
 logger = logging.getLogger(__name__)
@@ -470,9 +471,15 @@ asyncio.run(main())
 async def test_stream_runtime_direct_media_matrix(
     tmp_path: Path,
 ):
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
+    )
+    globals().update(env)
     assert BROWSER_IMAGE.startswith("sha256:"), "Immutable Browser image required"
     assert STREAM_IMAGE.startswith("sha256:"), "Immutable Stream image required"
-    assert Path(ENGINE_CACHE).is_dir(), "Read-only Linux engine cache required"
     """
     Validates AC-001 through AC-006 with strengthened security contract:
     - Real Browser Runtime container + real Stream Runtime container.

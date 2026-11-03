@@ -13,13 +13,14 @@ Validates:
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import uuid
 from pathlib import Path
 from typing import Any
 
 import pytest
+
+from e2e_env import require_e2e_env
 
 DEFAULT_IMAGE = (
     "sha256:4a76ae021ec38a40d674a50dc8fc569cb6da4dc7e24fc040f56141fdefeba7ce"
@@ -29,14 +30,17 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def get_docker_image() -> str:
-    return os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", DEFAULT_IMAGE)
+    return require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")[
+        "CBROWSER_RUNTIME_TEST_IMAGE"
+    ]
 
 
 def get_engine_cache_dir() -> Path:
-    env_path = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if env_path:
-        return Path(env_path)
-    return PROJECT_ROOT / DEFAULT_CACHE
+    return Path(
+        require_e2e_env("CBROWSER_RUNTIME_ENGINE_CACHE")[
+            "CBROWSER_RUNTIME_ENGINE_CACHE"
+        ]
+    )
 
 
 def check_prerequisites() -> tuple[bool, str]:

@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import os
 import secrets
 import uuid
 from dataclasses import asdict, is_dataclass

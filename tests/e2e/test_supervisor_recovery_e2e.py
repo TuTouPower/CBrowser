@@ -37,6 +37,7 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+from unittest.mock import MagicMock
 
 from e2e_env import free_udp_port_span, require_e2e_env
 from api_auth import create_auth_context
@@ -1073,3 +1074,69 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         if len(cleanup_errors) == 1:
             raise cleanup_errors[0]
         raise RuntimeError(f"Cleanup encountered errors: {cleanup_errors}")
+
+
+def test_real_api_and_sup_finally_propagates_cleanup_error_and_reaps_remaining(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """recovery E2E real_api_and_sup propagates wait error and cleans resources."""
+    e2e_mod = sys.modules[__name__]
+
+    orig_popen = subprocess.Popen
+    sleep_cmd = [sys.executable, "-c", "import time; time.sleep(60)"]
+    spawned_procs = []
+
+    def fake_popen(*args, **kwargs):
+        p = orig_popen(
+            sleep_cmd,
+            stdout=kwargs.get("stdout"),
+            stderr=kwargs.get("stderr"),
+        )
+        spawned_procs.append(p)
+        return p
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        httpx.Client,
+        "get",
+        lambda self, url, *a, **kw: httpx.Response(
+            503, request=httpx.Request("GET", url)
+        ),
+    )
+
+    fake_auth = MagicMock()
+    fake_auth.env = {}
+    fake_auth.login_sync.return_value = {"Authorization": "Bearer test"}
+    monkeypatch.setattr(e2e_mod, "create_auth_context", lambda *a, **kw: fake_auth)
+
+    fn = getattr(real_api_and_sup, "__wrapped__", real_api_and_sup)
+    gen = fn(tmp_path)
+    ctx = next(gen)
+
+    # Spawn two managed procs
+    p1 = orig_popen(sleep_cmd)
+    p2 = orig_popen(sleep_cmd)
+    spawned_procs.extend([p1, p2])
+
+    # p1 fails on wait
+    def failing_wait(timeout=None):
+        raise subprocess.TimeoutExpired(cmd=["p1"], timeout=timeout or 2.0)
+
+    monkeypatch.setattr(p1, "wait", failing_wait)
+    ctx["managed_procs"].extend([p1, p2])
+
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            try:
+                next(gen)
+            except StopIteration:
+                pass
+
+        # Verify p2 was still reaped (best-effort cleanup)
+        assert p2.poll() is not None, "p2 must be reaped despite p1 error"
+    finally:
+        monkeypatch.undo()
+        for p in spawned_procs:
+            if p.poll() is None:
+                p.kill()
+                p.wait(timeout=2.0)

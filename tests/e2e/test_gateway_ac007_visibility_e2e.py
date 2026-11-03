@@ -398,13 +398,14 @@ async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(
             # --- Phase 5: Negative control - injecting cbrowser activity frames ---
             await pageA.evaluate("""() => {
                 const ws = window.__last_ws;
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({
-                        cbrowser: "activity",
-                        visible: true,
-                        active: true
-                    }));
+                if (!ws || ws.readyState !== WebSocket.OPEN) {
+                    throw new Error("activity sentinel channel is not open");
                 }
+                ws.send(JSON.stringify({
+                    cbrowser: "activity",
+                    visible: true,
+                    active: true
+                }));
             }""")
             # Fixed 1 s settle window for a negative assertion: the absence of
             # visibility_update log lines must hold over an interval.

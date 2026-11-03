@@ -1,11 +1,9 @@
 """Sampler must discover the actual container limit without caller hints."""
 
-import os
 import time
 import uuid
 
 import docker
-import pytest
 
 from e2e_env import require_e2e_env
 from cbrowser.supervisor.resource_policy import (

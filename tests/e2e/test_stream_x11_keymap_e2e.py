@@ -1,12 +1,10 @@
 """Real Xvfb/Stream images must preserve native text bindings across reuse."""
 
 import json
-import os
 import subprocess
 import uuid
 from pathlib import Path
 
-import pytest
 
 from e2e_env import require_e2e_env
 from wait import wait_until_sync

@@ -45,13 +45,20 @@ async def test_teardown_offloads_blocking_docker_cleanup(tmp_path) -> None:
 
     adapter._teardown_profile_sync = blocking_teardown
 
+    state = {"done": False, "unblocked_while_running": False}
+
     async def unblock() -> int:
         await asyncio.to_thread(started.wait, 2)
+        state["unblocked_while_running"] = not state["done"]
         release.set()
         return 1
 
-    ticks = await asyncio.gather(adapter.teardown_profile("p1"), unblock())
-    assert ticks[1] == 1
+    task = asyncio.create_task(adapter.teardown_profile("p1"))
+    task.add_done_callback(lambda _: state.update(done=True))
+    ticks = await unblock()
+    await task
+    assert ticks == 1
+    assert state["unblocked_while_running"] is True
 
 
 @pytest.mark.asyncio
@@ -121,16 +128,21 @@ async def test_scan_inspect_offloads_blocking_docker_call(tmp_path) -> None:
             api,
             gateway_control=gateway,
         )
+        state = {"done": False, "unblocked_while_running": False}
+
         async def unblock() -> int:
             await asyncio.to_thread(inspect_started.wait, 2)
+            state["unblocked_while_running"] = not state["done"]
             release_inspect.set()
             return 1
 
-        _, ticks = await asyncio.gather(
-            core.scan_and_reconcile_existing(), unblock()
-        )
+        scan_task = asyncio.create_task(core.scan_and_reconcile_existing())
+        scan_task.add_done_callback(lambda _: state.update(done=True))
+        ticks = await unblock()
+        await scan_task
 
     assert ticks == 1
+    assert state["unblocked_while_running"] is True
     assert core.get_session("p1").udp_mux_port == 30000
 
 
