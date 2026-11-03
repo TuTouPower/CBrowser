@@ -1,0 +1,13 @@
+{
+  "tid": "t018",
+  "attempt": 2,
+  "execution_id": "3642a0bfe7464f6d95b84f50aa80f471",
+  "status": "done",
+  "branch": "t018_v2_test_gates_hygiene",
+  "base_sha": "5a3da225fbccf59d410e708a3754e7ab2160e12b",
+  "tests": "scripts/run_gates.sh EXIT=0: contract 169, legacy 384, unit 551, integration 79, frontend Vitest 95, tsc/build/verify_selkies/freshness passed.",
+  "blackbox": "Default E2E 19 passed / 62 skipped; required-mode collection exits 2 listing 9 missing image/cache prerequisites. Full Docker/Chrome E2E not executed in this environment; AC-004 relies on static checks and prior implementation evidence (trust_prior).",
+  "review": "Full code/test review Round 19 PASS both axes on b02df0b; f017/f029 withdrawn by user decision (no parallel double-run); only f021 minor transferred to p019.",
+  "pending": ["p019"],
+  "findings": []
+}

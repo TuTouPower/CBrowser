@@ -1224,3 +1224,55 @@ coverage = 6 / 7
 建议合并前人工抽查 trust_prior 项。
 
 verdict: PASS
+
+## Round 19 (2026-11-03T18:31:53+08:00)
+
+- round：19
+- reviewed_at：2026-11-03T18:31:53+08:00
+- reviewed_head：`b02df0b`
+
+reviewed_scope: 3ad040187e116824
+
+### Findings
+
+本轮无新 finding。
+
+### 结论
+
+- 前轮 finding 复核（以当前 worktree 与实跑为准；相对 Round 18 仅新增 b02df0b，共 13 个文件：8 个测试文件、`docs/blueprint/testing.md` 与 note/review 文件）：
+    - f001–f004 维持已消除。`config/docker/Dockerfile` 未传 `--check-freshness`；`bash scripts/run_gates.sh` 的 build/postbuild 实测输出 `Verified frontend dist`；默认模式 `tests/e2e --collect-only` 81 collected；`docs/blueprint/testing.md:40-55` 的 `test_cmd`/`blackbox_verify` 只引用 `scripts/run_gates.sh` 与模板契约标记行。
+    - f005–f011 维持已消除。`grep` 确认 `tests/` 无源码级 `spec_from_file_location`/`sys.path.insert`；共享 fixture 位于 `tests/{unit,integration,e2e}/conftest.py`；`ProductionGatewayService` 驱动生产 `create_gateway_app`，旧 `gateway_fixture.py`/`gateway_container.py` 已删除；新鲜度校验位于必需模式判断之前（`tests/e2e/conftest.py:31-46`）；`CBROWSER_E2E_REQUIRED=1` collection exit 2 列出 9 个缺项；IPv6 无条件下阻断、退避双边窗口、首帧 8000ms/输入 3000ms 上限在位；viewer close 只接受 `WSMsgType.CLOSE`；`docs/specs` 无凭据形态字面量。
+    - f012–f014 维持已消除。`tests/unit/test_repo_hygiene.py:22-39` 扫描全部已跟踪非二进制文本；`tests/unit/test_vendor_selkies_security.py` 覆盖 `../`、绝对路径、反斜杠、清单外文件与真实 zip 解包；`tests/unit/test_frontend_build_freshness.py` 覆盖 stale/missing/corrupt stamp 与 conftest hook 拒绝；定向实跑 15 passed。
+    - f015–f020 维持已消除。Selkies 宿主发布 `127.0.0.1:{port}`（`tests/e2e/test_stream_selkies_tokens_e2e.py:105`）；control 目录 0700/密钥 0600；`tests/unit/test_docker_offload.py:61,145` 保留 `unblocked_while_running` 可失败断言；activity 负向注入由 `tests/integration/test_gateway_control.py:302-345` 的真实 Gateway + `REAL_SIGNALING_MSG` 哨兵覆盖。
+    - f021 仍存在（minor，用户已知接受）。`tests/integration/test_normal_exit_replay.py:161,313,466,662` 仍把状态写到仓库 `.scratch/normal_exit_fix`；note 记录改用 /tmp 会使 API 事件收敛用例失败，按用户 2026-11-03 决策保留，不阻断。
+    - f022–f033 维持已消除。证据脱敏落盘断言（`tests/unit/test_evidence_redaction.py`）；`tests/unit/test_stream_runtime.py:260` 仍为精确 `clock.delays == [1.0]`；清理断言在 `finally` 之后（`test_supervisor_recovery_e2e.py:1040-1076`、`test_runtime_coordinator_e2e.py:500-502`、`test_supervisor_container_graph_e2e.py:689-691`）；`require_e2e_env` 单一前置清单与格式错 fail（`tests/fixtures/e2e_env.py:10-40`）；`offline_fixture.py:360-362` 走 `require_e2e_env`；browser runtime 前置为 session autouse 且 `http_server` 依赖（`tests/e2e/test_browser_runtime_e2e.py:53-64,191`）；f031 的两处 control 目录 0700（`tests/e2e/test_runtime_coordinator_e2e.py:71`、`tests/e2e/test_supervisor_container_graph_e2e.py:80`）；f033 的宿主 API 绑 `127.0.0.1`（`tests/e2e/test_runtime_coordinator_e2e.py:191`），本轮以宿主 127.0.0.1 HTTP 服务 + OrbStack 自定义 bridge 容器经 `host.docker.internal` 访问返回 `LOOPBACK_OK` 复验。
+    - f034 已消除。`tests/e2e/test_supervisor_namespace_policy_e2e.py:558-571` 覆盖「首轮无 READY、次轮出现 READY」成功路径；`b02df0b` 新增 `:574-584` 的 `test_wait_for_server_ready_times_out`，用假容器 + 注入时钟覆盖始终无 READY 的 `TimeoutError` 分支；实跑 `-k wait_for_server_ready` 2 passed。
+- 改测方向复核：无。`b02df0b` 只删除无消费者的路径常量、修正 `testing.md` 的 TMPDIR 措辞、补 READY timeout 分支；未发现删断言、反转断言、注释掉断言、`.skip`/`.only`、弱化断言或把旧预期改成当前实现输出。前 13 个 commit 的改测方向沿用 Round 18 结论并经本轮全量 diff 抽查未回退。
+- 本轮新发现：0 条。
+- 未进表的提示：
+    - 契约区 drift（AC-004 删除并行双跑、AC-006 删除 GitHub Actions CI）与用户 2026-11-03 决策一致，不计 finding。
+    - `tests/unit/test_stream_resume.py:150,209` 的等待谓词仍读取私有 `agent._detached_upstreams`，随后断言已改用公开 `has_detached_upstream`/`detached_upstream_count`；属同步谓词残余，非 AC 证据，可选清理（minor）。
+    - `tests/unit/test_runtime_agent.py:300` 的 `status_code in (400, 422)` 为既有宽松断言，不在 t018 diff，未由本 task 引入；`tests/unit/test_control_error_redaction.py:40` 同类。
+    - `tests/e2e/test_gateway_ac003_media_e2e.py` 重连注释仍写 “appears at least twice”，实际为 offset 后 `>= 1`，注释过时（minor，code review 已登记）。
+    - `b02df0b` 清理常量后残留多余空行与过期 `# noqa: E402`（`tests/e2e/test_frontend_app_auth_e2e.py:20-22`、`tests/e2e/test_frontend_session_e2e.py:22-23`），纯格式。
+    - `tests/fixtures/supervisor_recovery_probe/offline_fixture.py:489-491` 仍直读 browser/stream 镜像变量，属第二来源残余（minor）。
+    - `tests/e2e/test_frontend_adapter_build.py:66,96,124` 每次 `mkdtemp` 重新下载 wheel；`test_automation_cdp.py:57`、`test_runtime_profile_defaults_e2e.py:369`、`test_browser_runtime_e2e.py:49,51` 的 `mkdtemp` 未清理，属既有临时资源/网络依赖 minor。
+    - 完整 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 未执行（worktree 缺 9 项镜像/缓存与 Chrome 前置）；AC-004 的单次资源隔离仍依赖实施侧证据，建议合并前人工抽查。
+- 总体判断：f001–f033 维持已消除，f034 的 timeout 分支已补齐；当前仅余 f021 一个用户已知接受的 minor 与若干提示级残余，无未解决 critical/important，可 PASS。
+- 系统性 follow-up：无新增跨 task 缺口；f021 按用户决策保留。
+
+### AC 复验方式
+
+- AC-001：`re_verified`。实跑 `CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only` 以 exit 2 列出 9 个缺项；默认模式 81 collected / 19 passed / 62 skipped；`bash scripts/run_gates.sh` 的 postbuild `--check-freshness` 通过；定向 `pytest tests/unit/test_frontend_build_freshness.py` 4 passed。
+- AC-002：`re_verified`。确认 `tests/` 无源码级 `spec_from_file_location`/`sys.path.insert`；共享 fixture 在 `tests/{unit,integration,e2e}/conftest.py`；`ProductionGatewayService` 驱动生产 `create_gateway_app`，旧 Gateway 替身已删除；默认模式全量 E2E 19 passed / 62 skipped，无 setup error。
+- AC-003：`re_verified`（代码+单元层）。实跑 unit 551 passed、integration 79 passed、默认 E2E 19 passed / 62 skipped；核对 IPv6 无条件下阻断、退避 1→30 窗口、冻结恢复帧增长、逐页静音、首帧 8000ms/输入 3000ms 上限、viewer close 仅 CLOSE、清理断言在 `finally` 之后、会话关闭后容器 running 且 instance-id 不变；完整真实 Docker E2E 未执行。
+- AC-004：`trust_prior`（真实 Docker 单次门禁）。静态核对 Selkies 宿主发布仅 127.0.0.1、control 目录 0700/密钥 0600、证据默认写系统临时目录并脱敏、端口/显示号按 run 派生；f033 的回环绑定经独立 Docker 可达性探针复验；`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本轮未由 reviewer 执行；f021 为用户已知接受 minor。
+- AC-005：`re_verified`。实跑 unit 551 passed；A39 文件已改用公开访问器/注入时钟；`grep 'assert .*\._' tests/unit` 无私有状态断言；offload 用例保留可失败的 `unblocked_while_running` 断言。
+- AC-006：`re_verified`（本地非 E2E）。实跑 `bash scripts/run_gates.sh` EXIT=0（contract 169、legacy 384、unit 551、integration 79、前端 Vitest 95、build/verify）；`.github/` 不存在；`docs/blueprint/testing.md` 的 `test_cmd`/`blackbox_verify` 只引用脚本与模板契约标记行；E2E 必需模式 collection exit 2。
+- AC-007：`re_verified`。实跑 `tests/unit` 551 passed（含 repo hygiene、vendor 穿越/清单外、freshness fail-closed、证据脱敏）；`git ls-files --eol` 无 CRLF；`docs/specs` 无凭据形态字面量；归档 spike README 与 `.gitignore` 规则存在。
+
+coverage = 6 / 7
+
+建议合并前人工抽查 trust_prior 项。
+
+verdict: PASS
