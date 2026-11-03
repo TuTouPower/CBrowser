@@ -9,7 +9,7 @@
 |**浏览器配置**|`Profile`|独立浏览器身份的元数据聚合，包括名称、标签、指纹种子、语言、时区、代理及存储路径。|
 |**运行配置版本**|`ProfileConfigVersion`|不可变的运行参数快照。修改指纹或网络配置将生成新版本，需重启运行时才能生效。|
 |**期望状态**|`DesiredState`|用户或系统声明的目标运行态（如 `running` 或 `stopped`）。持久化于数据库。|
-|**观测状态**|`ObservedState`|运行时容器与进程的真实观测状态（`created` / `starting` / `running` / `stopping` / `stopped` / `failed`）。|
+|**观测状态**|`ObservedState`|运行时容器与进程的真实观测状态（`stopped` / `starting` / `running` / `stopping` / `error`）。|
 |**查看连接**|`ViewerConnection`|外部 Google Chrome 标签页与 BrowserRuntime 之间的实时显示与输入连接；所有连接均为 `controller` 角色，无排他锁与租约（ADR 007）。|
 |**运行时沙箱**|`BrowserRuntime`|托管单个 Profile 的隔离容器实例，生命周期受 Supervisor 调度。|
 |**运行时代理**|`RuntimeAgent`|运行在容器内部的 Python 守护进程，负责输入代理、下载监听、GTK 书签注入与健康汇报。|

@@ -11,7 +11,6 @@ from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator, PortPoolExhaustedError
-from test_supervisor_rpc import supervisor_api as supervisor_api  # noqa: PLC0414
 
 
 @pytest.mark.asyncio
@@ -35,6 +34,7 @@ async def test_exhausted_port_after_binding_records_one_start_failure(
     )
     key_file = tmp_path / "agent_key"
     key_file.write_text(secrets.token_urlsafe(32))
+    key_file.chmod(0o600)
     ports = PortAllocator(30000, 30000)
     await ports.allocate("other_profile")
     async with httpx.AsyncClient(
@@ -49,7 +49,6 @@ async def test_exhausted_port_after_binding_records_one_start_failure(
             events,
             api,
             agent_key_file=key_file,
-            coturn_container_id="coturn_test_id",
         )
         with pytest.raises(PortPoolExhaustedError):
             await core.start_profile(profile, ProfileConfig(name="capacity"))

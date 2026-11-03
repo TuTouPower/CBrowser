@@ -109,7 +109,7 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
         pid, inst, 1, observed_state="error", reason="missing_runtime"
     )
     assert mock_core.events.emit_event.call_count == 0
-    assert inst in coordinator._reported_dead_instances
+    assert coordinator.has_reported_dead_instance(inst)
     await coordinator.close()
 
 
@@ -143,6 +143,7 @@ async def test_core_profile_lock_held_skips_exit_synthesis(mock_core):
         await coordinator.tick()
 
         assert mock_core.events.emit_event.call_count == 0
+        mock_core.report_terminal_observation.assert_not_awaited()
     finally:
         lock.release()
 
@@ -200,6 +201,7 @@ async def test_native_exit_priority_prevents_synthetic_docker_exit(mock_core):
     await coordinator.tick()
 
     assert mock_core.events.emit_event.call_count == 0
+    mock_core.report_terminal_observation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -242,6 +244,7 @@ async def test_native_exit_priority_prevents_synthetic_missing_exit(mock_core):
     await coordinator.tick()
 
     assert mock_core.events.emit_event.call_count == 0
+    mock_core.report_terminal_observation.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -284,3 +287,38 @@ async def test_docker_created_status_does_not_synthesize_exit(mock_core):
     await coordinator.tick()
 
     assert mock_core.events.emit_event.call_count == 0
+    mock_core.report_terminal_observation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_initial_reconcile_failure_still_reaches_control_plane(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from cbrowser.supervisor import runner as runner_module
+    from cbrowser.supervisor.path_validator import PathValidator
+
+    class ControlPlaneReached(Exception):
+        pass
+
+    core = SimpleNamespace(
+        events=SimpleNamespace(replay_spooled_events=AsyncMock(return_value=0)),
+        consume_disk_events=AsyncMock(return_value=0),
+        scan_and_reconcile_existing=AsyncMock(
+            side_effect=RuntimeError("docker unavailable")
+        ),
+        docker=SimpleNamespace(
+            validator=PathValidator(tmp_path), resource_prefix="cb"
+        ),
+        api=SimpleNamespace(),
+        _token_file=tmp_path / "token",
+    )
+
+    def create_control_app(**_kwargs):
+        raise ControlPlaneReached
+
+    monkeypatch.setattr(runner_module, "create_control_app", create_control_app)
+    with pytest.raises(ControlPlaneReached):
+        await runner_module.serve_supervisor(core, "127.0.0.1", 0)
+    core.scan_and_reconcile_existing.assert_awaited_once()

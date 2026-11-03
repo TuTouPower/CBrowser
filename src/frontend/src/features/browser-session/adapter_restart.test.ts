@@ -1,9 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import {
-  DATA_CHANNEL_HISTORY_LIMIT,
-  RESTART_OFFER_HISTORY_LIMIT,
-  installSelkiesClientAdapter,
-} from "./adapter";
+import { installSelkiesClientAdapter } from "./adapter";
 
 class MockWebSocket {
   static OPEN = 1;
@@ -33,13 +29,9 @@ class MockRTCPeerConnection {
   connectionState = "connected";
   iceConnectionState = "connected";
   signalingState = "stable";
-  iceGatheringState = "complete";
-  localDescription = { type: "answer", sdp: "v=0\r\n" };
-  setRemoteDescription = vi.fn().mockResolvedValue(undefined);
-  createAnswer = vi.fn().mockResolvedValue({ type: "answer", sdp: "v=0\r\n" });
-  setLocalDescription = vi.fn().mockResolvedValue(undefined);
   addEventListener = vi.fn();
   removeEventListener = vi.fn();
+  getStats = vi.fn().mockResolvedValue(new Map());
   constructor(public config?: any) {}
 }
 
@@ -72,101 +64,90 @@ function makeWindow(): any {
     RTCPeerConnection: MockRTCPeerConnection as any,
     RTCDataChannel: { prototype: { send: vi.fn() } },
   };
-  win.RTCPeerConnection.prototype.setConfiguration = vi.fn();
   return win;
 }
 
-describe("SelkiesClientAdapter ice_restart parity", () => {
-  it("records the restart offer ufrag and answers the Gateway generation", async () => {
+describe("SelkiesClientAdapter production contract", () => {
+  it("rewrites signaling to the profile stream route", () => {
     const win = makeWindow();
     installSelkiesClientAdapter(win, "prof_456");
-    new win.RTCPeerConnection();
-
     const ws = new win.WebSocket("/api/webrtc/signaling");
-    const handlers = (ws as any).handlers.get("message") || [];
-    expect(handlers.length).toBeGreaterThan(0);
-
-    const offer = {
-      type: "offer",
-      sdp: "v=0\r\na=ice-ufrag:UFRAG123\r\na=ice-pwd:secret\r\n",
-    };
-    await handlers[0]({
-      data: JSON.stringify({
-        cbrowser: "ice_restart",
-        generation: 3,
-        rtc_config: { iceServers: [{ urls: ["turn:127.0.0.1:3478"] }] },
-        offer,
-      }),
-    });
-
-    expect(win.__restartOffers).toEqual([
-      { generation: 3, ufrag: "UFRAG123", offer },
-    ]);
-    expect(win.__latestRtcConfig).toEqual({
-      iceServers: [{ urls: ["turn:127.0.0.1:3478"] }],
-    });
-    expect((ws as any).sent.length).toBe(1);
-    expect(JSON.parse((ws as any).sent[0])).toMatchObject({
-      cbrowser: "ice_restart_answer",
-      generation: 3,
-    });
+    expect(ws.url).toBe("wss://cbrowser.local/stream/prof_456/signal");
   });
-});
 
-describe("SelkiesClientAdapter bounded diagnostics", () => {
-  it("keeps the sent DataChannel history bounded", () => {
+  it("does not expose test hooks on the iframe window", () => {
     const win = makeWindow();
     installSelkiesClientAdapter(win, "prof_456");
-
-    const total = DATA_CHANNEL_HISTORY_LIMIT + 25;
-    for (let i = 0; i < total; i += 1) {
-      win.RTCDataChannel.prototype.send(`k,${i}`);
+    for (const name of [
+      "__sentDataChannelMessages",
+      "__pcs",
+      "__inputChannel",
+      "__last_ws",
+      "__latestRtcConfig",
+      "__restartOffers",
+      "__activePC",
+      "__NativeWebSocket",
+      "__NativeRTCPeerConnection",
+      "__cbrowserShimInstalled",
+    ]) {
+      expect(win[name]).toBeUndefined();
     }
-
-    expect(win.__sentDataChannelMessages).toHaveLength(
-      DATA_CHANNEL_HISTORY_LIMIT
-    );
-    expect(win.__sentDataChannelMessages[0]).toBe(
-      `k,${total - DATA_CHANNEL_HISTORY_LIMIT}`
-    );
-    expect(win.__sentDataChannelMessages.at(-1)).toBe(`k,${total - 1}`);
+    expect(typeof win.__getWebRTCStats).toBe("function");
   });
 
-  it("retains only the active peer connection", () => {
+  it("blocks client resize packets at the data channel boundary", () => {
     const win = makeWindow();
+    const nativeSend = vi.fn();
+    win.RTCDataChannel = { prototype: { send: nativeSend } };
     installSelkiesClientAdapter(win, "prof_456");
-
-    const first = new win.RTCPeerConnection();
-    const second = new win.RTCPeerConnection();
-
-    expect(win.__pcs).toHaveLength(1);
-    expect(win.__pcs[0]).toBe(second);
-    expect(win.__activePC).toBe(second);
-    expect(win.__pcs).not.toContain(first);
+    win.RTCDataChannel.prototype.send("r,1920,1080");
+    expect(nativeSend).not.toHaveBeenCalled();
+    win.RTCDataChannel.prototype.send("k,abc");
+    expect(nativeSend).toHaveBeenCalledWith("k,abc");
   });
 
-  it("caps recorded ICE restart offers", async () => {
+  it("reports unavailable Web Locks as a dedicated parent message", async () => {
     const win = makeWindow();
+    win.navigator.locks.request.mockRejectedValue(new Error("no locks"));
     installSelkiesClientAdapter(win, "prof_456");
-    new win.RTCPeerConnection();
-
     const ws = new win.WebSocket("/api/webrtc/signaling");
-    const handler = ((ws as any).handlers.get("message") || [])[0];
-    const total = RESTART_OFFER_HISTORY_LIMIT + 5;
-    for (let generation = 1; generation <= total; generation += 1) {
-      await handler({
-        data: JSON.stringify({
-          cbrowser: "ice_restart",
-          generation,
-          offer: { type: "offer", sdp: "v=0\r\n" },
-        }),
-      });
-    }
-
-    expect(win.__restartOffers).toHaveLength(RESTART_OFFER_HISTORY_LIMIT);
-    expect(win.__restartOffers[0].generation).toBe(
-      total - RESTART_OFFER_HISTORY_LIMIT + 1
+    ws.send('HELLO client {"client_tab_id":"tab-1"}');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(win.parent.postMessage).toHaveBeenCalledWith(
+      { type: "CBROWSER_WEB_LOCKS_UNAVAILABLE" },
+      "https://cbrowser.local"
     );
-    expect(win.__restartOffers.at(-1).generation).toBe(total);
+    expect(ws.close).toHaveBeenCalledWith(1008, "tab_identity_unavailable");
+  });
+
+  it("posts WebSocket close events to the parent", () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+    const ws = new win.WebSocket("/api/webrtc/signaling");
+    for (const handler of ws.handlers.get("close") || []) {
+      handler({ code: 1006, reason: "lost" });
+    }
+    expect(win.parent.postMessage).toHaveBeenCalledWith(
+      { type: "CBROWSER_WS_CLOSE", code: 1006, reason: "lost" },
+      "https://cbrowser.local"
+    );
+  });
+
+  it("returns session statistics through the documented host contract", async () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+    const pc = new win.RTCPeerConnection();
+    pc.getStats.mockResolvedValue(
+      new Map([
+        [
+          "v1",
+          { id: "v1", type: "inbound-rtp", kind: "video", framesDecoded: 12 },
+        ],
+      ])
+    );
+    const stats = await win.__getWebRTCStats();
+    expect(stats.video.framesDecoded).toBe(12);
+    expect(stats.connected).toBe(true);
+    expect(stats.tab_id).toBeNull();
   });
 });

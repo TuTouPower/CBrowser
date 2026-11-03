@@ -3,6 +3,7 @@
  */
 
 import type { AudioStatus } from "./audio_status";
+import type { ApiClient } from "../../shared/api/client";
 
 export type { AudioStatus };
 
@@ -12,6 +13,7 @@ export type SessionStage =
   | "stopping"
   | "connecting_signaling"
   | "signaling_failed"
+  | "web_locks_unavailable"
   | "ice_failed"
   | "media_waiting"
   | "media_no_frames"
@@ -56,6 +58,6 @@ export interface BrowserSessionViewProps {
   diagnostics?: Partial<SessionDiagnosticsData>;
   errorMessage?: string;
   onCheckRuntimeStatus?: () => void;
-  runtimeStatusUrl?: string;
+  apiClient?: ApiClient;
   onSessionError?: (err: Error) => void;
 }

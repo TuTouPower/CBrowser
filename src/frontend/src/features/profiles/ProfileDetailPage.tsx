@@ -1,4 +1,4 @@
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Copy, Cpu, FolderArchive, RotateCcw, Trash2 } from "lucide-react";
 import {
@@ -34,13 +34,22 @@ export function ProfileDetailPage() {
   const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const dirtyFields = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (profile) {
-      setName(profile.name || "");
-      setProxy(profile.proxy || "");
+    dirtyFields.current.clear();
+  }, [profileId]);
+
+  useEffect(() => {
+    if (!profile) return;
+    const dirty = dirtyFields.current;
+    if (!dirty.has("name")) setName(profile.name || "");
+    if (!dirty.has("proxy")) setProxy(profile.proxy || "");
+    if (!dirty.has("geometry")) {
       setScreenWidth(profile.screen_width || 1920);
       setScreenHeight(profile.screen_height || 1080);
+    }
+    if (!dirty.has("tags")) {
       setTagsInput(
         profile.tags
           ? profile.tags.map((t) => (typeof t === "string" ? t : t.tag)).join(", ")
@@ -48,6 +57,10 @@ export function ProfileDetailPage() {
       );
     }
   }, [profile]);
+
+  const markDirty = (field: string) => {
+    dirtyFields.current.add(field);
+  };
 
   const runtimeRunning = runtime
     ? !(runtime.desired_state === "stopped" && runtime.observed_state === "stopped")
@@ -111,6 +124,7 @@ export function ProfileDetailPage() {
         },
       });
 
+      dirtyFields.current.clear();
       setSuccess(true);
       setTimeout(() => setSuccess(false), 2000);
     } catch (err: unknown) {
@@ -347,7 +361,7 @@ export function ProfileDetailPage() {
               type="text"
               required
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { markDirty("name"); setName(e.target.value); }}
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
           </div>
@@ -359,7 +373,7 @@ export function ProfileDetailPage() {
             <input
               type="text"
               value={proxy}
-              onChange={(e) => setProxy(e.target.value)}
+              onChange={(e) => { markDirty("proxy"); setProxy(e.target.value); }}
               placeholder="http://user:pass@host:port"
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
@@ -374,7 +388,7 @@ export function ProfileDetailPage() {
                 data-testid="profile-width-input"
                 type="number"
                 value={screenWidth}
-                onChange={(e) => setScreenWidth(Number(e.target.value))}
+                onChange={(e) => { markDirty("geometry"); setScreenWidth(Number(e.target.value)); }}
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
@@ -386,7 +400,7 @@ export function ProfileDetailPage() {
                 data-testid="profile-height-input"
                 type="number"
                 value={screenHeight}
-                onChange={(e) => setScreenHeight(Number(e.target.value))}
+                onChange={(e) => { markDirty("geometry"); setScreenHeight(Number(e.target.value)); }}
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
@@ -400,7 +414,7 @@ export function ProfileDetailPage() {
               data-testid="profile-tags-input"
               type="text"
               value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
+              onChange={(e) => { markDirty("tags"); setTagsInput(e.target.value); }}
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
           </div>

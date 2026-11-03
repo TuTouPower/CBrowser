@@ -24,14 +24,11 @@ Case 3: Native exit priority with local HTTP proxy
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
-import os
 import secrets
 import shutil
 import socket
-import sys
 import uuid
 from pathlib import Path
 
@@ -39,6 +36,8 @@ import aiohttp
 import docker
 import httpx
 import pytest
+
+from e2e_env import free_udp_port_span, require_e2e_env
 from aiohttp import web
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter
@@ -47,34 +46,18 @@ from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
 
-_core_e2e_path = Path(__file__).with_name("test_supervisor_core_e2e.py")
-_core_spec = importlib.util.spec_from_file_location(
-    "supervisor_core_e2e_module", _core_e2e_path
-)
-assert _core_spec is not None and _core_spec.loader is not None
-_core_module = importlib.util.module_from_spec(_core_spec)
-sys.modules["supervisor_core_e2e_module"] = _core_module
-_core_spec.loader.exec_module(_core_module)
-real_api_server = _core_module.real_api_server
-
 logger = logging.getLogger(__name__)
 
 
 def check_e2e_images():
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-
-    missing = []
-    if not browser_image:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_image:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
 
     assert browser_image.startswith("sha256:"), (
         f"CBROWSER_RUNTIME_TEST_IMAGE must be sha256 digest, got {browser_image}"
@@ -196,7 +179,8 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
         stream_image=stream_image,
         resource_prefix=prefix,
     )
-    port_allocator = PortAllocator(min_port=30000, max_port=30010)
+    udp_base = free_udp_port_span(2)
+    port_allocator = PortAllocator(min_port=udp_base, max_port=udp_base + 10)
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -370,7 +354,8 @@ async def test_supervisor_native_exit_priority_over_synthetic_e2e(
         stream_image=stream_image,
         resource_prefix=prefix,
     )
-    port_allocator = PortAllocator(min_port=30000, max_port=30010)
+    udp_base = free_udp_port_span(2)
+    port_allocator = PortAllocator(min_port=udp_base, max_port=udp_base + 10)
     event_forwarder = EventForwarder(
         api_base_url=proxy_url,
         events_spool_dir=data_root / "spool",

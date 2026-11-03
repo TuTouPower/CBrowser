@@ -3,39 +3,28 @@ Pydantic models and serialization schemas for StreamAgent <->
 Gateway/Supervisor communications.
 """
 
-import ipaddress
-import json
 import math
 import re
 from enum import Enum
-from typing import Any, Literal
-from urllib.parse import quote
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SecretStr,
     StrictBool,
     field_validator,
     model_validator,
 )
 
+# Shared transport frame ceiling for both Agent and Gateway WebSocket peers.
+MAX_STREAM_FRAME_SIZE = 1024 * 1024 * 6 + 64 * 1024
+
 
 class AgentAction(str, Enum):
     REGISTER = "register"
-    REGISTERED = "registered"
-    VIEWER_JOINED = "viewer_joined"
-    VIEWER_LEFT = "viewer_left"
-    SIGNAL = "signal"
     SUPERVISOR_QUOTA = "supervisor_quota"
-    ICE_RESTART = "ice_restart"
-    ICE_RESTART_OFFER = "ice_restart_offer"
-    ICE_RESTART_ANSWER = "ice_restart_answer"
-    ICE_RESTART_COMMITTED = "ice_restart_committed"
     HEARTBEAT = "heartbeat"
-    RTC_CONFIG = "rtc_config"
-    ERROR = "error"
 
 
 class GatewayTunnelEnvelope(BaseModel):
@@ -90,20 +79,36 @@ class GatewayTunnelEnvelope(BaseModel):
         return self
 
 
+class SupervisorQuotaPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_fps_cap: float | None = None
+    reason: str | None = None
+
+    @field_validator("max_fps_cap")
+    @classmethod
+    def validate_quota_cap(cls, v: float | None) -> float | None:
+        if v is not None and (not math.isfinite(v) or v < 8.0 or v > 30.0):
+            raise ValueError(
+                "Supervisor quota must be finite and within [8.0, 30.0]"
+            )
+        return v
+
+
 class GatewayControlEnvelope(BaseModel):
     """Wire envelope for control plane packets from Gateway to StreamAgent."""
 
     model_config = ConfigDict(extra="forbid")
 
     version: Literal["v2"]
-    action: AgentAction
+    action: Literal[AgentAction.SUPERVISOR_QUOTA]
     profile_id: str
     runtime_instance_id: str
     agent_session_id: str = Field(
         min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
     conn_id: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
+    payload: SupervisorQuotaPayload = Field(default_factory=SupervisorQuotaPayload)
     timestamp: str | None = None
 
     @field_validator("profile_id")
@@ -127,14 +132,6 @@ class GatewayControlEnvelope(BaseModel):
             raise ValueError("Invalid conn_id")
         return v
 
-    @field_validator("payload")
-    @classmethod
-    def validate_payload_bound(cls, v: dict[str, Any]) -> dict[str, Any]:
-        dumped = json.dumps(v)
-        if len(dumped.encode("utf-8")) > 1024 * 1024:
-            raise ValueError("Payload size exceeds 1MB limit")
-        return v
-
 
 class GatewayRegisterResponse(BaseModel):
     """Registration ACK from Gateway to StreamAgent."""
@@ -151,20 +148,18 @@ class GatewayRegisterResponse(BaseModel):
     error: str | None = None
 
 
-class ProtocolEnvelope(BaseModel):
-    """Outbound protocol envelope sent by StreamAgent to Gateway."""
+class _AgentEnvelope(BaseModel):
+    """Fields shared by every Agent-originated envelope."""
 
     model_config = ConfigDict(extra="forbid")
 
     version: Literal["v2"] = "v2"
-    action: AgentAction
     profile_id: str
     runtime_instance_id: str
     agent_session_id: str | None = Field(
         default=None, min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
     conn_id: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
     timestamp: str | None = None
 
     @field_validator("profile_id")
@@ -195,22 +190,9 @@ class AgentRegisterPayload(BaseModel):
     selkies_version: str = Field(min_length=1, max_length=64)
     runtime_state: RuntimeState
     config_version: int = Field(ge=1)
-    turn_host: str
-    turn_port: int = Field(ge=1, le=65535)
     video_streaming_mode: bool = False
-    max_fps: int = 30
-    min_fps: int = 8
     width: int = 1920
     height: int = 1080
-
-    @field_validator("turn_host")
-    @classmethod
-    def validate_turn_host(cls, v: str) -> str:
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("turn_host must be a valid IPv4 or IPv6 address")
-        return v
 
     @field_validator("udp_port")
     @classmethod
@@ -219,60 +201,12 @@ class AgentRegisterPayload(BaseModel):
             raise ValueError("udp_port must be in allocated range [30000, 30991]")
         return v
 
-    @field_validator("min_fps")
-    @classmethod
-    def validate_min_fps(cls, v: int) -> int:
-        if v != 8:
-            raise ValueError("min_fps must be 8")
-        return v
-
-    @field_validator("max_fps")
-    @classmethod
-    def validate_max_fps(cls, v: int) -> int:
-        if v != 30:
-            raise ValueError("max_fps must be 30")
-        return v
-
     @field_validator("video_streaming_mode")
     @classmethod
     def validate_video_mode(cls, v: bool) -> bool:
         if v is not False:
             raise ValueError("video_streaming_mode must be False")
         return v
-
-
-class SupervisorQuotaPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    max_fps_cap: float | None = None
-    reason: str | None = None
-
-    @field_validator("max_fps_cap")
-    @classmethod
-    def validate_quota_cap(cls, v: float | None) -> float | None:
-        if v is not None and (not math.isfinite(v) or v < 8.0 or v > 30.0):
-            raise ValueError(
-                "Supervisor quota must be finite and within [8.0, 30.0]"
-            )
-        return v
-
-
-class ICERestartOfferPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    conn_id: str
-    sdp: str
-    type: str = "offer"
-    generation: int
-
-
-class ICERestartAnswerPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    conn_id: str
-    sdp: str
-    type: str = "answer"
-    generation: int
 
 
 class AgentHeartbeatPayload(BaseModel):
@@ -289,61 +223,24 @@ class AgentHeartbeatPayload(BaseModel):
     capture_running: StrictBool
 
 
-class IceServer(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    urls: list[str] = Field(min_length=1)
-    username: str | None = Field(default=None, max_length=256)
-    credential: SecretStr | None = None
-
-    @field_validator("urls")
-    @classmethod
-    def validate_urls(cls, v: list[str]) -> list[str]:
-        for url in v:
-            if not url.startswith(("stun:", "turn:", "turns:")):
-                raise ValueError("ICE server URL must use stun, turn or turns")
-        return v
+class AgentRegisterEnvelope(_AgentEnvelope):
+    action: Literal[AgentAction.REGISTER] = AgentAction.REGISTER
+    payload: AgentRegisterPayload
 
 
-class RtcConfigPayload(BaseModel):
-    """Stream-side ICE servers for new PeerConnections and restarts."""
+class AgentHeartbeatEnvelope(_AgentEnvelope):
+    action: Literal[AgentAction.HEARTBEAT] = AgentAction.HEARTBEAT
+    payload: AgentHeartbeatPayload
 
-    model_config = ConfigDict(extra="forbid")
 
-    generation: int = Field(ge=1)
-    ice_servers: list[IceServer] = Field(min_length=1)
-    relay_only: StrictBool = False
+AgentEnvelope = Annotated[
+    AgentRegisterEnvelope | AgentHeartbeatEnvelope,
+    Field(discriminator="action"),
+]
 
-    def selkies_server_urls(self) -> tuple[list[str], list[str]]:
-        """STUN and TURN URL lists as Selkies RTCApp.update_rtc_config takes them.
 
-        Selkies parses TURN entries as turn://user:pass@host:port?query and
-        unquotes the credentials, so they are percent-encoded here.
-        """
-        stun: list[str] = []
-        turn: list[str] = []
-        for server in self.ice_servers:
-            for url in server.urls:
-                scheme, rest = url.split(":", 1)
-                if scheme == "stun":
-                    stun.append(url)
-                    continue
-                auth = ""
-                if server.username is not None and server.credential is not None:
-                    secret = server.credential.get_secret_value()
-                    auth = (
-                        f"{quote(server.username, safe='')}:{quote(secret, safe='')}@"
-                    )
-                turn.append(f"{scheme}://{auth}{rest}")
-        return stun, turn
+def validate_agent_envelope(raw: dict[str, Any]) -> AgentEnvelope:
+    """Validate any Agent-originated packet against the discriminated union."""
+    from pydantic import TypeAdapter
 
-    def wire_ice_servers(self) -> list[dict[str, Any]]:
-        servers = []
-        for server in self.ice_servers:
-            entry: dict[str, Any] = {"urls": list(server.urls)}
-            if server.username is not None:
-                entry["username"] = server.username
-            if server.credential is not None:
-                entry["credential"] = server.credential.get_secret_value()
-            servers.append(entry)
-        return servers
+    return TypeAdapter(AgentEnvelope).validate_python(raw)

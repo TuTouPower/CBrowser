@@ -26,3 +26,22 @@ def test_pending_command_identity_survives_coordinator_crash(tmp_path):
     recovered = OperationJournal(tmp_path)
     with pytest.raises(ValueError, match="different request"):
         recovered.begin("operation", {"runtime_instance_id": "new"})
+
+
+def test_corrupt_journal_is_quarantined_and_treated_as_missing(tmp_path):
+    request = {"runtime_instance_id": "old"}
+    result = {"status": "stopped"}
+    journal = OperationJournal(tmp_path)
+    journal.complete("operation", request, result)
+    record = next(tmp_path.glob("*.json"))
+    record.write_text("{not-json", encoding="utf-8")
+
+    restarted = OperationJournal(tmp_path)
+    assert restarted.lookup("operation", request) is None
+    assert not record.exists()
+    quarantined = list(tmp_path.glob("*.corrupt-*"))
+    assert len(quarantined) == 1
+    assert quarantined[0].read_text(encoding="utf-8") == "{not-json"
+
+    restarted.complete("operation", request, result)
+    assert OperationJournal(tmp_path).lookup("operation", request) == result

@@ -31,7 +31,7 @@ def require_supervisor(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> None:
-    token = request.app.state.supervisor_token
+    token = getattr(request.app.state, "supervisor_token", None)
     if token is None:
         raise HTTPException(503, "Supervisor RPC is not configured")
     if credentials is None or not hmac.compare_digest(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import time
+import threading
 from types import SimpleNamespace
 
 import httpx
@@ -16,14 +16,6 @@ from cbrowser.supervisor.port_allocator import PortAllocator
 
 BROWSER = "sha256:f2a8d42810c13c8480b83e4308669c754e86b0fe4a24c6215159e43a8d1f5346"
 STREAM = "sha256:072e86762d2f1810e86a2d20169d4be451b5a19e0ebabc880e882de63ac0d531"
-
-
-async def _ticker(stop: asyncio.Event) -> int:
-    ticks = 0
-    while not stop.is_set():
-        await asyncio.sleep(0.01)
-        ticks += 1
-    return ticks
 
 
 def _adapter(tmp_path):
@@ -44,25 +36,40 @@ def _adapter(tmp_path):
 @pytest.mark.asyncio
 async def test_teardown_offloads_blocking_docker_cleanup(tmp_path) -> None:
     adapter = _adapter(tmp_path)
-    adapter._teardown_profile_sync = lambda _pid: time.sleep(0.3)
+    started = threading.Event()
+    release = threading.Event()
 
-    stop = asyncio.Event()
-    ticker = asyncio.create_task(_ticker(stop))
-    started = time.monotonic()
-    await adapter.teardown_profile("p1")
-    elapsed = time.monotonic() - started
-    stop.set()
-    ticks = await ticker
+    def blocking_teardown(_pid: str) -> None:
+        started.set()
+        release.wait(2)
 
-    assert elapsed >= 0.25
-    assert ticks >= 5
+    adapter._teardown_profile_sync = blocking_teardown
+
+    state = {"done": False, "unblocked_while_running": False}
+
+    async def unblock() -> int:
+        await asyncio.to_thread(started.wait, 2)
+        state["unblocked_while_running"] = not state["done"]
+        release.set()
+        return 1
+
+    task = asyncio.create_task(adapter.teardown_profile("p1"))
+    task.add_done_callback(lambda _: state.update(done=True))
+    ticks = await unblock()
+    await task
+    assert ticks == 1
+    assert state["unblocked_while_running"] is True
 
 
 @pytest.mark.asyncio
 async def test_scan_inspect_offloads_blocking_docker_call(tmp_path) -> None:
+    inspect_started = threading.Event()
+    release_inspect = threading.Event()
+
     class _Api:
         def inspect_container(self, _cid):
-            time.sleep(0.3)
+            inspect_started.set()
+            release_inspect.wait(2)
             return {
                 "HostConfig": {
                     "PortBindings": {"30000/udp": [{"HostPort": "30000"}]}
@@ -121,17 +128,22 @@ async def test_scan_inspect_offloads_blocking_docker_call(tmp_path) -> None:
             api,
             gateway_control=gateway,
         )
-        stop = asyncio.Event()
-        ticker = asyncio.create_task(_ticker(stop))
-        started = time.monotonic()
-        await core.scan_and_reconcile_existing()
-        elapsed = time.monotonic() - started
-        stop.set()
-        ticks = await ticker
+        state = {"done": False, "unblocked_while_running": False}
 
-    assert elapsed >= 0.25
-    assert ticks >= 5
-    assert core._sessions["p1"].udp_mux_port == 30000
+        async def unblock() -> int:
+            await asyncio.to_thread(inspect_started.wait, 2)
+            state["unblocked_while_running"] = not state["done"]
+            release_inspect.set()
+            return 1
+
+        scan_task = asyncio.create_task(core.scan_and_reconcile_existing())
+        scan_task.add_done_callback(lambda _: state.update(done=True))
+        ticks = await unblock()
+        await scan_task
+
+    assert ticks == 1
+    assert state["unblocked_while_running"] is True
+    assert core.get_session("p1").udp_mux_port == 30000
 
 
 def async_none(value):

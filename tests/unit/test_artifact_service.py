@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
 import secrets
+import stat
 from pathlib import Path
 
 import pytest
@@ -38,7 +41,11 @@ async def _context(tmp_path: Path):
     profile = await ProfileRepository(maker).create_profile(
         ProfileConfig(name="Artifacts", fingerprint_seed=1)
     )
-    store = ArtifactStore(tmp_path / "artifact-root")
+    store = ArtifactStore(
+        tmp_path / "artifact-root",
+        runtime_uid=os.getuid(),
+        runtime_gid=os.getgid(),
+    )
     service = ArtifactService(
         ArtifactRepository(maker),
         store,
@@ -155,8 +162,8 @@ async def test_download_ingest_deduplicates_and_skips_partial_files(
             size=None,
             content_type=None,
         )
-        assert first is not None and first[1] is True
-        canonical = Path(first[0].storage_path)
+        assert first is not None and first.created is True
+        canonical = Path(first.artifact.storage_path)
         assert canonical.read_bytes() == payload
         assert not source.exists()
 
@@ -164,13 +171,13 @@ async def test_download_ingest_deduplicates_and_skips_partial_files(
             profile_id,
             path=str(canonical),
             name="orders.csv",
-            sha256=first[0].sha256,
+            sha256=first.artifact.sha256,
             size=len(payload),
             content_type=None,
         )
-        assert second is not None and second[1] is False
-        assert second[0].id == first[0].id
-        assert await service.list(profile_id) == [first[0]]
+        assert second is not None and second.created is False
+        assert second.artifact.id == first.artifact.id
+        assert await service.list(profile_id) == [first.artifact]
 
         assert partial.exists()
     finally:
@@ -227,9 +234,9 @@ async def test_same_checksum_with_different_name_is_a_distinct_artifact(
             size=None,
             content_type=None,
         )
-        assert first is not None and first[1] is True
-        assert second is not None and second[1] is True
-        assert first[0].sha256 == second[0].sha256
+        assert first is not None and first.created is True
+        assert second is not None and second.created is True
+        assert first.artifact.sha256 == second.artifact.sha256
         assert {item.name for item in await service.list(profile_id)} == {
             "first.csv",
             "second.csv",
@@ -267,9 +274,9 @@ async def test_same_name_with_different_download_path_is_distinct(
             size=None,
             content_type=None,
         )
-        assert first is not None and first[1] is True
-        assert second is not None and second[1] is True
-        assert first[0].id != second[0].id
+        assert first is not None and first.created is True
+        assert second is not None and second.created is True
+        assert first.artifact.id != second.artifact.id
         assert len(await service.list(profile_id)) == 2
     finally:
         await engine.dispose()
@@ -293,9 +300,9 @@ async def test_executable_download_is_registered_as_octet_stream(
             size=None,
             content_type=None,
         )
-        assert created is not None and created[1] is True
-        assert created[0].content_type == "application/octet-stream"
-        assert created[0].name == "installer.exe"
+        assert created is not None and created.created is True
+        assert created.artifact.content_type == "application/octet-stream"
+        assert created.artifact.name == "installer.exe"
     finally:
         await engine.dispose()
 
@@ -332,9 +339,7 @@ async def test_db_failure_restores_downloaded_file(
         await engine.dispose()
 
 
-def test_uploaded_file_is_readable_by_runtime_user(tmp_path: Path) -> None:
-    import asyncio
-
+def test_uploaded_file_has_exact_runtime_permissions(tmp_path: Path) -> None:
     async def run():
         engine, store, service, profile_id = await _context(tmp_path)
         try:
@@ -342,10 +347,57 @@ def test_uploaded_file_is_readable_by_runtime_user(tmp_path: Path) -> None:
                 profile_id, "readable.csv", "text/csv", _chunks(b"hello")
             )
             path = Path(artifact.storage_path)
-            file_mode = path.stat().st_mode & 0o777
-            dir_mode = path.parent.stat().st_mode & 0o777
-            assert file_mode & 0o040
-            assert dir_mode & 0o050
+            assert stat.S_IMODE(path.stat().st_mode) == 0o640
+            assert stat.S_IMODE(path.parent.stat().st_mode) == 0o750
+            assert stat.S_IMODE(store.uploads_dir(profile_id).stat().st_mode) == 0o750
+            assert path.stat().st_uid == os.getuid()
+            assert path.stat().st_gid == os.getgid()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(run())
+
+
+def test_artifact_ownership_targets_runtime_uid_1000_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = ArtifactStore(
+        tmp_path / "artifact-root", runtime_uid=1000, runtime_gid=1000
+    )
+    path = tmp_path / "artifact.bin"
+    path.write_bytes(b"payload")
+    calls: list[tuple[Path, int, int]] = []
+
+    def record(target, uid, gid, **_kwargs):
+        calls.append((Path(target), uid, gid))
+
+    monkeypatch.setattr(os, "chown", record)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    store._apply_runtime_permissions(path, directory=False)
+
+    assert calls == [(path, 1000, 1000)]
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_artifact_ownership_failure_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def run():
+        engine, store, service, profile_id = await _context(tmp_path)
+        store.runtime_uid = os.getuid() + 1
+        store.runtime_gid = os.getgid() + 1
+        monkeypatch.setattr(os, "geteuid", lambda: 0)
+
+        def deny(_path, _uid, _gid, **_kwargs):
+            raise PermissionError("not root")
+
+        monkeypatch.setattr(os, "chown", deny)
+        try:
+            with pytest.raises(Exception, match="ownership"):
+                await service.upload(
+                    profile_id, "denied.csv", "text/csv", _chunks(b"hello")
+                )
+            assert await service.list(profile_id) == []
         finally:
             await engine.dispose()
 
@@ -353,7 +405,9 @@ def test_uploaded_file_is_readable_by_runtime_user(tmp_path: Path) -> None:
 
 
 def test_store_rejects_profile_id_path_traversal(tmp_path: Path) -> None:
-    store = ArtifactStore(tmp_path / "artifact-root")
+    store = ArtifactStore(
+        tmp_path / "artifact-root", runtime_uid=1000, runtime_gid=1000
+    )
     with pytest.raises(ArtifactInvalidName):
         store.profile_dir("../escape")
 
@@ -361,11 +415,97 @@ def test_store_rejects_profile_id_path_traversal(tmp_path: Path) -> None:
 def test_download_source_rejects_paths_outside_the_downloads_directory(
     tmp_path: Path,
 ) -> None:
-    store = ArtifactStore(tmp_path / "artifact-root")
+    store = ArtifactStore(
+        tmp_path / "artifact-root", runtime_uid=1000, runtime_gid=1000
+    )
     with pytest.raises(ArtifactInvalidName):
         store.resolve_download_source("p1", "/exchange/downloads/../uploads/evil")
     with pytest.raises(ArtifactInvalidName):
         store.resolve_download_source("p1", "/etc/passwd")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_uploads_cannot_exceed_artifact_count_quota(
+    tmp_path: Path,
+) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+
+        async def attempt(index: int):
+            try:
+                return await service.upload(
+                    profile_id,
+                    f"file-{index}.csv",
+                    "text/csv",
+                    _chunks(b"x"),
+                )
+            except ArtifactQuotaExceeded:
+                return None
+
+        results = await asyncio.gather(*(attempt(index) for index in range(6)))
+        registered = [item for item in results if item is not None]
+        assert len(registered) == 2
+        assert len(await service.list(profile_id)) == 2
+        stored = [
+            item for item in store.profile_dir(profile_id).rglob("*") if item.is_file()
+        ]
+        assert len(stored) == 2
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "artifact_id",
+    ["../escape", "..", "a/b", "", ".hidden", "../../etc/passwd"],
+)
+@pytest.mark.asyncio
+async def test_artifact_id_must_be_a_single_path_component(
+    tmp_path: Path, artifact_id: str
+) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+        with pytest.raises(ArtifactInvalidName):
+            await service.get(profile_id, artifact_id)
+        with pytest.raises(ArtifactInvalidName):
+            store.upload_target(profile_id, artifact_id, "file.csv")
+        with pytest.raises(ArtifactInvalidName):
+            store.download_target(profile_id, artifact_id, "file.csv")
+        with pytest.raises(ArtifactInvalidName):
+            store.container_path(profile_id, artifact_id, "file.csv", "upload")
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_long_download_filename_is_truncated_and_registered(
+    tmp_path: Path,
+) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+        downloads = store.downloads_dir(profile_id)
+        downloads.mkdir(parents=True, exist_ok=True)
+        source = downloads / "guid-long"
+        source.write_bytes(b"long-name")
+        long_name = f"{'a' * 300}.csv"
+        result = await service.ingest_download(
+            profile_id,
+            path=str(source),
+            name=long_name,
+            sha256=None,
+            size=None,
+            content_type=None,
+        )
+        assert result.artifact is not None
+        assert result.reason == "created"
+        assert len(result.artifact.name.encode("utf-8")) <= 255
+        assert result.artifact.name.endswith(".csv")
+        assert Path(result.artifact.storage_path).is_file()
+        assert not source.exists()
+        assert [item.name for item in await service.list(profile_id)] == [
+            result.artifact.name
+        ]
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -384,7 +524,65 @@ async def test_checksum_mismatch_is_not_registered(tmp_path: Path) -> None:
             size=6,
             content_type=None,
         )
-        assert result is None
+        assert result.artifact is None
+        assert result.reason == "checksum_mismatch"
         assert await service.list(profile_id) == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_missing_download_is_reported_with_reason(tmp_path: Path) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+        downloads = store.downloads_dir(profile_id)
+        downloads.mkdir(parents=True, exist_ok=True)
+        result = await service.ingest_download(
+            profile_id,
+            path=str(downloads / "absent"),
+            name="absent.csv",
+            sha256=None,
+            size=None,
+            content_type=None,
+        )
+        assert result.artifact is None
+        assert result.reason == "missing"
+        assert await service.list(profile_id) == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_size_mismatch_is_reported_with_reason(tmp_path: Path) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+        downloads = store.downloads_dir(profile_id)
+        downloads.mkdir(parents=True, exist_ok=True)
+        source = downloads / "guid"
+        source.write_bytes(b"actual")
+        result = await service.ingest_download(
+            profile_id,
+            path=str(source),
+            name="actual.csv",
+            sha256=None,
+            size=999,
+            content_type=None,
+        )
+        assert result.artifact is None
+        assert result.reason == "size_mismatch"
+        assert source.is_file()
+        assert await service.list(profile_id) == []
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_artifact_locks_are_released_after_operations(tmp_path: Path) -> None:
+    engine, store, service, profile_id = await _context(tmp_path)
+    try:
+        await service.upload(profile_id, "one.csv", "text/csv", _chunks(b"1"))
+        assert service.locks_idle
+        await service.remove_profile(profile_id)
+        assert service.locks_idle
     finally:
         await engine.dispose()

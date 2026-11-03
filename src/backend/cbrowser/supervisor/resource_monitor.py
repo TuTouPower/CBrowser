@@ -70,7 +70,7 @@ class ResourceMonitor:
                     limit = container_cpu_limit(container.attrs.get("HostConfig", {}))
                     raw = container.stats(stream=False, one_shot=True)
                     current.append((target, container_id, raw, limit))
-            except (DockerException, OSError) as exc:
+            except (DockerException, OSError, ValueError, TypeError, KeyError) as exc:
                 logger.warning(
                     "Profile sampling failed: profile=%s error_type=%s",
                     target.profile_id,

@@ -70,6 +70,7 @@ class LoginRateLimiter:
             self._trim(queue, now - self.window_seconds)
             if len(queue) >= self.max_failures:
                 wait = max(wait, self.window_seconds - (now - queue[0]))
+        self._trim(self._global_failures, now - self.global_window_seconds)
         if len(self._global_failures) >= self.global_max_failures:
             wait = max(
                 wait, self.global_window_seconds - (now - self._global_failures[0])

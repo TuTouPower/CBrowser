@@ -28,7 +28,6 @@ CLIENT_SHIM_SCRIPT = r"""<script>
 
     const NativeWebSocket = window.WebSocket;
     const NativeRTCPeerConnection = window.RTCPeerConnection;
-    const NativeSetConfiguration = NativeRTCPeerConnection.prototype.setConfiguration;
     const NativeDataChannelSend = RTCDataChannel.prototype.send;
     window.__NativeWebSocket = NativeWebSocket;
     window.__NativeRTCPeerConnection = NativeRTCPeerConnection;
@@ -40,7 +39,6 @@ CLIENT_SHIM_SCRIPT = r"""<script>
     };
 
     let activePC = null;
-    let latestRtcConfig = null;
     let activeWS = null;
 
     let heldId = null;
@@ -70,23 +68,9 @@ CLIENT_SHIM_SCRIPT = r"""<script>
         return pending;
     }
 
-    // RTCPeerConnection wrapper
+    // RTCPeerConnection probe wrapper
     window.RTCPeerConnection = function(...args) {
-        let config = args[0] ? Object.assign({}, args[0]) : {};
-        if (latestRtcConfig) {
-            if (latestRtcConfig.iceServers) {
-                config.iceServers = latestRtcConfig.iceServers;
-            }
-            if (latestRtcConfig.iceTransportPolicy) {
-                config.iceTransportPolicy = latestRtcConfig.iceTransportPolicy;
-            }
-        }
-        const params = new URLSearchParams(location.search);
-        if (params.get('webrtc_mode') === 'relay-only'
-            || window.__CBROWSER_WEBRTC_MODE__ === 'relay-only'
-            || (latestRtcConfig && latestRtcConfig.iceTransportPolicy === 'relay')) {
-            config.iceTransportPolicy = 'relay';
-        }
+        const config = args[0] ? Object.assign({}, args[0]) : {};
         const pc = new NativeRTCPeerConnection(config);
         activePC = pc;
         window.__activePC = pc;
@@ -102,25 +86,6 @@ CLIENT_SHIM_SCRIPT = r"""<script>
     };
     window.RTCPeerConnection.prototype = NativeRTCPeerConnection.prototype;
     Object.assign(window.RTCPeerConnection, NativeRTCPeerConnection);
-
-    RTCPeerConnection.prototype.setConfiguration = function(config) {
-        let merged = config ? Object.assign({}, config) : {};
-        if (latestRtcConfig) {
-            if (latestRtcConfig.iceServers) {
-                merged.iceServers = latestRtcConfig.iceServers;
-            }
-            if (latestRtcConfig.iceTransportPolicy) {
-                merged.iceTransportPolicy = latestRtcConfig.iceTransportPolicy;
-            }
-        }
-        const params = new URLSearchParams(location.search);
-        if (params.get('webrtc_mode') === 'relay-only'
-            || window.__CBROWSER_WEBRTC_MODE__ === 'relay-only'
-            || (latestRtcConfig && latestRtcConfig.iceTransportPolicy === 'relay')) {
-            merged.iceTransportPolicy = 'relay';
-        }
-        return NativeSetConfiguration.call(this, merged);
-    };
 
     // WebSocket wrapper
     window.WebSocket = function(url, protocols) {
@@ -214,93 +179,12 @@ CLIENT_SHIM_SCRIPT = r"""<script>
             return origRemoveEventListener(type, listener, options);
         };
 
-        origAddEventListener('message', async (event) => {
+        origAddEventListener('message', (event) => {
             const data = event.data;
             if (typeof data === 'string' && data.includes('"cbrowser"')) {
                 try {
                     const parsed = JSON.parse(data);
                     if (parsed && parsed.cbrowser) {
-                        if (parsed.cbrowser === 'rtc_config') {
-                            latestRtcConfig = parsed.rtc_config;
-                            window.__latestRtcConfig = parsed.rtc_config;
-                            if (activePC) {
-                                try {
-                                    activePC.setConfiguration(parsed.rtc_config);
-                                } catch (e) {}
-                            }
-                        } else if (parsed.cbrowser === 'ice_restart') {
-                            window.__restartOffers = window.__restartOffers || [];
-                            let offerUfrag = null;
-                            if (parsed.offer && parsed.offer.sdp) {
-                                for (const line of parsed.offer.sdp.split('\n')) {
-                                    const trim = line.trim();
-                                    if (trim.startsWith('a=ice-ufrag:')) {
-                                        offerUfrag = trim.split(':', 2)[1].trim();
-                                        break;
-                                    }
-                                }
-                            }
-                            window.__restartOffers.push({
-                                generation: parsed.generation,
-                                ufrag: offerUfrag,
-                                offer: parsed.offer,
-                            });
-
-                            if (window.__negativeRejectClientTurn
-                                || location.search.includes('negative_turn_reject=1')) {
-                                if (parsed.rtc_config && parsed.rtc_config.iceServers) {
-                                    for (const s of parsed.rtc_config.iceServers) {
-                                        s.credential =
-                                            "invalid-password-for-negative-test";
-                                    }
-                                }
-                            }
-                            if (parsed.rtc_config) {
-                                latestRtcConfig = parsed.rtc_config;
-                                window.__latestRtcConfig = parsed.rtc_config;
-                            }
-
-                            if (activePC) {
-                                try {
-                                    if (parsed.rtc_config) {
-                                        activePC.setConfiguration(parsed.rtc_config);
-                                    }
-                                    await activePC.setRemoteDescription(parsed.offer);
-                                    const answer = await activePC.createAnswer();
-                                    await activePC.setLocalDescription(answer);
-                                    if (activePC.iceGatheringState !== 'complete') {
-                                        await new Promise(resolve => {
-                                            const check = () => {
-                                                if (activePC.iceGatheringState
-                                                    === 'complete') {
-                                                    activePC.removeEventListener(
-                                                        'icegatheringstatechange',
-                                                        check
-                                                    );
-                                                    resolve();
-                                                }
-                                            };
-                                            activePC.addEventListener(
-                                                'icegatheringstatechange',
-                                                check
-                                            );
-                                            setTimeout(resolve, 3000);
-                                        });
-                                    }
-                                    const answerPayload = {
-                                        cbrowser: "ice_restart_answer",
-                                        generation: parsed.generation,
-                                        sdp: {
-                                            type: activePC.localDescription.type,
-                                            sdp: activePC.localDescription.sdp,
-                                        }
-                                    };
-                                    nativeSend(JSON.stringify(answerPayload));
-                                } catch (err) {
-                                    console.error("ice_restart failure:", err);
-                                }
-                            }
-                        }
                         return;
                     }
                 } catch (e) {}

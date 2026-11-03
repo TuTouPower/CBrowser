@@ -49,6 +49,7 @@ WORKDIR /app
 # Copy entrypoint and whitelisted stream package code
 COPY config/docker/stream_runtime/entrypoint.sh /app/entrypoint.sh
 COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
+COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/stream_agent /app/cbrowser/stream_agent
 
 ENV PYTHONPATH=/app

@@ -32,7 +32,7 @@ async def test_old_stop_replay_keeps_replacement_session(tmp_path, completed):
             "profile", expected_instance="old_runtime", operation_id="old_stop"
         )
         assert replay == result
-        assert core._sessions["profile"] is current
+        assert core.get_session("profile") is current
         with pytest.raises(ValueError, match="different request"):
             await core.stop_profile(
                 "profile", expected_instance="new_runtime", operation_id="old_stop"

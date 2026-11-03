@@ -14,7 +14,7 @@
 
 ### 与初版决策的差异
 
-- 原 **D1–D12 全部转为采纳**，按上述原则选择方案；仅保留 **D1 数据保留策略** 作为待决定项（涉及隐私与审计的业务取舍）。
+- 原 **D1–D12 全部转为采纳**，按上述原则选择方案；**D1 数据保留策略** 作为唯一待决定项（涉及隐私与审计的业务取舍），已于 2026-11-01 决策为 A。
 - 原 **R1–R10、R13–R15、R18、R19、R21–R23、R26–R28 转为采纳**（已登记 pending 的条目在修复落地后按 pending 流程归档）。
 - 原 R11（t008 自动化接入面）仍为阶段外；新增保留不采纳：伪造 exit 事件（同信任域内签名无效，改为严格校验+隔离+文档记录）、内部 RPC 回环（协调设计本意）、Secure Cookie（契约正确）、隧道透传（同信任域）、前端 fail-open（合理降级）、协调器启动顺序（自愈设计）、缓存全量校验（安全措施）。
 
@@ -65,11 +65,11 @@ docs/reviews/review_20261101_075819
 
 - 采纳：31 项
 - 不采纳：8 项
-- 待决定：1 项
+- 待决定：0 项（D1 已决策）
 
-## 待决定项（请先决策）
+## 已决策项
 
-### D1. 删除 Profile 时 runtime_events 的保留策略
+### D1. 删除 Profile 时 runtime_events 的保留策略（已决策：A，2026-11-01）
 
 - 来源：review_opencode_opencode_go_deepseek_v4_1_flash（COR-10、TEST-5）
 - 位置：src/backend/cbrowser/adapters/database/models.py:205-225；src/backend/cbrowser/adapters/database/repository.py:399-405；docs/specs/runtime_persistence.md:23
@@ -81,7 +81,7 @@ docs/reviews/review_20261101_075819
     - C 保留但脱敏：删除 profile_id/instance_id 等标识，仅保留匿名统计
 - 推荐：A
 - 推荐理由：删除语义应与用户意图一致；审计需求已由 audit_events 覆盖；B/C 都会引入孤儿数据与额外清理债。选 A 需同步 A26 的 spec 修订。
-- 用户决策：A（审批通过时确认按推荐 A 执行）A
+- 用户决策：A（2026-11-01 已确认按推荐 A 执行）
 
 ## 采纳项
 

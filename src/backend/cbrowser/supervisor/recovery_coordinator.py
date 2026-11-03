@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import quote
 import time
 from typing import Any
 
@@ -53,6 +54,14 @@ class RecoveryCoordinator:
         self._cleanup_failures: dict[str, int] = {}
         self._cleanup_cooldown_until: dict[str, float] = {}
         self._cleanup_attempt_keys: dict[str, tuple[str | None, int]] = {}
+
+    def has_in_flight_task(self, profile_id: str) -> bool:
+        """Whether recovery is in flight for the profile."""
+        return profile_id in self._in_flight_tasks
+
+    def has_reported_dead_instance(self, instance_id: str) -> bool:
+        """Whether a dead instance was already reported."""
+        return instance_id in self._reported_dead_instances
 
     async def close(self) -> None:
         """Cancel pending retries without terminating healthy containers."""
@@ -176,7 +185,7 @@ class RecoveryCoordinator:
     ) -> None:
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
         except (httpx.HTTPError, OSError) as exc:
@@ -274,7 +283,7 @@ class RecoveryCoordinator:
     async def _fetch_runtime(self, profile_id: str) -> dict[str, Any] | None:
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
             if rt_resp.status_code != 200:
@@ -406,7 +415,7 @@ class RecoveryCoordinator:
             self._reported_dead_instances.add(instance_id)
         try:
             rt_resp = await self.core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self.core._auth_headers(),
             )
             if rt_resp.status_code == 200:
@@ -455,7 +464,7 @@ class RecoveryCoordinator:
             # intent
             try:
                 rt_resp = await self.core.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                    f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                     headers=self.core._auth_headers(),
                 )
                 if rt_resp.status_code != 200:
@@ -616,7 +625,7 @@ class RecoveryCoordinator:
     ) -> ProfileConfig:
         """Fetch and verify the immutable configuration snapshot."""
         ver_resp = await self.core.api.get(
-            f"/api/v1/internal/supervisor/profiles/{profile_id}/versions/{config_version}",
+            f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/versions/{config_version}",
             headers=self.core._auth_headers(),
         )
         ver_resp.raise_for_status()

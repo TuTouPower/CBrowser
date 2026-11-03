@@ -3,7 +3,6 @@
 import asyncio
 import json
 import secrets
-import sys
 from pathlib import Path
 
 import aiohttp
@@ -11,14 +10,13 @@ import httpx
 import pytest
 from cbrowser.stream_agent.protocol import (
     AgentAction,
+    AgentRegisterEnvelope,
     AgentRegisterPayload,
     GatewayControlEnvelope,
     GatewayTunnelEnvelope,
-    ProtocolEnvelope,
 )
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_gateway_fixtures import GatewayHarness
 
 
@@ -29,7 +27,8 @@ async def _register_agent(
     instance_id: str,
 ) -> tuple[aiohttp.ClientWebSocketResponse, str]:
     ws_agent = await session.ws_connect(
-        f"{harness.ws_url}/stream/agent/register",
+        f"{harness.ws_url}/stream/agent/register?profile_id={profile_id}"
+        f"&runtime_instance_id={instance_id}",
         headers={
             "Authorization": "Bearer "
             + harness.agent_credentials.token_for(profile_id, instance_id)
@@ -42,20 +41,15 @@ async def _register_agent(
         udp_port=30005,
         selkies_version="2.1.0",
         runtime_state="ready",
-        config_version=1,
-        turn_host="127.0.0.1",
-        turn_port=3478,
-    )
+        config_version=1,    )
     await ws_agent.send_str(
-        ProtocolEnvelope(
-            action=AgentAction.REGISTER,
+        AgentRegisterEnvelope(
             profile_id=profile_id,
             runtime_instance_id=instance_id,
-            payload=reg_payload.model_dump(),
+            payload=reg_payload,
         ).model_dump_json()
     )
     ack = json.loads((await ws_agent.receive()).data)
-    await ws_agent.receive()  # RTC_CONFIG
     return ws_agent, ack["agent_session_id"]
 
 
@@ -67,13 +61,16 @@ async def _report(
     payload: dict,
 ) -> None:
     await ws_agent.send_str(
-        ProtocolEnvelope(
-            action=AgentAction.HEARTBEAT,
-            profile_id=profile_id,
-            runtime_instance_id=instance_id,
-            agent_session_id=session_id,
-            payload=payload,
-        ).model_dump_json()
+        json.dumps(
+            {
+                "version": "v2",
+                "action": "heartbeat",
+                "profile_id": profile_id,
+                "runtime_instance_id": instance_id,
+                "agent_session_id": session_id,
+                "payload": payload,
+            }
+        )
     )
 
 
@@ -186,12 +183,35 @@ async def test_supervisor_control_auth_fence_quota_and_reported_visibility(
         await asyncio.sleep(0.2)
         assert await client.has_foreground_viewers(profile_id, instance_id) is False
 
+        token = harness.gw_token_file.read_text(encoding="utf-8").strip()
+        async with httpx.AsyncClient(
+            base_url=harness.base_url, trust_env=False
+        ) as raw_client:
+            rejected = await raw_client.post(
+                f"/gateway/v1/internal/profiles/{profile_id}/quota",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"runtime_instance_id": instance_id, "max_fps_cap": 99},
+            )
+            assert rejected.status_code == 400
+            not_object = await raw_client.post(
+                f"/gateway/v1/internal/profiles/{profile_id}/quota",
+                headers={"Authorization": f"Bearer {token}"},
+                json=["not-an-object"],
+            )
+            assert not_object.status_code == 400
+            bad_disconnect = await raw_client.post(
+                f"/gateway/v1/internal/profiles/{profile_id}/disconnect",
+                headers={"Authorization": f"Bearer {token}"},
+                json="not-an-object",
+            )
+            assert bad_disconnect.status_code == 400
+
         await client.set_quota(profile_id, instance_id, max_fps_cap=20.0)
         quota_env = GatewayControlEnvelope.model_validate_json(
             (await ws_agent.receive()).data
         )
         assert quota_env.action == AgentAction.SUPERVISOR_QUOTA
-        assert quota_env.payload.get("max_fps_cap") == 20.0
+        assert quota_env.payload.max_fps_cap == 20.0
 
         await client.close()
         await ws_agent.close()
@@ -219,7 +239,8 @@ async def test_supervisor_disconnect_closes_viewers_and_preserves_agent(
 
         # Connect Agent
         ws_agent = await session.ws_connect(
-            f"{harness.ws_url}/stream/agent/register",
+            f"{harness.ws_url}/stream/agent/register?profile_id={profile_id}"
+            f"&runtime_instance_id={instance_id}",
             headers={"Authorization": f"Bearer {agent_token}"},
         )
         reg_payload = AgentRegisterPayload(
@@ -230,19 +251,15 @@ async def test_supervisor_disconnect_closes_viewers_and_preserves_agent(
             selkies_version="2.1.0",
             runtime_state="ready",
             config_version=1,
-            turn_host="127.0.0.1",
-            turn_port=3478,
         )
         await ws_agent.send_str(
-            ProtocolEnvelope(
-                action=AgentAction.REGISTER,
+            AgentRegisterEnvelope(
                 profile_id=profile_id,
                 runtime_instance_id=instance_id,
-                payload=reg_payload.model_dump(),
+                payload=reg_payload,
             ).model_dump_json()
         )
         await ws_agent.receive()  # ACK
-        await ws_agent.receive()  # RTC_CONFIG
 
         # Connect Viewer
         ws_viewer = await session.ws_connect(
@@ -252,7 +269,6 @@ async def test_supervisor_disconnect_closes_viewers_and_preserves_agent(
                 "Cookie": f"cbrowser_session={cookie_val}",
             },
         )
-        await ws_viewer.receive()  # rtc_config
         await ws_agent.receive()  # tunnel open
 
         client = GatewayControlClient(
@@ -310,7 +326,6 @@ async def test_viewer_frames_never_change_visibility_or_reach_agent_as_control(
                 "Cookie": f"cbrowser_session={cookie}",
             },
         )
-        await ws_viewer.receive()  # rtc_config
         assert json.loads((await ws_agent.receive()).data)["type"] == "open"
 
         for frame in (

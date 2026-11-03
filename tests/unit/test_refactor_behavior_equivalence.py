@@ -222,15 +222,14 @@ def test_container_spec_stream_specs(tmp_path: Path) -> None:
         gateway_url="ws://gateway:8080/stream",
         config_version="3",
         udp_mux_port=30006,
-        media_addresses={"coturn_ip": "10.0.0.5"},
         screen_width=1280,
         screen_height=720,
     )
     assert env["CBROWSER_CONFIG_VERSION"] == "3"
     assert env["CBROWSER_SCREEN_WIDTH"] == "1280"
     assert env["CBROWSER_SCREEN_HEIGHT"] == "720"
-    assert env["SELKIES_STUN_HOST"] == "10.0.0.5"
-    assert env["SELKIES_TURN_PORT"] == "3478"
+    for removed in ("SELKIES_STUN_HOST", "SELKIES_TURN_HOST", "SELKIES_TURN_PORT"):
+        assert removed not in env
     assert stream_ports(30006) == {"30006/udp": ("127.0.0.1", 30006)}
     assert stream_labels("cb", "p1", "i1", "3")["com.cbrowser.role"] == "stream"
 

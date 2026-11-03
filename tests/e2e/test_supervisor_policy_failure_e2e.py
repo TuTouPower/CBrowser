@@ -19,18 +19,17 @@ Contract invariants:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import logging
-import os
 import secrets
 import shutil
-import sys
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
+
+from e2e_env import free_udp_port_span, require_e2e_env
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
@@ -38,23 +37,11 @@ from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 
-_core_e2e_path = Path(__file__).with_name("test_supervisor_core_e2e.py")
-_core_spec = importlib.util.spec_from_file_location(
-    "supervisor_core_e2e_module", _core_e2e_path
-)
-assert _core_spec is not None and _core_spec.loader is not None
-_core_module = importlib.util.module_from_spec(_core_spec)
-sys.modules["supervisor_core_e2e_module"] = _core_module
-_core_spec.loader.exec_module(_core_module)
-real_api_server = _core_module.real_api_server
-
 logger = logging.getLogger("cbrowser.test.policy_failure_e2e")
 
 
 def _get_required_env_image(env_var: str) -> str:
-    val = os.environ.get(env_var)
-    if not val:
-        pytest.skip(f"Env var {env_var} not set; skipping policy failure e2e.")
+    val = require_e2e_env(env_var)[env_var]
     if not (val.startswith("sha256:") or "@sha256:" in val):
         pytest.fail(f"Env var {env_var} must be immutable digest, got: {val}")
     return val
@@ -76,10 +63,9 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
     stream_image = _get_required_env_image("CBROWSER_STREAM_TEST_IMAGE")
     invalid_policy_image = _get_required_env_image("CBROWSER_INVALID_POLICY_TEST_IMAGE")
 
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not engine_cache_val:
-        pytest.skip("CBROWSER_RUNTIME_ENGINE_CACHE is not set")
-    assert Path(engine_cache_val).is_dir(), "Invalid runtime engine cache directory"
+    engine_cache_val = require_e2e_env(
+        "CBROWSER_RUNTIME_ENGINE_CACHE", paths=("CBROWSER_RUNTIME_ENGINE_CACHE",)
+    )["CBROWSER_RUNTIME_ENGINE_CACHE"]
 
     api_url, auth_token, token_file, auth_headers = real_api_server
     test_run_id = uuid.uuid4().hex[:8]
@@ -124,7 +110,8 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
         resource_prefix=prefix,
         geoip_cache_dir=engine_cache / "geoip",
     )
-    port_allocator = PortAllocator(min_port=30000, max_port=30005)
+    udp_base = free_udp_port_span(2)
+    port_allocator = PortAllocator(min_port=udp_base, max_port=udp_base + 5)
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -250,6 +237,7 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
             except docker.errors.DockerException as exc:
                 cleanup_errors.append(type(exc).__name__)
         docker_client.close()
-        assert not cleanup_errors, "Owned resource cleanup failed: " + ",".join(
-            cleanup_errors
-        )
+
+    assert not cleanup_errors, "Owned resource cleanup failed: " + ",".join(
+        cleanup_errors
+    )

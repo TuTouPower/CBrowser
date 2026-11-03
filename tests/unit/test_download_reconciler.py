@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -136,6 +137,152 @@ def test_supervisor_translates_container_path_and_forwards_once(
     assert calls[0]["name"] == "report.csv"
 
 
+def test_translate_download_path_rejects_escapes(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        translate_download_path("/exchange/downloads/../../evil", tmp_path, "p1")
+    with pytest.raises(ValueError):
+        translate_download_path("/exchange/downloads/guid", tmp_path, "../p1")
+    with pytest.raises(ValueError):
+        translate_download_path("/etc/passwd", tmp_path, "p1")
+
+
+def test_forwarder_dead_letters_unparseable_event(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    (events / "broken.json").write_text("{not-json", encoding="utf-8")
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+    assert not (events / "broken.json").exists()
+    dead_letter = data_root / "control" / "download-dead-letter" / "p1"
+    assert len(list(dead_letter.glob("broken.unreadable.*.json"))) == 1
+
+
+def test_forwarder_dead_letters_profile_mismatch(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    downloads = data_root / "artifacts" / "p1" / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "guid").write_bytes(b"payload")
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    event = {
+        "event_id": "dl_other_profile",
+        "profile_id": "p2",
+        "runtime_instance_id": "i1",
+        "guid": "guid",
+        "download_path": "/exchange/downloads/guid",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+    }
+    (events / "event.json").write_text(json.dumps(event), encoding="utf-8")
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+    dead_letter = data_root / "control" / "download-dead-letter" / "p1"
+    assert len(list(dead_letter.glob("event.profile_mismatch.*.json"))) == 1
+
+
+def test_forwarder_dead_letters_unsupported_envelope_version(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    downloads = data_root / "artifacts" / "p1" / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "guid").write_bytes(b"payload")
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    event = {
+        "version": 99,
+        "event_id": "dl_future",
+        "profile_id": "p1",
+        "runtime_instance_id": "i1",
+        "guid": "guid",
+        "download_path": "/exchange/downloads/guid",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+    }
+    (events / "event.json").write_text(json.dumps(event), encoding="utf-8")
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+    dead_letter = data_root / "control" / "download-dead-letter" / "p1"
+    assert len(list(dead_letter.glob("event.unsupported_version.*.json"))) == 1
+
+
+def test_forwarder_dead_letters_path_escape(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    event = {
+        "event_id": "dl_escape",
+        "profile_id": "p1",
+        "runtime_instance_id": "i1",
+        "guid": "guid",
+        "download_path": "/exchange/downloads/../../evil",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+    }
+    (events / "event.json").write_text(json.dumps(event), encoding="utf-8")
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+    dead_letter = data_root / "control" / "download-dead-letter" / "p1"
+    assert len(list(dead_letter.glob("event.path_escape.*.json"))) == 1
+
+
 def test_forwarder_does_not_skip_older_completed_events(tmp_path: Path) -> None:
     data_root = tmp_path / "data"
     downloads = data_root / "artifacts" / "p1" / "downloads"
@@ -192,6 +339,53 @@ def test_forwarder_does_not_skip_older_completed_events(tmp_path: Path) -> None:
 
     assert asyncio.run(run()) == 1
     assert [call["event_id"] for call in calls] == ["dl_completed_old"]
+
+
+def test_forwarder_truncates_overlong_filename_before_delivery(
+    tmp_path: Path,
+) -> None:
+    data_root = tmp_path / "data"
+    downloads = data_root / "artifacts" / "p1" / "downloads"
+    downloads.mkdir(parents=True)
+    source = downloads / "guid"
+    source.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    long_name = f"{'a' * 300}.csv"
+    event = {
+        "event_id": "dl_completed_long",
+        "profile_id": "p1",
+        "runtime_instance_id": "i1",
+        "guid": "guid",
+        "suggested_filename": long_name,
+        "download_path": "/exchange/downloads/guid",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+        "sha256": digest,
+    }
+    (events / "event.json").write_text(json.dumps(event), encoding="utf-8")
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            forwarder = DownloadArtifactForwarder(data_root, client)
+            first = await forwarder.forward_pending()
+            second = await forwarder.forward_pending()
+            return first, second
+
+    assert asyncio.run(run()) == (1, 0)
+    assert len(calls[0]["name"]) <= 255
+    assert calls[0]["name"]
 
 
 def test_forwarder_retries_after_retryable_4xx(tmp_path: Path) -> None:

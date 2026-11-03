@@ -4,19 +4,20 @@ Encapsulates:
 - RealApiProcess: Manages independent uvicorn Control API process with
   SQLite WAL database.
 - RealSupervisorProcess: Manages independent Supervisor process runner.
-- OfflineGatewayMock: Local aiohttp WebSocket Gateway verifying
-  AgentCredentials and GatewayControl.
 - RealBrowserActionProbe: Triggers in-container clean browser exit via
   UDS /run/cbrowser/runtime/agent.sock.
 - SpoolDirectoryWatcher: Watches data_root/spool for atomic event
   persistence and subsequent consumption.
 - SandboxContainerTracker: Exact, bounded cleanup of owned Docker containers.
+
+The Gateway counterparty is the production application in
+``supervisor_recovery_probe.gateway_service``; this module no longer ships a
+Gateway double.
 """
 
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
 import os
@@ -32,22 +33,10 @@ from typing import Any
 import docker
 import docker.errors
 import httpx
-import pytest
+
+from e2e_env import require_e2e_env
+from api_auth import create_auth_context
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
-
-_gw_fixture_path = Path(__file__).resolve().parent / "gateway_fixture.py"
-_gw_spec = importlib.util.spec_from_file_location("gateway_fixture", _gw_fixture_path)
-_gw_mod = importlib.util.module_from_spec(_gw_spec)
-
-_auth_path = Path(__file__).resolve().parents[1] / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
-sys.modules["gateway_fixture"] = _gw_mod
-_gw_spec.loader.exec_module(_gw_mod)
-SupervisorGatewayFixture = _gw_mod.SupervisorGatewayFixture
 
 logger = logging.getLogger("cbrowser.tests.offline_recovery_probe")
 
@@ -58,23 +47,16 @@ def get_e2e_prerequisites() -> tuple[str, str, Path, Path]:
     Skips the test if variables are missing. Fails if variables are present but
     invalid.
     """
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -204,6 +186,11 @@ class RealApiProcess:
         self._log_file_handle: Any | None = None
 
     @property
+    def log_handle_closed(self) -> bool:
+        """Whether the spawned process log handle is closed."""
+        return self._log_file_handle is None
+
+    @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
@@ -229,7 +216,11 @@ class RealApiProcess:
             CBROWSER_SUPERVISOR_TOKEN_FILE=str(self.token_file),
             PYTHONPATH=str(self.root / "src/backend"),
             PYTHONDONTWRITEBYTECODE="1",
-            **self.auth_context.env,
+            **{
+                key: value
+                for key, value in self.auth_context.env.items()
+                if key != "CBROWSER_SUPERVISOR_TOKEN_FILE"
+            },
         )
         self._log_file_handle = open(  # noqa: SIM115 - managed log handle closed in stop()
             self.log_path, "a", encoding="utf-8"
@@ -334,11 +325,12 @@ class RealSupervisorContainer:
         root: Path,
         env: dict[str, str],
         log_path: Path,
-        coturn_container_id: str | None = None,
         gateway_port: int | None = None,
         docker_client: docker.DockerClient | None = None,
         supervisor_image: str | None = None,
         network: str | None = None,
+        udp_mux_min_port: int = 30000,
+        udp_mux_max_port: int = 30991,
     ) -> None:
         self.api_url = api_url
         self.data_root = data_root.resolve()
@@ -354,7 +346,6 @@ class RealSupervisorContainer:
         self.root = root
         self.env = env
         self.log_path = log_path
-        self.coturn_container_id = coturn_container_id
         if gateway_port is not None:
             self.gateway_port = gateway_port
         elif self.gateway_url:
@@ -366,10 +357,12 @@ class RealSupervisorContainer:
             self.gateway_port = DEFAULT_GATEWAY_PORT
 
         self.docker_client = docker_client or docker.from_env()
-        self.supervisor_image = (
-            supervisor_image or os.environ.get("CBROWSER_SUPERVISOR_TEST_IMAGE")
-        )
+        self.supervisor_image = supervisor_image or require_e2e_env(
+            "CBROWSER_SUPERVISOR_TEST_IMAGE"
+        )["CBROWSER_SUPERVISOR_TEST_IMAGE"]
         self.network = network
+        self.udp_mux_min_port = udp_mux_min_port
+        self.udp_mux_max_port = udp_mux_max_port
         self.container: docker.models.containers.Container | None = None
         self.last_container_id: str | None = None
 
@@ -472,15 +465,12 @@ class RealSupervisorContainer:
             "--port",
             "8005",
         ]
-        if self.coturn_container_id:
-            cmd.extend(["--coturn-container-id", self.coturn_container_id])
         return cmd
 
     def start(self, timeout_sec: float = 30.0) -> None:
         if self.container is not None:
             raise RuntimeError("Supervisor container already running")
 
-        assert self.supervisor_image, "CBROWSER_SUPERVISOR_TEST_IMAGE is required"
         assert self.supervisor_image.startswith("sha256:"), (
             f"Invalid supervisor image: {self.supervisor_image}"
         )
@@ -500,6 +490,8 @@ class RealSupervisorContainer:
             ),
             "CBROWSER_STREAM_IMAGE": os.environ.get("CBROWSER_STREAM_TEST_IMAGE", ""),
             "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
+            "CBROWSER_UDP_MUX_MIN_PORT": str(self.udp_mux_min_port),
+            "CBROWSER_UDP_MUX_MAX_PORT": str(self.udp_mux_max_port),
         }
 
         c_name = f"{self.prefix}-supervisor-{uuid.uuid4().hex[:6]}"
@@ -686,9 +678,6 @@ class RealSupervisorContainer:
     def restart(self, timeout_sec: float = 30.0) -> None:
         self.stop()
         self.start(timeout_sec=timeout_sec)
-
-
-OfflineGatewayMock = SupervisorGatewayFixture
 
 
 class RealBrowserActionProbe:

@@ -35,6 +35,7 @@ class SessionResponse(BaseModel):
 class AutomationTokenCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     profile_ids: list[str] = Field(default_factory=list)
+    expires_in_hours: float | None = Field(default=None, gt=0, le=24 * 365)
 
 
 class AutomationTokenResponse(BaseModel):
@@ -44,6 +45,7 @@ class AutomationTokenResponse(BaseModel):
     created_at: str
     revoked: bool
     revoked_at: str | None = None
+    expires_at: str | None = None
 
 
 class AutomationTokenCreatedResponse(AutomationTokenResponse):
@@ -157,7 +159,9 @@ async def create_automation_token(
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
 ):
     raw_token, model = await auth_service.create_automation_token(
-        name=payload.name, profile_ids=payload.profile_ids
+        name=payload.name,
+        profile_ids=payload.profile_ids,
+        expires_in_hours=payload.expires_in_hours,
     )
     return AutomationTokenCreatedResponse(
         id=model.id,
@@ -167,6 +171,7 @@ async def create_automation_token(
         created_at=model.created_at,
         revoked=model.revoked,
         revoked_at=model.revoked_at,
+        expires_at=model.expires_at,
     )
 
 
@@ -187,6 +192,7 @@ async def list_automation_tokens(
             created_at=m.created_at,
             revoked=m.revoked,
             revoked_at=m.revoked_at,
+            expires_at=m.expires_at,
         )
         for m in models
     ]

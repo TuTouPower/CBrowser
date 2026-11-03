@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
+import stat
 from pathlib import Path
 
 import pytest
@@ -40,7 +42,10 @@ async def _context(tmp_path: Path):
         profile_id="p1",
         user_data_dir=str(profile_dir),
     )
-    return engine, repo, ProfileService(repo), source, profile_dir
+    service = ProfileService(
+        repo, runtime_uid=os.getuid(), runtime_gid=os.getgid()
+    )
+    return engine, repo, service, source, profile_dir
 
 
 def _write_state(profile_dir: Path) -> None:
@@ -259,16 +264,44 @@ async def test_duplicate_failure_removes_staged_directory(
 
 
 @pytest.mark.asyncio
-async def test_copy_permissions_are_readable_and_writable_for_runtime(
-    tmp_path: Path,
-) -> None:
+async def test_copy_permissions_are_exact_and_private(tmp_path: Path) -> None:
     engine, repo, service, source, profile_dir = await _context(tmp_path)
     _write_state(profile_dir)
     try:
         clone = await service.duplicate_profile("p1", include_browser_state=True)
         clone_dir = Path(clone.user_data_dir)
-        assert clone_dir.stat().st_mode & 0o002
-        assert (clone_dir / "Cookies").stat().st_mode & 0o002
+        assert stat.S_IMODE(clone_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE((clone_dir / "Cookies").stat().st_mode) == 0o600
+        assert stat.S_IMODE((clone_dir / "Default").stat().st_mode) == 0o700
+        assert (
+            stat.S_IMODE((clone_dir / "Default" / "Preferences").stat().st_mode)
+            == 0o600
+        )
+        for path in clone_dir.rglob("*"):
+            if not path.is_symlink():
+                assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_copy_ownership_failure_raises_and_cleans_up(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    _write_state(profile_dir)
+    service.runtime_uid = os.getuid() + 1
+    service.runtime_gid = os.getgid() + 1
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+
+    def deny(_path, _uid, _gid, **_kwargs):
+        raise PermissionError("not root")
+
+    monkeypatch.setattr(os, "chown", deny)
+    try:
+        with pytest.raises(PermissionError):
+            await service.duplicate_profile("p1", include_browser_state=True)
+        assert list((tmp_path / "profiles").iterdir()) == [tmp_path / "profiles" / "p1"]
     finally:
         await engine.dispose()
 
@@ -372,8 +405,8 @@ async def test_copy_manifest_mismatch_removes_clone(
 
     original = module._copy_user_data
 
-    def corrupt_copy(source_path, target_path):
-        original(source_path, target_path)
+    def corrupt_copy(source_path, target_path, **kwargs):
+        original(source_path, target_path, **kwargs)
         (target_path / "extra.txt").write_text("mismatch", encoding="utf-8")
 
     monkeypatch.setattr(module, "_copy_user_data", corrupt_copy)
@@ -393,7 +426,7 @@ async def test_copy_failure_removes_partial_clone(
     _write_state(profile_dir)
     import cbrowser.services.profile_service as module
 
-    def fail_copy(source_path, target_path):
+    def fail_copy(source_path, target_path, **kwargs):
         target_path.mkdir(parents=True, exist_ok=True)
         (target_path / "Cookies").write_bytes(b"partial")
         raise OSError("disk full")
@@ -490,5 +523,43 @@ async def test_copy_ownership_does_not_follow_directory_symlinks(
         clone_dir = Path(clone.user_data_dir)
         assert (clone_dir / "escape").is_symlink()
         assert victim.stat().st_mode & 0o777 == 0o755
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_profile_locks_are_released_after_operations(tmp_path: Path) -> None:
+    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    _write_state(profile_dir)
+    try:
+        await service.set_desired_state("p1", "stopped")
+        assert service.locks_idle
+        await service.duplicate_profile("p1", include_browser_state=True)
+        assert service.locks_idle
+        await service.delete_profile("p1")
+        assert service.locks_idle
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_copy_ownership_targets_runtime_uid_1000_by_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, repo, service, source, profile_dir = await _context(tmp_path)
+    _write_state(profile_dir)
+    calls: list[tuple[Path, int, int]] = []
+
+    def record(target, uid, gid, **_kwargs):
+        calls.append((Path(target), uid, gid))
+
+    monkeypatch.setattr(os, "chown", record)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    try:
+        await ProfileService(repo, runtime_uid=1000, runtime_gid=1000).duplicate_profile(
+            "p1", include_browser_state=True
+        )
+        assert calls
+        assert all((uid, gid) == (1000, 1000) for _, uid, gid in calls)
     finally:
         await engine.dispose()

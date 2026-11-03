@@ -1,3 +1,5 @@
+> 与代码冲突时以代码与生效 spec 为准，并须同步修正本文。
+
 # 约定（项目级）
 
 模板流程的编号与 Markdown 格式见 `.repo_template/docs/usage.md`「命名与格式」。本文定义 CBrowser 项目特有的技术栈约定、代码规范与 schema 落点。
@@ -15,14 +17,19 @@
 
 |类型|例子|落点|
 |---|---|---|
-|**跨服务接口契约**|OpenAPI 规范导出、WebRTC 信令协议|`schemas/openapi/`、`schemas/webrtc/`|
-|**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`backend/cbrowser/domain/`、`backend/cbrowser/api/schemas/`|
-|**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`frontend/src/shared/api/generated/`|
-|**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`backend/cbrowser/adapters/database/models.py`、`backend/migrations/`|
-|**配置 schema**|运行时配置验证、环境变量定义|`backend/cbrowser/config.py`、`config/schemas/`|
+|**跨服务接口契约**|OpenAPI 规范导出、Stream Gateway 信令协议|`schemas/openapi/`、`schemas/stream/`、`schemas/runtime/`|
+|**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`src/backend/cbrowser/domain/`|
+|**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`src/frontend/src/shared/api/generated/`|
+|**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`src/backend/cbrowser/adapters/database/models.py`、`src/backend/migrations/versions/`|
+|**配置 schema**|运行时配置验证、环境变量定义|`src/backend/cbrowser/*/config.py`、`config/`|
 |**文档/元数据 schema**|task front matter、状态机 JSON 校验|`.repo_template/docs/task_template/`|
 
-## 3. 编码与安全规范
+## 3. 路径与隐私规范
+
+- 已跟踪的非归档文本文件不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
+- 归档 spike 只作历史证据，不在仓库内运行；先复制到 `.scratch/`，探针秘密与工作目录不得入库。
+
+## 4. 编码与安全规范
 
 1. **凭证保护**：禁止在代码、日志、数据库或 Docker 镜像中硬编码密码、JWT 密钥、CloakBrowser 许可证或代理账密。
 2. **只读挂载**：容器沙箱内根文件系统必须为只读，仅对 `/tmp`、`/dev/shm` 以及 Profile 的挂载目录授予写权限。
@@ -32,7 +39,7 @@
     - 前端代码遵循 ESLint & Prettier 规范（2 空格）。
     - Markdown 文档统一使用 `md_kx` 格式化，表格使用 compact 格式。
 
-## 4. 原子写原则
+## 5. 原子写原则
 
 写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。

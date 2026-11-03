@@ -8,6 +8,7 @@ import secrets
 import uuid
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
+from urllib.parse import quote
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -76,9 +77,8 @@ class RuntimeEventBroadcaster:
         | None = None,
     ) -> AsyncGenerator[str, None]:
         q: asyncio.Queue[ProfileRuntimeEvent] = asyncio.Queue(maxsize=100)
-        self._subscribers.add(q)
-        try:
-            # 1. Determine catchup or full snapshot
+        initial_events: list[ProfileRuntimeEvent] = []
+        async with self._lock:
             replayed = False
             if last_event_id:
                 parsed = self._parse_event_id(last_event_id)
@@ -94,14 +94,11 @@ class RuntimeEventBroadcaster:
                         <= target_id
                         <= max(history_sequences)
                     ):
-                        for event in self._history:
-                            sequence = int(event.id.rsplit(":", 1)[1])
-                            if sequence > target_id:
-                                p = event.data.model_dump_json()
-                                yield (
-                                    f"id: {event.id}\nevent: {event.event}\n"
-                                    f"data: {p}\n\n"
-                                )
+                        initial_events = [
+                            event
+                            for event in self._history
+                            if int(event.id.rsplit(":", 1)[1]) > target_id
+                        ]
                         replayed = True
 
             if not replayed and initial_snapshot_provider is not None:
@@ -111,16 +108,23 @@ class RuntimeEventBroadcaster:
                 else:
                     snapshot_data_list = raw_res
                 for data in snapshot_data_list:
-                    async with self._lock:
-                        event_id = self._format_event_id(self._next_event_id)
-                        self._next_event_id += 1
+                    event_id = self._format_event_id(self._next_event_id)
+                    self._next_event_id += 1
                     event = ProfileRuntimeEvent(
                         id=event_id, event="runtime_state", data=data
                     )
-                    payload = event.data.model_dump_json()
-                    yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
+                    self._history.append(event)
+                    initial_events.append(event)
 
-            # 2. Stream real-time events with periodic keep-alive
+            # Register only after the snapshot/catch-up is built while holding the
+            # same lock as publish(), so no live event can fall into the gap.
+            self._subscribers.add(q)
+
+        try:
+            for event in initial_events:
+                payload = event.data.model_dump_json()
+                yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
+
             while True:
                 try:
                     event = await asyncio.wait_for(q.get(), timeout=15.0)
@@ -237,6 +241,15 @@ class RuntimeCoordinator:
                     )
         except Exception as e:  # noqa: BLE001 - top-level startup task boundary prevents worker crash
             logger.error("Failed to run startup reconciliation scan: %s", e)
+
+    def has_active_task(self, profile_id: str) -> bool:
+        """Whether a runtime task is active for the profile."""
+        return profile_id in self._active_tasks
+
+    @property
+    def publish_task_count(self) -> int:
+        """Number of in-flight publish tasks."""
+        return len(self._publish_tasks)
 
     async def stop(self) -> None:
         self._running = False
@@ -413,7 +426,7 @@ class RuntimeCoordinator:
             # transport failure is retried; an authoritative "no instance"
             # response means the stopped intent already holds.
             status_url = (
-                f"{self.supervisor_url}/supervisor/v1/profiles/{profile_id}/status"
+                f"{self.supervisor_url}/supervisor/v1/profiles/{quote(profile_id, safe='')}/status"
             )
             headers = {"Authorization": f"Bearer {self._token_str}"}
             try:

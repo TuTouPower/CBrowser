@@ -1,27 +1,22 @@
 """Browser egress and Stream media are separate bridges for one Profile."""
 
-import os
 import uuid
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.path_validator import PathValidator
 
 
 @pytest.mark.asyncio
 async def test_browser_egress_has_its_own_owned_bridge(tmp_path):
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if missing:
-        pytest.skip(
-            f"Missing required E2E image environment variables: {', '.join(missing)}"
-        )
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE", "CBROWSER_STREAM_TEST_IMAGE"
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
         f"got {browser_img}"

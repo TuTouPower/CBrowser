@@ -86,6 +86,11 @@
     "DownloadEventRecord": {
       "additionalProperties": false,
       "properties": {
+        "version": {
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
         "event_id": {
           "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
           "title": "Event Id",
@@ -264,6 +269,11 @@
     "RuntimeEventRecord": {
       "additionalProperties": false,
       "properties": {
+        "version": {
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
         "event_id": {
           "pattern": "^[a-zA-Z0-9_\\-\\.:]{1,128}$",
           "title": "Event Id",

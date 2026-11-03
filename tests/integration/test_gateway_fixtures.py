@@ -115,18 +115,13 @@ class GatewayHarness:
     def __init__(
         self,
         tmp_path: Path,
-        lifetime_sec: float = 86400.0,
-        interval_sec: float = 43200.0,
-        lead_time_sec: float = 21600.0,
         agent_heartbeat_timeout_sec: float = 30.0,
-        webrtc_mode: str = "public",
     ) -> None:
         self.tmp_path = tmp_path
         self.tmp_path.mkdir(parents=True, exist_ok=True)
         self.agent_key_bytes = secrets.token_urlsafe(32)
         self.gw_token_str = secrets.token_urlsafe(32)
         self.api_token_str = secrets.token_urlsafe(32)
-        self.turn_secret_str = secrets.token_urlsafe(32)
 
         self.agent_key_file = tmp_path / "agent_key.txt"
         self.agent_key_file.write_text(self.agent_key_bytes, encoding="utf-8")
@@ -139,10 +134,6 @@ class GatewayHarness:
         self.api_token_file = tmp_path / "api_token.txt"
         self.api_token_file.write_text(self.api_token_str, encoding="utf-8")
         self.api_token_file.chmod(0o600)
-
-        self.turn_secret_file = tmp_path / "turn_secret.txt"
-        self.turn_secret_file.write_text(self.turn_secret_str, encoding="utf-8")
-        self.turn_secret_file.chmod(0o600)
 
         self.agent_credentials = AgentCredentials(self.agent_key_file)
 
@@ -159,12 +150,6 @@ class GatewayHarness:
             api_url=f"http://127.0.0.1:{self.api_port}",
             api_token_file=self.api_token_file,
             allowed_origins=["https://localhost:8443", "http://127.0.0.1:3000"],
-            turn_secret_file=self.turn_secret_file,
-            webrtc_mode=webrtc_mode,
-            turn_public_urls=["turn:127.0.0.1:3478?transport=udp"],
-            credential_lifetime_sec=lifetime_sec,
-            generation_interval_sec=interval_sec,
-            ice_restart_lead_time_sec=lead_time_sec,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
 

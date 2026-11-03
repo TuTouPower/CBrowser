@@ -19,9 +19,10 @@ import inspect
 import logging
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote
 
 import websockets
-from cbrowser.domain.models import ProfileConfig
+from cbrowser.domain.models import ProfileConfig, ProfileRuntimeResponse
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
@@ -93,7 +94,7 @@ def create_control_app(
         # Fetch profile configuration from API
         try:
             cfg_resp = await core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{req.profile_id}/versions/{req.config_version}",
+                f"/api/v1/internal/supervisor/profiles/{quote(req.profile_id, safe='')}/versions/{req.config_version}",
                 headers=core._auth_headers(),
             )
             if cfg_resp.status_code != 200:
@@ -173,36 +174,36 @@ def create_control_app(
         session = core._sessions.get(profile_id)
         try:
             response = await core.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=core._auth_headers(),
             )
             response.raise_for_status()
-            runtime = response.json()
+            runtime = ProfileRuntimeResponse.model_validate(response.json())
         except Exception:  # noqa: BLE001 - runtime state query failure mapped to 503 Service Unavailable
             raise HTTPException(503, "Persisted runtime state is unavailable") from None
-        if session and session.runtime_instance_id == runtime["runtime_instance_id"]:
+        if session and session.runtime_instance_id == runtime.runtime_instance_id:
             return ProfileRuntimeStatus(
                 profile_id=profile_id,
                 runtime_instance_id=session.runtime_instance_id,
                 observed_state=session.observed_state,
-                desired_state=runtime["desired_state"],
+                desired_state=runtime.desired_state,
                 udp_mux_port=session.udp_mux_port,
                 browser_container_id=session.browser_container_id,
                 stream_container_id=session.stream_container_id,
-                restart_blocked=runtime["restart_blocked"],
-                failure_count=runtime["failure_count"],
+                restart_blocked=runtime.restart_blocked,
+                failure_count=runtime.failure_count,
             )
         else:
             return ProfileRuntimeStatus(
                 profile_id=profile_id,
-                runtime_instance_id=runtime["runtime_instance_id"],
-                observed_state=runtime["observed_state"],
-                desired_state=runtime["desired_state"],
+                runtime_instance_id=runtime.runtime_instance_id,
+                observed_state=runtime.observed_state,
+                desired_state=runtime.desired_state,
                 udp_mux_port=None,
                 browser_container_id=None,
                 stream_container_id=None,
-                restart_blocked=runtime["restart_blocked"],
-                failure_count=runtime["failure_count"],
+                restart_blocked=runtime.restart_blocked,
+                failure_count=runtime.failure_count,
             )
 
     @app.post(
@@ -237,7 +238,6 @@ def create_control_app(
     @app.websocket("/supervisor/v1/profiles/{profile_id}/cdp")
     async def cdp_proxy(websocket: WebSocket, profile_id: str):
         """Proxy an authorized CDP WebSocket to this Profile's Agent UDS."""
-        await websocket.accept()
         token = _bearer_token(websocket.headers.get("authorization", ""))
         if not token or not hmac.compare_digest(
             token.encode("utf-8"),
@@ -246,6 +246,7 @@ def create_control_app(
             logger.warning("CDP WebSocket rejected: invalid supervisor token")
             await websocket.close(code=4401)
             return
+        await websocket.accept()
 
         session = core._sessions.get(profile_id)
         if session is None or session.observed_state != "running":

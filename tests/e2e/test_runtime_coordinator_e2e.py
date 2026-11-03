@@ -1,7 +1,7 @@
 """Real Docker E2E test for AC-009 Runtime Coordinator.
 
 Tests:
-1. API process + Supervisor container + Gateway + coturn.
+1. API process + Supervisor container + Gateway.
 2. Setting running intent via API causes Browser & Stream to appear.
 3. Setting stopped intent via API causes Browser & Stream to disappear.
 4. Outage of Supervisor preserves intent, which converges upon recovery.
@@ -11,27 +11,23 @@ Tests:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import logging
 import os
 import secrets
 import shutil
 import socket
-import sys
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
-_auth_path = Path(__file__).resolve().parents[1] / "fixtures" / "api_auth.py"
-_auth_spec = importlib.util.spec_from_file_location("api_auth", _auth_path)
-_auth_mod = importlib.util.module_from_spec(_auth_spec)
-sys.modules["api_auth"] = _auth_mod
-_auth_spec.loader.exec_module(_auth_mod)
-create_auth_context = _auth_mod.create_auth_context
+from e2e_env import require_e2e_env
+from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from wait import poll_until, wait_until
+
+from api_auth import create_auth_context
 
 logger = logging.getLogger("cbrowser.test_runtime_coordinator_e2e")
 
@@ -43,14 +39,18 @@ def find_free_port() -> int:
 
 
 async def wait_until_ready(
-    url: str, path: str, headers: dict[str, str] | None = None, timeout: float = 30.0
+    url: str,
+    path: str,
+    headers: dict[str, str] | None = None,
+    timeout: float = 30.0,
+    expected_status: int = 200,
 ) -> None:
     deadline = asyncio.get_running_loop().time() + timeout
     async with httpx.AsyncClient(base_url=url, trust_env=False) as client:
         while asyncio.get_running_loop().time() < deadline:
             try:
                 resp = await client.get(path, headers=headers)
-                if resp.status_code == 200:
+                if resp.status_code == expected_status:
                     return
             except (httpx.TransportError, httpx.HTTPError):
                 pass
@@ -68,12 +68,22 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
     data = tmp_path / "data"
     control = data / "control"
     control.mkdir(parents=True)
-    control.chmod(0o777)
+    control.chmod(0o700)
     for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
         d = data / name
         d.mkdir()
         d.chmod(0o777)
 
+    require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_GATEWAY_IMAGE",
+        "CBROWSER_SUPERVISOR_TEST_IMAGE",
+        "CBROWSER_API_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+    )
     cache = data / "engine_cache"
     shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
     shutil.copytree(
@@ -83,7 +93,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
     )
 
     keys = {}
-    for name in ("supervisor", "agent", "gateway"):
+    for name in ("supervisor", "agent", "gateway", "gateway_api"):
         k = control / f"{name}_key"
         k.write_text(secrets.token_urlsafe(32), encoding="utf-8")
         k.chmod(0o600)
@@ -110,56 +120,31 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         )
         networks.append(edge_network)
 
-        # 2. Coturn container
-        turn_config = control / "turn.conf"
-        turn_config.write_text(
-            "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-            "no-cli\nno-tls\nno-dtls\nstatic-auth-secret="
-            + secrets.token_hex(32)
-            + "\n",
-            encoding="utf-8",
-        )
-        turn_config.chmod(0o644)
-
-        coturn = client.containers.run(
-            image("CBROWSER_TURN_TEST_IMAGE"),
-            name=f"{prefix}-coturn",
-            detach=True,
-            read_only=True,
-            cap_add=["NET_BIND_SERVICE"],
-            network=edge_network.name,
-            entrypoint="/usr/bin/turnserver",
-            command=[
-                "-c",
-                "/etc/turnserver.conf",
-                "--relay-threads=1",
-                "--log-file=stdout",
-            ],
-            volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-            labels={
-                "com.cbrowser.prefix": prefix,
-                "com.cbrowser.managed-by": "supervisor",
-                "com.cbrowser.role": "coturn",
-            },
-        )
-        containers.append(coturn)
-
         # 3. Gateway container
         gateway = client.containers.run(
-            image("CBROWSER_GATEWAY_TEST_IMAGE"),
+            image("CBROWSER_GATEWAY_IMAGE"),
             name=f"{prefix}-gateway",
             detach=True,
             read_only=True,
             network=edge_network.name,
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
-                "PROBE_AGENT_KEY_FILE": "/run/secrets/agent",
-                "PROBE_GATEWAY_KEY_FILE": "/run/secrets/gateway",
+                "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent",
+                "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway",
+                "CBROWSER_GATEWAY_API_URL": (
+                    f"http://host.docker.internal:{api_host_port}"
+                ),
+                "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
+                "CBROWSER_ALLOWED_ORIGINS": f"http://127.0.0.1:{api_host_port}",
             },
             volumes={
                 str(keys["agent"]): {"bind": "/run/secrets/agent", "mode": "ro"},
                 str(keys["gateway"]): {
                     "bind": "/run/secrets/gateway",
+                    "mode": "ro",
+                },
+                str(keys["gateway_api"]): {
+                    "bind": "/run/secrets/gateway_api",
                     "mode": "ro",
                 },
             },
@@ -174,7 +159,12 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         gateway.reload()
         gw_ports = gateway.attrs["NetworkSettings"]["Ports"]
         gw_port = gw_ports[f"{DEFAULT_GATEWAY_PORT}/tcp"][0]["HostPort"]
-        await wait_until_ready(f"http://127.0.0.1:{gw_port}", "/healthz", timeout=30.0)
+        await wait_until_ready(
+            f"http://127.0.0.1:{gw_port}",
+            "/stream/agent/register",
+            timeout=30.0,
+            expected_status=401,
+        )
         gateway_ip = gateway.attrs["NetworkSettings"]["Networks"][edge_network.name][
             "IPAddress"
         ]
@@ -190,6 +180,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         api_app = create_app(
             db_path=api_db_path,
             supervisor_token_file=keys["supervisor"],
+            gateway_token_file=keys["gateway_api"],
             admin_password_file=auth_ctx.admin_password_file,
             allowed_origins=auth_ctx.allowed_origin,
             supervisor_url=f"http://127.0.0.1:{supervisor_host_port}",
@@ -197,7 +188,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
 
         uv_config = uvicorn.Config(
             api_app,
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=api_host_port,
             log_level="warning",
         )
@@ -260,8 +251,6 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 str(DEFAULT_GATEWAY_PORT),
                 "--gateway-container-id",
                 gateway.id,
-                "--coturn-container-id",
-                coturn.id,
                 "--prefix",
                 prefix,
                 "--host",
@@ -312,17 +301,18 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             browser_c_name = f"{prefix}-browser-{profile_id}"
             stream_c_name = f"{prefix}-stream-{profile_id}"
 
-            b_found = False
-            s_found = False
-            for _ in range(360):
-                active = [c.name for c in client.containers.list()]
-                if browser_c_name in active and stream_c_name in active:
-                    b_found = True
-                    s_found = True
-                    break
-                await asyncio.sleep(0.5)
+            def active_names() -> list[str]:
+                return [c.name for c in client.containers.list()]
 
-            if not (b_found and s_found):
+            try:
+                await wait_until(
+                    lambda: browser_c_name in active_names()
+                    and stream_c_name in active_names(),
+                    timeout=180.0,
+                    interval=0.5,
+                    description=f"containers {browser_c_name} and {stream_c_name}",
+                )
+            except TimeoutError:
                 for c in client.containers.list(all=True, filters={"name": prefix}):
                     logger.error(
                         "Container %s (%s) logs:\n%s",
@@ -330,28 +320,24 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                         c.status,
                         c.logs().decode(errors="replace")[-2000:],
                     )
-
-            assert b_found and s_found, (
-                f"Containers {browser_c_name} and {stream_c_name} did not appear"
-            )
+                raise
 
             # Verify API runtime status reports running
-            rt_running = False
-            for _ in range(50):
-                rt = (
-                    await api_client.get(
-                        f"/api/v1/profiles/{profile_id}/runtime",
-                        headers=auth_headers,
-                    )
-                ).json()
-                if (
-                    rt["observed_state"] == "running"
-                    and rt["runtime_instance_id"] is not None
-                ):
-                    rt_running = True
-                    break
-                await asyncio.sleep(0.3)
-            assert rt_running, f"API did not report observed_state=running: {rt}"
+            async def get_runtime() -> dict:
+                response = await api_client.get(
+                    f"/api/v1/profiles/{profile_id}/runtime",
+                    headers=auth_headers,
+                )
+                return response.json()
+
+            rt = await poll_until(
+                get_runtime,
+                lambda value: value["observed_state"] == "running"
+                and value["runtime_instance_id"] is not None,
+                timeout=15.0,
+                interval=0.3,
+                description="API observed_state=running",
+            )
             assert rt["desired_state"] == "running"
             assert rt["last_coordinator_error"] is None
 
@@ -364,31 +350,21 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             assert stop_resp.json()["desired_state"] == "stopped"
 
             # Wait for Browser and Stream containers to disappear
-            disappeared = False
-            for _ in range(120):
-                active = [c.name for c in client.containers.list()]
-                if browser_c_name not in active and stream_c_name not in active:
-                    disappeared = True
-                    break
-                await asyncio.sleep(0.5)
-
-            assert disappeared, "Containers did not terminate after stop"
+            await wait_until(
+                lambda: browser_c_name not in active_names()
+                and stream_c_name not in active_names(),
+                timeout=60.0,
+                interval=0.5,
+                description="runtime containers terminated after stop",
+            )
 
             # Verify API reports stopped
-            rt_stopped_ok = False
-            for _ in range(50):
-                rt_stopped = (
-                    await api_client.get(
-                        f"/api/v1/profiles/{profile_id}/runtime",
-                        headers=auth_headers,
-                    )
-                ).json()
-                if rt_stopped["observed_state"] == "stopped":
-                    rt_stopped_ok = True
-                    break
-                await asyncio.sleep(0.3)
-            assert rt_stopped_ok, (
-                f"API did not report observed_state=stopped: {rt_stopped}"
+            rt_stopped = await poll_until(
+                get_runtime,
+                lambda value: value["observed_state"] == "stopped",
+                timeout=15.0,
+                interval=0.3,
+                description="API observed_state=stopped",
             )
             assert rt_stopped["desired_state"] == "stopped"
 
@@ -405,19 +381,13 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             assert patch_down.json()["desired_state"] == "running"
 
             # Coordinator sets last_coordinator_error
-            error_reported = False
-            for _ in range(40):
-                rt_err = (
-                    await api_client.get(
-                        f"/api/v1/profiles/{profile_id}/runtime",
-                        headers=auth_headers,
-                    )
-                ).json()
-                if rt_err["last_coordinator_error"]:
-                    error_reported = True
-                    break
-                await asyncio.sleep(0.2)
-            assert error_reported, "Expected coordinator error during supervisor outage"
+            rt_err = await poll_until(
+                get_runtime,
+                lambda value: bool(value["last_coordinator_error"]),
+                timeout=8.0,
+                interval=0.2,
+                description="coordinator error during supervisor outage",
+            )
             assert rt_err["desired_state"] == "running"
 
             # D. Restore Supervisor container
@@ -430,24 +400,13 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             )
 
             # Wait for coordinator to converge automatically upon recovery
-            converged_after_outage = False
-            for _ in range(240):
-                rt_rec = (
-                    await api_client.get(
-                        f"/api/v1/profiles/{profile_id}/runtime",
-                        headers=auth_headers,
-                    )
-                ).json()
-                if (
-                    rt_rec["observed_state"] == "running"
-                    and rt_rec["last_coordinator_error"] is None
-                ):
-                    converged_after_outage = True
-                    break
-                await asyncio.sleep(0.5)
-
-            assert converged_after_outage, (
-                "Expected coordinator to converge after supervisor restart"
+            await poll_until(
+                get_runtime,
+                lambda value: value["observed_state"] == "running"
+                and value["last_coordinator_error"] is None,
+                timeout=120.0,
+                interval=0.5,
+                description="coordinator convergence after supervisor restart",
             )
 
             # Cleanup: stop the running profile
@@ -537,6 +496,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 logger.error("Network remove error for %s: %s", n_name, err_t)
                 cleanup_errors.append(f"network_remove({n_name}): {err_t}")
 
-        if cleanup_errors:
-            msg = ", ".join(cleanup_errors)
-            raise RuntimeError(f"Cleanup encountered failures: {msg}")
+
+    if cleanup_errors:
+        msg = ", ".join(cleanup_errors)
+        raise RuntimeError(f"Cleanup encountered failures: {msg}")

@@ -35,4 +35,4 @@
 
 ## 验收与边界
 
-由 t007 真实栈 E2E（构建产物 + Caddy/API/Supervisor/Gateway/coturn/Browser/Stream + 无头 Google Chrome 双标签页）与 Vitest 验证。公网与原生 Linux x86_64 执行按用户豁免记 NOT_RUN / USER_WAIVED。
+由 t007 真实栈 E2E（构建产物 + Caddy/API/Supervisor/Gateway/Browser/Stream + 无头 Google Chrome 双标签页，无 coturn）与 Vitest 验证。公网与原生 Linux x86_64 执行按用户豁免记 NOT_RUN / USER_WAIVED。

@@ -7,7 +7,6 @@ import httpx
 import pytest
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
-from test_supervisor_rpc import supervisor_api as supervisor_api  # noqa: PLC0414
 
 
 @pytest.mark.asyncio

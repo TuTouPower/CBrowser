@@ -1,14 +1,17 @@
-"""Plan 7.2 registration fields, health payload and RTC config control messages."""
+"""Registration fields, heartbeat payload and per-action wire contract."""
 
 import pytest
 from cbrowser.stream_agent.protocol import (
     AgentAction,
+    AgentHeartbeatEnvelope,
     AgentHeartbeatPayload,
+    AgentRegisterEnvelope,
     AgentRegisterPayload,
     GatewayControlEnvelope,
-    RtcConfigPayload,
+    GatewayTunnelEnvelope,
+    validate_agent_envelope,
 )
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 REGISTER = {
     "hostname": "stream-a",
@@ -18,8 +21,13 @@ REGISTER = {
     "selkies_version": "2.1.0",
     "runtime_state": "ready",
     "config_version": 3,
-    "turn_host": "10.0.0.1",
-    "turn_port": 3478,
+}
+
+HEARTBEAT = {
+    "runtime_state": "ready",
+    "viewer_count": 2,
+    "unpaused_video_consumers": 1,
+    "capture_running": True,
 }
 
 
@@ -45,59 +53,15 @@ def test_registration_rejects_invalid_values(field, value):
         AgentRegisterPayload.model_validate({**REGISTER, field: value})
 
 
-def test_registration_requires_turn_host_and_port():
-    valid = {
-        **REGISTER,
-        "turn_host": "10.0.0.1",
-        "turn_port": 3478,
-    }
-    payload = AgentRegisterPayload.model_validate(valid)
-    assert payload.turn_host == "10.0.0.1"
-    assert payload.turn_port == 3478
-
-    # IPv6 test
-    valid_ipv6 = {
-        **REGISTER,
-        "turn_host": "2001:db8::1",
-        "turn_port": 3478,
-    }
-    payload_v6 = AgentRegisterPayload.model_validate(valid_ipv6)
-    assert payload_v6.turn_host == "2001:db8::1"
-
-    # Missing turn_host
-    no_host = {k: v for k, v in REGISTER.items() if k != "turn_host"}
+def test_registration_carries_no_turn_or_duplicate_fps_fields():
+    for field in ("turn_host", "turn_port", "max_fps", "min_fps"):
+        assert field not in AgentRegisterPayload.model_fields
     with pytest.raises(ValidationError):
-        AgentRegisterPayload.model_validate(no_host)
-
-    # Missing turn_port
-    no_port = {k: v for k, v in REGISTER.items() if k != "turn_port"}
-    with pytest.raises(ValidationError):
-        AgentRegisterPayload.model_validate(no_port)
-
-    # Invalid turn_host (hostname or bad IP)
-    for bad_host in ("coturn", "999.999.999.999", "not:an:ip:address:x"):
-        with pytest.raises(ValidationError):
-            AgentRegisterPayload.model_validate(
-                {**REGISTER, "turn_host": bad_host, "turn_port": 3478}
-            )
-
-    # Invalid turn_port (< 1 or > 65535)
-    for bad_port in (0, -1, 65536, 70000):
-        with pytest.raises(ValidationError):
-            AgentRegisterPayload.model_validate(
-                {**REGISTER, "turn_host": "10.0.0.1", "turn_port": bad_port}
-            )
+        AgentRegisterPayload.model_validate({**REGISTER, "max_fps": 30})
 
 
 def test_heartbeat_reports_selkies_video_state_strictly():
-    beat = AgentHeartbeatPayload.model_validate(
-        {
-            "runtime_state": "ready",
-            "viewer_count": 2,
-            "unpaused_video_consumers": 1,
-            "capture_running": True,
-        }
-    )
+    beat = AgentHeartbeatPayload.model_validate(HEARTBEAT)
     assert (beat.viewer_count, beat.unpaused_video_consumers) == (2, 1)
     assert beat.capture_running is True
     valid = beat.model_dump()
@@ -112,8 +76,26 @@ def test_heartbeat_reports_selkies_video_state_strictly():
             AgentHeartbeatPayload.model_validate(broken)
 
 
-def test_gateway_cannot_send_visibility_updates():
-    assert "visibility_update" not in {action.value for action in AgentAction}
+def test_actions_are_limited_to_the_implemented_contract():
+    assert {action.value for action in AgentAction} == {
+        "register",
+        "supervisor_quota",
+        "heartbeat",
+    }
+    for removed in ("visibility_update", "rtc_config", "ice_restart"):
+        assert removed not in {action.value for action in AgentAction}
+
+
+def test_gateway_control_is_quota_only_and_validated():
+    env = GatewayControlEnvelope(
+        version="v2",
+        action=AgentAction.SUPERVISOR_QUOTA,
+        profile_id="profile_a",
+        runtime_instance_id="inst_a",
+        agent_session_id="session_a",
+        payload={"max_fps_cap": 15},
+    )
+    assert env.payload.max_fps_cap == 15.0
     with pytest.raises(ValidationError):
         GatewayControlEnvelope.model_validate(
             {
@@ -125,55 +107,71 @@ def test_gateway_cannot_send_visibility_updates():
                 "payload": {"viewer_id": "viewer_a", "visible": True},
             }
         )
+    with pytest.raises(ValidationError):
+        GatewayControlEnvelope.model_validate(
+            {
+                "version": "v2",
+                "action": "supervisor_quota",
+                "profile_id": "profile_a",
+                "runtime_instance_id": "inst_a",
+                "agent_session_id": "session_a",
+                "payload": {"max_fps_cap": 99},
+            }
+        )
 
 
-def test_rtc_config_payload_validates_ice_servers_and_hides_credentials():
-    assert AgentAction.RTC_CONFIG.value == "rtc_config"
-    payload = RtcConfigPayload.model_validate(
+def test_agent_envelopes_discriminate_payload_by_action():
+    register = validate_agent_envelope(
         {
-            "generation": 2,
-            "ice_servers": [
-                {
-                    "urls": ["turn:10.0.0.5:3478?transport=udp"],
-                    "username": "1700000000:stream-profile_a",
-                    "credential": "c2VjcmV0",
-                }
-            ],
+            "version": "v2",
+            "action": "register",
+            "profile_id": "profile_a",
+            "runtime_instance_id": "inst_a",
+            "payload": REGISTER,
         }
     )
-    assert payload.ice_servers[0].credential.get_secret_value() == "c2VjcmV0"
-    assert "c2VjcmV0" not in repr(payload)
-    wire = payload.wire_ice_servers()
-    assert wire == [
+    assert isinstance(register, AgentRegisterEnvelope)
+    heartbeat = validate_agent_envelope(
         {
-            "urls": ["turn:10.0.0.5:3478?transport=udp"],
-            "username": "1700000000:stream-profile_a",
-            "credential": "c2VjcmV0",
+            "version": "v2",
+            "action": "heartbeat",
+            "profile_id": "profile_a",
+            "runtime_instance_id": "inst_a",
+            "agent_session_id": "session_a",
+            "payload": HEARTBEAT,
         }
-    ]
-    for broken in (
-        {"generation": 1, "ice_servers": []},
-        {"generation": 1, "ice_servers": [{"urls": ["http://evil"]}]},
-        {"generation": 0, "ice_servers": [{"urls": ["stun:10.0.0.5:3478"]}]},
-    ):
-        with pytest.raises(ValidationError):
-            RtcConfigPayload.model_validate(broken)
+    )
+    assert isinstance(heartbeat, AgentHeartbeatEnvelope)
+    with pytest.raises(ValidationError):
+        validate_agent_envelope(
+            {
+                "version": "v2",
+                "action": "register",
+                "profile_id": "profile_a",
+                "runtime_instance_id": "inst_a",
+                "payload": HEARTBEAT,
+            }
+        )
 
 
-def test_rtc_config_payload_relay_only_strict_boolean():
-    base = {
-        "generation": 1,
-        "ice_servers": [{"urls": ["turn:10.0.0.5:3478?transport=udp"]}],
-    }
-    # Defaults to False
-    p_default = RtcConfigPayload.model_validate(base)
-    assert p_default.relay_only is False
-
-    # Accepts True
-    p_relay = RtcConfigPayload.model_validate({**base, "relay_only": True})
-    assert p_relay.relay_only is True
-
-    # Strict boolean: non-bool types are rejected
-    for invalid in ("true", "false", 1, 0, None, []):
-        with pytest.raises(ValidationError):
-            RtcConfigPayload.model_validate({**base, "relay_only": invalid})
+def test_tunnel_envelope_requires_data_for_msg():
+    with pytest.raises(ValidationError):
+        GatewayTunnelEnvelope(
+            version="v2",
+            type="msg",
+            profile_id="profile_a",
+            runtime_instance_id="inst_a",
+            agent_session_id="session_a",
+            conn_id="conn_a",
+        )
+    adapter = TypeAdapter(GatewayTunnelEnvelope)
+    assert adapter.validate_python(
+        {
+            "version": "v2",
+            "type": "open",
+            "profile_id": "profile_a",
+            "runtime_instance_id": "inst_a",
+            "agent_session_id": "session_a",
+            "conn_id": "conn_a",
+        }
+    ).type == "open"

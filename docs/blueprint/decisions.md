@@ -116,3 +116,21 @@
     2. Profile `clipboard_sync` 开启时使用 Selkies seamless 双向自动同步，服务端锁定。
 - 结论：采用选项 2（用户决定）。`SELKIES_CLIPBOARD_SEAMLESS=true|locked`；`clipboard_sync` 关闭时 `enable_clipboard=false`，双向仍无传输；二进制剪贴板保持 `false|locked`。接受的代价：会话页获得焦点时本机剪贴板内容会发往该 Profile 的远程浏览器，远端复制会覆盖本机剪贴板；需要隔离的 Profile 关闭 `clipboard_sync`。原计划 19.3「用户剪贴板原内容保护」「后台页面不自动覆盖本机剪贴板」作废。
 - 替代：t014 的 seamless 关闭策略。
+
+## 013 单机单人部署包络与同机直连媒体链路（2026-11-02T22:00:00+08:00）
+
+- 背景：CBrowser 的唯一目标是同一台 Mac 上的单一用户；原架构仍按多主机流媒体服务维护 coturn、TURN 凭证轮换与同 PeerConnection 的 ICE 代次接管，后者依赖 Selkies 2.1.0 私有 ABI，且是本轮多条缺陷来源。s011/d026 在真实 Chrome + OrbStack 上验证同机 `127.0.0.1` host 候选直连可覆盖多页面、复制标签、刷新、关闭首个页面、可见性暂停/恢复、Viewer 断线 resume、音视频、键鼠与中文输入。
+- 选项：
+    1. 保留 coturn、短期凭证轮换与 ICE 代次接管，继续为未存在的多主机场景付费。
+    2. 删除 coturn、TURN 凭证与轮换、ICE 代次接管与 Selkies 私有 ABI 补丁，媒体只走同机直连；Gateway 收缩为 Agent 注册、信令路由与可见性/配额控制。
+- 结论：采用选项 2。Stream 容器 UDP mux 发布到 `127.0.0.1`，客户端与服务端均不下发 TURN 配置；公网、NAT 穿透与原生 Linux x86_64 明确不在需求范围（用户豁免）。该决定替代 010 的 TURN 凭证与地址上报机制；部署拓扑（t012）不再包含 coturn。
+- 替代：010
+
+## 014 运行时数据统一归属 uid 1000，删除全局可写回退（2026-11-03T02:00:00+08:00）
+
+- 背景：Profile 复制、Supervisor 引擎缓存与开发路径曾以 0777/0666 回退兼容 macOS 非 1000 uid，导致 Cookie、登录态与运行时文件对宿主其他用户可读写。
+- 选项：
+    1. 保留全局可写回退以兼容所有宿主 uid。
+    2. API、Supervisor 写入的运行时数据与 Browser/Stream 容器统一归属 uid/gid 1000；目录 0700/0750、文件 0600/0640，chown 失败即报错；开发路径改为在匹配 uid 下运行。
+- 结论：采用选项 2。Supervisor 以特权完成 chown，X11 目录由 1777 改为 0750（Browser/Stream 同为 uid 1000）；engine cache 只读挂载前收敛为 0750/0640。真实 Browser/Stream 双容器 E2E 已验证媒体与输入正常。
+- 替代：无

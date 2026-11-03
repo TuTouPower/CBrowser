@@ -2,18 +2,23 @@ import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "../features/auth/useAuth";
 import { I18nProvider } from "../i18n";
-import { defaultApiClient, ApiClient } from "../shared/api/client";
+import { defaultApiClient, ApiClient, shouldRetryRequest } from "../shared/api/client";
 import { defaultSseClient, ProfileEventsClient } from "../shared/api/sse";
 import { useProfileEventsSync } from "../features/profiles/useProfilesQuery";
 
 function SseSyncBridge({ sseClient }: { sseClient: ProfileEventsClient }) {
+  const { logout } = useAuth();
   useProfileEventsSync(sseClient);
 
   useEffect(() => {
+    sseClient.setOnUnauthorized?.(() => {
+      void logout();
+    });
     return () => {
       sseClient.stop();
+      sseClient.setOnUnauthorized?.(undefined);
     };
-  }, [sseClient]);
+  }, [sseClient, logout]);
 
   return null;
 }
@@ -44,8 +49,11 @@ export function AppProviders({
         defaultOptions: {
           queries: {
             staleTime: 5000,
-            retry: 1,
+            retry: shouldRetryRequest,
             refetchOnWindowFocus: true,
+          },
+          mutations: {
+            retry: shouldRetryRequest,
           },
         },
       }),

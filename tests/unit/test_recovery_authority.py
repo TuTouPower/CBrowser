@@ -84,7 +84,7 @@ async def test_exhausted_cleanup_does_not_schedule_another_attempt(tmp_path):
     recovery._cleanup_failures["p1"] = 3
     try:
         await recovery.tick()
-        assert "p1" not in recovery._in_flight_tasks
+        assert recovery.has_in_flight_task("p1") is False
     finally:
         await recovery.close()
 

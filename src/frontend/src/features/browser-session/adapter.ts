@@ -1,47 +1,41 @@
 /**
  * SelkiesClientAdapter
  *
- * Thin adapter running inside the Selkies iframe (or host environment) to:
+ * Thin adapter running inside the Selkies iframe to:
  * - Redirect signaling to /stream/{profileId}/signal
- * - Intercept and handle Gateway rtc_config and ice_restart control frames
- * - Preserve Gateway iceServers and iceTransportPolicy on setConfiguration (d022)
  * - Preserve official Selkies HELLO, client_tab_id, and resume_key
- * - Resolve duplicated tab conflicts via Web Locks without kicking the original tab (AC-002)
- * - Lock remote display resolution & DPR against external resize (AC-004)
- * - Block client activity/visibility frames to Gateway (AC-004, Plan 9.3)
+ * - Resolve duplicated tab conflicts via Web Locks without kicking the original tab
+ * - Lock remote display resolution & DPR against external resize
+ * - Block client resize/activity frames that must not reach the Gateway
  * - Enforce target="_blank" rel="noopener" on new windows
- * - Report diagnostic metrics and lifecycle state changes
+ * - Report diagnostic metrics and lifecycle state changes to the host page
+ *
+ * Production contract with the host page:
+ * - Host calls `window.__getWebRTCStats()` for session diagnostics.
+ * - Iframe posts CBROWSER_PC_STATE, CBROWSER_WS_CLOSE, CBROWSER_LIFECYCLE_STALE
+ *   and CBROWSER_WEB_LOCKS_UNAVAILABLE messages to `window.parent`.
+ * No other globals are exposed for tests; probes are injected by the test suite.
  */
 
-export const DATA_CHANNEL_HISTORY_LIMIT = 500;
-export const RESTART_OFFER_HISTORY_LIMIT = 20;
-
-function pushBounded(target: any[], value: unknown, limit: number): void {
-  target.push(value);
-  if (target.length > limit) {
-    target.splice(0, target.length - limit);
-  }
-}
+const installedWindows = new WeakSet<object>();
 
 export function installSelkiesClientAdapter(
   targetWindow: Window = window,
   profileId: string = "default"
 ): void {
   const win = targetWindow as any;
-  if (win.__cbrowserShimInstalled) {
+  if (installedWindows.has(win)) {
     return;
   }
-  win.__cbrowserShimInstalled = true;
-  win.__cbrowserIdentityGuard = true;
-  win.__cbrowserAdapterSource = "features/browser-session/adapter.ts";
+  installedWindows.add(win);
   win.__SELKIES_STREAMING_MODE__ = "webrtc";
 
-  // Lock remote display resolution (AC-004)
+  // Lock remote display resolution against client-side resize.
   win.enable_resize = false;
   win.manual_resolution = true;
   win.manualResolution = true;
 
-  // Enforce rel="noopener" for new windows and tabs
+  // Enforce rel="noopener" for new windows and tabs.
   if (typeof win.open === "function") {
     const origOpen = win.open.bind(win);
     win.open = function (url?: string | URL, target?: string, features?: string) {
@@ -68,26 +62,12 @@ export function installSelkiesClientAdapter(
 
   const NativeWebSocket = win.WebSocket;
   const NativeRTCPeerConnection = win.RTCPeerConnection;
-  const NativeSetConfiguration =
-    NativeRTCPeerConnection?.prototype?.setConfiguration;
   const NativeDataChannelSend = win.RTCDataChannel?.prototype?.send;
 
-  win.__NativeWebSocket = NativeWebSocket;
-  win.__NativeRTCPeerConnection = NativeRTCPeerConnection;
-  win.__sentDataChannelMessages = [];
-
-  // Filter DataChannel messages (AC-004: block resize packets 'r,width,height')
   if (win.RTCDataChannel?.prototype) {
     win.RTCDataChannel.prototype.send = function (data: any) {
       if (typeof data === "string" && data.startsWith("r,")) {
         return;
-      }
-      if (Array.isArray(win.__sentDataChannelMessages)) {
-        pushBounded(
-          win.__sentDataChannelMessages,
-          data,
-          DATA_CHANNEL_HISTORY_LIMIT
-        );
       }
       if (NativeDataChannelSend) {
         return NativeDataChannelSend.call(this, data);
@@ -96,22 +76,16 @@ export function installSelkiesClientAdapter(
   }
 
   let activePC: any = null;
-  let latestRtcConfig: any = null;
   let activeWS: any = null;
   let heldId: string | null = null;
   const acquisitions = new Map<string, Promise<boolean>>();
 
-  win.__applyGatewayRtcConfig = (config: any) => {
-    latestRtcConfig = config;
-    win.__latestRtcConfig = config;
-    if (activePC && typeof activePC.setConfiguration === "function") {
-      try {
-        activePC.setConfiguration(config);
-      } catch {
-        // Ignored
-      }
+  function postToParent(message: Record<string, unknown>): void {
+    const parentOrigin = win.location?.origin;
+    if (win.parent && win.parent !== win && parentOrigin) {
+      win.parent.postMessage(message, parentOrigin);
     }
-  };
+  }
 
   function acquireLock(id: string): Promise<boolean> {
     if (heldId === id) return Promise.resolve(true);
@@ -144,54 +118,20 @@ export function installSelkiesClientAdapter(
     return pending;
   }
 
-  // RTCPeerConnection wrapper (d022: preserves Gateway iceServers and iceTransportPolicy)
   if (NativeRTCPeerConnection) {
     win.RTCPeerConnection = function (...args: any[]) {
       const config = args[0] ? Object.assign({}, args[0]) : {};
-      if (latestRtcConfig) {
-        if (latestRtcConfig.iceServers) {
-          config.iceServers = latestRtcConfig.iceServers;
-        }
-        if (latestRtcConfig.iceTransportPolicy) {
-          config.iceTransportPolicy = latestRtcConfig.iceTransportPolicy;
-        }
-      }
-      const params = new URLSearchParams(win.location?.search || "");
-      if (
-        params.get("webrtc_mode") === "relay-only" ||
-        win.__CBROWSER_WEBRTC_MODE__ === "relay-only" ||
-        latestRtcConfig?.iceTransportPolicy === "relay"
-      ) {
-        config.iceTransportPolicy = "relay";
-      }
-
       const pc = new NativeRTCPeerConnection(config);
       activePC = pc;
-      win.__activePC = pc;
-      // Only the live peer connection is retained; stale PCs are not
-      // reachable from diagnostics and must not accumulate on reconnects.
-      win.__pcs = [pc];
 
       if (typeof pc.addEventListener === "function") {
-        pc.addEventListener("datachannel", (event: any) => {
-          if (event.channel && event.channel.label === "input") {
-            win.__inputChannel = event.channel;
-          }
-        });
-
         const notifyState = () => {
-          const parentOrigin = win.location?.origin;
-          if (win.parent && win.parent !== win && parentOrigin) {
-            win.parent.postMessage(
-              {
-                type: "CBROWSER_PC_STATE",
-                connectionState: pc.connectionState,
-                iceConnectionState: pc.iceConnectionState,
-                signalingState: pc.signalingState,
-              },
-              parentOrigin
-            );
-          }
+          postToParent({
+            type: "CBROWSER_PC_STATE",
+            connectionState: pc.connectionState,
+            iceConnectionState: pc.iceConnectionState,
+            signalingState: pc.signalingState,
+          });
         };
         pc.addEventListener("connectionstatechange", notifyState);
         pc.addEventListener("iceconnectionstatechange", notifyState);
@@ -203,32 +143,8 @@ export function installSelkiesClientAdapter(
 
     win.RTCPeerConnection.prototype = NativeRTCPeerConnection.prototype;
     Object.assign(win.RTCPeerConnection, NativeRTCPeerConnection);
-
-    if (NativeSetConfiguration) {
-      win.RTCPeerConnection.prototype.setConfiguration = function (config: any) {
-        const merged = config ? Object.assign({}, config) : {};
-        if (latestRtcConfig) {
-          if (latestRtcConfig.iceServers) {
-            merged.iceServers = latestRtcConfig.iceServers;
-          }
-          if (latestRtcConfig.iceTransportPolicy) {
-            merged.iceTransportPolicy = latestRtcConfig.iceTransportPolicy;
-          }
-        }
-        const params = new URLSearchParams(win.location?.search || "");
-        if (
-          params.get("webrtc_mode") === "relay-only" ||
-          win.__CBROWSER_WEBRTC_MODE__ === "relay-only" ||
-          latestRtcConfig?.iceTransportPolicy === "relay"
-        ) {
-          merged.iceTransportPolicy = "relay";
-        }
-        return NativeSetConfiguration.call(this, merged);
-      };
-    }
   }
 
-  // WebSocket proxy wrapper
   if (NativeWebSocket) {
     win.WebSocket = function (url: string, protocols?: any) {
       const u = new URL(url, win.location?.href || "http://localhost");
@@ -255,13 +171,10 @@ export function installSelkiesClientAdapter(
           ? new NativeWebSocket(u.toString(), protocols)
           : new NativeWebSocket(u.toString());
       activeWS = ws;
-      win.__last_ws = ws;
 
       const nativeSend = ws.send.bind(ws);
-      (ws as any)._nativeSend = nativeSend;
 
       ws.send = function (data: any) {
-        // Handle HELLO client with tab collision prevention
         if (typeof data === "string" && data.startsWith("HELLO client ")) {
           let id = win.sessionStorage?.getItem("selkies_tab_id");
           if (!id) {
@@ -274,7 +187,6 @@ export function installSelkiesClientAdapter(
             .then((acquired) => {
               if (ws.readyState !== NativeWebSocket.OPEN) return;
               if (!acquired) {
-                // Collision detected: generate new tab ID and reconnect
                 const newId =
                   win.crypto?.randomUUID?.() ||
                   `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -285,12 +197,12 @@ export function installSelkiesClientAdapter(
               nativeSend(data);
             })
             .catch(() => {
+              postToParent({ type: "CBROWSER_WEB_LOCKS_UNAVAILABLE" });
               ws.close(1008, "tab_identity_unavailable");
             });
           return;
         }
 
-        // AC-004: Drop visibility / activity frames
         if (
           typeof data === "string" &&
           data.includes('"cbrowser"') &&
@@ -302,159 +214,12 @@ export function installSelkiesClientAdapter(
         nativeSend(data);
       };
 
-      let userOnMessage: any = null;
-      Object.defineProperty(ws, "onmessage", {
-        get() {
-          return userOnMessage;
-        },
-        set(handler) {
-          userOnMessage = handler;
-        },
-        configurable: true,
-      });
-
-      const origAddEventListener = ws.addEventListener.bind(ws);
-      const origRemoveEventListener = ws.removeEventListener.bind(ws);
-      const wrappedListeners = new Map<any, any>();
-
-      ws.addEventListener = function (
-        type: string,
-        listener: any,
-        options?: any
-      ) {
-        if (type === "message" && typeof listener === "function") {
-          const wrapped = function (this: any, event: any) {
-            const data = event.data;
-            if (typeof data === "string" && data.includes('"cbrowser"')) {
-              try {
-                const parsed = JSON.parse(data);
-                if (parsed && parsed.cbrowser) {
-                  return; // Don't forward cbrowser control frames to Selkies
-                }
-              } catch {
-                // Ignore parse errors
-              }
-            }
-            return listener.call(this, event);
-          };
-          wrappedListeners.set(listener, wrapped);
-          return origAddEventListener(type, wrapped, options);
-        }
-        return origAddEventListener(type, listener, options);
-      };
-
-      ws.removeEventListener = function (
-        type: string,
-        listener: any,
-        options?: any
-      ) {
-        if (type === "message" && wrappedListeners.has(listener)) {
-          const wrapped = wrappedListeners.get(listener);
-          wrappedListeners.delete(listener);
-          return origRemoveEventListener(type, wrapped, options);
-        }
-        return origRemoveEventListener(type, listener, options);
-      };
-
-      // Handle Gateway control frames
-      origAddEventListener("message", async (event: any) => {
-        const data = event.data;
-        if (typeof data === "string" && data.includes('"cbrowser"')) {
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed && parsed.cbrowser) {
-              if (parsed.cbrowser === "rtc_config") {
-                win.__applyGatewayRtcConfig(parsed.rtc_config);
-              } else if (parsed.cbrowser === "ice_restart") {
-                const restartOffers =
-                  win.__restartOffers || (win.__restartOffers = []);
-                let offerUfrag: string | null = null;
-                if (parsed.offer && parsed.offer.sdp) {
-                  for (const line of parsed.offer.sdp.split("\n")) {
-                    const trim = line.trim();
-                    if (trim.startsWith("a=ice-ufrag:")) {
-                      offerUfrag = trim.split(":", 2)[1]?.trim() || null;
-                      break;
-                    }
-                  }
-                }
-                pushBounded(
-                  restartOffers,
-                  {
-                    generation: parsed.generation,
-                    ufrag: offerUfrag,
-                    offer: parsed.offer,
-                  },
-                  RESTART_OFFER_HISTORY_LIMIT
-                );
-
-                if (parsed.rtc_config) {
-                  win.__applyGatewayRtcConfig(parsed.rtc_config);
-                }
-
-                if (activePC) {
-                  try {
-                    await activePC.setRemoteDescription(parsed.offer);
-                    const answer = await activePC.createAnswer();
-                    await activePC.setLocalDescription(answer);
-
-                    if (activePC.iceGatheringState !== "complete") {
-                      await new Promise<void>((resolve) => {
-                        const check = () => {
-                          if (activePC.iceGatheringState === "complete") {
-                            activePC.removeEventListener(
-                              "icegatheringstatechange",
-                              check
-                            );
-                            resolve();
-                          }
-                        };
-                        activePC.addEventListener(
-                          "icegatheringstatechange",
-                          check
-                        );
-                        setTimeout(resolve, 3000);
-                      });
-                    }
-
-                    const answerPayload = {
-                      cbrowser: "ice_restart_answer",
-                      generation: parsed.generation,
-                      sdp: {
-                        type: activePC.localDescription?.type || "answer",
-                        sdp: activePC.localDescription?.sdp || "",
-                      },
-                    };
-                    nativeSend(JSON.stringify(answerPayload));
-                  } catch (err) {
-                    console.error("ice_restart failure:", err);
-                  }
-                }
-              }
-              return;
-            }
-          } catch {
-            // Ignored
-          }
-        }
-        if (userOnMessage) {
-          userOnMessage.call(ws, event);
-        }
-      });
-
-      // Post close events to parent window
       ws.addEventListener("close", (e: any) => {
-        const parentOrigin = win.location?.origin;
-        if (win.parent && win.parent !== win && parentOrigin) {
-          win.parent.postMessage(
-            {
-              type: "CBROWSER_WS_CLOSE",
-              code: e.code,
-              reason: e.reason,
-            },
-            parentOrigin
-          );
-        }
+        postToParent({
+          type: "CBROWSER_WS_CLOSE",
+          code: e.code,
+          reason: e.reason,
+        });
       });
 
       return ws;
@@ -464,7 +229,6 @@ export function installSelkiesClientAdapter(
     Object.assign(win.WebSocket, NativeWebSocket);
   }
 
-  // Diagnostics method
   win.__getWebRTCStats = async () => {
     const pc = activePC;
     if (!pc || typeof pc.getStats !== "function") return null;
@@ -549,18 +313,14 @@ export function installSelkiesClientAdapter(
     }
   };
 
-  // AC-007: Page Lifecycle and bfcache reactivation handler
   const handleReactivate = () => {
     const pcBroken =
       activePC &&
       (activePC.connectionState === "failed" ||
         activePC.connectionState === "closed");
-    const wsBroken = activeWS && activeWS.readyState > 1; // CLOSING or CLOSED
+    const wsBroken = activeWS && activeWS.readyState > 1;
     if (pcBroken || wsBroken) {
-      const parentOrigin = win.location?.origin;
-      if (win.parent && win.parent !== win && parentOrigin) {
-        win.parent.postMessage({ type: "CBROWSER_LIFECYCLE_STALE" }, parentOrigin);
-      }
+      postToParent({ type: "CBROWSER_LIFECYCLE_STALE" });
     }
   };
 

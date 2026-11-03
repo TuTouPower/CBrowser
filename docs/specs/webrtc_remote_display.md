@@ -15,13 +15,11 @@
 ## 传输与信令
 
 - Profile 的多个 Peer 共用该 Profile 分配的单个 UDP mux 发布端口；端口池30000–30991。Supervisor 负责独占分配、实际映射与回收。
-- WebRTC DTLS-SRTP 优先直连，必要时 TURN 中继。客户端与服务端配置分别使用可达地址和独立短期凭证；凭证轮换保持同 PC、DTLS 和 Track。
-- 新 ICE generation 必须实际接管，旧连接关闭并拒绝发送，然后按新 ufrag 的 selected relay pair 重新采样媒体增量；旧 relay 继续传流不能充当轮换通过。
-- 正式信令路径为 /stream/{profileId}/signal，由 Stream Gateway 提供：升级前校验 Origin、登录会话与 Profile 授权及 Agent 就绪；每个页面独立隧道，关闭一条不影响其他连接；媒体不经 Gateway。Gateway 重启不停止 Browser，Agent 按 1/2/4/8/16/30 秒退避重新注册后页面可重连。
-- Stream Agent 注册携带 profile_id、runtime_instance_id、selkies_version、runtime_state、webrtc_udp_port、config_version 与本网络 coturn 实际地址，每 10 秒发送健康消息；Gateway 只接受与 API 当前绑定一致的实例，并核对回传报文的 Profile、实例与 session。协议见 schemas/stream/agent_protocol.json。
-- 新连接首帧获得当前有效客户端 RTC 配置；Gateway 按 24 小时有效、12 小时换代、到期前 6 小时 ICE restart 轮换 TURN 凭证，同时向 Agent 下发新代 Stream 侧配置；只有 Agent 确认新 ICE 代真实接管后才算该连接迁移成功，失败记录并退避重试，不向新连接下发过期凭证。
+- WebRTC DTLS-SRTP 只使用同机 `127.0.0.1` host 候选直连；不部署 coturn，不下发 TURN 凭证，不做凭证轮换或 ICE 代次接管（ADR 013）。
+- 正式信令路径为 /stream/{profileId}/signal，由 Stream Gateway 提供：升级前校验 Origin、登录会话与 Profile 授权及 Agent 就绪；所有拒绝在升级与注册前完成，授权失败按来源与 Profile 限流；每个页面独立隧道，关闭一条不影响其他连接；媒体不经 Gateway。Gateway 重启不停止 Browser，Agent 按 1/2/4/8/16/30 秒退避重新注册后页面可重连。
+- Stream Agent 注册携带 profile_id、runtime_instance_id、selkies_version、runtime_state、webrtc_udp_port、config_version，每 10 秒发送健康消息；Gateway 只接受与 API 当前绑定一致的实例，并核对回传报文的 Profile、实例与 session。协议见 schemas/stream/agent_protocol.json，payload 按 action 判别并双向校验。
 - 页面可见性只经 Selkies 官方每 Peer STOP_VIDEO/START_VIDEO 暂停该页自身视频；Gateway 不采集页面可见性或活动，也不向 Agent 下发可见性。Agent 健康消息上报未暂停视频 consumer 数与捕获状态，Gateway 只转存最近上报值供 Supervisor 查询；信令心跳只判存活，不形成控制权。
-- 部署目标 coturn 的3478/5349与50000–50999中继端口由 t012 统一编排；t004 测试使用隔离端口，不代表部署完成。
+- 部署拓扑不包含 coturn；Stream UDP mux 由 Supervisor 分配并发布到宿主 `127.0.0.1`，由 t012 统一编排。
 
 ## 前端会话
 

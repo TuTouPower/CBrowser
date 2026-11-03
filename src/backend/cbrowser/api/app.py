@@ -70,7 +70,10 @@ def create_app(
     max_artifact_bytes: int = 256 * 1024 * 1024,
     max_artifacts_per_profile: int = 200,
     max_profile_artifact_bytes: int = 2 * 1024 * 1024 * 1024,
+    include_internal_schema: bool = False,
 ) -> FastAPI:
+    docs_enabled = os.environ.get("CBROWSER_API_DOCS", "0") == "1"
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         nonlocal service
@@ -166,6 +169,9 @@ def create_app(
             "convergence."
         ),
         lifespan=lifespan,
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
 
     @app.exception_handler(ConstraintViolationError)
@@ -335,7 +341,99 @@ def create_app(
     app.include_router(automation_router)
     app.include_router(legacy_cdp_router, include_in_schema=False)
     app.include_router(auth_router)
-    app.include_router(supervisor_router, include_in_schema=False)
-    app.include_router(internal_artifact_router, include_in_schema=False)
-    app.include_router(gateway_router, include_in_schema=False)
+    app.include_router(
+        supervisor_router, include_in_schema=include_internal_schema
+    )
+    app.include_router(
+        internal_artifact_router, include_in_schema=include_internal_schema
+    )
+    app.include_router(
+        gateway_router, include_in_schema=include_internal_schema
+    )
+
+    original_openapi = app.openapi
+
+    def contracted_openapi() -> dict:
+        if getattr(app, "openapi_schema", None):
+            return app.openapi_schema
+        schema = original_openapi()
+        components = schema.setdefault("components", {})
+        components.setdefault("securitySchemes", {}).update(
+            {
+                "sessionCookie": {
+                    "type": "apiKey",
+                    "in": "cookie",
+                    "name": "cbrowser_session",
+                },
+                "csrfHeader": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "X-CSRF-Token",
+                },
+                "serviceBearer": {
+                    "type": "http",
+                    "scheme": "bearer",
+                },
+            }
+        )
+        error_ref = {"$ref": "#/components/schemas/ErrorResponse"}
+        for path, methods in schema.get("paths", {}).items():
+            for method, operation in methods.items():
+                if method not in {"get", "post", "put", "patch", "delete"}:
+                    continue
+                if path in {"/api/v1/health", "/api/v1/auth/login"}:
+                    security = []
+                elif path.startswith("/api/v1/internal/"):
+                    security = [{"serviceBearer": []}]
+                elif method in {"post", "put", "patch", "delete"}:
+                    security = [{"sessionCookie": [], "csrfHeader": []}]
+                else:
+                    security = [{"sessionCookie": []}]
+                if security:
+                    operation["security"] = security
+                responses = operation.setdefault("responses", {})
+                codes = {"401": "Authentication required"}
+                if path.startswith("/api/v1/internal/"):
+                    codes.update(
+                        {"403": "Service authorization denied", "503": "Service unavailable"}
+                    )
+                    if "{" in path:
+                        codes["404"] = "Resource not found"
+                    if path.endswith(("/runtimes/bind", "/runtimes/observed")):
+                        codes.update(
+                            {"404": "Profile not found", "409": "Instance conflict"}
+                        )
+                    if path.endswith("/runtime/desired-state"):
+                        codes["409"] = "Lifecycle conflict"
+                    if "/artifacts/" in path:
+                        codes["404"] = "Profile or artifact not found"
+                else:
+                    codes.update(
+                        {
+                            "403": "Authorization or CSRF check failed",
+                            "503": "Service unavailable or database busy",
+                        }
+                    )
+                    if method in {"post", "put", "patch", "delete"}:
+                        codes["422"] = "Invalid request payload"
+                    if "{" in path:
+                        codes["404"] = "Resource not found"
+                    if path == "/api/v1/auth/login":
+                        codes["429"] = "Too many failed login attempts"
+                    if "/artifacts" in path:
+                        codes.update(
+                            {
+                                "400": "Invalid artifact request",
+                                "413": "Artifact exceeds per-file limit",
+                                "507": "Artifact quota exceeded",
+                            }
+                        )
+                for code, description in codes.items():
+                    responses.setdefault(
+                        code, {"description": description, "content": {"application/json": {"schema": error_ref}}}
+                    )
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = contracted_openapi
     return app

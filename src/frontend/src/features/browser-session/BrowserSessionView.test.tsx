@@ -5,6 +5,7 @@ import { BrowserSessionView } from "./BrowserSessionView";
 import { installSelkiesClientAdapter } from "./adapter";
 import type { BrowserSessionViewProps } from "./types";
 import { I18nProvider } from "../../i18n";
+import { ApiClient } from "../../shared/api/client";
 
 function renderView(props: BrowserSessionViewProps) {
   return render(
@@ -73,6 +74,69 @@ describe("BrowserSessionView (AC-003, AC-007, AC-004)", () => {
       );
     });
     expect(stopCalls).toHaveLength(0);
+  });
+
+  it("AC-008: API unreachable becomes runtime_not_ready with a reason", async () => {
+    const client = {
+      profiles: {
+        getRuntime: vi.fn().mockRejectedValue(new Error("connection refused")),
+      },
+    } as unknown as ApiClient;
+    renderView({ profileId, apiClient: client });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("session-stage-title").textContent).toContain(
+        "运行时未就绪"
+      );
+    });
+    expect(screen.getByTestId("session-error-message").textContent).toContain(
+      "connection refused"
+    );
+  });
+
+  it("AC-008: expired session is left to the auth layer", async () => {
+    const onUnauthorized = vi.fn();
+    const client = new ApiClient({ onUnauthorized });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ detail: "Unauthorized" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        })
+      );
+    renderView({ profileId, apiClient: client });
+
+    await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(screen.queryByTestId("session-stage-title")).toBeNull();
+    expect(screen.queryByTestId("session-error-message")).toBeNull();
+  });
+
+  it("AC-008: unmount releases message and lifecycle listeners", () => {
+    const removeWindow = vi.spyOn(window, "removeEventListener");
+    const removeDocument = vi.spyOn(document, "removeEventListener");
+    const { unmount } = renderView({ profileId, initialStage: "connected" });
+    unmount();
+    expect(removeWindow).toHaveBeenCalledWith("message", expect.any(Function));
+    expect(removeWindow).toHaveBeenCalledWith("pageshow", expect.any(Function));
+    expect(removeDocument).toHaveBeenCalledWith("resume", expect.any(Function));
+  });
+
+  it("AC-008: Web Locks unavailable has a dedicated diagnostic", () => {
+    renderView({ profileId, initialStage: "connecting_signaling" });
+    const iframe = screen.getByTestId(
+      "browser-session-iframe"
+    ) as HTMLIFrameElement;
+    dispatchIframeMessage(iframe, { type: "CBROWSER_WEB_LOCKS_UNAVAILABLE" });
+    dispatchIframeMessage(iframe, {
+      type: "CBROWSER_WS_CLOSE",
+      code: 1008,
+      reason: "tab_identity_unavailable",
+    });
+    expect(screen.getByTestId("session-stage-title").textContent).toContain(
+      "Web Locks 不可用"
+    );
   });
 
   it("AC-007: displays runtime_not_ready stage with reconnect and status actions", async () => {
@@ -470,13 +534,11 @@ describe("SelkiesClientAdapter unit tests (adapter.ts)", () => {
     // Resize packet must never reach the underlying RTCDataChannel send.
     fakeWindow.RTCDataChannel.prototype.send("r,1920,1080");
     expect(nativeDataChannelSend).not.toHaveBeenCalled();
-    expect(fakeWindow.__sentDataChannelMessages).toEqual([]);
 
-    // Non-resize packets still reach the data channel and are observable.
+    // Non-resize packets still reach the data channel.
     fakeWindow.RTCDataChannel.prototype.send("k,abc");
     expect(nativeDataChannelSend).toHaveBeenCalledTimes(1);
     expect(nativeDataChannelSend).toHaveBeenCalledWith("k,abc");
-    expect(fakeWindow.__sentDataChannelMessages).toEqual(["k,abc"]);
   });
 
   it("AC-002: appends noopener to window.open and to target=_blank links", () => {
@@ -526,26 +588,6 @@ describe("SelkiesClientAdapter unit tests (adapter.ts)", () => {
       },
       "https://cbrowser.local"
     );
-  });
-
-  it("d022: maintains rtc_config iceServers and iceTransportPolicy on setConfiguration", () => {
-    installSelkiesClientAdapter(fakeWindow, "prof_456");
-    const pc = new fakeWindow.RTCPeerConnection();
-
-    // Apply rtc_config
-    const gatewayConfig = {
-      iceServers: [{ urls: ["turn:127.0.0.1:3478"] }],
-      iceTransportPolicy: "relay",
-    };
-    fakeWindow.__applyGatewayRtcConfig(gatewayConfig);
-
-    // Call setConfiguration with empty config - must retain gateway config
-    pc.setConfiguration({ bundlePolicy: "max-bundle" });
-    expect(nativeSetConfigurationSpy).toHaveBeenCalledWith(expect.objectContaining({
-      iceServers: [{ urls: ["turn:127.0.0.1:3478"] }],
-      iceTransportPolicy: "relay",
-      bundlePolicy: "max-bundle",
-    }));
   });
 
   it("handles Web Locks tab conflict by generating new tab id without kicking existing tab", async () => {

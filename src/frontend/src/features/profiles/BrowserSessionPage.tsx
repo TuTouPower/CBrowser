@@ -116,6 +116,20 @@ export function BrowserSessionPage() {
           </div>
         )}
 
+        {setDesiredStateMutation.isError && (
+          <div
+            data-testid="session-start-error"
+            className="mb-4 p-2.5 bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded text-left"
+          >
+            {t("sessionStartFailed", {
+              error:
+                setDesiredStateMutation.error instanceof Error
+                  ? setDesiredStateMutation.error.message
+                  : t("runtimeStateUnknown"),
+            })}
+          </div>
+        )}
+
         {runtime?.last_coordinator_error && (
           <div
             data-testid="runtime-coordinator-error"

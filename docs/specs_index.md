@@ -5,10 +5,10 @@
 |slug|task 清单|最后更新时间|
 |---|---|---|
 |browser_isolation|baseline, t003|2026-11-01T10:13:32+08:00|
-|webrtc_remote_display|baseline, t004, t006, t007, t014|2026-11-02T20:09:33+08:00|
-|storage_and_artifacts|baseline, t008|2026-11-02T20:28:16+08:00|
+|webrtc_remote_display|baseline, t004, t006, t007, t014, t015|2026-11-02T23:30:00+08:00|
+|storage_and_artifacts|baseline, t008, t016|2026-11-03T03:00:00+08:00|
 |v2_runtime_validation|t001|2026-11-01T10:13:32+08:00|
-|runtime_persistence|t002|2026-11-01T10:13:32+08:00|
+|runtime_persistence|t002, t016|2026-11-03T03:00:00+08:00|
 |runtime_lifecycle|t005, t007|2026-10-31T17:41:46+08:00|
 |access_control|t006, t007, t008|2026-11-02T09:45:00+08:00|
-|profile_management|t007, t013|2026-11-02T11:30:00+08:00|
+|profile_management|t007, t013, t017|2026-11-03T05:15:00+08:00|

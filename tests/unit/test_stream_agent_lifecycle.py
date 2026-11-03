@@ -23,7 +23,6 @@ from cbrowser.stream_agent.protocol import (
     AgentAction,
     AgentHeartbeatPayload,
     AgentRegisterPayload,
-    GatewayControlEnvelope,
     GatewayRegisterResponse,
 )
 
@@ -39,6 +38,62 @@ def unique_port():
         return s.getsockname()[1]
 
 
+async def _wait_until(predicate, timeout: float = 2.0) -> None:
+    """Yield to the loop until predicate is true, without fixed sleeps."""
+
+    async def poll() -> None:
+        while not predicate():
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(poll(), timeout)
+
+
+class ManualClock:
+    """Deterministic sleep seam injected into the agent module."""
+
+    def __init__(self, *, block: bool = False) -> None:
+        self.delays: list[float] = []
+        self.block = block
+        self.sleep_started = asyncio.Event()
+        self.sleep_cancelled = False
+        self._release = asyncio.Event()
+
+    async def sleep(self, delay: float) -> None:
+        self.delays.append(delay)
+        self.sleep_started.set()
+        if not self.block:
+            await asyncio.sleep(0)
+            return
+        try:
+            await self._release.wait()
+        except asyncio.CancelledError:
+            self.sleep_cancelled = True
+            raise
+        self._release.clear()
+
+    def release_one(self) -> None:
+        self._release.set()
+
+
+class _ClockAsyncio:
+    """Delegates to asyncio except sleep, confined to the patched module."""
+
+    def __init__(self, clock: ManualClock) -> None:
+        self._clock = clock
+
+    def __getattr__(self, name: str):
+        return getattr(asyncio, name)
+
+    async def sleep(self, delay: float) -> None:
+        await self._clock.sleep(delay)
+
+
+def _inject_clock(monkeypatch, module, *, block: bool = False) -> ManualClock:
+    clock = ManualClock(block=block)
+    monkeypatch.setattr(module, "asyncio", _ClockAsyncio(clock))
+    return clock
+
+
 class MockGatewayServer:
     def __init__(self, port: int):
         self.port = port
@@ -50,7 +105,9 @@ class MockGatewayServer:
         self.received_messages: list[dict] = []
         self.active_ws: web.WebSocketResponse | None = None
         self.reject_registration: bool = False
+        self.reject_remaining: int = 0
         self.reject_reason: str = "registration_rejected"
+        self.close_on_heartbeat: bool = False
         self.agent_session_id = f"sess_{secrets.token_hex(8)}"
         self.on_message_callback = None
 
@@ -79,7 +136,10 @@ class MockGatewayServer:
             msg = json.loads(raw)
             self.received_messages.append(msg)
 
-            if self.reject_registration:
+            reject = self.reject_registration or self.reject_remaining > 0
+            if self.reject_remaining > 0:
+                self.reject_remaining -= 1
+            if reject:
                 resp = GatewayRegisterResponse(
                     version="v2",
                     status="error",
@@ -108,6 +168,12 @@ class MockGatewayServer:
                     self.received_messages.append(parsed)
                     if self.on_message_callback:
                         await self.on_message_callback(parsed, ws)
+                    if (
+                        self.close_on_heartbeat
+                        and parsed.get("action") == AgentAction.HEARTBEAT.value
+                    ):
+                        await ws.close()
+                        break
                 elif in_msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
         except Exception as exc:  # noqa: BLE001 - mock gateway pump disconnect tolerance
@@ -127,6 +193,7 @@ async def test_config_requires_config_version(tmp_path):
     """CBROWSER_CONFIG_VERSION is mandatory in from_env; missing fails closed."""
     secret_file = tmp_path / "secret.txt"
     secret_file.write_text(secrets.token_urlsafe(32))
+    secret_file.chmod(0o600)
 
     base_env = {
         "CBROWSER_PROFILE_ID": "profile_req1",
@@ -134,8 +201,6 @@ async def test_config_requires_config_version(tmp_path):
         "CBROWSER_GATEWAY_URL": "ws://127.0.0.1:18090",
         "CBROWSER_AGENT_SECRET_FILE": str(secret_file),
         "CBROWSER_WEBRTC_PUBLIC_IP": "127.0.0.1",
-        "SELKIES_TURN_HOST": "10.0.0.1",
-        "SELKIES_TURN_PORT": "3478",
     }
 
     # Missing CBROWSER_CONFIG_VERSION
@@ -164,10 +229,11 @@ async def test_config_requires_config_version(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_config_requires_turn_host_and_port(tmp_path):
-    """SELKIES_TURN_HOST and SELKIES_TURN_PORT are mandatory in from_env."""
+async def test_config_no_longer_requires_turn_settings(tmp_path):
+    """Direct media needs no TURN host/port in the Agent configuration."""
     secret_file = tmp_path / "secret.txt"
     secret_file.write_text(secrets.token_urlsafe(32))
+    secret_file.chmod(0o600)
 
     base_env = {
         "CBROWSER_PROFILE_ID": "profile_req1",
@@ -176,59 +242,10 @@ async def test_config_requires_turn_host_and_port(tmp_path):
         "CBROWSER_AGENT_SECRET_FILE": str(secret_file),
         "CBROWSER_CONFIG_VERSION": "1",
     }
-
-    # Missing SELKIES_TURN_HOST
-    with patch.dict(
-        os.environ, {**base_env, "SELKIES_TURN_PORT": "3478"}, clear=True
-    ), pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
-        StreamAgentConfig.from_env()
-
-    # Invalid SELKIES_TURN_HOST (not a valid IP)
-    with patch.dict(
-        os.environ,
-        {**base_env, "SELKIES_TURN_HOST": "coturn.local", "SELKIES_TURN_PORT": "3478"},
-        clear=True,
-    ), pytest.raises(ValueError, match="SELKIES_TURN_HOST"):
-        StreamAgentConfig.from_env()
-
-    # Missing SELKIES_TURN_PORT
-    missing_port = {**base_env, "SELKIES_TURN_HOST": "10.0.0.1"}
-    with patch.dict(os.environ, missing_port, clear=True), pytest.raises(
-        ValueError, match="SELKIES_TURN_PORT"
-    ):
-        StreamAgentConfig.from_env()
-
-    # Invalid SELKIES_TURN_PORT
-    for bad_port in ("not_int", "0", "70000", "-5"):
-        bad_port_env = {
-            **base_env,
-            "SELKIES_TURN_HOST": "10.0.0.1",
-            "SELKIES_TURN_PORT": bad_port,
-        }
-        with patch.dict(os.environ, bad_port_env, clear=True), pytest.raises(
-            ValueError, match="SELKIES_TURN_PORT"
-        ):
-            StreamAgentConfig.from_env()
-
-    # Valid IPv4
-    with patch.dict(
-        os.environ,
-        {**base_env, "SELKIES_TURN_HOST": "10.0.0.1", "SELKIES_TURN_PORT": "3478"},
-        clear=True,
-    ):
+    with patch.dict(os.environ, base_env, clear=True):
         cfg = StreamAgentConfig.from_env()
-        assert cfg.turn_host == "10.0.0.1"
-        assert cfg.turn_port == 3478
-
-    # Valid IPv6
-    with patch.dict(
-        os.environ,
-        {**base_env, "SELKIES_TURN_HOST": "2001:db8::1", "SELKIES_TURN_PORT": "3478"},
-        clear=True,
-    ):
-        cfg = StreamAgentConfig.from_env()
-        assert cfg.turn_host == "2001:db8::1"
-        assert cfg.turn_port == 3478
+    assert not hasattr(cfg, "turn_host")
+    assert not hasattr(cfg, "turn_port")
 
 
 @pytest.mark.asyncio
@@ -243,8 +260,6 @@ async def test_agent_registration_payload_fields(unique_port):
         runtime_instance_id="inst_reg_test_01",
         gateway_url=f"ws://127.0.0.1:{unique_port}",
         agent_token=token,
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30006,
         config_version=5,
         selkies_version="2.1.0",
@@ -258,11 +273,7 @@ async def test_agent_registration_payload_fields(unique_port):
     agent_task = asyncio.create_task(agent.connect_and_run())
 
     try:
-        # Wait for registration to complete
-        for _ in range(50):
-            if agent.agent_session_id is not None:
-                break
-            await asyncio.sleep(0.05)
+        await _wait_until(lambda: agent.agent_session_id is not None)
 
         assert agent.agent_session_id == gw.agent_session_id
         assert len(gw.received_messages) >= 1
@@ -279,16 +290,12 @@ async def test_agent_registration_payload_fields(unique_port):
         assert payload["runtime_state"] == "ready"
         assert payload["udp_port"] == 30006
         assert payload["config_version"] == 5
-        assert payload["turn_host"] == "10.0.0.1"
-        assert payload["turn_port"] == 3478
-
         # Verify payload validates strictly against AgentRegisterPayload
         validated = AgentRegisterPayload.model_validate(payload)
         assert validated.selkies_version == "2.1.0"
         assert validated.runtime_state == "ready"
         assert validated.config_version == 5
-        assert validated.turn_host == "10.0.0.1"
-        assert validated.turn_port == 3478
+        assert "turn_host" not in validated.model_dump()
     finally:
         await agent.stop()
         agent_task.cancel()
@@ -296,11 +303,14 @@ async def test_agent_registration_payload_fields(unique_port):
 
 
 @pytest.mark.asyncio
-async def test_agent_heartbeat_10s_rhythm(unique_port):
-    """Agent sends HEARTBEAT action every 10 seconds.
+async def test_agent_heartbeat_10s_rhythm(unique_port, monkeypatch):
+    """Agent schedules HEARTBEAT every 10 seconds through its sleep seam.
 
     Payload includes runtime_state and viewer_count.
     """
+    import cbrowser.stream_agent.agent as agent_module
+
+    clock = _inject_clock(monkeypatch, agent_module)
     gw = MockGatewayServer(unique_port)
     await gw.start()
 
@@ -309,8 +319,6 @@ async def test_agent_heartbeat_10s_rhythm(unique_port):
         runtime_instance_id="inst_hb_01",
         gateway_url=f"ws://127.0.0.1:{unique_port}",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30006,
         config_version=1,
         selkies_version="2.1.0",
@@ -320,28 +328,20 @@ async def test_agent_heartbeat_10s_rhythm(unique_port):
         config=cfg,
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
     )
-    # Accelerate heartbeat interval for fast, deterministic unit test
-    agent.heartbeat_interval = 0.1
 
     agent_task = asyncio.create_task(agent.connect_and_run())
 
     try:
-        # Wait for registration
-        for _ in range(50):
-            if agent.agent_session_id is not None:
-                break
-            await asyncio.sleep(0.05)
-
-        # Wait for at least 2 heartbeats
-        for _ in range(50):
-            hb_msgs = [
-                m
-                for m in gw.received_messages
-                if m.get("action") == AgentAction.HEARTBEAT.value
-            ]
-            if len(hb_msgs) >= 2:
-                break
-            await asyncio.sleep(0.05)
+        await _wait_until(
+            lambda: len(
+                [
+                    m
+                    for m in gw.received_messages
+                    if m.get("action") == AgentAction.HEARTBEAT.value
+                ]
+            )
+            >= 2
+        )
 
         hb_msgs = [
             m
@@ -349,6 +349,8 @@ async def test_agent_heartbeat_10s_rhythm(unique_port):
             if m.get("action") == AgentAction.HEARTBEAT.value
         ]
         assert len(hb_msgs) >= 2
+        assert agent.heartbeat_interval == 10.0
+        assert clock.delays and all(delay == 10.0 for delay in clock.delays)
 
         for hb in hb_msgs:
             assert hb["profile_id"] == "profile_hb_test"
@@ -363,6 +365,75 @@ async def test_agent_heartbeat_10s_rhythm(unique_port):
     finally:
         await agent.stop()
         agent_task.cancel()
+        await gw.stop()
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_loop_survives_a_single_state_exception(
+    unique_port, monkeypatch
+):
+    """One failed Selkies state read must not stop the heartbeat schedule."""
+    import cbrowser.stream_agent.agent as agent_module
+
+    clock = _inject_clock(monkeypatch, agent_module)
+
+    class FlakyStatePolicy:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def start(self) -> None:
+            pass
+
+        async def stop(self) -> None:
+            pass
+
+        async def reconcile_capture_state(self, *args, **kwargs) -> None:
+            pass
+
+        def remove_viewer(self, viewer_id: str) -> None:
+            pass
+
+        def unregister_peer_mapping(self, **kwargs) -> None:
+            pass
+
+        def selkies_video_state(self) -> tuple[int, bool]:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("selkies state unavailable")
+            return 0, False
+
+    gw = MockGatewayServer(unique_port)
+    await gw.start()
+    policy = FlakyStatePolicy()
+    cfg = StreamAgentConfig(
+        profile_id="profile_hb_fault",
+        runtime_instance_id="inst_hb_fault",
+        gateway_url=f"ws://127.0.0.1:{unique_port}",
+        agent_token=secrets.token_urlsafe(32),
+        udp_mux_port=30006,
+        config_version=1,
+        selkies_version="2.1.0",
+    )
+    agent = StreamAgent(
+        config=cfg,
+        policy_agent=policy,
+        upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+    )
+    agent_task = asyncio.create_task(agent.connect_and_run())
+    try:
+        await _wait_until(
+            lambda: policy.calls >= 2
+            and any(
+                m.get("action") == AgentAction.HEARTBEAT.value
+                for m in gw.received_messages
+            )
+        )
+        assert policy.calls >= 2
+        assert clock.delays
+    finally:
+        await agent.stop()
+        agent_task.cancel()
+        await asyncio.gather(agent_task, return_exceptions=True)
         await gw.stop()
 
 
@@ -387,10 +458,12 @@ def test_reconnect_backoff_calculation():
 
 
 @pytest.mark.asyncio
-async def test_agent_reconnect_backoff_on_disconnect(unique_port):
-    """When connection drops or registration rejected, agent applies backoff."""
+async def test_agent_reconnect_backoff_on_disconnect(unique_port, monkeypatch):
+    """When registration is rejected, the agent applies 1/2/4/8/16/30 backoff."""
+    import cbrowser.stream_agent.agent as agent_module
+
+    clock = _inject_clock(monkeypatch, agent_module)
     gw = MockGatewayServer(unique_port)
-    # Reject registration to trigger reconnect backoff
     gw.reject_registration = True
     await gw.start()
 
@@ -399,8 +472,6 @@ async def test_agent_reconnect_backoff_on_disconnect(unique_port):
         runtime_instance_id="inst_backoff_01",
         gateway_url=f"ws://127.0.0.1:{unique_port}",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30006,
         config_version=1,
         selkies_version="2.1.0",
@@ -411,36 +482,29 @@ async def test_agent_reconnect_backoff_on_disconnect(unique_port):
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
     )
 
-    sleep_delays: list[float] = []
-
-    async def fake_sleep(delay: float):
-        sleep_delays.append(delay)
-        # Yield control without actual delay
-        await asyncio.sleep(0.001)
-
-    agent._sleep_fn = fake_sleep
-
     agent_task = asyncio.create_task(agent.connect_and_run())
 
     try:
-        # Wait until several backoff steps have occurred
-        for _ in range(50):
-            if len(sleep_delays) >= 6:
-                break
-            await asyncio.sleep(0.05)
-
-        # Verify backoff sequence 1, 2, 4, 8, 16, 30
-        assert sleep_delays[:6] == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
+        await _wait_until(lambda: len(clock.delays) >= 6)
+        assert clock.delays[:6] == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0]
     finally:
         await agent.stop()
         agent_task.cancel()
+        await asyncio.gather(agent_task, return_exceptions=True)
         await gw.stop()
 
 
 @pytest.mark.asyncio
-async def test_agent_backoff_resets_after_successful_registration(unique_port):
-    """After successful registration, backoff counter resets to 1.0."""
+async def test_agent_backoff_resets_after_successful_registration(
+    unique_port, monkeypatch
+):
+    """A failure, then a success, then a disconnect restarts backoff at 1.0."""
+    import cbrowser.stream_agent.agent as agent_module
+
+    clock = _inject_clock(monkeypatch, agent_module)
     gw = MockGatewayServer(unique_port)
+    gw.reject_remaining = 1
+    gw.close_on_heartbeat = True
     await gw.start()
 
     cfg = StreamAgentConfig(
@@ -448,8 +512,6 @@ async def test_agent_backoff_resets_after_successful_registration(unique_port):
         runtime_instance_id="inst_reset_01",
         gateway_url=f"ws://127.0.0.1:{unique_port}",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30006,
         config_version=1,
         selkies_version="2.1.0",
@@ -460,164 +522,25 @@ async def test_agent_backoff_resets_after_successful_registration(unique_port):
         upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
     )
 
-    # Pre-advance backoff to simulating prior failures
-    agent._backoff.step()
-    agent._backoff.step()
-    agent._backoff.step()
-    assert agent._backoff.current() == 8.0
-
     agent_task = asyncio.create_task(agent.connect_and_run())
 
     try:
-        for _ in range(50):
-            if agent.agent_session_id is not None:
-                break
-            await asyncio.sleep(0.05)
-
-        assert agent.agent_session_id == gw.agent_session_id
-        # Backoff must be reset to 1.0 upon successful registration
-        assert agent._backoff.current() == 1.0
+        await _wait_until(
+            lambda: len(
+                [d for d in clock.delays if d != agent.heartbeat_interval]
+            )
+            >= 2
+        )
+        reconnect_delays = [
+            d for d in clock.delays if d != agent.heartbeat_interval
+        ]
+        assert reconnect_delays[:2] == [1.0, 1.0]
+        assert agent.agent_session_id is None
     finally:
         await agent.stop()
         agent_task.cancel()
+        await asyncio.gather(agent_task, return_exceptions=True)
         await gw.stop()
-
-
-@pytest.mark.asyncio
-async def test_agent_rtc_config_push_and_ice_restart(unique_port):
-    """Gateway rtc_config push updates stream-side ICE servers for PC/restart."""
-    gw = MockGatewayServer(unique_port)
-    await gw.start()
-
-    cfg = StreamAgentConfig(
-        profile_id="profile_rtc_test",
-        runtime_instance_id="inst_rtc_01",
-        gateway_url=f"ws://127.0.0.1:{unique_port}",
-        agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
-        udp_mux_port=30006,
-        config_version=1,
-        selkies_version="2.1.0",
-        turn_servers=[],
-    )
-
-    agent = StreamAgent(
-        config=cfg,
-        upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
-    )
-
-    agent_task = asyncio.create_task(agent.connect_and_run())
-
-    try:
-        for _ in range(50):
-            if agent.agent_session_id is not None and gw.active_ws:
-                break
-            await asyncio.sleep(0.05)
-
-        assert agent.agent_session_id == gw.agent_session_id
-
-        # 1. Gateway pushes valid rtc_config
-        turn_cred = secrets.token_hex(16)
-        rtc_ctrl = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.RTC_CONFIG,
-            profile_id="profile_rtc_test",
-            runtime_instance_id="inst_rtc_01",
-            agent_session_id=agent.agent_session_id,
-            payload={
-                "generation": 2,
-                "ice_servers": [
-                    {
-                        "urls": ["turn:10.0.0.5:3478?transport=udp"],
-                        "username": "1700000000:stream-profile_rtc_test",
-                        "credential": turn_cred,
-                    }
-                ],
-            },
-        )
-        await gw.active_ws.send_str(rtc_ctrl.model_dump_json())
-        await asyncio.sleep(0.1)
-
-        assert agent.active_rtc_config is not None
-        assert agent.active_rtc_config.generation == 2
-        wire_servers = agent.active_rtc_config.wire_ice_servers()
-        assert len(wire_servers) == 1
-        assert wire_servers[0]["urls"] == ["turn:10.0.0.5:3478?transport=udp"]
-        assert wire_servers[0]["username"] == "1700000000:stream-profile_rtc_test"
-        assert wire_servers[0]["credential"] == turn_cred
-
-        # 2. Verify default turn_servers updated on config
-        assert agent.config.turn_servers == wire_servers
-
-        # 3. Simulate ICE restart where payload does NOT supply ice_servers:
-        # Must resolve to the active rtc_config!
-        chosen_ice_servers = agent._resolve_ice_servers_for_restart({})
-        assert chosen_ice_servers == wire_servers
-
-        # 4. ICE restart where payload explicitly supplies overriding ice_servers
-        override_servers = [{"urls": ["stun:10.0.0.9:3478"]}]
-        override_result = agent._resolve_ice_servers_for_restart(
-            {"ice_servers": override_servers}
-        )
-        assert override_result == override_servers
-
-        # 5. Invalid rtc_config push is rejected and does not mutate active_rtc_config
-        bad_ctrl = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.RTC_CONFIG,
-            profile_id="profile_rtc_test",
-            runtime_instance_id="inst_rtc_01",
-            agent_session_id=agent.agent_session_id,
-            payload={"generation": 0, "ice_servers": []},  # Invalid generation & empty
-        )
-        await gw.active_ws.send_str(bad_ctrl.model_dump_json())
-        await asyncio.sleep(0.1)
-
-        # Generation remains 2 (not overwritten by invalid packet)
-        assert agent.active_rtc_config.generation == 2
-    finally:
-        await agent.stop()
-        agent_task.cancel()
-        await gw.stop()
-
-
-@pytest.mark.asyncio
-async def test_ice_restart_payload_updates_agent_active_rtc_config():
-    """Agent updates active_rtc_config when ice_restart carries ice_servers."""
-    cfg = StreamAgentConfig(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        gateway_url="ws://127.0.0.1:1",
-        agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
-    )
-    agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:1/upstream")
-    agent.agent_session_id = "sess_1"
-
-    new_servers = [
-        {
-            "urls": ["turn:10.0.0.1:3478?transport=udp"],
-            "username": "user2",
-            "credential": "cred2",
-        }
-    ]
-    envelope = GatewayControlEnvelope(
-        version="v2",
-        action=AgentAction.ICE_RESTART,
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        agent_session_id="sess_1",
-        conn_id="conn_1",
-        payload={"generation": 2, "ice_servers": new_servers},
-    )
-    agent.viewer_workers["conn_1"] = None  # type: ignore[assignment]
-    await agent._handle_control_packet(envelope)
-
-    assert agent.active_rtc_config is not None
-    assert agent.active_rtc_config.generation == 2
-    assert agent.active_rtc_config.wire_ice_servers() == new_servers
 
 
 def test_selkies_version_comes_only_from_installed_distribution(monkeypatch):
@@ -641,8 +564,6 @@ def test_agent_default_heartbeat_interval_is_ten_seconds():
         runtime_instance_id="inst_default_hb",
         gateway_url="ws://127.0.0.1:1",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30007,
         config_version=1,
         selkies_version="2.1.0",
@@ -678,8 +599,6 @@ def _state_agent(port: int, profile_id: str) -> StreamAgent:
         runtime_instance_id=f"{profile_id}_inst",
         gateway_url=f"ws://127.0.0.1:{port}",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30008,
         config_version=1,
         selkies_version="2.1.0",
@@ -706,12 +625,9 @@ async def test_first_heartbeat_follows_registration_with_selkies_video_state(
     agent.bind_webrtc_service(_SelkiesVideoState([False, True], capturing=True))
     task = asyncio.create_task(agent.connect_and_run())
     try:
-        for _ in range(40):
-            if _heartbeats(gw):
-                break
-            await asyncio.sleep(0.05)
+        await _wait_until(lambda: bool(_heartbeats(gw)))
         beats = _heartbeats(gw)
-        assert beats, "no heartbeat within 2s although the interval is 10s"
+        assert beats, "first heartbeat must not wait a full 10s interval"
         assert agent.heartbeat_interval == 10.0
         assert beats[0]["unpaused_video_consumers"] == 1
         assert beats[0]["capture_running"] is True
@@ -723,29 +639,26 @@ async def test_first_heartbeat_follows_registration_with_selkies_video_state(
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_tracks_selkies_pause_state(unique_port):
+async def test_heartbeat_tracks_selkies_pause_state(unique_port, monkeypatch):
+    import cbrowser.stream_agent.agent as agent_module
+
+    clock = _inject_clock(monkeypatch, agent_module, block=True)
     gw = MockGatewayServer(unique_port)
     await gw.start()
     agent = _state_agent(unique_port, "profile_hb_track")
     state = _SelkiesVideoState([False, False], capturing=True)
     agent.bind_webrtc_service(state)
-    agent.heartbeat_interval = 0.1
     task = asyncio.create_task(agent.connect_and_run())
     try:
-        for _ in range(40):
-            if _heartbeats(gw):
-                break
-            await asyncio.sleep(0.05)
+        await _wait_until(lambda: bool(_heartbeats(gw)))
         assert _heartbeats(gw)[0]["unpaused_video_consumers"] == 2
 
         state.consumers[0]["video_paused"] = True
         state.consumers[1]["video_paused"] = True
         state.capturing = False
         seen = len(_heartbeats(gw))
-        for _ in range(40):
-            if len(_heartbeats(gw)) > seen + 1:
-                break
-            await asyncio.sleep(0.05)
+        clock.release_one()
+        await _wait_until(lambda: len(_heartbeats(gw)) > seen)
         latest = _heartbeats(gw)[-1]
         assert latest["unpaused_video_consumers"] == 0
         assert latest["capture_running"] is False
@@ -756,142 +669,45 @@ async def test_heartbeat_tracks_selkies_pause_state(unique_port):
         await gw.stop()
 
 
-class _GatewaySink:
-    """Captures what the Agent reports to Gateway."""
-
-    closed = False
-
-    def __init__(self) -> None:
-        self.sent: list[dict] = []
-
-    async def send_str(self, data: str) -> None:
-        self.sent.append(json.loads(data))
-
-
-class _NegotiatingPeer:
-    """State surface of a Selkies RTCPeerConnection still negotiating."""
-
-    signalingState = "have-local-offer"
-    iceConnectionState = "checking"
-
-
 @pytest.mark.asyncio
-async def test_ice_restart_on_unconnected_peer_is_refused_for_retry():
-    """A restart offer during initial negotiation would break the first ICE run."""
+async def test_supervised_heartbeat_task_restarts_after_fatal_exit(monkeypatch):
+    """Internal supervision restarts a heartbeat loop after a fatal escape."""
     cfg = StreamAgentConfig(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
+        profile_id="profile_hb_restart",
+        runtime_instance_id="inst_hb_restart",
         gateway_url="ws://127.0.0.1:1",
         agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
-    )
-    agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:1/upstream")
-    agent.agent_session_id = "sess_1"
-    sink = _GatewaySink()
-    agent._gw_ws = sink
-    peer = _NegotiatingPeer()
-    agent.bind_webrtc_service(_SelkiesVideoState([False], capturing=True))
-    agent._webrtc_service.rtc_app = type(
-        "RtcAppState", (), {"peer_connections": {"sdk_1": {"peer_conn": peer}}}
-    )()
-    agent.conn_id_to_sdk_peer_id["conn_1"] = "sdk_1"
-
-    await agent._trigger_ice_restart("conn_1", {"generation": 2})
-
-    assert [m["action"] for m in sink.sent] == ["error"]
-    assert sink.sent[0]["conn_id"] == "conn_1"
-    assert sink.sent[0]["payload"] == {"error": "peer_not_ready"}
-
-
-@pytest.mark.asyncio
-async def test_agent_rtc_config_relay_only_intent(unique_port):
-    """Agent parses relay_only intent and updates ice_transport policy."""
-    from cbrowser.stream_agent.ice_transport import is_relay_only
-
-    gw = MockGatewayServer(unique_port)
-    await gw.start()
-
-    cfg = StreamAgentConfig(
-        profile_id="profile_relay_test",
-        runtime_instance_id="inst_relay_01",
-        gateway_url=f"ws://127.0.0.1:{unique_port}",
-        agent_token=secrets.token_urlsafe(32),
-        turn_host="10.0.0.1",
-        turn_port=3478,
         udp_mux_port=30006,
         config_version=1,
         selkies_version="2.1.0",
-        turn_servers=[],
     )
+    agent = StreamAgent(config=cfg, upstream_url="ws://127.0.0.1:1/upstream")
+    monkeypatch.setattr(agent, "_running", True)
+    monkeypatch.setattr(agent, "agent_session_id", "session_hb_restart")
 
-    agent = StreamAgent(
-        config=cfg,
-        upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
-    )
+    class FakeWs:
+        closed = False
 
-    agent_task = asyncio.create_task(agent.connect_and_run())
+    attempts = {"count": 0}
+    delays: list[float] = []
+    blocker = asyncio.Event()
 
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    async def heartbeat(ws) -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("fatal heartbeat escape")
+        await blocker.wait()
+
+    monkeypatch.setattr(agent, "_sleep_fn", fake_sleep)
+    monkeypatch.setattr(agent, "_heartbeat_loop", heartbeat)
+    task = agent._start_heartbeat_task(FakeWs())
     try:
-        for _ in range(50):
-            if agent.agent_session_id is not None and gw.active_ws:
-                break
-            await asyncio.sleep(0.05)
-
-        assert agent.agent_session_id == gw.agent_session_id
-
-        # Push rtc_config with relay_only=True
-        turn_cred = secrets.token_hex(16)
-        rtc_ctrl = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.RTC_CONFIG,
-            profile_id="profile_relay_test",
-            runtime_instance_id="inst_relay_01",
-            agent_session_id=agent.agent_session_id,
-            payload={
-                "generation": 1,
-                "relay_only": True,
-                "ice_servers": [
-                    {
-                        "urls": ["turn:10.0.0.5:3478?transport=udp"],
-                        "username": "1700000000:stream-profile_relay_test",
-                        "credential": turn_cred,
-                    }
-                ],
-            },
-        )
-        await gw.active_ws.send_str(rtc_ctrl.model_dump_json())
-        await asyncio.sleep(0.1)
-
-        assert agent.active_rtc_config is not None
-        assert agent.active_rtc_config.relay_only is True
-        assert is_relay_only() is True
-
-        # Push subsequent rtc_config with relay_only=False
-        rtc_ctrl_all = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.RTC_CONFIG,
-            profile_id="profile_relay_test",
-            runtime_instance_id="inst_relay_01",
-            agent_session_id=agent.agent_session_id,
-            payload={
-                "generation": 2,
-                "relay_only": False,
-                "ice_servers": [
-                    {
-                        "urls": ["turn:10.0.0.5:3478?transport=udp"],
-                        "username": "1700000000:stream-profile_relay_test",
-                        "credential": turn_cred,
-                    }
-                ],
-            },
-        )
-        await gw.active_ws.send_str(rtc_ctrl_all.model_dump_json())
-        await asyncio.sleep(0.1)
-
-        assert agent.active_rtc_config.relay_only is False
-        assert is_relay_only() is False
+        await _wait_until(lambda: attempts["count"] >= 2)
+        assert attempts["count"] >= 2
+        assert delays == [1.0]
     finally:
-        await agent.stop()
-        agent_task.cancel()
-        await gw.stop()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

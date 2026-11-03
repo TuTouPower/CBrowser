@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from frontend_probe.adapter_probe import inject_adapter_probe
 from frontend_probe.harness import REPO_ROOT, FrontendTopologyHarness
 
 logger = logging.getLogger("cbrowser.frontend_app_probe.harness")
@@ -38,6 +39,7 @@ def prepare_frontend_app(dest_dir: Path) -> Path:
     if dest_dir.exists():
         shutil.rmtree(dest_dir)
     shutil.copytree(DIST_DIR, dest_dir)
+    inject_adapter_probe(dest_dir / "selkies" / "index.html")
     return dest_dir
 
 

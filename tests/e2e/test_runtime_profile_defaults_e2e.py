@@ -16,27 +16,28 @@ import json
 import os
 import subprocess
 import uuid
+import tempfile
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-DEFAULT_IMAGE = (
-    "sha256:4a76ae021ec38a40d674a50dc8fc569cb6da4dc7e24fc040f56141fdefeba7ce"
-)
-DEFAULT_CACHE = Path(".scratch/t003_implementation/tmp/engine-cache")
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+from e2e_env import require_e2e_env
+
 
 
 def get_docker_image() -> str:
-    return os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", DEFAULT_IMAGE)
+    return require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")[
+        "CBROWSER_RUNTIME_TEST_IMAGE"
+    ]
 
 
 def get_engine_cache_dir() -> Path:
-    env_path = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if env_path:
-        return Path(env_path)
-    return PROJECT_ROOT / DEFAULT_CACHE
+    return Path(
+        require_e2e_env("CBROWSER_RUNTIME_ENGINE_CACHE")[
+            "CBROWSER_RUNTIME_ENGINE_CACHE"
+        ]
+    )
 
 
 def check_prerequisites() -> tuple[bool, str]:
@@ -99,8 +100,6 @@ async def run_scenario():
             "locale": locale,
             "geoip": False,
             "set_google_default": scenario == "runtime_startup_defaults",
-            "runtime_mode": "docker",
-            "viewer_mode": "webrtc",
         },
         "created_at": "2026-10-28T00:00:00Z",
     }
@@ -366,7 +365,7 @@ def _run_docker_e2e(scenario: str, locale: str = "en-US") -> dict[str, Any]:
     image = get_docker_image()
     cache_dir = get_engine_cache_dir().resolve()
 
-    scratch_run = PROJECT_ROOT / f".scratch/t003_profile_defaults/{run_id}"
+    scratch_run = Path(tempfile.mkdtemp(prefix="cbrowser-t003-defaults-", dir="/tmp"))
     scratch_run.mkdir(parents=True, exist_ok=True)
     script_path = scratch_run / "e2e_runner.py"
     script_path.write_text(CONTAINER_SCRIPT, encoding="utf-8")
@@ -441,7 +440,10 @@ class TestRuntimeProfileDefaultsE2E:
     def require_prerequisites(self):
         ready, reason = check_prerequisites()
         if not ready:
-            pytest.skip(f"E2E prerequisites missing: {reason}")
+            message = f"E2E prerequisites missing: {reason}"
+            if os.environ.get("CBROWSER_E2E_REQUIRED") == "1":
+                pytest.fail(message, pytrace=False)
+            pytest.skip(message)
 
     def test_profile_defaults_en_us(self):
         """Verify defaults initialization in en-US locale."""

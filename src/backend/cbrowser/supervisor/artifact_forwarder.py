@@ -4,26 +4,43 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import uuid
 from pathlib import Path
+from typing import Any
 
 import httpx
 from cbrowser.runtime_agent.protocol import DownloadEventRecord
 from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.supervisor.path_validator import PathSecurityError, validate_profile_id
 from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.artifact_forwarder")
 
 CONTAINER_DOWNLOAD_PREFIX = "/exchange/downloads/"
+DOWNLOAD_EVENT_ENVELOPE_VERSION = 1
 RETRYABLE_4XX = frozenset({401, 403, 408, 429})
 
 
 def translate_download_path(
     raw_path: str, data_root: Path | str, profile_id: str
 ) -> str:
+    try:
+        validate_profile_id(profile_id)
+    except PathSecurityError:
+        raise ValueError("Invalid download profile identity") from None
+    downloads_root = (
+        Path(data_root) / "artifacts" / profile_id / "downloads"
+    ).resolve()
     if raw_path.startswith(CONTAINER_DOWNLOAD_PREFIX):
         relative = raw_path[len(CONTAINER_DOWNLOAD_PREFIX) :]
-        return str(Path(data_root) / "artifacts" / profile_id / "downloads" / relative)
-    return raw_path
+        candidate = downloads_root / relative
+    else:
+        candidate = Path(raw_path)
+    resolved = candidate.resolve()
+    if not resolved.is_relative_to(downloads_root):
+        raise ValueError("Download path escapes the Profile download directory")
+    return str(resolved)
 
 
 class DownloadArtifactForwarder:
@@ -95,6 +112,46 @@ class DownloadArtifactForwarder:
             key
         )
 
+    @staticmethod
+    def _parse_event(data: Any) -> tuple[DownloadEventRecord | None, str]:
+        if not isinstance(data, dict):
+            return None, "invalid_event"
+        version = data.get("version", DOWNLOAD_EVENT_ENVELOPE_VERSION)
+        if (
+            not isinstance(version, int)
+            or isinstance(version, bool)
+            or version != DOWNLOAD_EVENT_ENVELOPE_VERSION
+        ):
+            return None, "unsupported_version"
+        body = {key: value for key, value in data.items() if key != "version"}
+        try:
+            return DownloadEventRecord.model_validate(body), ""
+        except ValidationError:
+            return None, "invalid_event"
+
+    def _dead_letter(self, event_file: Path, profile_id: str, reason: str) -> None:
+        target_dir = self.data_root / "control" / "download-dead-letter" / profile_id
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / (
+                f"{event_file.stem}.{reason}.{uuid.uuid4().hex}.json"
+            )
+            os.replace(event_file, target)
+        except OSError as exc:
+            logger.warning(
+                "Download event dead-letter failed: profile=%s reason=%s "
+                "error_type=%s",
+                profile_id,
+                reason,
+                type(exc).__name__,
+            )
+            return
+        logger.warning(
+            "Download event moved to dead-letter: profile=%s reason=%s",
+            profile_id,
+            reason,
+        )
+
     async def forward_pending(self) -> int:
         if not self.events_root.is_dir():
             return 0
@@ -105,42 +162,77 @@ class DownloadArtifactForwarder:
             if not profile_dir.is_dir():
                 continue
             profile_id = profile_dir.name
+            try:
+                validate_profile_id(profile_id)
+            except PathSecurityError:
+                logger.warning(
+                    "Skipping invalid download event profile directory: %s",
+                    profile_id,
+                )
+                continue
             events_dir = profile_dir / "events" / "downloads"
             if not events_dir.is_dir():
                 continue
             for event_file in sorted(events_dir.glob("*.json")):
                 try:
                     event_file.resolve().relative_to(self.events_root.resolve())
-                except ValueError:
+                except (OSError, RuntimeError, ValueError):
                     continue
-                event: DownloadEventRecord | None = None
                 try:
                     data = json.loads(event_file.read_text(encoding="utf-8"))
-                    event = DownloadEventRecord.model_validate(data)
-                except (OSError, ValueError, ValidationError, UnicodeError):
-                    instance_id = "_invalid"
-                    key = f"unparsed:{event_file.name}"
-                else:
-                    instance_id = event.runtime_instance_id
-                    key = event.event_id
+                except (OSError, ValueError, UnicodeError) as exc:
+                    logger.warning(
+                        "Unreadable download event: profile=%s error_type=%s",
+                        profile_id,
+                        type(exc).__name__,
+                    )
+                    self._dead_letter(event_file, profile_id, "unreadable")
+                    continue
+                event, invalid_reason = self._parse_event(data)
+                if event is None:
+                    logger.warning(
+                        "Invalid download event: profile=%s reason=%s",
+                        profile_id,
+                        invalid_reason,
+                    )
+                    self._dead_letter(event_file, profile_id, invalid_reason)
+                    continue
+                if event.profile_id != profile_id:
+                    logger.warning(
+                        "Download event profile mismatch: directory=%s event=%s",
+                        profile_id,
+                        event.profile_id,
+                    )
+                    self._dead_letter(event_file, profile_id, "profile_mismatch")
+                    continue
+                instance_id = event.runtime_instance_id
+                key = event.event_id
                 present.setdefault((profile_id, instance_id), set()).add(key)
                 if self._is_processed(profile_id, instance_id, key):
-                    continue
-                if event is None:
-                    self._mark_processed(profile_id, instance_id, key)
-                    changed = True
                     continue
                 if event.state != "completed" or not event.download_path:
                     self._mark_processed(profile_id, instance_id, key)
                     changed = True
                     continue
+                try:
+                    translated_path = translate_download_path(
+                        event.download_path, self.data_root, profile_id
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    logger.warning(
+                        "Download path rejected: profile=%s event=%s "
+                        "error_type=%s",
+                        profile_id,
+                        event.event_id,
+                        type(exc).__name__,
+                    )
+                    self._dead_letter(event_file, profile_id, "path_escape")
+                    continue
                 payload = {
                     "event_id": event.event_id,
-                    "profile_id": event.profile_id,
+                    "profile_id": profile_id,
                     "runtime_instance_id": event.runtime_instance_id,
-                    "path": translate_download_path(
-                        event.download_path, self.data_root, event.profile_id
-                    ),
+                    "path": translated_path,
                     "name": (
                         event.suggested_filename or Path(event.download_path).name
                     )[:255],

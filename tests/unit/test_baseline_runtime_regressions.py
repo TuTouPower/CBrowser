@@ -51,6 +51,20 @@ def test_gateway_runtime_packaging_integrity():
     )
 
 
+def test_stream_runtime_packaging_integrity():
+    content = _read_dockerfile("config/docker/stream_runtime/Dockerfile")
+    lines = content.splitlines()
+    from_line = next(line for line in lines if line.startswith("FROM "))
+    assert "@sha256:" in from_line, "Stream base image must be pinned by sha256 digest"
+    for required in (
+        "COPY src/backend/cbrowser/__init__.py",
+        "COPY src/backend/cbrowser/secret_files.py",
+        "COPY src/backend/cbrowser/stream_agent",
+        "COPY config/docker/stream_runtime/entrypoint.sh",
+    ):
+        assert required in content, f"Stream Dockerfile must copy {required}"
+
+
 def test_api_fixture_runtime_packaging_integrity():
     dockerfile_path = (
         "tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile"
@@ -71,29 +85,6 @@ def test_api_fixture_runtime_packaging_integrity():
     )
     assert "COPY src/backend/cbrowser/gateway" in content, (
         "API Dockerfile must copy gateway package for endpoint resolution"
-    )
-
-
-def test_gateway_fixture_runtime_packaging_integrity():
-    dockerfile_path = (
-        "tests/fixtures/supervisor_container_probe/gateway_runtime.Dockerfile"
-    )
-    content = _read_dockerfile(dockerfile_path)
-    lines = content.splitlines()
-
-    from_line = next(line for line in lines if line.startswith("FROM "))
-    assert "@sha256:" in from_line, (
-        "Gateway fixture base image must be pinned by digest"
-    )
-
-    assert "COPY src/backend/cbrowser/__init__.py" in content, (
-        "Gateway fixture Dockerfile must copy cbrowser/__init__.py"
-    )
-    assert "COPY src/backend/cbrowser/secret_files.py" in content, (
-        "Gateway fixture Dockerfile must copy secret_files.py"
-    )
-    assert "COPY src/backend/cbrowser/gateway" in content, (
-        "Gateway fixture Dockerfile must copy gateway package"
     )
 
 
@@ -158,7 +149,6 @@ async def test_serve_supervisor_watch_docker_events_subscribes_prefix(
         token_file=token_file,
         gateway_control=MagicMock(),
         gateway_container_id=None,
-        coturn_container_id=None,
     )
 
     with socket.socket() as s:
@@ -297,7 +287,6 @@ async def test_serve_supervisor_terminates_blocking_stream_via_close(tmp_path: P
         token_file=token_file,
         gateway_control=MagicMock(),
         gateway_container_id=None,
-        coturn_container_id=None,
     )
 
     with socket.socket() as s:

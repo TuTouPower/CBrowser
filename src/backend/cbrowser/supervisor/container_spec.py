@@ -68,14 +68,14 @@ def stream_labels(
     profile_id: str,
     runtime_instance_id: str,
     config_version: Any,
-) -> dict[str, Any]:
+) -> dict[str, str]:
     return {
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.profile-id": profile_id,
         "com.cbrowser.instance-id": runtime_instance_id,
         "com.cbrowser.role": "stream",
         "com.cbrowser.network-policy": "v1",
-        "com.cbrowser.config-version": config_version,
+        "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.prefix": prefix,
     }
 
@@ -118,7 +118,6 @@ def stream_environment(
     gateway_url: str,
     config_version: Any,
     udp_mux_port: int,
-    media_addresses: dict[str, str] | None,
     screen_width: int | None,
     screen_height: int | None,
     clipboard_sync: bool = True,
@@ -151,15 +150,6 @@ def stream_environment(
     if screen_width is not None and screen_height is not None:
         env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)
         env["CBROWSER_SCREEN_HEIGHT"] = str(screen_height)
-    if media_addresses is not None:
-        env.update(
-            {
-                "SELKIES_STUN_HOST": media_addresses["coturn_ip"],
-                "SELKIES_STUN_PORT": "3478",
-                "SELKIES_TURN_HOST": media_addresses["coturn_ip"],
-                "SELKIES_TURN_PORT": "3478",
-            }
-        )
     return env
 
 

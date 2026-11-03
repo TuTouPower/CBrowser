@@ -16,7 +16,7 @@
 ### 2.1 Profile CRUD 与数据完整性 (AC-001)
 
 - **接口契约**：
-    - `POST /api/v1/profiles`：创建新 Profile。配置字段保留计划 15.2 中有效字段；未提供指纹种子时随机生成整数；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；`sort_order` 正确持久化；`runtime_mode` 统一为 `docker`，`viewer_mode` 统一为 `webrtc`。
+    - `POST /api/v1/profiles`：创建新 Profile。配置字段保留计划 15.2 中有效字段；未提供指纹种子时随机生成整数；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；`sort_order` 正确持久化。
     - `GET /api/v1/profiles`：获取 Profile 列表。
     - `GET /api/v1/profiles/{id}`：获取单个 Profile 详情及标签。
     - `PUT /api/v1/profiles/{id}` 或 `PATCH /api/v1/profiles/{id}`：修改 Profile。
@@ -87,7 +87,7 @@
     - API 消费运行时事件时，向 stderr 输出机器可解析的 JSON 日志：`RUNTIME_EVENT_JSON: {"event_id": ..., "profile_id": ..., "runtime_instance_id": ..., "event_type": ..., "exit_code": ..., "exit_reason": ..., "config_version": ..., "outcome": ..., "timestamp": ...}`。
 - **数据脱敏与安全防御**：
     - 字段由严格白名单过滤，`exit_reason` 经由安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`；
-    - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的密码（`P@ssw0rd_Secret_999`）、Token（`SECRET_TOKEN_XYZ_123`）、Cookie（`SECRET_COOKIE_ABC_456`）、剪贴板文本（`SECRET_CLIPBOARD_CONTENT_789`）或私密笔记文本；
+    - 系统日志、标准输出以及 HTTP 4xx/5xx 错误响应体中严禁泄漏注入的密码、Token、Cookie、剪贴板文本或私密笔记文本；
     - 全局异常处理器不输出带参数的 SQL 跟踪日志。
 
 ## 3. 运维与验证命令

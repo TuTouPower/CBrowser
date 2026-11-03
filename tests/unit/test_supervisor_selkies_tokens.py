@@ -251,6 +251,7 @@ async def test_supervisor_core_start_profile_provisions_selkies_tokens(
 
     key_file = tmp_path / "agent_key"
     key_file.write_text("01234567890123456789012345678901", encoding="utf-8")
+    key_file.chmod(0o600)
 
     mock_stream_c = MagicMock()
     mock_stream_c.id = "s_id"
@@ -326,7 +327,6 @@ async def test_supervisor_core_start_profile_provisions_selkies_tokens(
             token_file=None,
             agent_key_file=key_file,
             gateway_control=mock_gw,
-            coturn_container_id="turn_test",
         )
 
         session = await core.start_profile("p1", ProfileConfig(name="p1"))

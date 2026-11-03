@@ -6,33 +6,51 @@ import asyncio
 import hmac
 import json
 import logging
-import time
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from aiohttp import WSMsgType, web
-from cbrowser.rtc_config.models import RtcScheduleParams
-from cbrowser.rtc_config.service import RtcConfigService
+from cbrowser.secret_files import read_secret_file
 from cbrowser.stream_agent.protocol import (
+    MAX_STREAM_FRAME_SIZE,
     AgentAction,
-    AgentHeartbeatPayload,
-    AgentRegisterPayload,
+    AgentRegisterEnvelope,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
-    ProtocolEnvelope,
+    SupervisorQuotaPayload,
+    validate_agent_envelope,
 )
 from cbrowser.supervisor.agent_credentials import AgentCredentials
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .api_client import GatewayApiClient
 from .config import GatewayConfig
 from .endpoint import normalize_origin
-from .registry import AgentRegistry, RegisteredAgent, RegistrationThrottle
-from .rotation import NoActiveGenerationError, RotationCoordinator
+from .registry import (
+    AgentRegistry,
+    AuthorizationThrottle,
+    RegisteredAgent,
+    RegistrationThrottle,
+)
 
 logger = logging.getLogger("cbrowser.gateway.server")
+
+
+class _QuotaRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runtime_instance_id: str
+    max_fps_cap: float | None = None
+    reason: str | None = None
+
+
+class _DisconnectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    runtime_instance_id: str
 
 
 @dataclass
@@ -51,22 +69,15 @@ def create_gateway_app(
     app = web.Application()
 
     credentials = AgentCredentials(config.agent_key_file)
-    control_token = (
-        config.gateway_token_file.read_text(encoding="utf-8").strip().encode("utf-8")
-    )
+    try:
+        control_token = read_secret_file(
+            config.gateway_token_file,
+            label="Gateway control token",
+            minimum_bytes=32,
+        ).encode("utf-8")
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from None
     api = api_client or GatewayApiClient(config.api_url, config.api_token_file)
-
-    rtc_params = RtcScheduleParams(
-        credential_lifetime_sec=config.credential_lifetime_sec,
-        generation_interval_sec=config.generation_interval_sec,
-        ice_restart_lead_time_sec=config.ice_restart_lead_time_sec,
-    )
-    rtc_service = RtcConfigService(
-        turn_secret_file=config.turn_secret_file,
-        turn_public_urls=config.turn_public_urls,
-        webrtc_mode=config.webrtc_mode,
-        params=rtc_params,
-    )
 
     registry = AgentRegistry()
     viewers: dict[str, ViewerEntry] = {}
@@ -92,25 +103,8 @@ def create_gateway_app(
                         "Failed closing viewer ws %s: %s", cid, type(exc).__name__
                     )
 
-    async def send_agent_control(env: GatewayControlEnvelope) -> None:
-        agent = registry.get(env.profile_id)
-        if agent is not None and not agent.ws.closed:
-            await agent.ws.send_str(env.model_dump_json())
-
-    async def send_viewer_control(conn_id: str, frame: dict[str, Any]) -> None:
-        viewer_entry = viewers.get(conn_id)
-        if viewer_entry is not None and not viewer_entry.ws.closed:
-            await viewer_entry.ws.send_str(json.dumps(frame))
-
     registration_throttle = RegistrationThrottle()
-
-    rotation = RotationCoordinator(
-        rtc_service=rtc_service,
-        send_agent_control=send_agent_control,
-        send_viewer_control=send_viewer_control,
-        get_active_connections=profile_connections,
-        get_agent_info=lambda pid: registry.get(pid),
-    )
+    authorization_throttle = AuthorizationThrottle()
 
     # ---------------- Supervisor Auth Helper ----------------
     def _check_supervisor_auth(request: web.Request) -> web.Response | None:
@@ -182,13 +176,20 @@ def create_gateway_app(
             body = await request.json()
         except (ValueError, json.JSONDecodeError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
-        runtime_instance_id = body.get("runtime_instance_id")
-        if not runtime_instance_id:
-            return web.json_response(
-                {"detail": "runtime_instance_id is required in body"},
-                status=400,
+        try:
+            quota_request = _QuotaRequest.model_validate(body)
+            payload = SupervisorQuotaPayload.model_validate(
+                {
+                    "max_fps_cap": quota_request.max_fps_cap,
+                    "reason": quota_request.reason,
+                }
             )
+        except ValidationError:
+            return web.json_response({"detail": "Invalid supervisor quota"}, status=400)
+        runtime_instance_id = quota_request.runtime_instance_id
 
         agent = registry.get(profile_id)
         if agent is None or agent.ws.closed:
@@ -207,14 +208,13 @@ def create_gateway_app(
                 status=409,
             )
 
-        max_fps_cap = body.get("max_fps_cap")
         env = GatewayControlEnvelope(
             version="v2",
             action=AgentAction.SUPERVISOR_QUOTA,
             profile_id=profile_id,
             runtime_instance_id=agent.instance_id,
             agent_session_id=agent.agent_session_id,
-            payload={"max_fps_cap": max_fps_cap},
+            payload=payload,
         )
         await agent.ws.send_str(env.model_dump_json())
         return web.json_response({"status": "ok"})
@@ -229,13 +229,14 @@ def create_gateway_app(
             body = await request.json()
         except (ValueError, json.JSONDecodeError):
             return web.json_response({"detail": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"detail": "Invalid JSON body"}, status=400)
 
-        runtime_instance_id = body.get("runtime_instance_id")
-        if not runtime_instance_id:
-            return web.json_response(
-                {"detail": "runtime_instance_id is required in body"},
-                status=400,
-            )
+        try:
+            disconnect_request = _DisconnectRequest.model_validate(body)
+        except ValidationError:
+            return web.json_response({"detail": "Invalid disconnect request"}, status=400)
+        runtime_instance_id = disconnect_request.runtime_instance_id
 
         agent = registry.get(profile_id)
         if agent is None or agent.ws.closed:
@@ -275,7 +276,6 @@ def create_gateway_app(
                 )
                 await agent.ws.send_str(close_env.model_dump_json())
 
-        await rotation.cancel_profile(profile_id)
         return web.json_response({"status": "ok"})
 
     # ---------------- Agent Register Route ----------------
@@ -288,7 +288,24 @@ def create_gateway_app(
             logger.warning("Agent registration rate limited for source")
             return web.Response(status=429, text="Too many registration attempts")
 
-        ws = web.WebSocketResponse()
+        profile_id = request.query.get("profile_id", "")
+        instance_id = request.query.get("runtime_instance_id", "")
+        if (
+            not profile_id
+            or not instance_id
+            or not re.fullmatch(r"[a-zA-Z0-9_-]+", profile_id)
+            or not re.fullmatch(r"[a-zA-Z0-9_\-\.:]{1,128}", instance_id)
+        ):
+            return web.Response(status=400, text="Missing registration identity")
+        if not credentials.verify(raw_token, profile_id, instance_id):
+            return web.Response(status=401, text="Invalid Agent credentials")
+        runtime_info = await api.get_profile_runtime(profile_id)
+        if not runtime_info or runtime_info.get("runtime_instance_id") != instance_id:
+            return web.Response(
+                status=403, text="Instance not currently bound to profile"
+            )
+
+        ws = web.WebSocketResponse(max_msg_size=MAX_STREAM_FRAME_SIZE)
         await ws.prepare(request)
 
         try:
@@ -303,39 +320,25 @@ def create_gateway_app(
 
         try:
             reg_raw = json.loads(msg.data)
-            envelope = ProtocolEnvelope.model_validate(reg_raw)
-            if envelope.action != AgentAction.REGISTER:
-                await ws.close(
-                    code=1008, message=b"First packet must be register action"
-                )
-                return ws
-            payload = AgentRegisterPayload.model_validate(envelope.payload)
+            envelope = AgentRegisterEnvelope.model_validate(reg_raw)
         except (ValidationError, Exception) as e:  # noqa: BLE001 - agent registration packet decoding boundary
             logger.warning("Agent registration payload invalid: %s", type(e).__name__)
             await ws.close(code=1008, message=b"Invalid registration payload")
             return ws
 
+        payload = envelope.payload
         pid = payload.profile_id
         iid = payload.runtime_instance_id
-
-        # Verify HMAC token
-        if not credentials.verify(raw_token, pid, iid):
-            await ws.close(code=1008, message=b"Invalid Agent credentials")
-            return ws
-
-        # Query internal API for profile runtime binding
-        runtime_info = await api.get_profile_runtime(pid)
-        if not runtime_info or runtime_info.get("runtime_instance_id") != iid:
-            exp_iid = runtime_info.get("runtime_instance_id") if runtime_info else None
+        if pid != profile_id or iid != instance_id:
             logger.warning(
-                "Rejected agent for %s: instance %s not bound (expected %s)",
+                "Agent registration identity mismatch: query=%s/%s payload=%s/%s",
+                profile_id,
+                instance_id,
                 pid,
                 iid,
-                exp_iid,
             )
-            # Crucial: Close 1008 and DO NOT overwrite existing registration
             await ws.close(
-                code=1008, message=b"Instance not currently bound to profile"
+                code=1008, message=b"Registration identity mismatch"
             )
             return ws
 
@@ -348,8 +351,6 @@ def create_gateway_app(
             runtime_state=payload.runtime_state,
             udp_port=payload.udp_port,
             config_version=payload.config_version,
-            turn_host=payload.turn_host,
-            turn_port=payload.turn_port,
             ws=ws,
             last_heartbeat=registry.now(),
         )
@@ -381,25 +382,6 @@ def create_gateway_app(
             agent_session_id=session_id,
         )
         await ws.send_str(ack.model_dump_json())
-
-        # Send Agent RTC_CONFIG
-        try:
-            eff_gen = rotation.get_effective_generation(pid)
-        except NoActiveGenerationError:
-            logger.error("Refusing Agent registration: no active TURN generation")
-            await ws.close(code=1011, message=b"TURN credentials expired")
-            return ws
-        rtc_ctrl = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.RTC_CONFIG,
-            profile_id=pid,
-            runtime_instance_id=iid,
-            agent_session_id=session_id,
-            payload=eff_gen.build_stream_rtc_config(
-                payload.turn_host, payload.turn_port
-            ),
-        )
-        await ws.send_str(rtc_ctrl.model_dump_json())
 
         # Pump messages from Agent
         try:
@@ -447,35 +429,27 @@ def create_gateway_app(
                                     ).encode("utf-8"),
                                 )
                                 viewers.pop(conn_id, None)
-                        elif "action" in pkt:
-                            proto_env = ProtocolEnvelope.model_validate(pkt)
+                        else:
+                            agent_env = validate_agent_envelope(pkt)
                             if (
-                                proto_env.profile_id != pid
-                                or proto_env.runtime_instance_id != iid
-                                or proto_env.agent_session_id != session_id
+                                agent_env.profile_id != pid
+                                or agent_env.runtime_instance_id != iid
+                                or agent_env.agent_session_id != session_id
                             ):
                                 logger.warning(
                                     "Dropped agent action packet: identity mismatch "
                                     "(action=%s)",
-                                    proto_env.action,
+                                    agent_env.action,
                                 )
                                 continue
 
-                            if proto_env.action == AgentAction.HEARTBEAT:
-                                beat = AgentHeartbeatPayload.model_validate(
-                                    proto_env.payload
-                                )
+                            if agent_env.action == AgentAction.HEARTBEAT:
+                                beat = agent_env.payload
                                 registry.update_heartbeat(pid, iid, session_id)
                                 agent.unpaused_video_consumers = (
                                     beat.unpaused_video_consumers
                                 )
                                 agent.capture_running = beat.capture_running
-                            elif proto_env.action == AgentAction.ICE_RESTART_OFFER:
-                                rotation.handle_agent_restart_offer(proto_env)
-                            elif proto_env.action == AgentAction.ICE_RESTART_COMMITTED:
-                                rotation.handle_agent_restart_committed(proto_env)
-                            elif proto_env.action == AgentAction.ERROR:
-                                rotation.handle_agent_error(proto_env)
                     except Exception as e:  # noqa: BLE001 - agent message handling loop isolation prevents gateway drop
                         logger.warning(
                             "Error processing packet from Agent: %s", type(e).__name__
@@ -486,7 +460,6 @@ def create_gateway_app(
             await close_viewers_for_session(
                 session_id, code=1001, message=b"Stream Agent disconnected"
             )
-            await rotation.cancel_profile(pid)
             registry.remove(pid, ws=ws)
 
         return ws
@@ -494,19 +467,28 @@ def create_gateway_app(
     # ---------------- Viewer Signal Route ----------------
     async def handle_viewer_signal(request: web.Request) -> web.WebSocketResponse:
         profile_id = request.match_info["profile_id"]
+        source = request.remote
+
+        if not authorization_throttle.allow(source, profile_id):
+            return web.Response(
+                status=429, text="Too many viewer authorization failures"
+            )
 
         # 1. Origin verification (normalized scheme/host/port)
         raw_origin = request.headers.get("Origin", "")
         try:
             origin = normalize_origin(raw_origin)
         except ValueError:
+            authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text="Origin not allowed")
         if origin not in config.allowed_origins:
+            authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text="Origin not allowed")
 
         # 2. Session cookie verification
         session_cookie = request.cookies.get("cbrowser_session")
         if not session_cookie:
+            authorization_throttle.record_failure(source, profile_id)
             return web.Response(
                 status=401,
                 text="Authentication required: cbrowser_session cookie missing",
@@ -514,6 +496,7 @@ def create_gateway_app(
 
         allowed, reason = await api.authorize_viewer(session_cookie, origin, profile_id)
         if not allowed:
+            authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text=reason or "Viewer unauthorized")
 
         # 3. Agent readiness & API observed_state check
@@ -535,7 +518,7 @@ def create_gateway_app(
                 text=f"Profile {profile_id} runtime not running (observed: {state})",
             )
 
-        ws = web.WebSocketResponse()
+        ws = web.WebSocketResponse(max_msg_size=MAX_STREAM_FRAME_SIZE)
         await ws.prepare(request)
 
         conn_id = str(uuid.uuid4())
@@ -547,27 +530,7 @@ def create_gateway_app(
         )
 
         try:
-            eff_gen = rotation.get_effective_generation(profile_id)
-        except NoActiveGenerationError:
-            logger.error(
-                "Refusing Viewer connection: no active TURN generation (profile=%s)",
-                profile_id,
-            )
-            return web.Response(
-                status=503, text="TURN credentials expired; retry after rotation"
-            )
-        rotation.register_connection(profile_id, conn_id, eff_gen)
-
-        try:
-            # 4. First frame to Viewer: rtc_config
-            rtc_frame = {
-                "cbrowser": "rtc_config",
-                "generation": eff_gen.generation,
-                "rtc_config": eff_gen.client_rtc_config,
-            }
-            await ws.send_str(json.dumps(rtc_frame))
-
-            # 5. Open tunnel to Agent
+            # 4. Open tunnel to Agent
             open_env = GatewayTunnelEnvelope(
                 version="v2",
                 type="open",
@@ -614,25 +577,14 @@ def create_gateway_app(
             async for m in ws:
                 if m.type == WSMsgType.TEXT:
                     text = m.data
-                    # Check for cbrowser control frame
-                    is_control = False
-                    if "cbrowser" in text:
+                    if '"cbrowser"' in text:
                         try:
                             parsed = json.loads(text)
-                            if isinstance(parsed, dict) and "cbrowser" in parsed:
-                                is_control = True
-                                cb_type = parsed.get("cbrowser")
-                                if cb_type == "ice_restart_answer":
-                                    rotation.handle_viewer_restart_answer(
-                                        conn_id, parsed
-                                    )
-                        except Exception as e:  # noqa: BLE001 - viewer control frame parse error must not abort tunnel
-                            logger.warning(
-                                "Error processing viewer control frame: %s",
-                                type(e).__name__,
-                            )
-
-                    if not is_control and not agent.ws.closed:
+                        except ValueError:
+                            parsed = None
+                        if isinstance(parsed, dict) and "cbrowser" in parsed:
+                            continue
+                    if not agent.ws.closed:
                         # Forward to Agent as tunnel msg
                         msg_env = GatewayTunnelEnvelope(
                             version="v2",
@@ -694,15 +646,15 @@ def create_gateway_app(
                         1.0, max(0.2, config.agent_heartbeat_timeout_sec / 4.0)
                     )
                     await asyncio.sleep(sleep_interval)
-                    wall_now = time.time()
                     timed_out = registry.check_heartbeat_timeouts(
                         now=registry.now(),
                         timeout_sec=config.agent_heartbeat_timeout_sec,
                     )
                     for agent in timed_out:
                         logger.warning(
-                            "Agent for profile %s timed out (>30s). Evicting.",
+                            "Agent for profile %s timed out (>%.0fs). Evicting.",
                             agent.profile_id,
+                            config.agent_heartbeat_timeout_sec,
                         )
                         if not agent.ws.closed:
                             await agent.ws.close(
@@ -714,9 +666,6 @@ def create_gateway_app(
                             code=1001,
                             message=b"Stream Agent disconnected",
                         )
-
-                    # Tick rotation coordinator
-                    await rotation.tick(now=wall_now)
                 except asyncio.CancelledError:
                     break
                 except Exception as e:  # noqa: BLE001 - background monitor loop isolation prevents gateway exit

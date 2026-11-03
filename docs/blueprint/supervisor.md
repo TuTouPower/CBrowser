@@ -14,7 +14,7 @@ API/Supervisor 控制面使用外部文件提供的 Bearer 凭证，至少 32 UT
 
 每个 Profile 创建 Browser/Stream 两个容器，均非 root、只读根、cap-drop ALL、restart policy `no`。Browser 提供 shareable IPC 和 1 GiB `/dev/shm`；Stream 只共享对应 Browser IPC/hostname，挂载 X11 socket 文件、Xauthority、Pulse 目录及实例凭证。Stream 不挂载用户数据、Browser Agent socket 或 Docker Socket。
 
-Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。共享 Gateway/coturn 动态加入媒体网络，实际地址明确传给 Stream。网络复用与删除要求名称和 managed-by/profile/prefix 标签匹配。清理遇未知端点必须失败，不能强制断开；失败回滚只撤销本次新建连接。
+Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。共享 Gateway 动态加入媒体网络，实际地址明确传给 Stream；不再有 coturn（ADR 013）。网络复用与删除要求名称和 managed-by/profile/prefix 标签匹配。清理遇未知端点必须失败，不能强制断开；失败回滚只撤销本次新建连接。
 
 引擎初始化通过临时 helper 完成，然后以只读挂载交付 Browser。SDK 初始化显式 pin `get_chromium_version()`，与 Runtime 使用相同引擎版本；不在 helper 失败后用盲目重试掩盖初始化错误。
 
@@ -46,7 +46,7 @@ API 已绑定但尚无对应 Browser 的启动中断，通过稳定 missing_runt
 
 策略安装使用同一不可变 Supervisor 镜像的短生命周期 helper，只授予 NET_ADMIN，加入指定 Runtime 网络命名空间，不挂 Docker Socket、宿主目录或用户数据。Browser/Stream 自身仍保持非 root、只读根、cap-drop ALL。启动 gate 在业务进程执行前等待匹配实例、角色和 ready 状态的原子标记；安装失败不开放 gate。已存在规则时拒绝覆盖，避免误接管未知网络策略。
 
-Browser 仅允许 loopback、已建立连接及公共目的地址，私有与保留地址默认拒绝；配置代理只按明确解析的地址和端口例外放行。Stream 按 WebRTC 模式分档：`relay-only` 仅允许实际 Gateway、coturn 地址/端口、本实例 UDP mux 与显式白名单，没有最终公共 `OUTPUT ACCEPT`；`local`/`lan`/`public` 额外允许公共地址作为 Viewer 直连候选，私有与保留地址仍拒绝。IPv6 仅放行带 hop-limit 255 的必要邻居发现类型，不全量放行 ICMPv6。端点 DNS 在 gated Runtime 内解析，私密代理 URL 不传入 helper。
+Browser 仅允许 loopback、已建立连接及公共目的地址，私有与保留地址默认拒绝；配置代理只按明确解析的地址和端口例外放行。Stream 仅允许实际 Gateway 地址/端口、本实例 UDP mux、显式白名单与同机直连所需流量；私有与保留地址仍拒绝。IPv6 仅放行带 hop-limit 255 的必要邻居发现类型，不全量放行 ICMPv6。端点 DNS 在 gated Runtime 内解析，私密代理 URL 不传入 helper。
 
 Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和匹配 ready 标记的 Runtime。启动独占锁内先清理严格匹配 prefix、managed-by、角色及随机名称的遗留 cache-init/network-policy helper；周期扫描不执行此清理，避免中断当前安装。
 

@@ -38,6 +38,9 @@ class AuthService:
         self.rate_limiter = rate_limiter or LoginRateLimiter(
             max_failures=5, window_seconds=60.0
         )
+        self._automation_limiter = LoginRateLimiter(
+            max_failures=10, window_seconds=60.0, global_max_failures=200
+        )
         self.ph = PasswordHasher()
         self._dummy_hash = self.ph.hash(
             "cbrowser_dummy_password_timing_defense_sentinel"
@@ -160,6 +163,9 @@ class AuthService:
         )
 
         async with self._session_maker() as session, write_transaction(session):
+            await session.execute(
+                delete(SessionModel).where(SessionModel.expires_at <= now.isoformat())
+            )
             session.add(model)
 
         return raw_session_token, csrf_token, model
@@ -210,13 +216,19 @@ class AuthService:
             return bool(res.rowcount and res.rowcount > 0)
 
     async def create_automation_token(
-        self, name: str, profile_ids: list[str]
+        self, name: str, profile_ids: list[str], expires_in_hours: float | None = None
     ) -> tuple[str, AutomationTokenModel]:
         """Create an automation token with cbat_ prefix."""
         raw_token = f"cbat_{secrets.token_urlsafe(32)}"
         token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
         token_id = str(uuid.uuid4())
-        now = utc_now_iso()
+        now_dt = datetime.datetime.now(datetime.UTC)
+        now = now_dt.isoformat()
+        expires_at = (
+            (now_dt + datetime.timedelta(hours=expires_in_hours)).isoformat()
+            if expires_in_hours is not None
+            else None
+        )
 
         model = AutomationTokenModel(
             id=token_id,
@@ -225,6 +237,7 @@ class AuthService:
             profile_ids=json.dumps(profile_ids),
             revoked=False,
             created_at=now,
+            expires_at=expires_at,
         )
 
         audit = AuditEventModel(
@@ -305,13 +318,16 @@ class AuthService:
         return True, None
 
     async def authorize_automation(
-        self, token: str, profile_id: str
+        self, token: str, profile_id: str, client_ip: str = "unknown"
     ) -> tuple[bool, str | None]:
-        """Authorize an automation client."""
+        """Authorize an automation client with per-source throttling."""
+        if self._automation_limiter.is_rate_limited(client_ip):
+            return False, "rate_limited"
         if not token or not token.startswith("cbat_"):
-            await self._record_auth_denied(
-                "unknown", profile_id, "invalid_token_format"
+            logger.warning(
+                "Automation authorization rejected: invalid token format"
             )
+            self._automation_limiter.record_failure(client_ip)
             return False, "invalid_token"
 
         token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -329,12 +345,19 @@ class AuthService:
             )
 
             if row is None:
-                await self._record_auth_denied("unknown", profile_id, "token_not_found")
+                logger.warning("Automation authorization rejected: token not found")
+                self._automation_limiter.record_failure(client_ip)
                 return False, "token_not_found"
 
             if row.revoked:
                 await self._record_auth_denied(row.id, profile_id, "token_revoked")
+                self._automation_limiter.record_failure(client_ip)
                 return False, "token_revoked"
+
+            if row.expires_at is not None and row.expires_at <= utc_now_iso():
+                await self._record_auth_denied(row.id, profile_id, "token_expired")
+                self._automation_limiter.record_failure(client_ip)
+                return False, "token_expired"
 
             try:
                 allowed_pids = json.loads(row.profile_ids)
@@ -345,13 +368,16 @@ class AuthService:
                 await self._record_auth_denied(
                     row.id, profile_id, "profile_unauthorized"
                 )
+                self._automation_limiter.record_failure(client_ip)
                 return False, "profile_unauthorized"
 
             prof = await session.get(ProfileModel, profile_id)
             if prof is None:
                 await self._record_auth_denied(row.id, profile_id, "profile_not_found")
+                self._automation_limiter.record_failure(client_ip)
                 return False, "profile_not_found"
 
+        self._automation_limiter.record_success(client_ip)
         return True, None
 
     async def _record_auth_denied(

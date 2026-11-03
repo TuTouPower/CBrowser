@@ -32,30 +32,28 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.util
 import json
 import logging
 import os
 import secrets
 import sqlite3
-import sys
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+
+from e2e_env import free_udp_port_span
+
+from supervisor_recovery_probe import offline_fixture
+from supervisor_recovery_probe.gateway_service import (
+    ApiRuntimeLookup,
+    ProductionGatewayService,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
-_fixture_path = ROOT / "tests/fixtures/supervisor_recovery_probe/offline_fixture.py"
-_spec = importlib.util.spec_from_file_location("offline_fixture", _fixture_path)
-offline_fixture = importlib.util.module_from_spec(_spec)
-sys.modules["offline_fixture"] = offline_fixture
-_spec.loader.exec_module(offline_fixture)
-
-OfflineGatewayMock = offline_fixture.OfflineGatewayMock
 RealApiProcess = offline_fixture.RealApiProcess
 RealBrowserActionProbe = offline_fixture.RealBrowserActionProbe
 RealSupervisorContainer = offline_fixture.RealSupervisorContainer
@@ -124,47 +122,14 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     tracker = SandboxContainerTracker()
     d_client = docker.from_env()
 
-    turn_image = os.environ.get(
-        "CBROWSER_TURN_TEST_IMAGE",
-        "sha256:e2bca2f79a4269d7240de5872ab60a9305013ad37296d2acf14f9510874346be",
-    )
-    d_client.images.get(turn_image)
-    turn_config = data_root / "turn.conf"
-    turn_config.write_text(
-        "listening-port=3478\nrealm=cbrowser.local\nuse-auth-secret\n"
-        "no-cli\nno-tls\nno-dtls\n"
-        "static-auth-secret=" + secrets.token_hex(32) + "\n"
-    )
-    turn_config.chmod(0o644)
-    coturn = d_client.containers.run(
-        turn_image,
-        name=f"{prefix}-coturn",
-        detach=True,
-        read_only=True,
-        cap_drop=["ALL"],
-        cap_add=["NET_BIND_SERVICE"],
-        security_opt=["no-new-privileges:true"],
-        tmpfs={"/tmp": "rw,size=256m"},
-        entrypoint="/usr/bin/turnserver",
-        command=[
-            "-c",
-            "/etc/turnserver.conf",
-            "--relay-threads=1",
-            "--log-file=stdout",
-        ],
-        volumes={str(turn_config): {"bind": "/etc/turnserver.conf", "mode": "ro"}},
-        labels={
-            "com.cbrowser.prefix": prefix,
-            "com.cbrowser.managed-by": "supervisor",
-            "com.cbrowser.role": "coturn",
-        },
-    )
-    tracker.track(coturn.id)
 
-    gateway = OfflineGatewayMock(
+    gateway = ProductionGatewayService(
         port=gw_port,
-        credentials=AgentCredentials(agent_key_file),
-        token_file=gw_token_file,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        runtime_lookup=ApiRuntimeLookup(
+            f"http://127.0.0.1:{api_port}", sup_token_file
+        ),
     )
 
     api_db_path = tmp_path / "control.db"
@@ -179,6 +144,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     )
 
     sup_log = tmp_path / "supervisor.log"
+    udp_base = free_udp_port_span(2)
     sup_proc = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
         data_root=data_root,
@@ -194,8 +160,9 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         root=ROOT,
         env=clean_environ,
         log_path=sup_log,
-        coturn_container_id=coturn.id,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
 
     api_headers = {"Authorization": f"Bearer {sup_token}"}

@@ -1,0 +1,13 @@
+{
+  "tid": "t017",
+  "attempt": 1,
+  "execution_id": "945c8e0adfce4d7cb21ff8f8f404f9c4",
+  "status": "done",
+  "branch": "t017_v2_frontend_convergence",
+  "base_sha": "5252f75ab2bd726f65f98dfa0a644c9a64d53fb2",
+  "tests": "Vitest 95 passed; tsc -b passed; npm run build + verify_frontend_dist passed; v1 reference and tracked tsbuildinfo checks passed.",
+  "blackbox": "No Docker E2E rerun in this task; frontend behavior covered by build/type/unit gates and prior real-topology E2E from t015/t016.",
+  "review": "Full code/test review Round 8 PASS; remaining minors transferred to p018.",
+  "pending": ["p018"],
+  "findings": []
+}

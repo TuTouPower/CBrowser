@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
@@ -43,7 +44,7 @@ from cbrowser.supervisor.recovery_rules import (
 )
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
-from docker.errors import NotFound
+from docker.errors import APIError, DockerException, NotFound
 from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.core")
@@ -95,8 +96,6 @@ class SupervisorCore:
         agent_key_file: Path | str | None = None,
         gateway_control: GatewayControlClient | None = None,
         gateway_container_id: str | None = None,
-        coturn_container_id: str | None = None,
-        webrtc_mode: str = "public",
         gateway_port: int | None = None,
     ):
         self.docker = docker_adapter
@@ -124,8 +123,6 @@ class SupervisorCore:
         self.gateway_control = gateway_control
         self.resource_monitor: ResourceMonitor | None = None
         self.gateway_container_id = gateway_container_id
-        self.coturn_container_id = coturn_container_id
-        self.webrtc_mode = webrtc_mode
 
         self._sessions: dict[str, ActiveSession] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -155,6 +152,24 @@ class SupervisorCore:
         token = self._get_bearer_token()
         return {"Authorization": f"Bearer {token}"} if token else {}
 
+    def get_session(self, profile_id: str) -> ActiveSession | None:
+        """Read-only session lookup for health checks and tests."""
+        return self._sessions.get(profile_id)
+
+    def terminal_observation_acknowledged(
+        self, profile_id: str, runtime_instance_id: str, config_version: int
+    ) -> bool:
+        """Whether the API already acknowledged this terminal observation."""
+        return (
+            profile_id,
+            runtime_instance_id,
+            config_version,
+        ) in self._terminal_observations
+
+    async def query_agent_health(self, profile_id: str):
+        """Public health probe used by tests and diagnostics."""
+        return await self._query_agent_health(profile_id)
+
     def _get_profile_lock(self, profile_id: str) -> asyncio.Lock:
         if profile_id not in self._locks:
             self._locks[profile_id] = asyncio.Lock()
@@ -173,252 +188,273 @@ class SupervisorCore:
                 profiles_found.setdefault(pid, {})[role] = c
 
         for pid, roles in profiles_found.items():
-            if self._get_profile_lock(pid).locked():
-                continue
-            b_c = roles.get("browser")
-            s_c = roles.get("stream")
-
-            # Integrity check: both browser and stream must exist
-            if not b_c or not s_c:
+            try:
+                await self._reconcile_profile(pid, roles)
+            except DockerException as exc:
+                if not isinstance(exc, APIError):
+                    raise
                 logger.warning(
-                    "Incomplete sandbox retained: profile=%s browser=%s stream=%s",
+                    "Profile reconciliation failed: profile=%s error_type=%s",
                     pid,
-                    bool(b_c),
-                    bool(s_c),
+                    type(exc).__name__,
                 )
-                continue
-
-            # Integrity check: instance_id on both containers must match
-            b_inst = b_c.get("instance_id")
-            s_inst = s_c.get("instance_id")
-            if not b_inst or b_inst != s_inst:
+            except Exception as exc:  # noqa: BLE001 - one Profile failure must not block the others
                 logger.warning(
-                    "Sandbox instance mismatch: profile=%s browser=%s stream=%s",
+                    "Profile reconciliation failed: profile=%s error_type=%s",
+                    pid,
+                    type(exc).__name__,
+                )
+        return containers
+
+    async def _reconcile_profile(
+        self, pid: str, roles: dict[str, Any]
+    ) -> None:
+        """Reconcile one Profile; callers isolate failures per Profile."""
+        if self._get_profile_lock(pid).locked():
+            return
+        b_c = roles.get("browser")
+        s_c = roles.get("stream")
+
+        # Integrity check: both browser and stream must exist
+        if not b_c or not s_c:
+            logger.warning(
+                "Incomplete sandbox retained: profile=%s browser=%s stream=%s",
+                pid,
+                bool(b_c),
+                bool(s_c),
+            )
+            return
+
+        # Integrity check: instance_id on both containers must match
+        b_inst = b_c.get("instance_id")
+        s_inst = s_c.get("instance_id")
+        if not b_inst or b_inst != s_inst:
+            logger.warning(
+                "Sandbox instance mismatch: profile=%s browser=%s stream=%s",
+                pid,
+                b_inst,
+                s_inst,
+            )
+            return
+
+        # Query API desired state with network/HTTP failure protection
+        try:
+            resp = await self.api.get(
+                f"/api/v1/internal/supervisor/profiles/{quote(pid, safe='')}/runtime",
+                headers=self._auth_headers(),
+            )
+        except Exception as e:  # noqa: BLE001 - API query transport failure safely retains profile without teardown
+            logger.warning(
+                "API unavailable; retaining profile=%s error_type=%s",
+                pid,
+                type(e).__name__,
+            )
+            return
+
+        if resp.status_code == 200:
+            rt = resp.json()
+            if self._get_profile_lock(pid).locked():
+                return
+            desired = rt.get("desired_state", "stopped")
+            api_inst = rt.get("runtime_instance_id")
+
+            # Fence check: if API instance does not match container instance
+            if desired == "running" and api_inst != b_inst:
+                logger.warning(
+                    "Instance fence mismatch: profile=%s docker=%s api=%s",
                     pid,
                     b_inst,
-                    s_inst,
+                    api_inst,
                 )
-                continue
+                return
 
-            # Query API desired state with network/HTTP failure protection
-            try:
-                resp = await self.api.get(
-                    f"/api/v1/internal/supervisor/profiles/{pid}/runtime",
-                    headers=self._auth_headers(),
+            session = self._sessions.get(pid)
+            bound_version = int(
+                rt.get("config_version", b_c.get("config_version", 1))
+            )
+            if desired == "running":
+                obs = await self._reconcile_instance_observation(
+                    pid, b_inst, bound_version, container_status=b_c.get("status")
                 )
-            except Exception as e:  # noqa: BLE001 - API query transport failure safely retains profile without teardown
-                logger.warning(
-                    "API unavailable; retaining profile=%s error_type=%s",
-                    pid,
-                    type(e).__name__,
-                )
-                continue
+                if obs in ("stopped", "error"):
+                    return
 
-            if resp.status_code == 200:
-                rt = resp.json()
-                if self._get_profile_lock(pid).locked():
-                    continue
-                desired = rt.get("desired_state", "stopped")
-                api_inst = rt.get("runtime_instance_id")
-
-                # Fence check: if API instance does not match container instance
-                if desired == "running" and api_inst != b_inst:
-                    logger.warning(
-                        "Instance fence mismatch: profile=%s docker=%s api=%s",
-                        pid,
-                        b_inst,
-                        api_inst,
-                    )
-                    continue
-
-                session = self._sessions.get(pid)
-                bound_version = int(
-                    rt.get("config_version", b_c.get("config_version", 1))
-                )
-                if desired == "running":
-                    obs = await self._reconcile_instance_observation(
-                        pid, b_inst, bound_version, container_status=b_c.get("status")
-                    )
-                    if obs in ("stopped", "error"):
-                        continue
-
-                if (
-                    desired == "running"
-                    and session is not None
-                    and session.runtime_instance_id == b_inst
-                ):
-                    # Same generation is already tracked. Docker "running" must
-                    # never overwrite an error observation from the Agent.
-                    if any(item["status"] != "running" for item in (b_c, s_c)):
-                        if session.observed_state != "error":
-                            session.observed_state = "error"
-                            await self.report_terminal_observation(
-                                pid,
-                                b_inst,
-                                int(rt.get("config_version", session.config_version)),
-                                observed_state="error",
-                                reason="container_exit",
-                            )
-                    elif (
-                        session.observed_state == "running"
-                        and rt.get("observed_state") != "running"
-                    ):
-                        await self._report_observed(
+            if (
+                desired == "running"
+                and session is not None
+                and session.runtime_instance_id == b_inst
+            ):
+                # Same generation is already tracked. Docker "running" must
+                # never overwrite an error observation from the Agent.
+                if any(item["status"] != "running" for item in (b_c, s_c)):
+                    if session.observed_state != "error":
+                        session.observed_state = "error"
+                        await self.report_terminal_observation(
                             pid,
                             b_inst,
-                            "running",
                             int(rt.get("config_version", session.config_version)),
+                            observed_state="error",
+                            reason="container_exit",
                         )
-                    continue
-
-                if desired == "running" and any(
-                    item["status"] != "running" for item in (b_c, s_c)
+                elif (
+                    session.observed_state == "running"
+                    and rt.get("observed_state") != "running"
                 ):
-                    await self.report_terminal_observation(
+                    await self._report_observed(
                         pid,
                         b_inst,
-                        int(rt.get("config_version", b_c.get("config_version", 1))),
-                        observed_state="error",
-                        reason="container_exit",
+                        "running",
+                        int(rt.get("config_version", session.config_version)),
                     )
-                    continue
+                return
 
-                if desired == "stopped":
-                    logger.info(
-                        "Stopping sandbox for stopped intent: profile=%s",
+            if desired == "running" and any(
+                item["status"] != "running" for item in (b_c, s_c)
+            ):
+                await self.report_terminal_observation(
+                    pid,
+                    b_inst,
+                    int(rt.get("config_version", b_c.get("config_version", 1))),
+                    observed_state="error",
+                    reason="container_exit",
+                )
+                return
+
+            if desired == "stopped":
+                logger.info(
+                    "Stopping sandbox for stopped intent: profile=%s",
+                    pid,
+                )
+                if pid not in self._sessions:
+                    self._sessions[pid] = ActiveSession(
                         pid,
+                        b_inst,
+                        rt.get("config_version", 1),
+                        0,
+                        b_c["id"],
+                        s_c["id"],
+                        desired_state="stopped",
                     )
-                    if pid not in self._sessions:
-                        self._sessions[pid] = ActiveSession(
-                            pid,
-                            b_inst,
-                            rt.get("config_version", 1),
-                            0,
-                            b_c["id"],
-                            s_c["id"],
-                            desired_state="stopped",
-                        )
-                    await self.stop_profile(pid)
-                else:
-                    if not all(item.get("policy_ready") is True for item in (b_c, s_c)):
-                        first_seen = self._unprotected_since.setdefault(
-                            pid, time.monotonic()
-                        )
-                        age = time.monotonic() - first_seen
-                        if age < UNPROTECTED_SANDBOX_GRACE_SEC:
-                            logger.warning(
-                                "Unprotected sandbox awaiting policy: profile=%s "
-                                "age=%.1fs",
-                                pid,
-                                age,
-                            )
-                            continue
-                        logger.error(
-                            "Unprotected sandbox exceeded grace; tearing down: "
-                            "profile=%s age=%.1fs",
+                await self.stop_profile(pid)
+            else:
+                if not all(item.get("policy_ready") is True for item in (b_c, s_c)):
+                    first_seen = self._unprotected_since.setdefault(
+                        pid, time.monotonic()
+                    )
+                    age = time.monotonic() - first_seen
+                    if age < UNPROTECTED_SANDBOX_GRACE_SEC:
+                        logger.warning(
+                            "Unprotected sandbox awaiting policy: profile=%s "
+                            "age=%.1fs",
                             pid,
                             age,
                         )
-                        self._unprotected_since.pop(pid, None)
-                        await self.disconnect_viewers(pid)
-                        teardown_failed = False
-                        try:
-                            await self.docker.teardown_profile(pid)
-                        except Exception as exc:  # noqa: BLE001 - unprotected sandbox teardown error isolated and logged
-                            teardown_failed = True
-                            logger.error(
-                                "Unprotected sandbox teardown failed: profile=%s "
-                                "error_type=%s",
-                                pid,
-                                type(exc).__name__,
-                            )
-                        finally:
-                            await self.ports.release(pid)
-                            self._sessions.pop(pid, None)
-                            self.forget_instance_events(pid, b_inst)
-                        if not teardown_failed:
-                            await self._report_observed(
-                                pid,
-                                b_inst,
-                                "error",
-                                int(rt.get("config_version", 1)),
-                                reason="unprotected_sandbox",
-                            )
-                        continue
-                    if self.gateway_control is None:
-                        raise RuntimeError(
-                            "Gateway control RPC is required for readiness"
-                        )
-                    try:
-                        await self.gateway_control.has_foreground_viewers(pid, b_inst)
-                    except (httpx.HTTPError, OSError, ValueError):
-                        continue
-                    # Restore UDP port from Stream container HostConfig port bindings
-                    actual_port = None
-                    try:
-                        s_inspect = await asyncio.to_thread(
-                            self.docker.client.api.inspect_container, s_c["id"]
-                        )
-                        port_bindings = s_inspect.get("HostConfig", {}).get(
-                            "PortBindings", {}
-                        )
-                        for k, v in port_bindings.items():
-                            if k.endswith("/udp") and v:
-                                actual_port = int(v[0]["HostPort"])
-                                break
-                    except Exception as e:  # noqa: BLE001 - stream port inspection failure logged before raising sandbox error
-                        logger.warning(
-                            "Stream port inspection failed: container=%s error_type=%s",
-                            s_c["id"],
-                            type(e).__name__,
-                        )
-
-                    if actual_port:
-                        port = await self.ports.restore(pid, actual_port)
-                    else:
-                        raise DockerSandboxError(
-                            "Existing Stream has no verified UDP mux mapping"
-                        )
-
-                    if self._get_profile_lock(pid).locked():
-                        continue
-                    self._unprotected_since.pop(pid, None)
-                    logger.info(
-                        "Restoring running session: profile=%s port=%s",
+                        return
+                    logger.error(
+                        "Unprotected sandbox exceeded grace; tearing down: "
+                        "profile=%s age=%.1fs",
                         pid,
-                        port,
+                        age,
                     )
-                    self._sessions[pid] = ActiveSession(
-                        profile_id=pid,
-                        runtime_instance_id=b_inst,
-                        config_version=rt.get("config_version", 1),
-                        udp_mux_port=port,
-                        browser_container_id=b_c["id"],
-                        stream_container_id=s_c["id"],
-                        desired_state="running",
-                        observed_state="running",
-                    )
-                    if rt.get("observed_state") == "starting":
-                        await self._report_observed(
-                            pid, b_inst, "running", rt["config_version"]
+                    self._unprotected_since.pop(pid, None)
+                    await self.disconnect_viewers(pid)
+                    teardown_failed = False
+                    try:
+                        await self.docker.teardown_profile(pid)
+                    except Exception as exc:  # noqa: BLE001 - unprotected sandbox teardown error isolated and logged
+                        teardown_failed = True
+                        logger.error(
+                            "Unprotected sandbox teardown failed: profile=%s "
+                            "error_type=%s",
+                            pid,
+                            type(exc).__name__,
                         )
-            elif resp.status_code == 404:
-                # Only 404 means Profile was deleted permanently from API
+                    finally:
+                        await self.ports.release(pid)
+                        self._sessions.pop(pid, None)
+                        self.forget_instance_events(pid, b_inst)
+                    if not teardown_failed:
+                        await self._report_observed(
+                            pid,
+                            b_inst,
+                            "error",
+                            int(rt.get("config_version", 1)),
+                            reason="unprotected_sandbox",
+                        )
+                    return
+                if self.gateway_control is None:
+                    raise RuntimeError(
+                        "Gateway control RPC is required for readiness"
+                    )
+                try:
+                    await self.gateway_control.has_foreground_viewers(pid, b_inst)
+                except (httpx.HTTPError, OSError, ValueError):
+                    return
+                # Restore UDP port from Stream container HostConfig port bindings
+                actual_port = None
+                try:
+                    s_inspect = await asyncio.to_thread(
+                        self.docker.client.api.inspect_container, s_c["id"]
+                    )
+                    port_bindings = s_inspect.get("HostConfig", {}).get(
+                        "PortBindings", {}
+                    )
+                    for k, v in port_bindings.items():
+                        if k.endswith("/udp") and v:
+                            actual_port = int(v[0]["HostPort"])
+                            break
+                except Exception as e:  # noqa: BLE001 - stream port inspection failure logged before raising sandbox error
+                    logger.warning(
+                        "Stream port inspection failed: container=%s error_type=%s",
+                        s_c["id"],
+                        type(e).__name__,
+                    )
+
+                if actual_port:
+                    port = await self.ports.restore(pid, actual_port)
+                else:
+                    raise DockerSandboxError(
+                        "Existing Stream has no verified UDP mux mapping"
+                    )
+
+                if self._get_profile_lock(pid).locked():
+                    return
+                self._unprotected_since.pop(pid, None)
                 logger.info(
-                    "Cleaning orphan sandbox after API 404: profile=%s",
+                    "Restoring running session: profile=%s port=%s",
                     pid,
+                    port,
                 )
-                await self.docker.teardown_profile(pid)
-                await self.ports.release(pid)
-                self._sessions.pop(pid, None)
-            else:
-                # 401, 403, 429, 5xx, 503: Keep healthy containers, do NOT teardown
-                logger.warning(
-                    "Retaining sandbox: profile=%s api_status=%s",
-                    pid,
-                    resp.status_code,
+                self._sessions[pid] = ActiveSession(
+                    profile_id=pid,
+                    runtime_instance_id=b_inst,
+                    config_version=rt.get("config_version", 1),
+                    udp_mux_port=port,
+                    browser_container_id=b_c["id"],
+                    stream_container_id=s_c["id"],
+                    desired_state="running",
+                    observed_state="running",
                 )
-        return containers
+                if rt.get("observed_state") == "starting":
+                    await self._report_observed(
+                        pid, b_inst, "running", rt["config_version"]
+                    )
+        elif resp.status_code == 404:
+            # Only 404 means Profile was deleted permanently from API
+            logger.info(
+                "Cleaning orphan sandbox after API 404: profile=%s",
+                pid,
+            )
+            await self.docker.teardown_profile(pid)
+            await self.ports.release(pid)
+            self._sessions.pop(pid, None)
+        else:
+            # 401, 403, 429, 5xx, 503: Keep healthy containers, do NOT teardown
+            logger.warning(
+                "Retaining sandbox: profile=%s api_status=%s",
+                pid,
+                resp.status_code,
+            )
 
     def _quarantine_event_file(
         self, event_file: Path, profile_id: str, instance_id: str, reason: str
@@ -781,6 +817,23 @@ class SupervisorCore:
         """A native exit awaiting delivery takes precedence over synthetic exits."""
         return (profile_id, instance_id, config_version) in self._native_exit_instances
 
+    def _write_runtime_snapshot(
+        self, snap_path: Path, snapshot: ConfigVersionSnapshot
+    ) -> None:
+        atomic_write_text(snap_path, snapshot.model_dump_json(indent=2), mode=0o600)
+        if getattr(self.docker, "manage_ownership", False):
+            try:
+                os.chown(
+                    snap_path,
+                    self.docker.runtime_uid,
+                    self.docker.runtime_gid,
+                )
+            except OSError as exc:
+                raise DockerSandboxError(
+                    "Cannot assign runtime snapshot ownership: "
+                    f"{type(exc).__name__}"
+                ) from None
+
     async def start_profile(
         self,
         profile_id: str,
@@ -812,7 +865,7 @@ class SupervisorCore:
                     raise ValueError("Manual retry requires an idempotent operation ID")
                 await self.reset_blocked(profile_id, operation_id)
             state_response = await self.api.get(
-                f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime",
+                f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
                 headers=self._auth_headers(),
             )
             state_response.raise_for_status()
@@ -839,12 +892,12 @@ class SupervisorCore:
                 config=config.model_dump(),
                 created_at=datetime.now(UTC).isoformat(),
             )
-            atomic_write_text(snap_path, snapshot.model_dump_json(indent=2), mode=0o644)
+            self._write_runtime_snapshot(snap_path, snapshot)
 
             # Bind runtime instance via internal supervisor API
             try:
                 bind_resp = await self.api.post(
-                    f"/api/v1/internal/supervisor/runtimes/bind?profile_id={profile_id}",
+                    f"/api/v1/internal/supervisor/runtimes/bind?profile_id={quote(profile_id, safe='')}",
                     headers=self._auth_headers(),
                     json={
                         "runtime_instance_id": runtime_instance_id,
@@ -860,20 +913,14 @@ class SupervisorCore:
                 raise
 
             try:
-                # A bound attempt must report failure even before Docker creation.
-                if not self.coturn_container_id:
-                    raise DockerSandboxError(
-                        "coturn infrastructure container is required to start runtime"
-                    )
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
                 media_addresses = None
-                if self.coturn_container_id:
+                if self.gateway_container_id:
                     media_addresses = await asyncio.to_thread(
                         self.docker.attach_profile_infrastructure,
                         profile_id,
                         self.gateway_container_id,
-                        self.coturn_container_id,
                         gateway_port=self.gateway_endpoint.port,
                     )
                 await self._report_observed(
@@ -926,10 +973,8 @@ class SupervisorCore:
                     )
                     or self.gateway_url,
                     agent_secret_path=agent_secret,
-                    media_addresses=media_addresses,
                     selkies_tokens_path=selkies_tokens_file,
                     snapshot_json_path=snap_path,
-                    webrtc_mode=self.webrtc_mode,
                     gateway_port=self.gateway_endpoint.port,
                 )
 
@@ -1146,7 +1191,7 @@ class SupervisorCore:
 
     async def reset_blocked(self, profile_id: str, operation_id: str) -> None:
         response = await self.api.patch(
-            f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime/desired-state",
+            f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime/desired-state",
             headers=dict(self._auth_headers(), **{"Idempotency-Key": operation_id}),
             json={"desired_state": "running"},
         )
@@ -1242,7 +1287,7 @@ class SupervisorCore:
     ) -> bool:
         try:
             resp = await self.api.post(
-                f"/api/v1/internal/supervisor/runtimes/observed?profile_id={profile_id}",
+                f"/api/v1/internal/supervisor/runtimes/observed?profile_id={quote(profile_id, safe='')}",
                 headers=self._auth_headers(),
                 json={
                     "runtime_instance_id": runtime_instance_id,

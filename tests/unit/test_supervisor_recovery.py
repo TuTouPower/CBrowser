@@ -7,12 +7,16 @@ Tests:
 3. Offline disk event consumption & status fence.
 """
 
+import asyncio
 import json
 import secrets
+import socket
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from aiohttp import ClientSession, WSMsgType
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.control_server import create_control_app
@@ -21,6 +25,17 @@ from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
+from cbrowser.stream_agent.messaging import (
+    build_heartbeat_envelope,
+    build_register_envelope,
+    build_register_payload,
+    iso_now,
+)
+from cbrowser.stream_agent.protocol import AgentHeartbeatPayload
+from supervisor_recovery_probe.gateway_service import (
+    FakeGatewayApiClient,
+    ProductionGatewayService,
+)
 
 
 @pytest.fixture
@@ -32,6 +47,7 @@ def supervisor_setup(tmp_path: Path):
 
     agent_key_file = tmp_path / "agent_key"
     agent_key_file.write_text(secrets.token_urlsafe(32))
+    agent_key_file.chmod(0o600)
     agent_key_file.chmod(0o600)
 
     gw_token_file = tmp_path / "gw_token"
@@ -173,11 +189,7 @@ def supervisor_setup(tmp_path: Path):
             return C()
 
         def attach_profile_infrastructure(self, *args, **kwargs):
-            return {
-                "coturn_ip": "10.0.0.8",
-                "coturn_ice_address": "10.0.0.8:3478",
-                "ice_server": "turn:10.0.0.8:3478",
-            }
+            return {"gateway_ip": "10.0.0.8", "gateway_url": "ws://10.0.0.8:18080"}
 
         async def teardown_profile(self, pid):
             pass
@@ -208,7 +220,6 @@ def supervisor_setup(tmp_path: Path):
         token_file=token_file,
         agent_key_file=agent_key_file,
         gateway_control=gw_control,
-        coturn_container_id="coturn_mock_id",
     )
 
     app = create_control_app(core, token_file)
@@ -380,79 +391,85 @@ async def test_offline_reconciliation_preserves_containers_on_api_error(
     )
 
     await core.scan_and_reconcile_existing()
-    assert "p_err" in core._sessions
-    assert core._sessions["p_err"].udp_mux_port == 30005
+    assert core.get_session("p_err") is not None
+    assert core.get_session("p_err").udp_mux_port == 30005
     assert core.ports.is_port_used(30005)
 
 
 @pytest.mark.asyncio
-async def test_supervisor_gateway_fixture_contract(tmp_path: Path):
-    import importlib.util
-    import sys
-
-    from aiohttp import ClientSession
-
-    fixture_path = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "supervisor_recovery_probe"
-        / "gateway_fixture.py"
-    )
-    spec = importlib.util.spec_from_file_location("gateway_fixture", fixture_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["gateway_fixture"] = module
-    spec.loader.exec_module(module)
-    SupervisorGatewayFixture = module.SupervisorGatewayFixture
-
+async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
+    """Supervisor control and viewer paths run against the production Gateway."""
     agent_key_file = tmp_path / "gw_agent_key"
     agent_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    agent_key_file.chmod(0o600)
     gw_token_file = tmp_path / "gw_token"
     gw_token = secrets.token_urlsafe(32)
     gw_token_file.write_text(gw_token, encoding="utf-8")
+    gw_token_file.chmod(0o600)
 
     credentials = AgentCredentials(agent_key_file)
-    import socket
-
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
-    fixture = SupervisorGatewayFixture(
-        port=port, credentials=credentials, token_file=gw_token_file
-    )
-    await fixture.start()
-
     profile_id = "test-p1"
     runtime_instance_id = "test-inst-1"
-    agent_token = credentials.token_for(profile_id, runtime_instance_id)
+    fake_api = FakeGatewayApiClient()
+    fake_api.set_profile_runtime(profile_id, runtime_instance_id)
+    fake_api.allow_all_viewers = True
 
-    auth_headers = {"Authorization": f"Bearer {gw_token}"}
-    client = httpx.AsyncClient(
-        base_url=fixture.control_url, headers=auth_headers, trust_env=False
+    gateway = ProductionGatewayService(
+        port=port,
+        agent_key_file=agent_key_file,
+        gateway_token_file=gw_token_file,
+        api_client=fake_api,
+        allowed_origins=["http://127.0.0.1:3000"],
+    )
+    await gateway.start()
+
+    agent_token = credentials.token_for(profile_id, runtime_instance_id)
+    control = GatewayControlClient(gateway.control_url, gw_token_file)
+    ws_base = f"ws://127.0.0.1:{port}"
+    viewer_headers = {
+        "Origin": "http://127.0.0.1:3000",
+        "Cookie": "cbrowser_session=test-session",
+    }
+    agent_config = SimpleNamespace(
+        profile_id=profile_id,
+        runtime_instance_id=runtime_instance_id,
+        udp_mux_port=30000,
+        selkies_version="2.1.0",
+        config_version=1,
+        video_streaming_mode=False,
+        width=1920,
+        height=1080,
     )
 
     try:
-        # 1. No agent registered yet: internal control returns 503
-        r_unavail = await client.get(
-            f"/gateway/v1/internal/profiles/{profile_id}/visibility",
-            params={"runtime_instance_id": runtime_instance_id},
-        )
-        assert r_unavail.status_code == 503
+        # 1. No agent registered yet: production control returns 503.
+        with pytest.raises(httpx.HTTPStatusError) as unavailable:
+            await control.has_foreground_viewers(
+                profile_id, runtime_instance_id
+            )
+        assert unavailable.value.response.status_code == 503
 
-        # 2. Register Agent over WebSocket
+        # 2. Register the Agent through the production WebSocket route.
         async with ClientSession() as session:
-            ws_url = f"http://127.0.0.1:{port}/stream/agent/register"
+            register_url = (
+                f"{ws_base}/stream/agent/register"
+                f"?profile_id={profile_id}"
+                f"&runtime_instance_id={runtime_instance_id}"
+            )
             async with session.ws_connect(
-                ws_url, headers={"Authorization": f"Bearer {agent_token}"}
+                register_url,
+                headers={"Authorization": f"Bearer {agent_token}"},
             ) as agent_ws:
-                await agent_ws.send_json(
-                    {
-                        "version": "v2",
-                        "action": "register",
-                        "profile_id": profile_id,
-                        "runtime_instance_id": runtime_instance_id,
-                    }
+                register = build_register_envelope(
+                    agent_config,
+                    build_register_payload(agent_config, "test-host", "2.1.0"),
+                    iso_now(),
                 )
+                await agent_ws.send_str(register.model_dump_json())
                 ack = await agent_ws.receive_json()
                 assert ack["status"] == "ok"
                 assert ack["profile_id"] == profile_id
@@ -460,56 +477,74 @@ async def test_supervisor_gateway_fixture_contract(tmp_path: Path):
                 agent_session_id = ack["agent_session_id"]
                 assert agent_session_id
 
-                # 3. Unauthorized control RPC (wrong Bearer token) -> 401
-                bad_auth_client = httpx.AsyncClient(
-                    base_url=fixture.control_url,
-                    headers={"Authorization": "Bearer bad"},
-                    trust_env=False,
-                )
-                r_unauth = await bad_auth_client.get(
-                    f"/gateway/v1/internal/profiles/{profile_id}/visibility",
-                    params={"runtime_instance_id": runtime_instance_id},
-                )
-                assert r_unauth.status_code == 401
-                await bad_auth_client.aclose()
-
-                # 4. Instance fence mismatch -> 409
-                r_conflict = await client.get(
-                    f"/gateway/v1/internal/profiles/{profile_id}/visibility",
-                    params={"runtime_instance_id": "wrong-instance-id"},
-                )
-                assert r_conflict.status_code == 409
-
-                # 5. Visibility check: no viewers -> False
-                r_vis1 = await client.get(
-                    f"/gateway/v1/internal/profiles/{profile_id}/visibility",
-                    params={"runtime_instance_id": runtime_instance_id},
-                )
-                assert r_vis1.status_code == 200
-                assert r_vis1.json()["has_foreground_viewers"] is False
-
-                # 6. Connect viewer with foreground=true
-                viewer_url = (
-                    f"http://127.0.0.1:{port}/viewer/{profile_id}?foreground=true"
-                )
-                async with session.ws_connect(viewer_url) as viewer_ws:
-                    # Visibility check now returns True
-                    r_vis2 = await client.get(
-                        f"/gateway/v1/internal/profiles/{profile_id}/visibility",
-                        params={"runtime_instance_id": runtime_instance_id},
+                # 3. Instance fence mismatch -> 409.
+                with pytest.raises(httpx.HTTPStatusError) as fenced:
+                    await control.has_foreground_viewers(
+                        profile_id, "wrong-instance-id"
                     )
-                    assert r_vis2.status_code == 200
-                    assert r_vis2.json()["has_foreground_viewers"] is True
+                assert fenced.value.response.status_code == 409
 
-                    # 7. Quota route: forwards v2 supervisor_quota envelope to Agent WS
-                    r_quota = await client.post(
-                        f"/gateway/v1/internal/profiles/{profile_id}/quota",
-                        json={
-                            "runtime_instance_id": runtime_instance_id,
-                            "max_fps_cap": 15.0,
-                        },
+                # 4. Visibility comes from the Agent heartbeat report.
+                heartbeat = build_heartbeat_envelope(
+                    agent_config,
+                    agent_session_id,
+                    AgentHeartbeatPayload(
+                        runtime_state="ready",
+                        viewer_count=1,
+                        unpaused_video_consumers=1,
+                        capture_running=True,
+                    ),
+                    iso_now(),
+                )
+                await agent_ws.send_str(heartbeat.model_dump_json())
+                for _ in range(50):
+                    try:
+                        visible = await control.has_foreground_viewers(
+                            profile_id, runtime_instance_id
+                        )
+                        break
+                    except httpx.HTTPStatusError:
+                        await asyncio.sleep(0.05)
+                else:
+                    pytest.fail("Agent heartbeat was not observable through Gateway")
+                assert visible is True
+
+                # 5. Real viewer signaling: connect, tunnel both directions.
+                viewer_url = f"{ws_base}/stream/{profile_id}/signal"
+                async with session.ws_connect(
+                    viewer_url, headers=viewer_headers
+                ) as viewer_ws:
+                    opened = await agent_ws.receive_json()
+                    assert opened["type"] == "open"
+                    assert opened["profile_id"] == profile_id
+                    assert opened["runtime_instance_id"] == runtime_instance_id
+                    conn_id = opened["conn_id"]
+
+                    await viewer_ws.send_str("client-frame")
+                    forwarded = await agent_ws.receive_json()
+                    assert forwarded["type"] == "msg"
+                    assert forwarded["conn_id"] == conn_id
+                    assert forwarded["data"] == "client-frame"
+
+                    await agent_ws.send_str(
+                        json.dumps(
+                            {
+                                "version": "v2",
+                                "type": "msg",
+                                "profile_id": profile_id,
+                                "runtime_instance_id": runtime_instance_id,
+                                "agent_session_id": agent_session_id,
+                                "conn_id": conn_id,
+                                "data": "agent-frame",
+                            }
+                        )
                     )
-                    assert r_quota.status_code == 200
+                    reply = await viewer_ws.receive()
+                    assert reply.type is WSMsgType.TEXT
+                    assert reply.data == "agent-frame"
+
+                    # 6. Quota route forwards a v2 supervisor_quota envelope.
+                    await control.set_quota(profile_id, runtime_instance_id, 15.0)
                     quota_msg = await agent_ws.receive_json()
                     assert quota_msg["action"] == "supervisor_quota"
                     assert quota_msg["profile_id"] == profile_id
@@ -517,19 +552,17 @@ async def test_supervisor_gateway_fixture_contract(tmp_path: Path):
                     assert quota_msg["agent_session_id"] == agent_session_id
                     assert quota_msg["payload"]["max_fps_cap"] == 15.0
 
-                    # 8. Disconnect route: closes viewer WS, leaves agent WS open
-                    r_disc = await client.post(
-                        f"/gateway/v1/internal/profiles/{profile_id}/disconnect",
-                        json={"runtime_instance_id": runtime_instance_id},
+                    # 7. Disconnect closes the viewer, not the Agent session.
+                    await control.disconnect_viewers(
+                        profile_id, runtime_instance_id
                     )
-                    assert r_disc.status_code == 200
-
-                    # Viewer receives close frame
                     viewer_close = await viewer_ws.receive()
-                    assert viewer_close.type.name in ("CLOSE", "CLOSED")
+                    assert viewer_close.type == WSMsgType.CLOSE
+                    close_env = await agent_ws.receive_json()
+                    assert close_env["type"] == "close"
+                    assert close_env["conn_id"] == conn_id
 
-                # Agent WS is still open and alive
                 assert not agent_ws.closed
     finally:
-        await client.aclose()
-        await fixture.stop()
+        await control.close()
+        await gateway.stop()

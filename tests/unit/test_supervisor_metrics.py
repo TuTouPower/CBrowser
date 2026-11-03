@@ -11,7 +11,19 @@ def test_stage_metrics_counts_and_reports() -> None:
 
     assert not metrics.should_report(now=0.0)
     snapshot = metrics.snapshot(now=100.0)
-    assert snapshot["scan"]["count"] == 2
-    assert snapshot["scan"]["total_ms"] == 600.0
-    assert snapshot["scan"]["max_ms"] == 400.0
-    assert snapshot["events"]["count"] == 1
+    assert snapshot["scan"]["cumulative_count"] == 2
+    assert snapshot["scan"]["cumulative_total_ms"] == 600.0
+    assert snapshot["scan"]["cumulative_max_ms"] == 400.0
+    assert snapshot["scan"]["interval_count"] == 2
+    assert snapshot["scan"]["interval_total_ms"] == 600.0
+    assert snapshot["scan"]["interval_max_ms"] == 400.0
+    assert snapshot["events"]["cumulative_count"] == 1
+
+    metrics.record("scan", 0.1)
+    next_snapshot = metrics.snapshot(now=200.0)
+    assert next_snapshot["scan"]["cumulative_count"] == 3
+    assert next_snapshot["scan"]["cumulative_total_ms"] == 700.0
+    assert next_snapshot["scan"]["interval_count"] == 1
+    assert next_snapshot["scan"]["interval_total_ms"] == 100.0
+    assert next_snapshot["scan"]["interval_max_ms"] == 100.0
+    assert next_snapshot["events"]["interval_count"] == 0

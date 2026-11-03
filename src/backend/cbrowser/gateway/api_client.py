@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from cbrowser.secret_files import read_secret_file
 from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.gateway.api_client")
@@ -17,9 +18,12 @@ class GatewayApiClient:
     """Invokes CBrowser internal API endpoints for authorization and runtime state."""
 
     def __init__(self, base_url: str, token_file: Path | str) -> None:
-        token = Path(token_file).read_text(encoding="utf-8").strip()
-        if len(token.encode("utf-8")) < 32:
-            raise ValueError("API token must contain at least 32 bytes")
+        try:
+            token = read_secret_file(
+                Path(token_file), label="Gateway API token", minimum_bytes=32
+            ).strip()
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from None
         self._token = SecretStr(token)
         self._base_url = base_url.rstrip("/")
         # trust_env=False to avoid SOCKS proxy issues in test environments

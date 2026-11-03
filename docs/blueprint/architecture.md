@@ -1,3 +1,5 @@
+> 与代码冲突时以代码与生效 spec 为准，并须同步修正本文。
+
 # 架构
 
 CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.1.0 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。
@@ -10,11 +12,11 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 
 - **新增 v2 持久化基础（t002）**：`src/backend/cbrowser/api/main.py` 提供独立 `/api/v1` 入口，落实 Profile 配置/标签/不可变版本、运行意愿与观测状态、实例事件去重、SQLite WAL 与空库 Alembic 初始化。旧正式入口尚未切换；Docker 编排、认证、媒体与前端由后续 task 实施。该入口不得直接用于生产公开服务，正式鉴权与交付分别由 t006/t012 验收。
 
-- **冻结的 v2 目标架构（Frozen v2 Target Architecture）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、coturn、CDP UDS 等 9 大专题技术验证（s001–s009，d001–d014）后正式冻结的目标技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**后续任务（t002+）分步落地实施的目标契约**，**不代表上述完整拓扑已交付；当前已实现部分以本节任务状态为准**。
+- **冻结的 v2 目标架构（Frozen v2 Target Architecture）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、CDP UDS 等专题技术验证（s001–s009，d001–d014）后正式冻结的目标技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**后续任务（t002+）分步落地实施的目标契约**，**不代表上述完整拓扑已交付；当前已实现部分以本节任务状态为准**。
 
-- **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway 与 TURN 凭证轮换（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
+- **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。t015（ADR 013）已删除 coturn、TURN 凭证轮换与 ICE 代次接管，媒体改为同机直连；文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
 
-- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.5）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件在 t011 移除。
+- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.4）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件在 t011 移除。
 
 Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
 
@@ -27,7 +29,6 @@ Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](str
 |**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；v2 架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
 |**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.1.0` (`6ee68a7a815956e6745e916741f13335e0b3ff53`)|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003），同 PC 凭证轮换依赖显式私有接口适配器（d010, d012），该机制属于固定 SDK 版本下的内部维护约束，非官方原生 public API 承诺|
-|**NAT 中继穿透**|coturn|[coturn/coturn](https://github.com/coturn/coturn)|`4.6-alpine`|STUN / TURN 协议实现，通过 REST HMAC-SHA1 短期凭证保障非对称 NAT 与跨网段 WebRTC 媒体中继|
 |**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由（`/api/*`、`/stream/*`）反向代理入口|
 |**模板与工作流**|repo_template|本地 `../repo_template`|当前工作流基线|消费仓规范：task 状态机驱动、轻量契约门禁、specs/blueprint 规范|
 |**文档格式化**|md_kx|[TuTouPower/md_kx](https://github.com/TuTouPower/md_kx)|PyPI `md-kx`|Markdown 文档自动化规范与一致性门禁检查|
@@ -76,10 +77,8 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
       │           ├── Stream Agent（动态注册至 Gateway，执行 8/30 FPS 捕获仲裁）
       │           └── 独占 UDP mux 媒体端口（30000–30991/UDP）
       │                 │
-      │                 └────── WebRTC DTLS-SRTP 媒体流 ──────┐
-      │                                                       │
-      ▼                                                       ▼
-   coturn（STUN / TURN 中继，端口 3478 / 5349，媒体范围 50000–50999）
+      │                 └── WebRTC DTLS-SRTP 媒体流 ──► 宿主 127.0.0.1
+      │                       （同机直连，无 TURN/coturn）
 ```
 
 ## 4. 核心模块与职责划分
@@ -90,7 +89,6 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
 |**Runtime Supervisor**|`cbrowser-supervisor` 容器（常驻）|**宿主机唯一持有 Docker Socket 的服务**。仅响应内部受限认证 RPC，负责 Profile 双容器生命周期、网络与 UDP 端口分配；通过受控 UDS 代理 CDP 与事件回传。**严格禁止读写或挂载 SQLite**|
 |**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
-|**coturn**|`coturn` 容器（常驻）|提供 STUN/TURN 中继，采用 REST HMAC-SHA1 短期凭证，保障隔离网络环境下的 WebRTC 媒体连通|
 |**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`|
 |**Stream Runtime**|`stream-runtime-{id}` 容器（动态）|特定 Profile 的远程显示沙箱。加入对应 Browser Runtime 的专属 IPC 命名空间，通过 XShm 共享内存捕获画面；负责音频/视频编码与 WebRTC 传输；分配独立 UDP mux 端口。**严格禁止挂载浏览器用户数据目录**|
 |**Browser Agent**|Browser 容器内守护进程|通过专属挂载目录的 `agent.sock`（UDS）暴露受控 RPC：监听 CDP 下载事件、代理授权 CDP 流、上报正常退出事件并自动恢复默认下载策略|
@@ -138,13 +136,13 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
     - API 离线或 Supervisor 重启时，已落盘事件在恢复后由 API 消费并收敛为 `desired_state=stopped`；多轮 reconcile 不会误重新拉起已正常关闭的浏览器（d006）。
     - 浏览器容器的 Docker restart policy 固定为 `no`，所有自愈与重启均由 Supervisor 统一决策。
 
-### 5.5 运行意愿协调（Runtime Coordinator）
+### 5.4 运行意愿协调（Runtime Coordinator）
 
 - 用户只经 `/api/v1` 修改运行意愿（`PATCH /api/v1/profiles/{id}/runtime/desired-state` 或 stop）。API 先持久化意愿，再由进程内 Runtime Coordinator 经内部认证 RPC 请求 Supervisor 启动/停止该 Profile 的 Browser/Stream；前端与测试都不直调 Supervisor。
 - Supervisor 不可达或 RPC 失败时意愿保留，错误写入 `last_coordinator_error` 并经 API 响应与 SSE `runtime_state` 事件显式报告；Coordinator 按指数退避重试直至收敛，成功即清空错误；API 启动时对意愿与观测不一致的 Profile 同样发起收敛。
 - Coordinator 需显式配置 `CBROWSER_SUPERVISOR_URL` 与 `CBROWSER_SUPERVISOR_TOKEN_FILE`。缺失时 API 仍可启动但 Coordinator 显式禁用：启动警告一次，且每次意愿变更以 `last_coordinator_error="Supervisor is not configured"` 报告。设置 `CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置使 API 启动失败；生产部署（t012）必须启用该模式。
 
-### 5.4 协议兼容与 API 演进
+### 5.5 协议兼容与 API 演进
 
 - 内部 UI API 统一规划在 `/api/v1/*`；
 - 旧的内部 Profile CRUD 路由在 v2 发布时作为破坏性变更移除；
@@ -161,8 +159,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |Supervisor|Docker Engine|Docker Engine API (`/var/run/docker.sock`)|**宿主机唯一持有 Docker Socket 的服务**；强制校验与规范化挂载路径|
 |Supervisor|Browser Agent|Unix Domain Socket (`agent.sock`)|健康检查、CDP 授权代理、下载事件与退出事件接收|
 |Stream Agent|Stream Gateway|长连接注册与信令隧道|动态注册运行时状态，双向透传 SDP/ICE 消息|
-|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`；当前仅发布至宿主回环 `127.0.0.1`，跨机/公网直连需在 t012 调整绑定与网络策略）；中继经 coturn|
-|Stream Runtime|coturn|STUN / TURN 协议|UDP/TCP 3478、TLS/TCP 5349、媒体 50000–50999；REST HMAC-SHA1 短期凭证|
+|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`，仅发布至宿主回环 `127.0.0.1`）；无 TURN 中继（ADR 013）|
 |Browser Runtime A|Browser Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
 |Stream Runtime A|Stream Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
 |运行容器|Docker Socket|**禁止**|所有运行容器严禁挂载 `/var/run/docker.sock`|
@@ -190,5 +187,5 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 **约束说明**：
 
 - 被豁免项在所有测试报告与需求矩阵中均单列记录，绝不标记为 `PASS`，亦不以此宣称具备公网可达性或 Linux x86_64 原生兼容性；
-- 豁免不代表删除对应功能实现：公网/TURN 基础配置、多架构 Dockerfile 与跨平台构建定义均完整保留，仅在当前阶段免去不可行环境上的实机阻断性验证；
+- 豁免不代表删除对应功能实现：多架构 Dockerfile 与跨平台构建定义保留；TURN/coturn 机制已按 ADR 013 删除，仅在当前阶段免去不可行环境上的实机阻断性验证；
 - 阶段验收与后续任务：第 19 章规定的 10 活跃流并发边界、8 小时高压稳定性测试、1000 次长周期输入法/剪贴板压力测试，均属于后续正式阶段（t009+）的验收范围；当前本地技术验证不代表长期 P95 延迟（\<100ms）或高并发无衰退承诺。

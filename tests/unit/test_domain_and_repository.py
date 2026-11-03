@@ -11,7 +11,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 from cbrowser.adapters.database.models import (
     Base,
     ProfileConfigVersionModel,
@@ -22,24 +21,11 @@ from cbrowser.adapters.database.repository import (
     InvalidConfigVersionError,
     ProfileRepository,
 )
+from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.domain.models import Profile, ProfileConfig, Tag
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-
-
-@pytest.fixture
-def temp_db_path(tmp_path: Path) -> Path:
-    return tmp_path / "test_v2.db"
-
-
-@pytest_asyncio.fixture
-async def db_context(temp_db_path: Path):
-    engine, session_maker = create_engine_and_maker(temp_db_path)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine, session_maker
-    await engine.dispose()
 
 
 @pytest.mark.asyncio
@@ -96,7 +82,7 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
         clipboard_sync=True,
         auto_launch=False,
         color_scheme="dark",
-        launch_args=["--flag-one", "--flag-two"],
+        launch_args=["--no-first-run", "--lang=en-US"],
         extension_paths=["/path/ext1"],
         allow_3p_cookies=False,
         set_google_default=True,
@@ -106,8 +92,6 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
         portable_cookies=False,
         notes="Important profile notes",
         sort_order=5,
-        runtime_mode="docker",
-        viewer_mode="webrtc",
     )
     tags = [Tag(tag="finance", color="#112233"), Tag(tag="secure", color=None)]
 
@@ -117,8 +101,6 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
     assert profile.config.name == "Test Profile Legacy"
     assert profile.config.fingerprint_seed == 123456
     assert profile.config.proxy == "socks5://user:pass@127.0.0.1:1080"
-    assert profile.config.runtime_mode == "docker"
-    assert profile.config.viewer_mode == "webrtc"
     assert profile.user_data_dir == f"/data/profiles/{profile.id}/profile"
     assert len(profile.tags) == 2
     assert profile.current_config_version == 1
@@ -540,3 +522,26 @@ def test_exported_openapi_schema_matches_live_app():
     )
     exported_schema = json.loads(openapi_file.read_text(encoding="utf-8"))
     assert live_schema == exported_schema
+
+
+def test_models_match_migrations(temp_db_path: Path):
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    run_database_migrations(temp_db_path)
+    engine, _ = create_engine_and_maker(temp_db_path)
+
+    def _diff(connection):
+        context = MigrationContext.configure(connection)
+        return compare_metadata(context, Base.metadata)
+
+    import asyncio
+
+    async def run():
+        try:
+            async with engine.connect() as connection:
+                return await connection.run_sync(_diff)
+        finally:
+            await engine.dispose()
+
+    assert asyncio.run(run()) == []

@@ -17,6 +17,7 @@ import docker
 import httpx
 import uvicorn
 from cbrowser.gateway.endpoint import gateway_port_from_env
+from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
@@ -61,8 +62,6 @@ async def run_supervisor(
     gateway_control_url: str | None = None,
     gateway_token_file: Path | None = None,
     gateway_container_id: str | None = None,
-    coturn_container_id: str | None = None,
-    webrtc_mode: str = "public",
     gateway_port: int | None = None,
     runtime_uid: int = 1000,
     runtime_gid: int = 1000,
@@ -82,8 +81,13 @@ async def run_supervisor(
 
     headers = {}
     if token_file and token_file.is_file():
-        t = token_file.read_text(encoding="utf-8").strip()
-        headers["Authorization"] = f"Bearer {t}"
+        try:
+            token = read_secret_file(
+                token_file, label="Supervisor API token", minimum_bytes=32
+            )
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from None
+        headers["Authorization"] = f"Bearer {token}"
 
     api_client = httpx.AsyncClient(
         base_url=api_url, headers=headers, timeout=10.0, trust_env=False
@@ -101,7 +105,10 @@ async def run_supervisor(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
     )
-    port_allocator = PortAllocator()
+    port_allocator = PortAllocator(
+        min_port=int(os.environ.get("CBROWSER_UDP_MUX_MIN_PORT", PortAllocator.MIN_PORT)),
+        max_port=int(os.environ.get("CBROWSER_UDP_MUX_MAX_PORT", PortAllocator.MAX_PORT)),
+    )
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -119,8 +126,6 @@ async def run_supervisor(
         agent_key_file=agent_key_file,
         gateway_control=GatewayControlClient(gateway_control_url, gateway_token_file),
         gateway_container_id=gateway_container_id,
-        coturn_container_id=coturn_container_id,
-        webrtc_mode=webrtc_mode,
         gateway_port=gateway_port,
     )
 
@@ -154,7 +159,13 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     recovery = RecoveryCoordinator(core)
 
     logger.info("Supervisor initialized. Starting existing container reconciliation...")
-    await core.scan_and_reconcile_existing()
+    try:
+        await core.scan_and_reconcile_existing()
+    except Exception as exc:  # noqa: BLE001 - control plane starts and retries reconciliation in background
+        logger.warning(
+            "Initial reconciliation failed; control plane will retry: error_type=%s",
+            type(exc).__name__,
+        )
     await event_forwarder.replay_spooled_events()
     await core.consume_disk_events()
     await download_forwarder.forward_pending()
@@ -377,15 +388,7 @@ def main():
         "--gateway-container-id", default=os.getenv("CBROWSER_GATEWAY_CONTAINER_ID")
     )
     parser.add_argument(
-        "--coturn-container-id", default=os.getenv("CBROWSER_COTURN_CONTAINER_ID")
-    )
-    parser.add_argument(
         "--prefix", default=os.getenv("CBROWSER_PREFIX", "cbrowser-t005")
-    )
-    parser.add_argument(
-        "--webrtc-mode",
-        default=os.getenv("CBROWSER_WEBRTC_MODE", "public"),
-        choices=["local", "lan", "public", "relay-only"],
     )
     parser.add_argument(
         "--runtime-uid",
@@ -432,8 +435,6 @@ def main():
                 if args.gateway_token_file
                 else None,
                 gateway_container_id=args.gateway_container_id,
-                coturn_container_id=args.coturn_container_id,
-                webrtc_mode=args.webrtc_mode,
                 gateway_port=args.gateway_port,
                 runtime_uid=args.runtime_uid,
                 runtime_gid=args.runtime_gid,

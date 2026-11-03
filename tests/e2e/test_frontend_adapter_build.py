@@ -9,15 +9,13 @@ only downloads/verifies official assets and injects the classic script tag.
 from __future__ import annotations
 
 import re
-import sys
+import tempfile
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from scripts import vendor_selkies_web as vendor_module  # noqa: E402
 from scripts.vendor_selkies_web import vendor_selkies_web  # noqa: E402
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 ADAPTER_TS = (
     REPO_ROOT
@@ -51,22 +49,21 @@ def test_production_adapter_artifact_is_built_from_typescript_adapter() -> None:
     )
 
     built = DIST_ADAPTER_JS.read_text(encoding="utf-8")
-    assert "__cbrowserAdapterSource" in built
-    assert "features/browser-session/adapter.ts" in built
+    assert "__getWebRTCStats" in built
+    assert "__SELKIES_STREAMING_MODE__" in built
 
     # The injected tag is a classic script that must execute before the official
     # module bundle; a module build would not run in the required order.
     assert not re.search(r"^\s*(import|export)\s", built, re.MULTILINE), (
         "adapter build must be a classic IIFE script"
     )
-    assert "__cbrowserShimInstalled" in built
 
 
 def test_vendor_script_injects_built_adapter_without_embedding_it(
     tmp_path: Path,
 ) -> None:
     dest_dir = tmp_path / "selkies"
-    cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
+    cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
         REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
@@ -96,7 +93,7 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
 
 def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
     dest_dir = tmp_path / "selkies"
-    cache_dir = REPO_ROOT / ".scratch" / "selkies_wheels"
+    cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
         REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
     )
@@ -124,7 +121,7 @@ def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
 
     vendor_selkies_web(
         dest_dir=dest_dir,
-        cache_dir=REPO_ROOT / ".scratch" / "selkies_wheels",
+        cache_dir=Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp")),
         manifest_path=REPO_ROOT
         / "config"
         / "selkies"

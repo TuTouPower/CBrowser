@@ -53,3 +53,11 @@ debug
 .plans
 src/backend/version.txt
 
+
+*.tsbuildinfo
+
+# Archived spike runtime secrets/workdirs
+docs/archive/spikes/**/probe_work/
+docs/archive/spikes/**/*secret*.txt
+docs/archive/spikes/**/*token*.txt
+docs/archive/spikes/**/*.secret

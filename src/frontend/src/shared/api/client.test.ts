@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { ApiClient, ApiError } from "./client";
@@ -140,5 +140,138 @@ describe("ApiClient", () => {
     };
 
     await expect(client.profiles.create({ name: "" })).rejects.toThrow("Invalid profile name");
+  });
+});
+
+describe("ApiClient hardening", () => {
+  it("rejects cross-origin absolute URLs before sending credentials", async () => {
+    const client = new ApiClient();
+    await expect(client.request("https://evil.example/api")).rejects.toMatchObject({
+      status: 0,
+    });
+  });
+
+  it("maps timeout to a retryable ApiError", async () => {
+    const server = http.createServer((_req, res) => {
+      setTimeout(() => res.end("{}"), 200);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address() as import("node:net").AddressInfo;
+    const client = new ApiClient({
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      defaultTimeoutMs: 10,
+    });
+    try {
+      await expect(client.request("/slow")).rejects.toMatchObject({
+        errorCode: "timeout",
+        retryable: true,
+      });
+    } finally {
+      server.close();
+    }
+  });
+
+  it("carries error code, retryable flag and detail", async () => {
+    document.cookie = "";
+    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: "validation_error",
+          retryable: false,
+          detail: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
+        }),
+        { status: 422, headers: { "content-type": "application/json" } },
+      ),
+    );
+    try {
+      await expect(client.profiles.list()).rejects.toMatchObject({
+        errorCode: "validation_error",
+        retryable: false,
+        status: 422,
+        detail: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("does not treat a 503 without retryable payload as retryable", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "database_busy" }), {
+        status: 503,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    try {
+      await expect(client.profiles.list()).rejects.toMatchObject({
+        retryable: false,
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  it("exposes separate upload and long-operation timeout policies", () => {
+    const client = new ApiClient({
+      defaultTimeoutMs: 11,
+      uploadTimeoutMs: 22,
+      longOperationTimeoutMs: 33,
+    });
+    expect([
+      client.defaultTimeoutMs,
+      client.uploadTimeoutMs,
+      client.longOperationTimeoutMs,
+    ]).toEqual([11, 22, 33]);
+  });
+
+  it("does not call fetch for protocol-relative cross-origin URLs", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const client = new ApiClient();
+    await expect(client.request("//evil.example/api")).rejects.toMatchObject({
+      status: 0,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("ApiClient idempotency", () => {
+  it("uses the caller-supplied action key for retries", async () => {
+    const keys: string[] = [];
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      keys.push(new Headers(init?.headers).get("Idempotency-Key") || "");
+      return new Response(JSON.stringify({ id: "p1" }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    try {
+      await client.profiles.create({ name: "same" }, "action-key-1");
+      await client.profiles.create({ name: "same" }, "action-key-1");
+      expect(keys).toEqual(["action-key-1", "action-key-1"]);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe("timeout policy wiring", () => {
+  it("uses upload and long-operation timeouts", async () => {
+    const client = new ApiClient({
+      baseUrl: "http://127.0.0.1:1",
+      uploadTimeoutMs: 22,
+      longOperationTimeoutMs: 33,
+    });
+    const requestSpy = vi
+      .spyOn(client, "request")
+      .mockResolvedValue({} as never);
+    const file = new File(["x"], "x.txt", { type: "text/plain" });
+    await client.artifacts.upload("p1", file, "key");
+    await client.profiles.stop("p1", "key");
+    expect(requestSpy.mock.calls[0][2]).toBe(22);
+    expect(requestSpy.mock.calls[1][2]).toBe(33);
   });
 });

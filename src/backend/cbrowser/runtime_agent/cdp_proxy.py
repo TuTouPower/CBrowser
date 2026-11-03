@@ -48,6 +48,7 @@ class CdpProxyManager:
             event_storage
         )
         self.rearm_count = 0
+        self._last_rearm_ok = False
         self.shutting_down = False
         self._event_listener_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
@@ -61,6 +62,7 @@ class CdpProxyManager:
             and self.agent_ws.state is State.OPEN
             and self._event_listener_task is not None
             and not self._event_listener_task.done()
+            and self._last_rearm_ok
         )
 
     async def start(self) -> None:
@@ -74,6 +76,7 @@ class CdpProxyManager:
         )
         self._event_listener_task = asyncio.create_task(self._listen_events())
         await self.rearm_download_capture()
+        self._last_rearm_ok = True
         logger.info("CDP proxy manager connected and armed default download capture")
 
     async def send_command(
@@ -133,34 +136,93 @@ class CdpProxyManager:
             return {"error": "close_unconfirmed"}
 
     async def _listen_events(self) -> None:
-        """Background loop reading CDP messages and tracking download events."""
-        try:
-            async for raw_msg in self.agent_ws:
-                msg = json.loads(raw_msg)
-                msg_id = msg.get("id")
-                if msg_id in self.pending_cmd_futures:
-                    fut = self.pending_cmd_futures.pop(msg_id)
-                    if not fut.done():
-                        fut.set_result(msg)
+        """Read CDP messages, isolating bad frames and reconnecting with backoff."""
+        delay = 1.0
+        while not self.shutting_down:
+            try:
+                async for raw_msg in self.agent_ws:
+                    try:
+                        msg = json.loads(raw_msg)
+                        msg_id = msg.get("id")
+                        if msg_id in self.pending_cmd_futures:
+                            fut = self.pending_cmd_futures.pop(msg_id)
+                            if not fut.done():
+                                fut.set_result(msg)
 
-                method = msg.get("method", "")
-                if method == "Browser.downloadWillBegin":
-                    self._handle_download_will_begin(msg.get("params", {}))
-                elif method == "Browser.downloadProgress":
-                    await self._handle_download_progress(msg.get("params", {}))
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:  # noqa: BLE001 - background CDP listener error isolated from manager lifecycle
-            if not self.shutting_down:
-                logger.error("CDP event listener error (%s)", type(e).__name__)
-        finally:
-            for future in self.pending_cmd_futures.values():
-                if not future.done():
-                    if self.shutting_down:
-                        future.cancel()
-                    else:
-                        future.set_exception(RuntimeError("CDP event channel closed"))
-            self.pending_cmd_futures.clear()
+                        method = msg.get("method", "")
+                        if method == "Browser.downloadWillBegin":
+                            self._handle_download_will_begin(msg.get("params", {}))
+                        elif method == "Browser.downloadProgress":
+                            await self._handle_download_progress(msg.get("params", {}))
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - one malformed frame must not stop the event stream
+                        logger.warning(
+                            "Ignored malformed CDP event frame (%s)",
+                            type(exc).__name__,
+                        )
+                        continue
+                if self.shutting_down:
+                    break
+                self._last_rearm_ok = False
+                logger.warning("CDP event channel closed; reconnecting")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - connection failure handled by reconnect loop
+                if self.shutting_down:
+                    break
+                self._last_rearm_ok = False
+                logger.error("CDP event listener error (%s)", type(exc).__name__)
+            finally:
+                for future in self.pending_cmd_futures.values():
+                    if not future.done():
+                        if self.shutting_down:
+                            future.cancel()
+                        else:
+                            future.set_exception(
+                                RuntimeError("CDP event channel closed")
+                            )
+                self.pending_cmd_futures.clear()
+
+            if self.shutting_down:
+                break
+            await asyncio.sleep(delay)
+            delay = min(delay * 2.0, 30.0)
+            try:
+                self.agent_ws = await websockets.connect(
+                    self.browser_ws_url,
+                    max_size=32 * 1024 * 1024,
+                    ping_interval=10,
+                    ping_timeout=10,
+                )
+                # This coroutine is the only reader of CDP responses; sending
+                # the rearm without awaiting its ACK avoids self-deadlock. The
+                # next listener iterations consume the response.
+                self._next_cmd_id += 1
+                await self.agent_ws.send(
+                    json.dumps(
+                        {
+                            "id": self._next_cmd_id,
+                            "method": "Browser.setDownloadBehavior",
+                            "params": {
+                                "behavior": "allowAndName",
+                                "downloadPath": self.default_download_dir,
+                                "eventsEnabled": True,
+                            },
+                        }
+                    )
+                )
+                self.rearm_count += 1
+                self._last_rearm_ok = True
+                delay = 1.0
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - reconnect failure retried by backoff
+                logger.error(
+                    "CDP reconnect failed (%s); retrying in %.1fs",
+                    type(exc).__name__,
+                    delay,
+                )
 
     def _handle_download_will_begin(self, params: dict[str, Any]) -> None:
         guid = params.get("guid", "")
@@ -261,11 +323,15 @@ class CdpProxyManager:
         self.shutting_down = True
         if self._event_listener_task:
             self._event_listener_task.cancel()
-            await self._event_listener_task
+            try:
+                await self._event_listener_task
+            except asyncio.CancelledError:
+                pass
         if self.agent_ws:
             await self.agent_ws.close()
         for fut in self.pending_cmd_futures.values():
             if not fut.done():
                 fut.cancel()
         self.pending_cmd_futures.clear()
+        self._last_rearm_ok = False
         logger.info("CDP proxy manager closed")

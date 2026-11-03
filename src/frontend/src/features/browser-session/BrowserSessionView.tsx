@@ -13,7 +13,7 @@ export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
   diagnostics: overrideDiagnostics,
   errorMessage: overrideError,
   onCheckRuntimeStatus,
-  runtimeStatusUrl,
+  apiClient,
 }) => {
   const { t } = useI18n();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -31,12 +31,13 @@ export const BrowserSessionView: React.FC<BrowserSessionViewProps> = ({
       initialStage,
       errorMessage: overrideError,
       diagnostics: overrideDiagnostics,
-      runtimeStatusUrl,
+          apiClient,
     });
 
   const isErrorStage = [
     "runtime_not_ready",
     "signaling_failed",
+    "web_locks_unavailable",
     "ice_failed",
     "media_no_frames",
     "error",

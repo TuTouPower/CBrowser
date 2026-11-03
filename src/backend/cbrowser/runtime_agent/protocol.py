@@ -58,6 +58,7 @@ class ControlResponse(BaseModel):
 class RuntimeEventRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    version: int = 1
     event_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
     profile_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
     runtime_instance_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
@@ -72,6 +73,7 @@ class RuntimeEventRecord(BaseModel):
 class DownloadEventRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    version: int = 1
     event_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
     profile_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")
     runtime_instance_id: str = Field(pattern=r"^[a-zA-Z0-9_\-\.:]{1,128}$")

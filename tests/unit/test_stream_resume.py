@@ -97,8 +97,6 @@ def _config() -> StreamAgentConfig:
         runtime_instance_id="r1",
         gateway_url="ws://127.0.0.1:1/register",
         agent_token=SecretStr("agent-secret"),
-        turn_host="127.0.0.1",
-        turn_port=3478,
         controller_token=SecretStr("controller-token"),
     )
 
@@ -144,7 +142,7 @@ async def test_viewer_close_keeps_selkies_session_for_resume() -> None:
         await agent._detach_viewer("conn-1")
 
         assert "conn-1" not in agent.viewer_workers
-        assert ("tab-1", "resume-1") in agent._detached_upstreams
+        assert agent.has_detached_upstream("tab-1", "resume-1")
         assert upstream.sockets[0].closed is False
 
         gateway_two, _ = await _start_worker(agent, session, "conn-2", 2)
@@ -177,12 +175,12 @@ async def test_gateway_disconnect_detaches_and_stop_closes() -> None:
         await agent._cleanup_all_viewers(caller="gateway_disconnect")
 
         assert agent.viewer_workers == {}
-        assert ("tab-1", "resume-1") in agent._detached_upstreams
+        assert agent.has_detached_upstream("tab-1", "resume-1")
         assert upstream.sockets[0].closed is False
 
         await agent.stop()
 
-        assert agent._detached_upstreams == {}
+        assert agent.detached_upstream_count == 0
         assert upstream.sockets[0].closed is True
     finally:
         await session.close()
@@ -206,7 +204,7 @@ async def test_detached_session_expires_after_grace() -> None:
         await _wait_for(upstream.hello_seen.is_set)
 
         await agent._detach_viewer("conn-1")
-        assert ("tab-1", "resume-1") in agent._detached_upstreams
+        assert agent.has_detached_upstream("tab-1", "resume-1")
 
         await _wait_for(lambda: not agent._detached_upstreams, timeout=3.0)
         await _wait_for(lambda: upstream.closed_sockets, timeout=3.0)

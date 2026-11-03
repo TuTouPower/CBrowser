@@ -12,6 +12,7 @@ from cbrowser.adapters.database.models import (
     AdminModel,
     AuditEventModel,
     ProfileModel,
+    SessionModel,
 )
 from cbrowser.adapters.database.session import (
     create_engine_and_maker,
@@ -238,6 +239,43 @@ async def test_viewer_and_automation_authorize(auth_db):
     assert ok is False
     assert reason == "invalid_token"
 
+    from sqlalchemy import select
+
+    from cbrowser.adapters.database.models import AuditEventModel
+
+    async with session_maker() as session:
+        before_audit = len((await session.execute(select(AuditEventModel))).scalars().all())
+    await service.authorize_automation("not-a-token", prof_id, client_ip="198.51.100.7")
+    await service.authorize_automation("cbat_unknown", prof_id, client_ip="198.51.100.7")
+    async with session_maker() as session:
+        after_audit = len((await session.execute(select(AuditEventModel))).scalars().all())
+    assert after_audit == before_audit
+
+    expired_token, _ = await service.create_automation_token(
+        name="expired", profile_ids=[prof_id], expires_in_hours=-1
+    )
+    ok, reason = await service.authorize_automation(expired_token, prof_id)
+    assert ok is False
+    assert reason == "token_expired"
+
+    await service.create_session(expire_hours=0)
+    await service.create_session()
+    async with session_maker() as session:
+        remaining = (await session.execute(select(SessionModel))).scalars().all()
+    assert all(row.expires_at > row.created_at for row in remaining)
+    assert len(remaining) >= 1
+
+    # Repeated forged tokens from one source are throttled.
+    for _ in range(10):
+        await service.authorize_automation(
+            "cbat_forged", prof_id, client_ip="203.0.113.99"
+        )
+    ok, reason = await service.authorize_automation(
+        "cbat_forged", prof_id, client_ip="203.0.113.99"
+    )
+    assert ok is False
+    assert reason == "rate_limited"
+
     # Unauthorized profile
     ok, reason = await service.authorize_automation(raw_auto_token, "prof-unauthorized")
     assert ok is False
@@ -259,3 +297,15 @@ async def test_viewer_and_automation_authorize(auth_db):
         for audit in denied_audits:
             assert raw_auto_token not in audit.details
             assert auto_model.token_hash not in audit.details
+
+
+def test_missing_auth_service_returns_503():
+    from types import SimpleNamespace
+
+    from cbrowser.auth.dependencies import get_auth_service
+    from fastapi import HTTPException
+
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
+    with pytest.raises(HTTPException) as exc_info:
+        get_auth_service(request)
+    assert exc_info.value.status_code == 503

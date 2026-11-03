@@ -12,13 +12,14 @@ from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
+from wait import poll_until, wait_for_log
 
 
 @pytest.mark.asyncio
 async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
     tmp_path: Path,
 ) -> None:
-    harness = GatewayTopologyHarness(tmp_path, webrtc_mode="lan")
+    harness = GatewayTopologyHarness(tmp_path)
     evidence: dict = {}
     try:
         await harness.start()
@@ -125,7 +126,6 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
                     ("browser", browser_cname),
                     ("gateway", harness.gateway_container.name),
                     ("supervisor", harness.supervisor_container.name),
-                    ("coturn", harness.coturn_container.name),
                     ("caddy", harness.caddy_container.name),
                 ]:
                     try:
@@ -162,7 +162,8 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             statsA1 = await wait_for_decode(pageA, "Page A")
             statsB1 = await wait_for_decode(pageB, "Page B")
 
-            # Sample after 2 seconds to prove continuous frame growth
+            # Fixed 2 s sampling window: frame growth is measured across an
+            # interval, which cannot be replaced by polling for a settled value.
             await asyncio.sleep(2.0)
             statsA2 = await pageA.evaluate("window.__getWebRTCStats()")
             statsB2 = await pageB.evaluate("window.__getWebRTCStats()")
@@ -238,12 +239,17 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             await prepare_remote_input()
             await pageA.locator("#overlayInput").focus()
             await pageA.keyboard.press("Digit1")
-            for _ in range(25):
-                if await remote_value() == "1":
-                    break
-                await asyncio.sleep(0.1)
-
-            single_val = await remote_value()
+            single_val = None
+            try:
+                single_val = await poll_until(
+                    remote_value,
+                    lambda value: value == "1",
+                    timeout=2.5,
+                    interval=0.1,
+                    description="first-page remote input",
+                )
+            except TimeoutError:
+                single_val = await remote_value()
             if single_val != "1":
                 diag_rem = await evaluate_remote(
                     "({active: document.activeElement ? "
@@ -270,12 +276,17 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             await pageA.keyboard.press("Digit1")
             await pageB.locator("#overlayInput").focus()
             await pageB.keyboard.press("Digit2")
-            for _ in range(25):
-                if await remote_value() == "12":
-                    break
-                await asyncio.sleep(0.1)
-
-            concurrent_val = await remote_value()
+            concurrent_val = None
+            try:
+                concurrent_val = await poll_until(
+                    remote_value,
+                    lambda value: value == "12",
+                    timeout=2.5,
+                    interval=0.1,
+                    description="concurrent remote input from both pages",
+                )
+            except TimeoutError:
+                concurrent_val = await remote_value()
             if concurrent_val != "12":
                 diag_rem = await evaluate_remote(
                     "({active: document.activeElement ? "
@@ -305,6 +316,8 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             # 4. Close Page A, verify Page B frames continue growing
             await pageA.close()
             before_close_B = await pageB.evaluate("window.__getWebRTCStats()")
+            # Fixed 2 s sampling window: the assertion is that frames keep
+            # arriving across an interval, not that a state value settles.
             await asyncio.sleep(2.0)
             after_close_B = await pageB.evaluate("window.__getWebRTCStats()")
             post_close_delta = (
@@ -321,6 +334,14 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             # 5. Gateway SIGKILL -> verify browser PID/starttime unchanged
             client = docker.from_env()
             gw_box = harness.gateway_container
+            stream_box = harness.docker_client.containers.get(stream_cname)
+
+            async def read_stream_logs() -> str:
+                return await asyncio.to_thread(
+                    lambda: stream_box.logs().decode("utf-8")
+                )
+
+            stream_log_offset = len(await read_stream_logs())
             gw_box.kill(signal="KILL")
 
             # Check Browser container running & process identity intact
@@ -342,31 +363,38 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
                 "start_ticks": after_kill_remote["identity"]["start_ticks"],
             }
 
-            # Wait to let Stream Agent observe Gateway disconnect and enter backoff
-            await asyncio.sleep(4.0)
+            # Wait for Stream Agent to observe Gateway disconnect and enter backoff
+            await wait_for_log(
+                read_stream_logs,
+                "backoff",
+                timeout=10.0,
+                interval=0.2,
+                offset=stream_log_offset,
+                description="Stream Agent backoff after Gateway kill",
+            )
 
             # Restart Gateway container
             gw_box.restart()
-            await asyncio.sleep(2.0)
 
             # Wait for Stream Agent to re-register (appears at least twice in logs)
-            stream_box = harness.docker_client.containers.get(stream_cname)
-            deadline = asyncio.get_running_loop().time() + 30.0
-            reconnect_logs = ""
-            while asyncio.get_running_loop().time() < deadline:
-                stream_logs = stream_box.logs().decode("utf-8")
-                if stream_logs.count("StreamAgent registered with Gateway") >= 2:
-                    reconnect_logs = stream_logs
-                    break
-                await asyncio.sleep(0.5)
-
-            if not reconnect_logs:
+            try:
+                reconnect_logs = await poll_until(
+                    read_stream_logs,
+                    lambda logs: logs[stream_log_offset:].count(
+                        "StreamAgent registered with Gateway"
+                    ) >= 1,
+                    timeout=30.0,
+                    interval=0.5,
+                    description="Stream Agent re-registration with restarted Gateway",
+                )
+            except TimeoutError:
                 gw_logs_after = gw_box.logs(tail=40).decode("utf-8")
                 s_logs_after = stream_box.logs(tail=40).decode("utf-8")
                 raise AssertionError(
                     f"Stream Agent did not re-register with restarted Gateway.\n"
                     f"Gateway logs:\n{gw_logs_after}\nStream logs:\n{s_logs_after}"
-                )
+                ) from None
+            reconnect_logs = reconnect_logs[stream_log_offset:]
             # Extract reconnect / backoff lines as evidence
             backoff_lines = [
                 line
@@ -385,6 +413,8 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
             recovered_stats = await wait_for_decode(
                 pageB, "Page B Recovered", timeout=25.0
             )
+            # Fixed 1.5 s sampling window: decoded frames must grow across the
+            # interval after recovery.
             await asyncio.sleep(1.5)
             recovered_stats_2 = await pageB.evaluate("window.__getWebRTCStats()")
             rec_delta = (
