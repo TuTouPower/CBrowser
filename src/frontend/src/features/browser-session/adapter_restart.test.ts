@@ -165,7 +165,10 @@ describe("SelkiesClientAdapter production contract", () => {
     installSelkiesClientAdapter(win, "prof_456");
 
     expect(listeners.has("keydown")).toBe(true);
-    const keydownHandler = listeners.get("keydown")![0];
+    const keydownHandler = listeners.get("keydown")?.[0];
+    if (!keydownHandler) {
+      throw new Error("keydownHandler not found");
+    }
 
     const unfocusedEvent = {
       type: "keydown",
