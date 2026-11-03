@@ -1,4 +1,4 @@
-# p022 人机控制权模型与交接机制（需新 ADR）
+# p029 人机控制权模型与交接机制（需新 ADR）
 
 - 来源：借鉴 ego-lite 技术调研 / 用户提出
 - 原始登记内容：制定并落实 Profile 级人机控制权模型（撰写新 ADR），解决外部真人经 WebRTC/X11 操作与 Agent 经 CDP 操作同一 Profile 时的冲突问题：1. 定义 Profile 级 `control_owner: agent | user` 状态机与持久化，经 SSE 向前端广播；2. 处于 user 控制时，Supervisor CDP 隧道拦截 Mutating 指令并返回稳定错误码与 reason；3. 确立人类物理输入优先抢占机制，Agent 遭遇验证码/2FA 时主动触发 handOff；4. 前端在页头/侧栏展示交接状态（不违背 ADR 006 铺满无遮挡原则）。
@@ -43,7 +43,7 @@
 
 - 远程真人输入经 WebRTC/Stream 进入，触发检测应放在实际输入来源可辨识的位置；仅监听 X11 最终事件可能无法区分真人与 Agent XTEST。
 - 抢占可以先阻止后续自动化动作，不能假定已在 Chrome 执行的动作可回滚。
-- CAPTCHA/2FA handOff 属主动交接；权限弹窗 handOff 与 p025 联动。自动恢复 Agent 控制还是显式恢复尚待决定。
+- CAPTCHA/2FA handOff 属主动交接；权限弹窗 handOff 与 p032 联动。自动恢复 Agent 控制还是显式恢复尚待决定。
 - 多个外部 Agent 同时连接时，Profile 级二态未区分 Agent 身份；是否只允许一个协作 Agent、如何处理竞争，也需明确。
 
 ## 后续决策与验证条件（候选，未执行）
@@ -61,8 +61,8 @@
 
 ## 关联条目与 Ego 入口
 
-- p021：CDP/XTEST 的实际输入路径与限制。
-- p023：执行器对暂停、交接与稳定错误的消费。
-- p025：JS Dialog 不应默认切换人机控制权，权限提示按已定规则交接。
-- p026：内部页面来源与清理权限独立于 Profile 控制权。
+- p028：CDP/XTEST 的实际输入路径与限制。
+- p030：执行器对暂停、交接与稳定错误的消费。
+- p032：JS Dialog 不应默认切换人机控制权，权限提示按已定规则交接。
+- p033：内部页面来源与清理权限独立于 Profile 控制权。
 - Ego 参考版本 12407167f84a58af24044f072868051952131491；入口为 ego-lite/AGENTS.md、package/ego-browser/src/page-model.ts 中 handOff 及原生 binding 调用。本地源码不能证明闭源浏览器实现细节。

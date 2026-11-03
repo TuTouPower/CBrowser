@@ -1,4 +1,4 @@
-# p024 沉淀特定站点自动化经验库（Domain Learnings / Site-Skills）
+# p031 沉淀特定站点自动化经验库（Domain Learnings / Site-Skills）
 
 - 来源：借鉴 ego-lite 技术调研 / 用户提出
 - 原始登记内容：设计特定站点的知识库与抽取工具沉淀规范（Site-Skills / Domain Learnings），支持为常见站点（如 GitHub、Google、X 等）维护预置的抽取脚本与操作说明，使 Agent 能够自适应加载并复用已有经验，避免重复探索 DOM。
@@ -16,14 +16,14 @@
 
 本条保持 parked / 不办。原有用户暂搁决定仍有效；分析意见不构成恢复授权。
 
-站点经验复用有价值，但目前 p021–p023、p025、p026 涉及的驱动、定位器、页面生命周期与交接契约仍待研究或决策。过早沉淀脚本会把未稳定接口、临时 selector 和站点现状固化为维护负担。
+站点经验复用有价值，但目前 p028–p030、p032、p033 涉及的驱动、定位器、页面生命周期与交接契约仍待研究或决策。过早沉淀脚本会把未稳定接口、临时 selector 和站点现状固化为维护负担。
 
 Ego 已有 learnings 的发现、校验与执行代码，可作为结构参考；README 的产品宣传、倍率与“即将上线”描述不能直接证明当前能力、收益或适用于 CBrowser。
 
 ## 分析意见
 
 1. 经验包应承载可复用任务知识、站点语义与经验证入口，不替代核心执行器，也不能成为绕过控制权和页面保护的第二入口。
-2. 稳定 API 优先于经验数量。若 p023 的 locator/ref 生命周期变化，已有站点脚本可能全部重写。
+2. 稳定 API 优先于经验数量。若 p030 的 locator/ref 生命周期变化，已有站点脚本可能全部重写。
 3. 后续确需恢复时，先选择少量可重复任务，比较使用经验前后的步骤数、成功率与维护成本；不先设计庞大站点市场、自动学习框架或复杂调度。
 4. 经验可区分操作说明与可执行提取逻辑，但应按实际需求组织，不为分类预设多层抽象。
 5. 站点脚本不应保存 token、Cookie、私有页面正文、账号标识或仅对某次登录态成立的硬编码；知识与会话数据需要分开。
@@ -32,9 +32,9 @@ Ego 已有 learnings 的发现、校验与执行代码，可作为结构参考�
 
 ## 恢复前置条件（候选，未满足即继续暂搁）
 
-- p023 有稳定且可版本化的执行入口、定位语义与错误模型。
-- p025、p026 的基础可靠性与页面保护可验证。
-- p022 的控制权规则不会被站点工具绕过。
+- p030 有稳定且可版本化的执行入口、定位语义与错误模型。
+- p032、p033 的基础可靠性与页面保护可验证。
+- p029 的控制权规则不会被站点工具绕过。
 - 存在重复使用、确有维护价值的站点任务，而非只有预置知识库设想。
 - 用户明确要求恢复本条。
 
@@ -46,4 +46,4 @@ Ego 已有 learnings 的发现、校验与执行代码，可作为结构参考�
 
 - Ego 参考版本：12407167f84a58af24044f072868051952131491。
 - 源码入口：ego-lite/AGENTS.md、package/ego-browser/src/learning/、skills/ego-browser/learnings/、package/ego-browser/scripts/validate-site-skills.ts。
-- [p023 执行器](../todo/p023_code_as_action_cli_runner.md) 是接口基础；[p026 页面保护](../todo/p026_tab_ownership_and_lifecycle_protection.md) 与 [p025 弹窗处理](../todo/p025_dialog_and_permission_prompt_routing.md) 提供可靠性边界。
+- [p030 执行器](../todo/p030_code_as_action_cli_runner.md) 是接口基础；[p033 页面保护](../todo/p033_tab_ownership_and_lifecycle_protection.md) 与 [p032 弹窗处理](../todo/p032_dialog_and_permission_prompt_routing.md) 提供可靠性边界。

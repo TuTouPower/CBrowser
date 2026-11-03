@@ -1,4 +1,4 @@
-# p025 Dialog 与权限弹窗分流及管道挂起防御
+# p032 Dialog 与权限弹窗分流及管道挂起防御
 
 - 来源：借鉴 ego-lite 技术调研 / 用户提出
 - 原始登记内容：实现浏览器弹窗分流与生命周期可靠性防护：1. 弹窗分流规则：alert、confirm、prompt、beforeunload 等页面级 JS Dialog 路由给 Agent 自动响应处理；摄像头、麦克风、地理位置、USB 等系统级权限弹窗路由给人类处理；2. 建立 Chromium 命令管道挂起防御：针对原生 JS Dialog 弹出期间 Chromium 挂起渲染线程、导致后续所有页面命令（含 Page.enable）超时崩溃的问题，在 CDP 代理层与客户端设立即时监听拦截与超时熔断恢复策略。
@@ -27,7 +27,7 @@
 1. 页面 JS Dialog 由 Agent 处理，应理解为提供可编程应答能力，不是默认全部 accept。confirm、prompt 和 beforeunload 的肯定响应可能改变业务结果或放弃未保存内容。
 2. alert、confirm、prompt、beforeunload 应分别定义无 handler 时行为、超时、错误和返回值；默认策略待决策。
 3. 摄像头、麦克风、定位、USB 等权限提示或设备选择器交给真人是目标方向，但能否检测、是否有统一事件、哪些需要 XTEST/原生 UI 路径尚未验证。
-4. JS Dialog 不应自动触发 p022 的人机交接；权限提示交接则需明确进入 user、暂停动作和恢复条件。
+4. JS Dialog 不应自动触发 p029 的人机交接；权限提示交接则需明确进入 user、暂停动作和恢复条件。
 5. 文件选择器与权限提示不能混为一类；文件上传可有独立受控路径，仍需按具体契约判断。
 
 ### 命令挂起与跨调用恢复
@@ -57,7 +57,7 @@
 
 ## 关联与 Ego 入口
 
-- p021：先核对目标 Playwright/CDP 会话是否支持所需事件与并发应答。
-- p023：基础 Dialog 处理宜进入最小执行器；跨调用恢复单独验证。
-- p022：权限提示的人机交接；p026：按 target/page 关联弹窗和清理。
+- p028：先核对目标 Playwright/CDP 会话是否支持所需事件与并发应答。
+- p030：基础 Dialog 处理宜进入最小执行器；跨调用恢复单独验证。
+- p029：权限提示的人机交接；p033：按 target/page 关联弹窗和清理。
 - Ego 参考版本 12407167f84a58af24044f072868051952131491；入口为 ego-lite/docs/native-javascript-dialog-requirement.md、package/ego-browser/src/browser-runtime.ts 与 scripts/real-browser-e2e/cases/page-dialogs.mjs。文档涉及 0.5.0.12、0.5.2.2 的历史观察，不能混同为所有版本已修复或本项目现状。

@@ -1,4 +1,4 @@
-# d027 iframe 焦点锁定与宿主快捷键隔离机制
+# d028 iframe 焦点锁定与宿主快捷键隔离机制
 
 - 来源：日常
 - 结论：当用户点击进入会话 `iframe` 后，点击宿主页面的非表单 DOM 容器（如 `aside`、`div` 等无 `tabIndex` 元素）不会触发浏览器对 `iframe` 的自动 `blur`，导致键盘事件依然发往 `iframe` 内协议栈。必须在宿主容器由 `pointerdown`/`mousedown` 主动执行 `iframe.blur()` + `window.focus()`，并在 `adapter.ts` 捕获阶段按 `win.parent.document.activeElement !== win.frameElement` 校验焦点状态并执行 `stopImmediatePropagation()`，才能实现宿主与远程会话快捷键（如 `Cmd+Shift+R`）的彻底隔离。
