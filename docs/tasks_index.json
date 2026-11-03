@@ -4,9 +4,9 @@
     "workspace": ".",
     "tasks": [
         {
-            "tid": "t009",
-            "slug": "v2_full_acceptance",
-            "title": "完成正式拓扑安全与性能输入压力验收",
+            "tid": "t019",
+            "slug": "stream_ice_turn_connect_delay",
+            "title": "修复 Stream 默认 STUN/TURN 导致的会话建立 5 秒延迟",
             "status": "backlog",
             "branch": "",
             "worktree": "",
@@ -14,42 +14,10 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t012",
+            "depends_on": "",
             "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t009_v2_full_acceptance"
-        },
-        {
-            "tid": "t010",
-            "slug": "v2_data_migration",
-            "title": "数据迁移、legacy 下线与正式切换",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t009",
-            "conflicts_with": "",
-            "note": "2026-11-02 合并 t011 与原 t012 AC-004（adoption review_20261102_201727）",
-            "dir": "docs/tasks/t010_v2_data_migration"
-        },
-        {
-            "tid": "t012",
-            "slug": "v2_docker_release",
-            "title": "v2 正式部署产物与部署文档",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t018",
-            "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t012_v2_docker_release"
+            "note": "来源 p020：Selkies 默认外部 TURN allocation 超时阻塞每个新 PeerConnection 约 5s",
+            "dir": "docs/tasks/t019_stream_ice_turn_connect_delay"
         }
     ]
 }

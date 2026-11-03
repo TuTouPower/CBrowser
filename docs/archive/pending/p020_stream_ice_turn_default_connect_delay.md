@@ -1,0 +1,8 @@
+# p020 Stream 默认 STUN/TURN 使每次新会话多等约 5 秒
+
+- 现象：启动后切换左侧 profile，Selkies iframe 重新建立会话，界面显示 `Connecting...` 约 5 秒；同一 profile 刷新、断线重连也会复现。
+- 影响：每次新建 WebRTC PeerConnection 的 SDP offer 被固定延迟约 5.0 秒（实测 5.003s），直接放大所有会话建立与切换耗时。附带问题：SDP 中出现 `typ srflx` 公网候选，客户端与服务端仍依赖外部 STUN/TURN，违反 ADR 013「同机 127.0.0.1 host 直连，客户端与服务端均不配置 STUN/TURN」。
+- 根因：`config/docker/stream_runtime/entrypoint.sh` 启动 Selkies 2.1.0 时未覆盖其默认 STUN/TURN。Selkies 默认 `turn_host=staticauth.openrelay.metered.ca:443` + `turn_shared_secret=openrelayprojectsecret`，并默认 Google/Cloudflare STUN。每个新 PeerConnection 在 `setLocalDescription()` 内执行 `RTCIceGatherer.gather()`，等待外部 TURN allocation；该服务在当前网络不可达，超时约 5 秒后才放行 offer。实测：原状 `gather=5.003s`；过滤 TURN 保留 STUN 后 offer `0.230s`；加 `--webrtc-ice-lite` 后 offer `0.015s`。分类：产品配置缺陷（启动参数遗漏），非环境偶发。已确认同类位点：生产启动路径仅 `entrypoint.sh` 一处；`src/backend/cbrowser/stream_agent/agent.py` 只 patch service，不负责 ICE 参数；`config/docker/stream_runtime/entrypoint.sh:194-214` 为唯一 active 启动点。归档 `docs/archive/spikes/` 下旧脚本不在生产范围，未计。
+- 测试缺口：现有 unit 测试只 grep entrypoint 的 dual-mode/file-transfers/clipboard directive，未断言关闭 STUN/TURN 或启用 ICE-lite；e2e `tests/e2e/test_stream_runtime_e2e.py` 只断言 selected candidate 为 `127.0.0.1:<udp_mux>`，不检查 offer/ICE 是否还有 srflx/relay 候选，也不测 `HELLO → offer`/首帧时延。应补：unit 级断言 entrypoint 明确设置 `--webrtc-ice-lite`（或等价关闭 STUN/TURN）；e2e 级断言新会话建立耗时上限且候选集不含非 host 类型，使用真实 Chrome 覆盖切换 profile 与刷新。
+- 线索：`.scratch/p020_evidence.md`、`.scratch/ws_probe.py`；生产接口直接复现（见证据文件的 `.venv/bin/python .scratch/ws_probe.py <profileId>`）；容器内 standalone Selkies 计时与对照命令见证据文件。附：同一时段 Stream 日志每 200ms 重复 `Resuming capture ... periodic_reconciliation`，未确认与本延迟因果，建议另立条目核查。
+- 处理：t019；resolution=transferred；reason=已核实根因与范围并转交该 task

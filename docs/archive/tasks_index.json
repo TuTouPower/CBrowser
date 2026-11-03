@@ -132,6 +132,38 @@
             "dir": "docs/archive/tasks/t008_v2_artifacts_automation"
         },
         {
+            "tid": "t009",
+            "slug": "v2_full_acceptance",
+            "title": "完成正式拓扑安全与性能输入压力验收",
+            "status": "dropped",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t012",
+            "conflicts_with": "",
+            "note": "dropped: 用户要求归档 t009-t012",
+            "dir": "docs/archive/tasks/t009_v2_full_acceptance"
+        },
+        {
+            "tid": "t010",
+            "slug": "v2_data_migration",
+            "title": "数据迁移、legacy 下线与正式切换",
+            "status": "dropped",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t009",
+            "conflicts_with": "",
+            "note": "2026-11-02 合并 t011 与原 t012 AC-004（adoption review_20261102_201727）; dropped: 用户要求归档 t009-t012",
+            "dir": "docs/archive/tasks/t010_v2_data_migration"
+        },
+        {
             "tid": "t011",
             "slug": "v2_remove_legacy",
             "title": "完整验收后移除 VNC 与原生桌面旧路径",
@@ -146,6 +178,22 @@
             "conflicts_with": "",
             "note": "merged into t010",
             "dir": "docs/archive/tasks/t011_v2_remove_legacy"
+        },
+        {
+            "tid": "t012",
+            "slug": "v2_docker_release",
+            "title": "v2 正式部署产物与部署文档",
+            "status": "dropped",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t018",
+            "conflicts_with": "",
+            "note": "dropped: 用户要求归档 t009-t012",
+            "dir": "docs/archive/tasks/t012_v2_docker_release"
         },
         {
             "tid": "t013",

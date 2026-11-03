@@ -2,7 +2,7 @@
 tid: "t009"
 slug: "v2_full_acceptance"
 title: "完成正式拓扑安全与性能输入压力验收"
-status: "backlog"
+status: "dropped"
 branch: ""
 worktree: ""
 review_level: "full"
@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: "t012"
 conflicts_with: ""
-note: ""
+note: "dropped: 用户要求归档 t009-t012"
 ---
 
 # Task 过程总账

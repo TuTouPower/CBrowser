@@ -1,7 +1,7 @@
 ---
-tid: "t012"
-slug: "v2_docker_release"
-title: "v2 正式部署产物与部署文档"
+tid: "t019"
+slug: "stream_ice_turn_connect_delay"
+title: "修复 Stream 默认 STUN/TURN 导致的会话建立 5 秒延迟"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,9 +9,9 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t018"
+depends_on: ""
 conflicts_with: ""
-note: ""
+note: "来源 p020：Selkies 默认外部 TURN allocation 超时阻塞每个新 PeerConnection 约 5s"
 ---
 
 # Task 过程总账
