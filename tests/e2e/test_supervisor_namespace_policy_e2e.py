@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import subprocess
 import sys
 import time
@@ -43,15 +42,15 @@ from typing import Any
 
 import docker
 import pytest
+
+from e2e_env import require_e2e_env
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 
 logger = logging.getLogger("cbrowser.test.namespace_policy_e2e")
 
 
 def _get_required_env_image(env_var: str) -> str:
-    val = os.environ.get(env_var)
-    if not val:
-        pytest.skip(f"Env var {env_var} not set; skipping policy e2e.")
+    val = require_e2e_env(env_var)[env_var]
     if not (val.startswith("sha256:") or "@sha256:" in val):
         pytest.fail(f"Env var {env_var} must be immutable digest, got: {val}")
     return val

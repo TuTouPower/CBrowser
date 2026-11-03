@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 
 # Ensure repo root is on sys.path so scripts can be imported
 from scripts.vendor_selkies_web import (  # noqa: E402

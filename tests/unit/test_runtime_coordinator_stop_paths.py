@@ -223,7 +223,7 @@ async def test_reconcile_loop_survives_unexpected_exception_and_retries(
                 await asyncio.sleep(0.01)
 
             assert calls >= 2
-            assert profile.id not in coordinator._active_tasks
+            assert coordinator.has_active_task(profile.id) is False
             assert any("unexpected coordinator failure" in m for m in records)
         finally:
             await coordinator.stop()

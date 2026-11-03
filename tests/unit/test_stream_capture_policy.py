@@ -4,7 +4,6 @@ and RealPolicyControlledWebRTCService wrapper callbacks.
 Verifies all AC-003 requirements without requiring native GStreamer/WebRTC binaries.
 """
 
-import asyncio
 import json
 from typing import Any
 

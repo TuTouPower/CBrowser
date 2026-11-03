@@ -581,8 +581,8 @@ async def test_artifact_locks_are_released_after_operations(tmp_path: Path) -> N
     engine, store, service, profile_id = await _context(tmp_path)
     try:
         await service.upload(profile_id, "one.csv", "text/csv", _chunks(b"1"))
-        assert service._locks._locks == {}
+        assert service.locks_idle
         await service.remove_profile(profile_id)
-        assert service._locks._locks == {}
+        assert service.locks_idle
     finally:
         await engine.dispose()

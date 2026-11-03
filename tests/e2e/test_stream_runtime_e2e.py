@@ -19,7 +19,6 @@ from pathlib import Path
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_until
 

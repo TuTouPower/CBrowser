@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import docker.errors
 import httpx
@@ -970,7 +970,7 @@ def test_real_api_process_start_failure_reaps_child_and_closes_log(
         assert len(spawned_procs) == 1
         reaped_proc = spawned_procs[0]
         assert reaped_proc.poll() is not None, "Child process must be reaped"
-        assert api._log_file_handle is None, "Log handle must be closed"
+        assert api.log_handle_closed, "Log handle must be closed"
         assert api.proc is None
     finally:
         for p in spawned_procs:
@@ -1006,7 +1006,7 @@ def test_real_api_process_popen_error_closes_log_and_propagates(
         api.start(timeout_sec=0.2)
 
     assert api.proc is None
-    assert api._log_file_handle is None
+    assert api.log_handle_closed
     assert log_path.exists()
 
 
@@ -1045,7 +1045,7 @@ def test_real_api_process_stop_kill_wait_failure_propagates_and_retains_proc(
             api.stop(timeout_sec=0.01)
 
         assert api.proc is proc, "Unreaped process reference must be retained"
-        assert api._log_file_handle is None, "Log handle must be closed in finally"
+        assert api.log_handle_closed, "Log handle must be closed in finally"
         assert log_handle.closed is True, "Underlying log handle must be closed"
     finally:
         monkeypatch.undo()
@@ -1107,7 +1107,7 @@ def test_real_api_process_start_failure_with_cleanup_failure_chains(
         assert api.proc is spawned_procs[0], (
             "Proc reference must be retained on cleanup error"
         )
-        assert api._log_file_handle is None, "Log handle must be closed in finally"
+        assert api.log_handle_closed, "Log handle must be closed in finally"
     finally:
         monkeypatch.undo()
         for p in spawned_procs:

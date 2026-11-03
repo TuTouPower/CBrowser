@@ -715,7 +715,6 @@ async def test_report_terminal_unacknowledged_does_not_dedup_or_modify_desired(
     # Must NOT have changed desired_state
     assert core.get_session(profile_id).desired_state == "running"
     # Must NOT have acknowledged the terminal observation
-    key = (profile_id, instance_id, config_version)
     assert not core.terminal_observation_acknowledged(profile_id, instance_id, config_version)
 
     # Second attempt: API is back online (returns 200)

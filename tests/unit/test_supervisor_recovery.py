@@ -391,8 +391,8 @@ async def test_offline_reconciliation_preserves_containers_on_api_error(
     )
 
     await core.scan_and_reconcile_existing()
-    assert "p_err" in core._sessions
-    assert core._sessions["p_err"].udp_mux_port == 30005
+    assert core.get_session("p_err") is not None
+    assert core.get_session("p_err").udp_mux_port == 30005
     assert core.ports.is_port_used(30005)
 
 

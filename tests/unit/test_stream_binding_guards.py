@@ -61,8 +61,8 @@ def test_superseded_sdk_peer_cannot_remove_replacement_viewer():
     policy.set_viewer_visibility("conn", True)
     policy.register_peer_mapping("old_sdk", "conn")
     policy.register_peer_mapping("new_sdk", "conn")
-    assert "old_sdk" not in policy._sdk_peer_to_conn
-    assert policy._conn_to_sdk_peer["conn"] == "new_sdk"
+    assert policy.has_sdk_peer_mapping("old_sdk") is False
+    assert policy.sdk_peer_for_conn("conn") == "new_sdk"
     policy.remove_peer("old_sdk")
     assert policy.peers["conn"]["active"]
 
@@ -116,10 +116,10 @@ async def test_control_requires_current_registration():
     )
     before = agent.policy._supervisor_fps_cap
     await agent._handle_control_packet(envelope)
-    assert agent.policy._supervisor_fps_cap == before
+    assert agent.policy.supervisor_fps_cap == before
     agent.agent_session_id = "session_a"
     await agent._handle_control_packet(envelope)
-    assert agent.policy._supervisor_fps_cap == 15
+    assert agent.policy.supervisor_fps_cap == 15
     await agent.stop()
 
 

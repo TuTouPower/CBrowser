@@ -40,6 +40,8 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+
+from e2e_env import require_e2e_env
 from gateway_probe.topology import cleanup_prefixed_resources
 from supervisor_recovery_probe.gateway_service import (
     ApiRuntimeLookup,
@@ -67,23 +69,16 @@ def parse_docker_timestamp(ts_str: str) -> datetime:
 
 @pytest.mark.asyncio
 async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
-    missing = []
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache_val = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_image:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_image:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache_val:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache_val:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache_val = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache_val = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_image.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "

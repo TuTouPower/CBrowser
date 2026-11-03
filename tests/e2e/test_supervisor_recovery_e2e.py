@@ -37,6 +37,8 @@ from pathlib import Path
 import docker
 import httpx
 import pytest
+
+from e2e_env import free_udp_port_span, require_e2e_env
 from api_auth import create_auth_context
 from cbrowser.domain.models import RuntimeEventReportRequest
 from cbrowser.runtime_agent.event_storage import atomic_write_json
@@ -51,23 +53,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_e2e_prerequisites() -> tuple[str, str, Path, Path]:
-    missing = []
-    browser_img = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_img = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_img:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_img:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    )
+    browser_img = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_img = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_img.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -293,6 +288,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         assert r_des.status_code == 200
 
     # 2. Spawn Supervisor container
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -311,6 +307,8 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -385,7 +383,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             assert r_stat.status_code == 200
             stat_data = r_stat.json()
             assert stat_data["observed_state"] == "running"
-            assert stat_data["udp_mux_port"] == 30000
+            assert stat_data["udp_mux_port"] == udp_base
 
             # 5. Real Browser Normal Exit via in-container Agent UDS /control RPC
             # Execute python inside browser container to trigger graceful close
@@ -521,6 +519,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             json={"desired_state": "running"},
         )
 
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor_inv.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -539,6 +538,8 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id
@@ -560,7 +561,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                     pass
                 await asyncio.sleep(0.1)
 
-            # Start Profile A (allocates 30000)
+            # Start Profile A (allocates the run-local base port)
             res_a = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": p_a, "config_version": 1},
@@ -569,12 +570,12 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             start_a = res_a.json()
             port_a = start_a["udp_mux_port"]
             inst_a = start_a["runtime_instance_id"]
-            assert port_a == 30000
+            assert port_a == udp_base
             created_containers.extend(
                 [start_a["browser_container"], start_a["stream_container"]]
             )
 
-            # Start Profile B (allocates 30001)
+            # Start Profile B (allocates base + 1)
             res_b = await sup_client.post(
                 "/supervisor/v1/profiles/start",
                 json={"profile_id": p_b, "config_version": 1},
@@ -583,7 +584,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             start_b = res_b.json()
             port_b = start_b["udp_mux_port"]
             inst_b = start_b["runtime_instance_id"]
-            assert port_b == 30001
+            assert port_b == udp_base + 1
             created_containers.extend(
                 [start_b["browser_container"], start_b["stream_container"]]
             )
@@ -610,7 +611,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 await asyncio.sleep(0.1)
 
             # Query status from resurrected supervisor: ports MUST be identical
-            # (30000, 30001)
+            # (base, base + 1)
             stat_a = (
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_a}/status")
             ).json()
@@ -618,9 +619,9 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 await sup_client2.get(f"/supervisor/v1/profiles/{p_b}/status")
             ).json()
             assert stat_a["observed_state"] == "running"
-            assert stat_a["udp_mux_port"] == 30000
+            assert stat_a["udp_mux_port"] == udp_base
             assert stat_b["observed_state"] == "running"
-            assert stat_b["udp_mux_port"] == 30001
+            assert stat_b["udp_mux_port"] == udp_base + 1
 
             # Stop both cleanly
             await sup_client2.post(
@@ -759,6 +760,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             json={"desired_state": "running"},
         )
 
+    udp_base = free_udp_port_span(2)
     sup_log = tmp_path / "supervisor_spool_authority.log"
     sup = RealSupervisorContainer(
         api_url=f"http://host.docker.internal:{api_port}",
@@ -777,6 +779,8 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         env=env,
         log_path=sup_log,
         docker_client=d_client,
+        udp_mux_min_port=udp_base,
+        udp_mux_max_port=udp_base + 1,
     )
     await asyncio.to_thread(sup.start)
     c1_id = sup.container_id

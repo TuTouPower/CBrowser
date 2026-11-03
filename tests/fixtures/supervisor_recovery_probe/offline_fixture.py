@@ -192,6 +192,11 @@ class RealApiProcess:
         self._log_file_handle: Any | None = None
 
     @property
+    def log_handle_closed(self) -> bool:
+        """Whether the spawned process log handle is closed."""
+        return self._log_file_handle is None
+
+    @property
     def url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
@@ -330,6 +335,8 @@ class RealSupervisorContainer:
         docker_client: docker.DockerClient | None = None,
         supervisor_image: str | None = None,
         network: str | None = None,
+        udp_mux_min_port: int = 30000,
+        udp_mux_max_port: int = 30991,
     ) -> None:
         self.api_url = api_url
         self.data_root = data_root.resolve()
@@ -360,6 +367,8 @@ class RealSupervisorContainer:
             supervisor_image or os.environ.get("CBROWSER_SUPERVISOR_TEST_IMAGE")
         )
         self.network = network
+        self.udp_mux_min_port = udp_mux_min_port
+        self.udp_mux_max_port = udp_mux_max_port
         self.container: docker.models.containers.Container | None = None
         self.last_container_id: str | None = None
 
@@ -488,6 +497,8 @@ class RealSupervisorContainer:
             ),
             "CBROWSER_STREAM_IMAGE": os.environ.get("CBROWSER_STREAM_TEST_IMAGE", ""),
             "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
+            "CBROWSER_UDP_MUX_MIN_PORT": str(self.udp_mux_min_port),
+            "CBROWSER_UDP_MUX_MAX_PORT": str(self.udp_mux_max_port),
         }
 
         c_name = f"{self.prefix}-supervisor-{uuid.uuid4().hex[:6]}"

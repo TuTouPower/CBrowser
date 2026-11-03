@@ -109,7 +109,7 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
         pid, inst, 1, observed_state="error", reason="missing_runtime"
     )
     assert mock_core.events.emit_event.call_count == 0
-    assert inst in coordinator._reported_dead_instances
+    assert coordinator.has_reported_dead_instance(inst)
     await coordinator.close()
 
 

@@ -162,6 +162,14 @@ class LiveCapturePolicyAgent:
         self._sdk_peer_to_conn[sdk_peer_id] = conn_id
         self._conn_to_sdk_peer[conn_id] = sdk_peer_id
 
+    def has_sdk_peer_mapping(self, sdk_peer_id: str) -> bool:
+        """Whether an SDK peer is currently mapped to a Gateway connection."""
+        return sdk_peer_id in self._sdk_peer_to_conn
+
+    def sdk_peer_for_conn(self, conn_id: str) -> str | None:
+        """Return the SDK peer currently mapped to a Gateway connection."""
+        return self._conn_to_sdk_peer.get(conn_id)
+
     def unregister_peer_mapping(
         self,
         sdk_peer_id: str | None = None,

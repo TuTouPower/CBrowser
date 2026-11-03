@@ -105,7 +105,10 @@ async def run_supervisor(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
     )
-    port_allocator = PortAllocator()
+    port_allocator = PortAllocator(
+        min_port=int(os.environ.get("CBROWSER_UDP_MUX_MIN_PORT", PortAllocator.MIN_PORT)),
+        max_port=int(os.environ.get("CBROWSER_UDP_MUX_MAX_PORT", PortAllocator.MAX_PORT)),
+    )
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",

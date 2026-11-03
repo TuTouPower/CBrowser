@@ -7,14 +7,17 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+from e2e_env import require_e2e_env
 from wait import wait_until_sync
 
 
 def test_native_keymap_reuse_preserves_every_binding(tmp_path: Path) -> None:
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    if not browser_image or not stream_image:
-        pytest.skip("NOT_RUN: provide immutable Browser and Stream Runtime images")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE", "CBROWSER_STREAM_TEST_IMAGE"
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
     assert browser_image.startswith("sha256:") and stream_image.startswith("sha256:")
     socket_dir = tmp_path / "x11"
     socket_dir.mkdir(mode=0o777)

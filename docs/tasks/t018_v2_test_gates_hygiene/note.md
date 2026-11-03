@@ -36,6 +36,8 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 - 复审修复：E2E NameError/socket/REPO_ROOT、testing.md 单入口、run_gates 临时目录清理、证据脱敏、ProductionGatewayService 关闭 httpx、IPv6 无条件下阻断、退避上下限、会话冻结帧增长。
 - AC-005 收尾：`test_stream_capture_policy.py` 去掉 `_is_paused` 断言与固定 sleep，改用公开 pipeline 状态与注入时钟；`SupervisorCore` 新增只读 `get_session` / `terminal_observation_acknowledged` / `query_agent_health` 观测接口，相关单测不再直接断言 `_sessions` / `_terminal_observations`。剩余存量私有断言不在本 task 触碰范围。
 
+第二轮：E2E 前置条件统一走 `tests/fixtures/e2e_env.py`（required 模式 fail、否则 skip）；单测私有状态断言清零并改用公开访问器；Supervisor E2E 端口改为运行内空闲范围，容器通过 `CBROWSER_UDP_MUX_MIN_PORT/MAX_PORT` 注入；`tests/conftest.py` sys.path 注入移除，改用 pyproject `pythonpath`，跨模块 fixture 移入 conftest。
+
 ## Review 处置
 
 每个结构化 finding 一行。`已修` 表示本 task 已修复；`遗留` 必须指向 `pNNN` 或 follow-up tid；`撤回` 必须写清理由。critical/important 未解决时不得 PASS。

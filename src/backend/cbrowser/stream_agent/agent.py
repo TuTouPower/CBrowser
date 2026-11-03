@@ -205,6 +205,15 @@ class StreamAgent:
         self._heartbeat_task: asyncio.Task | None = None
         self._sleep_fn = asyncio.sleep
 
+    def has_detached_upstream(self, tab_id: str, resume_id: str) -> bool:
+        """Whether a detached upstream is retained for resume."""
+        return (tab_id, resume_id) in self._detached_upstreams
+
+    @property
+    def detached_upstream_count(self) -> int:
+        """Number of retained detached upstreams."""
+        return len(self._detached_upstreams)
+
     @property
     def viewer_queues(self) -> dict[str, asyncio.Queue]:
         return {k: v.queue for k, v in self.viewer_workers.items()}

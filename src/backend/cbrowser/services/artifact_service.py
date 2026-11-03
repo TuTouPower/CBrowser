@@ -54,6 +54,11 @@ class ArtifactService:
         self.max_profile_bytes = max_profile_bytes
         self._locks = ProfileLockRegistry()
 
+    @property
+    def locks_idle(self) -> bool:
+        """Whether no per-profile artifact lock is registered."""
+        return self._locks.is_idle
+
     async def _check_quota(
         self, profile_id: str, incoming: int, *, check_disk: bool = True
     ) -> int:

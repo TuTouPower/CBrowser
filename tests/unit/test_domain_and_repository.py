@@ -11,7 +11,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 from cbrowser.adapters.database.models import (
     Base,
     ProfileConfigVersionModel,

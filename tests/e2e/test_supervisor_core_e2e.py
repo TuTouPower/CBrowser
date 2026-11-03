@@ -4,7 +4,7 @@ Validates:
 1. Real isolated FastAPI Uvicorn process with SQLite WAL and external Bearer token file.
 2. Production Gateway application for Stream Agent outbound registration.
 3. Dual-container sandbox for Profile A and Profile B concurrently.
-4. Browser 03 with default GeoIP cache & Stream 07 with UDP mux ports 30000 / 30001.
+4. Browser 03 with default GeoIP cache & Stream 07 with run-local UDP mux ports.
 5. Verification of Browser Agent ready (runner_info.json, agent.sock, PID > 0).
 6. Verification of Stream Agent authenticating and registering with Gateway.
 7. Verification of cross-profile isolation (non-shared IPC / independent network).
@@ -19,19 +19,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import secrets
 import shutil
 import socket
-import subprocess
-import time
 import uuid
 from pathlib import Path
 
 import docker
 import httpx
 import pytest
-from api_auth import create_auth_context
+
+from e2e_env import free_udp_port_span, require_e2e_env
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.docker_adapter import DockerAdapter
@@ -51,23 +49,17 @@ logger = logging.getLogger(__name__)
 
 @pytest.mark.asyncio
 async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_server):
-    missing = []
-    browser_image = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE")
-    stream_image = os.environ.get("CBROWSER_STREAM_TEST_IMAGE")
-    engine_cache_val = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    geoip_cache_val = os.environ.get("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if not browser_image:
-        missing.append("CBROWSER_RUNTIME_TEST_IMAGE")
-    if not stream_image:
-        missing.append("CBROWSER_STREAM_TEST_IMAGE")
-    if not engine_cache_val:
-        missing.append("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if not geoip_cache_val:
-        missing.append("CBROWSER_RUNTIME_GEOIP_CACHE")
-
-    if missing:
-        pytest.skip(f"Missing required E2E environment variables: {', '.join(missing)}")
+    env = require_e2e_env(
+        "CBROWSER_RUNTIME_TEST_IMAGE",
+        "CBROWSER_STREAM_TEST_IMAGE",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+        paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
+    )
+    browser_image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
+    stream_image = env["CBROWSER_STREAM_TEST_IMAGE"]
+    engine_cache_val = env["CBROWSER_RUNTIME_ENGINE_CACHE"]
+    geoip_cache_val = env["CBROWSER_RUNTIME_GEOIP_CACHE"]
 
     assert browser_image.startswith("sha256:"), (
         "CBROWSER_RUNTIME_TEST_IMAGE must be sha256 immutable digest, "
@@ -138,7 +130,8 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         resource_prefix=prefix,
         geoip_cache_dir=engine_cache / "geoip",
     )
-    port_allocator = PortAllocator(min_port=30000, max_port=30010)
+    udp_base = free_udp_port_span(2)
+    port_allocator = PortAllocator(min_port=udp_base, max_port=udp_base + 10)
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -188,7 +181,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
     try:
         # 2. Start Profile A in Supervisor
         session_a = await core.start_profile(profile_a, cfg_a)
-        assert session_a.udp_mux_port == 30000
+        assert session_a.udp_mux_port == udp_base
 
         # Reload & verify Browser container A
         b_c_a = d_client.containers.get(session_a.browser_container_id)
@@ -218,7 +211,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
 
         # 3. Start Profile B concurrently
         session_b = await core.start_profile(profile_b, cfg_b)
-        assert session_b.udp_mux_port == 30001
+        assert session_b.udp_mux_port == udp_base + 1
         assert session_b.browser_container_id != session_a.browser_container_id
 
         b_c_b = d_client.containers.get(session_b.browser_container_id)
@@ -275,8 +268,8 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         # 5. Orderly Stop Profile A
         await core.stop_profile(profile_a)
 
-        # Port 30000 released
-        assert not port_allocator.is_port_used(30000)
+        # Base port released
+        assert not port_allocator.is_port_used(udp_base)
 
         # Profile B remains running and intact
         b_c_b.reload()

@@ -192,7 +192,7 @@ async def test_old_normal_exit_cannot_remove_new_local_runtime(tmp_path):
     )
     try:
         await core.consume_disk_events()
-        assert core._sessions["profile"] is current
+        assert core.get_session("profile") is current
         # Durable acknowledgements avoid re-uploading an entire native journal.
         await core.consume_disk_events()
         assert received == ["old_exit"]
