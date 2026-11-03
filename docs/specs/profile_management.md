@@ -12,6 +12,13 @@
 - Profile 列表、创建、编辑（名称、屏幕尺寸、标签）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
 
+## 中文字体包（t020）
+
+- Profile 配置含 `font_bundle`，取值 `none`、`wqy-microhei`、`wqy-zenhei`，默认 `none`；创建、更新、读取与配置版本快照均携带该字段，非法值与显式 null 被拒绝，存量 Profile 迁移后读为 `none`。
+- Browser 镜像把文泉驿微米黑与正黑的 `.ttc` staged 在 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`；默认容器内 `sans-serif` 的中文解析不命中任何中文字体。
+- Browser Runner 按快照中的 `font_bundle` 生成 Profile 专属 fontconfig 配置（include 系统配置并追加对应 bundle 目录），仅对非 `none` 档位为 Chrome 进程设置 `FONTCONFIG_FILE`；生成失败时不设置该变量、保持系统默认配置。修改 `font_bundle` 产生新配置版本，重建容器后生效，不影响其他 Profile。
+- 前端创建与编辑界面提供三档选择并回显 API 返回值；不提供 Windows 专有字体，不挂载宿主字体目录。
+
 ## 页面独立选择
 
 - 主界面以 `/?profileId=` 表示当前页面的操控目标，刷新恢复该目标。每个 Chrome 标签页独立切换 Profile，不改变其他标签页的目标或连接；不使用跨标签页共享的 `localStorage.currentProfileId`。

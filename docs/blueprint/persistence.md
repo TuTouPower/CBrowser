@@ -21,7 +21,8 @@
 系统数据库包含 8 张核心业务与状态表，不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
 1. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `font_bundle`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - `font_bundle` 由迁移 `0007_font_bundle` 以 `server_default='none'` 新增（`none`/`wqy-microhei`/`wqy-zenhei`），存量行迁移后均为 `none`，字体可见集合不变。
     - 完整覆盖计划 15.2 中有效配置字段；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；旧 native 运行模式映射为 `docker`，旧 vnc 模式映射为 `webrtc`。
 2. `profile_config_versions`：
     - 字段：`id`, `profile_id`, `version`, `snapshot`, `created_at`。

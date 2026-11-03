@@ -4610,6 +4610,16 @@
             ],
             "title": "Color Scheme"
           },
+          "font_bundle": {
+            "type": "string",
+            "enum": [
+              "none",
+              "wqy-microhei",
+              "wqy-zenhei"
+            ],
+            "title": "Font Bundle",
+            "default": "none"
+          },
           "launch_args": {
             "items": {
               "type": "string"
@@ -4826,6 +4836,11 @@
               }
             ],
             "title": "Color Scheme"
+          },
+          "font_bundle": {
+            "type": "string",
+            "title": "Font Bundle",
+            "default": "none"
           },
           "launch_args": {
             "items": {
@@ -5239,6 +5254,22 @@
               }
             ],
             "title": "Color Scheme"
+          },
+          "font_bundle": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "wqy-microhei",
+                  "wqy-zenhei"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Bundle"
           },
           "launch_args": {
             "anyOf": [

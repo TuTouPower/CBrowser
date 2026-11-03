@@ -23,6 +23,7 @@ from cloakbrowser.browser import seed_widevine_hint
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
+from .fontconfig import prepare_profile_fontconfig
 from .profile_defaults import initialize_profile_defaults
 from .protocol import RuntimeEventRecord, RuntimeStateRecord
 from cbrowser.launch_args import validate_launch_args
@@ -104,6 +105,7 @@ class BrowserRunner:
         self.xauth_path = self.run_dir / "Xauthority"
         self.runner_info_file = self.run_dir / "runner_info.json"
 
+        self.fontconfig_path: Path | None = None
         self.xvfb_proc: subprocess.Popen[Any] | None = None
         self.openbox_proc: subprocess.Popen[Any] | None = None
         self.chrome_pid: int | None = None
@@ -349,7 +351,11 @@ class BrowserRunner:
         return self.xauth_path
 
     def _browser_environment(
-        self, pulse_sock: Path, pulse_cookie: Path, wrapper_path: Path
+        self,
+        pulse_sock: Path,
+        pulse_cookie: Path,
+        wrapper_path: Path,
+        fontconfig_path: Path | None = None,
     ) -> dict[str, str]:
         """Build an explicit child environment instead of mutating ``os.environ``."""
         env = dict(os.environ)
@@ -363,6 +369,12 @@ class BrowserRunner:
                 "CLOAKBROWSER_CACHE_DIR": str(self.engine_cache_dir),
             }
         )
+        # A profile only sees its CJK bundle when a generated fontconfig file
+        # was prepared for it; otherwise the variable must not leak in from
+        # the runner's own environment.
+        env.pop("FONTCONFIG_FILE", None)
+        if fontconfig_path is not None:
+            env["FONTCONFIG_FILE"] = str(fontconfig_path)
         return env
 
     @staticmethod
@@ -405,6 +417,9 @@ class BrowserRunner:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.fontconfig_path = prepare_profile_fontconfig(
+            self.run_dir, cfg.font_bundle
+        )
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -430,7 +445,9 @@ class BrowserRunner:
         wrapper_path.write_text(wrapper_script, encoding="utf-8")
         wrapper_path.chmod(0o755)
 
-        browser_env = self._browser_environment(pulse_sock, pulse_cookie, wrapper_path)
+        browser_env = self._browser_environment(
+            pulse_sock, pulse_cookie, wrapper_path, self.fontconfig_path
+        )
 
         # Second validation gate: the API already rejects non-whitelisted args.
         safe_user_args = validate_launch_args(cfg.launch_args)

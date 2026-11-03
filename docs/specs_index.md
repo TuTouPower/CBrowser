@@ -11,4 +11,4 @@
 |runtime_persistence|t002, t016|2026-11-03T03:00:00+08:00|
 |runtime_lifecycle|t005, t007|2026-10-31T17:41:46+08:00|
 |access_control|t006, t007, t008|2026-11-02T09:45:00+08:00|
-|profile_management|t007, t013, t017|2026-11-03T05:15:00+08:00|
+|profile_management|t007, t013, t017, t020|2026-11-04T01:04:09+08:00|

@@ -32,12 +32,12 @@ browser runtime 镜像当前不安装任何 CJK 字体，中文网页在容器�
 
 <!-- /规范 -->
 
-- [ ] AC-001：构建后的 Browser 镜像默认不提供中文字体：在未设置 profile 字体开关的容器内，`sans-serif` 的中文解析不命中任何中文字体，且 `fonts-wqy-microhei`、`fonts-wqy-zenhei` 的字体文件不在 fontconfig 默认扫描路径中。
-- [ ] AC-002：Profile 创建、更新与读取支持 `font_bundle` 取值 `none`、`wqy-microhei`、`wqy-zenhei`；未提供时默认 `none`，存量 Profile 读取结果也为 `none`，其他取值被拒绝。
-- [ ] AC-003：`font_bundle=none` 的 Profile 启动后，Chrome 渲染中文与私用区字符使用相同 fallback（文本度量一致），不出现中文字体解析。
-- [ ] AC-004：`font_bundle=wqy-microhei` 的 Profile 启动后，Chrome 实际使用文泉驿微米黑渲染中文；`font_bundle=wqy-zenhei` 的 Profile 启动后，Chrome 实际使用文泉驿正黑渲染中文。
-- [ ] AC-005：两个 Profile 同时运行不同 `font_bundle` 时，各自 Browser 容器的字体可见集合互不影响；修改某 Profile 的 `font_bundle` 会产生新配置版本，重建该 Profile 容器后新值生效且不影响其他 Profile。
-- [ ] AC-006：前端 Profile 创建与编辑界面可查看并选择三档字体，保存后回显与 API 返回一致。
+- [x] AC-001：构建后的 Browser 镜像默认不提供中文字体：在未设置 profile 字体开关的容器内，`sans-serif` 的中文解析不命中任何中文字体，且 `fonts-wqy-microhei`、`fonts-wqy-zenhei` 的字体文件不在 fontconfig 默认扫描路径中。
+- [x] AC-002：Profile 创建、更新与读取支持 `font_bundle` 取值 `none`、`wqy-microhei`、`wqy-zenhei`；未提供时默认 `none`，存量 Profile 读取结果也为 `none`，其他取值被拒绝。
+- [x] AC-003：`font_bundle=none` 的 Profile 启动后，Chrome 渲染中文与私用区字符使用相同 fallback（文本度量一致），不出现中文字体解析。
+- [x] AC-004：`font_bundle=wqy-microhei` 的 Profile 启动后，Chrome 实际使用文泉驿微米黑渲染中文；`font_bundle=wqy-zenhei` 的 Profile 启动后，Chrome 实际使用文泉驿正黑渲染中文。
+- [x] AC-005：两个 Profile 同时运行不同 `font_bundle` 时，各自 Browser 容器的字体可见集合互不影响；修改某 Profile 的 `font_bundle` 会产生新配置版本，重建该 Profile 容器后新值生效且不影响其他 Profile。
+- [x] AC-006：前端 Profile 创建与编辑界面可查看并选择三档字体，保存后回显与 API 返回一致。
 
 ### 可测试性声明
 

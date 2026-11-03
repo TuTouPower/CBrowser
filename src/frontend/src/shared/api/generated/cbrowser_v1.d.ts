@@ -539,6 +539,12 @@ export interface components {
             auto_launch: boolean;
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
+            /**
+             * Font Bundle
+             * @default none
+             * @enum {string}
+             */
+            font_bundle: "none" | "wqy-microhei" | "wqy-zenhei";
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -657,6 +663,11 @@ export interface components {
             auto_launch: boolean;
             /** Color Scheme */
             color_scheme?: string | null;
+            /**
+             * Font Bundle
+             * @default none
+             */
+            font_bundle: string;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -790,6 +801,8 @@ export interface components {
             auto_launch?: boolean | null;
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
+            /** Font Bundle */
+            font_bundle?: ("none" | "wqy-microhei" | "wqy-zenhei") | null;
             /** Launch Args */
             launch_args?: string[] | null;
             /** Extension Paths */

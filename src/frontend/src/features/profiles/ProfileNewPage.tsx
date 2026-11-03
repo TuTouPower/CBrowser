@@ -2,8 +2,13 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { useCreateProfileMutation } from "./useProfilesQuery";
-import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
+import {
+  DEFAULT_PROFILE_CREATE_VALUES,
+  type ProfileCreateRequest,
+} from "../../shared/api/types";
 import { useI18n } from "../../i18n";
+
+type FontBundle = NonNullable<ProfileCreateRequest["font_bundle"]>;
 
 export function ProfileNewPage() {
   const { t } = useI18n();
@@ -14,6 +19,7 @@ export function ProfileNewPage() {
   const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
+  const [fontBundle, setFontBundle] = useState<FontBundle>("none");
   const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +41,7 @@ export function ProfileNewPage() {
         proxy: proxy.trim() || null,
         screen_width: screenWidth,
         screen_height: screenHeight,
+        font_bundle: fontBundle,
         tags,
       });
 
@@ -117,6 +124,22 @@ export function ProfileNewPage() {
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              {t("fontBundle")}
+            </label>
+            <select
+              data-testid="profile-font-bundle-select"
+              value={fontBundle}
+              onChange={(e) => setFontBundle(e.target.value as FontBundle)}
+              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
+            >
+              <option value="none">{t("fontBundleNone")}</option>
+              <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
+              <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
+            </select>
           </div>
 
           <div>

@@ -24,6 +24,7 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   geoip: true,
   clipboard_sync: true,
   auto_launch: false,
+  font_bundle: "none",
   allow_3p_cookies: true,
   set_google_default: true,
   capture_preview: true,

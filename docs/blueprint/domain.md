@@ -16,6 +16,7 @@
 |**容器协调器**|`RuntimeSupervisor`|宿主端容器调度器，唯一定义容器模板、分配媒体 UDP 端口池并执行生命周期操作。|
 |**文件归档**|`Artifact`|用户上传到浏览器环境或浏览器内下载完成的文件元数据记录，包含 SHA-256、体积与配额信息。|
 |**文件交换区**|`ExchangeDirectory`|宿主机与容器共享的持久化上传/下载暂存目录，按 Profile 严格隔离。|
+|**中文字体包**|`ProfileConfig.font_bundle`|Profile 级 CJK 字体可见性开关：`none`（默认，容器内无中文字体）、`wqy-microhei`（文泉驿微米黑）、`wqy-zenhei`（文泉驿正黑）；属于运行配置，变更产生新 `ProfileConfigVersion`。|
 
 ## 状态转换规则
 

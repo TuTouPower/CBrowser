@@ -185,6 +185,7 @@ async def create_profile(
         clipboard_sync=payload.clipboard_sync,
         auto_launch=payload.auto_launch,
         color_scheme=payload.color_scheme,
+        font_bundle=payload.font_bundle,
         launch_args=payload.launch_args,
         extension_paths=payload.extension_paths,
         allow_3p_cookies=payload.allow_3p_cookies,
