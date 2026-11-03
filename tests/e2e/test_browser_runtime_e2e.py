@@ -50,7 +50,7 @@ ENGINE_CACHE = Path(os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE", "")).resolve
 LOGS_DIR = Path(os.path.abspath(".scratch/t003_implementation/tmp/logs"))
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def _require_runtime_prerequisites():
     global IMAGE_TAG, ENGINE_CACHE
     env = require_e2e_env(
@@ -188,7 +188,7 @@ window.onload = async () => {{
 
 
 @pytest.fixture(scope="session")
-def http_server():
+def http_server(_require_runtime_prerequisites):
     """Serve synthetic fixtures on a dedicated Docker bridge, without host ports."""
     global ACTIVE_TEST_NETWORK
     run_id = uuid.uuid4().hex[:10]

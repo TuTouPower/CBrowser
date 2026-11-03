@@ -38,7 +38,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 第二轮：E2E 前置条件统一走 `tests/fixtures/e2e_env.py`（required 模式 fail、否则 skip）；单测私有状态断言清零并改用公开访问器；Supervisor E2E 端口改为运行内空闲范围，容器通过 `CBROWSER_UDP_MUX_MIN_PORT/MAX_PORT` 注入；`tests/conftest.py` sys.path 注入移除，改用 pyproject `pythonpath`，跨模块 fixture 移入 conftest。
 
-第三轮：端口范围收敛到协议允许的 30000-30990；Freshness 校验不再依赖必需模式；viewer close 只接受 CLOSE；Selkies token E2E 绑定 127.0.0.1；Gateway secret 目录 0700；docker offload 单测改为 event rendezvous；E2E 环境 helper 的格式错误统一 fail；Selkies 容器内服务保持 0.0.0.0 仅宿主发布绑定 127.0.0.1；offload 单测改为事件 rendezvous 并断言未阻塞；迁移 importlib fixture 借用、stream/event/defaults 前置条件。删除未到达生产 Gateway 的 activity 负向注入（测试包装层直接丢弃该帧，哨兵不存在）；required 模式下 defaults 的镜像/缓存前置缺失改为硬失败；修复 stream cache 变量名、event shutdown 重复检查与 policy 镜像回退；Topology/ContainerGraph/RuntimeCoordinator 统一走 e2e_env；移除 topology 硬编码 Caddy digest；browser runtime / stream selkies 的模块级镜像回退改为 autouse 前置；event shutdown 非必需模式缺 Docker 改为 skip。
+第三轮：端口范围收敛到协议允许的 30000-30990；Freshness 校验不再依赖必需模式；viewer close 只接受 CLOSE；Selkies token E2E 绑定 127.0.0.1；Gateway secret 目录 0700；docker offload 单测改为 event rendezvous；E2E 环境 helper 的格式错误统一 fail；Selkies 容器内服务保持 0.0.0.0 仅宿主发布绑定 127.0.0.1；offload 单测改为事件 rendezvous 并断言未阻塞；迁移 importlib fixture 借用、stream/event/defaults 前置条件。删除未到达生产 Gateway 的 activity 负向注入（测试包装层直接丢弃该帧，哨兵不存在）；required 模式下 defaults 的镜像/缓存前置缺失改为硬失败；修复 stream cache 变量名、event shutdown 重复检查与 policy 镜像回退；Topology/ContainerGraph/RuntimeCoordinator 统一走 e2e_env；移除 topology 硬编码 Caddy digest；browser runtime / stream selkies 的模块级镜像回退改为 autouse 前置；event shutdown 非必需模式缺 Docker 改为 skip；browser runtime 前置改为 session 级并作为 http_server 依赖；Supervisor 容器镜像统一经 e2e_env 获取。
 
 ## Review 处置
 

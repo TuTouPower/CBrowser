@@ -357,9 +357,9 @@ class RealSupervisorContainer:
             self.gateway_port = DEFAULT_GATEWAY_PORT
 
         self.docker_client = docker_client or docker.from_env()
-        self.supervisor_image = (
-            supervisor_image or os.environ.get("CBROWSER_SUPERVISOR_TEST_IMAGE")
-        )
+        self.supervisor_image = supervisor_image or require_e2e_env(
+            "CBROWSER_SUPERVISOR_TEST_IMAGE"
+        )["CBROWSER_SUPERVISOR_TEST_IMAGE"]
         self.network = network
         self.udp_mux_min_port = udp_mux_min_port
         self.udp_mux_max_port = udp_mux_max_port
@@ -471,7 +471,6 @@ class RealSupervisorContainer:
         if self.container is not None:
             raise RuntimeError("Supervisor container already running")
 
-        assert self.supervisor_image, "CBROWSER_SUPERVISOR_TEST_IMAGE is required"
         assert self.supervisor_image.startswith("sha256:"), (
             f"Invalid supervisor image: {self.supervisor_image}"
         )
