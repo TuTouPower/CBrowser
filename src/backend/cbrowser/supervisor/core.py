@@ -994,9 +994,11 @@ class SupervisorCore:
                     # later terminal fact for this same instance must be
                     # reportable again (t026_code_f015).
                     session.observed_state = "running"
-                    self._terminal_observations.discard(
-                        (pid, b_inst, bound_version)
-                    )
+                    self._terminal_observations = {
+                        item
+                        for item in self._terminal_observations
+                        if not (item[0] == pid and item[1] == b_inst)
+                    }
 
             if (
                 desired == "running"

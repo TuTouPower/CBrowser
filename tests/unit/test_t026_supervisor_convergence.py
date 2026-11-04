@@ -970,6 +970,58 @@ async def test_latched_container_exit_error_releases_on_authoritative_running(
 
 
 @pytest.mark.asyncio
+async def test_latch_release_clears_terminal_keys_across_versions(tmp_path):
+    # t026_code_f016 / p036: the release path derives bound_version
+    # from the container label when the runtime payload omits
+    # config_version. A dedupe key written under the session version
+    # must still be cleared; clearing only the derived version would
+    # leave the old key behind and swallow the next terminal fact.
+    adapter = _FakeAdapter(tmp_path)
+    gateway = _FakeGatewayControl()
+    runtime = {
+        "desired_state": "running",
+        "runtime_instance_id": INSTANCE,
+    }
+    core = _core_with_runtime_api(tmp_path, adapter, gateway, {PROFILE: runtime})
+    session = ActiveSession(
+        PROFILE, INSTANCE, 1, 30005, "c_browser", "c_stream",
+        desired_state="running", observed_state="error",
+    )
+    core._sessions[PROFILE] = session
+    core._terminal_observations.add((PROFILE, INSTANCE, 1))
+
+    async def _observation_ok(*args, **kwargs):
+        return "running"
+
+    core._reconcile_instance_observation = _observation_ok
+    converged: list[str] = []
+
+    async def _record_converge(profile_id, sess, roles):
+        converged.append(profile_id)
+
+    core._converge_session = _record_converge
+
+    roles_up = {
+        "browser": {
+            "status": "running",
+            "instance_id": INSTANCE,
+            "config_version": 2,
+        },
+        "stream": {"status": "running", "instance_id": INSTANCE},
+    }
+    await core._reconcile_profile(PROFILE, roles_up)
+
+    assert session.observed_state == "running"
+    assert converged == [PROFILE]
+    # Both the label-derived version (2) and the session-version key
+    # (1) are gone; no stale key survives this instance generation.
+    assert not [
+        item for item in core._terminal_observations
+        if item[0] == PROFILE and item[1] == INSTANCE
+    ]
+
+
+@pytest.mark.asyncio
 async def test_readiness_failure_in_one_profile_still_evaluates_others(tmp_path):
     # test f011: the f009 isolation is per-Profile — a Docker failure
     # for one Profile must not skip evaluating the healthy one.
