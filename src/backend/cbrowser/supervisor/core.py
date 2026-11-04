@@ -49,6 +49,12 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
 from cbrowser.supervisor.path_validator import PathSecurityError
 from cbrowser.supervisor.port_allocator import PortAllocator
+from cbrowser.supervisor.protocol import (
+    ProfileReadiness,
+    ReadinessResponse,
+    ReconcileAllResponse,
+    TransportObservation,
+)
 from cbrowser.supervisor.recovery_rules import (
     is_error_exit_health,
     is_normal_exit_health,
@@ -142,6 +148,7 @@ class SupervisorCore:
             host=endpoint.host, port=endpoint.port, secure=endpoint.secure
         )
         self.gateway_url = gateway_url or self.gateway_endpoint.ws_url
+        self.gateway_port = self.gateway_endpoint.port
         self._token_file = Path(token_file) if token_file else None
         self.agent_credentials = (
             AgentCredentials(agent_key_file) if agent_key_file else None
@@ -155,6 +162,12 @@ class SupervisorCore:
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
         self._terminal_observations: set[tuple[str, str, int]] = set()
+        # t026 convergence state (in-memory only; a restart re-derives it
+        # from the same scans that rebuild sessions).
+        self._transport: dict[str, TransportObservation] = {}
+        self._registration_known: dict[str, bool] = {}
+        self._stream_replace_attempts: dict[str, list[float]] = {}
+        self._policy_fail_closed: set[tuple[str, str]] = set()
         self._unprotected_since: dict[str, float] = {}
         self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
         self._event_cursor_file = (
@@ -201,6 +214,610 @@ class SupervisorCore:
             self._locks[profile_id] = asyncio.Lock()
         return self._locks[profile_id]
 
+    # ---------------- t026 convergence & observation ----------------
+
+    _NON_FIXABLE_REJECTION_CODES = frozenset(
+        {
+            "unsupported_version",
+            "unauthorized",
+            "identity_mismatch",
+            "invalid_payload",
+            "instance_not_bound",
+        }
+    )
+    _STREAM_REPLACE_WINDOW_SEC = 300.0
+    _STREAM_REPLACE_MAX = 3
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now(UTC).isoformat()
+
+    def _update_transport(self, profile_id: str, **fields: Any) -> None:
+        current = self._transport.get(profile_id)
+        if current is None:
+            current = TransportObservation(profile_id=profile_id)
+            self._transport[profile_id] = current
+        for key, value in fields.items():
+            setattr(current, key, value)
+
+    def get_transport_observation(self, profile_id: str) -> TransportObservation:
+        cached = self._transport.get(profile_id)
+        if cached is not None:
+            return cached
+        return TransportObservation(profile_id=profile_id)
+
+    def _resolve_gateway_id(self) -> str | None:
+        resolver = getattr(self.docker, "resolve_gateway_container_id", None)
+        resolved = resolver() if resolver is not None else None
+        return resolved or self.gateway_container_id
+
+    def _stream_replacement_allowed(self, profile_id: str, instance_id: str) -> bool:
+        key = f"{profile_id}:{instance_id}"
+        now = time.monotonic()
+        attempts = [
+            stamp
+            for stamp in self._stream_replace_attempts.get(key, [])
+            if now - stamp <= self._STREAM_REPLACE_WINDOW_SEC
+        ]
+        self._stream_replace_attempts[key] = attempts
+        return len(attempts) < self._STREAM_REPLACE_MAX
+
+    def _record_stream_replacement(self, profile_id: str, instance_id: str) -> None:
+        key = f"{profile_id}:{instance_id}"
+        self._stream_replace_attempts.setdefault(key, []).append(time.monotonic())
+
+    async def _converge_session(
+        self,
+        profile_id: str,
+        session: ActiveSession,
+        scan_roles: dict[str, Any],
+    ) -> None:
+        """Steady-state convergence for a running pair (t026 AC-002..008).
+
+        Runs inside the existing reconciliation pass while the profile is
+        not operation-locked. Only the drifted layer is repaired: media
+        attachment and Stream policy/registration problems are Stream-only
+        fixes; a Browser policy drift fails closed and is reported, never
+        torn down from here.
+        """
+        instance_id = session.runtime_instance_id
+        self._update_transport(
+            profile_id,
+            runtime_instance_id=instance_id,
+            browser_state=(
+                "running" if scan_roles["browser"]["status"] == "running" else "error"
+            ),
+            stream_state=(
+                "running" if scan_roles["stream"]["status"] == "running" else "error"
+            ),
+            config_version=session.config_version,
+            protocol_version="v2",
+        )
+        objects = await asyncio.to_thread(
+            self.docker.get_profile_containers, profile_id
+        )
+        browser_c = objects.get("browser")
+        stream_c = objects.get("stream")
+        if browser_c is None or stream_c is None:
+            return
+        try:
+            media = await asyncio.to_thread(
+                self.docker.inspect_media_network, profile_id
+            )
+        except DockerSandboxError:
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error="media_inspect_failed",
+                last_error_at=self._now_iso(),
+            )
+            return
+        plan = media.get("plan")
+        if plan is not None:
+            self._update_transport(
+                profile_id, gateway_endpoint=plan.gateway_endpoint
+            )
+        if not media["exists"] or not media["conforms"]:
+            if self._stream_replacement_allowed(profile_id, instance_id):
+                await self._replace_stream_only(
+                    profile_id, session, rebuild_network=True
+                )
+            else:
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="media_network_drift",
+                    last_error_at=self._now_iso(),
+                )
+            return
+        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        if gateway_id is None:
+            self._registration_known.pop(profile_id, None)
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="gateway_missing",
+                last_error_at=self._now_iso(),
+            )
+            return
+        if media["gateway_attached_id"] != gateway_id:
+            try:
+                attach = await asyncio.to_thread(
+                    self.docker.attach_profile_infrastructure,
+                    profile_id,
+                    gateway_id,
+                    self.gateway_port,
+                )
+            except DockerSandboxError:
+                # Includes the fixed endpoint being held by another
+                # container (AC-003): explicit degraded state, not a
+                # scan-level warning only.
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="media_attach_failed",
+                    last_error_at=self._now_iso(),
+                )
+                return
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                gateway_endpoint=attach["gateway_ip"],
+                last_attached_at=self._now_iso(),
+            )
+        stream_spec = self.docker.stream_policy_spec(
+            plan, self.gateway_port, session.udp_mux_port
+        )
+        try:
+            stream_policy_ok = await asyncio.to_thread(
+                self.docker.verify_container_policy, stream_c, stream_spec
+            )
+        except DockerSandboxError:
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="policy_verify_unavailable",
+                last_error_at=self._now_iso(),
+            )
+            return
+        if not stream_policy_ok:
+            if self._stream_replacement_allowed(profile_id, instance_id):
+                await self._replace_stream_only(
+                    profile_id, session, rebuild_network=False
+                )
+            else:
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="stream_policy_drift",
+                    last_error_at=self._now_iso(),
+                )
+            return
+        browser_spec = await asyncio.to_thread(
+            self.docker.browser_policy_spec, profile_id, browser_c
+        )
+        try:
+            browser_policy_ok = await asyncio.to_thread(
+                self.docker.verify_container_policy, browser_c, browser_spec
+            )
+        except DockerSandboxError:
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="policy_verify_unavailable",
+                last_error_at=self._now_iso(),
+            )
+            return
+        if not browser_policy_ok:
+            key = (profile_id, instance_id)
+            if key not in self._policy_fail_closed:
+                try:
+                    await asyncio.to_thread(
+                        self.docker.fail_close_container, browser_c
+                    )
+                except DockerSandboxError:
+                    # Not marked as handled: the Browser is still
+                    # unmitigated, so the next cycle retries and the
+                    # observation must not claim a completed fail-close.
+                    logger.warning(
+                        "Browser fail-close failed: profile=%s", profile_id
+                    )
+                    self._update_transport(
+                        profile_id,
+                        transport_state="recovering",
+                        last_error="browser_policy_drift_unmitigated",
+                        last_error_at=self._now_iso(),
+                    )
+                    return
+                self._policy_fail_closed.add(key)
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error="browser_policy_drift",
+                last_error_at=self._now_iso(),
+            )
+            return
+        if self.gateway_control is None:
+            self._update_transport(profile_id, transport_state="unknown")
+            return
+        registered = await self.gateway_control.agent_registered(
+            profile_id, instance_id
+        )
+        if registered is None:
+            self._registration_known.pop(profile_id, None)
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="gateway_unreachable",
+                last_error_at=self._now_iso(),
+            )
+            return
+        status = await self.gateway_control.registration_status(profile_id)
+        if status is not None:
+            self._update_transport(
+                profile_id,
+                agent_build_id=status.get("agent_build_id"),
+                gateway_build_id=status.get("gateway_build_id"),
+                selkies_version=status.get("selkies_version"),
+            )
+        if registered:
+            self._registration_known[profile_id] = True
+            self._update_transport(
+                profile_id,
+                transport_state="ready",
+                last_registered_at=self._now_iso(),
+                last_error=None,
+                rejection_code=None,
+            )
+            return
+        self._registration_known[profile_id] = False
+        rejection = (status or {}).get("rejection") or {}
+        rejection_code = rejection.get("code")
+        if (status or {}).get("rejection_runtime_instance_id") != instance_id:
+            rejection_code = None
+        if rejection_code in self._NON_FIXABLE_REJECTION_CODES:
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error=f"registration_rejected:{rejection_code}",
+                rejection_code=rejection_code,
+                last_error_at=self._now_iso(),
+            )
+            return
+        if self._stream_replacement_allowed(profile_id, instance_id):
+            await self._replace_stream_only(
+                profile_id, session, rebuild_network=False
+            )
+        else:
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error="stream_unregistered",
+                rejection_code=rejection_code,
+                last_error_at=self._now_iso(),
+            )
+
+    async def _replace_stream_only(
+        self,
+        profile_id: str,
+        session: ActiveSession,
+        *,
+        rebuild_network: bool,
+    ) -> bool:
+        """Rebuild only the Stream layer of a running pair.
+
+        The Browser container, IPC/X11 endpoints, Profile data, runtime
+        instance and ports are untouched. When the media network itself
+        drifted from the fixed-endpoint spec it is rebuilt first (which
+        briefly detaches the Gateway); the Stream is then recreated
+        against the same instance secret and Selkies credential files.
+        """
+        instance_id = session.runtime_instance_id
+        # AC-008: a missing Gateway is never a reason to tear down the
+        # Stream. Resolve it before touching anything; only a reachable
+        # replacement target justifies the rebuild below.
+        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        if gateway_id is None:
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="gateway_missing",
+                last_error_at=self._now_iso(),
+            )
+            return False
+        self._record_stream_replacement(profile_id, instance_id)
+        self._update_transport(
+            profile_id,
+            transport_state="recovering",
+            stream_state="stopped",
+            last_error="stream_replacement",
+            last_error_at=self._now_iso(),
+        )
+        validator = self.docker.validator
+        try:
+            stream_name = self.docker.get_stream_container_name(profile_id)
+            await asyncio.to_thread(
+                self.docker.cleanup_container_by_name, stream_name
+            )
+            if rebuild_network:
+                # The Browser stays attached throughout: the adapter
+                # disconnects/reconnects endpoints around the rebuild
+                # (cleanup_network_by_name rightly refuses this with
+                # runtime containers attached).
+                await asyncio.to_thread(
+                    self.docker.rebuild_media_network, profile_id
+                )
+            attach = await asyncio.to_thread(
+                self.docker.attach_profile_infrastructure,
+                profile_id,
+                gateway_id,
+                self.gateway_port,
+            )
+            dirs = {
+                "runtime": validator.get_runtime_dir(profile_id),
+                "secret": validator.get_secret_dir(profile_id),
+            }
+            secret_file = dirs["secret"] / "agent_secret.txt"
+            if not secret_file.exists():
+                token = self.agent_credentials.token_for(profile_id, instance_id)
+                atomic_write_text(secret_file, token, mode=0o600)
+            selkies_tokens = SelkiesTokens.generate()
+            selkies_file = selkies_tokens.provision_credentials_file(
+                validator.get_secret_dir(profile_id), instance_id
+            )
+            objects = await asyncio.to_thread(
+                self.docker.get_profile_containers, profile_id
+            )
+            browser_container = objects.get("browser")
+            if browser_container is None:
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="browser_missing",
+                    last_error_at=self._now_iso(),
+                )
+                return False
+            stream_container = await self.docker.start_stream_container(
+                profile_id=profile_id,
+                runtime_instance_id=instance_id,
+                browser_container_name=browser_container.name,
+                udp_mux_port=session.udp_mux_port,
+                gateway_url=attach["gateway_url"],
+                agent_secret_path=secret_file,
+                selkies_tokens_path=selkies_file,
+                snapshot_json_path=dirs["runtime"] / "snapshot.json",
+                gateway_port=self.gateway_port,
+            )
+            session.stream_container_id = stream_container.id
+            self._update_transport(
+                profile_id,
+                stream_state="running",
+                gateway_endpoint=attach["gateway_ip"],
+                last_attached_at=self._now_iso(),
+            )
+            return True
+        except (DockerSandboxError, OSError, ValueError) as exc:
+            logger.warning(
+                "Stream-only replacement failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error=f"stream_replacement_failed:{type(exc).__name__}",
+                last_error_at=self._now_iso(),
+            )
+            return False
+
+    async def _recover_attachment_offline(
+        self, profile_id: str, scan_instance_id: str | None = None
+    ) -> None:
+        """API-offline recovery (t026 AC-006): re-attach media only.
+
+        Lifecycle and session state are never touched here; the profile
+        is re-attached by label/instance consistency so viewers recover
+        once the Gateway path is whole again. Instance consistency
+        comes from the tracked session when one exists, otherwise from
+        the scan's label-verified pair the caller already
+        integrity-checked — a Supervisor restart must not strand
+        existing sandboxes.
+        """
+        session = self._sessions.get(profile_id)
+        instance_id = (
+            session.runtime_instance_id
+            if session is not None
+            else scan_instance_id
+        )
+        if instance_id is None:
+            return
+        media = await asyncio.to_thread(
+            self.docker.inspect_media_network, profile_id
+        )
+        if not media["exists"] or not media["conforms"]:
+            return
+        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        if gateway_id is None or media["gateway_attached_id"] == gateway_id:
+            return
+        try:
+            attach = await asyncio.to_thread(
+                self.docker.attach_profile_infrastructure,
+                profile_id,
+                gateway_id,
+                self.gateway_port,
+            )
+        except DockerSandboxError:
+            return
+        self._update_transport(
+            profile_id,
+            runtime_instance_id=instance_id,
+            transport_state="recovering",
+            gateway_endpoint=attach["gateway_ip"],
+            last_attached_at=self._now_iso(),
+        )
+
+    async def reconcile_all(self) -> ReconcileAllResponse:
+        """One full convergence pass over every live pair (t026 AC-009)."""
+        scanned = await self.scan_and_reconcile_existing()
+        return ReconcileAllResponse(
+            scanned=len(scanned),
+            profiles=sorted({item["profile_id"] for item in scanned}),
+        )
+
+    async def readiness(self) -> ReadinessResponse:
+        """Deployment readiness over every desired=running Profile.
+
+        Any unknown (API unreachable, no session, unverifiable policy or
+        registration) makes the result not ready; the response carries
+        per-Profile redacted diagnostics instead of a bare boolean.
+        """
+        try:
+            list_resp = await self.api.get(
+                "/api/v1/internal/supervisor/profiles",
+                headers=self._auth_headers(),
+            )
+            list_resp.raise_for_status()
+            profiles = list_resp.json()
+        except Exception as exc:  # noqa: BLE001 - readiness must degrade to unknown, never crash
+            return ReadinessResponse(
+                ready=False,
+                reason=f"api_unavailable:{type(exc).__name__}",
+            )
+        results: list[ProfileReadiness] = []
+        for entry in profiles:
+            profile_id = entry.get("id") or entry.get("profile_id")
+            if not profile_id:
+                continue
+            try:
+                rt_resp = await self.api.get(
+                    f"/api/v1/internal/supervisor/profiles/{quote(profile_id, safe='')}/runtime",
+                    headers=self._auth_headers(),
+                )
+                rt_resp.raise_for_status()
+                runtime = rt_resp.json()
+            except Exception as exc:  # noqa: BLE001 - per-profile unknown
+                results.append(
+                    ProfileReadiness(
+                        profile_id=profile_id,
+                        ready=False,
+                        checks={"runtime": None},
+                        diagnostics=[f"runtime_unavailable:{type(exc).__name__}"],
+                    )
+                )
+                continue
+            if runtime.get("desired_state") != "running":
+                continue
+            try:
+                results.append(
+                    await self._profile_readiness(profile_id, runtime)
+                )
+            except Exception as exc:  # noqa: BLE001 - one Profile's Docker failure must not 500 the whole readiness view (AC-009)
+                results.append(
+                    ProfileReadiness(
+                        profile_id=profile_id,
+                        ready=False,
+                        checks={"instance": None},
+                        diagnostics=[
+                            f"readiness_check_failed:{type(exc).__name__}"
+                        ],
+                    )
+                )
+        return ReadinessResponse(
+            ready=all(item.ready for item in results),
+            profiles=results,
+        )
+
+    async def _profile_readiness(
+        self, profile_id: str, runtime: dict[str, Any]
+    ) -> ProfileReadiness:
+        instance_id = runtime.get("runtime_instance_id")
+        checks: dict[str, bool | None] = {}
+        diagnostics: list[str] = []
+        session = self._sessions.get(profile_id)
+        checks["instance"] = bool(
+            session is not None and session.runtime_instance_id == instance_id
+        )
+        if not checks["instance"]:
+            diagnostics.append("session_instance_mismatch")
+        roles: dict[str, Any] | None = None
+        if session is not None:
+            roles = await asyncio.to_thread(
+                self.docker.get_profile_containers, profile_id
+            )
+        checks["browser"] = bool(
+            roles
+            and roles.get("browser") is not None
+            and roles["browser"].status == "running"
+        )
+        checks["stream"] = bool(
+            roles
+            and roles.get("stream") is not None
+            and roles["stream"].status == "running"
+        )
+        media = await asyncio.to_thread(
+            self.docker.inspect_media_network, profile_id
+        )
+        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        checks["attach"] = bool(
+            media["conforms"]
+            and gateway_id is not None
+            and media["gateway_attached_id"] == gateway_id
+        )
+        if not checks["attach"]:
+            diagnostics.append("gateway_not_attached_at_fixed_endpoint")
+        plan = media.get("plan")
+        if (
+            roles
+            and roles.get("browser") is not None
+            and roles.get("stream") is not None
+            and plan is not None
+            and session is not None
+        ):
+            try:
+                stream_spec = self.docker.stream_policy_spec(
+                    plan, self.gateway_port, session.udp_mux_port
+                )
+                stream_ok = await asyncio.to_thread(
+                    self.docker.verify_container_policy,
+                    roles["stream"],
+                    stream_spec,
+                )
+                browser_spec = await asyncio.to_thread(
+                    self.docker.browser_policy_spec, profile_id, roles["browser"]
+                )
+                browser_ok = await asyncio.to_thread(
+                    self.docker.verify_container_policy,
+                    roles["browser"],
+                    browser_spec,
+                )
+                checks["policy"] = bool(stream_ok and browser_ok)
+            except DockerSandboxError:
+                checks["policy"] = None
+                diagnostics.append("policy_verify_unavailable")
+        else:
+            checks["policy"] = None
+            diagnostics.append("policy_unverifiable")
+        if self.gateway_control is not None and instance_id:
+            registered = await self.gateway_control.agent_registered(
+                profile_id, instance_id
+            )
+            checks["registration"] = registered
+            if registered is None:
+                diagnostics.append("registration_unverifiable")
+            elif registered is not True:
+                diagnostics.append("agent_not_registered")
+        else:
+            checks["registration"] = None
+            diagnostics.append("registration_unverifiable")
+        ready = all(value is True for value in checks.values())
+        return ProfileReadiness(
+            profile_id=profile_id,
+            runtime_instance_id=instance_id,
+            ready=ready,
+            checks=checks,
+            diagnostics=diagnostics,
+        )
+
     async def scan_and_reconcile_existing(self) -> list[dict[str, Any]]:
         """Reconcile Docker labels and ports with authenticated API state."""
         containers = await asyncio.to_thread(self.docker.scan_active_containers)
@@ -230,6 +847,11 @@ class SupervisorCore:
                     pid,
                     type(exc).__name__,
                 )
+        for item in containers:
+            if item.get("role") == "stream":
+                known = self._registration_known.get(item.get("profile_id"))
+                if known is not None:
+                    item["registered"] = known
         return containers
 
     async def _reconcile_profile(
@@ -241,8 +863,11 @@ class SupervisorCore:
         b_c = roles.get("browser")
         s_c = roles.get("stream")
 
-        # Integrity check: both browser and stream must exist
-        if not b_c or not s_c:
+        # Integrity check: the Browser anchors the pair. A missing
+        # Stream is a convergence target (AC-008), not a reason to
+        # retain silently — it is handled once the API confirms the
+        # desired state and the tracked session below.
+        if not b_c:
             logger.warning(
                 "Incomplete sandbox retained: profile=%s browser=%s stream=%s",
                 pid,
@@ -253,7 +878,7 @@ class SupervisorCore:
 
         # Integrity check: instance_id on both containers must match
         b_inst = b_c.get("instance_id")
-        s_inst = s_c.get("instance_id")
+        s_inst = s_c.get("instance_id") if s_c else b_inst
         if not b_inst or b_inst != s_inst:
             logger.warning(
                 "Sandbox instance mismatch: profile=%s browser=%s stream=%s",
@@ -275,6 +900,11 @@ class SupervisorCore:
                 pid,
                 type(e).__name__,
             )
+            # t026 AC-006: while the API is unreachable, only the media
+            # attachment may be recovered; lifecycle is never touched.
+            # The pair's labels/instance consistency was verified above,
+            # so recovery does not depend on an in-memory session.
+            await self._recover_attachment_offline(pid, b_inst)
             return
 
         if resp.status_code == 200:
@@ -298,12 +928,75 @@ class SupervisorCore:
             bound_version = int(
                 rt.get("config_version", b_c.get("config_version", 1))
             )
+            if (
+                desired == "running"
+                and s_c is None
+                and session is not None
+                and session.runtime_instance_id == b_inst
+            ):
+                # AC-008: the Stream container is gone while the pair
+                # is tracked and desired running — rebuild only the
+                # Stream; the Browser keeps running untouched. The
+                # replacement budget bounds this path like every other
+                # Stream-only replacement (no unbounded self-retry).
+                if not self._stream_replacement_allowed(pid, b_inst):
+                    self._update_transport(
+                        pid,
+                        transport_state="failed",
+                        stream_state="missing",
+                        last_error="stream_missing_budget_exhausted",
+                        last_error_at=self._now_iso(),
+                    )
+                    return
+                rebuild_network = False
+                try:
+                    media = await asyncio.to_thread(
+                        self.docker.inspect_media_network, pid
+                    )
+                    rebuild_network = not (
+                        media.get("exists") and media.get("conforms")
+                    )
+                except DockerSandboxError:
+                    rebuild_network = False
+                await self._replace_stream_only(
+                    pid, session, rebuild_network=rebuild_network
+                )
+                return
+            if s_c is None:
+                # Without a tracked session the Stream's port binding
+                # cannot be recovered safely; retain as before.
+                logger.warning(
+                    "Stream missing without tracked session; retained: "
+                    "profile=%s",
+                    pid,
+                )
+                return
             if desired == "running":
                 obs = await self._reconcile_instance_observation(
                     pid, b_inst, bound_version, container_status=b_c.get("status")
                 )
                 if obs in ("stopped", "error"):
                     return
+                if (
+                    obs == "running"
+                    and session is not None
+                    and session.runtime_instance_id == b_inst
+                    and session.observed_state == "error"
+                ):
+                    # Release a locally latched container_exit error:
+                    # the authoritative observation (Browser running +
+                    # Agent health for this very instance) supersedes
+                    # it. Without the release, the same-instance branch
+                    # below can neither report running nor converge
+                    # again for this instance (t026_code_f014). The
+                    # terminal-observation dedupe key goes with it: the
+                    # generation demonstrably did not terminate, so a
+                    # later terminal fact for this same instance must be
+                    # reportable again (t026_code_f015).
+                    session.observed_state = "running"
+                    self._terminal_observations.discard(
+                        (pid, b_inst, bound_version)
+                    )
 
             if (
                 desired == "running"
@@ -313,6 +1006,19 @@ class SupervisorCore:
                 # Same generation is already tracked. Docker "running" must
                 # never overwrite an error observation from the Agent.
                 if any(item["status"] != "running" for item in (b_c, s_c)):
+                    if (
+                        b_c["status"] == "running"
+                        and s_c["status"] != "running"
+                        and self._stream_replacement_allowed(pid, b_inst)
+                    ):
+                        # AC-008: a stopped/exited Stream is repaired in
+                        # place within the replacement budget; the
+                        # running Browser and the pair are left alone
+                        # instead of escalating to a whole-pair error.
+                        await self._replace_stream_only(
+                            pid, session, rebuild_network=False
+                        )
+                        return
                     if session.observed_state != "error":
                         session.observed_state = "error"
                         await self.report_terminal_observation(
@@ -332,6 +1038,11 @@ class SupervisorCore:
                         "running",
                         int(rt.get("config_version", session.config_version)),
                     )
+                if (
+                    session.observed_state == "running"
+                    and all(item["status"] == "running" for item in (b_c, s_c))
+                ):
+                    await self._converge_session(pid, session, roles)
                 return
 
             if desired == "running" and any(
@@ -938,6 +1649,106 @@ class SupervisorCore:
         if resp.status_code != 200:
             raise RuntimeUnavailableError("Runtime agent control unavailable")
 
+    async def release_dialog_attendant(self, profile_id: str) -> bool:
+        """Best-effort release of the Agent's resident dialog attendant.
+
+        Called by the Supervisor close-tunnels cascade during a
+        takeover (t031). Returns True only when the Agent acknowledges
+        or when no Agent process exists (vacuous: a dead Agent holds no
+        attendant state, so there is nothing to release -- without this
+        case every close for a never-started profile would stay pending
+        forever). False degrades to the attendant's own release-on-stop
+        path and never blocks the tunnel close.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return True
+                request = ControlRequest(
+                    action="release_attendant",
+                    params={"profile_id": profile_id},
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - release failure degrades, never blocks
+            return False
+        return resp.status_code == 200
+
+    async def list_attendant_dialogs(
+        self, profile_id: str
+    ) -> list[dict] | None:
+        """Peek held dialogs from the Agent's resident attendant.
+
+        Returns None when the Agent is unreachable (the caller treats
+        it as "no held dialog known"); an empty list means the
+        attendant is reachable and holds nothing.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return None
+                request = ControlRequest(
+                    action="list_attendant_dialogs",
+                    params={"profile_id": profile_id},
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - unreachable Agent degrades to unknown
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        data = body.get("data") or {}
+        dialogs = data.get("dialogs")
+        return dialogs if isinstance(dialogs, list) else None
+
+    async def answer_attendant_dialog(
+        self,
+        profile_id: str,
+        target_id: str,
+        accept: bool,
+        prompt_text: str | None = None,
+    ) -> dict | None:
+        """Answer a held dialog through the attendant's session.
+
+        Returns the answered dialog record, or None when no dialog is
+        held for the target or the Agent is unreachable.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return None
+                params: dict[str, Any] = {
+                    "profile_id": profile_id,
+                    "target_id": target_id,
+                    "accept": accept,
+                }
+                if prompt_text is not None:
+                    params["prompt_text"] = prompt_text
+                request = ControlRequest(
+                    action="answer_attendant_dialog",
+                    params=params,
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - unreachable Agent degrades to unknown
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        data = body.get("data") or {}
+        dialog = data.get("dialog")
+        return dialog if isinstance(dialog, dict) else None
+
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
     ) -> bool:
@@ -1045,11 +1856,12 @@ class SupervisorCore:
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
                 media_addresses = None
-                if self.gateway_container_id:
+                resolved_gateway = await asyncio.to_thread(self._resolve_gateway_id)
+                if resolved_gateway:
                     media_addresses = await asyncio.to_thread(
                         self.docker.attach_profile_infrastructure,
                         profile_id,
-                        self.gateway_container_id,
+                        resolved_gateway,
                         gateway_port=self.gateway_endpoint.port,
                     )
                 await self._report_observed(
@@ -1144,6 +1956,24 @@ class SupervisorCore:
                     observed_state="running",
                 )
                 self._sessions[profile_id] = session
+                self._registration_known[profile_id] = True
+                self._update_transport(
+                    profile_id,
+                    runtime_instance_id=runtime_instance_id,
+                    browser_state="running",
+                    stream_state="running",
+                    transport_state="ready",
+                    config_version=config_version,
+                    protocol_version="v2",
+                    gateway_endpoint=(
+                        media_addresses.get("gateway_ip")
+                        if media_addresses
+                        else None
+                    ),
+                    last_attached_at=self._now_iso(),
+                    last_registered_at=self._now_iso(),
+                    last_error=None,
+                )
                 return session
 
             except Exception as err:
@@ -1302,6 +2132,13 @@ class SupervisorCore:
                 profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
             )
             self.operations.complete(command_id, request, result)
+            self._registration_known.pop(profile_id, None)
+            self._update_transport(
+                profile_id,
+                browser_state="stopped",
+                stream_state="stopped",
+                transport_state="unknown",
+            )
             logger.info(
                 f"Profile {profile_id} cleanly stopped and resources reclaimed."
             )

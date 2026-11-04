@@ -49,6 +49,11 @@
 
 由 t007 真实栈 E2E（构建产物 + Caddy/API/Supervisor/Gateway/Browser/Stream + 无头 Google Chrome 双标签页，无 coturn）与 Vitest 验证。公网与原生 Linux x86_64 执行按用户豁免记 NOT_RUN / USER_WAIVED。
 
+## 会话动作隔离与应用阶段语义（t025）
+
+- 会话页、页头与 Profile 详情页的动作状态（error/pending）按动作目标 Profile 隔离呈现：停留在组件实例上的共享 mutation 状态只在目标与当前查看的 Profile 一致时显示；切换到其他 Profile 不显示前一 Profile 的错误（含页头 `display-apply-error` 条）、不被其 pending 禁用，前一 Profile 的迟到响应不污染当前视图；详情页本地结果横幅（保存成功/失败）与处理器的后续导航/表单清理同样按发起 Profile 守卫，迟到结算不写入已切换到的 Profile。
+- “应用并重启”是带阶段的逻辑动作：阶段与 stop 前的 runtime_instance_id 跨自动重试保存，重试先观测当前运行时再续跑——stop 已生效则不再等待已完成阶段；start 已在服务端生效而响应丢失时，识别 desired=running 的新实例并收敛到 running，不等待 stopped、不停止或重建新实例；「新实例」的认定在新旧实例 id 均已知时要求二者不同（同 id 的 running 视为旧实例被外部恢复，仍走完整 stop/start），任一 id 未知时回退 desired/observed 判定；stop/start 未生效时以同一操作键安全续跑，状态查询持续失败时有界报错。
+
 ## 前端请求与文案一致性（t023）
 
 - 前端写操作的 `Idempotency-Key` 在每次调用边界生成：同一逻辑动作的自动重试复用同一键，并发或先后发生的独立动作必须使用不同键；复合动作（如应用显示设置的 stop→start）由单次动作键派生各步操作键。请求取消与超时可区分：外部取消不可重试，内部超时可重试。

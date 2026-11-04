@@ -38,9 +38,81 @@
     "SearchDefaultsStatusResponse": {
       "$id": "#/$defs/SearchDefaultsStatusResponse",
       "$ref": "#/$defs/SearchDefaultsStatusResponse"
+    },
+    "TransportObservation": {
+      "$id": "#/$defs/TransportObservation",
+      "$ref": "#/$defs/TransportObservation"
+    },
+    "TransportObservationResponse": {
+      "$id": "#/$defs/TransportObservationResponse",
+      "$ref": "#/$defs/TransportObservationResponse"
+    },
+    "ReconcileAllResponse": {
+      "$id": "#/$defs/ReconcileAllResponse",
+      "$ref": "#/$defs/ReconcileAllResponse"
+    },
+    "ProfileReadiness": {
+      "$id": "#/$defs/ProfileReadiness",
+      "$ref": "#/$defs/ProfileReadiness"
+    },
+    "ReadinessResponse": {
+      "$id": "#/$defs/ReadinessResponse",
+      "$ref": "#/$defs/ReadinessResponse"
     }
   },
   "$defs": {
+    "ProfileReadiness": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "ready": {
+          "default": false,
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "checks": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Checks",
+          "type": "object"
+        },
+        "diagnostics": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Diagnostics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "ProfileReadiness",
+      "type": "object"
+    },
     "ProfileRuntimeStatus": {
       "additionalProperties": false,
       "properties": {
@@ -132,6 +204,56 @@
         "profile_id"
       ],
       "title": "ProfileRuntimeStatus",
+      "type": "object"
+    },
+    "ReadinessResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "ready": {
+          "default": false,
+          "title": "Ready",
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "profiles": {
+          "items": {
+            "$ref": "#/$defs/ProfileReadiness"
+          },
+          "title": "Profiles",
+          "type": "array"
+        }
+      },
+      "title": "ReadinessResponse",
+      "type": "object"
+    },
+    "ReconcileAllResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "scanned": {
+          "default": 0,
+          "title": "Scanned",
+          "type": "integer"
+        },
+        "profiles": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Profiles",
+          "type": "array"
+        }
+      },
+      "title": "ReconcileAllResponse",
       "type": "object"
     },
     "ResetBlockedRequest": {
@@ -448,6 +570,244 @@
         "status"
       ],
       "title": "StopProfileResponse",
+      "type": "object"
+    },
+    "TransportObservation": {
+      "additionalProperties": false,
+      "description": "Layered runtime observation for one Profile (t026 AC-010).\n\nBrowser/Stream are process layers; transport is the media/signaling\npath between them and the viewer (Gateway attachment, policy and\nAgent registration). Held in memory by the Supervisor and the API;\nnever persisted. ``unknown`` is the honest value before the first\nreport of a generation.",
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "browser_state": {
+          "default": "unknown",
+          "enum": [
+            "running",
+            "stopped",
+            "missing",
+            "error",
+            "unknown"
+          ],
+          "title": "Browser State",
+          "type": "string"
+        },
+        "stream_state": {
+          "default": "unknown",
+          "enum": [
+            "running",
+            "stopped",
+            "missing",
+            "error",
+            "unknown"
+          ],
+          "title": "Stream State",
+          "type": "string"
+        },
+        "transport_state": {
+          "default": "unknown",
+          "enum": [
+            "ready",
+            "recovering",
+            "failed",
+            "unknown"
+          ],
+          "title": "Transport State",
+          "type": "string"
+        },
+        "protocol_version": {
+          "anyOf": [
+            {
+              "maxLength": 16,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protocol Version"
+        },
+        "selkies_version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selkies Version"
+        },
+        "agent_build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Build Id"
+        },
+        "gateway_build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gateway Build Id"
+        },
+        "config_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Version"
+        },
+        "gateway_endpoint": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gateway Endpoint"
+        },
+        "last_attached_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Attached At"
+        },
+        "last_registered_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Registered At"
+        },
+        "last_error": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Error"
+        },
+        "last_error_at": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Error At"
+        },
+        "rejection_code": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rejection Code"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "TransportObservation",
+      "type": "object"
+    },
+    "TransportObservationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtime Instance Id"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TransportObservation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "TransportObservationResponse",
       "type": "object"
     }
   }

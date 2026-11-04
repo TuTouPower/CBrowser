@@ -53,6 +53,41 @@ class GatewayApiClient:
             )
             return None
 
+    async def report_human_takeover(
+        self, profile_id: str, conn_id: str | None, input_kind: str | None
+    ) -> dict[str, Any] | None:
+        """Report a classified foreground human input to the API (t031).
+
+        The API moves the profile to the user, closes tunnels, and
+        broadcasts the new state. Returns the control state dict, or
+        None when the API is unreachable or rejects the report.
+        """
+        path = (
+            f"/api/v1/internal/gateway/profiles/{quote(profile_id, safe='')}"
+            "/control/takeover"
+        )
+        try:
+            resp = await self._client.post(
+                path,
+                headers=self._headers(),
+                json={
+                    "source": "gateway",
+                    "conn_id": conn_id,
+                    "input_kind": input_kind,
+                },
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:  # noqa: BLE001 - report failure is logged, never fatal
+            logger.warning(
+                "Failed to report human takeover for profile %s: %s",
+                profile_id,
+                type(e).__name__,
+            )
+            return None
+
     async def authorize_viewer(
         self, session_cookie: str, origin: str, profile_id: str
     ) -> tuple[bool, str | None]:

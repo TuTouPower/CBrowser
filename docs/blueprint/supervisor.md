@@ -16,6 +16,8 @@ API/Supervisor 控制面使用外部文件提供的 Bearer 凭证，至少 32 UT
 
 Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。共享 Gateway 动态加入媒体网络，实际地址明确传给 Stream；不再有 coturn（ADR 013）。网络复用与删除要求名称和 managed-by/profile/prefix 标签匹配。清理遇未知端点必须失败，不能强制断开；失败回滚只撤销本次新建连接。
 
+媒体网络自 t026 起使用固定端点规格（d029）：Supervisor 从可配置地址池（默认 `10.251.0.0/16`、每 Profile 一个 /24）显式分配 subnet 与 ip_range（subnet 低半段），Gateway 固定附着在 subnet 内、range 外的端点（广播地址前一可用地址），规格以网络标签记录（`com.cbrowser.media-spec=fixed-endpoint-v1` 等）。分配必须避开全部既有 Docker 网络与宿主路由；池耗尽、subnet 冲突、端点被其他容器占用或标签/IPAM 不一致都显式失败，绝不退回 Docker 自动 subnet 或随机地址。既有不合规网络不做原地修改（Docker 不支持），由收敛器经 Stream-only 替换重建迁移。Gateway 身份每轮按标签（prefix + managed-by + role=gateway）重新解析，配置的静态容器 ID 只作兜底；Gateway 被替换后在同一固定端点重新附着，不重建 Browser/Stream。
+
 引擎初始化通过临时 helper 完成，然后以只读挂载交付 Browser。SDK 初始化显式 pin `get_chromium_version()`，与 Runtime 使用相同引擎版本；不在 helper 失败后用盲目重试掩盖初始化错误。
 
 ## 生命周期与恢复
@@ -29,6 +31,10 @@ Native 事件按目录归属、Profile 与实例核对后进入持久 spool。�
 `RecoveryCoordinator` 根据 API 状态与 Docker 扫描协调异常重试。首次异常之后分别等待 2/10/30 秒，共三次自动重试；三次均失败时，原始异常总数 `failure_count=4` 并阻断。调度以 API 持久时间为依据，Supervisor 重启不能重新开始完整等待。正常退出和用户 stopped 意愿不重试；手动解除阻断经 API 幂等意愿事务执行。启动失败由 Core 上报一次稳定事件，协调器不重复计数。
 
 Supervisor 控制目录持进程级 flock，SIGKILL 由内核释放。Supervisor 正常退出仅取消自身后台任务，不终止健康 Runtime；重启时核对 API 意愿、实例及 Docker 标签和实际端口，再恢复本地会话。单纯看到容器对象或端口配置不等于 Runtime 已就绪。Browser 就绪还须核对当前 Profile、实例、配置版本和 PID，Stream 必须完成 Gateway 注册。
+
+稳态持续收敛（t026）：同实例运行对在每轮扫描（容器/网络事件唤醒或 30 秒兜底）中依次校验媒体网络合规、Gateway 固定端点附着、Stream 与 Browser 的实际 netns 规则（与渲染规格全等比对，而非假定安装成功）与 Agent 注册状态，只修复漂移的那一层。Stream 层问题（网络不合规、Stream 策略漂移、可修复的未注册）走 Stream-only 替换：保留 Browser 容器、IPC/X11、页面与 Profile 数据、同实例凭证与 UDP 端口，替换在有界预算内进行（同实例窗口内最多 3 次），预算耗尽报 transport failed。Browser 策略漂移则立即 fail-closed（双族 DROP）并报告 error，绝不自动 teardown。注册被 Gateway 以协议级原因（版本/凭证/身份/载荷/实例未绑定）拒绝时不做任何替换、直接报 failed；Gateway 本身不可达时只呈现 recovering、从不重建 Stream。恢复判定感知注册状态：Stream 容器在跑但 Agent 已知未注册时不视为活跃对。API 失联期间只允许按标签/实例一致性恢复媒体附着，不执行任何生命周期动作。Supervisor 控制面另提供 `POST /supervisor/v1/reconcile`（一轮全量收敛）与 `GET /supervisor/v1/readiness`（对全部 desired=running Profile 逐项校验实例/进程/附着/实际策略/注册，任一未知即未就绪并返回逐 Profile 脱敏诊断），宿主机经 `docker compose exec` 在容器内用 `cbrowser.supervisor.control_client` 调用，不新增发布端口或反向代理路由。
+
+分层观测（t026）：Supervisor 维护每 Profile 的 browser/stream/transport 三层观测（状态、协议与 Selkies 版本、Agent/Gateway build 标识、配置版本、固定端点、最近附着/注册时间与最近错误/拒绝码），经控制面 `GET /supervisor/v1/profiles/{id}/transport` 暴露；API 侧仅内存缓存并按实例围栏进入运行响应与 SSE，不新增持久化列，API 重启后为 unknown 直至 Supervisor 下次上报。
 
 API 已绑定但尚无对应 Browser 的启动中断，通过稳定 missing_runtime 事件收敛后进入正常退避。Profile 锁持有期间不合成退出；已读取 Native 退出 journal 时优先等待其送达，避免首次 API 503 后被合成异常抢先覆盖。手动重开先移除旧自有 Browser 容器，再清理指向旧 hostname/PID 的 Chromium singleton 链接；不跟随链接修改目标。
 

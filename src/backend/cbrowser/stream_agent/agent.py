@@ -41,9 +41,11 @@ from .protocol import (
     MAX_TUNNEL_ENVELOPE_SIZE,
     AgentAction,
     AgentHeartbeatPayload,
+    AgentHumanInputTakeoverEnvelope,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
     GatewayTunnelEnvelope,
+    HumanInputTakeoverPayload,
     serialize_tunnel_envelope,
 )
 
@@ -205,6 +207,8 @@ class StreamAgent:
         )
         self.upstream_url = upstream_url
         self.agent_session_id: str | None = None
+        self.last_rejection = None
+        self.gateway_build_id: str | None = None
         self._running = False
         self._gw_ws: aiohttp.ClientWebSocketResponse | None = None
         self._webrtc_service: Any = None
@@ -222,6 +226,56 @@ class StreamAgent:
         self.heartbeat_interval: float = 10.0
         self._heartbeat_task: asyncio.Task | None = None
         self._sleep_fn = asyncio.sleep
+
+        # t031: human-takeover reports pending Gateway delivery. The
+        # policy callback appends here synchronously (input delivery
+        # never waits); flush runs after registration and on every new
+        # report while the Gateway connection is live. A report that
+        # fails to send stays pending for the next flush; the takeover
+        # itself is idempotent, so a later input re-reports it anyway.
+        self._pending_takeovers: list[dict[str, str | None]] = []
+        self.policy.on_human_takeover = self.report_human_takeover
+
+    def report_human_takeover(
+        self, conn_id: str | None, input_kind: str
+    ) -> None:
+        """Queue a classified foreground input for Gateway reporting."""
+        self._pending_takeovers.append(
+            {"conn_id": conn_id, "input_kind": input_kind}
+        )
+        ws = self._gw_ws
+        if ws is not None and not ws.closed:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            loop.create_task(self._flush_takeovers())
+
+    async def _flush_takeovers(self) -> None:
+        """Send pending takeover reports over the Gateway connection."""
+        ws = self._gw_ws
+        if ws is None or ws.closed:
+            return
+        while self._pending_takeovers:
+            report = self._pending_takeovers[0]
+            try:
+                envelope = AgentHumanInputTakeoverEnvelope(
+                    profile_id=self.config.profile_id,
+                    runtime_instance_id=self.config.runtime_instance_id,
+                    agent_session_id=self.agent_session_id,
+                    conn_id=None,
+                    payload=HumanInputTakeoverPayload(
+                        input_kind=str(report["input_kind"]),
+                        viewer_conn_id=report["conn_id"],
+                    ),
+                )
+                await ws.send_str(envelope.model_dump_json())
+            except Exception:  # noqa: BLE001 - keep pending for next flush
+                logger.warning(
+                    "Human takeover report send failed; kept pending"
+                )
+                return
+            self._pending_takeovers.pop(0)
 
     def has_detached_upstream(self, tab_id: str, resume_id: str) -> bool:
         """Whether a detached upstream is retained for resume."""
@@ -331,10 +385,17 @@ class StreamAgent:
                     raw_ack = json.loads(resp.data)
                     ack = GatewayRegisterResponse.model_validate(raw_ack)
                     if ack.status != "ok":
+                        self.last_rejection = ack.rejection
                         err_detail = ack.error or "unknown"
+                        if ack.rejection is not None:
+                            err_detail = (
+                                f"{ack.rejection.code}: {ack.rejection.message}"
+                            )
                         raise GatewayRegistrationError(
                             f"Gateway registration rejected: {err_detail}"
                         )
+                    self.gateway_build_id = ack.gateway_build_id
+                    self.last_rejection = None
 
                     if (
                         ack.profile_id != self.config.profile_id
@@ -350,6 +411,10 @@ class StreamAgent:
                     logger.info(
                         "StreamAgent registered with Gateway",
                     )
+
+                    # t031: flush takeover reports queued while the
+                    # Gateway connection was down.
+                    await self._flush_takeovers()
 
                     # Start application heartbeat task
                     self._heartbeat_task = self._start_heartbeat_task(ws)

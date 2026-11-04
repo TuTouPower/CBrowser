@@ -356,7 +356,11 @@ class RecoveryCoordinator:
             return
 
         if runtime_instance_id is not None and runtime_pair_active(
-            observed_state, runtime_instance_id, browser, stream
+            observed_state,
+            runtime_instance_id,
+            browser,
+            stream,
+            stream_registered=(stream or {}).get("registered"),
         ):
             self._cleanup_failures.pop(profile_id, None)
             self._cleanup_cooldown_until.pop(profile_id, None)

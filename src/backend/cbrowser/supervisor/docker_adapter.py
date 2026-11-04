@@ -29,6 +29,14 @@ from cbrowser.supervisor.container_spec import (
     stream_ports,
     x11_helper_labels,
 )
+from cbrowser.supervisor.address_pool import (
+    MediaNetworkPlan,
+    MediaPoolExhaustedError,
+    MediaSubnetAllocator,
+    host_route_networks,
+    media_network_labels,
+    plan_from_labels,
+)
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.network_spec import (
@@ -107,6 +115,7 @@ class DockerAdapter:
         runtime_uid: int = 1000,
         runtime_gid: int = 1000,
         manage_ownership: bool = False,
+        media_subnet_pool: str | None = None,
     ):
         self.validator = path_validator
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
@@ -132,6 +141,11 @@ class DockerAdapter:
         self.manage_ownership = manage_ownership
         self.policy_image = policy_image or os.environ.get(
             "CBROWSER_NETWORK_POLICY_IMAGE"
+        )
+        self.media_allocator = MediaSubnetAllocator(
+            media_subnet_pool
+            or os.environ.get("CBROWSER_MEDIA_SUBNET_POOL")
+            or "10.251.0.0/16"
         )
         self._cache_lock = asyncio.Lock()
         self._binary_ready = False
@@ -636,9 +650,7 @@ with path.open('w') as output:
                     )
 
     async def create_profile_network(self, profile_id: str) -> Any:
-        return await asyncio.to_thread(
-            self._ensure_network, profile_id, self.get_network_name(profile_id)
-        )
+        return await asyncio.to_thread(self._ensure_media_network, profile_id)
 
     async def create_browser_network(self, profile_id: str) -> Any:
         return await asyncio.to_thread(
@@ -661,6 +673,126 @@ with path.open('w') as output:
             )
         except DockerException as e:
             raise DockerSandboxError(f"Failed to create network {net_name}: {e}") from e
+
+    def _used_subnets(self) -> list[ipaddress.IPv4Network]:
+        """Every subnet Docker already knows, plus host route targets."""
+        used: list[ipaddress.IPv4Network] = []
+        try:
+            networks = self.client.networks.list()
+        except DockerException as e:
+            raise DockerSandboxError(
+                f"Failed to list networks for subnet allocation: {e}"
+            ) from e
+        for network in networks:
+            config = (network.attrs.get("IPAM") or {}).get("Config") or []
+            for entry in config:
+                subnet = entry.get("Subnet") if isinstance(entry, dict) else None
+                if not subnet:
+                    continue
+                try:
+                    parsed = ipaddress.ip_network(subnet)
+                except ValueError:
+                    continue
+                if isinstance(parsed, ipaddress.IPv4Network):
+                    used.append(parsed)
+        used.extend(host_route_networks())
+        return used
+
+    def _ensure_media_network(self, profile_id: str) -> Any:
+        """Create the Profile media network with the fixed-endpoint spec.
+
+        Existing networks are returned as-is; conformance is a separate
+        inspection (reconcile migrates non-conforming networks by
+        rebuild). New networks always get an allocated explicit subnet:
+        allocation failure is explicit, never an auto-subnet fallback.
+        """
+        net_name = self.get_network_name(profile_id)
+        try:
+            try:
+                existing = self.client.networks.get(net_name)
+            except NotFound:
+                existing = None
+            if existing is not None:
+                self._require_network_ownership(existing, net_name)
+                return existing
+            try:
+                plan = self.media_allocator.allocate(self._used_subnets())
+            except MediaPoolExhaustedError as e:
+                raise DockerSandboxError(str(e)) from e
+            ipam = docker.types.IPAMConfig(
+                pool_configs=[
+                    docker.types.IPAMPool(
+                        subnet=plan.subnet, iprange=plan.ip_range
+                    )
+                ]
+            )
+            return self.client.networks.create(
+                net_name,
+                driver="bridge",
+                ipam=ipam,
+                labels=media_network_labels(
+                    network_labels(self.resource_prefix, profile_id), plan
+                ),
+            )
+        except DockerSandboxError:
+            raise
+        except DockerException as e:
+            raise DockerSandboxError(
+                f"Failed to create network {net_name}: {e}"
+            ) from e
+
+    def inspect_media_network(self, profile_id: str) -> dict[str, Any]:
+        """Conformance snapshot of the Profile media network.
+
+        ``conforms`` requires the recorded plan labels AND a live IPAM
+        config that matches them; anything else (missing network,
+        pre-spec network, label/IPAM drift) is reported, not assumed.
+        """
+        net_name = self.get_network_name(profile_id)
+        result: dict[str, Any] = {
+            "exists": False,
+            "conforms": False,
+            "plan": None,
+            "gateway_attached_id": None,
+            "gateway_ip": None,
+            "endpoints": {},
+        }
+        try:
+            network = self.client.networks.get(net_name)
+        except NotFound:
+            return result
+        except DockerException as e:
+            raise DockerSandboxError(
+                f"Failed to inspect network {net_name}: {e}"
+            ) from e
+        self._require_network_ownership(network, net_name)
+        network.reload()
+        result["exists"] = True
+        plan = plan_from_labels(network.attrs.get("Labels") or {})
+        ipam_entries = (network.attrs.get("IPAM") or {}).get("Config") or []
+        ipam_matches = plan is not None and any(
+            isinstance(entry, dict)
+            and entry.get("Subnet") == plan.subnet
+            and entry.get("IPRange") == plan.ip_range
+            for entry in ipam_entries
+        )
+        endpoints: dict[str, str] = {}
+        for container_id, info in (
+            network.attrs.get("Containers") or {}
+        ).items():
+            if isinstance(info, dict):
+                endpoints[container_id] = (info.get("IPv4Address") or "").split(
+                    "/"
+                )[0]
+        result["endpoints"] = endpoints
+        if plan is not None:
+            result["plan"] = plan
+            for container_id, ip in endpoints.items():
+                if ip == plan.gateway_endpoint:
+                    result["gateway_attached_id"] = container_id
+                    result["gateway_ip"] = ip
+        result["conforms"] = bool(plan is not None and ipam_matches)
+        return result
 
     def _require_network_ownership(self, network: Any, name: str) -> None:
         labels = network.attrs.get("Labels") or {}
@@ -704,6 +836,82 @@ with path.open('w') as output:
             )
         return container
 
+    def rebuild_media_network(self, profile_id: str) -> Any:
+        """Rebuild a nonconformant media network around live containers.
+
+        Docker refuses to remove a network with active endpoints, so
+        every verified endpoint is disconnected first and the
+        Browser/Stream containers are reconnected to the recreated
+        network afterwards: their IDs, pages, IPC/X11 and Profile data
+        are untouched (t026 AC-004). An unknown endpoint aborts the
+        rebuild before anything is detached. The Gateway is not
+        reconnected here — the caller re-attaches it at the new plan's
+        fixed endpoint.
+        """
+        net_name = self.get_network_name(profile_id)
+        try:
+            net = self.client.networks.get(net_name)
+        except NotFound:
+            return self._ensure_media_network(profile_id)
+        except DockerException as e:
+            raise DockerSandboxError(
+                f"Failed to get network {net_name}: {e}"
+            ) from e
+        self._require_network_ownership(net, net_name)
+        net.reload()
+        endpoints: list[Any] = []
+        for container_id in list((net.attrs.get("Containers") or {}).keys()):
+            try:
+                container = self.client.containers.get(container_id)
+            except DockerException as e:
+                raise DockerSandboxError(
+                    f"Failed to inspect endpoint container {container_id} "
+                    f"in network {net_name}: {e}"
+                ) from e
+            labels = container.labels or {}
+            if (
+                labels.get("com.cbrowser.prefix") != self.resource_prefix
+                or labels.get("com.cbrowser.managed-by") != "supervisor"
+                or labels.get("com.cbrowser.role")
+                not in {"browser", "stream", "gateway"}
+            ):
+                raise DockerSandboxError(
+                    f"Unknown endpoint container {container.name} "
+                    f"({container_id}) in network {net_name}"
+                )
+            endpoints.append(container)
+        for container in endpoints:
+            try:
+                net.disconnect(container)
+            except DockerException as e:
+                raise DockerSandboxError(
+                    f"Failed to disconnect {container.name} from "
+                    f"{net_name}: {e}"
+                ) from e
+        try:
+            net.remove()
+        except DockerException as e:
+            for container in endpoints:
+                try:
+                    net.connect(container)
+                except DockerException:
+                    pass
+            raise DockerSandboxError(
+                f"Failed to remove network {net_name}: {e}"
+            ) from e
+        new_net = self._ensure_media_network(profile_id)
+        for container in endpoints:
+            if (container.labels or {}).get("com.cbrowser.role") == "gateway":
+                continue
+            try:
+                new_net.connect(container)
+            except DockerException as e:
+                raise DockerSandboxError(
+                    f"Failed to reconnect {container.name} to "
+                    f"{net_name}: {e}"
+                ) from e
+        return new_net
+
     def attach_profile_infrastructure(
         self,
         profile_id: str,
@@ -730,9 +938,48 @@ with path.open('w') as output:
         try:
             net.reload()
             connected_containers = net.attrs.get("Containers") or {}
+            plan = plan_from_labels(net.attrs.get("Labels") or {})
 
             targets = [c for c in (gw,) if c is not None]
             for container in targets:
+                if plan is not None:
+                    # Fixed-endpoint spec: the endpoint must be free or
+                    # already held by this Gateway; a different holder is
+                    # an explicit conflict, never a silent renumber.
+                    for other_id, info in connected_containers.items():
+                        other_ip = (
+                            (info.get("IPv4Address") or "").split("/")[0]
+                            if isinstance(info, dict)
+                            else ""
+                        )
+                        if other_ip == plan.gateway_endpoint and other_id != container.id:
+                            raise DockerSandboxError(
+                                "Gateway fixed endpoint is held by another "
+                                f"container on {net_name}"
+                            )
+                    current_ip = None
+                    if container.id in connected_containers:
+                        current_ip = (
+                            connected_containers[container.id].get(
+                                "IPv4Address"
+                            )
+                            or ""
+                        ).split("/")[0]
+                    if current_ip == plan.gateway_endpoint:
+                        continue
+                    if container.id in connected_containers:
+                        # Attached at a drifted address: re-attach at the
+                        # fixed endpoint (infra container, safe to move).
+                        net.disconnect(container)
+                        net.reload()
+                        connected_containers = net.attrs.get("Containers") or {}
+                    net.connect(
+                        container, ipv4_address=plan.gateway_endpoint
+                    )
+                    newly_connected.append(container)
+                    net.reload()
+                    connected_containers = net.attrs.get("Containers") or {}
+                    continue
                 if container.id not in connected_containers:
                     net.connect(container)
                     newly_connected.append(container)
@@ -755,6 +1002,11 @@ with path.open('w') as output:
                     raise DockerSandboxError(
                         f"Failed to allocate or retrieve IPv4 address for "
                         f"gateway on {net_name}"
+                    )
+                if plan is not None and gw_ip != plan.gateway_endpoint:
+                    raise DockerSandboxError(
+                        "Gateway address does not match the fixed endpoint "
+                        f"for {net_name}"
                     )
 
             result: dict[str, Any] = {}
@@ -1069,6 +1321,7 @@ with path.open('w') as output:
             screen_width=screen_width,
             screen_height=screen_height,
             clipboard_sync=clipboard_sync,
+            build_id=os.environ.get("CBROWSER_BUILD_ID") or None,
         )
         ports = stream_ports(udp_mux_port)
 
@@ -1244,6 +1497,178 @@ with path.open('w') as output:
         except (OSError, ValueError, TypeError, KeyError):
             return False
         return False
+
+    def scan_gateway_containers(self) -> list[Any]:
+        """Running containers carrying this deployment's Gateway identity.
+
+        Gateway identity is resolved from labels on every scan (t026):
+        prefix + managed-by + role=gateway. A replaced Gateway container
+        (new ID) is found without any static startup parameter.
+        """
+        try:
+            containers = self.client.containers.list(
+                all=False,
+                filters={"label": f"com.cbrowser.prefix={self.resource_prefix}"},
+            )
+        except DockerException as e:
+            raise DockerSandboxError(
+                f"Gateway scan failed: {type(e).__name__}"
+            ) from None
+        result = []
+        for container in containers:
+            labels = container.labels or {}
+            if (
+                labels.get("com.cbrowser.managed-by") == "supervisor"
+                and labels.get("com.cbrowser.role") == "gateway"
+                and container.status == "running"
+            ):
+                result.append(container)
+        return result
+
+    def resolve_gateway_container_id(self) -> str | None:
+        """The current Gateway container ID, or None when absent."""
+        gateways = self.scan_gateway_containers()
+        return gateways[0].id if gateways else None
+
+    def stream_policy_spec(
+        self, plan: MediaNetworkPlan, gateway_port: int, udp_mux_port: int
+    ) -> dict[str, Any]:
+        """Expected live Stream netfilter spec for convergence checks.
+
+        Mirrors startup installation: the only allowed TCP peer is the
+        Gateway at its fixed media endpoint, plus the UDP mux listener.
+        """
+        return {
+            "role": "stream",
+            "udp_mux_port": udp_mux_port,
+            "allowed_tcp": [(plan.gateway_endpoint, gateway_port)],
+            "allowed_udp": [],
+        }
+
+    def browser_policy_spec(
+        self, profile_id: str, container: Any
+    ) -> dict[str, Any]:
+        """Expected live Browser netfilter spec for convergence checks.
+
+        Rebuilt from the same inputs as startup application: the stored
+        snapshot's proxy, resolved from inside the Browser container.
+        """
+        proxy: str | None = None
+        snapshot_path = self.validator.get_runtime_dir(profile_id) / "snapshot.json"
+        if snapshot_path.exists():
+            try:
+                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                config = snapshot.get("config") if isinstance(snapshot, dict) else None
+                candidate = config.get("proxy") if isinstance(config, dict) else None
+                proxy = candidate if isinstance(candidate, str) else None
+            except (OSError, ValueError):
+                proxy = None
+        allowed_tcp = self._resolved_endpoint(container, proxy) if proxy else []
+        return {
+            "role": "browser",
+            "allowed_tcp": allowed_tcp,
+            "allowed_udp": [],
+            "udp_mux_port": None,
+        }
+
+    def _run_policy_helper(self, container: Any, command: list[str]) -> int:
+        """Run the policy module in the target namespace; return its exit code."""
+        if not self.policy_image or not (
+            self.policy_image.startswith("sha256:") or "@sha256:" in self.policy_image
+        ):
+            raise DockerSandboxError(
+                "Explicit immutable network policy image is required"
+            )
+        helper = None
+        try:
+            helper = self.client.containers.run(
+                self.policy_image,
+                entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
+                command=command,
+                detach=True,
+                user="0:0",
+                read_only=True,
+                cap_drop=["ALL"],
+                cap_add=["NET_ADMIN"],
+                security_opt=["no-new-privileges:true"],
+                network_mode=f"container:{container.id}",
+                tmpfs={
+                    "/run": "rw,nosuid,nodev,size=4m",
+                    "/tmp": "rw,nosuid,nodev,size=4m",
+                },
+                labels=policy_helper_labels(
+                    self.resource_prefix,
+                    (container.labels or {}).get("com.cbrowser.instance-id", ""),
+                ),
+            )
+            result = helper.wait(timeout=30)
+            return int(result.get("StatusCode", -1))
+        except DockerException as exc:
+            raise DockerSandboxError(
+                "Runtime network policy helper failed: " + type(exc).__name__
+            ) from None
+        finally:
+            if helper is not None:
+                helper.remove(force=True)
+
+    def verify_container_policy(
+        self, container: Any, policy: dict[str, Any]
+    ) -> bool:
+        """True only when the container's live netns rules equal the spec.
+
+        Exit 0 from the helper means an exact match, 4 a definite
+        mismatch; anything else is an adapter error, never a silent pass.
+        """
+        validated = NetworkPolicySpec.model_validate(policy)
+        code = self._run_policy_helper(
+            container, ["verify", validated.model_dump_json()]
+        )
+        if code == 0:
+            return True
+        if code == 4:
+            return False
+        raise DockerSandboxError(
+            f"Runtime network policy verification failed: exit={code}"
+        )
+
+    def fail_close_container(self, container: Any) -> None:
+        """Replace the container's rules with DROP-everything (AC-005)."""
+        code = self._run_policy_helper(container, ["fail-closed"])
+        if code != 0:
+            raise DockerSandboxError(
+                f"Runtime fail-closed installation failed: exit={code}"
+            )
+
+    def get_profile_containers(self, profile_id: str) -> dict[str, Any]:
+        """Live Browser/Stream container objects for one Profile.
+
+        Each role is fetched by its deterministic name; a container is
+        only returned when its labels bind it to this prefix, Profile
+        and role — anything else reads as missing rather than adopted.
+        """
+        result: dict[str, Any] = {"browser": None, "stream": None}
+        names = {
+            "browser": self.get_browser_container_name(profile_id),
+            "stream": self.get_stream_container_name(profile_id),
+        }
+        for role, name in names.items():
+            try:
+                container = self.client.containers.get(name)
+            except NotFound:
+                continue
+            except DockerException as e:
+                raise DockerSandboxError(
+                    f"Failed to inspect {role} container {name}: {e}"
+                ) from e
+            labels = container.labels or {}
+            if (
+                labels.get("com.cbrowser.prefix") != self.resource_prefix
+                or labels.get("com.cbrowser.profile-id") != profile_id
+                or labels.get("com.cbrowser.role") != role
+            ):
+                continue
+            result[role] = container
+        return result
 
     def scan_active_containers(self) -> list[dict[str, Any]]:
         try:

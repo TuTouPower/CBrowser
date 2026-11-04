@@ -14,7 +14,7 @@
 
 完整 E2E 启动全新 Browser、Stream 与独立 bridge，仅发布 localhost 测试端口；媒体同机 `127.0.0.1` 直连，无 coturn。夹具不读已有 Profile，不接管现有 cbrowser 容器。测试资源按唯一名称在 finally 清理，不使用 prune。
 
-验证两页真实1920×1080视频、音频字节与能量增长；复制标签继承旧 sessionStorage 后独立重签，新页解码时原页保持原 PC；刷新、关闭与静音按页隔离。策略通过认证 Agent 连接发送，检查静止8/运动30、配额15/恢复及客户端越权拒绝。页面隐藏暂停、全部后台停捕获与恢复关键帧只走 Selkies 官方 STOP_VIDEO/START_VIDEO（计划 9.3），由 t006 Gateway E2E 以真实 Chrome 页面可见性验证。
+验证两页真实1920×1080视频、音频字节与能量增长；复制标签继承旧 sessionStorage 后独立重签，新页解码时原页保持原 PC；刷新、关闭与静音按页隔离。共享策略（静止8/运动30）通过认证 Agent 连接发送并在本指南的组件级用例中检查；Supervisor 配额（15/恢复）与客户端越权拒绝不在本指南的证据范围内，由配额链 E2E（`tests/e2e/test_supervisor_quota_chain_e2e.py`）经生产控制客户端在真实 Gateway 拓扑中以 Viewer 解码帧数验证。页面隐藏暂停、全部后台停捕获与恢复关键帧只走 Selkies 官方 STOP_VIDEO/START_VIDEO（计划 9.3），由 t006 Gateway E2E 以真实 Chrome 页面可见性验证。
 
 测试核对两页 selected remote candidate 为 `127.0.0.1` host/udp，视频 1920×1080 与音频持续增长；覆盖复制标签、刷新、关闭首 tab、可见性暂停/恢复与 Viewer 断线 resume。不得以 Mock Peer 或合成音频替代真实 Chrome。
 

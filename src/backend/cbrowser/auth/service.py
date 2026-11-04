@@ -337,6 +337,35 @@ class AuthService:
 
         return True, None
 
+    async def resolve_automation_token_id(self, token: str) -> str | None:
+        """Return the automation token row id for a presented token.
+
+        Used by the API automation proxy to scope the t031 control claim
+        to the authorizing credential. Returns None for unknown,
+        malformed, revoked, or expired tokens; never raises for a bad
+        token (callers treat None as unauthorized).
+        """
+        if not token or not token.startswith("cbat_"):
+            return None
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        async with self._session_maker() as session:
+            row = (
+                (
+                    await session.execute(
+                        select(AutomationTokenModel).where(
+                            AutomationTokenModel.token_hash == token_hash
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+        if row is None or row.revoked:
+            return None
+        if row.expires_at is not None and row.expires_at <= utc_now_iso():
+            return None
+        return row.id
+
     async def authorize_automation(
         self, token: str, profile_id: str, client_ip: str = "unknown"
     ) -> tuple[bool, str | None]:

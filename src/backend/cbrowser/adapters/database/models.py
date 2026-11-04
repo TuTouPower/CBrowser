@@ -293,3 +293,38 @@ class AutomationTokenModel(Base):
     expires_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     __table_args__ = (Index("idx_automation_tokens_token_hash", "token_hash"),)
+
+
+class ProfileControlModel(Base):
+    """Durable human-priority control state, one row per profile (t031).
+
+    Only the API-side control service writes this table (ADR 019: the
+    API is the sole business-DB writer). ``generation`` fences stale
+    tunnels and control responses; ``agent_reclaim_allowed`` blocks
+    silent re-claim after a takeover until an explicit human restore.
+    """
+
+    __tablename__ = "profile_controls"
+
+    profile_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    owner: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    agent_instance_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    agent_session_id: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    handoff_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    handoff_detail: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    agent_reclaim_allowed: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
+    pending_supervisor_close: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )

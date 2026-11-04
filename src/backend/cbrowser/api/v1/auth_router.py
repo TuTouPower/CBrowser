@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Annotated
 
 from cbrowser.adapters.database.models import SessionModel
+from cbrowser.api.v1.control_router import get_optional_control_service
 from cbrowser.auth.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
     get_auth_service,
@@ -13,8 +15,11 @@ from cbrowser.auth.dependencies import (
     require_user_session,
 )
 from cbrowser.auth.service import AuthService
+from cbrowser.services.control_service import ProfileControlService
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("cbrowser.api.v1.auth")
 
 auth_router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -206,6 +211,10 @@ async def list_automation_tokens(
 async def revoke_automation_token(
     token_id: str,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    control_service: Annotated[
+        ProfileControlService | None,
+        Depends(get_optional_control_service),
+    ],
 ):
     ok = await auth_service.revoke_automation_token(token_id)
     if not ok:
@@ -213,3 +222,18 @@ async def revoke_automation_token(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Token {token_id} not found or already revoked",
         )
+    # t031_code_f002: revoking the token must also move live control
+    # back to the user (identity_invalid) through the normal cascade,
+    # or the revoked agent's established tunnels would keep working.
+    # Best-effort after the revoke commit: a handoff failure is logged
+    # but never undoes the revoke.
+    if control_service is not None:
+        try:
+            await control_service.handoff_for_identity(
+                token_id, "identity_invalid"
+            )
+        except Exception:  # noqa: BLE001 - revoke already committed
+            logger.warning(
+                "Control handoff after token revoke failed: token=%s",
+                token_id,
+            )

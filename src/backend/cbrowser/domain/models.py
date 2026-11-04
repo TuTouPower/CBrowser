@@ -483,6 +483,122 @@ class SearchDefaultsStatusData(BaseModel):
     updated_at: str
 
 
+class TransportObservationData(BaseModel):
+    """API view of the Supervisor's layered transport observation (t026).
+
+    Mirrors the Supervisor control protocol model. Held in memory only:
+    after an API restart the value is ``unknown`` until the Supervisor
+    reports again, never a stale persisted copy.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str
+    runtime_instance_id: str | None = None
+    browser_state: Literal["running", "stopped", "missing", "error", "unknown"] = (
+        "unknown"
+    )
+    stream_state: Literal["running", "stopped", "missing", "error", "unknown"] = (
+        "unknown"
+    )
+    transport_state: Literal["ready", "recovering", "failed", "unknown"] = "unknown"
+    protocol_version: str | None = Field(default=None, max_length=16)
+    selkies_version: str | None = Field(default=None, max_length=64)
+    agent_build_id: str | None = Field(default=None, max_length=64)
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    config_version: int | None = None
+    gateway_endpoint: str | None = Field(default=None, max_length=64)
+    last_attached_at: str | None = None
+    last_registered_at: str | None = None
+    last_error: str | None = Field(default=None, max_length=256)
+    last_error_at: str | None = None
+    rejection_code: str | None = Field(default=None, max_length=64)
+
+
+class ProfileControlStateData(BaseModel):
+    """Human-priority control state for one profile (t031, ADR 019).
+
+    ``owner`` is ``user`` by default and after every restart, crash,
+    identity failure, or takeover; ``agent`` only while an explicitly
+    claimed agent session holds control. ``generation`` increases on
+    every ownership change and fences stale tunnel messages, control
+    responses, and SSE snapshots. ``agent_reclaim_allowed`` is cleared
+    by a takeover and only restored by an explicit human restore or a
+    clean agent finish, so a taken-over agent cannot silently re-claim
+    control through a fresh tunnel handshake.
+    """
+
+    profile_id: str
+    owner: Literal["user", "agent"] = "user"
+    generation: int = 0
+    agent_instance_id: str | None = None
+    agent_session_id: str | None = None
+    handoff_reason: str | None = None
+    handoff_detail: str | None = Field(default=None, max_length=256)
+    agent_reclaim_allowed: bool = True
+    pending_supervisor_close: bool = False
+    updated_at: str
+
+
+ControlHandoffReason = Literal[
+    "human_input",
+    "cli_handoff",
+    "permission",
+    "captcha",
+    "two_fa",
+    "agent_finish",
+    "supervisor_restart",
+    "profile_restart",
+    "crash",
+    "identity_invalid",
+]
+
+
+class ControlClaimRequest(BaseModel):
+    """Claim request (t031_code_f005: read the field notes).
+
+    ``agent_instance_id`` is accepted but IGNORED: the recorded
+    instance identity always comes from the automation token id, so a
+    caller-supplied instance never renames the claim. Only
+    ``agent_session_id`` is honored (it scopes the claim to a session).
+    """
+
+    agent_instance_id: str | None = Field(default=None, max_length=128)
+    agent_session_id: str | None = Field(default=None, max_length=128)
+
+
+class ControlHandoffRequest(BaseModel):
+    """Handoff request (t031_code_f005: read the field notes).
+
+    Handoff is fail-open toward the user: the identity fields are
+    accepted but IGNORED (any automation-token holder may move a
+    profile back to the safe state; the server does not check that the
+    caller is the controlling agent). Only ``reason``/``detail`` act.
+    """
+
+    reason: ControlHandoffReason
+    detail: str | None = Field(default=None, max_length=256)
+    agent_instance_id: str | None = Field(default=None, max_length=128)
+    agent_session_id: str | None = Field(default=None, max_length=128)
+
+
+class ControlTakeoverReport(BaseModel):
+    """Gateway-reported human-input takeover (internal endpoint)."""
+
+    source: str = Field(default="gateway", max_length=64)
+    conn_id: str | None = Field(default=None, max_length=128)
+    input_kind: str | None = Field(default=None, max_length=64)
+
+
+class AutomationTunnelData(BaseModel):
+    tunnel_id: str
+    layer: Literal["api", "supervisor"]
+    agent_instance_id: str | None = None
+    agent_session_id: str | None = None
+    generation: int
+    opened_at: str
+
+
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
     desired_state: DesiredState
@@ -494,6 +610,8 @@ class ProfileRuntimeResponse(BaseModel):
     last_exit_event_id: str | None
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
+    transport: TransportObservationData | None = None
+    control: ProfileControlStateData | None = None
     updated_at: str
 
 
@@ -506,6 +624,8 @@ class ProfileRuntimeStatusEvent(BaseModel):
     restart_blocked: bool = False
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
+    transport: TransportObservationData | None = None
+    control: ProfileControlStateData | None = None
     updated_at: str
 
 

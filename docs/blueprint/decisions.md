@@ -153,3 +153,88 @@
 ## 016 默认搜索初始化不作为浏览器就绪成功条件（D1=B，2026-11-04，t022）
 
 默认搜索引擎初始化（set_google_default）是 best-effort 增强，不是浏览器 readiness 的成功条件：初始化异常或超时后浏览器仍视为可用，其结果以独立类型化状态（applied/failed/disabled/pending）呈现到 Profile 页面，并提供受身份围栏保护、可幂等重试的操作；重试不重启浏览器、不干扰已有标签页，只有验证 Google 成为默认后才写成功 marker，正常启动不覆盖用户后续手动选择。原 D1 在 t022 立项时经用户选择 B 方案定案。
+
+## 017 不可变 release 身份、回退约束与凭证分级（2026-11-04，t027）
+
+- 背景：旧发布链路以可变 `*-deploy` 标签与非原子 `compose.env` 覆盖实现"升级"，同名 tag 每次被覆盖、无上一版 release，"可回滚"是假象；脚本还重复构建 API 镜像、无条件重启 Caddy、末尾打印管理员密码、缺失时自动生成全部 secret，且 compose 写死镜像 tag 与 build 块、固定实例命名，无法同 daemon 起隔离的第二实例。
+- 选项：
+    1. 保留标签覆盖，仅补健康检查与验收探针（回退仍无真实目标）。
+    2. 每次发布生成不可变 release（release 标签 + manifest 以镜像 ID 固定六镜像与配置指纹、迁移版本、readiness 能力），current/previous 指针只在 readiness 验收后原子移动；回退显式选上一 release 并受 readiness 能力与迁移版本下限约束；凭证分级：管理员密码用户提供、内部密钥自动随机生成（0600、永不打印）。
+- 结论：采用选项 2。发布/回退共用同一验收（有界 `up --wait` + 容器内探针调 t026 `reconcile_all`/`readiness`）；compose 镜像全变量化且无 build 块；实例身份参数化，prefix 异项目占用启动前拒绝；不存在降级迁移，数据从不由发布/回退删除。真实部署演练归 t032。
+- 替代：无（DOCKER_DEPLOYMENT.md 旧"标签可回滚"说法自本决定起作废）
+
+## 018 CDP 隧道由透明转发改为拒绝浏览器级破坏性命令（2026-11-04，t030）
+
+- 背景：t029 探针证实隧道透明转发时，外部客户端一句 `Browser.close`
+  即按 normal exit 停掉 Profile 且不恢复；Playwright 默认 context 会在
+  连接期间覆盖下载行为、绕过 Artifact 捕获。执行器上线前必须先堵住
+  这类命令，否则“可用执行器”先于“安全执行器”交付。
+- 选项：
+    1. 保持透明转发，只在执行器文档中警告（调用方自律；一次误发即停
+       Profile，不可接受）。
+    2. 隧道层拒绝清单命令并返回稳定错误，下载行为与 Emulation 覆盖
+       一律拒绝，脚本登记 + 断开清理；关 Tab 不在隧道做归属过滤（实测
+       会挂起 Playwright popup 关闭），改由执行器账本 enforcement，隧道
+       仅保留最后一页 backstop。
+- 结论：采用选项 2（规约见 `docs/specs/agent_executor.md`“隧道过滤”一节）。
+  t029 的“外部 Browser.close 停 Profile”与“no_defaults=False 期间客户端
+  下载优先”两条断言随策略变更整体替换为拒绝语义测试并注明 t030 为
+  裁决来源，不静默改预期。
+- 替代：无（透明转发语义自本决定起作废）
+
+## 019 Profile 人机控制权：真人优先、单 Agent 排他与代次围栏（2026-11-04，t031）
+
+- 背景：t030 落下两项输入：其一，CLI 退出后无认领的 JS Dialog 由容器
+  内常驻 Agent 分支维护（AC-006 否则分支未实现，打勾 + deferral 注）；
+  其二，setAutoAttach 会话的隧道 backstop 漏判。p029 另要求真人输入可
+  抢占 Agent 控制。ADR 007 已废弃排他 Viewer 租约：多人类 Viewer 并发
+  是既定语义，不能为控制权复活它。
+- 选项：
+    1. 方法名黑名单式拦截“致变 CDP 命令”（evaluate/callFunctionOn 等
+       逐条禁）：p029 已指出 evaluate 可跑任意致变脚本，名单不可靠。
+    2. 控制权状态机 + 连接拆除：每 Profile 一条控制记录（owner user/
+       agent、单调 generation、Agent 实例 + 会话身份、交接原因、
+       agent_reclaim_allowed、pending_supervisor_close），API 为唯一业
+       务库写入方；接管时持久化 owner=user 并代次 +1，API 与 Supervisor
+       各自关闭已登记的活动隧道并以代次围栏拒旧代次重连；向 user 的迁
+       移 fail-open、向 agent 的迁移 fail-closed（身份一致 + reclaim
+       标志 + 显式恢复三者缺一不可）。
+    3. 恢复 ADR 007 式排他租约并扩展到 Viewer：与多 Viewer 并发语义冲突。
+- 结论：采用选项 2。排他只存在于“人类侧作为一类”与“Agent 侧”之间，
+  首版每 Profile 至多一个协作 Agent；多人类 Viewer 不受限。默认与重
+  启/崩溃/身份失效一律回到 user；干净 Agent 结束（agent_finish）与运
+  行时重启/崩溃属于全新开始，reclaim 保持开放；人类驱动的交接关闭
+  reclaim，必须显式恢复。Supervisor 分区期间的残留窗口如实记录：分
+  区内已存在的 Supervisor 直连隧道在分区愈合前不受 API 侧关闭约束；
+  直连 Supervisor 令牌持有者属于基础设施信任边界（Supervisor token
+  即服务间凭证），其握手不查 API 状态，但转发代次受围栏约束。
+  ADR 006 “配置与管理集中于 /manage”的说法与实现不符（现无 /manage
+  路由，管理面为 AppLayout 顶栏 + Profile 详情/自动化页），按 decisions.md
+  勘误约定以本条为准修正。存储规约见 `docs/specs/human_agent_control.md`。
+- 常驻 Dialog attendant 与链实测结论：attendant 为 Agent 进程内组件，
+  持直连 browser_ws 的服务连接、在每页保持 no-op dialog 监听以阻止
+  Chrome 自动消解；t031 真浏览器链实测推翻“新会话可经标准 dialog_answer
+  应答滞留 dialog”的假设——新会话 Page.enable 会在 modal dialog 后挂起，
+  handleJavaScriptDialog 报 "No dialog is showing"，故滞留 dialog 只能
+  由 attendant 打开前已 Page.enable 的会话应答；CLI dialog_wait/
+  dialog_answer 在未 attach 时先经控制面 peek（/control/dialogs）再经
+  attendant 会话应答（/control/dialog-answer），adopt 在目标有滞留 dialog
+  时跳过 attach（否则 adopt 先挂在 Page.enable 上）。接管 release 后
+  dialog 回归 Chrome 默认处置（链实测：无监听时 firing 的 confirm 自动
+  消解为 false）。attendant 状态 v1 不进管理面（Agent 无 API 直连通道），
+  人类在视频中直接可见滞留 dialog，CLI 可经 peek 发现；补 API 拉取或
+  Agent 上报通道属后续设计，不在本 task 造无消费者 plumbing。
+- setAutoAttach 处置：tunnel_filter 补 attachedToTarget/detachedFromTarget
+  处理（登记 session→target 映射 + 已知页面），setAutoAttach 本身保持转发
+  （执行器自身传输）；最后一页 backstop 由此覆盖自动挂接会话。
+- R1 审阅补强（不改结论）：控制面 peek/应答要求调用方持有控制权且
+  token 身份与记录的 Agent 实例一致（user 态或第二 token 一律 409）；
+  接管级联的 attendant 释放纳入 pending 确认（释放失败则 reconcile
+  重试整条级联；无 Agent 进程时为空确认）；吊销 automation token 时
+  该 token 持有控制的 Profile 各执行一次 identity_invalid 交接；同一
+  Profile 的控制迁移按 profile 级异步锁串行化（并发认领败者为
+  control_second_agent 冲突）；服务连接丢失即释放滞留 dialog 状态；
+  handoff 响应体返回结算后状态。token 过期无独立清理点（握手时校验，
+  已建立隧道过期后不自动关闭）与恢复时清除 pending 而不补发关闭
+  （补发会误杀新隧道）均属已知边界，见规约。
+- 替代：无（方法名黑名单与排他租约复活均不采用）。

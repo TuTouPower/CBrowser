@@ -1,6 +1,7 @@
 import type {
   ArtifactResponse,
   AutomationEndpointResponse,
+  ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -9,6 +10,7 @@ import type {
   LoginResponse,
   SessionResponse,
 } from "./types";
+import { resolveSameOriginUrl } from "./same_origin";
 
 export class ApiError extends Error {
   constructor(
@@ -44,7 +46,6 @@ export function newIdempotencyKey(): string {
 }
 
 export interface ApiClientOptions {
-  baseUrl?: string;
   onUnauthorized?: () => void;
   defaultTimeoutMs?: number;
   uploadTimeoutMs?: number;
@@ -52,7 +53,6 @@ export interface ApiClientOptions {
 }
 
 export class ApiClient {
-  private baseUrl: string;
   private onUnauthorized?: () => void;
   private inMemoryCsrfToken: string | null = null;
   readonly defaultTimeoutMs: number;
@@ -60,7 +60,6 @@ export class ApiClient {
   readonly longOperationTimeoutMs: number;
 
   constructor(options: ApiClientOptions = {}) {
-    this.baseUrl = options.baseUrl ? options.baseUrl.replace(/\/+$/, "") : "";
     this.onUnauthorized = options.onUnauthorized;
     this.defaultTimeoutMs = options.defaultTimeoutMs ?? 30_000;
     this.uploadTimeoutMs = options.uploadTimeoutMs ?? 5 * 60_000;
@@ -84,15 +83,15 @@ export class ApiClient {
     init: RequestInit = {},
     timeoutMs: number = this.defaultTimeoutMs,
   ): Promise<T> {
-    const url = endpoint.startsWith("http")
-      ? endpoint
-      : `${this.baseUrl}${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
-    if (endpoint.startsWith("http") || endpoint.startsWith("//")) {
-      const target = new URL(endpoint, window.location.origin);
-      if (target.origin !== window.location.origin) {
-        throw new ApiError("Cross-origin API requests are not allowed", 0);
-      }
+    // The same-origin decision is made on the final resolved URL, never
+    // on the raw endpoint prefix: backslash and protocol-relative
+    // variants normalize to a cross-origin target inside the URL parser
+    // and must be refused before credentials or CSRF are attached.
+    const target = resolveSameOriginUrl(endpoint);
+    if (!target) {
+      throw new ApiError("Cross-origin API requests are not allowed", 0);
     }
+    const url = target.href;
 
     const method = (init.method || "GET").toUpperCase();
     const headers = new Headers(init.headers || {});
@@ -264,6 +263,20 @@ export class ApiClient {
         },
       );
     },
+    restoreControl: async (
+      profileId: string,
+      idempotencyKey?: string,
+    ): Promise<ProfileControlStateData> => {
+      // t031: explicit human restore. Returns the control state; the
+      // mutation hook merges it into the cached runtime response.
+      return this.request<ProfileControlStateData>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/control/restore`,
+        {
+          method: "POST",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
+    },
     setDesiredState: async (
       profileId: string,
       desiredState: "running" | "stopped",
@@ -352,7 +365,12 @@ export class ApiClient {
       );
     },
     downloadUrl: (profileId: string, artifactId: string): string => {
-      return `${this.baseUrl}/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts/${encodeURIComponent(artifactId)}`;
+      const path = `/api/v1/profiles/${encodeURIComponent(profileId)}/artifacts/${encodeURIComponent(artifactId)}`;
+      const target = resolveSameOriginUrl(path);
+      // The path is built only from encoded ids, so it is same-origin by
+      // construction; return the path form so the link can never point
+      // at a foreign origin.
+      return target ? `${target.pathname}${target.search}` : path;
     },
   };
 
@@ -376,10 +394,15 @@ export class ApiClient {
       return res;
     },
     logout: async (): Promise<void> => {
-      await this.request<void>("/api/v1/auth/logout", {
-        method: "POST",
-      });
-      this.setCsrfToken(null);
+      try {
+        await this.request<void>("/api/v1/auth/logout", {
+          method: "POST",
+        });
+      } finally {
+        // A failed logout request must not leave a usable CSRF token
+        // behind: the local session is over either way.
+        this.setCsrfToken(null);
+      }
     },
     session: async (): Promise<SessionResponse> => {
       const res = await this.request<SessionResponse>("/api/v1/auth/session");

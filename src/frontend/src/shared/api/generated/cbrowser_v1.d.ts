@@ -265,6 +265,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/profiles/{profile_id}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Control State */
+        get: operations["get_control_state_api_v1_profiles__profile_id__control_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/tunnels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Control Tunnels */
+        get: operations["list_control_tunnels_api_v1_profiles__profile_id__control_tunnels_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim Control */
+        post: operations["claim_control_api_v1_profiles__profile_id__control_claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/handoff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Handoff Control */
+        post: operations["handoff_control_api_v1_profiles__profile_id__control_handoff_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore Control */
+        post: operations["restore_control_api_v1_profiles__profile_id__control_restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/dialogs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Control Dialogs
+         * @description Peek dialogs held by the resident attendant (automation token).
+         *
+         *     A session attached after a dialog opened cannot observe it through
+         *     its own CDP session (t031 chain evidence), so a later session
+         *     peeks here before deciding whether to answer via the attendant.
+         *     The peek is gated to the controlling agent (see
+         *     ``_require_dialog_agent``).
+         */
+        get: operations["list_control_dialogs_api_v1_profiles__profile_id__control_dialogs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profiles/{profile_id}/control/dialog-answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer Control Dialog
+         * @description Answer a held dialog on the attendant's session (automation token).
+         *
+         *     Gated to the controlling agent (see ``_require_dialog_agent``):
+         *     a taken-over profile or a second token cannot answer dialogs.
+         */
+        post: operations["answer_control_dialog_api_v1_profiles__profile_id__control_dialog_answer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -384,6 +518,21 @@ export interface components {
             /** Created At */
             created_at: string;
         };
+        /**
+         * AttendantDialogAnswerRequest
+         * @description t031: answer a held dialog through the attendant's session.
+         */
+        AttendantDialogAnswerRequest: {
+            /** Target Id */
+            target_id: string;
+            /**
+             * Accept
+             * @default false
+             */
+            accept: boolean;
+            /** Prompt Text */
+            prompt_text?: string | null;
+        };
         /** AutomationEndpointResponse */
         AutomationEndpointResponse: {
             /** Profile Id */
@@ -450,6 +599,24 @@ export interface components {
             /** Expires At */
             expires_at?: string | null;
         };
+        /** AutomationTunnelData */
+        AutomationTunnelData: {
+            /** Tunnel Id */
+            tunnel_id: string;
+            /**
+             * Layer
+             * @enum {string}
+             */
+            layer: "api" | "supervisor";
+            /** Agent Instance Id */
+            agent_instance_id?: string | null;
+            /** Agent Session Id */
+            agent_session_id?: string | null;
+            /** Generation */
+            generation: number;
+            /** Opened At */
+            opened_at: string;
+        };
         /** ConfigVersionResponse */
         ConfigVersionResponse: {
             /** Id */
@@ -466,6 +633,43 @@ export interface components {
             tags?: components["schemas"]["Tag"][];
             /** Created At */
             created_at: string;
+        };
+        /**
+         * ControlClaimRequest
+         * @description Claim request (t031_code_f005: read the field notes).
+         *
+         *     ``agent_instance_id`` is accepted but IGNORED: the recorded
+         *     instance identity always comes from the automation token id, so a
+         *     caller-supplied instance never renames the claim. Only
+         *     ``agent_session_id`` is honored (it scopes the claim to a session).
+         */
+        ControlClaimRequest: {
+            /** Agent Instance Id */
+            agent_instance_id?: string | null;
+            /** Agent Session Id */
+            agent_session_id?: string | null;
+        };
+        /**
+         * ControlHandoffRequest
+         * @description Handoff request (t031_code_f005: read the field notes).
+         *
+         *     Handoff is fail-open toward the user: the identity fields are
+         *     accepted but IGNORED (any automation-token holder may move a
+         *     profile back to the safe state; the server does not check that the
+         *     caller is the controlling agent). Only ``reason``/``detail`` act.
+         */
+        ControlHandoffRequest: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "human_input" | "cli_handoff" | "permission" | "captcha" | "two_fa" | "agent_finish" | "supervisor_restart" | "profile_restart" | "crash" | "identity_invalid";
+            /** Detail */
+            detail?: string | null;
+            /** Agent Instance Id */
+            agent_instance_id?: string | null;
+            /** Agent Session Id */
+            agent_session_id?: string | null;
         };
         /** ErrorResponse */
         ErrorResponse: {
@@ -499,6 +703,54 @@ export interface components {
              * @description CSRF token for write requests
              */
             csrf_token: string;
+        };
+        /**
+         * ProfileControlStateData
+         * @description Human-priority control state for one profile (t031, ADR 019).
+         *
+         *     ``owner`` is ``user`` by default and after every restart, crash,
+         *     identity failure, or takeover; ``agent`` only while an explicitly
+         *     claimed agent session holds control. ``generation`` increases on
+         *     every ownership change and fences stale tunnel messages, control
+         *     responses, and SSE snapshots. ``agent_reclaim_allowed`` is cleared
+         *     by a takeover and only restored by an explicit human restore or a
+         *     clean agent finish, so a taken-over agent cannot silently re-claim
+         *     control through a fresh tunnel handshake.
+         */
+        ProfileControlStateData: {
+            /** Profile Id */
+            profile_id: string;
+            /**
+             * Owner
+             * @default user
+             * @enum {string}
+             */
+            owner: "user" | "agent";
+            /**
+             * Generation
+             * @default 0
+             */
+            generation: number;
+            /** Agent Instance Id */
+            agent_instance_id?: string | null;
+            /** Agent Session Id */
+            agent_session_id?: string | null;
+            /** Handoff Reason */
+            handoff_reason?: string | null;
+            /** Handoff Detail */
+            handoff_detail?: string | null;
+            /**
+             * Agent Reclaim Allowed
+             * @default true
+             */
+            agent_reclaim_allowed: boolean;
+            /**
+             * Pending Supervisor Close
+             * @default false
+             */
+            pending_supervisor_close: boolean;
+            /** Updated At */
+            updated_at: string;
         };
         /** ProfileCreateRequest */
         ProfileCreateRequest: {
@@ -767,6 +1019,8 @@ export interface components {
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
+            transport?: components["schemas"]["TransportObservationData"] | null;
+            control?: components["schemas"]["ProfileControlStateData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -799,6 +1053,8 @@ export interface components {
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
+            transport?: components["schemas"]["TransportObservationData"] | null;
+            control?: components["schemas"]["ProfileControlStateData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -901,6 +1157,60 @@ export interface components {
             tag: string;
             /** Color */
             color?: string | null;
+        };
+        /**
+         * TransportObservationData
+         * @description API view of the Supervisor's layered transport observation (t026).
+         *
+         *     Mirrors the Supervisor control protocol model. Held in memory only:
+         *     after an API restart the value is ``unknown`` until the Supervisor
+         *     reports again, never a stale persisted copy.
+         */
+        TransportObservationData: {
+            /** Profile Id */
+            profile_id: string;
+            /** Runtime Instance Id */
+            runtime_instance_id?: string | null;
+            /**
+             * Browser State
+             * @default unknown
+             * @enum {string}
+             */
+            browser_state: "running" | "stopped" | "missing" | "error" | "unknown";
+            /**
+             * Stream State
+             * @default unknown
+             * @enum {string}
+             */
+            stream_state: "running" | "stopped" | "missing" | "error" | "unknown";
+            /**
+             * Transport State
+             * @default unknown
+             * @enum {string}
+             */
+            transport_state: "ready" | "recovering" | "failed" | "unknown";
+            /** Protocol Version */
+            protocol_version?: string | null;
+            /** Selkies Version */
+            selkies_version?: string | null;
+            /** Agent Build Id */
+            agent_build_id?: string | null;
+            /** Gateway Build Id */
+            gateway_build_id?: string | null;
+            /** Config Version */
+            config_version?: number | null;
+            /** Gateway Endpoint */
+            gateway_endpoint?: string | null;
+            /** Last Attached At */
+            last_attached_at?: string | null;
+            /** Last Registered At */
+            last_registered_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Last Error At */
+            last_error_at?: string | null;
+            /** Rejection Code */
+            rejection_code?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2510,6 +2820,487 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AutomationEndpointResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_control_state_api_v1_profiles__profile_id__control_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileControlStateData"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_control_tunnels_api_v1_profiles__profile_id__control_tunnels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutomationTunnelData"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    claim_control_api_v1_profiles__profile_id__control_claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlClaimRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileControlStateData"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    handoff_control_api_v1_profiles__profile_id__control_handoff_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ControlHandoffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileControlStateData"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    restore_control_api_v1_profiles__profile_id__control_restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileControlStateData"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_control_dialogs_api_v1_profiles__profile_id__control_dialogs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    answer_control_dialog_api_v1_profiles__profile_id__control_dialog_answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AttendantDialogAnswerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Authentication required */

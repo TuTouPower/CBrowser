@@ -1,0 +1,14 @@
+**
+!tests/
+!tests/fixtures/
+!tests/fixtures/runtime_probe/
+!tests/fixtures/runtime_probe/test_mitshm.c
+!config/
+!config/docker/
+!config/docker/browser_runtime/
+!config/docker/browser_runtime/requirements.txt
+!config/docker/browser_runtime/entrypoint.sh
+!src/
+!src/backend/
+!src/backend/cbrowser/
+!src/backend/cbrowser/**

@@ -129,6 +129,7 @@ def stream_environment(
     screen_width: int | None,
     screen_height: int | None,
     clipboard_sync: bool = True,
+    build_id: str | None = None,
 ) -> dict[str, Any]:
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -159,6 +160,8 @@ def stream_environment(
     if screen_width is not None and screen_height is not None:
         env["CBROWSER_SCREEN_WIDTH"] = str(screen_width)
         env["CBROWSER_SCREEN_HEIGHT"] = str(screen_height)
+    if build_id:
+        env["CBROWSER_BUILD_ID"] = build_id
     return env
 
 

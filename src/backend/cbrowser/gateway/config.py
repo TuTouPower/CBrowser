@@ -36,6 +36,7 @@ class GatewayConfig(BaseModel):
     api_token_file: Path
     allowed_origins: list[str]
     agent_heartbeat_timeout_sec: float = 30.0
+    build_id: str = "dev"
 
     @field_validator("agent_heartbeat_timeout_sec")
     @classmethod
@@ -92,4 +93,5 @@ class GatewayConfig(BaseModel):
             api_token_file=api_token_file,
             allowed_origins=allowed_origins,
             agent_heartbeat_timeout_sec=hb_timeout,
+            build_id=(os.environ.get("CBROWSER_BUILD_ID") or "dev").strip(),
         )

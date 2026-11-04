@@ -18,6 +18,8 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
+from .dialog_attendant import DialogAttendantService
+from .tunnel_filter import TunnelFilter
 from .download_reconciler import scan_completed_downloads
 from .event_storage import EventStorage, StorageError, atomic_write_json
 from .profile_defaults import (
@@ -83,6 +85,9 @@ def create_agent_app(
     r_dir = Path(run_dir)
     storage = EventStorage(Path(events_dir) if events_dir else r_dir)
     active_cdp_proxy = cdp_proxy
+    # t031: resident dialog attendant (one per Agent process). Armed on
+    # /cdp client connect, released on takeover cascade / Agent stop.
+    dialog_attendant = DialogAttendantService()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -327,6 +332,54 @@ def create_agent_app(
                 action="close",
                 message="close_unconfirmed" if "error" in res else "close_acknowledged",
             )
+        elif req.action == "release_attendant":
+            # t031: takeover cascade releases the resident dialog
+            # attendant so held dialogs return to Chrome's default
+            # handling (visible to the human in the video stream).
+            await dialog_attendant.release()
+            return ControlResponse(
+                status="ok",
+                action="release_attendant",
+                message="attendant_released",
+            )
+        elif req.action == "list_attendant_dialogs":
+            # t031: peek held dialogs for a later agent session. A
+            # session attached after a dialog opened cannot observe or
+            # answer it through its own CDP session (chain evidence),
+            # so the peek is the discovery step for the answer path.
+            return ControlResponse(
+                status="ok",
+                action="list_attendant_dialogs",
+                message="attendant_dialogs",
+                data={
+                    "dialogs": [
+                        d.to_dict()
+                        for d in dialog_attendant.attendant.held_dialogs()
+                    ]
+                },
+            )
+        elif req.action == "answer_attendant_dialog":
+            # t031: only the attendant's pre-existing session can
+            # answer a held dialog; this is the explicit control-plane
+            # answer path used by a later session's dialog_answer.
+            target_id = str(req.params.get("target_id", ""))
+            accept = bool(req.params.get("accept", False))
+            prompt_text = req.params.get("prompt_text")
+            answered = await dialog_attendant.answer_dialog(
+                target_id,
+                accept,
+                prompt_text if isinstance(prompt_text, str) else None,
+            )
+            if answered is None:
+                raise HTTPException(
+                    status_code=404, detail="no held dialog for target"
+                )
+            return ControlResponse(
+                status="ok",
+                action="answer_attendant_dialog",
+                message="attendant_dialog_answered",
+                data={"dialog": answered},
+            )
         elif req.action == "retry_search_defaults":
             # Fenced, idempotent retry: the request must name the exact live
             # instance from runner metadata; the runner consumes the request
@@ -421,6 +474,7 @@ def create_agent_app(
 
         chrome_ws = None
         commands_sent = 0
+        tunnel_filter = TunnelFilter()
         tunnel_tasks: list[asyncio.Task[None]] = []
         try:
             chrome_ws = await websockets.connect(
@@ -429,16 +483,36 @@ def create_agent_app(
                 ping_interval=10,
                 ping_timeout=10,
             )
+            # t031: every tunneled session passes through this proxy,
+            # so arming here covers both API and Supervisor paths.
+            # Idempotent: a running attendant is left alone.
+            dialog_attendant.arm(runner_info["browser_ws_url"])
 
             async def client_to_chrome():
                 nonlocal commands_sent
                 while True:
                     msg = await client_ws.receive_text()
+                    try:
+                        parsed = json.loads(msg)
+                    except (ValueError, TypeError):
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        decision, response = tunnel_filter.filter_outgoing(parsed)
+                        if decision == "reject":
+                            if response is not None:
+                                await client_ws.send_text(json.dumps(response))
+                            continue
                     commands_sent += 1
                     await chrome_ws.send(msg)
 
             async def chrome_to_client():
                 async for msg in chrome_ws:
+                    try:
+                        parsed = json.loads(msg)
+                    except (ValueError, TypeError):
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        tunnel_filter.observe_incoming(parsed)
                     await client_ws.send_text(msg)
 
             tunnel_tasks = [
@@ -463,6 +537,15 @@ def create_agent_app(
                     task.cancel()
             await asyncio.gather(*tunnel_tasks, return_exceptions=True)
             if chrome_ws:
+                # Best-effort removal of per-session scripts this connection
+                # registered, before the browser-level socket goes away.
+                try:
+                    for cmd in tunnel_filter.disconnect_cleanup_commands():
+                        await chrome_ws.send(json.dumps(cmd))
+                except Exception as exc:  # noqa: BLE001 - cleanup must not break teardown
+                    logger.debug(
+                        "Tunnel script cleanup failed (%s)", type(exc).__name__
+                    )
                 await chrome_ws.close()
             try:
                 await client_ws.close()

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { ProfileEventsClient, type ProfileRuntimeEvent } from "./sse";
@@ -54,9 +54,18 @@ describe("ProfileEventsClient SSE", () => {
 
     const addr = server.address() as AddressInfo;
     serverUrl = `http://127.0.0.1:${addr.port}/api/v1/events`;
+    // Same-origin fixture (t025): ProfileEventsClient no longer accepts
+    // a url, so forward fetch to the test server by rewriting only the
+    // origin of the client's same-origin resolved URL.
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), serverUrl);
+      return realFetch(`http://127.0.0.1:${addr.port}${url.pathname}${url.search}`, init);
+    });
   });
 
   afterAll(async () => {
+    vi.unstubAllGlobals();
     if (currentRes && !currentRes.destroyed) {
       currentRes.destroy();
     }
@@ -68,7 +77,6 @@ describe("ProfileEventsClient SSE", () => {
   it("receives SSE events, recovers on disconnect, and passes Last-Event-ID header on reconnect", async () => {
     const receivedEvents: ProfileRuntimeEvent[] = [];
     const client = new ProfileEventsClient({
-      url: serverUrl,
       reconnectIntervalMs: 50,
       maxReconnectIntervalMs: 100,
     });

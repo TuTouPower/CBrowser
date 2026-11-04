@@ -81,6 +81,8 @@ def test_actions_are_limited_to_the_implemented_contract():
         "register",
         "supervisor_quota",
         "heartbeat",
+        # t031: human-input takeover report (Stream -> Gateway -> API).
+        "human_input_takeover",
     }
     for removed in ("visibility_update", "rtc_config", "ice_restart"):
         assert removed not in {action.value for action in AgentAction}

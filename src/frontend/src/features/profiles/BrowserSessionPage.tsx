@@ -1,6 +1,7 @@
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { Play, Settings as SettingsIcon, FolderArchive, Cpu, Compass } from "lucide-react";
 import {
+  scopeMutationToProfile,
   useProfileQuery,
   useProfileRuntimeQuery,
   useSetDesiredStateMutation,
@@ -22,6 +23,13 @@ export function BrowserSessionPage() {
   const { data: profile, isLoading: isProfileLoading } = profileQuery;
   const { data: runtime, isLoading: isRuntimeLoading } = runtimeQuery;
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
+  // The page stays mounted across ?profileId= switches: only surface the
+  // launch state of an action that targeted the Profile on screen.
+  const launchState = scopeMutationToProfile(
+    setDesiredStateMutation,
+    profileId,
+    (input) => input.id,
+  );
 
   if (!profileId) {
     return (
@@ -149,15 +157,15 @@ export function BrowserSessionPage() {
           </div>
         )}
 
-        {setDesiredStateMutation.isError && (
+        {launchState.isError && (
           <div
             data-testid="session-start-error"
             className="mb-4 p-2.5 bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded text-left"
           >
             {t("sessionStartFailed", {
               error:
-                setDesiredStateMutation.error instanceof Error
-                  ? setDesiredStateMutation.error.message
+                launchState.error instanceof Error
+                  ? launchState.error.message
                   : t("runtimeStateUnknown"),
             })}
           </div>
@@ -176,7 +184,7 @@ export function BrowserSessionPage() {
           type="button"
           data-testid="session-launch-btn"
           onClick={handleLaunch}
-          disabled={setDesiredStateMutation.isPending || runtime?.observed_state === "starting"}
+          disabled={launchState.isPending || runtime?.observed_state === "starting"}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-primary text-primary-foreground font-semibold rounded-lg text-sm hover:opacity-90 disabled:opacity-50 transition-opacity mb-4"
         >
           <Play className="h-4 w-4 fill-current" />
