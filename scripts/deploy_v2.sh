@@ -303,11 +303,16 @@ build_and_record_release() {
   local tag_supervisor="cbrowser-supervisor:$release_id" tag_browser="cbrowser-browser:$release_id"
   local tag_stream="cbrowser-stream:$release_id"
 
-  docker build -t "$tag_browser" -f config/docker/browser_runtime/Dockerfile .
-  docker build -t "$tag_stream" -f config/docker/stream_runtime/Dockerfile .
-  docker build -t "$tag_supervisor" -f config/docker/supervisor_runtime/Dockerfile .
-  docker build -t "$tag_gateway" -f config/docker/gateway_runtime/Dockerfile .
-  docker build -t "$tag_api" -f config/docker/api_runtime/Dockerfile .
+  # Attestation manifests embed per-invocation build metadata, so an
+  # otherwise identical rebuild would get a different image ID and force
+  # compose to recreate healthy services. Disable them: the release
+  # manifest pins the rootfs/config digest, which is what reproducibility
+  # and rollback identity depend on (t032 AC-001/AC-010).
+  docker build --provenance=false --sbom=false -t "$tag_browser" -f config/docker/browser_runtime/Dockerfile .
+  docker build --provenance=false --sbom=false -t "$tag_stream" -f config/docker/stream_runtime/Dockerfile .
+  docker build --provenance=false --sbom=false -t "$tag_supervisor" -f config/docker/supervisor_runtime/Dockerfile .
+  docker build --provenance=false --sbom=false -t "$tag_gateway" -f config/docker/gateway_runtime/Dockerfile .
+  docker build --provenance=false --sbom=false -t "$tag_api" -f config/docker/api_runtime/Dockerfile .
   if ! docker image inspect "$CADDY_REF" >/dev/null 2>&1; then
     docker pull "$CADDY_REF"
   fi
