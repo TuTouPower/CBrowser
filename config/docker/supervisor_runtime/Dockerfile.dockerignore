@@ -7,6 +7,8 @@
 !src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/supervisor/
 !src/backend/cbrowser/supervisor/*.py
+!src/backend/cbrowser/services/
+!src/backend/cbrowser/services/*.py
 !src/backend/cbrowser/domain/
 !src/backend/cbrowser/domain/*.py
 !src/backend/cbrowser/gateway/

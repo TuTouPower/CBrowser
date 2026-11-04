@@ -17,6 +17,8 @@ COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
 COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py
 COPY src/backend/cbrowser/supervisor /app/cbrowser/supervisor
+COPY src/backend/cbrowser/services/__init__.py /app/cbrowser/services/__init__.py
+COPY src/backend/cbrowser/services/tunnel_registry.py /app/cbrowser/services/tunnel_registry.py
 COPY src/backend/cbrowser/domain /app/cbrowser/domain
 COPY src/backend/cbrowser/gateway /app/cbrowser/gateway
 COPY src/backend/cbrowser/runtime_agent /app/cbrowser/runtime_agent
