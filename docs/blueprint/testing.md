@@ -31,6 +31,8 @@ project_configured
 
 - t026 reconciliation 故障矩阵（本机已验，真实环境义务归 t032 AC-009）：Gateway 替换重附着（unit 收敛双测 + adapter 双测）、网络事件唤醒扫描（runner 代码路径，真实事件流归 t032）、API 离线只恢复附着（unit）、协议拒绝结构化与不可修复分类（真实 Gateway 集成）、地址冲突与池耗尽（adapter 双测按 d029 行为建模 + e2e 真实 Docker 用例）、规格迁移 Stream-only 替换（unit）、策略漂移 Stream 替换/Browser fail-closed（unit + network_policy 渲染-校验全等单测）、并发与幂等（收敛预算与 fail-close 单次语义 unit）、恢复失败预算耗尽（unit）。真实 Docker 用例在 `tests/e2e/test_supervisor_reconciliation_e2e.py`（daemon 与 `CBROWSER_RUNTIME_TEST_IMAGE` 门控，本机无 Docker 时跳过、不得记为已验）；全栈场景（真实 Gateway 镜像拒绝、容器内 netns 漂移、API 进程离线）在 t032 以 REQUIRED_E2E_ENV 镜像集与 supervisor_recovery_probe fixtures 实跑。
 
+- t027 发布验收矩阵（云端已验，真实环境义务归 t032 AC-009）：生产脚本 `scripts/deploy_v2.sh` 由 fake Docker CLI 在仓库副本中实跑（`tests/unit/test_t027_release_controller.py`），覆盖每镜像只构建一次、六镜像 ID 与指纹/manifest 固定、缺管理员密码先失败列缺项、内部密钥 0600 生成且秘密不出现在输出/manifest/env、up 失败与 readiness 未收敛时上一 release 保持 current、相同配置重复发布幂等且无 restart、prefix 异项目冲突启动前拒绝（全量 ps -a 按名/标签归属）、回退成功与回退拒绝（迁移版本过低/无 readiness 能力时零 up 调用）、回退采用目标 release 身份而非调用方 shell 环境、失败发布已应用迁移版本抬高回退下限、探针 reconcile 以验收截止为超时且 report 模式只读不触发 reconcile；readiness 探针 `scripts/supervisor_readiness_probe.py` 对真实 Supervisor 控制面（stub core）走真实 HTTP 集成（`tests/integration/test_t027_readiness_probe.py`）；Gateway 健康路由走真实 Gateway harness 集成；构建上下文门禁对任一运行时镜像缺失 ignore 规则失败、且断言 data/secrets/.scratch 永不被任一白名单接纳。真实冷构建、重复发布、回退与双实例并存演练在 t032 按 `DOCKER_DEPLOYMENT.md` 的演练步骤实跑，云端 fake 结果不得记为真实部署 PASS。
+
 ## doctor_cmd
 
 环境前置检查：契约测试可成功收集；另需 `md_kx` 在 PATH。

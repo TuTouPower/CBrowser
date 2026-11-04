@@ -153,3 +153,12 @@
 ## 016 默认搜索初始化不作为浏览器就绪成功条件（D1=B，2026-11-04，t022）
 
 默认搜索引擎初始化（set_google_default）是 best-effort 增强，不是浏览器 readiness 的成功条件：初始化异常或超时后浏览器仍视为可用，其结果以独立类型化状态（applied/failed/disabled/pending）呈现到 Profile 页面，并提供受身份围栏保护、可幂等重试的操作；重试不重启浏览器、不干扰已有标签页，只有验证 Google 成为默认后才写成功 marker，正常启动不覆盖用户后续手动选择。原 D1 在 t022 立项时经用户选择 B 方案定案。
+
+## 017 不可变 release 身份、回退约束与凭证分级（2026-11-04，t027）
+
+- 背景：旧发布链路以可变 `*-deploy` 标签与非原子 `compose.env` 覆盖实现"升级"，同名 tag 每次被覆盖、无上一版 release，"可回滚"是假象；脚本还重复构建 API 镜像、无条件重启 Caddy、末尾打印管理员密码、缺失时自动生成全部 secret，且 compose 写死镜像 tag 与 build 块、固定实例命名，无法同 daemon 起隔离的第二实例。
+- 选项：
+    1. 保留标签覆盖，仅补健康检查与验收探针（回退仍无真实目标）。
+    2. 每次发布生成不可变 release（release 标签 + manifest 以镜像 ID 固定六镜像与配置指纹、迁移版本、readiness 能力），current/previous 指针只在 readiness 验收后原子移动；回退显式选上一 release 并受 readiness 能力与迁移版本下限约束；凭证分级：管理员密码用户提供、内部密钥自动随机生成（0600、永不打印）。
+- 结论：采用选项 2。发布/回退共用同一验收（有界 `up --wait` + 容器内探针调 t026 `reconcile_all`/`readiness`）；compose 镜像全变量化且无 build 块；实例身份参数化，prefix 异项目占用启动前拒绝；不存在降级迁移，数据从不由发布/回退删除。真实部署演练归 t032。
+- 替代：无（DOCKER_DEPLOYMENT.md 旧"标签可回滚"说法自本决定起作废）

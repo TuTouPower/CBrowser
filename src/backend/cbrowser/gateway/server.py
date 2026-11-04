@@ -273,6 +273,13 @@ def create_gateway_app(
             )
         return None
 
+    # ---------------- Health Route (t027) ----------------
+    async def handle_health(request: web.Request) -> web.Response:
+        # Unauthenticated liveness for the compose healthcheck: the probe
+        # runs inside the deployment network and learns nothing beyond the
+        # process being up, mirroring the API /api/v1/health contract.
+        return web.json_response({"status": "ok", "role": "gateway"})
+
     # ---------------- Supervisor Control Routes ----------------
     async def handle_supervisor_visibility(request: web.Request) -> web.Response:
         auth_err = _check_supervisor_auth(request)
@@ -858,6 +865,7 @@ def create_gateway_app(
         return ws
 
     # ---------------- Setup Routes ----------------
+    app.router.add_get("/gateway/v1/health", handle_health)
     app.router.add_get("/stream/agent/register", handle_agent_register)
     app.router.add_get(
         "/gateway/v1/internal/profiles/{profile_id}/visibility",

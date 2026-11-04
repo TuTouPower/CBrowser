@@ -182,19 +182,10 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     )
     recovery = RecoveryCoordinator(core)
 
-    logger.info("Supervisor initialized. Starting existing container reconciliation...")
-    try:
-        await core.scan_and_reconcile_existing()
-    except Exception as exc:  # noqa: BLE001 - control plane starts and retries reconciliation in background
-        logger.warning(
-            "Initial reconciliation failed; control plane will retry: error_type=%s",
-            type(exc).__name__,
-        )
-    await event_forwarder.replay_spooled_events()
-    await core.consume_disk_events()
-    await download_forwarder.forward_pending()
-
-    # Start FastAPI control server
+    # t027: start the FastAPI control server BEFORE the initial
+    # reconciliation scan so liveness (/supervisor/v1/health, used by the
+    # compose healthcheck) is never blocked by a slow or stuck scan; the
+    # background monitor loop keeps reconciling after startup either way.
     if core._token_file is None:
         raise ValueError("Supervisor control authentication file is required")
     control_app = create_control_app(core=core, token_file=core._token_file)
@@ -207,6 +198,18 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     )
     server = uvicorn.Server(config)
     server_task = asyncio.create_task(server.serve())
+
+    logger.info("Supervisor initialized. Starting existing container reconciliation...")
+    try:
+        await core.scan_and_reconcile_existing()
+    except Exception as exc:  # noqa: BLE001 - control plane is already up and retries reconciliation in background
+        logger.warning(
+            "Initial reconciliation failed; control plane will retry: error_type=%s",
+            type(exc).__name__,
+        )
+    await event_forwarder.replay_spooled_events()
+    await core.consume_disk_events()
+    await download_forwarder.forward_pending()
 
     stop_event = asyncio.Event()
     events_stream: Any = None

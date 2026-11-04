@@ -38,15 +38,15 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：成功发布的 release manifest/env 以不可变 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy 全部镜像，并记录 compose、Caddyfile、前端产物指纹与数据库迁移版本；每个镜像本次只构建一次，`up` 不触发构建；生成或部署中途失败不覆盖上一份有效 release，上一 release 的镜像仍存在。
-- [ ] AC-002：全部运行时镜像的构建上下文受 ignore 规则限制，`data/`、`config/deploy/secrets`、`.scratch` 不进入任何构建上下文；任一运行时镜像缺失 ignore 规则时测试失败而非跳过。
-- [ ] AC-003：API、Gateway、Supervisor 具备匹配实际能力的 compose 健康检查，Supervisor 存活判定不被初始扫描阻塞；健康检查失败、服务不 ready 或 readiness 报告任一 desired=running Profile 未收敛时，脚本在明确截止时间内非零退出并输出脱敏逐 Profile 诊断，绝不打印成功。
-- [ ] AC-004：只有服务健康且 t026 readiness 确认全部 desired=running Profile 收敛后才返回成功；脚本只调用显式收敛入口，不自行执行网络编排或停止 Browser。
-- [ ] AC-005：连续相同配置发布幂等，未变化的 Caddy 不重启；配置变化时只重建受影响服务。
-- [ ] AC-006：回退到上一 release 恢复其全部镜像与配置，不删除当前 Browser、Profile 数据或数据库；目标 release 不具备 readiness 能力或其迁移版本低于当前数据库时在变更前拒绝并说明原因；回退后执行同一 readiness 验收，状态未知不报成功。
-- [ ] AC-007：缺少用户提供的管理员密码或其他发布前提时先失败并列出缺项；容器间内部密钥缺失时以随机值生成并以 0600 保存；不生成公网默认凭证，脚本输出、日志与 manifest 不含任何秘密真值。
-- [ ] AC-008：发布实例身份可参数化，两个实例在同一 Docker daemon 并存时互不扫描、不清理对方资源；目标 prefix 已被另一运行实例占用时启动前拒绝。
-- [ ] AC-009：shell/配置验证与受控 Docker CLI/HTTP 测试执行生产脚本，覆盖成功、超时、部分失败、重复发布、回退拒绝与回退成功、实例冲突；交付真实演练步骤和现场保存规则给 t032。
+- [x] AC-001：成功发布的 release manifest/env 以不可变 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy 全部镜像，并记录 compose、Caddyfile、前端产物指纹与数据库迁移版本；每个镜像本次只构建一次，`up` 不触发构建；生成或部署中途失败不覆盖上一份有效 release，上一 release 的镜像仍存在。
+- [x] AC-002：全部运行时镜像的构建上下文受 ignore 规则限制，`data/`、`config/deploy/secrets`、`.scratch` 不进入任何构建上下文；任一运行时镜像缺失 ignore 规则时测试失败而非跳过。
+- [x] AC-003：API、Gateway、Supervisor 具备匹配实际能力的 compose 健康检查，Supervisor 存活判定不被初始扫描阻塞；健康检查失败、服务不 ready 或 readiness 报告任一 desired=running Profile 未收敛时，脚本在明确截止时间内非零退出并输出脱敏逐 Profile 诊断，绝不打印成功。
+- [x] AC-004：只有服务健康且 t026 readiness 确认全部 desired=running Profile 收敛后才返回成功；脚本只调用显式收敛入口，不自行执行网络编排或停止 Browser。
+- [x] AC-005：连续相同配置发布幂等，未变化的 Caddy 不重启；配置变化时只重建受影响服务。
+- [x] AC-006：回退到上一 release 恢复其全部镜像与配置，不删除当前 Browser、Profile 数据或数据库；目标 release 不具备 readiness 能力或其迁移版本低于当前数据库时在变更前拒绝并说明原因；回退后执行同一 readiness 验收，状态未知不报成功。
+- [x] AC-007：缺少用户提供的管理员密码或其他发布前提时先失败并列出缺项；容器间内部密钥缺失时以随机值生成并以 0600 保存；不生成公网默认凭证，脚本输出、日志与 manifest 不含任何秘密真值。
+- [x] AC-008：发布实例身份可参数化，两个实例在同一 Docker daemon 并存时互不扫描、不清理对方资源；目标 prefix 已被另一运行实例占用时启动前拒绝。
+- [x] AC-009：shell/配置验证与受控 Docker CLI/HTTP 测试执行生产脚本，覆盖成功、超时、部分失败、重复发布、回退拒绝与回退成功、实例冲突；交付真实演练步骤和现场保存规则给 t032。
 
 ### 可测试性声明
 
