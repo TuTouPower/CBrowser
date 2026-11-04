@@ -95,6 +95,17 @@ describe("SelkiesClientAdapter production contract", () => {
     expect(typeof win.__getWebRTCStats).toBe("function");
   });
 
+  it("strips Selkies default external STUN for the ICE-lite media path", () => {
+    const win = makeWindow();
+    installSelkiesClientAdapter(win, "prof_456");
+    const pc = new win.RTCPeerConnection({
+      iceServers: [{ urls: ["stun:stun.l.google.com:19302"] }],
+      iceTransportPolicy: "all",
+    });
+    expect(pc.config.iceServers).toEqual([]);
+    expect(pc.config.iceTransportPolicy).toBe("all");
+  });
+
   it("blocks client resize packets at the data channel boundary", () => {
     const win = makeWindow();
     const nativeSend = vi.fn();

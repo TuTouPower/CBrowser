@@ -151,6 +151,10 @@ export function installSelkiesClientAdapter(
   if (NativeRTCPeerConnection) {
     win.RTCPeerConnection = function (...args: any[]) {
       const config = args[0] ? Object.assign({}, args[0]) : {};
+      // Selkies defaults to Google's public STUN server. This deployment is
+      // ICE-lite over a loopback-only media path (ADR 013), so external STUN
+      // both stalls setup and yields peer-reflexive candidates.
+      config.iceServers = [];
       const pc = new NativeRTCPeerConnection(config);
       activePC = pc;
 
