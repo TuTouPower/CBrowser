@@ -241,11 +241,23 @@ class DownloadArtifactForwarder:
                     )
                     self._dead_letter(event_file, profile_id, "path_escape")
                     continue
+                # Send the container-relative path, not the Supervisor's
+                # host path: the API's artifact root is mounted at a
+                # different location (/data or /metadata) inside its
+                # container. translate_download_path above already proved
+                # the path stays inside the Profile downloads directory.
+                downloads_root = (
+                    Path(self.data_root)
+                    / "artifacts"
+                    / profile_id
+                    / "downloads"
+                ).resolve()
+                relative = Path(translated_path).relative_to(downloads_root)
                 payload = {
                     "event_id": event.event_id,
                     "profile_id": profile_id,
                     "runtime_instance_id": event.runtime_instance_id,
-                    "path": translated_path,
+                    "path": CONTAINER_DOWNLOAD_PREFIX + str(relative),
                     "name": (
                         event.suggested_filename or Path(event.download_path).name
                     )[:255],

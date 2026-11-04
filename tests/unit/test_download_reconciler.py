@@ -128,7 +128,7 @@ def test_supervisor_translates_container_path_and_forwards_once(
     first, second = asyncio.run(run())
     assert first == 1
     assert second == 0
-    assert calls[0]["path"] == str(source)
+    assert calls[0]["path"] == "/exchange/downloads/guid"
     assert calls[0]["sha256"] == digest
     assert calls[0]["name"] == "report.csv"
 

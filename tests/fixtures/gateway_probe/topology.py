@@ -7,6 +7,7 @@ import logging
 import secrets
 import shutil
 import socket
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -239,6 +240,13 @@ class GatewayTopologyHarness:
             },
             volumes={
                 str(self.metadata_dir): {"bind": "/metadata", "mode": "rw"},
+                # The API's artifact root is /metadata/artifacts; share the
+                # same Browser download directory with it so ingest sees
+                # the file the Agent reported.
+                str(self.data_dir / "artifacts"): {
+                    "bind": "/metadata/artifacts",
+                    "mode": "rw",
+                },
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
             ports={"8000/tcp": ("127.0.0.1", None)},
@@ -521,41 +529,56 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
     """Core cleanup helper: removes resources strictly labeled with prefix."""
     errors: list[str] = []
 
-    # 1. Containers: verify com.cbrowser.prefix label, remove owned containers
-    try:
-        owned_containers = docker_client.containers.list(
-            all=True,
-            filters={"label": f"com.cbrowser.prefix={prefix}"},
+    # 1. Containers: verify com.cbrowser.prefix label, remove owned
+    # containers. Stop infrastructure first so the Supervisor cannot
+    # create a replacement Stream while the Profile containers are being
+    # torn down, then re-list to catch anything created in the race.
+    role_priority = {"api": 0, "supervisor": 1, "gateway": 2, "caddy": 3}
+    for attempt in range(3):
+        try:
+            owned_containers = docker_client.containers.list(
+                all=True,
+                filters={"label": f"com.cbrowser.prefix={prefix}"},
+            )
+        except Exception as exc:  # noqa: BLE001
+            owned_containers = []
+            errors.append(f"containers_list: {type(exc).__name__}")
+            break
+
+        def _labels(container):
+            labels = getattr(container, "labels", None)
+            if labels is None and hasattr(container, "attrs"):
+                labels = container.attrs.get("Config", {}).get("Labels", {}) or {}
+            return labels or {}
+
+        owned_containers = [
+            c for c in owned_containers
+            if _labels(c).get("com.cbrowser.prefix") == prefix
+        ]
+        owned_containers.sort(
+            key=lambda c: role_priority.get(_labels(c).get("com.cbrowser.role"), 10)
         )
-    except Exception as exc:  # noqa: BLE001
-        owned_containers = []
-        errors.append(f"containers_list: {type(exc).__name__}")
-
-    for c in owned_containers:
-        lbls = getattr(c, "labels", None)
-        if lbls is None and hasattr(c, "attrs"):
-            lbls = c.attrs.get("Config", {}).get("Labels", {}) or {}
-        lbls = lbls or {}
-        if lbls.get("com.cbrowser.prefix") != prefix:
-            continue
-
-        c_name = getattr(c, "name", "unnamed")
-        try:
-            c.stop(timeout=1)
-        except docker.errors.NotFound:
-            pass
-        except Exception as exc:  # noqa: BLE001
-            err_t = type(exc).__name__
-            logger.warning("Container stop error for %s: %s", c_name, err_t)
-
-        try:
-            c.remove(force=True, v=True)
-        except docker.errors.NotFound:
-            pass
-        except Exception as exc:  # noqa: BLE001
-            err_t = type(exc).__name__
-            logger.error("Container remove error for %s: %s", c_name, err_t)
-            errors.append(f"container_remove({c_name}): {err_t}")
+        if not owned_containers:
+            break
+        for c in owned_containers:
+            c_name = getattr(c, "name", "unnamed")
+            try:
+                c.stop(timeout=1)
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Container stop error for %s: %s", c_name, type(exc).__name__
+                )
+            try:
+                c.remove(force=True, v=True)
+            except docker.errors.NotFound:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Container remove error for %s: %s", c_name, type(exc).__name__
+                )
+                errors.append(f"container_remove({c_name}): {type(exc).__name__}")
 
     # 2. Networks: verify com.cbrowser.prefix label, delete empty owned networks
     try:
@@ -582,6 +605,12 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
             continue
 
         containers_attached = getattr(n, "attrs", {}).get("Containers") or {}
+        for _ in range(20):
+            if not containers_attached:
+                break
+            time.sleep(0.25)
+            n.reload()
+            containers_attached = getattr(n, "attrs", {}).get("Containers") or {}
         if containers_attached:
             errors.append(f"network_not_empty({n_name})")
             continue
