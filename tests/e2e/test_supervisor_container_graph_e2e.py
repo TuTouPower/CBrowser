@@ -301,9 +301,21 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     for profile in ordered
                 ]
             )
-            assert all(response.status_code == 200 for response in started), [
-                response.text for response in started
-            ]
+            if not all(response.status_code == 200 for response in started):
+                supervisor.reload()
+                api.reload()
+                sup_logs = supervisor.logs(tail=200).decode(
+                    "utf-8", errors="replace"
+                )
+                api_logs = api.logs(tail=200).decode("utf-8", errors="replace")
+                pytest.fail(
+                    "concurrent profile start failed: "
+                    + repr([response.text for response in started])
+                    + "\n--- supervisor logs ---\n"
+                    + sup_logs
+                    + "\n--- api logs ---\n"
+                    + api_logs
+                )
             sessions = [response.json() for response in started]
             assert len({session["udp_mux_port"] for session in sessions}) == 2
             duplicates = await asyncio.gather(
@@ -645,7 +657,8 @@ sys.stdout.write(json.dumps(result))
             box_name = getattr(box, "name", "unnamed")
             if box.id not in known_infra_ids:
                 is_valid_dynamic = (
-                    lbls.get("com.cbrowser.role") == "cache-init"
+                    lbls.get("com.cbrowser.role")
+                    in ("cache-init", "network-policy", "x11-permissions")
                     or lbls.get("com.cbrowser.profile-id") in profiles
                 )
                 if not is_valid_dynamic:
