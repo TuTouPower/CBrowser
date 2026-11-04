@@ -1289,10 +1289,22 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
             b"E2E_VERIFICATION_CONTENT_FIRST_DOWNLOAD_11111" in found_file1.read_bytes()
         )
 
-        # 2. External Automation connects, overrides download behavior, and triggers
-        # third intermediate download
-        # WHILE HOLDING the connection open, proving override is actively in effect in
-        # ext_override_dir
+        # The first client disconnect must have rearmed capture before we
+        # measure the override session's own rearm.
+        _, rearm_before_health = await poll_until(
+            lambda: asyncio.to_thread(uds_http, c_name, "GET", "/health"),
+            lambda result: result[0] == 200
+            and result[1]["details"]["rearm_count"] >= 2,
+            timeout=5.0,
+            interval=0.1,
+            description="Agent to rearm after the first automation disconnect",
+        )
+        rearm_before = rearm_before_health["details"]["rearm_count"]
+
+        # 2. External automation attempts to redirect download capture while
+        # holding the connection open.  t030 keeps capture Agent-managed, so
+        # the override must be rejected and the intermediate download must
+        # still land in the default directory.
         ext_override_dir = "/tmp/external_downloads"
         override_and_mid_dl_script = f"""
         override_params = {{
@@ -1300,10 +1312,20 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
             "downloadPath": "{ext_override_dir}",
             "eventsEnabled": False,
         }}
-        resp = await send_cmd(
-            ws, 99, "Browser.setDownloadBehavior", override_params
-        )
-        # Trigger intermediate download while override is still active
+        override_error = None
+        try:
+            await send_cmd(
+                ws, 99, "Browser.setDownloadBehavior", override_params
+            )
+        except RuntimeError as exc:
+            override_error = str(exc)
+        if override_error is None:
+            raise AssertionError(
+                "Browser.setDownloadBehavior was not rejected by the tunnel"
+            )
+        if "rejected" not in override_error:
+            raise AssertionError(f"Unexpected override error: {{override_error}}")
+        # Trigger intermediate download while the automation session is live.
         targets = await send_cmd(ws, 100, "Target.getTargets")
         target_id = targets["result"]["targetInfos"][0]["targetId"]
         attach = await send_cmd(
@@ -1314,38 +1336,72 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
         await send_cmd(
             ws, 102, "Runtime.evaluate", {{"expression": click_mid}}, session_id=s
         )
-        # Sleep to allow intermediate download to land in ext_override_dir before
-        # closing ws
         await asyncio.sleep(2.0)
-        print("RESULT:" + json.dumps({{"status": "ok", "override": resp}}))
+        print(
+            "RESULT:"
+            + json.dumps({{"status": "ok", "override_error": override_error}})
+        )
 """
         override_res = exec_uds_cdp(c_name, override_and_mid_dl_script)
-        assert "error" not in override_res, f"Override failed: {override_res}"
+        assert "rejected" in override_res.get("override_error", ""), (
+            f"Override was not rejected by the Agent tunnel: {override_res}"
+        )
 
-        # Confirm intermediate download landed in external override dir, and NOT in
-        # default /exchange/downloads
+        # Confirm the intermediate download was still captured by the Agent in
+        # the default directory, and nothing leaked into the attempted target.
+        intermediate_payload = (
+            b"E2E_VERIFICATION_CONTENT_INTERMEDIATE_DOWNLOAD_OVERRIDE_ACTIVE"
+        )
+        mid_file = None
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            for candidate in dl_dir.glob("*"):
+                if (
+                    candidate.is_file()
+                    and candidate.read_bytes() == intermediate_payload
+                ):
+                    mid_file = candidate
+                    break
+            if mid_file is not None:
+                break
+            await asyncio.sleep(0.2)
+        assert mid_file is not None, (
+            "Intermediate download was not captured in /exchange/downloads!"
+        )
+        current_default_files = [f for f in dl_dir.glob("*") if f.is_file()]
+        assert len(current_default_files) == 2, (
+            "Expected only the first and intermediate downloads in the default "
+            f"directory: {current_default_files}"
+        )
         mid_file_proc = await asyncio.to_thread(
             subprocess.run,
-            ["docker", "exec", c_name, "ls", ext_override_dir],
+            [
+                "docker",
+                "exec",
+                c_name,
+                "sh",
+                "-c",
+                f"ls -A {ext_override_dir} 2>/dev/null || true",
+            ],
             capture_output=True,
             text=True,
             check=False,
         )
-        assert "download-intermediate.txt" in mid_file_proc.stdout, (
-            "Intermediate download did not land in override dir: "
+        assert mid_file_proc.stdout.strip() == "", (
+            "Rejected override directory unexpectedly received files: "
             f"{mid_file_proc.stdout}"
         )
-        # Default dir must still only have found_file1
-        current_default_files = list(dl_dir.glob("*"))
-        assert len(current_default_files) == 1, (
-            "Intermediate download unexpectedly leaked into default dir: "
-            f"{current_default_files}"
-        )
 
-        # 3. Disconnection of external client automatically triggers rearm.
-        # No fixed sleep (t024 AC-007/A28): the rearm is proven by the
-        # recovery download below landing in the default directory; if the
-        # agent never rearmed, that assertion fails on its own evidence.
+        # 3. Disconnection of the external client automatically triggers rearm.
+        # Measure it directly instead of assuming it happened.
+        await poll_until(
+            lambda: asyncio.to_thread(uds_http, c_name, "GET", "/health"),
+            lambda result: result[0] == 200
+            and result[1]["details"]["rearm_count"] > rearm_before,
+            timeout=5.0,
+            interval=0.1,
+            description="Agent to rearm after the override session disconnected",
+        )
 
         # 4. Trigger Second Formal Download (Proof of Automatic Recovery)
         dl2_script = """
@@ -1363,20 +1419,20 @@ async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
 """
         exec_uds_cdp(c_name, dl2_script)
 
+        second_payload = b"E2E_VERIFICATION_CONTENT_SECOND_DOWNLOAD_22222"
         found_file2 = None
-        for _ in range(30):
-            files = [f for f in dl_dir.glob("*") if f != found_file1]
-            if files:
-                found_file2 = files[0]
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            for candidate in dl_dir.glob("*"):
+                if candidate.is_file() and candidate.read_bytes() == second_payload:
+                    found_file2 = candidate
+                    break
+            if found_file2 is not None:
                 break
             await asyncio.sleep(0.5)
 
         assert found_file2 is not None, (
             "Second download did not recover to /exchange/downloads!"
-        )
-        assert (
-            b"E2E_VERIFICATION_CONTENT_SECOND_DOWNLOAD_22222"
-            in found_file2.read_bytes()
         )
 
         # Event storage is append-only: begin and completion records have distinct
@@ -1499,9 +1555,25 @@ async def test_t008_download_reconcile_after_agent_restart(
     assert session_cookie
     login_client.headers["Cookie"] = f"cbrowser_session={session_cookie}"
 
-    def start() -> None:
+    async def start() -> None:
         nonlocal instance_generation
         instance_generation += 1
+        instance_id = f"inst_reconcile_{run_id}_{instance_generation}"
+        previous = (
+            f"inst_reconcile_{run_id}_{instance_generation - 1}"
+            if instance_generation > 1
+            else None
+        )
+        bind_engine, bind_maker = create_engine_and_maker(api_db)
+        try:
+            await ProfileRepository(bind_maker).bind_runtime_instance(
+                profile_id,
+                instance_id,
+                config_version=1,
+                expected_current_instance=previous,
+            )
+        finally:
+            await bind_engine.dispose()
         profile_dir = dir_work / "profile"
         for lock_name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
             lock_path = profile_dir / lock_name
@@ -1514,7 +1586,7 @@ async def test_t008_download_reconcile_after_agent_restart(
             host_exchange_dir=downloads,
             snapshot_path=snap_file,
             profile_id=profile_id,
-            runtime_instance_id=f"inst_reconcile_{run_id}_{instance_generation}",
+            runtime_instance_id=instance_id,
             host_uploads_dir=uploads,
             display=disp,
         )
@@ -1541,7 +1613,7 @@ async def test_t008_download_reconcile_after_agent_restart(
         return response.json()
 
     try:
-        start()
+        await start()
         visible = subprocess.run(
             ["docker", "exec", c_name, "cat", "/exchange/uploads/visible.txt"],
             capture_output=True,
@@ -1614,7 +1686,7 @@ async def test_t008_download_reconcile_after_agent_restart(
         manual_payload = b"manual-download-without-event"
         (downloads / "manual.csv").write_bytes(manual_payload)
 
-        start()
+        await start()
         deadline = time.monotonic() + 15
         events: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
@@ -1641,7 +1713,7 @@ async def test_t008_download_reconcile_after_agent_restart(
         ]
 
         stop_and_rm_container(c_name)
-        start()
+        await start()
         await asyncio.sleep(2.0)
         assert scan_events() == events, "Agent restart duplicated the backfill event"
     except Exception:
