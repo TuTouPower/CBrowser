@@ -6,9 +6,10 @@ Scenarios run inside the real Browser Runtime image:
   under /opt/cbrowser-fonts (outside fontconfig's default scan paths) and a
   default container resolves no CJK font for sans-serif.
 - ``render`` (AC-003/AC-004): a profile started with each bundle value
-  renders Chinese in real Chrome accordingly, proven by canvas text metrics
-  and CDP platform-font queries, plus the FONTCONFIG_FILE actually present
-  in the Chrome process environment.
+  renders Chinese in real Chrome accordingly, proven by canvas text metrics,
+  a CDP platform-font query for the explicit bundle family, fc-list/fc-match
+  under the profile fontconfig, and the FONTCONFIG_FILE actually present in
+  the Chrome process environment.
 - ``isolation`` (AC-005): two profiles with different bundles run at the
   same time in one container and each sees only its own bundle.
 """
@@ -65,6 +66,7 @@ def check_prerequisites() -> tuple[bool, str]:
 
 CONTAINER_SCRIPT = """import asyncio
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -76,6 +78,10 @@ PUA_TEXT = "\\ue000\\ue001\\ue002\\ue003\\ue004\\ue005"
 PAGE_HTML = (
     "<html><body>"
     "<div id='zhprobe' style='font-family: sans-serif; font-size: 48px;'>"
+    + ZH_TEXT
+    + "</div>"
+    "<div id='zhprobe-explicit' "
+    "style='font-family: __FONT_FAMILY__; font-size: 48px;'>"
     + ZH_TEXT
     + "</div></body></html>"
 )
@@ -116,16 +122,46 @@ def chrome_fontconfig_env(pid: int) -> str | None:
     return None
 
 
-async def platform_font_families(page) -> list[str]:
+def fontconfig_env(fontconfig_file: str | None) -> dict[str, str]:
+    env = dict(os.environ)
+    if fontconfig_file is None:
+        env.pop("FONTCONFIG_FILE", None)
+    else:
+        env["FONTCONFIG_FILE"] = fontconfig_file
+    return env
+
+
+def fc_listing(fontconfig_file: str | None) -> str:
+    return subprocess.run(
+        ["fc-list"],
+        env=fontconfig_env(fontconfig_file),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def fc_match(fontconfig_file: str | None, pattern: str) -> str:
+    return subprocess.run(
+        ["fc-match", "-f", "%{family}", pattern],
+        env=fontconfig_env(fontconfig_file),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+async def platform_font_families(page, selector: str) -> list[str]:
     session = await page.context.new_cdp_session(page)
     await session.send("DOM.enable")
+    await session.send("CSS.enable")
     doc = await session.send("DOM.getDocument", {"depth": 1})
     probe = await session.send(
         "DOM.querySelector",
-        {"nodeId": doc["root"]["nodeId"], "selector": "#zhprobe"},
+        {"nodeId": doc["root"]["nodeId"], "selector": selector},
     )
     result = await session.send(
-        "DOM.getPlatformFontsForNode", {"nodeId": probe["nodeId"]}
+        "CSS.getPlatformFontsForNode", {"nodeId": probe["nodeId"]}
     )
     return [f["familyName"] for f in result["fonts"]]
 
@@ -137,6 +173,9 @@ async def start_runner(profile_id: str, bundle: str, display: str):
     events_dir = base / "events"
     for directory in (run_dir, prof_dir, events_dir):
         directory.mkdir(parents=True, exist_ok=True)
+    # The image sets one PulseAudio runtime dir; two concurrent runners in a
+    # single test container need their own daemon pid/socket directory.
+    os.environ["PULSE_RUNTIME_PATH"] = f"/tmp/pulse-runtime-{profile_id}"
     snap_path = base / "snap.json"
     write_snapshot(profile_id, bundle, snap_path)
     runner = BrowserRunner(
@@ -153,12 +192,27 @@ async def start_runner(profile_id: str, bundle: str, display: str):
     return runner
 
 
-async def measure_profile(runner) -> dict:
+def bundle_family(bundle: str) -> str:
+    return (
+        "WenQuanYi Micro Hei"
+        if bundle == "wqy-microhei"
+        else "WenQuanYi Zen Hei"
+    )
+
+
+async def measure_profile(runner, bundle: str) -> dict:
     page = await runner.browser_context.new_page()
     try:
-        await page.goto("data:text/html," + PAGE_HTML)
+        if bundle == "none":
+            html = PAGE_HTML.replace("__FONT_FAMILY__", "sans-serif")
+            selector = "#zhprobe"
+        else:
+            expected = bundle_family(bundle)
+            html = PAGE_HTML.replace("__FONT_FAMILY__", expected)
+            selector = "#zhprobe-explicit"
+        await page.goto("data:text/html," + html)
         metrics = await page.evaluate(MEASURE_JS)
-        families = await platform_font_families(page)
+        families = await platform_font_families(page, selector)
     finally:
         await page.close()
     return {
@@ -196,28 +250,32 @@ def scenario_image_layout() -> dict:
 async def scenario_render(bundle: str) -> dict:
     runner = await start_runner(f"prof_{bundle}", bundle, ":99")
     try:
-        result = await measure_profile(runner)
+        result = await measure_profile(runner, bundle)
     finally:
         await runner.stop()
     metrics, families = result["metrics"], result["families"]
+    fontconfig_file = result["fontconfig_file"]
     if bundle == "none":
-        assert result["fontconfig_file"] is None, result
+        assert fontconfig_file is None, result
         assert abs(metrics["sansZh"] - metrics["sansPua"]) < 0.01, metrics
         assert not any("WenQuanYi" in f for f in families), families
+        assert "WenQuanYi" not in fc_listing(None), result
     else:
-        expected = (
-            "WenQuanYi Micro Hei" if bundle == "wqy-microhei"
-            else "WenQuanYi Zen Hei"
-        )
+        expected = bundle_family(bundle)
         other = (
             "WenQuanYi Zen Hei" if bundle == "wqy-microhei"
             else "WenQuanYi Micro Hei"
         )
-        assert result["fontconfig_file"] is not None, result
-        assert result["fontconfig_file"].endswith("profile-fonts.conf"), result
+        assert fontconfig_file is not None, result
+        assert fontconfig_file.endswith("profile-fonts.conf"), result
         assert expected in families, families
         assert other not in families, families
         assert abs(metrics["sansZh"] - metrics["sansPua"]) > 0.01, metrics
+        listing = fc_listing(fontconfig_file)
+        assert expected in listing, listing
+        assert other not in listing, listing
+        assert expected in fc_match(fontconfig_file, expected), result
+        assert other not in fc_match(fontconfig_file, other), result
     return {"status": "PASS", "scenario": f"render:{bundle}", **result}
 
 
@@ -225,8 +283,8 @@ async def scenario_isolation() -> dict:
     runner_a = await start_runner("prof_iso_micro", "wqy-microhei", ":99")
     runner_b = await start_runner("prof_iso_none", "none", ":100")
     try:
-        result_a = await measure_profile(runner_a)
-        result_b = await measure_profile(runner_b)
+        result_a = await measure_profile(runner_a, "wqy-microhei")
+        result_b = await measure_profile(runner_b, "none")
     finally:
         await runner_a.stop()
         await runner_b.stop()
@@ -237,7 +295,20 @@ async def scenario_isolation() -> dict:
     assert result_a["fontconfig_file"] is not None, result_a
     assert result_b["fontconfig_file"] is None, result_b
     assert result_a["fontconfig_file"] != result_b["fontconfig_file"]
-    return {"status": "PASS", "scenario": "isolation"}
+    metrics_a = result_a["metrics"]
+    metrics_b = result_b["metrics"]
+    assert abs(metrics_a["sansZh"] - metrics_a["sansPua"]) > 0.01, metrics_a
+    assert abs(metrics_b["sansZh"] - metrics_b["sansPua"]) < 0.01, metrics_b
+    listing_a = fc_listing(result_a["fontconfig_file"])
+    assert "WenQuanYi Micro Hei" in listing_a, listing_a
+    assert "WenQuanYi Zen Hei" not in listing_a, listing_a
+    assert "WenQuanYi" not in fc_listing(None), result_b
+    return {
+        "status": "PASS",
+        "scenario": "isolation",
+        "micro": result_a,
+        "none": result_b,
+    }
 
 
 async def run_scenario() -> None:
