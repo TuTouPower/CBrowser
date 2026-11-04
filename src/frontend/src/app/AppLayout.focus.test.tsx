@@ -5,14 +5,21 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "./AppLayout";
 
-vi.mock("../features/profiles/useProfilesQuery", () => ({
-  useProfilesQuery: () => ({ data: [], isLoading: false }),
-  useProfileQuery: () => ({ data: null }),
-  useProfileRuntimeQuery: () => ({ data: null }),
-  useSetDesiredStateMutation: () => ({ mutate: vi.fn(), isPending: false }),
-  useStopProfileMutation: () => ({ mutate: vi.fn(), isPending: false }),
-  useApplyDisplaySettingsMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
-}));
+vi.mock("../features/profiles/useProfilesQuery", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../features/profiles/useProfilesQuery")>();
+  return {
+    // Keep pure helpers (scopeMutationToProfile, profileKeys) real; only
+    // the data hooks are stubbed for this focus-contract fixture.
+    ...actual,
+    useProfilesQuery: () => ({ data: [], isLoading: false }),
+    useProfileQuery: () => ({ data: null }),
+    useProfileRuntimeQuery: () => ({ data: null }),
+    useSetDesiredStateMutation: () => ({ mutate: vi.fn(), isPending: false }),
+    useStopProfileMutation: () => ({ mutate: vi.fn(), isPending: false }),
+    useApplyDisplaySettingsMutation: () => ({ mutate: vi.fn(), isPending: false, error: null }),
+  };
+});
 
 vi.mock("../features/auth/useAuth", () => ({
   useAuth: () => ({ logout: vi.fn() }),

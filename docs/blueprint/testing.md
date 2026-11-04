@@ -163,3 +163,5 @@ t007 前端门禁：`npm run build` 的 `prebuild` 自动拉取并校验官方 S
 ```
 
 E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须用当前源重建（旧 API 镜像缺 `/api/v1/events` 与 Runtime Coordinator，旧 Supervisor 镜像不写 Selkies token 文件）。`test_frontend_app_*` 用构建产物经 Caddy 托管，API 启用 Runtime Coordinator（`CBROWSER_REQUIRE_SUPERVISOR=1`），Profile 启停只经界面/`/api/v1`。测试代码不得自带编排互斥锁或引用 `.scratch` 编排目录；多路并行跑 Docker E2E 时由外层调度互斥。
+
+t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 ApiClient/SSE/下载链接三入口的绝对、协议相对、反斜杠与混合变体（`client.sameorigin.test.ts`、`sse.sameorigin.test.ts`）；真实 HTTP 夹具改为注入 fetch 按 origin 转发到测试服务器（客户端已无 baseUrl/url 配置项）；注销失败处置走生产 AppProviders + 实现 `setOnUnauthorized` 的真实 SSE 客户端断言回调路径（`providers.unauthorized.test.tsx`），AppProviders 默认 QueryClient retry 接线由 `providers.defaults.test.tsx` 守卫；跨 Profile 动作隔离由三页面的 `*.isolation.test.tsx` 覆盖，apply 阶段续跑由 `useProfilesQuery.applyresume.test.tsx` 以服务端幂等重放模型覆盖。真实 Docker/Chrome 拓扑下的会话回归（真实 401 注销、跨 Profile 切换与应用并重启）不在云端执行，统一由 t032 在目标环境判定。

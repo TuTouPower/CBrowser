@@ -1,4 +1,5 @@
 import type { ProfileRuntimeStatusEvent } from "./types";
+import { resolveSameOriginUrl } from "./same_origin";
 
 /**
  * The wire shape of `runtime_state` events is owned by the generated
@@ -83,11 +84,12 @@ export function parseProfileRuntimeEvent(
 }
 
 export interface ProfileEventsClientOptions {
-  url?: string;
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
   onUnauthorized?: () => void;
 }
+
+const EVENTS_PATH = "/api/v1/events";
 
 export class ProfileEventsClient {
   private url: string;
@@ -106,7 +108,7 @@ export class ProfileEventsClient {
   private errorListeners: Set<ProfileErrorListener> = new Set();
 
   constructor(options: ProfileEventsClientOptions = {}) {
-    this.url = options.url || "/api/v1/events";
+    this.url = EVENTS_PATH;
     this.reconnectIntervalMs = options.reconnectIntervalMs ?? 1000;
     this.maxReconnectIntervalMs = options.maxReconnectIntervalMs ?? 30000;
     this.currentReconnectInterval = this.reconnectIntervalMs;
@@ -162,6 +164,17 @@ export class ProfileEventsClient {
   private async connect(generation: number): Promise<void> {
     if (!this.isCurrent(generation)) return;
 
+    // Same final-URL same-origin rule as ApiClient: never stream events
+    // (with credentials) from a cross-origin target.
+    const target = resolveSameOriginUrl(this.url);
+    if (!target) {
+      this.dispatchError(
+        new Error("Cross-origin SSE connections are not allowed"),
+      );
+      this.stop();
+      return;
+    }
+
     this.abortController = new AbortController();
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
@@ -173,7 +186,7 @@ export class ProfileEventsClient {
     }
 
     try {
-      const response = await fetch(this.url, {
+      const response = await fetch(target.href, {
         method: "GET",
         headers,
         credentials: "include",

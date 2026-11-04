@@ -4,6 +4,20 @@ import type { AddressInfo } from "node:net";
 import { ApiClient, ApiError, shouldRetryRequest } from "./client";
 import { DEFAULT_PROFILE_CREATE_VALUES } from "./types";
 
+/**
+ * Same-origin fixture (t025): ApiClient no longer accepts a baseUrl, so
+ * tests that exercise a real HTTP server forward fetch to it by
+ * rewriting only the origin of the client's same-origin resolved URL.
+ * Assertions on methods, headers and bodies are unchanged.
+ */
+function forwardFetchTo(serverUrl: string) {
+  const realFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input), serverUrl);
+    return realFetch(`${serverUrl}${url.pathname}${url.search}`, init);
+  });
+}
+
 describe("ApiClient", () => {
   let server: http.Server;
   let serverUrl: string;
@@ -43,9 +57,11 @@ describe("ApiClient", () => {
 
     const addr = server.address() as AddressInfo;
     serverUrl = `http://127.0.0.1:${addr.port}`;
+    forwardFetchTo(serverUrl);
   });
 
   afterAll(async () => {
+    vi.unstubAllGlobals();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
@@ -58,7 +74,7 @@ describe("ApiClient", () => {
   });
 
   it("lists profiles with a GET to the profiles endpoint", async () => {
-    const client = new ApiClient({ baseUrl: serverUrl });
+    const client = new ApiClient();
     mockHandler = (_req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify([{ id: "p1", name: "Profile 1" }]));
@@ -83,7 +99,7 @@ describe("ApiClient", () => {
           headers: { "content-type": "application/json" },
         });
       });
-    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const client = new ApiClient();
     try {
       await client.profiles.list();
       expect(seen).toHaveLength(1);
@@ -94,7 +110,7 @@ describe("ApiClient", () => {
   });
 
   it("reads cbrowser_csrf cookie and sends X-CSRF-Token header on write requests", async () => {
-    const client = new ApiClient({ baseUrl: serverUrl });
+    const client = new ApiClient();
     document.cookie = "cbrowser_csrf=csrf_secret_token_12345; path=/";
 
     mockHandler = (_req, res) => {
@@ -116,7 +132,7 @@ describe("ApiClient", () => {
   });
 
   it("sends X-CSRF-Token on writes including desired-state PATCH", async () => {
-    const client = new ApiClient({ baseUrl: serverUrl });
+    const client = new ApiClient();
     document.cookie = "cbrowser_csrf=token_for_update; path=/";
 
     mockHandler = (_req, res) => {
@@ -147,7 +163,6 @@ describe("ApiClient", () => {
   it("triggers onUnauthorized callback on 401 status", async () => {
     let unauthorizedTriggered = false;
     const client = new ApiClient({
-      baseUrl: serverUrl,
       onUnauthorized: () => {
         unauthorizedTriggered = true;
       },
@@ -163,7 +178,7 @@ describe("ApiClient", () => {
   });
 
   it("surfaces server error detail from JSON response", async () => {
-    const client = new ApiClient({ baseUrl: serverUrl });
+    const client = new ApiClient();
     mockHandler = (_req, res) => {
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ detail: "Invalid profile name" }));
@@ -189,8 +204,8 @@ describe("ApiClient hardening", () => {
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address() as import("node:net").AddressInfo;
+    forwardFetchTo(`http://127.0.0.1:${address.port}`);
     const client = new ApiClient({
-      baseUrl: `http://127.0.0.1:${address.port}`,
       defaultTimeoutMs: 10,
     });
     try {
@@ -199,13 +214,14 @@ describe("ApiClient hardening", () => {
         retryable: true,
       });
     } finally {
+      vi.unstubAllGlobals();
       server.close();
     }
   });
 
   it("carries error code, retryable flag and detail", async () => {
     document.cookie = "";
-    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const client = new ApiClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -235,7 +251,7 @@ describe("ApiClient hardening", () => {
         headers: { "content-type": "application/json" },
       }),
     );
-    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const client = new ApiClient();
     try {
       await expect(client.profiles.list()).rejects.toMatchObject({
         retryable: false,
@@ -270,13 +286,14 @@ describe("ApiClient hardening", () => {
 });
 
 describe("ApiClient artifacts", () => {
-  it("builds the artifact download URL from the configured base URL", () => {
-    const client = new ApiClient({ baseUrl: "http://host:8080" });
+  it("builds a same-origin path-only artifact download URL", () => {
+    // t025: downloadUrl has no configurable base left; it always yields
+    // the same-origin path with the ids encoded.
+    const client = new ApiClient();
     expect(client.artifacts.downloadUrl("p 1", "a/1")).toBe(
-      "http://host:8080/api/v1/profiles/p%201/artifacts/a%2F1",
+      "/api/v1/profiles/p%201/artifacts/a%2F1",
     );
-    const defaultClient = new ApiClient();
-    expect(defaultClient.artifacts.downloadUrl("p1", "a1")).toBe(
+    expect(client.artifacts.downloadUrl("p1", "a1")).toBe(
       "/api/v1/profiles/p1/artifacts/a1",
     );
   });
@@ -294,7 +311,7 @@ describe("ApiClient idempotency", () => {
         headers: { "content-type": "application/json" },
       });
     });
-    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const client = new ApiClient();
     try {
       await client.profiles.create(
         { ...DEFAULT_PROFILE_CREATE_VALUES, name: "same" },
@@ -338,8 +355,7 @@ describe("ApiClient cancellation", () => {
   it("distinguishes external cancellation from timeout: cancelled is not retryable", async () => {
     const fetchSpy = abortingFetch();
     const client = new ApiClient({
-      baseUrl: "http://127.0.0.1:1",
-      defaultTimeoutMs: 60_000,
+            defaultTimeoutMs: 60_000,
     });
     const external = new AbortController();
     const removeSpy = vi.spyOn(external.signal, "removeEventListener");
@@ -370,8 +386,7 @@ describe("ApiClient cancellation", () => {
     const external = new AbortController();
     const removeSpy = vi.spyOn(external.signal, "removeEventListener");
     const client = new ApiClient({
-      baseUrl: "http://127.0.0.1:1",
-      defaultTimeoutMs: 30,
+            defaultTimeoutMs: 30,
     });
     try {
       const pending = client.request("/api/v1/profiles", {
@@ -412,8 +427,7 @@ describe("ApiClient cancellation", () => {
     const external = new AbortController();
     const removeSpy = vi.spyOn(external.signal, "removeEventListener");
     const client = new ApiClient({
-      baseUrl: "http://127.0.0.1:1",
-      defaultTimeoutMs: 60_000,
+            defaultTimeoutMs: 60_000,
     });
     try {
       const pending = client.request("/api/v1/profiles", {
@@ -443,7 +457,7 @@ describe("ApiClient cancellation", () => {
     );
     const external = new AbortController();
     const removeSpy = vi.spyOn(external.signal, "removeEventListener");
-    const client = new ApiClient({ baseUrl: "http://127.0.0.1:1" });
+    const client = new ApiClient();
     try {
       await client.request("/api/v1/profiles", { signal: external.signal });
       expect(removeSpy).toHaveBeenCalledWith(
@@ -460,8 +474,7 @@ describe("ApiClient cancellation", () => {
 describe("timeout policy wiring", () => {
   it("uses upload and long-operation timeouts", async () => {
     const client = new ApiClient({
-      baseUrl: "http://127.0.0.1:1",
-      uploadTimeoutMs: 22,
+            uploadTimeoutMs: 22,
       longOperationTimeoutMs: 33,
     });
     const requestSpy = vi

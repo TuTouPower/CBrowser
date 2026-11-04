@@ -32,12 +32,12 @@ t023 已交付外部取消、监听释放、SSE 连接代次、动作幂等键�
 
 <!-- /规范 -->
 
-- [ ] AC-001：跨源目标（任何可配置的 base/url、绝对 URL、协议相对、反斜杠及混合变体）在 ApiClient 请求、SSE 连接与下载链接生成三个入口均被拒绝：fetch 未被调用、不产生跨源下载链接；合法同源目标保留现有凭据/CSRF 语义。
-- [ ] AC-002：经生产 AppProviders 与实现 `setOnUnauthorized` 的 SSE 客户端触发 unauthorized，logout HTTP/网络失败时仍清理认证状态、停止 SSE，且不产生 unhandled rejection；断言来自 unauthorized 回调路径本身，不能依赖 unmount 清理通过；各注销调用点均有明确错误处置。
-- [ ] AC-003：在 BrowserSessionPage、AppLayout 顶栏与 ProfileDetailPage 中，Profile A 的动作失败或未结束时切换到 B：B 不显示 A 的错误（含 `display-apply-error` 条），按钮不被 A 的 pending 禁用，A 的迟到响应不污染 B；再次打开 A 按当前 runtime 展示。
-- [ ] AC-004：apply 动作阶段跨重试保存：stop 已生效后重试不再等待已完成阶段；start 已在服务端生效而响应丢失时，重试识别 desired=running 的新实例并收敛到 running，不等待 stopped、不停止或重建新实例；stop 未生效、start 未生效、状态查询短暂失败分别安全续跑或有界报错。
-- [ ] AC-005：不注入 QueryClient 的生产 AppProviders 默认配置下，queries 与 mutations 对可重试错误重试、对主动取消与不可重试错误不重试；t023 的独立动作幂等键既有回归原样通过。
-- [ ] AC-006：AC-001–AC-004 的新增回归先在修复前实现上失败再通过，失败用例名与命令记入 note.md 实施笔记（不只留在 gitignored 目录）；取消释放、SSE stop/start/EOF 与现有会话测试继续通过；真实拓扑回归入口和期望交付 t032。
+- [x] AC-001：跨源目标（任何可配置的 base/url、绝对 URL、协议相对、反斜杠及混合变体）在 ApiClient 请求、SSE 连接与下载链接生成三个入口均被拒绝：fetch 未被调用、不产生跨源下载链接；合法同源目标保留现有凭据/CSRF 语义。
+- [x] AC-002：经生产 AppProviders 与实现 `setOnUnauthorized` 的 SSE 客户端触发 unauthorized，logout HTTP/网络失败时仍清理认证状态、停止 SSE，且不产生 unhandled rejection；断言来自 unauthorized 回调路径本身，不能依赖 unmount 清理通过；各注销调用点均有明确错误处置。
+- [x] AC-003：在 BrowserSessionPage、AppLayout 顶栏与 ProfileDetailPage 中，Profile A 的动作失败或未结束时切换到 B：B 不显示 A 的错误（含 `display-apply-error` 条），按钮不被 A 的 pending 禁用，A 的迟到响应不污染 B；再次打开 A 按当前 runtime 展示。
+- [x] AC-004：apply 动作阶段跨重试保存：stop 已生效后重试不再等待已完成阶段；start 已在服务端生效而响应丢失时，重试识别 desired=running 的新实例并收敛到 running，不等待 stopped、不停止或重建新实例；stop 未生效、start 未生效、状态查询短暂失败分别安全续跑或有界报错。
+- [x] AC-005：不注入 QueryClient 的生产 AppProviders 默认配置下，queries 与 mutations 对可重试错误重试、对主动取消与不可重试错误不重试；t023 的独立动作幂等键既有回归原样通过。
+- [x] AC-006：AC-001–AC-004 的新增回归先在修复前实现上失败再通过，失败用例名与命令记入 note.md 实施笔记（不只留在 gitignored 目录）；取消释放、SSE stop/start/EOF 与现有会话测试继续通过；真实拓扑回归入口和期望交付 t032。
 
 ### 可测试性声明
 

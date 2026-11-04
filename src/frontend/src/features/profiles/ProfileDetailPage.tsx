@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type FormEvent } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Copy, Cpu, FolderArchive, RotateCcw, Trash2 } from "lucide-react";
 import {
+  scopeMutationToProfile,
   useProfileQuery,
   useProfileRuntimeQuery,
   useUpdateProfileMutation,
@@ -31,6 +32,18 @@ export function ProfileDetailPage() {
   const duplicateMutation = useDuplicateProfileMutation(client);
   const resetMutation = useResetProfileMutation(client);
   const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation(client);
+  // The page stays mounted across :profileId changes: action state is
+  // shown only for the Profile the action targeted.
+  const updateState = scopeMutationToProfile(updateMutation, profileId, (input) => input.id);
+  const deleteState = scopeMutationToProfile(deleteMutation, profileId, (input) => input);
+  const applyState = scopeMutationToProfile(applyDisplayMutation, profileId, (input) => input);
+  const duplicateState = scopeMutationToProfile(duplicateMutation, profileId, (input) => input.id);
+  const resetState = scopeMutationToProfile(resetMutation, profileId, (input) => input);
+  const retrySearchDefaultsState = scopeMutationToProfile(
+    retrySearchDefaultsMutation,
+    profileId,
+    (input) => input,
+  );
 
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
@@ -43,9 +56,19 @@ export function ProfileDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const dirtyFields = useRef<Set<string>>(new Set());
+  // Latest routed Profile, read by async handlers after an await: a
+  // result that settles after the user switched Profiles belongs to the
+  // Profile it targeted and must not land on the one now on screen.
+  const activeProfileIdRef = useRef(profileId);
+  activeProfileIdRef.current = profileId;
+  const isStillOnProfile = (id: string) => activeProfileIdRef.current === id;
 
   useEffect(() => {
     dirtyFields.current.clear();
+    // Local action outcome banners belong to the Profile they were
+    // produced on; never carry them across a Profile switch.
+    setError(null);
+    setSuccess(false);
   }, [profileId]);
 
   useEffect(() => {
@@ -79,37 +102,47 @@ export function ProfileDetailPage() {
 
   const handleDuplicate = async (includeBrowserState: boolean) => {
     if (!profileId) return;
+    const targetId = profileId;
     setError(null);
     try {
       const clone = await duplicateMutation.mutateAsync({
-        id: profileId,
+        id: targetId,
         includeBrowserState,
       });
+      if (!isStillOnProfile(targetId)) return;
       navigate(`/profiles/${clone.id}`);
     } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToDuplicateProfile"));
     }
   };
 
   const handleReset = async () => {
     if (!profileId) return;
+    const targetId = profileId;
     setError(null);
     try {
-      await resetMutation.mutateAsync(profileId);
+      await resetMutation.mutateAsync(targetId);
+      if (!isStillOnProfile(targetId)) return;
       setResetOpen(false);
       setSuccess(true);
-      setTimeout(() => setSuccess(false), 2000);
+      setTimeout(() => {
+        if (isStillOnProfile(targetId)) setSuccess(false);
+      }, 2000);
     } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToResetProfile"));
     }
   };
 
   const handleRetrySearchDefaults = async () => {
     if (!profileId) return;
+    const targetId = profileId;
     setError(null);
     try {
-      await retrySearchDefaultsMutation.mutateAsync(profileId);
+      await retrySearchDefaultsMutation.mutateAsync(targetId);
     } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
       setError(
         err instanceof Error ? err.message : t("failedToRetrySearchDefaults"),
       );
@@ -125,6 +158,7 @@ export function ProfileDetailPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!profileId || !name.trim()) return;
+    const targetId = profileId;
 
     setError(null);
     setSuccess(false);
@@ -137,7 +171,7 @@ export function ProfileDetailPage() {
         .map((t) => ({ tag: t }));
 
       await updateMutation.mutateAsync({
-        id: profileId,
+        id: targetId,
         data: {
           name: name.trim(),
           proxy: proxy.trim() || null,
@@ -148,10 +182,14 @@ export function ProfileDetailPage() {
         },
       });
 
+      if (!isStillOnProfile(targetId)) return;
       dirtyFields.current.clear();
       setSuccess(true);
-      setTimeout(() => setSuccess(false), 2000);
+      setTimeout(() => {
+        if (isStillOnProfile(targetId)) setSuccess(false);
+      }, 2000);
     } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToUpdateProfile"));
     }
   };
@@ -159,11 +197,14 @@ export function ProfileDetailPage() {
   const handleDelete = async () => {
     if (!profileId) return;
     if (!window.confirm(t("deleteProfileConfirm"))) return;
+    const targetId = profileId;
 
     try {
-      await deleteMutation.mutateAsync(profileId);
+      await deleteMutation.mutateAsync(targetId);
+      if (!isStillOnProfile(targetId)) return;
       navigate("/");
     } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToDeleteProfile"));
     }
   };
@@ -255,7 +296,7 @@ export function ProfileDetailPage() {
             <button
               type="button"
               onClick={() => void handleDuplicate(false)}
-              disabled={duplicateMutation.isPending}
+              disabled={duplicateState.isPending}
               className="px-3 py-1.5 rounded text-xs bg-primary text-white disabled:opacity-50"
             >
               {t("duplicateSettingsOnly")}
@@ -263,7 +304,7 @@ export function ProfileDetailPage() {
             <button
               type="button"
               onClick={() => void handleDuplicate(true)}
-              disabled={duplicateMutation.isPending || runtimeRunning}
+              disabled={duplicateState.isPending || runtimeRunning}
               className="px-3 py-1.5 rounded text-xs bg-surface-2 border border-border text-gray-200 disabled:opacity-50"
               title={runtimeRunning ? t("stopProfileFirst") : undefined}
             >
@@ -295,10 +336,10 @@ export function ProfileDetailPage() {
             <button
               type="button"
               onClick={() => void handleReset()}
-              disabled={resetMutation.isPending || runtimeRunning}
+              disabled={resetState.isPending || runtimeRunning}
               className="px-3 py-1.5 rounded text-xs bg-red-500 text-white disabled:opacity-50"
             >
-              {resetMutation.isPending ? t("resetting") : t("reset")}
+              {resetState.isPending ? t("resetting") : t("reset")}
             </button>
             <button
               type="button"
@@ -320,7 +361,7 @@ export function ProfileDetailPage() {
           <button
             type="button"
             onClick={handleDelete}
-            disabled={deleteMutation.isPending}
+            disabled={deleteState.isPending}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border border-red-500/20 transition-colors"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -359,10 +400,10 @@ export function ProfileDetailPage() {
             <button
               type="button"
               onClick={() => void handleRetrySearchDefaults()}
-              disabled={retrySearchDefaultsMutation.isPending}
+              disabled={retrySearchDefaultsState.isPending}
               className="shrink-0 px-3 py-1.5 rounded text-xs bg-amber-500 text-white disabled:opacity-50"
             >
-              {retrySearchDefaultsMutation.isPending
+              {retrySearchDefaultsState.isPending
                 ? t("searchDefaultsRetrying")
                 : t("retrySearchDefaults")}
             </button>
@@ -379,24 +420,24 @@ export function ProfileDetailPage() {
               type="button"
               data-testid="profile-display-apply-btn"
               onClick={() => profileId && applyDisplayMutation.mutate(profileId)}
-              disabled={applyDisplayMutation.isPending}
+              disabled={applyState.isPending}
               className="px-3 py-1.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50 shrink-0"
             >
-              {applyDisplayMutation.isPending
+              {applyState.isPending
                 ? t("displayApplyingRestart")
                 : t("displayApplyAndRestart")}
             </button>
           </div>
         )}
 
-        {applyDisplayMutation.error && (
+        {applyState.error && (
           <div
             data-testid="profile-display-apply-error"
             role="alert"
             className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded"
           >
             {t("displayApplyFailed", {
-              error: applyDisplayMutation.error.message,
+              error: applyState.error.message,
             })}
           </div>
         )}
@@ -489,10 +530,10 @@ export function ProfileDetailPage() {
             <button
               data-testid="profile-edit-submit"
               type="submit"
-              disabled={updateMutation.isPending || !name.trim()}
+              disabled={updateState.isPending || !name.trim()}
               className="px-4 py-2 bg-primary text-primary-foreground font-medium rounded text-sm hover:opacity-90 disabled:opacity-50"
             >
-              {updateMutation.isPending ? t("saving") : t("save")}
+              {updateState.isPending ? t("saving") : t("save")}
             </button>
           </div>
         </form>

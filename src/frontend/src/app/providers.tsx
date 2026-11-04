@@ -13,7 +13,11 @@ function SseSyncBridge({ sseClient }: { sseClient: ProfileEventsClient }) {
 
   useEffect(() => {
     sseClient.setOnUnauthorized?.(() => {
-      void logout();
+      // Explicit disposal: AuthProvider clears the local auth state in a
+      // finally block, so a failed logout request has nothing further to
+      // clean up — but its rejection must not escape as an unhandled
+      // rejection.
+      void logout().catch(() => undefined);
     });
     return () => {
       sseClient.stop();

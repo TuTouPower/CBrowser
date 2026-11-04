@@ -10,5 +10,5 @@
 |v2_runtime_validation|t001|2026-11-01T10:13:32+08:00|
 |runtime_persistence|t002, t016, t021|2026-11-04T02:13:35+08:00|
 |runtime_lifecycle|t005, t007, t022|2026-11-04T03:27:00+08:00|
-|access_control|t006, t007, t008, t021, t023|2026-11-04T04:42:46+08:00|
-|profile_management|t007, t013, t017, t020, t021, t023|2026-11-04T04:42:46+08:00|
+|access_control|t006, t007, t008, t021, t023, t025|2026-11-04T08:39:09+08:00|
+|profile_management|t007, t013, t017, t020, t021, t023, t025|2026-11-04T08:39:09+08:00|
