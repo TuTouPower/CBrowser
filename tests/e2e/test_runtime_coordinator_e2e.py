@@ -191,6 +191,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             host="127.0.0.1",
             port=api_host_port,
             log_level="warning",
+            timeout_graceful_shutdown=5,
         )
         uv_server = uvicorn.Server(uv_config)
         server_task = asyncio.create_task(uv_server.serve())
@@ -228,6 +229,15 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 "CBROWSER_STREAM_IMAGE": image("CBROWSER_STREAM_TEST_IMAGE"),
                 "CBROWSER_NETWORK_POLICY_IMAGE": image(
                     "CBROWSER_SUPERVISOR_TEST_IMAGE"
+                ),
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
+                "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
+                    "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
                 ),
             },
             volumes=mounts,
@@ -409,15 +419,31 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 description="coordinator convergence after supervisor restart",
             )
 
-            # Cleanup: stop the running profile
+            # Cleanup: stop the running profile and wait for the Supervisor
+            # to finish removing its containers before the harness removes
+            # them too (a concurrent removal returns Docker 409).
             await api_client.post(
                 f"/api/v1/profiles/{profile_id}/stop", headers=auth_headers
+            )
+            await wait_until(
+                lambda: browser_c_name not in active_names()
+                and stream_c_name not in active_names(),
+                timeout=60.0,
+                interval=0.5,
+                description="runtime containers removed after final stop",
             )
 
     finally:
         if server_task:
             uv_server.should_exit = True
-            await server_task
+            # The Supervisor can hold a long-lived SSE/control connection
+            # across its restart; uvicorn's graceful wait would never
+            # return. Force the configured shutdown bound, then cancel.
+            try:
+                await asyncio.wait_for(server_task, timeout=10.0)
+            except (TimeoutError, asyncio.TimeoutError):
+                server_task.cancel()
+                await asyncio.gather(server_task, return_exceptions=True)
 
         cleanup_errors: list[str] = []
         # Cleanup all containers strictly labeled with this prefix
@@ -429,7 +455,14 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             owned_containers = []
             cleanup_errors.append(f"containers_list: {type(exc).__name__}")
 
-        for c in owned_containers:
+        def _cleanup_order(box) -> int:
+            labels = getattr(box, "labels", None)
+            if labels is None and hasattr(box, "attrs"):
+                labels = box.attrs.get("Config", {}).get("Labels", {}) or {}
+            role = (labels or {}).get("com.cbrowser.role")
+            return 0 if role in ("supervisor", "api", "gateway") else 1
+
+        for c in sorted(owned_containers, key=_cleanup_order):
             lbls = getattr(c, "labels", None)
             if lbls is None and hasattr(c, "attrs"):
                 lbls = c.attrs.get("Config", {}).get("Labels", {}) or {}
@@ -447,14 +480,20 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                     "Container stop error for %s: %s", c_name, type(exc).__name__
                 )
 
-            try:
-                c.remove(force=True, v=True)
-            except docker.errors.NotFound:
-                pass
-            except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
-                err_t = type(exc).__name__
-                logger.error("Container remove error for %s: %s", c_name, err_t)
-                cleanup_errors.append(f"container_remove({c_name}): {err_t}")
+            for attempt in range(40):
+                try:
+                    c.remove(force=True, v=True)
+                    break
+                except docker.errors.NotFound:
+                    break
+                except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
+                    if "already in progress" in str(exc) and attempt < 39:
+                        await asyncio.sleep(0.25)
+                        continue
+                    err_t = type(exc).__name__
+                    logger.error("Container remove error for %s: %s", c_name, err_t)
+                    cleanup_errors.append(f"container_remove({c_name}): {err_t}")
+                    break
 
         # Cleanup networks strictly labeled with this prefix
         try:
@@ -482,19 +521,33 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
                 )
                 continue
 
-            containers_attached = getattr(net, "attrs", {}).get("Containers") or {}
-            if containers_attached:
+            for attempt in range(40):
+                containers_attached = (
+                    getattr(net, "attrs", {}).get("Containers") or {}
+                )
+                if not containers_attached:
+                    try:
+                        net.remove()
+                    except docker.errors.NotFound:
+                        pass
+                    except Exception as exc:  # noqa: BLE001 - robust network cleanup
+                        err_t = type(exc).__name__
+                        logger.error("Network remove error for %s: %s", n_name, err_t)
+                        cleanup_errors.append(f"network_remove({n_name}): {err_t}")
+                    break
+                if attempt < 39:
+                    await asyncio.sleep(0.25)
+                    try:
+                        net.reload()
+                    except docker.errors.NotFound:
+                        break
+                    except Exception as exc:  # noqa: BLE001 - robust network reload
+                        cleanup_errors.append(
+                            f"network_reload({n_name}): {type(exc).__name__}"
+                        )
+                        break
+                    continue
                 cleanup_errors.append(f"network_not_empty({n_name})")
-                continue
-
-            try:
-                net.remove()
-            except docker.errors.NotFound:
-                pass
-            except Exception as exc:  # noqa: BLE001 - robust network remove cleanup
-                err_t = type(exc).__name__
-                logger.error("Network remove error for %s: %s", n_name, err_t)
-                cleanup_errors.append(f"network_remove({n_name}): {err_t}")
 
 
     if cleanup_errors:

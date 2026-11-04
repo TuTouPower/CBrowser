@@ -124,6 +124,14 @@ async def stop_profile_via_header(page: Page) -> None:
     await page.click('[data-testid="header-stop-btn"]', timeout=15000)
 
 
+async def _evaluate_bounded(
+    page: Page, expression: str, *, timeout: float = 5.0
+) -> Any:
+    """Evaluate with a hard bound; Playwright evaluate has no timeout and
+    can wait forever on a stalled page/iframe."""
+    return await asyncio.wait_for(page.evaluate(expression), timeout=timeout)
+
+
 async def wait_iframe_stats(
     page: Page,
     *,
@@ -135,7 +143,8 @@ async def wait_iframe_stats(
     last: Any = None
     while time.monotonic() < deadline:
         try:
-            last = await page.evaluate(
+            last = await _evaluate_bounded(
+                page,
                 """async () => {
                     const SEL = 'iframe[data-testid="browser-session-iframe"]';
                     const f = document.querySelector(SEL);
@@ -143,9 +152,10 @@ async def wait_iframe_stats(
                     const fn = f.contentWindow.__getWebRTCStats;
                     if (typeof fn !== 'function') return null;
                     return await fn();
-                }"""
+                }""",
+                timeout=5.0,
             )
-        except Exception as exc:  # noqa: BLE001 - page navigating / iframe swapped
+        except Exception as exc:  # noqa: BLE001 - navigated/swapped/stalled
             last = {"error": type(exc).__name__}
         if (
             last
@@ -1314,7 +1324,9 @@ async def test_t019_switch_and_refresh_first_frame_within_2s_host_only(
         await wait_iframe_stats(page_a, name="B after switch")
         switch_elapsed = time.monotonic() - switch_start
         assert switch_elapsed <= 2.0, f"switch to first frame took {switch_elapsed:.3f}s"
-        switch_candidates = await page_a.evaluate(_ALL_CANDIDATES_SCRIPT)
+        switch_candidates = await _evaluate_bounded(
+            page_a, _ALL_CANDIDATES_SCRIPT, timeout=10.0
+        )
         _assert_host_only_candidates(switch_candidates, udp_mux_port_b)
 
         # Refresh rebuilds the session: same budget, same candidate set.
@@ -1325,7 +1337,9 @@ async def test_t019_switch_and_refresh_first_frame_within_2s_host_only(
         assert refresh_elapsed <= 2.0, (
             f"refresh to first frame took {refresh_elapsed:.3f}s"
         )
-        refresh_candidates = await page_a.evaluate(_ALL_CANDIDATES_SCRIPT)
+        refresh_candidates = await _evaluate_bounded(
+            page_a, _ALL_CANDIDATES_SCRIPT, timeout=10.0
+        )
         _assert_host_only_candidates(refresh_candidates, udp_mux_port_b)
 
         _save(

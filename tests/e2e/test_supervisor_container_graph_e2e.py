@@ -29,6 +29,7 @@ import httpx
 import pytest
 
 from e2e_env import require_e2e_env
+from wait import poll_until
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from api_auth import create_auth_context
@@ -222,6 +223,15 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_STREAM_IMAGE": image("CBROWSER_STREAM_TEST_IMAGE"),
                 "CBROWSER_NETWORK_POLICY_IMAGE": image(
                     "CBROWSER_SUPERVISOR_TEST_IMAGE"
+                ),
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
+                "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
+                    "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
                 ),
             },
             volumes=mounts,
@@ -551,15 +561,28 @@ sys.stdout.write(json.dumps(result))
                 base_url=sup_url, headers=headers, trust_env=False
             ) as recovered:
                 for profile, session in zip(ordered, snapshots):
-                    response = await recovered.get(
-                        f"/supervisor/v1/profiles/{profile}/status"
+                    async def _recovered_status(pid: str = profile) -> dict:
+                        response = await recovered.get(
+                            f"/supervisor/v1/profiles/{pid}/status"
+                        )
+                        assert response.status_code == 200
+                        return response.json()
+
+                    # Startup reconciliation runs after the control plane is
+                    # healthy; until the session is re-adopted the status
+                    # correctly reports no port.
+                    status = await poll_until(
+                        _recovered_status,
+                        lambda body: body["udp_mux_port"]
+                        == session["udp_mux_port"],
+                        timeout=30.0,
+                        interval=0.2,
+                        description=f"recovered status for {profile}",
                     )
-                    assert response.status_code == 200
                     assert (
-                        response.json()["runtime_instance_id"]
+                        status["runtime_instance_id"]
                         == session["runtime_instance_id"]
                     )
-                    assert response.json()["udp_mux_port"] == session["udp_mux_port"]
             for name, container_id in identities.items():
                 assert client.containers.get(name).id == container_id
             for profile, pid in browser_pids.items():
@@ -602,7 +625,16 @@ sys.stdout.write(json.dumps(result))
             owned_containers = []
             cleanup_errors.append(f"containers_list: {type(exc).__name__}")
 
-        for box in owned_containers:
+        def _cleanup_order(box) -> int:
+            labels = getattr(box, "labels", None)
+            if labels is None and hasattr(box, "attrs"):
+                labels = box.attrs.get("Config", {}).get("Labels", {}) or {}
+            role = (labels or {}).get("com.cbrowser.role")
+            # Stop the actor before its sandboxes: a live Supervisor can
+            # recreate a Stream while the harness is removing the pair.
+            return 0 if role in ("supervisor", "api", "gateway") else 1
+
+        for box in sorted(owned_containers, key=_cleanup_order):
             lbls = getattr(box, "labels", None)
             if lbls is None and hasattr(box, "attrs"):
                 lbls = box.attrs.get("Config", {}).get("Labels", {}) or {}
@@ -638,14 +670,22 @@ sys.stdout.write(json.dumps(result))
                     "Container stop error for %s: %s", box_name, type(exc).__name__
                 )
 
-            try:
-                box.remove(force=True, v=True)
-            except docker.errors.NotFound:
-                pass
-            except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
-                err_type = type(exc).__name__
-                logger.error("Container remove error for %s: %s", box_name, err_type)
-                cleanup_errors.append(f"container_remove({box_name}): {err_type}")
+            for attempt in range(40):
+                try:
+                    box.remove(force=True, v=True)
+                    break
+                except docker.errors.NotFound:
+                    break
+                except Exception as exc:  # noqa: BLE001 - robust container remove cleanup
+                    if "already in progress" in str(exc) and attempt < 39:
+                        await asyncio.sleep(0.25)
+                        continue
+                    err_type = type(exc).__name__
+                    logger.error(
+                        "Container remove error for %s: %s", box_name, err_type
+                    )
+                    cleanup_errors.append(f"container_remove({box_name}): {err_type}")
+                    break
 
         try:
             owned_networks = client.networks.list(
@@ -672,20 +712,38 @@ sys.stdout.write(json.dumps(result))
                 )
                 continue
 
-            containers_attached = getattr(network, "attrs", {}).get("Containers") or {}
-            if containers_attached:
-                cleanup_errors.append(f"network_not_empty({n_name})")
-                continue
-
-            try:
-                network.remove()
-            except docker.errors.NotFound:
-                pass
-            except Exception as exc:  # noqa: BLE001 - robust network remove cleanup
-                logger.error(
-                    "Network remove error for %s: %s", n_name, type(exc).__name__
+            for attempt in range(40):
+                containers_attached = (
+                    getattr(network, "attrs", {}).get("Containers") or {}
                 )
-                cleanup_errors.append(f"network_remove({n_name}): {type(exc).__name__}")
+                if not containers_attached:
+                    try:
+                        network.remove()
+                    except docker.errors.NotFound:
+                        pass
+                    except Exception as exc:  # noqa: BLE001 - robust network cleanup
+                        logger.error(
+                            "Network remove error for %s: %s",
+                            n_name,
+                            type(exc).__name__,
+                        )
+                        cleanup_errors.append(
+                            f"network_remove({n_name}): {type(exc).__name__}"
+                        )
+                    break
+                if attempt < 39:
+                    await asyncio.sleep(0.25)
+                    try:
+                        network.reload()
+                    except docker.errors.NotFound:
+                        break
+                    except Exception as exc:  # noqa: BLE001 - robust reload
+                        cleanup_errors.append(
+                            f"network_reload({n_name}): {type(exc).__name__}"
+                        )
+                        break
+                    continue
+                cleanup_errors.append(f"network_not_empty({n_name})")
 
         client.close()
 

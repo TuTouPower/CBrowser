@@ -69,7 +69,7 @@ def _run_gateway_container(name: str):
     client = docker.from_env()
     return client.containers.run(
         IMAGE,
-        command=["sleep", "300"],
+        entrypoint=["sleep", "300"],
         name=name,
         detach=True,
         labels={

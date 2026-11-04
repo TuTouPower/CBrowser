@@ -550,12 +550,23 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             assert stat_a["observed_state"] in ("stopped", "inactive", "idle")
 
             # Verify in Docker directly: Profile A original container is exited or
-            # cleanly removed, and zero running containers exist for Profile A
-            try:
-                b_c_a.reload()
-                assert b_c_a.status in ("exited", "dead", "stopped")
-            except docker.errors.NotFound:
-                pass  # Container was cleanly removed upon stop
+            # cleanly removed, and zero running containers exist for Profile A.
+            # Startup reconciliation is a background task after the control
+            # plane is healthy, so give it a bounded window to converge.
+            async def _profile_a_container_retired() -> bool:
+                try:
+                    b_c_a.reload()
+                except docker.errors.NotFound:
+                    return True  # Container was cleanly removed upon stop
+                return b_c_a.status in ("exited", "dead", "stopped")
+
+            await poll_until(
+                _profile_a_container_retired,
+                lambda retired: retired,
+                timeout=30.0,
+                interval=0.5,
+                description="Profile A browser container retired after restart",
+            )
 
             running_a = [
                 c
@@ -584,8 +595,13 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
                 f"/api/v1/profiles/{profile_a_id}/runtime/desired-state",
                 json={"desired_state": "running"},
             )
+            # The spool file is an internal envelope (version + event body);
+            # replay the same body the forwarder sends to the API.
+            replay_body = {
+                key: value for key, value in event_data.items() if key != "version"
+            }
             r_dup = await api_client.post(
-                "/api/v1/internal/supervisor/runtimes/events", json=event_data
+                "/api/v1/internal/supervisor/runtimes/events", json=replay_body
             )
             assert r_dup.status_code == 200
             dup_res = r_dup.json()

@@ -492,6 +492,9 @@ class RealSupervisorContainer:
             "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
             "CBROWSER_UDP_MUX_MIN_PORT": str(self.udp_mux_min_port),
             "CBROWSER_UDP_MUX_MAX_PORT": str(self.udp_mux_max_port),
+            "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
+                "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
+            ),
         }
 
         c_name = f"{self.prefix}-supervisor-{uuid.uuid4().hex[:6]}"
