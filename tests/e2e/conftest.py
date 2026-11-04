@@ -21,6 +21,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 HOST_CHROME_PATH = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
+_PROXY_ENV = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "ALL_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "all_proxy",
+)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _loopback_tests_ignore_proxy_environment():
+    """The suite talks to loopback only; an inherited desktop proxy makes
+    websockets/httpx route localhost through it (and break header APIs)."""
+    for name in _PROXY_ENV:
+        os.environ.pop(name, None)
+
 
 def _item_needs_host_chrome(item) -> bool:
     """True when the item's suite launches the host Google Chrome.

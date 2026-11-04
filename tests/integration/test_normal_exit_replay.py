@@ -129,8 +129,10 @@ def _bind(
 
 
 async def _run_uds_server(app, sock_path: Path):
-    rel_sock = os.path.relpath(sock_path.resolve(), os.getcwd())
-    config = uvicorn.Config(app=app, uds=rel_sock, log_level="error")
+    absolute = str(sock_path.resolve())
+    relative = os.path.relpath(sock_path.resolve(), os.getcwd())
+    uds_target = absolute if len(absolute) <= len(relative) else relative
+    config = uvicorn.Config(app=app, uds=uds_target, log_level="error")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())
     for _ in range(50):

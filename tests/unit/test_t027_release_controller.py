@@ -28,6 +28,20 @@ STATE="${FAKE_DOCKER_STATE:?}"
 mkdir -p "$STATE/images"
 echo "docker $*" >> "$LOG"
 san() { printf '%s' "$1" | tr '/:' '__'; }
+sha_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+sha_text() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
+  fi
+}
 cmd="${1:-}"; if [ $# -gt 0 ]; then shift; fi
 case "$cmd" in
   build)
@@ -41,12 +55,12 @@ case "$cmd" in
     done
     echo "build tag=$tag dockerfile=$df" >> "$LOG.builds"
     if [ "${FAKE_FAIL_BUILD:-0}" = "1" ]; then echo "build failed" >&2; exit 1; fi
-    id="sha256:$(sha256sum "$df" | awk '{print $1}')"
+    id="sha256:$(sha_file "$df")"
     printf '%s' "$id" > "$STATE/images/$(san "$tag")"
     ;;
   pull)
     ref="$1"
-    id="sha256:$(printf '%s' "pulled:$ref" | sha256sum | awk '{print $1}')"
+    id="sha256:$(sha_text "pulled:$ref")"
     printf '%s' "$id" > "$STATE/images/$(san "$ref")"
     ;;
   image)

@@ -4,7 +4,9 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import socket
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -24,6 +26,17 @@ async def _wait_until(predicate, timeout: float = 3.0) -> None:
             await asyncio.sleep(0)
 
     await asyncio.wait_for(poll(), timeout)
+
+
+@pytest.fixture
+def short_socket_dir():
+    """Short AF_UNIX base: pytest tmp_path can exceed sun_path on macOS."""
+    base = Path("/tmp") if Path("/tmp").is_dir() else Path(tempfile.gettempdir())
+    root = Path(tempfile.mkdtemp(prefix="cbx", dir=base))
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 class ManualClock:
@@ -771,7 +784,7 @@ async def test_reconnect_rearm_late_ack_does_not_restore_health(
 
 
 def test_x11_socket_without_lock_and_dead_server_is_cleared(
-    tmp_path: Path,
+    short_socket_dir: Path,
 ) -> None:
     """A14/f012: no lock file — the socket alone is probed; a socket that
     refuses connections is proven stale and removed."""
@@ -779,17 +792,17 @@ def test_x11_socket_without_lock_and_dead_server_is_cleared(
 
     from cbrowser.runtime_agent.runner import BrowserRunner
 
-    sock = tmp_path / "X0"
+    sock = short_socket_dir / "X0"
     server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
     server.bind(str(sock))
     server.close()  # bound-then-closed leaves a refusing socket file
-    lock = tmp_path / "X0-lock"
+    lock = short_socket_dir / "X0-lock"
     BrowserRunner._clear_stale_x11_state(lock, sock)
     assert not sock.exists()
 
 
 def test_x11_socket_without_lock_and_live_server_is_kept(
-    tmp_path: Path,
+    short_socket_dir: Path,
 ) -> None:
     """A14/f012: no lock file but a live server accepts connections — the
     socket must be kept and the conflict reported, never deleted."""
@@ -797,11 +810,11 @@ def test_x11_socket_without_lock_and_live_server_is_kept(
 
     from cbrowser.runtime_agent.runner import BrowserRunner
 
-    sock = tmp_path / "X0"
+    sock = short_socket_dir / "X0"
     server = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
     server.bind(str(sock))
     server.listen(1)
-    lock = tmp_path / "X0-lock"
+    lock = short_socket_dir / "X0-lock"
     try:
         with pytest.raises(RuntimeError):
             BrowserRunner._clear_stale_x11_state(lock, sock)
