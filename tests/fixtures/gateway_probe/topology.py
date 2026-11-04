@@ -225,6 +225,12 @@ class GatewayTopologyHarness:
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
                 "CBROWSER_DB_PATH": "/metadata/control.db",
+                # The automation tunnel is gated on the API coordinator
+                # being enabled (t031); the production stack sets both,
+                # so the harness must too or every CDP handshake closes
+                # with 1011 before auth is even evaluated.
+                "CBROWSER_SUPERVISOR_URL": f"http://{self.prefix}-supervisor:8005",
+                "CBROWSER_REQUIRE_SUPERVISOR": "1",
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/supervisor_key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_password",

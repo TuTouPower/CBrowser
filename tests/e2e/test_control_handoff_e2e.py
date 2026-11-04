@@ -81,7 +81,7 @@ async def test_handoff_closes_established_tunnel_and_refuses_reconnect(
         # Establish a real tunnel through API -> Supervisor -> Agent.
         async with websockets.connect(
             _ws_url(harness, profile_id),
-            extra_headers={"Authorization": f"Bearer {token}"},
+            additional_headers={"Authorization": f"Bearer {token}"},
             ssl=ssl_ctx,
             max_size=None,
         ) as ws:
@@ -117,7 +117,7 @@ async def test_handoff_closes_established_tunnel_and_refuses_reconnect(
         # Reconnect while reclaim is blocked must be refused the same way.
         ws2 = await websockets.connect(
             _ws_url(harness, profile_id),
-            extra_headers={"Authorization": f"Bearer {token}"},
+            additional_headers={"Authorization": f"Bearer {token}"},
             ssl=ssl_ctx,
             max_size=None,
         )
@@ -146,7 +146,7 @@ async def test_handoff_closes_established_tunnel_and_refuses_reconnect(
             assert restore.json()["owner"] == "agent"
         async with websockets.connect(
             _ws_url(harness, profile_id),
-            extra_headers={"Authorization": f"Bearer {token}"},
+            additional_headers={"Authorization": f"Bearer {token}"},
             ssl=ssl_ctx,
             max_size=None,
         ) as ws3:

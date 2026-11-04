@@ -282,10 +282,25 @@ def prepare_selkies_web_assets(stream_image_id: str, dest_dir: Path) -> Path:
     client = docker.from_env()
     container = client.containers.create(stream_image_id, entrypoint=["/bin/sh"])
     try:
-        archive_stream, _ = container.get_archive(
-            "/usr/local/lib/python3.12/site-packages/selkies/selkies_web"
+        # The Stream image installs Selkies into /opt/venv (current
+        # Dockerfile); older builds used /usr/local. Try both so the
+        # harness follows the shipped runtime instead of a frozen path.
+        candidates = (
+            "/opt/venv/lib/python3.12/site-packages/selkies/selkies_web",
+            "/usr/local/lib/python3.12/site-packages/selkies/selkies_web",
         )
-        archive_bytes = b"".join(archive_stream)
+        archive_bytes = None
+        for candidate in candidates:
+            try:
+                archive_stream, _ = container.get_archive(candidate)
+            except docker.errors.NotFound:
+                continue
+            archive_bytes = b"".join(archive_stream)
+            break
+        if archive_bytes is None:
+            raise FileNotFoundError(
+                "selkies_web not found in Stream image: " + ", ".join(candidates)
+            )
         with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as tar:
             tar.extractall(path=dest_dir)
     finally:
