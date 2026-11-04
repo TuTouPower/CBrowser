@@ -9,8 +9,8 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t030"
-conflicts_with: "t025,t026"
+depends_on: "t026,t030"
+conflicts_with: "t025"
 note: "来源 p029；消费 t030 的 Dialog/页面保护接口；云端 Muse，真实环境执行交 t032"
 ---
 
@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p029；消费 t030 的 Dialog/页面保护接口 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅修订：硬依赖改为 t026、t030；写入用户决定的接管触发语义（前台点击/按键/滚轮/IME 提交，纯移动不触发）；补输入上报通路、API/Supervisor 活动隧道注册表、迁移与 schema、/manage 不存在的修正。
 
 ## Review 处置
 

@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p030、p032、p033 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅修订：新增隧道层拒绝 Browser.close 与下载捕获保护；跨调用 ref 改自建注册表；targetId 经 CDP 获取；遗留 Dialog 机制按 t029 证据选择；凭据 AC 收窄到 CLI 自身输出；Skill 不放模板软链目录；固定 Playwright 版本与 entrypoint。
 
 ## Review 处置
 

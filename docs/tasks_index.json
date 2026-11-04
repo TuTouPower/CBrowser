@@ -31,7 +31,7 @@
             "verify_limit": "5",
             "diff_anchor": "",
             "depends_on": "",
-            "conflicts_with": "t025,t031",
+            "conflicts_with": "t025",
             "note": "来源 p034（运行时部分）；云端 Muse，真实环境执行交 t032",
             "dir": "docs/tasks/t026_runtime_infrastructure_reconciliation"
         },
@@ -47,14 +47,14 @@
             "verify_limit": "5",
             "diff_anchor": "",
             "depends_on": "t026",
-            "conflicts_with": "",
+            "conflicts_with": "t028",
             "note": "来源 p034（发布部分）；云端 Muse，真实环境执行交 t032",
             "dir": "docs/tasks/t027_release_controller_readiness"
         },
         {
             "tid": "t028",
             "slug": "runtime_isolation_quota_regression",
-            "title": "补齐直连拓扑隔离、配额与 Agent 替换回归用例",
+            "title": "补齐历史实跑入口、配额与 Agent 替换回归及门禁证据",
             "status": "backlog",
             "branch": "",
             "worktree": "",
@@ -62,8 +62,8 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t026",
-            "conflicts_with": "",
+            "depends_on": "",
+            "conflicts_with": "t027",
             "note": "来源 p016；云端 Muse，真实环境执行交 t032",
             "dir": "docs/tasks/t028_runtime_isolation_quota_regression"
         },
@@ -80,7 +80,7 @@
             "diff_anchor": "",
             "depends_on": "",
             "conflicts_with": "",
-            "note": "来源 p028（云端研究及探针；真实引擎结论交 t032）；云端 Muse，真实环境执行交 t032",
+            "note": "来源 p028；云端 Muse 以目标引擎二进制执行指纹增量与 Dialog 基线，真实镜像复核交 t032",
             "dir": "docs/tasks/t029_automation_compatibility_probe_harness"
         },
         {
@@ -110,8 +110,8 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t030",
-            "conflicts_with": "t025,t026",
+            "depends_on": "t026,t030",
+            "conflicts_with": "t025",
             "note": "来源 p029；消费 t030 的 Dialog/页面保护接口；云端 Muse，真实环境执行交 t032",
             "dir": "docs/tasks/t031_human_agent_control_handoff"
         },

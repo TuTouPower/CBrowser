@@ -10,7 +10,7 @@ review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
-conflicts_with: "t025,t031"
+conflicts_with: "t025"
 note: "来源 p034（运行时部分）；云端 Muse，真实环境执行交 t032"
 ---
 
@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p034（运行时部分） 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅修订并实测 d029：并入 search-defaults 门禁测试修复（用户决定）；固定端点改为显式 subnet+ip_range；旧规格网络经 Stream-only 替换收敛；策略按实际规则校验，Browser 漂移 fail-closed；readiness 归 Supervisor 经容器内命令调用；传输观测不落库。
 
 ## Review 处置
 

@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
 conflicts_with: ""
-note: "来源 p028（云端研究及探针；真实引擎结论交 t032）；云端 Muse，真实环境执行交 t032"
+note: "来源 p028；云端 Muse 以目标引擎二进制执行指纹增量与 Dialog 基线，真实镜像复核交 t032"
 ---
 
 # Task 过程总账
@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p028（云端研究及探针；真实引擎结论交 t032） 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅与用户要求修订：指纹增量（L0–L6）与 CDP/XTEST 比较改为云端以 cloakbrowser linux-x64 目标引擎执行并预先登记阈值，云端前提不可用时向用户报告 BLOCKED；新增 no_defaults、下载覆盖、Browser.close 与 Dialog 基线；最后 Tab/adopt 移交 t030。
 
 ## Review 处置
 

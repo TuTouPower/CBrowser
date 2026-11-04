@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p018 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅修订：背景更正 apply 重试根因（服务端重放 no-op，客户端空等 stopped）；AC-001 扩到 SSE 与 downloadUrl；AC-003 补 AppLayout/ProfileDetailPage；AC-005 收窄到生产 AppProviders 默认 retry；红测证据须记入本笔记。
 
 ## Review 处置
 

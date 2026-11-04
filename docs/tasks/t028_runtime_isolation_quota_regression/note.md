@@ -1,7 +1,7 @@
 ---
 tid: "t028"
 slug: "runtime_isolation_quota_regression"
-title: "补齐直连拓扑隔离、配额与 Agent 替换回归用例"
+title: "补齐历史实跑入口、配额与 Agent 替换回归及门禁证据"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,8 +9,8 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t026"
-conflicts_with: ""
+depends_on: ""
+conflicts_with: "t027"
 note: "来源 p016；云端 Muse，真实环境执行交 t032"
 ---
 
@@ -26,6 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-04：从 p016 聚合立项，核实基线 main@c6a9322；只创建 backlog，不 start。
 - 云端范围与本地最终 t032 分离；真实环境未执行不能按通过回填。
+- 2026-11-04：按三方审阅修订：新拓扑附网/回滚用例移交 t026 并解除对 t026 的硬依赖；新增历史真实链入口、required 模式 sha256 fail-closed 与 run_gates 证据模式；与 t027 互斥。
 
 ## Review 处置
 
