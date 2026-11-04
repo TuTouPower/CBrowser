@@ -42,6 +42,7 @@ class StreamAgentConfig(BaseModel):
     video_streaming_mode: bool = False
     config_version: int = Field(default=1, ge=1)
     selkies_version: str | None = None
+    build_id: str | None = None
     controller_token: SecretStr | None = None
 
     @field_validator("profile_id")
@@ -276,5 +277,6 @@ class StreamAgentConfig(BaseModel):
             x11_socket=x11_socket,
             xauthority_path=xauth,
             config_version=config_version,
+            build_id=(os.environ.get("CBROWSER_BUILD_ID") or "").strip() or None,
             controller_token=controller_token_str,
         )

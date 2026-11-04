@@ -28,11 +28,52 @@ from .policy_rules import (
 __all__ = [
     "DISALLOWED_SETTINGS_KEYS",
     "LiveCapturePolicyAgent",
+    "classify_human_takeover_input",
     "sanitize_settings_message",
     "should_block_client_verb",
 ]
 
 logger = logging.getLogger("cbrowser.stream_agent.policy")
+
+
+# t031 human-priority takeover classification. Conservative by design:
+# a missed takeover is the critical failure (an agent keeps driving
+# while the human is already inputting), while a spurious takeover is
+# corrected by an explicit human restore. So every *ambiguous known
+# input* counts, and only provably non-input frames are excluded:
+# - kd, (key press) -> takeover; ku, (bare key release) -> not input.
+# - m, (pure mouse move) -> not input (spec-explicit).
+# - m2, (mouse button event) -> takeover; the button-state field
+#   semantics are not pinned in-repo, so no finer distinction is drawn.
+# - sf,/sfe, (wheel) -> takeover.
+# - co,end (IME commit) -> takeover; other co, (composition in
+#   progress) -> not input.
+# - Unknown prefixes -> not input (no evidence of human input; the
+#   channel also carries protocol frames, which must not flap control).
+# - XTEST injection never traverses the WebRTC data channel, so it is
+#   structurally incapable of triggering a takeover here.
+_TAKEOVER_INPUT_KINDS: dict[str, str] = {
+    "kd": "key",
+    "m2": "mouse_button",
+    "sf": "wheel",
+    "sfe": "wheel",
+}
+
+
+def classify_human_takeover_input(msg: Any) -> str | None:
+    """Return the takeover input kind for a data-channel message.
+
+    Returns None when the message is not a takeover input. Pure
+    function: unit tests lock the table without a policy agent.
+    """
+    if not isinstance(msg, str):
+        return None
+    head, _sep, rest = msg.partition(",")
+    if head in _TAKEOVER_INPUT_KINDS:
+        return _TAKEOVER_INPUT_KINDS[head]
+    if head == "co" and (rest == "end" or rest.startswith("end,")):
+        return "ime_commit"
+    return None
 
 
 class LiveCapturePolicyAgent:
@@ -95,6 +136,12 @@ class LiveCapturePolicyAgent:
         self._loop_task: asyncio.Task | None = None
         self._motion_task: asyncio.Task | None = None
         self._loop_sleep = asyncio.sleep
+
+        # t031: takeover reporting. The StreamAgent wires this to its
+        # Gateway connection (pending + flush on reconnect); unset in
+        # standalone policy use, where classification still runs but no
+        # report leaves the process.
+        self.on_human_takeover: Callable[[str | None, str], None] | None = None
 
         # Bounded action audit log
         self._action_history: collections.deque = collections.deque(
@@ -188,6 +235,41 @@ class LiveCapturePolicyAgent:
             p_id = self._conn_to_sdk_peer.pop(conn_id, None)
             if p_id:
                 self._sdk_peer_to_conn.pop(p_id, None)
+
+    def conn_for_peer(self, peer_id: str) -> str:
+        """Resolve an SDK peer id to its Gateway conn id, if mapped."""
+        return self._sdk_peer_to_conn.get(peer_id, peer_id)
+
+    def is_foreground_input(self, conn_id: str | None) -> bool:
+        """True when a data-channel input counts as foreground human input.
+
+        Peers are keyed by Gateway conn id; an SDK peer id resolves
+        through the mapping first. An unmapped connection counts as
+        foreground (fail-closed: a mapping race must not swallow a
+        takeover). A mapped but inactive (background) viewer does not
+        trigger.
+        """
+        if conn_id is None:
+            return True
+        viewer_id = self.conn_for_peer(conn_id)
+        entry = self.peers.get(viewer_id)
+        if entry is None:
+            return True
+        return bool(entry.get("active"))
+
+    def report_human_takeover(
+        self, conn_id: str | None, input_kind: str
+    ) -> None:
+        """Invoke the wired takeover report callback, if any."""
+        if self.on_human_takeover is None:
+            return
+        try:
+            self.on_human_takeover(conn_id, input_kind)
+        except Exception:  # noqa: BLE001 - reporting never breaks input delivery
+            logger.warning(
+                "Human takeover report callback failed: kind=%s",
+                input_kind,
+            )
 
     def record_input(self) -> None:
         """Mark that a user input event (keyboard, mouse, IME) just occurred.
@@ -627,6 +709,15 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 and self.policy_agent
             ):
                 self.policy_agent.record_input()
+                # t031: a classified foreground input preempts agent
+                # control. The report callback is wired by the Stream
+                # Agent; input delivery below is unconditional and never
+                # waits for the report.
+                input_kind = classify_human_takeover_input(msg)
+                if input_kind and self.policy_agent.is_foreground_input(
+                    conn_id
+                ):
+                    self.policy_agent.report_human_takeover(conn_id, input_kind)
 
             # Unconditionally pass through to X11 input handler (NO LEASE LOCK!)
             return super()._on_peer_data_message(msg, display_id, conn_id=conn_id)

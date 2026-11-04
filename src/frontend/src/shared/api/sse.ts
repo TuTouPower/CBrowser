@@ -1,4 +1,5 @@
 import type { ProfileRuntimeStatusEvent } from "./types";
+import { resolveSameOriginUrl } from "./same_origin";
 
 /**
  * The wire shape of `runtime_state` events is owned by the generated
@@ -42,6 +43,53 @@ function isValidSearchDefaults(value: unknown): boolean {
   return true;
 }
 
+const LAYER_STATES = new Set(["running", "stopped", "missing", "error", "unknown"]);
+const TRANSPORT_STATES = new Set(["ready", "recovering", "failed", "unknown"]);
+const CONTROL_OWNERS = new Set(["user", "agent"]);
+
+function isValidControl(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const c = value as Record<string, unknown>;
+  if (typeof c.profile_id !== "string") return false;
+  if (typeof c.owner !== "string" || !CONTROL_OWNERS.has(c.owner)) {
+    return false;
+  }
+  if (typeof c.generation !== "number") return false;
+  if (!isNullableString(c.agent_instance_id)) return false;
+  if (!isNullableString(c.agent_session_id)) return false;
+  if (!isNullableString(c.handoff_reason)) return false;
+  if (!isNullableString(c.handoff_detail)) return false;
+  if (typeof c.agent_reclaim_allowed !== "boolean") return false;
+  if (typeof c.pending_supervisor_close !== "boolean") return false;
+  if (typeof c.updated_at !== "string") return false;
+  return true;
+}
+
+function isValidTransport(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const t = value as Record<string, unknown>;
+  if (typeof t.profile_id !== "string") return false;
+  if (!isNullableString(t.runtime_instance_id)) return false;
+  if (typeof t.browser_state !== "string" || !LAYER_STATES.has(t.browser_state)) {
+    return false;
+  }
+  if (typeof t.stream_state !== "string" || !LAYER_STATES.has(t.stream_state)) {
+    return false;
+  }
+  if (
+    typeof t.transport_state !== "string" ||
+    !TRANSPORT_STATES.has(t.transport_state)
+  ) {
+    return false;
+  }
+  if (!isNullableString(t.last_error)) return false;
+  if (!isNullableString(t.rejection_code)) return false;
+  if (!isNullableString(t.gateway_endpoint)) return false;
+  return true;
+}
+
 function hasValidCoreFields(e: Record<string, unknown>): boolean {
   if (typeof e.profile_id !== "string" || e.profile_id.length === 0) {
     return false;
@@ -79,15 +127,18 @@ export function parseProfileRuntimeEvent(
   if (!isNullableString(e.runtime_instance_id)) return null;
   if (!isNullableString(e.last_coordinator_error)) return null;
   if (!isValidSearchDefaults(e.search_defaults)) return null;
+  if (!isValidTransport(e.transport)) return null;
+  if (!isValidControl(e.control)) return null;
   return raw as ProfileRuntimeEvent;
 }
 
 export interface ProfileEventsClientOptions {
-  url?: string;
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
   onUnauthorized?: () => void;
 }
+
+const EVENTS_PATH = "/api/v1/events";
 
 export class ProfileEventsClient {
   private url: string;
@@ -106,7 +157,7 @@ export class ProfileEventsClient {
   private errorListeners: Set<ProfileErrorListener> = new Set();
 
   constructor(options: ProfileEventsClientOptions = {}) {
-    this.url = options.url || "/api/v1/events";
+    this.url = EVENTS_PATH;
     this.reconnectIntervalMs = options.reconnectIntervalMs ?? 1000;
     this.maxReconnectIntervalMs = options.maxReconnectIntervalMs ?? 30000;
     this.currentReconnectInterval = this.reconnectIntervalMs;
@@ -162,6 +213,17 @@ export class ProfileEventsClient {
   private async connect(generation: number): Promise<void> {
     if (!this.isCurrent(generation)) return;
 
+    // Same final-URL same-origin rule as ApiClient: never stream events
+    // (with credentials) from a cross-origin target.
+    const target = resolveSameOriginUrl(this.url);
+    if (!target) {
+      this.dispatchError(
+        new Error("Cross-origin SSE connections are not allowed"),
+      );
+      this.stop();
+      return;
+    }
+
     this.abortController = new AbortController();
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
@@ -173,7 +235,7 @@ export class ProfileEventsClient {
     }
 
     try {
-      const response = await fetch(this.url, {
+      const response = await fetch(target.href, {
         method: "GET",
         headers,
         credentials: "include",

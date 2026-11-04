@@ -29,6 +29,7 @@ def build_register_payload(
         runtime_instance_id=config.runtime_instance_id,
         udp_port=config.udp_mux_port,
         selkies_version=selkies_version,
+        build_id=getattr(config, "build_id", None),
         runtime_state="ready",
         config_version=config.config_version,
         video_streaming_mode=config.video_streaming_mode,

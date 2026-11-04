@@ -291,9 +291,13 @@ async def test_docker_created_status_does_not_synthesize_exit(mock_core):
 
 
 @pytest.mark.asyncio
-async def test_initial_reconcile_failure_still_reaches_control_plane(
-    tmp_path, monkeypatch
-):
+async def test_control_plane_created_before_initial_scan(tmp_path, monkeypatch):
+    """t027 startup order: the control plane is created before the initial
+    reconciliation scan runs, so supervisor liveness is never blocked by
+    the scan.  This replaces the pre-t027 test that asserted the scan ran
+    first and a scan failure still reached control-plane creation; the
+    semantics are inverted on purpose (health must not wait for the scan).
+    """
     from types import SimpleNamespace
 
     from cbrowser.supervisor import runner as runner_module
@@ -305,9 +309,7 @@ async def test_initial_reconcile_failure_still_reaches_control_plane(
     core = SimpleNamespace(
         events=SimpleNamespace(replay_spooled_events=AsyncMock(return_value=0)),
         consume_disk_events=AsyncMock(return_value=0),
-        scan_and_reconcile_existing=AsyncMock(
-            side_effect=RuntimeError("docker unavailable")
-        ),
+        scan_and_reconcile_existing=AsyncMock(return_value=[]),
         docker=SimpleNamespace(
             validator=PathValidator(tmp_path), resource_prefix="cb"
         ),
@@ -321,4 +323,74 @@ async def test_initial_reconcile_failure_still_reaches_control_plane(
     monkeypatch.setattr(runner_module, "create_control_app", create_control_app)
     with pytest.raises(ControlPlaneReached):
         await runner_module.serve_supervisor(core, "127.0.0.1", 0)
-    core.scan_and_reconcile_existing.assert_awaited_once()
+    core.scan_and_reconcile_existing.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_initial_scan_failure_after_control_plane_started(
+    tmp_path, monkeypatch
+):
+    """A failing initial scan must not prevent the control server from
+    starting: the server serve() is entered before the scan is awaited,
+    and the scan failure is logged, not raised (t027)."""
+    import asyncio
+    from types import SimpleNamespace
+
+    from cbrowser.supervisor import runner as runner_module
+    from cbrowser.supervisor.path_validator import PathValidator
+
+    order: list[str] = []
+
+    class FakeConfig:
+        def __init__(self, **_kwargs):
+            pass
+
+    class FakeServer:
+        def __init__(self, _config):
+            self.should_exit = False
+
+        async def serve(self):
+            order.append("server_serve")
+            # Exit immediately: serve_supervisor then surfaces the
+            # unexpected-exit error, which is how this test terminates.
+            return None
+
+    async def failing_scan():
+        # Wait until the server task has actually been scheduled before
+        # recording the scan.  Under the pre-t027 order (scan awaited
+        # before the control server existed) "server_serve" can never
+        # appear here, so the order assertion below fails there; under
+        # the t027 order the already-created server task runs first.
+        for _ in range(1000):
+            if "server_serve" in order:
+                break
+            await asyncio.sleep(0)
+        order.append("scan")
+        raise RuntimeError("docker unavailable")
+
+    core = SimpleNamespace(
+        events=SimpleNamespace(replay_spooled_events=AsyncMock(return_value=0)),
+        consume_disk_events=AsyncMock(return_value=0),
+        scan_and_reconcile_existing=AsyncMock(side_effect=failing_scan),
+        docker=SimpleNamespace(
+            validator=PathValidator(tmp_path), resource_prefix="cb"
+        ),
+        api=SimpleNamespace(),
+        _token_file=tmp_path / "token",
+    )
+
+    def create_control_app(**_kwargs):
+        order.append("create_app")
+        return object()
+
+    monkeypatch.setattr(runner_module, "create_control_app", create_control_app)
+    monkeypatch.setattr(
+        runner_module,
+        "uvicorn",
+        SimpleNamespace(Config=FakeConfig, Server=FakeServer),
+    )
+    with pytest.raises(RuntimeError, match="exited unexpectedly"):
+        await asyncio.wait_for(
+            runner_module.serve_supervisor(core, "127.0.0.1", 0), timeout=30
+        )
+    assert order[:3] == ["create_app", "server_serve", "scan"]

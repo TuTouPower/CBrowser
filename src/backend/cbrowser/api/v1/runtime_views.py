@@ -8,6 +8,7 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProfileRuntimeResponse,
     SearchDefaultsStatusData,
+    TransportObservationData,
 )
 
 
@@ -26,7 +27,19 @@ def fence_search_defaults(
     return status
 
 
-def make_runtime_response(
+def fence_transport(
+    observation: TransportObservationData | None,
+    runtime_instance_id: str | None,
+) -> TransportObservationData | None:
+    """Same instance fence as search-defaults, for transport state."""
+    if observation is None:
+        return None
+    if observation.runtime_instance_id != runtime_instance_id:
+        return None
+    return observation
+
+
+async def make_runtime_response(
     rt: ProfileRuntime, coordinator: Any = None
 ) -> ProfileRuntimeResponse:
     last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
@@ -37,6 +50,19 @@ def make_runtime_response(
         else None,
         rt.runtime_instance_id,
     )
+    transport = fence_transport(
+        coordinator.get_transport(rt.profile_id)
+        if coordinator is not None and hasattr(coordinator, "get_transport")
+        else None,
+        rt.runtime_instance_id,
+    )
+    control = None
+    control_service = getattr(coordinator, "control_service", None)
+    if control_service is not None:
+        try:
+            control = await control_service.get_state(rt.profile_id)
+        except Exception:  # noqa: BLE001 - control is advisory on the runtime view
+            control = None
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
         desired_state=rt.desired_state,
@@ -48,6 +74,8 @@ def make_runtime_response(
         last_exit_event_id=rt.last_exit_event_id,
         last_coordinator_error=last_error,
         search_defaults=search_defaults,
+        transport=transport,
+        control=control,
         updated_at=rt.updated_at,
     )
 

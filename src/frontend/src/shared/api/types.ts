@@ -9,6 +9,7 @@ export type ProfileCreateRequest = Schemas["ProfileCreateRequest"];
 export type ProfileUpdateRequest = Schemas["ProfileUpdateRequest"];
 export type ProfileRuntimeResponse = Schemas["ProfileRuntimeResponse"];
 export type ProfileRuntimeStatusEvent = Schemas["ProfileRuntimeStatusEvent"];
+export type ProfileControlStateData = Schemas["ProfileControlStateData"];
 export type SearchDefaultsStatusData = Schemas["SearchDefaultsStatusData"];
 export type LoginRequest = Schemas["LoginRequest"];
 export type LoginResponse = Schemas["LoginResponse"];

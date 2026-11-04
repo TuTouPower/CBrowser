@@ -26,7 +26,7 @@
 2. `test_supervisor_startup_recovery_e2e.py` 用实际 bind RPC 重建启动中断状态，使用真实 API/Docker 空扫描及 HTTP 503 故障代理验证补偿与 Native 事件优先；该测试自身不声称执行了 SIGKILL。Host Supervisor E2E 验证真实 Browser/Stream 启动、独立 API 离线、正常 UDS 关闭、事件重放、Supervisor SIGKILL 和持久重试时间。
 3. `test_supervisor_container_graph_e2e.py` 验证完整容器拓扑、唯一 Socket 持有者、无 SQLite、双网络、真实 infra 地址及 Viewer 停止握手顺序。
 4. `test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py` 和 `test_supervisor_policy_failure_e2e.py` 使用无过滤监听服务、同网正例及真实 kernel 策略验证 IPv4/IPv6 隔离、允许端点、重复安装拒绝和失败时 gate 封闭。`test_supervisor_orphan_helpers_e2e.py` 验证启动锁内回收自有临时 helper，保留 Runtime、Gateway 和不匹配归属的容器。
-5. Stream 媒体测试使用官方 Chrome 验证实际解码帧数下降与恢复，不能以 Docker stats、配额消息或 Native 探针代替画面证明。
+5. 配额生效的画面证明由 `test_supervisor_quota_chain_e2e.py` 提供：配额经生产控制客户端（`GatewayControlClient.set_quota`）下发，以 Viewer 页官方 Chrome 实际解码帧数的下降与恢复判定，CPU policy 腿（`supervisor_resource_probe/stream_monitor.py`）的帧数窗口同样取自 Viewer 页解码统计；不能以 Docker stats、配额消息或 Native 探针代替画面证明。
 
 任何源变更后，应重建受影响镜像并保存实际 `.Id`，再运行相应 E2E；旧镜像通过不能代表当前源通过。失败轮次保留独立日志。测试 finally 只清理精确自有资源，不做 prune 或强制断开未知网络端点。
 

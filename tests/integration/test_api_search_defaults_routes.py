@@ -69,6 +69,14 @@ class _StubCoordinator:
                 request_id=None,
                 updated_at="2026-11-04T00:00:00+00:00",
             )
+        if self.behavior == "mismatch":
+            return SearchDefaultsStatusData(
+                state="failed",
+                error_kind="timeout",
+                runtime_instance_id="inst_other",
+                request_id=None,
+                updated_at="2026-11-04T00:00:00+00:00",
+            )
         return None
 
     async def refresh_search_defaults(self, _profile_id: str):
@@ -101,7 +109,16 @@ async def _logged_in_client(api_server) -> tuple[httpx.AsyncClient, dict, str]:
         "/api/v1/profiles", json={"name": "sd_profile"}, headers=headers
     )
     assert created.status_code == 201
-    return client, headers, created.json()["id"]
+    profile_id = created.json()["id"]
+    # The stub coordinator reports a status for instance inst_1; the
+    # runtime response fences statuses by the bound instance (t022), so
+    # the fixture must bind the profile to that same instance — an
+    # unbound profile correctly surfaces search_defaults=null.
+    from cbrowser.api.v1.router import get_profile_service
+
+    service = api_server["app"].dependency_overrides[get_profile_service]()
+    await service.bind_runtime_instance(profile_id, "inst_1", config_version=1)
+    return client, headers, profile_id
 
 
 @pytest.mark.asyncio
@@ -131,6 +148,24 @@ async def test_retry_route_requires_csrf_and_maps_outcomes(api_server) -> None:
         stub.behavior = "unavailable"
         resp = await client.post(url, headers=headers)
         assert resp.status_code == 503
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_runtime_view_hides_status_from_another_instance(api_server) -> None:
+    """Instance fence (t026 AC-001 negative case): a search-defaults
+    status recorded for a different instance than the bound one must
+    surface as search_defaults=null, never as the current outcome."""
+    client, headers, profile_id = await _logged_in_client(api_server)
+    api_server["app"].state.coordinator = _StubCoordinator("mismatch")
+    try:
+        resp = await client.get(
+            f"/api/v1/profiles/{profile_id}/runtime", headers=headers
+        )
+        assert resp.status_code == 200
+        assert resp.json()["runtime_instance_id"] == "inst_1"
+        assert resp.json()["search_defaults"] is None
     finally:
         await client.aclose()
 

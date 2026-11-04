@@ -1,0 +1,122 @@
+"""t026 AC-005: live netfilter state is compared, not assumed.
+
+The renderer that installs policy and the verifier that convergence
+trusts must agree on normalized rules; any drift — including a missing
+terminal DROP — reads as non-conforming.
+"""
+
+import pytest
+import cbrowser.supervisor.network_policy as np_module
+from cbrowser.supervisor.network_policy import (
+    NetworkPolicySpec,
+    parse_filter_rules,
+    render_ip6tables_rules,
+    render_iptables_rules,
+    rendered_filter_rules,
+    verify_policy,
+)
+
+STREAM_SPEC = NetworkPolicySpec(
+    role="stream",
+    udp_mux_port=30005,
+    allowed_tcp=[("10.251.7.254", 8443)],
+)
+BROWSER_SPEC = NetworkPolicySpec(
+    role="browser",
+    allowed_tcp=[("10.251.7.20", 1080)],
+)
+
+
+def test_render_parse_round_trip_both_families():
+    for spec, render in (
+        (STREAM_SPEC, render_iptables_rules),
+        (STREAM_SPEC, render_ip6tables_rules),
+        (BROWSER_SPEC, render_iptables_rules),
+    ):
+        policies, rules = parse_filter_rules(render(spec))
+        assert policies["OUTPUT"] == "DROP"
+        assert rules  # non-empty ruleset
+    assert rendered_filter_rules(STREAM_SPEC)["ipv4"] == parse_filter_rules(
+        render_iptables_rules(STREAM_SPEC)
+    )
+
+
+def test_counters_do_not_affect_parsed_equality():
+    rendered = render_iptables_rules(STREAM_SPEC)
+    with_counters = rendered.replace("[0:0]", "[123:4567]")
+    assert parse_filter_rules(with_counters) == parse_filter_rules(rendered)
+
+
+def test_verify_policy_compares_live_dump(monkeypatch):
+    expected = rendered_filter_rules(STREAM_SPEC)
+    monkeypatch.setattr(
+        np_module, "current_filter_rules", lambda family: expected[family]
+    )
+    assert verify_policy(STREAM_SPEC) is True
+
+    drifted = dict(expected)
+    policies, rules = expected["ipv4"]
+    drifted["ipv4"] = (policies, frozenset(sorted(rules)[:-1]))  # one rule lost
+    monkeypatch.setattr(
+        np_module, "current_filter_rules", lambda family: drifted[family]
+    )
+    assert verify_policy(STREAM_SPEC) is False
+
+
+def test_stream_and_browser_specs_are_not_interchangeable(monkeypatch):
+    expected = rendered_filter_rules(STREAM_SPEC)
+    monkeypatch.setattr(
+        np_module, "current_filter_rules", lambda family: expected[family]
+    )
+    assert verify_policy(BROWSER_SPEC) is False
+
+
+def test_install_fail_closed_raises_when_restore_fails(monkeypatch):
+    # code f010: the explicit fail-closed entry point is strict — a
+    # restore that exits nonzero must surface, never report success
+    # (the Supervisor records the Browser as sealed on this result).
+    import subprocess as _sp
+
+    def _failing_run(*args, **kwargs):
+        return _sp.CompletedProcess(args, 1, stdout=b"", stderr=b"denied")
+
+    monkeypatch.setattr(np_module.subprocess, "run", _failing_run)
+    with pytest.raises(np_module.NetworkPolicyError):
+        np_module.install_fail_closed()
+
+
+def test_install_fail_closed_succeeds_when_restores_pass(monkeypatch):
+    import subprocess as _sp
+
+    def _ok_run(*args, **kwargs):
+        return _sp.CompletedProcess(args, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(np_module.subprocess, "run", _ok_run)
+    np_module.install_fail_closed()  # must not raise
+
+
+def test_install_fail_closed_raises_on_single_family_failure(monkeypatch):
+    # test f010: a failure in only the second family must still raise —
+    # an all-or-nothing stub cannot see a swallowed per-family error.
+    import subprocess as _sp
+
+    def _run(args, **kwargs):
+        if "ip6tables" in args[0]:
+            return _sp.CompletedProcess(args, 1, stdout=b"", stderr=b"denied")
+        return _sp.CompletedProcess(args, 0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(np_module.subprocess, "run", _run)
+    with pytest.raises(np_module.NetworkPolicyError):
+        np_module.install_fail_closed()
+
+
+def test_fail_closed_cli_exits_3_on_restore_failure(monkeypatch):
+    import subprocess as _sp
+
+    def _failing_run(*args, **kwargs):
+        return _sp.CompletedProcess(args, 1, stdout=b"", stderr=b"denied")
+
+    monkeypatch.setattr(np_module.subprocess, "run", _failing_run)
+    with pytest.raises(SystemExit) as excinfo:
+        np_module.main(["fail-closed"])
+    assert excinfo.value.code == 3

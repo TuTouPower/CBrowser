@@ -1,0 +1,194 @@
+"""t028 AC-006: run_gates.sh evidence mode.
+
+Evidence mode runs every suite even when one fails, retains per-suite
+command/exit code/JUnit/redacted log plus a manifest in the evidence
+directory, and exits non-zero on any failure.  Default mode is
+unchanged: it stops at the first failing suite.  The gate script is
+driven end-to-end with stub `uv`/`npm` binaries so the shell behaviour
+itself is under test.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+UV_STUB = """#!/bin/bash
+echo "uv $*" >> "$GATE_STUB_LOG"
+echo "uv-output password=hunter2"
+if [ "$1" = "venv" ]; then
+  target="${@: -1}"
+  mkdir -p "$target/bin"
+  cat > "$target/bin/python" <<'PYEOF'
+#!/bin/bash
+echo "python $*" >> "$GATE_STUB_LOG"
+if [ "$1" != "-m" ]; then
+  # Script invocations (redactor, manifest builder) run for real.
+  exec "$GATE_STUB_REAL_PY" "$@"
+fi
+for a in "$@"; do
+  case "$a" in
+    --junitxml=*)
+      f="${a#--junitxml=}"
+      mkdir -p "$(dirname "$f")"
+      printf '<testsuites/>' > "$f"
+      ;;
+  esac
+done
+echo "suite output password=hunter2 Bearer abc.def-123"
+if [ -n "${GATE_STUB_FAIL:-}" ] && [[ "$*" == *"$GATE_STUB_FAIL"* ]]; then
+  exit 3
+fi
+exit 0
+PYEOF
+  chmod +x "$target/bin/python"
+fi
+exit 0
+"""
+
+NPM_STUB = """#!/bin/bash
+echo "npm $*" >> "$GATE_STUB_LOG"
+if [ -n "${GATE_STUB_NPM_FAIL:-}" ] && [[ "$*" == *"$GATE_STUB_NPM_FAIL"* ]]; then
+  exit 4
+fi
+exit 0
+"""
+
+
+def _stub_bin(tmp_path: Path) -> Path:
+    bin_dir = tmp_path / "stubbin"
+    bin_dir.mkdir()
+    for name, body in (("uv", UV_STUB), ("npm", NPM_STUB)):
+        stub = bin_dir / name
+        stub.write_text(body, encoding="utf-8")
+        stub.chmod(0o755)
+    return bin_dir
+
+
+def _run_gates(tmp_path: Path, extra_env: dict[str, str]) -> subprocess.CompletedProcess:
+    bin_dir = _stub_bin(tmp_path)
+    env = dict(os.environ)
+    env.pop("TMPDIR", None)
+    env.pop("CBROWSER_RUN_E2E", None)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["GATE_STUB_LOG"] = str(tmp_path / "stub.log")
+    env["GATE_STUB_REAL_PY"] = sys.executable
+    env["CBROWSER_GATE_SCRATCH"] = str(tmp_path / "scratch")
+    env.update(extra_env)
+    return subprocess.run(
+        ["bash", "scripts/run_gates.sh"],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+
+def _stub_log(tmp_path: Path) -> str:
+    log = tmp_path / "stub.log"
+    return log.read_text(encoding="utf-8") if log.exists() else ""
+
+
+def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence"
+    result = _run_gates(
+        tmp_path,
+        {
+            "CBROWSER_GATE_EVIDENCE_DIR": str(evidence),
+            "GATE_STUB_FAIL": "tests/integration",
+        },
+    )
+    assert result.returncode != 0
+
+    # Every suite ran despite the integration failure.
+    log = _stub_log(tmp_path)
+    assert ".repo_template/tests" in log
+    assert "tests/unit" in log
+    assert "tests/integration" in log
+    assert "npm test" in log
+    assert "npm run build" in log
+
+    manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+    suites = {entry["name"]: entry for entry in manifest["suites"]}
+    assert list(suites) == [
+        "contract",
+        "unit",
+        "integration",
+        "frontend_test",
+        "frontend_build",
+    ]
+    assert suites["contract"]["exit_code"] == 0
+    assert suites["integration"]["exit_code"] == 3
+    assert suites["frontend_build"]["exit_code"] == 0
+    assert manifest["all_passed"] is False
+    assert "pytest" in suites["integration"]["command"]
+    assert suites["integration"]["junit"] == "junit/integration.xml"
+    assert (evidence / "junit" / "contract.xml").is_file()
+    assert (evidence / "junit" / "unit.xml").is_file()
+
+    # Retained logs are redacted: stub suites print secret-shaped text.
+    integration_log = (evidence / "logs" / "integration.log").read_text(
+        encoding="utf-8"
+    )
+    assert "hunter2" not in integration_log
+    assert "abc.def-123" not in integration_log
+    assert "<redacted>" in integration_log
+
+    # The environment build log goes through the same redaction.
+    environment_log = (evidence / "logs" / "environment.log").read_text(
+        encoding="utf-8"
+    )
+    assert "hunter2" not in environment_log
+    assert "<redacted>" in environment_log
+    assert not (evidence / "logs" / "environment.raw.log").exists()
+
+
+def test_evidence_mode_all_pass_exits_zero(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence"
+    result = _run_gates(
+        tmp_path, {"CBROWSER_GATE_EVIDENCE_DIR": str(evidence)}
+    )
+    assert result.returncode == 0
+    manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["all_passed"] is True
+    assert all(entry["exit_code"] == 0 for entry in manifest["suites"])
+
+
+def test_default_mode_still_stops_at_first_failure(tmp_path: Path) -> None:
+    result = _run_gates(tmp_path, {"GATE_STUB_FAIL": "tests/integration"})
+    assert result.returncode != 0
+    log = _stub_log(tmp_path)
+    assert "tests/integration" in log
+    # set -e semantics preserved: later suites never started.
+    assert "npm test" not in log
+    assert not (tmp_path / "evidence").exists()
+
+
+def test_redact_evidence_script() -> None:
+    sample = (
+        "Authorization: Bearer tok123\n"
+        "login password=hunter2 ok\n"
+        '"token": "abc123", cbrowser_session=sessvalue; other\n'
+        "plain line stays\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "scripts/redact_evidence.py"],
+        cwd=REPO_ROOT,
+        input=sample,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0
+    assert "tok123" not in result.stdout
+    assert "hunter2" not in result.stdout
+    assert "abc123" not in result.stdout
+    assert "sessvalue" not in result.stdout
+    assert "plain line stays" in result.stdout
+    assert result.stdout.count("<redacted>") >= 4

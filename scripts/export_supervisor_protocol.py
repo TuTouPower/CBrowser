@@ -13,7 +13,10 @@ import json
 from pathlib import Path
 
 from cbrowser.supervisor.protocol import (
+    ProfileReadiness,
     ProfileRuntimeStatus,
+    ReadinessResponse,
+    ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
     SearchDefaultsRetryRequest,
@@ -22,6 +25,8 @@ from cbrowser.supervisor.protocol import (
     StartProfileResponse,
     StopProfileRequest,
     StopProfileResponse,
+    TransportObservation,
+    TransportObservationResponse,
 )
 from pydantic import TypeAdapter
 
@@ -35,6 +40,11 @@ _MESSAGES = (
     ProfileRuntimeStatus,
     SearchDefaultsRetryRequest,
     SearchDefaultsStatusResponse,
+    TransportObservation,
+    TransportObservationResponse,
+    ReconcileAllResponse,
+    ProfileReadiness,
+    ReadinessResponse,
 )
 
 
@@ -66,6 +76,11 @@ def supervisor_protocol_schema() -> dict:
         | ProfileRuntimeStatus
         | SearchDefaultsRetryRequest
         | SearchDefaultsStatusResponse
+        | TransportObservation
+        | TransportObservationResponse
+        | ReconcileAllResponse
+        | ProfileReadiness
+        | ReadinessResponse
     ).json_schema()
     return _entry_index_document(schema, [model.__name__ for model in _MESSAGES])
 

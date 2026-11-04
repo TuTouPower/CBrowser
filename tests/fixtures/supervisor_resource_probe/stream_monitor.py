@@ -1,4 +1,20 @@
-"""Measure CPU-triggered policy against the real Stream and Chrome decoder."""
+"""Measure CPU-triggered policy against the real Stream and Chrome decoder.
+
+Wired into ``tests/e2e/test_supervisor_quota_chain_e2e.py`` (t028
+AC-003).  The observation chain is production code end to end:
+
+- the Supervisor side is the production ``ResourceMonitor`` +
+  ``ResourcePolicyService`` sampling the real Stream container's cgroup
+  counters via the Docker API;
+- delivery goes through the production ``GatewayControlClient`` to the
+  real Gateway's supervisor quota endpoint (no in-memory callback and
+  no protocol mock stands in for any link);
+- the real Stream Agent applies the cap and the caller-supplied
+  ``frame_window`` measures decoded frames in the real Chrome viewer.
+
+The proof JSON records delivered values, the sampling windows with
+their CPU counters, the applied cap and the measured frame counts.
+"""
 
 import asyncio
 import json
@@ -6,11 +22,7 @@ import time
 from dataclasses import asdict, is_dataclass
 
 import docker
-from cbrowser.stream_agent.protocol import (
-    AgentAction,
-    GatewayControlEnvelope,
-    SupervisorQuotaPayload,
-)
+from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.resource_policy import (
     ResourcePolicyConfig,
@@ -19,42 +31,46 @@ from cbrowser.supervisor.resource_policy import (
 
 
 async def verify_stream_cpu_policy(
-    stream_name, profile_id, gateway, frame_window, work_dir
+    stream_name,
+    profile_id,
+    runtime_instance_id,
+    gateway_control: GatewayControlClient,
+    frame_window,
+    work_dir,
+    *,
+    ownership_label: tuple[str, str],
 ):
     client = docker.from_env()
     stream = client.containers.get(stream_name)
-    assert stream.labels.get("cbrowser-t004-e2e"), (
-        "Only this E2E's sandbox may change quota"
+    label_name, label_value = ownership_label
+    assert stream.labels.get(label_name) == label_value, (
+        "Only this run's own Stream container may change quota"
     )
     original_limit = stream.attrs["HostConfig"].get("NanoCpus", 0)
     original_quota = stream.attrs["HostConfig"].get("CpuQuota", 0) or -1
     original_period = stream.attrs["HostConfig"].get("CpuPeriod", 0) or 100_000
-    instance = gateway.agent_instances[profile_id]
-    target = ProfileResourceTarget(profile_id, instance, (stream.id,), True)
+    target = ProfileResourceTarget(
+        profile_id, runtime_instance_id, (stream.id,), True
+    )
     windows = []
     deliveries = []
 
     async def send_quota(current, decision):
-        # The gateway here is the stream suite's in-process mock: its
-        # registries are the connection table this delivery must use.
-        # The wire message itself is built with the PRODUCTION protocol
-        # type (t024 AC-004/A25) — the same GatewayControlEnvelope the
-        # real gateway constructs in gateway/server.py — so a protocol
-        # change breaks this probe instead of silently drifting.
-        session, socket = gateway.registered_agents[current.profile_id]
-        assert (
-            gateway.agent_instances[current.profile_id] == current.runtime_instance_id
+        # Production delivery path: the same GatewayControlClient call
+        # the Supervisor runner wires into the monitor (runner.py), so a
+        # Gateway quota-endpoint or fence change breaks this probe
+        # instead of silently drifting.
+        await gateway_control.set_quota(
+            current.profile_id,
+            current.runtime_instance_id,
+            decision.max_fps_cap,
         )
-        envelope = GatewayControlEnvelope(
-            version="v2",
-            action=AgentAction.SUPERVISOR_QUOTA,
-            profile_id=current.profile_id,
-            runtime_instance_id=current.runtime_instance_id,
-            agent_session_id=session,
-            payload=SupervisorQuotaPayload(max_fps_cap=decision.max_fps_cap),
+        deliveries.append(
+            {
+                "runtime_instance_id": current.runtime_instance_id,
+                "max_fps_cap": decision.max_fps_cap,
+            }
         )
-        await socket.send_json(envelope.model_dump(mode="json"))
-        deliveries.append(asdict(decision))
 
     policy = ResourcePolicyService(
         client,

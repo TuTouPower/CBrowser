@@ -125,11 +125,50 @@ def test_copy_sources_exist_in_tree() -> None:
     assert not missing, "COPY sources missing from tree:\n" + "\n".join(missing)
 
 
+def test_every_runtime_dockerfile_has_dockerignore() -> None:
+    """t027 AC-002: a runtime image without ignore rules fails the gate
+    instead of silently shipping the whole repository as build context."""
+    missing = [
+        dockerfile.parent.name
+        for dockerfile in _runtime_dockerfiles()
+        if not dockerfile.with_name("Dockerfile.dockerignore").is_file()
+    ]
+    assert not missing, (
+        "runtime images missing Dockerfile.dockerignore:\n" + "\n".join(missing)
+    )
+
+
+def test_sensitive_paths_never_admitted_by_runtime_contexts() -> None:
+    """t027 AC-002: data/, deploy secrets and scratch never enter any
+    runtime build context, whatever the whitelist admits for COPY."""
+    sensitive = [
+        "data/v2/cbrowser.db",
+        "data/v2/profiles/p1/profile/Default/Cookies",
+        "config/deploy/secrets/admin_password",
+        "config/deploy/secrets/supervisor_key",
+        "config/deploy/compose.env",
+        ".scratch/probe/run.py",
+    ]
+    admitted: list[str] = []
+    for dockerfile in _runtime_dockerfiles():
+        ignore_file = dockerfile.with_name("Dockerfile.dockerignore")
+        rules = Dockerignore(ignore_file.read_text(encoding="utf-8"))
+        for rel in sensitive:
+            if rules.admits(rel):
+                admitted.append(f"{dockerfile.parent.name}: {rel}")
+    assert not admitted, (
+        "sensitive paths admitted into a build context:\n" + "\n".join(admitted)
+    )
+
+
 def test_copy_sources_admitted_by_dockerignore() -> None:
     rejected: list[str] = []
     for dockerfile in _runtime_dockerfiles():
         ignore_file = dockerfile.with_name("Dockerfile.dockerignore")
         if not ignore_file.is_file():
+            # AC-002 (t027): missing rules are a failure, never a skip;
+            # test_every_runtime_dockerfile_has_dockerignore lists them.
+            rejected.append(f"{dockerfile.parent.name}: missing Dockerfile.dockerignore")
             continue
         rules = Dockerignore(ignore_file.read_text(encoding="utf-8"))
         for source in _copy_sources(dockerfile):

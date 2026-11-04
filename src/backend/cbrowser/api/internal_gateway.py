@@ -6,12 +6,23 @@ import hmac
 from pathlib import Path
 from typing import Annotated
 
+from cbrowser.api.v1.control_router import get_control_service
 from cbrowser.api.v1.router import get_profile_service
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
-from cbrowser.domain.models import DesiredState, ObservedState
+from cbrowser.domain.models import (
+    ControlTakeoverReport,
+    DesiredState,
+    ObservedState,
+    ProfileControlStateData,
+)
 from cbrowser.secret_files import read_secret_file
 from cbrowser.service_errors import ServiceNotConfiguredError
+from cbrowser.services.control_service import (
+    ControlConflictError,
+    ControlNotFoundError,
+    ProfileControlService,
+)
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -119,4 +130,42 @@ async def get_gateway_profile_runtime(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
+        )
+
+
+@gateway_router.post(
+    "/profiles/{profile_id}/control/takeover",
+    response_model=ProfileControlStateData,
+    status_code=status.HTTP_200_OK,
+)
+async def gateway_report_takeover(
+    profile_id: str,
+    payload: ControlTakeoverReport,
+    control_service: Annotated[
+        ProfileControlService, Depends(get_control_service)
+    ],
+):
+    """Human-input takeover reported by the Gateway (t031).
+
+    The Stream Agent classifies a foreground viewer input, the Gateway
+    forwards it here, and the control service moves the profile to the
+    user, closes tunnels, and broadcasts the new state. Idempotent:
+    reporting a takeover for an already-user profile is a no-op.
+    """
+    try:
+        state, _close_requested = await control_service.takeover(
+            profile_id,
+            conn_id=payload.conn_id,
+            input_kind=payload.input_kind,
+        )
+        return state
+    except ControlNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Profile {profile_id} not found",
+        )
+    except ControlConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": str(exc)},
         )

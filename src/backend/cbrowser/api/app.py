@@ -27,6 +27,11 @@ from cbrowser.api.v1.automation_router import (
     automation_router,
     legacy_cdp_router,
 )
+from cbrowser.api.v1.control_router import (
+    control_router,
+    get_control_service,
+    get_optional_control_service,
+)
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
@@ -34,11 +39,13 @@ from cbrowser.auth.service import AuthService
 from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
+from cbrowser.services.control_service import ProfileControlService
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
     ProfileService,
 )
+from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -152,6 +159,35 @@ def create_app(
             require_supervisor=resolved_require_sup,
         )
         app.state.coordinator = coordinator
+
+        # t031: human-priority control state. The API is the sole
+        # business-DB writer; the service's hooks close tunnels (API
+        # registry here, Supervisor over HTTP) and publish SSE before
+        # any observer sees the new state.
+        automation_tunnels = AutomationTunnelRegistry(layer="api")
+        app.state.automation_tunnels = automation_tunnels
+
+        async def _close_api_tunnels(
+            profile_id: str, generation: int
+        ) -> bool:
+            await automation_tunnels.close_all_for_profile(
+                profile_id, generation=generation
+            )
+            return True
+
+        control_service = ProfileControlService(
+            session_maker,
+            publish_profile_change=coordinator.publish_profile_change,
+            close_supervisor_tunnels=coordinator.close_supervisor_tunnels,
+            close_api_tunnels=_close_api_tunnels,
+        )
+        coordinator.control_service = control_service
+        app.state.control_service = control_service
+        app.dependency_overrides[get_control_service] = lambda: control_service
+        app.dependency_overrides[get_optional_control_service] = (
+            lambda: control_service
+        )
+
         await coordinator.start()
 
         resolved_admin_pwd_file = admin_password_file or os.environ.get(
@@ -356,6 +392,7 @@ def create_app(
     app.include_router(v1_router)
     app.include_router(artifact_router)
     app.include_router(automation_router)
+    app.include_router(control_router)
     app.include_router(legacy_cdp_router, include_in_schema=False)
     app.include_router(auth_router)
     app.include_router(

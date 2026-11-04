@@ -234,6 +234,20 @@
           "title": "Selkies Version",
           "type": "string"
         },
+        "build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Build Id"
+        },
         "runtime_state": {
           "enum": [
             "starting",
@@ -368,11 +382,18 @@
           "type": "string"
         },
         "agent_session_id": {
-          "maxLength": 128,
-          "minLength": 1,
-          "pattern": "^[a-zA-Z0-9_.:-]+$",
-          "title": "Agent Session Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Session Id"
         },
         "error": {
           "anyOf": [
@@ -385,14 +406,37 @@
           ],
           "default": null,
           "title": "Error"
+        },
+        "gateway_build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gateway Build Id"
+        },
+        "rejection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RegistrationRejection"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "version",
         "status",
         "profile_id",
-        "runtime_instance_id",
-        "agent_session_id"
+        "runtime_instance_id"
       ],
       "title": "GatewayRegisterResponse",
       "type": "object"
@@ -480,6 +524,57 @@
         "conn_id"
       ],
       "title": "GatewayTunnelEnvelope",
+      "type": "object"
+    },
+    "RegistrationRejection": {
+      "additionalProperties": false,
+      "description": "Structured registration refusal (t026 AC-008).\n\n``code`` is the machine-readable reason the Supervisor's replacement\npolicy keys on; ``message`` is a bounded human diagnostic that never\ncarries credentials. ``gateway_build_id`` identifies the refusing\nGateway build; ``agent_build_id`` echoes what the Agent offered.",
+      "properties": {
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9_]+$",
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 256,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "gateway_build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gateway Build Id"
+        },
+        "agent_build_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Build Id"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "RegistrationRejection",
       "type": "object"
     },
     "SupervisorQuotaPayload": {

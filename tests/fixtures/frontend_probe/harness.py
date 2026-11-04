@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -18,21 +17,6 @@ from .host_builder import prepare_frontend_host
 logger = logging.getLogger("cbrowser.frontend_probe.harness")
 
 
-def load_images_env() -> None:
-    """Loads immutable image IDs from .scratch/images_env.txt into os.environ."""
-    env_file = REPO_ROOT / ".scratch" / "images_env.txt"
-    if env_file.is_file():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            k = k.strip()
-            v = v.strip()
-            if k not in os.environ and v:
-                os.environ[k] = v
-
-
 class FrontendTopologyHarness(GatewayTopologyHarness):
     """Topology harness customized for t007 frontend session E2E tests."""
 
@@ -44,7 +28,11 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
         work_dir: Path,
         agent_heartbeat_timeout_sec: float = 30.0,
     ) -> None:
-        load_images_env()
+        # Image IDs come only from the process environment, validated
+        # fail-closed by the E2E required-mode gate (t028 AC-005).  This
+        # harness must never silently load IDs from .scratch or any other
+        # side file: a stale file would let an old tag pose as the
+        # current build.
         super().__init__(
             work_dir=work_dir,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,

@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -21,6 +22,7 @@ from cbrowser.stream_agent.protocol import (
     AgentRegisterEnvelope,
     GatewayControlEnvelope,
     GatewayRegisterResponse,
+    RegistrationRejection,
     GatewayTunnelEnvelope,
     SupervisorQuotaPayload,
     serialize_tunnel_envelope,
@@ -188,6 +190,52 @@ def create_gateway_app(
 
     registry = AgentRegistry()
     viewers: dict[str, ViewerEntry] = {}
+    # Most recent registration refusal per profile (t026 AC-008): the
+    # Supervisor diagnoses persistent unregistration through the control
+    # plane instead of guessing why an Agent never appears.
+    registration_rejections: dict[str, dict[str, Any]] = {}
+
+    def _record_rejection(
+        profile_id: str,
+        runtime_instance_id: str,
+        code: str,
+        message: str,
+        agent_build_id: str | None = None,
+    ) -> RegistrationRejection:
+        rejection = RegistrationRejection(
+            code=code,
+            message=message,
+            gateway_build_id=config.build_id,
+            agent_build_id=agent_build_id,
+        )
+        registration_rejections[profile_id] = {
+            "runtime_instance_id": runtime_instance_id,
+            "rejection": rejection.model_dump(),
+            "at": time.time(),
+        }
+        return rejection
+
+    async def _send_rejection(
+        ws: web.WebSocketResponse,
+        profile_id: str,
+        runtime_instance_id: str,
+        rejection: RegistrationRejection,
+    ) -> None:
+        response = GatewayRegisterResponse(
+            version="v2",
+            status="error",
+            profile_id=profile_id,
+            runtime_instance_id=runtime_instance_id,
+            error=rejection.code,
+            gateway_build_id=config.build_id,
+            rejection=rejection,
+        )
+        try:
+            await ws.send_str(response.model_dump_json())
+        except Exception as exc:  # noqa: BLE001 - dead socket is reaped by the caller
+            logger.debug(
+                "Failed sending registration rejection: %s", type(exc).__name__
+            )
 
     async def close_viewers_for_session(
         session_id: str,
@@ -225,6 +273,13 @@ def create_gateway_app(
             )
         return None
 
+    # ---------------- Health Route (t027) ----------------
+    async def handle_health(request: web.Request) -> web.Response:
+        # Unauthenticated liveness for the compose healthcheck: the probe
+        # runs inside the deployment network and learns nothing beyond the
+        # process being up, mirroring the API /api/v1/health contract.
+        return web.json_response({"status": "ok", "role": "gateway"})
+
     # ---------------- Supervisor Control Routes ----------------
     async def handle_supervisor_visibility(request: web.Request) -> web.Response:
         auth_err = _check_supervisor_auth(request)
@@ -259,6 +314,28 @@ def create_gateway_app(
                 "capture_running": agent.capture_running,
             }
         )
+
+    async def handle_supervisor_registration(request: web.Request) -> web.Response:
+        """Registration state + last structured refusal for one profile."""
+        auth_err = _check_supervisor_auth(request)
+        if auth_err:
+            return auth_err
+        profile_id = request.match_info["profile_id"]
+        agent = registry.get(profile_id)
+        recorded = registration_rejections.get(profile_id)
+        body: dict[str, Any] = {
+            "profile_id": profile_id,
+            "gateway_build_id": config.build_id,
+            "registered": bool(agent is not None and not agent.ws.closed),
+            "runtime_instance_id": agent.instance_id if agent else None,
+            "agent_build_id": agent.build_id if agent else None,
+            "selkies_version": agent.selkies_version if agent else None,
+            "rejection": recorded["rejection"] if recorded else None,
+            "rejection_runtime_instance_id": (
+                recorded["runtime_instance_id"] if recorded else None
+            ),
+        }
+        return web.json_response(body)
 
     async def handle_supervisor_quota(request: web.Request) -> web.Response:
         auth_err = _check_supervisor_auth(request)
@@ -358,9 +435,22 @@ def create_gateway_app(
             ):
                 return web.Response(status=400, text="Missing registration identity")
             if not credentials.verify(raw_token, profile_id, instance_id):
+                if profile_id and instance_id:
+                    _record_rejection(
+                        profile_id,
+                        instance_id,
+                        "unauthorized",
+                        "Agent credentials rejected",
+                    )
                 return web.Response(status=401, text="Invalid Agent credentials")
             runtime_info = await api.get_profile_runtime(profile_id)
             if not runtime_info or runtime_info.get("runtime_instance_id") != instance_id:
+                _record_rejection(
+                    profile_id,
+                    instance_id,
+                    "instance_not_bound",
+                    "Instance not currently bound to profile",
+                )
                 return web.Response(
                     status=403, text="Instance not currently bound to profile"
                 )
@@ -383,6 +473,29 @@ def create_gateway_app(
                 envelope = AgentRegisterEnvelope.model_validate(reg_raw)
             except Exception as e:  # noqa: BLE001 - registration packet decoding boundary: any malformed packet closes the handshake, mirroring the other decode boundaries in this module
                 logger.warning("Agent registration payload invalid: %s", type(e).__name__)
+                offered_version = (
+                    reg_raw.get("version") if isinstance(reg_raw, dict) else None
+                )
+                offered_build = None
+                if isinstance(reg_raw, dict) and isinstance(
+                    reg_raw.get("payload"), dict
+                ):
+                    offered_build = reg_raw["payload"].get("build_id")
+                code = (
+                    "unsupported_version"
+                    if offered_version not in (None, "v2")
+                    else "invalid_payload"
+                )
+                rejection = _record_rejection(
+                    profile_id,
+                    instance_id,
+                    code,
+                    "Registration payload rejected",
+                    agent_build_id=offered_build
+                    if isinstance(offered_build, str)
+                    else None,
+                )
+                await _send_rejection(ws, profile_id, instance_id, rejection)
                 await ws.close(code=1008, message=b"Invalid registration payload")
                 return ws
 
@@ -397,6 +510,14 @@ def create_gateway_app(
                     pid,
                     iid,
                 )
+                rejection = _record_rejection(
+                    profile_id,
+                    instance_id,
+                    "identity_mismatch",
+                    "Registration identity mismatch",
+                    agent_build_id=payload.build_id,
+                )
+                await _send_rejection(ws, profile_id, instance_id, rejection)
                 await ws.close(
                     code=1008, message=b"Registration identity mismatch"
                 )
@@ -413,7 +534,9 @@ def create_gateway_app(
                 config_version=payload.config_version,
                 ws=ws,
                 last_heartbeat=registry.now(),
+                build_id=payload.build_id,
             )
+            registration_rejections.pop(pid, None)
 
             old_agent = registry.register(agent)
             if old_agent:
@@ -458,6 +581,7 @@ def create_gateway_app(
                 profile_id=pid,
                 runtime_instance_id=iid,
                 agent_session_id=session_id,
+                gateway_build_id=config.build_id,
             )
             try:
                 await ws.send_str(ack.model_dump_json())
@@ -553,6 +677,31 @@ def create_gateway_app(
                                     beat.unpaused_video_consumers
                                 )
                                 agent.capture_running = beat.capture_running
+                            elif (
+                                agent_env.action
+                                == AgentAction.HUMAN_INPUT_TAKEOVER
+                            ):
+                                # t031: foreground human input preempts
+                                # agent control. Forward to the API, which
+                                # owns the transition and the tunnel close.
+                                # A failed report is logged, never fatal
+                                # to the Gateway pump; the takeover is
+                                # idempotent, so the human's next
+                                # classified input re-reports it.
+                                takeover = agent_env.payload
+                                reported = await api.report_human_takeover(
+                                    pid,
+                                    takeover.viewer_conn_id,
+                                    takeover.input_kind,
+                                )
+                                if reported is None:
+                                    logger.warning(
+                                        "Human takeover report failed: "
+                                        "profile=%s conn=%s kind=%s",
+                                        pid,
+                                        takeover.viewer_conn_id,
+                                        takeover.input_kind,
+                                    )
                     except Exception as e:  # noqa: BLE001 - agent message handling loop isolation prevents gateway drop
                         logger.warning(
                             "Error processing packet from Agent: %s", type(e).__name__
@@ -741,10 +890,15 @@ def create_gateway_app(
         return ws
 
     # ---------------- Setup Routes ----------------
+    app.router.add_get("/gateway/v1/health", handle_health)
     app.router.add_get("/stream/agent/register", handle_agent_register)
     app.router.add_get(
         "/gateway/v1/internal/profiles/{profile_id}/visibility",
         handle_supervisor_visibility,
+    )
+    app.router.add_get(
+        "/gateway/v1/internal/profiles/{profile_id}/registration",
+        handle_supervisor_registration,
     )
     app.router.add_post(
         "/gateway/v1/internal/profiles/{profile_id}/quota",

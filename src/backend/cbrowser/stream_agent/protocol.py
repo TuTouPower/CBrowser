@@ -43,6 +43,7 @@ class AgentAction(str, Enum):
     REGISTER = "register"
     SUPERVISOR_QUOTA = "supervisor_quota"
     HEARTBEAT = "heartbeat"
+    HUMAN_INPUT_TAKEOVER = "human_input_takeover"
 
 
 # Shared identity validation for every envelope model (t022 A48): one
@@ -169,6 +170,23 @@ class GatewayControlEnvelope(BaseModel):
         return _check_optional_conn_id(v)
 
 
+class RegistrationRejection(BaseModel):
+    """Structured registration refusal (t026 AC-008).
+
+    ``code`` is the machine-readable reason the Supervisor's replacement
+    policy keys on; ``message`` is a bounded human diagnostic that never
+    carries credentials. ``gateway_build_id`` identifies the refusing
+    Gateway build; ``agent_build_id`` echoes what the Agent offered.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    message: str = Field(min_length=1, max_length=256)
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    agent_build_id: str | None = Field(default=None, max_length=64)
+
+
 class GatewayRegisterResponse(BaseModel):
     """Registration ACK from Gateway to StreamAgent."""
 
@@ -178,10 +196,13 @@ class GatewayRegisterResponse(BaseModel):
     status: Literal["ok", "error"]
     profile_id: str
     runtime_instance_id: str
-    agent_session_id: str = Field(
-        min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
+    # Only a successful ACK carries a session; rejections have none.
+    agent_session_id: str | None = Field(
+        default=None, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
     error: str | None = None
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    rejection: RegistrationRejection | None = None
 
 
 class _AgentEnvelope(BaseModel):
@@ -220,6 +241,9 @@ class AgentRegisterPayload(BaseModel):
     runtime_instance_id: str
     udp_port: int
     selkies_version: str = Field(min_length=1, max_length=64)
+    build_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[a-zA-Z0-9_.:-]+$"
+    )
     runtime_state: RuntimeState
     config_version: int = Field(ge=1)
     video_streaming_mode: bool = False
@@ -265,8 +289,30 @@ class AgentHeartbeatEnvelope(_AgentEnvelope):
     payload: AgentHeartbeatPayload
 
 
+class HumanInputTakeoverPayload(BaseModel):
+    """Classified foreground human input that must take over control.
+
+    Sent by the Stream Agent when its policy classifier observes a
+    takeover input (key press, mouse button, wheel, IME commit) from a
+    foreground viewer. The Gateway forwards it to the API, which moves
+    the profile to the user and closes agent tunnels (t031).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    input_kind: str = Field(min_length=1, max_length=64)
+    viewer_conn_id: str | None = Field(default=None, max_length=128)
+
+
+class AgentHumanInputTakeoverEnvelope(_AgentEnvelope):
+    action: Literal[AgentAction.HUMAN_INPUT_TAKEOVER] = (
+        AgentAction.HUMAN_INPUT_TAKEOVER
+    )
+    payload: HumanInputTakeoverPayload
+
+
 AgentEnvelope = Annotated[
-    AgentRegisterEnvelope | AgentHeartbeatEnvelope,
+    AgentRegisterEnvelope | AgentHeartbeatEnvelope | AgentHumanInputTakeoverEnvelope,
     Field(discriminator="action"),
 ]
 

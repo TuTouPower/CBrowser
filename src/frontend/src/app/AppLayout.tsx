@@ -11,6 +11,7 @@ import {
   PanelLeft,
 } from "lucide-react";
 import {
+  scopeMutationToProfile,
   useProfilesQuery,
   useProfileQuery,
   useProfileRuntimeQuery,
@@ -40,6 +41,23 @@ export function AppLayout() {
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const stopProfileMutation = useStopProfileMutation(client);
   const applyDisplayMutation = useApplyDisplaySettingsMutation(client);
+  // The layout stays mounted across Profile switches: header action
+  // state is shown only for the Profile the action targeted.
+  const launchState = scopeMutationToProfile(
+    setDesiredStateMutation,
+    currentProfileId,
+    (input) => input.id,
+  );
+  const stopState = scopeMutationToProfile(
+    stopProfileMutation,
+    currentProfileId,
+    (input) => input,
+  );
+  const applyState = scopeMutationToProfile(
+    applyDisplayMutation,
+    currentProfileId,
+    (input) => input,
+  );
 
   useEffect(() => {
     const handleHostPointerDown = (e: MouseEvent | PointerEvent) => {
@@ -150,10 +168,10 @@ export function AppLayout() {
                     type="button"
                     data-testid="display-apply-restart-btn"
                     onClick={() => applyDisplayMutation.mutate(activeProfile.id)}
-                    disabled={applyDisplayMutation.isPending}
+                    disabled={applyState.isPending}
                     className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50"
                   >
-                    {applyDisplayMutation.isPending
+                    {applyState.isPending
                       ? t("displayApplyingRestart")
                       : t("displayApplyAndRestart")}
                   </button>
@@ -164,7 +182,7 @@ export function AppLayout() {
                   type="button"
                   data-testid="header-stop-btn"
                   onClick={handleStop}
-                  disabled={stopProfileMutation.isPending}
+                  disabled={stopState.isPending}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition-colors"
                 >
                   <Square className="h-3 w-3 fill-current" />
@@ -176,7 +194,7 @@ export function AppLayout() {
                   data-testid="header-launch-btn"
                   onClick={handleLaunch}
                   disabled={
-                    setDesiredStateMutation.isPending ||
+                    launchState.isPending ||
                     activeRuntime?.observed_state === "starting"
                   }
                   className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors"
@@ -220,13 +238,13 @@ export function AppLayout() {
         </div>
       </header>
 
-      {applyDisplayMutation.error && (
+      {applyState.error && (
         <div
           data-testid="display-apply-error"
           role="alert"
           className="px-4 py-1.5 bg-red-500/10 border-b border-red-500/30 text-red-300 text-xs"
         >
-          {t("displayApplyFailed", { error: applyDisplayMutation.error.message })}
+          {t("displayApplyFailed", { error: applyState.error.message })}
         </div>
       )}
 

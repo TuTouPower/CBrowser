@@ -59,6 +59,10 @@ def test_profile_runtime_status_event_schema():
         "last_coordinator_error": "Connection refused",
         # t022/A55: typed search-defaults status rides the runtime event.
         "search_defaults": None,
+        # t026/AC-010: layered transport observation rides the same event.
+        "transport": None,
+        # t031: human-priority control state rides the same event.
+        "control": None,
         "updated_at": "2026-10-31T00:00:00Z",
     }
 

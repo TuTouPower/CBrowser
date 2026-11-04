@@ -4,6 +4,10 @@ version = "2.0.0"
 description = "Self-hosted Docker browser manager with WebRTC display and isolated profile sandboxes"
 readme = "README.md"
 requires-python = ">=3.12"
+
+[project.scripts]
+cbrowser-agent = "cbrowser.agent_executor.cli:main"
+
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",

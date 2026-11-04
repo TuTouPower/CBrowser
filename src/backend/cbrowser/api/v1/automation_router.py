@@ -107,15 +107,78 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
         await websocket.close(code=1011)
         return
 
+    # t031: the handshake performs the implicit control claim (token
+    # identity). A conflict (second agent, or reclaim blocked after a
+    # takeover) rejects the tunnel before it opens; a success renews
+    # or moves control to this agent and yields the generation that is
+    # forwarded to the Supervisor as a stale-handshake fence.
+    control_generation: int | None = None
+    control_service = getattr(websocket.app.state, "control_service", None)
+    if control_service is not None:
+        token_id = await auth_service.resolve_automation_token_id(token)
+        try:
+            state, _ = await control_service.claim(
+                profile_id, token_id, None
+            )
+            control_generation = state.generation
+        except Exception as exc:  # noqa: BLE001 - mapped to close codes
+            from cbrowser.services.control_service import (
+                ControlConflictError,
+                ControlNotFoundError,
+            )
+
+            if isinstance(exc, ControlNotFoundError):
+                await websocket.close(code=4404)
+            elif isinstance(exc, ControlConflictError):
+                logger.warning(
+                    "Automation CDP rejected by control: profile=%s code=%s",
+                    profile_id,
+                    exc.code,
+                )
+                await websocket.close(code=4403, reason="control_revoked")
+            else:
+                logger.warning(
+                    "Automation CDP control claim failed: profile=%s error=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+                await websocket.close(code=1011)
+            return
+    else:
+        logger.warning(
+            "Automation CDP without control service: profile=%s "
+            "(pre-t031 degraded path)",
+            profile_id,
+        )
+
     await websocket.accept()
+    registry = getattr(websocket.app.state, "automation_tunnels", None)
+    tunnel_record = None
+    if registry is not None:
+        tunnel_record = registry.register(
+            profile_id,
+            lambda: websocket.close(
+                code=4403, reason="control_revoked"
+            ),
+            generation=control_generation,
+            agent_instance_id=None,
+            agent_session_id=None,
+        )
     upstream = None
     tasks = []
     try:
+        forward_headers = {
+            "Authorization": f"Bearer {supervisor_token.get_secret_value()}"
+        }
+        if control_generation is not None:
+            # The Supervisor rejects forwarded handshakes at or below
+            # its fenced generation (stale API processes after takeover).
+            forward_headers["X-CBrowser-Control-Generation"] = str(
+                control_generation
+            )
         upstream = await websockets.connect(
             _supervisor_ws_url(coordinator.supervisor_url, profile_id),
-            additional_headers={
-                "Authorization": f"Bearer {supervisor_token.get_secret_value()}"
-            },
+            additional_headers=forward_headers,
             **_websocket_kwargs(),
         )
 
@@ -165,6 +228,8 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
             await asyncio.gather(*tasks, return_exceptions=True)
         if upstream is not None:
             await upstream.close()
+        if tunnel_record is not None and registry is not None:
+            registry.unregister(tunnel_record.tunnel_id)
         try:
             await websocket.close()
         except Exception:  # noqa: BLE001 - already-closed client socket is harmless

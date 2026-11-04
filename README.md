@@ -17,16 +17,21 @@ CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统
 npm ci --prefix src/frontend
 npm run build --prefix src/frontend
 
-# 生成密钥、构建镜像并启动
+# 管理员密码由你提供（脚本不生成、不打印任何秘密）
+mkdir -p config/deploy/secrets
+printf '%s' '你的管理员密码' > config/deploy/secrets/admin_password
+chmod 600 config/deploy/secrets/admin_password
+
+# 生成内部密钥、构建镜像、发布不可变 release 并做 readiness 验收
 bash scripts/deploy_v2.sh
 ```
 
-访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。
+访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。每次发布生成不可变 release（`config/deploy/releases/`），回退用 `bash scripts/deploy_v2.sh rollback`。
 
 ## 停用与备份
 
 ```bash
-docker compose --env-file config/deploy/compose.env down
+docker compose --env-file config/deploy/releases/<release_id>.env -f compose.yaml down
 tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
 ```
 

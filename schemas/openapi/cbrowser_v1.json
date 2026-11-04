@@ -2426,6 +2426,651 @@
         ]
       }
     },
+    "/api/v1/profiles/{profile_id}/control": {
+      "get": {
+        "tags": [
+          "control"
+        ],
+        "summary": "Get Control State",
+        "operationId": "get_control_state_api_v1_profiles__profile_id__control_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileControlStateData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/tunnels": {
+      "get": {
+        "tags": [
+          "control"
+        ],
+        "summary": "List Control Tunnels",
+        "operationId": "list_control_tunnels_api_v1_profiles__profile_id__control_tunnels_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AutomationTunnelData"
+                  },
+                  "title": "Response List Control Tunnels Api V1 Profiles  Profile Id  Control Tunnels Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/claim": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "Claim Control",
+        "operationId": "claim_control_api_v1_profiles__profile_id__control_claim_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlClaimRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileControlStateData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/handoff": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "Handoff Control",
+        "operationId": "handoff_control_api_v1_profiles__profile_id__control_handoff_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ControlHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileControlStateData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/restore": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "Restore Control",
+        "operationId": "restore_control_api_v1_profiles__profile_id__control_restore_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileControlStateData"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/dialogs": {
+      "get": {
+        "tags": [
+          "control"
+        ],
+        "summary": "List Control Dialogs",
+        "description": "Peek dialogs held by the resident attendant (automation token).\n\nA session attached after a dialog opened cannot observe it through\nits own CDP session (t031 chain evidence), so a later session\npeeks here before deciding whether to answer via the attendant.\nThe peek is gated to the controlling agent (see\n``_require_dialog_agent``).",
+        "operationId": "list_control_dialogs_api_v1_profiles__profile_id__control_dialogs_get",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profiles/{profile_id}/control/dialog-answer": {
+      "post": {
+        "tags": [
+          "control"
+        ],
+        "summary": "Answer Control Dialog",
+        "description": "Answer a held dialog on the attendant's session (automation token).\n\nGated to the controlling agent (see ``_require_dialog_agent``):\na taken-over profile or a second token cannot answer dialogs.",
+        "operationId": "answer_control_dialog_api_v1_profiles__profile_id__control_dialog_answer_post",
+        "parameters": [
+          {
+            "name": "profile_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Profile Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendantDialogAnswerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "tags": [
@@ -2933,6 +3578,38 @@
         ],
         "title": "ArtifactResponse"
       },
+      "AttendantDialogAnswerRequest": {
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Target Id"
+          },
+          "accept": {
+            "type": "boolean",
+            "title": "Accept",
+            "default": false
+          },
+          "prompt_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "target_id"
+        ],
+        "title": "AttendantDialogAnswerRequest",
+        "description": "t031: answer a held dialog through the attendant's session."
+      },
       "AutomationEndpointResponse": {
         "properties": {
           "profile_id": {
@@ -3135,6 +3812,60 @@
         ],
         "title": "AutomationTokenResponse"
       },
+      "AutomationTunnelData": {
+        "properties": {
+          "tunnel_id": {
+            "type": "string",
+            "title": "Tunnel Id"
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "api",
+              "supervisor"
+            ],
+            "title": "Layer"
+          },
+          "agent_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Instance Id"
+          },
+          "agent_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Session Id"
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation"
+          },
+          "opened_at": {
+            "type": "string",
+            "title": "Opened At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "tunnel_id",
+          "layer",
+          "generation",
+          "opened_at"
+        ],
+        "title": "AutomationTunnelData"
+      },
       "ConfigVersionResponse": {
         "properties": {
           "id": {
@@ -3175,6 +3906,99 @@
           "created_at"
         ],
         "title": "ConfigVersionResponse"
+      },
+      "ControlClaimRequest": {
+        "properties": {
+          "agent_instance_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Instance Id"
+          },
+          "agent_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Session Id"
+          }
+        },
+        "type": "object",
+        "title": "ControlClaimRequest",
+        "description": "Claim request (t031_code_f005: read the field notes).\n\n``agent_instance_id`` is accepted but IGNORED: the recorded\ninstance identity always comes from the automation token id, so a\ncaller-supplied instance never renames the claim. Only\n``agent_session_id`` is honored (it scopes the claim to a session)."
+      },
+      "ControlHandoffRequest": {
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "human_input",
+              "cli_handoff",
+              "permission",
+              "captcha",
+              "two_fa",
+              "agent_finish",
+              "supervisor_restart",
+              "profile_restart",
+              "crash",
+              "identity_invalid"
+            ],
+            "title": "Reason"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "agent_instance_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Instance Id"
+          },
+          "agent_session_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Session Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reason"
+        ],
+        "title": "ControlHandoffRequest",
+        "description": "Handoff request (t031_code_f005: read the field notes).\n\nHandoff is fail-open toward the user: the identity fields are\naccepted but IGNORED (any automation-token holder may move a\nprofile back to the safe state; the server does not check that the\ncaller is the controlling agent). Only ``reason``/``detail`` act."
       },
       "ErrorResponse": {
         "properties": {
@@ -3240,6 +4064,94 @@
           "csrf_token"
         ],
         "title": "LoginResponse"
+      },
+      "ProfileControlStateData": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "owner": {
+            "type": "string",
+            "enum": [
+              "user",
+              "agent"
+            ],
+            "title": "Owner",
+            "default": "user"
+          },
+          "generation": {
+            "type": "integer",
+            "title": "Generation",
+            "default": 0
+          },
+          "agent_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Instance Id"
+          },
+          "agent_session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Session Id"
+          },
+          "handoff_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Reason"
+          },
+          "handoff_detail": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Detail"
+          },
+          "agent_reclaim_allowed": {
+            "type": "boolean",
+            "title": "Agent Reclaim Allowed",
+            "default": true
+          },
+          "pending_supervisor_close": {
+            "type": "boolean",
+            "title": "Pending Supervisor Close",
+            "default": false
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "profile_id",
+          "updated_at"
+        ],
+        "title": "ProfileControlStateData",
+        "description": "Human-priority control state for one profile (t031, ADR 019).\n\n``owner`` is ``user`` by default and after every restart, crash,\nidentity failure, or takeover; ``agent`` only while an explicitly\nclaimed agent session holds control. ``generation`` increases on\nevery ownership change and fences stale tunnel messages, control\nresponses, and SSE snapshots. ``agent_reclaim_allowed`` is cleared\nby a takeover and only restored by an explicit human restore or a\nclean agent finish, so a taken-over agent cannot silently re-claim\ncontrol through a fresh tunnel handshake."
       },
       "ProfileCreateRequest": {
         "properties": {
@@ -3773,6 +4685,26 @@
               }
             ]
           },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportObservationData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileControlStateData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -3853,6 +4785,26 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SearchDefaultsStatusData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportObservationData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileControlStateData"
               },
               {
                 "type": "null"
@@ -4321,6 +5273,195 @@
           "tag"
         ],
         "title": "Tag"
+      },
+      "TransportObservationData": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "runtime_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Instance Id"
+          },
+          "browser_state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "missing",
+              "error",
+              "unknown"
+            ],
+            "title": "Browser State",
+            "default": "unknown"
+          },
+          "stream_state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "missing",
+              "error",
+              "unknown"
+            ],
+            "title": "Stream State",
+            "default": "unknown"
+          },
+          "transport_state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "recovering",
+              "failed",
+              "unknown"
+            ],
+            "title": "Transport State",
+            "default": "unknown"
+          },
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "selkies_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selkies Version"
+          },
+          "agent_build_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Build Id"
+          },
+          "gateway_build_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Build Id"
+          },
+          "config_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Version"
+          },
+          "gateway_endpoint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Endpoint"
+          },
+          "last_attached_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attached At"
+          },
+          "last_registered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Registered At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "rejection_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "TransportObservationData",
+        "description": "API view of the Supervisor's layered transport observation (t026).\n\nMirrors the Supervisor control protocol model. Held in memory only:\nafter an API restart the value is ``unknown`` until the Supervisor\nreports again, never a stale persisted copy."
       },
       "ValidationError": {
         "properties": {

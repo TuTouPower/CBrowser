@@ -59,7 +59,14 @@ class ConfigVersionResponse(BaseModel):
 class ControlRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["close", "rearm_downloads", "retry_search_defaults"]
+    action: Literal[
+        "close",
+        "rearm_downloads",
+        "retry_search_defaults",
+        "release_attendant",
+        "list_attendant_dialogs",
+        "answer_attendant_dialog",
+    ]
     params: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -69,6 +76,7 @@ class ControlResponse(BaseModel):
     status: Literal["ok", "error"]
     action: str
     message: str | None = None
+    data: dict[str, Any] | None = None
 
 
 class RuntimeEventRecord(BaseModel):

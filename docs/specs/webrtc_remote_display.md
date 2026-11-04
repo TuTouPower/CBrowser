@@ -52,6 +52,11 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - FPS 配额协议与策略同规：有限且 ∈ [min_fps, max_fps]，越界严格拒绝，None 仅解除限制。StreamAgent 仅保留可 await 的完整 stop（取消并等待全部后台任务、释放 Viewer 与 detached upstream、幂等）。Selkies 私有 API 只经适配层访问，钉版 ABI 不符明确报 unsupported。
 - SSE 快照为订阅私有数据并携带 live 基点，不写共享历史；窗口不足显式重建。
 
+## 注册结构化拒绝与信令恢复呈现（t026）
+
+- 注册载荷可携带 Agent build 标识，成功 ACK 返回 Gateway build 标识；WS 建立后的拒绝（版本不支持/载荷非法/身份不一致）先返回结构化拒绝（含原因码与双方 build 标识）再关闭，升级前拒绝（凭证/实例未绑定）同样按 Profile 记录最近拒绝，成功注册清除。Supervisor 经控制端点读取注册状态与拒绝原因做收敛决策。
+- 信令首次连接异常关闭（含 1006）：transport 处于 recovering 时呈现恢复中并在有界窗口内等待，变 ready 后重连；明确失败或超窗口才呈现失败。已连接后的断开沿用既有 resume 语义。
+
 ## 前端会话一致性（t023）
 
 - SSE 运行时事件以生成的 `ProfileRuntimeStatusEvent` 为唯一类型契约：投递前验证核心字段与状态枚举，畸形或未知事件只进错误通道、不投递给消费者。连接以代次隔离：重复 `start` 不新增连接，旧代次不得投递、报错或触发重连，`stop`（含登出）后不得重连。
