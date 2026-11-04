@@ -244,7 +244,9 @@ def create_app(
 
     @app.exception_handler(DBAPIError)
     async def dbapi_error_handler(request: Request, exc: DBAPIError):
-        logger.error("Database error: %s", type(exc).__name__)
+        logger.exception(
+            "Database error: %s (%s)", type(exc).__name__, getattr(exc, "orig", "")
+        )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={

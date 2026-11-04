@@ -18,6 +18,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from cbrowser.adapters.database.models import ProfileControlModel, ProfileModel
+from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import (
     ControlHandoffReason,
     ProfileControlStateData,
@@ -236,7 +237,7 @@ class ProfileControlService:
         generation bump). A claim while another agent holds control, or
         while reclaim is blocked after a takeover, is a conflict.
         """
-        async with self._session_maker() as session:
+        async with self._session_maker() as session, write_transaction(session):
             row = await self._get_or_create_row(session, profile_id)
             if row.owner == "agent":
                 if not _identity_matches(
@@ -257,7 +258,6 @@ class ProfileControlService:
                 if upgraded:
                     row.agent_session_id = agent_session_id
                     row.updated_at = utc_now_iso()
-                    await session.commit()
                 data = _row_to_data(row)
                 if upgraded:
                     await self._publish(profile_id)
@@ -280,7 +280,6 @@ class ProfileControlService:
             row.handoff_reason = None
             row.handoff_detail = None
             row.updated_at = utc_now_iso()
-            await session.commit()
             data = _row_to_data(row)
         await self._publish(profile_id)
         return data, False
@@ -319,7 +318,7 @@ class ProfileControlService:
         only a clean finish or a runtime restart/crash leaves reclaim
         open; every human-driven handoff requires explicit restore.
         """
-        async with self._session_maker() as session:
+        async with self._session_maker() as session, write_transaction(session):
             row = await self._get_or_create_row(session, profile_id)
             if row.owner == "user":
                 return _row_to_data(row), False
@@ -330,7 +329,6 @@ class ProfileControlService:
             row.agent_reclaim_allowed = reason in RECLAIM_ALLOWED_REASONS
             row.pending_supervisor_close = True
             row.updated_at = utc_now_iso()
-            await session.commit()
             data = _row_to_data(row)
         close_ok = await self._close_supervisor(profile_id, data.generation)
         if not close_ok:
@@ -392,7 +390,7 @@ class ProfileControlService:
         Already-agent is an idempotent no-op. A profile that never had
         an agent identity recorded cannot be restored (conflict).
         """
-        async with self._session_maker() as session:
+        async with self._session_maker() as session, write_transaction(session):
             row = await self._get_or_create_row(session, profile_id)
             if row.owner == "agent":
                 return _row_to_data(row), False
@@ -408,7 +406,6 @@ class ProfileControlService:
             row.agent_reclaim_allowed = True
             row.pending_supervisor_close = False
             row.updated_at = utc_now_iso()
-            await session.commit()
             data = _row_to_data(row)
         await self._publish(profile_id)
         return data, False
@@ -463,7 +460,7 @@ class ProfileControlService:
         return handed
 
     async def _set_pending(self, profile_id: str, value: bool) -> None:
-        async with self._session_maker() as session:
+        async with self._session_maker() as session, write_transaction(session):
             row = await session.get(ProfileControlModel, profile_id)
             if row is None:
                 return
@@ -471,7 +468,6 @@ class ProfileControlService:
                 return
             row.pending_supervisor_close = value
             row.updated_at = utc_now_iso()
-            await session.commit()
 
     async def retry_pending_supervisor_close(
         self, profile_id: str
