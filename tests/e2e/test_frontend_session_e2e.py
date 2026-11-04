@@ -371,6 +371,28 @@ async def test_frontend_session_independent_input_and_mute(
 
 
 @pytest.mark.asyncio
+async def animate_remote_page(browser_container: str) -> None:
+    """Paint continuously in the remote page so damage-gated capture has
+    fresh frames after the Page Lifecycle resume."""
+    script = """(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 640;
+        canvas.height = 480;
+        canvas.style.cssText =
+            'position:fixed;left:0;top:0;width:640px;height:480px;z-index:2147483647';
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        let tick = 0;
+        setInterval(() => {
+            tick += 1;
+            ctx.fillStyle = `hsl(${(tick * 7) % 360}, 80%, 50%)`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }, 40);
+        return 'animating';
+    })()"""
+    await asyncio.to_thread(browser_eval, browser_container, script)
+
+
 async def test_frontend_session_freeze_resume_and_diagnostics(
     tmp_path: Path,
 ) -> None:
@@ -415,6 +437,11 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
             await pageA.goto(session_url, wait_until="domcontentloaded")
             stats_before = await wait_for_iframe_decode(pageA, name="Page A initial")
             tab_id_before = stats_before["tab_id"]
+
+            # Damage-gated capture emits no frames for a static page; paint
+            # continuously so the resume assertion measures lifecycle, not
+            # an idle screen.
+            await animate_remote_page(profile["browser_container"])
 
             # 1. Page Lifecycle freeze & resume via CDP (AC-007)
             cdp = await context.new_cdp_session(pageA)

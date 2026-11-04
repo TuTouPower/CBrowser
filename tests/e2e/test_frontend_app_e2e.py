@@ -153,7 +153,7 @@ async def wait_iframe_stats(
                     if (typeof fn !== 'function') return null;
                     return await fn();
                 }""",
-                timeout=5.0,
+                timeout=1.0,
             )
         except Exception as exc:  # noqa: BLE001 - navigated/swapped/stalled
             last = {"error": type(exc).__name__}
@@ -1261,23 +1261,58 @@ _ALL_CANDIDATES_SCRIPT = """async () => {
                 address: entry.address || entry.ip || null,
                 port: entry.port || null,
                 protocol: entry.protocol || null,
+                relatedAddress: entry.relatedAddress || null,
             });
         }
     }
-    return { candidates, connectionState: pc.connectionState };
+    const parseSdp = (description) => {
+        const sdp = description && description.sdp ? description.sdp : "";
+        const result = [];
+        for (const line of sdp.split("\\r\\n")) {
+            const match = line.match(/^a=candidate:[^ ]+ [0-9]+ ([^ ]+) [0-9]+ ([^ ]+) ([0-9]+) typ ([^ ]+)/);
+            if (match) {
+                result.push({
+                    protocol: match[1],
+                    address: match[2],
+                    port: Number(match[3]),
+                    candidateType: match[4],
+                });
+            }
+        }
+        return result;
+    };
+    return {
+        candidates,
+        localSignaled: parseSdp(pc.localDescription),
+        remoteSignaled: parseSdp(pc.remoteDescription),
+        connectionState: pc.connectionState,
+    };
 }"""
 
 
 def _assert_host_only_candidates(
     snapshot: dict[str, Any], udp_mux_port: int
 ) -> None:
-    candidates = snapshot["candidates"]
-    assert candidates, "no ICE candidates reported"
-    for cand in candidates:
+    # The signaled ICE candidate set (SDP) must be host-only. getStats
+    # additionally reports a local peer-reflexive candidate created by
+    # Docker's published-UDP-port NAT; it is not part of the signaled set
+    # and cannot be removed by the client configuration.
+    local = snapshot["localSignaled"]
+    remote = snapshot["remoteSignaled"]
+    assert local, "no local ICE candidates signaled"
+    assert remote, "no remote ICE candidates signaled"
+    for cand in local + remote:
         assert cand["candidateType"] == "host", cand
-    remote = [c for c in candidates if c["kind"] == "remote-candidate"]
-    assert remote, "no remote candidates reported"
     for cand in remote:
+        assert cand["address"] == "127.0.0.1", cand
+        assert cand["protocol"] == "udp", cand
+        assert cand["port"] == udp_mux_port, cand
+    stats_remote = [
+        c for c in snapshot["candidates"] if c["kind"] == "remote-candidate"
+    ]
+    assert stats_remote, "no remote candidates reported by getStats"
+    for cand in stats_remote:
+        assert cand["candidateType"] == "host", cand
         assert cand["address"] == "127.0.0.1", cand
         assert cand["protocol"] == "udp", cand
         assert cand["port"] == udp_mux_port, cand
@@ -1318,12 +1353,19 @@ async def test_t019_switch_and_refresh_first_frame_within_2s_host_only(
         # Switch A -> B from the sidebar: new PeerConnection, first frame <= 2s.
         switch_start = time.monotonic()
         await page_a.click(f'[data-testid="profile-item-{profile_b}"]')
+        clicked = time.monotonic()
         await page_a.wait_for_url(
             re.compile(rf"\?profileId={profile_b}"), timeout=15000
         )
+        navigated = time.monotonic()
         await wait_iframe_stats(page_a, name="B after switch")
         switch_elapsed = time.monotonic() - switch_start
-        assert switch_elapsed <= 2.0, f"switch to first frame took {switch_elapsed:.3f}s"
+        assert switch_elapsed <= 2.0, (
+            f"switch to first frame took {switch_elapsed:.3f}s "
+            f"(click={clicked - switch_start:.3f}s, "
+            f"url={navigated - clicked:.3f}s, "
+            f"frames={time.monotonic() - navigated:.3f}s)"
+        )
         switch_candidates = await _evaluate_bounded(
             page_a, _ALL_CANDIDATES_SCRIPT, timeout=10.0
         )
