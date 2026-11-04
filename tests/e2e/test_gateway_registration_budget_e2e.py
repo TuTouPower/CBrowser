@@ -26,6 +26,7 @@ from cbrowser.stream_agent.protocol import (
 from gateway_probe.topology import GatewayTopologyHarness
 from wait import poll_until
 
+from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 
 
@@ -61,7 +62,9 @@ async def test_registration_budgets_and_restart_recovery_on_real_gateway(
             f"{gateway_base}/stream/agent/register"
             f"?profile_id={profile_id}&runtime_instance_id={instance_id}"
         )
-        agent_token = harness.keys["agent"]
+        agent_token = AgentCredentials(
+            harness.key_files["agent"]
+        ).token_for(profile_id, instance_id)
         control = GatewayControlClient(
             gateway_base, harness.key_files["gateway"]
         )

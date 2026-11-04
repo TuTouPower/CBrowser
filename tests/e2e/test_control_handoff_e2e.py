@@ -114,21 +114,17 @@ async def test_handoff_closes_established_tunnel_and_refuses_reconnect(
                 await asyncio.wait_for(ws.recv(), timeout=15)
             assert exc.value.code == 4403
 
-        # Reconnect while reclaim is blocked must be refused the same way.
-        ws2 = await websockets.connect(
-            _ws_url(harness, profile_id),
-            additional_headers={"Authorization": f"Bearer {token}"},
-            ssl=ssl_ctx,
-            max_size=None,
-        )
-        try:
-            with pytest.raises(
-                websockets.exceptions.ConnectionClosed
-            ) as exc:
-                await asyncio.wait_for(ws2.recv(), timeout=15)
-            assert exc.value.code == 4403
-        finally:
-            await ws2.close()
+        # A reconnect while reclaim is blocked is refused during the
+        # handshake. Starlette cannot send a 4403 close before accepting,
+        # so the fail-closed refusal surfaces as HTTP 403.
+        with pytest.raises(websockets.exceptions.InvalidStatus) as refused:
+            await websockets.connect(
+                _ws_url(harness, profile_id),
+                additional_headers={"Authorization": f"Bearer {token}"},
+                ssl=ssl_ctx,
+                max_size=None,
+            )
+        assert refused.value.response.status_code == 403
 
         # Explicit human restore re-enables the agent path.
         headers = await harness.login_api()

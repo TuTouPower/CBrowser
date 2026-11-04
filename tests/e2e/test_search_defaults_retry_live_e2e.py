@@ -43,11 +43,10 @@ async def test_search_defaults_retry_on_live_context(tmp_path: Path) -> None:
             timeout=30.0,
         ) as api:
             # CSRF is enforced on the live route exactly as in the stub
-            # contract tests.
-            no_csrf = {
-                k: v for k, v in auth_headers.items() if k != "X-CSRF-Token"
-            }
-            resp = await api.post(url, headers=no_csrf)
+            # contract tests. httpx merges client headers into the
+            # request, so omitting the key would silently reuse the
+            # client's valid token; send a wrong one instead.
+            resp = await api.post(url, headers={"X-CSRF-Token": "invalid"})
             assert resp.status_code == 403
 
             async def do_retry() -> httpx.Response:
