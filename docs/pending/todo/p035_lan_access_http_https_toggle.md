@@ -1,0 +1,30 @@
+# p035 局域网访问与 HTTP/HTTPS 支持改为用户可配置（UI 保存 + 一键重启生效）
+
+- 来源：用户提出
+- 内容：当前部署强制 HTTPS：Caddy 仅发布 443（`CBROWSER_HTTPS_PORT`，默认 56661），站点写死 `https://` + `tls internal`，HTTP 不可达。需新增管理员 UI 设置，用户可配置三项：是否允许局域网访问、是否启用 HTTP、是否启用 HTTPS。默认行为：允许局域网访问，且同时启用 HTTP 与 HTTPS。用户在 UI 修改并保存后，点击“重启软件”按钮重启整个栈生效，不做运行中热切换。
+- 已确认方案（用户）：
+    - 配置持久化到本地文件，例如 `data/v2/config/runtime.json`；不只存 SQLite，因为 Caddy、Supervisor 读不到 SQLite。可在 UI/API 侧同时写 `settings` 表（`src/backend/cbrowser/adapters/database/models.py:207`，已存在未使用）作展示与审计。
+    - 所有服务挂载该文件并在启动时读取：Caddy 决定站点与协议，Supervisor 决定 UDP 绑定与 LAN 候选 IP，API/Gateway 决定 Origin 白名单与 Cookie `Secure`。
+    - UI 提供“重启整个软件”按钮：API 校验管理员会话与 CSRF 后转发 Supervisor；Supervisor 已通过 `/var/run/docker.sock` 管理容器（实际具备 Docker 写权限），按顺序重启 `gateway`、`caddy`、`api`，最后重启自身。
+- 已确认范围（用户）：局域网指完整可用，其他机器必须能打开并操作远程浏览器画面，不只是 UI/API 可达。
+- 重启交互要求：
+    - 点击后前端立即显示“正在重启”，停止普通轮询，改为轮询 `/api/v1/health` 直到恢复。
+    - 重启 API 的请求会被中断，前端不得依赖该请求成功返回。
+    - 需防重复触发；部分失败时要能靠 `restart: unless-stopped` 与健康轮询恢复。
+- 现状与改动面：
+    - 端口：`compose.yaml:94` 仅映射 HTTPS。建议 HTTP/HTTPS 两个端口始终映射，由配置决定 Caddy 是否监听；改端口时整栈重启自然重建。
+    - Caddy：`config/deploy/caddy/Caddyfile` 为只读单文件挂载、`admin off`、站点写死。改为按配置文件生成/选择 Caddyfile，启动时读取；局域网限制用 `remote_ip` matcher，不可靠时改用绑定地址（LAN 绑 `0.0.0.0`，本机绑 `127.0.0.1`）。
+    - 认证：Cookie `secure=True` 硬编码（`src/backend/cbrowser/api/v1/auth_router.py:94` 起多处）；`CBROWSER_ALLOWED_ORIGINS` 仅在启动时读入（`api/app.py:90`、`gateway/config.py:70`）。HTTP 下需按配置下发非 Secure Cookie，API 与 Gateway 启动时读取同一份 Origin 白名单。切换后需重新登录。
+    - 功能降级：局域网 IP 走 HTTP 属非安全上下文，`navigator.clipboard` 不可用，剪贴板同步失效（`localhost` 例外）。
+- 媒体面改造路径（可行，已有预留）：
+    - Selkies 原生支持 1:1 NAT host candidate：`--webrtc-public-ip` 已由 `CBROWSER_WEBRTC_PUBLIC_IP` 传入（`config/docker/stream_runtime/entrypoint.sh:194,217`），但 Supervisor 调用 `start_stream_container` 未传 `public_ip`，实际固定默认 `127.0.0.1`（`src/backend/cbrowser/supervisor/core.py:1095`、`docker_adapter.py:956`）。
+    - UDP mux 端口当前发布到 `127.0.0.1`（`container_spec.py:166`）。需改为绑定 LAN 可达地址，或始终绑定 `0.0.0.0` 后由访问控制兜底。
+    - `docs/v2_architecture_plan.md:602` 原设计已规划 `CBROWSER_WEBRTC_MODE=local|lan|public|relay-only` 与 `CBROWSER_WEBRTC_ADVERTISE_IP`，但未实现；可作为设计基础，并需新 ADR 修订 ADR 013 的“仅同机”约束。
+    - 重启切换 LAN 模式会重建 Stream 容器（端口绑定与候选 IP 创建时固定）；Browser 容器与 Profile 数据保留，现有会话断线重连。
+- 主要难点：
+    - 宿主 LAN IP 的来源与多网卡/DHCP 变更：Supervisor 在容器内，难以可靠自动探测；倾向由配置或 UI 让用户确认/填写，再由部署侧自动预填。
+    - 局域网 HTTP 属非安全上下文：剪贴板同步不可用；真实 Chrome 下 RTCPeerConnection/WebRTC 在 HTTP 源是否可用需实测确认。
+    - Docker/OrbStack 发布端口下，Caddy 能否用 `remote_ip` 区分局域网与宿主本机来源（macOS 虚拟化网关可能统一成同一源 IP），需 spike。
+    - 重启 API 中断请求、Supervisor 自重启的时序与失败恢复需集成验证。
+- 规模判断：中等，预计 2-3 个 task；建议先做 LAN IP 通告与 HTTP 下 WebRTC 的 spike，再拆实施 task。
+- 处理：未开
