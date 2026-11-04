@@ -162,3 +162,22 @@
     2. 每次发布生成不可变 release（release 标签 + manifest 以镜像 ID 固定六镜像与配置指纹、迁移版本、readiness 能力），current/previous 指针只在 readiness 验收后原子移动；回退显式选上一 release 并受 readiness 能力与迁移版本下限约束；凭证分级：管理员密码用户提供、内部密钥自动随机生成（0600、永不打印）。
 - 结论：采用选项 2。发布/回退共用同一验收（有界 `up --wait` + 容器内探针调 t026 `reconcile_all`/`readiness`）；compose 镜像全变量化且无 build 块；实例身份参数化，prefix 异项目占用启动前拒绝；不存在降级迁移，数据从不由发布/回退删除。真实部署演练归 t032。
 - 替代：无（DOCKER_DEPLOYMENT.md 旧"标签可回滚"说法自本决定起作废）
+
+## 018 CDP 隧道由透明转发改为拒绝浏览器级破坏性命令（2026-11-04，t030）
+
+- 背景：t029 探针证实隧道透明转发时，外部客户端一句 `Browser.close`
+  即按 normal exit 停掉 Profile 且不恢复；Playwright 默认 context 会在
+  连接期间覆盖下载行为、绕过 Artifact 捕获。执行器上线前必须先堵住
+  这类命令，否则“可用执行器”先于“安全执行器”交付。
+- 选项：
+    1. 保持透明转发，只在执行器文档中警告（调用方自律；一次误发即停
+       Profile，不可接受）。
+    2. 隧道层拒绝清单命令并返回稳定错误，下载行为与 Emulation 覆盖
+       一律拒绝，脚本登记 + 断开清理；关 Tab 不在隧道做归属过滤（实测
+       会挂起 Playwright popup 关闭），改由执行器账本 enforcement，隧道
+       仅保留最后一页 backstop。
+- 结论：采用选项 2（规约见 `docs/specs/agent_executor.md`“隧道过滤”一节）。
+  t029 的“外部 Browser.close 停 Profile”与“no_defaults=False 期间客户端
+  下载优先”两条断言随策略变更整体替换为拒绝语义测试并注明 t030 为
+  裁决来源，不静默改预期。
+- 替代：无（透明转发语义自本决定起作废）

@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
+from .tunnel_filter import TunnelFilter
 from .download_reconciler import scan_completed_downloads
 from .event_storage import EventStorage, StorageError, atomic_write_json
 from .profile_defaults import (
@@ -421,6 +422,7 @@ def create_agent_app(
 
         chrome_ws = None
         commands_sent = 0
+        tunnel_filter = TunnelFilter()
         tunnel_tasks: list[asyncio.Task[None]] = []
         try:
             chrome_ws = await websockets.connect(
@@ -434,11 +436,27 @@ def create_agent_app(
                 nonlocal commands_sent
                 while True:
                     msg = await client_ws.receive_text()
+                    try:
+                        parsed = json.loads(msg)
+                    except (ValueError, TypeError):
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        decision, response = tunnel_filter.filter_outgoing(parsed)
+                        if decision == "reject":
+                            if response is not None:
+                                await client_ws.send_text(json.dumps(response))
+                            continue
                     commands_sent += 1
                     await chrome_ws.send(msg)
 
             async def chrome_to_client():
                 async for msg in chrome_ws:
+                    try:
+                        parsed = json.loads(msg)
+                    except (ValueError, TypeError):
+                        parsed = None
+                    if isinstance(parsed, dict):
+                        tunnel_filter.observe_incoming(parsed)
                     await client_ws.send_text(msg)
 
             tunnel_tasks = [
@@ -463,6 +481,15 @@ def create_agent_app(
                     task.cancel()
             await asyncio.gather(*tunnel_tasks, return_exceptions=True)
             if chrome_ws:
+                # Best-effort removal of per-session scripts this connection
+                # registered, before the browser-level socket goes away.
+                try:
+                    for cmd in tunnel_filter.disconnect_cleanup_commands():
+                        await chrome_ws.send(json.dumps(cmd))
+                except Exception as exc:  # noqa: BLE001 - cleanup must not break teardown
+                    logger.debug(
+                        "Tunnel script cleanup failed (%s)", type(exc).__name__
+                    )
                 await chrome_ws.close()
             try:
                 await client_ws.close()

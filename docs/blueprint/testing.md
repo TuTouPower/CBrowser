@@ -222,8 +222,36 @@ t032 执行者按本表运行，不需要回读 t028 的执行过程。所有 E2
 |探针机制与判定规则（阈值、脱敏、命令分类）|`tests/unit/test_automation_probe_harness.py`|unit|已跑|
 |全链矩阵 + 下载归属/恢复 + 授权拒绝|`test_automation_probe_chain.py::test_probe_chain_target_engine_matrix_and_disconnect`、`::test_probe_chain_ordinary_chromium_matrix`|integration|已跑|
 |Dialog 基线（普通 Chromium 全链 / 目标引擎直连）|`::test_probe_chain_dialog_contract`、`::test_probe_target_engine_dialog_contract`|integration|已跑|
-|外部 Browser.close 停 Profile|`::test_probe_chain_external_browser_close_stops_profile`|integration|已跑|
+|外部 Browser.close 停 Profile|`::test_probe_chain_external_browser_close_stops_profile`|integration|已废止：t030 隧道策略变更为拒绝，测试整体替换为 `test_probe_chain_external_browser_close_rejected`（见下节）|
 |L0–L6 增量与 CDP/XTEST 输入比较|`tests/fixtures/automation_probe/run_levels.py`（env：CBROWSER_T029_ENGINE_CACHE、CBROWSER_T029_REPORT_DIR、T029_XTE、T029_SAMPLES）|采样驱动|已跑（每级 5 样本）|
 |t032 真实镜像复核|`tests/e2e/test_automation_compatibility_probe_e2e.py`（`CBROWSER_T029_PROBE_E2E=1` 门控）|e2e|默认 skip，t032 执行|
 
 预登记判定：L0–L6 每级 ≥5 个独立进程样本；字段值落在 L0 全部样本之外且该级 ≥4/5 复现才记新增变化。输入比较的采用规则：只有 CDP 出现可复现新增变化或坐标误差 >1 CSS px 才判定 XTEST 有采用收益。采样样本目录在样本结束后自清理（小 tmpfs 上 profile 目录堆积会撑爆磁盘）。外站检测器（BrowserLeaks/CreepJS/Pixelscan）不可达记 NOT_RUN，不以总分或 isTrusted 证明不可检测。
+
+## Agent 执行器验证（t030）
+
+执行器测试在 `tests/unit/test_agent_executor_*.py`（账本、ref、Dialog、
+CLI、隧道过滤、跨调用状态）与
+`tests/integration/test_agent_executor_chain.py`（真实 Chromium +
+目标引擎链路）。证据分级与 t029 相同：云端已验 ≠ 真实镜像已验；
+真实 arm64 镜像、容器化 X11/Stream、Mac Chrome Viewer 只在 t032 判定。
+
+|用例|入口|云端状态|
+|---|---|---|
+|CLI 端到端（用户页快照、agent 页 popup 归属、输入提取、清理）|`test_executor_cli_chromium_end_to_end`|已跑|
+|Dialog pending 与遗留（应答、消解结果）|`test_executor_dialog_pending_and_legacy`|已跑|
+|ref 导航失效与节点替换失效|`test_executor_ref_stale_after_navigation_and_replace`|已跑|
+|隧道拒绝与会话下载捕获|`test_tunnel_rejections_and_session_download_capture`|已跑|
+|隧道脚本登记与断开清理|`test_tunnel_script_registration_cleaned_on_disconnect`|已跑|
+|目标引擎核心流|`test_executor_target_engine_core_flow`|已跑|
+|t029 策略变更替换：外部 close 被拒、no_defaults=False 连接被拒|`test_probe_chain_external_browser_close_rejected` 及矩阵测试的 False 分支（t030 裁决来源）|已跑（引擎缓存检测：`CBROWSER_T029_ENGINE_CACHE` 优先，其次包默认 `~/.cloakbrowser`，再其次 `~/.cache/cloakbrowser`；三处皆无则 skip 并在 skip 信息中明示该变量）|
+|prompt 对话框 accept + promptText 真实浏览器验证|`test_executor_dialog_prompt_accepts_text`|已跑|
+|文件选择独立步骤（跨调用会话先请求 document）|`test_executor_set_input_files`（integration）+ `test_cli_set_input_files_step`（unit fake）|已跑|
+|超时/取消可区分（step_timeout、dialog_timeout、dialog_not_open、cancelled、失败后清理）|`test_cli_timeout_codes_are_distinguishable`、`test_cli_program_timeout_and_cancel_are_distinguishable`|已跑|
+|安装入口与 --help 冒烟|`test_cli_help_smoke_and_entrypoint_declaration`|已跑|
+
+云端实测修正的 t029 结论（t032 不必复测旧语义）：AX 树只在 frame 根节点
+带 frameId（快照 frame 归属改以 DOM 映射为准）；`addScriptToEvaluateOnNewDocument`
+须先 `Page.enable` 否则注册成功但脚本不运行；无认领会话时 Chrome 在打开
+时即自动 dismiss dialog（遗留消解为 false）；lingering 处理会话滞留的
+dialog 属 Chrome 层限制（新会话无法启用 Page 也无法应答），见执行器规约。

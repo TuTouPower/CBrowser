@@ -69,6 +69,7 @@ _MAIN_HTML = """<!doctype html>
 <button id="popup-btn" type="button">Open popup</button>
 <a id="download-link" href="/download">Download probe file</a>
 <input id="text-input" type="text" autocomplete="off">
+<input id="file-input" type="file">
 <div id="pad" style="width:300px;height:180px;background:#446688">Pointer pad</div>
 <div id="scrollbox" style="width:320px;height:120px;overflow:auto;border:1px solid #000">
   <div style="height:600px;padding-top:420px">
@@ -847,11 +848,19 @@ def write_profile_snapshot(
 
 
 def engine_cache_dir() -> Path | None:
-    """Locate a CloakBrowser engine cache (env override or default)."""
+    """Locate a CloakBrowser engine cache (env override or default).
+
+    Candidates: the CBROWSER_T029_ENGINE_CACHE override, then the
+    cloakbrowser package default (~/.cloakbrowser), then the legacy
+    ~/.cache/cloakbrowser.  Missing all three means skip -- and the
+    skip message names the override, so a green gate never silently
+    means "the policy-change tests did not run".
+    """
     candidates = []
     override = os.environ.get("CBROWSER_T029_ENGINE_CACHE")
     if override:
         candidates.append(Path(override))
+    candidates.append(Path.home() / ".cloakbrowser")
     candidates.append(Path.home() / ".cache" / "cloakbrowser")
     for candidate in candidates:
         binary = candidate / f"chromium-{TARGET_ENGINE_VERSION}" / "chrome"

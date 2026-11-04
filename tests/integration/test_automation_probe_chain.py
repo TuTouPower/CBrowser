@@ -317,7 +317,10 @@ def _assert_matrix_output(payload: dict) -> None:
 async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
     cache = engine_cache_dir()
     if cache is None:
-        pytest.skip("CloakBrowser target engine cache not installed")
+        pytest.skip(
+            "CloakBrowser target engine cache not installed; set "
+            "CBROWSER_T029_ENGINE_CACHE to the cache dir to run this test"
+        )
     if shutil.which("Xvfb") is None:
         pytest.skip("Xvfb not available")
     root = Path(tempfile.mkdtemp(prefix="cbrowser-t029-target-", dir="/tmp"))
@@ -345,6 +348,14 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
                 headers={"Authorization": f"Bearer {chain.token}"},
             ).start()
 
+            # POLICY CHANGE (t030, replaces the t029 no_defaults=False
+            # expectation): the mediated tunnel rejects
+            # Browser.setDownloadBehavior, so Playwright's
+            # connect_over_cdp with no_defaults=False now fails fast at
+            # connect time with the stable tunnel error instead of
+            # taking over download capture.  External clients must use
+            # no_defaults=True (or raw CDP without download overrides).
+            # The browser and the user page must survive the refusal.
             outcomes: dict[str, dict] = {}
             for no_defaults in (True, False):
                 out_path = root / f"matrix-{no_defaults}.json"
@@ -361,29 +372,34 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
                     "exit",
                     *(["--no-defaults"] if no_defaults else []),
                 )
+                if not no_defaults:
+                    assert rc != 0, "no_defaults=False connect must be refused"
+                    assert "CBrowser tunnel" in stderr
+                    assert "Browser.setDownloadBehavior" in stderr
+                    # Nothing was clicked (connect failed first), so no
+                    # download may have been captured.
+                    assert chain.downloads_snapshot() == downloads_before
+                    outcomes[str(no_defaults)] = {
+                        "connect_rejected": True,
+                        "reason": "tunnel rejects Browser.setDownloadBehavior",
+                    }
+                    assert _pid_alive(int(runner.chrome_pid))
+                    assert await page.evaluate("() => document.title") == (
+                        "CBrowser Probe Main"
+                    )
+                    continue
                 assert rc == 0, stderr
                 assert payload is not None
                 _assert_matrix_output(payload)
                 captured = await chain.wait_new_downloads(downloads_before)
                 payload["agent_capture_during_connection"] = captured
-                if no_defaults:
-                    # Playwright applied no download behavior of its own,
-                    # so the Agent's browser-level capture must have taken
-                    # the file clicked during the connection (AC-002).
-                    assert captured, (
-                        "Agent did not capture the download clicked during "
-                        "a no-defaults external connection"
-                    )
-                else:
-                    # With defaults applied, Playwright's per-context
-                    # download behavior replaces the browser-level one:
-                    # the client gets the event and the Agent must NOT
-                    # capture the file (AC-002, measured both ways).
-                    assert payload["download"]["event"] == "download"
-                    assert captured == [], (
-                        "Agent captured a download that Playwright's "
-                        "default-context behavior should have taken"
-                    )
+                # Playwright applied no download behavior of its own,
+                # so the Agent's browser-level capture must have taken
+                # the file clicked during the connection (AC-002).
+                assert captured, (
+                    "Agent did not capture the download clicked during "
+                    "a no-defaults external connection"
+                )
                 outcomes[str(no_defaults)] = payload
                 assert _pid_alive(int(runner.chrome_pid))
                 assert await page.evaluate("() => document.title") == (
@@ -712,7 +728,10 @@ async def test_probe_target_engine_dialog_contract() -> None:
     """
     cache = engine_cache_dir()
     if cache is None:
-        pytest.skip("CloakBrowser target engine cache not installed")
+        pytest.skip(
+            "CloakBrowser target engine cache not installed; set "
+            "CBROWSER_T029_ENGINE_CACHE to the cache dir to run this test"
+        )
     if shutil.which("Xvfb") is None:
         pytest.skip("Xvfb not available")
     root = Path(tempfile.mkdtemp(prefix="cbrowser-t029-dlg-target-", dir="/tmp"))
@@ -927,13 +946,23 @@ async def test_probe_chain_client_killed_mid_connection_survival() -> None:
 
 
 @pytest.mark.asyncio
-async def test_probe_chain_external_browser_close_stops_profile() -> None:
+async def test_probe_chain_external_browser_close_rejected() -> None:
+    """POLICY CHANGE (t030, replaces the t029 close-stops-profile test).
+
+    The mediated tunnel rejects external Browser.close with a stable
+    error: no external client may stop the Profile through the tunnel.
+    The browser, the user page and the runner state must all survive the
+    refusal; lifecycle close stays on the Agent's own /control path.
+    """
     cache = engine_cache_dir()
     if cache is None:
-        pytest.skip("CloakBrowser target engine cache not installed")
+        pytest.skip(
+            "CloakBrowser target engine cache not installed; set "
+            "CBROWSER_T029_ENGINE_CACHE to the cache dir to run this test"
+        )
     if shutil.which("Xvfb") is None:
         pytest.skip("Xvfb not available")
-    root = Path(tempfile.mkdtemp(prefix="cbrowser-t029-close-", dir="/tmp"))
+    root = Path(tempfile.mkdtemp(prefix="cbrowser-t030-close-", dir="/tmp"))
     runner_cls = host_runner_class()
     runner = runner_cls(
         profile_id="p1",
@@ -962,27 +991,30 @@ async def test_probe_chain_external_browser_close_stops_profile() -> None:
                 version = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
                 assert "result" in version
                 await ws.send(json.dumps({"id": 2, "method": "Browser.close"}))
-                try:
-                    await asyncio.wait_for(ws.recv(), timeout=5)
-                except Exception:  # noqa: BLE001 - close may end the socket
-                    pass
+                rejected = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                assert rejected["id"] == 2
+                assert rejected["error"]["code"] == -32000
+                assert "CBrowser tunnel" in rejected["error"]["message"]
             pid = int(runner.chrome_pid)
-            for _ in range(150):
-                if not _pid_alive(pid):
-                    break
+            # Poll liveness instead of a fixed sleep: a rejected close
+            # either takes effect immediately or not at all, so repeated
+            # alive checks over a second are the stronger assertion (and
+            # cannot flake on a slow machine).  Long-term survival is
+            # covered by the title assertion and the chain tests below.
+            for _ in range(10):
+                assert _pid_alive(pid), (
+                    "rejected Browser.close must not stop the browser"
+                )
                 await asyncio.sleep(0.1)
-            assert not _pid_alive(pid), "external Browser.close must stop the browser"
-            state_text = ""
-            for _ in range(100):
-                for candidate in (root / "events").rglob("*.json"):
-                    text = candidate.read_text(encoding="utf-8", errors="ignore")
-                    if '"stopped"' in text:
-                        state_text = text
-                        break
-                if state_text:
-                    break
-                await asyncio.sleep(0.1)
-            assert state_text, "runner must persist the stopped state"
+            assert await page.evaluate("() => document.title") == (
+                "CBrowser Probe Main"
+            )
+            stopped = [
+                candidate
+                for candidate in (root / "events").rglob("*.json")
+                if '"stopped"' in candidate.read_text(encoding="utf-8", errors="ignore")
+            ]
+            assert not stopped, "runner must not persist a stopped state"
         finally:
             await chain.stop()
             await runner.stop()
