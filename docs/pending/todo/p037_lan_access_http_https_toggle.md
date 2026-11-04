@@ -19,7 +19,7 @@
 - 媒体面改造路径（可行，已有预留）：
     - Selkies 原生支持 1:1 NAT host candidate：`--webrtc-public-ip` 已由 `CBROWSER_WEBRTC_PUBLIC_IP` 传入（`config/docker/stream_runtime/entrypoint.sh:194,217`），但 Supervisor 调用 `start_stream_container` 未传 `public_ip`，实际固定默认 `127.0.0.1`（`src/backend/cbrowser/supervisor/core.py:1095`、`docker_adapter.py:956`）。
     - UDP mux 端口当前发布到 `127.0.0.1`（`container_spec.py:166`）。需改为绑定 LAN 可达地址，或始终绑定 `0.0.0.0` 后由访问控制兜底。
-    - `docs/v2_architecture_plan.md:602` 原设计已规划 `CBROWSER_WEBRTC_MODE=local|lan|public|relay-only` 与 `CBROWSER_WEBRTC_ADVERTISE_IP`，但未实现；可作为设计基础，并需新 ADR 修订 ADR 013 的“仅同机”约束。
+    - `docs/plan_v2_architecture_.md:602` 原设计已规划 `CBROWSER_WEBRTC_MODE=local|lan|public|relay-only` 与 `CBROWSER_WEBRTC_ADVERTISE_IP`，但未实现；可作为设计基础，并需新 ADR 修订 ADR 013 的“仅同机”约束。
     - 重启切换 LAN 模式会重建 Stream 容器（端口绑定与候选 IP 创建时固定）；Browser 容器与 Profile 数据保留，现有会话断线重连。
 - 主要难点：
     - 宿主 LAN IP 的来源与多网卡/DHCP 变更：Supervisor 在容器内，难以可靠自动探测；倾向由配置或 UI 让用户确认/填写，再由部署侧自动预填。
