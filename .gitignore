@@ -4,6 +4,9 @@
 .scratch/
 *.log
 
+# 设计参考原型（外部前端 demo，仅本地参照，不入库）
+/.design_reference/
+
 # Python
 __pycache__/
 *.py[cod]
