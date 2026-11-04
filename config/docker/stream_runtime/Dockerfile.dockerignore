@@ -11,3 +11,6 @@
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/stream_agent/
 !src/backend/cbrowser/stream_agent/**
+
+**/__pycache__
+**/*.pyc

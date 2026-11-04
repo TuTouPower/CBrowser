@@ -12,3 +12,6 @@
 !src/backend/
 !src/backend/cbrowser/
 !src/backend/cbrowser/**
+
+**/__pycache__
+**/*.pyc

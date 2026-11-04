@@ -148,6 +148,11 @@ def test_sensitive_paths_never_admitted_by_runtime_contexts() -> None:
         "config/deploy/secrets/supervisor_key",
         "config/deploy/compose.env",
         ".scratch/probe/run.py",
+        # Bytecode is build-machine state, not source: admitting it makes
+        # otherwise identical builds produce different image IDs (t032
+        # repeat-deploy drill) and can ship stale code.
+        "src/backend/cbrowser/__pycache__/module.cpython-312.pyc",
+        "src/backend/cbrowser/stream_agent/__pycache__/agent.cpython-312.pyc",
     ]
     admitted: list[str] = []
     for dockerfile in _runtime_dockerfiles():

@@ -1,3 +1,6 @@
 *
 !src/backend
 !config/docker/api_runtime/requirements.txt
+
+**/__pycache__
+**/*.pyc
