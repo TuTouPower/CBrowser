@@ -434,6 +434,14 @@ async def test_agent_identity_isolation_between_profiles(tmp_path: Path) -> None
 
 @pytest.mark.asyncio
 async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
+    """Agent replacement precision (t028 AC-002, restoring 251fa0f).
+
+    The t015 cleanup weakened this scenario to "old Viewer receives any
+    CLOSE".  The contract is exact: the old Viewer is closed with code
+    1001, the replacement connection carries a different conn_id, the new
+    Viewer/Agent pair exchanges messages in both directions, and the old
+    Agent's exit does not close the new Viewer.
+    """
     harness = GatewayHarness(tmp_path)
     await harness.start()
     try:
@@ -470,6 +478,7 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
                 aiohttp.WSMsgType.CLOSED,
                 aiohttp.WSMsgType.CLOSE,
             )
+            assert close_v1.data == 1001
 
             ws_viewer_2 = await session.ws_connect(
                 f"{harness.ws_url}/stream/{profile_id}/signal",
@@ -482,6 +491,7 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
                 (await ws_agent_2.receive()).data
             )
             assert open_2.type == "open"
+            assert open_2.conn_id != open_1.conn_id
 
             await ws_viewer_2.send_str("MSG_FROM_V2")
             agent_in = GatewayTunnelEnvelope.model_validate_json(
@@ -490,6 +500,46 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
             assert agent_in.type == "msg"
             assert agent_in.conn_id == open_2.conn_id
             assert agent_in.data == "MSG_FROM_V2"
+
+            # Downstream: Agent 2 replies to Viewer 2 on the new conn_id.
+            await ws_agent_2.send_str(
+                GatewayTunnelEnvelope(
+                    version="v2",
+                    type="msg",
+                    profile_id=profile_id,
+                    runtime_instance_id=instance_id,
+                    agent_session_id=sess_2,
+                    conn_id=open_2.conn_id,
+                    data="REPLY_FROM_A2",
+                ).model_dump_json()
+            )
+            reply = await asyncio.wait_for(ws_viewer_2.receive(), timeout=2.0)
+            assert reply.type == aiohttp.WSMsgType.TEXT
+            assert reply.data == "REPLY_FROM_A2"
+
+            # The replaced Agent's exit must not close the new Viewer:
+            # Viewer 2 stays connected and keeps exchanging messages.
+            # A delayed erroneous CLOSE is also ruled out: no close-family
+            # frame may arrive within a bounded quiet window after the
+            # old Agent exits.
+            await ws_agent_1.close()
+            try:
+                late = await asyncio.wait_for(ws_viewer_2.receive(), timeout=0.5)
+            except asyncio.TimeoutError:
+                late = None
+            assert late is None or late.type not in (
+                aiohttp.WSMsgType.CLOSE,
+                aiohttp.WSMsgType.CLOSING,
+                aiohttp.WSMsgType.CLOSED,
+            )
+            assert not ws_viewer_2.closed
+            await ws_viewer_2.send_str("STILL_ALIVE")
+            still_in = GatewayTunnelEnvelope.model_validate_json(
+                (await ws_agent_2.receive()).data
+            )
+            assert still_in.type == "msg"
+            assert still_in.conn_id == open_2.conn_id
+            assert still_in.data == "STILL_ALIVE"
 
             await ws_viewer_2.close()
             await ws_agent_2.close()

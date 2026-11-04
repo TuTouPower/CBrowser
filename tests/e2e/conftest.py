@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 import pytest
 from api_auth import create_auth_context
-from e2e_env import REQUIRED_E2E_ENV
+from e2e_env import REQUIRED_E2E_ENV, image_identity_problems
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -80,8 +80,14 @@ def pytest_collection_modifyitems(config, items):
     if os.environ.get("CBROWSER_E2E_REQUIRED") != "1":
         return
     missing = _missing_requirements(items)
-    if missing:
+    # Required mode is fail-closed on image identity (t028 AC-005): a set
+    # variable holding a tag, a malformed digest, or an ID that does not
+    # resolve locally fails the session exactly like a missing variable.
+    identity = image_identity_problems()
+    if missing or identity:
         details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
+        if identity:
+            details += "\n" + "\n".join(f"- {problem}" for problem in identity)
         pytest.exit(f"E2E required mode is missing prerequisites:\n{details}", returncode=2)
 
 

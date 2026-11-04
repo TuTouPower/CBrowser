@@ -55,11 +55,13 @@ pytest .repo_template/tests -q -m contract
 
 ## blackbox_verify
 
-真实 Docker/Chrome 黑盒通过同一入口的 E2E 必需模式执行；缺少镜像、缓存或 Chrome 时在会话开始即失败并列出缺项。
+真实 Docker/Chrome 黑盒通过同一入口的 E2E 必需模式执行；缺少镜像、缓存或 Chrome 时在会话开始即失败并列出缺项。必需模式下，镜像类环境变量还须通过不可变身份校验（`tests/fixtures/e2e_env.py` 的 `image_identity_problems`）：值必须是 `sha256:<64 位十六进制>` 的镜像 ID、本地存在且可解析，tag、短摘要或本地不存在一律在收集期失败封闭并逐项列出，不得降级为跳过。
 
 ```bash
 CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 ```
+
+门禁证据模式：设置 `CBROWSER_GATE_EVIDENCE_DIR=<dir>` 运行 `scripts/run_gates.sh` 时，各 suite 逐个执行到底（单 suite 失败不中止后续 suite），每 suite 的脱敏日志（`scripts/redact_evidence.py` 处理 token/password/secret/api_key/authorization 与 Bearer/会话 Cookie）、JUnit XML（pytest suite）与退出码保留在证据目录，并生成 `manifest.json`：含逐 suite 的名称、完整命令、退出码、log 与 junit 路径、运行镜像的不可变身份（`image_identity` 字段，取自同一身份校验）与总判定 `all_passed`；任一 suite 非零时总退出码非零。未设置该变量时保持默认 fail-fast 行为。
 
 ## Stream Runtime 组件验证
 
@@ -148,7 +150,7 @@ t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS �
 
 网络与启动清理专项还须运行 `test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`、`test_supervisor_policy_failure_e2e.py` 和 `test_supervisor_orphan_helpers_e2e.py`。仅在持有 CoordinatorLock 的启动阶段回收遗留 helper，周期扫描不得调用该清理。
 
-资源压力验证继续运行 `test_supervisor_resource_policy_e2e.py`、`test_supervisor_resource_capacity_e2e.py`、`test_supervisor_resource_monitor_e2e.py`，以及 Stream Runtime 的真实 Chrome CPU 降帧用例。保存实际 CPU counter、quota、采样窗口、配额下发与 Chrome 帧数；资源算法、真实采样、实际画面各自证据不互相替代。
+资源策略与配额链验证分三层：资源算法与状态机由 unit 层 `test_supervisor_resource_policy.py`、`test_supervisor_resource_aggregation.py`、`test_resource_fault_isolation.py` 及 integration 层对应文件覆盖；真实 Docker CPU 采样与 monitor/policy 决策由 `test_supervisor_resource_policy_e2e.py`、`test_supervisor_resource_capacity_e2e.py`、`test_supervisor_resource_monitor_e2e.py` 覆盖，其中 monitor 用例的投递腿是本地回调，只证明决策与采样、不证明 Gateway 投递；真实配额投递链由 `tests/e2e/test_supervisor_quota_chain_e2e.py` 在真实 Gateway 拓扑中经生产控制客户端（`GatewayControlClient.set_quota`，与 Supervisor `ResourceMonitor` 相同的投递路径）下发配额，以 Viewer 页实际解码帧数与帧几何判定生效、客户端越权不生效与配额清除后恢复；CPU policy 腿复用 `tests/fixtures/supervisor_resource_probe/stream_monitor.py`，其配额投递同样走生产控制客户端（该探针原先的自建 mock Gateway socket 投递已由 t028 替换，未复活）。保存实际 CPU counter、quota、采样窗口、配额下发与 Chrome 帧数；资源算法、真实采样、实际画面各自证据不互相替代。
 
 Supervisor 控制契约导出使用：
 
@@ -169,3 +171,44 @@ t007 前端门禁：`npm run build` 的 `prebuild` 自动拉取并校验官方 S
 E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须用当前源重建（旧 API 镜像缺 `/api/v1/events` 与 Runtime Coordinator，旧 Supervisor 镜像不写 Selkies token 文件）。`test_frontend_app_*` 用构建产物经 Caddy 托管，API 启用 Runtime Coordinator（`CBROWSER_REQUIRE_SUPERVISOR=1`），Profile 启停只经界面/`/api/v1`。测试代码不得自带编排互斥锁或引用 `.scratch` 编排目录；多路并行跑 Docker E2E 时由外层调度互斥。
 
 t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 ApiClient/SSE/下载链接三入口的绝对、协议相对、反斜杠与混合变体（`client.sameorigin.test.ts`、`sse.sameorigin.test.ts`）；真实 HTTP 夹具改为注入 fetch 按 origin 转发到测试服务器（客户端已无 baseUrl/url 配置项）；注销失败处置走生产 AppProviders + 实现 `setOnUnauthorized` 的真实 SSE 客户端断言回调路径（`providers.unauthorized.test.tsx`），AppProviders 默认 QueryClient retry 接线由 `providers.defaults.test.tsx` 守卫；跨 Profile 动作隔离由三页面的 `*.isolation.test.tsx` 覆盖，apply 阶段续跑由 `useProfilesQuery.applyresume.test.tsx` 以服务端幂等重放模型覆盖。真实 Docker/Chrome 拓扑下的会话回归（真实 401 注销、跨 Profile 切换与应用并重启）不在云端执行，统一由 t032 在目标环境判定。
+
+## 历史实跑覆盖矩阵（t028）
+
+下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。
+
+|来源|原行为|现行入口|触达组件|证据层级|云端结果|t032 待执行项|
+|---|---|---|---|---|---|---|
+|p016|网络保护真实行为|`test_supervisor_browser_network_e2e.py`（出口/媒体独立桥）、`test_supervisor_network_ownership_e2e.py`（归属/幂等/精确清理）、`test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`、`test_supervisor_policy_failure_e2e.py`（内核策略）；附网/回滚另见 `test_supervisor_reconciliation_e2e.py`|Supervisor reconcile/attach、Stream 策略安装|真实拓扑|skip|AC-008、AC-009|
+|p016|Supervisor 真实配额实际生效|`test_supervisor_quota_chain_e2e.py`；CPU 腿 `supervisor_resource_probe/stream_monitor.py`|`ResourceMonitor` → `GatewayControlClient.set_quota` → Gateway `SUPERVISOR_QUOTA` → Agent/Selkies|真实拓扑 + Viewer 解码帧|skip（collect-only）|AC-008|
+|p016|Agent 替换关闭旧 Viewer|`test_gateway_signaling.py::test_agent_replacement_closes_old_viewers`|Gateway 会话替换（close 1001、新 conn_id、下行回复、旧 Agent 退出后续传）|集成（真实 Gateway）|已实跑通过（t028 恢复 251fa0f 精确断言）|随 AC-014 复验|
+|p021（t019）|无外部 STUN/TURN、ICE-lite 与首帧时延|`test_stream_ice_config.py`（unit）；`test_frontend_app_e2e.py` t019 用例|Stream entrypoint ICE-lite 参数、前端会话建立|unit + 真实 Chrome|unit 已跑通过；e2e skip|AC-003|
+|p022（t020）|字体包三档贯通|`test_font_bundles.py`（unit）；`test_profile_font_bundle_api.py`（integration）；`test_browser_font_bundles_e2e.py`|API font_bundle 字段、Supervisor 注入、Browser 渲染|unit/integration + 真实拓扑|unit/integration 已跑通过；e2e skip|AC-004|
+|p023（t021）|控制 API/文件交换/OpenAPI 契约|`tests/contract/` 与 schemas 导出校验|API 路由、协议 schema、文件交换契约|契约|已跑通过|AC-005|
+|p023（t021）|Origin 变体授权|unit origin 授权测试 + integration 真实 HTTP|API 授权中间件|unit/integration|已跑通过|AC-005|
+|p023（t021）|工件下载全链|`test_artifact_download_chain_e2e.py`（t028 新建）|浏览器下载捕获 → ArtifactService 入库 → API 下载字节/sha256 比对|真实拓扑|skip（collect-only）|AC-002、AC-005|
+|p023（t021）|删除意图跨重启续跑|`test_artifact_delete_resume_e2e.py`（t028 新建）|`ArtifactService.delete` 意图持久化、启动 `resume_pending_deletions`|真实 API 子进程（两段启停）|已实跑通过|随 AC-014 复验|
+|p023（t021）|打包 import 契约|`test_exit_reason_allowlist.py`（import `cbrowser.runtime_event_log` / `emit_runtime_event_log`）|打包后模块路径|unit|已跑通过|—|
+|p024（t022）|X11 helper 权限收敛|`test_x11_helper_permissions_e2e.py`（t028 新建）；另见 `test_supervisor_orphan_helpers_e2e.py`|`DockerAdapter.setup_x11_permissions`|真实 Docker|skip（collect-only）|AC-006|
+|p024（t022）|缓存代次|`test_supervisor_cache_generations.py`|Supervisor 缓存代次封存/重验|unit|已跑通过|随 AC-014 复验|
+|p024（t022）|双族网络策略 DROP|`test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`、`test_supervisor_policy_failure_e2e.py`|netns 策略安装与失败封闭|真实拓扑|skip|AC-006|
+|p024（t022）|keymap 调用顺序|`test_stream_keymap_abi.py`、`test_stream_binding_guards.py`|Stream keymap ABI 适配层|unit|已跑通过|AC-006（真实调用顺序）|
+|p024（t022）|多 Agent 注册预算|`test_gateway_registration_budget_e2e.py`（t028 新建）；集成层见 `test_gateway_signaling.py`|Gateway `RegistrationThrottle`（在途 4、失败 20/60s、重启恢复）|真实拓扑 + 集成|e2e skip（collect-only）；集成已跑|AC-006|
+|p024（t022）|search-defaults 真链|`test_search_defaults_retry_live_e2e.py`（t028 新建）；`test_api_search_defaults_routes.py`、`test_runtime_coordinator_integration.py`（integration）|API retry 路由（CSRF/幂等键）→ RuntimeCoordinator → Supervisor → 状态围栏|真实进程链 + 集成|e2e skip（collect-only）；集成已跑|AC-006|
+|p026（t023）|前端会话/请求语义与构建链|src/frontend Vitest（含 t025 残余回归）；`frontend_probe` harness（镜像身份只经 REQUIRED_E2E_ENV 注入，t028 删除 `.scratch` 旁路读取）|前端 ApiClient/SSE、host_builder 构建|前端 + 契约|已跑通过|AC-007|
+|p027（t024）|Supervisor/Stream 镜像真实构建|`config/docker/` 各 Dockerfile；run_gates 证据模式 manifest 的 `image_identity`|镜像构建与身份固定|构建证据|manifest 机制 unit 已验；真实构建未跑|AC-002|
+
+## t032 运行映射（t028）
+
+t032 执行者按本表运行，不需要回读 t028 的执行过程。所有 E2E 先按 `config/docker/` 的 Dockerfile 构建镜像并以 `docker image inspect` 的 `.Id` 固定身份；预算为 M1 Max 基准的预留量，以目标机实测为准。结果 artifact 字段以证据模式 `manifest.json` 为准：`suites[].name/command/exit_code/log/junit`、`image_identity`、`all_passed`；AC-015 最终验收报告逐项引用实际镜像 ID、退出码、逐 suite 计数（以 junit 为准）与 JUnit 路径，不得以云端结果替代。
+
+|t032 待执行项|指令|所需镜像与环境变量|资源/时间预算|结果 artifact 字段|
+|---|---|---|---|---|
+|AC-002 镜像构建与身份固定|逐个 `docker build -f config/docker/<name>/Dockerfile` 后 `docker image inspect` 取 `.Id` 写入 env 文件；再以 `CBROWSER_E2E_REQUIRED=1` 收集校验|全部 REQUIRED_E2E_ENV 镜像变量 + 引擎/GeoIP 缓存|首次全量构建为主要耗时，预留半天（含缓存预热）|`image_identity`；报告记录实际镜像 ID|
+|AC-003 ICE/首帧|`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 或单跑 `test_frontend_app_e2e.py` 的 t019 用例|RUNTIME/STREAM/API/CADDY 镜像 + 官方 Chrome|单用例数分钟|`suites[].exit_code/log/junit`；报告含候选类型与首帧样本|
+|AC-004 字体三档|单跑 `test_browser_font_bundles_e2e.py`|RUNTIME 镜像|数分钟|同上；附三档渲染证据路径|
+|AC-005 契约真实拓扑|必需模式全量 E2E（见 AC-014 指令）|全镜像集|完整 E2E 按小时级预留、分批执行|manifest 全部字段|
+|AC-006 运行时恢复|单跑 `test_x11_helper_permissions_e2e.py`、`test_gateway_registration_budget_e2e.py`、`test_search_defaults_retry_live_e2e.py` 与 namespace/ipv6/policy_failure 三件|SUPERVISOR/GATEWAY/API/RUNTIME/STREAM 镜像|每件数分钟|`suites[]` 逐项退出码与 log|
+|AC-007 前端部署|部署产物上单跑 frontend app/session E2E|部署 release + 全镜像集|数十分钟|同上|
+|AC-008 p016 配额/网络|单跑 `test_supervisor_quota_chain_e2e.py`、`test_supervisor_browser_network_e2e.py`、`test_supervisor_network_ownership_e2e.py`|全镜像集 + 引擎缓存|配额链含 CPU 采样窗口，约 10 分钟级|stream_monitor proof JSON（windows/deliveries）+ manifest|
+|AC-009 附网/回滚与发布演练|单跑 `test_supervisor_reconciliation_e2e.py`；发布演练按 `DOCKER_DEPLOYMENT.md` 步骤|全镜像集|数十分钟 + 演练人工步骤|同上|
+|AC-014 required + 证据模式全跑|`CBROWSER_E2E_REQUIRED=1 CBROWSER_RUN_E2E=1 CBROWSER_GATE_EVIDENCE_DIR=<dir> scripts/run_gates.sh`|全镜像集与缓存|全量门禁 + 完整 E2E，预留半天|manifest.json（逐 suite 计数以 junit 为准、`all_passed`、`image_identity`）|

@@ -36,13 +36,13 @@ t015 删 TURN 时误删与 TURN 无关的端到端断言；后续 task 的真实
 
 <!-- /规范 -->
 
-- [ ] AC-001：覆盖矩阵逐项列出 p016 原行为与 p021–p024、p026、p027 历史项的现行入口、触达组件、证据层级（unit/integration/真实 E2E）、云端结果与 t032 待执行项；已覆盖条目引用具体断言，t026 负责的新拓扑条目引用其用例，缺口均有可收集执行入口。
-- [ ] AC-002：Agent 替换用例断言旧 Viewer close=1001、新旧 conn_id 不同、新连接上下行回复正确、旧 Agent 退出不误关新 Viewer；仅收到任意 CLOSE、宽泛超时或异常均不能通过。
-- [ ] AC-003：真实配额探针观测链贯通 Supervisor、Gateway、Agent、Stream 和 Chrome，记录投递值、CPU counter/采样窗、限帧值与实际帧数；客户端抬高 FPS 不突破 cap，布局保持，motion/static 与 CPU policy 分别有证据；链路任一环节不以内存回调或 mock 服务替代。
-- [ ] AC-004：矩阵确认缺失的历史项各有可收集的真实 E2E 入口与明确断言：真实 Chrome 下载经 Agent、Supervisor 进程到 API Artifact 全链；删除意图跨真实进程重启续跑；真实容器内 X11 helper 权限；真实 Gateway 上多 Agent 注册预算/429/恢复；活 context 上 search-defaults 重试。
-- [ ] AC-005：E2E required 模式只接受本机存在的不可变 `sha256:` 镜像 ID，缺失、非 ID 形式或无法解析即明确失败；不静默读取 `.scratch` 等旁路文件；evidence 记录实际镜像 ID；普通收集不能冒充已运行。
-- [ ] AC-006：`run_gates.sh` 证据模式跑完全部 suite，在保留的证据目录记录逐 suite 命令、退出码、JUnit 与脱敏 evidence 路径，任一 suite 失败时总退出码非零；默认模式行为不变。
-- [ ] AC-007：每次探针资源与证据独立，正常/失败路径均只清理本轮资源并脱敏；运行指令、预算和 artifact 字段逐项映射到 t032。
+- [x] AC-001：覆盖矩阵逐项列出 p016 原行为与 p021–p024、p026、p027 历史项的现行入口、触达组件、证据层级（unit/integration/真实 E2E）、云端结果与 t032 待执行项；已覆盖条目引用具体断言，t026 负责的新拓扑条目引用其用例，缺口均有可收集执行入口。
+- [x] AC-002：Agent 替换用例断言旧 Viewer close=1001、新旧 conn_id 不同、新连接上下行回复正确、旧 Agent 退出不误关新 Viewer；仅收到任意 CLOSE、宽泛超时或异常均不能通过。
+- [x] AC-003：真实配额探针观测链贯通 Supervisor、Gateway、Agent、Stream 和 Chrome，记录投递值、CPU counter/采样窗、限帧值与实际帧数；客户端抬高 FPS 不突破 cap，布局保持，motion/static 与 CPU policy 分别有证据；链路任一环节不以内存回调或 mock 服务替代。
+- [x] AC-004：矩阵确认缺失的历史项各有可收集的真实 E2E 入口与明确断言：真实 Chrome 下载经 Agent、Supervisor 进程到 API Artifact 全链；删除意图跨真实进程重启续跑；真实容器内 X11 helper 权限；真实 Gateway 上多 Agent 注册预算/429/恢复；活 context 上 search-defaults 重试。
+- [x] AC-005：E2E required 模式只接受本机存在的不可变 `sha256:` 镜像 ID，缺失、非 ID 形式或无法解析即明确失败；不静默读取 `.scratch` 等旁路文件；evidence 记录实际镜像 ID；普通收集不能冒充已运行。
+- [x] AC-006：`run_gates.sh` 证据模式跑完全部 suite，在保留的证据目录记录逐 suite 命令、退出码、JUnit 与脱敏 evidence 路径，任一 suite 失败时总退出码非零；默认模式行为不变。
+- [x] AC-007：每次探针资源与证据独立，正常/失败路径均只清理本轮资源并脱敏；运行指令、预算和 artifact 字段逐项映射到 t032。
 
 ### 可测试性声明
 
