@@ -12,7 +12,7 @@
 
 1. 前端视觉与交互对齐设计参考原型（见第 13 节），并以根目录 `DESIGN.md` 作为唯一设计权威，支持亮色与暗色两种模式。
 2. 前端信息架构从「会话页为首页 + 侧栏 Profile 列表」改为「环境列表为首页 + 导航侧栏 + 独立会话页」。
-3. 新增业务能力：独立代理库、环境分组（替换现有 Tag）、环境卡片实时缩略图、指纹平台人格（windows / macos）与人格字体。
+3. 新增业务能力：独立代理库、环境分组（替换现有 Tag）、环境卡片实时缩略图、指纹平台（windows / macos）与平台字体。
 4. 底层框架、工具链、运行时与基础镜像升级到当前最新版本；只保留有事实依据的例外（第 7.2 节）。
 
 ### 1.2 不在本方案范围
@@ -21,6 +21,7 @@
 - 命令面板。
 - 代理连通性与出口 IP 检测：已暂搁为 `docs/pending/parked/p040_proxy_connectivity_exit_ip_check.md`。
 - 同窗口多会话分屏：已暂搁为 p039。
+- 独立桌面应用打包（不依赖 Docker）：已暂搁为 p041。
 - 运行 Profile 数量的容量实测与容器资源上限：用户不要求；软件层面不设数量上限（第 6.10 节）。
 - 自动化令牌管理 UI：API 已有，前端无界面，不在本方案范围。
 
@@ -38,12 +39,13 @@
 |D3|代理管理|独立代理库：新增 Proxy 实体，Profile 引用代理|
 |D4|分组|Tag 整体替换为 Group；每个环境最多属于一个分组；代码与文档不再出现业务 Tag 概念（例外见 6.2）|
 |D5|缩略图|做|
-|D6|指纹平台|做，支持 windows 与 macos 两种人格|
+|D6|指纹平台|做，支持 windows 与 macos 两种指纹平台|
 |D7|浏览器内核|无 key 免费内核（Chromium 146）；cloakbrowser 封装库锁 0.6.4（第 7.2 节）|
-|D8|人格字体|Windows 与 Mac 专有字体由 agent 获取（来源见 6.8），只在运行时挂载，不进镜像、不入库|
+|D8|平台字体|Windows 与 macOS 专有字体由 agent 获取（来源见 6.8），只在运行时挂载，不进镜像、不入库|
 |D9|旧数据|没有旧用户；schema 直接重写 baseline，不写数据迁移；用户测试数据由 agent 手动迁移|
 |D10|技术底层|默认升级到最新版本，包括大版本|
 |D11|命令面板、容量实测|不做|
+|D12|部署形态|当前只做 Docker 版；将来独立桌面应用与 Docker 版并存（`docs/pending/parked/p041_standalone_desktop_app.md`）。本方案的新增功能在两种形态下实现成本相当时，选择不依赖 Docker 或 Linux 的做法|
 
 ## 3. 与现状差异总览
 
@@ -57,9 +59,9 @@
 |配置版本|任何 PATCH 都生成新版本，改名也提示「待应用并重启」|只有运行配置变化才生成新版本|
 |最后活跃|无|运行时记录最后启动与最后停止时间|
 |浏览器版本|无真实上报|Runner 经 CDP 取版本与 UA 并上报|
-|缩略图|`capture_preview` 字段存在但无实现|Browser 容器内定时截取 X11 窗口，API 提供预览图|
+|缩略图|`capture_preview` 字段存在但无实现|Runtime Agent 经 CDP 定时截取当前页面，API 提供预览图|
 |指纹平台|`--fingerprint-platform=windows` 写死（`runner.py`）|Profile 字段 `fingerprint_platform`：windows / macos|
-|字体|镜像只有 `fonts-liberation`，另有可选文泉驿 `font_bundle`|基础开源字体入镜像；人格字体运行时只读挂载；按人格隔离可见字体|
+|字体|镜像只有 `fonts-liberation`，另有可选文泉驿 `font_bundle`|基础开源字体入镜像；平台字体运行时只读挂载；按指纹平台隔离可见字体|
 
 ## 4. 设计系统（DESIGN.md）
 
@@ -93,7 +95,7 @@
 |`surface-subtle`|表头、次级区块|`#E9EEEA`|`#1B231E`|
 |`surface-hover`|悬停|`#E2E9E4`|`#232B26`|
 |`sidebar`|侧栏底色|`#E7EDE9`|`#050A07`|
-|`stage`|会话舞台留白区|WP03 定|WP03 定|
+|`stage`|会话画面区背景|WP03 定|WP03 定|
 |`on-surface`|主文字|`#0D1611`|`#E6EDE8`|
 |`on-surface-muted`|次级文字|`#48534C`|`#A1ABA4`|
 |`on-surface-subtle`|三级文字、占位|`#656F69`|`#858F88`|
@@ -126,7 +128,7 @@
 |`body-md`|Space Grotesk|13px / 400 / 1.5|默认正文|
 |`body-sm`|Space Grotesk|12px / 400 / 1.5|表格单元、次级说明|
 |`label-md`|Space Grotesk|12px / 550 / 1|按钮、导航|
-|`label-sm`|Space Grotesk|11px / 500 / 1.2|徽标、字段标签|
+|`label-sm`|Space Grotesk|11px / 500 / 1.2|状态标签、字段标签|
 |`mono-md`|IBM Plex Mono|12px / 400 / 1.4|ID、host:port、版本号、种子|
 |`mono-caps`|IBM Plex Mono|10px / 500 / 1，字距 0.04em，大写|表头|
 
@@ -136,8 +138,8 @@
 - 侧栏：默认 232px，可拖宽 200–360px，折叠为 72px 图标栏；状态存 localStorage（`cbrowser.sidebar.width`、`cbrowser.sidebar.collapsed`）。
 - 页面内容最大宽度 1600px，内边距 24px（窄屏 16px）。
 - 控件高度：常规 36px，小号 30px；表格行高 56px。
-- 圆角：`sm 4`（徽标、分组标签）、`md 7`（按钮、输入框）、`lg 10`（表格、卡片）、`xl 13`（弹窗）、`full`。
-- 层级：以色调分层与边框表达，阴影只用于浮层（popover、弹窗、toast）。规范 alpha 没有阴影 token，阴影精确值写在 Elevation & Depth 正文，由 WP03 落到 Tailwind 主题。
+- 圆角：`sm 4`（状态标签、分组标签）、`md 7`（按钮、输入框）、`lg 10`（表格、卡片）、`xl 13`（弹窗）、`full`。
+- 层级：用深浅不同的底色与边框区分，阴影只用于浮层（popover、弹窗、toast）。规范 alpha 没有阴影 token，阴影精确值写在 Elevation & Depth 正文，由 WP03 落到 Tailwind 主题。
 - 动效：160–200ms ease-out；遵守 `prefers-reduced-motion`。
 - 响应式：桌面优先（≥1024px）；窄屏侧栏改抽屉，表格隐藏次要列。
 
@@ -156,7 +158,7 @@
 
 ### 4.7 Do's and Don'ts（硬约束）
 
-- 不绘制任何模拟浏览器框；会话舞台只承载 Selkies iframe。
+- 不绘制任何模拟浏览器框；会话画面区只承载 Selkies iframe。
 - 每个视图最多一个 `button-primary`。
 - 状态必须有文字或图标，不能只靠颜色。
 - ID、端口、版本号、种子、host 一律用 mono 字体。
@@ -205,9 +207,9 @@
 - 旧路由（`/?profileId=`、`/profiles/new`、`/automation/:profileId`）直接删除，不做重定向。
 - 列表、切换器、会话入口中的环境链接一律用真实 `<a href>`，Cmd/Ctrl/中键点击由 Chrome 原生打开新标签页（ADR 003）。
 
-### 5.2 外壳
+### 5.2 全局布局
 
-- 侧栏：品牌标识（现有 CBrowser logo + 字距字标）；导航项为环境、代理、会话、设置；底部显示运行中环境数量，并放主题切换、语言切换、退出登录。
+- 侧栏：品牌标识（现有 CBrowser logo + 加字距的文字标识）；导航项为环境、代理、会话、设置；底部显示运行中环境数量，并放主题切换、语言切换、退出登录。
 - 「会话」导航：本标签页已有会话目标时回到该会话，否则进入 `/session`。
 - 全局横幅：Runtime Coordinator 错误（`runtime-coordinator-error`）保留，改用 `banner-warning` 样式。
 - 保留 iframe 焦点守卫：宿主外部点击时 `blur()` iframe（d028）。
@@ -240,7 +242,7 @@
 - 宽弹窗，分区：
     - 基本：名称（必填）、分组（下拉，可就地新建）、备注。
     - 网络：代理（代理库下拉或「直连」）、`geoip`、时区、语言。
-    - 指纹：平台（windows / macos，附人格字体状态提示）、种子（显示当前值，「随机生成」重新生成）、GPU（auto / nvidia / intel）、屏幕分辨率（预设加自定义）、`color_scheme`。
+    - 指纹：平台（windows / macos，附平台字体状态提示）、种子（显示当前值，「随机生成」重新生成）、GPU（auto / nvidia / intel）、屏幕分辨率（预设加自定义）、`color_scheme`。
     - 高级（默认折叠）：其余运行配置字段（humanize、human_preset、clipboard_sync、auto_launch、allow_3p_cookies、set_google_default、restore_session、transparent_proxy、portable_cookies、capture_preview、launch_args、extension_paths）。
 - 提交按钮：「创建」与「创建并启动」。
 
@@ -258,16 +260,16 @@
 - 页头（单行）：
     - 环境切换器：popover 内可搜索，按分组列出环境与状态；条目为链接。
     - 状态：observed state 与 transport 状态。
-    - 待应用徽标与「应用并重启」。
+    - 待应用标记与「应用并重启」。
     - 操作：音频、诊断、详情面板、专注模式、停止。
-- 舞台：Selkies iframe 铺满。非 `connected` 阶段显示居中状态面板与可执行操作，沿用 frontend.md 第 4 节全部会话阶段与恢复语义。
+- 画面区：Selkies iframe 铺满。非 `connected` 阶段显示居中状态面板与可执行操作，沿用 frontend.md 第 4 节全部会话阶段与恢复语义。
 - 详情面板（右侧 300px，默认收起，状态存 `cbrowser.session.details_open`）：
     - 环境：名称、分组、备注。
     - 网络：代理名、协议、地区、`geoip`。
-    - 指纹：平台、人格字体状态、种子、语言、时区、屏幕、GPU、浏览器版本与 UA（WP07）。
+    - 指纹：平台、平台字体状态、种子、语言、时区、屏幕、GPU、浏览器版本与 UA（WP07）。
     - 运行：实例 ID、配置版本、transport 状态、最近错误、启动时间。
     - 每个值可复制。
-- 专注模式：隐藏侧栏与页头；顶部边缘悬停显示迷你工具条，提供退出按钮。不使用 Esc 退出。
+- 专注模式：隐藏侧栏与页头；顶部边缘悬停显示悬浮工具条，提供退出按钮。不使用 Esc 退出。
 - 剪贴板权限提示、音频状态、诊断浮层沿用现有实现并换皮。
 - 保留现有 `data-testid`：`browser-session-iframe`、`session-*` 系列。
 
@@ -292,7 +294,7 @@
 - 外观：主题（跟随系统、亮色、暗色）。
 - 语言：en / zh。
 - 系统信息：应用版本、浏览器内核版本、Selkies 版本、Control API 健康状态（只呈现真实探测对象，沿用现有规则）。
-- 人格字体：Windows、Mac 字体集的检测结果（WP15）。
+- 平台字体：Windows、macOS 字体集的检测结果（WP15）。
 
 ### 5.10 登录页
 
@@ -354,24 +356,24 @@
 
 ### 6.7 缩略图
 
-- 采集：Browser 容器内 Runner 在 running 且 `capture_preview=true` 时每 15 秒截取一次 X11 显示（整个浏览器窗口，含标签栏），缩放到宽 480px，JPEG 质量 70。不经 CDP 接触页面，避免影响页面行为与指纹。截取实现（候选：Pillow `ImageGrab` 的 XCB 后端）待 WP13 验证。
+- 采集：Runtime Agent 在 running 且 `capture_preview=true` 时，每 15 秒经已有的 CDP 连接对当前活动标签页调用 `Page.captureScreenshot`（JPEG，质量 70，缩放到宽 480px）。只截网页区域，不含浏览器标签栏与地址栏。选择 CDP 而不是 X11 截图，是因为 CDP 在 Docker 与将来的独立桌面应用（p041）中都可用。截图对页面行为的影响（例如后台标签页、焦点）待 WP13 验证。
 - 存储：原子写入 Profile 专属目录下的 `preview/latest.jpg` 与元数据（`captured_at`、`runtime_instance_id`），权限 0600；停止后保留最后一帧。
 - 传给 API：沿用 Artifact 的 Agent → Supervisor → API 转发模式；具体通道在 WP13 读 `supervisor/artifact_forwarder.py` 与 `api/internal_artifacts.py` 后确定。
 - API：`GET /api/v1/profiles/{profile_id}/preview` 返回 `image/jpeg`，`Cache-Control: no-store`，ETag 取 `captured_at`；无预览返回 404。
 - SSE 新增 `profile_preview` 事件（`profile_id`、`captured_at`）；前端以 `captured_at` 作为图片 URL 版本参数刷新。
 - 隐私：截图视同 Cookie 级私密数据，不进日志；重置或删除 Profile 时清除；`capture_preview` 改为 false 时停止采集并删除已有预览。
 
-### 6.8 指纹平台与人格字体
+### 6.8 指纹平台与平台字体
 
-- 字段：`fingerprint_platform`，取值 `windows` / `macos`，默认 `windows`，属于运行配置。Runner 用该字段替换写死的 `--fingerprint-platform=windows`。CloakBrowser 只支持这两种人格，没有 Linux 人格。
+- 字段：`fingerprint_platform`，取值 `windows` / `macos`，默认 `windows`，属于运行配置。Runner 用该字段替换写死的 `--fingerprint-platform=windows`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。
 - 字体分层：
     - 基础开源字体（CloakBrowser 文档列出的最低要求）进入 Browser 镜像：`fonts-noto-color-emoji`、`fonts-freefont-ttf`、`fonts-unifont`、`fonts-ipafont-gothic`、`fonts-wqy-zenhei`、`fonts-tlwg-loma-otf`。
-    - 人格字体放在宿主 `data/fonts/windows/` 与 `data/fonts/mac/`（`data/` 已被忽略），Supervisor 只读挂载进 Browser 容器（例如 `/opt/cbrowser-persona-fonts/{windows,mac}`，位于 fontconfig 默认扫描路径之外）。
-    - Runner 为每个 Profile 生成 `FONTCONFIG_FILE`（扩展现有 `runtime_agent/fontconfig.py`），只暴露该人格的字体集以及 spike 认定的基础字体；Liberation 等 Linux 专属字体对两种人格都不可见。
-- 现有 `font_bundle`（文泉驿）字段：两种人格都已有原生 CJK 字体（微软雅黑、宋体；苹方、冬青黑体），文泉驿本身会成为 Linux 特征。WP14 确认后删除该字段与镜像中的字体包。
-- 字体完整性：Agent 用 Profile 的 fontconfig 检查 CloakBrowser 的特征字体清单（Windows 8 个、Office 10 个、Mac 20 个），结果经 runtime 状态与设置页呈现；缺失时 UI 告警，不阻断启动。
+    - 平台字体放在宿主 `data/fonts/windows/` 与 `data/fonts/mac/`（`data/` 已被忽略），Supervisor 只读挂载进 Browser 容器（例如 `/opt/cbrowser-platform-fonts/{windows,mac}`，位于 fontconfig 默认扫描路径之外）。
+    - Runner 为每个 Profile 生成 `FONTCONFIG_FILE`（扩展现有 `runtime_agent/fontconfig.py`），只暴露该指纹平台的字体集以及 spike 认定的基础字体；Liberation 等 Linux 专属字体对两种指纹平台都不可见。
+- 现有 `font_bundle`（文泉驿）字段：两种指纹平台都有原生 CJK 字体（微软雅黑、宋体；苹方、冬青黑体），文泉驿本身会成为 Linux 特征。WP14 确认后删除该字段与镜像中的字体包。
+- 字体完整性：Agent 用 Profile 的 fontconfig 检查 CloakBrowser 的检测字体清单（Windows 8 个、Office 10 个、Mac 20 个），结果经 runtime 状态与设置页呈现；缺失时 UI 告警，不阻断启动。
 - 字体来源（只用官方渠道，不使用第三方字体站或 GitHub 镜像，原因是授权与文件来源无法校验）：
-    - Mac：从本机复制 `/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts`，以及 `/System/Library/AssetsV2/` 下的苹方资源。已核对本机：前两个目录分别有 83、290 个文件，Mac 特征字体齐全。
+    - Mac：从本机复制 `/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts`，以及 `/System/Library/AssetsV2/` 下的苹方资源。已核对本机：前两个目录分别有 83、290 个文件，Mac 检测字体清单中的字体齐全。
     - Windows：下载微软官方 Windows 11 企业评估版 ISO（约 6 GB，暂存 `.scratch/`），用本机 `7zz`（`/opt/homebrew/bin/7zz`）从 `sources/install.wim` 提取 `Windows/Fonts`。
 - 字体不进入任何镜像，不进入仓库；部署与发布脚本不得 COPY 该目录。
 
@@ -383,7 +385,7 @@
 |新增|`/api/v1/proxies`、`/api/v1/proxies/{proxy_id}`|
 |新增|`GET /api/v1/profiles/{profile_id}/preview`|
 |改|Profile 创建、PATCH、PUT 与响应：删除 `tags`、`proxy`、`font_bundle`；新增 `group_id`、`proxy_id`、`fingerprint_platform`|
-|改|`ProfileRuntimeResponse` 与 SSE 事件：新增 `last_started_at`、`last_stopped_at`、`browser_product`、`browser_user_agent`、人格字体状态；新增 `profile_preview` 事件|
+|改|`ProfileRuntimeResponse` 与 SSE 事件：新增 `last_started_at`、`last_stopped_at`、`browser_product`、`browser_user_agent`、平台字体状态；新增 `profile_preview` 事件|
 |改|配置版本接口：代理密码脱敏|
 |删|OpenAPI 中的 `tags` 分组元数据|
 
@@ -391,9 +393,9 @@
 
 ### 6.10 并发数量
 
-代码中没有运行 Profile 数量上限。资源池上限：媒体子网池 `10.251.0.0/16` 按每个运行中的 Profile 一个 /24 切分（约 256 个）；UDP mux 端口池 `30000–30991`（992 个）。无 key 免费内核没有并发席位限制。本方案不改变这些上限。
+代码中没有运行 Profile 数量上限。资源池上限：媒体子网池 `10.251.0.0/16` 按每个运行中的 Profile 一个 /24 切分（约 256 个）；UDP mux 端口池 `30000–30991`（992 个）。无 key 免费内核没有并发数限制。本方案不改变这些上限。
 
-## 7. 底座升级
+## 7. 技术底层升级
 
 ### 7.1 升级清单
 
@@ -422,7 +424,7 @@
 
 ### 7.2 例外：cloakbrowser 封装库锁 0.6.4
 
-- 0.6.4 有三种模式：无 key（旧版免费内核 Chromium 146，不校验 license、不计席位）、免费 key（最新内核，1 个并发会话）、Pro（最新内核，多个并发）。当前使用无 key 模式。
+- 0.6.4 有三种模式：无 key（旧版免费内核 Chromium 146，不校验 license、不限制并发数）、免费 key（最新内核，1 个并发会话）、Pro（最新内核，多个并发）。当前使用无 key 模式。
 - 0.7.0 的 `ensure_binary` 删除了无 key 路径：没有 key 时自动申领免费 key，结果只允许 1 个并发会话，会破坏多 Profile 并发。
 - 结论：锁定 0.6.4，在 `decisions.md` 记录原因与复查条件（上游恢复无 key 路径，或用户改用 Pro）。
 - 风险：146 内核下载依赖上游 GitHub release 资源长期可用。引擎缓存（`/data/engine-cache`）纳入备份；必要时用 `CLOAKBROWSER_BINARY_PATH` 指向本地二进制。
@@ -480,7 +482,7 @@
 - AC 草案：运行中环境的 runtime 响应含真实 product 与 UA，与容器内 Chrome 实际版本一致。
 - 验证：真实栈 E2E。
 
-### WP08 外壳与基础组件
+### WP08 全局布局与基础组件
 
 - 范围：5.2、5.9、5.10 节；`shared/ui/` 组件库；新路由骨架（旧路由删除）。
 - 依赖：WP03。
@@ -522,20 +524,20 @@
 - AC 草案：运行中环境约 15 秒更新一次缩略图；停止后保留最后一帧；关闭 `capture_preview` 后停止采集并删除预览；重置与删除 Profile 时清除；预览接口需鉴权且 `no-store`。
 - 验证：integration；真实栈 E2E。
 
-### WP14 指纹人格 spike
+### WP14 指纹平台 spike
 
 - 范围：
     - 获取字体（6.8 节来源）并放入 `data/fonts/`。
-    - 在 146 内核下验证 windows 与 macos 人格：`cloakbrowser info` 的字体计数；离线字体探测页（按字体名渲染测宽）；`navigator.platform`、UA、Client Hints 一致性。
-    - 确定每种人格可见的基础字体组合，以及 `font_bundle` 的去留。
+    - 在 146 内核下验证 windows 与 macos 两种指纹平台：`cloakbrowser info` 的字体计数；离线字体探测页（按字体名渲染测宽）；`navigator.platform`、UA、Client Hints 一致性。
+    - 确定每种指纹平台可见的基础字体组合，以及 `font_bundle` 的去留。
 - 依赖：WP02（trixie 字体包）。
 - 产出：spike 报告与 `docs/findings/` 条目。
 
-### WP15 指纹人格实施
+### WP15 指纹平台实施
 
 - 范围：6.8 节其余部分。
 - 依赖：WP06、WP11、WP14。
-- AC 草案：两种人格启动后平台与 UA 一致；人格字体只对对应人格可见；字体缺失时 UI 告警；字体不出现在任何镜像层。
+- AC 草案：两种指纹平台启动后 `navigator.platform` 与 UA 一致；平台字体只对对应指纹平台可见；字体缺失时 UI 告警；字体不出现在任何镜像层。
 - 验证：E2E；镜像层内容检查。
 
 ### WP16 收尾
@@ -573,16 +575,16 @@ WP16 最后
 |---|---|
 |`DESIGN.md`|新建（WP03）|
 |`AGENTS.md`|目录表新增 `DESIGN.md` 与 `.design_reference/` 两行|
-|`docs/blueprint/frontend.md`|重写外壳、路由、页面、主题、设计门禁相关章节|
+|`docs/blueprint/frontend.md`|重写全局布局、路由、页面、主题、设计门禁相关章节|
 |`docs/blueprint/domain.md`|新增 Group、Proxy 实体与「环境」术语对照；删除 Tag；补充元数据与运行配置的区分|
 |`docs/blueprint/persistence.md`|新 schema 与 baseline 策略|
-|`docs/blueprint/browser_runtime.md`|人格字体、缩略图采集、浏览器版本上报|
-|`docs/blueprint/supervisor.md`|人格字体挂载、预览转发|
+|`docs/blueprint/browser_runtime.md`|平台字体、缩略图采集、浏览器版本上报|
+|`docs/blueprint/supervisor.md`|平台字体挂载、预览转发|
 |`docs/blueprint/security.md`|代理密码只写不回显、预览隐私、字体不进镜像|
 |`docs/blueprint/conventions.md`|技术栈版本、`DESIGN.md` 落点|
 |`docs/blueprint/testing.md`|设计门禁|
-|`docs/blueprint/decisions.md`|新 ADR：DESIGN.md 与双模式约定；schema baseline 重写策略；Tag 替换为 Group；cloakbrowser 锁 0.6.4；Selkies 2.2.1（替代 2.1.0 固定）；人格字体只运行时挂载；各底座目标版本|
-|`docs/specs/`|新建 `ui_design_system`、`proxy_management`、`profile_preview`、`fingerprint_persona`；更新 `profile_management`、`webrtc_remote_display`、`runtime_lifecycle`、`release_deployment`、`browser_isolation`|
+|`docs/blueprint/decisions.md`|新 ADR：DESIGN.md 与双模式约定；schema baseline 重写策略；Tag 替换为 Group；cloakbrowser 锁 0.6.4；Selkies 2.2.1（替代 2.1.0 固定）；平台字体只在运行时挂载；各技术底层组件的目标版本|
+|`docs/specs/`|新建 `ui_design_system`、`proxy_management`、`profile_preview`、`fingerprint_platform`；更新 `profile_management`、`webrtc_remote_display`、`runtime_lifecycle`、`release_deployment`、`browser_isolation`|
 
 ## 12. 风险与待验证项
 
@@ -594,9 +596,9 @@ WP16 最后
 |Selkies 2.2.1 与适配层、`x11_keymap` 私有 ABI|未实测|WP05 spike|会话核心功能|
 |trixie 下 apt 包名|未核对|WP02 构建镜像|镜像构建|
 |浏览器版本的传递链路|未读完整链路|WP07 开始时读 Agent → Supervisor → API 代码|WP07 实现方式|
-|X11 截图实现与预览转发通道|未实测|WP13 原型|WP13 实现方式|
-|146 内核下 macOS 人格质量|官方改进记录在 156|WP14 spike|macOS 人格的可用程度|
-|每种人格应暴露的基础字体组合|未实测|WP14 spike|字体隔离方案|
+|CDP 截图对页面行为的影响与预览转发通道|未实测|WP13 原型|WP13 实现方式|
+|146 内核下 macOS 指纹平台的质量|官方改进记录在 156|WP14 spike|macOS 指纹平台的可用程度|
+|每种指纹平台应暴露的基础字体组合|未实测|WP14 spike|字体隔离方案|
 |带认证 SOCKS5 是否被 CloakBrowser 支持|Chromium 原生不支持，CloakBrowser 行为未实测|WP10 或 WP14 实测|代理表单提示文案|
 |删除运行中 Profile 的现有语义|未核对|WP09 读 API 实现|批量删除交互|
 
@@ -605,5 +607,5 @@ WP16 最后
 - 内容：用户提供的前端原型源码（React + Vite + Tailwind 3，Kimi Agent 生成），复制自用户下载的 zip，原样保留。
 - 用途：实施 WP03、WP08–WP12 时对照视觉与交互细节。它不是构建输入，不被任何脚本、测试或构建读取。
 - 权威关系：设计权威是 `DESIGN.md`。原型与本文或 `DESIGN.md` 冲突时，以后两者为准。原型中的模拟浏览器框、假指纹参数、localStorage 假数据、删除代理后改为直连、未使用的 shadcn 组件与 Kimi 专用 Vite 插件，均不采用。
-- 版本控制：由 `.gitignore` 的 `/.design_reference/` 忽略，不入库。被忽略的文件不会出现在 task worktree 中，实施时从主检出读取。
+- 版本控制：由 `.gitignore` 的 `/.design_reference/` 忽略，不入库。被忽略的文件不会出现在 task worktree 中，实施时从主仓库目录读取。
 - 生命周期：WP12 完成后由 WP16 删除。
