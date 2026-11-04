@@ -175,6 +175,32 @@ def _pump_network_events(
             break
 
 
+def _watch_network_events(
+    client: Any,
+    prefix: str,
+    stop_event: threading.Event | asyncio.Event,
+    register_stream: Any,
+    wake: Any,
+    close_streams: Any,
+) -> None:
+    try:
+        stream = client.events(decode=True, filters={"type": "network"})
+        register_stream(stream)
+        if stop_event.is_set():
+            # Shutdown raced the subscription: the caller's finally-path
+            # may already have run its close pass, so close here instead
+            # of leaking a stream nobody will ever close.
+            close_streams()
+            return
+        logger.info("Docker network events stream subscribed")
+        _pump_network_events(stream, prefix, wake, stop_event)
+    except Exception as exc:  # noqa: BLE001 - network event watching is an accelerator; scans still converge
+        logger.warning(
+            "Docker network event stream stopped: error_type=%s",
+            type(exc).__name__,
+        )
+
+
 async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     event_forwarder = core.events
     download_forwarder = DownloadArtifactForwarder(
@@ -288,32 +314,20 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         # the same scan loop, so Gateway replacement or a detached media
         # endpoint converges on the event instead of the 30 s fallback.
         nonlocal network_events_stream
-        try:
-            prefix = core.docker.resource_prefix
-            stream = core.docker.client.events(
-                decode=True,
-                filters={"type": "network"},
-            )
+
+        def _register(stream: Any) -> None:
+            nonlocal network_events_stream
             with stream_lock:
                 network_events_stream = stream
-            if stop_event.is_set():
-                # Shutdown raced the subscription: the finally-path may
-                # already have run its close pass, so close here instead
-                # of leaking a stream nobody will ever close.
-                _close_stream_sync()
-                return
-            logger.info("Docker network events stream subscribed")
-            _pump_network_events(
-                stream,
-                prefix,
-                lambda: loop.call_soon_threadsafe(scan_wakeup.set),
-                stop_event,
-            )
-        except Exception as exc:  # noqa: BLE001 - network event watching is an accelerator; scans still converge
-            logger.warning(
-                "Docker network event stream stopped: error_type=%s",
-                type(exc).__name__,
-            )
+
+        _watch_network_events(
+            core.docker.client,
+            core.docker.resource_prefix,
+            stop_event,
+            _register,
+            lambda: loop.call_soon_threadsafe(scan_wakeup.set),
+            _close_stream_sync,
+        )
 
     docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))
     docker_network_events_task = asyncio.create_task(

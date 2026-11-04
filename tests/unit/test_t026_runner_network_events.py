@@ -12,6 +12,7 @@ import threading
 
 from cbrowser.supervisor.runner import (
     _pump_network_events,
+    _watch_network_events,
     media_network_event_matches,
 )
 
@@ -67,3 +68,86 @@ def test_pump_stops_when_stop_event_set():
     _pump_network_events(events, PREFIX, _on_match, stop)
     # The stop flag is honored before the next event is processed.
     assert hits == ["wake"]
+
+
+class _RecordingStream:
+    def __init__(self, events: list[dict]) -> None:
+        self.events = events
+        self.iterated = False
+
+    def __iter__(self):
+        self.iterated = True
+        yield from self.events
+
+
+class _FakeDockerClient:
+    def __init__(self, stream: _RecordingStream) -> None:
+        self.stream = stream
+        self.calls: list[dict] = []
+
+    def events(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.stream
+
+
+def test_network_watcher_closes_stream_when_stop_races_registration():
+    # t026_code_f012 / p035: shutdown that lands between stream
+    # subscription and the stop check must close the stream and never
+    # start pumping it.
+    stop = threading.Event()
+    stream = _RecordingStream([_event(f"{PREFIX}-net-p1")])
+    client = _FakeDockerClient(stream)
+    registered: list[_RecordingStream] = []
+    wakes: list[str] = []
+    closed: list[_RecordingStream] = []
+
+    def _register(candidate) -> None:
+        registered.append(candidate)
+        # Simulate shutdown racing the subscription after registration.
+        stop.set()
+
+    _watch_network_events(
+        client,
+        PREFIX,
+        stop,
+        _register,
+        lambda: wakes.append("wake"),
+        lambda: closed.append(stream),
+    )
+
+    assert client.calls == [{"decode": True, "filters": {"type": "network"}}]
+    assert registered == [stream]
+    assert closed == [stream]
+    assert stream.iterated is False
+    assert wakes == []
+
+
+def test_network_watcher_pumps_matching_events_until_stop():
+    stop = threading.Event()
+    stream = _RecordingStream(
+        [_event("unrelated"), _event(f"{PREFIX}-net-p1")]
+    )
+    client = _FakeDockerClient(stream)
+    registered: list[_RecordingStream] = []
+    wakes: list[str] = []
+    closed: list[_RecordingStream] = []
+
+    def _wake() -> None:
+        wakes.append("wake")
+        stop.set()
+
+    _watch_network_events(
+        client,
+        PREFIX,
+        stop,
+        registered.append,
+        _wake,
+        lambda: closed.append(stream),
+    )
+
+    assert registered == [stream]
+    assert stream.iterated is True
+    assert wakes == ["wake"]
+    # Normal pump exit leaves the stream for the supervisor's final
+    # close pass; the race branch is the one that closes here.
+    assert closed == []
