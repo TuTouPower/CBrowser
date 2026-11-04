@@ -1,4 +1,4 @@
-# p036 内置 mihomo 作为 Profile 代理节点来源
+# p038 内置 mihomo 作为 Profile 代理节点来源
 
 - 来源：用户提出
 - 内容：内置 mihomo，用户上传自有配置或导入订阅链接，由 mihomo 向 CBrowser 提供多个代理端口，供各 Profile 使用。现有能力为 `Profile.proxy` 单 URL 字段，外部自建 mihomo 填 `socks5://host:port` 大概率已可用（未验证）；内置价值在协议桥接、SOCKS5 认证转换与节点管理体验。
