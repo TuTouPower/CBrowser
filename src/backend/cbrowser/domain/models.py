@@ -483,6 +483,38 @@ class SearchDefaultsStatusData(BaseModel):
     updated_at: str
 
 
+class TransportObservationData(BaseModel):
+    """API view of the Supervisor's layered transport observation (t026).
+
+    Mirrors the Supervisor control protocol model. Held in memory only:
+    after an API restart the value is ``unknown`` until the Supervisor
+    reports again, never a stale persisted copy.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str
+    runtime_instance_id: str | None = None
+    browser_state: Literal["running", "stopped", "missing", "error", "unknown"] = (
+        "unknown"
+    )
+    stream_state: Literal["running", "stopped", "missing", "error", "unknown"] = (
+        "unknown"
+    )
+    transport_state: Literal["ready", "recovering", "failed", "unknown"] = "unknown"
+    protocol_version: str | None = Field(default=None, max_length=16)
+    selkies_version: str | None = Field(default=None, max_length=64)
+    agent_build_id: str | None = Field(default=None, max_length=64)
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    config_version: int | None = None
+    gateway_endpoint: str | None = Field(default=None, max_length=64)
+    last_attached_at: str | None = None
+    last_registered_at: str | None = None
+    last_error: str | None = Field(default=None, max_length=256)
+    last_error_at: str | None = None
+    rejection_code: str | None = Field(default=None, max_length=64)
+
+
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
     desired_state: DesiredState
@@ -494,6 +526,7 @@ class ProfileRuntimeResponse(BaseModel):
     last_exit_event_id: str | None
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
+    transport: TransportObservationData | None = None
     updated_at: str
 
 
@@ -506,6 +539,7 @@ class ProfileRuntimeStatusEvent(BaseModel):
     restart_blocked: bool = False
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
+    transport: TransportObservationData | None = None
     updated_at: str
 
 

@@ -205,6 +205,8 @@ class StreamAgent:
         )
         self.upstream_url = upstream_url
         self.agent_session_id: str | None = None
+        self.last_rejection = None
+        self.gateway_build_id: str | None = None
         self._running = False
         self._gw_ws: aiohttp.ClientWebSocketResponse | None = None
         self._webrtc_service: Any = None
@@ -331,10 +333,17 @@ class StreamAgent:
                     raw_ack = json.loads(resp.data)
                     ack = GatewayRegisterResponse.model_validate(raw_ack)
                     if ack.status != "ok":
+                        self.last_rejection = ack.rejection
                         err_detail = ack.error or "unknown"
+                        if ack.rejection is not None:
+                            err_detail = (
+                                f"{ack.rejection.code}: {ack.rejection.message}"
+                            )
                         raise GatewayRegistrationError(
                             f"Gateway registration rejected: {err_detail}"
                         )
+                    self.gateway_build_id = ack.gateway_build_id
+                    self.last_rejection = None
 
                     if (
                         ack.profile_id != self.config.profile_id

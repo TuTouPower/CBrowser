@@ -8,6 +8,7 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProfileRuntimeResponse,
     SearchDefaultsStatusData,
+    TransportObservationData,
 )
 
 
@@ -26,6 +27,18 @@ def fence_search_defaults(
     return status
 
 
+def fence_transport(
+    observation: TransportObservationData | None,
+    runtime_instance_id: str | None,
+) -> TransportObservationData | None:
+    """Same instance fence as search-defaults, for transport state."""
+    if observation is None:
+        return None
+    if observation.runtime_instance_id != runtime_instance_id:
+        return None
+    return observation
+
+
 def make_runtime_response(
     rt: ProfileRuntime, coordinator: Any = None
 ) -> ProfileRuntimeResponse:
@@ -34,6 +47,12 @@ def make_runtime_response(
         coordinator.get_search_defaults(rt.profile_id)
         if coordinator is not None
         and hasattr(coordinator, "get_search_defaults")
+        else None,
+        rt.runtime_instance_id,
+    )
+    transport = fence_transport(
+        coordinator.get_transport(rt.profile_id)
+        if coordinator is not None and hasattr(coordinator, "get_transport")
         else None,
         rt.runtime_instance_id,
     )
@@ -48,6 +67,7 @@ def make_runtime_response(
         last_exit_event_id=rt.last_exit_event_id,
         last_coordinator_error=last_error,
         search_defaults=search_defaults,
+        transport=transport,
         updated_at=rt.updated_at,
     )
 

@@ -16,10 +16,16 @@ interface UseBrowserSessionOptions {
   apiClient?: ApiClient;
   mediaTimeoutMs?: number;
   iceDisconnectGraceMs?: number;
+  transportRecoveryWindowMs?: number;
 }
 
 // WebRTC "disconnected" often self-heals; only a persistent one is a failure.
 const DEFAULT_ICE_DISCONNECT_GRACE_MS = 5000;
+// t026 AC-011: a first-connection signaling drop while the transport
+// layer reports "recovering" is presented as recovery, and only an
+// explicit transport failure or an exhausted window is a failure.
+const DEFAULT_TRANSPORT_RECOVERY_WINDOW_MS = 30000;
+const TRANSPORT_RECOVERY_POLL_MS = 2000;
 
 export function useBrowserSession(
   profileId: string,
@@ -50,6 +56,11 @@ export function useBrowserSession(
   const statsPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iceDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transportRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const apiClientRef = useRef<ApiClient>(options.apiClient || defaultApiClient);
+  apiClientRef.current = options.apiClient || defaultApiClient;
   const mountedRef = useRef<boolean>(true);
   const audioMutedRef = useRef<boolean>(false);
   const audioSamplesRef = useRef<AudioStatsSample[]>([]);
@@ -116,6 +127,8 @@ export function useBrowserSession(
     if (statsPollTimerRef.current) clearInterval(statsPollTimerRef.current);
     if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
     if (iceDisconnectTimerRef.current) clearTimeout(iceDisconnectTimerRef.current);
+    if (transportRecoveryTimerRef.current)
+      clearTimeout(transportRecoveryTimerRef.current);
 
     setErrorMessage(null);
     webLocksUnavailableRef.current = false;
@@ -123,6 +136,49 @@ export function useBrowserSession(
     setReloadKey((k) => k + 1);
     audioSamplesRef.current = [];
   }, []);
+
+  const failSignaling = useCallback((code: number) => {
+    setStage("signaling_failed");
+    setErrorMessage(tRef.current("signalingDisconnected", { code }));
+  }, []);
+
+  // First-connection signaling drop (t026 AC-011): while the transport
+  // layer is recovering, present recovery and poll within a bounded
+  // window; only an explicit transport failure or the window expiring
+  // turns this into signaling_failed.
+  const handleInitialSignalingClose = useCallback(
+    (code: number) => {
+      const windowMs =
+        options.transportRecoveryWindowMs ??
+        DEFAULT_TRANSPORT_RECOVERY_WINDOW_MS;
+      const deadline = Date.now() + windowMs;
+      setStage("reconnecting");
+      const poll = async (): Promise<void> => {
+        if (!mountedRef.current) return;
+        let transportState: string | undefined;
+        try {
+          const data = await apiClientRef.current.profiles.getRuntime(profileId);
+          transportState = data.transport?.transport_state ?? undefined;
+        } catch {
+          transportState = undefined;
+        }
+        if (!mountedRef.current) return;
+        if (transportState === "ready") {
+          reconnect();
+          return;
+        }
+        if (transportState === "failed" || Date.now() >= deadline) {
+          failSignaling(code);
+          return;
+        }
+        transportRecoveryTimerRef.current = setTimeout(() => {
+          void poll();
+        }, TRANSPORT_RECOVERY_POLL_MS);
+      };
+      void poll();
+    },
+    [profileId, reconnect, failSignaling, options.transportRecoveryWindowMs]
+  );
 
   // Check runtime status on mount if not provided with explicit initialStage
   useEffect(() => {
@@ -268,8 +324,7 @@ export function useBrowserSession(
               }
             }, 5000);
           } else {
-            setStage("signaling_failed");
-            setErrorMessage(tRef.current("signalingDisconnected", { code }));
+            handleInitialSignalingClose(code);
           }
         }
       } else if (type === "CBROWSER_LIFECYCLE_STALE") {
@@ -284,7 +339,12 @@ export function useBrowserSession(
     return () => {
       window.removeEventListener("message", handleMessage);
     };
-  }, [reconnect, iframeRef, options.iceDisconnectGraceMs]);
+  }, [
+    reconnect,
+    iframeRef,
+    options.iceDisconnectGraceMs,
+    handleInitialSignalingClose,
+  ]);
 
   // Once the session is live, align the official audio pipeline with this page's
   // own mute state (START_AUDIO/STOP_AUDIO), never with another page.

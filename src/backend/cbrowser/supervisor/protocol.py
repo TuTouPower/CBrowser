@@ -84,3 +84,67 @@ class ProfileRuntimeStatus(BaseModel):
     stream_container_id: str | None = None
     restart_blocked: bool = False
     failure_count: int = 0
+
+
+LayerState = Literal["running", "stopped", "missing", "error", "unknown"]
+TransportState = Literal["ready", "recovering", "failed", "unknown"]
+
+
+class TransportObservation(BaseModel):
+    """Layered runtime observation for one Profile (t026 AC-010).
+
+    Browser/Stream are process layers; transport is the media/signaling
+    path between them and the viewer (Gateway attachment, policy and
+    Agent registration). Held in memory by the Supervisor and the API;
+    never persisted. ``unknown`` is the honest value before the first
+    report of a generation.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    runtime_instance_id: str | None = None
+    browser_state: LayerState = "unknown"
+    stream_state: LayerState = "unknown"
+    transport_state: TransportState = "unknown"
+    protocol_version: str | None = Field(default=None, max_length=16)
+    selkies_version: str | None = Field(default=None, max_length=64)
+    agent_build_id: str | None = Field(default=None, max_length=64)
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    config_version: int | None = None
+    gateway_endpoint: str | None = Field(default=None, max_length=64)
+    last_attached_at: str | None = None
+    last_registered_at: str | None = None
+    last_error: str | None = Field(default=None, max_length=256)
+    last_error_at: str | None = None
+    rejection_code: str | None = Field(default=None, max_length=64)
+
+
+class TransportObservationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    runtime_instance_id: str | None = None
+    transport: TransportObservation | None = None
+
+
+class ReconcileAllResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scanned: int = 0
+    profiles: list[str] = Field(default_factory=list)
+
+
+class ProfileReadiness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    runtime_instance_id: str | None = None
+    ready: bool = False
+    # None means the check could not be evaluated (unknown), which
+    # always makes the profile not ready.
+    checks: dict[str, bool | None] = Field(default_factory=dict)
+    diagnostics: list[str] = Field(default_factory=list)
+
+
+class ReadinessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ready: bool = False
+    reason: str | None = None
+    profiles: list[ProfileReadiness] = Field(default_factory=list)

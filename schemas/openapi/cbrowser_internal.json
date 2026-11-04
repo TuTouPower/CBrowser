@@ -5025,6 +5025,16 @@
               }
             ]
           },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportObservationData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "updated_at": {
             "type": "string",
             "title": "Updated At"
@@ -5105,6 +5115,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/SearchDefaultsStatusData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TransportObservationData"
               },
               {
                 "type": "null"
@@ -5766,6 +5786,195 @@
           "tag"
         ],
         "title": "Tag"
+      },
+      "TransportObservationData": {
+        "properties": {
+          "profile_id": {
+            "type": "string",
+            "title": "Profile Id"
+          },
+          "runtime_instance_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime Instance Id"
+          },
+          "browser_state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "missing",
+              "error",
+              "unknown"
+            ],
+            "title": "Browser State",
+            "default": "unknown"
+          },
+          "stream_state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "missing",
+              "error",
+              "unknown"
+            ],
+            "title": "Stream State",
+            "default": "unknown"
+          },
+          "transport_state": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "recovering",
+              "failed",
+              "unknown"
+            ],
+            "title": "Transport State",
+            "default": "unknown"
+          },
+          "protocol_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Protocol Version"
+          },
+          "selkies_version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selkies Version"
+          },
+          "agent_build_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Build Id"
+          },
+          "gateway_build_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Build Id"
+          },
+          "config_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Config Version"
+          },
+          "gateway_endpoint": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gateway Endpoint"
+          },
+          "last_attached_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attached At"
+          },
+          "last_registered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Registered At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "rejection_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rejection Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile_id"
+        ],
+        "title": "TransportObservationData",
+        "description": "API view of the Supervisor's layered transport observation (t026).\n\nMirrors the Supervisor control protocol model. Held in memory only:\nafter an API restart the value is ``unknown`` until the Supervisor\nreports again, never a stale persisted copy."
       },
       "ValidationError": {
         "properties": {

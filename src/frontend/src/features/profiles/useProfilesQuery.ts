@@ -393,6 +393,10 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
               event.search_defaults !== undefined
                 ? event.search_defaults
                 : old.search_defaults,
+            transport:
+              event.transport !== undefined
+                ? event.transport
+                : old.transport,
             updated_at: event.updated_at ?? old.updated_at,
           };
         },

@@ -66,6 +66,7 @@ async def run_supervisor(
     runtime_uid: int = 1000,
     runtime_gid: int = 1000,
     manage_ownership: bool | None = None,
+    media_subnet_pool: str | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -101,6 +102,7 @@ async def run_supervisor(
         geoip_cache_dir=geoip_cache,
         runtime_uid=runtime_uid,
         runtime_gid=runtime_gid,
+        media_subnet_pool=media_subnet_pool,
         manage_ownership=(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
@@ -151,6 +153,28 @@ async def run_supervisor(
         d_client.close()
 
 
+def media_network_event_matches(event: Any, prefix: str) -> bool:
+    """True when a Docker network event concerns a media network."""
+    if not isinstance(event, dict):
+        return False
+    attributes = (event.get("Actor") or {}).get("Attributes") or {}
+    name = attributes.get("name") or event.get("id") or ""
+    return str(name).startswith(f"{prefix}-net-")
+
+
+def _pump_network_events(
+    stream: Any,
+    prefix: str,
+    on_match: Any,
+    stop_event: threading.Event,
+) -> None:
+    for event in stream:
+        if media_network_event_matches(event, prefix):
+            on_match()
+        if stop_event.is_set():
+            break
+
+
 async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     event_forwarder = core.events
     download_forwarder = DownloadArtifactForwarder(
@@ -186,20 +210,24 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
 
     stop_event = asyncio.Event()
     events_stream: Any = None
+    network_events_stream: Any = None
     stream_lock = threading.Lock()
 
     def _close_stream_sync() -> None:
-        nonlocal events_stream
+        nonlocal events_stream, network_events_stream
         with stream_lock:
-            target = events_stream
+            targets = [events_stream, network_events_stream]
             events_stream = None
-        if target is not None and hasattr(target, "close"):
-            try:
-                target.close()
-            except Exception as exc:  # noqa: BLE001 - docker event stream close failure during cleanup logged
-                logger.warning(
-                    "Docker event stream close failed: %s", type(exc).__name__
-                )
+            network_events_stream = None
+        for target in targets:
+            if target is not None and hasattr(target, "close"):
+                try:
+                    target.close()
+                except Exception as exc:  # noqa: BLE001 - docker event stream close failure during cleanup logged
+                    logger.warning(
+                        "Docker event stream close failed: %s",
+                        type(exc).__name__,
+                    )
 
     def handle_signal():
         logger.info("Received shutdown signal.")
@@ -252,7 +280,42 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         finally:
             _close_stream_sync()
 
+    def watch_docker_network_events() -> None:
+        # t026 AC-002: media network create/remove/disconnect events wake
+        # the same scan loop, so Gateway replacement or a detached media
+        # endpoint converges on the event instead of the 30 s fallback.
+        nonlocal network_events_stream
+        try:
+            prefix = core.docker.resource_prefix
+            stream = core.docker.client.events(
+                decode=True,
+                filters={"type": "network"},
+            )
+            with stream_lock:
+                network_events_stream = stream
+            if stop_event.is_set():
+                # Shutdown raced the subscription: the finally-path may
+                # already have run its close pass, so close here instead
+                # of leaking a stream nobody will ever close.
+                _close_stream_sync()
+                return
+            logger.info("Docker network events stream subscribed")
+            _pump_network_events(
+                stream,
+                prefix,
+                lambda: loop.call_soon_threadsafe(scan_wakeup.set),
+                stop_event,
+            )
+        except Exception as exc:  # noqa: BLE001 - network event watching is an accelerator; scans still converge
+            logger.warning(
+                "Docker network event stream stopped: error_type=%s",
+                type(exc).__name__,
+            )
+
     docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))
+    docker_network_events_task = asyncio.create_task(
+        asyncio.to_thread(watch_docker_network_events)
+    )
 
     # Background continuous event consumption; Docker scans are event-driven
     # with a 30 s fallback so state changes always converge.
@@ -332,6 +395,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
         monitor_task.cancel()
         resource_task.cancel()
         docker_events_task.cancel()
+        docker_network_events_task.cancel()
         await recovery.close()
         try:
             await asyncio.wait_for(
@@ -341,6 +405,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                     resource_task,
                     server_task,
                     docker_events_task,
+                    docker_network_events_task,
                     return_exceptions=True,
                 ),
                 timeout=15,
@@ -405,6 +470,10 @@ def main():
         choices=["auto", "1", "0"],
         default=os.getenv("CBROWSER_MANAGE_OWNERSHIP", "auto"),
     )
+    parser.add_argument(
+        "--media-subnet-pool",
+        default=os.getenv("CBROWSER_MEDIA_SUBNET_POOL"),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8005)
 
@@ -443,6 +512,7 @@ def main():
                     if args.manage_ownership == "auto"
                     else args.manage_ownership == "1"
                 ),
+                media_subnet_pool=args.media_subnet_pool,
             )
         )
 

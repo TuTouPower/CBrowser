@@ -29,6 +29,8 @@ project_configured
 
 - t022 故障矩阵（本机已验，真实环境义务见 p024）：CDP rearm ACK 分类、事件投递三态与死信游标、生命周期冲突真实 HTTP 三态、双族网络策略失败 DROP 兜底、注册双预算（429/窗口恢复/在途释放/网关重启）、SSE 快照私有化与基点交接并发、缓存代次封存与篡改重验、Selkies ABI 适配层契约、配额严格拒绝与 stop 幂等、search-defaults 路由与围栏映射。真实 Docker/Chrome 拓扑、keymap 真实调用顺序与多 Agent 集群恢复为黑盒条款，按用户豁免口径跳过并立 p024 追踪，不以本机替代验证冒充真实运行证据。
 
+- t026 reconciliation 故障矩阵（本机已验，真实环境义务归 t032 AC-009）：Gateway 替换重附着（unit 收敛双测 + adapter 双测）、网络事件唤醒扫描（runner 代码路径，真实事件流归 t032）、API 离线只恢复附着（unit）、协议拒绝结构化与不可修复分类（真实 Gateway 集成）、地址冲突与池耗尽（adapter 双测按 d029 行为建模 + e2e 真实 Docker 用例）、规格迁移 Stream-only 替换（unit）、策略漂移 Stream 替换/Browser fail-closed（unit + network_policy 渲染-校验全等单测）、并发与幂等（收敛预算与 fail-close 单次语义 unit）、恢复失败预算耗尽（unit）。真实 Docker 用例在 `tests/e2e/test_supervisor_reconciliation_e2e.py`（daemon 与 `CBROWSER_RUNTIME_TEST_IMAGE` 门控，本机无 Docker 时跳过、不得记为已验）；全栈场景（真实 Gateway 镜像拒绝、容器内 netns 漂移、API 进程离线）在 t032 以 REQUIRED_E2E_ENV 镜像集与 supervisor_recovery_probe fixtures 实跑。
+
 ## doctor_cmd
 
 环境前置检查：契约测试可成功收集；另需 `md_kx` 在 PATH。

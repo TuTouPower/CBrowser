@@ -39,18 +39,18 @@ Gateway 容器替换后丢失 Profile 媒体网络附着；既有 Stream 的 `CB
 
 <!-- /规范 -->
 
-- [ ] AC-001：本 task 基线上 `scripts/run_gates.sh` 非 E2E 段全部通过；search-defaults 路由测试原断言不变，并有实例不一致时 `search_defaults` 为 null 的负例。
-- [ ] AC-002：同实例周期扫描、Gateway 容器事件与 Profile 网络 connect/disconnect 事件均触发附着、策略与注册检查；Gateway 替换为新容器 ID、断网或 Supervisor 重启后，在配置的有界窗口内以同一固定端点重新附着，Browser/Stream 不重建；通过生产收敛器故障注入验证。
-- [ ] AC-003：新建 Profile 媒体网络使用 Supervisor 分配的显式 subnet 与 ip_range，Gateway 固定端点位于 range 外，Stream URL 与 egress policy 使用该端点；地址池耗尽、subnet 冲突、端点被占或标签不符时显式 degraded/失败，绝不退回随机地址或整网放行。
-- [ ] AC-004：规格不符的既有媒体网络经 Stream-only 替换收敛到新规格；Browser 容器 ID、内部页面、IPC/X11 与 Profile 数据不变，替换期间 Viewer 呈现恢复中。
-- [ ] AC-005：实际 netns 规则与渲染规格不一致或缺失时被检测：Stream 经 Stream-only 替换修复；Browser 立即进入拒绝全部非 loopback 流量的 fail-closed 状态并报告 error，不在无策略状态继续运行，不自动 teardown；新建沙箱等待策略的既有宽限与清理语义不变。
-- [ ] AC-006：API 失联期间，按 Docker 标签与实例一致性判定合法的既有 Browser/Stream/网络仍完成网络重新附着；Agent 注册与信令按 ADR 010 等待 API 恢复，期间 readiness 为未就绪；不执行未知生命周期意愿，不把 API 不可达或 404 以外的响应当清理授权。
-- [ ] AC-007：多 Profile 并发、重复事件与周期扫描幂等且不串网；未知 endpoint 拒绝清理；附着后策略安装或校验失败只回滚本轮新建连接，已有合法连接与 Browser 保留。
-- [ ] AC-008：Gateway 依现有协议版本字段接受或拒绝 Agent，拒绝时返回结构化原因与 build 标识；Supervisor 可诊断拒绝与持续未注册；仅在 Gateway 可达且原因可由替换修复时有界退避地替换对应 Stream；Stream 缺失或未注册不再导致停止整个 Browser/Stream 对。
-- [ ] AC-009：Supervisor 提供经内部认证的 reconcile_all 与 readiness，宿主机经容器内命令调用，无新增发布端口或 Caddy 路由；readiness 对 API 当前全部 desired=running Profile 校验当前实例、Browser/Stream 进程、固定端点附着、实际策略与 Agent 注册；API/意愿查询不可用或任一状态未知时不报 ready，返回逐 Profile 可脱敏诊断；契约导出 schema 并有一致性测试。
-- [ ] AC-010：API 运行响应与 SSE 暴露 browser/stream/transport 分层观测、协议与最近附着/注册/错误，不新增持久化列；API 重启后为 unknown 直至下次上报；导出 schema、前端类型与 SSE 缓存同步和生产响应一致，新增字段不在前端同步中丢失。
-- [ ] AC-011：信令 1006（含首次连接）在 transport 为 recovering 时呈现恢复中；明确失败或超出恢复窗口才显示失败。
-- [ ] AC-012：以生产入口覆盖 Gateway 替换、网络事件、API 离线、协议拒绝、地址冲突与池耗尽、规格迁移、策略漂移、并发事件和恢复失败；Docker 替身按 d029 已核实行为返回错误，测试不得只检查替身调用次数；交付可收集的真实 Docker 故障用例与运行说明供 t032 AC-009，执行环境有 Docker daemon 时须实跑并记录结果。
+- [x] AC-001：本 task 基线上 `scripts/run_gates.sh` 非 E2E 段全部通过；search-defaults 路由测试原断言不变，并有实例不一致时 `search_defaults` 为 null 的负例。
+- [x] AC-002：同实例周期扫描、Gateway 容器事件与 Profile 网络 connect/disconnect 事件均触发附着、策略与注册检查；Gateway 替换为新容器 ID、断网或 Supervisor 重启后，在配置的有界窗口内以同一固定端点重新附着，Browser/Stream 不重建；通过生产收敛器故障注入验证。
+- [x] AC-003：新建 Profile 媒体网络使用 Supervisor 分配的显式 subnet 与 ip_range，Gateway 固定端点位于 range 外，Stream URL 与 egress policy 使用该端点；地址池耗尽、subnet 冲突、端点被占或标签不符时显式 degraded/失败，绝不退回随机地址或整网放行。
+- [x] AC-004：规格不符的既有媒体网络经 Stream-only 替换收敛到新规格；Browser 容器 ID、内部页面、IPC/X11 与 Profile 数据不变，替换期间 Viewer 呈现恢复中。
+- [x] AC-005：实际 netns 规则与渲染规格不一致或缺失时被检测：Stream 经 Stream-only 替换修复；Browser 立即进入拒绝全部非 loopback 流量的 fail-closed 状态并报告 error，不在无策略状态继续运行，不自动 teardown；新建沙箱等待策略的既有宽限与清理语义不变。
+- [x] AC-006：API 失联期间，按 Docker 标签与实例一致性判定合法的既有 Browser/Stream/网络仍完成网络重新附着；Agent 注册与信令按 ADR 010 等待 API 恢复，期间 readiness 为未就绪；不执行未知生命周期意愿，不把 API 不可达或 404 以外的响应当清理授权。
+- [x] AC-007：多 Profile 并发、重复事件与周期扫描幂等且不串网；未知 endpoint 拒绝清理；附着后策略安装或校验失败只回滚本轮新建连接，已有合法连接与 Browser 保留。
+- [x] AC-008：Gateway 依现有协议版本字段接受或拒绝 Agent，拒绝时返回结构化原因与 build 标识；Supervisor 可诊断拒绝与持续未注册；仅在 Gateway 可达且原因可由替换修复时有界退避地替换对应 Stream；Stream 缺失或未注册不再导致停止整个 Browser/Stream 对。
+- [x] AC-009：Supervisor 提供经内部认证的 reconcile_all 与 readiness，宿主机经容器内命令调用，无新增发布端口或 Caddy 路由；readiness 对 API 当前全部 desired=running Profile 校验当前实例、Browser/Stream 进程、固定端点附着、实际策略与 Agent 注册；API/意愿查询不可用或任一状态未知时不报 ready，返回逐 Profile 可脱敏诊断；契约导出 schema 并有一致性测试。
+- [x] AC-010：API 运行响应与 SSE 暴露 browser/stream/transport 分层观测、协议与最近附着/注册/错误，不新增持久化列；API 重启后为 unknown 直至下次上报；导出 schema、前端类型与 SSE 缓存同步和生产响应一致，新增字段不在前端同步中丢失。
+- [x] AC-011：信令 1006（含首次连接）在 transport 为 recovering 时呈现恢复中；明确失败或超出恢复窗口才显示失败。
+- [x] AC-012：以生产入口覆盖 Gateway 替换、网络事件、API 离线、协议拒绝、地址冲突与池耗尽、规格迁移、策略漂移、并发事件和恢复失败；Docker 替身按 d029 已核实行为返回错误，测试不得只检查替身调用次数；交付可收集的真实 Docker 故障用例与运行说明供 t032 AC-009，执行环境有 Docker daemon 时须实跑并记录结果。
 
 ### 可测试性声明
 

@@ -69,5 +69,57 @@ class GatewayControlClient:
             raise ValueError("Gateway visibility response requires a boolean")
         return value
 
+    async def agent_registered(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> bool | None:
+        """Whether this exact instance is registered with the Gateway.
+
+        Returns None when the Gateway itself cannot be reached, so the
+        caller can distinguish "Gateway down" (never a reason to rebuild
+        a Stream) from "Agent absent" (a replacement candidate). The
+        visibility route's fence distinguishes the states: 409 is a
+        different live instance, a 503 "unavailable" detail is no agent,
+        and a 503 "has not reported yet" still means registered.
+        """
+        try:
+            response = await self._client.get(
+                self._path(profile_id, "visibility"),
+                headers=self._headers(),
+                params={"runtime_instance_id": runtime_instance_id},
+            )
+        except (httpx.HTTPError, OSError):
+            return None
+        if response.status_code == 200:
+            return True
+        if response.status_code == 409:
+            return False
+        if response.status_code == 503:
+            try:
+                detail = response.json().get("detail", "")
+            except ValueError:
+                detail = ""
+            return "unavailable" not in str(detail)
+        return None
+
+    async def registration_status(self, profile_id: str) -> dict | None:
+        """Full registration diagnostics (state + structured refusal).
+
+        Returns None when the Gateway cannot be reached.
+        """
+        try:
+            response = await self._client.get(
+                self._path(profile_id, "registration"),
+                headers=self._headers(),
+            )
+        except (httpx.HTTPError, OSError):
+            return None
+        if response.status_code != 200:
+            return None
+        try:
+            value = response.json()
+        except ValueError:
+            return None
+        return value if isinstance(value, dict) else None
+
     async def close(self) -> None:
         await self._client.aclose()

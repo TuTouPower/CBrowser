@@ -317,12 +317,130 @@ def apply_policy(spec: NetworkPolicySpec) -> None:
             )
 
 
+def parse_filter_rules(text: str) -> tuple[dict[str, str], frozenset[str]]:
+    """Parse an iptables-save / iptables-restore filter table.
+
+    Returns (chain default policies, rule lines). Packet/byte counters
+    are stripped so a live `iptables-save` dump and the rendered restore
+    script for the same ruleset parse to equal values.
+    """
+    policies: dict[str, str] = {}
+    rules: set[str] = set()
+    in_filter = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line == "*filter":
+            in_filter = True
+            continue
+        if line == "COMMIT":
+            in_filter = False
+            continue
+        if not in_filter:
+            continue
+        if line.startswith(":"):
+            fields = line[1:].split()
+            if len(fields) >= 2:
+                policies[fields[0]] = fields[1]
+        elif line.startswith("-A "):
+            rules.add(line)
+    return policies, frozenset(rules)
+
+
+def rendered_filter_rules(spec: NetworkPolicySpec) -> dict[str, tuple[dict[str, str], frozenset[str]]]:
+    """The exact parsed ruleset a successful apply of ``spec`` installs."""
+    return {
+        "ipv4": parse_filter_rules(render_iptables_rules(spec)),
+        "ipv6": parse_filter_rules(render_ip6tables_rules(spec)),
+    }
+
+
+def _save_tool(family: str) -> str:
+    return "iptables-save" if family == "ipv4" else "ip6tables-save"
+
+
+def current_filter_rules(family: str) -> tuple[dict[str, str], frozenset[str]]:
+    """Dump the live filter table of this namespace for one family."""
+    result = subprocess.run(
+        [_save_tool(family), "-t", "filter"],
+        capture_output=True,
+        timeout=5,
+        check=True,
+    )
+    return parse_filter_rules(result.stdout.decode("utf-8"))
+
+
+def verify_policy(spec: NetworkPolicySpec) -> bool:
+    """True only when the live rules in this namespace equal the spec's."""
+    expected = rendered_filter_rules(spec)
+    for family in ("ipv4", "ipv6"):
+        if current_filter_rules(family) != expected[family]:
+            return False
+    return True
+
+
+def install_fail_closed() -> None:
+    """Replace both families with the DROP-everything ruleset.
+
+    Used when a Browser namespace's live rules drift from its rendered
+    spec: the runtime keeps running but loses all non-loopback traffic
+    until an explicit restart reinstalls the real policy (t026 AC-005).
+
+    Unlike the apply-path fallback (best-effort by design), this
+    explicit entry point is strict: a failed restore raises
+    NetworkPolicyError so callers never record a fail-close that did
+    not actually happen.
+    """
+    for family in ("ipv4", "ipv6"):
+        tool = _FAMILY_TOOLS[family]
+        try:
+            completed = subprocess.run(
+                [tool, "-w", "5"],
+                input=_fail_closed_rules().encode("utf-8"),
+                capture_output=True,
+                timeout=10,
+                check=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - strict wrapper re-raises as NetworkPolicyError
+            raise NetworkPolicyError(
+                family=family,
+                tool=tool,
+                exit_code=None,
+                stderr=f"restore could not run: {type(exc).__name__}",
+            ) from exc
+        if completed.returncode != 0:
+            raise NetworkPolicyError(
+                family=family,
+                tool=tool,
+                exit_code=completed.returncode,
+                stderr=_bounded_stderr(completed.stderr or b""),
+            )
+
+
 def main(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
+    mode = "apply"
+    if argv and argv[0] in ("verify", "fail-closed"):
+        mode = argv[0]
+        argv = argv[1:]
+    if mode == "fail-closed":
+        if argv:
+            sys.stderr.write(
+                "Usage: python -m cbrowser.supervisor.network_policy fail-closed\n"
+            )
+            sys.exit(1)
+        try:
+            install_fail_closed()
+        except Exception as exc:  # noqa: BLE001 - fail-closed install failure exits with code 3
+            logger.error(
+                "Fail-closed installation failed: error_type=%s", type(exc).__name__
+            )
+            sys.exit(3)
+        return
     if len(argv) != 1:
         sys.stderr.write(
-            "Usage: python -m cbrowser.supervisor.network_policy <POLICY_JSON>\n"
+            "Usage: python -m cbrowser.supervisor.network_policy "
+            "[verify|fail-closed] <POLICY_JSON>\n"
         )
         sys.exit(1)
 
@@ -333,6 +451,16 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as exc:  # noqa: BLE001 - CLI argument json decode or schema validation error exits with code 2
         logger.error("Invalid policy spec: error_type=%s", type(exc).__name__)
         sys.exit(2)
+
+    if mode == "verify":
+        try:
+            matched = verify_policy(spec)
+        except Exception as exc:  # noqa: BLE001 - verification tooling failure exits with code 3
+            logger.error(
+                "Policy verification failed: error_type=%s", type(exc).__name__
+            )
+            sys.exit(3)
+        sys.exit(0 if matched else 4)
 
     try:
         apply_policy(spec)

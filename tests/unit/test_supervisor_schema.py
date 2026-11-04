@@ -40,6 +40,13 @@ def test_supervisor_schema_uses_entry_index_convention():
         # t022/A55: search-defaults observation + retry join the protocol.
         "SearchDefaultsRetryRequest",
         "SearchDefaultsStatusResponse",
+        # t026/AC-009+AC-010: transport observation, reconcile-all and
+        # readiness join the protocol.
+        "TransportObservation",
+        "TransportObservationResponse",
+        "ReconcileAllResponse",
+        "ProfileReadiness",
+        "ReadinessResponse",
     }
     for name in schema["messages"]:
         assert schema["messages"][name] == {
@@ -92,6 +99,12 @@ def test_supervisor_schema_uses_entry_index_convention():
         "ResetBlockedRequest": {"profile_id": "p1"},
         "ResetBlockedResponse": {"profile_id": "p1"},
         "ProfileRuntimeStatus": {"profile_id": "p1"},
+        # t026 messages.
+        "TransportObservation": {"profile_id": "p1"},
+        "TransportObservationResponse": {"profile_id": "p1"},
+        "ReconcileAllResponse": {},
+        "ProfileReadiness": {"profile_id": "p1"},
+        "ReadinessResponse": {},
     }
     assert set(valid_packets) == set(schema["messages"])
     for message, packet in valid_packets.items():

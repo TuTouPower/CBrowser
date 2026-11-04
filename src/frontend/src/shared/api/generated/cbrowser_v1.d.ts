@@ -767,6 +767,7 @@ export interface components {
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
+            transport?: components["schemas"]["TransportObservationData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -799,6 +800,7 @@ export interface components {
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
+            transport?: components["schemas"]["TransportObservationData"] | null;
             /** Updated At */
             updated_at: string;
         };
@@ -901,6 +903,60 @@ export interface components {
             tag: string;
             /** Color */
             color?: string | null;
+        };
+        /**
+         * TransportObservationData
+         * @description API view of the Supervisor's layered transport observation (t026).
+         *
+         *     Mirrors the Supervisor control protocol model. Held in memory only:
+         *     after an API restart the value is ``unknown`` until the Supervisor
+         *     reports again, never a stale persisted copy.
+         */
+        TransportObservationData: {
+            /** Profile Id */
+            profile_id: string;
+            /** Runtime Instance Id */
+            runtime_instance_id?: string | null;
+            /**
+             * Browser State
+             * @default unknown
+             * @enum {string}
+             */
+            browser_state: "running" | "stopped" | "missing" | "error" | "unknown";
+            /**
+             * Stream State
+             * @default unknown
+             * @enum {string}
+             */
+            stream_state: "running" | "stopped" | "missing" | "error" | "unknown";
+            /**
+             * Transport State
+             * @default unknown
+             * @enum {string}
+             */
+            transport_state: "ready" | "recovering" | "failed" | "unknown";
+            /** Protocol Version */
+            protocol_version?: string | null;
+            /** Selkies Version */
+            selkies_version?: string | null;
+            /** Agent Build Id */
+            agent_build_id?: string | null;
+            /** Gateway Build Id */
+            gateway_build_id?: string | null;
+            /** Config Version */
+            config_version?: number | null;
+            /** Gateway Endpoint */
+            gateway_endpoint?: string | null;
+            /** Last Attached At */
+            last_attached_at?: string | null;
+            /** Last Registered At */
+            last_registered_at?: string | null;
+            /** Last Error */
+            last_error?: string | null;
+            /** Last Error At */
+            last_error_at?: string | null;
+            /** Rejection Code */
+            rejection_code?: string | null;
         };
         /** ValidationError */
         ValidationError: {

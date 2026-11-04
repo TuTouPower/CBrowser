@@ -32,6 +32,8 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
 
 注册节流为双预算（t022）：在途握手预留（上限 4，按来源）与失败窗口（20 次/60 秒）分离，成功不消耗失败额度也不清除既有失败记录，超时/取消/失败等全部退出路径释放预留；预算耗尽返回 429。Agent 重连退避带可注入 jitter（缩放至 [50%,100%]，不超上限），避免多 Agent 同步重试。心跳同步更新 registry 的 `runtime_state`（仅已注册会话）。消息预算三层单一权威（stream 协议）：原始 data 1MiB、序列化 envelope 2MiB+64KiB、WS 帧 6MiB+64KiB；超限按 1009 受控关闭单个连接，不影响其他连接。
 
+结构化拒绝（t026）：注册载荷可携带 Agent 的 `build_id`；成功 ACK 回 Gateway 的 `gateway_build_id`（均来自 `CBROWSER_BUILD_ID`，缺省 `dev`）。WS 建立后的拒绝（载荷非法、协议版本不支持、身份不一致）先下发 `GatewayRegisterResponse(status="error", rejection={code, message, gateway_build_id, agent_build_id})` 再关闭，并按 Profile 记录最近一次拒绝（凭证拒绝、实例未绑定等升级前拒绝同样记录），成功注册清除记录。Supervisor 经控制端点读取注册状态与拒绝原因，据此区分可修复与不可修复：版本/凭证/身份/载荷/实例未绑定类拒绝不触发 Stream 替换。
+
 ## Viewer 隧道与连接隔离 (`/stream/{profile_id}/signal`)
 
 外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`：
@@ -61,6 +63,7 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 |端点|方法|说明|错误码|
 |---|---|---|---|
 |`/gateway/v1/internal/profiles/{profile_id}/visibility`|GET|返回 Agent 最近上报的前台状态|401（未授权）、503（Agent离线或尚未上报）、409（实例不符）|
+|`/gateway/v1/internal/profiles/{profile_id}/registration`|GET|返回注册状态、Agent/Gateway build 标识与最近一次结构化拒绝（t026）|401（未授权）|
 |`/gateway/v1/internal/profiles/{profile_id}/quota`|POST|转发帧率配额 `max_fps_cap` 给 Agent|400（body/配额非法）、401（未授权）、503（Agent离线）、409（实例不符）|
 |`/gateway/v1/internal/profiles/{profile_id}/disconnect`|POST|关闭该 Profile 全部 Viewer 连接并通知 Agent|400（body 非法）、401（未授权）、503（Agent离线）、409（实例不符）|
 

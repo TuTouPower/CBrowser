@@ -43,6 +43,33 @@ function isValidSearchDefaults(value: unknown): boolean {
   return true;
 }
 
+const LAYER_STATES = new Set(["running", "stopped", "missing", "error", "unknown"]);
+const TRANSPORT_STATES = new Set(["ready", "recovering", "failed", "unknown"]);
+
+function isValidTransport(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "object" || Array.isArray(value)) return false;
+  const t = value as Record<string, unknown>;
+  if (typeof t.profile_id !== "string") return false;
+  if (!isNullableString(t.runtime_instance_id)) return false;
+  if (typeof t.browser_state !== "string" || !LAYER_STATES.has(t.browser_state)) {
+    return false;
+  }
+  if (typeof t.stream_state !== "string" || !LAYER_STATES.has(t.stream_state)) {
+    return false;
+  }
+  if (
+    typeof t.transport_state !== "string" ||
+    !TRANSPORT_STATES.has(t.transport_state)
+  ) {
+    return false;
+  }
+  if (!isNullableString(t.last_error)) return false;
+  if (!isNullableString(t.rejection_code)) return false;
+  if (!isNullableString(t.gateway_endpoint)) return false;
+  return true;
+}
+
 function hasValidCoreFields(e: Record<string, unknown>): boolean {
   if (typeof e.profile_id !== "string" || e.profile_id.length === 0) {
     return false;
@@ -80,6 +107,7 @@ export function parseProfileRuntimeEvent(
   if (!isNullableString(e.runtime_instance_id)) return null;
   if (!isNullableString(e.last_coordinator_error)) return null;
   if (!isValidSearchDefaults(e.search_defaults)) return null;
+  if (!isValidTransport(e.transport)) return null;
   return raw as ProfileRuntimeEvent;
 }
 

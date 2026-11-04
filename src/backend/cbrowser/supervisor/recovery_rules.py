@@ -94,7 +94,11 @@ def runtime_pair_active(
     runtime_instance_id: str,
     browser: dict[str, Any] | None,
     stream: dict[str, Any] | None,
+    stream_registered: bool | None = None,
 ) -> bool:
+    # t026: a running Stream container whose Agent is known to be
+    # unregistered is not an active pair; unknown registration (None)
+    # keeps the historical behavior.
     return (
         observed_state != "error"
         and browser is not None
@@ -102,6 +106,7 @@ def runtime_pair_active(
         and browser.get("status") == "running"
         and stream.get("status") == "running"
         and browser.get("instance_id") == runtime_instance_id
+        and stream_registered is not False
     )
 
 

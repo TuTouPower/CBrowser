@@ -20,6 +20,7 @@ from cbrowser.domain.models import (
     ProfileRuntimeEvent,
     ProfileRuntimeEventData,
     SearchDefaultsStatusData,
+    TransportObservationData,
 )
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from pydantic import SecretStr
@@ -213,6 +214,7 @@ class RuntimeCoordinator:
 
         self._last_errors: dict[str, str | None] = {}
         self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
+        self._transport: dict[str, TransportObservationData | None] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
@@ -302,6 +304,73 @@ class RuntimeCoordinator:
             return self.get_search_defaults(profile_id)
         self._search_defaults[profile_id] = status
         return status
+
+    def get_transport(
+        self, profile_id: str
+    ) -> TransportObservationData | None:
+        return self._transport.get(profile_id)
+
+    def fenced_transport(
+        self, profile_id: str, runtime_instance_id: str | None
+    ) -> TransportObservationData | None:
+        """Cached observation only when it belongs to the live instance.
+
+        Same fence rationale as search-defaults: an instance switch must
+        never broadcast the old generation's transport state under the
+        new instance's id.
+        """
+        observation = self._transport.get(profile_id)
+        if observation is None:
+            return None
+        if observation.runtime_instance_id != runtime_instance_id:
+            return None
+        return observation
+
+    async def refresh_transport(
+        self, profile_id: str
+    ) -> TransportObservationData | None:
+        """Best-effort refresh of the cached transport observation.
+
+        Any failure keeps the previously cached value; before the first
+        successful report the value stays absent (rendered as unknown).
+        """
+        if not self.is_enabled():
+            return self.get_transport(profile_id)
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/transport"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        try:
+            resp = await self._client.get(url, headers=headers)
+        except Exception:  # noqa: BLE001 - observation refresh is best-effort only
+            return self.get_transport(profile_id)
+        if resp.status_code != 200:
+            return self.get_transport(profile_id)
+        try:
+            payload = resp.json()
+            raw = payload.get("transport")
+            observation = (
+                TransportObservationData.model_validate(raw)
+                if raw is not None
+                else None
+            )
+            if observation is not None and (
+                payload.get("runtime_instance_id") is None
+                or observation.runtime_instance_id
+                != payload.get("runtime_instance_id")
+            ):
+                observation = None
+        except Exception:  # noqa: BLE001 - malformed supervisor payload keeps the cache
+            return self.get_transport(profile_id)
+        self._transport[profile_id] = observation
+        return observation
 
     async def retry_search_defaults(
         self, profile_id: str, request_id: str | None = None
@@ -467,6 +536,9 @@ class RuntimeCoordinator:
                 restart_blocked=rt.restart_blocked,
                 last_coordinator_error=err,
                 search_defaults=self.fenced_search_defaults(
+                    profile_id, rt.runtime_instance_id
+                ),
+                transport=self.fenced_transport(
                     profile_id, rt.runtime_instance_id
                 ),
                 updated_at=rt.updated_at,

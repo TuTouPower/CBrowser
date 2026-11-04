@@ -19,6 +19,7 @@ class RegisteredAgent:
     config_version: int
     ws: Any
     last_heartbeat: float
+    build_id: str | None = None
     # Last Selkies video state reported in an Agent HEARTBEAT; None until then.
     unpaused_video_consumers: int | None = None
     capture_running: bool | None = None

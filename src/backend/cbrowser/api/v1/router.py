@@ -13,6 +13,7 @@ from cbrowser.adapters.database.repository import (
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
 from cbrowser.api.v1.runtime_views import (
     fence_search_defaults,
+    fence_transport,
     make_runtime_response,
     resolve_operation_id,
 )
@@ -107,6 +108,13 @@ async def subscribe_runtime_events(
                     else None,
                     rt.runtime_instance_id,
                 )
+                transport = fence_transport(
+                    coordinator.get_transport(p.id)
+                    if coordinator is not None
+                    and hasattr(coordinator, "get_transport")
+                    else None,
+                    rt.runtime_instance_id,
+                )
                 snapshots.append(
                     ProfileRuntimeEventData(
                         profile_id=rt.profile_id,
@@ -117,6 +125,7 @@ async def subscribe_runtime_events(
                         restart_blocked=rt.restart_blocked,
                         last_coordinator_error=last_err,
                         search_defaults=search_defaults,
+                        transport=transport,
                         updated_at=rt.updated_at,
                     )
                 )
@@ -594,6 +603,8 @@ async def get_profile_runtime(
         coord = getattr(request.app.state, "coordinator", None)
         if coord is not None and hasattr(coord, "refresh_search_defaults"):
             await coord.refresh_search_defaults(profile_id)
+        if coord is not None and hasattr(coord, "refresh_transport"):
+            await coord.refresh_transport(profile_id)
         return make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(

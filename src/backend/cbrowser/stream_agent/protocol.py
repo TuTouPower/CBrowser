@@ -169,6 +169,23 @@ class GatewayControlEnvelope(BaseModel):
         return _check_optional_conn_id(v)
 
 
+class RegistrationRejection(BaseModel):
+    """Structured registration refusal (t026 AC-008).
+
+    ``code`` is the machine-readable reason the Supervisor's replacement
+    policy keys on; ``message`` is a bounded human diagnostic that never
+    carries credentials. ``gateway_build_id`` identifies the refusing
+    Gateway build; ``agent_build_id`` echoes what the Agent offered.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9_]+$")
+    message: str = Field(min_length=1, max_length=256)
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    agent_build_id: str | None = Field(default=None, max_length=64)
+
+
 class GatewayRegisterResponse(BaseModel):
     """Registration ACK from Gateway to StreamAgent."""
 
@@ -178,10 +195,13 @@ class GatewayRegisterResponse(BaseModel):
     status: Literal["ok", "error"]
     profile_id: str
     runtime_instance_id: str
-    agent_session_id: str = Field(
-        min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
+    # Only a successful ACK carries a session; rejections have none.
+    agent_session_id: str | None = Field(
+        default=None, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$"
     )
     error: str | None = None
+    gateway_build_id: str | None = Field(default=None, max_length=64)
+    rejection: RegistrationRejection | None = None
 
 
 class _AgentEnvelope(BaseModel):
@@ -220,6 +240,9 @@ class AgentRegisterPayload(BaseModel):
     runtime_instance_id: str
     udp_port: int
     selkies_version: str = Field(min_length=1, max_length=64)
+    build_id: str | None = Field(
+        default=None, max_length=64, pattern=r"^[a-zA-Z0-9_.:-]+$"
+    )
     runtime_state: RuntimeState
     config_version: int = Field(ge=1)
     video_streaming_mode: bool = False

@@ -32,6 +32,8 @@ from cbrowser.supervisor.core import (
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
     ProfileRuntimeStatus,
+    ReadinessResponse,
+    ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
     SearchDefaultsRetryRequest,
@@ -40,6 +42,7 @@ from cbrowser.supervisor.protocol import (
     StartProfileResponse,
     StopProfileRequest,
     StopProfileResponse,
+    TransportObservationResponse,
 )
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, status
 from pydantic import SecretStr
@@ -226,6 +229,35 @@ def create_control_app(
             runtime_instance_id=instance_id,
             search_defaults=search_defaults,
         )
+
+    @app.get(
+        "/supervisor/v1/profiles/{profile_id}/transport",
+        response_model=TransportObservationResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def get_transport(profile_id: str):
+        observation = core.get_transport_observation(profile_id)
+        return TransportObservationResponse(
+            profile_id=profile_id,
+            runtime_instance_id=observation.runtime_instance_id,
+            transport=observation,
+        )
+
+    @app.post(
+        "/supervisor/v1/reconcile",
+        response_model=ReconcileAllResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def reconcile_all():
+        return await core.reconcile_all()
+
+    @app.get(
+        "/supervisor/v1/readiness",
+        response_model=ReadinessResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def readiness():
+        return await core.readiness()
 
     @app.post(
         "/supervisor/v1/profiles/search-defaults/retry",
