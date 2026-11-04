@@ -257,7 +257,7 @@ def test_deploy_success_builds_once_and_pins_everything(tmp_path: Path) -> None:
     assert manifest["compose_sha256"] == hashlib.sha256(
         (ROOT / "compose.yaml").read_bytes()
     ).hexdigest()
-    assert manifest["migration_version"] == "0008_artifact_delete_intent"
+    assert manifest["migration_version"] == "0009_profile_control_state"
     assert manifest["capabilities"]["readiness"] is True
 
     env_text = (
@@ -490,16 +490,18 @@ def test_rollback_refuses_when_failed_deploy_raised_db_version(
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
 
     versions = repo / "src" / "backend" / "migrations" / "versions"
-    drill = versions / "0009_drill.py"
+    # t031: the drill must chain from the current head (0009), not 0008,
+    # or it branches instead of advancing the applied version.
+    drill = versions / "0010_drill.py"
     drill.write_text(
-        'revision = "0009_drill"\ndown_revision = "0008_artifact_delete_intent"\n',
+        'revision = "0010_drill"\ndown_revision = "0009_profile_control_state"\n',
         encoding="utf-8",
     )
     failed = _deploy(repo, bin_dir, "rel-002", FAKE_READINESS="unready")
     assert failed.returncode != 0
     assert _pointer(repo, "current_release") == "rel-001"
     applied = repo / "config" / "deploy" / "applied_migration_version"
-    assert applied.read_text(encoding="utf-8").strip() == "0009_drill"
+    assert applied.read_text(encoding="utf-8").strip() == "0010_drill"
 
     drill.unlink()
     assert _deploy(repo, bin_dir, "rel-003").returncode == 0
@@ -507,7 +509,7 @@ def test_rollback_refuses_when_failed_deploy_raised_db_version(
     ups_before = _compose_log(repo).count("up -d")
     result = _run(repo, bin_dir, "rollback")
     assert result.returncode != 0
-    assert "0009_drill" in result.stderr
+    assert "0010_drill" in result.stderr
     assert _compose_log(repo).count("up -d") == ups_before
     assert _pointer(repo, "current_release") == "rel-003"
 

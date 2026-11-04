@@ -219,6 +219,9 @@ class RuntimeCoordinator:
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
         self._running: bool = False
+        # t031: set by app lifespan after the control service is built.
+        # None in tests that construct the coordinator standalone.
+        self.control_service = None
 
     def is_enabled(self) -> bool:
         return bool(self.supervisor_url and self._token_str)
@@ -304,6 +307,118 @@ class RuntimeCoordinator:
             return self.get_search_defaults(profile_id)
         self._search_defaults[profile_id] = status
         return status
+
+    async def close_supervisor_tunnels(
+        self, profile_id: str, generation: int
+    ) -> bool:
+        """Ask the Supervisor to close its tunnels for the profile (t031).
+
+        Returns True only when the Supervisor confirms the close AND
+        the attendant release (t031_code_f001: a failed attendant
+        release keeps the control record's pending flag set, so the
+        next reconcile round retries the whole cascade). A False result
+        leaves the pending flag set (see reconcile_profile_now).
+        """
+        if not self.is_enabled():
+            return False
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/control/close-tunnels"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        try:
+            resp = await self._client.post(
+                url, json={"generation": generation}, headers=headers
+            )
+        except Exception:  # noqa: BLE001 - close failure degrades to pending
+            return False
+        if resp.status_code != 200:
+            return False
+        try:
+            body = resp.json()
+        except Exception:  # noqa: BLE001 - undecodable close is unconfirmed
+            return False
+        return body.get("attendant_released") is True
+
+    async def list_attendant_dialogs(
+        self, profile_id: str
+    ) -> list[dict] | None:
+        """Peek held dialogs via the Supervisor (t031 answer path).
+
+        Returns None when the Supervisor is disabled or unreachable;
+        an empty list means the attendant is reachable and holds
+        nothing for this profile.
+        """
+        if not self.is_enabled():
+            return None
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/control/dialogs"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        try:
+            resp = await self._client.get(url, headers=headers)
+        except Exception:  # noqa: BLE001 - unreachable Supervisor degrades
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        dialogs = body.get("dialogs")
+        return dialogs if isinstance(dialogs, list) else None
+
+    async def answer_attendant_dialog(
+        self,
+        profile_id: str,
+        target_id: str,
+        accept: bool,
+        prompt_text: str | None = None,
+    ) -> dict | None:
+        """Answer a held dialog via the Supervisor (t031 answer path)."""
+        if not self.is_enabled():
+            return None
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/control/answer-dialog"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        payload: dict[str, Any] = {"target_id": target_id, "accept": accept}
+        if prompt_text is not None:
+            payload["prompt_text"] = prompt_text
+        try:
+            resp = await self._client.post(
+                url, json=payload, headers=headers
+            )
+        except Exception:  # noqa: BLE001 - unreachable Supervisor degrades
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        dialog = body.get("dialog")
+        return dialog if isinstance(dialog, dict) else None
 
     def get_transport(
         self, profile_id: str
@@ -527,6 +642,12 @@ class RuntimeCoordinator:
         try:
             rt = await self.profile_service.get_runtime(profile_id)
             err = self.get_last_error(profile_id)
+            control = None
+            if self.control_service is not None:
+                try:
+                    control = await self.control_service.get_state(profile_id)
+                except Exception:  # noqa: BLE001 - control is advisory here
+                    control = None
             data = ProfileRuntimeEventData(
                 profile_id=rt.profile_id,
                 desired_state=rt.desired_state,
@@ -541,6 +662,7 @@ class RuntimeCoordinator:
                 transport=self.fenced_transport(
                     profile_id, rt.runtime_instance_id
                 ),
+                control=control,
                 updated_at=rt.updated_at,
             )
             await self.broadcaster.publish(data)
@@ -569,6 +691,20 @@ class RuntimeCoordinator:
             self.set_last_error(profile_id, "Supervisor is not configured")
             await self.publish_profile_change(profile_id)
             return ReconcileOutcome.RETRYABLE
+
+        # t031: a takeover whose Supervisor close failed stays pending;
+        # retry it on every reconcile round until the Supervisor
+        # confirms (the API-side state already committed at takeover).
+        if self.control_service is not None:
+            try:
+                await self.control_service.retry_pending_supervisor_close(
+                    profile_id
+                )
+            except Exception:  # noqa: BLE001 - retry never blocks reconcile
+                logger.warning(
+                    "Pending supervisor close retry failed: profile=%s",
+                    profile_id,
+                )
 
         import httpx
 

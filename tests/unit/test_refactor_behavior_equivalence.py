@@ -337,7 +337,7 @@ def test_policy_rules_are_pure_and_stable() -> None:
     assert sanitize_settings_message("HELLO client") == "HELLO client"
 
 
-def test_runtime_view_helpers() -> None:
+async def test_runtime_view_helpers() -> None:
     runtime = ProfileRuntime(
         profile_id="p1",
         desired_state="running",
@@ -351,12 +351,15 @@ def test_runtime_view_helpers() -> None:
     )
     coordinator = SimpleNamespace(get_last_error=lambda profile_id: "boom")
 
-    response = make_runtime_response(runtime, coordinator)
+    # t031: make_runtime_response became async (control best-effort load).
+    response = await make_runtime_response(runtime, coordinator)
 
     assert response.profile_id == "p1"
     assert response.last_coordinator_error == "boom"
     assert response.updated_at == runtime.updated_at
-    assert make_runtime_response(runtime).last_coordinator_error is None
+    assert (
+        await make_runtime_response(runtime)
+    ).last_coordinator_error is None
     assert resolve_operation_id("idem", "x", "query") == "idem"
     assert resolve_operation_id(None, "x", "query") == "x"
     assert resolve_operation_id(None, None, "query") == "query"

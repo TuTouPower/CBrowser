@@ -24,6 +24,7 @@ from urllib.parse import quote
 import websockets
 from cbrowser.domain.models import ProfileConfig, ProfileRuntimeResponse
 from cbrowser.secret_files import read_secret_file
+from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from cbrowser.supervisor.core import (
     LifecycleConflictError,
     RuntimeUnavailableError,
@@ -43,6 +44,11 @@ from cbrowser.supervisor.protocol import (
     StopProfileRequest,
     StopProfileResponse,
     TransportObservationResponse,
+    AnswerAttendantDialogRequest,
+    AnswerAttendantDialogResponse,
+    AttendantDialogsResponse,
+    CloseTunnelsRequest,
+    CloseTunnelsResponse,
 )
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, status
 from pydantic import SecretStr
@@ -60,6 +66,15 @@ def create_control_app(
     token_file: Path | str,
 ) -> FastAPI:
     app = FastAPI(title="CBrowser Supervisor Control API", version="1.0.0")
+
+    # t031: live Supervisor-layer tunnels + the generation fence.
+    # Direct Supervisor-token holders are infrastructure-trusted (the
+    # token is the inter-service credential); automation clients are
+    # fenced at the API proxy, and forwarded handshakes carrying a
+    # generation at or below the fence are stale and rejected here.
+    app.state.supervisor_tunnels = AutomationTunnelRegistry(
+        layer="supervisor"
+    )
 
     try:
         expected_token = SecretStr(
@@ -303,6 +318,80 @@ def create_control_app(
             "decision": asdict(decision) if decision else None,
         }
 
+    @app.post(
+        "/supervisor/v1/profiles/{profile_id}/control/close-tunnels",
+        response_model=CloseTunnelsResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def close_control_tunnels(
+        profile_id: str, req: CloseTunnelsRequest
+    ):
+        """t031: close every live Supervisor tunnel for the profile.
+
+        Called by the API coordinator during a takeover (control moves
+        to the user). The generation fence advances even when no tunnel
+        is live, so stale forwarded handshakes stay rejected. The
+        resident dialog attendant is released best-effort through the
+        Agent control channel; a False there degrades to the attendant's
+        own release-on-stop path and never blocks the tunnel close.
+        """
+        registry = getattr(app.state, "supervisor_tunnels", None)
+        closed: list[str] = []
+        if registry is not None:
+            closed = await registry.close_all_for_profile(
+                profile_id, generation=req.generation
+            )
+        attendant_released = await core.release_dialog_attendant(profile_id)
+        return CloseTunnelsResponse(
+            profile_id=profile_id,
+            generation=req.generation,
+            closed_tunnel_ids=closed,
+            attendant_released=attendant_released,
+        )
+
+    @app.get(
+        "/supervisor/v1/profiles/{profile_id}/control/dialogs",
+        response_model=AttendantDialogsResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def list_control_dialogs(profile_id: str):
+        """t031: peek dialogs held by the resident attendant.
+
+        A session attached after a dialog opened cannot observe it
+        through its own CDP session, so this peek is how a later
+        session discovers a held dialog before answering it.
+        """
+        dialogs = await core.list_attendant_dialogs(profile_id)
+        return AttendantDialogsResponse(
+            profile_id=profile_id,
+            dialogs=dialogs if dialogs is not None else [],
+        )
+
+    @app.post(
+        "/supervisor/v1/profiles/{profile_id}/control/answer-dialog",
+        response_model=AnswerAttendantDialogResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def answer_control_dialog(
+        profile_id: str, req: AnswerAttendantDialogRequest
+    ):
+        """t031: answer a held dialog on the attendant's session."""
+        answered = await core.answer_attendant_dialog(
+            profile_id,
+            req.target_id,
+            req.accept,
+            req.prompt_text,
+        )
+        if answered is None:
+            raise HTTPException(
+                status_code=404, detail="no held dialog for target"
+            )
+        return AnswerAttendantDialogResponse(
+            profile_id=profile_id,
+            dialog=answered,
+            action="accept" if req.accept else "dismiss",
+        )
+
     @app.websocket("/supervisor/v1/profiles/{profile_id}/cdp")
     async def cdp_proxy(websocket: WebSocket, profile_id: str):
         """Proxy an authorized CDP WebSocket to this Profile's Agent UDS."""
@@ -314,6 +403,30 @@ def create_control_app(
             logger.warning("CDP WebSocket rejected: invalid supervisor token")
             await websocket.close(code=4401)
             return
+        # t031: forwarded handshakes carry the control generation the
+        # API proxy claimed with. At or below the fence means a stale
+        # API process replaying a pre-takeover generation: reject.
+        # Absent header = direct infrastructure caller (trusted token).
+        registry = getattr(app.state, "supervisor_tunnels", None)
+        presented_generation: int | None = None
+        raw_generation = websocket.headers.get("x-cbrowser-control-generation")
+        if raw_generation is not None:
+            try:
+                presented_generation = int(raw_generation)
+            except ValueError:
+                presented_generation = None
+        if (
+            registry is not None
+            and registry.is_generation_fenced(profile_id, presented_generation)
+        ):
+            logger.warning(
+                "CDP WebSocket rejected: stale control generation "
+                "profile=%s generation=%s",
+                profile_id,
+                presented_generation,
+            )
+            await websocket.close(code=4403, reason="control_revoked")
+            return
         await websocket.accept()
 
         session = core._sessions.get(profile_id)
@@ -321,6 +434,16 @@ def create_control_app(
             logger.warning("CDP WebSocket rejected: profile is not running")
             await websocket.close(code=4404)
             return
+
+        tunnel_record = None
+        if registry is not None:
+            tunnel_record = registry.register(
+                profile_id,
+                lambda: websocket.close(
+                    code=4403, reason="control_revoked"
+                ),
+                generation=presented_generation,
+            )
 
         try:
             runtime_dir = core.docker.validator.get_runtime_dir(profile_id)
@@ -399,6 +522,8 @@ def create_control_app(
             await asyncio.gather(*tasks, return_exceptions=True)
             if upstream is not None:
                 await upstream.close()
+            if tunnel_record is not None and registry is not None:
+                registry.unregister(tunnel_record.tunnel_id)
             try:
                 await websocket.close()
             except Exception:  # noqa: BLE001 - already-closed client socket is harmless

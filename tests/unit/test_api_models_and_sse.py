@@ -61,6 +61,8 @@ def test_profile_runtime_status_event_schema():
         "search_defaults": None,
         # t026/AC-010: layered transport observation rides the same event.
         "transport": None,
+        # t031: human-priority control state rides the same event.
+        "control": None,
         "updated_at": "2026-10-31T00:00:00Z",
     }
 

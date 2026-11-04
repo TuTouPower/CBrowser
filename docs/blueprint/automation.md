@@ -75,6 +75,17 @@ t030 必须拦截或避开的 CDP 命令（探针代码 `MUST_MEDIATE_METHODS` �
   实现：它会改变全部自动化客户端的 dialog 语义，必须与 t031 的真人优先
   与排他设计一并定夺；仍由 live 外部处理会话持有的 dialog 不属于
   “CLI 退出后遗留”，其仲裁归 t031。
+- t031 续（真人优先控制权，ADR 019）：常驻分支落地为 Agent 进程内
+  attendant（直连 browser_ws 服务连接、每页 no-op 监听、接管时 release）；
+  链实测推翻“新会话可经标准 dialog_answer 应答滞留 dialog”——新会话
+  Page.enable 在 modal dialog 后挂起、handleJavaScriptDialog 报无 dialog，
+  故滞留 dialog 只能由 attendant 会话经控制面应答（CLI 未 attach 时先
+  peek `/control/dialogs` 再经 `/control/dialog-answer` 应答；adopt 在
+  目标有滞留 dialog 时跳过 attach）。接管 release 后 dialog 回归 Chrome
+  默认处置（无监听时 firing 的 confirm 自动消解为 false）。
+- t031 续（setAutoAttach）：tunnel_filter 补 attachedToTarget/
+  detachedFromTarget 处理，setAutoAttach 本身保持转发；最后一页 backstop
+  由此覆盖自动挂接会话发现的页面。
 - 隧道 v2：拒绝 `Browser.close`、下载行为覆盖、Emulation 覆盖族与
   `Network.emulateNetworkConditions`（稳定 CDP 错误 -32000）；
   `addScriptToEvaluateOnNewDocument` 按会话登记、断开时清理；关 Tab

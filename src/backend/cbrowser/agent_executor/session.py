@@ -16,7 +16,9 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
+import httpx
 from .dialogs import DialogRecord, DialogTracker, permission_needs_human_payload
 from .ledger import PageLedger, PageRecord
 from .refs import (
@@ -108,6 +110,7 @@ class ExecutorSession:
         self.runtime_instance_id = runtime_instance_id
         self.step_timeout = step_timeout
         self.session_id = f"exec-{int(time.time() * 1000)}"
+        self._control_generation: int | None = None
         self.ledger = PageLedger(profile_id, runtime_instance_id)
         self.dialogs = DialogTracker()
         self._client = CdpClient(
@@ -146,6 +149,13 @@ class ExecutorSession:
         try:
             await self._client.connect()
         except Exception as exc:  # noqa: BLE001 - connect failure is a stable CLI error
+            close_code = getattr(getattr(exc, "rcvd", None), "code", None)
+            if close_code == 4403:
+                raise SessionError(
+                    "control_revoked",
+                    "control was taken over; an explicit human restore "
+                    "is required before this agent may connect again",
+                ) from None
             raise SessionError(
                 "connection_failed", f"cannot connect to automation endpoint: {exc}"
             ) from None
@@ -311,6 +321,22 @@ class ExecutorSession:
         if target_id not in live:
             raise SessionError("target_not_found", f"target {target_id} not live")
         record = self.ledger.adopt(target_id)
+        if target_id not in self._target_sessions:
+            # t031: when the attendant holds a dialog on this page,
+            # attaching would hang Page.enable behind the modal dialog
+            # (chain evidence). Skip the attach: the page is still
+            # adopted for dialog operations, which resolve through the
+            # attendant peek path instead of this session.
+            dialogs = await self._attendant_dialogs()
+            if dialogs and any(
+                d.get("target_id") == target_id for d in dialogs
+            ):
+                return {
+                    "target_id": target_id,
+                    "origin": record.origin,
+                    "manageable": record.manageable,
+                    "cleanable": record.cleanable,
+                }
         await self.attach(target_id)
         return {
             "target_id": target_id,
@@ -646,6 +672,43 @@ class ExecutorSession:
         answer: str | None = None,
         prompt_text: str | None = None,
     ) -> dict:
+        if target_id not in self._target_sessions:
+            # t031: a session attached AFTER a dialog opened cannot
+            # answer it (Chrome: "No dialog is showing"; Page.enable
+            # hangs behind the modal dialog). A dialog held by the
+            # resident attendant is answered on the attendant's own
+            # session instead; anything else falls through to the
+            # normal attach path below.
+            dialogs = await self._attendant_dialogs()
+            if dialogs:
+                for held in dialogs:
+                    if held.get("target_id") != target_id:
+                        continue
+                    if answer is not None and answer not in (
+                        "accept",
+                        "dismiss",
+                    ):
+                        raise SessionError(
+                            "invalid_program",
+                            f"invalid dialog answer: {answer!r}",
+                        )
+                    if answer is not None:
+                        accept = answer == "accept"
+                    else:
+                        # Conservative default, mirroring
+                        # dialogs.default_action.
+                        accept = held.get("type") == "alert"
+                    answered = await self._answer_attendant_dialog(
+                        target_id, accept, prompt_text
+                    )
+                    if answered is not None:
+                        return {
+                            "action": answered.get(
+                                "action",
+                                "accept" if accept else "dismiss",
+                            )
+                        }
+                    break
         session_id = await self.attach(target_id)
         try:
             action, text = self.dialogs.decide(target_id, answer, prompt_text)
@@ -668,6 +731,18 @@ class ExecutorSession:
         return {"action": action}
 
     async def dialog_wait(self, target_id: str, timeout_ms: int) -> dict:
+        if target_id not in self._target_sessions:
+            # t031: attaching first would hang Page.enable behind an
+            # already-open modal dialog, so a held dialog is observed
+            # through the attendant peek instead of the session path.
+            dialogs = await self._attendant_dialogs()
+            if dialogs:
+                for held in dialogs:
+                    if held.get("target_id") == target_id:
+                        return {
+                            "type": held.get("type", ""),
+                            "message": held.get("message", ""),
+                        }
         # Attach first, like dialog_answer: without Page enabled on the
         # target, opening events never reach the tracker and the wait
         # would always time out even while a dialog is open.
@@ -727,6 +802,178 @@ class ExecutorSession:
             kind=kind,
             session_id=self.session_id,
         )
+
+    # ---- t031 human-priority control (ADR 019) ----
+
+    @property
+    def control_api_base(self) -> str:
+        """API origin derived from the automation WS endpoint.
+
+        The CLI takes no separate API URL: the tunnel endpoint is
+        same-origin with the API, so ws(s)://host/path maps to
+        http(s)://host. The token is never logged (callers redact).
+        """
+        parts = urlsplit(self.endpoint)
+        scheme = "https" if parts.scheme == "wss" else "http"
+        return f"{scheme}://{parts.netloc}"
+
+    async def _control_post(self, action: str, payload: dict) -> dict:
+        url = (
+            f"{self.control_api_base}/api/v1/profiles/{self.profile_id}"
+            f"/control/{action}"
+        )
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.step_timeout, trust_env=False
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+        except Exception as exc:  # noqa: BLE001 - transport failure is a CLI error
+            raise SessionError(
+                "control_request_failed",
+                f"control {action} request failed: {type(exc).__name__}",
+            ) from None
+        if resp.status_code == 409:
+            detail = resp.json().get("detail", {})
+            code = (
+                detail.get("code")
+                if isinstance(detail, dict)
+                else "control_conflict"
+            )
+            raise SessionError(
+                "control_conflict",
+                f"control {action} refused: {code}",
+            )
+        if resp.status_code != 200:
+            raise SessionError(
+                "control_request_failed",
+                f"control {action} failed: HTTP {resp.status_code}",
+            )
+        data = resp.json()
+        generation = data.get("generation")
+        if isinstance(generation, int):
+            # Stale-response fence (AC-005): never let an older control
+            # state overwrite a newer one this session already knows.
+            if (
+                self._control_generation is not None
+                and generation < self._control_generation
+            ):
+                raise SessionError(
+                    "control_stale_generation",
+                    f"control {action} response is stale "
+                    f"(generation {generation} < {self._control_generation})",
+                )
+            self._control_generation = generation
+        return data
+
+    async def control_claim(self) -> dict:
+        """Explicitly claim control for this session's identity."""
+        return await self._control_post(
+            "claim", {"agent_session_id": self.session_id}
+        )
+
+    async def _attendant_dialogs(self) -> list[dict] | None:
+        """Peek dialogs held by the resident attendant (t031).
+
+        Returns None when the endpoint is unreachable or malformed;
+        callers fall back to the normal session path in that case.
+        """
+        url = (
+            f"{self.control_api_base}/api/v1/profiles/{self.profile_id}"
+            "/control/dialogs"
+        )
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.step_timeout, trust_env=False
+            ) as client:
+                resp = await client.get(
+                    url,
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+        except Exception:  # noqa: BLE001 - peek failure degrades to normal path
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            dialogs = resp.json().get("dialogs")
+        except ValueError:
+            return None
+        return dialogs if isinstance(dialogs, list) else None
+
+    async def _answer_attendant_dialog(
+        self,
+        target_id: str,
+        accept: bool,
+        prompt_text: str | None = None,
+    ) -> dict | None:
+        """Answer a held dialog on the attendant's session (t031)."""
+        url = (
+            f"{self.control_api_base}/api/v1/profiles/{self.profile_id}"
+            "/control/dialog-answer"
+        )
+        payload: dict[str, Any] = {"target_id": target_id, "accept": accept}
+        if prompt_text is not None:
+            payload["prompt_text"] = prompt_text
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.step_timeout, trust_env=False
+            ) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {self.token}"},
+                )
+        except Exception:  # noqa: BLE001 - answer failure degrades to normal path
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            return resp.json()
+        except ValueError:
+            return None
+
+    async def control_handoff(
+        self, reason: str, detail: str | None = None
+    ) -> dict:
+        """Hand control back to the user (permission/captcha/2FA/handoff).
+
+        The harness pattern is: permission returns needs-human, then
+        the harness issues control_handoff. The session itself never
+        auto-hands-off on a permission probe: the harness decides.
+        """
+        if reason not in (
+            "cli_handoff",
+            "permission",
+            "captcha",
+            "two_fa",
+            "agent_finish",
+        ):
+            raise SessionError(
+                "invalid_program", f"unknown control handoff reason: {reason!r}"
+            )
+        payload: dict[str, Any] = {
+            "reason": reason,
+            "agent_session_id": self.session_id,
+        }
+        if detail:
+            payload["detail"] = detail
+        return await self._control_post("handoff", payload)
+
+    async def control_release(self) -> dict:
+        """Best-effort end-of-session release (reason agent_finish).
+
+        Never raises: cleanup paths must not fail on control release.
+        Control release is explicit: process exit alone does not
+        release control (the session persists via the state file), and
+        a human takeover always preempts regardless of release.
+        """
+        try:
+            return await self.control_handoff("agent_finish")
+        except Exception:  # noqa: BLE001 - best-effort release
+            return {"released": False}
 
     async def wait_for_target_count(self, count: int, timeout_ms: int) -> dict:
         """Wait until at least ``count`` live page targets exist."""

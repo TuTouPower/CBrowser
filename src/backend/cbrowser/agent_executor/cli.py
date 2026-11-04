@@ -149,6 +149,17 @@ async def _run_step(session: ExecutorSession, step: dict) -> dict:
         return await session.permission(
             _req_str(step, "targetId"), _req_str(step, "kind")
         )
+    if action == "control_claim":
+        return await session.control_claim()
+    if action == "control_handoff":
+        detail = step.get("detail")
+        if detail is not None and not isinstance(detail, str):
+            raise SessionError("invalid_program", "detail must be a string")
+        return await session.control_handoff(
+            _req_str(step, "reason"), detail
+        )
+    if action == "control_release":
+        return await session.control_release()
     if action == "wait_for_target_count":
         return await session.wait_for_target_count(
             _req_int(step, "count"), _req_int(step, "timeoutMs", 10000)
@@ -198,6 +209,20 @@ async def run_program(
                 results.append({"action": step.get("action"), "error": nonlocal_error})
                 raise _StepFailed(nonlocal_error) from None
             results.append({"action": step.get("action"), "result": result})
+            # t031: after a handoff the CLI must not issue further agent
+            # commands (they would be rejected at the boundary anyway).
+            # Remaining steps are reported as skipped, not executed.
+            if step.get("action") == "control_handoff":
+                for skipped in steps[index + 1 :]:
+                    results.append(
+                        {
+                            "action": skipped.get("action")
+                            if isinstance(skipped, dict)
+                            else None,
+                            "skipped": "control_handed_off",
+                        }
+                    )
+                break
 
     try:
         await asyncio.wait_for(_steps(), timeout=program_timeout)

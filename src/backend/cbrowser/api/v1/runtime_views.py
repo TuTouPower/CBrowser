@@ -39,7 +39,7 @@ def fence_transport(
     return observation
 
 
-def make_runtime_response(
+async def make_runtime_response(
     rt: ProfileRuntime, coordinator: Any = None
 ) -> ProfileRuntimeResponse:
     last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
@@ -56,6 +56,13 @@ def make_runtime_response(
         else None,
         rt.runtime_instance_id,
     )
+    control = None
+    control_service = getattr(coordinator, "control_service", None)
+    if control_service is not None:
+        try:
+            control = await control_service.get_state(rt.profile_id)
+        except Exception:  # noqa: BLE001 - control is advisory on the runtime view
+            control = None
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
         desired_state=rt.desired_state,
@@ -68,6 +75,7 @@ def make_runtime_response(
         last_coordinator_error=last_error,
         search_defaults=search_defaults,
         transport=transport,
+        control=control,
         updated_at=rt.updated_at,
     )
 

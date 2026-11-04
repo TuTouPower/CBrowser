@@ -41,6 +41,31 @@
 - 隧道拒绝类命令返回稳定错误而不转发；脚本登记与断开清理保证不断开
   不残留；浏览器级破坏性命令的拒绝不依赖调用方自律。
 
+## 真人优先控制权（t031，ADR 019）
+
+- 控制权状态由 API 唯一写入（`profile_controls`）；接管时 API 与
+  Supervisor 各自关闭已登记的活动隧道并以单调代次围栏拒旧代次重连
+  （转发握手带 `X-CBrowser-Control-Generation`，不高于围栏者 4403 拒绝）。
+- Agent UDS 层为本地信任边界（0660 socket + Supervisor 管理的 runtime
+  目录）：UDS 直连客户端不在强制范围内（与直接访问 runtime 目录等价）；
+  控制强制经 CLI 会话生命周期 + 接管级联（Supervisor 关闭隧道端点 →
+  Agent /control `release_attendant`）覆盖。
+- Supervisor 直连令牌持有者属于基础设施信任边界：其握手不查 API 状态，
+  但转发代次受围栏约束；Supervisor 分区期间的残留窗口如实记录（分区内
+  已存在的直连隧道在分区愈合前不受 API 侧关闭约束）。
+- 不承诺任意只读 CDP 黑名单保证（evaluate 可跑任意致变脚本）；不承诺
+  自动识别全部 CAPTCHA 或代解验证码；不回滚已执行的浏览器动作。
+- Stream 输入分类保守取向（宁可误接管、不漏接管）；XTEST 注入结构上
+  不走 WebRTC 数据通道，不构成人类输入。
+- 常驻 attendant 的应答只经控制面显式请求（CLI 未 attach 时的 peek +
+  attendant 会话应答）；attendant 自身永不自动应答。控制面 peek/应答
+  要求调用方持有控制权且 token 身份与记录的 Agent 实例一致（R1
+  code f001）：user 态或第二 token 一律 409；接管级联的 attendant
+  释放纳入 pending 确认（释放失败则 reconcile 重试整条级联）。
+- 吊销 automation token 时，该 token 持有控制的 Profile 各执行一次
+  `identity_invalid` 交接（R1 code f002）；token 过期在握手时校验，
+  已建立隧道在过期后不自动关闭属已知残留（无独立过期清理点）。
+
 ## 服务间与媒体凭证
 
 - Stream Agent 凭证由主密钥按 Profile 与 runtime_instance_id 派生（HMAC-SHA256），每个 Stream 只拿到本实例凭证文件。凭证文件位于 `runtime/.secrets/<profile_id>/agent_secret.txt`（0600），只挂给 Stream；Browser 只挂 `runtime/<profile_id>`，看不到 secret 目录。Gateway 另以 API 持久绑定校验实例，过期实例不能覆盖当前注册。

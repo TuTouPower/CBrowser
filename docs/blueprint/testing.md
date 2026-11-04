@@ -255,3 +255,30 @@ CLI、隧道过滤、跨调用状态）与
 须先 `Page.enable` 否则注册成功但脚本不运行；无认领会话时 Chrome 在打开
 时即自动 dismiss dialog（遗留消解为 false）；lingering 处理会话滞留的
 dialog 属 Chrome 层限制（新会话无法启用 Page 也无法应答），见执行器规约。
+
+## 真人优先控制权验证（t031）
+
+控制权测试在 `tests/unit/test_control_service.py`（状态机、代次、
+reclaim、身份匹配矩阵）、`test_stream_takeover_classifier.py`（分类表与
+前台判定）、`test_tunnel_registry.py`（注册表与代次围栏）、
+`test_tunnel_filter_autoattach.py`（自动挂接 backstop）、
+`test_dialog_attendant.py`（状态机与服务连接应答）、
+`test_agent_executor_control.py`（CLI 控制面）、`test_control_migration.py`
+（0009 隔离库升级与备份恢复），集成在 `test_control_api.py`（端点全流程
+与隧道关闭）、`test_control_supervisor_close.py`（Supervisor 关闭端点与围栏）、
+`test_control_http_clients.py`（CLI/Gateway 客户端对 stub 服务）、
+`test_stream_takeover_report.py`（Stream 上报 envelope 与 pending 语义）与
+`test_control_attendant_chain.py`（真实 Chromium 链）。
+
+|用例|入口|云端状态|
+|---|---|---|
+|attendant 滞留 dialog 跨会话 peek 与应答、release 后默认消解|`test_attendant_holds_dialog_and_release_restores_default`|已跑|
+|控制认领/交接/恢复全流程与隧道关闭|`test_control_claim_handoff_restore_flow`、`test_control_handoff_closes_registered_api_tunnels`|已跑|
+|Supervisor 关闭端点与代次围栏|`test_close_tunnels_closes_and_fences`|已跑|
+|CLI 控制往返与 stale 代次围栏|`test_cli_claim_handoff_round_trip_and_stale_fence`|已跑|
+
+链实测修正的 t031 结论（t032 不必复测）：dialog 打开后才 attach 的新会话
+无法观测或应答它（Page.enable 在 modal dialog 后挂起、handleJavaScriptDialog
+报无 dialog），滞留 dialog 只能由 attendant 会话经控制面应答；接管 release
+后 dialog 回归 Chrome 默认处置。目标 WebRTC/X11 来源的接管、原生权限交接
+用例与真实拓扑下的接管/恢复只在 t032 判定。

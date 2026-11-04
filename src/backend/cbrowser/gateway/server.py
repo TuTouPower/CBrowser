@@ -677,6 +677,31 @@ def create_gateway_app(
                                     beat.unpaused_video_consumers
                                 )
                                 agent.capture_running = beat.capture_running
+                            elif (
+                                agent_env.action
+                                == AgentAction.HUMAN_INPUT_TAKEOVER
+                            ):
+                                # t031: foreground human input preempts
+                                # agent control. Forward to the API, which
+                                # owns the transition and the tunnel close.
+                                # A failed report is logged, never fatal
+                                # to the Gateway pump; the takeover is
+                                # idempotent, so the human's next
+                                # classified input re-reports it.
+                                takeover = agent_env.payload
+                                reported = await api.report_human_takeover(
+                                    pid,
+                                    takeover.viewer_conn_id,
+                                    takeover.input_kind,
+                                )
+                                if reported is None:
+                                    logger.warning(
+                                        "Human takeover report failed: "
+                                        "profile=%s conn=%s kind=%s",
+                                        pid,
+                                        takeover.viewer_conn_id,
+                                        takeover.input_kind,
+                                    )
                     except Exception as e:  # noqa: BLE001 - agent message handling loop isolation prevents gateway drop
                         logger.warning(
                             "Error processing packet from Agent: %s", type(e).__name__

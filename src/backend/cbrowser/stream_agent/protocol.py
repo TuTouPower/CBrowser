@@ -43,6 +43,7 @@ class AgentAction(str, Enum):
     REGISTER = "register"
     SUPERVISOR_QUOTA = "supervisor_quota"
     HEARTBEAT = "heartbeat"
+    HUMAN_INPUT_TAKEOVER = "human_input_takeover"
 
 
 # Shared identity validation for every envelope model (t022 A48): one
@@ -288,8 +289,30 @@ class AgentHeartbeatEnvelope(_AgentEnvelope):
     payload: AgentHeartbeatPayload
 
 
+class HumanInputTakeoverPayload(BaseModel):
+    """Classified foreground human input that must take over control.
+
+    Sent by the Stream Agent when its policy classifier observes a
+    takeover input (key press, mouse button, wheel, IME commit) from a
+    foreground viewer. The Gateway forwards it to the API, which moves
+    the profile to the user and closes agent tunnels (t031).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    input_kind: str = Field(min_length=1, max_length=64)
+    viewer_conn_id: str | None = Field(default=None, max_length=128)
+
+
+class AgentHumanInputTakeoverEnvelope(_AgentEnvelope):
+    action: Literal[AgentAction.HUMAN_INPUT_TAKEOVER] = (
+        AgentAction.HUMAN_INPUT_TAKEOVER
+    )
+    payload: HumanInputTakeoverPayload
+
+
 AgentEnvelope = Annotated[
-    AgentRegisterEnvelope | AgentHeartbeatEnvelope,
+    AgentRegisterEnvelope | AgentHeartbeatEnvelope | AgentHumanInputTakeoverEnvelope,
     Field(discriminator="action"),
 ]
 

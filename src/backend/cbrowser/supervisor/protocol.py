@@ -66,6 +66,50 @@ class ResetBlockedRequest(BaseModel):
     profile_id: str = Field(min_length=1, max_length=128)
 
 
+class CloseTunnelsRequest(BaseModel):
+    """t031: close every Supervisor-layer tunnel for a profile.
+
+    ``generation`` is the post-takeover control generation: the fence
+    advances to it monotonically, so later forwarded handshakes at or
+    below it are stale and rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    generation: int = Field(ge=0)
+
+
+class CloseTunnelsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    generation: int
+    closed_tunnel_ids: list[str] = Field(default_factory=list)
+    attendant_released: bool = False
+
+
+class AttendantDialogsResponse(BaseModel):
+    """t031: held dialogs peeked from the resident attendant."""
+
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    dialogs: list[dict] = Field(default_factory=list)
+
+
+class AnswerAttendantDialogRequest(BaseModel):
+    """t031: answer a held dialog through the attendant's session."""
+
+    model_config = ConfigDict(extra="forbid")
+    target_id: str = Field(min_length=1)
+    accept: bool = False
+    prompt_text: str | None = None
+
+
+class AnswerAttendantDialogResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_id: str
+    dialog: dict
+    action: str
+
+
 class ResetBlockedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_id: str

@@ -8,6 +8,7 @@ import {
 import { defaultApiClient, ApiClient } from "../../shared/api/client";
 import { useActionKeyMutation } from "../../shared/api/action_key_mutation";
 import type {
+  ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -194,6 +195,28 @@ export function useRetrySearchDefaultsMutation(
       client.profiles.retrySearchDefaults(input, actionKey),
     onSuccess: (data, { input }) => {
       queryClient.setQueryData(profileKeys.runtime(input), data);
+    },
+  });
+}
+
+export function useRestoreControlMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProfileControlStateData, Error, string> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.profiles.restoreControl(input, actionKey),
+    onSuccess: (data, { input }) => {
+      // The restore endpoint returns only the control state; merge it
+      // into the cached runtime response (SSE will confirm it next).
+      queryClient.setQueryData(
+        profileKeys.runtime(input),
+        (old: ProfileRuntimeResponse | undefined) => {
+          if (!old) return old;
+          return { ...old, control: data };
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: profileKeys.runtime(input) });
     },
   });
 }
@@ -397,6 +420,16 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
               event.transport !== undefined
                 ? event.transport
                 : old.transport,
+            control:
+              // t031 (review f006): SSE is normally ordered, but a
+              // delayed or replayed event must not overwrite newer
+              // generation state: only apply control at or above the
+              // cached generation.
+              event.control != null &&
+              (old.control == null ||
+                event.control.generation >= old.control.generation)
+                ? event.control
+                : old.control,
             updated_at: event.updated_at ?? old.updated_at,
           };
         },

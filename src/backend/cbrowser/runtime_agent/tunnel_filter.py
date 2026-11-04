@@ -196,6 +196,30 @@ class TunnelFilter:
             target_id = (msg.get("params") or {}).get("targetId")
             if isinstance(target_id, str):
                 self._known_pages.discard(target_id)
+        elif msg.get("method") == "Target.attachedToTarget":
+            # t031: auto-attached sessions (Target.setAutoAttach) never
+            # produce a Target.attachToTarget response, so without this
+            # branch the session->target map misses them and the
+            # Page.close last-page backstop is bypassed through an
+            # auto-attached session. The event also teaches the page
+            # set: a client using setAutoAttach without
+            # setDiscoverTargets receives no targetCreated events, so
+            # the closeTarget backstop would otherwise miss pages that
+            # only auto-attach discovered. setAutoAttach itself stays
+            # forwarded: rejecting it would break the executor's own
+            # transport.
+            params = msg.get("params") or {}
+            session_id = params.get("sessionId")
+            info = params.get("targetInfo") or {}
+            target_id = info.get("targetId")
+            if isinstance(session_id, str) and isinstance(target_id, str):
+                self._session_targets[session_id] = target_id
+                if info.get("type") == "page":
+                    self._known_pages.add(target_id)
+        elif msg.get("method") == "Target.detachedFromTarget":
+            session_id = (msg.get("params") or {}).get("sessionId")
+            if isinstance(session_id, str):
+                self._session_targets.pop(session_id, None)
 
     # -- disconnect ----------------------------------------------------------
 

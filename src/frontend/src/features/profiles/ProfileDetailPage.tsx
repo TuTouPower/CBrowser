@@ -11,6 +11,7 @@ import {
   useDuplicateProfileMutation,
   useResetProfileMutation,
   useRetrySearchDefaultsMutation,
+  useRestoreControlMutation,
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
@@ -32,6 +33,7 @@ export function ProfileDetailPage() {
   const duplicateMutation = useDuplicateProfileMutation(client);
   const resetMutation = useResetProfileMutation(client);
   const retrySearchDefaultsMutation = useRetrySearchDefaultsMutation(client);
+  const restoreControlMutation = useRestoreControlMutation(client);
   // The page stays mounted across :profileId changes: action state is
   // shown only for the Profile the action targeted.
   const updateState = scopeMutationToProfile(updateMutation, profileId, (input) => input.id);
@@ -41,6 +43,11 @@ export function ProfileDetailPage() {
   const resetState = scopeMutationToProfile(resetMutation, profileId, (input) => input);
   const retrySearchDefaultsState = scopeMutationToProfile(
     retrySearchDefaultsMutation,
+    profileId,
+    (input) => input,
+  );
+  const restoreControlState = scopeMutationToProfile(
+    restoreControlMutation,
     profileId,
     (input) => input,
   );
@@ -145,6 +152,23 @@ export function ProfileDetailPage() {
       if (!isStillOnProfile(targetId)) return;
       setError(
         err instanceof Error ? err.message : t("failedToRetrySearchDefaults"),
+      );
+    }
+  };
+
+  // t031: explicit human restore. Offered only when control is with
+  // the user and an agent identity is recorded; restoring while the
+  // agent holds control is a no-op server-side.
+  const handleRestoreControl = async () => {
+    if (!profileId) return;
+    const targetId = profileId;
+    setError(null);
+    try {
+      await restoreControlMutation.mutateAsync(targetId);
+    } catch (err: unknown) {
+      if (!isStillOnProfile(targetId)) return;
+      setError(
+        err instanceof Error ? err.message : t("controlFailedToRestore"),
       );
     }
   };
@@ -352,6 +376,79 @@ export function ProfileDetailPage() {
           {runtimeRunning && (
             <p className="text-[11px] text-yellow-400 mt-2">{t("stopProfileFirst")}</p>
           )}
+        </div>
+      )}
+
+      {runtime?.control && (
+        <div
+          data-testid="profile-control-panel"
+          className="mb-4 bg-surface-1 border border-border rounded-lg p-4"
+        >
+          <h2 className="text-sm font-semibold text-gray-100 mb-2">
+            {t("controlTitle")}
+          </h2>
+          <dl className="text-xs text-gray-300 space-y-1">
+            <div className="flex gap-2">
+              <dt className="text-gray-400">{t("controlTitle")}:</dt>
+              <dd data-testid="profile-control-owner">
+                {runtime.control.owner === "agent"
+                  ? t("controlOwnerAgent")
+                  : t("controlOwnerUser")}
+              </dd>
+            </div>
+            <div className="flex gap-2">
+              <dt className="text-gray-400">{t("controlGeneration")}:</dt>
+              <dd>{runtime.control.generation}</dd>
+            </div>
+            {runtime.control.owner === "user" &&
+              runtime.control.handoff_reason && (
+                <div className="flex gap-2">
+                  <dt className="text-gray-400">{t("controlHandoffReason")}:</dt>
+                  <dd>{runtime.control.handoff_reason}</dd>
+                </div>
+              )}
+            {(runtime.control.agent_instance_id ||
+              runtime.control.agent_session_id) && (
+              <div className="flex gap-2">
+                <dt className="text-gray-400">{t("controlAgentIdentity")}:</dt>
+                <dd>
+                  {[
+                    runtime.control.agent_instance_id,
+                    runtime.control.agent_session_id,
+                  ]
+                    .filter(Boolean)
+                    .join(" / ")}
+                </dd>
+              </div>
+            )}
+          </dl>
+          {runtime.control.pending_supervisor_close && (
+            <p className="text-[11px] text-yellow-400 mt-2">
+              {t("controlPendingSupervisorClose")}
+            </p>
+          )}
+          {runtime.control.owner === "user" &&
+            (runtime.control.agent_instance_id ||
+              runtime.control.agent_session_id) && (
+              <button
+                type="button"
+                data-testid="profile-control-restore-button"
+                onClick={() => void handleRestoreControl()}
+                disabled={restoreControlState.isPending}
+                className="mt-3 px-3 py-1.5 rounded text-xs bg-primary text-white disabled:opacity-50"
+              >
+                {restoreControlState.isPending
+                  ? t("controlRestoring")
+                  : t("controlRestore")}
+              </button>
+            )}
+          {runtime.control.owner === "user" &&
+            !runtime.control.agent_instance_id &&
+            !runtime.control.agent_session_id && (
+              <p className="text-[11px] text-gray-400 mt-2">
+                {t("controlNoRecordedAgent")}
+              </p>
+            )}
         </div>
       )}
 

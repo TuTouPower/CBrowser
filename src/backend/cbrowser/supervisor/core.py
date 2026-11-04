@@ -1649,6 +1649,106 @@ class SupervisorCore:
         if resp.status_code != 200:
             raise RuntimeUnavailableError("Runtime agent control unavailable")
 
+    async def release_dialog_attendant(self, profile_id: str) -> bool:
+        """Best-effort release of the Agent's resident dialog attendant.
+
+        Called by the Supervisor close-tunnels cascade during a
+        takeover (t031). Returns True only when the Agent acknowledges
+        or when no Agent process exists (vacuous: a dead Agent holds no
+        attendant state, so there is nothing to release -- without this
+        case every close for a never-started profile would stay pending
+        forever). False degrades to the attendant's own release-on-stop
+        path and never blocks the tunnel close.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return True
+                request = ControlRequest(
+                    action="release_attendant",
+                    params={"profile_id": profile_id},
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - release failure degrades, never blocks
+            return False
+        return resp.status_code == 200
+
+    async def list_attendant_dialogs(
+        self, profile_id: str
+    ) -> list[dict] | None:
+        """Peek held dialogs from the Agent's resident attendant.
+
+        Returns None when the Agent is unreachable (the caller treats
+        it as "no held dialog known"); an empty list means the
+        attendant is reachable and holds nothing.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return None
+                request = ControlRequest(
+                    action="list_attendant_dialogs",
+                    params={"profile_id": profile_id},
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - unreachable Agent degrades to unknown
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        data = body.get("data") or {}
+        dialogs = data.get("dialogs")
+        return dialogs if isinstance(dialogs, list) else None
+
+    async def answer_attendant_dialog(
+        self,
+        profile_id: str,
+        target_id: str,
+        accept: bool,
+        prompt_text: str | None = None,
+    ) -> dict | None:
+        """Answer a held dialog through the attendant's session.
+
+        Returns the answered dialog record, or None when no dialog is
+        held for the target or the Agent is unreachable.
+        """
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return None
+                params: dict[str, Any] = {
+                    "profile_id": profile_id,
+                    "target_id": target_id,
+                    "accept": accept,
+                }
+                if prompt_text is not None:
+                    params["prompt_text"] = prompt_text
+                request = ControlRequest(
+                    action="answer_attendant_dialog",
+                    params=params,
+                )
+                resp = await client.post(
+                    "/control", json=request.model_dump()
+                )
+        except Exception:  # noqa: BLE001 - unreachable Agent degrades to unknown
+            return None
+        if resp.status_code != 200:
+            return None
+        try:
+            body = resp.json()
+        except ValueError:
+            return None
+        data = body.get("data") or {}
+        dialog = data.get("dialog")
+        return dialog if isinstance(dialog, dict) else None
+
     def has_native_exit(
         self, profile_id: str, instance_id: str, config_version: int
     ) -> bool:

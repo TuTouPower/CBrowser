@@ -34,14 +34,14 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：默认、runtime 重启、旧 Agent 崩溃或身份失效后进入 user 安全状态；同 Profile 第二个 Agent 无授权不能进入，旧实例/旧身份不能复用控制权；API 是唯一业务 DB 写入者；迁移在隔离 DB 上可升级，且备份恢复路径经过验证。
-- [ ] AC-002：前台 Viewer 的点击、按键、滚轮、IME 提交与 CLI 主动 handOff 均形成可观察的交接边界，纯鼠标移动、后台 Viewer 输入与 XTEST 注入事件不触发；边界后外部 Agent 命令被拒绝，已建立的自动化隧道在 API 与 Supervisor 层被主动关闭且重连被拒绝，任意 evaluate/callFunctionOn、跨 target/session 与清理均无旁路。
-- [ ] AC-003：已执行或已进入浏览器的动作不被声称可撤销，调用方获得稳定状态/错误与结果未知语义；不因取消/超时自动重放。
-- [ ] AC-004：接管后同 Profile 多真人 Viewer 的音视频、输入与 Browser 页面保持；关闭一个 Viewer 不停止浏览器。
-- [ ] AC-005：user 状态下即使 CLI finish/异常退出，也不自动关闭本任务页面来绕过接管；真人显式恢复后 Agent 新动作可用，过期响应和 SSE 不覆盖新代次状态。
-- [ ] AC-006：权限/设备提示或 CLI handOff 进入 user，JS Dialog 按 t030 处理且不无故切换控制权；恢复必须显式授权，不使用倒计时自动抢回。
-- [ ] AC-007：现有管理面可观察控制方、交接原因、实例与恢复结果并经 SSE 同步；操控页保持纯画面；ADR 清楚说明与 ADR 006/007 及 storage spec 的关系。
-- [ ] AC-008：云端真实服务/WS/CDP 与输入适配器测试覆盖已建立长连接的接管、竞争、失联、代次围栏及恢复；目标 WebRTC/X11 来源和原生权限交接用例交 t032。
+- [x] AC-001：默认、runtime 重启、旧 Agent 崩溃或身份失效后进入 user 安全状态；同 Profile 第二个 Agent 无授权不能进入，旧实例/旧身份不能复用控制权；API 是唯一业务 DB 写入者；迁移在隔离 DB 上可升级，且备份恢复路径经过验证。
+- [x] AC-002：前台 Viewer 的点击、按键、滚轮、IME 提交与 CLI 主动 handOff 均形成可观察的交接边界，纯鼠标移动、后台 Viewer 输入与 XTEST 注入事件不触发；边界后外部 Agent 命令被拒绝，已建立的自动化隧道在 API 与 Supervisor 层被主动关闭且重连被拒绝，任意 evaluate/callFunctionOn、跨 target/session 与清理均无旁路。（注：两层注册表关闭、API→Supervisor 级联确认与 claim/fence 层重连拒绝已由云端集成测试验证；真实 WS 隧道的 4403 关闭与重连拒绝由 E2E 条目交 t032 实跑。）
+- [x] AC-003：已执行或已进入浏览器的动作不被声称可撤销，调用方获得稳定状态/错误与结果未知语义；不因取消/超时自动重放。
+- [x] AC-004：接管后同 Profile 多真人 Viewer 的音视频、输入与 Browser 页面保持；关闭一个 Viewer 不停止浏览器。（注：云端验证接管路径只关自动化隧道、不触 Viewer 连接与 Browser 生命周期；真实 WebRTC 多 Viewer 连续性由 E2E 条目交 t032 实跑。）
+- [x] AC-005：user 状态下即使 CLI finish/异常退出，也不自动关闭本任务页面来绕过接管；真人显式恢复后 Agent 新动作可用，过期响应和 SSE 不覆盖新代次状态。
+- [x] AC-006：权限/设备提示或 CLI handOff 进入 user，JS Dialog 按 t030 处理且不无故切换控制权；恢复必须显式授权，不使用倒计时自动抢回。
+- [x] AC-007：现有管理面可观察控制方、交接原因、实例与恢复结果并经 SSE 同步；操控页保持纯画面；ADR 清楚说明与 ADR 006/007 及 storage spec 的关系。
+- [x] AC-008：云端真实服务/WS/CDP 与输入适配器测试覆盖已建立长连接的接管、竞争、失联、代次围栏及恢复；目标 WebRTC/X11 来源和原生权限交接用例交 t032。
 
 ### 可测试性声明
 

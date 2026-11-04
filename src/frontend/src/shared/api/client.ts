@@ -1,6 +1,7 @@
 import type {
   ArtifactResponse,
   AutomationEndpointResponse,
+  ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -256,6 +257,20 @@ export class ApiClient {
       // fresh execution, so the mutation hook always supplies one (A19).
       return this.request<ProfileRuntimeResponse>(
         `/api/v1/profiles/${encodeURIComponent(profileId)}/runtime/search-defaults/retry`,
+        {
+          method: "POST",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
+    },
+    restoreControl: async (
+      profileId: string,
+      idempotencyKey?: string,
+    ): Promise<ProfileControlStateData> => {
+      // t031: explicit human restore. Returns the control state; the
+      // mutation hook merges it into the cached runtime response.
+      return this.request<ProfileControlStateData>(
+        `/api/v1/profiles/${encodeURIComponent(profileId)}/control/restore`,
         {
           method: "POST",
           headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
