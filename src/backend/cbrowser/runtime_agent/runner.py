@@ -190,7 +190,12 @@ class BrowserRunner:
         config_dir.chmod(0o700)
         daemon_conf = config_dir / "daemon.conf"
         daemon_conf.write_text(
-            "default-sample-rate = 48000\nalternate-sample-rate = 48000\n",
+            "default-sample-rate = 48000\n"
+            "alternate-sample-rate = 48000\n"
+            # The virtual sink is the Agent's audio readiness anchor; the
+            # default 20s idle timeout makes the daemon (and its socket)
+            # disappear whenever Chrome is not actively playing audio.
+            "exit-idle-time = -1\n",
             encoding="utf-8",
         )
         daemon_conf.chmod(0o600)

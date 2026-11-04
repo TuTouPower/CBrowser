@@ -322,6 +322,14 @@ class SupervisorCore:
             )
         if not media["exists"] or not media["conforms"]:
             if self._stream_replacement_allowed(profile_id, instance_id):
+                logger.warning(
+                    "Stream-only replacement: media_network_drift profile=%s "
+                    "instance=%s exists=%s conforms=%s",
+                    profile_id,
+                    instance_id,
+                    media.get("exists"),
+                    media.get("conforms"),
+                )
                 await self._replace_stream_only(
                     profile_id, session, rebuild_network=True
                 )
@@ -385,6 +393,12 @@ class SupervisorCore:
             return
         if not stream_policy_ok:
             if self._stream_replacement_allowed(profile_id, instance_id):
+                logger.warning(
+                    "Stream-only replacement: stream_policy_drift profile=%s "
+                    "instance=%s",
+                    profile_id,
+                    instance_id,
+                )
                 await self._replace_stream_only(
                     profile_id, session, rebuild_network=False
                 )
@@ -488,6 +502,13 @@ class SupervisorCore:
             )
             return
         if self._stream_replacement_allowed(profile_id, instance_id):
+            logger.warning(
+                "Stream-only replacement: stream_unregistered profile=%s "
+                "instance=%s rejection=%s",
+                profile_id,
+                instance_id,
+                rejection_code,
+            )
             await self._replace_stream_only(
                 profile_id, session, rebuild_network=False
             )
@@ -1397,6 +1418,15 @@ class SupervisorCore:
                 ecode = data.get("exit_code")
                 config_version = int(data.get("config_version", 1))
 
+                if etype == "exit":
+                    # A native exit journal is local truth: it must suppress
+                    # synthetic Docker/missing exits even when the first
+                    # upload is unavailable and the event stays queued
+                    # (docs/specs/runtime_lifecycle.md).
+                    self._native_exit_instances.add(
+                        (profile_id, instance_id, config_version)
+                    )
+
                 evt_id = data.get("event_id", evt_file.stem)
                 outcome = await self.events.emit_event_with_outcome(
                     event_id=evt_id,
@@ -1429,10 +1459,6 @@ class SupervisorCore:
                 if outcome != DELIVERED:
                     # Temporarily unavailable: stays pending for a later scan.
                     continue
-                if etype == "exit":
-                    self._native_exit_instances.add(
-                        (profile_id, instance_id, config_version)
-                    )
                 total_forwarded += 1
                 await self._reconcile_instance_observation(
                     profile_id, instance_id, config_version
