@@ -276,6 +276,12 @@ class GatewayTopologyHarness:
                 "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
                     self.agent_heartbeat_timeout_sec
                 ),
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
             },
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},

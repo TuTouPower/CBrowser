@@ -12,6 +12,7 @@ import urllib.parse
 from pathlib import Path
 
 from cbrowser.secret_files import read_secret_file
+from cbrowser.udp_mux import udp_mux_bounds
 
 from pydantic import (
     BaseModel,
@@ -105,8 +106,11 @@ class StreamAgentConfig(BaseModel):
     @field_validator("udp_mux_port")
     @classmethod
     def validate_udp_mux_port(cls, v: int) -> int:
-        if v < 30000 or v > 30991:
-            raise ValueError("udp_mux_port must be in allocated range [30000, 30991]")
+        minimum, maximum = udp_mux_bounds()
+        if v < minimum or v > maximum:
+            raise ValueError(
+                f"udp_mux_port must be in allocated range [{minimum}, {maximum}]"
+            )
         return v
 
     @field_validator("width")

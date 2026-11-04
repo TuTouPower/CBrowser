@@ -98,11 +98,13 @@ class RegistrationThrottle:
 
     - In-flight handshakes per source are bounded by a reservation that is
       released on *every* exit path (success, rejection, timeout, cancel).
-    - Failed handshakes are recorded per source inside a sliding window;
-      only failures consume that budget. A success releases its reservation
-      and never erases other failures, so legitimate Agent recovery is not
-      starved by the failure budget it did not spend, and an attacker
-      cannot reset the window by succeeding once.
+    - Failed credential verifications are recorded per source inside a
+      sliding window; only those failures consume that budget. A success
+      releases its reservation and never erases other failures, so
+      legitimate Agent recovery is not starved by the failure budget it
+      did not spend, and an attacker cannot reset the window by succeeding
+      once. Aborted handshakes (timeouts, cancellations, post-auth protocol
+      errors) release their reservation without spending the budget.
 
     Keys are transport source addresses only — never an unauthenticated
     claimed identity — and the number of tracked sources is bounded.

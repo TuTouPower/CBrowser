@@ -23,6 +23,7 @@ import subprocess
 import sys
 from typing import Any, Literal
 
+from cbrowser.udp_mux import udp_mux_bounds
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger("cbrowser.supervisor.network_policy")
@@ -59,8 +60,7 @@ BLOCKED_IPV6_RANGES = [
 ]
 
 # Valid UDP mux port range for Selkies / Stream
-UDP_MUX_MIN = 30000
-UDP_MUX_MAX = 30991
+UDP_MUX_MIN, UDP_MUX_MAX = udp_mux_bounds()
 
 def _validate_ip_port(v: tuple[str, int]) -> tuple[str, int]:
     if not (isinstance(v, (tuple, list)) and len(v) == 2):
@@ -103,7 +103,10 @@ class NetworkPolicySpec(BaseModel):
     @model_validator(mode="after")
     def validate_role_mux_port(self) -> NetworkPolicySpec:
         if self.role == "stream" and self.udp_mux_port is None:
-            raise ValueError("udp_mux_port is required for stream role (30000..30991)")
+            raise ValueError(
+                "udp_mux_port is required for stream role "
+                f"({UDP_MUX_MIN}..{UDP_MUX_MAX})"
+            )
         if self.role == "browser" and self.udp_mux_port is not None:
             raise ValueError("udp_mux_port must not be specified for browser role")
         return self
@@ -317,12 +320,58 @@ def apply_policy(spec: NetworkPolicySpec) -> None:
             )
 
 
+_IMPLICIT_PROTOCOL_MODULES = frozenset({"tcp", "udp", "icmp", "icmp6"})
+
+
+def _normalized_address(value: str) -> str:
+    try:
+        return str(ipaddress.ip_network(value, strict=False))
+    except ValueError:
+        return value
+
+
+def _canonical_rule(line: str) -> str:
+    """Normalize a rule so renderer and live dumps compare semantically.
+
+    ``iptables-save`` on the nft backend canonicalizes what
+    ``iptables-restore`` accepted: it adds implicit ``-m tcp``/``-m udp``
+    modules, writes IPv4 hosts as ``/32``, reorders match clauses, and
+    sorts conntrack states. The same ruleset must verify as equal after
+    one apply/read cycle, otherwise convergence would rebuild a healthy
+    Stream forever (t032 AC-007 real-kernel finding).
+    """
+    tokens = line.split()
+    if len(tokens) < 2 or tokens[0] != "-A":
+        return line
+    chain = tokens[1]
+    atoms: list[str] = []
+    index = 2
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "-m" and index + 1 < len(tokens):
+            module = tokens[index + 1]
+            if module not in _IMPLICIT_PROTOCOL_MODULES:
+                atoms.append(f"-m {module}")
+            index += 2
+            continue
+        value = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token in ("-d", "-s"):
+            atoms.append(f"{token} {_normalized_address(value)}")
+        elif token == "--ctstate":
+            atoms.append(f"{token} {','.join(sorted(value.split(',')))}")
+        else:
+            atoms.append(f"{token} {value}")
+        index += 2
+    return f"-A {chain} " + " ".join(sorted(atoms))
+
+
 def parse_filter_rules(text: str) -> tuple[dict[str, str], frozenset[str]]:
     """Parse an iptables-save / iptables-restore filter table.
 
-    Returns (chain default policies, rule lines). Packet/byte counters
-    are stripped so a live `iptables-save` dump and the rendered restore
-    script for the same ruleset parse to equal values.
+    Returns (chain default policies, canonical rule lines). Packet/byte
+    counters are stripped and rules are canonicalized so a live
+    `iptables-save` dump and the rendered restore script for the same
+    ruleset parse to equal values.
     """
     policies: dict[str, str] = {}
     rules: set[str] = set()
@@ -342,7 +391,7 @@ def parse_filter_rules(text: str) -> tuple[dict[str, str], frozenset[str]]:
             if len(fields) >= 2:
                 policies[fields[0]] = fields[1]
         elif line.startswith("-A "):
-            rules.add(line)
+            rules.add(_canonical_rule(line))
     return policies, frozenset(rules)
 
 

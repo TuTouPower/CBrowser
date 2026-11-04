@@ -423,6 +423,7 @@ def create_gateway_app(
             logger.warning("Agent registration rate limited for source")
             return web.Response(status=429, text="Too many registration attempts")
         handshake_complete = False
+        credential_failure = False
         try:
 
             profile_id = request.query.get("profile_id", "")
@@ -435,6 +436,7 @@ def create_gateway_app(
             ):
                 return web.Response(status=400, text="Missing registration identity")
             if not credentials.verify(raw_token, profile_id, instance_id):
+                credential_failure = True
                 if profile_id and instance_id:
                     _record_rejection(
                         profile_id,
@@ -591,7 +593,14 @@ def create_gateway_app(
                 )
         finally:
             if not handshake_complete:
-                registration_throttle.release(source, success=False)
+                # Only rejected credentials consume the failure budget.
+                # Timeouts, cancellations, and post-auth protocol errors
+                # release the in-flight reservation without letting a
+                # flaky Agent or a shared source address exhaust the
+                # brute-force budget it never spent.
+                registration_throttle.release(
+                    source, success=not credential_failure
+                )
 
         # Pump messages from Agent
         try:

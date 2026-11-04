@@ -31,6 +31,21 @@ _PROXY_ENV = (
 )
 
 
+def pytest_configure(config) -> None:
+    """Align host-side model validation with the lane's UDP mux range.
+
+    The real-topology harness passes ``CBROWSER_E2E_UDP_BASE`` to the
+    Supervisor and Gateway containers; the test process itself also
+    builds Agent registration payloads with the allocated port, so it
+    must validate them against the same range.
+    """
+    base = os.environ.get("CBROWSER_E2E_UDP_BASE")
+    if not base:
+        return
+    os.environ.setdefault("CBROWSER_UDP_MUX_MIN_PORT", base)
+    os.environ.setdefault("CBROWSER_UDP_MUX_MAX_PORT", str(int(base) + 991))
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _loopback_tests_ignore_proxy_environment():
     """The suite talks to loopback only; an inherited desktop proxy makes

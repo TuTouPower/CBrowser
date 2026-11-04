@@ -5,10 +5,13 @@ from __future__ import annotations
 from typing import Literal
 
 from cbrowser.runtime_agent.protocol import SearchDefaultsStatus
+from cbrowser.udp_mux import udp_mux_bounds
 from pydantic import BaseModel, ConfigDict, Field
 
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
 DesiredState = Literal["stopped", "running"]
+
+UDP_MUX_MIN, UDP_MUX_MAX = udp_mux_bounds()
 
 
 class StartProfileRequest(BaseModel):
@@ -24,7 +27,7 @@ class StartProfileResponse(BaseModel):
     profile_id: str
     status: Literal["starting", "running"]
     runtime_instance_id: str
-    udp_mux_port: int = Field(ge=30000, le=30991)
+    udp_mux_port: int = Field(ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
     browser_container: str
     stream_container: str
 

@@ -23,19 +23,20 @@ from cbrowser.stream_agent.protocol import (
     AgentRegisterPayload,
     GatewayRegisterResponse,
 )
+from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.supervisor.gateway_client import GatewayControlClient
 from gateway_probe.topology import GatewayTopologyHarness
 from wait import poll_until
 
-from cbrowser.supervisor.agent_credentials import AgentCredentials
-from cbrowser.supervisor.gateway_client import GatewayControlClient
 
-
-def _register_payload(profile_id: str, instance_id: str) -> AgentRegisterPayload:
+def _register_payload(
+    profile_id: str, instance_id: str, udp_port: int
+) -> AgentRegisterPayload:
     return AgentRegisterPayload(
         hostname="host-1",
         profile_id=profile_id,
         runtime_instance_id=instance_id,
-        udp_port=30005,
+        udp_port=udp_port,
         selkies_version="2.1.0",
         runtime_state="ready",
         config_version=1,
@@ -54,6 +55,7 @@ async def test_registration_budgets_and_restart_recovery_on_real_gateway(
         )
         profile_id = profile["profile_id"]
         instance_id = profile["runtime_instance_id"]
+        udp_port = profile["udp_mux_port"]
 
         gw_ports = harness.gateway_container.attrs["NetworkSettings"]["Ports"]
         gw_port = gw_ports[f"{DEFAULT_GATEWAY_PORT}/tcp"][0]["HostPort"]
@@ -86,7 +88,7 @@ async def test_registration_budgets_and_restart_recovery_on_real_gateway(
                 AgentRegisterEnvelope(
                     profile_id=profile_id,
                     runtime_instance_id=instance_id,
-                    payload=_register_payload(profile_id, instance_id),
+                    payload=_register_payload(profile_id, instance_id, udp_port),
                 ).model_dump_json()
             )
             ack = GatewayRegisterResponse.model_validate_json(
@@ -154,8 +156,21 @@ async def test_registration_budgets_and_restart_recovery_on_real_gateway(
                 assert caught.value.status == 429
 
             # Gateway restart: throttle state is fresh and the real
-            # Agent re-registers on its own.
+            # Agent re-registers on its own. The host port binding is
+            # re-read because Docker/OrbStack may reassign it on restart.
             await asyncio.to_thread(harness.gateway_container.restart)
+            harness.gateway_container.reload()
+            gw_ports = harness.gateway_container.attrs["NetworkSettings"]["Ports"]
+            gw_port = gw_ports[f"{DEFAULT_GATEWAY_PORT}/tcp"][0]["HostPort"]
+            gateway_base = f"http://127.0.0.1:{gw_port}"
+            register_url = (
+                f"{gateway_base}/stream/agent/register"
+                f"?profile_id={profile_id}&runtime_instance_id={instance_id}"
+            )
+            await control.close()
+            control = GatewayControlClient(
+                gateway_base, harness.key_files["gateway"]
+            )
             await poll_until(
                 real_agent_registered,
                 lambda ok: ok,

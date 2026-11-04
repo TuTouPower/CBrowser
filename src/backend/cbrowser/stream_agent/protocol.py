@@ -8,6 +8,7 @@ import re
 from enum import Enum
 from typing import Annotated, Any, Literal
 
+from cbrowser.udp_mux import udp_mux_bounds
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -253,8 +254,11 @@ class AgentRegisterPayload(BaseModel):
     @field_validator("udp_port")
     @classmethod
     def validate_udp_port(cls, v: int) -> int:
-        if v < 30000 or v > 30991:
-            raise ValueError("udp_port must be in allocated range [30000, 30991]")
+        minimum, maximum = udp_mux_bounds()
+        if v < minimum or v > maximum:
+            raise ValueError(
+                f"udp_port must be in allocated range [{minimum}, {maximum}]"
+            )
         return v
 
     @field_validator("video_streaming_mode")

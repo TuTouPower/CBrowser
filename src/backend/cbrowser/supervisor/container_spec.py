@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from cbrowser.udp_mux import udp_mux_bounds
+
 
 def gated_entrypoint(instance_id: str, role: str) -> list[str]:
     return [
@@ -131,6 +133,7 @@ def stream_environment(
     clipboard_sync: bool = True,
     build_id: str | None = None,
 ) -> dict[str, Any]:
+    udp_mux_min, udp_mux_max = udp_mux_bounds()
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "CBROWSER_WEBRTC_PUBLIC_IP": public_ip,
@@ -143,6 +146,8 @@ def stream_environment(
         "CBROWSER_AGENT_SECRET_FILE": "/tmp/secret.txt",
         "CBROWSER_SELKIES_CREDENTIALS_FILE": "/tmp/selkies_credentials.json",
         "CBROWSER_UDP_MUX_PORT": str(udp_mux_port),
+        "CBROWSER_UDP_MUX_MIN_PORT": str(udp_mux_min),
+        "CBROWSER_UDP_MUX_MAX_PORT": str(udp_mux_max),
         "CBROWSER_AUDIO_DEVICE": "cbrowser_sink.monitor",
         "CBROWSER_PULSE_DIR": "/pulse",
         "CBROWSER_X11_SOCKET": "/tmp/.X11-unix/X99",

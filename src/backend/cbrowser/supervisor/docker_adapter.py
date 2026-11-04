@@ -53,9 +53,18 @@ from cbrowser.supervisor.volume_spec import (
     cache_init_volumes,
     stream_volumes,
 )
+from cbrowser.udp_mux import udp_mux_bounds
 from docker.errors import DockerException, NotFound
 
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
+
+
+def _udp_mux_helper_environment() -> dict[str, str]:
+    minimum, maximum = udp_mux_bounds()
+    return {
+        "CBROWSER_UDP_MUX_MIN_PORT": str(minimum),
+        "CBROWSER_UDP_MUX_MAX_PORT": str(maximum),
+    }
 
 
 def _parse_config_version(raw: Any) -> int | None:
@@ -239,6 +248,7 @@ class DockerAdapter:
                 cap_add=["NET_ADMIN"],
                 security_opt=["no-new-privileges:true"],
                 network_mode=f"container:{container.id}",
+                environment=_udp_mux_helper_environment(),
                 tmpfs={
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",
@@ -1592,6 +1602,7 @@ with path.open('w') as output:
                 cap_add=["NET_ADMIN"],
                 security_opt=["no-new-privileges:true"],
                 network_mode=f"container:{container.id}",
+                environment=_udp_mux_helper_environment(),
                 tmpfs={
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",

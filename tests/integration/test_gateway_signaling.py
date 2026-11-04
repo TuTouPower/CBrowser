@@ -840,6 +840,18 @@ async def test_handshake_timeout_releases_reservations(tmp_path: Path) -> None:
             for ws in held:
                 await asyncio.wait_for(ws.receive(), timeout=20.0)
                 assert ws.close_code == 1008
+            # Timed-out handshakes release their reservation without
+            # spending the failure budget: nineteen bad credentials still
+            # leave one slot before the limit, so a valid registration
+            # must succeed (four timeout failures would have blocked it).
+            for _ in range(19):
+                with pytest.raises(aiohttp.ClientResponseError) as caught:
+                    await session.ws_connect(
+                        f"{harness.ws_url}/stream/agent/register"
+                        f"?profile_id={profile_id}&runtime_instance_id={instance_id}",
+                        headers={"Authorization": "Bearer invalid-token"},
+                    )
+                assert caught.value.status == 401
             ws_agent, _ = await _register_agent(
                 session, harness, profile_id, instance_id
             )

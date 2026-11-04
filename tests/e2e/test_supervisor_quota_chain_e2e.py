@@ -69,6 +69,13 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
                 browser_eval, browser_cname, expression, target_id
             )
 
+        remote_geometry = (
+            await evaluate_remote(
+                "({width: window.screen.width, height: window.screen.height})"
+            )
+        )["value"]
+        assert remote_geometry == {"width": 1920, "height": 1080}
+
         # Production Supervisor->Gateway control client against the real
         # Gateway container (host-published port, supervisor token file).
         gw_ports = harness.gateway_container.attrs["NetworkSettings"]["Ports"]
@@ -102,6 +109,26 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
                     viewport={"width": 1280, "height": 720},
                 )
                 page = await context.new_page()
+                # Track the Selkies input data channel so the client-side
+                # escape attempt below can drive the same channel the
+                # real viewer uses.
+                await page.add_init_script(
+                    """(() => {
+                        const NativePC = window.RTCPeerConnection;
+                        window.RTCPeerConnection = function (...args) {
+                            const pc = new NativePC(...args);
+                            window.__inputChannels = window.__inputChannels || [];
+                            pc.addEventListener('datachannel', (event) => {
+                                if (event.channel.label === 'input') {
+                                    window.__inputChannels.push(event.channel);
+                                }
+                            });
+                            return pc;
+                        };
+                        window.RTCPeerConnection.prototype = NativePC.prototype;
+                        Object.assign(window.RTCPeerConnection, NativePC);
+                    })();"""
+                )
                 await page.goto(harness.origin, wait_until="domcontentloaded")
                 login_status = await page.evaluate(
                     """async (password) => {
@@ -128,6 +155,7 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
                 await poll_until(
                     stats,
                     lambda s: bool(s)
+                    and bool(s.get("video"))
                     and s["video"].get("framesDecoded", 0) > 0,
                     timeout=30.0,
                     description="viewer decoding frames",
@@ -174,11 +202,12 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
                 await asyncio.sleep(0.5)
                 proof["client_cannot_escape_cap_frames_2s"] = await frame_window()
                 assert 0 < proof["client_cannot_escape_cap_frames_2s"] <= 40
-                geometry = (await stats())["video"]
-                assert (geometry["frameWidth"], geometry["frameHeight"]) == (
-                    1920,
-                    1080,
-                )
+                geometry = (
+                    await evaluate_remote(
+                        "({width: window.screen.width, height: window.screen.height})"
+                    )
+                )["value"]
+                assert geometry == remote_geometry
 
                 logs_before = await read_stream_logs()
                 await control.set_quota(profile_id, instance_id, None)
