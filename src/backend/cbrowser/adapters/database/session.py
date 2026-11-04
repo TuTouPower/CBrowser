@@ -51,8 +51,11 @@ def create_engine_and_maker(
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragmas(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
+        # busy_timeout must precede journal_mode: the latter may need to
+        # wait for another connection's write transaction, and without a
+        # timeout already installed SQLite fails immediately with BUSY.
         cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
