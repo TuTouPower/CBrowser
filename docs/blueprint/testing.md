@@ -212,3 +212,18 @@ t032 执行者按本表运行，不需要回读 t028 的执行过程。所有 E2
 |AC-008 p016 配额/网络|单跑 `test_supervisor_quota_chain_e2e.py`、`test_supervisor_browser_network_e2e.py`、`test_supervisor_network_ownership_e2e.py`|全镜像集 + 引擎缓存|配额链含 CPU 采样窗口，约 10 分钟级|stream_monitor proof JSON（windows/deliveries）+ manifest|
 |AC-009 附网/回滚与发布演练|单跑 `test_supervisor_reconciliation_e2e.py`；发布演练按 `DOCKER_DEPLOYMENT.md` 步骤|全镜像集|数十分钟 + 演练人工步骤|同上|
 |AC-014 required + 证据模式全跑|`CBROWSER_E2E_REQUIRED=1 CBROWSER_RUN_E2E=1 CBROWSER_GATE_EVIDENCE_DIR=<dir> scripts/run_gates.sh`|全镜像集与缓存|全量门禁 + 完整 E2E，预留半天|manifest.json（逐 suite 计数以 junit 为准、`all_passed`、`image_identity`）|
+
+## 自动化兼容性探针矩阵（t029）
+
+探针在 `tests/fixtures/automation_probe/`，结论 spec 为 `docs/specs/automation_compatibility.md`。证据分级：云端已验（目标引擎 linux-x64 + Xvfb）≠ 真实镜像已验；真实 arm64 镜像、容器化 X11/Stream、Mac Chrome Viewer 只在 t032 判定，云端结果不得记为其 PASS。
+
+|探针|入口|层级|云端状态|
+|---|---|---|---|
+|探针机制与判定规则（阈值、脱敏、命令分类）|`tests/unit/test_automation_probe_harness.py`|unit|已跑|
+|全链矩阵 + 下载归属/恢复 + 授权拒绝|`test_automation_probe_chain.py::test_probe_chain_target_engine_matrix_and_disconnect`、`::test_probe_chain_ordinary_chromium_matrix`|integration|已跑|
+|Dialog 基线（普通 Chromium 全链 / 目标引擎直连）|`::test_probe_chain_dialog_contract`、`::test_probe_target_engine_dialog_contract`|integration|已跑|
+|外部 Browser.close 停 Profile|`::test_probe_chain_external_browser_close_stops_profile`|integration|已跑|
+|L0–L6 增量与 CDP/XTEST 输入比较|`tests/fixtures/automation_probe/run_levels.py`（env：CBROWSER_T029_ENGINE_CACHE、CBROWSER_T029_REPORT_DIR、T029_XTE、T029_SAMPLES）|采样驱动|已跑（每级 5 样本）|
+|t032 真实镜像复核|`tests/e2e/test_automation_compatibility_probe_e2e.py`（`CBROWSER_T029_PROBE_E2E=1` 门控）|e2e|默认 skip，t032 执行|
+
+预登记判定：L0–L6 每级 ≥5 个独立进程样本；字段值落在 L0 全部样本之外且该级 ≥4/5 复现才记新增变化。输入比较的采用规则：只有 CDP 出现可复现新增变化或坐标误差 >1 CSS px 才判定 XTEST 有采用收益。采样样本目录在样本结束后自清理（小 tmpfs 上 profile 目录堆积会撑爆磁盘）。外站检测器（BrowserLeaks/CreepJS/Pixelscan）不可达记 NOT_RUN，不以总分或 isTrusted 证明不可检测。

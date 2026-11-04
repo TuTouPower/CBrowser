@@ -51,13 +51,13 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：候选矩阵通过真实 Playwright 进程与真实 Chromium/目标引擎验证 browser 级 `connect_over_cdp`（`no_defaults` 为 True/False）、默认 context/既有页面、popup/iframe/下载及断线行为，并经真实 API→Supervisor 控制面→Agent UDS→Chrome 组件运行；每项记录版本、方法、事件、响应和限制，不以 WS echo 或单次响应代替。
-- [ ] AC-002：自动化子进程正常退出、异常或超时后，已有用户页面与浏览器仍存活，安全断开不发送 Browser.close、context.close 或停止 Profile；两种 `no_defaults` 模式下分别记录连接期间与断开后的下载是否进入 Artifact 捕获，并列出 attach 发出的改变共享浏览器状态的 CDP 命令。
-- [ ] AC-003：目标兼容探针只经 Profile 限定 cbat\_ API→Supervisor→Agent UDS→loopback，覆盖授权失败、跨 Profile、下载策略覆盖/恢复、重连及外部 Browser.close 当前导致的 Profile 停止；无裸 CDP TCP 暴露。
-- [ ] AC-004：在目标引擎（`cloakbrowser` 包下载的 CloakBrowser 二进制、生产 launch args、固定 seed/配置/视口、Xvfb 有头）上执行 L0–L6 增量对照：每级不少于 5 次重复采样，保存字段级样本；某字段值落在 L0 全部样本之外且在该级至少 4/5 样本复现才记为新增变化；每级给出“无变化/新增变化（列字段）/结论不足”及证据；外站不可达记 NOT_RUN，不以总分或 isTrusted=true 证明不可检测。
-- [ ] AC-005：在目标引擎与 Xvfb 上比较 CDP 与 XTEST 输入，覆盖 DPR/缩放、装饰/内容区偏移、滚动、iframe、复杂交互与焦点争用，记录坐标误差与 AC-004 的输入事件字段；只有 CDP 存在可复现的新增变化或坐标误差超过 1 CSS px 时才判定 XTEST 有采用收益。
-- [ ] AC-006：Dialog 基线在真实 Chromium 与目标引擎上覆盖 alert/confirm/prompt/beforeunload：触发命令 pending 时能否应答、客户端退出遗留 Dialog 后新连接能否得知并应答、Page 等域启用或其他命令是否阻塞、beforeunload 是否需要真实用户激活；结论作为 t030 机制选择输入，不声称执行器行为。
-- [ ] AC-007：报告逐项区分云端已验（目标引擎 linux-x64）、目标待验（真实 arm64 镜像、容器化 X11/Stream、真实 Mac Chrome Viewer）与否决条件；给出各级是否可被 t030 采用、t030 必须拦截或避开的命令/能力清单，以及 t031/t032 的逐项输入；全部探针在云端验证参数、报告格式与安全清理。
+- [x] AC-001：候选矩阵通过真实 Playwright 进程与真实 Chromium/目标引擎验证 browser 级 `connect_over_cdp`（`no_defaults` 为 True/False）、默认 context/既有页面、popup/iframe/下载及断线行为，并经真实 API→Supervisor 控制面→Agent UDS→Chrome 组件运行；每项记录版本、方法、事件、响应和限制，不以 WS echo 或单次响应代替。
+- [x] AC-002：自动化子进程正常退出、异常或超时后，已有用户页面与浏览器仍存活，安全断开不发送 Browser.close、context.close 或停止 Profile；两种 `no_defaults` 模式下分别记录连接期间与断开后的下载是否进入 Artifact 捕获，并列出 attach 发出的改变共享浏览器状态的 CDP 命令。
+- [x] AC-003：目标兼容探针只经 Profile 限定 cbat\_ API→Supervisor→Agent UDS→loopback，覆盖授权失败、跨 Profile、下载策略覆盖/恢复、重连及外部 Browser.close 当前导致的 Profile 停止；无裸 CDP TCP 暴露。
+- [x] AC-004：在目标引擎（`cloakbrowser` 包下载的 CloakBrowser 二进制、生产 launch args、固定 seed/配置/视口、Xvfb 有头）上执行 L0–L6 增量对照：每级不少于 5 次重复采样，保存字段级样本；某字段值落在 L0 全部样本之外且在该级至少 4/5 样本复现才记为新增变化；每级给出“无变化/新增变化（列字段）/结论不足”及证据；外站不可达记 NOT_RUN，不以总分或 isTrusted=true 证明不可检测。
+- [x] AC-005：在目标引擎与 Xvfb 上比较 CDP 与 XTEST 输入，覆盖 DPR/缩放、装饰/内容区偏移、滚动、iframe、复杂交互与焦点争用，记录坐标误差与 AC-004 的输入事件字段；只有 CDP 存在可复现的新增变化或坐标误差超过 1 CSS px 时才判定 XTEST 有采用收益。
+- [x] AC-006：Dialog 基线在真实 Chromium 与目标引擎上覆盖 alert/confirm/prompt/beforeunload：触发命令 pending 时能否应答、客户端退出遗留 Dialog 后新连接能否得知并应答、Page 等域启用或其他命令是否阻塞、beforeunload 是否需要真实用户激活；结论作为 t030 机制选择输入，不声称执行器行为。
+- [x] AC-007：报告逐项区分云端已验（目标引擎 linux-x64）、目标待验（真实 arm64 镜像、容器化 X11/Stream、真实 Mac Chrome Viewer）与否决条件；给出各级是否可被 t030 采用、t030 必须拦截或避开的命令/能力清单，以及 t031/t032 的逐项输入；全部探针在云端验证参数、报告格式与安全清理。
 
 ### 可测试性声明
 
@@ -97,9 +97,9 @@
 
 <!-- /规范 -->
 
-- Playwright attach 在既有默认 context 上发出的 CDP 命令集及其对下载捕获的影响：UNVERIFIED-SPIKE，由 AC-001/AC-002 实测回填。
-- Chromium/CloakBrowser 对遗留 Dialog 的新连接事件重放与命令阻塞行为：UNVERIFIED-SPIKE，由 AC-006 实测回填。
-- 目标引擎 L1–L6 指纹增量与 CDP/XTEST 输入差异：UNVERIFIED-SPIKE，由 AC-004/AC-005 实测回填；真实镜像复核由 t032 完成。
+- Playwright attach 在既有默认 context 上发出的 CDP 命令集及其对下载捕获的影响：已实测回填（2026-11-04）——桥接记录的命令集与分类见 docs/specs/automation_compatibility.md；no_defaults=False 时 Playwright 覆盖默认 context 下载行为、连接期间下载绕过 Agent 捕获，no_defaults=True 时 Agent 的 browser 级捕获生效、客户端无 download 事件；断开后 Agent rearm 恢复捕获。
+- Chromium/CloakBrowser 对遗留 Dialog 的新连接事件重放与命令阻塞行为：已实测回填（2026-11-04）——两种引擎一致：遗留 Dialog 不向新连接重放 opening 事件，新连接的域启用与其他命令不被阻塞，遗留项在原会话消失后被消解（confirm 结果 false）、用户页面保持可用；prompt 的 promptText 回传不生效（页面得 null）。
+- 目标引擎 L1–L6 指纹增量与 CDP/XTEST 输入差异：已实测回填（2026-11-04）——L1–L6 在预登记阈值下均无新增变化（每级 5 样本）；CDP 输入坐标误差 0、XTEST 未校准系统偏差约 (+10, −10.88) CSS px 且滚轮量不稳定，按预登记规则判定 XTEST 无采用收益；缩放快捷键子项 INCONCLUSIVE。真实镜像复核由 t032 完成。
 
 ### 风险与回退
 

@@ -11,5 +11,6 @@
 |runtime_persistence|t002, t016, t021|2026-11-04T02:13:35+08:00|
 |runtime_lifecycle|t005, t007, t022, t026|2026-11-04T09:51:48+08:00|
 |release_deployment|t027|2026-11-04T11:30:00+08:00|
+|automation_compatibility|t029|2026-11-04T13:37:11+08:00|
 |access_control|t006, t007, t008, t021, t023, t025|2026-11-04T08:39:09+08:00|
 |profile_management|t007, t013, t017, t020, t021, t023, t025|2026-11-04T08:39:09+08:00|
