@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 import shutil
 import socket
@@ -91,7 +92,8 @@ class GatewayTopologyHarness:
         self.engine_cache_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
         self.geoip_cache_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
-        self.caddy_host_port = find_free_port(35000, 35999)
+        http_base = int(os.environ.get("CBROWSER_E2E_HTTP_BASE", "35000"))
+        self.caddy_host_port = find_free_port(http_base, http_base + 999)
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
 
         self.data_dir = self.work_dir / "data"
@@ -310,6 +312,17 @@ class GatewayTopologyHarness:
                 "CBROWSER_BROWSER_IMAGE": self.browser_image,
                 "CBROWSER_STREAM_IMAGE": self.stream_image,
                 "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
+                # Lane isolation for concurrent t032 topology runs:
+                # separate Supervisor UDP mux ranges and media subnets.
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
+                "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
+                    "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
+                ),
             },
             volumes=mounts,
             ports={"8005/tcp": ("127.0.0.1", None)},

@@ -114,10 +114,24 @@ def collect_image_identity_evidence(
     }
 
 
-def free_udp_port_span(count: int = 2, *, start: int = 30000, end: int = 30990) -> int:
-    """Return a base port with ``count`` consecutive free loopback UDP ports."""
+def free_udp_port_span(
+    count: int = 2,
+    *,
+    start: int | None = None,
+    end: int | None = None,
+) -> int:
+    """Return a base port with ``count`` consecutive free loopback UDP ports.
+
+    ``CBROWSER_E2E_UDP_BASE`` partitions the default span so two
+    concurrent real-topology lanes on one Docker daemon cannot allocate
+    the same Supervisor mux port.
+    """
     import socket
 
+    if start is None:
+        start = int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000"))
+    if end is None:
+        end = start + 990
     for base in range(start, end - count + 1):
         sockets = []
         try:
