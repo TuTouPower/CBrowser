@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,6 +158,10 @@ class DockerAdapter:
             or "10.251.0.0/16"
         )
         self._cache_lock = asyncio.Lock()
+        # Media subnet allocation reads Docker's network list and then
+        # creates the allocation; concurrent launches must not pick the
+        # same subnet from the same snapshot.
+        self._media_network_lock = threading.Lock()
         self._binary_ready = False
         self._geoip_ready = False
 
@@ -718,32 +723,33 @@ with path.open('w') as output:
         """
         net_name = self.get_network_name(profile_id)
         try:
-            try:
-                existing = self.client.networks.get(net_name)
-            except NotFound:
-                existing = None
-            if existing is not None:
-                self._require_network_ownership(existing, net_name)
-                return existing
-            try:
-                plan = self.media_allocator.allocate(self._used_subnets())
-            except MediaPoolExhaustedError as e:
-                raise DockerSandboxError(str(e)) from e
-            ipam = docker.types.IPAMConfig(
-                pool_configs=[
-                    docker.types.IPAMPool(
-                        subnet=plan.subnet, iprange=plan.ip_range
-                    )
-                ]
-            )
-            return self.client.networks.create(
-                net_name,
-                driver="bridge",
-                ipam=ipam,
-                labels=media_network_labels(
-                    network_labels(self.resource_prefix, profile_id), plan
-                ),
-            )
+            with self._media_network_lock:
+                try:
+                    existing = self.client.networks.get(net_name)
+                except NotFound:
+                    existing = None
+                if existing is not None:
+                    self._require_network_ownership(existing, net_name)
+                    return existing
+                try:
+                    plan = self.media_allocator.allocate(self._used_subnets())
+                except MediaPoolExhaustedError as e:
+                    raise DockerSandboxError(str(e)) from e
+                ipam = docker.types.IPAMConfig(
+                    pool_configs=[
+                        docker.types.IPAMPool(
+                            subnet=plan.subnet, iprange=plan.ip_range
+                        )
+                    ]
+                )
+                return self.client.networks.create(
+                    net_name,
+                    driver="bridge",
+                    ipam=ipam,
+                    labels=media_network_labels(
+                        network_labels(self.resource_prefix, profile_id), plan
+                    ),
+                )
         except DockerSandboxError:
             raise
         except DockerException as e:
@@ -1595,6 +1601,7 @@ with path.open('w') as output:
                 self.policy_image,
                 entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
                 command=command,
+                name=f"{self.resource_prefix}-policy-{uuid.uuid4().hex[:12]}",
                 detach=True,
                 user="0:0",
                 read_only=True,
@@ -1613,7 +1620,18 @@ with path.open('w') as output:
                 ),
             )
             result = helper.wait(timeout=30)
-            return int(result.get("StatusCode", -1))
+            status_code = int(result.get("StatusCode", -1))
+            if status_code != 0:
+                try:
+                    output = helper.logs()[-2000:].decode("utf-8", errors="replace")
+                except DockerException:
+                    output = ""
+                logger.warning(
+                    "Network policy helper exit=%s output=%s",
+                    status_code,
+                    output,
+                )
+            return status_code
         except DockerException as exc:
             raise DockerSandboxError(
                 "Runtime network policy helper failed: " + type(exc).__name__

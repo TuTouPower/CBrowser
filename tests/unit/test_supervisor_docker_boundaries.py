@@ -84,6 +84,44 @@ class _FakeHelper:
         self.removed = True
 
 
+def test_policy_verification_helper_has_deterministic_managed_name(tmp_path) -> None:
+    """A9/f006: verify/fail-closed helpers must carry the reaper name too.
+    An auto-generated Docker name would make the startup orphan reaper
+    raise a false ownership mismatch after a mid-verification SIGKILL.
+    """
+    import re
+
+    helper = _FakeHelper(0)
+    calls: dict = {}
+
+    def run(image, **kwargs):
+        calls.update(kwargs)
+        return helper
+
+    client = SimpleNamespace(containers=SimpleNamespace(run=run))
+    adapter = _adapter(tmp_path, client)
+    target = SimpleNamespace(
+        id="target-id", labels={"com.cbrowser.instance-id": "inst_a"}
+    )
+    assert (
+        adapter.verify_container_policy(
+            target,
+            {
+                "role": "stream",
+                "udp_mux_port": 30005,
+                "allowed_tcp": [],
+                "allowed_udp": [],
+            },
+        )
+        is True
+    )
+    assert re.fullmatch(
+        rf"{re.escape(adapter.resource_prefix)}-policy-[0-9a-f]{{12}}",
+        calls["name"],
+    )
+    assert helper.removed is True
+
+
 def test_x11_helper_is_least_privilege_and_cleaned_up(tmp_path) -> None:
     """A9: the X11 permission helper drops all capabilities except the one
     chmod needs, runs on a read-only rootfs with no-new-privileges, carries
