@@ -47,7 +47,10 @@ from cbrowser.supervisor.event_forwarder import (
 from cbrowser.supervisor.file_storage import atomic_write_text
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
-from cbrowser.supervisor.path_validator import PathSecurityError
+from cbrowser.supervisor.path_validator import (
+    PathSecurityError,
+    short_unix_socket_path,
+)
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.protocol import (
     ProfileReadiness,
@@ -1553,25 +1556,12 @@ class SupervisorCore:
         if not sock_path.is_socket():
             yield None
             return
-        dir_fd: int | None = None
-        try:
-            proc_fd_dir = Path("/proc/self/fd")
-            if proc_fd_dir.exists():
-                dir_fd = os.open(
-                    str(sock_path.parent),
-                    os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
-                )
-                uds_target = f"/proc/self/fd/{dir_fd}/{sock_path.name}"
-            else:
-                uds_target = os.path.relpath(sock_path, os.getcwd())
+        with short_unix_socket_path(sock_path) as uds_target:
             transport = httpx.AsyncHTTPTransport(uds=uds_target)
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://uds", timeout=2.0
             ) as client:
                 yield client
-        finally:
-            if dir_fd is not None:
-                os.close(dir_fd)
 
     async def _query_agent_health(self, profile_id: str) -> HealthResponse | None:
         """Query Agent UDS /health; validate runtime path and reject if inaccessible."""

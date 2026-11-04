@@ -30,6 +30,7 @@ from cbrowser.supervisor.core import (
     RuntimeUnavailableError,
     SupervisorCore,
 )
+from cbrowser.supervisor.path_validator import short_unix_socket_path
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
     ProfileRuntimeStatus,
@@ -460,18 +461,19 @@ def create_control_app(
         upstream = None
         tasks: list[Any] = []
         try:
-            upstream = await websockets.unix_connect(
-                str(sock_path),
-                uri="ws://localhost/cdp",
-                max_size=32 * 1024 * 1024,
-                ping_interval=10,
-                ping_timeout=10,
-                **(
-                    {"proxy": None}
-                    if "proxy" in inspect.signature(websockets.connect).parameters
-                    else {}
-                ),
-            )
+            with short_unix_socket_path(sock_path) as uds_target:
+                upstream = await websockets.unix_connect(
+                    uds_target,
+                    uri="ws://localhost/cdp",
+                    max_size=32 * 1024 * 1024,
+                    ping_interval=10,
+                    ping_timeout=10,
+                    **(
+                        {"proxy": None}
+                        if "proxy" in inspect.signature(websockets.connect).parameters
+                        else {}
+                    ),
+                )
 
             async def client_to_upstream():
                 while True:

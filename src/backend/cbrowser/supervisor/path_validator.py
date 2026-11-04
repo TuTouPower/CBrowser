@@ -7,11 +7,40 @@ strictly confined within configured canonical roots.
 
 from __future__ import annotations
 
+import os
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 
 
 class PathSecurityError(Exception):
     """Raised when a path violates security constraints or attempts escape."""
+
+
+@contextmanager
+def short_unix_socket_path(sock_path: Path) -> Iterator[str]:
+    """Yield the shortest bindable AF_UNIX path for an existing socket.
+
+    AF_UNIX sun_path is ~104-108 bytes. Data roots can exceed that, so on
+    Linux use the /proc/self/fd symlink (short and fails closed if the
+    directory is swapped), otherwise pick the shorter of absolute and
+    CWD-relative spellings. The directory fd stays open for the caller's
+    connect call.
+    """
+    proc_fd = Path("/proc/self/fd")
+    if proc_fd.exists():
+        dir_fd = os.open(
+            str(sock_path.parent),
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        )
+        try:
+            yield f"/proc/self/fd/{dir_fd}/{sock_path.name}"
+        finally:
+            os.close(dir_fd)
+        return
+    absolute = str(sock_path)
+    relative = os.path.relpath(sock_path, os.getcwd())
+    yield absolute if len(absolute) <= len(relative) else relative
 
 
 RESERVED_PROFILE_IDS = frozenset({".secrets", "secrets", "archive", "quarantine"})
