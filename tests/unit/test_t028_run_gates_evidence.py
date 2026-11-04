@@ -75,6 +75,10 @@ def _run_gates(tmp_path: Path, extra_env: dict[str, str]) -> subprocess.Complete
     env = dict(os.environ)
     env.pop("TMPDIR", None)
     env.pop("CBROWSER_RUN_E2E", None)
+    # A parent gate run exports its evidence directory; without clearing
+    # it this nested run writes into the parent's evidence tree, deletes
+    # its in-flight per-suite logs and corrupts the outer manifest.
+    env.pop("CBROWSER_GATE_EVIDENCE_DIR", None)
     env["PATH"] = f"{bin_dir}:{env['PATH']}"
     env["GATE_STUB_LOG"] = str(tmp_path / "stub.log")
     env["GATE_STUB_REAL_PY"] = sys.executable
