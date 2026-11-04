@@ -231,7 +231,18 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
         if tunnel_record is not None and registry is not None:
             registry.unregister(tunnel_record.tunnel_id)
         try:
-            await websocket.close()
+            # Propagate the control-revoked close from the Supervisor
+            # proxy; dropping it would turn a 4403 takeover into a
+            # generic 1000 for the client.
+            close_code = (
+                upstream.close_code
+                if upstream is not None and upstream.close_code is not None
+                else None
+            )
+            if close_code is not None and close_code != 1005:
+                await websocket.close(code=close_code)
+            else:
+                await websocket.close()
         except Exception:  # noqa: BLE001 - already-closed client socket is harmless
             pass
 
