@@ -12,11 +12,11 @@ t032's.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 from pathlib import Path
 
-import docker
 import httpx
 import pytest
 from gateway_probe.browser_oracle import browser_eval
@@ -25,73 +25,33 @@ from gateway_probe.topology import GatewayTopologyHarness
 from wait import poll_until
 
 PAYLOAD = b"cbrowser-t028-artifact-chain\n" * 512
-SERVER_PORT = 18099
-SERVER_SCRIPT = """
-import hashlib
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
-PAYLOAD = b"cbrowser-t028-artifact-chain\\n" * 512
-
-
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path != "/artifact.bin":
-            self.send_response(404)
-            self.end_headers()
-            return
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header(
-            "Content-Disposition", 'attachment; filename="artifact.bin"'
-        )
-        self.send_header("Content-Length", str(len(PAYLOAD)))
-        self.end_headers()
-        self.wfile.write(PAYLOAD)
-
-    def log_message(self, *args):
-        pass
-
-
-HTTPServer(("0.0.0.0", 18099), Handler).serve_forever()
-"""
+DOWNLOAD_SCRIPT = (
+    "const b=Uint8Array.from(atob('%s'),c=>c.charCodeAt(0));"
+    "const a=document.createElement('a');"
+    "a.href=URL.createObjectURL(new Blob([b],{type:'application/octet-stream'}));"
+    "a.download='artifact.bin';document.body.appendChild(a);a.click();"
+    "'download-started'"
+) % base64.b64encode(PAYLOAD).decode("ascii")
 
 
 @pytest.mark.asyncio
 async def test_chrome_download_reaches_api_artifact(tmp_path: Path) -> None:
     harness = GatewayTopologyHarness(tmp_path)
-    docker_client = docker.from_env()
-    server = None
     try:
         await harness.start()
         profile = await harness.create_and_start_profile("artifact_profile")
         profile_id = profile["profile_id"]
         browser_cname = profile["browser_container"]
 
-        # A file server on the topology edge network serves the file the
-        # real Browser container's Chrome will download.
-        server = docker_client.containers.run(
-            harness.browser_image,
-            entrypoint="python3",
-            command=["-c", SERVER_SCRIPT],
-            name=f"{harness.prefix}-fileserver",
-            detach=True,
-            network=harness.edge_network.name,
-            labels={
-                "com.cbrowser.prefix": harness.prefix,
-                "com.cbrowser.test": "t028-artifact-chain",
-                "com.cbrowser.role": "fileserver",
-            },
-        )
-        server.reload()
-        server_ip = server.attrs["NetworkSettings"]["Networks"][
-            harness.edge_network.name
-        ]["IPAddress"]
-
         # Trigger a genuine Chrome download inside the Browser container.
+        # A Blob URL keeps the download independent of the Browser network
+        # policy (arbitrary edge-network hosts are denied by design) while
+        # still exercising Chrome's real download pipeline and the Agent's
+        # completion capture.
         await asyncio.to_thread(
             browser_eval,
             browser_cname,
-            f"window.location.href = 'http://{server_ip}:{SERVER_PORT}/artifact.bin'; 'download-started'",
+            DOWNLOAD_SCRIPT,
         )
 
         auth_headers = await harness.login_api()
@@ -138,14 +98,11 @@ async def test_chrome_download_reaches_api_artifact(tmp_path: Path) -> None:
                 "artifact_id": artifact["id"],
                 "size": artifact["size"],
                 "sha256": artifact["sha256"],
-                "server_container": server.name,
+                "download_source": "blob-url",
             },
             tmp_path,
         )
     finally:
-        if server is not None:
-            server.remove(force=True)
-        docker_client.close()
         await harness.cleanup()
         # The payload must never leak into evidence files verbatim.
         proof = tmp_path / "artifact_download_chain.json"
