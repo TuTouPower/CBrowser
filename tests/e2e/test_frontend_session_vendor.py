@@ -1,7 +1,8 @@
-"""Verification of Selkies 2.1.0 official web client vendoring and hash verification."""
+"""Verification of Selkies official web client vendoring and hash verification."""
 
 from __future__ import annotations
 
+import tomllib
 from pathlib import Path
 
 from scripts.vendor_selkies_web import (  # noqa: E402
@@ -15,14 +16,37 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VENDORED_DIR = REPO_ROOT / "src" / "frontend" / "public" / "selkies"
 
 
-def test_pinned_constants() -> None:
-    """Change alarm for the pin values themselves (kept from the original
-    test): a deliberate pin bump is the only way this test should fail."""
-    assert PINNED_SELKIES_VERSION == "2.1.0"
-    assert (
-        PINNED_WHEEL_SHA256
-        == "8bde6207ca921cb2f38c3204fafe18d40b5578165894818ae1ca9e46fca7b966"
+def test_pinned_version_matches_lock() -> None:
+    """The vendor pin must equal the version locked in pyproject/uv.lock.
+
+    Replaces the removed hard-coded ``test_pinned_constants`` (which asserted
+    the literal "2.1.0"): its expected value changed with the t043 upgrade,
+    and in-place edits of an old test's expected output are forbidden.  The
+    new assertion is version-agnostic and fails on any drift between the
+    vendor script and the single uv.lock source (t034/t043).
+    """
+    pyproject = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
+    stream_group = pyproject["dependency-groups"]["stream"]
+    pinned = next(
+        item.split("==", 1)[1]
+        for item in stream_group
+        if item.startswith("selkies==")
+    )
+    lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
+    locked = next(
+        p["version"] for p in lock["package"] if p["name"] == "selkies"
+    )
+    assert PINNED_SELKIES_VERSION == pinned == locked
+    # The wheel hash is the artifact identity behind the pin; lock it to
+    # uv.lock's recorded wheel hash rather than a bare length check.
+    wheel_hash = next(
+        w["hash"].removeprefix("sha256:")
+        for w in next(p for p in lock["package"] if p["name"] == "selkies")["wheels"]
+        if w["url"].endswith(".whl")
+    )
+    assert PINNED_WHEEL_SHA256 == wheel_hash
 
 
 def test_vendored_tree_matches_reference_manifest() -> None:

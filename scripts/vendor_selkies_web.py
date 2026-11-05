@@ -1,4 +1,4 @@
-"""Vendors official Selkies 2.1.0 web assets and injects the adapter tag."""
+"""Vendors official Selkies 2.2.1 web assets and injects the adapter tag."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import io
 import logging
+import re
 import shutil
 import urllib.request
 import zipfile
@@ -16,12 +17,12 @@ logger = logging.getLogger("cbrowser.vendor_selkies_web")
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MANIFEST_PATH = REPO_ROOT / "config" / "selkies" / "selkies_web_sha256.txt"
 
-PINNED_SELKIES_VERSION = "2.1.0"
-PINNED_WHEEL_SHA256 = "8bde6207ca921cb2f38c3204fafe18d40b5578165894818ae1ca9e46fca7b966"
+PINNED_SELKIES_VERSION = "2.2.1"
+PINNED_WHEEL_SHA256 = "18503b5c1491a04194f0a45fa10c547ffe5b4a24f33496ce5d56e97370a6a3cd"
 PINNED_WHEEL_FILENAME = f"selkies-{PINNED_SELKIES_VERSION}-py3-none-any.whl"
 PINNED_WHEEL_URL = (
-    "https://files.pythonhosted.org/packages/48/39/"
-    "64b75999a7a45a1bf063cc31f2a3fda9da65dafb0fb7a6567ecde9674891/"
+    "https://files.pythonhosted.org/packages/40/33/"
+    "ece2923d078b414bed7c1e74e15ba83be34f77ecfc5092d58103bda3f210/"
     f"selkies-{PINNED_SELKIES_VERSION}-py3-none-any.whl"
 )
 
@@ -226,12 +227,18 @@ def vendor_selkies_web(
     if inject_adapter:
         raw_html = official_backup.read_text(encoding="utf-8")
         adapter_tag = '<script src="./selkies_adapter.js"></script>'
-        marker = (
-            '<script type="module" crossorigin '
-            'src="./assets/index-BpOBp7NB.js"></script>'
-        )
-        if marker in raw_html:
-            adapted_html = raw_html.replace(marker, adapter_tag + "\n" + marker, 1)
+        # Inject immediately before the FIRST module script, whichever
+        # hashed bundle name the current Selkies release ships.  A frozen
+        # 2.1.0 marker would silently fall back to <head> injection on a
+        # version bump (t043 s012 spike).
+        module_match = re.search(r"<script[^>]+type=\"module\"[^>]*>", raw_html)
+        if module_match:
+            adapted_html = (
+                raw_html[: module_match.start()]
+                + adapter_tag
+                + "\n"
+                + raw_html[module_match.start() :]
+            )
         elif "<head>" in raw_html:
             adapted_html = raw_html.replace("<head>", "<head>\n" + adapter_tag, 1)
         else:
@@ -244,7 +251,7 @@ def vendor_selkies_web(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Vendor Selkies 2.1.0 web client assets with verified SHA256 integrity"
+            "Vendor official Selkies 2.2.1 web client assets with verified SHA256 integrity"
         )
     )
     repo_root = Path(__file__).resolve().parent.parent

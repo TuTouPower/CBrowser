@@ -319,7 +319,8 @@ class StreamAgent:
         if entry is None:
             return None
 
-        # Selkies 2.1.0 RTCApp._start_rtc_pipeline stores dict['peer_conn'].
+        # Selkies 2.2.1 RTCApp._start_rtc_pipeline stores dict['peer_conn']
+        # (unchanged from 2.1.0; re-verified in the t043 s012 spike).
         return entry.get("peer_conn") if isinstance(entry, dict) else None
 
     async def connect_and_run(self) -> None:

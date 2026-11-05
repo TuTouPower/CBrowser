@@ -2,7 +2,7 @@
 
 ## 边界与部署接口
 
-Stream Runtime 负责单个 Profile 的 Selkies 2.1.0 捕获、共享编码、WebRTC Peer 与原生输入；Browser Runtime 独立持有引擎与用户数据。Stream 不启动或停止 Browser，不访问 Profile 数据、Browser Agent UDS 或 Docker Socket。
+Stream Runtime 负责单个 Profile 的 Selkies 2.2.1 捕获、共享编码、WebRTC Peer 与原生输入；Browser Runtime 独立持有引擎与用户数据。Stream 不启动或停止 Browser，不访问 Profile 数据、Browser Agent UDS 或 Docker Socket。
 
 Stream 使用 UID 1000、只读根文件系统、cap-drop ALL 与独立 PID namespace，加入指定 Browser 的 shareable IPC，使用相同 hostname。只挂载对应 X99 Socket 文件、Xauthority 文件、Pulse 子目录和 Agent 凭证文件；不能挂载整个 Browser runtime 目录。Pulse 源为 cbrowser_sink.monitor，48000 Hz、S16LE、双声道。宿主发布每个 Profile 分配的 UDP mux；Native HTTP 仅监听 Stream 容器 loopback。
 
@@ -44,7 +44,7 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 中文使用官方 composition/co,end → Native X11 输入，不使用剪贴板提交。x11_keymap.py 按运行时 XKB 非空名称过滤 spare，保留 Native 分配顺序；每次新绑定通过有界 xkbcomp reload 通知活跃 Chrome，并保留 SDK settle。按住的槽及当前 batch 已绑定槽不得重绑，无容量则拒绝。该路径有同步 subprocess 成本，P95、1000次输入与8小时稳定性须在 t009/t012 实测，当前不作性能承诺。细节见 d014/d017/d018。
 
-Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验钉版 2.1.0 的完整私有面（prebind/text_room/\_find_spare_keycodes/\_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。不自动升级 Selkies/CloakBrowser 版本。
+Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验当前钉版（t043 起为 2.2.1，`SUPPORTED_SELKIES_VERSION`）的完整私有面（prebind/text_room/\_find_spare_keycodes/\_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。版本升级须先按 s012 spike 复核协议字符串与私有 ABI，不静默放行。
 
 ## 镜像构成（t024）
 

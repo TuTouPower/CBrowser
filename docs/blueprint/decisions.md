@@ -259,3 +259,11 @@
     - **cloakbrowser 锁定 0.6.4（D7）**：0.6.4 无 key 模式使用免费 Chromium 146 内核、不校验 license、无并发上限；0.7.0 删除无 key 路径，自动申领的免费 key 只允许 1 个并发会话，会破坏多 Profile 并发。故精确锁定 `cloakbrowser[geoip]==0.6.4`，不升 0.7.x。
 - 复查条件：上游恢复无 key 路径且免费 key 不再限制并发会话时，重新评估 cloakbrowser 升级（需真引擎并发验证）；Python/Debian/Caddy 后续大版本升级按同一 digest 固定 + SPIKE + 全量门禁流程。
 - 替代：无（不采用 `--legacy-peer-deps` 类绕过，不保留手写并行依赖清单）。
+
+## 022 Selkies 升级至 2.2.1 与契约适配（2026-11-05，t043）
+
+- 背景：D10 要求 Selkies 升到当前最新 2.x；t034 已把运行时底座升到 Python 3.15 / trixie，但刻意把 Selkies 拆到 t043 以保留独立回退边界。正式 spike `docs/spikes/s012_selkies_2_2_upgrade_contract/report.md` 与 finding `docs/findings/d030_selkies_2_2_1_upgrade_contract.md` 以官方 wheel 源码逐项比对 2.1.0 → 2.2.1。
+- 选项：升到 2.2.1；或发现不可适配破坏变化时停止报告用户并保留 2.1.0。
+- 结论：采用 2.2.1（PyPI 最新 2.x，METADATA 声明支持 Python 3.15）。比对结论：Python 模块清单相同；`webrtc_signaling_server.py` 的 HELLO / client_tab_id / resume_key / resume 语义不变；`_XTestKeyboard` 私有 ABI（4 方法签名、`_BIND_SETTLE_S`、6 个实例属性）AST 校验全部一致；Web 客户端 `selkies-core.js` 从 `src/` 移到根但协议字符串上下文逐字相同，`adapter.ts` 的 WebSocket hook 有效——**无不可适配的破坏性变化**。适配点：Web 客户端文件清单与 SHA 清单重生（2018 行）、index.html 新增 `__SELKIES_DEFER_INITIALIZATION` / modulepreload / 末尾 `selkies-core.js` module（vendor 注入 marker 改通用「首个 module tag」而非写死 2.1.0 bundle 名，IIFE adapter 仍在 head 首位）、pixelflux 2.2.3 / pcmflux 2.2.1 随 `uv.lock` 联动、`x11_keymap` 的 `SUPPORTED_SELKIES_VERSION=2.2.1` 版本门禁（ABI 校验本身不变）。ADR 002 / 013 的历史「2.1.0 固定」表述按 ADR 传播约定由本条更新现行文档面，历史条目原文不改。
+- 复查条件：后续 2.x 升级沿用同一 spike（协议字符串、私有 ABI AST、Web 客户端文件清单/注入顺序、原生依赖）与 Stream/会话 E2E 差异探针；任一不可适配变化按 t043 契约停止报告用户，不自行保留旧版。
+- 替代：无。

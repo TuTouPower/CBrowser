@@ -312,7 +312,7 @@ gateway = [
 stream = [
     { name = "aiohttp", specifier = "==3.14.5" },
     { name = "pydantic", specifier = "==2.14.1" },
-    { name = "selkies", specifier = "==2.1.0" },
+    { name = "selkies", specifier = "==2.2.1" },
 ]
 supervisor = [
     { name = "docker", specifier = ">=7.0.0" },
@@ -900,13 +900,13 @@ wheels = [
 
 [[package]]
 name = "pcmflux"
-version = "2.2.0"
+version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/06/5c09341b35ea7dd9ba43b9967b516a77202f73dac77ac462fdb59863d69b/pcmflux-2.2.0-cp315-cp315-manylinux_2_28_aarch64.whl", hash = "sha256:ee37fb3378390a2016325190e4ed2b78826466000ae631d919d10caf73011869", size = 3569305, upload-time = "2026-10-20T16:32:07.622Z" },
-    { url = "https://files.pythonhosted.org/packages/c4/b8/befcb68750c0f1863d31ad79f84fda2ca5e2f627063b3d5d8882f23194de/pcmflux-2.2.0-cp315-cp315-manylinux_2_28_x86_64.whl", hash = "sha256:029f4d974b030a7cf11e0db6666c43d9b054703311cf9331519784ed81cbaf31", size = 3910712, upload-time = "2026-10-20T16:32:09.362Z" },
-    { url = "https://files.pythonhosted.org/packages/80/7b/ba066887a37339182fcbd5299e48289f8587fa3891743410abbfa6f3b73a/pcmflux-2.2.0-cp315-cp315-musllinux_1_2_aarch64.whl", hash = "sha256:0d1e758a2feb7e828bce346b706f0b09d1676979eba11941f9d0b841e52c56f6", size = 2243163, upload-time = "2026-10-20T16:32:10.915Z" },
-    { url = "https://files.pythonhosted.org/packages/b8/22/fe9963f4efaf4ca400d045094469b01fa7dd14c10fee1b942bce7ec6af05/pcmflux-2.2.0-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:5a118833fdb8c152cc14b68c97165a0d6031116d711710472cf8eaa1e8ee880d", size = 2366076, upload-time = "2026-10-20T16:32:12.578Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/3c/ffccb5bee0bd7421f3aca8264d2dfbe1d3594be0db157b199bb653aaf2dd/pcmflux-2.2.1-cp315-cp315-manylinux_2_28_aarch64.whl", hash = "sha256:b782c1c794b6b1e4a54435dfc1f9c926b6423d45be6929543e504cb454671987", size = 3569346, upload-time = "2026-11-01T15:46:56.526Z" },
+    { url = "https://files.pythonhosted.org/packages/93/cf/a7fff43a5841256c47870ca1a4045c771fec5b332322c3bd4e4a601a26a5/pcmflux-2.2.1-cp315-cp315-manylinux_2_28_x86_64.whl", hash = "sha256:9fff67cc1042a22365a183cc8e4b3449ee90ca5b0f4a4edac885891e8eae8c25", size = 3910893, upload-time = "2026-11-01T15:46:57.978Z" },
+    { url = "https://files.pythonhosted.org/packages/98/a8/2f2cb90de39992927301d326386c2f1fa615cbb389d1769d4c824d1423ed/pcmflux-2.2.1-cp315-cp315-musllinux_1_2_aarch64.whl", hash = "sha256:a2d96f8633e9a2c63d1a6f1c2fcaca1b0260f00fc39109e5e59e54ec3c23b7da", size = 2242698, upload-time = "2026-11-01T15:46:59.443Z" },
+    { url = "https://files.pythonhosted.org/packages/53/5b/04d7eea921ad3b8f438c509a8183bf150ee6eb279b433b7612955c0ea776/pcmflux-2.2.1-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:d2da09a9a13e22e93f0ac08cd70df620a501fb17cceab5827319a84547b2b2e9", size = 2366208, upload-time = "2026-11-01T15:47:00.907Z" },
 ]
 
 [[package]]
@@ -940,13 +940,13 @@ wheels = [
 
 [[package]]
 name = "pixelflux"
-version = "2.2.1"
+version = "2.2.3"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fe/df/e89224d1d30dcaac3a922a79992f0028d9770ea000a65e568907d2a23ad0/pixelflux-2.2.1-cp315-cp315-manylinux_2_28_aarch64.whl", hash = "sha256:481555b24f6dbd82fe0845280e13c878934e321e15863fb8ff9c48f1d4ee484a", size = 13832583, upload-time = "2026-10-21T03:31:03.172Z" },
-    { url = "https://files.pythonhosted.org/packages/d1/71/95e6318d95034662f33c17be9b8d1771464293f68555760953d4cfa02460/pixelflux-2.2.1-cp315-cp315-manylinux_2_28_x86_64.whl", hash = "sha256:d168d66535e99877b70fd3fb22a977a61902fede35e7b0a0f5a7f89625923911", size = 14717378, upload-time = "2026-10-21T03:31:05.61Z" },
-    { url = "https://files.pythonhosted.org/packages/39/39/8a01238e7ec3a759e5075611f5b12f8f1d412e0b7f00f92a0ff5937b50a3/pixelflux-2.2.1-cp315-cp315-musllinux_1_2_aarch64.whl", hash = "sha256:fd22042ecff93759f8214ca0c93f695fa450db5172245a7f4de8d2c7e7ad2d05", size = 13954091, upload-time = "2026-10-21T03:31:08.286Z" },
-    { url = "https://files.pythonhosted.org/packages/02/10/4d93d1daaec295559a228200cd83636916f0ec717ab2e1d891607b208fd8/pixelflux-2.2.1-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:2b43648990af199ce04e45d7c1fa2b8ed600c87746e48edb28f3ddecee611c46", size = 14803743, upload-time = "2026-10-21T03:31:10.81Z" },
+    { url = "https://files.pythonhosted.org/packages/18/41/d3037115d74ff202605c08bf38db87a7ce8c3677277c59d517c244c5feef/pixelflux-2.2.3-cp315-cp315-manylinux_2_28_aarch64.whl", hash = "sha256:a23fd2fc22de387009e07781767241e5bbb48cd5e2f0d22185fa555e3c1e858d", size = 13885529, upload-time = "2026-11-04T07:29:56.945Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/79/e15eca07ae12c89d27a94483d4f8cf51e7353f53d8cb8b42062727bf712c/pixelflux-2.2.3-cp315-cp315-manylinux_2_28_x86_64.whl", hash = "sha256:c8ebd39afe68ff09938d10fc39b03058d5d4e23a65651ccbf1f3b0d820cebfd2", size = 14772100, upload-time = "2026-11-04T07:29:59.899Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/3b/e750c64ad71513b86625f283fda1eb4ae0517c9177262c501342d3a63abb/pixelflux-2.2.3-cp315-cp315-musllinux_1_2_aarch64.whl", hash = "sha256:d1153dacbfad39b55aa040b85d989a7992a3d72cafdaae5a9f8e83b8cde9931b", size = 14011247, upload-time = "2026-11-04T07:30:02.79Z" },
+    { url = "https://files.pythonhosted.org/packages/da/9c/9c1594430a0efcd34c2f1c5de12c78f88eca6256238e9b1ba6a385a426a6/pixelflux-2.2.3-cp315-cp315-musllinux_1_2_x86_64.whl", hash = "sha256:b71c743c65ce37f15e85c7be25885d3e5a096e554c669b83736d2813657bca10", size = 14860562, upload-time = "2026-11-04T07:30:05.993Z" },
 ]
 
 [[package]]
@@ -1291,7 +1291,7 @@ wheels = [
 
 [[package]]
 name = "selkies"
-version = "2.1.0"
+version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1314,9 +1314,9 @@ dependencies = [
     { name = "uvloop", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "watchdog" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/10/9c/f720e882705cec1fb7466402fef660b6d18c1d816d87e617191309c8e29f/selkies-2.1.0.tar.gz", hash = "sha256:9765360801ca1f381916b4cfac21b106aa27fdbe025c64e1da0081565a316abe", size = 1775073, upload-time = "2026-10-21T04:10:20.987Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6a/76/544fed418e6bf477bc94e7547e78cb36593b1b5fdb238a234e4fecf731b9/selkies-2.2.1.tar.gz", hash = "sha256:29fad949d74555701248e70cff29740ce5e6386935124d8d47ebb4909e66f099", size = 1975067, upload-time = "2026-11-04T08:06:07.919Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/48/39/64b75999a7a45a1bf063cc31f2a3fda9da65dafb0fb7a6567ecde9674891/selkies-2.1.0-py3-none-any.whl", hash = "sha256:8bde6207ca921cb2f38c3204fafe18d40b5578165894818ae1ca9e46fca7b966", size = 2535078, upload-time = "2026-10-21T04:10:18.701Z" },
+    { url = "https://files.pythonhosted.org/packages/40/33/ece2923d078b414bed7c1e74e15ba83be34f77ecfc5092d58103bda3f210/selkies-2.2.1-py3-none-any.whl", hash = "sha256:18503b5c1491a04194f0a45fa10c547ffe5b4a24f33496ce5d56e97370a6a3cd", size = 2733413, upload-time = "2026-11-04T08:06:06.029Z" },
 ]
 
 [[package]]

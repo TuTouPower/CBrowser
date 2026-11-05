@@ -37,7 +37,7 @@ USER root
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; fi
 
-# Runtime shared libraries and tools for Selkies 2.1.0 only: the runtime
+# Runtime shared libraries and tools for Selkies 2.2.1 only: the runtime
 # counterparts of the builder stage's -dev packages, with no toolchain.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

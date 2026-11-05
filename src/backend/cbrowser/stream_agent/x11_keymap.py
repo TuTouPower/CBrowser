@@ -33,9 +33,11 @@ def _read_keymap() -> bytes:
 
 
 # The complete Selkies private surface this adapter depends on (verified
-# against the pinned selkies==2.1.0 wheel in the t022 A47 spike). Any drift
-# must surface as an explicit unsupported-ABI failure at install time, never
-# as an AttributeError deep in input handling that looks like a dead driver.
+# against the pinned selkies==2.1.0 wheel in the t022 A47 spike and
+# re-verified for 2.2.1 in the t043 s012 spike). Any drift must surface as
+# an explicit unsupported-ABI failure at install time, never as an
+# AttributeError deep in input handling that looks like a dead driver.
+SUPPORTED_SELKIES_VERSION = "2.2.1"
 _ABI_METHODS = (
     ("prebind", ["self", "keysyms"]),
     ("text_room", ["self"]),
@@ -118,8 +120,10 @@ def install_x11_keymap_refresh() -> None:
     global _installed
     if _installed:
         return
-    if version("selkies") != "2.1.0" or not Path(_XKBCOMP).is_file():
-        raise RuntimeError("Unsupported X11 input runtime")
+    if version("selkies") != SUPPORTED_SELKIES_VERSION or not Path(_XKBCOMP).is_file():
+        raise RuntimeError(
+            f"Unsupported X11 input runtime: requires selkies=={SUPPORTED_SELKIES_VERSION}"
+        )
 
     from selkies.input_handler import _XTestKeyboard
 

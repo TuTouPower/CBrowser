@@ -2,7 +2,7 @@
 
 # 架构
 
-CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.1.0 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。
+CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.2.1 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。
 
 ## 1. 现状与演进状态说明
 
@@ -28,7 +28,7 @@ Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](str
 |---|---|---|---|---|
 |**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；v2 架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
-|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.1.0` (`6ee68a7a815956e6745e916741f13335e0b3ff53`)|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
+|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.2.1`（t043 由 2.1.0 升级，ADR 022 / s012 spike）|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
 |**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由（`/api/*`、`/stream/*`）反向代理入口|
 |**模板与工作流**|repo_template|本地 `../repo_template`|当前工作流基线|消费仓规范：task 状态机驱动、轻量契约门禁、specs/blueprint 规范|
 |**文档格式化**|md_kx|[TuTouPower/md_kx](https://github.com/TuTouPower/md_kx)|PyPI `md-kx`|Markdown 文档自动化规范与一致性门禁检查|
@@ -73,7 +73,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
       │     │           │ (同 Profile 专属卷：X11 Socket, Xauthority, PulseAudio Socket)
       │     │           ▼
       │     └── stream-runtime-{profileId}（IpcMode=container:browser-runtime-{profileId}）
-      │           ├── Selkies 2.1.0 WebRTC 捕获编码引擎（XShm 共享内存画面捕获）
+      │           ├── Selkies 2.2.1 WebRTC 捕获编码引擎（XShm 共享内存画面捕获）
       │           ├── Stream Agent（动态注册至 Gateway，执行 8/30 FPS 捕获仲裁）
       │           └── 独占 UDP mux 媒体端口（30000–30991/UDP）
       │                 │

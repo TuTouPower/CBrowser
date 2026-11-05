@@ -10,7 +10,7 @@
 - **本地工具版本**：`.mise.toml` 固定 Node 26.13.0 与 Python 3.15.2；门禁与镜像主次版本一致。
 - **前端**：TypeScript 5.9 + React 19.3，构建工具 Vite 8（Rolldown）；状态管理 TanStack Query 5，路由 `react-router` 8 单包（不再用 `react-router-dom`）；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。宿主构建 Node 固定 26 LTS（`.mise.toml`），`engines.node=">=26.0.0 <27"`。
 - **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions.md`「前端工具链目标版本（t033）」。
-- **远程显示**：固定 Selkies 2.1.0 官方稳定发布版本，纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路。
+- **远程显示**：Selkies 2.2.1 官方稳定发布版本（t043 由 2.1.0 升级，ADR 022），纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路；官方 Web 客户端由 `scripts/vendor_selkies_web.py` 按固定 wheel SHA256 解出，`config/selkies/selkies_web_sha256.txt` 由对应版本 wheel 生成。
 - **容器与部署**：生产运行平台为 Linux Docker；本地开发验证支持 macOS (OrbStack)。
 
 ## 2. schema 类型落点

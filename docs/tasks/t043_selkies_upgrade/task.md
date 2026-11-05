@@ -26,10 +26,10 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：Stream 镜像内 Selkies 服务端版本与 vendor 的官方 Web 客户端版本一致，SHA 清单与 vendor 产物匹配。
-- [ ] AC-002：`x11_keymap` 依赖的 Selkies 私有接口与目标版本不匹配时，启动失败封闭并报告不支持的 ABI；匹配时 x11 键盘映射 E2E 通过。
-- [ ] AC-003：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的会话与 Stream E2E 无头通过，覆盖会话阶段、同 Profile 多页面、复制标签页身份重映射、刷新与关闭首个页面、IME 组合输入、音频、剪贴板、可见性暂停与恢复、Viewer 断线 resume。
-- [ ] AC-004：生产构建的适配层产物仍通过 `verify_frontend_dist.py`，注入顺序与经典 IIFE 形态不变。
+- [x] AC-001：Stream 镜像内 Selkies 服务端版本与 vendor 的官方 Web 客户端版本一致，SHA 清单与 vendor 产物匹配。
+- [x] AC-002：`x11_keymap` 依赖的 Selkies 私有接口与目标版本不匹配时，启动失败封闭并报告不支持的 ABI；匹配时 x11 键盘映射 E2E 通过。
+- [x] AC-003：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的会话与 Stream E2E 无头通过，覆盖会话阶段、同 Profile 多页面、复制标签页身份重映射、刷新与关闭首个页面、IME 组合输入、音频、剪贴板、可见性暂停与恢复、Viewer 断线 resume。
+- [x] AC-004：生产构建的适配层产物仍通过 `verify_frontend_dist.py`，注入顺序与经典 IIFE 形态不变。
 
 ### 可测试性声明
 
@@ -62,7 +62,7 @@
 
 <!-- /规范 -->
 
-- Selkies 2.1.0 → 目标版本的协议与私有接口差异：UNVERIFIED-SPIKE，正式 spike 比对源码并跑现有 E2E；存在无法适配的破坏性变化时停止并报告用户，不自行决定保留 2.1.0。
+- Selkies 2.1.0 → 目标版本的协议与私有接口差异：**已验证结论（可适配，目标 2.2.1）**。正式 spike `docs/spikes/s012_selkies_2_2_upgrade_contract/report.md` + finding `docs/findings/d030_selkies_2_2_1_upgrade_contract.md` 以官方 PyPI wheel 源码逐项比对：Python 模块清单相同；`webrtc_signaling_server.py` 的 HELLO / client_tab_id / resume_key / resume 语义不变（仅一处日志括号）；`_XTestKeyboard` 私有 ABI 的 4 方法签名、`_BIND_SETTLE_S` 与 6 个实例属性 AST 校验全部一致；Web 客户端 `selkies-core.js` 从 `src/` 移到根但 `HELLO ${...}` 模板 / `client_tab_id` / `resume_key` 上下文逐字相同（`HELLO client ` 为运行时拼接串、非静态字面量），`adapter.ts` 的 WebSocket hook 有效；2.2.1 METADATA 声明支持 Python 3.15。需适配：Web 客户端文件清单与 SHA 清单（新增字体/rolldown chunk/jsdb）、index.html 新增 `__SELKIES_DEFER_INITIALIZATION` 与末尾 module（vendor 注入 marker 改用通用 module tag，IIFE adapter 仍在 head 首位）、pixelflux 2.2.3 / pcmflux 2.2.1、`x11_keymap` 版本门禁放宽。差异探针为现有 Stream/会话 E2E（结果见 progress.md）。无不可适配的破坏性变化，无需停止报告用户。
 
 ### 风险与回退
 

@@ -32,7 +32,7 @@ browser = [
     "httpx>=0.27.0", "pydantic>=2.8.0",
     "playwright==1.64.1", "cloakbrowser[geoip]==0.6.4",
 ]
-stream = ["selkies==2.1.0", "pydantic==2.14.1", "aiohttp==3.14.5"]
+stream = ["selkies==2.2.1", "pydantic==2.14.1", "aiohttp==3.14.5"]
 gate = [
     "pytest>=9.0", "pytest-asyncio>=1.0", "httpx>=0.27.0",
     "aiosqlite>=0.20.0", "sqlalchemy[asyncio]>=2.0.0", "alembic>=1.13.0",
