@@ -1,10 +1,10 @@
 # CBrowser UI 重设计与配套升级方案
 
-- 文档状态：未来状态方案。决策状态 Accepted（用户 2026-11-05 逐项确认）；实现状态 Not started。
+- 文档状态：未来状态方案。决策状态 Accepted（用户 2026-11-05 逐项确认，同日修订 D9 并新增 D13、D14）；实现状态 Not started，task 已创建（t033–t042，见第 8.1 节）。
 - 基线：main@3f15666（2026-11-05T02:27:06+08:00）。
 - 读者：实施各工作包的 agent 与用户。前置知识：`docs/blueprint/architecture.md`、`docs/blueprint/frontend.md`、`docs/blueprint/domain.md`。
 - 权威关系：本文只定义目标与拆分。各工作包落地后，当前行为以 `docs/specs/`、`docs/blueprint/` 为准；本文同步修订受影响章节，全部工作包完成后迁入 `docs/archive/`。
-- 工作包编号 `WPnn` 是本文内部标识，不是 task 编号；task 由 `.repo_template` 流程创建时另行分配 `tNNN`。
+- 工作包编号 `WPnn` 是本文内部标识，不是 task 编号；工作包与 task 的对应见第 8.1 节。
 
 ## 1. 目标与范围
 
@@ -42,10 +42,12 @@
 |D6|指纹平台|做，支持 windows 与 macos 两种指纹平台|
 |D7|浏览器内核|无 key 免费内核（Chromium 146）；cloakbrowser 封装库锁 0.6.4（第 7.2 节）|
 |D8|平台字体|Windows 与 macOS 专有字体由 agent 获取（来源见 6.8），只在运行时挂载，不进镜像、不入库|
-|D9|旧数据|没有旧用户；schema 直接重写 baseline，不写数据迁移；用户测试数据由 agent 手动迁移|
+|D9|旧数据|没有正式上线与旧用户；schema 直接重写 baseline，不写数据迁移与兼容层，也不迁移用户测试数据（用户 2026-11-05 修订）|
 |D10|技术底层|默认升级到最新版本，包括大版本|
 |D11|命令面板、容量实测|不做|
 |D12|部署形态|当前只做 Docker 版；将来独立桌面应用与 Docker 版并存（`docs/pending/parked/p041_standalone_desktop_app.md`）。本方案的新增功能在两种形态下实现成本相当时，选择不依赖 Docker 或 Linux 的做法|
+|D13|删除运行中 Profile|非 stopped 状态删除返回 409 `profile_running`；界面对运行中禁用删除，批量删除中的运行项计入失败（用户 2026-11-05）|
+|D14|局域网 HTTP 下的会话页|会话适配层依赖只在安全上下文可用的 Web Locks；非安全上下文下会话页显式降级为「需 HTTPS」，设置页告警并提供 Caddy 本地根证书下载（用户 2026-11-05，随 p037 由 t042 实现）|
 
 ## 3. 与现状差异总览
 
@@ -271,6 +273,7 @@
     - 每个值可复制。
 - 专注模式：隐藏侧栏与页头；顶部边缘悬停显示悬浮工具条，提供退出按钮。不使用 Esc 退出。
 - 剪贴板权限提示、音频状态、诊断浮层沿用现有实现并换皮。
+- 非安全上下文（局域网 HTTP）下显示「需 HTTPS」状态与 HTTPS 链接，不建立信令（D14，t042）。
 - 保留现有 `data-testid`：`browser-session-iframe`、`session-*` 系列。
 
 ### 5.7 代理库（`/proxies`）
@@ -282,7 +285,7 @@
     - 字段：名称、协议（http / https / socks5）、host、端口、用户名、密码、国家码、地区标签、备注。
     - 密码只写：编辑时显示「已设置，留空不修改」，并提供「清除密码」。
     - 「从 URL 粘贴」：解析 `scheme://user:pass@host:port` 填入各字段。
-    - socks5 加认证时显示提示：Chromium 不支持带认证的 SOCKS5（是否被 CloakBrowser 绕过待验证，见第 12 节）。
+    - 带认证 socks5：Chromium 原生不支持，CloakBrowser 的行为由 t035 实测；不支持时 API 拒绝该组合，表单阻止提交并说明原因。
 
 ### 5.8 分组管理弹窗
 
@@ -295,6 +298,7 @@
 - 语言：en / zh。
 - 系统信息：应用版本、浏览器内核版本、Selkies 版本、Control API 健康状态（只呈现真实探测对象，沿用现有规则）。
 - 平台字体：Windows、macOS 字体集的检测结果（WP15）。
+- 网络访问：局域网访问、HTTP、HTTPS 开关与局域网通告 IP，「重启软件」，Caddy 本地根证书下载（t042，来源 p037）。
 
 ### 5.10 登录页
 
@@ -309,8 +313,8 @@
 
 ### 6.1 Schema baseline 重写
 
-- 依据 D9：直接改写 `src/backend/migrations/versions/0001_initial_schema.py` 为目标 schema，不新增增量迁移。本方案所有 schema 变更（6.2–6.8）都并入 baseline。
-- 执行前备份 `data/v2/cbrowser.db` 与用户实例数据目录，并确认备份可读；重建后手动迁移用户测试数据（当前本地为 2 个 Profile、0 条 tag）。
+- 依据 D9：直接改写 `src/backend/migrations/versions/0001_initial_schema.py` 为目标 schema，不新增增量迁移。6.2–6.5 由 t035 一次写入 baseline，6.8 的字段由 t041 写入。
+- 不迁移用户测试数据；本地旧库文件改名保留后重建。
 - 只处理用户本人实例；其他会话或 task 创建的部署实例（例如 `cbrowser-t032*`）不碰。
 - 在 `decisions.md` 记录该策略及其失效条件：出现真实用户后，迁移恢复为只追加。
 
@@ -320,7 +324,7 @@
 - `profiles.group_id`：可空，外键 `ON DELETE SET NULL`。
 - API：`GET/POST /api/v1/groups`、`PATCH/DELETE /api/v1/groups/{group_id}`；Profile 创建与 PATCH 接受 `group_id`；`ProfileResponse` 返回 `group_id`。
 - 分组属于元数据（6.4），变更不生成配置版本。
-- 删除全部 Tag 相关实现：`Tag` 模型、`profile_tags` 表、请求与响应中的 `tags` 字段、快照中的 tags、前端逗号分隔输入、`tagsCommaSeparated` 等文案键，以及 FastAPI `APIRouter(tags=["v1"])` 参数（生成的 OpenAPI 不再含 tags）。
+- 删除全部 Tag 相关实现：`Tag` 模型、`profile_tags` 表、请求与响应中的 `tags` 字段、快照中的 tags、前端逗号分隔输入、`tagsCommaSeparated` 等文案键，以及全部 FastAPI `APIRouter(tags=...)` 参数（现有 auth、artifacts、control、automation、internal-\* 等分组；生成的 OpenAPI 不再含 tags）。
 - 仍会出现 tag 字样的范围仅限：`docs/archive/**` 与 `docs/reviews/**` 的历史记录；含义不同的用法（Docker 镜像 tag、git tag、HTML 元素与 `tagName`）；`.repo_template/` 工具链。
 
 ### 6.3 Proxy
@@ -384,7 +388,8 @@
 |新增|`/api/v1/groups`、`/api/v1/groups/{group_id}`|
 |新增|`/api/v1/proxies`、`/api/v1/proxies/{proxy_id}`|
 |新增|`GET /api/v1/profiles/{profile_id}/preview`|
-|改|Profile 创建、PATCH、PUT 与响应：删除 `tags`、`proxy`、`font_bundle`；新增 `group_id`、`proxy_id`、`fingerprint_platform`|
+|改|Profile 创建、PATCH、PUT 与响应：删除 `tags`、`proxy`；新增 `group_id`、`proxy_id`（t035）。新增 `fingerprint_platform` 与按 spike 结论删除 `font_bundle`（t041）|
+|改|删除非 stopped 状态的 Profile 返回 409 `profile_running`（D13，t035）|
 |改|`ProfileRuntimeResponse` 与 SSE 事件：新增 `last_started_at`、`last_stopped_at`、`browser_product`、`browser_user_agent`、平台字体状态；新增 `profile_preview` 事件|
 |改|配置版本接口：代理密码脱敏|
 |删|OpenAPI 中的 `tags` 分组元数据|
@@ -431,7 +436,26 @@
 
 ## 8. 工作包
 
-每个工作包由 `/task-create` 建成一个或多个 task；带 spike 的先经 `.repo_template/scripts/spikes.py new` 取证。下文 AC 为草案，建 task 时按模板改写为 `AC-NNN`。
+2026-11-05 已由 `/task-create` 合并建成 task（8.1 节）。下文各工作包的范围与 AC 草案保留为设计记录；当前契约以各 task 的 `task.md` 为准。所有 task 的 AC 均可自动测试，不含人工验收（用户 2026-11-05）。
+
+### 8.1 工作包与 task 对应
+
+|task|标题|工作包|依赖|
+|---|---|---|---|
+|t033|前端工具链升级到最新稳定版本|WP01|—|
+|t034|运行时与镜像底座升级|WP02、WP04、WP05|t032|
+|t035|Profile 领域模型重建|WP06（不含 `fingerprint_platform` 与 `font_bundle`）、WP07、D13|t034|
+|t036|设计系统与应用外壳|WP03、WP08|t033|
+|t037|环境管理界面|WP09、WP11|t035、t036|
+|t038|代理库界面|WP10|t037|
+|t039|会话页重设计|WP12|t037|
+|t040|环境实时缩略图|WP13|t037|
+|t041|指纹平台与平台字体|WP14（task 内正式 spike）、WP15，含 `fingerprint_platform` 字段与 `font_bundle` 去留|t039|
+|t042|局域网访问与 HTTP/HTTPS 可配置|不属于本方案工作包；来源 p037，同批创建，含 D14|t034、t039|
+
+- WP16 不建 task：文档最终核对、删除 `.design_reference/`、本文归档，在 main 直接完成。
+- 合并理由：Selkies 与基础镜像同改 Stream 镜像，只重写一次；数据模型一次设计，baseline 只在 t035 集中重写；设计系统以外壳组件验证；新建弹窗与详情配置页共用一套表单。
+- `fingerprint_platform` 移到 t041：没有字体隔离时，macos 指纹会配 Linux 字体，属于不一致的半成品；146 内核下 macos 的质量也待 spike 验证。
 
 ### WP01 前端工具链升级
 
@@ -449,8 +473,8 @@
 
 - 范围：`DESIGN.md`（第 4 节）、Tailwind 4 迁移、生成器、三条门禁、主题运行时、字体自托管、`AGENTS.md` 目录表登记 `DESIGN.md` 与 `.design_reference/`。
 - 依赖：WP01。
-- AC 草案：官方 lint 0 error / 0 warning；`design:check` 通过；主题偏好三态切换生效且首帧无闪烁；业务代码不含硬编码颜色（以 `gray-`、`surface-[0-4]`、`emerald-`、`#xxxxxx` 等模式 grep 检查）。
-- 验证：门禁全绿；亮暗两种模式下各页面截图人工核对（无头截图）。
+- AC 草案：官方 lint 0 error / 0 warning；`design:check` 通过；主题偏好三态切换生效且首帧无闪烁；颜色门禁扫描前端源码中的 Tailwind 默认调色板类与颜色字面量，只豁免显式列出的待替换旧页面文件，豁免清单只减不增，由 t039 删除。
+- 验证：门禁全绿。
 
 ### WP04 Caddy 升级
 
@@ -466,7 +490,7 @@
 
 ### WP06 后端数据模型重建
 
-- 范围：6.1–6.5 节与 6.8 节的字段部分（`fingerprint_platform`）、6.9 节 API 变更、OpenAPI 重新导出、手动迁移测试数据。
+- 范围：6.1–6.5 节、6.9 节 API 变更（`fingerprint_platform` 与 `font_bundle` 除外，归 t041）、D13 删除语义、OpenAPI 重新导出；不迁移测试数据。
 - 依赖：WP02。
 - AC 草案：
     - 分组 CRUD；删除分组后引用环境变为未分组。
@@ -542,24 +566,21 @@
 
 ### WP16 收尾
 
-- 范围：第 11 节文档更新的最终核对；`.design_reference/` 删除（WP12 完成后）；本文迁入 `docs/archive/`。
+- 范围：第 11 节文档更新的最终核对；`.design_reference/` 删除（t039 完成后）；本文迁入 `docs/archive/`。不建 task，在 main 直接完成。
 
 ## 9. 依赖与执行顺序
 
 ```text
-WP01 ─> WP03 ─> WP08 ─┬─> WP09 ─> WP13
-                      ├─> WP10
-                      ├─> WP11 ─┐
-                      └─> WP12  │
-WP02 ─> WP06 ─┬─> WP09/WP10/WP11（同上）
-              └─> WP07 ─> WP12
-WP02 ─> WP14 ─> WP15（另依赖 WP06、WP11）
-WP05 ─> WP12
-WP04 独立
-WP16 最后
+t033 ─> t036 ──────────────┐
+t032 ─> t034 ─> t035 ──────┴─> t037 ─┬─> t038
+                                     ├─> t039 ─┬─> t041
+                                     │         └─> t042（另依赖 t034）
+                                     └─> t040
+WP16（main 直接完成）最后
 ```
 
-可并行的起点：WP01、WP02、WP04、WP05（spike）。WP02 与 WP06 可在独立 worktree 中与 WP01、WP03、WP08 并行。
+- 可并行的起点：t033 与 t034（t034 须等 t032 合入）。t034、t035 可在独立 worktree 中与 t033、t036 并行。
+- t037 之后的 task 共享前端文件（`i18n.tsx`、路由、共用组件）、Runtime Agent、Supervisor 或 baseline，以 `conflicts_with` 串行；`task.py plan --serial` 给出单链 t033 → … → t042。
 
 ## 10. 测试策略
 
@@ -599,8 +620,10 @@ WP16 最后
 |CDP 截图对页面行为的影响与预览转发通道|未实测|WP13 原型|WP13 实现方式|
 |146 内核下 macOS 指纹平台的质量|官方改进记录在 156|WP14 spike|macOS 指纹平台的可用程度|
 |每种指纹平台应暴露的基础字体组合|未实测|WP14 spike|字体隔离方案|
-|带认证 SOCKS5 是否被 CloakBrowser 支持|Chromium 原生不支持，CloakBrowser 行为未实测|WP10 或 WP14 实测|代理表单提示文案|
-|删除运行中 Profile 的现有语义|未核对|WP09 读 API 实现|批量删除交互|
+|带认证 SOCKS5 是否被 CloakBrowser 支持|Chromium 原生不支持，CloakBrowser 行为未实测|t035 用真实引擎实测|API 是否拒绝该组合、代理表单行为|
+|删除运行中 Profile 的现有语义|已核对：现状不检查运行态，直接删除 DB 行（`services/profile_service.py:334`）|用户决定 D13|t035 返回 409，t037 批量删除计入失败|
+
+验证方式列中的 WP 编号对应的 task 见 8.1 节。
 
 ## 13. 设计参考目录（`.design_reference/`）
 

@@ -27,4 +27,4 @@
     - Docker/OrbStack 发布端口下，Caddy 能否用 `remote_ip` 区分局域网与宿主本机来源（macOS 虚拟化网关可能统一成同一源 IP），需 spike。
     - 重启 API 中断请求、Supervisor 自重启的时序与失败恢复需集成验证。
 - 规模判断：中等，预计 2-3 个 task；建议先做 LAN IP 通告与 HTTP 下 WebRTC 的 spike，再拆实施 task。
-- 处理：未开
+- 处理：t042；resolution=transferred；reason=已核实范围并转交该 task；局域网 HTTP 下会话页降级为需 HTTPS（用户 2026-11-05 决定）
