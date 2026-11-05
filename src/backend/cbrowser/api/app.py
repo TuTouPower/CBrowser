@@ -121,7 +121,7 @@ def create_app(
 
         if service is None:
             repo = ProfileRepository(session_maker)
-            service = ProfileService(repo)
+            service = ProfileService(repo, data_root=resolved_db.parent)
         resolved_artifacts_root = Path(
             artifacts_root or resolved_db.parent / "artifacts"
         )

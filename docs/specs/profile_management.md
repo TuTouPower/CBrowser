@@ -39,9 +39,9 @@
 
 ## 复制与重置
 
-- 配置复制：`POST /api/v1/profiles/{id}/duplicate`（`include_browser_state=false`）创建新 Profile 与配置版本，保留全部有效配置字段、标签与同一指纹种子；不复制浏览器用户数据和 Artifact，源 Profile 不变。
+- 配置复制：`POST /api/v1/profiles/{id}/duplicate`（`include_browser_state=false`）创建新 Profile 与配置版本，保留全部有效配置字段、分组与代理引用及同一指纹种子；不复制浏览器用户数据和 Artifact，源 Profile 不变。
 - 状态复制：同一接口 `include_browser_state=true` 仅在源 `desired_state` 与 `observed_state` 均为 stopped 时执行；复制用户数据目录（跳过 SingletonLock/Cookie/Socket），逐文件校验后创建新 Profile。源运行中返回 409，前端引导停止；Artifact 不复制。
-- 重置：`POST /api/v1/profiles/{id}/reset` 要求显式 `confirm=true`，且源已停止；将用户数据目录移动到备份、更新指纹种子并生成新配置版本，成功后删除备份，失败恢复原目录。保留设置、标签、备注与 Artifact，不影响其他 Profile。
+- 重置：`POST /api/v1/profiles/{id}/reset` 要求显式 `confirm=true`，且源已停止；将用户数据目录移动到备份、更新指纹种子并生成新配置版本，成功后删除备份，失败恢复原目录。保留设置、分组与代理引用、备注与 Artifact，不影响其他 Profile。
 - 重复请求使用 `Idempotency-Key` 返回同一结果；并发状态复制或源启动通过停止检查与复制后复检拒绝，不发布半复制目录。
 - 前端 Profile 详情页提供复制（仅配置/含状态）与重置确认面板，重置明确列出将清除的浏览器数据。
 
@@ -59,3 +59,15 @@
 - 前端写操作的 `Idempotency-Key` 在每次调用边界生成：同一逻辑动作的自动重试复用同一键，并发或先后发生的独立动作必须使用不同键；复合动作（如应用显示设置的 stop→start）由单次动作键派生各步操作键。请求取消与超时可区分：外部取消不可重试，内部超时可重试。
 - 页面与布局经应用上下文下发的 ApiClient 实例工作；页面流程测试在 ApiClient 边界注入独立桩并走真实数据 hooks，不 mock hooks 模块、不改共享单例。
 - 界面文案键集以 en 字典为唯一来源派生，zh 字典编译期对齐同一键集；设置页健康状态只声称其真实探测的 Control API 状态。
+
+## 分组库、代理库与配置版本三分（t035）
+
+- Profile 请求与响应不再含 `tags` / `proxy`；导出 OpenAPI 按资源分组，不含 `v1` 分组（AC-012）。业务 Tag 概念从仓库移除。
+- 分组：CRUD 与排序可用；名称重复、超长或颜色不在调色板内被拒绝；删除分组后原引用 Profile 的 `group_id` 变 null；创建与 PATCH 可设置或清除 `group_id`，引用不存在的分组被拒绝。
+- 代理：CRUD 可用，协议/host/端口按规则校验、名称唯一；响应含 `has_password` 与 `used_by_count`，`password` 不出现在代理/Profile/配置版本/错误响应/SSE/日志，也不进配置版本快照。PATCH `password` 三态：缺失=不变、null=清除、字符串=设置（同时递增 `credential_revision`）。
+- 代理被任一 Profile 的当前配置或 runtime 绑定版本引用时，删除返回 409 `proxy_in_use` 并附引用数量，代理与引用关系不变。
+- 配置版本三分：只改元数据、只改 `capture_preview`、或提交与当前值相同的运行配置都不生成新版本，运行中 Profile 不出现待应用；修改代理连接字段时在同一事务内为每个引用 Profile 生成新版本并广播 SSE；只改代理名称/地区/备注不生成。
+- 带认证 SOCKS5 按 spike `s013` 结论处理：Chromium 146 支持时端到端经代理出站；代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`，应用新版本后启动成功。
+- runtime 响应与 SSE 携带 `last_started_at` / `last_stopped_at` / `browser_product` / `browser_user_agent`；前端校验拒绝非法时间值。运行中 Profile 的浏览器版本字段与容器内 CDP `Browser.getVersion` 一致，未运行时为 null。
+- 运行态或仍绑定实例的 Profile 删除返回 409 `profile_running`；error 且无实例可删除，删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
+- 迁移目录只有一个 baseline 修订；旧 schema 代的 DB 在 API 启动与部署时失败封闭并输出重建指引，release controller 按修订链判定回退下限（ADR 023）。

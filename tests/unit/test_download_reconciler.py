@@ -534,6 +534,170 @@ def test_forwarder_keeps_cursors_when_profile_scan_fails(
     assert "p2" not in cursors
 
 
+@pytest.mark.asyncio
+async def test_cdp_completion_waits_for_late_will_begin(
+    tmp_path: Path,
+) -> None:
+    """t035: Browser.downloadProgress(completed) may arrive before
+    downloadWillBegin when the extra CDP session used for Browser.getVersion
+    reorders event delivery. The manager must not record a completion with an
+    empty suggested_filename; it waits for the late will-begin and backfills
+    the real name instead of leaving the CDP guid as the only name source."""
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    payload = b"payload"
+    path = downloads / "guid"
+    path.write_bytes(payload)
+    storage = EventStorage(tmp_path / "runtime")
+    manager = CdpProxyManager(
+        browser_ws_url="ws://127.0.0.1:1/devtools/browser/x",
+        default_download_dir=downloads,
+        profile_id="p1",
+        runtime_instance_id="i1",
+        event_storage=storage,
+    )
+
+    await manager._handle_download_progress(
+        {
+            "guid": "guid",
+            "state": "completed",
+            "receivedBytes": len(payload),
+            "totalBytes": len(payload),
+            "filePath": str(path),
+        }
+    )
+    assert all(event.state != "completed" for event in storage.get_download_events()), (
+        "a completion without suggested_filename must wait for downloadWillBegin"
+    )
+
+    await manager._handle_download_will_begin(
+        {
+            "guid": "guid",
+            "url": "https://example.test/file",
+            "suggestedFilename": "download-1.txt",
+        }
+    )
+    completed = [
+        event
+        for event in storage.get_download_events()
+        if event.state == "completed"
+    ]
+    assert len(completed) == 1
+    assert completed[0].suggested_filename == "download-1.txt"
+    assert completed[0].sha256 == hashlib.sha256(payload).hexdigest()
+
+
+def test_forwarder_never_names_artifact_after_cdp_guid(tmp_path: Path) -> None:
+    """t035: name must come only from suggestedFilename. A completed event
+    that lacks it must be held for backfill, not forwarded with the internal
+    CDP guid as its name."""
+    data_root = tmp_path / "data"
+    downloads = data_root / "artifacts" / "p1" / "downloads"
+    downloads.mkdir(parents=True)
+    source = downloads / "711212a5-9187-4eb8-912e-5149aa540837"
+    source.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    event = {
+        "event_id": "dl_completed_guid",
+        "profile_id": "p1",
+        "runtime_instance_id": "i1",
+        "guid": "711212a5-9187-4eb8-912e-5149aa540837",
+        "download_path": "/exchange/downloads/711212a5-9187-4eb8-912e-5149aa540837",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+        "sha256": digest,
+    }
+    (events / "dl_completed_guid.json").write_text(
+        json.dumps(event), encoding="utf-8"
+    )
+
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"status": "ok", "outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            return await DownloadArtifactForwarder(
+                data_root, client
+            ).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+
+    # A later backfilled completion with the real name is still forwarded.
+    event["event_id"] = "dl_completed_backfilled"
+    event["suggested_filename"] = "download-1.txt"
+    (events / "dl_completed_backfilled.json").write_text(
+        json.dumps(event), encoding="utf-8"
+    )
+    assert asyncio.run(run()) == 1
+    assert calls[0]["name"] == "download-1.txt"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_files_still_tracked_by_cdp(
+    tmp_path: Path,
+) -> None:
+    """t035: an automatic rearm must not scan a completed-looking file while
+    CDP downloadWillBegin is still tracking it. Otherwise the scan event
+    (named after the internal CDP guid) races the real completion event and
+    can be forwarded first, as in the t008 full-gate regression."""
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    guid = "545836c9-09ef-4c01-8ebd-e40be1c6cfb6"
+    path = downloads / guid
+    path.write_bytes(b"payload")
+    storage = EventStorage(tmp_path / "runtime")
+    manager = CdpProxyManager(
+        browser_ws_url="ws://127.0.0.1:1/devtools/browser/x",
+        default_download_dir=downloads,
+        profile_id="p1",
+        runtime_instance_id="i1",
+        event_storage=storage,
+    )
+    manager.active_downloads[guid] = {
+        "guid": guid,
+        "url": "https://example.test/file",
+        "suggested_filename": "download-1.txt",
+        "download_path": str(path),
+        "state": "in_progress",
+    }
+
+    await manager.reconcile_downloads()
+    events = storage.get_download_events()
+    assert all(not event.event_id.startswith("dl_scan_") for event in events), (
+        "in-flight CDP downloads must not be backfilled by a scan"
+    )
+
+
+def test_scan_does_not_use_cdp_guid_as_artifact_name(tmp_path: Path) -> None:
+    """t035: allowAndName stores downloads under the internal CDP guid. A
+    scan backfill must not promote that guid to an artifact name; the name
+    can only come from CDP suggestedFilename."""
+    downloads = tmp_path / "downloads"
+    downloads.mkdir()
+    guid = "545836c9-09ef-4c01-8ebd-e40be1c6cfb6"
+    (downloads / guid).write_bytes(b"payload")
+    storage = EventStorage(tmp_path / "runtime")
+
+    async def run():
+        return await scan_completed_downloads(
+            downloads, "p1", "i1", storage
+        )
+
+    created = asyncio.run(run())
+    assert len(created) == 1
+    assert created[0].suggested_filename is None
+
+
 def test_recovery_coordinator_uses_shared_singleton_lock_names() -> None:
     """AC-006 (A12): one lock-file identity for normal start and recovery."""
     from cbrowser.supervisor import recovery_coordinator

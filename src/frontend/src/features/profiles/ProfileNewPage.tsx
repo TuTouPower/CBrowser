@@ -17,11 +17,9 @@ export function ProfileNewPage() {
   const createMutation = useCreateProfileMutation(useApiClient());
 
   const [name, setName] = useState("");
-  const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
   const [fontBundle, setFontBundle] = useState<FontBundle>("none");
-  const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -30,20 +28,12 @@ export function ProfileNewPage() {
 
     setError(null);
     try {
-      const tags = tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((t) => ({ tag: t }));
-
       const created = await createMutation.mutateAsync({
         ...DEFAULT_PROFILE_CREATE_VALUES,
         name: name.trim(),
-        proxy: proxy.trim() || null,
         screen_width: screenWidth,
         screen_height: screenHeight,
         font_bundle: fontBundle,
-        tags,
       });
 
       navigate(`/?profileId=${created.id}`);
@@ -83,19 +73,6 @@ export function ProfileNewPage() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t("profileNameExample")}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("proxyUrlOptional")}
-            </label>
-            <input
-              type="text"
-              value={proxy}
-              onChange={(e) => setProxy(e.target.value)}
-              placeholder="http://user:pass@host:port"
               className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
             />
           </div>
@@ -141,20 +118,6 @@ export function ProfileNewPage() {
               <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
               <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
             </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("tagsCommaSeparated")}
-            </label>
-            <input
-              data-testid="profile-tags-input"
-              type="text"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              placeholder={t("tagsPlaceholder")}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
           </div>
 
           <div className="pt-2 flex justify-end gap-3">

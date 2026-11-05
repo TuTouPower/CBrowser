@@ -102,11 +102,7 @@ export function AppLayout() {
 
   const filteredProfiles = profiles.filter((p) => {
     if (!searchFilter.trim()) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.tags?.some((tag) => (typeof tag === "string" ? tag : tag.tag).toLowerCase().includes(q))
-    );
+    return p.name.toLowerCase().includes(searchFilter.toLowerCase());
   });
 
   const isRunning = activeRuntime?.observed_state === "running";
@@ -305,11 +301,6 @@ export function AppLayout() {
                     >
                       <div className="truncate flex-1 mr-2">
                         <div className="font-medium truncate">{p.name}</div>
-                        {p.tags && p.tags.length > 0 && (
-                          <div className="text-[10px] text-gray-500 truncate mt-0.5">
-                            {p.tags.map((tag) => typeof tag === "string" ? `#${tag}` : `#${tag.tag}`).join(" ")}
-                          </div>
-                        )}
                       </div>
                     </button>
                   );

@@ -212,6 +212,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Groups */
+        get: operations["list_groups_api_v1_groups_get"];
+        put?: never;
+        /** Create Group */
+        post: operations["create_group_api_v1_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reorder Groups */
+        post: operations["reorder_groups_api_v1_groups_reorder_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Group */
+        delete: operations["delete_group_api_v1_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Group */
+        patch: operations["update_group_api_v1_groups__group_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/proxies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Proxies */
+        get: operations["list_proxies_api_v1_proxies_get"];
+        put?: never;
+        /** Create Proxy */
+        post: operations["create_proxy_api_v1_proxies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proxies/{proxy_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Proxy */
+        get: operations["get_proxy_api_v1_proxies__proxy_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Proxy */
+        delete: operations["delete_proxy_api_v1_proxies__proxy_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Proxy */
+        patch: operations["update_proxy_api_v1_proxies__proxy_id__patch"];
+        trace?: never;
+    };
     "/api/v1/profiles/{profile_id}/artifacts": {
         parameters: {
             query?: never;
@@ -629,8 +719,6 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
-            /** Tags */
-            tags?: components["schemas"]["Tag"][];
             /** Created At */
             created_at: string;
         };
@@ -682,6 +770,57 @@ export interface components {
              * @default false
              */
             retryable: boolean;
+        };
+        /** GroupCreateRequest */
+        GroupCreateRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Color
+             * @default slate
+             * @enum {string}
+             */
+            color: "slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet";
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+        };
+        /** GroupReorderRequest */
+        GroupReorderRequest: {
+            /** Ordered Ids */
+            ordered_ids: string[];
+        };
+        /** GroupResponse */
+        GroupResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Color
+             * @enum {string}
+             */
+            color: "slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet";
+            /**
+             * Sort Order
+             * @default 0
+             */
+            sort_order: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** GroupUpdateRequest */
+        GroupUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Color */
+            color?: ("slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet") | null;
+            /** Sort Order */
+            sort_order?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -758,8 +897,10 @@ export interface components {
             name: string;
             /** Fingerprint Seed */
             fingerprint_seed?: number | null;
-            /** Proxy */
-            proxy?: string | null;
+            /** Group Id */
+            group_id?: string | null;
+            /** Proxy Id */
+            proxy_id?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Locale */
@@ -855,8 +996,6 @@ export interface components {
              * @default 0
              */
             sort_order: number;
-            /** Tags */
-            tags?: components["schemas"]["Tag"][] | null;
         };
         /** ProfileDuplicateRequest */
         ProfileDuplicateRequest: {
@@ -884,8 +1023,10 @@ export interface components {
             name: string;
             /** Fingerprint Seed */
             fingerprint_seed: number;
-            /** Proxy */
-            proxy?: string | null;
+            /** Group Id */
+            group_id?: string | null;
+            /** Proxy Id */
+            proxy_id?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Locale */
@@ -980,8 +1121,6 @@ export interface components {
              * @default 0
              */
             sort_order: number;
-            /** Tags */
-            tags?: components["schemas"]["Tag"][];
             /**
              * Current Config Version
              * @default 1
@@ -1016,6 +1155,14 @@ export interface components {
             restart_blocked: boolean;
             /** Last Exit Event Id */
             last_exit_event_id: string | null;
+            /** Last Started At */
+            last_started_at?: string | null;
+            /** Last Stopped At */
+            last_stopped_at?: string | null;
+            /** Browser Product */
+            browser_product?: string | null;
+            /** Browser User Agent */
+            browser_user_agent?: string | null;
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
@@ -1050,6 +1197,14 @@ export interface components {
              * @default false
              */
             restart_blocked: boolean;
+            /** Last Started At */
+            last_started_at?: string | null;
+            /** Last Stopped At */
+            last_stopped_at?: string | null;
+            /** Browser Product */
+            browser_product?: string | null;
+            /** Browser User Agent */
+            browser_user_agent?: string | null;
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
@@ -1064,8 +1219,10 @@ export interface components {
             name?: string | null;
             /** Fingerprint Seed */
             fingerprint_seed?: number | null;
-            /** Proxy */
-            proxy?: string | null;
+            /** Group Id */
+            group_id?: string | null;
+            /** Proxy Id */
+            proxy_id?: string | null;
             /** Timezone */
             timezone?: string | null;
             /** Locale */
@@ -1110,8 +1267,98 @@ export interface components {
             notes?: string | null;
             /** Sort Order */
             sort_order?: number | null;
-            /** Tags */
-            tags?: components["schemas"]["Tag"][] | null;
+        };
+        /** ProxyCreateRequest */
+        ProxyCreateRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Scheme
+             * @enum {string}
+             */
+            scheme: "http" | "https" | "socks5";
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Username */
+            username?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Country Code */
+            country_code?: string | null;
+            /** Region Label */
+            region_label?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** ProxyResponse */
+        ProxyResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Scheme
+             * @enum {string}
+             */
+            scheme: "http" | "https" | "socks5";
+            /** Host */
+            host: string;
+            /** Port */
+            port: number;
+            /** Username */
+            username?: string | null;
+            /**
+             * Has Password
+             * @default false
+             */
+            has_password: boolean;
+            /**
+             * Credential Revision
+             * @default 1
+             */
+            credential_revision: number;
+            /** Country Code */
+            country_code?: string | null;
+            /** Region Label */
+            region_label?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /**
+             * Used By Count
+             * @default 0
+             */
+            used_by_count: number;
+            /** Created At */
+            created_at: string;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * ProxyUpdateRequest
+         * @description PATCH semantics: ``password`` omitted = unchanged, null = clear,
+         *     string = set.  All other fields are optional tri-state fields.
+         */
+        ProxyUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Scheme */
+            scheme?: ("http" | "https" | "socks5") | null;
+            /** Host */
+            host?: string | null;
+            /** Port */
+            port?: number | null;
+            /** Username */
+            username?: string | null;
+            /** Password */
+            password?: string | null;
+            /** Country Code */
+            country_code?: string | null;
+            /** Region Label */
+            region_label?: string | null;
+            /** Notes */
+            notes?: string | null;
         };
         /** RuntimeDesiredStateRequest */
         RuntimeDesiredStateRequest: {
@@ -1150,13 +1397,6 @@ export interface components {
             authenticated: boolean;
             /** Csrf Token */
             csrf_token: string;
-        };
-        /** Tag */
-        Tag: {
-            /** Tag */
-            tag: string;
-            /** Color */
-            color?: string | null;
         };
         /**
          * TransportObservationData
@@ -2414,6 +2654,619 @@ export interface operations {
                 };
             };
             /** @description Database busy (retryable) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_groups_api_v1_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_group_api_v1_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reorder_groups_api_v1_groups_reorder_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupReorderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_group_api_v1_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_group_api_v1_groups__group_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_proxies_api_v1_proxies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyResponse"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_proxy_api_v1_proxies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxyCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_proxy_api_v1_proxies__proxy_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_proxy_api_v1_proxies__proxy_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_proxy_api_v1_proxies__proxy_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProxyUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
             503: {
                 headers: {
                     [name: string]: unknown;

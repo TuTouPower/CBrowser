@@ -71,6 +71,20 @@ logger = logging.getLogger("cbrowser.supervisor.core")
 
 UNPROTECTED_SANDBOX_GRACE_SEC = 60.0
 
+PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
+PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
+
+
+class ProxyCredentialsChangedError(RuntimeError):
+    """Fail closed when proxy credentials changed after the version was bound.
+
+    The reason string is fixed and non-sensitive: the password is never
+    embedded in an exception, log line, or reported runtime state (AC-007).
+    """
+
+    def __init__(self) -> None:
+        super().__init__(PROXY_CREDENTIALS_CHANGED)
+
 
 def browser_runtime_ready(
     runtime_dir: Path, profile_id: str, instance_id: str, config_version: int
@@ -1808,6 +1822,102 @@ class SupervisorCore:
         """A native exit awaiting delivery takes precedence over synthetic exits."""
         return (profile_id, instance_id, config_version) in self._native_exit_instances
 
+    async def _resolve_proxy_credentials(
+        self, profile_id: str, config: ProfileConfig, config_version: int
+    ) -> dict[str, Any] | None:
+        """Fetch current proxy credentials for the bound config version.
+
+        Returns ``None`` when the profile has no proxy. Raises
+        ``ProxyCredentialsChangedError`` when the proxy's current credential
+        revision differs from the frozen revision in the bound version, so a
+        version bound before a password change can never be launched with the
+        new credentials (AC-007 fail-closed).
+        """
+        if not config.proxy_id:
+            return None
+        resp = await self.api.get(
+            f"/api/v1/internal/supervisor/proxies/{quote(config.proxy_id, safe='')}/credentials"
+            f"?profile_id={quote(profile_id, safe='')}&version={config_version}",
+            headers=self._auth_headers(),
+        )
+        if resp.status_code == 404:
+            raise ProxyCredentialsChangedError()
+        if resp.status_code != 200:
+            raise RuntimeError("Proxy credentials unavailable")
+        try:
+            data = resp.json()
+            current = data["credential_revision"]
+            frozen = data.get("proxy_credential_revision")
+            scheme = data["scheme"]
+            host = data["host"]
+            port = data["port"]
+            username = data.get("username")
+            password = data.get("password")
+        except (ValueError, KeyError, TypeError):
+            raise ProxyCredentialsChangedError() from None
+        if (
+            type(current) is not int
+            or not isinstance(scheme, str)
+            or not isinstance(host, str)
+            or type(port) is not int
+        ):
+            raise ProxyCredentialsChangedError()
+        if frozen is not None and type(frozen) is int and current != frozen:
+            logger.error(
+                "Proxy credential revision changed; refusing launch: "
+                "proxy_credentials_changed profile=%s",
+                profile_id,
+            )
+            raise ProxyCredentialsChangedError()
+        return {
+            "scheme": scheme,
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "credential_revision": current,
+            "proxy_credential_revision": frozen if frozen is not None else current,
+        }
+
+    def _write_proxy_credentials(
+        self, path: Path, credentials: dict[str, Any]
+    ) -> None:
+        atomic_write_text(path, json.dumps(credentials), mode=0o600)
+        if getattr(self.docker, "manage_ownership", False):
+            try:
+                os.chown(
+                    path,
+                    self.docker.runtime_uid,
+                    self.docker.runtime_gid,
+                )
+            except OSError as exc:
+                raise DockerSandboxError(
+                    "Cannot assign proxy credentials ownership: "
+                    f"{type(exc).__name__}"
+                ) from None
+
+    def _read_browser_version(self, profile_id: str) -> tuple[str | None, str | None]:
+        """Read CDP browser version facts from the live runner metadata.
+
+        The Runner writes ``browser_product`` / ``browser_user_agent`` into
+        ``runner_info.json`` (also surfaced in the Agent health payload). They
+        are only reported for a running generation; stopped/error reports
+        leave them unset so the repository can clear the persisted values.
+        """
+        info_path = self.docker.validator.get_runtime_dir(profile_id) / "runner_info.json"
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None, None
+        if not isinstance(info, dict):
+            return None, None
+        product = info.get("browser_product")
+        user_agent = info.get("browser_user_agent")
+        return (
+            product if isinstance(product, str) else None,
+            user_agent if isinstance(user_agent, str) else None,
+        )
+
     def _write_runtime_snapshot(
         self, snap_path: Path, snapshot: ConfigVersionSnapshot
     ) -> None:
@@ -1878,14 +1988,7 @@ class SupervisorCore:
             dirs = self.docker.prepare_profile_directories(profile_id)
 
             snap_path = dirs["runtime"] / "snapshot.json"
-            snapshot = ConfigVersionSnapshot(
-                id=f"snap_{uuid.uuid4().hex[:12]}",
-                profile_id=profile_id,
-                version=config_version,
-                config=config.model_dump(),
-                created_at=datetime.now(UTC).isoformat(),
-            )
-            self._write_runtime_snapshot(snap_path, snapshot)
+            creds_path = dirs["runtime"] / PROXY_CREDENTIALS_FILENAME
 
             # Bind runtime instance via internal supervisor API
             try:
@@ -1906,6 +2009,39 @@ class SupervisorCore:
                 raise
 
             try:
+                proxy_credentials = await self._resolve_proxy_credentials(
+                    profile_id, config, config_version
+                )
+                snapshot = ConfigVersionSnapshot(
+                    id=f"snap_{uuid.uuid4().hex[:12]}",
+                    profile_id=profile_id,
+                    version=config_version,
+                    config=config.model_dump(),
+                    proxy_credential_revision=(
+                        proxy_credentials["proxy_credential_revision"]
+                        if proxy_credentials is not None
+                        else None
+                    ),
+                    created_at=datetime.now(UTC).isoformat(),
+                )
+                self._write_runtime_snapshot(snap_path, snapshot)
+                if proxy_credentials is not None:
+                    self._write_proxy_credentials(
+                        creds_path,
+                        {
+                            "scheme": proxy_credentials["scheme"],
+                            "host": proxy_credentials["host"],
+                            "port": proxy_credentials["port"],
+                            "username": proxy_credentials["username"],
+                            "password": proxy_credentials["password"],
+                            "credential_revision": proxy_credentials[
+                                "credential_revision"
+                            ],
+                        },
+                    )
+                else:
+                    creds_path.unlink(missing_ok=True)
+
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
                 media_addresses = None
@@ -2030,6 +2166,11 @@ class SupervisorCore:
                 return session
 
             except Exception as err:
+                failure_reason = (
+                    PROXY_CREDENTIALS_CHANGED
+                    if isinstance(err, ProxyCredentialsChangedError)
+                    else "startup_failure"
+                )
                 logger.error(
                     "Sandbox launch failed for %s: error_type=%s error=%s",
                     profile_id,
@@ -2041,7 +2182,7 @@ class SupervisorCore:
                     runtime_instance_id,
                     config_version,
                     observed_state="error",
-                    reason="startup_failure",
+                    reason=failure_reason,
                 )
                 try:
                     try:
@@ -2318,17 +2459,43 @@ class SupervisorCore:
         *,
         reason: str | None = None,
     ) -> bool:
+        payload = {
+            "runtime_instance_id": runtime_instance_id,
+            "observed_state": state,
+            "config_version": config_version,
+            "reason": reason,
+        }
+        # Browser version facts belong to a running generation only; stopped
+        # and error reports leave them unset so the repository clears them.
+        version_fields: dict[str, Any] = {}
+        if state == "running":
+            product, user_agent = self._read_browser_version(profile_id)
+            version_fields = {
+                "browser_product": product,
+                "browser_user_agent": user_agent,
+            }
+        url = (
+            f"/api/v1/internal/supervisor/runtimes/observed?profile_id={quote(profile_id, safe='')}"
+        )
         try:
             resp = await self.api.post(
-                f"/api/v1/internal/supervisor/runtimes/observed?profile_id={quote(profile_id, safe='')}",
+                url,
                 headers=self._auth_headers(),
-                json={
-                    "runtime_instance_id": runtime_instance_id,
-                    "observed_state": state,
-                    "config_version": config_version,
-                    "reason": reason,
-                },
+                json={**payload, **version_fields},
             )
+            if resp.status_code == 422 and version_fields:
+                # The request model is strict (extra=forbid). If the API layer
+                # has not yet declared the two version fields, degrade to the
+                # original payload so runtime convergence is never blocked;
+                # the version facts simply stay unset until it does.
+                logger.warning(
+                    "Observed-state request rejected version fields; "
+                    "reporting without browser version: profile=%s",
+                    profile_id,
+                )
+                resp = await self.api.post(
+                    url, headers=self._auth_headers(), json=payload
+                )
             return resp.status_code == 200
         except Exception as e:  # noqa: BLE001 - API state report network failure logged and returns False
             logger.warning(

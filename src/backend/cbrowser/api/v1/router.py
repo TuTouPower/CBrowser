@@ -10,6 +10,9 @@ from cbrowser.adapters.database.repository import (
     InstanceConflictError,
     InvalidConfigVersionError,
 )
+from cbrowser.api.v1.deps import get_profile_service
+from cbrowser.api.v1.groups_router import group_router
+from cbrowser.api.v1.proxies_router import proxy_router
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
 from cbrowser.api.v1.control_router import (
     get_optional_control_service,
@@ -39,7 +42,6 @@ from cbrowser.domain.models import (
     RuntimeEventResponse,
     RuntimeInstanceBindRequest,
     RuntimeObservedReportRequest,
-    Tag,
     ValidationErrorResponse,
 )
 from cbrowser.services.profile_service import (
@@ -58,12 +60,10 @@ from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("cbrowser.api.v1.router")
 
-v1_router = APIRouter(prefix="/api/v1", tags=["v1"])
-profile_router = APIRouter(dependencies=[Depends(require_csrf_and_origin)])
-
-
-def get_profile_service() -> ProfileService:
-    raise NotImplementedError("ProfileService dependency must be provided")
+v1_router = APIRouter(prefix="/api/v1")
+profile_router = APIRouter(
+    tags=["profiles"], dependencies=[Depends(require_csrf_and_origin)]
+)
 
 
 @v1_router.get("/health")
@@ -136,6 +136,10 @@ async def subscribe_runtime_events(
                         runtime_instance_id=rt.runtime_instance_id,
                         failure_count=rt.failure_count,
                         restart_blocked=rt.restart_blocked,
+                        last_started_at=rt.last_started_at,
+                        last_stopped_at=rt.last_stopped_at,
+                        browser_product=rt.browser_product,
+                        browser_user_agent=rt.browser_user_agent,
                         last_coordinator_error=last_err,
                         search_defaults=search_defaults,
                         transport=transport,
@@ -205,7 +209,8 @@ async def create_profile(
         fingerprint_seed=payload.fingerprint_seed
         if payload.fingerprint_seed is not None
         else ProfileConfig().fingerprint_seed,
-        proxy=payload.proxy,
+        group_id=payload.group_id,
+        proxy_id=payload.proxy_id,
         timezone=payload.timezone,
         locale=payload.locale,
         screen_width=payload.screen_width,
@@ -229,9 +234,8 @@ async def create_profile(
         notes=payload.notes,
         sort_order=payload.sort_order,
     )
-    tags = payload.tags or []
     profile = await service.create_profile(
-        config=config, tags=tags, operation_id=op_id, req_payload=payload.model_dump()
+        config=config, operation_id=op_id, req_payload=payload.model_dump()
     )
     return ProfileResponse.from_domain(profile)
 
@@ -336,15 +340,9 @@ async def update_profile(
     op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
         patch_data = payload.model_dump(exclude_unset=True)
-        tags_provided = "tags" in payload.model_fields_set
-        tags_update = patch_data.pop("tags", None)
-        # Tri-state: absent = unchanged, null or [] = clear, list = replace.
-        tags_val = [Tag(**t) for t in (tags_update or [])] if tags_provided else None
-
         p = await service.update_profile(
             profile_id=profile_id,
             patch_data=patch_data,
-            tags=tags_val,
             operation_id=op_id,
         )
         return ProfileResponse.from_domain(p)
@@ -392,6 +390,11 @@ async def delete_profile(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
+        )
+    except ProfileRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "profile_running", "message": str(exc)},
         )
 
 
@@ -546,7 +549,6 @@ async def list_versions(
                 profile_id=v.profile_id,
                 version=v.version,
                 config=v.config,
-                tags=v.tags,
                 created_at=v.created_at,
             )
             for v in versions
@@ -584,7 +586,6 @@ async def get_version(
             profile_id=v.profile_id,
             version=v.version,
             config=v.config,
-            tags=v.tags,
             created_at=v.created_at,
         )
     except ProfileNotFoundError:
@@ -832,6 +833,8 @@ async def report_observed_state(
             payload.observed_state,
             payload.config_version,
             payload.reason,
+            browser_product=payload.browser_product,
+            browser_user_agent=payload.browser_user_agent,
         )
         coord = getattr(request.app.state, "coordinator", None)
         if coord:
@@ -887,3 +890,5 @@ async def report_runtime_event(
 
 
 v1_router.include_router(profile_router)
+v1_router.include_router(group_router)
+v1_router.include_router(proxy_router)

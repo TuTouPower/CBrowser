@@ -37,36 +37,6 @@ def test_profile_runtime_response_last_coordinator_error():
     assert rt_default.last_coordinator_error is None
 
 
-def test_profile_runtime_status_event_schema():
-    evt = ProfileRuntimeStatusEvent(
-        profile_id="p1",
-        desired_state="running",
-        observed_state="stopped",
-        runtime_instance_id=None,
-        failure_count=1,
-        restart_blocked=False,
-        last_coordinator_error="Connection refused",
-        updated_at="2026-10-31T00:00:00Z",
-    )
-    dumped = evt.model_dump()
-    assert dumped == {
-        "profile_id": "p1",
-        "desired_state": "running",
-        "observed_state": "stopped",
-        "runtime_instance_id": None,
-        "failure_count": 1,
-        "restart_blocked": False,
-        "last_coordinator_error": "Connection refused",
-        # t022/A55: typed search-defaults status rides the runtime event.
-        "search_defaults": None,
-        # t026/AC-010: layered transport observation rides the same event.
-        "transport": None,
-        # t031: human-priority control state rides the same event.
-        "control": None,
-        "updated_at": "2026-10-31T00:00:00Z",
-    }
-
-
 @pytest.mark.asyncio
 async def test_sse_broadcaster_initial_snapshot():
     broadcaster = RuntimeEventBroadcaster(maxlen=10)
@@ -86,3 +56,35 @@ async def test_sse_broadcaster_initial_snapshot():
 
     assert "event: runtime_state" in first_chunk
     assert "p_snap" in first_chunk
+
+
+def test_profile_runtime_status_event_schema_with_t035_runtime_fields():
+    """AC-009/AC-010: the runtime status event carries the four new
+    runtime fields, all defaulting to None until observed."""
+    evt = ProfileRuntimeStatusEvent(
+        profile_id="p1",
+        desired_state="running",
+        observed_state="stopped",
+        runtime_instance_id=None,
+        failure_count=1,
+        restart_blocked=False,
+        last_coordinator_error="Connection refused",
+        updated_at="2026-10-31T00:00:00Z",
+    )
+    assert evt.model_dump() == {
+        "profile_id": "p1",
+        "desired_state": "running",
+        "observed_state": "stopped",
+        "runtime_instance_id": None,
+        "failure_count": 1,
+        "restart_blocked": False,
+        "last_started_at": None,
+        "last_stopped_at": None,
+        "browser_product": None,
+        "browser_user_agent": None,
+        "last_coordinator_error": "Connection refused",
+        "search_defaults": None,
+        "transport": None,
+        "control": None,
+        "updated_at": "2026-10-31T00:00:00Z",
+    }

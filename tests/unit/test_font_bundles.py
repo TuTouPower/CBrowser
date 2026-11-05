@@ -3,6 +3,11 @@
 Covers the non-Docker halves of AC-002/AC-005 plus the fontconfig generation
 contract behind AC-003/AC-004. Real Browser/Chrome rendering assertions live
 in tests/e2e/test_browser_font_bundles_e2e.py.
+
+t035: the 0001-0009 migration chain was replaced by a single baseline.  The
+two legacy-row migration tests (0006 -> 0007) were deleted wholesale, not
+rewritten to the new output; see the "Baseline schema" section for the
+reason and the replacement test.
 """
 
 from __future__ import annotations
@@ -128,91 +133,45 @@ async def test_update_font_bundle_creates_new_config_version(db_context) -> None
 
 
 # ---------------------------------------------------------------------------
-# Migration: legacy rows read back as none (AC-002)
+# Baseline schema (t035): font_bundle column + default (AC-001/AC-002)
 # ---------------------------------------------------------------------------
+# The two old tests here migrated an 0006-style database up to 0007 to
+# prove the font_bundle column was added and legacy rows defaulted to
+# "none".  The 0001-0009 chain is gone; there is no pre-font_bundle
+# revision to upgrade from, so those tests and their _insert_legacy_profile
+# helper were deleted wholesale (not rewritten to the new output).  The
+# baseline schema ships the column directly, covered by the test below.
 
 
-def _insert_legacy_profile(db_path: Path) -> None:
-    conn = sqlite3.connect(str(db_path))
-    try:
-        columns = conn.execute("PRAGMA table_info(profiles)").fetchall()
-        names = [c[1] for c in columns if c[3] or c[1] == "id"]  # NOT NULL or PK
-        assert "font_bundle" not in names
-        values: dict[str, object] = {}
-        for _cid, name, ctype, _notnull, _dflt, _pk in columns:
-            if name == "id":
-                values[name] = "legacy_profile_1"
-            elif name in ("launch_args", "extension_paths"):
-                values[name] = "[]"
-            elif name in ("screen_width", "screen_height"):
-                values[name] = 1920
-            elif name == "gpu_family":
-                values[name] = "auto"
-            elif name == "human_preset":
-                values[name] = "default"
-            elif name == "color_scheme":
-                values[name] = None
-            elif name == "user_data_dir":
-                values[name] = "/data/profiles/legacy_profile_1/profile"
-            elif "INT" in (ctype or "").upper() or "BOOL" in (ctype or "").upper():
-                values[name] = 1
-            else:
-                values[name] = "legacy"
-        cols = ", ".join(values)
-        marks = ", ".join("?" for _ in values)
-        conn.execute(
-            f"INSERT INTO profiles ({cols}) VALUES ({marks})",
-            tuple(values.values()),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def test_migration_adds_font_bundle_defaulting_legacy_rows_to_none(
-    tmp_path: Path,
-) -> None:
+def test_baseline_schema_defaults_font_bundle_to_none(tmp_path: Path) -> None:
     from alembic import command
 
-    db_path = tmp_path / "legacy.db"
+    db_path = tmp_path / "baseline_fonts.db"
     cfg = get_alembic_config(db_path)
-    command.upgrade(cfg, "0006_snapshot_modes")
-    _insert_legacy_profile(db_path)
-
     command.upgrade(cfg, "head")
 
     conn = sqlite3.connect(str(db_path))
     try:
+        conn.execute(
+            "INSERT INTO profiles "
+            "(id, name, fingerprint_seed, user_data_dir, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "baseline_profile_1",
+                "plain",
+                1,
+                "/data/profiles/baseline_profile_1/profile",
+                "2026-01-01T00:00:00+00:00",
+                "2026-01-01T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
         row = conn.execute(
-            "SELECT font_bundle FROM profiles WHERE id = 'legacy_profile_1'"
+            "SELECT font_bundle FROM profiles WHERE id = 'baseline_profile_1'"
         ).fetchone()
     finally:
         conn.close()
     assert row == ("none",)
-
-
-@pytest.mark.asyncio
-async def test_repository_reads_migrated_legacy_profile_as_none(
-    tmp_path: Path,
-) -> None:
-    from alembic import command
-
-    from cbrowser.adapters.database.session import create_engine_and_maker
-
-    db_path = tmp_path / "legacy_repo.db"
-    cfg = get_alembic_config(db_path)
-    command.upgrade(cfg, "0006_snapshot_modes")
-    _insert_legacy_profile(db_path)
-    command.upgrade(cfg, "head")
-
-    engine, session_maker = create_engine_and_maker(db_path)
-    try:
-        repo = ProfileRepository(session_maker)
-        profile = await repo.get_profile("legacy_profile_1")
-        assert profile is not None
-        assert profile.config.font_bundle == "none"
-    finally:
-        await engine.dispose()
 
 
 # ---------------------------------------------------------------------------

@@ -655,6 +655,10 @@ class RuntimeCoordinator:
                 runtime_instance_id=rt.runtime_instance_id,
                 failure_count=rt.failure_count,
                 restart_blocked=rt.restart_blocked,
+                last_started_at=rt.last_started_at,
+                last_stopped_at=rt.last_stopped_at,
+                browser_product=rt.browser_product,
+                browser_user_agent=rt.browser_user_agent,
                 last_coordinator_error=err,
                 search_defaults=self.fenced_search_defaults(
                     profile_id, rt.runtime_instance_id

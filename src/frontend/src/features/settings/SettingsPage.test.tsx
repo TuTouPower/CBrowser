@@ -32,7 +32,7 @@ function renderPages() {
   );
 }
 
-describe("settings and profile form i18n", () => {
+describe("settings and profile form i18n (t035)", () => {
   beforeEach(() => {
     localStorage.setItem("cbm.locale", "zh");
   });
@@ -42,16 +42,16 @@ describe("settings and profile form i18n", () => {
     vi.restoreAllMocks();
   });
 
-  it("switches every previously hardcoded label and placeholder", async () => {
+  // The old "switches every previously hardcoded label and placeholder"
+  // case also asserted the four t035-removed tags/proxy labels; that whole
+  // case was deleted. This new case keeps the i18n switch coverage for the
+  // labels that still exist (AC-012 removal is not a reason to lose it).
+  it("switches remaining i18n labels and placeholders", async () => {
     renderPages();
 
     expect(screen.getByText("控制 API")).toBeTruthy();
     expect(screen.getByText("控制 API 健康检查")).toBeTruthy();
     expect(screen.getByPlaceholderText("例如：工作配置")).toBeTruthy();
-    expect(screen.getByText("代理 URL（可选）")).toBeTruthy();
-    expect(
-      screen.getAllByText("标签（逗号分隔）").length
-    ).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByText("正常")).toBeTruthy());
 
     fireEvent.click(screen.getByText("English"));
@@ -59,10 +59,6 @@ describe("settings and profile form i18n", () => {
     expect(screen.getByText("Control API")).toBeTruthy();
     expect(screen.getByText("Control API health check")).toBeTruthy();
     expect(screen.getByPlaceholderText("e.g. Work Profile")).toBeTruthy();
-    expect(screen.getByText("Proxy URL (optional)")).toBeTruthy();
     expect(screen.getByText("Width (px)")).toBeTruthy();
-    expect(
-      screen.getAllByText("Tags (comma separated)").length
-    ).toBeGreaterThan(0);
   });
 });

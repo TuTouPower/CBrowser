@@ -23,7 +23,7 @@ from cbrowser.adapters.database.repository import (
 )
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.domain.models import Profile, ProfileConfig, Tag
+from cbrowser.domain.models import Profile, ProfileConfig
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
@@ -42,7 +42,7 @@ async def test_sqlite_pragmas_wal_and_busy_timeout(db_context):
 
 
 @pytest.mark.asyncio
-async def test_eight_tables_exist(db_context):
+async def test_profile_domain_tables_exist(db_context):
     _engine, session_maker = db_context
     async with session_maker() as session:
         result = await session.execute(
@@ -52,7 +52,8 @@ async def test_eight_tables_exist(db_context):
         required_tables = {
             "profiles",
             "profile_config_versions",
-            "profile_tags",
+            "profile_groups",
+            "proxies",
             "profile_runtimes",
             "artifacts",
             "settings",
@@ -60,17 +61,28 @@ async def test_eight_tables_exist(db_context):
             "audit_events",
         }
         assert required_tables.issubset(tables)
+        assert "profile_tags" not in tables
 
 
 @pytest.mark.asyncio
-async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
+async def test_profile_crud_roundtrip_with_refs(db_context):
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
+    group = await repo.create_group("Finance", "slate", 0)
+    proxy = await repo.create_proxy(
+        {
+            "name": "crud-proxy",
+            "scheme": "socks5",
+            "host": "127.0.0.1",
+            "port": 1080,
+        }
+    )
     config = ProfileConfig(
-        name="Test Profile Legacy",
+        name="Test Profile With Refs",
         fingerprint_seed=123456,
-        proxy="socks5://user:pass@127.0.0.1:1080",
+        group_id=group.id,
+        proxy_id=proxy.id,
         timezone="America/New_York",
         locale="en-US",
         screen_width=1920,
@@ -93,16 +105,15 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
         notes="Important profile notes",
         sort_order=5,
     )
-    tags = [Tag(tag="finance", color="#112233"), Tag(tag="secure", color=None)]
 
     # 1. Create
-    profile = await repo.create_profile(config=config, tags=tags)
+    profile = await repo.create_profile(config=config)
     assert profile.id is not None
-    assert profile.config.name == "Test Profile Legacy"
+    assert profile.config.name == "Test Profile With Refs"
     assert profile.config.fingerprint_seed == 123456
-    assert profile.config.proxy == "socks5://user:pass@127.0.0.1:1080"
+    assert profile.config.group_id == group.id
+    assert profile.config.proxy_id == proxy.id
     assert profile.user_data_dir == f"/data/profiles/{profile.id}/profile"
-    assert len(profile.tags) == 2
     assert profile.current_config_version == 1
 
     # Check runtime initialized
@@ -116,28 +127,20 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
     fetched = await repo.get_profile(profile.id)
     assert fetched is not None
     assert fetched.config == config
-    assert {t.tag for t in fetched.tags} == {"finance", "secure"}
+    assert fetched.config.group_id == group.id
+    assert fetched.config.proxy_id == proxy.id
 
-    # 3. Update
-    updated_config = config.model_copy(
-        update={
-            "name": "Renamed Profile",
-            "color_scheme": "light",
-            "screen_width": 2560,
-        }
-    )
+    # 3. Update a runtime-config field -> new version
     updated = await repo.update_profile(
         profile.id,
-        patch_data=updated_config,
-        tags=[Tag(tag="updated", color="#445566")],
+        patch_data={"screen_width": 2560, "color_scheme": "light"},
     )
     assert updated is not None
-    assert updated.config.name == "Renamed Profile"
     assert updated.config.color_scheme == "light"
     assert updated.config.screen_width == 2560
     assert updated.current_config_version == 2
-    assert len(updated.tags) == 1
-    assert updated.tags[0].tag == "updated"
+    assert updated.config.group_id == group.id
+    assert updated.config.proxy_id == proxy.id
 
     # 4. Delete
     deleted = await repo.delete_profile(profile.id)
@@ -147,64 +150,12 @@ async def test_profile_crud_and_full_legacy_fields_roundtrip(db_context):
 
 
 @pytest.mark.asyncio
-async def test_immutable_config_version_snapshots_include_tags(db_context):
-    _engine, session_maker = db_context
-    repo = ProfileRepository(session_maker)
-
-    config_v1 = ProfileConfig(name="Initial Name", screen_width=1280, screen_height=720)
-    profile = await repo.create_profile(
-        config_v1, tags=[Tag(tag="v1_tag", color="#aaa")]
-    )
-    v1_id = profile.id
-
-    # Mutate to v2
-    config_v2 = profile.config.model_copy(
-        update={"name": "Second Name", "screen_width": 1920}
-    )
-    await repo.update_profile(
-        v1_id, patch_data=config_v2, tags=[Tag(tag="v2_tag", color="#bbb")]
-    )
-
-    # Mutate to v3
-    config_v3 = config_v2.model_copy(
-        update={"name": "Third Name", "screen_width": 2560}
-    )
-    await repo.update_profile(
-        v1_id, patch_data=config_v3, tags=[Tag(tag="v3_tag", color="#ccc")]
-    )
-
-    # Check snapshots
-    versions = await repo.list_config_versions(v1_id)
-    assert len(versions) == 3
-    assert [v.version for v in versions] == [1, 2, 3]
-
-    v1_snapshot = await repo.get_config_version(v1_id, 1)
-    assert v1_snapshot is not None
-    assert v1_snapshot.config["name"] == "Initial Name"
-    assert v1_snapshot.config["screen_width"] == 1280
-    assert len(v1_snapshot.tags) == 1
-    assert v1_snapshot.tags[0].tag == "v1_tag"
-
-    v2_snapshot = await repo.get_config_version(v1_id, 2)
-    assert v2_snapshot is not None
-    assert v2_snapshot.config["name"] == "Second Name"
-    assert v2_snapshot.config["screen_width"] == 1920
-    assert v2_snapshot.tags[0].tag == "v2_tag"
-
-    v3_snapshot = await repo.get_config_version(v1_id, 3)
-    assert v3_snapshot is not None
-    assert v3_snapshot.config["name"] == "Third Name"
-    assert v3_snapshot.config["screen_width"] == 2560
-    assert v3_snapshot.tags[0].tag == "v3_tag"
-
-
-@pytest.mark.asyncio
 async def test_actual_db_constraint_failure_rollback(db_context):
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
 
     config = ProfileConfig(name="Constraint Rollback Profile")
-    p = await repo.create_profile(config, tags=[])
+    p = await repo.create_profile(config)
 
     # Attempt a raw SQL insert that violates foreign key or constraint
     with pytest.raises(IntegrityError):
@@ -479,22 +430,9 @@ async def test_wal_reader_parallelism_while_write_lock_held(
 
 
 @pytest.mark.asyncio
-async def test_idempotent_create_tag_conflict_detected(db_context):
-    """Reusing operation_id on create with different tags raises error."""
-    _engine, session_maker = db_context
-    repo = ProfileRepository(session_maker)
-
-    op_id = "op_tag_conflict_test"
-    cfg = ProfileConfig(name="Tag Test Profile")
-    await repo.create_profile(cfg, tags=[Tag(tag="tag_A")], operation_id=op_id)
-
-    # Calling create with different tags must raise IdempotencyConflictError
-    with pytest.raises(IdempotencyConflictError):
-        await repo.create_profile(cfg, tags=[Tag(tag="tag_B")], operation_id=op_id)
-
-
-@pytest.mark.asyncio
-async def test_same_instance_rebind_and_observation_config_version_guard(db_context):
+async def test_runtime_instance_config_version_guard_after_runtime_config_change(
+    db_context,
+):
     """Same instance rebind or observation with unapplied version is rejected."""
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)
@@ -502,8 +440,9 @@ async def test_same_instance_rebind_and_observation_config_version_guard(db_cont
     p = await repo.create_profile(ProfileConfig(name="Version Guard Profile"))
     await repo.bind_runtime_instance(p.id, "inst_X", config_version=1)
 
-    # Save v2
-    await repo.update_profile(p.id, patch_data={"name": "v2 Name"})
+    # A runtime-config field change creates v2 (t035 AC-006); metadata-only
+    # edits no longer produce a new version.
+    await repo.update_profile(p.id, patch_data={"screen_width": 2560})
 
     # 1. Observation report with unapplied v2 on inst_X bound to 1 -> rejected
     with pytest.raises(InvalidConfigVersionError):

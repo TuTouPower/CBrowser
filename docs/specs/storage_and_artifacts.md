@@ -13,10 +13,10 @@
 - 引入 SQLAlchemy 2.0 异步 ORM 并通过 Alembic 管理版本化数据库迁移。
 - 禁止在业务中执行非版本化的临时建表或删表逻辑。
 - 核心表结构包括：
-    - `profiles`：Profile 基本元数据
-    - `profile_config_versions`：不可变运行参数版本快照
-    - `profile_tags`：标签与分类
-    - `profile_runtimes`：期望状态与真实观测状态
+    - `profiles`：Profile 基本元数据，含 `group_id` / `proxy_id` 标量引用（t035）
+    - `profile_groups` / `proxies`：分组库与代理库条目（t035 取代业务 Tag 表与内嵌 proxy 字段）
+    - `profile_config_versions`：不可变运行参数版本快照，不含密码与业务 Tag
+    - `profile_runtimes`：期望状态与真实观测状态，含起停时间戳与浏览器版本字段（t035）
     - `runtime_events`：运行事件去重与退出事件记录（随 Profile 级联删除）
     - `artifacts`：上传与下载文件元数据
     - `audit_events`：生命周期操作审计（无外键，不随 Profile 删除）
@@ -26,8 +26,9 @@
 ### 2.2 旧数据库迁移兼容
 
 - 旧版 `profiles.db` 迁移工具归 t010，当前未实施；本节描述的是 t010 的交付契约，不代表已交付。
+- **t035 修订（2026-11-05）**：迁移链已折叠为单一 baseline 修订 `b7e1c9d4a2f3`，业务 Tag 表与内嵌 `proxy` 字段已移除。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不做自动升级、不修改该库；t010 式的自动迁移工具不再交付（ADR 023）。生产数据须经用户批准的备份与迁移流程重建。
 - 迁移工具支持 `--dry-run` 模式，提前校验数据完整性。
-- 迁移必须保留现有 Profile UUID、名称、标签、指纹配置以及用户历史目录（Cookies, 网站存储），严禁重新生成指纹或清除登录态。
+- 迁移必须保留现有 Profile UUID、名称、分组与代理引用、指纹配置以及用户历史目录（Cookies, 网站存储），严禁重新生成指纹或清除登录态。
 
 ### 2.3 文件交换与下载捕获
 

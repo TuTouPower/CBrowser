@@ -9,10 +9,10 @@
 |storage_and_artifacts|baseline, t008, t016, t021, t023|2026-11-04T04:42:46+08:00|
 |v2_runtime_validation|t001|2026-11-01T10:13:32+08:00|
 |runtime_persistence|t002, t016, t021|2026-11-04T02:13:35+08:00|
-|runtime_lifecycle|t005, t007, t022, t026|2026-11-04T09:51:48+08:00|
-|release_deployment|t027, t034|2026-11-05T17:30:00+08:00|
+|runtime_lifecycle|t005, t007, t022, t026, t035|2026-11-05T23:45:36+08:00|
+|release_deployment|t027, t034, t035|2026-11-05T23:45:36+08:00|
 |automation_compatibility|t029|2026-11-04T13:37:11+08:00|
 |agent_executor|t030|2026-11-04T22:00:00+08:00|
 |human_agent_control|t031|2026-11-04T21:00:00+08:00|
 |access_control|t006, t007, t008, t021, t023, t025|2026-11-04T08:39:09+08:00|
-|profile_management|t007, t013, t017, t020, t021, t023, t025|2026-11-04T08:39:09+08:00|
+|profile_management|t007, t013, t017, t020, t021, t023, t025, t035|2026-11-05T23:45:36+08:00|

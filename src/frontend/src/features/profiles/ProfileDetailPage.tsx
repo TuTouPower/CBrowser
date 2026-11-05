@@ -55,11 +55,9 @@ export function ProfileDetailPage() {
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [name, setName] = useState("");
-  const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
   const [fontBundle, setFontBundle] = useState<FontBundle>("none");
-  const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const dirtyFields = useRef<Set<string>>(new Set());
@@ -82,20 +80,12 @@ export function ProfileDetailPage() {
     if (!profile) return;
     const dirty = dirtyFields.current;
     if (!dirty.has("name")) setName(profile.name || "");
-    if (!dirty.has("proxy")) setProxy(profile.proxy || "");
     if (!dirty.has("geometry")) {
       setScreenWidth(profile.screen_width || 1920);
       setScreenHeight(profile.screen_height || 1080);
     }
     if (!dirty.has("fontBundle")) {
       setFontBundle((profile.font_bundle as FontBundle) || "none");
-    }
-    if (!dirty.has("tags")) {
-      setTagsInput(
-        profile.tags
-          ? profile.tags.map((t) => (typeof t === "string" ? t : t.tag)).join(", ")
-          : "",
-      );
     }
   }, [profile]);
 
@@ -188,21 +178,13 @@ export function ProfileDetailPage() {
     setSuccess(false);
 
     try {
-      const tags = tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((t) => ({ tag: t }));
-
       await updateMutation.mutateAsync({
         id: targetId,
         data: {
           name: name.trim(),
-          proxy: proxy.trim() || null,
           screen_width: screenWidth,
           screen_height: screenHeight,
           font_bundle: fontBundle,
-          tags,
         },
       });
 
@@ -554,19 +536,6 @@ export function ProfileDetailPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("proxyUrl")}
-            </label>
-            <input
-              type="text"
-              value={proxy}
-              onChange={(e) => { markDirty("proxy"); setProxy(e.target.value); }}
-              placeholder="http://user:pass@host:port"
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
@@ -608,19 +577,6 @@ export function ProfileDetailPage() {
               <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
               <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
             </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("tagsCommaSeparated")}
-            </label>
-            <input
-              data-testid="profile-tags-input"
-              type="text"
-              value={tagsInput}
-              onChange={(e) => { markDirty("tags"); setTagsInput(e.target.value); }}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
           </div>
 
           <div className="pt-2 flex justify-end gap-3">

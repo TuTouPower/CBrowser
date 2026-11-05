@@ -56,18 +56,18 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：迁移目录只有一个 baseline 修订，其 revision 身份与旧链中的任何修订都不同；空库 `alembic upgrade head` 后 schema 与 ORM 模型一致（autogenerate 无差异）。
-- [ ] AC-002：用旧 schema 代的数据库启动 API，或用它部署时，均失败封闭并输出重建指引，不修改该数据库。release controller 按修订链判定回退下限：旧 schema 代的 release 被拒绝作为回退目标；同代 release 之间的发布与回退通过。
-- [ ] AC-003：分组 CRUD 与排序可用。名称重复、超长或颜色不在调色板内时被拒绝；删除分组后，原引用 Profile 的 `group_id` 变为 null；Profile 创建与 PATCH 可设置或清除 `group_id`，引用不存在的分组被拒绝。
-- [ ] AC-004：代理 CRUD 可用，协议、host、端口按规则校验，名称唯一。代理、Profile、配置版本、错误响应、SSE 与日志中都不出现代理密码；配置版本快照存储中也不含密码；代理响应含 `has_password` 与 `used_by_count`；PATCH `password` 的缺失 / null / 字符串三种语义分别为不变 / 清除 / 设置。
-- [ ] AC-005：代理被任一 Profile 的当前配置或 runtime 绑定版本引用时，删除返回 409 `proxy_in_use` 并附引用数量，代理与引用关系不变。
-- [ ] AC-006：只改元数据、只改 `capture_preview`，或提交与当前值相同的运行配置，都不生成新配置版本，运行中的 Profile 不出现待应用。修改代理连接字段时，在同一事务内为每个引用它的 Profile 生成新版本，提交后对这些 Profile 广播 SSE；只改代理名称、地区或备注不生成。
-- [ ] AC-007：引用代理的 Profile 启动后，浏览器出站流量经过该代理（真实栈 E2E 以本地测试代理记录到请求为证）。代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`；应用新版本后启动成功。
-- [ ] AC-008：带认证 SOCKS5 按 spike 结论处理：引擎支持时端到端经代理出站；不支持时，API 以 422 拒绝创建或更新为该组合，并有测试覆盖。
-- [ ] AC-009：runtime 进入 running 时写入 `last_started_at`，进入 stopped 或 error 时写入 `last_stopped_at`（ISO 8601 带时区），两者经 runtime 响应与 SSE 下发；前端校验拒绝非法值。
-- [ ] AC-010：运行中 Profile 的 runtime 响应含 `browser_product` 与 `browser_user_agent`，与容器内浏览器 CDP `Browser.getVersion` 的返回值一致（真实栈 E2E）；未运行时两字段为 null。
-- [ ] AC-011：desired 为 running、observed 为 starting / running / stopping，或仍绑定实例的 Profile，删除返回 409 `profile_running`，数据与运行时不变。observed 为 error 且无实例的 Profile 可以删除，请求停止后 observed 变为 stopped。删除成功后，DB 行、Artifact 与全部 Profile 专属目录都不存在。
-- [ ] AC-012：Profile 请求与响应不含 `tags`、`proxy`；导出的 OpenAPI 按资源分组，不含 `v1` 分组。仓库中除 `docs/archive/**`、`docs/reviews/**`、`.repo_template/**`，以及 OpenAPI 分组、Docker 镜像 tag、git tag、HTML 元素 / `tagName` 等不同含义的用法外，不再出现业务 Tag 概念（扫描命令与结果写入实施笔记）。
+- [x] AC-001：迁移目录只有一个 baseline 修订，其 revision 身份与旧链中的任何修订都不同；空库 `alembic upgrade head` 后 schema 与 ORM 模型一致（autogenerate 无差异）。
+- [x] AC-002：用旧 schema 代的数据库启动 API，或用它部署时，均失败封闭并输出重建指引，不修改该数据库。release controller 按修订链判定回退下限：旧 schema 代的 release 被拒绝作为回退目标；同代 release 之间的发布与回退通过。
+- [x] AC-003：分组 CRUD 与排序可用。名称重复、超长或颜色不在调色板内时被拒绝；删除分组后，原引用 Profile 的 `group_id` 变为 null；Profile 创建与 PATCH 可设置或清除 `group_id`，引用不存在的分组被拒绝。
+- [x] AC-004：代理 CRUD 可用，协议、host、端口按规则校验，名称唯一。代理、Profile、配置版本、错误响应、SSE 与日志中都不出现代理密码；配置版本快照存储中也不含密码；代理响应含 `has_password` 与 `used_by_count`；PATCH `password` 的缺失 / null / 字符串三种语义分别为不变 / 清除 / 设置。
+- [x] AC-005：代理被任一 Profile 的当前配置或 runtime 绑定版本引用时，删除返回 409 `proxy_in_use` 并附引用数量，代理与引用关系不变。
+- [x] AC-006：只改元数据、只改 `capture_preview`，或提交与当前值相同的运行配置，都不生成新配置版本，运行中的 Profile 不出现待应用。修改代理连接字段时，在同一事务内为每个引用它的 Profile 生成新版本，提交后对这些 Profile 广播 SSE；只改代理名称、地区或备注不生成。
+- [x] AC-007：引用代理的 Profile 启动后，浏览器出站流量经过该代理（真实栈 E2E 以本地测试代理记录到请求为证）。代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`；应用新版本后启动成功。
+- [x] AC-008：带认证 SOCKS5 按 spike 结论处理：引擎支持时端到端经代理出站；不支持时，API 以 422 拒绝创建或更新为该组合，并有测试覆盖。
+- [x] AC-009：runtime 进入 running 时写入 `last_started_at`，进入 stopped 或 error 时写入 `last_stopped_at`（ISO 8601 带时区），两者经 runtime 响应与 SSE 下发；前端校验拒绝非法值。
+- [x] AC-010：运行中 Profile 的 runtime 响应含 `browser_product` 与 `browser_user_agent`，与容器内浏览器 CDP `Browser.getVersion` 的返回值一致（真实栈 E2E）；未运行时两字段为 null。
+- [x] AC-011：desired 为 running、observed 为 starting / running / stopping，或仍绑定实例的 Profile，删除返回 409 `profile_running`，数据与运行时不变。observed 为 error 且无实例的 Profile 可以删除，请求停止后 observed 变为 stopped。删除成功后，DB 行、Artifact 与全部 Profile 专属目录都不存在。
+- [x] AC-012：Profile 请求与响应不含 `tags`、`proxy`；导出的 OpenAPI 按资源分组，不含 `v1` 分组。仓库中除 `docs/archive/**`、`docs/reviews/**`、`.repo_template/**`，以及 OpenAPI 分组、Docker 镜像 tag、git tag、HTML 元素 / `tagName` 等不同含义的用法外，不再出现业务 Tag 概念（扫描命令与结果写入实施笔记）。
 
 ### 可测试性声明
 
@@ -109,7 +109,7 @@
 
 <!-- /规范 -->
 
-- CloakBrowser 0.6.4（Chromium 146）对带认证 SOCKS5 的支持（Chromium 原生不支持）：UNVERIFIED-SPIKE，用真实引擎经本地带认证 SOCKS5 代理实测，结论决定 AC-008 的分支并写入 `docs/findings/`。
+- CloakBrowser 0.6.4（Chromium 146）对带认证 SOCKS5 的支持：**已验证结论（支持，AC-008 取「端到端经代理出站」分支）**。正式 spike `docs/spikes/s013_authenticated_socks5_engine_probe/report.md` + finding `docs/findings/d031_authenticated_socks5_supported.md`，在 Linux arm64 探针容器用真实引擎实测：`--proxy-server=socks5://user:pass@host:port` 时 greeting 只声明 method `0x02` 并完成用户名/密码子协商；正确凭据 → 认证 accepted、页面经代理加载；错误凭据 → `net::ERR_SOCKS_CONNECTION_FAILED`；无认证对照亦正常。契约背景「Chromium 原生不支持」假设不成立，故 API 不以 422 拒绝该组合，但凭据变更须按 `credential_revision` 失败封闭（AC-007）。复查条件：Chromium 主版本或指纹平台升级后重跑 s013。
 
 ### 风险与回退
 

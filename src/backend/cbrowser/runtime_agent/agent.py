@@ -244,6 +244,8 @@ def create_agent_app(
                         "state": state.state,
                         "exit_code": state.exit_code,
                         "exit_reason": state.exit_reason,
+                        "browser_product": None,
+                        "browser_user_agent": None,
                     },
                     search_defaults=_search_defaults_status(),
                 )
@@ -292,6 +294,8 @@ def create_agent_app(
                 "browser_pid": browser_pid,
                 "cdp_port": cdp_port,
                 "rearm_count": active_cdp_proxy.rearm_count if active_cdp_proxy else 0,
+                "browser_product": r_info.get("browser_product"),
+                "browser_user_agent": r_info.get("browser_user_agent"),
             },
             search_defaults=_search_defaults_status(),
         )

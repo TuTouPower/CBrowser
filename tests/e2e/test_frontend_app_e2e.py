@@ -88,15 +88,12 @@ async def create_profile_via_ui(
     page: Page,
     harness: FrontendAppTopologyHarness,
     name: str,
-    tags: str = "",
     width: int = 1920,
     height: int = 1080,
 ) -> str:
     await page.goto(f"{harness.origin}/profiles/new", wait_until="domcontentloaded")
     await page.wait_for_selector('[data-testid="profile-new-page"]', timeout=15000)
     await page.fill('[data-testid="profile-name-input"]', name)
-    if tags:
-        await page.fill('[data-testid="profile-tags-input"]', tags)
     await page.fill('[data-testid="profile-width-input"]', str(width))
     await page.fill('[data-testid="profile-height-input"]', str(height))
     await page.click('[data-testid="profile-create-submit"]')
@@ -323,20 +320,18 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
 
         name_a = "Fe Alpha"
         name_b = "Fe Beta"
-        profile_a = await create_profile_via_ui(
-            page_a, harness, name_a, tags="alpha,beta"
-        )
-        profile_b = await create_profile_via_ui(page_a, harness, name_b, tags="gamma")
+        profile_a = await create_profile_via_ui(page_a, harness, name_a)
+        profile_b = await create_profile_via_ui(page_a, harness, name_b)
 
-        # Profile list shows the created profiles and tags.
+        # Profile list shows the created profiles.
         await page_a.goto(harness.origin + "/", wait_until="domcontentloaded")
         await page_a.wait_for_selector(
             f'[data-testid="profile-item-{profile_a}"]', timeout=15000
         )
         item_text = await page_a.inner_text(f'[data-testid="profile-item-{profile_a}"]')
-        assert name_a in item_text and "#alpha" in item_text and "#beta" in item_text
+        assert name_a in item_text
 
-        # Edit name/tags through the UI.
+        # Edit name through the UI.
         await page_a.goto(
             f"{harness.origin}/profiles/{profile_a}", wait_until="domcontentloaded"
         )
@@ -344,7 +339,6 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             '[data-testid="profile-detail-page"]', timeout=15000
         )
         await page_a.fill('[data-testid="profile-name-input"]', name_a + " Edited")
-        await page_a.fill('[data-testid="profile-tags-input"]', "delta,epsilon")
         await page_a.click('[data-testid="profile-edit-submit"]')
         await page_a.wait_for_selector(
             '[data-testid="profile-save-success"]', timeout=15000
@@ -357,7 +351,6 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             f'[data-testid="profile-item-{profile_a}"]'
         )
         assert name_a + " Edited" in edited_text
-        assert "#delta" in edited_text and "#epsilon" in edited_text
 
         # Start profile A through the session page; runtime state must arrive via SSE
         # (no reload and no polling: the mutation only sets desired/observed=starting).
@@ -459,7 +452,7 @@ async def test_ac002_ac003_ac010_identity_copy_close_and_tokens(
         page_a = await context.new_page()
         await ui_login(page_a, harness)
         profile_id = await create_profile_via_ui(
-            page_a, harness, "Identity Profile", tags="id"
+            page_a, harness, "Identity Profile"
         )
 
         wire = WireRecorder(page_a, context)
@@ -625,9 +618,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
     try:
         page_a = await context.new_page()
         await ui_login(page_a, harness)
-        profile_id = await create_profile_via_ui(
-            page_a, harness, "Input Profile", tags="io"
-        )
+        profile_id = await create_profile_via_ui(page_a, harness, "Input Profile")
 
         wire = WireRecorder(page_a, context)
         await wire.start()

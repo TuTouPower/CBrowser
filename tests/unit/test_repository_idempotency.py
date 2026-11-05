@@ -32,7 +32,7 @@ async def repo(tmp_path: Path):
 
 
 def _payload(name: str = "Idem") -> dict:
-    return {"config": {"name": name}, "tags": []}
+    return {"config": {"name": name}}
 
 
 @pytest.mark.asyncio

@@ -19,13 +19,63 @@ class Base(DeclarativeBase):
     pass
 
 
+class ProfileGroupModel(Base):
+    __tablename__ = "profile_groups"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    color: Mapped[str] = mapped_column(
+        String(32), default="slate", nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+
+class ProxyModel(Base):
+    __tablename__ = "proxies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    scheme: Mapped[str] = mapped_column(String(16), nullable=False)
+    host: Mapped[str] = mapped_column(String(512), nullable=False)
+    port: Mapped[int] = mapped_column(Integer, nullable=False)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credential_revision: Mapped[int] = mapped_column(
+        Integer, default=1, nullable=False
+    )
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    region_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+
 class ProfileModel(Base):
     __tablename__ = "profiles"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     fingerprint_seed: Mapped[int] = mapped_column(Integer, nullable=False)
-    proxy: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    group_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("profile_groups.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    proxy_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("proxies.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     locale: Mapped[str | None] = mapped_column(String(64), nullable=True)
     screen_width: Mapped[int] = mapped_column(Integer, default=1920, nullable=False)
@@ -72,17 +122,9 @@ class ProfileModel(Base):
     )
 
     # Relationships are never loaded implicitly: ordinary profile reads load
-    # only what their DTO needs (tags, via explicit selectinload in the
-    # repository); immutable version history and artifact collections are
-    # fetched by their dedicated queries. Profile deletion cascades at the
-    # database level (FK ON DELETE CASCADE + foreign_keys pragma).
-    tags: Mapped[list[ProfileTagModel]] = relationship(
-        "ProfileTagModel",
-        back_populates="profile",
-        cascade="all, delete-orphan",
-        lazy="noload",
-        passive_deletes=True,
-    )
+    # only what their DTO needs; immutable version history and artifact
+    # collections are fetched by their dedicated queries. Profile deletion
+    # cascades at the database level (FK ON DELETE CASCADE + foreign_keys pragma).
     versions: Mapped[list[ProfileConfigVersionModel]] = relationship(
         "ProfileConfigVersionModel",
         back_populates="profile",
@@ -104,6 +146,11 @@ class ProfileModel(Base):
         cascade="all, delete-orphan",
         lazy="noload",
         passive_deletes=True,
+    )
+
+    __table_args__ = (
+        Index("idx_profiles_group_id", "group_id"),
+        Index("idx_profiles_proxy_id", "proxy_id"),
     )
 
 
@@ -129,18 +176,6 @@ class ProfileConfigVersionModel(Base):
     )
 
 
-class ProfileTagModel(Base):
-    __tablename__ = "profile_tags"
-
-    profile_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
-    )
-    tag: Mapped[str] = mapped_column(String(64), primary_key=True)
-    color: Mapped[str | None] = mapped_column(String(32), nullable=True)
-
-    profile: Mapped[ProfileModel] = relationship("ProfileModel", back_populates="tags")
-
-
 class ProfileRuntimeModel(Base):
     __tablename__ = "profile_runtimes"
 
@@ -160,6 +195,10 @@ class ProfileRuntimeModel(Base):
         Boolean, default=False, nullable=False
     )
     last_exit_event_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_stopped_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    browser_product: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    browser_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )

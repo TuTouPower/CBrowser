@@ -253,14 +253,25 @@ class DownloadArtifactForwarder:
                     / "downloads"
                 ).resolve()
                 relative = Path(translated_path).relative_to(downloads_root)
+                name = event.suggested_filename
+                if not name:
+                    # t035: CDP suggestedFilename is the only legitimate
+                    # artifact name. When downloadWillBegin is delayed past
+                    # progress, hold the event for the backfilled completion
+                    # rather than shipping the internal CDP guid as a name.
+                    logger.warning(
+                        "Holding download event without suggested_filename: "
+                        "profile=%s event=%s",
+                        profile_id,
+                        event.event_id,
+                    )
+                    continue
                 payload = {
                     "event_id": event.event_id,
                     "profile_id": profile_id,
                     "runtime_instance_id": event.runtime_instance_id,
                     "path": CONTAINER_DOWNLOAD_PREFIX + str(relative),
-                    "name": (
-                        event.suggested_filename or Path(event.download_path).name
-                    )[:255],
+                    "name": name[:255],
                     "size": event.size_bytes or event.received_bytes,
                     "sha256": event.sha256,
                     "content_type": None,

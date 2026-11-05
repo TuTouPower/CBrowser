@@ -141,22 +141,6 @@ export function BrowserSessionPage() {
           </span>
         </div>
 
-        {profile.tags && profile.tags.length > 0 && (
-          <div className="flex flex-wrap justify-center gap-1.5 mb-6">
-            {profile.tags.map((tag, idx) => {
-              const tagStr = typeof tag === "string" ? tag : tag.tag;
-              return (
-                <span
-                  key={idx}
-                  className="px-2 py-0.5 rounded text-[11px] bg-surface-2 text-gray-400 border border-border"
-                >
-                  #{tagStr}
-                </span>
-              );
-            })}
-          </div>
-        )}
-
         {launchState.isError && (
           <div
             data-testid="session-start-error"

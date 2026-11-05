@@ -43,7 +43,6 @@ function profile(id: string, name: string): ProfileResponse {
     auto_launch: false,
     launch_args: [],
     extension_paths: [],
-    tags: [],
     human_preset: "default",
     font_bundle: "none",
     allow_3p_cookies: true,

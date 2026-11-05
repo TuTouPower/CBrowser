@@ -189,10 +189,10 @@ def _validate_schema(data: Any, schema_name: str):
 
 
 @pytest.mark.asyncio
-async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
+async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
     server_harness: SubprocessServer,
 ):
-    """AC-001: CRUD via API, canonical user_data_dir, legacy fields & tags persist.
+    """AC-001: CRUD via API, canonical user_data_dir, group/proxy refs persist.
 
     Nullable vs non-nullable updates, invalid inputs rejected.
     AC-005: Database initialized from empty directory and accessed independently.
@@ -217,10 +217,9 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert invalid_args.status_code == 422
         assert len((await client.get("/api/v1/profiles")).json()) == len(before)
 
-        # 1. Create Profile with full valid legacy fields and tags
+        # 1. Create Profile with full valid fields and empty group/proxy refs
         payload = {
             "name": "Alpha Production Profile",
-            "proxy": "http://user:secretpassword@proxy.example.com:8080",
             "timezone": "Europe/London",
             "locale": "en-GB",
             "screen_width": 1440,
@@ -242,10 +241,6 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
             "portable_cookies": True,
             "notes": "Top secret profile notes",
             "sort_order": 12,
-            "tags": [
-                {"tag": "banking", "color": "#ff0000"},
-                {"tag": "uk", "color": "#0000ff"},
-            ],
         }
         res = await client.post("/api/v1/profiles", json=payload)
         assert res.status_code == 201
@@ -257,9 +252,10 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         # Canonical metadata user_data_dir path check
         assert created["user_data_dir"] == f"/data/profiles/{pid}/profile"
         assert created["fingerprint_seed"] >= 100000
-        assert created["proxy"] == "http://user:secretpassword@proxy.example.com:8080"
+        assert created["group_id"] is None
+        assert created["proxy_id"] is None
+        assert created["transparent_proxy"] is True
         assert created["sort_order"] == 12
-        assert len(created["tags"]) == 2
         assert created["current_config_version"] == 1
 
         # 2. Nullable vs Non-nullable validation
@@ -290,11 +286,11 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
 
         # Nullable fields cleared to null: accepted with 200
         patch_res = await client.put(
-            f"/api/v1/profiles/{pid}", json={"notes": None, "proxy": None}
+            f"/api/v1/profiles/{pid}", json={"notes": None}
         )
         assert patch_res.status_code == 200
         assert patch_res.json()["notes"] is None
-        assert patch_res.json()["proxy"] is None
+        assert patch_res.json()["proxy_id"] is None
 
     # 3. Simulate server restart: stop subprocess and start new on same DB
     server.stop()
@@ -314,7 +310,8 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert reloaded["name"] == "Alpha Production Profile"
         assert reloaded["user_data_dir"] == f"/data/profiles/{pid}/profile"
         assert reloaded["notes"] is None
-        assert reloaded["proxy"] is None
+        assert reloaded["group_id"] is None
+        assert reloaded["proxy_id"] is None
         assert reloaded["timezone"] == "Europe/London"
         assert reloaded["locale"] == "en-GB"
         assert reloaded["screen_width"] == 1440
@@ -323,7 +320,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
         assert reloaded["humanize"] is True
         assert reloaded["human_preset"] == "careful"
         assert reloaded["sort_order"] == 12
-        assert {t["tag"] for t in reloaded["tags"]} == {"banking", "uk"}
+        assert reloaded["transparent_proxy"] is True
 
         # 4. Delete profile
         del_res = await client.delete(f"/api/v1/profiles/{pid}")
@@ -332,10 +329,10 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init(
 
 
 @pytest.mark.asyncio
-async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
+async def test_ac002_immutable_snapshots_and_idempotency_conflicts_with_refs(
     server_harness: SubprocessServer,
 ):
-    """AC-002: Immutable version snapshots (including tags), concurrent same op_id,
+    """AC-002: Immutable version snapshots, concurrent same op_id,
 
     409 Conflict when op_id reused with different request payload or target,
     and concurrent disjoint patches without lost updates.
@@ -354,7 +351,6 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
             "name": "Immutable Profile",
             "screen_width": 1024,
             "screen_height": 768,
-            "tags": [{"tag": "v1_tag", "color": "#111"}],
         }
 
         # 1. Concurrent 5 identical requests with same operation_id
@@ -404,7 +400,6 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
             json={
                 "name": "Name v2",
                 "screen_width": 1920,
-                "tags": [{"tag": "v2_tag", "color": "#222"}],
             },
         )
         assert up2.status_code == 200
@@ -415,7 +410,6 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
             json={
                 "name": "Name v3",
                 "screen_width": 2560,
-                "tags": [{"tag": "v3_tag", "color": "#333"}],
             },
         )
         assert up3.status_code == 200
@@ -451,21 +445,22 @@ async def test_ac002_immutable_snapshots_and_idempotency_conflicts(
         v1 = (await client.get(f"/api/v1/profiles/{pid}/versions/1")).json()
         assert v1["config"]["name"] == "Immutable Profile"
         assert v1["config"]["screen_width"] == 1024
-        assert v1["tags"][0]["tag"] == "v1_tag"
+        assert "tags" not in v1
+        assert "tags" not in v1["config"]
 
         v2 = (await client.get(f"/api/v1/profiles/{pid}/versions/2")).json()
         assert v2["config"]["name"] == "Name v2"
         assert v2["config"]["screen_width"] == 1920
-        assert v2["tags"][0]["tag"] == "v2_tag"
+        assert "tags" not in v2
 
         v3 = (await client.get(f"/api/v1/profiles/{pid}/versions/3")).json()
         assert v3["config"]["name"] == "Name v3"
         assert v3["config"]["screen_width"] == 2560
-        assert v3["tags"][0]["tag"] == "v3_tag"
+        assert "tags" not in v3
 
 
 @pytest.mark.asyncio
-async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
+async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics_with_refs(
     server_harness: SubprocessServer,
 ):
     """AC-003: Runtime state convergence, intent separation, stale protection.
@@ -493,8 +488,7 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
             "/api/v1/profiles",
             json={
                 "name": "Runtime Convergence Profile",
-                "proxy": f"socks5://admin:{secret_pass}@proxy.example.com:1080",
-                "notes": secret_note,
+                "notes": f"{secret_note}|{secret_pass}",
             },
         )
         assert p_res.status_code == 201
@@ -548,12 +542,21 @@ async def test_ac003_and_ac006_runtime_events_convergence_and_diagnostics(
         assert rebind_diff_cfg.status_code == 422
         _validate_schema(rebind_diff_cfg.json(), "ValidationErrorResponse")
 
-        # 3. User modifies profile config to v2 while container runs v1
+        # 3. User modifies a runtime-config field to v2 while container runs v1
+        # (t035 AC-006: metadata-only edits no longer create a version).
         up_res = await client.put(
-            f"/api/v1/profiles/{pid}", json={"name": "Updated Name v2"}
+            f"/api/v1/profiles/{pid}",
+            json={"name": "Updated Name v2", "screen_width": 1280},
         )
         assert up_res.status_code == 200
         assert up_res.json()["current_config_version"] == 2
+
+        # AC-006: a metadata-only edit (notes) must not create a v3.
+        meta_res = await client.put(
+            f"/api/v1/profiles/{pid}", json={"notes": "metadata only edit"}
+        )
+        assert meta_res.status_code == 200
+        assert meta_res.json()["current_config_version"] == 2
 
         # Runtime bound config_version remains 1!
         rt_check = (await client.get(f"/api/v1/profiles/{pid}/runtime")).json()
@@ -867,83 +870,3 @@ async def test_ac004_sqlite_busy_timeout_contention_and_recovery(
         assert recover_resp.json()["name"] == "Recovered Profile"
 
 
-@pytest.mark.asyncio
-async def test_ac006_db_constraint_integrity_error_no_secret_leak_in_logs(
-    server_harness: SubprocessServer,
-):
-    """AC-006: Real DB constraint violation rolls back cleanly.
-
-    Returns typed 409 Conflict, and DOES NOT leak SQL parameters or secrets in logs.
-    """
-    server = server_harness
-    secret = "ROOT_PRIVATE_SENTINEL_9b84"
-
-    async with httpx.AsyncClient(
-        base_url=server.base_url,
-        headers=server.auth_headers,
-        timeout=10.0,
-        trust_env=False,
-    ) as client:
-        # Trigger real SQLite IntegrityError (duplicate PK on profile_tags)
-        failed = await client.post(
-            "/api/v1/profiles",
-            json={
-                "name": "atomic rollback",
-                "tags": [{"tag": secret}, {"tag": secret}],
-            },
-        )
-        assert failed.status_code == 409
-        _validate_schema(failed.json(), "ErrorResponse")
-        assert secret not in failed.text
-
-        # Verify zero partial data created in DB
-        profiles = (await client.get("/api/v1/profiles")).json()
-        assert not any(p["name"] == "atomic rollback" for p in profiles)
-
-        # Next valid request succeeds cleanly
-        succ = await client.post(
-            "/api/v1/profiles", json={"name": "Post Constraint Success"}
-        )
-        assert succ.status_code == 201
-
-    # Verify physical server log contains zero secret or SQL bind parameter dumps
-    await asyncio.sleep(0.2)
-    logs = server.read_logs()
-    assert secret not in logs, (
-        "Security Violation: Secret leaked in physical server logs!"
-    )
-    assert "[parameters:" not in logs, (
-        "Security Violation: SQL parameters dumped in logs!"
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "keyword_tag", ["busy", "locked", "profile-busy-worker", "db-locked-state"]
-)
-async def test_ac006_duplicate_tags_with_busy_and_locked_keywords_return_409(
-    server_harness: SubprocessServer, keyword_tag: str
-):
-    """IntegrityError for tags with 'busy' or 'locked' must return 409, NOT 503."""
-    server = server_harness
-    async with httpx.AsyncClient(
-        base_url=server.base_url,
-        headers=server.auth_headers,
-        timeout=10.0,
-        trust_env=False,
-    ) as client:
-        resp = await client.post(
-            "/api/v1/profiles",
-            json={
-                "name": f"constraint-{keyword_tag}",
-                "tags": [{"tag": keyword_tag}, {"tag": keyword_tag}],
-            },
-        )
-        assert resp.status_code == 409, (
-            f"Expected 409 for duplicate tag '{keyword_tag}', "
-            f"got {resp.status_code}: {resp.text}"
-        )
-        body = resp.json()
-        _validate_schema(body, "ErrorResponse")
-        assert body["error"] == "constraint_violation"
-        assert body["retryable"] is False

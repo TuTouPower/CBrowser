@@ -11,10 +11,8 @@ import { ProfileDetailPage } from "./ProfileDetailPage";
 const PROFILE = {
   id: "p1",
   name: "Original",
-  proxy: "",
   screen_width: 1920,
   screen_height: 1080,
-  tags: [],
   current_config_version: 1,
 } as unknown as ProfileResponse;
 

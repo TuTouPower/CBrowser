@@ -10,26 +10,27 @@ from typing import Any
 from cbrowser.adapters.database.models import (
     AuditEventModel,
     ProfileConfigVersionModel,
+    ProfileGroupModel,
     ProfileModel,
     ProfileRuntimeModel,
-    ProfileTagModel,
+    ProxyModel,
     RuntimeEventModel,
 )
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
+    GroupResponse,
     Profile,
     ProfileConfig,
     ProfileRuntime,
+    ProxyResponse,
     RuntimeEvent,
-    Tag,
     utc_now_iso,
 )
 from cbrowser.domain.runtime_policy import BLOCK_AFTER_RUNTIME_FAILURES
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
 
 
 class IdempotencyConflictError(Exception):
@@ -53,6 +54,22 @@ def _hash_request(action: str, target: str, payload: Any) -> str:
     signature = {"action": action, "target": target, "payload": payload}
     serialized = json.dumps(signature, sort_keys=True, default=str)
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+# t035 AC-006: only a value change in one of these fields creates a new
+# config version.  Metadata and the instant preview policy are written
+# directly to the profile row without producing a "pending apply" state.
+METADATA_FIELDS = frozenset({"name", "notes", "sort_order", "group_id"})
+INSTANT_FIELDS = frozenset({"capture_preview"})
+CONFIG_VERSION_FIELDS = frozenset(
+    set(ProfileConfig.model_fields) - METADATA_FIELDS - INSTANT_FIELDS
+)
+# Connection fields of a proxy: changing one of these regenerates a config
+# version for every profile referencing the proxy (AC-006).  Name, region
+# and notes are presentation metadata and do not.
+PROXY_CONNECTION_FIELDS = frozenset(
+    {"scheme", "host", "port", "username", "password"}
+)
 
 
 class ProfileRepository:
@@ -87,23 +104,18 @@ class ProfileRepository:
     async def _load_profile_model(
         session: AsyncSession, profile_id: str
     ) -> ProfileModel | None:
-        """Load one profile with only the tags collection attached.
+        """Load one profile row.
 
         Immutable config versions and artifact history are never loaded by
         ordinary profile reads; dedicated repository methods query them.
         """
-        stmt = (
-            select(ProfileModel)
-            .where(ProfileModel.id == profile_id)
-            .options(selectinload(ProfileModel.tags))
-        )
+        stmt = select(ProfileModel).where(ProfileModel.id == profile_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def create_profile(
         self,
         config: ProfileConfig,
-        tags: list[Tag] | None = None,
         *,
         profile_id: str | None = None,
         user_data_dir: str | None = None,
@@ -114,11 +126,7 @@ class ProfileRepository:
         pid = profile_id or str(uuid.uuid4())
         udd = user_data_dir or f"/data/profiles/{pid}/profile"
         now = utc_now_iso()
-        tag_list = tags or []
-        fallback_payload = {
-            "config": config.model_dump(),
-            "tags": [t.model_dump() for t in tag_list],
-        }
+        fallback_payload = {"config": config.model_dump()}
         sig_hash = _hash_request(
             "create_profile",
             "",
@@ -149,7 +157,8 @@ class ProfileRepository:
                     id=pid,
                     name=config.name,
                     fingerprint_seed=config.fingerprint_seed,
-                    proxy=config.proxy,
+                    group_id=config.group_id,
+                    proxy_id=config.proxy_id,
                     timezone=config.timezone,
                     locale=config.locale,
                     screen_width=config.screen_width,
@@ -179,18 +188,14 @@ class ProfileRepository:
                 )
                 session.add(p_model)
 
-                for t in tag_list:
-                    session.add(
-                        ProfileTagModel(
-                            profile_id=pid,
-                            tag=t.tag,
-                            color=t.color,
-                        )
-                    )
-
+                proxy_credential_revision: int | None = None
+                if config.proxy_id:
+                    proxy_model = await session.get(ProxyModel, config.proxy_id)
+                    if proxy_model is not None:
+                        proxy_credential_revision = proxy_model.credential_revision
                 snapshot_data = {
                     "config": config.model_dump(),
-                    "tags": [t.model_dump() for t in tag_list],
+                    "proxy_credential_revision": proxy_credential_revision,
                 }
                 v_model = ProfileConfigVersionModel(
                     id=str(uuid.uuid4()),
@@ -210,6 +215,10 @@ class ProfileRepository:
                     failure_count=0,
                     restart_blocked=False,
                     last_exit_event_id=None,
+                    last_started_at=None,
+                    last_stopped_at=None,
+                    browser_product=None,
+                    browser_user_agent=None,
                     updated_at=now,
                 )
                 session.add(rt_model)
@@ -250,7 +259,6 @@ class ProfileRepository:
                     return self._to_domain_profile(existing)
                 return await self.create_profile(
                     config,
-                    tags,
                     profile_id=audit.entity_id,
                     user_data_dir=user_data_dir,
                     operation_id=None,
@@ -280,28 +288,26 @@ class ProfileRepository:
 
     async def list_profiles(self) -> list[Profile]:
         async with self._session_maker() as session:
-            stmt = (
-                select(ProfileModel)
-                .options(selectinload(ProfileModel.tags))
-                .order_by(
-                    ProfileModel.sort_order.asc(), ProfileModel.created_at.desc()
-                )
+            stmt = select(ProfileModel).order_by(
+                ProfileModel.sort_order.asc(), ProfileModel.created_at.desc()
             )
             result = await session.execute(stmt)
-            models = result.scalars().unique().all()
+            models = result.scalars().all()
             return [self._to_domain_profile(m) for m in models]
 
     async def update_profile(
         self,
         profile_id: str,
         patch_data: dict[str, Any] | ProfileConfig,
-        tags: list[Tag] | None = None,
         *,
         operation_id: str | None = None,
         audit_action: str = "update_profile",
     ) -> Profile | None:
         """Atomically merge supplied patch fields into latest profile state.
 
+        Only a change to an actual runtime-config field creates a new config
+        version (t035 AC-006): metadata (name/notes/sort_order/group_id) and
+        the instant policy (capture_preview) are written directly.
         Performs update under write_transaction.
         """
         if isinstance(patch_data, ProfileConfig):
@@ -309,16 +315,10 @@ class ProfileRepository:
         else:
             patch_dict = dict(patch_data)
 
-        tag_list = tags if tags is not None else None
         sig_hash = _hash_request(
             audit_action,
             profile_id,
-            {
-                "patch": patch_dict,
-                "tags": [t.model_dump() for t in tag_list]
-                if tag_list is not None
-                else None,
-            },
+            {"patch": patch_dict},
         )
         now = utc_now_iso()
 
@@ -343,7 +343,8 @@ class ProfileRepository:
                 current_dict = {
                     "name": p_model.name,
                     "fingerprint_seed": p_model.fingerprint_seed,
-                    "proxy": p_model.proxy,
+                    "group_id": p_model.group_id,
+                    "proxy_id": p_model.proxy_id,
                     "timezone": p_model.timezone,
                     "locale": p_model.locale,
                     "screen_width": p_model.screen_width,
@@ -373,20 +374,27 @@ class ProfileRepository:
                 }
 
                 # Merge ONLY the supplied patch fields
+                old_cfg = ProfileConfig(**current_dict)
                 current_dict.update(patch_dict)
                 merged_cfg = ProfileConfig(**current_dict)
 
-                # Compute latest version atomically
-                max_v_stmt = select(func.max(ProfileConfigVersionModel.version)).where(
-                    ProfileConfigVersionModel.profile_id == profile_id
+                runtime_changed = any(
+                    getattr(old_cfg, key) != getattr(merged_cfg, key)
+                    for key in CONFIG_VERSION_FIELDS
                 )
-                max_v = (await session.execute(max_v_stmt)).scalar() or 0
-                new_version = max_v + 1
+                new_version = p_model.current_config_version
+                if runtime_changed:
+                    max_v_stmt = select(
+                        func.max(ProfileConfigVersionModel.version)
+                    ).where(ProfileConfigVersionModel.profile_id == profile_id)
+                    max_v = (await session.execute(max_v_stmt)).scalar() or 0
+                    new_version = max_v + 1
 
                 # Update model fields
                 p_model.name = merged_cfg.name
                 p_model.fingerprint_seed = merged_cfg.fingerprint_seed
-                p_model.proxy = merged_cfg.proxy
+                p_model.group_id = merged_cfg.group_id
+                p_model.proxy_id = merged_cfg.proxy_id
                 p_model.timezone = merged_cfg.timezone
                 p_model.locale = merged_cfg.locale
                 p_model.screen_width = merged_cfg.screen_width
@@ -412,36 +420,31 @@ class ProfileRepository:
                 p_model.current_config_version = new_version
                 p_model.updated_at = now
 
-                # Tags handling
-                if tags is not None:
-                    await session.execute(
-                        delete(ProfileTagModel).where(
-                            ProfileTagModel.profile_id == profile_id
+                if runtime_changed:
+                    # Snapshot holds only the proxy id and credential
+                    # revision; the password itself lives solely in proxies.
+                    proxy_credential_revision: int | None = None
+                    if merged_cfg.proxy_id:
+                        proxy_model = await session.get(
+                            ProxyModel, merged_cfg.proxy_id
+                        )
+                        if proxy_model is not None:
+                            proxy_credential_revision = (
+                                proxy_model.credential_revision
+                            )
+                    snapshot_data = {
+                        "config": merged_cfg.model_dump(),
+                        "proxy_credential_revision": proxy_credential_revision,
+                    }
+                    session.add(
+                        ProfileConfigVersionModel(
+                            id=str(uuid.uuid4()),
+                            profile_id=profile_id,
+                            version=new_version,
+                            snapshot=json.dumps(snapshot_data),
+                            created_at=now,
                         )
                     )
-                    for t in tags:
-                        session.add(
-                            ProfileTagModel(
-                                profile_id=profile_id, tag=t.tag, color=t.color
-                            )
-                        )
-                    active_tags = tags
-                else:
-                    active_tags = [Tag(tag=t.tag, color=t.color) for t in p_model.tags]
-
-                # Snapshot includes tags
-                snapshot_data = {
-                    "config": merged_cfg.model_dump(),
-                    "tags": [t.model_dump() for t in active_tags],
-                }
-                v_model = ProfileConfigVersionModel(
-                    id=str(uuid.uuid4()),
-                    profile_id=profile_id,
-                    version=new_version,
-                    snapshot=json.dumps(snapshot_data),
-                    created_at=now,
-                )
-                session.add(v_model)
 
                 if operation_id:
                     session.add(
@@ -615,6 +618,9 @@ class ProfileRepository:
         observed_state: str,
         config_version: int | None = None,
         reason: str | None = None,
+        *,
+        browser_product: str | None = None,
+        browser_user_agent: str | None = None,
     ) -> ProfileRuntime | None:
         """Supervisor reports authoritative observed state for an instance.
 
@@ -635,6 +641,16 @@ class ProfileRepository:
                 )
             previous = m.observed_state
             m.observed_state = observed_state
+            if observed_state == "running":
+                m.last_started_at = now
+                if browser_product is not None:
+                    m.browser_product = browser_product
+                if browser_user_agent is not None:
+                    m.browser_user_agent = browser_user_agent
+            elif observed_state in ("stopped", "error"):
+                m.last_stopped_at = now
+                m.browser_product = None
+                m.browser_user_agent = None
             observation_id = f"observed_error:{runtime_instance_id}"
             already_counted = (
                 previous == "error" or m.last_exit_event_id == observation_id
@@ -707,11 +723,20 @@ class ProfileRepository:
                     )
                 )
 
-            # Fresh manual user intent
+            # Fresh manual user intent: an errored profile with no bound
+            # instance converges to stopped when the user asks it to stop
+            # (t035 AC-011).
             m.desired_state = desired_state
             if desired_state == "running":
                 m.failure_count = 0
                 m.restart_blocked = False
+            elif (
+                desired_state == "stopped"
+                and m.observed_state == "error"
+                and m.runtime_instance_id is None
+            ):
+                m.observed_state = "stopped"
+                m.last_stopped_at = now
             m.updated_at = now
         return await self.get_runtime(profile_id)
 
@@ -807,24 +832,28 @@ class ProfileRepository:
             failure_count=m.failure_count,
             restart_blocked=m.restart_blocked,
             last_exit_event_id=m.last_exit_event_id,
+            last_started_at=m.last_started_at,
+            last_stopped_at=m.last_stopped_at,
+            browser_product=m.browser_product,
+            browser_user_agent=m.browser_user_agent,
             updated_at=m.updated_at,
         )
 
     @staticmethod
     def _to_domain_snapshot(m: ProfileConfigVersionModel) -> ConfigVersionSnapshot:
         parsed = json.loads(m.snapshot)
-        if isinstance(parsed, dict) and "config" in parsed:
-            cfg = parsed["config"]
-            tags = [Tag(**t) for t in parsed.get("tags", [])]
-        else:
-            cfg = parsed
-            tags = []
+        cfg = parsed["config"] if isinstance(parsed, dict) and "config" in parsed else parsed
+        proxy_credential_revision = (
+            parsed.get("proxy_credential_revision")
+            if isinstance(parsed, dict)
+            else None
+        )
         return ConfigVersionSnapshot(
             id=m.id,
             profile_id=m.profile_id,
             version=m.version,
             config=cfg,
-            tags=tags,
+            proxy_credential_revision=proxy_credential_revision,
             created_at=m.created_at,
         )
 
@@ -833,7 +862,8 @@ class ProfileRepository:
         cfg = ProfileConfig(
             name=m.name,
             fingerprint_seed=m.fingerprint_seed,
-            proxy=m.proxy,
+            group_id=m.group_id,
+            proxy_id=m.proxy_id,
             timezone=m.timezone,
             locale=m.locale,
             screen_width=m.screen_width,
@@ -857,14 +887,301 @@ class ProfileRepository:
             notes=m.notes,
             sort_order=m.sort_order,
         )
-        tags = [Tag(tag=t.tag, color=t.color) for t in m.tags]
         return Profile(
             id=m.id,
             config=cfg,
-            tags=tags,
             user_data_dir=m.user_data_dir,
             sort_order=m.sort_order,
             current_config_version=m.current_config_version,
             created_at=m.created_at,
             updated_at=m.updated_at,
+        )
+
+    # ---- Groups (t035 AC-003) -------------------------------------------
+
+    @staticmethod
+    def _to_domain_group(m: ProfileGroupModel) -> GroupResponse:
+        return GroupResponse(
+            id=m.id,
+            name=m.name,
+            color=m.color,  # type: ignore
+            sort_order=m.sort_order,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        )
+
+    async def list_groups(self) -> list[GroupResponse]:
+        async with self._session_maker() as session:
+            stmt = select(ProfileGroupModel).order_by(
+                ProfileGroupModel.sort_order.asc(), ProfileGroupModel.created_at.asc()
+            )
+            result = await session.execute(stmt)
+            return [self._to_domain_group(m) for m in result.scalars().all()]
+
+    async def create_group(
+        self, name: str, color: str, sort_order: int
+    ) -> GroupResponse:
+        now = utc_now_iso()
+        model = ProfileGroupModel(
+            id=str(uuid.uuid4()),
+            name=name,
+            color=color,
+            sort_order=sort_order,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                session.add(model)
+        except IntegrityError as exc:
+            raise ValueError("group name already exists") from exc
+        return self._to_domain_group(model)
+
+    async def update_group(
+        self, group_id: str, patch: dict[str, Any]
+    ) -> GroupResponse | None:
+        now = utc_now_iso()
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                model = await session.get(ProfileGroupModel, group_id)
+                if model is None:
+                    return None
+                for key, value in patch.items():
+                    setattr(model, key, value)
+                model.updated_at = now
+                return self._to_domain_group(model)
+        except IntegrityError as exc:
+            raise ValueError("group name already exists") from exc
+
+    async def delete_group(self, group_id: str) -> bool:
+        async with self._session_maker() as session, write_transaction(session):
+            model = await session.get(ProfileGroupModel, group_id)
+            if model is None:
+                return False
+            await session.delete(model)
+            return True
+
+    async def reorder_groups(self, ordered_ids: list[str]) -> list[GroupResponse]:
+        now = utc_now_iso()
+        async with self._session_maker() as session, write_transaction(session):
+            for index, group_id in enumerate(ordered_ids):
+                model = await session.get(ProfileGroupModel, group_id)
+                if model is None:
+                    raise ValueError(f"unknown group {group_id}")
+                model.sort_order = index
+                model.updated_at = now
+        return await self.list_groups()
+
+    # ---- Proxies (t035 AC-004 / AC-005 / AC-006) -----------------------
+
+    @staticmethod
+    def _to_domain_proxy(m: ProxyModel, used_by_count: int) -> ProxyResponse:
+        return ProxyResponse(
+            id=m.id,
+            name=m.name,
+            scheme=m.scheme,  # type: ignore
+            host=m.host,
+            port=m.port,
+            username=m.username,
+            has_password=bool(m.password),
+            credential_revision=m.credential_revision,
+            country_code=m.country_code,
+            region_label=m.region_label,
+            notes=m.notes,
+            used_by_count=used_by_count,
+            created_at=m.created_at,
+            updated_at=m.updated_at,
+        )
+
+    async def _proxy_used_by(
+        self, session: AsyncSession, proxy_id: str
+    ) -> list[str]:
+        """Profiles whose current config OR runtime-bound version reference it."""
+        current = (
+            await session.execute(
+                select(ProfileModel.id).where(ProfileModel.proxy_id == proxy_id)
+            )
+        ).scalars().all()
+        result = set(current)
+        runtimes = (
+            await session.execute(select(ProfileRuntimeModel))
+        ).scalars().all()
+        for rt in runtimes:
+            version = (
+                await session.execute(
+                    select(ProfileConfigVersionModel).where(
+                        ProfileConfigVersionModel.profile_id == rt.profile_id,
+                        ProfileConfigVersionModel.version == rt.config_version,
+                    )
+                )
+            ).scalar_one_or_none()
+            if version is None:
+                continue
+            parsed = json.loads(version.snapshot)
+            cfg = parsed.get("config", parsed) if isinstance(parsed, dict) else parsed
+            if isinstance(cfg, dict) and cfg.get("proxy_id") == proxy_id:
+                result.add(rt.profile_id)
+        return sorted(result)
+
+    async def list_proxies(self) -> list[ProxyResponse]:
+        async with self._session_maker() as session:
+            models = (
+                await session.execute(select(ProxyModel))
+            ).scalars().all()
+            return [
+                self._to_domain_proxy(
+                    m, len(await self._proxy_used_by(session, m.id))
+                )
+                for m in models
+            ]
+
+    async def get_proxy(self, proxy_id: str) -> ProxyResponse | None:
+        async with self._session_maker() as session:
+            m = await session.get(ProxyModel, proxy_id)
+            if m is None:
+                return None
+            return self._to_domain_proxy(
+                m, len(await self._proxy_used_by(session, proxy_id))
+            )
+
+    async def get_proxy_credentials(self, proxy_id: str) -> dict[str, Any] | None:
+        """Raw connection + credentials for the Supervisor's Browser sandbox.
+
+        Internal service-plane only: the password lives solely in the proxy
+        library and is never returned by the public proxy API or written into
+        a config-version snapshot.
+        """
+        async with self._session_maker() as session:
+            m = await session.get(ProxyModel, proxy_id)
+            if m is None:
+                return None
+            return {
+                "scheme": m.scheme,
+                "host": m.host,
+                "port": m.port,
+                "username": m.username,
+                "password": m.password,
+                "credential_revision": m.credential_revision,
+            }
+
+    async def create_proxy(self, payload: dict[str, Any]) -> ProxyResponse:
+        now = utc_now_iso()
+        model = ProxyModel(
+            id=str(uuid.uuid4()),
+            created_at=now,
+            updated_at=now,
+            **payload,
+        )
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                session.add(model)
+        except IntegrityError as exc:
+            raise ValueError("proxy name already exists") from exc
+        return self._to_domain_proxy(model, 0)
+
+    async def update_proxy(
+        self, proxy_id: str, patch: dict[str, Any], password_supplied: bool
+    ) -> tuple[ProxyResponse | None, list[str]]:
+        """Update a proxy; when a connection field changes, regenerate a
+        config version for every referencing profile in the same transaction.
+
+        Returns (proxy, affected_profile_ids).  The caller broadcasts SSE
+        for the affected ids after the commit (AC-006).
+        """
+        now = utc_now_iso()
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                model = await session.get(ProxyModel, proxy_id)
+                if model is None:
+                    return None, []
+                connection_changed = False
+                old_password = model.password
+                for key, value in patch.items():
+                    if key in PROXY_CONNECTION_FIELDS and getattr(model, key) != value:
+                        connection_changed = True
+                    setattr(model, key, value)
+                if password_supplied and patch.get("password") != old_password:
+                    model.credential_revision += 1
+                    connection_changed = True
+                model.updated_at = now
+
+                affected: list[str] = []
+                if connection_changed:
+                    affected = await self._proxy_used_by(session, proxy_id)
+                    for pid in affected:
+                        p_model = await session.get(ProfileModel, pid)
+                        if p_model is None:
+                            continue
+                        max_v = (
+                            await session.execute(
+                                select(func.max(ProfileConfigVersionModel.version)).where(
+                                    ProfileConfigVersionModel.profile_id == pid
+                                )
+                            )
+                        ).scalar() or 0
+                        new_version = max_v + 1
+                        cfg = self._profile_config_from_model(p_model)
+                        snapshot = {
+                            "config": cfg.model_dump(),
+                            "proxy_credential_revision": model.credential_revision,
+                        }
+                        session.add(
+                            ProfileConfigVersionModel(
+                                id=str(uuid.uuid4()),
+                                profile_id=pid,
+                                version=new_version,
+                                snapshot=json.dumps(snapshot),
+                                created_at=now,
+                            )
+                        )
+                        p_model.current_config_version = new_version
+                        p_model.updated_at = now
+                return (
+                    self._to_domain_proxy(model, len(affected)),
+                    affected,
+                )
+        except IntegrityError as exc:
+            raise ValueError("proxy name already exists") from exc
+
+    async def delete_proxy(self, proxy_id: str) -> tuple[bool, int]:
+        """Return (deleted, used_by_count).  A referenced proxy is refused."""
+        async with self._session_maker() as session, write_transaction(session):
+            model = await session.get(ProxyModel, proxy_id)
+            if model is None:
+                return False, 0
+            used_by = await self._proxy_used_by(session, proxy_id)
+            if used_by:
+                return False, len(used_by)
+            await session.delete(model)
+            return True, 0
+
+    @staticmethod
+    def _profile_config_from_model(m: ProfileModel) -> ProfileConfig:
+        return ProfileConfig(
+            name=m.name,
+            fingerprint_seed=m.fingerprint_seed,
+            group_id=m.group_id,
+            proxy_id=m.proxy_id,
+            timezone=m.timezone,
+            locale=m.locale,
+            screen_width=m.screen_width,
+            screen_height=m.screen_height,
+            gpu_family=m.gpu_family,  # type: ignore
+            humanize=m.humanize,
+            human_preset=m.human_preset,  # type: ignore
+            geoip=m.geoip,
+            clipboard_sync=m.clipboard_sync,
+            auto_launch=m.auto_launch,
+            color_scheme=m.color_scheme,  # type: ignore
+            font_bundle=m.font_bundle,  # type: ignore
+            launch_args=json.loads(m.launch_args) if m.launch_args else [],
+            extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
+            allow_3p_cookies=m.allow_3p_cookies,
+            set_google_default=m.set_google_default,
+            capture_preview=m.capture_preview,
+            restore_session=m.restore_session,
+            transparent_proxy=m.transparent_proxy,
+            portable_cookies=m.portable_cookies,
+            notes=m.notes,
+            sort_order=m.sort_order,
         )

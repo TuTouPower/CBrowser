@@ -77,7 +77,7 @@ export const en = {
   resetProfileDataList:
     "Deletes this profile's entire browser data, including cookies, site data, cache, history, bookmarks, saved passwords, extensions and logged-in sessions, and re-rolls the fingerprint identity.",
   resetProfileKeeps:
-    "Keeps settings, tags, notes and Artifacts. Other profiles are untouched.",
+    "Keeps settings, notes and Artifacts. Other profiles are untouched.",
   duplicateWithStateTitle: "With browser state",
   stopProfileFirst: "Stop the profile first",
   reset: "Reset",
@@ -105,8 +105,6 @@ export const en = {
   fontBundleMicroHei: "WenQuanYi Micro Hei",
   fontBundleZenHei: "WenQuanYi Zen Hei",
   profileNameExample: "e.g. Work Profile",
-  proxyUrlOptional: "Proxy URL (optional)",
-  tagsPlaceholder: "dev, research, shopping",
   copied: "Copied!",
   profileFiles: "Profile files",
   noFilesYet:
@@ -210,10 +208,8 @@ export const en = {
   backToDashboard: "Back to Dashboard",
   profileNotFoundOrFailed: "Profile not found or failed to load.",
   profileUpdatedSuccessfully: "Profile updated successfully.",
-  proxyUrl: "Proxy URL",
   widthPx: "Width (px)",
   heightPx: "Height (px)",
-  tagsCommaSeparated: "Tags (comma separated)",
 
   failedToCreateProfile: "Failed to create profile",
   failedToUpdateProfile: "Failed to update profile",
@@ -275,7 +271,7 @@ export const zh = {
   resetProfileTitle: "重置浏览器状态",
   resetProfileDataList:
     "将清除此配置的全部浏览器数据，包括 Cookie、站点数据、缓存、历史、书签、保存的密码、扩展与登录状态，并重新生成指纹身份。",
-  resetProfileKeeps: "保留设置、标签、备注与 Artifact；不影响其他配置。",
+  resetProfileKeeps: "保留设置、备注与 Artifact；不影响其他配置。",
   duplicateWithStateTitle: "包含浏览器状态",
   stopProfileFirst: "请先停止该配置",
   reset: "重置",
@@ -302,8 +298,6 @@ export const zh = {
   fontBundleMicroHei: "文泉驿微米黑",
   fontBundleZenHei: "文泉驿正黑",
   profileNameExample: "例如：工作配置",
-  proxyUrlOptional: "代理 URL（可选）",
-  tagsPlaceholder: "开发, 调研, 购物",
   copied: "已复制！",
   profileFiles: "配置文件",
   noFilesYet: "暂无文件。可上传、拖放到画面，或在浏览器中下载。",
@@ -403,10 +397,8 @@ export const zh = {
   backToDashboard: "返回控制台",
   profileNotFoundOrFailed: "配置不存在或加载失败。",
   profileUpdatedSuccessfully: "配置更新成功。",
-  proxyUrl: "代理 URL",
   widthPx: "宽度 (px)",
   heightPx: "高度 (px)",
-  tagsCommaSeparated: "标签（逗号分隔）",
 
   failedToCreateProfile: "创建配置失败",
   failedToUpdateProfile: "更新配置失败",

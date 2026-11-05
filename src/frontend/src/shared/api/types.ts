@@ -14,7 +14,6 @@ export type SearchDefaultsStatusData = Schemas["SearchDefaultsStatusData"];
 export type LoginRequest = Schemas["LoginRequest"];
 export type LoginResponse = Schemas["LoginResponse"];
 export type SessionResponse = Schemas["SessionResponse"];
-export type Tag = Schemas["Tag"];
 
 export type ApiPaths = paths;
 
@@ -35,5 +34,4 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   transparent_proxy: false,
   portable_cookies: false,
   sort_order: 0,
-  tags: [],
 };
