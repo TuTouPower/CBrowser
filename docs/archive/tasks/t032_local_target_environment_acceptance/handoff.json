@@ -1,0 +1,16 @@
+{
+  "tid": "t032",
+  "attempt": 1,
+  "execution_id": "ec61b8498f9d4041bf57fccff3db7132",
+  "status": "done",
+  "branch": "t032_local_target_environment_acceptance",
+  "base_sha": "c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a",
+  "tests": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 完整 required + evidence 门禁（contract 223 项、unit 998 项、integration 160 项 18 skip、frontend_test / frontend_build 全绿；e2e 102 项中 7 项失败、2 项 skip，`all_passed=false`，逐项见 `final_report.md`）；定向单测 45 passed；容器探针 `probe.xml` 2 passed、子 `chain.xml` 16 passed 0 skip、`levels.json` L0–L6 八组各 5 样本；Gateway AC-003 单例连续 3 passed、Supervisor 双 Profile 端口不变性 1 passed。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 E2E 必需模式在真实 Docker/Chrome 拓扑执行，镜像 ID 通过 `image_identity_problems` 不可变身份校验；另在 Linux arm64 容器内以实际交付引擎 `146.0.7680.177.3` 跑 AC-011/012/013 探针与外站三站可达性（`.scratch/t032/resume/probe-final/`）。",
+  "review": "full 级独立 review（`review_code.md` / `review_test.md`）PASS，finding 全部处置，AC 打勾经 TICK-VALID 复核。",
+  "review_scope": "f1db825439450c73",
+  "pending": [
+    "p042"
+  ],
+  "findings": []
+}

@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
@@ -39,15 +40,20 @@ def _run_pytest_subset(report_dir: Path, *node_ids: str) -> None:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(REPO_ROOT / "src" / "backend")
     env["CBROWSER_T029_REPORT_DIR"] = str(report_dir)
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", *node_ids],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=1800,
-    )
-    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
+    log_path = report_dir / "chain.log"
+    with log_path.open("w") as log:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q",
+             "-o", f"cache_dir={report_dir / 'pytest-cache'}",
+             f"--junitxml={report_dir / 'chain.xml'}", *node_ids],
+            cwd=REPO_ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
+            text=True, timeout=1800,
+        )
+    output = log_path.read_text()
+    assert proc.returncode == 0, output[-6000:]
+    cases = ET.parse(report_dir / "chain.xml").findall(".//testcase")
+    assert len(cases) >= len(node_ids), "probe cases missing from JUnit"
+    assert not any(case.find("skipped") is not None for case in cases), output[-6000:]
 
 
 def test_t032_probe_chain_and_dialog_recheck(tmp_path: Path) -> None:
@@ -55,9 +61,11 @@ def test_t032_probe_chain_and_dialog_recheck(tmp_path: Path) -> None:
     _run_pytest_subset(
         tmp_path,
         f"{integration}::test_probe_chain_target_engine_matrix_and_disconnect",
-        f"{integration}::test_probe_chain_external_browser_close_stops_profile",
+        f"{integration}::test_probe_chain_external_browser_close_rejected",
+        f"{integration}::test_probe_chain_client_killed_mid_connection_survival",
         f"{integration}::test_probe_chain_dialog_contract",
         f"{integration}::test_probe_target_engine_dialog_contract",
+        "tests/integration/test_agent_executor_chain.py",
     )
     for name in ("chain-target.json", "chain-dialog.json", "dialog-target.json"):
         report = tmp_path / name
@@ -77,15 +85,13 @@ def test_t032_probe_levels_recheck(tmp_path: Path) -> None:
         / "automation_probe"
         / "run_levels.py"
     )
-    proc = subprocess.run(
-        [sys.executable, str(driver)],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=3600,
-    )
-    assert proc.returncode == 0, proc.stdout[-3000:] + proc.stderr[-3000:]
+    log_path = tmp_path / "levels.log"
+    with log_path.open("w") as log:
+        proc = subprocess.run(
+            [sys.executable, str(driver)], cwd=REPO_ROOT, env=env,
+            stdout=log, stderr=subprocess.STDOUT, text=True, timeout=3600,
+        )
+    assert proc.returncode == 0, log_path.read_text()[-6000:]
     report = json.loads((tmp_path / "levels.json").read_text(encoding="utf-8"))
     assert report["schema"] == "automation-probe-report/v1"
     for level in ("L0", "L1", "L2", "L3", "L4", "L5", "L6_cdp_input", "L6_xtest_input"):

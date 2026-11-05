@@ -26,21 +26,21 @@
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：运行前记录当前 commit、Mac/OrbStack/Chrome/引擎及工具版本、本轮构建的全部不可变镜像 ID 和缓存身份；以 t027 参数化的独立实例（prefix、项目、容器名、网络、卷、数据库、端口均与生产不同）启动，并先断言不扫描、不触达生产资源；缺少任何必需前提即明确失败，不能用旧镜像或源码 import 代替构建产物。
-- [ ] [deploy] AC-002：以当前源真实隔离构建 Supervisor 与 Stream，构建上下文不含 `data/`、secrets 与 `.scratch`；Supervisor 镜像可 import `cbrowser.launch_args`，实际交付镜像/wheel 可 import `cbrowser.runtime_event_log` 并调用 `emit_runtime_event_log`；Stream 冷构建成功、最终层无构建工具链且真实媒体/输入/剪贴板运行所需库完整。
-- [ ] [deploy] AC-003：真实 Mac Chrome（无头）执行 t019 候选集和时延：仅 host、远端 127.0.0.1，无 srflx/relay/prflx，切换已运行 Profile 与刷新到首帧均不超过 2 秒；回归多页面/复制/可见性暂停恢复/断线 resume，并保存逐次耗时与候选快照。
-- [ ] [deploy] AC-004：真实 Browser 镜像执行 font bundle image_layout、三档 render 与双 Profile isolation，记录 fc-list/fc-match、canvas/CDP 字体和实际渲染；同 Profile 配置在目标镜像中生效且两 Profile 不串扰。
-- [ ] [deploy] AC-005：经 t028 交付的真实链入口完成真实 Chrome 下载→Browser Agent→Supervisor 进程→API Artifact 全链、删除意图跨真实进程重启续跑、Origin 变体 viewer 授权；保留入库、删除恢复与授权结果证据。
-- [ ] [deploy] AC-006：实际容器执行 X11 helper 权限、缓存代次与双族 DROP 兜底；记录 Selkies 2.1.0 owner-loss/正常退出/keymap 初始化真实调用顺序、真实 Gateway 上多 Agent 注册预算/429/恢复及活 context 上 search-defaults 重试结果。
-- [ ] [deploy] AC-007：当前构建产物通过 frontend app/session 与 frontend_probe harness；会话挂载、语言切换、SSE 代次、t025 出站同源/注销/跨 Profile/阶段重试、t026 信令 1006 恢复中与明确失败区分均无回归，构建链确实托管当前产物而非测试替身。
-- [ ] [deploy] AC-008：执行 t026/t028 全部隔离/清理/回滚、配额至实际画面和 Agent 替换场景，记录正向网络基线、内核负例、实际 CPU/帧数及 close=1001/conn_id/上下行/Viewer 存活，不互换证据层级。
-- [ ] [deploy] AC-009：两个以上 Profile 运行时执行 Gateway 替换/进程退出、Supervisor 重启、网络断开、策略缺失、API 离线、协议不兼容与旧规格网络迁移；兼容替换不重建 Browser/Stream，不兼容与规格迁移仅有界替换 Stream，Browser 策略缺失时 fail-closed 且页面保留；固定 Gateway 端点真实可附着且不会被 Docker 自动分配占用（复核 d029）。
-- [ ] [deploy] AC-010：在隔离实例演练 t027 连续发布、部分服务不 ready、Gateway 永不 ready、回退拒绝条件与上一 release 回退；失败非零且有界保留诊断，成功代表所有活跃 Runtime 收敛，无 Browser/用户数据清理及无条件 Caddy 重启。
-- [ ] [deploy] AC-011：在 Linux arm64 容器内使用实际交付引擎 `146.0.7680.177.3`，经正式 cbat\_ 隧道运行 t029/t030 目标兼容与生命周期矩阵：默认 context、既有页面、popup/iframe/OOPIF、下载（含会话期间捕获）、导航/ref 失效、adopt/未知页面、最后 Tab、Browser.close 拒绝、超时/取消/异常退出均符合契约；真实 Dialog 在 pending 命令与跨 CLI 调用后可恢复，beforeunload 具备真实激活。容器必须挂载仓库与引擎缓存并在 Xvfb/xte 环境执行，不得以宿主 macOS 直接执行 Linux 引擎或跳过代替。
-- [ ] [deploy] AC-012：在 Linux arm64 容器内的实际交付引擎 `146.0.7680.177.3` 上，以 t029 同一探针、样本数与判定阈值执行 L0–L6 指纹增量自对照，逐级给出新增变化与证据强度；外站 BrowserLeaks/CreepJS/Pixelscan 不纳入人工判读与因果复核（用户决定移除），可自动采集时记录可达性，不可达/样本不足只记 INCONCLUSIVE；与 t029 云端 `.5` 结论仅作跨版本参考，不作强制一致判定；不以总分或 isTrusted=true 证明不可检测。
-- [ ] [deploy] AC-013：按 t029 AC-005 阈值完成自动化的 CDP/XTEST 坐标、DPR、窗口装饰、滚动、iframe、复杂交互与焦点争用比较，明确是否采用 XTEST，无证据不增加第二驱动；前台 Viewer 真人输入、原生权限/设备选择器、CAPTCHA/2FA、IME 人工交接不纳入本轮验收（用户决定移除，最终报告记 `OUT_OF_SCOPE_BY_USER`）；程序化 control handoff 仍须保留并通过。
-- [ ] [deploy] AC-014：执行 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 required 与证据模式，记录各 suite 命令、退出码、JUnit、实际镜像 ID 和脱敏 evidence；逐项对应历史债与新增 AC，未执行/跳过/失败/结论不足分别列出，禁止延用旧 trust_prior 或把 skip 算 PASS。
-- [ ] [deploy] AC-015：出具最终验收报告与运行入口索引；发布要求的行为与安全检查全部有目标环境证据，未通过项保留未勾选并登记具体缺陷/所需补证，修复后重跑受影响项。若需新输入驱动或改变控制权架构，先凭证据修订方案，禁止静默回退到合成事件或放宽隔离。
+- [x] [deploy] AC-001：运行前记录当前 commit、Mac/OrbStack/Chrome/引擎及工具版本、本轮构建的全部不可变镜像 ID 和缓存身份；以 t027 参数化的独立实例（prefix、项目、容器名、网络、卷、数据库、端口均与生产不同）启动，并先断言不扫描、不触达生产资源；缺少任何必需前提即明确失败，不能用旧镜像或源码 import 代替构建产物。
+- [x] [deploy] AC-002：以当前源真实隔离构建 Supervisor 与 Stream，构建上下文不含 `data/`、secrets 与 `.scratch`；Supervisor 镜像可 import `cbrowser.launch_args`，实际交付镜像/wheel 可 import `cbrowser.runtime_event_log` 并调用 `emit_runtime_event_log`；Stream 冷构建成功、最终层无构建工具链且真实媒体/输入/剪贴板运行所需库完整。
+- [x] [deploy] AC-003：真实 Mac Chrome（无头）执行 t019 候选集和时延：仅 host、远端 127.0.0.1，无 srflx/relay/prflx，切换已运行 Profile 与刷新到首帧均不超过 2 秒；回归多页面/复制/可见性暂停恢复/断线 resume，并保存逐次耗时与候选快照。
+- [x] [deploy] AC-004：真实 Browser 镜像执行 font bundle image_layout、三档 render 与双 Profile isolation，记录 fc-list/fc-match、canvas/CDP 字体和实际渲染；同 Profile 配置在目标镜像中生效且两 Profile 不串扰。
+- [x] [deploy] AC-005：经 t028 交付的真实链入口完成真实 Chrome 下载→Browser Agent→Supervisor 进程→API Artifact 全链、删除意图跨真实进程重启续跑、Origin 变体 viewer 授权；保留入库、删除恢复与授权结果证据。
+- [x] [deploy] AC-006：实际容器执行 X11 helper 权限、缓存代次与双族 DROP 兜底；记录 Selkies 2.1.0 owner-loss/正常退出/keymap 初始化真实调用顺序、真实 Gateway 上多 Agent 注册预算/429/恢复及活 context 上 search-defaults 重试结果。
+- [x] [deploy] AC-007：当前构建产物通过 frontend app/session 与 frontend_probe harness；会话挂载、语言切换、SSE 代次、t025 出站同源/注销/跨 Profile/阶段重试、t026 信令 1006 恢复中与明确失败区分均无回归，构建链确实托管当前产物而非测试替身。
+- [x] [deploy] AC-008：执行 t026/t028 全部隔离/清理/回滚、配额至实际画面和 Agent 替换场景，记录正向网络基线、内核负例、实际 CPU/帧数及 close=1001/conn_id/上下行/Viewer 存活，不互换证据层级。
+- [x] [deploy] AC-009：两个以上 Profile 运行时执行 Gateway 替换/进程退出、Supervisor 重启、网络断开、策略缺失、API 离线、协议不兼容与旧规格网络迁移；兼容替换不重建 Browser/Stream，不兼容与规格迁移仅有界替换 Stream，Browser 策略缺失时 fail-closed 且页面保留；固定 Gateway 端点真实可附着且不会被 Docker 自动分配占用（复核 d029）。
+- [x] [deploy] AC-010：在隔离实例演练 t027 连续发布、部分服务不 ready、Gateway 永不 ready、回退拒绝条件与上一 release 回退；失败非零且有界保留诊断，成功代表所有活跃 Runtime 收敛，无 Browser/用户数据清理及无条件 Caddy 重启。
+- [x] [deploy] AC-011：在 Linux arm64 容器内使用实际交付引擎 `146.0.7680.177.3`，经正式 cbat\_ 隧道运行 t029/t030 目标兼容与生命周期矩阵：默认 context、既有页面、popup/iframe/OOPIF、下载（含会话期间捕获）、导航/ref 失效、adopt/未知页面、最后 Tab、Browser.close 拒绝、超时/取消/异常退出均符合契约；真实 Dialog 在 pending 命令与跨 CLI 调用后可恢复，beforeunload 具备真实激活。容器必须挂载仓库与引擎缓存并在 Xvfb/xte 环境执行，不得以宿主 macOS 直接执行 Linux 引擎或跳过代替。
+- [x] [deploy] AC-012：在 Linux arm64 容器内的实际交付引擎 `146.0.7680.177.3` 上，以 t029 同一探针、样本数与判定阈值执行 L0–L6 指纹增量自对照，逐级给出新增变化与证据强度；外站 BrowserLeaks/CreepJS/Pixelscan 不纳入人工判读与因果复核（用户决定移除），可自动采集时记录可达性，不可达/样本不足只记 INCONCLUSIVE；与 t029 云端 `.5` 结论仅作跨版本参考，不作强制一致判定；不以总分或 isTrusted=true 证明不可检测。
+- [x] [deploy] AC-013：按 t029 AC-005 阈值完成自动化的 CDP/XTEST 坐标、DPR、窗口装饰、滚动、iframe、复杂交互与焦点争用比较，明确是否采用 XTEST，无证据不增加第二驱动；前台 Viewer 真人输入、原生权限/设备选择器、CAPTCHA/2FA、IME 人工交接不纳入本轮验收（用户决定移除，最终报告记 `OUT_OF_SCOPE_BY_USER`）；程序化 control handoff 仍须保留并通过。
+- [x] [deploy] AC-014：执行 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 required 与证据模式，记录各 suite 命令、退出码、JUnit、实际镜像 ID 和脱敏 evidence；逐项对应历史债与新增 AC，未执行/跳过/失败/结论不足分别列出，禁止延用旧 trust_prior 或把 skip 算 PASS。
+- [x] [deploy] AC-015：出具最终验收报告与运行入口索引；发布要求的行为与安全检查全部有目标环境证据，未通过项保留未勾选并登记具体缺陷/所需补证，修复后重跑受影响项。若需新输入驱动或改变控制权架构，先凭证据修订方案，禁止静默回退到合成事件或放宽隔离。
 
 ### 可测试性声明
 

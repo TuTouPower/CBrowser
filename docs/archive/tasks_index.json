@@ -498,6 +498,22 @@
             "conflicts_with": "t025",
             "note": "来源 p029；消费 t030 的 Dialog/页面保护接口；云端 Muse，真实环境执行交 t032",
             "dir": "docs/archive/tasks/t031_human_agent_control_handoff"
+        },
+        {
+            "tid": "t032",
+            "slug": "local_target_environment_acceptance",
+            "title": "本地完成真实镜像、运行时故障与 Agent 目标环境最终验收",
+            "status": "done",
+            "branch": "t032_local_target_environment_acceptance",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a",
+            "depends_on": "t025,t026,t027,t028,t029,t030,t031",
+            "conflicts_with": "",
+            "note": "仅本地执行；合并 p021-p024/p026/p027 实跑债，并验收 t025-t031；云端 Muse 不执行",
+            "dir": "docs/archive/tasks/t032_local_target_environment_acceptance"
         }
     ]
 }

@@ -306,6 +306,51 @@ async def test_gateway_unreachable_never_rebuilds(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_registered_then_unregistered_defers_replacement_within_grace(tmp_path):
+    adapter = _FakeAdapter(tmp_path)
+    gateway = _FakeGatewayControl()
+    core, session, scan = _make_core(tmp_path, adapter, gateway)
+
+    # The Stream was registered; the Gateway restarts and the healthy
+    # Stream has not re-registered yet. Replacement must wait out the
+    # grace instead of punishing the transient.
+    gateway.registered = True
+    await core._converge_session(PROFILE, session, scan)
+    gateway.registered = False
+    await core._converge_session(PROFILE, session, scan)
+    await core._converge_session(PROFILE, session, scan)
+
+    assert "start_stream" not in adapter.calls
+    observation = core.get_transport_observation(PROFILE)
+    assert observation.transport_state == "recovering"
+    assert observation.last_error == "registration_recovery_grace"
+
+
+@pytest.mark.asyncio
+async def test_registration_loss_beyond_grace_replaces_stream(tmp_path):
+    adapter = _FakeAdapter(tmp_path)
+    gateway = _FakeGatewayControl()
+    core, session, scan = _make_core(tmp_path, adapter, gateway)
+    secret_dir = adapter.validator.get_secret_dir(PROFILE)
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    (secret_dir / "agent_secret.txt").write_text("x" * 40)
+
+    gateway.registered = True
+    await core._converge_session(PROFILE, session, scan)
+    gateway.registered = False
+    await core._converge_session(PROFILE, session, scan)
+    assert "start_stream" not in adapter.calls
+    # A Stream that never comes back must still be repaired: age the
+    # loss past the grace and the next pass replaces.
+    core._registration_lost_at[PROFILE] -= (
+        SupervisorCore._REGISTRATION_LOSS_GRACE_SEC + 1.0
+    )
+    await core._converge_session(PROFILE, session, scan)
+
+    assert "start_stream" in adapter.calls
+
+
+@pytest.mark.asyncio
 async def test_offline_recovery_only_reattaches(tmp_path):
     adapter = _FakeAdapter(tmp_path)
     adapter.attached_gateway = None

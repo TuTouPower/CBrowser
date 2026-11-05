@@ -612,13 +612,25 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
                 await asyncio.sleep(0.1)
 
             # Query status from resurrected supervisor: ports MUST be identical
-            # (base, base + 1)
-            stat_a = (
-                await sup_client2.get(f"/supervisor/v1/profiles/{p_a}/status")
-            ).json()
-            stat_b = (
-                await sup_client2.get(f"/supervisor/v1/profiles/{p_b}/status")
-            ).json()
+            # (base, base + 1). Health 200 is liveness only: the
+            # post-startup scan restores sessions asynchronously, so poll
+            # for convergence before asserting port invariance.
+            stat_a = stat_b = None
+            for _ in range(120):
+                stat_a = (
+                    await sup_client2.get(f"/supervisor/v1/profiles/{p_a}/status")
+                ).json()
+                stat_b = (
+                    await sup_client2.get(f"/supervisor/v1/profiles/{p_b}/status")
+                ).json()
+                if (
+                    stat_a["observed_state"] == "running"
+                    and stat_b["observed_state"] == "running"
+                    and stat_a["udp_mux_port"] is not None
+                    and stat_b["udp_mux_port"] is not None
+                ):
+                    break
+                await asyncio.sleep(1.0)
             assert stat_a["observed_state"] == "running"
             assert stat_a["udp_mux_port"] == udp_base
             assert stat_b["observed_state"] == "running"
