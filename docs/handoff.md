@@ -66,12 +66,12 @@
 
 ### 未完成 / 阻塞
 
-- **AC-011 目标引擎矩阵：当前环境 BLOCKED。**
-    - 探针要求 `chromium-146.0.7680.177.5` Linux 引擎；本机生产缓存只有 `.3`。
-    - 用 CloakBrowser SDK 下载 `.5`：Darwin arm64 包 404；该探针实现是 host runner，macOS 无法执行 Linux 引擎。
-    - 需要 Linux VM/容器内跑探针，或在最终报告中明确记 `BLOCKED/NOT_RUN`，不能按 skip 算通过。
-- **AC-012 指纹对照**：BrowserLeaks/CreepJS/Pixelscan 未跑；外站不可达时只能记 `INCONCLUSIVE`。
-- **AC-013 XTEST/人工项**：CDP vs XTEST 比较、原生权限/设备选择器、真人 CAPTCHA/2FA、IME 未做；程序化 control handoff 已通过。
+- **AC-011 目标引擎矩阵：待容器化执行。**
+    - 2026-11-05 用户决定改用实际交付引擎 `146.0.7680.177.3`，不再要求云端基线 `.5`。
+    - 执行方式改为 Linux arm64 容器：挂载仓库与 `.scratch/t032/data/engine-cache`，容器内安装 pytest/xte，Xvfb 有头运行探针；macOS 宿主不能直接执行 Linux 引擎。
+    - 探针代码尚未改成 `.3`/容器入口；这是下一步实现，不是已完成。
+- **AC-012 指纹对照**：范围收窄为 `.3` 引擎 L0–L6 自动自对照；外站人工判读/因果复核移除，无法自动采集时记 `INCONCLUSIVE`，不与 t029 `.5` 强制对比。
+- **AC-013 输入比较**：保留自动 CDP/XTEST 坐标、DPR、装饰、滚动、iframe、复杂交互、焦点争用；原生权限/设备、真人 CAPTCHA/2FA、IME 人工交接移出本轮，报告记 `OUT_OF_SCOPE_BY_USER`。程序化 control handoff 已通过。
 - **AC-014 最终全量门禁**：未完成。最后一次 `evidence-final` 只完成 contract（169 passed）、integration（157 passed）、unit（993 tests，4 failed，现已修复）；e2e 未跑。
 - **AC-015 最终报告**：未写。
 - t032 `task.md` AC 勾选、`note.md`、`specs_index`、`docs/blueprint/testing.md`/`automation.md`/`decisions.md` 均未收口。
@@ -105,7 +105,7 @@
 
 1. 跑一次完整 `tests/unit`，确认 `c63856a` 上无剩余 unit 失败。
 2. 用 t032fix 镜像跑一次完整 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，证据目录重新建；不再逐项全量重跑。
-3. AC-011 决策：Linux VM/容器跑目标引擎矩阵，或按契约记 `BLOCKED/NOT_RUN`；不要用 `.3` 缓存冒充 `.5`。
-4. AC-012 外站指纹：能达则跑，否则 `INCONCLUSIVE`；AC-013 人工项按实际记 `NOT_RUN`。
+3. 实现探针 `.3` 版本选择与 Linux 容器入口；在容器内跑 AC-011 全链/Dialog 矩阵。
+4. 在容器内跑 AC-012 L0–L6 自动自对照；AC-013 只跑自动 CDP/XTEST 比较；人工项记 `OUT_OF_SCOPE_BY_USER`。
 5. 写 AC-015 报告，勾选 t032 `task.md`，更新 `note.md`、`specs_index`、`docs/blueprint/testing.md`/`automation.md`/`decisions.md`。
 6. 最终清理 t032fix 镜像、BuildKit 缓存、临时测试资源；确认 Docker 只剩生产与用户服务。

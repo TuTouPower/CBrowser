@@ -56,7 +56,7 @@
 
 |维度|CDP Input（经 Playwright）|XTEST（xte）|
 |---|---|---|
-|点击坐标|命中目标 client 坐标（5/5，误差 [0, −0.88] CSS px，为 bounding box 浮点与事件整数坐标的取整差，在 1 CSS px 阈值内）|系统偏差恒定 (+10, −10.88) CSS px（5/5 完全一致）：朴素映射（window.screenX/Y + outer/inner 差）在无窗口管理器的 Xvfb 下，Chrome 报告的窗口原点与内容区实际原点不一致；偏差确定性可校准，但未校准误差约 14.8px |
+|点击坐标|命中目标 client 坐标（5/5，误差 [0, −0.88] CSS px，为 bounding box 浮点与事件整数坐标的取整差，在 1 CSS px 阈值内）|系统偏差恒定 (+10, −10.88) CSS px（5/5 完全一致）：朴素映射（window.screenX/Y + outer/inner 差）在无窗口管理器的 Xvfb 下，Chrome 报告的窗口原点与内容区实际原点不一致；偏差确定性可校准，但未校准误差约 14.8px|
 |滚动|wheel delta 精确（请求 300 → scrollTop 300，5/5）|滚轮格数与滚动量不成固定比例（5 格实测 120 或 600 交替），不可精确寻址滚动量|
 |键盘/文本|精确|文本输入可用（5/5 得目标文本）；浏览器级缩放快捷键（Ctrl+plus / Ctrl+equal 两种 keysym）未生效、DPR 恒为 1，该维度对比 INCONCLUSIVE，归 t032 在有窗口管理器的真实容器复核|
 |iframe|frame 内点击事件齐全（pointerdown/up/click、isTrusted）|可点击且 isTrusted（5/5）；frame 局部坐标系下误差 (+7, −12.81) CSS px，与主页面同源的映射系统偏差（事件 client 坐标为 frame 局部坐标，换算时须减去 frame 元素位置）|
@@ -83,3 +83,11 @@
 - 目标待验（t032）：真实 arm64 镜像（引擎 146.0.7680.177.3）同探针复核；容器化 X11/Stream 下的窗口装饰与坐标映射；真实 Mac 上 Chrome Viewer 的焦点与输入行为；真实镜像中外部 Browser.close 后的恢复编排。
 - 否决条件：任一级在 t032 复测出现可复现新增变化时，t030 不得采用该级能力，须携证据修订方案；XTEST 只有在 CDP 出现可复现新增变化或坐标误差 >1 CSS px 时才有采用收益（见输入比较结论）。
 - t031 输入：控制权交接不得假设 Dialog 重放或 prompt 文本回传；交接期间的下载归属以本 spec 的模式表为准。
+
+## t032 执行口径（2026-11-05 用户决定）
+
+- t032 改用实际交付引擎 `146.0.7680.177.3`，在 Linux arm64 容器内挂载仓库与引擎缓存，安装 pytest/xte 后在 Xvfb 有头环境复跑探针；不再要求云端基线 `146.0.7680.177.5`。
+- 与 t029 云端 `.5` 结论只做跨版本参考；任何差异不得直接归因于自动化接入，报告须显式记录引擎版本。
+- AC-012 外站人工判读与因果复核移除；可自动采集时记录 BrowserLeaks/CreepJS/Pixelscan 可达性，不可达/样本不足记 `INCONCLUSIVE`。
+- AC-013 原生权限/设备选择器、真人 CAPTCHA/2FA、IME 人工交接移出本轮，报告记 `OUT_OF_SCOPE_BY_USER`；自动 CDP/XTEST 比较与程序化 control handoff 仍须执行。
+- 容器执行是探针的运行方式，不改变被测生产链路；禁止在 macOS 宿主直接执行 Linux 引擎后声称已验。

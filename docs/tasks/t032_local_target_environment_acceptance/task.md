@@ -36,9 +36,9 @@
 - [ ] [deploy] AC-008：执行 t026/t028 全部隔离/清理/回滚、配额至实际画面和 Agent 替换场景，记录正向网络基线、内核负例、实际 CPU/帧数及 close=1001/conn_id/上下行/Viewer 存活，不互换证据层级。
 - [ ] [deploy] AC-009：两个以上 Profile 运行时执行 Gateway 替换/进程退出、Supervisor 重启、网络断开、策略缺失、API 离线、协议不兼容与旧规格网络迁移；兼容替换不重建 Browser/Stream，不兼容与规格迁移仅有界替换 Stream，Browser 策略缺失时 fail-closed 且页面保留；固定 Gateway 端点真实可附着且不会被 Docker 自动分配占用（复核 d029）。
 - [ ] [deploy] AC-010：在隔离实例演练 t027 连续发布、部分服务不 ready、Gateway 永不 ready、回退拒绝条件与上一 release 回退；失败非零且有界保留诊断，成功代表所有活跃 Runtime 收敛，无 Browser/用户数据清理及无条件 Caddy 重启。
-- [ ] [deploy] AC-011：经正式 cbat\_ 隧道运行 t029/t030 目标兼容与生命周期矩阵：默认 context、既有页面、popup/iframe/OOPIF、下载（含会话期间捕获）、导航/ref 失效、adopt/未知页面、最后 Tab、Browser.close 拒绝、超时/取消/异常退出均符合契约；真实 Dialog 在 pending 命令与跨 CLI 调用后可恢复，beforeunload 具备真实激活。
-- [ ] [deploy] AC-012：在真实 arm64 镜像上以 t029 同一探针、样本数与判定阈值执行 L0–L6 指纹增量对照，记录 BrowserLeaks/CreepJS/Pixelscan 可达性和波动；逐级给出新增变化与证据强度，并与 t029 云端结论比对，冲突以本项为准并登记修订；不可达/样本不足只记 INCONCLUSIVE，不以总分或 isTrusted=true 证明不可检测。
-- [ ] [deploy] AC-013：按 t029 AC-005 阈值完成 CDP/XTEST 坐标/DPR/装饰/滚动/iframe/复杂交互/焦点比较，明确是否采用 XTEST，无证据不增加第二驱动；前台 Viewer 的点击/按键/滚轮/IME 提交、权限/设备提示及主动 CAPTCHA/2FA handOff 能撤销已建 Agent 通道、拒绝重连，纯鼠标移动不触发，保留多 Viewer 和用户页，显式恢复后才允许 Agent 新动作。
+- [ ] [deploy] AC-011：在 Linux arm64 容器内使用实际交付引擎 `146.0.7680.177.3`，经正式 cbat\_ 隧道运行 t029/t030 目标兼容与生命周期矩阵：默认 context、既有页面、popup/iframe/OOPIF、下载（含会话期间捕获）、导航/ref 失效、adopt/未知页面、最后 Tab、Browser.close 拒绝、超时/取消/异常退出均符合契约；真实 Dialog 在 pending 命令与跨 CLI 调用后可恢复，beforeunload 具备真实激活。容器必须挂载仓库与引擎缓存并在 Xvfb/xte 环境执行，不得以宿主 macOS 直接执行 Linux 引擎或跳过代替。
+- [ ] [deploy] AC-012：在 Linux arm64 容器内的实际交付引擎 `146.0.7680.177.3` 上，以 t029 同一探针、样本数与判定阈值执行 L0–L6 指纹增量自对照，逐级给出新增变化与证据强度；外站 BrowserLeaks/CreepJS/Pixelscan 不纳入人工判读与因果复核（用户决定移除），可自动采集时记录可达性，不可达/样本不足只记 INCONCLUSIVE；与 t029 云端 `.5` 结论仅作跨版本参考，不作强制一致判定；不以总分或 isTrusted=true 证明不可检测。
+- [ ] [deploy] AC-013：按 t029 AC-005 阈值完成自动化的 CDP/XTEST 坐标、DPR、窗口装饰、滚动、iframe、复杂交互与焦点争用比较，明确是否采用 XTEST，无证据不增加第二驱动；前台 Viewer 真人输入、原生权限/设备选择器、CAPTCHA/2FA、IME 人工交接不纳入本轮验收（用户决定移除，最终报告记 `OUT_OF_SCOPE_BY_USER`）；程序化 control handoff 仍须保留并通过。
 - [ ] [deploy] AC-014：执行 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 required 与证据模式，记录各 suite 命令、退出码、JUnit、实际镜像 ID 和脱敏 evidence；逐项对应历史债与新增 AC，未执行/跳过/失败/结论不足分别列出，禁止延用旧 trust_prior 或把 skip 算 PASS。
 - [ ] [deploy] AC-015：出具最终验收报告与运行入口索引；发布要求的行为与安全检查全部有目标环境证据，未通过项保留未勾选并登记具体缺陷/所需补证，修复后重跑受影响项。若需新输入驱动或改变控制权架构，先凭证据修订方案，禁止静默回退到合成事件或放宽隔离。
 
@@ -51,8 +51,8 @@
 <!-- /规范 -->
 
 - AC-001–AC-011、AC-014：有自动测试/探针，但必须本地真实镜像、Mac Chrome 和 Docker 拓扑运行，云端不能替代。
-- AC-012：指纹对照按 t029 阈值自动采集与判定，外站判读与因果复核需人工；保存字段级样本、对照条件及明确可达性。
-- AC-013：坐标可自动测，原生权限/设备选择器、真人输入与 CAPTCHA/2FA 主动交接需本地人工；录像/截图脱敏并配套事件时序、页面存活与通道拒绝证据。
+- AC-012：L0–L6 按 t029 阈值自动采集与判定；外站人工判读与因果复核已按用户决定移出本轮，自动可达性数据仍尽量保留。
+- AC-013：坐标、DPR、装饰、滚动、iframe、复杂交互与焦点争用可自动测；原生权限/设备选择器、真人输入与 CAPTCHA/2FA/IME 人工交接已按用户决定移出本轮，最终报告记 `OUT_OF_SCOPE_BY_USER`。
 - AC-015：人工复核证据完整性与发布判定；失败、未执行或结论不足不允许勾选对应行为为通过。
 
 ## 上下文区
@@ -83,6 +83,7 @@
 ### 有意不测
 
 - 公网 TURN/公网 ICE 与原生 Linux x86_64：当前产品同机直连且已有明确豁免，不借本地补证扩大平台。
+- AC-012 外站人工判读/因果复核、AC-013 原生权限/设备选择器、真人 CAPTCHA/2FA、IME 人工交接：用户决定本轮不做，报告记 `OUT_OF_SCOPE_BY_USER`，不得按 PASS 计。
 - 用户现有生产实例：只在独立测试实例验证，防止故障演练影响既有工作。
 - Docker daemon 故障：共享 daemon 不在破坏性演练授权内；未提供独立 daemon/VM 时报告记 NOT_RUN。
 
@@ -90,7 +91,7 @@
 
 - 从 docs/blueprint/testing.md、stream_runtime_validation.md、supervisor_validation.md 的现行入口启动，执行前核对镜像/缓存和真实调用路径。
 - 使用 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 required 与证据模式；新增专项入口由 t026–t031 提供，不凭空引用未交付脚本。必要专项独立运行并保留命令/样本，不另造巨型探针总控。
-- Chrome/Playwright 一律无头运行，不弹窗、不抢焦点；需真人操作的 AC-013 项除外，由执行人手工完成。
+- Chrome/Playwright 一律无头运行，不弹窗、不抢焦点；t029 探针按设计在 Linux 容器 Xvfb 有头运行；AC-013 已移除需真人操作的部分。
 - 资源前缀、网络、卷、端口和 evidence 每轮独立；finally/trap 只清理本轮对象。秘密、页面内容和指纹隐私原始样本按最小范围留本地产物，入库报告只保留脱敏结论及 artifact 位置。
 - 任一行为失败则保留现场，按 bug-to-pending 工作流登记并关联修复 task，修复后重跑；验证报告不替代修复。
 
