@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -207,3 +208,53 @@ def test_observation_server_serves_pages_and_download() -> None:
     assert 'id="frame-pad"' in frame
     assert body == b"cbrowser-probe-download\n"
     assert "probe-download.txt" in disposition
+
+
+def test_selected_engine_cache_and_runner_build_match(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from automation_probe import harness
+
+    monkeypatch.setattr(harness, "TARGET_ENGINE_VERSION", "146.0.7680.177.3")
+    monkeypatch.setenv("CBROWSER_T029_ENGINE_CACHE", str(tmp_path))
+    binary = tmp_path / "chromium-146.0.7680.177.3" / "chrome"
+    binary.parent.mkdir()
+    binary.write_bytes(b"probe")
+    binary.chmod(0o755)
+    assert harness.engine_cache_dir() == tmp_path
+    runner = harness.host_runner_class()(
+        profile_id="p1",
+        runtime_instance_id="i1",
+        config_snapshot_path=harness.write_profile_snapshot(
+            tmp_path, profile_id="p1", seed=290029
+        ),
+        run_dir=tmp_path / "run",
+        user_data_dir=tmp_path / "profile",
+        events_dir=tmp_path / "events",
+        engine_cache_dir=tmp_path,
+    )
+    assert runner.engine_build == "146.0.7680.177.3"
+
+
+def test_container_probe_retains_production_display_and_window_setup(monkeypatch):
+    from automation_probe.harness import host_runner_class
+    from cbrowser.runtime_agent.runner import BrowserRunner
+
+    monkeypatch.setenv("CBROWSER_PROBE_CONTAINER_RUNTIME", "1")
+    runner = host_runner_class()
+    assert runner.setup_display is BrowserRunner.setup_display
+    assert runner.setup_pulse is BrowserRunner.setup_pulse
+    assert runner._configure_window is BrowserRunner._configure_window
+
+
+def test_xtest_passes_selected_display_authority(tmp_path):
+    sent = {}
+
+    def run(cmd, **kwargs):
+        sent.update(kwargs)
+        return type("Result", (), {"returncode": 0, "stderr": ""})()
+
+    authority = tmp_path / "Xauthority"
+    XTestInput(":141", xte_path="xte", runner=run, xauthority=authority).click(1, 2)
+    assert sent["env"]["XAUTHORITY"] == str(authority)
+    assert sent["env"]["DISPLAY"] == ":141"

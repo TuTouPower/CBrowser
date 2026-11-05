@@ -282,3 +282,21 @@ reclaim、身份匹配矩阵）、`test_stream_takeover_classifier.py`（分类�
 报无 dialog），滞留 dialog 只能由 attendant 会话经控制面应答；接管 release
 后 dialog 回归 Chrome 默认处置。目标 WebRTC/X11 来源的接管、原生权限交接
 用例与真实拓扑下的接管/恢复只在 t032 判定。
+
+## t032 Linux arm64 探针入口
+
+目标引擎默认为 `146.0.7680.177.3`，可用 `CBROWSER_T029_TARGET_ENGINE_VERSION` 显式选择；缓存查找、BrowserRunner 启动和报告使用同一版本。云端 `.5` 仅作跨版本参考。
+
+在宿主用不可变 Browser 镜像 ID 核对本地 tag 后，构建独立探针镜像；不重建生产镜像：
+
+```bash
+docker tag "$CBROWSER_RUNTIME_TEST_IMAGE" cbrowser-probe-base:local
+docker build -f config/docker/automation_probe/Dockerfile \
+  --build-arg BROWSER_IMAGE=cbrowser-probe-base:local -t cbrowser-probe:local .
+export CBROWSER_PROBE_TEST_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-probe:local)"
+export CBROWSER_T029_ENGINE_CACHE="$PWD/.scratch/t032/data/engine-cache"
+export CBROWSER_T029_REPORT_DIR="$PWD/.scratch/t032/probe-evidence"
+bash scripts/run_automation_probe.sh
+```
+
+入口要求 Linux arm64 镜像、可执行目标引擎和空证据目录。仓库及引擎只读挂载，独立容器不挂 Docker socket 或生产数据；提供 Xvfb/XTEST；链路 Dialog 与执行器测试的显式浏览器路径同样指向选中目标引擎。容器中的生产 Python 组件通过 loopback 建立 API → Supervisor → Agent → CDP 链路；这不替代独立 Stream/Viewer 容器 E2E。子测试 JUnit 不得含 skip，报告和镜像身份留在证据目录。AC-012 外站不可达或样本不足记 `INCONCLUSIVE`；AC-013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`。

@@ -169,6 +169,7 @@ class SupervisorCore:
         # from the same scans that rebuild sessions).
         self._transport: dict[str, TransportObservation] = {}
         self._registration_known: dict[str, bool] = {}
+        self._registration_lost_at: dict[str, float] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
         self._unprotected_since: dict[str, float] = {}
@@ -230,6 +231,14 @@ class SupervisorCore:
     )
     _STREAM_REPLACE_WINDOW_SEC = 300.0
     _STREAM_REPLACE_MAX = 3
+    # A registered-then-unregistered transition is a recovery transient
+    # until proven otherwise: after a Gateway outage/restart the healthy
+    # Stream agent backs off up to 30s before re-registering, so an
+    # unregistered reading shortly after a known registration must not
+    # cost the Stream its container. Covers the worst-case backoff step
+    # plus registration roundtrip and converge passes. A profile that
+    # was never registered is unaffected and still replaces immediately.
+    _REGISTRATION_LOSS_GRACE_SEC = 90.0
 
     @staticmethod
     def _now_iso() -> str:
@@ -268,6 +277,20 @@ class SupervisorCore:
     def _record_stream_replacement(self, profile_id: str, instance_id: str) -> None:
         key = f"{profile_id}:{instance_id}"
         self._stream_replace_attempts.setdefault(key, []).append(time.monotonic())
+
+    def _within_registration_recovery_grace(self, profile_id: str) -> bool:
+        """Whether a registration loss is still within the recovery grace.
+
+        Only applies to a registered-then-unregistered transition: the
+        first such pass arms the grace, later passes inside the window
+        defer replacement, and expiry falls through to replacement.
+        """
+        lost_at = self._registration_lost_at.get(profile_id)
+        now = time.monotonic()
+        if lost_at is None:
+            self._registration_lost_at[profile_id] = now
+            return True
+        return now - lost_at < self._REGISTRATION_LOSS_GRACE_SEC
 
     async def _converge_session(
         self,
@@ -479,6 +502,7 @@ class SupervisorCore:
             )
         if registered:
             self._registration_known[profile_id] = True
+            self._registration_lost_at.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 transport_state="ready",
@@ -487,6 +511,7 @@ class SupervisorCore:
                 rejection_code=None,
             )
             return
+        previously_known = self._registration_known.get(profile_id, False)
         self._registration_known[profile_id] = False
         rejection = (status or {}).get("rejection") or {}
         rejection_code = rejection.get("code")
@@ -498,6 +523,16 @@ class SupervisorCore:
                 transport_state="failed",
                 last_error=f"registration_rejected:{rejection_code}",
                 rejection_code=rejection_code,
+                last_error_at=self._now_iso(),
+            )
+            return
+        if (
+            previously_known or profile_id in self._registration_lost_at
+        ) and self._within_registration_recovery_grace(profile_id):
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="registration_recovery_grace",
                 last_error_at=self._now_iso(),
             )
             return

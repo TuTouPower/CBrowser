@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from pathlib import Path
 
 import docker
@@ -436,4 +437,19 @@ async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(
         )
 
     finally:
-        await harness.cleanup()
+        try:
+            if sys.exc_info()[0] is not None and harness.supervisor_container is not None:
+                from scripts.redact_evidence import redact
+
+                try:
+                    logs = await asyncio.wait_for(
+                        asyncio.to_thread(harness.supervisor_container.logs, tail=300),
+                        timeout=30,
+                    )
+                    (tmp_path / "supervisor_failure.log").write_text(
+                        redact(logs.decode("utf-8", "replace")), encoding="utf-8"
+                    )
+                except Exception:  # noqa: BLE001 - diagnostics are best-effort and must not mask the original failure.
+                    pass
+        finally:
+            await harness.cleanup()

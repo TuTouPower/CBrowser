@@ -36,6 +36,7 @@ import websockets
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "fixtures"))
 
 from automation_probe.harness import (  # noqa: E402
+    TARGET_ENGINE_VERSION,
     ObservationServer,
     chromium_executable,
     devtools_ws_url,
@@ -278,7 +279,7 @@ def _target_engine_cache() -> Path | None:
     if cache is not None:
         return cache
     default = Path.home() / ".cloakbrowser"
-    binary = default / "chromium-146.0.7680.177.5" / "chrome"
+    binary = default / f"chromium-{TARGET_ENGINE_VERSION}" / "chrome"
     if binary.is_file() and os.access(binary, os.X_OK):
         return default
     return None
@@ -315,7 +316,7 @@ async def _target_engine_context(root: Path, display: str):
     cache = _target_engine_cache()
     if cache is None:
         return None, None
-    binary = cache / "chromium-146.0.7680.177.5" / "chrome"
+    binary = cache / f"chromium-{TARGET_ENGINE_VERSION}" / "chrome"
     if not binary.is_file() or not os.access(binary, os.X_OK):
         return None, None
     pw = await async_playwright().start()
@@ -1364,3 +1365,156 @@ async def test_executor_target_engine_core_flow() -> None:
                 await pw.stop()
             xvfb.terminate()
             shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["timeout", "cancel"])
+async def test_executor_target_timeout_cancel_preserves_user_page(mode: str) -> None:
+    """Real target engine and tunnel: failed programs clean only agent pages."""
+    from cbrowser.agent_executor.cli import run_program
+    from cbrowser.agent_executor.session import ExecutorSession
+
+    if shutil.which("Xvfb") is None or _target_engine_cache() is None:
+        pytest.skip("Target engine and Xvfb required")
+    root = Path(tempfile.mkdtemp(prefix="cbrowser-t032-cancel-", dir="/tmp"))
+    display = ":170" if mode == "timeout" else ":171"
+    xvfb = start_xvfb(display)
+    chain = _Chain()
+    pw = context = session = task = None
+    try:
+        pw, context = await _target_engine_context(root, display)
+        assert context is not None
+        user_page = context.pages[0]
+        await user_page.goto("data:text/html,<title>User page</title>")
+        await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+        session = ExecutorSession(
+            endpoint=f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
+            token=chain.token, profile_id="p1", runtime_instance_id="i1",
+        )
+        await session.start()
+        agent = await session.new_page("about:blank")
+        program = {"version": 1, "steps": [{
+            "action": "wait_for", "targetId": agent["target_id"],
+            "expression": "(window.__t032_wait_started = true, false)",
+            "timeoutMs": 30000,
+        }]}
+        task = asyncio.create_task(run_program(
+            session, program, program_timeout=1 if mode == "timeout" else 30,
+            token=chain.token,
+        ))
+        if mode == "cancel":
+            async def wait_started():
+                while True:
+                    for candidate in context.pages:
+                        if not candidate.is_closed() and await candidate.evaluate(
+                            "() => window.__t032_wait_started === true"
+                        ):
+                            return
+                    await asyncio.sleep(0.05)
+            await asyncio.wait_for(wait_started(), 10)
+            task.cancel()
+        output, code = await asyncio.wait_for(task, 15)
+        assert code != 0
+        assert output["error"]["code"] == (
+            "step_timeout" if mode == "timeout" else "cancelled"
+        )
+        assert agent["target_id"] in output["cleanup"]["closed"]
+        assert not user_page.is_closed()
+        assert await user_page.title() == "User page"
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        if session is not None:
+            await session.close()
+        await chain.stop()
+        if context is not None:
+            await context.close()
+        if pw is not None:
+            await pw.stop()
+        xvfb.terminate()
+        xvfb.wait(timeout=5)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_target_unknown_oopif_and_last_tab_protection() -> None:
+    """Probe cross-site frame isolation and page ownership on the real engine."""
+    from cbrowser.agent_executor.session import ExecutorSession
+
+    if shutil.which("Xvfb") is None or _target_engine_cache() is None:
+        pytest.skip("Target engine and Xvfb required")
+    root = Path(tempfile.mkdtemp(prefix="cbrowser-t032-pages-", dir="/tmp"))
+    xvfb = start_xvfb(":172")
+    chain = _Chain()
+    pw = context = session = None
+    try:
+        with ObservationServer() as observation:
+            pw, context = await _target_engine_context(root, ":172")
+            assert context is not None
+            user_page = context.pages[0]
+            await user_page.goto(observation.url)
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            session = ExecutorSession(
+                endpoint=f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
+                token=chain.token, profile_id="p1", runtime_instance_id="i1",
+            )
+            await session.start()
+            # localhost and 127.0.0.1 are distinct sites, unlike two ports
+            # on the same host. The iframe target proves OOPIF isolation.
+            frame_url = observation.url.replace("127.0.0.1", "localhost") + "/frame"
+            await user_page.locator("#frame").evaluate("(el, url) => el.src = url", frame_url)
+            await user_page.frame_locator("#frame").locator("#frame-pad").wait_for()
+            targets = await session._client.send("Target.getTargets")
+            assert any(
+                target.get("type") == "iframe" and target.get("url") == frame_url
+                for target in targets["targetInfos"]
+            ), "Cross-site frame did not become an OOPIF"
+            baseline = await session.list_targets()
+            user_id = next(t["target_id"] for t in baseline if t["origin"] == "user")
+            await session.adopt(user_id)
+            snapshot = await session.snapshot(user_id)
+            assert snapshot["nodes"], "OOPIF must not break the page snapshot"
+            box = await user_page.frame_locator("#frame").locator("#frame-pad").bounding_box()
+            assert box is not None
+            sid = await session.attach(user_id)
+            for event in ("mousePressed", "mouseReleased"):
+                await session._client.send(
+                    "Input.dispatchMouseEvent",
+                    {"type": event, "x": box["x"] + 20, "y": box["y"] + 20,
+                     "button": "left", "clickCount": 1}, session_id=sid,
+                )
+            frame = user_page.frame(url=frame_url)
+            assert frame is not None
+            await frame.wait_for_function(
+                "window.__events.some(e => e.type === 'click' && e.target === 'frame-pad')"
+            )
+
+            unknown_page = await context.new_page()
+            await session.wait_for_target_count(2, 10000)
+            unknown = next(t for t in await session.list_targets() if t["origin"] == "unknown")
+            assert unknown["manageable"] is False and unknown["cleanable"] is False
+            await session.adopt(unknown["target_id"])
+            adopted = next(t for t in await session.list_targets() if t["target_id"] == unknown["target_id"])
+            assert adopted["manageable"] is True and adopted["cleanable"] is False
+            assert adopted["origin"] == "unknown"
+            agent = await session.new_page("about:blank")
+            await unknown_page.close()
+            await user_page.close()
+            await session.wait_for_target_count(1, 10000)
+            result = await session.cleanup()
+            assert result["closed"] == []
+            assert result["refused"] == [{"target_id": agent["target_id"], "reason": "last_tab_protected"}]
+            live = await session._client.send("Target.getTargets")
+            assert any(t["targetId"] == agent["target_id"] for t in live["targetInfos"])
+    finally:
+        if session is not None:
+            await session.close()
+        await chain.stop()
+        if context is not None:
+            await context.close()
+        if pw is not None:
+            await pw.stop()
+        xvfb.terminate()
+        xvfb.wait(timeout=5)
+        shutil.rmtree(root, ignore_errors=True)

@@ -32,6 +32,8 @@ from automation_probe.harness import (  # noqa: E402
     build_report,
     engine_cache_dir,
     host_runner_class,
+    restore_pulse_runtime_path,
+    stop_sample_pulse_daemon,
     summarize_levels,
     write_profile_snapshot,
 )
@@ -70,8 +72,10 @@ class Sample:
         self.root = Path(tempfile.mkdtemp(prefix=f"t029-lvl-{tag}-", dir="/tmp"))
         self.runner = None
         self.bridge: CdpBridge | None = None
+        self._previous_pulse_runtime_path = None
 
     async def __aenter__(self):
+        self._previous_pulse_runtime_path = os.environ.get("PULSE_RUNTIME_PATH")
         runner_cls = host_runner_class()
         cache = engine_cache_dir()
         assert cache is not None
@@ -94,17 +98,24 @@ class Sample:
         return self
 
     async def __aexit__(self, *exc):
-        if self.bridge is not None:
-            self.bridge.close()
-        if self.runner is not None:
-            await self.runner.stop()
-        # Each sample's profile directory is several MB; on small
-        # tmpfs mounts (the cloud VM has 512 MB) keeping them all
-        # exhausts the disk mid-run, so samples clean up after
-        # themselves.  Samples live in the report, not on disk.
-        import shutil
+        try:
+            if self.bridge is not None:
+                self.bridge.close()
+            if self.runner is not None:
+                await self.runner.stop()
+        finally:
+            # Production runners do not stop their own daemon. Stop only this
+            # sample's container daemon, then restore the process-global
+            # environment before removing the sample directory.
+            stop_sample_pulse_daemon(self.runner)
+            restore_pulse_runtime_path(self._previous_pulse_runtime_path)
+            # Each sample's profile directory is several MB; on small
+            # tmpfs mounts (the cloud VM has 512 MB) keeping them all
+            # exhausts the disk mid-run, so samples clean up after
+            # themselves.  Samples live in the report, not on disk.
+            import shutil
 
-        shutil.rmtree(self.root, ignore_errors=True)
+            shutil.rmtree(self.root, ignore_errors=True)
 
     @property
     def page(self):
@@ -205,7 +216,7 @@ async def main() -> None:
             async with Sample(obs, f"L6x-{i}") as s:
                 page = s.page
                 await page.evaluate("() => { window.__events = []; }")
-                xtest = XTestInput(DISPLAY, xte_path=XTE)
+                xtest = XTestInput(DISPLAY, xte_path=XTE, xauthority=s.runner.xauth_path)
                 meta = await page.evaluate(
                     """() => ({sx: window.screenX, sy: window.screenY,
                                ow: window.outerWidth, oh: window.outerHeight,
@@ -340,7 +351,7 @@ async def main() -> None:
         for i in range(2):
             async with Sample(obs, f"zoom-{i}") as s:
                 page = s.page
-                xtest = XTestInput(DISPLAY, xte_path=XTE)
+                xtest = XTestInput(DISPLAY, xte_path=XTE, xauthority=s.runner.xauth_path)
                 meta = await window_meta(page)
                 bx = (meta["ow"] - meta["iw"]) / 2
                 tu = (meta["oh"] - meta["ih"]) - bx
@@ -398,7 +409,7 @@ async def main() -> None:
                 ])
                 try:
                     assert await wait_file(ready), "L3 hold never ready"
-                    xtest = XTestInput(DISPLAY, xte_path=XTE)
+                    xtest = XTestInput(DISPLAY, xte_path=XTE, xauthority=s.runner.xauth_path)
                     input_details["focus_contention"].append({
                         "has_focus_during_L3": await page.evaluate(
                             "() => document.hasFocus()"

@@ -39,7 +39,9 @@ from typing import Any, Callable
 
 PLAYWRIGHT_VERSION = "1.64.1"
 CLOAKBROWSER_PACKAGE_VERSION = "0.6.4"
-TARGET_ENGINE_VERSION = "146.0.7680.177.5"
+TARGET_ENGINE_VERSION = os.environ.get(
+    "CBROWSER_T029_TARGET_ENGINE_VERSION", "146.0.7680.177.3"
+)
 EGO_LITE_BASELINE_COMMIT = "12407167f84a58af24044f072868051952131491"
 REPORT_SCHEMA = "automation-probe-report/v1"
 
@@ -506,6 +508,7 @@ class XTestInput:
         display: str,
         xte_path: str | None = None,
         runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        xauthority: Path | str | None = None,
     ) -> None:
         resolved = xte_path or shutil.which("xte")
         if not resolved:
@@ -515,9 +518,12 @@ class XTestInput:
         self._xte = resolved
         self._display = display
         self._runner = runner
+        self._xauthority = xauthority
 
     def _send(self, *commands: str) -> None:
         env = dict(os.environ, DISPLAY=self._display)
+        if self._xauthority is not None:
+            env["XAUTHORITY"] = str(self._xauthority)
         result = self._runner(
             [self._xte],
             input="\n".join(commands) + "\n",
@@ -769,7 +775,19 @@ def host_runner_class() -> type:
     """
     from cbrowser.runtime_agent.runner import BrowserRunner
 
-    class HostBrowserRunner(BrowserRunner):
+    class SelectedBrowserRunner(BrowserRunner):
+        def __init__(self, **kwargs):
+            kwargs.setdefault("engine_build", TARGET_ENGINE_VERSION)
+            super().__init__(**kwargs)
+            if os.environ.get("CBROWSER_PROBE_CONTAINER_RUNTIME") == "1":
+                # Samples share one probe container; production profiles each
+                # have their own container and PulseAudio runtime directory.
+                os.environ["PULSE_RUNTIME_PATH"] = str(self.pulse_dir / "runtime")
+
+    if os.environ.get("CBROWSER_PROBE_CONTAINER_RUNTIME") == "1":
+        return SelectedBrowserRunner
+
+    class HostBrowserRunner(SelectedBrowserRunner):
         def setup_pulse(self) -> tuple[Path, Path]:
             self.pulse_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             cookie = self.pulse_dir / "pulse.cookie"
@@ -812,6 +830,44 @@ def host_runner_class() -> type:
             return None
 
     return HostBrowserRunner
+
+
+def sample_pulse_runtime_path(runner):
+    pulse_dir = getattr(runner, "pulse_dir", None)
+    if pulse_dir is None:
+        return None
+    return Path(pulse_dir) / "runtime"
+
+
+def stop_sample_pulse_daemon(runner, timeout=5.0, run=subprocess.run):
+    """Best-effort bounded stop for one probe sample's PulseAudio daemon."""
+    if os.environ.get("CBROWSER_PROBE_CONTAINER_RUNTIME") != "1":
+        return False
+    runtime_path = sample_pulse_runtime_path(runner)
+    if runtime_path is None:
+        return False
+    env = dict(os.environ)
+    env["PULSE_RUNTIME_PATH"] = str(runtime_path)
+    try:
+        run(
+            ["pulseaudio", "--kill"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return True
+
+
+def restore_pulse_runtime_path(previous):
+    """Restore the process-global PulseAudio runtime path saved by a sample."""
+    if previous is None:
+        os.environ.pop("PULSE_RUNTIME_PATH", None)
+    else:
+        os.environ["PULSE_RUNTIME_PATH"] = previous
 
 
 def write_profile_snapshot(
@@ -871,6 +927,10 @@ def engine_cache_dir() -> Path | None:
 
 def chromium_executable() -> Path | None:
     """Locate the Playwright-downloaded full Chromium (not headless shell)."""
+    executable = os.environ.get("CBROWSER_PROBE_CHROMIUM_EXECUTABLE")
+    if executable:
+        candidate = Path(executable)
+        return candidate if candidate.is_file() and os.access(candidate, os.X_OK) else None
     roots = []
     override = os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
     if override:

@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import secrets
 import shutil
 import subprocess
@@ -410,7 +411,7 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
             assert "Browser.close" not in methods
             report = build_report(
                 chain={
-                    "engine": "cloakbrowser-linux-x64",
+                    "engine": f"cloakbrowser-linux-{platform.machine()}",
                     "matrix": outcomes,
                     "state_changing_methods": bridge.state_changing_methods(),
                     "browser_close_sent_by_safe_disconnect": "Browser.close"
@@ -841,7 +842,7 @@ async def test_probe_target_engine_dialog_contract() -> None:
             evidence["beforeunload_script_activation"] = beforeunload_script
 
             report = build_report(
-                chain={"engine": "cloakbrowser-linux-x64", "dialog": evidence}
+                chain={"engine": f"cloakbrowser-linux-{platform.machine()}", "dialog": evidence}
             )
             (_report_dir(root) / "dialog-target.json").write_text(
                 json.dumps(report, indent=2), encoding="utf-8"
