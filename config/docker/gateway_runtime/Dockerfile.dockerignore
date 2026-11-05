@@ -6,6 +6,7 @@
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/gateway/
 !src/backend/cbrowser/gateway/*.py
+!src/backend/cbrowser/udp_mux.py
 !src/backend/cbrowser/stream_agent/
 !src/backend/cbrowser/stream_agent/__init__.py
 !src/backend/cbrowser/stream_agent/protocol.py

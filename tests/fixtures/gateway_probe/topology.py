@@ -553,6 +553,7 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
     # create a replacement Stream while the Profile containers are being
     # torn down, then re-list to catch anything created in the race.
     role_priority = {"api": 0, "supervisor": 1, "gateway": 2, "caddy": 3}
+    removed_ids: set[str] = set()
     for attempt in range(3):
         try:
             owned_containers = docker_client.containers.list(
@@ -573,6 +574,7 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
         owned_containers = [
             c for c in owned_containers
             if _labels(c).get("com.cbrowser.prefix") == prefix
+            and str(getattr(c, "id", "")) not in removed_ids
         ]
         owned_containers.sort(
             key=lambda c: role_priority.get(_labels(c).get("com.cbrowser.role"), 10)
@@ -591,8 +593,9 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
                 )
             try:
                 c.remove(force=True, v=True)
+                removed_ids.add(str(getattr(c, "id", c_name)))
             except docker.errors.NotFound:
-                pass
+                removed_ids.add(str(getattr(c, "id", c_name)))
             except Exception as exc:  # noqa: BLE001
                 logger.error(
                     "Container remove error for %s: %s", c_name, type(exc).__name__
