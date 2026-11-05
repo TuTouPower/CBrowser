@@ -12,12 +12,12 @@ metadata:
 
 ## 组合契约
 
-仅用户显式授权入口或 registry.json 已登记父流程可执行。本流程作为子流程时，由父流程直接读取本 canonical `SKILL.md` 并执行正文，不调用宿主原生 Skill 工具；原样传递参数、exact identity、owner_id 和写域。父流程授权不扩大，缺少所需授权时停止。调用关系以 `.repo_template/skills/registry.json` 为权威。
+仅用户显式授权入口或 registry.json 已登记父流程可执行；作为子流程时由父流程直接读取本正文，原样传递参数、identity、owner_id 与授权，不扩大授权。完整规则见 `.repo_template/docs/usage.md`「skill 调用」。
 
 ## 模式
 
 - 默认：分析登记后询问是否立项，批准则调用 `task-create`，最后询问 pending commit。
-- `analysis-only`：只分析和登记，返回 `pNNN` 后结束；不立项、不 commit。供 `task-work`、`pending-record` 等内部调用。
+- `analysis-only`：只分析和登记，返回 `pNNN` 后结束；不立项、不 commit。供 `pending-record` 等内部调用。
 
 ## 流程
 

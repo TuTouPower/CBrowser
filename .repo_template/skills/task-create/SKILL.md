@@ -12,14 +12,14 @@ metadata:
 
 ## 组合契约
 
-仅用户显式授权入口或 registry.json 已登记父流程可执行。本流程作为子流程时，由父流程直接读取本 canonical `SKILL.md` 并执行正文，不调用宿主原生 Skill 工具；原样传递参数、exact identity、owner_id 和写域。父流程授权不扩大，缺少所需授权时停止。调用关系以 `.repo_template/skills/registry.json` 为权威。
+仅用户显式授权入口或 registry.json 已登记父流程可执行；作为子流程时由父流程直接读取本正文，原样传递参数、identity、owner_id 与授权，不扩大授权。完整规则见 `.repo_template/docs/usage.md`「skill 调用」。
 
 ## 流程
 
 1. 按 effective status 查重；已有等价 task 时复用，不重复创建。
 2. 只澄清代码库无法回答且会改变范围、AC 或产品行为的问题。没有可靠推荐时不要伪造推荐。
-3. 拆分 task：每个 task 有单一交付结果、可证伪 AC 和最小依赖，并适合一个工程意义明确的执行 commit。
-4. 用 `task.py add` 创建目录，严格填写 `task.md` 和 `note.md`：只替换占位符，不删除模板规范块，不手改 front matter。
+3. 拆分 task：每个 task 有单一交付结果、可证伪 AC 和最小依赖，并适合一个工程意义明确的实现 commit。
+4. 用 `task.py add` 创建目录，严格填写 `task.md` 和 `progress.md`：只替换占位符，不删除模板规范块，不手改 front matter。
 5. 按风险设置 `review_level`：安全、鉴权、资金、并发、迁移、协议兼容用 `full`；其它通常用 `single`。
 6. 对每个 task 运行 `task.py preflight {tid} --creation`。结构、AC、占位符或裸 `UNVERIFIED` 为 FAIL；已分类的 `UNVERIFIED-BLOCKING` 可作为 backlog WARN，但仍不能 start。
 7. 列出新增 task、依赖建议和创建有效性结果，询问是否提交；同意后本批 task 和派生 index 用一个创建 commit 提交。

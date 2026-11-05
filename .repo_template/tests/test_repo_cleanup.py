@@ -8,6 +8,7 @@ main 子进程，覆盖默认类别扫描、docs/ 保护、node/scratch/artifact
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -171,6 +172,28 @@ def test_default_categories_do_not_enter_unnamed_dirs(tmp_path):
     assert "node_modules" in paths
 
 
+def test_default_categories_skip_nested_unnamed_dirs(tmp_path):
+    """嵌套 node_modules/.git/artifacts/data/.scratch 也不得被默认类别遍历（Issue #71）。"""
+    repo = tmp_path / "repo"
+    for rel in (
+        "src/node_modules/pkg/x.pyc",
+        "src/node_modules/pkg/debug.log",
+        "src/artifacts/run.log",
+        "src/data/.DS_Store",
+        "src/.scratch/note.log",
+        "src/nested/.git/hooks/pre-commit.log",
+    ):
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x\n", encoding="utf-8")
+
+    hits, _ = rc.collect(repo, rc.DEFAULT_CATEGORIES, [])
+    assert {h["path"] for h in hits} == set()
+
+    hits, _ = rc.collect(repo, ["node"], [])
+    assert "src/node_modules" in {h["path"] for h in hits}
+
+
 def test_cli_scan_is_read_only(tree):
     before = {str(p) for p in tree.rglob("*")}
     r = subprocess.run(
@@ -212,7 +235,7 @@ def test_repo_cleanup_git_timeout(monkeypatch):
     def mock_run(*args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=["git"], timeout=30)
 
-    monkeypatch.setattr(subprocess, "run", mock_run)
+    monkeypatch.setattr(rc, "subprocess", SimpleNamespace(**{**vars(subprocess), "run": mock_run}))
     with pytest.raises(rc.CleanupError, match="超时（30s）"):
         rc.repo_root()
 

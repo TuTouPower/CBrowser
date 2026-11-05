@@ -11,6 +11,10 @@ from pathlib import Path
 import repo_task.context as ctx
 
 
+class DocumentWriteError(ctx.TaskDataError, ValueError):
+    """文档写入被拒绝（如目标是软链）；同时满足库层 ValueError 与 CLI 统一出口。"""
+
+
 def _quote(value: str) -> str:
     """YAML 双引号标量：转义反斜杠、双引号与换行符。"""
     escaped = (
@@ -52,25 +56,62 @@ def _unquote(value: str) -> str:
         return "".join(out)
     return value
 
+def _clean_line(line: str) -> str:
+    return line[:-1] if line.endswith("\r") else line
+
+
 def parse_front_matter_text(text: str, *, source: str) -> tuple[dict, str]:
-    """从文本返回 (front matter dict, 正文)。"""
-    if not text.startswith("---"):
-        raise ctx.TaskDataError(f"{source}: note.md 必须以 YAML front matter (---) 开头")
-    end = text.find("\n---", 3)
-    if end == -1:
+    """从文本返回 (front matter dict, 正文)。
+
+    格式漂移 fail-closed：首尾围栏必须是独占一行的 ``---``；区内非空、非注释行
+    必须含冒号；重复键报错。错误均带 ``文件:行号``，避免依赖边等字段静默丢失。
+    """
+    lines = text.split("\n")
+    if not lines or _clean_line(lines[0]) != "---":
+        raise ctx.TaskDataError(
+            f"{source}:1: {ctx.PROGRESS_FILE} 必须以独占一行的 YAML front matter (---) 开头"
+        )
+    end = None
+    for index in range(1, len(lines)):
+        line = _clean_line(lines[index])
+        if line == "---":
+            end = index
+            break
+        if line.startswith("---"):
+            raise ctx.TaskDataError(
+                f"{source}:{index + 1}: front matter 结束围栏必须是独占一行的 ---"
+                f"（当前 {line!r}）"
+            )
+    if end is None:
         raise ctx.TaskDataError(f"{source}: front matter 未闭合（缺结束的 ---）")
-    body = text[end + 4:].lstrip("\n")
+
     fm = {}
-    for line in text[3:end].splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or ":" not in line:
+    first_seen: dict[str, int] = {}
+    for index in range(1, end):
+        raw = _clean_line(lines[index])
+        line = raw.strip()
+        if not line or line.startswith("#"):
             continue
+        if ":" not in line:
+            raise ctx.TaskDataError(
+                f"{source}:{index + 1}: 无法解析 front matter 行（缺冒号）：{line!r}"
+            )
         key, _, val = line.partition(":")
+        key = key.strip()
+        if not key:
+            raise ctx.TaskDataError(f"{source}:{index + 1}: front matter 键为空")
+        if key in fm:
+            raise ctx.TaskDataError(
+                f"{source}:{index + 1}: front matter 重复键 {key!r}"
+                f"（首次见第 {first_seen[key]} 行）"
+            )
         val = val.strip()
         # 未加引号的值剥掉行内注释（# 前须有空格），防照搬文档示例后值被污染
         if val and val[0] not in ("\"", "'"):
             val = val.split(" #", 1)[0].rstrip()
-        fm[key.strip()] = _unquote(val)
+        fm[key] = _unquote(val)
+        first_seen[key] = index + 1
+    body = "\n".join(lines[end + 1:]).lstrip("\n")
     return fm, body
 
 def parse_front_matter(path: Path) -> tuple[dict, str]:
@@ -107,14 +148,18 @@ def _create_temporary_file(path: Path, *, encoding: str = "utf-8"):
 
 
 def atomic_write_text(path: Path | str, content: str, *, encoding: str = "utf-8") -> None:
-    """tmp 文件 + fsync + os.replace 原子写，防掉电/中断产生半写状态。
+    """tmp 文件 + fsync + os.replace 原子写，保证两级语义。
+
+    - 防半写：进程中断、并发写、读者不会看到截断或混合内容。
+    - 不保证掉电后 rename 已持久：未 fsync 父目录，ext4 等文件系统在掉电后
+      可能回退为旧版本或丢失新建文件。需要该保证时由调用方另行处理。
 
     使用同目录唯一临时文件，防止并发写入相互覆盖；保留已有目标权限或应用系统 umask，
     写完后 os.replace 原子替换。不支持向软链路径写入。
     """
     path = Path(path)
     if path.is_symlink():
-        raise ValueError(f"atomic_write_text does not support writing to symlink: {path}")
+        raise DocumentWriteError(f"atomic_write_text does not support writing to symlink: {path}")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     existing_mode = (path.stat().st_mode & 0o7777) if path.exists() else None
@@ -153,7 +198,7 @@ def write_front_matter_many(files: list[tuple[Path, dict, str]]) -> None:
 
     for path, _fm, _body in files:
         if Path(path).is_symlink():
-            raise ValueError(f"write_front_matter_many does not support writing to symlink: {path}")
+            raise DocumentWriteError(f"write_front_matter_many does not support writing to symlink: {path}")
 
     try:
         for path, fm, body in files:
@@ -527,10 +572,10 @@ def validate_task_documents(
                 problems.append(f"task.md AC 编号重复：{ac_id}")
             ac_ids.append(ac_id)
 
-    missing_task_headings = _missing_heading_sequence(task_body, ctx.TASK_REQUIRED_HEADINGS)
+    missing_task_headings = _missing_heading_sequence(task_body, ctx.PROGRESS_REQUIRED_HEADINGS)
     if missing_task_headings:
         problems.append(
-            "note.md 缺必需标题、标题层级错误或顺序错误："
+            f"{ctx.PROGRESS_FILE} 缺必需标题、标题层级错误或顺序错误："
             + "、".join(missing_task_headings)
         )
 
@@ -540,7 +585,7 @@ def validate_task_documents(
         line for line in ctx.IMPLEMENTATION_NOTE_GUIDANCE if line not in visible_task_lines
     ]
     if missing_guidance:
-        problems.append("note.md 实施笔记缺当前模板固定说明；先运行 repo-template-sync 强制迁移")
+        problems.append(f"{ctx.PROGRESS_FILE} 实施笔记缺当前模板固定说明；先运行 repo-template-sync 强制迁移")
 
     notes = _extract_markdown_section(task_body, 2, "实施笔记")
     if notes is not None:
@@ -550,14 +595,14 @@ def validate_task_documents(
             if line.strip() and line.strip() not in ctx.IMPLEMENTATION_NOTE_GUIDANCE
         ]
         if not payload_lines:
-            problems.append("note.md 实施笔记为空；无事项时写「无」")
+            problems.append(f"{ctx.PROGRESS_FILE} 实施笔记为空；无事项时写「无」")
 
     if not allow_template_placeholders:
         visible_text = "\n".join(_visible_markdown_lines(spec_text + "\n" + task_body))
         placeholders = ctx.TEMPLATE_PLACEHOLDER_RE.findall(_strip_inline_code(visible_text))
         if placeholders:
             problems.append(
-                f"task.md / note.md 残留 {len(placeholders)} 个模板占位符："
+                f"task.md / {ctx.PROGRESS_FILE} 残留 {len(placeholders)} 个模板占位符："
                 + "、".join(sorted(set(placeholders))[:3])
             )
 

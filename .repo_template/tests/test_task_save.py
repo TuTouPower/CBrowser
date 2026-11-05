@@ -1,6 +1,7 @@
 """task.py front matter 读写与转义。"""
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
@@ -103,6 +104,28 @@ def test_parse_raises_when_unclosed(tmp_path):
         parse_front_matter(p)
 
 
+def test_parse_rejects_nonstandard_closing_fence_with_line(tmp_path):
+    for fence in ("--- ", "----"):
+        p = tmp_path / "task.md"
+        p.write_text(f"---\ntid: t001\n{fence}\nbody\n", encoding="utf-8")
+        with pytest.raises(TaskDataError, match=r"task\.md:3"):
+            parse_front_matter(p)
+
+
+def test_parse_rejects_key_without_colon(tmp_path):
+    p = tmp_path / "task.md"
+    p.write_text('---\ntid: t001\ndepends_on "t002"\n---\nbody\n', encoding="utf-8")
+    with pytest.raises(TaskDataError, match=r"task\.md:3.*缺冒号"):
+        parse_front_matter(p)
+
+
+def test_parse_rejects_duplicate_key(tmp_path):
+    p = tmp_path / "task.md"
+    p.write_text("---\ntid: t001\ntid: t002\n---\nbody\n", encoding="utf-8")
+    with pytest.raises(TaskDataError, match=r"task\.md:3.*重复键 'tid'.*第 2 行"):
+        parse_front_matter(p)
+
+
 def test_write_uses_lf_newlines(tmp_path):
     p = tmp_path / "task.md"
     write_front_matter(p, {"tid": "t001"}, "body\n")
@@ -158,7 +181,7 @@ def test_atomic_write_replace_failure_preserves_target_and_cleans_tmp(tmp_path, 
     def _failing_replace(src, dst):
         raise OSError("injected replace failure")
 
-    monkeypatch.setattr(os, "replace", _failing_replace)
+    monkeypatch.setattr("repo_task.documents.os", SimpleNamespace(**{**vars(os), "replace": _failing_replace}))
     with pytest.raises(OSError, match="injected replace failure"):
         atomic_write_text(target, "half baked state\n")
 
@@ -175,7 +198,7 @@ def test_atomic_write_fsync_failure_cleans_tmp(tmp_path, monkeypatch):
     def _failing_fsync(fd):
         raise OSError("injected fsync failure")
 
-    monkeypatch.setattr(os, "fsync", _failing_fsync)
+    monkeypatch.setattr("repo_task.documents.os", SimpleNamespace(**{**vars(os), "fsync": _failing_fsync}))
     with pytest.raises(OSError, match="injected fsync failure"):
         atomic_write_text(target, "never written\n")
 
@@ -221,7 +244,7 @@ def test_write_front_matter_many_fsync_failure_cleans_all_tmp(tmp_path, monkeypa
         if call_count >= 2:
             raise OSError("injected fsync failure on second file")
 
-    monkeypatch.setattr(os, "fsync", _fsync_fail_on_second)
+    monkeypatch.setattr("repo_task.documents.os", SimpleNamespace(**{**vars(os), "fsync": _fsync_fail_on_second}))
     with pytest.raises(OSError, match="injected fsync failure on second file"):
         write_front_matter_many(files)
 
@@ -307,7 +330,7 @@ def test_atomic_write_does_not_mutate_or_query_umask(tmp_path, monkeypatch):
         umask_called.append(mask)
         return 0o022
 
-    monkeypatch.setattr(os, "umask", mock_umask)
+    monkeypatch.setattr("repo_task.documents.os", SimpleNamespace(**{**vars(os), "umask": mock_umask}))
 
     # 1. atomic_write_text 写新文件
     f1 = tmp_path / "f1.txt"

@@ -70,7 +70,7 @@ def repo_layout(tmp_path, monkeypatch):
     archive_dir.mkdir(parents=True)
     (tasks_dir / "t001_spec_doc").mkdir()
     (tasks_dir / "t001_spec_doc" / "task.md").write_text("# task 正文\n", encoding="utf-8")
-    (tasks_dir / "t001_spec_doc" / "note.md").write_text("# note 正文\n", encoding="utf-8")
+    (tasks_dir / "t001_spec_doc" / "progress.md").write_text("# note 正文\n", encoding="utf-8")
     (archive_dir / "t002_archived").mkdir()
     (archive_dir / "t002_archived" / "task.md").write_text("# 归档 task\n", encoding="utf-8")
     monkeypatch.setattr(ctx, "REPO_ROOT", tmp_path)
@@ -83,7 +83,7 @@ def test_resolve_task_doc_ok(repo_layout):
     tasks = {"t001": {"dir": "docs/tasks/t001_spec_doc"}}
     path = view_server._resolve_task_doc(tasks, "t001", "task")
     assert path.read_text(encoding="utf-8") == "# task 正文\n"
-    assert view_server._resolve_task_doc(tasks, "t001", "note").name == "note.md"
+    assert view_server._resolve_task_doc(tasks, "t001", "progress").name == "progress.md"
 
 
 def test_resolve_task_doc_archived_ok(repo_layout):
@@ -152,7 +152,7 @@ def test_read_task_doc_from_branch_source(tmp_path, monkeypatch):
     _git(repo, "commit", "-m", "init")
     _git(repo, "checkout", "-b", "t001_x")
     (repo / "docs/archive/tasks/t001_x").mkdir(parents=True)
-    (repo / "docs/archive/tasks/t001_x/note.md").write_text("# 分支归档 note\n", encoding="utf-8")
+    (repo / "docs/archive/tasks/t001_x/progress.md").write_text("# 分支归档 note\n", encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-m", "task")
     _git(repo, "checkout", "main")
@@ -160,7 +160,7 @@ def test_read_task_doc_from_branch_source(tmp_path, monkeypatch):
     monkeypatch.setattr(ctx, "REPO_ROOT", repo)
     schedule = {"tasks": {"t001": {"dir": "docs/archive/tasks/t001_x"}}}
     sources = {"t001": {"source": "branch", "read_at": "t001_x"}}
-    body = view_server._read_task_doc(schedule, sources, "t001", "note")
+    body = view_server._read_task_doc(schedule, sources, "t001", "progress")
     assert body.decode("utf-8") == "# 分支归档 note\n"
     with pytest.raises(ctx.TaskDataError):
         view_server._read_task_doc(schedule, sources, "t001", "task")
@@ -383,9 +383,8 @@ def test_rendered_html_cache_debounce(monkeypatch):
         return {"project": "demo", "nodes": [], "edges": [], "summary": {}}
 
     monkeypatch.setattr(view_server, "_build_model", fake_build)
-    # 重置缓存时间
-    view_server._CACHED_HTML = ""
-    view_server._LAST_RENDER_TIME = 0.0
+    monkeypatch.setattr(view_server, "_CACHED_HTML", "")
+    monkeypatch.setattr(view_server, "_LAST_RENDER_TIME", 0.0)
 
     # 1. 连续 5 次快速请求
     for _ in range(5):
@@ -399,11 +398,13 @@ def test_rendered_html_cache_debounce(monkeypatch):
 def test_task_doc_endpoint_requires_valid_session_token(repo_layout, monkeypatch):
     """验证 /task-doc 接口校验 session token，未授权请求返回 403（Issue #44）。"""
     tasks_dir, _ = repo_layout
-    monkeypatch.setattr(view_server, "compute_schedule", lambda: {
-        "tasks": {"t001": {"tid": "t001", "dir": "docs/tasks/t001_spec_doc"}},
+    monkeypatch.setattr(view_server, "_SESSION_TOKEN", "test-session-token")
+    tasks = {"t001": {"tid": "t001", "dir": "docs/tasks/t001_spec_doc"}}
+    monkeypatch.setattr(view_server, "compute_schedule", lambda tasks=None: {
+        "tasks": tasks,
         "selected": ["t001"],
     })
-    monkeypatch.setattr(view_server, "discover_effective_sources", lambda: {})
+    monkeypatch.setattr(view_server, "discover_effective_bundle", lambda: (tasks, {}))
 
     responses = []
 
@@ -427,10 +428,38 @@ def test_task_doc_endpoint_requires_valid_session_token(repo_layout, monkeypatch
     assert responses[-1][0] == 403
 
     # 3. 正确 token 返回 200
-    h3 = MockHandler(f"/task-doc?tid=t001&doc=task&token={view_server._SESSION_TOKEN}")
+    h3 = MockHandler("/task-doc?tid=t001&doc=task&token=test-session-token")
     view_server._Handler._route_get(h3)
     assert responses[-1][0] == 200
     assert b"# task \xe6\xad\xa3\xe6\x96\x87" in responses[-1][1]
+
+
+def test_root_requires_session_token_and_does_not_leak_it(repo_layout, monkeypatch):
+    """首页也必须校验 token，未持有者无法从 403 响应取得 token（Issue #73）。"""
+    monkeypatch.setattr(view_server, "_get_rendered_html", lambda: "<html>board</html>")
+    monkeypatch.setattr(view_server, "_SESSION_TOKEN", "test-session-token")
+    responses = []
+
+    class MockHandler:
+        def __init__(self, path):
+            self.path = path
+        def _send_error_text(self, status, message):
+            responses.append((status, message))
+        def _send_bytes(self, status, body, ct):
+            responses.append((status, body))
+
+    view_server._Handler._route_get(MockHandler("/"))
+    assert responses[-1][0] == 403
+    assert "test-session-token" not in responses[-1][1]
+
+    view_server._Handler._route_get(MockHandler("/index.html?token=wrong"))
+    assert responses[-1][0] == 403
+
+    view_server._Handler._route_get(
+        MockHandler("/?token=test-session-token")
+    )
+    assert responses[-1][0] == 200
+    assert responses[-1][1] == b"<html>board</html>"
 
 
 def test_find_free_port_and_serve_ipv6_loopback(monkeypatch):

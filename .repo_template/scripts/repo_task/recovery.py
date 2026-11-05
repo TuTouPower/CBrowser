@@ -7,7 +7,7 @@ from .documents import parse_front_matter
 from .git_ops import _git, require_primary_worktree, worktree_paths
 from .ledger import ledger_read
 from .locks import control_locked
-from .monitoring import verify_integrate_ready
+from .monitoring import implementation_commit, verify_integrate_ready
 from .store import discover_effective_tasks, git_text_at_ref, load_task_at_ref
 
 
@@ -38,21 +38,21 @@ def recovery_state(tid: str) -> dict:
         if task["status"] in ctx.ARCHIVED_STATUSES and (not record or record["state"] == "integrated"):
             return phase("integrated_or_archived", "检查 Git merge 状态和 integrated 记录；不重复执行")
         if record:
-            verdict, detail = verify_integrate_ready(tid, record["attempt"], record["execution_id"])
+            verdict, _kind, detail = verify_integrate_ready(tid, record["attempt"], record["execution_id"])
             report = record.get("report") or {}
             if verdict == "ready" and record.get("terminal_status") == "completed" and report.get("status") == "done":
                 return phase("closed", "保留分支作下一 --base；整链完成后询问合并授权")
             state["action"] = f"停止：无登记 worktree，{detail}"
             return state
         if task["status"] == "backlog":
-            return phase("pending", "start → reserve；若同名分支残留则先处理所有权")
+            return phase("pending", "run-begin（start → reserve → claim）；若同名分支残留则先处理所有权")
         return state
     if registered_branch != branch:
         state["action"] = "停止：登记 worktree 分支与 task ownership 不符"
         return state
     task_dir = worktree / task["dir"]
     state["task_dir"] = str(task_dir)
-    fm, _ = parse_front_matter(task_dir / "note.md")
+    fm, _ = parse_front_matter(task_dir / ctx.PROGRESS_FILE)
     if fm.get("branch") != branch or fm.get("tid") != tid:
         return state
     if fm["status"] == "active":
@@ -65,12 +65,22 @@ def recovery_state(tid: str) -> dict:
         except ctx.TaskDataError as error:
             return phase("runtime_mismatch", str(error))
         if record["state"] == "running":
-            return phase("executing", "核对 owner_id；先原子 claim。跨会话接管必须确认原会话已停止，不得直接复用 identity 并行实施")
+            if not record.get("owner_id"):
+                return phase("executing", "尚未 claim：按原 identity 用 attempt claim 领取执行权（run-begin 中途失败时的现场），不重复 start/reserve")
+            return phase("executing", "核对 owner_id；同一 owner 直接续行。跨会话接管必须确认原会话已停止并 attempt claim --replace-owner ... --confirm-stopped，不得直接复用 identity 并行实施")
         if (record.get("report") or {}).get("status") in {"blocked", "failed"}:
             return phase("retry_ready", "task 保持 active；直接 reserve 新 identity 后继续")
         return state
     if fm["status"] != "done" or record is None:
         return state
+    if not (task_dir / "handoff.json").exists():
+        head = _git(["rev-parse", "HEAD"], root=worktree)
+        if head.returncode == 0 and head.stdout.strip() == fm.get("diff_anchor") and record["state"] == "running":
+            return phase(
+                "finish_interrupted",
+                "finish 在生成 handoff.json 前被中断（已 done、无 handoff、无实现 commit）：停止并报告用户；"
+                f"不重复 finish、不 reserve。核对 {ctx.PROGRESS_FILE} 验证摘要后，由用户决定补写 handoff.json 并提交，或把 {ctx.PROGRESS_FILE} 还原为 active",
+            )
     try:
         handoff = json.loads((task_dir / "handoff.json").read_text(encoding="utf-8"))
         expected = {"tid": tid, "branch": branch, "status": "done",
@@ -83,31 +93,70 @@ def recovery_state(tid: str) -> dict:
             raise ValueError(head.stderr)
         if head.stdout.strip() == fm["diff_anchor"]:
             if record["state"] == "running":
-                return phase("finished_uncommitted", "核验归档 handoff、review 和全部 diff 后完成“收尾与执行 commit”；不 finish、不 reserve")
-            raise ValueError("未提交执行 commit 却已关闭 attempt")
-        parent = _git(["rev-parse", "HEAD^1"], root=worktree)
-        if parent.returncode != 0 or parent.stdout.strip() != fm["diff_anchor"]:
-            raise ValueError("HEAD 不是以 diff_anchor 为 first parent 的一个执行 commit")
+                return phase("finished_uncommitted", "finish 在提交前被中断：核验 handoff、review 和全部 diff 后暂存并提交实现 commit（沿用原 message）；不重复 finish、不 reserve")
+            raise ValueError("未提交实现 commit 却已关闭 attempt")
+        implementation_commit(head.stdout.strip(), fm["diff_anchor"])
         _, committed_fm, _ = load_task_at_ref(tid, head.stdout.strip())
         committed = json.loads(git_text_at_ref(head.stdout.strip(), f"{task['dir']}/handoff.json"))
         if committed_fm.get("status") != "done" or committed != handoff:
-            raise ValueError("分支 tip 未包含当前归档 handoff")
+            raise ValueError("分支 tip 未包含当前 handoff")
     except (OSError, ValueError, KeyError, TypeError, AttributeError, ctx.TaskDataError) as error:
         state["action"] = f"停止：{error}"
         return state
     tip_sha = head.stdout.strip()
     diff_anchor = fm.get("diff_anchor", "")
-    if record.get("state") == "terminal" and record.get("terminal_status") == "completed":
-        verdict, gate_detail = verify_integrate_ready(tid, record["attempt"], record["execution_id"])
-        if verdict != "ready" and "review gate" in gate_detail:
-            action = _evidence_repair_action(
+    report = record.get("report") or {}
+    report_done = report.get("status") == "done"
+    gate_check = record["state"] == "running" or (
+        record["state"] == "terminal" and record.get("terminal_status") == "completed"
+    )
+    if gate_check or report_done:
+        verdict, kind, gate_detail = verify_integrate_ready(tid, record["attempt"], record["execution_id"])
+        if verdict != "ready" and kind == "review_scope_mismatch":
+            if report_done:
+                state["action"] = (
+                    f"停止：report 已写入 done，但实现 commit 内容偏离 review 内容（{gate_detail}）；"
+                    "不可撤销、不可 amend，人工核查"
+                )
+                return state
+            if record["state"] != "running":
+                # 正常主路径下 run-close 门禁失败不写 terminal；terminal 已关闭又无 report
+                # 只会来自手工 attempt terminal，finish-unwind 不处理，直接停止。
+                state["action"] = (
+                    f"停止：实现 commit 内容偏离 review 内容（{gate_detail}）；"
+                    f"attempt 已是 {record['state']}:{record.get('terminal_status')} 且无 report，"
+                    "finish-unwind 只处理 running 现场，人工核查"
+                )
+                return state
+            if _tip_has_successor(tip_sha, branch):
+                state["action"] = (
+                    f"停止：实现 commit 内容偏离 review 内容（{gate_detail}）；"
+                    f"已有后继分支包含当前 tip {tip_sha[:12]}，撤销会使其悬空，人工核查"
+                )
+                return state
+            return phase(
+                "review_mismatch",
+                f"实现 commit 内容偏离 review 内容（{gate_detail}）。"
+                f"无后继分支、report 未写入 done，可执行撤销：运行 "
+                f"`task.py finish-unwind {tid} --reason <原因>` 把分支退回 diff_anchor、"
+                "把 progress 还原为 active，然后重新 review 再 finish；"
+                "禁止 rewind、reserve、amend 修复。",
+            )
+        if verdict != "ready" and kind == "review_gate":
+            if report_done:
+                state["action"] = (
+                    f"停止：report 已写入 done，但 review 门禁失败（{gate_detail}）；"
+                    "不改写实现 commit、不 amend，请人工核查"
+                )
+                return state
+            action = _review_repair_action(
                 tid, record["attempt"], record["execution_id"],
                 tip_sha, diff_anchor, gate_detail, branch,
             )
-            return phase("evidence_repair", action)
+            return phase("review_repair", action)
     if not record.get("report"):
         return phase("committed_unreported", "验证最终提交和 review gate；按原 identity 补缺失的 terminal/report，不重复写已有事件")
-    if record.get("terminal_status") == "completed" and record["report"].get("status") == "done":
+    if record.get("terminal_status") == "completed" and report_done:
         return phase("reported_uncleaned", "按原 identity exact cleanup；脏改动或门禁失败时保留现场")
     return state
 
@@ -125,19 +174,20 @@ def _tip_has_successor(tip_sha: str, current_branch: str) -> bool:
     return False
 
 
-def _evidence_repair_action(tid: str, attempt: int, execution_id: str, tip_sha: str, diff_anchor: str, detail: str, branch: str) -> str:
+def _review_repair_action(tid: str, attempt: int, execution_id: str, tip_sha: str, diff_anchor: str, detail: str, branch: str) -> str:
     if _tip_has_successor(tip_sha, branch):
         return (
-            f"证据修复：review 门禁失败（{detail}）。"
+            f"review 修复：review 门禁失败（{detail}）。"
             f"已有后继分支以 tip {tip_sha[:12]} 为 ancestor；停止并报告，不 amend。"
         )
     return (
-        f"证据修复：review 门禁失败（{detail}）。"
-        f"在原 worktree 对当前 tip {tip_sha[:12]} 的交付内容重审；"
-        "只改 review 过程文件；"
-        f"git commit --amend 进同一个执行 commit，first parent 必须仍是 diff_anchor {diff_anchor[:12]}；"
-        "禁止第二个 commit、rewind、reserve；"
-        f"amend 后 worktree 必须干净，再按原 identity attempt={attempt} execution_id={execution_id} exact cleanup。"
+        f"review 修复：review 门禁失败（{detail}）。"
+        f"在原 worktree 对当前 tip {tip_sha[:12]} 的交付内容重新 review；"
+        "只改 review 过程文件"
+        f"（{ctx.PROGRESS_FILE} 正文、review_*.md、渲染的 review prompt），不得改 handoff.json、交付文件或其它路径；"
+        "用 `git commit --amend --no-edit` 把改动并入同一实现 commit；"
+        f"worktree 干净后在主仓运行 `run-close {tid} --owner-id ... --result done`；"
+        "禁止 rewind、reserve。"
     )
 
 
@@ -162,7 +212,7 @@ def cmd_ledger_import(args):
     if not isinstance(handoff, dict):
         raise ctx.TaskDataError("拒绝导入：handoff 非 JSON 对象")
     attempt, execution_id = handoff.get("attempt"), handoff.get("execution_id")
-    verdict, detail = verify_integrate_ready(args.tid, attempt, execution_id)
+    verdict, _kind, detail = verify_integrate_ready(args.tid, attempt, execution_id)
     if verdict != "ready":
         raise ctx.TaskDataError(f"拒绝导入：{detail}")
     worktree = (ctx.REPO_ROOT / ctx.worktree_rel_path(args.tid)).resolve()
