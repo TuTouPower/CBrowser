@@ -1,7 +1,7 @@
 ---
 tid: "t041"
 slug: "fingerprint_platform_fonts"
-title: "指纹平台与平台字体"
+title: "指纹平台与平台字体运行时"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,9 +9,9 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t039"
-conflicts_with: "t038,t040"
-note: "来源 plan_20261105_ui_redesign WP14+WP15"
+depends_on: "t035"
+conflicts_with: ""
+note: "来源 plan_20261105_ui_redesign WP14+WP15；2026-11-05 按审阅前移到 UI task 之前，界面拆入 t036/t037/t039"
 ---
 
 # Task 进展

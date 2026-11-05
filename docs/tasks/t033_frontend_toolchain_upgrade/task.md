@@ -10,7 +10,7 @@
 
 - 把 Vite、@vitejs/plugin-react、Vitest、TypeScript、React/ReactDOM、路由库、lucide-react、jsdom、@testing-library/\*、@types/node、@tanstack/react-query、openapi-typescript 升到当前最新稳定版本；路由库由 `react-router-dom` 换为 `react-router` 单包。
 - 适配全部破坏性变更：路由 API、图标改名、Vitest 与 Vite 配置、TypeScript 新版类型检查。
-- 宿主构建 Node 升到当前最新 LTS；`package.json` 声明 `engines`，前端门禁校验 Node 版本。
+- 宿主构建 Node 升到当前最新 LTS；仓库固定本地 Node 版本，`package.json` 声明 `engines`，前端门禁校验 Node 版本。
 - 清理因升级而不再需要的变通配置（例如 `NODE_OPTIONS=--no-experimental-webstorage`，以实测为准）。
 - 目标版本与例外原因写入 `docs/blueprint/decisions.md`。
 
@@ -78,6 +78,7 @@
 ### 依赖与约束
 
 - 无前置依赖。t036 依赖本 task。
+- 用户已授权执行时用 mise 写 `~/.local/share/mise` 安装 Node（2026-11-05）。
 - 所有浏览器测试无头运行。
 
 ### Finalization 时更新的 blueprint

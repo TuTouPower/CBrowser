@@ -1,6 +1,6 @@
 # CBrowser UI 重设计与配套升级方案
 
-- 文档状态：未来状态方案。决策状态 Accepted（用户 2026-11-05 逐项确认，同日修订 D9 并新增 D13、D14）；实现状态 Not started，task 已创建（t033–t042，见第 8.1 节）。
+- 文档状态：未来状态方案。决策状态 Accepted（用户 2026-11-05 逐项确认，同日修订 D9、D14 并新增 D13、D15，按三份外部审阅修订第 6、8、9 节）；实现状态 Not started，task 已创建（t033–t043，见第 8.1 节）。
 - 基线：main@3f15666（2026-11-05T02:27:06+08:00）。
 - 读者：实施各工作包的 agent 与用户。前置知识：`docs/blueprint/architecture.md`、`docs/blueprint/frontend.md`、`docs/blueprint/domain.md`。
 - 权威关系：本文只定义目标与拆分。各工作包落地后，当前行为以 `docs/specs/`、`docs/blueprint/` 为准；本文同步修订受影响章节，全部工作包完成后迁入 `docs/archive/`。
@@ -47,7 +47,8 @@
 |D11|命令面板、容量实测|不做|
 |D12|部署形态|当前只做 Docker 版；将来独立桌面应用与 Docker 版并存（`docs/pending/parked/p041_standalone_desktop_app.md`）。本方案的新增功能在两种形态下实现成本相当时，选择不依赖 Docker 或 Linux 的做法|
 |D13|删除运行中 Profile|非 stopped 状态删除返回 409 `profile_running`；界面对运行中禁用删除，批量删除中的运行项计入失败（用户 2026-11-05）|
-|D14|局域网 HTTP 下的会话页|会话适配层依赖只在安全上下文可用的 Web Locks；非安全上下文下会话页显式降级为「需 HTTPS」，设置页告警并提供 Caddy 本地根证书下载（用户 2026-11-05，随 p037 由 t042 实现）|
+|D14|局域网访问协议|只提供 HTTPS；局域网设备安装 Caddy 本地根证书，会话页始终处于安全上下文，复制标签页的 Web Locks 机制不变（用户 2026-11-05，取代先前的「局域网 HTTP 会话降级」；随 p037 由 t042 实现）|
+|D15|字体集绑定|字体导入为不可变、按内容寻址的字体集（manifest 含来源、系统版本、文件哈希）；Profile 运行配置绑定字体集，新字体集只用于新建或显式切换，指纹跨时间稳定（用户 2026-11-05）|
 
 ## 3. 与现状差异总览
 
@@ -273,7 +274,6 @@
     - 每个值可复制。
 - 专注模式：隐藏侧栏与页头；顶部边缘悬停显示悬浮工具条，提供退出按钮。不使用 Esc 退出。
 - 剪贴板权限提示、音频状态、诊断浮层沿用现有实现并换皮。
-- 非安全上下文（局域网 HTTP）下显示「需 HTTPS」状态与 HTTPS 链接，不建立信令（D14，t042）。
 - 保留现有 `data-testid`：`browser-session-iframe`、`session-*` 系列。
 
 ### 5.7 代理库（`/proxies`）
@@ -297,8 +297,8 @@
 - 外观：主题（跟随系统、亮色、暗色）。
 - 语言：en / zh。
 - 系统信息：应用版本、浏览器内核版本、Selkies 版本、Control API 健康状态（只呈现真实探测对象，沿用现有规则）。
-- 平台字体：Windows、macOS 字体集的检测结果（WP15）。
-- 网络访问：局域网访问、HTTP、HTTPS 开关与局域网通告 IP，「重启软件」，Caddy 本地根证书下载（t042，来源 p037）。
+- 平台字体：按平台列出字体集、来源版本、完整性与使用环境数（数据来自 t041 字体集目录接口，界面由 t036 交付）。
+- 网络访问：局域网开关与通告 IP、待应用与已应用状态、「应用」及操作阶段、Caddy 本地根证书下载（t042，来源 p037，仅 HTTPS）。
 
 ### 5.10 登录页
 
@@ -313,8 +313,9 @@
 
 ### 6.1 Schema baseline 重写
 
-- 依据 D9：直接改写 `src/backend/migrations/versions/0001_initial_schema.py` 为目标 schema，不新增增量迁移。6.2–6.5 由 t035 一次写入 baseline，6.8 的字段由 t041 写入。
-- 不迁移用户测试数据；本地旧库文件改名保留后重建。
+- 依据 D9：t035 把现有 0001–0009 合并为一个使用新 revision 身份的 baseline，删除旧迁移文件，不写数据迁移，不迁移用户测试数据。
+- 旧 schema 代的数据库与 release 失败封闭：不可升级，也不可作为回退目标；release controller 的回退下限改为按修订链判定，不再用字符串比较。
+- 此后已部署过的修订不再原地改写，schema 变更用增量迁移（例如 t041 的指纹平台与字体集字段）。同一 revision 永远只代表一种结构（2026-11-05 按外部审阅修订）。
 - 只处理用户本人实例；其他会话或 task 创建的部署实例（例如 `cbrowser-t032*`）不碰。
 - 在 `decisions.md` 记录该策略及其失效条件：出现真实用户后，迁移恢复为只追加。
 
@@ -324,8 +325,8 @@
 - `profiles.group_id`：可空，外键 `ON DELETE SET NULL`。
 - API：`GET/POST /api/v1/groups`、`PATCH/DELETE /api/v1/groups/{group_id}`；Profile 创建与 PATCH 接受 `group_id`；`ProfileResponse` 返回 `group_id`。
 - 分组属于元数据（6.4），变更不生成配置版本。
-- 删除全部 Tag 相关实现：`Tag` 模型、`profile_tags` 表、请求与响应中的 `tags` 字段、快照中的 tags、前端逗号分隔输入、`tagsCommaSeparated` 等文案键，以及全部 FastAPI `APIRouter(tags=...)` 参数（现有 auth、artifacts、control、automation、internal-\* 等分组；生成的 OpenAPI 不再含 tags）。
-- 仍会出现 tag 字样的范围仅限：`docs/archive/**` 与 `docs/reviews/**` 的历史记录；含义不同的用法（Docker 镜像 tag、git tag、HTML 元素与 `tagName`）；`.repo_template/` 工具链。
+- 删除全部 Tag 相关实现：`Tag` 模型、`profile_tags` 表、请求与响应中的 `tags` 字段、快照中的 tags、前端逗号分隔输入、`tagsCommaSeparated` 等文案键。OpenAPI 分组（`APIRouter(tags=...)`）是接口文档元数据，与业务 Tag 无关，保留；无意义的 `tags=["v1"]` 改为按资源分组（2026-11-05 按外部审阅修订）。
+- 仍会出现 tag 字样的范围仅限：`docs/archive/**` 与 `docs/reviews/**` 的历史记录；含义不同的用法（OpenAPI 分组、Docker 镜像 tag、git tag、HTML 元素与 `tagName`）；`.repo_template/` 工具链。
 
 ### 6.3 Proxy
 
@@ -334,16 +335,17 @@
 - API：`GET/POST /api/v1/proxies`、`GET/PATCH/DELETE /api/v1/proxies/{proxy_id}`。
     - 响应不含 `password`，改为 `has_password`；另返回 `used_by_count`。
     - PATCH `password`：缺失表示不变；`null` 表示清除；字符串表示设置。
-    - 删除被引用的代理返回 409，错误码 `proxy_in_use`，附引用数量。
-- 配置版本快照保存 `proxy_id` 与解析后的完整代理参数（运行时以快照为准，保持「快照即运行内容」语义）。
-- 编辑代理的运行相关字段（scheme、host、port、username、password）时，为每个引用它的 Profile 生成新配置版本；运行中的 Profile 显示待应用。名称、地区、备注等元数据不触发。
+    - 删除被任一 Profile 的当前配置或 runtime 绑定版本引用的代理返回 409，错误码 `proxy_in_use`，附引用数量。
+- 代理凭据只存一份（`proxies` 表，含 `credential_revision`）。配置版本快照保存 `proxy_id`、非密连接参数与 `credential_revision`，不含密码；启动时按 `proxy_id` 读取凭据，revision 与绑定快照不一致时失败封闭（`proxy_credentials_changed`）。
+- 编辑代理的运行相关字段（scheme、host、port、username、password）时，在同一写事务内为每个引用它的 Profile 生成新配置版本（改密码同时递增 `credential_revision`），提交后广播 SSE；运行中的 Profile 显示待应用。名称、地区、备注等元数据不触发。
 - `GET /profiles/{id}/versions` 与 `/versions/{version}` 的响应对代理密码脱敏。
 - 凭据存储级别与现状一致（SQLite 明文，现状为 URL 内嵌账密）；不得进入日志、错误信息与 SSE 事件。
 
 ### 6.4 元数据与运行配置拆分
 
 - 元数据：`name`、`notes`、`sort_order`、`group_id`。直接写 `profiles` 表，不生成配置版本。
-- 运行配置：其余影响浏览器运行的字段（含 `proxy_id` 解析结果与 `fingerprint_platform`）。只有值实际变化时才生成新版本；提交相同值不生成新版本。
+- 即时策略：`capture_preview`，不生成配置版本，可即时生效与撤销（6.7）。
+- 运行配置：其余影响浏览器运行的字段（含 `proxy_id` 解析结果、`fingerprint_platform` 与 `font_set_id`）。只有值实际变化时才生成新版本；提交相同值不生成新版本。
 - 待应用提示仅由运行配置版本差异驱动。
 - 修复的缺陷：现状下任何 PATCH 都无条件生成新版本（`adapters/database/repository.py` 的 update 路径），导致运行中的环境仅改名也提示重启。
 
@@ -361,21 +363,26 @@
 ### 6.7 缩略图
 
 - 采集：Runtime Agent 在 running 且 `capture_preview=true` 时，每 15 秒经已有的 CDP 连接对当前活动标签页调用 `Page.captureScreenshot`（JPEG，质量 70，缩放到宽 480px）。只截网页区域，不含浏览器标签栏与地址栏。选择 CDP 而不是 X11 截图，是因为 CDP 在 Docker 与将来的独立桌面应用（p041）中都可用。截图对页面行为的影响（例如后台标签页、焦点）待 WP13 验证。
-- 存储：原子写入 Profile 专属目录下的 `preview/latest.jpg` 与元数据（`captured_at`、`runtime_instance_id`），权限 0600；停止后保留最后一帧。
-- 传给 API：沿用 Artifact 的 Agent → Supervisor → API 转发模式；具体通道在 WP13 读 `supervisor/artifact_forwarder.py` 与 `api/internal_artifacts.py` 后确定。
+- 授权：`capture_preview` 是即时策略，API 持久化策略与递增代次，经 Supervisor 即时下发；采集、落盘、通知、读取都校验策略代次与 runtime 实例，不一致即丢弃并删除残留，覆盖撤销时截图进行中、旧通知迟到、重置后旧实例回传。
+- 存储：Agent 原子写入 `profiles/{id}/preview/latest.jpg` 与 `meta.json`（`captured_at`、`runtime_instance_id`、策略代次），权限 0600；该目录单独挂载进 Browser 容器，不在浏览器 user data 目录内；停止后保留最后一帧。
+- 通知：Agent 健康状态携带最新 `captured_at`，Supervisor 观测到变化时通知 API。不复用 Artifact 的事件文件与游标模式，它面向持久下载，不适合高频覆盖写。
 - API：`GET /api/v1/profiles/{profile_id}/preview` 返回 `image/jpeg`，`Cache-Control: no-store`，ETag 取 `captured_at`；无预览返回 404。
-- SSE 新增 `profile_preview` 事件（`profile_id`、`captured_at`）；前端以 `captured_at` 作为图片 URL 版本参数刷新。
+- SSE 新增 `profile_preview` 事件（`profile_id`、`captured_at`），只实时扇出，不进入 runtime 事件重放环；`ProfileRuntimeResponse` 含 `preview_captured_at` 供首屏判断；前端 SSE 按事件类型分发，以 `captured_at` 作为图片 URL 版本参数刷新。
 - 隐私：截图视同 Cookie 级私密数据，不进日志；重置或删除 Profile 时清除；`capture_preview` 改为 false 时停止采集并删除已有预览。
 
 ### 6.8 指纹平台与平台字体
 
-- 字段：`fingerprint_platform`，取值 `windows` / `macos`，默认 `windows`，属于运行配置。Runner 用该字段替换写死的 `--fingerprint-platform=windows`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。
+- 字段：`fingerprint_platform`，取值 `windows` / `macos`，默认 `windows`；`font_set_id`，绑定同平台的不可变字体集（D15）。两者属于运行配置，由 t041 以增量迁移加入。Runner 用绑定快照替换写死的 `--fingerprint-platform=windows`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。
 - 字体分层：
     - 基础开源字体（CloakBrowser 文档列出的最低要求）进入 Browser 镜像：`fonts-noto-color-emoji`、`fonts-freefont-ttf`、`fonts-unifont`、`fonts-ipafont-gothic`、`fonts-wqy-zenhei`、`fonts-tlwg-loma-otf`。
-    - 平台字体放在宿主 `data/fonts/windows/` 与 `data/fonts/mac/`（`data/` 已被忽略），Supervisor 只读挂载进 Browser 容器（例如 `/opt/cbrowser-platform-fonts/{windows,mac}`，位于 fontconfig 默认扫描路径之外）。
-    - Runner 为每个 Profile 生成 `FONTCONFIG_FILE`（扩展现有 `runtime_agent/fontconfig.py`），只暴露该指纹平台的字体集以及 spike 认定的基础字体；Liberation 等 Linux 专属字体对两种指纹平台都不可见。
+    - 基础开源字体在镜像内放到 fontconfig 默认扫描路径之外。
+    - 平台字体集放在 `CBROWSER_FONTS_DIR`（宿主目录，各实例共享，经 `.worktreeinclude` 供 task worktree 使用），按 `{platform}/{set_id}/` 不可变存放并附 manifest；Supervisor 只把 Profile 绑定的字体集只读挂载进 Browser 容器，挂载点位于默认扫描路径之外。
+    - Runner 为每个 Profile 生成 `FONTCONFIG_FILE`，只显式声明基础字体与绑定字体集目录，不 include 系统字体配置（现有实现 include `/etc/fonts/fonts.conf`，会把 `/usr/share/fonts` 全部暴露）；Liberation 等 Linux 专属字体对两种指纹平台都不可见。
 - 现有 `font_bundle`（文泉驿）字段：两种指纹平台都有原生 CJK 字体（微软雅黑、宋体；苹方、冬青黑体），文泉驿本身会成为 Linux 特征。WP14 确认后删除该字段与镜像中的字体包。
-- 字体完整性：Agent 用 Profile 的 fontconfig 检查 CloakBrowser 的检测字体清单（Windows 8 个、Office 10 个、Mac 20 个），结果经 runtime 状态与设置页呈现；缺失时 UI 告警，不阻断启动。
+- 字体完整性：
+    - 静态：API 对字体集做 manifest 一致性与检测字体清单（Windows 8 个、Office 10 个、Mac 20 个）覆盖检查，经 `GET /api/v1/font-sets` 供设置页与环境表单随时查询。
+    - 运行时：Agent 用 Profile 的 fontconfig 复核，并经 runtime 状态下发实际使用的 `font_set_id` 与缺失字体。
+    - 绑定的字体集缺失或与 manifest 不一致时，启动失败封闭（`font_set_unavailable`）；`font_set_id` 为 null 时正常启动并告警。
 - 字体来源（只用官方渠道，不使用第三方字体站或 GitHub 镜像，原因是授权与文件来源无法校验）：
     - Mac：从本机复制 `/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts`，以及 `/System/Library/AssetsV2/` 下的苹方资源。已核对本机：前两个目录分别有 83、290 个文件，Mac 检测字体清单中的字体齐全。
     - Windows：下载微软官方 Windows 11 企业评估版 ISO（约 6 GB，暂存 `.scratch/`），用本机 `7zz`（`/opt/homebrew/bin/7zz`）从 `sources/install.wim` 提取 `Windows/Fonts`。
@@ -388,10 +395,11 @@
 |新增|`/api/v1/groups`、`/api/v1/groups/{group_id}`|
 |新增|`/api/v1/proxies`、`/api/v1/proxies/{proxy_id}`|
 |新增|`GET /api/v1/profiles/{profile_id}/preview`|
-|改|Profile 创建、PATCH、PUT 与响应：删除 `tags`、`proxy`；新增 `group_id`、`proxy_id`（t035）。新增 `fingerprint_platform` 与按 spike 结论删除 `font_bundle`（t041）|
-|改|删除非 stopped 状态的 Profile 返回 409 `profile_running`（D13，t035）|
-|改|`ProfileRuntimeResponse` 与 SSE 事件：新增 `last_started_at`、`last_stopped_at`、`browser_product`、`browser_user_agent`、平台字体状态；新增 `profile_preview` 事件|
-|改|配置版本接口：代理密码脱敏|
+|新增|`GET /api/v1/font-sets`（t041）|
+|改|Profile 创建、PATCH、PUT 与响应：删除 `tags`、`proxy`；新增 `group_id`、`proxy_id`（t035）。新增 `fingerprint_platform`、`font_set_id`，按 spike 结论删除 `font_bundle`（t041）|
+|改|删除仍在运行、过渡中或绑定实例的 Profile 返回 409 `profile_running`；error 且无实例时可删；删除清理全部 Profile 专属目录（D13，t035）|
+|改|`ProfileRuntimeResponse` 与 SSE 事件：新增 `last_started_at`、`last_stopped_at`、`browser_product`、`browser_user_agent`、`font_set_id` 与缺失字体、`preview_captured_at`；新增只实时扇出的 `profile_preview` 事件|
+|改|配置版本快照与接口不含代理密码，以 `credential_revision` 关联凭据|
 |删|OpenAPI 中的 `tags` 分组元数据|
 
 所有变更经 `schemas/openapi/cbrowser_v1.json` 导出，前端 `npm run generate:api` 重新生成类型。
@@ -443,19 +451,27 @@
 |task|标题|工作包|依赖|
 |---|---|---|---|
 |t033|前端工具链升级到最新稳定版本|WP01|—|
-|t034|运行时与镜像底座升级|WP02、WP04、WP05|t032|
-|t035|Profile 领域模型重建|WP06（不含 `fingerprint_platform` 与 `font_bundle`）、WP07、D13|t034|
-|t036|设计系统与应用外壳|WP03、WP08|t033|
-|t037|环境管理界面|WP09、WP11|t035、t036|
+|t034|运行时与镜像底座升级|WP02、WP04|t032|
+|t043|Selkies 升级到最新 2.x|WP05|t034|
+|t035|Profile 领域模型重建|WP06（不含 `fingerprint_platform`、`font_set_id` 与 `font_bundle`）、WP07、D13|t034|
+|t041|指纹平台与平台字体运行时|WP14（task 内正式 spike）、WP15 的后端与运行时部分、D15|t035|
+|t036|设计系统与应用外壳|WP03、WP08，含设置页平台字体区块|t033、t041|
+|t037|环境管理界面|WP09、WP11，含平台与字体集选择|t036|
 |t038|代理库界面|WP10|t037|
-|t039|会话页重设计|WP12|t037|
+|t039|会话页重设计|WP12，含指纹详情与全局颜色门禁|t037、t043|
 |t040|环境实时缩略图|WP13|t037|
-|t041|指纹平台与平台字体|WP14（task 内正式 spike）、WP15，含 `fingerprint_platform` 字段与 `font_bundle` 去留|t039|
-|t042|局域网访问与 HTTP/HTTPS 可配置|不属于本方案工作包；来源 p037，同批创建，含 D14|t034、t039|
+|t042|局域网访问可配置（仅 HTTPS）|不属于本方案工作包；来源 p037，同批创建，含 D14|t039、t043|
 
 - WP16 不建 task：文档最终核对、删除 `.design_reference/`、本文归档，在 main 直接完成。
-- 合并理由：Selkies 与基础镜像同改 Stream 镜像，只重写一次；数据模型一次设计，baseline 只在 t035 集中重写；设计系统以外壳组件验证；新建弹窗与详情配置页共用一套表单。
-- `fingerprint_platform` 移到 t041：没有字体隔离时，macos 指纹会配 Linux 字体，属于不一致的半成品；146 内核下 macos 的质量也待 spike 验证。
+- 合并理由：数据模型一次设计，baseline 只在 t035 重置一次；设计系统以外壳组件验证；新建弹窗与详情配置页共用一套表单。
+- Selkies 单独成 task（t043）：协议与私有接口风险需要独立的回退边界，spike 不可适配时不阻塞其他底座升级。
+- t041 排在 t035 之后、所有 UI task 之前：指纹平台与字体集的后端一次就绪，设置页、环境表单与列表、会话详情面板一次建成，不回头返工；字段以增量迁移加入，不改写已部署的 baseline。
+- t042 须先完成正式 spike，并以 ADR 定案边缘容器重建归属后才能开始。
+- 外部审阅（2026-11-05）中未采纳的：
+    - 截图视觉基线：更新基线即把预期改成当前输出，违反 AGENTS.md 的 TDD 规则。
+    - router 迁移挪到 t036：现有 router 很小，留在 t033。
+    - t036 为旧页面迁移 token：过渡期不要求可用，改为不设豁免、由 t039 启用全局颜色门禁。
+    - 重新评估 Chromium 146：D7 已定。
 
 ### WP01 前端工具链升级
 
@@ -473,7 +489,7 @@
 
 - 范围：`DESIGN.md`（第 4 节）、Tailwind 4 迁移、生成器、三条门禁、主题运行时、字体自托管、`AGENTS.md` 目录表登记 `DESIGN.md` 与 `.design_reference/`。
 - 依赖：WP01。
-- AC 草案：官方 lint 0 error / 0 warning；`design:check` 通过；主题偏好三态切换生效且首帧无闪烁；颜色门禁扫描前端源码中的 Tailwind 默认调色板类与颜色字面量，只豁免显式列出的待替换旧页面文件，豁免清单只减不增，由 t039 删除。
+- AC 草案：官方 lint 0 error / 0 warning；`design:check` 通过；主题偏好三态切换生效且首帧无闪烁；外壳与基础组件不含默认调色板类与颜色字面量；全局颜色门禁不设豁免，由 t039 在最后一个旧页面删除时启用。
 - 验证：门禁全绿。
 
 ### WP04 Caddy 升级
@@ -571,16 +587,17 @@
 ## 9. 依赖与执行顺序
 
 ```text
-t033 ─> t036 ──────────────┐
-t032 ─> t034 ─> t035 ──────┴─> t037 ─┬─> t038
-                                     ├─> t039 ─┬─> t041
-                                     │         └─> t042（另依赖 t034）
-                                     └─> t040
+t033 ────────────────────────────┐
+t032 ─> t034 ─> t035 ─> t041 ────┴─> t036 ─> t037 ─┬─> t038
+          └───> t043                                ├─> t039 ─> t042
+                                                    └─> t040
+（t039 与 t042 另依赖 t043）
 WP16（main 直接完成）最后
 ```
 
-- 可并行的起点：t033 与 t034（t034 须等 t032 合入）。t034、t035 可在独立 worktree 中与 t033、t036 并行。
-- t037 之后的 task 共享前端文件（`i18n.tsx`、路由、共用组件）、Runtime Agent、Supervisor 或 baseline，以 `conflicts_with` 串行；`task.py plan --serial` 给出单链 t033 → … → t042。
+- 可并行的起点：t033 与 t034（t034 须等 t032 合入）；t043 可与 t035、t041 并行。
+- t036 排在 t041 之后：设置页需要字体集接口，也避免与 t035 同时修改旧前端文件。
+- t037 之后的 task 共享前端文件（`i18n.tsx`、路由、共用组件），以 `conflicts_with` 串行。
 
 ## 10. 测试策略
 

@@ -1,7 +1,7 @@
 ---
 tid: "t034"
 slug: "runtime_platform_upgrade"
-title: "运行时与镜像底座升级：Python、Debian、依赖锁定、Caddy 与 Selkies"
+title: "运行时与镜像底座升级：Python、Debian、依赖锁定与 Caddy"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: "t032"
 conflicts_with: ""
-note: "来源 plan_20261105_ui_redesign WP02+WP04+WP05"
+note: "来源 plan_20261105_ui_redesign WP02+WP04；Selkies 已拆到 t043"
 ---
 
 # Task 进展

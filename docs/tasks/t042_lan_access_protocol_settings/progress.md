@@ -1,7 +1,7 @@
 ---
 tid: "t042"
 slug: "lan_access_protocol_settings"
-title: "局域网访问与 HTTP/HTTPS 可配置"
+title: "局域网访问可配置（仅 HTTPS）"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,9 +9,9 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t034,t039"
-conflicts_with: "t038,t040,t041"
-note: "来源 p037"
+depends_on: "t039,t043"
+conflicts_with: "t038,t040"
+note: "来源 p037；2026-11-05 用户决定仅 HTTPS（D14）；须先完成正式 spike 并以 ADR 定案边缘容器重建归属"
 ---
 
 # Task 进展

@@ -9,7 +9,7 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: "t037"
+depends_on: "t037,t043"
 conflicts_with: "t038"
 note: "来源 plan_20261105_ui_redesign WP12"
 ---

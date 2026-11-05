@@ -38,7 +38,7 @@
         {
             "tid": "t034",
             "slug": "runtime_platform_upgrade",
-            "title": "运行时与镜像底座升级：Python、Debian、依赖锁定、Caddy 与 Selkies",
+            "title": "运行时与镜像底座升级：Python、Debian、依赖锁定与 Caddy",
             "status": "backlog",
             "branch": "",
             "worktree": "",
@@ -48,7 +48,7 @@
             "diff_anchor": "",
             "depends_on": "t032",
             "conflicts_with": "",
-            "note": "来源 plan_20261105_ui_redesign WP02+WP04+WP05",
+            "note": "来源 plan_20261105_ui_redesign WP02+WP04；Selkies 已拆到 t043",
             "dir": "docs/tasks/t034_runtime_platform_upgrade"
         },
         {
@@ -74,11 +74,11 @@
             "status": "backlog",
             "branch": "",
             "worktree": "",
-            "review_level": "single",
+            "review_level": "full",
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t033",
+            "depends_on": "t033,t041",
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP03+WP08",
             "dir": "docs/tasks/t036_design_system_app_shell"
@@ -90,11 +90,11 @@
             "status": "backlog",
             "branch": "",
             "worktree": "",
-            "review_level": "single",
+            "review_level": "full",
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t035,t036",
+            "depends_on": "t036",
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP09+WP11",
             "dir": "docs/tasks/t037_environment_management_ui"
@@ -106,7 +106,7 @@
             "status": "backlog",
             "branch": "",
             "worktree": "",
-            "review_level": "single",
+            "review_level": "full",
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
@@ -126,7 +126,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t037",
+            "depends_on": "t037,t043",
             "conflicts_with": "t038",
             "note": "来源 plan_20261105_ui_redesign WP12",
             "dir": "docs/tasks/t039_session_page_redesign"
@@ -150,7 +150,7 @@
         {
             "tid": "t041",
             "slug": "fingerprint_platform_fonts",
-            "title": "指纹平台与平台字体",
+            "title": "指纹平台与平台字体运行时",
             "status": "backlog",
             "branch": "",
             "worktree": "",
@@ -158,15 +158,15 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t039",
-            "conflicts_with": "t038,t040",
-            "note": "来源 plan_20261105_ui_redesign WP14+WP15",
+            "depends_on": "t035",
+            "conflicts_with": "",
+            "note": "来源 plan_20261105_ui_redesign WP14+WP15；2026-11-05 按审阅前移到 UI task 之前，界面拆入 t036/t037/t039",
             "dir": "docs/tasks/t041_fingerprint_platform_fonts"
         },
         {
             "tid": "t042",
             "slug": "lan_access_protocol_settings",
-            "title": "局域网访问与 HTTP/HTTPS 可配置",
+            "title": "局域网访问可配置（仅 HTTPS）",
             "status": "backlog",
             "branch": "",
             "worktree": "",
@@ -174,10 +174,26 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t034,t039",
-            "conflicts_with": "t038,t040,t041",
-            "note": "来源 p037",
+            "depends_on": "t039,t043",
+            "conflicts_with": "t038,t040",
+            "note": "来源 p037；2026-11-05 用户决定仅 HTTPS（D14）；须先完成正式 spike 并以 ADR 定案边缘容器重建归属",
             "dir": "docs/tasks/t042_lan_access_protocol_settings"
+        },
+        {
+            "tid": "t043",
+            "slug": "selkies_upgrade",
+            "title": "Selkies 升级到最新 2.x",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t034",
+            "conflicts_with": "",
+            "note": "来源 plan_20261105_ui_redesign WP05；2026-11-05 按审阅从 t034 拆出",
+            "dir": "docs/tasks/t043_selkies_upgrade"
         }
     ]
 }
