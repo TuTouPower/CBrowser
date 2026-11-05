@@ -1,11 +1,11 @@
 # Independent, reproducible Browser Runtime image for CBrowser v2
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS xshm_probe_builder
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS xshm_probe_builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libx11-dev libxext-dev libc6-dev && rm -rf /var/lib/apt/lists/*
 COPY tests/fixtures/runtime_probe/test_mitshm.c /tmp/test_mitshm.c
 RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /test_mitshm
 
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS font_bundle_builder
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS font_bundle_builder
 # Stage the two open-source WenQuanYi CJK bundles (t020). Only the .ttc
 # payloads are copied into the final image, under /opt/cbrowser-fonts which
 # is outside fontconfig's default scan paths: a profile sees a bundle only
@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cp /usr/share/fonts/truetype/wqy/wqy-microhei.ttc /opt/cbrowser-fonts/wqy-microhei/ && \
     cp /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc /opt/cbrowser-fonts/wqy-zenhei/
 
-FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1

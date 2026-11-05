@@ -77,7 +77,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 ## 门禁依赖与证据完整性（t024）
 
-- 门禁依赖由 `scripts/gate-requirements.txt` 全量锁定（pin 到具体版本），`scripts/run_gates.sh` 以固定 Python 3.12 建单一 venv 从锁安装后依次执行契约/unit/integration/前端/构建，不再运行时临时解析未 pin 的包组；锁的再生成命令写在该文件头部。
+- 门禁依赖由 `uv.lock` 单一来源导出：`scripts/generate_requirements.sh` 以 PEP 735 依赖组（api / gateway / supervisor / browser / stream / gate）分别 `uv export --only-group`，生成各镜像 `requirements.txt` 与 `scripts/gate-requirements.txt`；`tests/unit/test_t034_dependency_lock.py` 在 unit suite 中逐组比对生成物与锁文件，手改或锁过期即失败（t034 AC-002）。`scripts/run_gates.sh` 以 `GATE_PYTHON_MINOR=3.15`（与全部运行时镜像一致）建单一 venv 从导出锁安装后依次执行契约/unit/integration/前端/构建；本地无 3.15 时 uv 明确失败，unit suite 同时断言解释器主次版本（t034 AC-003）。
 - 前端构建戳为 v2 格式：必需输入（index.html、package.json、package-lock.json）缺失拒绝生成；配置五件套的 present/absent、src/ 与 public/ 全量文件哈希、声明的环境值（allowlist）共同决定新鲜度；所有实际消费 dist 的探针（浏览器 harness、frontend probe、E2E collection 钩子）在复制/托管前校验，dist 存在即校验、与测试文件命名无关。
 - 测试等待统一走 `tests/fixtures/wait.py` 的 deadline + 最后观测助手；时间敏感逻辑用注入 clock，不 patch 标准库 time 模块对象。共享 Docker 替身在 `tests/fixtures/docker_doubles.py`，与真实 DockerAdapter 的命名/集合契约由 `tests/unit/test_docker_doubles_contract.py` 对照。
 - E2E 证据目录每次运行私有（mkdtemp），证据脱敏覆盖 token/secret/password/cookie/resume_key/session；性能预算保持原硬阈值（首帧 8000ms、输入 3000ms、SQLite busy_timeout 原上界），证据记录完整样本而非仅判定。

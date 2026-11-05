@@ -10,7 +10,7 @@
 |v2_runtime_validation|t001|2026-11-01T10:13:32+08:00|
 |runtime_persistence|t002, t016, t021|2026-11-04T02:13:35+08:00|
 |runtime_lifecycle|t005, t007, t022, t026|2026-11-04T09:51:48+08:00|
-|release_deployment|t027|2026-11-04T11:30:00+08:00|
+|release_deployment|t027, t034|2026-11-05T17:30:00+08:00|
 |automation_compatibility|t029|2026-11-04T13:37:11+08:00|
 |agent_executor|t030|2026-11-04T22:00:00+08:00|
 |human_agent_control|t031|2026-11-04T21:00:00+08:00|

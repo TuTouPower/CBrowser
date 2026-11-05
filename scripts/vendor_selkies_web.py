@@ -134,11 +134,23 @@ def extract_from_stream_image(image_id: str, dest_dir: Path) -> None:
     import docker
 
     client = docker.from_env()
-    container = client.containers.create(image_id, entrypoint=["/bin/sh"])
+    container = client.containers.create(
+        image_id, entrypoint=["/bin/sh"], command=["-c", "sleep 60"]
+    )
     try:
-        archive_stream, _ = container.get_archive(
-            "/usr/local/lib/python3.12/site-packages/selkies/selkies_web"
+        container.start()
+        # Locate selkies_web inside the image instead of freezing a Python
+        # minor version in the path (t034 upgrades the runtime to 3.15).
+        result = container.exec_run(
+            ["find", "/opt/venv", "/usr/local/lib", "-maxdepth", "6",
+             "-type", "d", "-name", "selkies_web", "-print", "-quit"],
         )
+        found = (result.output or b"").decode("utf-8", "replace").strip()
+        if result.exit_code != 0 or not found:
+            raise FileNotFoundError(
+                "selkies_web not found in Stream image (dynamic discovery failed)"
+            )
+        archive_stream, _ = container.get_archive(found.splitlines()[0])
         archive_bytes = b"".join(archive_stream)
         with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as tar:
             for member in tar.getmembers():

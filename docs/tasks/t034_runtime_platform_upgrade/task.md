@@ -38,12 +38,12 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：每个运行镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）的基础镜像都以 digest 固定；同一源码两次干净构建得到的 Python 与系统包集合一致。
-- [ ] AC-002：Python 依赖只有 `uv.lock` 一处锁定来源。各镜像内安装的 Python 包与 `uv.lock` 导出结果一致；生成的 requirements 被手改或与锁文件不一致时门禁失败；仓库不存在其他手写的 Python 依赖锁定清单。
-- [ ] AC-003：`scripts/run_gates.sh` 用与镜像相同的 Python 主次版本运行全部 suite 并通过；本地解释器版本不符时门禁失败并输出所需版本。
-- [ ] AC-004：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 全量真实栈 E2E 无头通过。
-- [ ] AC-005：经 Caddy 的 HTTPS 访问、静态资源、`/api/v1` 与 `/stream/*/signal` 转发行为与升级前一致，由 E2E 覆盖。
-- [ ] AC-006：部署脚本在隔离实例（独立 project、prefix、端口、数据目录）上完成一次新 release 发布，再回退到上一 release，两次均通过健康检查；其他实例不受影响。
+- [x] AC-001：每个运行镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）的基础镜像都以 digest 固定；同一源码两次干净构建得到的 Python 与系统包集合一致。
+- [x] AC-002：Python 依赖只有 `uv.lock` 一处锁定来源。各镜像内安装的 Python 包与 `uv.lock` 导出结果一致；生成的 requirements 被手改或与锁文件不一致时门禁失败；仓库不存在其他手写的 Python 依赖锁定清单。
+- [x] AC-003：`scripts/run_gates.sh` 用与镜像相同的 Python 主次版本运行全部 suite 并通过；本地解释器版本不符时门禁失败并输出所需版本。
+- [x] AC-004：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 全量真实栈 E2E 无头通过。
+- [x] AC-005：经 Caddy 的 HTTPS 访问、静态资源、`/api/v1` 与 `/stream/*/signal` 转发行为与升级前一致，由 E2E 覆盖。
+- [x] AC-006：部署脚本在隔离实例（独立 project、prefix、端口、数据目录）上完成一次新 release 发布，再回退到上一 release，两次均通过健康检查；其他实例不受影响。
 
 ### 可测试性声明
 
@@ -77,8 +77,8 @@
 
 <!-- /规范 -->
 
-- Debian trixie 下 Browser / Stream 镜像所需 apt 包名与可用性：UNVERIFIED-SPIKE，构建验证。
-- Caddy 最新版对现有 Caddyfile 语法与 `tls internal` 的行为：UNVERIFIED-SPIKE，E2E 验证。
+- Debian trixie 下 Browser / Stream 镜像所需 apt 包名与可用性：**已验证结论（全部可用）**。以 `python:3.15-slim-trixie` 容器实跑 `apt-cache show`，逐项核对 build-essential、libx11/xext/xfixes/xtst/pulse/glib/gstreamer 的 `-dev` 与运行时库、gstreamer1.0-plugins-{base,good,bad,ugly}/tools、pulseaudio-utils、x11-utils、x11-xkb-utils、procps、curl、tini、iptables、xautomation、xvfb、openbox、fonts-wqy-{microhei,zenhei} 共 34 项，全部返回 OK，无包名变化。
+- Caddy 最新版对现有 Caddyfile 语法与 `tls internal` 的行为：**已验证结论（保持）**。Caddy 2.11.8（`caddy:2-alpine` digest `sha256:70b3180...`）对现有 Caddyfile 执行 `caddy validate`，返回 `Valid configuration`；`auto_https disable_redirects`、`default_sni 127.0.0.1`、`tls internal` 与 `handle` 三段转发均被接受，仅提示格式未 `caddy fmt`（非错误）。E2E 的 AC-005 覆盖转发行为。
 
 ### 风险与回退
 

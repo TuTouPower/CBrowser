@@ -6,7 +6,8 @@
 
 ## 1. 技术栈与工具链约定
 
-- **后端**：Python 3.12+，使用 `uv` 管理虚拟环境与依赖；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.0 异步/强类型语法；数据库迁移使用 Alembic。
+- **后端**：Python 3.15+，使用 `uv` 管理虚拟环境与依赖；依赖唯一锁定来源为根 `pyproject.toml` + `uv.lock`，各镜像与门禁的 requirements 由 `scripts/generate_requirements.sh` 按依赖组 `uv export` 生成，禁止手写并行依赖清单（t034）；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.1 异步/强类型语法；数据库迁移使用 Alembic。全部 Python 镜像基于 `python:3.15-slim-trixie` digest 固定，辅助阶段基于 `debian:trixie-slim` digest 固定；Caddy 基于 2.x digest 固定。
+- **本地工具版本**：`.mise.toml` 固定 Node 26.13.0 与 Python 3.15.2；门禁与镜像主次版本一致。
 - **前端**：TypeScript 5.9 + React 19.3，构建工具 Vite 8（Rolldown）；状态管理 TanStack Query 5，路由 `react-router` 8 单包（不再用 `react-router-dom`）；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。宿主构建 Node 固定 26 LTS（`.mise.toml`），`engines.node=">=26.0.0 <27"`。
 - **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions.md`「前端工具链目标版本（t033）」。
 - **远程显示**：固定 Selkies 2.1.0 官方稳定发布版本，纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路。

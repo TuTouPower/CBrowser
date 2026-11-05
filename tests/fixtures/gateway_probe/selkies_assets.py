@@ -280,15 +280,24 @@ def prepare_selkies_web_assets(stream_image_id: str, dest_dir: Path) -> Path:
     index_file = dest_dir / "index.html"
 
     client = docker.from_env()
-    container = client.containers.create(stream_image_id, entrypoint=["/bin/sh"])
+    container = client.containers.create(
+        stream_image_id, entrypoint=["/bin/sh"], command=["-c", "sleep 60"]
+    )
     try:
-        # The Stream image installs Selkies into /opt/venv (current
-        # Dockerfile); older builds used /usr/local. Try both so the
-        # harness follows the shipped runtime instead of a frozen path.
-        candidates = (
-            "/opt/venv/lib/python3.12/site-packages/selkies/selkies_web",
-            "/usr/local/lib/python3.12/site-packages/selkies/selkies_web",
+        container.start()
+        # Resolve selkies_web from the image itself: its site-packages path
+        # embeds the Python minor (3.15 after t034), so a frozen path would
+        # break on every runtime upgrade.
+        result = container.exec_run(
+            ["find", "/opt/venv", "/usr/local/lib", "-maxdepth", "6",
+             "-type", "d", "-name", "selkies_web", "-print", "-quit"],
         )
+        found = (result.output or b"").decode("utf-8", "replace").strip()
+        if result.exit_code != 0 or not found:
+            raise FileNotFoundError(
+                "selkies_web not found in Stream image (dynamic discovery failed)"
+            )
+        candidates = found.splitlines()
         archive_bytes = None
         for candidate in candidates:
             try:
