@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { Lock } from "lucide-react";
 import { useAuth } from "./useAuth";
 import { sanitizeNextPath } from "./redirect";

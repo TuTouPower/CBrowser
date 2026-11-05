@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { ArrowLeft, Download, FolderArchive, Trash2, Upload } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { useProfileQuery } from "../profiles/useProfilesQuery";

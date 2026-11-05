@@ -7,7 +7,8 @@
 ## 1. 技术栈与工具链约定
 
 - **后端**：Python 3.12+，使用 `uv` 管理虚拟环境与依赖；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.0 异步/强类型语法；数据库迁移使用 Alembic。
-- **前端**：TypeScript + React 19，构建工具使用 Vite；状态管理采用 TanStack Query 5，路由采用 React Router 7；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。
+- **前端**：TypeScript 5.9 + React 19.3，构建工具 Vite 8（Rolldown）；状态管理 TanStack Query 5，路由 `react-router` 8 单包（不再用 `react-router-dom`）；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。宿主构建 Node 固定 26 LTS（`.mise.toml`），`engines.node=">=26.0.0 <27"`。
+- **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions.md`「前端工具链目标版本（t033）」。
 - **远程显示**：固定 Selkies 2.1.0 官方稳定发布版本，纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路。
 - **容器与部署**：生产运行平台为 Linux Docker；本地开发验证支持 macOS (OrbStack)。
 

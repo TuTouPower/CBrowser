@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router";
 import { ArrowLeft, Copy, Cpu, FolderArchive, RotateCcw, Trash2 } from "lucide-react";
 import {
   scopeMutationToProfile,

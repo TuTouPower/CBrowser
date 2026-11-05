@@ -13,7 +13,7 @@ import {
   Route,
   useNavigate,
   type NavigateFunction,
-} from "react-router-dom";
+} from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";

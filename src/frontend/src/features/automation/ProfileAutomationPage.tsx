@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { ArrowLeft, Check, Copy, Cpu } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";

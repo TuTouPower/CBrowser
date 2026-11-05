@@ -1,10 +1,10 @@
 # 前端
 
-v2 前端为 `src/frontend` 下的 React 19 + Vite 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。t017 已删除 v1 前端树、旧测试、noVNC 类型与仅其使用的依赖；路由只保留 `react-router-dom` 单一实现。
+v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。t017 已删除 v1 前端树、旧测试、noVNC 类型与仅其使用的依赖；路由只保留 `react-router` 8 单包实现（t033 由 `react-router-dom` 换包，DOM API 全部由单包导出）。
 
 ## 1. 外壳与数据
 
-- 路由（React Router 7，`app/router.tsx`）：`/login`、`/`（`?profileId=` 指定当前页面的操控目标）、`/settings`、`/profiles/new`、`/profiles/:profileId`、`/profiles/:profileId/files`、`/automation/:profileId`；会话失效（401）或登出时跳转 `/login`。
+- 路由（React Router 8 单包，`app/router.tsx`）：`/login`、`/`（`?profileId=` 指定当前页面的操控目标）、`/settings`、`/profiles/new`、`/profiles/:profileId`、`/profiles/:profileId/files`、`/automation/:profileId`；会话失效（401）或登出时跳转 `/login`。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `detail`。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。
 - 运行协调错误（Supervisor 未配置或不可达）在页头与会话页以 `runtime-coordinator-error` 显式展示，运行意愿保持不变。
@@ -48,5 +48,5 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 
 ## 5. 测试
 
-- Vitest（`npm test --prefix src/frontend`，需 `NODE_OPTIONS=--no-experimental-webstorage`）覆盖 API 客户端、SSE、路由与会话组件；`npm test` 先执行 `test:types`（`tsc -p tsconfig.test.json`）对全部测试文件做严格类型检查，再运行 Vitest。页面与守卫测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks 接线，禁止 mock 数据 hooks 模块、禁止对共享单例做方法赋值；测试夹具与事件字面量须使用生成类型的完整线形状。
+- Vitest 5（`npm test --prefix src/frontend`，无需 `NODE_OPTIONS`）覆盖 API 客户端、SSE、路由与会话组件；`npm test` 先执行 `test:types`（`tsc -p tsconfig.test.json`）对全部测试文件做严格类型检查，再运行 Vitest。页面与守卫测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks 接线，禁止 mock 数据 hooks 模块、禁止对共享单例做方法赋值；测试夹具与事件字面量须使用生成类型的完整线形状。
 - 真实栈 E2E 用构建产物 + 官方 Selkies 资源，经 Caddy/API（启用 Runtime Coordinator）/Supervisor/Gateway/Browser/Stream 与无头 Google Chrome（无 coturn）：`tests/e2e/test_frontend_app_e2e.py`、`test_frontend_session_e2e.py`、`test_frontend_session_vendor.py`。所有浏览器测试必须无头。

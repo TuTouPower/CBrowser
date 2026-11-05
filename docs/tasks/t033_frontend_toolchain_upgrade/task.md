@@ -28,11 +28,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：`scripts/run_gates.sh` 前端阶段（类型检查、Vitest、生产构建、postbuild 产物校验）在新工具链下全部通过；没有新增跳过的测试，因 API 消失而删除的测试在实施笔记逐条写明理由。
-- [ ] AC-002：生产构建产出的 `dist/selkies/selkies_adapter.js` 仍为经典 IIFE（不含 ES module 语法），并注入在官方 module bundle 之前；`verify_frontend_dist.py` 通过。
-- [ ] AC-003：`npm run generate:api` 在新工具链下成功生成类型；生成文件相对升级前只有生成器格式差异，没有类型语义变化（差异写入实施笔记），前端类型检查通过。
-- [ ] AC-004：Node 版本不满足 `engines` 时，前端门禁失败并输出所需版本；满足时通过。
-- [ ] AC-005：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 中的前端真实栈 E2E（鉴权、会话、应用并重启）在新构建产物上无头通过。
+- [x] AC-001：`scripts/run_gates.sh` 前端阶段（类型检查、Vitest、生产构建、postbuild 产物校验）在新工具链下全部通过；没有新增跳过的测试，因 API 消失而删除的测试在实施笔记逐条写明理由。
+- [x] AC-002：生产构建产出的 `dist/selkies/selkies_adapter.js` 仍为经典 IIFE（不含 ES module 语法），并注入在官方 module bundle 之前；`verify_frontend_dist.py` 通过。
+- [x] AC-003：`npm run generate:api` 在新工具链下成功生成类型；生成文件相对升级前只有生成器格式差异，没有类型语义变化（差异写入实施笔记），前端类型检查通过。
+- [x] AC-004：Node 版本不满足 `engines` 时，前端门禁失败并输出所需版本；满足时通过。
+- [x] AC-005：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 中的前端真实栈 E2E（鉴权、会话、应用并重启）在新构建产物上无头通过。
 
 ### 可测试性声明
 
@@ -66,9 +66,9 @@
 
 <!-- /规范 -->
 
-- TypeScript 最新大版本与 openapi-typescript 的兼容（后者 peer 声明 `typescript ^5.x` 且依赖 TS 编译器 API）：UNVERIFIED-SPIKE，实施时以实际生成与类型检查验证；不兼容时选用兼容的最高版本，并在 `decisions.md` 写明原因与复查条件。
-- Vite 最新大版本（Rolldown）对 `vite.selkies.config.ts` 经典 IIFE 产物的支持：UNVERIFIED-SPIKE，构建后用 `verify_frontend_dist.py` 验证。
-- 新版 jsdom 与 Node LTS 下是否仍需 `--no-experimental-webstorage`：UNVERIFIED-SPIKE，移除后跑全量 Vitest 验证。
+- TypeScript 最新大版本与 openapi-typescript 的兼容：**已验证结论（例外）**。`npm view openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，安装 TypeScript 7.0.2 实测 `ERESOLVE unable to resolve dependency tree`（peer 冲突），openapi-typescript 最新版本 7.13.0 未放宽。按契约「不兼容时选用兼容的最高版本」，TypeScript 固定 5.9.3（当前最高 5.x）；原因与复查条件写入 `docs/blueprint/decisions.md`。`generate:api` 实测通过（7.13.0 生成 3697 行声明）。
+- Vite 最新大版本（Rolldown）对 `vite.selkies.config.ts` 经典 IIFE 产物的支持：**已验证结论（通过）**。在 `.scratch/t033_spike/` 以 Vite 8.3.5 + 真实 `vite.selkies.config.ts` + `selkies_adapter_entry.ts`/`adapter.ts` 实跑 `vite build --config vite.selkies.config.ts`，产出 `dist/selkies/selkies_adapter.js` 10.64 kB，以 `(function() {` 开头、行首无 `import`/`export`，保持经典 IIFE。注入顺序由 `scripts/verify_frontend_dist.py` 检查。
+- 新版 jsdom 与 Node LTS 下是否仍需 `--no-experimental-webstorage`：**已验证结论（不再需要）**。jsdom 30.1.3 + Vitest 5.1.0 + Node 24.21.0 在 `env -u NODE_OPTIONS npx vitest run` 下 jsdom 环境 smoke 测试 1 passed（localStorage 可读写）。故删除 `run_gates.sh` 两处 `NODE_OPTIONS=--no-experimental-webstorage` 变通配置。
 
 ### 风险与回退
 

@@ -238,3 +238,11 @@
     已建立隧道过期后不自动关闭）与恢复时清除 pending 而不补发关闭
     （补发会误杀新隧道）均属已知边界，见规约。
 - 替代：无（方法名黑名单与排他租约复活均不采用）。
+
+## 020 前端工具链目标版本与 Node LTS 固定（2026-11-05，t033）
+
+- 背景：`docs/plan_20261105_ui_redesign.md` D10 要求技术底层默认升到最新稳定版本（含大版本），t033 在设计系统（t036）之前先升级前端工具链。2026-11-05 实测 npm `latest`：Vite 8.3.5（Rolldown）、@vitejs/plugin-react 6.2.1、Vitest 5.1.0、React/ReactDOM 19.3.1、`react-router` 8.5.1、lucide-react 1.68.0、jsdom 30.1.3、@testing-library/jest-dom 7.0.1、@testing-library/react 16.3.3、@types/node 26.6.6、@types/react(-dom) 19.3.0、@tanstack/react-query 5.106.0、openapi-typescript 7.13.0、TypeScript 7.0.2。
+- 选项：全部升到 `latest`；或遇 peer 冲突时选兼容的最高版本。
+- 结论：按 D10 升到上述最新稳定版本；路由库由 `react-router-dom` 换为 `react-router` 单包（实测 8.5.1 导出 BrowserRouter/Link/Routes/RouterProvider/createBrowserRouter 等全部 DOM API，25 个源文件仅换包名，无 API 适配）。三项 SPIKE 结论：① Vite 8 Rolldown 仍产出经典 IIFE（`function() {` 开头、行首无 import/export），`verify_frontend_dist.py` 注入顺序校验不变；② jsdom 30 + Vitest 5 + Node 24.21 不再需要 `NODE_OPTIONS=--no-experimental-webstorage`，`run_gates.sh` 两处变通已删除；③ TypeScript 7.0.2 与 openapi-typescript 7.13.0 的 peer `typescript@^5.x` 实测 ERESOLVE 冲突，故 TypeScript 例外固定在当前最高 5.x = 5.9.3（不是 7.x）。宿主构建 Node 固定 26 LTS（`.mise.toml` 固定 26.13.0，`engines.node=">=26.0.0 <27"`），`check_node.mjs` 在 `pretest` 与 `build` 链首校验并输出所需范围。Tailwind 4 迁移与设计系统仍归 t036，不在本决策范围。
+- 复查条件：当 `openapi-typescript` 发布兼容 TypeScript 7.x 的版本（peer 放宽到 `^7 || ^5` 或更高）且 `generate:api` 产物与当前 5.9.3 生成结果一致、全套类型检查与 Vitest 通过时，可把 TypeScript 升到 7.x 并删除本例外；复查时同时确认 Vite/Rolldown IIFE 产物形态未变。
+- 替代：无（不采用 `--legacy-peer-deps` 强装 TS 7，也不降级 openapi-typescript）。

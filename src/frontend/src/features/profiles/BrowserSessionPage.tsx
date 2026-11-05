@@ -1,4 +1,4 @@
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router";
 import { Play, Settings as SettingsIcon, FolderArchive, Cpu, Compass } from "lucide-react";
 import {
   scopeMutationToProfile,

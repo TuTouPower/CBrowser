@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { ArrowLeft, Settings, ShieldCheck, Globe } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";

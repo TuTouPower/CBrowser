@@ -69,6 +69,28 @@ def test_package_build_runs_vendor_and_verification() -> None:
     assert "scripts/verify_frontend_dist.py" in scripts["verify:selkies"]
 
 
+def test_frontend_gate_checks_pinned_node_version() -> None:
+    """t033 AC-004: both npm test and npm run build fail on a wrong Node.
+
+    The old wiring assertion above stays unchanged; this test covers the
+    new engines/check:node gate so prebuild's vendor semantics remain
+    verifiable independently.
+    """
+    package = json.loads(
+        (REPO_ROOT / "src" / "frontend" / "package.json").read_text(encoding="utf-8")
+    )
+    assert package["engines"]["node"] == ">=26.0.0 <27"
+    scripts = package["scripts"]
+    assert scripts["check:node"] == "node scripts/check_node.mjs"
+    assert scripts["pretest"] == "npm run check:node"
+    assert scripts["build"].startswith("npm run check:node && ")
+    checker = REPO_ROOT / "src" / "frontend" / "scripts" / "check_node.mjs"
+    assert checker.is_file()
+    body = checker.read_text(encoding="utf-8")
+    assert "engines" in body and "process.exit(1)" in body
+    assert "process.versions.node" in body
+
+
 def test_default_manifests_live_outside_tests() -> None:
     assert DEFAULT_MANIFEST_PATH == DEFAULT_MANIFEST
     assert DEFAULT_MANIFEST.is_file()
