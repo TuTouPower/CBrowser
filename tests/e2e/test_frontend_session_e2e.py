@@ -162,7 +162,7 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
             assert login_resp == 200, "Login failed"
 
             # Navigate Page A to profile session
-            session_url = f"{harness.origin}/?profileId={profile_id}"
+            session_url = f"{harness.origin}/session/{profile_id}"
             await pageA.goto(session_url, wait_until="domcontentloaded")
             statsA1 = await wait_for_iframe_decode(pageA, name="Page A")
             tab_id_A = statsA1["tab_id"]
@@ -293,7 +293,7 @@ async def test_frontend_session_independent_input_and_mute(
                 harness.admin_password,
             )
 
-            session_url = f"{harness.origin}/?profileId={profile_id}"
+            session_url = f"{harness.origin}/session/{profile_id}"
             await pageA.goto(session_url, wait_until="domcontentloaded")
             await wait_for_iframe_decode(pageA, name="Page A")
 
@@ -433,7 +433,7 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
                 harness.admin_password,
             )
 
-            session_url = f"{harness.origin}/?profileId={profile_id}"
+            session_url = f"{harness.origin}/session/{profile_id}"
             await pageA.goto(session_url, wait_until="domcontentloaded")
             stats_before = await wait_for_iframe_decode(pageA, name="Page A initial")
             tab_id_before = stats_before["tab_id"]
@@ -479,7 +479,7 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
 
             # 2. Diagnostics display for unready / stopped profile (AC-007)
             pageUnready = await context.new_page()
-            unready_url = f"{harness.origin}/?profileId=stopped-or-unready-profile-id"
+            unready_url = f"{harness.origin}/session/stopped-or-unready-profile-id"
             await pageUnready.goto(unready_url, wait_until="domcontentloaded")
 
             # The diagnostic overlay must be visible (no unexplained black screen!)

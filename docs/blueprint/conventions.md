@@ -45,3 +45,10 @@
 
 写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。
+
+## 6. DESIGN.md 落点与业务代码只用语义 token（t036）
+
+- 设计权威为仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式）；颜色、字体、字号、间距、圆角与组件只在其中定义。`npm run design:tokens` 用 `@google/design.md@0.4.0` 的 `lint()` 确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 变量）并入库，禁止手改产物；`design:lint` / `design:check` 为门禁。
+- 业务代码（`shared/ui/`、`app/`、`features/*` 页面与手写 `globals.css`）只用语义 token 类（`bg-surface`、`text-on-surface`、`border-outline`、`rounded-md`、`px-md` 等），禁止 Tailwind 默认调色板类与 hex / rgb / hsl / oklch 颜色字面量；由 AC-003 源码与构建产物扫描约束。生成产物 `design_tokens.css` 按设计权威含 hex，不列入业务源码扫描。
+- 根目录 `DESIGN.md` 大写属社区约定例外；其余新建普通文件与目录统一 snake_case，缩进用空格。
+- `.design_reference/` 为 gitignore 只读参考原型，与 plan / `DESIGN.md` 冲突时以后两者为准。

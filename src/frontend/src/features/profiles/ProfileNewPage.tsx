@@ -29,7 +29,7 @@ export function ProfileNewPage() {
         screen_height: screenHeight,
       });
 
-      navigate(`/?profileId=${created.id}`);
+      navigate(`/session/${created.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("failedToCreateProfile"));
     }

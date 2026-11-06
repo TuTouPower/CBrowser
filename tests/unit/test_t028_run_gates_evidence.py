@@ -115,6 +115,9 @@ def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> No
     assert ".repo_template/tests" in log
     assert "tests/unit" in log
     assert "tests/integration" in log
+    assert "npm run design:lint" in log
+    assert "npm run design:check" in log
+    assert "npm run design:tokens" in log
     assert "npm test" in log
     assert "npm run build" in log
 
@@ -124,6 +127,9 @@ def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> No
         "contract",
         "unit",
         "integration",
+        "design_lint",
+        "design_check",
+        "design_tokens",
         "frontend_test",
         "frontend_build",
     ]

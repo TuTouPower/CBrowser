@@ -157,10 +157,10 @@ async def test_frontend_app_auth_guard_e2e(harness: AuthTopologyHarness) -> None
         recorder = ApiRequestRecorder(page)
 
         await page.goto(
-            f"{harness.origin}/?profileId={profile_id}", wait_until="domcontentloaded"
+            f"{harness.origin}/session/{profile_id}", wait_until="domcontentloaded"
         )
         await page.wait_for_url(re.compile(r"/login\?next="), timeout=20000)
-        assert login_next(page.url) == f"/?profileId={profile_id}"
+        assert login_next(page.url) == f"/session/{profile_id}"
         assert await page.query_selector('[data-testid="login-page"]') is not None
 
         # Session check happened, but no business or SSE traffic before login.
@@ -175,24 +175,23 @@ async def test_frontend_app_auth_guard_e2e(harness: AuthTopologyHarness) -> None
         # Login returns to the original target and selects that profile.
         await ui_login(page, harness)
         await page.wait_for_url(
-            re.compile(rf"/\?profileId={profile_id}$"), timeout=20000
+            re.compile(rf"/session/{profile_id}$"), timeout=20000
         )
         await page.wait_for_selector(
-            '[data-testid="active-profile-header"]', timeout=20000
+            '[data-testid="session-launch-btn"]', timeout=20000
         )
-        header = await page.inner_text('[data-testid="active-profile-header"]')
-        assert profile["name"] in header
+        assert profile["name"] in await page.content()
         await wait_for_api_request(recorder, "/api/v1/events")
         await wait_for_api_status(recorder, "/api/v1/events", 200)
 
         # Server-side session revocation: the next API call must 401 and redirect.
-        await page.wait_for_selector('[data-testid="header-launch-btn"]', timeout=20000)
+        await page.wait_for_selector('[data-testid="session-launch-btn"]', timeout=20000)
         await revoke_browser_session(context, harness)
         events_before = recorder.count("/api/v1/events")
-        await page.click('[data-testid="header-launch-btn"]')
+        await page.click('[data-testid="session-launch-btn"]')
 
         await page.wait_for_url(re.compile(r"/login\?next="), timeout=20000)
-        assert login_next(page.url) == f"/?profileId={profile_id}"
+        assert login_next(page.url) == f"/session/{profile_id}"
         assert await page.query_selector('[data-testid="login-page"]') is not None
 
         # SSE must not reconnect after the session expired.
@@ -215,7 +214,7 @@ async def test_frontend_app_auth_guard_e2e(harness: AuthTopologyHarness) -> None
             )
             await ui_login(hostile_page, harness)
             await hostile_page.wait_for_selector(
-                '[data-testid="new-profile-link"]', timeout=20000
+                '[data-testid="sidebar"]', timeout=20000
             )
             landed = urlparse(hostile_page.url)
             origin = urlparse(harness.origin)

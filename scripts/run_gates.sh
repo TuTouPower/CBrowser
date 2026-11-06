@@ -92,6 +92,9 @@ if [ -n "$EVIDENCE_DIR" ]; then
     --junitxml="$EVIDENCE_DIR/junit/unit.xml"
   run_suite integration env PYTHONPATH=src/backend "$PY" -m pytest tests/integration -q \
     --junitxml="$EVIDENCE_DIR/junit/integration.xml"
+  run_suite design_lint npm run design:lint --prefix src/frontend
+  run_suite design_check npm run design:check --prefix src/frontend
+  run_suite design_tokens npm run design:tokens --prefix src/frontend
   run_suite frontend_test npm test --prefix src/frontend
   run_suite frontend_build npm run build --prefix src/frontend
 
@@ -110,6 +113,9 @@ fi
 "$PY" -m pytest .repo_template/tests -q -m contract
 PYTHONPATH=src/backend "$PY" -m pytest tests/unit -q
 PYTHONPATH=src/backend "$PY" -m pytest tests/integration -q
+npm run design:lint --prefix src/frontend
+npm run design:check --prefix src/frontend
+npm run design:tokens --prefix src/frontend
 npm test --prefix src/frontend
 npm run build --prefix src/frontend
 

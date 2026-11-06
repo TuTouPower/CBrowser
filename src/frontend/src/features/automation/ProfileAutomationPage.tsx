@@ -42,7 +42,7 @@ export function ProfileAutomationPage() {
   return (
     <div data-testid="profile-automation-page" className="p-8 max-w-3xl mx-auto">
       <Link
-        to={`/?profileId=${profileId}`}
+        to={`/session/${profileId}`}
         className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
       >
         <ArrowLeft className="h-4 w-4" />

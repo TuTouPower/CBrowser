@@ -45,8 +45,8 @@ def _write_dist(
     assets = dist / "assets"
     assets.mkdir()
     (assets / "index.css").write_text(
-        ".bg-primary{background-color:var(--primary)}"
-        ".text-primary-foreground{color:var(--primary-foreground)}\n",
+        "@theme{--color-*: initial;--color-primary:#006edc;--color-surface:#f7fbf8}"
+        ".bg-primary{background-color:var(--color-primary)}\n",
         encoding="utf-8",
     )
 

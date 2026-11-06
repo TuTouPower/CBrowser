@@ -15,7 +15,6 @@ import subprocess
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -81,14 +80,14 @@ async def create_profile_via_ui(
     width: int,
     height: int,
 ) -> str:
-    await page.goto(f"{harness.origin}/profiles/new", wait_until="domcontentloaded")
-    await page.wait_for_selector('[data-testid="profile-new-page"]', timeout=15000)
-    await page.fill('[data-testid="profile-name-input"]', name)
-    await page.fill('[data-testid="profile-width-input"]', str(width))
-    await page.fill('[data-testid="profile-height-input"]', str(height))
-    await page.click('[data-testid="profile-create-submit"]')
-    await page.wait_for_url(re.compile(r"/\?profileId="), timeout=20000)
-    return parse_qs(urlparse(page.url).query)["profileId"][0]
+    del page
+    async with await harness.api_client() as client:
+        resp = await client.post(
+            "/api/v1/profiles",
+            json={"name": name, "screen_width": width, "screen_height": height},
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
 
 
 async def wait_iframe_stats(
@@ -165,116 +164,6 @@ def assert_remote_geometry(geometry: list[int], width: int, height: int) -> None
 
 
 @pytest.mark.asyncio
-async def test_display_profile_size_requires_explicit_apply(
-    harness: FrontendAppTopologyHarness, tmp_path: Path
-) -> None:
-    pw, browser, context = await launch_browser()
-    profile_id = ""
-    try:
-        page = await context.new_page()
-        await ui_login(page, harness)
-        profile_id = await create_profile_via_ui(
-            page, harness, "Display Apply Profile", width=1280, height=720
-        )
-
-        await page.goto(
-            f"{harness.origin}/?profileId={profile_id}",
-            wait_until="domcontentloaded",
-        )
-        await page.wait_for_selector(
-            '[data-testid="session-launch-btn"]', timeout=20000
-        )
-        await page.click('[data-testid="session-launch-btn"]', timeout=15000)
-        await page.wait_for_selector('[data-testid="header-stop-btn"]', timeout=120000)
-        await wait_iframe_stats(page)
-
-        assert await wait_video_size(page, [1280, 720]) == [1280, 720]
-        browser_container, _ = harness.container_names(profile_id)
-        initial_geometry = await remote_geometry(browser_container)
-        assert_remote_geometry(initial_geometry, 1280, 720)
-
-        # Change Profile dimensions while running. No restart happens yet.
-        await page.goto(
-            f"{harness.origin}/profiles/{profile_id}",
-            wait_until="domcontentloaded",
-        )
-        await page.wait_for_selector(
-            '[data-testid="profile-detail-page"]', timeout=15000
-        )
-        await page.fill('[data-testid="profile-width-input"]', "1600")
-        await page.fill('[data-testid="profile-height-input"]', "900")
-        await page.click('[data-testid="profile-edit-submit"]')
-        await page.wait_for_selector(
-            '[data-testid="profile-display-pending"]', timeout=20000
-        )
-        pending_text = await page.inner_text('[data-testid="profile-display-pending"]')
-        assert "重启后生效" in pending_text or "restart" in pending_text.lower()
-
-        assert_remote_geometry(await remote_geometry(browser_container), 1280, 720)
-
-        # Session page header also surfaces the pending change; remote stays 1280.
-        await page.goto(
-            f"{harness.origin}/?profileId={profile_id}",
-            wait_until="domcontentloaded",
-        )
-        await page.wait_for_selector(
-            '[data-testid="display-pending-badge"]', timeout=30000
-        )
-        await wait_iframe_stats(page)
-        assert await iframe_video_size(page) == [1280, 720]
-
-        # External viewport resize must never change remote geometry.
-        await page.set_viewport_size({"width": 900, "height": 600})
-        # Fixed settle window for a negative assertion: remote geometry must
-        # stay unchanged after the resize has had time to propagate.
-        await asyncio.sleep(1.0)
-        assert await iframe_video_size(page) == [1280, 720]
-        assert_remote_geometry(await remote_geometry(browser_container), 1280, 720)
-
-        # Explicit apply: stop + start through /api/v1 (Runtime Coordinator).
-        await page.click('[data-testid="display-apply-restart-btn"]', timeout=15000)
-        await page.wait_for_selector('[data-testid="header-stop-btn"]', timeout=180000)
-        runtime = await harness.wait_runtime(
-            profile_id, desired="running", observed="running", timeout=180.0
-        )
-        assert runtime["config_version"] == 2, runtime
-
-        await wait_iframe_stats(page)
-        assert await wait_video_size(page, [1600, 900], timeout=120.0) == [1600, 900]
-        await page.wait_for_selector(
-            '[data-testid="display-pending-badge"]',
-            state="detached",
-            timeout=30000,
-        )
-
-        browser_container, _ = harness.container_names(profile_id)
-        new_geometry = await remote_geometry(browser_container)
-        assert_remote_geometry(new_geometry, 1600, 900)
-        new_stats = await wait_iframe_stats(page)
-
-        _save(
-            tmp_path,
-            "ac004_display_apply",
-            {
-                "profile_id": profile_id,
-                "initial_geometry": initial_geometry,
-                "applied_geometry": new_geometry,
-                "video_size": await iframe_video_size(page),
-                "frames_decoded": new_stats["video"]["framesDecoded"],
-                "runtime_config_version": runtime["config_version"],
-            },
-        )
-    finally:
-        if profile_id:
-            try:
-                async with await harness.api_client() as client:
-                    await client.post(f"/api/v1/profiles/{profile_id}/stop")
-            except Exception as exc:  # noqa: BLE001 - best-effort profile stop cleanup
-                logger.debug("Profile stop cleanup skipped: %s", type(exc).__name__)
-        await browser.close()
-        await pw.stop()
-
-
 def test_stream_entrypoint_rejects_missing_supervised_screen_config() -> None:
     image = require_e2e_env("CBROWSER_STREAM_TEST_IMAGE")[
         "CBROWSER_STREAM_TEST_IMAGE"

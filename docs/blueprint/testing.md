@@ -172,6 +172,12 @@ E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须
 
 t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 ApiClient/SSE/下载链接三入口的绝对、协议相对、反斜杠与混合变体（`client.sameorigin.test.ts`、`sse.sameorigin.test.ts`）；真实 HTTP 夹具改为注入 fetch 按 origin 转发到测试服务器（客户端已无 baseUrl/url 配置项）；注销失败处置走生产 AppProviders + 实现 `setOnUnauthorized` 的真实 SSE 客户端断言回调路径（`providers.unauthorized.test.tsx`），AppProviders 默认 QueryClient retry 接线由 `providers.defaults.test.tsx` 守卫；跨 Profile 动作隔离由三页面的 `*.isolation.test.tsx` 覆盖，apply 阶段续跑由 `useProfilesQuery.applyresume.test.tsx` 以服务端幂等重放模型覆盖。真实 Docker/Chrome 拓扑下的会话回归（真实 401 注销、跨 Profile 切换与应用并重启）不在云端执行，统一由 t032 在目标环境判定。
 
+### t036 设计门禁与产物扫描
+
+设计门禁三条命令接入 `scripts/run_gates.sh` 前端阶段，顺序在 `frontend_test` 之前：`npm run design:lint`（`DESIGN.md` 官方 lint，error / warning 任一非零即失败）、`npm run design:check`（入库 `design_tokens.css` 与重新生成结果比对，不一致即失败）、`npm run design:tokens`（幂等写回）。`design_tokens.test.mjs` 覆盖三条生成前校验（`light-*` / `dark-*` 角色集合不等、未解析引用、既非 `primary` 又无模式前缀的颜色 token）与确定性生成；`design:check` 失败路径以追加 stale marker 验证（退出 1）。
+
+AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置页、手写 `globals.css`、占位页）中 Tailwind 默认调色板类、旧 `surface-*` / `primary-foreground` 类与颜色字面量命中 0；构建产物 CSS 中 `bg-red-500` / `text-gray-100` / `bg-emerald-500` / `bg-blue-500` / `text-slate-900` / `bg-surface-0` 均不产生样式，语义变量（`--color-background` / `--color-surface` / `--color-accent` / `--font-ui` / `--font-mono` / `--text-body-md` / `--radius-md` / `--spacing-md`）、`.bg-primary` 与 `.dark` 覆盖均存在。AC-009 扫描：`dist/index.html` 与 `dist/assets/*.css` 中 `https?://` 仅命中 Tailwind MIT license 注释，无外部字体 / 图标 CDN 引用；自托管 `*.woff2` 13 个；`index.html` 内联脚本数 0。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。

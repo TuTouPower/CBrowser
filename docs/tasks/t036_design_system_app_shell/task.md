@@ -34,16 +34,16 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：`DESIGN.md` 官方 lint 为 0 error / 0 warning，两种模式下全部组件的文字与背景组合对比度达 WCAG AA；token 覆盖 plan 4.3–4.6 列出的颜色角色（亮暗成对）、字体、间距、圆角与组件。
-- [ ] AC-002：`npm run design:tokens` 由 `DESIGN.md` 确定性生成 `design_tokens.css`；`light-*` 与 `dark-*` 角色集合不同、存在未解析引用，或存在既非 `primary` 又无模式前缀的颜色 token 时，生成失败；入库产物与重新生成结果不一致时 `design:check` 失败；三条命令在 `run_gates.sh` 前端阶段执行。
-- [ ] AC-003：Tailwind 默认调色板类在构建中不产生样式；外壳、`shared/ui`、登录页、设置页与样式源码不含 Tailwind 默认调色板类与颜色字面量（扫描命令与结果写入实施笔记）。
-- [ ] AC-004：主题三态切换即时生效并持久化；`system` 模式跟随 `prefers-color-scheme` 变化；首次渲染前 `<html>` 已具备目标主题 class 与 `color-scheme`，页面不含内联脚本；切换 UI 主题不改变任何 Profile 的 `color_scheme`。
-- [ ] AC-005：侧栏可折叠、可拖宽（200–360px），状态刷新后恢复；所有导航与控件可键盘操作；底部运行中环境数随 SSE 更新；窄屏下侧栏为抽屉。
-- [ ] AC-006：Runtime Coordinator 错误以全局警示横幅展示；宿主页内、iframe 之外的点击使 iframe 失焦。
-- [ ] AC-007：路由表与 plan 5.1 一致：旧路由（`/?profileId=`、`/profiles/new`、`/automation/:profileId`）不再匹配任何页面；导航与环境链接均为真实 `<a href>`。
-- [ ] AC-008：Dialog、DropdownMenu、Popover、Tooltip 具备焦点陷阱与焦点归还、Esc 关闭和正确的 ARIA 角色；Toast 全局只有一个实例（组件测试覆盖）。
-- [ ] AC-009：前端构建产物不引用任何外部字体或图标 CDN，字体文件随产物分发（产物扫描）。
-- [ ] AC-010：登录页与设置页按设计系统重做后，鉴权、登录跳转、语言切换与系统信息的语义由测试覆盖并通过；设置页平台字体区块的内容与 `GET /api/v1/font-sets` 一致，完整性不一致的字体集显示告警。
+- [x] AC-001：`DESIGN.md` 官方 lint 为 0 error / 0 warning，两种模式下全部组件的文字与背景组合对比度达 WCAG AA；token 覆盖 plan 4.3–4.6 列出的颜色角色（亮暗成对）、字体、间距、圆角与组件。
+- [x] AC-002：`npm run design:tokens` 由 `DESIGN.md` 确定性生成 `design_tokens.css`；`light-*` 与 `dark-*` 角色集合不同、存在未解析引用，或存在既非 `primary` 又无模式前缀的颜色 token 时，生成失败；入库产物与重新生成结果不一致时 `design:check` 失败；三条命令在 `run_gates.sh` 前端阶段执行。
+- [x] AC-003：Tailwind 默认调色板类在构建中不产生样式；外壳、`shared/ui`、登录页、设置页与样式源码不含 Tailwind 默认调色板类与颜色字面量（扫描命令与结果写入实施笔记）。
+- [x] AC-004：主题三态切换即时生效并持久化；`system` 模式跟随 `prefers-color-scheme` 变化；首次渲染前 `<html>` 已具备目标主题 class 与 `color-scheme`，页面不含内联脚本；切换 UI 主题不改变任何 Profile 的 `color_scheme`。
+- [x] AC-005：侧栏可折叠、可拖宽（200–360px），状态刷新后恢复；所有导航与控件可键盘操作；底部运行中环境数随 SSE 更新；窄屏下侧栏为抽屉。
+- [x] AC-006：Runtime Coordinator 错误以全局警示横幅展示；宿主页内、iframe 之外的点击使 iframe 失焦。
+- [x] AC-007：路由表与 plan 5.1 一致：旧路由（`/?profileId=`、`/profiles/new`、`/automation/:profileId`）不再匹配任何页面；导航与环境链接均为真实 `<a href>`。
+- [x] AC-008：Dialog、DropdownMenu、Popover、Tooltip 具备焦点陷阱与焦点归还、Esc 关闭和正确的 ARIA 角色；Toast 全局只有一个实例（组件测试覆盖）。
+- [x] AC-009：前端构建产物不引用任何外部字体或图标 CDN，字体文件随产物分发（产物扫描）。
+- [x] AC-010：登录页与设置页按设计系统重做后，鉴权、登录跳转、语言切换与系统信息的语义由测试覆盖并通过；设置页平台字体区块的内容与 `GET /api/v1/font-sets` 一致，完整性不一致的字体集显示告警。
 
 ### 可测试性声明
 
@@ -78,8 +78,8 @@
 
 <!-- /规范 -->
 
-- `@google/design.md` 当前最新版的程序化 API 与 lint 规则（plan 以 0.4.0 实测）：UNVERIFIED-SPIKE，实施时以精确固定的最新版重跑 4.2 节写法验证。
-- Tailwind 4 `@tailwindcss/vite` 与 t033 选定的 Vite 大版本兼容：UNVERIFIED-SPIKE，构建验证。
+- `@google/design.md` 当前最新版的程序化 API 与 lint 规则：**已核实**（正式 spike `s015` + finding `d034`）。`npm view` 2026-11-06 最新版为 `0.4.0`；精确固定 `@google/design.md@0.4.0` 后，plan 4.2 双模式写法（`primary` + 成对 `light-*` / `dark-*` + 成对 `<component>-light` / `<component>-dark` + `### Modes`）经 `npx @google/design.md lint` 实测 `{"errors":0,"warnings":0,"infos":1}`；程序化 `import { lint } from '@google/design.md/linter'` 的 `lint(content)` 返回 `LintReport`，`designSystem.colors` 为 `Map`（值含 `hex` / `r` / `g` / `b` / `luminance`），`tailwindConfig` 可用。官方 lint 不校验 `light-*` 与 `dark-*` 角色集合相等，该规则由生成器实现（AC-002）。
+- Tailwind 4 `@tailwindcss/vite` 与 t033 选定的 Vite 大版本兼容：**已核实**（`s015`）。精确固定 `@tailwindcss/vite@4.3.4` + `tailwindcss@4.3.4` + `vite@8.3.5`（t033 固定）后 `vite build` 成功，产物 CSS 含 `@theme` token 值，不需 PostCSS / autoprefixer；Vite 8 的 `root` 须写在 config（`--root` CLI 参数已不支持）。
 
 ### 风险与回退
 

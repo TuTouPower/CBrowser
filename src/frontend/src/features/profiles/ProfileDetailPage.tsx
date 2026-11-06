@@ -100,7 +100,7 @@ export function ProfileDetailPage() {
         includeBrowserState,
       });
       if (!isStillOnProfile(targetId)) return;
-      navigate(`/profiles/${clone.id}`);
+      navigate(`/profiles/${clone.id}/config`);
     } catch (err: unknown) {
       if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToDuplicateProfile"));
@@ -232,7 +232,7 @@ export function ProfileDetailPage() {
     <div data-testid="profile-detail-page" className="p-8 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <Link
-          to={`/?profileId=${profile.id}`}
+          to={`/session/${profile.id}`}
           className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -248,7 +248,7 @@ export function ProfileDetailPage() {
             {t("files")}
           </Link>
           <Link
-            to={`/automation/${profile.id}`}
+            to={`/profiles/${profile.id}/automation`}
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 border border-border"
           >
             <Cpu className="h-3.5 w-3.5" />

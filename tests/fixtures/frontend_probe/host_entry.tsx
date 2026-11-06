@@ -4,8 +4,9 @@ import { BrowserSessionView } from "../../../src/frontend/src/features/browser-s
 import { I18nProvider } from "../../../src/frontend/src/i18n";
 
 const params = new URLSearchParams(window.location.search);
+const sessionPath = window.location.pathname.match(/\/session\/([^/]+)/);
 const profileId =
-  params.get("profileId") || params.get("profile_id") || "default";
+  params.get("profileId") || params.get("profile_id") || sessionPath?.[1] || "default";
 
 (window as any).__cbrowserHostLoaded = true;
 

@@ -29,6 +29,14 @@ vi.mock("../i18n", () => ({
   useI18n: () => ({ t: (k: string) => k, locale: "en", setLocale: vi.fn() }),
 }));
 
+vi.mock("../theme", () => ({
+  useTheme: () => ({
+    preference: "dark",
+    resolved: "dark",
+    setPreference: vi.fn(),
+  }),
+}));
+
 describe("AppLayout iframe focus-release contract", () => {
   let queryClient: QueryClient;
 

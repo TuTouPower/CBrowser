@@ -1,107 +1,248 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router";
-import { ArrowLeft, Settings, ShieldCheck, Globe } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import {
+  Globe,
+  Palette,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  Type,
+} from "lucide-react";
 import { useI18n } from "../../i18n";
+import { useTheme, type ThemePreference } from "../../theme";
 import { useApiClient } from "../../shared/api/client_context";
+import { Banner, Button, Select, StatusBadge } from "../../shared/ui";
+
+interface FontSetIntegrity {
+  ok: boolean;
+  problems?: string[];
+}
+
+interface FontSetInfo {
+  platform: string;
+  set_id: string;
+  source?: string | null;
+  source_version?: string | null;
+  integrity: FontSetIntegrity;
+  file_count: number;
+  used_by_count: number;
+}
+
+function Section({
+  icon,
+  title,
+  description,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-outline bg-surface p-lg">
+      <div className="mb-md flex items-center gap-md">
+        <span className="text-on-surface-muted">{icon}</span>
+        <div>
+          <h2 className="font-ui text-title-sm text-on-surface">{title}</h2>
+          <p className="font-ui text-body-sm text-on-surface-muted">{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
 
 export function SettingsPage() {
   const { locale, setLocale, t } = useI18n();
+  const { preference, setPreference } = useTheme();
   const client = useApiClient();
-  const [healthStatus, setHealthStatus] = useState<string>("checking");
+  const [healthStatus, setHealthStatus] = useState<
+    "checking" | "healthy" | "error"
+  >("checking");
+  const [fontSets, setFontSets] = useState<FontSetInfo[] | null>(null);
+  const [fontSetsError, setFontSetsError] = useState(false);
 
   useEffect(() => {
+    let active = true;
     client.health
       .check()
-      .then(() => setHealthStatus("healthy"))
-      .catch(() => setHealthStatus("error"));
+      .then(() => {
+        if (active) setHealthStatus("healthy");
+      })
+      .catch(() => {
+        if (active) setHealthStatus("error");
+      });
+    return () => {
+      active = false;
+    };
   }, [client]);
 
-  return (
-    <div data-testid="settings-page" className="p-8 max-w-3xl mx-auto">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t("backToDashboard")}
-      </Link>
+  useEffect(() => {
+    let active = true;
+    client
+      .request<FontSetInfo[]>("/api/v1/font-sets")
+      .then((sets) => {
+        if (active) setFontSets(sets);
+      })
+      .catch(() => {
+        if (active) setFontSetsError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [client]);
 
-      <div className="flex items-center gap-3 mb-6">
-        <Settings className="h-6 w-6 text-primary" />
-        <h1 className="text-xl font-bold text-gray-100">{t("settings")}</h1>
+  const themeOptions = [
+    { value: "system", label: t("themeSystem") },
+    { value: "light", label: t("themeLight") },
+    { value: "dark", label: t("themeDark") },
+  ];
+
+  return (
+    <div data-testid="settings-page" className="mx-auto max-w-3xl">
+      <div className="mb-lg flex items-center gap-md">
+        <SettingsIcon aria-hidden="true" className="h-6 w-6 text-on-surface-muted" />
+        <h1 className="font-ui text-headline-lg text-on-surface">{t("settings")}</h1>
       </div>
 
-      <div className="space-y-6">
-        {/* Language setting */}
-        <div className="bg-surface-1 border border-border rounded-lg p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Globe className="h-5 w-5 text-gray-400" />
-              <div>
-                <h3 className="text-sm font-medium text-gray-200">{t("language")}</h3>
-                <p className="text-xs text-gray-400">{t("switchLanguage")}</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setLocale("en")}
-                className={`px-3 py-1.5 rounded text-xs font-medium border ${
-                  locale === "en"
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-surface-2 text-gray-300 border-border hover:bg-surface-3"
-                }`}
-              >
-                {t("languageEn")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setLocale("zh")}
-                className={`px-3 py-1.5 rounded text-xs font-medium border ${
-                  locale === "zh"
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-surface-2 text-gray-300 border-border hover:bg-surface-3"
-                }`}
-              >
-                {t("languageZh")}
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="flex flex-col gap-lg">
+        <Section
+          icon={<Palette aria-hidden="true" className="h-5 w-5" />}
+          title={t("appearance")}
+          description={t("theme")}
+        >
+          <Select
+            ariaLabel={t("theme")}
+            value={preference}
+            onValueChange={(value) => setPreference(value as ThemePreference)}
+            options={themeOptions}
+          />
+        </Section>
 
-        {/* API System Status */}
-        <div className="bg-surface-1 border border-border rounded-lg p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="h-5 w-5 text-gray-400" />
-              <div>
-                <h3 className="text-sm font-medium text-gray-200">
-                  {t("controlApiStatusTitle")}
-                </h3>
-                <p className="text-xs text-gray-400">
-                  {t("controlApiStatusHint")}
-                </p>
-              </div>
-            </div>
-            <div>
-              {healthStatus === "healthy" && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  {t("healthHealthy")}
-                </span>
-              )}
-              {healthStatus === "checking" && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                  {t("healthChecking")}
-                </span>
-              )}
-              {healthStatus === "error" && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20">
-                  {t("healthUnreachable")}
-                </span>
-              )}
-            </div>
+        <Section
+          icon={<Globe aria-hidden="true" className="h-5 w-5" />}
+          title={t("language")}
+          description={t("switchLanguage")}
+        >
+          <div className="flex gap-sm">
+            <Button
+              variant={locale === "en" ? "primary" : "secondary"}
+              onClick={() => setLocale("en")}
+            >
+              {t("languageEn")}
+            </Button>
+            <Button
+              variant={locale === "zh" ? "primary" : "secondary"}
+              onClick={() => setLocale("zh")}
+            >
+              {t("languageZh")}
+            </Button>
           </div>
-        </div>
+        </Section>
+
+        <Section
+          icon={<ShieldCheck aria-hidden="true" className="h-5 w-5" />}
+          title={t("controlApiStatusTitle")}
+          description={t("controlApiStatusHint")}
+        >
+          <StatusBadge
+            tone={
+              healthStatus === "healthy"
+                ? "running"
+                : healthStatus === "error"
+                  ? "error"
+                  : "transition"
+            }
+            label={
+              healthStatus === "healthy"
+                ? t("healthHealthy")
+                : healthStatus === "error"
+                  ? t("healthUnreachable")
+                  : t("healthChecking")
+            }
+          />
+        </Section>
+
+        <Section
+          icon={<Type aria-hidden="true" className="h-5 w-5" />}
+          title={t("platformFontSets")}
+          description={t("platformFontSets")}
+        >
+          {fontSetsError && (
+            <Banner tone="danger" testId="font-sets-error">
+              {t("fontSetsLoadFailed")}
+            </Banner>
+          )}
+          {!fontSetsError && fontSets?.length === 0 && (
+            <p className="font-ui text-body-sm text-on-surface-muted">
+              {t("fontSetsEmpty")}
+            </p>
+          )}
+          {fontSets && fontSets.length > 0 && (
+            <div data-testid="font-sets" className="flex flex-col gap-sm">
+              {fontSets.map((fontSet) => (
+                <div
+                  key={`${fontSet.platform}-${fontSet.set_id}`}
+                  data-testid={`font-set-${fontSet.platform}-${fontSet.set_id}`}
+                  className="rounded-md border border-outline bg-surface-subtle p-md"
+                >
+                  <div className="mb-sm flex items-center justify-between gap-sm">
+                    <span className="font-mono text-mono-md text-on-surface">
+                      {fontSet.platform}
+                    </span>
+                    {fontSet.integrity.ok ? (
+                      <StatusBadge
+                        tone="running"
+                        label={t("fontSetIntegrityOk")}
+                      />
+                    ) : (
+                      <span data-testid="font-set-integrity-bad">
+                        <Banner tone="danger">
+                          {t("fontSetIntegrityBad")}
+                        </Banner>
+                      </span>
+                    )}
+                  </div>
+                  <dl className="grid grid-cols-2 gap-sm font-ui text-body-sm">
+                    <div>
+                      <dt className="text-on-surface-muted">{t("fontSetSource")}</dt>
+                      <dd className="font-mono text-mono-md text-on-surface">
+                        {fontSet.source ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-muted">{t("fontSetVersion")}</dt>
+                      <dd className="font-mono text-mono-md text-on-surface">
+                        {fontSet.source_version ?? "—"}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-muted">{t("fontSetFileCount")}</dt>
+                      <dd className="font-mono text-mono-md text-on-surface">
+                        {fontSet.file_count}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-on-surface-muted">{t("fontSetUsedBy")}</dt>
+                      <dd className="font-mono text-mono-md text-on-surface">
+                        {fontSet.used_by_count}
+                      </dd>
+                    </div>
+                  </dl>
+                  {!fontSet.integrity.ok && fontSet.integrity.problems?.length ? (
+                    <ul
+                      data-testid="font-set-problems"
+                      className="mt-sm list-inside list-disc font-mono text-mono-md text-on-surface"
+                    >
+                      {fontSet.integrity.problems.map((problem) => (
+                        <li key={problem}>{problem}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </Section>
       </div>
     </div>
   );

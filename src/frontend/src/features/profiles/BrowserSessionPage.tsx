@@ -1,4 +1,5 @@
-import { useSearchParams, useNavigate, Link } from "react-router";
+import { useEffect } from "react";
+import { useParams, useNavigate, Link } from "react-router";
 import { Play, Settings as SettingsIcon, FolderArchive, Cpu, Compass } from "lucide-react";
 import {
   scopeMutationToProfile,
@@ -12,18 +13,26 @@ import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
 
 export function BrowserSessionPage() {
-  const [searchParams] = useSearchParams();
-  const profileId = searchParams.get("profileId");
+  const { profileId } = useParams<{ profileId: string }>();
   const navigate = useNavigate();
   const { t } = useI18n();
   const client = useApiClient();
+
+  useEffect(() => {
+    if (!profileId) return;
+    try {
+      sessionStorage.setItem("cbrowser.session.target", profileId);
+    } catch {
+      return;
+    }
+  }, [profileId]);
 
   const profileQuery = useProfileQuery(profileId, client);
   const runtimeQuery = useProfileRuntimeQuery(profileId, client);
   const { data: profile, isLoading: isProfileLoading } = profileQuery;
   const { data: runtime, isLoading: isRuntimeLoading } = runtimeQuery;
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
-  // The page stays mounted across ?profileId= switches: only surface the
+  // The page stays mounted across :profileId changes: only surface the
   // launch state of an action that targeted the Profile on screen.
   const launchState = scopeMutationToProfile(
     setDesiredStateMutation,
@@ -42,7 +51,7 @@ export function BrowserSessionPage() {
           {t("sessionSelectHint")}
         </p>
         <Link
-          to="/profiles/new"
+          to="/"
           className="px-4 py-2 bg-primary text-primary-foreground text-xs font-medium rounded hover:opacity-90 transition-opacity"
         >
           + {t("newProfile")}
@@ -101,7 +110,7 @@ export function BrowserSessionPage() {
       <BrowserSessionMount
         profileId={profileId}
         clipboardSync={profile.clipboard_sync}
-        onCheckRuntimeStatus={() => navigate(`/profiles/${profileId}`)}
+        onCheckRuntimeStatus={() => navigate(`/profiles/${profileId}/config`)}
         apiClient={client}
       />
     );
@@ -179,7 +188,7 @@ export function BrowserSessionPage() {
 
         <div className="flex items-center justify-center gap-3 pt-3 border-t border-border">
           <Link
-            to={`/profiles/${profile.id}`}
+            to={`/profiles/${profile.id}/config`}
             className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
           >
             <SettingsIcon className="h-3.5 w-3.5" />
@@ -195,7 +204,7 @@ export function BrowserSessionPage() {
           </Link>
           <span className="text-gray-600">•</span>
           <Link
-            to={`/automation/${profile.id}`}
+            to={`/profiles/${profile.id}/automation`}
             className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-200"
           >
             <Cpu className="h-3.5 w-3.5" />

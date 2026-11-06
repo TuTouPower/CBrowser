@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@theme {
+  --color-light-surface: #F7FBF8;
+  --color-light-on-surface: #0D1611;
+  --radius-lg: 10px;
+  --spacing-md: 12px;
+}
+.dark { --color-light-surface: #0E1411; --color-light-on-surface: #E6EDE8; }

@@ -113,10 +113,10 @@ function renderPage(client: ApiClient) {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ApiClientContext.Provider value={client}>
-          <MemoryRouter initialEntries={["/?profileId=pA"]}>
+          <MemoryRouter initialEntries={["/session/pA"]}>
             <NavCapture />
             <Routes>
-              <Route path="/" element={<BrowserSessionPage />} />
+              <Route path="/session/:profileId" element={<BrowserSessionPage />} />
             </Routes>
           </MemoryRouter>
         </ApiClientContext.Provider>
@@ -143,7 +143,7 @@ describe("BrowserSessionPage per-profile action isolation", () => {
       "launch failed A",
     );
 
-    act(() => navigateFn("/?profileId=pB"));
+    act(() => navigateFn("/session/pB"));
     expect(await screen.findByText("Beta")).toBeTruthy();
     await waitFor(() =>
       expect(screen.queryByTestId("session-start-error")).toBeNull(),
@@ -168,7 +168,7 @@ describe("BrowserSessionPage per-profile action isolation", () => {
       expect(screen.getByTestId("session-launch-btn")).toBeDisabled(),
     );
 
-    act(() => navigateFn("/?profileId=pB"));
+    act(() => navigateFn("/session/pB"));
     expect(await screen.findByText("Beta")).toBeTruthy();
     await waitFor(() =>
       expect(screen.getByTestId("session-launch-btn")).not.toBeDisabled(),
@@ -196,13 +196,13 @@ describe("BrowserSessionPage per-profile action isolation", () => {
       "launch failed A",
     );
 
-    act(() => navigateFn("/?profileId=pB"));
+    act(() => navigateFn("/session/pB"));
     expect(await screen.findByText("Beta")).toBeTruthy();
     await waitFor(() =>
       expect(screen.queryByTestId("session-start-error")).toBeNull(),
     );
 
-    act(() => navigateFn("/?profileId=pA"));
+    act(() => navigateFn("/session/pA"));
     expect(await screen.findByText("Alpha")).toBeTruthy();
     // Back on A, the view presents A's own state again — not B's, not a
     // leftover from the detour.

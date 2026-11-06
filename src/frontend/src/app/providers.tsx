@@ -2,6 +2,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider, useAuth } from "../features/auth/useAuth";
 import { I18nProvider } from "../i18n";
+import { ThemeProvider } from "../theme";
+import { ToastProvider } from "../shared/ui";
 import { defaultApiClient, ApiClient, shouldRetryRequest } from "../shared/api/client";
 import { ApiClientContext } from "../shared/api/client_context";
 import { defaultSseClient, ProfileEventsClient } from "../shared/api/sse";
@@ -67,12 +69,16 @@ export function AppProviders({
   return (
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <ApiClientContext.Provider value={apiClient}>
-          <AuthProvider client={apiClient}>
-            <AuthenticatedSseBridge sseClient={sseClient} />
-            {children}
-          </AuthProvider>
-        </ApiClientContext.Provider>
+        <ThemeProvider>
+          <ToastProvider>
+            <ApiClientContext.Provider value={apiClient}>
+              <AuthProvider client={apiClient}>
+                <AuthenticatedSseBridge sseClient={sseClient} />
+                {children}
+              </AuthProvider>
+            </ApiClientContext.Provider>
+          </ToastProvider>
+        </ThemeProvider>
       </I18nProvider>
     </QueryClientProvider>
   );

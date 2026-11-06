@@ -290,3 +290,14 @@
     3. 把平台专有字体打进 Browser 镜像或提交到 git 仓库随发布分发。
 - 结论：采用选项 2。运行配置新增 `fingerprint_platform`（默认 `windows`）与 `font_set_id`，经增量迁移 `0002_fingerprint_platform.py` 加入，两者修改任一生成新 `ProfileConfigVersion`；Runner 按绑定快照选择平台，删除写死的参数。基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）放镜像 `/opt/cbrowser-base-fonts`（默认扫描路径之外，仅满足 CloakBrowser 安装要求，**不进入**指纹 Profile 白名单，用户 2026-11-06 裁决）；平台字体集存宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`（内容寻址 set_id + 来源与 sha256 manifest，经 `.worktreeinclude` 供 worktree 共享），只读挂到 `/run/cbrowser/fonts/{platform}/{set_id}`。绑定集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时回退基础开源字体可见、保证页面可用（空字体集会让真实栈页面交互失败），runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体；runtime 响应与 SSE 下发实际 `font_set_id` 与 `missing_fonts`，`GET /api/v1/font-sets` 列出平台、来源、版本、静态完整性与 `used_by_count`。字体不进任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录（AC-008）；`font_bundle` 字段、镜像字体包、代码、文档与测试引用一并删除（AC-009）。UA-CH `architecture=arm` 与 windows UA `x64` 的差异：引擎层无 flag、CDP 页面级覆盖漏 ServiceWorker，按用户裁决不做半套覆盖（`d032` + `p045`），AC-004 文本不改。选项 3 把平台字体打进镜像 / 仓库等同分发，授权与来源风险明确不做；平台字体只从官方渠道取得、只在运行时只读挂载，不进入任何镜像层与仓库。
 - 替代：015（本条为现行决定，替代 ADR 015；历史 ADR 015 原文不改，其「不挂载宿主字体目录」「不预置字体文件」结论由运行时只读挂载取代）。
+
+## 025 DESIGN.md 为设计权威与亮暗双模式约定（2026-11-06T14:26:49+08:00，t036）
+
+- 背景：前端颜色硬编码（Tailwind 3 `surface-0..4` / `gray-*` / `emerald-*`），只有暗色；设计参考原型与实现分离，无法约束后续 UI task。plan 4 节（D1，用户 2026-11-05 确认）要求以 google-labs-code/design.md alpha 格式的设计文件作为唯一设计权威并支持亮暗双模式。正式 spike `s015` + finding `d034` 在 `@google/design.md@0.4.0` 实测：前缀 token 正常解析、成对组件分别做 WCAG AA 对比度检查、程序化 `lint()` 返回已解析 hex / RGB；`@tailwindcss/vite@4.3.4` 与 t033 选定的 Vite 8.3.5 构建兼容。
+- 选项：
+    1. 继续用 Tailwind 3 自定义 `theme.extend.colors` 并手写两套 CSS 变量。
+    2. 采用根目录 `DESIGN.md` 作为唯一权威，精确固定 `@google/design.md@0.4.0`，由生成器输出 Tailwind 4 `@theme` 变量，业务代码只用语义 token；双模式以 `light-*` / `dark-*` 成对角色 + 成对组件表达。
+    3. 等上游规范正式支持多模式后再做主题。
+- 结论：采用选项 2。`DESIGN.md` 章节按规范顺序，`primary` 为模式无关品牌色，其余颜色角色成对且集合相同（由生成器校验，官方 lint 不校验此规则）；字体 / 间距 / 圆角与模式无关只定义一次。`design:tokens` 生成 `design_tokens.css`（亮色默认 + `.dark` 覆盖全部颜色变量），产物入库，`design:lint` / `design:check` 与 `design:tokens` 接入完整门禁。Tailwind 4 以 `--color-*: initial` 重置默认调色板，删除 PostCSS / autoprefixer / `tailwind.config.ts`；字体经 `@fontsource` 自托管。主题偏好 `system` / `light` / `dark`（默认 `dark`）存 `cbrowser.theme`，`public/theme_boot.js` 外链经典脚本保证首帧无闪烁，UI 主题与 Profile `color_scheme` 互不影响。选项 1 保留硬编码分歧、无单一权威；选项 3 把已确认的需求无限期推迟。
+- 复查条件：`@google/design.md` 升级或上游正式支持多模式时重跑 `s015` 的 lint 与 Vite build 两条命令；若双模式写法失效，只改 token 写法与生成器，业务代码不变。
+- 替代：不影响既有 ADR；ADR 020（t033 前端工具链）为本次 Tailwind 4 / Vite 8 前提，ADR 015 字体三档由 ADR 024 取代。
