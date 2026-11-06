@@ -4,7 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
-import { ProfileNewPage } from "../profiles/ProfileNewPage";
+import { ProfileForm } from "../profiles/ProfileForm";
 import type { ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
 import { I18nProvider } from "../../i18n";
@@ -29,6 +29,9 @@ function renderPages(fontSets: FontSetFixture[] = []) {
   const stubClient = {
     health: { check: vi.fn(async () => undefined) },
     profiles: { create: vi.fn(async () => ({ id: "p-new" })) },
+    groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
+    proxies: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => []) },
     request: vi.fn(async () => fontSets),
   } as unknown as ApiClient;
   return render(
@@ -38,7 +41,7 @@ function renderPages(fontSets: FontSetFixture[] = []) {
           <ApiClientContext.Provider value={stubClient}>
             <MemoryRouter>
               <SettingsPage />
-              <ProfileNewPage />
+              <ProfileForm mode="create" onSubmit={async () => {}} />
             </MemoryRouter>
           </ApiClientContext.Provider>
         </QueryClientProvider>
@@ -66,15 +69,16 @@ describe("settings and profile form i18n (t035)", () => {
 
     expect(screen.getByText("控制 API")).toBeTruthy();
     expect(screen.getByText("控制 API 健康检查")).toBeTruthy();
-    expect(screen.getByPlaceholderText("例如：工作配置")).toBeTruthy();
+    expect(screen.getByText("名称")).toBeTruthy();
+    expect(screen.getByLabelText("宽度 (px)")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("正常")).toBeTruthy());
 
     fireEvent.click(screen.getByText("English"));
 
     expect(screen.getByText("Control API")).toBeTruthy();
     expect(screen.getByText("Control API health check")).toBeTruthy();
-    expect(screen.getByPlaceholderText("e.g. Work Profile")).toBeTruthy();
-    expect(screen.getByText("Width (px)")).toBeTruthy();
+    expect(screen.getByText("Name")).toBeTruthy();
+    expect(screen.getByLabelText("Width (px)")).toBeTruthy();
   });
 });
 

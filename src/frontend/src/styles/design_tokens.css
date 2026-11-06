@@ -52,6 +52,45 @@
   --spacing-lg: 16px;
   --spacing-xl: 24px;
   --spacing-2xl: 32px;
+  --container-dialog: 32rem;
+  --container-dialog-width: calc(100% - 2rem);
+  --container-dialog-height: 90vh;
+  --container-panel: 28rem;
+  --container-hint: 20rem;
+  --container-page: 100rem;
+  --container-menu: 10rem;
+  --container-select: 8rem;
+  --container-control-sm: 1.875rem;
+}
+
+@layer utilities {
+  .h-dialog { height: var(--container-dialog); }
+  .max-h-dialog { max-height: var(--container-dialog); }
+  .min-h-dialog { min-height: var(--container-dialog); }
+  .h-dialog-width { height: var(--container-dialog-width); }
+  .max-h-dialog-width { max-height: var(--container-dialog-width); }
+  .min-h-dialog-width { min-height: var(--container-dialog-width); }
+  .h-dialog-height { height: var(--container-dialog-height); }
+  .max-h-dialog-height { max-height: var(--container-dialog-height); }
+  .min-h-dialog-height { min-height: var(--container-dialog-height); }
+  .h-panel { height: var(--container-panel); }
+  .max-h-panel { max-height: var(--container-panel); }
+  .min-h-panel { min-height: var(--container-panel); }
+  .h-hint { height: var(--container-hint); }
+  .max-h-hint { max-height: var(--container-hint); }
+  .min-h-hint { min-height: var(--container-hint); }
+  .h-page { height: var(--container-page); }
+  .max-h-page { max-height: var(--container-page); }
+  .min-h-page { min-height: var(--container-page); }
+  .h-menu { height: var(--container-menu); }
+  .max-h-menu { max-height: var(--container-menu); }
+  .min-h-menu { min-height: var(--container-menu); }
+  .h-select { height: var(--container-select); }
+  .max-h-select { max-height: var(--container-select); }
+  .min-h-select { min-height: var(--container-select); }
+  .h-control-sm { height: var(--container-control-sm); }
+  .max-h-control-sm { max-height: var(--container-control-sm); }
+  .min-h-control-sm { min-height: var(--container-control-sm); }
 }
 
 .dark {

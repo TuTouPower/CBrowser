@@ -66,7 +66,7 @@ export const SessionDiagnostics: React.FC<SessionDiagnosticsProps> = ({
       data-testid="session-diagnostics-overlay"
       className="absolute inset-0 bg-neutral-900/90 text-white flex flex-col items-center justify-center p-6 z-20 backdrop-blur-sm"
     >
-      <div className="max-w-md w-full bg-neutral-800 border border-neutral-700 rounded-lg p-6 shadow-xl space-y-4">
+      <div className="max-w-panel w-full bg-neutral-800 border border-neutral-700 rounded-lg p-6 shadow-xl space-y-4">
         <div className="flex items-center space-x-3">
           <div
             className={`w-3 h-3 rounded-full ${

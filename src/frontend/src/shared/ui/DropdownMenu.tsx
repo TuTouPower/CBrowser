@@ -23,7 +23,7 @@ export function DropdownMenu({
         <DropdownMenuPrimitive.Content
           aria-label={ariaLabel}
           sideOffset={4}
-          className="z-50 min-w-[10rem] rounded-lg border border-outline bg-surface-raised p-sm text-on-surface shadow-lg"
+          className="z-50 min-w-menu rounded-lg border border-outline bg-surface-raised p-sm text-on-surface shadow-lg"
         >
           {items.map((item) => (
             <DropdownMenuPrimitive.Item

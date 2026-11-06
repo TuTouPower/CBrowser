@@ -42,7 +42,11 @@ def fence_transport(
 async def make_runtime_response(
     rt: ProfileRuntime, coordinator: Any = None
 ) -> ProfileRuntimeResponse:
-    last_error = coordinator.get_last_error(rt.profile_id) if coordinator else None
+    last_error = (
+        coordinator.get_last_error(rt.profile_id, runtime=rt)
+        if coordinator
+        else None
+    )
     search_defaults = fence_search_defaults(
         coordinator.get_search_defaults(rt.profile_id)
         if coordinator is not None

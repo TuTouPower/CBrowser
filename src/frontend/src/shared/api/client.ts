@@ -9,6 +9,12 @@ import type {
   LoginRequest,
   LoginResponse,
   SessionResponse,
+  GroupResponse,
+  GroupCreateRequest,
+  GroupUpdateRequest,
+  GroupReorderRequest,
+  ProxyResponse,
+  FontSetInfo,
 } from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
 
@@ -410,6 +416,72 @@ export class ApiClient {
         this.setCsrfToken(res.csrf_token);
       }
       return res;
+    },
+  };
+
+  readonly groups = {
+    list: async (): Promise<GroupResponse[]> => {
+      return this.request<GroupResponse[]>("/api/v1/groups");
+    },
+    create: async (
+      data: GroupCreateRequest,
+      idempotencyKey?: string,
+    ): Promise<GroupResponse> => {
+      return this.request<GroupResponse>("/api/v1/groups", {
+        method: "POST",
+        body: JSON.stringify(data),
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      });
+    },
+    update: async (
+      groupId: string,
+      data: GroupUpdateRequest,
+      idempotencyKey?: string,
+    ): Promise<GroupResponse> => {
+      return this.request<GroupResponse>(
+        `/api/v1/groups/${encodeURIComponent(groupId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(data),
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
+    },
+    remove: async (groupId: string, idempotencyKey?: string): Promise<void> => {
+      await this.request<void>(
+        `/api/v1/groups/${encodeURIComponent(groupId)}`,
+        {
+          method: "DELETE",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
+    },
+    reorder: async (
+      data: GroupReorderRequest,
+      idempotencyKey?: string,
+    ): Promise<GroupResponse[]> => {
+      return this.request<GroupResponse[]>("/api/v1/groups/reorder", {
+        method: "POST",
+        body: JSON.stringify(data),
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      });
+    },
+  };
+
+  readonly proxies = {
+    list: async (): Promise<ProxyResponse[]> => {
+      return this.request<ProxyResponse[]>("/api/v1/proxies");
+    },
+    get: async (proxyId: string): Promise<ProxyResponse> => {
+      return this.request<ProxyResponse>(
+        `/api/v1/proxies/${encodeURIComponent(proxyId)}`,
+      );
+    },
+  };
+
+  readonly fontSets = {
+    list: async (): Promise<FontSetInfo[]> => {
+      return this.request<FontSetInfo[]>("/api/v1/font-sets");
     },
   };
 

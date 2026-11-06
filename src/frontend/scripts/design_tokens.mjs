@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { lint } from "@google/design.md/linter";
@@ -12,6 +12,12 @@ export class DesignValidationError extends Error {
 
 const DESIGN_MD_URL = new URL("../../../DESIGN.md", import.meta.url);
 const OUTPUT_CSS_URL = new URL("../src/styles/design_tokens.css", import.meta.url);
+const SOURCE_DIR_URL = new URL("../src/", import.meta.url);
+
+const HIJACKED_SIZE_CLASS =
+  /\b(?:max-w|min-w|w|max-h|min-h|h|size)-(?:xs|sm|md|lg|xl|2xl)\b/;
+const ARBITRARY_SIZE_CLASS =
+  /\b(?:max-w|min-w|w|max-h|min-h|h|size)-\[[^\]]+\]/;
 
 const CJK_FALLBACK =
   '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
@@ -19,6 +25,65 @@ const CJK_FALLBACK =
 function dimension(value) {
   if (!value || value.type !== "dimension") return null;
   return `${value.value}${value.unit}`;
+}
+
+function parseContainerSizes(source) {
+  const start = source.indexOf("## Container sizes");
+  if (start < 0) {
+    throw new DesignValidationError("DESIGN.md Container sizes section is missing");
+  }
+  const rest = source.slice(start);
+  const next = rest.indexOf("\n## ", 1);
+  const body = next >= 0 ? rest.slice(0, next) : rest;
+  const rows = [];
+  for (const line of body.split("\n")) {
+    const match = line.match(/^\|\s*([a-z][a-z0-9-]*)\s*\|\s*([^|]+?)\s*\|/);
+    if (match && match[1] !== "token") {
+      rows.push([match[1], match[2].trim()]);
+    }
+  }
+  if (rows.length === 0) {
+    throw new DesignValidationError("DESIGN.md Container sizes table is empty");
+  }
+  return rows;
+}
+
+export function assertNoSizeTokenHijack(sources) {
+  const offenders = [];
+  for (const { path, text } of sources) {
+    text.split("\n").forEach((line, index) => {
+      if (HIJACKED_SIZE_CLASS.test(line) || ARBITRARY_SIZE_CLASS.test(line)) {
+        offenders.push(`${path}:${index + 1}: ${line.trim().slice(0, 140)}`);
+      }
+    });
+  }
+  if (offenders.length > 0) {
+    throw new DesignValidationError(
+      `Named/arbitrary size utilities are forbidden (spacing-token hijack or non-semantic value):\n${offenders
+        .map((offender) => `  - ${offender}`)
+        .join("\n")}`,
+    );
+  }
+  return offenders;
+}
+
+function collectSources(dirPath, baseRel) {
+  const out = [];
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const full = resolve(dirPath, entry.name);
+    const rel = `${baseRel}/${entry.name}`;
+    if (entry.isDirectory()) {
+      if (entry.name === "generated" || entry.name === "styles") continue;
+      out.push(...collectSources(full, rel));
+    } else if (
+      /\.(ts|tsx)$/.test(entry.name) &&
+      !/\.(test|spec)\./.test(entry.name) &&
+      entry.name !== "test_setup.ts"
+    ) {
+      out.push({ path: rel, text: readFileSync(full, "utf8") });
+    }
+  }
+  return out;
 }
 
 function assertValid(report) {
@@ -68,7 +133,7 @@ function assertValid(report) {
   return { light };
 }
 
-function generateCss(report, { light }) {
+function generateCss(report, { light, containers }) {
   const state = report.designSystem;
   const primary = state.colors.get("primary").hex;
   const lines = ["@theme {", "  --color-*: initial;", `  --color-primary: ${primary};`];
@@ -92,7 +157,17 @@ function generateCss(report, { light }) {
     const size = dimension(value);
     if (size) lines.push(`  --spacing-${name}: ${size};`);
   }
+  for (const [name, value] of containers) {
+    lines.push(`  --container-${name}: ${value};`);
+  }
 
+  lines.push("}");
+  lines.push("", "@layer utilities {");
+  for (const [name] of containers) {
+    lines.push(`  .h-${name} { height: var(--container-${name}); }`);
+    lines.push(`  .max-h-${name} { max-height: var(--container-${name}); }`);
+    lines.push(`  .min-h-${name} { min-height: var(--container-${name}); }`);
+  }
   lines.push("}", "", ".dark {");
   lines.push(`  --color-primary: ${primary};`);
   for (const role of light) {
@@ -106,7 +181,8 @@ function generateCss(report, { light }) {
 export function validateAndGenerate(source) {
   const report = lint(source);
   const { light } = assertValid(report);
-  return generateCss(report, { light });
+  const containers = parseContainerSizes(source);
+  return generateCss(report, { light, containers });
 }
 
 function main() {
@@ -125,7 +201,11 @@ function main() {
   }
 
   if (mode === "--lint") {
-    console.log("DESIGN.md lint: 0 error / 0 warning");
+    const sources = collectSources(fileURLToPath(SOURCE_DIR_URL), "src");
+    assertNoSizeTokenHijack(sources);
+    console.log(
+      `DESIGN.md lint: 0 error / 0 warning; size-token scan: ${sources.length} files clean`,
+    );
     return;
   }
   if (mode === "--check") {

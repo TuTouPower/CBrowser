@@ -112,6 +112,9 @@ function makeStubClient() {
       stop: vi.fn(async (id: string) => runtimeFor(id, "stopped")),
       retrySearchDefaults: vi.fn(async () => runtimeFor("p1", "running")),
     },
+    groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
+    proxies: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => []) },
     artifacts: {
       list: vi.fn(async () => []),
       upload: vi.fn(),
@@ -182,7 +185,11 @@ describe("Application Router (plan 5.1)", () => {
     expect(await login.findByTestId("login-page")).toBeInTheDocument();
     login.unmount();
 
-    for (const path of ["/", "/session", "/proxies", "/profiles/p1/maintenance"]) {
+    const list = renderWithRouter(["/"]);
+    expect(await list.findByTestId("env-list-page")).toBeInTheDocument();
+    list.unmount();
+
+    for (const path of ["/session", "/proxies"]) {
       const view = renderWithRouter([path]);
       expect(await view.findByTestId("placeholder-page")).toBeInTheDocument();
       view.unmount();
@@ -192,39 +199,33 @@ describe("Application Router (plan 5.1)", () => {
     expect(await session.findByTestId("browser-session-mount")).toBeInTheDocument();
     session.unmount();
 
-    const config = renderWithRouter(["/profiles/p1/config"]);
-    expect(await config.findByTestId("profile-detail-page")).toBeInTheDocument();
-    config.unmount();
-
-    const files = renderWithRouter(["/profiles/p1/files"]);
-    expect(await files.findByTestId("profile-files-page")).toBeInTheDocument();
-    files.unmount();
-
-    const automation = renderWithRouter(["/profiles/p1/automation"]);
-    expect(await automation.findByTestId("profile-automation-page")).toBeInTheDocument();
-    automation.unmount();
+    for (const path of [
+      "/profiles/p1/config",
+      "/profiles/p1/files",
+      "/profiles/p1/automation",
+      "/profiles/p1/maintenance",
+    ]) {
+      const view = renderWithRouter([path]);
+      expect(await view.findByTestId("profile-detail-view")).toBeInTheDocument();
+      view.unmount();
+    }
 
     const settings = renderWithRouter(["/settings"]);
     expect(await settings.findByTestId("settings-page")).toBeInTheDocument();
     settings.unmount();
   });
 
-  it("drops the legacy routes", async () => {
-    const legacyNew = renderWithRouter(["/profiles/new"]);
-    expect(await legacyNew.findByTestId("placeholder-page")).toBeInTheDocument();
-    expect(legacyNew.queryByTestId("profile-new-page")).not.toBeInTheDocument();
-    expect(legacyNew.router.state.location.pathname).toBe("/");
-    legacyNew.unmount();
-
-    const legacyAutomation = renderWithRouter(["/automation/p1"]);
-    expect(await legacyAutomation.findByTestId("placeholder-page")).toBeInTheDocument();
-    expect(legacyAutomation.queryByTestId("profile-automation-page")).not.toBeInTheDocument();
-    legacyAutomation.unmount();
-
-    const legacyTarget = renderWithRouter(["/?profileId=p1"]);
-    expect(await legacyTarget.findByTestId("placeholder-page")).toBeInTheDocument();
-    expect(legacyTarget.queryByTestId("active-profile-header")).not.toBeInTheDocument();
-    legacyTarget.unmount();
+  it("treats an unknown profileId as a normal detail route", async () => {
+    const view = renderWithRouter(["/profiles/new"]);
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe(
+        "/profiles/new/config",
+      ),
+    );
+    expect(await view.findByTestId("profile-detail-view")).toBeInTheDocument();
+    expect(view.queryByTestId("env-list-page")).not.toBeInTheDocument();
+    expect(stubClient.profiles.get).toHaveBeenCalledWith("new");
+    view.unmount();
   });
 
   it("renders navigation as real anchors", async () => {
@@ -246,17 +247,17 @@ describe("Application Router (plan 5.1)", () => {
     view.unmount();
   });
 
-  it("offers duplicate and reset confirmations on the config page", async () => {
-    let resetCalled = false;
+  it("offers duplicate and reset actions on the maintenance tab", async () => {
     stubClient.profiles.getRuntime.mockImplementation(async (id: string) =>
       runtimeFor(id, "stopped"),
     );
-    stubClient.profiles.reset.mockImplementation(async () => {
-      resetCalled = true;
-      return PROFILES[0];
-    });
-    const view = renderWithRouter(["/profiles/p1/config"]);
-    await view.findByTestId("profile-detail-page");
+    const view = renderWithRouter(["/profiles/p1/maintenance"]);
+    expect(await view.findByTestId("profile-detail-view")).toBeInTheDocument();
+    expect(await view.findByTestId("profile-maintenance-tab")).toBeInTheDocument();
+
+    const duplicateSection = view.getByTestId("profile-maintenance-duplicate");
+    const resetSection = view.getByTestId("profile-maintenance-reset");
+    expect(resetSection).toHaveTextContent(/cookies/i);
 
     let duplicatePayload: unknown = null;
     stubClient.profiles.duplicate.mockImplementation(
@@ -265,24 +266,25 @@ describe("Application Router (plan 5.1)", () => {
         return PROFILES[0];
       },
     );
-    fireEvent.click(view.getByTestId("profile-duplicate-button"));
-    expect(view.getByTestId("profile-duplicate-panel")).toHaveTextContent(
-      "Duplicate profile",
+    fireEvent.click(
+      within(duplicateSection).getByRole("button", {
+        name: "Configuration only",
+      }),
     );
-    fireEvent.click(view.getByRole("button", { name: "Duplicate settings and fingerprint only" }));
     await waitFor(() =>
       expect(duplicatePayload).toEqual({ include_browser_state: false }),
     );
-    await view.findByTestId("profile-detail-page");
-    fireEvent.click(view.getByTestId("profile-reset-button"));
-    expect(view.getByTestId("profile-reset-panel")).toHaveTextContent(/cookies/i);
-    expect(resetCalled).toBe(false);
+
+    expect(stubClient.profiles.reset).not.toHaveBeenCalled();
     fireEvent.click(
-      within(view.getByTestId("profile-reset-panel")).getByRole("button", {
-        name: "Reset",
-      }),
+      within(resetSection).getByRole("button", { name: "Reset" }),
     );
-    await waitFor(() => expect(resetCalled).toBe(true));
+    await waitFor(() =>
+      expect(stubClient.profiles.reset).toHaveBeenCalledWith(
+        "p1",
+        expect.any(String),
+      ),
+    );
     view.unmount();
   });
 });

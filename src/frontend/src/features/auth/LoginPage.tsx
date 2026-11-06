@@ -53,7 +53,7 @@ export function LoginPage() {
       data-testid="login-page"
       className="flex min-h-screen items-center justify-center bg-background px-md"
     >
-      <div className="w-full max-w-sm rounded-lg border border-outline bg-surface p-xl">
+      <div className="w-full max-w-panel rounded-lg border border-outline bg-surface p-xl">
         <div className="mb-lg flex flex-col items-center">
           <div className="mb-md flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft text-on-surface">
             <Lock aria-hidden="true" className="h-6 w-6" />

@@ -1,0 +1,17 @@
+{
+  "tid": "t037",
+  "attempt": 1,
+  "execution_id": "7ea77fb1d06a4d7c9d0f6ad10ce22b49",
+  "status": "done",
+  "branch": "t037_environment_management_ui",
+  "base_sha": "05dda065aa237f9e32c3507f6f6a65f47a185205",
+  "tests": "最终并行全量门禁 `.scratch/t037_evidence_v8/manifest.json`：requirements_check / contract / unit / integration / design_lint / design_check / frontend_test / frontend_build / image_packages 九 suite exit 0（contract 258 / unit 1143 / integration 155 用例）；前端 `tsc -p tsconfig.test.json` 与 `tsc -p tsconfig.json` 均通过、Vitest `298 passed`（49 文件）、`npm run build` 通过、`design:lint` 0 error/0 warning + 74 文件尺寸门禁 clean、`design:check` 产物一致；AC-012 颜色扫描 32 个新增源码文件 0 命中、diff 新增行 0 命中；ac009 确定性红测 + 连续 5/5 通过、全量 unit 1143 / integration 137 通过。",
+  "blackbox": "最终 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` E2E 101 用例真实并行执行（无头 Chrome）：`test_t019_switch_and_refresh_first_frame_within_2s_host_only` 1 项为 t032 已登记基线遗留（首帧 3.344s > 2s，t036 串行门禁同样仅此项）；v8 另有 3 项**环境波动**（`test_frontend_adapter_build::test_vendor_replaces_stale_destination_contents` 的 SSL EOF、`test_frontend_app_e2e::test_ac007...` 的媒体帧计数时序、`test_supervisor_recovery_e2e::test_supervisor_dual_profile_port_invariance_on_sigkill` 的 setup ReadTimeout），三者定向重跑 `3 passed in 213.30s`，确认非 t037 代码回归；2 项按开关启用的探针用例 skip（AC-005 可选用例外）、0 error。v4/v5 门禁失败集合仅 t019，达标。被中止的 v6 残留容器已按测试前缀清理（p048 登记门禁基础设施修复）。门禁后无本轮残留容器与网络。",
+  "review": "full 两路 `review_code.md` / `review_test.md` 共 5 轮，Round 1 3 条 minor 全部「已修」、Round 2~5 零新 finding，12/12 AC 全程 TICK-VALID（两轴均 re_verified，coverage 12/12），最终 reviewed_scope `2a1217ac45ea38e9`；`check_review_status.py`：overall=PASS / review_scope=ok / ac_review=ok / next_action=finalize。",
+  "review_scope": "2a1217ac45ea38e9",
+  "pending": [
+    "p047",
+    "p048"
+  ],
+  "findings": []
+}

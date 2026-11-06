@@ -31,7 +31,7 @@ export function ClipboardPermissionHint() {
     <div
       data-testid="clipboard-permission-hint"
       data-clipboard-permission={state}
-      className="absolute bottom-12 left-2 z-10 max-w-xs text-[11px] px-2.5 py-2 bg-neutral-800/90 text-neutral-200 rounded border border-neutral-700/70"
+      className="absolute bottom-12 left-2 z-10 max-w-hint text-[11px] px-2.5 py-2 bg-neutral-800/90 text-neutral-200 rounded border border-neutral-700/70"
       role="status"
     >
       <span className="inline-flex items-center gap-1 font-medium">

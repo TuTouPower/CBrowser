@@ -14,6 +14,13 @@ export type SearchDefaultsStatusData = Schemas["SearchDefaultsStatusData"];
 export type LoginRequest = Schemas["LoginRequest"];
 export type LoginResponse = Schemas["LoginResponse"];
 export type SessionResponse = Schemas["SessionResponse"];
+export type GroupResponse = Schemas["GroupResponse"];
+export type GroupCreateRequest = Schemas["GroupCreateRequest"];
+export type GroupUpdateRequest = Schemas["GroupUpdateRequest"];
+export type GroupReorderRequest = Schemas["GroupReorderRequest"];
+export type ProxyResponse = Schemas["ProxyResponse"];
+export type FontSetInfo = Schemas["FontSetInfo"];
+export type FontSetIntegrity = Schemas["FontSetIntegrity"];
 
 export type ApiPaths = paths;
 
@@ -33,4 +40,14 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   transparent_proxy: false,
   portable_cookies: false,
   sort_order: 0,
+  fingerprint_platform: "windows",
+  font_set_id: null,
+  group_id: null,
+  proxy_id: null,
+  notes: null,
+  timezone: null,
+  locale: null,
+  color_scheme: null,
+  launch_args: [],
+  extension_paths: [],
 };

@@ -15,7 +15,7 @@
 |agent_executor|t030|2026-11-04|
 |human_agent_control|t031|2026-11-04|
 |access_control|t006, t007, t008, t021, t023, t025|2026-11-04|
-|profile_management|t007, t013, t017, t020, t021, t023, t025, t035, t041|2026-11-06|
+|profile_management|t007, t013, t017, t020, t021, t023, t025, t035, t041, t037|2026-11-06|
 |fingerprint_platform|t041|2026-11-06|
-|ui_design_system|t036|2026-11-06|
+|ui_design_system|t036, t037|2026-11-06|
 |gate_verification|t044|2026-11-06|
