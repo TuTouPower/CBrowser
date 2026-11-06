@@ -21,6 +21,8 @@ import pytest
 
 from api_auth import create_auth_context
 
+pytestmark = pytest.mark.serial
+
 # The subprocess scratch root is created by the module-scoped fixture
 # below, not at import time (t024 AC-006/A27): collection must not create
 # state, and the directory is removed when the module finishes.

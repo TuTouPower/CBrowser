@@ -15,6 +15,8 @@ from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_until
 
+pytestmark = pytest.mark.serial
+
 
 @pytest.mark.asyncio
 async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(

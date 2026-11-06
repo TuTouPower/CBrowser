@@ -15,6 +15,8 @@ from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_for_log
 
+pytestmark = pytest.mark.serial
+
 
 @pytest.mark.asyncio
 async def test_ac003_dual_chrome_media_inputs_and_gateway_recovery_v2(

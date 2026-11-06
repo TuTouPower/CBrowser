@@ -19,6 +19,24 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 UV_STUB = """#!/bin/bash
+if [ "$1" = "export" ]; then
+  echo "uv $*" >> "$GATE_STUB_LOG"
+  grp=""
+  prev=""
+  for a in "$@"; do
+    if [ "$prev" = "--only-group" ]; then grp="$a"; fi
+    prev="$a"
+  done
+  case "$grp" in
+    api) cat config/docker/api_runtime/requirements.txt ;;
+    gateway) cat config/docker/gateway_runtime/requirements.txt ;;
+    supervisor) cat config/docker/supervisor_runtime/requirements.txt ;;
+    browser) cat config/docker/browser_runtime/requirements.txt ;;
+    stream) cat config/docker/stream_runtime/requirements.txt ;;
+    gate) cat scripts/gate-requirements.txt ;;
+  esac
+  exit 0
+fi
 echo "uv $*" >> "$GATE_STUB_LOG"
 echo "uv-output password=hunter2"
 if [ "$1" = "venv" ]; then
@@ -83,6 +101,8 @@ def _run_gates(tmp_path: Path, extra_env: dict[str, str]) -> subprocess.Complete
     env["GATE_STUB_LOG"] = str(tmp_path / "stub.log")
     env["GATE_STUB_REAL_PY"] = sys.executable
     env["CBROWSER_GATE_SCRATCH"] = str(tmp_path / "scratch")
+    env["CBROWSER_GATE_VENV"] = str(tmp_path / "gate_venv")
+    env["CBROWSER_GATE_UV_CACHE"] = str(tmp_path / "uv_cache")
     env.update(extra_env)
     return subprocess.run(
         ["bash", "scripts/run_gates.sh"],
@@ -117,22 +137,24 @@ def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> No
     assert "tests/integration" in log
     assert "npm run design:lint" in log
     assert "npm run design:check" in log
-    assert "npm run design:tokens" in log
+    assert "npm run design:tokens" not in log
     assert "npm test" in log
     assert "npm run build" in log
 
     manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
     suites = {entry["name"]: entry for entry in manifest["suites"]}
     assert list(suites) == [
+        "requirements_check",
         "contract",
         "unit",
         "integration",
         "design_lint",
         "design_check",
-        "design_tokens",
         "frontend_test",
         "frontend_build",
     ]
+    assert suites["requirements_check"]["exit_code"] == 0
+    assert "generate_requirements.sh --check" in suites["requirements_check"]["command"]
     assert suites["contract"]["exit_code"] == 0
     assert suites["integration"]["exit_code"] == 3
     assert suites["frontend_build"]["exit_code"] == 0

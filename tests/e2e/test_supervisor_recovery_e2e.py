@@ -50,6 +50,8 @@ from supervisor_recovery_probe.gateway_service import (
 )
 from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger(__name__)
 
 

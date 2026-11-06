@@ -132,7 +132,7 @@ class ProfileModel(Base):
         "ProfileConfigVersionModel",
         back_populates="profile",
         cascade="all, delete-orphan",
-        lazy="noload",
+        lazy="raise",
         passive_deletes=True,
     )
     runtime: Mapped[ProfileRuntimeModel | None] = relationship(
@@ -140,14 +140,14 @@ class ProfileModel(Base):
         back_populates="profile",
         uselist=False,
         cascade="all, delete-orphan",
-        lazy="noload",
+        lazy="raise",
         passive_deletes=True,
     )
     artifacts: Mapped[list[ArtifactModel]] = relationship(
         "ArtifactModel",
         back_populates="profile",
         cascade="all, delete-orphan",
-        lazy="noload",
+        lazy="raise",
         passive_deletes=True,
     )
 

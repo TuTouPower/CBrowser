@@ -28,6 +28,8 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from gateway_probe.topology import GatewayTopologyHarness
 from wait import poll_until
 
+pytestmark = pytest.mark.serial
+
 
 def _register_payload(
     profile_id: str, instance_id: str, udp_port: int

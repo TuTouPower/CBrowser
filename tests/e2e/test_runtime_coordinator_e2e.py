@@ -29,6 +29,8 @@ from wait import poll_until, wait_until
 
 from api_auth import create_auth_context
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger("cbrowser.test_runtime_coordinator_e2e")
 
 

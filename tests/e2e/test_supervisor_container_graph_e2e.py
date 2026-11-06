@@ -33,6 +33,8 @@ from wait import poll_until
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from api_auth import create_auth_context
+
+pytestmark = pytest.mark.serial
 logger = logging.getLogger("cbrowser.test_container_graph")
 
 

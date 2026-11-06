@@ -13,7 +13,11 @@ from pathlib import Path
 import httpx
 import pytest
 from api_auth import create_auth_context
-from e2e_env import REQUIRED_E2E_ENV, image_identity_problems
+from e2e_env import (
+    REQUIRED_E2E_ENV,
+    image_identity_problems,
+    worker_resource_offsets,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -32,18 +36,30 @@ _PROXY_ENV = (
 
 
 def pytest_configure(config) -> None:
-    """Align host-side model validation with the lane's UDP mux range.
+    """Partition per-worker resources and align the UDP mux range.
 
-    The real-topology harness passes ``CBROWSER_E2E_UDP_BASE`` to the
-    Supervisor and Gateway containers; the test process itself also
-    builds Agent registration payloads with the allocated port, so it
-    must validate them against the same range.
+    ``worker_resource_offsets`` gives every xdist worker disjoint UDP/HTTP
+    bases and a media subnet.  The xdist controller seeds the defaults
+    first (no worker id), and workers inherit that environment; a plain
+    ``setdefault`` would therefore leave every worker on the controller's
+    base and collide on the host ports.  Workers must re-partition by
+    *overwriting* the inherited values, while the controller still honours
+    values the gate exported explicitly.
     """
-    base = os.environ.get("CBROWSER_E2E_UDP_BASE")
-    if not base:
-        return
-    os.environ.setdefault("CBROWSER_UDP_MUX_MIN_PORT", base)
-    os.environ.setdefault("CBROWSER_UDP_MUX_MAX_PORT", str(int(base) + 991))
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    for name, value in worker_resource_offsets().items():
+        if worker:
+            os.environ[name] = value
+        else:
+            os.environ.setdefault(name, value)
+    base = os.environ["CBROWSER_E2E_UDP_BASE"]
+    min_port, max_port = base, str(int(base) + 991)
+    if worker:
+        os.environ["CBROWSER_UDP_MUX_MIN_PORT"] = min_port
+        os.environ["CBROWSER_UDP_MUX_MAX_PORT"] = max_port
+    else:
+        os.environ.setdefault("CBROWSER_UDP_MUX_MIN_PORT", min_port)
+        os.environ.setdefault("CBROWSER_UDP_MUX_MAX_PORT", max_port)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -116,10 +132,70 @@ def pytest_collection_modifyitems(config, items):
     # variable holding a tag, a malformed digest, or an ID that does not
     # resolve locally fails the session exactly like a missing variable.
     identity = image_identity_problems()
-    if missing or identity:
+
+    # t044 AC-005: global prerequisites are collected before exiting so the
+    # report enumerates every missing item at once.  None may degrade into a
+    # per-test skip in required mode.
+    extra: list[str] = []
+    try:
+        import docker
+
+        client = docker.from_env()
+        try:
+            client.ping()
+        finally:
+            client.close()
+    except Exception as exc:  # daemon unreachable or SDK absent
+        extra.append(
+            f"Docker daemon unavailable: {type(exc).__name__}: {exc}"
+        )
+
+    for name in (
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        "CBROWSER_RUNTIME_GEOIP_CACHE",
+    ):
+        value = os.environ.get(name)
+        if not value or not Path(value).is_dir():
+            extra.append(f"{name}: not an existing directory: {value!r}")
+
+    if any(
+        Path(str(item.fspath)).name == "test_fingerprint_platform_e2e.py"
+        for item in items
+    ):
+        fonts_root = os.environ.get("CBROWSER_E2E_FONTS_DIR")
+        if not fonts_root or not Path(fonts_root).is_dir():
+            extra.append(
+                "CBROWSER_E2E_FONTS_DIR: not an existing directory: "
+                f"{fonts_root!r} (windows/macos font sets unavailable)"
+            )
+        else:
+            ok_platforms: set[str] = set()
+            try:
+                from cbrowser.font_sets import list_font_sets
+
+                ok_platforms = {
+                    item["platform"]
+                    for item in list_font_sets(fonts_root)
+                    if item["integrity"]["ok"]
+                }
+            except Exception as exc:
+                extra.append(
+                    f"CBROWSER_E2E_FONTS_DIR: cannot verify font sets: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            for platform in ("windows", "macos"):
+                if platform not in ok_platforms:
+                    extra.append(
+                        f"CBROWSER_E2E_FONTS_DIR: missing complete imported "
+                        f"{platform} font set (ok=True)"
+                    )
+
+    if missing or identity or extra:
         details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
         if identity:
             details += "\n" + "\n".join(f"- {problem}" for problem in identity)
+        if extra:
+            details += "\n" + "\n".join(f"- {problem}" for problem in extra)
         pytest.exit(f"E2E required mode is missing prerequisites:\n{details}", returncode=2)
 
 

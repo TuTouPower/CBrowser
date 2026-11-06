@@ -187,7 +187,7 @@ async def subscribe_runtime_events(
             "model": ErrorResponse,
             "description": "Idempotency conflict",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ValidationErrorResponse,
             "description": "Validation error",
         },
@@ -242,7 +242,7 @@ async def create_profile(
         )
     except InvalidFontSetBindingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from None
     return ProfileResponse.from_domain(profile)
 
@@ -304,7 +304,7 @@ async def get_profile(
             "model": ErrorResponse,
             "description": "Idempotency conflict",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ValidationErrorResponse,
             "description": "Validation error",
         },
@@ -326,7 +326,7 @@ async def get_profile(
             "model": ErrorResponse,
             "description": "Idempotency conflict",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ValidationErrorResponse,
             "description": "Validation error",
         },
@@ -355,7 +355,7 @@ async def update_profile(
         return ProfileResponse.from_domain(p)
     except InvalidFontSetBindingError as exc:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from None
     except ProfileNotFoundError:
         raise HTTPException(
@@ -712,7 +712,7 @@ async def retry_profile_search_defaults(
             "model": ErrorResponse,
             "description": "Idempotency conflict",
         },
-        status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ValidationErrorResponse,
             "description": "Validation error",
         },
@@ -822,7 +822,7 @@ async def bind_runtime(
         )
     except InvalidConfigVersionError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
         )
     except InstanceConflictError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
@@ -868,7 +868,7 @@ async def report_observed_state(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
     except InvalidConfigVersionError as e:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(e)
         )
 
 
@@ -879,7 +879,7 @@ async def report_runtime_event(
 ):
     if payload.event_type == "exit" and payload.exit_code is None:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="exit_code cannot be null for exit event",
         )
 

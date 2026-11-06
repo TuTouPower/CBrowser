@@ -311,7 +311,7 @@ def create_app(
         request: Request, exc: InvalidConfigVersionError
     ):
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
                 "detail": [
@@ -340,7 +340,7 @@ def create_app(
                 }
             )
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
                 "detail": sanitized_errors,

@@ -23,6 +23,8 @@ from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 
+pytestmark = pytest.mark.serial
+
 PROFILE = "prof_t026"
 INSTANCE = "inst_1"
 PLAN = plan_for_subnet(ipaddress.ip_network("10.251.7.0/24"))
@@ -192,7 +194,7 @@ async def test_healthy_pair_converges_to_ready_without_mutation(tmp_path):
     assert observation.transport_state == "ready"
     assert observation.agent_build_id == "agent-build-1"
     assert observation.gateway_build_id == "gw-build-1"
-    assert core._registration_known[PROFILE] is True
+    assert core._registration[PROFILE].known is True
 
 
 @pytest.mark.asyncio
@@ -342,12 +344,102 @@ async def test_registration_loss_beyond_grace_replaces_stream(tmp_path):
     assert "start_stream" not in adapter.calls
     # A Stream that never comes back must still be repaired: age the
     # loss past the grace and the next pass replaces.
-    core._registration_lost_at[PROFILE] -= (
+    core._registration[PROFILE].lost_at -= (
         SupervisorCore._REGISTRATION_LOSS_GRACE_SEC + 1.0
     )
     await core._converge_session(PROFILE, session, scan)
 
     assert "start_stream" in adapter.calls
+
+
+@pytest.mark.asyncio
+async def test_stale_registration_timestamp_does_not_defer_replacement_after_boundary(
+    tmp_path,
+):
+    """AC-010: a same-name restart must not inherit a stale recovery grace.
+
+    Regression: the lifecycle cleanup points used to clear only the
+    ``known`` flag while leaving the ``lost_at`` timestamp behind.  A
+    profile rebuilt under the same id inside the 90s grace then deferred
+    replacement even though its fresh Stream never registered.
+    """
+    adapter = _FakeAdapter(tmp_path)
+    gateway = _FakeGatewayControl()
+    core, session, scan = _make_core(tmp_path, adapter, gateway)
+    secret_dir = adapter.validator.get_secret_dir(PROFILE)
+    secret_dir.mkdir(parents=True, exist_ok=True)
+    (secret_dir / "agent_secret.txt").write_text("x" * 40)
+
+    # A previous generation was registered, then lost registration: the
+    # recovery grace is armed with a timestamp.
+    gateway.registered = True
+    await core._converge_session(PROFILE, session, scan)
+    gateway.registered = False
+    await core._converge_session(PROFILE, session, scan)
+    observation = core.get_transport_observation(PROFILE)
+    assert observation.last_error == "registration_recovery_grace"
+
+    # A lifecycle boundary (gateway_unreachable) must discard the whole
+    # registration state, not just one of its fields.
+    gateway.registered = None
+    await core._converge_session(PROFILE, session, scan)
+
+    # Same-name restart with a fresh, never-registered Stream must take
+    # the replacement path instead of the stale grace.
+    gateway.registered = False
+    await core._converge_session(PROFILE, session, scan)
+    observation = core.get_transport_observation(PROFILE)
+    assert observation.last_error != "registration_recovery_grace"
+    assert "start_stream" in adapter.calls
+
+
+@pytest.mark.asyncio
+async def test_registration_state_is_a_single_per_profile_object(tmp_path):
+    """AC-010: known flag and grace timestamp live in one state object."""
+    adapter = _FakeAdapter(tmp_path)
+    gateway = _FakeGatewayControl()
+    core, session, scan = _make_core(tmp_path, adapter, gateway)
+
+    gateway.registered = True
+    await core._converge_session(PROFILE, session, scan)
+    state = core._registration[PROFILE]
+    assert state.known is True
+    assert state.lost_at is None
+
+    gateway.registered = False
+    await core._converge_session(PROFILE, session, scan)
+    assert core._registration[PROFILE] is state
+    assert state.known is False
+    assert state.lost_at is not None
+
+    # Cleanup point 1: gateway_missing removes the whole object.  The
+    # resolver also falls back to gateway_container_id, so clear both.
+    core.gateway_container_id = None
+    adapter.gateway_id = None
+    await core._converge_session(PROFILE, session, scan)
+    assert PROFILE not in core._registration
+
+    # Cleanup point 2: gateway_unreachable removes the whole object too.
+    adapter.gateway_id = "gw_1"
+    core.gateway_container_id = "gw_stale"
+    gateway.registered = True
+    await core._converge_session(PROFILE, session, scan)
+    assert PROFILE in core._registration
+    gateway.registered = None
+    await core._converge_session(PROFILE, session, scan)
+    assert PROFILE not in core._registration
+
+
+def test_four_lifecycle_cleanup_points_use_the_single_state_object() -> None:
+    """AC-010: no parallel registration dicts survive; cleanup is uniform."""
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "src/backend/cbrowser/supervisor/core.py"
+    ).read_text(encoding="utf-8")
+    assert "_registration_known" not in source
+    assert "_registration_lost_at" not in source
+    assert source.count("self._registration.pop(profile_id, None)") >= 4
+    assert "class RegistrationState:" in source
 
 
 @pytest.mark.asyncio

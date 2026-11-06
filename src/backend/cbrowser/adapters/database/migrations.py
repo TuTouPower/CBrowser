@@ -33,6 +33,7 @@ def get_alembic_config(db_path: Path | str) -> Config:
 
     cfg = Config(str(ini_path))
     cfg.set_main_option("script_location", str(script_loc))
+    cfg.set_main_option("path_separator", "os")
     resolved_db = Path(db_path).resolve()
     resolved_db.parent.mkdir(parents=True, exist_ok=True)
     cfg.set_main_option("sqlalchemy.url", f"sqlite:///{resolved_db}")

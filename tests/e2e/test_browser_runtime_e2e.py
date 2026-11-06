@@ -44,6 +44,8 @@ from cbrowser.api.app import create_app
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
+
+pytestmark = pytest.mark.serial
 logger = logging.getLogger(__name__)
 
 IMAGE_TAG = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")
@@ -1168,6 +1170,7 @@ async def test_ac003_controlled_uds_and_allowlist(http_server: str) -> None:
         created_containers.append(peer_name)
         script = f"""
 import errno, json, socket, urllib.request
+
 with urllib.request.urlopen({http_server!r} + '/download-1.txt', timeout=5) as response:
     assert response.status == 200
 with socket.socket() as connection:

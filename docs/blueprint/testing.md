@@ -326,3 +326,32 @@ bash scripts/run_automation_probe.sh
 |AC-007|runtime 响应与 SSE 含实际 `font_set_id` 与 `missing_fonts`，与 Agent 用该 Profile fontconfig 的检查结果一致|integration（runtime 响应 / SSE 字段）+ Agent fontconfig 复核|
 |AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
 |AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|
+
+## t044 门禁并行化与验证工具
+
+本节的机械锚点仍是上文 `doctor_cmd` / `test_cmd` / `blackbox_verify` 章节命令；日常全量门禁唯一入口 `scripts/run_gates.sh`，E2E 必需模式入口 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，命令形式不变。需求级契约见 `docs/specs/gate_verification.md`。
+
+### suite 并行与串行标注
+
+- unit / integration / E2E 由 `run_gate_suite` 分两阶段执行：并行 `-n "$WORKERS" -m "not serial"`（`WORKERS` 由 `CBROWSER_GATE_WORKERS` 覆盖，默认 4）与串行 `-n 0 -m "serial"`；两阶段 JUnit 由 `scripts/merge_junit.py` 合并为单一 `junit/<suite>.xml`，用例集合与改造前一致。
+- 时序敏感、固定宿主端口、嵌套 pytest 或 sqlite 竞争的用例以模块级 `pytestmark = pytest.mark.serial` 标注，在单进程阶段执行，期间不与任何其它用例并发。`pyproject.toml` 注册 `serial` marker。
+- 每个 xdist worker 由 `PYTEST_XDIST_WORKER` 经 `tests/fixtures/e2e_env.py::worker_resource_offsets` 派生独立 UDP / HTTP 端口区间与 media 子网；basetemp 按阶段与 worker 隔离；容器 / 网络名沿用随机前缀。suite 结束不残留本轮资源。
+
+### 并发分组与证据
+
+- evidence 模式下后端组（contract / unit / integration）与前端组（design_lint / design_check / frontend_test / frontend_build）并发执行，E2E 在两组 `wait` 完成后开始；逐 suite 写 `suites.d/*.tsv` 片段，按固定 `SUITE_ORDER` 合并为 `suites.tsv`，manifest / junit / 脱敏日志格式不变，任一 suite 非零则总退出码非零。默认模式保持串行 fail-fast。
+- `design:tokens` 是生成命令（会重写受跟踪的 `design_tokens.css`），已从门禁移除；门禁只做只读 `design:lint` / `design:check`。`design_tokens.css` 过期时 `design:check` 使门禁失败，且完整门禁前后受跟踪文件内容不变。
+- 环境准备复用持久共享 uv 缓存（`CBROWSER_GATE_UV_CACHE`）与 gate venv（`CBROWSER_GATE_VENV`），以 `gate-requirements.txt` 哈希戳判定复用；缓存就绪时 `logs/environment.log` 仅记录 `reuse cached venv`，无依赖下载。
+
+### 必跑模式前置封闭
+
+- `require_e2e_env` / `require_e2e_available` 统一收口前置检查；必跑模式 `CBROWSER_E2E_REQUIRED=1` 缺失即 `pytest.fail` 并列出缺失项，非必跑 skip。镜像变量还须通过 `image_identity_problems` 的 `sha256:<64hex>` 不可变身份与本地存在校验。
+- 指纹平台 E2E 从 `CBROWSER_E2E_FONTS_DIR` 持久字体目录读取经 `scripts/import_font_set.py` 导入的内容寻址字体集（windows 来自微软官方 Windows 11 企业评估版 ISO 的 `sources/install.wim` → `Windows/Fonts`，macos 来自本机系统目录），不依赖 worktree 私有 `.scratch`；字体不入库、不进镜像。conftest 在必跑模式 collection 期额外校验字体集、引擎 / GeoIP 缓存与 Docker daemon。
+- 该变量是 E2E 专用：产品 `CBROWSER_FONTS_DIR` 若在门禁环境存在，API 会给新建 Profile 绑定默认字体集，而 E2E 的 Supervisor 容器看不到宿主目录会 `font_set_unavailable` 失败封闭；`scripts/run_gates.sh` 对该产品变量全程 `unset`，只向 E2E 进程提供 `CBROWSER_E2E_FONTS_DIR`。
+- E2E suite 先跑单进程 `--collect-only -n 0` preflight，前置缺失时一次干净 `pytest.exit(2)` 列出缺项，不让每个 xdist worker 各自失败。模块级开关启用的探针用例为显式可选用例外。
+
+### 验证工具与弃用策略
+
+- `requirements_check` suite 运行 `scripts/generate_requirements.sh --check`，锁与导出 requirements 漂移即失败；E2E 必跑模式 `image_packages` suite 对 browser / stream / gateway / supervisor / api 五个运行镜像运行 `scripts/verify_image_packages.py`，镜像内已安装包集合与依赖锁不一致即失败。
+- `pyproject.toml` 的 `filterwarnings` 以 `error::DeprecationWarning` 兜底，仅精确登记忽略三条第三方来源（httpx per-request cookies、aiohttp bare functions、jsonschema RefResolver）；产品源码弃用用法从根因修正，不靠忽略掩盖：`status.HTTP_422_UNPROCESSABLE_CONTENT`、SQLAlchemy `lazy="raise"`、`aiohttp.ClientWSTimeout(ws_receive=...)`、Alembic `path_separator=os`、`asyncio_default_fixture_loop_scope`。
+- 门禁新增 `scripts/merge_junit.py`；`tests/unit/test_t028_run_gates_evidence.py` 的 stub 契约随 suite 列表同步（去 `design_tokens`、加 `requirements_check`）。

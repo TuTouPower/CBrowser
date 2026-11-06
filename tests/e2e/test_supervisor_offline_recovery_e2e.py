@@ -54,6 +54,8 @@ from supervisor_recovery_probe.gateway_service import (
     ProductionGatewayService,
 )
 
+pytestmark = pytest.mark.serial
+
 ROOT = Path(__file__).resolve().parents[2]
 
 RealApiProcess = offline_fixture.RealApiProcess
