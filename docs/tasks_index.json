@@ -182,7 +182,7 @@
         {
             "tid": "t044",
             "slug": "e2e_parallel_execution",
-            "title": "E2E 并行执行",
+            "title": "E2E 并行执行与前置条件封闭",
             "status": "backlog",
             "branch": "",
             "worktree": "",
