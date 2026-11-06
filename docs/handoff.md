@@ -1,26 +1,34 @@
 # 项目交接记录（最新）
 
-## 2026-11-05T11:00:00+08:00 t032 收口；按模板流程补登记后启动 t033–t043 队列
+## 2026-11-05T20:30:00+08:00 队列推进：T032 已合入，t033/t034/t043 已 done，t035 完成 spike 后交接
 
 ### 状态与工作区
 
-- branch `main`；交出前 head_commit `c0ab32d`（其他会话提交：按外部审阅修订 t033–t042 并新增 t043）。本地领先 origin/main，未 push。
-- t032 由用户授权在 main 现场实施，收口按模板流程补登记（run-begin → worktree → finish → integrate）；此前无 attempt / execution identity，task 状态仍为 backlog。
-- 完整门禁证据：`.scratch/t032/resume/evidence-final3/`；目标引擎探针证据：`.scratch/t032/resume/probe-final/`；外站可达性：`.scratch/t032/resume/probe-final-reach/`。
-- 最终验收报告：`docs/tasks/t032_local_target_environment_acceptance/final_report.md`；实施与验证摘要：同目录 `progress.md`。
-- 上一节（2026-11-05T09:37:22+08:00 停工交接）的全部事实已并入 t032 的 `progress.md` 与 `final_report.md`，随 task 归档保留；本文件只保留最新一节。
-- 工作区在收口前的未提交改动全部属于 t032，收口时一并迁入登记 worktree；其他会话的 t033–t043 文档改动已在 `c0ab32d` 入库，不混入本轮提交。
+- branch `main`；交出时 head_commit `0ac2ac6`（`docs(pending): 登记并暂搁 p043 导入本机 Chrome 数据为 Profile 并绑定一键重复导入`，属其他会话提交，未动）。本地领先 origin/main，未 push。
+- task 状态以 `task.py effective-status` 为准：t032 `done | main`；t033 / t034 / t043 `done | branch`；t035 `active | worktree`（`../CBrowser_t035`）；t036–t042 `backlog | main`。
+- 已闭环成员的分支与实现 commit：`t033_frontend_toolchain_upgrade` = `00f828e`、`t034_runtime_platform_upgrade` = `2e95581`、`t043_selkies_upgrade` = `eeffb89`；三者均已完成 full review、finish、run-close，分支保留待整链 merge。t032 merge commit `483071a` 已进入 main。
+- 队列为单一串行链 c1，链尾 t042；`plan --serial --json t033 t034 t043 t035 t041 t036 t037 t038 t039 t040 t042` 的 base 依次链式传递。merge 授权按 task-run 规则在整链完成后统一请求，本会话未请求、未 push。
+- 主仓工作区干净；`0ac2ac6` 为其他会话改动，按工作区保护保留。
 
-### 本轮结果
+### 本轮结果（均已验证）
 
-- 修复 3 个缺陷：Gateway 恢复瞬态误替换 Stream（`src/backend/cbrowser/supervisor/core.py` 的 registered→unregistered 90s 恢复宽限）、Supervisor 双 Profile 端口不变性测试等待契约、Gateway 诊断 finally 与探针 Pulse 按样本隔离两个 review 清理问题。
-- 定向验证：收敛单测 32 passed、探针单测 13 passed、相关单测合计 45 passed；容器探针 `probe.xml` 2 passed、子 `chain.xml` 16 passed 0 skip、`levels.json` L0–L6 八组各 5 样本 no_change；Gateway AC-003 单例连续 3 passed、Supervisor 端口不变性 1 passed。
-- 模板 contract 2 项失败（受管 `.env` 软链契约）已走 `template-issue-report` 上报 `TuTouPower/repo_template#84`；消费仓未改模板、未绕过。
-- AC-013 DPR 缩放快捷键无效记 `INCONCLUSIVE`、复杂手势无独立证据；AC-012/013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`；均如实登记，不声称通过。
+- **t033**：前端工具链升到最新稳定版（Vite 8 / plugin-react 6 / Vitest 5 / React 19.3 / react-router 8 单包 / lucide 1.68 / jsdom 30 / jest-dom 7 / @types/node 26 / TanStack Query 5.106），TypeScript 因 openapi-typescript peer 例外固定 5.9.3（ADR 020）；Node 固定 26 LTS + `check_node.mjs` 双分支门禁；3 项 SPIKE 实测闭环；完整门禁 `all_passed=true`。
+- **t034**：Python 3.15.2 / Debian trixie / Caddy 2.11.8 digest 固定；修正 `pyproject.toml` 的 `dependencies` 误落 `[project.scripts]` 缺陷，PEP 735 六组依赖 + `uv.lock` 单一来源，`generate_requirements.sh` 按组导出并在 unit suite 校验；SQLAlchemy 2.1.8 / Alembic 1.20.1 / aiosqlite 0.22.1；cloakbrowser 锁 0.6.4（ADR 021）；5 镜像两次干净构建 ID 一致、包集合与 uv.lock MATCH；隔离实例发布 rh1→rh2→回退 rh1 三次健康检查全绿；完整门禁 `all_passed=true`。8 条 review minor 5 修 3 登记 `p044`。
+- **t043**：Selkies 2.1.0 → 2.2.1，正式 spike `s012` + finding `d030` 证明协议/私有 ABI 无不可适配破坏变化；vendor pin/wheel SHA/URL/SHA 清单（2018 行）、注入 marker 改通用首个 module tag、`x11_keymap` 版本门禁、pixelflux 2.2.3 / pcmflux 2.2.1 联动；ADR 022。**按用户监督纠正**把 `test_frontend_session_freeze_resume_and_diagnostics` 的错误归因（原记为 t032/t033 已登记偶发）更正为 2.2.1 延迟初始化引入的负载下时序回归；修根因（`useBrowserSession` 的 `DIAGNOSTIC_STAGES` 守卫，诊断态忽略 iframe 的 WS_CLOSE/PC_STATE/LIFECYCLE_STALE）+ TDD 回归；修复后完整门禁 `all_passed=true`、E2E 103 项 0 失败、该用例在完整门禁中 PASS；scope 变化后重新 review（PASS）。
+- **t035**：正式 spike `s013` + finding `d031` 闭环，UNVERIFIED-SPIKE 结论回填 `task.md`。在 Linux arm64 探针容器用真实引擎三组实测：Chromium 146 **支持**带认证 SOCKS5（正确凭据经代理加载、错误凭据 `ERR_SOCKS_CONNECTION_FAILED`、无认证对照正常），与契约背景「原生不支持」相反；AC-008 取「端到端经代理出站」分支。`code/probe.py` 可复现。12 条 AC 的代码改造未开始：曾起草 baseline 迁移与 models.py 局部改动，因会让 repository/domain/API/前端/测试全部引用失效，按「工作区保护 / 每个 commit 独立可验证」撤销，t035 worktree 保持干净一致（仅 spike 成果 + progress/task.md 回填）。
 
-### 下一步
+### 关键证据路径
 
-1. 完成 t032 的 finish 与 integrate，使其 status=done 且实现 commit 进入 main（队列硬前置）。
-2. 按 task-run 队列顺序串行执行：`t033 → t034 → t043 → t035 → t041 → t036 → t037 → t038 → t039 → t040 → t042`；每个成员止于实现 commit 与 run-close，merge 在整链完成后单独请求用户授权。
-3. 队列硬前置：`t034 depends_on t032`，`integration.py` 的 start 门禁要求依赖 status=done 且实现 commit 在 base 祖先链上；t032 不闭环整条链会在 t034 停摆。
-4. 队列内依赖：`t036 depends_on t033,t041`、`t039 depends_on t037,t043`、`t042 depends_on t039,t043`；冲突对（t038/t039/t040/t041/t042）按串行队列自然避开。
+- t033：`/Users/karson/kar/code/CBrowser_t033/.scratch/evidence_t033c/`（已随 worktree 清理，证据摘要在 t033 `progress.md` / `final_report.md`）。
+- t034：`.scratch/evidence_t034c/`（原 t034 worktree 已清理；摘要在 t034 `progress.md`）。
+- t043：`.scratch/evidence_t043c/`（原 t043 worktree 已清理；摘要在 t043 `progress.md`）。
+- t035 spike：`docs/spikes/s013_authenticated_socks5_engine_probe/`（report.md + code/probe.py）、`docs/findings/d031_authenticated_socks5_supported.md`（均在 t035 worktree，尚未 commit）。
+- 环境：`.scratch/t032/fix-env.sh`（镜像 ID）、`.scratch/t032/data/engine-cache`（引擎缓存）、mise 固定 Node 26.13.0 / Python 3.15.2。
+
+### 恢复入口与下一步
+
+1. t035 保持 `active`、attempt `34759d07` running(inline)、worktree `../CBrowser_t035` 保留、代码层零半成品。**不要重复 `run-begin t035`**；先 `python3 .repo_template/scripts/task.py recovery t035` 判定现场，按 `.repo_template/docs/recovery.md` 继续。
+2. t035 实施规划见 t035 `progress.md`「实施笔记」：迁移基线 `b7e1c9d4a2f3` 合并 0001–0009 并删旧文件 + 旧 schema 代 fail-closed + release controller 按修订链；Group/Proxy 表与 CRUD、删除业务 Tag 全部实现、配置版本三分（元数据/即时/运行）、代理字段变更同事务生成新版本 + SSE、runtime `last_started_at`/`last_stopped_at` 与浏览器版本上报链路（Runner CDP → Agent → Supervisor → API）、删除语义与目录清理、OpenAPI 导出与前端类型重生成、`domain.md`。12 条 AC 的测试须按新语义重写（旧测试整体删除并写明理由），最后跑完整门禁 + full review。
+3. 队列后续成员 `t041 → t036 → t037 → t038 → t039 → t040 → t042` 仍为 backlog；每个仍需完整实施 + 门禁 + review + finish + run-close。
+4. 整链完成后按 `task-integrate` / `integrate-chain` 逐项请求用户明确 merge 授权，单成员链用 `integrate {tid}`、多成员链用 `integrate-chain t042`；不 push。
+5. 已知外部项：模板 contract 2 项失败已上报 `TuTouPower/repo_template#84`（消费仓未改模板）；`p044` 登记 t034 验证工具接线/弃用告警/mock 深度 follow-up。
