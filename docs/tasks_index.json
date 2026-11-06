@@ -86,11 +86,11 @@
         {
             "tid": "t044",
             "slug": "e2e_parallel_execution",
-            "title": "E2E 并行执行与前置条件封闭",
+            "title": "门禁并行化、E2E 前置封闭与遗留缺陷收口",
             "status": "backlog",
             "branch": "",
             "worktree": "",
-            "review_level": "single",
+            "review_level": "full",
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",

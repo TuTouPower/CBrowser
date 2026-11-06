@@ -6,6 +6,13 @@
 
 同日用户决定把 E2E 前置条件封闭并入本 task：t036 完整门禁（`CBROWSER_E2E_REQUIRED=1`）中，t041 的 3 个指纹平台真实引擎用例（平台与 UA / Client Hints 一致、fontconfig 隐藏 Linux 字体、CJK 与 emoji 渲染）因找不到 Windows 官方字体集被 skip。该测试从 worktree 内 `.scratch/t041/...` 读取字体，t041 run-close 删除 worktree 后字体与 ISO 一并消失；且它直接调用 `pytest.skip`，绕开了 `tests/fixtures/e2e_env.py` 中必跑模式失败封闭的 `require_e2e_env`。产品侧已有持久字体目录 `CBROWSER_FONTS_DIR`（`$CBROWSER_DATA_ROOT/fonts`，由 `scripts/import_font_set.py` 导入），E2E 未使用。`test_runtime_profile_defaults_e2e.py`、`test_supervisor_event_shutdown_e2e.py`、`test_control_handoff_e2e.py` 也有类似的直接 skip。2026-11-06 于 main@0ac2ac6 核实：E2E 用例已部分使用随机前缀与动态端口（`tests/e2e/conftest.py` 等处 `bind(("127.0.0.1", 0))`），依赖中尚无 `pytest-xdist`。
 
+同日用户决定再并入以下工作：
+
+- 其余 suite 加速：最近一次完整门禁（`.scratch/evidence_merge2`）中 unit 1091 例约 98 秒、integration 155 例约 80 秒，均为串行 pytest；`run_gates.sh` 中后端与前端 suite 依次执行，互不依赖；环境准备每轮新建 venv 并重新下载 playwright 等依赖（约 10 秒）。
+- p042：`supervisor/core.py` 用 `_registration_known` 与 `_registration_lost_at` 两个字典表示同一 profile 的注册状态。2026-11-06 于 main@8cdaeb7 核实问题仍在：`gateway_missing`（398 行）、`gateway_unreachable`（516 行）、启动确认注册（2192 行）、clean stop（2375 行）四处只维护前者。profile 停止后 90 秒内以同名重建、且新 Stream 未注册时，残留时间戳会把新实例误判进恢复宽限，替换最多再延迟约 90 秒。
+- p044：t034 review 遗留的验证工具缺口，2026-11-06 于 main@8cdaeb7 逐项核实仍在：① `scripts/generate_requirements.sh --check` 与 `scripts/verify_image_packages.py` 未接入门禁；② `pyproject.toml` 全局 `ignore::DeprecationWarning`，源码仍在 `api/app.py`、`api/v1/router.py` 使用已弃用的 `HTTP_422_UNPROCESSABLE_ENTITY`；③ `tests/unit/test_t034_runtime_paths.py` 对 Selkies Web 资产动态定位只做源码文本断言；④ `tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile` 仍为 `python:3.12-slim-bookworm`（被 `test_baseline_runtime_regressions.py` 引用），与运行镜像的 Python 3.15 / Debian trixie 不一致。
+- 门禁写工作区：`run_gates.sh` 依次运行 `design:lint`、`design:check`、`design:tokens`，其中 `design:tokens` 是生成命令，会根据 `DESIGN.md` 重写受跟踪的 `src/frontend/src/styles/design_tokens.css`（证据日志 `wrote .../design_tokens.css`）。新鲜度已由 `design:check` 只读校验，该步骤多余，且在 `design:check` 失败时会让门禁留下工作区改动。
+
 ## 契约区
 
 ### 范围
@@ -19,12 +26,17 @@
 - 指纹平台 E2E 改为从持久字体目录读取经导入工具导入的字体集，不再依赖任何 worktree 的 `.scratch` 路径。
 - 全部 E2E 的前置条件检查（字体集、引擎缓存、镜像、Docker、环境变量等）统一走必跑模式失败封闭：必跑模式下缺失即失败，非必跑模式下才 skip。
 - 按 t041 的官方来源重新获取 Windows 字体并导入持久字体目录，使本机完整门禁能真实运行指纹平台用例。
+- unit 与 integration suite 改为多 worker 并行；依赖固定端口、子进程或 sqlite 竞争的用例标注为串行。
+- `run_gates.sh` 中互不依赖的后端组（contract、unit、integration）与前端组（design、frontend_test、frontend_build）并发执行，E2E 在两组完成后执行。
+- 门禁环境准备复用共享 uv 缓存。
+- p042：Supervisor 的注册状态改为每个 profile 一个状态对象，所有生命周期清理点一次性清除该对象。
+- p044：依赖锁漂移检查与镜像内包集合比对接入门禁；测试运行把 DeprecationWarning 视为错误，只精确忽略登记的第三方来源，源码改用 `HTTP_422_UNPROCESSABLE_CONTENT`；Selkies Web 资产动态定位补以 Docker SDK 为边界的单测；测试夹具镜像对齐运行镜像基线。
+- 从门禁中移除 `design:tokens` 生成步骤，门禁只做只读检查；生成命令保留供开发时手动运行。
 
 ### 非范围
 
-- 不修改被测产品代码的行为。
-- 不改变 E2E 用例覆盖的行为与断言语义。
-- 不并行化 unit、integration、前端 suite。
+- 除 p042 的注册状态修复与 p044 的弃用常量替换外，不修改产品行为。
+- 不改变既有用例覆盖的行为与断言语义。
 - 不设性能阈值。
 
 ### 验收标准
@@ -41,6 +53,15 @@
 - [ ] AC-004：门禁证据保持原格式：E2E junit 含全部用例及各自结果，manifest 与 `suites.tsv` 的 suite 名与退出码语义不变，任一用例失败时可从证据定位到具体用例。
 - [ ] AC-005：必跑模式（`CBROWSER_E2E_REQUIRED=1`）下，任一 E2E 用例的前置条件缺失时该用例失败并给出缺失项；非必跑模式下同样情形为 skip。必跑模式的完整门禁中，除显式按开关启用的可选用例外没有 skip。
 - [ ] AC-006：指纹平台 E2E 使用持久字体目录中经导入工具导入的字体集运行，结果不依赖任何 worktree 是否存在；本 task 的完整门禁中这些用例真实执行并通过。
+- [ ] AC-007：unit 与 integration suite 以多个 worker 并行执行，收集到的用例集合与改造前一致；标注为串行的用例不与其它用例并发运行。
+- [ ] AC-008：完整门禁中后端组与前端组并发执行，E2E 在两组都结束后才开始；任一 suite 失败时证据仍逐 suite 记录，总退出码非零。
+- [ ] AC-009：门禁环境准备复用共享依赖缓存；缓存已就绪时，环境准备日志中没有依赖下载。
+- [ ] AC-010：profile 停止后在恢复宽限期内以同名重新启动、且新 Stream 未注册时，Supervisor 不进入恢复宽限，按未注册路径替换；`gateway_missing`、`gateway_unreachable`、启动确认注册、clean stop 四个清理点之后不残留该 profile 的任何注册状态。
+- [ ] AC-011：依赖锁与导出的 requirements 不一致时，完整门禁失败；E2E 必跑模式下，任一运行镜像内的已安装包集合与依赖锁不一致时，门禁失败。
+- [ ] AC-012：测试运行中出现未登记来源的 DeprecationWarning 时测试失败；源码中不再出现 `HTTP_422_UNPROCESSABLE_ENTITY`。
+- [ ] AC-013：Selkies Web 资产提取在镜像内用 `find` 定位路径、用返回路径取归档、出错时强制删除探测容器，三点均有以 Docker SDK 为边界的单测覆盖。
+- [ ] AC-014：测试夹具镜像与运行镜像使用相同的 Python 版本与发行版基线。
+- [ ] AC-015：完整门禁运行前后，仓库中受跟踪文件内容不变（包括 `design:check` 失败的情形）；`design_tokens.css` 过期时由 `design:check` 使门禁失败。
 
 ### 可测试性声明
 
@@ -54,7 +75,7 @@
 
 ## 上下文区
 
-- 来源：无（用户 2026-11-06 直接需求）
+- 来源：用户 2026-11-06 直接需求；p042（t032 review `t032_code_f001`）、p044（t034 review `t034_test_f002` / `f004` / `f005`），2026-11-06 于 main@8cdaeb7 核实仍存在，结论见背景。
 
 ### 有意不测
 
@@ -65,6 +86,10 @@
 - unit：门禁脚本参数、时序敏感标注收集、资源命名唯一性。
 - E2E：完整门禁真实运行验证 AC-001 至 AC-004、AC-006；残留检查在 suite 结束后列出本轮前缀的容器与网络。
 - unit：前置条件检查在必跑与非必跑模式下分别失败与 skip（AC-005）；扫描 `tests/e2e` 中绕开封闭检查的直接 `pytest.skip`。
+- unit：门禁脚本的并发分组与 E2E 排序、失败时逐 suite 记录（AC-008）；锁漂移检查失败路径（AC-011）；DeprecationWarning 失败策略（AC-012）；Docker SDK 边界的资产提取（AC-013）；门禁 suite 列表不含生成命令（AC-015）。
+- 完整门禁前后对比 `git status --porcelain` 与受跟踪文件哈希，含人为让 `design_tokens.css` 过期的失败路径（AC-015）。
+- unit：先写「stop 后同名重启且旧时间戳残留」红测，再修 Supervisor 注册状态（AC-010），重跑 `tests/unit/test_t026_supervisor_convergence.py`。
+- 完整门禁真实运行验证 AC-007、AC-009、AC-011。
 
 ### 未知契约清单
 
@@ -78,8 +103,8 @@
 
 ### 风险与回退
 
-- 风险：并行负载加重时序敏感用例的偶发失败；共享栈引入用例间状态泄漏；官方字体需重新下载约 8GB 评估版 ISO。
-- 回退：worker 数降为 1 即恢复串行执行。
+- 风险：并行负载加重时序敏感用例的偶发失败；共享栈引入用例间状态泄漏；官方字体需重新下载约 8GB 评估版 ISO；把 DeprecationWarning 视为错误可能暴露更多第三方弃用告警。
+- 回退：worker 数降为 1 即恢复串行执行；suite 并发可改回顺序执行；源码层回退本 task commit。
 
 ### 依赖与约束
 
@@ -89,4 +114,4 @@
 
 ### Finalization 时更新的 blueprint
 
-- `docs/blueprint/testing.md`：E2E 并行执行方式、时序敏感用例标注规则、必跑模式前置条件失败封闭规则、指纹平台 E2E 的字体集来源。
+- `docs/blueprint/testing.md`：各 suite 并行执行方式与串行标注规则、门禁 suite 并发分组、必跑模式前置条件失败封闭规则、指纹平台 E2E 的字体集来源、锁漂移与镜像包比对门禁、DeprecationWarning 策略。
