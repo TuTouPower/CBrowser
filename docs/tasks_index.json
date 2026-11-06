@@ -30,7 +30,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t037",
+            "depends_on": "t037,t045",
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP10",
             "dir": "docs/tasks/t038_proxy_library_ui"
@@ -98,6 +98,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/tasks/t044_e2e_parallel_execution"
+        },
+        {
+            "tid": "t045",
+            "slug": "e2e_gate_stability_cleanup",
+            "title": "门禁稳定性与 E2E 遗留缺陷合并收口",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t037",
+            "conflicts_with": "",
+            "note": "来源 p046 p048 p049 p050 用户授权聚合",
+            "dir": "docs/tasks/t045_e2e_gate_stability_cleanup"
         }
     ]
 }
