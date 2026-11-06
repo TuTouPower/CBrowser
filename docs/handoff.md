@@ -19,7 +19,7 @@
 
 ### 关键证据路径
 
-- t033：`/Users/karson/kar/code/CBrowser_t033/.scratch/evidence_t033c/`（已随 worktree 清理，证据摘要在 t033 `progress.md` / `final_report.md`）。
+- t033：`~/kar/code/CBrowser_t033/.scratch/evidence_t033c/`（已随 worktree 清理，证据摘要在 t033 `progress.md` / `final_report.md`）。
 - t034：`.scratch/evidence_t034c/`（原 t034 worktree 已清理；摘要在 t034 `progress.md`）。
 - t043：`.scratch/evidence_t043c/`（原 t043 worktree 已清理；摘要在 t043 `progress.md`）。
 - t035 spike：`docs/spikes/s013_authenticated_socks5_engine_probe/`（report.md + code/probe.py）、`docs/findings/d031_authenticated_socks5_supported.md`（均在 t035 worktree，尚未 commit）。
