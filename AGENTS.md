@@ -40,6 +40,8 @@ CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统
 |`scripts/`|运维与项目工具脚本|仅在 task 执行期按 spec 修改，或经授权由 `pending-fix` 在 main 直修；debug 复现不得写入|
 |`tests/`|跨模块集成与端到端测试|仅在 task 执行期按 spec 修改，或经授权由 `pending-fix` 在 main 直修|
 |`.repo_template/`|模板工具链（skills、scripts、docs、hooks）|仅模板演进时修改；细目与写权见`.repo_template/docs/usage.md`|
+|`.repo_template/docs/task_template/`|task 文件模板（非工作项）|只改模板本身|
+|`.repo_template/docs/review_prompts/`|review prompt 模板|改审查标准时更新|
 |`artifacts/` `data/` `.scratch/`|产物、运行数据、一次性草稿|运行与草稿；debug 复现和临时实验只写`.scratch/`（已 gitignore）；需保留的 spike 验证材料写 `docs/spikes/{sid}_{slug}/code/`|
 
 ## 开发原则
