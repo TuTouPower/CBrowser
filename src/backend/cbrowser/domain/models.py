@@ -22,7 +22,7 @@ def generate_fingerprint_seed() -> int:
 DesiredState = Literal["stopped", "running"]
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
 RuntimeEventType = Literal["exit", "heartbeat", "lifecycle"]
-FontBundle = Literal["none", "wqy-microhei", "wqy-zenhei"]
+FingerprintPlatform = Literal["windows", "macos"]
 
 
 class ErrorResponse(BaseModel):
@@ -159,7 +159,8 @@ class ProfileConfig(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle = "none"
+    fingerprint_platform: FingerprintPlatform = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -177,13 +178,6 @@ class ProfileConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Profile name cannot be blank")
         return v.strip()
-
-    @field_validator("font_bundle", mode="before")
-    @classmethod
-    def validate_font_bundle(cls, v: Any) -> Any:
-        if v is None:
-            raise ValueError("font_bundle cannot be null")
-        return v
 
     @field_validator("launch_args", "extension_paths", mode="before")
     @classmethod
@@ -378,7 +372,8 @@ class ProfileCreateRequest(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle = "none"
+    fingerprint_platform: FingerprintPlatform = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -431,7 +426,8 @@ class ProfileUpdateRequest(BaseModel):
     clipboard_sync: bool | None = None
     auto_launch: bool | None = None
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle | None = None
+    fingerprint_platform: FingerprintPlatform | None = None
+    font_set_id: str | None = None
     launch_args: list[str] | None = None
     extension_paths: list[str] | None = None
     allow_3p_cookies: bool | None = None
@@ -464,13 +460,6 @@ class ProfileUpdateRequest(BaseModel):
             raise ValueError("gpu_family cannot be null")
         return value
 
-    @field_validator("font_bundle", mode="before")
-    @classmethod
-    def reject_null_font_bundle(cls, value: object) -> object:
-        if value is None:
-            raise ValueError("font_bundle cannot be null")
-        return value
-
     @field_validator("screen_width", "screen_height", mode="before")
     @classmethod
     def reject_null_dimensions(cls, value: object) -> object:
@@ -496,7 +485,8 @@ class ProfileResponse(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: str | None = None
-    font_bundle: str = "none"
+    fingerprint_platform: str = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -532,7 +522,8 @@ class ProfileResponse(BaseModel):
             clipboard_sync=cfg.clipboard_sync,
             auto_launch=cfg.auto_launch,
             color_scheme=cfg.color_scheme,
-            font_bundle=cfg.font_bundle,
+            fingerprint_platform=cfg.fingerprint_platform,
+            font_set_id=cfg.font_set_id,
             launch_args=cfg.launch_args,
             extension_paths=cfg.extension_paths,
             allow_3p_cookies=cfg.allow_3p_cookies,
@@ -704,6 +695,8 @@ class ProfileRuntimeResponse(BaseModel):
     last_stopped_at: str | None = None
     browser_product: str | None = None
     browser_user_agent: str | None = None
+    font_set_id: str | None = None
+    missing_fonts: list[str] = Field(default_factory=list)
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None
@@ -722,6 +715,8 @@ class ProfileRuntimeStatusEvent(BaseModel):
     last_stopped_at: str | None = None
     browser_product: str | None = None
     browser_user_agent: str | None = None
+    font_set_id: str | None = None
+    missing_fonts: list[str] = Field(default_factory=list)
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None

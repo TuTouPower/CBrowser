@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -845,15 +846,6 @@ def test_rollback_refuses_legacy_generation_database(tmp_path: Path) -> None:
     assert _pointer(repo, "current_release") == "rel-002"
 
 
-def test_manifest_records_baseline_revision(tmp_path: Path) -> None:
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
-    assert _manifest(repo, "rel-001")["migration_version"] == BASELINE_REVISION
-    versions = sorted(
-        (repo / "src" / "backend" / "migrations" / "versions").glob("*.py")
-    )
-    assert len(versions) == 1
 
 
 def test_rollback_refuses_legacy_generation_release(tmp_path: Path) -> None:
@@ -872,13 +864,54 @@ def test_rollback_refuses_legacy_generation_release(tmp_path: Path) -> None:
     assert _pointer(repo, "current_release") == "rel-002"
 
 
-def test_same_generation_publish_and_rollback(tmp_path: Path) -> None:
+
+
+def _migration_head(repo: Path) -> str:
+    """Parse the shipped revision ids and return the single chain head."""
+    versions = repo / "src" / "backend" / "migrations" / "versions"
+    revisions: dict[str, str | None] = {}
+    downs: set[str] = set()
+    for path in versions.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        m = re.search(r'^revision[^=]*=\s*"([^"]+)"', text, re.M)
+        d = re.search(r'^down_revision[^=]*=\s*"([^"]+)"', text, re.M)
+        if m:
+            revisions[m.group(1)] = d.group(1) if d else None
+            if d:
+                downs.add(d.group(1))
+    heads = [r for r in revisions if r not in downs]
+    assert len(heads) == 1
+    return heads[0]
+
+
+def test_manifest_records_current_head_with_incremental_chain(
+    tmp_path: Path,
+) -> None:
+    """t041: manifest records the current chain head, not the baseline."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    head = _migration_head(repo)
+    assert head != BASELINE_REVISION
+    assert _manifest(repo, "rel-001")["migration_version"] == head
+    versions = sorted(
+        (repo / "src" / "backend" / "migrations" / "versions").glob("*.py")
+    )
+    assert len(versions) == 2
+
+
+def test_same_generation_publish_and_rollback_with_incremental_chain(
+    tmp_path: Path,
+) -> None:
+    """t041: same-generation releases still publish and roll back when the
+    chain contains an incremental migration after the baseline."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
     assert _deploy(repo, bin_dir, "rel-002").returncode == 0
-    assert _manifest(repo, "rel-001")["migration_version"] == BASELINE_REVISION
-    assert _manifest(repo, "rel-002")["migration_version"] == BASELINE_REVISION
+    head = _migration_head(repo)
+    assert _manifest(repo, "rel-001")["migration_version"] == head
+    assert _manifest(repo, "rel-002")["migration_version"] == head
     result = _run(repo, bin_dir, "rollback")
     assert result.returncode == 0, result.stderr
     assert _pointer(repo, "current_release") == "rel-001"

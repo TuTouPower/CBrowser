@@ -27,6 +27,11 @@ from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.api.runtime_coordinator")
 
+_PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
+    "windows": ("windows", "office"),
+    "macos": ("macos",),
+}
+
 
 class ReconcileOutcome(Enum):
     CONVERGED = "converged"
@@ -215,6 +220,9 @@ class RuntimeCoordinator:
         self._last_errors: dict[str, str | None] = {}
         self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
         self._transport: dict[str, TransportObservationData | None] = {}
+        self._font_runtime_cache: dict[
+            tuple[str, str], tuple[str | None, list[str]]
+        ] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
@@ -237,6 +245,50 @@ class RuntimeCoordinator:
 
     def clear_last_error(self, profile_id: str) -> None:
         self._last_errors.pop(profile_id, None)
+
+    async def get_font_runtime(
+        self, profile_id: str
+    ) -> tuple[str | None, list[str]]:
+        """Resolve the bound font set and its missing detection fonts (AC-007).
+
+        Derived from the Profile's own config with the same ``check_font_set``
+        detection data the Agent reports in /health, so the REST response and
+        SSE agree with the in-container check. Font sets are content-addressed
+        and immutable, so the hash-heavy scan is cached per (platform, id).
+        Any read failure degrades to the set id with an empty missing list and
+        never breaks a runtime response.
+        """
+        from cbrowser import font_sets
+        from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
+
+        try:
+            profile = await self.profile_service.get_profile(profile_id)
+        except Exception:  # noqa: BLE001
+            return None, []
+        config = profile.config
+        font_set_id = config.font_set_id
+        if not font_set_id:
+            return None, [PLATFORM_FONTS_UNCONFIGURED]
+        platform = config.fingerprint_platform
+        if platform not in _PLATFORM_DETECTION_LABELS:
+            return str(font_set_id), []
+        key = (str(platform), str(font_set_id))
+        if key not in self._font_runtime_cache:
+            found = font_sets.get_font_set(platform, font_set_id)
+            if found is None:
+                self._font_runtime_cache[key] = (str(font_set_id), [])
+            else:
+                directory, _manifest = found
+                detection = font_sets.check_font_set(directory).get("detection", {})
+                missing = sorted(
+                    {
+                        name
+                        for label in _PLATFORM_DETECTION_LABELS[platform]
+                        for name in detection.get(label, {}).get("missing", [])
+                    }
+                )
+                self._font_runtime_cache[key] = (str(font_set_id), missing)
+        return self._font_runtime_cache[key]
 
     def get_search_defaults(
         self, profile_id: str
@@ -648,6 +700,7 @@ class RuntimeCoordinator:
                     control = await self.control_service.get_state(profile_id)
                 except Exception:  # noqa: BLE001 - control is advisory here
                     control = None
+            font_set_id, missing_fonts = await self.get_font_runtime(profile_id)
             data = ProfileRuntimeEventData(
                 profile_id=rt.profile_id,
                 desired_state=rt.desired_state,
@@ -659,6 +712,8 @@ class RuntimeCoordinator:
                 last_stopped_at=rt.last_stopped_at,
                 browser_product=rt.browser_product,
                 browser_user_agent=rt.browser_user_agent,
+                font_set_id=font_set_id,
+                missing_fonts=missing_fonts,
                 last_coordinator_error=err,
                 search_defaults=self.fenced_search_defaults(
                     profile_id, rt.runtime_instance_id

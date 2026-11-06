@@ -89,8 +89,11 @@ class ProfileModel(Base):
     clipboard_sync: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     auto_launch: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     color_scheme: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    font_bundle: Mapped[str] = mapped_column(
-        String(32), default="none", nullable=False
+    fingerprint_platform: Mapped[str] = mapped_column(
+        String(16), default="windows", nullable=False
+    )
+    font_set_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
     )
     launch_args: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
     extension_paths: Mapped[str] = mapped_column(Text, default="[]", nullable=False)

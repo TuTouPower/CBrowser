@@ -15,9 +15,6 @@ import {
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileUpdateRequest } from "../../shared/api/types";
-
-type FontBundle = NonNullable<ProfileUpdateRequest["font_bundle"]>;
 
 export function ProfileDetailPage() {
   const { profileId } = useParams<{ profileId: string }>();
@@ -57,7 +54,6 @@ export function ProfileDetailPage() {
   const [name, setName] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
-  const [fontBundle, setFontBundle] = useState<FontBundle>("none");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const dirtyFields = useRef<Set<string>>(new Set());
@@ -83,9 +79,6 @@ export function ProfileDetailPage() {
     if (!dirty.has("geometry")) {
       setScreenWidth(profile.screen_width || 1920);
       setScreenHeight(profile.screen_height || 1080);
-    }
-    if (!dirty.has("fontBundle")) {
-      setFontBundle((profile.font_bundle as FontBundle) || "none");
     }
   }, [profile]);
 
@@ -184,7 +177,6 @@ export function ProfileDetailPage() {
           name: name.trim(),
           screen_width: screenWidth,
           screen_height: screenHeight,
-          font_bundle: fontBundle,
         },
       });
 
@@ -561,22 +553,6 @@ export function ProfileDetailPage() {
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("fontBundle")}
-            </label>
-            <select
-              data-testid="profile-font-bundle-select"
-              value={fontBundle}
-              onChange={(e) => { markDirty("fontBundle"); setFontBundle(e.target.value as FontBundle); }}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            >
-              <option value="none">{t("fontBundleNone")}</option>
-              <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
-              <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
-            </select>
           </div>
 
           <div className="pt-2 flex justify-end gap-3">

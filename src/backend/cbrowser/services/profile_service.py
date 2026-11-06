@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+from cbrowser import font_sets
 from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
@@ -73,6 +74,33 @@ class ProfileRunningError(ProfileServiceError):
         super().__init__(f"Stop profile {profile_id} before {operation}")
         self.profile_id = profile_id
         self.operation = operation
+
+
+class InvalidFontSetBindingError(ProfileServiceError):
+    """A profile's font_set_id does not reference a usable font set."""
+
+
+def _validate_font_set_binding(platform: str, font_set_id: str | None) -> None:
+    """Reject a non-null binding whose set is missing, cross-platform, or
+    fails its integrity check."""
+    if font_set_id is None:
+        return
+    found = font_sets.get_font_set(platform, font_set_id)
+    if found is None:
+        raise InvalidFontSetBindingError(
+            f"font_set_id {font_set_id!r} does not reference an available "
+            f"{platform} font set"
+        )
+    directory, manifest = found
+    if manifest.get("platform") != platform:
+        raise InvalidFontSetBindingError(
+            f"font set {font_set_id!r} platform does not match "
+            f"fingerprint_platform {platform!r}"
+        )
+    if not font_sets.check_font_set(directory)["ok"]:
+        raise InvalidFontSetBindingError(
+            f"font set {font_set_id!r} failed its integrity check"
+        )
 
 
 class ProfileLockRegistry:
@@ -284,6 +312,11 @@ class ProfileService:
         operation_id: str | None = None,
         req_payload: dict[str, Any] | None = None,
     ) -> Profile:
+        if config.font_set_id is None:
+            default = font_sets.default_font_set(config.fingerprint_platform)
+            if default is not None:
+                config = config.model_copy(update={"font_set_id": default})
+        _validate_font_set_binding(config.fingerprint_platform, config.font_set_id)
         try:
             return await self._repo.create_profile(
                 config=config,
@@ -309,6 +342,9 @@ class ProfileService:
         except DBAPIError as e:
             self._handle_db_error(e)
 
+    async def font_set_usage_counts(self) -> dict[str, int]:
+        return await self._repo.font_set_usage_counts()
+
     async def update_profile(
         self,
         profile_id: str,
@@ -316,6 +352,21 @@ class ProfileService:
         *,
         operation_id: str | None = None,
     ) -> Profile:
+        patch_dict = (
+            patch_data.model_dump()
+            if isinstance(patch_data, ProfileConfig)
+            else dict(patch_data)
+        )
+        if "font_set_id" in patch_dict or "fingerprint_platform" in patch_dict:
+            current = await self._repo.get_profile(profile_id)
+            if current is not None:
+                platform = patch_dict.get(
+                    "fingerprint_platform", current.config.fingerprint_platform
+                )
+                font_set_id = patch_dict.get(
+                    "font_set_id", current.config.font_set_id
+                )
+                _validate_font_set_binding(platform, font_set_id)
         try:
             profile = await self._repo.update_profile(
                 profile_id=profile_id,

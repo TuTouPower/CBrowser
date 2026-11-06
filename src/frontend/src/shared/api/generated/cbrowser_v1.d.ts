@@ -302,6 +302,23 @@ export interface paths {
         patch: operations["update_proxy_api_v1_proxies__proxy_id__patch"];
         trace?: never;
     };
+    "/api/v1/font-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Font Sets */
+        get: operations["list_font_sets_api_v1_font_sets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profiles/{profile_id}/artifacts": {
         parameters: {
             query?: never;
@@ -771,6 +788,58 @@ export interface components {
              */
             retryable: boolean;
         };
+        /** FontDetection */
+        FontDetection: {
+            /** Total */
+            total: number;
+            /** Matched */
+            matched: number;
+            /** Missing */
+            missing: string[];
+        };
+        /** FontSetInfo */
+        FontSetInfo: {
+            /** Platform */
+            platform: string;
+            /** Set Id */
+            set_id: string;
+            /** Source */
+            source?: string | null;
+            /** Source Version */
+            source_version?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            integrity: components["schemas"]["FontSetIntegrity"];
+            /** File Count */
+            file_count: number;
+            /**
+             * Used By Count
+             * @default 0
+             */
+            used_by_count: number;
+        };
+        /** FontSetIntegrity */
+        FontSetIntegrity: {
+            /** Ok */
+            ok: boolean;
+            /** Problems */
+            problems?: string[];
+            /** Missing Fonts */
+            missing_fonts?: string[];
+            /** Hash Mismatches */
+            hash_mismatches?: string[];
+            /** Unregistered Fonts */
+            unregistered_fonts?: string[];
+            /**
+             * File Count
+             * @default 0
+             */
+            file_count: number;
+            /** Detection */
+            detection?: {
+                [key: string]: components["schemas"]["FontDetection"];
+            };
+        };
         /** GroupCreateRequest */
         GroupCreateRequest: {
             /** Name */
@@ -950,11 +1019,12 @@ export interface components {
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
             /**
-             * Font Bundle
-             * @default none
+             * Fingerprint Platform
              * @enum {string}
              */
-            font_bundle: "none" | "wqy-microhei" | "wqy-zenhei";
+            fingerprint_platform?: "windows" | "macos";
+            /** Font Set Id */
+            font_set_id?: string | null;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -1073,11 +1143,10 @@ export interface components {
             auto_launch: boolean;
             /** Color Scheme */
             color_scheme?: string | null;
-            /**
-             * Font Bundle
-             * @default none
-             */
-            font_bundle: string;
+            /** Fingerprint Platform */
+            fingerprint_platform?: string;
+            /** Font Set Id */
+            font_set_id?: string | null;
             /** Launch Args */
             launch_args?: string[];
             /** Extension Paths */
@@ -1163,6 +1232,10 @@ export interface components {
             browser_product?: string | null;
             /** Browser User Agent */
             browser_user_agent?: string | null;
+            /** Font Set Id */
+            font_set_id?: string | null;
+            /** Missing Fonts */
+            missing_fonts?: string[];
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
@@ -1205,6 +1278,10 @@ export interface components {
             browser_product?: string | null;
             /** Browser User Agent */
             browser_user_agent?: string | null;
+            /** Font Set Id */
+            font_set_id?: string | null;
+            /** Missing Fonts */
+            missing_fonts?: string[];
             /** Last Coordinator Error */
             last_coordinator_error?: string | null;
             search_defaults?: components["schemas"]["SearchDefaultsStatusData"] | null;
@@ -1245,8 +1322,10 @@ export interface components {
             auto_launch?: boolean | null;
             /** Color Scheme */
             color_scheme?: ("light" | "dark" | "no-preference") | null;
-            /** Font Bundle */
-            font_bundle?: ("none" | "wqy-microhei" | "wqy-zenhei") | null;
+            /** Fingerprint Platform */
+            fingerprint_platform?: ("windows" | "macos") | null;
+            /** Font Set Id */
+            font_set_id?: string | null;
             /** Launch Args */
             launch_args?: string[] | null;
             /** Extension Paths */
@@ -3264,6 +3343,53 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_font_sets_api_v1_font_sets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FontSetInfo"][];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */

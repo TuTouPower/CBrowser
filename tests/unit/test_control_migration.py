@@ -74,27 +74,6 @@ async def test_migration_upgrade_backup_restore(tmp_path):
     assert _read_control(restored) == ("user", 2, "human_input", 0)
 
 
-def test_baseline_is_single_revision_in_chain(tmp_path: Path) -> None:
-    """AC-001: the shipped migration chain holds exactly one revision,
-    the t035 baseline, whose id differs from any retired 0001-0009
-    revision and which has no down_revision."""
-    cfg = get_alembic_config(tmp_path / "chain.db")
-    script = ScriptDirectory.from_config(cfg)
-    chain = [rev.revision for rev in script.walk_revisions()]
-    assert chain == [BASELINE_REVISION]
-    retired_revisions = (
-        "0001_initial_schema",
-        "0002_auth",
-        "0006_snapshot_modes",
-        "0008_artifact_delete_intent",
-        "0009_profile_control_state",
-    )
-    assert BASELINE_REVISION not in retired_revisions
-    assert all(legacy not in chain for legacy in retired_revisions)
-    assert script.get_heads() == [BASELINE_REVISION]
-    baseline = script.get_revision(BASELINE_REVISION)
-    assert baseline is not None
-    assert baseline.down_revision is None
 
 
 def test_upgrade_head_matches_orm_metadata(tmp_path: Path) -> None:
@@ -105,3 +84,29 @@ def test_upgrade_head_matches_orm_metadata(tmp_path: Path) -> None:
     db = tmp_path / "schema.db"
     run_database_migrations(db)
     command.check(get_alembic_config(db))
+
+
+def test_revision_chain_is_baseline_plus_incremental(tmp_path: Path) -> None:
+    """t041: the shipped chain is the t035 baseline plus one incremental
+    migration; the head advances while the baseline remains the root."""
+    cfg = get_alembic_config(tmp_path / "chain.db")
+    script = ScriptDirectory.from_config(cfg)
+    chain = [rev.revision for rev in script.walk_revisions()]
+    assert len(chain) == 2
+    assert chain[-1] == BASELINE_REVISION
+    baseline = script.get_revision(BASELINE_REVISION)
+    assert baseline is not None
+    assert baseline.down_revision is None
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert heads[0] == chain[0]
+    assert heads[0] != BASELINE_REVISION
+    retired_revisions = (
+        "0001_initial_schema",
+        "0002_auth",
+        "0006_snapshot_modes",
+        "0008_artifact_delete_intent",
+        "0009_profile_control_state",
+    )
+    assert BASELINE_REVISION not in retired_revisions
+    assert all(legacy not in chain for legacy in retired_revisions)

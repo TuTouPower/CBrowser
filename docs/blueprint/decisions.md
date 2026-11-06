@@ -280,3 +280,13 @@
     - **认证 SOCKS5 走端到端分支**：Chromium 146 实测支持 `socks5://user:pass@host:port`（正确凭据 `loaded=True`、错误凭据 `net::ERR_SOCKS_CONNECTION_FAILED`），故 Runner 直接构造 `--proxy-server`，不采用 422 拒绝创建的降级路径。
 - 复查条件：Chromium 主版本或指纹平台升级后重跑 `s013` 的三组实测（无认证 / 正确凭据 / 错误凭据），若引擎不再接受带认证 SOCKS5 则按 AC-008 回退到 API 422 分支；后续 schema 破坏性升级沿用「单 baseline + 旧代失败封闭 + 修订链回退下限」流程。
 - 替代：①/③/④ 均不采用（兼容层与自动升级违背破坏性升级不留包袱原则；快照复制密码违背凭据单一来源；422 拒绝与实测引擎能力不符）。
+
+## 024 平台字体运行时只读挂载与 Profile 绑定不可变字体集（2026-11-06T07:27:29+08:00，t041）
+
+- 背景：ADR 015（t020）按 Profile 三档 `font_bundle`（文泉驿）开关 CJK 字体，并写明不挂载宿主字体目录、不在宿主数据目录预置字体；Runner 的 fontconfig 配置 include `/etc/fonts/fonts.conf`，会把 `/usr/share/fonts` 下 apt 安装的全部字体暴露给所有 Profile。t041 正式 spike `s014`（结论 `d032` / `d033`）在 cloakbrowser 0.6.4 / Chromium 146 实测：`--fingerprint-platform=windows` / `=macos` 下 `navigator.platform`、UA、UA-CH `platform` / `platformVersion` 两平台一致；只白名单声明字体目录的 `FONTCONFIG_FILE` 使 Liberation / Nimbus / 文泉驿等 Linux 专属字体命中 0；两种平台都有原生 CJK 字体（微软雅黑、宋体；苹方、冬青黑体），文泉驿本身成为 Linux 特征。用户 2026-11-05 决定 Profile 可选 windows / macos 指纹平台并绑定不可变字体集（D15），字体只在运行时挂载、不进镜像不入库。
+- 选项：
+    1. 保留 ADR 015 的 `font_bundle` 三档与 include 系统 fontconfig 的开关机制。
+    2. 删除 `font_bundle`，平台专有字体只在运行时由 Supervisor 只读挂载，Profile 绑定按内容寻址的不可变字体集，Runner 生成只白名单声明绑定集目录（不含基础字体）的 `FONTCONFIG_FILE`。
+    3. 把平台专有字体打进 Browser 镜像或提交到 git 仓库随发布分发。
+- 结论：采用选项 2。运行配置新增 `fingerprint_platform`（默认 `windows`）与 `font_set_id`，经增量迁移 `0002_fingerprint_platform.py` 加入，两者修改任一生成新 `ProfileConfigVersion`；Runner 按绑定快照选择平台，删除写死的参数。基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）放镜像 `/opt/cbrowser-base-fonts`（默认扫描路径之外，仅满足 CloakBrowser 安装要求，**不进入**指纹 Profile 白名单，用户 2026-11-06 裁决）；平台字体集存宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`（内容寻址 set_id + 来源与 sha256 manifest，经 `.worktreeinclude` 供 worktree 共享），只读挂到 `/run/cbrowser/fonts/{platform}/{set_id}`。绑定集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时回退基础开源字体可见、保证页面可用（空字体集会让真实栈页面交互失败），runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体；runtime 响应与 SSE 下发实际 `font_set_id` 与 `missing_fonts`，`GET /api/v1/font-sets` 列出平台、来源、版本、静态完整性与 `used_by_count`。字体不进任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录（AC-008）；`font_bundle` 字段、镜像字体包、代码、文档与测试引用一并删除（AC-009）。UA-CH `architecture=arm` 与 windows UA `x64` 的差异：引擎层无 flag、CDP 页面级覆盖漏 ServiceWorker，按用户裁决不做半套覆盖（`d032` + `p045`），AC-004 文本不改。选项 3 把平台字体打进镜像 / 仓库等同分发，授权与来源风险明确不做；平台字体只从官方渠道取得、只在运行时只读挂载，不进入任何镜像层与仓库。
+- 替代：015（本条为现行决定，替代 ADR 015；历史 ADR 015 原文不改，其「不挂载宿主字体目录」「不预置字体文件」结论由运行时只读挂载取代）。

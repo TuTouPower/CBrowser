@@ -25,7 +25,10 @@ from cloakbrowser.browser import seed_widevine_hint
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
-from .fontconfig import prepare_profile_fontconfig
+from .fontconfig import (
+    profile_font_dirs,
+    prepare_profile_fontconfig,
+)
 from .profile_defaults import (
     SEARCH_DEFAULTS_RETRY_FILE,
     run_search_defaults_initialization,
@@ -574,9 +577,10 @@ class BrowserRunner:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.fontconfig_path = prepare_profile_fontconfig(
-            self.run_dir, cfg.font_bundle
+        font_dirs = profile_font_dirs(
+            cfg.fingerprint_platform, cfg.font_set_id
         )
+        self.fontconfig_path = prepare_profile_fontconfig(self.run_dir, font_dirs)
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -618,7 +622,7 @@ class BrowserRunner:
             "--remote-debugging-port=0",
             "--remote-debugging-address=127.0.0.1",
             "--autoplay-policy=no-user-gesture-required",
-            "--fingerprint-platform=windows",
+            f"--fingerprint-platform={cfg.fingerprint_platform}",
             f"--fingerprint-screen-width={width}",
             f"--fingerprint-screen-height={height}",
             # GTK is present only for the file chooser; its IME reads a stale

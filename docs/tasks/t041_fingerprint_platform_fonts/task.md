@@ -31,9 +31,9 @@
 - 运行时：
     - Runner 按绑定快照选择平台，删除写死的参数。
     - Supervisor 只把绑定的字体集目录只读挂载进 Browser 容器，挂载点位于 fontconfig 默认扫描路径之外。
-    - 基础开源字体在镜像内放到默认扫描路径之外。
+    - 基础开源字体在镜像内放到默认扫描路径之外，且不进入指纹 Profile 的 `FONTCONFIG_FILE` 白名单（用户 2026-11-06 监督裁决）。
     - 生成的 `FONTCONFIG_FILE` 只显式声明允许的字体目录（基础字体与绑定字体集），不引入系统字体目录；Linux 专属字体对两种平台都不可见。
-- 失败与告警：绑定的字体集缺失，或文件与 manifest 不一致时，启动失败封闭，原因 `font_set_unavailable`。`font_set_id` 为 null 时正常启动，runtime 状态报告「平台字体未配置」。
+- 失败与告警：绑定的字体集缺失，或文件与 manifest 不一致时，启动失败封闭，原因 `font_set_unavailable`。`font_set_id` 为 null 时正常启动，回退为基础开源字体可见保证页面可用，runtime 状态报告「平台字体未配置」并在缺失检测字体列表/告警中标明当前暴露 Linux 基础字体。
 - 运行时完整性：Agent 用 Profile 的 fontconfig 检查检测字体清单，runtime 响应与 SSE 下发实际使用的 `font_set_id` 与缺失字体列表。
 - 按 spike 结论处理 `font_bundle`：删除时以增量迁移删除字段，并一并删除镜像字体包、代码与文档。
 - 新增 ADR 替代 ADR 015：平台字体只在运行时挂载、Profile 绑定不可变字体集，写明字体来源与分发边界。
@@ -55,15 +55,15 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：导入工具生成带 manifest（来源、来源系统版本、文件 sha256）的不可变字体集；相同内容重复导入得到相同 `set_id`，内容变化得到新 `set_id`，已有字体集不被修改。
-- [ ] AC-002：`GET /api/v1/font-sets` 需要登录会话，列出各字体集的平台、来源、版本、静态完整性与 `used_by_count`；文件被篡改或缺失时完整性显示不一致。
-- [ ] AC-003：`fingerprint_platform` 与 `font_set_id` 可经 Profile 创建与 PATCH 设置，引用不存在或平台不一致的字体集被拒绝；新建 Profile 默认使用该平台最新的字体集；修改任一字段都生成新配置版本；浏览器启动参数取自绑定快照，代码中不再写死平台。
-- [ ] AC-004：两种平台启动后，`navigator.platform`、UA 与 UA Client Hints（platform、platformVersion）均与所选平台一致（真实引擎 E2E）。
-- [ ] AC-005：离线字体探测页上，windows Profile 检出 Windows 检测字体清单而检不出 Mac 专有字体，macos Profile 反之；Liberation 等 Linux 专属字体在两种平台下都检不出；可见字体只来自基础字体与绑定的字体集（真实引擎 E2E）。
-- [ ] AC-006：绑定的字体集缺失或与 manifest 不一致时，启动失败封闭并报告 `font_set_unavailable`；`font_set_id` 为 null 的 Profile 正常启动，runtime 状态报告平台字体未配置。
-- [ ] AC-007：运行中 Profile 的 runtime 响应与 SSE 含实际使用的 `font_set_id` 与缺失的检测字体列表，与 Agent 用该 Profile fontconfig 的检查结果一致。
-- [ ] AC-008：任一镜像层与 git 仓库中都没有平台字体文件（镜像层内容扫描与仓库扫描）；部署与发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 访问同一字体目录。
-- [ ] AC-009：`font_bundle` 按 spike 结论处理：删除时字段、镜像字体包、代码与文档引用一并删除，扫描为空；保留时新 ADR 写明原因。
+- [x] AC-001：导入工具生成带 manifest（来源、来源系统版本、文件 sha256）的不可变字体集；相同内容重复导入得到相同 `set_id`，内容变化得到新 `set_id`，已有字体集不被修改。
+- [x] AC-002：`GET /api/v1/font-sets` 需要登录会话，列出各字体集的平台、来源、版本、静态完整性与 `used_by_count`；文件被篡改或缺失时完整性显示不一致。
+- [x] AC-003：`fingerprint_platform` 与 `font_set_id` 可经 Profile 创建与 PATCH 设置，引用不存在或平台不一致的字体集被拒绝；新建 Profile 默认使用该平台最新的字体集；修改任一字段都生成新配置版本；浏览器启动参数取自绑定快照，代码中不再写死平台。
+- [x] AC-004：两种平台启动后，`navigator.platform`、UA 与 UA Client Hints（platform、platformVersion）均与所选平台一致（真实引擎 E2E）。
+- [x] AC-005：离线字体探测页上，windows Profile 检出 Windows 检测字体清单而检不出 Mac 专有字体，macos Profile 反之；Liberation 等 Linux 专属字体在两种平台下都检不出；可见字体只来自基础字体与绑定的字体集（真实引擎 E2E）。
+- [x] AC-006：绑定的字体集缺失或与 manifest 不一致时，启动失败封闭并报告 `font_set_unavailable`；`font_set_id` 为 null 的 Profile 正常启动，runtime 状态报告平台字体未配置。
+- [x] AC-007：运行中 Profile 的 runtime 响应与 SSE 含实际使用的 `font_set_id` 与缺失的检测字体列表，与 Agent 用该 Profile fontconfig 的检查结果一致。
+- [x] AC-008：任一镜像层与 git 仓库中都没有平台字体文件（镜像层内容扫描与仓库扫描）；部署与发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 访问同一字体目录。
+- [x] AC-009：`font_bundle` 按 spike 结论处理：删除时字段、镜像字体包、代码与文档引用一并删除，扫描为空；保留时新 ADR 写明原因。
 
 ### 可测试性声明
 
@@ -98,10 +98,10 @@
 
 <!-- /规范 -->
 
-- 146 内核下 macos 指纹平台的一致性（UA、Client Hints、字体）：UNVERIFIED-SPIKE，正式 spike 实测；达不到一致时停止并报告用户。
-- 每种平台应暴露的基础字体组合，以及 `font_bundle` 的去留：UNVERIFIED-SPIKE，正式 spike 实测。
-- 微软官方评估版 ISO 的可获取性与 `install.wim` 字体提取：UNVERIFIED-SPIKE，实施时获取；不可获取时报告 BLOCKED 并附证据。
-- macOS 苹方等字体在 `/System/Library/AssetsV2/` 下的实际位置：UNVERIFIED-SPIKE，本机核实。
+- 146 内核下 macos 指纹平台的一致性（UA、Client Hints、字体）：**已核实**（s014 report + `d032` / `d033`）。`--fingerprint-platform=windows` / `=macos` 下 `navigator.platform`、UA、`userAgentData.platform`、`platformVersion` 两平台均一致，不触发停止条件；fontconfig 白名单隔离实测两平台字体可见、Linux 字体不可见。CH `architecture=arm` 与 windows UA `x64` 的差异按用户 2026-11-06 裁决：引擎层无开关、CDP 页面级覆盖漏 ServiceWorker，不做半套覆盖，结论 `d032` + 追踪 `p045`，AC-004 文本不改。
+- 每种平台应暴露的基础字体组合，以及 `font_bundle` 的去留：**已核实**（`d033`）。基础开源字体按 plan 6.8 六项清单装入镜像但**不进入**指纹 Profile 白名单（Linux 特征，用户 2026-11-06 裁决）；平台字体集只读挂载到默认扫描路径之外；`FONTCONFIG_FILE` 绑定集时只白名单声明该集、不 include 系统配置，`fc-list` 实测 Linux 专属字体命中 0；`font_set_id` 为 null 时回退基础字体可见（页面可用、状态标记暴露 Linux 基础字体）；真实 146 引擎验证 CJK 由雅黑/宋体或苹方渲染、emoji 有平台字体或合理回退。两种平台都有原生 CJK 字体，`font_bundle`（按 Profile 选配文泉驿）**删除**（AC-009）。
+- 微软官方评估版 ISO 的可获取性与 `install.wim` 字体提取：**已核实**（s014 report）。评估中心 `LinkId=2382601` → 26H2 中文简体 Enterprise ISO 8,548,628,480 字节 → `7zz` 提取 `install.wim` → `Windows/Fonts` 346 文件 / 488 MB，检测字体齐全。
+- macOS 苹方等字体在 `/System/Library/AssetsV2/` 下的实际位置：**已核实**（s014 report）。`com_apple_MobileAsset_Font8/86ba2c91f017a3749571a82f2c6d890ac7ffb2fb.asset/AssetData/PingFang.ttc`。
 
 ### 风险与回退
 

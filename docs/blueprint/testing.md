@@ -182,7 +182,7 @@ t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 Ap
 |p016|Supervisor 真实配额实际生效|`test_supervisor_quota_chain_e2e.py`；CPU 腿 `supervisor_resource_probe/stream_monitor.py`|`ResourceMonitor` → `GatewayControlClient.set_quota` → Gateway `SUPERVISOR_QUOTA` → Agent/Selkies|真实拓扑 + Viewer 解码帧|skip（collect-only）|AC-008|
 |p016|Agent 替换关闭旧 Viewer|`test_gateway_signaling.py::test_agent_replacement_closes_old_viewers`|Gateway 会话替换（close 1001、新 conn_id、下行回复、旧 Agent 退出后续传）|集成（真实 Gateway）|已实跑通过（t028 恢复 251fa0f 精确断言）|随 AC-014 复验|
 |p021（t019）|无外部 STUN/TURN、ICE-lite 与首帧时延|`test_stream_ice_config.py`（unit）；`test_frontend_app_e2e.py` t019 用例|Stream entrypoint ICE-lite 参数、前端会话建立|unit + 真实 Chrome|unit 已跑通过；e2e skip|AC-003|
-|p022（t020）|字体包三档贯通|`test_font_bundles.py`（unit）；`test_profile_font_bundle_api.py`（integration）；`test_browser_font_bundles_e2e.py`|API font_bundle 字段、Supervisor 注入、Browser 渲染|unit/integration + 真实拓扑|unit/integration 已跑通过；e2e skip|AC-004|
+|p022（t020）|字体包三档贯通（t041 已删除 `font_bundle`，本行为废止）|`test_font_bundles.py`（unit）；`test_profile_font_bundle_api.py`（integration）；`test_browser_font_bundles_e2e.py`|API font_bundle 字段、Supervisor 注入、Browser 渲染|unit/integration + 真实拓扑|unit/integration 已跑通过；e2e skip|已废止（t041 替代，见下节）|
 |p023（t021）|控制 API/文件交换/OpenAPI 契约|`tests/contract/` 与 schemas 导出校验|API 路由、协议 schema、文件交换契约|契约|已跑通过|AC-005|
 |p023（t021）|Origin 变体授权|unit origin 授权测试 + integration 真实 HTTP|API 授权中间件|unit/integration|已跑通过|AC-005|
 |p023（t021）|工件下载全链|`test_artifact_download_chain_e2e.py`（t028 新建）|浏览器下载捕获 → ArtifactService 入库 → API 下载字节/sha256 比对|真实拓扑|skip（collect-only）|AC-002、AC-005|
@@ -205,7 +205,7 @@ t032 执行者按本表运行，不需要回读 t028 的执行过程。所有 E2
 |---|---|---|---|---|
 |AC-002 镜像构建与身份固定|逐个 `docker build -f config/docker/<name>/Dockerfile` 后 `docker image inspect` 取 `.Id` 写入 env 文件；再以 `CBROWSER_E2E_REQUIRED=1` 收集校验|全部 REQUIRED_E2E_ENV 镜像变量 + 引擎/GeoIP 缓存|首次全量构建为主要耗时，预留半天（含缓存预热）|`image_identity`；报告记录实际镜像 ID|
 |AC-003 ICE/首帧|`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 或单跑 `test_frontend_app_e2e.py` 的 t019 用例|RUNTIME/STREAM/API/CADDY 镜像 + 官方 Chrome|单用例数分钟|`suites[].exit_code/log/junit`；报告含候选类型与首帧样本|
-|AC-004 字体三档|单跑 `test_browser_font_bundles_e2e.py`|RUNTIME 镜像|数分钟|同上；附三档渲染证据路径|
+|AC-004 字体三档（t041 删除 `font_bundle`，本项废止）|单跑 `test_browser_font_bundles_e2e.py`|RUNTIME 镜像|数分钟|同上；附三档渲染证据路径|
 |AC-005 契约真实拓扑|必需模式全量 E2E（见 AC-014 指令）|全镜像集|完整 E2E 按小时级预留、分批执行|manifest 全部字段|
 |AC-006 运行时恢复|单跑 `test_x11_helper_permissions_e2e.py`、`test_gateway_registration_budget_e2e.py`、`test_search_defaults_retry_live_e2e.py` 与 namespace/ipv6/policy_failure 三件|SUPERVISOR/GATEWAY/API/RUNTIME/STREAM 镜像|每件数分钟|`suites[]` 逐项退出码与 log|
 |AC-007 前端部署|部署产物上单跑 frontend app/session E2E|部署 release + 全镜像集|数十分钟|同上|
@@ -300,3 +300,19 @@ bash scripts/run_automation_probe.sh
 ```
 
 入口要求 Linux arm64 镜像、可执行目标引擎和空证据目录。仓库及引擎只读挂载，独立容器不挂 Docker socket 或生产数据；提供 Xvfb/XTEST；链路 Dialog 与执行器测试的显式浏览器路径同样指向选中目标引擎。容器中的生产 Python 组件通过 loopback 建立 API → Supervisor → Agent → CDP 链路；这不替代独立 Stream/Viewer 容器 E2E。子测试 JUnit 不得含 skip，报告和镜像身份留在证据目录。AC-012 外站不可达或样本不足记 `INCONCLUSIVE`；AC-013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`。
+
+## t041 指纹平台与平台字体集验收映射
+
+下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
+
+|AC|行为|测试 / 证据|
+|---|---|---|
+|AC-001|导入工具生成带 manifest（来源、来源系统版本、逐文件 sha256）的不可变字体集；相同内容重复导入同一 `set_id`，内容变化得新 `set_id`，已有集不被修改|导入工具 / 内容寻址 unit|
+|AC-002|`GET /api/v1/font-sets` 需登录会话，列出平台、来源、版本、静态完整性与 `used_by_count`；文件被篡改或缺失时完整性显示不一致|integration API 用例 + manifest 完整性检查|
+|AC-003|`fingerprint_platform` / `font_set_id` 可经创建与 PATCH 设置；引用不存在或平台不一致的集被拒绝；新建 Profile 默认用平台最新集；修改任一生成新配置版本；启动参数取自绑定快照|unit（校验、默认选择、fontconfig 生成）+ integration（API / 配置版本快照）|
+|AC-004|两平台 `navigator.platform`、UA、UA-CH `platform` / `platformVersion` 与所选平台一致|真实引擎 E2E（离线探测页，`http://127.0.0.1` / HTTPS 安全上下文）；CH `architecture` 不做半套覆盖（`d032` + `p045`），文本不改|
+|AC-005|windows 检出 Windows 检测字体清单、检不出 Mac 专有字体，macos 反之；两平台都检不出 Liberation 等 Linux 字体；可见字体只来自基础字体与绑定集|真实引擎 E2E 离线字体探测页；spike `fc-list` 隔离实测（`d033`）|
+|AC-006|绑定集缺失或与 manifest 不一致时启动失败封闭 `font_set_unavailable`；null 时正常启动并报告平台字体未配置|unit + 真实引擎 E2E 失败封闭|
+|AC-007|runtime 响应与 SSE 含实际 `font_set_id` 与 `missing_fonts`，与 Agent 用该 Profile fontconfig 的检查结果一致|integration（runtime 响应 / SSE 字段）+ Agent fontconfig 复核|
+|AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
+|AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|

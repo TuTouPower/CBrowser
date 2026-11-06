@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
+from .fontconfig import FONT_SET_MOUNT_ROOT, PLATFORM_FONTS_UNCONFIGURED
 from .dialog_attendant import DialogAttendantService
 from .tunnel_filter import TunnelFilter
 from .download_reconciler import scan_completed_downloads
@@ -39,6 +40,11 @@ from .security import validate_runtime_id
 from .subsystems import check_audio, check_browser, check_display
 
 logger = logging.getLogger("cbrowser.runtime_agent.agent")
+
+_PLATFORM_DETECTION_LABELS: dict[str, tuple[str, ...]] = {
+    "windows": ("windows", "office"),
+    "macos": ("macos",),
+}
 
 
 def _validated_runner_info(runner_info: dict[str, Any]) -> dict[str, Any]:
@@ -80,9 +86,12 @@ def create_agent_app(
     default_download_dir: Path | str,
     events_dir: Path | str | None = None,
     cdp_proxy: CdpProxyManager | None = None,
+    font_set_root: Path | str | None = None,
 ) -> FastAPI:
     """Create FastAPI application configured for UDS control and CDP proxying."""
     r_dir = Path(run_dir)
+    font_root = Path(font_set_root) if font_set_root is not None else FONT_SET_MOUNT_ROOT
+    font_runtime_cache: dict[tuple[str, str], tuple[str | None, list[str]]] = {}
     storage = EventStorage(Path(events_dir) if events_dir else r_dir)
     active_cdp_proxy = cdp_proxy
     # t031: resident dialog attendant (one per Agent process). Armed on
@@ -155,8 +164,49 @@ def create_agent_app(
         except Exception:  # noqa: BLE001 - malformed status is reported as unknown
             return None
 
+    def _font_runtime() -> tuple[str | None, list[str]]:
+        """Bound font set id plus its missing detection fonts for /health.
+
+        The font set is content-addressed and immutable, so the integrity/
+        detection scan (which hashes every font file) is cached per
+        (platform, set_id) instead of running on every health probe. A null
+        binding reports the "platform fonts not configured" state as
+        ``(None, [PLATFORM_FONTS_UNCONFIGURED])``.
+        """
+        try:
+            snapshot = json.loads(
+                (r_dir / "snapshot.json").read_text(encoding="utf-8")
+            )
+            cfg = snapshot.get("config") if isinstance(snapshot, dict) else None
+        except (OSError, ValueError):
+            return None, []
+        if not isinstance(cfg, dict):
+            return None, []
+        font_set_id = cfg.get("font_set_id")
+        if not font_set_id:
+            return None, [PLATFORM_FONTS_UNCONFIGURED]
+        platform = cfg.get("fingerprint_platform", "windows")
+        if platform not in _PLATFORM_DETECTION_LABELS:
+            return str(font_set_id), []
+        key = (str(platform), str(font_set_id))
+        if key not in font_runtime_cache:
+            from cbrowser import font_sets
+
+            directory = font_root / str(platform) / str(font_set_id)
+            detection = font_sets.check_font_set(directory).get("detection", {})
+            missing = sorted(
+                {
+                    name
+                    for label in _PLATFORM_DETECTION_LABELS[platform]
+                    for name in detection.get(label, {}).get("missing", [])
+                }
+            )
+            font_runtime_cache[key] = (str(font_set_id), missing)
+        return font_runtime_cache[key]
+
     @app.get("/health", response_model=HealthResponse)
     async def get_health() -> HealthResponse:
+        font_set_id, missing_fonts = _font_runtime()
         runner_info = _read_runner_info()
         state = _state_for_context(runner_info)
         if state is None and runner_info is None:
@@ -246,6 +296,8 @@ def create_agent_app(
                         "exit_reason": state.exit_reason,
                         "browser_product": None,
                         "browser_user_agent": None,
+                        "font_set_id": font_set_id,
+                        "missing_fonts": missing_fonts,
                     },
                     search_defaults=_search_defaults_status(),
                 )
@@ -296,6 +348,8 @@ def create_agent_app(
                 "rearm_count": active_cdp_proxy.rearm_count if active_cdp_proxy else 0,
                 "browser_product": r_info.get("browser_product"),
                 "browser_user_agent": r_info.get("browser_user_agent"),
+                "font_set_id": font_set_id,
+                "missing_fonts": missing_fonts,
             },
             search_defaults=_search_defaults_status(),
         )

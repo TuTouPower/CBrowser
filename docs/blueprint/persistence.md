@@ -18,12 +18,12 @@
 
 ## 2. 核心数据表结构 (SQLAlchemy 2.0 + Alembic)
 
-迁移目录只有一个 baseline 修订 `b7e1c9d4a2f3`（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
+迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
 01. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `group_id`, `proxy_id`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `font_bundle`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - 字段：`id`, `name`, `fingerprint_seed`, `group_id`, `proxy_id`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `fingerprint_platform`, `font_set_id`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
     - `group_id` / `proxy_id` 为可空外键引用（t035），取代已删除的业务 Tag 表与内嵌 `proxy` 字段；删除分组时 `group_id` 置 null，代理被引用时删除受限。
-    - `font_bundle` 默认 `none`（`none`/`wqy-microhei`/`wqy-zenhei`）；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`。
+    - `fingerprint_platform` 默认 `windows`（`windows` / `macos`）；`font_set_id` 可空，引用同平台的不可变字体集；两者都属运行配置，修改任一生成新 `ProfileConfigVersion`（t041）。`font_bundle` 列已随 `0002_fingerprint_platform.py` 删除。默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`。
 02. `profile_groups`：
     - 字段：`id`, `name`, `color`, `sort_order`, `created_at`, `updated_at`；名称唯一、颜色取自调色板、可排序。
 03. `proxies`：

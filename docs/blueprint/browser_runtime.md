@@ -49,11 +49,18 @@ Runner 接收 SIGTERM/SIGINT 后正常关闭 SDK context 与子系统；Supervis
 
 默认搜索初始化与浏览器 readiness 分离：有界超时内 best-effort 执行，结果写入 run_dir 内独立状态文件 `search_defaults_status.json`（applied/failed/disabled/pending + 脱敏 error_kind），失败不写成功 marker、不阻断启动、不影响已有标签页；`set_google_default=false` 不执行。Agent `/health` 以类型化 `search_defaults` 呈现该状态；重试经 `/control retry_search_defaults` 以 profile+instance 围栏 + request_id 幂等触发，Runner 在活 context 上消费，不重启浏览器。CDP 下载捕获 rearm 仅在唯一 reader 收到匹配命令 ID 的成功 ACK 后报告健康，错误/无 ACK/断线保持不健康。Agent 启动对 runner 元数据做完整字段与类型校验，非空但残缺/类型错误以脱敏错误拒绝启动；X11 锁仅在可解析且确认进程不存在时清理，不可读/损坏一律保留并明确报错。
 
-## 字体包与 fontconfig 开关
+## 指纹平台、平台字体集与 fontconfig 白名单（t041）
 
-镜像构建时从 Debian 官方包解出 `fonts-wqy-microhei` 与 `fonts-wqy-zenhei` 的 `.ttc`，只 staged 到 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`，最终镜像不安装这两个包（避免其 fontconfig snippet 与字体文件进入默认扫描路径）。默认状态下容器内 `sans-serif` 的中文解析不命中任何中文字体，这是默认档位的反指纹基线。
+Profile 运行配置含 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台的不可变字体集，可为 null），经增量迁移 `0002_fingerprint_platform.py` 加入；两者都属运行配置，修改任一都生成新 `ProfileConfigVersion`。CloakBrowser 只支持这两种指纹平台，没有 Linux 指纹平台。Runner 按绑定快照选择平台，代码中不再写死 `--fingerprint-platform=windows`。
 
-Runner 消费的配置快照含 `font_bundle`（`none`/`wqy-microhei`/`wqy-zenhei`，默认 `none`）。非 `none` 时 Runner 在运行卷生成 `profile-fonts.conf`（include `/etc/fonts/fonts.conf` 并追加对应 bundle 目录），并仅为 Chrome 子进程环境设置 `FONTCONFIG_FILE` 指向它；`none` 时确保该变量不出现在 Chrome 环境中。生成失败时保持系统默认配置（其扫描路径不含 bundle，回到无 CJK 的安全状态），不让损坏的 fontconfig 配置扩散到整个浏览器。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
+字体分两层，均放在 fontconfig 默认扫描路径之外：
+
+- 基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）进入 Browser 镜像 `/opt/cbrowser-base-fonts`，仅满足 CloakBrowser 文档的最低安装要求；它们是 Linux 特征字体，**不进入**指纹 Profile 的 fontconfig 白名单。
+- 平台专有字体集在宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，按内容寻址的 `set_id` + `manifest.json`（来源、来源系统版本、逐文件 sha256）不可变存放，经 `.worktreeinclude` 供各 worktree 共享；Supervisor 只把 Profile 绑定的集只读挂到容器 `/run/cbrowser/fonts/{platform}/{set_id}`。
+
+Runner 为每个 Profile 生成 `FONTCONFIG_FILE`：绑定平台字体集时只以 `<dir>` 白名单声明该集目录，不 include `/etc/fonts/fonts.conf`，也不声明基础开源字体目录；`font_set_id` 为 null（平台字体未配置）时**回退基础开源字体可见**，保证浏览器有字体、页面可用（AC-006 正常启动），runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。绑定集场景下 Liberation / Nimbus / 文泉驿 / Unifont / FreeFont / IPAGothic / Loma 等 Linux 专属字体对两种平台都不可见（真实 146 引擎 E2E 与 `fc-list` 实测命中 0，见 d033）；null 回退场景下它们可见并由状态明确标记。
+
+失败封闭：绑定的字体集缺失，或文件与 manifest 不一致，启动失败并报告 `font_set_unavailable`；`font_set_id` 为 null 时回退基础开源字体可见、正常启动，runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。`font_bundle`（文泉驿按 Profile 三态）已删除，字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
 
 ## 显示、音频与配置
 

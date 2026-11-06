@@ -58,10 +58,10 @@ async def test_sse_broadcaster_initial_snapshot():
     assert "p_snap" in first_chunk
 
 
-def test_profile_runtime_status_event_schema_with_t035_runtime_fields():
-    """AC-009/AC-010: the runtime status event carries the four new
-    runtime fields, all defaulting to None until observed."""
-    evt = ProfileRuntimeStatusEvent(
+def test_profile_runtime_status_event_exposes_font_set_state():
+    """t041 AC-007: the runtime status event reports the bound font set and
+    the detection fonts missing from it, defaulting to the unconfigured state."""
+    unconfigured = ProfileRuntimeStatusEvent(
         profile_id="p1",
         desired_state="running",
         observed_state="stopped",
@@ -71,7 +71,7 @@ def test_profile_runtime_status_event_schema_with_t035_runtime_fields():
         last_coordinator_error="Connection refused",
         updated_at="2026-10-31T00:00:00Z",
     )
-    assert evt.model_dump() == {
+    assert unconfigured.model_dump() == {
         "profile_id": "p1",
         "desired_state": "running",
         "observed_state": "stopped",
@@ -82,9 +82,24 @@ def test_profile_runtime_status_event_schema_with_t035_runtime_fields():
         "last_stopped_at": None,
         "browser_product": None,
         "browser_user_agent": None,
+        "font_set_id": None,
+        "missing_fonts": [],
         "last_coordinator_error": "Connection refused",
         "search_defaults": None,
         "transport": None,
         "control": None,
         "updated_at": "2026-10-31T00:00:00Z",
     }
+    assert unconfigured.model_dump()["font_set_id"] is None
+    assert unconfigured.model_dump()["missing_fonts"] == []
+
+    bound = ProfileRuntimeStatusEvent(
+        profile_id="p1",
+        desired_state="running",
+        observed_state="running",
+        updated_at="2026-10-31T00:00:00Z",
+        font_set_id="a" * 64,
+        missing_fonts=["arial.ttf"],
+    )
+    assert bound.model_dump()["font_set_id"] == "a" * 64
+    assert bound.model_dump()["missing_fonts"] == ["arial.ttf"]

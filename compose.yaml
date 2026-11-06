@@ -16,6 +16,7 @@ services:
       - /tmp:rw,size=256m
     environment:
       CBROWSER_DB_PATH: /data/cbrowser.db
+      CBROWSER_FONTS_DIR: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts
       CBROWSER_SUPERVISOR_URL: http://supervisor:8005
       CBROWSER_REQUIRE_SUPERVISOR: "1"
       CBROWSER_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_key
@@ -24,6 +25,7 @@ services:
       CBROWSER_ALLOWED_ORIGINS: ${CBROWSER_PUBLIC_ORIGIN:?set CBROWSER_PUBLIC_ORIGIN}
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:/data
+      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}:/run/secrets:ro
     networks: [edge]
     restart: unless-stopped
@@ -88,11 +90,13 @@ services:
       CBROWSER_DATA_ROOT: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
       CBROWSER_ENGINE_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache
       CBROWSER_GEOIP_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache/geoip
+      CBROWSER_FONTS_DIR: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts
       CBROWSER_PREFIX: ${CBROWSER_PREFIX:-cbrowser}
       CBROWSER_MANAGE_OWNERSHIP: "1"
     command: ["--host", "0.0.0.0", "--port", "8005"]
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
+      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}:/run/secrets:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks: [edge]

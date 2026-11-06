@@ -170,7 +170,8 @@ class ProfileRepository:
                     clipboard_sync=config.clipboard_sync,
                     auto_launch=config.auto_launch,
                     color_scheme=config.color_scheme,
-                    font_bundle=config.font_bundle,
+                    fingerprint_platform=config.fingerprint_platform,
+                    font_set_id=config.font_set_id,
                     launch_args=json.dumps(config.launch_args),
                     extension_paths=json.dumps(config.extension_paths),
                     allow_3p_cookies=config.allow_3p_cookies,
@@ -295,6 +296,20 @@ class ProfileRepository:
             models = result.scalars().all()
             return [self._to_domain_profile(m) for m in models]
 
+    async def font_set_usage_counts(self) -> dict[str, int]:
+        """Count profiles bound to each non-empty font set id (t041 AC-002)."""
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileModel.font_set_id, func.count())
+                .where(
+                    ProfileModel.font_set_id.is_not(None),
+                    ProfileModel.font_set_id != "",
+                )
+                .group_by(ProfileModel.font_set_id)
+            )
+            result = await session.execute(stmt)
+            return {row[0]: row[1] for row in result.all() if row[0]}
+
     async def update_profile(
         self,
         profile_id: str,
@@ -356,7 +371,8 @@ class ProfileRepository:
                     "clipboard_sync": p_model.clipboard_sync,
                     "auto_launch": p_model.auto_launch,
                     "color_scheme": p_model.color_scheme,
-                    "font_bundle": p_model.font_bundle,
+                    "fingerprint_platform": p_model.fingerprint_platform,
+                    "font_set_id": p_model.font_set_id,
                     "launch_args": json.loads(p_model.launch_args)
                     if p_model.launch_args
                     else [],
@@ -406,7 +422,8 @@ class ProfileRepository:
                 p_model.clipboard_sync = merged_cfg.clipboard_sync
                 p_model.auto_launch = merged_cfg.auto_launch
                 p_model.color_scheme = merged_cfg.color_scheme
-                p_model.font_bundle = merged_cfg.font_bundle
+                p_model.fingerprint_platform = merged_cfg.fingerprint_platform
+                p_model.font_set_id = merged_cfg.font_set_id
                 p_model.launch_args = json.dumps(merged_cfg.launch_args)
                 p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
                 p_model.allow_3p_cookies = merged_cfg.allow_3p_cookies
@@ -875,7 +892,8 @@ class ProfileRepository:
             clipboard_sync=m.clipboard_sync,
             auto_launch=m.auto_launch,
             color_scheme=m.color_scheme,  # type: ignore
-            font_bundle=m.font_bundle,  # type: ignore
+            fingerprint_platform=m.fingerprint_platform,  # type: ignore
+            font_set_id=m.font_set_id,  # type: ignore
             launch_args=json.loads(m.launch_args) if m.launch_args else [],
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
             allow_3p_cookies=m.allow_3p_cookies,
@@ -1173,7 +1191,8 @@ class ProfileRepository:
             clipboard_sync=m.clipboard_sync,
             auto_launch=m.auto_launch,
             color_scheme=m.color_scheme,  # type: ignore
-            font_bundle=m.font_bundle,  # type: ignore
+            fingerprint_platform=m.fingerprint_platform,  # type: ignore
+            font_set_id=m.font_set_id,  # type: ignore
             launch_args=json.loads(m.launch_args) if m.launch_args else [],
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
             allow_3p_cookies=m.allow_3p_cookies,

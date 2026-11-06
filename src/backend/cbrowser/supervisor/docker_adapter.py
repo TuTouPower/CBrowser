@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 import docker
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -1186,6 +1187,22 @@ with path.open('w') as output:
                 "bind": "/run/cbrowser/runtime/proxy_credentials.json",
                 "mode": "ro",
             }
+        cfg = snapshot.get("config")
+        if isinstance(cfg, dict):
+            font_set_id = cfg.get("font_set_id")
+            platform = cfg.get("fingerprint_platform", "windows")
+            fonts_root = os.environ.get("CBROWSER_FONTS_DIR")
+            if (
+                isinstance(font_set_id, str)
+                and re.fullmatch(r"[a-f0-9]{32,64}", font_set_id)
+                and platform in ("windows", "macos")
+                and fonts_root
+            ):
+                host_font_dir = Path(fonts_root) / platform / font_set_id
+                volumes[str(host_font_dir)] = {
+                    "bind": str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
+                    "mode": "ro",
+                }
         proxy = proxy_endpoint_from_credentials(creds_file)
         command = browser_command(profile_id, runtime_instance_id, display)
 

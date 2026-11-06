@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 
 # Single baseline revision (t035).  A database stamped with any other
 # revision belongs to the retired 0001-0009 schema generation and must NOT
@@ -61,10 +62,16 @@ def run_database_migrations(db_path: Path | str) -> None:
                 current = check.execute(
                     "SELECT version_num FROM alembic_version"
                 ).fetchone()
-                if current is not None and current[0] != BASELINE_REVISION:
-                    raise LegacySchemaError(
-                        f"Legacy schema revision {current[0]!r}. {REBUILD_GUIDANCE}"
+                if current is not None and current[0]:
+                    script = ScriptDirectory.from_config(
+                        get_alembic_config(resolved_db)
                     )
+                    known = {rev.revision for rev in script.walk_revisions()}
+                    if current[0] not in known:
+                        raise LegacySchemaError(
+                            f"Legacy schema revision {current[0]!r}. "
+                            f"{REBUILD_GUIDANCE}"
+                        )
         finally:
             check.close()
 

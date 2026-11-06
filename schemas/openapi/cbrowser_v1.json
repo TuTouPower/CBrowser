@@ -2630,6 +2630,66 @@
         ]
       }
     },
+    "/api/v1/font-sets": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "List Font Sets",
+        "operationId": "list_font_sets_api_v1_font_sets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FontSetInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Font Sets Api V1 Font Sets Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      }
+    },
     "/api/v1/profiles/{profile_id}/artifacts": {
       "get": {
         "tags": [
@@ -4801,6 +4861,150 @@
         ],
         "title": "ErrorResponse"
       },
+      "FontDetection": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "matched",
+          "missing"
+        ],
+        "title": "FontDetection"
+      },
+      "FontSetInfo": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "set_id": {
+            "type": "string",
+            "title": "Set Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/FontSetIntegrity"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "used_by_count": {
+            "type": "integer",
+            "title": "Used By Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform",
+          "set_id",
+          "integrity",
+          "file_count"
+        ],
+        "title": "FontSetInfo"
+      },
+      "FontSetIntegrity": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
+          },
+          "hash_mismatches": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hash Mismatches"
+          },
+          "unregistered_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unregistered Fonts"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count",
+            "default": 0
+          },
+          "detection": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FontDetection"
+            },
+            "type": "object",
+            "title": "Detection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "FontSetIntegrity"
+      },
       "GroupCreateRequest": {
         "properties": {
           "name": {
@@ -5218,15 +5422,24 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "type": "string",
             "enum": [
-              "none",
-              "wqy-microhei",
-              "wqy-zenhei"
+              "windows",
+              "macos"
             ],
-            "title": "Font Bundle",
-            "default": "none"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "items": {
@@ -5442,10 +5655,20 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "type": "string",
-            "title": "Font Bundle",
-            "default": "none"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "items": {
@@ -5639,6 +5862,24 @@
             ],
             "title": "Browser User Agent"
           },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
+          },
           "last_coordinator_error": {
             "anyOf": [
               {
@@ -5788,6 +6029,24 @@
               }
             ],
             "title": "Browser User Agent"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
           },
           "last_coordinator_error": {
             "anyOf": [
@@ -6033,21 +6292,31 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "none",
-                  "wqy-microhei",
-                  "wqy-zenhei"
+                  "windows",
+                  "macos"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Font Bundle"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "anyOf": [

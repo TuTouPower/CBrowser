@@ -47,6 +47,7 @@ from cbrowser.domain.models import (
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
+    InvalidFontSetBindingError,
     InvalidProfileNameError,
     ProfileNotFoundError,
     ProfileOperationConflictError,
@@ -222,7 +223,8 @@ async def create_profile(
         clipboard_sync=payload.clipboard_sync,
         auto_launch=payload.auto_launch,
         color_scheme=payload.color_scheme,
-        font_bundle=payload.font_bundle,
+        fingerprint_platform=payload.fingerprint_platform,
+        font_set_id=payload.font_set_id,
         launch_args=payload.launch_args,
         extension_paths=payload.extension_paths,
         allow_3p_cookies=payload.allow_3p_cookies,
@@ -234,9 +236,14 @@ async def create_profile(
         notes=payload.notes,
         sort_order=payload.sort_order,
     )
-    profile = await service.create_profile(
-        config=config, operation_id=op_id, req_payload=payload.model_dump()
-    )
+    try:
+        profile = await service.create_profile(
+            config=config, operation_id=op_id, req_payload=payload.model_dump()
+        )
+    except InvalidFontSetBindingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
     return ProfileResponse.from_domain(profile)
 
 
@@ -346,6 +353,10 @@ async def update_profile(
             operation_id=op_id,
         )
         return ProfileResponse.from_domain(p)
+    except InvalidFontSetBindingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from None
     except ProfileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

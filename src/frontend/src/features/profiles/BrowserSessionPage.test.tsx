@@ -22,7 +22,6 @@ const PROFILE: ProfileResponse = {
   launch_args: [],
   extension_paths: [],
   human_preset: "default",
-  font_bundle: "none",
   allow_3p_cookies: true,
   set_google_default: true,
   capture_preview: true,

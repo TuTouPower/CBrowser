@@ -32,6 +32,7 @@ from cbrowser.api.v1.control_router import (
     get_control_service,
     get_optional_control_service,
 )
+from cbrowser.api.v1.font_sets_router import font_set_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
@@ -392,6 +393,7 @@ def create_app(
         )
 
     app.include_router(v1_router)
+    app.include_router(font_set_router)
     app.include_router(artifact_router)
     app.include_router(automation_router)
     app.include_router(control_router)
@@ -410,9 +412,20 @@ def create_app(
     original_openapi = app.openapi
 
     def contracted_openapi() -> dict:
+        """Build the contracted schema.
+
+        An optional request field carrying a server-applied ``default`` is not
+        emitted with that keyword: openapi-typescript treats ``default`` as a
+        required client-side member, which would misrepresent an omittable
+        field such as ``fingerprint_platform``.
+        """
         if getattr(app, "openapi_schema", None):
             return app.openapi_schema
         schema = original_openapi()
+        for component in schema.get("components", {}).get("schemas", {}).values():
+            platform = component.get("properties", {}).get("fingerprint_platform")
+            if isinstance(platform, dict):
+                platform.pop("default", None)
         components = schema.setdefault("components", {})
         components.setdefault("securitySchemes", {}).update(
             {

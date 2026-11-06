@@ -12,13 +12,6 @@
 - Profile 列表、创建、编辑（名称、屏幕尺寸、标签）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
 
-## 中文字体包（t020）
-
-- Profile 配置含 `font_bundle`，取值 `none`、`wqy-microhei`、`wqy-zenhei`，默认 `none`；创建、更新、读取与配置版本快照均携带该字段，非法值与显式 null 被拒绝，存量 Profile 迁移后读为 `none`。
-- Browser 镜像把文泉驿微米黑与正黑的 `.ttc` staged 在 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`；默认容器内 `sans-serif` 的中文解析不命中任何中文字体。
-- Browser Runner 按快照中的 `font_bundle` 生成 Profile 专属 fontconfig 配置（include 系统配置并追加对应 bundle 目录），仅对非 `none` 档位为 Chrome 进程设置 `FONTCONFIG_FILE`；生成失败时不设置该变量、保持系统默认配置。修改 `font_bundle` 产生新配置版本，重建容器后生效，不影响其他 Profile。
-- 前端创建与编辑界面提供三档选择并回显 API 返回值；不提供 Windows 专有字体，不挂载宿主字体目录。
-
 ## 启动参数校验与 PATCH 三态（t021）
 
 - 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取时的过滤保持不变。
@@ -70,4 +63,11 @@
 - 带认证 SOCKS5 按 spike `s013` 结论处理：Chromium 146 支持时端到端经代理出站；代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`，应用新版本后启动成功。
 - runtime 响应与 SSE 携带 `last_started_at` / `last_stopped_at` / `browser_product` / `browser_user_agent`；前端校验拒绝非法时间值。运行中 Profile 的浏览器版本字段与容器内 CDP `Browser.getVersion` 一致，未运行时为 null。
 - 运行态或仍绑定实例的 Profile 删除返回 409 `profile_running`；error 且无实例可删除，删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
-- 迁移目录只有一个 baseline 修订；旧 schema 代的 DB 在 API 启动与部署时失败封闭并输出重建指引，release controller 按修订链判定回退下限（ADR 023）。
+- 迁移目录以 t035 单 baseline 修订为起点，t041 追加增量迁移 `0002_fingerprint_platform.py`（新增 `fingerprint_platform` / `font_set_id`、删除 `font_bundle`）；旧 schema 代的 DB 在 API 启动与部署时失败封闭并输出重建指引，release controller 按修订链判定回退下限（ADR 023）。
+
+## 指纹平台与平台字体集（t041）
+
+- Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集，可为 null），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
+- `font_set_id` 必须引用已存在且平台一致的字体集，引用不存在或平台不一致的集被拒绝；新建 Profile 默认使用该平台最新导入的字体集，无可用集时为 null。
+- `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
+- runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时正常启动并报告平台字体未配置（AC-006 / AC-007）。

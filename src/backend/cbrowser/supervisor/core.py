@@ -28,6 +28,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+from cbrowser import font_sets
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.protocol import (
@@ -73,6 +74,7 @@ UNPROTECTED_SANDBOX_GRACE_SEC = 60.0
 
 PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
 PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
+FONT_SET_UNAVAILABLE = "font_set_unavailable"
 
 
 class ProxyCredentialsChangedError(RuntimeError):
@@ -84,6 +86,19 @@ class ProxyCredentialsChangedError(RuntimeError):
 
     def __init__(self) -> None:
         super().__init__(PROXY_CREDENTIALS_CHANGED)
+
+
+class FontSetUnavailableError(RuntimeError):
+    """Fail closed when the bound font set is missing or fails integrity (AC-006).
+
+    The reason is a fixed, non-sensitive string: no font path, platform or
+    manifest detail ever reaches the exception, a log line, or the reported
+    runtime state. The same shape as ``ProxyCredentialsChangedError`` so the
+    launch-failure path reports one stable reason per failure class.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(FONT_SET_UNAVAILABLE)
 
 
 def browser_runtime_ready(
@@ -1935,6 +1950,34 @@ class SupervisorCore:
                     f"{type(exc).__name__}"
                 ) from None
 
+    def _validate_font_set(self, config: ProfileConfig) -> None:
+        """Fail closed when a bound font set cannot be trusted (AC-006).
+
+        A null ``font_set_id`` is a supported configuration ("platform fonts
+        not configured"): the Profile launches with base fonts only. A bound
+        set must exist, declare the matching platform, and pass its integrity
+        check; anything else refuses the launch with one fixed, non-sensitive
+        reason so the Browser container is never started on unusable fonts.
+        """
+        if not config.font_set_id:
+            logger.info(
+                "Profile starts without platform fonts configured: "
+                "platform=%s; runtime status reports platform fonts "
+                "unconfigured and Linux base fonts exposed",
+                config.fingerprint_platform,
+            )
+            return
+        found = font_sets.get_font_set(
+            config.fingerprint_platform, config.font_set_id
+        )
+        if found is None:
+            raise FontSetUnavailableError()
+        directory, manifest = found
+        if manifest.get("platform") != config.fingerprint_platform:
+            raise FontSetUnavailableError()
+        if not font_sets.check_font_set(directory)["ok"]:
+            raise FontSetUnavailableError()
+
     async def start_profile(
         self,
         profile_id: str,
@@ -2009,6 +2052,7 @@ class SupervisorCore:
                 raise
 
             try:
+                self._validate_font_set(config)
                 proxy_credentials = await self._resolve_proxy_credentials(
                     profile_id, config, config_version
                 )
@@ -2169,6 +2213,8 @@ class SupervisorCore:
                 failure_reason = (
                     PROXY_CREDENTIALS_CHANGED
                     if isinstance(err, ProxyCredentialsChangedError)
+                    else FONT_SET_UNAVAILABLE
+                    if isinstance(err, FontSetUnavailableError)
                     else "startup_failure"
                 )
                 logger.error(
