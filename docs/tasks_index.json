@@ -78,7 +78,7 @@
             "review_limit": "5",
             "verify_limit": "5",
             "diff_anchor": "",
-            "depends_on": "t036",
+            "depends_on": "t036,t044",
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP09+WP11",
             "dir": "docs/tasks/t037_environment_management_ui"
@@ -178,6 +178,22 @@
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP05；2026-11-05 按审阅从 t034 拆出",
             "dir": "docs/tasks/t043_selkies_upgrade"
+        },
+        {
+            "tid": "t044",
+            "slug": "e2e_parallel_execution",
+            "title": "E2E 并行执行",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "single",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "t036",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/tasks/t044_e2e_parallel_execution"
         }
     ]
 }
