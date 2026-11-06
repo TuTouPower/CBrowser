@@ -23,7 +23,7 @@
 - t034：`.scratch/evidence_t034c/`（原 t034 worktree 已清理；摘要在 t034 `progress.md`）。
 - t043：`.scratch/evidence_t043c/`（原 t043 worktree 已清理；摘要在 t043 `progress.md`）。
 - t035 spike：`docs/spikes/s013_authenticated_socks5_engine_probe/`（report.md + code/probe.py）、`docs/findings/d031_authenticated_socks5_supported.md`（均在 t035 worktree，尚未 commit）。
-- 环境：`.scratch/t032/fix-env.sh`（镜像 ID）、`.scratch/t032/data/engine-cache`（引擎缓存）、mise 固定 Node 26.13.0 / Python 3.15.2。
+- 环境：`~/kar/code/.cbrowser/e2e-env.sh`（引擎缓存与 E2E 变量）、`~/kar/code/.cbrowser/engine-cache`（Chromium 146 引擎缓存，已迁出 `.scratch`）、mise 固定 Node 26.13.0 / Python 3.15.2。镜像 ID 需重建镜像后按 `docker image inspect` 填入。
 
 ### 恢复入口与下一步
 

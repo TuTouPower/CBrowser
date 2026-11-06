@@ -304,7 +304,7 @@ docker tag "$CBROWSER_RUNTIME_TEST_IMAGE" cbrowser-probe-base:local
 docker build -f config/docker/automation_probe/Dockerfile \
   --build-arg BROWSER_IMAGE=cbrowser-probe-base:local -t cbrowser-probe:local .
 export CBROWSER_PROBE_TEST_IMAGE="$(docker image inspect --format '{{.Id}}' cbrowser-probe:local)"
-export CBROWSER_T029_ENGINE_CACHE="$PWD/.scratch/t032/data/engine-cache"
+export CBROWSER_T029_ENGINE_CACHE="${HOME}/kar/code/.cbrowser/engine-cache"
 export CBROWSER_T029_REPORT_DIR="$PWD/.scratch/t032/probe-evidence"
 bash scripts/run_automation_probe.sh
 ```

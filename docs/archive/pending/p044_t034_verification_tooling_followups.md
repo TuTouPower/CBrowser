@@ -6,4 +6,4 @@
     2. `pyproject.toml` 全局 `filterwarnings = ["ignore::DeprecationWarning"]` 与 task.md 测试策略「把 DeprecationWarning 视为错误」存在口径差；E2E 实测 3 条 `StarletteDeprecationWarning`（`HTTP_422_UNPROCESSABLE_ENTITY`，来自 starlette 1.10，非 t034 引入）。后续可新增定向 `-W error::DeprecationWarning` 检查并替换该常量，同时精确忽略已知第三方噪声。
     3. `tests/unit/test_t034_runtime_paths.py` 对动态 `find` 的回归是源码文本断言；后续补以 `docker.from_env()` 为边界的 mock 单测，断言 `exec_run` 命令含 `find`、`get_archive` 使用返回路径、异常时 `container.remove(force=True)`，并把文本断言升级为「不含 `python3.<minor>` 形式 site-packages 字面量」。
     4. `tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile` 仍是 `python:3.12-slim-bookworm` 测试夹具（非 AC-001 的六个运行镜像、无构建引用），可对齐 3.15/trixie。
-- 处理：未开。以上均为验证深度/工具接线增强，不改变 t034 已验证的产品行为与 six-AC 结论。
+- 处理：t044；resolution=transferred；reason=2026-11-06 于 main@8cdaeb7 核实问题仍存在，按用户决定并入 t044
