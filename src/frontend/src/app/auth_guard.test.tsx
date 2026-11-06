@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { QueryClient } from "@tanstack/react-query";
 import { AppProviders } from "./providers";
 import { routes } from "./router";
@@ -24,7 +24,6 @@ const PROFILE: ProfileResponse = {
   launch_args: [],
   extension_paths: [],
   human_preset: "default",
-  font_bundle: "none",
   allow_3p_cookies: true,
   set_google_default: true,
   capture_preview: true,
@@ -33,7 +32,6 @@ const PROFILE: ProfileResponse = {
   portable_cookies: false,
   user_data_dir: "/data/p1",
   sort_order: 0,
-  tags: [{ tag: "tag1" }],
   current_config_version: 1,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
@@ -90,6 +88,7 @@ function mockApi(authenticated: boolean): MockedApi {
       unauthorized = callback;
     },
     setCsrfToken: vi.fn(),
+    request: vi.fn(async () => []),
     health: { check: vi.fn(async () => undefined) },
     auth: {
       session: vi.fn(async () => {
@@ -182,7 +181,7 @@ describe("auth guard and session expiry", () => {
 
     expect(await screen.findByTestId("auth-loading")).toBeInTheDocument();
     expect(screen.queryByTestId("browser-session-mount")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("active-profile-header")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("sidebar")).not.toBeInTheDocument();
     expect(api.client.profiles.list).not.toHaveBeenCalled();
     expect(sseClient.start).not.toHaveBeenCalled();
   });
@@ -192,9 +191,7 @@ describe("auth guard and session expiry", () => {
     const sseClient = makeFakeSse();
     renderApp(["/?profileId=p1"], sseClient);
 
-    expect(
-      await screen.findByTestId("active-profile-header"),
-    ).toHaveTextContent("Profile Alpha");
+    expect(await screen.findByTestId("sidebar")).toBeInTheDocument();
     expect(sseClient.start).toHaveBeenCalledTimes(1);
   });
 
@@ -203,11 +200,10 @@ describe("auth guard and session expiry", () => {
     const sseClient = makeFakeSse();
     const { router } = renderApp(["/?profileId=p1"], sseClient);
 
-    await screen.findByTestId("active-profile-header");
+    await screen.findByTestId("sidebar");
     expect(sseClient.start).toHaveBeenCalled();
 
-    api.expireOnNextMutation();
-    fireEvent.click(screen.getByTestId("header-launch-btn"));
+    api.triggerUnauthorized();
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
     expect(new URLSearchParams(router.state.location.search).get("next")).toBe(
@@ -222,8 +218,8 @@ describe("auth guard and session expiry", () => {
     const sseClient = makeFakeSse();
     const { router } = renderApp(["/?profileId=p1"], sseClient);
 
-    await screen.findByTestId("active-profile-header");
-    fireEvent.click(screen.getByTitle("Log out"));
+    await screen.findByTestId("sidebar");
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
     expect(api.state.authenticated).toBe(false);
@@ -246,9 +242,7 @@ describe("auth guard and session expiry", () => {
     expect(router.state.location.search).toBe("?profileId=p1");
     expect(api.state.authenticated).toBe(true);
     expect(api.client.auth.login).toHaveBeenCalledWith({ password });
-    expect(await screen.findByTestId("active-profile-header")).toHaveTextContent(
-      "Profile Alpha",
-    );
+    expect(await screen.findByTestId("sidebar")).toBeInTheDocument();
   });
 
   it("redirects authenticated visitors away from /login to the target or root", async () => {

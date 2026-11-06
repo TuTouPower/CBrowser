@@ -191,6 +191,35 @@ describe("BrowserSessionView (AC-003, AC-007, AC-004)", () => {
     expect(screen.getByTestId("session-reconnect-btn")).toBeDefined();
   });
 
+  it("t043: a deferred 2.2.1 client's WebSocket close must not disturb a diagnostic stage", () => {
+    const onCheckStatus = vi.fn();
+    renderView({
+      profileId,
+      initialStage: "runtime_not_ready",
+      errorMessage: "Profile container is stopped",
+      onCheckRuntimeStatus: onCheckStatus,
+    });
+
+    const iframe = screen.getByTestId(
+      "browser-session-iframe"
+    ) as HTMLIFrameElement;
+    // Selkies 2.2.1 defers initialization; its WebSocket is created and
+    // closed only after the host has already settled on the diagnostic
+    // stage.  That close is expected for a profile that is not running.
+    dispatchIframeMessage(iframe, {
+      type: "CBROWSER_WS_CLOSE",
+      code: 1006,
+      reason: "profile_not_found",
+    });
+
+    expect(screen.getByTestId("session-diagnostics-overlay")).toBeDefined();
+    expect(screen.getByTestId("session-stage-title").textContent).toContain(
+      "运行时未就绪"
+    );
+    expect(screen.getByTestId("session-reconnect-btn")).toBeDefined();
+    expect(screen.getByTestId("session-view-status-btn")).toBeDefined();
+  });
+
   it("AC-007: displays signaling_failed stage with diagnostics and reconnect action", () => {
     renderView({
       profileId,

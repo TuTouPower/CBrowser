@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router";
 import { ArrowLeft, Download, FolderArchive, Trash2, Upload } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { useProfileQuery } from "../profiles/useProfilesQuery";
@@ -80,7 +80,7 @@ export function ProfileFilesPage() {
   return (
     <div data-testid="profile-files-page" className="p-8 max-w-3xl mx-auto">
       <Link
-        to={`/?profileId=${profileId}`}
+        to={`/session/${profileId}`}
         className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 mb-6"
       >
         <ArrowLeft className="h-4 w-4" />

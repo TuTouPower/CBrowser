@@ -1,0 +1,19 @@
+{
+  "tid": "t041",
+  "attempt": 1,
+  "execution_id": "dc7e6f45557f49b383a4785a54369d76",
+  "status": "done",
+  "branch": "t041_fingerprint_platform_fonts",
+  "base_sha": "c30cf20e162f4a39226740b5073c7fbf8c2c0583",
+  "tests": "finish 依据 = **第六轮完整门禁** `.scratch/evidence_t041_final6/`（contract / integration / frontend_test / frontend_build / e2e 五 suite exit 0；E2E `100 passed / 2 skipped`；unit 唯一失败 `test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths`，起因为两份 review 报告写入了家路径字面量）+ **本次复跑**：contract `222 passed / 1 skipped`、unit `1091 passed`（含 `test_repo_hygiene` 转绿）。第六轮之后只改了两份 `review_code.md` / `review_test.md`（`.md`，由 `REVIEW_PROCESS_FILES` 排除、不进 scope）；产品代码与测试代码零变化，按 t035 先例（Markdown-only 变更 + 定向复跑即可，不重跑 25 分钟完整门禁）。`check_finalization` 预检通过（warnings 空）。",
+  "blackbox": "真实 Docker/Chrome 完整栈 E2E 共七轮，最终代码上的第六轮 `100 passed / 2 skipped`；正式 spike `s014` 用真实 Chromium 146 引擎实测两平台 `navigator.platform` / UA / UA-CH 一致性、fontconfig 白名单隔离（Linux 特征字体命中 0）、CJK 由雅黑/宋体或苹方渲染、emoji 平台字体或合理回退（`tests/e2e/test_fingerprint_platform_e2e.py` 3 passed，缺字体集/镜像/引擎缓存时显式 skip）。`d032` 用真实 146 引擎三组实测 UA-CH 覆盖上下文（主文档/iframe/Worker/ServiceWorker/请求头）。",
+  "review": "full review 两路 Round 1 均 PASS（3 条 minor 全部「已修」）+ Round 2 scope 重绑定 PASS（零新 finding、9 条 AC 全 TICK-VALID）。`check_review_status.py`：`code_verdict=PASS` / `test_verdict=PASS` / `overall=PASS` / `review_scope=ok` / `ac_review=ok` / `next_action=finalize`；scope 定稿 `95e64468fda0d84a`。",
+  "review_scope": "95e64468fda0d84a",
+  "pending": [
+    "p045"
+  ],
+  "findings": [
+    "d032",
+    "d033"
+  ]
+}

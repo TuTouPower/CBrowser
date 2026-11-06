@@ -5,6 +5,14 @@ CLI in a scratch copy of the repository tree: the fake records every
 invocation, serves deterministic image IDs derived from Dockerfile
 content, and answers compose exec with canned readiness reports.  Real
 Docker behaviour is exercised only in t032; nothing here claims it.
+
+t035 (AC-002): the 0001-0009 migration chain was collapsed into one new
+baseline revision.  Assertions/tests that hardcoded retired revision ids
+(0001_initial_schema, 0009_profile_control_state, 0010_drill) and the
+string-compare ``applied_migration_version`` rollback floor were removed
+wholesale, not rewritten to match the new output.  Coverage for the new
+semantics (baseline in the manifest, old-generation DB/release refusal,
+same-generation publish and rollback) is added at the end of this file.
 """
 
 from __future__ import annotations
@@ -12,12 +20,19 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
+import sqlite3
 import stat
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+BASELINE_REVISION = "b7e1c9d4a2f3"
+# Representative retired 0001-0009 revision id, used only as fixture data
+# to build an old-generation DB/release (not as an expected output).
+LEGACY_HEAD = "0009_profile_control_state"
 
 ADMIN_SENTINEL = "ADMIN-SENTINEL-VALUE-9f27"
 
@@ -271,7 +286,6 @@ def test_deploy_success_builds_once_and_pins_everything(tmp_path: Path) -> None:
     assert manifest["compose_sha256"] == hashlib.sha256(
         (ROOT / "compose.yaml").read_bytes()
     ).hexdigest()
-    assert manifest["migration_version"] == "0009_profile_control_state"
     assert manifest["capabilities"]["readiness"] is True
 
     env_text = (
@@ -407,19 +421,6 @@ def _deploy_two_then_edit_manifest(
     return repo, bin_dir
 
 
-def test_rollback_refuses_lower_migration(tmp_path: Path) -> None:
-    def edit(manifest: dict) -> None:
-        manifest["migration_version"] = "0001_initial_schema"
-
-    repo, bin_dir = _deploy_two_then_edit_manifest(tmp_path, edit)
-    ups_before = _compose_log(repo).count("up -d")
-    result = _run(repo, bin_dir, "rollback")
-    assert result.returncode != 0
-    assert "migration" in result.stderr
-    assert _compose_log(repo).count("up -d") == ups_before
-    assert _pointer(repo, "current_release") == "rel-002"
-
-
 def test_rollback_refuses_without_readiness_capability(tmp_path: Path) -> None:
     def edit(manifest: dict) -> None:
         manifest["capabilities"]["readiness"] = False
@@ -490,42 +491,6 @@ def test_rollback_conflict_checked_against_release_prefix(tmp_path: Path) -> Non
     assert result.returncode != 0
     assert "prefix" in result.stderr
     assert _pointer(repo, "current_release") == "b-002"
-
-
-def test_rollback_refuses_when_failed_deploy_raised_db_version(
-    tmp_path: Path,
-) -> None:
-    """Review f003: the API migrates at startup, so a deploy that came up
-    and then failed readiness has already raised the live database
-    version; rolling back below that applied version must be refused
-    even when the current release manifest is lower."""
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
-
-    versions = repo / "src" / "backend" / "migrations" / "versions"
-    # t031: the drill must chain from the current head (0009), not 0008,
-    # or it branches instead of advancing the applied version.
-    drill = versions / "0010_drill.py"
-    drill.write_text(
-        'revision = "0010_drill"\ndown_revision = "0009_profile_control_state"\n',
-        encoding="utf-8",
-    )
-    failed = _deploy(repo, bin_dir, "rel-002", FAKE_READINESS="unready")
-    assert failed.returncode != 0
-    assert _pointer(repo, "current_release") == "rel-001"
-    applied = repo / "config" / "deploy" / "applied_migration_version"
-    assert applied.read_text(encoding="utf-8").strip() == "0010_drill"
-
-    drill.unlink()
-    assert _deploy(repo, bin_dir, "rel-003").returncode == 0
-    assert _pointer(repo, "current_release") == "rel-003"
-    ups_before = _compose_log(repo).count("up -d")
-    result = _run(repo, bin_dir, "rollback")
-    assert result.returncode != 0
-    assert "0010_drill" in result.stderr
-    assert _compose_log(repo).count("up -d") == ups_before
-    assert _pointer(repo, "current_release") == "rel-003"
 
 
 def test_instance_identity_parameterized_and_independent(
@@ -812,3 +777,141 @@ def test_compose_yaml_release_contract() -> None:
     assert "CBROWSER_COMPOSE_PROJECT" in text
     assert "container_name: ${CBROWSER_PREFIX:-cbrowser}-api" in text
     assert "com.cbrowser.prefix: ${CBROWSER_PREFIX:-cbrowser}" in text
+
+
+# ---------------------------------------------------------------------------
+# t035 AC-002: schema-generation fail-closed + revision-chain rollback floor
+# These replace the removed old-generation assertions/tests above and cover
+# the new semantics.  Old-generation DB ids and the LEGACY_HEAD fixture are
+# inputs, never expected outputs.
+# ---------------------------------------------------------------------------
+
+
+def _stamp_db(repo: Path, revision: str) -> Path:
+    """Create a database stamped with the given alembic_version at the
+    instance data root, as the API would leave it on disk."""
+    data_root = repo / "data" / "v2"
+    data_root.mkdir(parents=True, exist_ok=True)
+    db = data_root / "cbrowser.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute(
+            "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO alembic_version (version_num) VALUES (?)", (revision,)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return db
+
+
+def test_deploy_refuses_legacy_generation_database(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    db = _stamp_db(repo, LEGACY_HEAD)
+    before = db.read_bytes()
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode != 0
+    assert "rebuild" in result.stderr.lower()
+    assert "data directory" in result.stderr.lower()
+    # Fail closed: database untouched, nothing built, no release activated.
+    assert db.read_bytes() == before
+    assert _builds(repo) == []
+    assert _pointer(repo, "current_release") == ""
+
+
+def test_deploy_allows_baseline_generation_database(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _stamp_db(repo, BASELINE_REVISION)
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode == 0, result.stderr
+
+
+def test_rollback_refuses_legacy_generation_database(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    db = _stamp_db(repo, LEGACY_HEAD)
+    before = db.read_bytes()
+    ups_before = _compose_log(repo).count("up -d")
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode != 0
+    assert "rebuild" in result.stderr.lower()
+    assert db.read_bytes() == before
+    assert _compose_log(repo).count("up -d") == ups_before
+    assert _pointer(repo, "current_release") == "rel-002"
+
+
+
+
+def test_rollback_refuses_legacy_generation_release(tmp_path: Path) -> None:
+    def edit(manifest: dict) -> None:
+        # A retired 0001-0009 revision id: representative of an
+        # old-generation release (fixture input, not an expected output).
+        manifest["migration_version"] = LEGACY_HEAD
+
+    repo, bin_dir = _deploy_two_then_edit_manifest(tmp_path, edit)
+    ups_before = _compose_log(repo).count("up -d")
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode != 0
+    assert "revision chain" in result.stderr.lower()
+    assert "migration" in result.stderr.lower()
+    assert _compose_log(repo).count("up -d") == ups_before
+    assert _pointer(repo, "current_release") == "rel-002"
+
+
+
+
+def _migration_head(repo: Path) -> str:
+    """Parse the shipped revision ids and return the single chain head."""
+    versions = repo / "src" / "backend" / "migrations" / "versions"
+    revisions: dict[str, str | None] = {}
+    downs: set[str] = set()
+    for path in versions.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        m = re.search(r'^revision[^=]*=\s*"([^"]+)"', text, re.M)
+        d = re.search(r'^down_revision[^=]*=\s*"([^"]+)"', text, re.M)
+        if m:
+            revisions[m.group(1)] = d.group(1) if d else None
+            if d:
+                downs.add(d.group(1))
+    heads = [r for r in revisions if r not in downs]
+    assert len(heads) == 1
+    return heads[0]
+
+
+def test_manifest_records_current_head_with_incremental_chain(
+    tmp_path: Path,
+) -> None:
+    """t041: manifest records the current chain head, not the baseline."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    head = _migration_head(repo)
+    assert head != BASELINE_REVISION
+    assert _manifest(repo, "rel-001")["migration_version"] == head
+    versions = sorted(
+        (repo / "src" / "backend" / "migrations" / "versions").glob("*.py")
+    )
+    assert len(versions) == 2
+
+
+def test_same_generation_publish_and_rollback_with_incremental_chain(
+    tmp_path: Path,
+) -> None:
+    """t041: same-generation releases still publish and roll back when the
+    chain contains an incremental migration after the baseline."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    head = _migration_head(repo)
+    assert _manifest(repo, "rel-001")["migration_version"] == head
+    assert _manifest(repo, "rel-002")["migration_version"] == head
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode == 0, result.stderr
+    assert _pointer(repo, "current_release") == "rel-001"

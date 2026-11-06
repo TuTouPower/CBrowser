@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppLayout } from "./AppLayout";
 
@@ -27,6 +27,14 @@ vi.mock("../features/auth/useAuth", () => ({
 
 vi.mock("../i18n", () => ({
   useI18n: () => ({ t: (k: string) => k, locale: "en", setLocale: vi.fn() }),
+}));
+
+vi.mock("../theme", () => ({
+  useTheme: () => ({
+    preference: "dark",
+    resolved: "dark",
+    setPreference: vi.fn(),
+  }),
 }));
 
 describe("AppLayout iframe focus-release contract", () => {

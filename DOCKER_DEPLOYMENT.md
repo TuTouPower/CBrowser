@@ -92,11 +92,9 @@ bash scripts/deploy_v2.sh
 tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
 ```
 
-恢复：停止 compose，解压备份覆盖 `data/v2`，再发布。迁移 legacy 数据使用：
+恢复：停止 compose，解压备份覆盖 `data/v2`，再发布。
 
-```bash
-PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with alembic --with sqlalchemy --with aiosqlite   python scripts/migrate_legacy.py --source ~/.cbrowser --target data/v2 --apply
-```
+t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy_v2.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/v2`；legacy 迁移脚本已随该破坏性升级移除。
 
 ## 9. 故障定位
 

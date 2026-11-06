@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import { ApiError, type ApiClient } from "../../shared/api/client";
@@ -21,9 +21,7 @@ const PROFILE: ProfileResponse = {
   auto_launch: false,
   launch_args: [],
   extension_paths: [],
-  tags: [],
   human_preset: "default",
-  font_bundle: "none",
   allow_3p_cookies: true,
   set_google_default: true,
   capture_preview: true,
@@ -87,8 +85,10 @@ function renderPage() {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ApiClientContext.Provider value={stub.client}>
-          <MemoryRouter initialEntries={["/?profileId=p1"]}>
-            <BrowserSessionPage />
+          <MemoryRouter initialEntries={["/session/p1"]}>
+            <Routes>
+              <Route path="/session/:profileId" element={<BrowserSessionPage />} />
+            </Routes>
           </MemoryRouter>
         </ApiClientContext.Provider>
       </I18nProvider>

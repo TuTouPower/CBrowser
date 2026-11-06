@@ -1,73 +1,119 @@
-import { useState, useEffect } from "react";
-import { Outlet, useNavigate, useSearchParams, Link } from "react-router-dom";
 import {
-  Plus,
-  Settings as SettingsIcon,
+  useEffect,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import {
+  Globe2,
+  Languages,
+  Layers,
   LogOut,
-  Play,
-  Square,
-  Globe,
-  PanelLeftClose,
+  Menu,
+  MonitorPlay,
   PanelLeft,
+  PanelLeftClose,
+  Settings as SettingsIcon,
+  SunMoon,
+  X,
 } from "lucide-react";
-import {
-  scopeMutationToProfile,
-  useProfilesQuery,
-  useProfileQuery,
-  useProfileRuntimeQuery,
-  useSetDesiredStateMutation,
-  useStopProfileMutation,
-  useApplyDisplaySettingsMutation,
-} from "../features/profiles/useProfilesQuery";
+import { useApiClient } from "../shared/api/client_context";
 import { useAuth } from "../features/auth/useAuth";
 import { useI18n } from "../i18n";
-import { useApiClient } from "../shared/api/client_context";
+import { useTheme, type ThemePreference } from "../theme";
+import { Banner, Button, DropdownMenu, IconButton } from "../shared/ui";
+import { useRuntimeSnapshot } from "./useRuntimeSnapshot";
+
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 360;
+const DEFAULT_WIDTH = 232;
+const COLLAPSED_WIDTH = 72;
+const WIDTH_KEY = "cbrowser.sidebar.width";
+const COLLAPSED_KEY = "cbrowser.sidebar.collapsed";
+const SESSION_TARGET_KEY = "cbrowser.session.target";
+
+function clampWidth(value: number): number {
+  if (!Number.isFinite(value)) return DEFAULT_WIDTH;
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(value)));
+}
+
+function readWidth(): number {
+  try {
+    const stored = localStorage.getItem(WIDTH_KEY);
+    return stored === null ? DEFAULT_WIDTH : clampWidth(Number(stored));
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(COLLAPSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function useNarrowLayout(): boolean {
+  const [narrow, setNarrow] = useState(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return false;
+    }
+    return window.matchMedia("(max-width: 1023px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 1023px)");
+    const onChange = () => setNarrow(query.matches);
+    setNarrow(query.matches);
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    }
+    query.addListener(onChange);
+    return () => query.removeListener(onChange);
+  }, []);
+  return narrow;
+}
 
 export function AppLayout() {
   const { t, locale, setLocale } = useI18n();
+  const { preference, setPreference } = useTheme();
   const { logout } = useAuth();
   const client = useApiClient();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const currentProfileId = searchParams.get("profileId");
+  const location = useLocation();
+  const narrow = useNarrowLayout();
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [searchFilter, setSearchFilter] = useState("");
-
-  const { data: profiles = [], isLoading: isProfilesLoading } = useProfilesQuery(client);
-  const { data: activeProfile } = useProfileQuery(currentProfileId, client);
-  const { data: activeRuntime } = useProfileRuntimeQuery(currentProfileId, client);
-
-  const setDesiredStateMutation = useSetDesiredStateMutation(client);
-  const stopProfileMutation = useStopProfileMutation(client);
-  const applyDisplayMutation = useApplyDisplaySettingsMutation(client);
-  // The layout stays mounted across Profile switches: header action
-  // state is shown only for the Profile the action targeted.
-  const launchState = scopeMutationToProfile(
-    setDesiredStateMutation,
-    currentProfileId,
-    (input) => input.id,
-  );
-  const stopState = scopeMutationToProfile(
-    stopProfileMutation,
-    currentProfileId,
-    (input) => input,
-  );
-  const applyState = scopeMutationToProfile(
-    applyDisplayMutation,
-    currentProfileId,
-    (input) => input,
-  );
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [width, setWidth] = useState(readWidth);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const { runningCount, coordinatorError } = useRuntimeSnapshot(client);
 
   useEffect(() => {
-    const handleHostPointerDown = (e: MouseEvent | PointerEvent) => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(width));
+    } catch {
+      return;
+    }
+  }, [width]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    } catch {
+      return;
+    }
+  }, [collapsed]);
+
+  useEffect(() => {
+    const handleHostPointerDown = (event: MouseEvent | PointerEvent) => {
       const active = document.activeElement;
-      if (active && active.tagName === "IFRAME" && e.target !== active) {
+      if (active && active.tagName === "IFRAME" && event.target !== active) {
         (active as HTMLElement).blur();
         window.focus();
       }
     };
-
     window.addEventListener("pointerdown", handleHostPointerDown, true);
     window.addEventListener("mousedown", handleHostPointerDown, true);
     return () => {
@@ -76,19 +122,19 @@ export function AppLayout() {
     };
   }, []);
 
-  const handleSelectProfile = (id: string) => {
-    // Always land on this page instance's session route (AC-001).
-    navigate({ pathname: "/", search: `?profileId=${encodeURIComponent(id)}` });
-  };
-
-  const handleLaunch = () => {
-    if (!currentProfileId) return;
-    setDesiredStateMutation.mutate({ id: currentProfileId, state: "running" });
-  };
-
-  const handleStop = () => {
-    if (!currentProfileId) return;
-    stopProfileMutation.mutate(currentProfileId);
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const onMove = (move: PointerEvent) => {
+      setWidth(clampWidth(startWidth + move.clientX - startX));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   };
 
   const handleLogout = async () => {
@@ -100,230 +146,187 @@ export function AppLayout() {
     navigate("/login");
   };
 
-  const filteredProfiles = profiles.filter((p) => {
-    if (!searchFilter.trim()) return true;
-    const q = searchFilter.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.tags?.some((tag) => (typeof tag === "string" ? tag : tag.tag).toLowerCase().includes(q))
-    );
-  });
+  let sessionTarget: string | null = null;
+  try {
+    sessionTarget = sessionStorage.getItem(SESSION_TARGET_KEY);
+  } catch {
+    sessionTarget = null;
+  }
+  const sessionPath = sessionTarget
+    ? `/session/${encodeURIComponent(sessionTarget)}`
+    : "/session";
 
-  const isRunning = activeRuntime?.observed_state === "running";
-  const displayPending = Boolean(
-    activeProfile &&
-      isRunning &&
-      activeRuntime &&
-      activeRuntime.config_version !== activeProfile.current_config_version,
+  const navItems = [
+    { to: "/", label: t("navEnvironments"), icon: Layers, key: "navEnvironments" },
+    { to: "/proxies", label: t("navProxies"), icon: Globe2, key: "navProxies" },
+    { to: sessionPath, label: t("navSessions"), icon: MonitorPlay, key: "navSessions" },
+    { to: "/settings", label: t("navSettings"), icon: SettingsIcon, key: "navSettings" },
+  ];
+
+  const themeItems = [
+    { label: t("themeSystem"), value: "system" as ThemePreference },
+    { label: t("themeLight"), value: "light" as ThemePreference },
+    { label: t("themeDark"), value: "dark" as ThemePreference },
+  ];
+
+  const sidebarContent: ReactNode = (
+    <div className="flex h-full flex-col bg-sidebar text-on-surface">
+      <div className="flex h-12 shrink-0 items-center justify-between gap-sm border-b border-outline px-md">
+        <Link to="/" className="flex items-center gap-sm overflow-hidden">
+          <img src="/menubar-icon.svg" alt="" className="h-5 w-5 shrink-0" />
+          {!collapsed && (
+            <span className="truncate font-ui text-title-sm tracking-wide">CBrowser</span>
+          )}
+        </Link>
+        {narrow ? (
+          <IconButton label={t("closeNavigation")} onClick={() => setDrawerOpen(false)}>
+            <X aria-hidden="true" className="h-4 w-4" />
+          </IconButton>
+        ) : (
+          <IconButton
+            label={collapsed ? t("sidebarExpand") : t("sidebarCollapse")}
+            onClick={() => setCollapsed(!collapsed)}
+          >
+            {collapsed ? (
+              <PanelLeft aria-hidden="true" className="h-4 w-4" />
+            ) : (
+              <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
+            )}
+          </IconButton>
+        )}
+      </div>
+
+      <nav aria-label={t("openNavigation")} className="flex-1 overflow-y-auto p-sm">
+        <ul className="flex flex-col gap-xs">
+          {navItems.map((item) => {
+            const active = item.key === "navEnvironments"
+              ? location.pathname === "/" || location.pathname.startsWith("/profiles/")
+              : location.pathname.startsWith(item.to);
+            const Icon = item.icon;
+            return (
+              <li key={item.key}>
+                <Link
+                  to={item.to}
+                  aria-current={active ? "page" : undefined}
+                  title={collapsed ? item.label : undefined}
+                  onClick={() => setDrawerOpen(false)}
+                  className="flex h-9 items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface"
+                >
+                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+
+      <div className="shrink-0 border-t border-outline p-sm">
+        <div
+          data-testid="running-count"
+          className="mb-sm flex items-center gap-sm rounded-md bg-surface-subtle px-sm py-sm font-ui text-label-sm text-on-surface"
+        >
+          <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+          {!collapsed && <span className="truncate">{t("runningProfiles", { count: runningCount })}</span>}
+        </div>
+        <div className="flex items-center justify-between gap-xs">
+          <DropdownMenu
+            ariaLabel={t("switchTheme")}
+            trigger={
+              <IconButton label={t("switchTheme")}>
+                <SunMoon aria-hidden="true" className="h-4 w-4" />
+              </IconButton>
+            }
+            items={themeItems.map((item) => ({
+              label: `${preference === item.value ? "• " : ""}${item.label}`,
+              onSelect: () => setPreference(item.value),
+            }))}
+          />
+          <Button
+            size="sm"
+            aria-label={t("switchLanguage")}
+            onClick={() => setLocale(locale === "en" ? "zh" : "en")}
+          >
+            <Languages aria-hidden="true" className="h-3.5 w-3.5" />
+            {!collapsed && <span className="uppercase">{locale}</span>}
+          </Button>
+          <IconButton label={t("logOut")} onClick={handleLogout}>
+            <LogOut aria-hidden="true" className="h-4 w-4" />
+          </IconButton>
+        </div>
+      </div>
+    </div>
   );
 
+  const sidebarWidth = collapsed ? COLLAPSED_WIDTH : width;
+
   return (
-    <div className="h-screen flex flex-col bg-surface-0 text-gray-100 overflow-hidden">
-      {/* Top Navbar */}
-      <header className="h-12 border-b border-border bg-surface-1 flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-400 hover:text-gray-200 p-1"
-            title={sidebarOpen ? t("hideSidebar") : t("showSidebar")}
-          >
-            {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-          </button>
-
-          <Link to="/" className="flex items-center gap-2 text-sm font-bold text-gray-100">
-            <img src="/menubar-icon.svg" alt="CBrowser" className="h-5 w-5" />
-            <span>CBrowser</span>
-          </Link>
-
-          {activeProfile && (
-            <div
-              data-testid="active-profile-header"
-              className="ml-4 pl-4 border-l border-border flex items-center gap-2"
-            >
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  isRunning
-                    ? "bg-emerald-400"
-                    : activeRuntime?.observed_state === "starting"
-                      ? "bg-amber-400 animate-pulse"
-                      : "bg-gray-500"
-                }`}
+    <div className="flex h-screen overflow-hidden bg-background text-on-surface">
+      {narrow ? (
+        <>
+          <div className="flex h-12 shrink-0 items-center gap-sm border-b border-outline bg-sidebar px-md">
+            <IconButton label={t("openNavigation")} onClick={() => setDrawerOpen(true)}>
+              <Menu aria-hidden="true" className="h-4 w-4" />
+            </IconButton>
+            <span className="font-ui text-title-sm">CBrowser</span>
+          </div>
+          {drawerOpen && (
+            <div className="fixed inset-0 z-40 flex" data-testid="sidebar-drawer">
+              <div
+                className="absolute inset-0 bg-overlay"
+                onClick={() => setDrawerOpen(false)}
+                aria-hidden="true"
               />
-              <span className="text-xs font-medium text-gray-200">{activeProfile.name}</span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {activeProfile && (
-            <>
-              {displayPending && (
-                <div
-                  data-testid="display-pending-badge"
-                  className="flex items-center gap-2 pl-2 pr-1 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px]"
-                >
-                  <span>{t("displaySettingsSavedPending")}</span>
-                  <button
-                    type="button"
-                    data-testid="display-apply-restart-btn"
-                    onClick={() => applyDisplayMutation.mutate(activeProfile.id)}
-                    disabled={applyState.isPending}
-                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 disabled:opacity-50"
-                  >
-                    {applyState.isPending
-                      ? t("displayApplyingRestart")
-                      : t("displayApplyAndRestart")}
-                  </button>
-                </div>
-              )}
-              {isRunning ? (
-                <button
-                  type="button"
-                  data-testid="header-stop-btn"
-                  onClick={handleStop}
-                  disabled={stopState.isPending}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/30 transition-colors"
-                >
-                  <Square className="h-3 w-3 fill-current" />
-                  {t("stop")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  data-testid="header-launch-btn"
-                  onClick={handleLaunch}
-                  disabled={
-                    launchState.isPending ||
-                    activeRuntime?.observed_state === "starting"
-                  }
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 transition-colors"
-                >
-                  <Play className="h-3 w-3 fill-current" />
-                  {t("launch")}
-                </button>
-              )}
-            </>
-          )}
-
-          {/* Language Toggle */}
-          <button
-            type="button"
-            onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-            className="p-1.5 text-gray-400 hover:text-gray-200 rounded text-xs flex items-center gap-1"
-            title={t("switchLanguage")}
-          >
-            <Globe className="h-3.5 w-3.5" />
-            <span className="text-[11px] uppercase font-mono">{locale}</span>
-          </button>
-
-          {/* Settings Link */}
-          <Link
-            to="/settings"
-            className="p-1.5 text-gray-400 hover:text-gray-200 rounded"
-            title={t("settings")}
-          >
-            <SettingsIcon className="h-4 w-4" />
-          </Link>
-
-          {/* Logout */}
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="p-1.5 text-gray-400 hover:text-red-400 rounded"
-            title={t("logOut")}
-          >
-            <LogOut className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
-
-      {applyState.error && (
-        <div
-          data-testid="display-apply-error"
-          role="alert"
-          className="px-4 py-1.5 bg-red-500/10 border-b border-red-500/30 text-red-300 text-xs"
-        >
-          {t("displayApplyFailed", { error: applyState.error.message })}
-        </div>
-      )}
-
-      {activeRuntime?.last_coordinator_error && (
-        <div
-          data-testid="runtime-coordinator-error"
-          role="alert"
-          className="px-4 py-1.5 bg-amber-500/10 border-b border-amber-500/30 text-amber-300 text-xs"
-        >
-          {t("runtimeCoordinatorError", { error: activeRuntime.last_coordinator_error })}
-        </div>
-      )}
-
-      {/* Main Body */}
-      <div className="flex-1 flex min-h-0">
-        {/* Sidebar */}
-        {sidebarOpen && (
-          <aside className="w-64 border-r border-border bg-surface-1 flex flex-col shrink-0">
-            <div className="p-3 border-b border-border flex items-center justify-between gap-2">
-              <input
-                type="text"
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder={t("searchProfiles")}
-                className="flex-1 px-2.5 py-1 bg-surface-2 border border-border rounded text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary"
-              />
-              <Link
-                to="/profiles/new"
-                data-testid="new-profile-link"
-                className="p-1.5 bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity shrink-0"
-                title={t("newProfile")}
+              <aside
+                data-testid="sidebar"
+                style={{ width: sidebarWidth }}
+                className="relative h-full shrink-0 border-r border-outline"
               >
-                <Plus className="h-3.5 w-3.5" />
-              </Link>
+                {sidebarContent}
+              </aside>
             </div>
-
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {isProfilesLoading ? (
-                <div className="p-4 text-center text-xs text-gray-500">{t("loading")}</div>
-              ) : filteredProfiles.length === 0 ? (
-                <div className="p-4 text-center text-xs text-gray-500">
-                  {searchFilter ? t("noMatches") : t("noProfilesYet")}
-                </div>
-              ) : (
-                filteredProfiles.map((p) => {
-                  const isSelected = p.id === currentProfileId;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      data-testid={`profile-item-${p.id}`}
-                      onClick={() => handleSelectProfile(p.id)}
-                      className={`w-full text-left px-3 py-2 rounded text-xs flex items-center justify-between transition-colors ${
-                        isSelected
-                          ? "bg-primary/15 text-primary border border-primary/30"
-                          : "text-gray-300 hover:bg-surface-2 hover:text-gray-100"
-                      }`}
-                    >
-                      <div className="truncate flex-1 mr-2">
-                        <div className="font-medium truncate">{p.name}</div>
-                        {p.tags && p.tags.length > 0 && (
-                          <div className="text-[10px] text-gray-500 truncate mt-0.5">
-                            {p.tags.map((tag) => typeof tag === "string" ? `#${tag}` : `#${tag.tag}`).join(" ")}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+          )}
+        </>
+      ) : (
+        <div className="relative flex shrink-0" style={{ width: sidebarWidth }}>
+          <aside
+            data-testid="sidebar"
+            className="h-full w-full border-r border-outline"
+          >
+            {sidebarContent}
           </aside>
-        )}
+          {!collapsed && (
+            <div
+              data-testid="sidebar-resize-handle"
+              role="separator"
+              aria-label={t("sidebarResize")}
+              aria-orientation="vertical"
+              tabIndex={0}
+              onPointerDown={startResize}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") setWidth(clampWidth(width - 8));
+                if (event.key === "ArrowRight") setWidth(clampWidth(width + 8));
+              }}
+              className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize"
+            />
+          )}
+        </div>
+      )}
 
-        {/* Content Outlet */}
-        <main className="flex-1 flex flex-col min-w-0 min-h-0 overflow-y-auto">
-          <Outlet />
-        </main>
-      </div>
+      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col px-lg py-lg">
+          {coordinatorError && (
+            <div className="mb-md" data-testid="runtime-coordinator-error-slot">
+              <Banner tone="warning" testId="runtime-coordinator-error">
+                {t("runtimeCoordinatorError", { error: coordinatorError })}
+              </Banner>
+            </div>
+          )}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <Outlet />
+          </div>
+        </div>
+      </main>
     </div>
   );
 }

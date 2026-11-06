@@ -26,45 +26,45 @@
 ## Agent 执行器凭证与清理权限（t030）
 
 - 执行器凭证与自动化凭证同源（`cbat_` Bearer，见上节）：CLI 只经
-  `--token-file`（0600）或 `CBROWSER_AGENT_TOKEN` 传入；故意不设
-  `--token` 旗标；输出、日志与账本做 token redact；状态文件（ref 与账本
-  元数据）不含凭证、Cookie 或认证头，0600 原子写入。0600 是调用方
-  保管约定：权限更宽的 token 文件只触发 stderr 告警、不拒绝运行
-  （拒绝并不能收回已暴露的文件，只会拒绝服务）；状态文件带
-  （profile，runtime）绑定，绑定不符即整体丢弃。
+    `--token-file`（0600）或 `CBROWSER_AGENT_TOKEN` 传入；故意不设
+    `--token` 旗标；输出、日志与账本做 token redact；状态文件（ref 与账本
+    元数据）不含凭证、Cookie 或认证头，0600 原子写入。0600 是调用方
+    保管约定：权限更宽的 token 文件只触发 stderr 告警、不拒绝运行
+    （拒绝并不能收回已暴露的文件，只会拒绝服务）；状态文件带
+    （profile，runtime）绑定，绑定不符即整体丢弃。
 - `extract`/`evaluate` 的调用方脚本返回值是调用方数据：执行器只透传，
-  不承诺只读、不做脱敏、不写入账本；文档中明确该边界。
+    不承诺只读、不做脱敏、不写入账本；文档中明确该边界。
 - 清理权限永不由管理权推导：adopt 只授管理权；仅本会话可证明创建的
-  页面（createTarget 记录、popup 三方归属证据）可清理；用户/unknown 页
-  在正常、异常、取消与显式清理下全部保留；最后一页 backstop 同时存在
-  于账本与隧道两层。
+    页面（createTarget 记录、popup 三方归属证据）可清理；用户/unknown 页
+    在正常、异常、取消与显式清理下全部保留；最后一页 backstop 同时存在
+    于账本与隧道两层。
 - 隧道拒绝类命令返回稳定错误而不转发；脚本登记与断开清理保证不断开
-  不残留；浏览器级破坏性命令的拒绝不依赖调用方自律。
+    不残留；浏览器级破坏性命令的拒绝不依赖调用方自律。
 
 ## 真人优先控制权（t031，ADR 019）
 
 - 控制权状态由 API 唯一写入（`profile_controls`）；接管时 API 与
-  Supervisor 各自关闭已登记的活动隧道并以单调代次围栏拒旧代次重连
-  （转发握手带 `X-CBrowser-Control-Generation`，不高于围栏者 4403 拒绝）。
+    Supervisor 各自关闭已登记的活动隧道并以单调代次围栏拒旧代次重连
+    （转发握手带 `X-CBrowser-Control-Generation`，不高于围栏者 4403 拒绝）。
 - Agent UDS 层为本地信任边界（0660 socket + Supervisor 管理的 runtime
-  目录）：UDS 直连客户端不在强制范围内（与直接访问 runtime 目录等价）；
-  控制强制经 CLI 会话生命周期 + 接管级联（Supervisor 关闭隧道端点 →
-  Agent /control `release_attendant`）覆盖。
+    目录）：UDS 直连客户端不在强制范围内（与直接访问 runtime 目录等价）；
+    控制强制经 CLI 会话生命周期 + 接管级联（Supervisor 关闭隧道端点 →
+    Agent /control `release_attendant`）覆盖。
 - Supervisor 直连令牌持有者属于基础设施信任边界：其握手不查 API 状态，
-  但转发代次受围栏约束；Supervisor 分区期间的残留窗口如实记录（分区内
-  已存在的直连隧道在分区愈合前不受 API 侧关闭约束）。
+    但转发代次受围栏约束；Supervisor 分区期间的残留窗口如实记录（分区内
+    已存在的直连隧道在分区愈合前不受 API 侧关闭约束）。
 - 不承诺任意只读 CDP 黑名单保证（evaluate 可跑任意致变脚本）；不承诺
-  自动识别全部 CAPTCHA 或代解验证码；不回滚已执行的浏览器动作。
+    自动识别全部 CAPTCHA 或代解验证码；不回滚已执行的浏览器动作。
 - Stream 输入分类保守取向（宁可误接管、不漏接管）；XTEST 注入结构上
-  不走 WebRTC 数据通道，不构成人类输入。
+    不走 WebRTC 数据通道，不构成人类输入。
 - 常驻 attendant 的应答只经控制面显式请求（CLI 未 attach 时的 peek +
-  attendant 会话应答）；attendant 自身永不自动应答。控制面 peek/应答
-  要求调用方持有控制权且 token 身份与记录的 Agent 实例一致（R1
-  code f001）：user 态或第二 token 一律 409；接管级联的 attendant
-  释放纳入 pending 确认（释放失败则 reconcile 重试整条级联）。
+    attendant 会话应答）；attendant 自身永不自动应答。控制面 peek/应答
+    要求调用方持有控制权且 token 身份与记录的 Agent 实例一致（R1
+    code f001）：user 态或第二 token 一律 409；接管级联的 attendant
+    释放纳入 pending 确认（释放失败则 reconcile 重试整条级联）。
 - 吊销 automation token 时，该 token 持有控制的 Profile 各执行一次
-  `identity_invalid` 交接（R1 code f002）；token 过期在握手时校验，
-  已建立隧道在过期后不自动关闭属已知残留（无独立过期清理点）。
+    `identity_invalid` 交接（R1 code f002）；token 过期在握手时校验，
+    已建立隧道在过期后不自动关闭属已知残留（无独立过期清理点）。
 
 ## 服务间与媒体凭证
 
@@ -81,6 +81,12 @@
 - Browser/Stream 以 uid/gid 1000 运行，只能访问本 Profile 目录；其他宿主 UID 无读写权。跨 Profile 读取不依赖网络命名空间。
 - 宿主直跑 Supervisor（开发/测试）在非 root 时不做跨 uid chown，仅使用精确 mode；可用 `CBROWSER_MANAGE_OWNERSHIP=1` 强制受管权限、`CBROWSER_RUNTIME_UID/GID` 指定属主。不存在 0777/0666 回退。
 - 威胁模型假设：能控制本 Profile 网页的进程已处于该 Profile 信任域，可读本 Profile 的 Browser 可写目录；目标是阻止跨 Profile 访问、阻止 Browser 读取 Agent/Selkies 凭证、阻止未受策略保护的沙箱长期运行。事件伪造不改变生命周期权威（见 [Supervisor](supervisor.md) 与 d016）。
+
+## 平台字体来源与分发边界（t041）
+
+- 平台专有字体只从官方渠道取得：macOS 取本机 `/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts` 及 `/System/Library/AssetsV2/` 下的苹方资源；Windows 取微软官方 Windows 11 企业评估版 ISO，经 `7zz` 从 `sources/install.wim` 提取 `Windows/Fonts`。不使用第三方字体站或 GitHub 镜像（授权与文件来源无法校验）。
+- 字体只写入宿主 `CBROWSER_FONTS_DIR` 与 `.scratch/`，不进入任何镜像层，不进入 git 仓库；部署与发布脚本不复制字体目录（AC-008）。导入工具把字体固化为按内容寻址的不可变字体集，`manifest.json` 记录来源、来源系统版本与逐文件 sha256，供静态完整性校验（AC-001 / AC-002）。
+- 字体集只在运行时由 Supervisor 只读挂载给绑定它的 Profile，其他 Profile 与 Stream 容器不可见；系统不提供字体集删除功能，也不分发或打包字体文件。基础开源字体为镜像内的 Debian 官方包，不含平台专有字体，且绑定平台字体集时不进入指纹 Profile 的 fontconfig 白名单（`font_set_id` 为 null 时作为回退可见并由 runtime 状态标记，ADR 024）。
 
 ## 验证边界
 

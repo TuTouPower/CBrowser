@@ -23,6 +23,10 @@ def _runtime(instance: str | None = "inst_1"):
         failure_count=0,
         restart_blocked=False,
         last_exit_event_id=None,
+        last_started_at=None,
+        last_stopped_at=None,
+        browser_product=None,
+        browser_user_agent=None,
         updated_at="2026-11-04T00:00:00+00:00",
     )
 

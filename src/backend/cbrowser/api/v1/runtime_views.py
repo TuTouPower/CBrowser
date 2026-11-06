@@ -63,6 +63,10 @@ async def make_runtime_response(
             control = await control_service.get_state(rt.profile_id)
         except Exception:  # noqa: BLE001 - control is advisory on the runtime view
             control = None
+    font_set_id: str | None = None
+    missing_fonts: list[str] = []
+    if coordinator is not None and hasattr(coordinator, "get_font_runtime"):
+        font_set_id, missing_fonts = await coordinator.get_font_runtime(rt.profile_id)
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
         desired_state=rt.desired_state,
@@ -72,6 +76,12 @@ async def make_runtime_response(
         failure_count=rt.failure_count,
         restart_blocked=rt.restart_blocked,
         last_exit_event_id=rt.last_exit_event_id,
+        last_started_at=rt.last_started_at,
+        last_stopped_at=rt.last_stopped_at,
+        browser_product=rt.browser_product,
+        browser_user_agent=rt.browser_user_agent,
+        font_set_id=font_set_id,
+        missing_fonts=missing_fonts,
         last_coordinator_error=last_error,
         search_defaults=search_defaults,
         transport=transport,

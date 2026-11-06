@@ -1,61 +1,141 @@
-# Gate dependency lock for scripts/run_gates.sh (t024 AC-009/A30).
-# Every package the gate suites need, pinned to an exact version so a
-# gate run rebuilds the identical environment from an empty cache
-# instead of resolving unpinned --with sets against a live index.
-# Regenerate on CPython 3.12 with:
-#   pip install pytest pytest-asyncio httpx aiosqlite "sqlalchemy[asyncio]" alembic fastapi pydantic uvicorn jsonschema websockets "cloakbrowser==0.6.4" docker aiohttp argon2-cffi playwright
-#   pip freeze
 aiohappyeyeballs==2.7.1
+    # via aiohttp
 aiohttp==3.14.5
 aiosignal==1.4.0
+    # via aiohttp
 aiosqlite==0.22.1
 alembic==1.20.1
 annotated-doc==0.0.5
+    # via fastapi
 annotated-types==0.8.0
+    # via pydantic
 anyio==4.16.0
+    # via
+    #   httpx
+    #   starlette
 argon2-cffi==25.1.0
 argon2-cffi-bindings==26.1.0
+    # via argon2-cffi
 attrs==26.1.0
+    # via
+    #   aiohttp
+    #   jsonschema
+    #   referencing
 certifi==2026.10.23
+    # via
+    #   httpcore
+    #   httpx
+    #   requests
 cffi==2.1.1
+    # via
+    #   argon2-cffi-bindings
+    #   cryptography
 charset-normalizer==3.5.2
+    # via requests
 click==8.5.0
+    # via uvicorn
 cloakbrowser==0.6.4
+colorama==0.4.6 ; sys_platform == 'win32'
+    # via pytest
 cryptography==50.0.2
+    # via cloakbrowser
 docker==7.2.0
 fastapi==0.162.0
 frozenlist==1.8.0
+    # via
+    #   aiohttp
+    #   aiosignal
 greenlet==3.5.6
+    # via
+    #   playwright
+    #   sqlalchemy
 h11==0.16.0
+    # via
+    #   httpcore
+    #   uvicorn
 httpcore==1.0.9
+    # via httpx
 httpx==0.28.1
+    # via cloakbrowser
 idna==3.20
+    # via
+    #   anyio
+    #   httpx
+    #   requests
+    #   yarl
 iniconfig==2.3.1
+    # via pytest
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-Mako==1.4.3
-MarkupSafe==3.0.4
+    # via jsonschema
+mako==1.4.3
+    # via alembic
+markupsafe==3.0.4
+    # via mako
 multidict==7.2.1
+    # via
+    #   aiohttp
+    #   yarl
 opentelemetry-api==1.45.2
+    # via fastapi
 packaging==26.3
+    # via pytest
 playwright==1.64.1
+    # via cloakbrowser
 pluggy==1.7.0
+    # via pytest
 propcache==0.5.4
-pycparser==3.12
-pydantic==2.14.2
-pydantic_core==2.50.2
+    # via
+    #   aiohttp
+    #   yarl
+pycparser==3.12 ; implementation_name != 'PyPy'
+    # via cffi
+pydantic==2.14.1
+    # via fastapi
+pydantic-core==2.50.1
+    # via pydantic
 pyee==14.0.0
-Pygments==2.21.0
+    # via playwright
+pygments==2.21.0
+    # via pytest
 pytest==9.2.0
+    # via pytest-asyncio
 pytest-asyncio==1.4.1.post1
+pywin32==312 ; sys_platform == 'win32'
+    # via docker
 referencing==0.37.0
+    # via
+    #   jsonschema
+    #   jsonschema-specifications
 requests==2.34.2
+    # via docker
 rpds-py==2026.9.1
-SQLAlchemy==2.1.7
+    # via
+    #   jsonschema
+    #   referencing
+sqlalchemy==2.1.8
+    # via alembic
 starlette==1.10.0
-typing-inspection==0.4.4
-typing_extensions==4.16.0
+    # via fastapi
+typing-extensions==4.16.0
+    # via
+    #   alembic
+    #   fastapi
+    #   opentelemetry-api
+    #   pydantic
+    #   pydantic-core
+    #   pyee
+    #   sqlalchemy
+    #   typing-inspection
+typing-inspection==0.4.5
+    # via
+    #   fastapi
+    #   pydantic
 urllib3==2.8.0
+    # via
+    #   docker
+    #   requests
 uvicorn==0.54.0
 websockets==17.4
 yarl==1.25.1
+    # via aiohttp

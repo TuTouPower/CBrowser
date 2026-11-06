@@ -1,0 +1,14 @@
+{
+  "tid": "t033",
+  "attempt": 1,
+  "execution_id": "73d627babfea4259ad15ac1a35fa4e58",
+  "status": "done",
+  "branch": "t033_frontend_toolchain_upgrade",
+  "base_sha": "483071a01e818ce94d6b51b70b8bc2f04b2a4f3f",
+  "tests": "完整 required+evidence 门禁 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`（Node 26.13，证据 `.scratch/evidence_t033b/`）：contract 223 项 0 失败、unit 998 项 0 失败、integration 160 项、frontend_test（216 Vitest + 类型检查）0 失败、frontend_build（含 postbuild `verify_frontend_dist.py --check-freshness`）0 失败、e2e 103 项 2 失败 2 skip；定向补验 `test_frontend_build_wiring.py` 9 passed、`test_t028_run_gates_evidence.py` 4 passed、`npx tsc -p tsconfig.test.json --noEmit` 零错误、`npm run generate:api` 产物零差异。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 的 E2E 必需模式在新构建产物上以真实 Docker/Chrome 拓扑执行；AC-005 点名的前端真实栈 E2E（鉴权、会话、应用并重启）全部无头通过；2 项失败（t019 首帧 3.795s、Supervisor 端口恢复 None）与 2 项探针门控 skip 逐项如实登记，skip 不计 PASS。",
+  "review": "single 级独立 review（`review_general.md`）PASS。",
+  "review_scope": "ec6c6978239a7bce",
+  "pending": [],
+  "findings": []
+}

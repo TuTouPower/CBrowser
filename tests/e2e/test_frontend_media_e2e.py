@@ -124,7 +124,7 @@ async def open_session(
     page: Page, harness: FrontendAppTopologyHarness, profile_id: str
 ) -> None:
     await page.goto(
-        f"{harness.origin}/?profileId={profile_id}", wait_until="domcontentloaded"
+        f"{harness.origin}/session/{profile_id}", wait_until="domcontentloaded"
     )
     await page.wait_for_selector(IFRAME_SELECTOR, timeout=30000)
 

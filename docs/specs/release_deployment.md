@@ -4,7 +4,7 @@
 
 ## 不可变 release
 
-- 每次发布是一个不可变 release：五个运行时镜像各按当前源只构建一次并打 release 标签，Caddy 使用固定上游引用；release manifest/env 以不可变镜像 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy 全部六个镜像，并记录 compose 文件、Caddyfile、前端产物的 SHA-256 指纹与数据库迁移版本（alembic head），以及 readiness/reconcile 能力标记。
+- 每次发布是一个不可变 release：五个运行时镜像各按当前源只构建一次并打 release 标签，Caddy 使用固定上游引用；release manifest/env 以不可变镜像 ID 固定 API、Gateway、Supervisor、Browser、Stream、Caddy 全部六个镜像，并记录 compose 文件、Caddyfile、前端产物的 SHA-256 指纹与数据库迁移版本（alembic head），以及 readiness/reconcile 能力标记。t034 起基础镜像为 digest 固定的 `python:3.15-slim-trixie` / `debian:trixie-slim`（辅助阶段），Caddy 为 digest 固定的 2.x，`CADDY_REF` 默认值随之更新；Python 依赖由 `uv.lock` 单一来源按依赖组导出。
 - release 文件保存在 `config/deploy/releases/<release_id>.{env,json}`，同名 release 禁止覆盖。当前/上一 release 只经 `current_release`/`previous_release` 指针文件表示，指针只在发布或回退通过验收后原子更新；生成或部署中途失败不覆盖上一份有效 release，上一 release 的镜像保留在 daemon 中。
 - compose.yaml 的全部服务镜像只读 release 变量且无 build 块，`up` 永不触发构建。
 

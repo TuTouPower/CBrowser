@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render } from "@testing-library/react";
-import { createMemoryRouter, RouterProvider } from "react-router-dom";
+import { createMemoryRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";
@@ -23,7 +23,6 @@ const profile: ProfileResponse = {
   launch_args: [],
   extension_paths: [],
   human_preset: "default",
-  font_bundle: "none",
   allow_3p_cookies: true,
   set_google_default: true,
   capture_preview: true,
@@ -32,7 +31,6 @@ const profile: ProfileResponse = {
   portable_cookies: false,
   user_data_dir: "/data/p1",
   sort_order: 0,
-  tags: [],
   current_config_version: 1,
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",

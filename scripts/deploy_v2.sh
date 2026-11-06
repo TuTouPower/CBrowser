@@ -16,7 +16,8 @@
 #             overwrites the previous valid release.
 #   rollback  re-deploy the previous (or a named) release after checking
 #             it still offers the readiness capability and its migration
-#             version is not below the current database version; the
+#             head belongs to the current Alembic revision chain (a release
+#             from the retired 0001-0009 schema generation is refused); the
 #             same readiness verification runs before success is claimed.
 #   status    print the current/previous release ids (never secrets).
 #
@@ -48,9 +49,16 @@ DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
 RELEASES_DIR="$DEPLOY_DIR/releases"
 CURRENT_FILE="$DEPLOY_DIR/current_release"
 PREVIOUS_FILE="$DEPLOY_DIR/previous_release"
-CADDY_REF="${CBROWSER_CADDY_REF:-caddy:2.8-alpine}"
+CADDY_REF="${CBROWSER_CADDY_REF:-caddy@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3}"
 UP_WAIT_TIMEOUT="${CBROWSER_DEPLOY_DEADLINE_SEC:-600}"
 VERIFY_DEADLINE="${CBROWSER_VERIFY_DEADLINE_SEC:-300}"
+
+# t035: the single baseline Alembic revision.  A database stamped with any
+# other revision belongs to the retired 0001-0009 schema generation and must
+# be rebuilt, never upgraded in place.  Kept in sync with the API-side
+# constant in cbrowser/adapters/database/migrations.py.
+BASELINE_REVISION="b7e1c9d4a2f3"
+REBUILD_GUIDANCE="This database was created by a retired CBrowser schema generation (0001-0009). Rebuild the data directory from scratch: stop the stack, move the old data root aside, then start with an empty data directory so the baseline schema is created fresh. No in-place data migration is provided (project decision: no formal users before t035)."
 
 export CBROWSER_COMPOSE_PROJECT="$PROJECT"
 export CBROWSER_PREFIX="$PREFIX"
@@ -113,6 +121,72 @@ migration_head() {
   printf '%s' "$head"
 }
 
+current_revision_chain() {
+  # The Alembic revision ids shipped in this source tree: the current
+  # schema generation's revision chain.  A release whose migration head
+  # is absent here was built from the retired 0001-0009 chain (t035
+  # AC-002) and is not a valid rollback target.
+  local versions_dir="$ROOT/src/backend/migrations/versions" file rev
+  for file in "$versions_dir"/*.py; do
+    [ -f "$file" ] || continue
+    rev="$(sed -n 's/^revision[^=]*= "\(.*\)".*/\1/p' "$file" | head -1)"
+    [ -n "$rev" ] && printf '%s\n' "$rev"
+  done
+  return 0
+}
+
+check_database_schema_generation() {
+  # AC-002 (t035): a database stamped with a retired 0001-0009 revision
+  # must NOT be deployed or rolled back against.  Inspect it read-only
+  # (python3 sqlite3) and fail closed, printing REBUILD_GUIDANCE, before
+  # any image is built, container started, or pointer moved.  An absent
+  # database, one without an alembic_version table, or one already at the
+  # baseline revision is left for the API to create/upgrade on startup.
+  # The database file is never opened for writing here.
+  local db_path="$DATA_ROOT/cbrowser.db" rc
+  [ -f "$db_path" ] || return 0
+  set +e
+  python3 - "$db_path" "$BASELINE_REVISION" <<'PY'
+import sqlite3
+import sys
+from urllib.parse import quote
+
+db, baseline = sys.argv[1], sys.argv[2]
+conn = None
+try:
+    conn = sqlite3.connect("file:" + quote(db) + "?mode=ro", uri=True)
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name='alembic_version'"
+    ).fetchone()
+    if row is None:
+        sys.exit(0)
+    current = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+    sys.exit(3 if current is not None and current[0] != baseline else 0)
+except sqlite3.DatabaseError:
+    # Not a readable SQLite database: no stamped legacy schema to reject
+    # here; the API startup path reports the real error.
+    sys.exit(0)
+finally:
+    if conn is not None:
+        conn.close()
+PY
+  rc=$?
+  set -e
+  case "$rc" in
+    0) return 0 ;;
+    3)
+      echo "Refusing to deploy: database $db_path is stamped with a retired schema revision (expected baseline $BASELINE_REVISION)." >&2
+      echo "$REBUILD_GUIDANCE" >&2
+      return 1
+      ;;
+    *)
+      echo "Failed to inspect database schema generation at $db_path (python3 exit $rc)." >&2
+      return 1
+      ;;
+  esac
+}
+
 atomic_write() {
   # atomic_write <path> ; content on stdin
   local path="$1" tmp
@@ -163,35 +237,18 @@ verify_readiness() {
   probe_exec "$1" verify "$VERIFY_DEADLINE"
 }
 
-record_applied_migration() {
-  # The API migrates the database at startup, so any release whose stack
-  # was brought up may have raised the live database version even when
-  # the deploy afterwards failed verification and the release pointers
-  # never moved.  Record the highest migration version actually applied
-  # (monotonic); the rollback gate uses it as the database floor.
-  local release_id="$1" migration applied
-  migration="$(manifest_field "$RELEASES_DIR/$release_id.json" migration_version)"
-  [ -n "$migration" ] || return 0
-  applied="$(read_pointer "$DEPLOY_DIR/applied_migration_version")"
-  if [ -z "$applied" ] || [[ "$applied" < "$migration" ]]; then
-    printf '%s\n' "$migration" | atomic_write "$DEPLOY_DIR/applied_migration_version"
-  fi
-}
-
 deploy_up_and_verify() {
   # deploy_up_and_verify <release_id> : up --wait + readiness gate.
   local release_id="$1"
   local env_file="$RELEASES_DIR/$release_id.env"
   if ! compose_with "$env_file" up -d --no-build --wait --wait-timeout "$UP_WAIT_TIMEOUT"; then
     echo "compose up did not reach a healthy state within ${UP_WAIT_TIMEOUT}s (release $release_id)" >&2
-    record_applied_migration "$release_id"
     # Read-only per-Profile diagnostics for the failure report (single
     # readiness snapshot, no new reconcile, no polling); the deploy is a
     # failure regardless of what the probe returns here.
     probe_exec "$env_file" report || true
     return 1
   fi
-  record_applied_migration "$release_id"
   if ! verify_readiness "$env_file"; then
     echo "readiness verification failed for release $release_id; previous release remains current" >&2
     return 1
@@ -375,6 +432,7 @@ JSON
 
 cmd_deploy() {
   check_prerequisites
+  check_database_schema_generation
   ensure_internal_secrets
   mkdir -p "$DATA_ROOT"/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache/geoip}
   check_prefix_conflict
@@ -417,7 +475,10 @@ cmd_rollback() {
   # From here on, everything (conflict check, compose interpolation,
   # data root, secrets) uses the target release's recorded identity.
   load_release_identity "$target_env"
-  local current current_manifest
+  # AC-002 (t035): fail closed before anything changes when the live
+  # database belongs to the retired schema generation.
+  check_database_schema_generation
+  local current
   current="$(read_pointer "$CURRENT_FILE")"
   if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.json" ]; then
     echo "No current release recorded; nothing to roll back from." >&2
@@ -427,33 +488,29 @@ cmd_rollback() {
     echo "Rollback target '$target' is already the current release." >&2
     exit 1
   fi
-  current_manifest="$RELEASES_DIR/$current.json"
-
   # Refuse BEFORE changing anything when the target cannot be verified
-  # by the current acceptance contract, or would run migrations older
-  # than the live database (no downgrade migrations exist).
+  # by the current acceptance contract, or belongs to a different
+  # (retired) schema generation (t035 AC-002).
   if ! grep -q '"readiness": true' "$target_manifest"; then
     echo "Refusing rollback to '$target': release does not offer the readiness capability required for acceptance." >&2
     exit 1
   fi
-  local target_migration current_migration db_floor applied_migration
+  local target_migration chain
   target_migration="$(manifest_field "$target_manifest" migration_version)"
-  current_migration="$(manifest_field "$current_manifest" migration_version)"
-  if [ -z "$target_migration" ] || [ -z "$current_migration" ]; then
-    echo "Refusing rollback: migration version missing from a release manifest." >&2
+  if [ -z "$target_migration" ]; then
+    echo "Refusing rollback: migration version missing from target release manifest." >&2
     exit 1
   fi
-  # The database floor is the highest migration actually applied, which
-  # can exceed the current release's manifest when a later deploy
-  # migrated the database and then failed verification (the API migrates
-  # at startup, before any pointer moves).
-  db_floor="$current_migration"
-  applied_migration="$(read_pointer "$DEPLOY_DIR/applied_migration_version")"
-  if [ -n "$applied_migration" ] && [[ "$db_floor" < "$applied_migration" ]]; then
-    db_floor="$applied_migration"
-  fi
-  if [[ "$target_migration" < "$db_floor" ]]; then
-    echo "Refusing rollback to '$target': its migration version ($target_migration) is below the live database version ($db_floor)." >&2
+  # The rollback floor is decided by the Alembic revision chain, not by
+  # lexical string comparison.  Only a release whose migration head is a
+  # member of the shipped chain (the current schema generation, whose
+  # single head is the t035 baseline) may be a rollback target.  A release
+  # built from the retired 0001-0009 chain is refused here, before any
+  # container is started or pointer moved.
+  chain="$(current_revision_chain)"
+  if ! grep -qxF "$target_migration" <<< "$chain"; then
+    echo "Refusing rollback to '$target': its migration head '$target_migration' is not in the current Alembic revision chain (baseline $BASELINE_REVISION)." >&2
+    echo "Releases from the retired 0001-0009 schema generation cannot be rollback targets; rebuild the data directory from scratch instead." >&2
     exit 1
   fi
 

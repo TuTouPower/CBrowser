@@ -25,6 +25,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -3005,3 +3006,144 @@ async def test_p014_file_input_opens_chooser_with_uploads_bookmark(
         stop_and_rm_container(c_name)
         if dir_work.exists():
             shutil.rmtree(dir_work, ignore_errors=True)
+
+
+class _T035RecordingProxyHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        print(f"PROXY_GET {self.path}", flush=True)
+        try:
+            with urllib.request.urlopen(self.path, timeout=5.0) as resp:
+                body = resp.read()
+            self.send_response(resp.status)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:  # noqa: BLE001 - test proxy is diagnostic only
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(str(exc).encode())
+
+    def log_message(self, *args: Any) -> None:
+        return
+
+
+@pytest.mark.asyncio
+async def test_t035_proxy_outbound_and_cdp_browser_version(
+    http_server: str,
+) -> None:
+    """t035 AC-007/008/010: a proxy configured in the frozen config snapshot
+    makes browser egress traverse a local recording proxy, and the Runner
+    reports CDP ``Browser.getVersion`` fields over UDS health.  The snapshot
+    carries ``proxy_credential_revision`` and the mounted credentials file
+    must agree, so this also exercises the fail-closed credential path."""
+    if ACTIVE_TEST_NETWORK is None:
+        raise RuntimeError("Docker HTTP fixture network is not initialized")
+    run_id = uuid.uuid4().hex[:8]
+    c_name = f"cbrowser-t035-proxy-{run_id}"
+    proxy_name = f"cbrowser-t035-proxy-node-{run_id}"
+    profile_id = "profile_t035_proxy"
+    dir_work = SCRATCH_ROOT / f"t035_{run_id}"
+    runtime_dir = dir_work / "runtime"
+    profile_dir = dir_work / "profile"
+    exchange = dir_work / "exchange"
+    snap_file = dir_work / "snapshot.json"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    proxy_script = (
+        "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
+        "import urllib.request\n"
+        + inspect.getsource(_T035RecordingProxyHandler)
+        + "\nHTTPServer(('0.0.0.0', 8080), _T035RecordingProxyHandler).serve_forever()\n"
+    )
+    subprocess.run(
+        [
+            "docker", "run", "-d", "--name", proxy_name,
+            "--network", ACTIVE_TEST_NETWORK,
+            "--label", "cbrowser.task=t035",
+            "--entrypoint", "python3", IMAGE_TAG,
+            "-c", proxy_script,
+        ],
+        check=True, capture_output=True, text=True, timeout=30.0,
+    )
+    time.sleep(1.0)
+
+    create_snapshot_file(
+        snap_file, profile_id=profile_id, version=1, proxy_id="px_t035"
+    )
+    snapshot_payload = json.loads(snap_file.read_text(encoding="utf-8"))
+    snapshot_payload["proxy_credential_revision"] = 1
+    snap_file.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
+
+    creds_file = runtime_dir / "proxy_credentials.json"
+    creds_file.write_text(
+        json.dumps(
+            {
+                "scheme": "http",
+                "host": proxy_name,
+                "port": 8080,
+                "username": None,
+                "password": None,
+                "credential_revision": 1,
+                "proxy_credential_revision": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(creds_file, 0o644)
+
+    cid = run_docker_container(
+        c_name, profile_dir, runtime_dir, exchange, snap_file,
+        profile_id, f"inst_t035_{run_id}",
+    )
+    assert cid
+    try:
+        health = wait_for_uds_ready(c_name)
+        details = health.get("details") or {}
+        assert details.get("browser_product"), (
+            "AC-010: CDP Browser.getVersion product missing from UDS health"
+        )
+        assert details.get("browser_user_agent"), (
+            "AC-010: CDP Browser.getVersion userAgent missing from UDS health"
+        )
+
+        cdp = exec_uds_cdp(
+            c_name,
+            f"""
+            targets = await send_cmd(ws, 1, "Target.getTargets")
+            pages = [t for t in targets["result"]["targetInfos"] if t["type"] == "page"]
+            target_id = pages[0]["targetId"]
+            attach = await send_cmd(ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}})
+            s = attach["result"]["sessionId"]
+            await send_cmd(ws, 3, "Page.navigate", {{"url": "{http_server}/audio_test.html?freq=440"}}, session_id=s)
+            version = await send_cmd(ws, 4, "Browser.getVersion")
+            await asyncio.sleep(3.0)
+            print("RESULT:" + json.dumps({{"status": "ok", "product": version["result"]["product"], "userAgent": version["result"]["userAgent"]}}))
+        """,
+        )
+        # AC-010: the runtime fields published over UDS health are exactly
+        # the values the container's browser reports to CDP.
+        assert details["browser_product"] == cdp["product"]
+        assert details["browser_user_agent"] == cdp["userAgent"]
+
+        deadline = time.monotonic() + 30.0
+        recorded = False
+        while time.monotonic() < deadline:
+            logs = subprocess.run(
+                ["docker", "logs", proxy_name],
+                check=False, capture_output=True, text=True,
+            )
+            output = logs.stdout + logs.stderr
+            if f"PROXY_GET {http_server}/audio_test.html" in output:
+                recorded = True
+                break
+            await asyncio.sleep(0.5)
+        assert recorded, (
+            "AC-007/008: browser egress did not traverse the configured proxy"
+        )
+    except Exception:
+        save_container_failure_log(c_name, "t035_proxy_outbound")
+        raise
+    finally:
+        stop_and_rm_container(c_name)
+        stop_and_rm_container(proxy_name)
+        shutil.rmtree(dir_work, ignore_errors=True)

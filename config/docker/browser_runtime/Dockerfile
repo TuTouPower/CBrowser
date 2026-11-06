@@ -1,22 +1,29 @@
 # Independent, reproducible Browser Runtime image for CBrowser v2
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS xshm_probe_builder
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS xshm_probe_builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libx11-dev libxext-dev libc6-dev && rm -rf /var/lib/apt/lists/*
 COPY tests/fixtures/runtime_probe/test_mitshm.c /tmp/test_mitshm.c
 RUN gcc -O2 /tmp/test_mitshm.c -lX11 -lXext -o /test_mitshm
 
-FROM debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3 AS font_bundle_builder
-# Stage the two open-source WenQuanYi CJK bundles (t020). Only the .ttc
-# payloads are copied into the final image, under /opt/cbrowser-fonts which
-# is outside fontconfig's default scan paths: a profile sees a bundle only
-# when the Browser Runner generates a per-profile FONTCONFIG_FILE for it.
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS base_fonts_builder
+# Base open-source fonts (plan 6.8, six apt packages) satisfy CloakBrowser's
+# documented minimum install. They are Linux-flavoured, so they live under
+# /opt/cbrowser-base-fonts outside fontconfig's default scan paths and are
+# deliberately NOT whitelisted by the per-profile FONTCONFIG_FILE: a windows
+# or macos fingerprint Profile must never see WenQuanYi, Unifont, FreeFont,
+# IPAGothic or Loma. Only the bound platform font set is whitelisted.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    fonts-wqy-microhei fonts-wqy-zenhei && rm -rf /var/lib/apt/lists/* && \
-    mkdir -p /opt/cbrowser-fonts/wqy-microhei /opt/cbrowser-fonts/wqy-zenhei && \
-    cp /usr/share/fonts/truetype/wqy/wqy-microhei.ttc /opt/cbrowser-fonts/wqy-microhei/ && \
-    cp /usr/share/fonts/truetype/wqy/wqy-zenhei.ttc /opt/cbrowser-fonts/wqy-zenhei/
+    fonts-noto-color-emoji \
+    fonts-freefont-ttf \
+    fonts-unifont \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-tlwg-loma-otf \
+    && mkdir -p /opt/cbrowser-base-fonts \
+    && cp -a /usr/share/fonts/. /opt/cbrowser-base-fonts/ \
+    && rm -rf /var/lib/apt/lists/*
 
-FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1
@@ -98,11 +105,12 @@ ENV HOME=/home/cbrowser \
 COPY src/backend/cbrowser /app/src/backend/cbrowser
 COPY config/docker/browser_runtime/entrypoint.sh /app/entrypoint.sh
 COPY --from=xshm_probe_builder /test_mitshm /usr/local/bin/test_mitshm
-COPY --from=font_bundle_builder /opt/cbrowser-fonts /opt/cbrowser-fonts
+COPY --from=base_fonts_builder /opt/cbrowser-base-fonts /opt/cbrowser-base-fonts
 
 USER root
 RUN chmod 755 /usr/local/bin/test_mitshm /app/entrypoint.sh && \
-    chown cbrowser:cbrowser /app/entrypoint.sh
+    chown cbrowser:cbrowser /app/entrypoint.sh && \
+    chown -R cbrowser:cbrowser /opt/cbrowser-base-fonts
 
 USER cbrowser
 WORKDIR /home/cbrowser

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";
@@ -12,7 +12,6 @@ const BASE_PROFILE = {
   id: "p1",
   name: "Original",
   fingerprint_seed: 101,
-  proxy: "",
   screen_width: 1920,
   screen_height: 1080,
   gpu_family: "auto",
@@ -22,9 +21,7 @@ const BASE_PROFILE = {
   auto_launch: false,
   launch_args: [],
   extension_paths: [],
-  tags: [],
   current_config_version: 1,
-  font_bundle: "none",
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 } as unknown as ProfileResponse;
@@ -130,43 +127,6 @@ describe("ProfileDetailPage", () => {
     expect(
       (screen.getByTestId("profile-name-input") as HTMLInputElement).value,
     ).toBe("Edited locally");
-  });
-
-  it("echoes the saved font bundle and submits a changed one", async () => {
-    stub.state.profile = {
-      ...stub.state.profile,
-      font_bundle: "wqy-zenhei",
-    } as ProfileResponse;
-    renderPage();
-    const select = (await screen.findByTestId(
-      "profile-font-bundle-select",
-    )) as HTMLSelectElement;
-    expect(select.value).toBe("wqy-zenhei");
-    expect(Array.from(select.options).map((o) => o.value)).toEqual([
-      "none",
-      "wqy-microhei",
-      "wqy-zenhei",
-    ]);
-
-    fireEvent.change(select, { target: { value: "wqy-microhei" } });
-    fireEvent.submit(select.closest("form") as HTMLFormElement);
-    await waitFor(() =>
-      expect(stub.client.profiles.update).toHaveBeenCalledTimes(1),
-    );
-    const [, data] = stub.client.profiles.update.mock.calls[0] as [
-      string,
-      { font_bundle?: string },
-    ];
-    expect(data.font_bundle).toBe("wqy-microhei");
-
-    // The save invalidates the profile query; the refetched server echo
-    // drives the select.
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId("profile-font-bundle-select") as HTMLSelectElement)
-          .value,
-      ).toBe("wqy-microhei"),
-    );
   });
 
   it("saves edited fields through the update mutation", async () => {

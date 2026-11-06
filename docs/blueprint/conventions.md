@@ -6,9 +6,11 @@
 
 ## 1. 技术栈与工具链约定
 
-- **后端**：Python 3.12+，使用 `uv` 管理虚拟环境与依赖；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.0 异步/强类型语法；数据库迁移使用 Alembic。
-- **前端**：TypeScript + React 19，构建工具使用 Vite；状态管理采用 TanStack Query 5，路由采用 React Router 7；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。
-- **远程显示**：固定 Selkies 2.1.0 官方稳定发布版本，纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路。
+- **后端**：Python 3.15+，使用 `uv` 管理虚拟环境与依赖；依赖唯一锁定来源为根 `pyproject.toml` + `uv.lock`，各镜像与门禁的 requirements 由 `scripts/generate_requirements.sh` 按依赖组 `uv export` 生成，禁止手写并行依赖清单（t034）；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.1 异步/强类型语法；数据库迁移使用 Alembic。全部 Python 镜像基于 `python:3.15-slim-trixie` digest 固定，辅助阶段基于 `debian:trixie-slim` digest 固定；Caddy 基于 2.x digest 固定。
+- **本地工具版本**：`.mise.toml` 固定 Node 26.13.0 与 Python 3.15.2；门禁与镜像主次版本一致。
+- **前端**：TypeScript 5.9 + React 19.3，构建工具 Vite 8（Rolldown）；状态管理 TanStack Query 5，路由 `react-router` 8 单包（不再用 `react-router-dom`）；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。宿主构建 Node 固定 26 LTS（`.mise.toml`），`engines.node=">=26.0.0 <27"`。
+- **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions.md`「前端工具链目标版本（t033）」。
+- **远程显示**：Selkies 2.2.1 官方稳定发布版本（t043 由 2.1.0 升级，ADR 022），纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路；官方 Web 客户端由 `scripts/vendor_selkies_web.py` 按固定 wheel SHA256 解出，`config/selkies/selkies_web_sha256.txt` 由对应版本 wheel 生成。
 - **容器与部署**：生产运行平台为 Linux Docker；本地开发验证支持 macOS (OrbStack)。
 
 ## 2. schema 类型落点
@@ -43,3 +45,10 @@
 
 写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。
+
+## 6. DESIGN.md 落点与业务代码只用语义 token（t036）
+
+- 设计权威为仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式）；颜色、字体、字号、间距、圆角与组件只在其中定义。`npm run design:tokens` 用 `@google/design.md@0.4.0` 的 `lint()` 确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 变量）并入库，禁止手改产物；`design:lint` / `design:check` 为门禁。
+- 业务代码（`shared/ui/`、`app/`、`features/*` 页面与手写 `globals.css`）只用语义 token 类（`bg-surface`、`text-on-surface`、`border-outline`、`rounded-md`、`px-md` 等），禁止 Tailwind 默认调色板类与 hex / rgb / hsl / oklch 颜色字面量；由 AC-003 源码与构建产物扫描约束。生成产物 `design_tokens.css` 按设计权威含 hex，不列入业务源码扫描。
+- 根目录 `DESIGN.md` 大写属社区约定例外；其余新建普通文件与目录统一 snake_case，缩进用空格。
+- `.design_reference/` 为 gitignore 只读参考原型，与 plan / `DESIGN.md` 冲突时以后两者为准。

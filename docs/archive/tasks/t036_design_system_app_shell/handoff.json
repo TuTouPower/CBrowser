@@ -1,0 +1,16 @@
+{
+  "tid": "t036",
+  "attempt": 1,
+  "execution_id": "42776e5ceece477faa28883650e4683d",
+  "status": "done",
+  "branch": "t036_design_system_app_shell",
+  "base_sha": "95cccfc9f328290cbb13090ef960b0f22a129782",
+  "tests": "完整门禁证据 `.scratch/evidence_t036_final/manifest.json`：`contract` / `unit` / `integration` / `design_lint` / `design_check` / `design_tokens` / `frontend_test` / `frontend_build` 全绿；前端 Vitest `46 files / 248 tests passed`；`npm run build`（含 vendor Selkies、selkies IIFE、postbuild freshness）通过；`design:lint` = 0 error / 0 warning、`design:check` 通过、`design:tokens` 幂等。",
+  "blackbox": "E2E `95 passed / 5 skipped / 1 failed`。唯一失败 `test_t019_switch_and_refresh_first_frame_within_2s_host_only`（首帧 3.341s > 2s）为 t032 已登记的时序敏感遗留，定向重跑 84.65s 通过；按用户明确口径「按 t032 已登记遗留如实登记，不归因后续 task」登记，不阻断本 task 结论。定向复核另含 3 个代表用例（session dual-tab / app dual-tab SSE / media visibility）、build_wiring、auth_guard、supervisor_recovery，均通过。",
+  "review": "full 两路 `review_code.md` / `review_test.md`；结论见 `check_review_status.py` 输出与下方 Review 处置。",
+  "review_scope": "187b5cfbff2c91cc",
+  "pending": [],
+  "findings": [
+    "d034"
+  ]
+}

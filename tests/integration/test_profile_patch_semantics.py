@@ -1,4 +1,4 @@
-"""PATCH semantics: explicit null name is invalid; tags are tri-state."""
+"""PATCH semantics: explicit null name is invalid."""
 
 from __future__ import annotations
 
@@ -47,11 +47,6 @@ def _create(client: TestClient) -> str:
     return response.json()["id"]
 
 
-def _tags(client: TestClient, profile_id: str) -> list[str]:
-    body = client.get(f"/api/v1/profiles/{profile_id}").json()
-    return [tag["tag"] for tag in body["tags"]]
-
-
 def test_explicit_null_name_returns_422_without_mutation(api_client) -> None:
     profile_id = _create(api_client)
     response = api_client.patch(
@@ -61,49 +56,3 @@ def test_explicit_null_name_returns_422_without_mutation(api_client) -> None:
     assert api_client.get(f"/api/v1/profiles/{profile_id}").json()["name"] == (
         "patch_profile"
     )
-
-
-def test_tags_tristate_absent_null_and_empty(api_client) -> None:
-    profile_id = _create(api_client)
-    assert _tags(api_client, profile_id) == []
-
-    replace = api_client.patch(
-        f"/api/v1/profiles/{profile_id}",
-        json={"tags": [{"tag": "finance", "color": "#123456"}]},
-    )
-    assert replace.status_code == 200
-    assert _tags(api_client, profile_id) == ["finance"]
-
-    # Field absent: other updates must preserve existing tags.
-    assert (
-        api_client.patch(
-            f"/api/v1/profiles/{profile_id}", json={"notes": "unchanged tags"}
-        ).status_code
-        == 200
-    )
-    assert _tags(api_client, profile_id) == ["finance"]
-
-    # Explicit null clears.
-    assert (
-        api_client.patch(
-            f"/api/v1/profiles/{profile_id}", json={"tags": None}
-        ).status_code
-        == 200
-    )
-    assert _tags(api_client, profile_id) == []
-
-    assert (
-        api_client.patch(
-            f"/api/v1/profiles/{profile_id}",
-            json={"tags": [{"tag": "work"}]},
-        ).status_code
-        == 200
-    )
-    # Empty array also clears.
-    assert (
-        api_client.patch(
-            f"/api/v1/profiles/{profile_id}", json={"tags": []}
-        ).status_code
-        == 200
-    )
-    assert _tags(api_client, profile_id) == []

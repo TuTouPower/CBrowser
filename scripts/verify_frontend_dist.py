@@ -51,10 +51,9 @@ REQUIRED_DIRS = ("src",)
 CONFIG_INPUTS = (
     "vite.config.ts",
     "vite.selkies.config.ts",
-    "tailwind.config.ts",
-    "postcss.config.js",
     "tsconfig.json",
 )
+REPO_INPUTS = ("DESIGN.md",)
 SOURCE_DIRS = ("src", "public")
 ENV_VALUE_ALLOWLIST: tuple[str, ...] = ()
 STAMP_VERSION = 2
@@ -85,6 +84,10 @@ def frontend_input_manifest(
         path = frontend_dir / name
         if path.is_file():
             files[name] = _file_sha256(path)
+    for name in REPO_INPUTS:
+        path = REPO_ROOT / name
+        if path.is_file():
+            files[f"repo:{name}"] = _file_sha256(path)
     for dirname in REQUIRED_DIRS:
         if not (frontend_dir / dirname).is_dir():
             raise RuntimeError(
@@ -217,7 +220,7 @@ def verify_frontend_dist(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in (dist_dir / "assets").glob("*.css")
     )
-    for utility in (".bg-primary", ".text-primary-foreground"):
+    for utility in (".bg-primary", "--color-surface"):
         if utility not in css_text:
             raise RuntimeError(f"Generated CSS is missing {utility}")
     if check_freshness:

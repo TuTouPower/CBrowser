@@ -27,6 +27,24 @@ const DEFAULT_ICE_DISCONNECT_GRACE_MS = 5000;
 const DEFAULT_TRANSPORT_RECOVERY_WINDOW_MS = 30000;
 const TRANSPORT_RECOVERY_POLL_MS = 2000;
 
+// A diagnostic/terminal stage means the runtime is not running (or the
+// session has ended), so the host has already rendered its recovery UI.
+// The iframe client can still open and close a signaling WebSocket after
+// that: Selkies 2.2.1 defers initialization until its own core module
+// loads, which under load happens after the host settles on the diagnostic
+// stage.  Such transport events are expected fallout, not a live-session
+// disconnect, and must not drag the stage back to "reconnecting" (which
+// unmounts the diagnostic overlay and its reconnect/status actions).
+const DIAGNOSTIC_STAGES: SessionStage[] = [
+  "runtime_not_ready",
+  "signaling_failed",
+  "web_locks_unavailable",
+  "ice_failed",
+  "media_no_frames",
+  "error",
+  "stopping",
+];
+
 export function useBrowserSession(
   profileId: string,
   iframeRef: React.RefObject<HTMLIFrameElement | null>,
@@ -253,6 +271,15 @@ export function useBrowserSession(
       if (!event.data || typeof event.data !== "object") return;
       const { type, connectionState, iceConnectionState, signalingState, code } =
         event.data;
+
+      if (
+        DIAGNOSTIC_STAGES.includes(stageRef.current) &&
+        (type === "CBROWSER_WS_CLOSE" ||
+          type === "CBROWSER_PC_STATE" ||
+          type === "CBROWSER_LIFECYCLE_STALE")
+      ) {
+        return;
+      }
 
       if (type === "CBROWSER_PC_STATE") {
         setDiagData((prev) => ({

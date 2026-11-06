@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, type FormEvent } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router";
 import { ArrowLeft, Copy, Cpu, FolderArchive, RotateCcw, Trash2 } from "lucide-react";
 import {
   scopeMutationToProfile,
@@ -15,9 +15,6 @@ import {
 } from "./useProfilesQuery";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProfileUpdateRequest } from "../../shared/api/types";
-
-type FontBundle = NonNullable<ProfileUpdateRequest["font_bundle"]>;
 
 export function ProfileDetailPage() {
   const { profileId } = useParams<{ profileId: string }>();
@@ -55,11 +52,8 @@ export function ProfileDetailPage() {
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [name, setName] = useState("");
-  const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
-  const [fontBundle, setFontBundle] = useState<FontBundle>("none");
-  const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const dirtyFields = useRef<Set<string>>(new Set());
@@ -82,20 +76,9 @@ export function ProfileDetailPage() {
     if (!profile) return;
     const dirty = dirtyFields.current;
     if (!dirty.has("name")) setName(profile.name || "");
-    if (!dirty.has("proxy")) setProxy(profile.proxy || "");
     if (!dirty.has("geometry")) {
       setScreenWidth(profile.screen_width || 1920);
       setScreenHeight(profile.screen_height || 1080);
-    }
-    if (!dirty.has("fontBundle")) {
-      setFontBundle((profile.font_bundle as FontBundle) || "none");
-    }
-    if (!dirty.has("tags")) {
-      setTagsInput(
-        profile.tags
-          ? profile.tags.map((t) => (typeof t === "string" ? t : t.tag)).join(", ")
-          : "",
-      );
     }
   }, [profile]);
 
@@ -117,7 +100,7 @@ export function ProfileDetailPage() {
         includeBrowserState,
       });
       if (!isStillOnProfile(targetId)) return;
-      navigate(`/profiles/${clone.id}`);
+      navigate(`/profiles/${clone.id}/config`);
     } catch (err: unknown) {
       if (!isStillOnProfile(targetId)) return;
       setError(err instanceof Error ? err.message : t("failedToDuplicateProfile"));
@@ -188,21 +171,12 @@ export function ProfileDetailPage() {
     setSuccess(false);
 
     try {
-      const tags = tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((t) => ({ tag: t }));
-
       await updateMutation.mutateAsync({
         id: targetId,
         data: {
           name: name.trim(),
-          proxy: proxy.trim() || null,
           screen_width: screenWidth,
           screen_height: screenHeight,
-          font_bundle: fontBundle,
-          tags,
         },
       });
 
@@ -258,7 +232,7 @@ export function ProfileDetailPage() {
     <div data-testid="profile-detail-page" className="p-8 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <Link
-          to={`/?profileId=${profile.id}`}
+          to={`/session/${profile.id}`}
           className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -274,7 +248,7 @@ export function ProfileDetailPage() {
             {t("files")}
           </Link>
           <Link
-            to={`/automation/${profile.id}`}
+            to={`/profiles/${profile.id}/automation`}
             className="inline-flex items-center gap-1 px-3 py-1.5 rounded text-xs bg-surface-2 hover:bg-surface-3 text-gray-300 border border-border"
           >
             <Cpu className="h-3.5 w-3.5" />
@@ -554,19 +528,6 @@ export function ProfileDetailPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("proxyUrl")}
-            </label>
-            <input
-              type="text"
-              value={proxy}
-              onChange={(e) => { markDirty("proxy"); setProxy(e.target.value); }}
-              placeholder="http://user:pass@host:port"
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
@@ -592,35 +553,6 @@ export function ProfileDetailPage() {
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("fontBundle")}
-            </label>
-            <select
-              data-testid="profile-font-bundle-select"
-              value={fontBundle}
-              onChange={(e) => { markDirty("fontBundle"); setFontBundle(e.target.value as FontBundle); }}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            >
-              <option value="none">{t("fontBundleNone")}</option>
-              <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
-              <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("tagsCommaSeparated")}
-            </label>
-            <input
-              data-testid="profile-tags-input"
-              type="text"
-              value={tagsInput}
-              onChange={(e) => { markDirty("tags"); setTagsInput(e.target.value); }}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
           </div>
 
           <div className="pt-2 flex justify-end gap-3">

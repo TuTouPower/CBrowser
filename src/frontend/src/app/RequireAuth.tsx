@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router";
 import { useAuth } from "../features/auth/useAuth";
 import { loginRedirectPath } from "../features/auth/redirect";
 import { useI18n } from "../i18n";

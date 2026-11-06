@@ -16,6 +16,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.domain.runtime_policy import ExitReason
@@ -24,7 +25,10 @@ from cloakbrowser.browser import seed_widevine_hint
 from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
-from .fontconfig import prepare_profile_fontconfig
+from .fontconfig import (
+    profile_font_dirs,
+    prepare_profile_fontconfig,
+)
 from .profile_defaults import (
     SEARCH_DEFAULTS_RETRY_FILE,
     run_search_defaults_initialization,
@@ -35,6 +39,83 @@ from cbrowser.launch_args import validate_launch_args
 from .security import validate_runtime_id
 
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
+
+
+PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
+PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
+_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
+
+
+class ProxyCredentialsChangedError(RuntimeError):
+    """Fail closed when runtime proxy credentials are missing or stale.
+
+    The message is a fixed, non-sensitive reason string: the password is
+    never embedded in an exception, log line, or reported runtime state.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(PROXY_CREDENTIALS_CHANGED)
+
+
+def build_proxy_server_arg(credentials: dict[str, Any]) -> str:
+    """Build ``--proxy-server=...`` from validated proxy credentials.
+
+    Chromium accepts inline credentials in the proxy URL (verified for
+    authenticated SOCKS5 in finding d031). Credentials are percent-encoded so
+    special characters cannot break URL parsing. The secret is only ever used
+    inside the returned launch argument, never in an error or log message.
+    """
+    if not isinstance(credentials, dict):
+        raise ProxyCredentialsChangedError()
+    scheme = credentials.get("scheme")
+    host = credentials.get("host")
+    port = credentials.get("port")
+    if scheme not in _PROXY_SCHEMES or not isinstance(host, str) or not host:
+        raise ProxyCredentialsChangedError()
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ProxyCredentialsChangedError()
+    username = credentials.get("username")
+    password = credentials.get("password")
+    if username is not None and not isinstance(username, str):
+        raise ProxyCredentialsChangedError()
+    if password is not None and not isinstance(password, str):
+        raise ProxyCredentialsChangedError()
+    if username is None and password is not None:
+        raise ProxyCredentialsChangedError()
+    userinfo = ""
+    if username is not None:
+        encoded_user = quote(username, safe="")
+        if password is not None:
+            userinfo = f"{encoded_user}:{quote(password, safe='')}@"
+        else:
+            userinfo = f"{encoded_user}@"
+    netloc_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+    return f"--proxy-server={scheme}://{userinfo}{netloc_host}:{port}"
+
+
+def resolve_proxy_server_arg(
+    config: ProfileConfig,
+    snapshot: ConfigVersionSnapshot,
+    credentials_path: Path,
+) -> str | None:
+    """Return the proxy launch arg, or fail closed on missing/stale credentials.
+
+    A profile without a proxy id gets no proxy argument. Otherwise the mounted
+    credentials file must exist and its revision must match the frozen revision
+    in the bound config snapshot; any drift is a fail-closed
+    ``proxy_credentials_changed`` error.
+    """
+    if not config.proxy_id:
+        return None
+    try:
+        credentials = json.loads(credentials_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raise ProxyCredentialsChangedError() from None
+    if not isinstance(credentials, dict):
+        raise ProxyCredentialsChangedError()
+    if credentials.get("credential_revision") != snapshot.proxy_credential_revision:
+        raise ProxyCredentialsChangedError()
+    return build_proxy_server_arg(credentials)
 
 
 def load_config_snapshot(
@@ -424,6 +505,34 @@ class BrowserRunner:
         """Second launch-argument gate applied immediately before launch."""
         return validate_launch_args(args)
 
+    async def _resolve_browser_version(self) -> tuple[str | None, str | None]:
+        """Read CDP ``Browser.getVersion`` product and userAgent (AC-010).
+
+        Once the persistent context is up, a Playwright CDP session can issue
+        the browser-level command. This is observational only: any failure
+        leaves both fields unset instead of blocking browser readiness.
+        """
+        try:
+            context = self.browser_context
+            pages = list(context.pages)
+            page = pages[0] if pages else await context.new_page()
+            session = await context.new_cdp_session(page)
+            try:
+                info = await session.send("Browser.getVersion")
+            finally:
+                await session.detach()
+            product = info.get("product")
+            user_agent = info.get("userAgent")
+            return (
+                product if isinstance(product, str) else None,
+                user_agent if isinstance(user_agent, str) else None,
+            )
+        except Exception as exc:  # noqa: BLE001 - version observation is best-effort
+            logger.warning(
+                "Browser.getVersion unavailable (%s)", type(exc).__name__
+            )
+            return None, None
+
     async def start(self) -> None:
         """Initialize all subsystems and launch CloakBrowser."""
         cfg = self.profile_config
@@ -445,6 +554,15 @@ class BrowserRunner:
                 return
             raise RuntimeError("Runtime instance is already initialized")
 
+        # Resolve proxy credentials before starting any subsystem. A missing
+        # file or a stale credential revision fails closed without launching
+        # the browser (AC-007 / AC-008).
+        proxy_arg = resolve_proxy_server_arg(
+            cfg,
+            self.snapshot,
+            self.config_snapshot_path.parent / PROXY_CREDENTIALS_FILENAME,
+        )
+
         chrome_bin = self.resolve_engine_binary()
         self.event_storage.save_state(
             RuntimeStateRecord(
@@ -459,9 +577,10 @@ class BrowserRunner:
 
         self.user_data_dir.mkdir(parents=True, exist_ok=True)
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.fontconfig_path = prepare_profile_fontconfig(
-            self.run_dir, cfg.font_bundle
+        font_dirs = profile_font_dirs(
+            cfg.fingerprint_platform, cfg.font_set_id
         )
+        self.fontconfig_path = prepare_profile_fontconfig(self.run_dir, font_dirs)
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -503,7 +622,7 @@ class BrowserRunner:
             "--remote-debugging-port=0",
             "--remote-debugging-address=127.0.0.1",
             "--autoplay-policy=no-user-gesture-required",
-            "--fingerprint-platform=windows",
+            f"--fingerprint-platform={cfg.fingerprint_platform}",
             f"--fingerprint-screen-width={width}",
             f"--fingerprint-screen-height={height}",
             # GTK is present only for the file chooser; its IME reads a stale
@@ -529,6 +648,8 @@ class BrowserRunner:
             extra_args.append("--restore-last-session")
 
         extra_args.extend(safe_user_args)
+        if proxy_arg is not None:
+            extra_args.append(proxy_arg)
 
         logger.info(
             "Launching CloakBrowser (profile=%s, instance=%s)...",
@@ -547,7 +668,6 @@ class BrowserRunner:
             self.browser_context = await launch_persistent_context_async(
                 user_data_dir=str(self.user_data_dir),
                 headless=False,
-                proxy=cfg.proxy,
                 args=extra_args,
                 timezone=cfg.timezone,
                 locale=cfg.locale,
@@ -619,6 +739,8 @@ class BrowserRunner:
         if not self.browser_ws_url:
             raise RuntimeError("Failed to obtain webSocketDebuggerUrl from Chrome")
 
+        browser_product, browser_user_agent = await self._resolve_browser_version()
+
         await self._configure_window(width, height)
         # Default-search setup is best-effort (D1=B): a failure or timeout is
         # recorded as an independent status and never blocks browser startup.
@@ -645,6 +767,8 @@ class BrowserRunner:
             "browser_pid": self.chrome_pid,
             "runner_pid": os.getpid(),
             "engine_build": self.engine_build or self.browser_version,
+            "browser_product": browser_product,
+            "browser_user_agent": browser_user_agent,
         }
         self.event_storage.save_state(
             RuntimeStateRecord(
@@ -983,6 +1107,9 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except ProxyCredentialsChangedError:
+        logger.error("Browser Runner refused to launch: proxy_credentials_changed")
+        raise SystemExit(1) from None
     except Exception as exc:  # noqa: BLE001 - CLI top-level exception handler redacts credentials and exits status 1
         # SDK exceptions can embed launch arguments and proxy credentials.
         logger.error("Browser Runner failed (%s)", type(exc).__name__)

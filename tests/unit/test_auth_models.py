@@ -1,4 +1,10 @@
-"""Unit tests for auth database models and migration 0002_auth."""
+"""Unit tests for auth database models on the t035 baseline schema.
+
+t035 (AC-001/AC-002): the 0001-0009 chain was collapsed into a single
+baseline revision.  The old "migration 0002_auth" naming is removed; no
+assertion here hardcoded a retired revision id, so these tests are kept
+verbatim (they exercise ORM writes against an empty DB upgraded to head).
+"""
 
 from __future__ import annotations
 
@@ -21,7 +27,7 @@ from sqlalchemy.exc import IntegrityError
 
 
 @pytest.mark.asyncio
-async def test_migration_0002_creates_auth_tables(tmp_path: Path):
+async def test_baseline_creates_auth_tables(tmp_path: Path):
     db_file = tmp_path / "auth_migration_test.db"
     run_database_migrations(db_file)
 

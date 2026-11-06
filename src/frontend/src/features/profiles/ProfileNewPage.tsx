@@ -1,15 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { useCreateProfileMutation } from "./useProfilesQuery";
-import {
-  DEFAULT_PROFILE_CREATE_VALUES,
-  type ProfileCreateRequest,
-} from "../../shared/api/types";
+import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-
-type FontBundle = NonNullable<ProfileCreateRequest["font_bundle"]>;
 
 export function ProfileNewPage() {
   const { t } = useI18n();
@@ -17,11 +12,8 @@ export function ProfileNewPage() {
   const createMutation = useCreateProfileMutation(useApiClient());
 
   const [name, setName] = useState("");
-  const [proxy, setProxy] = useState("");
   const [screenWidth, setScreenWidth] = useState(1920);
   const [screenHeight, setScreenHeight] = useState(1080);
-  const [fontBundle, setFontBundle] = useState<FontBundle>("none");
-  const [tagsInput, setTagsInput] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
@@ -30,23 +22,14 @@ export function ProfileNewPage() {
 
     setError(null);
     try {
-      const tags = tagsInput
-        .split(",")
-        .map((tag) => tag.trim())
-        .filter(Boolean)
-        .map((t) => ({ tag: t }));
-
       const created = await createMutation.mutateAsync({
         ...DEFAULT_PROFILE_CREATE_VALUES,
         name: name.trim(),
-        proxy: proxy.trim() || null,
         screen_width: screenWidth,
         screen_height: screenHeight,
-        font_bundle: fontBundle,
-        tags,
       });
 
-      navigate(`/?profileId=${created.id}`);
+      navigate(`/session/${created.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("failedToCreateProfile"));
     }
@@ -87,19 +70,6 @@ export function ProfileNewPage() {
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("proxyUrlOptional")}
-            </label>
-            <input
-              type="text"
-              value={proxy}
-              onChange={(e) => setProxy(e.target.value)}
-              placeholder="http://user:pass@host:port"
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
-          </div>
-
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1.5">
@@ -125,36 +95,6 @@ export function ProfileNewPage() {
                 className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("fontBundle")}
-            </label>
-            <select
-              data-testid="profile-font-bundle-select"
-              value={fontBundle}
-              onChange={(e) => setFontBundle(e.target.value as FontBundle)}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            >
-              <option value="none">{t("fontBundleNone")}</option>
-              <option value="wqy-microhei">{t("fontBundleMicroHei")}</option>
-              <option value="wqy-zenhei">{t("fontBundleZenHei")}</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("tagsCommaSeparated")}
-            </label>
-            <input
-              data-testid="profile-tags-input"
-              type="text"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              placeholder={t("tagsPlaceholder")}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 focus:outline-none focus:border-primary"
-            />
           </div>
 
           <div className="pt-2 flex justify-end gap-3">

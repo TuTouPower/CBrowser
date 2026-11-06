@@ -22,7 +22,7 @@ def generate_fingerprint_seed() -> int:
 DesiredState = Literal["stopped", "running"]
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
 RuntimeEventType = Literal["exit", "heartbeat", "lifecycle"]
-FontBundle = Literal["none", "wqy-microhei", "wqy-zenhei"]
+FingerprintPlatform = Literal["windows", "macos"]
 
 
 class ErrorResponse(BaseModel):
@@ -46,10 +46,99 @@ class ValidationErrorResponse(BaseModel):
     retryable: bool = False
 
 
-class Tag(BaseModel):
+GROUP_COLORS = Literal[
+    "slate", "blue", "teal", "green", "amber", "orange", "red", "violet"
+]
+PROXY_SCHEMES = Literal["http", "https", "socks5"]
+
+
+class GroupResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    tag: str = Field(min_length=1, max_length=64)
-    color: str | None = Field(default=None, max_length=32)
+    id: str
+    name: str
+    color: GROUP_COLORS
+    sort_order: int = 0
+    created_at: str
+    updated_at: str
+
+
+class GroupCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=64)
+    color: GROUP_COLORS = "slate"
+    sort_order: int = 0
+
+
+class GroupUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1, max_length=64)
+    color: GROUP_COLORS | None = None
+    sort_order: int | None = None
+
+
+class GroupReorderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ordered_ids: list[str]
+
+
+class ProxyResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    scheme: PROXY_SCHEMES
+    host: str
+    port: int
+    username: str | None = None
+    has_password: bool = False
+    credential_revision: int = 1
+    country_code: str | None = None
+    region_label: str | None = None
+    notes: str | None = None
+    used_by_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class ProxyCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=255)
+    scheme: PROXY_SCHEMES
+    host: str = Field(min_length=1, max_length=512)
+    port: int = Field(ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = None
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    region_label: str | None = Field(default=None, max_length=255)
+    notes: str | None = None
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, v: str | None) -> str | None:
+        return v.upper() if v else v
+
+
+class ProxyUpdateRequest(BaseModel):
+    """PATCH semantics: ``password`` omitted = unchanged, null = clear,
+    string = set.  All other fields are optional tri-state fields."""
+
+    model_config = ConfigDict(extra="forbid")
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    scheme: PROXY_SCHEMES | None = None
+    host: str | None = Field(default=None, min_length=1, max_length=512)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = None
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    region_label: str | None = None
+    notes: str | None = None
+
+    @field_validator("country_code")
+    @classmethod
+    def normalize_country_code(cls, v: str | None) -> str | None:
+        return v.upper() if v else v
+
+    def password_was_supplied(self) -> bool:
+        return "password" in self.model_fields_set
 
 
 class ProfileConfig(BaseModel):
@@ -57,7 +146,8 @@ class ProfileConfig(BaseModel):
 
     name: str = Field(default="Default Profile", min_length=1, max_length=255)
     fingerprint_seed: int = Field(default_factory=generate_fingerprint_seed)
-    proxy: str | None = Field(default=None, max_length=512)
+    group_id: str | None = None
+    proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
     locale: str | None = Field(default=None, max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
@@ -69,7 +159,8 @@ class ProfileConfig(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle = "none"
+    fingerprint_platform: FingerprintPlatform = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -87,13 +178,6 @@ class ProfileConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Profile name cannot be blank")
         return v.strip()
-
-    @field_validator("font_bundle", mode="before")
-    @classmethod
-    def validate_font_bundle(cls, v: Any) -> Any:
-        if v is None:
-            raise ValueError("font_bundle cannot be null")
-        return v
 
     @field_validator("launch_args", "extension_paths", mode="before")
     @classmethod
@@ -117,7 +201,6 @@ class ProfileConfig(BaseModel):
 class Profile(BaseModel):
     id: str
     config: ProfileConfig
-    tags: list[Tag] = Field(default_factory=list)
     user_data_dir: str
     sort_order: int = 0
     current_config_version: int = 1
@@ -130,7 +213,7 @@ class ConfigVersionSnapshot(BaseModel):
     profile_id: str
     version: int
     config: dict[str, Any]
-    tags: list[Tag] = Field(default_factory=list)
+    proxy_credential_revision: int | None = None
     created_at: str
 
 
@@ -143,6 +226,10 @@ class ProfileRuntime(BaseModel):
     failure_count: int = 0
     restart_blocked: bool = False
     last_exit_event_id: str | None = None
+    last_started_at: str | None = None
+    last_stopped_at: str | None = None
+    browser_product: str | None = None
+    browser_user_agent: str | None = None
     updated_at: str
 
 
@@ -272,7 +359,8 @@ class ProfileCreateRequest(BaseModel):
 
     name: str = Field(min_length=1, max_length=255)
     fingerprint_seed: int | None = None
-    proxy: str | None = Field(default=None, max_length=512)
+    group_id: str | None = None
+    proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
     locale: str | None = Field(default=None, max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
@@ -284,7 +372,8 @@ class ProfileCreateRequest(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle = "none"
+    fingerprint_platform: FingerprintPlatform = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -295,7 +384,6 @@ class ProfileCreateRequest(BaseModel):
     portable_cookies: bool = False
     notes: str | None = None
     sort_order: int = 0
-    tags: list[Tag] | None = None
 
     @field_validator("name")
     @classmethod
@@ -325,7 +413,8 @@ class ProfileUpdateRequest(BaseModel):
         return None if v is None else validate_launch_args(v)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     fingerprint_seed: int | None = None
-    proxy: str | None = Field(default=None, max_length=512)
+    group_id: str | None = None
+    proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
     locale: str | None = Field(default=None, max_length=64)
     screen_width: int | None = Field(default=None, ge=100, le=10000)
@@ -337,7 +426,8 @@ class ProfileUpdateRequest(BaseModel):
     clipboard_sync: bool | None = None
     auto_launch: bool | None = None
     color_scheme: Literal["light", "dark", "no-preference"] | None = None
-    font_bundle: FontBundle | None = None
+    fingerprint_platform: FingerprintPlatform | None = None
+    font_set_id: str | None = None
     launch_args: list[str] | None = None
     extension_paths: list[str] | None = None
     allow_3p_cookies: bool | None = None
@@ -348,7 +438,6 @@ class ProfileUpdateRequest(BaseModel):
     portable_cookies: bool | None = None
     notes: str | None = None
     sort_order: int | None = None
-    tags: list[Tag] | None = None
 
     @field_validator("name", mode="before")
     @classmethod
@@ -371,13 +460,6 @@ class ProfileUpdateRequest(BaseModel):
             raise ValueError("gpu_family cannot be null")
         return value
 
-    @field_validator("font_bundle", mode="before")
-    @classmethod
-    def reject_null_font_bundle(cls, value: object) -> object:
-        if value is None:
-            raise ValueError("font_bundle cannot be null")
-        return value
-
     @field_validator("screen_width", "screen_height", mode="before")
     @classmethod
     def reject_null_dimensions(cls, value: object) -> object:
@@ -390,7 +472,8 @@ class ProfileResponse(BaseModel):
     id: str
     name: str
     fingerprint_seed: int
-    proxy: str | None = None
+    group_id: str | None = None
+    proxy_id: str | None = None
     timezone: str | None = None
     locale: str | None = None
     screen_width: int = 1920
@@ -402,7 +485,8 @@ class ProfileResponse(BaseModel):
     clipboard_sync: bool = True
     auto_launch: bool = False
     color_scheme: str | None = None
-    font_bundle: str = "none"
+    fingerprint_platform: str = "windows"
+    font_set_id: str | None = None
     launch_args: list[str] = Field(default_factory=list)
     extension_paths: list[str] = Field(default_factory=list)
     allow_3p_cookies: bool = True
@@ -414,7 +498,6 @@ class ProfileResponse(BaseModel):
     notes: str | None = None
     user_data_dir: str
     sort_order: int = 0
-    tags: list[Tag] = Field(default_factory=list)
     current_config_version: int = 1
     created_at: str
     updated_at: str
@@ -426,7 +509,8 @@ class ProfileResponse(BaseModel):
             id=p.id,
             name=cfg.name,
             fingerprint_seed=cfg.fingerprint_seed,
-            proxy=cfg.proxy,
+            group_id=cfg.group_id,
+            proxy_id=cfg.proxy_id,
             timezone=cfg.timezone,
             locale=cfg.locale,
             screen_width=cfg.screen_width,
@@ -438,7 +522,8 @@ class ProfileResponse(BaseModel):
             clipboard_sync=cfg.clipboard_sync,
             auto_launch=cfg.auto_launch,
             color_scheme=cfg.color_scheme,
-            font_bundle=cfg.font_bundle,
+            fingerprint_platform=cfg.fingerprint_platform,
+            font_set_id=cfg.font_set_id,
             launch_args=cfg.launch_args,
             extension_paths=cfg.extension_paths,
             allow_3p_cookies=cfg.allow_3p_cookies,
@@ -450,7 +535,6 @@ class ProfileResponse(BaseModel):
             notes=cfg.notes,
             user_data_dir=p.user_data_dir,
             sort_order=p.sort_order,
-            tags=p.tags,
             current_config_version=p.current_config_version,
             created_at=p.created_at,
             updated_at=p.updated_at,
@@ -462,7 +546,6 @@ class ConfigVersionResponse(BaseModel):
     profile_id: str
     version: int
     config: dict[str, Any]
-    tags: list[Tag] = Field(default_factory=list)
     created_at: str
 
 
@@ -608,6 +691,12 @@ class ProfileRuntimeResponse(BaseModel):
     failure_count: int
     restart_blocked: bool
     last_exit_event_id: str | None
+    last_started_at: str | None = None
+    last_stopped_at: str | None = None
+    browser_product: str | None = None
+    browser_user_agent: str | None = None
+    font_set_id: str | None = None
+    missing_fonts: list[str] = Field(default_factory=list)
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None
@@ -622,6 +711,12 @@ class ProfileRuntimeStatusEvent(BaseModel):
     runtime_instance_id: str | None = None
     failure_count: int = 0
     restart_blocked: bool = False
+    last_started_at: str | None = None
+    last_stopped_at: str | None = None
+    browser_product: str | None = None
+    browser_user_agent: str | None = None
+    font_set_id: str | None = None
+    missing_fonts: list[str] = Field(default_factory=list)
     last_coordinator_error: str | None = None
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None
@@ -655,6 +750,8 @@ class RuntimeObservedReportRequest(BaseModel):
     observed_state: ObservedState
     config_version: int | None = None
     reason: str | None = Field(default=None, max_length=64)
+    browser_product: str | None = Field(default=None, max_length=255)
+    browser_user_agent: str | None = None
 
 
 class RuntimeDesiredStateRequest(BaseModel):

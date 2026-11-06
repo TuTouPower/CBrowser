@@ -8,9 +8,6 @@
   "paths": {
     "/api/v1/health": {
       "get": {
-        "tags": [
-          "v1"
-        ],
         "summary": "Health Check",
         "operationId": "health_check_api_v1_health_get",
         "responses": {
@@ -57,9 +54,6 @@
     },
     "/api/v1/events": {
       "get": {
-        "tags": [
-          "v1"
-        ],
         "summary": "Subscribe Runtime Events",
         "operationId": "subscribe_runtime_events_api_v1_events_get",
         "parameters": [
@@ -158,7 +152,7 @@
     "/api/v1/profiles": {
       "post": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Create Profile",
         "operationId": "create_profile_api_v1_profiles_post",
@@ -293,7 +287,7 @@
       },
       "get": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "List Profiles",
         "operationId": "list_profiles_api_v1_profiles_get",
@@ -353,7 +347,7 @@
     "/api/v1/profiles/{profile_id}": {
       "get": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Get Profile",
         "operationId": "get_profile_api_v1_profiles__profile_id__get",
@@ -438,7 +432,7 @@
       },
       "patch": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Update Profile",
         "operationId": "update_profile_api_v1_profiles__profile_id__patch",
@@ -592,7 +586,7 @@
       },
       "put": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Update Profile",
         "operationId": "update_profile_api_v1_profiles__profile_id__put",
@@ -746,7 +740,7 @@
       },
       "delete": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Delete Profile",
         "operationId": "delete_profile_api_v1_profiles__profile_id__delete",
@@ -827,7 +821,7 @@
     "/api/v1/profiles/{profile_id}/duplicate": {
       "post": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Duplicate Profile",
         "operationId": "duplicate_profile_api_v1_profiles__profile_id__duplicate_post",
@@ -993,7 +987,7 @@
     "/api/v1/profiles/{profile_id}/reset": {
       "post": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Reset Profile",
         "operationId": "reset_profile_api_v1_profiles__profile_id__reset_post",
@@ -1159,7 +1153,7 @@
     "/api/v1/profiles/{profile_id}/versions": {
       "get": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "List Versions",
         "operationId": "list_versions_api_v1_profiles__profile_id__versions_get",
@@ -1250,7 +1244,7 @@
     "/api/v1/profiles/{profile_id}/versions/{version}": {
       "get": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Get Version",
         "operationId": "get_version_api_v1_profiles__profile_id__versions__version__get",
@@ -1346,7 +1340,7 @@
     "/api/v1/profiles/{profile_id}/runtime": {
       "get": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Get Profile Runtime",
         "operationId": "get_profile_runtime_api_v1_profiles__profile_id__runtime_get",
@@ -1433,7 +1427,7 @@
     "/api/v1/profiles/{profile_id}/runtime/search-defaults/retry": {
       "post": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Retry Profile Search Defaults",
         "operationId": "retry_profile_search_defaults_api_v1_profiles__profile_id__runtime_search_defaults_retry_post",
@@ -1547,7 +1541,7 @@
     "/api/v1/profiles/{profile_id}/runtime/desired-state": {
       "patch": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Set Desired State",
         "operationId": "set_desired_state_api_v1_profiles__profile_id__runtime_desired_state_patch",
@@ -1703,7 +1697,7 @@
     "/api/v1/profiles/{profile_id}/stop": {
       "post": {
         "tags": [
-          "v1"
+          "profiles"
         ],
         "summary": "Stop Profile",
         "operationId": "stop_profile_api_v1_profiles__profile_id__stop_post",
@@ -1842,6 +1836,856 @@
           {
             "sessionCookie": [],
             "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/groups": {
+      "get": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "List Groups",
+        "operationId": "list_groups_api_v1_groups_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GroupResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Groups Api V1 Groups Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Create Group",
+        "operationId": "create_group_api_v1_groups_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/groups/reorder": {
+      "post": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Reorder Groups",
+        "operationId": "reorder_groups_api_v1_groups_reorder_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupReorderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GroupResponse"
+                  },
+                  "type": "array",
+                  "title": "Response Reorder Groups Api V1 Groups Reorder Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/groups/{group_id}": {
+      "patch": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Update Group",
+        "operationId": "update_group_api_v1_groups__group_id__patch",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "groups"
+        ],
+        "summary": "Delete Group",
+        "operationId": "delete_group_api_v1_groups__group_id__delete",
+        "parameters": [
+          {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Group Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/proxies": {
+      "get": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "List Proxies",
+        "operationId": "list_proxies_api_v1_proxies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ProxyResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Proxies Api V1 Proxies Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Create Proxy",
+        "operationId": "create_proxy_api_v1_proxies_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/proxies/{proxy_id}": {
+      "get": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Get Proxy",
+        "operationId": "get_proxy_api_v1_proxies__proxy_id__get",
+        "parameters": [
+          {
+            "name": "proxy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proxy Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Update Proxy",
+        "operationId": "update_proxy_api_v1_proxies__proxy_id__patch",
+        "parameters": [
+          {
+            "name": "proxy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proxy Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProxyUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Delete Proxy",
+        "operationId": "delete_proxy_api_v1_proxies__proxy_id__delete",
+        "parameters": [
+          {
+            "name": "proxy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proxy Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
+    "/api/v1/font-sets": {
+      "get": {
+        "tags": [
+          "profiles"
+        ],
+        "summary": "List Font Sets",
+        "operationId": "list_font_sets_api_v1_font_sets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FontSetInfo"
+                  },
+                  "type": "array",
+                  "title": "Response List Font Sets Api V1 Font Sets Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
           }
         ]
       }
@@ -3885,13 +4729,6 @@
             "type": "object",
             "title": "Config"
           },
-          "tags": {
-            "items": {
-              "$ref": "#/components/schemas/Tag"
-            },
-            "type": "array",
-            "title": "Tags"
-          },
           "created_at": {
             "type": "string",
             "title": "Created At"
@@ -4023,6 +4860,304 @@
           "message"
         ],
         "title": "ErrorResponse"
+      },
+      "FontDetection": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "matched",
+          "missing"
+        ],
+        "title": "FontDetection"
+      },
+      "FontSetInfo": {
+        "properties": {
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "set_id": {
+            "type": "string",
+            "title": "Set Id"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/FontSetIntegrity"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count"
+          },
+          "used_by_count": {
+            "type": "integer",
+            "title": "Used By Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "platform",
+          "set_id",
+          "integrity",
+          "file_count"
+        ],
+        "title": "FontSetInfo"
+      },
+      "FontSetIntegrity": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "problems": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Problems"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
+          },
+          "hash_mismatches": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hash Mismatches"
+          },
+          "unregistered_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unregistered Fonts"
+          },
+          "file_count": {
+            "type": "integer",
+            "title": "File Count",
+            "default": 0
+          },
+          "detection": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/FontDetection"
+            },
+            "type": "object",
+            "title": "Detection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "FontSetIntegrity"
+      },
+      "GroupCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "slate",
+              "blue",
+              "teal",
+              "green",
+              "amber",
+              "orange",
+              "red",
+              "violet"
+            ],
+            "title": "Color",
+            "default": "slate"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "GroupCreateRequest"
+      },
+      "GroupReorderRequest": {
+        "properties": {
+          "ordered_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Ordered Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "ordered_ids"
+        ],
+        "title": "GroupReorderRequest"
+      },
+      "GroupResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "slate",
+              "blue",
+              "teal",
+              "green",
+              "amber",
+              "orange",
+              "red",
+              "violet"
+            ],
+            "title": "Color"
+          },
+          "sort_order": {
+            "type": "integer",
+            "title": "Sort Order",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "color",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GroupResponse"
+      },
+      "GroupUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "slate",
+                  "blue",
+                  "teal",
+                  "green",
+                  "amber",
+                  "orange",
+                  "red",
+                  "violet"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "GroupUpdateRequest"
       },
       "HTTPValidationError": {
         "properties": {
@@ -4172,17 +5307,27 @@
             ],
             "title": "Fingerprint Seed"
           },
-          "proxy": {
+          "group_id": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 512
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Proxy"
+            "title": "Group Id"
+          },
+          "proxy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Id"
           },
           "timezone": {
             "anyOf": [
@@ -4277,15 +5422,24 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "type": "string",
             "enum": [
-              "none",
-              "wqy-microhei",
-              "wqy-zenhei"
+              "windows",
+              "macos"
             ],
-            "title": "Font Bundle",
-            "default": "none"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "items": {
@@ -4346,20 +5500,6 @@
             "type": "integer",
             "title": "Sort Order",
             "default": 0
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/Tag"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
           }
         },
         "additionalProperties": false,
@@ -4420,7 +5560,7 @@
             "type": "integer",
             "title": "Fingerprint Seed"
           },
-          "proxy": {
+          "group_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -4429,7 +5569,18 @@
                 "type": "null"
               }
             ],
-            "title": "Proxy"
+            "title": "Group Id"
+          },
+          "proxy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Id"
           },
           "timezone": {
             "anyOf": [
@@ -4504,10 +5655,20 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "type": "string",
-            "title": "Font Bundle",
-            "default": "none"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "items": {
@@ -4572,13 +5733,6 @@
             "type": "integer",
             "title": "Sort Order",
             "default": 0
-          },
-          "tags": {
-            "items": {
-              "$ref": "#/components/schemas/Tag"
-            },
-            "type": "array",
-            "title": "Tags"
           },
           "current_config_version": {
             "type": "integer",
@@ -4663,6 +5817,68 @@
               }
             ],
             "title": "Last Exit Event Id"
+          },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          },
+          "last_stopped_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Stopped At"
+          },
+          "browser_product": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Product"
+          },
+          "browser_user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser User Agent"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
           },
           "last_coordinator_error": {
             "anyOf": [
@@ -4770,6 +5986,68 @@
             "title": "Restart Blocked",
             "default": false
           },
+          "last_started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Started At"
+          },
+          "last_stopped_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Stopped At"
+          },
+          "browser_product": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser Product"
+          },
+          "browser_user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Browser User Agent"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
+          },
+          "missing_fonts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missing Fonts"
+          },
           "last_coordinator_error": {
             "anyOf": [
               {
@@ -4851,17 +6129,27 @@
             ],
             "title": "Fingerprint Seed"
           },
-          "proxy": {
+          "group_id": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 512
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Proxy"
+            "title": "Group Id"
+          },
+          "proxy_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Id"
           },
           "timezone": {
             "anyOf": [
@@ -5004,21 +6292,31 @@
             ],
             "title": "Color Scheme"
           },
-          "font_bundle": {
+          "fingerprint_platform": {
             "anyOf": [
               {
                 "type": "string",
                 "enum": [
-                  "none",
-                  "wqy-microhei",
-                  "wqy-zenhei"
+                  "windows",
+                  "macos"
                 ]
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Font Bundle"
+            "title": "Fingerprint Platform"
+          },
+          "font_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Set Id"
           },
           "launch_args": {
             "anyOf": [
@@ -5135,25 +6433,339 @@
               }
             ],
             "title": "Sort Order"
-          },
-          "tags": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/Tag"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tags"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "title": "ProfileUpdateRequest"
+      },
+      "ProxyCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https",
+              "socks5"
+            ],
+            "title": "Scheme"
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "country_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Code"
+          },
+          "region_label": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Label"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "scheme",
+          "host",
+          "port"
+        ],
+        "title": "ProxyCreateRequest"
+      },
+      "ProxyResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "http",
+              "https",
+              "socks5"
+            ],
+            "title": "Scheme"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
+          },
+          "credential_revision": {
+            "type": "integer",
+            "title": "Credential Revision",
+            "default": 1
+          },
+          "country_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Code"
+          },
+          "region_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Label"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "used_by_count": {
+            "type": "integer",
+            "title": "Used By Count",
+            "default": 0
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "scheme",
+          "host",
+          "port",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProxyResponse"
+      },
+      "ProxyUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "scheme": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "http",
+                  "https",
+                  "socks5"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheme"
+          },
+          "host": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Host"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65535.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Port"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "country_code": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Code"
+          },
+          "region_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region Label"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProxyUpdateRequest",
+        "description": "PATCH semantics: ``password`` omitted = unchanged, null = clear,\nstring = set.  All other fields are optional tri-state fields."
       },
       "RuntimeDesiredStateRequest": {
         "properties": {
@@ -5245,34 +6857,6 @@
           "csrf_token"
         ],
         "title": "SessionResponse"
-      },
-      "Tag": {
-        "properties": {
-          "tag": {
-            "type": "string",
-            "maxLength": 64,
-            "minLength": 1,
-            "title": "Tag"
-          },
-          "color": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 32
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Color"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "tag"
-        ],
-        "title": "Tag"
       },
       "TransportObservationData": {
         "properties": {

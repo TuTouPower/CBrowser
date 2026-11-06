@@ -11,6 +11,8 @@
 !src/backend/cbrowser/services/*.py
 !src/backend/cbrowser/domain/
 !src/backend/cbrowser/domain/*.py
+!src/backend/cbrowser/font_sets/
+!src/backend/cbrowser/font_sets/*.py
 !src/backend/cbrowser/gateway/
 !src/backend/cbrowser/gateway/*.py
 !src/backend/cbrowser/udp_mux.py

@@ -13,7 +13,7 @@ from cbrowser.adapters.database.artifact_repository import ArtifactRepository
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.domain.models import ProfileConfig, Tag
+from cbrowser.domain.models import ProfileConfig
 from cbrowser.services.profile_service import (
     InvalidProfileNameError,
     ProfileOperationConflictError,
@@ -29,16 +29,25 @@ async def _context(tmp_path: Path):
     repo = ProfileRepository(maker)
     profile_dir = tmp_path / "profiles" / "p1" / "profile"
     profile_dir.mkdir(parents=True)
+    group = await repo.create_group("Research", "slate", 0)
+    proxy = await repo.create_proxy(
+        {
+            "name": "source-proxy",
+            "scheme": "http",
+            "host": "proxy.test",
+            "port": 8080,
+        }
+    )
     source = await repo.create_profile(
         ProfileConfig(
             name="Source",
             fingerprint_seed=12345,
-            proxy="http://proxy.test:8080",
+            group_id=group.id,
+            proxy_id=proxy.id,
             timezone="Asia/Shanghai",
             locale="zh-CN",
             notes="keep me",
         ),
-        tags=[Tag(tag="research", color="blue")],
         profile_id="p1",
         user_data_dir=str(profile_dir),
     )
@@ -58,7 +67,7 @@ def _write_state(profile_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_config_only_duplicate_preserves_fields_and_skips_state(
+async def test_config_only_duplicate_preserves_ref_fields_and_skips_state(
     tmp_path: Path,
 ) -> None:
     engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
@@ -68,18 +77,17 @@ async def test_config_only_duplicate_preserves_fields_and_skips_state(
         assert clone.id != source.id
         assert clone.config.name == "Source (copy)"
         assert clone.config.fingerprint_seed == 12345
-        assert clone.config.proxy == "http://proxy.test:8080"
+        assert clone.config.group_id == source.config.group_id
+        assert clone.config.proxy_id == source.config.proxy_id
         assert clone.config.timezone == "Asia/Shanghai"
         assert clone.config.locale == "zh-CN"
         assert clone.config.notes == "keep me"
-        assert clone.tags == source.tags
         assert clone.config == source.config.model_copy(
             update={"name": "Source (copy)"}
         )
         versions = await repo.list_config_versions(clone.id)
         assert versions[0].version == 1
         assert versions[0].config == clone.config.model_dump()
-        assert versions[0].tags == source.tags
         assert clone.current_config_version == 1
         assert not Path(clone.user_data_dir).exists()
         assert (profile_dir / "Cookies").read_bytes() == b"cookie-data"
@@ -133,7 +141,7 @@ async def test_state_duplicate_rejects_running_profile(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_reset_wipes_state_and_rerolls_seed_without_touching_other_profiles(
+async def test_reset_rerolls_seed_and_preserves_refs_without_touching_other_profiles(
     tmp_path: Path,
 ) -> None:
     engine, repo, service, source, profile_dir, maker = await _context(tmp_path)
@@ -150,7 +158,8 @@ async def test_reset_wipes_state_and_rerolls_seed_without_touching_other_profile
         updated = await service.reset_profile("p1")
         assert updated.config.fingerprint_seed != 12345
         assert updated.config.name == "Source"
-        assert updated.config.proxy == "http://proxy.test:8080"
+        assert updated.config.group_id == source.config.group_id
+        assert updated.config.proxy_id == source.config.proxy_id
         assert updated.config.notes == "keep me"
         assert updated.current_config_version == 2
         versions = await repo.list_config_versions("p1")

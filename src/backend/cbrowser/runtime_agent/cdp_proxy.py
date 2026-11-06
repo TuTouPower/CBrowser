@@ -45,6 +45,7 @@ class CdpProxyManager:
         self._next_cmd_id = 10000
         self.pending_cmd_futures: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self.active_downloads: dict[str, dict[str, Any]] = {}
+        self._pending_completions: dict[str, dict[str, Any]] = {}
         self._reconciled_keys: set[tuple[str, str]] = installed_download_keys(
             event_storage
         )
@@ -198,7 +199,9 @@ class CdpProxyManager:
 
                         method = msg.get("method", "")
                         if method == "Browser.downloadWillBegin":
-                            self._handle_download_will_begin(msg.get("params", {}))
+                            await self._handle_download_will_begin(
+                                msg.get("params", {})
+                            )
                         elif method == "Browser.downloadProgress":
                             await self._handle_download_progress(msg.get("params", {}))
                     except asyncio.CancelledError:
@@ -275,7 +278,7 @@ class CdpProxyManager:
                     delay,
                 )
 
-    def _handle_download_will_begin(self, params: dict[str, Any]) -> None:
+    async def _handle_download_will_begin(self, params: dict[str, Any]) -> None:
         guid = params.get("guid", "")
         url = params.get("url")
         suggested_filename = params.get("suggestedFilename")
@@ -303,6 +306,14 @@ class CdpProxyManager:
         )
         self.event_storage.save_download_event(event)
 
+        # A terminal progress event may have arrived before will-begin (CDP
+        # event reordering, e.g. when an extra CDP session is opened during
+        # browser startup). Flush the held completion now that the real
+        # suggested filename is known.
+        pending = self._pending_completions.pop(guid, None)
+        if pending is not None:
+            await self._handle_download_progress(pending)
+
     async def _handle_download_progress(self, params: dict[str, Any]) -> None:
         guid = params.get("guid", "")
         state = params.get("state", "in_progress")
@@ -316,6 +327,16 @@ class CdpProxyManager:
             dl["state"] = state
 
         if state in ("completed", "canceled"):
+            if dl is None:
+                # downloadWillBegin has not arrived yet. Recording a
+                # completion now would leave suggested_filename empty and
+                # force the forwarder to name the artifact after the CDP
+                # guid. Hold it until will-begin supplies the real name.
+                self._pending_completions[guid] = dict(params)
+                logger.info(
+                    "Held download completion pending will-begin: %s", guid
+                )
+                return
             candidate = params.get("filePath") or (
                 dl.get("download_path")
                 if dl
@@ -360,13 +381,26 @@ class CdpProxyManager:
             self.active_downloads.pop(guid, None)
 
     async def reconcile_downloads(self) -> None:
-        """Backfill completed files that have no matching CDP completion event."""
+        """Backfill completed files that have no matching CDP completion event.
+
+        Files still tracked by an in-flight CDP download are skipped: the
+        will-begin event owns the real filename, and a scan backfill would
+        race it (t035 t008 regression). After an Agent restart there are no
+        in-flight CDP downloads, so genuinely orphaned files are still
+        backfilled.
+        """
+        skip = {
+            str(Path(dl["download_path"]).resolve())
+            for dl in self.active_downloads.values()
+            if dl.get("download_path")
+        }
         await scan_completed_downloads(
             self.default_download_dir,
             self.profile_id,
             self.runtime_instance_id,
             self.event_storage,
             existing_keys=self._reconciled_keys,
+            skip_paths=skip,
         )
 
     async def close(self) -> None:

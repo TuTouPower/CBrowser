@@ -20,6 +20,12 @@ Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。�
 
 引擎初始化通过临时 helper 完成，然后以只读挂载交付 Browser。SDK 初始化显式 pin `get_chromium_version()`，与 Runtime 使用相同引擎版本；不在 helper 失败后用盲目重试掩盖初始化错误。
 
+## 平台字体集只读挂载与失败封闭（t041）
+
+平台专有字体集不属于任何镜像，只存于宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，经 `.worktreeinclude` 供各 worktree 共享同一份。Supervisor 按 Profile 绑定的配置版本快照，只把该字体集目录只读挂载进 Browser 容器的 `/run/cbrowser/fonts/{platform}/{set_id}`，挂载点位于 fontconfig 默认扫描路径之外；不挂载整个字体根目录，也不把字体集挂给 Stream 容器。
+
+启动前按绑定快照校验字体集存在且文件与 `manifest.json`（来源、来源系统版本、逐文件 sha256）一致：缺失或不一致即启动失败封闭并报告 `font_set_unavailable`，不降级为无字体启动。`font_set_id` 为 null 时不做挂载，回退镜像内基础开源字体可见、正常启动，由 runtime 状态报告平台字体未配置并在 `missing_fonts` 标明当前暴露 Linux 基础字体。字体集本身不在本系统内删除。
+
 ## 生命周期与恢复
 
 API 保存 `desired_state`、实例、失败计数与阻断状态。启动前必须已有 running 意愿并读取不可变配置；配置请求失败不能猜测默认配置继续启动。按 Profile 串行创建，分配 30000–30991 范围独立 UDP mux 端口，容器内外端口一致。

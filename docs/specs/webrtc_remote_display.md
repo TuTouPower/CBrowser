@@ -15,7 +15,7 @@
 ## 传输与信令
 
 - Profile 的多个 Peer 共用该 Profile 分配的单个 UDP mux 发布端口；端口池30000–30991。Supervisor 负责独占分配、实际映射与回收。
-- WebRTC DTLS-SRTP 只使用同机 `127.0.0.1` host 候选直连；不部署 coturn，不下发 TURN 凭证，不做凭证轮换或 ICE 代次接管（ADR 013）。Stream 入口显式启用 ICE-lite（Supervisor `stream_environment` 注入 `SELKIES_WEBRTC_ICE_LITE=true`、entrypoint 同步 export 并传 `--webrtc-ice-lite`），阻止 Selkies 2.1.0 回退其默认外部 STUN/TURN（默认 OpenRelay TURN 的 allocation 超时曾使每个新 PeerConnection 的 offer 固定延迟约 5 秒，t019）。
+- WebRTC DTLS-SRTP 只使用同机 `127.0.0.1` host 候选直连；不部署 coturn，不下发 TURN 凭证，不做凭证轮换或 ICE 代次接管（ADR 013）。Stream 入口显式启用 ICE-lite（Supervisor `stream_environment` 注入 `SELKIES_WEBRTC_ICE_LITE=true`、entrypoint 同步 export 并传 `--webrtc-ice-lite`），阻止 Selkies 2.2.1 回退其默认外部 STUN/TURN（默认 OpenRelay TURN 的 allocation 超时曾使每个新 PeerConnection 的 offer 固定延迟约 5 秒，t019）。
 - 正式信令路径为 /stream/{profileId}/signal，由 Stream Gateway 提供：升级前校验 Origin、登录会话与 Profile 授权及 Agent 就绪；所有拒绝在升级与注册前完成，授权失败按来源与 Profile 限流；每个页面独立隧道，关闭一条不影响其他连接；媒体不经 Gateway。Gateway 重启不停止 Browser，Agent 按 1/2/4/8/16/30 秒退避重新注册后页面可重连。
 - Stream Agent 注册携带 profile_id、runtime_instance_id、selkies_version、runtime_state、webrtc_udp_port、config_version，每 10 秒发送健康消息；Gateway 只接受与 API 当前绑定一致的实例，并核对回传报文的 Profile、实例与 session。协议见 schemas/stream/agent_protocol.json，payload 按 action 判别并双向校验。
 - 页面可见性只经 Selkies 官方每 Peer STOP_VIDEO/START_VIDEO 暂停该页自身视频；Gateway 不采集页面可见性或活动，也不向 Agent 下发可见性。Agent 健康消息上报未暂停视频 consumer 数与捕获状态，Gateway 只转存最近上报值供 Supervisor 查询；信令心跳只判存活，不形成控制权。
@@ -23,7 +23,7 @@
 
 ## 前端会话
 
-- 会话页以同源 iframe 加载固定版本官方 Selkies 2.1.0 Web 客户端，薄适配层只改写信令地址、处理 Gateway 控制帧、锁定远端尺寸/DPR（RTC 配置由 Gateway 下发，适配层不处理），不改写官方 HELLO、`client_tab_id`、`resume_key`。复制标签页自动分离身份且不踢原页；刷新与重连保留身份。
+- 会话页以同源 iframe 加载固定版本官方 Selkies 2.2.1 Web 客户端（t043 升级，ADR 022），薄适配层只改写信令地址、处理 Gateway 控制帧、锁定远端尺寸/DPR（RTC 配置由 Gateway 下发，适配层不处理），不改写官方 HELLO、`client_tab_id`、`resume_key`。复制标签页自动分离身份且不踢原页；刷新与重连保留身份。
 - 页面不持有 Selkies token：每 Profile master/controller token 由服务端随机生成，master 只开启 Stream 内安全模式，controller 由 Stream Agent 代注入；经认证 Gateway 隧道的页面以 controller 接入，绕过隧道直连 Selkies 或使用错误 token 被拒。Stream 显式关闭 Selkies 模式切换，客户端无法切到 WebSocket 模式。
 - 连接显示阶段：运行时未就绪、信令失败、ICE 失败、媒体无帧分别给出说明与操作（重连、查看运行状态），诊断取自 RTCPeerConnection 状态与 getStats；不出现无解释黑屏、不新增媒体回退通道。
 - 页面冻结/恢复（Page Lifecycle freeze/resume、bfcache pageshow）后检测失效连接，以原身份重建。

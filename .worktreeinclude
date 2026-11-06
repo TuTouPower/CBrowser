@@ -1,0 +1,6 @@
+# t041 平台字体集（内容寻址、不可变）由各 task worktree 共享同一份。
+# 宿主 .env 中 CBROWSER_FONTS_DIR 指向仓库内 data/fonts 目录（相对路径，
+# 不写死绝对路径/家目录）；字体文件不入库、不进镜像，仅在运行期只读挂载。
+# 下面目录被 .gitignore 的 /data/ 规则忽略，登记后由 run-begin 软链回主仓，
+# 使每个 worktree 访问主仓同一份字体集。
+/data/fonts

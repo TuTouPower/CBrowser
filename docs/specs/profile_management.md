@@ -12,13 +12,6 @@
 - Profile 列表、创建、编辑（名称、屏幕尺寸、标签）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
 
-## 中文字体包（t020）
-
-- Profile 配置含 `font_bundle`，取值 `none`、`wqy-microhei`、`wqy-zenhei`，默认 `none`；创建、更新、读取与配置版本快照均携带该字段，非法值与显式 null 被拒绝，存量 Profile 迁移后读为 `none`。
-- Browser 镜像把文泉驿微米黑与正黑的 `.ttc` staged 在 fontconfig 默认扫描路径之外的 `/opt/cbrowser-fonts/{wqy-microhei,wqy-zenhei}`；默认容器内 `sans-serif` 的中文解析不命中任何中文字体。
-- Browser Runner 按快照中的 `font_bundle` 生成 Profile 专属 fontconfig 配置（include 系统配置并追加对应 bundle 目录），仅对非 `none` 档位为 Chrome 进程设置 `FONTCONFIG_FILE`；生成失败时不设置该变量、保持系统默认配置。修改 `font_bundle` 产生新配置版本，重建容器后生效，不影响其他 Profile。
-- 前端创建与编辑界面提供三档选择并回显 API 返回值；不提供 Windows 专有字体，不挂载宿主字体目录。
-
 ## 启动参数校验与 PATCH 三态（t021）
 
 - 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取时的过滤保持不变。
@@ -39,9 +32,9 @@
 
 ## 复制与重置
 
-- 配置复制：`POST /api/v1/profiles/{id}/duplicate`（`include_browser_state=false`）创建新 Profile 与配置版本，保留全部有效配置字段、标签与同一指纹种子；不复制浏览器用户数据和 Artifact，源 Profile 不变。
+- 配置复制：`POST /api/v1/profiles/{id}/duplicate`（`include_browser_state=false`）创建新 Profile 与配置版本，保留全部有效配置字段、分组与代理引用及同一指纹种子；不复制浏览器用户数据和 Artifact，源 Profile 不变。
 - 状态复制：同一接口 `include_browser_state=true` 仅在源 `desired_state` 与 `observed_state` 均为 stopped 时执行；复制用户数据目录（跳过 SingletonLock/Cookie/Socket），逐文件校验后创建新 Profile。源运行中返回 409，前端引导停止；Artifact 不复制。
-- 重置：`POST /api/v1/profiles/{id}/reset` 要求显式 `confirm=true`，且源已停止；将用户数据目录移动到备份、更新指纹种子并生成新配置版本，成功后删除备份，失败恢复原目录。保留设置、标签、备注与 Artifact，不影响其他 Profile。
+- 重置：`POST /api/v1/profiles/{id}/reset` 要求显式 `confirm=true`，且源已停止；将用户数据目录移动到备份、更新指纹种子并生成新配置版本，成功后删除备份，失败恢复原目录。保留设置、分组与代理引用、备注与 Artifact，不影响其他 Profile。
 - 重复请求使用 `Idempotency-Key` 返回同一结果；并发状态复制或源启动通过停止检查与复制后复检拒绝，不发布半复制目录。
 - 前端 Profile 详情页提供复制（仅配置/含状态）与重置确认面板，重置明确列出将清除的浏览器数据。
 
@@ -59,3 +52,22 @@
 - 前端写操作的 `Idempotency-Key` 在每次调用边界生成：同一逻辑动作的自动重试复用同一键，并发或先后发生的独立动作必须使用不同键；复合动作（如应用显示设置的 stop→start）由单次动作键派生各步操作键。请求取消与超时可区分：外部取消不可重试，内部超时可重试。
 - 页面与布局经应用上下文下发的 ApiClient 实例工作；页面流程测试在 ApiClient 边界注入独立桩并走真实数据 hooks，不 mock hooks 模块、不改共享单例。
 - 界面文案键集以 en 字典为唯一来源派生，zh 字典编译期对齐同一键集；设置页健康状态只声称其真实探测的 Control API 状态。
+
+## 分组库、代理库与配置版本三分（t035）
+
+- Profile 请求与响应不再含 `tags` / `proxy`；导出 OpenAPI 按资源分组，不含 `v1` 分组（AC-012）。业务 Tag 概念从仓库移除。
+- 分组：CRUD 与排序可用；名称重复、超长或颜色不在调色板内被拒绝；删除分组后原引用 Profile 的 `group_id` 变 null；创建与 PATCH 可设置或清除 `group_id`，引用不存在的分组被拒绝。
+- 代理：CRUD 可用，协议/host/端口按规则校验、名称唯一；响应含 `has_password` 与 `used_by_count`，`password` 不出现在代理/Profile/配置版本/错误响应/SSE/日志，也不进配置版本快照。PATCH `password` 三态：缺失=不变、null=清除、字符串=设置（同时递增 `credential_revision`）。
+- 代理被任一 Profile 的当前配置或 runtime 绑定版本引用时，删除返回 409 `proxy_in_use` 并附引用数量，代理与引用关系不变。
+- 配置版本三分：只改元数据、只改 `capture_preview`、或提交与当前值相同的运行配置都不生成新版本，运行中 Profile 不出现待应用；修改代理连接字段时在同一事务内为每个引用 Profile 生成新版本并广播 SSE；只改代理名称/地区/备注不生成。
+- 带认证 SOCKS5 按 spike `s013` 结论处理：Chromium 146 支持时端到端经代理出站；代理密码在 Profile 绑定版本之后被修改时，按旧版本重启失败封闭并报告 `proxy_credentials_changed`，应用新版本后启动成功。
+- runtime 响应与 SSE 携带 `last_started_at` / `last_stopped_at` / `browser_product` / `browser_user_agent`；前端校验拒绝非法时间值。运行中 Profile 的浏览器版本字段与容器内 CDP `Browser.getVersion` 一致，未运行时为 null。
+- 运行态或仍绑定实例的 Profile 删除返回 409 `profile_running`；error 且无实例可删除，删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
+- 迁移目录以 t035 单 baseline 修订为起点，t041 追加增量迁移 `0002_fingerprint_platform.py`（新增 `fingerprint_platform` / `font_set_id`、删除 `font_bundle`）；旧 schema 代的 DB 在 API 启动与部署时失败封闭并输出重建指引，release controller 按修订链判定回退下限（ADR 023）。
+
+## 指纹平台与平台字体集（t041）
+
+- Profile 运行配置新增 `fingerprint_platform`（`windows` 默认 / `macos`）与 `font_set_id`（引用同平台不可变字体集，可为 null），经增量迁移 `0002_fingerprint_platform.py` 加入；两者属运行配置，修改任一都生成新 `ProfileConfigVersion`（AC-003）。
+- `font_set_id` 必须引用已存在且平台一致的字体集，引用不存在或平台不一致的集被拒绝；新建 Profile 默认使用该平台最新导入的字体集，无可用集时为 null。
+- `font_bundle`（文泉驿三档）已删除：字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。
+- runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`；绑定字体集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时正常启动并报告平台字体未配置（AC-006 / AC-007）。

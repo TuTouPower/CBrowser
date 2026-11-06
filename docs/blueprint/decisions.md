@@ -238,3 +238,66 @@
     已建立隧道过期后不自动关闭）与恢复时清除 pending 而不补发关闭
     （补发会误杀新隧道）均属已知边界，见规约。
 - 替代：无（方法名黑名单与排他租约复活均不采用）。
+
+## 020 前端工具链目标版本与 Node LTS 固定（2026-11-05，t033）
+
+- 背景：`docs/plan_20261105_ui_redesign.md` D10 要求技术底层默认升到最新稳定版本（含大版本），t033 在设计系统（t036）之前先升级前端工具链。2026-11-05 实测 npm `latest`：Vite 8.3.5（Rolldown）、@vitejs/plugin-react 6.2.1、Vitest 5.1.0、React/ReactDOM 19.3.1、`react-router` 8.5.1、lucide-react 1.68.0、jsdom 30.1.3、@testing-library/jest-dom 7.0.1、@testing-library/react 16.3.3、@types/node 26.6.6、@types/react(-dom) 19.3.0、@tanstack/react-query 5.106.0、openapi-typescript 7.13.0、TypeScript 7.0.2。
+- 选项：全部升到 `latest`；或遇 peer 冲突时选兼容的最高版本。
+- 结论：按 D10 升到上述最新稳定版本；路由库由 `react-router-dom` 换为 `react-router` 单包（实测 8.5.1 导出 BrowserRouter/Link/Routes/RouterProvider/createBrowserRouter 等全部 DOM API，25 个源文件仅换包名，无 API 适配）。三项 SPIKE 结论：① Vite 8 Rolldown 仍产出经典 IIFE（`function() {` 开头、行首无 import/export），`verify_frontend_dist.py` 注入顺序校验不变；② jsdom 30 + Vitest 5 + Node 24.21 不再需要 `NODE_OPTIONS=--no-experimental-webstorage`，`run_gates.sh` 两处变通已删除；③ TypeScript 7.0.2 与 openapi-typescript 7.13.0 的 peer `typescript@^5.x` 实测 ERESOLVE 冲突，故 TypeScript 例外固定在当前最高 5.x = 5.9.3（不是 7.x）。宿主构建 Node 固定 26 LTS（`.mise.toml` 固定 26.13.0，`engines.node=">=26.0.0 <27"`），`check_node.mjs` 在 `pretest` 与 `build` 链首校验并输出所需范围。Tailwind 4 迁移与设计系统仍归 t036，不在本决策范围。
+- 复查条件：当 `openapi-typescript` 发布兼容 TypeScript 7.x 的版本（peer 放宽到 `^7 || ^5` 或更高）且 `generate:api` 产物与当前 5.9.3 生成结果一致、全套类型检查与 Vitest 通过时，可把 TypeScript 升到 7.x 并删除本例外；复查时同时确认 Vite/Rolldown IIFE 产物形态未变。
+- 替代：无（不采用 `--legacy-peer-deps` 强装 TS 7，也不降级 openapi-typescript）。
+
+## 021 运行时底座目标版本、依赖单一来源与 cloakbrowser 锁定（2026-11-05，t034）
+
+- 背景：D7/D10 要求运行时、基础镜像、依赖锁定与 Caddy 升到当前最新稳定版本；Selkies 升级拆到 t043 单独回退。2026-11-05 核实现状：全部 Python 镜像 `python:3.12-slim-bookworm`、辅助阶段 `debian:bookworm-slim`、无 `uv.lock`、依赖分散在 `requirements.in`/`requirements.txt` 与 `src/backend/requirements.txt`、SQLAlchemy 2.0.43 / Alembic 1.16.5 / aiosqlite 0.21.0、Caddy 2.8-alpine。
+- 选项：全升最新；或遇兼容问题时保留例外。
+- 结论：
+    - **Python 3.15.2 / Debian trixie**：六个运行时镜像全部改为 digest 固定的 `python:3.15-slim-trixie@sha256:8c13a3f...`、Browser 辅助阶段 `debian:trixie-slim@sha256:f6b08b0...`；trixie apt 包名 SPIKE 实测全部可用（X11/GStreamer/Pulse/XTEST/文泉驿字体等）。`pyproject.toml` 的 `requires-python` 与 `uv.lock` 均为 `>=3.15`，`run_gates.sh` 的 `GATE_PYTHON_MINOR=3.15`，`.mise.toml` 固定 3.15.2。
+    - **依赖单一来源**：修正 `pyproject.toml` 原缺陷（`dependencies` 误落在 `[project.scripts]` 表下，项目依赖为空），改用 PEP 735 `[dependency-groups]` 定义 6 组；`uv.lock` 为唯一锁定来源，`scripts/generate_requirements.sh` 按组 `uv export --only-group` 生成各镜像 requirements 与门禁 requirements；`tests/unit/test_t034_dependency_lock.py` 在门禁中校验一致，手改即失败。删除 `src/backend/requirements.txt` 与四处 `requirements.in`。
+    - **升级版本**：`uv.lock` 解析 77 包，SQLAlchemy 2.1.8、Alembic 1.20.1、aiosqlite 0.22.1；全量 unit（1002+）、integration（142）、contract（222）在 Python 3.15 下通过，无弃用用法导致的回归。
+    - **Caddy 2.11.8**：`deploy_v2.sh` 默认引用改为 digest 固定；现有 Caddyfile（`tls internal`、`auto_https disable_redirects`、`handle` 转发）经 `caddy validate` 实测通过，行为不变。
+    - **cloakbrowser 锁定 0.6.4（D7）**：0.6.4 无 key 模式使用免费 Chromium 146 内核、不校验 license、无并发上限；0.7.0 删除无 key 路径，自动申领的免费 key 只允许 1 个并发会话，会破坏多 Profile 并发。故精确锁定 `cloakbrowser[geoip]==0.6.4`，不升 0.7.x。
+- 复查条件：上游恢复无 key 路径且免费 key 不再限制并发会话时，重新评估 cloakbrowser 升级（需真引擎并发验证）；Python/Debian/Caddy 后续大版本升级按同一 digest 固定 + SPIKE + 全量门禁流程。
+- 替代：无（不采用 `--legacy-peer-deps` 类绕过，不保留手写并行依赖清单）。
+
+## 022 Selkies 升级至 2.2.1 与契约适配（2026-11-05，t043）
+
+- 背景：D10 要求 Selkies 升到当前最新 2.x；t034 已把运行时底座升到 Python 3.15 / trixie，但刻意把 Selkies 拆到 t043 以保留独立回退边界。正式 spike `docs/spikes/s012_selkies_2_2_upgrade_contract/report.md` 与 finding `docs/findings/d030_selkies_2_2_1_upgrade_contract.md` 以官方 wheel 源码逐项比对 2.1.0 → 2.2.1。
+- 选项：升到 2.2.1；或发现不可适配破坏变化时停止报告用户并保留 2.1.0。
+- 结论：采用 2.2.1（PyPI 最新 2.x，METADATA 声明支持 Python 3.15）。比对结论：Python 模块清单相同；`webrtc_signaling_server.py` 的 HELLO / client_tab_id / resume_key / resume 语义不变；`_XTestKeyboard` 私有 ABI（4 方法签名、`_BIND_SETTLE_S`、6 个实例属性）AST 校验全部一致；Web 客户端 `selkies-core.js` 从 `src/` 移到根但协议字符串上下文逐字相同，`adapter.ts` 的 WebSocket hook 有效——**无不可适配的破坏性变化**。适配点：Web 客户端文件清单与 SHA 清单重生（2018 行）、index.html 新增 `__SELKIES_DEFER_INITIALIZATION` / modulepreload / 末尾 `selkies-core.js` module（vendor 注入 marker 改通用「首个 module tag」而非写死 2.1.0 bundle 名，IIFE adapter 仍在 head 首位）、pixelflux 2.2.3 / pcmflux 2.2.1 随 `uv.lock` 联动、`x11_keymap` 的 `SUPPORTED_SELKIES_VERSION=2.2.1` 版本门禁（ABI 校验本身不变）。ADR 002 / 013 的历史「2.1.0 固定」表述按 ADR 传播约定由本条更新现行文档面，历史条目原文不改。
+- 复查条件：后续 2.x 升级沿用同一 spike（协议字符串、私有 ABI AST、Web 客户端文件清单/注入顺序、原生依赖）与 Stream/会话 E2E 差异探针；任一不可适配变化按 t043 契约停止报告用户，不自行保留旧版。
+- 替代：无。
+
+## 023 Profile 领域模型重建：单 baseline、Group/Proxy 引用与配置版本三分（2026-11-05，t035）
+
+- 背景：`docs/plan_20261105_ui_redesign.md` WP06/WP07 要求 Profile 由「业务 Tag + 内嵌 proxy 字符串」改为「分组库 + 代理库引用」，代理密码需单一来源且不进快照/日志/SSE；同时迁移链 0001-0009 已累积 9 个修订，旧代 schema 与新模型不可增量兼容。AC-002 要求旧代 DB 失败封闭并输出重建指引。认证 SOCKS5 的引擎能力经正式 spike `s013_authenticated_socks5_engine_probe` 验证（finding `d031`）。
+- 选项：① 保留 0001-0009 链并新增增量迁移 + 兼容读取；② 折叠为单 baseline、旧代 DB 失败封闭；③ 代理密码随版本快照复制；④ 认证 SOCKS5 一律 422 拒绝。
+- 结论：
+    - **破坏性升级不留兼容层**：迁移目录只保留 `0001_baseline_v2.py`（revision `b7e1c9d4a2f3`，`down_revision=None`），删除 0001-0009。API 启动（`migrations.py` 的 `LegacySchemaError` + `REBUILD_GUIDANCE`）与 `scripts/deploy_v2.sh`（只读探测 `alembic_version`）均对旧代 DB 失败封闭，不修改该 DB、不构建镜像、不移动 release 指针。**生产数据必须经用户批准的备份与迁移流程重建**，不自动升级、不静默删数据。
+    - **release controller 按修订链判回退下限**：`current_revision_chain()` 读取当前源码树的修订 id，旧代 release（退役 0001-0009 head）拒绝作为回退目标；同代 release 之间的发布与回退通过。删除原 `applied_migration_version` 字符串比较机制。
+    - **Proxy 凭据单一来源**：密码只存 `proxies` 表；配置版本快照只存 `proxy_id` 与 `proxy_credential_revision`（无代理时为 `None`），不含密码。`update_proxy` 改连接字段时在同一事务为引用 Profile 生成新版本并广播 SSE；改 name/region/notes 不生成。Supervisor 经只读 internal 端点取凭据，Runner 挂载 0600 `proxy_credentials.json`，revision 不一致或文件缺失即失败封闭 `proxy_credentials_changed`。
+    - **配置版本三分**：只改元数据（name/notes/sort_order/group_id）、只改即时策略 `capture_preview`、或提交与当前值相同的运行配置，都不生成新版本、运行中不出现待应用；只有运行配置字段值变化才生成。
+    - **认证 SOCKS5 走端到端分支**：Chromium 146 实测支持 `socks5://user:pass@host:port`（正确凭据 `loaded=True`、错误凭据 `net::ERR_SOCKS_CONNECTION_FAILED`），故 Runner 直接构造 `--proxy-server`，不采用 422 拒绝创建的降级路径。
+- 复查条件：Chromium 主版本或指纹平台升级后重跑 `s013` 的三组实测（无认证 / 正确凭据 / 错误凭据），若引擎不再接受带认证 SOCKS5 则按 AC-008 回退到 API 422 分支；后续 schema 破坏性升级沿用「单 baseline + 旧代失败封闭 + 修订链回退下限」流程。
+- 替代：①/③/④ 均不采用（兼容层与自动升级违背破坏性升级不留包袱原则；快照复制密码违背凭据单一来源；422 拒绝与实测引擎能力不符）。
+
+## 024 平台字体运行时只读挂载与 Profile 绑定不可变字体集（2026-11-06T07:27:29+08:00，t041）
+
+- 背景：ADR 015（t020）按 Profile 三档 `font_bundle`（文泉驿）开关 CJK 字体，并写明不挂载宿主字体目录、不在宿主数据目录预置字体；Runner 的 fontconfig 配置 include `/etc/fonts/fonts.conf`，会把 `/usr/share/fonts` 下 apt 安装的全部字体暴露给所有 Profile。t041 正式 spike `s014`（结论 `d032` / `d033`）在 cloakbrowser 0.6.4 / Chromium 146 实测：`--fingerprint-platform=windows` / `=macos` 下 `navigator.platform`、UA、UA-CH `platform` / `platformVersion` 两平台一致；只白名单声明字体目录的 `FONTCONFIG_FILE` 使 Liberation / Nimbus / 文泉驿等 Linux 专属字体命中 0；两种平台都有原生 CJK 字体（微软雅黑、宋体；苹方、冬青黑体），文泉驿本身成为 Linux 特征。用户 2026-11-05 决定 Profile 可选 windows / macos 指纹平台并绑定不可变字体集（D15），字体只在运行时挂载、不进镜像不入库。
+- 选项：
+    1. 保留 ADR 015 的 `font_bundle` 三档与 include 系统 fontconfig 的开关机制。
+    2. 删除 `font_bundle`，平台专有字体只在运行时由 Supervisor 只读挂载，Profile 绑定按内容寻址的不可变字体集，Runner 生成只白名单声明绑定集目录（不含基础字体）的 `FONTCONFIG_FILE`。
+    3. 把平台专有字体打进 Browser 镜像或提交到 git 仓库随发布分发。
+- 结论：采用选项 2。运行配置新增 `fingerprint_platform`（默认 `windows`）与 `font_set_id`，经增量迁移 `0002_fingerprint_platform.py` 加入，两者修改任一生成新 `ProfileConfigVersion`；Runner 按绑定快照选择平台，删除写死的参数。基础开源字体六项（`fonts-noto-color-emoji` / `fonts-freefont-ttf` / `fonts-unifont` / `fonts-ipafont-gothic` / `fonts-wqy-zenhei` / `fonts-tlwg-loma-otf`）放镜像 `/opt/cbrowser-base-fonts`（默认扫描路径之外，仅满足 CloakBrowser 安装要求，**不进入**指纹 Profile 白名单，用户 2026-11-06 裁决）；平台字体集存宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`（内容寻址 set_id + 来源与 sha256 manifest，经 `.worktreeinclude` 供 worktree 共享），只读挂到 `/run/cbrowser/fonts/{platform}/{set_id}`。绑定集缺失或 manifest / 文件不一致时启动失败封闭 `font_set_unavailable`，`font_set_id` 为 null 时回退基础开源字体可见、保证页面可用（空字体集会让真实栈页面交互失败），runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体；runtime 响应与 SSE 下发实际 `font_set_id` 与 `missing_fonts`，`GET /api/v1/font-sets` 列出平台、来源、版本、静态完整性与 `used_by_count`。字体不进任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录（AC-008）；`font_bundle` 字段、镜像字体包、代码、文档与测试引用一并删除（AC-009）。UA-CH `architecture=arm` 与 windows UA `x64` 的差异：引擎层无 flag、CDP 页面级覆盖漏 ServiceWorker，按用户裁决不做半套覆盖（`d032` + `p045`），AC-004 文本不改。选项 3 把平台字体打进镜像 / 仓库等同分发，授权与来源风险明确不做；平台字体只从官方渠道取得、只在运行时只读挂载，不进入任何镜像层与仓库。
+- 替代：015（本条为现行决定，替代 ADR 015；历史 ADR 015 原文不改，其「不挂载宿主字体目录」「不预置字体文件」结论由运行时只读挂载取代）。
+
+## 025 DESIGN.md 为设计权威与亮暗双模式约定（2026-11-06T14:26:49+08:00，t036）
+
+- 背景：前端颜色硬编码（Tailwind 3 `surface-0..4` / `gray-*` / `emerald-*`），只有暗色；设计参考原型与实现分离，无法约束后续 UI task。plan 4 节（D1，用户 2026-11-05 确认）要求以 google-labs-code/design.md alpha 格式的设计文件作为唯一设计权威并支持亮暗双模式。正式 spike `s015` + finding `d034` 在 `@google/design.md@0.4.0` 实测：前缀 token 正常解析、成对组件分别做 WCAG AA 对比度检查、程序化 `lint()` 返回已解析 hex / RGB；`@tailwindcss/vite@4.3.4` 与 t033 选定的 Vite 8.3.5 构建兼容。
+- 选项：
+    1. 继续用 Tailwind 3 自定义 `theme.extend.colors` 并手写两套 CSS 变量。
+    2. 采用根目录 `DESIGN.md` 作为唯一权威，精确固定 `@google/design.md@0.4.0`，由生成器输出 Tailwind 4 `@theme` 变量，业务代码只用语义 token；双模式以 `light-*` / `dark-*` 成对角色 + 成对组件表达。
+    3. 等上游规范正式支持多模式后再做主题。
+- 结论：采用选项 2。`DESIGN.md` 章节按规范顺序，`primary` 为模式无关品牌色，其余颜色角色成对且集合相同（由生成器校验，官方 lint 不校验此规则）；字体 / 间距 / 圆角与模式无关只定义一次。`design:tokens` 生成 `design_tokens.css`（亮色默认 + `.dark` 覆盖全部颜色变量），产物入库，`design:lint` / `design:check` 与 `design:tokens` 接入完整门禁。Tailwind 4 以 `--color-*: initial` 重置默认调色板，删除 PostCSS / autoprefixer / `tailwind.config.ts`；字体经 `@fontsource` 自托管。主题偏好 `system` / `light` / `dark`（默认 `dark`）存 `cbrowser.theme`，`public/theme_boot.js` 外链经典脚本保证首帧无闪烁，UI 主题与 Profile `color_scheme` 互不影响。选项 1 保留硬编码分歧、无单一权威；选项 3 把已确认的需求无限期推迟。
+- 复查条件：`@google/design.md` 升级或上游正式支持多模式时重跑 `s015` 的 lint 与 Vite build 两条命令；若双模式写法失效，只改 token 写法与生成器，业务代码不变。
+- 替代：不影响既有 ADR；ADR 020（t033 前端工具链）为本次 Tailwind 4 / Vite 8 前提，ADR 015 字体三档由 ADR 024 取代。

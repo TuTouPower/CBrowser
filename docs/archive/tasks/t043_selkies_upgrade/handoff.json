@@ -1,0 +1,16 @@
+{
+  "tid": "t043",
+  "attempt": 1,
+  "execution_id": "78c8126edbaa4a0f86747deeba0d96aa",
+  "status": "done",
+  "branch": "t043_selkies_upgrade",
+  "base_sha": "2e9558147b6c8ce0a6357115e23c003593f37327",
+  "tests": "完整 required+evidence 门禁 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`（Node 26.13、Python 3.15；最终证据 `.scratch/evidence_t043c/`）：contract / unit / integration / frontend_test / frontend_build / e2e **六个 suite 全部 exit 0，`manifest.json` 的 `all_passed=true`**；e2e 103 项 0 失败、2 skip（探针门控，t032 已由容器探针补证）。`test_frontend_session_freeze_resume_and_diagnostics` 在修复后的完整门禁中 PASS（用户要求的最终判据，单跑不作数）。`verify_frontend_dist.py --check-freshness` 通过；定向：`test_t043_selkies_pin.py` + `test_stream_keymap_abi.py` + `test_frontend_session_vendor.py`、`test_frontend_adapter_build.py` 全通过、`BrowserSessionView.test.tsx` 26 passed（含新增回归用例）、全量前端 217 passed、真实 2.2.1 镜像内 `_verify_selkies_keyboard_abi(_XTestKeyboard)` 通过、`verify_image_packages.py` 35 包一致。",
+  "blackbox": "全量真实栈 E2E 的会话与 Stream 场景（会话阶段、同 Profile 多页面、复制标签页身份重映射、刷新/关闭首个页面、IME 组合输入、音频、剪贴板、可见性暂停恢复、Viewer 断线 resume）在完整门禁中全部无头通过。`test_frontend_session_freeze_resume_and_diagnostics` 在 2.2.1 两轮完整门禁连续失败（Reconnect / View status 按钮），定位为 2.2.1 延迟初始化导致的负载下时序回归（见「负载下时序回归根因」），已修根因；修复后完整门禁中该用例 PASS、`all_passed=true`。首轮门禁另 2 项失败（写死 2.1.0 bundle 名的旧断言）与 unit 隐私白名单（t034 报告指纹）已按 TDD/约定修复并登记。",
+  "review": "full 级独立 review（`review_code.md` / `review_test.md`）PASS。",
+  "review_scope": "f57a06cc51579761",
+  "pending": [],
+  "findings": [
+    "d030"
+  ]
+}

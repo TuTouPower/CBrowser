@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 from pathlib import Path
 
 from .event_storage import EventStorage
@@ -14,6 +15,11 @@ logger = logging.getLogger("cbrowser.runtime_agent.download_reconciler")
 
 TEMP_SUFFIXES = (".crdownload", ".part", ".partial", ".download", ".tmp")
 CHUNK_SIZE = 1024 * 1024
+# Browser.setDownloadBehavior("allowAndName") stores the file under the
+# internal CDP guid. That guid is never a legitimate artifact name.
+_CDP_GUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 
 def _is_temporary(name: str) -> bool:
@@ -48,19 +54,28 @@ async def scan_completed_downloads(
     storage: EventStorage,
     *,
     existing_keys: set[tuple[str, str]] | None = None,
+    skip_paths: set[str] | None = None,
 ) -> list[DownloadEventRecord]:
-    """Emit completed events for files lacking a matching path+checksum event."""
+    """Emit completed events for files lacking a matching path+checksum event.
+
+    ``skip_paths`` holds files still tracked by an in-flight CDP download:
+    their real name comes from ``downloadWillBegin`` and a scan event would
+    race the CDP completion event (t035 t008 regression).
+    """
     directory = Path(download_dir)
     if not directory.is_dir():
         return []
     seen = (
         existing_keys if existing_keys is not None else installed_download_keys(storage)
     )
+    skipped = {str(Path(path).resolve()) for path in (skip_paths or ())}
     created: list[DownloadEventRecord] = []
     for item in sorted(directory.iterdir()):
         if not item.is_file() or item.is_symlink() or _is_temporary(item.name):
             continue
         resolved = str(item.resolve())
+        if resolved in skipped:
+            continue
         try:
             digest = await asyncio.to_thread(_sha256_file, item)
             size = item.stat().st_size
@@ -78,7 +93,9 @@ async def scan_completed_downloads(
             profile_id=profile_id,
             runtime_instance_id=runtime_instance_id,
             guid=f"scan-{digest[:16]}",
-            suggested_filename=item.name,
+            suggested_filename=(
+                None if _CDP_GUID_RE.fullmatch(item.name) else item.name
+            ),
             download_path=resolved,
             state="completed",
             received_bytes=size,

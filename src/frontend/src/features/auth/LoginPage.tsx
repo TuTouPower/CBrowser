@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router";
 import { Lock } from "lucide-react";
 import { useAuth } from "./useAuth";
 import { sanitizeNextPath } from "./redirect";
 import { useI18n } from "../../i18n";
+import { Banner, Button, FieldLabel, Input } from "../../shared/ui";
 
 export function LoginPage() {
   const { t } = useI18n();
@@ -36,7 +37,7 @@ export function LoginPage() {
     return (
       <div
         data-testid="auth-loading"
-        className="min-h-screen flex items-center justify-center bg-surface-0 text-gray-500 text-sm"
+        className="flex min-h-screen items-center justify-center bg-background font-ui text-body-sm text-on-surface-muted"
       >
         {t("loading")}
       </div>
@@ -50,48 +51,48 @@ export function LoginPage() {
   return (
     <div
       data-testid="login-page"
-      className="min-h-screen flex items-center justify-center bg-surface-0 px-4"
+      className="flex min-h-screen items-center justify-center bg-background px-md"
     >
-      <div className="w-full max-w-sm bg-surface-1 border border-border rounded-lg p-6 shadow-xl">
-        <div className="flex flex-col items-center mb-6">
-          <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
-            <Lock className="h-6 w-6" />
+      <div className="w-full max-w-sm rounded-lg border border-outline bg-surface p-xl">
+        <div className="mb-lg flex flex-col items-center">
+          <div className="mb-md flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft text-on-surface">
+            <Lock aria-hidden="true" className="h-6 w-6" />
           </div>
-          <h1 className="text-xl font-bold text-gray-100">CBrowser v2</h1>
-          <p className="text-xs text-gray-400 mt-1">{t("enterAccessToken")}</p>
+          <h1 className="font-ui text-headline-lg text-on-surface">CBrowser</h1>
+          <p className="mt-sm font-ui text-body-sm text-on-surface-muted">
+            {t("enterAccessToken")}
+          </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-2.5 bg-red-500/10 border border-red-500/20 text-red-400 text-xs rounded">
-            {error}
+          <div className="mb-md">
+            <Banner tone="danger">{error}</Banner>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-md">
           <div>
-            <label className="block text-xs font-medium text-gray-300 mb-1.5">
-              {t("accessToken")}
-            </label>
-            <input
+            <FieldLabel htmlFor="login-password">{t("accessToken")}</FieldLabel>
+            <Input
+              id="login-password"
               data-testid="login-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
               disabled={submitting}
-              className="w-full px-3 py-2 bg-surface-2 border border-border rounded text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-primary"
               autoFocus
             />
           </div>
 
-          <button
+          <Button
             data-testid="login-submit"
             type="submit"
+            variant="primary"
             disabled={submitting || !password}
-            className="w-full py-2 px-4 bg-primary text-primary-foreground font-medium rounded text-sm hover:opacity-90 disabled:opacity-50 transition-opacity"
           >
             {submitting ? t("authenticating") : t("unlock")}
-          </button>
+          </Button>
         </form>
       </div>
     </div>

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 from cbrowser.api.v1 import router as runtime_api
+from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.domain.models import (
     ConfigVersionResponse,
     ProfileResponse,
@@ -13,9 +14,10 @@ from cbrowser.domain.models import (
 )
 from cbrowser.secret_files import read_secret_file
 from cbrowser.service_errors import ServiceNotConfiguredError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import SecretStr
+from pydantic import BaseModel, SecretStr
 
 bearer = HTTPBearer(auto_error=False, scheme_name="SupervisorServiceBearer")
 
@@ -97,4 +99,56 @@ for path, method, endpoint, response_model in (
 ):
     supervisor_router.add_api_route(
         path, endpoint, methods=[method], response_model=response_model
+    )
+
+
+class ProxyCredentialsResponse(BaseModel):
+    """Current proxy credentials for the Supervisor's Browser sandbox.
+
+    ``proxy_credential_revision`` is the revision frozen in the bound config
+    version; ``credential_revision`` is the proxy's current revision. The
+    Supervisor refuses to launch when they disagree (AC-007).
+    """
+
+    scheme: str
+    host: str
+    port: int
+    username: str | None = None
+    password: str | None = None
+    credential_revision: int
+    proxy_credential_revision: int | None = None
+
+
+@supervisor_router.get(
+    "/proxies/{proxy_id}/credentials",
+    response_model=ProxyCredentialsResponse,
+    include_in_schema=False,
+)
+async def get_proxy_credentials(
+    proxy_id: str,
+    profile_id: Annotated[str, Query()],
+    version: Annotated[int, Query(ge=1)],
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+) -> ProxyCredentialsResponse:
+    """Return current proxy credentials plus the version's frozen revision.
+
+    Read-only service-plane RPC protected by the Supervisor bearer token. The
+    password is returned only over this internal channel and is never logged.
+    Both reads go through the service/repository layer: the frozen revision
+    comes from the domain config-version snapshot, the live credentials from
+    the proxy library.
+    """
+    try:
+        snapshot = await service.get_config_version(profile_id, version)
+    except ProfileNotFoundError:
+        raise HTTPException(404, "Config version not found") from None
+    cfg = snapshot.config if isinstance(snapshot.config, dict) else {}
+    if cfg.get("proxy_id") != proxy_id:
+        raise HTTPException(404, "Proxy credentials not found")
+    creds = await service.get_proxy_credentials(proxy_id)
+    if creds is None:
+        raise HTTPException(404, "Proxy credentials not found")
+    return ProxyCredentialsResponse(
+        **creds,
+        proxy_credential_revision=snapshot.proxy_credential_revision,
     )

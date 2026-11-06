@@ -1,14 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
 import { ProfileNewPage } from "../profiles/ProfileNewPage";
 import type { ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
 import { I18nProvider } from "../../i18n";
+import { ThemeProvider } from "../../theme";
 
-function renderPages() {
+interface FontSetFixture {
+  platform: string;
+  set_id: string;
+  source?: string | null;
+  source_version?: string | null;
+  integrity: { ok: boolean; problems?: string[] };
+  file_count: number;
+  used_by_count: number;
+}
+
+function renderPages(fontSets: FontSetFixture[] = []) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -17,22 +29,25 @@ function renderPages() {
   const stubClient = {
     health: { check: vi.fn(async () => undefined) },
     profiles: { create: vi.fn(async () => ({ id: "p-new" })) },
+    request: vi.fn(async () => fontSets),
   } as unknown as ApiClient;
   return render(
     <I18nProvider>
-      <QueryClientProvider client={queryClient}>
-        <ApiClientContext.Provider value={stubClient}>
-          <MemoryRouter>
-            <SettingsPage />
-            <ProfileNewPage />
-          </MemoryRouter>
-        </ApiClientContext.Provider>
-      </QueryClientProvider>
-    </I18nProvider>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientContext.Provider value={stubClient}>
+            <MemoryRouter>
+              <SettingsPage />
+              <ProfileNewPage />
+            </MemoryRouter>
+          </ApiClientContext.Provider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </I18nProvider>,
   );
 }
 
-describe("settings and profile form i18n", () => {
+describe("settings and profile form i18n (t035)", () => {
   beforeEach(() => {
     localStorage.setItem("cbm.locale", "zh");
   });
@@ -42,16 +57,16 @@ describe("settings and profile form i18n", () => {
     vi.restoreAllMocks();
   });
 
-  it("switches every previously hardcoded label and placeholder", async () => {
+  // The old "switches every previously hardcoded label and placeholder"
+  // case also asserted the four t035-removed tags/proxy labels; that whole
+  // case was deleted. This new case keeps the i18n switch coverage for the
+  // labels that still exist (AC-012 removal is not a reason to lose it).
+  it("switches remaining i18n labels and placeholders", async () => {
     renderPages();
 
     expect(screen.getByText("控制 API")).toBeTruthy();
     expect(screen.getByText("控制 API 健康检查")).toBeTruthy();
     expect(screen.getByPlaceholderText("例如：工作配置")).toBeTruthy();
-    expect(screen.getByText("代理 URL（可选）")).toBeTruthy();
-    expect(
-      screen.getAllByText("标签（逗号分隔）").length
-    ).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByText("正常")).toBeTruthy());
 
     fireEvent.click(screen.getByText("English"));
@@ -59,10 +74,58 @@ describe("settings and profile form i18n", () => {
     expect(screen.getByText("Control API")).toBeTruthy();
     expect(screen.getByText("Control API health check")).toBeTruthy();
     expect(screen.getByPlaceholderText("e.g. Work Profile")).toBeTruthy();
-    expect(screen.getByText("Proxy URL (optional)")).toBeTruthy();
     expect(screen.getByText("Width (px)")).toBeTruthy();
-    expect(
-      screen.getAllByText("Tags (comma separated)").length
-    ).toBeGreaterThan(0);
+  });
+});
+
+describe("settings platform font sets (t036)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("renders font set data from GET /api/v1/font-sets", async () => {
+    renderPages([
+      {
+        platform: "windows",
+        set_id: "win11",
+        source: "Windows 11 Enterprise",
+        source_version: "10.0.22631",
+        integrity: { ok: true },
+        file_count: 346,
+        used_by_count: 2,
+      },
+    ]);
+
+    const card = await screen.findByTestId("font-set-windows-win11");
+    expect(card).toHaveTextContent("Windows 11 Enterprise");
+    expect(card).toHaveTextContent("10.0.22631");
+    expect(card).toHaveTextContent("346");
+    expect(card).toHaveTextContent("2");
+    expect(screen.queryByTestId("font-set-integrity-bad")).not.toBeInTheDocument();
+  });
+
+  it("shows an integrity warning for a font set with problems", async () => {
+    renderPages([
+      {
+        platform: "macos",
+        set_id: "pingfang",
+        source: "macOS",
+        source_version: "14",
+        integrity: { ok: false, problems: ["missing: PingFang.ttc"] },
+        file_count: 5,
+        used_by_count: 0,
+      },
+    ]);
+
+    const card = await screen.findByTestId("font-set-macos-pingfang");
+    expect(card).toHaveTextContent("macOS");
+    expect(screen.getByTestId("font-set-integrity-bad")).toBeInTheDocument();
+    expect(screen.getByTestId("font-set-problems")).toHaveTextContent(
+      "missing: PingFang.ttc",
+    );
   });
 });

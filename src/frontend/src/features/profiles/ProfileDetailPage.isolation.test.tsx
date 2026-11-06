@@ -13,7 +13,7 @@ import {
   Route,
   useNavigate,
   type NavigateFunction,
-} from "react-router-dom";
+} from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";
@@ -34,7 +34,6 @@ function profile(id: string, name: string): ProfileResponse {
     id,
     name,
     fingerprint_seed: 101,
-    proxy: "",
     screen_width: 1920,
     screen_height: 1080,
     gpu_family: "auto",
@@ -44,9 +43,7 @@ function profile(id: string, name: string): ProfileResponse {
     auto_launch: false,
     launch_args: [],
     extension_paths: [],
-    tags: [],
     human_preset: "default",
-    font_bundle: "none",
     allow_3p_cookies: true,
     set_google_default: true,
     capture_preview: true,

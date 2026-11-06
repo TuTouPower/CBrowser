@@ -29,6 +29,18 @@ function isNullableString(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
 }
 
+const ISO_8601_WITH_TZ =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+function isNullableIsoTimestamp(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return (
+    typeof value === "string" &&
+    ISO_8601_WITH_TZ.test(value) &&
+    !Number.isNaN(Date.parse(value))
+  );
+}
+
 function isValidSearchDefaults(value: unknown): boolean {
   if (value === undefined || value === null) return true;
   if (typeof value !== "object" || Array.isArray(value)) return false;
@@ -126,6 +138,10 @@ export function parseProfileRuntimeEvent(
   if (!hasValidCoreFields(e)) return null;
   if (!isNullableString(e.runtime_instance_id)) return null;
   if (!isNullableString(e.last_coordinator_error)) return null;
+  if (!isNullableIsoTimestamp(e.last_started_at)) return null;
+  if (!isNullableIsoTimestamp(e.last_stopped_at)) return null;
+  if (!isNullableString(e.browser_product)) return null;
+  if (!isNullableString(e.browser_user_agent)) return null;
   if (!isValidSearchDefaults(e.search_defaults)) return null;
   if (!isValidTransport(e.transport)) return null;
   if (!isValidControl(e.control)) return null;

@@ -12,9 +12,9 @@ project_configured
 
 1. **模板与工作流工具链契约**：通过运行 `.repo_template/tests`（带 `-m contract` 标记）验证 task 状态机、文档解析及仓库整洁度，通过数量以实际输出为准；
 2. **业务后端单元测试基线**：通过 `uv` 运行 `src/backend/tests`，涵盖现有 API 接口、鉴权、下载捕获、数据库及生命周期，通过数量以实际输出为准；
-3. **前端测试基线与 Node 26 环境标记**：
-    - 在 Node v26+ 环境下，运行前端测试因 Node 默认开启的实验性 WebStorage 会在 `localStorage.getItem` 处抛出异常（参见 d001，直接运行会导致大量失败）；
-    - 运行前端测试必须显式设置环境变量：`NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend`，通过数量以实际输出为准；
+3. **前端测试基线与 Node 26 LTS 门禁**：
+    - 宿主构建 Node 固定为 26 LTS（仓库 `.mise.toml` 固定 26.13.0，`src/frontend/package.json` 的 `engines.node=">=26.0.0 <27"`）；前端门禁 `npm test` 的 `pretest` 与 `npm run build` 的 `build` 链首先执行 `node scripts/check_node.mjs`，版本不满足即失败并输出所需范围（t033 AC-004）。
+    - jsdom 30.1.3 + Vitest 5.1.0 下不再需要 `NODE_OPTIONS=--no-experimental-webstorage`：jsdom 30 + Vitest 5 的 SPIKE 在 Node 24.21 实测 1 项 smoke 通过，完整门禁在 Node 26.13 下 216 项 Vitest 全绿（t033 SPIKE 结论，替代 d001 早期的 `--no-experimental-webstorage` 变通）。`scripts/run_gates.sh` 两处 `NODE_OPTIONS` 已移除；
     - `npm test` 内含 `test:types` 前置门禁：`tsconfig.test.json` 以与生产相同的严格选项（含 `noUncheckedIndexedAccess`）检查全部测试文件（node 内置模块类型来自 devDependency `@types/node`）；测试夹具、桩与事件字面量必须满足生成类型的完整线形状，不完整或名实不符的测试在该门禁下直接失败；
     - 严格禁止在业务代码或测试中就地弱化断言，禁止引入隐式不可见的环境改动；
 4. **容器黑盒与健康检查**：通过 curl 检查运行中的容器健康探针 `http://127.0.0.1:56661/api/health`，并支持通过 ego-browser 执行端到端网页交互自动化验证；
@@ -81,7 +81,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 ## 门禁依赖与证据完整性（t024）
 
-- 门禁依赖由 `scripts/gate-requirements.txt` 全量锁定（pin 到具体版本），`scripts/run_gates.sh` 以固定 Python 3.12 建单一 venv 从锁安装后依次执行契约/unit/integration/前端/构建，不再运行时临时解析未 pin 的包组；锁的再生成命令写在该文件头部。
+- 门禁依赖由 `uv.lock` 单一来源导出：`scripts/generate_requirements.sh` 以 PEP 735 依赖组（api / gateway / supervisor / browser / stream / gate）分别 `uv export --only-group`，生成各镜像 `requirements.txt` 与 `scripts/gate-requirements.txt`；`tests/unit/test_t034_dependency_lock.py` 在 unit suite 中逐组比对生成物与锁文件，手改或锁过期即失败（t034 AC-002）。`scripts/run_gates.sh` 以 `GATE_PYTHON_MINOR=3.15`（与全部运行时镜像一致）建单一 venv 从导出锁安装后依次执行契约/unit/integration/前端/构建；本地无 3.15 时 uv 明确失败，unit suite 同时断言解释器主次版本（t034 AC-003）。
 - 前端构建戳为 v2 格式：必需输入（index.html、package.json、package-lock.json）缺失拒绝生成；配置五件套的 present/absent、src/ 与 public/ 全量文件哈希、声明的环境值（allowlist）共同决定新鲜度；所有实际消费 dist 的探针（浏览器 harness、frontend probe、E2E collection 钩子）在复制/托管前校验，dist 存在即校验、与测试文件命名无关。
 - 测试等待统一走 `tests/fixtures/wait.py` 的 deadline + 最后观测助手；时间敏感逻辑用注入 clock，不 patch 标准库 time 模块对象。共享 Docker 替身在 `tests/fixtures/docker_doubles.py`，与真实 DockerAdapter 的命名/集合契约由 `tests/unit/test_docker_doubles_contract.py` 对照。
 - E2E 证据目录每次运行私有（mkdtemp），证据脱敏覆盖 token/secret/password/cookie/resume_key/session；性能预算保持原硬阈值（首帧 8000ms、输入 3000ms、SQLite busy_timeout 原上界），证据记录完整样本而非仅判定。
@@ -125,7 +125,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 |类别|必须覆盖|常见盲区|
 |---|---|---|
-|**单元测试**|pytest 后端业务测试与前端 Vitest（`NODE_OPTIONS=--no-experimental-webstorage`）；数量以实际输出为准|mock 掉真实逻辑、在业务代码中弱化测试断言|
+|**单元测试**|pytest 后端业务测试与前端 Vitest（Node 26 LTS，无需 `NODE_OPTIONS` 变通）；数量以实际输出为准|mock 掉真实逻辑、在业务代码中弱化测试断言|
 |**契约测试**|pytest 模板轻量契约测试（`-m contract`）；数量以实际输出为准|路径或状态机格式不匹配、specs_index 缺失条目|
 |**文档格式**|`python3 .repo_template/scripts/md_format.py --check`|Markdown 表格未 compact 或标题语法错误|
 |**容器黑盒**|容器健康检查探针与本地技术验证专项探针|只看进程存活、未验证实际双向媒体与数据完整性|
@@ -176,6 +176,12 @@ E2E 镜像变量同“Gateway 阶段验证”，且 API/Supervisor/Stream 必须
 
 t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 ApiClient/SSE/下载链接三入口的绝对、协议相对、反斜杠与混合变体（`client.sameorigin.test.ts`、`sse.sameorigin.test.ts`）；真实 HTTP 夹具改为注入 fetch 按 origin 转发到测试服务器（客户端已无 baseUrl/url 配置项）；注销失败处置走生产 AppProviders + 实现 `setOnUnauthorized` 的真实 SSE 客户端断言回调路径（`providers.unauthorized.test.tsx`），AppProviders 默认 QueryClient retry 接线由 `providers.defaults.test.tsx` 守卫；跨 Profile 动作隔离由三页面的 `*.isolation.test.tsx` 覆盖，apply 阶段续跑由 `useProfilesQuery.applyresume.test.tsx` 以服务端幂等重放模型覆盖。真实 Docker/Chrome 拓扑下的会话回归（真实 401 注销、跨 Profile 切换与应用并重启）不在云端执行，统一由 t032 在目标环境判定。
 
+### t036 设计门禁与产物扫描
+
+设计门禁三条命令接入 `scripts/run_gates.sh` 前端阶段，顺序在 `frontend_test` 之前：`npm run design:lint`（`DESIGN.md` 官方 lint，error / warning 任一非零即失败）、`npm run design:check`（入库 `design_tokens.css` 与重新生成结果比对，不一致即失败）、`npm run design:tokens`（幂等写回）。`design_tokens.test.mjs` 覆盖三条生成前校验（`light-*` / `dark-*` 角色集合不等、未解析引用、既非 `primary` 又无模式前缀的颜色 token）与确定性生成；`design:check` 失败路径以追加 stale marker 验证（退出 1）。
+
+AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置页、手写 `globals.css`、占位页）中 Tailwind 默认调色板类、旧 `surface-*` / `primary-foreground` 类与颜色字面量命中 0；构建产物 CSS 中 `bg-red-500` / `text-gray-100` / `bg-emerald-500` / `bg-blue-500` / `text-slate-900` / `bg-surface-0` 均不产生样式，语义变量（`--color-background` / `--color-surface` / `--color-accent` / `--font-ui` / `--font-mono` / `--text-body-md` / `--radius-md` / `--spacing-md`）、`.bg-primary` 与 `.dark` 覆盖均存在。AC-009 扫描：`dist/index.html` 与 `dist/assets/*.css` 中 `https?://` 仅命中 Tailwind MIT license 注释，无外部字体 / 图标 CDN 引用；自托管 `*.woff2` 13 个；`index.html` 内联脚本数 0。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。
@@ -186,7 +192,7 @@ t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 Ap
 |p016|Supervisor 真实配额实际生效|`test_supervisor_quota_chain_e2e.py`；CPU 腿 `supervisor_resource_probe/stream_monitor.py`|`ResourceMonitor` → `GatewayControlClient.set_quota` → Gateway `SUPERVISOR_QUOTA` → Agent/Selkies|真实拓扑 + Viewer 解码帧|skip（collect-only）|AC-008|
 |p016|Agent 替换关闭旧 Viewer|`test_gateway_signaling.py::test_agent_replacement_closes_old_viewers`|Gateway 会话替换（close 1001、新 conn_id、下行回复、旧 Agent 退出后续传）|集成（真实 Gateway）|已实跑通过（t028 恢复 251fa0f 精确断言）|随 AC-014 复验|
 |p021（t019）|无外部 STUN/TURN、ICE-lite 与首帧时延|`test_stream_ice_config.py`（unit）；`test_frontend_app_e2e.py` t019 用例|Stream entrypoint ICE-lite 参数、前端会话建立|unit + 真实 Chrome|unit 已跑通过；e2e skip|AC-003|
-|p022（t020）|字体包三档贯通|`test_font_bundles.py`（unit）；`test_profile_font_bundle_api.py`（integration）；`test_browser_font_bundles_e2e.py`|API font_bundle 字段、Supervisor 注入、Browser 渲染|unit/integration + 真实拓扑|unit/integration 已跑通过；e2e skip|AC-004|
+|p022（t020）|字体包三档贯通（t041 已删除 `font_bundle`，本行为废止）|`test_font_bundles.py`（unit）；`test_profile_font_bundle_api.py`（integration）；`test_browser_font_bundles_e2e.py`|API font_bundle 字段、Supervisor 注入、Browser 渲染|unit/integration + 真实拓扑|unit/integration 已跑通过；e2e skip|已废止（t041 替代，见下节）|
 |p023（t021）|控制 API/文件交换/OpenAPI 契约|`tests/contract/` 与 schemas 导出校验|API 路由、协议 schema、文件交换契约|契约|已跑通过|AC-005|
 |p023（t021）|Origin 变体授权|unit origin 授权测试 + integration 真实 HTTP|API 授权中间件|unit/integration|已跑通过|AC-005|
 |p023（t021）|工件下载全链|`test_artifact_download_chain_e2e.py`（t028 新建）|浏览器下载捕获 → ArtifactService 入库 → API 下载字节/sha256 比对|真实拓扑|skip（collect-only）|AC-002、AC-005|
@@ -209,7 +215,7 @@ t032 执行者按本表运行，不需要回读 t028 的执行过程。所有 E2
 |---|---|---|---|---|
 |AC-002 镜像构建与身份固定|逐个 `docker build -f config/docker/<name>/Dockerfile` 后 `docker image inspect` 取 `.Id` 写入 env 文件；再以 `CBROWSER_E2E_REQUIRED=1` 收集校验|全部 REQUIRED_E2E_ENV 镜像变量 + 引擎/GeoIP 缓存|首次全量构建为主要耗时，预留半天（含缓存预热）|`image_identity`；报告记录实际镜像 ID|
 |AC-003 ICE/首帧|`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 或单跑 `test_frontend_app_e2e.py` 的 t019 用例|RUNTIME/STREAM/API/CADDY 镜像 + 官方 Chrome|单用例数分钟|`suites[].exit_code/log/junit`；报告含候选类型与首帧样本|
-|AC-004 字体三档|单跑 `test_browser_font_bundles_e2e.py`|RUNTIME 镜像|数分钟|同上；附三档渲染证据路径|
+|AC-004 字体三档（t041 删除 `font_bundle`，本项废止）|单跑 `test_browser_font_bundles_e2e.py`|RUNTIME 镜像|数分钟|同上；附三档渲染证据路径|
 |AC-005 契约真实拓扑|必需模式全量 E2E（见 AC-014 指令）|全镜像集|完整 E2E 按小时级预留、分批执行|manifest 全部字段|
 |AC-006 运行时恢复|单跑 `test_x11_helper_permissions_e2e.py`、`test_gateway_registration_budget_e2e.py`、`test_search_defaults_retry_live_e2e.py` 与 namespace/ipv6/policy_failure 三件|SUPERVISOR/GATEWAY/API/RUNTIME/STREAM 镜像|每件数分钟|`suites[]` 逐项退出码与 log|
 |AC-007 前端部署|部署产物上单跑 frontend app/session E2E|部署 release + 全镜像集|数十分钟|同上|
@@ -304,3 +310,19 @@ bash scripts/run_automation_probe.sh
 ```
 
 入口要求 Linux arm64 镜像、可执行目标引擎和空证据目录。仓库及引擎只读挂载，独立容器不挂 Docker socket 或生产数据；提供 Xvfb/XTEST；链路 Dialog 与执行器测试的显式浏览器路径同样指向选中目标引擎。容器中的生产 Python 组件通过 loopback 建立 API → Supervisor → Agent → CDP 链路；这不替代独立 Stream/Viewer 容器 E2E。子测试 JUnit 不得含 skip，报告和镜像身份留在证据目录。AC-012 外站不可达或样本不足记 `INCONCLUSIVE`；AC-013 人工项按用户决定记 `OUT_OF_SCOPE_BY_USER`。
+
+## t041 指纹平台与平台字体集验收映射
+
+下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
+
+|AC|行为|测试 / 证据|
+|---|---|---|
+|AC-001|导入工具生成带 manifest（来源、来源系统版本、逐文件 sha256）的不可变字体集；相同内容重复导入同一 `set_id`，内容变化得新 `set_id`，已有集不被修改|导入工具 / 内容寻址 unit|
+|AC-002|`GET /api/v1/font-sets` 需登录会话，列出平台、来源、版本、静态完整性与 `used_by_count`；文件被篡改或缺失时完整性显示不一致|integration API 用例 + manifest 完整性检查|
+|AC-003|`fingerprint_platform` / `font_set_id` 可经创建与 PATCH 设置；引用不存在或平台不一致的集被拒绝；新建 Profile 默认用平台最新集；修改任一生成新配置版本；启动参数取自绑定快照|unit（校验、默认选择、fontconfig 生成）+ integration（API / 配置版本快照）|
+|AC-004|两平台 `navigator.platform`、UA、UA-CH `platform` / `platformVersion` 与所选平台一致|真实引擎 E2E（离线探测页，`http://127.0.0.1` / HTTPS 安全上下文）；CH `architecture` 不做半套覆盖（`d032` + `p045`），文本不改|
+|AC-005|windows 检出 Windows 检测字体清单、检不出 Mac 专有字体，macos 反之；两平台都检不出 Liberation 等 Linux 字体；可见字体只来自基础字体与绑定集|真实引擎 E2E 离线字体探测页；spike `fc-list` 隔离实测（`d033`）|
+|AC-006|绑定集缺失或与 manifest 不一致时启动失败封闭 `font_set_unavailable`；null 时正常启动并报告平台字体未配置|unit + 真实引擎 E2E 失败封闭|
+|AC-007|runtime 响应与 SSE 含实际 `font_set_id` 与 `missing_fonts`，与 Agent 用该 Profile fontconfig 的检查结果一致|integration（runtime 响应 / SSE 字段）+ Agent fontconfig 复核|
+|AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
+|AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|

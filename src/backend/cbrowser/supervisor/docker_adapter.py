@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 import docker
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -58,6 +59,38 @@ from cbrowser.udp_mux import udp_mux_bounds
 from docker.errors import DockerException, NotFound
 
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
+
+PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
+_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
+
+
+def proxy_endpoint_from_credentials(creds_path: Path) -> str | None:
+    """Build the proxy URL used for Browser egress policy resolution.
+
+    The old ``config.proxy`` field no longer exists; the connection parameters
+    now live in the mounted credentials file. Returns ``None`` when there is
+    no proxy or the file is unusable, which yields an empty ``allowed_tcp``.
+    """
+    try:
+        creds = json.loads(creds_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(creds, dict):
+        return None
+    scheme = creds.get("scheme")
+    host = creds.get("host")
+    port = creds.get("port")
+    if (
+        isinstance(scheme, str)
+        and scheme in _PROXY_SCHEMES
+        and isinstance(host, str)
+        and host
+        and type(port) is int
+        and 1 <= port <= 65535
+    ):
+        netloc_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        return f"{scheme}://{netloc_host}:{port}"
+    return None
 
 
 def _udp_mux_helper_environment() -> dict[str, str]:
@@ -1127,7 +1160,6 @@ with path.open('w') as output:
                 lock_path.unlink()
 
         gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "browser")
-        proxy = snapshot.get("config", {}).get("proxy")
         self._validate_cache_paths()
         volumes = browser_volumes(
             profile_id=profile_id,
@@ -1136,6 +1168,42 @@ with path.open('w') as output:
             engine_cache=self.engine_cache,
             geoip_cache=self.geoip_cache,
         )
+        creds_file = dirs["runtime"] / PROXY_CREDENTIALS_FILENAME
+        has_proxy = isinstance(snapshot.get("config"), dict) and bool(
+            snapshot["config"].get("proxy_id")
+        )
+        if has_proxy and creds_file.is_file():
+            validated_creds = self.validator.validate_runtime_source(
+                profile_id, creds_file
+            )
+            if (validated_creds.stat().st_mode & 0o077) != 0:
+                raise DockerSandboxError(
+                    "Proxy credentials file must have 0600 permissions"
+                )
+            # The whole runtime directory is already mounted rw for the
+            # Runner; shadow the credentials file with a dedicated read-only
+            # bind so the sandbox cannot rewrite its own proxy secret.
+            volumes[str(validated_creds)] = {
+                "bind": "/run/cbrowser/runtime/proxy_credentials.json",
+                "mode": "ro",
+            }
+        cfg = snapshot.get("config")
+        if isinstance(cfg, dict):
+            font_set_id = cfg.get("font_set_id")
+            platform = cfg.get("fingerprint_platform", "windows")
+            fonts_root = os.environ.get("CBROWSER_FONTS_DIR")
+            if (
+                isinstance(font_set_id, str)
+                and re.fullmatch(r"[a-f0-9]{32,64}", font_set_id)
+                and platform in ("windows", "macos")
+                and fonts_root
+            ):
+                host_font_dir = Path(fonts_root) / platform / font_set_id
+                volumes[str(host_font_dir)] = {
+                    "bind": str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
+                    "mode": "ro",
+                }
+        proxy = proxy_endpoint_from_credentials(creds_file)
         command = browser_command(profile_id, runtime_instance_id, display)
 
         try:
@@ -1566,19 +1634,11 @@ with path.open('w') as output:
     ) -> dict[str, Any]:
         """Expected live Browser netfilter spec for convergence checks.
 
-        Rebuilt from the same inputs as startup application: the stored
-        snapshot's proxy, resolved from inside the Browser container.
+        Rebuilt from the same inputs as startup application: the mounted
+        proxy credentials file, resolved from inside the Browser container.
         """
-        proxy: str | None = None
-        snapshot_path = self.validator.get_runtime_dir(profile_id) / "snapshot.json"
-        if snapshot_path.exists():
-            try:
-                snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-                config = snapshot.get("config") if isinstance(snapshot, dict) else None
-                candidate = config.get("proxy") if isinstance(config, dict) else None
-                proxy = candidate if isinstance(candidate, str) else None
-            except (OSError, ValueError):
-                proxy = None
+        creds_file = self.validator.get_runtime_dir(profile_id) / PROXY_CREDENTIALS_FILENAME
+        proxy = proxy_endpoint_from_credentials(creds_file)
         allowed_tcp = self._resolved_endpoint(container, proxy) if proxy else []
         return {
             "role": "browser",

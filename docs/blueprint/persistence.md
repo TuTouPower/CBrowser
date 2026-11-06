@@ -2,7 +2,7 @@
 
 # 持久化架构与单写者契约 (persistence)
 
-本文定义 CBrowser v2 系统的持久化架构、数据库写入归属、8 张核心数据表模型、配置版本不可变快照及运行状态收敛契约。
+本文定义 CBrowser v2 系统的持久化架构、数据库写入归属、t035 单一 baseline 修订创建的数据表模型、配置版本不可变快照及运行状态收敛契约。
 
 ## 1. 架构定位与单写者边界
 
@@ -18,35 +18,33 @@
 
 ## 2. 核心数据表结构 (SQLAlchemy 2.0 + Alembic)
 
-系统数据库包含 8 张核心业务与状态表，不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
+迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
-1. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `proxy`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `font_bundle`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
-    - `font_bundle` 由迁移 `0007_font_bundle` 以 `server_default='none'` 新增（`none`/`wqy-microhei`/`wqy-zenhei`），存量行迁移后均为 `none`，字体可见集合不变。
-    - 完整覆盖计划 15.2 中有效配置字段；默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`；旧 native 运行模式映射为 `docker`，旧 vnc 模式映射为 `webrtc`。
-2. `profile_config_versions`：
-    - 字段：`id`, `profile_id`, `version`, `snapshot`, `created_at`。
-    - `(profile_id, version)` 唯一约束。
-    - `snapshot` 存储完整的不可变快照（包含配置数据与关联标签），配置修改后递增版本，历史快照严格只读。
-3. `profile_tags`：
-    - 字段：`profile_id`, `tag`, `color`。
-    - 复合主键 `(profile_id, tag)`，外键级联删除。
-4. `profile_runtimes`：
-    - 字段：`profile_id` (PK), `desired_state`, `observed_state`, `runtime_instance_id`, `config_version`, `failure_count`, `restart_blocked`, `last_exit_event_id`, `updated_at`。
-    - 维护 Profile 的用户意向状态与实际观测运行状态。`config_version` 严格代表当前运行实例实际绑定的配置快照版本。
-5. `artifacts`：
+01. `profiles`：
+    - 字段：`id`, `name`, `fingerprint_seed`, `group_id`, `proxy_id`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `fingerprint_platform`, `font_set_id`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - `group_id` / `proxy_id` 为可空外键引用（t035），取代已删除的业务 Tag 表与内嵌 `proxy` 字段；删除分组时 `group_id` 置 null，代理被引用时删除受限。
+    - `fingerprint_platform` 默认 `windows`（`windows` / `macos`）；`font_set_id` 可空，引用同平台的不可变字体集；两者都属运行配置，修改任一生成新 `ProfileConfigVersion`（t041）。`font_bundle` 列已随 `0002_fingerprint_platform.py` 删除。默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`。
+02. `profile_groups`：
+    - 字段：`id`, `name`, `color`, `sort_order`, `created_at`, `updated_at`；名称唯一、颜色取自调色板、可排序。
+03. `proxies`：
+    - 字段：`id`, `name`, `scheme`, `host`, `port`, `username`, `password`, `credential_revision`, `country_code`, `region_label`, `notes`, `created_at`, `updated_at`；名称唯一，密码是凭据的唯一存储点。
+04. `profile_config_versions`：
+    - 字段：`id`, `profile_id`, `version`, `snapshot`, `created_at`。`(profile_id, version)` 唯一约束。
+    - `snapshot` 是不可变 JSON：含 `config` 与 `proxy_credential_revision`（无代理时为 null），**不含密码、不含业务 Tag**。只有运行配置字段值变化才生成新版本；元数据（name/notes/sort_order/group_id）、`capture_preview` 或提交相同运行配置都不生成（t035 AC-006）。历史快照严格只读。
+05. `profile_runtimes`：
+    - 字段：`profile_id` (PK), `desired_state`, `observed_state`, `runtime_instance_id`, `config_version`, `failure_count`, `restart_blocked`, `last_exit_event_id`, `last_started_at`, `last_stopped_at`, `browser_product`, `browser_user_agent`, `updated_at`。
+    - 维护 Profile 的用户意向状态与实际观测运行状态。`config_version` 严格代表当前运行实例实际绑定的配置快照版本；`last_started_at` / `last_stopped_at` 为 ISO 8601 带时区，浏览器版本字段来自容器内 CDP `Browser.getVersion`（t035 AC-009/010）。
+06. `artifacts`：
     - 字段：`id`, `profile_id`, `name`, `size`, `kind`, `state`, `content_type`, `picker_name`, `sha256`, `storage_path`, `delete_requested_at`, `created_at`。
-    - 存储 Profile 关联文件的元数据索引，二进制文件存放在对应文件卷。
-    - `delete_requested_at`（迁移 0008，t021）是持久化删除意图：先落意图、再删文件、最后删行；服务启动时续跑未完成意图。删除目标是否已存在等标量判断走专用存在性查询，不整表加载实体。
-6. `settings`：
-    - 字段：`key` (PK), `value`, `updated_at`。
-    - 存储系统级键值配置。
-7. `runtime_events`：
+    - 存储 Profile 关联文件的元数据索引，二进制文件存放在对应文件卷。`delete_requested_at` 是持久化删除意图：先落意图、再删文件、最后删行；服务启动时续跑未完成意图。
+07. `settings`：`key` (PK), `value`, `updated_at`；系统级键值配置。
+08. `runtime_events`：
     - 字段：`event_id` (PK), `profile_id`, `runtime_instance_id`, `event_type`, `exit_code`, `exit_reason`, `config_version`, `payload`, `created_at`。
-    - 持久化运行期退出/生命周期事件，通过 `event_id` 主键执行物理去重；`runtime_events` 随 Profile 级联删除，审计总账由独立 `audit_events` 承担。
-8. `audit_events`：
-    - 字段：`id` (PK), `entity_type`, `entity_id`, `action`, `actor`, `details`, `created_at`。
-    - 记录关键操作审计与幂等性校验签名。
+    - 持久化运行期退出/生命周期事件，通过 `event_id` 主键执行物理去重；随 Profile 级联删除，审计总账由独立 `audit_events` 承担。
+09. `audit_events`：
+    - 字段：`id` (PK), `entity_type`, `entity_id`, `action`, `actor`, `details`, `created_at`；记录关键操作审计与幂等性校验签名。
+10. `profile_controls`：`profile_id` (PK), `owner`, `generation`, `agent_instance_id`, `agent_session_id`, `handoff_reason`, `handoff_detail`, `agent_reclaim_allowed`, `pending_supervisor_close`, `updated_at`。
+11. 认证与自动化表：`admins`（`id`, `username`, `password_hash`, `created_at`, `updated_at`）、`sessions`（`id`, `token_hash`, `csrf_token`, `expires_at`, `created_at`）、`automation_tokens`（`id`, `name`, `token_hash`, `profile_ids`, `revoked`, `created_at`, `revoked_at`, `expires_at`）。
 
 ## 3. 运行状态分离与状态收敛契约
 
@@ -90,8 +88,8 @@
     - 若同一操作 ID 被复用于不同目标 Profile、不同动作或不同载荷，API 返回明确的 HTTP 409 Conflict（`idempotency_conflict`），阻止跨实体污染。
     - 重放启动意图（`desired_state=running`）的旧操作 ID 时，保持幂等重放语义，**严禁将崩溃累积的 `failure_count` 清零**；仅全新的手动启动请求可重置失败计数与阻断标记。
     - 三个写入点（create/update/set_desired_state）的审计匹配共用单一 helper（t021）；目标已删除后的重放有确定性语义：update 重放返回已删除（None），create 重放按审计中的实体 ID 确定性重建同一身份，不生成新 ID。
-- **查询加载边界（t021）**：
-    - Profile 四个集合关系（tags/versions/runtime/artifacts）统一 `lazy="noload"` + `passive_deletes=True`：删除走数据库外键级联（`ON DELETE CASCADE` + `foreign_keys` pragma），普通读取不隐式整表加载集合；确需标签的读取由仓储显式 `selectinload`。
+- **查询加载边界（t021，t035 修订）**：
+    - Profile 集合关系（versions/runtime/artifacts）统一 `lazy="noload"` + `passive_deletes=True`：删除走数据库外键级联（`ON DELETE CASCADE` + `foreign_keys` pragma），普通读取不隐式整表加载集合；`group_id` / `proxy_id` 是标量外键引用，不再有业务 Tag 集合（t035）。
     - 下载去重在 SQL 层按 `(profile, sha256, storage_path)` 精确过滤，不再把候选集拉回内存逐条比对。
 - **并发版本分配**：
     - Profile 采用仅传递修改字段并在 `BEGIN IMMEDIATE` 事务内就地合并的方式，杜绝了预读导致的更新丢失；更新版本号自动计算最新最大版本号递增，并在并发冲突时安全重试。

@@ -14,7 +14,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 
 import docker
 import httpx
@@ -88,27 +88,24 @@ async def create_profile_via_ui(
     page: Page,
     harness: FrontendAppTopologyHarness,
     name: str,
-    tags: str = "",
     width: int = 1920,
     height: int = 1080,
 ) -> str:
-    await page.goto(f"{harness.origin}/profiles/new", wait_until="domcontentloaded")
-    await page.wait_for_selector('[data-testid="profile-new-page"]', timeout=15000)
-    await page.fill('[data-testid="profile-name-input"]', name)
-    if tags:
-        await page.fill('[data-testid="profile-tags-input"]', tags)
-    await page.fill('[data-testid="profile-width-input"]', str(width))
-    await page.fill('[data-testid="profile-height-input"]', str(height))
-    await page.click('[data-testid="profile-create-submit"]')
-    await page.wait_for_url(re.compile(r"/\?profileId="), timeout=20000)
-    return parse_qs(urlparse(page.url).query)["profileId"][0]
+    del page
+    async with await harness.api_client() as client:
+        resp = await client.post(
+            "/api/v1/profiles",
+            json={"name": name, "screen_width": width, "screen_height": height},
+        )
+        resp.raise_for_status()
+        return resp.json()["id"]
 
 
 async def open_session(
     page: Page, harness: FrontendAppTopologyHarness, profile_id: str
 ) -> None:
     await page.goto(
-        f"{harness.origin}/?profileId={profile_id}", wait_until="domcontentloaded"
+        f"{harness.origin}/session/{profile_id}", wait_until="domcontentloaded"
     )
 
 
@@ -116,12 +113,19 @@ async def launch_profile_via_ui(page: Page, timeout: float = 120.0) -> None:
     """Clicks the in-page Launch button; waits for the Stop state to appear via SSE."""
     await page.click('[data-testid="session-launch-btn"]', timeout=15000)
     await page.wait_for_selector(
-        '[data-testid="header-stop-btn"]', timeout=timeout * 1000
+        '[data-testid="browser-session-mount"]', timeout=timeout * 1000
     )
 
 
-async def stop_profile_via_header(page: Page) -> None:
-    await page.click('[data-testid="header-stop-btn"]', timeout=15000)
+async def stop_profile_via_api(
+    page: Page,
+    harness: FrontendAppTopologyHarness,
+    profile_id: str,
+) -> None:
+    del page
+    async with await harness.api_client() as client:
+        resp = await client.post(f"/api/v1/profiles/{profile_id}/stop")
+        resp.raise_for_status()
 
 
 async def _evaluate_bounded(
@@ -323,20 +327,15 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
 
         name_a = "Fe Alpha"
         name_b = "Fe Beta"
-        profile_a = await create_profile_via_ui(
-            page_a, harness, name_a, tags="alpha,beta"
-        )
-        profile_b = await create_profile_via_ui(page_a, harness, name_b, tags="gamma")
+        profile_a = await create_profile_via_ui(page_a, harness, name_a)
+        profile_b = await create_profile_via_ui(page_a, harness, name_b)
 
-        # Profile list shows the created profiles and tags.
-        await page_a.goto(harness.origin + "/", wait_until="domcontentloaded")
-        await page_a.wait_for_selector(
-            f'[data-testid="profile-item-{profile_a}"]', timeout=15000
-        )
-        item_text = await page_a.inner_text(f'[data-testid="profile-item-{profile_a}"]')
-        assert name_a in item_text and "#alpha" in item_text and "#beta" in item_text
+        # The environment list is delivered by t037; verify creation via API.
+        async with await harness.api_client() as client:
+            resp = await client.get("/api/v1/profiles")
+            assert name_a in resp.text
 
-        # Edit name/tags through the UI.
+        # Edit name through the UI.
         await page_a.goto(
             f"{harness.origin}/profiles/{profile_a}", wait_until="domcontentloaded"
         )
@@ -344,20 +343,13 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             '[data-testid="profile-detail-page"]', timeout=15000
         )
         await page_a.fill('[data-testid="profile-name-input"]', name_a + " Edited")
-        await page_a.fill('[data-testid="profile-tags-input"]', "delta,epsilon")
         await page_a.click('[data-testid="profile-edit-submit"]')
         await page_a.wait_for_selector(
             '[data-testid="profile-save-success"]', timeout=15000
         )
-        await page_a.goto(harness.origin + "/", wait_until="domcontentloaded")
-        await page_a.wait_for_selector(
-            f'[data-testid="profile-item-{profile_a}"]', timeout=15000
-        )
-        edited_text = await page_a.inner_text(
-            f'[data-testid="profile-item-{profile_a}"]'
-        )
-        assert name_a + " Edited" in edited_text
-        assert "#delta" in edited_text and "#epsilon" in edited_text
+        async with await harness.api_client() as client:
+            resp = await client.get("/api/v1/profiles")
+            assert name_a + " Edited" in resp.text
 
         # Start profile A through the session page; runtime state must arrive via SSE
         # (no reload and no polling: the mutation only sets desired/observed=starting).
@@ -372,22 +364,18 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
         await launch_profile_via_ui(page_b)
         stats_b = await wait_iframe_stats(page_b, name="B")
 
-        assert parse_qs(urlparse(page_a.url).query)["profileId"] == [profile_a]
-        assert parse_qs(urlparse(page_b.url).query)["profileId"] == [profile_b]
+        assert urlparse(page_a.url).path == f"/session/{profile_a}"
+        assert urlparse(page_b.url).path == f"/session/{profile_b}"
         assert profile_a in (await iframe_src(page_a))
         assert profile_b in (await iframe_src(page_b))
         assert stats_a["tab_id"] != stats_b["tab_id"]
 
         # Switching profile on page A must not change page B's target or connection.
         frames_b_before = stats_b["video"]["framesDecoded"]
-        await page_a.click(f'[data-testid="profile-item-{profile_b}"]')
-        await page_a.wait_for_url(
-            re.compile(rf"\?profileId={profile_b}"), timeout=15000
-        )
-        assert parse_qs(urlparse(page_a.url).query)["profileId"] == [profile_b]
-        assert parse_qs(urlparse(page_b.url).query)["profileId"] == [profile_b]
-        header_b = await page_b.inner_text('[data-testid="active-profile-header"]')
-        assert name_b in header_b
+        await open_session(page_a, harness, profile_b)
+        assert urlparse(page_a.url).path == f"/session/{profile_b}"
+        assert urlparse(page_b.url).path == f"/session/{profile_b}"
+
         await animate_remote_fixture(harness, profile_b)
         stats_b_after = await wait_iframe_stats(
             page_b, name="B after switch", min_frames=frames_b_before + 1
@@ -416,13 +404,13 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             '[data-testid="session-launch-btn"]', timeout=45000
         )
 
-        # Stop page A's profile through the header action (explicit stop only).
-        await page_a.click(f'[data-testid="profile-item-{profile_a}"]')
-        await page_a.wait_for_url(
-            re.compile(rf"\?profileId={profile_a}"), timeout=15000
+        # Stop page A's profile via API: the new shell has no header stop
+        # control (t039 delivers the session stop action).
+        await open_session(page_a, harness, profile_a)
+        await page_a.wait_for_selector(
+            '[data-testid="browser-session-mount"]', timeout=45000
         )
-        await page_a.wait_for_selector('[data-testid="header-stop-btn"]', timeout=45000)
-        await stop_profile_via_header(page_a)
+        await stop_profile_via_api(page_a, harness, profile_a)
         await page_a.wait_for_selector(
             '[data-testid="session-launch-btn"]', timeout=60000
         )
@@ -459,7 +447,7 @@ async def test_ac002_ac003_ac010_identity_copy_close_and_tokens(
         page_a = await context.new_page()
         await ui_login(page_a, harness)
         profile_id = await create_profile_via_ui(
-            page_a, harness, "Identity Profile", tags="id"
+            page_a, harness, "Identity Profile"
         )
 
         wire = WireRecorder(page_a, context)
@@ -625,9 +613,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
     try:
         page_a = await context.new_page()
         await ui_login(page_a, harness)
-        profile_id = await create_profile_via_ui(
-            page_a, harness, "Input Profile", tags="io"
-        )
+        profile_id = await create_profile_via_ui(page_a, harness, "Input Profile")
 
         wire = WireRecorder(page_a, context)
         await wire.start()
@@ -1054,7 +1040,7 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
             # The product action must route to the profile detail page.
             await media_page.click('[data-testid="session-view-status-btn"]')
             await media_page.wait_for_url(
-                re.compile(rf"/profiles/{profile_id}$"), timeout=15000
+                re.compile(rf"/profiles/{profile_id}/config$"), timeout=15000
             )
         finally:
             await media_page.close()
@@ -1155,7 +1141,7 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
         stats = await wait_iframe_stats(page, name="coordinator launch")
 
         # Explicit stop button removes the real containers.
-        await stop_profile_via_header(page)
+        await stop_profile_via_api(page, harness, profile_id)
         await harness.wait_runtime(profile_id, desired="stopped", observed="stopped")
         await wait_runtime_containers_gone(harness, profile_id)
         await page.wait_for_selector(
@@ -1226,7 +1212,7 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
             },
         )
 
-        await stop_profile_via_header(page)
+        await stop_profile_via_api(page, harness, profile_id)
         await harness.wait_runtime(profile_id, desired="stopped", observed="stopped")
         await wait_runtime_containers_gone(harness, profile_id)
     finally:
@@ -1352,10 +1338,14 @@ async def test_t019_switch_and_refresh_first_frame_within_2s_host_only(
 
         # Switch A -> B from the sidebar: new PeerConnection, first frame <= 2s.
         switch_start = time.monotonic()
-        await page_a.click(f'[data-testid="profile-item-{profile_b}"]')
+        await page_a.evaluate(
+            "(id) => { window.history.pushState({}, '', '/session/' + id);"
+            " window.dispatchEvent(new PopStateEvent('popstate')); }",
+            profile_b,
+        )
         clicked = time.monotonic()
         await page_a.wait_for_url(
-            re.compile(rf"\?profileId={profile_b}"), timeout=15000
+            re.compile(rf"/session/{profile_b}"), timeout=15000
         )
         navigated = time.monotonic()
         await wait_iframe_stats(page_a, name="B after switch")

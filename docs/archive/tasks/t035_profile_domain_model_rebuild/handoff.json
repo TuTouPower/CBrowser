@@ -1,0 +1,16 @@
+{
+  "tid": "t035",
+  "attempt": 1,
+  "execution_id": "34759d072cbe4c0698bf3c29f8b20d50",
+  "status": "done",
+  "branch": "t035_profile_domain_model_rebuild",
+  "base_sha": "eeffb8947b130185fd2bd5f3e4d565f5faae5bef",
+  "tests": "六轮 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` evidence 模式，**finish 依据为最终第六轮 `.scratch/evidence_t035_final2/`**（最终代码 + 最终重建镜像）：contract exit 0、unit exit 0（1063 passed）、frontend_test exit 0（40 files / 216+ tests）、frontend_build exit 0、integration 135 passed / 1 failed / 18 skipped、e2e 100 passed / 2 failed / 2 skipped。`test_t008_download_reconcile_after_agent_restart`、`test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection` 与新增 `test_t035_proxy_outbound_and_cdp_browser_version` 在最终门禁 junit 中均无 failure。全量 unit 在 Python 3.15 门禁 venv 下 1063 passed；定向：9 个重写用例 + 12 个纯新增用例在 HEAD 旧实现上实证为红、新实现全绿；t008 两个竞态各 2 条红测先红后绿。`manifest.all_passed=false` 的三项剩余失败（`test_t019...` 为 t032 已登记遗留；`test_ac009_supervisor_unreachable...` 为收敛时序、`test_vendor_script_injects...` 为下载 SSL EOF，均有零改动 + 单跑通过的证据）逐项如实登记在「结果摘要」，不归因 t035。",
+  "blackbox": "真实 Docker/Chrome 完整栈 E2E 四轮（Browser/Stream/Gateway/Supervisor/API/Caddy + 无头 Google Chrome）；`s013` spike 在 Linux arm64 容器内以真实 Chromium 146 引擎做认证 SOCKS5 三组实测（无认证 / 正确凭据 / 错误凭据），finding `d031`。新增真实栈用例验证引用代理的浏览器出站经本地记录代理、UDS health 携带 CDP `Browser.getVersion` 字段。",
+  "review": "full review 两路（code / test）Round 1 各 PASS、共 4 条 minor 全部「已修」，Round 2 / 3 / 4 独立复核修复与 scope 重绑定，零新 finding、零 TICK-VOID、12 条 AC 全 TICK-VALID；`check_review_status.py`：`code_verdict=PASS`、`test_verdict=PASS`、`overall=PASS`、`review_scope=ok`、`ac_review=ok`、`next_action=finalize`；scope 最终定稿 `8470a2b443de40dc`（`3cd91010480bf5ab` → `83ac5cc8b9059f44` → `2685fd4cc458f17c` → `8470a2b443de40dc`，最后一次仅由纯机械 Markdown 格式化引起）。报告：`review_code.md` / `review_test.md`；处置见「Review 处置」。",
+  "review_scope": "8470a2b443de40dc",
+  "pending": [],
+  "findings": [
+    "d031"
+  ]
+}

@@ -25,16 +25,18 @@ cd "$REPO_ROOT"
 # and the scratch directory is deleted by the trap above.
 EVIDENCE_DIR="${CBROWSER_GATE_EVIDENCE_DIR:-}"
 
-# Build the gate environment once from the pinned dependency lock
-# (scripts/gate-requirements.txt, t024 AC-009/A30).  Every suite below runs
-# in this single environment, so a gate run is reproducible from an empty
-# cache and no longer depends on live resolution of unpinned package sets.
+# Build the gate environment once from the single uv.lock source
+# (t034 AC-002/AC-003).  Every suite below runs in this single environment,
+# so a gate run is reproducible from an empty cache.  GATE_PYTHON_MINOR is
+# the same minor as every runtime image; uv fails with an explicit
+# "no interpreter found" message when it is unavailable locally.
+GATE_PYTHON_MINOR="3.15"
 VENV="$SCRATCH/venv"
 if [ -n "$EVIDENCE_DIR" ]; then
   mkdir -p "$EVIDENCE_DIR/logs" "$EVIDENCE_DIR/junit"
   : > "$EVIDENCE_DIR/suites.tsv"
   build_ok=1
-  uv venv --python 3.12 "$VENV" >"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1 || build_ok=0
+  uv venv --python "$GATE_PYTHON_MINOR" "$VENV" >"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1 || build_ok=0
   if [ "$build_ok" = 1 ]; then
     uv pip install --python "$VENV/bin/python" -r scripts/gate-requirements.txt >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1 || build_ok=0
   fi
@@ -57,7 +59,7 @@ if [ -n "$EVIDENCE_DIR" ]; then
     exit 1
   fi
 else
-  uv venv --python 3.12 "$VENV"
+  uv venv --python "$GATE_PYTHON_MINOR" "$VENV"
   uv pip install --python "$VENV/bin/python" -r scripts/gate-requirements.txt
 fi
 PY="$VENV/bin/python"
@@ -90,8 +92,10 @@ if [ -n "$EVIDENCE_DIR" ]; then
     --junitxml="$EVIDENCE_DIR/junit/unit.xml"
   run_suite integration env PYTHONPATH=src/backend "$PY" -m pytest tests/integration -q \
     --junitxml="$EVIDENCE_DIR/junit/integration.xml"
-  run_suite frontend_test env NODE_OPTIONS=--no-experimental-webstorage \
-    npm test --prefix src/frontend
+  run_suite design_lint npm run design:lint --prefix src/frontend
+  run_suite design_check npm run design:check --prefix src/frontend
+  run_suite design_tokens npm run design:tokens --prefix src/frontend
+  run_suite frontend_test npm test --prefix src/frontend
   run_suite frontend_build npm run build --prefix src/frontend
 
   if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
@@ -109,7 +113,10 @@ fi
 "$PY" -m pytest .repo_template/tests -q -m contract
 PYTHONPATH=src/backend "$PY" -m pytest tests/unit -q
 PYTHONPATH=src/backend "$PY" -m pytest tests/integration -q
-NODE_OPTIONS=--no-experimental-webstorage npm test --prefix src/frontend
+npm run design:lint --prefix src/frontend
+npm run design:check --prefix src/frontend
+npm run design:tokens --prefix src/frontend
+npm test --prefix src/frontend
 npm run build --prefix src/frontend
 
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then

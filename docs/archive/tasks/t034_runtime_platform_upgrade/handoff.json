@@ -1,0 +1,16 @@
+{
+  "tid": "t034",
+  "attempt": 1,
+  "execution_id": "ef9b049c79f04fb9855ba28c6ca9e808",
+  "status": "done",
+  "branch": "t034_runtime_platform_upgrade",
+  "base_sha": "00f828e9cdf4db729c39f36a12ee303cbb7a5910",
+  "tests": "完整 required+evidence 门禁 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`（Node 26.13、Python 3.15，证据 `.scratch/evidence_t034c/`）：contract 222 passed / 1 skipped、unit 全绿、integration 全绿、frontend_test 216 Vitest + 类型检查、frontend_build 含 `verify_frontend_dist.py --check-freshness`、e2e 103 项 0 失败 2 skip（探针门控）；`manifest.json` 六个 suite exit_code 全 0、`all_passed=true`。定向：`test_t034_dependency_lock.py` 5 passed、`test_t034_runtime_paths.py` + vendor 安全 10 passed、`verify_image_packages.py` 五镜像全 MATCH、Python 3.15 venv 全量回归 contract 222 / unit 1002+8 / integration 142。",
+  "blackbox": "全量真实栈 E2E 无头通过（含 AC-005 的 Caddy HTTPS 静态资源与 `/api/v1`、`/stream/*/signal` 转发用例）；AC-006 隔离实例演练：独立 project/prefix `cbrowser-t034-rh`、端口 56789、独立 data/secrets/deploy 目录，连续发布 rh1 → rh2 → 回退 rh1，三次 `up --wait` 四服务全 Healthy、readiness `{\"ready\": true}`，生产 `cbrowser-*` 栈与其它实例全程未受影响，演练后隔离栈已 down -v 清理。",
+  "review": "full 级独立 review（`review_code.md` / `review_test.md`）PASS。",
+  "review_scope": "4230c0bb95b7ec52",
+  "pending": [
+    "p044"
+  ],
+  "findings": []
+}

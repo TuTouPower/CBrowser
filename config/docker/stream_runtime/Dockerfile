@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337 AS builder
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0 AS builder
 
 USER root
 
@@ -29,7 +29,7 @@ RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
-FROM python:3.12-slim-bookworm@sha256:e697c81897302a4c4333bade000d98038fbb21eb064f8ee1fd42d02ebcd9d337
+FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
 
 USER root
 
@@ -37,7 +37,7 @@ USER root
 ARG APT_MIRROR=""
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s|deb.debian.org|$APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources; fi
 
-# Runtime shared libraries and tools for Selkies 2.1.0 only: the runtime
+# Runtime shared libraries and tools for Selkies 2.2.1 only: the runtime
 # counterparts of the builder stage's -dev packages, with no toolchain.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \

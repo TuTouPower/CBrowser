@@ -14,7 +14,7 @@ from cbrowser.adapters.database.artifact_repository import ArtifactRepository
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.domain.models import ProfileConfig, Tag
+from cbrowser.domain.models import ProfileConfig
 from sqlalchemy import event
 
 
@@ -38,16 +38,16 @@ def _capture(engine) -> list[str]:
 
 
 @pytest.mark.asyncio
-async def test_ordinary_profile_reads_do_not_load_history(repos) -> None:
+async def test_ordinary_profile_reads_do_not_load_history_with_refs(repos) -> None:
     engine, profiles, artifacts = repos
     profile = await profiles.create_profile(
-        ProfileConfig(name="History", fingerprint_seed=7),
-        tags=[Tag(tag="keep")],
+        ProfileConfig(name="History", fingerprint_seed=7)
     )
-    # Grow immutable history: config versions and artifact rows.
+    # Grow immutable history with runtime-config field changes (t035 AC-006:
+    # metadata-only edits no longer create a version) and artifact rows.
     for index in range(3):
         await profiles.update_profile(
-            profile.id, {"notes": f"edit-{index}"}
+            profile.id, {"screen_width": 1280 + index}
         )
     for index in range(3):
         await artifacts.create_artifact(
@@ -67,15 +67,17 @@ async def test_ordinary_profile_reads_do_not_load_history(repos) -> None:
     joined = "\n".join(statements)
     assert "profile_config_versions" not in joined
     assert "artifacts" not in joined
-    assert "profile_tags" in joined
+    assert "FROM profiles" in joined
 
     # Returned DTOs are unchanged by the loading strategy.
     assert fetched is not None
     assert fetched.config.name == "History"
-    assert [tag.tag for tag in fetched.tags] == ["keep"]
     assert fetched.current_config_version == 4
     assert [item.id for item in listed] == [profile.id]
-    assert [tag.tag for tag in listed[0].tags] == ["keep"]
+
+    # AC-006: a metadata-only edit (name) must not create a new version.
+    await profiles.update_profile(profile.id, {"name": "History renamed"})
+    assert (await profiles.get_profile(profile.id)).current_config_version == 4
 
 
 @pytest.mark.asyncio

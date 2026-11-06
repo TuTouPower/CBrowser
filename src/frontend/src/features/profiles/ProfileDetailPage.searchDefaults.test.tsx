@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";
@@ -11,10 +11,8 @@ import { ProfileDetailPage } from "./ProfileDetailPage";
 const PROFILE = {
   id: "p1",
   name: "Original",
-  proxy: "",
   screen_width: 1920,
   screen_height: 1080,
-  tags: [],
   current_config_version: 1,
 } as unknown as ProfileResponse;
 
