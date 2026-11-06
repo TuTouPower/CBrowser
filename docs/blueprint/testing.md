@@ -63,6 +63,10 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 门禁证据模式：设置 `CBROWSER_GATE_EVIDENCE_DIR=<dir>` 运行 `scripts/run_gates.sh` 时，各 suite 逐个执行到底（单 suite 失败不中止后续 suite），每 suite 的脱敏日志（`scripts/redact_evidence.py` 处理 token/password/secret/api_key/authorization 与 Bearer/会话 Cookie）、JUnit XML（pytest suite）与退出码保留在证据目录，并生成 `manifest.json`：含逐 suite 的名称、完整命令、退出码、log 与 junit 路径、运行镜像的不可变身份（`image_identity` 字段，取自同一身份校验）与总判定 `all_passed`；任一 suite 非零时总退出码非零。未设置该变量时保持默认 fail-fast 行为。
 
+## gate_timeout_seconds
+
+1800
+
 ## Stream Runtime 组件验证
 
 运行 t004/t015 组件验收前，按照 docs/guides/stream_runtime_validation.md 提供 Browser/Stream 不可变镜像 ID 和只读引擎缓存。完整媒体测试通过官方 Mac Google Chrome，覆盖双 Peer、复制标签、刷新、关闭首 tab、可见性暂停/恢复、Viewer 断线 resume、共享策略、真实组合输入与 Browser 生存性；媒体为同机直连，无 coturn/TURN。
