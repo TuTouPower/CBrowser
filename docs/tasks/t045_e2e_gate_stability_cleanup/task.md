@@ -29,13 +29,13 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：`run_gate_suite` 的并行阶段（c1）与串行阶段（c2）对 pytest exit 5（no tests collected）对称处理；构造一个全部用例标 `serial` 的 suite 时，门禁不假失败，且 junit 仍合并该 suite 的串行用例结果。
-- [ ] AC-002：门禁启动时检测并清理上一轮遗留的测试前缀容器与网络（按前缀白名单精确匹配）；`cbrowser-supervisor/gateway/api/caddy` 生产部署容器与其它会话命名的资源不被删除；SIGTERM/SIGINT/EXIT 中断时也执行同一套清理；有单测覆盖「残留容器存在时被清」「非白名单容器不被删」。
-- [ ] AC-003：前端 E2E 文件内共享一套容器栈，用例间只重置状态；串行阶段整套容器启停次数显著低于改造前（同一文件内多次用例不再各起一套）；文件内全部用例通过且无跨用例 Profile / 状态串扰（有隔离语义测试覆盖）。
-- [ ] AC-004：`test_vendor_replaces_stale_destination_contents` 不再发起任何公网请求，使用本地已锁定 SHA256 的缓存 wheel；缓存缺失且必跑模式时用例失败并列出缺失项，非必跑模式才 skip；不回落公网。
-- [ ] AC-005：`test_ac007_lifecycle_resume_and_isolated_media_diagnostics` 的媒体帧判定与 `test_supervisor_recovery_e2e::test_supervisor_dual_profile_port_invariance_on_sigkill` 的 setup 就绪判定改为事件 / 就绪条件驱动，无 `sleep` 加长或超时上调；负载下稳定通过。
-- [ ] AC-006：合并 task 的完整门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）中 AC-004、AC-005 涉及的三个 E2E 用例都通过（非仅定向单跑通过），E2E 失败集合不超出 t032 已登记基线（t019 首帧）。
-- [ ] AC-007：p046 / p048 / p049 / p050 四条 pending 在收尾前按 `pending.py archive --resolution transferred --fix-ref t045` 归档（p046 在 t044 与 t037 分支的重复只归档本 worktree 内一份），归档备注写明转入 tid 与核实结论。
+- [x] AC-001：`run_gate_suite` 的并行阶段（c1）与串行阶段（c2）对 pytest exit 5（no tests collected）对称处理；构造一个全部用例标 `serial` 的 suite 时，门禁不假失败，且 junit 仍合并该 suite 的串行用例结果。
+- [x] AC-002：门禁启动时检测并清理上一轮遗留的测试前缀容器与网络（按前缀白名单精确匹配）；`cbrowser-supervisor/gateway/api/caddy` 生产部署容器与其它会话命名的资源不被删除；SIGTERM/SIGINT/EXIT 中断时也执行同一套清理；有单测覆盖「残留容器存在时被清」「非白名单容器不被删」。
+- [x] AC-003：前端 E2E 文件内共享一套容器栈，用例间只重置状态；串行阶段整套容器启停次数显著低于改造前（同一文件内多次用例不再各起一套）；文件内全部用例通过且无跨用例 Profile / 状态串扰（有隔离语义测试覆盖）。
+- [x] AC-004：`test_vendor_replaces_stale_destination_contents` 不再发起任何公网请求，使用本地已锁定 SHA256 的缓存 wheel；缓存缺失且必跑模式时用例失败并列出缺失项，非必跑模式才 skip；不回落公网。
+- [x] AC-005：`test_ac007_lifecycle_resume_and_isolated_media_diagnostics` 的媒体帧判定与 `test_supervisor_recovery_e2e::test_supervisor_dual_profile_port_invariance_on_sigkill` 的 setup 就绪判定改为事件 / 就绪条件驱动，无 `sleep` 加长或超时上调；负载下稳定通过。
+- [x] AC-006：合并 task 的完整门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）中 AC-004、AC-005 涉及的三个 E2E 用例都通过（非仅定向单跑通过），E2E 失败集合不超出 t032 已登记基线（t019 首帧）。
+- [x] AC-007：p046 / p048 / p049 / p050 四条 pending 在收尾前按 `pending.py archive --resolution transferred --fix-ref t045` 归档（p046 在 t044 与 t037 分支的重复只归档本 worktree 内一份），归档备注写明转入 tid 与核实结论。
 
 ### 可测试性声明
 

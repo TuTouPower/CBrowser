@@ -3,7 +3,7 @@
 - task：`t037_environment_management_ui`
 - spec：`docs/tasks/t037_environment_management_ui/task.md`
 - diff_anchor：`05dda065aa237f9e32c3507f6f6a65f47a185205`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t037' diff 05dda065aa237f9e32c3507f6f6a65f47a185205`
+- target：`git diff 05dda065aa237f9e32c3507f6f6a65f47a185205`（t037 worktree）
 - round：1
 - reviewed_at：2026-11-07T02:04:37+08:00
 

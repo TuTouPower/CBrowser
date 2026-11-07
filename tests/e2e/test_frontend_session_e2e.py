@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 
+import httpx  # noqa: E402
 import pytest  # noqa: E402
 from frontend_probe.harness import FrontendTopologyHarness  # noqa: E402
 from gateway_probe.browser_oracle import browser_eval  # noqa: E402
@@ -29,6 +30,115 @@ from wait import poll_until  # noqa: E402
 pytestmark = pytest.mark.serial
 
 logger = logging.getLogger("cbrowser.frontend_session.e2e")
+
+
+class SharedContainerStack:
+    def __init__(
+        self,
+        harness: Any,
+        profiles: dict[str, str] | None = None,
+        stop_profile: Callable[[str], Awaitable[None]] | None = None,
+        delete_profile: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        self.harness = harness
+        self.profiles = profiles if profiles is not None else {}
+        self._stop_profile = stop_profile
+        self._delete_profile = delete_profile
+        self._started = False
+        self._cleaned = False
+
+    async def start(self) -> None:
+        if not self._started:
+            await self.harness.start()
+            self._started = True
+
+    async def cleanup(self) -> None:
+        if self._started and not self._cleaned:
+            self._cleaned = True
+            await self.harness.cleanup()
+
+    def register_profile(self, case_key: str, profile_id: str) -> None:
+        self.profiles[case_key] = profile_id
+
+    async def reset_profile_state(
+        self,
+        case_key: str,
+        stop_profile: Callable[[str], Awaitable[None]] | None = None,
+        delete_profile: Callable[[str], Awaitable[None]] | None = None,
+    ) -> str | None:
+        profile_id = self.profiles.get(case_key)
+        if profile_id is None:
+            return None
+        stop = stop_profile if stop_profile is not None else self._stop_profile
+        delete = delete_profile if delete_profile is not None else self._delete_profile
+        if stop is None or delete is None:
+            raise RuntimeError('SharedContainerStack profile actions are not configured')
+        await stop(profile_id)
+        await delete(profile_id)
+        self.profiles.pop(case_key, None)
+        return profile_id
+
+
+def _profile_actions(
+    harness: FrontendTopologyHarness,
+) -> tuple[
+    Callable[[str], Awaitable[None]],
+    Callable[[str], Awaitable[None]],
+]:
+    async def stop_profile(profile_id: str) -> None:
+        headers = await harness.login_api()
+        async with httpx.AsyncClient(
+            base_url=harness.origin,
+            headers=headers,
+            verify=False,
+            trust_env=False,
+            timeout=30.0,
+        ) as api:
+            resp = await api.post(f'/api/v1/profiles/{profile_id}/stop')
+            resp.raise_for_status()
+            await poll_until(
+                lambda: api.get(f'/api/v1/profiles/{profile_id}/runtime'),
+                lambda result: (
+                    result.status_code == 200
+                    and result.json().get('observed_state') == 'stopped'
+                    and result.json().get('runtime_instance_id') is None
+                ),
+                timeout=60.0,
+                interval=0.3,
+                description=f'profile {profile_id} runtime stopped',
+            )
+
+    async def delete_profile(profile_id: str) -> None:
+        headers = await harness.login_api()
+        async with httpx.AsyncClient(
+            base_url=harness.origin,
+            headers=headers,
+            verify=False,
+            trust_env=False,
+            timeout=30.0,
+        ) as api:
+            resp = await api.delete(f'/api/v1/profiles/{profile_id}')
+            assert resp.status_code in (200, 204), (
+                f'Failed to delete profile {profile_id}: {resp.text}'
+            )
+
+    return stop_profile, delete_profile
+
+
+@pytest.fixture(scope='module')
+def shared_stack(tmp_path_factory: pytest.TempPathFactory):
+    harness = FrontendTopologyHarness(tmp_path_factory.mktemp('fe_session'))
+    stop_profile, delete_profile = _profile_actions(harness)
+    stack = SharedContainerStack(
+        harness,
+        stop_profile=stop_profile,
+        delete_profile=delete_profile,
+    )
+    asyncio.run(stack.start())
+    try:
+        yield stack
+    finally:
+        asyncio.run(stack.cleanup())
 
 
 async def wait_for_iframe_decode(
@@ -120,15 +230,15 @@ async def get_iframe_webrtc_stats(page: Page) -> dict[str, Any] | None:
 
 @pytest.mark.asyncio
 async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close(
-    tmp_path: Path,
+    shared_stack: SharedContainerStack,
 ) -> None:
     """AC-002, AC-003: tab identity, refresh, copy conflict and close isolation."""
-    harness = FrontendTopologyHarness(tmp_path)
+    harness = shared_stack.harness
+    case_key = 'dual_tab_identity'
     try:
-        await harness.start()
-
         # 1. Create and start a real profile
         profile = await harness.create_and_start_profile("fe_session_identity_prof")
+        shared_stack.register_profile(case_key, profile["profile_id"])
         profile_id = profile["profile_id"]
 
         async with async_playwright() as p:
@@ -251,19 +361,19 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
 
             await browser.close()
     finally:
-        await harness.cleanup()
+        await shared_stack.reset_profile_state(case_key)
 
 
 @pytest.mark.asyncio
 async def test_frontend_session_independent_input_and_mute(
-    tmp_path: Path,
+    shared_stack: SharedContainerStack,
 ) -> None:
     """AC-004, AC-005: lease-free input, independent mute, no activity frames."""
-    harness = FrontendTopologyHarness(tmp_path)
+    harness = shared_stack.harness
+    case_key = 'independent_input_mute'
     try:
-        await harness.start()
-
         profile = await harness.create_and_start_profile("fe_session_input_prof")
+        shared_stack.register_profile(case_key, profile["profile_id"])
         profile_id = profile["profile_id"]
 
         async with async_playwright() as p:
@@ -369,7 +479,7 @@ async def test_frontend_session_independent_input_and_mute(
 
             await browser.close()
     finally:
-        await harness.cleanup()
+        await shared_stack.reset_profile_state(case_key)
 
 
 @pytest.mark.asyncio
@@ -396,14 +506,14 @@ async def animate_remote_page(browser_container: str) -> None:
 
 
 async def test_frontend_session_freeze_resume_and_diagnostics(
-    tmp_path: Path,
+    shared_stack: SharedContainerStack,
 ) -> None:
     """AC-007: freeze/resume via CDP and diagnostic overlay for unready profiles."""
-    harness = FrontendTopologyHarness(tmp_path)
+    harness = shared_stack.harness
+    case_key = 'freeze_resume_diagnostics'
     try:
-        await harness.start()
-
         profile = await harness.create_and_start_profile("fe_session_lifecycle_prof")
+        shared_stack.register_profile(case_key, profile["profile_id"])
         profile_id = profile["profile_id"]
 
         async with async_playwright() as p:
@@ -515,4 +625,4 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
 
             await browser.close()
     finally:
-        await harness.cleanup()
+        await shared_stack.reset_profile_state(case_key)

@@ -8,10 +8,12 @@ only downloads/verifies official assets and injects the classic script tag.
 
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 from pathlib import Path
 
+from e2e_env import require_e2e_available  # noqa: E402
 from scripts import vendor_selkies_web as vendor_module  # noqa: E402
 from scripts.vendor_selkies_web import vendor_selkies_web  # noqa: E402
 
@@ -40,6 +42,22 @@ DIST_ADAPTER_JS = (
 )
 
 
+def _local_wheel() -> Path:
+    cache = Path(
+        os.environ.get(
+            'CBROWSER_SELKIES_WHEEL_CACHE',
+            str(REPO_ROOT / '.scratch' / 'selkies_wheels'),
+        )
+    )
+    wheel = cache / vendor_module.PINNED_WHEEL_FILENAME
+    require_e2e_available(
+        wheel.is_file(),
+        f'Local Selkies wheel cache missing: {wheel} '
+        f'(set CBROWSER_SELKIES_WHEEL_CACHE; public download disabled)',
+    )
+    return wheel
+
+
 def test_production_adapter_artifact_is_built_from_typescript_adapter() -> None:
     assert ADAPTER_TS.is_file(), "adapter.ts must remain the single implementation"
     assert ADAPTER_ENTRY_TS.is_file(), "classic-script entry point is required"
@@ -62,6 +80,7 @@ def test_production_adapter_artifact_is_built_from_typescript_adapter() -> None:
 def test_vendor_script_injects_built_adapter_without_embedding_it(
     tmp_path: Path,
 ) -> None:
+    wheel = _local_wheel()
     dest_dir = tmp_path / "selkies"
     cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
@@ -70,8 +89,10 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
 
     vendor_selkies_web(
         dest_dir=dest_dir,
+        wheel_path=wheel,
         cache_dir=cache_dir,
         manifest_path=manifest_path,
+        allow_download=False,
     )
 
     assert not hasattr(vendor_module, "SELKIES_CLIENT_ADAPTER_JS"), (
@@ -95,6 +116,7 @@ def test_vendor_script_injects_built_adapter_without_embedding_it(
 
 
 def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
+    wheel = _local_wheel()
     dest_dir = tmp_path / "selkies"
     cache_dir = Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp"))
     manifest_path = (
@@ -103,9 +125,11 @@ def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
 
     vendor_selkies_web(
         dest_dir=dest_dir,
+        wheel_path=wheel,
         cache_dir=cache_dir,
         manifest_path=manifest_path,
         inject_adapter=False,
+        allow_download=False,
     )
 
     index_text = (dest_dir / "index.html").read_text(encoding="utf-8")
@@ -115,6 +139,7 @@ def test_vendor_no_inject_adapter_keeps_official_index(tmp_path: Path) -> None:
 
 
 def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
+    wheel = _local_wheel()
     dest_dir = tmp_path / "selkies"
     dest_dir.mkdir()
     (dest_dir / "selkies_adapter.js").write_text("stale embedded adapter")
@@ -122,11 +147,13 @@ def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
 
     vendor_selkies_web(
         dest_dir=dest_dir,
+        wheel_path=wheel,
         cache_dir=Path(tempfile.mkdtemp(prefix="cbrowser-selkies-wheels-", dir="/tmp")),
         manifest_path=REPO_ROOT
         / "config"
         / "selkies"
         / "selkies_web_sha256.txt",
+        allow_download=False,
     )
 
     assert not (dest_dir / "selkies_adapter.js").exists()

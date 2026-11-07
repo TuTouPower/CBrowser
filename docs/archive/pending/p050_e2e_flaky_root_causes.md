@@ -7,4 +7,4 @@
     3. `tests/e2e/test_supervisor_recovery_e2e.py::test_supervisor_dual_profile_port_invariance_on_sigkill`：setup 阶段 `httpx.ReadTimeout: timed out`。同样定位负载下 harness 启动就绪判定根因，改为健康检查 / 事件就绪条件驱动，不加长超时。
 - 验收标准：**聚合 task 的完整门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）中这三项都通过**（不是仅定向单跑通过）。
 - 已知证据：t037 v8 三项失败与定向重跑 `3 passed in 213.30s`；t035 同类 SSL EOF；t044 最终门禁同一批用例通过（说明是负载/网络波动，非稳定回归）。
-- 处理：待转入聚合 task 解决。
+- 处理：t045；resolution=transferred；reason=已核实仍有效并转交 t045 聚合门禁稳定性与 E2E 遗留缺陷收口：p046 exit5 两阶段对称、p048 前缀清理与中断 trap、p049 前端 E2E 共享栈、p050 就绪条件驱动与本地 wheel 缓存；实现与验证随 t045 完成

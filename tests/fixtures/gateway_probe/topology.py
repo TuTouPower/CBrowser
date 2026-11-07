@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import socket
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -25,17 +26,30 @@ from .selkies_assets import prepare_selkies_web_assets
 logger = logging.getLogger("cbrowser.gateway_probe.topology")
 
 
-def find_free_port(start: int = 34800, end: int = 35999) -> int:
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
+_allocated_host_ports: set[int] = set()
+_host_port_lock = threading.Lock()
+
+
+def find_free_port() -> int:
+    """Return an OS-assigned ephemeral loopback host port.
+
+    Docker binds the chosen host port itself, so pre-scanning a fixed range
+    is a TOCTOU race: concurrent xdist workers can all "find" the same free
+    port and then collide with ``Bind ... port is already allocated``
+    (t045 AC-006).  Let the OS allocate from its ephemeral range and keep a
+    per-process set so one pytest process never hands the same port to two
+    harnesses.  The fixed ``CBROWSER_E2E_HTTP_BASE`` worker partition is no
+    longer needed: ephemeral ports are disjoint from it and unique per call.
+    """
+    with _host_port_lock:
+        for _ in range(100):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            if port not in _allocated_host_ports:
+                _allocated_host_ports.add(port)
                 return port
-            except OSError:
-                continue
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    raise RuntimeError("Could not allocate a unique ephemeral host port")
 
 
 async def wait_until_ready(
@@ -92,8 +106,7 @@ class GatewayTopologyHarness:
         self.engine_cache_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
         self.geoip_cache_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
-        http_base = int(os.environ.get("CBROWSER_E2E_HTTP_BASE", "35000"))
-        self.caddy_host_port = find_free_port(http_base, http_base + 999)
+        self.caddy_host_port = find_free_port()
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
 
         self.data_dir = self.work_dir / "data"
@@ -544,6 +557,43 @@ class GatewayTopologyHarness:
         cleanup_prefixed_resources(self.docker_client, self.prefix)
 
 
+def _record_e2e_deletion(
+    name: str, labels: dict[str, Any], action: str, cleanup_prefix: str
+) -> None:
+    """Append a structured deletion record so a container that vanishes
+    mid-test can be attributed to a specific cleanup caller and xdist worker
+    in the next gate run (t045 container-disappearance diagnosis)."""
+    log_path = os.environ.get("CBROWSER_E2E_DELETION_LOG")
+    if not log_path:
+        return
+    import inspect
+    import json
+    from datetime import datetime, timezone
+
+    caller = "unknown"
+    try:
+        for frame in inspect.stack()[1:]:
+            if "topology.py" not in frame.filename:
+                caller = f"{Path(frame.filename).name}:{frame.function}"
+                break
+    except Exception:
+        pass
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "container": name,
+        "label_prefix": (labels or {}).get("com.cbrowser.prefix"),
+        "cleanup_prefix": cleanup_prefix,
+        "caller": caller,
+        "worker": os.environ.get("PYTEST_XDIST_WORKER", "controller"),
+    }
+    try:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
     """Core cleanup helper: removes resources strictly labeled with prefix."""
     errors: list[str] = []
@@ -583,6 +633,7 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
             break
         for c in owned_containers:
             c_name = getattr(c, "name", "unnamed")
+            _record_e2e_deletion(c_name, _labels(c), "container_remove", prefix)
             try:
                 c.stop(timeout=1)
             except docker.errors.NotFound:

@@ -44,3 +44,12 @@
 ## 8. 测试夹具基线（p044 / t044）
 
 - 测试夹具镜像与运行镜像使用相同的 Python 3.15 / Debian trixie digest 基线；Selkies Web 资产提取的 find 定位、归档取得、出错强制删除探测容器三点均有以 Docker SDK 为边界的单测。
+
+## 9. 门禁稳定性与 E2E 遗留缺陷收口（t045）
+
+- `run_gate_suite` 并行阶段（c1）与串行阶段（c2）对 pytest exit 5（no tests collected）对称处理：用例全标 `serial` 的 suite 不再假失败；两阶段都为空时判失败并列出缺项，junit 仍由 `scripts/merge_junit.py` 合并串行结果。
+- 门禁启动与 `SIGTERM` / `SIGINT` / `EXIT` 中断执行同一套清理：`scripts/gate_container_cleanup.py` 按精确测试前缀白名单清理上一轮遗留容器与网络；`cbrowser-api` / `cbrowser-gateway` / `cbrowser-supervisor` / `cbrowser-caddy` 生产部署容器与其它会话命名资源不删。前缀匹配为纯函数，Docker 边界由单测 stub 覆盖。
+- 前端 E2E 文件内共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈，天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
+- Selkies wheel 从 `CBROWSER_SELKIES_WHEEL_CACHE` 指向的本地已锁定 SHA256 缓存读取；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起任何公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项、非必跑模式才 skip，不回落公网。
+- 负载下时序判定统一改为就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 兜底、不上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
+- AC-005 涉及的三个 E2E 用例（`test_vendor_replaces_stale_destination_contents`、`test_ac007_lifecycle_resume_and_isolated_media_diagnostics`、`test_supervisor_dual_profile_port_invariance_on_sigkill`）须在 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 完整必跑门禁中通过，非仅定向单跑。

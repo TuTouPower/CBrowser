@@ -102,7 +102,7 @@ asyncio.run(run_server())
             "--name",
             self.container_name,
             "-p",
-            f"127.0.0.1:{self.port}:{self.port}",
+            f"127.0.0.1::{self.port}",
             "--read-only",
             "--cap-drop",
             "ALL",
@@ -148,7 +148,19 @@ asyncio.run(run_server())
             self.stop()
             raise RuntimeError(f"Container {self.container_name} failed to reach ready")
 
-        return f"http://127.0.0.1:{self.port}"
+        # The host port is assigned by Docker (``-p 127.0.0.1::<container>``),
+        # so no pre-scanned fixed host port can collide with another xdist
+        # worker (t045 AC-006).  Read the actual mapping back.
+        port_res = await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "port", self.container_name, f"{self.port}/tcp"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        mapping = port_res.stdout.strip().splitlines()[0]
+        host_port = mapping.rsplit(":", 1)[-1]
+        return f"http://127.0.0.1:{host_port}"
 
     def get_logs(self) -> str:
         res = subprocess.run(

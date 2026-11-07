@@ -22,6 +22,7 @@ import pytest
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from wait import poll_until
 
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
@@ -1002,25 +1003,35 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
             initial_bytes = initial_fault_stats["video"]["bytesReceived"]
             initial_packets = initial_fault_stats["video"]["packetsReceived"]
 
-            deadline = time.monotonic() + 45
-            media_title = ""
-            final_fault_stats: dict[str, Any] | None = None
-            while time.monotonic() < deadline:
+            async def media_fault_observation() -> tuple[str, dict[str, Any], Any]:
                 title_el = await media_page.query_selector(
                     '[data-testid="session-stage-title"]'
                 )
-                if title_el:
-                    media_title = await title_el.inner_text()
+                title = await title_el.inner_text() if title_el else ""
                 stats = await wait_iframe_stats(
                     media_page, min_frames=0, name="media fault poll"
                 )
-                if "媒体未产生画面" in media_title and (
-                    stats["video"]["bytesReceived"] > initial_bytes
-                    or stats["video"]["packetsReceived"] > initial_packets
-                ):
-                    final_fault_stats = stats
-                    break
-                await asyncio.sleep(0.5)
+                discarded = await iframe_eval(
+                    media_page, "window.__discardedFramesCount || 0"
+                )
+                return title, stats, discarded
+
+            media_title, final_fault_stats, discarded_count = await poll_until(
+                media_fault_observation,
+                lambda obs: (
+                    "媒体未产生画面" in obs[0]
+                    and (
+                        obs[1]["video"]["bytesReceived"] > initial_bytes
+                        or obs[1]["video"]["packetsReceived"] > initial_packets
+                    )
+                    and (obs[2] or 0) > 0
+                ),
+                timeout=45.0,
+                interval=0.5,
+                description=(
+                    "media_no_frames stage, RTP growth and discarded encoded frames"
+                ),
+            )
 
             assert final_fault_stats is not None, (
                 "media_no_frames or RTP growth not observed in 45s: "
@@ -1042,10 +1053,6 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
                     '[data-testid="session-view-status-btn"]'
                 )
                 is not None
-            )
-
-            discarded_count = await iframe_eval(
-                media_page, "window.__discardedFramesCount || 0"
             )
             assert discarded_count > 0, (
                 f"Worker must have discarded encoded frames, got {discarded_count}"
