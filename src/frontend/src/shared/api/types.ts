@@ -19,6 +19,8 @@ export type GroupCreateRequest = Schemas["GroupCreateRequest"];
 export type GroupUpdateRequest = Schemas["GroupUpdateRequest"];
 export type GroupReorderRequest = Schemas["GroupReorderRequest"];
 export type ProxyResponse = Schemas["ProxyResponse"];
+export type ProxyCreateRequest = Schemas["ProxyCreateRequest"];
+export type ProxyUpdateRequest = Schemas["ProxyUpdateRequest"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
 

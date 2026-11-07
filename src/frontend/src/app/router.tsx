@@ -5,6 +5,7 @@ import { BrowserSessionPage } from "../features/profiles/BrowserSessionPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { EnvironmentListPage } from "../features/profiles/EnvironmentListPage";
 import { ProfileDetailPage } from "../features/profiles/ProfileDetailPage";
+import { ProxyListPage } from "../features/proxies/ProxyListPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { PlaceholderPage } from "../routes/PlaceholderPage";
 
@@ -35,7 +36,7 @@ export const routes: RouteObject[] = [
       },
       {
         path: "proxies",
-        element: <PlaceholderPage titleKey="placeholderProxies" />,
+        element: <ProxyListPage />,
       },
       {
         path: "profiles/:profileId",

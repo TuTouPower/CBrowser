@@ -189,11 +189,15 @@ describe("Application Router (plan 5.1)", () => {
     expect(await list.findByTestId("env-list-page")).toBeInTheDocument();
     list.unmount();
 
-    for (const path of ["/session", "/proxies"]) {
+    for (const path of ["/session"]) {
       const view = renderWithRouter([path]);
       expect(await view.findByTestId("placeholder-page")).toBeInTheDocument();
       view.unmount();
     }
+
+    const proxies = renderWithRouter(["/proxies"]);
+    expect(await proxies.findByTestId("proxy-list-page")).toBeInTheDocument();
+    proxies.unmount();
 
     const session = renderWithRouter(["/session/p1"]);
     expect(await session.findByTestId("browser-session-mount")).toBeInTheDocument();

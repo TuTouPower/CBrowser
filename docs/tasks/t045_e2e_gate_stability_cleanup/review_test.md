@@ -3,7 +3,7 @@
 - task：`t045_e2e_gate_stability_cleanup`
 - spec：`docs/tasks/t045_e2e_gate_stability_cleanup/task.md`
 - diff_anchor：`a361058152631d6b4c2621a78cd1609e975621e0`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t045' diff a361058152631d6b4c2621a78cd1609e975621e0`
+- target：`git diff a361058152631d6b4c2621a78cd1609e975621e0`
 - round：1
 - reviewed_at：2026-11-07T08:54:20+08:00
 
@@ -26,7 +26,7 @@ reviewed_scope: 7108a0e4e26fc648
 - 未进表的提示：(1) AC-002 的 EXIT/INT/TERM trap「同一套清理」仅 `.scratch/t045_verify/trap_check.py` + `trap_normal.log`/`trap_sigint.log` smoke（各 `scratch`/`containers` 一次），未入库；AC-002 明确要求的两类单测（残留容器被清 / 非白名单不被删）已由 9 条入库单测覆盖，trap 未列入「有单测覆盖」要求，故不进表。(2) `tests/fixtures/gateway_probe/topology.py:396` 仍为 `ports={"443/tcp": ("127.0.0.1", self.caddy_host_port)}` 显式宿主端口绑定；端口 guard 仅验证 `find_free_port` 内 `bind(0)` 与不读 `CBROWSER_E2E_HTTP_BASE`（`test_t045_e2e_host_port_allocation.py:124-167`），未覆盖实际 docker 绑定形态，属可选覆盖扩展，非本 task 引入的假行为。(3) 危险模式扫描全量：diff 无删除断言 / 删测试 / `.skip` / `.only` / 恒真断言 / `type: ignore` / 阈值（timeout/重试/容差）增大掩盖。`test_frontend_session_e2e.py` 删除每用例 `harness.cleanup()` 由 spec 共享栈要求驱动，已由 module `shared_stack.cleanup()` 与 `test_t045_e2e_shared_stack.py` 等价补回，合法。(4) 端口防回归 3 条单测真实触达：ast.parse 遍历真实 `tests/e2e/test_*.py` 与 `topology.py`；`_pinned_literal_ports` 覆盖 `ports=` 字面量固定端口与非 0 `bind`，`_fixed_range_port_scans` 覆盖 `find_free_port(start,end)` 带参调用，`_pinned_cli_port_mappings` 覆盖 `f"127.0.0.1:{a}:{b}"` 双端口；实测 helper 命中 `test_stream_runtime_e2e.py` 的 `f'127.0.0.1:{udp_mux_port}:{udp_mux_port}/udp'` 且该模块 `pytestmark = pytest.mark.serial`，`test_non_serial_e2e_modules_do_not_pin_host_ports` 正确跳过、`test_modules_with_pinned_host_ports_are_serial` 通过；改回固定范围扫描会同时触发 `_bind_zero` 缺失与「不得 bind 固定端口」断言，非假绿。
 - 总体判断：7 条 AC 打勾在测试与验证层均有真实证据支撑；唯一 minor 为 AC-001 验证未入库，无未解决 critical / important，PASS。
 - 系统性 follow-up：`docs/pending/todo/p051_e2e_container_vanish_during_gate.md`（观察项，已登记）。前四轮完整门禁曾出现「容器运行期消失」超基线失败，根因未定；第 5 轮冻结门禁未复现。AC-006 按第 5 轮证据判定成立，但稳定性仍依赖后续门禁按 p051 归因，不据一次全绿结案根因。
-- 复核执行：落点仓库 `git rev-parse --show-toplevel` = `/Users/karson/kar/code/CBrowser_t045` ✓；`env PYTHONPATH=src/backend .scratch/gate_venv/bin/python -m pytest tests/unit/test_t045_*.py -q` → 16 passed；`tests/unit -q -n 4` → 1159 passed；`bash -n scripts/run_gates.sh` → OK。
+- 复核执行：落点仓库 `git rev-parse --show-toplevel` = `t045 worktree` ✓；`env PYTHONPATH=src/backend .scratch/gate_venv/bin/python -m pytest tests/unit/test_t045_*.py -q` → 16 passed；`tests/unit -q -n 4` → 1159 passed；`bash -n scripts/run_gates.sh` → OK。
 
 ### AC 复验方式
 
@@ -46,7 +46,7 @@ verdict: PASS
 
 reviewed_scope: ad5ba37ad33167c0
 
-- 落点校验：`git rev-parse --show-toplevel`（不带 -C）= `/Users/karson/kar/code/CBrowser_t045` ✓。指纹经 `check_review_status.current_scope_fingerprint` 只读重算 = `ad5ba37ad33167c0`，与本轮行精确一致；派审前脚本 `review_scope=stale`（报告仍为 Round 1 指纹 `7108a0e4e26fc648`），追加本轮行后转 ok。
+- 落点校验：`git rev-parse --show-toplevel`（不带 -C）= `t045 worktree` ✓。指纹经 `check_review_status.current_scope_fingerprint` 只读重算 = `ad5ba37ad33167c0`，与本轮行精确一致；派审前脚本 `review_scope=stale`（报告仍为 Round 1 指纹 `7108a0e4e26fc648`），追加本轮行后转 ok。
 
 ## Findings（Round 2）
 

@@ -4,7 +4,7 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 
 ## 1. 外壳与数据
 
-- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。t037 / t038 / t039 交付前 `/`、`/session`、`/proxies` 为空状态页，其余以现有组件挂新路径。
+- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。`/` 由 t037 环境列表承载、`/proxies` 由 t038 代理库承载，`/session` 占位页留给 t039。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `detail`。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
@@ -63,7 +63,7 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 
 ## 7. 环境管理界面（t037）
 
-- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`session` / `proxies` 占位页分别留给 t039 / t038。
+- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`/proxies` 由 t038 代理库页面承载（见第 8 节），`session` 占位页留给 t039。
 
 - 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、网络列（代理名 / 协议 / 地区）与分组使用环境数由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。`ApiClient` 新增 `groups` / `proxies` / `fontSets` 三个命名空间，只复用 `request()` 与生成类型，不手写契约。
 
@@ -76,3 +76,16 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 - 真实栈无头 E2E「新建 → 启动 → 打开会话」走新建弹窗 UI（`env-new` → `env-new-dialog` → `profile-form-name` → `profile-form-submit`），不再直接 POST API 伪造创建。
 
 - 尺寸语义 token（`DESIGN.md` 的 `## Container sizes`）：`--container-*` 独立于 `--spacing-*`，业务代码只用 `max-w-dialog`/`w-dialog-width`/`max-w-panel`/`max-w-page`/`min-w-menu`/`h-control-sm` 等语义类；`npm run design:lint` 的 `assertNoSizeTokenHijack` 禁止命名尺寸类（`max-w-lg` 等会被 spacing token 劫持）与任意尺寸值（`max-w-[...]`）。
+
+## 8. 代理库界面（t038）
+
+- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载（替换 t036 占位页）；`ProxyListToolbar` 提供搜索（名称 / host / 地区标签，大小写不敏感）与协议筛选（http / https / socks5）可组合，`ProxyTable` 列 = 名称 / 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 认证（有 / 无，文字不可只靠颜色）/ 地区（`RegionCode` + 标签）/ 使用环境数 / 操作。页面沿用环境列表的全量客户端过滤、无分页。
+- 使用环境数为 `<Link to={"/?proxy=" + id}>`：`useEnvironmentFilters` 已读 `proxy` URL 参数，环境列表无需改动即可按代理筛选（AC-006）。
+- 添加 / 编辑用受控 `Dialog`（`ProxyFormDialog`），字段校验与 `ProxyCreateRequest` / 后端 `models.py` 一致（name 1..255、host 1..512、port 1..65535 整数、country_code 空或 2 字母大写、scheme 枚举），错误在字段旁与底部汇总。保存成功后 `proxyKeys.lists()` 与 `profileKeys.lists()` 失效，列表即时更新。
+- 密码只写：`ProxyResponse` 不含 password；编辑态只凭 `has_password` 显示「已设置，留空不修改」，提供「清除密码」。提交 `ProxyUpdateRequest.password` 三态——留空**省略该键**、`null` 清除、字符串设置；已存密码不进入表单 state / DOM / query cache / URL，关闭弹窗清空本地 state。
+- 「从 URL 粘贴」由纯函数 `features/proxies/parseProxyUrl.ts` 解析 `scheme://[user[:pass]@]host[:port]`：scheme 白名单归一、IPv6 方括号、百分号编码账密解码、port 1..65535；失败返回判别联合的错误结果，**已填字段保持不变**。表驱动测试覆盖合法与非法形态。
+- 删除保护：`used_by_count > 0` 时删除按钮禁用并提示先改绑；后端 409 响应体为 `{"detail":{"code":"proxy_in_use","used_by_count":N}}`（非 `ErrorResponse`），前端从 `ApiError.detail` / `.data` 取引用数展示，**不依赖 `errorCode`**。
+- 带认证 SOCKS5（AC-007）：依据 `docs/findings/d031_authenticated_socks5_supported.md` 与 ADR 023（`decisions.md`），CloakBrowser 0.6.4 / Chromium 146 支持带认证 SOCKS5；后端无任何 socks5 拒绝分支、API 永不返回该 422。表单直接允许 `socks5` + 用户名/密码提交，**无降级路径、无「引擎不支持」提示**；所有后端错误统一走 `describeError()` 结构化展示。task.md 中「引擎不支持时阻止提交」沿用旧假设、前提不成立，不实现推测性代码（详见 `docs/specs/proxy_management.md` 第 5 节）。
+- `ApiClient.proxies` 在 t037 的 `list`/`get` 之外补 `create`/`update`/`remove`（照 `groups` 同构、写操作带 `Idempotency-Key`），`useProfilesQuery.ts` 补 `useCreateProxyMutation` / `useUpdateProxyMutation` / `useDeleteProxyMutation`（`useActionKeyMutation` 独立幂等键、失效代理与 Profile 列表）；`shared/api/types.ts` 补 `ProxyCreateRequest` / `ProxyUpdateRequest` 生成类型别名，不改 generated 产物。
+- i18n 在 `i18n.tsx` 的 en / zh 同步补 `proxy*` 键，`i18n.test.tsx` 键集相等与非空兜底。
+- 真实栈无头 E2E（`tests/e2e/test_proxy_library_e2e.py`，`serial`）覆盖 AC-008：UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经本地记录代理（日志 `PROXY_GET`），不依赖公网。

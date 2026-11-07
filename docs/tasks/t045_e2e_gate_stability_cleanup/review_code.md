@@ -3,7 +3,7 @@
 - task：`t045_e2e_gate_stability_cleanup`
 - spec：`docs/tasks/t045_e2e_gate_stability_cleanup/task.md`
 - diff_anchor：`a361058152631d6b4c2621a78cd1609e975621e0`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t045' diff a361058152631d6b4c2621a78cd1609e975621e0`
+- target：`git diff a361058152631d6b4c2621a78cd1609e975621e0`
 - round：1
 - reviewed_at：2026-11-07T08:53:49+08:00
 
@@ -52,8 +52,8 @@ verdict: PASS
 reviewed_scope: ad5ba37ad33167c0
 
 - round：2；reviewer_focus：代码；diff_anchor：`a361058152631d6b4c2621a78cd1609e975621e0`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t045' diff a361058152631d6b4c2621a78cd1609e975621e0`（完整 worktree，含 staged 新交付文件）
-- 落点校验：`git rev-parse --show-toplevel`（不带 `-C`）输出精确等于 `/Users/karson/kar/code/CBrowser_t045` ✓
+- target：`git diff a361058152631d6b4c2621a78cd1609e975621e0`（完整 worktree，含 staged 新交付文件）
+- 落点校验：`git rev-parse --show-toplevel`（不带 `-C`）输出精确等于 `t045 worktree` ✓
 - 范围：相对 Round 1 的 f001/f002 修复改动逐项核实 + 7 条 AC 独立复验。`git status --short` 仅 `review_code.md` / `review_test.md` 两份 review 报告未跟踪（流程文件，可见、非交付物），无隐藏交付文件，不判 INCOMPLETE。
 
 ### Findings
