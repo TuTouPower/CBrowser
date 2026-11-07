@@ -1,0 +1,16 @@
+{
+  "tid": "t040",
+  "attempt": 1,
+  "execution_id": "813615b51ea147b38807a70dd3039cbc",
+  "status": "done",
+  "branch": "t040_environment_preview_thumbnails",
+  "base_sha": "d9e0843545275d26f64d7b2932fa933c4e3263fb",
+  "tests": "完整门禁 `.scratch/t040_evidence_20261108_032501` 的 design_lint / design_check / frontend_test / frontend_build / requirements_check / image_packages / integration 全 exit 0；unit 因 Round 2 review 报告 home 路径（#89 模板缺陷）失败 1 例，已做 .md-only 清理后按用户监督决定**只补跑 contract + unit**：contract 257 passed / 1 skipped、unit 1203 passed、repo_hygiene 8 passed；`md_format --changed --check` 与 `git diff --check` 通过。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`（证据 `032501`）：并行阶段 50 passed / 2 skipped，串行阶段 52 passed / 52 deselected，2 failed 均为 `tests/e2e/test_frontend_session_e2e.py` 的 `test_frontend_session_independent_input_and_mute` / `test_frontend_session_freeze_resume_and_diagnostics`。根因证据 `e2e.log:371,422,690,741,805` `Sandbox launch failed ... error_type=DockerSandboxError error=Timed out waiting for current Browser instance readiness`、`:379` `Runtime start failed: DockerSandboxError`，与 t039 第 9 轮（222642）同类跨会话 daemon 资源竞争级联；对照 `013227` / `024359` 两轮 junit 同 2 用例均 PASS，且本轮 t019 基线 PASS。按用户监督决定不重跑完整 E2E，沿用本轮结果（代码未变）。",
+  "review": "full 两路共 4 轮。Round 1 code FAIL（3 条：f001/f002/f003）、test FAIL（2 条：f001 important 含 AC-001 TICK-VOID、f002 minor）；逐条根因修复、撤回 AC、重验、重新打勾。Round 2 test PASS、code FAIL（f004 important：多写者乱序 UDS 回退代次）；修复为 Agent 不写 policy（单一写者）+ epoch 单调 + 文件 fence，重建镜像、补复现测试。Round 3 两轴均 PASS、0 新 finding、7 条 AC 全 `TICK-VALID`、coverage 7/7。因删除未跟踪的前端运行软链 `src/frontend/node_modules` 导致工作区指纹更新至 `3cfef0709d1ad59b`（源码零变动），Round 4 重验两轴均 PASS、0 新 finding、7 条 AC 全 `TICK-VALID`、coverage 7/7。`check_review_status` overall=PASS / review_scope=ok / ac_review=ok / round=4 / finalize；6 条 finding 全部处置（已修 6、无遗留/撤回）。",
+  "review_scope": "3cfef0709d1ad59b",
+  "pending": [],
+  "findings": [
+    "d035"
+  ]
+}

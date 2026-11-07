@@ -22,6 +22,7 @@ from cbrowser.api.internal_gateway import gateway_router, read_gateway_token
 from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
 from cbrowser.api.runtime_coordinator import RuntimeCoordinator
 from cbrowser.api.v1.artifact_router import artifact_router
+from cbrowser.api.v1.preview_router import preview_router
 from cbrowser.api.v1.auth_router import auth_router
 from cbrowser.api.v1.automation_router import (
     automation_router,
@@ -395,6 +396,7 @@ def create_app(
     app.include_router(v1_router)
     app.include_router(font_set_router)
     app.include_router(artifact_router)
+    app.include_router(preview_router)
     app.include_router(automation_router)
     app.include_router(control_router)
     app.include_router(legacy_cdp_router, include_in_schema=False)

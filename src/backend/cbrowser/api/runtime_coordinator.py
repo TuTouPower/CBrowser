@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import time
@@ -17,6 +18,8 @@ if TYPE_CHECKING:
     import httpx
 
 from cbrowser.domain.models import (
+    PreviewPolicySyncRequest,
+    ProfilePreviewEvent,
     ProfileRuntimeEvent,
     ProfileRuntimeEventData,
     SearchDefaultsStatusData,
@@ -54,7 +57,7 @@ class RuntimeEventBroadcaster:
         self._epoch = secrets.token_hex(16)
         self._next_event_id: int = 1
         self._history: deque[ProfileRuntimeEvent] = deque(maxlen=maxlen)
-        self._subscribers: set[asyncio.Queue[ProfileRuntimeEvent]] = set()
+        self._subscribers: set[asyncio.Queue[ProfileRuntimeEvent | str]] = set()
         self._lock = asyncio.Lock()
 
     def _format_event_id(self, sequence: int) -> str:
@@ -89,13 +92,34 @@ class RuntimeEventBroadcaster:
                         pass
             return event
 
+    async def publish_transient(self, event_name: str, data: Any) -> None:
+        payload = (
+            data.model_dump_json()
+            if hasattr(data, "model_dump_json")
+            else json.dumps(data, separators=(",", ":"))
+        )
+        frame = f"event: {event_name}\ndata: {payload}\n\n"
+        async with self._lock:
+            for q in list(self._subscribers):
+                try:
+                    q.put_nowait(frame)
+                except asyncio.QueueFull:
+                    try:
+                        q.get_nowait()
+                    except asyncio.QueueEmpty:
+                        pass
+                    try:
+                        q.put_nowait(frame)
+                    except asyncio.QueueFull:
+                        pass
+
     async def subscribe(
         self,
         last_event_id: str | None = None,
         initial_snapshot_provider: Callable[[], list[ProfileRuntimeEventData]]
         | None = None,
     ) -> AsyncGenerator[str, None]:
-        q: asyncio.Queue[ProfileRuntimeEvent] = asyncio.Queue(maxsize=100)
+        q: asyncio.Queue[ProfileRuntimeEvent | str] = asyncio.Queue(maxsize=100)
         initial_events: list[ProfileRuntimeEvent] = []
         resync_required = False
         async with self._lock:
@@ -168,6 +192,9 @@ class RuntimeEventBroadcaster:
             while True:
                 try:
                     event = await asyncio.wait_for(q.get(), timeout=15.0)
+                    if isinstance(event, str):
+                        yield event
+                        continue
                     payload = event.data.model_dump_json()
                     yield f"id: {event.id}\nevent: {event.event}\ndata: {payload}\n\n"
                 except TimeoutError:
@@ -226,6 +253,7 @@ class RuntimeCoordinator:
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
+        self._pending_preview_policy: dict[str, tuple[bool, int, str | None]] = {}
         self._running: bool = False
         # t031: set by app lifespan after the control service is built.
         # None in tests that construct the coordinator standalone.
@@ -743,6 +771,83 @@ class RuntimeCoordinator:
         except Exception as e:  # noqa: BLE001 - event broadcaster boundary protects coordinator loop
             logger.warning("Error publishing profile runtime change: %s", e)
 
+    async def _post_preview_policy(
+        self,
+        profile_id: str,
+        enabled: bool,
+        epoch: int,
+        instance: str | None,
+    ) -> None:
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
+        url = (
+            f"{self.supervisor_url}/supervisor/v1/profiles/"
+            f"{quote(profile_id, safe='')}/preview-policy"
+        )
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        body = PreviewPolicySyncRequest(
+            enabled=enabled,
+            epoch=epoch,
+            runtime_instance_id=instance,
+            request_id=uuid.uuid4().hex,
+        ).model_dump()
+        resp = await self._client.post(url, json=body, headers=headers)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Preview policy sync failed ({resp.status_code})")
+
+    async def request_preview_policy(
+        self,
+        profile_id: str,
+        enabled: bool,
+        epoch: int,
+        instance: str | None,
+    ) -> None:
+        if not self.is_enabled():
+            self._pending_preview_policy[profile_id] = (enabled, epoch, instance)
+            return
+        try:
+            await self._post_preview_policy(profile_id, enabled, epoch, instance)
+        except Exception as exc:  # noqa: BLE001 - keep a pending dispatch
+            self._pending_preview_policy[profile_id] = (enabled, epoch, instance)
+            logger.warning(
+                "Preview policy dispatch pending: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+        else:
+            self._pending_preview_policy.pop(profile_id, None)
+
+    async def flush_pending_preview_policy(self, profile_id: str) -> None:
+        pending = self._pending_preview_policy.get(profile_id)
+        if pending is None or not self.is_enabled():
+            return
+        enabled, epoch, instance = pending
+        try:
+            await self._post_preview_policy(profile_id, enabled, epoch, instance)
+        except Exception as exc:  # noqa: BLE001 - retry on the next reconcile
+            logger.warning(
+                "Preview policy reconcile retry failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            return
+        self._pending_preview_policy.pop(profile_id, None)
+
+    def has_pending_preview_policy(self, profile_id: str) -> bool:
+        return profile_id in self._pending_preview_policy
+
+    async def publish_profile_preview(
+        self, profile_id: str, captured_at: str
+    ) -> None:
+        data = ProfilePreviewEvent(
+            profile_id=profile_id, captured_at=captured_at
+        )
+        await self.broadcaster.publish_transient("profile_preview", data)
+
     def trigger_reconcile(self, profile_id: str) -> None:
         if not self.is_enabled():
             self.set_last_error(profile_id, "Supervisor is not configured")
@@ -777,6 +882,8 @@ class RuntimeCoordinator:
                     "Pending supervisor close retry failed: profile=%s",
                     profile_id,
                 )
+
+        await self.flush_pending_preview_policy(profile_id)
 
         import httpx
 

@@ -445,10 +445,22 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     });
 
+    const unsubscribePreview: (() => void) | undefined =
+      sseClient.onPreviewEvent?.((event) => {
+        queryClient.setQueryData(
+          profileKeys.runtime(event.profile_id),
+          (old: ProfileRuntimeResponse | undefined) => {
+            if (!old) return undefined;
+            return { ...old, preview_captured_at: event.captured_at };
+          },
+        );
+      });
+
     sseClient.start();
 
     return () => {
       unsubscribe();
+      unsubscribePreview?.();
       sseClient.stop();
     };
   }, [sseClient, queryClient]);

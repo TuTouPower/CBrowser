@@ -597,8 +597,16 @@ with path.open('w') as output:
         events_dir = self.validator.get_events_dir(profile_id)
         exchange_dir = self.validator.get_exchange_dir(profile_id)
         upload_dir = self.validator.get_upload_dir(profile_id)
+        preview_dir = self.validator.get_preview_dir(profile_id)
 
-        for d in (profile_dir, runtime_dir, events_dir, exchange_dir, upload_dir):
+        for d in (
+            profile_dir,
+            runtime_dir,
+            events_dir,
+            exchange_dir,
+            upload_dir,
+            preview_dir,
+        ):
             self._secure_directory(d, 0o750)
 
         x11_dir = self.validator.validate_runtime_source(
@@ -618,6 +626,7 @@ with path.open('w') as output:
             "uploads": upload_dir,
             "x11": x11_dir,
             "pulse": pulse_dir,
+            "preview": preview_dir,
         }
 
     def _secure_directory(self, directory: Path, mode: int) -> None:

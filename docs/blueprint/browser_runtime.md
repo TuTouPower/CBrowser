@@ -85,3 +85,17 @@ agent.sock 位于专属运行卷，父目录0750。先在 umask077 下绑定，�
 |WebSocket /cdp|双向 CDP 流，外部命令连接断开后自动恢复默认下载策略并等待 ACK|
 
 Chrome CDP 仅监听容器回环，禁止宿主端口映射或容器网络直连。下载完整性以实际文件内容与 completed 事件共同证明；开始事件不能当完成事件。只有确实存在且位于默认下载目录的文件才公开 captured path，外部覆盖目录不能冒充默认 Artifact。事件接口没有消费确认/清理机制，后续 Supervisor/Artifact 服务须按 event_id 去重，不能按列表首条或文件名排序推断最新状态。
+
+## 缩略图采集与策略代次（t040）
+
+环境实时缩略图由 Runtime Agent 的 `PreviewCaptureLoop` 在 running 且策略允许时每 15 秒（`CAPTURE_INTERVAL_SEC`）采一帧，经已有 CDP 连接完成：CDP `Target.getTargets` 无 active/foreground 字段、页面可见性与焦点在多标签下恒真，活动标签由产品自维护（s016 / d035），采集只用它枚举 page target 并取首个。采集序列为 `Target.attachToTarget` → `Page.getLayoutMetrics` → `Page.captureScreenshot`，`clip.scale=480/viewport_width`、JPEG 质量 70，只截 viewport 网页区域，不含浏览器标签栏与地址栏（AC-001）。**不调用** `Page.bringToFront` / `Target.activateTarget`，截图前后页面 `document.visibilityState`、焦点与活动标签不变（AC-007）。
+
+`capture_preview` 是即时策略，不进入 `ProfileConfigVersion`，不触发重启或应用配置。`ProfileModel.capture_preview_epoch` 每次 PATCH 变化 +1，只作 DB 内部代次，不暴露到 `ProfileResponse` 或前端。共享模块 `src/backend/cbrowser/preview.py` 定义 `PreviewPolicy(enabled, epoch, runtime_instance_id)` 与 `PreviewMeta(captured_at, runtime_instance_id, policy_epoch)`：`commit_preview` 落盘前重读 policy 校验 enabled / epoch / instance，任一不一致即清理残留并返回 False，迟到写入丢弃；`is_current_preview` 供读取端点做同等校验。采集、落盘、通知、读取四环节都校验策略代次与 runtime 实例。
+
+预览目录 `data_root/profiles/{id}/preview/` 独立挂载进 Browser 容器 `/data/preview`，不进入 `/data/profiles/{id}/profile`（user data dir），因此「含浏览器状态」复制不带走预览；`policy.json`、`latest.jpg`、`meta.json` 全部 0600 原子写。
+
+|文件|内容|
+|---|---|
+|policy.json|`PreviewPolicy`：enabled / epoch / runtime_instance_id|
+|latest.jpg|最新一帧 JPEG；停止后保留最后一帧|
+|meta.json|`PreviewMeta`：captured_at / runtime_instance_id / policy_epoch|

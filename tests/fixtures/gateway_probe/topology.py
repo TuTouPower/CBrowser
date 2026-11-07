@@ -111,7 +111,6 @@ class GatewayTopologyHarness:
 
         self.data_dir = self.work_dir / "data"
         self.control_dir = self.data_dir / "control"
-        self.metadata_dir = self.work_dir / "api_metadata"
         self.static_dir = self.work_dir / "static"
 
         self.keys: dict[str, str] = {}
@@ -146,10 +145,9 @@ class GatewayTopologyHarness:
 
     def _init_dirs_and_secrets(self) -> None:
         # Confine the whole harness tree under a 0o700 work root
-        # (t024 AC-011/A33): the data and metadata directories stay
-        # group/other-writable because they are bind-mounted into
-        # containers running as other uids, but no unrelated local user
-        # can traverse into the tree.
+        # (t024 AC-011/A33): the data directory stays group/other-writable
+        # because it is bind-mounted into containers running as other uids,
+        # but no unrelated local user can traverse into the tree.
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
@@ -158,9 +156,6 @@ class GatewayTopologyHarness:
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
-
-        self.metadata_dir.mkdir(parents=True, exist_ok=True)
-        self.metadata_dir.chmod(0o777)
 
         cache = self.data_dir / "engine_cache"
         if not cache.exists():
@@ -240,7 +235,7 @@ class GatewayTopologyHarness:
             read_only=True,
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
-                "CBROWSER_DB_PATH": "/metadata/control.db",
+                "CBROWSER_DB_PATH": "/data/cbrowser.db",
                 # The automation tunnel is gated on the API coordinator
                 # being enabled (t031); the production stack sets both,
                 # so the harness must too or every CDP handshake closes
@@ -254,14 +249,7 @@ class GatewayTopologyHarness:
                 **self.api_environment_extra(),
             },
             volumes={
-                str(self.metadata_dir): {"bind": "/metadata", "mode": "rw"},
-                # The API's artifact root is /metadata/artifacts; share the
-                # same Browser download directory with it so ingest sees
-                # the file the Agent reported.
-                str(self.data_dir / "artifacts"): {
-                    "bind": "/metadata/artifacts",
-                    "mode": "rw",
-                },
+                str(self.data_dir): {"bind": "/data", "mode": "rw"},
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
             ports={"8000/tcp": ("127.0.0.1", None)},

@@ -29,8 +29,21 @@ from urllib.parse import quote
 
 import httpx
 from cbrowser import font_sets
-from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.domain.models import (
+    ConfigVersionSnapshot,
+    PreviewObservedRequest,
+    PreviewPolicySyncRequest,
+    ProfileConfig,
+)
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.preview import (
+    PreviewPolicy,
+    clear_preview,
+    preview_dir,
+    read_meta,
+    read_policy,
+    write_policy,
+)
 from cbrowser.runtime_agent.protocol import (
     ControlRequest,
     HealthResponse,
@@ -196,6 +209,8 @@ class SupervisorCore:
         self.gateway_container_id = gateway_container_id
 
         self._sessions: dict[str, ActiveSession] = {}
+        self._preview_request_ids: dict[str, str] = {}
+        self._preview_captured_at: dict[str, str | None] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: set[tuple[str, str, int]] = set()
@@ -1671,9 +1686,9 @@ class SupervisorCore:
                 if client is None:
                     return None
                 resp = await client.get("/health")
-                if resp.status_code == 200:
-                    return HealthResponse.model_validate(resp.json())
-                return None
+                if resp.status_code != 200:
+                    return None
+                health = HealthResponse.model_validate(resp.json())
         except Exception as exc:  # noqa: BLE001 - agent UDS health query failure safely returns None
             logger.debug(
                 "Agent health query failed: profile=%s error_type=%s",
@@ -1681,6 +1696,52 @@ class SupervisorCore:
                 type(exc).__name__,
             )
             return None
+        await self._observe_preview_capture(profile_id, health)
+        return health
+
+    async def _observe_preview_capture(
+        self, profile_id: str, health: HealthResponse
+    ) -> None:
+        try:
+            captured_at = health.details.get("preview_captured_at")
+            if not isinstance(captured_at, str):
+                captured_at = None
+            if self._preview_captured_at.get(profile_id) == captured_at:
+                return
+            self._preview_captured_at[profile_id] = captured_at
+            if captured_at is None:
+                return
+            directory = preview_dir(self.docker.validator.data_root, profile_id)
+            policy = read_policy(directory)
+            meta = read_meta(directory)
+            if policy is None or not policy.enabled or meta is None:
+                return
+            if meta.policy_epoch != policy.epoch:
+                return
+            if meta.runtime_instance_id != health.runtime_instance_id:
+                return
+            request = PreviewObservedRequest(
+                captured_at=captured_at,
+                runtime_instance_id=health.runtime_instance_id,
+                policy_epoch=policy.epoch,
+            )
+            url = (
+                f"/api/v1/internal/supervisor/profiles/"
+                f"{quote(profile_id, safe='')}/preview"
+            )
+            resp = await self.api.post(
+                url, headers=self._auth_headers(), json=request.model_dump()
+            )
+            if resp.status_code != 200:
+                logger.debug(
+                    "Preview observation rejected: profile=%s", profile_id
+                )
+        except Exception as exc:  # noqa: BLE001 - observation failure never blocks the health path
+            logger.debug(
+                "Preview observation failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
 
     async def get_search_defaults(
         self, profile_id: str
@@ -1741,6 +1802,65 @@ class SupervisorCore:
             raise LifecycleConflictError("Search defaults retry rejected by agent")
         if resp.status_code != 200:
             raise RuntimeUnavailableError("Runtime agent control unavailable")
+
+    async def apply_preview_policy(
+        self, profile_id: str, request: PreviewPolicySyncRequest
+    ) -> None:
+        directory = preview_dir(self.docker.validator.data_root, profile_id)
+        current = read_policy(directory)
+        if current is not None and request.epoch < current.epoch:
+            logger.debug(
+                "Preview policy stale epoch skipped: profile=%s", profile_id
+            )
+            return
+        if self._preview_request_ids.get(profile_id) == request.request_id:
+            logger.debug(
+                "Preview policy dispatch skipped for duplicate request: profile=%s",
+                profile_id,
+            )
+            return
+        session = self._sessions.get(profile_id)
+        if (
+            session is None
+            or session.runtime_instance_id != request.runtime_instance_id
+        ):
+            logger.debug(
+                "Preview policy dispatch skipped for stale instance: profile=%s",
+                profile_id,
+            )
+            return
+        policy = PreviewPolicy(
+            enabled=request.enabled,
+            epoch=request.epoch,
+            runtime_instance_id=request.runtime_instance_id,
+        )
+        write_policy(directory, policy)
+        if not request.enabled:
+            clear_preview(directory)
+        self._preview_request_ids[profile_id] = request.request_id
+
+        control = {
+            "action": "preview_policy",
+            "enabled": request.enabled,
+            "epoch": request.epoch,
+            "runtime_instance_id": request.runtime_instance_id,
+            "request_id": request.request_id,
+        }
+        try:
+            async with self._agent_uds_client(profile_id) as client:
+                if client is None:
+                    return
+                resp = await client.post("/control", json=control)
+            if resp.status_code != 200:
+                logger.debug(
+                    "Preview policy control rejected: profile=%s", profile_id
+                )
+        except Exception as exc:  # noqa: BLE001 - dispatch failure never fails the policy write
+            logger.debug(
+                "Preview policy control failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
 
     async def release_dialog_attendant(self, profile_id: str) -> bool:
         """Best-effort release of the Agent's resident dialog attendant.

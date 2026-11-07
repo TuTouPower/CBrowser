@@ -65,3 +65,19 @@ Browser 仅允许 loopback、已建立连接及公共目的地址，私有与保
 Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和匹配 ready 标记的 Runtime。启动独占锁内先清理严格匹配 prefix、managed-by、角色及随机名称的遗留 cache-init/network-policy helper；周期扫描不执行此清理，避免中断当前安装。
 
 真实无过滤 TCP 正负对照、IPv6 私有 echo 拒绝、策略重复安装拒绝及双 Profile 容器拓扑已取得定向证明。完整阶段状态仍以最终源门禁、独立 review 和 task 验收为准，不能以历史候选镜像通过代替当前源验证。
+
+## 预览目录独立挂载、策略即时下发与 health 变化通知（t040）
+
+预览目录 `data_root/profiles/{id}/preview/` 由 Supervisor 单独挂载进 Browser 容器 `/data/preview`，不进入 `/data/profiles/{id}/profile`（user data dir）；`PathValidator` 按同一数据根与 Profile 归属校验，目录内 `policy.json` / `latest.jpg` / `meta.json` 全部 0600 原子写。该分离使「含浏览器状态」复制不带走预览，停止后保留最后一帧。
+
+`capture_preview` 为即时策略，不进入配置版本。策略变化链路：
+
+|环节|行为|
+|---|---|
+|API PATCH|本地写 policy，关闭时清除已有预览|
+|`RuntimeCoordinator.request_preview_policy`|POST `/supervisor/v1/profiles/{id}/preview-policy`（`PreviewPolicySyncRequest`，带 request_id）|
+|Supervisor `apply_preview_policy`|写 policy，经 Agent UDS `/control` 以 `action=preview_policy` 即时下发|
+
+下发以 runtime_instance_id + request_id 双重围栏，旧实例与重复请求丢弃；**不重启、不应用配置**。
+
+Agent `/health` 的 details 携带 `preview_captured_at`。Supervisor 观测到变化且校验 `meta.policy_epoch == policy.epoch` 与 instance 匹配后，POST API 内部端点 `/api/v1/internal/supervisor/profiles/{id}/preview`（`PreviewObservedRequest`）；不复用 Artifact 的事件文件 + 游标模式（面向持久下载，不适合每 15 秒覆盖写）。API 侧 `record_preview_capture` 再校验代次与实例，失败丢弃并清预览。

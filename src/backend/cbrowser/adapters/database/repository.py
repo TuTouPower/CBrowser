@@ -432,6 +432,10 @@ class ProfileRepository:
                 p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
                 p_model.allow_3p_cookies = merged_cfg.allow_3p_cookies
                 p_model.set_google_default = merged_cfg.set_google_default
+                if old_cfg.capture_preview != merged_cfg.capture_preview:
+                    p_model.capture_preview_epoch = (
+                        p_model.capture_preview_epoch or 0
+                    ) + 1
                 p_model.capture_preview = merged_cfg.capture_preview
                 p_model.restore_session = merged_cfg.restore_session
                 p_model.transparent_proxy = merged_cfg.transparent_proxy
@@ -633,6 +637,45 @@ class ProfileRepository:
             )
 
         return await self.get_runtime(profile_id)
+
+    async def get_preview_policy(self, profile_id: str) -> tuple[bool, int] | None:
+        """Return (enabled, epoch) for the API-authoritative preview policy."""
+        async with self._session_maker() as session:
+            profile = await session.get(ProfileModel, profile_id)
+            if profile is None:
+                return None
+            return profile.capture_preview, profile.capture_preview_epoch
+
+    async def record_preview_capture(
+        self,
+        profile_id: str,
+        captured_at: str,
+        runtime_instance_id: str,
+        policy_epoch: int,
+    ) -> bool:
+        """Persist preview_captured_at only for a live policy epoch and instance.
+
+        Revocations, epoch bumps and stale instance callbacks are dropped, so a
+        late write can never resurrect a deleted preview (t040 AC-004).
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            profile = await session.get(ProfileModel, profile_id)
+            runtime = await session.get(ProfileRuntimeModel, profile_id)
+            if (
+                profile is None
+                or runtime is None
+                or profile.capture_preview_epoch != policy_epoch
+                or runtime.runtime_instance_id != runtime_instance_id
+            ):
+                return False
+            runtime.preview_captured_at = captured_at
+            return True
+
+    async def clear_preview_capture(self, profile_id: str) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            runtime = await session.get(ProfileRuntimeModel, profile_id)
+            if runtime is not None:
+                runtime.preview_captured_at = None
 
     async def report_observed_state(
         self,
@@ -873,6 +916,7 @@ class ProfileRepository:
             browser_user_agent=m.browser_user_agent,
             backoff_started_at=m.backoff_started_at,
             next_retry_at=m.next_retry_at,
+            preview_captured_at=m.preview_captured_at,
             updated_at=m.updated_at,
         )
 

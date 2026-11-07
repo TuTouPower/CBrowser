@@ -48,13 +48,13 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：running 且策略允许的 Profile 约每 15 秒产生一帧宽 480px 的 JPEG 预览，内容为当前活动标签页的网页区域，不含浏览器标签栏与地址栏（真实栈 E2E 以已知页面内容比对）。
-- [ ] AC-002：预览接口未登录时拒绝；有预览时返回 `image/jpeg`、`Cache-Control: no-store` 与基于 `captured_at` 的 ETag；无预览或策略已撤销时返回 404。
-- [ ] AC-003：runtime 响应含 `preview_captured_at`，没有预览时为 null，卡片直接显示占位而不请求图片；每产生一帧新预览，SSE 下发 `profile_preview`，卡片据此刷新。`profile_preview` 不进入重放环，SSE 重连后的 runtime 状态重放不受缩略图事件数量影响。
-- [ ] AC-004：运行中关闭 `capture_preview` 后，不需要重启或应用配置即停止采集，已有预览被删除且接口返回 404。以下情况的迟到写入均被丢弃，不会重新出现预览：关闭时截图正在进行；旧代次的通知延迟到达；重置后旧实例回传（集成测试注入时序）。
-- [ ] AC-005：Profile 停止后保留最后一帧；重置或删除 Profile 后预览被清除；「含浏览器状态」的复制不复制预览。
-- [ ] AC-006：预览文件权限为 0600；截图内容与文件路径不出现在日志、错误响应与事件中。
-- [ ] AC-007：截图前后页面的 `document.visibilityState`、焦点与活动标签页不变（真实栈 E2E 断言）。
+- [x] AC-001：running 且策略允许的 Profile 约每 15 秒产生一帧宽 480px 的 JPEG 预览，内容为当前活动标签页的网页区域，不含浏览器标签栏与地址栏（真实栈 E2E 以已知页面内容比对）。
+- [x] AC-002：预览接口未登录时拒绝；有预览时返回 `image/jpeg`、`Cache-Control: no-store` 与基于 `captured_at` 的 ETag；无预览或策略已撤销时返回 404。
+- [x] AC-003：runtime 响应含 `preview_captured_at`，没有预览时为 null，卡片直接显示占位而不请求图片；每产生一帧新预览，SSE 下发 `profile_preview`，卡片据此刷新。`profile_preview` 不进入重放环，SSE 重连后的 runtime 状态重放不受缩略图事件数量影响。
+- [x] AC-004：运行中关闭 `capture_preview` 后，不需要重启或应用配置即停止采集，已有预览被删除且接口返回 404。以下情况的迟到写入均被丢弃，不会重新出现预览：关闭时截图正在进行；旧代次的通知延迟到达；重置后旧实例回传（集成测试注入时序）。
+- [x] AC-005：Profile 停止后保留最后一帧；重置或删除 Profile 后预览被清除；「含浏览器状态」的复制不复制预览。
+- [x] AC-006：预览文件权限为 0600；截图内容与文件路径不出现在日志、错误响应与事件中。
+- [x] AC-007：截图前后页面的 `document.visibilityState`、焦点与活动标签页不变（真实栈 E2E 断言）。
 
 ### 可测试性声明
 
@@ -89,7 +89,7 @@
 
 <!-- /规范 -->
 
-- CDP 没有直接的「当前活动标签页」字段；在 CloakBrowser 146 / Xvfb 下识别活动标签页的方法，以及 `Page.captureScreenshot` 对后台标签页、焦点和页面可见性的影响：UNVERIFIED-SPIKE，实施前用真实引擎实测，结论写入 `docs/findings/`。
+- CDP 没有直接的「当前活动标签页」字段；在 CloakBrowser 146 / Xvfb 下识别活动标签页的方法，以及 `Page.captureScreenshot` 对后台标签页、焦点和页面可见性的影响：**已验证（s016 / d035）**。CDP `Target.getTargets` 无 active 字段、页面 visibility/focus 在多标签下恒真，活动标签须由产品自维护（Agent 记录激活 target 或外部焦点 `client_tab_id` 映射）；`Page.captureScreenshot` 对前台/后台页均返回有效 JPEG 且截图前后可见性、焦点、页面事件与 target 列表不变，只截 viewport。验证方式：`docs/spikes/s016_cdp_active_tab_capture_probe/report.md` 与 `code/result_headless.json` / `code/result_xvfb.json`，真实 Chromium 146 引擎在 headless 与容器 Xvfb 两组实测；依据 `docs/findings/d035_cdp_active_tab_capture_screenshot.md`。
 
 ### 风险与回退
 

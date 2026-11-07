@@ -6,11 +6,13 @@ export function EnvironmentCardGrid({
   selected,
   onToggle,
   onAction,
+  previewCapturedAtById,
 }: {
   rows: EnvironmentRow[];
   selected: Set<string>;
   onToggle: (id: string, checked: boolean) => void;
   onAction: (action: EnvironmentAction, row: EnvironmentRow) => void;
+  previewCapturedAtById?: Map<string, string | null>;
 }) {
   return (
     <div
@@ -24,6 +26,9 @@ export function EnvironmentCardGrid({
           selected={selected.has(row.profile.id)}
           onToggle={onToggle}
           onAction={onAction}
+          previewCapturedAt={
+            previewCapturedAtById?.get(row.profile.id) ?? null
+          }
         />
       ))}
     </div>

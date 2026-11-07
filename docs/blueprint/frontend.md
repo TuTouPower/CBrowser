@@ -54,6 +54,8 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 
 分层观测消费（t026）：runtime 响应与 SSE 事件携带 `transport` 分层观测（browser/stream/transport 状态与最近错误），前端校验与缓存同步规则与 `search_defaults` 同构：结构不合法的事件整帧拒绝，事件未携带字段时保留缓存值。会话信令呈现区分恢复与失败：首次连接的信令异常关闭（含 1006）在 transport 为 recovering 时呈现恢复中并在有界窗口（默认 30 秒）内轮询运行状态，transport 变 ready 后重连、明确 failed 或窗口耗尽才呈现信令失败；已连接后的断开沿用既有 resume 语义不变。
 
+SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按类型路由，`runtime_state` 走原运行状态通道，新增 `profile_preview` 走 `onPreviewEvent`；`useProfilesQuery.ts` 订阅 preview 事件刷新 runtime 缓存。`profile_preview` 只实时扇出、绝不进入 runtime 事件重放环，SSE 重连后的 runtime 状态重放不受缩略图事件数量影响（AC-003）。`ProfileRuntimeResponse.preview_captured_at` 无预览为 null，首屏据此显示图片或占位，**无值不请求图片**；`EnvironmentCard` 以 `?v=<captured_at>` 作为图片 URL 版本参数触发刷新，404 / onError 回退占位。
+
 ## 5. 测试
 
 - Vitest 5（`npm test --prefix src/frontend`，无需 `NODE_OPTIONS`）覆盖 API 客户端、SSE、路由与会话组件；`npm test` 先执行 `test:types`（`tsc -p tsconfig.test.json`）对全部测试文件做严格类型检查，再运行 Vitest。页面与守卫测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks 接线，禁止 mock 数据 hooks 模块、禁止对共享单例做方法赋值；测试夹具与事件字面量须使用生成类型的完整线形状。

@@ -22,7 +22,11 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 import websockets
-from cbrowser.domain.models import ProfileConfig, ProfileRuntimeResponse
+from cbrowser.domain.models import (
+    PreviewPolicySyncRequest,
+    ProfileConfig,
+    ProfileRuntimeResponse,
+)
 from cbrowser.secret_files import read_secret_file
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from cbrowser.supervisor.core import (
@@ -38,6 +42,7 @@ from cbrowser.supervisor.protocol import (
     ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
+    PreviewPolicySyncResponse,
     SearchDefaultsRetryRequest,
     SearchDefaultsStatusResponse,
     StartProfileRequest,
@@ -289,6 +294,17 @@ def create_control_app(
         except RuntimeUnavailableError:
             raise HTTPException(503, "Runtime agent unavailable") from None
         return {"status": "ok"}
+
+    @app.post(
+        "/supervisor/v1/profiles/{profile_id}/preview-policy",
+        response_model=PreviewPolicySyncResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def sync_preview_policy(
+        profile_id: str, req: PreviewPolicySyncRequest
+    ):
+        await core.apply_preview_policy(profile_id, req)
+        return PreviewPolicySyncResponse()
 
     @app.post(
         "/supervisor/v1/profiles/reset-blocked",

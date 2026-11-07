@@ -64,6 +64,11 @@ class SearchDefaultsStatusResponse(BaseModel):
     search_defaults: SearchDefaultsStatus | None = None
 
 
+class PreviewPolicySyncResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["ok"] = "ok"
+
+
 class ResetBlockedRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_id: str = Field(min_length=1, max_length=128)

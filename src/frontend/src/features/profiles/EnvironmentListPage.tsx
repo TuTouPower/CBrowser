@@ -67,6 +67,14 @@ export function EnvironmentListPage() {
     );
   });
 
+  const previewCapturedAtById = new Map<string, string | null>();
+  profiles.forEach((item) => {
+    previewCapturedAtById.set(
+      item.id,
+      runtimeById.get(item.id)?.preview_captured_at ?? null,
+    );
+  });
+
   const rows: EnvironmentRow[] = profiles.map((item) => ({
     profile: item,
     runtime: runtimeById.get(item.id),
@@ -196,6 +204,7 @@ export function EnvironmentListPage() {
           selected={selected}
           onToggle={toggle}
           onAction={handleAction}
+          previewCapturedAtById={previewCapturedAtById}
         />
       )}
 

@@ -1,0 +1,273 @@
+{
+  "engine": "/data/engine-cache/chromium-146.0.7680.177.3/chrome",
+  "headless": true,
+  "cases": [
+    {
+      "name": "background_page0_default",
+      "target_index": 0,
+      "params": {
+        "format": "jpeg",
+        "quality": 70
+      },
+      "shot": {
+        "bytes": 10248,
+        "jpeg": true
+      },
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-2%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-2%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-2",
+          "attached": true,
+          "targetId": "8A91FFF234728EC287E1E2B91245C1EB"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-1%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-1%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-1",
+          "attached": true,
+          "targetId": "28A04CE403999907FD542B29CF74015A"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-0%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-0%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-0",
+          "attached": true,
+          "targetId": "50FD88ED0139F706C9C0919448E8AAF7"
+        }
+      ]
+    },
+    {
+      "name": "foreground_page1_default",
+      "target_index": 1,
+      "params": {
+        "format": "jpeg",
+        "quality": 70
+      },
+      "shot": {
+        "bytes": 9950,
+        "jpeg": true
+      },
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-2%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-2%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-2",
+          "attached": true,
+          "targetId": "8A91FFF234728EC287E1E2B91245C1EB"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-1%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-1%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-1",
+          "attached": true,
+          "targetId": "28A04CE403999907FD542B29CF74015A"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-0%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-0%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-0",
+          "attached": true,
+          "targetId": "50FD88ED0139F706C9C0919448E8AAF7"
+        }
+      ]
+    },
+    {
+      "name": "background_page0_beyond_viewport",
+      "target_index": 0,
+      "params": {
+        "format": "jpeg",
+        "quality": 70,
+        "captureBeyondViewport": true
+      },
+      "shot": {
+        "bytes": 10248,
+        "jpeg": true
+      },
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-2%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-2%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-2",
+          "attached": true,
+          "targetId": "8A91FFF234728EC287E1E2B91245C1EB"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-1%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-1%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-1",
+          "attached": true,
+          "targetId": "28A04CE403999907FD542B29CF74015A"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-0%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-0%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-0",
+          "attached": true,
+          "targetId": "50FD88ED0139F706C9C0919448E8AAF7"
+        }
+      ]
+    },
+    {
+      "name": "background_page0_no_surface",
+      "target_index": 0,
+      "params": {
+        "format": "jpeg",
+        "quality": 70,
+        "fromSurface": false
+      },
+      "shot": {
+        "bytes": 10248,
+        "jpeg": true
+      },
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-2%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-2%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-2",
+          "attached": true,
+          "targetId": "8A91FFF234728EC287E1E2B91245C1EB"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-1%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-1%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-1",
+          "attached": true,
+          "targetId": "28A04CE403999907FD542B29CF74015A"
+        },
+        {
+          "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-0%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-0%3C/h1%3E%3C/body%3E%3C/html%3E",
+          "title": "tab-0",
+          "attached": true,
+          "targetId": "50FD88ED0139F706C9C0919448E8AAF7"
+        }
+      ]
+    }
+  ],
+  "baseline": {
+    "samples": [
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-0",
+        "events": []
+      },
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-1",
+        "events": []
+      },
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-2",
+        "events": []
+      }
+    ],
+    "targets": [
+      {
+        "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-2%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-2%3C/h1%3E%3C/body%3E%3C/html%3E",
+        "title": "tab-2",
+        "attached": true,
+        "targetId": "8A91FFF234728EC287E1E2B91245C1EB"
+      },
+      {
+        "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-1%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-1%3C/h1%3E%3C/body%3E%3C/html%3E",
+        "title": "tab-1",
+        "attached": true,
+        "targetId": "28A04CE403999907FD542B29CF74015A"
+      },
+      {
+        "url": "data:text/html;charset=utf-8,%3Chtml%3E%3Chead%3E%3Ctitle%3Etab-0%3C/title%3E%3C/head%3E%3Cbody%20style%3D%27margin%3A0%3Bbackground%3A%23ffffff%27%3E%3Ch1%20id%3D%27marker%27%20style%3D%27font%3A700%2080px%20sans-serif%3Bcolor%3A%23003300%27%3ETAB-0%3C/h1%3E%3C/body%3E%3C/html%3E",
+        "title": "tab-0",
+        "attached": true,
+        "targetId": "50FD88ED0139F706C9C0919448E8AAF7"
+      }
+    ]
+  }
+}

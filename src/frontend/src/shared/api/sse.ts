@@ -7,8 +7,23 @@ import { resolveSameOriginUrl } from "./same_origin";
  */
 export type ProfileRuntimeEvent = ProfileRuntimeStatusEvent;
 
+export interface ProfilePreviewEvent {
+  event: "profile_preview";
+  profile_id: string;
+  captured_at: string;
+}
+
+export type ProfileSseEvent = ProfileRuntimeEvent | ProfilePreviewEvent;
+
 export type ProfileEventListener = (event: ProfileRuntimeEvent) => void;
+export type ProfilePreviewEventListener = (event: ProfilePreviewEvent) => void;
 export type ProfileErrorListener = (error: unknown) => void;
+
+export function isProfilePreviewEvent(
+  event: ProfileSseEvent,
+): event is ProfilePreviewEvent {
+  return "event" in event && event.event === "profile_preview";
+}
 
 const DESIRED_STATES = new Set(["stopped", "running"]);
 const OBSERVED_STATES = new Set([
@@ -148,6 +163,17 @@ export function parseProfileRuntimeEvent(
   return raw as ProfileRuntimeEvent;
 }
 
+export function parseProfilePreviewEvent(
+  raw: unknown,
+): ProfilePreviewEvent | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const e = raw as Record<string, unknown>;
+  if (e.event !== "profile_preview") return null;
+  if (typeof e.profile_id !== "string" || e.profile_id.length === 0) return null;
+  if (typeof e.captured_at !== "string" || e.captured_at.length === 0) return null;
+  return raw as ProfilePreviewEvent;
+}
+
 export interface ProfileEventsClientOptions {
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
@@ -170,6 +196,7 @@ export class ProfileEventsClient {
   private abortController: AbortController | null = null;
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: Set<ProfileEventListener> = new Set();
+  private previewListeners: Set<ProfilePreviewEventListener> = new Set();
   private errorListeners: Set<ProfileErrorListener> = new Set();
 
   constructor(options: ProfileEventsClientOptions = {}) {
@@ -183,6 +210,11 @@ export class ProfileEventsClient {
   onEvent(listener: ProfileEventListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  onPreviewEvent(listener: ProfilePreviewEventListener): () => void {
+    this.previewListeners.add(listener);
+    return () => this.previewListeners.delete(listener);
   }
 
   setOnUnauthorized(callback?: () => void): void {
@@ -280,7 +312,14 @@ export class ProfileEventsClient {
       const decoder = new TextDecoder();
       let buffer = "";
       let currentId: string | null = null;
+      let currentEventName = "";
       let currentDataLines: string[] = [];
+
+      const resetFrame = () => {
+        currentId = null;
+        currentEventName = "";
+        currentDataLines = [];
+      };
 
       const flushEvent = () => {
         if (currentDataLines.length === 0) return;
@@ -295,13 +334,47 @@ export class ProfileEventsClient {
           this.dispatchError(parseErr);
           return;
         }
-        const event = parseProfileRuntimeEvent(parsed);
-        if (event) {
-          this.dispatchEvent(event);
+        const eventName = currentEventName || "runtime_state";
+        let event: ProfileSseEvent | null = null;
+        if (eventName === "profile_preview") {
+          event = parseProfilePreviewEvent(parsed);
+          if (!event) {
+            this.dispatchError(
+              new Error("Malformed profile_preview event payload"),
+            );
+            return;
+          }
+        } else if (eventName === "runtime_state") {
+          event = parseProfileRuntimeEvent(parsed);
+          if (!event) {
+            this.dispatchError(
+              new Error("Malformed runtime_state event payload"),
+            );
+            return;
+          }
         } else {
-          this.dispatchError(
-            new Error("Malformed runtime_state event payload"),
-          );
+          return;
+        }
+        this.dispatchEvent(event);
+      };
+
+      const processLine = (line: string) => {
+        if (line === "") {
+          // End of event
+          if (this.isCurrent(generation)) {
+            flushEvent();
+          }
+          resetFrame();
+        } else if (line.startsWith("id:")) {
+          currentId = line.slice(3).trim();
+        } else if (line.startsWith("event:")) {
+          currentEventName = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
+          let data = line.slice(5);
+          if (data.startsWith(" ")) {
+            data = data.slice(1);
+          }
+          currentDataLines.push(data);
         }
       };
 
@@ -314,22 +387,7 @@ export class ProfileEventsClient {
         buffer = lines.pop() ?? "";
 
         for (const line of lines) {
-          if (line === "") {
-            // End of event
-            if (this.isCurrent(generation)) {
-              flushEvent();
-            }
-            currentId = null;
-            currentDataLines = [];
-          } else if (line.startsWith("id:")) {
-            currentId = line.slice(3).trim();
-          } else if (line.startsWith("data:")) {
-            let data = line.slice(5);
-            if (data.startsWith(" ")) {
-              data = data.slice(1);
-            }
-            currentDataLines.push(data);
-          }
+          processLine(line);
         }
       }
       if (!this.isCurrent(generation)) return;
@@ -337,11 +395,7 @@ export class ProfileEventsClient {
       if (buffer) {
         const lines = buffer.split(/\r?\n/);
         for (const line of lines) {
-          if (line.startsWith("id:")) {
-            currentId = line.slice(3).trim();
-          } else if (line.startsWith("data:")) {
-            currentDataLines.push(line.slice(5).replace(/^ /, ""));
-          }
+          processLine(line);
         }
       }
       if (this.isCurrent(generation)) {
@@ -357,12 +411,22 @@ export class ProfileEventsClient {
     }
   }
 
-  private dispatchEvent(event: ProfileRuntimeEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(event);
-      } catch (err) {
-        console.error("Error in SSE event listener:", err);
+  private dispatchEvent(event: ProfileSseEvent): void {
+    if (isProfilePreviewEvent(event)) {
+      for (const listener of this.previewListeners) {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error("Error in SSE preview event listener:", err);
+        }
+      }
+    } else {
+      for (const listener of this.listeners) {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error("Error in SSE event listener:", err);
+        }
       }
     }
   }

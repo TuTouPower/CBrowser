@@ -69,7 +69,8 @@
             "retry_search_defaults",
             "release_attendant",
             "list_attendant_dialogs",
-            "answer_attendant_dialog"
+            "answer_attendant_dialog",
+            "preview_policy"
           ],
           "title": "Action",
           "type": "string"

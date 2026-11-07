@@ -88,6 +88,14 @@
 - 字体只写入宿主 `CBROWSER_FONTS_DIR` 与 `.scratch/`，不进入任何镜像层，不进入 git 仓库；部署与发布脚本不复制字体目录（AC-008）。导入工具把字体固化为按内容寻址的不可变字体集，`manifest.json` 记录来源、来源系统版本与逐文件 sha256，供静态完整性校验（AC-001 / AC-002）。
 - 字体集只在运行时由 Supervisor 只读挂载给绑定它的 Profile，其他 Profile 与 Stream 容器不可见；系统不提供字体集删除功能，也不分发或打包字体文件。基础开源字体为镜像内的 Debian 官方包，不含平台专有字体，且绑定平台字体集时不进入指纹 Profile 的 fontconfig 白名单（`font_set_id` 为 null 时作为回退可见并由 runtime 状态标记，ADR 024）。
 
+## 预览隐私与撤销语义（t040）
+
+环境实时缩略图视同 Cookie 级私密数据：`latest.jpg` 内容与预览目录路径不进日志、错误响应与 SSE 事件，日志只记 error_type 与计数（AC-006）。文件 0600 原子写，独立挂载进 Browser 容器 `/data/preview`，不进入 user data dir；跨 Profile 读取由 `PathValidator` 归属校验与专属挂载阻断。
+
+`GET /api/v1/profiles/{id}/preview` 需登录会话，返回 `image/jpeg` + `Cache-Control: no-store` + ETag（`captured_at`），条件请求 304；无预览、策略已撤销或代次 / 实例不符统一返回 404，错误体不含路径与截图内容。`no-store` 保证私密帧不经浏览器或代理缓存留存。
+
+撤销与清除语义：关闭 `capture_preview` 即时停止采集、删除已有预览、接口随即 404，不需重启或应用配置；采集、落盘、通知、读取四环节以策略代次 + `runtime_instance_id` 围栏，关闭时截图正在进行、旧代次通知迟到、reset 后旧实例回传等迟到写入一律丢弃并清理残留，预览不会重新出现；reset / delete 清除预览目录与 `preview_captured_at`，Profile 停止保留最后一帧，「含浏览器状态」复制不复制预览。
+
 ## 验证边界
 
 单元与真实 HTTP/WS 集成测试覆盖凭证校验、会话与 CSRF、限速、审计脱敏和 Gateway 控制面；真实 HTTPS、Chrome Cookie 属性与端到端信令由 Gateway E2E 验证。公网 TLS 证书与公网穿透属 USER_WAIVED 范围外，本机以 Caddy 内部 CA 验证。

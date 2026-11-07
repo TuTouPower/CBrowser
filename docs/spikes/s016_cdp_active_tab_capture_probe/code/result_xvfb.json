@@ -1,0 +1,168 @@
+{
+  "engine": "/data/engine-cache/chromium-146.0.7680.177.3/chrome",
+  "headless": false,
+  "display": "container_xvfb",
+  "cases": [
+    {
+      "label": "after_create",
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "title": "tab-1",
+          "attached": true
+        },
+        {
+          "title": "tab-0",
+          "attached": true
+        },
+        {
+          "title": "tab-2",
+          "attached": true
+        }
+      ]
+    },
+    {
+      "label": "after_bring_p1",
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "title": "tab-1",
+          "attached": true
+        },
+        {
+          "title": "tab-0",
+          "attached": true
+        },
+        {
+          "title": "tab-2",
+          "attached": true
+        }
+      ]
+    },
+    {
+      "label": "after_bring_p0",
+      "samples": [
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-0",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-1",
+          "events": []
+        },
+        {
+          "visibilityState": "visible",
+          "hidden": false,
+          "hasFocus": true,
+          "marker": "TAB-2",
+          "events": []
+        }
+      ],
+      "targets": [
+        {
+          "title": "tab-1",
+          "attached": true
+        },
+        {
+          "title": "tab-0",
+          "attached": true
+        },
+        {
+          "title": "tab-2",
+          "attached": true
+        }
+      ]
+    }
+  ],
+  "capture_background_p2": {
+    "jpeg": true,
+    "bytes": 10189,
+    "samples_after": [
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-0",
+        "events": []
+      },
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-1",
+        "events": []
+      },
+      {
+        "visibilityState": "visible",
+        "hidden": false,
+        "hasFocus": true,
+        "marker": "TAB-2",
+        "events": []
+      }
+    ],
+    "targets_after": [
+      {
+        "title": "tab-1",
+        "attached": true
+      },
+      {
+        "title": "tab-0",
+        "attached": true
+      },
+      {
+        "title": "tab-2",
+        "attached": true
+      }
+    ]
+  }
+}

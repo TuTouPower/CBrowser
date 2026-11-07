@@ -81,6 +81,7 @@ def upgrade() -> None:
         sa.Column("allow_3p_cookies", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("set_google_default", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("capture_preview", sa.Boolean(), nullable=False, server_default="1"),
+        sa.Column("capture_preview_epoch", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("restore_session", sa.Boolean(), nullable=False, server_default="1"),
         sa.Column("transparent_proxy", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("portable_cookies", sa.Boolean(), nullable=False, server_default="0"),
@@ -128,6 +129,7 @@ def upgrade() -> None:
         sa.Column("browser_user_agent", sa.Text(), nullable=True),
         sa.Column("backoff_started_at", sa.String(length=64), nullable=True),
         sa.Column("next_retry_at", sa.String(length=64), nullable=True),
+        sa.Column("preview_captured_at", sa.String(length=64), nullable=True),
         sa.Column("updated_at", sa.String(length=64), nullable=False),
     )
     op.create_table(

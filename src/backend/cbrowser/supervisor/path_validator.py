@@ -150,6 +150,12 @@ class PathValidator:
         target = self.data_root / "profiles" / profile_id / "profile"
         return self._fixed_profile_directory(target)
 
+    def get_preview_dir(self, profile_id: str) -> Path:
+        """Return the canonical Profile preview directory, outside user data."""
+        validate_profile_id(profile_id)
+        target = self.data_root / "profiles" / profile_id / "preview"
+        return self._fixed_profile_directory(target)
+
     def get_runtime_dir(self, profile_id: str) -> Path:
         """Return canonical runtime dir: data_root/runtime/{profile_id}."""
         validate_profile_id(profile_id)
