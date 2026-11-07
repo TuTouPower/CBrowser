@@ -9,6 +9,7 @@ import { ApiError, type ApiClient } from "../shared/api/client";
 import type { ProfileEventsClient } from "../shared/api/sse";
 import type { ProfileResponse, ProfileRuntimeResponse } from "../shared/api/types";
 import { sanitizeNextPath } from "../features/auth/redirect";
+import { SESS_PAGE } from "../features/browser-session/session_keys";
 
 const PROFILE: ProfileResponse = {
   id: "p1",
@@ -180,7 +181,7 @@ describe("auth guard and session expiry", () => {
     renderApp(["/?profileId=p1"], sseClient);
 
     expect(await screen.findByTestId("auth-loading")).toBeInTheDocument();
-    expect(screen.queryByTestId("browser-session-mount")).not.toBeInTheDocument();
+    expect(screen.queryByTestId(SESS_PAGE)).not.toBeInTheDocument();
     expect(screen.queryByTestId("sidebar")).not.toBeInTheDocument();
     expect(api.client.profiles.list).not.toHaveBeenCalled();
     expect(sseClient.start).not.toHaveBeenCalled();

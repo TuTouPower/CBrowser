@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
+import type { JSX } from "react";
 import { Clipboard } from "lucide-react";
 import { useI18n } from "../../i18n";
 import {
   watchClipboardPermission,
   type ClipboardPermissionState,
 } from "./clipboard_bridge";
+import { sessId } from "./session_keys";
 
-export function ClipboardPermissionHint() {
+export function ClipboardPermissionHint(): JSX.Element {
   const { t } = useI18n();
   const [state, setState] = useState<ClipboardPermissionState | null>(null);
 
@@ -25,21 +27,22 @@ export function ClipboardPermissionHint() {
     };
   }, []);
 
-  if (state !== "denied" && state !== "prompt") return null;
+  if (state !== "denied" && state !== "prompt") return <></>;
 
+  const denied = state === "denied";
   return (
     <div
-      data-testid="clipboard-permission-hint"
+      data-testid={sessId("clipboard", "hint")}
       data-clipboard-permission={state}
-      className="absolute bottom-12 left-2 z-10 max-w-hint text-[11px] px-2.5 py-2 bg-neutral-800/90 text-neutral-200 rounded border border-neutral-700/70"
       role="status"
+      className="pointer-events-none absolute bottom-md left-md z-10 flex max-w-panel flex-col gap-xs rounded-md border border-outline bg-surface p-md"
     >
-      <span className="inline-flex items-center gap-1 font-medium">
-        <Clipboard className="h-3.5 w-3.5" />
-        {state === "denied" ? t("clipboardPermissionDenied") : t("clipboardPermissionPrompt")}
+      <span className="inline-flex items-center gap-sm font-ui text-label-sm text-on-surface">
+        <Clipboard aria-hidden="true" className="h-4 w-4 shrink-0" />
+        {denied ? t("clipboardPermissionDenied") : t("clipboardPermissionPrompt")}
       </span>
-      <span className="block mt-1 text-neutral-400">
-        {state === "denied"
+      <span className="font-ui text-body-sm text-on-surface-muted">
+        {denied
           ? t("clipboardPermissionDeniedHint")
           : t("clipboardPermissionPromptHint")}
       </span>

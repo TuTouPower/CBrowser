@@ -126,6 +126,8 @@ def upgrade() -> None:
         sa.Column("last_stopped_at", sa.String(length=64), nullable=True),
         sa.Column("browser_product", sa.String(length=255), nullable=True),
         sa.Column("browser_user_agent", sa.Text(), nullable=True),
+        sa.Column("backoff_started_at", sa.String(length=64), nullable=True),
+        sa.Column("next_retry_at", sa.String(length=64), nullable=True),
         sa.Column("updated_at", sa.String(length=64), nullable=False),
     )
     op.create_table(

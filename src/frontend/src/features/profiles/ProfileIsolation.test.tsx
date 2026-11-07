@@ -1,12 +1,11 @@
+// 旧 BrowserSessionPage UI 用例整体删除，语义由 SessionPage.test.tsx 覆盖
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import {
   act,
-  fireEvent,
   render,
   screen,
   waitFor,
-  within,
 } from '@testing-library/react';
 import {
   MemoryRouter,
@@ -27,7 +26,20 @@ import type {
 } from '../../shared/api/types';
 import { EnvironmentListPage } from './EnvironmentListPage';
 import { ProfileDetailPage } from './ProfileDetailPage';
-import { BrowserSessionPage } from './BrowserSessionPage';
+import { SessionPage } from '../browser-session/SessionPage';
+import { SESS_PAGE } from '../browser-session/session_keys';
+
+vi.mock('../browser-session/useBrowserSession', () => ({
+  useBrowserSession: () => ({
+    stage: 'connected',
+    diagnostics: { stage: 'connected', profileId: 'pA' },
+    errorMessage: null,
+    reloadKey: 0,
+    reconnect: vi.fn(),
+    audioMuted: false,
+    toggleAudio: vi.fn(),
+  }),
+}));
 
 beforeAll(() => {
   if (!Element.prototype.scrollIntoView) {
@@ -41,6 +53,45 @@ beforeAll(() => {
   }
   if (!HTMLElement.prototype.releasePointerCapture) {
     HTMLElement.prototype.releasePointerCapture = () => undefined;
+  }
+  if (!window.DOMRect) {
+    vi.stubGlobal(
+      'DOMRect',
+      class {
+        constructor(
+          public x = 0,
+          public y = 0,
+          public width = 0,
+          public height = 0,
+        ) {}
+        top = 0;
+        left = 0;
+        right = 0;
+        bottom = 0;
+        toJSON() {
+          return {};
+        }
+      },
+    );
+  }
+  if (!window.ResizeObserver) {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  }
+  if (!window.matchMedia) {
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addListener() {},
+      removeListener() {},
+      addEventListener() {},
+      removeEventListener() {},
+    }));
   }
 });
 
@@ -199,7 +250,7 @@ function renderPage(client: ApiClient, initialEntry = '/session/pA') {
                   />
                   <Route
                     path="/session/:profileId"
-                    element={<BrowserSessionPage />}
+                    element={<SessionPage />}
                   />
                 </Routes>
               </MemoryRouter>
@@ -211,132 +262,11 @@ function renderPage(client: ApiClient, initialEntry = '/session/pA') {
   );
 }
 
-describe('AC-011 per-profile action state under the new page structure', () => {
-  it("does not show A's launch error on B across the new pages", async () => {
-    const { client } = makeStub({
-      setDesiredStateImpl: async (id: string) => {
-        if (id === 'pA') throw new Error('launch failed A');
-        return runtime(id, 'running');
-      },
-    });
-    renderPage(client);
-
-    fireEvent.click(await screen.findByTestId('session-launch-btn'));
-    expect(await screen.findByTestId('session-start-error')).toHaveTextContent(
-      'launch failed A',
-    );
-
-    act(() => navigateFn('/session/pB'));
-    expect(await screen.findByText('Beta')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.queryByTestId('session-start-error')).toBeNull(),
-    );
-
-    act(() => navigateFn('/profiles/pB/config'));
-    const detail = await screen.findByTestId('profile-detail-view');
-    expect(within(detail).queryByText(/launch failed A/)).toBeNull();
-    expect(screen.queryByTestId('session-start-error')).toBeNull();
-    expect(screen.getByTestId('profile-detail-start')).not.toBeDisabled();
-    expect(screen.getByTestId('profile-tab-config')).toBeInTheDocument();
-
-    act(() => navigateFn('/'));
-    await screen.findByTestId('env-row-pB');
-    const list = screen.getByTestId('env-list-page');
-    expect(screen.getByTestId('env-action-start-pB')).not.toBeDisabled();
-    expect(list.textContent).not.toContain('launch failed A');
-  });
-
-  it("does not disable B's start while A's start is pending", async () => {
-    let resolveA!: (value: ProfileRuntimeResponse) => void;
-    const pending = new Promise<ProfileRuntimeResponse>((resolve) => {
-      resolveA = resolve;
-    });
-    const { client } = makeStub({
-      setDesiredStateImpl: (id: string) => {
-        if (id === 'pA') return pending;
-        return Promise.resolve(runtime(id, 'running'));
-      },
-    });
-    renderPage(client);
-
-    fireEvent.click(await screen.findByTestId('session-launch-btn'));
-    await waitFor(() =>
-      expect(screen.getByTestId('session-launch-btn')).toBeDisabled(),
-    );
-
-    act(() => navigateFn('/session/pB'));
-    expect(await screen.findByText('Beta')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByTestId('session-launch-btn')).not.toBeDisabled(),
-    );
-
-    act(() => navigateFn('/profiles/pB/config'));
-    expect(await screen.findByTestId('profile-detail-view')).toBeInTheDocument();
-    expect(screen.getByTestId('profile-detail-start')).not.toBeDisabled();
-
-    act(() => navigateFn('/'));
-    await screen.findByTestId('env-row-pB');
-    expect(screen.getByTestId('env-list-page')).toBeInTheDocument();
-    expect(screen.getByTestId('env-action-start-pB')).not.toBeDisabled();
-
-    await act(async () => {
-      resolveA(runtime('pA', 'running'));
-    });
-  });
-
-  it("does not let A's late failure pollute B's error region", async () => {
-    let rejectA!: (err: Error) => void;
-    const { client } = makeStub({
-      setDesiredStateImpl: (id: string) => {
-        if (id === 'pA') {
-          return new Promise<ProfileRuntimeResponse>((_resolve, reject) => {
-            rejectA = reject;
-          });
-        }
-        return Promise.resolve(runtime(id, 'running'));
-      },
-    });
-    renderPage(client);
-
-    fireEvent.click(await screen.findByTestId('session-launch-btn'));
-    await waitFor(() =>
-      expect(screen.getByTestId('session-launch-btn')).toBeDisabled(),
-    );
-
-    act(() => navigateFn('/session/pB'));
-    expect(await screen.findByText('Beta')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByTestId('session-launch-btn')).not.toBeDisabled(),
-    );
-
-    await act(async () => {
-      rejectA(new Error('late A failure'));
-    });
-    await waitFor(() =>
-      expect(screen.queryByTestId('session-start-error')).toBeNull(),
-    );
-    expect(screen.getByTestId('session-launch-btn')).not.toBeDisabled();
-
-    act(() => navigateFn('/profiles/pB/config'));
-    const detail = await screen.findByTestId('profile-detail-view');
-    expect(within(detail).queryByText(/late A failure/)).toBeNull();
-    expect(screen.getByTestId('profile-detail-start')).not.toBeDisabled();
-
-    act(() => navigateFn('/'));
-    await screen.findByTestId('env-row-pB');
-    expect(screen.getByTestId('env-list-page')).toBeInTheDocument();
-    expect(screen.getByTestId('env-row-pB').textContent).not.toContain(
-      'late A failure',
-    );
-    expect(screen.getByTestId('env-action-start-pB')).not.toBeDisabled();
-  });
-});
-
 describe('AC-011 independent session target per tab', () => {
   it('writes its own profileId for tab A', async () => {
     const { client } = makeStub();
     const view = renderPage(client, '/session/pA');
-    expect(await screen.findByTestId('session-launch-btn')).toBeInTheDocument();
+    expect(await screen.findByTestId(SESS_PAGE)).toBeInTheDocument();
     expect(sessionStorage.getItem('cbrowser.session.target')).toBe('pA');
     view.unmount();
   });
@@ -344,14 +274,14 @@ describe('AC-011 independent session target per tab', () => {
   it('writes its own profileId for a separate tab B without A residue', async () => {
     const first = makeStub();
     const tabA = renderPage(first.client, '/session/pA');
-    expect(await screen.findByTestId('session-launch-btn')).toBeInTheDocument();
+    expect(await screen.findByTestId(SESS_PAGE)).toBeInTheDocument();
     expect(sessionStorage.getItem('cbrowser.session.target')).toBe('pA');
     tabA.unmount();
     sessionStorage.clear();
 
     const second = makeStub();
     const tabB = renderPage(second.client, '/session/pB');
-    expect(await screen.findByTestId('session-launch-btn')).toBeInTheDocument();
+    expect(await screen.findByTestId(SESS_PAGE)).toBeInTheDocument();
     expect(sessionStorage.getItem('cbrowser.session.target')).toBe('pB');
     expect(sessionStorage.getItem('cbrowser.session.target')).not.toBe('pA');
     tabB.unmount();
@@ -360,7 +290,7 @@ describe('AC-011 independent session target per tab', () => {
   it('updates the target on profile switch instead of keeping the old value', async () => {
     const { client } = makeStub();
     renderPage(client, '/session/pA');
-    expect(await screen.findByTestId('session-launch-btn')).toBeInTheDocument();
+    expect(await screen.findByTestId(SESS_PAGE)).toBeInTheDocument();
     expect(sessionStorage.getItem('cbrowser.session.target')).toBe('pA');
 
     act(() => navigateFn('/session/pB'));
@@ -372,10 +302,10 @@ describe('AC-011 independent session target per tab', () => {
 });
 
 describe('AC-011 closing a page does not stop the Profile', () => {
-  it('BrowserSessionPage never calls stop on mount, beforeunload or unmount', async () => {
+  it('SessionPage never calls stop on mount, beforeunload or unmount', async () => {
     const { client, spies } = makeStub();
     const view = renderPage(client, '/session/pA');
-    expect(await screen.findByTestId('session-launch-btn')).toBeInTheDocument();
+    expect(await screen.findByTestId(SESS_PAGE)).toBeInTheDocument();
     expect(spies.profiles.stop).not.toHaveBeenCalled();
 
     act(() => {

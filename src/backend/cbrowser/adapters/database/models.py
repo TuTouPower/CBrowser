@@ -202,6 +202,8 @@ class ProfileRuntimeModel(Base):
     last_stopped_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     browser_product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     browser_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backoff_started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_retry_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )

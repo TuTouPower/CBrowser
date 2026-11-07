@@ -272,11 +272,13 @@ export function useBrowserSession(
       const { type, connectionState, iceConnectionState, signalingState, code } =
         event.data;
 
+      // CBROWSER_WS_CLOSE / CBROWSER_PC_STATE are expected transport fallout
+      // on a diagnostic stage. CBROWSER_LIFECYCLE_STALE is an explicit
+      // rebuild request after a broken PeerConnection and must reconnect
+      // even while the recovery UI is shown.
       if (
         DIAGNOSTIC_STAGES.includes(stageRef.current) &&
-        (type === "CBROWSER_WS_CLOSE" ||
-          type === "CBROWSER_PC_STATE" ||
-          type === "CBROWSER_LIFECYCLE_STALE")
+        (type === "CBROWSER_WS_CLOSE" || type === "CBROWSER_PC_STATE")
       ) {
         return;
       }

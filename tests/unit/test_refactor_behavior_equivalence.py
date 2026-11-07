@@ -45,6 +45,7 @@ from cbrowser.supervisor.recovery_rules import (
     is_brand_new_runtime,
     live_instance_ids,
     remaining_retry_seconds,
+    remaining_retry_seconds_from_deadline,
     retry_delay_for_failure,
     runtime_pair_active,
     stream_missing,
@@ -120,6 +121,39 @@ def test_recovery_schedule_predicates() -> None:
 
     assert not failure_budget_exhausted(3, 4)
     assert failure_budget_exhausted(4, 4)
+
+
+def test_retry_deadline_resumes_remaining_window() -> None:
+    now = datetime.now(UTC)
+    backoff_started_at = (now - timedelta(seconds=4)).isoformat()
+    next_retry_at = (now + timedelta(seconds=6)).isoformat()
+    # The API persists backoff_started_at / next_retry_at when a failure is
+    # observed. A Supervisor restart resumes the remaining window; it never
+    # replays the full 10s delay.
+    remaining = remaining_retry_seconds_from_deadline(
+        next_retry_at, backoff_started_at, 10.0
+    )
+    assert 5.9 < remaining <= 6.0
+    # Missing or invalid deadline falls back to the same deadline formula
+    # derived from the observed failure time, never to a full replay.
+    assert (
+        5.9
+        < remaining_retry_seconds_from_deadline(None, backoff_started_at, 10.0)
+        <= 6.0
+    )
+    assert (
+        5.9
+        < remaining_retry_seconds_from_deadline("invalid", backoff_started_at, 10.0)
+        <= 6.0
+    )
+    past = (now - timedelta(seconds=1)).isoformat()
+    assert remaining_retry_seconds_from_deadline(past, backoff_started_at, 10.0) == 0.0
+    # A fresh user intent clears the failure count; no deadline may hold
+    # the new generation back.
+    assert (
+        remaining_retry_seconds_from_deadline(next_retry_at, backoff_started_at, 0.0)
+        == 0.0
+    )
 
 
 def test_container_spec_entrypoint_and_browser_arguments() -> None:

@@ -134,9 +134,9 @@ async def open_session(page: Any, harness: Any, profile_id: str) -> None:
 
 
 async def launch_profile_via_ui(page: Any, timeout: float = 120.0) -> None:
-    await page.click('[data-testid="session-launch-btn"]', timeout=15000)
+    await page.click('[data-testid="sess-stage-action-launch"]', timeout=15000)
     await page.wait_for_selector(
-        '[data-testid="browser-session-mount"]', timeout=timeout * 1000
+        '[data-testid="sess-page"]', timeout=timeout * 1000
     )
 
 

@@ -1,13 +1,13 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { AppLayout } from "./AppLayout";
 import { RequireAuth } from "./RequireAuth";
-import { BrowserSessionPage } from "../features/profiles/BrowserSessionPage";
+import { SessionPage } from "../features/browser-session/SessionPage";
+import { SessionEntryPage } from "../features/browser-session/SessionEntryPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
 import { EnvironmentListPage } from "../features/profiles/EnvironmentListPage";
 import { ProfileDetailPage } from "../features/profiles/ProfileDetailPage";
 import { ProxyListPage } from "../features/proxies/ProxyListPage";
 import { LoginPage } from "../features/auth/LoginPage";
-import { PlaceholderPage } from "../routes/PlaceholderPage";
 
 export const routes: RouteObject[] = [
   {
@@ -28,11 +28,11 @@ export const routes: RouteObject[] = [
       },
       {
         path: "session",
-        element: <PlaceholderPage titleKey="placeholderSessions" />,
+        element: <SessionEntryPage />,
       },
       {
         path: "session/:profileId",
-        element: <BrowserSessionPage />,
+        element: <SessionPage />,
       },
       {
         path: "proxies",

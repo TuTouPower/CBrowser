@@ -4,7 +4,7 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 
 ## 1. 外壳与数据
 
-- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。`/` 由 t037 环境列表承载、`/proxies` 由 t038 代理库承载，`/session` 占位页留给 t039。
+- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。`/` 由 t037 环境列表承载、`/proxies` 由 t038 代理库承载；`/session` 为会话入口页（t039：本标签页无目标时列出运行中环境供选择）、`/session/:profileId` 为 t039 重新设计的新会话页。t039 已启用全局颜色门禁（见 testing.md）。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `detail`。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
@@ -20,6 +20,9 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 - 页面与布局的动作状态（error/pending）按动作目标 Profile 隔离呈现（`scopeMutationToProfile`）：常驻组件（AppLayout、会话页、详情页）只显示目标为当前 Profile 的动作状态，其他 Profile 的错误、pending 与迟到响应不进入当前视图，本地结果横幅不跨 Profile 携带。
 - 同一 Profile 可有多个页面同时连接，全部为 controller；前端不维护租约或唯一控制者状态。
 - 页面关闭、刷新或切换目标只关闭自身 PeerConnection 与信令，不调用 Profile stop；只有用户明确停止 Profile 才停止 Browser。
+- 详情面板展开状态持久化在 `cbrowser.session.details_open`（刷新后保持），默认收起（t039）。
+- 专注模式隐藏导航侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端 iframe）；专注状态经 `SessionFocusProvider` 提升到 `AppProviders`（`app/providers.tsx` 的 `AuthProvider` 内）供 `AppLayout` 与会话页共享读取，专注期间不条件卸载 iframe 与 `useBrowserSession`，不重建连接、不中断远端输入（t039）。
+- `/session` 会话入口在本标签页无目标时列出运行中环境（真实链接）；侧栏「会话」导航在本标签页已有目标时回跳该会话（t039）。
 
 ## 3. Selkies 官方客户端薄适配
 
@@ -41,6 +44,11 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 - 剪贴板：`ClipboardPermissionHint` 在宿主会话页中按需探测权限（与 `/selkies` iframe 同源），拒绝/提示状态显示可执行说明；自身不调用 `navigator.clipboard` 读写，复制粘贴同步由 iframe 内官方 Selkies seamless 客户端完成（decisions 012）。
 - 音频：每页静音按钮经官方 `pipelineControl` audio（`STOP_AUDIO`/`START_AUDIO`）；音频状态（`audio_status.ts`）由 getStats 推导，与视频阶段独立：`normal`/`muted`/`no_track`/`no_data`/`unknown`，内容静音不判故障。
 - 显示设置：运行时 `config_version` 与 Profile 当前配置版本不同即显示待应用提示与“应用并重启”（经 API stop → running）。该动作带阶段跟踪（按动作键保存 stop 前实例与 start 已发出标记）：自动重试先观测运行时再续跑——stop 已生效不重发不重等、start 已生效而响应丢失时收敛到新实例的 running（不等待 stopped、不停止或重建新实例）、未生效步骤以同一操作键续跑、状态查询持续失败有界报错。
+- 会话页画面区由 `SessionPage` 承载：iframe 铺满、不绘制模拟浏览器框（ADR 003/006）。全部非 `connected` 阶段显示居中状态面板（`SessionStagePanel`），给出阶段原因与可执行操作（重连 / 查看运行状态 / 启动），`connected` 不显示面板；阶段清单以 blueprint 本节为权威——`connecting_ice` 在 `types.ts` 未定义，`SessionStagePanel` 以字符串字面量分支保留该 stage，逻辑层（`useBrowserSession`）暂不产生它（t039）。
+- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 网络 / 指纹 / 运行四区（指纹含平台、字体集与缺失字体告警；运行含浏览器版本与 UA、实例 ID、配置版本、transport 状态、最近错误、启动时间），每个值可复制（t039）。
+- 剪贴板权限提示（`ClipboardPermissionHint`）、音频状态与诊断浮层按设计系统重建、行为语义不变：剪贴板只探测权限不读写本机剪贴板，音频经官方 `pipelineControl` 的 `STOP_AUDIO` / `START_AUDIO`，诊断取自 `RTCPeerConnection` 状态与 `getStats()`（t039）。
+- 旧会话页组件（`BrowserSessionPage` / `BrowserSessionView` / `BrowserSessionMount` 及旧测试）整体删除；`data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），会话 E2E 与组件测试选择器同步改写（t039）。
+- 旧页面全部替换后启用全局颜色门禁：`npm run design:lint` 的 `--lint` 经 `runLintSources(sources)` 同时跑尺寸断言与颜色断言，扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 testing.md「t039 全局颜色门禁」）。
 
 SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点事件 id（快照时刻最后一条实时事件序号），不进入共享历史；重连以基点 id 经 Last-Event-ID 续传，服务端回放基点之后的实时事件，无缺口无倒退；窗口不足时服务端以全量快照显式重建。Profile 详情页呈现独立的默认搜索初始化状态：`search_defaults.state == "failed"` 时显示与浏览器可用性分离的失败提示与重试按钮（调用 `POST /profiles/{id}/runtime/search-defaults/retry`），不要求重启浏览器。
 

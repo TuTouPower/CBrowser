@@ -13,7 +13,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return (
       <div
         data-testid="auth-loading"
-        className="h-screen flex items-center justify-center bg-surface-0 text-gray-500 text-sm"
+        className="h-screen flex items-center justify-center bg-background text-on-surface-muted text-sm"
       >
         {t("loading")}
       </div>

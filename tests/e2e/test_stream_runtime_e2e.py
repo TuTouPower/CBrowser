@@ -1285,8 +1285,25 @@ async def test_stream_runtime_direct_media_matrix(
                 f"Expected 2 viewers after closing Tab 3, got {len(gateway.viewers)}"
             )
 
-            stats1_after_close = await page1.evaluate(stats_script)
-            stats2_after_close = await page2.evaluate(stats_script)
+            # Frames must keep advancing after the clone closes. Wait for the
+            # growth instead of comparing a single snapshot, which under load
+            # can be sampled before the next decoded frame is reported.
+            stats1_after_close = await poll_until(
+                lambda: page1.evaluate(stats_script),
+                lambda s: s["video"]["framesDecoded"]
+                > stats1_post_dup["video"]["framesDecoded"],
+                timeout=15.0,
+                interval=0.2,
+                description="Page 1 media progressing after Tab 3 closed",
+            )
+            stats2_after_close = await poll_until(
+                lambda: page2.evaluate(stats_script),
+                lambda s: s["video"]["framesDecoded"]
+                > stats2_post_dup["video"]["framesDecoded"],
+                timeout=15.0,
+                interval=0.2,
+                description="Page 2 media progressing after Tab 3 closed",
+            )
             assert (
                 stats1_after_close["video"]["framesDecoded"]
                 > stats1_post_dup["video"]["framesDecoded"]

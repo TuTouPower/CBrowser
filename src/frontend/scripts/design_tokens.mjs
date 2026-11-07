@@ -19,6 +19,21 @@ const HIJACKED_SIZE_CLASS =
 const ARBITRARY_SIZE_CLASS =
   /\b(?:max-w|min-w|w|max-h|min-h|h|size)-\[[^\]]+\]/;
 
+const PALETTE_COLOR_CLASS =
+  /\b(?:bg|text|border|outline|ring|from|to|via|fill|stroke)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}(?:\/\d{1,3})?\b/;
+const PLAIN_COLOR_CLASS =
+  /\b(?:bg|text|border|outline|ring|from|to|via|fill|stroke)-(?:white|black)\b/;
+const LEGACY_COLOR_CLASS =
+  /\b(?:bg|text|border|outline|ring|from|to|via|fill|stroke)-(?:surface-[0-4]|primary-foreground)\b/;
+const COLOR_LITERAL = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\s*\([^)]*\)/;
+
+const COLOR_VIOLATION_PATTERNS = [
+  PALETTE_COLOR_CLASS,
+  PLAIN_COLOR_CLASS,
+  LEGACY_COLOR_CLASS,
+  COLOR_LITERAL,
+];
+
 const CJK_FALLBACK =
   '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
 
@@ -67,7 +82,31 @@ export function assertNoSizeTokenHijack(sources) {
   return offenders;
 }
 
-function collectSources(dirPath, baseRel) {
+export function assertNoColorViolations(sources) {
+  const offenders = [];
+  for (const { path, text } of sources) {
+    text.split("\n").forEach((line, index) => {
+      if (COLOR_VIOLATION_PATTERNS.some((pattern) => pattern.test(line))) {
+        offenders.push(`${path}:${index + 1}: ${line.trim().slice(0, 140)}`);
+      }
+    });
+  }
+  if (offenders.length > 0) {
+    throw new DesignValidationError(
+      `Hardcoded colors are forbidden (use semantic tokens):\n${offenders
+        .map((offender) => `  - ${offender}`)
+        .join("\n")}`,
+    );
+  }
+  return offenders;
+}
+
+export function runLintSources(sources) {
+  assertNoSizeTokenHijack(sources);
+  assertNoColorViolations(sources);
+}
+
+export function collectSources(dirPath, baseRel) {
   const out = [];
   for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
     const full = resolve(dirPath, entry.name);
@@ -202,9 +241,9 @@ function main() {
 
   if (mode === "--lint") {
     const sources = collectSources(fileURLToPath(SOURCE_DIR_URL), "src");
-    assertNoSizeTokenHijack(sources);
+    runLintSources(sources);
     console.log(
-      `DESIGN.md lint: 0 error / 0 warning; size-token scan: ${sources.length} files clean`,
+      `DESIGN.md lint: 0 error / 0 warning; size+color scan: ${sources.length} files clean`,
     );
     return;
   }

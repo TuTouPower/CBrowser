@@ -153,7 +153,7 @@ async def wait_for_iframe_decode(
             stats = await page.evaluate(
                 """async () => {
                     const iframe = document.querySelector(
-                        'iframe[data-testid="browser-session-iframe"]');
+                        'iframe[data-testid="sess-iframe"]');
                     if (!iframe || !iframe.contentWindow) return null;
                     const getStats = iframe.contentWindow.__getWebRTCStats;
                     if (typeof getStats !== 'function') return null;
@@ -180,7 +180,7 @@ async def iframe_eval(page: Page, expression: str) -> Any:
     return await page.evaluate(
         """(expr) => {
             const iframe = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!iframe || !iframe.contentWindow) return null;
             return iframe.contentWindow.eval(expr);
         }""",
@@ -219,7 +219,7 @@ async def get_iframe_webrtc_stats(page: Page) -> dict[str, Any] | None:
     return await page.evaluate(
         """async () => {
             const iframe = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!iframe || !iframe.contentWindow) return null;
             const getStats = iframe.contentWindow.__getWebRTCStats;
             if (typeof getStats !== 'function') return null;
@@ -415,7 +415,7 @@ async def test_frontend_session_independent_input_and_mute(
 
             # Product mute control in Page A must send STOP_AUDIO only on A's
             # own data channel and must not affect Page B.
-            await pageA.click('[data-testid="session-audio-toggle-btn"]')
+            await pageA.click('[data-testid="sess-audio-toggle"]')
             messages_a = await wait_iframe_datachannel_message(pageA, "STOP_AUDIO")
             assert "STOP_AUDIO" in messages_a
             muted_a = await iframe_eval(
@@ -434,7 +434,7 @@ async def test_frontend_session_independent_input_and_mute(
                 isinstance(m, str) and m.startswith("STOP_AUDIO") for m in messages_b
             ), "Page B must not receive A's STOP_AUDIO"
 
-            await pageA.click('[data-testid="session-audio-toggle-btn"]')
+            await pageA.click('[data-testid="sess-audio-toggle"]')
             messages_a2 = await wait_iframe_datachannel_message(pageA, "START_AUDIO")
             assert "START_AUDIO" in messages_a2
 
@@ -469,7 +469,7 @@ async def test_frontend_session_independent_input_and_mute(
             blocked_resize = await pageA.evaluate(
                 """() => {
                     const iframe = document.querySelector(
-                        'iframe[data-testid="browser-session-iframe"]');
+                        'iframe[data-testid="sess-iframe"]');
                     if (!iframe || !iframe.contentWindow) return false;
                     return iframe.contentWindow.enable_resize === false
                         && iframe.contentWindow.manual_resolution === true;
@@ -596,7 +596,7 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
 
             # The diagnostic overlay must be visible (no unexplained black screen!)
             overlay_visible = await pageUnready.wait_for_selector(
-                '[data-testid="session-diagnostics-overlay"]',
+                '[data-testid="sess-diag-overlay"]',
                 timeout=10000,
             )
             assert overlay_visible, (
@@ -604,7 +604,7 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
             )
 
             title_text = await pageUnready.inner_text(
-                '[data-testid="session-stage-title"]'
+                '[data-testid="sess-stage-title"]'
             )
             assert (
                 "运行时未就绪" in title_text
@@ -614,12 +614,12 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
 
             # Reconnect and status buttons must be present
             reconnect_btn = await pageUnready.query_selector(
-                '[data-testid="session-reconnect-btn"]'
+                '[data-testid="sess-stage-action-reconnect"]'
             )
             assert reconnect_btn is not None, "Reconnect button must be available"
 
             status_btn = await pageUnready.query_selector(
-                '[data-testid="session-view-status-btn"]'
+                '[data-testid="sess-stage-action-view-status"]'
             )
             assert status_btn is not None, "View status button must be available"
 

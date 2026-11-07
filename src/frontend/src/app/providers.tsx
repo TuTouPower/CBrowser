@@ -6,6 +6,7 @@ import { ThemeProvider } from "../theme";
 import { ToastProvider } from "../shared/ui";
 import { defaultApiClient, ApiClient, shouldRetryRequest } from "../shared/api/client";
 import { ApiClientContext } from "../shared/api/client_context";
+import { SessionFocusProvider } from "../features/browser-session/session_focus";
 import { defaultSseClient, ProfileEventsClient } from "../shared/api/sse";
 import { useProfileEventsSync } from "../features/profiles/useProfilesQuery";
 
@@ -73,8 +74,10 @@ export function AppProviders({
           <ToastProvider>
             <ApiClientContext.Provider value={apiClient}>
               <AuthProvider client={apiClient}>
-                <AuthenticatedSseBridge sseClient={sseClient} />
-                {children}
+                <SessionFocusProvider>
+                  <AuthenticatedSseBridge sseClient={sseClient} />
+                  {children}
+                </SessionFocusProvider>
               </AuthProvider>
             </ApiClientContext.Provider>
           </ToastProvider>

@@ -220,9 +220,25 @@ def verify_frontend_dist(
         path.read_text(encoding="utf-8", errors="ignore")
         for path in (dist_dir / "assets").glob("*.css")
     )
-    for utility in (".bg-primary", "--color-surface"):
-        if utility not in css_text:
-            raise RuntimeError(f"Generated CSS is missing {utility}")
+    # t039 D16: 旧 BrowserSessionPage（唯一引用 .bg-primary 的源码）已删除，
+    # Tailwind JIT 不再生成该类；原 ".bg-primary 存在" 断言失效（见 progress
+    # 测试处置清单）。新语义：Button 的 primary 主色类 .bg-accent 由设计
+    # token --color-accent 生成，且 --color-*: initial 必须重置默认调色板。
+    if ".bg-accent" not in css_text:
+        raise RuntimeError(
+            "Generated CSS is missing .bg-accent (Button primary class)"
+        )
+    if "--color-accent" not in css_text:
+        raise RuntimeError("Generated CSS is missing --color-accent design token")
+    if "--color-surface" not in css_text:
+        raise RuntimeError("Generated CSS is missing --color-surface design token")
+    if re.search(
+        r"\.bg-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|"
+        r"green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)"
+        r"-\d{2,3}",
+        css_text,
+    ):
+        raise RuntimeError("Generated CSS leaks a default palette class")
     if check_freshness:
         verify_frontend_build_freshness(dist_dir)
     print(f"Verified frontend dist: {selkies_dir}")

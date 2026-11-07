@@ -47,7 +47,7 @@ class MediaTopologyHarness(FrontendAppTopologyHarness):
     test_label = "t007-media"
 
 
-IFRAME_SELECTOR = 'iframe[data-testid="browser-session-iframe"]'
+IFRAME_SELECTOR = 'iframe[data-testid="sess-iframe"]'
 
 # Plan 9.2 targets 30 FPS for an active foreground viewer and 8 FPS for a
 # static visible viewer. Over a 3 s sample we require at least 20 FPS
@@ -135,7 +135,7 @@ async def iframe_eval(page: Page, expression: str) -> Any:
     return await page.evaluate(
         """(expr) => {
             const f = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!f || !f.contentWindow) return null;
             return f.contentWindow.eval(expr);
         }""",
@@ -147,7 +147,7 @@ async def iframe_stats(page: Page) -> dict[str, Any] | None:
     return await page.evaluate(
         """async () => {
             const f = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!f || !f.contentWindow) return null;
             if (typeof f.contentWindow.__getWebRTCStats !== 'function') return null;
             return await f.contentWindow.__getWebRTCStats();
@@ -204,7 +204,7 @@ async def set_iframe_visibility(page: Page, hidden: bool) -> None:
         """(hidden) => {
             const state = hidden ? 'hidden' : 'visible';
             const f = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!f || !f.contentDocument) throw new Error('iframe document missing');
             const doc = f.contentDocument;
             Object.defineProperty(doc, 'visibilityState', {
@@ -286,7 +286,7 @@ async def sample_iframe_pixel(page: Page) -> list[int] | None:
     return await page.evaluate(
         """() => {
             const f = document.querySelector(
-                'iframe[data-testid="browser-session-iframe"]');
+                'iframe[data-testid="sess-iframe"]');
             if (!f || !f.contentDocument) return null;
             const doc = f.contentDocument;
             const tmp = doc.createElement('canvas');
@@ -615,10 +615,10 @@ async def test_ac005_product_mute_is_independent_per_page(
 
         # Mute page A through the product control, never by touching audio.muted.
         dc_a_before = await data_channel_messages(page_a)
-        await page_a.click('[data-testid="session-audio-toggle-btn"]')
+        await page_a.click('[data-testid="sess-audio-toggle"]')
         assert (
             await page_a.get_attribute(
-                '[data-testid="session-audio-toggle-btn"]', "data-audio-muted"
+                '[data-testid="sess-audio-toggle"]', "aria-pressed"
             )
             == "true"
         )
@@ -642,16 +642,16 @@ async def test_ac005_product_mute_is_independent_per_page(
         assert b_energy_growth > 0, "page B audio was silent while A muted"
         assert (
             await page_b.get_attribute(
-                '[data-testid="session-audio-toggle-btn"]', "data-audio-muted"
+                '[data-testid="sess-audio-toggle"]', "aria-pressed"
             )
             == "false"
         )
 
         # Unmute A through the same product control.
-        await page_a.click('[data-testid="session-audio-toggle-btn"]')
+        await page_a.click('[data-testid="sess-audio-toggle"]')
         assert (
             await page_a.get_attribute(
-                '[data-testid="session-audio-toggle-btn"]', "data-audio-muted"
+                '[data-testid="sess-audio-toggle"]', "aria-pressed"
             )
             == "false"
         )
@@ -834,16 +834,23 @@ async def test_ac005_remote_tab_switch_is_visible_on_both_pages(
 # --------------------------------------------------------------------------- #
 
 
+AUDIO_STATUS_SELECTOR = '[data-testid="sess-diag-audio-status"]'
+CONN_STATE_SELECTOR = '[data-testid="sess-diag-conn-state"]'
+
+
 async def read_audio_status(page: Page) -> str:
-    node = await page.query_selector('[data-testid="diag-audio-status"]')
+    node = await page.query_selector(AUDIO_STATUS_SELECTOR)
     if node is None:
-        toggle = await page.query_selector('[data-testid="session-toggle-diag-btn"]')
+        toggle = await page.query_selector('[data-testid="sess-diag-toggle"]')
         if toggle is not None:
             await toggle.click()
-            await page.wait_for_selector(
-                '[data-testid="diag-audio-status"]', timeout=5000
-            )
-            node = await page.query_selector('[data-testid="diag-audio-status"]')
+            await page.wait_for_selector(AUDIO_STATUS_SELECTOR, timeout=5000)
+            node = await page.query_selector(AUDIO_STATUS_SELECTOR)
+    return (await node.inner_text()).strip() if node else ""
+
+
+async def read_conn_state(page: Page) -> str:
+    node = await page.query_selector(CONN_STATE_SELECTOR)
     return (await node.inner_text()).strip() if node else ""
 
 
@@ -868,16 +875,18 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
         # Positive: audible oscillator -> normal audio, video stage connected.
         normal_text = await poll_until(
             lambda: read_audio_status(page),
-            lambda text: "音频正常" in text,
+            lambda text: text == "音频正常",
             timeout=30.0,
             interval=0.5,
             description="normal audio diagnostic",
         )
-        assert "音频正常" in normal_text, normal_text
+        assert normal_text == "音频正常", normal_text
 
-        stage_title = await page.inner_text('[data-testid="session-stage-title"]')
-        assert "已连接" in stage_title, stage_title
-        conn_state = await page.inner_text('[data-testid="diag-conn-state"]')
+        stage = await page.get_attribute(
+            '[data-testid="sess-page"]', "data-stage"
+        )
+        assert stage == "connected", stage
+        conn_state = await read_conn_state(page)
         assert conn_state == "connected", conn_state
 
         # Silence must not be reported as a fault: a zero-amplitude but running
@@ -894,7 +903,7 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
         await asyncio.sleep(4.0)
         silence_text = await read_audio_status(page)
         silence_stats = await iframe_stats(page)
-        assert "音频正常" in silence_text, silence_text
+        assert silence_text == "音频正常", silence_text
         assert (
             silence_stats["audio"]["packetsReceived"]
             > silence_before["packetsReceived"]
@@ -909,16 +918,18 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
         )
         failure_text = await poll_until(
             lambda: read_audio_status(page),
-            lambda text: "音频无数据" in text,
+            lambda text: text == "音频无数据",
             timeout=30.0,
             interval=0.5,
             description="audio link failure diagnostic",
         )
-        assert "音频无数据" in failure_text, failure_text
+        assert failure_text == "音频无数据", failure_text
 
-        stage_title = await page.inner_text('[data-testid="session-stage-title"]')
-        conn_state = await page.inner_text('[data-testid="diag-conn-state"]')
-        assert "已连接" in stage_title, stage_title
+        stage = await page.get_attribute(
+            '[data-testid="sess-page"]', "data-stage"
+        )
+        conn_state = await read_conn_state(page)
+        assert stage == "connected", stage
         assert conn_state == "connected", conn_state
         # Fixed 1.5 s sampling window: frames must keep arriving after the audio
         # link failure, proving video is unaffected.
@@ -932,11 +943,11 @@ async def test_ac005_audio_diagnostics_normal_silence_and_link_failure(
             {
                 "profile_id": profile_id,
                 "normal_status": normal_text,
-                "normal_stage": stage_title,
+                "normal_stage": stage,
                 "silence_status": silence_text,
                 "silence_audio": silence_stats["audio"],
                 "failure_status": failure_text,
-                "failure_stage": stage_title,
+                "failure_stage": stage,
                 "failure_conn_state": conn_state,
                 "frames_before_failure": frames_before_failure,
                 "frames_after_failure": frames_after_failure,

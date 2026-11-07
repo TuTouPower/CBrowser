@@ -182,6 +182,12 @@ t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 Ap
 
 AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置页、手写 `globals.css`、占位页）中 Tailwind 默认调色板类、旧 `surface-*` / `primary-foreground` 类与颜色字面量命中 0；构建产物 CSS 中 `bg-red-500` / `text-gray-100` / `bg-emerald-500` / `bg-blue-500` / `text-slate-900` / `bg-surface-0` 均不产生样式，语义变量（`--color-background` / `--color-surface` / `--color-accent` / `--font-ui` / `--font-mono` / `--text-body-md` / `--radius-md` / `--spacing-md`）、`.bg-primary` 与 `.dark` 覆盖均存在。AC-009 扫描：`dist/index.html` 与 `dist/assets/*.css` 中 `https?://` 仅命中 Tailwind MIT license 注释，无外部字体 / 图标 CDN 引用；自托管 `*.woff2` 13 个；`index.html` 内联脚本数 0。
 
+### t039 全局颜色门禁
+
+全局颜色门禁由 `npm run design:lint` 的 `--lint` 分支承载（`src/frontend/scripts/design_tokens.mjs`）：`runLintSources(sources)` 合并执行尺寸断言（`assertNoSizeTokenHijack`）与颜色断言（`assertNoColorViolations`），一次扫描同时覆盖 Tailwind 默认调色板类（含 `/透明度` 变体）、`white` / `black` 类、旧 `surface-0..4` / `primary-foreground` 类与 hex / rgb / hsl / oklch 颜色字面量，**发现即失败、无豁免**，日志 `size+color scan: N files clean`。源集沿用 t036 口径：`collectSources("src")` 递归收集 `.ts` / `.tsx`，排除 `generated` / `styles` 目录与 `*.test.*` / `*.spec.*` / `test_setup.ts`。门禁零改 `scripts/run_gates.sh`——`design_lint` suite 已调用 `design:lint`，接入即生效。
+
+`design_tokens.test.mjs` 覆盖 3 例纯函数断言（`assertNoColorViolations` 颜色正则的命中与放行）与 2 例集成测试（`mkdtempSync` 临时目录 + `collectSources` 走真实门禁路径，违规文件使 `runLintSources` 抛错、干净目录通过）。`doctor_cmd` / `test_cmd` / `blackbox_verify` / `gate_timeout_seconds` 章节名与命令形式不变。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。

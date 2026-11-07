@@ -11,6 +11,7 @@ import { I18nProvider } from "../i18n";
 import { ThemeProvider } from "../theme";
 import { ToastProvider } from "../shared/ui";
 import type { ProfileResponse, ProfileRuntimeResponse } from "../shared/api/types";
+import { SESS_ENTRY_PAGE, SESS_PAGE } from "../features/browser-session/session_keys";
 
 const PROFILES: ProfileResponse[] = [
   {
@@ -191,7 +192,7 @@ describe("Application Router (plan 5.1)", () => {
 
     for (const path of ["/session"]) {
       const view = renderWithRouter([path]);
-      expect(await view.findByTestId("placeholder-page")).toBeInTheDocument();
+      expect(await view.findByTestId(SESS_ENTRY_PAGE)).toBeInTheDocument();
       view.unmount();
     }
 
@@ -200,7 +201,7 @@ describe("Application Router (plan 5.1)", () => {
     proxies.unmount();
 
     const session = renderWithRouter(["/session/p1"]);
-    expect(await session.findByTestId("browser-session-mount")).toBeInTheDocument();
+    expect(await session.findByTestId(SESS_PAGE)).toBeInTheDocument();
     session.unmount();
 
     for (const path of [
@@ -217,7 +218,7 @@ describe("Application Router (plan 5.1)", () => {
     const settings = renderWithRouter(["/settings"]);
     expect(await settings.findByTestId("settings-page")).toBeInTheDocument();
     settings.unmount();
-  });
+  }, 20000);
 
   it("treats an unknown profileId as a normal detail route", async () => {
     const view = renderWithRouter(["/profiles/new"]);

@@ -299,10 +299,24 @@ async def test_ac009_api_supervisor_start_and_stop_coordination(coord_test_env):
         assert sup_mock.start_calls[0]["profile_id"] == profile_id
         assert sup_mock.start_calls[0]["config_version"] == 1
 
-        # Check API runtime state has converged to running
+        # Check API runtime state has converged to running. The Coordinator
+        # converges asynchronously after the start RPC: waiting only for
+        # start_calls used to observe a transient "starting" state (AC-009
+        # flake). Poll the runtime until observed_state is the terminal value,
+        # then keep the original assertions unchanged.
         rt_resp = await client.get(
             f"/api/v1/profiles/{profile_id}/runtime", headers=auth_headers
         )
+        for _ in range(50):
+            if (
+                rt_resp.status_code == 200
+                and rt_resp.json().get("observed_state") == "running"
+            ):
+                break
+            await asyncio.sleep(0.1)
+            rt_resp = await client.get(
+                f"/api/v1/profiles/{profile_id}/runtime", headers=auth_headers
+            )
         assert rt_resp.status_code == 200
         rt_data = rt_resp.json()
         assert rt_data["desired_state"] == "running"

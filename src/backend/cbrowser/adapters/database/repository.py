@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 from cbrowser.adapters.database.models import (
@@ -27,7 +28,10 @@ from cbrowser.domain.models import (
     RuntimeEvent,
     utc_now_iso,
 )
-from cbrowser.domain.runtime_policy import BLOCK_AFTER_RUNTIME_FAILURES
+from cbrowser.domain.runtime_policy import (
+    AUTO_RETRY_DELAYS,
+    BLOCK_AFTER_RUNTIME_FAILURES,
+)
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -609,6 +613,8 @@ class ProfileRepository:
             m.runtime_instance_id = runtime_instance_id
             m.config_version = config_version
             m.observed_state = "starting"
+            m.backoff_started_at = None
+            m.next_retry_at = None
             m.updated_at = now
 
             # Record bind lifecycle event
@@ -660,6 +666,8 @@ class ProfileRepository:
             m.observed_state = observed_state
             if observed_state == "running":
                 m.last_started_at = now
+                m.backoff_started_at = None
+                m.next_retry_at = None
                 if browser_product is not None:
                     m.browser_product = browser_product
                 if browser_user_agent is not None:
@@ -678,6 +686,14 @@ class ProfileRepository:
                 if m.failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
                     m.restart_blocked = True
                 m.runtime_instance_id = None
+                m.backoff_started_at = now
+                if m.failure_count <= len(AUTO_RETRY_DELAYS):
+                    m.next_retry_at = (
+                        datetime.fromisoformat(now)
+                        + timedelta(seconds=AUTO_RETRY_DELAYS[m.failure_count - 1])
+                    ).isoformat()
+                else:
+                    m.next_retry_at = None
                 session.add(
                     RuntimeEventModel(
                         event_id=f"observed_error:{runtime_instance_id}",
@@ -747,6 +763,8 @@ class ProfileRepository:
             if desired_state == "running":
                 m.failure_count = 0
                 m.restart_blocked = False
+                m.backoff_started_at = None
+                m.next_retry_at = None
             elif (
                 desired_state == "stopped"
                 and m.observed_state == "error"
@@ -853,6 +871,8 @@ class ProfileRepository:
             last_stopped_at=m.last_stopped_at,
             browser_product=m.browser_product,
             browser_user_agent=m.browser_user_agent,
+            backoff_started_at=m.backoff_started_at,
+            next_retry_at=m.next_retry_at,
             updated_at=m.updated_at,
         )
 

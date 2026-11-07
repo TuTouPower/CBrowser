@@ -388,6 +388,44 @@ async def test_desired_state_idempotent_replay_does_not_clear_failure_count(db_c
 
 
 @pytest.mark.asyncio
+async def test_runtime_backoff_deadline_facts_are_persisted(db_context):
+    """API records backoff_started_at / next_retry_at on an observed failure.
+
+    next_retry_at is the authoritative server-side deadline, exactly
+    backoff_started_at + AUTO_RETRY_DELAYS[failure_count - 1]. A running
+    observation clears the stale backoff facts.
+    """
+    from datetime import datetime
+
+    from cbrowser.domain.runtime_policy import AUTO_RETRY_DELAYS
+
+    _engine, session_maker = db_context
+    repo = ProfileRepository(session_maker)
+    p = await repo.create_profile(ProfileConfig(name="Backoff Facts Profile"))
+    await repo.set_desired_state(p.id, "running")
+
+    for strike, delay in enumerate(AUTO_RETRY_DELAYS, start=1):
+        instance_id = f"inst_crash_{strike}"
+        await repo.bind_runtime_instance(p.id, instance_id, config_version=1)
+        await repo.report_observed_state(
+            p.id, instance_id, "error", reason="process_lost"
+        )
+        rt = await repo.get_runtime(p.id)
+        assert rt.failure_count == strike
+        assert rt.backoff_started_at is not None
+        assert rt.next_retry_at is not None
+        started = datetime.fromisoformat(rt.backoff_started_at)
+        deadline = datetime.fromisoformat(rt.next_retry_at)
+        assert (deadline - started).total_seconds() == delay
+
+    await repo.bind_runtime_instance(p.id, "inst_recovered", config_version=1)
+    await repo.report_observed_state(p.id, "inst_recovered", "running")
+    rt_running = await repo.get_runtime(p.id)
+    assert rt_running.backoff_started_at is None
+    assert rt_running.next_retry_at is None
+
+
+@pytest.mark.asyncio
 async def test_wal_reader_parallelism_while_write_lock_held(
     db_context, temp_db_path: Path
 ):

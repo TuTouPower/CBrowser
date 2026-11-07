@@ -230,6 +230,8 @@ class ProfileRuntime(BaseModel):
     last_stopped_at: str | None = None
     browser_product: str | None = None
     browser_user_agent: str | None = None
+    backoff_started_at: str | None = None
+    next_retry_at: str | None = None
     updated_at: str
 
 
@@ -701,6 +703,8 @@ class ProfileRuntimeResponse(BaseModel):
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None
     control: ProfileControlStateData | None = None
+    backoff_started_at: str | None = None
+    next_retry_at: str | None = None
     updated_at: str
 
 

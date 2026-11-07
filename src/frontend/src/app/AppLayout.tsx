@@ -24,6 +24,7 @@ import { useI18n } from "../i18n";
 import { useTheme, type ThemePreference } from "../theme";
 import { Banner, Button, DropdownMenu, IconButton } from "../shared/ui";
 import { useRuntimeSnapshot } from "./useRuntimeSnapshot";
+import { useSessionFocus } from "../features/browser-session/session_focus";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 360;
@@ -85,6 +86,8 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const narrow = useNarrowLayout();
+  const { focusMode } = useSessionFocus();
+  const isSessionPage = /^\/session\/[^/]+$/.test(location.pathname);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [width, setWidth] = useState(readWidth);
@@ -264,14 +267,14 @@ export function AppLayout() {
     <div className="flex h-screen overflow-hidden bg-background text-on-surface">
       {narrow ? (
         <>
-          <div className="flex h-12 shrink-0 items-center gap-sm border-b border-outline bg-sidebar px-md">
+          <div className={`flex h-12 shrink-0 items-center gap-sm border-b border-outline bg-sidebar px-md${focusMode ? " hidden" : ""}`}>
             <IconButton label={t("openNavigation")} onClick={() => setDrawerOpen(true)}>
               <Menu aria-hidden="true" className="h-4 w-4" />
             </IconButton>
             <span className="font-ui text-title-sm">CBrowser</span>
           </div>
           {drawerOpen && (
-            <div className="fixed inset-0 z-40 flex" data-testid="sidebar-drawer">
+            <div className={`fixed inset-0 z-40 flex${focusMode ? " hidden" : ""}`} data-testid="sidebar-drawer">
               <div
                 className="absolute inset-0 bg-overlay"
                 onClick={() => setDrawerOpen(false)}
@@ -288,7 +291,7 @@ export function AppLayout() {
           )}
         </>
       ) : (
-        <div className="relative flex shrink-0" style={{ width: sidebarWidth }}>
+        <div className={`relative flex shrink-0${focusMode ? " hidden" : ""}`} style={{ width: sidebarWidth }}>
           <aside
             data-testid="sidebar"
             className="h-full w-full border-r border-outline"
@@ -314,7 +317,13 @@ export function AppLayout() {
       )}
 
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto flex min-h-0 w-full max-w-page flex-1 flex-col px-lg py-lg">
+        <div
+          className={
+            isSessionPage
+              ? "flex min-h-0 flex-1 flex-col"
+              : "mx-auto flex min-h-0 w-full max-w-page flex-1 flex-col px-lg py-lg"
+          }
+        >
           {coordinatorError && (
             <div className="mb-md" data-testid="runtime-coordinator-error-slot">
               <Banner tone="warning" testId="runtime-coordinator-error">
