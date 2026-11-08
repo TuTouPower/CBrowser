@@ -93,14 +93,25 @@ async def create_profile_via_ui(
     width: int = 1920,
     height: int = 1080,
 ) -> str:
-    del page
-    async with await harness.api_client() as client:
-        resp = await client.post(
-            "/api/v1/profiles",
-            json={"name": name, "screen_width": width, "screen_height": height},
-        )
-        resp.raise_for_status()
-        return resp.json()["id"]
+    del width, height
+    await page.goto(f"{harness.origin}/", wait_until="domcontentloaded")
+    await page.wait_for_selector(
+        '[data-testid="env-list-page"]', timeout=15000
+    )
+    await page.click('[data-testid="env-new"]', timeout=15000)
+    await page.wait_for_selector(
+        '[data-testid="env-new-dialog"]', timeout=15000
+    )
+    await page.fill('[data-testid="profile-form-name"]', name)
+    await page.click('[data-testid="profile-form-submit"]', timeout=15000)
+    await page.wait_for_selector(
+        '[data-testid="env-new-dialog"]', state="detached", timeout=15000
+    )
+    row = page.locator('[data-testid^="env-row-"]').filter(has_text=name)
+    await row.wait_for(state="visible", timeout=15000)
+    testid = await row.get_attribute("data-testid")
+    assert testid is not None
+    return testid.removeprefix("env-row-")
 
 
 async def open_session(
@@ -337,20 +348,21 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             resp = await client.get("/api/v1/profiles")
             assert name_a in resp.text
 
-        # Edit name through the UI.
+        # Edit name through the shared config form on the new detail page.
         await page_a.goto(
             f"{harness.origin}/profiles/{profile_a}", wait_until="domcontentloaded"
         )
         await page_a.wait_for_selector(
-            '[data-testid="profile-detail-page"]', timeout=15000
+            '[data-testid="profile-detail-view"]', timeout=15000
         )
-        await page_a.fill('[data-testid="profile-name-input"]', name_a + " Edited")
-        await page_a.click('[data-testid="profile-edit-submit"]')
-        await page_a.wait_for_selector(
-            '[data-testid="profile-save-success"]', timeout=15000
-        )
+        await page_a.fill('[data-testid="profile-form-name"]', name_a + " Edited")
+        await page_a.click('[data-testid="profile-form-submit"]')
         async with await harness.api_client() as client:
-            resp = await client.get("/api/v1/profiles")
+            for _ in range(50):
+                resp = await client.get("/api/v1/profiles")
+                if name_a + " Edited" in resp.text:
+                    break
+                await asyncio.sleep(0.1)
             assert name_a + " Edited" in resp.text
 
         # Start profile A through the session page; runtime state must arrive via SSE

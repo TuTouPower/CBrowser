@@ -11,7 +11,7 @@ from collections import deque
 from collections.abc import AsyncGenerator, Callable
 from urllib.parse import quote
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     import httpx
@@ -234,7 +234,20 @@ class RuntimeCoordinator:
     def is_enabled(self) -> bool:
         return bool(self.supervisor_url and self._token_str)
 
-    def get_last_error(self, profile_id: str) -> str | None:
+    @staticmethod
+    def _is_running_converged(runtime: Any) -> bool:
+        return (
+            getattr(runtime, "desired_state", None) == "running"
+            and getattr(runtime, "observed_state", None) == "running"
+            and getattr(runtime, "runtime_instance_id", None) is not None
+        )
+
+    def get_last_error(
+        self, profile_id: str, runtime: Any = None
+    ) -> str | None:
+        if runtime is not None and self._is_running_converged(runtime):
+            self._last_errors.pop(profile_id, None)
+            return None
         return self._last_errors.get(profile_id)
 
     def set_last_error(self, profile_id: str, error: str | None) -> None:
@@ -693,7 +706,7 @@ class RuntimeCoordinator:
     async def publish_profile_change(self, profile_id: str) -> None:
         try:
             rt = await self.profile_service.get_runtime(profile_id)
-            err = self.get_last_error(profile_id)
+            err = self.get_last_error(profile_id, runtime=rt)
             control = None
             if self.control_service is not None:
                 try:

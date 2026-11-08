@@ -3,9 +3,8 @@ import { AppLayout } from "./AppLayout";
 import { RequireAuth } from "./RequireAuth";
 import { BrowserSessionPage } from "../features/profiles/BrowserSessionPage";
 import { SettingsPage } from "../features/settings/SettingsPage";
+import { EnvironmentListPage } from "../features/profiles/EnvironmentListPage";
 import { ProfileDetailPage } from "../features/profiles/ProfileDetailPage";
-import { ProfileFilesPage } from "../features/artifacts/ProfileFilesPage";
-import { ProfileAutomationPage } from "../features/automation/ProfileAutomationPage";
 import { LoginPage } from "../features/auth/LoginPage";
 import { PlaceholderPage } from "../routes/PlaceholderPage";
 
@@ -24,7 +23,7 @@ export const routes: RouteObject[] = [
     children: [
       {
         index: true,
-        element: <PlaceholderPage titleKey="placeholderEnvironments" />,
+        element: <EnvironmentListPage />,
       },
       {
         path: "session",
@@ -39,10 +38,6 @@ export const routes: RouteObject[] = [
         element: <PlaceholderPage titleKey="placeholderProxies" />,
       },
       {
-        path: "profiles/new",
-        element: <Navigate to="/" replace />,
-      },
-      {
         path: "profiles/:profileId",
         element: <Navigate to="config" replace />,
       },
@@ -52,15 +47,15 @@ export const routes: RouteObject[] = [
       },
       {
         path: "profiles/:profileId/files",
-        element: <ProfileFilesPage />,
+        element: <ProfileDetailPage />,
       },
       {
         path: "profiles/:profileId/automation",
-        element: <ProfileAutomationPage />,
+        element: <ProfileDetailPage />,
       },
       {
         path: "profiles/:profileId/maintenance",
-        element: <PlaceholderPage titleKey="placeholderMaintenance" />,
+        element: <ProfileDetailPage />,
       },
       {
         path: "settings",

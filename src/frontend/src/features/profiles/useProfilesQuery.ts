@@ -13,6 +13,11 @@ import type {
   ProfileCreateRequest,
   ProfileUpdateRequest,
   ProfileRuntimeResponse,
+  GroupResponse,
+  GroupCreateRequest,
+  GroupUpdateRequest,
+  ProxyResponse,
+  FontSetInfo,
 } from "../../shared/api/types";
 import { ProfileEventsClient } from "../../shared/api/sse";
 
@@ -445,4 +450,104 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
       sseClient.stop();
     };
   }, [sseClient, queryClient]);
+}
+
+
+export const groupKeys = {
+  all: ["groups"] as const,
+  lists: () => [...groupKeys.all, "list"] as const,
+};
+
+export const proxyKeys = {
+  all: ["proxies"] as const,
+  lists: () => [...proxyKeys.all, "list"] as const,
+};
+
+export const fontSetKeys = {
+  all: ["fontSets"] as const,
+  lists: () => [...fontSetKeys.all, "list"] as const,
+};
+
+export function useGroupsQuery(
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<GroupResponse[], Error> {
+  return useQuery({
+    queryKey: groupKeys.lists(),
+    queryFn: () => client.groups.list(),
+  });
+}
+
+export function useProxiesQuery(
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyResponse[], Error> {
+  return useQuery({
+    queryKey: proxyKeys.lists(),
+    queryFn: () => client.proxies.list(),
+  });
+}
+
+export function useFontSetsQuery(
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<FontSetInfo[], Error> {
+  return useQuery({
+    queryKey: fontSetKeys.lists(),
+    queryFn: () => client.fontSets.list(),
+  });
+}
+
+export function useCreateGroupMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<GroupResponse, Error, GroupCreateRequest> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) => client.groups.create(input, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useUpdateGroupMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<
+  GroupResponse,
+  Error,
+  { groupId: string; data: GroupUpdateRequest }
+> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.groups.update(input.groupId, input.data, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteGroupMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) => client.groups.remove(input, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useReorderGroupsMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<GroupResponse[], Error, { orderedIds: string[] }> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.groups.reorder({ ordered_ids: input.orderedIds }, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+    },
+  });
 }

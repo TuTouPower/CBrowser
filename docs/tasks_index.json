@@ -4,22 +4,6 @@
     "workspace": ".",
     "tasks": [
         {
-            "tid": "t037",
-            "slug": "environment_management_ui",
-            "title": "环境管理界面：列表、新建、详情与分组",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t036,t044",
-            "conflicts_with": "",
-            "note": "来源 plan_20261105_ui_redesign WP09+WP11",
-            "dir": "docs/tasks/t037_environment_management_ui"
-        },
-        {
             "tid": "t038",
             "slug": "proxy_library_ui",
             "title": "代理库界面",

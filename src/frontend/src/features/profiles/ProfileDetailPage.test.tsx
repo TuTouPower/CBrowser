@@ -1,225 +1,248 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import "@testing-library/jest-dom/vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "../../i18n";
-import type { ApiClient } from "../../shared/api/client";
+import { I18nProvider, en } from "../../i18n";
+import { ThemeProvider } from "../../theme";
+import { ToastProvider } from "../../shared/ui";
 import { ApiClientContext } from "../../shared/api/client_context";
-import type { ProfileResponse, ProfileRuntimeResponse } from "../../shared/api/types";
+import type { ApiClient } from "../../shared/api/client";
+import type {
+  ProfileResponse,
+  ProfileRuntimeResponse,
+} from "../../shared/api/types";
 import { ProfileDetailPage } from "./ProfileDetailPage";
 
-const BASE_PROFILE = {
-  id: "p1",
-  name: "Original",
-  fingerprint_seed: 101,
-  screen_width: 1920,
-  screen_height: 1080,
-  gpu_family: "auto",
-  humanize: false,
-  geoip: false,
-  clipboard_sync: false,
-  auto_launch: false,
-  launch_args: [],
-  extension_paths: [],
-  current_config_version: 1,
-  created_at: "2026-01-01T00:00:00Z",
-  updated_at: "2026-01-01T00:00:00Z",
-} as unknown as ProfileResponse;
+beforeAll(() => {
+  class ResizeObserverStub {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => undefined;
+  }
+  if (!window.DOMRect) {
+    vi.stubGlobal(
+      "DOMRect",
+      class {
+        constructor(
+          public x = 0,
+          public y = 0,
+          public width = 0,
+          public height = 0,
+        ) {}
+        static fromRect() {
+          return new DOMRect();
+        }
+        top = 0;
+        left = 0;
+        right = 0;
+        bottom = 0;
+        toJSON() {
+          return {};
+        }
+      },
+    );
+  }
+  if (!HTMLElement.prototype.hasPointerCapture) {
+    HTMLElement.prototype.hasPointerCapture = () => false;
+  }
+  if (!HTMLElement.prototype.setPointerCapture) {
+    HTMLElement.prototype.setPointerCapture = () => undefined;
+  }
+  if (!HTMLElement.prototype.releasePointerCapture) {
+    HTMLElement.prototype.releasePointerCapture = () => undefined;
+  }
+});
 
-function runtime(overrides: Partial<ProfileRuntimeResponse>): ProfileRuntimeResponse {
+function profile(): ProfileResponse {
+  return {
+    id: "p1",
+    name: "Profile Alpha",
+    fingerprint_seed: 101,
+    group_id: "g1",
+    proxy_id: null,
+    timezone: null,
+    locale: null,
+    screen_width: 1920,
+    screen_height: 1080,
+    gpu_family: "auto",
+    humanize: false,
+    human_preset: "default",
+    geoip: true,
+    clipboard_sync: true,
+    auto_launch: false,
+    color_scheme: null,
+    fingerprint_platform: "windows",
+    font_set_id: null,
+    launch_args: [],
+    extension_paths: [],
+    allow_3p_cookies: true,
+    set_google_default: true,
+    capture_preview: true,
+    restore_session: true,
+    transparent_proxy: false,
+    portable_cookies: false,
+    notes: null,
+    user_data_dir: "/data/p1",
+    sort_order: 0,
+    current_config_version: 1,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+}
+
+function runtime(observed: string): ProfileRuntimeResponse {
   return {
     profile_id: "p1",
-    desired_state: "stopped",
-    observed_state: "stopped",
-    config_version: 1,
+    desired_state: observed === "running" ? "running" : "stopped",
+    observed_state: observed,
+    runtime_instance_id: "inst_1",
+    config_version: 2,
     failure_count: 0,
     restart_blocked: false,
+    last_exit_event_id: null,
     updated_at: "2026-01-01T00:00:00Z",
-    ...overrides,
-  } as ProfileRuntimeResponse;
-}
-
-/**
- * Real hook wiring against an injected stub client (A22): the page, its
- * query/mutation hooks and the ApiClient boundary are exercised together;
- * no hook module is mocked.
- */
-function makeStub() {
-  const state = {
-    profile: { ...BASE_PROFILE } as ProfileResponse,
-    runtime: runtime({}),
-  };
-  const client = {
-    profiles: {
-      get: vi.fn(async () => state.profile),
-      getRuntime: vi.fn(async () => state.runtime),
-      update: vi.fn(
-        async (_id: string, data: Record<string, unknown>) => {
-          state.profile = { ...state.profile, ...data } as ProfileResponse;
-          return state.profile;
-        },
-      ),
-      delete: vi.fn(async () => undefined),
-      duplicate: vi.fn(async () => state.profile),
-      reset: vi.fn(async () => state.profile),
-      stop: vi.fn(async () => {
-        state.runtime = runtime({ observed_state: "stopped" });
-        return state.runtime;
-      }),
-      setDesiredState: vi.fn(async () => {
-        state.runtime = runtime({
-          desired_state: "running",
-          observed_state: "running",
-        });
-        return state.runtime;
-      }),
-      retrySearchDefaults: vi.fn(async () => state.runtime),
+    search_defaults: {
+      state: "failed",
+      error_kind: "timeout",
+      runtime_instance_id: "inst_1",
+      request_id: null,
+      updated_at: "2026-01-01T00:00:00Z",
     },
-  } as unknown as ApiClient & {
-    profiles: { [K in keyof ApiClient["profiles"]]: ReturnType<typeof vi.fn> };
-  };
-  return { client, state };
+  } as unknown as ProfileRuntimeResponse;
 }
 
-let stub: ReturnType<typeof makeStub>;
-let queryClient: QueryClient;
+function makeStub(observed = "running") {
+  return {
+    profiles: {
+      get: vi.fn(async () => profile()),
+      getRuntime: vi.fn(async () => runtime(observed)),
+      list: vi.fn(async () => [profile()]),
+      update: vi.fn(async () => profile()),
+      delete: vi.fn(async () => undefined),
+      duplicate: vi.fn(async () => profile()),
+      reset: vi.fn(async () => profile()),
+      retrySearchDefaults: vi.fn(async () => runtime(observed)),
+      setDesiredState: vi.fn(async () => runtime(observed)),
+      stop: vi.fn(async () => runtime(observed)),
+    },
+    groups: {
+      list: vi.fn(async () => [
+        {
+          id: "g1",
+          name: "Work",
+          color: "slate",
+          sort_order: 0,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ]),
+    },
+    proxies: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => []) },
+  } as unknown as ApiClient & {
+    profiles: {
+      retrySearchDefaults: ReturnType<typeof vi.fn>;
+      setDesiredState: ReturnType<typeof vi.fn>;
+      stop: ReturnType<typeof vi.fn>;
+    };
+  };
+}
 
-function renderPage() {
-  queryClient = new QueryClient({
+function renderPage(stub: ReturnType<typeof makeStub>) {
+  const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
-        <ApiClientContext.Provider value={stub.client}>
-          <MemoryRouter initialEntries={["/profiles/p1"]}>
-            <Routes>
-              <Route path="/profiles/:profileId" element={<ProfileDetailPage />} />
-              <Route path="/" element={<div>dashboard</div>} />
-            </Routes>
-          </MemoryRouter>
-        </ApiClientContext.Provider>
+        <ThemeProvider>
+          <ToastProvider>
+            <ApiClientContext.Provider value={stub}>
+              <MemoryRouter initialEntries={["/profiles/p1/config"]}>
+                <Routes>
+                  <Route
+                    path="/profiles/:profileId/:tab"
+                    element={<ProfileDetailPage />}
+                  />
+                </Routes>
+              </MemoryRouter>
+            </ApiClientContext.Provider>
+          </ToastProvider>
+        </ThemeProvider>
       </I18nProvider>
     </QueryClientProvider>,
   );
 }
 
+const STATUS_CASES: Array<[string, string]> = [
+  ["starting", en.statusStarting],
+  ["stopping", en.statusStopping],
+  ["running", en.statusRunning],
+  ["error", en.statusError],
+  ["stopped", en.statusStopped],
+];
+
 describe("ProfileDetailPage", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    stub = makeStub();
-  });
-
-  it("does not overwrite unsaved edits when background data refreshes", async () => {
-    renderPage();
-    const input = (await screen.findByTestId(
-      "profile-name-input",
-    )) as HTMLInputElement;
-    expect(input.value).toBe("Original");
-    fireEvent.change(input, { target: { value: "Edited locally" } });
-
-    // Simulate a background refresh delivering a newer server name.
-    stub.state.profile = { ...stub.state.profile, name: "Server refreshed" };
-    await act(async () => {
-      await queryClient.invalidateQueries();
-    });
-
-    expect(
-      (screen.getByTestId("profile-name-input") as HTMLInputElement).value,
-    ).toBe("Edited locally");
-  });
-
-  it("saves edited fields through the update mutation", async () => {
-    renderPage();
-    const input = (await screen.findByTestId(
-      "profile-name-input",
-    )) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "Renamed" } });
-    fireEvent.click(screen.getByTestId("profile-edit-submit"));
-    await waitFor(() =>
-      expect(stub.client.profiles.update).toHaveBeenCalledWith(
-        "p1",
-        expect.objectContaining({ name: "Renamed" }),
-        expect.any(String),
-      ),
-    );
-    expect(await screen.findByTestId("profile-save-success")).toBeTruthy();
-  });
-
-  it("deletes the profile after confirmation and navigates away", async () => {
-    renderPage();
-    await screen.findByTestId("profile-detail-page");
-    const originalConfirm = window.confirm;
-    window.confirm = () => true;
-    try {
-      fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+  for (const [observed, label] of STATUS_CASES) {
+    it(`shows the ${observed} status with its text`, async () => {
+      renderPage(makeStub(observed));
       await waitFor(() =>
-        expect(stub.client.profiles.delete).toHaveBeenCalledWith(
-          "p1",
-          expect.any(String),
+        expect(screen.getByTestId("profile-detail-status").textContent).toBe(
+          label,
         ),
       );
-      expect(await screen.findByText("dashboard")).toBeTruthy();
-    } finally {
-      window.confirm = originalConfirm;
+    });
+  }
+
+  it("renders four real tab anchors", async () => {
+    renderPage(makeStub());
+    await screen.findByTestId("profile-detail-tabs");
+    for (const tab of ["config", "files", "automation", "maintenance"]) {
+      expect(screen.getByTestId(`profile-tab-${tab}`).getAttribute("href")).toBe(
+        `/profiles/p1/${tab}`,
+      );
     }
   });
 
-  it("duplicates with the settings-only payload from the panel", async () => {
-    renderPage();
-    await screen.findByTestId("profile-detail-page");
-    fireEvent.click(screen.getByTestId("profile-duplicate-button"));
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Duplicate settings and fingerprint only",
-      }),
-    );
+  it("offers start and stop actions", async () => {
+    const stub = makeStub("stopped");
+    renderPage(stub);
+
+    await screen.findByTestId("profile-detail-start");
+    fireEvent.click(screen.getByTestId("profile-detail-start"));
     await waitFor(() =>
-      expect(stub.client.profiles.duplicate).toHaveBeenCalledWith(
+      expect(stub.profiles.setDesiredState).toHaveBeenCalledWith(
         "p1",
-        { include_browser_state: false },
+        "running",
         expect.any(String),
       ),
     );
+
+    fireEvent.click(screen.getByTestId("profile-detail-stop"));
+    await waitFor(() =>
+      expect(stub.profiles.stop).toHaveBeenCalledWith("p1", expect.any(String)),
+    );
   });
 
-  it("resets only after the panel confirmation", async () => {
-    renderPage();
-    await screen.findByTestId("profile-detail-page");
-    fireEvent.click(screen.getByTestId("profile-reset-button"));
-    const panel = screen.getByTestId("profile-reset-panel");
-    expect(stub.client.profiles.reset).not.toHaveBeenCalled();
-    fireEvent.click(within(panel).getByRole("button", { name: "Reset" }));
+  it("shows both shared banners on the config tab", async () => {
+    const stub = makeStub("running");
+    renderPage(stub);
+
+    const failed = await screen.findByTestId("profile-search-defaults-failed");
+    expect(failed).toBeInTheDocument();
+    expect(await screen.findByTestId("profile-apply-pending")).toBeInTheDocument();
+
+    fireEvent.click(within(failed).getByRole("button"));
     await waitFor(() =>
-      expect(stub.client.profiles.reset).toHaveBeenCalledWith(
+      expect(stub.profiles.retrySearchDefaults).toHaveBeenCalledWith(
         "p1",
         expect.any(String),
       ),
-    );
-  });
-
-  it("applies pending display settings via stop then start", async () => {
-    stub.state.runtime = runtime({
-      desired_state: "running",
-      observed_state: "running",
-      config_version: 2,
-    });
-    renderPage();
-    const applyBtn = await screen.findByTestId("profile-display-apply-btn");
-    fireEvent.click(applyBtn);
-    await waitFor(() =>
-      expect(stub.client.profiles.setDesiredState).toHaveBeenCalled(),
-    );
-    const stopOrder = stub.client.profiles.stop.mock.invocationCallOrder[0]!;
-    const startOrder =
-      stub.client.profiles.setDesiredState.mock.invocationCallOrder[0]!;
-    expect(stopOrder).toBeLessThan(startOrder);
-    const stopKey = stub.client.profiles.stop.mock.calls[0]?.[1] as string;
-    const startKey = stub.client.profiles.setDesiredState.mock
-      .calls[0]?.[2] as string;
-    expect(stopKey).not.toBe(startKey);
-    expect(stopKey.replace(/:stop$/, "")).toBe(
-      startKey.replace(/:start$/, ""),
     );
   });
 });

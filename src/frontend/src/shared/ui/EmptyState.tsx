@@ -20,7 +20,7 @@ export function EmptyState({
       <div className="text-on-surface-muted">{icon ?? <Inbox aria-hidden="true" className="h-8 w-8" />}</div>
       <h2 className="font-ui text-headline-md text-on-surface">{title}</h2>
       {description && (
-        <p className="max-w-md font-ui text-body-sm text-on-surface-muted">{description}</p>
+        <p className="max-w-panel font-ui text-body-sm text-on-surface-muted">{description}</p>
       )}
       {action}
     </div>

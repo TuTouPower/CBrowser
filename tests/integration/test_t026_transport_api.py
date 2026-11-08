@@ -65,7 +65,7 @@ class _StubCoordinator:
     def __init__(self, observation: TransportObservationData | None) -> None:
         self.observation = observation
 
-    def get_last_error(self, _profile_id: str):
+    def get_last_error(self, _profile_id: str, runtime=None):
         return None
 
     def get_search_defaults(self, _profile_id: str):

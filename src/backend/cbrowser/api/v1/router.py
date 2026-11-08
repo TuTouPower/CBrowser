@@ -108,7 +108,11 @@ async def subscribe_runtime_events(
         for p in profiles:
             try:
                 rt = await service.get_runtime(p.id)
-                last_err = coordinator.get_last_error(p.id) if coordinator else None
+                last_err = (
+                    coordinator.get_last_error(p.id, runtime=rt)
+                    if coordinator
+                    else None
+                )
                 search_defaults = fence_search_defaults(
                     coordinator.get_search_defaults(p.id)
                     if coordinator is not None

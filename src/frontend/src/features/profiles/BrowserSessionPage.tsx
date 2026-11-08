@@ -47,7 +47,7 @@ export function BrowserSessionPage() {
         <h2 className="text-base font-semibold text-gray-200 mb-1">
           {t("selectOrCreateProfile")}
         </h2>
-        <p className="text-xs text-gray-500 max-w-sm mb-4">
+        <p className="text-xs text-gray-500 max-w-panel mb-4">
           {t("sessionSelectHint")}
         </p>
         <Link
@@ -124,7 +124,7 @@ export function BrowserSessionPage() {
     <div className="flex-1 flex items-center justify-center p-6 bg-surface-0">
       <div
         data-testid="session-runtime-not-ready"
-        className="max-w-md w-full bg-surface-1 border border-border rounded-xl p-8 text-center shadow-lg"
+        className="max-w-panel w-full bg-surface-1 border border-border rounded-xl p-8 text-center shadow-lg"
       >
         <div className="h-16 w-16 mx-auto mb-4 rounded-full bg-surface-2 flex items-center justify-center border border-border">
           <span className="text-2xl font-bold text-gray-300">

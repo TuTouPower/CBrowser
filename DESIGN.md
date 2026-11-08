@@ -717,3 +717,24 @@ UI 字体 Space Grotesk Variable，技术数据字体 IBM Plex Mono，均经 `@f
 ## Do's and Don'ts
 
 不绘制任何模拟浏览器框；会话画面区只承载 Selkies iframe。每个视图最多一个 `button-primary`。状态必须有文字或图标，不能只靠颜色。ID、端口、版本号、种子、host 一律 mono 字体。两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。不引用外部字体或图标 CDN。不使用 `DESIGN.md` 之外的颜色值；业务代码只用语义 token。会话页快捷键不得占用 Esc，以及会转发给远端浏览器的常用组合键。
+
+## Container sizes
+
+Named spacing tokens (`--spacing-xs` … `--spacing-2xl`) share Tailwind 4's
+`--spacing-*` namespace, so a named size utility such as `max-w-lg` resolves
+to `var(--spacing-lg)` (16px) instead of a container width. Components must
+never use named or arbitrary size utilities; use these semantic container
+tokens instead. The generator emits them into the independent
+`--container-*` namespace, which cannot be hijacked by spacing tokens.
+
+|token|value|
+|---|---|
+|dialog|32rem|
+|dialog-width|calc(100% - 2rem)|
+|dialog-height|90vh|
+|panel|28rem|
+|hint|20rem|
+|page|100rem|
+|menu|10rem|
+|select|8rem|
+|control-sm|1.875rem|

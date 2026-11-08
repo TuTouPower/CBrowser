@@ -27,7 +27,7 @@ export function Dialog({
           aria-modal="true"
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl border border-outline bg-surface-raised p-lg text-on-surface shadow-xl",
+            "fixed left-1/2 top-1/2 z-50 w-dialog-width max-w-dialog -translate-x-1/2 -translate-y-1/2 rounded-xl border border-outline bg-surface-raised p-lg text-on-surface shadow-xl",
             "focus:outline-none",
             contentClassName,
           )}

@@ -349,7 +349,9 @@ async def test_runtime_view_helpers() -> None:
         last_exit_event_id="exit_1",
         updated_at="2026-11-01T00:00:00+00:00",
     )
-    coordinator = SimpleNamespace(get_last_error=lambda profile_id: "boom")
+    coordinator = SimpleNamespace(
+        get_last_error=lambda profile_id, runtime=None: "boom"
+    )
 
     # t031: make_runtime_response became async (control best-effort load).
     response = await make_runtime_response(runtime, coordinator)

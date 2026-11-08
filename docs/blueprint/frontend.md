@@ -60,3 +60,19 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 - 应用外壳：导航侧栏（环境 / 代理 / 会话 / 设置；品牌标识；底部运行中环境数随 SSE 更新，并放主题切换、语言切换、退出登录），可折叠为 72px 图标栏、200–360px 拖宽，状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
 - 基础组件在 `src/frontend/src/shared/ui/`：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语（焦点陷阱、焦点归还、Esc 关闭与 ARIA 角色由原语保证）。
 - 登录页与设置页按设计系统重做；设置页新增平台字体区块，数据来自 `GET /api/v1/font-sets`，完整性不一致显示告警。
+
+## 7. 环境管理界面（t037）
+
+- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`session` / `proxies` 占位页分别留给 t039 / t038。
+
+- 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、网络列（代理名 / 协议 / 地区）与分组使用环境数由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。`ApiClient` 新增 `groups` / `proxies` / `fontSets` 三个命名空间，只复用 `request()` 与生成类型，不手写契约。
+
+- `useEnvironmentFilters`（URL 查询参数）、`useEnvironmentLayout`（localStorage）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；页面组件只用语义 token 类与 `shared/ui` 组件族。
+
+- 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；`SharedProfileBanners` 在四个标签共享搜索失败与待应用提示，沿用 `useApplyDisplaySettingsMutation` 阶段跟踪。
+
+- 测试：`npm test` 先 `tsc -p tsconfig.test.json`（严格类型、生成类型完整线形状夹具）再 Vitest；页面测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks。`src/test_setup.ts` 提供 Radix 所需 `ResizeObserver` / `matchMedia` polyfill。旧页面与其测试整体删除，按 D16 在 task `progress.md`「测试处置清单」逐用例登记去向。
+
+- 真实栈无头 E2E「新建 → 启动 → 打开会话」走新建弹窗 UI（`env-new` → `env-new-dialog` → `profile-form-name` → `profile-form-submit`），不再直接 POST API 伪造创建。
+
+- 尺寸语义 token（`DESIGN.md` 的 `## Container sizes`）：`--container-*` 独立于 `--spacing-*`，业务代码只用 `max-w-dialog`/`w-dialog-width`/`max-w-panel`/`max-w-page`/`min-w-menu`/`h-control-sm` 等语义类；`npm run design:lint` 的 `assertNoSizeTokenHijack` 禁止命名尺寸类（`max-w-lg` 等会被 spacing token 劫持）与任意尺寸值（`max-w-[...]`）。

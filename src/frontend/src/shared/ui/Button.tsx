@@ -40,7 +40,7 @@ export function Button({
       type={type}
       className={cn(
         "inline-flex items-center justify-center gap-sm rounded-md font-ui text-label-md transition-colors",
-        size === "sm" ? "h-[30px] px-sm" : "h-9 px-md",
+        size === "sm" ? "h-control-sm px-sm" : "h-9 px-md",
         VARIANTS[variant],
         "disabled:cursor-not-allowed disabled:opacity-50",
         FOCUS,

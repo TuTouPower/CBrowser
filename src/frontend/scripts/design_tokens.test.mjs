@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateAndGenerate, DesignValidationError } from "./design_tokens.mjs";
+import { validateAndGenerate, DesignValidationError, assertNoSizeTokenHijack } from "./design_tokens.mjs";
 
 const VALID_SOURCE = `---
 name: CBrowser Test Design
@@ -76,6 +76,12 @@ Spacing.
 ## Components
 
 Paired components.
+
+## Container sizes
+
+|token|value|
+|---|---|
+|dialog|32rem|
 `;
 
 const withReplacements = (pairs) =>
@@ -126,5 +132,34 @@ describe("validateAndGenerate", () => {
     expect(css).toContain("--text-body-md: 13px;");
     expect(css).toContain("--radius-md: 7px;");
     expect(css).toContain("--spacing-md: 12px;");
+    expect(css).toContain("--container-dialog: 32rem;");
+    expect(css).not.toContain("--container-lg");
+  });
+});
+
+
+describe("size-token hijack gate", () => {
+  it("rejects a named size class resolved from --spacing-*", () => {
+    expect(() =>
+      assertNoSizeTokenHijack([
+        { path: "src/x.tsx", text: '<div className="max-w-lg" />' },
+      ]),
+    ).toThrow(/Named\/arbitrary size utilities/);
+  });
+
+  it("rejects an arbitrary size value", () => {
+    expect(() =>
+      assertNoSizeTokenHijack([
+        { path: "src/x.tsx", text: '<div className="max-w-[32rem]" />' },
+      ]),
+    ).toThrow(/Named\/arbitrary size utilities/);
+  });
+
+  it("accepts semantic container token classes", () => {
+    expect(
+      assertNoSizeTokenHijack([
+        { path: "src/x.tsx", text: '<div className="max-w-dialog p-md" />' },
+      ]),
+    ).toEqual([]);
   });
 });

@@ -314,7 +314,7 @@ export function AppLayout() {
       )}
 
       <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-        <div className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-1 flex-col px-lg py-lg">
+        <div className="mx-auto flex min-h-0 w-full max-w-page flex-1 flex-col px-lg py-lg">
           {coordinatorError && (
             <div className="mb-md" data-testid="runtime-coordinator-error-slot">
               <Banner tone="warning" testId="runtime-coordinator-error">
