@@ -115,6 +115,41 @@ class NetworkPolicySpec(BaseModel):
         return self
 
 
+def _render_output_tail(spec: NetworkPolicySpec, version: int) -> list[str]:
+    if version == 4:
+        blocked = BLOCKED_IPV4_RANGES
+        media_local = [ipaddress.ip_network("169.254.0.0/16")]
+        media_lan = [
+            ipaddress.ip_network("10.0.0.0/8"),
+            ipaddress.ip_network("172.16.0.0/12"),
+            ipaddress.ip_network("192.168.0.0/16"),
+        ]
+    else:
+        blocked = BLOCKED_IPV6_RANGES
+        media_local = [ipaddress.ip_network("fe80::/10")]
+        media_lan = [ipaddress.ip_network("fc00::/7")]
+
+    lines: list[str] = []
+    if spec.role == "stream":
+        assert spec.udp_mux_port is not None
+        media_networks = list(media_local)
+        if spec.allow_lan_media:
+            media_networks.extend(media_lan)
+        for net in media_networks:
+            lines.append(
+                f"-A OUTPUT -p udp --sport {spec.udp_mux_port} -d {net} -j ACCEPT"
+            )
+
+    for net in blocked:
+        lines.append(f"-A OUTPUT -d {net} -j DROP")
+
+    if spec.role == "browser":
+        lines.append("-A OUTPUT -j ACCEPT")
+    else:
+        lines.append("-A OUTPUT -j DROP")
+    return lines
+
+
 def render_iptables_rules(spec: NetworkPolicySpec) -> str:
     """Render IPv4 iptables-restore script."""
     lines: list[str] = [
@@ -146,16 +181,7 @@ def render_iptables_rules(spec: NetworkPolicySpec) -> str:
         if addr.version == 4:
             lines.append(f"-A OUTPUT -p udp -d {ip_str} --dport {port} -j ACCEPT")
 
-    # Stream role in LAN mode: allow outbound UDP media responses to clients on LAN/private subnets
-    if spec.role == "stream" and spec.allow_lan_media:
-        assert spec.udp_mux_port is not None
-        lines.append(f"-A OUTPUT -p udp --sport {spec.udp_mux_port} -j ACCEPT")
-
-    # Block non-public / internal IPv4 ranges
-    for net in BLOCKED_IPV4_RANGES:
-        lines.append(f"-A OUTPUT -d {net} -j DROP")
-
-    lines.append("-A OUTPUT -j ACCEPT")
+    lines.extend(_render_output_tail(spec, 4))
     lines.append("COMMIT\n")
 
     return "\n".join(lines)
@@ -198,11 +224,7 @@ def render_ip6tables_rules(spec: NetworkPolicySpec) -> str:
         if addr.version == 6:
             lines.append(f"-A OUTPUT -p udp -d {ip_str} --dport {port} -j ACCEPT")
 
-    # Block private / ULA / non-public IPv6 ranges
-    for net6 in BLOCKED_IPV6_RANGES:
-        lines.append(f"-A OUTPUT -d {net6} -j DROP")
-
-    lines.append("-A OUTPUT -j ACCEPT")
+    lines.extend(_render_output_tail(spec, 6))
     lines.append("COMMIT\n")
 
     return "\n".join(lines)
