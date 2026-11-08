@@ -16,6 +16,7 @@ import logging
 from typing import Annotated
 
 from cbrowser.adapters.database.models import SessionModel
+from cbrowser.auth.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
     get_auth_service,
     require_csrf_and_origin,
@@ -71,7 +72,11 @@ async def require_automation_token(
 ) -> str:
     """Validate a cbat_ automation token for the profile; return its id."""
     token = _bearer_token(request.headers.get("authorization", ""))
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = resolve_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("x-forwarded-for"),
+        getattr(request.app.state, "trusted_proxy_cidrs", []),
+    )
     allowed, _reason = await auth_service.authorize_automation(
         token, profile_id, client_ip=client_ip
     )
