@@ -7,8 +7,6 @@ import logging
 import os
 import secrets
 import shutil
-import socket
-import threading
 import time
 import uuid
 from pathlib import Path
@@ -29,30 +27,20 @@ from .selkies_assets import prepare_selkies_web_assets
 logger = logging.getLogger("cbrowser.gateway_probe.topology")
 
 
-_allocated_host_ports: set[int] = set()
-_host_port_lock = threading.Lock()
-
-
-def find_free_port() -> int:
-    """Return an OS-assigned ephemeral loopback host port.
-
-    Docker binds the chosen host port itself, so pre-scanning a fixed range
-    is a TOCTOU race: concurrent xdist workers can all "find" the same free
-    port and then collide with ``Bind ... port is already allocated``
-    (t045 AC-006).  Let the OS allocate from its ephemeral range and keep a
-    per-process set so one pytest process never hands the same port to two
-    harnesses.  The fixed ``CBROWSER_E2E_HTTP_BASE`` worker partition is no
-    longer needed: ephemeral ports are disjoint from it and unique per call.
-    """
-    with _host_port_lock:
-        for _ in range(100):
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(("127.0.0.1", 0))
-                port = s.getsockname()[1]
-            if port not in _allocated_host_ports:
-                _allocated_host_ports.add(port)
-                return port
-    raise RuntimeError("Could not allocate a unique ephemeral host port")
+def published_host_port(container: Any, container_port: str) -> int:
+    """Read the host port the Docker daemon actually bound for a publish."""
+    bindings = (
+        container.attrs.get("NetworkSettings", {})
+        .get("Ports", {})
+        .get(container_port)
+        or []
+    )
+    host_ports = [b["HostPort"] for b in bindings if b.get("HostPort")]
+    if not host_ports:
+        raise RuntimeError(
+            f"Docker did not publish {container_port} for {container.name}"
+        )
+    return int(host_ports[0])
 
 
 async def wait_until_ready(
@@ -109,8 +97,8 @@ class GatewayTopologyHarness:
         self.engine_cache_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
         self.geoip_cache_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
-        self.caddy_host_port = find_free_port()
-        self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
+        self.caddy_host_port: int = 0
+        self.origin = ""
 
         self.data_dir = self.work_dir / "data"
         self.control_dir = self.data_dir / "control"
@@ -159,11 +147,6 @@ class GatewayTopologyHarness:
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
-
-        # Initialize network state with harness Caddy port (t042 AC-007)
-        v1 = create_default_applied_version(https_port=self.caddy_host_port)
-        caddyfile_content = generate_caddyfile(v1)
-        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
 
         cache = self.data_dir / "engine_cache"
         if not cache.exists():
@@ -235,6 +218,50 @@ class GatewayTopologyHarness:
             labels={"com.cbrowser.prefix": self.prefix},
         )
         self.networks.append(self.edge_network)
+
+        caddyfile_path = self.work_dir / "Caddyfile"
+        caddyfile_content = generate_caddyfile(
+            create_default_applied_version(),
+            api_upstream=f"http://{self.prefix}-api:8000",
+            gateway_upstream=(
+                f"http://{self.prefix}-gateway:{DEFAULT_GATEWAY_PORT}"
+            ),
+            frontend_dir="/var/www/html",
+        )
+        caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
+
+        self.caddy_container = self._run_container(
+            "caddy",
+            self.caddy_image,
+            read_only=True,
+            tmpfs={
+                "/tmp": "rw,size=64m",
+                "/config": "rw,size=32m",
+                "/data": "rw,size=64m",
+            },
+            volumes={
+                str(caddyfile_path): {"bind": "/etc/caddy/Caddyfile", "mode": "ro"},
+                str(self.static_dir): {"bind": "/var/www/html", "mode": "ro"},
+            },
+            ports={"443/tcp": ("127.0.0.1", None)},
+            command=[
+                "caddy",
+                "run",
+                "--config",
+                "/etc/caddy/Caddyfile",
+                "--adapter",
+                "caddyfile",
+            ],
+        )
+        self.caddy_container.reload()
+        self.caddy_host_port = published_host_port(
+            self.caddy_container, "443/tcp"
+        )
+        self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
+        v1 = create_default_applied_version(https_port=self.caddy_host_port)
+        write_applied_network_state(
+            self.data_dir / "network", v1, caddyfile_content
+        )
 
         # 1. API container
         self.api_container = self._run_container(
@@ -367,42 +394,6 @@ class GatewayTopologyHarness:
                 "0.0.0.0",
                 "--port",
                 "8005",
-            ],
-        )
-
-        # 5. Caddy container: generated strictly via product generate_caddyfile and applied version
-        v1 = create_default_applied_version(https_port=self.caddy_host_port)
-        caddyfile_content = generate_caddyfile(
-            v1,
-            api_upstream=f"http://{self.api_ip}:8000",
-            gateway_upstream=f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
-            frontend_dir="/var/www/html",
-        )
-        caddyfile_path = self.work_dir / "Caddyfile"
-        caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
-        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
-
-        self.caddy_container = self._run_container(
-            "caddy",
-            self.caddy_image,
-            read_only=True,
-            tmpfs={
-                "/tmp": "rw,size=64m",
-                "/config": "rw,size=32m",
-                "/data": "rw,size=64m",
-            },
-            volumes={
-                str(caddyfile_path): {"bind": "/etc/caddy/Caddyfile", "mode": "ro"},
-                str(self.static_dir): {"bind": "/var/www/html", "mode": "ro"},
-            },
-            ports={"443/tcp": ("127.0.0.1", self.caddy_host_port)},
-            command=[
-                "caddy",
-                "run",
-                "--config",
-                "/etc/caddy/Caddyfile",
-                "--adapter",
-                "caddyfile",
             ],
         )
 

@@ -14,7 +14,7 @@ REQUIRED_E2E_ENV = {
     "CBROWSER_STREAM_TEST_IMAGE": "Stream Runtime image sha256",
     "CBROWSER_GATEWAY_IMAGE": "Gateway image sha256",
     "CBROWSER_SUPERVISOR_TEST_IMAGE": "Supervisor image sha256",
-    "CBROWSER_API_TEST_IMAGE": "API image sha256",
+    "CBROWSER_API_TEST_IMAGE": "API image sha256 (config/docker/api_runtime/Dockerfile)",
     "CBROWSER_CADDY_TEST_IMAGE": "Caddy image sha256",
     "CBROWSER_RUNTIME_ENGINE_CACHE": "initialized Linux engine cache",
     "CBROWSER_RUNTIME_GEOIP_CACHE": "GeoIP cache",

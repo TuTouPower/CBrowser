@@ -65,41 +65,6 @@ def test_stream_runtime_packaging_integrity():
         assert required in content, f"Stream Dockerfile must copy {required}"
 
 
-def test_api_fixture_runtime_packaging_integrity():
-    dockerfile_path = (
-        "tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile"
-    )
-    content = _read_dockerfile(dockerfile_path)
-    lines = content.splitlines()
-
-    from_line = next(line for line in lines if line.startswith("FROM "))
-    assert "@sha256:" in from_line, (
-        "API probe fixture base image must be pinned by digest"
-    )
-
-    prod_from_line = next(
-        line
-        for line in _read_dockerfile(
-            "config/docker/api_runtime/Dockerfile"
-        ).splitlines()
-        if line.startswith("FROM ")
-    )
-    assert from_line == prod_from_line, (
-        "API probe fixture base image must exactly match the production "
-        "api_runtime Dockerfile FROM line (3.15/trixie digest)"
-    )
-
-    assert "COPY src/backend/cbrowser/__init__.py" in content, (
-        "API Dockerfile must copy cbrowser/__init__.py"
-    )
-    assert "COPY src/backend/cbrowser/secret_files.py" in content, (
-        "API Dockerfile must copy secret_files.py"
-    )
-    assert "COPY src/backend/cbrowser/gateway" in content, (
-        "API Dockerfile must copy gateway package for endpoint resolution"
-    )
-
-
 @pytest.mark.asyncio
 async def test_serve_supervisor_watch_docker_events_subscribes_prefix(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
