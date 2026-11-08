@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { render, waitFor } from "@testing-library/react";
 import { en, zh, I18nProvider, useI18n } from "./i18n";
 
@@ -24,24 +24,66 @@ describe("i18n dictionaries", () => {
   });
 });
 
-describe("i18n", () => {
+describe("i18n current storage key", () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.lang = "";
   });
 
-  it("migrates the legacy locale key and syncs document language", async () => {
-    localStorage.setItem("cbm.locale", "zh");
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    document.documentElement.lang = "";
+  });
+
+  it("reads cbrowser.locale, syncs document language and saves switches to the current key", async () => {
+    localStorage.setItem("cbrowser.locale", "zh");
     const view = render(
       <I18nProvider>
         <Probe />
       </I18nProvider>,
     );
     expect(view.getByTestId("switch").textContent).toBe("zh");
-    expect(localStorage.getItem("cbrowser.locale")).toBe("zh");
-    expect(localStorage.getItem("cbm.locale")).toBeNull();
     await waitFor(() => expect(document.documentElement.lang).toBe("zh"));
     view.getByTestId("switch").click();
     await waitFor(() => expect(document.documentElement.lang).toBe("en"));
+    expect(localStorage.getItem("cbrowser.locale")).toBe("en");
+  });
+
+  it("defaults to the browser language when no current key is stored", async () => {
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("zh-CN");
+    const view = render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>,
+    );
+    expect(view.getByTestId("switch").textContent).toBe("zh");
+    await waitFor(() => expect(document.documentElement.lang).toBe("zh"));
+  });
+});
+
+describe("legacy cbm.locale migration is discontinued", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.lang = "";
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    localStorage.clear();
+    document.documentElement.lang = "";
+  });
+
+  it("ignores cbm.locale and applies the default rules without migrating", () => {
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("en-US");
+    localStorage.setItem("cbm.locale", "zh");
+    const view = render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>,
+    );
+    expect(view.getByTestId("switch").textContent).toBe("en");
+    expect(localStorage.getItem("cbrowser.locale")).toBeNull();
+    expect(localStorage.getItem("cbm.locale")).toBe("zh");
   });
 });

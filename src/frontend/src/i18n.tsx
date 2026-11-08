@@ -28,6 +28,11 @@ export const en = {
   languageZh: "中文",
   switchLanguage: "Switch language",
   language: "Language",
+  errorBoundaryTitle: "Something went wrong",
+  errorBoundaryDescription:
+    "The application could not be displayed. Reload the page or return to the environment list.",
+  errorBoundaryReload: "Reload",
+  errorBoundaryBack: "Back to environments",
 
   // Auth / login
   enterAccessToken: "Enter your access token",
@@ -484,6 +489,10 @@ export const zh = {
   languageZh: "中文",
   switchLanguage: "切换语言",
   language: "界面语言",
+  errorBoundaryTitle: "出现错误",
+  errorBoundaryDescription: "应用界面无法正常显示。可重新加载页面，或返回环境列表。",
+  errorBoundaryReload: "重新加载",
+  errorBoundaryBack: "返回环境列表",
 
   enterAccessToken: "请输入访问令牌",
   accessToken: "访问令牌",
@@ -921,7 +930,6 @@ export type TranslationKey = keyof typeof en;
 const messages = { en, zh } as const;
 
 const STORAGE_KEY = "cbrowser.locale";
-const LEGACY_STORAGE_KEY = "cbm.locale";
 
 interface I18nContextValue {
   locale: Locale;
@@ -933,15 +941,8 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 function detectInitialLocale(): Locale {
   if (typeof window === "undefined") return "en";
-  const stored =
-    localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
-  if (stored === "zh" || stored === "en") {
-    if (!localStorage.getItem(STORAGE_KEY)) {
-      localStorage.setItem(STORAGE_KEY, stored);
-      localStorage.removeItem(LEGACY_STORAGE_KEY);
-    }
-    return stored;
-  }
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored === "zh" || stored === "en") return stored;
   const nav = (navigator.language || "").toLowerCase();
   return nav.startsWith("zh") ? "zh" : "en";
 }
@@ -965,7 +966,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     localStorage.setItem(STORAGE_KEY, next);
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }, []);
 
   const t = useCallback(
