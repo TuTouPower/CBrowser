@@ -1,9 +1,9 @@
 """t045 AC-006: E2E host-port allocation guard.
 
 A pinned host port inside a non-serial E2E module is a cross-worker
-collision (``Bind ... port is already allocated``).  The shared gateway
-harness must let the OS assign an ephemeral port instead of scanning a
-fixed worker range (t044 AC-003 / t045 AC-006).
+collision (``Bind ... port is already allocated``).  The gateway harness
+publish is now daemon-allocated and read back (A28); this module keeps the
+non-serial E2E pinned-port guard (t044 AC-003 / t045 AC-006).
 """
 
 from __future__ import annotations
@@ -13,9 +13,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 E2E_DIR = REPO_ROOT / "tests" / "e2e"
-HARNESS_PATH = (
-    REPO_ROOT / "tests" / "fixtures" / "gateway_probe" / "topology.py"
-)
 
 _SCAN_HELPERS = {"find_free_port", "_free_udp_port"}
 
@@ -31,19 +28,6 @@ def _module_is_serial(tree: ast.Module) -> bool:
                 ):
                     return True
     return False
-
-
-def _bind_zero(node: ast.Call) -> bool:
-    if not (
-        isinstance(node.func, ast.Attribute)
-        and node.func.attr == "bind"
-        and node.args
-        and isinstance(node.args[0], ast.Tuple)
-        and len(node.args[0].elts) == 2
-    ):
-        return False
-    host = node.args[0].elts[1]
-    return isinstance(host, ast.Constant) and host.value == 0
 
 
 def _pinned_literal_ports(tree: ast.Module) -> list[int]:
@@ -119,52 +103,6 @@ def test_non_serial_e2e_modules_do_not_pin_host_ports() -> None:
         for call in _pinned_cli_port_mappings(tree):
             violations.append(f"{path.name}: pinned CLI host port {call}")
     assert not violations, "\n".join(violations)
-
-
-def test_shared_harness_ports_are_os_assigned() -> None:
-    """The gateway harness must use bind(('127.0.0.1', 0)), not a fixed range."""
-    source = HARNESS_PATH.read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    fn = next(
-        (
-            node
-            for node in tree.body
-            if isinstance(node, ast.FunctionDef)
-            and node.name == "find_free_port"
-        ),
-        None,
-    )
-    assert fn is not None
-    assert any(
-        isinstance(node, ast.Call) and _bind_zero(node)
-        for node in ast.walk(fn)
-    ), "find_free_port must bind an OS-assigned ephemeral port (port 0)"
-    assert not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "bind"
-        and node.args
-        and isinstance(node.args[0], ast.Tuple)
-        and len(node.args[0].elts) == 2
-        and not (
-            isinstance(node.args[0].elts[1], ast.Constant)
-            and node.args[0].elts[1].value == 0
-        )
-        for node in ast.walk(fn)
-    ), "find_free_port must not bind a fixed host port"
-    assert not any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "get"
-        and node.args
-        and isinstance(node.args[0], ast.Constant)
-        and node.args[0].value == "CBROWSER_E2E_HTTP_BASE"
-        for node in ast.walk(tree)
-    ), "harness must not read the fixed HTTP worker base"
-    assert not any(
-        isinstance(node, ast.Name) and node.id == "http_base"
-        for node in ast.walk(tree)
-    )
 
 
 def test_modules_with_pinned_host_ports_are_serial() -> None:

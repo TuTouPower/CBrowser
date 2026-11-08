@@ -551,6 +551,7 @@ async def test_gateway_topology_harness_secrets_permission_0600(
             "NetworkSettings": {
                 "Networks": {"test-edge": {"IPAddress": "192.168.100.5"}},
                 "Ports": {
+                    "443/tcp": [{"HostPort": "38443"}],
                     "8000/tcp": [{"HostPort": "38000"}],
                     "8005/tcp": [{"HostPort": "38005"}],
                     f"{DEFAULT_GATEWAY_PORT}/tcp": [{"HostPort": "38080"}],
@@ -785,6 +786,7 @@ async def test_gateway_topology_harness_environment_and_ports_consistent(
             "NetworkSettings": {
                 "Networks": {"test-edge": {"IPAddress": "192.168.100.5"}},
                 "Ports": {
+                    "443/tcp": [{"HostPort": "38443"}],
                     "8000/tcp": [{"HostPort": "38000"}],
                     "8005/tcp": [{"HostPort": "38005"}],
                     f"{DEFAULT_GATEWAY_PORT}/tcp": [{"HostPort": "38080"}],

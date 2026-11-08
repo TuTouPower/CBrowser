@@ -190,6 +190,9 @@ cleanup_containers
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
   SUITE_ORDER="$SUITE_ORDER image_packages e2e"
 fi
+if [ "${CBROWSER_REQUIRE_REAL_ENGINE:-0}" = "1" ]; then
+  SUITE_ORDER="$SUITE_ORDER real_engine"
+fi
 
 # The product CBROWSER_FONTS_DIR must not leak into any gate suite: when
 # set, the API binds a default font set to every new Profile and the
@@ -199,6 +202,10 @@ fi
 unset CBROWSER_FONTS_DIR
 
 protocol_drift_check
+
+if [ "${CBROWSER_REQUIRE_REAL_ENGINE:-0}" != "1" ]; then
+  echo "gate: real_engine NOT_RUN (set CBROWSER_REQUIRE_REAL_ENGINE=1 for the container probe suite)"
+fi
 
 # ---------------- evidence mode: concurrent groups (t044 AC-008) ----------------
 if [ -n "$EVIDENCE_DIR" ]; then
@@ -236,6 +243,10 @@ if [ -n "$EVIDENCE_DIR" ]; then
     run_suite e2e "env PYTHONPATH=src/backend:tests/fixtures pytest tests/e2e -q -n $WORKERS" \
       run_e2e_suite "$EVIDENCE_DIR/junit/e2e.xml" "$SCRATCH/basetemp/e2e"
   fi
+  if [ "${CBROWSER_REQUIRE_REAL_ENGINE:-0}" = "1" ]; then
+    run_suite real_engine "bash scripts/run_automation_probe.sh" \
+      bash scripts/run_automation_probe.sh
+  fi
 
   if finish_evidence; then exit 0; else exit 1; fi
 fi
@@ -252,4 +263,8 @@ npm run build --prefix src/frontend
 
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
   run_e2e_suite "$SCRATCH/junit/e2e.xml" "$SCRATCH/basetemp/e2e"
+fi
+
+if [ "${CBROWSER_REQUIRE_REAL_ENGINE:-0}" = "1" ]; then
+  bash scripts/run_automation_probe.sh
 fi
