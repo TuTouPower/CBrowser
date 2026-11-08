@@ -1,11 +1,11 @@
 # CBrowser
 
-CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统。系统以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.1.0 WebRTC 实现低延迟远程画面传输（同机直连，无 TURN），由独立的 Docker 容器沙箱实现严格的 Profile 隔离与多页面连接管理。
+CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统。系统以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.2.1 WebRTC 实现低延迟远程画面传输（同机直连，无 TURN），由独立的 Docker 容器沙箱实现严格的 Profile 隔离与多页面连接管理。
 
 本项目基于上游仓库 [CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager) 衍生开发，并在架构上彻底重构为独立 Docker 容器沙箱与 WebRTC 架构。底层核心依赖包括：
 
 - [PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)（CloakBrowser 隐私指纹对抗引擎）
-- [selkies-project/selkies](https://github.com/selkies-project/selkies)（官方 WebRTC 远程捕获传输协议栈，版本 2.1.0）
+- [selkies-project/selkies](https://github.com/selkies-project/selkies)（官方 WebRTC 远程捕获传输协议栈，版本 2.2.1）
 - [caddyserver/caddy](https://github.com/caddyserver/caddy)（自动化 TLS 与反向代理网关）
 
 本项目使用模板仓 repo_template。此声明必须保留，消费仓不得删除。

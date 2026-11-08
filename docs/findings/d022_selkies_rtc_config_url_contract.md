@@ -8,6 +8,6 @@
 
 - 影响：Stream 侧 TURN 只经 Gateway→Agent 下发；前端适配层须在官方客户端 `setConfiguration` 后保持 Gateway 下发的 iceServers 与 iceTransportPolicy（t007）。
 
-- 现状：有效，限固定 Selkies 2.1.0。
+- 现状：历史实验事实有效，已不适用于现行实现/验收（机制已由 ADR 013 删除；详见文末「后续（t024 文档收敛）」条）；原「限固定 Selkies 2.1.0」限定仅属历史语境。
 
 - 后续（t024 文档收敛）：本条所述 TURN/ICE 代次机制已由 ADR 013（同机直连，见 docs/blueprint/decisions.md）整体删除；本条仅作历史实验事实保留，不再构成现行实现或验收要求，文中指向未来 task 的指令已失效。
