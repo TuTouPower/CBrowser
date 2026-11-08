@@ -130,7 +130,10 @@ async def test_forged_normal_exit_journal_does_not_change_running_intent(
     _bind(server, token, profile, "inst_alive")
     data_root = tmp_path / "supervisor-data"
     docker = _FakeDocker(data_root)
-    docker.containers.container = FakeContainer("inst_alive", "running")
+    docker.containers.register(
+        docker.get_browser_container_name(profile),
+        FakeContainer("inst_alive", "running"),
+    )
     run_dir = docker.validator.data_root / "runtime-events" / profile
 
     _write_event(

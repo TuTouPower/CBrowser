@@ -30,15 +30,18 @@ class FakeContainers:
     """containers collection: get() raises docker NotFound when absent."""
 
     def __init__(self) -> None:
-        self.container: FakeContainer | None = None
+        self._containers: dict[str, FakeContainer] = {}
 
-    def get(self, _name: str) -> FakeContainer:
-        if self.container is None:
-            raise NotFound("no browser container")
-        return self.container
+    def register(self, name: str, container: FakeContainer) -> None:
+        self._containers[name] = container
+
+    def get(self, name: str) -> FakeContainer:
+        if name not in self._containers:
+            raise NotFound(f"no such container: {name}")
+        return self._containers[name]
 
     def list(self, **_kwargs) -> list[FakeContainer]:
-        return [self.container] if self.container is not None else []
+        return list(self._containers.values())
 
 
 class FakeDockerClient:
