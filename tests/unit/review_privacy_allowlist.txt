@@ -3,7 +3,7 @@
 # to the exact file content fingerprint -- an exemption lapses as soon as
 # the file content changes, and new files never inherit one).
 # Format: <repo-relative path> sha256:<hex of file bytes>
-docs/archive/handoff.md sha256:3a85f58f649d60b82d9df055fcb0a8d52ecd5a91ccaa7895bf52decb0f8d0183
+docs/archive/handoff.md sha256:627ab712fd1e38cdbf5dfac60371e8e01a5d15acbb24d94137b9becd1a67f8c3
 docs/archive/spikes/s001_selkies_runtime/blackbox_review.md sha256:1dbe162d1a24df539b93ce9c8ea5d0408cc0ddf79225845ae9a1badf72907f2c
 docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py sha256:87be6dc641ae8dfe64699e1df9160e2536816ae851e6e10c9156016cf1ea0cf2
 docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py sha256:1b9c321a3ea06feb55f66f5f3e8f420e96630e7b475c12b229a3dbf3be0142fe
