@@ -29,10 +29,10 @@ docs/reviews/review_20261108_153337
     - bundle_repository_summary.md
     - review_intensive.md
 - 缺失：无（按根层实际文件判断；不推测未提供的模型路线）。
-- 合并说明：原始 73 条具名 finding → 原审阅 55 个决策项；外部方案补充新增 4 项，全文共 59 项（采纳 41、不采纳 18、待决定 0）。聚合报告逐条核对，无仅聚合新增项；bundle_repository_summary 的同题总结并入对应条目，不另计 finding。intensive 属单源多视角，不能作为多模型独立互证。
+- 合并说明：原始 73 条具名 finding → 原审阅 55 个决策项；外部方案补充新增 4 项，全文共 59 项（采纳 42、不采纳 17、待决定 0）。聚合报告逐条核对，无仅聚合新增项；bundle_repository_summary 的同题总结并入对应条目，不另计 finding。intensive 属单源多视角，不能作为多模型独立互证。
 - 下方映射穷尽 73 条具名 finding；相同行为的跨模块族条目已注明具体覆盖范围。cross_validation 共 24 条 agree 已全部吸收，但 agree 不替代现状核验；无 CHALLENGED/PARTIAL 标记。直接代码反证导致的拒绝/限定范围已逐项说明。
 - followup：q_arch_01 → A35；q_strategy_01 → R9（不接受其跨平台战略推断）；q_system_properties_01 → A3（恢复占用不等于只看 running session）。
-- 证据基线：HEAD `80e34b58b3dea4572c9e3364dcedb902b36b6f71`，与聚合审阅一致。当前工作区仅本轮 review 目录未跟踪。本次只写决策文档，未跑完整产品门禁或真实故障注入，不将静态核验写成运行通过。
+- 证据基线：HEAD `80e34b58b3dea4572c9e3364dcedb902b36b6f71`，与聚合审阅一致。该 review 目录已由现有提交 53a3ec6 纳入跟踪；本次以其为文档修订基线，源代码与 80e34b58b3dea4572c9e3364dcedb902b36b6f71 相比无变更。工作区另有用户未跟踪 config/deploy，保持不动。本次只写决策文档，未跑完整产品门禁或真实故障注入，不将静态核验写成运行通过。
 
 ## 外部方案补充评估来源
 
@@ -46,15 +46,15 @@ docs/reviews/review_20261108_153337
 |W1|[Weblink 本地 IME 状态机](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/domain/remote-control/text-input.ts)|以 DOM 编辑器为输入权威，组合期间不提交，compositionend 延后收尾；reset 丢弃未提交组合。|
 |W2|[Weblink 有界文字提交](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/domain/remote-control/text.ts)|每包 64、每提交 1024 均按 UTF-16 code unit 计数；按 Unicode code point 遍历避免切断代理对；Enter/Tab 分离，传输复位不排队重放。|
 |W3|[Weblink 隐形输入控件](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/routes/home/components/remote-keyboard-input.tsx)|实际路径为 routes/home/components；可聚焦透明 1px textarea、两端零宽守卫、焦点/失焦与独立剪贴板处理。|
-|W4|[Weblink Windows 原生文字投递](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-input/src/windows/text.rs)|仅已知 Edit/RichEdit 类走 EM_REPLACESEL；有前台焦点及进程校验，超时不盲目改走按键重放。|
-|W5|[Weblink Windows Unicode 键注入](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-input/src/windows/device.rs)|submit_text 先尝试原生编辑控件，再经 KEYEVENTF_UNICODE 注入；此为 Windows 实现。|
+|W4|[Weblink Windows 原生文字投递](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-input/src/windows/text.rs)|无可用 Focus/非适用控件等前置条件返回 Ok(false)；已进入校验/replace 的错误返回 Err。不能把“不适用”与“投递失败”统称一种失败。|
+|W5|[Weblink Windows Unicode 键注入](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-input/src/windows/device.rs)|text::insert 返回 Ok(true) 时结束，Ok(false) 时转 KEYEVENTF_UNICODE；Err 经 ? 直接传播，包括 native 投递超时或其它 Err，不泛化为所有非超时失败都会回退。|
 |W6|[Weblink 按视图启用的诊断采样](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/hooks/session-diagnostics.ts)|Solid signal 保存在局部 hook；视图 enabled/visible 才采样，等待请求后 setTimeout 续跑，retired 防迟到写回。|
 |W7|[Weblink 有界编码包录制旁路](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-capture/src/media/recording.rs)|32 包/8 MiB 双重上限，try_send 不等待录制消费者；从关键帧开始，溢出终止录制订阅并给出错误。数值是上游策略，不直接成为本项目默认。|
 |W8|[Weblink 录制订阅生命周期](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/crates/desktop-capture/src/media/recording/source.rs)|录制订阅与 Viewer transport 分离；恢复请求关键帧，支持 encoded audio，不能复用时另有 PCM 路径。|
-|W9|[Weblink 编码包封装](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/application/recording-encoded.ts)|使用 EncodedVideoPacketSource/可用时编码音频；PCM 或 MediaStream 音频分支会编码 Opus，不能说所有录制路径完全不编码。|
-|W10|[Weblink NAL 格式与参数集归一](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/application/recording-video-config.ts)|在原编码视频上做参数集验证与 NAL 长度前缀转换，不把 RTP 包直接拼成文件。|
+|W9|[Weblink 编码包封装](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/application/recording-encoded.ts)|视频 EncodedVideoPacketSource 与 encodedAudio 可复用原编码；PCM/MediaStream 音频分支执行 Opus 编码，区别于对已有编码音轨的重新编码。|
+|W10|[Weblink NAL 格式与参数集归一](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/application/recording-video-config.ts)|本文件证明参数集归一与 NAL 长度前缀转换；编码样本封装链还需结合 W7–W9 核对，不单凭此文件推断全系统如何处理 RTP。|
 |W11|[Weblink 原生录制 codec 选择](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/libs/application/native-codec-selection.ts)|该原生录制选择入口限定 H.264/H.265，不能据此推断任意 VP8 管线都有同样录制能力。|
-|W12|[Weblink 前端框架](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/app.tsx)|使用 Solid，并非 React；借鉴响应边界与采样生命周期，不复制其框架状态模型。|
+|W12|[Weblink app.tsx](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/src/app.tsx) 与 [apps/web/package.json](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/apps/web/package.json)|应用入口使用 Solid，包声明 solid-js/@solidjs/router、vite-plugin-solid 等；本次核对的 web 应用入口及构建依赖为 Solid，不据单文件推断仓库所有应用都没有 React。|
 |W13|[Weblink 许可证](https://github.com/99percentpeople/weblink/blob/6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed/LICENSE)|MIT；若后续实质复用代码，保留对应版权/许可证；本次只记录设计评估，未复制代码进入生产。|
 |C1|`src/frontend/src/features/browser-session/useBrowserSession.ts:386-465`；`SessionPage.tsx:158,194,252-288`；`app/providers.tsx`|每秒把诊断写入会话 hook state，驱动 SessionPage 重渲染；未发现原始 RTCStatsReport 放入顶层 Context。iframe 节点 key 稳定，父组件重渲染不等于媒体被重建。|
 |C2|`src/backend/cbrowser/supervisor/volume_spec.py:47-66`；`docs/blueprint/artifacts.md`|Stream 无 `/exchange` 挂载；Artifact 由 API 单写者登记，下载补登只扫描直接子文件，不自动接纳 recordings 子目录。|
@@ -87,80 +87,80 @@ docs/reviews/review_20261108_153337
 |bundle_global_evolution.md:L9|`f_global_evolution_schema_drift_governance`|A16|
 |bundle_global_strategy.md:L9|`f_global_strategy_platform_impedance`|R9|
 |bundle_global_system_properties.md:L9|`f_global_sys_proxy_ip_cascade_dos`|A4|
-|bundle_local_backend_core.md:L71|`f_backend_core_attr_error`|A1|
+|bundle_local_backend_core.md:L70|`f_backend_core_attr_error`|A1|
 |bundle_local_backend_core.md:L77|`f_backend_core_network_prefix`|A2|
-|bundle_local_backend_core.md:L83|`f_backend_core_control_client_ip`|A4|
-|bundle_local_backend_core.md:L89|`f_backend_core_network_active_leak`|A35|
-|bundle_local_backend_core.md:L95|`f_backend_core_font_sets_block`|A5|
-|bundle_local_backend_core.md:L101|`f_backend_core_http_exc_dict`|A6|
-|bundle_local_backend_core.md:L107|`f_backend_core_automation_tunnel_agent_id`|R1|
-|bundle_local_backend_core.md:L113|`f_backend_core_legacy_cdp_router`|A7|
-|bundle_local_backend_runtime_supervisor.md:L65|`f_supervisor_teardown_port_leak`|A3|
+|bundle_local_backend_core.md:L84|`f_backend_core_control_client_ip`|A4|
+|bundle_local_backend_core.md:L91|`f_backend_core_network_active_leak`|A35|
+|bundle_local_backend_core.md:L98|`f_backend_core_font_sets_block`|A5|
+|bundle_local_backend_core.md:L105|`f_backend_core_http_exc_dict`|A6|
+|bundle_local_backend_core.md:L112|`f_backend_core_automation_tunnel_agent_id`|A42|
+|bundle_local_backend_core.md:L119|`f_backend_core_legacy_cdp_router`|A7|
+|bundle_local_backend_runtime_supervisor.md:L64|`f_supervisor_teardown_port_leak`|A3|
 |bundle_local_backend_runtime_supervisor.md:L71|`f_supervisor_normal_exit_override`|A8|
-|bundle_local_backend_runtime_supervisor.md:L77|`f_supervisor_replace_stream_leak`|A9|
-|bundle_local_backend_runtime_supervisor.md:L83|`f_supervisor_stream_output_accept`|A10|
-|bundle_local_backend_runtime_supervisor.md:L89|`f_supervisor_caddy_rebuild_no_rollback`|A35|
-|bundle_local_backend_runtime_supervisor.md:L95|`f_supervisor_helper_read_timeout`|A11|
-|bundle_local_backend_runtime_supervisor.md:L101|`f_supervisor_transport_pending_futures`|A12|
-|bundle_local_backend_runtime_supervisor.md:L107|`f_supervisor_preview_session_leak`|A13|
-|bundle_local_backend_runtime_supervisor.md:L113|`f_supervisor_secret_file_toctou`|A14|
-|bundle_local_backend_runtime_supervisor.md:L119|`f_supervisor_dialog_attendant_waiters`|A12|
-|bundle_local_backend_runtime_supervisor.md:L125|`f_supervisor_start_profile_journal`|R2|
-|bundle_local_backend_runtime_supervisor.md:L131|`f_supervisor_orphan_helper_regex`|A15|
-|bundle_local_backend_runtime_supervisor.md:L137|`f_supervisor_stop_global_lock`|R3|
-|bundle_local_backend_runtime_supervisor.md:L143|`f_supervisor_sun_path_proc_fd_hack`|A36|
-|bundle_local_backend_stream_gateway.md:L59|`f_gateway_viewer_throttle_proxy_ip`|A4|
+|bundle_local_backend_runtime_supervisor.md:L78|`f_supervisor_replace_stream_leak`|A9|
+|bundle_local_backend_runtime_supervisor.md:L85|`f_supervisor_stream_output_accept`|A10|
+|bundle_local_backend_runtime_supervisor.md:L92|`f_supervisor_caddy_rebuild_no_rollback`|A35|
+|bundle_local_backend_runtime_supervisor.md:L99|`f_supervisor_helper_read_timeout`|A11|
+|bundle_local_backend_runtime_supervisor.md:L106|`f_supervisor_transport_pending_futures`|A12|
+|bundle_local_backend_runtime_supervisor.md:L113|`f_supervisor_preview_session_leak`|A13|
+|bundle_local_backend_runtime_supervisor.md:L120|`f_supervisor_secret_file_toctou`|A14|
+|bundle_local_backend_runtime_supervisor.md:L127|`f_supervisor_dialog_attendant_waiters`|A12|
+|bundle_local_backend_runtime_supervisor.md:L134|`f_supervisor_start_profile_journal`|R2|
+|bundle_local_backend_runtime_supervisor.md:L141|`f_supervisor_orphan_helper_regex`|A15|
+|bundle_local_backend_runtime_supervisor.md:L148|`f_supervisor_stop_global_lock`|R3|
+|bundle_local_backend_runtime_supervisor.md:L155|`f_supervisor_sun_path_proc_fd_hack`|A36|
+|bundle_local_backend_stream_gateway.md:L58|`f_gateway_viewer_throttle_proxy_ip`|A4|
 |bundle_local_backend_stream_gateway.md:L65|`f_stream_agent_tunnel_close_empty_session`|R4|
-|bundle_local_backend_stream_gateway.md:L71|`f_gateway_missing_applied_network_403`|R5|
-|bundle_local_backend_stream_gateway.md:L77|`f_stream_agent_x11_keymap_monkeypatch`|A39|
-|bundle_local_contracts_deploy_infra.md:L55|`f_contracts_supervisor_protocol_drift`|A16|
+|bundle_local_backend_stream_gateway.md:L72|`f_gateway_missing_applied_network_403`|R5|
+|bundle_local_backend_stream_gateway.md:L79|`f_stream_agent_x11_keymap_monkeypatch`|A39|
+|bundle_local_contracts_deploy_infra.md:L54|`f_contracts_supervisor_protocol_drift`|A16|
 |bundle_local_contracts_deploy_infra.md:L61|`f_contracts_stream_protocol_drift`|A16|
-|bundle_local_contracts_deploy_infra.md:L67|`f_deploy_script_bind_port_drop`|A24|
-|bundle_local_contracts_deploy_infra.md:L73|`f_deploy_script_inline_caddyfile`|A24|
-|bundle_local_contracts_deploy_infra.md:L79|`f_docker_supervisor_root_cap`|A37|
-|bundle_local_contracts_deploy_infra.md:L85|`f_docker_browser_copy_all_backend`|A26|
-|bundle_local_contracts_deploy_infra.md:L91|`f_compose_secrets_dir_overexpose`|A25|
-|bundle_local_contracts_deploy_infra.md:L97|`f_docker_automation_probe_arm64_deb`|R10|
-|bundle_local_frontend_core_shared.md:L58|`f_frontend_missing_error_boundary`|A17|
+|bundle_local_contracts_deploy_infra.md:L68|`f_deploy_script_bind_port_drop`|A24|
+|bundle_local_contracts_deploy_infra.md:L75|`f_deploy_script_inline_caddyfile`|A24|
+|bundle_local_contracts_deploy_infra.md:L82|`f_docker_supervisor_root_cap`|A37|
+|bundle_local_contracts_deploy_infra.md:L89|`f_docker_browser_copy_all_backend`|A26|
+|bundle_local_contracts_deploy_infra.md:L96|`f_compose_secrets_dir_overexpose`|A25|
+|bundle_local_contracts_deploy_infra.md:L103|`f_docker_automation_probe_arm64_deb`|R10|
+|bundle_local_frontend_core_shared.md:L57|`f_frontend_missing_error_boundary`|A17|
 |bundle_local_frontend_core_shared.md:L64|`f_frontend_router_no_code_split`|R6|
-|bundle_local_frontend_core_shared.md:L70|`f_frontend_runtime_snapshot_thundering_herd`|R7|
-|bundle_local_frontend_core_shared.md:L76|`f_frontend_cn_class_collision`|R8|
-|bundle_local_frontend_core_shared.md:L82|`f_frontend_legacy_cbm_locale_key`|A18|
-|bundle_local_frontend_features.md:L55|`f_frontend_settings_poll_timer_leak`|A19|
+|bundle_local_frontend_core_shared.md:L71|`f_frontend_runtime_snapshot_thundering_herd`|R7|
+|bundle_local_frontend_core_shared.md:L78|`f_frontend_cn_class_collision`|R8|
+|bundle_local_frontend_core_shared.md:L85|`f_frontend_legacy_cbm_locale_key`|A18|
+|bundle_local_frontend_features.md:L54|`f_frontend_settings_poll_timer_leak`|A19|
 |bundle_local_frontend_features.md:L61|`f_frontend_session_recovery_timer_leak`|A20|
-|bundle_local_frontend_features.md:L67|`f_frontend_mounted_ref_lifecycle`|A20|
-|bundle_local_frontend_features.md:L73|`f_frontend_session_stage_split_brain`|A20|
-|bundle_local_frontend_features.md:L79|`f_frontend_settings_contract_violation`|A21|
-|bundle_local_frontend_features.md:L85|`f_frontend_profile_detail_nav_link`|R14|
-|bundle_local_frontend_features.md:L91|`f_frontend_maintenance_missing_redirect`|A22|
-|bundle_local_frontend_features.md:L97|`f_frontend_adapter_any_casting`|A23|
-|bundle_local_historical_archives_reviews.md:L47|`f_arch_unarchived_spikes_lingering`|R16|
+|bundle_local_frontend_features.md:L68|`f_frontend_mounted_ref_lifecycle`|A20|
+|bundle_local_frontend_features.md:L75|`f_frontend_session_stage_split_brain`|A20|
+|bundle_local_frontend_features.md:L82|`f_frontend_settings_contract_violation`|A21|
+|bundle_local_frontend_features.md:L89|`f_frontend_profile_detail_nav_link`|R14|
+|bundle_local_frontend_features.md:L96|`f_frontend_maintenance_missing_redirect`|A22|
+|bundle_local_frontend_features.md:L103|`f_frontend_adapter_any_casting`|A23|
+|bundle_local_historical_archives_reviews.md:L46|`f_arch_unarchived_spikes_lingering`|R16|
 |bundle_local_historical_archives_reviews.md:L53|`f_arch_unarchived_reviews_lingering`|R16|
-|bundle_local_historical_archives_reviews.md:L59|`f_arch_adoption_decision_dead_links`|R16|
-|bundle_local_repo_template_toolchain.md:L48|`f_tool_track_worktree_regex_greedy`|R15|
+|bundle_local_historical_archives_reviews.md:L60|`f_arch_adoption_decision_dead_links`|R16|
+|bundle_local_repo_template_toolchain.md:L47|`f_tool_track_worktree_regex_greedy`|R15|
 |bundle_local_repo_template_toolchain.md:L54|`f_tool_repo_cleanup_symlink_traversal`|R12|
-|bundle_local_repo_template_toolchain.md:L60|`f_tool_sync_state_json_type_check`|R13|
-|bundle_local_specs_blueprint_docs.md:L54|`f_docs_selkies_version_drift`|A32|
+|bundle_local_repo_template_toolchain.md:L61|`f_tool_sync_state_json_type_check`|R13|
+|bundle_local_specs_blueprint_docs.md:L53|`f_docs_selkies_version_drift`|A32|
 |bundle_local_specs_blueprint_docs.md:L60|`f_docs_frontend_router_contradiction`|A33|
-|bundle_local_specs_blueprint_docs.md:L66|`f_docs_guides_python_version_drift`|A32|
-|bundle_local_specs_blueprint_docs.md:L72|`f_docs_findings_metadata_drift`|A34|
-|bundle_local_specs_blueprint_docs.md:L78|`f_docs_parked_p031_dead_link`|A33|
-|bundle_local_specs_blueprint_docs.md:L84|`f_docs_skill_task_id_leak`|A33|
-|bundle_local_tests_integration_e2e.md:L52|`f_tests_integration_bare_skips`|A38|
+|bundle_local_specs_blueprint_docs.md:L67|`f_docs_guides_python_version_drift`|A32|
+|bundle_local_specs_blueprint_docs.md:L74|`f_docs_findings_metadata_drift`|A34|
+|bundle_local_specs_blueprint_docs.md:L81|`f_docs_parked_p031_dead_link`|A33|
+|bundle_local_specs_blueprint_docs.md:L88|`f_docs_skill_task_id_leak`|A33|
+|bundle_local_tests_integration_e2e.md:L51|`f_tests_integration_bare_skips`|A38|
 |bundle_local_tests_integration_e2e.md:L58|`f_tests_find_free_port_toctou`|A28|
-|bundle_local_tests_integration_e2e.md:L64|`f_tests_e2e_hardcoded_macos_chrome`|R9|
-|bundle_local_tests_integration_e2e.md:L70|`f_tests_frontend_media_vacuous_test`|R11|
-|bundle_local_tests_integration_e2e.md:L76|`f_tests_network_apply_all_mocked`|A29|
-|bundle_local_tests_integration_e2e.md:L82|`f_tests_build_wiring_wrong_directory`|A30|
-|bundle_local_tests_unit_fixtures.md:L50|`f_tests_fake_containers_ignore_name`|A27|
+|bundle_local_tests_integration_e2e.md:L65|`f_tests_e2e_hardcoded_macos_chrome`|R9|
+|bundle_local_tests_integration_e2e.md:L72|`f_tests_frontend_media_vacuous_test`|R11|
+|bundle_local_tests_integration_e2e.md:L79|`f_tests_network_apply_all_mocked`|A29|
+|bundle_local_tests_integration_e2e.md:L86|`f_tests_build_wiring_wrong_directory`|A30|
+|bundle_local_tests_unit_fixtures.md:L49|`f_tests_fake_containers_ignore_name`|A27|
 |bundle_local_tests_unit_fixtures.md:L56|`f_tests_schema_assert_hardcoded`|A16|
-|bundle_local_tests_unit_fixtures.md:L62|`f_tests_frontend_api_codegen_ungated`|A16|
-|bundle_local_tests_unit_fixtures.md:L68|`f_tests_abandoned_api_dockerfile`|A31|
+|bundle_local_tests_unit_fixtures.md:L63|`f_tests_frontend_api_codegen_ungated`|A16|
+|bundle_local_tests_unit_fixtures.md:L70|`f_tests_abandoned_api_dockerfile`|A31|
 
 ## 统计
 
-- 采纳：41 项
-- 不采纳：18 项
+- 采纳：42 项
+- 不采纳：17 项
 - 待决定：0 项
 
 ## 决策原则与执行边界
@@ -184,7 +184,7 @@ docs/reviews/review_20261108_153337
 |D6|C|R16|本轮不归档历史资料，不批量改历史链接|
 |D7|A|A38|真实引擎容器化必跑入口与完整证据|
 
-R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1–R14 编号保持不变；后续沟通使用当前编号，旧 D 编号只用于追溯。
+R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2–R14 编号保持不变；原 R1 已撤回并转 A42；后续沟通使用当前编号，旧 D 编号只用于追溯。
 
 ## 待决定项
 
@@ -195,13 +195,13 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### A1. 修复网络 RPC 客户端与认证接入
 
 - 来源：bundle_cross_validation, bundle_local_backend_core, bundle_repository_summary
-- 位置：src/backend/cbrowser/api/runtime_coordinator.py:1155,1157,1179,1181
+- 位置：src/backend/cbrowser/api/app.py:153-158,198-202；api/runtime_coordinator.py:255,262-263,1144-1191；services/network_service.py:154-161,196-202
 - 优先级：CRITICAL
 - 结论：采纳
 - 覆盖：`f_backend_core_attr_error`
-- 详细判断理由：AST 与调用点确认只定义 self.\_client，两个网络 RPC 使用不存在的 self.client 和 \_auth_headers。不是可选重构；受管部署路径会直接失败。
-- 修复说明：修改 RuntimeCoordinator.rebuild_edge / converge_network_streams，复用既有 httpx 客户端初始化、supervisor_token 认证与错误处理路径；禁止再建一套认证封装；以真实本地 HTTP stub 校验 URL、Bearer、载荷和错误响应。
-- 验收标准：真实 RuntimeCoordinator 对受控 HTTP 服务分别完成两种网络 RPC，验证路径、Bearer 认证与完整载荷；401、超时和 5xx 被正确上报，不再出现 AttributeError；禁用 Supervisor 模式不能作为受管部署通过证据。
+- 详细判断理由：生产装配中 `app.py:153-158,198-202` 将 RuntimeCoordinator 实例注入 NetworkService.supervisor_client；当 URL/token 齐备、`is_enabled()` 为真，网络后台操作第一次调用 `rebuild_edge` 就访问不存在的 `self.client`，在发出 HTTP 请求前抛 AttributeError，后续 `_auth_headers` 也未定义。NetworkService 捕获后保存 FAILED。这是当前受管调用链的首个失败点；从正式 UI 进入还另受 A2 路由错误阻断，不能把下游容器修改描述为这次操作已发生的事实。
+- 修复说明：复用既有 `_client` 的创建/生命周期、Supervisor 凭据及错误契约，修复两个网络 RPC；不另建认证权威。测试必须通过正式装配的 NetworkService→真实 RuntimeCoordinator→受控 HTTP 服务，不能替换被验证的 Coordinator 方法。
+- 验收标准：修复前证明受管 `is_enabled=True` 时进入第一次 RPC 即失败且下游零请求；修复后两种 RPC 的路径、认证、载荷、401/超时/5xx 和失败状态均正确。A35 的下游故障注入必须以本项与 A2 已解决或明确隔离入口为前提。
 
 ### A2. 统一网络 API 的 /api/v1 前缀
 
@@ -228,13 +228,17 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### A4. 统一受信反代后的客户端 IP 限流键
 
 - 来源：bundle_cross_validation, bundle_global_system_properties, bundle_local_backend_core, bundle_local_backend_stream_gateway, bundle_repository_summary
-- 位置：src/backend/cbrowser/api/v1/control_router.py:74；src/backend/cbrowser/gateway/server.py:731-760；src/backend/cbrowser/api/v1/control_router.py:74; gateway/server.py:731
+- 位置：api/v1/control_router.py:74；auth/service.py:43-45,389-396；auth/rate_limiter.py:55-68；gateway/server.py:421-426,731-760；gateway/registry.py:96-247
 - 优先级：HIGH
 - 结论：采纳
 - 覆盖：`f_backend_core_control_client_ip`, `f_gateway_viewer_throttle_proxy_ip`, `f_global_sys_proxy_ip_cascade_dos`
-- 详细判断理由：控制面直接用 request.client.host，aiohttp Gateway 直接用 request.remote；反代下会共享 Caddy 地址，形成限流连带影响。报告夸大为多租户全局封禁，Gateway 实际还按 profile_id 分桶，但根因成立。FastAPI 还受服务器代理配置影响，修复须统一实际部署边界，不能盲信 X-Forwarded-For。
-- 修复说明：control_router 复用现有 resolve_client_ip 与 trusted_proxy_cidrs；Gateway 配置与部署显式接入同一受信代理策略，aiohttp 请求经同一解析逻辑取得限流来源。验证可信/非可信代理、伪造头及不同来源限流隔离，不全信任任意 CIDR。
-- 验收标准：用可信代理、多级转发、直连和伪造 X-Forwarded-For 构造端到端鉴权负例；两个来源的失败计数隔离，同来源仍受限；不同框架的来源解析符合统一策略，不能通过任意头绕过限流。
+- 详细判断理由：三类限流应分别分析，不能用一个模块的桶键反证另一个模块。控制 API 的 require_automation_token 使用 request.client.host 调用 AuthService.authorize_automation；后者的 source bucket 仅按 client_ip，另有独立 global budget。同一 Caddy 地址达到 source 阈值会影响经该入口访问不同 Profile 的自动化客户端，跨 Profile 连带风险成立。Gateway Viewer 的 AuthorizationThrottle 则按 `(source, profile_id)`，影响范围限于共享来源的该 Profile；Agent RegistrationThrottle 的并发和凭据失败预算又只按 source IP。三者不能混称同一种封禁。
+- 修复说明：API 控制路由复用 resolve_client_ip 与受信代理配置；Gateway 的 Viewer 及 Agent 注册入口分别核对真实网络路径并采用明确受信来源解析。内部 Stream Agent 直接注册时应保留可验证的传输对端 IP；经已配置可信反代时才解析转发链，不能因入口是内部接口就忽略其 source-only 桶。保留有意设计的全局抗猜测预算，不把它误删为代理缺陷。
+- 桶与影响范围：
+    - 控制面：`auth/service.py:389` + `auth/rate_limiter.py:55-68`，source-only；代理来源合并会跨 Profile 连带限流。全局预算是额外机制，修复来源识别不承诺攻击请求永远不影响全局预算。
+    - Viewer：`gateway/server.py:731` + `gateway/registry.py:209-247`，source/profile；负例应验证同 Profile 不同来源隔离，而非据此缩小控制面影响。
+    - Agent 注册：`gateway/server.py:421-426` + `gateway/registry.py:96-205`，source-only；实际直连/反代拓扑需分别验证，注册 reservation 在成功、拒绝、超时和取消时仍正确释放。
+- 验收标准：两来源、两 Profile、可信与非可信代理、伪造 X-Forwarded-For 分别测试；错误 Token 不把整台反代当成控制面单一来源。注册与 Viewer 的桶键、阈值与释放语义各自断言，不能只测 Viewer 即宣布全链修复。
 
 ### A5. 将字体完整性扫描移出 API 事件循环
 
@@ -272,13 +276,13 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### A8. 按实例原生退出事实统一终态观测
 
 - 来源：bundle_cross_validation, bundle_local_backend_runtime_supervisor
-- 位置：src/backend/cbrowser/supervisor/core.py:1598-1606; core.py:1555
+- 位置：supervisor/core.py:1514-1556,1562-1655；supervisor/recovery_coordinator.py:145-235
 - 优先级：HIGH
 - 结论：采纳
 - 覆盖：`f_supervisor_normal_exit_override`
-- 详细判断理由：exited/dead/not_found 分支无条件报 error 属实；但存在终态去重、原生事件围栏与正常 Agent health 分支，不能据此宣称所有正常关闭必复活。缺口是“已有匹配正常原生退出、容器已退出且尚无终态 ACK”路径。仅凭 Docker ExitCode=0 判正常会违背 process_observation_lost 等已定契约。
-- 修复说明：统一 \_reconcile_instance_observation、磁盘事件重放与 RecoveryCoordinator 的退出事实优先级；校验 profile/instance/config_version 后依据正常原生事实报告 stopped/normal_exit，未知、owner-loss 与异常退出保持 error；补 API 离线重放与容器先退出时序测试，禁止用 ExitCode==0 一刀切。
-- 验收标准：覆盖“匹配正常 journal+容器已退出+API 离线后重放”、未知退出、owner-loss、实例/配置版本不匹配、终态 ACK 去重；正常关闭不复活，异常仍按原退避契约恢复。
+- 详细判断理由：报告描述的“正常原生退出 journal 已送达，随后按 exited/dead/not_found 对账”路径确实存在：consume_disk_events 调用 `_reconcile_instance_observation`，后者在 `core.py:1598-1606` 直接上报 error/container_exit。normal-exit health 判定位于 container_status==running 的分支，无法反证已退出容器的缺陷。终态 ACK 去重会影响某次错误是否被接受，但不能替代本路径正确分类。初稿把报告归约为“所有正常关闭必复活”再反驳，撤回该表述。
+- 修复说明：统一原生 journal、容器事实及 health 的优先级，在已退出容器路径校验 Profile/实例/配置版本后利用可信原生退出原因作终态分类；不能只在 running health 分支补判断。保留 owner-loss 等异常语义，Docker ExitCode==0 本身不足以替代正常原生退出证据。
+- 验收标准：覆盖正常 journal 送达后容器已退出、API 暂不可用后重放、终态 ACK 前后去重、错实例/错版本和 owner-loss；验证 API 实际最终观测及自动恢复行为，正常关闭不被合成 error 覆盖。不能用运行中 Agent health 正例替代 exited 分支验证。
 
 ### A9. Stream 创建失败由创建者完成回收
 
@@ -437,13 +441,13 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### A23. 显式声明 Selkies 薄适配层接口
 
 - 来源：bundle_local_frontend_features
-- 位置：src/frontend/src/features/browser-session/adapter.ts:26,50,98,108
+- 位置：src/frontend/src/features/browser-session/adapter.ts:26,50,98,108-109,133,152,183,211,251,272-274,365
 - 优先级：LOW
 - 结论：采纳
 - 覆盖：`f_frontend_adapter_any_casting`
-- 详细判断理由：adapter 中 any 跨过 window/WebRTC/统计接口检查，已有明确的有限交互面，可用结构类型约束，不需抽象成通用框架。
-- 修复说明：在 adapter 及直接消费边界声明实际使用的扩展 Window、统计结果与构造参数类型；外部未知数据先用 unknown 校验，只清理本范围裸 any，跑 typecheck 与原有 adapter 行为测试。
-- 验收标准：TypeScript 检查与 adapter 原有身份、信令、Web Locks、统计和焦点测试通过；扩展接口无臆造必需字段，未知消息经过运行时校验，不用宽泛 any/断言消除真实错误。
+- 详细判断理由：报告列出的四处是示例，不是全部改动范围。当前 adapter.ts 对 `any` 的检索共有 14 处：26、50、98、108、109、133、152、183、211、251、272、273、274、365，覆盖扩展 Window、原生构造器与发送参数、Web Locks 回调、WebSocket 事件、RTCStats 及生命周期事件。此前按四处描述会低估接口梳理和回归面。
+- 修复说明：按整个 adapter 的实际边界清单定义类型，关联 A40 的统计样本契约和 A20 的会话代次；复用 DOM/WebRTC/WebSocket/Web Locks 标准类型。外部未知对象使用 unknown 加运行时校验，不以粗泛断言代替检查；不据此扩成全仓 any 清理。
+- 验收标准：逐项核对上述 14 处及其直接消费者，类型检查与信令、构造器原型/静态行为、Web Locks、统计、焦点、pageshow 测试通过；需要保留的极小例外逐项解释，不用忽略规则把未建模接口隐藏。
 
 ### A24. 发布网络初始化与端口读取统一事实源
 
@@ -474,9 +478,9 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 优先级：MEDIUM
 - 结论：采纳
 - 覆盖：`f_docker_browser_copy_all_backend`
-- 详细判断理由：全量 COPY 后端属实；开源代码可读并不等同凭据泄漏，报告安全影响夸大，但运行组件职责边界与交付最小化问题成立。
-- 修复说明：从 Browser entrypoint/runtime_agent 实际 import 闭包确定模块白名单，Dockerfile 改为按必需模块复制；验证所有入口启动、健康、CDP、下载、字体与预览；镜像不含 API/Gateway 等无关服务入口，不仅按报告示例目录机械裁剪。
-- 验收标准：检查实际镜像文件与启动 import 闭包；Browser 的 Agent、字体、预览、CDP、下载与停止功能通过；API/Gateway/Supervisor 等无关服务入口未复制，缺模块不靠补回全量 COPY 解决。
+- 详细判断理由：生产 Browser Dockerfile 全量复制 cbrowser 后端包，报告指出可在受损 Browser 内读取无关服务源码，这一事实成立。初稿额外引入“凭据泄漏”作为反证对象，与报告原论点无关，撤回。采纳依据是运行交付应与 Browser 职责和实际 import 闭包匹配；删源码本身不阻止获得其它能力，也不能当作凭据隔离或漏洞消除的证明。
+- 修复说明：从 Browser 入口与 runtime_agent 实际依赖确定最小模块交付，移除与运行无关的 API/Gateway/Supervisor 代码；保留字体、预览、CDP、下载、协议模型等真实依赖，按镜像构建验证缺项。不机械复制报告中的示例目录清单。
+- 验收标准：镜像中实际模块清单与 import/入口冒烟、健康、字体、预览、CDP、下载和停止链路一致；无关服务入口未交付，必要功能完整。权限和凭据安全分别由对应条目验收，不借源码裁剪宣称额外安全收益。
 
 ### A27. Docker fake 按容器名匹配资源
 
@@ -522,16 +526,16 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 修复说明：将 test_frontend_build_wiring.py 移到 tests/unit 对应位置，保留原测试语义；检查相对路径、collection 与无 E2E 前置运行，避免重复收集。
 - 验收标准：常规 unit collection 能收集原有全部构建校验器用例，原负例仍失败/被正确断言；无 Docker/Chrome/真实 dist 前置；旧 E2E 路径不再重复收集。
 
-### A31. 移除失去运行消费者的私有 API 测试镜像
+### A31. 统一 API 测试镜像交付入口并同步现行指南
 
 - 来源：bundle_local_tests_unit_fixtures
-- 位置：tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile:1-19
+- 位置：tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile；tests/unit/test_baseline_runtime_regressions.py:68-104；docs/guides/supervisor_validation.md:16,19；tests/fixtures/e2e_env.py:17；tests/fixtures/gateway_probe/topology.py:101；tests/e2e/test_supervisor_container_graph_e2e.py:71,153
 - 优先级：LOW
 - 结论：采纳
 - 覆盖：`f_tests_abandoned_api_dockerfile`
-- 详细判断理由：仓库引用检索仅见一处文本门禁，没有构建/运行消费者。报告所称旧版/root 并不等于现行运行漏洞，但废弃交付路径应删除，避免恢复第二套私有拓扑。
-- 修复说明：确认现行脚本与 harness 无消费者后，删除该 api_runtime.Dockerfile 及其专属 dockerignore；删除只针对废弃夹具的文本断言，保留正式 API 镜像基线校验。
-- 验收标准：再次检索构建、脚本、harness 与文档无运行消费者后删除；常规正式镜像基线测试保留并通过；清理范围仅这套已废弃夹具及专属引用，不顺带删其它历史资产。
+- 详细判断理由：测试代码与脚本中未发现现行构建调用，但该 Dockerfile 仍被 test_baseline_runtime_regressions.py 的文本测试引用，且现行 supervisor_validation.md:16,19 明确指导将它构建为 CBROWSER_API_TEST_IMAGE。该镜像变量又被 e2e_env、GatewayTopologyHarness 和容器拓扑用例实际消费。因此不能写成“仅一处文本引用”“无运行消费者”；失去的是可验证的统一构建/交付关系，指南仍保留旧入口。
+- 修复说明：先验证现行正式 API 镜像及统一 harness 能满足这些 E2E 所需 API 角色，明确 CBROWSER_API_TEST_IMAGE 的生产方式与含义，再合并私有 fixture 构建入口。同步修改 supervisor_validation.md 的环境变量、构建入口与相关说明，移除被替代 Dockerfile/专属 dockerignore 及仅验证它的文本测试；不能先删文件再留下失效指南或任意删除仍被消费的镜像变量。
+- 验收标准：全仓核对脚本、测试与现行文档中的 Dockerfile 和 CBROWSER_API_TEST_IMAGE 引用，构建指令真实可执行且注入统一镜像；容器图与 API 相关 E2E 使用该入口通过。若发现不可替代运行行为，先报告差异，不以“死文件”假设强行删除。
 
 ### A32. 现行入口文档对齐依赖基线
 
@@ -569,70 +573,69 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### A35. 网络切换改为可恢复、可验证的配置事务
 
 - 来源：bundle_cross_validation, bundle_followup_q_arch_01, bundle_global_architecture, bundle_local_backend_core, bundle_local_backend_runtime_supervisor, bundle_repository_summary
-- 位置：src/backend/cbrowser/services/network_service.py:135-203; runtime_coordinator.py:1144-1190；src/backend/cbrowser/services/network_service.py:49,71-76,129-133；src/backend/cbrowser/supervisor/docker_adapter.py:1868-1887
+- 位置：api/app.py:153-158,198-202；services/network_service.py:135-202；api/runtime_coordinator.py:255,262-263,1144-1191；supervisor/core.py:2695-2755；supervisor/docker_adapter.py:1830-1898；adapters/database/repository.py:1278-1322；gateway/config.py:44-45,57-77；supervisor/operation_journal.py
 - 优先级：HIGH
 - 结论：采纳
 - 覆盖：`f_global_arch_network_switch_atomicity`, `f_backend_core_network_active_leak`, `f_supervisor_caddy_rebuild_no_rollback`
 - 决策记录：原 D1；用户在文档选择 A，采用持久化、可恢复的网络配置事务。
 - 用户决策：A（持久化配置事务）。
-- 详细判断理由：网络应用包含反向代理入口、Gateway Origin、活动 Stream 发布地址和网络策略、磁盘导出及 API 数据库多个参与面。现实现先删 Caddy、再重建 Stream，失败仅把操作标 FAILED，无法证明上一版本仍完整生效；API 重启还会遗留非终态操作。统一配置事务与恢复协议才能修正根因。该事务提供阶段可追溯、最终一致与补偿能力，不承诺多容器瞬时原子切换。
-- 修复说明：在 NetworkService、RuntimeCoordinator、Supervisor Core/DockerAdapter 与网络配置导出之间定义同一 operation_id/target_version 的幂等协议。由 API 持久化配置意图和阶段，Supervisor 只持久化自身操作事实，不访问 SQLite；Gateway 消费同一已发布版本。以下阶段和字段是实施契约要求，具体类名及数据库列由实施设计确定，不能另建竞争状态权威。
-- 实施步骤：
-    1. 接受操作前原子完成并发占用检查及新操作登记，冻结目标配置与上一已验证配置；密码只用于本次验证，不进入操作日志、恢复快照或错误文本。
-    2. prepare 阶段校验配置、目标入口占用、Caddy 配置有效性、资源归属及可恢复旧入口所需信息；每项检查记录实际结果，准备失败不破坏现行入口。
-    3. 逐资源记录应用前身份与待执行动作，执行后核对实际 Docker/服务状态再推进阶段。Caddy 必须保留可恢复旧配置、镜像与必要网络/卷配置；同端口不能同时绑定时允许有界中断，但失败必须能恢复旧入口，不能先永久删除唯一旧资源。
-    4. Stream 更新按 Profile 与运行实例围栏执行；已完成项可重放核验，旧实例、已删除 Profile 与新启动实例分别处理，不能把旧操作覆盖到后来实例。与 A3/A9 共用资源占用和清理语义。
-    5. readiness 真实核对目标入口、API/Gateway 可达性、Origin、目标版本及受影响 Stream 注册/媒体配置；没有运行中 Profile 时也必须验证控制入口。只写阶段名或收到 RPC 200 均不等于完成验收。
-    6. 用持久提交意图协调数据库已应用版本和磁盘导出；单个文件 os.replace 不等于跨数据库/文件事务。进程在任意间隙退出后，恢复逻辑能依据意图与实际状态补齐提交或执行补偿，不能暴露永久冲突的两套版本。
-    7. 任一应用/验收失败按已记录事实补偿到上一已验证版本，补偿同样幂等并执行恢复 readiness；补偿失败保留资源占用、操作事实及明确恢复状态，不能只标 FAILED 后允许下一操作覆盖现场。
-    8. API/Supervisor 重启先恢复未终结操作，再开放冲突变更；正常结束及时移除后台任务引用。取消和关闭事件有明确收尾，不把 CancelledError 当正常完成。
-- 验收标准：
-    - 覆盖 Local→LAN、LAN→Local 与自定义 HTTPS 端口切换，成功后 API/导出文件/Caddy/Gateway/全部受影响 Stream 的版本和入口一致。
-    - 在 Caddy 创建、第二个 Stream 更新、readiness、数据库与文件提交间隙、补偿过程中分别注入失败或进程中断；恢复后只能处于完整目标版本、完整旧版本，或明确可诊断的恢复未完成状态。
-    - 同 operation_id 重放不重复创建资源；并发不同操作不能同时进入应用；已正常关闭的 Profile 不被恢复动作拉起。
-    - 故障资源仍存在或 Docker 状态无法核实时，A3 的端口占用不释放；用户可通过保存的旧入口/恢复说明定位控制面。
-- 数据与回退：变更操作持久化结构前确认当前 schema 与数据备份可恢复，提供迁移/回退说明；不删除 Profile、浏览器用户数据或运行证据。不将发布脚本回滚等同数据库降级。
-- 关联范围：A1/A2/A16/A19/A21/A24/A29 为同链路接口、前端与证据配套；各条目保留独立职责，不能以其中一项通过宣布整个网络事务已完成。
+- 详细判断理由：必须区分三层证据。第一层为当前正式可达链路：app 注入 RuntimeCoordinator，受管 is_enabled 为真时，NetworkService 在 Phase 1 首次 RPC 因 A1 的未定义属性失败并记录 FAILED，尚未执行 Caddy 删除或 Stream 重建；从 UI 进入还受 A2 阻断。第二层为下游静态缺陷：Supervisor/DockerAdapter 的重建方法本身先删 Caddy 再 run，失败无恢复，NetworkService 后续步骤无跨组件补偿；它们可通过独立调用/故障注入验证，但不能作为本次正式链路已执行的事实。第三层是本文选定的未来恢复设计。A1/A2 是正式链路验证前置；修复它们不能掩盖第二层缺口，本项也不能靠当前不可达证明端到端故障已复现。
+- 修复说明：由 API/SQLite 作为网络配置、操作阶段和最终提交/放弃的唯一裁决者，在原有配置/操作记录内补足恢复字段；磁盘导出、Gateway 缓存和 Supervisor journal 均不得独立提升配置版本。各状态的权威关系与提交边界先写入契约，再实施。
+- 现状与拟定状态权威：
+
+|状态面|当前事实|本项拟定职责|
+|---|---|---|
+|API/SQLite|repository.py:1298 已规定 DB applied version 优先；同库有 pending/active operation|已提交配置与操作终局的唯一权威；配置意图、阶段、恢复方向仍存同一操作权威，不另建平行总账|
+|磁盘 applied 文件/Caddyfile|导出副本；当前 NetworkService 先写文件后记 DB，有崩溃间隙；空 DB 可从磁盘启动|由 API 决定导出的版本化快照，含 operation/generation/hash；DB 非空时不能覆盖 DB；首次空库导入只作为显式初始化事务，不在日常恢复时争夺权威|
+|Gateway Origin 缓存|gateway/config.py:44-45,63-75 按 mtime 惰性加载并保留缓存|消费 API 授权的发布快照并回执实际 generation/hash；mtime 只作重读提示，不能充当已切换证明，也不能无限保留无法核实的旧 Origin|
+|Supervisor operation_journal|本地持久命令请求/结果，用于生命周期幂等；当前网络 RPC 未接入它|执行回执及资源补偿证据，不裁决全局配置；子命令 ID 从 API 操作/阶段/资源派生，不能因旧缓存结果而跳过 Docker 实况核验|
+|Docker/运行进程|Caddy 绑定、Stream 标签/参数、注册等实际状态|用于核验和恢复的物理事实，既不替代 API 的意图，也不凭日志中 status=ok 宣布全局提交|
+
+- 执行协议（全部为拟实施要求，不是现状）：
+    1. API 在同一数据库事务中排他登记操作，冻结旧已提交配置、目标配置、operation_id 和执行代次；并发新操作被拒绝。密码不进入持久化操作或错误日志。
+    2. prepare 生成候选快照并验证配置、端口、Caddy、归属与旧入口恢复材料。候选配置有 operation 标识，不能冒充已提交 applied version；各组件准备完成后回执实际内容 hash。
+    3. API 持久推进操作后命令参与组件安装候选代次，逐资源记录结果；API/Gateway 的暂态 Origin 接纳也必须由同一活动操作明确授权，记录有效代次与清理条件。没有隐含的独立配置开关或靠 mtime 恰好变化推进流程。
+    4. 重建 Caddy 前保留足够旧镜像/配置/卷/网络/端口身份以恢复；同端口冲突可有界中断，但新建失败必须能恢复旧入口。Stream 按实例围栏逐项执行，与 A3/A9 共用清理和占用语义。
+    5. readiness 收集 Caddy 实际绑定、API/Gateway 当前激活 generation/hash、Origin 判定、Stream 实例与注册/媒体配置回执。Gateway 未 ACK、仍消费旧缓存或接口不可验证时，不允许最终提交；一次普通 health 200 不足以证明版本一致。
+    6. 满足 readiness 后，仅 API 数据库事务可提升 network.applied_version 并记录 COMMIT 决定；之后按该决定完成/核对派生导出与回执。此时崩溃只续做提交收尾，不能因客户端丢响应退回旧版本。
+    7. COMMIT 前失败由 API 持久记录 ABORT/补偿方向，命令所有已改变组件恢复旧配置，Gateway/API 同步撤销候选 Origin，并以新的执行代次确认旧内容；配置版本可回到旧值，执行代次仍递增，防止旧回执或 mtime 缓存误判。补偿失败保持恢复未完成状态，不释放仍占用端口，不让下一操作覆盖现场。
+    8. 重启恢复先读 DB 终局与活动阶段，再对照各组件回执和实况：已有 COMMIT 续完目标，有 ABORT 恢复旧配置，无终局则在排他恢复中作出并持久裁决后再执行。Supervisor/API 短暂失联不能自行猜测成功或切换恢复方向。
+- 验收标准：先复现 A1 处下游零请求；修复 A1/A2 后再执行真实链路并在 Caddy、部分 Stream、Gateway 缓存未更新、Origin 生效、DB COMMIT 前后与磁盘导出间隙注入故障/重启。验证 DB 决定唯一、Gateway ACK 可验证、旧/目标快照无永久分裂、幂等重放不碰新实例、原有端口不提前释放。
+- 依赖与回退：A1/A2/A16/A24/A29 为真实调用及契约基础，A19/A21 呈现实际阶段；DB schema 变化按项目迁移/备份规则，配置补偿不等于二进制回滚或数据库降级。该选择不承诺多容器瞬时原子，也不重新引入旧客户端兼容层。
 
 ### A36. 将 UDS 地址与可变数据根解耦
 
 - 来源：bundle_local_backend_runtime_supervisor, bundle_repository_summary
-- 位置：src/backend/cbrowser/supervisor/path_validator.py:20-44
+- 位置：supervisor/path_validator.py:20-44；supervisor/core.py:1670-1685；supervisor/control_server.py:467-490；Agent socket 创建与对应卷映射
 - 优先级：MEDIUM
 - 结论：采纳
 - 覆盖：`f_supervisor_sun_path_proc_fd_hack`
 - 决策记录：原 D3；用户在文档选择 A，建立独立且长度有界的 UDS 运行根。
 - 用户决策：A（独立短路径运行根）。
-- 详细判断理由：可变持久数据根不应决定操作系统 socket 地址能否连接。当前目录 fd 方案有防目录替换作用，不能简单删函数了事；本次重构须同时保留 Profile/实例归属及防路径逃逸。生产仅在 Linux 容器使用 UDS，目标不是新增任意宿主回退路径。
-- 修复说明：定义唯一短路径 UDS 拓扑，与长期 Profile 数据及事件目录分离；Browser Agent 创建、Supervisor HTTP/WS 消费者、Compose/动态容器挂载、路径校验和测试 harness 使用同一地址规则，移除 short_unix_socket_path 的 proc 与 cwd-relative 回退及无消费者代码。
-- 实施步骤：
-    1. 为运行实例选择受限长度标识与唯一位置，完整路径按编码后的字节数校验，计入 socket 文件名与终止符约束；不能仅限制字符数，也不能靠截断 Profile ID 造成碰撞。
-    2. 映射 Docker 宿主运行根与容器内固定短路径，启动期一次性验证可写方/只读消费方、UID/GID 与权限；Stream 不获得 Browser 用户数据或不必要控制目录。
-    3. 生产者与消费者都校验实例及路径归属，拒绝软链接、越界路径和异常 owner；短路径不替代原有安全校验。可变目录仍须具备等价防替换机制。
-    4. socket 属运行时瞬态资源，旧实例停止/替换时按身份清理，启动不会误连同 Profile 的旧实例，也不会删除其它实例 socket。
-    5. 直接切换所有现行调用方，不保留新旧双读、探测或静默回退；旧运行实例通过受管停止/重建完成切换，浏览器持久数据不迁移、不删除。
-- 验收标准：深数据根不影响真实 UDS HTTP/WS；最长合法标识仍满足实际平台路径限制；两 Profile/两实例地址不冲突；软链接逃逸、目录替换与旧实例误连负例均拒绝；健康、CDP、预览和控制通道完整通过。
-- 迁移与回退：在隔离拓扑验证后给出受影响运行实例重建清单和有界中断说明；回退恢复上一完整拓扑，不保留运行期兼容分支。
+- 详细判断理由：当前 short_unix_socket_path 不是死代码：SupervisorCore.\_agent_uds_client 在 core.py:1677 使用它，control_server.py:482 的自动化 WebSocket 也使用它。采纳的是将 UDS 地址从可变数据根解耦，同时完整迁移这些活跃消费者；“删除无消费者代码”只能是所有调用方迁完后的收尾条件。
+- 修复说明：定义生产者与 HTTP/WS 消费者共同使用的有界 socket 运行根、标识规则、挂载和归属校验。全部现行消费者迁移后再移除 proc/相对路径适配；实际依赖目录 FD 提供的防替换能力须以新拓扑下等价机制保留。
+- 切换与回退语义：
+    - 不保留长期运行的新旧地址探测、双读或静默 fallback，这是零兼容约束。
+    - 升级事务仍须 prepare：验证新挂载/路径/权限，保存旧完整镜像与拓扑，停止受影响运行实例后切换生产者和全部消费者，完成真实 UDS readiness。前置失败保留旧拓扑，切换中失败恢复旧完整部署。
+    - 部署级回滚启动上一套匹配的二进制、挂载与路径规则，不要求新代码同时识别旧地址；必要时重新创建运行实例并验证。禁止兼容分支不等于禁止恢复旧部署，与 A35 的事务恢复要求一致。
+    - 不改动持久 Profile 数据；旧实例停止与 socket 清理由受管身份限定，不能删其它实例目录。迁移有中断或数据/schema影响时须提前列清备份与恢复路径。
+- 实施步骤：限定编码后路径字节上界及标识唯一性；明确宿主根到容器短路径映射；更新 Agent 创建、Core HTTP、control_server WS、Compose/动态卷与 harness；保留实例/归属/软链接防护；迁完再删除旧适配及仅服务该适配的测试。
+- 验收标准：真实 HTTP health/control 与 WS CDP 均走新根；最长合法标识、深持久数据根、两个 Profile/实例、软链接及目录替换负例覆盖；在切换各阶段故障时恢复旧完整拓扑后旧客户端仍能连接，正常新部署没有运行期双地址 fallback。
 
-### A37. 确定 Supervisor 最小权限与 Docker 控制信任边界
+### A37. 显式收敛 Supervisor 进程权限，不宣称削弱 Docker 控制权
 
 - 来源：bundle_cross_validation, bundle_local_contracts_deploy_infra
-- 位置：config/docker/supervisor_runtime/Dockerfile:1-32; compose.yaml:71-76
+- 位置：compose.yaml:71-76；config/docker/supervisor_runtime/Dockerfile；supervisor 的直接文件归属/缓存操作与 helper 启动路径
 - 优先级：HIGH
 - 结论：采纳
 - 覆盖：`f_docker_supervisor_root_cap`
 - 决策记录：原 D4；用户在文档选择 A，保留 Supervisor 为唯一高信任 Docker 控制者并落实最小权限。
 - 用户决策：A（保留现行控制信任模型，审计并收敛权限）。
-- 详细判断理由：Docker 控制能力是本组件既定职责，完整 socket 可创建高权限容器，非 root 或 cap_drop 本身不能隔离该权能。当前缺少显式剥离与权限职责证明，需落实可验证的最小权限，而不是增加不能约束创建参数的 proxy 并宣称安全边界已经改变。
-- 修复说明：审计 Supervisor 常驻进程与短生命周期 helper 的能力需求；Compose 显式先剥离能力，再按必要操作授予最小集合，并约束写路径和提权。保留唯一 socket 持有者、API 唯一数据库写入者，不引入 socket proxy/rootless daemon 或额外常驻控制者。
-- 权限审计清单：
-    - 逐项区分由 Supervisor 进程执行的 chown/chmod/文件创建，与经 Docker 启动的 NET_ADMIN/FOWNER helper；helper 所需权限不能直接加到常驻进程作为默认能力。
-    - 以实际调用证明是否仍需 root 和哪些 capabilities，不能预先承诺全部删除，也不能沿用 Docker 默认完整集合；保留项须说明触发操作与负例验证。
-    - 对数据根、字体、引擎缓存、临时目录及 secret 挂载核对读写范围，结合 A25 消除无关凭据可读；日志不输出密钥、代理凭证或用户内容。
-    - 明确 read-only docker.sock 挂载只约束文件挂载属性，不限制 Docker API 写操作；不使用该声明作为宿主隔离证明。
-    - 审核 no-new-privileges 与明确剥离策略是否兼容入口、helper 调度及当前运行环境；验证失败要按根因调整，不能靠 privileged 或放回默认全部能力通过。
-- 验收标准：在正式镜像/编排中检查实际 User、CapDrop/CapAdd、安全选项和挂载；最小能力下新建 Profile、缓存归属、网络策略安装、停止、恢复与 readiness 全部通过；非必要文件和凭据不可读写。
-- 残余边界：Supervisor 受损仍可能通过合法 Docker 控制能力影响宿主，此项不能消除该风险。文档须如实说明，不能写成沙箱级隔离或已防逃逸；Browser/Stream 的零特权隔离要求继续独立成立。
+- 详细判断理由：现有 Compose 已有 read_only:true 与 cap_add:[FOWNER,DAC_OVERRIDE]，不能描述为“没有显式权限约束”。但 cap_add 本身只添加能力，不等于 cap_drop:[ALL] 后逐项授予；实际进程 capability 集仍须 inspect/运行测量确认。root/Docker socket 是当前高信任控制者的能力，非 root 或 cap_drop 不会限制经 Docker API 创建高权限容器的权能。
+- 采纳目的：仅审计并收敛 Supervisor 常驻进程直接持有的 Linux 权限，防止非必要直接文件/进程操作；明确它不改善“完整 Docker socket 等同宿主控制权”的信任边界，不以此声称阻止 Supervisor 受损后经 Docker 越权。初稿以 Docker 信任边界改善为题立项、用 A25 凭据成果验收，撤回。
+- 修复说明：保持用户选定的唯一高信任 Docker 控制者架构，先测现有 User/CapEff/CapBnd 与直接 chown/chmod/缓存操作需求；只有可证明存在非必要默认能力，才改为显式剥离后授予实际所需集合。helper 的 NET_ADMIN/FOWNER 按各自容器验证，不加到常驻进程；root 是否可移除由实际文件归属需求决定，不预先承诺。
+- 验收标准：提供变更前后同镜像/编排下实际 capability 差异及被删除能力的具体负例，必要归属处理、缓存初始化、helper 调度、启动/停止和恢复全链通过；不能仅检查 YAML 文本或 A25 的凭据不可读就记本项完成。若没有可安全收敛的能力，交付该结论和需求证据，不为保持“修复成果”另建服务或偷偷放回默认能力。
+- 范围与残余：只读根策略保持，新增安全选项需在当前平台验证；A25 单独负责 secret 挂载，本项不重复计功。若目标变为真正限制 Docker 控制权，必须另选可校验资源/挂载/HostConfig 的执行边界或隔离 daemon；这不在用户已选 A 的范围内。
 
 ### A38. 为真实引擎集成测试建立必跑验证通道
 
@@ -656,7 +659,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 范围边界：不新增 Linux 宿主 Chrome 支持、不交付 amd64 探针、不把容器内链路验证当作 Mac Chrome Viewer/真实 WebRTC 媒体或长期稳定性通过；R9/R10 的拒绝范围保持不变。
 - 关联范围：A16 处理生成产物完整性，A27/A28/A29/A30 处理测试真实性与可执行范围；此项只关闭真实引擎链路的必跑与证据缺口。
 
-### A39. 先验证中文文字提交边界，再确定如何删除猴子补丁
+### A39. 中立验证中文文字提交方案与依赖交付边界
 
 - 来源：bundle_cross_validation, bundle_local_backend_stream_gateway, bundle_repository_summary
 
@@ -672,45 +675,31 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 
 - 用户决策：A（先验证输入方案）。
 
-- 详细判断理由：AST 检查与私有方法动态替换确实存在，但这不能推出必须二开 Selkies。本地固定 2.2.1 wheel 的 co,end 处理先取得完整 text_to_type，再调用 \_type_text_xtest，失败才走 xdotool；文字传输不是已知故障点，历史缺陷位于 X11 键位映射与 Chromium 缓存。现行规约锁定 Native X11 且禁止用剪贴板提交，因此既往修复沿此路径展开。用户质疑复杂度后重新评估：直接派生 wheel 只是收回实现所有权，尚未证明输入架构最优；应先用真实 Chrome 比较未修改上游、当前补丁与候选文字提交方式。候选方案的焦点、地址栏、编辑器、事件语义与隐私影响未验证，不能宣称可直接替换。现有补丁不能未经验证删除。
+- 详细判断理由：静态核对确认现行客户端与服务端已有通过 co,end 提交 composition 最终文字的调用链；固定 Selkies X11 输入实现随后执行 XTest/xdotool，历史 d014/d017 记录了特定环境下的 XKB 问题。本轮未运行真实中文输入，不能据调用链宣称端到端输入已通过。Weblink 提供了另一组前端输入、传输与 Windows 注入样例。它们都不能单独证明本项目必须二开、必须新建文本协议，或必须采用零宽守卫。用户选择 A 是授权先比较方案，并未选定最后实现。
 
-- 修复说明：先建立隔离、可复现的输入路径比较，以真实 Chrome 行为确定最简单且完全满足需求的唯一正式输入方案。该项第一阶段交付是验证结论、证据与明确实施建议，不授权直接维护 Selkies 派生包、改用剪贴板、修改生产输入规约或删除现有补丁。若现行 Native X11 设计不是最佳方案，应从输入职责边界重定正式路径，不继续叠加私有 ABI 适配或多层回退。
+- 修复说明：建立中立的隔离对照，先列现行功能/安全/平台要求和可变更的旧设计约束，再按同一矩阵评价候选。每个候选都记录权限、焦点、文本语义、事件可观测性、维护/升级和工程交付要求；不因是否二开、是否使用剪贴板或是否涉及私有 ABI 预先判输，按证据和同一正式验收标准作结论。
 
-- 验证目标：本机输入法完成选词后，完整 Unicode 文本能按顺序、恰好一次地进入目标 Profile 的正确焦点位置；英文按键、修饰键与快捷键仍遵循各自语义。文字传输、焦点定位与远端提交分别观测，不能把发送成功等同文字已经正确进入 Chrome。
+- 候选范围（均未定案）：
 
-- 实施步骤：
+    - 未修改的固定 Selkies 与当前补丁分别作为基线，真实复核历史故障；不能以历史短测代替当前版本完整输入行为。
+    - 现有/新本地 IME 暂存方案、现有 co,end 或显式文本协议，分别测试；Weblink 的 DOM 取值、延后收尾、两端守卫是候选技术，不是本项目已经采用的设计。
+    - Linux 可用的成熟文字提交机制、浏览器专用接口、上游源码修复或派生包均可进入对照；记录它们对网页、富文本、地址栏、权限和输入事件的不同边界。
+    - 剪贴板方案也可在隔离测试作为对照，但当前“不用剪贴板提交”仍是生效规约；列出改规约所需的副作用与用户策略决策，不把尚未批准的正式变更当成已允许，也不在技术比较开始前把它排除。
 
-    1. 明确用户实际输入场景：网页普通输入框、密码框与多行文本、contenteditable/富文本、Chrome 地址栏与搜索框；区分网页内容和浏览器自身界面，不把只能操作网页的候选方案当成全部场景已覆盖。
-    2. 在隔离的当前固定 Selkies 2.2.1、真实 Browser/Stream/Chrome 拓扑比较未修改上游与当前补丁，复查 d014/d017 的长文本、键位池及 XKB 缓存问题；无法复现时记录环境和差异，不继续把历史现象视作所有环境下的必然故障。
-    3. 对完整文字提交消息进行脱敏观测，定位重复、丢字、错序发生在本机 composition、传输、接收还是远端注入；只保存测试样本文本与必要计数，不记录用户真实输入或剪贴板内容。
-    4. 核查当前上游公开配置与成熟输入机制，验证能够减少动态键位映射的候选路径；候选接口、所需权限及能力上界必须有源码/协议或真实实验支持。尚未验证的浏览器专用接口只列假设，不写成保证支持地址栏、受控编辑器或全部可信事件的事实。
-    5. 所有候选执行同一测试矩阵：中英混输、常用/生僻字、Emoji、组合字符、换行和长文本；选词提交、取消、重复输入、按住修饰键、快捷键、焦点切换、双页面同时连接与不同 Profile 隔离。网络中断后的重放/拒绝语义必须明确，不以盲目重发掩盖丢字。
-    6. 比较焦点正确性、内容一致性、重复/丢失/错序、应用输入事件及页面可见差异、剪贴板副作用、权限范围和输入延迟。隐私指纹变化与事件可信性需分别证实，不能仅凭 isTrusted 或检测器总分判安全。
-    7. 按“完整满足需求的最简单实现”给出唯一推荐：若未修改上游已满足要求，删除补丁前给出回归证据；若成熟独立文字提交方案更合适，明确其完整覆盖及是否需调整旧 Native X11 约束；仅在证据证明必须保留现行路线且上游存在确定缺陷时，再提出上游修复或源码派生方案，不自动执行二开。
-    8. 形成来源、环境/版本、比较结果、失败样本、未覆盖场景和可执行结论；需要长期保留的验证按项目 spike/findings 工具链登记。输入架构、权限或跨服务契约变化须在后续明确方案中同步 specs/blueprint/ADR，历史实验结论保持原语境。
+- 当前工程落点：本仓 vendor_selkies_web.py 只从锁定 wheel 提取前端资源，现有 uv.lock/requirements/Stream Dockerfile 消费上游包，没有 Selkies 服务端源码构建与派生 wheel 发布流水线。若派生包胜出，方案必须补全源码固定提交、可重现构建、包分发/哈希、依赖锁、服务端安装与前端资源同源、许可证、升级和回滚；不能说“改 wheel”已有现成工程入口。本轮不执行该构建或外部发布。
 
-- 验收标准：
+- Weblink 证据如何使用：
 
-    - 每个候选都有明确环境、代码来源、启用方式与同矩阵结果，当前补丁与未修改上游均有基线；不以 mock 输入、仅 DataChannel 收到文本或单一空白网页成功作为完整通过。
-    - 推荐方案覆盖目标焦点及 Profile 隔离，中文/Emoji/长文本内容严格一致，无重复、丢字或错序；不支持的控件或地址栏必须明确列为缺口，不能隐去。
-    - 本机 composition 取消不向远端残留拼音；中英文切换、已有选择区、光标位置与修饰键行为有真实验证；剪贴板关闭的 Profile 不因文字输入而传输或改写剪贴板。
-    - 若候选引入浏览器控制接口，说明连接、权限、焦点/目标选择与页面可观测影响；若候选依赖剪贴板，明确其与现行规约冲突及副作用，未经新决策不得作为正式路径上线。
-    - 报告明确区分“方案验证完成”“正式实现完成”和“长期压力验收完成”；当前采纳不预先宣称哪种方案获胜，也不将二开列为既定交付物。
+    - W1/W3 的 composing/finishing、DOM editor、setTimeout 收尾与零宽守卫仅列对照维度；先比较官方 Selkies 已有捕获器，不默认加第二套。验收要求是正确提交与焦点隔离，而不是必须通过某种零宽守卫实现。
+    - W2 的 64/1024 按 UTF-16 code unit 计，不是 WebRTC 标准上限；对比按不同语义长度/字节预算分包的正确性。Enter/Tab 是物理动作还是文本内容要按控件行为评测，不能机械翻译。
+    - 本地一次提交去重与跨断连交付语义分开；任何候选都验证中断、焦点变化与重复风险，不从可靠 DataChannel 推导跨重连恰好一次。
+    - W4/W5 展示 Windows 特定注入：native path 返回 Ok(false) 才进入 Unicode 路径，已返回 Err 的投递通过 `?` 传播，不重放。Linux 后端不能直接移植这些 API；这不否定派生依赖或其它成熟 Linux 输入实现作为候选。
 
-- 实施边界：现阶段保留可用生产输入路径，只在隔离验证中关闭/替换补丁；不向上游自动提交流、不发布派生 wheel、不修改用户 Profile 或真实剪贴板；不为该验证扩展公网、amd64 或其它宿主平台支持。
+- 验证矩阵：普通/密码/多行输入框、contenteditable/富文本、地址栏及浏览器搜索；中英切换、长中文、生僻字、Emoji/组合字符、用户真实零宽字符、换行/Tab、选择区/光标、撤销、快捷键、取消组合、compositionend/input 顺序交换、失焦/切 Profile/连接代次变化、分包中断、双 Viewer 与跨 Profile 隔离。必须区分本地捕获、消息传输、远端最终编辑三层结果。
 
-- Weblink 补充借鉴（W1–W5、C4/C5、P4/P5）：
+- 验收标准：交付每个可行候选的环境、代码/接口来源、同矩阵结果、权限与事件差异、未覆盖场景和可实施入口；比较前不得把任何候选技术写成“采用”。能说明不适用原因也属于有效研究结论，不强行承诺一定替换现有路径。正式方案变更另行更新 specs/blueprint/ADR 和实施范围。
 
-    - 本地 IME 层：采用“只暂存、只提交最终文字”的职责划分。以实际编辑器值为权威，在 compositionend 的最终 input 序列完成后只提交一次；失焦、切 Profile、控制权变化或连接代次失效时取消未提交组合及延后任务。`setTimeout(0)` 是收尾时序手段，不是已证明覆盖所有浏览器/输入法事件顺序的保证，须用目标 Mac Chrome 真实输入法验证。
-    - 零宽守卫仅维持本地编辑上下文。若验证确有收益，种子和光标位置可参考 W1/W3；只能去掉自身注入的边界守卫，不得全局删除用户文本中的合法 U+200B 或其它组合字符。先对照官方 Selkies 已有 composition/keyboard-input-assist 行为，禁止在宿主与 iframe 同时运行两套捕获器导致双发，也不能让隐形 textarea 抢走管理页密码框、宿主快捷键或远端输入焦点。
-    - 传输层：保留“文本提交”和“物理按键”两个语义，优先映射现有 Selkies co,end/按键协议，不因 Weblink 使用 JSON 就另建未鉴权信道。若确需新契约，明确定义可靠有序传输、长度单位、字节上限、连接/输入代次及服务端验证，并与 Schema/身份围栏同时更新。
-    - 分包层：W2 的 64/1024 是 UTF-16 code unit 数，不是 64 字节、1024 个 Unicode 字符，也不是 WebRTC 协议硬上限；本项目边界依据实际消息预算与接收端能力定案。分包不能切断 surrogate pair；超长、非法孤立 surrogate、控制字符和 channel 背压必须显式处理，不静默截断用户输入。
-    - 文本中的换行/Tab 不机械等同 Enter/Tab。后者可能触发表单提交或改变焦点，须按目标控件及现行交互契约验证；多行粘贴、Shift+Enter、富文本和地址栏行为分别判定。
-    - “单次 composition 只提交一次”限定在本地事件去重；可靠 DataChannel 不等于跨重连恰好一次执行。已发出但 ACK 不明的文字不得自动重放到新焦点/新 Profile；中断返回明确结果，避免继续排队造成重复或错投。
-    - 宿主层：Weblink 的原生 Edit/RichEdit 快路径与 KEYEVENTF_UNICODE 仅作为“文本不是扫描码”的架构证据；不把 Windows API 或 UTF-16 消息投递移植承诺写入 Linux 设计。X11 路径、成熟输入机制及浏览器专用候选分别按 A39 同矩阵验证；CDP insertText 不能先验覆盖 Chrome 地址栏或所有目标控件。
-    - 真人优先：若文字绕开现行 co,end，须让真正已提交的前台文本仍进入现有真人接管与活动分类；不复制 Weblink 排他 grant/lease 模型，不复活 CBrowser 已废弃的多 Viewer 排他租约。文本不写日志，不因 clipboard_sync=false 被改成远程粘贴。
-
-- 补充验收：除了 A39 原矩阵，再覆盖 compositionend/input 顺序交换、连续提交、失焦前后收尾、超长 UTF-16、跨包 Emoji、真实零宽字符、分包中途断连、焦点切换及两套捕获器排重。记录“接收字符串正确”与“远端编辑结果正确”两层证据，不把前端借鉴记为 XKB 问题已经解决。
+- 安全与实施边界：研究只用隔离 Profile、测试字符串和测试剪贴板，不触碰用户实际数据；记录的是当前规范与候选方案冲突、以及需用户决定的变更，不据“中立验证”授权上线任何路径。真人接管、Profile 隔离及不记录真实文本为共同要求；不默认移植 Weblink 的 grant/lease 架构，不把研究完成记成生产输入重构完成。
 
 ### A40. 会话诊断采样独立于页面渲染，只让展示叶子订阅
 
@@ -742,46 +731,46 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 结论：采纳
 - 采纳范围：采纳“复用已经编码的音视频、非阻塞有界录制旁路”的架构原则及隔离技术验证；用户提出的是未来录像需求评估，本次没有立项或授权完整会话录像产品，也不默认开启录音/录像。
 - 修复说明：先在固定依赖的隔离拓扑验证预编码样本订阅、非阻塞封装、故障隔离和受管 Artifact 交付；以结果确认稳定扩展点与实际预算，再形成正式录制功能方案，不按未经核对的 appsink 或下载子目录描述直接修改生产链路。
-- 详细判断理由：CBrowser 受纯 CPU 编码预算约束，重复抓屏/解码后编码不应成为未来录制默认方案。固定依赖已经在 pixelflux/pcmflux 回调产生预编码视频与 Opus，RTP sender 只打包，静态上存在复用编码样本的合理边界；Weblink 对编码包的有界订阅、关键帧起始和独立生命周期是可借鉴实现。尚未证明当前 Selkies 提供正式稳定的录制订阅接口、容器内 muxer 可用或实际性能预算，故必须先验证，不能直接部署私有猴子补丁。
-- 目标拓扑：单 Profile 共享捕获/编码 → 同一预编码样本边界 → 原 WebRTC RTP 发送，以及独立有界录制订阅 → 封装写入 worker → 受管临时录像 → 完成校验 → 经 Supervisor/API 登记 Artifact。录制不绑定某个 Viewer，不为每个外部页面重复编码或重复录制；媒体不绕经 API 转发。
-- 实施步骤：
-    01. 先在隔离固定镜像识别真实 codec、profile、参数集、关键帧标识、pts/dts/time_base 和原生 buffer 生命周期，验证可通过受支持的回调/组件边界订阅一次。优先编码后、RTP 分包前样本，而非从每个 Peer 收集分片；若只能取得 RTP，需完整去包、重排与样本重建，不能直接追加 RTP bytes 成 MP4/MKV。
-    02. 接口不存在或只有私有实现时，记录缺口并提出明确扩展方案，不新增运行时 AST/monkey-patch，不因本次评估自动 fork Selkies。不把 `produce_data` 内部实现存在当成已承诺稳定的插件 API。
-    03. 录制消费者使用包数和字节数双上限、单一异步封装写入者，采集/发送线程不等待磁盘或 muxer。内存引用可共享则共享；若必须复制就计入成本。队列满、磁盘慢/满或写入失败时，只终止/报错录制订阅并保留可诊断终态，不能阻塞 Viewer、无界缓存或悄悄丢帧仍标完整成功。
-    04. 从可独立解码的关键帧开始，保存 H.264/H.265 所需参数及容器 codec metadata，正确处理 NAL framing；VP8/VP9 不套用 H.264 NALU 术语。先验证实际 H.264+Opus 复用，容器候选优先满足原 codec 的 MKV；MP4 是否符合实际 codec、播放器和分段要求单独验证，不为文件扩展名自动转码。
-    05. 直接复用已编码 Opus 才能称音频也免重编码；PulseAudio 48000 Hz 只说明采样率，原始 PCM 不是 Opus，不能用采样率推出零编码开销。若需要混音、重采样或 AAC，显式标为新增编码范围并另测预算，本项不自动回退到这些路径；缺音轨与静音必须如实表达。
-    06. 使用共同单调时间基准映射音视频，处理 8/30 动态帧率、损伤驱动静止、静音门控与捕获重启；不能假定固定帧间隔或给每帧伪造 30 FPS。codec/分辨率/配置代次变更按可解码边界分段，补充必要参数；编码器重启不能让文件时间戳倒退。
-    07. 录制停止先停止接收新样本、有限排空队列、完成容器索引/尾部并校验，再原子发布；崩溃截断、未收尾和溢出录像标 partial/failed，不作为完整证据。分段长度/大小服从 Artifact 配额、磁盘保留与长会话可恢复性，不能把全部录像保存在内存。
-    08. 输出由 Supervisor 为当前 Profile/实例分配唯一受管 staging 位置，Stream 或写入 worker 仅获得必要录像目录。禁止为方便挂完整 Browser 用户数据或全量 downloads；确需新增挂载时走卷边界设计和验证，不能假设当前存在 `/exchange`。
-    09. 录像不是浏览器 CDP 下载；由显式完成事件/RPC 经 Supervisor 鉴权、路径/实例围栏和配额校验后交 API 单写者登记，复用 Artifact 元数据及下载授权，不另建平行文件总账。现有下载补登只扫直接子文件，不能靠 recordings 子目录自动入库；半文件、未知实例与越界路径拒绝。
-    10. 记录现行全后台/无 Viewer 会暂停捕获这一事实。验证阶段只证明已有媒体流的旁路能力；未来若要求无人观看时连续录制，须明确录制是否成为独立捕获消费者、8/30/CPU 配额和停录策略，再更新正式契约，不能偷偷破坏后台节流，也不能把暂停时无画面的录像称完整无人值守审计。
+- 详细判断理由：静态证据支持“编码帧可复用”这一研究方向，但固定依赖中尚无已验证稳定的独立录制订阅接口。produce_data 是 Selkies 模块内回调，不等于对外录制 API；本仓也没有把录制注册为捕获消费者。policy.py:554-573 在无活跃 Viewer 时暂停捕获，届时没有视频预编码样本。因此必须先证明接入点和捕获存续条件，不能先画一条已成立的独立录制拓扑。
+- 采纳范围：技术可行性研究与证据，不是已选定录制架构或完整会话录像功能。评估有流时的复用、无流时的边界，并提出需变更的依赖/捕获/Artifact 契约；没有稳定落点也可形成“不宜按当前条件实施”的有效结论。
+- 修复说明：按以下前置门逐项验证。前一门未通过时，后续拓扑只能列为条件方案，不能登记成当前能力或绕过失败继续写生产实现。
+- 门 1——稳定接入：定位固定版本实际编码帧与 Opus 回调，验证 codec/参数集/pts/dts/time_base、原生 buffer 所有权和可用接入机制。已有受支持接口、明确组件扩展或依赖源码扩展分别记录；produce_data 内部可见只证明数据存在，不能作为已稳定订阅。需要扩展依赖时给出维护/构建/锁定/回滚方案，是否采用由结果决定，不假设本仓已有派生流水线。
+- 门 2——捕获存续：第一组实验严格保持现行 Viewer 策略，只在已有活跃流时证明旁路封装；无 Viewer/全后台时样本停止是预期观察，不得报录制完整。若目标是无 Viewer 连续录制，必须先提出并确认“录制是否计作独立消费者”、帧率/音频/CPU 配额和生命周期新契约，再开展第二组验证。录制生命周期不由某 Viewer 对象拥有，不等于捕获可脱离所有 Viewer 持续。
+- 门 3——隔离旁路：只有门 1/2 条件满足后，才验证预编码样本→独立有界队列→封装写入 worker 的候选；采用包数/字节数上限、不可阻塞捕获/发送、溢出或慢盘只失败录制。RTP 前样本可避免去包；若仅有 RTP，须验证重排/去包/时钟及完整样本恢复。队列或 worker 不被当作已有代码落点。
+- 门 4——容器与音频：用实际 codec 决定 MKV/MP4 等候选，验证关键帧起始、参数集/NAL framing、音视频同步、8/30 变帧率、静止和静音间隙及代次切换。复用已编码 Opus 才是音频免重编码；PCM→Opus 是对该 PCM 的首次编码，若为录像另开则是新增编码开销，不称“把编码音轨重新编码”。encodedAudio 分支复用本身不编码；混音、重采样或转换原有压缩音轨需另列成本。
+- 门 5——受管存储：当前 Stream 无 /exchange，Artifact 补登不扫描 recordings 子目录。候选输出须由 Supervisor 分配最小必要 staging 挂载/写入者，完成并封装校验后经受限事件/RPC 交 API 单写者登记，保留路径/实例/配额围栏；不能直接把子目录当作现有自动登记入口。
+- 条件目标拓扑：在已验证接入机制及捕获消费者契约的前提下，单 Profile 编码样本可同时服务 RTP 与一个受管录制旁路；这是研究待证设计，不是固定依赖现有功能。无消费者捕获暂停、低权限 Stream、媒体不经 API 转发等现行契约在正式变更前保持。
 - 技术验收：
-    - 观察编码器实例/调用与采集来源，确认新增录制没有开启第二路抓屏、视频解码/编码或重复音频编码；产物可独立解复用/解码，codec 与原始样本一致，音画时钟正确。
-    - 同场景分别测“仅流媒体”与“流媒体+录制”的 CPU、内存、队列高水位、磁盘吞吐/空间、编码吞吐和 Viewer RTT/丢包/帧率；免重编码不等于零额外 CPU、零复制或零延迟，不预填性能数值。
-    - 测慢盘、满盘、队列溢出、writer 崩溃、Profile 停止、Stream-only 替换、codec/分辨率变化及主进程退出；Viewer 不被录制故障拖停，资源有界回收，完整和残缺文件区分明确。
-    - 双 Profile 路径/授权隔离与多 Viewer 共享录制验证通过；未经开启不落盘；完成事件重放幂等，旧实例事件不能覆盖当前录制，已完成录像经 Artifact 正常读取和删除。
-- 交付与未定业务项：交付真实管线接入可行性、产物样本、性能/故障矩阵及稳定扩展点建议。正式录像立项另定谁可开始/停止、默认关闭、音轨范围、持续/仅观看模式、保留/删除策略、配额与界面；本项不预选这些用户策略。录像只能证明已捕获画面，不能自动证明操作人身份、无丢帧或防篡改审计链。
-- 实施边界：本轮只写 adoption，未来验证按项目 spike 工具链隔离开展；保留 API 唯一 SQLite 写入者、Supervisor 唯一 Docker 控制者、Profile 隔离及官方 Chrome 客户端，不复制 Weblink 的 Tauri/Windows 采集栈或引入第二套流媒体架构。
+    - 明确接入机制是否稳定、是否需改依赖，以及有/无 Viewer 两类实验的差异；只完成回调探针不能报完整独立录制可用。
+    - 用编码器/采集调用证据判断是否增加新视频编码或音频编码，产物独立解复用/解码及时间戳正确；不依赖“免重编码”口号推断性能。
+    - 同场景测 CPU、内存、队列、磁盘与 Viewer 媒体指标；测慢/满盘、溢出、writer 崩溃、Stream 替换、codec/分辨率变化和退出收尾。失败片段标 partial/failed，不能宣称完整审计。
+    - 验证 Profile 授权隔离、最小挂载、完成事件幂等与 Artifact 读取/删除；不能因研究需要修改真实 Profile、真实剪贴板或生产数据。
+- 交付与未决产品条件：报告固定版本接入缺口、候选实现、实验结果、依赖/捕获契约变更清单及结论。谁可录制、持续或仅观看、是否录音、保留/配额策略仍待正式立项；本项不把这些条件预选为可上线功能。
+
+### A42. 自动化隧道登记沿用现行 token_id 主体语义
+
+- 来源：bundle_local_backend_core
+- 位置：api/v1/control_router.py:148-179；api/v1/automation_router.py:118-125,158-166；services/control_service.py:218-278；services/tunnel_registry.py:29-58
+- 优先级：LOW
+- 结论：采纳
+- 覆盖：`f_backend_core_automation_tunnel_agent_id`
+- 修订记录：撤回原 R1。原拒绝依据只按字段名推断身份定义，未核对现行控制面实现，判定错误。
+- 详细判断理由：control_router 的 claim/handoff 已把 token_id 当作 agent_instance_id 使用，automation_cdp 也用 token_id 进行隐式 claim；但相同隧道 registry.register 却写 agent_instance_id=None，丢失既有主体标识。报告建议与当前领域语义一致，不能用另行设想的“执行器实例 ID”概念拒绝它。
+- 修复说明：复用成功鉴权/claim 得到的有效 token_id，传入 API 层隧道登记的 agent_instance_id；不把原始 token、哈希或未知字符串写入记录。若存在未启用控制服务的测试/显式配置路径，同样明确取得经鉴权的 token_id，不能依赖仅在某 if 分支定义的局部变量。
+- 验收标准：从真实鉴权与控制 claim 进入隧道，registry 的 token 身份与当前 control 主体一致；两 Token、多 Profile、撤销/接管/关闭和 agent_session_id=None 语义均验证。身份缺失/鉴权失败不登记，日志与对外响应不暴露凭据值，不因本修复更改现行领域身份模型。
 
 ## 不采纳项
 
-### R1. 不把 token_id 冒充 agent_instance_id
-
-- 来源：bundle_local_backend_core
-- 位置：src/backend/cbrowser/api/v1/automation_router.py:158-166
-- 优先级：LOW
-- 结论：不采纳
-- 覆盖：`f_backend_core_automation_tunnel_agent_id`
-- 详细判断理由：token_id 是自动化凭证/主体标识，agent_instance_id 是执行器实例标识，两者不同；control_service.claim 已显式使用 token_id。简单赋值会制造错误身份与审计语义，原报告未证明实例 ID 可以从凭证推导。若后续增加 Token 审计字段，应另定义字段而非复用。
-
-### R2. 不采纳“正常重复 start 必返回 409”的断言
+### R2. 未证实 start 命令重放缺口的完整语义，不机械复制 stop 账本
 
 - 来源：bundle_local_backend_runtime_supervisor
 - 位置：src/backend/cbrowser/supervisor/core.py:2114-2235
 - 优先级：LOW
 - 结论：不采纳
 - 覆盖：`f_supervisor_start_profile_journal`
-- 详细判断理由：start_profile 在 Profile 锁内对 observed_state=running 直接返回既有 session，已具有常规重复启动语义；只有尚未完成清理的运行实例才拒绝。operation_id 在 force/reset 中另有用途，不能仅凭未调用 operations.begin 判定 start 合同缺失。跨生命周期命令重放是否需要持久结果须另立契约，当前证据不足。
+- 详细判断理由：报告论点是 start_profile 未接入持久操作账本，不能简化成“所有正常重复 start 都返回 409”。未调用 begin/complete 是事实；running session 的直接返回只证明同一活跃生命周期内的幂等，不能证明跨重启或部分启动失败的 operation_id 结果重放已经实现。409 出现在已有非 running session，是否由同 operation_id 重试触发及应否重放原结果，还需要具体时序/契约证据。
+- 当前处置：不直接采纳“在 start 入口照搬 stop 的 begin/complete”修法；先区分当前状态幂等、命令结果幂等和跨生命周期重放。如果报告要求的持久命令语义属于现行契约，应据此另行修正分类，不能以 running 分支当成永久反证。本项保留这一限制，不宣称缺口不存在或已被 reset_blocked 覆盖。
+- 不采纳理由：当前可核事实不足以定义启动中断、旧 operation_id 与新实例之间的结果保留边界，机械复制账本可能返回过时实例；不把未跑出的竞态写成已证实，也不凭方法名推定完整合同。
 
 ### R3. 不直接删除停止流程全局锁
 
@@ -792,23 +781,27 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 覆盖：`f_supervisor_stop_global_lock`
 - 详细判断理由：锁存在属实，但报告没有锁竞争测量与共享状态互斥分析；“不同 Profile 独立”不能证明共享端口、扫描和会话账本无需协调。仅删除锁不是根因级并发设计，也无法从当前证据确认这是实际性能缺陷。
 
-### R4. 不放宽注册会话身份或填占位 session_id
+### R4. 不以占位身份或放宽协议修复关闭通知，竞态结论保留
 
 - 来源：bundle_local_backend_stream_gateway
 - 位置：src/backend/cbrowser/stream_agent/agent.py:957; protocol.py:89; messaging.py:86-105
 - 优先级：MEDIUM
 - 结论：不采纳
 - 覆盖：`f_stream_agent_tunnel_close_empty_session`
-- 详细判断理由：worker 只在注册后处理，断连 finally 清空 session 再清理 worker；通知分支还有 ws.closed 与 generation 守卫，信封构造异常也已捕获。报告未证明未注册状态能走到有效通知路径，更不会按所述直接崩溃。伪造占位 ID 或放宽 min_length 会破坏围栏，拒绝该修复建议；若复现竞态，应传递 worker 原注册代次而非假身份。
+- 详细判断理由：`session_id=self.agent_session_id or ""` 与非空模型约束确实存在；报告担忧的是失败时关闭通知不能正确发出。该构造异常位于内部 try/except，不能把未通知与未捕获崩溃混为一谈。注册后才创建 worker、通知前检查 generation/ws.closed、断连 finally 清空 session 的事实支持检查时序，但单靠这些静态守卫不能穷尽取消/清理竞争，也不能证明缺陷绝不触发。
+- 当前处置：不采纳占位 session_id 或放宽信封约束。若复现有效 worker 仍需通知却丢失注册身份，应绑定 worker 创建时的真实注册代次，并验证关闭通知或明确清理结果；不能造一个能通过 Pydantic 却无领域身份的字符串。
+- 证据限制：本轮未跑出此竞态，故不把关闭通知完整性标已验证，也不以“不会崩溃”否定通知失败的价值。后续测试须覆盖 Gateway close、worker 异常与取消并发、None session 及新代次替换。
 
-### R5. 保留缺配置时 Origin 失败封闭
+### R5. 不采用固定 Origin 回退，启动配置缺失由初始化链路解决
 
 - 来源：bundle_local_backend_stream_gateway, bundle_repository_summary
 - 位置：src/backend/cbrowser/gateway/config.py:57-75
 - 优先级：MEDIUM
 - 结论：不采纳
 - 覆盖：`f_gateway_missing_applied_network_403`
-- 详细判断理由：Gateway.allowed_origins 注释明确要求从已应用版本派生；部署初始化负责预置文件。缺配置返回空列表符合失败封闭，硬编码 localhost 白名单会引入第二套权威并绕过实际端口/网络配置。初始化漂移由 A24 处理，不添加回退。
+- 详细判断理由：报告准确指出首次冷启动没有 applied 文件时 Origin 列表为空，合法 Viewer 会被拒绝；其建议是固定本机白名单回退。当前 Gateway 明确要求从已应用配置派生 Origin，部署负责提供初始版本，因此不采纳常量白名单作为第二套配置来源。不能因该安全取舍抹去冷启动可用性问题。
+- 正确去向：A24 保证初始化产物可验证且真实可供 Gateway 消费；A35 规定运行切换与缓存确认。文件缺失/损坏时应有可诊断的未就绪状态与恢复路径，不能“健康但永远 403”就称验收通过。
+- 不采纳边界：拒绝固定 Origin 回退，不是拒绝修启动流程；不推测报告意图绕过鉴权。实际端口/网络模式随配置变化，回退常量不能满足该契约。
 
 ### R6. 同步路由导入不足以证明首屏性能缺陷
 
@@ -819,14 +812,16 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 覆盖：`f_frontend_router_no_code_split`
 - 详细判断理由：同步导入属实，但报告未给构建分块、压缩体积或首屏指标，Selkies 大型官方客户端又在独立 iframe。按路由切块并非必然更优；当前没有冷启动性能缺陷或需求证据，不因抽象最佳实践新增 Suspense/加载状态。
 
-### R7. 否决“每条 SSE 重取所有 runtime”的结论
+### R7. 区分 SSE 单 Profile 失效与窗口回焦全体 stale 查询重取
 
 - 来源：bundle_local_frontend_core_shared
-- 位置：src/frontend/src/app/useRuntimeSnapshot.ts:16-21; AppLayout.tsx:95; useProfilesQuery.ts:444
+- 位置：features/profiles/useProfilesQuery.ts:444；app/useRuntimeSnapshot.ts:16-21；app/providers.tsx:55-61
 - 优先级：MEDIUM
 - 结论：不采纳
 - 覆盖：`f_frontend_runtime_snapshot_thundering_herd`
-- 详细判断理由：useRuntimeSnapshot 首次确实为各 Profile 建查询，但 SSE 只 invalidate profileKeys.runtime(event.profile_id) 与列表，不使所有 runtime key 失效；无定时 refetchInterval。报告将初始 N 次查询和逐事件全部重取混为一谈。仅读已有缓存还会漏掉未加载 Profile 的统计与错误，不能按原方案删 fetcher。
+- 详细判断理由：SSE 的 runtime 失效键限定为 event.profile_id，因此原报告“每条 SSE 必触发全部 runtime 重取”没有由此调用点得到支持；但初稿由此延伸成没有全量重取路径也错误。AppProviders 配置 staleTime=5000 与 refetchOnWindowFocus=true，useRuntimeSnapshot 为全体 Profile 挂载活跃查询；页面恢复焦点时，已 stale 的这些查询可能集中重取，初次装载也有 N 个 runtime 请求。
+- 当前处置：不采纳以错误 SSE 因果为依据的聚合接口或仅读缓存修法；保留焦点重取和初次 N 查询这一实际成本，不宣称“没有惊群/无定时轮询”即可排除它。仅消费已有缓存还可能遗漏未加载 Profile 的统计与错误，不能无证据删取数职责。
+- 验证边界：后续量化普通 SSE、SSE 初始快照、失焦超过 staleTime 后回焦、Profile 数变化时的实际请求数和状态完整性；若确认焦点重取造成问题，基于该真实触发器确定查询策略/聚合方案，不凭当前错误论证直接改全局 refetchOnWindowFocus。
 
 ### R8. 不为未定义的覆盖契约替换 cn
 
@@ -876,11 +871,11 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 ### R13. 同步状态顶层类型缺失为误报
 
 - 来源：bundle_local_repo_template_toolchain
-- 位置：.repo_template/scripts/template_sync/state.py:27-38
+- 位置：.repo_template/scripts/template_sync/state.py:14-16；.repo_template/scripts/template_sync/common.py:34-49
 - 优先级：LOW
 - 结论：不采纳
 - 覆盖：`f_tool_sync_state_json_type_check`
-- 详细判断理由：state.read_state 经 common.\_load_json_object 读取；该 helper 已验证 isinstance(data, dict)，否则抛带恢复指引的 SyncError。报告忽略公共 helper，不需重复校验。
+- 详细判断理由：read_state 在 state.py:14-16 调用 common.\_load_json_object，后者 common.py:34-49 检查顶层是否 dict，非对象则抛带恢复指引的 SyncError。结论为误报，但初稿仅列 state.py:27-38 不能指向该证据，现补齐真实调用与实现位置，不重复添加类型断言。
 
 ### R14. 真实锚点导航符合当前明确契约
 
@@ -933,9 +928,10 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - 位置：固定 Selkies 2.2.1 WebRTC 编码回调、Stream volume 及 Artifact 管理链路。
 - 优先级：MEDIUM
 - 结论：不采纳
-- 详细判断理由：提案把可借鉴的编码包复用，扩大成了尚不存在的 GStreamer tee/appsink 接口、已挂载下载目录和绝对零开销承诺。源码/锁定 wheel 显示当前 WebRTC 路径是 pixelflux/pcmflux→预编码样本→RTP 打包；Stream 无 /exchange，Artifact 扫描也不遍历 recordings 子目录。MP4/MKV 需要编码参数、样本边界、时钟与收尾；Weblink 自身也有 PCM/音轨重新编码分支。直接按描述落地会跨错组件边界并绕过配额/登记。
-- 不采纳内容：不新增第二路无头抓屏/解码再编码作为默认，不将 RTP bytes 直接拼文件，不把 48 kHz PCM 当已编码音频，不承诺零 CPU/零延迟，不为了套 GStreamer 图额外替换当前已可复用的编码管线，不把 /exchange/downloads/recordings 当作当前可写且自动受管的目录。
-- 正确去向：A41 单独采纳编码样本旁路与有界生命周期并安排技术验证；可验证的额外成本与存储契约必须写明。本项不是否决未来录像，也不是要求引入一套通用录像平台。
+- 详细判断理由：提案的编码复用原则值得研究，但字面实现依赖未经证明的接口与存储前提。当前锁定 WebRTC 路径为 pixelflux/pcmflux 产出编码样本后打包 RTP，produce_data 是内部回调，Stream 无 /exchange；Artifact 也不自动扫描 recordings 子目录。容器还需要参数集、样本边界、时间戳和正确收尾，不能把已有 RTP bytes 直接当文件内容。
+- 音频术语更正：W9 的 encodedAudio 分支复用压缩包，不做编码；PCM/MediaStreamAudioTrackSource 分支生成 Opus，属于对应原始音频的编码，不能笼统叫“音轨重新编码”。若从已存在的压缩音轨解码再编码才属于重编码；为录像另开 PCM 编码路径虽非重编码，仍是新增 CPU 编码成本。
+- 不采纳内容：不承诺零 CPU/零复制/零延迟，不按未验证的 GStreamer appsink 或固定下载子目录直接接线，也不把 48 kHz 采样率当已编码证明；默认再抓屏解码再编码不能被包装成免重编码方案。
+- 正确去向：A41 先过稳定接入与捕获存续两道前置验证门。R18 拒绝不成立的具体前提，不否定未来采用已验证封装组件或其它可满足需求的实现。
 
 ## 实施组织与验证要求
 
@@ -945,11 +941,11 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 |---|---|---|
 |网络应用完整链路|A1、A2、A16、A19、A21、A24、A29、A35|先统一接口与配置权威，再做实际切换、故障补偿、重启恢复；前端仅反映真实操作结果|
 |容器生命周期与占用|A3、A8、A9、A11、A15|统一实例围栏及清理语义；与网络补偿共享资源占用事实，不能靠删除 session 假装清理完成|
-|安全边界|A4、A10、A14、A25、A37|分别验证来源可信度、双栈最小出站、凭据读取/挂载及高信任控制权限，不互相替代安全证明|
+|安全边界|A4、A10、A14、A25、A37、A42|限流桶按模块验证；进程能力收敛不宣称削弱 Docker 权能；凭据挂载和隧道身份分别验收|
 |运行控制与 UDS|A12、A13、A36|先明确唯一运行地址和会话生命周期；验证真实健康/CDP/控制/预览消费者|
 |前端契约与生命周期|A6、A17、A18、A20、A22、A23|保留现行导航与多页面语义；错误、终态和旧异步回调均可观测且可恢复|
 |测试与交付真实性|A5、A26、A27、A28、A30、A31、A38|分别保持实际产品覆盖、镜像依赖闭包、资源隔离及必跑证据，不用文本断言代替真实行为|
-|中文输入方案验证|A39、R17|纳入 Weblink 本地 IME 与有界文本语义；Linux 注入单独验证，不默认派生 Selkies或移植 Windows API|
+|中文输入方案验证|A39、R17|Weblink 技术列入同矩阵候选，不预设暂存/零宽守卫胜出；依赖二开、剪贴板等按相同标准比较，当前规约变更需另行定案|
 |诊断采样与渲染|A40|与 A20/A23 统一会话代次和类型；采样共享、叶子订阅，保持首帧/恢复判定|
 |免重编码录制验证|A41、R18|先验证真实编码样本旁路和 Artifact 边界；不默认实现完整录像、不承诺零 CPU|
 |现行文档修正|A32、A33、A34|随对应实现同步核对 blueprint/specs/ADR 传播，保留历史事实，遵守 R15/R16 暂缓边界|
@@ -959,6 +955,33 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 - schema、TypeScript、设计 token 等派生产物均从权威源生成；检查型门禁不得改写受跟踪文件。所有调试与一次性材料只写已忽略目录或正式登记 spike 工作区。
 - 数据/运行拓扑改变前准备可恢复备份、受影响实例清单与回退方式；生产数据不因“零兼容”直接删除。发布、外部 issue、push 均需已有明确授权，本文未提供这些授权。
 - A 项“采纳”表示方案进入后续实施范围，不表示已经完成。R 项“暂缓”保留问题状态；A39 已选择先验证输入方案，验收对象首先是可信的方案结论，不能以探针完成冒充输入重构已交付。
+
+## 本轮复核修订记录
+
+本次按用户逐条复核意见修订，不将文档修订视为代码修复。事实、当前可达路径、潜在下游缺陷和拟定设计分别标明。
+
+|复核点|修订与证据|去向|
+|---|---|---|
+|A35 与 A1 现状冲突|正式注入链在首次受管 RPC 抛 AttributeError；删除 Caddy/重建 Stream 只作下游静态缺陷，正式故障验证依赖 A1/A2|A1、A35|
+|R1 错误身份假设|control_router 及隐式 claim 已用 token_id；撤回 R1，沿用现行主体语义|A42|
+|A4 混用反证对象|控制面 source-only、Viewer source/profile、注册 source-only 分开，补注册路径与全局预算区别|A4|
+|录制订阅/无 Viewer 前提|produce_data 无稳定外部订阅证明，现行无活跃 Viewer 即暂停；先验证接入与捕获条件，独立拓扑标为条件方案|A41|
+|输入验证预设胜负|把 Weblink 暂存/守卫改为候选；二开、剪贴板、私有接口与其它方案按共同标准比较，区分当前规范与可提议变更|A39|
+|UDS 双读与回滚混淆|禁止长期运行兼容，不禁止部署事务恢复旧完整镜像/挂载；列明 Core HTTP 与 control_server WS 是活跃消费者|A36|
+|权限手段/收益错位|已有只读根和 cap_add 如实保留；只测直接进程 capability 收敛，不声称约束 Docker socket；A25 不重复计功|A37|
+|网络多份状态无裁决|API/DB 为唯一终局决定者；文件派生、Gateway 缓存/ACK、Supervisor 回执各有职责，COMMIT 前后恢复方向明确|A35|
+|私有 API 镜像引用漏指南|指南与 CBROWSER_API_TEST_IMAGE 实际消费者纳入替换范围，先打通统一镜像交付再删除旧入口|A31|
+|R13 行号不支持结论|补 state.py:14-16 调用与 common.py:34-49 对象校验证据|R13|
+|any 范围低估|当前 adapter 14 处 any 列清并按整个实际接口边界验收|A23|
+|全局回焦重取遗漏|补 staleTime/refetchOnWindowFocus 与全 Profile 活跃查询组合；不再从 SSE 单键失效推断无全局重取|R7|
+|退出 health 反证错位|running health 无法覆盖 exited/dead/not_found；撤回“所有正常退出”归约，针对报告原路径修复|A8|
+|稻草人措辞|R2 分清命令/状态幂等；R4 分清通知与崩溃；R5 保留冷启动可用性问题；A26 删除自设的凭据泄漏靶子|R2、R4、R5、A26|
+|PCM 编码/重编码术语|encodedAudio 复用不编码，PCM→Opus 是对应原始音频编码；另开编码仍有新增成本|W9、A41、R18|
+|Windows fallback 摘要过宽|Ok(false) 才转 Unicode；进入投递后返回 Err 的超时和其它错误都经 ? 传播，不能统称非超时失败均回退|W4/W5、A39|
+|W10 证据越界|仅归因参数集/NAL 转换，全链封装结合 W7–W9|W10|
+|框架证据单薄|追加固定提交 apps/web/package.json，结论限定所核对 web 应用入口/构建，不覆盖整个 monorepo|W12|
+
+未新增生产代码、未跑故障注入/录制/输入性能实验，不将这些条件方案写成已验证能力。原 73 条 finding 重新按当前根层报告定位行号，finding ID 和源文件保持不变；R1→A42 的改判不改变原 finding 总量。
 
 ## 本轮校验
 
@@ -970,5 +993,5 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R1�
 
 ## 审批状态
 
-- 当前：原选择已全部回填；用户要求的 Weblink 补充评估已写入 A39/A40/A41、R17/R18，全文 41 项采纳、18 项不采纳、0 项待决定；等待用户审批更新后的整份文档。选择确认不等于审批，不提交 review 目录，不实施采纳项。
+- 当前：原选择已全部回填；用户要求的 Weblink 补充评估已写入 A39/A40/A41、R17/R18，全文 42 项采纳、17 项不采纳、0 项待决定；本轮复核已修订，等待用户审阅更新后的整份文档。选择确认不等于审批，不提交 review 目录，不实施采纳项。
 - 审批归档与采纳项实施分开确认。
