@@ -11,7 +11,15 @@
 !src/
 !src/backend/
 !src/backend/cbrowser/
-!src/backend/cbrowser/**
+!src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/launch_args.py
+!src/backend/cbrowser/preview.py
+!src/backend/cbrowser/domain/
+!src/backend/cbrowser/domain/*.py
+!src/backend/cbrowser/font_sets/
+!src/backend/cbrowser/font_sets/*.py
+!src/backend/cbrowser/runtime_agent/
+!src/backend/cbrowser/runtime_agent/*.py
 
 **/__pycache__
 **/*.pyc
