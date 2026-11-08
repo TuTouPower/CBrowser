@@ -3348,11 +3348,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object",
-                  "title": "Response Update Network Settings Api V1 Network Settings Put"
+                  "$ref": "#/components/schemas/NetworkSettingsUpdateResponse"
                 }
               }
             }
@@ -3583,9 +3579,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Check Disconnect Api V1 Network Check Disconnect Get"
+                  "$ref": "#/components/schemas/NetworkDisconnectCheckResponse"
                 }
               }
             }
@@ -7275,6 +7269,37 @@
           "admin_password"
         ],
         "title": "NetworkApplyRequest"
+      },
+      "NetworkDisconnectCheckResponse": {
+        "properties": {
+          "will_disconnect": {
+            "type": "boolean",
+            "title": "Will Disconnect"
+          },
+          "new_entry_url": {
+            "type": "string",
+            "title": "New Entry Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "will_disconnect",
+          "new_entry_url"
+        ],
+        "title": "NetworkDisconnectCheckResponse"
+      },
+      "NetworkSettingsUpdateResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "ok"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NetworkSettingsUpdateResponse"
       },
       "ProfileControlStateData": {
         "properties": {

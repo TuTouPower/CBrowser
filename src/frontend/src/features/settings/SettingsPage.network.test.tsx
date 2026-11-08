@@ -1,19 +1,25 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
 import { I18nProvider } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ApiClientContext } from "../../shared/api/client_context";
-import type { ApiClient } from "../../shared/api/client";
+import { ApiClient } from "../../shared/api/client";
 
 function renderWithProviders(client: ApiClient) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     <I18nProvider>
       <ThemeProvider>
-        <ApiClientContext.Provider value={client}>
-          <SettingsPage />
-        </ApiClientContext.Provider>
+        <QueryClientProvider client={queryClient}>
+          <ApiClientContext.Provider value={client}>
+            <SettingsPage />
+          </ApiClientContext.Provider>
+        </QueryClientProvider>
       </ThemeProvider>
     </I18nProvider>
   );
@@ -23,46 +29,50 @@ describe("SettingsPage Network Access Block", () => {
   let mockClient: any;
 
   beforeEach(() => {
-    mockClient = {
-      health: { check: vi.fn().mockResolvedValue({ status: "healthy" }) },
-      request: vi.fn().mockImplementation((path: string, options?: any) => {
-        if (path === "/api/v1/font-sets") {
-          return Promise.resolve([]);
+    mockClient = new ApiClient();
+    vi.spyOn(mockClient, "request").mockImplementation((...args: unknown[]) => {
+      const path = args[0] as string;
+      const options = args[1] as { method?: string } | undefined;
+      if (path === "/api/v1/font-sets") {
+        return Promise.resolve([]);
+      }
+      if (path === "/api/v1/network/settings") {
+        if (options?.method === "PUT") {
+          return Promise.resolve({ status: "ok" });
         }
-        if (path === "/api/v1/network/settings") {
-          if (options?.method === "PUT") {
-            return Promise.resolve({ status: "ok" });
-          }
-          return Promise.resolve({
-            pending_config: { lan_access_enabled: false, lan_advertised_ip: null },
-            applied_version: {
-              version: 1,
-              config: { lan_access_enabled: false, lan_advertised_ip: null },
-              applied_at: "2026-11-08T00:00:00+08:00",
-              caddyfile_sha256: "",
-              origin_whitelist: ["https://127.0.0.1:56661"],
-            },
-            active_operation: null,
-          });
-        }
-        if (path === "/api/v1/network/check-disconnect") {
-          return Promise.resolve({
-            will_disconnect: false,
-            new_entry_url: "https://127.0.0.1:56661",
-          });
-        }
-        if (path === "/api/v1/network/apply") {
-          return Promise.resolve({
-            operation_id: "op-test-1",
-            target_version: 2,
-            phase: "rebuilding_caddy",
-            created_at: "2026-11-08T00:00:00+08:00",
-            updated_at: "2026-11-08T00:00:00+08:00",
-          });
-        }
-        return Promise.resolve({});
-      }),
-    };
+        return Promise.resolve({
+          pending_config: { lan_access_enabled: false, lan_advertised_ip: null },
+          applied_version: {
+            version: 1,
+            config: { lan_access_enabled: false, lan_advertised_ip: null },
+            applied_at: "2026-11-08T00:00:00+08:00",
+            caddyfile_sha256: "",
+            origin_whitelist: ["https://127.0.0.1:56661"],
+          },
+          active_operation: null,
+        });
+      }
+      if (path === "/api/v1/network/check-disconnect") {
+        return Promise.resolve({
+          will_disconnect: false,
+          new_entry_url: "https://127.0.0.1:56661",
+        });
+      }
+      if (path === "/api/v1/network/apply") {
+        return Promise.resolve({
+          operation_id: "op-test-1",
+          target_version: 2,
+          phase: "rebuilding_caddy",
+          created_at: "2026-11-08T00:00:00+08:00",
+          updated_at: "2026-11-08T00:00:00+08:00",
+        });
+      }
+      return Promise.resolve({});
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders network access settings and displays applied status", async () => {

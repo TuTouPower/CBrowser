@@ -23,6 +23,14 @@ export type ProxyCreateRequest = Schemas["ProxyCreateRequest"];
 export type ProxyUpdateRequest = Schemas["ProxyUpdateRequest"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
+export type NetworkApplyPhase = Schemas["NetworkApplyPhase"];
+export type NetworkAccessConfig = Schemas["NetworkAccessConfig"];
+export type AppliedNetworkAccessVersion = Schemas["AppliedNetworkAccessVersion"];
+export type NetworkApplyOperation = Schemas["NetworkApplyOperation"];
+export type NetworkAccessSettingsResponse = Schemas["NetworkAccessSettingsResponse"];
+export type NetworkApplyRequest = Schemas["NetworkApplyRequest"];
+export type NetworkSettingsUpdateResponse = Schemas["NetworkSettingsUpdateResponse"];
+export type NetworkDisconnectCheckResponse = Schemas["NetworkDisconnectCheckResponse"];
 
 export type ApiPaths = paths;
 

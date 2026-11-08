@@ -1087,6 +1087,21 @@ export interface components {
             /** Admin Password */
             admin_password: string;
         };
+        /** NetworkDisconnectCheckResponse */
+        NetworkDisconnectCheckResponse: {
+            /** Will Disconnect */
+            will_disconnect: boolean;
+            /** New Entry Url */
+            new_entry_url: string;
+        };
+        /** NetworkSettingsUpdateResponse */
+        NetworkSettingsUpdateResponse: {
+            /**
+             * Status
+             * @default ok
+             */
+            status: string;
+        };
         /**
          * ProfileControlStateData
          * @description Human-priority control state for one profile (t031, ADR 019).
@@ -4095,9 +4110,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
+                    "application/json": components["schemas"]["NetworkSettingsUpdateResponse"];
                 };
             };
             /** @description Authentication required */
@@ -4280,9 +4293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["NetworkDisconnectCheckResponse"];
                 };
             };
             /** @description Authentication required */

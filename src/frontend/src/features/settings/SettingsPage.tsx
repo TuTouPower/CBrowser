@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   Globe,
@@ -11,52 +12,18 @@ import {
 import { useI18n } from "../../i18n";
 import { useTheme, type ThemePreference } from "../../theme";
 import { useApiClient } from "../../shared/api/client_context";
+import type {
+  NetworkAccessConfig,
+  NetworkApplyOperation,
+  NetworkApplyRequest,
+} from "../../shared/api/types";
 import { Banner, Button, Select, StatusBadge } from "../../shared/ui";
-
-interface NetworkAccessConfig {
-  lan_access_enabled: boolean;
-  lan_advertised_ip?: string | null;
-  https_port?: number;
-}
-
-interface AppliedNetworkAccessVersion {
-  version: number;
-  config: NetworkAccessConfig;
-  applied_at: string;
-  caddyfile_sha256: string;
-  origin_whitelist: string[];
-}
-
-interface NetworkApplyOperation {
-  operation_id: string;
-  target_version: number;
-  phase: string;
-  error_reason?: string | null;
-  new_entry_url?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-interface NetworkSettingsResponse {
-  pending_config: NetworkAccessConfig;
-  applied_version: AppliedNetworkAccessVersion;
-  active_operation?: NetworkApplyOperation | null;
-}
-
-interface FontSetIntegrity {
-  ok: boolean;
-  problems?: string[];
-}
-
-interface FontSetInfo {
-  platform: string;
-  set_id: string;
-  source?: string | null;
-  source_version?: string | null;
-  integrity: FontSetIntegrity;
-  file_count: number;
-  used_by_count: number;
-}
+import { useFontSetsQuery } from "../profiles/useProfilesQuery";
+import {
+  isTerminalOperation,
+  useNetworkOperationPolling,
+} from "./useNetworkOperationPolling";
+import { networkKeys, useNetworkSettingsQuery } from "./useNetworkQueries";
 
 function Section({
   icon,
@@ -87,15 +54,18 @@ export function SettingsPage() {
   const { locale, setLocale, t } = useI18n();
   const { preference, setPreference } = useTheme();
   const client = useApiClient();
+  const queryClient = useQueryClient();
+  const settingsQuery = useNetworkSettingsQuery(client);
+  const fontSetsQuery = useFontSetsQuery(client);
+  const netSettings = settingsQuery.data ?? null;
+  const fontSets = fontSetsQuery.data ?? null;
+  const fontSetsError = fontSetsQuery.isError;
+  const formSeededRef = useRef(false);
+  const formDirtyRef = useRef(false);
   const [healthStatus, setHealthStatus] = useState<
     "checking" | "healthy" | "error"
   >("checking");
-  const [fontSets, setFontSets] = useState<FontSetInfo[] | null>(null);
-  const [fontSetsError, setFontSetsError] = useState(false);
-
-  // Network access state (t042)
-  const [netSettings, setNetSettings] = useState<NetworkSettingsResponse | null>(null);
-  const [netError, setNetError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [lanEnabled, setLanEnabled] = useState(false);
   const [lanIp, setLanIp] = useState("");
   const [httpsPort, setHttpsPort] = useState(56661);
@@ -103,109 +73,37 @@ export function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [applyState, setApplyState] = useState<"idle" | "applying" | "success" | "error">("idle");
+  const [applyState, setApplyState] = useState<
+    "idle" | "applying" | "success" | "error" | "disconnected"
+  >("idle");
   const [applyErrorMsg, setApplyErrorMsg] = useState<string | null>(null);
   const [disconnectNotice, setDisconnectNotice] = useState<string | null>(null);
+  const [trackedOperation, setTrackedOperation] = useState<NetworkApplyOperation | null>(null);
+  const [entryUrl, setEntryUrl] = useState<string | null>(null);
+  const [lastPhase, setLastPhase] = useState<string | null>(null);
+
+  const netError =
+    actionError ??
+    (settingsQuery.error ? settingsQuery.error.message : null);
+  const activeOperation = settingsQuery.data?.active_operation ?? null;
 
   useEffect(() => {
-    let active = true;
-    client
-      .request<NetworkSettingsResponse>("/api/v1/network/settings")
-      .then((res) => {
-        if (active) {
-          setNetSettings(res);
-          setLanEnabled(res.pending_config.lan_access_enabled);
-          setLanIp(res.pending_config.lan_advertised_ip ?? "");
-          setHttpsPort(res.pending_config.https_port ?? 56661);
-        }
-      })
-      .catch((err) => {
-        if (active) setNetError(err?.message ?? "Failed to load network settings");
-      });
-    return () => {
-      active = false;
-    };
-  }, [client]);
+    const data = settingsQuery.data;
+    if (!data || formSeededRef.current) return;
+    formSeededRef.current = true;
+    if (formDirtyRef.current) return;
+    setLanEnabled(data.pending_config.lan_access_enabled);
+    setLanIp(data.pending_config.lan_advertised_ip ?? "");
+    setHttpsPort(data.pending_config.https_port ?? 56661);
+  }, [settingsQuery.data]);
 
-  const handleSaveNetwork = async () => {
-    setSavingNet(true);
-    setSaveSuccess(false);
-    setNetError(null);
-    try {
-      await client.request("/api/v1/network/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          lan_access_enabled: lanEnabled,
-          lan_advertised_ip: lanEnabled ? lanIp.trim() : null,
-          https_port: Number(httpsPort) || 56661,
-        }),
-      });
-      setSaveSuccess(true);
-      const updated = await client.request<NetworkSettingsResponse>("/api/v1/network/settings");
-      setNetSettings(updated);
-    } catch (e: any) {
-      setNetError(e?.message ?? "Failed to save network configuration");
-    } finally {
-      setSavingNet(false);
-    }
-  };
-
-  const handleOpenApply = async () => {
-    setNetError(null);
-    setApplyErrorMsg(null);
-    try {
-      const check = await client.request<{ will_disconnect: boolean; new_entry_url: string }>(
-        "/api/v1/network/check-disconnect"
-      );
-      if (check.will_disconnect) {
-        setDisconnectNotice(check.new_entry_url);
-      } else {
-        setDisconnectNotice(null);
-      }
-    } catch {
-      setDisconnectNotice(null);
-    }
-    setShowApplyModal(true);
-  };
-
-  const handleConfirmApply = async () => {
+  useEffect(() => {
+    if (applyState !== "idle") return;
+    if (!activeOperation || isTerminalOperation(activeOperation)) return;
+    setTrackedOperation(activeOperation);
+    setEntryUrl((prev) => activeOperation.new_entry_url ?? prev);
     setApplyState("applying");
-    setApplyErrorMsg(null);
-    try {
-      const op = await client.request<NetworkApplyOperation>("/api/v1/network/apply", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ admin_password: adminPassword }),
-      });
-      setAdminPassword("");
-      setShowApplyModal(false);
-
-      // Poll operation until finished
-      const pollTimer = setInterval(async () => {
-        try {
-          const cur = await client.request<NetworkApplyOperation>(
-            `/api/v1/network/operations/${op.operation_id}`
-          );
-          if (cur.phase === "completed") {
-            clearInterval(pollTimer);
-            setApplyState("success");
-            const refreshed = await client.request<NetworkSettingsResponse>("/api/v1/network/settings");
-            setNetSettings(refreshed);
-          } else if (cur.phase === "failed") {
-            clearInterval(pollTimer);
-            setApplyState("error");
-            setApplyErrorMsg(cur.error_reason ?? "Application failed");
-          }
-        } catch {
-          // Keep polling or network changing
-        }
-      }, 1000);
-    } catch (e: any) {
-      setApplyState("error");
-      setApplyErrorMsg(e?.message ?? "Failed to initiate apply operation");
-    }
-  };
+  }, [activeOperation, applyState]);
 
   useEffect(() => {
     let active = true;
@@ -222,20 +120,82 @@ export function SettingsPage() {
     };
   }, [client]);
 
-  useEffect(() => {
-    let active = true;
-    client
-      .request<FontSetInfo[]>("/api/v1/font-sets")
-      .then((sets) => {
-        if (active) setFontSets(sets);
-      })
-      .catch(() => {
-        if (active) setFontSetsError(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [client]);
+  const handleSaveNetwork = async () => {
+    setSavingNet(true);
+    setSaveSuccess(false);
+    setActionError(null);
+    try {
+      const config: NetworkAccessConfig = {
+        lan_access_enabled: lanEnabled,
+        lan_advertised_ip: lanEnabled ? lanIp.trim() : null,
+        https_port: Number(httpsPort) || 56661,
+      };
+      await client.network.updateSettings(config);
+      setSaveSuccess(true);
+      queryClient.invalidateQueries({ queryKey: networkKeys.settings() });
+    } catch (e: any) {
+      setActionError(e?.message ?? "Failed to save network configuration");
+    } finally {
+      setSavingNet(false);
+    }
+  };
+
+  const handleOpenApply = async () => {
+    setActionError(null);
+    setApplyErrorMsg(null);
+    try {
+      const check = await client.network.checkDisconnect();
+      if (check.will_disconnect) {
+        setDisconnectNotice(check.new_entry_url);
+      } else {
+        setDisconnectNotice(null);
+      }
+    } catch {
+      setDisconnectNotice(null);
+    }
+    setShowApplyModal(true);
+  };
+
+  const handleConfirmApply = async () => {
+    setApplyState("applying");
+    setApplyErrorMsg(null);
+    try {
+      const body: NetworkApplyRequest = { admin_password: adminPassword };
+      const op = await client.network.apply(body);
+      setAdminPassword("");
+      setShowApplyModal(false);
+      setEntryUrl(op.new_entry_url ?? disconnectNotice);
+      setLastPhase(null);
+      setTrackedOperation(op);
+    } catch (e: any) {
+      setApplyState("error");
+      setApplyErrorMsg(e?.message ?? "Failed to initiate apply operation");
+    }
+  };
+
+  useNetworkOperationPolling(
+    (id, signal) => client.network.getOperation(id, signal),
+    trackedOperation,
+    {
+      onCompleted: (op) => {
+        setApplyState("success");
+        setEntryUrl((prev) => op.new_entry_url ?? prev);
+        setTrackedOperation(null);
+        queryClient.invalidateQueries({ queryKey: networkKeys.settings() });
+      },
+      onFailed: (op) => {
+        setApplyState("error");
+        setApplyErrorMsg(op.error_reason ?? "Application failed");
+        setTrackedOperation(null);
+      },
+      onDeadline: (lastKnown) => {
+        setApplyState("disconnected");
+        setLastPhase(lastKnown.phase);
+        setEntryUrl((prev) => lastKnown.new_entry_url ?? prev);
+        setTrackedOperation(null);
+      },
+    },
+  );
 
   const themeOptions = [
     { value: "system", label: t("themeSystem") },
@@ -308,7 +268,6 @@ export function SettingsPage() {
           />
         </Section>
 
-        {/* Network Access Section (t042) */}
         <Section
           icon={<Network aria-hidden="true" className="h-5 w-5" />}
           title={t("networkAccess")}
@@ -327,7 +286,18 @@ export function SettingsPage() {
             )}
             {applyState === "success" && (
               <Banner testId="network-apply-success">
-                {t("applySuccess")}
+                <div className="flex flex-col gap-xs">
+                  <span>{t("applySuccess")}</span>
+                  {entryUrl && (
+                    <a
+                      data-testid="network-apply-entry-link"
+                      href={entryUrl}
+                      className="font-mono text-mono-md text-on-surface underline"
+                    >
+                      {entryUrl}
+                    </a>
+                  )}
+                </div>
               </Banner>
             )}
             {applyState === "error" && applyErrorMsg && (
@@ -335,8 +305,41 @@ export function SettingsPage() {
                 {t("applyFailed", { reason: applyErrorMsg })}
               </Banner>
             )}
+            {applyState === "disconnected" && (
+              <Banner tone="warning" testId="network-apply-disconnected">
+                <div className="flex flex-col gap-xs">
+                  <span className="font-ui text-label-md text-on-surface">
+                    {t("disconnectWarningTitle")}
+                  </span>
+                  <span className="font-ui text-body-sm text-on-surface-muted">
+                    {t("applyFailed", { reason: t("healthUnreachable") })}
+                  </span>
+                  {lastPhase && (
+                    <span
+                      data-testid="network-last-phase"
+                      className="font-mono text-mono-md text-on-surface"
+                    >
+                      {lastPhase}
+                    </span>
+                  )}
+                  {entryUrl && (
+                    <>
+                      <span className="font-ui text-body-sm text-on-surface-muted">
+                        {t("disconnectWarningDesc", { url: entryUrl })}
+                      </span>
+                      <a
+                        data-testid="network-reconnect-link"
+                        href={entryUrl}
+                        className="font-mono text-mono-md text-on-surface underline"
+                      >
+                        {entryUrl}
+                      </a>
+                    </>
+                  )}
+                </div>
+              </Banner>
+            )}
 
-            {/* Current Applied Status vs Pending */}
             <div className="flex flex-wrap items-center justify-between gap-sm rounded-md border border-outline bg-surface-subtle p-md font-ui text-body-sm">
               <div className="flex flex-col gap-xs">
                 <span className="font-ui text-label-md text-on-surface-muted">
@@ -360,14 +363,16 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Toggle and IP Input */}
             <div className="flex flex-col gap-sm">
               <label className="flex items-center gap-sm font-ui text-body-md text-on-surface">
                 <input
                   type="checkbox"
                   data-testid="lan-access-toggle"
                   checked={lanEnabled}
-                  onChange={(e) => setLanEnabled(e.target.checked)}
+                  onChange={(e) => {
+                    formDirtyRef.current = true;
+                    setLanEnabled(e.target.checked);
+                  }}
                   className="h-4 w-4 rounded border-outline accent-accent"
                 />
                 {t("lanAccessToggle")}
@@ -383,7 +388,10 @@ export function SettingsPage() {
                     type="text"
                     data-testid="lan-ip-input"
                     value={lanIp}
-                    onChange={(e) => setLanIp(e.target.value)}
+                    onChange={(e) => {
+                      formDirtyRef.current = true;
+                      setLanIp(e.target.value);
+                    }}
                     placeholder={t("lanAdvertisedIpPlaceholder")}
                     className="max-w-hint rounded-md border border-outline bg-surface px-sm py-1 font-mono text-mono-md text-on-surface"
                   />
@@ -399,7 +407,10 @@ export function SettingsPage() {
                   type="number"
                   data-testid="https-port-input"
                   value={httpsPort}
-                  onChange={(e) => setHttpsPort(Number(e.target.value))}
+                  onChange={(e) => {
+                    formDirtyRef.current = true;
+                    setHttpsPort(Number(e.target.value));
+                  }}
                   min={1}
                   max={65535}
                   className="max-w-hint rounded-md border border-outline bg-surface px-sm py-1 font-mono text-mono-md text-on-surface"
@@ -407,7 +418,6 @@ export function SettingsPage() {
               </div>
             </div>
 
-            {/* Save & Apply Buttons */}
             <div className="flex items-center gap-sm pt-sm">
               <Button
                 variant="secondary"
@@ -427,7 +437,6 @@ export function SettingsPage() {
               </Button>
             </div>
 
-            {/* Root CA Certificate Download */}
             <div className="mt-md rounded-md border border-outline bg-surface-subtle p-md">
               <div className="flex items-center justify-between gap-sm">
                 <div>
@@ -454,7 +463,6 @@ export function SettingsPage() {
             </div>
           </div>
 
-          {/* Admin Password & Disconnect Modal */}
           {showApplyModal && (
             <div
               data-testid="apply-modal"
