@@ -17,13 +17,72 @@
  * No other globals are exposed for tests; probes are injected by the test suite.
  */
 
+import type {
+  SelkiesAudioStats,
+  SelkiesCandidatePairStats,
+  SelkiesStats,
+  SelkiesVideoStats,
+} from "./types";
+
+type SelkiesWindow = Window &
+  typeof globalThis & {
+    __SELKIES_STREAMING_MODE__?: string;
+    enable_resize?: boolean;
+    manual_resolution?: boolean;
+    manualResolution?: boolean;
+    __CBROWSER_PROFILE_ID__?: string;
+    __getWebRTCStats?: () => Promise<SelkiesStats | null>;
+  };
+
+type DataChannelPayload = string | Blob | ArrayBuffer | ArrayBufferView;
+type WebSocketPayload = string | ArrayBufferLike | Blob | ArrayBufferView;
+
 const installedWindows = new WeakSet<object>();
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function numberField(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumberField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function pairFrom(
+  stat: Record<string, unknown>,
+  report: ReadonlyMap<string, unknown>
+): SelkiesCandidatePairStats {
+  const local = asRecord(report.get(stringField(stat.localCandidateId) ?? ""));
+  const remote = asRecord(report.get(stringField(stat.remoteCandidateId) ?? ""));
+  return {
+    localType: local ? stringField(local.candidateType) : null,
+    remoteType: remote ? stringField(remote.candidateType) : null,
+    remoteAddress: remote
+      ? stringField(remote.ip) ?? stringField(remote.address)
+      : null,
+    remotePort: remote ? nullableNumberField(remote.port) : null,
+    remoteUfrag: remote ? stringField(remote.usernameFragment) : null,
+    bytesReceived: numberField(stat.bytesReceived),
+    roundTripTime:
+      numberField(stat.currentRoundTripTime) ||
+      numberField(stat.roundTripTime),
+  };
+}
 
 export function installSelkiesClientAdapter(
   targetWindow: Window = window,
   profileId: string = "default"
 ): void {
-  const win = targetWindow as any;
+  const win = targetWindow as SelkiesWindow;
   if (installedWindows.has(win)) {
     return;
   }
@@ -47,12 +106,16 @@ export function installSelkiesClientAdapter(
   if (win.document && typeof win.document.addEventListener === "function") {
     win.document.addEventListener(
       "click",
-      (e: any) => {
-        const a = e.target && e.target.closest ? e.target.closest("a") : null;
-        if (a && a.target === "_blank") {
-          const rel = a.getAttribute("rel") || "";
+      (e: MouseEvent) => {
+        const element = e.target as Element | null;
+        const anchor =
+          element && typeof element.closest === "function"
+            ? element.closest("a")
+            : null;
+        if (anchor && anchor.target === "_blank") {
+          const rel = anchor.getAttribute("rel") || "";
           if (!rel.includes("noopener")) {
-            a.setAttribute("rel", rel ? `${rel} noopener` : "noopener");
+            anchor.setAttribute("rel", rel ? `${rel} noopener` : "noopener");
           }
         }
       },
@@ -90,23 +153,27 @@ export function installSelkiesClientAdapter(
     win.addEventListener("keyup", guardKeyEvent, true);
   }
 
-  const NativeWebSocket = win.WebSocket;
-  const NativeRTCPeerConnection = win.RTCPeerConnection;
+  const NativeWebSocket: typeof WebSocket | undefined = win.WebSocket;
+  const NativeRTCPeerConnection: typeof RTCPeerConnection | undefined =
+    win.RTCPeerConnection;
   const NativeDataChannelSend = win.RTCDataChannel?.prototype?.send;
 
   if (win.RTCDataChannel?.prototype) {
-    win.RTCDataChannel.prototype.send = function (data: any) {
+    win.RTCDataChannel.prototype.send = function (
+      this: RTCDataChannel,
+      data: DataChannelPayload
+    ) {
       if (typeof data === "string" && data.startsWith("r,")) {
         return;
       }
       if (NativeDataChannelSend) {
-        return NativeDataChannelSend.call(this, data);
+        Reflect.apply(NativeDataChannelSend, this, [data]);
       }
     };
   }
 
-  let activePC: any = null;
-  let activeWS: any = null;
+  let activePC: RTCPeerConnection | null = null;
+  let activeWS: WebSocket | null = null;
   let heldId: string | null = null;
   const acquisitions = new Map<string, Promise<boolean>>();
 
@@ -130,14 +197,14 @@ export function installSelkiesClientAdapter(
         .request(
           `cbrowser_tab_lock_${id}`,
           { ifAvailable: true },
-          (lock: any) => {
+          (lock: Lock | null) => {
             if (!lock) {
               resolve(false);
               return;
             }
             heldId = id;
             resolve(true);
-            return new Promise(() => {}); // Hold lock across signaling reconnects
+            return new Promise<void>(() => {}); // Hold lock across signaling reconnects
           }
         )
         .catch(reject);
@@ -149,183 +216,164 @@ export function installSelkiesClientAdapter(
   }
 
   if (NativeRTCPeerConnection) {
-    win.RTCPeerConnection = function (...args: any[]) {
-      const config = args[0] ? Object.assign({}, args[0]) : {};
-      // Selkies defaults to Google's public STUN server. This deployment is
-      // ICE-lite over a loopback-only media path (ADR 013), so external STUN
-      // both stalls setup and yields peer-reflexive candidates.
-      config.iceServers = [];
-      const pc = new NativeRTCPeerConnection(config);
-      activePC = pc;
+    class ShimRTCPeerConnection extends NativeRTCPeerConnection {
+      constructor(configuration?: RTCConfiguration) {
+        const config: RTCConfiguration = configuration
+          ? Object.assign({}, configuration)
+          : {};
+        // Selkies defaults to Google's public STUN server. This deployment is
+        // ICE-lite over a loopback-only media path (ADR 013), so external STUN
+        // both stalls setup and yields peer-reflexive candidates.
+        config.iceServers = [];
+        super(config);
+        activePC = this;
 
-      if (typeof pc.addEventListener === "function") {
-        const notifyState = () => {
-          postToParent({
-            type: "CBROWSER_PC_STATE",
-            connectionState: pc.connectionState,
-            iceConnectionState: pc.iceConnectionState,
-            signalingState: pc.signalingState,
-          });
-        };
-        pc.addEventListener("connectionstatechange", notifyState);
-        pc.addEventListener("iceconnectionstatechange", notifyState);
-        pc.addEventListener("signalingstatechange", notifyState);
+        if (typeof this.addEventListener === "function") {
+          const notifyState = () => {
+            postToParent({
+              type: "CBROWSER_PC_STATE",
+              connectionState: this.connectionState,
+              iceConnectionState: this.iceConnectionState,
+              signalingState: this.signalingState,
+            });
+          };
+          this.addEventListener("connectionstatechange", notifyState);
+          this.addEventListener("iceconnectionstatechange", notifyState);
+          this.addEventListener("signalingstatechange", notifyState);
+        }
       }
+    }
 
-      return pc;
-    };
-
-    win.RTCPeerConnection.prototype = NativeRTCPeerConnection.prototype;
-    Object.assign(win.RTCPeerConnection, NativeRTCPeerConnection);
+    win.RTCPeerConnection = ShimRTCPeerConnection;
   }
 
   if (NativeWebSocket) {
-    win.WebSocket = function (url: string, protocols?: any) {
-      const u = new URL(url, win.location?.href || "http://localhost");
-      const params = new URLSearchParams(win.location?.search || "");
-      const resolvedProfileId =
-        params.get("profileId") ||
-        params.get("profile_id") ||
-        win.__CBROWSER_PROFILE_ID__ ||
-        profileId ||
-        "default";
-
-      if (
-        u.pathname.includes("/signaling") ||
-        u.pathname.endsWith("/api/ws") ||
-        u.pathname.includes("/stream/")
-      ) {
-        u.protocol = win.location?.protocol === "https:" ? "wss:" : "ws:";
-        u.host = win.location?.host || "localhost";
-        u.pathname = `/stream/${encodeURIComponent(resolvedProfileId)}/signal`;
-      }
-
-      const ws =
-        protocols !== undefined
-          ? new NativeWebSocket(u.toString(), protocols)
-          : new NativeWebSocket(u.toString());
-      activeWS = ws;
-
-      const nativeSend = ws.send.bind(ws);
-
-      ws.send = function (data: any) {
-        if (typeof data === "string" && data.startsWith("HELLO client ")) {
-          let id = win.sessionStorage?.getItem("selkies_tab_id");
-          if (!id) {
-            id =
-              win.crypto?.randomUUID?.() ||
-              `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-            win.sessionStorage?.setItem("selkies_tab_id", id);
-          }
-          acquireLock(id)
-            .then((acquired) => {
-              if (ws.readyState !== NativeWebSocket.OPEN) return;
-              if (!acquired) {
-                const newId =
-                  win.crypto?.randomUUID?.() ||
-                  `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
-                win.sessionStorage?.setItem("selkies_tab_id", newId);
-                ws.close(1000, "tab_collision_remap");
-                return;
-              }
-              nativeSend(data);
-            })
-            .catch(() => {
-              postToParent({ type: "CBROWSER_WEB_LOCKS_UNAVAILABLE" });
-              ws.close(1008, "tab_identity_unavailable");
-            });
-          return;
-        }
+    const BaseWebSocket = NativeWebSocket;
+    class ShimWebSocket extends BaseWebSocket {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        const u = new URL(url, win.location?.href || "http://localhost");
+        const params = new URLSearchParams(win.location?.search || "");
+        const resolvedProfileId =
+          params.get("profileId") ||
+          params.get("profile_id") ||
+          win.__CBROWSER_PROFILE_ID__ ||
+          profileId ||
+          "default";
 
         if (
-          typeof data === "string" &&
-          data.includes('"cbrowser"') &&
-          data.includes('"activity"')
+          u.pathname.includes("/signaling") ||
+          u.pathname.endsWith("/api/ws") ||
+          u.pathname.includes("/stream/")
         ) {
-          return;
+          u.protocol = win.location?.protocol === "https:" ? "wss:" : "ws:";
+          u.host = win.location?.host || "localhost";
+          u.pathname = `/stream/${encodeURIComponent(resolvedProfileId)}/signal`;
         }
 
-        nativeSend(data);
-      };
+        super(u.toString(), protocols);
+        activeWS = this;
 
-      ws.addEventListener("close", (e: any) => {
-        postToParent({
-          type: "CBROWSER_WS_CLOSE",
-          code: e.code,
-          reason: e.reason,
+        const nativeSend = this.send.bind(this);
+
+        this.send = (data: WebSocketPayload): void => {
+          if (typeof data === "string" && data.startsWith("HELLO client ")) {
+            let id = win.sessionStorage?.getItem("selkies_tab_id");
+            if (!id) {
+              id =
+                win.crypto?.randomUUID?.() ||
+                `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+              win.sessionStorage?.setItem("selkies_tab_id", id);
+            }
+            acquireLock(id)
+              .then((acquired) => {
+                if (this.readyState !== BaseWebSocket.OPEN) return;
+                if (!acquired) {
+                  const newId =
+                    win.crypto?.randomUUID?.() ||
+                    `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+                  win.sessionStorage?.setItem("selkies_tab_id", newId);
+                  this.close(1000, "tab_collision_remap");
+                  return;
+                }
+                nativeSend(data);
+              })
+              .catch(() => {
+                postToParent({ type: "CBROWSER_WEB_LOCKS_UNAVAILABLE" });
+                this.close(1008, "tab_identity_unavailable");
+              });
+            return;
+          }
+
+          if (
+            typeof data === "string" &&
+            data.includes('"cbrowser"') &&
+            data.includes('"activity"')
+          ) {
+            return;
+          }
+
+          nativeSend(data);
+        };
+
+        this.addEventListener("close", (e: CloseEvent) => {
+          postToParent({
+            type: "CBROWSER_WS_CLOSE",
+            code: e.code,
+            reason: e.reason,
+          });
         });
-      });
+      }
+    }
 
-      return ws;
-    };
-
-    win.WebSocket.prototype = NativeWebSocket.prototype;
-    Object.assign(win.WebSocket, NativeWebSocket);
+    win.WebSocket = ShimWebSocket;
   }
 
-  win.__getWebRTCStats = async () => {
+  win.__getWebRTCStats = async (): Promise<SelkiesStats | null> => {
     const pc = activePC;
     if (!pc || typeof pc.getStats !== "function") return null;
 
     try {
-      const report = await pc.getStats();
-      let video: any = null;
-      let audio: any = null;
-      let pair: any = null;
+      const report: ReadonlyMap<string, unknown> = await pc.getStats();
+      let video: SelkiesVideoStats | null = null;
+      let audio: SelkiesAudioStats | null = null;
+      let pair: SelkiesCandidatePairStats | null = null;
 
-      for (const stat of report.values()) {
+      for (const raw of report.values()) {
+        const stat = asRecord(raw);
+        if (!stat) continue;
         if (stat.type === "inbound-rtp") {
           if (stat.kind === "video") {
             video = {
-              framesDecoded: stat.framesDecoded || 0,
-              keyFramesDecoded: stat.keyFramesDecoded || 0,
-              bytesReceived: stat.bytesReceived || 0,
-              packetsLost: stat.packetsLost || 0,
-              packetsReceived: stat.packetsReceived || 0,
+              framesDecoded: numberField(stat.framesDecoded),
+              keyFramesDecoded: numberField(stat.keyFramesDecoded),
+              bytesReceived: numberField(stat.bytesReceived),
+              packetsLost: numberField(stat.packetsLost),
+              packetsReceived: numberField(stat.packetsReceived),
             };
           } else if (stat.kind === "audio") {
             audio = {
-              totalAudioEnergy: stat.totalAudioEnergy || 0,
-              bytesReceived: stat.bytesReceived || 0,
-              packetsReceived: stat.packetsReceived || 0,
-              packetsLost: stat.packetsLost || 0,
-              trackIdentifier: stat.trackIdentifier || null,
+              totalAudioEnergy: numberField(stat.totalAudioEnergy),
+              bytesReceived: numberField(stat.bytesReceived),
+              packetsReceived: numberField(stat.packetsReceived),
+              packetsLost: numberField(stat.packetsLost),
+              trackIdentifier: stringField(stat.trackIdentifier),
             };
           }
         } else if (
           stat.type === "candidate-pair" &&
-          (stat.selected || stat.nominated || stat.state === "succeeded")
+          (stat.selected === true || stat.nominated === true || stat.state === "succeeded")
         ) {
-          const local = report.get(stat.localCandidateId);
-          const remote = report.get(stat.remoteCandidateId);
-          pair = {
-            localType: local ? local.candidateType : null,
-            remoteType: remote ? remote.candidateType : null,
-            remoteAddress: remote ? remote.ip || remote.address : null,
-            remotePort: remote ? remote.port : null,
-            remoteUfrag: remote ? remote.usernameFragment : null,
-            bytesReceived: stat.bytesReceived || 0,
-            roundTripTime: stat.currentRoundTripTime || stat.roundTripTime || 0,
-          };
+          pair = pairFrom(stat, report);
         } else if (
           stat.type === "transport" &&
           stat.selectedCandidatePairId &&
           !pair
         ) {
-          const p = report.get(stat.selectedCandidatePairId);
-          if (p) {
-            const local = report.get(p.localCandidateId);
-            const remote = report.get(p.remoteCandidateId);
-            pair = {
-              localType: local ? local.candidateType : null,
-              remoteType: remote ? remote.candidateType : null,
-              remoteAddress: remote ? remote.ip || remote.address : null,
-              remotePort: remote ? remote.port : null,
-              remoteUfrag: remote ? remote.usernameFragment : null,
-              bytesReceived: p.bytesReceived || 0,
-              roundTripTime:
-                p.currentRoundTripTime || p.roundTripTime || 0,
-            };
+          const selected = asRecord(
+            report.get(stringField(stat.selectedCandidatePairId) ?? "")
+          );
+          if (selected) {
+            pair = pairFrom(selected, report);
           }
         }
       }
@@ -362,7 +410,7 @@ export function installSelkiesClientAdapter(
     win.document.addEventListener("resume", handleReactivate);
   }
   if (typeof win.addEventListener === "function") {
-    win.addEventListener("pageshow", (event: any) => {
+    win.addEventListener("pageshow", (event: PageTransitionEvent) => {
       if (event.persisted) handleReactivate();
     });
   }

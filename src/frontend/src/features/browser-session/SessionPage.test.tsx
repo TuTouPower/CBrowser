@@ -35,20 +35,74 @@ import {
 import { SessionPage } from "./SessionPage";
 import { SessionFocusProvider } from "./session_focus";
 
-const hookState = vi.hoisted(() => ({
-  stage: "connected" as SessionStage,
-  diagnostics: {
-    stage: "connected",
-    profileId: "p1",
-    connectionState: "connected",
-    framesDecoded: 128,
-  } as SessionDiagnosticsData,
-  errorMessage: null as string | null,
-  reloadKey: 0,
-  audioMuted: false,
-  reconnect: vi.fn(),
-  toggleAudio: vi.fn(),
-}));
+const { hookState, diagnosticsSourceStub } = vi.hoisted(() => {
+  const hookState = {
+    stage: "connected" as SessionStage,
+    diagnostics: {
+      stage: "connected",
+      profileId: "p1",
+      connectionState: "connected",
+      framesDecoded: 128,
+    } as SessionDiagnosticsData,
+    errorMessage: null as string | null,
+    reloadKey: 0,
+    audioMuted: false,
+    reconnect: vi.fn(),
+    toggleAudio: vi.fn(),
+  };
+  const listeners = new Set<() => void>();
+  let cachedFor: SessionDiagnosticsData | null = null;
+  let cachedSnapshot: {
+    connection: {
+      connected: boolean;
+      hasFrames: boolean;
+      connectionState: string | null;
+      iceConnectionState: string | null;
+      signalingState: string | null;
+    };
+    diagnostics: {
+      framesDecoded?: number;
+      packetsLost?: number;
+      packetsReceived?: number;
+      roundTripTime?: number;
+      audioStatus?: string;
+    };
+  } | null = null;
+  const getSnapshot = () => {
+    if (cachedFor !== hookState.diagnostics || cachedSnapshot === null) {
+      const d = hookState.diagnostics;
+      cachedFor = d;
+      cachedSnapshot = {
+        connection: {
+          connected: d.connectionState === "connected",
+          hasFrames: (d.framesDecoded ?? 0) > 0,
+          connectionState: d.connectionState ?? null,
+          iceConnectionState: d.iceConnectionState ?? null,
+          signalingState: d.signalingState ?? null,
+        },
+        diagnostics: {
+          framesDecoded: d.framesDecoded,
+          packetsLost: d.packetsLost,
+          packetsReceived: d.packetsReceived,
+          roundTripTime: d.roundTripTime,
+          audioStatus: d.audioStatus,
+        },
+      };
+    }
+    return cachedSnapshot;
+  };
+  const diagnosticsSourceStub = {
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getSnapshot,
+    setDiagnosticsEnabled: () => undefined,
+  };
+  return { hookState, diagnosticsSourceStub };
+});
 
 vi.mock("./useBrowserSession", () => ({
   useBrowserSession: () => ({
@@ -59,6 +113,7 @@ vi.mock("./useBrowserSession", () => ({
     reconnect: hookState.reconnect,
     audioMuted: hookState.audioMuted,
     toggleAudio: hookState.toggleAudio,
+    diagnosticsSource: diagnosticsSourceStub,
   }),
 }));
 

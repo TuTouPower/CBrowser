@@ -1,11 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import {
-  AUDIO_STATUS_WINDOW_MS,
-  deriveAudioStatus,
-  type AudioStatsSample,
-} from "./audio_status";
 import { sendAudioPipelineControl } from "./audio_control";
-import { SessionDiagnosticsData, SessionStage } from "./types";
+import {
+  SessionDiagnosticsData,
+  SessionStage,
+  type SelkiesIframeWindow,
+  type SelkiesStats,
+} from "./types";
+import {
+  deriveSessionStage,
+  isTerminalStage,
+  type RuntimeObservedState,
+} from "./session_stage";
+import {
+  SessionDiagnosticsSource,
+  type ConnectionSnapshot,
+} from "./diagnostics_source";
 import { useI18n } from "../../i18n";
 import { ApiClient, ApiError, defaultApiClient } from "../../shared/api/client";
 
@@ -17,6 +26,7 @@ interface UseBrowserSessionOptions {
   mediaTimeoutMs?: number;
   iceDisconnectGraceMs?: number;
   transportRecoveryWindowMs?: number;
+  runtimeState?: RuntimeObservedState | null;
 }
 
 // WebRTC "disconnected" often self-heals; only a persistent one is a failure.
@@ -26,24 +36,6 @@ const DEFAULT_ICE_DISCONNECT_GRACE_MS = 5000;
 // explicit transport failure or an exhausted window is a failure.
 const DEFAULT_TRANSPORT_RECOVERY_WINDOW_MS = 30000;
 const TRANSPORT_RECOVERY_POLL_MS = 2000;
-
-// A diagnostic/terminal stage means the runtime is not running (or the
-// session has ended), so the host has already rendered its recovery UI.
-// The iframe client can still open and close a signaling WebSocket after
-// that: Selkies 2.2.1 defers initialization until its own core module
-// loads, which under load happens after the host settles on the diagnostic
-// stage.  Such transport events are expected fallout, not a live-session
-// disconnect, and must not drag the stage back to "reconnecting" (which
-// unmounts the diagnostic overlay and its reconnect/status actions).
-const DIAGNOSTIC_STAGES: SessionStage[] = [
-  "runtime_not_ready",
-  "signaling_failed",
-  "web_locks_unavailable",
-  "ice_failed",
-  "media_no_frames",
-  "error",
-  "stopping",
-];
 
 export function useBrowserSession(
   profileId: string,
@@ -71,7 +63,6 @@ export function useBrowserSession(
   });
 
   const mediaTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const statsPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wsCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const iceDisconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transportRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -81,7 +72,6 @@ export function useBrowserSession(
   apiClientRef.current = options.apiClient || defaultApiClient;
   const mountedRef = useRef<boolean>(true);
   const audioMutedRef = useRef<boolean>(false);
-  const audioSamplesRef = useRef<AudioStatsSample[]>([]);
   const stageRef = useRef<SessionStage>(
     options.initialStage || "checking_runtime"
   );
@@ -89,8 +79,108 @@ export function useBrowserSession(
     (options.initialStage || "checking_runtime") === "connected"
   );
   const webLocksUnavailableRef = useRef<boolean>(false);
+  const generationRef = useRef<number>(0);
+  const lastGenerationKeyRef = useRef<string>("");
 
-  // Sync prop changes
+  const generationKey = `${profileId}:${reloadKey}`;
+  if (lastGenerationKeyRef.current !== generationKey) {
+    lastGenerationKeyRef.current = generationKey;
+    generationRef.current += 1;
+  }
+  const generation = generationRef.current;
+
+  const effectiveStage = deriveSessionStage(stage, options.runtimeState);
+  const effectiveStageRef = useRef<SessionStage>(effectiveStage);
+  effectiveStageRef.current = effectiveStage;
+
+  const isCurrent = useCallback(
+    (gen: number): boolean =>
+      mountedRef.current && gen === generationRef.current,
+    []
+  );
+
+  const clearTimer = useCallback(
+    (ref: React.MutableRefObject<ReturnType<typeof setTimeout> | null>) => {
+      if (ref.current !== null) {
+        clearTimeout(ref.current);
+        ref.current = null;
+      }
+    },
+    []
+  );
+
+  const clearAllTimers = useCallback(() => {
+    clearTimer(mediaTimerRef);
+    clearTimer(wsCloseTimerRef);
+    clearTimer(iceDisconnectTimerRef);
+    clearTimer(transportRecoveryTimerRef);
+  }, [clearTimer]);
+
+  const readStats = useCallback(async (): Promise<SelkiesStats | null> => {
+    const win = iframeRef.current?.contentWindow as
+      | SelkiesIframeWindow
+      | null
+      | undefined;
+    if (!win || typeof win.__getWebRTCStats !== "function") return null;
+    try {
+      return await win.__getWebRTCStats();
+    } catch {
+      return null;
+    }
+  }, [iframeRef]);
+
+  const handleConnectionSignal = useCallback(
+    (connection: ConnectionSnapshot) => {
+      const gen = generationRef.current;
+      if (!isCurrent(gen)) return;
+      setDiagData((prev) => {
+        const connectionState = connection.connectionState ?? prev.connectionState;
+        const iceConnectionState =
+          connection.iceConnectionState ?? prev.iceConnectionState;
+        const signalingState =
+          connection.signalingState ?? prev.signalingState;
+        if (
+          prev.connectionState === connectionState &&
+          prev.iceConnectionState === iceConnectionState &&
+          prev.signalingState === signalingState
+        ) {
+          return prev;
+        }
+        return { ...prev, connectionState, iceConnectionState, signalingState };
+      });
+      if (
+        connection.hasFrames &&
+        stageRef.current !== "connected" &&
+        !isTerminalStage(effectiveStageRef.current)
+      ) {
+        setStage("connected");
+        clearTimer(mediaTimerRef);
+      }
+    },
+    [isCurrent, clearTimer]
+  );
+
+  const sourceRef = useRef<SessionDiagnosticsSource | null>(null);
+  if (sourceRef.current === null) {
+    sourceRef.current = new SessionDiagnosticsSource({
+      readStats,
+      onConnectionSignal: handleConnectionSignal,
+    });
+  }
+  const diagnosticsSource = sourceRef.current;
+
+  useEffect(() => {
+    diagnosticsSource.setGeneration(generation);
+  }, [diagnosticsSource, generation]);
+
+  useEffect(() => {
+    diagnosticsSource.setActive(!isTerminalStage(effectiveStage));
+  }, [diagnosticsSource, effectiveStage, generation]);
+
+  useEffect(() => {
+    diagnosticsSource.setMuted(audioMuted);
+  }, [diagnosticsSource, audioMuted]);
+
   useEffect(() => {
     if (options.initialStage) {
       setStage(options.initialStage);
@@ -123,6 +213,15 @@ export function useBrowserSession(
     }
   }, [stage]);
 
+  useEffect(() => {
+    if (isTerminalStage(effectiveStage)) {
+      clearTimer(mediaTimerRef);
+      clearTimer(wsCloseTimerRef);
+      clearTimer(iceDisconnectTimerRef);
+      clearTimer(transportRecoveryTimerRef);
+    }
+  }, [effectiveStage, generation, clearTimer]);
+
   const applyAudioState = useCallback(
     (enabled: boolean) => {
       const win = iframeRef.current?.contentWindow;
@@ -139,21 +238,13 @@ export function useBrowserSession(
     applyAudioState(!nextMuted);
   }, [applyAudioState]);
 
-  // Reconnect action
   const reconnect = useCallback(() => {
-    if (mediaTimerRef.current) clearTimeout(mediaTimerRef.current);
-    if (statsPollTimerRef.current) clearInterval(statsPollTimerRef.current);
-    if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
-    if (iceDisconnectTimerRef.current) clearTimeout(iceDisconnectTimerRef.current);
-    if (transportRecoveryTimerRef.current)
-      clearTimeout(transportRecoveryTimerRef.current);
-
+    clearAllTimers();
     setErrorMessage(null);
     webLocksUnavailableRef.current = false;
     setStage("reconnecting");
     setReloadKey((k) => k + 1);
-    audioSamplesRef.current = [];
-  }, []);
+  }, [clearAllTimers]);
 
   const failSignaling = useCallback((code: number) => {
     setStage("signaling_failed");
@@ -166,13 +257,14 @@ export function useBrowserSession(
   // turns this into signaling_failed.
   const handleInitialSignalingClose = useCallback(
     (code: number) => {
+      const gen = generationRef.current;
       const windowMs =
         options.transportRecoveryWindowMs ??
         DEFAULT_TRANSPORT_RECOVERY_WINDOW_MS;
       const deadline = Date.now() + windowMs;
       setStage("reconnecting");
       const poll = async (): Promise<void> => {
-        if (!mountedRef.current) return;
+        if (!isCurrent(gen)) return;
         let transportState: string | undefined;
         try {
           const data = await apiClientRef.current.profiles.getRuntime(profileId);
@@ -180,7 +272,7 @@ export function useBrowserSession(
         } catch {
           transportState = undefined;
         }
-        if (!mountedRef.current) return;
+        if (!isCurrent(gen)) return;
         if (transportState === "ready") {
           reconnect();
           return;
@@ -190,27 +282,29 @@ export function useBrowserSession(
           return;
         }
         transportRecoveryTimerRef.current = setTimeout(() => {
+          transportRecoveryTimerRef.current = null;
           void poll();
         }, TRANSPORT_RECOVERY_POLL_MS);
       };
       void poll();
     },
-    [profileId, reconnect, failSignaling, options.transportRecoveryWindowMs]
+    [
+      profileId,
+      reconnect,
+      failSignaling,
+      options.transportRecoveryWindowMs,
+      isCurrent,
+    ]
   );
 
   // Check runtime status on mount if not provided with explicit initialStage
   useEffect(() => {
-    mountedRef.current = true;
-    if (options.initialStage) {
-      return;
-    }
-
-    let active = true;
+    const gen = generationRef.current;
     const client = options.apiClient || defaultApiClient;
     const checkRuntime = async () => {
       try {
         const data = await client.profiles.getRuntime(profileId);
-        if (!active) return;
+        if (!isCurrent(gen)) return;
         const observed = data.observed_state;
         if (observed === "stopping") {
           setStage("stopping");
@@ -233,7 +327,7 @@ export function useBrowserSession(
           setStage("connecting_signaling");
         }
       } catch (err) {
-        if (!active) return;
+        if (!isCurrent(gen)) return;
         if (err instanceof ApiError && err.status === 401) {
           // The auth provider handles the redirect to login.
           return;
@@ -249,17 +343,10 @@ export function useBrowserSession(
       }
     };
 
-    checkRuntime();
-    return () => {
-      active = false;
-      mountedRef.current = false;
-    };
-  }, [
-    profileId,
-    options.apiClient,
-    options.initialStage,
-    reloadKey,
-  ]);
+    if (!options.initialStage) {
+      void checkRuntime();
+    }
+  }, [profileId, options.apiClient, options.initialStage, reloadKey, isCurrent]);
 
   // Handle postMessage events from iframe adapter
   useEffect(() => {
@@ -271,13 +358,14 @@ export function useBrowserSession(
       if (!event.data || typeof event.data !== "object") return;
       const { type, connectionState, iceConnectionState, signalingState, code } =
         event.data;
+      const gen = generationRef.current;
 
       // CBROWSER_WS_CLOSE / CBROWSER_PC_STATE are expected transport fallout
       // on a diagnostic stage. CBROWSER_LIFECYCLE_STALE is an explicit
       // rebuild request after a broken PeerConnection and must reconnect
       // even while the recovery UI is shown.
       if (
-        DIAGNOSTIC_STAGES.includes(stageRef.current) &&
+        isTerminalStage(effectiveStageRef.current) &&
         (type === "CBROWSER_WS_CLOSE" || type === "CBROWSER_PC_STATE")
       ) {
         return;
@@ -313,6 +401,7 @@ export function useBrowserSession(
           if (!iceDisconnectTimerRef.current) {
             iceDisconnectTimerRef.current = setTimeout(() => {
               iceDisconnectTimerRef.current = null;
+              if (!isCurrent(gen)) return;
               setStage("ice_failed");
               setErrorMessage(tRef.current("iceConnectivityLost"));
             }, options.iceDisconnectGraceMs ?? DEFAULT_ICE_DISCONNECT_GRACE_MS);
@@ -338,15 +427,16 @@ export function useBrowserSession(
             setStage("reconnecting");
             if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
             wsCloseTimerRef.current = setTimeout(async () => {
-              const win = iframeRef.current?.contentWindow as any;
+              wsCloseTimerRef.current = null;
+              const win = iframeRef.current?.contentWindow as
+                | SelkiesIframeWindow
+                | null
+                | undefined;
               let healthy = false;
               if (win && typeof win.__getWebRTCStats === "function") {
-                try {
-                  const stats = await win.__getWebRTCStats();
-                  healthy = Boolean(stats && stats.connected);
-                } catch {
-                  healthy = false;
-                }
+                const stats = await readStats();
+                if (!isCurrent(gen)) return;
+                healthy = Boolean(stats && stats.connected);
               }
               if (!healthy) {
                 reconnect();
@@ -373,6 +463,8 @@ export function useBrowserSession(
     iframeRef,
     options.iceDisconnectGraceMs,
     handleInitialSignalingClose,
+    readStats,
+    isCurrent,
   ]);
 
   // Once the session is live, align the official audio pipeline with this page's
@@ -383,121 +475,45 @@ export function useBrowserSession(
     }
   }, [stage, applyAudioState]);
 
-  // Poll WebRTC stats from iframe window
-  useEffect(() => {
-    if (
-      stage === "runtime_not_ready" ||
-      stage === "signaling_failed" ||
-      stage === "web_locks_unavailable" ||
-      stage === "stopping" ||
-      stage === "error"
-    ) {
-      return;
-    }
-
-    const pollStats = async () => {
-      const win = iframeRef.current?.contentWindow as any;
-      if (!win || typeof win.__getWebRTCStats !== "function") return;
-
-      try {
-        const stats = await win.__getWebRTCStats();
-        if (!stats) return;
-
-        const now = Date.now();
-        const audioSample: AudioStatsSample = {
-          at: now,
-          present: !!stats.audio,
-          bytesReceived: stats.audio?.bytesReceived ?? 0,
-          packetsReceived: stats.audio?.packetsReceived ?? 0,
-          totalAudioEnergy: stats.audio?.totalAudioEnergy ?? 0,
-        };
-        const audioHistory = [...audioSamplesRef.current, audioSample].filter(
-          (sample) => now - sample.at <= AUDIO_STATUS_WINDOW_MS * 2
-        );
-        audioSamplesRef.current = audioHistory;
-        const audioStatus = deriveAudioStatus(
-          audioHistory,
-          now,
-          AUDIO_STATUS_WINDOW_MS,
-          audioMutedRef.current
-        );
-
-        setDiagData((prev) => ({
-          ...prev,
-          connectionState: stats.connectionState || prev.connectionState,
-          iceConnectionState:
-            stats.iceConnectionState || prev.iceConnectionState,
-          signalingState: stats.signalingState || prev.signalingState,
-          selectedPair: stats.pair || prev.selectedPair,
-          framesDecoded: stats.video?.framesDecoded ?? prev.framesDecoded,
-          keyFramesDecoded:
-            stats.video?.keyFramesDecoded ?? prev.keyFramesDecoded,
-          packetsLost: stats.video?.packetsLost ?? prev.packetsLost,
-          packetsReceived:
-            stats.video?.packetsReceived ?? prev.packetsReceived,
-          roundTripTime: stats.pair?.roundTripTime
-            ? Math.round(stats.pair.roundTripTime * 1000)
-            : prev.roundTripTime,
-          totalAudioEnergy: stats.audio?.totalAudioEnergy ?? prev.totalAudioEnergy,
-          audioBytesReceived:
-            stats.audio?.bytesReceived ?? prev.audioBytesReceived,
-          audioStatus,
-        }));
-
-        if (stats.video && stats.video.framesDecoded > 0) {
-          setStage("connected");
-          if (mediaTimerRef.current) {
-            clearTimeout(mediaTimerRef.current);
-            mediaTimerRef.current = null;
-          }
-        }
-      } catch {
-        // Ignored in cross-origin or unloaded cases
-      }
-    };
-
-    statsPollTimerRef.current = setInterval(pollStats, 1000);
-    return () => {
-      if (statsPollTimerRef.current) {
-        clearInterval(statsPollTimerRef.current);
-      }
-    };
-  }, [stage, iframeRef]);
-
   // Media frames timeout check (AC-007)
   useEffect(() => {
     if (stage === "media_waiting") {
+      const gen = generationRef.current;
       const timeoutMs = options.mediaTimeoutMs || 10000;
       mediaTimerRef.current = setTimeout(() => {
-        if (mountedRef.current) {
-          setStage((curr) =>
-            curr === "media_waiting" ? "media_no_frames" : curr
-          );
-          setErrorMessage(tRef.current("mediaFramesTimeout"));
-        }
+        mediaTimerRef.current = null;
+        if (!isCurrent(gen)) return;
+        setStage((curr) =>
+          curr === "media_waiting" ? "media_no_frames" : curr
+        );
+        setErrorMessage(tRef.current("mediaFramesTimeout"));
       }, timeoutMs);
 
       return () => {
-        if (mediaTimerRef.current) {
-          clearTimeout(mediaTimerRef.current);
-        }
+        clearTimer(mediaTimerRef);
       };
     }
-  }, [stage, options.mediaTimeoutMs]);
+  }, [stage, options.mediaTimeoutMs, isCurrent, clearTimer]);
 
   // Page Lifecycle & bfcache reactivation (AC-007)
   useEffect(() => {
     const handleHostReactivate = () => {
-      const win = iframeRef.current?.contentWindow as any;
+      const win = iframeRef.current?.contentWindow as
+        | SelkiesIframeWindow
+        | null
+        | undefined;
       if (win && typeof win.__getWebRTCStats === "function") {
-        win
-          .__getWebRTCStats()
-          .then((s: any) => {
-            if (!s || !s.connected) {
+        const gen = generationRef.current;
+        readStats()
+          .then((stats) => {
+            if (!isCurrent(gen)) return;
+            if (!stats || !stats.connected) {
               reconnect();
             }
           })
-          .catch(() => reconnect());
+          .catch(() => {
+            if (isCurrent(gen)) reconnect();
+          });
       }
     };
 
@@ -511,21 +527,21 @@ export function useBrowserSession(
       document.removeEventListener("resume", handleHostReactivate);
       window.removeEventListener("pageshow", handlePageShow);
     };
-  }, [reconnect, iframeRef]);
+  }, [reconnect, iframeRef, readStats, isCurrent]);
 
   // AC-003: On unmount, only clean up timers and release iframe reference.
   // NEVER call profile stop API or desired-state PATCH.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
-      if (mediaTimerRef.current) clearTimeout(mediaTimerRef.current);
-      if (statsPollTimerRef.current) clearInterval(statsPollTimerRef.current);
-      if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
-      if (iceDisconnectTimerRef.current) clearTimeout(iceDisconnectTimerRef.current);
+      mountedRef.current = false;
+      clearAllTimers();
+      diagnosticsSource.dispose();
       if (iframeRef.current) {
         iframeRef.current.src = "about:blank";
       }
     };
-  }, [iframeRef]);
+  }, [iframeRef, clearAllTimers, diagnosticsSource]);
 
   return {
     stage,
@@ -535,5 +551,7 @@ export function useBrowserSession(
     reconnect,
     audioMuted,
     toggleAudio,
+    generation,
+    diagnosticsSource,
   };
 }

@@ -20,6 +20,47 @@ export type SessionStage =
   | "reconnecting"
   | "error";
 
+export interface SelkiesVideoStats {
+  framesDecoded: number;
+  keyFramesDecoded: number;
+  bytesReceived: number;
+  packetsLost: number;
+  packetsReceived: number;
+}
+
+export interface SelkiesAudioStats {
+  totalAudioEnergy: number;
+  bytesReceived: number;
+  packetsReceived: number;
+  packetsLost: number;
+  trackIdentifier: string | null;
+}
+
+export interface SelkiesCandidatePairStats {
+  localType: string | null;
+  remoteType: string | null;
+  remoteAddress: string | null;
+  remotePort: number | null;
+  remoteUfrag: string | null;
+  roundTripTime: number;
+  bytesReceived: number;
+}
+
+export interface SelkiesStats {
+  video: SelkiesVideoStats | null;
+  audio: SelkiesAudioStats | null;
+  pair: SelkiesCandidatePairStats | null;
+  tab_id: string | null;
+  connected: boolean;
+  connectionState: string;
+  iceConnectionState: string;
+  signalingState: string;
+}
+
+export interface SelkiesIframeWindow extends Window {
+  __getWebRTCStats?: () => Promise<SelkiesStats | null>;
+}
+
 export interface CandidatePairDiagnostics {
   localType: string | null;
   remoteType: string | null;
