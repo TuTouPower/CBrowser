@@ -244,6 +244,34 @@ describe("ApiClient hardening", () => {
     }
   });
 
+  it("reads the agreed business error code, detail and retryable flag", async () => {
+    document.cookie = "";
+    const client = new ApiClient();
+    const detail = { code: "proxy_in_use", used_by_count: 3 };
+    const payload = {
+      error: "proxy_in_use",
+      message: "Conflict",
+      detail,
+      retryable: false,
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify(payload), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    try {
+      await expect(client.proxies.remove("px1")).rejects.toMatchObject({
+        errorCode: "proxy_in_use",
+        detail,
+        retryable: false,
+        status: 409,
+      });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("does not treat a 503 without retryable payload as retryable", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "database_busy" }), {

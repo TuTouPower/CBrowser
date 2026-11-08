@@ -73,20 +73,39 @@ def test_automation_websocket_rejects_missing_or_foreign_token(
         assert close.value.code == 4401
 
 
-def test_legacy_cdp_entry_requires_new_automation_token(automation_env) -> None:
+def test_legacy_cdp_entry_is_removed_and_current_entry_still_authenticates(
+    automation_env,
+) -> None:
+    """A7: the legacy compatibility CDP entry is gone; the current
+    automation endpoint keeps the full automation-token check."""
     client = automation_env["client"]
     profile_id = automation_env["profile_id"]
-    for path in (
-        f"/api/profiles/{profile_id}/cdp",
-        f"/api/v1/automation/profiles/{profile_id}/cdp",
-    ):
-        with pytest.raises(WebSocketDisconnect) as close:
-            with client.websocket_connect(
-                path, headers={"Authorization": "Bearer cbat_wrong"}
-            ):
-                pass
-        assert close.value.code == 4401
+    with pytest.raises(WebSocketDisconnect) as close:
+        with client.websocket_connect(
+            f"/api/v1/automation/profiles/{profile_id}/cdp",
+            headers={"Authorization": "Bearer cbat_wrong"},
+        ):
+            pass
+    assert close.value.code == 4401
     assert "/api/profiles/{profile_id}/cdp" not in client.app.openapi()["paths"]
+
+    def route_paths(routes, prefix=""):
+        found = set()
+        for route in routes:
+            nested = getattr(route, "original_router", None)
+            if nested is not None:
+                context = getattr(route, "include_context", None)
+                extra = getattr(context, "prefix", "") or ""
+                found |= route_paths(nested.routes, prefix + extra)
+            elif hasattr(route, "path"):
+                found.add(prefix + route.path)
+            elif getattr(route, "routes", None):
+                found |= route_paths(route.routes, prefix)
+        return found
+
+    paths = route_paths(client.app.routes)
+    assert "/api/profiles/{profile_id}/cdp" not in paths
+    assert "/api/v1/automation/profiles/{profile_id}/cdp" in paths
 
 
 def test_automation_websocket_rejects_profile_outside_token(automation_env) -> None:

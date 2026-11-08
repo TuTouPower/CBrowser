@@ -18,7 +18,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket
 from pydantic import SecretStr
 
 automation_router = APIRouter(prefix="/api/v1", tags=["automation"])
-legacy_cdp_router = APIRouter(prefix="/api", include_in_schema=False)
 logger = logging.getLogger("cbrowser.api.automation")
 
 
@@ -112,10 +111,18 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
     # takeover) rejects the tunnel before it opens; a success renews
     # or moves control to this agent and yields the generation that is
     # forwarded to the Supervisor as a stale-handshake fence.
+    token_id = await auth_service.resolve_automation_token_id(token)
+    if token_id is None:
+        logger.warning(
+            "Automation CDP rejected: profile=%s missing token identity",
+            profile_id,
+        )
+        await websocket.close(code=4401)
+        return
+
     control_generation: int | None = None
     control_service = getattr(websocket.app.state, "control_service", None)
     if control_service is not None:
-        token_id = await auth_service.resolve_automation_token_id(token)
         try:
             state, _ = await control_service.claim(
                 profile_id, token_id, None
@@ -161,7 +168,7 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
                 code=4403, reason="control_revoked"
             ),
             generation=control_generation,
-            agent_instance_id=None,
+            agent_instance_id=token_id,
             agent_session_id=None,
         )
     upstream = None
@@ -245,8 +252,3 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
                 await websocket.close()
         except Exception:  # noqa: BLE001 - already-closed client socket is harmless
             pass
-
-
-legacy_cdp_router.add_api_websocket_route(
-    "/profiles/{profile_id}/cdp", automation_cdp, name="legacy_cdp_proxy"
-)

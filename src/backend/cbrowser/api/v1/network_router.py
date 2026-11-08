@@ -33,7 +33,7 @@ def get_network_service(request: Request) -> NetworkService:
 
 
 def create_network_router() -> APIRouter:
-    router = APIRouter(prefix="/network", tags=["network"])
+    router = APIRouter(prefix="/api/v1/network", tags=["network"])
 
     @router.get(
         "/settings",

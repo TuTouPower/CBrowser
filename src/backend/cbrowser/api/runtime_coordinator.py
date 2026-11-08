@@ -1151,19 +1151,28 @@ class RuntimeCoordinator:
     ) -> dict[str, Any]:
         if not self.is_enabled():
             return {"status": "ok", "mock": True}
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
         url = f"{self.supervisor_url}/supervisor/v1/network/rebuild-edge"
-        resp = await self.client.post(
-            url,
-            headers=self._auth_headers(),
-            json={
-                "target_version": target_version,
-                "bind_host": bind_host,
-                "https_port": https_port,
-                "caddyfile_path": caddyfile_path,
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        body = {
+            "target_version": target_version,
+            "bind_host": bind_host,
+            "https_port": https_port,
+            "caddyfile_path": caddyfile_path,
+        }
+        try:
+            resp = await self._client.post(url, json=body, headers=headers)
+        except httpx.TransportError as e:
+            raise RuntimeError(
+                f"Supervisor rebuild-edge unreachable: {type(e).__name__}"
+            ) from None
+        if resp.status_code != 200:
+            raise RuntimeError(f"Supervisor rebuild-edge failed ({resp.status_code})")
         return resp.json()
 
     async def converge_network_streams(
@@ -1175,16 +1184,27 @@ class RuntimeCoordinator:
     ) -> dict[str, Any]:
         if not self.is_enabled():
             return {"status": "ok", "rebuilt_streams": 0}
+        import httpx
+
+        if not self._client:
+            self._client = httpx.AsyncClient(
+                transport=self.transport, timeout=10.0, trust_env=False
+            )
         url = f"{self.supervisor_url}/supervisor/v1/network/converge-streams"
-        resp = await self.client.post(
-            url,
-            headers=self._auth_headers(),
-            json={
-                "target_version": target_version,
-                "bind_host": bind_host,
-                "advertised_ip": advertised_ip,
-            },
-            timeout=30.0,
-        )
-        resp.raise_for_status()
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        body = {
+            "target_version": target_version,
+            "bind_host": bind_host,
+            "advertised_ip": advertised_ip,
+        }
+        try:
+            resp = await self._client.post(url, json=body, headers=headers)
+        except httpx.TransportError as e:
+            raise RuntimeError(
+                f"Supervisor converge-streams unreachable: {type(e).__name__}"
+            ) from None
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Supervisor converge-streams failed ({resp.status_code})"
+            )
         return resp.json()

@@ -67,7 +67,7 @@ def test_app(mock_network_service, tmp_path):
     app.state.caddy_ca_dir = tmp_path
 
     router = create_network_router()
-    app.include_router(router, prefix="/api/v1")
+    app.include_router(router)
     return app
 
 

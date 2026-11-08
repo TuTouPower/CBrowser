@@ -7,6 +7,7 @@ import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from cbrowser.adapters.database.artifact_repository import ArtifactRepository
 from cbrowser.adapters.database.migrations import run_database_migrations
@@ -24,10 +25,7 @@ from cbrowser.api.runtime_coordinator import RuntimeCoordinator
 from cbrowser.api.v1.artifact_router import artifact_router
 from cbrowser.api.v1.preview_router import preview_router
 from cbrowser.api.v1.auth_router import auth_router
-from cbrowser.api.v1.automation_router import (
-    automation_router,
-    legacy_cdp_router,
-)
+from cbrowser.api.v1.automation_router import automation_router
 from cbrowser.api.v1.control_router import (
     control_router,
     get_control_service,
@@ -71,6 +69,64 @@ def _env_int(name: str, fallback: int) -> int:
     except ValueError:
         return fallback
     return value if value > 0 else fallback
+
+
+_STATUS_ERROR_NAMES = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    409: "conflict",
+    422: "validation_error",
+    503: "database_busy",
+}
+
+_STATUS_MESSAGES = {
+    400: "Bad request",
+    401: "Authentication required",
+    403: "Forbidden",
+    404: "Not found",
+    409: "Conflict",
+    422: "Invalid request payload",
+    503: "Service unavailable",
+}
+
+
+def _http_error_content(exc: HTTPException) -> dict[str, Any]:
+    status_code = exc.status_code
+    error_name = _STATUS_ERROR_NAMES.get(status_code, "http_error")
+    generic_message = _STATUS_MESSAGES.get(status_code, "Request failed")
+    detail = exc.detail
+    if status_code == 422:
+        text = detail.get("message") if isinstance(detail, dict) else detail
+        if not isinstance(text, str) or not text:
+            text = generic_message
+        return {
+            "error": "validation_error",
+            "message": text,
+            "detail": [{"loc": ["body"], "msg": text, "type": "value_error"}],
+            "retryable": False,
+        }
+    if isinstance(detail, dict):
+        code = detail.get("code")
+        error = code if isinstance(code, str) and code else error_name
+        message = detail.get("message")
+        if not isinstance(message, str) or not message:
+            message = generic_message
+        retryable = detail.get("retryable")
+        if not isinstance(retryable, bool):
+            retryable = status_code == 503
+        return {
+            "error": error,
+            "message": message,
+            "detail": detail,
+            "retryable": retryable,
+        }
+    return {
+        "error": error_name,
+        "message": detail if isinstance(detail, str) else generic_message,
+        "retryable": status_code == 503,
+    }
 
 
 def create_app(
@@ -359,6 +415,9 @@ def create_app(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
+                "message": _STATUS_MESSAGES.get(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT, "Request failed"
+                ),
                 "detail": sanitized_errors,
                 "retryable": False,
             },
@@ -366,34 +425,10 @@ def create_app(
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
-        error_name = {
-            400: "bad_request",
-            404: "not_found",
-            409: "conflict",
-            422: "validation_error",
-            503: "database_busy",
-        }.get(exc.status_code, "http_error")
-        if exc.status_code == 422:
-            return JSONResponse(
-                status_code=422,
-                headers=exc.headers,
-                content={
-                    "error": "validation_error",
-                    "message": str(exc.detail),
-                    "detail": [
-                        {"loc": ["body"], "msg": str(exc.detail), "type": "value_error"}
-                    ],
-                    "retryable": False,
-                },
-            )
         return JSONResponse(
             status_code=exc.status_code,
             headers=exc.headers,
-            content={
-                "error": error_name,
-                "message": str(exc.detail),
-                "retryable": exc.status_code == 503,
-            },
+            content=_http_error_content(exc),
         )
 
     @app.exception_handler(Exception)
@@ -415,7 +450,6 @@ def create_app(
     app.include_router(create_network_router())
     app.include_router(automation_router)
     app.include_router(control_router)
-    app.include_router(legacy_cdp_router, include_in_schema=False)
     app.include_router(auth_router)
     app.include_router(
         supervisor_router, include_in_schema=include_internal_schema
@@ -445,6 +479,9 @@ def create_app(
             if isinstance(platform, dict):
                 platform.pop("default", None)
         components = schema.setdefault("components", {})
+        error_schema = components.setdefault("schemas", {}).get("ErrorResponse")
+        if isinstance(error_schema, dict):
+            error_schema.setdefault("properties", {})["detail"] = {}
         components.setdefault("securitySchemes", {}).update(
             {
                 "sessionCookie": {

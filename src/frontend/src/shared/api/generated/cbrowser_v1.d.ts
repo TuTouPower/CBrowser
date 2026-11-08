@@ -372,7 +372,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/network/settings": {
+    "/api/v1/network/settings": {
         parameters: {
             query?: never;
             header?: never;
@@ -380,9 +380,9 @@ export interface paths {
             cookie?: never;
         };
         /** Get Network Settings */
-        get: operations["get_network_settings_network_settings_get"];
+        get: operations["get_network_settings_api_v1_network_settings_get"];
         /** Update Network Settings */
-        put: operations["update_network_settings_network_settings_put"];
+        put: operations["update_network_settings_api_v1_network_settings_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -390,7 +390,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/network/apply": {
+    "/api/v1/network/apply": {
         parameters: {
             query?: never;
             header?: never;
@@ -400,14 +400,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Apply Network Configuration */
-        post: operations["apply_network_configuration_network_apply_post"];
+        post: operations["apply_network_configuration_api_v1_network_apply_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/network/operations/{operation_id}": {
+    "/api/v1/network/operations/{operation_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -415,7 +415,7 @@ export interface paths {
             cookie?: never;
         };
         /** Get Apply Operation */
-        get: operations["get_apply_operation_network_operations__operation_id__get"];
+        get: operations["get_apply_operation_api_v1_network_operations__operation_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -424,7 +424,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/network/check-disconnect": {
+    "/api/v1/network/check-disconnect": {
         parameters: {
             query?: never;
             header?: never;
@@ -432,7 +432,7 @@ export interface paths {
             cookie?: never;
         };
         /** Check Disconnect */
-        get: operations["check_disconnect_network_check_disconnect_get"];
+        get: operations["check_disconnect_api_v1_network_check_disconnect_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -441,7 +441,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/network/root-ca": {
+    "/api/v1/network/root-ca": {
         parameters: {
             query?: never;
             header?: never;
@@ -452,7 +452,7 @@ export interface paths {
          * Download Root Ca
          * @description Download public root CA certificate only (AC-008). No private keys.
          */
-        get: operations["download_root_ca_network_root_ca_get"];
+        get: operations["download_root_ca_api_v1_network_root_ca_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -913,6 +913,7 @@ export interface components {
              * @default false
              */
             retryable: boolean;
+            detail?: unknown;
         };
         /** FontDetection */
         FontDetection: {
@@ -4028,7 +4029,7 @@ export interface operations {
             };
         };
     };
-    get_network_settings_network_settings_get: {
+    get_network_settings_api_v1_network_settings_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4075,7 +4076,7 @@ export interface operations {
             };
         };
     };
-    update_network_settings_network_settings_put: {
+    update_network_settings_api_v1_network_settings_put: {
         parameters: {
             query?: never;
             header?: never;
@@ -4137,7 +4138,7 @@ export interface operations {
             };
         };
     };
-    apply_network_configuration_network_apply_post: {
+    apply_network_configuration_api_v1_network_apply_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -4197,7 +4198,7 @@ export interface operations {
             };
         };
     };
-    get_apply_operation_network_operations__operation_id__get: {
+    get_apply_operation_api_v1_network_operations__operation_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4264,7 +4265,7 @@ export interface operations {
             };
         };
     };
-    check_disconnect_network_check_disconnect_get: {
+    check_disconnect_api_v1_network_check_disconnect_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4313,7 +4314,7 @@ export interface operations {
             };
         };
     };
-    download_root_ca_network_root_ca_get: {
+    download_root_ca_api_v1_network_root_ca_get: {
         parameters: {
             query?: never;
             header?: never;
