@@ -1523,5 +1523,14 @@ ______________________________________________________________________
 
 1. 完成 t032 的 finish 与 integrate，使其 status=done 且实现 commit 进入 main（队列硬前置）。
 2. 按 task-run 队列顺序串行执行：`t033 → t034 → t043 → t035 → t041 → t036 → t037 → t038 → t039 → t040 → t042`；每个成员止于实现 commit 与 run-close，merge 在整链完成后单独请求用户授权。
-3. 队列硬前置：`t034 depends_on t032`，`integration.py` 的 start 门禁要求依赖 status=done 且实现 commit 在 base 祖先链上；t032 不闭环整条链会在 t034 停摆。
-4. 队列内依赖：`t036 depends_on t033,t041`、`t039 depends_on t037,t043`、`t042 depends_on t039,t043`；冲突对（t038/t039/t040/t041/t042）按串行队列自然避开。
+    3. 队列硬前置：`t034 depends_on t032`，`integration.py` 的 start 门禁要求依赖 status=done 且实现 commit 在 base 祖先链上；t032 不闭环整条链会在 t034 停摆。
+    4. 队列内依赖：`t036 depends_on t033,t041`、`t039 depends_on t037,t043`、`t042 depends_on t039,t043`；冲突对（t038/t039/t040/t041/t042）按串行队列自然避开。
+
+## 2026-11-05T20:30:00+08:00 队列推进：T032 已合入，t033/t034/t043 已 done，t035 完成 spike 后交接
+
+### 状态与工作区
+
+- branch `main`；交出时 head_commit `0ac2ac6`。本地领先 origin/main，未 push。
+- task 状态以 `task.py effective-status` 为准：t032 `done | main`；t033 / t034 / t043 `done | branch`；t035 `active | worktree`；t036–t042 `backlog | main`。
+- 已闭环成员的分支与实现 commit：`t033_frontend_toolchain_upgrade` = `00f828e`、`t034_runtime_platform_upgrade` = `2e95581`、`t043_selkies_upgrade` = `eeffb89`。
+- 本轮结果：t033、t034、t043 均完成完整门禁与 review。
