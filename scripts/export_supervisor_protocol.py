@@ -10,42 +10,15 @@ and does not claim to be a wire-negotiated version.
 """
 
 import json
+import logging
+import sys
 from pathlib import Path
+from typing import get_args
 
-from cbrowser.supervisor.protocol import (
-    ProfileReadiness,
-    ProfileRuntimeStatus,
-    ReadinessResponse,
-    ReconcileAllResponse,
-    ResetBlockedRequest,
-    ResetBlockedResponse,
-    SearchDefaultsRetryRequest,
-    SearchDefaultsStatusResponse,
-    StartProfileRequest,
-    StartProfileResponse,
-    StopProfileRequest,
-    StopProfileResponse,
-    TransportObservation,
-    TransportObservationResponse,
-)
+from cbrowser.supervisor.protocol import SupervisorMessage
 from pydantic import TypeAdapter
 
-_MESSAGES = (
-    StartProfileRequest,
-    StartProfileResponse,
-    StopProfileRequest,
-    StopProfileResponse,
-    ResetBlockedRequest,
-    ResetBlockedResponse,
-    ProfileRuntimeStatus,
-    SearchDefaultsRetryRequest,
-    SearchDefaultsStatusResponse,
-    TransportObservation,
-    TransportObservationResponse,
-    ReconcileAllResponse,
-    ProfileReadiness,
-    ReadinessResponse,
-)
+logger = logging.getLogger(__name__)
 
 
 def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
@@ -66,27 +39,26 @@ def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
 
 
 def supervisor_protocol_schema() -> dict:
-    schema = TypeAdapter(
-        StartProfileRequest
-        | StartProfileResponse
-        | StopProfileRequest
-        | StopProfileResponse
-        | ResetBlockedRequest
-        | ResetBlockedResponse
-        | ProfileRuntimeStatus
-        | SearchDefaultsRetryRequest
-        | SearchDefaultsStatusResponse
-        | TransportObservation
-        | TransportObservationResponse
-        | ReconcileAllResponse
-        | ProfileReadiness
-        | ReadinessResponse
-    ).json_schema()
-    return _entry_index_document(schema, [model.__name__ for model in _MESSAGES])
+    schema = TypeAdapter(SupervisorMessage).json_schema()
+    return _entry_index_document(
+        schema, [model.__name__ for model in get_args(SupervisorMessage)]
+    )
+
+
+def render_supervisor_protocol() -> str:
+    return json.dumps(supervisor_protocol_schema(), indent=2) + "\n"
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     destination = (
         Path(__file__).resolve().parents[1] / "schemas/runtime/supervisor_protocol.json"
     )
-    destination.write_text(json.dumps(supervisor_protocol_schema(), indent=2) + "\n")
+    rendered = render_supervisor_protocol()
+    if len(sys.argv) > 1 and sys.argv[1] == "--check":
+        if destination.read_text(encoding="utf-8") != rendered:
+            logger.error("protocol drift: %s is out of date", destination)
+            raise SystemExit(1)
+        logger.info("%s is up to date", destination)
+    else:
+        destination.write_text(rendered, encoding="utf-8")

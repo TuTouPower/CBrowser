@@ -19,6 +19,7 @@
     "test": "npm run test:types && vitest run",
     "test:watch": "vitest",
     "generate:api": "openapi-typescript ../../schemas/openapi/cbrowser_v1.json -o src/shared/api/generated/cbrowser_v1.d.ts",
+    "check:api": "tmp=$(mktemp -d) && trap 'rm -rf \"$tmp\"' EXIT && openapi-typescript ../../schemas/openapi/cbrowser_v1.json -o \"$tmp/cbrowser_v1.d.ts\" >/dev/null && cmp -s \"$tmp/cbrowser_v1.d.ts\" src/shared/api/generated/cbrowser_v1.d.ts",
     "test:types": "tsc -p tsconfig.test.json",
     "design:tokens": "node scripts/design_tokens.mjs --write",
     "design:lint": "node scripts/design_tokens.mjs --lint",

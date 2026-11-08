@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Union
 
 from cbrowser.runtime_agent.protocol import SearchDefaultsStatus
 from cbrowser.udp_mux import udp_mux_bounds
@@ -215,3 +215,29 @@ class ConvergeStreamsRequest(BaseModel):
     target_version: int = Field(ge=1)
     bind_host: str = Field(min_length=1, max_length=64)
     advertised_ip: str = Field(min_length=1, max_length=64)
+
+
+SupervisorMessage = Union[
+    StartProfileRequest,
+    StartProfileResponse,
+    StopProfileRequest,
+    StopProfileResponse,
+    SearchDefaultsRetryRequest,
+    SearchDefaultsStatusResponse,
+    PreviewPolicySyncResponse,
+    ResetBlockedRequest,
+    CloseTunnelsRequest,
+    CloseTunnelsResponse,
+    AttendantDialogsResponse,
+    AnswerAttendantDialogRequest,
+    AnswerAttendantDialogResponse,
+    ResetBlockedResponse,
+    ProfileRuntimeStatus,
+    TransportObservation,
+    TransportObservationResponse,
+    ReconcileAllResponse,
+    ProfileReadiness,
+    ReadinessResponse,
+    RebuildEdgeRequest,
+    ConvergeStreamsRequest,
+]

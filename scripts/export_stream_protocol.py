@@ -10,24 +10,15 @@ version literal (``v2``) and is maintained per protocol.
 """
 
 import json
+import logging
+import sys
 from pathlib import Path
+from typing import get_args
 
-from cbrowser.stream_agent.protocol import (
-    AgentHeartbeatEnvelope,
-    AgentRegisterEnvelope,
-    GatewayControlEnvelope,
-    GatewayRegisterResponse,
-    GatewayTunnelEnvelope,
-)
+from cbrowser.stream_agent.protocol import GatewayWireMessage
 from pydantic import TypeAdapter
 
-_MESSAGES = (
-    AgentRegisterEnvelope,
-    AgentHeartbeatEnvelope,
-    GatewayRegisterResponse,
-    GatewayTunnelEnvelope,
-    GatewayControlEnvelope,
-)
+logger = logging.getLogger(__name__)
 
 
 def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
@@ -48,18 +39,26 @@ def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
 
 
 def stream_protocol_schema() -> dict:
-    schema = TypeAdapter(
-        AgentRegisterEnvelope
-        | AgentHeartbeatEnvelope
-        | GatewayRegisterResponse
-        | GatewayTunnelEnvelope
-        | GatewayControlEnvelope
-    ).json_schema()
-    return _entry_index_document(schema, [model.__name__ for model in _MESSAGES])
+    schema = TypeAdapter(GatewayWireMessage).json_schema()
+    return _entry_index_document(
+        schema, [model.__name__ for model in get_args(GatewayWireMessage)]
+    )
+
+
+def render_stream_protocol() -> str:
+    return json.dumps(stream_protocol_schema(), indent=2) + "\n"
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     destination = (
         Path(__file__).resolve().parents[1] / "schemas/stream/agent_protocol.json"
     )
-    destination.write_text(json.dumps(stream_protocol_schema(), indent=2) + "\n")
+    rendered = render_stream_protocol()
+    if len(sys.argv) > 1 and sys.argv[1] == "--check":
+        if destination.read_text(encoding="utf-8") != rendered:
+            logger.error("protocol drift: %s is out of date", destination)
+            raise SystemExit(1)
+        logger.info("%s is up to date", destination)
+    else:
+        destination.write_text(rendered, encoding="utf-8")

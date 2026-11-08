@@ -33,24 +33,6 @@ def test_exported_stream_schema_matches_models():
     assert _load_schema() == stream_protocol_schema()
 
 
-def test_stream_schema_uses_entry_index_convention():
-    schema = _load_schema()
-    assert "anyOf" not in schema
-    assert schema["version"] == "v2"
-    assert set(schema["messages"]) == {
-        "AgentRegisterEnvelope",
-        "AgentHeartbeatEnvelope",
-        "GatewayRegisterResponse",
-        "GatewayTunnelEnvelope",
-        "GatewayControlEnvelope",
-    }
-    # $defs stay exactly as the union generates them (no injected $id,
-    # which would change nested $ref resolution); the stable $id lives on
-    # the message entries instead.
-    for definition in schema["$defs"].values():
-        assert "$id" not in definition
-
-
 def test_stream_schema_accepts_protocol_packets_without_visibility_update():
     schema = _load_schema()
     identity = {

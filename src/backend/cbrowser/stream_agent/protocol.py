@@ -6,7 +6,7 @@ Gateway/Supervisor communications.
 import math
 import re
 from enum import Enum
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Union
 
 from cbrowser.udp_mux import udp_mux_bounds
 from pydantic import (
@@ -318,6 +318,16 @@ class AgentHumanInputTakeoverEnvelope(_AgentEnvelope):
 AgentEnvelope = Annotated[
     AgentRegisterEnvelope | AgentHeartbeatEnvelope | AgentHumanInputTakeoverEnvelope,
     Field(discriminator="action"),
+]
+
+
+GatewayWireMessage = Union[
+    AgentRegisterEnvelope,
+    AgentHeartbeatEnvelope,
+    AgentHumanInputTakeoverEnvelope,
+    GatewayRegisterResponse,
+    GatewayTunnelEnvelope,
+    GatewayControlEnvelope,
 ]
 
 
