@@ -6,6 +6,7 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import re
 import time
 import uuid
@@ -32,6 +33,7 @@ from cbrowser.supervisor.agent_credentials import AgentCredentials
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from .api_client import GatewayApiClient
+from .client_ip import parse_trusted_proxy_cidrs, resolve_client_ip
 from .config import GatewayConfig
 from .endpoint import normalize_origin
 from .registry import (
@@ -176,6 +178,16 @@ def create_gateway_app(
 ) -> web.Application:
     """Builds and configures the aiohttp Gateway web application."""
     app = web.Application()
+    trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
+        os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
+    )
+
+    def _resolve_source(request: web.Request) -> str:
+        return resolve_client_ip(
+            request.remote,
+            request.headers.get("X-Forwarded-For"),
+            trusted_proxy_cidrs,
+        )
 
     credentials = AgentCredentials(config.agent_key_file)
     try:
@@ -418,7 +430,7 @@ def create_gateway_app(
         if not auth.startswith("Bearer "):
             return web.Response(status=401, text="Unauthorized Agent")
         raw_token = auth.removeprefix("Bearer ").strip()
-        source = request.remote
+        source = _resolve_source(request)
         if not registration_throttle.reserve(source):
             logger.warning("Agent registration rate limited for source")
             return web.Response(status=429, text="Too many registration attempts")
@@ -728,7 +740,7 @@ def create_gateway_app(
     # ---------------- Viewer Signal Route ----------------
     async def handle_viewer_signal(request: web.Request) -> web.WebSocketResponse:
         profile_id = request.match_info["profile_id"]
-        source = request.remote
+        source = _resolve_source(request)
 
         if not authorization_throttle.allow(source, profile_id):
             return web.Response(
