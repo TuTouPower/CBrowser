@@ -1,34 +1,26 @@
 # 项目交接记录（最新）
 
-## 2026-11-08T11:30:00+08:00 任务队列全部闭环：t044/t037/t045/t038/t039/t040/t042 全量通过门禁与两轴审查
+## 2026-11-08T13:30:00+08:00 任务队列全部闭环并合入主干：t044/t037/t045/t038/t039/t040/t042/t046 全量合入 main
 
 ### 状态与工作区
 
-- branch `main`；交出时 head_commit `9b6eb40`（本地领先 origin/main，未 push）。
+- branch `main`；交出时 head_commit `b3bb2f2`（本地领先 origin/main，未 push）。
 - task 状态以 `task.py effective-status` 为准：
-    - `t044_e2e_parallel_execution` = `done | branch`
-    - `t037_environment_management_ui` = `done | branch`
-    - `t045_e2e_gate_stability_cleanup` = `done | branch`
-    - `t038_proxy_library_ui` = `done | branch`
-    - `t039_session_page_redesign` = `done | branch`
-    - `t040_environment_preview_thumbnails` = `done | branch`（commit `b43c921`）
-    - `t042_lan_access_protocol_settings` = `done | branch`（commit `1628879`）
-- 串行任务队列全体成员均已完成实施、完整门禁全绿（10 suites 全部 exit 0）、双轴 review PASS、finish 与 run-close，各分支保留待整链集成。
-- 所有临时 worktree 已规范清理，Docker 容器与网络干净，主仓工作区无未跟踪/未暂存文件。
+    - `t037`–`t042`、`t044`–`t046` 全部为 `done | main`。
+    - `docs/pending/todo/` 总账完全清空（`p051` 与 `p052` 已闭环并归档至 `docs/archive/pending/`）。
+- 主仓工作区干净，所有临时 worktree 已规范清理，Docker 容器与网络干净，无未暂存/未跟踪改动。
 
 ### 本轮结果（均已验证）
 
-- **t042 (局域网访问可配置·仅 HTTPS)**：
-    - 前置 Spike：完成 `s017`（5 组实测，`report.md`、探针脚本与结果数据），提炼 `d036`，定案 ADR 026 修订 ADR 013。
-    - 单一真相源：彻底废除 `CBROWSER_ALLOWED_ORIGINS` 旁路与代码默认端口 fallback；Origin 白名单（仅派生 `https://`）与对外端口完全由不可变已应用网络版本驱动，API 与 Gateway 强一致对账，未列出 Origin 严格 403 拒绝。
-    - 边缘与媒体重建：Supervisor 原地原子重绑 Caddy 容器端口与网络配置；对账时比对 Stream 容器网络标签（`com.cbrowser.bind-host`、`com.cbrowser.advertised-ip`）漂移并自愈重建；网络策略放行局域网媒体 UDP；Browser 与 Profile 数据完整保留，会话自动重连。
-    - 零测试分叉与事件驱动：StreamAgent 消除测试钩子分叉，统一单一等待原语 `wait_heartbeat`，实现 consumer 暂停/恢复毫秒级即时心跳上报；补齐 `test_policy_consumer_active_changes_trigger_immediate_heartbeat` 单元测试。
-    - 前端界面：SettingsPage 网络访问双态对比配置、密码确认弹窗、断连警告与根证书公钥下载引导，补齐中英数字典。
-    - 部署与 Release 控制器：删除写死 IP 的静态 Caddyfile，由生成器确定性生成并取指纹；部署脚本与测试全量对齐。
-    - 完整门禁证据：`.scratch/t042_evidence_20261108_105101/manifest.json`，10 个测试 suites 全部 exit 0，`all_passed: True`（requirements_check、contract、unit 1225 passed、integration 149 passed、design_lint、design_check、frontend_test 419 passed、frontend_build、image_packages、e2e all passed）。
-    - Review 验收：Round 1 code 与 test 均为 PASS，指纹 `bade1636925b9945`，10 条行为 AC 全部 `TICK-VALID`。实现 commit：`16288796262a38a2e56ab7e3e2d3c6de40f24460`。
+- **t046 (E2E 基础设施重构与协议探针模型归一)**：
+    - 根除 p051（容器销毁中途消失）：彻底重写 `test_runtime_coordinator_e2e.py`，移除所有私有 subprocess、raw `containers.run` 与自建 cleanup 循环，100% 接入标准 `FrontendAppTopologyHarness`；修复 Docker SDK 在 `containers.list` 与 inspect 间的 TOCTOU 404 竞态。
+    - 根除 p052（Selkies 协议探针关闭握手时序）：重构 `test_stream_selkies_tokens_e2e.py` 被驱逐连接的客户端模型，建立实时并发接收任务，确保实时响应服务端的 RFC 6455 Close Frame；连续 10 次单跑 100% 成功，精确保持 4001 与 `Superseded by a new connection.` 断言。
+    - 修复 `test_supervisor_recovery_e2e.py` 中 `sigkill_reconciliation` 重启后状态查询的 `poll_until` 就绪门控。
+    - 完整门禁（`scripts/run_gates.sh`）执行通过，证据位于 `.scratch/t046_evidence_20261108_124935/`。
+    - 双轴审查（Round 1 code/test PASS，指纹 `4d6a7fb3e9229c90`，5 条行为 AC 全部 `TICK-VALID`）。
+    - 执行 `task.py integrate t046`，成功合入 `main`（merge commit `b3bb2f2`），对应 task 目录已归档。
 
-### 下一步与集成准备
+### 下一步
 
-1. 当前队列的所有 task 均已完成实施与 run-close，整链等待用户授权执行 merge 集成（`integrate-chain` 或逐项 `integrate`）。
-2. 在用户明确批准 merge 之前，不执行 git merge，不 push。
+1. 当前全部 backlog 与 todo 队列已清空，全部任务已合入本地主干 `main`。
+2. 遵守用户约束，本地保持未 push 状态，等待用户后续指令。
