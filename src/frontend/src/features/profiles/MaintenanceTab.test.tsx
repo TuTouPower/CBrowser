@@ -1,15 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { I18nProvider, en } from '../../i18n';
 import { ThemeProvider } from '../../theme';
 import { ToastProvider } from '../../shared/ui';
 import { ApiClientContext } from '../../shared/api/client_context';
+import { ApiError } from '../../shared/api/client';
 import type { ApiClient } from '../../shared/api/client';
 import type { ProfileResponse, ProfileRuntimeResponse } from '../../shared/api/types';
-import { profileKeys } from './useProfilesQuery';
 import { MaintenanceTab } from './MaintenanceTab';
 
 function profile(): ProfileResponse {
@@ -95,6 +95,8 @@ function makeStub(
   } as unknown as StubClient;
 }
 
+const DETAIL_PATH = '/profiles/p1/maintenance';
+
 function renderTab(client: StubClient) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -103,66 +105,117 @@ function renderTab(client: StubClient) {
     },
   });
   const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+  const router = createMemoryRouter(
+    [
+      { path: '/', element: <div data-testid="env-list-probe" /> },
+      { path: DETAIL_PATH, element: <MaintenanceTab profileId="p1" /> },
+    ],
+    { initialEntries: [DETAIL_PATH] },
+  );
   render(
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ThemeProvider>
           <ToastProvider>
             <ApiClientContext.Provider value={client}>
-              <MemoryRouter>
-                <MaintenanceTab profileId="p1" />
-              </MemoryRouter>
+              <RouterProvider router={router} />
             </ApiClientContext.Provider>
           </ToastProvider>
         </ThemeProvider>
       </I18nProvider>
     </QueryClientProvider>,
   );
-  return invalidateSpy;
+  return { invalidateSpy, router };
+}
+
+async function clickDelete() {
+  const section = await screen.findByTestId('profile-maintenance-delete');
+  const button = within(section).getByRole('button', { name: en.delete });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  return button;
 }
 
 describe('MaintenanceTab', () => {
-  it('deletes with a fresh idempotency key per action and keeps the tab mounted after success', async () => {
+  it('replaces the deleted profile detail with the environment list', async () => {
     const client = makeStub('stopped');
-    const invalidateSpy = renderTab(client);
+    const { router } = renderTab(client);
 
-    await screen.findByTestId('profile-maintenance-tab');
-    const section = await screen.findByTestId('profile-maintenance-delete');
-    const button = within(section).getByRole('button', { name: en.delete });
-    await waitFor(() => expect(button).toBeEnabled());
-    await waitFor(() =>
-      expect(client.profiles.getRuntime).toHaveBeenCalledWith('p1'),
-    );
-
-    fireEvent.click(button);
-    await waitFor(() =>
-      expect(client.profiles.delete).toHaveBeenCalledTimes(1),
-    );
-    expect(client.profiles.delete).toHaveBeenCalledWith('p1', expect.any(String));
-    const firstKey = client.profiles.delete.mock.calls[0]![1] as string;
-    expect(firstKey).not.toBe('');
-
-    await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({
-        queryKey: profileKeys.lists(),
-      }),
-    );
+    await clickDelete();
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
+    expect(router.state.historyAction).toBe('REPLACE');
+    expect(await screen.findByTestId('env-list-probe')).toBeInTheDocument();
+    expect(
+      screen.queryByTestId('profile-maintenance-tab'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByTestId('profile-maintenance-error'),
     ).not.toBeInTheDocument();
-    expect(screen.getByTestId('profile-maintenance-delete')).toBeInTheDocument();
-    await waitFor(() => expect(button).toBeEnabled());
+    expect(client.profiles.delete).toHaveBeenCalledWith('p1', expect.any(String));
+
+    await router.navigate(-1);
+    expect(router.state.location.pathname).not.toBe(DETAIL_PATH);
+  });
+
+  it('keeps the detail page and the running-disabled error on a 409', async () => {
+    const client = makeStub('stopped');
+    client.profiles.delete.mockRejectedValue(
+      new ApiError('Profile is running', 409, undefined, 'profile_running'),
+    );
+    const { router } = renderTab(client);
+
+    const button = await clickDelete();
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-maintenance-error')).toHaveTextContent(
+        en.maintenanceDeleteRunningDisabled,
+      ),
+    );
+    expect(router.state.location.pathname).toBe(DETAIL_PATH);
+    expect(screen.getByTestId('profile-maintenance-tab')).toBeInTheDocument();
 
     fireEvent.click(button);
     await waitFor(() =>
       expect(client.profiles.delete).toHaveBeenCalledTimes(2),
     );
+    const firstKey = client.profiles.delete.mock.calls[0]![1] as string;
     const secondKey = client.profiles.delete.mock.calls[1]![1] as string;
+    expect(firstKey).not.toBe('');
     expect(secondKey).not.toBe('');
     expect(secondKey).not.toBe(firstKey);
-    expect(
-      screen.queryByTestId('profile-maintenance-error'),
-    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the detail page and the API error on a 401', async () => {
+    const client = makeStub('stopped');
+    client.profiles.delete.mockRejectedValue(
+      new ApiError('Unauthorized', 401),
+    );
+    const { router } = renderTab(client);
+
+    await clickDelete();
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-maintenance-error')).toHaveTextContent(
+        'Unauthorized',
+      ),
+    );
+    expect(router.state.location.pathname).toBe(DETAIL_PATH);
+    expect(screen.getByTestId('profile-maintenance-tab')).toBeInTheDocument();
+  });
+
+  it('keeps the detail page and the message on a network failure', async () => {
+    const client = makeStub('stopped');
+    client.profiles.delete.mockRejectedValue(
+      new TypeError('Failed to fetch'),
+    );
+    const { router } = renderTab(client);
+
+    await clickDelete();
+    await waitFor(() =>
+      expect(screen.getByTestId('profile-maintenance-error')).toHaveTextContent(
+        'Failed to fetch',
+      ),
+    );
+    expect(router.state.location.pathname).toBe(DETAIL_PATH);
+    expect(screen.getByTestId('profile-maintenance-tab')).toBeInTheDocument();
   });
 
   it('disables delete while the profile is running', async () => {

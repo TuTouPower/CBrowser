@@ -1,4 +1,5 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
+import { AppErrorPage } from "./AppErrorPage";
 import { AppLayout } from "./AppLayout";
 import { RequireAuth } from "./RequireAuth";
 import { SessionPage } from "../features/browser-session/SessionPage";
@@ -13,6 +14,7 @@ export const routes: RouteObject[] = [
   {
     path: "/login",
     element: <LoginPage />,
+    errorElement: <AppErrorPage />,
   },
   {
     path: "/",
@@ -21,6 +23,7 @@ export const routes: RouteObject[] = [
         <AppLayout />
       </RequireAuth>
     ),
+    errorElement: <AppErrorPage />,
     children: [
       {
         index: true,
@@ -67,6 +70,7 @@ export const routes: RouteObject[] = [
   {
     path: "*",
     element: <Navigate to="/" replace />,
+    errorElement: <AppErrorPage />,
   },
 ];
 

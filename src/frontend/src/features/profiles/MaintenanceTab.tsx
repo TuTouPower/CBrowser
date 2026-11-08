@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { Banner, Button } from "../../shared/ui";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
@@ -13,6 +14,7 @@ import {
 export function MaintenanceTab({ profileId }: { profileId: string }) {
   const { t } = useI18n();
   const client = useApiClient();
+  const navigate = useNavigate();
   const { data: runtime } = useProfileRuntimeQuery(profileId, client);
   const duplicateMutation = useDuplicateProfileMutation(client);
   const resetMutation = useResetProfileMutation(client);
@@ -25,6 +27,7 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
     setError(null);
     try {
       await deleteMutation.mutateAsync(profileId);
+      navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof ApiError && err.errorCode === "profile_running") {
         setError(t("maintenanceDeleteRunningDisabled"));
