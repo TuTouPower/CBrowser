@@ -36,7 +36,10 @@ from cbrowser.domain.models import (
     PreviewPolicySyncRequest,
     ProfileConfig,
 )
-from cbrowser.network_config import read_applied_network_state
+from cbrowser.network_config import (
+    compute_caddyfile_sha256,
+    read_applied_network_state,
+)
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.preview import (
     PreviewPolicy,
@@ -2869,6 +2872,42 @@ class SupervisorCore:
             return state[0].config
         return NetworkAccessConfig(lan_access_enabled=False)
 
+    def _network_edge_receipt(
+        self,
+        operation_id: str | None,
+        execution_generation: int | None,
+        phase: str,
+        caddyfile_path: str,
+    ) -> dict[str, Any]:
+        try:
+            content_hash = compute_caddyfile_sha256(
+                Path(caddyfile_path).read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError):
+            content_hash = ""
+        receipt = {
+            "operation_id": operation_id,
+            "execution_generation": execution_generation,
+            "phase": phase,
+            "resource": "caddy",
+            "caddyfile_sha256": content_hash,
+        }
+        if operation_id and self.operations is not None:
+            request = {
+                "operation_id": operation_id,
+                "execution_generation": execution_generation,
+                "phase": phase,
+                "resource": "caddy",
+            }
+            self.operations.complete_network_receipt(
+                operation_id,
+                phase,
+                "caddy",
+                request,
+                {"status": "ok", "docker_verified": bool(content_hash), **receipt},
+            )
+        return receipt
+
     async def rebuild_edge_proxy(
         self,
         *,
@@ -2876,6 +2915,10 @@ class SupervisorCore:
         bind_host: str,
         https_port: int,
         caddyfile_path: str,
+        operation_id: str | None = None,
+        execution_generation: int | None = None,
+        candidate_hash: str | None = None,
+        restoring: bool = False,
     ) -> dict[str, Any]:
         logger.info(
             "Rebuilding edge proxy to version %d: bind_host=%s https_port=%d",
@@ -2883,12 +2926,50 @@ class SupervisorCore:
             bind_host,
             https_port,
         )
+        phase = "compensating" if restoring else "installing"
+        receipt = self._network_edge_receipt(
+            operation_id, execution_generation, phase, caddyfile_path
+        )
+        if candidate_hash is not None:
+            receipt["candidate_hash"] = candidate_hash
+            if (
+                receipt["caddyfile_sha256"]
+                and receipt["caddyfile_sha256"] != candidate_hash
+            ):
+                raise DockerSandboxError("candidate snapshot hash mismatch")
         res = await self.docker.rebuild_caddy_container(
             bind_host=bind_host,
             https_port=https_port,
             caddyfile_path=caddyfile_path,
         )
-        return {"status": "ok", "version": target_version, **res}
+        return {"status": "ok", "version": target_version, **receipt, **res}
+
+    async def restore_edge_proxy(
+        self,
+        *,
+        old_version: int,
+        bind_host: str,
+        https_port: int,
+        caddyfile_path: str,
+        operation_id: str | None = None,
+        execution_generation: int | None = None,
+    ) -> dict[str, Any]:
+        logger.info("Restoring edge proxy to old version %d", old_version)
+        receipt = self._network_edge_receipt(
+            operation_id, execution_generation, "compensating", caddyfile_path
+        )
+        res = await self.docker.rebuild_caddy_container(
+            bind_host=bind_host,
+            https_port=https_port,
+            caddyfile_path=caddyfile_path,
+        )
+        return {
+            "status": "ok",
+            "version": old_version,
+            "restored": True,
+            **receipt,
+            **res,
+        }
 
     async def converge_network_streams(
         self,
@@ -2896,6 +2977,8 @@ class SupervisorCore:
         target_version: int,
         bind_host: str,
         advertised_ip: str,
+        operation_id: str | None = None,
+        execution_generation: int | None = None,
     ) -> dict[str, Any]:
         logger.info(
             "Converging streams for network version %d: bind_host=%s advertised_ip=%s",
@@ -2904,6 +2987,7 @@ class SupervisorCore:
             advertised_ip,
         )
         rebuilt = 0
+        touched: list[str] = []
         for profile_id, session in list(self._sessions.items()):
             containers = await asyncio.to_thread(
                 self.docker.get_profile_containers, profile_id
@@ -2924,4 +3008,25 @@ class SupervisorCore:
                     )
                     await self._replace_stream_only(profile_id, session, rebuild_network=False)
                     rebuilt += 1
-        return {"status": "ok", "rebuilt_streams": rebuilt}
+                    touched.append(profile_id)
+        receipt = {
+            "operation_id": operation_id,
+            "execution_generation": execution_generation,
+            "resource": "stream",
+            "stream_instances": touched,
+        }
+        if operation_id and self.operations is not None:
+            request = {
+                "operation_id": operation_id,
+                "execution_generation": execution_generation,
+                "phase": "installing",
+                "resource": "stream",
+            }
+            self.operations.complete_network_receipt(
+                operation_id,
+                "installing",
+                "stream",
+                request,
+                {"status": "ok", "docker_verified": False, **receipt},
+            )
+        return {"status": "ok", "rebuilt_streams": rebuilt, **receipt}

@@ -86,13 +86,22 @@ def test_upgrade_head_matches_orm_metadata(tmp_path: Path) -> None:
     command.check(get_alembic_config(db))
 
 
-def test_revision_chain_is_baseline_plus_incremental(tmp_path: Path) -> None:
-    """t041: the shipped chain is the t035 baseline plus one incremental
-    migration; the head advances while the baseline remains the root."""
+def test_revision_chain_matches_shipped_migration_files(tmp_path: Path) -> None:
+    """The shipped chain is the t035 baseline plus every incremental
+    migration present in versions/: the head advances while the baseline
+    remains the root, and each shipped file is reachable in the chain."""
     cfg = get_alembic_config(tmp_path / "chain.db")
     script = ScriptDirectory.from_config(cfg)
     chain = [rev.revision for rev in script.walk_revisions()]
-    assert len(chain) == 2
+    versions_dir = (
+        Path(__file__).resolve().parents[2]
+        / "src" / "backend" / "migrations" / "versions"
+    )
+    revision_files = [
+        p for p in versions_dir.glob("*.py") if not p.name.startswith("__")
+    ]
+    assert len(chain) == len(revision_files)
+    assert len(set(chain)) == len(chain)
     assert chain[-1] == BASELINE_REVISION
     baseline = script.get_revision(BASELINE_REVISION)
     assert baseline is not None

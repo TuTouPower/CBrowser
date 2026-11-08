@@ -901,7 +901,24 @@ def test_manifest_records_current_head_with_incremental_chain(
     versions = sorted(
         (repo / "src" / "backend" / "migrations" / "versions").glob("*.py")
     )
-    assert len(versions) == 2
+    revision_files = [p for p in versions if not p.name.startswith("__")]
+    revisions: dict[str, str | None] = {}
+    for path in revision_files:
+        text = path.read_text(encoding="utf-8")
+        m = re.search(r'^revision[^=]*=\s*"([^"]+)"', text, re.M)
+        d = re.search(r'^down_revision[^=]*=\s*"([^"]+)"', text, re.M)
+        if m:
+            revisions[m.group(1)] = d.group(1) if d else None
+    assert head in revisions
+    assert len(revisions) == len(revision_files)
+    cursor: str | None = head
+    seen: set[str] = set()
+    while cursor is not None:
+        assert cursor not in seen
+        seen.add(cursor)
+        cursor = revisions[cursor]
+    assert len(seen) == len(revisions)
+    assert BASELINE_REVISION in seen
 
 
 def test_same_generation_publish_and_rollback_with_incremental_chain(

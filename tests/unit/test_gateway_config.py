@@ -1,6 +1,5 @@
 """Unit tests for Gateway configuration validation and applied origin derivation (t042 AC-007)."""
 
-import json
 import secrets
 from pathlib import Path
 import pytest
@@ -36,16 +35,22 @@ def test_gateway_config_from_env_defaults(
     assert cfg.agent_heartbeat_timeout_sec == 30.0
 
 
-def test_gateway_config_derives_origins_from_applied_state_and_reloads(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """t042 AC-007: Gateway reads origin whitelist from the single applied network version file,
-    and hot-reloads when the file is updated upon mode switch."""
-    _set_required_env(tmp_path, monkeypatch)
+def _gateway_config(tmp_path: Path, net_dir: Path) -> GatewayConfig:
+    key = tmp_path / "key.txt"
+    key.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    key.chmod(0o600)
+    return GatewayConfig(
+        agent_key_file=key,
+        gateway_token_file=key,
+        api_url="http://127.0.0.1:8000",
+        api_token_file=key,
+        network_state_dir=net_dir,
+    )
+
+
+def test_gateway_baseline_is_explicit_and_mtime_does_not_switch(tmp_path: Path) -> None:
     net_dir = tmp_path / "network"
     net_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. Initial applied state (Local only)
     v1 = AppliedNetworkAccessVersion(
         version=1,
         config=NetworkAccessConfig(lan_access_enabled=False),
@@ -55,27 +60,98 @@ def test_gateway_config_derives_origins_from_applied_state_and_reloads(
     )
     write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
 
-    cfg = GatewayConfig.from_env()
-    assert cfg.allowed_origins == ["https://127.0.0.1:56661", "https://localhost:56661"]
+    cfg = _gateway_config(tmp_path, net_dir)
+    assert "https://127.0.0.1:56661" in cfg.allowed_origins
 
-    # 2. Mode switch: write new applied state with LAN IP
     v2 = AppliedNetworkAccessVersion(
         version=2,
-        config=NetworkAccessConfig(lan_access_enabled=True, lan_advertised_ip="192.168.31.76"),
+        config=NetworkAccessConfig(
+            lan_access_enabled=True, lan_advertised_ip="192.168.31.76"
+        ),
         applied_at=utc_now_iso(),
         caddyfile_sha256="hash2",
-        origin_whitelist=[
-            "https://127.0.0.1:56661",
-            "https://localhost:56661",
-            "https://192.168.31.76:56661",
-        ],
+        origin_whitelist=["https://127.0.0.1:56661", "https://192.168.31.76:56661"],
     )
-    import time
-    time.sleep(0.05)  # Ensure mtime increments
     write_applied_network_state(net_dir, v2, "dummy caddyfile 2")
 
-    # Gateway dynamically reflects new origin whitelist without restarting (AC-007)
-    assert "https://192.168.31.76:56661" in cfg.allowed_origins
+    assert "https://192.168.31.76:56661" not in cfg.allowed_origins
+    assert cfg.active_publication()["operation_id"] == "baseline"
+
+
+def test_gateway_requires_authorized_ack_to_activate_new_origins(
+    tmp_path: Path,
+) -> None:
+    net_dir = tmp_path / "network"
+    net_dir.mkdir(parents=True, exist_ok=True)
+    v1 = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False),
+        applied_at=utc_now_iso(),
+        caddyfile_sha256="hash1",
+        origin_whitelist=["https://127.0.0.1:56661"],
+    )
+    write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
+    cfg = _gateway_config(tmp_path, net_dir)
+
+    cfg.authorize_publication(
+        "op-1", 3, "candidate-hash", ["https://lan.example:56661"]
+    )
+    assert "https://lan.example:56661" not in cfg.allowed_origins
+    ack = cfg.acknowledge_publication("op-1", 3, "candidate-hash")
+    assert ack["acked"] is True
+    assert "https://lan.example:56661" in cfg.allowed_origins
+    assert cfg.active_publication()["generation"] == 3
+
+    cfg.revoke_publication("op-1")
+    assert "https://lan.example:56661" not in cfg.allowed_origins
+    assert "https://127.0.0.1:56661" in cfg.allowed_origins
+
+
+def test_gateway_authorize_rejects_stale_generation(tmp_path: Path) -> None:
+    from cbrowser.gateway.config import NetworkPublicationAuthority
+
+    authority = NetworkPublicationAuthority()
+    authority.import_baseline(
+        ["https://127.0.0.1:56661"], generation=0, snapshot_hash="base"
+    )
+    assert authority.authorize("op-new", 4, "hash-new", ["https://lan:56661"])[
+        "authorized"
+    ] is True
+    assert authority.acknowledge("op-new", 4, "hash-new")["acked"] is True
+
+    stale = authority.authorize("op-stale", 3, "hash-stale", ["https://evil:56661"])
+    assert stale["authorized"] is False
+    assert authority.acknowledge("op-stale", 3, "hash-stale")["acked"] is False
+    assert "https://lan:56661" in authority.active()["origins"]
+
+
+def test_gateway_mtime_is_only_a_reread_hint_for_active_publication(
+    tmp_path: Path,
+) -> None:
+    net_dir = tmp_path / "network"
+    net_dir.mkdir(parents=True, exist_ok=True)
+    v1 = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False),
+        applied_at=utc_now_iso(),
+        caddyfile_sha256="hash1",
+        origin_whitelist=["https://127.0.0.1:56661"],
+    )
+    write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
+    cfg = _gateway_config(tmp_path, net_dir)
+
+    before = cfg.active_publication()
+    v2 = v1.model_copy(
+        update={
+            "version": 2,
+            "origin_whitelist": ["https://192.168.31.76:56661"],
+        }
+    )
+    write_applied_network_state(net_dir, v2, "dummy caddyfile 2")
+    _ = cfg.allowed_origins
+
+    assert cfg.active_publication() == before
+    assert "https://192.168.31.76:56661" not in cfg.active_publication()["origins"]
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])

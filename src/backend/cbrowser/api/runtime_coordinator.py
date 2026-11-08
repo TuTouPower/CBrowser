@@ -1141,6 +1141,25 @@ class RuntimeCoordinator:
             if self._active_tasks.get(profile_id) is asyncio.current_task():
                 self._active_tasks.pop(profile_id, None)
 
+    def _network_operation_headers(
+        self,
+        *,
+        operation_id: str | None,
+        execution_generation: int | None,
+        candidate_hash: str | None = None,
+        restoring: bool = False,
+    ) -> dict[str, str]:
+        headers = {"Authorization": f"Bearer {self._token_str}"}
+        if operation_id:
+            headers["X-CBrowser-Operation-Id"] = operation_id
+        if execution_generation is not None:
+            headers["X-CBrowser-Execution-Generation"] = str(execution_generation)
+        if candidate_hash:
+            headers["X-CBrowser-Candidate-Hash"] = candidate_hash
+        if restoring:
+            headers["X-CBrowser-Restore"] = "1"
+        return headers
+
     async def rebuild_edge(
         self,
         *,
@@ -1148,6 +1167,10 @@ class RuntimeCoordinator:
         bind_host: str,
         https_port: int,
         caddyfile_path: str,
+        operation_id: str | None = None,
+        execution_generation: int | None = None,
+        candidate_hash: str | None = None,
+        restoring: bool = False,
     ) -> dict[str, Any]:
         if not self.is_enabled():
             return {"status": "ok", "mock": True}
@@ -1158,7 +1181,12 @@ class RuntimeCoordinator:
                 transport=self.transport, timeout=10.0, trust_env=False
             )
         url = f"{self.supervisor_url}/supervisor/v1/network/rebuild-edge"
-        headers = {"Authorization": f"Bearer {self._token_str}"}
+        headers = self._network_operation_headers(
+            operation_id=operation_id,
+            execution_generation=execution_generation,
+            candidate_hash=candidate_hash,
+            restoring=restoring,
+        )
         body = {
             "target_version": target_version,
             "bind_host": bind_host,
@@ -1181,6 +1209,8 @@ class RuntimeCoordinator:
         target_version: int,
         bind_host: str,
         advertised_ip: str,
+        operation_id: str | None = None,
+        execution_generation: int | None = None,
     ) -> dict[str, Any]:
         if not self.is_enabled():
             return {"status": "ok", "rebuilt_streams": 0}
@@ -1191,7 +1221,10 @@ class RuntimeCoordinator:
                 transport=self.transport, timeout=10.0, trust_env=False
             )
         url = f"{self.supervisor_url}/supervisor/v1/network/converge-streams"
-        headers = {"Authorization": f"Bearer {self._token_str}"}
+        headers = self._network_operation_headers(
+            operation_id=operation_id,
+            execution_generation=execution_generation,
+        )
         body = {
             "target_version": target_version,
             "bind_host": bind_host,
@@ -1208,3 +1241,28 @@ class RuntimeCoordinator:
                 f"Supervisor converge-streams failed ({resp.status_code})"
             )
         return resp.json()
+
+    async def restore_network_snapshot(
+        self,
+        *,
+        operation_id: str,
+        execution_generation: int,
+        old_version: int,
+        bind_host: str,
+        https_port: int,
+        caddyfile_sha256: str,
+        caddyfile_path: str | None = None,
+    ) -> dict[str, Any]:
+        if not self.is_enabled():
+            return {"status": "ok", "restored": 0}
+        result = await self.rebuild_edge(
+            target_version=old_version,
+            bind_host=bind_host,
+            https_port=https_port,
+            caddyfile_path=caddyfile_path or "",
+            operation_id=operation_id,
+            execution_generation=execution_generation,
+            candidate_hash=caddyfile_sha256,
+            restoring=True,
+        )
+        return {"status": "ok", "restored": 1, **result}

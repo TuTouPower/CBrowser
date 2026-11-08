@@ -38,10 +38,11 @@ from cbrowser.api.v1.network_router import (
 )
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.network_config import derive_origin_whitelist
-from cbrowser.services.network_service import NetworkService
+from cbrowser.services.network_service import GatewayPublicationClient, NetworkService
 from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
+from cbrowser.gateway.config import NetworkPublicationAuthority
 from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
@@ -251,22 +252,42 @@ def create_app(
 
         # t042: Network Access Service and Applied Configuration
         export_network_dir = resolved_db.parent / "network"
+        publication_authority = NetworkPublicationAuthority()
+        gateway_publication_client = None
+        if app.state.gateway_token is not None:
+            gateway_publication_client = GatewayPublicationClient(
+                base_url=os.environ.get(
+                    "CBROWSER_GATEWAY_PUBLICATION_URL", "http://gateway:18080"
+                ),
+                token=app.state.gateway_token,
+            )
         network_service = NetworkService(
             repo=repo,
             auth_service=auth_service,
             supervisor_client=coordinator,
             export_dir=export_network_dir,
             on_origins_updated=lambda origins: setattr(app.state, "allowed_origins", list(origins)),
+            gateway=publication_authority,
+            gateway_client=gateway_publication_client,
         )
         app.state.network_service = network_service
+        app.state.network_publication_authority = publication_authority
         app.dependency_overrides[get_network_service] = lambda: network_service
         app.state.caddy_ca_dir = Path(
             os.environ.get("CBROWSER_CADDY_CA_DIR", "/data/caddy/pki/authorities/local")
         )
 
-        # Set applied Origin whitelist strictly derived from durable applied version (t042 AC-007)
+        initializer = getattr(repo, "initialize_network_from_disk", None)
+        if callable(initializer):
+            await initializer(export_network_dir)
         applied_settings = await network_service.get_settings()
         app.state.allowed_origins = derive_origin_whitelist(applied_settings.applied_version)
+        publication_authority.import_baseline(
+            list(app.state.allowed_origins),
+            generation=applied_settings.applied_version.version - 1,
+            snapshot_hash=applied_settings.applied_version.caddyfile_sha256,
+        )
+        await network_service.recover_pending_operation()
 
         yield
         if coordinator:
