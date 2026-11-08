@@ -15,6 +15,11 @@ class PortPoolExhaustedError(RuntimeError):
     """Raised when no UDP mux ports are available in [30000, 30991]."""
 
 
+class PortAllocationBlockedError(RuntimeError):
+    """Raised while an identified managed Stream has an unresolved port."""
+
+
+
 
 class PortAllocator:
     MIN_PORT: int = 30000
@@ -28,12 +33,23 @@ class PortAllocator:
         self._lock = asyncio.Lock()
         self._allocated: dict[str, int] = {}  # profile_id -> port
         self._used_ports: set[int] = set()
+        self._pending: set[str] = set()
+
+    async def sync_pending(self, profile_ids: set[str]) -> None:
+        """Replace the set of Profiles with unresolved managed Stream ports."""
+        async with self._lock:
+            self._pending = set(profile_ids)
 
     async def allocate(self, profile_id: str) -> int:
         """Idempotently allocate a UDP mux port for profile_id."""
         async with self._lock:
             if profile_id in self._allocated:
                 return self._allocated[profile_id]
+            if self._pending:
+                raise PortAllocationBlockedError(
+                    "UDP mux allocation blocked by unresolved managed "
+                    "Stream port"
+                )
 
             for port in range(self.min_port, self.max_port + 1):
                 if port not in self._used_ports:
@@ -61,6 +77,7 @@ class PortAllocator:
                 raise ValueError("Recovered UDP mux port is owned by another Profile")
             self._allocated[profile_id] = port
             self._used_ports.add(port)
+            self._pending.discard(profile_id)
             return port
 
     async def release(self, profile_id: str) -> int | None:
@@ -69,6 +86,7 @@ class PortAllocator:
             port = self._allocated.pop(profile_id, None)
             if port is not None:
                 self._used_ports.discard(port)
+            self._pending.discard(profile_id)
             return port
 
     def get_port(self, profile_id: str) -> int | None:

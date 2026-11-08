@@ -19,8 +19,11 @@ class _Docker:
         self.validator = PathValidator(data_root)
         self.policy_ready = policy_ready
         self.teardown_calls = 0
+        self._present = True
 
     def scan_active_containers(self):
+        if not self._present:
+            return []
         return [
             {
                 "id": f"{role}-id",
@@ -36,6 +39,7 @@ class _Docker:
 
     async def teardown_profile(self, profile_id: str) -> None:
         self.teardown_calls += 1
+        self._present = False
 
 
 async def _core(tmp_path, docker):

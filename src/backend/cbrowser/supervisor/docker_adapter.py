@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import docker
+import requests
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.supervisor.container_spec import (
@@ -115,6 +116,21 @@ def _parse_config_version(raw: Any) -> int | None:
 
 class DockerSandboxError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class StreamResidue:
+    profile_id: str
+    runtime_instance_id: str
+    container_id: str | None
+    container_name: str | None
+
+
+class StreamContainerResidueError(DockerSandboxError):
+    def __init__(self, residue: StreamResidue, cause_type: str) -> None:
+        super().__init__("Stream container cleanup pending")
+        self.residue = residue
+        self.cause_type = cause_type
 
 
 CACHE_GENERATION_FILENAME = ".cbrowser-cache-generation.json"
@@ -273,6 +289,7 @@ class DockerAdapter:
     ) -> None:
         validated_policy = NetworkPolicySpec.model_validate(policy)
         helper = None
+        cleanup_error = None
         try:
             helper = self.client.containers.run(
                 self.policy_image,
@@ -296,13 +313,30 @@ class DockerAdapter:
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
                 raise DockerSandboxError("Runtime network policy installation failed")
-        except DockerException as exc:
+        except DockerSandboxError:
+            raise
+        except (requests.exceptions.RequestException, DockerException) as exc:
+            raise DockerSandboxError(
+                "Runtime network policy installation failed: " + type(exc).__name__
+            ) from None
+        except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
             raise DockerSandboxError(
                 "Runtime network policy installation failed: " + type(exc).__name__
             ) from None
         finally:
             if helper is not None:
-                helper.remove(force=True)
+                try:
+                    helper.remove(force=True)
+                except Exception as exc:  # noqa: BLE001 - cleanup never masks the primary outcome
+                    cleanup_error = exc
+                    logger.warning(
+                        "Failed to remove network policy helper: error_type=%s",
+                        type(exc).__name__,
+                    )
+        if cleanup_error is not None:
+            raise DockerSandboxError(
+                "Runtime network policy helper cleanup failed"
+            ) from None
         atomic_write_text(
             gate / "ready.json",
             json.dumps({"instance_id": instance_id, "role": role, "status": "ready"}),
@@ -460,7 +494,11 @@ class DockerAdapter:
                     container.name,
                 )
             ):
-                raise DockerSandboxError("Transient helper ownership mismatch")
+                logger.warning(
+                    "Orphan helper identity mismatch retained: role=%s",
+                    role,
+                )
+                continue
             owned.append(container)
         for container in owned:
             try:
@@ -1419,6 +1457,7 @@ with path.open('w') as output:
         )
         ports = stream_ports(udp_mux_port, bind_host=bind_host)
 
+        container = None
         try:
             container = await asyncio.to_thread(
                 self.client.containers.run,
@@ -1466,10 +1505,106 @@ with path.open('w') as output:
                 "stream",
             )
             return container
-        except DockerException as e:
+        except Exception as exc:  # noqa: BLE001 - initialization failure is owned by the creator
+            if container is not None:
+                residue = self._reclaim_created_stream(
+                    container, profile_id, runtime_instance_id
+                )
+                if residue is not None:
+                    raise StreamContainerResidueError(
+                        residue, type(exc).__name__
+                    ) from exc
+            if isinstance(exc, DockerSandboxError):
+                raise
+            if isinstance(exc, DockerException):
+                raise DockerSandboxError(
+                    f"Failed to run stream container {s_name}: "
+                    f"{type(exc).__name__}"
+                ) from None
             raise DockerSandboxError(
-                f"Failed to run stream container {s_name}: {e}"
-            ) from e
+                f"Failed to initialize stream container {s_name}: "
+                f"{type(exc).__name__}"
+            ) from None
+
+    def _reclaim_created_stream(
+        self, container: Any, profile_id: str, instance_id: str
+    ) -> StreamResidue | None:
+        residue = StreamResidue(
+            profile_id=profile_id,
+            runtime_instance_id=instance_id,
+            container_id=getattr(container, "id", None),
+            container_name=getattr(container, "name", None),
+        )
+        labels = getattr(container, "labels", None) or {}
+        verified = (
+            residue.container_id is not None
+            and residue.container_name
+            == self.get_stream_container_name(profile_id)
+            and labels.get("com.cbrowser.prefix") == self.resource_prefix
+            and labels.get("com.cbrowser.managed-by") == "supervisor"
+            and labels.get("com.cbrowser.role") == "stream"
+            and labels.get("com.cbrowser.profile-id") == profile_id
+            and labels.get("com.cbrowser.instance-id") == instance_id
+        )
+        if not verified:
+            logger.warning(
+                "Stream container identity unverified; retained: container=%s",
+                residue.container_id,
+            )
+            return residue
+        try:
+            container.remove(force=True)
+        except Exception as exc:  # noqa: BLE001 - reclaim failure is reported as typed pending residue
+            logger.warning(
+                "Stream container reclaim failed: container=%s error_type=%s",
+                residue.container_id,
+                type(exc).__name__,
+            )
+            return residue
+        return None
+
+    def cleanup_stream_residue(self, residue: StreamResidue) -> bool:
+        if not residue.container_id:
+            return False
+        try:
+            container = self.client.containers.get(residue.container_id)
+        except NotFound:
+            return True
+        except DockerException as exc:
+            logger.warning(
+                "Stream residue lookup failed: container=%s error_type=%s",
+                residue.container_id,
+                type(exc).__name__,
+            )
+            return False
+        labels = getattr(container, "labels", None) or {}
+        if (
+            getattr(container, "name", None)
+            != self.get_stream_container_name(residue.profile_id)
+            or labels.get("com.cbrowser.prefix") != self.resource_prefix
+            or labels.get("com.cbrowser.managed-by") != "supervisor"
+            or labels.get("com.cbrowser.role") != "stream"
+            or labels.get("com.cbrowser.profile-id") != residue.profile_id
+            or labels.get("com.cbrowser.instance-id")
+            != residue.runtime_instance_id
+        ):
+            logger.warning(
+                "Stream residue identity mismatch; retained: container=%s",
+                residue.container_id,
+            )
+            return False
+        try:
+            container.remove(force=True)
+        except NotFound:
+            return True
+        except DockerException as exc:
+            logger.warning(
+                "Stream residue removal failed: container=%s error_type=%s",
+                residue.container_id,
+                type(exc).__name__,
+            )
+            return False
+        return True
 
     def cleanup_container_by_name(self, name: str) -> None:
         try:
