@@ -32,7 +32,6 @@ from cbrowser.supervisor.recovery_rules import (
     retry_delay_for_failure,
     runtime_pair_active,
     stream_missing,
-    terminal_observation,
 )
 from cbrowser.supervisor.volume_spec import SINGLETON_LOCK_NAMES
 
@@ -226,7 +225,7 @@ class RecoveryCoordinator:
             profile_id,
             exit_code,
         )
-        observed_state, reason = terminal_observation(exit_code)
+        observed_state, reason = "error", "container_exit"
         reported = await self.core.report_terminal_observation(
             profile_id,
             instance_id,

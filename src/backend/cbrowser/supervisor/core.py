@@ -54,7 +54,12 @@ from cbrowser.runtime_agent.protocol import (
 )
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
-from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
+from cbrowser.supervisor.docker_adapter import (
+    DockerAdapter,
+    DockerSandboxError,
+    StreamContainerResidueError,
+    StreamResidue,
+)
 from cbrowser.supervisor.event_forwarder import (
     DELIVERED,
     REJECTED,
@@ -215,13 +220,16 @@ class SupervisorCore:
         self._preview_captured_at: dict[str, str | None] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
-        self._native_exit_instances: set[tuple[str, str, int]] = set()
+        self._native_exit_instances: dict[
+            tuple[str, str, int], tuple[str, str]
+        ] = {}
         self._terminal_observations: set[tuple[str, str, int]] = set()
         # t026 convergence state (in-memory only; a restart re-derives it
         # from the same scans that rebuild sessions).
         self._transport: dict[str, TransportObservation] = {}
         self._registration: dict[str, RegistrationState] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
+        self._pending_stream_residue: dict[str, StreamResidue] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
         self._unprotected_since: dict[str, float] = {}
         self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
@@ -651,6 +659,23 @@ class SupervisorCore:
         )
         validator = self.docker.validator
         try:
+            pending = self._pending_stream_residue.get(profile_id)
+            if pending is not None:
+                if pending.runtime_instance_id != instance_id:
+                    self._pending_stream_residue.pop(profile_id, None)
+                elif not await asyncio.to_thread(
+                    self.docker.cleanup_stream_residue, pending
+                ):
+                    self._update_transport(
+                        profile_id,
+                        transport_state="failed",
+                        stream_state="stopped",
+                        last_error="stream_residue_cleanup_failed",
+                        last_error_at=self._now_iso(),
+                    )
+                    return False
+                else:
+                    self._pending_stream_residue.pop(profile_id, None)
             stream_name = self.docker.get_stream_container_name(profile_id)
             await asyncio.to_thread(
                 self.docker.cleanup_container_by_name, stream_name
@@ -712,6 +737,23 @@ class SupervisorCore:
                 last_attached_at=self._now_iso(),
             )
             return True
+        except StreamContainerResidueError as exc:
+            self._pending_stream_residue[profile_id] = exc.residue
+            logger.warning(
+                "Stream replacement residue pending cleanup: profile=%s "
+                "instance=%s error_type=%s",
+                profile_id,
+                instance_id,
+                exc.cause_type,
+            )
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                stream_state="stopped",
+                last_error="stream_replacement_residue_pending",
+                last_error_at=self._now_iso(),
+            )
+            return False
         except (DockerSandboxError, OSError, ValueError) as exc:
             logger.warning(
                 "Stream-only replacement failed: profile=%s error_type=%s",
@@ -934,10 +976,87 @@ class SupervisorCore:
             diagnostics=diagnostics,
         )
 
+    async def _reserve_ports_from_docker_facts(
+        self, containers: list[dict[str, Any]]
+    ) -> None:
+        client = getattr(self.docker, "client", None)
+        api = getattr(client, "api", None) if client is not None else None
+        inspect = getattr(api, "inspect_container", None) if api is not None else None
+        unresolved: set[str] = set()
+        for item in containers:
+            if item.get("role") != "stream":
+                continue
+            pid = item.get("profile_id")
+            if not isinstance(pid, str) or not pid:
+                continue
+            port = None
+            if inspect is not None:
+                try:
+                    data = await asyncio.to_thread(inspect, item["id"])
+                    bindings = (
+                        (data.get("HostConfig", {}) or {}).get("PortBindings", {})
+                        or {}
+                    )
+                    for key, value in bindings.items():
+                        if key.endswith("/udp") and value:
+                            port = int(value[0]["HostPort"])
+                            break
+                except Exception as exc:  # noqa: BLE001 - one unreadable binding must not abort the scan
+                    logger.warning(
+                        "Stream port evidence unavailable: container=%s "
+                        "error_type=%s",
+                        item.get("id"),
+                        type(exc).__name__,
+                    )
+            if port is None:
+                session = self._sessions.get(pid)
+                if session is not None:
+                    port = session.udp_mux_port
+            if port is None:
+                port = self.ports.get_port(pid)
+            if port is None:
+                logger.warning(
+                    "Stream port evidence unverifiable; resource retained: "
+                    "profile=%s",
+                    pid,
+                )
+                unresolved.add(pid)
+                continue
+            try:
+                await self.ports.restore(pid, port)
+            except ValueError as exc:
+                logger.warning(
+                    "Stream port reservation conflict: profile=%s error_type=%s",
+                    pid,
+                    type(exc).__name__,
+                )
+                unresolved.add(pid)
+        await self.ports.sync_pending(unresolved)
+
+    async def _confirm_sandbox_gone(self, profile_id: str) -> bool:
+        try:
+            containers = await asyncio.to_thread(
+                self.docker.scan_active_containers
+            )
+        except Exception as exc:  # noqa: BLE001 - unverifiable removal keeps the port reserved
+            logger.warning(
+                "Sandbox removal verification unavailable: profile=%s "
+                "error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            return False
+        return not any(
+            item.get("profile_id") == profile_id
+            and item.get("role") in ("browser", "stream")
+            for item in containers
+        )
+
     async def scan_and_reconcile_existing(self) -> list[dict[str, Any]]:
         """Reconcile Docker labels and ports with authenticated API state."""
         containers = await asyncio.to_thread(self.docker.scan_active_containers)
         logger.info(f"Container scan found {len(containers)} containers.")
+        await self._reserve_ports_from_docker_facts(containers)
 
         profiles_found: dict[str, dict[str, Any]] = {}
         for c in containers:
@@ -1224,18 +1343,23 @@ class SupervisorCore:
                             pid,
                             type(exc).__name__,
                         )
-                    finally:
-                        await self.ports.release(pid)
-                        self._sessions.pop(pid, None)
-                        self.forget_instance_events(pid, b_inst)
-                    if not teardown_failed:
-                        await self._report_observed(
+                    if teardown_failed or not await self._confirm_sandbox_gone(pid):
+                        logger.warning(
+                            "Unprotected sandbox removal unverified; port "
+                            "retained pending cleanup: profile=%s",
                             pid,
-                            b_inst,
-                            "error",
-                            int(rt.get("config_version", 1)),
-                            reason="unprotected_sandbox",
                         )
+                        return
+                    await self.ports.release(pid)
+                    self._sessions.pop(pid, None)
+                    self.forget_instance_events(pid, b_inst)
+                    await self._report_observed(
+                        pid,
+                        b_inst,
+                        "error",
+                        int(rt.get("config_version", 1)),
+                        reason="unprotected_sandbox",
+                    )
                     return
                 if self.gateway_control is None:
                     raise RuntimeError(
@@ -1301,8 +1425,15 @@ class SupervisorCore:
                 pid,
             )
             await self.docker.teardown_profile(pid)
-            await self.ports.release(pid)
-            self._sessions.pop(pid, None)
+            if await self._confirm_sandbox_gone(pid):
+                await self.ports.release(pid)
+                self._sessions.pop(pid, None)
+            else:
+                logger.warning(
+                    "Orphan sandbox removal unverified; port retained pending "
+                    "cleanup: profile=%s",
+                    pid,
+                )
         else:
             # 401, 403, 429, 5xx, 503: Keep healthy containers, do NOT teardown
             logger.warning(
@@ -1433,12 +1564,31 @@ class SupervisorCore:
                 "Event archive failed: error_type=%s", type(exc).__name__
             )
 
+    @staticmethod
+    def _classify_native_exit(data: dict[str, Any]) -> tuple[str, str]:
+        if (
+            data.get("event_type") == "exit"
+            and data.get("exit_code") == 0
+            and data.get("exit_reason") == "normal"
+        ):
+            return ("stopped", "normal_exit")
+        return ("error", "agent_exit")
+
+    def _native_terminal_observation(
+        self, profile_id: str, instance_id: str, config_version: int
+    ) -> tuple[str, str] | None:
+        return self._native_exit_instances.get(
+            (profile_id, instance_id, config_version)
+        )
+
     def forget_instance_events(
         self, profile_id: str, runtime_instance_id: str
     ) -> None:
         """Drop per-instance memory when a runtime generation ends."""
         self._native_exit_instances = {
-            item for item in self._native_exit_instances if item[0] != profile_id
+            key: value
+            for key, value in self._native_exit_instances.items()
+            if key[0] != profile_id
         }
         self._terminal_observations = {
             item
@@ -1515,9 +1665,9 @@ class SupervisorCore:
                     # synthetic Docker/missing exits even when the first
                     # upload is unavailable and the event stays queued
                     # (docs/specs/runtime_lifecycle.md).
-                    self._native_exit_instances.add(
+                    self._native_exit_instances[
                         (profile_id, instance_id, config_version)
-                    )
+                    ] = self._classify_native_exit(data)
 
                 evt_id = data.get("event_id", evt_file.stem)
                 outcome = await self.events.emit_event_with_outcome(
@@ -1574,6 +1724,9 @@ class SupervisorCore:
 
         Returns 'stopped', 'error', 'running', or None if unresolved / unacknowledged.
         """
+        native = self._native_terminal_observation(
+            profile_id, instance_id, config_version
+        )
         if container_status is None:
             try:
                 container = await asyncio.to_thread(
@@ -1596,16 +1749,27 @@ class SupervisorCore:
                 container_status = None
 
         if container_status in ("exited", "dead", "not_found"):
+            observed_state, reason = native or ("error", "container_exit")
             delivered = await self.report_terminal_observation(
                 profile_id,
                 instance_id,
                 config_version,
-                observed_state="error",
-                reason="container_exit",
+                observed_state=observed_state,
+                reason=reason,
             )
-            return "error" if delivered else None
+            return observed_state if delivered else None
 
         if container_status == "running":
+            if native is not None:
+                observed_state, reason = native
+                delivered = await self.report_terminal_observation(
+                    profile_id,
+                    instance_id,
+                    config_version,
+                    observed_state=observed_state,
+                    reason=reason,
+                )
+                return observed_state if delivered else None
             health = await self._query_agent_health(profile_id)
             if health is None:
                 return None
@@ -2159,7 +2323,9 @@ class SupervisorCore:
 
             runtime_instance_id = f"inst_{uuid.uuid4().hex[:12]}"
             self._native_exit_instances = {
-                item for item in self._native_exit_instances if item[0] != profile_id
+                key: value
+                for key, value in self._native_exit_instances.items()
+                if key[0] != profile_id
             }
             dirs = self.docker.prepare_profile_directories(profile_id)
 
@@ -2364,16 +2530,26 @@ class SupervisorCore:
                     reason=failure_reason,
                 )
                 try:
+                    cleanup_confirmed = False
                     try:
                         await self.docker.teardown_profile(profile_id)
+                        cleanup_confirmed = await self._confirm_sandbox_gone(
+                            profile_id
+                        )
                     except Exception as cleanup_exc:  # noqa: BLE001 - launch failure cleanup error logged without overriding original startup error
                         logger.error(
                             "Launch cleanup failed: profile=%s error_type=%s",
                             profile_id,
                             type(cleanup_exc).__name__,
                         )
-                    finally:
+                    if cleanup_confirmed:
                         await self.ports.release(profile_id)
+                    else:
+                        logger.warning(
+                            "Launch cleanup unverified; port retained pending "
+                            "cleanup: profile=%s",
+                            profile_id,
+                        )
                 finally:
                     await self.events.emit_event(
                         event_id=f"startup_failure:{runtime_instance_id}",
@@ -2487,20 +2663,31 @@ class SupervisorCore:
                     profile_id,
                     type(exc).__name__,
                 )
-            finally:
-                # Port ownership ends with this operation regardless of teardown.
-                # Any residue is reconciled by the pre-start orphan cleanup.
-                if self._sessions.get(profile_id) is session:
-                    await self.ports.release(profile_id)
-                    self._sessions.pop(profile_id, None)
-                    self._terminal_observations.discard(
-                        (profile_id, curr_inst, cfg_ver)
-                    )
-                    self.forget_instance_events(profile_id, curr_inst)
             if teardown_error is not None:
+                logger.warning(
+                    "Sandbox teardown failed; port retained pending cleanup: "
+                    "profile=%s",
+                    profile_id,
+                )
                 raise DockerSandboxError(
                     "Sandbox teardown failed; residual containers require cleanup"
                 ) from teardown_error
+            if not await self._confirm_sandbox_gone(profile_id):
+                logger.warning(
+                    "Sandbox removal unverified; port retained pending cleanup: "
+                    "profile=%s",
+                    profile_id,
+                )
+                raise DockerSandboxError(
+                    "Sandbox removal unverified; residual containers require cleanup"
+                )
+            if self._sessions.get(profile_id) is session:
+                await self.ports.release(profile_id)
+                self._sessions.pop(profile_id, None)
+                self._terminal_observations.discard(
+                    (profile_id, curr_inst, cfg_ver)
+                )
+                self.forget_instance_events(profile_id, curr_inst)
 
             await self._report_observed(
                 profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"

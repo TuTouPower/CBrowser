@@ -1,24 +1,28 @@
-"""Stopping never depends on the signaling plane or on teardown success."""
+"""Stopping is fenced by signaling-plane independence and resource lifetime.
+
+The former ``test_teardown_failure_still_releases_port_and_reports_error``
+asserted the pre-A3 behaviour that a failed teardown still released the UDP
+mux port.  A3 replaces that condition: ownership is released only after Docker
+facts confirm the managed resources are gone.  That test was removed in whole
+(rather than having its expectation rewritten to the new implementation) and
+the replacement semantics live in ``test_a3_port_lifecycle.py``.
+"""
 
 import httpx
 import pytest
 from cbrowser.supervisor.core import ActiveSession, SupervisorCore
-from cbrowser.supervisor.docker_adapter import DockerSandboxError
 from cbrowser.supervisor.event_forwarder import EventForwarder
 from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 
 
 class _Docker:
-    def __init__(self, data_root, *, teardown_fails: bool = False) -> None:
+    def __init__(self, data_root) -> None:
         self.validator = PathValidator(data_root)
-        self.teardown_fails = teardown_fails
         self.teardown_calls = 0
 
     async def teardown_profile(self, profile_id: str) -> None:
         self.teardown_calls += 1
-        if self.teardown_fails:
-            raise RuntimeError("docker daemon unavailable")
 
     def scan_active_containers(self):
         return []
@@ -66,28 +70,6 @@ async def test_stop_continues_after_gateway_disconnect_failure(
         "runtime_instance_id": "inst",
         "status": "stopped",
     }
-    assert docker.teardown_calls == 1
-    assert core.ports.get_port("profile") is None
-    assert core.get_session("profile") is None
-
-
-@pytest.mark.asyncio
-async def test_teardown_failure_still_releases_port_and_reports_error(tmp_path):
-    class _Gateway:
-        async def disconnect_viewers(self, profile_id, instance):
-            return None
-
-    docker = _Docker(tmp_path / "data", teardown_fails=True)
-    core = _core(tmp_path, docker, _Gateway())
-    await core.ports.allocate("profile")
-    core._sessions["profile"] = ActiveSession(
-        "profile", "inst", 1, 30001, "browser", "stream"
-    )
-
-    with pytest.raises(DockerSandboxError):
-        await core.stop_profile("profile")
-    await core.api.aclose()
-
     assert docker.teardown_calls == 1
     assert core.ports.get_port("profile") is None
     assert core.get_session("profile") is None
