@@ -25,6 +25,7 @@ import shutil
 import sqlite3
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -198,6 +199,8 @@ def _run(
         "FAKE_DOCKER_LOG": str(state / "docker.log"),
         "FAKE_DOCKER_STATE": str(state),
         "FAKE_OWN_PROJECT": "cbrowser",
+        "CBROWSER_PYTHON": sys.executable,
+        "PYTHONPATH": str(ROOT / "src" / "backend"),
     }
     if env_extra:
         env.update(env_extra)

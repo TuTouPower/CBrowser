@@ -42,7 +42,8 @@ if [ "$#" -gt 0 ]; then shift; fi
 PROJECT="${CBROWSER_COMPOSE_PROJECT:-cbrowser}"
 PREFIX="${CBROWSER_PREFIX:-cbrowser}"
 HTTPS_PORT="${CBROWSER_HTTPS_PORT:-56661}"
-PUBLIC_ORIGIN="${CBROWSER_PUBLIC_ORIGIN:-https://127.0.0.1:$HTTPS_PORT}"
+PUBLIC_ORIGIN_OVERRIDE="${CBROWSER_PUBLIC_ORIGIN:-}"
+PUBLIC_ORIGIN="${PUBLIC_ORIGIN_OVERRIDE:-https://127.0.0.1:$HTTPS_PORT}"
 DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/v2}"
 SECRETS_DIR="${CBROWSER_SECRETS_DIR:-$ROOT/config/deploy/secrets}"
 DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
@@ -52,6 +53,15 @@ PREVIOUS_FILE="$DEPLOY_DIR/previous_release"
 CADDY_REF="${CBROWSER_CADDY_REF:-caddy@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3}"
 UP_WAIT_TIMEOUT="${CBROWSER_DEPLOY_DEADLINE_SEC:-600}"
 VERIFY_DEADLINE="${CBROWSER_VERIFY_DEADLINE_SEC:-300}"
+
+NET_CONFIG_PY="${CBROWSER_PYTHON:-}"
+if [ -z "$NET_CONFIG_PY" ]; then
+  if [ -x "$ROOT/.venv/bin/python" ]; then
+    NET_CONFIG_PY="$ROOT/.venv/bin/python"
+  else
+    NET_CONFIG_PY="python3"
+  fi
+fi
 
 # t035: the single baseline Alembic revision.  A database stamped with any
 # other revision belongs to the retired 0001-0009 schema generation and must
@@ -193,6 +203,28 @@ atomic_write() {
   tmp="$(mktemp "$path.tmp.XXXXXX")"
   cat > "$tmp"
   mv "$tmp" "$path"
+}
+
+network_config() {
+  local op="${1:-}" read_output rc
+  if read_output="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+      "$NET_CONFIG_PY" -m cbrowser.network_config_cli "$@")"; then
+    printf '%s\n' "$read_output"
+  else
+    rc=$?
+    case "$rc" in
+      3)
+        echo "Refusing to deploy: applied network configuration is missing ($op); no default is applied." >&2
+        ;;
+      4)
+        echo "Refusing to deploy: applied network configuration is corrupt ($op); refusing to reset or overwrite it." >&2
+        ;;
+      *)
+        echo "Refusing to deploy: network_config $op failed (exit $rc)." >&2
+        ;;
+    esac
+    printf 'exit %d\n' "$rc"
+  fi
 }
 
 read_pointer() {
@@ -450,61 +482,14 @@ cmd_deploy() {
     exit 1
   fi
 
-  # Ensure initial network state and Caddyfile exist in DATA_ROOT from single baseline generator
-  mkdir -p "$DATA_ROOT/network"
-  if [ ! -f "$DATA_ROOT/network/applied_network_version.json" ]; then
-    cat << JSON > "$DATA_ROOT/network/applied_network_version.json"
-{
-  "version": 1,
-  "config": {
-    "lan_access_enabled": false,
-    "lan_advertised_ip": null,
-    "https_port": $HTTPS_PORT
-  },
-  "bind_host": "127.0.0.1",
-  "applied_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "caddyfile_sha256": "",
-  "origin_whitelist": [
-    "https://127.0.0.1:$HTTPS_PORT",
-    "https://localhost:$HTTPS_PORT"
-  ]
-}
-JSON
+  eval "$(network_config init --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
+  eval "$(network_config read --network-dir "$DATA_ROOT/network")"
+  if [ -n "$PUBLIC_ORIGIN_OVERRIDE" ]; then
+    PUBLIC_ORIGIN="$PUBLIC_ORIGIN_OVERRIDE"
   fi
-
-  if [ ! -f "$DATA_ROOT/network/Caddyfile" ]; then
-    cat << EOF > "$DATA_ROOT/network/Caddyfile"
-{
-    admin off
-    auto_https disable_redirects
-    default_sni 127.0.0.1
-}
-
-https://127.0.0.1, https://localhost {
-    tls internal
-
-    handle /api/* {
-        reverse_proxy http://api:8000
-    }
-
-    handle /stream/* {
-        reverse_proxy http://gateway:18080
-    }
-
-    handle {
-        root * /var/www/html
-        try_files {path} /index.html
-        file_server
-    }
-}
-EOF
-  fi
-
-  # Single source of bind host and https port from applied version
-  BIND_HOST="127.0.0.1"
-  if [ -f "$DATA_ROOT/network/applied_network_version.json" ]; then
-    BIND_HOST="$(grep '"bind_host"' "$DATA_ROOT/network/applied_network_version.json" | head -1 | cut -d'"' -f4 || echo 127.0.0.1)"
-  fi
+  export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
+  export CBROWSER_BIND_HOST="$BIND_HOST"
+  export CBROWSER_PUBLIC_ORIGIN="$PUBLIC_ORIGIN"
 
   build_and_record_release "$release_id"
   deploy_up_and_verify "$release_id"
