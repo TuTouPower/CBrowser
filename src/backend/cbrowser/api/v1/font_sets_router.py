@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated
+from weakref import WeakKeyDictionary
 
 from cbrowser import font_sets
 from cbrowser.api.v1.deps import get_profile_service
@@ -47,10 +49,29 @@ font_set_router = APIRouter(
 
 Service = Annotated[ProfileService, Depends(get_profile_service)]
 
+FONT_SCAN_CONCURRENCY = 2
+
+_scan_semaphores: WeakKeyDictionary = WeakKeyDictionary()
+
+
+def _scan_semaphore(loop: asyncio.AbstractEventLoop) -> asyncio.Semaphore:
+    semaphore = _scan_semaphores.get(loop)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(FONT_SCAN_CONCURRENCY)
+        _scan_semaphores[loop] = semaphore
+    return semaphore
+
+
+async def _collect_font_sets() -> list[dict]:
+    loop = asyncio.get_running_loop()
+    async with _scan_semaphore(loop):
+        return await asyncio.to_thread(font_sets.list_font_sets)
+
 
 @font_set_router.get("", response_model=list[FontSetInfo])
 async def list_font_sets(service: Service) -> list[FontSetInfo]:
     usage = await service.font_set_usage_counts()
+    items = await _collect_font_sets()
     return [
         FontSetInfo(
             platform=item["platform"],
@@ -62,5 +83,5 @@ async def list_font_sets(service: Service) -> list[FontSetInfo]:
             file_count=item["file_count"],
             used_by_count=usage.get(item["set_id"], 0),
         )
-        for item in font_sets.list_font_sets()
+        for item in items
     ]

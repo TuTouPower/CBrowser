@@ -299,6 +299,13 @@ class DialogAttendantService:
             if isinstance(session_id, str):
                 self.attendant.note_closed(session_id)
 
+    def _settle_waiters(self) -> None:
+        waiters = list(self._waiters.values())
+        self._waiters.clear()
+        for waiter in waiters:
+            if not waiter.done():
+                waiter.cancel()
+
     async def _run(self, browser_ws_url: str) -> None:
         import websockets
 
@@ -343,6 +350,7 @@ class DialogAttendantService:
             # per the chain evidence), so peek would report dialogs no
             # one can answer. A later re-arm clears the released flag.
             self.attendant.release()
+            self._settle_waiters()
             if self._ws is not None:
                 try:
                     await self._ws.close()

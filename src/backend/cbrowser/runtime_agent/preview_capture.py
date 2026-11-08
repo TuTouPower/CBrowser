@@ -113,29 +113,41 @@ class PreviewCaptureLoop:
         session = attached.get("sessionId")
         if not isinstance(session, str) or not session:
             return
-        metrics = await self.cdp_send("Page.getLayoutMetrics", {}, session)
-        viewport = (
-            metrics.get("cssLayoutViewport")
-            or metrics.get("layoutViewport")
-            or {}
-        )
-        vw = int(viewport.get("clientWidth", 0) or 0)
-        vh = int(viewport.get("clientHeight", 0) or 0)
-        if vw <= 0 or vh <= 0:
-            return
-        shot = await self.cdp_send(
-            "Page.captureScreenshot",
-            capture_screenshot_params(vw, vh),
-            session,
-        )
-        jpeg = base64.b64decode(shot["data"])
-        meta = PreviewMeta(
-            captured_at=utc_now_iso(),
-            runtime_instance_id=policy.runtime_instance_id,
-            policy_epoch=policy.epoch,
-        )
-        if commit_preview(self.directory, jpeg, meta, policy):
-            self.last_captured_at = meta.captured_at
+        try:
+            metrics = await self.cdp_send("Page.getLayoutMetrics", {}, session)
+            viewport = (
+                metrics.get("cssLayoutViewport")
+                or metrics.get("layoutViewport")
+                or {}
+            )
+            vw = int(viewport.get("clientWidth", 0) or 0)
+            vh = int(viewport.get("clientHeight", 0) or 0)
+            if vw <= 0 or vh <= 0:
+                return
+            shot = await self.cdp_send(
+                "Page.captureScreenshot",
+                capture_screenshot_params(vw, vh),
+                session,
+            )
+            jpeg = base64.b64decode(shot["data"])
+            meta = PreviewMeta(
+                captured_at=utc_now_iso(),
+                runtime_instance_id=policy.runtime_instance_id,
+                policy_epoch=policy.epoch,
+            )
+            if commit_preview(self.directory, jpeg, meta, policy):
+                self.last_captured_at = meta.captured_at
+        finally:
+            try:
+                await self.cdp_send(
+                    "Target.detachFromTarget",
+                    {"sessionId": session},
+                    None,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Preview detach failed: error_type=%s", type(exc).__name__
+                )
 
     async def run(self) -> None:
         while True:

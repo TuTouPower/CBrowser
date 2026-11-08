@@ -28,6 +28,18 @@ class CdpTimeoutError(CdpError):
     """A CDP command did not answer within its timeout."""
 
 
+class CdpDisconnectedError(CdpError):
+    pass
+
+
+_DISCONNECT_MESSAGE = "CDP transport disconnected"
+
+
+def _consume_future_exception(fut: asyncio.Future) -> None:
+    if not fut.cancelled():
+        fut.exception()
+
+
 class CdpClient:
     def __init__(
         self,
@@ -59,6 +71,15 @@ class CdpClient:
         kwargs["proxy"] = None
         self._ws = await websockets.connect(self.ws_url, **kwargs)
         self._reader_task = asyncio.create_task(self._read_loop())
+
+    def _settle_pending(self) -> None:
+        pending = list(self._pending.values())
+        self._pending.clear()
+        for fut in pending:
+            if fut.done():
+                continue
+            fut.set_exception(CdpDisconnectedError(_DISCONNECT_MESSAGE))
+            fut.add_done_callback(_consume_future_exception)
 
     async def _read_loop(self) -> None:
         try:
@@ -94,6 +115,8 @@ class CdpClient:
             raise
         except Exception:  # noqa: BLE001 - reader death surfaces on next send
             pass
+        finally:
+            self._settle_pending()
 
     async def send_request(
         self,
@@ -119,9 +142,14 @@ class CdpClient:
             msg["sessionId"] = session_id
         loop = asyncio.get_running_loop()
         fut: asyncio.Future = loop.create_future()
-        self._pending[(session_id, msg_id)] = fut
-        await self._ws.send(json.dumps(msg))
-        return (session_id, msg_id), fut
+        key = (session_id, msg_id)
+        self._pending[key] = fut
+        try:
+            await self._ws.send(json.dumps(msg))
+        except Exception as exc:
+            self._settle_pending()
+            raise CdpDisconnectedError(_DISCONNECT_MESSAGE) from exc
+        return key, fut
 
     def drop_pending(self, key: tuple[str | None, int]) -> None:
         """Forget a pending command; its late response is ignored."""
@@ -172,3 +200,4 @@ class CdpClient:
             except Exception:  # noqa: BLE001 - best-effort close
                 pass
             self._ws = None
+        self._settle_pending()
