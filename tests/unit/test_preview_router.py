@@ -15,7 +15,7 @@ from cbrowser.preview import (
 )
 from fastapi.testclient import TestClient
 
-ORIGIN = "https://app.cbrowser.local"
+ORIGIN = "https://127.0.0.1:56661"
 CAPTURED_AT = "2026-11-07T12:00:00+00:00"
 JPEG_MARKER = b"SECRET_IMAGE_MARKER_XYZ"
 JPEG_BYTES = b"\xff\xd8\xff\xe0" + JPEG_MARKER + b"\xff\xd9"
@@ -30,7 +30,6 @@ def ctx(tmp_path: Path):
     app = create_app(
         db_path=tmp_path / "preview.db",
         admin_password_file=admin_file,
-        allowed_origins=[ORIGIN],
     )
     with TestClient(app, base_url=ORIGIN) as client:
         service = app.dependency_overrides[get_profile_service]()

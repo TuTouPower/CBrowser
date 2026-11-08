@@ -25,12 +25,11 @@ async def api_server(tmp_path: Path):
     admin_pwd_file = tmp_path / "admin_pwd.txt"
     admin_pwd = secrets.token_urlsafe(32)
     admin_pwd_file.write_text(admin_pwd, encoding="utf-8")
-    origin = "https://app.cbrowser.local"
+    origin = "https://127.0.0.1:56661"
     app = create_app(
         db_path=tmp_path / "api.db",
         admin_password_file=admin_pwd_file,
-        allowed_origins=[origin],
-    )
+            )
     config = uvicorn.Config(app=app, host="127.0.0.1", port=0, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())

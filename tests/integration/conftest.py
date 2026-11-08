@@ -23,7 +23,7 @@ def supervisor_api(tmp_path: Path):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
+    auth_ctx = create_auth_context(tmp_path)
     env = dict(os.environ)
     for name in (
         "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY",

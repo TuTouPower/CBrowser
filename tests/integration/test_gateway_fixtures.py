@@ -143,6 +143,19 @@ class GatewayHarness:
 
         self.api_service = FakeApiService(port=self.api_port, token=self.api_token_str)
 
+        from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig, utc_now_iso
+        from cbrowser.network_config import write_applied_network_state
+        net_dir = tmp_path / "network"
+        net_dir.mkdir(parents=True, exist_ok=True)
+        v = AppliedNetworkAccessVersion(
+            version=1,
+            config=NetworkAccessConfig(lan_access_enabled=False),
+            applied_at=utc_now_iso(),
+            caddyfile_sha256="",
+            origin_whitelist=["https://127.0.0.1:56661", "https://localhost:8443"],
+        )
+        write_applied_network_state(net_dir, v, "dummy caddyfile")
+
         self.config = GatewayConfig(
             host="127.0.0.1",
             port=self.gw_port,
@@ -150,7 +163,7 @@ class GatewayHarness:
             gateway_token_file=self.gw_token_file,
             api_url=f"http://127.0.0.1:{self.api_port}",
             api_token_file=self.api_token_file,
-            allowed_origins=["https://localhost:8443", "http://127.0.0.1:3000"],
+            network_state_dir=net_dir,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
 

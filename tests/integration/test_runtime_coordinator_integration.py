@@ -184,13 +184,12 @@ async def start_api_server(
     for attempt in range(attempts):
         port = find_free_port()
         api_url = f"http://127.0.0.1:{port}"
-        auth_ctx = create_auth_context(auth_dir / f"auth{attempt}", origin=api_url)
+        auth_ctx = create_auth_context(auth_dir / f"auth{attempt}")
         app = create_app(
             db_path=db_path,
             supervisor_token_file=sup_token_file,
             admin_password_file=auth_ctx.admin_password_file,
-            allowed_origins=auth_ctx.allowed_origin,
-            supervisor_url=sup_url,
+                        supervisor_url=sup_url,
         )
         server = uvicorn.Server(
             uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
@@ -476,8 +475,7 @@ async def test_api_startup_fails_when_supervisor_required_but_unconfigured(tmp_p
     app = create_app(
         db_path=tmp_path / "require_sup.db",
         admin_password_file=admin_pwd_file,
-        allowed_origins=["http://127.0.0.1:3000"],
-        require_supervisor=True,
+                require_supervisor=True,
     )
     with pytest.raises(
         RuntimeError, match="Supervisor URL and token must be configured"

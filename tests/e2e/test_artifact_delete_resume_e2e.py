@@ -120,8 +120,7 @@ def test_delete_intent_resumes_after_real_process_restart(
     tmp_path: Path,
 ) -> None:
     port = _free_port()
-    origin = f"http://127.0.0.1:{port}"
-    auth_ctx = create_auth_context(tmp_path / "auth", origin=origin)
+    auth_ctx = create_auth_context(tmp_path / "auth")
     db_path = tmp_path / "control.db"
     artifacts_root = tmp_path / "artifacts"
     env = _spawn_env(tmp_path, db_path, auth_ctx.env)

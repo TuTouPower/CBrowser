@@ -31,10 +31,12 @@ import httpx
 from cbrowser import font_sets
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
+    NetworkAccessConfig,
     PreviewObservedRequest,
     PreviewPolicySyncRequest,
     ProfileConfig,
 )
+from cbrowser.network_config import read_applied_network_state
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.preview import (
     PreviewPolicy,
@@ -2682,3 +2684,67 @@ class SupervisorCore:
                 type(e).__name__,
             )
             return False
+
+    def _get_applied_network_config(self) -> NetworkAccessConfig:
+        network_dir = self.docker.validator.data_root / "network"
+        state = read_applied_network_state(network_dir)
+        if state is not None:
+            return state[0].config
+        return NetworkAccessConfig(lan_access_enabled=False)
+
+    async def rebuild_edge_proxy(
+        self,
+        *,
+        target_version: int,
+        bind_host: str,
+        https_port: int,
+        caddyfile_path: str,
+    ) -> dict[str, Any]:
+        logger.info(
+            "Rebuilding edge proxy to version %d: bind_host=%s https_port=%d",
+            target_version,
+            bind_host,
+            https_port,
+        )
+        res = await self.docker.rebuild_caddy_container(
+            bind_host=bind_host,
+            https_port=https_port,
+            caddyfile_path=caddyfile_path,
+        )
+        return {"status": "ok", "version": target_version, **res}
+
+    async def converge_network_streams(
+        self,
+        *,
+        target_version: int,
+        bind_host: str,
+        advertised_ip: str,
+    ) -> dict[str, Any]:
+        logger.info(
+            "Converging streams for network version %d: bind_host=%s advertised_ip=%s",
+            target_version,
+            bind_host,
+            advertised_ip,
+        )
+        rebuilt = 0
+        for profile_id, session in list(self._sessions.items()):
+            containers = await asyncio.to_thread(
+                self.docker.get_profile_containers, profile_id
+            )
+            s_container = containers.get("stream")
+            if s_container is not None:
+                labels = s_container.labels or {}
+                curr_bind = labels.get("com.cbrowser.stream.bind-host")
+                curr_adv = labels.get("com.cbrowser.stream.advertised-ip")
+                if curr_bind != bind_host or curr_adv != advertised_ip:
+                    logger.info(
+                        "Replacing stream for %s due to network version update: (%s, %s) -> (%s, %s)",
+                        profile_id,
+                        curr_bind,
+                        curr_adv,
+                        bind_host,
+                        advertised_ip,
+                    )
+                    await self._replace_stream_only(profile_id, session, rebuild_network=False)
+                    rebuilt += 1
+        return {"status": "ok", "rebuilt_streams": rebuilt}

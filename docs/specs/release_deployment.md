@@ -36,3 +36,9 @@
 ## 构建上下文
 
 - 全部运行时镜像的构建上下文受各自 `Dockerfile.dockerignore` 白名单限制：`data/`、`config/deploy/secrets`、`.scratch` 永不进入上下文；任一运行时镜像缺失 ignore 规则时门禁测试失败而非跳过（t027 起）。
+
+## 确定性 Caddyfile 生成与边缘端口重建（t042）
+
+- 删除仓库入库的静态 Caddyfile：Caddy 配置由已应用不可变版本从生成器 `src/backend/cbrowser/network_config.py` 确定性生成；release manifest 对生成器代码取指纹。
+- 端口绑定环境参数化：`compose.yaml` 中 Caddy 端口映射默认使用 `${CBROWSER_BIND_HOST:-127.0.0.1}:${CBROWSER_HTTPS_PORT:-56661}:443`；本机模式绑定 `127.0.0.1`，局域网模式绑定 `0.0.0.0`。
+- 运行时原子重建：网络模式切换由 Supervisor 接管 Caddy 容器原地原子重绑并重启；`compose.yaml` 中 Caddyfile 挂载对齐 `${CBROWSER_DATA_ROOT}/network/Caddyfile`。

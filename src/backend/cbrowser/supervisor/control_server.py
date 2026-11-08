@@ -37,8 +37,10 @@ from cbrowser.supervisor.core import (
 from cbrowser.supervisor.path_validator import short_unix_socket_path
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
+    ConvergeStreamsRequest,
     ProfileRuntimeStatus,
     ReadinessResponse,
+    RebuildEdgeRequest,
     ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
@@ -546,5 +548,28 @@ def create_control_app(
                 await websocket.close()
             except Exception:  # noqa: BLE001 - already-closed client socket is harmless
                 pass
+
+    @app.post(
+        "/supervisor/v1/network/rebuild-edge",
+        dependencies=[Depends(verify_token)],
+    )
+    async def rebuild_edge(req: RebuildEdgeRequest):
+        return await core.rebuild_edge_proxy(
+            target_version=req.target_version,
+            bind_host=req.bind_host,
+            https_port=req.https_port,
+            caddyfile_path=req.caddyfile_path,
+        )
+
+    @app.post(
+        "/supervisor/v1/network/converge-streams",
+        dependencies=[Depends(verify_token)],
+    )
+    async def converge_streams(req: ConvergeStreamsRequest):
+        return await core.converge_network_streams(
+            target_version=req.target_version,
+            bind_host=req.bind_host,
+            advertised_ip=req.advertised_ip,
+        )
 
     return app

@@ -424,7 +424,6 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
         agent_key_file=agent_key_file,
         gateway_token_file=gw_token_file,
         api_client=fake_api,
-        allowed_origins=["http://127.0.0.1:3000"],
     )
     await gateway.start()
 
@@ -432,7 +431,7 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
     control = GatewayControlClient(gateway.control_url, gw_token_file)
     ws_base = f"ws://127.0.0.1:{port}"
     viewer_headers = {
-        "Origin": "http://127.0.0.1:3000",
+        "Origin": "https://127.0.0.1:56661",
         "Cookie": "cbrowser_session=test-session",
     }
     agent_config = SimpleNamespace(

@@ -133,13 +133,16 @@ async def test_ac007_tab_visibility_pause_resume_and_gateway_endpoint(
                     lambda: stream_box.logs().decode("utf-8")
                 )
 
-            # Wait until initial state has 2 unpaused video consumers
+            # Wait until initial state has 2 unpaused video consumers and capture running
             initial_vis = await poll_until(
                 get_visibility,
-                lambda vis: vis.get("unpaused_video_consumers") == 2,
+                lambda vis: (
+                    vis.get("unpaused_video_consumers") == 2
+                    and vis.get("capture_running") is True
+                ),
                 timeout=15.0,
                 interval=0.5,
-                description="two unpaused video consumers",
+                description="two unpaused video consumers and running capture",
             )
             assert initial_vis["unpaused_video_consumers"] == 2
             assert initial_vis["capture_running"] is True

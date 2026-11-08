@@ -34,7 +34,13 @@ from cbrowser.api.v1.control_router import (
     get_optional_control_service,
 )
 from cbrowser.api.v1.font_sets_router import font_set_router
+from cbrowser.api.v1.network_router import (
+    create_network_router,
+    get_network_service,
+)
 from cbrowser.api.v1.router import get_profile_service, v1_router
+from cbrowser.network_config import derive_origin_whitelist
+from cbrowser.services.network_service import NetworkService
 from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
@@ -73,7 +79,6 @@ def create_app(
     supervisor_token_file: Path | str | None = None,
     admin_password_file: Path | str | None = None,
     gateway_token_file: Path | str | None = None,
-    allowed_origins: list[str] | str | None = None,
     supervisor_url: str | None = None,
     require_supervisor: bool = False,
     artifacts_root: Path | str | None = None,
@@ -95,16 +100,7 @@ def create_app(
         app.state.gateway_token = read_gateway_token(
             gateway_token_file or os.environ.get("CBROWSER_GATEWAY_API_TOKEN_FILE")
         )
-
-        raw_origins = allowed_origins or os.environ.get("CBROWSER_ALLOWED_ORIGINS")
-        if raw_origins:
-            app.state.allowed_origins = normalize_origins(raw_origins)
-        else:
-            app.state.allowed_origins = []
-        if not app.state.allowed_origins:
-            raise RuntimeError(
-                "CBROWSER_ALLOWED_ORIGINS must list at least one browser origin"
-            )
+        app.state.allowed_origins = []
 
         # Configure event logger to output to stderr
         event_logger = logging.getLogger("cbrowser.events")
@@ -121,8 +117,8 @@ def create_app(
         run_database_migrations(resolved_db)
         engine, session_maker = create_engine_and_maker(resolved_db)
 
+        repo = getattr(service, "repo", None) or ProfileRepository(session_maker)
         if service is None:
-            repo = ProfileRepository(session_maker)
             service = ProfileService(repo, data_root=resolved_db.parent)
         resolved_artifacts_root = Path(
             artifacts_root or resolved_db.parent / "artifacts"
@@ -196,6 +192,25 @@ def create_app(
             "CBROWSER_ADMIN_PASSWORD_FILE"
         )
         await auth_service.init_admin_password(resolved_admin_pwd_file)
+
+        # t042: Network Access Service and Applied Configuration
+        export_network_dir = resolved_db.parent / "network"
+        network_service = NetworkService(
+            repo=repo,
+            auth_service=auth_service,
+            supervisor_client=coordinator,
+            export_dir=export_network_dir,
+            on_origins_updated=lambda origins: setattr(app.state, "allowed_origins", list(origins)),
+        )
+        app.state.network_service = network_service
+        app.dependency_overrides[get_network_service] = lambda: network_service
+        app.state.caddy_ca_dir = Path(
+            os.environ.get("CBROWSER_CADDY_CA_DIR", "/data/caddy/pki/authorities/local")
+        )
+
+        # Set applied Origin whitelist strictly derived from durable applied version (t042 AC-007)
+        applied_settings = await network_service.get_settings()
+        app.state.allowed_origins = derive_origin_whitelist(applied_settings.applied_version)
 
         yield
         if coordinator:
@@ -397,6 +412,7 @@ def create_app(
     app.include_router(font_set_router)
     app.include_router(artifact_router)
     app.include_router(preview_router)
+    app.include_router(create_network_router())
     app.include_router(automation_router)
     app.include_router(control_router)
     app.include_router(legacy_cdp_router, include_in_schema=False)

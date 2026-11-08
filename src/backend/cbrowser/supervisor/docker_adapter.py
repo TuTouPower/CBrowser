@@ -1299,6 +1299,7 @@ with path.open('w') as output:
         gateway_url: str | None = None,
         agent_secret_path: Path | None = None,
         public_ip: str = "127.0.0.1",
+        bind_host: str = "127.0.0.1",
         display: str = ":99",
         selkies_tokens_path: Path | None = None,
         snapshot_json_path: Path | None = None,
@@ -1416,7 +1417,7 @@ with path.open('w') as output:
             clipboard_sync=clipboard_sync,
             build_id=os.environ.get("CBROWSER_BUILD_ID") or None,
         )
-        ports = stream_ports(udp_mux_port)
+        ports = stream_ports(udp_mux_port, bind_host=bind_host)
 
         try:
             container = await asyncio.to_thread(
@@ -1442,6 +1443,8 @@ with path.open('w') as output:
                     profile_id,
                     runtime_instance_id,
                     config_version,
+                    bind_host=bind_host,
+                    advertised_ip=public_ip,
                 ),
             )
             allowed_tcp.extend(
@@ -1819,3 +1822,68 @@ with path.open('w') as output:
             raise DockerSandboxError(
                 f"Container scan failed: {type(e).__name__}"
             ) from None
+
+    async def rebuild_caddy_container(
+        self,
+        *,
+        bind_host: str,
+        https_port: int,
+        caddyfile_path: str,
+    ) -> dict[str, Any]:
+        """Rebuild edge reverse proxy container (Caddy) with atomic port re-binding."""
+        caddy_name = f"{self.resource_prefix}-caddy"
+
+        def _do_rebuild() -> dict[str, Any]:
+            try:
+                caddy_c = self.client.containers.get(caddy_name)
+            except NotFound:
+                logger.warning("Caddy container %s not found for rebuild", caddy_name)
+                return {"rebuilt": False, "reason": "not_found"}
+
+            inspect = self.client.api.inspect_container(caddy_c.id)
+            config = inspect["Config"]
+            host_config = inspect["HostConfig"]
+
+            # Update PortBindings for 443/tcp
+            port_bindings = host_config.get("PortBindings") or {}
+            port_bindings["443/tcp"] = [{"HostIp": bind_host, "HostPort": str(https_port)}]
+
+            # Update binds for Caddyfile if host path provided
+            binds = list(host_config.get("Binds") or [])
+            new_binds = []
+            caddyfile_mounted = False
+            for b in binds:
+                if ":/etc/caddy/Caddyfile" in b:
+                    new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
+                    caddyfile_mounted = True
+                else:
+                    new_binds.append(b)
+            if not caddyfile_mounted and caddyfile_path:
+                new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
+
+            # Extract network mode / endpoints
+            networks = inspect.get("NetworkSettings", {}).get("Networks", {})
+            network_name = list(networks.keys())[0] if networks else f"{self.resource_prefix}-edge"
+
+            # Remove old container
+            caddy_c.remove(force=True)
+
+            # Re-create container with new port bindings
+            image = config["Image"]
+            env = config.get("Env") or []
+            labels = config.get("Labels") or {}
+
+            new_c = self.client.containers.run(
+                image,
+                name=caddy_name,
+                detach=True,
+                network=network_name,
+                ports={"443/tcp": (bind_host, https_port)},
+                volumes=new_binds,
+                environment=env,
+                labels=labels,
+                restart_policy={"Name": "unless-stopped"},
+            )
+            return {"rebuilt": True, "container_id": new_c.id, "bind_host": bind_host}
+
+        return await asyncio.to_thread(_do_rebuild)

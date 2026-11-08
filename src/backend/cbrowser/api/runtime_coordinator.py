@@ -1140,3 +1140,51 @@ class RuntimeCoordinator:
         finally:
             if self._active_tasks.get(profile_id) is asyncio.current_task():
                 self._active_tasks.pop(profile_id, None)
+
+    async def rebuild_edge(
+        self,
+        *,
+        target_version: int,
+        bind_host: str,
+        https_port: int,
+        caddyfile_path: str,
+    ) -> dict[str, Any]:
+        if not self.is_enabled():
+            return {"status": "ok", "mock": True}
+        url = f"{self.supervisor_url}/supervisor/v1/network/rebuild-edge"
+        resp = await self.client.post(
+            url,
+            headers=self._auth_headers(),
+            json={
+                "target_version": target_version,
+                "bind_host": bind_host,
+                "https_port": https_port,
+                "caddyfile_path": caddyfile_path,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    async def converge_network_streams(
+        self,
+        *,
+        target_version: int,
+        bind_host: str,
+        advertised_ip: str,
+    ) -> dict[str, Any]:
+        if not self.is_enabled():
+            return {"status": "ok", "rebuilt_streams": 0}
+        url = f"{self.supervisor_url}/supervisor/v1/network/converge-streams"
+        resp = await self.client.post(
+            url,
+            headers=self._auth_headers(),
+            json={
+                "target_version": target_version,
+                "bind_host": bind_host,
+                "advertised_ip": advertised_ip,
+            },
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()

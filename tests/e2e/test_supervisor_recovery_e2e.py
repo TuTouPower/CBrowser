@@ -121,7 +121,7 @@ def real_api_and_sup(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         gw_port = s.getsockname()[1]
 
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{api_port}")
+    auth_ctx = create_auth_context(tmp_path)
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
     for name in (

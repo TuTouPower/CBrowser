@@ -127,13 +127,22 @@ class ProductionGatewayService:
         gateway_token_file: Path,
         runtime_lookup: ApiRuntimeLookup | None = None,
         api_client: FakeGatewayApiClient | None = None,
-        allowed_origins: list[str] | None = None,
+        network_state_dir: Path | None = None,
         agent_heartbeat_timeout_sec: float = 30.0,
     ) -> None:
         self.port = port
         self.agent_key_file = Path(agent_key_file)
         self.gateway_token_file = Path(gateway_token_file)
         self.api = api_client or FakeGatewayApiClient(runtime_lookup=runtime_lookup)
+
+        if network_state_dir is None:
+            from cbrowser.network_config import create_default_applied_version, write_applied_network_state
+            net_dir = self.agent_key_file.parent / "network"
+            net_dir.mkdir(parents=True, exist_ok=True)
+            v = create_default_applied_version()
+            write_applied_network_state(net_dir, v, "caddyfile dummy")
+            network_state_dir = net_dir
+
         self.config = GatewayConfig(
             host="127.0.0.1",
             port=port,
@@ -141,7 +150,7 @@ class ProductionGatewayService:
             gateway_token_file=self.gateway_token_file,
             api_url="http://api.invalid",
             api_token_file=self.gateway_token_file,
-            allowed_origins=allowed_origins or ["http://127.0.0.1"],
+            network_state_dir=network_state_dir,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
         self.app = create_gateway_app(self.config, api_client=self.api)

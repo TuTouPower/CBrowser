@@ -20,13 +20,12 @@ def control_env(tmp_path: Path):
     gateway_file = tmp_path / "gateway.txt"
     gateway_file.write_text(gateway_token, encoding="utf-8")
     gateway_file.chmod(0o600)
-    origin = "https://app.cbrowser.local"
+    origin = "https://127.0.0.1:56661"
     app = create_app(
         db_path=tmp_path / "control.db",
         admin_password_file=password_file,
         gateway_token_file=gateway_file,
-        allowed_origins=[origin],
-        artifacts_root=tmp_path / "artifacts",
+                artifacts_root=tmp_path / "artifacts",
     )
     with TestClient(app, base_url=origin) as client:
         login = client.post("/api/v1/auth/login", json={"password": password})
@@ -170,7 +169,7 @@ def test_control_endpoints_require_auth(control_env) -> None:
     # No session cookie: state and tunnels reject.
     from fastapi.testclient import TestClient as _TC
 
-    with _TC(control_env["app"], base_url="https://app.cbrowser.local") as anon:
+    with _TC(control_env["app"], base_url="https://127.0.0.1:56661") as anon:
         assert anon.get(_control_url(pid)).status_code == 401
         assert anon.get(_control_url(pid, "/tunnels")).status_code == 401
         # No bearer: claim/handoff reject.

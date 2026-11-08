@@ -172,3 +172,14 @@ def test_browser_keeps_public_egress() -> None:
     spec = NetworkPolicySpec(role="browser")
     rules = render_iptables_rules(spec)
     assert "-A OUTPUT -j ACCEPT" in rules
+
+
+def test_stream_network_policy_lan_media_allowed() -> None:
+    spec_lan = NetworkPolicySpec(
+        role="stream",
+        udp_mux_port=30025,
+        allow_lan_media=True,
+    )
+    rules_lan = render_iptables_rules(spec_lan)
+    # LAN media output is accepted before private range drop
+    assert "-A OUTPUT -p udp --sport 30025 -j ACCEPT" in rules_lan

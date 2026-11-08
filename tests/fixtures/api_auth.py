@@ -90,7 +90,7 @@ class AuthTestContext:
 
 def create_auth_context(
     dir_path: Path,
-    origin: str = "http://127.0.0.1",
+    origin: str = "https://127.0.0.1:56661",
 ) -> AuthTestContext:
     """Create a randomized admin password file (0600) and return AuthTestContext."""
     dir_path.mkdir(parents=True, exist_ok=True)
@@ -105,7 +105,6 @@ def create_auth_context(
     supervisor_token_file.chmod(0o600)
     env = {
         "CBROWSER_ADMIN_PASSWORD_FILE": str(pwd_file),
-        "CBROWSER_ALLOWED_ORIGINS": origin,
     }
 
     return AuthTestContext(

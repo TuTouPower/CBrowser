@@ -86,6 +86,7 @@ class NetworkPolicySpec(BaseModel):
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
     udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
+    allow_lan_media: bool = False
 
     @field_validator("allowed_tcp", "allowed_udp", mode="before")
     @classmethod
@@ -109,6 +110,8 @@ class NetworkPolicySpec(BaseModel):
             )
         if self.role == "browser" and self.udp_mux_port is not None:
             raise ValueError("udp_mux_port must not be specified for browser role")
+        if self.role == "browser" and self.allow_lan_media:
+            raise ValueError("allow_lan_media is only permitted for stream role")
         return self
 
 
@@ -142,6 +145,11 @@ def render_iptables_rules(spec: NetworkPolicySpec) -> str:
         addr = ipaddress.ip_address(ip_str)
         if addr.version == 4:
             lines.append(f"-A OUTPUT -p udp -d {ip_str} --dport {port} -j ACCEPT")
+
+    # Stream role in LAN mode: allow outbound UDP media responses to clients on LAN/private subnets
+    if spec.role == "stream" and spec.allow_lan_media:
+        assert spec.udp_mux_port is not None
+        lines.append(f"-A OUTPUT -p udp --sport {spec.udp_mux_port} -j ACCEPT")
 
     # Block non-public / internal IPv4 ranges
     for net in BLOCKED_IPV4_RANGES:

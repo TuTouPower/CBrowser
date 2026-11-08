@@ -1,0 +1,19 @@
+{
+  "initial_binding": {
+    "8080/tcp": [
+      {
+        "HostIp": "127.0.0.1",
+        "HostPort": "54326"
+      }
+    ]
+  },
+  "recreated_binding": {
+    "8080/tcp": [
+      {
+        "HostIp": "0.0.0.0",
+        "HostPort": "54326"
+      }
+    ]
+  },
+  "success": true
+}

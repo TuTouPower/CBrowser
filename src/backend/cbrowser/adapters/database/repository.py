@@ -16,6 +16,7 @@ from cbrowser.adapters.database.models import (
     ProfileRuntimeModel,
     ProxyModel,
     RuntimeEventModel,
+    SettingModel,
 )
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import (
@@ -26,6 +27,11 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProxyResponse,
     RuntimeEvent,
+    AppliedNetworkAccessVersion,
+    NetworkAccessConfig,
+    NetworkAccessSettingsResponse,
+    NetworkApplyOperation,
+    NetworkApplyPhase,
     utc_now_iso,
 )
 from cbrowser.domain.runtime_policy import (
@@ -1268,3 +1274,153 @@ class ProfileRepository:
             notes=m.notes,
             sort_order=m.sort_order,
         )
+
+    # -------------------------------------------------------------------------
+    # Network Access Settings & Apply Operations (t042)
+    # -------------------------------------------------------------------------
+
+    KEY_NETWORK_PENDING = "network.pending_config"
+    KEY_NETWORK_APPLIED = "network.applied_version"
+    KEY_NETWORK_ACTIVE_OP = "network.active_operation"
+    KEY_NETWORK_OP_PREFIX = "network.operation."
+
+    async def get_network_access_settings(
+        self, export_dir: Path | None = None
+    ) -> NetworkAccessSettingsResponse:
+        async with self._session_maker() as session:
+            # Pending config
+            pending_row = await session.get(SettingModel, self.KEY_NETWORK_PENDING)
+            if pending_row:
+                pending_config = NetworkAccessConfig.model_validate_json(pending_row.value)
+            else:
+                pending_config = NetworkAccessConfig(lan_access_enabled=False)
+
+            # Applied version: DB takes precedence; on clean boot fallback to disk exported baseline
+            applied_row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            if applied_row:
+                applied_version = AppliedNetworkAccessVersion.model_validate_json(applied_row.value)
+            else:
+                from cbrowser.network_config import (
+                    create_default_applied_version,
+                    read_applied_network_state,
+                )
+                file_state = (
+                    read_applied_network_state(export_dir) if export_dir else None
+                )
+                if file_state is not None:
+                    applied_version = file_state[0]
+                else:
+                    applied_version = create_default_applied_version()
+
+            # Active operation
+            active_op_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            active_op = None
+            if active_op_row:
+                active_op = NetworkApplyOperation.model_validate_json(active_op_row.value)
+
+            return NetworkAccessSettingsResponse(
+                pending_config=pending_config,
+                applied_version=applied_version,
+                active_operation=active_op,
+            )
+
+    async def save_pending_network_config(self, config: NetworkAccessConfig) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            row = await session.get(SettingModel, self.KEY_NETWORK_PENDING)
+            raw = config.model_dump_json()
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=self.KEY_NETWORK_PENDING,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+    async def record_applied_network_version(
+        self, version: AppliedNetworkAccessVersion
+    ) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            # 1. Update latest applied version
+            row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            raw = version.model_dump_json()
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=self.KEY_NETWORK_APPLIED,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+            # 2. Store immutable historical record
+            hist_key = f"network.version.{version.version}"
+            hist_row = await session.get(SettingModel, hist_key)
+            if not hist_row:
+                session.add(
+                    SettingModel(
+                        key=hist_key,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+    async def save_network_operation(self, op: NetworkApplyOperation) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            raw = op.model_dump_json()
+            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{op.operation_id}"
+
+            # Save historical operation record
+            row = await session.get(SettingModel, op_key)
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=op_key,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+            # Update active operation pointer
+            active_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            is_terminal = op.phase in (NetworkApplyPhase.COMPLETED, NetworkApplyPhase.FAILED)
+            if is_terminal:
+                if active_row:
+                    await session.delete(active_row)
+            else:
+                if active_row:
+                    active_row.value = raw
+                    active_row.updated_at = utc_now_iso()
+                else:
+                    session.add(
+                        SettingModel(
+                            key=self.KEY_NETWORK_ACTIVE_OP,
+                            value=raw,
+                            updated_at=utc_now_iso(),
+                        )
+                    )
+
+    async def get_active_network_operation(self) -> NetworkApplyOperation | None:
+        async with self._session_maker() as session:
+            row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            if not row:
+                return None
+            return NetworkApplyOperation.model_validate_json(row.value)
+
+    async def get_network_operation(
+        self, operation_id: str
+    ) -> NetworkApplyOperation | None:
+        async with self._session_maker() as session:
+            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{operation_id}"
+            row = await session.get(SettingModel, op_key)
+            if not row:
+                return None
+            return NetworkApplyOperation.model_validate_json(row.value)

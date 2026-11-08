@@ -1,0 +1,10 @@
+{
+  "selkies_version": "2.2.1",
+  "flags_supported": {
+    "--webrtc-public-ip": true,
+    "--webrtc-ice-lite": true,
+    "--webrtc-udp-mux-port": true
+  },
+  "entrypoint_plumbing": "Already exports SELKIES_WEBRTC_PUBLIC_IP and passes --webrtc-public-ip",
+  "supervisor_gap": "container_spec.stream_ports() hardcodes 127.0.0.1 and docker_adapter hardcodes public_ip=127.0.0.1"
+}

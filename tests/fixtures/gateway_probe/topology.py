@@ -19,8 +19,11 @@ import httpx
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env
-
-from .caddyfile import generate_caddyfile
+from cbrowser.network_config import (
+    create_default_applied_version,
+    generate_caddyfile,
+    write_applied_network_state,
+)
 from .selkies_assets import prepare_selkies_web_assets
 
 logger = logging.getLogger("cbrowser.gateway_probe.topology")
@@ -152,10 +155,15 @@ class GatewayTopologyHarness:
         self.work_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
         self.control_dir.chmod(0o700)
-        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
+        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
+
+        # Initialize network state with harness Caddy port (t042 AC-007)
+        v1 = create_default_applied_version(https_port=self.caddy_host_port)
+        caddyfile_content = generate_caddyfile(v1)
+        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
 
         cache = self.data_dir / "engine_cache"
         if not cache.exists():
@@ -245,7 +253,7 @@ class GatewayTopologyHarness:
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/supervisor_key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_password",
-                "CBROWSER_ALLOWED_ORIGINS": self.origin,
+                "CBROWSER_HTTPS_PORT": str(self.caddy_host_port),
                 **self.api_environment_extra(),
             },
             volumes={
@@ -273,7 +281,7 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
-                "CBROWSER_ALLOWED_ORIGINS": self.origin,
+                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
                 "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
                     self.agent_heartbeat_timeout_sec
                 ),
@@ -286,6 +294,7 @@ class GatewayTopologyHarness:
             },
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
+                str(self.data_dir / "network"): {"bind": "/data/network", "mode": "ro"},
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
@@ -361,12 +370,17 @@ class GatewayTopologyHarness:
             ],
         )
 
-        # 5. Caddy container
+        # 5. Caddy container: generated strictly via product generate_caddyfile and applied version
+        v1 = create_default_applied_version(https_port=self.caddy_host_port)
         caddyfile_content = generate_caddyfile(
-            self.api_ip, self.gateway_ip, DEFAULT_GATEWAY_PORT
+            v1,
+            api_upstream=f"http://{self.api_ip}:8000",
+            gateway_upstream=f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+            frontend_dir="/var/www/html",
         )
         caddyfile_path = self.work_dir / "Caddyfile"
         caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
+        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
 
         self.caddy_container = self._run_container(
             "caddy",

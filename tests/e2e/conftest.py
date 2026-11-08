@@ -239,7 +239,7 @@ def real_api_server(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
+    auth_ctx = create_auth_context(tmp_path)
     env = dict(os.environ)
     for name in (
         "HTTP_PROXY",

@@ -15,7 +15,7 @@ import pytest
 from cbrowser.api.app import create_app
 from fastapi.testclient import TestClient
 
-ORIGIN = "https://app.cbrowser.local"
+ORIGIN = "https://127.0.0.1:56661"
 DOWNLOAD_BODY = {
     "event_id": "evt_cfg_1",
     "profile_id": "prof-x",
@@ -45,8 +45,7 @@ def _make_app(tmp_path: Path, *, with_tokens: bool):
     app = create_app(
         db_path=tmp_path / "svc.db",
         admin_password_file=admin_file,
-        allowed_origins=[ORIGIN],
-        include_internal_schema=True,
+                include_internal_schema=True,
         **kwargs,
     )
     return app, tokens

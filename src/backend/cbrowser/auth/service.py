@@ -99,6 +99,13 @@ class AuthService:
             )
         logger.info("Admin account successfully bootstrapped")
 
+    async def verify_admin_password(
+        self, password: str, client_ip: str = "127.0.0.1"
+    ) -> bool:
+        """Verify admin password without creating a session."""
+        valid, _ = await self.authenticate_admin(password, client_ip)
+        return valid
+
     async def authenticate_admin(
         self, password: str, client_ip: str
     ) -> tuple[bool, str | None]:

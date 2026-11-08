@@ -1,6 +1,6 @@
 # Stream Gateway
 
-本模块实现 CBrowser v2 独立认证信令 Gateway 与 Agent 健康状态转存服务（`cbrowser.gateway`）。网关作为独立 aiohttp 服务运行，对外暴露统一的 `/stream/*` 端点，对内提供 Supervisor 控制 RPC 与 API 鉴权联动。WebRTC 音视频媒体流经同机 `127.0.0.1` host 候选直连，无 TURN/coturn，绝不经过 Gateway（ADR 013）。
+本模块实现 CBrowser v2 独立认证信令 Gateway 与 Agent 健康状态转存服务（`cbrowser.gateway`）。网关作为独立 aiohttp 服务运行，对外暴露统一的 `/stream/*` 端点，对内提供 Supervisor 控制 RPC 与 API 鉴权联动。WebRTC 音视频媒体流经 host 候选直连（本机模式 `127.0.0.1`，局域网模式 `0.0.0.0`），无 TURN/coturn，绝不经过 Gateway（ADR 026 修订 ADR 013）。Origin 白名单由当前已应用的网络配置确定性派生。
 
 ## 权限与部署边界
 
@@ -39,7 +39,7 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
 外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`：
 
 1. **升级前三级校验**：
-    - **Origin 门禁**：Origin 必须在 `CBROWSER_ALLOWED_ORIGINS` 白名单中，否则返回 HTTP 403。
+    - **Origin 门禁**：Origin 必须在由当前已应用网络版本派生的白名单中（纯 https，从 `/data/network/applied_network_version.json` 动态读取并支持热重载，t042），否则返回 HTTP 403。
     - **会话鉴权**：提取 `cbrowser_session` Cookie，调 API `POST /api/v1/internal/gateway/viewer-authorize` 校验登录态与 Profile 授权，未授权返回 HTTP 401/403。
     - **就绪检查**：检查该 Profile 在网关内存中已有活跃 Agent，且 API 查询 `observed_state` 为 `running`（或 `ready`），否则返回 HTTP 503 并说明原因。
 2. **握手**：生成唯一 `connection_id`，记录其绑定的 `agent_session_id`，向 Agent 发送 `GatewayTunnelEnvelope(type="open", conn_id=connection_id)`；不再向页面下发任何 RTC/TURN 首帧。
@@ -81,7 +81,7 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 |`CBROWSER_GATEWAY_TOKEN_FILE`|path|-|Supervisor 控制 RPC Bearer 凭证文件（≥32字节）|
 |`CBROWSER_GATEWAY_API_URL`|url|-|CBrowser API 基础地址（如 `http://api:8000`）|
 |`CBROWSER_GATEWAY_API_TOKEN_FILE`|path|-|Gateway 调 API 内部鉴权 Bearer 凭证文件（≥32字节）|
-|`CBROWSER_ALLOWED_ORIGINS`|string|-|允许的 WebSocket Origin 列表（逗号分隔）|
+|`CBROWSER_NETWORK_STATE_DIR`|path|`/data/network`|已应用网络版本与 Origin 白名单共享目录（只读挂载）|
 |`CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC`|float|`30.0`|Agent 心跳失联判定超时阈值|
 
 ## 日志与脱敏

@@ -1,0 +1,8 @@
+{
+  "isSecureContext": true,
+  "hasLocks": true,
+  "hasRTCPeerConnection": true,
+  "hasCryptoSubtle": true,
+  "protocol": "https:",
+  "origin": "https://192.168.31.76:54324"
+}

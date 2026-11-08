@@ -295,21 +295,10 @@ def prepare_selkies_web_assets(stream_image_id: str, dest_dir: Path) -> Path:
         found = (result.output or b"").decode("utf-8", "replace").strip()
         if result.exit_code != 0 or not found:
             raise FileNotFoundError(
-                "selkies_web not found in Stream image (dynamic discovery failed)"
+                f"selkies_web package directory not found in Stream image ({stream_image_id})"
             )
-        candidates = found.splitlines()
-        archive_bytes = None
-        for candidate in candidates:
-            try:
-                archive_stream, _ = container.get_archive(candidate)
-            except docker.errors.NotFound:
-                continue
-            archive_bytes = b"".join(archive_stream)
-            break
-        if archive_bytes is None:
-            raise FileNotFoundError(
-                "selkies_web not found in Stream image: " + ", ".join(candidates)
-            )
+        archive_stream, _ = container.get_archive(found)
+        archive_bytes = b"".join(archive_stream)
         with tarfile.open(fileobj=io.BytesIO(archive_bytes)) as tar:
             tar.extractall(path=dest_dir)
     finally:
