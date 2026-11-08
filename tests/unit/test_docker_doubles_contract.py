@@ -77,8 +77,11 @@ def test_containers_collection_semantics_match_docker_sdk(tmp_path: Path) -> Non
         assert containers.list() == []
     # Present container on the double: get returns it, list surfaces it.
     staged = FakeContainer("inst-1", "running")
-    fake.containers.container = staged
-    assert fake.containers.get("any") is staged
+    name = fake.get_browser_container_name("p1")
+    fake.containers.register(name, staged)
+    assert fake.containers.get(name) is staged
+    with pytest.raises(NotFound):
+        fake.containers.get("any")
     assert fake.containers.list() == [staged]
     assert staged.labels == {"com.cbrowser.instance-id": "inst-1"}
     assert staged.status == "running"
