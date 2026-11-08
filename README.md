@@ -1,6 +1,6 @@
 # CBrowser
 
-CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统。以 Google Chrome 作为唯一外部客户端，通过 Selkies 2.1.0 WebRTC 传输画面，每个 Profile 由独立 Browser/Stream 容器沙箱隔离。
+CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统。以 Google Chrome 作为唯一外部客户端，通过 Selkies 2.2.1 WebRTC 传输画面，每个 Profile 由独立 Browser/Stream 容器沙箱隔离。
 
 ## 架构
 

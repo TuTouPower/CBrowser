@@ -46,4 +46,4 @@ Ego 已有 learnings 的发现、校验与执行代码，可作为结构参考�
 
 - Ego 参考版本：12407167f84a58af24044f072868051952131491。
 - 源码入口：ego-lite/AGENTS.md、package/ego-browser/src/learning/、skills/ego-browser/learnings/、package/ego-browser/scripts/validate-site-skills.ts。
-- [p030 执行器](../todo/p030_code_as_action_cli_runner.md) 是接口基础；[p033 页面保护](../todo/p033_tab_ownership_and_lifecycle_protection.md) 与 [p032 弹窗处理](../todo/p032_dialog_and_permission_prompt_routing.md) 提供可靠性边界。
+- [p030 执行器](../../archive/pending/p030_code_as_action_cli_runner.md) 是接口基础；[p033 页面保护](../../archive/pending/p033_tab_ownership_and_lifecycle_protection.md) 与 [p032 弹窗处理](../../archive/pending/p032_dialog_and_permission_prompt_routing.md) 提供可靠性边界。

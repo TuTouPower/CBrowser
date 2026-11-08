@@ -8,7 +8,7 @@
 
 - 影响：支持TURN鉴权与relay transport基础可行性；这不是RTCPeerConnection ICE候选选择、WebRTC媒体、凭证刷新或同PC ICE restart通过依据，第18.14仍未完成。实验TTL300秒用于加速测试，不改变生产24h/12h/提前6h计划。
 
-- 现状：有效
+- 现状：历史实验事实有效，已不适用于现行实现/验收（机制已由 ADR 013 删除；详见文末「后续（t024 文档收敛）」条）。
 
 - 实验镜像：coturn/coturn@sha256:bbefd3e1fdfdc0d58770fe01b581fd8b00d9f3a5580d00acb77cf719a6bc78e3。
 

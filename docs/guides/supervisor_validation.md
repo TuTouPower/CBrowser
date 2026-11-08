@@ -18,7 +18,7 @@
 
 镜像构建入口为 `config/docker/supervisor_runtime/Dockerfile` 与 `tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile`，各自带专属 Docker ignore，只发送必要源码；容器拓扑中的 Gateway 直接使用生产镜像。API fixture 的 SQLAlchemy asyncio extra 包含 arm64 冷启动所需 greenlet；Supervisor 镜像不安装 SQLAlchemy。
 
-所有缓存、TMPDIR、pytest basetemp/cache_dir 都应放在允许写域内。先创建 TMPDIR，再启动解释器；避免回退系统临时目录。为本地 HTTP 测试清除当前测试进程的代理环境，不修改宿主机全局配置。使用 Python 3.12+ 和 `python -m pytest`，避免调用 PATH 中其他环境的 pytest。
+所有缓存、TMPDIR、pytest basetemp/cache_dir 都应放在允许写域内。先创建 TMPDIR，再启动解释器；避免回退系统临时目录。为本地 HTTP 测试清除当前测试进程的代理环境，不修改宿主机全局配置。使用 Python 3.15+ 和 `python -m pytest`，避免调用 PATH 中其他环境的 pytest。
 
 ## 分层验收
 

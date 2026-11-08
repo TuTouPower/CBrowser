@@ -37,14 +37,14 @@ docker run --rm --name cbrowser-runtime-cache-init \
 
 ## 执行真实 E2E
 
-先设置仓库内 TMPDIR、UV_CACHE_DIR，并使用 Python3.12+。项目声明的完整命令见 docs/blueprint/testing.md；专项运行：
+先设置仓库内 TMPDIR、UV_CACHE_DIR，并使用 Python3.15+。项目声明的完整命令见 docs/blueprint/testing.md；专项运行：
 
 ```bash
 export TMPDIR="$PWD/.scratch/runtime_validation/tmp"
 export UV_CACHE_DIR="$PWD/.scratch/runtime_validation/uv_cache"
 export PYTHONDONTWRITEBYTECODE=1
 mkdir -p "$TMPDIR" "$UV_CACHE_DIR"
-PYTHONPATH=src/backend uv run --no-project --python '>=3.12'   --with pytest --with pytest-asyncio --with fastapi --with pydantic   --with uvicorn --with httpx --with websockets --with cloakbrowser   pytest tests/e2e/test_browser_runtime_e2e.py     tests/e2e/test_runtime_profile_defaults_e2e.py -v
+PYTHONPATH=src/backend uv run --no-project --python '>=3.15'   --with pytest --with pytest-asyncio --with fastapi --with pydantic   --with uvicorn --with httpx --with websockets --with cloakbrowser   pytest tests/e2e/test_browser_runtime_e2e.py     tests/e2e/test_runtime_profile_defaults_e2e.py -v
 ```
 
 容器、桥接网络与新测试数据均使用独立随机标识。HTTP 夹具位于专属 Docker 网络，不监听宿主端口；浏览器仅发布 UDS，不映射 CDP TCP。测试结束清理自身容器及网络，失败容器日志保存在 .scratch/t003_implementation/tmp/logs，搜索设置场景保存在 .scratch/t003_profile_defaults。单元故障注入不等于真实断电；合成音频只用于校准，Profile 隔离以实际 Chrome WebAudio 录音测量。

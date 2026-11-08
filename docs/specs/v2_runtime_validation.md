@@ -8,13 +8,15 @@
 
 当前实验只证明文中引用机制；正式服务命名、授权路由和持久Artifact是目标约束，不能由实验代码推断已交付生产功能。Pulse同UID可绕过Cookie，跨Profile依赖专属Socket卷；不能把IPC或Cookie当绝对防护。
 
+> 版本基线（ADR 022）：本文为 t001 历史技术验证契约，实验基于固定 Selkies 2.1.0（含 §2.4 / d003 所述原生 ICE restart 缺口），文中所有 2.1.0 字样均为历史验证基线原文，不改写历史证据。现行运行基线已由 ADR 022（t043）升级为 Selkies 2.2.1；现行实现、依赖与验收以 ADR 022 及现行蓝图为准。
+
 ## 2. 可观察技术行为契约
 
 ### 2.1 容器沙箱、IPC 命名空间与 X11 跨容器捕获契约
 
 - **双容器沙箱拓扑**：每个 Profile 分配两个专属沙箱容器：
     - `browser-runtime-{profileId}`：承载 CloakBrowser 真实浏览器进程、Xvfb 虚拟屏幕（`:99`）、Openbox 窗口管理器、Browser Agent 及虚拟 PulseAudio 服务。
-    - `stream-runtime-{profileId}`：承载 Selkies 2.1.0 WebRTC 捕获编码器及 Stream Agent。
+    - `stream-runtime-{profileId}`：承载 Selkies 2.1.0 WebRTC 捕获编码器及 Stream Agent（t001 历史验证基线，现行 2.2.1 见文首版本基线说明）。
 - **IPC 供体与共享契约**：
     - `browser-runtime` 容器必须显式配置 `HostConfig.IpcMode=shareable` 并分配 1 GiB `/dev/shm`（d004）；
     - `stream-runtime` 容器通过 `IpcMode=container:<browser-runtime-id>` 加入该专属 IPC 命名空间；禁止使用宿主机 IPC 命名空间；
@@ -68,7 +70,7 @@
     - 正式目标由`RtcConfigService`分别为外部 Chrome 客户端与内部 Stream Runtime 生成适配其可达网络的独立 RTC 配置（客户端使用外部可达 TURN 地址，服务端使用容器内部网络地址）（s008, d012）；
     - coturn 强制启用 TURN REST HMAC-SHA1 短期凭证，单侧提供错误密码或过期凭证均被严格拒绝（401 Unauthorized）（s002, s008, d009, d012）。
 - **同 PC ICE 代轮换与媒体接管**：
-    - 固定 Selkies 2.1.0 SDK 提交缺少原生公开 ICE restart API（d003）；
+    - 固定 Selkies 2.1.0 SDK 提交缺少原生公开 ICE restart API（d003，t001 历史验证基线）；
     - 在同 SDK 进程内通过显式私有接口适配器（维持同一个 RTCPeerConnection / DTLS / DataChannel 对象引用），在交换新 ICE 凭证后通过显式代栅栏（Generation Barrier）关闭旧代传输并由新代接管媒体（s008, d010, d012）。
 
 ### 2.5 CDP UDS 本地控制、下载捕获与服务重启恢复契约

@@ -10,9 +10,9 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
 - `/profiles/:profileId/files` 为 Artifact 管理页：经 `shared/api/client.ts` 的 `artifacts` 方法列出、上传、下载、删除文件，展示 `container_path`，写操作带 CSRF。多文件上传顺序执行、首个失败即停止，失败文案须给出已成功数、失败文件名与未处理数（不输出文件内容）。
 - 设置页的健康状态只呈现其真实探测对象——Control API 健康检查，不声称网关或其它服务的状态。
-- `/automation/:profileId` 为自动化页：经 `automation.status()` 展示授权 WS 端点、运行状态、运行实例、Supervisor 配置状态与 `Authorization: Bearer <cbat_...>` 头格式；不展示任何明文凭证。
+- `/profiles/:profileId/automation` 为自动化页：经 `automation.status()` 展示授权 WS 端点、运行状态、运行实例、Supervisor 配置状态与 `Authorization: Bearer <cbat_...>` 头格式；不展示任何明文凭证。
 - Profile 详情页提供复制与重置面板：复制可选仅配置或含浏览器状态（运行中禁用状态复制并提示停止）；重置面板明确列出将清除的 Cookie、站点数据、缓存、登录状态与指纹身份，并说明保留设置与 Artifact。
-- 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；语言偏好存储键为 `cbrowser.locale`（迁移旧 `cbm.locale`），切换时同步 `document.documentElement.lang`。翻译键集由 en 字典派生（`TranslationKey = keyof typeof en`），zh 字典以 `satisfies Record<TranslationKey, string>` 编译期对齐，并有键集相等测试兜底；新增文案必须 en/zh 同步补键。
+- 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；语言偏好存储键为 `cbrowser.locale`，切换时同步 `document.documentElement.lang`。翻译键集由 en 字典派生（`TranslationKey = keyof typeof en`），zh 字典以 `satisfies Record<TranslationKey, string>` 编译期对齐，并有键集相等测试兜底；新增文案必须 en/zh 同步补键。
 
 ## 2. 页面独立状态
 
