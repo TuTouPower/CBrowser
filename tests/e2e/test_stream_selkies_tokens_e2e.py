@@ -110,6 +110,10 @@ asyncio.run(run_server())
             "no-new-privileges:true",
             "--tmpfs",
             "/tmp:rw,nosuid,nodev,size=64m",
+            "--label",
+            "com.cbrowser.prefix=t007-stream-tokens",
+            "--label",
+            "com.cbrowser.test=stream-tokens",
         ]
         cmd.extend(self.extra_docker_args)
         cmd.extend(
@@ -421,7 +425,10 @@ async def test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection(
             assert not ws1.closed
             assert not ws2.closed
 
-            # 3. Tab 1 reconnects using its original resume_key and tab_id
+            # 3. Tab 1 reconnects using its original resume_key and tab_id.
+            # Arm active reader on old ws1 so its close frame is received in real-time.
+            old_close_task = asyncio.create_task(ws1.receive())
+
             ws1_reconnect = await session.ws_connect(ws_url)
             h1_reconnect = {
                 "client_type": "controller",
@@ -435,13 +442,17 @@ async def test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection(
             assert r1_rec.data.startswith("HELLO")
 
             # Old ws1 socket is closed after resume
-            old_close = await ws1.receive()
+            old_close = await old_close_task
             assert old_close.type in (WSMsgType.CLOSE, WSMsgType.CLOSED)
             # Both new ws1 and ws2 remain active
             assert not ws1_reconnect.closed
             assert not ws2.closed
 
-            # 4. Tab collision: cloned tab with same tab_id but new resume_key
+            # 4. Tab collision: cloned tab with same tab_id but new resume_key.
+            # Arm active reader on ws1_reconnect so its 4001 close frame is
+            # received in real-time before transport teardown races.
+            evict_task = asyncio.create_task(ws1_reconnect.receive())
+
             ws_cloned = await session.ws_connect(ws_url)
             h_cloned = {
                 "client_type": "controller",
@@ -453,8 +464,8 @@ async def test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection(
             r_cloned = await ws_cloned.receive()
             assert r_cloned.type == WSMsgType.TEXT
 
-            # Old ws1_reconnect is superseded
-            evict = await ws1_reconnect.receive()
+            # Old ws1_reconnect is superseded and received the 4001 close frame
+            evict = await evict_task
             assert evict.type in (WSMsgType.CLOSE, WSMsgType.CLOSED)
             assert ws1_reconnect.close_code == 4001
             assert evict.extra == "Superseded by a new connection."

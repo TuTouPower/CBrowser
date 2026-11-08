@@ -722,6 +722,22 @@
             "conflicts_with": "",
             "note": "来源 p046 p048 p049 p050 用户授权聚合",
             "dir": "docs/archive/tasks/t045_e2e_gate_stability_cleanup"
+        },
+        {
+            "tid": "t046",
+            "slug": "e2e_infrastructure_and_protocol_harness_rebuild",
+            "title": "E2E 基础设施重构与协议探针模型归一",
+            "status": "done",
+            "branch": "t046_e2e_infrastructure_and_protocol_harness_rebuild",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "3950648050c4374e4ae45af9cfe527746afa23f4",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "来源 p051、p052：消除 test_runtime_coordinator_e2e 私有 Docker 编排与 Selkies 协议探针关闭握手时序竞态",
+            "dir": "docs/archive/tasks/t046_e2e_infrastructure_and_protocol_harness_rebuild"
         }
     ]
 }

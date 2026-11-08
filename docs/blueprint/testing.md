@@ -371,3 +371,8 @@ bash scripts/run_automation_probe.sh
 - 前端 E2E 同文件共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈、天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
 - Selkies wheel：`CBROWSER_SELKIES_WHEEL_CACHE` 指向已锁定 SHA256 的本地缓存；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项（`tests/e2e/conftest.py`、`test_frontend_adapter_build.py`、`tests/unit/test_t045_selkies_wheel_cache.py`）。
 - 负载下时序判定改就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 或上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
+
+## t046 E2E 基础设施重构与协议探针模型归一
+
+- **全仓唯一 Docker E2E Harness 铁律**：`tests/e2e/test_runtime_coordinator_e2e.py` 彻底重构接入标准的 `FrontendAppTopologyHarness`；彻底移除测试用例内私有 API 子进程、私有 Docker 启动与自建 `finally` 遍历删除逻辑。所有测试容器、网络、卷的分配、运行、观察与清理严格收敛于 `GatewayTopologyHarness` / `FrontendAppTopologyHarness` 与 `cleanup_prefixed_resources`，受 `CBROWSER_E2E_DELETION_LOG` 统一结构化审计。
+- **协议探针异步事件流模型**：`tests/e2e/test_stream_selkies_tokens_e2e.py` 中被驱逐旧连接的客户端使用后台并发任务异步监听 Close Frame，确保实时响应服务端 RFC 6455 关闭握手，消除底层 Transport 提早掐断导致的 `1006 ABNORMAL_CLOSURE` 假失败；严格维持 `close_code == 4001` 与 `Superseded by a new connection.` 精确断言。

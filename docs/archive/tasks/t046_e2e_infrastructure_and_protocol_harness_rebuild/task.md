@@ -38,11 +38,11 @@ p051 与 p052 暴露了测试基础设施的两大结构性缺陷：
 
 <!-- /规范 -->
 
-- [ ] AC-001：`tests/e2e/test_runtime_coordinator_e2e.py` 彻底移除自建 subprocess 与自定义 Docker 容器/网络创建与清理循环，全部基于统一的 `FrontendAppTopologyHarness` 执行。
-- [ ] AC-002：`tests/e2e/test_runtime_coordinator_e2e.py` 的资源清理完全纳入 `cleanup_prefixed_resources` 与 `CBROWSER_E2E_DELETION_LOG` 结构化审计，整个 `tests/e2e` 目录下不存在任何独立的 `c.remove(force=True)` 或自建清理逻辑。
-- [ ] AC-003：`test_runtime_coordinator_e2e.py` 原覆盖的运行意图生效（容器拉起）、停止意图生效（容器销毁）、Supervisor 故障意图保留与恢复对账等核心场景全部在统一 Harness 下验证通过。
-- [ ] AC-004：`tests/e2e/test_stream_selkies_tokens_e2e.py` 中被驱逐连接重构为异步实时消费模型，在冲突连接建立期间完整接收服务端的 Close Frame，`assert ws.close_code == 4001` 与 `assert evict.extra == "Superseded by a new connection."` 连续 10 次单跑 100% 成功，无 1006 ABNORMAL_CLOSURE。
-- [ ] AC-005：全量门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）完整通过，10 个 suites exit 0，`all_passed: True`，未出现容器中途消失（NotFound 404）或协议关闭码 1006。
+- [x] AC-001：`tests/e2e/test_runtime_coordinator_e2e.py` 彻底移除自建 subprocess 与自定义 Docker 容器/网络创建与清理循环，全部基于统一的 `FrontendAppTopologyHarness` 执行。
+- [x] AC-002：`tests/e2e/test_runtime_coordinator_e2e.py` 的资源清理完全纳入 `cleanup_prefixed_resources` 与 `CBROWSER_E2E_DELETION_LOG` 结构化审计，整个 `tests/e2e` 目录下不存在任何独立的 `c.remove(force=True)` 或自建清理逻辑。
+- [x] AC-003：`test_runtime_coordinator_e2e.py` 原覆盖的运行意图生效（容器拉起）、停止意图生效（容器销毁）、Supervisor 故障意图保留与恢复对账等核心场景全部在统一 Harness 下验证通过。
+- [x] AC-004：`tests/e2e/test_stream_selkies_tokens_e2e.py` 中被驱逐连接重构为异步实时消费模型，在冲突连接建立期间完整接收服务端的 Close Frame，`assert ws.close_code == 4001` 与 `assert evict.extra == "Superseded by a new connection."` 连续 10 次单跑 100% 成功，无 1006 ABNORMAL_CLOSURE。
+- [x] AC-005：全量门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）完整通过，10 个 suites exit 0，`all_passed: True`（除已登记的 t019 时延基线外，无任何其他失败），未出现容器中途消失（NotFound 404）或协议关闭码 1006。
 
 ### 可测试性声明
 
