@@ -11,6 +11,10 @@
       "$id": "#/$defs/AgentHeartbeatEnvelope",
       "$ref": "#/$defs/AgentHeartbeatEnvelope"
     },
+    "AgentHumanInputTakeoverEnvelope": {
+      "$id": "#/$defs/AgentHumanInputTakeoverEnvelope",
+      "$ref": "#/$defs/AgentHumanInputTakeoverEnvelope"
+    },
     "GatewayRegisterResponse": {
       "$id": "#/$defs/GatewayRegisterResponse",
       "$ref": "#/$defs/GatewayRegisterResponse"
@@ -133,6 +137,80 @@
         "capture_running"
       ],
       "title": "AgentHeartbeatPayload",
+      "type": "object"
+    },
+    "AgentHumanInputTakeoverEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": "v2",
+          "default": "v2",
+          "title": "Version",
+          "type": "string"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "agent_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agent Session Id"
+        },
+        "conn_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conn Id"
+        },
+        "timestamp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timestamp"
+        },
+        "action": {
+          "const": "human_input_takeover",
+          "default": "human_input_takeover",
+          "title": "Action",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/HumanInputTakeoverPayload"
+        }
+      },
+      "required": [
+        "profile_id",
+        "runtime_instance_id",
+        "payload"
+      ],
+      "title": "AgentHumanInputTakeoverEnvelope",
       "type": "object"
     },
     "AgentRegisterEnvelope": {
@@ -524,6 +602,36 @@
         "conn_id"
       ],
       "title": "GatewayTunnelEnvelope",
+      "type": "object"
+    },
+    "HumanInputTakeoverPayload": {
+      "additionalProperties": false,
+      "description": "Classified foreground human input that must take over control.\n\nSent by the Stream Agent when its policy classifier observes a\ntakeover input (key press, mouse button, wheel, IME commit) from a\nforeground viewer. The Gateway forwards it to the API, which moves\nthe profile to the user and closes agent tunnels (t031).",
+      "properties": {
+        "input_kind": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Input Kind",
+          "type": "string"
+        },
+        "viewer_conn_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewer Conn Id"
+        }
+      },
+      "required": [
+        "input_kind"
+      ],
+      "title": "HumanInputTakeoverPayload",
       "type": "object"
     },
     "RegistrationRejection": {

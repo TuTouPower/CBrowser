@@ -123,6 +123,12 @@ verify_image_packages_all() {
   return "$rc"
 }
 
+protocol_drift_check() {
+  env PYTHONPATH=src/backend "$PY" scripts/export_supervisor_protocol.py --check \
+    && env PYTHONPATH=src/backend "$PY" scripts/export_stream_protocol.py --check \
+    && npm run check:api --prefix src/frontend
+}
+
 # E2E runs a single-process collection preflight first. In required mode a
 # missing prerequisite fails closed once, with an itemized message, instead
 # of crashing each xdist worker (t044 AC-005) and scrambling failure
@@ -191,6 +197,8 @@ fi
 # starts fail with font_set_unavailable. E2E reads the same persistent
 # directory through the dedicated CBROWSER_E2E_FONTS_DIR instead.
 unset CBROWSER_FONTS_DIR
+
+protocol_drift_check
 
 # ---------------- evidence mode: concurrent groups (t044 AC-008) ----------------
 if [ -n "$EVIDENCE_DIR" ]; then

@@ -19,9 +19,41 @@
       "$id": "#/$defs/StopProfileResponse",
       "$ref": "#/$defs/StopProfileResponse"
     },
+    "SearchDefaultsRetryRequest": {
+      "$id": "#/$defs/SearchDefaultsRetryRequest",
+      "$ref": "#/$defs/SearchDefaultsRetryRequest"
+    },
+    "SearchDefaultsStatusResponse": {
+      "$id": "#/$defs/SearchDefaultsStatusResponse",
+      "$ref": "#/$defs/SearchDefaultsStatusResponse"
+    },
+    "PreviewPolicySyncResponse": {
+      "$id": "#/$defs/PreviewPolicySyncResponse",
+      "$ref": "#/$defs/PreviewPolicySyncResponse"
+    },
     "ResetBlockedRequest": {
       "$id": "#/$defs/ResetBlockedRequest",
       "$ref": "#/$defs/ResetBlockedRequest"
+    },
+    "CloseTunnelsRequest": {
+      "$id": "#/$defs/CloseTunnelsRequest",
+      "$ref": "#/$defs/CloseTunnelsRequest"
+    },
+    "CloseTunnelsResponse": {
+      "$id": "#/$defs/CloseTunnelsResponse",
+      "$ref": "#/$defs/CloseTunnelsResponse"
+    },
+    "AttendantDialogsResponse": {
+      "$id": "#/$defs/AttendantDialogsResponse",
+      "$ref": "#/$defs/AttendantDialogsResponse"
+    },
+    "AnswerAttendantDialogRequest": {
+      "$id": "#/$defs/AnswerAttendantDialogRequest",
+      "$ref": "#/$defs/AnswerAttendantDialogRequest"
+    },
+    "AnswerAttendantDialogResponse": {
+      "$id": "#/$defs/AnswerAttendantDialogResponse",
+      "$ref": "#/$defs/AnswerAttendantDialogResponse"
     },
     "ResetBlockedResponse": {
       "$id": "#/$defs/ResetBlockedResponse",
@@ -30,14 +62,6 @@
     "ProfileRuntimeStatus": {
       "$id": "#/$defs/ProfileRuntimeStatus",
       "$ref": "#/$defs/ProfileRuntimeStatus"
-    },
-    "SearchDefaultsRetryRequest": {
-      "$id": "#/$defs/SearchDefaultsRetryRequest",
-      "$ref": "#/$defs/SearchDefaultsRetryRequest"
-    },
-    "SearchDefaultsStatusResponse": {
-      "$id": "#/$defs/SearchDefaultsStatusResponse",
-      "$ref": "#/$defs/SearchDefaultsStatusResponse"
     },
     "TransportObservation": {
       "$id": "#/$defs/TransportObservation",
@@ -58,9 +82,187 @@
     "ReadinessResponse": {
       "$id": "#/$defs/ReadinessResponse",
       "$ref": "#/$defs/ReadinessResponse"
+    },
+    "RebuildEdgeRequest": {
+      "$id": "#/$defs/RebuildEdgeRequest",
+      "$ref": "#/$defs/RebuildEdgeRequest"
+    },
+    "ConvergeStreamsRequest": {
+      "$id": "#/$defs/ConvergeStreamsRequest",
+      "$ref": "#/$defs/ConvergeStreamsRequest"
     }
   },
   "$defs": {
+    "AnswerAttendantDialogRequest": {
+      "additionalProperties": false,
+      "description": "t031: answer a held dialog through the attendant's session.",
+      "properties": {
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "accept": {
+          "default": false,
+          "title": "Accept",
+          "type": "boolean"
+        },
+        "prompt_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Text"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "AnswerAttendantDialogRequest",
+      "type": "object"
+    },
+    "AnswerAttendantDialogResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "dialog": {
+          "additionalProperties": true,
+          "title": "Dialog",
+          "type": "object"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "dialog",
+        "action"
+      ],
+      "title": "AnswerAttendantDialogResponse",
+      "type": "object"
+    },
+    "AttendantDialogsResponse": {
+      "additionalProperties": false,
+      "description": "t031: held dialogs peeked from the resident attendant.",
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "dialogs": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Dialogs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "AttendantDialogsResponse",
+      "type": "object"
+    },
+    "CloseTunnelsRequest": {
+      "additionalProperties": false,
+      "description": "t031: close every Supervisor-layer tunnel for a profile.\n\n``generation`` is the post-takeover control generation: the fence\nadvances to it monotonically, so later forwarded handshakes at or\nbelow it are stale and rejected.",
+      "properties": {
+        "generation": {
+          "minimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "generation"
+      ],
+      "title": "CloseTunnelsRequest",
+      "type": "object"
+    },
+    "CloseTunnelsResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "generation": {
+          "title": "Generation",
+          "type": "integer"
+        },
+        "closed_tunnel_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Closed Tunnel Ids",
+          "type": "array"
+        },
+        "attendant_released": {
+          "default": false,
+          "title": "Attendant Released",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profile_id",
+        "generation"
+      ],
+      "title": "CloseTunnelsResponse",
+      "type": "object"
+    },
+    "ConvergeStreamsRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "target_version": {
+          "minimum": 1,
+          "title": "Target Version",
+          "type": "integer"
+        },
+        "bind_host": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Bind Host",
+          "type": "string"
+        },
+        "advertised_ip": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Advertised Ip",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_version",
+        "bind_host",
+        "advertised_ip"
+      ],
+      "title": "ConvergeStreamsRequest",
+      "type": "object"
+    },
+    "PreviewPolicySyncResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok",
+          "default": "ok",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "title": "PreviewPolicySyncResponse",
+      "type": "object"
+    },
     "ProfileReadiness": {
       "additionalProperties": false,
       "properties": {
@@ -235,6 +437,41 @@
         }
       },
       "title": "ReadinessResponse",
+      "type": "object"
+    },
+    "RebuildEdgeRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "target_version": {
+          "minimum": 1,
+          "title": "Target Version",
+          "type": "integer"
+        },
+        "bind_host": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Bind Host",
+          "type": "string"
+        },
+        "https_port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Https Port",
+          "type": "integer"
+        },
+        "caddyfile_path": {
+          "minLength": 1,
+          "title": "Caddyfile Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_version",
+        "bind_host",
+        "https_port",
+        "caddyfile_path"
+      ],
+      "title": "RebuildEdgeRequest",
       "type": "object"
     },
     "ReconcileAllResponse": {
