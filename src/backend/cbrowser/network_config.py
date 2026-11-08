@@ -13,6 +13,7 @@ from cbrowser.domain.models import (
     NetworkAccessConfig,
     utc_now_iso,
 )
+from cbrowser.supervisor.file_storage import atomic_write_text
 
 logger = logging.getLogger("cbrowser.network_config")
 
@@ -132,17 +133,10 @@ def write_applied_network_state(
     version_file = export_dir / APPLIED_VERSION_FILENAME
     caddy_file = export_dir / CADDYFILE_FILENAME
 
-    # Write version json
-    tmp_v = version_file.with_suffix(".tmp")
-    tmp_v.write_text(version.model_dump_json(indent=2), encoding="utf-8")
-    tmp_v.chmod(0o644)
-    tmp_v.replace(version_file)
-
-    # Write Caddyfile
-    tmp_c = caddy_file.with_suffix(".tmp")
-    tmp_c.write_text(caddyfile_content, encoding="utf-8")
-    tmp_c.chmod(0o644)
-    tmp_c.replace(caddy_file)
+    atomic_write_text(
+        version_file, version.model_dump_json(indent=2), mode=0o644
+    )
+    atomic_write_text(caddy_file, caddyfile_content, mode=0o644)
 
 
 def read_applied_network_state(
