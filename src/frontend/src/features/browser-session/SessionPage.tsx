@@ -4,7 +4,7 @@ import { useNavigate, useParams } from "react-router";
 import { useI18n } from "../../i18n";
 import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
-import { Banner, Button, MonoValue } from "../../shared/ui";
+import { Banner, Button } from "../../shared/ui";
 import {
   useProfileQuery,
   useProfileRuntimeQuery,
@@ -17,6 +17,7 @@ import {
   useApplyDisplaySettingsMutation,
 } from "../profiles/useProfilesQuery";
 import { useBrowserSession } from "./useBrowserSession";
+import { deriveSessionStage } from "./session_stage";
 import type { SessionDiagnosticsData, SessionStage } from "./types";
 import {
   SESS_PAGE,
@@ -26,10 +27,11 @@ import {
 } from "./session_keys";
 import { useSessionFocus } from "./session_focus";
 import { SessionHeader } from "./SessionHeader";
-import { SessionStagePanel } from "./SessionStagePanel";
+import { SessionStagePanelConnected } from "./session_stage_panel_connected";
 import { SessionDetailsPanel } from "./SessionDetailsPanel";
 import { FocusModeToolbar } from "./FocusModeToolbar";
 import { ClipboardPermissionHint } from "./ClipboardPermissionHint";
+import { DiagnosticsOverlay } from "./diagnostics_overlay";
 
 const DETAILS_OPEN_KEY = "cbrowser.session.details_open";
 const SESSION_TARGET_KEY = "cbrowser.session.target";
@@ -70,67 +72,6 @@ function LoadErrorView({
   );
 }
 
-function DiagnosticsOverlay({
-  diagnostics,
-  onClose,
-}: {
-  diagnostics: SessionDiagnosticsData;
-  onClose: () => void;
-}): JSX.Element {
-  const { t } = useI18n();
-  const audioLabels: Record<string, string> = {
-    normal: t("audioStatusNormal"),
-    no_track: t("audioStatusNoTrack"),
-    no_data: t("audioStatusNoData"),
-    unknown: t("audioStatusUnknown"),
-    muted: t("audioStatusMuted"),
-  };
-  const audioStatus = diagnostics.audioStatus
-    ? audioLabels[diagnostics.audioStatus] ?? diagnostics.audioStatus
-    : "-";
-  const rows: Array<{
-    label: string;
-    value: string | number;
-    testId: string;
-  }> = [
-    { label: t("sessionDiagConnectionState"), value: diagnostics.connectionState ?? "-", testId: sessId("diag", "conn-state") },
-    { label: t("sessionDiagIceState"), value: diagnostics.iceConnectionState ?? "-", testId: sessId("diag", "ice-state") },
-    { label: t("sessionDiagSignalingState"), value: diagnostics.signalingState ?? "-", testId: sessId("diag", "signaling-state") },
-    { label: t("sessionDiagAudioStatus"), value: audioStatus, testId: sessId("diag", "audio-status") },
-    { label: t("sessionDiagFramesDecoded"), value: diagnostics.framesDecoded ?? "-", testId: sessId("diag", "frames-decoded") },
-    { label: t("sessionDiagPacketsLost"), value: diagnostics.packetsLost ?? "-", testId: sessId("diag", "packets-lost") },
-    { label: t("sessionDiagRoundTripTime"), value: diagnostics.roundTripTime ?? "-", testId: sessId("diag", "round-trip-time") },
-  ];
-  return (
-    <div
-      data-testid={sessId("diag", "overlay")}
-      className="pointer-events-none absolute inset-0 flex justify-end p-md"
-    >
-      <div className="pointer-events-auto flex w-details self-start flex-col gap-sm rounded-lg border border-outline bg-surface p-md">
-        <div className="flex items-center justify-between gap-sm">
-          <h3 className="font-ui text-title-sm text-on-surface">{t("sessDiagnostics")}</h3>
-          <Button variant="ghost" size="sm" data-testid={sessId("diag", "close")} onClick={onClose}>
-            {t("sessionHideDiagnostics")}
-          </Button>
-        </div>
-        {diagnostics.errorMessage ? (
-          <Banner tone="danger">{diagnostics.errorMessage}</Banner>
-        ) : null}
-        <dl className="flex flex-col gap-xs">
-          {rows.map((row) => (
-            <div key={row.label} className="flex justify-between gap-sm">
-               <dt className="font-ui text-label-sm text-on-surface-muted">{row.label}</dt>
-              <dd data-testid={row.testId}>
-                <MonoValue>{row.value}</MonoValue>
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </div>
-  );
-}
-
 export function SessionPage(): JSX.Element {
   const { profileId } = useParams<{ profileId: string }>();
   const id = profileId ?? "";
@@ -155,7 +96,10 @@ export function SessionPage(): JSX.Element {
   const proxiesQuery = useProxiesQuery(client);
   const fontSetsQuery = useFontSetsQuery(client);
 
-  const session = useBrowserSession(id, iframeRef, { apiClient: client });
+  const session = useBrowserSession(id, iframeRef, {
+    apiClient: client,
+    runtimeState: runtimeQuery.data?.observed_state ?? null,
+  });
 
   const [detailsOpen, setDetailsOpen] = useState(readDetailsOpen);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
@@ -181,16 +125,14 @@ export function SessionPage(): JSX.Element {
   // on the shell / stage wrapper / iframe, diagnostics view) sees one value.
   // stopping, error and stopped each map to their own stage with the right
   // recovery actions instead of being flattened to runtime_not_ready.
-  const stage: SessionStage =
-    runtime?.observed_state === "stopping"
-      ? "stopping"
-      : runtime?.observed_state === "error"
-        ? "error"
-        : runtime &&
-            runtime.observed_state !== "running" &&
-            runtime.observed_state !== "starting"
-          ? "runtime_not_ready"
-          : session.stage;
+  const stage: SessionStage = deriveSessionStage(
+    session.stage,
+    runtime?.observed_state
+  );
+  const diagnosticsEnabled = diagnosticsOpen || stage !== "connected";
+  useEffect(() => {
+    session.diagnosticsSource?.setDiagnosticsEnabled(diagnosticsEnabled);
+  }, [diagnosticsEnabled, session.diagnosticsSource]);
   const diagnosticsView: SessionDiagnosticsData = {
     ...session.diagnostics,
     stage,
@@ -275,9 +217,10 @@ export function SessionPage(): JSX.Element {
               </div>
             ) : null}
             {stage !== "connected" ? (
-              <SessionStagePanel
+              <SessionStagePanelConnected
                 stage={stage}
                 diagnostics={diagnosticsView}
+                source={session.diagnosticsSource}
                 onReconnect={session.reconnect}
                 onViewStatus={() => navigate(`/profiles/${id}/config`)}
                 onLaunch={() => setDesiredStateMutation.mutate({ id, state: "running" })}
@@ -286,6 +229,7 @@ export function SessionPage(): JSX.Element {
             {diagnosticsOpen ? (
               <DiagnosticsOverlay
                 diagnostics={diagnosticsView}
+                source={session.diagnosticsSource}
                 onClose={() => setDiagnosticsOpen(false)}
               />
             ) : null}
