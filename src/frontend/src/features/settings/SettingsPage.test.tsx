@@ -52,7 +52,7 @@ function renderPages(fontSets: FontSetFixture[] = []) {
 
 describe("settings and profile form i18n (t035)", () => {
   beforeEach(() => {
-    localStorage.setItem("cbm.locale", "zh");
+    localStorage.setItem("cbrowser.locale", "zh");
   });
 
   afterEach(() => {
