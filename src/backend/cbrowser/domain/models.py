@@ -883,3 +883,16 @@ class NetworkApplyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     admin_password: str = Field(min_length=1)
+
+
+class NetworkSettingsUpdateResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = "ok"
+
+
+class NetworkDisconnectCheckResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    will_disconnect: bool
+    new_entry_url: str

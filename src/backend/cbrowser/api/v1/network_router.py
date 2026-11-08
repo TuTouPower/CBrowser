@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import PlainTextResponse
@@ -16,6 +16,8 @@ from cbrowser.domain.models import (
     NetworkAccessSettingsResponse,
     NetworkApplyOperation,
     NetworkApplyRequest,
+    NetworkDisconnectCheckResponse,
+    NetworkSettingsUpdateResponse,
 )
 from cbrowser.services.network_service import NetworkService
 
@@ -47,16 +49,16 @@ def create_network_router() -> APIRouter:
 
     @router.put(
         "/settings",
-        response_model=dict[str, str],
+        response_model=NetworkSettingsUpdateResponse,
         dependencies=[Depends(require_csrf_and_origin)],
     )
     async def update_network_settings(
         config: NetworkAccessConfig,
         session: Annotated[SessionModel, Depends(require_user_session)],
         service: Annotated[NetworkService, Depends(get_network_service)],
-    ) -> dict[str, str]:
+    ) -> NetworkSettingsUpdateResponse:
         await service.update_pending_config(config)
-        return {"status": "ok"}
+        return NetworkSettingsUpdateResponse(status="ok")
 
     @router.post(
         "/apply",
@@ -106,22 +108,22 @@ def create_network_router() -> APIRouter:
 
     @router.get(
         "/check-disconnect",
-        response_model=dict[str, Any],
+        response_model=NetworkDisconnectCheckResponse,
     )
     async def check_disconnect(
         request: Request,
         session: Annotated[SessionModel, Depends(require_user_session)],
         service: Annotated[NetworkService, Depends(get_network_service)],
-    ) -> dict[str, Any]:
+    ) -> NetworkDisconnectCheckResponse:
         client_host = request.headers.get("host", "127.0.0.1")
         settings = await service.get_settings()
         will_disconnect, new_url = service.check_entry_disconnect(
             client_host, settings.pending_config
         )
-        return {
-            "will_disconnect": will_disconnect,
-            "new_entry_url": new_url,
-        }
+        return NetworkDisconnectCheckResponse(
+            will_disconnect=will_disconnect,
+            new_entry_url=new_url,
+        )
 
     @router.get(
         "/root-ca",
