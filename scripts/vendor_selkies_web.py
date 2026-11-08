@@ -181,6 +181,7 @@ def vendor_selkies_web(
     cache_dir: Path | None = None,
     manifest_path: Path | None = None,
     inject_adapter: bool = True,
+    allow_download: bool = True,
 ) -> Path:
     """Extracts, verifies, and optionally injects Selkies web client."""
     repo_root = Path(__file__).resolve().parent.parent
@@ -194,8 +195,33 @@ def vendor_selkies_web(
         shutil.rmtree(dest_dir)
     dest_dir.mkdir(parents=True)
 
+    if not allow_download:
+        candidates: list[Path] = []
+        if wheel_path is not None:
+            candidates.append(wheel_path)
+        candidates.append(cache_dir / PINNED_WHEEL_FILENAME)
+        problems: list[str] = []
+        for candidate in candidates:
+            if not candidate.is_file():
+                problems.append(f'missing {candidate}')
+                continue
+            h = hashlib.sha256(candidate.read_bytes()).hexdigest()
+            if h != PINNED_WHEEL_SHA256:
+                problems.append(
+                    f'SHA256 mismatch for {candidate}: '
+                    f'{PINNED_WHEEL_SHA256} != {h}'
+                )
+                continue
+            extract_from_wheel(candidate, dest_dir)
+            break
+        else:
+            raise RuntimeError(
+                'Local Selkies wheel unavailable (download disabled): '
+                + '; '.join(problems)
+                + f'; expected SHA256 {PINNED_WHEEL_SHA256}'
+            )
     # Strategy 1: Explicit wheel path
-    if wheel_path and wheel_path.is_file():
+    elif wheel_path and wheel_path.is_file():
         h = hashlib.sha256(wheel_path.read_bytes()).hexdigest()
         if h != PINNED_WHEEL_SHA256:
             raise RuntimeError(f"Wheel hash mismatch: {PINNED_WHEEL_SHA256} != {h}")

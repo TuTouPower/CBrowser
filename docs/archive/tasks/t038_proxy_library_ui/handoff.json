@@ -1,0 +1,14 @@
+{
+  "tid": "t038",
+  "attempt": 1,
+  "execution_id": "075af9bd7a904385868aa9ea3794bea9",
+  "status": "done",
+  "branch": "t038_proxy_library_ui",
+  "base_sha": "1ca4cb4fd4212ddfb7ad4b6c9bcfcbcc9b1df65d",
+  "tests": "`npm test --prefix src/frontend` 54 文件 356 测试全过（含 `test:types` 严格类型）；`design:lint` 0 error / 0 warning、`design:check` up to date；parseProxyUrl 33、ProxyFormDialog 10、ProxyListPage + router 17；AC-008 E2E collect-only + py_compile OK。完整门禁 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 共三轮（第 1 / 2 轮诊断，第 3 轮最终代码为 finish 依据）；第 3 轮 unit 曾 `exit 1`（仅 `test_repo_hygiene` 命中 review 报告 / progress 的 home 绝对路径，属 #89 复现），修复后定向重跑 contract（`257 passed, 1 skipped`）与 unit（`1165 passed`，`test_repo_hygiene` `8 passed`）确认通过。",
+  "blackbox": "**第 3 轮最终代码完整门禁** E2E 102 用例 FAIL=1 / ERROR=0 / SKIP=2 —— 仅 `test_t019_switch_and_refresh_first_frame_within_2s_host_only`（t032 已登记基线首帧 3.363s），`test_runtime_coordinator_docker_e2e` 本轮未复现；符合监督要求的失败集合（只允许 t019 + 有 p051 证据的 runtime_coordinator）。**AC-008 `test_ac008_proxy_library_outbound_via_ui` 真实栈 PASS**（UI 新建代理 → 环境引用 → 启动 → 浏览器出站经本地记录代理 `PROXY_GET`）。integration / 前端 / design / requirements_check / image_packages 共 8 个非 E2E suite 全 exit 0。",
+  "review": "待 review 报告填写",
+  "review_scope": "b0716cf278d4ae49",
+  "pending": [],
+  "findings": []
+}

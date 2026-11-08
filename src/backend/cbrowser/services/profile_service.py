@@ -26,6 +26,13 @@ from cbrowser.domain.models import (
     RuntimeEvent,
     generate_fingerprint_seed,
 )
+from cbrowser.preview import (
+    POLICY_FILE,
+    PreviewPolicy,
+    clear_preview,
+    preview_dir,
+    write_policy,
+)
 from cbrowser.runtime_event_log import emit_runtime_event_log
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
@@ -244,6 +251,44 @@ class ProfileService:
         """Whether no per-profile lock is registered."""
         return self._locks.is_idle
 
+    def get_preview_dir(self, profile_id: str) -> Path | None:
+        if self._data_root is None:
+            return None
+        return preview_dir(self._data_root, profile_id)
+
+    async def get_preview_policy(
+        self, profile_id: str
+    ) -> tuple[bool, int] | None:
+        return await self._repo.get_preview_policy(profile_id)
+
+    async def clear_preview_capture(self, profile_id: str) -> None:
+        await self._repo.clear_preview_capture(profile_id)
+
+    async def record_preview_capture(
+        self,
+        profile_id: str,
+        captured_at: str,
+        runtime_instance_id: str,
+        policy_epoch: int,
+    ) -> bool:
+        return await self._repo.record_preview_capture(
+            profile_id, captured_at, runtime_instance_id, policy_epoch
+        )
+
+    async def _clear_preview_state(self, profile_id: str) -> None:
+        directory = self.get_preview_dir(profile_id)
+        if directory is not None:
+            clear_preview(directory)
+            try:
+                (directory / POLICY_FILE).unlink(missing_ok=True)
+            except OSError as exc:
+                logger.warning(
+                    "Preview policy cleanup failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
+        await self.clear_preview_capture(profile_id)
+
     async def _replay_if_committed(
         self,
         operation_id: str | None,
@@ -428,6 +473,7 @@ class ProfileService:
                         await asyncio.to_thread(
                             self._remove_profile_directory, target, profile_id
                         )
+                await self._clear_preview_state(profile_id)
                 return True
         except DBAPIError as e:
             self._handle_db_error(e)
@@ -481,6 +527,17 @@ class ProfileService:
                 )
             if not rt:
                 raise ProfileNotFoundError(profile_id)
+            policy_row = await self.get_preview_policy(profile_id)
+            directory = self.get_preview_dir(profile_id)
+            if policy_row is not None and directory is not None:
+                write_policy(
+                    directory,
+                    PreviewPolicy(
+                        enabled=policy_row[0],
+                        epoch=policy_row[1],
+                        runtime_instance_id=runtime_instance_id,
+                    ),
+                )
             return rt
         except DBAPIError as e:
             self._handle_db_error(e)
@@ -735,6 +792,7 @@ class ProfileService:
                         raise ProfileServiceError(
                             "Reset completed but backup cleanup failed"
                         ) from None
+                await self._clear_preview_state(profile_id)
                 return updated
         except DBAPIError as e:
             self._handle_db_error(e)

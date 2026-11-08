@@ -44,12 +44,11 @@ def profile_env(tmp_path: Path):
     password_file = tmp_path / "admin.txt"
     password_file.write_text(password, encoding="utf-8")
     password_file.chmod(0o600)
-    origin = "https://app.cbrowser.local"
+    origin = "https://127.0.0.1:56661"
     app = create_app(
         db_path=db_file,
         admin_password_file=password_file,
-        allowed_origins=[origin],
-    )
+            )
     with TestClient(app, base_url=origin) as client:
         profile_service = app.dependency_overrides[get_profile_service]()
         profile_service.runtime_uid = os.getuid()

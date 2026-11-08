@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import socket
@@ -190,6 +191,29 @@ def pytest_collection_modifyitems(config, items):
                         f"{platform} font set (ok=True)"
                     )
 
+    if any(
+        Path(str(item.fspath)).name == 'test_frontend_adapter_build.py'
+        for item in items
+    ):
+        from scripts import vendor_selkies_web as vendor_module
+
+        cache = Path(
+            os.environ.get(
+                'CBROWSER_SELKIES_WHEEL_CACHE',
+                str(REPO_ROOT / '.scratch' / 'selkies_wheels'),
+            )
+        )
+        wheel = cache / vendor_module.PINNED_WHEEL_FILENAME
+        if not wheel.is_file():
+            extra.append(f'Local Selkies wheel cache missing: {wheel}')
+        else:
+            h = hashlib.sha256(wheel.read_bytes()).hexdigest()
+            if h != vendor_module.PINNED_WHEEL_SHA256:
+                extra.append(
+                    f'Local Selkies wheel SHA256 mismatch: {wheel}: '
+                    f'{vendor_module.PINNED_WHEEL_SHA256} != {h}'
+                )
+
     if missing or identity or extra:
         details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
         if identity:
@@ -215,7 +239,7 @@ def real_api_server(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
 
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{port}")
+    auth_ctx = create_auth_context(tmp_path)
     env = dict(os.environ)
     for name in (
         "HTTP_PROXY",

@@ -1,0 +1,61 @@
+{
+  "loopback_binding": {
+    "local_access": {
+      "status": 200,
+      "data": {
+        "client_address": "192.168.215.1",
+        "client_port": 39422,
+        "headers": {
+          "Host": "127.0.0.1:54321",
+          "User-Agent": "Python-urllib/3.15",
+          "Connection": "close",
+          "Accept-Encoding": "identity"
+        }
+      }
+    },
+    "lan_ip_access": {
+      "status": "error",
+      "error": "TimeoutError"
+    }
+  },
+  "all_interfaces_binding": {
+    "local_access": {
+      "status": 200,
+      "data": {
+        "client_address": "192.168.215.1",
+        "client_port": 59131,
+        "headers": {
+          "Host": "127.0.0.1:54322",
+          "User-Agent": "Python-urllib/3.15",
+          "Connection": "close",
+          "Accept-Encoding": "identity"
+        }
+      }
+    },
+    "lan_ip_access": {
+      "status": 200,
+      "data": {
+        "client_address": "192.168.215.1",
+        "client_port": 18200,
+        "headers": {
+          "Host": "192.168.31.76:54322",
+          "User-Agent": "Python-urllib/3.15",
+          "Connection": "close",
+          "Accept-Encoding": "identity"
+        }
+      }
+    }
+  },
+  "docker_container_client": {
+    "access_lan_port_all": {
+      "client_address": "192.168.215.1",
+      "client_port": 37960,
+      "headers": {
+        "Host": "192.168.31.76:54322",
+        "User-Agent": "curl/8.23.0",
+        "Accept": "*/*"
+      }
+    },
+    "access_lan_port_loopback_returncode": 7
+  }
+}

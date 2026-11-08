@@ -83,6 +83,31 @@ def remaining_retry_seconds(updated_at: Any, delay_sec: float) -> float:
         return delay_sec
 
 
+def remaining_retry_seconds_from_deadline(
+    next_retry_at: Any, updated_at: Any, delay_sec: float
+) -> float:
+    """Resume the remaining window from the API's durable retry deadline.
+
+    ``next_retry_at`` is the server-side authoritative deadline recorded
+    when a failure is observed (``backoff_started_at +
+    AUTO_RETRY_DELAYS[failure_count - 1]``). A Supervisor restart resumes
+    the remaining window; it never replays the full delay. Fall back to the
+    same formula derived from ``updated_at`` when the deadline is absent or
+    unparsable.
+    """
+    if delay_sec <= 0.0:
+        return 0.0
+    if next_retry_at:
+        try:
+            deadline_dt = datetime.fromisoformat(next_retry_at)
+            if deadline_dt.tzinfo is None:
+                deadline_dt = deadline_dt.replace(tzinfo=UTC)
+            return max(0.0, (deadline_dt - datetime.now(UTC)).total_seconds())
+        except (ValueError, TypeError):
+            pass
+    return remaining_retry_seconds(updated_at, delay_sec)
+
+
 def is_brand_new_runtime(
     failure_count: int, last_exit_event_id: str | None
 ) -> bool:

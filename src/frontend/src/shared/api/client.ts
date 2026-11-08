@@ -14,6 +14,8 @@ import type {
   GroupUpdateRequest,
   GroupReorderRequest,
   ProxyResponse,
+  ProxyCreateRequest,
+  ProxyUpdateRequest,
   FontSetInfo,
 } from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
@@ -475,6 +477,39 @@ export class ApiClient {
     get: async (proxyId: string): Promise<ProxyResponse> => {
       return this.request<ProxyResponse>(
         `/api/v1/proxies/${encodeURIComponent(proxyId)}`,
+      );
+    },
+    create: async (
+      data: ProxyCreateRequest,
+      idempotencyKey?: string,
+    ): Promise<ProxyResponse> => {
+      return this.request<ProxyResponse>("/api/v1/proxies", {
+        method: "POST",
+        body: JSON.stringify(data),
+        headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+      });
+    },
+    update: async (
+      proxyId: string,
+      data: ProxyUpdateRequest,
+      idempotencyKey?: string,
+    ): Promise<ProxyResponse> => {
+      return this.request<ProxyResponse>(
+        `/api/v1/proxies/${encodeURIComponent(proxyId)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(data),
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
+      );
+    },
+    remove: async (proxyId: string, idempotencyKey?: string): Promise<void> => {
+      await this.request<void>(
+        `/api/v1/proxies/${encodeURIComponent(proxyId)}`,
+        {
+          method: "DELETE",
+          headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+        },
       );
     },
   };

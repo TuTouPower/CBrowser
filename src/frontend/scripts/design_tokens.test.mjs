@@ -1,5 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { validateAndGenerate, DesignValidationError, assertNoSizeTokenHijack } from "./design_tokens.mjs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  validateAndGenerate,
+  DesignValidationError,
+  assertNoSizeTokenHijack,
+  assertNoColorViolations,
+  runLintSources,
+  collectSources,
+} from "./design_tokens.mjs";
 
 const VALID_SOURCE = `---
 name: CBrowser Test Design
@@ -161,5 +171,80 @@ describe("size-token hijack gate", () => {
         { path: "src/x.tsx", text: '<div className="max-w-dialog p-md" />' },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("color gate", () => {
+  it("rejects a Tailwind default palette color class", () => {
+    let error;
+    try {
+      assertNoColorViolations([
+        { path: "src/x.tsx", text: '<div className="bg-red-500" />' },
+      ]);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(DesignValidationError);
+    expect(error.message).toContain("src/x.tsx");
+    expect(error.message).toContain("bg-red-500");
+  });
+
+  it("rejects neutral/white/hex literals", () => {
+    const texts = [
+      '<div className="text-gray-500" />',
+      '<div className="bg-white" />',
+      '<div style={{ color: "#ff00aa" }} />',
+    ];
+    for (const text of texts) {
+      expect(() =>
+        assertNoColorViolations([{ path: "src/x.tsx", text }]),
+      ).toThrow(/hardcoded color/i);
+    }
+  });
+
+  it("accepts semantic token classes", () => {
+    expect(
+      assertNoColorViolations([
+        {
+          path: "src/x.tsx",
+          text: '<div className="bg-surface text-on-surface-muted"><span className="bg-accent" /></div>',
+        },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("global color gate integration (lint path)", () => {
+  let tmp;
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "cbrowser-design-lint-"));
+  });
+  afterEach(() => {
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  const buildSources = (text) => {
+    writeFileSync(join(tmp, "a.tsx"), text);
+    return collectSources(tmp, "src");
+  };
+
+  it("fails the lint gate when a source adds a default palette color class", () => {
+    const sources = buildSources('<div className="bg-red-500" />');
+    let error;
+    try {
+      runLintSources(sources);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(DesignValidationError);
+    expect(error.message).toContain("src/a.tsx");
+    expect(error.message).toContain("bg-red-500");
+  });
+
+  it("passes the lint gate for semantic token sources", () => {
+    const sources = buildSources(
+      '<div className="bg-surface text-on-surface-muted" />',
+    );
+    expect(() => runLintSources(sources)).not.toThrow();
   });
 });

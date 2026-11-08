@@ -114,13 +114,12 @@ async def test_automation_token_reaches_agent_uds_through_supervisor() -> None:
     admin_file = short / "admin"
     admin_file.write_text(admin_password, encoding="utf-8")
     admin_file.chmod(0o600)
-    origin = "http://127.0.0.1"
+    origin = "https://127.0.0.1:56661"
     api = _UvicornThread(
         create_app(
             db_path=db_file,
             admin_password_file=admin_file,
-            allowed_origins=[origin],
-            artifacts_root=short / "artifacts",
+                        artifacts_root=short / "artifacts",
             supervisor_url=f"http://127.0.0.1:{supervisor_port}",
             supervisor_token_file=supervisor_token_file,
         ),

@@ -104,7 +104,7 @@ async def wait_iframe_stats(
         try:
             last = await page.evaluate(
                 """async () => {
-                    const SEL = 'iframe[data-testid="browser-session-iframe"]';
+                    const SEL = 'iframe[data-testid="sess-iframe"]';
                     const f = document.querySelector(SEL);
                     if (!f || !f.contentWindow) return null;
                     const fn = f.contentWindow.__getWebRTCStats;
@@ -128,7 +128,7 @@ async def wait_iframe_stats(
 async def iframe_video_size(page: Page) -> list[int] | None:
     return await page.evaluate(
         """() => {
-            const SEL = 'iframe[data-testid="browser-session-iframe"]';
+            const SEL = 'iframe[data-testid="sess-iframe"]';
             const f = document.querySelector(SEL);
             if (!f || !f.contentWindow) return null;
             const v = f.contentWindow.document.querySelector('video');

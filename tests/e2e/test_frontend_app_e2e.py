@@ -22,6 +22,7 @@ import pytest
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
+from wait import poll_until
 
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
@@ -30,7 +31,7 @@ pytestmark = pytest.mark.serial
 
 logger = logging.getLogger("cbrowser.frontend_app.e2e")
 
-IFRAME_SELECTOR = 'iframe[data-testid="browser-session-iframe"]'
+IFRAME_SELECTOR = 'iframe[data-testid="sess-iframe"]'
 
 
 # --------------------------------------------------------------------------- #
@@ -122,12 +123,55 @@ async def open_session(
     )
 
 
-async def launch_profile_via_ui(page: Page, timeout: float = 120.0) -> None:
-    """Clicks the in-page Launch button; waits for the Stop state to appear via SSE."""
-    await page.click('[data-testid="session-launch-btn"]', timeout=15000)
-    await page.wait_for_selector(
-        '[data-testid="browser-session-mount"]', timeout=timeout * 1000
+async def wait_session_ready(page: Page, timeout: float = 120.0) -> None:
+    """Waits for the session main view (iframe + header) before timing frames.
+
+    t039: the outer ``sess-page`` shell exists even in the loading branch, and
+    ``sess-stage-panel`` is absent there too, so a "panel absent" signal used
+    to fire while requests were still pending — starting the first-frame clock
+    too early and charging page load to the 8s media budget. Require the
+    iframe and header (only rendered once profile/runtime resolved) instead.
+    """
+    await page.wait_for_function(
+        """() => {
+            const root = document.querySelector('[data-testid="sess-page"]');
+            if (!root) return false;
+            return Boolean(
+                document.querySelector('iframe[data-testid="sess-iframe"]') &&
+                document.querySelector('[data-testid="sess-header"]')
+            );
+        }""",
+        timeout=timeout * 1000,
     )
+
+
+async def launch_profile_via_ui(page: Page, timeout: float = 120.0) -> None:
+    """Clicks the in-page Launch button; waits for a ready session via SSE."""
+    await page.click('[data-testid="sess-stage-action-launch"]', timeout=15000)
+    await wait_session_ready(page, timeout=timeout)
+    # t039: the product SessionPage renders the iframe as soon as the
+    # profile/runtime queries resolve, before the runtime is running. t038's
+    # browser-session-mount appeared only once observed_state became
+    # "running", so every downstream clock (first-frame budget, lifecycle
+    # probes) started after the container/Selkies cold start. Restore that
+    # same ready gate so the original timing semantics hold.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        state = await _evaluate_bounded(
+            page,
+            """async () => {
+                const id = location.pathname.split('/').filter(Boolean).pop();
+                const r = await fetch(`/api/v1/profiles/${id}/runtime`);
+                if (!r.ok) return null;
+                const rt = await r.json();
+                return rt.observed_state;
+            }""",
+        )
+        if state == "running":
+            break
+        await asyncio.sleep(0.25)
+    else:
+        raise AssertionError("runtime did not reach observed_state=running")
 
 
 async def stop_profile_via_api(
@@ -163,7 +207,7 @@ async def wait_iframe_stats(
             last = await _evaluate_bounded(
                 page,
                 """async () => {
-                    const SEL = 'iframe[data-testid="browser-session-iframe"]';
+                    const SEL = 'iframe[data-testid="sess-iframe"]';
                     const f = document.querySelector(SEL);
                     if (!f || !f.contentWindow) return null;
                     const fn = f.contentWindow.__getWebRTCStats;
@@ -188,7 +232,7 @@ async def wait_iframe_stats(
 async def iframe_eval(page: Page, expression: str) -> Any:
     return await page.evaluate(
         """(expr) => {
-            const SEL = 'iframe[data-testid="browser-session-iframe"]';
+            const SEL = 'iframe[data-testid="sess-iframe"]';
             const f = document.querySelector(SEL);
             if (!f || !f.contentWindow) return null;
             return f.contentWindow.eval(expr);
@@ -200,7 +244,7 @@ async def iframe_eval(page: Page, expression: str) -> Any:
 async def iframe_src(page: Page) -> str:
     return await page.evaluate(
         """() => {
-            const SEL = 'iframe[data-testid="browser-session-iframe"]';
+            const SEL = 'iframe[data-testid="sess-iframe"]';
             const f = document.querySelector(SEL);
             return f ? f.getAttribute('src') : null;
         }"""
@@ -254,7 +298,14 @@ async def animate_remote_fixture(
     Frame-growth assertions must not depend on a static screen being re-encoded
     by damage-gated capture.
     """
-    browser_container, _ = harness.container_names(profile_id)
+    names = await poll_until(
+        lambda: asyncio.to_thread(harness.container_names, profile_id),
+        lambda value: value is not None,
+        timeout=60.0,
+        interval=0.3,
+        description=f"browser/stream containers bound for {profile_id}",
+    )
+    browser_container, _ = names
     await asyncio.to_thread(browser_eval, browser_container, "true")
 
 
@@ -415,18 +466,18 @@ async def test_ac001_ac006_profile_ui_dual_tab_sse_and_stale_state(
             resp.raise_for_status()
         await page_b.unroute("**/api/v1/events")
         await page_b.wait_for_selector(
-            '[data-testid="session-launch-btn"]', timeout=45000
+            '[data-testid="sess-stage-action-launch"]', timeout=45000
         )
 
         # Stop page A's profile via API: the new shell has no header stop
         # control (t039 delivers the session stop action).
         await open_session(page_a, harness, profile_a)
         await page_a.wait_for_selector(
-            '[data-testid="browser-session-mount"]', timeout=45000
+            '[data-testid="sess-page"][data-stage="connected"]', timeout=45000
         )
         await stop_profile_via_api(page_a, harness, profile_a)
         await page_a.wait_for_selector(
-            '[data-testid="session-launch-btn"]', timeout=60000
+            '[data-testid="sess-stage-action-launch"]', timeout=60000
         )
 
         _save(
@@ -477,7 +528,7 @@ async def test_ac002_ac003_ac010_identity_copy_close_and_tokens(
         dom = await page_a.evaluate("() => document.documentElement.outerHTML")
         iframe_dom = await page_a.evaluate(
             """() => {
-                const SEL = 'iframe[data-testid="browser-session-iframe"]';
+                const SEL = 'iframe[data-testid="sess-iframe"]';
                 const f = document.querySelector(SEL);
                 return f && f.contentDocument
                     ? f.contentDocument.documentElement.outerHTML
@@ -715,7 +766,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
         assert concurrent == "12", concurrent
 
         # Independent audio mute per connection through the product control.
-        await page_a.click('[data-testid="session-audio-toggle-btn"]')
+        await page_a.click('[data-testid="sess-audio-toggle"]')
         messages_a = await wait_iframe_datachannel_message(page_a, "STOP_AUDIO")
         assert "STOP_AUDIO" in messages_a
         # Media elements carrying the remote audio track must exist; an empty
@@ -745,7 +796,7 @@ async def test_ac004_ac005_input_mute_size_no_activity_frames(
             isinstance(message, str) and message.startswith("STOP_AUDIO")
             for message in messages_b
         ), "Page B must not receive A's STOP_AUDIO"
-        await page_a.click('[data-testid="session-audio-toggle-btn"]')
+        await page_a.click('[data-testid="sess-audio-toggle"]')
         messages_a2 = await wait_iframe_datachannel_message(page_a, "START_AUDIO")
         assert "START_AUDIO" in messages_a2
 
@@ -851,14 +902,14 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
         unready = await create_profile_via_ui(page, harness, "Unready Profile")
         await open_session(page, harness, unready)
         await page.wait_for_selector(
-            '[data-testid="session-runtime-not-ready"]', timeout=15000
+            '[data-testid="sess-stage-panel"]', timeout=15000
         )
         stage_title = await page.inner_text(
-            '[data-testid="session-runtime-not-ready-title"]'
+            '[data-testid="sess-stage-panel"]'
         )
         assert "运行时未就绪" in stage_title
         assert (
-            await page.query_selector('[data-testid="session-launch-btn"]') is not None
+            await page.query_selector('[data-testid="sess-stage-action-launch"]') is not None
         )
 
         # Start a real runtime, then freeze/resume the page via CDP Page lifecycle.
@@ -942,7 +993,7 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
         await page.wait_for_function(
             r"""(expected) => {
                 const f = document.querySelector(
-                    'iframe[data-testid="browser-session-iframe"]');
+                    'iframe[data-testid="sess-iframe"]');
                 const src = f ? f.getAttribute('src') || '' : '';
                 const match = src.match(/_k=(\d+)/);
                 return Boolean(match && Number(match[1]) >= expected);
@@ -1002,25 +1053,35 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
             initial_bytes = initial_fault_stats["video"]["bytesReceived"]
             initial_packets = initial_fault_stats["video"]["packetsReceived"]
 
-            deadline = time.monotonic() + 45
-            media_title = ""
-            final_fault_stats: dict[str, Any] | None = None
-            while time.monotonic() < deadline:
+            async def media_fault_observation() -> tuple[str, dict[str, Any], Any]:
                 title_el = await media_page.query_selector(
-                    '[data-testid="session-stage-title"]'
+                    '[data-testid="sess-stage-title"]'
                 )
-                if title_el:
-                    media_title = await title_el.inner_text()
+                title = await title_el.inner_text() if title_el else ""
                 stats = await wait_iframe_stats(
                     media_page, min_frames=0, name="media fault poll"
                 )
-                if "媒体未产生画面" in media_title and (
-                    stats["video"]["bytesReceived"] > initial_bytes
-                    or stats["video"]["packetsReceived"] > initial_packets
-                ):
-                    final_fault_stats = stats
-                    break
-                await asyncio.sleep(0.5)
+                discarded = await iframe_eval(
+                    media_page, "window.__discardedFramesCount || 0"
+                )
+                return title, stats, discarded
+
+            media_title, final_fault_stats, discarded_count = await poll_until(
+                media_fault_observation,
+                lambda obs: (
+                    "媒体未产生画面" in obs[0]
+                    and (
+                        obs[1]["video"]["bytesReceived"] > initial_bytes
+                        or obs[1]["video"]["packetsReceived"] > initial_packets
+                    )
+                    and (obs[2] or 0) > 0
+                ),
+                timeout=45.0,
+                interval=0.5,
+                description=(
+                    "media_no_frames stage, RTP growth and discarded encoded frames"
+                ),
+            )
 
             assert final_fault_stats is not None, (
                 "media_no_frames or RTP growth not observed in 45s: "
@@ -1034,25 +1095,21 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
                 or final_fault_stats["video"]["packetsReceived"] > initial_packets
             ), "RTP video bytes/packets must grow across media waiting interval"
             assert (
-                await media_page.query_selector('[data-testid="session-reconnect-btn"]')
+                await media_page.query_selector('[data-testid="sess-stage-action-reconnect"]')
                 is not None
             )
             assert (
                 await media_page.query_selector(
-                    '[data-testid="session-view-status-btn"]'
+                    '[data-testid="sess-stage-action-view-status"]'
                 )
                 is not None
-            )
-
-            discarded_count = await iframe_eval(
-                media_page, "window.__discardedFramesCount || 0"
             )
             assert discarded_count > 0, (
                 f"Worker must have discarded encoded frames, got {discarded_count}"
             )
 
             # The product action must route to the profile detail page.
-            await media_page.click('[data-testid="session-view-status-btn"]')
+            await media_page.click('[data-testid="sess-stage-action-view-status"]')
             await media_page.wait_for_url(
                 re.compile(rf"/profiles/{profile_id}/config$"), timeout=15000
             )
@@ -1080,20 +1137,20 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
             sig_page = await context.new_page()
             await open_session(sig_page, harness, profile_id)
             await sig_page.wait_for_selector(
-                '[data-testid="session-stage-title"]', timeout=60000
+                '[data-testid="sess-stage-title"]', timeout=60000
             )
             deadline = time.monotonic() + 45
             sig_title = ""
             while time.monotonic() < deadline:
                 sig_title = await sig_page.inner_text(
-                    '[data-testid="session-stage-title"]'
+                    '[data-testid="sess-stage-title"]'
                 )
                 if "信令连接失败" in sig_title:
                     break
                 await asyncio.sleep(0.5)
             assert "信令连接失败" in sig_title, sig_title
             assert (
-                await sig_page.query_selector('[data-testid="session-reconnect-btn"]')
+                await sig_page.query_selector('[data-testid="sess-stage-action-reconnect"]')
                 is not None
             )
         finally:
@@ -1159,14 +1216,14 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
         await harness.wait_runtime(profile_id, desired="stopped", observed="stopped")
         await wait_runtime_containers_gone(harness, profile_id)
         await page.wait_for_selector(
-            '[data-testid="session-launch-btn"]', timeout=60000
+            '[data-testid="sess-stage-action-launch"]', timeout=60000
         )
 
         # Supervisor outage: desired state is preserved, UI reports coordination error,
         # and convergence happens after Supervisor comes back.
         harness.supervisor_container.stop(timeout=10)
         try:
-            await page.click('[data-testid="session-launch-btn"]')
+            await page.click('[data-testid="sess-stage-action-launch"]')
             rt_outage = await harness.wait_runtime(
                 profile_id, desired="running", timeout=60
             )
@@ -1245,7 +1302,7 @@ async def test_ac009_ui_start_stop_and_supervisor_outage_convergence(
 # --------------------------------------------------------------------------- #
 
 _ALL_CANDIDATES_SCRIPT = """async () => {
-    const SEL = 'iframe[data-testid="browser-session-iframe"]';
+    const SEL = 'iframe[data-testid="sess-iframe"]';
     const f = document.querySelector(SEL);
     if (!f || !f.contentWindow) return null;
     const pcs = f.contentWindow.__pcs || [];

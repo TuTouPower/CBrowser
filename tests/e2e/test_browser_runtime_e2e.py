@@ -1530,14 +1530,13 @@ async def test_t008_download_reconcile_after_agent_restart(
     supervisor_token_file.chmod(0o600)
     control_port = _free_port()
     api_port = _free_port()
-    origin = f"http://127.0.0.1:{api_port}"
+    origin = "https://127.0.0.1:56661"
     api = _UvicornThread(
         create_app(
             db_path=api_db,
             admin_password_file=admin_file,
             supervisor_token_file=supervisor_token_file,
-            allowed_origins=[origin],
-            artifacts_root=artifact_root,
+                        artifacts_root=artifact_root,
             supervisor_url=f"http://127.0.0.1:{control_port}",
         ),
         api_port,
@@ -2792,13 +2791,12 @@ async def test_t013_state_copy_restores_cookies_in_clone(http_server: str) -> No
         stop_and_rm_container(source_name)
 
         api_port = _free_port()
-        origin = f"http://127.0.0.1:{api_port}"
+        origin = "https://127.0.0.1:56661"
         api = _UvicornThread(
             create_app(
                 db_path=db,
                 admin_password_file=admin_file,
-                allowed_origins=[origin],
-                artifacts_root=dir_work / "artifacts",
+                                artifacts_root=dir_work / "artifacts",
             ),
             api_port,
         )

@@ -301,3 +301,21 @@
 - 结论：采用选项 2。`DESIGN.md` 章节按规范顺序，`primary` 为模式无关品牌色，其余颜色角色成对且集合相同（由生成器校验，官方 lint 不校验此规则）；字体 / 间距 / 圆角与模式无关只定义一次。`design:tokens` 生成 `design_tokens.css`（亮色默认 + `.dark` 覆盖全部颜色变量），产物入库，`design:lint` / `design:check` 与 `design:tokens` 接入完整门禁。Tailwind 4 以 `--color-*: initial` 重置默认调色板，删除 PostCSS / autoprefixer / `tailwind.config.ts`；字体经 `@fontsource` 自托管。主题偏好 `system` / `light` / `dark`（默认 `dark`）存 `cbrowser.theme`，`public/theme_boot.js` 外链经典脚本保证首帧无闪烁，UI 主题与 Profile `color_scheme` 互不影响。选项 1 保留硬编码分歧、无单一权威；选项 3 把已确认的需求无限期推迟。
 - 复查条件：`@google/design.md` 升级或上游正式支持多模式时重跑 `s015` 的 lint 与 Vite build 两条命令；若双模式写法失效，只改 token 写法与生成器，业务代码不变。
 - 替代：不影响既有 ADR；ADR 020（t033 前端工具链）为本次 Tailwind 4 / Vite 8 前提，ADR 015 字体三档由 ADR 024 取代。
+
+## 026 局域网访问、边缘容器重建与媒体直连扩展（2026-11-08T04:30:00+08:00，t042）
+
+- 背景：p037 要求局域网访问可配置并在 UI 中保存与应用生效；用户 2026-11-05 决定只保留 HTTPS（D14），删除原 HTTP 降级与开关。正式 spike `s017`（结论 `d036`）在当前 Docker (OrbStack) / Chromium 146 / Selkies 2.2.1 实测：
+    1. 端口物理隔离：端口绑定 `127.0.0.1` 阻断宿主局域网 IP 访问（连接被拒/超时）；绑定 `0.0.0.0` 连通。
+    2. 安全上下文：Chrome 访问未信任的局域网 HTTPS 时，跳过证书警告后页面中 `window.isSecureContext` 恒为 `true`，`navigator.locks`、`RTCPeerConnection`、`crypto.subtle` 全部正常生效。安装根证书为消除浏览器警告与防止中间人攻击的最佳实践，非 Web Locks / WebRTC 功能阻断硬前置。
+    3. Selkies 2.2.1：原生支持 `--webrtc-public-ip` 与 `--webrtc-ice-lite`，局域网模式下注入通告 IP 并将 UDP mux 绑定到 `0.0.0.0` 即可输出局域网 host candidate。
+    4. 边缘容器重建归属：运行期端口绑定变更必须重建容器；宿主机严禁常驻进程（ADR 017），Supervisor 作为单机唯一持有 Docker socket 的协调者，统一接管 Caddy 与 Stream 的重建与对账。
+- 选项：
+    1. 引入外部宿主守护进程或脚本监听端口变更并重建 Caddy。
+    2. Supervisor 作为单机唯一 Docker 协调者，接管边缘代理（Caddy）与媒体容器（Stream）的端口重建与版本对账。
+    3. 仅修改反向代理规则，不修改 Docker Host Port 绑定。
+- 结论：采用选项 2。
+    - **端口绑定物理隔离**：本机模式下，HTTPS 端口（Caddy）与媒体 UDP mux（Stream）强制绑定 `127.0.0.1`，非回环访问在网络层物理不可达；局域网模式下，绑定 `0.0.0.0`，Selkies 注入局域网通告 IP 输出局域网 host candidate。
+    - **Supervisor 统一接管边缘容器重建**：应用操作由 API 发起，Supervisor 执行原子重建。对 Caddy，Supervisor 保留原有 volume、network、image 与 compose 标签，仅重写 `PortBindings` 并原子替换容器；对 Stream，`_converge_session` 与启动对账比对当前运行容器标签中的绑定地址与通告 IP，漂移即重建。
+    - **修订 ADR 013**：媒体链路依然无 STUN/TURN、无 ICE 重启机制，但由原「仅同机回环 127.0.0.1 直连」扩展为「本机回环 / 局域网 host 候选直连可配置」。
+- 复查条件：Docker 网络或网络后端架构变更、或需支持公网/NAT 穿透时重新评审。
+- 替代：修订 ADR 013（媒体直连由仅回环扩展为支持局域网直连）。选项 1 违背单机免外部守护原则；选项 3 无法满足本机模式物理阻断要求。

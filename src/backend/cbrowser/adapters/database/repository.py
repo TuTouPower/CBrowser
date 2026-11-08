@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from datetime import datetime, timedelta
 from typing import Any
 
 from cbrowser.adapters.database.models import (
@@ -15,6 +16,7 @@ from cbrowser.adapters.database.models import (
     ProfileRuntimeModel,
     ProxyModel,
     RuntimeEventModel,
+    SettingModel,
 )
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.domain.models import (
@@ -25,9 +27,17 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProxyResponse,
     RuntimeEvent,
+    AppliedNetworkAccessVersion,
+    NetworkAccessConfig,
+    NetworkAccessSettingsResponse,
+    NetworkApplyOperation,
+    NetworkApplyPhase,
     utc_now_iso,
 )
-from cbrowser.domain.runtime_policy import BLOCK_AFTER_RUNTIME_FAILURES
+from cbrowser.domain.runtime_policy import (
+    AUTO_RETRY_DELAYS,
+    BLOCK_AFTER_RUNTIME_FAILURES,
+)
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -428,6 +438,10 @@ class ProfileRepository:
                 p_model.extension_paths = json.dumps(merged_cfg.extension_paths)
                 p_model.allow_3p_cookies = merged_cfg.allow_3p_cookies
                 p_model.set_google_default = merged_cfg.set_google_default
+                if old_cfg.capture_preview != merged_cfg.capture_preview:
+                    p_model.capture_preview_epoch = (
+                        p_model.capture_preview_epoch or 0
+                    ) + 1
                 p_model.capture_preview = merged_cfg.capture_preview
                 p_model.restore_session = merged_cfg.restore_session
                 p_model.transparent_proxy = merged_cfg.transparent_proxy
@@ -609,6 +623,8 @@ class ProfileRepository:
             m.runtime_instance_id = runtime_instance_id
             m.config_version = config_version
             m.observed_state = "starting"
+            m.backoff_started_at = None
+            m.next_retry_at = None
             m.updated_at = now
 
             # Record bind lifecycle event
@@ -627,6 +643,45 @@ class ProfileRepository:
             )
 
         return await self.get_runtime(profile_id)
+
+    async def get_preview_policy(self, profile_id: str) -> tuple[bool, int] | None:
+        """Return (enabled, epoch) for the API-authoritative preview policy."""
+        async with self._session_maker() as session:
+            profile = await session.get(ProfileModel, profile_id)
+            if profile is None:
+                return None
+            return profile.capture_preview, profile.capture_preview_epoch
+
+    async def record_preview_capture(
+        self,
+        profile_id: str,
+        captured_at: str,
+        runtime_instance_id: str,
+        policy_epoch: int,
+    ) -> bool:
+        """Persist preview_captured_at only for a live policy epoch and instance.
+
+        Revocations, epoch bumps and stale instance callbacks are dropped, so a
+        late write can never resurrect a deleted preview (t040 AC-004).
+        """
+        async with self._session_maker() as session, write_transaction(session):
+            profile = await session.get(ProfileModel, profile_id)
+            runtime = await session.get(ProfileRuntimeModel, profile_id)
+            if (
+                profile is None
+                or runtime is None
+                or profile.capture_preview_epoch != policy_epoch
+                or runtime.runtime_instance_id != runtime_instance_id
+            ):
+                return False
+            runtime.preview_captured_at = captured_at
+            return True
+
+    async def clear_preview_capture(self, profile_id: str) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            runtime = await session.get(ProfileRuntimeModel, profile_id)
+            if runtime is not None:
+                runtime.preview_captured_at = None
 
     async def report_observed_state(
         self,
@@ -660,6 +715,8 @@ class ProfileRepository:
             m.observed_state = observed_state
             if observed_state == "running":
                 m.last_started_at = now
+                m.backoff_started_at = None
+                m.next_retry_at = None
                 if browser_product is not None:
                     m.browser_product = browser_product
                 if browser_user_agent is not None:
@@ -678,6 +735,14 @@ class ProfileRepository:
                 if m.failure_count >= BLOCK_AFTER_RUNTIME_FAILURES:
                     m.restart_blocked = True
                 m.runtime_instance_id = None
+                m.backoff_started_at = now
+                if m.failure_count <= len(AUTO_RETRY_DELAYS):
+                    m.next_retry_at = (
+                        datetime.fromisoformat(now)
+                        + timedelta(seconds=AUTO_RETRY_DELAYS[m.failure_count - 1])
+                    ).isoformat()
+                else:
+                    m.next_retry_at = None
                 session.add(
                     RuntimeEventModel(
                         event_id=f"observed_error:{runtime_instance_id}",
@@ -747,6 +812,8 @@ class ProfileRepository:
             if desired_state == "running":
                 m.failure_count = 0
                 m.restart_blocked = False
+                m.backoff_started_at = None
+                m.next_retry_at = None
             elif (
                 desired_state == "stopped"
                 and m.observed_state == "error"
@@ -853,6 +920,9 @@ class ProfileRepository:
             last_stopped_at=m.last_stopped_at,
             browser_product=m.browser_product,
             browser_user_agent=m.browser_user_agent,
+            backoff_started_at=m.backoff_started_at,
+            next_retry_at=m.next_retry_at,
+            preview_captured_at=m.preview_captured_at,
             updated_at=m.updated_at,
         )
 
@@ -1204,3 +1274,153 @@ class ProfileRepository:
             notes=m.notes,
             sort_order=m.sort_order,
         )
+
+    # -------------------------------------------------------------------------
+    # Network Access Settings & Apply Operations (t042)
+    # -------------------------------------------------------------------------
+
+    KEY_NETWORK_PENDING = "network.pending_config"
+    KEY_NETWORK_APPLIED = "network.applied_version"
+    KEY_NETWORK_ACTIVE_OP = "network.active_operation"
+    KEY_NETWORK_OP_PREFIX = "network.operation."
+
+    async def get_network_access_settings(
+        self, export_dir: Path | None = None
+    ) -> NetworkAccessSettingsResponse:
+        async with self._session_maker() as session:
+            # Pending config
+            pending_row = await session.get(SettingModel, self.KEY_NETWORK_PENDING)
+            if pending_row:
+                pending_config = NetworkAccessConfig.model_validate_json(pending_row.value)
+            else:
+                pending_config = NetworkAccessConfig(lan_access_enabled=False)
+
+            # Applied version: DB takes precedence; on clean boot fallback to disk exported baseline
+            applied_row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            if applied_row:
+                applied_version = AppliedNetworkAccessVersion.model_validate_json(applied_row.value)
+            else:
+                from cbrowser.network_config import (
+                    create_default_applied_version,
+                    read_applied_network_state,
+                )
+                file_state = (
+                    read_applied_network_state(export_dir) if export_dir else None
+                )
+                if file_state is not None:
+                    applied_version = file_state[0]
+                else:
+                    applied_version = create_default_applied_version()
+
+            # Active operation
+            active_op_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            active_op = None
+            if active_op_row:
+                active_op = NetworkApplyOperation.model_validate_json(active_op_row.value)
+
+            return NetworkAccessSettingsResponse(
+                pending_config=pending_config,
+                applied_version=applied_version,
+                active_operation=active_op,
+            )
+
+    async def save_pending_network_config(self, config: NetworkAccessConfig) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            row = await session.get(SettingModel, self.KEY_NETWORK_PENDING)
+            raw = config.model_dump_json()
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=self.KEY_NETWORK_PENDING,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+    async def record_applied_network_version(
+        self, version: AppliedNetworkAccessVersion
+    ) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            # 1. Update latest applied version
+            row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            raw = version.model_dump_json()
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=self.KEY_NETWORK_APPLIED,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+            # 2. Store immutable historical record
+            hist_key = f"network.version.{version.version}"
+            hist_row = await session.get(SettingModel, hist_key)
+            if not hist_row:
+                session.add(
+                    SettingModel(
+                        key=hist_key,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+    async def save_network_operation(self, op: NetworkApplyOperation) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            raw = op.model_dump_json()
+            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{op.operation_id}"
+
+            # Save historical operation record
+            row = await session.get(SettingModel, op_key)
+            if row:
+                row.value = raw
+                row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=op_key,
+                        value=raw,
+                        updated_at=utc_now_iso(),
+                    )
+                )
+
+            # Update active operation pointer
+            active_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            is_terminal = op.phase in (NetworkApplyPhase.COMPLETED, NetworkApplyPhase.FAILED)
+            if is_terminal:
+                if active_row:
+                    await session.delete(active_row)
+            else:
+                if active_row:
+                    active_row.value = raw
+                    active_row.updated_at = utc_now_iso()
+                else:
+                    session.add(
+                        SettingModel(
+                            key=self.KEY_NETWORK_ACTIVE_OP,
+                            value=raw,
+                            updated_at=utc_now_iso(),
+                        )
+                    )
+
+    async def get_active_network_operation(self) -> NetworkApplyOperation | None:
+        async with self._session_maker() as session:
+            row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+            if not row:
+                return None
+            return NetworkApplyOperation.model_validate_json(row.value)
+
+    async def get_network_operation(
+        self, operation_id: str
+    ) -> NetworkApplyOperation | None:
+        async with self._session_maker() as session:
+            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{operation_id}"
+            row = await session.get(SettingModel, op_key)
+            if not row:
+                return None
+            return NetworkApplyOperation.model_validate_json(row.value)

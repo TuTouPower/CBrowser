@@ -17,6 +17,7 @@ import docker.errors
 import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.network_config import create_default_applied_version, generate_caddyfile
 
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
@@ -26,7 +27,6 @@ from cbrowser.stream_agent.messaging import (  # noqa: E402
     iso_now,
 )
 from cbrowser.supervisor.agent_credentials import AgentCredentials  # noqa: E402
-from gateway_probe.caddyfile import generate_caddyfile  # noqa: E402
 from gateway_probe.topology import GatewayTopologyHarness  # noqa: E402
 from supervisor_recovery_probe.gateway_service import (  # noqa: E402
     FakeGatewayApiClient,
@@ -747,11 +747,15 @@ async def test_gateway_topology_harness_start_failure_with_cleanup_failure_chain
 
 def test_caddyfile_generator_uses_authoritative_gateway_port() -> None:
     """generate_caddyfile must proxy /stream/* to DEFAULT_GATEWAY_PORT."""
-    content = generate_caddyfile("10.0.0.1", "10.0.0.2")
+    v1 = create_default_applied_version()
+    content = generate_caddyfile(v1)
     assert f":{DEFAULT_GATEWAY_PORT}" in content
     assert "18097" not in content
 
-    custom = generate_caddyfile("10.0.0.1", "10.0.0.2", gateway_port=18088)
+    custom = generate_caddyfile(
+        v1,
+        gateway_upstream="http://gateway:18088",
+    )
     assert ":18088" in custom
 
 
@@ -1143,7 +1147,6 @@ async def test_production_gateway_forwards_non_dict_viewer_json(
         agent_key_file=key_file,
         gateway_token_file=token_file,
         api_client=fake_api,
-        allowed_origins=["http://127.0.0.1"],
     )
     server = TestServer(gateway.app)
     client = TestClient(server)
@@ -1179,7 +1182,7 @@ async def test_production_gateway_forwards_non_dict_viewer_json(
             async with client.ws_connect(
                 f"/stream/{profile_id}/signal",
                 headers={
-                    "Origin": "http://127.0.0.1",
+                    "Origin": "https://127.0.0.1:56661",
                     "Cookie": "cbrowser_session=test-session",
                 },
             ) as viewer_ws:

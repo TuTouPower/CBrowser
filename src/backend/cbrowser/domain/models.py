@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import datetime
+from enum import Enum
 import random
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cbrowser.launch_args import filter_launch_args, validate_launch_args
 
@@ -230,6 +231,9 @@ class ProfileRuntime(BaseModel):
     last_stopped_at: str | None = None
     browser_product: str | None = None
     browser_user_agent: str | None = None
+    backoff_started_at: str | None = None
+    next_retry_at: str | None = None
+    preview_captured_at: str | None = None
     updated_at: str
 
 
@@ -701,6 +705,9 @@ class ProfileRuntimeResponse(BaseModel):
     search_defaults: SearchDefaultsStatusData | None = None
     transport: TransportObservationData | None = None
     control: ProfileControlStateData | None = None
+    backoff_started_at: str | None = None
+    next_retry_at: str | None = None
+    preview_captured_at: str | None = None
     updated_at: str
 
 
@@ -783,3 +790,96 @@ class RuntimeEventResponse(BaseModel):
     outcome: str
     event_id: str
     profile_id: str
+
+
+class PreviewPolicySyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    epoch: int = Field(ge=0)
+    runtime_instance_id: str | None = Field(default=None, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+class PreviewObservedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    captured_at: str = Field(min_length=1, max_length=64)
+    runtime_instance_id: str = Field(min_length=1, max_length=128)
+    policy_epoch: int = Field(ge=0)
+
+
+class ProfilePreviewEvent(BaseModel):
+    event: str = "profile_preview"
+    profile_id: str
+    captured_at: str
+
+
+class NetworkApplyPhase(str, Enum):
+    PENDING = "pending"
+    REBUILDING_CADDY = "rebuilding_caddy"
+    REBUILDING_STREAM = "rebuilding_stream"
+    VERIFYING_READINESS = "verifying_readiness"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class NetworkAccessConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    lan_access_enabled: bool = False
+    lan_advertised_ip: str | None = None
+    https_port: int = Field(default=56661, ge=1, le=65535)
+
+    @model_validator(mode="after")
+    def validate_lan_config(self) -> NetworkAccessConfig:
+        if self.lan_access_enabled:
+            if not self.lan_advertised_ip:
+                raise ValueError("lan_advertised_ip is required when lan_access_enabled is True")
+            import ipaddress
+            try:
+                ip = ipaddress.IPv4Address(self.lan_advertised_ip.strip())
+            except Exception as e:
+                raise ValueError(f"Invalid IPv4 address: {self.lan_advertised_ip}") from e
+            if ip.is_loopback:
+                raise ValueError(f"Loopback IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+            if ip.is_unspecified:
+                raise ValueError(f"Unspecified IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+            if ip.is_multicast:
+                raise ValueError(f"Multicast IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+        return self
+
+
+class AppliedNetworkAccessVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = Field(ge=1)
+    config: NetworkAccessConfig
+    bind_host: str = Field(default="127.0.0.1")
+    applied_at: str = Field(min_length=1)
+    caddyfile_sha256: str = Field(default="")
+    origin_whitelist: list[str] = Field(default_factory=list)
+
+
+class NetworkApplyOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str = Field(min_length=1, max_length=128)
+    target_version: int = Field(ge=1)
+    phase: NetworkApplyPhase = NetworkApplyPhase.PENDING
+    error_reason: str | None = None
+    new_entry_url: str | None = None
+    created_at: str = Field(min_length=1)
+    updated_at: str = Field(min_length=1)
+
+
+class NetworkAccessSettingsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pending_config: NetworkAccessConfig
+    applied_version: AppliedNetworkAccessVersion
+    active_operation: NetworkApplyOperation | None = None
+
+
+class NetworkApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    admin_password: str = Field(min_length=1)

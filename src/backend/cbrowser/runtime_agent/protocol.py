@@ -66,6 +66,7 @@ class ControlRequest(BaseModel):
         "release_attendant",
         "list_attendant_dialogs",
         "answer_attendant_dialog",
+        "preview_policy",
     ]
     params: dict[str, Any] = Field(default_factory=dict)
 

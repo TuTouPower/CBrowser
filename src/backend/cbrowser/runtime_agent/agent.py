@@ -18,6 +18,11 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from .cdp_proxy import CdpProxyManager
+from .preview_capture import (
+    PREVIEW_MOUNT_DIR,
+    PreviewCaptureLoop,
+    cdp_send_from_proxy,
+)
 from .fontconfig import FONT_SET_MOUNT_ROOT, PLATFORM_FONTS_UNCONFIGURED
 from .dialog_attendant import DialogAttendantService
 from .tunnel_filter import TunnelFilter
@@ -87,6 +92,7 @@ def create_agent_app(
     events_dir: Path | str | None = None,
     cdp_proxy: CdpProxyManager | None = None,
     font_set_root: Path | str | None = None,
+    preview_loop: PreviewCaptureLoop | None = None,
 ) -> FastAPI:
     """Create FastAPI application configured for UDS control and CDP proxying."""
     r_dir = Path(run_dir)
@@ -100,7 +106,15 @@ def create_agent_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        yield
+        task: asyncio.Task[None] | None = None
+        if preview_loop is not None:
+            task = asyncio.create_task(preview_loop.run(), name="preview_capture")
+        try:
+            yield
+        finally:
+            if task is not None:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
         title="CBrowser Runtime Agent",
@@ -298,6 +312,9 @@ def create_agent_app(
                         "browser_user_agent": None,
                         "font_set_id": font_set_id,
                         "missing_fonts": missing_fonts,
+                        "preview_captured_at": preview_loop.last_captured_at
+                        if preview_loop
+                        else None,
                     },
                     search_defaults=_search_defaults_status(),
                 )
@@ -350,6 +367,9 @@ def create_agent_app(
                 "browser_user_agent": r_info.get("browser_user_agent"),
                 "font_set_id": font_set_id,
                 "missing_fonts": missing_fonts,
+                "preview_captured_at": preview_loop.last_captured_at
+                if preview_loop
+                else None,
             },
             search_defaults=_search_defaults_status(),
         )
@@ -483,6 +503,21 @@ def create_agent_app(
                 status="ok",
                 action="rearm_downloads",
                 message=f"rearm_count={active_cdp_proxy.rearm_count}",
+            )
+        elif req.action == "preview_policy":
+            if preview_loop is None:
+                raise HTTPException(
+                    status_code=503, detail="Preview capture not active"
+                )
+            preview_loop.set_policy(
+                enabled=bool(req.params.get("enabled")),
+                epoch=int(req.params.get("epoch", 0)),
+                runtime_instance_id=req.params.get("runtime_instance_id"),
+            )
+            return ControlResponse(
+                status="ok",
+                action="preview_policy",
+                message="preview_policy_updated",
             )
         else:
             raise HTTPException(
@@ -716,11 +751,20 @@ async def run_uds_agent(
                 storage,
             )
 
+    preview_loop = None
+    if cdp_proxy is not None:
+        preview_loop = PreviewCaptureLoop(
+            data_root=PREVIEW_MOUNT_DIR,
+            cdp_send=cdp_send_from_proxy(cdp_proxy),
+            instance_id=expected_instance or "",
+        )
+
     app = create_agent_app(
         run_dir=r_dir,
         default_download_dir=default_download_dir,
         events_dir=events_dir,
         cdp_proxy=cdp_proxy,
+        preview_loop=preview_loop,
     )
 
     uvicorn_config = uvicorn.Config(

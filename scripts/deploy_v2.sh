@@ -276,8 +276,8 @@ check_prerequisites() {
     missing+=("user-provided admin password: $SECRETS_DIR/admin_password (create it with mode 0600; it is never generated)")
   [ -f "$ROOT/src/frontend/dist/index.html" ] || \
     missing+=("frontend product: src/frontend/dist/index.html (run: npm ci --prefix src/frontend && npm run build --prefix src/frontend)")
-  [ -f "$ROOT/config/deploy/caddy/Caddyfile" ] || \
-    missing+=("Caddyfile: config/deploy/caddy/Caddyfile")
+  [ -f "$ROOT/src/backend/cbrowser/network_config.py" ] || \
+    missing+=("network config generator: src/backend/cbrowser/network_config.py")
   local name
   for name in browser_runtime stream_runtime supervisor_runtime gateway_runtime api_runtime; do
     [ -f "$ROOT/config/docker/$name/Dockerfile" ] || missing+=("Dockerfile: config/docker/$name/Dockerfile")
@@ -338,7 +338,7 @@ load_release_identity() {
   while IFS= read -r line; do
     case "$line" in
       CBROWSER_COMPOSE_PROJECT=*|CBROWSER_PREFIX=*|CBROWSER_HTTPS_PORT=*|\
-      CBROWSER_PUBLIC_ORIGIN=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*)
+      CBROWSER_BIND_HOST=*|CBROWSER_PUBLIC_ORIGIN=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*)
         key="${line%%=*}"
         value="${line#*=}"
         export "$key=$value"
@@ -348,6 +348,7 @@ load_release_identity() {
   PROJECT="$CBROWSER_COMPOSE_PROJECT"
   PREFIX="$CBROWSER_PREFIX"
   HTTPS_PORT="$CBROWSER_HTTPS_PORT"
+  BIND_HOST="${CBROWSER_BIND_HOST:-127.0.0.1}"
   PUBLIC_ORIGIN="$CBROWSER_PUBLIC_ORIGIN"
   DATA_ROOT="$CBROWSER_DATA_ROOT"
   SECRETS_DIR="$CBROWSER_SECRETS_DIR"
@@ -384,7 +385,7 @@ build_and_record_release() {
 
   local compose_sha caddyfile_sha frontend_sha migration
   compose_sha="$(sha256_of_file "$ROOT/compose.yaml")"
-  caddyfile_sha="$(sha256_of_file "$ROOT/config/deploy/caddy/Caddyfile")"
+  caddyfile_sha="$(sha256_of_file "$ROOT/src/backend/cbrowser/network_config.py")"
   frontend_sha="$(frontend_fingerprint)"
   migration="$(migration_head)"
 
@@ -393,6 +394,7 @@ build_and_record_release() {
 CBROWSER_COMPOSE_PROJECT=$PROJECT
 CBROWSER_PREFIX=$PREFIX
 CBROWSER_HTTPS_PORT=$HTTPS_PORT
+CBROWSER_BIND_HOST=$BIND_HOST
 CBROWSER_PUBLIC_ORIGIN=$PUBLIC_ORIGIN
 CBROWSER_DATA_ROOT=$DATA_ROOT
 CBROWSER_SECRETS_DIR=$SECRETS_DIR
@@ -446,6 +448,62 @@ cmd_deploy() {
   if [ -e "$RELEASES_DIR/$release_id.json" ]; then
     echo "Refusing to overwrite existing release '$release_id' (releases are immutable); pick a new CBROWSER_RELEASE_ID." >&2
     exit 1
+  fi
+
+  # Ensure initial network state and Caddyfile exist in DATA_ROOT from single baseline generator
+  mkdir -p "$DATA_ROOT/network"
+  if [ ! -f "$DATA_ROOT/network/applied_network_version.json" ]; then
+    cat << JSON > "$DATA_ROOT/network/applied_network_version.json"
+{
+  "version": 1,
+  "config": {
+    "lan_access_enabled": false,
+    "lan_advertised_ip": null,
+    "https_port": $HTTPS_PORT
+  },
+  "bind_host": "127.0.0.1",
+  "applied_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "caddyfile_sha256": "",
+  "origin_whitelist": [
+    "https://127.0.0.1:$HTTPS_PORT",
+    "https://localhost:$HTTPS_PORT"
+  ]
+}
+JSON
+  fi
+
+  if [ ! -f "$DATA_ROOT/network/Caddyfile" ]; then
+    cat << EOF > "$DATA_ROOT/network/Caddyfile"
+{
+    admin off
+    auto_https disable_redirects
+    default_sni 127.0.0.1
+}
+
+https://127.0.0.1, https://localhost {
+    tls internal
+
+    handle /api/* {
+        reverse_proxy http://api:8000
+    }
+
+    handle /stream/* {
+        reverse_proxy http://gateway:18080
+    }
+
+    handle {
+        root * /var/www/html
+        try_files {path} /index.html
+        file_server
+    }
+}
+EOF
+  fi
+
+  # Single source of bind host and https port from applied version
+  BIND_HOST="127.0.0.1"
+  if [ -f "$DATA_ROOT/network/applied_network_version.json" ]; then
+    BIND_HOST="$(grep '"bind_host"' "$DATA_ROOT/network/applied_network_version.json" | head -1 | cut -d'"' -f4 || echo 127.0.0.1)"
   fi
 
   build_and_record_release "$release_id"

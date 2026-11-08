@@ -28,7 +28,7 @@ from cbrowser.supervisor.recovery_rules import (
     index_containers_by_profile,
     is_brand_new_runtime,
     live_instance_ids,
-    remaining_retry_seconds,
+    remaining_retry_seconds_from_deadline,
     retry_delay_for_failure,
     runtime_pair_active,
     stream_missing,
@@ -370,7 +370,9 @@ class RecoveryCoordinator:
             return
 
         delay_sec = retry_delay_for_failure(failure_count)
-        remaining = remaining_retry_seconds(runtime.get("updated_at"), delay_sec)
+        remaining = remaining_retry_seconds_from_deadline(
+            runtime.get("next_retry_at"), runtime.get("updated_at"), delay_sec
+        )
 
         async with self._lock:
             existing_task = self._in_flight_tasks.get(profile_id)

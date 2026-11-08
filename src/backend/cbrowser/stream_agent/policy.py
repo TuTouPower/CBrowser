@@ -143,6 +143,9 @@ class LiveCapturePolicyAgent:
         # report leaves the process.
         self.on_human_takeover: Callable[[str | None, str], None] | None = None
 
+        # Event-driven heartbeat trigger on video consumer or capture state changes
+        self.on_video_state_changed: Callable[[], None] | None = None
+
         # Bounded action audit log
         self._action_history: collections.deque = collections.deque(
             maxlen=MAX_HISTORY_SIZE
@@ -356,6 +359,15 @@ class LiveCapturePolicyAgent:
             "PolicyAgent: Supervisor quota cap set to %.1f FPS",
             self._supervisor_fps_cap,
         )
+
+    def notify_video_state_changed(self) -> None:
+        """Notify listeners that video consumer or capture state changed (event-driven)."""
+        cb = getattr(self, "on_video_state_changed", None)
+        if cb is not None:
+            try:
+                cb()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Error invoking on_video_state_changed callback: %s", exc)
 
     def has_active_visible_viewers(self) -> bool:
         """Return True if any authenticated viewer is currently visible."""
@@ -808,6 +820,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 await self.policy_agent.reconcile_capture_state(
                     caller="handle_video_consumer_active"
                 )
+                self.policy_agent.notify_video_state_changed()
 
         async def handle_consumers_changed(self, display_id: str) -> None:
             """A peer joined or left a display's consumer set."""
@@ -828,6 +841,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 await self.policy_agent.reconcile_capture_state(
                     caller="handle_consumers_changed"
                 )
+                self.policy_agent.notify_video_state_changed()
 
         async def handle_peer_gone(
             self, peer_id: str, peer: dict[str, Any] | None = None
@@ -843,6 +857,7 @@ def create_policy_controlled_service_class(base_cls: Any) -> Any:
                 await self.policy_agent.reconcile_capture_state(
                     caller="handle_peer_gone"
                 )
+                self.policy_agent.notify_video_state_changed()
 
         async def _resume_display_capture(
             self,

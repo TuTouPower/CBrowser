@@ -172,8 +172,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
         ]
 
         # 4. API uvicorn process
-        origin = f"http://127.0.0.1:{api_host_port}"
-        auth_ctx = create_auth_context(control, origin=origin)
+        auth_ctx = create_auth_context(control)
         api_db_path = data / "api_control.db"
 
         import uvicorn
@@ -184,8 +183,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             supervisor_token_file=keys["supervisor"],
             gateway_token_file=keys["gateway_api"],
             admin_password_file=auth_ctx.admin_password_file,
-            allowed_origins=auth_ctx.allowed_origin,
-            supervisor_url=f"http://127.0.0.1:{supervisor_host_port}",
+                        supervisor_url=f"http://127.0.0.1:{supervisor_host_port}",
         )
 
         uv_config = uvicorn.Config(

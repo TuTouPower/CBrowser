@@ -184,13 +184,12 @@ async def start_api_server(
     for attempt in range(attempts):
         port = find_free_port()
         api_url = f"http://127.0.0.1:{port}"
-        auth_ctx = create_auth_context(auth_dir / f"auth{attempt}", origin=api_url)
+        auth_ctx = create_auth_context(auth_dir / f"auth{attempt}")
         app = create_app(
             db_path=db_path,
             supervisor_token_file=sup_token_file,
             admin_password_file=auth_ctx.admin_password_file,
-            allowed_origins=auth_ctx.allowed_origin,
-            supervisor_url=sup_url,
+                        supervisor_url=sup_url,
         )
         server = uvicorn.Server(
             uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
@@ -299,10 +298,24 @@ async def test_ac009_api_supervisor_start_and_stop_coordination(coord_test_env):
         assert sup_mock.start_calls[0]["profile_id"] == profile_id
         assert sup_mock.start_calls[0]["config_version"] == 1
 
-        # Check API runtime state has converged to running
+        # Check API runtime state has converged to running. The Coordinator
+        # converges asynchronously after the start RPC: waiting only for
+        # start_calls used to observe a transient "starting" state (AC-009
+        # flake). Poll the runtime until observed_state is the terminal value,
+        # then keep the original assertions unchanged.
         rt_resp = await client.get(
             f"/api/v1/profiles/{profile_id}/runtime", headers=auth_headers
         )
+        for _ in range(50):
+            if (
+                rt_resp.status_code == 200
+                and rt_resp.json().get("observed_state") == "running"
+            ):
+                break
+            await asyncio.sleep(0.1)
+            rt_resp = await client.get(
+                f"/api/v1/profiles/{profile_id}/runtime", headers=auth_headers
+            )
         assert rt_resp.status_code == 200
         rt_data = rt_resp.json()
         assert rt_data["desired_state"] == "running"
@@ -462,8 +475,7 @@ async def test_api_startup_fails_when_supervisor_required_but_unconfigured(tmp_p
     app = create_app(
         db_path=tmp_path / "require_sup.db",
         admin_password_file=admin_pwd_file,
-        allowed_origins=["http://127.0.0.1:3000"],
-        require_supervisor=True,
+                require_supervisor=True,
     )
     with pytest.raises(
         RuntimeError, match="Supervisor URL and token must be configured"

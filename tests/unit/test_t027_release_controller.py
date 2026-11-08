@@ -153,10 +153,11 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
     )
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
     _copy_tree(ROOT / "config" / "docker", repo / "config" / "docker")
-    caddy_dir = repo / "config" / "deploy" / "caddy"
-    caddy_dir.mkdir(parents=True)
+    net_dir = repo / "src" / "backend" / "cbrowser"
+    net_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy(
-        ROOT / "config" / "deploy" / "caddy" / "Caddyfile", caddy_dir / "Caddyfile"
+        ROOT / "src" / "backend" / "cbrowser" / "network_config.py",
+        net_dir / "network_config.py",
     )
     _copy_tree(
         ROOT / "src" / "backend" / "migrations",
@@ -567,7 +568,7 @@ def test_caddy_fingerprints_recorded_and_change_sensitive(
 
     env1 = _env("rel-001")
     expected_caddy = hashlib.sha256(
-        (repo / "config" / "deploy" / "caddy" / "Caddyfile").read_bytes()
+        (repo / "src" / "backend" / "cbrowser" / "network_config.py").read_bytes()
     ).hexdigest()
     assert env1["CBROWSER_CADDYFILE_SHA256"] == expected_caddy
     dist = repo / "src" / "frontend" / "dist"
@@ -579,9 +580,9 @@ def test_caddy_fingerprints_recorded_and_change_sensitive(
     expected_frontend = hashlib.sha256(listing.encode()).hexdigest()
     assert env1["CBROWSER_FRONTEND_SHA256"] == expected_frontend
 
-    caddyfile = repo / "config" / "deploy" / "caddy" / "Caddyfile"
-    caddyfile.write_text(
-        caddyfile.read_text(encoding="utf-8") + "\n# drill change\n",
+    net_config = repo / "src" / "backend" / "cbrowser" / "network_config.py"
+    net_config.write_text(
+        net_config.read_text(encoding="utf-8") + "\n# drill change\n",
         encoding="utf-8",
     )
     assert _deploy(repo, bin_dir, "rel-002").returncode == 0

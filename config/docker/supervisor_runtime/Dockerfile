@@ -17,6 +17,8 @@ COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
 COPY src/backend/cbrowser/udp_mux.py /app/cbrowser/udp_mux.py
 COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py
+COPY src/backend/cbrowser/preview.py /app/cbrowser/preview.py
+COPY src/backend/cbrowser/network_config.py /app/cbrowser/network_config.py
 COPY src/backend/cbrowser/supervisor /app/cbrowser/supervisor
 COPY src/backend/cbrowser/services/__init__.py /app/cbrowser/services/__init__.py
 COPY src/backend/cbrowser/services/tunnel_registry.py /app/cbrowser/services/tunnel_registry.py

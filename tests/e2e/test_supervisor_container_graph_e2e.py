@@ -87,9 +87,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     control = data / "control"
     control.mkdir(parents=True)
     control.chmod(0o700)
-    for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
-        (data / name).mkdir()
+    for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
+        (data / name).mkdir(parents=True, exist_ok=True)
         (data / name).chmod(0o777)
+    from cbrowser.network_config import create_default_applied_version, generate_caddyfile, write_applied_network_state
+    v1_init = create_default_applied_version()
+    write_applied_network_state(data / "network", v1_init, generate_caddyfile(v1_init))
     cache = data / "engine_cache"
     shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
     shutil.copytree(
@@ -144,9 +147,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             s.bind(("127.0.0.1", 0))
             api_host_port = s.getsockname()[1]
 
-        auth_ctx = create_auth_context(
-            control, origin=f"http://127.0.0.1:{api_host_port}"
-        )
+        auth_ctx = create_auth_context(control)
         api = run(
             "api",
             image("CBROWSER_API_TEST_IMAGE"),
@@ -155,7 +156,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_pass",
-                "CBROWSER_ALLOWED_ORIGINS": auth_ctx.allowed_origin,
             },
             volumes={
                 str(metadata): {"bind": "/metadata", "mode": "rw"},
@@ -179,7 +179,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway",
                 "CBROWSER_GATEWAY_API_URL": f"http://{prefix}-api:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
-                "CBROWSER_ALLOWED_ORIGINS": auth_ctx.allowed_origin,
+                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
             },
             volumes={
                 str(keys["agent"]): {"bind": "/run/secrets/agent", "mode": "ro"},
@@ -188,6 +188,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     "bind": "/run/secrets/gateway_api",
                     "mode": "ro",
                 },
+                str(data / "network"): {"bind": "/data/network", "mode": "ro"},
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )

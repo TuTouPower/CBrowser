@@ -738,3 +738,4 @@ tokens instead. The generator emits them into the independent
 |menu|10rem|
 |select|8rem|
 |control-sm|1.875rem|
+|details|18.75rem|

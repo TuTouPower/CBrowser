@@ -104,6 +104,9 @@ class ProfileModel(Base):
         Boolean, default=True, nullable=False
     )
     capture_preview: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    capture_preview_epoch: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
     restore_session: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     transparent_proxy: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
@@ -202,6 +205,9 @@ class ProfileRuntimeModel(Base):
     last_stopped_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     browser_product: Mapped[str | None] = mapped_column(String(255), nullable=True)
     browser_user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    backoff_started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_retry_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preview_captured_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )

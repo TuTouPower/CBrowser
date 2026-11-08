@@ -76,6 +76,30 @@ class ManualClock:
     def release_one(self) -> None:
         self._release.set()
 
+    async def wait_heartbeat(self, trigger: asyncio.Event, timeout: float) -> None:
+        """Controllable heartbeat wait: can be awakened by trigger or clock release."""
+        self.delays.append(timeout)
+        self.sleep_started.set()
+        if not self.block:
+            try:
+                await asyncio.wait_for(trigger.wait(), timeout=0.001)
+                trigger.clear()
+            except asyncio.TimeoutError:
+                pass
+            return
+        release_task = asyncio.create_task(self._release.wait())
+        trigger_task = asyncio.create_task(trigger.wait())
+        done, pending = await asyncio.wait(
+            [release_task, trigger_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for t in pending:
+            t.cancel()
+        if release_task in done:
+            self._release.clear()
+        if trigger_task in done:
+            trigger.clear()
+
 
 class _ClockAsyncio:
     """Delegates to asyncio except sleep, confined to the patched module."""
@@ -93,6 +117,7 @@ class _ClockAsyncio:
 def _inject_clock(monkeypatch, module, *, block: bool = False) -> ManualClock:
     clock = ManualClock(block=block)
     monkeypatch.setattr(module, "asyncio", _ClockAsyncio(clock))
+    monkeypatch.setattr(module, "_default_wait_heartbeat", clock.wait_heartbeat)
     return clock
 
 
@@ -803,3 +828,116 @@ async def test_agent_stop_releases_viewers_detached_and_tasks(unique_port):
     assert reader.done() and timer.done()
     assert closed == ["upstream"]
     await agent.stop()  # still idempotent with everything drained
+
+
+@pytest.mark.asyncio
+async def test_event_driven_heartbeat_trigger_on_video_state_changed(unique_port):
+    """AC-007 / event-driven heartbeat: state change fires heartbeat immediately without waiting 10s."""
+    gw = MockGatewayServer(unique_port)
+    await gw.start()
+
+    cfg = StreamAgentConfig(
+        profile_id="profile_event_hb",
+        runtime_instance_id="inst_event_01",
+        gateway_url=f"ws://127.0.0.1:{unique_port}",
+        agent_token=secrets.token_urlsafe(32),
+        udp_mux_port=30006,
+        config_version=1,
+        selkies_version="2.1.0",
+    )
+
+    agent = StreamAgent(
+        config=cfg,
+        upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+    )
+
+    agent_task = asyncio.create_task(agent.connect_and_run())
+
+    try:
+        # Wait for registration and first heartbeat
+        await _wait_until(
+            lambda: len(gw.received_messages) >= 2,
+            timeout=5.0,
+        )
+        assert len(gw.received_messages) == 2
+        assert gw.received_messages[0]["action"] == "register"
+        assert gw.received_messages[1]["action"] == "heartbeat"
+
+        # Simulate video state change from PolicyAgent
+        agent.policy.selkies_video_state = lambda: (1, True)
+        agent.policy.notify_video_state_changed()
+
+        # Immediate heartbeat must arrive well within 1.0s (not waiting for 10s)
+        await _wait_until(
+            lambda: len(gw.received_messages) >= 3,
+            timeout=1.0,
+        )
+        assert len(gw.received_messages) == 3
+        payload = gw.received_messages[2]["payload"]
+        assert payload["unpaused_video_consumers"] == 1
+        assert payload["capture_running"] is True
+    finally:
+        await agent.stop()
+        agent_task.cancel()
+        await asyncio.gather(agent_task, return_exceptions=True)
+        await gw.stop()
+
+
+@pytest.mark.asyncio
+async def test_policy_consumer_active_changes_trigger_immediate_heartbeat(unique_port):
+    """Consumer pause/resume (handle_video_consumer_active) triggers immediate heartbeat."""
+    gw = MockGatewayServer(unique_port)
+    await gw.start()
+
+    cfg = StreamAgentConfig(
+        profile_id="profile_consumer_hb",
+        runtime_instance_id="inst_consumer_01",
+        gateway_url=f"ws://127.0.0.1:{unique_port}",
+        agent_token=secrets.token_urlsafe(32),
+        udp_mux_port=30006,
+        config_version=1,
+        selkies_version="2.1.0",
+    )
+
+    agent = StreamAgent(
+        config=cfg,
+        upstream_url=f"ws://127.0.0.1:{unique_port}/upstream",
+    )
+
+    class FakeService:
+        def __init__(self):
+            self.peers = {"p1": {"video_paused": False}}
+
+        def _display_consumers(self, display_id: str):
+            return list(self.peers.values())
+
+    fake_service = FakeService()
+    agent.policy.bind_service(fake_service)
+
+    agent_task = asyncio.create_task(agent.connect_and_run())
+
+    try:
+        # Wait for registration and initial heartbeat
+        await _wait_until(
+            lambda: len(gw.received_messages) >= 2,
+            timeout=5.0,
+        )
+        assert len(gw.received_messages) == 2
+
+        # Simulate consumer pause via policy callback
+        fake_service.peers["p1"]["video_paused"] = True
+        agent.policy.notify_video_state_changed()
+
+        # Immediate heartbeat must arrive well within 1.0s
+        await _wait_until(
+            lambda: len(gw.received_messages) >= 3,
+            timeout=1.0,
+        )
+        assert len(gw.received_messages) == 3
+        payload = gw.received_messages[2]["payload"]
+        assert payload["unpaused_video_consumers"] == 0
+    finally:
+        await agent.stop()
+        agent_task.cancel()
+        await asyncio.gather(agent_task, return_exceptions=True)
+        await gw.stop()

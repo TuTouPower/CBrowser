@@ -182,6 +182,12 @@ t025 前端残余回归（Vitest，云端已验）：出站同源矩阵覆盖 Ap
 
 AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置页、手写 `globals.css`、占位页）中 Tailwind 默认调色板类、旧 `surface-*` / `primary-foreground` 类与颜色字面量命中 0；构建产物 CSS 中 `bg-red-500` / `text-gray-100` / `bg-emerald-500` / `bg-blue-500` / `text-slate-900` / `bg-surface-0` 均不产生样式，语义变量（`--color-background` / `--color-surface` / `--color-accent` / `--font-ui` / `--font-mono` / `--text-body-md` / `--radius-md` / `--spacing-md`）、`.bg-primary` 与 `.dark` 覆盖均存在。AC-009 扫描：`dist/index.html` 与 `dist/assets/*.css` 中 `https?://` 仅命中 Tailwind MIT license 注释，无外部字体 / 图标 CDN 引用；自托管 `*.woff2` 13 个；`index.html` 内联脚本数 0。
 
+### t039 全局颜色门禁
+
+全局颜色门禁由 `npm run design:lint` 的 `--lint` 分支承载（`src/frontend/scripts/design_tokens.mjs`）：`runLintSources(sources)` 合并执行尺寸断言（`assertNoSizeTokenHijack`）与颜色断言（`assertNoColorViolations`），一次扫描同时覆盖 Tailwind 默认调色板类（含 `/透明度` 变体）、`white` / `black` 类、旧 `surface-0..4` / `primary-foreground` 类与 hex / rgb / hsl / oklch 颜色字面量，**发现即失败、无豁免**，日志 `size+color scan: N files clean`。源集沿用 t036 口径：`collectSources("src")` 递归收集 `.ts` / `.tsx`，排除 `generated` / `styles` 目录与 `*.test.*` / `*.spec.*` / `test_setup.ts`。门禁零改 `scripts/run_gates.sh`——`design_lint` suite 已调用 `design:lint`，接入即生效。
+
+`design_tokens.test.mjs` 覆盖 3 例纯函数断言（`assertNoColorViolations` 颜色正则的命中与放行）与 2 例集成测试（`mkdtempSync` 临时目录 + `collectSources` 走真实门禁路径，违规文件使 `runLintSources` 抛错、干净目录通过）。`doctor_cmd` / `test_cmd` / `blackbox_verify` / `gate_timeout_seconds` 章节名与命令形式不变。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。
@@ -355,3 +361,13 @@ bash scripts/run_automation_probe.sh
 - `requirements_check` suite 运行 `scripts/generate_requirements.sh --check`，锁与导出 requirements 漂移即失败；E2E 必跑模式 `image_packages` suite 对 browser / stream / gateway / supervisor / api 五个运行镜像运行 `scripts/verify_image_packages.py`，镜像内已安装包集合与依赖锁不一致即失败。
 - `pyproject.toml` 的 `filterwarnings` 以 `error::DeprecationWarning` 兜底，仅精确登记忽略三条第三方来源（httpx per-request cookies、aiohttp bare functions、jsonschema RefResolver）；产品源码弃用用法从根因修正，不靠忽略掩盖：`status.HTTP_422_UNPROCESSABLE_CONTENT`、SQLAlchemy `lazy="raise"`、`aiohttp.ClientWSTimeout(ws_receive=...)`、Alembic `path_separator=os`、`asyncio_default_fixture_loop_scope`。
 - 门禁新增 `scripts/merge_junit.py`；`tests/unit/test_t028_run_gates_evidence.py` 的 stub 契约随 suite 列表同步（去 `design_tokens`、加 `requirements_check`）。
+
+## t045 门禁稳定性与 E2E 遗留缺陷收口
+
+需求级契约见 `docs/specs/gate_verification.md` 第 9 节；`doctor_cmd` / `test_cmd` / `blackbox_verify` 机械锚点命令形式不变。
+
+- `run_gate_suite` 两阶段对 pytest exit 5 对称：并行阶段用例全标 `serial` 时不再假失败，两阶段皆空判失败并列出缺项，junit 仍合并串行结果（`scripts/run_gates.sh`）。
+- 门禁启动与 `EXIT` / `INT` / `TERM` 中断经同一套 trap 调用 `scripts/gate_container_cleanup.py`：按精确测试前缀白名单清理上一轮遗留容器 / 网络，`cbrowser-api` / `cbrowser-gateway` / `cbrowser-supervisor` / `cbrowser-caddy` 生产部署与其它会话命名资源不删；匹配为纯函数，单测 stub Docker 边界（`tests/unit/test_t045_gate_container_cleanup.py`）。
+- 前端 E2E 同文件共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈、天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
+- Selkies wheel：`CBROWSER_SELKIES_WHEEL_CACHE` 指向已锁定 SHA256 的本地缓存；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项（`tests/e2e/conftest.py`、`test_frontend_adapter_build.py`、`tests/unit/test_t045_selkies_wheel_cache.py`）。
+- 负载下时序判定改就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 或上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。

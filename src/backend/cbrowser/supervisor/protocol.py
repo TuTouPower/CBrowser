@@ -64,6 +64,11 @@ class SearchDefaultsStatusResponse(BaseModel):
     search_defaults: SearchDefaultsStatus | None = None
 
 
+class PreviewPolicySyncResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["ok"] = "ok"
+
+
 class ResetBlockedRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_id: str = Field(min_length=1, max_length=128)
@@ -195,3 +200,18 @@ class ReadinessResponse(BaseModel):
     ready: bool = False
     reason: str | None = None
     profiles: list[ProfileReadiness] = Field(default_factory=list)
+
+
+class RebuildEdgeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_version: int = Field(ge=1)
+    bind_host: str = Field(min_length=1, max_length=64)
+    https_port: int = Field(ge=1, le=65535)
+    caddyfile_path: str = Field(min_length=1)
+
+
+class ConvergeStreamsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target_version: int = Field(ge=1)
+    bind_host: str = Field(min_length=1, max_length=64)
+    advertised_ip: str = Field(min_length=1, max_length=64)

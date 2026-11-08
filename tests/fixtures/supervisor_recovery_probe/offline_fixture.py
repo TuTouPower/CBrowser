@@ -178,9 +178,7 @@ class RealApiProcess:
         self.root = root
         self.env = env
         self.log_path = log_path
-        self.auth_context = create_auth_context(
-            log_path.parent, origin=f"http://127.0.0.1:{port}"
-        )
+        self.auth_context = create_auth_context(log_path.parent)
         self.auth_headers: dict[str, str] = {}
         self.proc: subprocess.Popen | None = None
         self._log_file_handle: Any | None = None

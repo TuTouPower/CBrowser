@@ -1,0 +1,16 @@
+{
+  "tid": "t042",
+  "attempt": 1,
+  "execution_id": "f86f952bf7044e27a2bf6f81c2cc1887",
+  "status": "done",
+  "branch": "t042_lan_access_protocol_settings",
+  "base_sha": "b43c9212d29492ab8c6310c93b2b7015681e6fd5",
+  "tests": "全量门禁 10 个 suites 全部 exit 0（`.scratch/t042_evidence_20261108_105101/manifest.json` `all_passed: True`；unit 1225 passed，integration 149 passed，frontend_test 419 passed，contract 257 passed，e2e 全部 passed）",
+  "blackbox": "非回环客户端物理阻断与连通验证通过，未信任局域网 HTTPS 下 Web Locks / WebRTC Secure Context 实测通过（s017 / d036）",
+  "review": "Round 1 code 与 test 均为 PASS，指纹 `bade1636925b9945`",
+  "review_scope": "bade1636925b9945",
+  "pending": [],
+  "findings": [
+    "d036"
+  ]
+}

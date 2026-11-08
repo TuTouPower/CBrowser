@@ -7,6 +7,8 @@ from typing import Any
 
 SINGLETON_LOCK_NAMES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
 
+PREVIEW_CONTAINER_DIR = "/data/preview"
+
 
 def browser_volumes(
     *,
@@ -17,6 +19,7 @@ def browser_volumes(
     geoip_cache: Path,
 ) -> dict[str, dict[str, Any]]:
     upload_dir = dirs.get("uploads") or dirs["exchange"].parent / "uploads"
+    preview_dir = dirs.get("preview") or dirs["profile"].parent / "preview"
     return {
         str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
         str(dirs["profile"]): {
@@ -32,6 +35,7 @@ def browser_volumes(
         str(dirs["runtime"]): {"bind": "/run/cbrowser/runtime", "mode": "rw"},
         str(dirs["x11"]): {"bind": "/tmp/.X11-unix", "mode": "rw"},
         str(dirs["pulse"]): {"bind": "/pulse", "mode": "rw"},
+        str(preview_dir): {"bind": PREVIEW_CONTAINER_DIR, "mode": "rw"},
         str(engine_cache): {"bind": "/data/engine-cache", "mode": "ro"},
         str(geoip_cache): {
             "bind": "/data/engine-cache/geoip",

@@ -1,0 +1,20 @@
+{
+  "tid": "t045",
+  "attempt": 1,
+  "execution_id": "3e7ef768d0994e9db2b0840be9271478",
+  "status": "done",
+  "branch": "t045_e2e_gate_stability_cleanup",
+  "base_sha": "a361058152631d6b4c2621a78cd1609e975621e0",
+  "tests": "定向 `tests/unit/test_t045_*.py` 共 16 passed（wheel 2 / 共享栈 2 / 清理 9 / 端口防回归 3）；unit 全量 `1159 passed`；`py_compile` 改动文件 OK；`bash -n scripts/run_gates.sh` OK；必跑模式全量 E2E collect-only `101 tests collected`（preflight RC=0）；`test_real_api_and_sup_finally...` 定向 `1 passed`；删除诊断冒烟 / `docker port` 回读格式验证 OK。完整门禁 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 共六轮（前四轮诊断、第 5 轮在其后代码变更前、第 6 轮 09:20 被 OrbStack 引擎整体重启打断作废；证据见实施笔记）；**finish 依据为 09:43 在最终冻结代码上重跑的完整门禁：10 个 suite 全 exit 0、unit exit 0、manifest `all_passed: true`**。",
+  "blackbox": "六轮完整必跑 E2E 门禁（真实 Docker + 无头 Chrome）；**finish 依据轮（最终冻结代码）E2E 101 用例 FAIL=0 / ERROR=0 / SKIP=2**，三个 AC-006 目标用例、`test_e2e_ac010_selkies_server_token_semantics_with_emulated_injection`（WS 1006 用例）、`test_takeover_does_not_stop_browser_page`、`test_runtime_coordinator_docker_e2e`、t019 全部 PASS；容器消失类未决项随 `p051` 保留观察（诊断已就位、96 条删除归属一致）。",
+  "review": "待 review 报告填写",
+  "review_scope": "ad5ba37ad33167c0",
+  "pending": [
+    "p046",
+    "p048",
+    "p049",
+    "p050",
+    "p051"
+  ],
+  "findings": []
+}

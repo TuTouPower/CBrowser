@@ -178,17 +178,17 @@ async def test_frontend_app_auth_guard_e2e(harness: AuthTopologyHarness) -> None
             re.compile(rf"/session/{profile_id}$"), timeout=20000
         )
         await page.wait_for_selector(
-            '[data-testid="session-launch-btn"]', timeout=20000
+            '[data-testid="sess-stage-action-launch"]', timeout=20000
         )
         assert profile["name"] in await page.content()
         await wait_for_api_request(recorder, "/api/v1/events")
         await wait_for_api_status(recorder, "/api/v1/events", 200)
 
         # Server-side session revocation: the next API call must 401 and redirect.
-        await page.wait_for_selector('[data-testid="session-launch-btn"]', timeout=20000)
+        await page.wait_for_selector('[data-testid="sess-stage-action-launch"]', timeout=20000)
         await revoke_browser_session(context, harness)
         events_before = recorder.count("/api/v1/events")
-        await page.click('[data-testid="session-launch-btn"]')
+        await page.click('[data-testid="sess-stage-action-launch"]')
 
         await page.wait_for_url(re.compile(r"/login\?next="), timeout=20000)
         assert login_next(page.url) == f"/session/{profile_id}"

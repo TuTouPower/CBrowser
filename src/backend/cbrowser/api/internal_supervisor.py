@@ -8,10 +8,12 @@ from cbrowser.api.v1 import router as runtime_api
 from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.domain.models import (
     ConfigVersionResponse,
+    PreviewObservedRequest,
     ProfileResponse,
     ProfileRuntimeResponse,
     RuntimeEventResponse,
 )
+from cbrowser.preview import clear_preview
 from cbrowser.secret_files import read_secret_file
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
@@ -152,3 +154,30 @@ async def get_proxy_credentials(
         **creds,
         proxy_credential_revision=snapshot.proxy_credential_revision,
     )
+
+
+@supervisor_router.post(
+    "/profiles/{profile_id}/preview",
+    include_in_schema=False,
+)
+async def report_preview_observation(
+    profile_id: str,
+    payload: PreviewObservedRequest,
+    request: Request,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    accepted = await service.record_preview_capture(
+        profile_id,
+        payload.captured_at,
+        payload.runtime_instance_id,
+        payload.policy_epoch,
+    )
+    if not accepted:
+        directory = service.get_preview_dir(profile_id)
+        if directory is not None:
+            clear_preview(directory)
+        return {"status": "ok"}
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None:
+        await coordinator.publish_profile_preview(profile_id, payload.captured_at)
+    return {"status": "ok"}

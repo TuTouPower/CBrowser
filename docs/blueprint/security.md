@@ -11,7 +11,8 @@
 ## 浏览器用户会话
 
 - `POST /api/v1/auth/login` 成功后下发 `cbrowser_session`（`HttpOnly; Secure; SameSite=Strict; Path=/`）与非 HttpOnly 的 `cbrowser_csrf`，响应体返回 `csrf_token`。会话令牌为 32 字节随机值，库内只存 SHA-256，默认 12 小时过期；登出立即失效。失败登录按来源 5 次/分钟限速（429）。
-- 除 health、login 与内部服务路由外，`/api/v1` 全部需要有效会话。写方法另需 `X-CSRF-Token` 与会话绑定值一致，且 `Origin`（缺失时取 `Referer` 的 origin）属于 `CBROWSER_ALLOWED_ORIGINS`。该允许列表必须显式配置，为空时 API 启动失败。
+- 除 health、login 与内部服务路由外，`/api/v1` 全部需要有效会话。写方法另需 `X-CSRF-Token` 与会话绑定值一致，且 `Origin`（缺失时取 `Referer` 的 origin）属于当前已应用网络版本派生的白名单（仅限 `https://`，t042）。API 与 Gateway 读取同一不可变版本源，废弃 `CBROWSER_ALLOWED_ORIGINS` 环境变量；未列出的 Origin 严格返回 403。
+- Caddy CA 私钥隔离（t042）：`GET /api/v1/network/root-ca` 仅公开公钥根证书（`root.crt`）；API 服务容器挂载绝不包含 `caddy_data` 卷，严禁挂载或暴露 CA 私钥 `root.key`。
 - Viewer 信令 WebSocket 在升级前由 Gateway 校验 Origin、经 API `viewer-authorize` 校验会话与 Profile；拒绝时不升级连接。master token 与 Selkies token 永不返回前端。
 - Origin 比较全链使用同一规范化（`cbrowser.gateway.endpoint.normalize_origin`，t021）：Gateway 入口归一化后，API 侧 `authorize_viewer` 对入参与允许列表同样归一化再比对，尾斜杠/默认端口/大小写变体不产生假拒绝，畸形 Origin 归为 `invalid_origin`；CSRF 来源校验对畸形 `Referer`（如非法 IPv6 字面量）返回 403 而非 500。
 - 内部服务未配置时返回 503 `service_not_configured`（`retryable=false`），与数据库忙的 `database_busy`（`retryable=true`）严格区分（t021）：Supervisor/Gateway/Artifact 三个内部面经同一 `ServiceNotConfiguredError` 通道。OpenAPI 按路径标注真实服务身份：`/internal/supervisor*`（含 Artifact 面）为 `SupervisorServiceBearer`、`/internal/gateway*` 为 `GatewayServiceBearer`，两把令牌互不通用。
@@ -87,6 +88,14 @@
 - 平台专有字体只从官方渠道取得：macOS 取本机 `/System/Library/Fonts`、`/System/Library/Fonts/Supplemental`、`/Library/Fonts` 及 `/System/Library/AssetsV2/` 下的苹方资源；Windows 取微软官方 Windows 11 企业评估版 ISO，经 `7zz` 从 `sources/install.wim` 提取 `Windows/Fonts`。不使用第三方字体站或 GitHub 镜像（授权与文件来源无法校验）。
 - 字体只写入宿主 `CBROWSER_FONTS_DIR` 与 `.scratch/`，不进入任何镜像层，不进入 git 仓库；部署与发布脚本不复制字体目录（AC-008）。导入工具把字体固化为按内容寻址的不可变字体集，`manifest.json` 记录来源、来源系统版本与逐文件 sha256，供静态完整性校验（AC-001 / AC-002）。
 - 字体集只在运行时由 Supervisor 只读挂载给绑定它的 Profile，其他 Profile 与 Stream 容器不可见；系统不提供字体集删除功能，也不分发或打包字体文件。基础开源字体为镜像内的 Debian 官方包，不含平台专有字体，且绑定平台字体集时不进入指纹 Profile 的 fontconfig 白名单（`font_set_id` 为 null 时作为回退可见并由 runtime 状态标记，ADR 024）。
+
+## 预览隐私与撤销语义（t040）
+
+环境实时缩略图视同 Cookie 级私密数据：`latest.jpg` 内容与预览目录路径不进日志、错误响应与 SSE 事件，日志只记 error_type 与计数（AC-006）。文件 0600 原子写，独立挂载进 Browser 容器 `/data/preview`，不进入 user data dir；跨 Profile 读取由 `PathValidator` 归属校验与专属挂载阻断。
+
+`GET /api/v1/profiles/{id}/preview` 需登录会话，返回 `image/jpeg` + `Cache-Control: no-store` + ETag（`captured_at`），条件请求 304；无预览、策略已撤销或代次 / 实例不符统一返回 404，错误体不含路径与截图内容。`no-store` 保证私密帧不经浏览器或代理缓存留存。
+
+撤销与清除语义：关闭 `capture_preview` 即时停止采集、删除已有预览、接口随即 404，不需重启或应用配置；采集、落盘、通知、读取四环节以策略代次 + `runtime_instance_id` 围栏，关闭时截图正在进行、旧代次通知迟到、reset 后旧实例回传等迟到写入一律丢弃并清理残留，预览不会重新出现；reset / delete 清除预览目录与 `preview_captured_at`，Profile 停止保留最后一帧，「含浏览器状态」复制不复制预览。
 
 ## 验证边界
 

@@ -44,15 +44,14 @@ def api_client(tmp_path: Path, monkeypatch):
         db_path=db_file,
         admin_password_file=admin_file,
         gateway_token_file=gateway_file,
-        allowed_origins=["https://app.cbrowser.local"],
-    )
-    with TestClient(app, base_url="https://app.cbrowser.local") as client:
+            )
+    with TestClient(app, base_url="https://127.0.0.1:56661") as client:
         login = client.post("/api/v1/auth/login", json={"password": admin_pass})
         assert login.status_code == 200
         client.headers.update(
             {
                 "X-CSRF-Token": login.json()["csrf_token"],
-                "Origin": "https://app.cbrowser.local",
+                "Origin": "https://127.0.0.1:56661",
             }
         )
         yield client, fonts

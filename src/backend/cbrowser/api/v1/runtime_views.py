@@ -90,6 +90,9 @@ async def make_runtime_response(
         search_defaults=search_defaults,
         transport=transport,
         control=control,
+        backoff_started_at=rt.backoff_started_at,
+        next_retry_at=rt.next_retry_at,
+        preview_captured_at=rt.preview_captured_at,
         updated_at=rt.updated_at,
     )
 

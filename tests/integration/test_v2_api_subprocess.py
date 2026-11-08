@@ -82,7 +82,6 @@ class SubprocessServer:
             env["CBROWSER_ADMIN_PASSWORD_FILE"] = str(
                 self.auth_context.admin_password_file
             )
-            env["CBROWSER_ALLOWED_ORIGINS"] = self.auth_context.allowed_origin
             env["CBROWSER_SUPERVISOR_TOKEN_FILE"] = str(
                 self.auth_context.supervisor_token_file
             )
@@ -162,7 +161,7 @@ def server_harness(scratch_dir: Path) -> SubprocessServer:
     db_file = tmp_dir / "cbrowser_v2.db"
     log_file = tmp_dir / "server.log"
     port = find_free_port()
-    auth_ctx = create_auth_context(tmp_dir, origin=f"http://127.0.0.1:{port}")
+    auth_ctx = create_auth_context(tmp_dir)
 
     server = SubprocessServer(db_file, port, log_file, auth_context=auth_ctx)
     server.start()

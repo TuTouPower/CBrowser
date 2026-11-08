@@ -31,22 +31,21 @@ def auth_env(tmp_path: Path):
     gateway_token_file.write_text(gateway_token, encoding="utf-8")
     gateway_token_file.chmod(0o600)
 
-    allowed_origins = ["https://app.cbrowser.local", "http://localhost:3000"]
+    origin = "https://127.0.0.1:56661"
 
     app = create_app(
         db_path=db_file,
         admin_password_file=admin_pwd_file,
         gateway_token_file=gateway_token_file,
-        allowed_origins=allowed_origins,
     )
 
-    with TestClient(app, base_url="https://app.cbrowser.local") as client:
+    with TestClient(app, base_url=origin) as client:
         yield {
             "client": client,
             "admin_pass": admin_pass,
             "gateway_token": gateway_token,
             "db_file": db_file,
-            "allowed_origin": "https://app.cbrowser.local",
+            "allowed_origin": origin,
         }
 
 
@@ -166,7 +165,7 @@ def test_csrf_referer_fallback_allows_same_origin(auth_env):
         "/api/v1/auth/logout",
         headers={
             "X-CSRF-Token": csrf_token,
-            "Referer": "https://app.cbrowser.local/profiles?page=2",
+            "Referer": f"{auth_env['allowed_origin']}/profiles?page=2",
         },
     )
     assert resp.status_code == 200
@@ -434,22 +433,41 @@ def test_public_runtime_endpoints_require_auth_and_csrf(auth_env):
     assert resp_bad_origin.status_code == 403
 
 
-def test_startup_requires_explicit_allowed_origins(tmp_path, monkeypatch):
-    """An empty origin allow-list must fail startup instead of silently 403ing."""
-    monkeypatch.delenv("CBROWSER_ALLOWED_ORIGINS", raising=False)
+# TDD removal note: test_startup_requires_explicit_allowed_origins removed because
+# CBROWSER_ALLOWED_ORIGINS and create_app(allowed_origins=...) were retired per t042 AC-007;
+# Origin whitelist is now derived strictly and deterministically from AppliedNetworkAccessVersion.
+def test_applied_network_origin_single_source_and_unlisted_rejected(tmp_path: Path) -> None:
+    """t042 AC-007: Origin whitelist is derived from applied network version, unlisted is 403."""
+    db_file = tmp_path / "origin_strict.db"
+    run_database_migrations(db_file)
+    admin_pass = secrets.token_urlsafe(32)
     admin_pwd_file = tmp_path / "admin_pass.txt"
-    admin_pwd_file.write_text(secrets.token_urlsafe(16), encoding="utf-8")
+    admin_pwd_file.write_text(admin_pass, encoding="utf-8")
     admin_pwd_file.chmod(0o600)
-    for origins in (None, [], ["  "]):
-        app = create_app(
-            db_path=tmp_path / "origins.db",
-            admin_password_file=admin_pwd_file,
-            allowed_origins=origins,
+
+    app = create_app(
+        db_path=db_file,
+        admin_password_file=admin_pwd_file,
+    )
+    with TestClient(app, base_url="https://127.0.0.1:56661") as client:
+        # Applied whitelist has https://127.0.0.1:56661
+        login = client.post("/api/v1/auth/login", json={"password": admin_pass})
+        assert login.status_code == 200
+        csrf = login.json()["csrf_token"]
+
+        # Unlisted origin is rejected with 403
+        resp_bad = client.post(
+            "/api/v1/auth/logout",
+            headers={"X-CSRF-Token": csrf, "Origin": "https://unauthorized.evil.com"},
         )
-        with pytest.raises(RuntimeError, match="CBROWSER_ALLOWED_ORIGINS"), TestClient(
-            app
-        ):
-            pass
+        assert resp_bad.status_code == 403
+
+        # Valid applied origin succeeds
+        resp_ok = client.post(
+            "/api/v1/auth/logout",
+            headers={"X-CSRF-Token": csrf, "Origin": "https://127.0.0.1:56661"},
+        )
+        assert resp_ok.status_code == 200
 
 
 def test_allowed_origin_with_trailing_slash_is_accepted(tmp_path: Path) -> None:
@@ -468,9 +486,8 @@ def test_allowed_origin_with_trailing_slash_is_accepted(tmp_path: Path) -> None:
         db_path=db_file,
         admin_password_file=admin_pwd_file,
         gateway_token_file=gateway_token_file,
-        allowed_origins=["https://app.cbrowser.local/"],
     )
-    with TestClient(app, base_url="https://app.cbrowser.local") as client:
+    with TestClient(app, base_url="https://127.0.0.1:56661") as client:
         login = client.post("/api/v1/auth/login", json={"password": admin_pass})
         assert login.status_code == 200
         csrf = login.json()["csrf_token"]
@@ -478,7 +495,7 @@ def test_allowed_origin_with_trailing_slash_is_accepted(tmp_path: Path) -> None:
             "/api/v1/auth/logout",
             headers={
                 "X-CSRF-Token": csrf,
-                "Origin": "https://app.cbrowser.local/",
+                "Origin": "https://127.0.0.1:56661/",
             },
         )
         assert logout.status_code == 200
@@ -503,10 +520,9 @@ def test_login_uses_xff_from_trusted_proxy_and_returns_retry_after(
         db_path=db_file,
         admin_password_file=admin_pwd_file,
         gateway_token_file=gateway_token_file,
-        allowed_origins=["https://app.cbrowser.local"],
     )
     with TestClient(
-        app, base_url="https://app.cbrowser.local", client=("127.0.0.1", 4321)
+        app, base_url="https://127.0.0.1:56661", client=("127.0.0.1", 4321)
     ) as client:
         for _ in range(5):
             resp = client.post(

@@ -10,14 +10,29 @@ export UV_CACHE_DIR="${CBROWSER_GATE_UV_CACHE:-$REPO_ROOT/.scratch/gate_uv_cache
 GATE_VENV="${CBROWSER_GATE_VENV:-$REPO_ROOT/.scratch/gate_venv}"
 mkdir -p "$UV_CACHE_DIR"
 
+cleanup_containers() {
+  if [ -x "${PY:-}" ]; then
+    "$PY" "$REPO_ROOT/scripts/gate_container_cleanup.py"
+  fi
+}
+
+cleanup_gate_resources() {
+  if [ "${GATE_CLEANUP_DONE:-0}" = "1" ]; then return 0; fi
+  GATE_CLEANUP_DONE=1
+  if [ "$CLEAN_SCRATCH" = "1" ]; then rm -rf "$SCRATCH"; fi
+  cleanup_containers
+}
+
 if [ -n "${CBROWSER_GATE_SCRATCH:-}" ]; then
   SCRATCH="$CBROWSER_GATE_SCRATCH"
   CLEAN_SCRATCH=0
 else
   SCRATCH="$(mktemp -d)"
   CLEAN_SCRATCH=1
-  trap 'if [ "$CLEAN_SCRATCH" = "1" ]; then rm -rf "$SCRATCH"; fi' EXIT
 fi
+trap cleanup_gate_resources EXIT
+trap 'cleanup_gate_resources; exit 130' INT
+trap 'cleanup_gate_resources; exit 143' TERM
 export TMPDIR="${TMPDIR:-$SCRATCH/tmp}"
 mkdir -p "$TMPDIR"
 
@@ -64,7 +79,8 @@ run_gate_suite() {
     -m "serial" --basetemp="$basetemp/serial" --junitxml="$b" "$@" || c2=$?
   "$PY" scripts/merge_junit.py --output "$junit" "$a" "$b"
   rm -f "$a" "$b"
-  if [ "$c1" != 0 ]; then return "$c1"; fi
+  if [ "$c1" = 5 ] && [ "$c2" = 5 ]; then return 5; fi
+  if [ "$c1" != 0 ] && [ "$c1" != 5 ]; then return "$c1"; fi
   if [ "$c2" != 0 ] && [ "$c2" != 5 ]; then return "$c2"; fi
   return 0
 }
@@ -163,6 +179,8 @@ else
   prepare_env
 fi
 
+cleanup_containers
+
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
   SUITE_ORDER="$SUITE_ORDER image_packages e2e"
 fi
@@ -176,6 +194,9 @@ unset CBROWSER_FONTS_DIR
 
 # ---------------- evidence mode: concurrent groups (t044 AC-008) ----------------
 if [ -n "$EVIDENCE_DIR" ]; then
+  # t045: attribute any mid-test container disappearance to its cleanup
+  # caller + xdist worker in the evidence directory.
+  export CBROWSER_E2E_DELETION_LOG="$EVIDENCE_DIR/container_deletions.jsonl"
   run_suite requirements_check "scripts/generate_requirements.sh --check" \
     bash scripts/generate_requirements.sh --check
 

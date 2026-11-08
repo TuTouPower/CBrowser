@@ -49,6 +49,7 @@ from supervisor_recovery_probe.gateway_service import (
     ProductionGatewayService,
 )
 from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
+from wait import poll_until
 
 pytestmark = pytest.mark.serial
 
@@ -120,7 +121,7 @@ def real_api_and_sup(tmp_path: Path):
         s.bind(("127.0.0.1", 0))
         gw_port = s.getsockname()[1]
 
-    auth_ctx = create_auth_context(tmp_path, origin=f"http://127.0.0.1:{api_port}")
+    auth_ctx = create_auth_context(tmp_path)
     root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
     for name in (
@@ -554,15 +555,21 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
         ) as sup_client:
-            for _ in range(100):
+            async def sup_health_code() -> int | None:
                 try:
-                    if (
+                    return (
                         await sup_client.get("/supervisor/v1/health")
-                    ).status_code == 200:
-                        break
+                    ).status_code
                 except httpx.TransportError:
-                    pass
-                await asyncio.sleep(0.1)
+                    return None
+
+            await poll_until(
+                sup_health_code,
+                lambda code: code == 200,
+                timeout=10.0,
+                interval=0.1,
+                description="supervisor health before first profile start",
+            )
 
             # Start Profile A (allocates the run-local base port)
             res_a = await sup_client.post(
@@ -603,15 +610,21 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         async with httpx.AsyncClient(
             base_url=sup_url, headers=sup_headers, timeout=60.0, trust_env=False
         ) as sup_client2:
-            for _ in range(100):
+            async def sup_health_code2() -> int | None:
                 try:
-                    if (
+                    return (
                         await sup_client2.get("/supervisor/v1/health")
-                    ).status_code == 200:
-                        break
+                    ).status_code
                 except httpx.TransportError:
-                    pass
-                await asyncio.sleep(0.1)
+                    return None
+
+            await poll_until(
+                sup_health_code2,
+                lambda code: code == 200,
+                timeout=10.0,
+                interval=0.1,
+                description="resurrected supervisor health before status query",
+            )
 
             # Query status from resurrected supervisor: ports MUST be identical
             # (base, base + 1). Health 200 is liveness only: the

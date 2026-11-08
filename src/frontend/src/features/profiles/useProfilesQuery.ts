@@ -17,6 +17,8 @@ import type {
   GroupCreateRequest,
   GroupUpdateRequest,
   ProxyResponse,
+  ProxyCreateRequest,
+  ProxyUpdateRequest,
   FontSetInfo,
 } from "../../shared/api/types";
 import { ProfileEventsClient } from "../../shared/api/sse";
@@ -443,10 +445,22 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     });
 
+    const unsubscribePreview: (() => void) | undefined =
+      sseClient.onPreviewEvent?.((event) => {
+        queryClient.setQueryData(
+          profileKeys.runtime(event.profile_id),
+          (old: ProfileRuntimeResponse | undefined) => {
+            if (!old) return undefined;
+            return { ...old, preview_captured_at: event.captured_at };
+          },
+        );
+      });
+
     sseClient.start();
 
     return () => {
       unsubscribe();
+      unsubscribePreview?.();
       sseClient.stop();
     };
   }, [sseClient, queryClient]);
@@ -548,6 +562,50 @@ export function useReorderGroupsMutation(
       client.groups.reorder({ ordered_ids: input.orderedIds }, actionKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+    },
+  });
+}
+
+export function useCreateProxyMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProxyResponse, Error, ProxyCreateRequest> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) => client.proxies.create(input, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useUpdateProxyMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<
+  ProxyResponse,
+  Error,
+  { proxyId: string; data: ProxyUpdateRequest }
+> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) =>
+      client.proxies.update(input.proxyId, input.data, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}
+
+export function useDeleteProxyMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<void, Error, string> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input, actionKey }) => client.proxies.remove(input, actionKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
     },
   });
 }

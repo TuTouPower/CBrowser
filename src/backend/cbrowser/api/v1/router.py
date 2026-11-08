@@ -14,6 +14,7 @@ from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.api.v1.groups_router import group_router
 from cbrowser.api.v1.proxies_router import proxy_router
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
+from cbrowser.preview import PreviewPolicy, clear_preview, write_policy
 from cbrowser.api.v1.control_router import (
     get_optional_control_service,
 )
@@ -60,6 +61,44 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, s
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("cbrowser.api.v1.router")
+
+
+async def _apply_preview_policy(
+    profile_id: str,
+    enabled: bool,
+    epoch: int,
+    request: Request,
+    service: ProfileService,
+) -> None:
+    instance: str | None = None
+    try:
+        runtime = await service.get_runtime(profile_id)
+        instance = runtime.runtime_instance_id
+    except ProfileNotFoundError:
+        pass
+    directory = service.get_preview_dir(profile_id)
+    if directory is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Preview storage unavailable",
+        )
+    write_policy(
+        directory,
+        PreviewPolicy(
+            enabled=enabled,
+            epoch=epoch,
+            runtime_instance_id=instance,
+        ),
+    )
+    if not enabled:
+        clear_preview(directory)
+        await service.clear_preview_capture(profile_id)
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None:
+        await coordinator.request_preview_policy(profile_id, enabled, epoch, instance)
+        if coordinator.has_pending_preview_policy(profile_id):
+            coordinator.trigger_reconcile(profile_id)
+
 
 v1_router = APIRouter(prefix="/api/v1")
 profile_router = APIRouter(
@@ -343,20 +382,25 @@ async def get_profile(
 async def update_profile(
     profile_id: str,
     payload: ProfileUpdateRequest,
+    request: Request,
     service: Annotated[ProfileService, Depends(get_profile_service)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
     x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
     operation_id: Annotated[str | None, Query()] = None,
 ):
     op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
+    patch_data = payload.model_dump(exclude_unset=True)
+    preview_patch = "capture_preview" in patch_data
+    before_epoch: int | None = None
+    if preview_patch:
+        before = await service.get_preview_policy(profile_id)
+        before_epoch = before[1] if before is not None else None
     try:
-        patch_data = payload.model_dump(exclude_unset=True)
         p = await service.update_profile(
             profile_id=profile_id,
             patch_data=patch_data,
             operation_id=op_id,
         )
-        return ProfileResponse.from_domain(p)
     except InvalidFontSetBindingError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
@@ -366,6 +410,11 @@ async def update_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
         )
+    if preview_patch and before_epoch is not None:
+        after = await service.get_preview_policy(profile_id)
+        if after is not None and after[1] != before_epoch:
+            await _apply_preview_policy(profile_id, after[0], after[1], request, service)
+    return ProfileResponse.from_domain(p)
 
 
 @profile_router.delete(

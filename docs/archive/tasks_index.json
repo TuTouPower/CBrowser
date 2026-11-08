@@ -596,6 +596,54 @@
             "dir": "docs/archive/tasks/t037_environment_management_ui"
         },
         {
+            "tid": "t038",
+            "slug": "proxy_library_ui",
+            "title": "代理库界面",
+            "status": "done",
+            "branch": "t038_proxy_library_ui",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "1ca4cb4fd4212ddfb7ad4b6c9bcfcbcc9b1df65d",
+            "depends_on": "t037,t045",
+            "conflicts_with": "",
+            "note": "来源 plan_20261105_ui_redesign WP10",
+            "dir": "docs/archive/tasks/t038_proxy_library_ui"
+        },
+        {
+            "tid": "t039",
+            "slug": "session_page_redesign",
+            "title": "会话页重设计",
+            "status": "done",
+            "branch": "t039_session_page_redesign",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "90293b4ae3fc74d39de7449f2a419b471628f431",
+            "depends_on": "t037,t043",
+            "conflicts_with": "t038",
+            "note": "来源 plan_20261105_ui_redesign WP12",
+            "dir": "docs/archive/tasks/t039_session_page_redesign"
+        },
+        {
+            "tid": "t040",
+            "slug": "environment_preview_thumbnails",
+            "title": "环境实时缩略图",
+            "status": "done",
+            "branch": "t040_environment_preview_thumbnails",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "d9e0843545275d26f64d7b2932fa933c4e3263fb",
+            "depends_on": "t037",
+            "conflicts_with": "t038,t039",
+            "note": "来源 plan_20261105_ui_redesign WP13",
+            "dir": "docs/archive/tasks/t040_environment_preview_thumbnails"
+        },
+        {
             "tid": "t041",
             "slug": "fingerprint_platform_fonts",
             "title": "指纹平台与平台字体运行时",
@@ -610,6 +658,22 @@
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP14+WP15；2026-11-05 按审阅前移到 UI task 之前，界面拆入 t036/t037/t039",
             "dir": "docs/archive/tasks/t041_fingerprint_platform_fonts"
+        },
+        {
+            "tid": "t042",
+            "slug": "lan_access_protocol_settings",
+            "title": "局域网访问可配置（仅 HTTPS）",
+            "status": "done",
+            "branch": "t042_lan_access_protocol_settings",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "b43c9212d29492ab8c6310c93b2b7015681e6fd5",
+            "depends_on": "t039,t043",
+            "conflicts_with": "t038,t040",
+            "note": "来源 p037；2026-11-05 用户决定仅 HTTPS（D14）；须先完成正式 spike 并以 ADR 定案边缘容器重建归属",
+            "dir": "docs/archive/tasks/t042_lan_access_protocol_settings"
         },
         {
             "tid": "t043",
@@ -642,6 +706,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t044_e2e_parallel_execution"
+        },
+        {
+            "tid": "t045",
+            "slug": "e2e_gate_stability_cleanup",
+            "title": "门禁稳定性与 E2E 遗留缺陷合并收口",
+            "status": "done",
+            "branch": "t045_e2e_gate_stability_cleanup",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "a361058152631d6b4c2621a78cd1609e975621e0",
+            "depends_on": "t037",
+            "conflicts_with": "",
+            "note": "来源 p046 p048 p049 p050 用户授权聚合",
+            "dir": "docs/archive/tasks/t045_e2e_gate_stability_cleanup"
         }
     ]
 }

@@ -19,7 +19,7 @@ def artifact_env(tmp_path: Path):
     password_file = tmp_path / "admin.txt"
     password_file.write_text(admin_password, encoding="utf-8")
     password_file.chmod(0o600)
-    origin = "https://app.cbrowser.local"
+    origin = "https://127.0.0.1:56661"
     supervisor_token = secrets.token_urlsafe(32)
     supervisor_token_file = tmp_path / "supervisor.token"
     supervisor_token_file.write_text(supervisor_token, encoding="utf-8")
@@ -28,8 +28,7 @@ def artifact_env(tmp_path: Path):
         db_path=db_file,
         admin_password_file=password_file,
         supervisor_token_file=supervisor_token_file,
-        allowed_origins=[origin],
-        artifacts_root=tmp_path / "artifacts",
+                artifacts_root=tmp_path / "artifacts",
         max_artifact_bytes=1024 * 1024,
     )
     with TestClient(app, base_url=origin) as client:

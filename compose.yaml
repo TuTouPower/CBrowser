@@ -22,7 +22,6 @@ services:
       CBROWSER_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_key
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
       CBROWSER_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
-      CBROWSER_ALLOWED_ORIGINS: ${CBROWSER_PUBLIC_ORIGIN:?set CBROWSER_PUBLIC_ORIGIN}
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:/data
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
@@ -53,8 +52,9 @@ services:
       CBROWSER_GATEWAY_TOKEN_FILE: /run/secrets/gateway_key
       CBROWSER_GATEWAY_API_URL: http://api:8000
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
-      CBROWSER_ALLOWED_ORIGINS: ${CBROWSER_PUBLIC_ORIGIN:?set CBROWSER_PUBLIC_ORIGIN}
+      CBROWSER_NETWORK_STATE_DIR: /data/network
     volumes:
+      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/network:/data/network:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}:/run/secrets:ro
     networks: [edge]
     depends_on:
@@ -127,9 +127,9 @@ services:
       CBROWSER_CADDYFILE_SHA256: ${CBROWSER_CADDYFILE_SHA256:-}
       CBROWSER_FRONTEND_SHA256: ${CBROWSER_FRONTEND_SHA256:-}
     ports:
-      - "0.0.0.0:${CBROWSER_HTTPS_PORT:-56661}:443"
+      - "${CBROWSER_BIND_HOST:?run scripts/deploy_v2.sh first}:${CBROWSER_HTTPS_PORT:?run scripts/deploy_v2.sh first}:443"
     volumes:
-      - ./config/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/network/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./src/frontend/dist:/var/www/html:ro
       - caddy_data:/data
       - caddy_config:/config

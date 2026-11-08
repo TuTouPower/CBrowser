@@ -229,8 +229,7 @@ class _Chain:
         api = create_app(
             db_path=db_file,
             admin_password_file=admin_file,
-            allowed_origins=[origin],
-            artifacts_root=root / "artifacts",
+                        artifacts_root=root / "artifacts",
             supervisor_url=f"http://127.0.0.1:{self.supervisor_port}",
             supervisor_token_file=token_file,
         )

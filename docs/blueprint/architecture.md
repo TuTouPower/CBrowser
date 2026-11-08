@@ -163,7 +163,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |Supervisor|Docker Engine|Docker Engine API (`/var/run/docker.sock`)|**宿主机唯一持有 Docker Socket 的服务**；强制校验与规范化挂载路径|
 |Supervisor|Browser Agent|Unix Domain Socket (`agent.sock`)|健康检查、CDP 授权代理、下载事件与退出事件接收|
 |Stream Agent|Stream Gateway|长连接注册与信令隧道|动态注册运行时状态，双向透传 SDP/ICE 消息|
-|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`，仅发布至宿主回环 `127.0.0.1`）；无 TURN 中继（ADR 013）|
+|外部 Chrome|Stream Runtime|WebRTC DTLS-SRTP 媒体传输|直连经专属 UDP mux 端口（`30000–30991`，本机模式发布至 `127.0.0.1`，局域网模式发布至 `0.0.0.0`）；无 TURN 中继（ADR 026 修订 ADR 013）|
 |Browser Runtime A|Browser Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
 |Stream Runtime A|Stream Runtime B|**禁止**|相互隔离，禁止跨 Profile 挂载或访问|
 |运行容器|Docker Socket|**禁止**|所有运行容器严禁挂载 `/var/run/docker.sock`|

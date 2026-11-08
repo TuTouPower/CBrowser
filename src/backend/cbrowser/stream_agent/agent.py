@@ -191,6 +191,15 @@ class DetachedUpstream:
         self.timer_task = timer_task
 
 
+async def _default_wait_heartbeat(trigger: asyncio.Event, timeout: float) -> None:
+    """Production heartbeat wait: awakened immediately by trigger or times out."""
+    try:
+        await asyncio.wait_for(trigger.wait(), timeout=timeout)
+        trigger.clear()
+    except asyncio.TimeoutError:
+        pass
+
+
 class StreamAgent:
     def __init__(
         self,
@@ -226,6 +235,7 @@ class StreamAgent:
         self.heartbeat_interval: float = 10.0
         self._heartbeat_task: asyncio.Task | None = None
         self._sleep_fn = asyncio.sleep
+        self._wait_heartbeat = _default_wait_heartbeat
 
         # t031: human-takeover reports pending Gateway delivery. The
         # policy callback appends here synchronously (input delivery
@@ -235,6 +245,14 @@ class StreamAgent:
         # itself is idempotent, so a later input re-reports it anyway.
         self._pending_takeovers: list[dict[str, str | None]] = []
         self.policy.on_human_takeover = self.report_human_takeover
+
+        # Event-driven heartbeat trigger on video consumer or capture state changes
+        self._heartbeat_trigger = asyncio.Event()
+        self.policy.on_video_state_changed = self.trigger_heartbeat
+
+    def trigger_heartbeat(self) -> None:
+        """Trigger an immediate heartbeat due to video/capture state change."""
+        self._heartbeat_trigger.set()
 
     def report_human_takeover(
         self, conn_id: str | None, input_kind: str
@@ -522,7 +540,7 @@ class StreamAgent:
                     "Heartbeat send failed (%s); retrying next interval",
                     type(e).__name__,
                 )
-            await self._sleep_fn(self.heartbeat_interval)
+            await self._wait_heartbeat(self._heartbeat_trigger, self.heartbeat_interval)
 
     async def _drain_workers(self, workers: list[ViewerWorkerEntry]) -> None:
         """Await owned tasks and sockets after invalidating their generations."""

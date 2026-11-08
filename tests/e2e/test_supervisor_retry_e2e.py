@@ -332,7 +332,15 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             b1_c.kill(signal=signal.SIGKILL)
             logger.info("Killed container %s at mono=%.3f", b1_cid, t_kill_2)
 
-            updated_at_2_dt = None
+            # Product fact: the API records backoff_started_at (failure time)
+            # and next_retry_at (= backoff_started_at + 10s) when strike 2 is
+            # observed. A Supervisor restart resumes the remaining window
+            # against that durable deadline; it does NOT replay a full 10s.
+            # Both endpoints of delay_2 are server-side timestamps (API DB
+            # fact + Docker container Created), so no test-side polling clock
+            # quantization is involved.
+            backoff_started_dt = None
+            next_retry_dt = None
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 r_rt = await api_client.get(
@@ -342,12 +350,19 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                 if (
                     rt_val.get("failure_count") == 2
                     and rt_val.get("runtime_instance_id") is None
+                    and rt_val.get("backoff_started_at")
+                    and rt_val.get("next_retry_at")
                 ):
-                    updated_at_2_dt = datetime.fromisoformat(
-                        rt_val["updated_at"]
+                    backoff_started_dt = datetime.fromisoformat(
+                        rt_val["backoff_started_at"]
+                    ).replace(tzinfo=UTC)
+                    next_retry_dt = datetime.fromisoformat(
+                        rt_val["next_retry_at"]
                     ).replace(tzinfo=UTC)
                     break
-            assert updated_at_2_dt is not None, "API did not register failure 2"
+            assert backoff_started_dt is not None, "API did not register failure 2"
+            assert next_retry_dt is not None, "API did not record the retry deadline"
+            assert (next_retry_dt - backoff_started_dt).total_seconds() == 10.0
 
             # Sleep ~2.5s into the 10s delay, then SIGKILL Supervisor container
             await asyncio.sleep(2.5)
@@ -395,11 +410,21 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
 
             assert inst_2 is not None and b2_created_dt is not None
             tracked_cids.append(b2_cid)
-            delay_2 = (b2_created_dt - updated_at_2_dt).total_seconds()
+            # Both endpoints are server-side timestamps: the API's durable
+            # backoff_started_at (DB) and the Docker container Created. No
+            # test-side polling clock is involved, so there is no ±0.25s
+            # quantization jitter. Product semantics: the API records a
+            # durable deadline (next_retry_at = backoff_started_at + 10s);
+            # a Supervisor restart resumes the remaining window against that
+            # deadline, it never replays a full 10s delay. The 10.0s lower
+            # bound asserts the deadline was not reset by the crash; the
+            # 5.0s tolerance covers bounded rebuild overhead afterwards.
+            delay_2 = (b2_created_dt - backoff_started_dt).total_seconds()
             logger.info(
-                "Strike 2 across crash: updated_at=%s, created_at=%s, "
-                "delta=%.3fs (expected >= 10.0s)",
-                updated_at_2_dt,
+                "Strike 2 across crash: backoff_started_at=%s, next_retry_at=%s, "
+                "created_at=%s, backoff=%.3fs (expected >= 10.0s)",
+                backoff_started_dt,
+                next_retry_dt,
                 b2_created_dt,
                 delay_2,
             )
@@ -411,7 +436,8 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                     "strike": 2,
                     "target_delay_sec": 10.0,
                     "actual_delay_sec": delay_2,
-                    "updated_at": updated_at_2_dt.isoformat(),
+                    "backoff_started_at": backoff_started_dt.isoformat(),
+                    "next_retry_at": next_retry_dt.isoformat(),
                     "container_created_at": b2_created_dt.isoformat(),
                     "instance_id": inst_2,
                     "supervisor_sigkill_verified": True,

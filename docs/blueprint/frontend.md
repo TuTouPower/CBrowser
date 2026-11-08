@@ -4,7 +4,7 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 
 ## 1. 外壳与数据
 
-- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。t037 / t038 / t039 交付前 `/`、`/session`、`/proxies` 为空状态页，其余以现有组件挂新路径。
+- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。`/` 由 t037 环境列表承载、`/proxies` 由 t038 代理库承载；`/session` 为会话入口页（t039：本标签页无目标时列出运行中环境供选择）、`/session/:profileId` 为 t039 重新设计的新会话页。t039 已启用全局颜色门禁（见 testing.md）。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `detail`。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
@@ -20,6 +20,9 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 - 页面与布局的动作状态（error/pending）按动作目标 Profile 隔离呈现（`scopeMutationToProfile`）：常驻组件（AppLayout、会话页、详情页）只显示目标为当前 Profile 的动作状态，其他 Profile 的错误、pending 与迟到响应不进入当前视图，本地结果横幅不跨 Profile 携带。
 - 同一 Profile 可有多个页面同时连接，全部为 controller；前端不维护租约或唯一控制者状态。
 - 页面关闭、刷新或切换目标只关闭自身 PeerConnection 与信令，不调用 Profile stop；只有用户明确停止 Profile 才停止 Browser。
+- 详情面板展开状态持久化在 `cbrowser.session.details_open`（刷新后保持），默认收起（t039）。
+- 专注模式隐藏导航侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端 iframe）；专注状态经 `SessionFocusProvider` 提升到 `AppProviders`（`app/providers.tsx` 的 `AuthProvider` 内）供 `AppLayout` 与会话页共享读取，专注期间不条件卸载 iframe 与 `useBrowserSession`，不重建连接、不中断远端输入（t039）。
+- `/session` 会话入口在本标签页无目标时列出运行中环境（真实链接）；侧栏「会话」导航在本标签页已有目标时回跳该会话（t039）。
 
 ## 3. Selkies 官方客户端薄适配
 
@@ -41,10 +44,17 @@ v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 
 - 剪贴板：`ClipboardPermissionHint` 在宿主会话页中按需探测权限（与 `/selkies` iframe 同源），拒绝/提示状态显示可执行说明；自身不调用 `navigator.clipboard` 读写，复制粘贴同步由 iframe 内官方 Selkies seamless 客户端完成（decisions 012）。
 - 音频：每页静音按钮经官方 `pipelineControl` audio（`STOP_AUDIO`/`START_AUDIO`）；音频状态（`audio_status.ts`）由 getStats 推导，与视频阶段独立：`normal`/`muted`/`no_track`/`no_data`/`unknown`，内容静音不判故障。
 - 显示设置：运行时 `config_version` 与 Profile 当前配置版本不同即显示待应用提示与“应用并重启”（经 API stop → running）。该动作带阶段跟踪（按动作键保存 stop 前实例与 start 已发出标记）：自动重试先观测运行时再续跑——stop 已生效不重发不重等、start 已生效而响应丢失时收敛到新实例的 running（不等待 stopped、不停止或重建新实例）、未生效步骤以同一操作键续跑、状态查询持续失败有界报错。
+- 会话页画面区由 `SessionPage` 承载：iframe 铺满、不绘制模拟浏览器框（ADR 003/006）。全部非 `connected` 阶段显示居中状态面板（`SessionStagePanel`），给出阶段原因与可执行操作（重连 / 查看运行状态 / 启动），`connected` 不显示面板；阶段清单以 blueprint 本节为权威——`connecting_ice` 在 `types.ts` 未定义，`SessionStagePanel` 以字符串字面量分支保留该 stage，逻辑层（`useBrowserSession`）暂不产生它（t039）。
+- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 网络 / 指纹 / 运行四区（指纹含平台、字体集与缺失字体告警；运行含浏览器版本与 UA、实例 ID、配置版本、transport 状态、最近错误、启动时间），每个值可复制（t039）。
+- 剪贴板权限提示（`ClipboardPermissionHint`）、音频状态与诊断浮层按设计系统重建、行为语义不变：剪贴板只探测权限不读写本机剪贴板，音频经官方 `pipelineControl` 的 `STOP_AUDIO` / `START_AUDIO`，诊断取自 `RTCPeerConnection` 状态与 `getStats()`（t039）。
+- 旧会话页组件（`BrowserSessionPage` / `BrowserSessionView` / `BrowserSessionMount` 及旧测试）整体删除；`data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），会话 E2E 与组件测试选择器同步改写（t039）。
+- 旧页面全部替换后启用全局颜色门禁：`npm run design:lint` 的 `--lint` 经 `runLintSources(sources)` 同时跑尺寸断言与颜色断言，扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 testing.md「t039 全局颜色门禁」）。
 
 SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点事件 id（快照时刻最后一条实时事件序号），不进入共享历史；重连以基点 id 经 Last-Event-ID 续传，服务端回放基点之后的实时事件，无缺口无倒退；窗口不足时服务端以全量快照显式重建。Profile 详情页呈现独立的默认搜索初始化状态：`search_defaults.state == "failed"` 时显示与浏览器可用性分离的失败提示与重试按钮（调用 `POST /profiles/{id}/runtime/search-defaults/retry`），不要求重启浏览器。
 
 分层观测消费（t026）：runtime 响应与 SSE 事件携带 `transport` 分层观测（browser/stream/transport 状态与最近错误），前端校验与缓存同步规则与 `search_defaults` 同构：结构不合法的事件整帧拒绝，事件未携带字段时保留缓存值。会话信令呈现区分恢复与失败：首次连接的信令异常关闭（含 1006）在 transport 为 recovering 时呈现恢复中并在有界窗口（默认 30 秒）内轮询运行状态，transport 变 ready 后重连、明确 failed 或窗口耗尽才呈现信令失败；已连接后的断开沿用既有 resume 语义不变。
+
+SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按类型路由，`runtime_state` 走原运行状态通道，新增 `profile_preview` 走 `onPreviewEvent`；`useProfilesQuery.ts` 订阅 preview 事件刷新 runtime 缓存。`profile_preview` 只实时扇出、绝不进入 runtime 事件重放环，SSE 重连后的 runtime 状态重放不受缩略图事件数量影响（AC-003）。`ProfileRuntimeResponse.preview_captured_at` 无预览为 null，首屏据此显示图片或占位，**无值不请求图片**；`EnvironmentCard` 以 `?v=<captured_at>` 作为图片 URL 版本参数触发刷新，404 / onError 回退占位。
 
 ## 5. 测试
 
@@ -63,7 +73,7 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 
 ## 7. 环境管理界面（t037）
 
-- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`session` / `proxies` 占位页分别留给 t039 / t038。
+- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`/proxies` 由 t038 代理库页面承载（见第 8 节），`session` 占位页留给 t039。
 
 - 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、网络列（代理名 / 协议 / 地区）与分组使用环境数由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。`ApiClient` 新增 `groups` / `proxies` / `fontSets` 三个命名空间，只复用 `request()` 与生成类型，不手写契约。
 
@@ -76,3 +86,24 @@ SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点
 - 真实栈无头 E2E「新建 → 启动 → 打开会话」走新建弹窗 UI（`env-new` → `env-new-dialog` → `profile-form-name` → `profile-form-submit`），不再直接 POST API 伪造创建。
 
 - 尺寸语义 token（`DESIGN.md` 的 `## Container sizes`）：`--container-*` 独立于 `--spacing-*`，业务代码只用 `max-w-dialog`/`w-dialog-width`/`max-w-panel`/`max-w-page`/`min-w-menu`/`h-control-sm` 等语义类；`npm run design:lint` 的 `assertNoSizeTokenHijack` 禁止命名尺寸类（`max-w-lg` 等会被 spacing token 劫持）与任意尺寸值（`max-w-[...]`）。
+
+## 8. 代理库界面（t038）
+
+- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载（替换 t036 占位页）；`ProxyListToolbar` 提供搜索（名称 / host / 地区标签，大小写不敏感）与协议筛选（http / https / socks5）可组合，`ProxyTable` 列 = 名称 / 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 认证（有 / 无，文字不可只靠颜色）/ 地区（`RegionCode` + 标签）/ 使用环境数 / 操作。页面沿用环境列表的全量客户端过滤、无分页。
+- 使用环境数为 `<Link to={"/?proxy=" + id}>`：`useEnvironmentFilters` 已读 `proxy` URL 参数，环境列表无需改动即可按代理筛选（AC-006）。
+- 添加 / 编辑用受控 `Dialog`（`ProxyFormDialog`），字段校验与 `ProxyCreateRequest` / 后端 `models.py` 一致（name 1..255、host 1..512、port 1..65535 整数、country_code 空或 2 字母大写、scheme 枚举），错误在字段旁与底部汇总。保存成功后 `proxyKeys.lists()` 与 `profileKeys.lists()` 失效，列表即时更新。
+- 密码只写：`ProxyResponse` 不含 password；编辑态只凭 `has_password` 显示「已设置，留空不修改」，提供「清除密码」。提交 `ProxyUpdateRequest.password` 三态——留空**省略该键**、`null` 清除、字符串设置；已存密码不进入表单 state / DOM / query cache / URL，关闭弹窗清空本地 state。
+- 「从 URL 粘贴」由纯函数 `features/proxies/parseProxyUrl.ts` 解析 `scheme://[user[:pass]@]host[:port]`：scheme 白名单归一、IPv6 方括号、百分号编码账密解码、port 1..65535；失败返回判别联合的错误结果，**已填字段保持不变**。表驱动测试覆盖合法与非法形态。
+- 删除保护：`used_by_count > 0` 时删除按钮禁用并提示先改绑；后端 409 响应体为 `{"detail":{"code":"proxy_in_use","used_by_count":N}}`（非 `ErrorResponse`），前端从 `ApiError.detail` / `.data` 取引用数展示，**不依赖 `errorCode`**。
+- 带认证 SOCKS5（AC-007）：依据 `docs/findings/d031_authenticated_socks5_supported.md` 与 ADR 023（`decisions.md`），CloakBrowser 0.6.4 / Chromium 146 支持带认证 SOCKS5；后端无任何 socks5 拒绝分支、API 永不返回该 422。表单直接允许 `socks5` + 用户名/密码提交，**无降级路径、无「引擎不支持」提示**；所有后端错误统一走 `describeError()` 结构化展示。task.md 中「引擎不支持时阻止提交」沿用旧假设、前提不成立，不实现推测性代码（详见 `docs/specs/proxy_management.md` 第 5 节）。
+- `ApiClient.proxies` 在 t037 的 `list`/`get` 之外补 `create`/`update`/`remove`（照 `groups` 同构、写操作带 `Idempotency-Key`），`useProfilesQuery.ts` 补 `useCreateProxyMutation` / `useUpdateProxyMutation` / `useDeleteProxyMutation`（`useActionKeyMutation` 独立幂等键、失效代理与 Profile 列表）；`shared/api/types.ts` 补 `ProxyCreateRequest` / `ProxyUpdateRequest` 生成类型别名，不改 generated 产物。
+- i18n 在 `i18n.tsx` 的 en / zh 同步补 `proxy*` 键，`i18n.test.tsx` 键集相等与非空兜底。
+- 真实栈无头 E2E（`tests/e2e/test_proxy_library_e2e.py`，`serial`）覆盖 AC-008：UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经本地记录代理（日志 `PROXY_GET`），不依赖公网。
+
+## 9. 网络访问与设置（t042）
+
+- 设置页 `/settings` 承载「网络访问 (Network Access)」区块：支持配置局域网开关（`lan_access_enabled`）与通告 IP（`lan_advertised_ip`，单播 IPv4 校验）。
+- 待应用与当前生效状态：双态并列对比展示，保存只更新待应用配置（`PUT /api/v1/network/settings`）；应用操作需管理员密码确认（`POST /api/v1/network/apply`）。
+- 入口变化提示（AC-009）：应用前调用 `GET /api/v1/network/check-disconnect`，若当前来源将不可达则弹出告警并提供重定向指引与新入口地址。
+- 根证书下载引导：提供 `GET /api/v1/network/root-ca` 直接下载链接与系统/浏览器根证书导入指引。
+- 国际化：中英文字典同步完备定义（`networkAccess*`, `lanAccess*`, `rootCa*`）。

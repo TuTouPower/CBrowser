@@ -22,7 +22,11 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 import websockets
-from cbrowser.domain.models import ProfileConfig, ProfileRuntimeResponse
+from cbrowser.domain.models import (
+    PreviewPolicySyncRequest,
+    ProfileConfig,
+    ProfileRuntimeResponse,
+)
 from cbrowser.secret_files import read_secret_file
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from cbrowser.supervisor.core import (
@@ -33,11 +37,14 @@ from cbrowser.supervisor.core import (
 from cbrowser.supervisor.path_validator import short_unix_socket_path
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
+    ConvergeStreamsRequest,
     ProfileRuntimeStatus,
     ReadinessResponse,
+    RebuildEdgeRequest,
     ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
+    PreviewPolicySyncResponse,
     SearchDefaultsRetryRequest,
     SearchDefaultsStatusResponse,
     StartProfileRequest,
@@ -291,6 +298,17 @@ def create_control_app(
         return {"status": "ok"}
 
     @app.post(
+        "/supervisor/v1/profiles/{profile_id}/preview-policy",
+        response_model=PreviewPolicySyncResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def sync_preview_policy(
+        profile_id: str, req: PreviewPolicySyncRequest
+    ):
+        await core.apply_preview_policy(profile_id, req)
+        return PreviewPolicySyncResponse()
+
+    @app.post(
         "/supervisor/v1/profiles/reset-blocked",
         response_model=ResetBlockedResponse,
         dependencies=[Depends(verify_token)],
@@ -530,5 +548,28 @@ def create_control_app(
                 await websocket.close()
             except Exception:  # noqa: BLE001 - already-closed client socket is harmless
                 pass
+
+    @app.post(
+        "/supervisor/v1/network/rebuild-edge",
+        dependencies=[Depends(verify_token)],
+    )
+    async def rebuild_edge(req: RebuildEdgeRequest):
+        return await core.rebuild_edge_proxy(
+            target_version=req.target_version,
+            bind_host=req.bind_host,
+            https_port=req.https_port,
+            caddyfile_path=req.caddyfile_path,
+        )
+
+    @app.post(
+        "/supervisor/v1/network/converge-streams",
+        dependencies=[Depends(verify_token)],
+    )
+    async def converge_streams(req: ConvergeStreamsRequest):
+        return await core.converge_network_streams(
+            target_version=req.target_version,
+            bind_host=req.bind_host,
+            advertised_ip=req.advertised_ip,
+        )
 
     return app

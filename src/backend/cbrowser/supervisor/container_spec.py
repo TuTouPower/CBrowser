@@ -70,6 +70,8 @@ def stream_labels(
     profile_id: str,
     runtime_instance_id: str,
     config_version: Any,
+    bind_host: str = "127.0.0.1",
+    advertised_ip: str = "127.0.0.1",
 ) -> dict[str, str]:
     return {
         "com.cbrowser.managed-by": "supervisor",
@@ -79,6 +81,8 @@ def stream_labels(
         "com.cbrowser.network-policy": "v1",
         "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.prefix": prefix,
+        "com.cbrowser.stream.bind-host": bind_host,
+        "com.cbrowser.stream.advertised-ip": advertised_ip,
     }
 
 
@@ -170,5 +174,5 @@ def stream_environment(
     return env
 
 
-def stream_ports(udp_mux_port: int) -> dict[str, tuple[str, int]]:
-    return {f"{udp_mux_port}/udp": ("127.0.0.1", udp_mux_port)}
+def stream_ports(udp_mux_port: int, bind_host: str = "127.0.0.1") -> dict[str, tuple[str, int]]:
+    return {f"{udp_mux_port}/udp": (bind_host, udp_mux_port)}

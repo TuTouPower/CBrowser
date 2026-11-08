@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useI18n } from "../../i18n";
 import { Checkbox, GroupChip, StatusBadge } from "../../shared/ui";
 import { formatRelativeTime } from "./formatRelativeTime";
@@ -16,17 +17,25 @@ export function EnvironmentCard({
   selected,
   onToggle,
   onAction,
+  previewCapturedAt,
 }: {
   row: EnvironmentRow;
   selected: boolean;
   onToggle: (id: string, checked: boolean) => void;
   onAction: (action: EnvironmentAction, row: EnvironmentRow) => void;
+  previewCapturedAt?: string | null;
 }) {
   const { t } = useI18n();
   const id = row.profile.id;
   const observed = row.runtime?.observed_state ?? "stopped";
   const status = statusDescriptor(observed);
   const running = observed === "running";
+  const [failedCapturedAt, setFailedCapturedAt] = useState<string | null>(null);
+  const capturedAt = previewCapturedAt ?? null;
+  const previewUrl =
+    capturedAt && failedCapturedAt !== capturedAt
+      ? `/api/v1/profiles/${id}/preview?v=${encodeURIComponent(capturedAt)}`
+      : null;
 
   return (
     <div
@@ -35,8 +44,19 @@ export function EnvironmentCard({
     >
       <div
         data-testid={`env-card-preview-${id}`}
-        className="aspect-video w-full rounded-md bg-surface-subtle"
-      />
+        className="aspect-video w-full overflow-hidden rounded-md bg-surface-subtle"
+      >
+        {previewUrl ? (
+          <img
+            src={previewUrl}
+            alt={row.profile.name}
+            loading="lazy"
+            className="h-full w-full object-cover"
+            onError={() => setFailedCapturedAt(capturedAt)}
+            data-testid={`env-card-preview-img-${id}`}
+          />
+        ) : null}
+      </div>
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <span className="font-ui text-body-md text-on-surface">
           {row.profile.name}

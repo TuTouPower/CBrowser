@@ -45,8 +45,8 @@ def _write_dist(
     assets = dist / "assets"
     assets.mkdir()
     (assets / "index.css").write_text(
-        "@theme{--color-*: initial;--color-primary:#006edc;--color-surface:#f7fbf8}"
-        ".bg-primary{background-color:var(--color-primary)}\n",
+        "@theme{--color-*: initial;--color-accent:#006edc;--color-surface:#f7fbf8}"
+        ".bg-accent{background-color:var(--color-accent)}\n",
         encoding="utf-8",
     )
 
@@ -101,6 +101,28 @@ def test_default_manifests_live_outside_tests() -> None:
 def test_valid_dist_passes(tmp_path: Path) -> None:
     dist, manifest = _write_dist(tmp_path)
     verify_frontend_dist(dist, manifest)
+
+
+def test_missing_button_primary_class_fails(tmp_path: Path) -> None:
+    """t039: Button primary 主色类缺位即失败，覆盖删旧 .bg-primary 后的新语义。"""
+    dist, manifest = _write_dist(tmp_path)
+    (dist / "assets" / "index.css").write_text(
+        "@theme{--color-*: initial;--color-accent:#006edc;--color-surface:#f7fbf8}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(RuntimeError, match=r"missing \.bg-accent"):
+        verify_frontend_dist(dist, manifest)
+
+
+def test_default_palette_class_fails(tmp_path: Path) -> None:
+    """t039: 默认调色板类泄漏即失败（--color-*: initial 重置语义）。"""
+    dist, manifest = _write_dist(tmp_path)
+    css = (dist / "assets" / "index.css").read_text(encoding="utf-8")
+    (dist / "assets" / "index.css").write_text(
+        css + ".bg-red-500{color:red}\n", encoding="utf-8"
+    )
+    with pytest.raises(RuntimeError, match="default palette"):
+        verify_frontend_dist(dist, manifest)
 
 
 def test_missing_adapter_fails(tmp_path: Path) -> None:

@@ -3,7 +3,6 @@
  */
 
 import type { AudioStatus } from "./audio_status";
-import type { ApiClient } from "../../shared/api/client";
 
 export type { AudioStatus };
 
@@ -48,15 +47,4 @@ export interface SessionDiagnosticsData {
   audioStatus?: AudioStatus;
   errorMessage?: string;
   lastUpdated?: string;
-}
-
-export interface BrowserSessionViewProps {
-  profileId: string;
-  clipboardSync?: boolean;
-  className?: string;
-  initialStage?: SessionStage;
-  diagnostics?: Partial<SessionDiagnosticsData>;
-  errorMessage?: string;
-  onCheckRuntimeStatus?: () => void;
-  apiClient?: ApiClient;
 }

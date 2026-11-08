@@ -61,6 +61,7 @@
   --container-menu: 10rem;
   --container-select: 8rem;
   --container-control-sm: 1.875rem;
+  --container-details: 18.75rem;
 }
 
 @layer utilities {
@@ -91,6 +92,9 @@
   .h-control-sm { height: var(--container-control-sm); }
   .max-h-control-sm { max-height: var(--container-control-sm); }
   .min-h-control-sm { min-height: var(--container-control-sm); }
+  .h-details { height: var(--container-details); }
+  .max-h-details { max-height: var(--container-details); }
+  .min-h-details { min-height: var(--container-details); }
 }
 
 .dark {

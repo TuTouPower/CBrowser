@@ -8,6 +8,7 @@ import os
 import secrets
 import shutil
 import socket
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -18,24 +19,40 @@ import httpx
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env
-
-from .caddyfile import generate_caddyfile
+from cbrowser.network_config import (
+    create_default_applied_version,
+    generate_caddyfile,
+    write_applied_network_state,
+)
 from .selkies_assets import prepare_selkies_web_assets
 
 logger = logging.getLogger("cbrowser.gateway_probe.topology")
 
 
-def find_free_port(start: int = 34800, end: int = 35999) -> int:
-    for port in range(start, end):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", port))
+_allocated_host_ports: set[int] = set()
+_host_port_lock = threading.Lock()
+
+
+def find_free_port() -> int:
+    """Return an OS-assigned ephemeral loopback host port.
+
+    Docker binds the chosen host port itself, so pre-scanning a fixed range
+    is a TOCTOU race: concurrent xdist workers can all "find" the same free
+    port and then collide with ``Bind ... port is already allocated``
+    (t045 AC-006).  Let the OS allocate from its ephemeral range and keep a
+    per-process set so one pytest process never hands the same port to two
+    harnesses.  The fixed ``CBROWSER_E2E_HTTP_BASE`` worker partition is no
+    longer needed: ephemeral ports are disjoint from it and unique per call.
+    """
+    with _host_port_lock:
+        for _ in range(100):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            if port not in _allocated_host_ports:
+                _allocated_host_ports.add(port)
                 return port
-            except OSError:
-                continue
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    raise RuntimeError("Could not allocate a unique ephemeral host port")
 
 
 async def wait_until_ready(
@@ -92,13 +109,11 @@ class GatewayTopologyHarness:
         self.engine_cache_src = Path(env["CBROWSER_RUNTIME_ENGINE_CACHE"])
         self.geoip_cache_src = Path(env["CBROWSER_RUNTIME_GEOIP_CACHE"])
 
-        http_base = int(os.environ.get("CBROWSER_E2E_HTTP_BASE", "35000"))
-        self.caddy_host_port = find_free_port(http_base, http_base + 999)
+        self.caddy_host_port = find_free_port()
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
 
         self.data_dir = self.work_dir / "data"
         self.control_dir = self.data_dir / "control"
-        self.metadata_dir = self.work_dir / "api_metadata"
         self.static_dir = self.work_dir / "static"
 
         self.keys: dict[str, str] = {}
@@ -133,21 +148,22 @@ class GatewayTopologyHarness:
 
     def _init_dirs_and_secrets(self) -> None:
         # Confine the whole harness tree under a 0o700 work root
-        # (t024 AC-011/A33): the data and metadata directories stay
-        # group/other-writable because they are bind-mounted into
-        # containers running as other uids, but no unrelated local user
-        # can traverse into the tree.
+        # (t024 AC-011/A33): the data directory stays group/other-writable
+        # because it is bind-mounted into containers running as other uids,
+        # but no unrelated local user can traverse into the tree.
         self.work_dir.mkdir(parents=True, exist_ok=True)
         self.work_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
         self.control_dir.chmod(0o700)
-        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
+        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
 
-        self.metadata_dir.mkdir(parents=True, exist_ok=True)
-        self.metadata_dir.chmod(0o777)
+        # Initialize network state with harness Caddy port (t042 AC-007)
+        v1 = create_default_applied_version(https_port=self.caddy_host_port)
+        caddyfile_content = generate_caddyfile(v1)
+        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
 
         cache = self.data_dir / "engine_cache"
         if not cache.exists():
@@ -227,7 +243,7 @@ class GatewayTopologyHarness:
             read_only=True,
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
-                "CBROWSER_DB_PATH": "/metadata/control.db",
+                "CBROWSER_DB_PATH": "/data/cbrowser.db",
                 # The automation tunnel is gated on the API coordinator
                 # being enabled (t031); the production stack sets both,
                 # so the harness must too or every CDP handshake closes
@@ -237,18 +253,11 @@ class GatewayTopologyHarness:
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/supervisor_key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_password",
-                "CBROWSER_ALLOWED_ORIGINS": self.origin,
+                "CBROWSER_HTTPS_PORT": str(self.caddy_host_port),
                 **self.api_environment_extra(),
             },
             volumes={
-                str(self.metadata_dir): {"bind": "/metadata", "mode": "rw"},
-                # The API's artifact root is /metadata/artifacts; share the
-                # same Browser download directory with it so ingest sees
-                # the file the Agent reported.
-                str(self.data_dir / "artifacts"): {
-                    "bind": "/metadata/artifacts",
-                    "mode": "rw",
-                },
+                str(self.data_dir): {"bind": "/data", "mode": "rw"},
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
             },
             ports={"8000/tcp": ("127.0.0.1", None)},
@@ -272,7 +281,7 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
-                "CBROWSER_ALLOWED_ORIGINS": self.origin,
+                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
                 "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
                     self.agent_heartbeat_timeout_sec
                 ),
@@ -285,6 +294,7 @@ class GatewayTopologyHarness:
             },
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
+                str(self.data_dir / "network"): {"bind": "/data/network", "mode": "ro"},
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
@@ -360,12 +370,17 @@ class GatewayTopologyHarness:
             ],
         )
 
-        # 5. Caddy container
+        # 5. Caddy container: generated strictly via product generate_caddyfile and applied version
+        v1 = create_default_applied_version(https_port=self.caddy_host_port)
         caddyfile_content = generate_caddyfile(
-            self.api_ip, self.gateway_ip, DEFAULT_GATEWAY_PORT
+            v1,
+            api_upstream=f"http://{self.api_ip}:8000",
+            gateway_upstream=f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+            frontend_dir="/var/www/html",
         )
         caddyfile_path = self.work_dir / "Caddyfile"
         caddyfile_path.write_text(caddyfile_content, encoding="utf-8")
+        write_applied_network_state(self.data_dir / "network", v1, caddyfile_content)
 
         self.caddy_container = self._run_container(
             "caddy",
@@ -544,6 +559,43 @@ class GatewayTopologyHarness:
         cleanup_prefixed_resources(self.docker_client, self.prefix)
 
 
+def _record_e2e_deletion(
+    name: str, labels: dict[str, Any], action: str, cleanup_prefix: str
+) -> None:
+    """Append a structured deletion record so a container that vanishes
+    mid-test can be attributed to a specific cleanup caller and xdist worker
+    in the next gate run (t045 container-disappearance diagnosis)."""
+    log_path = os.environ.get("CBROWSER_E2E_DELETION_LOG")
+    if not log_path:
+        return
+    import inspect
+    import json
+    from datetime import datetime, timezone
+
+    caller = "unknown"
+    try:
+        for frame in inspect.stack()[1:]:
+            if "topology.py" not in frame.filename:
+                caller = f"{Path(frame.filename).name}:{frame.function}"
+                break
+    except Exception:
+        pass
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "action": action,
+        "container": name,
+        "label_prefix": (labels or {}).get("com.cbrowser.prefix"),
+        "cleanup_prefix": cleanup_prefix,
+        "caller": caller,
+        "worker": os.environ.get("PYTEST_XDIST_WORKER", "controller"),
+    }
+    try:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
+
+
 def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
     """Core cleanup helper: removes resources strictly labeled with prefix."""
     errors: list[str] = []
@@ -583,6 +635,7 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
             break
         for c in owned_containers:
             c_name = getattr(c, "name", "unnamed")
+            _record_e2e_deletion(c_name, _labels(c), "container_remove", prefix)
             try:
                 c.stop(timeout=1)
             except docker.errors.NotFound:
