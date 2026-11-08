@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from cbrowser.supervisor.network_policy import (
     NetworkPolicySpec,
+    render_ip6tables_rules,
     render_iptables_rules,
 )
 from cbrowser.supervisor.startup_gate import wait_for_marker
@@ -150,9 +151,37 @@ def test_startup_gate_logic(tmp_path: Path) -> None:
     )
 
 
-def test_stream_direct_media_keeps_allowlist_and_public_egress() -> None:
-    from cbrowser.supervisor.network_policy import render_ip6tables_rules
+def _output_rules(rendered: str) -> list[str]:
+    return [
+        line.strip()
+        for line in rendered.splitlines()
+        if line.strip().startswith("-A OUTPUT")
+    ]
 
+
+def _unconditional_output_accepts(rendered: str) -> list[str]:
+    return [
+        line.strip()
+        for line in rendered.splitlines()
+        if line.strip() == "-A OUTPUT -j ACCEPT"
+    ]
+
+
+def _media_destinations(rendered: str) -> list[str]:
+    destinations: list[str] = []
+    for line in rendered.splitlines():
+        stripped = line.strip()
+        if (
+            stripped.startswith("-A OUTPUT")
+            and "--sport" in stripped
+            and stripped.endswith("-j ACCEPT")
+        ):
+            tokens = stripped.split()
+            destinations.append(tokens[tokens.index("-d") + 1])
+    return destinations
+
+
+def test_stream_allowlist_endpoints_are_rendered() -> None:
     spec = NetworkPolicySpec(
         role="stream",
         allowed_tcp=[("203.0.113.10", 18080)],
@@ -164,8 +193,15 @@ def test_stream_direct_media_keeps_allowlist_and_public_egress() -> None:
     assert "-A OUTPUT -p tcp -d 203.0.113.10 --dport 18080 -j ACCEPT" in rules
     assert "-A OUTPUT -p udp -d 203.0.113.10 --dport 3478 -j ACCEPT" in rules
     assert "-A OUTPUT -d 10.0.0.0/8 -j DROP" in rules
-    assert "-A OUTPUT -j ACCEPT" in rules
-    assert "-A OUTPUT -j ACCEPT" in render_ip6tables_rules(spec)
+
+
+def test_browser_vs_stream_output_terminal_both_families() -> None:
+    browser = NetworkPolicySpec(role="browser")
+    stream = NetworkPolicySpec(role="stream", udp_mux_port=30022)
+    for render in (render_iptables_rules, render_ip6tables_rules):
+        assert _output_rules(render(browser))[-1] == "-A OUTPUT -j ACCEPT"
+        assert _output_rules(render(stream))[-1] == "-A OUTPUT -j DROP"
+        assert _unconditional_output_accepts(render(stream)) == []
 
 
 def test_browser_keeps_public_egress() -> None:
@@ -174,12 +210,40 @@ def test_browser_keeps_public_egress() -> None:
     assert "-A OUTPUT -j ACCEPT" in rules
 
 
-def test_stream_network_policy_lan_media_allowed() -> None:
-    spec_lan = NetworkPolicySpec(
-        role="stream",
-        udp_mux_port=30025,
-        allow_lan_media=True,
+def test_stream_local_media_is_link_local_only_both_families() -> None:
+    spec = NetworkPolicySpec(role="stream", udp_mux_port=30025)
+    assert sorted(_media_destinations(render_iptables_rules(spec))) == ["169.254.0.0/16"]
+    assert sorted(_media_destinations(render_ip6tables_rules(spec))) == ["fe80::/10"]
+
+
+def test_stream_lan_media_adds_private_networks_both_families() -> None:
+    spec = NetworkPolicySpec(
+        role="stream", udp_mux_port=30025, allow_lan_media=True
     )
-    rules_lan = render_iptables_rules(spec_lan)
-    # LAN media output is accepted before private range drop
-    assert "-A OUTPUT -p udp --sport 30025 -j ACCEPT" in rules_lan
+    assert sorted(_media_destinations(render_iptables_rules(spec))) == sorted([
+        "169.254.0.0/16",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+    ])
+    assert sorted(_media_destinations(render_ip6tables_rules(spec))) == sorted([
+        "fe80::/10",
+        "fc00::/7",
+    ])
+
+
+def test_stream_media_accepts_are_destination_scoped_both_families() -> None:
+    for lan in (False, True):
+        spec = NetworkPolicySpec(
+            role="stream", udp_mux_port=30025, allow_lan_media=lan
+        )
+        for render in (render_iptables_rules, render_ip6tables_rules):
+            media = [
+                line.strip()
+                for line in render(spec).splitlines()
+                if line.strip().startswith("-A OUTPUT")
+                and "--sport 30025" in line
+                and line.strip().endswith("-j ACCEPT")
+            ]
+            assert media
+            assert all("-d " in rule for rule in media)
