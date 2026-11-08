@@ -129,18 +129,41 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
         return json.loads(files[0].read_text(encoding="utf-8"))
 
     def containers_for(self, profile_id: str) -> list[Any]:
-        return self.docker_client.containers.list(
-            all=True,
-            filters={"label": f"com.cbrowser.profile-id={profile_id}"},
-        )
+        try:
+            return self.docker_client.containers.list(
+                all=True,
+                filters={"label": f"com.cbrowser.profile-id={profile_id}"},
+            )
+        except docker.errors.NotFound:
+            # During container teardown, a container deleted between GET /containers/json
+            # and GET /containers/{id}/json is safely skipped.
+            return []
 
     def container_names(self, profile_id: str) -> tuple[str, str] | None:
-        """Returns (browser, stream) container names for a profile, if bound."""
+        """Returns (browser, stream) container names for a profile, if bound.
+
+        Uses atomic GET /containers/json API directly to eliminate TOCTOU NotFound
+        races when containers are in the middle of being stopped or removed.
+        """
         found: dict[str, str] = {}
-        for container in self.containers_for(profile_id):
-            role = container.labels.get("com.cbrowser.role")
+        try:
+            raw_containers = self.docker_client.api.containers(
+                all=True,
+                filters={"label": f"com.cbrowser.profile-id={profile_id}"},
+            )
+        except docker.errors.NotFound:
+            return None
+        except Exception:
+            return None
+
+        for c_dict in raw_containers:
+            labels = c_dict.get("Labels") or {}
+            role = labels.get("com.cbrowser.role")
             if role in ("browser", "stream"):
-                found[role] = container.name
+                names = c_dict.get("Names") or []
+                if names:
+                    clean_name = names[0].lstrip("/")
+                    found[role] = clean_name
         if "browser" in found and "stream" in found:
             return found["browser"], found["stream"]
         return None

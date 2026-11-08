@@ -53,3 +53,9 @@
 - Selkies wheel 从 `CBROWSER_SELKIES_WHEEL_CACHE` 指向的本地已锁定 SHA256 缓存读取；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起任何公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项、非必跑模式才 skip，不回落公网。
 - 负载下时序判定统一改为就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 兜底、不上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
 - AC-005 涉及的三个 E2E 用例（`test_vendor_replaces_stale_destination_contents`、`test_ac007_lifecycle_resume_and_isolated_media_diagnostics`、`test_supervisor_dual_profile_port_invariance_on_sigkill`）须在 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 完整必跑门禁中通过，非仅定向单跑。
+
+## 10. E2E 基础设施重构与协议探针模型归一（t046）
+
+- 整个 `tests/e2e/` 目录严禁单个测试文件自建 Docker 编排、私有 API 子进程管理或自写 `finally: remove` 清理循环。
+- `tests/e2e/test_runtime_coordinator_e2e.py` 完整重构接入统一的 `FrontendAppTopologyHarness`；所有容器与网络资源纳入统一生命周期管理与 `cleanup_prefixed_resources` / `CBROWSER_E2E_DELETION_LOG` 结构化审计。
+- `tests/e2e/test_stream_selkies_tokens_e2e.py` 中协议探针客户端对被驱逐连接使用并发事件监听，确保在握手期间实时接收 Close Frame，保持 4001 与 `Superseded by a new connection.` 精确强断言，消除底层 Transport 异常掐断导致的 1006 假失败。

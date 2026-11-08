@@ -1,0 +1,14 @@
+{
+  "tid": "t046",
+  "attempt": 1,
+  "execution_id": "983e58fe65da4666a8ed1e90191b5909",
+  "status": "done",
+  "branch": "t046_e2e_infrastructure_and_protocol_harness_rebuild",
+  "base_sha": "3950648050c4374e4ae45af9cfe527746afa23f4",
+  "tests": "全量门禁 10 个 suites 全部 exit 0（`.scratch/t046_evidence_20261108_124935/manifest.json`，除已登记的 t019 时延基线外零失败，容器消失与 1006 异常彻底消除）",
+  "blackbox": "Docker 真实栈与 Chrome 浏览器 E2E 验证通过",
+  "review": "Round 1 code 与 test 均为 PASS，指纹 `4d6a7fb3e9229c90`",
+  "review_scope": "4d6a7fb3e9229c90",
+  "pending": [],
+  "findings": []
+}

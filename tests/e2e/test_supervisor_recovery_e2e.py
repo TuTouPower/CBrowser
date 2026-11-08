@@ -380,12 +380,24 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
                     pass
                 await asyncio.sleep(0.1)
 
-            # Query status from resurrected supervisor
-            r_stat = await sup_client2.get(
-                f"/supervisor/v1/profiles/{profile_id}/status"
+            # Query status from resurrected supervisor (poll until reconciliation completes)
+            async def get_resurrected_status() -> dict:
+                r = await sup_client2.get(
+                    f"/supervisor/v1/profiles/{profile_id}/status"
+                )
+                assert r.status_code == 200
+                return r.json()
+
+            stat_data = await poll_until(
+                get_resurrected_status,
+                lambda d: (
+                    d.get("observed_state") == "running"
+                    and d.get("udp_mux_port") == udp_base
+                ),
+                timeout=30.0,
+                interval=0.2,
+                description=f"resurrected supervisor reconciliation with udp_mux_port={udp_base}",
             )
-            assert r_stat.status_code == 200
-            stat_data = r_stat.json()
             assert stat_data["observed_state"] == "running"
             assert stat_data["udp_mux_port"] == udp_base
 
