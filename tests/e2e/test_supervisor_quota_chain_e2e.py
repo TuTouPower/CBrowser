@@ -33,6 +33,8 @@ from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_for_log
 
+pytestmark = pytest.mark.serial
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 

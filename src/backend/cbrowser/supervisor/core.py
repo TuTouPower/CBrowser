@@ -148,6 +148,12 @@ class ActiveSession:
     observed_state: str = "running"
 
 
+@dataclass
+class RegistrationState:
+    known: bool = False
+    lost_at: float | None = None
+
+
 class SupervisorCore:
     def __init__(
         self,
@@ -197,8 +203,7 @@ class SupervisorCore:
         # t026 convergence state (in-memory only; a restart re-derives it
         # from the same scans that rebuild sessions).
         self._transport: dict[str, TransportObservation] = {}
-        self._registration_known: dict[str, bool] = {}
-        self._registration_lost_at: dict[str, float] = {}
+        self._registration: dict[str, RegistrationState] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
         self._unprotected_since: dict[str, float] = {}
@@ -314,12 +319,15 @@ class SupervisorCore:
         first such pass arms the grace, later passes inside the window
         defer replacement, and expiry falls through to replacement.
         """
-        lost_at = self._registration_lost_at.get(profile_id)
+        state = self._registration.get(profile_id)
+        if state is None:
+            state = RegistrationState()
+            self._registration[profile_id] = state
         now = time.monotonic()
-        if lost_at is None:
-            self._registration_lost_at[profile_id] = now
+        if state.lost_at is None:
+            state.lost_at = now
             return True
-        return now - lost_at < self._REGISTRATION_LOSS_GRACE_SEC
+        return now - state.lost_at < self._REGISTRATION_LOSS_GRACE_SEC
 
     async def _converge_session(
         self,
@@ -395,7 +403,7 @@ class SupervisorCore:
             return
         gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
         if gateway_id is None:
-            self._registration_known.pop(profile_id, None)
+            self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 transport_state="recovering",
@@ -513,7 +521,7 @@ class SupervisorCore:
             profile_id, instance_id
         )
         if registered is None:
-            self._registration_known.pop(profile_id, None)
+            self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 transport_state="recovering",
@@ -530,8 +538,7 @@ class SupervisorCore:
                 selkies_version=status.get("selkies_version"),
             )
         if registered:
-            self._registration_known[profile_id] = True
-            self._registration_lost_at.pop(profile_id, None)
+            self._registration[profile_id] = RegistrationState(known=True)
             self._update_transport(
                 profile_id,
                 transport_state="ready",
@@ -540,8 +547,12 @@ class SupervisorCore:
                 rejection_code=None,
             )
             return
-        previously_known = self._registration_known.get(profile_id, False)
-        self._registration_known[profile_id] = False
+        state = self._registration.get(profile_id)
+        previously_known = state.known if state is not None else False
+        if state is None:
+            state = RegistrationState()
+            self._registration[profile_id] = state
+        state.known = False
         rejection = (status or {}).get("rejection") or {}
         rejection_code = rejection.get("code")
         if (status or {}).get("rejection_runtime_instance_id") != instance_id:
@@ -556,7 +567,7 @@ class SupervisorCore:
             )
             return
         if (
-            previously_known or profile_id in self._registration_lost_at
+            previously_known or state.lost_at is not None
         ) and self._within_registration_recovery_grace(profile_id):
             self._update_transport(
                 profile_id,
@@ -937,9 +948,9 @@ class SupervisorCore:
                 )
         for item in containers:
             if item.get("role") == "stream":
-                known = self._registration_known.get(item.get("profile_id"))
-                if known is not None:
-                    item["registered"] = known
+                state = self._registration.get(item.get("profile_id"))
+                if state is not None:
+                    item["registered"] = state.known
         return containers
 
     async def _reconcile_profile(
@@ -2189,7 +2200,7 @@ class SupervisorCore:
                     observed_state="running",
                 )
                 self._sessions[profile_id] = session
-                self._registration_known[profile_id] = True
+                self._registration[profile_id] = RegistrationState(known=True)
                 self._update_transport(
                     profile_id,
                     runtime_instance_id=runtime_instance_id,
@@ -2274,6 +2285,7 @@ class SupervisorCore:
                 session.runtime_instance_id if session else None
             )
             if target is None:
+                self._registration.pop(profile_id, None)
                 return {
                     "profile_id": profile_id,
                     "status": "already_absent",
@@ -2372,7 +2384,7 @@ class SupervisorCore:
                 profile_id, curr_inst, "stopped", cfg_ver, reason="stop_requested"
             )
             self.operations.complete(command_id, request, result)
-            self._registration_known.pop(profile_id, None)
+            self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 browser_state="stopped",

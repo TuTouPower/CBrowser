@@ -21,24 +21,22 @@ import httpx
 import pytest
 import websockets
 
+from e2e_env import require_e2e_env
 from gateway_probe.topology import GatewayTopologyHarness
+
+pytestmark = pytest.mark.serial
 
 
 async def _setup(tmp_path: Path):
-    """Start the real topology, or skip when it is unavailable.
+    """Start the real topology, or fail/skip when Docker is unavailable.
 
-    Only Docker unavailability is a skip (ping probe below) and missing
-    image/cache env (the harness constructor skips via require_e2e_env).
+    Docker availability is gated through e2e_env (fail in required mode,
+    skip otherwise); the harness constructor resolves image/cache env.
     A start() failure -- readiness timeout, unexposed port, unregistered
     Stream Agent -- is a real failure and must propagate, not become a
     skip (review t031_test_f002).
     """
-    try:
-        import docker
-
-        docker.from_env().ping()
-    except Exception as exc:  # noqa: BLE001 - Docker absence is a skip
-        pytest.skip(f"Docker unavailable (t032 real run): {exc!r}")
+    require_e2e_env(docker=True)
     harness = GatewayTopologyHarness(tmp_path)
     await harness.start()
     return harness
@@ -112,7 +110,7 @@ async def test_handoff_closes_established_tunnel_and_refuses_reconnect(
             # The established tunnel must be closed by the takeover.
             with pytest.raises(websockets.exceptions.ConnectionClosed) as exc:
                 await asyncio.wait_for(ws.recv(), timeout=15)
-            assert exc.value.code == 4403
+            assert exc.value.rcvd.code == 4403
 
         # A reconnect while reclaim is blocked is refused during the
         # handshake. Starlette cannot send a 4403 close before accepting,

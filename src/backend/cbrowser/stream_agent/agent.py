@@ -352,7 +352,7 @@ class StreamAgent:
                         url,
                         headers=headers,
                         max_msg_size=MAX_STREAM_FRAME_SIZE,
-                        timeout=IO_TIMEOUT,
+                        timeout=aiohttp.ClientWSTimeout(ws_close=IO_TIMEOUT),
                         heartbeat=HEARTBEAT_INTERVAL,
                     ) as ws,
                 ):
@@ -850,7 +850,7 @@ class StreamAgent:
             upstream_ws = await session.ws_connect(
                 self.upstream_url,
                 max_msg_size=MAX_STREAM_FRAME_SIZE,
-                timeout=IO_TIMEOUT,
+                timeout=aiohttp.ClientWSTimeout(ws_close=IO_TIMEOUT),
                 heartbeat=HEARTBEAT_INTERVAL,
             )
             upstream_reader_task = asyncio.create_task(

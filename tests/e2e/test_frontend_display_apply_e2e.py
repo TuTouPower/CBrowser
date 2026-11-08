@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
+pytestmark = pytest.mark.serial
+
 
 @pytest.fixture(scope="module")
 def harness(tmp_path_factory: pytest.TempPathFactory):

@@ -128,13 +128,16 @@ def extract_from_wheel(wheel_path: Path, dest_dir: Path) -> None:
             out_file.write_bytes(z.read(info.filename))
 
 
-def extract_from_stream_image(image_id: str, dest_dir: Path) -> None:
+def extract_from_stream_image(
+    image_id: str, dest_dir: Path, client_factory=None
+) -> None:
     """Extracts selkies_web from Stream Docker image container."""
     import tarfile
 
     import docker
 
-    client = docker.from_env()
+    factory = client_factory or (lambda: docker.from_env())
+    client = factory()
     container = client.containers.create(
         image_id, entrypoint=["/bin/sh"], command=["-c", "sleep 60"]
     )

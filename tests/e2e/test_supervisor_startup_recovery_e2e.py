@@ -49,6 +49,8 @@ from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger(__name__)
 
 

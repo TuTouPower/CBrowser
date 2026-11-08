@@ -23,6 +23,8 @@ from playwright.async_api import async_playwright
 from e2e_env import require_e2e_env
 from wait import poll_until, wait_until
 
+
+pytestmark = pytest.mark.serial
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = next(

@@ -26,6 +26,8 @@ from gateway_probe.browser_oracle import browser_eval  # noqa: E402
 from playwright.async_api import Page, async_playwright  # noqa: E402
 from wait import poll_until  # noqa: E402
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger("cbrowser.frontend_session.e2e")
 
 

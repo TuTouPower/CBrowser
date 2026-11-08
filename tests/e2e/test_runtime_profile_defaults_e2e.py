@@ -13,7 +13,6 @@ Validates:
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import uuid
 import tempfile
@@ -38,31 +37,6 @@ def get_engine_cache_dir() -> Path:
             "CBROWSER_RUNTIME_ENGINE_CACHE"
         ]
     )
-
-
-def check_prerequisites() -> tuple[bool, str]:
-    """Verify Docker, immutable image, and engine cache exist."""
-    res = subprocess.run(
-        ["which", "docker"], capture_output=True, text=True, check=False
-    )
-    if res.returncode != 0:
-        return False, "Docker CLI not found on host"
-
-    cache = get_engine_cache_dir()
-    if not cache.exists() or not any(cache.iterdir()):
-        return False, f"Engine cache directory missing or empty at {cache}"
-
-    image = get_docker_image()
-    insp = subprocess.run(
-        ["docker", "image", "inspect", image],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if insp.returncode != 0:
-        return False, f"Docker image {image} not present locally"
-
-    return True, "Ready"
 
 
 CONTAINER_SCRIPT = """import asyncio
@@ -438,12 +412,12 @@ class TestRuntimeProfileDefaultsE2E:
 
     @pytest.fixture(autouse=True)
     def require_prerequisites(self):
-        ready, reason = check_prerequisites()
-        if not ready:
-            message = f"E2E prerequisites missing: {reason}"
-            if os.environ.get("CBROWSER_E2E_REQUIRED") == "1":
-                pytest.fail(message, pytrace=False)
-            pytest.skip(message)
+        require_e2e_env(
+            "CBROWSER_RUNTIME_TEST_IMAGE",
+            "CBROWSER_RUNTIME_ENGINE_CACHE",
+            paths=("CBROWSER_RUNTIME_ENGINE_CACHE",),
+            docker=True,
+        )
 
     def test_profile_defaults_en_us(self):
         """Verify defaults initialization in en-US locale."""

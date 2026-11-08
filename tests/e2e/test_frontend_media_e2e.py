@@ -35,6 +35,8 @@ from wait import poll_until
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger("cbrowser.frontend_media.e2e")
 
 

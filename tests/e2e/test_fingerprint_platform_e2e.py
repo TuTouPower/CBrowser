@@ -14,17 +14,15 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from e2e_env import require_e2e_env
+from e2e_env import require_e2e_available, require_e2e_env
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENGINE_RELATIVE = Path("chromium-146.0.7680.177.3") / "chrome"
-WINDOWS_FONTS = REPO_ROOT / ".scratch" / "t041" / "win_fonts" / "Windows" / "Fonts"
+
+pytestmark = pytest.mark.serial
 MAC_FONT_DIRS = (
     Path("/System/Library/Fonts"),
     Path("/System/Library/Fonts/Supplemental"),
@@ -44,6 +42,7 @@ import re
 import subprocess
 import threading
 from pathlib import Path
+
 
 ENGINE = "/data/engine-cache/chromium-146.0.7680.177.3/chrome"
 LINUX_FONT_RE = re.compile(
@@ -217,66 +216,54 @@ if __name__ == "__main__":
 '''
 
 
-def _engine_cache_candidates() -> list[Path]:
-    scratch = Path(".scratch") / "t032" / "data" / "engine-cache"
-    candidates: list[Path] = []
-    env_value = os.environ.get("CBROWSER_RUNTIME_ENGINE_CACHE")
-    if env_value:
-        candidates.append(Path(env_value))
-    candidates.append(REPO_ROOT / scratch)
-    git_file = REPO_ROOT / ".git"
-    if git_file.is_file():
-        text = git_file.read_text(encoding="utf-8").strip()
-        if text.startswith("gitdir:"):
-            git_dir = Path(text.split(":", 1)[1].strip())
-            if len(git_dir.parts) >= 4:
-                candidates.append(git_dir.parents[2] / scratch)
-    return candidates
-
-
 def _resolve_engine_cache() -> Path:
-    candidates = _engine_cache_candidates()
-    for candidate in candidates:
-        if (candidate / ENGINE_RELATIVE).is_file():
-            return candidate
-    checked = ", ".join(str(c / ENGINE_RELATIVE) for c in candidates)
-    pytest.skip(
-        "Chromium 146 engine cache not found; set CBROWSER_RUNTIME_ENGINE_CACHE "
-        f"to the engine-cache directory. Checked: {checked}"
-    )
+    return Path(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"])
+
+
+def _image_present(image: str) -> bool:
+    """True when the browser runtime image is present locally."""
+    import docker
+
+    client = docker.from_env()
+    try:
+        client.images.get(image)
+        return True
+    except Exception:  # noqa: BLE001 - any lookup failure is a missing prerequisite
+        return False
+    finally:
+        client.close()
 
 
 @pytest.fixture(scope="module")
 def probe_result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     env = require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")
     image = env["CBROWSER_RUNTIME_TEST_IMAGE"]
-    if shutil.which("docker") is None:
-        pytest.skip("docker CLI is not available on PATH")
-    daemon = subprocess.run(["docker", "info"], capture_output=True, text=True, timeout=30)
-    if daemon.returncode != 0:
-        pytest.skip(f"docker daemon unavailable: {daemon.stderr.strip()}")
-    present = subprocess.run(
-        ["docker", "image", "inspect", image],
-        capture_output=True, text=True, timeout=30,
+    fonts_env = require_e2e_env(
+        "CBROWSER_E2E_FONTS_DIR",
+        "CBROWSER_RUNTIME_ENGINE_CACHE",
+        paths=("CBROWSER_E2E_FONTS_DIR", "CBROWSER_RUNTIME_ENGINE_CACHE"),
+        docker=True,
+        fonts_platform="windows",
     )
-    if present.returncode != 0:
-        pytest.skip(f"browser runtime image not present locally: {image}")
-    if not WINDOWS_FONTS.is_dir():
-        pytest.skip(
-            "official Windows font set not present; run "
-            "scripts/import_font_set.py or extract the evaluation ISO first: "
-            f"{WINDOWS_FONTS}"
-        )
-    missing = [str(p) for p in MAC_FONT_DIRS if not p.is_dir()]
-    if missing:
-        pytest.skip(f"macOS system font directories missing: {missing}")
+    windows_fonts = Path(fonts_env["_fonts_dir"])
     engine_cache = _resolve_engine_cache()
+
+    missing_mac = [str(p) for p in MAC_FONT_DIRS if not p.is_dir()]
+    require_e2e_available(
+        not missing_mac,
+        "macOS system font directories missing: " + ", ".join(missing_mac),
+    )
+    require_e2e_available(
+        _image_present(image),
+        f"browser runtime image not present locally: {image}",
+    )
+
     script_dir = tmp_path_factory.mktemp("t041-probe")
     (script_dir / "probe.py").write_text(PROBE_SCRIPT, encoding="utf-8")
     mounts = [
         "-v", f"{engine_cache}:/data/engine-cache:ro",
         "-v", f"{script_dir}:/probe:ro",
-        "-v", f"{WINDOWS_FONTS}:/probe_fonts/windows:ro",
+        "-v", f"{windows_fonts}:/probe_fonts/windows:ro",
         "-v", f"{MAC_FONT_DIRS[0]}:/probe_fonts/macos1:ro",
         "-v", f"{MAC_FONT_DIRS[1]}:/probe_fonts/macos2:ro",
         "-v", f"{MAC_FONT_DIRS[2]}:/probe_fonts/macos3:ro",

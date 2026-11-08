@@ -56,6 +56,8 @@ from supervisor_recovery_probe.offline_fixture import (
     get_free_port,
 )
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger(__name__)
 
 

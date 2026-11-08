@@ -77,6 +77,18 @@ def test_api_fixture_runtime_packaging_integrity():
         "API probe fixture base image must be pinned by digest"
     )
 
+    prod_from_line = next(
+        line
+        for line in _read_dockerfile(
+            "config/docker/api_runtime/Dockerfile"
+        ).splitlines()
+        if line.startswith("FROM ")
+    )
+    assert from_line == prod_from_line, (
+        "API probe fixture base image must exactly match the production "
+        "api_runtime Dockerfile FROM line (3.15/trixie digest)"
+    )
+
     assert "COPY src/backend/cbrowser/__init__.py" in content, (
         "API Dockerfile must copy cbrowser/__init__.py"
     )

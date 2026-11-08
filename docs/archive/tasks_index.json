@@ -610,6 +610,22 @@
             "conflicts_with": "",
             "note": "来源 plan_20261105_ui_redesign WP05；2026-11-05 按审阅从 t034 拆出",
             "dir": "docs/archive/tasks/t043_selkies_upgrade"
+        },
+        {
+            "tid": "t044",
+            "slug": "e2e_parallel_execution",
+            "title": "门禁并行化、E2E 前置封闭与遗留缺陷收口",
+            "status": "done",
+            "branch": "t044_e2e_parallel_execution",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "98a9df796d46b2b451a5620f39e2801816155536",
+            "depends_on": "t036",
+            "conflicts_with": "",
+            "note": "",
+            "dir": "docs/archive/tasks/t044_e2e_parallel_execution"
         }
     ]
 }

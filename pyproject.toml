@@ -39,11 +39,12 @@ gate = [
     "fastapi>=0.115.0", "pydantic>=2.0", "uvicorn>=0.34.0",
     "jsonschema>=4.20", "websockets>=14.0", "cloakbrowser==0.6.4",
     "docker>=7.0.0", "aiohttp>=3.9.0", "argon2-cffi>=23.1.0",
-    "playwright==1.64.1",
+    "playwright==1.64.1", "pytest-xdist>=3.6",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = [".", "tests/fixtures", "src/backend"]
 testpaths = [
     ".repo_template/tests",
@@ -51,7 +52,11 @@ testpaths = [
 ]
 markers = [
     "contract: lightweight repository contract tests",
+    "serial: timing-sensitive tests that must not run concurrently with others",
 ]
 filterwarnings = [
-    "ignore::DeprecationWarning",
+    "error::DeprecationWarning",
+    "ignore:Setting per-request cookies=.* is being deprecated:DeprecationWarning",
+    "ignore:Bare functions are deprecated, use async ones:DeprecationWarning",
+    "ignore:jsonschema.RefResolver is deprecated:DeprecationWarning",
 ]

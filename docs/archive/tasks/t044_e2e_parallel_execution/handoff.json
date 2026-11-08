@@ -1,0 +1,16 @@
+{
+  "tid": "t044",
+  "attempt": 1,
+  "execution_id": "ee50862713cc4a0f95feab9cef7f42b7",
+  "status": "done",
+  "branch": "t044_e2e_parallel_execution",
+  "base_sha": "98a9df796d46b2b451a5620f39e2801816155536",
+  "tests": "最终并行全量门禁 `.scratch/t044_evidence_final_gate/manifest.json`：requirements_check / contract / unit / integration / design_lint / design_check / frontend_test / frontend_build / image_packages 九 suite exit 0；unit 1140 / integration 155 / contract 258 junit 用例数与 collect 完全一致；定向 86 unit 全绿、字体/端口回归 5 项、媒体 3 项、指纹 3 用例全 passed；门禁前后 `git status --porcelain` 一致（AC-015），缓存复用日志无依赖下载（AC-009），design:check 过期失败路径已验。",
+  "blackbox": "最终 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 完整门禁 E2E 101 用例真实并行执行，仅 `test_t019_switch_and_refresh_first_frame_within_2s_host_only` 1 项失败（首帧 3.344s > 2s，t032 已登记遗留，t036 串行门禁同样仅此项）、2 项按开关启用的探针用例 skip（AC-005 可选用例外）、0 error；失败集合不超串行基线（基线最多 t019 + supervisor sigkill，本轮 sigkill 已通过）。首轮 13 / 重验 11 项并行化回归逐项按失败日志根因修复（详见实施笔记），不记为遗留；门禁后无本轮残留容器与网络。",
+  "review": "full 两路 `review_code.md` / `review_test.md` 均 verdict PASS，15/15 AC TICK-VALID（两轴全部 re_verified，coverage 15/15），reviewed_scope 一致 `2d0e65481bb01c5c`；code 轴 1 条 minor 按处置表登记 `p046`，test 轴零 finding。`check_review_status.py`：code_verdict=PASS / test_verdict=PASS / overall=PASS / review_scope=ok / ac_review=ok。",
+  "review_scope": "d432a53e9ed380fd",
+  "pending": [
+    "p046"
+  ],
+  "findings": []
+}

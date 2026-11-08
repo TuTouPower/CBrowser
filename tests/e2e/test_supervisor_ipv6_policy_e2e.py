@@ -9,6 +9,8 @@ import pytest
 
 from e2e_env import require_e2e_env
 
+pytestmark = pytest.mark.serial
+
 
 @pytest.mark.asyncio
 async def test_kernel_ipv6_echo_isolation_preserves_allowed_tcp(tmp_path):

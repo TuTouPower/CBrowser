@@ -26,6 +26,8 @@ from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
+pytestmark = pytest.mark.serial
+
 logger = logging.getLogger("cbrowser.frontend_app.e2e")
 
 IFRAME_SELECTOR = 'iframe[data-testid="browser-session-iframe"]'
