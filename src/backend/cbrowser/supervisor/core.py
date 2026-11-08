@@ -1760,16 +1760,6 @@ class SupervisorCore:
             return observed_state if delivered else None
 
         if container_status == "running":
-            if native is not None:
-                observed_state, reason = native
-                delivered = await self.report_terminal_observation(
-                    profile_id,
-                    instance_id,
-                    config_version,
-                    observed_state=observed_state,
-                    reason=reason,
-                )
-                return observed_state if delivered else None
             health = await self._query_agent_health(profile_id)
             if health is None:
                 return None
