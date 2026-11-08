@@ -1,0 +1,491 @@
+# Intensive Review
+
+- Coverage: completed_with_limitations
+
+- Scope: {"mode": "all", "base": null, "head": "80e34b58b3dea4572c9e3364dcedb902b36b6f71", "include_untracked": false, "paths": [], "exclude_paths": [".agents/skills", ".claude/skills", "docs/reviews/review_20261108_153337"]}
+
+- Targets: 1339; units: 11
+
+- Verdict: BLOCK
+
+- Findings: {"Critical": 3, "High": 21, "Medium": 30, "Low": 19, "Info": 0}
+
+## Global conclusions
+
+- strategy: 从战略适配视角评估：CBrowser 聚焦单机 Docker 沙箱与低延迟直连 WebRTC，彻底去除 TURN/coturn 与分布式依赖，架构战略定位精准，技术复杂度与单机隐私隔离目标高度匹配。核心矛盾在于测试工程与环境依赖存在平台特化倾向（macOS 路径硬编码），需在后续演进中解耦以支持标准 Linux CI。
+- architecture: 从整体架构视角评估：单一写入者 SQLite（API 独占）、单一 Docker 控制者（Supervisor 独占）与不可变配置版本链（ADR 023）执行严密，职责清晰。但在横向通信与网络重构协同上，API 路由前缀、网关配置与部署脚本之间存在多处未对齐裂痕，且局域网重构缺乏跨容器分布式原子性保证。
+- system_properties: 从系统整体性质（安全、可靠性、一致性）评估：系统在沙箱权限剥离（0750/0600、只读 rootfs、cap_drop ALL、iptables 私网阻断）方面表现优异，符合隐私沙箱高强度隔离设计。但在反向代理穿透防护与故障清理时序上存在系统级漏洞：网关与控制面限速误用反代 IP 导致连带 DoS 风险，容器清理异常未阻断端口释放导致跨 Profile 端口污染风险。
+- evolution: 从演进与长期成本视角评估：单 baseline Alembic 持久化重构（ADR 023）、全量不可变发布（deploy_v2.sh）与设计系统 Token 自动化编译门禁表现卓越，为长期演进奠定了极佳基础。主要演进负债集中在跨服务协议 Schema 导出缺乏自动化 CI 守护，以及历史审查与调研资产缺乏自动化归档流转机制。
+
+## Findings
+
+- [Critical][95] src/backend/cbrowser/api/runtime_coordinator.py:1155,1157,1179,1181 — RuntimeCoordinator 致命 AttributeError 导致网络重构崩溃
+    - Sources: bundle_local_backend_core.md (f_backend_core_attr_error)
+    - f_backend_core_attr_error: runtime_coordinator.py:1155: await self.client.post(url, headers=self.\_auth_headers(), ...); 类定义中仅初始化 self.\_client，从未定义 self.client 属性，亦从未定义 self.\_auth_headers() 方法
+        - Impact: 管理员在受管 Docker 部署环境下执行网络模式切换（Local / LAN Switch）触发 rebuild_edge 时，任务必抛 AttributeError，网络重构直接中断并标记为失败
+        - Fix: 在 RuntimeCoordinator 中添加 self.\_auth_headers() 方法或使用统一的私有认证头，并将 self.client 修正为 self.\_client
+        - Verification: static
+- [Critical][95] src/backend/cbrowser/api/v1/network_router.py:36; src/backend/cbrowser/api/app.py:415 — NetworkRouter 路由前缀缺失导致前端请求 404 与 Caddy 代理断裂
+    - Sources: bundle_local_backend_core.md (f_backend_core_network_prefix)
+    - f_backend_core_network_prefix: network_router.py:36 声明 prefix="/network"，app.py:415 直接 include_router 未传 prefix="/api/v1"; 前端 SettingsPage 全链请求 /api/v1/network/*，且 Caddyfile 仅反代 /api/* 与 /stream/\*
+        - Impact: 前端网络设置与根证书下载端点在经过 Caddy 代理时全部 404，导致控制台无法获取网络配置与进行 LAN 模式切换
+        - Fix: 将 network_router.py 的前缀改为 /api/v1/network 或在 app.py 挂载时显式添加 prefix="/api/v1"
+        - Verification: static
+- [Critical][95] src/backend/cbrowser/supervisor/core.py:2491-2503; 1218-1231 — 容器清理失败未阻断端口释放，违反蓝图铁律并引发跨 Profile 端口绑定冲突
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_teardown_port_leak)
+    - f_supervisor_teardown_port_leak: core.py:2480-2504 在 teardown_profile 抛出异常被记录到 teardown_error 后，finally 块无视错误执行 self.ports.release(profile_id); 直接违背 docs/blueprint/supervisor.md 第 33 行纲领：'清理失败不释放仍占用的端口'
+        - Impact: 当 Docker 守护进程故障或超时导致 Stream 容器未能删除时，宿主 UDP 端口仍被旧容器占用。端口被提前归还后分配给新 Profile，后续 Docker 启动报错 address already in use，或导致 WebRTC 媒体流量发送至陈旧容器产生串扰
+        - Fix: 仅当 teardown_error is None 时调用 self.ports.release(profile_id)；清理失败时保留端口映射与 session 故障跟踪状态
+        - Verification: static
+- [High][90] src/backend/cbrowser/api/v1/control_router.py:74 — Control 模块自动化鉴权绕过代理 IP 解析导致限速伪造与 DoS 风险
+    - Sources: bundle_local_backend_core.md (f_backend_core_control_client_ip)
+    - f_backend_core_control_client_ip: control_router.py:74 直接使用 request.client.host 作为 client_ip 传入 authorize_automation; 对比 auth_router.py 与 automation_router.py 均调用了 resolve_client_ip 解析受信任反向代理 X-Forwarded-For
+        - Impact: 在反代部署下，request.client.host 恒为 Caddy 容器 IP。恶意外部请求向 control 路由灌入错误 Token 达到阈值后，Caddy IP 被全局限流，导致所有正常 Agent 遭遇连带拒绝服务
+        - Fix: 引入 resolve_client_ip 并传入 request.headers.get("x-forwarded-for") 与 trusted_proxy_cidrs
+        - Verification: static
+- [High][90] src/backend/cbrowser/services/network_service.py:49,71-76,129-133 — NetworkService 崩溃导致活跃操作死锁与内存任务泄漏
+    - Sources: bundle_local_backend_core.md (f_backend_core_network_active_leak)
+    - f_backend_core_network_active_leak: apply_configuration 生成后台任务后存入 self.\_background_tasks[op_id]，完成后未从字典移除; 若 API 进程在异步阶段异常终止，SQLite 中 active_op 永久处于非终态，重启后第 71-76 行冲突检查永久拦截后续任何 apply
+        - Impact: 网络配置应用若遇异常崩溃，系统后续将永久无法再发起网络变更，且常驻后台任务字典只增不减
+        - Fix: 为 \_background_tasks 增加完成回调清理，并在服务启动 lifespan 中回收未决孤儿 active_op 为 FAILED
+        - Verification: static
+- [High][90] src/backend/cbrowser/api/v1/font_sets_router.py:51-66; src/backend/cbrowser/font_sets/manifest.py:312-314 — GET /api/v1/font-sets 同步计算大文件 SHA-256 阻塞事件循环
+    - Sources: bundle_local_backend_core.md (f_backend_core_font_sets_block)
+    - f_backend_core_font_sets_block: font_sets_router.py 的 list_font_sets 同步调用 check_font_set，对数百兆字体文件逐个同步计算 SHA-256; 未通过 asyncio.to_thread 移出主事件循环，亦未对不可变 Content-Addressed 字体集结果做缓存
+        - Impact: 前端加载配置页或查询字体集时，FastAPI 主线程被同步 I/O 阻塞长达数百毫秒至数秒，导致并发请求与心跳包延迟
+        - Fix: 在内存中基于 set_id 缓存已校验的字体集完整性状态，或在检查时使用 asyncio.to_thread 转移至工作线程
+        - Verification: static
+- [High][95] src/backend/cbrowser/api/app.py:29,418; src/backend/cbrowser/api/v1/automation_router.py:21,250 — 违反零兼容负担铁律：偷偷保留 legacy_cdp_router 并用 include_in_schema=False 掩盖过时路径
+    - Sources: bundle_local_backend_core.md (f_backend_core_legacy_cdp_router)
+    - f_backend_core_legacy_cdp_router: app.py:418 显式调用 app.include_router(legacy_cdp_router, include_in_schema=False); automation_router.py:250 为旧路径 /profiles/{profile_id}/cdp 注册了 legacy_cdp_proxy WebSocket 路由; 直接违背核心架构铁律：'零兼容性负担：直接执行破坏性变更，完全不需要考虑前后兼容' 与 '架构设计层面不留兼容层：破坏性升级优于兼容包袱，直接移除过时路径'
+        - Impact: 违背全仓架构铁律，在生产 API 中偷偷维持废弃的旧版 CDP 路由，增加维护割裂与潜在非授权访问风险
+        - Fix: 彻底删除 legacy_cdp_router 及相关引用，仅保留 /api/v1/automation/profiles/{profile_id}/cdp
+        - Verification: static
+- [High][90] src/backend/cbrowser/supervisor/core.py:1598-1606; core.py:1555 — 容器退出状态对账忽略退出码与原生事实，将正常用户退出覆盖为异常崩溃并诱发死循环重启
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_normal_exit_override)
+    - f_supervisor_normal_exit_override: core.py:1598-1606 当 container_status in ('exited', 'dead', 'not_found') 时无条件上报 observed_state='error', reason='container_exit'; 在 consume_disk_events 消费到正常的 Exit 0 原生退出事件后，随即触发 \_reconcile_instance_observation，无条件将其覆盖为 error
+        - Impact: 用户主动关闭浏览器被判定为崩溃，触发 RecoveryCoordinator 的 2/10/30s 自动重试机制强行重新拉起容器，导致已正常关闭的 Profile 窗口死循环复活
+        - Fix: 在对账确认容器已退出时，先检查是否存在 native exit 事实或检查 Docker ExitCode；若 ExitCode 为 0 上报 observed_state='stopped'
+        - Verification: static
+- [High][90] src/backend/cbrowser/supervisor/core.py:696-728; docker_adapter.py:1423-1468 — Stream 局部单容器替换失败时未清理残存容器，导致孤儿容器驻留并耗尽替换预算
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_replace_stream_leak)
+    - f_supervisor_replace_stream_leak: docker_adapter.py 中 client.containers.run 启动容器后，若后续 \_install_network_policy 抛出异常，未清理已创建容器; core.py:715-727 捕获异常后记录日志并标记失败，未对残留的 stream 容器执行 cleanup_container_by_name
+        - Impact: 启动失败的 Stream 容器处于卡死状态且常驻 Docker 守护进程，持续占用宿主 UDP 端口；3 次替换配额耗尽后成为永久孤儿容器阻断后续同名容器创建
+        - Fix: 在 start_stream_container 异常处理中增加对未完成初始化 container 的删除回滚，并在 \_replace_stream_only 失败时兜底清理
+        - Verification: static
+- [High][90] src/backend/cbrowser/supervisor/network_policy.py:158,205 — 网络策略对 Stream 角色无条件放行公网出站流量，违背出站最小特权原则
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_stream_output_accept)
+    - f_supervisor_stream_output_accept: network_policy.py:158 在遍历 BLOCKED_IPV4_RANGES 阻断后，无条件追加 lines.append('-A OUTPUT -j ACCEPT'); 与 docs/blueprint/supervisor.md 第 63 行冲突：Stream 仅允许实际 Gateway 地址/端口、本实例 UDP mux、显式白名单与同机直连所需流量
+        - Impact: Stream 容器挂载了宿主 X11 与 Pulse 目录，被赋予了主动向公网任意 IP 发起连接的能力。若 WebRTC 或 GStreamer 媒体解析库存在漏洞，攻击者可直接向外部 C2 反弹 Shell
+        - Fix: 仅当 spec.role == 'browser' 时才追加默认公网放行；对 stream 角色默认保持 DROP，仅放行网关白名单与 UDP mux 端口
+        - Verification: static
+- [High][90] src/backend/cbrowser/supervisor/docker_adapter.py:1868-1887 — Edge 网关容器重建采用非原子删除替换模式，创建异常将导致网关永久离线
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_caddy_rebuild_no_rollback)
+    - f_supervisor_caddy_rebuild_no_rollback: docker_adapter.py:1870 先执行 caddy_c.remove(force=True) 删除旧容器，再调用 client.containers.run 创建新容器; 若端口冲突或配置异常导致 run 失败，旧容器已不复存在，且无回滚捕获机制
+        - Impact: 网关重建失败将导致整个系统的 HTTPS 入口彻底丢失，无法自动降级或拉起备份，必须人工介入修复
+        - Fix: 采用重命名备份模式：先将旧容器重命名，成功启动新容器后再删除；启动失败则恢复重命名并重新拉起旧容器
+        - Verification: static
+- [High][90] src/backend/cbrowser/gateway/server.py:731-760 — Gateway Viewer 信令限流使用 Caddy 代理 IP 导致跨用户连带拒绝服务
+    - Sources: bundle_local_backend_stream_gateway.md (f_gateway_viewer_throttle_proxy_ip)
+    - f_gateway_viewer_throttle_proxy_ip: gateway/server.py:731 source = request.remote 获取客户端地址，并以此为 key 传入 authorization_throttle.allow(source, profile_id); 在反代架构下，request.remote 恒为 Caddy 容器 IP
+        - Impact: 针对某 Profile 连续失败连接（如过期会话尝试 10 次）后直接封禁 Caddy IP，导致所有经由该反代访问该 Profile 的合法用户收到 429 报错，画面连接中断
+        - Fix: 复用 resolve_client_ip 并传入 CBROWSER_TRUSTED_PROXY_CIDRS 解析真实客户端 IP
+        - Verification: static
+- [High][90] src/backend/cbrowser/stream_agent/x11_keymap.py:35-194 — 违反拒绝妥协铁律：使用 AST 源码解析与运行时 monkey-patch 私有类规避上游 Selkies 底层修复
+    - Sources: bundle_local_backend_stream_gateway.md (f_stream_agent_x11_keymap_monkeypatch)
+    - f_stream_agent_x11_keymap_monkeypatch: x11_keymap.py 包含 203 行代码，通过 Python ast 模块反编译 selkies.input_handler.\_XTestKeyboard.__init__ 源码以检查私有属性; 在 install_x11_keymap_refresh 中直接在内存中劫持替换 \_XTestKeyboard.prebind 等私有方法与内部属性; 违背核心架构铁律：'拒绝妥协：严禁使用临时补丁或局部修补来规避底层重构；发现设计缺陷时必须从根因修正，必要时彻底重构或重写'
+        - Impact: 猴子补丁机制与脆弱的 AST 反射强耦合上游未公开私有实现细节，极易在上游微小变动或底层运行环境差异下发生非预期故障
+        - Fix: 从根因解决：向上游 Selkies 项目提交流或定制构建包含 XKBCOMP 刷新支持的官方 wheel 包，彻底移除 AST 逆向与运行时 monkey-patch
+        - Verification: static
+- [High][90] src/frontend/src/app/router.tsx:12-71; src/frontend/src/main.tsx:8-14 — 全局与路由树缺少 ErrorBoundary，组件渲染异常导致白屏崩溃
+    - Sources: bundle_local_frontend_core_shared.md (f_frontend_missing_error_boundary)
+    - f_frontend_missing_error_boundary: main.tsx 直接挂载 RouterProvider，router.tsx 定义的路由树根节点及各子路由均未声明 errorElement 或 ErrorBoundary
+        - Impact: 任一子组件在渲染期发生未捕获异常时，整个 React Fiber 树完全卸载，页面直接白屏，用户失去全部交互与错误上下文
+        - Fix: 在 shared/ui 实现通用 ErrorBoundary 组件并在 router.tsx 根路由配置 errorElement: <RouteErrorFallback />
+        - Verification: static
+- [High][90] src/frontend/src/features/settings/SettingsPage.tsx:185-203 — 确认应用网络设置后启动的 pollTimer 闭包泄漏，组件卸载后无休止空转
+    - Sources: bundle_local_frontend_features.md (f_frontend_settings_poll_timer_leak)
+    - f_frontend_settings_poll_timer_leak: SettingsPage.tsx:185 启动 pollTimer = setInterval(...) 轮询操作状态，未保存至 ref，未在卸载时 clearInterval，且 catch 吞没异常持续执行
+        - Impact: 用户在操作进行中离开页面，计时器永久驻留内存以 1 秒为周期持续请求后端，并在已卸载组件上触发更新与内存泄漏
+        - Fix: 使用 useRef 保存定时器句柄，在 useEffect cleanup 中清除，并增加最大重试轮询次数限制
+        - Verification: static
+- [High][95] scripts/export_supervisor_protocol.py:15-48 — Supervisor 协议导出脚本与实际 RPC 端点模型严重漂移，遗漏 8 个关键请求/响应模型
+    - Sources: bundle_local_contracts_deploy_infra.md (f_contracts_supervisor_protocol_drift)
+    - f_contracts_supervisor_protocol_drift: export_supervisor_protocol.py 的 \_MESSAGES 仅包含 14 个模型，遗漏了 RebuildEdgeRequest, ConvergeStreamsRequest, PreviewPolicySyncResponse, CloseTunnelsRequest, CloseTunnelsResponse, AttendantDialogsResponse, AnswerAttendantDialogRequest, AnswerAttendantDialogResponse
+        - Impact: 跨服务 RPC 契约文件与真实实现脱节，导致网络动态切换、隧道关闭与弹窗响应协议缺少 Schema 规格定义
+        - Fix: 在 \_MESSAGES 中补齐上述 8 个模型或自动内省 protocol.py 中所有 BaseModel 子类并重新导出
+        - Verification: static
+- [High][95] scripts/export_stream_protocol.py:24-30 — Stream 信令协议导出脚本遗漏 AgentHumanInputTakeoverEnvelope 核心信令
+    - Sources: bundle_local_contracts_deploy_infra.md (f_contracts_stream_protocol_drift)
+    - f_contracts_stream_protocol_drift: src/backend/cbrowser/stream_agent/protocol.py:311 定义了 AgentHumanInputTakeoverEnvelope，但 export_stream_protocol.py 未包含该消息
+        - Impact: 人工接管控制流协议脱离契约权威，网关无法通过官方 Schema 验证接管数据包
+        - Fix: 将 AgentHumanInputTakeoverEnvelope 加入导出脚本的 \_MESSAGES 并重新生成 Schema
+        - Verification: static
+- [High][90] scripts/deploy_v2.sh:503-508 — 重新部署脚本读取已应用网络配置时遗漏提取 https_port，导致自定义端口被重置
+    - Sources: bundle_local_contracts_deploy_infra.md (f_deploy_script_bind_port_drop)
+    - f_deploy_script_bind_port_drop: deploy_v2.sh:503 注释声明提取 bind host 与 https port，但实际代码仅 grep 了 bind_host，未读取 https_port; 后续直接回退到默认值 HTTPS_PORT=56661
+        - Impact: 用户在 Web 控制台修改了网络端口后，执行 deploy 升级会导致端口被强行重置回默认 56661，破坏配置持久性
+        - Fix: 在 deploy_v2.sh 中增加从 applied_network_version.json 解析 https_port 并同步更新环境变量
+        - Verification: static
+- [High][90] config/docker/supervisor_runtime/Dockerfile:1-32; compose.yaml:71-76 — supervisor_runtime 镜像与编排以 root 用户运行且未进行能力剥离
+    - Sources: bundle_local_contracts_deploy_infra.md (f_docker_supervisor_root_cap)
+    - f_docker_supervisor_root_cap: Dockerfile 无 USER 指令默认 UID 0，compose.yaml 未声明 cap_drop: [ALL]，且只读挂载了 /var/run/docker.sock; Unix socket 在 Linux VFS 中不受只读挂载限制，Supervisor 拥有对 Docker 守护进程的未受限访问权
+        - Impact: Supervisor 容器若存在漏洞，攻击者可借助 root 身份与 docker socket 直接逃逸接管宿主机
+        - Fix: 引入 socket proxy 限制 Docker API 方法，或通过 user namespace 与严格 capabilities 最小化剥离权限
+        - Verification: static
+- [High][95] tests/fixtures/docker_doubles.py:29-43 — 共享 Docker 测试双重实体 FakeContainers.get 忽略容器名参数，易造成假绿测试
+    - Sources: bundle_local_tests_unit_fixtures.md (f_tests_fake_containers_ignore_name)
+    - f_tests_fake_containers_ignore_name: FakeContainers.get(self, \_name: str) -> FakeContainer 完全忽略 \_name 参数，只要 self.container 存在即恒定返回该容器对象
+        - Impact: 生产代码因拼写错误传入错误或不存在的容器名时，测试依然返回有效容器而不抛出 NotFound，掩盖容器定位缺陷
+        - Fix: 将 FakeContainers 改造为基于容器名称字典映射 dict[str, FakeContainer]，未命中时抛出 NotFound 异常
+        - Verification: static
+- [High][95] tests/unit/test_supervisor_schema.py:32-50; test_stream_protocol_schema.py:40-46 — 协议 Schema 一致性测试采用硬编码白名单比对，形成契约漏检盲区
+    - Sources: bundle_local_tests_unit_fixtures.md (f_tests_schema_assert_hardcoded)
+    - f_tests_schema_assert_hardcoded: test_supervisor_schema.py:32 硬编码比对 14 个消息名，未对比生产代码 protocol.py 中声明的完整 BaseModel 集合; 生产代码新增消息而导出脚本遗漏时，单测依然 100% 通过
+        - Impact: 形成契约一致性虚假安全感，无法守卫协议导出脚本的完整性
+        - Fix: 在单测中引入反射或内省机制，动态遍历协议源码文件中所有顶级消息类，断言其必须 100% 存在于 Schema messages 中
+        - Verification: static
+- [High][95] tests/integration/test_agent_executor_chain.py:343; test_automation_probe_chain.py:320 — 集成测试套件中包含 18 个无条件 bare pytest.skip 的 GUI 强依赖测试，导致常规 CI 静默假绿
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_integration_bare_skips)
+    - f_tests_integration_bare_skips: test_agent_executor_chain.py 等文件在缺失 Chromium 或 Xvfb 时直接执行 pytest.skip，共 18 处; 常规 CI 环境运行 pytest tests/integration 时静默跳过但这部分核心执行器未能真正受到保护
+        - Impact: 执行器核心链路在常规门禁中完全未运行，破坏逻辑时门禁依然全绿放行
+        - Fix: 将强依赖真实 Chromium/Xvfb 的测试用例移至 tests/e2e/，并在 CBROWSER_E2E_REQUIRED=1 时实行严格 fail-closed
+        - Verification: static
+- [High][90] src/backend/cbrowser/services/network_service.py:135-203; runtime_coordinator.py:1144-1190 — 局域网接入模式切换缺乏事务性回滚与补偿，失败将致多沙箱状态分裂
+    - Sources: bundle_global_architecture.md (f_global_arch_network_switch_atomicity)
+    - f_global_arch_network_switch_atomicity: NetworkService 执行配置应用分 4 阶段推进，若后半部分容器策略更新失败，前期已生效的 Caddy 端口与部分容器网络规则无法自动回滚; 结合 BC-01 的 AttributeError 与 BC-02 的 404 缺陷，网络切换流程极易中断于半完成状态
+        - Impact: 网络配置更新失败后系统处于混合中间态，部分沙箱可访问部分沙箱不可访问，且数据库活跃操作被永久死锁
+        - Fix: 在 NetworkService 中引入补偿机制（Saga 模式或旧版本回退快照），并在任何阶段失败时调用回滚钩子
+        - Verification: static
+- [High][90] src/backend/cbrowser/api/v1/control_router.py:74; gateway/server.py:731 — 反代 IP 解析穿透不一致引发跨用户、跨租户级连带拒绝服务漏洞
+    - Sources: bundle_global_system_properties.md (f_global_sys_proxy_ip_cascade_dos)
+    - f_global_sys_proxy_ip_cascade_dos: control_router.py 与 gateway/server.py 均未调用 resolve_client_ip，直接使用反代网关 Caddy 的内部 IP 进行限流与封禁; 外部恶意请求达到阈值后导致 Caddy 容器 IP 全局被拉黑
+        - Impact: 单个恶意客户端的攻击行为会导致共享同一网关的所有合法用户与自动化 Agent 全部遭受 429 阻断，系统整体可用性崩溃
+        - Fix: 在网关与控制面全链路强制引入 resolve_client_ip 并配置受信任代理 CIDR 白名单
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/api/v1/control_router.py:102,233; src/backend/cbrowser/api/app.py:394 — 控制权与实体路由器将 dict 传入 HTTPException.detail 破坏规范
+    - Sources: bundle_local_backend_core.md (f_backend_core_http_exc_dict)
+    - f_backend_core_http_exc_dict: control_router 抛出 HTTPException(detail={"code": exc.code, "message": str(exc)}); app.py 全局异常处理器直接执行 str(exc.detail)，响应体变为 Python repr 字符串（如 "{code: ...}"）
+        - Impact: 客户端无法解析结构化错误码，破坏了 ErrorResponse 的 OpenAPI 契约与前端 Typed Client 的错误分支处理
+        - Fix: 在全局 http_exception_handler 中支持对 dict 类型 detail 的解构提取，或统一抛出业务异常
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/supervisor/docker_adapter.py:296-302,676-680 — 底层 HTTP 传输超时异常穿透 Docker 错误处理层，导致 helper 等待超时逃逸
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_helper_read_timeout)
+    - f_supervisor_helper_read_timeout: docker_adapter.py 调用 helper.wait(timeout=30) 时仅捕获了 except DockerException; Python docker SDK 中 wait 超时底层抛出的是 requests.exceptions.ReadTimeout（属于 RequestException，不继承 DockerException）
+        - Impact: 当 helper 策略注入卡死超时时，未封装的 ReadTimeout 异常向上传播中断流程，破坏异常类型契约且无法被沙箱降级捕获
+        - Fix: 在调用 helper.wait(timeout=...) 处同时捕获 DockerException 与 requests.exceptions.RequestException 并转化为 DockerSandboxError
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/agent_executor/transport.py:63-96,161-174 — CDP WebSocket 读循环异常退出或主动关闭时未拒绝挂起 Future 造成协程悬挂
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_transport_pending_futures)
+    - f_supervisor_transport_pending_futures: transport.py 的 \_read_loop 在发生异常或 close 时仅取消了 \_reader_task，未对 self.\_pending 中的 Futures 做异常置位; 对比 runtime_agent/cdp_proxy.py:227-235 严格遍历 pending_cmd_futures 并设置 set_exception
+        - Impact: 外部自动化调用在隧道断开时无法立即感知失败，挂起协程必须等待 30 秒 step_timeout 超时才返回，显著延缓错误反馈
+        - Fix: 在 \_read_loop 的 finally 及 close() 中遍历 self.\_pending 将未完成 Future 置为 CdpError('CDP transport disconnected')
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/runtime_agent/preview_capture.py:108-139 — 周期截图循环只附加不脱离导致 Chrome CDP 内部 Session 句柄长期累积泄露
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_preview_session_leak)
+    - f_supervisor_preview_session_leak: capture_once 通过 Target.attachToTarget 获取 sessionId 后，获取 metrics 并截图，未调用 Target.detachFromTarget 即返回
+        - Impact: 截图循环每 15 秒执行一次，单日产生数千个未释放的 Target Session 结构体，加剧浏览器内存泄漏与 CDP 事件分发负载
+        - Fix: 在获取截图后通过 try...finally 确保调用 Target.detachFromTarget 释放 session 资源
+        - Verification: static
+- [Medium][80] src/backend/cbrowser/secret_files.py:15-27 — 敏感凭据读取存在检查到使用的时间差漏洞，且未限制正规文件导致 FIFO 悬挂
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_secret_file_toctou)
+    - f_supervisor_secret_file_toctou: secret_files.py 先执行 target.stat() 检查权限，随后执行 target.read_text() 重新打开文件; stat() 与 open() 之间存在 TOCTOU 竞争，且对命名管道（FIFO）同样返回 0600 模式，随后的 read_text() 将永久阻塞主线程
+        - Impact: 可能遭遇文件替换攻击，或因意外传入命名管道文件导致 Supervisor 启动与主线程无界阻塞 DoS
+        - Fix: 使用 os.open 带 O_NOFOLLOW|O_CLOEXEC 获取文件描述符，对 fd 执行 fstat 校验 S_ISREG 正规文件与权限后直接读取
+        - Verification: static
+- [Medium][90] src/backend/cbrowser/supervisor/path_validator.py:20-44 — 违反拒绝妥协铁律：使用 /proc/self/fd 魔法路径临时绕过 108 字节 sun_path 限制而非根因规范目录拓扑
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_sun_path_proc_fd_hack)
+    - f_supervisor_sun_path_proc_fd_hack: path_validator.py 的 short_unix_socket_path 通过 os.open(dir, os.O_PATH) 获得目录句柄，拼接成 /proc/self/fd/{fd}/{filename}; 这是为了规避 sockaddr_un.sun_path 的 108 字节限制所使用的临时规避手段（workaround）; 未从根因将 runtime socket 放置在标准短路径拓扑中（如 /run/cbrowser/s/{id}.sock）
+        - Impact: 强依赖 Linux 特定的 /proc 文件系统机制，在非 Linux 宿主、特定容器受限环境或 /proc 受保护场景下失效
+        - Fix: 从架构顶层规范沙箱 runtime 目录拓扑结构，确保 socket 绝对路径原生控制在 108 字节内，移除 proc 魔法路径
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/stream_agent/agent.py:957; protocol.py:89; messaging.py:86-105 — tunnel_close_envelope 传递空 session_id 触发 Pydantic 校验异常
+    - Sources: bundle_local_backend_stream_gateway.md (f_stream_agent_tunnel_close_empty_session)
+    - f_stream_agent_tunnel_close_empty_session: protocol.py 中 agent_session_id 约束 min_length=1; agent.py:957 close_env = tunnel_close_envelope(..., session_id=self.agent_session_id or ''), 在未完成注册时传入空字符串触发 ValidationError
+        - Impact: Worker 异常退出时由于校验失败直接抛错崩溃，无法正常向 Gateway 回传 1011 错误状态码
+        - Fix: 在发送前校验 session_id，若为空则使用占位合法标识或在信封定义中允许关闭包放宽约束
+        - Verification: static
+- [Medium][85] src/backend/cbrowser/gateway/config.py:57-75 — Gateway 首次冷启动缺少 applied_network_version.json 导致 403 阻断
+    - Sources: bundle_local_backend_stream_gateway.md (f_gateway_missing_applied_network_403)
+    - f_gateway_missing_applied_network_403: gateway/config.py 中 allowed_origins 若未检测到 applied_network_version.json 文件，直接回退为默认空列表 []
+        - Impact: 在本地开发、单测或未使用部署脚本预置文件的场景下，前端合法的 WebRTC 信令连接全部触发 403 Origin not allowed 阻断
+        - Fix: 当配置文件不存在时，自动回退到默认本地白名单（https://127.0.0.1:56661, https://localhost:56661）
+        - Verification: static
+- [Medium][90] src/frontend/src/app/router.tsx:4-10 — 路由页面同步导入，未做按需代码分割与懒加载
+    - Sources: bundle_local_frontend_core_shared.md (f_frontend_router_no_code_split)
+    - f_frontend_router_no_code_split: router.tsx 顶层直接同步 import 了 SessionPage, SettingsPage, EnvironmentListPage, ProxyListPage 等全部页面组件
+        - Impact: 首屏加载必须下载包含流媒体会话、WebRTC 适配、代理与自动化配置在内的完整巨大 JS Bundle，拖慢 FCP 与 TTI
+        - Fix: 使用 React.lazy() 配合 <Suspense> 改造所有二级路由页面为按需懒加载
+        - Verification: static
+- [Medium][85] src/frontend/src/app/useRuntimeSnapshot.ts:16-21; AppLayout.tsx:95; useProfilesQuery.ts:444 — 全局布局轮询全量 Runtime 查询并在 SSE 更新时产生并发 HTTP 惊群
+    - Sources: bundle_local_frontend_core_shared.md (f_frontend_runtime_snapshot_thundering_herd)
+    - f_frontend_runtime_snapshot_thundering_herd: useRuntimeSnapshot 在全局 AppLayout 挂载，使用 useQueries 对全量 Profile 发起并发 getRuntime 请求; 每次 SSE 广播事件触发 invalidateQueries，导致全量 Profile 的 getRuntime 瞬间并发重发
+        - Impact: 当 Profile 数量增加时，每次状态更新引发大量并发 HTTP 请求产生网络惊群，增加后端压力并抵消 SSE 收益
+        - Fix: 提供单一聚合接口，或在前端仅基于本地 QueryClient 已有缓存进行聚合计算，不再主动为未激活详情的 Profile 挂载独立 fetcher
+        - Verification: static
+- [Medium][95] src/frontend/src/i18n.tsx:924,937-941,968; src/frontend/src/i18n.test.tsx:33-42 — 违反零兼容负担铁律：保留上游旧仓 cbm.locale 存储键迁移兼容逻辑与无用测试
+    - Sources: bundle_local_frontend_core_shared.md (f_frontend_legacy_cbm_locale_key)
+    - f_frontend_legacy_cbm_locale_key: i18n.tsx:924 定义了 LEGACY_STORAGE_KEY = 'cbm.locale'，并在 937-941 行实现读旧写新并删除旧键的兼容迁移逻辑; i18n.test.tsx:33 为该兼容逻辑单独编写了单元测试; cbm 为上游已废弃项目 CloakBrowser-Manager 的历史缩写，CBrowser 作为破坏性重构项目，严禁背负旧系统兼容包袱
+        - Impact: 在核心基础设施中引入不必要的历史迁移兼容逻辑，违背零兼容负担原则
+        - Fix: 彻底删除 LEGACY_STORAGE_KEY 及所有相关的旧键读取和清理代码，清理对应单元测试
+        - Verification: static
+- [Medium][85] src/frontend/src/features/browser-session/useBrowserSession.ts:77-79,192-194,518-528 — 会话卸载清理钩子未清理 transportRecoveryTimerRef 导致内存泄漏
+    - Sources: bundle_local_frontend_features.md (f_frontend_session_recovery_timer_leak)
+    - f_frontend_session_recovery_timer_leak: useBrowserSession.ts:192 启动了 transportRecoveryTimerRef.current = setTimeout(...)，但在 518-528 行卸载清理中未清除
+        - Impact: 用户在信令重连期间关闭页面，定时器依然会在后台触发一次多余的 getRuntime 请求
+        - Fix: 在 useEffect 卸载清理函数中增加 if (transportRecoveryTimerRef.current) clearTimeout(transportRecoveryTimerRef.current)
+        - Verification: static
+- [Medium][85] src/frontend/src/features/browser-session/useBrowserSession.ts:82,202-256 — mountedRef 错误挂载在参数驱动的 checkRuntime 副作用上，生命周期判断失真
+    - Sources: bundle_local_frontend_features.md (f_frontend_mounted_ref_lifecycle)
+    - f_frontend_mounted_ref_lifecycle: mountedRef 挂在 checkRuntime 的 useEffect 上；若传入 options.initialStage，在 205 行提前 return 导致未注册 cleanup，卸载后 mountedRef 恒为 true; 当 reconnect() 导致 reloadKey 自增时，重新触发导致 mountedRef 短暂被置为 false
+        - Impact: 异步回调中的 if (!mountedRef.current) 守卫失效，或在重连时误杀正在执行的异步操作
+        - Fix: 使用独立的空依赖 useEffect 管理组件真实的 mount/unmount 状态
+        - Verification: static
+- [Medium][85] src/frontend/src/features/browser-session/SessionPage.tsx:158,184-193; useBrowserSession.ts:387-465 — 会话页与底层 Hook 存在状态机分流，后台 Profile 停止后 WebRTC 轮询未停止
+    - Sources: bundle_local_frontend_features.md (f_frontend_session_stage_split_brain)
+    - f_frontend_session_stage_split_brain: SessionPage 依据 runtimeQuery.data 计算 stage；而 useBrowserSession 内部维持独立 stage 且只在初始化查一次 runtime; 外部 Profile 停止时，页面显示未就绪，但 useBrowserSession 内部仍为 connected，每秒继续对 iframe 执行 \_\_getWebRTCStats()
+        - Impact: 状态机两处分流造成数据不一致，并在容器已停止时产生无意义的后台指标轮询开销
+        - Fix: 将 useProfileRuntimeQuery 的数据状态作为入参或依赖传入 useBrowserSession，消除重复请求与分流
+        - Verification: static
+- [Medium][85] src/frontend/src/features/settings/SettingsPage.tsx:16-59,112-238 — 网络与字体设置绕过 OpenAPI 生成契约与 ApiClient 抽象，手写重叠 DTO 与裸请求
+    - Sources: bundle_local_frontend_features.md (f_frontend_settings_contract_violation)
+    - f_frontend_settings_contract_violation: SettingsPage 手写定义 NetworkAccessConfig 等接口并通过 client.request 发起裸请求，未封装至 ApiClient 且未复用 useFontSetsQuery; 违背 docs/blueprint/conventions.md 关于 OpenAPI 统一生成类型的约定
+        - Impact: 后端契约调整时无法通过 test:types 静态检出漂移，增加代码维护难度
+        - Fix: 从 shared/api/types.ts 导入生成的类型并在 ApiClient 中封装网络设置子域
+        - Verification: static
+- [Medium][80] src/frontend/src/features/profiles/ProfileDetailPage.tsx:68-74,98-106 — Profile 详情页 Tab 与打开会话操作使用原生 <a> 标签，破坏 SPA 客户端路由
+    - Sources: bundle_local_frontend_features.md (f_frontend_profile_detail_nav_link)
+    - f_frontend_profile_detail_nav_link: ProfileDetailPage 中 TABS.map 与打开会话直接使用 <a href='...'> 标签
+        - Impact: 用户在详情页切换 Tab 时触发浏览器整页硬刷新，重新下载 HTML 并丢失 React Query 内存缓存与 SSE 状态
+        - Fix: 使用 react-router 的 <Link> 或 <NavLink> 替代原生 <a> 标签
+        - Verification: static
+- [Medium][80] src/frontend/src/features/profiles/MaintenanceTab.tsx:24-37 — 维护面板删除 Profile 成功后未执行路由重定向
+    - Sources: bundle_local_frontend_features.md (f_frontend_maintenance_missing_redirect)
+    - f_frontend_maintenance_missing_redirect: handleDelete 在 deleteMutation.mutateAsync 成功后未做任何跳转
+        - Impact: 环境已被删除，界面依然停留在已失效路由，后续 Query 抛出 404 并展示空界面
+        - Fix: 引入 useNavigate，在删除成功后执行 navigate('/', { replace: true })
+        - Verification: static
+- [Medium][85] scripts/deploy_v2.sh:455-501 — deploy_v2.sh 内联硬编码 Caddyfile 与配置 JSON 模板，违反单一事实源原则
+    - Sources: bundle_local_contracts_deploy_infra.md (f_deploy_script_inline_caddyfile)
+    - f_deploy_script_inline_caddyfile: deploy_v2.sh 使用 cat \<< EOF 在 Bash 中手写生成初始 Caddyfile 与 applied_network_version.json，且 caddyfile_sha256 硬编码为空字符串; 与 Python 模块 network_config.py 形成双生成器分歧
+        - Impact: Caddyfile 逻辑演进时初次部署与动态 apply 产生行为漂移，且落盘配置中的哈希值为伪值
+        - Fix: 调用 python3 -m cbrowser.network_config 生成初始配置与 Caddyfile，废除 Bash 内联模板
+        - Verification: static
+- [Medium][85] config/docker/browser_runtime/Dockerfile:105 — browser_runtime 镜像复制全量后端源码，导致沙箱环境代码最小化原则失效
+    - Sources: bundle_local_contracts_deploy_infra.md (f_docker_browser_copy_all_backend)
+    - f_docker_browser_copy_all_backend: browser_runtime Dockerfile 执行 COPY src/backend/cbrowser /app/src/backend/cbrowser，将全量后端代码打入浏览器镜像
+        - Impact: 浏览器容器直面不受信外部 Web 内容，一旦发生逃逸，攻击者可在沙箱内直接读取 Supervisor、Gateway 与 API 模块源码
+        - Fix: 采用白名单复制，仅将 runtime_agent/, domain/, font_sets/ 等必需模块复制进镜像
+        - Verification: static
+- [Medium][85] compose.yaml:28,58,100 — compose.yaml 未做密钥隔离，全量挂载 SECRETS_DIR 导致凭据越权可读
+    - Sources: bundle_local_contracts_deploy_infra.md (f_compose_secrets_dir_overexpose)
+    - f_compose_secrets_dir_overexpose: api, gateway, supervisor 均挂载了相同的 /run/secrets:ro 目录，目录内包含 admin_password, supervisor_key 等全部 5 个密钥; gateway 与 api 运行 UID 同为 1000，gateway 可读取非属自身的 admin_password 与 supervisor_key
+        - Impact: 违背最小权限原则，若面对公网的网关容器受损，攻击者可盗取最高特权的管理员凭据
+        - Fix: 在 compose 中改为精确挂载单文件，或将不同角色的密钥物理放置于不同子目录
+        - Verification: static
+- [Medium][90] src/frontend/package.json:21; scripts/run_gates.sh:212-217 — 前端 OpenAPI 生成类型缺乏自动化漂移守卫
+    - Sources: bundle_local_tests_unit_fixtures.md (f_tests_frontend_api_codegen_ungated)
+    - f_tests_frontend_api_codegen_ungated: package.json 中的 test 命令以及 run_gates.sh 均未执行 npm run generate:api 并检查 git diff
+        - Impact: 后端接口调整后若开发者遗漏手动执行 generate:api，前端签入的类型定义与后端 OpenAPI 契约发生静默漂移
+        - Fix: 在前端测试或门禁脚本中增加 npm run generate:api && git diff --exit-code 检查步
+        - Verification: static
+- [Medium][90] tests/fixtures/gateway_probe/topology.py:36-56 — find_free_port() 存在跨进程 TOCTOU 竞争与无效线程锁
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_find_free_port_toctou)
+    - f_tests_find_free_port_toctou: find_free_port 绑定端口获取 port 后立即 close socket，到 Docker 实际 run 绑定端口之间存在时间差; \_host_port_lock 为进程内线程锁，在 pytest-xdist 多进程并发下完全失效
+        - Impact: 高并发测试时偶发端口分配冲突，导致 Harness 容器拉起失败并引发测试 Flaky
+        - Fix: 按 worker id 预分配独立的静态端口范围基地址，或让 Docker 自行分配随机端口（绑定宿主 0 端口）后回读
+        - Verification: static
+- [Medium][90] tests/e2e/conftest.py:27; test_stream_runtime_e2e.py:39 — E2E 测试强行硬编码 macOS 专属 Google Chrome 路径，导致 Linux CI 无法运行
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_e2e_hardcoded_macos_chrome)
+    - f_tests_e2e_hardcoded_macos_chrome: conftest.py:27 HOST_CHROME_PATH = Path('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'); 在 Linux 机器上开启 E2E 验证时，即使安装了 google-chrome，预检门禁也必然因找不到 /Applications 路径而 fail-closed
+        - Impact: 直接阻断 Linux 持续集成流水线与非 macOS 开发者运行 E2E 测试
+        - Fix: 引入跨平台路径探测逻辑：优先读取 CBROWSER_CHROME_PATH，其次探测 shutil.which('google-chrome') 与 Linux 常见路径
+        - Verification: static
+- [Medium][85] tests/e2e/test_frontend_media_e2e.py:695-830 — E2E 核心媒体测试用例缺乏断言语句，存在假测试风险
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_frontend_media_vacuous_test)
+    - f_tests_frontend_media_vacuous_test: test_ac005_remote_tab_switch_is_visible_on_both_pages 全程执行像素等待和落盘，但函数内无任何一条 assert 语句
+        - Impact: 测试用例未能对双页面间像素一致性与切换结果做显式断言校验，存在静默假通过隐患
+        - Fix: 在测试末尾显式补充对 red_a, red_b, green_a, green_b 匹配结果的 assert 断言
+        - Verification: static
+- [Medium][85] tests/integration/test_network_apply_operations.py:39-60 — 集成测试全量 Mock 核心依赖服务，退化为假集成测试
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_network_apply_all_mocked)
+    - f_tests_network_apply_all_mocked: test_network_apply_operations.py 将核心通信对象 supervisor 整体 MagicMock 掉，仅验证 NetworkService 自身内部流转
+        - Impact: 未验证真实的 HTTP RPC 调用、鉴权头透传与协议兼容性，将纯单元测试伪装为集成测试导致覆盖率虚高
+        - Fix: 将该用例移至 tests/unit/，或在集成测试中拉起真实 MockSupervisorServer 验证完整网络栈
+        - Verification: static
+- [Medium][95] README.md:3; AGENTS.md:3,8; docs/specs/v2_runtime_validation.md:17,71 — 核心根文档与生效需求规格遗留陈旧 Selkies 2.1.0 声明，与现行蓝图产生版本架构冲突
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_selkies_version_drift)
+    - f_docs_selkies_version_drift: README.md:3, AGENTS.md:3,8 与 docs/specs/v2_runtime_validation.md:17 依然写着 Selkies 2.1.0; docs/blueprint/decisions.md ADR 022 与 architecture.md 已明确声明在 t043 升级为 Selkies 2.2.1
+        - Impact: 外部协作者与 Agent 阅读根文档时获取到已废弃的依赖版本，违反单一权威与 ADR 传播一致性
+        - Fix: 将上述文件中的 Selkies 2.1.0 统一修正为 Selkies 2.2.1
+        - Verification: static
+- [Medium][90] .repo_template/scripts/track_worktree.py:140 — track_worktree.py 参数提取正则缺少精确词法边界，存在参数吞噬与错配风险
+    - Sources: bundle_local_repo_template_toolchain.md (f_tool_track_worktree_regex_greedy)
+    - f_tool_track_worktree_regex_greedy: match = re.search(r'--tid[= ](%5CS+)', command) 使用 \\S+ 贪婪捕获，在复合 shell 命令中捕获分号或管道连带字符（如 t042;）
+        - Impact: 导致 resolve_worktree 比对失败，使得工作树自动跟踪与状态记录失效
+        - Fix: 将正则限定为严格的标识符字符集：r'--tid[= ](%5Ba-zA-Z0-9_-%5D+)'
+        - Verification: static
+- [Medium][95] docs/spikes/ — 7 项已完结调研专题（s011–s017）滞留于活跃工作区，未按规约归档至 docs/archive/spikes/
+    - Sources: bundle_local_historical_archives_reviews.md (f_arch_unarchived_spikes_lingering)
+    - f_arch_unarchived_spikes_lingering: docs/spikes/ 下存在 s011 至 s017 共 7 个目录，对应 task 均已完结且合入 main; AGENTS.md 明确要求完结 spike 应由 repo-hygiene 迁入 docs/archive/spikes/
+        - Impact: 混淆活跃调研与历史资产的界限，增加工程全局扫描开销
+        - Fix: 运行 python3 .repo_template/scripts/repo_hygiene.py archive-spike 批量归档
+        - Verification: static
+- [Medium][90] tests/e2e/conftest.py:27; tests/integration/test_agent_executor_chain.py:343 — 测试架构存在操作系统环境阻抗，阻碍多平台 CI 战略落地
+    - Sources: bundle_global_strategy.md (f_global_strategy_platform_impedance)
+    - f_global_strategy_platform_impedance: E2E 测试硬编码 macOS Chrome 路径，集成测试存在 18 处 GUI 强依赖跳过; 系统核心容器与后端业务虽为标准 Linux 容器化，但在非开发机宿主上难以执行自动化门禁验收
+        - Impact: 阻碍团队协作与跨平台持续集成，增加了部署到标准 Linux 服务器后的验证成本
+        - Fix: 统一将宿主依赖转为环境变量探测，并将 GUI 强依赖测试从常规 integration 组剥离至专用 e2e 组
+        - Verification: static
+- [Medium][90] scripts/export_supervisor_protocol.py; export_stream_protocol.py; tests/unit/test_supervisor_schema.py — 跨服务通信 Schema 治理机制存在静默退化风险
+    - Sources: bundle_global_evolution.md (f_global_evolution_schema_drift_governance)
+    - f_global_evolution_schema_drift_governance: 协议导出脚本遗漏了 8 个 Supervisor 消息与 1 个 Stream 关键信令，而单元测试采用硬编码白名单比对导致门禁失灵; 前端 OpenAPI 生成类型在 CI 中未强制检查 git diff
+        - Impact: 随着后续接口与协议演进，跨语言与跨服务接口定义极易发生静默脱节与隐蔽破坏，增加团队沟通与版本迭代成本
+        - Fix: 在 CI 门禁中增加 export_all_schemas.py && git diff --exit-code 强制校验，并使用反射断言协议模型全量导出
+        - Verification: static
+- [Low][85] src/backend/cbrowser/api/v1/automation_router.py:158-166 — 自动化 Token 隧道注册遗漏 agent_instance_id 导致可观测性降级
+    - Sources: bundle_local_backend_core.md (f_backend_core_automation_tunnel_agent_id)
+    - f_backend_core_automation_tunnel_agent_id: automation_cdp 成功解析出 token_id，但在调用 registry.register 时硬编码 agent_instance_id=None
+        - Impact: 查询活跃自动化隧道列表时无法追踪到具体的 Token 身份 ID，降低审计可观测性
+        - Fix: 将 registry.register 中的 agent_instance_id=None 替换为 agent_instance_id=token_id
+        - Verification: static
+- [Low][80] src/backend/cbrowser/runtime_agent/dialog_attendant.py:339-351 — 弹窗托管服务异常断开未注销正在等待响应的 Future，引发 30 秒无意义等待
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_dialog_attendant_waiters)
+    - f_supervisor_dialog_attendant_waiters: dialog_attendant.py 的 \_run 在异常退出时仅调用 attendant.release() 与 ws.close()，未取消 self.\_waiters 中的 Future
+        - Impact: 若弹窗应答期间与浏览器内部连接断开，调用端无法立即感知，需等待完整的 30 秒超时才返回 None
+        - Fix: 在 \_run 的 finally 块中遍历 self.\_waiters 将挂起的 Future 取消并清空字典
+        - Verification: static
+- [Low][80] src/backend/cbrowser/supervisor/core.py:2114-2235 — 核心启动流程未持久化操作账本，并发幂等重试退化为 409 冲突
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_start_profile_journal)
+    - f_supervisor_start_profile_journal: start_profile 接受了 operation_id，但自身从未调用 self.operations.begin() 或 complete()，仅在 stop_profile 中持久化了账本
+        - Impact: 因网络抖动携带相同 operation_id 重试 start_profile 时，直接触发 LifecycleConflictError 抛出 409，未享受到操作账本的幂等保护
+        - Fix: 在 start_profile 入口处接入 self.operations.begin() 并在完成时记录结果
+        - Verification: static
+- [Low][80] src/backend/cbrowser/supervisor/docker_adapter.py:458-463 — 孤儿清理逻辑遭遇非预期命名格式时全盘失败，阻断 Supervisor 启动
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_orphan_helper_regex)
+    - f_supervisor_orphan_helper_regex: docker_adapter.py 的 \_cleanup_orphan_helpers 对容器名执行严格正则匹配，不匹配直接抛出 DockerSandboxError; 在 runner.py:147 中作为启动必经前置门禁执行
+        - Impact: 若宿主机存在同前缀的手动调试容器，正则不匹配直接导致 Supervisor 守护进程崩溃无法启动
+        - Fix: 遵循蓝图纲领异常资源逐个拒绝不中断整轮，对命名不匹配容器记录 Warning 跳过，仅清理严格匹配的容器
+        - Verification: static
+- [Low][80] src/backend/cbrowser/supervisor/core.py:2404 — 全局协程锁过度序列化 stop 操作造成 Profile 关停并发性能瓶颈
+    - Sources: bundle_local_backend_runtime_supervisor.md (f_supervisor_stop_global_lock)
+    - f_supervisor_stop_global_lock: core.py:2404 async with self.\_global_lock, lock: 在 stop_profile 中持有了类全局唯一的 self.\_global_lock
+        - Impact: 不同 Profile 之间的容器相互独立，持有了全局锁导致多沙箱停止操作必须完全串行等待（单次耗时 1-3 秒，10 个沙箱需等待 20-30 秒）
+        - Fix: 移除 self.\_global_lock，单 Profile 粒度的 \_locks[profile_id] 已足以保证互斥
+        - Verification: static
+- [Low][85] src/frontend/src/shared/ui/cn.ts:1-5 — cn 仅执行简单字符串拼接，缺少 Tailwind 样式优先级覆盖合并
+    - Sources: bundle_local_frontend_core_shared.md (f_frontend_cn_class_collision)
+    - f_frontend_cn_class_collision: cn 函数实现仅为 parts.filter(Boolean).join(' ')，未处理同一属性的 Tailwind 类名冲突
+        - Impact: 外部传入自定义高度/边距类名时，与组件内部默认类名并存，生效规则取决于 CSS 编译顺序，产生样式覆盖不确定 Bug
+        - Fix: 引入 tailwind-merge 处理类名覆盖合并，或在基础组件中使用排他型 variant 控制
+        - Verification: static
+- [Low][80] src/frontend/src/features/browser-session/adapter.ts:26,50,98,108 — Selkies 适配层采用松散 any 强制转换，缺乏结构化类型约束
+    - Sources: bundle_local_frontend_features.md (f_frontend_adapter_any_casting)
+    - f_frontend_adapter_any_casting: adapter.ts 大量使用 const win = targetWindow as any，以及 args: any[]
+        - Impact: 削弱 TypeScript 静态检查能力，WebRTC 或上游 Selkies 变更时无法在编译期暴露接口破坏风险
+        - Fix: 为 targetWindow 扩展强类型 SelkiesWindow 接口，消除裸 any 强转
+        - Verification: static
+- [Low][80] config/docker/automation_probe/Dockerfile:5-6 — automation_probe Dockerfile 硬编码特定架构 arm64 deb 安装包
+    - Sources: bundle_local_contracts_deploy_infra.md (f_docker_automation_probe_arm64_deb)
+    - f_docker_automation_probe_arm64_deb: Dockerfile 直接 ADD 了 xautomation_1.09-4_arm64.deb
+        - Impact: 在 x86_64/amd64 主机上构建 probe 镜像将直接失败或安装错误架构二进制，破坏跨平台 CI
+        - Fix: 改用 apt-get install -y xautomation 或基于 TARGETARCH 参数动态选择安装包
+        - Verification: static
+- [Low][85] tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile:1-19 — 存在废弃且版本冲突的历史测试镜像 Dockerfile 夹具
+    - Sources: bundle_local_tests_unit_fixtures.md (f_tests_abandoned_api_dockerfile)
+    - f_tests_abandoned_api_dockerfile: tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile 残留在仓库中，硬编码旧版依赖且以 root 运行，仅有一处单测做文本断言
+        - Impact: 混淆代码审计，且维持了死代码夹具的维护成本
+        - Fix: 清理该历史 Dockerfile 夹具并同步移除单测中的对应文本断言
+        - Verification: static
+- [Low][80] tests/e2e/test_frontend_build_wiring.py:1-164 — 纯 Python 单元测试被错误放置于 tests/e2e/ 目录中
+    - Sources: bundle_local_tests_integration_e2e.md (f_tests_build_wiring_wrong_directory)
+    - f_tests_build_wiring_wrong_directory: test_frontend_build_wiring.py 全文仅测试 verify_frontend_dist.py 文件匹配逻辑，无需 Docker 与 Chrome，耗时小于 0.2s; 位于 tests/e2e/ 导致在常规门禁阶段完全被跳过
+        - Impact: 构建验证逻辑单测未能在常规门禁阶段执行，且污染 E2E 目录结构
+        - Fix: 将该文件移动至 tests/unit/ 目录下使其每次随单测自动执行
+        - Verification: static
+- [Low][90] docs/blueprint/frontend.md:7,13 — frontend.md 中路由废弃声明与后续自动化页面规格描述存在局部自相矛盾
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_frontend_router_contradiction)
+    - f_docs_frontend_router_contradiction: frontend.md:7 声明 /automation/:profileId 直接删除，但第 13 行仍将 /automation/:profileId 列为自动化页; 代码实现已将其收敛为详情页 Tab 路由 profiles/:profileId/automation
+        - Impact: 蓝图内部描述抵触，对前端路由入口形态造成认知歧义
+        - Fix: 更正 frontend.md:13 路径为 /profiles/:profileId/automation
+        - Verification: static
+- [Low][90] docs/guides/supervisor_validation.md:21; browser_runtime_validation.md:40 — 验证指南中遗留陈旧的 Python 3.12+ 解释器版本要求，滞后于 Python 3.15+ 真实基线
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_guides_python_version_drift)
+    - f_docs_guides_python_version_drift: 验证指南中描述使用 Python 3.12+，而 conventions.md 与 .mise.toml 强制基准为 Python 3.15+
+        - Impact: 指导操作者测试时可能因使用低版本 Python 导致依赖检查失败
+        - Fix: 统一更新指南中的解释器版本为 Python 3.15+
+        - Verification: static
+- [Low][85] docs/findings/d030_selkies_2_2_1_upgrade_contract.md; d009_turn_hmac_relay_transport.md:11 — docs/findings/ 事实记录状态元数据不规范且部分条目存在三态混淆
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_findings_metadata_drift)
+    - f_docs_findings_metadata_drift: d030 与 d031 缺少 '- 现状：' 元数据行；d009, d010 等已被 ADR 013 废弃的条目元数据仍标记为有效
+        - Impact: 自动化脚本解析元数据时会将已废弃技术事实（coturn）误判为现行有效
+        - Fix: 补齐 d030/d031 现状元数据，并将 d009 等更正为已由 ADR 013 替代
+        - Verification: static
+- [Low][85] docs/pending/parked/p031_domain_learnings_site_skills.md:49 — 暂搁待办 p031 中引用了已闭环条目的失效相对路径，产生死链
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_parked_p031_dead_link)
+    - f_docs_parked_p031_dead_link: p031 链接了 ../todo/p030\_...，而 p030 等文件已完成并迁移到 docs/archive/pending/
+        - Impact: 文档链接断裂，无法直接溯源已闭环的前置条目
+        - Fix: 将链接修正为 ../../archive/pending/ 下对应的归档文件
+        - Verification: static
+- [Low][80] assets/skills/cbrowser-agent/SKILL.md:22 — Skill 公共执行器规约文档残留内部 task 编号标识符
+    - Sources: bundle_local_specs_blueprint_docs.md (f_docs_skill_task_id_leak)
+    - f_docs_skill_task_id_leak: 文档出现 '交 t031 handOff'，直接引用了内部临时 task 编号
+        - Impact: 破坏公共 Skill 文档的抽象封装
+        - Fix: 更正为指向领域语义 '交由系统真人优先控制权规约处理（见 docs/specs/human_agent_control.md）'
+        - Verification: static
+- [Low][85] .repo_template/scripts/repo_cleanup.py:223-225 — repo_cleanup.py 在批量清理目录内容时对软链接缺乏解引阻断
+    - Sources: bundle_local_repo_template_toolchain.md (f_tool_repo_cleanup_symlink_traversal)
+    - f_tool_repo_cleanup_symlink_traversal: 清理目录遍历使用 target.is_dir() 判断，若存在指向外部真实目录的符号链接，默认跟随并执行 shutil.rmtree(target)
+        - Impact: 在 .scratch 下存在外部目录符号链接时，可能意外误删外部真实目录
+        - Fix: 优先检查 target.is_symlink() 执行 unlink()，防止递归跟随
+        - Verification: static
+- [Low][80] .repo_template/scripts/template_sync/state.py:27-38 — state.py 读取本地 sync_state.json 时对顶层非字典结构缺少类型防御
+    - Sources: bundle_local_repo_template_toolchain.md (f_tool_sync_state_json_type_check)
+    - f_tool_sync_state_json_type_check: 解析 JSON 后未做 isinstance(data, dict) 判断直接 .get()，若文件格式损坏为数组则抛出未受控 AttributeError
+        - Impact: 缺少结构损坏时的友好异常报错与恢复指引
+        - Fix: 增加类型断言校验并抛出结构清晰的 SyncError
+        - Verification: static
+- [Low][90] docs/reviews/ — 历史多路评审会话产物长期堆积于 docs/reviews/，未执行生命周期归档
+    - Sources: bundle_local_historical_archives_reviews.md (f_arch_unarchived_reviews_lingering)
+    - f_arch_unarchived_reviews_lingering: docs/reviews/ 下堆积了 5 个历史审查目录，而 docs/archive/reviews/ 保持为空
+        - Impact: 活跃评审目录体积膨胀，干扰日常文档检索与审计
+        - Fix: 经由 repo_hygiene.py archive-review 将确认过时的历史评审迁移归档
+        - Verification: static
+- [Low][85] docs/reviews/review_20261103_185924/adoption_decision.md — 历史审查决议文档中引用当时进行中 task 的相对路径因 task 归档而失效
+    - Sources: bundle_local_historical_archives_reviews.md (f_arch_adoption_decision_dead_links)
+    - f_arch_adoption_decision_dead_links: adoption_decision.md 中包含 57 处指向 ../../tasks/t02X\_... 的链接，由于任务归档导致全部变为死链
+        - Impact: 查阅该历史决议时无法点击跳转到对应 task 的上下文说明
+        - Fix: 批量将链接路径更正为指向 ../../archive/tasks/ 对应归档文件
+        - Verification: static
+
+## Gaps
+
+None.
+
+## Limitations
+
+- 静态深度审阅与逻辑推导，未在真实多机物理 Docker 宿主执行破坏性故障注入
+- 部分 E2E 测试依赖本地已安装 Google Chrome 与 macOS 宿主显示服务
+
+## Sources
+
+- [bundle_local_backend_core.md](bundle_local_backend_core.md)
+- [bundle_local_backend_runtime_supervisor.md](bundle_local_backend_runtime_supervisor.md)
+- [bundle_local_backend_stream_gateway.md](bundle_local_backend_stream_gateway.md)
+- [bundle_local_frontend_core_shared.md](bundle_local_frontend_core_shared.md)
+- [bundle_local_frontend_features.md](bundle_local_frontend_features.md)
+- [bundle_local_contracts_deploy_infra.md](bundle_local_contracts_deploy_infra.md)
+- [bundle_local_tests_unit_fixtures.md](bundle_local_tests_unit_fixtures.md)
+- [bundle_local_tests_integration_e2e.md](bundle_local_tests_integration_e2e.md)
+- [bundle_local_specs_blueprint_docs.md](bundle_local_specs_blueprint_docs.md)
+- [bundle_local_repo_template_toolchain.md](bundle_local_repo_template_toolchain.md)
+- [bundle_local_historical_archives_reviews.md](bundle_local_historical_archives_reviews.md)
+- [bundle_repository_summary.md](bundle_repository_summary.md)
+- [bundle_followup_q_strategy_01.md](bundle_followup_q_strategy_01.md)
+- [bundle_global_strategy.md](bundle_global_strategy.md)
+- [bundle_followup_q_arch_01.md](bundle_followup_q_arch_01.md)
+- [bundle_global_architecture.md](bundle_global_architecture.md)
+- [bundle_followup_q_system_properties_01.md](bundle_followup_q_system_properties_01.md)
+- [bundle_global_system_properties.md](bundle_global_system_properties.md)
+- [bundle_global_evolution.md](bundle_global_evolution.md)
+- [bundle_cross_validation.md](bundle_cross_validation.md)

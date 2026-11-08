@@ -1,0 +1,52 @@
+# Cross validation
+
+Reviewer: independent_cross_verifier
+
+- f_backend_core_attr_error: agree — 代码事实确凿，网络重构时必发调用失败崩溃
+    - Evidence: runtime_coordinator.py:1155 调用了 self.client.post 与 self.\_auth_headers(); 类定义中仅有 self.\_client 属性，确实缺少 self.client 与 self.\_auth_headers()，必抛 AttributeError
+- f_backend_core_control_client_ip: agree — 限速桶绑定至反代网关 IP，存在连带 DoS 风险
+    - Evidence: control_router.py:74 直接使用 request.client.host; 反代下获取到的是 Caddy 内部容器 IP，多次错误尝试将导致 Caddy IP 被限流
+- f_backend_core_font_sets_block: agree — 大文件同步哈希计算导致事件循环冻结事实确凿
+    - Evidence: font_sets_router.py 同步调用 check_font_set 遍历并计算字体文件 SHA-256; 计算全在主事件循环中同步执行，大字体集场景下阻塞主线程数秒
+- f_backend_core_legacy_cdp_router: agree — 代码确凿存在未清理的旧版兼容路由与文档隐藏，违背顶层铁律
+    - Evidence: app.py:418 显式调用 app.include_router(legacy_cdp_router, include_in_schema=False); automation_router.py:250 注册了旧版路径 /profiles/{profile_id}/cdp; 直接违背 '零兼容性负担：直接执行破坏性变更，完全不需要考虑前后兼容' 架构铁律
+- f_backend_core_network_active_leak: agree — 操作状态死锁与任务句柄泄漏事实确凿
+    - Evidence: network_service.py 中 \_background_tasks 在任务完成后未从字典删除; 异常终止后 active_op 保持非终态，导致后续 apply 持续遭遇并发冲突拦截
+- f_backend_core_network_prefix: agree — 路由前缀缺失导致前端所有网络相关请求通过网关时必发 404
+    - Evidence: network_router.py:36 声明前缀为 /network，app.py 挂载时未提供 prefix='/api/v1'; 前端全链请求 /api/v1/network/\* 且 Caddyfile 仅反代 /api/\*
+- f_contracts_stream_protocol_drift: agree — 人工接管核心信令未被纳入契约规范
+    - Evidence: protocol.py 定义了 AgentHumanInputTakeoverEnvelope，但 export_stream_protocol.py 未列入导出列表
+- f_contracts_supervisor_protocol_drift: agree — 契约 Schema 滞后于生产代码实现
+    - Evidence: export_supervisor_protocol.py 的 \_MESSAGES 仅 14 个模型，遗漏了 8 个实际使用的 RPC 模型; 生成的 supervisor_protocol.json 契约不全
+- f_deploy_script_bind_port_drop: agree — 重新部署导致自定义端口丢失被强行覆盖
+    - Evidence: deploy_v2.sh:503 仅读取 bind_host，未读取 https_port，后续直接回退为默认 56661
+- f_docker_supervisor_root_cap: agree — 容器若受损可直接借助 docker socket 逃逸接管宿主
+    - Evidence: supervisor Dockerfile 无 USER 默认为 root，compose 未配 cap_drop: [ALL]，且只读挂载了 docker.sock; Unix Socket 不受只读文件系统属性约束，root 拥有完整 Docker 控制权
+- f_frontend_missing_error_boundary: agree — 缺少最外层与路由层渲染异常兜底，用户交互断裂
+    - Evidence: main.tsx 与 router.tsx 均未声明 errorElement 或 ErrorBoundary; React 19 渲染期异常将导致整个组件树完全卸载白屏
+- f_frontend_settings_poll_timer_leak: agree — 离开页面后定时器依然每秒后台轮询后端，闭包与网络请求永久泄漏
+    - Evidence: SettingsPage.tsx:185 启动 pollTimer = setInterval(...)，未保存 ref，无 useEffect cleanup; catch 块吞没异常持续轮询
+- f_gateway_viewer_throttle_proxy_ip: agree — 单点错误封禁反代 IP，引发跨用户大面积拒绝服务
+    - Evidence: gateway/server.py:731 直接使用 request.remote 作为限流来源 Key; 反代下 request.remote 恒为 Caddy 容器 IP，错误尝试直接导致网关 IP 被封禁
+- f_global_arch_network_switch_atomicity: agree — 宏观架构缺乏网络模式切换失败的事务性补偿机制
+    - Evidence: NetworkService 分 4 阶段推进，中途失败无自动回滚机制; 已生效的新端口与部分容器规则与未生效容器产生状态割裂
+- f_global_sys_proxy_ip_cascade_dos: agree — 跨模块均存在同类代理 IP 识别穿透漏洞，形成系统级连锁 DoS 风险
+    - Evidence: control_router.py 与 gateway/server.py 均未调用 resolve_client_ip; 反代 IP 被封禁引发跨用户拒绝服务
+- f_stream_agent_x11_keymap_monkeypatch: agree — 运行时猴子补丁与 AST 逆向耦合上游私有细节，属于典型的不优雅妥协方案
+    - Evidence: x11_keymap.py:35-194 包含整套 AST 反编译解析与运行时私有方法动态替换逻辑; 违背 '拒绝妥协：严禁使用临时补丁或局部修补来规避底层重构' 架构铁律
+- f_supervisor_caddy_rebuild_no_rollback: agree — 非原子删除替换导致网关单点故障后服务彻底断开
+    - Evidence: docker_adapter.py:1870 先对旧 Caddy 容器执行 remove(force=True)，随后才尝试 run 新容器; 创建新容器一旦失败，旧容器已永久销毁且无回滚机制
+- f_supervisor_normal_exit_override: agree — 覆盖正常退出状态破坏生命周期一致性，诱发浏览器复活死循环
+    - Evidence: core.py:1598-1606 当 container_status 为 exited 时无条件上报 observed_state='error'; 即使捕获了 Native Exit 0，随后也被对账逻辑覆盖为 error 从而诱发退避重试死循环
+- f_supervisor_replace_stream_leak: agree — 半初始化的 Stream 容器持续驻留 Docker 并占用宿主端口，耗尽重试配额
+    - Evidence: docker_adapter.py 的 start_stream_container 在网络策略安装失败时未清理刚启动的容器; core.py:715 捕获异常后未做孤儿容器兜底删除
+- f_supervisor_stream_output_accept: agree — Stream 容器被赋予非必要的全网出站能力，扩大了媒体解析逃逸后的攻击面
+    - Evidence: network_policy.py:158 对所有角色无条件追加 -A OUTPUT -j ACCEPT; 违背 blueprint 中 Stream 容器仅放行必要网关与直连白名单的最小出站特权约定
+- f_supervisor_teardown_port_leak: agree — 残存容器占用的 UDP 端口被提前归还后重分配，必发端口绑定冲突或媒体流串扰
+    - Evidence: core.py:2480-2504 在捕获 teardown_error 后于 finally 块强行调用 self.ports.release(profile_id); 违反 docs/blueprint/supervisor.md 中'清理失败不释放仍占用的端口'铁律
+- f_tests_fake_containers_ignore_name: agree — 错误容器名也能命中对象，导致生命周期匹配单测产生假绿
+    - Evidence: FakeContainers.get 完全忽略容器名参数，恒定返回 self.container
+- f_tests_integration_bare_skips: agree — 执行器核心链路在常规门禁中完全未运行却放行
+    - Evidence: test_agent_executor_chain.py 等文件存在 18 处 bare pytest.skip; 在标准无 GUI 环境运行 integration 测试时静默跳过，但套件整体退出码为 0
+- f_tests_schema_assert_hardcoded: agree — 导出脚本遗漏新增模型时，单测依然 100% 通过，形成假安全感
+    - Evidence: test_supervisor_schema.py 硬编码比对 14 个已知模型名称集合，未反射对比 protocol.py 的真实集合
