@@ -11,7 +11,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from aiohttp import WSMsgType, web
 from cbrowser.secret_files import read_secret_file
@@ -30,12 +30,12 @@ from cbrowser.stream_agent.protocol import (
     validate_agent_envelope,
 )
 from cbrowser.supervisor.agent_credentials import AgentCredentials
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .api_client import GatewayApiClient
 from .client_ip import parse_trusted_proxy_cidrs, resolve_client_ip
 from .config import GatewayConfig
-from .endpoint import normalize_origin
+from .endpoint import normalize_origin, normalize_origins
 from .registry import (
     AgentRegistry,
     AuthorizationThrottle,
@@ -58,6 +58,16 @@ class _DisconnectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     runtime_instance_id: str
+
+
+class _PublicationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["prepare", "acknowledge", "revoke"]
+    operation_id: str = Field(min_length=1, max_length=128)
+    generation: int = Field(ge=0)
+    config_hash: str = Field(min_length=1, max_length=256)
+    origins: list[str] = Field(default_factory=list)
 
 
 @dataclass
@@ -198,6 +208,14 @@ def create_gateway_app(
         ).encode("utf-8")
     except RuntimeError as exc:
         raise ValueError(str(exc)) from None
+    try:
+        publication_token = read_secret_file(
+            config.api_token_file,
+            label="Gateway publication token",
+            minimum_bytes=32,
+        ).encode("utf-8")
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from None
     api = api_client or GatewayApiClient(config.api_url, config.api_token_file)
 
     registry = AgentRegistry()
@@ -282,6 +300,20 @@ def create_gateway_app(
         if not hmac.compare_digest(provided, control_token):
             return web.json_response(
                 {"detail": "Unauthorized control token"}, status=401
+            )
+        return None
+
+    def _check_publication_auth(request: web.Request) -> web.Response | None:
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return web.json_response(
+                {"detail": "Missing or invalid Bearer authorization header"},
+                status=401,
+            )
+        provided = auth[len("Bearer ") :].strip().encode("utf-8")
+        if not hmac.compare_digest(provided, publication_token):
+            return web.json_response(
+                {"detail": "Unauthorized publication token"}, status=401
             )
         return None
 
@@ -423,6 +455,72 @@ def create_gateway_app(
                 status=503,
             )
         return web.json_response({"status": "ok"})
+
+    async def handle_network_publication(request: web.Request) -> web.Response:
+        auth_err = _check_publication_auth(request)
+        if auth_err:
+            return auth_err
+        try:
+            body = await request.json()
+        except (ValueError, json.JSONDecodeError):
+            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+        if not isinstance(body, dict):
+            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+        try:
+            payload = _PublicationRequest.model_validate(body)
+        except ValidationError:
+            return web.json_response({"detail": "Invalid publication"}, status=400)
+        try:
+            origins = normalize_origins(payload.origins)
+        except ValueError:
+            return web.json_response({"detail": "Invalid publication origins"}, status=400)
+
+        identity = {
+            "source": "gateway",
+            "operation_id": payload.operation_id,
+            "generation": payload.generation,
+            "config_hash": payload.config_hash,
+        }
+        if payload.action == "prepare":
+            if not origins:
+                return web.json_response(
+                    {"detail": "Publication origins are required"}, status=400
+                )
+            result = config.authorize_publication(
+                payload.operation_id,
+                payload.generation,
+                payload.config_hash,
+                origins,
+            )
+            if result.get("authorized") is not True:
+                return web.json_response(
+                    {"published": False, **identity}, status=409
+                )
+            return web.json_response({"published": True, **identity})
+        if payload.action == "acknowledge":
+            ack = config.acknowledge_publication(
+                payload.operation_id, payload.generation, payload.config_hash
+            )
+            if ack.get("acked") is not True:
+                return web.json_response(
+                    {"acked": False, **identity}, status=409
+                )
+            return web.json_response(
+                {
+                    "acked": True,
+                    "snapshot_hash": payload.config_hash,
+                    "active": config.active_publication(),
+                    **identity,
+                }
+            )
+        revoked = config.revoke_publication(payload.operation_id)
+        return web.json_response(
+            {
+                "revoked": True,
+                "active": revoked.get("publication"),
+                **identity,
+            }
+        )
 
     # ---------------- Agent Register Route ----------------
     async def handle_agent_register(request: web.Request) -> web.WebSocketResponse:
@@ -748,13 +846,15 @@ def create_gateway_app(
             )
 
         # 1. Origin verification (normalized scheme/host/port)
+        config.note_network_state_mtime()
+        publication = config.active_publication()
         raw_origin = request.headers.get("Origin", "")
         try:
             origin = normalize_origin(raw_origin)
         except ValueError:
             authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text="Origin not allowed")
-        if origin not in config.allowed_origins:
+        if origin not in publication.get("origins", []):
             authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text="Origin not allowed")
 
@@ -929,6 +1029,7 @@ def create_gateway_app(
         "/gateway/v1/internal/profiles/{profile_id}/disconnect",
         handle_supervisor_disconnect,
     )
+    app.router.add_post("/gateway/v1/network/publication", handle_network_publication)
     app.router.add_get("/stream/{profile_id}/signal", handle_viewer_signal)
 
     # ---------------- Background Tasks ----------------

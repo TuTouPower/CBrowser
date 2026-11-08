@@ -1978,16 +1978,26 @@ with path.open('w') as output:
             inspect = self.client.api.inspect_container(caddy_c.id)
             config = inspect["Config"]
             host_config = inspect["HostConfig"]
+            old_port_bindings = host_config.get("PortBindings") or {}
+            old_binds = list(host_config.get("Binds") or [])
+            networks = inspect.get("NetworkSettings", {}).get("Networks", {})
+            network_name = (
+                list(networks.keys())[0]
+                if networks
+                else f"{self.resource_prefix}-edge"
+            )
+            image = config["Image"]
+            env = config.get("Env") or []
+            labels = config.get("Labels") or {}
+            old_binding = old_port_bindings.get("443/tcp") or [
+                {"HostIp": "127.0.0.1", "HostPort": str(https_port)}
+            ]
+            old_host_ip = old_binding[0].get("HostIp", "127.0.0.1")
+            old_host_port = int(old_binding[0].get("HostPort", https_port))
 
-            # Update PortBindings for 443/tcp
-            port_bindings = host_config.get("PortBindings") or {}
-            port_bindings["443/tcp"] = [{"HostIp": bind_host, "HostPort": str(https_port)}]
-
-            # Update binds for Caddyfile if host path provided
-            binds = list(host_config.get("Binds") or [])
             new_binds = []
             caddyfile_mounted = False
-            for b in binds:
+            for b in old_binds:
                 if ":/etc/caddy/Caddyfile" in b:
                     new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
                     caddyfile_mounted = True
@@ -1996,29 +2006,51 @@ with path.open('w') as output:
             if not caddyfile_mounted and caddyfile_path:
                 new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
 
-            # Extract network mode / endpoints
-            networks = inspect.get("NetworkSettings", {}).get("Networks", {})
-            network_name = list(networks.keys())[0] if networks else f"{self.resource_prefix}-edge"
-
-            # Remove old container
             caddy_c.remove(force=True)
-
-            # Re-create container with new port bindings
-            image = config["Image"]
-            env = config.get("Env") or []
-            labels = config.get("Labels") or {}
-
-            new_c = self.client.containers.run(
-                image,
-                name=caddy_name,
-                detach=True,
-                network=network_name,
-                ports={"443/tcp": (bind_host, https_port)},
-                volumes=new_binds,
-                environment=env,
-                labels=labels,
-                restart_policy={"Name": "unless-stopped"},
-            )
-            return {"rebuilt": True, "container_id": new_c.id, "bind_host": bind_host}
+            try:
+                new_c = self.client.containers.run(
+                    image,
+                    name=caddy_name,
+                    detach=True,
+                    network=network_name,
+                    ports={"443/tcp": (bind_host, https_port)},
+                    volumes=new_binds,
+                    environment=env,
+                    labels=labels,
+                    restart_policy={"Name": "unless-stopped"},
+                )
+            except DockerException as exc:
+                logger.warning(
+                    "Caddy rebuild failed, restoring old entry: error_type=%s",
+                    type(exc).__name__,
+                )
+                try:
+                    restored = self.client.containers.run(
+                        image,
+                        name=caddy_name,
+                        detach=True,
+                        network=network_name,
+                        ports={"443/tcp": (old_host_ip, old_host_port)},
+                        volumes=old_binds,
+                        environment=env,
+                        labels=labels,
+                        restart_policy={"Name": "unless-stopped"},
+                    )
+                except DockerException:
+                    raise DockerSandboxError(
+                        "Caddy rebuild failed and old entry could not be restored"
+                    ) from None
+                return {
+                    "rebuilt": False,
+                    "reason": "restore_old_entry",
+                    "container_id": restored.id,
+                    "old_entry_preserved": True,
+                }
+            return {
+                "rebuilt": True,
+                "container_id": new_c.id,
+                "bind_host": bind_host,
+                "old_entry_preserved": True,
+            }
 
         return await asyncio.to_thread(_do_rebuild)

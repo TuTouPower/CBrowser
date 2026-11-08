@@ -65,6 +65,94 @@ class OperationJournal:
             self._write(operation_id, request, None)
         return previous
 
+    def network_command_id(
+        self, operation_id: str, phase: str, resource: str
+    ) -> str:
+        return f"network:{operation_id}:{phase}:{resource}"
+
+    def begin_network_receipt(
+        self, operation_id: str, phase: str, resource: str, request: dict
+    ) -> dict | None:
+        return self.begin(
+            self.network_command_id(operation_id, phase, resource), request
+        )
+
+    def complete_network_receipt(
+        self,
+        operation_id: str,
+        phase: str,
+        resource: str,
+        request: dict,
+        result: dict,
+    ) -> None:
+        self.complete(
+            self.network_command_id(operation_id, phase, resource), request, result
+        )
+
+    def network_receipt(
+        self, operation_id: str, phase: str, resource: str, request: dict
+    ) -> dict[str, Any] | None:
+        return self.lookup(
+            self.network_command_id(operation_id, phase, resource), request
+        )
+
+    def network_receipt_verified(
+        self, operation_id: str, phase: str, resource: str, request: dict
+    ) -> bool:
+        receipt = self.network_receipt(operation_id, phase, resource, request)
+        return bool(
+            receipt
+            and receipt.get("status") == "ok"
+            and receipt.get("docker_verified") is True
+        )
+
+    def _network_execution_request(
+        self,
+        operation_id: str,
+        generation: int,
+        candidate_hash: str,
+        restoring: bool,
+    ) -> dict[str, Any]:
+        return {
+            "operation_id": operation_id,
+            "execution_generation": generation,
+            "candidate_hash": candidate_hash,
+            "restoring": restoring,
+        }
+
+    def record_network_execution(
+        self,
+        operation_id: str,
+        generation: int,
+        candidate_hash: str,
+        result: dict,
+        *,
+        restoring: bool = False,
+    ) -> None:
+        request = self._network_execution_request(
+            operation_id, generation, candidate_hash, restoring
+        )
+        phase = "compensating" if restoring else "installing"
+        self.complete_network_receipt(
+            operation_id, phase, "caddy-execution", request, result
+        )
+
+    def network_execution_receipt(
+        self,
+        operation_id: str,
+        generation: int,
+        candidate_hash: str,
+        *,
+        restoring: bool = False,
+    ) -> dict[str, Any] | None:
+        request = self._network_execution_request(
+            operation_id, generation, candidate_hash, restoring
+        )
+        phase = "compensating" if restoring else "installing"
+        return self.network_receipt(
+            operation_id, phase, "caddy-execution", request
+        )
+
     def _write(self, operation_id: str, request: dict, result: dict | None) -> None:
         atomic_write_text(
             self._path(operation_id), json.dumps({"request": request, "result": result})

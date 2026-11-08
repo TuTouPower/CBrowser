@@ -5,133 +5,18 @@ unlisted origins rejected, and mode-switch updates whitelist simultaneously acro
 
 from pathlib import Path
 import secrets
-from unittest.mock import AsyncMock, MagicMock
+import httpx
 import pytest
-import pytest_asyncio
+from aiohttp.test_utils import TestServer
 from fastapi.testclient import TestClient
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from cbrowser.adapters.database.models import Base
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.api.app import create_app
-from cbrowser.domain.models import NetworkAccessConfig
+from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig, utc_now_iso
 from cbrowser.gateway.config import GatewayConfig
+from cbrowser.gateway.server import create_gateway_app
 from cbrowser.network_config import write_applied_network_state
-
-
-@pytest_asyncio.fixture
-async def session_maker():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    maker = async_sessionmaker(engine, expire_on_commit=False)
-    yield maker
-    await engine.dispose()
-
-
-@pytest.mark.asyncio
-async def test_ac007_origin_whitelist_sync_and_rejection(session_maker, tmp_path, monkeypatch):
-    """AC-007: Single source Origin whitelist across API and Gateway, mode switch updates both."""
-    db_file = tmp_path / "ac007.db"
-    net_dir = tmp_path / "network"
-    net_dir.mkdir(parents=True, exist_ok=True)
-
-    admin_pwd_file = tmp_path / "admin_pwd.txt"
-    admin_pwd_file.write_text("admin_secret_pass_123", encoding="utf-8")
-    admin_pwd_file.chmod(0o600)
-
-    gw_key_file = tmp_path / "gw_key.txt"
-    gw_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
-    gw_key_file.chmod(0o600)
-
-    from cbrowser.adapters.database.migrations import run_database_migrations
-    from cbrowser.network_config import create_default_applied_version, write_applied_network_state
-    run_database_migrations(db_file)
-
-    # Initial deployment produces baseline version 1 file in network state dir
-    v1_init = create_default_applied_version()
-    write_applied_network_state(net_dir, v1_init, "caddyfile dummy")
-
-    # 1. Start API (defaults to applied version 1: local-only)
-    app = create_app(
-        db_path=db_file,
-        admin_password_file=admin_pwd_file,
-    )
-    with TestClient(app, base_url="https://127.0.0.1:56661") as api_client:
-        # 2. Start Gateway configuration pointing to the same network state dir
-        gw_cfg = GatewayConfig(
-            agent_key_file=gw_key_file,
-            gateway_token_file=gw_key_file,
-            api_url="http://127.0.0.1:8000",
-            api_token_file=gw_key_file,
-            network_state_dir=net_dir,
-        )
-
-        # Login to API
-        login_resp = api_client.post("/api/v1/auth/login", json={"password": "admin_secret_pass_123"})
-        assert login_resp.status_code == 200
-        csrf_token = login_resp.json()["csrf_token"]
-
-        # Verify Initial Baseline Whitelist
-        # - Local loopback is allowed in API and Gateway
-        assert "https://127.0.0.1:56661" in app.state.allowed_origins
-        assert "https://127.0.0.1:56661" in gw_cfg.allowed_origins
-
-        # - LAN Origin is unlisted in initial mode -> MUST be rejected in both
-        lan_origin = "https://192.168.31.76:56661"
-        assert lan_origin not in app.state.allowed_origins
-        assert lan_origin not in gw_cfg.allowed_origins
-
-        # API rejects unlisted LAN origin
-        resp_api_rejected = api_client.post(
-            "/api/v1/auth/logout",
-            headers={"X-CSRF-Token": csrf_token, "Origin": lan_origin},
-        )
-        assert resp_api_rejected.status_code == 403
-
-        # 3. Mode Switch: Apply LAN configuration
-        net_service = app.state.network_service
-        # Mock supervisor for integration test
-        net_service.supervisor_client = MagicMock()
-        net_service.supervisor_client.rebuild_edge = AsyncMock(return_value={"status": "ok"})
-        net_service.supervisor_client.converge_network_streams = AsyncMock(return_value={"status": "ok", "rebuilt_streams": 0})
-        net_service.export_dir = net_dir
-
-        # Update pending to LAN mode
-        await net_service.update_pending_config(
-            NetworkAccessConfig(
-                lan_access_enabled=True,
-                lan_advertised_ip="192.168.31.76",
-            )
-        )
-        # Apply configuration
-        op = await net_service.apply_configuration("admin_secret_pass_123")
-        await net_service.wait_for_operation(op.operation_id, timeout=5.0)
-
-        # 4. Verify New Whitelist Takes Effect in BOTH API and Gateway Simultaneously
-        # - API reflects new origin
-        assert lan_origin in app.state.allowed_origins
-        # - Gateway reflects new origin from the single applied version file
-        assert lan_origin in gw_cfg.allowed_origins
-
-        # Re-login to get fresh CSRF
-        login_resp2 = api_client.post("/api/v1/auth/login", json={"password": "admin_secret_pass_123"})
-        csrf_token2 = login_resp2.json()["csrf_token"]
-
-        # Still rejects unlisted attacker origin with 403
-        resp_attacker = api_client.post(
-            "/api/v1/auth/logout",
-            headers={"X-CSRF-Token": csrf_token2, "Origin": "https://evil-hacker.com"},
-        )
-        assert resp_attacker.status_code == 403
-        assert "https://evil-hacker.com" not in gw_cfg.allowed_origins
-
-        # Now LAN origin is accepted by API
-        resp_api_accepted = api_client.post(
-            "/api/v1/auth/logout",
-            headers={"X-CSRF-Token": csrf_token2, "Origin": lan_origin},
-        )
-        assert resp_api_accepted.status_code == 200
+from cbrowser.services.network_service import GatewayPublicationClient
 
 
 @pytest.mark.asyncio
@@ -218,3 +103,78 @@ async def test_non_default_port_origin_sync_and_acceptance(tmp_path: Path):
             headers={"X-CSRF-Token": csrf, "Origin": expected_custom_origin},
         )
         assert ok_resp.status_code == 200
+
+
+BASELINE_ORIGIN = "https://127.0.0.1:56661"
+CANDIDATE_ORIGIN = "https://192.168.31.76:56661"
+
+
+class _StubApi:
+    async def authorize_viewer(self, *args, **kwargs):
+        return True, None
+
+    async def get_profile_runtime(self, *args, **kwargs):
+        return None
+
+    async def report_human_takeover(self, *args, **kwargs):
+        return {}
+
+    async def close(self):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_a35_gateway_process_origin_allowlist_follows_authorized_publication(
+    tmp_path: Path,
+):
+    key = tmp_path / "key.txt"
+    key.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+    key.chmod(0o600)
+    net_dir = tmp_path / "network"
+    net_dir.mkdir(parents=True, exist_ok=True)
+    v1 = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False),
+        bind_host="127.0.0.1",
+        applied_at=utc_now_iso(),
+        caddyfile_sha256="hash1",
+        origin_whitelist=[BASELINE_ORIGIN],
+    )
+    write_applied_network_state(net_dir, v1, "caddyfile v1")
+
+    config = GatewayConfig(
+        agent_key_file=key,
+        gateway_token_file=key,
+        api_url="http://127.0.0.1:8000",
+        api_token_file=key,
+        network_state_dir=net_dir,
+    )
+    server = TestServer(create_gateway_app(config, api_client=_StubApi()))
+    await server.start_server()
+    signal_url = str(server.make_url("/stream/ac007/signal"))
+    client = GatewayPublicationClient(
+        base_url=str(server.make_url("/")).rstrip("/"),
+        token=key.read_text(encoding="utf-8").strip(),
+    )
+
+    async with httpx.AsyncClient(trust_env=False) as probe:
+        async def status(origin: str) -> int:
+            resp = await probe.get(signal_url, headers={"Origin": origin})
+            return resp.status_code
+
+        assert await status(BASELINE_ORIGIN) == 401
+        assert await status(CANDIDATE_ORIGIN) == 403
+
+        await client.prepare("op-ac007", 1, "candidate-hash", [CANDIDATE_ORIGIN])
+        assert await status(BASELINE_ORIGIN) == 401
+        assert await status(CANDIDATE_ORIGIN) == 403
+
+        await client.acknowledge("op-ac007", 1, "candidate-hash")
+        assert await status(CANDIDATE_ORIGIN) == 401
+        assert await status(BASELINE_ORIGIN) == 403
+
+        await client.revoke("op-ac007", 1, "candidate-hash")
+        assert await status(BASELINE_ORIGIN) == 401
+        assert await status(CANDIDATE_ORIGIN) == 403
+
+    await server.close()

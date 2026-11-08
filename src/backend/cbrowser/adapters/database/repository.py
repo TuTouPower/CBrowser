@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import uuid
@@ -38,9 +39,52 @@ from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
     BLOCK_AFTER_RUNTIME_FAILURES,
 )
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+
+class NetworkTransaction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation_id: str = Field(min_length=1, max_length=128)
+    target_version: int = Field(ge=1)
+    phase: NetworkApplyPhase = NetworkApplyPhase.PENDING
+    error_reason: str | None = None
+    new_entry_url: str | None = None
+    created_at: str = Field(min_length=1)
+    updated_at: str = Field(min_length=1)
+    transaction_phase: str = "pending"
+    decision: str = "pending"
+    execution_generation: int = 0
+    old_applied: dict[str, Any] = Field(default_factory=dict)
+    target_applied: dict[str, Any] = Field(default_factory=dict)
+    candidate_hash: str = ""
+    component_hash: str = ""
+    gateway_acked: bool = False
+    gateway_generation: int | None = None
+    gateway_hash: str = ""
+    recovery_complete: bool = True
+
+    def to_operation(self) -> NetworkApplyOperation:
+        return NetworkApplyOperation(
+            operation_id=self.operation_id,
+            target_version=self.target_version,
+            phase=self.phase,
+            error_reason=self.error_reason,
+            new_entry_url=self.new_entry_url,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+
+def _load_transaction(raw: str) -> NetworkTransaction:
+    data = json.loads(raw)
+    allowed = set(NetworkTransaction.model_fields)
+    return NetworkTransaction.model_validate(
+        {key: value for key, value in data.items() if key in allowed}
+    )
 
 
 class IdempotencyConflictError(Exception):
@@ -85,6 +129,7 @@ PROXY_CONNECTION_FIELDS = frozenset(
 class ProfileRepository:
     def __init__(self, session_maker: async_sessionmaker[AsyncSession]):
         self._session_maker = session_maker
+        self._network_transaction_lock = asyncio.Lock()
 
     @staticmethod
     async def _match_operation_audit(
@@ -1283,6 +1328,8 @@ class ProfileRepository:
     KEY_NETWORK_APPLIED = "network.applied_version"
     KEY_NETWORK_ACTIVE_OP = "network.active_operation"
     KEY_NETWORK_OP_PREFIX = "network.operation."
+    KEY_NETWORK_GENERATION = "network.execution_generation"
+    KEY_NETWORK_CURRENT_TXN = "network.transaction.current"
 
     async def get_network_access_settings(
         self, export_dir: Path | None = None
@@ -1316,7 +1363,7 @@ class ProfileRepository:
             active_op_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
             active_op = None
             if active_op_row:
-                active_op = NetworkApplyOperation.model_validate_json(active_op_row.value)
+                active_op = _load_transaction(active_op_row.value).to_operation()
 
             return NetworkAccessSettingsResponse(
                 pending_config=pending_config,
@@ -1370,57 +1417,330 @@ class ProfileRepository:
                     )
                 )
 
-    async def save_network_operation(self, op: NetworkApplyOperation) -> None:
-        async with self._session_maker() as session, write_transaction(session):
-            raw = op.model_dump_json()
-            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{op.operation_id}"
+    async def _read_transaction(
+        self, session: AsyncSession, operation_id: str
+    ) -> NetworkTransaction | None:
+        op_key = f"{self.KEY_NETWORK_OP_PREFIX}{operation_id}"
+        row = await session.get(SettingModel, op_key)
+        if row is None:
+            return None
+        return _load_transaction(row.value)
 
-            # Save historical operation record
-            row = await session.get(SettingModel, op_key)
-            if row:
-                row.value = raw
-                row.updated_at = utc_now_iso()
+    async def _write_transaction(
+        self, session: AsyncSession, txn: NetworkTransaction
+    ) -> None:
+        raw = txn.model_dump_json()
+        op_key = f"{self.KEY_NETWORK_OP_PREFIX}{txn.operation_id}"
+        row = await session.get(SettingModel, op_key)
+        if row:
+            row.value = raw
+            row.updated_at = utc_now_iso()
+        else:
+            session.add(
+                SettingModel(key=op_key, value=raw, updated_at=utc_now_iso())
+            )
+
+        current = await session.get(SettingModel, self.KEY_NETWORK_CURRENT_TXN)
+        if current:
+            current.value = txn.operation_id
+            current.updated_at = utc_now_iso()
+        else:
+            session.add(
+                SettingModel(
+                    key=self.KEY_NETWORK_CURRENT_TXN,
+                    value=txn.operation_id,
+                    updated_at=utc_now_iso(),
+                )
+            )
+
+        active = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
+        keep_active = txn.decision == "pending" or not txn.recovery_complete
+        if keep_active:
+            if active:
+                active.value = raw
+                active.updated_at = utc_now_iso()
             else:
                 session.add(
                     SettingModel(
-                        key=op_key,
+                        key=self.KEY_NETWORK_ACTIVE_OP,
                         value=raw,
                         updated_at=utc_now_iso(),
                     )
                 )
+        elif active:
+            await session.delete(active)
 
-            # Update active operation pointer
+    async def _bump_generation(self, session: AsyncSession) -> int:
+        row = await session.get(SettingModel, self.KEY_NETWORK_GENERATION)
+        try:
+            current = int(row.value) if row else 0
+        except (TypeError, ValueError):
+            current = 0
+        generation = current + 1
+        if row:
+            row.value = str(generation)
+            row.updated_at = utc_now_iso()
+        else:
+            session.add(
+                SettingModel(
+                    key=self.KEY_NETWORK_GENERATION,
+                    value=str(generation),
+                    updated_at=utc_now_iso(),
+                )
+            )
+        return generation
+
+    async def _write_applied(
+        self, session: AsyncSession, version: AppliedNetworkAccessVersion
+    ) -> None:
+        raw = version.model_dump_json()
+        row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+        if row:
+            row.value = raw
+            row.updated_at = utc_now_iso()
+        else:
+            session.add(
+                SettingModel(
+                    key=self.KEY_NETWORK_APPLIED,
+                    value=raw,
+                    updated_at=utc_now_iso(),
+                )
+            )
+        hist_key = f"network.version.{version.version}"
+        hist_row = await session.get(SettingModel, hist_key)
+        if not hist_row:
+            session.add(
+                SettingModel(
+                    key=hist_key, value=raw, updated_at=utc_now_iso()
+                )
+            )
+
+    async def get_execution_generation(self) -> int:
+        async with self._session_maker() as session:
+            row = await session.get(SettingModel, self.KEY_NETWORK_GENERATION)
+            if row is None:
+                return 0
+            try:
+                return int(row.value)
+            except (TypeError, ValueError):
+                return 0
+
+    async def initialize_network_from_disk(self, export_dir: Path) -> bool:
+        from cbrowser.network_config import read_applied_network_state
+
+        async with self._session_maker() as session, write_transaction(session):
+            row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            if row is not None:
+                return False
+            state = read_applied_network_state(export_dir)
+            if state is None:
+                return False
+            await self._write_applied(session, state[0])
+            return True
+
+    async def begin_network_transaction(
+        self,
+        *,
+        operation: NetworkApplyOperation,
+        old_applied: AppliedNetworkAccessVersion,
+        target_applied: AppliedNetworkAccessVersion,
+        candidate_hash: str,
+    ) -> NetworkTransaction:
+        async with (
+            self._network_transaction_lock,
+            self._session_maker() as session,
+            write_transaction(session),
+        ):
             active_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
-            is_terminal = op.phase in (NetworkApplyPhase.COMPLETED, NetworkApplyPhase.FAILED)
-            if is_terminal:
-                if active_row:
-                    await session.delete(active_row)
-            else:
-                if active_row:
-                    active_row.value = raw
-                    active_row.updated_at = utc_now_iso()
-                else:
-                    session.add(
-                        SettingModel(
-                            key=self.KEY_NETWORK_ACTIVE_OP,
-                            value=raw,
-                            updated_at=utc_now_iso(),
-                        )
+            if active_row is not None:
+                existing = _load_transaction(active_row.value)
+                if existing.decision == "pending" or not existing.recovery_complete:
+                    raise RuntimeError("Apply operation already in progress")
+            current_row = await session.get(
+                SettingModel, self.KEY_NETWORK_CURRENT_TXN
+            )
+            if current_row is not None:
+                previous = await self._read_transaction(
+                    session, current_row.value
+                )
+                if previous is not None and not previous.recovery_complete:
+                    raise RuntimeError(
+                        "Apply operation already in progress: recovery incomplete"
                     )
+            generation = await self._bump_generation(session)
+            txn = NetworkTransaction(
+                operation_id=operation.operation_id,
+                target_version=operation.target_version,
+                phase=operation.phase,
+                new_entry_url=operation.new_entry_url,
+                created_at=operation.created_at,
+                updated_at=operation.updated_at,
+                transaction_phase="prepared",
+                decision="pending",
+                execution_generation=generation,
+                old_applied=old_applied.model_dump(),
+                target_applied=target_applied.model_dump(),
+                candidate_hash=candidate_hash,
+            )
+            await self._write_transaction(session, txn)
+            return txn
+
+    async def get_network_transaction(
+        self, operation_id: str
+    ) -> NetworkTransaction | None:
+        async with self._session_maker() as session:
+            return await self._read_transaction(session, operation_id)
+
+    async def get_current_network_transaction(self) -> NetworkTransaction | None:
+        async with self._session_maker() as session:
+            row = await session.get(SettingModel, self.KEY_NETWORK_CURRENT_TXN)
+            if row is None:
+                return None
+            return await self._read_transaction(session, row.value)
+
+    async def advance_network_transaction(
+        self, operation_id: str, **updates: Any
+    ) -> NetworkTransaction:
+        protected = {
+            "decision",
+            "operation_id",
+            "execution_generation",
+            "old_applied",
+            "target_applied",
+            "created_at",
+        }
+        async with self._session_maker() as session, write_transaction(session):
+            txn = await self._read_transaction(session, operation_id)
+            if txn is None:
+                raise ValueError(f"Network transaction {operation_id} not found")
+            if txn.decision != "pending":
+                raise RuntimeError("Network transaction already has a final decision")
+            for key, value in updates.items():
+                if key not in NetworkTransaction.model_fields or key in protected:
+                    raise ValueError(f"Invalid transaction update: {key}")
+                setattr(txn, key, value)
+            txn.updated_at = utc_now_iso()
+            await self._write_transaction(session, txn)
+            return txn
+
+    async def commit_network_transaction(
+        self,
+        *,
+        operation_id: str,
+        execution_generation: int,
+        gateway_generation: int,
+        gateway_hash: str,
+    ) -> NetworkTransaction:
+        async with self._session_maker() as session, write_transaction(session):
+            txn = await self._read_transaction(session, operation_id)
+            if txn is None:
+                raise ValueError(f"Network transaction {operation_id} not found")
+            if txn.decision == "commit":
+                if (
+                    txn.execution_generation == execution_generation
+                    and txn.gateway_hash == gateway_hash
+                ):
+                    return txn
+                raise RuntimeError("Commit replay with different generation")
+            if txn.decision != "pending":
+                raise RuntimeError("Aborted network transaction cannot be committed")
+            if txn.execution_generation != execution_generation:
+                raise RuntimeError("Stale execution generation")
+            if (
+                not txn.gateway_acked
+                or txn.gateway_generation != gateway_generation
+                or txn.gateway_hash != gateway_hash
+                or gateway_hash != txn.candidate_hash
+            ):
+                raise RuntimeError("Gateway ACK not verifiable")
+            await self._write_applied(
+                session, AppliedNetworkAccessVersion.model_validate(txn.target_applied)
+            )
+            txn.decision = "commit"
+            txn.transaction_phase = "committed"
+            txn.phase = NetworkApplyPhase.COMPLETED
+            txn.updated_at = utc_now_iso()
+            await self._write_transaction(session, txn)
+            return txn
+
+    async def abort_network_transaction(
+        self,
+        *,
+        operation_id: str,
+        execution_generation: int,
+        reason: str,
+        recovery_complete: bool,
+    ) -> NetworkTransaction:
+        async with self._session_maker() as session, write_transaction(session):
+            txn = await self._read_transaction(session, operation_id)
+            if txn is None:
+                raise ValueError(f"Network transaction {operation_id} not found")
+            if txn.decision == "commit":
+                raise RuntimeError("Committed network transaction cannot be aborted")
+            if txn.decision == "abort":
+                if txn.recovery_complete != recovery_complete:
+                    txn.recovery_complete = recovery_complete
+                    txn.transaction_phase = (
+                        "aborted" if recovery_complete else "aborting"
+                    )
+                    txn.updated_at = utc_now_iso()
+                    await self._write_transaction(session, txn)
+                return txn
+            if txn.execution_generation != execution_generation:
+                raise RuntimeError("Stale execution generation")
+            txn.execution_generation = await self._bump_generation(session)
+            txn.decision = "abort"
+            txn.transaction_phase = "aborted" if recovery_complete else "aborting"
+            txn.recovery_complete = recovery_complete
+            txn.error_reason = reason
+            txn.phase = NetworkApplyPhase.FAILED
+            txn.updated_at = utc_now_iso()
+            if txn.old_applied:
+                await self._write_applied(
+                    session,
+                    AppliedNetworkAccessVersion.model_validate(txn.old_applied),
+                )
+            await self._write_transaction(session, txn)
+            return txn
+
+    async def save_network_operation(self, op: NetworkApplyOperation) -> None:
+        async with self._session_maker() as session, write_transaction(session):
+            txn = await self._read_transaction(session, op.operation_id)
+            if txn is None:
+                txn = NetworkTransaction(
+                    operation_id=op.operation_id,
+                    target_version=op.target_version,
+                    created_at=op.created_at,
+                    updated_at=op.updated_at,
+                )
+            txn.phase = op.phase
+            txn.error_reason = op.error_reason
+            txn.new_entry_url = op.new_entry_url
+            txn.updated_at = op.updated_at
+            if op.phase in (
+                NetworkApplyPhase.COMPLETED,
+                NetworkApplyPhase.FAILED,
+            ) and txn.decision == "pending":
+                txn.decision = (
+                    "commit" if op.phase == NetworkApplyPhase.COMPLETED else "abort"
+                )
+                txn.transaction_phase = (
+                    "committed" if op.phase == NetworkApplyPhase.COMPLETED else "aborted"
+                )
+            await self._write_transaction(session, txn)
 
     async def get_active_network_operation(self) -> NetworkApplyOperation | None:
         async with self._session_maker() as session:
             row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
             if not row:
                 return None
-            return NetworkApplyOperation.model_validate_json(row.value)
+            return _load_transaction(row.value).to_operation()
 
     async def get_network_operation(
         self, operation_id: str
     ) -> NetworkApplyOperation | None:
         async with self._session_maker() as session:
-            op_key = f"{self.KEY_NETWORK_OP_PREFIX}{operation_id}"
-            row = await session.get(SettingModel, op_key)
-            if not row:
+            txn = await self._read_transaction(session, operation_id)
+            if txn is None:
                 return None
-            return NetworkApplyOperation.model_validate_json(row.value)
+            return txn.to_operation()
