@@ -150,7 +150,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 - 内部 UI API 统一规划在 `/api/v1/*`；
 - 旧的内部 Profile CRUD 路由在 v2 发布时作为破坏性变更移除；
-- 旧的 CDP 连接入口保留为薄兼容适配器（转发到新的 CDP 代理），不保留旧 CDP 端口暴露。
+- 旧的 CDP 连接入口已彻底删除：`/api/profiles/{id}/cdp` 兼容适配器与隐藏挂载均不再注册，不保留重定向或旧路由代理；现行唯一入口为 `/api/v1/automation/profiles/{id}/cdp`，完整执行自动化令牌鉴权与控制权围栏。
 
 ## 6. 安全、网络与端口矩阵
 

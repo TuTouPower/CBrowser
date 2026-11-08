@@ -3271,13 +3271,13 @@
         ]
       }
     },
-    "/network/settings": {
+    "/api/v1/network/settings": {
       "get": {
         "tags": [
           "network"
         ],
         "summary": "Get Network Settings",
-        "operationId": "get_network_settings_network_settings_get",
+        "operationId": "get_network_settings_api_v1_network_settings_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3331,7 +3331,7 @@
           "network"
         ],
         "summary": "Update Network Settings",
-        "operationId": "update_network_settings_network_settings_put",
+        "operationId": "update_network_settings_api_v1_network_settings_put",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3352,7 +3352,7 @@
                     "type": "string"
                   },
                   "type": "object",
-                  "title": "Response Update Network Settings Network Settings Put"
+                  "title": "Response Update Network Settings Api V1 Network Settings Put"
                 }
               }
             }
@@ -3406,13 +3406,13 @@
         ]
       }
     },
-    "/network/apply": {
+    "/api/v1/network/apply": {
       "post": {
         "tags": [
           "network"
         ],
         "summary": "Apply Network Configuration",
-        "operationId": "apply_network_configuration_network_apply_post",
+        "operationId": "apply_network_configuration_api_v1_network_apply_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3483,13 +3483,13 @@
         ]
       }
     },
-    "/network/operations/{operation_id}": {
+    "/api/v1/network/operations/{operation_id}": {
       "get": {
         "tags": [
           "network"
         ],
         "summary": "Get Apply Operation",
-        "operationId": "get_apply_operation_network_operations__operation_id__get",
+        "operationId": "get_apply_operation_api_v1_network_operations__operation_id__get",
         "parameters": [
           {
             "name": "operation_id",
@@ -3570,13 +3570,13 @@
         ]
       }
     },
-    "/network/check-disconnect": {
+    "/api/v1/network/check-disconnect": {
       "get": {
         "tags": [
           "network"
         ],
         "summary": "Check Disconnect",
-        "operationId": "check_disconnect_network_check_disconnect_get",
+        "operationId": "check_disconnect_api_v1_network_check_disconnect_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -3585,7 +3585,7 @@
                 "schema": {
                   "additionalProperties": true,
                   "type": "object",
-                  "title": "Response Check Disconnect Network Check Disconnect Get"
+                  "title": "Response Check Disconnect Api V1 Network Check Disconnect Get"
                 }
               }
             }
@@ -3628,14 +3628,14 @@
         ]
       }
     },
-    "/network/root-ca": {
+    "/api/v1/network/root-ca": {
       "get": {
         "tags": [
           "network"
         ],
         "summary": "Download Root Ca",
         "description": "Download public root CA certificate only (AC-008). No private keys.",
-        "operationId": "download_root_ca_network_root_ca_get",
+        "operationId": "download_root_ca_api_v1_network_root_ca_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -5395,7 +5395,8 @@
             "type": "boolean",
             "title": "Retryable",
             "default": false
-          }
+          },
+          "detail": {}
         },
         "additionalProperties": false,
         "type": "object",
