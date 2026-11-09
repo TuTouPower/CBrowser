@@ -2,15 +2,19 @@ import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type { ProfileRuntimeResponse } from "../../shared/api/types";
-import { EmptyState, StatusBadge } from "../../shared/ui";
+import { Banner, Button, EmptyState, StatusBadge } from "../../shared/ui";
 import { profileKeys, useProfilesQuery } from "../profiles/useProfilesQuery";
 import { SESS_ENTRY_LINK, SESS_ENTRY_LIST, SESS_ENTRY_PAGE } from "./session_keys";
 
 export function SessionEntryPage() {
   const { t } = useI18n();
   const client = useApiClient();
-  const { data: profiles = [], isPending: profilesPending } =
-    useProfilesQuery(client);
+  const profilesQuery = useProfilesQuery(client);
+  const profiles = profilesQuery.data ?? [];
+  const profilesPending = profilesQuery.isPending;
+  const profilesError = profilesQuery.isError
+    ? (profilesQuery.error?.message ?? t("runtimeStateUnknown"))
+    : null;
 
   const runtimeQueries = useQueries({
     queries: profiles.map((profile) => ({
@@ -25,6 +29,11 @@ export function SessionEntryPage() {
       | undefined;
     return runtime?.observed_state === "running";
   });
+  const runtimeError = runtimeQueries.some((query) => query.isError)
+    ? (runtimeQueries.find((query) => query.isError)?.error?.message ??
+      t("runtimeStateUnknown"))
+    : null;
+  const loadError = profilesError ?? runtimeError;
   const loading =
     profilesPending || runtimeQueries.some((query) => query.isPending);
 
@@ -33,7 +42,23 @@ export function SessionEntryPage() {
       <h1 className="font-ui text-headline-md text-on-surface">
         {t("sessEntryTitle")}
       </h1>
-      {loading ? (
+      {loadError ? (
+        <Banner tone="danger" testId="sess-entry-error">
+          <span>{loadError}</span>
+          <Button
+            size="sm"
+            data-testid="sess-entry-retry"
+            onClick={() => {
+              if (profilesQuery.isError) void profilesQuery.refetch();
+              for (const query of runtimeQueries) {
+                if (query.isError) void query.refetch();
+              }
+            }}
+          >
+            {t("retryAction")}
+          </Button>
+        </Banner>
+      ) : loading ? (
         <p className="font-ui text-body-md text-on-surface-muted">
           {t("loading")}
         </p>

@@ -175,12 +175,19 @@ def worker_resource_offsets(
     worker = env.get("PYTEST_XDIST_WORKER", "")
     match = re.fullmatch(r"gw(\d+)", worker)
     idx = int(match.group(1)) if match else 0
-    if idx > 200:
-        raise ValueError(f"xdist worker index out of range: {idx} (max 200)")
+    udp_base = 30000 + idx * 1000
+    http_base = 35000 + idx * 1000
+    octet = 251 + idx
+    if octet > 255 or udp_base + 990 > 65535 or http_base > 65535:
+        raise ValueError(
+            f"xdist worker index out of range: {idx} "
+            f"(octet 10.{octet}.0.0/16 / UDP {udp_base} / HTTP {http_base} "
+            "exceeds IPv4 octet or port limits; max gw4)"
+        )
     return {
-        "CBROWSER_E2E_UDP_BASE": str(30000 + idx * 1000),
-        "CBROWSER_E2E_HTTP_BASE": str(35000 + idx * 1000),
-        "CBROWSER_E2E_MEDIA_POOL": f"10.{251 + idx}.0.0/16",
+        "CBROWSER_E2E_UDP_BASE": str(udp_base),
+        "CBROWSER_E2E_HTTP_BASE": str(http_base),
+        "CBROWSER_E2E_MEDIA_POOL": f"10.{octet}.0.0/16",
     }
 
 

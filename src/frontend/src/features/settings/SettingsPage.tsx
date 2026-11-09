@@ -120,15 +120,21 @@ export function SettingsPage() {
     };
   }, [client]);
 
+  const applying = applyState === "applying";
   const handleSaveNetwork = async () => {
     setSavingNet(true);
     setSaveSuccess(false);
     setActionError(null);
     try {
+      const rawPort = Number(httpsPort);
+      if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
+        setActionError(t("proxyPortInvalid"));
+        return;
+      }
       const config: NetworkAccessConfig = {
         lan_access_enabled: lanEnabled,
         lan_advertised_ip: lanEnabled ? lanIp.trim() : null,
-        https_port: Number(httpsPort) || 56661,
+        https_port: rawPort,
       };
       await client.network.updateSettings(config);
       setSaveSuccess(true);
@@ -357,8 +363,10 @@ export function SettingsPage() {
                 </span>
                 <span className="font-mono text-mono-md text-on-surface">
                   {netSettings?.pending_config?.lan_access_enabled
-                    ? `LAN: ${netSettings.pending_config.lan_advertised_ip ?? "—"}`
-                    : "127.0.0.1 (Local)"}
+                    ? t("appliedLan", {
+                        ip: netSettings.pending_config.lan_advertised_ip ?? "—",
+                      })
+                    : t("appliedLocal")}
                 </span>
               </div>
             </div>
@@ -495,11 +503,20 @@ export function SettingsPage() {
                     className="rounded-md border border-outline bg-surface px-sm py-1 font-ui text-body-md text-on-surface"
                   />
                 </div>
+                {applyState === "error" && applyErrorMsg && (
+                  <div className="my-md">
+                    <Banner tone="danger" testId="apply-modal-error">
+                      {t("applyFailed", { reason: applyErrorMsg })}
+                    </Banner>
+                  </div>
+                )}
                 <div className="flex justify-end gap-sm">
                   <Button
                     variant="secondary"
                     data-testid="cancel-apply-btn"
+                    disabled={applying}
                     onClick={() => {
+                      if (applying) return;
                       setShowApplyModal(false);
                       setAdminPassword("");
                     }}
@@ -509,10 +526,10 @@ export function SettingsPage() {
                   <Button
                     variant="primary"
                     data-testid="confirm-apply-btn"
-                    disabled={!adminPassword.trim()}
+                    disabled={!adminPassword.trim() || applying}
                     onClick={handleConfirmApply}
                   >
-                    {t("confirmApply")}
+                    {applying ? t("applying") : t("confirmApply")}
                   </Button>
                 </div>
               </div>

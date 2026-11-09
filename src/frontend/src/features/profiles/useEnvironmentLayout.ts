@@ -8,13 +8,21 @@ export function useEnvironmentLayout(): [
   EnvironmentLayout,
   (layout: EnvironmentLayout) => void,
 ] {
-  const [layout, setLayoutState] = useState<EnvironmentLayout>(() =>
-    localStorage.getItem(STORAGE_KEY) === "card" ? "card" : "list",
-  );
+  const [layout, setLayoutState] = useState<EnvironmentLayout>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) === "card" ? "card" : "list";
+    } catch {
+      return "list";
+    }
+  });
 
   const setLayout = useCallback((next: EnvironmentLayout) => {
     setLayoutState(next);
-    localStorage.setItem(STORAGE_KEY, next);
+    try {
+      localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      return;
+    }
   }, []);
 
   return [layout, setLayout];

@@ -171,7 +171,7 @@ export function EnvironmentTable({
                 <Checkbox
                   checked={allSelected}
                   onCheckedChange={onToggleAll}
-                  label="Select all"
+                  label={t("envSelectAll")}
                 />
               </span>
             </TableHead>

@@ -15,6 +15,8 @@ import subprocess
 import time
 import pytest
 
+pytestmark = pytest.mark.serial
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 

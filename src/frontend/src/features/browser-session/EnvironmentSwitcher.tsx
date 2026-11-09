@@ -1,14 +1,23 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router";
+import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
-import type { GroupResponse, ProfileResponse } from "../../shared/api/types";
+import type {
+  GroupResponse,
+  ProfileResponse,
+  ProfileRuntimeResponse,
+} from "../../shared/api/types";
 import {
   Popover,
   SearchField,
   StatusBadge,
   type StatusTone,
 } from "../../shared/ui";
-import { useProfileRuntimeQuery } from "../profiles/useProfilesQuery";
+import {
+  profileKeys,
+  useProfileRuntimeQuery,
+} from "../profiles/useProfilesQuery";
 import {
   SESS_SWITCHER_GROUP,
   SESS_SWITCHER_ITEM,
@@ -60,6 +69,20 @@ export function EnvironmentSwitcher({
   const current = profiles.find((profile) => profile.id === currentProfileId);
   const { data: runtime } = useProfileRuntimeQuery(currentProfileId, client);
   const status = currentStatus(runtime?.observed_state, t);
+  const itemRuntimes = useQueries({
+    queries: profiles.map((profile) => ({
+      queryKey: profileKeys.runtime(profile.id),
+      queryFn: () => client.profiles.getRuntime(profile.id),
+    })),
+  });
+  const observedById = new Map<string, string | undefined>();
+  profiles.forEach((profile, index) => {
+    observedById.set(
+      profile.id,
+      (itemRuntimes[index]?.data as ProfileRuntimeResponse | undefined)
+        ?.observed_state,
+    );
+  });
 
   const sections = useMemo<SwitcherSection[]>(() => {
     const normalized = query.trim().toLowerCase();
@@ -131,20 +154,30 @@ export function EnvironmentSwitcher({
                   {section.label}
                 </p>
                 <ul className="flex flex-col gap-xs">
-                  {section.items.map((profile) => (
-                    <li
-                      key={profile.id}
-                      data-testid={SESS_SWITCHER_ITEM}
-                    >
-                      <a
-                        data-testid={sessId("switcher-item", profile.id)}
-                        href={`/session/${encodeURIComponent(profile.id)}`}
-                        className="block rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  {section.items.map((profile) => {
+                    const itemStatus = currentStatus(
+                      observedById.get(profile.id),
+                      t,
+                    );
+                    return (
+                      <li
+                        key={profile.id}
+                        data-testid={SESS_SWITCHER_ITEM}
                       >
-                        {profile.name}
-                      </a>
-                    </li>
-                  ))}
+                        <Link
+                          data-testid={sessId("switcher-item", profile.id)}
+                          to={`/session/${encodeURIComponent(profile.id)}`}
+                          className="flex items-center justify-between gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                        >
+                          <span className="truncate">{profile.name}</span>
+                          <StatusBadge
+                            tone={itemStatus.tone}
+                            label={itemStatus.label}
+                          />
+                        </Link>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}

@@ -96,3 +96,19 @@ def test_both_phases_empty_suite_fails(tmp_path: Path) -> None:
     """Both phases empty must be reported as a failure, not silently passed."""
     result, _ = _drive(tmp_path, "# no test functions\n")
     assert result.returncode == 5, result.stdout + result.stderr
+
+
+def test_parallel_pass_serial_fail_is_nonzero(tmp_path: Path) -> None:
+    """Parallel green + serial red must fail the gate (no exit-5 masking)."""
+    result, junit = _drive(
+        tmp_path,
+        "import pytest\n"
+        "def test_parallel_ok():\n    pass\n"
+        "@pytest.mark.serial\n"
+        "def test_serial_bad():\n    assert False, 'serial failure'\n",
+    )
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert result.returncode != 5, result.stdout + result.stderr
+    names = _case_names(junit)
+    assert "test_parallel_ok" in names
+    assert "test_serial_bad" in names

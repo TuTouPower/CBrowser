@@ -12,5 +12,5 @@
     - `docs/spikes/s017_lan_access_and_edge_rebuild/code/result_secure_context.json`
     - `docs/spikes/s017_lan_access_and_edge_rebuild/code/result_selkies_public_ip.json`
     - `docs/spikes/s017_lan_access_and_edge_rebuild/code/result_edge_rebuild.json`
-- 影响：定案 t042 实现方案与 ADR 024，解除 t042 的 UNVERIFIED-BLOCKING 与 UNVERIFIED-SPIKE 阻塞。
+- 影响：定案 t042 实现方案与 ADR 026，解除 t042 的 UNVERIFIED-BLOCKING 与 UNVERIFIED-SPIKE 阻塞。
 - 现状：有效

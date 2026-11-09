@@ -249,6 +249,11 @@ def test_worker_resource_offsets_reject_out_of_range_worker():
         )
 
 
+def test_worker_resource_offsets_reject_gw5_octet_overflow():
+    with pytest.raises(ValueError):
+        e2e_env.worker_resource_offsets(environ={"PYTEST_XDIST_WORKER": "gw5"})
+
+
 def test_pytest_configure_repartitions_inherited_ports_on_workers(monkeypatch):
     """AC-003: a worker must overwrite the controller's inherited base."""
     import importlib.util

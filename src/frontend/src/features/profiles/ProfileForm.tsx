@@ -15,7 +15,7 @@ import {
   Select,
   type SelectOption,
 } from "../../shared/ui";
-import { useI18n } from "../../i18n";
+import { useI18n, type TranslationKey } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import { DEFAULT_PROFILE_CREATE_VALUES } from "../../shared/api/types";
 import type {
@@ -164,17 +164,17 @@ function Section({
 
 const ADVANCED_BOOL_FIELDS: Array<{
   key: keyof ProfileFormValues;
-  label: string;
+  labelKey: TranslationKey;
 }> = [
-  { key: "humanize", label: "Humanize" },
-  { key: "clipboard_sync", label: "Clipboard sync" },
-  { key: "auto_launch", label: "Auto launch" },
-  { key: "allow_3p_cookies", label: "Allow 3rd-party cookies" },
-  { key: "set_google_default", label: "Set Google as default" },
-  { key: "restore_session", label: "Restore session" },
-  { key: "transparent_proxy", label: "Transparent proxy" },
-  { key: "portable_cookies", label: "Portable cookies" },
-  { key: "capture_preview", label: "Capture preview" },
+  { key: "humanize", labelKey: "formHumanize" },
+  { key: "clipboard_sync", labelKey: "formClipboardSync" },
+  { key: "auto_launch", labelKey: "formAutoLaunch" },
+  { key: "allow_3p_cookies", labelKey: "formAllow3pCookies" },
+  { key: "set_google_default", labelKey: "formSetGoogleDefault" },
+  { key: "restore_session", labelKey: "formRestoreSession" },
+  { key: "transparent_proxy", labelKey: "formTransparentProxy" },
+  { key: "portable_cookies", labelKey: "formPortableCookies" },
+  { key: "capture_preview", labelKey: "formCapturePreview" },
 ];
 
 export function ProfileForm({
@@ -204,6 +204,7 @@ export function ProfileForm({
   const [showErrors, setShowErrors] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  const [groupError, setGroupError] = useState<string | null>(null);
   // P1-13: 本地提交态与父级 pending 合并禁用，防双击重复创建。
   const [submitting, setSubmitting] = useState(false);
   const submitDisabled = submitting || isPending;
@@ -357,23 +358,44 @@ export function ProfileForm({
               <Input
                 aria-label={t("formNewGroup")}
                 value={newGroupName}
-                onChange={(event) => setNewGroupName(event.target.value)}
+                onChange={(event) => {
+                  setNewGroupName(event.target.value);
+                  setGroupError(null);
+                }}
               />
               <Button
+                disabled={createGroupMutation.isPending}
                 onClick={async () => {
-                  const created = await createGroupMutation.mutateAsync({
-                    name: newGroupName.trim(),
-                    color: "slate",
-                    sort_order: 0,
-                  });
-                  setField("group_id", created.id);
-                  setCreatingGroup(false);
-                  setNewGroupName("");
+                  const name = newGroupName.trim();
+                  if (!name) {
+                    setGroupError(t("formNameRequired"));
+                    return;
+                  }
+                  setGroupError(null);
+                  try {
+                    const created = await createGroupMutation.mutateAsync({
+                      name,
+                      color: "slate",
+                      sort_order: 0,
+                    });
+                    setField("group_id", created.id);
+                    setCreatingGroup(false);
+                    setNewGroupName("");
+                  } catch (err: unknown) {
+                    setGroupError(
+                      err instanceof Error ? err.message : t("failedToCreateProfile"),
+                    );
+                  }
                 }}
               >
                 {t("groupSave")}
               </Button>
             </div>
+          )}
+          {groupError && (
+            <Banner tone="danger" testId="profile-form-group-error">
+              {groupError}
+            </Banner>
           )}
         </Row>
         <Row label={t("formNotes")}>
@@ -592,10 +614,10 @@ export function ProfileForm({
             {t("formAdvancedHint")}
           </p>
           <div className="grid grid-cols-2 gap-sm">
-            {ADVANCED_BOOL_FIELDS.map(({ key, label }) => (
+            {ADVANCED_BOOL_FIELDS.map(({ key, labelKey }) => (
               <BoolRow
                 key={key}
-                label={label}
+                label={t(labelKey)}
                 checked={values[key] as boolean}
                 onChange={(checked) =>
                   setField(key, checked as ProfileFormValues[typeof key])

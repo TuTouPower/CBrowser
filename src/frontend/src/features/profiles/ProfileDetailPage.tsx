@@ -1,5 +1,5 @@
-import { useLocation, useParams } from "react-router";
-import { Button, GroupChip, StatusBadge } from "../../shared/ui";
+import { Link, useLocation, useParams } from "react-router";
+import { Banner, Button, GroupChip, StatusBadge } from "../../shared/ui";
 import { useI18n, type TranslationKey } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import {
@@ -30,9 +30,12 @@ export function ProfileDetailPage() {
   const { pathname } = useLocation();
   const { t } = useI18n();
   const client = useApiClient();
-  const { data: profile } = useProfileQuery(profileId, client);
-  const { data: runtime } = useProfileRuntimeQuery(profileId, client);
-  const { data: groups } = useGroupsQuery(client);
+  const profileQuery = useProfileQuery(profileId, client);
+  const runtimeQuery = useProfileRuntimeQuery(profileId, client);
+  const groupsQuery = useGroupsQuery(client);
+  const profile = profileQuery.data;
+  const runtime = runtimeQuery.data;
+  const groups = groupsQuery.data;
   const startMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
 
@@ -47,6 +50,40 @@ export function ProfileDetailPage() {
   const observed = runtime?.observed_state ?? "stopped";
   const status = statusDescriptor(observed);
   const group = groups?.find((item) => item.id === profile?.group_id);
+  const loadError = profileQuery.isError
+    ? (profileQuery.error?.message ?? t("runtimeStateUnknown"))
+    : runtimeQuery.isError
+      ? (runtimeQuery.error?.message ?? t("runtimeStateUnknown"))
+      : null;
+  const controlPending = startMutation.isPending || stopMutation.isPending;
+  const controlError =
+    startMutation.isError || stopMutation.isError
+      ? ((startMutation.error ?? stopMutation.error)?.message ??
+        t("runtimeStateUnknown"))
+      : null;
+  if (loadError) {
+    return (
+      <div
+        data-testid="profile-detail-view"
+        className="flex flex-col gap-lg p-lg"
+      >
+        <Banner tone="danger" testId="profile-detail-error">
+          <span>{loadError}</span>
+          <Button
+            size="sm"
+            data-testid="profile-detail-retry"
+            onClick={() => {
+              if (profileQuery.isError) void profileQuery.refetch();
+              if (runtimeQuery.isError) void runtimeQuery.refetch();
+              if (groupsQuery.isError) void groupsQuery.refetch();
+            }}
+          >
+            {t("retryAction")}
+          </Button>
+        </Banner>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -65,16 +102,17 @@ export function ProfileDetailPage() {
             <GroupChip label={group.name} hue={group.color} />
           </div>
         )}
-        <a
+        <Link
           data-testid="profile-detail-open-session"
-          href={`/session/${profileId}`}
+          to={`/session/${profileId}`}
           className="rounded-md border border-outline px-md py-sm font-ui text-label-md text-on-surface hover:bg-surface-hover"
         >
           {t("detailOpenSession")}
-        </a>
+        </Link>
         <Button
           data-testid="profile-detail-start"
           variant="primary"
+          disabled={controlPending}
           onClick={() =>
             startMutation.mutate({ id: profileId, state: "running" })
           }
@@ -84,25 +122,31 @@ export function ProfileDetailPage() {
         <Button
           data-testid="profile-detail-stop"
           variant="stop"
+          disabled={controlPending}
           onClick={() => stopMutation.mutate(profileId)}
         >
           {t("detailStop")}
         </Button>
       </header>
+      {controlError && (
+        <Banner tone="danger" testId="profile-detail-control-error">
+          {controlError}
+        </Banner>
+      )}
 
       <nav
         data-testid="profile-detail-tabs"
         className="flex gap-sm border-b border-outline"
       >
         {TABS.map((tab) => (
-          <a
+          <Link
             key={tab.key}
             data-testid={`profile-tab-${tab.key}`}
-            href={`/profiles/${profileId}/${tab.key}`}
+            to={`/profiles/${profileId}/${tab.key}`}
             className="rounded-md px-md py-sm font-ui text-label-md text-on-surface hover:bg-surface-hover"
           >
             {t(tab.label)}
-          </a>
+          </Link>
         ))}
       </nav>
 

@@ -220,7 +220,9 @@ describe("ProxyListPage AC-001 列展示", () => {
     stub = makeStub([]);
     renderPage();
     expect(await screen.findByTestId("proxy-list-page")).toBeInTheDocument();
-    expect(screen.getByTestId("empty-state")).toHaveTextContent(en.proxyEmpty);
+    expect(await screen.findByTestId("empty-state")).toHaveTextContent(
+      en.proxyEmpty,
+    );
     expect(screen.queryByTestId("proxy-table")).toBeNull();
   });
 });
