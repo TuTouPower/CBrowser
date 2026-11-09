@@ -2,7 +2,7 @@
 
 ## 1. 业务目标与适用范围
 
-本文档定义 CBrowser v2.3 架构重构在 `t002: v2_backend_foundation` 中累积实现的生产后端数据持久化、Profile 配置生命周期、运行状态模型、不可变版本快照、并发事务控制及结构化运行时诊断契约。
+本文档定义 CBrowser 架构重构在 `t002: v2_backend_foundation` 中累积实现的生产后端数据持久化、Profile 配置生命周期、运行状态模型、不可变版本快照、并发事务控制及结构化运行时诊断契约。
 
 **适用范围**：
 
@@ -116,7 +116,7 @@ PYTHONPATH=src/backend uv run --no-project python scripts/export_openapi.py
 CBROWSER_DB_PATH="/path/to/cbrowser.db" CBROWSER_PORT=56661 PYTHONPATH=src/backend uv run --no-project python -m uvicorn cbrowser.api.main:app --host 127.0.0.1 --port 56661
 ```
 
-### 3.4 运行 v2 后端单元与集成测试套件
+### 3.4 运行后端单元与集成测试套件
 
 ```bash
 PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio --with httpx --with aiosqlite --with sqlalchemy --with alembic --with fastapi --with pydantic --with uvicorn --with jsonschema pytest tests/ -s -v

@@ -69,14 +69,14 @@ def test_browser_runtime_base_fonts_dir_is_outside_default_scan_paths() -> None:
 
 def test_deploy_script_does_not_copy_font_directories() -> None:
     """AC-008: the release deployment script never copies a font directory."""
-    text = (ROOT / "scripts" / "deploy_v2.sh").read_text(encoding="utf-8")
+    text = (ROOT / "scripts" / "deploy.sh").read_text(encoding="utf-8")
     offenders = [
         line.strip()
         for line in text.splitlines()
         if re.search(r"\b(cp|rsync|tar|install)\b", line, re.IGNORECASE)
         and re.search(r"\bfonts\b", line, re.IGNORECASE)
     ]
-    assert not offenders, "deploy_v2.sh copies font directories:\n" + "\n".join(offenders)
+    assert not offenders, "deploy.sh copies font directories:\n" + "\n".join(offenders)
 
 
 def test_compose_font_directory_mounts_are_read_only() -> None:

@@ -63,19 +63,19 @@
 - 结论：采用选项 2。所有配置与管理收纳在 `/manage`，操控页纯净显示远程画面。
 - 替代：无
 
-## 007 冻结 v2 双容器 WebRTC 目标架构、废弃排他控制租约与定案本地运行基准（2026-10-27T18:50:00+08:00）
+## 007 冻结双容器 WebRTC 目标架构、废弃排他控制租约与定案本地运行基准（2026-10-27T18:50:00+08:00）
 
 - 背景：早期设计中预设单 Profile 单容器运行、排他控制租约（`ControlSession`、心跳超时、抢占接管等待）、60 FPS 恒定帧率、未经验证的 300ms 画面恢复指标，并假设 Selkies 2.1.0 具备原生公共 ICE restart API 及以远端 Linux x86_64 服务器为基准。t001 技术验证（s001–s009, d001–d014）与 2026-10-27 用户执行调整（跳过公网/Linux x86 验证，基准改为当前电脑 Docker + 本机 Chrome 访问）提供了确定性事实与调整依据。
 - 选项：
     1. 维持旧设计的单容器与独占控制租约模型，继续假设无 GPU 下恒定 60 FPS 并等待远端 Linux 服务器验证。
-    2. 冻结经验证的 v2 目标架构：
+    2. 冻结经验证的目标架构：
         - 采用同 Profile 双容器（Browser Runtime 显式 `shareable` IPC 与 Stream Runtime 加入），基于专属卷 X11 Socket 与 MIT-SHM 零拷贝捕获，彻底切断媒体容器对浏览器用户数据的直接挂载；
         - 彻底废弃独占控制租约与接管锁，多外部页面（ViewerConnection）以 `controller` 角色并发解码与输入，依靠官方 `client_tab_id`、Web Locks 与 `resume_key` 维持页面身份与重连；
         - 采用单 Profile 单一共享编码管线，执行 8/30 FPS 自适应仲裁与全后台暂停捕获；
         - API 为唯一 SQLite 写入者，Supervisor 为唯一 Docker Socket 持有者，经受控 UDS 隔离代理 CDP 与事件；
         - 明确 Selkies 2.1.0（commit `6ee68a7a`）同 PC 凭证轮换依赖进程内私有接口适配器（属于内部维护约束，非官方原生 public API）；
         - 将目标部署基准定案为当前 MacBook Pro M1 Max 上的 OrbStack Docker（10 CPU / ~15.66 GiB RAM，CPU 纯软件编码无 GPU 预算）配合本机 Chrome 访问；公网与原生 Linux x86_64 验证明确记为 `NOT_RUN / USER_WAIVED`。
-- 结论：采用选项 2。正式冻结 v2 目标架构。明确当前生产代码尚未实现该目标（当前生产代码仍保持旧基线），后续任务（t002+）据此实施。
+- 结论：采用选项 2。正式冻结目标架构。（t001 时点：当时生产代码尚未实现该目标仍保持旧基线，后续任务（t002+）据此实施；现行架构已落地，状态见现行蓝图。）
 - 替代：001（细化并替代单容器沙箱假设为双容器 shareable IPC 隔离）；明确废弃早期计划中关于独占控制租约、恒定 60 FPS 及 300ms 恢复假设。
 
 ## 008 区分首次异常与三次自动重试计数（2026-10-30T01:05:04+08:00）
@@ -84,7 +84,7 @@
 - 选项：
     1. 首次异常算入三次，实际只重试两次。
     2. 首次异常后执行三次重试，持久字段继续记录实际异常总数。
-- 结论：采用选项2。failure_count依次为1/2/3时分别等待2/10/30秒，第4次异常阻断；API与Supervisor共用domain/runtime_policy常量。正常启动不清历史，手动重试通过API幂等事务清除阻断。数据库字段结构不变，当前仅隔离v2测试数据；正式用户数据迁移仍由t010负责。
+- 结论：采用选项2。failure_count依次为1/2/3时分别等待2/10/30秒，第4次异常阻断；API与Supervisor共用domain/runtime_policy常量。正常启动不清历史，手动重试通过API幂等事务清除阻断。数据库字段结构不变，当前仅隔离测试数据；正式用户数据迁移仍由t010负责。
 - 替代：无；明确架构计划中“连续3次失败”指三次自动重试均失败。
 
 ## 009 Runtime 网络命名空间策略与启动门禁（2026-10-30T02:31:12+08:00）
@@ -255,7 +255,7 @@
     - **Python 3.15.2 / Debian trixie**：六个运行时镜像全部改为 digest 固定的 `python:3.15-slim-trixie@sha256:8c13a3f...`、Browser 辅助阶段 `debian:trixie-slim@sha256:f6b08b0...`；trixie apt 包名 SPIKE 实测全部可用（X11/GStreamer/Pulse/XTEST/文泉驿字体等）。`pyproject.toml` 的 `requires-python` 与 `uv.lock` 均为 `>=3.15`，`run_gates.sh` 的 `GATE_PYTHON_MINOR=3.15`，`.mise.toml` 固定 3.15.2。
     - **依赖单一来源**：修正 `pyproject.toml` 原缺陷（`dependencies` 误落在 `[project.scripts]` 表下，项目依赖为空），改用 PEP 735 `[dependency-groups]` 定义 6 组；`uv.lock` 为唯一锁定来源，`scripts/generate_requirements.sh` 按组 `uv export --only-group` 生成各镜像 requirements 与门禁 requirements；`tests/unit/test_t034_dependency_lock.py` 在门禁中校验一致，手改即失败。删除 `src/backend/requirements.txt` 与四处 `requirements.in`。
     - **升级版本**：`uv.lock` 解析 77 包，SQLAlchemy 2.1.8、Alembic 1.20.1、aiosqlite 0.22.1；全量 unit（1002+）、integration（142）、contract（222）在 Python 3.15 下通过，无弃用用法导致的回归。
-    - **Caddy 2.11.8**：`deploy_v2.sh` 默认引用改为 digest 固定；现有 Caddyfile（`tls internal`、`auto_https disable_redirects`、`handle` 转发）经 `caddy validate` 实测通过，行为不变。
+    - **Caddy 2.11.8**：`deploy.sh` 默认引用改为 digest 固定；现有 Caddyfile（`tls internal`、`auto_https disable_redirects`、`handle` 转发）经 `caddy validate` 实测通过，行为不变。
     - **cloakbrowser 锁定 0.6.4（D7）**：0.6.4 无 key 模式使用免费 Chromium 146 内核、不校验 license、无并发上限；0.7.0 删除无 key 路径，自动申领的免费 key 只允许 1 个并发会话，会破坏多 Profile 并发。故精确锁定 `cloakbrowser[geoip]==0.6.4`，不升 0.7.x。
 - 复查条件：上游恢复无 key 路径且免费 key 不再限制并发会话时，重新评估 cloakbrowser 升级（需真引擎并发验证）；Python/Debian/Caddy 后续大版本升级按同一 digest 固定 + SPIKE + 全量门禁流程。
 - 替代：无（不采用 `--legacy-peer-deps` 类绕过，不保留手写并行依赖清单）。
@@ -273,7 +273,7 @@
 - 背景：`docs/plan_20261105_ui_redesign.md` WP06/WP07 要求 Profile 由「业务 Tag + 内嵌 proxy 字符串」改为「分组库 + 代理库引用」，代理密码需单一来源且不进快照/日志/SSE；同时迁移链 0001-0009 已累积 9 个修订，旧代 schema 与新模型不可增量兼容。AC-002 要求旧代 DB 失败封闭并输出重建指引。认证 SOCKS5 的引擎能力经正式 spike `s013_authenticated_socks5_engine_probe` 验证（finding `d031`）。
 - 选项：① 保留 0001-0009 链并新增增量迁移 + 兼容读取；② 折叠为单 baseline、旧代 DB 失败封闭；③ 代理密码随版本快照复制；④ 认证 SOCKS5 一律 422 拒绝。
 - 结论：
-    - **破坏性升级不留兼容层**：迁移目录只保留 `0001_baseline_v2.py`（revision `b7e1c9d4a2f3`，`down_revision=None`），删除 0001-0009。API 启动（`migrations.py` 的 `LegacySchemaError` + `REBUILD_GUIDANCE`）与 `scripts/deploy_v2.sh`（只读探测 `alembic_version`）均对旧代 DB 失败封闭，不修改该 DB、不构建镜像、不移动 release 指针。**生产数据必须经用户批准的备份与迁移流程重建**，不自动升级、不静默删数据。
+    - **破坏性升级不留兼容层**：迁移目录只保留 `0001_baseline_v2.py`（revision `b7e1c9d4a2f3`，`down_revision=None`），删除 0001-0009。API 启动（`migrations.py` 的 `LegacySchemaError` + `REBUILD_GUIDANCE`）与 `scripts/deploy.sh`（只读探测 `alembic_version`）均对旧代 DB 失败封闭，不修改该 DB、不构建镜像、不移动 release 指针。**生产数据必须经用户批准的备份与迁移流程重建**，不自动升级、不静默删数据。
     - **release controller 按修订链判回退下限**：`current_revision_chain()` 读取当前源码树的修订 id，旧代 release（退役 0001-0009 head）拒绝作为回退目标；同代 release 之间的发布与回退通过。删除原 `applied_migration_version` 字符串比较机制。
     - **Proxy 凭据单一来源**：密码只存 `proxies` 表；配置版本快照只存 `proxy_id` 与 `proxy_credential_revision`（无代理时为 `None`），不含密码。`update_proxy` 改连接字段时在同一事务为引用 Profile 生成新版本并广播 SSE；改 name/region/notes 不生成。Supervisor 经只读 internal 端点取凭据，Runner 挂载 0600 `proxy_credentials.json`，revision 不一致或文件缺失即失败封闭 `proxy_credentials_changed`。
     - **配置版本三分**：只改元数据（name/notes/sort_order/group_id）、只改即时策略 `capture_preview`、或提交与当前值相同的运行配置，都不生成新版本、运行中不出现待应用；只有运行配置字段值变化才生成。

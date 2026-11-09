@@ -15,7 +15,7 @@
 - **P1-2 成功后绑定 staging**：成功 apply 后 Caddy 必须挂持久 `network/Caddyfile`（首次即挂持久路径或 finalize 后二次 rebuild）；`_finalize_commit`（`network_service.py:456-473`）不得只写盘不重指。
 - **P1-3 启动恢复过早**：恢复移到 Gateway/Supervisor 就绪后（后台重试），失败不清永久 409（`repository.py:1554-1569` 的 `recovery_complete=False` 死锁须有出路）。
 - **P1-6 443 Origin 自锁**：白名单生成归一化默认端口（`network_config.py:49-57`），一行。
-- **P1-8 baseline 断言**：`deploy_v2.sh:159-196` 改与 revision 链/祖先比较；与 P0-2 同批。跨代回退：预检显式拒绝（目标 head 与当前 DB 跨代 → 报错重建数据目录），文档写明不支持，不做 `ALLOWED_ORIGINS` 兼容。
+- **P1-8 baseline 断言**：`deploy.sh:159-196` 改与 revision 链/祖先比较；与 P0-2 同批。跨代回退：预检显式拒绝（目标 head 与当前 DB 跨代 → 报错重建数据目录），文档写明不支持，不做 `ALLOWED_ORIGINS` 兼容。
 
 ## P1 预览（只修功能）
 

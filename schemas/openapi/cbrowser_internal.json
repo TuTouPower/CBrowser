@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "CBrowser Control API",
-    "description": "Minimal coherent v2 Control API for profile lifecycle and runtime convergence.",
+    "description": "Minimal coherent Control API for profile lifecycle and runtime convergence.",
     "version": "2.0.0"
   },
   "paths": {

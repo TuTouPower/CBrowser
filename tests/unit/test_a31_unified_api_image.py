@@ -3,7 +3,7 @@
 The private supervisor_container_probe fixture duplicated the production
 packaging with a hand-picked source subset and its own dockerignore.  The
 production image (config/docker/api_runtime/Dockerfile, built by
-deploy_v2.sh and verified by run_gates.sh) covers the same API role, so the
+deploy.sh and verified by run_gates.sh) covers the same API role, so the
 fixture, its ignore file, its text-only test and the stale guide entry are
 removed together.  Live consumers of the image variable are kept.
 """
@@ -34,7 +34,7 @@ FIXTURE_IGNORE = (
 )
 GUIDE = REPO_ROOT / "docs" / "guides" / "supervisor_validation.md"
 GATES = REPO_ROOT / "scripts" / "run_gates.sh"
-DEPLOY = REPO_ROOT / "scripts" / "deploy_v2.sh"
+DEPLOY = REPO_ROOT / "scripts" / "deploy.sh"
 E2E_ENV = REPO_ROOT / "tests" / "fixtures" / "e2e_env.py"
 TOPOLOGY = REPO_ROOT / "tests" / "fixtures" / "gateway_probe" / "topology.py"
 GRAPH_E2E = (

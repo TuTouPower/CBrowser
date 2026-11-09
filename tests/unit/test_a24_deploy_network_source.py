@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts" / "deploy_v2.sh"
+SCRIPT = ROOT / "scripts" / "deploy.sh"
 
 
 def _text():
@@ -71,7 +71,7 @@ PY_STUB = (
 def _run_isolated_deploy(tmp_path, read_rc):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    shutil.copy(SCRIPT, repo / "scripts" / "deploy_v2.sh")
+    shutil.copy(SCRIPT, repo / "scripts" / "deploy.sh")
     net_dir = repo / "src" / "backend" / "cbrowser"
     net_dir.mkdir(parents=True)
     (net_dir / "network_config.py").write_text("", encoding="utf-8")
@@ -119,7 +119,7 @@ def _run_isolated_deploy(tmp_path, read_rc):
         "PYTHONPATH": str(repo / "src" / "backend"),
     }
     result = subprocess.run(
-        ["bash", "scripts/deploy_v2.sh", "deploy"],
+        ["bash", "scripts/deploy.sh", "deploy"],
         cwd=repo,
         env=env,
         capture_output=True,

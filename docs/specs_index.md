@@ -7,7 +7,7 @@
 |browser_isolation|baseline, t003, t041|2026-11-06T00:00:00+08:00|
 |webrtc_remote_display|baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042|2026-11-08T00:00:00+08:00|
 |storage_and_artifacts|baseline, t008, t016, t021, t023|2026-11-04T00:00:00+08:00|
-|v2_runtime_validation|t001|2026-11-01T00:00:00+08:00|
+|runtime_validation|t001|2026-11-01T00:00:00+08:00|
 |runtime_persistence|t002, t016, t021|2026-11-04T00:00:00+08:00|
 |runtime_lifecycle|t005, t007, t022, t026, t035|2026-11-05T00:00:00+08:00|
 |release_deployment|t027, t034, t035, t042|2026-11-08T00:00:00+08:00|

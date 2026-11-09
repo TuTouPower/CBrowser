@@ -18,7 +18,7 @@
 mkdir -p config/deploy/secrets
 printf '%s' '你的管理员密码' > config/deploy/secrets/admin_password
 chmod 600 config/deploy/secrets/admin_password
-bash scripts/deploy_v2.sh            # 等同于 bash scripts/deploy_v2.sh deploy
+bash scripts/deploy.sh            # 等同于 bash scripts/deploy.sh deploy
 ```
 
 脚本做的事：生成缺失的容器间内部密钥（`supervisor_key`、`agent_key`、`gateway_key`、`gateway_api_key`，随机、0600、永不打印）→ 每个运行时镜像只构建一次并打 release 标签 → 生成不可变 release（见第 3 节）→ `docker compose up -d --no-build --wait` 等服务健康 → 在 Supervisor 容器内执行 readiness 探针，确认全部 desired=running 的 Profile 已收敛才算成功。任一步失败都会非零退出并保留上一份有效 release 为当前版本，不打印成功。
@@ -29,7 +29,7 @@ bash scripts/deploy_v2.sh            # 等同于 bash scripts/deploy_v2.sh deplo
 
 - 每次发布生成 `config/deploy/releases/<release_id>.json`（manifest：六个镜像的不可变 ID、compose/`src/backend/cbrowser/network_config.py` 生成器/前端产物指纹、数据库迁移版本、readiness 能力）与同名 `.env`（compose 用的固定变量）。
 - `config/deploy/current_release` 与 `config/deploy/previous_release` 是指针文件，只在发布/回退通过 readiness 验收后才原子更新；失败发布不覆盖上一份有效 release，上一 release 的镜像仍在 daemon 中。
-- `bash scripts/deploy_v2.sh status` 查看当前/上一 release。
+- `bash scripts/deploy.sh status` 查看当前/上一 release。
 - compose.yaml 的服务镜像全部来自 release env 且没有 build 块，手工 `docker compose --env-file config/deploy/releases/<id>.env -f compose.yaml up -d` 也不会触发构建。
 
 ## 4. 升级与回退
@@ -38,7 +38,7 @@ bash scripts/deploy_v2.sh            # 等同于 bash scripts/deploy_v2.sh deplo
 
 ```bash
 npm run build --prefix src/frontend   # 前端有变化时
-bash scripts/deploy_v2.sh
+bash scripts/deploy.sh
 ```
 
 相同配置重复发布是幂等的：镜像与配置未变的服务不会被重建，Caddy 只在其配置指纹（`network_config.py` 生成器或前端产物）变化时才重建。
@@ -46,8 +46,8 @@ bash scripts/deploy_v2.sh
 回退到上一 release（恢复其全部镜像与配置，不删除 Browser、Profile 数据或数据库）：
 
 ```bash
-bash scripts/deploy_v2.sh rollback              # 回到 previous_release
-bash scripts/deploy_v2.sh rollback <release_id> # 回到指定 release
+bash scripts/deploy.sh rollback              # 回到 previous_release
+bash scripts/deploy.sh rollback <release_id> # 回到指定 release
 ```
 
 回退同样执行 readiness 验收后才切换指针，且自动采用目标 release 记录的实例身份（项目、prefix、端口、数据根、secrets 目录）执行，不受你当前 shell 里这些环境变量的影响——默认实例直接裸命令 `rollback` 即可。唯一例外是 release 存放位置本身：若该实例发布时用了自定义 `CBROWSER_DEPLOY_DIR`（见第 6 节），回退时也要带上同一个 `CBROWSER_DEPLOY_DIR`，否则会命中默认实例的指针。以下情况回退会在任何变更前被拒绝并说明原因：目标 release 不具备 readiness 能力；目标 release 的迁移版本低于当前数据库版本（当前数据库版本以实际已应用的最高迁移为准：一次拉起后验收失败的发布可能已经把数据库升过版，即使它没有成为 current release；系统没有降级迁移，不要手工绕过）。
@@ -69,7 +69,7 @@ CBROWSER_HTTPS_PORT=56662 \
 CBROWSER_DATA_ROOT=$PWD/data/test-v2 \
 CBROWSER_SECRETS_DIR=$PWD/config/deploy/test-secrets \
 CBROWSER_DEPLOY_DIR=$PWD/config/deploy/test-instance \
-bash scripts/deploy_v2.sh
+bash scripts/deploy.sh
 ```
 
 注意：新实例的 secrets 目录同样需要先放好它自己的 `admin_password`。**prefix 是 Supervisor 的资源扫描边界**：两个实例绝不能共用同一 prefix；若目标 prefix 已被另一个运行中的实例占用，脚本会在启动前拒绝。
@@ -94,12 +94,12 @@ tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
 
 恢复：停止 compose，解压备份覆盖 `data/v2`，再发布。
 
-t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy_v2.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/v2`；legacy 迁移脚本已随该破坏性升级移除。
+t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/v2`；legacy 迁移脚本已随该破坏性升级移除。
 
 ## 9. 故障定位
 
 ```bash
-bash scripts/deploy_v2.sh status
+bash scripts/deploy.sh status
 docker compose --env-file config/deploy/releases/<release_id>.env -f compose.yaml ps
 docker logs --tail 200 cbrowser-api
 docker logs --tail 200 cbrowser-supervisor
