@@ -120,6 +120,9 @@ interrupted_args=()
 if [ -f "$interrupted_file" ]; then
   interrupted_args=(--interrupted)
 fi
+# NOTE: the expansion below must stay in the guarded form: expanding an
+# empty array bare is an unbound-variable error on bash 3.2 (macOS
+# /bin/bash) under `set -u`.
 python3 "$REPO_ROOT/scripts/automation_probe_evidence.py" \
   --junit "$report_dir/probe.xml" \
   --image-json "$report_dir/image.json" \
@@ -128,7 +131,7 @@ python3 "$REPO_ROOT/scripts/automation_probe_evidence.py" \
   --preflight "$preflight_file" \
   --log image.json --log probe.xml --log evidence.json \
   --output "$report_dir/evidence.json" \
-  "${interrupted_args[@]}"
+  ${interrupted_args[@]+"${interrupted_args[@]}"}
 evidence_rc=$?
 if [ "$evidence_rc" -eq 0 ]; then
   echo "real_engine: all_passed (evidence.json)"

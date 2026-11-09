@@ -55,9 +55,18 @@ prepare_env() {
     return 0
   fi
   echo "gate env: build venv $GATE_VENV (python $GATE_PYTHON_MINOR)"
-  uv venv --python "$GATE_PYTHON_MINOR" "$GATE_VENV"
+  uv venv --clear --python "$GATE_PYTHON_MINOR" "$GATE_VENV"
   uv pip install --python "$PY" -r scripts/gate-requirements.txt
   printf '%s' "$REQ_HASH" > "$STAMP"
+}
+
+# Clean clones lack .scratch/selkies_wheels (gitignored) while the unit
+# gate and the E2E adapter suites require the pinned wheel bytes; fetch it
+# once (SHA256-verified) before any suite so a clean clone runs as-is.
+# Warm runs reuse the cached file without any download.
+ensure_selkies_wheel_cache() {
+  local cache="${CBROWSER_SELKIES_WHEEL_CACHE:-$REPO_ROOT/.scratch/selkies_wheels}"
+  "$PY" -m scripts.ensure_selkies_wheel_cache --cache-dir "$cache"
 }
 
 # run_gate_suite <target> <pythonpath> <junit> <basetemp> [extra pytest args]
@@ -77,8 +86,12 @@ run_gate_suite() {
     -m "not serial" --basetemp="$basetemp/parallel" --junitxml="$a" "$@" || c1=$?
   env PYTHONPATH="$pp" "$PY" -m pytest "$target" -q -n 0 \
     -m "serial" --basetemp="$basetemp/serial" --junitxml="$b" "$@" || c2=$?
-  "$PY" scripts/merge_junit.py --output "$junit" "$a" "$b"
+  "$PY" scripts/merge_junit.py --output "$junit" "$a" "$b" || return "$?"
   rm -f "$a" "$b"
+  if [ ! -f "$junit" ]; then
+    echo "gate: junit merge output missing: $junit" >&2
+    return 1
+  fi
   if [ "$c1" = 5 ] && [ "$c2" = 5 ]; then return 5; fi
   if [ "$c1" != 0 ] && [ "$c1" != 5 ]; then return "$c1"; fi
   if [ "$c2" != 0 ] && [ "$c2" != 5 ]; then return "$c2"; fi
@@ -148,7 +161,13 @@ finish_evidence() {
   : > "$EVIDENCE_DIR/suites.tsv"
   for name in $SUITE_ORDER; do
     f="$EVIDENCE_DIR/suites.d/$name.tsv"
-    if [ -f "$f" ]; then cat "$f" >> "$EVIDENCE_DIR/suites.tsv"; fi
+    if [ -f "$f" ]; then
+      cat "$f" >> "$EVIDENCE_DIR/suites.tsv"
+    else
+      echo "gate evidence: missing suite result: $name" >&2
+      printf '%s\t1\t%s\n' "$name" "(missing suite result: suite did not run)" >> "$EVIDENCE_DIR/suites.tsv"
+      GATE_FAILURES=1
+    fi
   done
   for f in "$EVIDENCE_DIR"/suites.d/*.tsv; do
     [ -f "$f" ] || continue
@@ -156,7 +175,11 @@ finish_evidence() {
     if [ "$code" != "0" ]; then GATE_FAILURES=1; fi
   done
   "$PY" scripts/gate_evidence_manifest.py \
-    --evidence-dir "$EVIDENCE_DIR" --suites-tsv "$EVIDENCE_DIR/suites.tsv"
+    --evidence-dir "$EVIDENCE_DIR" --suites-tsv "$EVIDENCE_DIR/suites.tsv" || GATE_FAILURES=1
+  if [ ! -f "$EVIDENCE_DIR/manifest.json" ]; then
+    echo "gate evidence: manifest.json not written" >&2
+    return 1
+  fi
   echo "gate evidence: manifest at $EVIDENCE_DIR/manifest.json"
   return "$GATE_FAILURES"
 }
@@ -165,7 +188,7 @@ finish_evidence() {
 if [ -n "$EVIDENCE_DIR" ]; then
   mkdir -p "$EVIDENCE_DIR/logs" "$EVIDENCE_DIR/junit" "$EVIDENCE_DIR/suites.d"
   : > "$EVIDENCE_DIR/logs/environment.raw.log"
-  if ! prepare_env >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1; then
+  if ! { prepare_env && ensure_selkies_wheel_cache; } >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1; then
     if ! "$PY" scripts/redact_evidence.py <"$EVIDENCE_DIR/logs/environment.raw.log" >"$EVIDENCE_DIR/logs/environment.log" 2>/dev/null; then
       echo "environment log redaction failed; raw log withheld from evidence" > "$EVIDENCE_DIR/logs/environment.log"
     fi
@@ -183,6 +206,7 @@ if [ -n "$EVIDENCE_DIR" ]; then
   rm -f "$EVIDENCE_DIR/logs/environment.raw.log"
 else
   prepare_env
+  ensure_selkies_wheel_cache
 fi
 
 cleanup_containers

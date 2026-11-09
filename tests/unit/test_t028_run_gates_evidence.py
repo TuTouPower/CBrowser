@@ -224,3 +224,73 @@ def test_redact_evidence_script() -> None:
     assert "sessvalue" not in result.stdout
     assert "plain line stays" in result.stdout
     assert result.stdout.count("<redacted>") >= 4
+
+
+def _finish_evidence_function() -> str:
+    text = (REPO_ROOT / "scripts" / "run_gates.sh").read_text(encoding="utf-8")
+    start = text.index("finish_evidence() {")
+    end = text.index("\n}\n", start) + len("\n}\n")
+    return text[start:end]
+
+
+def _drive_finish_evidence(tmp_path: Path, present: dict[str, int]) -> subprocess.CompletedProcess:
+    import shlex
+
+    evidence = tmp_path / "evidence"
+    (evidence / "logs").mkdir(parents=True)
+    (evidence / "junit").mkdir(parents=True)
+    suites_d = evidence / "suites.d"
+    suites_d.mkdir(parents=True)
+    for name, code in present.items():
+        (suites_d / f"{name}.tsv").write_text(
+            f"{name}\t{code}\tcmd {name}\n", encoding="utf-8"
+        )
+    script = tmp_path / "drive.sh"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                f"PY={shlex.quote(sys.executable)}",
+                f"EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                'SUITE_ORDER="requirements_check contract unit"',
+                _finish_evidence_function().rstrip("\n"),
+                "finish_evidence",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", str(script)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+    )
+
+
+def test_finish_evidence_missing_suite_tsv_fails_closed(tmp_path: Path) -> None:
+    """A suite that never wrote its TSV (missing, not failed) fails the
+    gate instead of passing with a partial manifest."""
+    result = _drive_finish_evidence(
+        tmp_path, {"requirements_check": 0, "contract": 0}
+    )
+    assert result.returncode != 0
+    assert "missing suite result: unit" in result.stderr
+    manifest = json.loads(
+        (tmp_path / "evidence" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["all_passed"] is False
+
+
+def test_finish_evidence_all_present_still_passes(tmp_path: Path) -> None:
+    result = _drive_finish_evidence(
+        tmp_path,
+        {"requirements_check": 0, "contract": 0, "unit": 0},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads(
+        (tmp_path / "evidence" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["all_passed"] is True

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from scripts import vendor_selkies_web as vendor_module
+from scripts import ensure_selkies_wheel_cache as ensure_module
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WHEEL_CACHE = REPO_ROOT / '.scratch' / 'selkies_wheels'
@@ -78,3 +79,41 @@ def test_missing_local_wheel_fails_closed_without_network(
     assert str(missing) in message
     assert str(cache / vendor_module.PINNED_WHEEL_FILENAME) in message
     assert calls == []
+
+
+def test_ensure_reuses_valid_cached_wheel_without_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wheel = _pinned_wheel()
+    assert wheel.is_file(), f'local Selkies wheel cache missing: {wheel}'
+    cache = tmp_path / 'wheels'
+    cache.mkdir()
+    seeded = cache / vendor_module.PINNED_WHEEL_FILENAME
+    seeded.write_bytes(wheel.read_bytes())
+    calls: list[str] = []
+
+    def _urlopen(*args, **kwargs):
+        calls.append('urlopen')
+        raise AssertionError('public network access attempted')
+
+    monkeypatch.setattr(vendor_module.urllib.request, 'urlopen', _urlopen)
+
+    assert ensure_module.main(['--cache-dir', str(cache)]) == 0
+    assert calls == []
+    assert seeded.read_bytes() == wheel.read_bytes()
+
+
+def test_ensure_missing_wheel_fails_closed_without_network(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def _urlopen(*args, **kwargs):
+        raise AssertionError('public network access attempted')
+
+    monkeypatch.setattr(vendor_module.urllib.request, 'urlopen', _urlopen)
+    cache = tmp_path / 'wheels'
+    cache.mkdir()
+
+    assert ensure_module.main(['--cache-dir', str(cache)]) == 1
+    assert 'selkies wheel cache unavailable' in capsys.readouterr().err
