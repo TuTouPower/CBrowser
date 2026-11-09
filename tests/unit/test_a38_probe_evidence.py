@@ -269,3 +269,12 @@ def test_probe_entry_declares_required_cases_and_evidence() -> None:
         assert node_id in probe
     assert "automation_probe_evidence.py" in probe
     assert "--junitxml=/evidence/probe.xml" in probe
+
+
+def test_probe_empty_array_expansion_is_bash32_safe() -> None:
+    """run_automation_probe.sh runs under `set -u` on bash 3.2 (macOS
+    /bin/bash), where a bare "${arr[@]}" on an empty array is an
+    unbound-variable error. The guarded form must be used instead."""
+    probe = PROBE.read_text(encoding="utf-8")
+    assert '${interrupted_args[@]+"${interrupted_args[@]}"}' in probe
+    assert '\n  "${interrupted_args[@]}"\n' not in probe

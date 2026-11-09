@@ -64,6 +64,29 @@ def test_gate_wires_lock_drift_and_image_package_checks() -> None:
     assert "requirements_check" in GATE
 
 
+def test_gate_rebuilds_venv_clear() -> None:
+    """A stale .scratch/gate_venv must not abort the gate with "already
+    exists": the rebuild clears the target directory first."""
+    assert "uv venv --clear" in GATE
+
+
+def test_gate_wheel_cache_is_a_pre_step() -> None:
+    """Clean clones lack .scratch/selkies_wheels (gitignored); the gate
+    fetches the pinned wheel before any suite instead of failing in unit."""
+    assert "ensure_selkies_wheel_cache" in GATE
+    assert "-m scripts.ensure_selkies_wheel_cache" in GATE
+    assert "CBROWSER_SELKIES_WHEEL_CACHE" in GATE
+    assert ".scratch/selkies_wheels" in GATE
+
+
+def test_gate_evidence_fails_closed_on_missing_suite_tsv() -> None:
+    """A missing per-suite TSV (suite never ran) fails the gate instead of
+    silently passing with a partial manifest."""
+    assert "missing suite result" in GATE
+    assert "manifest.json not written" in GATE
+    assert "junit merge output missing" in GATE
+
+
 def test_gate_reuses_shared_uv_cache() -> None:
     """AC-009: persistent cache + venv stamp; warm run logs no download."""
     assert "export UV_CACHE_DIR=" in GATE
