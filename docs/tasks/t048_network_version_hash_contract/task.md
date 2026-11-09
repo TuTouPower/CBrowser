@@ -42,7 +42,7 @@
 - [ ] AC-004：`network_service` 回滚旧版本时，旧快照哈希与重新生成的 Caddyfile 不一致即拒绝绑定，不存在因哈希为空而跳过校验的路径；下发给 Supervisor 的 `caddyfile_sha256` 恒为非空且经过校验的值。
 - [ ] AC-005：申请新网络版本时生成的版本哈希与写出的 Caddyfile 一致，过程中不构造空哈希的中间版本对象。
 - [ ] AC-006：`network_config_cli init` 在空目录写出的版本文件可被 `network_config_cli read` 无错读出；目录中版本文件哈希为空时 `read` 以 corrupt 退出码失败。
-- [ ] AC-007：全量门禁（`scripts/run_gates.sh`）通过。
+- [ ] AC-007：全量门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）通过，含使用已应用网络版本的 E2E fixture（`tests/fixtures/gateway_probe/topology.py`、`tests/fixtures/supervisor_recovery_probe/gateway_service.py`）所驱动的用例。
 
 ### 可测试性声明
 
@@ -66,7 +66,7 @@
 
 - 单元：模型校验（AC-001）、构造入口与 Caddyfile 哈希一致性（AC-002/AC-005）、repository 回退（AC-003）、`_restore_old` 拒绝不一致与无空哈希下发（AC-004）、CLI init/read 往返与空哈希拒绝（AC-006）。
 - 既有 `tests/unit/test_a24_network_config_cli.py`、`test_a24_deploy_v2_network_source.py` 等若依赖空哈希构造，按 TDD 规则整体删除并写明理由或保留原样，不就地改预期。
-- 门禁：`scripts/run_gates.sh`。
+- 门禁：`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`；E2E fixture 中的默认版本构造随单一构造入口一并替换。与 t049 并行时 E2E 门禁错开执行（共享 OrbStack，`serial` 用例占固定宿主端口）。
 
 ### 未知契约清单
 
