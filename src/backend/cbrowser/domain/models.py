@@ -835,16 +835,20 @@ class NetworkAccessConfig(BaseModel):
             if not self.lan_advertised_ip:
                 raise ValueError("lan_advertised_ip is required when lan_access_enabled is True")
             import ipaddress
+            # Normalize once and store it so validated values are persisted
+            # without surrounding whitespace.
+            cleaned = self.lan_advertised_ip.strip()
             try:
-                ip = ipaddress.IPv4Address(self.lan_advertised_ip.strip())
+                ip = ipaddress.IPv4Address(cleaned)
             except Exception as e:
-                raise ValueError(f"Invalid IPv4 address: {self.lan_advertised_ip}") from e
+                raise ValueError(f"Invalid IPv4 address: {cleaned}") from e
             if ip.is_loopback:
-                raise ValueError(f"Loopback IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+                raise ValueError(f"Loopback IP {cleaned} cannot be used as advertised LAN IP")
             if ip.is_unspecified:
-                raise ValueError(f"Unspecified IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+                raise ValueError(f"Unspecified IP {cleaned} cannot be used as advertised LAN IP")
             if ip.is_multicast:
-                raise ValueError(f"Multicast IP {self.lan_advertised_ip} cannot be used as advertised LAN IP")
+                raise ValueError(f"Multicast IP {cleaned} cannot be used as advertised LAN IP")
+            self.lan_advertised_ip = cleaned
         return self
 
 

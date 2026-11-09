@@ -41,12 +41,22 @@ def preview_dir(data_root: Path | str, profile_id: str) -> Path:
 def _atomic_write(path: Path, payload: str | bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    if isinstance(payload, bytes):
-        tmp.write_bytes(payload)
-    else:
-        tmp.write_text(payload, encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    try:
+        if isinstance(payload, bytes):
+            tmp.write_bytes(payload)
+        else:
+            tmp.write_text(payload, encoding="utf-8")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        # Never leave a half-written staging file behind (cancellation,
+        # disk errors); a stale tmp could otherwise be mistaken for a
+        # pending write by later readers.
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def read_policy(directory: Path) -> PreviewPolicy | None:

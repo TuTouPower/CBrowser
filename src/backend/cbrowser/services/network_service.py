@@ -268,12 +268,23 @@ class NetworkService:
             created_at=utc_now_iso(),
             updated_at=utc_now_iso(),
         )
-        txn = await self.repo.begin_network_transaction(
-            operation=op,
-            old_applied=old_applied,
-            target_applied=new_version,
-            candidate_hash=caddy_sha,
-        )
+        # Read-write pairing with the repository TOCTOU guard: the settings
+        # snapshot above goes stale if a concurrent apply commits first.
+        # Surface that as a retryable conflict instead of a duplicate
+        # target version.
+        try:
+            txn = await self.repo.begin_network_transaction(
+                operation=op,
+                old_applied=old_applied,
+                target_applied=new_version,
+                candidate_hash=caddy_sha,
+            )
+        except RuntimeError as exc:
+            if "Stale applied network version" in str(exc):
+                raise RuntimeError(
+                    "Stale applied network version; reload settings and retry"
+                ) from exc
+            raise
         task = asyncio.create_task(
             self._execute_apply(txn, new_version, caddy_content)
         )
@@ -413,13 +424,18 @@ class NetworkService:
                 if new_version.config.lan_access_enabled
                 else "127.0.0.1"
             )
-            await self.supervisor_client.converge_network_streams(
+            converge_result = await self.supervisor_client.converge_network_streams(
                 target_version=new_version.version,
                 bind_host=new_version.bind_host,
                 advertised_ip=advertised_ip,
                 operation_id=op_id,
                 execution_generation=generation,
             )
+            if (
+                not isinstance(converge_result, dict)
+                or converge_result.get("status") != "ok"
+            ):
+                raise RuntimeError("Stream convergence not verified")
 
             await self.repo.advance_network_transaction(
                 op_id,

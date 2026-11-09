@@ -1536,6 +1536,23 @@ class ProfileRepository:
             if state is None:
                 return False
             await self._write_applied(session, state[0])
+            # Seed the execution generation from the rebuilt applied version
+            # so the next transaction is not dialed from 0: the Gateway
+            # baseline generation is applied.version - 1 and would reject a
+            # lower generation as stale.
+            gen_row = await session.get(SettingModel, self.KEY_NETWORK_GENERATION)
+            seed = str(state[0].version)
+            if gen_row:
+                gen_row.value = seed
+                gen_row.updated_at = utc_now_iso()
+            else:
+                session.add(
+                    SettingModel(
+                        key=self.KEY_NETWORK_GENERATION,
+                        value=seed,
+                        updated_at=utc_now_iso(),
+                    )
+                )
             return True
 
     async def begin_network_transaction(
@@ -1551,6 +1568,24 @@ class ProfileRepository:
             self._session_maker() as session,
             write_transaction(session),
         ):
+            applied_row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
+            if applied_row is not None:
+                try:
+                    current_applied = (
+                        AppliedNetworkAccessVersion.model_validate_json(
+                            applied_row.value
+                        )
+                    )
+                except ValueError:
+                    raise RuntimeError(
+                        "Applied network version is unreadable"
+                    ) from None
+                if current_applied.version != old_applied.version:
+                    raise RuntimeError(
+                        "Stale applied network version: expected version "
+                        f"{old_applied.version}, found version "
+                        f"{current_applied.version}"
+                    )
             active_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
             if active_row is not None:
                 existing = _load_transaction(active_row.value)
