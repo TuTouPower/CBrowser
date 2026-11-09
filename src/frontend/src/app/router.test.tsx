@@ -281,8 +281,13 @@ describe("Application Router (plan 5.1)", () => {
     );
 
     expect(stubClient.profiles.reset).not.toHaveBeenCalled();
+    // Reset is two-step confirm (request → confirm); the confirm flow stays.
     fireEvent.click(
-      within(resetSection).getByRole("button", { name: "Reset" }),
+      within(resetSection).getByTestId("profile-maintenance-reset-request"),
+    );
+    expect(stubClient.profiles.reset).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(resetSection).getByTestId("profile-maintenance-reset-confirm"),
     );
     await waitFor(() =>
       expect(stubClient.profiles.reset).toHaveBeenCalledWith(

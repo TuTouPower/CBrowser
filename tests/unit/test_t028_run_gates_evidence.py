@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 UV_STUB = """#!/bin/bash
@@ -192,6 +194,53 @@ def test_evidence_mode_all_pass_exits_zero(tmp_path: Path) -> None:
     assert all(entry["exit_code"] == 0 for entry in manifest["suites"])
 
 
+@pytest.mark.serial
+def test_evidence_dir_reuse_cleans_stale_files(tmp_path: Path) -> None:
+    """Reusing an evidence dir must not go false-green on stale files: old
+    suites.d/junit/logs fragments are cleared before the run.
+
+    Heavy end-to-end gate drive: serial to avoid contending with other
+    concurrent gate drives (t044 AC-002/AC-007 timing-sensitive).
+    """
+    evidence = tmp_path / "evidence"
+    (evidence / "suites.d").mkdir(parents=True)
+    (evidence / "junit").mkdir(parents=True)
+    (evidence / "logs").mkdir(parents=True)
+    # Stale pass from a previous run for a suite that will run again, plus
+    # stale fragments for suites not in this run's order (e2e, retired).
+    (evidence / "suites.d" / "unit.tsv").write_text(
+        "unit\t0\tstale cmd\n", encoding="utf-8"
+    )
+    (evidence / "suites.d" / "e2e.tsv").write_text(
+        "e2e\t0\tstale e2e\n", encoding="utf-8"
+    )
+    (evidence / "suites.d" / "design_tokens.tsv").write_text(
+        "design_tokens\t0\tstale\n", encoding="utf-8"
+    )
+    (evidence / "junit" / "stale.xml").write_text("<testsuites/>", encoding="utf-8")
+    (evidence / "logs" / "stale.log").write_text("stale\n", encoding="utf-8")
+    result = _run_gates(
+        tmp_path, {"CBROWSER_GATE_EVIDENCE_DIR": str(evidence)}
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (evidence / "junit" / "stale.xml").exists()
+    assert not (evidence / "logs" / "stale.log").exists()
+    assert not (evidence / "suites.d" / "design_tokens.tsv").exists()
+    assert not (evidence / "suites.d" / "e2e.tsv").exists()
+    manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
+    assert [s["name"] for s in manifest["suites"]] == [
+        "requirements_check",
+        "contract",
+        "unit",
+        "integration",
+        "design_lint",
+        "design_check",
+        "frontend_test",
+        "frontend_build",
+    ]
+    assert manifest["all_passed"] is True
+
+
 def test_default_mode_still_stops_at_first_failure(tmp_path: Path) -> None:
     result = _run_gates(tmp_path, {"GATE_STUB_FAIL": "tests/integration"})
     assert result.returncode != 0
@@ -294,3 +343,205 @@ def test_finish_evidence_all_present_still_passes(tmp_path: Path) -> None:
         (tmp_path / "evidence" / "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["all_passed"] is True
+
+
+def _run_suite_function() -> str:
+    text = (REPO_ROOT / "scripts" / "run_gates.sh").read_text(encoding="utf-8")
+    start = text.index("run_suite() {")
+    end = text.index("\n}\n", start) + len("\n}\n")
+    return text[start:end]
+
+
+def _drive_run_suite(
+    tmp_path: Path, *, py: str, suite_cmd: list[str]
+) -> subprocess.CompletedProcess:
+    import shlex
+
+    evidence = tmp_path / "evidence"
+    (evidence / "logs").mkdir(parents=True)
+    (evidence / "suites.d").mkdir(parents=True)
+    script = tmp_path / "drive_run.sh"
+    cmd = " ".join(shlex.quote(c) for c in suite_cmd)
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                f"PY={shlex.quote(py)}",
+                f"EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                _run_suite_function().rstrip("\n"),
+                f"run_suite mysuite 'cmd mysuite' {cmd}",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    return subprocess.run(
+        ["bash", str(script)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+    )
+
+
+def test_finish_evidence_stale_extra_tsv_does_not_false_green(
+    tmp_path: Path,
+) -> None:
+    """An old extra TSV (e.g. a retired suite or a previous E2E run) must
+    not sneak into the manifest or flip the verdict to pass."""
+    import shlex
+
+    evidence = tmp_path / "evidence"
+    (evidence / "logs").mkdir(parents=True)
+    (evidence / "junit").mkdir(parents=True)
+    suites_d = evidence / "suites.d"
+    suites_d.mkdir(parents=True)
+    for name in ("requirements_check", "contract", "unit"):
+        (suites_d / f"{name}.tsv").write_text(
+            f"{name}\t0\tcmd {name}\n", encoding="utf-8"
+        )
+    # Stale files from a previous run / retired suite.
+    (suites_d / "design_tokens.tsv").write_text(
+        "design_tokens\t0\told cmd\n", encoding="utf-8"
+    )
+    (suites_d / "e2e.tsv").write_text("e2e\t0\told e2e\n", encoding="utf-8")
+    script = tmp_path / "drive.sh"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                f"PY={shlex.quote(sys.executable)}",
+                f"EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                'SUITE_ORDER="requirements_check contract unit"',
+                _finish_evidence_function().rstrip("\n"),
+                "finish_evidence",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads(
+        (evidence / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["all_passed"] is True
+    assert [s["name"] for s in manifest["suites"]] == [
+        "requirements_check",
+        "contract",
+        "unit",
+    ]
+
+
+def test_finish_evidence_stale_extra_tsv_ignored(
+    tmp_path: Path,
+) -> None:
+    """A stale extra TSV (previous run / retired suite) is ignored: it
+    neither sneaks into the manifest nor flips the verdict (cleaning
+    already removed such files; this is defense in depth against reuse
+    without cleaning)."""
+    import shlex
+
+    evidence = tmp_path / "evidence"
+    (evidence / "logs").mkdir(parents=True)
+    (evidence / "junit").mkdir(parents=True)
+    suites_d = evidence / "suites.d"
+    suites_d.mkdir(parents=True)
+    for name in ("requirements_check", "contract", "unit"):
+        (suites_d / f"{name}.tsv").write_text(
+            f"{name}\t0\tcmd {name}\n", encoding="utf-8"
+        )
+    (suites_d / "e2e.tsv").write_text("e2e\t1\told e2e\n", encoding="utf-8")
+    script = tmp_path / "drive.sh"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                f"PY={shlex.quote(sys.executable)}",
+                f"EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                'SUITE_ORDER="requirements_check contract unit"',
+                _finish_evidence_function().rstrip("\n"),
+                "finish_evidence",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    manifest = json.loads(
+        (evidence / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["all_passed"] is True
+    assert [s["name"] for s in manifest["suites"]] == [
+        "requirements_check",
+        "contract",
+        "unit",
+    ]
+
+
+def test_run_suite_redaction_failure_withholds_raw(tmp_path: Path) -> None:
+    """Redaction failure must not leave an unredacted raw log behind."""
+    result = _drive_run_suite(tmp_path, py="false", suite_cmd=["echo", "hello"])
+    evidence = tmp_path / "evidence"
+    # Suite itself succeeded (echo 0); redaction failed (false).
+    assert not (evidence / "logs" / "mysuite.raw.log").exists()
+    log = (evidence / "logs" / "mysuite.log").read_text(encoding="utf-8")
+    assert "withheld" in log
+    assert "hello" not in log
+    tsv = (evidence / "suites.d" / "mysuite.tsv").read_text(encoding="utf-8")
+    assert tsv.startswith("mysuite\t0\t")
+
+
+def test_finish_evidence_manifest_failure_fails_closed(tmp_path: Path) -> None:
+    """When the manifest builder fails, finish_evidence fails closed."""
+    import shlex
+
+    evidence = tmp_path / "evidence"
+    (evidence / "logs").mkdir(parents=True)
+    (evidence / "junit").mkdir(parents=True)
+    suites_d = evidence / "suites.d"
+    suites_d.mkdir(parents=True)
+    for name in ("requirements_check", "contract", "unit"):
+        (suites_d / f"{name}.tsv").write_text(
+            f"{name}\t0\tcmd {name}\n", encoding="utf-8"
+        )
+    script = tmp_path / "drive.sh"
+    script.write_text(
+        "\n".join(
+            [
+                "#!/bin/bash",
+                "set -uo pipefail",
+                "PY=false",
+                f"EVIDENCE_DIR={shlex.quote(str(evidence))}",
+                'SUITE_ORDER="requirements_check contract unit"',
+                _finish_evidence_function().rstrip("\n"),
+                "finish_evidence",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        timeout=120,
+    )
+    assert result.returncode != 0

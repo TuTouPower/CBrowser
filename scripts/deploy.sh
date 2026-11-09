@@ -15,10 +15,15 @@
 #             readiness verification passes, so a failed deploy never
 #             overwrites the previous valid release.
 #   rollback  re-deploy the previous (or a named) release after checking
-#             it still offers the readiness capability and its migration
-#             head belongs to the current Alembic revision chain (a release
-#             from the retired 0001-0009 schema generation is refused); the
-#             same readiness verification runs before success is claimed.
+#             it still offers the readiness capability, its migration
+#             head belongs to the current Alembic revision chain, and its
+#             head equals the live database stamp (no downgrade: a stale
+#             same-generation head and a retired-generation release are
+#             both refused, including old t042 releases that would need the
+#             deleted ALLOWED_ORIGINS — refuse, no compat); its compose
+#             file fingerprint must still match the working tree (no mixed
+#             old-images/new-compose); the same readiness verification
+#             runs before success is claimed.
 #   status    print the current/previous release ids (never secrets).
 #
 # Credentials: the admin password is user-provided and must already exist
@@ -42,8 +47,6 @@ if [ "$#" -gt 0 ]; then shift; fi
 PROJECT="${CBROWSER_COMPOSE_PROJECT:-cbrowser}"
 PREFIX="${CBROWSER_PREFIX:-cbrowser}"
 HTTPS_PORT="${CBROWSER_HTTPS_PORT:-56661}"
-PUBLIC_ORIGIN_OVERRIDE="${CBROWSER_PUBLIC_ORIGIN:-}"
-PUBLIC_ORIGIN="${PUBLIC_ORIGIN_OVERRIDE:-https://127.0.0.1:$HTTPS_PORT}"
 DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/v2}"
 SECRETS_DIR="${CBROWSER_SECRETS_DIR:-$ROOT/config/deploy/secrets}"
 DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
@@ -73,7 +76,6 @@ REBUILD_GUIDANCE="This database was created by a retired CBrowser schema generat
 export CBROWSER_COMPOSE_PROJECT="$PROJECT"
 export CBROWSER_PREFIX="$PREFIX"
 export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
-export CBROWSER_PUBLIC_ORIGIN="$PUBLIC_ORIGIN"
 export CBROWSER_DATA_ROOT="$DATA_ROOT"
 export CBROWSER_SECRETS_DIR="$SECRETS_DIR"
 
@@ -145,27 +147,14 @@ current_revision_chain() {
   return 0
 }
 
-check_database_schema_generation() {
-  # AC-002 (t035, P1-8): a database stamped with a retired 0001-0009
-  # revision must NOT be deployed or rolled back against.  Inspect it
-  # read-only (python3 sqlite3) and fail closed, printing
-  # REBUILD_GUIDANCE, before any image is built, container started, or
-  # pointer moved.  Membership is decided by the Alembic revision chain
-  # shipped in this source tree (current_revision_chain), not by a single
-  # BASELINE_REVISION equality: after the first deploy the live database
-  # is stamped at the chain head (0002/0003/0004...), and a baseline-only
-  # comparison would mis-kill every second deploy and rollback.  An
-  # absent database, one without an alembic_version table, or one stamped
-  # with any shipped chain member is left for the API to create/upgrade
-  # on startup.  The database file is never opened for writing here.
-  # Cross-generation rollback (live DB stamped outside the shipped chain,
-  # or rollback target head outside the shipped chain) is refused here and
-  # at the target check below: rebuild the data directory from scratch,
-  # no in-place cross-generation migration and no ALLOWED_ORIGINS compat.
-  local db_path="$DATA_ROOT/cbrowser.db" rc current chain
-  [ -f "$db_path" ] || return 0
+current_db_stamp() {
+  # Print the live database's Alembic stamp (empty when absent/unclaimed).
+  # Read-only (python3 sqlite3 mode=ro); fails closed on inspect error.
+  # The database file is never opened for writing here.
+  local db_path="$DATA_ROOT/cbrowser.db" rc stamp
+  [ -f "$db_path" ] || { printf ''; return 0; }
   set +e
-  current="$(python3 - "$db_path" <<'PY'
+  stamp="$(python3 - "$db_path" <<'PY'
 import sqlite3
 import sys
 from urllib.parse import quote
@@ -200,7 +189,33 @@ PY
   fi
   # Command substitution strips trailing newlines; an empty stamp means
   # "no migration generation claimed" and is left to API startup.
-  current="$(printf '%s' "$current" | tr -d '[:space:]')"
+  printf '%s' "$stamp" | tr -d '[:space:]'
+  return 0
+}
+
+check_database_schema_generation() {
+  # AC-002 (t035, P1-8): a database stamped with a retired 0001-0009
+  # revision must NOT be deployed or rolled back against.  Inspect it
+  # read-only (python3 sqlite3) and fail closed, printing
+  # REBUILD_GUIDANCE, before any image is built, container started, or
+  # pointer moved.  Membership is decided by the Alembic revision chain
+  # shipped in this source tree (current_revision_chain), not by a single
+  # BASELINE_REVISION equality: after the first deploy the live database
+  # is stamped at the chain head (0002/0003/0004...), and a baseline-only
+  # comparison would mis-kill every second deploy and rollback.  An
+  # absent database, one without an alembic_version table, or one stamped
+  # with any shipped chain member is left for the API to create/upgrade
+  # on startup.  The database file is never opened for writing here.
+  # Cross-generation rollback (live DB stamped outside the shipped chain,
+  # or rollback target head outside the shipped chain) is refused here and
+  # at the target check below: rebuild the data directory from scratch,
+  # no in-place cross-generation migration and no ALLOWED_ORIGINS compat.
+  local db_path="$DATA_ROOT/cbrowser.db" current chain
+  if ! current="$(current_db_stamp)"; then
+    return 1
+  fi
+  # An empty stamp means "no migration generation claimed" and is left to
+  # API startup.
   [ -z "$current" ] && return 0
   chain="$(current_revision_chain)"
   if ! grep -qxF "$current" <<< "$chain"; then
@@ -375,15 +390,20 @@ check_prefix_conflict() {
 
 load_release_identity() {
   # load_release_identity <env_file> : adopt the instance identity
-  # recorded in a release env (project, prefix, port, origin, data root,
-  # secrets dir).  Compose interpolation prefers the shell environment
-  # over --env-file values, so a rollback must run with the TARGET
-  # release's identity, never with whatever the caller's shell exports.
+  # recorded in a release env (project, prefix, port, bind host, data
+  # root, secrets dir).  Compose interpolation prefers the shell
+  # environment over --env-file values, so a rollback must run with the
+  # TARGET release's identity, never with whatever the caller's shell
+  # exports.  Origin is NOT part of the identity: the Origin whitelist
+  # is derived from the applied network version (network_config), never
+  # from CBROWSER_PUBLIC_ORIGIN / CBROWSER_ALLOWED_ORIGINS (t042: both
+  # retired, no compat — old releases needing them are refused by the
+  # stamp check below, not adapted).
   local env_file="$1" line key value
   while IFS= read -r line; do
     case "$line" in
       CBROWSER_COMPOSE_PROJECT=*|CBROWSER_PREFIX=*|CBROWSER_HTTPS_PORT=*|\
-      CBROWSER_BIND_HOST=*|CBROWSER_PUBLIC_ORIGIN=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*)
+      CBROWSER_BIND_HOST=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*)
         key="${line%%=*}"
         value="${line#*=}"
         export "$key=$value"
@@ -394,7 +414,6 @@ load_release_identity() {
   PREFIX="$CBROWSER_PREFIX"
   HTTPS_PORT="$CBROWSER_HTTPS_PORT"
   BIND_HOST="${CBROWSER_BIND_HOST:-127.0.0.1}"
-  PUBLIC_ORIGIN="$CBROWSER_PUBLIC_ORIGIN"
   DATA_ROOT="$CBROWSER_DATA_ROOT"
   SECRETS_DIR="$CBROWSER_SECRETS_DIR"
 }
@@ -440,7 +459,6 @@ CBROWSER_COMPOSE_PROJECT=$PROJECT
 CBROWSER_PREFIX=$PREFIX
 CBROWSER_HTTPS_PORT=$HTTPS_PORT
 CBROWSER_BIND_HOST=$BIND_HOST
-CBROWSER_PUBLIC_ORIGIN=$PUBLIC_ORIGIN
 CBROWSER_DATA_ROOT=$DATA_ROOT
 CBROWSER_SECRETS_DIR=$SECRETS_DIR
 CBROWSER_API_IMAGE=$api_id
@@ -497,12 +515,8 @@ cmd_deploy() {
 
   eval "$(network_config init --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
   eval "$(network_config read --network-dir "$DATA_ROOT/network")"
-  if [ -n "$PUBLIC_ORIGIN_OVERRIDE" ]; then
-    PUBLIC_ORIGIN="$PUBLIC_ORIGIN_OVERRIDE"
-  fi
   export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
   export CBROWSER_BIND_HOST="$BIND_HOST"
-  export CBROWSER_PUBLIC_ORIGIN="$PUBLIC_ORIGIN"
 
   build_and_record_release "$release_id"
   deploy_up_and_verify "$release_id"
@@ -568,6 +582,38 @@ cmd_rollback() {
   if ! grep -qxF "$target_migration" <<< "$chain"; then
     echo "Refusing rollback to '$target': its migration head '$target_migration' is not in the current Alembic revision chain (baseline $BASELINE_REVISION)." >&2
     echo "Releases from the retired 0001-0009 schema generation cannot be rollback targets; rebuild the data directory from scratch instead." >&2
+    exit 1
+  fi
+  # P1-C: no downgrade — the target head must equal the live database
+  # stamp read right now (read-only, before any change).  A stale
+  # same-generation head (target in chain but older than the stamped head)
+  # and a retired-generation release are both refused here.  An old t042
+  # release that would need the deleted ALLOWED_ORIGINS is refused by this
+  # equality (its head cannot equal a current-generation stamp); no compat
+  # is provided — rebuild the data directory instead.  An absent/unstamped
+  # database is left to API startup (fresh install path).
+  local live_stamp
+  if ! live_stamp="$(current_db_stamp)"; then
+    exit 1
+  fi
+  if [ -n "$live_stamp" ] && [ "$target_migration" != "$live_stamp" ]; then
+    echo "Refusing rollback to '$target': target migration head '$target_migration' != live database stamp '$live_stamp'; no downgrade migration exists." >&2
+    echo "Rebuild the data directory from scratch instead; no ALLOWED_ORIGINS compat is provided." >&2
+    exit 1
+  fi
+  # Rollback consumes compose_sha256: the working-tree compose.yaml must
+  # still match the target release's fingerprint.  Deploying old images
+  # with a new compose file would be a mixed, unaccepted configuration, so
+  # refuse before anything changes instead of silently mixing generations.
+  local target_compose current_compose
+  target_compose="$(manifest_field "$target_manifest" compose_sha256)"
+  if [ -z "$target_compose" ]; then
+    echo "Refusing rollback: compose_sha256 missing from target release manifest." >&2
+    exit 1
+  fi
+  current_compose="$(sha256_of_file "$ROOT/compose.yaml")"
+  if [ "$target_compose" != "$current_compose" ]; then
+    echo "Refusing rollback to '$target': working-tree compose.yaml (sha256 $current_compose) != target compose_sha256 ($target_compose); old images with a new compose file would be mixed." >&2
     exit 1
   fi
 
