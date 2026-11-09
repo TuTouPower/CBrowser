@@ -24,6 +24,7 @@ COPY src/backend/cbrowser/stream_agent/__init__.py /app/cbrowser/stream_agent/__
 COPY src/backend/cbrowser/stream_agent/protocol.py /app/cbrowser/stream_agent/protocol.py
 COPY src/backend/cbrowser/supervisor/__init__.py /app/cbrowser/supervisor/__init__.py
 COPY src/backend/cbrowser/supervisor/agent_credentials.py /app/cbrowser/supervisor/agent_credentials.py
+COPY src/backend/cbrowser/supervisor/file_storage.py /app/cbrowser/supervisor/file_storage.py
 
 RUN chown -R appuser:appgroup /app
 

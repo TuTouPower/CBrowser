@@ -425,7 +425,6 @@ class GatewayTopologyHarness:
             "/supervisor/v1/health",
             headers={"Authorization": f"Bearer {self.keys['supervisor']}"},
         )
-        await wait_until_ready(gateway_internal_url, "/gateway/v1/health")
         await wait_until_ready(self.origin, "/api/v1/health", verify=False)
 
     async def login_api(
