@@ -319,3 +319,13 @@
     - **修订 ADR 013**：媒体链路依然无 STUN/TURN、无 ICE 重启机制，但由原「仅同机回环 127.0.0.1 直连」扩展为「本机回环 / 局域网 host 候选直连可配置」。
 - 复查条件：Docker 网络或网络后端架构变更、或需支持公网/NAT 穿透时重新评审。
 - 替代：修订 ADR 013（媒体直连由仅回环扩展为支持局域网直连）。选项 1 违背单机免外部守护原则；选项 3 无法满足本机模式物理阻断要求。
+
+## 027 omni 视觉系统迁移采用 AA-safe 色板与 DESIGN.md 派生字体字重（2026-11-09T22:00:00+08:00，t047）
+
+- 背景：用户要求前端界面参考 omni_panel 的 `DESIGN.md` 改造视觉风格（冷灰主题、Inter 字体、高字重标题、大圆角与柔和阴影），且不动主要界面与交互。直接复制 omni 色值在现有 `design:lint` 门禁下有 4 处因 WCAG AA 对比度不足（< 4.5:1）而失败（亮色 accent、亮色 danger、暗色 on-accent、亮色 muted 在背景上）。同时 `@google/design.md` linter 将 front matter 中未知的 `shadows`/`motion` 视作 warning（阻断门禁），且原生成器硬编码 Space Grotesk 字体、未输出字重与行高变量。
+- 选项：
+    1. 放宽门禁（忽略 contrast warning 或允许部分非 AA 颜色对），手写 Tailwind 阴影配置。
+    2. 采用 AA-safe 变体调色板（亮色 accent `#2F66E0`、亮色 danger `#DC2626`、暗色 on-accent `#0B1220`、亮色 muted `#5C6478`），生成器直接从 `DESIGN.md` 的 `typography` 派生字体栈，输出字重、行高与字距变量，并从 `## Elevation & Depth` 正文表格解析 `--shadow-*` 阴影变量；保持 `.dark` 首帧机制不变。
+    3. 彻底重构前端主题架构为 `data-theme` 与五档强调色切换。
+- 结论：采用选项 2。在不破坏任何业务代码与首帧机制的前提下，纯靠 token 管线升级完成整体视觉换肤；全部颜色对 100% 满足 WCAG AA 4.5:1 门禁；字体平滑迁移至 Inter Variable 与 JetBrains Mono Variable；圆角与阴影全局自动更新。选项 1 违背严格门禁质量铁律；选项 3 超出用户“只改主题背景字体字号、不动主界面”的明确需求范围。
+- 替代：本条修订 ADR 025 中的字体栈声明（Space Grotesk / IBM Plex 替换为 Inter / JetBrains Mono）与单字重假设（生成器扩展输出字重、行高、字距与阴影）。

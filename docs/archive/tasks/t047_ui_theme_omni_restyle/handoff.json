@@ -1,0 +1,14 @@
+{
+  "tid": "t047",
+  "attempt": 1,
+  "execution_id": "35608352ef8245ad92855a18ac9e26d2",
+  "status": "done",
+  "branch": "t047_ui_theme_omni_restyle",
+  "base_sha": "ede48471178d9d69c6fe4903fea379ab9e3d6257",
+  "tests": "`npm run design:tokens`、`design:check`、`design:lint` 0 error/0 warning；`npm test --prefix src/frontend` 73 文件 499 用例全部通过；`npm run build --prefix src/frontend` 成功输出自托管 woff2 且无外部 CDN",
+  "blackbox": "前端产物完整构建并通过 Selkies / Chrome 静态分发校验，所有页面布局、表单与浮层语义无入侵破坏",
+  "review": "Round 1 general review PASS（零 finding，reviewed_scope 指纹 92639f51b7b56d70 校验一致，6 条 AC 全部 TICK-VALID）",
+  "review_scope": "92639f51b7b56d70",
+  "pending": [],
+  "findings": []
+}

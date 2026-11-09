@@ -34,8 +34,10 @@ const COLOR_VIOLATION_PATTERNS = [
   COLOR_LITERAL,
 ];
 
-const CJK_FALLBACK =
+const CJK_UI_FALLBACK =
   '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
+const CJK_MONO_FALLBACK =
+  '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace';
 
 function dimension(value) {
   if (!value || value.type !== "dimension") return null;
@@ -59,6 +61,22 @@ function parseContainerSizes(source) {
   }
   if (rows.length === 0) {
     throw new DesignValidationError("DESIGN.md Container sizes table is empty");
+  }
+  return rows;
+}
+
+function parseShadows(source) {
+  const start = source.indexOf("## Elevation & Depth");
+  if (start < 0) return [];
+  const rest = source.slice(start);
+  const next = rest.indexOf("\n## ", 1);
+  const body = next >= 0 ? rest.slice(0, next) : rest;
+  const rows = [];
+  for (const line of body.split("\n")) {
+    const match = line.match(/^\|\s*([a-z][a-z0-9-]*)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|/);
+    if (match && match[1] !== "token") {
+      rows.push([match[1], match[2].trim(), match[3].trim()]);
+    }
   }
   return rows;
 }
@@ -169,10 +187,34 @@ function assertValid(report) {
     }
   }
 
-  return { light };
+  const uiFont = report.designSystem.typography.get("body-md")?.fontFamily;
+  const monoFont = report.designSystem.typography.get("mono-md")?.fontFamily;
+  if (!uiFont || !monoFont) {
+    throw new DesignValidationError(
+      "DESIGN.md typography must define body-md and mono-md font families",
+    );
+  }
+
+  for (const [name, typo] of report.designSystem.typography) {
+    if (name.startsWith("mono-")) {
+      if (typo.fontFamily !== monoFont) {
+        throw new DesignValidationError(
+          `typography.${name} fontFamily '${typo.fontFamily}' must match mono-md '${monoFont}'`,
+        );
+      }
+    } else {
+      if (typo.fontFamily !== uiFont) {
+        throw new DesignValidationError(
+          `typography.${name} fontFamily '${typo.fontFamily}' must match body-md '${uiFont}'`,
+        );
+      }
+    }
+  }
+
+  return { light, uiFont, monoFont };
 }
 
-function generateCss(report, { light, containers }) {
+function generateCss(report, { light, containers, shadows, uiFont, monoFont }) {
   const state = report.designSystem;
   const primary = state.colors.get("primary").hex;
   const lines = ["@theme {", "  --color-*: initial;", `  --color-primary: ${primary};`];
@@ -181,12 +223,17 @@ function generateCss(report, { light, containers }) {
     lines.push(`  --color-${role}: ${state.colors.get(`light-${role}`).hex};`);
   }
 
-  lines.push(`  --font-ui: "Space Grotesk Variable", ${CJK_FALLBACK};`);
-  lines.push(`  --font-mono: "IBM Plex Mono", ${CJK_FALLBACK};`);
+  lines.push(`  --font-ui: "${uiFont}", system-ui, ${CJK_UI_FALLBACK};`);
+  lines.push(`  --font-mono: "${monoFont}", ui-monospace, "SF Mono", Menlo, Consolas, ${CJK_MONO_FALLBACK};`);
 
   for (const [name, value] of state.typography) {
     const size = dimension(value.fontSize);
     if (size) lines.push(`  --text-${name}: ${size};`);
+    const lh = dimension(value.lineHeight);
+    if (lh) lines.push(`  --text-${name}--line-height: ${lh};`);
+    if (value.fontWeight !== undefined) lines.push(`  --text-${name}--font-weight: ${value.fontWeight};`);
+    const ls = dimension(value.letterSpacing);
+    if (ls) lines.push(`  --text-${name}--letter-spacing: ${ls};`);
   }
   for (const [name, value] of state.rounded) {
     const size = dimension(value);
@@ -195,6 +242,9 @@ function generateCss(report, { light, containers }) {
   for (const [name, value] of state.spacing) {
     const size = dimension(value);
     if (size) lines.push(`  --spacing-${name}: ${size};`);
+  }
+  for (const [name, lightVal] of shadows) {
+    lines.push(`  --shadow-${name}: ${lightVal};`);
   }
   for (const [name, value] of containers) {
     lines.push(`  --container-${name}: ${value};`);
@@ -212,6 +262,9 @@ function generateCss(report, { light, containers }) {
   for (const role of light) {
     lines.push(`  --color-${role}: ${state.colors.get(`dark-${role}`).hex};`);
   }
+  for (const [name, , darkVal] of shadows) {
+    lines.push(`  --shadow-${name}: ${darkVal};`);
+  }
   lines.push("}", "");
 
   return lines.join("\n");
@@ -219,9 +272,10 @@ function generateCss(report, { light, containers }) {
 
 export function validateAndGenerate(source) {
   const report = lint(source);
-  const { light } = assertValid(report);
+  const { light, uiFont, monoFont } = assertValid(report);
   const containers = parseContainerSizes(source);
-  return generateCss(report, { light, containers });
+  const shadows = parseShadows(source);
+  return generateCss(report, { light, containers, shadows, uiFont, monoFont });
 }
 
 function main() {

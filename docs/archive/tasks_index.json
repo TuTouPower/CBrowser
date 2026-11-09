@@ -738,6 +738,22 @@
             "conflicts_with": "",
             "note": "来源 p051、p052：消除 test_runtime_coordinator_e2e 私有 Docker 编排与 Selkies 协议探针关闭握手时序竞态",
             "dir": "docs/archive/tasks/t046_e2e_infrastructure_and_protocol_harness_rebuild"
+        },
+        {
+            "tid": "t047",
+            "slug": "ui_theme_omni_restyle",
+            "title": "前端主题改造：omni_panel 冷灰视觉与 Inter 字体体系",
+            "status": "done",
+            "branch": "t047_ui_theme_omni_restyle",
+            "worktree": "",
+            "review_level": "single",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "ede48471178d9d69c6fe4903fea379ab9e3d6257",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "来源 2026-11-09 用户需求：参考 omni_panel DESIGN.md 改造主题/背景/字体/字号，不动主界面；用户确认全部推荐决策（AA-safe 色板、字重行高、omni 圆角、阴影覆盖、默认 dark）",
+            "dir": "docs/archive/tasks/t047_ui_theme_omni_restyle"
         }
     ]
 }
