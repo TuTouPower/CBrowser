@@ -2034,24 +2034,28 @@ class SupervisorCore:
             epoch=request.epoch,
             runtime_instance_id=request.runtime_instance_id,
         )
-        write_policy(directory, policy)
         if getattr(self.docker, "manage_ownership", False):
-            from cbrowser.preview import POLICY_FILE
-
             try:
-                os.chown(
-                    directory / POLICY_FILE,
-                    self.docker.runtime_uid,
-                    self.docker.runtime_gid,
+                write_policy(
+                    directory,
+                    policy,
+                    uid=self.docker.runtime_uid,
+                    gid=self.docker.runtime_gid,
                 )
             except OSError as exc:
+                logger.error(
+                    "Preview policy write failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
                 raise DockerSandboxError(
                     "Cannot assign preview policy ownership: "
                     f"{type(exc).__name__}"
                 ) from None
+        else:
+            write_policy(directory, policy)
         if not request.enabled:
             clear_preview(directory)
-        self._preview_request_ids[profile_id] = request.request_id
 
         control = ControlRequest(
             action="preview_policy",
@@ -2065,18 +2069,36 @@ class SupervisorCore:
         try:
             async with self._agent_uds_client(profile_id) as client:
                 if client is None:
-                    return
+                    logger.error(
+                        "Preview policy dispatch failed: profile=%s error_type=%s",
+                        profile_id,
+                        "AgentUnavailable",
+                    )
+                    raise RuntimeUnavailableError(
+                        "Runtime agent socket unavailable"
+                    )
                 resp = await client.post("/control", json=control)
             if resp.status_code != 200:
-                logger.debug(
-                    "Preview policy control rejected: profile=%s", profile_id
+                logger.error(
+                    "Preview policy control rejected: profile=%s status_code=%s",
+                    profile_id,
+                    resp.status_code,
                 )
-        except Exception as exc:  # noqa: BLE001 - dispatch failure never fails the policy write
-            logger.debug(
+                raise RuntimeUnavailableError(
+                    "Runtime agent control unavailable"
+                )
+        except RuntimeUnavailableError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - dispatch failure keeps pending for retry
+            logger.error(
                 "Preview policy control failed: profile=%s error_type=%s",
                 profile_id,
                 type(exc).__name__,
             )
+            raise RuntimeUnavailableError(
+                f"Runtime agent control failed: {type(exc).__name__}"
+            ) from None
+        self._preview_request_ids[profile_id] = request.request_id
 
     async def release_dialog_attendant(self, profile_id: str) -> bool:
         """Best-effort release of the Agent's resident dialog attendant.

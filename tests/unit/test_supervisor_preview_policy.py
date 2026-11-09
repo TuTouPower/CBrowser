@@ -417,4 +417,133 @@ async def test_apply_preview_policy_chowns_policy_to_runtime_uid(
         ),
     )
 
-    assert chowned == [(str(_pdir(core) / "policy.json"), 1000, 1000)]
+    # chown happens on the staging tmp before replace: no root:root 0600
+    # window on the final path.
+    assert len(chowned) == 1
+    assert chowned[0][1:] == (1000, 1000)
+    assert chowned[0][0].endswith(".tmp")
+    assert "policy.json" in chowned[0][0]
+    assert read_policy(_pdir(core)) == PreviewPolicy(
+        enabled=True, epoch=3, runtime_instance_id="inst_1"
+    )
+    assert list(_pdir(core).glob(".*.tmp")) == []
+
+
+@pytest.mark.asyncio
+async def test_apply_preview_policy_chown_failure_leaves_no_root_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cbrowser.supervisor.docker_adapter import DockerSandboxError
+
+    core, _ = _core(tmp_path)
+    core.docker.manage_ownership = True  # type: ignore[attr-defined]
+    core.docker.runtime_uid = 1000  # type: ignore[attr-defined]
+    core.docker.runtime_gid = 1000  # type: ignore[attr-defined]
+
+    def _fail_chown(*_args, **_kwargs):
+        raise OSError("chown failed")
+
+    monkeypatch.setattr("os.chown", _fail_chown)
+    core._agent_uds_client = _control_uds([])  # type: ignore[method-assign]
+
+    with pytest.raises(DockerSandboxError):
+        await core.apply_preview_policy(
+            "profile",
+            PreviewPolicySyncRequest(
+                enabled=True, epoch=3, runtime_instance_id="inst_1", request_id="r1"
+            ),
+        )
+
+    assert not (_pdir(core) / "policy.json").exists()
+    assert list(_pdir(core).glob(".*.tmp")) == []
+
+
+def _failing_uds(calls: list, *, status: int = 500):
+    @asynccontextmanager
+    async def factory(_profile_id):
+        async def post(url, json=None, **kwargs):
+            calls.append((url, json))
+            return SimpleNamespace(status_code=status)
+
+        async def get(url, **kwargs):
+            return SimpleNamespace(status_code=503, json=lambda: {})
+
+        yield SimpleNamespace(post=post, get=get)
+
+    return factory
+
+
+def _none_uds():
+    @asynccontextmanager
+    async def factory(_profile_id):
+        yield None
+
+    return factory
+
+
+def _raising_uds():
+    @asynccontextmanager
+    async def factory(_profile_id):
+        async def post(url, json=None, **kwargs):
+            raise ConnectionError("uds down")
+
+        async def get(url, **kwargs):
+            raise ConnectionError("uds down")
+
+        yield SimpleNamespace(post=post, get=get)
+
+    return factory
+
+
+@pytest.mark.asyncio
+async def test_apply_preview_policy_dispatch_failure_raises_and_keeps_retryable(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from cbrowser.supervisor.core import RuntimeUnavailableError
+
+    factories = [
+        _none_uds(),
+        _failing_uds([], status=500),
+        _failing_uds([], status=403),
+        _raising_uds(),
+    ]
+    for index, factory in enumerate(factories):
+        core, _ = _core(tmp_path)
+        core._sessions["profile"] = core._sessions["profile"]
+        core._agent_uds_client = factory  # type: ignore[method-assign]
+        req = PreviewPolicySyncRequest(
+            enabled=True,
+            epoch=10 + index,
+            runtime_instance_id="inst_1",
+            request_id=f"r-retry-{index}",
+        )
+        with caplog.at_level("ERROR", logger="cbrowser.supervisor.core"):
+            with pytest.raises(RuntimeUnavailableError):
+                await core.apply_preview_policy("profile", req)
+        assert any(
+            r.levelname == "ERROR" and "profile" in r.getMessage()
+            for r in caplog.records
+        )
+        caplog.clear()
+        # failure must not poison dedup: same request_id retries dispatch
+        ok_calls: list = []
+        core._agent_uds_client = _control_uds(ok_calls)  # type: ignore[method-assign]
+        await core.apply_preview_policy("profile", req)
+        assert len(ok_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_preview_policy_duplicate_after_success_still_skipped(
+    tmp_path: Path,
+) -> None:
+    core, _ = _core(tmp_path)
+    control_calls: list = []
+    core._agent_uds_client = _control_uds(control_calls)  # type: ignore[method-assign]
+
+    req = PreviewPolicySyncRequest(
+        enabled=True, epoch=3, runtime_instance_id="inst_1", request_id="r-dup"
+    )
+    await core.apply_preview_policy("profile", req)
+    assert len(control_calls) == 1
+    await core.apply_preview_policy("profile", req)
+    assert len(control_calls) == 1

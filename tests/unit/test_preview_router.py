@@ -237,3 +237,163 @@ async def test_apply_preview_policy_uses_fresh_db_state_under_lock(
         enabled=False, epoch=7, runtime_instance_id=None
     )
     assert service.cleared == ["p-lock"]
+
+
+async def test_apply_releases_lock_before_rpc_and_skips_on_concurrent_delete(
+    tmp_path: Path,
+) -> None:
+    """The 10s supervisor RPC must not hold the per-profile lock, and a
+    concurrently deleted profile (fresh is None) must not recreate files."""
+    from cbrowser.services.profile_service import (
+        ProfileLockRegistry,
+        ProfileNotFoundError,
+    )
+
+    directory = tmp_path / "profiles" / "p-split" / "preview"
+
+    class _StubService:
+        def __init__(self) -> None:
+            self._locks = ProfileLockRegistry()
+            self.cleared: list[str] = []
+
+        async def get_preview_policy(
+            self, _profile_id: str
+        ) -> tuple[bool, int] | None:
+            return (True, 4)
+
+        async def get_runtime(self, profile_id: str):
+            return SimpleNamespace(runtime_instance_id="inst-1")
+
+        def get_preview_dir(self, _profile_id: str) -> Path:
+            return directory
+
+        async def clear_preview_capture(self, profile_id: str) -> None:
+            self.cleared.append(profile_id)
+
+    class _Coordinator:
+        def __init__(self, service: _StubService) -> None:
+            self.service = service
+            self.calls: list = []
+            self.lock_held_during_rpc: bool | None = None
+
+        async def request_preview_policy(
+            self, profile_id: str, enabled: bool, epoch: int, instance
+        ) -> None:
+            lock = self.service._locks._locks.get(profile_id)
+            self.lock_held_during_rpc = (
+                lock.locked() if lock is not None else False
+            )
+            self.calls.append((profile_id, enabled, epoch, instance))
+
+        def has_pending_preview_policy(self, _profile_id: str) -> bool:
+            return False
+
+    service = _StubService()
+    coordinator = _Coordinator(service)
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(coordinator=coordinator))
+    )
+    await _apply_preview_policy("p-split", True, 4, request, service)
+    assert coordinator.calls == [("p-split", True, 4, "inst-1")]
+    assert coordinator.lock_held_during_rpc is False
+    assert read_policy(directory) == PreviewPolicy(
+        enabled=True, epoch=4, runtime_instance_id="inst-1"
+    )
+
+    class _DeletedService(_StubService):
+        async def get_preview_policy(
+            self, _profile_id: str
+        ) -> tuple[bool, int] | None:
+            return None
+
+    deleted = _DeletedService()
+    deleted_coordinator = _Coordinator(deleted)
+    deleted_request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(coordinator=deleted_coordinator))
+    )
+    deleted_dir = tmp_path / "profiles" / "p-gone" / "preview"
+    deleted.get_preview_dir = lambda _pid: deleted_dir  # type: ignore[method-assign]
+    await _apply_preview_policy("p-gone", True, 9, deleted_request, deleted)
+    assert not (deleted_dir / "policy.json").exists()
+    assert deleted_coordinator.calls == []
+
+
+def test_same_value_retry_converges_after_local_write_failure(
+    monkeypatch, ctx
+) -> None:
+    """Local file-write failure must not gate the next same-value PATCH:
+    the epoch-unchanged retry still re-applies and converges."""
+    import cbrowser.api.v1.router as router_mod
+
+    _login(ctx)
+    profile_id = _create(ctx)
+    real_write = router_mod.write_policy
+    calls = {"n": 0}
+
+    def _flaky(directory, policy):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("disk full")
+        return real_write(directory, policy)
+
+    monkeypatch.setattr(router_mod, "write_policy", _flaky)
+    first = ctx.client.patch(
+        f"/api/v1/profiles/{profile_id}", json={"capture_preview": False}
+    )
+    assert first.status_code == 500
+    row = ctx.service.get_preview_dir(profile_id)
+    # DB already committed the disable; the file layer is still stale.
+    import asyncio
+
+    after_first = asyncio.run(ctx.service.get_preview_policy(profile_id))
+    assert after_first == (False, 1)
+
+    second = ctx.client.patch(
+        f"/api/v1/profiles/{profile_id}", json={"capture_preview": False}
+    )
+    assert second.status_code == 200, second.text
+    assert read_policy(row) == PreviewPolicy(
+        enabled=False, epoch=1, runtime_instance_id=None
+    )
+
+
+def test_bind_writes_preview_policy_inside_profile_lock(ctx) -> None:
+    """bind_runtime_instance must write the policy file while holding the
+    same per-profile lock as PATCH, using fresh DB enabled/epoch."""
+    import asyncio
+
+    _login(ctx)
+    profile_id = _create(ctx)
+    revoke = ctx.client.patch(
+        f"/api/v1/profiles/{profile_id}", json={"capture_preview": False}
+    )
+    assert revoke.status_code == 200, revoke.text
+    assert asyncio.run(ctx.service.get_preview_policy(profile_id)) == (False, 1)
+
+    held_during_write = {}
+
+    import cbrowser.services.profile_service as service_mod
+
+    real_write = service_mod.write_policy
+
+    def _checked(directory, policy):
+        lock = ctx.service._locks._locks.get(profile_id)
+        held_during_write["held"] = lock.locked() if lock is not None else False
+        held_during_write["policy"] = policy
+        return real_write(directory, policy)
+
+    import unittest.mock as mock
+
+    with mock.patch.object(service_mod, "write_policy", side_effect=_checked):
+        bound = asyncio.run(
+            ctx.service.bind_runtime_instance(profile_id, "inst-bind-1")
+        )
+    assert bound.runtime_instance_id == "inst-bind-1"
+    assert held_during_write.get("held") is True
+    assert held_during_write["policy"].enabled is False
+    assert held_during_write["policy"].epoch == 1
+    assert held_during_write["policy"].runtime_instance_id == "inst-bind-1"
+    directory = ctx.service.get_preview_dir(profile_id)
+    assert read_policy(directory) == PreviewPolicy(
+        enabled=False, epoch=1, runtime_instance_id="inst-bind-1"
+    )
