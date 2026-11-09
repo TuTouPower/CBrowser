@@ -11,6 +11,7 @@ from cbrowser.preview import (
     PreviewMeta,
     PreviewPolicy,
     commit_preview,
+    read_policy,
     write_policy,
 )
 from fastapi.testclient import TestClient
@@ -154,3 +155,41 @@ def test_preview_policy_local_failure_fails_the_patch(monkeypatch, ctx) -> None:
         f"/api/v1/profiles/{profile_id}", json={"capture_preview": False}
     )
     assert response.status_code == 500
+
+
+def test_db_disabled_is_authoritative_over_enabled_file(ctx) -> None:
+    _login(ctx)
+    profile_id = _create(ctx)
+    _write_valid_preview(ctx.service, profile_id)
+    assert ctx.client.get(f"/api/v1/profiles/{profile_id}/preview").status_code == 200
+
+    revoke = ctx.client.patch(
+        f"/api/v1/profiles/{profile_id}", json={"capture_preview": False}
+    )
+    assert revoke.status_code == 200, revoke.text
+
+    # DB now disables previews but the file layer still holds an enabled
+    # policy with a fresh frame (stale supervisor sync): the read end must
+    # still answer 404 because the DB row is authoritative.
+    directory = ctx.service.get_preview_dir(profile_id)
+    db_epoch = read_policy(directory).epoch
+    enabled = PreviewPolicy(
+        enabled=True, epoch=db_epoch, runtime_instance_id="inst-1"
+    )
+    write_policy(directory, enabled)
+    assert (
+        commit_preview(
+            directory,
+            JPEG_BYTES,
+            PreviewMeta(
+                captured_at=CAPTURED_AT,
+                runtime_instance_id="inst-1",
+                policy_epoch=db_epoch,
+            ),
+            enabled,
+        )
+        is True
+    )
+
+    response = ctx.client.get(f"/api/v1/profiles/{profile_id}/preview")
+    assert response.status_code == 404

@@ -2023,17 +2023,33 @@ class SupervisorCore:
             runtime_instance_id=request.runtime_instance_id,
         )
         write_policy(directory, policy)
+        if getattr(self.docker, "manage_ownership", False):
+            from cbrowser.preview import POLICY_FILE
+
+            try:
+                os.chown(
+                    directory / POLICY_FILE,
+                    self.docker.runtime_uid,
+                    self.docker.runtime_gid,
+                )
+            except OSError as exc:
+                raise DockerSandboxError(
+                    "Cannot assign preview policy ownership: "
+                    f"{type(exc).__name__}"
+                ) from None
         if not request.enabled:
             clear_preview(directory)
         self._preview_request_ids[profile_id] = request.request_id
 
-        control = {
-            "action": "preview_policy",
-            "enabled": request.enabled,
-            "epoch": request.epoch,
-            "runtime_instance_id": request.runtime_instance_id,
-            "request_id": request.request_id,
-        }
+        control = ControlRequest(
+            action="preview_policy",
+            params={
+                "enabled": request.enabled,
+                "epoch": request.epoch,
+                "runtime_instance_id": request.runtime_instance_id,
+                "request_id": request.request_id,
+            },
+        ).model_dump()
         try:
             async with self._agent_uds_client(profile_id) as client:
                 if client is None:
