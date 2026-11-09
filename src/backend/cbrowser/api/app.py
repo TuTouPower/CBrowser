@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -287,9 +288,51 @@ def create_app(
             generation=applied_settings.applied_version.version - 1,
             snapshot_hash=applied_settings.applied_version.caddyfile_sha256,
         )
-        await network_service.recover_pending_operation()
+        # P1-3: never run recovery once synchronously before Gateway /
+        # Supervisor are ready. Retry in the background until the pending
+        # transaction (if any) reaches a recovery-complete state, so a
+        # recovery_complete=False txn cannot block applies with 409 forever.
+        async def _network_recovery_loop() -> None:
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    verdict = await network_service.recover_pending_operation()
+                except Exception as exc:
+                    logger.warning(
+                        "Network recovery attempt %d failed: error_type=%s; retrying",
+                        attempt,
+                        type(exc).__name__,
+                    )
+                    await asyncio.sleep(5.0)
+                    continue
+                try:
+                    current = await repo.get_current_network_transaction()
+                except Exception:
+                    current = None
+                if current is None or current.recovery_complete:
+                    logger.info(
+                        "Network recovery complete: verdict=%s attempt=%d",
+                        verdict,
+                        attempt,
+                    )
+                    return
+                logger.warning(
+                    "Network recovery incomplete: verdict=%s attempt=%d "
+                    "recovery_complete=False; retrying",
+                    verdict,
+                    attempt,
+                )
+                await asyncio.sleep(5.0)
+
+        recovery_task = asyncio.create_task(_network_recovery_loop())
 
         yield
+        recovery_task.cancel()
+        try:
+            await recovery_task
+        except (asyncio.CancelledError, Exception):
+            pass
         if coordinator:
             await coordinator.stop()
         if engine:

@@ -48,7 +48,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "body": body,
             }
         )
-        plan = sup.plans.pop(0) if sup.plans else {"status": 200, "body": {"status": "ok"}}
+        plan = sup.plans.pop(0) if sup.plans else {"status": 200, "body": {"status": "ok", "rebuilt": True}}
         if sup.expected_token is not None and self.headers.get("Authorization") != (
             f"Bearer {sup.expected_token}"
         ):
@@ -133,13 +133,13 @@ async def test_direct_rpc_exercises_real_client_url_auth_and_model(supervisor_to
             target_version=4,
             bind_host="127.0.0.1",
             https_port=443,
-            caddyfile_path="/data/network/Caddyfile.staging.4",
+            caddyfile_path="Caddyfile.staging.4",
         )
         streams = await coord.converge_network_streams(
             target_version=4, bind_host="127.0.0.1", advertised_ip="127.0.0.1"
         )
-        assert edge == {"status": "ok"}
-        assert streams == {"status": "ok"}
+        assert edge == {"status": "ok", "rebuilt": True}
+        assert streams == {"status": "ok", "rebuilt": True}
         assert coord._client is not None
         assert len(sup.requests) == 2
         edge_req, stream_req = sup.requests

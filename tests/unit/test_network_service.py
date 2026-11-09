@@ -41,7 +41,12 @@ def mock_auth_service():
 @pytest.fixture
 def mock_supervisor_client():
     client = MagicMock()
-    client.rebuild_edge = AsyncMock(return_value={"status": "ok"})
+    client.rebuild_edge = AsyncMock(
+        return_value={"status": "ok", "rebuilt": True}
+    )
+    client.restore_network_snapshot = AsyncMock(
+        return_value={"status": "ok", "restored": 1, "rebuilt": True}
+    )
     client.converge_network_streams = AsyncMock(return_value={"status": "ok", "rebuilt_streams": 0})
     return client
 

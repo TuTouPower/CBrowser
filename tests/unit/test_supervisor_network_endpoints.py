@@ -9,11 +9,14 @@ from cbrowser.supervisor.control_server import create_control_app
 
 
 @pytest.fixture
-def mock_supervisor_core():
+def mock_supervisor_core(tmp_path):
     core = MagicMock()
     core.rebuild_edge_proxy = AsyncMock(return_value={"status": "ok", "version": 2})
     core.converge_network_streams = AsyncMock(
         return_value={"status": "ok", "rebuilt_streams": 1}
+    )
+    core.resolve_network_caddyfile = MagicMock(
+        side_effect=lambda ref: tmp_path / ref
     )
     return core
 
@@ -41,7 +44,7 @@ def test_rebuild_edge_endpoint_auth(supervisor_test_app):
             "target_version": 2,
             "bind_host": "0.0.0.0",
             "https_port": 56661,
-            "caddyfile_path": "/data/network/Caddyfile",
+            "caddyfile_path": "Caddyfile",
         },
     )
     assert resp.status_code == 401
@@ -53,12 +56,27 @@ def test_rebuild_edge_endpoint_auth(supervisor_test_app):
             "target_version": 2,
             "bind_host": "0.0.0.0",
             "https_port": 56661,
-            "caddyfile_path": "/data/network/Caddyfile",
+            "caddyfile_path": "Caddyfile",
         },
         headers={"Authorization": "Bearer secret-supervisor-token-32-bytes-long!!"},
     )
     assert resp2.status_code == 200
     assert resp2.json()["status"] == "ok"
+
+
+def test_rebuild_edge_rejects_absolute_path(supervisor_test_app):
+    client = TestClient(supervisor_test_app)
+    resp = client.post(
+        "/supervisor/v1/network/rebuild-edge",
+        json={
+            "target_version": 2,
+            "bind_host": "0.0.0.0",
+            "https_port": 56661,
+            "caddyfile_path": "/data/network/Caddyfile.staging.op",
+        },
+        headers={"Authorization": "Bearer secret-supervisor-token-32-bytes-long!!"},
+    )
+    assert resp.status_code == 422
 
 
 def test_converge_streams_endpoint(supervisor_test_app):

@@ -2901,6 +2901,29 @@ class SupervisorCore:
             return state[0].config
         return NetworkAccessConfig(lan_access_enabled=False)
 
+    def resolve_network_caddyfile(self, ref: str) -> Path:
+        """Resolve a logical network resource name against data_root/network.
+
+        Accepts only basenames ("Caddyfile" or "Caddyfile.staging.<op_id>");
+        absolute paths, separators and traversal are rejected. Containment
+        inside data_root is enforced via the path validator.
+        """
+        if not isinstance(ref, str) or not ref:
+            raise DockerSandboxError("Invalid network resource name")
+        if ref != Path(ref).name or "/" in ref or "\\" in ref or ".." in ref:
+            raise DockerSandboxError(
+                "Network resource must be a basename within network/"
+            )
+        if ref != "Caddyfile" and not ref.startswith("Caddyfile.staging."):
+            raise DockerSandboxError(
+                "Unknown network resource name"
+            )
+        network_dir = self.docker.validator.data_root / "network"
+        candidate = network_dir / ref
+        return self.docker.validator.validate_safe_path(
+            candidate, allow_create=True
+        )
+
     def _network_edge_receipt(
         self,
         operation_id: str | None,
@@ -2956,8 +2979,9 @@ class SupervisorCore:
             https_port,
         )
         phase = "compensating" if restoring else "installing"
+        staging_path = self.resolve_network_caddyfile(caddyfile_path)
         receipt = self._network_edge_receipt(
-            operation_id, execution_generation, phase, caddyfile_path
+            operation_id, execution_generation, phase, str(staging_path)
         )
         if candidate_hash is not None:
             receipt["candidate_hash"] = candidate_hash
@@ -2966,10 +2990,23 @@ class SupervisorCore:
                 and receipt["caddyfile_sha256"] != candidate_hash
             ):
                 raise DockerSandboxError("candidate snapshot hash mismatch")
+        # P1-2: the running Caddy must bind the persistent network/Caddyfile,
+        # never a staging file that the API deletes after commit. Promote the
+        # verified candidate content to the persistent file first, then bind
+        # the persistent path so later staging cleanup cannot break Caddy.
+        network_dir = self.docker.validator.data_root / "network"
+        persistent_path = network_dir / "Caddyfile"
+        try:
+            candidate_text = staging_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            raise DockerSandboxError(
+                f"candidate snapshot unreadable: {type(exc).__name__}"
+            ) from None
+        atomic_write_text(persistent_path, candidate_text, mode=0o644)
         res = await self.docker.rebuild_caddy_container(
             bind_host=bind_host,
             https_port=https_port,
-            caddyfile_path=caddyfile_path,
+            caddyfile_path=str(persistent_path),
         )
         return {"status": "ok", "version": target_version, **receipt, **res}
 
@@ -2984,13 +3021,14 @@ class SupervisorCore:
         execution_generation: int | None = None,
     ) -> dict[str, Any]:
         logger.info("Restoring edge proxy to old version %d", old_version)
+        persistent_path = self.resolve_network_caddyfile(caddyfile_path)
         receipt = self._network_edge_receipt(
-            operation_id, execution_generation, "compensating", caddyfile_path
+            operation_id, execution_generation, "compensating", str(persistent_path)
         )
         res = await self.docker.rebuild_caddy_container(
             bind_host=bind_host,
             https_port=https_port,
-            caddyfile_path=caddyfile_path,
+            caddyfile_path=str(persistent_path),
         )
         return {
             "status": "ok",

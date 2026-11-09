@@ -380,11 +380,24 @@ class NetworkService:
                 target_version=new_version.version,
                 bind_host=new_version.bind_host,
                 https_port=new_version.config.https_port,
-                caddyfile_path=str(staging_caddy),
+                caddyfile_path=staging_caddy.name,
                 operation_id=op_id,
                 execution_generation=generation,
                 candidate_hash=candidate_hash,
             )
+            if (
+                not isinstance(rebuild_result, dict)
+                or rebuild_result.get("rebuilt") is not True
+            ):
+                reason = (
+                    rebuild_result.get("reason")
+                    if isinstance(rebuild_result, dict)
+                    else None
+                )
+                raise RuntimeError(
+                    "Edge rebuild not verified"
+                    + (f": {reason}" if reason else "")
+                )
             component_hash = self._component_hash(
                 rebuild_result, candidate_hash, staging_caddy
             )
@@ -472,6 +485,25 @@ class NetworkService:
                     type(exc).__name__,
                 )
 
+    def _write_persistent_caddyfile(
+        self, version: AppliedNetworkAccessVersion
+    ) -> None:
+        """Rewrite the persistent network/Caddyfile from a known version.
+
+        The Supervisor promotes the staging candidate to the persistent
+        file before rebinding Caddy, so abort/restore must reconstruct the
+        old content first; otherwise restore would rebind the new file.
+        """
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+        content = generate_caddyfile(
+            version,
+            api_upstream=self.api_upstream,
+            gateway_upstream=self.gateway_upstream,
+        )
+        persistent = self.export_dir / CADDYFILE_FILENAME
+        persistent.write_text(content, encoding="utf-8")
+        persistent.chmod(0o644)
+
     async def _restore_old(self, txn: NetworkTransaction) -> bool:
         old = (
             AppliedNetworkAccessVersion.model_validate(txn.old_applied)
@@ -482,7 +514,8 @@ class NetworkService:
             await self.publication.revoke(
                 txn.operation_id, txn.execution_generation, txn.candidate_hash
             )
-            await self._maybe_await(
+            self._write_persistent_caddyfile(old)
+            restored = await self._maybe_await(
                 self.supervisor_client.restore_network_snapshot(
                     operation_id=txn.operation_id,
                     execution_generation=txn.execution_generation,
@@ -490,9 +523,11 @@ class NetworkService:
                     bind_host=old.bind_host,
                     https_port=old.config.https_port,
                     caddyfile_sha256=old.caddyfile_sha256,
-                    caddyfile_path=str(self.export_dir / CADDYFILE_FILENAME),
+                    caddyfile_path=CADDYFILE_FILENAME,
                 )
             )
+            if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
+                raise RuntimeError("Edge restore not verified")
             if callable(self.on_origins_updated):
                 self.on_origins_updated(list(old.origin_whitelist))
             return True
@@ -527,7 +562,8 @@ class NetworkService:
         recovery_complete = True
         try:
             await self.publication.revoke(op_id, generation, candidate_hash)
-            await self._maybe_await(
+            self._write_persistent_caddyfile(old_applied)
+            restored = await self._maybe_await(
                 self.supervisor_client.restore_network_snapshot(
                     operation_id=op_id,
                     execution_generation=generation,
@@ -535,9 +571,11 @@ class NetworkService:
                     bind_host=old_applied.bind_host,
                     https_port=old_applied.config.https_port,
                     caddyfile_sha256=old_applied.caddyfile_sha256,
-                    caddyfile_path=str(self.export_dir / CADDYFILE_FILENAME),
+                    caddyfile_path=CADDYFILE_FILENAME,
                 )
             )
+            if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
+                raise RuntimeError("Edge restore not verified")
             if callable(self.on_origins_updated):
                 self.on_origins_updated(list(old_applied.origin_whitelist))
         except Exception as comp_exc:

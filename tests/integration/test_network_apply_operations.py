@@ -39,7 +39,12 @@ def mock_auth():
 async def test_apply_operation_full_lifecycle(session_maker, mock_auth, tmp_path):
     repo = ProfileRepository(session_maker)
     supervisor = MagicMock()
-    supervisor.rebuild_edge = AsyncMock(return_value={"status": "ok"})
+    supervisor.rebuild_edge = AsyncMock(
+        return_value={"status": "ok", "rebuilt": True}
+    )
+    supervisor.restore_network_snapshot = AsyncMock(
+        return_value={"status": "ok", "restored": 1, "rebuilt": True}
+    )
     supervisor.converge_network_streams = AsyncMock(return_value={"status": "ok", "rebuilt_streams": 0})
 
     svc = NetworkService(
@@ -66,6 +71,16 @@ async def test_apply_operation_full_lifecycle(session_maker, mock_auth, tmp_path
     assert final_op.phase == NetworkApplyPhase.COMPLETED
     assert final_op.error_reason is None
 
+    # P0-1: only a logical resource name crosses the API→Supervisor boundary.
+    _, kwargs = supervisor.rebuild_edge.await_args
+    assert kwargs["caddyfile_path"] == f"Caddyfile.staging.{op.operation_id}"
+    assert "/" not in kwargs["caddyfile_path"]
+
+    # P1-2: the running edge must bind the persistent Caddyfile, so the
+    # staging file must be gone while the persistent file remains.
+    assert not (tmp_path / "network" / f"Caddyfile.staging.{op.operation_id}").exists()
+    assert (tmp_path / "network" / "Caddyfile").is_file()
+
     # 4. Verify durable persistence in database
     settings = await svc.get_settings()
     assert settings.applied_version.version == 2
@@ -84,6 +99,9 @@ async def test_apply_failure_convergence_ac010(session_maker, mock_auth, tmp_pat
     supervisor = MagicMock()
     # Inject failure at edge rebuild step
     supervisor.rebuild_edge = AsyncMock(side_effect=RuntimeError("Docker daemon connection lost"))
+    supervisor.restore_network_snapshot = AsyncMock(
+        return_value={"status": "ok", "restored": 1, "rebuilt": True}
+    )
 
     svc = NetworkService(
         repo=repo,
@@ -113,3 +131,84 @@ async def test_apply_failure_convergence_ac010(session_maker, mock_auth, tmp_pat
 
     # Active operation in DB is cleared so future operations are not blocked
     assert await repo.get_active_network_operation() is None
+
+
+@pytest.mark.asyncio
+async def test_rebuild_without_rebuilt_flag_blocks_commit(
+    session_maker, mock_auth, tmp_path
+):
+    """P1-1: rebuilt is not True ( incl. restore_old_entry/not_found ) blocks commit."""
+    repo = ProfileRepository(session_maker)
+    supervisor = MagicMock()
+    supervisor.rebuild_edge = AsyncMock(
+        return_value={
+            "status": "ok",
+            "rebuilt": False,
+            "reason": "restore_old_entry",
+        }
+    )
+    supervisor.restore_network_snapshot = AsyncMock(
+        return_value={"status": "ok", "restored": 1, "rebuilt": True}
+    )
+    supervisor.converge_network_streams = AsyncMock(
+        return_value={"status": "ok", "rebuilt_streams": 0}
+    )
+    svc = NetworkService(
+        repo=repo,
+        auth_service=mock_auth,
+        supervisor_client=supervisor,
+        export_dir=tmp_path / "network",
+    )
+    await svc.update_pending_config(
+        NetworkAccessConfig(
+            lan_access_enabled=True,
+            lan_advertised_ip="192.168.31.76",
+        )
+    )
+    op = await svc.apply_configuration("correct_password")
+    final_op = await svc.wait_for_operation(op.operation_id, timeout=5.0)
+    assert final_op.phase == NetworkApplyPhase.FAILED
+    assert "not verified" in (final_op.error_reason or "")
+    settings = await svc.get_settings()
+    assert settings.applied_version.version == 1
+    txn = await repo.get_network_transaction(op.operation_id)
+    assert txn.decision == "abort"
+
+
+@pytest.mark.asyncio
+async def test_restore_without_rebuilt_flag_keeps_recovery_incomplete(
+    session_maker, mock_auth, tmp_path
+):
+    """P1-1 (restore path): rebuilt False on restore keeps recovery incomplete."""
+    repo = ProfileRepository(session_maker)
+    supervisor = MagicMock()
+    supervisor.rebuild_edge = AsyncMock(
+        side_effect=RuntimeError("Docker daemon connection lost")
+    )
+    supervisor.restore_network_snapshot = AsyncMock(
+        return_value={
+            "status": "ok",
+            "restored": 0,
+            "rebuilt": False,
+            "reason": "not_found",
+        }
+    )
+    svc = NetworkService(
+        repo=repo,
+        auth_service=mock_auth,
+        supervisor_client=supervisor,
+        export_dir=tmp_path / "network",
+    )
+    await svc.update_pending_config(
+        NetworkAccessConfig(
+            lan_access_enabled=True,
+            lan_advertised_ip="192.168.31.76",
+        )
+    )
+    op = await svc.apply_configuration("correct_password")
+    await svc.wait_for_operation(op.operation_id, timeout=5.0)
+    txn = await repo.get_network_transaction(op.operation_id)
+    assert txn.decision == "abort"
+    assert txn.recovery_complete is False
+    _, kwargs = supervisor.restore_network_snapshot.await_args
+    assert kwargs["caddyfile_path"] == "Caddyfile"
