@@ -14,7 +14,8 @@ describe("useBrowserSession runtime stage mapping", () => {
     ["running", "connecting_signaling"],
     ["stopping", "stopping"],
     ["stopped", "runtime_not_ready"],
-    ["starting", "runtime_not_ready"],
+    // P1-E: 首挂载 starting 直接走 connecting_signaling，不再显示错误态 + Launch。
+    ["starting", "connecting_signaling"],
   ];
 
   for (const [observed, expectedStage] of cases) {

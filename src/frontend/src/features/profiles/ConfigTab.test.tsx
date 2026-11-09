@@ -227,6 +227,50 @@ function renderTab(stub: StubClient) {
 }
 
 describe('ConfigTab', () => {
+  it('shows a success echo and remounts with the saved value after save', async () => {
+    const initial = profile('Profile Alpha');
+    const saved = { ...profile('Renamed By Save'), current_config_version: 2 };
+    const get = vi.fn(async () => initial);
+    const stub = makeStub(get);
+    (stub.profiles.update as ReturnType<typeof vi.fn>).mockResolvedValueOnce(saved);
+    const queryClient = renderTab(stub);
+
+    const nameInput = await screen.findByTestId('profile-form-name');
+    await waitFor(() => expect(nameInput).toHaveValue('Profile Alpha'));
+    fireEvent.change(nameInput, { target: { value: 'Renamed By Save' } });
+    fireEvent.click(screen.getByTestId('profile-form-submit'));
+
+    // P2: 保存成功回显 profileUpdatedSuccessfully，且缓存写 saved。
+    expect(await screen.findByTestId('profile-config-save-success')).toHaveTextContent(
+      'Profile updated successfully.',
+    );
+    await waitFor(() =>
+      expect(queryClient.getQueryData<ProfileResponse>(profileKeys.detail('p1'))).toEqual(
+        expect.objectContaining({ name: 'Renamed By Save' }),
+      ),
+    );
+    expect(screen.queryByTestId('profile-config-save-error')).toBeNull();
+  });
+
+  it('surfaces a save error without an unhandled rejection', async () => {
+    const initial = profile('Profile Alpha');
+    const get = vi.fn(async () => initial);
+    const stub = makeStub(get);
+    (stub.profiles.update as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error('save down'),
+    );
+    renderTab(stub);
+
+    const nameInput = await screen.findByTestId('profile-form-name');
+    fireEvent.change(nameInput, { target: { value: 'Bad Save' } });
+    fireEvent.click(screen.getByTestId('profile-form-submit'));
+
+    expect(await screen.findByTestId('profile-config-save-error')).toHaveTextContent(
+      'save down',
+    );
+    expect(screen.queryByTestId('profile-config-save-success')).toBeNull();
+  });
+
   it('keeps unsaved name edits when the profile query is refreshed in the background', async () => {
     const initial = profile('Profile Alpha');
     const pushed = {

@@ -681,7 +681,9 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     selectRow("p1");
     selectRow("p2");
     await screen.findByTestId("env-batch-bar");
+    // P2: 批量删除需二次确认。
     fireEvent.click(screen.getByTestId("env-batch-delete"));
+    fireEvent.click(await screen.findByTestId("env-batch-delete-accept"));
     await waitFor(() =>
       expect(stub.spies.profiles.delete).toHaveBeenCalledTimes(2),
     );
@@ -708,6 +710,7 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     selectRow("p2");
     await screen.findByTestId("env-batch-bar");
     fireEvent.click(screen.getByTestId("env-batch-delete"));
+    fireEvent.click(await screen.findByTestId("env-batch-delete-accept"));
 
     await waitFor(() =>
       expect(screen.getByTestId("toast-item").textContent).toContain(

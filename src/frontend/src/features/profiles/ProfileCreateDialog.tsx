@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Banner, Dialog } from "../../shared/ui";
+import { Banner, Button, Dialog } from "../../shared/ui";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
@@ -24,13 +24,47 @@ export function ProfileCreateDialog({
   const createMutation = useCreateProfileMutation(client);
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const [createError, setCreateError] = useState<string | null>(null);
+  // P1-F: 创建成功 + 启动失败后记住 created.id，主按钮切“重试启动/关闭”，
+  // 重试只调 setDesiredState，不再重复 create（同名 409/改名多建消失）。
+  const [createdId, setCreatedId] = useState<string | null>(null);
   // P1-13: pending 合并禁用，防双击重复创建。
   const isPending =
     createMutation.isPending || setDesiredStateMutation.isPending;
 
-  const handleOpenChange = (open: boolean) => {
-    if (open) setCreateError(null);
-    onOpenChange(open);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen) {
+      setCreateError(null);
+      setCreatedId(null);
+    } else {
+      setCreatedId(null);
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const handleClose = () => {
+    setCreateError(null);
+    setCreatedId(null);
+    onOpenChange(false);
+  };
+
+  const handleRetryStart = async () => {
+    if (!createdId) return;
+    setCreateError(null);
+    try {
+      await setDesiredStateMutation.mutateAsync({
+        id: createdId,
+        state: "running",
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      setCreateError(
+        t("profileCreateStartFailed", { id: createdId, error: reason })
+      );
+      return;
+    }
+    setCreateError(null);
+    setCreatedId(null);
+    onOpenChange(false);
   };
 
   const handleSubmit = async (
@@ -57,15 +91,17 @@ export function ProfileCreateDialog({
           state: "running",
         });
       } catch (err) {
-        // P1-13: 创建成 + 启动败必须提示已创建 id，不吞错、不关窗。
+        // P1-F: 错误文案入 i18n，记住 id 切重试，不关窗。
         const reason = err instanceof Error ? err.message : String(err);
+        setCreatedId(created.id);
         setCreateError(
-          `Profile ${created.id} created, but start failed: ${reason}`,
+          t("profileCreateStartFailed", { id: created.id, error: reason })
         );
         return;
       }
     }
     setCreateError(null);
+    setCreatedId(null);
     onOpenChange(false);
   };
 
@@ -83,12 +119,32 @@ export function ProfileCreateDialog({
             {createError}
           </Banner>
         ) : null}
-        <ProfileForm
-          mode="create"
-          onSubmit={handleSubmit}
-          submitLabel={t("formCreate")}
-          isPending={isPending}
-        />
+        {createdId ? (
+          <div className="flex justify-end gap-sm">
+            <Button
+              data-testid="env-new-retry-start"
+              variant="primary"
+              disabled={isPending}
+              onClick={() => void handleRetryStart()}
+            >
+              {t("profileCreateRetryStart")}
+            </Button>
+            <Button
+              data-testid="env-new-close"
+              variant="secondary"
+              onClick={handleClose}
+            >
+              {t("profileCreateClose")}
+            </Button>
+          </div>
+        ) : (
+          <ProfileForm
+            mode="create"
+            onSubmit={handleSubmit}
+            submitLabel={t("formCreate")}
+            isPending={isPending}
+          />
+        )}
       </div>
     </Dialog>
   );

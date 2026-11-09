@@ -225,6 +225,17 @@ describe("ProxyListPage AC-001 列展示", () => {
     );
     expect(screen.queryByTestId("proxy-table")).toBeNull();
   });
+
+  it("shows an error state instead of an empty table when loading fails", async () => {
+    stub.spies.proxies.list.mockRejectedValueOnce(new Error("proxies down"));
+    renderPage();
+    expect(await screen.findByTestId("proxy-list-load-error")).toHaveTextContent(
+      "proxies down",
+    );
+    expect(await screen.findByTestId("proxy-list-empty-error")).toBeInTheDocument();
+    expect(screen.queryByTestId("proxy-table")).toBeNull();
+    expect(screen.queryByTestId("empty-state")).toBeNull();
+  });
 });
 
 describe("ProxyListPage 搜索与协议筛选", () => {

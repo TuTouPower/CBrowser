@@ -21,6 +21,7 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
   const deleteMutation = useDeleteProfileMutation(client);
   const [error, setError] = useState<string | null>(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const running = runtime ? runtime.observed_state !== "stopped" : true;
 
@@ -50,6 +51,7 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
     setError(null);
     try {
       await deleteMutation.mutateAsync(profileId);
+      setConfirmingDelete(false);
       navigate("/", { replace: true });
     } catch (err: unknown) {
       if (err instanceof ApiError && err.errorCode === "profile_running") {
@@ -121,7 +123,7 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
             data-testid="profile-maintenance-reset-request"
             onClick={() => setConfirmingReset(true)}
           >
-            {t("maintenanceResetConfirm")}
+            {t("maintenanceResetRequest")}
           </Button>
           {confirmingReset && (
             <>
@@ -152,14 +154,37 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
         <h2 className="font-ui text-headline-md text-on-surface">
           {t("maintenanceDeleteTitle")}
         </h2>
-        <div>
+        <div className="flex flex-wrap items-center gap-sm">
           <Button
             variant="danger"
             disabled={running || deleteMutation.isPending}
-            onClick={() => void handleDelete()}
+            data-testid="profile-maintenance-delete-request"
+            onClick={() => setConfirmingDelete(true)}
           >
             {t("delete")}
           </Button>
+          {confirmingDelete && (
+            <>
+              <span className="font-ui text-body-sm text-on-surface">
+                {t("maintenanceDeleteConfirm")}
+              </span>
+              <Button
+                variant="danger"
+                disabled={running || deleteMutation.isPending}
+                data-testid="profile-maintenance-delete-confirm"
+                onClick={() => void handleDelete()}
+              >
+                {t("delete")}
+              </Button>
+              <Button
+                variant="secondary"
+                data-testid="profile-maintenance-delete-cancel"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                {t("cancel")}
+              </Button>
+            </>
+          )}
         </div>
         {running && (
           <p className="font-ui text-label-sm text-on-surface-muted">

@@ -31,6 +31,8 @@ export function ConfigTab({ profileId }: { profileId: string }) {
   const updateMutation = useUpdateProfileMutation(client);
   const [runtimeDirty, setRuntimeDirty] = useState(false);
   const [formKey, setFormKey] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const onDirtyRuntimeConfig = useCallback(
     (changed: boolean) => setRuntimeDirty(changed),
     [],
@@ -39,19 +41,47 @@ export function ConfigTab({ profileId }: { profileId: string }) {
   const handleSubmit = async (
     values: ProfileCreateRequest | ProfileUpdateRequest,
   ) => {
+    setSaveError(null);
+    setSaveSuccess(false);
     const data = runtimeDirty
       ? (values as ProfileUpdateRequest)
       : pickMetadata(values as ProfileUpdateRequest);
-    const saved = await updateMutation.mutateAsync({ id: profileId, data });
+    // P2: 保存失败 catch，避免 unhandled rejection；成功回显。
+    let saved;
+    try {
+      saved = await updateMutation.mutateAsync({ id: profileId, data });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      setSaveError(t("formSaveFailed", { error: reason }));
+      return;
+    }
     // P1-12: 先用返回值写缓存，再 formKey+1 remount，不再回显旧值覆盖。
     queryClient.setQueryData(profileKeys.detail(profileId), saved);
     setRuntimeDirty(false);
+    setSaveSuccess(true);
     setFormKey((key) => key + 1);
   };
 
   return (
     <div data-testid="profile-config-tab" className="flex flex-col gap-md">
       <SharedProfileBanners profileId={profileId} />
+      {saveError ? (
+        <div
+          data-testid="profile-config-save-error"
+          role="alert"
+          className="font-ui text-label-sm text-danger"
+        >
+          {saveError}
+        </div>
+      ) : null}
+      {saveSuccess ? (
+        <div
+          data-testid="profile-config-save-success"
+          className="font-ui text-label-sm text-on-surface"
+        >
+          {t("profileUpdatedSuccessfully")}
+        </div>
+      ) : null}
       {profile && (
         <ProfileForm
           key={formKey}

@@ -245,4 +245,20 @@ describe("ProfileDetailPage", () => {
       ),
     );
   });
+
+  it("runtime failure does not block the config tab", async () => {
+    const stub = makeStub("running");
+    (stub.profiles.getRuntime as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("runtime down"),
+    );
+    renderPage(stub);
+
+    // P2: runtime 失败降级为顶栏 Banner，配置页仍可访问。
+    expect(await screen.findByTestId("profile-detail-runtime-error")).toHaveTextContent(
+      "runtime down",
+    );
+    expect(screen.getByTestId("profile-detail-view")).toBeInTheDocument();
+    expect(screen.getByTestId("profile-config-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("profile-detail-error")).toBeNull();
+  });
 });

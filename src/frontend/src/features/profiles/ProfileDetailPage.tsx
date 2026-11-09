@@ -50,25 +50,28 @@ export function ProfileDetailPage() {
   const observed = runtime?.observed_state ?? "stopped";
   const status = statusDescriptor(observed);
   const group = groups?.find((item) => item.id === profile?.group_id);
-  const loadError = profileQuery.isError
+  // P2: runtime 失败不阻塞配置页；仅 profile 失败才整页错误，runtime
+  // 失败降级为顶栏 Banner，配置/文件/自动化/维护仍可访问。
+  const profileLoadError = profileQuery.isError
     ? (profileQuery.error?.message ?? t("runtimeStateUnknown"))
-    : runtimeQuery.isError
-      ? (runtimeQuery.error?.message ?? t("runtimeStateUnknown"))
-      : null;
+    : null;
+  const runtimeLoadError = runtimeQuery.isError
+    ? (runtimeQuery.error?.message ?? t("runtimeStateUnknown"))
+    : null;
   const controlPending = startMutation.isPending || stopMutation.isPending;
   const controlError =
     startMutation.isError || stopMutation.isError
       ? ((startMutation.error ?? stopMutation.error)?.message ??
         t("runtimeStateUnknown"))
       : null;
-  if (loadError) {
+  if (profileLoadError) {
     return (
       <div
         data-testid="profile-detail-view"
         className="flex flex-col gap-lg p-lg"
       >
         <Banner tone="danger" testId="profile-detail-error">
-          <span>{loadError}</span>
+          <span>{profileLoadError}</span>
           <Button
             size="sm"
             data-testid="profile-detail-retry"
@@ -131,6 +134,18 @@ export function ProfileDetailPage() {
       {controlError && (
         <Banner tone="danger" testId="profile-detail-control-error">
           {controlError}
+        </Banner>
+      )}
+      {runtimeLoadError && (
+        <Banner tone="danger" testId="profile-detail-runtime-error">
+          <span>{runtimeLoadError}</span>
+          <Button
+            size="sm"
+            data-testid="profile-detail-runtime-retry"
+            onClick={() => void runtimeQuery.refetch()}
+          >
+            {t("retryAction")}
+          </Button>
         </Banner>
       )}
 

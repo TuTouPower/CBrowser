@@ -272,19 +272,19 @@ export function ProfileForm({
     { value: "macos", label: t("formPlatformMacos") },
   ];
   const gpuOptions: SelectOption[] = [
-    { value: "auto", label: "auto" },
-    { value: "nvidia", label: "nvidia" },
-    { value: "intel", label: "intel" },
+    { value: "auto", label: t("formGpuAuto") },
+    { value: "nvidia", label: t("formGpuNvidia") },
+    { value: "intel", label: t("formGpuIntel") },
   ];
   const presetOptions: SelectOption[] = [
-    { value: "default", label: "default" },
-    { value: "careful", label: "careful" },
+    { value: "default", label: t("formPresetDefault") },
+    { value: "careful", label: t("formPresetCareful") },
   ];
   const colorSchemeOptions: SelectOption[] = [
     { value: "__none__", label: t("formFontSetNone") },
-    { value: "light", label: "Light" },
-    { value: "dark", label: "Dark" },
-    { value: "no-preference", label: "No preference" },
+    { value: "light", label: t("formColorLight") },
+    { value: "dark", label: t("formColorDark") },
+    { value: "no-preference", label: t("formColorNoPreference") },
   ];
 
   const submitValues = async () => {
@@ -383,7 +383,7 @@ export function ProfileForm({
                     setNewGroupName("");
                   } catch (err: unknown) {
                     setGroupError(
-                      err instanceof Error ? err.message : t("failedToCreateProfile"),
+                      err instanceof Error ? err.message : t("failedToCreateGroup"),
                     );
                   }
                 }}
@@ -625,19 +625,19 @@ export function ProfileForm({
               />
             ))}
           </div>
-          <Row label="Human preset">
+          <Row label={t("formHumanPreset")}>
             <Select
               value={values.human_preset}
               onValueChange={(value) =>
                 setField("human_preset", normalizePreset(value))
               }
               options={presetOptions}
-              ariaLabel="Human preset"
+              ariaLabel={t("formHumanPreset")}
             />
           </Row>
-          <Row label="Launch args">
+          <Row label={t("formLaunchArgs")}>
             <Input
-              aria-label="Launch args"
+              aria-label={t("formLaunchArgs")}
               value={(values.launch_args ?? []).join(", ")}
               onChange={(event) =>
                 setField(
@@ -650,9 +650,9 @@ export function ProfileForm({
               }
             />
           </Row>
-          <Row label="Extension paths">
+          <Row label={t("formExtensionPaths")}>
             <Input
-              aria-label="Extension paths"
+              aria-label={t("formExtensionPaths")}
               value={(values.extension_paths ?? []).join(", ")}
               onChange={(event) =>
                 setField(

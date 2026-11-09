@@ -39,6 +39,7 @@ export interface SessionHeaderProps {
   diagnosticsOpen: boolean;
   detailsOpen: boolean;
   focusMode: boolean;
+  isPending?: boolean;
   onAudioToggle: () => void;
   onDiagnosticsToggle: () => void;
   onDetailsToggle: () => void;
@@ -93,6 +94,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
     diagnosticsOpen,
     detailsOpen,
     focusMode,
+    isPending = false,
     onAudioToggle,
     onDiagnosticsToggle,
     onDetailsToggle,
@@ -143,6 +145,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           <Button
             size="sm"
             data-testid={SESS_APPLY_RESTART}
+            disabled={isPending}
             onClick={onApplyRestart}
           >
             {t("sessApplyRestart")}
@@ -199,6 +202,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           variant="danger"
           aria-label={t("sessStop")}
           data-testid={SESS_STOP}
+          disabled={isPending}
           onClick={onStop}
         >
           <Square aria-hidden="true" className="h-4 w-4" />
