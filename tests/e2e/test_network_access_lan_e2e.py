@@ -56,6 +56,22 @@ def detect_host_non_loopback_ip() -> str:
     )
 
 
+def _network_root_ca_client():
+    """Assemble the network router exactly as the production app does."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from cbrowser.api.v1.network_router import create_network_router
+
+    app = FastAPI()
+    temp_ca_dir = REPO_ROOT / ".scratch" / "test_ca_dir"
+    temp_ca_dir.mkdir(parents=True, exist_ok=True)
+    pub_cert = "-----BEGIN CERTIFICATE-----\nMIIC...PUBLIC_CERT_DATA\n-----END CERTIFICATE-----"
+    (temp_ca_dir / "root.crt").write_text(pub_cert)
+    app.state.caddy_ca_dir = temp_ca_dir
+    app.include_router(create_network_router())
+    return TestClient(app)
+
+
 def test_e2e_ac006_no_hardcoded_caddyfiles_in_repo():
     """AC-006: No hardcoded hostnames or IP addresses in any committed Caddyfile."""
     caddy_dir = REPO_ROOT / "config" / "deploy" / "caddy"
@@ -105,26 +121,22 @@ def test_e2e_ac008_root_ca_public_only_and_no_private_key_mount():
         assert "root.key" not in v_str, "API service must not mount root.key"
 
     # 2. Functional endpoint check
-    from fastapi.testclient import TestClient
-    from cbrowser.api.v1.network_router import create_network_router
-    from fastapi import FastAPI
-
-    app = FastAPI()
-    temp_ca_dir = REPO_ROOT / ".scratch" / "test_ca_dir"
-    temp_ca_dir.mkdir(parents=True, exist_ok=True)
-
-    pub_cert = "-----BEGIN CERTIFICATE-----\nMIIC...PUBLIC_CERT_DATA\n-----END CERTIFICATE-----"
-    (temp_ca_dir / "root.crt").write_text(pub_cert)
-
-    app.state.caddy_ca_dir = temp_ca_dir
-    app.include_router(create_network_router(), prefix="/api/v1")
-
-    client = TestClient(app)
+    client = _network_root_ca_client()
     resp = client.get("/api/v1/network/root-ca")
     assert resp.status_code == 200
     assert "-----BEGIN CERTIFICATE-----" in resp.text
     assert "PRIVATE KEY" not in resp.text
     assert resp.headers["content-disposition"] == 'attachment; filename="cbrowser_root_ca.crt"'
+
+
+def test_e2e_a2_network_root_ca_authoritative_prefix_and_legacy_path_rejected():
+    """A2: root CA is served under /api/v1/network; legacy /network path is rejected."""
+    client = _network_root_ca_client()
+    resp = client.get("/api/v1/network/root-ca")
+    assert resp.status_code == 200
+    assert "-----BEGIN CERTIFICATE-----" in resp.text
+    assert "PRIVATE KEY" not in resp.text
+    assert client.get("/network/root-ca").status_code == 404
 
 
 def test_e2e_ac004_port_binding_physical_isolation():

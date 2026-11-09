@@ -329,6 +329,10 @@ class GatewayTopologyHarness:
         self.gateway_ip = self.gateway_container.attrs["NetworkSettings"]["Networks"][
             self.edge_network.name
         ]["IPAddress"]
+        gateway_host_port = published_host_port(
+            self.gateway_container, f"{DEFAULT_GATEWAY_PORT}/tcp"
+        )
+        gateway_internal_url = f"http://127.0.0.1:{gateway_host_port}"
 
         # 4. Supervisor container
         mounts = {
@@ -421,6 +425,7 @@ class GatewayTopologyHarness:
             "/supervisor/v1/health",
             headers={"Authorization": f"Bearer {self.keys['supervisor']}"},
         )
+        await wait_until_ready(gateway_internal_url, "/gateway/v1/health")
         await wait_until_ready(self.origin, "/api/v1/health", verify=False)
 
     async def login_api(
@@ -462,6 +467,20 @@ class GatewayTopologyHarness:
         self, name: str = "e2e_profile"
     ) -> dict[str, Any]:
         """Creates profile, sets desired state, starts via Supervisor."""
+        self.gateway_container.reload()
+        if self.gateway_container.status != "running":
+            try:
+                gw_logs = self.gateway_container.logs().decode(
+                    "utf-8", errors="replace"
+                )
+            except Exception as exc:
+                gw_logs = f"<unavailable: {type(exc).__name__}: {exc}>"
+            gw_state = self.gateway_container.attrs.get("State", {})
+            raise AssertionError(
+                "Gateway container is not running: "
+                f"status={self.gateway_container.status} state={gw_state}\n"
+                f"Gateway logs:\n{gw_logs}"
+            )
         auth_headers = await self.login_api()
         async with httpx.AsyncClient(
             base_url=self.origin,

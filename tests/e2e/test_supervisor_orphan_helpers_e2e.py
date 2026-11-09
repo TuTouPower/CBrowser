@@ -1,5 +1,6 @@
 """Startup reaps only positively owned transient helpers using real Docker."""
 
+import logging
 import uuid
 
 import docker
@@ -7,12 +8,14 @@ import pytest
 
 from e2e_env import require_e2e_env
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
-from cbrowser.supervisor.docker_adapter import DockerAdapter, DockerSandboxError
+from cbrowser.supervisor.docker_adapter import DockerAdapter
 from cbrowser.supervisor.path_validator import PathValidator
 
 
 @pytest.mark.asyncio
-async def test_locked_startup_reaps_helpers_without_touching_other_containers(tmp_path):
+async def test_locked_startup_reaps_helpers_without_touching_other_containers(
+    tmp_path, caplog
+):
     image = require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")[
         "CBROWSER_RUNTIME_TEST_IMAGE"
     ]
@@ -64,24 +67,24 @@ async def test_locked_startup_reaps_helpers_without_touching_other_containers(tm
         foreign = launch(
             prefix + "-cache-" + uuid.uuid4().hex[:12], "cache-init", managed="other"
         )
-        with CoordinatorLock(tmp_path / "supervisor.lock"):
-            await adapter.cleanup_orphan_helpers()
-            await adapter.cleanup_orphan_helpers()
+        mismatched = launch(prefix + "-unrelated", "cache-init")
+        with caplog.at_level(
+            logging.WARNING, logger="cbrowser.supervisor.docker_adapter"
+        ):
+            with CoordinatorLock(tmp_path / "supervisor.lock"):
+                await adapter.cleanup_orphan_helpers()
+                await adapter.cleanup_orphan_helpers()
         for removed in (cache_helper, policy_helper):
             with pytest.raises(docker.errors.NotFound):
                 client.containers.get(removed.id)
-        for retained in (runtime, gateway, foreign):
+        for retained in (runtime, gateway, foreign, mismatched):
             retained.reload()
             assert retained.status == "running"
-        # Even matching ownership labels cannot authorize an unrelated name.
-        mismatched = launch(prefix + "-unrelated", "cache-init")
-        with (
-            CoordinatorLock(tmp_path / "supervisor.lock"),
-            pytest.raises(DockerSandboxError, match="helper ownership"),
-        ):
-            await adapter.cleanup_orphan_helpers()
-        mismatched.reload()
-        assert mismatched.status == "running"
+        assert "Orphan helper identity mismatch retained" in caplog.text
+        assert "role=cache-init" in caplog.text
+        assert mismatched.name not in caplog.text
+        assert mismatched.id not in caplog.text
+        assert prefix not in caplog.text
     finally:
         try:
             for container in containers:
