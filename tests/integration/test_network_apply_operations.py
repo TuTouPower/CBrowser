@@ -190,7 +190,7 @@ async def test_restore_without_rebuilt_flag_keeps_recovery_incomplete(
             "status": "ok",
             "restored": 0,
             "rebuilt": False,
-            "reason": "not_found",
+            "reason": "restore_old_entry",
         }
     )
     svc = NetworkService(
@@ -212,3 +212,47 @@ async def test_restore_without_rebuilt_flag_keeps_recovery_incomplete(
     assert txn.recovery_complete is False
     _, kwargs = supervisor.restore_network_snapshot.await_args
     assert kwargs["caddyfile_path"] == "Caddyfile"
+
+
+@pytest.mark.asyncio
+async def test_restore_not_found_is_explicit_terminal(
+    session_maker, mock_auth, tmp_path
+):
+    """P2 not_found way out: missing Caddy is terminal, not permanent spin."""
+    repo = ProfileRepository(session_maker)
+    supervisor = MagicMock()
+    supervisor.rebuild_edge = AsyncMock(
+        side_effect=RuntimeError("Docker daemon connection lost")
+    )
+    supervisor.restore_network_snapshot = AsyncMock(
+        return_value={
+            "status": "ok",
+            "restored": 0,
+            "rebuilt": False,
+            "reason": "not_found",
+            "terminal": True,
+        }
+    )
+    svc = NetworkService(
+        repo=repo,
+        auth_service=mock_auth,
+        supervisor_client=supervisor,
+        export_dir=tmp_path / "network",
+    )
+    await svc.update_pending_config(
+        NetworkAccessConfig(
+            lan_access_enabled=True,
+            lan_advertised_ip="192.168.31.76",
+        )
+    )
+    op = await svc.apply_configuration("correct_password")
+    await svc.wait_for_operation(op.operation_id, timeout=5.0)
+    txn = await repo.get_network_transaction(op.operation_id)
+    assert txn.decision == "abort"
+    assert txn.recovery_complete is True
+    # Next apply is no longer blocked by the missing edge.
+    await svc.update_pending_config(
+        NetworkAccessConfig(lan_access_enabled=False)
+    )
+    op2 = await svc.apply_configuration("correct_password")
+    assert op2.operation_id != op.operation_id

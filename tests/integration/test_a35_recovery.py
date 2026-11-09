@@ -328,6 +328,7 @@ async def test_restart_with_abort_restores_old_config(session_maker, tmp_path):
         NetworkApplyOperation,
         utc_now_iso,
     )
+    from cbrowser.network_config import compute_caddyfile_sha256, generate_caddyfile
 
     repo = ProfileRepository(session_maker)
     old = AppliedNetworkAccessVersion(
@@ -337,6 +338,13 @@ async def test_restart_with_abort_restores_old_config(session_maker, tmp_path):
         applied_at=utc_now_iso(),
         caddyfile_sha256="old-hash",
         origin_whitelist=["https://127.0.0.1:56661"],
+    )
+    # P2 restore verifies the old content hash: use the real hash so the
+    # restore path binds instead of refusing on a dummy mismatch.
+    old = old.model_copy(
+        update={
+            "caddyfile_sha256": compute_caddyfile_sha256(generate_caddyfile(old))
+        }
     )
     target = AppliedNetworkAccessVersion(
         version=2,
@@ -419,3 +427,79 @@ async def test_restart_without_finality_makes_exclusive_abort_decision(
     assert (await restarted.get_settings()).applied_version.version == 1
     fresh_supervisor.rebuild_edge.assert_not_awaited()
     assert fresh_supervisor.restore_network_snapshot.called
+
+
+@pytest.mark.asyncio
+async def test_restore_fails_once_then_retry_succeeds_with_bumped_generation(
+    session_maker, tmp_path
+):
+    """P1-A: restore fails once, retry with the bumped generation succeeds.
+
+    Uses the bumped txn exclusively so the Supervisor never sees a stale
+    generation (which previously raised 500 via the journal).
+    """
+    from unittest.mock import AsyncMock
+
+    from cbrowser.domain.models import (
+        AppliedNetworkAccessVersion,
+        NetworkApplyOperation,
+        utc_now_iso,
+    )
+    from cbrowser.network_config import compute_caddyfile_sha256, generate_caddyfile
+
+    repo = ProfileRepository(session_maker)
+    old = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False),
+        bind_host="127.0.0.1",
+        applied_at=utc_now_iso(),
+        caddyfile_sha256="",
+        origin_whitelist=["https://127.0.0.1:56661"],
+    )
+    old = old.model_copy(
+        update={
+            "caddyfile_sha256": compute_caddyfile_sha256(generate_caddyfile(old))
+        }
+    )
+    op = NetworkApplyOperation(
+        operation_id="op-restore-retry",
+        target_version=2,
+        phase=NetworkApplyPhase.REBUILDING_CADDY,
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    )
+    txn = await repo.begin_network_transaction(
+        operation=op,
+        old_applied=old,
+        target_applied=old.model_copy(update={"version": 2}),
+        candidate_hash="h-retry",
+    )
+    await repo.abort_network_transaction(
+        operation_id="op-restore-retry",
+        execution_generation=txn.execution_generation,
+        reason="crash",
+        recovery_complete=False,
+    )
+    bumped = await repo.get_network_transaction("op-restore-retry")
+
+    supervisor = _supervisor()
+    supervisor.restore_network_snapshot = AsyncMock(
+        side_effect=[
+            RuntimeError("edge restore unreachable"),
+            {"status": "ok", "restored": 1, "rebuilt": True},
+        ]
+    )
+    _, svc = _service(session_maker, supervisor, tmp_path)
+
+    first = await svc.recover_pending_operation()
+    assert first == "abort"
+    assert (await repo.get_network_transaction("op-restore-retry")).recovery_complete is False
+    _, first_kwargs = supervisor.restore_network_snapshot.await_args_list[0]
+    assert first_kwargs["execution_generation"] == bumped.execution_generation
+
+    second = await svc.recover_pending_operation()
+    assert second == "abort"
+    assert (await repo.get_network_transaction("op-restore-retry")).recovery_complete is True
+    _, second_kwargs = supervisor.restore_network_snapshot.await_args_list[1]
+    assert second_kwargs["execution_generation"] == bumped.execution_generation
+    assert await repo.get_active_network_operation() is None

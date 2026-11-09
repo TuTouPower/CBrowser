@@ -655,6 +655,35 @@ def create_control_app(
                 )
                 raise HTTPException(409, "candidate snapshot hash mismatch")
 
+        if verified and restoring:
+            # Restore must rebind the old content, not a stale/new file.
+            # Verify the persistent snapshot still matches the expected old
+            # hash before Docker runs; a mismatch means the file was
+            # overwritten by a concurrent installing rebuild.
+            try:
+                actual_old_hash = compute_caddyfile_sha256(
+                    Path(resolved_caddyfile).read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeError):
+                actual_old_hash = ""
+            if actual_old_hash != candidate_hash:
+                _write_execution_receipt(
+                    operation_id,
+                    generation,
+                    candidate_hash,
+                    {
+                        "status": "rejected",
+                        "reason": "old snapshot hash mismatch",
+                        "docker_verified": False,
+                        "operation_id": operation_id,
+                        "execution_generation": generation,
+                        "candidate_hash": candidate_hash,
+                        "caddyfile_sha256": actual_old_hash,
+                    },
+                    restoring=True,
+                )
+                raise HTTPException(409, "old snapshot hash mismatch")
+
         try:
             if restoring:
                 result = await core.restore_edge_proxy(
@@ -695,23 +724,49 @@ def create_control_app(
             raise HTTPException(409, str(exc)) from None
 
         if verified:
-            _write_execution_receipt(
-                operation_id,
-                generation,
-                candidate_hash,
-                {
-                    "status": "ok",
-                    "docker_verified": True,
-                    "operation_id": operation_id,
-                    "execution_generation": generation,
-                    "candidate_hash": candidate_hash,
-                    "restoring": restoring,
-                },
-                restoring=restoring,
+            rebuilt_ok = (
+                isinstance(result, dict) and result.get("rebuilt") is True
             )
+            if rebuilt_ok:
+                _write_execution_receipt(
+                    operation_id,
+                    generation,
+                    candidate_hash,
+                    {
+                        "status": "ok",
+                        "docker_verified": True,
+                        "operation_id": operation_id,
+                        "execution_generation": generation,
+                        "candidate_hash": candidate_hash,
+                        "restoring": restoring,
+                    },
+                    restoring=restoring,
+                )
+            else:
+                _write_execution_receipt(
+                    operation_id,
+                    generation,
+                    candidate_hash,
+                    {
+                        "status": "rejected",
+                        "reason": result.get("reason", "edge not rebuilt")
+                        if isinstance(result, dict)
+                        else "edge not rebuilt",
+                        "docker_verified": False,
+                        "operation_id": operation_id,
+                        "execution_generation": generation,
+                        "candidate_hash": candidate_hash,
+                        "restoring": restoring,
+                    },
+                    restoring=restoring,
+                )
         return {
             **result,
-            "receipt_verified": verified,
+            "receipt_verified": bool(
+                verified
+                and isinstance(result, dict)
+                and result.get("rebuilt") is True
+            ),
             "operation_id": operation_id,
             "execution_generation": generation,
             "candidate_hash": candidate_hash,
@@ -721,11 +776,30 @@ def create_control_app(
         "/supervisor/v1/network/converge-streams",
         dependencies=[Depends(verify_token)],
     )
-    async def converge_streams(req: ConvergeStreamsRequest):
-        return await core.converge_network_streams(
-            target_version=req.target_version,
-            bind_host=req.bind_host,
-            advertised_ip=req.advertised_ip,
-        )
+    async def converge_streams(
+        req: ConvergeStreamsRequest,
+        operation_id: Annotated[
+            str | None, Header(alias="X-CBrowser-Operation-Id")
+        ] = None,
+        execution_generation: Annotated[
+            str | None, Header(alias="X-CBrowser-Execution-Generation")
+        ] = None,
+    ):
+        generation: int | None = None
+        if execution_generation is not None:
+            try:
+                generation = int(execution_generation)
+            except ValueError:
+                generation = None
+        try:
+            return await core.converge_network_streams(
+                target_version=req.target_version,
+                bind_host=req.bind_host,
+                advertised_ip=req.advertised_ip,
+                operation_id=operation_id,
+                execution_generation=generation,
+            )
+        except DockerSandboxError as exc:
+            raise HTTPException(409, str(exc)) from None
 
     return app

@@ -633,6 +633,8 @@ class SupervisorCore:
         session: ActiveSession,
         *,
         rebuild_network: bool,
+        bind_host: str | None = None,
+        advertised_ip: str | None = None,
     ) -> bool:
         """Rebuild only the Stream layer of a running pair.
 
@@ -724,16 +726,26 @@ class SupervisorCore:
                     last_error_at=self._now_iso(),
                 )
                 return False
+            stream_kwargs: dict[str, Any] = {
+                "profile_id": profile_id,
+                "runtime_instance_id": instance_id,
+                "browser_container_name": browser_container.name,
+                "udp_mux_port": session.udp_mux_port,
+                "gateway_url": attach["gateway_url"],
+                "agent_secret_path": secret_file,
+                "selkies_tokens_path": selkies_file,
+                "snapshot_json_path": dirs["runtime"] / "snapshot.json",
+                "gateway_port": self.gateway_port,
+            }
+            # Network converge carries the target edge binding; other
+            # callers (t026 steady-state) keep the existing default so
+            # their behavior is unchanged.
+            if bind_host is not None:
+                stream_kwargs["bind_host"] = bind_host
+            if advertised_ip is not None:
+                stream_kwargs["public_ip"] = advertised_ip
             stream_container = await self.docker.start_stream_container(
-                profile_id=profile_id,
-                runtime_instance_id=instance_id,
-                browser_container_name=browser_container.name,
-                udp_mux_port=session.udp_mux_port,
-                gateway_url=attach["gateway_url"],
-                agent_secret_path=secret_file,
-                selkies_tokens_path=selkies_file,
-                snapshot_json_path=dirs["runtime"] / "snapshot.json",
-                gateway_port=self.gateway_port,
+                **stream_kwargs
             )
             session.stream_container_id = stream_container.id
             self._update_transport(
@@ -2987,13 +2999,39 @@ class SupervisorCore:
         execution_generation: int | None,
         phase: str,
         receipt: dict[str, Any],
+        docker_result: dict[str, Any] | None = None,
     ) -> None:
         """Overwrite the staged receipt once Docker has applied the Caddyfile.
 
         Only a post-Docker receipt may claim docker_verified: committing on
-        a pre-Docker ok would certify content Caddy never served.
+        a pre-Docker ok would certify content Caddy never served. A Docker
+        result without rebuilt True is recorded as rejected, never ok, so
+        recovery cannot mistake an unapplied Caddyfile for verified.
         """
         if operation_id and self.operations is not None:
+            verified = (
+                isinstance(docker_result, dict)
+                and docker_result.get("rebuilt") is True
+            )
+            if verified:
+                payload: dict[str, Any] = {
+                    "status": "ok",
+                    "docker_verified": True,
+                    **receipt,
+                }
+            else:
+                reason = (
+                    docker_result.get("reason")
+                    if isinstance(docker_result, dict)
+                    else None
+                )
+                payload = {
+                    "status": "rejected",
+                    "docker_verified": False,
+                    **receipt,
+                }
+                if reason:
+                    payload["reason"] = reason
             self.operations.complete_network_receipt(
                 operation_id,
                 phase,
@@ -3004,7 +3042,7 @@ class SupervisorCore:
                     "phase": phase,
                     "resource": "caddy",
                 },
-                {"status": "ok", "docker_verified": True, **receipt},
+                payload,
             )
 
     async def rebuild_edge_proxy(
@@ -3026,6 +3064,18 @@ class SupervisorCore:
             https_port,
         )
         phase = "compensating" if restoring else "installing"
+        # Fencing: a late installing rebuild must not overwrite a newer
+        # restore for the same operation. Restores record their generation;
+        # an installing rebuild at or below that generation is stale.
+        if not restoring and operation_id is not None and execution_generation is not None:
+            latest_restore = getattr(self, "_network_restore_generations", {}).get(
+                operation_id
+            )
+            if (
+                latest_restore is not None
+                and execution_generation <= latest_restore
+            ):
+                raise DockerSandboxError("Stale execution generation: superseded rebuild")
         staging_path = self.resolve_network_caddyfile(caddyfile_path)
         receipt = self._network_edge_receipt(
             operation_id, execution_generation, phase, str(staging_path)
@@ -3042,6 +3092,32 @@ class SupervisorCore:
         # verified candidate content to the persistent file first, then bind
         # the persistent path so later staging cleanup cannot break Caddy.
         network_dir = self.docker.validator.data_root / "network"
+        # Ownership root cause: the network directory is shared between
+        # Supervisor (root) and API (uid 1000). The directory itself must be
+        # owned by the runtime uid, otherwise the API cannot create the
+        # same-dir temp file for its atomic replace after a root promote.
+        network_dir.mkdir(parents=True, exist_ok=True)
+        if getattr(self.docker, "manage_ownership", False) is True:
+            try:
+                runtime_uid = self.docker.runtime_uid
+                runtime_gid = self.docker.runtime_gid
+                if not isinstance(runtime_uid, int) or not isinstance(
+                    runtime_gid, int
+                ):
+                    raise DockerSandboxError(
+                        "Network directory ownership requires integer ids"
+                    )
+                os.chown(
+                    network_dir,
+                    runtime_uid,
+                    runtime_gid,
+                )
+                os.chmod(network_dir, 0o755)
+            except OSError as exc:
+                raise DockerSandboxError(
+                    "Cannot assign network directory ownership: "
+                    f"{type(exc).__name__}"
+                ) from None
         persistent_path = network_dir / "Caddyfile"
         try:
             candidate_text = staging_path.read_text(encoding="utf-8")
@@ -3050,13 +3126,39 @@ class SupervisorCore:
                 f"candidate snapshot unreadable: {type(exc).__name__}"
             ) from None
         atomic_write_text(persistent_path, candidate_text, mode=0o644)
-        res = await self.docker.rebuild_caddy_container(
-            bind_host=bind_host,
-            https_port=https_port,
-            caddyfile_path=str(persistent_path),
-        )
+        if getattr(self.docker, "manage_ownership", False) is True:
+            try:
+                runtime_uid = self.docker.runtime_uid
+                runtime_gid = self.docker.runtime_gid
+                if not isinstance(runtime_uid, int) or not isinstance(
+                    runtime_gid, int
+                ):
+                    raise DockerSandboxError(
+                        "Network file ownership requires integer ids"
+                    )
+                os.chown(
+                    persistent_path,
+                    runtime_uid,
+                    runtime_gid,
+                )
+            except OSError as exc:
+                raise DockerSandboxError(
+                    "Cannot assign network file ownership: "
+                    f"{type(exc).__name__}"
+                ) from None
+        try:
+            res = await asyncio.wait_for(
+                self.docker.rebuild_caddy_container(
+                    bind_host=bind_host,
+                    https_port=https_port,
+                    caddyfile_path=str(persistent_path),
+                ),
+                timeout=30.0,
+            )
+        except TimeoutError as exc:
+            raise DockerSandboxError("Caddy rebuild timed out") from exc
         self._finalize_network_edge_receipt(
-            operation_id, execution_generation, phase, receipt
+            operation_id, execution_generation, phase, receipt, res
         )
         return {"status": "ok", "version": target_version, **receipt, **res}
 
@@ -3075,14 +3177,30 @@ class SupervisorCore:
         receipt = self._network_edge_receipt(
             operation_id, execution_generation, "compensating", str(persistent_path)
         )
-        res = await self.docker.rebuild_caddy_container(
-            bind_host=bind_host,
-            https_port=https_port,
-            caddyfile_path=str(persistent_path),
-        )
+        try:
+            res = await asyncio.wait_for(
+                self.docker.rebuild_caddy_container(
+                    bind_host=bind_host,
+                    https_port=https_port,
+                    caddyfile_path=str(persistent_path),
+                ),
+                timeout=30.0,
+            )
+        except TimeoutError as exc:
+            raise DockerSandboxError("Caddy restore timed out") from exc
         self._finalize_network_edge_receipt(
-            operation_id, execution_generation, "compensating", receipt
+            operation_id, execution_generation, "compensating", receipt, res
         )
+        # Record the newest restore generation so a late installing rebuild
+        # for the same operation is fenced instead of overwriting this.
+        if operation_id is not None and execution_generation is not None:
+            generations = getattr(self, "_network_restore_generations", None)
+            if generations is None:
+                generations = {}
+                self._network_restore_generations = generations
+            previous = generations.get(operation_id)
+            if previous is None or execution_generation > previous:
+                generations[operation_id] = execution_generation
         return {
             "status": "ok",
             "version": old_version,
@@ -3106,36 +3224,93 @@ class SupervisorCore:
             bind_host,
             advertised_ip,
         )
+        # Fencing: a late converge for a superseded generation must not
+        # run at all — it would replace streams with a stale binding after
+        # a newer restore already rewound the edge.
+        if operation_id is not None and execution_generation is not None:
+            latest_restore = getattr(self, "_network_restore_generations", {}).get(
+                operation_id
+            )
+            if (
+                latest_restore is not None
+                and execution_generation <= latest_restore
+            ):
+                raise DockerSandboxError("Stale execution generation: superseded converge")
+        advertised_ip = (advertised_ip or "").strip() or "127.0.0.1"
+        bind_host = (bind_host or "").strip() or "127.0.0.1"
         rebuilt = 0
         touched: list[str] = []
-        for profile_id, session in list(self._sessions.items()):
-            containers = await asyncio.to_thread(
-                self.docker.get_profile_containers, profile_id
-            )
-            s_container = containers.get("stream")
-            if s_container is not None:
-                labels = s_container.labels or {}
-                curr_bind = labels.get("com.cbrowser.stream.bind-host")
-                curr_adv = labels.get("com.cbrowser.stream.advertised-ip")
-                if curr_bind != bind_host or curr_adv != advertised_ip:
-                    logger.info(
-                        "Replacing stream for %s due to network version update: (%s, %s) -> (%s, %s)",
-                        profile_id,
-                        curr_bind,
-                        curr_adv,
-                        bind_host,
-                        advertised_ip,
-                    )
-                    ok = await self._replace_stream_only(
-                        profile_id, session, rebuild_network=False
-                    )
-                    if not ok:
-                        raise DockerSandboxError(
-                            "Stream replacement failed for "
-                            f"{profile_id}; network commit blocked"
+        replaced: list[tuple[str, str | None, str | None]] = []
+        try:
+            for profile_id, session in list(self._sessions.items()):
+                containers = await asyncio.to_thread(
+                    self.docker.get_profile_containers, profile_id
+                )
+                s_container = containers.get("stream")
+                if s_container is not None:
+                    labels = s_container.labels or {}
+                    curr_bind = labels.get("com.cbrowser.stream.bind-host")
+                    curr_adv = labels.get("com.cbrowser.stream.advertised-ip")
+                    if curr_bind != bind_host or curr_adv != advertised_ip:
+                        logger.info(
+                            "Replacing stream for %s due to network version update: (%s, %s) -> (%s, %s)",
+                            profile_id,
+                            curr_bind,
+                            curr_adv,
+                            bind_host,
+                            advertised_ip,
                         )
-                    rebuilt += 1
-                    touched.append(profile_id)
+                        try:
+                            ok = await asyncio.wait_for(
+                                self._replace_stream_only(
+                                    profile_id,
+                                    session,
+                                    rebuild_network=False,
+                                    bind_host=bind_host,
+                                    advertised_ip=advertised_ip,
+                                ),
+                                timeout=30.0,
+                            )
+                        except TimeoutError as exc:
+                            raise DockerSandboxError(
+                                "Stream replacement timed out for "
+                                f"{profile_id}; network commit blocked"
+                            ) from exc
+                        if not ok:
+                            raise DockerSandboxError(
+                                "Stream replacement failed for "
+                                f"{profile_id}; network commit blocked"
+                            )
+                        rebuilt += 1
+                        touched.append(profile_id)
+                        replaced.append((profile_id, curr_bind, curr_adv))
+        except DockerSandboxError:
+            # Partial failure: best-effort rollback of already-replaced
+            # Streams to their previous binding so the edge and streams do
+            # not diverge. Rollback failures are logged; the original
+            # error still blocks the commit.
+            for pid, old_bind, old_adv in reversed(replaced):
+                session = self._sessions.get(pid)
+                if session is None:
+                    continue
+                try:
+                    await asyncio.wait_for(
+                        self._replace_stream_only(
+                            pid,
+                            session,
+                            rebuild_network=False,
+                            bind_host=old_bind or "127.0.0.1",
+                            advertised_ip=old_adv or "127.0.0.1",
+                        ),
+                        timeout=30.0,
+                    )
+                except Exception as rollback_exc:  # noqa: BLE001 - rollback is best-effort
+                    logger.warning(
+                        "Stream rollback failed: profile=%s error_type=%s",
+                        pid,
+                        type(rollback_exc).__name__,
+                    )
+            raise
         receipt = {
             "operation_id": operation_id,
             "execution_generation": execution_generation,
@@ -3154,6 +3329,6 @@ class SupervisorCore:
                 "installing",
                 "stream",
                 request,
-                {"status": "ok", "docker_verified": False, **receipt},
+                {"status": "ok", "docker_verified": True, **receipt},
             )
         return {"status": "ok", "rebuilt_streams": rebuilt, **receipt}
