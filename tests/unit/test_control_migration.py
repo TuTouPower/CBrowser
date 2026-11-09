@@ -11,6 +11,7 @@ The backup/restore test is kept verbatim (no retired revision id in it).
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 from pathlib import Path
@@ -23,9 +24,17 @@ from cbrowser.adapters.database.migrations import (
     get_alembic_config,
     run_database_migrations,
 )
+from cbrowser.adapters.database.models import SettingModel
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.domain.models import ProfileConfig
+from cbrowser.domain.models import (
+    AppliedNetworkAccessVersion,
+    NetworkAccessConfig,
+    NetworkApplyOperation,
+    NetworkApplyPhase,
+    ProfileConfig,
+)
 from cbrowser.adapters.database.repository import ProfileRepository
+from cbrowser.gateway.config import NetworkPublicationAuthority
 from cbrowser.services.control_service import ProfileControlService
 
 
@@ -198,3 +207,340 @@ async def test_upgrade_from_0002_era_old_db_to_head(tmp_path: Path) -> None:
     finally:
         await engine.dispose()
     command.check(get_alembic_config(db))
+
+
+def _legacy_applied_payload(version: int) -> str:
+    return AppliedNetworkAccessVersion(
+        version=version,
+        config=NetworkAccessConfig(lan_access_enabled=False),
+        bind_host="127.0.0.1",
+        applied_at="2026-01-01T00:00:00+00:00",
+        caddyfile_sha256=f"hash-{version}",
+        origin_whitelist=["https://127.0.0.1:56661"],
+    ).model_dump_json()
+
+
+def _legacy_operation_payload(
+    operation_id: str = "op-crash",
+    target_version: int = 2,
+    phase: str = "pending",
+) -> str:
+    # Pre-A35 shape: a plain NetworkApplyOperation snapshot with no recovery
+    # fields (decision/transaction_phase/execution_generation/recovery_complete).
+    now = "2026-01-01T00:00:00+00:00"
+    return json.dumps(
+        {
+            "operation_id": operation_id,
+            "target_version": target_version,
+            "phase": phase,
+            "error_reason": None,
+            "new_entry_url": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+
+
+def _add_legacy_1a6ec51_columns(conn: sqlite3.Connection) -> None:
+    """Add the four columns the 1a6ec51-era 0001 already carried, with the
+    same nullability/defaults the current 0004 restore uses."""
+    conn.execute(
+        "ALTER TABLE profiles ADD COLUMN capture_preview_epoch"
+        " INTEGER NOT NULL DEFAULT 0"
+    )
+    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN backoff_started_at VARCHAR(64)")
+    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN next_retry_at VARCHAR(64)")
+    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN preview_captured_at VARCHAR(64)")
+    conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_upgrade_from_legacy_0001_with_columns_to_head(tmp_path: Path) -> None:
+    """P0-A: a database stamped at 0002 whose tables already carry the four
+    t039/t040 columns (the 1a6ec51 in-place-0001 shape, i.e. live data/v2)
+    upgrades to head without a duplicate-column failure, and the ORM stays
+    usable. The 0004 downgrade is equally guarded: it drops only columns
+    that are still present."""
+    db = tmp_path / "legacy-cols.db"
+    cfg = get_alembic_config(db)
+    command.upgrade(cfg, "c41f0a2b7d93")
+    conn = sqlite3.connect(db)
+    try:
+        _add_legacy_1a6ec51_columns(conn)
+        now = "2026-01-01T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO profiles (id, name, fingerprint_seed, user_data_dir,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("legacy-1", "Legacy", 9, "/data/profiles/legacy-1/profile", now, now),
+        )
+        conn.execute(
+            "INSERT INTO profile_runtimes (profile_id, updated_at)"
+            " VALUES (?, ?)",
+            ("legacy-1", now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # Upgrade through 0003 + 0004 to the current head: must not raise.
+    run_database_migrations(db)
+    conn = sqlite3.connect(db)
+    try:
+        row = conn.execute(
+            "SELECT capture_preview_epoch FROM profiles WHERE id = ?",
+            ("legacy-1",),
+        ).fetchone()
+        assert row is not None and row[0] == 0
+        row = conn.execute(
+            "SELECT backoff_started_at, next_retry_at, preview_captured_at"
+            " FROM profile_runtimes WHERE profile_id = ?",
+            ("legacy-1",),
+        ).fetchone()
+        assert row == (None, None, None)
+    finally:
+        conn.close()
+    engine, maker = create_engine_and_maker(db)
+    try:
+        repo = ProfileRepository(maker)
+        old = await repo.get_profile("legacy-1")
+        assert old is not None
+        assert old.id == "legacy-1"
+        new = await repo.create_profile(ProfileConfig(name="New", fingerprint_seed=2))
+        assert new.id
+        assert await repo.get_profile(new.id) is not None
+    finally:
+        await engine.dispose()
+    # Re-running the migration entry point is a no-op.
+    run_database_migrations(db)
+    # 0004 downgrade drops only present columns, then re-upgrade restores them.
+    command.downgrade(cfg, "a35c0f1e7b42")
+    conn = sqlite3.connect(db)
+    try:
+        profiles_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(profiles)").fetchall()
+        }
+        runtimes_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(profile_runtimes)").fetchall()
+        }
+        assert "capture_preview_epoch" not in profiles_cols
+        assert "backoff_started_at" not in runtimes_cols
+        assert "next_retry_at" not in runtimes_cols
+        assert "preview_captured_at" not in runtimes_cols
+    finally:
+        conn.close()
+    run_database_migrations(db)
+    command.check(get_alembic_config(db))
+
+
+@pytest.mark.asyncio
+async def test_0003_backfills_crash_residual_active_operation(tmp_path: Path) -> None:
+    """A pre-A35 crash leaves network.active_operation as a plain operation
+    snapshot with no transaction.current pointer: boot recovery arbitrates
+    via the current pointer (reports "none") while begin still sees a
+    pending active row, so every later apply is rejected forever. 0003 now
+    backfills the active row with the same recovery defaults and links it
+    from the current pointer, so the standard abort-recovery path can clear
+    it and the next begin succeeds."""
+    db = tmp_path / "crash-active.db"
+    cfg = get_alembic_config(db)
+    command.upgrade(cfg, "c41f0a2b7d93")
+    conn = sqlite3.connect(db)
+    try:
+        now = "2026-01-01T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            ("network.applied_version", _legacy_applied_payload(1), now),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            ("network.operation.op-crash", _legacy_operation_payload(), now),
+        )
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+            ("network.active_operation", _legacy_operation_payload(), now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    run_database_migrations(db)
+    conn = sqlite3.connect(db)
+    try:
+        gen = conn.execute(
+            "SELECT value FROM settings WHERE key = 'network.execution_generation'"
+        ).fetchone()
+        assert gen is not None and gen[0] == "0"
+        op_raw = conn.execute(
+            "SELECT value FROM settings WHERE key = 'network.operation.op-crash'"
+        ).fetchone()[0]
+        assert json.loads(op_raw)["decision"] == "pending"
+        active_raw = conn.execute(
+            "SELECT value FROM settings WHERE key = 'network.active_operation'"
+        ).fetchone()[0]
+        assert json.loads(active_raw)["decision"] == "pending"
+        current = conn.execute(
+            "SELECT value FROM settings WHERE key = 'network.transaction.current'"
+        ).fetchone()
+        assert current is not None and current[0] == "op-crash"
+    finally:
+        conn.close()
+    engine, maker = create_engine_and_maker(db)
+    try:
+        repo = ProfileRepository(maker)
+        current_txn = await repo.get_current_network_transaction()
+        assert current_txn is not None
+        assert current_txn.operation_id == "op-crash"
+        # Mirror NetworkService.recover_pending_operation for a pending txn
+        # without finality: abort incomplete, then complete the compensation.
+        aborted = await repo.abort_network_transaction(
+            operation_id="op-crash",
+            execution_generation=current_txn.execution_generation,
+            reason="recovery without finality",
+            recovery_complete=False,
+        )
+        assert aborted.recovery_complete is False
+        done = await repo.abort_network_transaction(
+            operation_id="op-crash",
+            execution_generation=aborted.execution_generation,
+            reason="recovery",
+            recovery_complete=True,
+        )
+        assert done.recovery_complete is True
+        assert await repo.get_active_network_operation() is None
+        applied = AppliedNetworkAccessVersion.model_validate_json(
+            _legacy_applied_payload(1)
+        )
+        target = AppliedNetworkAccessVersion.model_validate_json(
+            _legacy_applied_payload(2)
+        )
+        txn = await repo.begin_network_transaction(
+            operation=NetworkApplyOperation(
+                operation_id="op-next",
+                target_version=2,
+                phase=NetworkApplyPhase.PENDING,
+                created_at="2026-01-02T00:00:00+00:00",
+                updated_at="2026-01-02T00:00:00+00:00",
+            ),
+            old_applied=applied,
+            target_applied=target,
+            candidate_hash="candidate-next",
+        )
+        assert txn.execution_generation > done.execution_generation
+    finally:
+        await engine.dispose()
+    command.check(get_alembic_config(db))
+
+
+@pytest.mark.asyncio
+async def test_0003_drops_terminal_or_orphan_active_operation(tmp_path: Path) -> None:
+    """A crash leftover active row that is already terminal, or that points
+    at a missing operation record, can never be consumed by recovery: drop it
+    instead of linking a pointer no abort path could clear."""
+    for case, active_payload in (
+        ("terminal", _legacy_operation_payload("op-done", phase="completed")),
+        ("orphan", _legacy_operation_payload("op-gone")),
+    ):
+        db = tmp_path / f"stale-active-{case}.db"
+        cfg = get_alembic_config(db)
+        command.upgrade(cfg, "c41f0a2b7d93")
+        conn = sqlite3.connect(db)
+        try:
+            now = "2026-01-01T00:00:00+00:00"
+            if case == "terminal":
+                conn.execute(
+                    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                    ("network.operation.op-done", _legacy_operation_payload("op-done"), now),
+                )
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                ("network.active_operation", active_payload, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        run_database_migrations(db)
+        conn = sqlite3.connect(db)
+        try:
+            assert (
+                conn.execute(
+                    "SELECT value FROM settings WHERE key = 'network.active_operation'"
+                ).fetchone()
+                is None
+            )
+            assert (
+                conn.execute(
+                    "SELECT value FROM settings WHERE key = 'network.transaction.current'"
+                ).fetchone()
+                is None
+            )
+        finally:
+            conn.close()
+        command.check(get_alembic_config(db))
+
+
+@pytest.mark.asyncio
+async def test_initialize_network_corrects_generation_when_applied_exists(
+    tmp_path: Path,
+) -> None:
+    """Pre-A35 databases upgraded in place keep an applied version row while
+    the execution generation stays 0/missing. The Gateway baseline is
+    applied.version - 1, so the next apply (generation 1) would be rejected
+    as stale. initialize_network_from_disk now corrects the seed to
+    applied.version when an applied row already exists, without touching the
+    applied version itself, and never moves the seed down."""
+    db = tmp_path / "seed.db"
+    run_database_migrations(db)
+    engine, maker = create_engine_and_maker(db)
+    try:
+        repo = ProfileRepository(maker)
+        await repo.record_applied_network_version(
+            AppliedNetworkAccessVersion.model_validate_json(_legacy_applied_payload(5))
+        )
+        assert await repo.get_execution_generation() == 0
+        # Correction applies the seed and reports work done.
+        assert await repo.initialize_network_from_disk(tmp_path / "no-such-dir") is True
+        assert await repo.get_execution_generation() == 5
+        settings = await repo.get_network_access_settings()
+        assert settings.applied_version.version == 5
+        # Already correct: no-op.
+        assert (
+            await repo.initialize_network_from_disk(tmp_path / "no-such-dir") is False
+        )
+        assert await repo.get_execution_generation() == 5
+        # A higher generation is never moved down to the applied version.
+        async with maker() as session:
+            row = await session.get(SettingModel, repo.KEY_NETWORK_GENERATION)
+            assert row is not None
+            row.value = "9"
+            await session.commit()
+        assert (
+            await repo.initialize_network_from_disk(tmp_path / "no-such-dir") is False
+        )
+        assert await repo.get_execution_generation() == 9
+        # A missing generation row is reseeded from the applied version.
+        async with maker() as session:
+            row = await session.get(SettingModel, repo.KEY_NETWORK_GENERATION)
+            assert row is not None
+            await session.delete(row)
+            await session.commit()
+        assert await repo.initialize_network_from_disk(tmp_path / "no-such-dir") is True
+        assert await repo.get_execution_generation() == 5
+        # The corrected seed clears the Gateway stale fence: baseline is
+        # applied.version - 1, the next bumped generation authorizes.
+        authority = NetworkPublicationAuthority()
+        authority.import_baseline(
+            ["https://127.0.0.1:56661"], generation=5 - 1, snapshot_hash="hash-5"
+        )
+        assert (
+            authority.authorize("op-stale", 1, "candidate", ["https://127.0.0.1:56661"])[
+                "authorized"
+            ]
+            is False
+        )
+        assert (
+            authority.authorize("op-next", 6, "candidate", ["https://127.0.0.1:56661"])[
+                "authorized"
+            ]
+            is True
+        )
+    finally:
+        await engine.dispose()
