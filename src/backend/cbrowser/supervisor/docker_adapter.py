@@ -20,6 +20,10 @@ import docker
 import requests
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
+from cbrowser.runtime_agent.socket_root import (
+    AGENT_SOCKET_PATH_ENV,
+    agent_socket_path,
+)
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -49,7 +53,14 @@ from cbrowser.supervisor.network_spec import (
     network_ownership_matches,
     profile_network_name,
 )
-from cbrowser.supervisor.path_validator import PathSecurityError, PathValidator
+from cbrowser.supervisor.path_validator import (
+    AGENT_SOCKET_ROOT_ENV,
+    PathSecurityError,
+    PathValidator,
+    SocketRootError,
+    prepare_socket_dir,
+    validate_socket_deployment,
+)
 from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
     browser_volumes,
@@ -667,6 +678,39 @@ with path.open('w') as output:
             "preview": preview_dir,
         }
 
+    def prepare_agent_socket_dir(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> Path:
+        try:
+            if os.environ.get(AGENT_SOCKET_ROOT_ENV):
+                validate_socket_deployment(
+                    self.validator.socket_root, profile_id, runtime_instance_id
+                )
+            return prepare_socket_dir(
+                self.validator.socket_root,
+                profile_id,
+                runtime_instance_id,
+                managed_uid=self.runtime_uid if self.manage_ownership else None,
+                managed_gid=self.runtime_gid if self.manage_ownership else None,
+            )
+        except SocketRootError as exc:
+            raise DockerSandboxError(
+                f"Agent socket root prepare failed: {type(exc).__name__}"
+            ) from None
+
+    def _agent_socket_environment(
+        self, profile_id: str, runtime_instance_id: str
+    ) -> dict[str, str]:
+        root = self.validator.socket_root
+        return {
+            AGENT_SOCKET_ROOT_ENV: str(root),
+            AGENT_SOCKET_PATH_ENV: str(
+                agent_socket_path(root, profile_id, runtime_instance_id)
+            ),
+            "PROFILE_ID": profile_id,
+            "RUNTIME_INSTANCE_ID": runtime_instance_id,
+        }
+
     def _secure_directory(self, directory: Path, mode: int) -> None:
         """Own Profile data by the runtime UID with exact non-world modes.
 
@@ -1215,6 +1259,8 @@ with path.open('w') as output:
             engine_cache=self.engine_cache,
             geoip_cache=self.geoip_cache,
         )
+        socket_dir = self.prepare_agent_socket_dir(profile_id, runtime_instance_id)
+        volumes[str(socket_dir)] = {"bind": str(socket_dir), "mode": "rw"}
         creds_file = dirs["runtime"] / PROXY_CREDENTIALS_FILENAME
         has_proxy = isinstance(snapshot.get("config"), dict) and bool(
             snapshot["config"].get("proxy_id")
@@ -1274,6 +1320,9 @@ with path.open('w') as output:
                     "/home/cbrowser": "rw,mode=0755,size=64m",
                 },
                 volumes=volumes,
+                environment=self._agent_socket_environment(
+                    profile_id, runtime_instance_id
+                ),
                 labels=browser_labels(
                     self.resource_prefix,
                     profile_id,
@@ -1455,6 +1504,7 @@ with path.open('w') as output:
             clipboard_sync=clipboard_sync,
             build_id=os.environ.get("CBROWSER_BUILD_ID") or None,
         )
+        env.update(self._agent_socket_environment(profile_id, runtime_instance_id))
         ports = stream_ports(udp_mux_port, bind_host=bind_host)
 
         container = None

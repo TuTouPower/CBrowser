@@ -228,8 +228,9 @@ async def cmd(ws, cid, method, params=None, session=None):
             return msg.get("result", {})
 
 async def run():
+    from cbrowser.runtime_agent.socket_root import container_agent_socket_path
     async with websockets.unix_connect(
-        "/run/cbrowser/runtime/agent.sock", "ws://localhost/cdp"
+        container_agent_socket_path(), "ws://localhost/cdp"
     ) as ws:
         targets = await cmd(ws, 1, "Target.getTargets")
         pages = [t for t in targets["targetInfos"] if t["type"] == "page"]

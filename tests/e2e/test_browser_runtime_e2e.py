@@ -42,6 +42,11 @@ from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.app import create_app
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.runtime_agent.socket_root import (
+    AGENT_SOCKET_PATH_ENV,
+    AGENT_SOCKET_ROOT_ENV,
+    agent_socket_path,
+)
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
 
@@ -301,6 +306,8 @@ def run_docker_container(
 
     (host_runtime_dir / "x11").mkdir(parents=True, exist_ok=True)
     (host_runtime_dir / "pulse").mkdir(parents=True, exist_ok=True)
+    host_socket_root = host_runtime_dir.parent / "sockets"
+    host_socket_root.mkdir(parents=True, exist_ok=True)
 
     # Permission setup for in-container UID 1000
     os.chmod(host_profile_dir, 0o777)
@@ -310,6 +317,10 @@ def run_docker_container(
     os.chmod(events_dir, 0o777)
     os.chmod(host_runtime_dir / "x11", 0o777)
     os.chmod(host_runtime_dir / "pulse", 0o777)
+    os.chmod(host_socket_root, 0o777)
+    agent_sock = str(
+        agent_socket_path(Path("/run/cb/socks"), profile_id, runtime_instance_id)
+    )
 
     # Initialize Linux sticky bit 1777 on X11 directory as required by Xvfb
     subprocess.run(
@@ -383,6 +394,16 @@ def run_docker_container(
         f"{host_runtime_dir}/x11:/tmp/.X11-unix",
         "-v",
         f"{host_runtime_dir}/pulse:/pulse",
+        "-v",
+        f"{host_socket_root}:/run/cb/socks:rw",
+        "-e",
+        f"{AGENT_SOCKET_ROOT_ENV}=/run/cb/socks",
+        "-e",
+        f"{AGENT_SOCKET_PATH_ENV}={agent_sock}",
+        "-e",
+        f"PROFILE_ID={profile_id}",
+        "-e",
+        f"RUNTIME_INSTANCE_ID={runtime_instance_id}",
         IMAGE_TAG,
         "--profile-id",
         profile_id,
@@ -443,7 +464,8 @@ def uds_http(
     payload_repr = repr(json_data) if json_data is not None else "None"
     script = f"""
 import httpx, json, sys
-transport = httpx.HTTPTransport(uds="/run/cbrowser/runtime/agent.sock")
+from cbrowser.runtime_agent.socket_root import container_agent_socket_path
+transport = httpx.HTTPTransport(uds=container_agent_socket_path())
 with httpx.Client(transport=transport, base_url="http://uds") as client:
     if "{method}" == "GET":
         r = client.get("{endpoint}")
@@ -512,7 +534,8 @@ async def send_cmd(ws, cid, method, params=None, session_id=None, timeout=15.0):
             return msg
 
 async def run():
-    sock = "/run/cbrowser/runtime/agent.sock"
+    from cbrowser.runtime_agent.socket_root import container_agent_socket_path
+    sock = container_agent_socket_path()
     async with websockets.unix_connect(sock, "ws://localhost/cdp") as ws:
 {code_inside}
 

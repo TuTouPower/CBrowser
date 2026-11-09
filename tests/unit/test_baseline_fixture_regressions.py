@@ -18,6 +18,10 @@ import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 from cbrowser.network_config import create_default_applied_version, generate_caddyfile
+from cbrowser.runtime_agent.socket_root import (
+    AGENT_SOCKET_ROOT_ENV,
+    DEFAULT_AGENT_SOCKET_ROOT,
+)
 
 
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
@@ -355,12 +359,18 @@ def test_real_supervisor_container_mounts_isolate_control_db_bait_and_sync_secre
         str(tmp_path / "engine"),
         str(tmp_path / "geoip"),
         "/var/run/docker.sock",
+        DEFAULT_AGENT_SOCKET_ROOT,
     }
     assert set(volumes.keys()) == expected_subs
     # Supervisor initialization writer contract: caches are mounted rw
     assert volumes[str(tmp_path / "engine")]["mode"] == "rw"
     assert volumes[str(tmp_path / "geoip")]["mode"] == "rw"
     assert volumes["/var/run/docker.sock"]["mode"] == "ro"
+    assert volumes[DEFAULT_AGENT_SOCKET_ROOT]["mode"] == "rw"
+    assert (
+        run_kwargs["environment"][AGENT_SOCKET_ROOT_ENV]
+        == DEFAULT_AGENT_SOCKET_ROOT
+    )
 
     # 3. Secret file synced to data_root/control with 0600 mode
     synced_token = data_root / "control" / "sup_token"

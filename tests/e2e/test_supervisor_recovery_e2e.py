@@ -405,8 +405,9 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
             # Execute python inside browser container to trigger graceful close
             script = (
                 "import httpx; "
+                "from cbrowser.runtime_agent.socket_root import container_agent_socket_path; "
                 "transport = httpx.HTTPTransport("
-                "uds='/run/cbrowser/runtime/agent.sock'); "
+                "uds=container_agent_socket_path()); "
                 "client = httpx.Client(transport=transport, base_url='http://uds'); "
                 "r = client.post('/control', json={'action': 'close'}); "
                 "assert r.status_code == 200, r.text; "
@@ -691,8 +692,9 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
 def _probe_in_container_agent_health(container_name: str) -> dict:
     probe_script = (
         "import httpx, json, sys\n"
+        "from cbrowser.runtime_agent.socket_root import container_agent_socket_path\n"
         "try:\n"
-        "    sock = '/run/cbrowser/runtime/agent.sock'\n"
+        "    sock = container_agent_socket_path()\n"
         "    transport = httpx.HTTPTransport(uds=sock)\n"
         "    with httpx.Client(\n"
         "        transport=transport, base_url='http://uds', timeout=5.0\n"

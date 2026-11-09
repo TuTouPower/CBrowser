@@ -128,6 +128,12 @@ def _bind(
     assert response.status_code == 200, response.text
 
 
+def _agent_sock(docker, profile_id: str, instance_id: str) -> Path:
+    sock = docker.validator.get_agent_socket_path(profile_id, instance_id)
+    sock.parent.mkdir(parents=True, exist_ok=True)
+    return sock
+
+
 async def _run_uds_server(app, sock_path: Path):
     absolute = str(sock_path.resolve())
     relative = os.path.relpath(sock_path.resolve(), os.getcwd())
@@ -271,7 +277,7 @@ async def test_normal_exit_converges_to_desired_stopped_while_container_running(
     agent_app = create_agent_app(
         run_dir=dirs["runtime"], default_download_dir=dirs["exchange"]
     )
-    sock_path = dirs["runtime"] / "agent.sock"
+    sock_path = _agent_sock(docker, profile_id, instance_id)
     uds_server, uds_task = await _run_uds_server(agent_app, sock_path)
 
     try:
@@ -417,7 +423,7 @@ async def test_owner_loss_exit_preserves_running_intent_and_records_failure(
     agent_app = create_agent_app(
         run_dir=dirs["runtime"], default_download_dir=dirs["exchange"]
     )
-    sock_path = dirs["runtime"] / "agent.sock"
+    sock_path = _agent_sock(docker, profile_id, instance_id)
     uds_server, uds_task = await _run_uds_server(agent_app, sock_path)
 
     try:
@@ -592,13 +598,13 @@ async def test_offline_recovery_dual_profile_isolation(
     app_a = create_agent_app(
         run_dir=dirs_a["runtime"], default_download_dir=dirs_a["exchange"]
     )
-    sock_a = dirs_a["runtime"] / "agent.sock"
+    sock_a = _agent_sock(docker, profile_a, inst_a)
     server_a, task_a = await _run_uds_server(app_a, sock_a)
 
     app_b = create_agent_app(
         run_dir=dirs_b["runtime"], default_download_dir=dirs_b["exchange"]
     )
-    sock_b = dirs_b["runtime"] / "agent.sock"
+    sock_b = _agent_sock(docker, profile_b, inst_b)
     server_b, task_b = await _run_uds_server(app_b, sock_b)
 
     try:
@@ -783,13 +789,13 @@ async def test_normal_exit_ack_triggers_scan_cleanup_and_port_release(
     app_a = create_agent_app(
         run_dir=dirs_a["runtime"], default_download_dir=dirs_a["exchange"]
     )
-    sock_a = dirs_a["runtime"] / "agent.sock"
+    sock_a = _agent_sock(docker, profile_a, inst_a)
     server_a, task_a = await _run_uds_server(app_a, sock_a)
 
     app_b = create_agent_app(
         run_dir=dirs_b["runtime"], default_download_dir=dirs_b["exchange"]
     )
-    sock_b = dirs_b["runtime"] / "agent.sock"
+    sock_b = _agent_sock(docker, profile_b, inst_b)
     server_b, task_b = await _run_uds_server(app_b, sock_b)
 
     try:

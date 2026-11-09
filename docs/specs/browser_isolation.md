@@ -56,7 +56,7 @@
 - 容器根文件系统配置为只读（Read-Only Rootfs），仅对 `/tmp`、`/dev/shm` 以及 Profile 专属数据目录进行写入。
 - 严禁挂载 `/var/run/docker.sock`。
 - Chromium CDP 调试端口仅监听容器内回环（`127.0.0.1`），不得对公网或容器网络直接暴露。
-- 外部自动化必须经由受控 UDS（`/run/cbrowser/runtime/agent.sock`）以标准 HTTP/WebSocket 协议受权访问。
+- 外部自动化必须经由受控 UDS（运行根 `/run/cb/socks`，由 `CBROWSER_SOCKET_ROOT` 配置、`container_agent_socket_path()` 按 Profile/实例派生 `<slot>/agent.sock`）以标准 HTTP/WebSocket 协议受权访问。
 
 ### 2.4 指纹平台与平台字体集隔离（t041）
 

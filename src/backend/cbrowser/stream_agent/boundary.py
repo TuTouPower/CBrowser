@@ -19,7 +19,7 @@ PROHIBITED_PATHS = (
     "/data/profiles",
     "/home/cbrowser/.config",
     "/root/.config/google-chrome",
-    "/run/cbrowser/runtime/agent.sock",
+    "/run/cb/socks",
     "/tmp/cbrowser-agent.sock",
     "/run/cbrowser/runtime/userdata",
     "/run/cbrowser/runtime/events",
@@ -39,7 +39,7 @@ def verify_stream_runtime_boundaries(
     - PulseAudio socket and cookie
     - NEVER Docker socket (/var/run/docker.sock)
     - NEVER browser user data directory (/data/profiles)
-    - NEVER browser agent socket (/run/cbrowser/runtime/agent.sock)
+    - NEVER browser agent socket root (/run/cb/socks) or its derived sockets
     - NEVER sqlite databases or whole runtime mounts
     """
     results: dict[str, Any] = {

@@ -42,6 +42,11 @@ from .protocol import (
     SearchDefaultsStatus,
 )
 from .security import validate_runtime_id
+from .socket_root import (
+    agent_socket_path,
+    prepare_socket_dir,
+    resolve_socket_root,
+)
 from .subsystems import check_audio, check_browser, check_display
 
 logger = logging.getLogger("cbrowser.runtime_agent.agent")
@@ -669,17 +674,14 @@ async def run_uds_agent(
 ) -> None:
     """Run standalone UDS Agent process consuming runner_info.json."""
     r_dir = Path(run_dir)
-    sock_path = Path(uds_path) if uds_path else r_dir / "agent.sock"
-    if sock_path.exists():
-        sock_path.unlink()
+    expected_instance = os.environ.get("RUNTIME_INSTANCE_ID")
+    expected_profile = os.environ.get("PROFILE_ID")
 
     storage = EventStorage(Path(events_dir) if events_dir else r_dir)
 
     # Check persistent terminal state before starting CDP or Agent:
     # If state is already "stopped", Agent operates in offline replay mode (no Chrome /
     # CDP connection)
-    expected_instance = os.environ.get("RUNTIME_INSTANCE_ID")
-    expected_profile = os.environ.get("PROFILE_ID")
     prior_state = (
         storage.get_instance_state(
             expected_profile, expected_instance, recover_terminal=True
@@ -766,6 +768,15 @@ async def run_uds_agent(
         cdp_proxy=cdp_proxy,
         preview_loop=preview_loop,
     )
+
+    if uds_path:
+        sock_path = Path(uds_path)
+    else:
+        if not expected_profile or not expected_instance:
+            raise RuntimeError("Managed socket identity unavailable")
+        root = resolve_socket_root()
+        prepare_socket_dir(root, expected_profile, expected_instance)
+        sock_path = agent_socket_path(root, expected_profile, expected_instance)
 
     uvicorn_config = uvicorn.Config(
         app,
