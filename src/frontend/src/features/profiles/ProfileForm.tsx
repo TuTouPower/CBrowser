@@ -43,6 +43,7 @@ export interface ProfileFormProps {
   ) => Promise<void>;
   submitLabel?: string;
   onDirtyRuntimeConfig?: (changed: boolean) => void;
+  isPending?: boolean;
 }
 
 const EMPTY_GROUPS: GroupResponse[] = [];
@@ -182,6 +183,7 @@ export function ProfileForm({
   onSubmit,
   submitLabel,
   onDirtyRuntimeConfig,
+  isPending = false,
 }: ProfileFormProps) {
   const { t } = useI18n();
   const client = useApiClient();
@@ -202,6 +204,9 @@ export function ProfileForm({
   const [showErrors, setShowErrors] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+  // P1-13: 本地提交态与父级 pending 合并禁用，防双击重复创建。
+  const [submitting, setSubmitting] = useState(false);
+  const submitDisabled = submitting || isPending;
 
   const setField = <K extends keyof ProfileFormValues>(
     key: K,
@@ -282,17 +287,23 @@ export function ProfileForm({
   ];
 
   const submitValues = async () => {
+    if (submitDisabled) return;
     if (!values.name.trim()) {
       setShowErrors(true);
       return;
     }
     setShowErrors(false);
-    const start = intentRef.current === "create-start";
-    intentRef.current = "create";
-    const payload: ProfileCreateRequest | ProfileUpdateRequest = start
-      ? Object.assign({}, values, { __startAfterCreate: true })
-      : values;
-    await onSubmit(payload);
+    setSubmitting(true);
+    try {
+      const start = intentRef.current === "create-start";
+      intentRef.current = "create";
+      const payload: ProfileCreateRequest | ProfileUpdateRequest = start
+        ? Object.assign({}, values, { __startAfterCreate: true })
+        : values;
+      await onSubmit(payload);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -649,6 +660,7 @@ export function ProfileForm({
           <Button
             data-testid="profile-form-submit"
             variant="secondary"
+            disabled={submitDisabled}
             onClick={() => {
               intentRef.current = "create";
               void submitValues();
@@ -659,6 +671,7 @@ export function ProfileForm({
           <Button
             data-testid="profile-form-submit-start"
             variant="primary"
+            disabled={submitDisabled}
             onClick={() => {
               intentRef.current = "create-start";
               void submitValues();
@@ -672,6 +685,7 @@ export function ProfileForm({
           <Button
             data-testid="profile-form-submit"
             variant="primary"
+            disabled={submitDisabled}
             onClick={() => {
               intentRef.current = "save";
               void submitValues();

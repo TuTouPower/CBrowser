@@ -1,11 +1,16 @@
 import { useCallback, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
   ProfileCreateRequest,
   ProfileUpdateRequest,
 } from "../../shared/api/types";
-import { useProfileQuery, useUpdateProfileMutation } from "./useProfilesQuery";
+import {
+  profileKeys,
+  useProfileQuery,
+  useUpdateProfileMutation,
+} from "./useProfilesQuery";
 import { ProfileForm } from "./ProfileForm";
 import { SharedProfileBanners } from "./SharedProfileBanners";
 
@@ -21,6 +26,7 @@ function pickMetadata(values: ProfileUpdateRequest): ProfileUpdateRequest {
 export function ConfigTab({ profileId }: { profileId: string }) {
   const { t } = useI18n();
   const client = useApiClient();
+  const queryClient = useQueryClient();
   const { data: profile } = useProfileQuery(profileId, client);
   const updateMutation = useUpdateProfileMutation(client);
   const [runtimeDirty, setRuntimeDirty] = useState(false);
@@ -36,7 +42,9 @@ export function ConfigTab({ profileId }: { profileId: string }) {
     const data = runtimeDirty
       ? (values as ProfileUpdateRequest)
       : pickMetadata(values as ProfileUpdateRequest);
-    await updateMutation.mutateAsync({ id: profileId, data });
+    const saved = await updateMutation.mutateAsync({ id: profileId, data });
+    // P1-12: 先用返回值写缓存，再 formKey+1 remount，不再回显旧值覆盖。
+    queryClient.setQueryData(profileKeys.detail(profileId), saved);
     setRuntimeDirty(false);
     setFormKey((key) => key + 1);
   };

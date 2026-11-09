@@ -81,7 +81,10 @@ export function useUpdateProfileMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) =>
       client.profiles.update(input.id, input.data, actionKey),
-    onSuccess: (_data, { input }) => {
+    onSuccess: (data, { input }) => {
+      // P1-12: 保存成功先用 mutation 返回值写缓存，再由调用方 remount，
+      // 避免 remount 时读到旧值回显覆盖。
+      queryClient.setQueryData(profileKeys.detail(input.id), data);
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(input.id) });
       queryClient.invalidateQueries({ queryKey: profileKeys.runtime(input.id) });

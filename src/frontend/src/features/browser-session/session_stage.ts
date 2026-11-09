@@ -19,7 +19,17 @@ export function deriveSessionStage(
 ): SessionStage {
   if (observed === "stopping") return "stopping";
   if (observed === "error") return "error";
-  if (observed && observed !== "running" && observed !== "starting") {
+  // P1-11: 初检 checking_runtime 遇 running/starting 直接推进到
+  // connecting_signaling，避免首屏卡死；runtime_not_ready 的恢复由
+  // useBrowserSession 的 runtime 恢复 effect 推进（需触发 reloadKey），
+  // 此处保持原语义以保留 stopped 时的 launch 入口。
+  if (
+    (observed === "running" || observed === "starting") &&
+    stage === "checking_runtime"
+  ) {
+    return "connecting_signaling";
+  }
+  if (observed === "stopped") {
     return "runtime_not_ready";
   }
   return stage;

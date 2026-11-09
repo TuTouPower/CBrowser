@@ -78,6 +78,9 @@ export function useBrowserSession(
   const wasConnectedRef = useRef<boolean>(
     (options.initialStage || "checking_runtime") === "connected"
   );
+  const prevRuntimeRef = useRef<RuntimeObservedState | null | undefined>(
+    options.runtimeState
+  );
   const webLocksUnavailableRef = useRef<boolean>(false);
   const generationRef = useRef<number>(0);
   const lastGenerationKeyRef = useRef<string>("");
@@ -151,7 +154,8 @@ export function useBrowserSession(
       if (
         connection.hasFrames &&
         stageRef.current !== "connected" &&
-        !isTerminalStage(effectiveStageRef.current)
+        effectiveStageRef.current !== "stopping" &&
+        effectiveStageRef.current !== "error"
       ) {
         setStage("connected");
         clearTimer(mediaTimerRef);
@@ -245,6 +249,34 @@ export function useBrowserSession(
     setStage("reconnecting");
     setReloadKey((k) => k + 1);
   }, [clearAllTimers]);
+
+  // P1-11: runtime 从非 running 进入 running/starting 时推进阶段或触发
+  // reloadKey，stopped/starting 后 Launch 不再卡 runtime_not_ready。
+  // 初挂载 prev 为 null/undefined 时不触发，避免首屏双重加载。
+  useEffect(() => {
+    const prev = prevRuntimeRef.current;
+    const next = options.runtimeState;
+    if (prev === next) return;
+    prevRuntimeRef.current = next;
+    const prevExplicitNonRunning =
+      prev === "stopped" ||
+      prev === "starting" ||
+      prev === "stopping" ||
+      prev === "error";
+    if (!prevExplicitNonRunning) return;
+    if (next === "running") {
+      if (stageRef.current !== "reconnecting") {
+        reconnect();
+      }
+    } else if (next === "starting") {
+      if (
+        stageRef.current === "runtime_not_ready" ||
+        stageRef.current === "checking_runtime"
+      ) {
+        setStage("connecting_signaling");
+      }
+    }
+  }, [options.runtimeState, reconnect]);
 
   const failSignaling = useCallback((code: number) => {
     setStage("signaling_failed");

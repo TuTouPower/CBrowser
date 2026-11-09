@@ -181,8 +181,16 @@ export function SessionPage(): JSX.Element {
             onDiagnosticsToggle={() => setDiagnosticsOpen(!diagnosticsOpen)}
             onDetailsToggle={() => handleDetailsOpenChange(!detailsOpen)}
             onFocusToggle={() => setFocusMode(!focusMode)}
-            onStop={() => stopMutation.mutate(id)}
-            onApplyRestart={() => applyMutation.mutate(id)}
+            onStop={() =>
+              stopMutation.mutate(id, {
+                onSuccess: () => session.reconnect(),
+              })
+            }
+            onApplyRestart={() =>
+              applyMutation.mutate(id, {
+                onSuccess: () => session.reconnect(),
+              })
+            }
           />
         </div>
         <div className="flex min-h-0 flex-1">
