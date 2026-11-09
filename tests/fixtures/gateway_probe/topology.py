@@ -344,6 +344,7 @@ class GatewayTopologyHarness:
             )
         }
         mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
+        mounts["/run/cb/socks"] = {"bind": "/run/cb/socks", "mode": "rw"}
 
         self.supervisor_container = self._run_container(
             "supervisor",
@@ -366,6 +367,7 @@ class GatewayTopologyHarness:
                 "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
                     "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
                 ),
+                "CBROWSER_SOCKET_ROOT": "/run/cb/socks",
             },
             volumes=mounts,
             ports={"8005/tcp": ("127.0.0.1", None)},

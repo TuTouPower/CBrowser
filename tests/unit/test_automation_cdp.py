@@ -14,7 +14,7 @@ import tempfile
 from collections.abc import Iterator
 import websockets
 from cbrowser.supervisor.control_server import create_control_app
-from cbrowser.supervisor.path_validator import PathValidator
+from cbrowser.supervisor.path_validator import PathValidator, agent_socket_path
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -71,9 +71,10 @@ def short_root() -> Iterator[Path]:
 
 def test_supervisor_cdp_websocket_forwards_to_agent_uds(short_root: Path) -> None:
     root = short_root
-    runtime = root / "runtime" / "p1"
-    runtime.mkdir(parents=True)
-    sock = runtime / "agent.sock"
+    validator = PathValidator(root)
+    socket_root = validator.socket_root
+    sock = agent_socket_path(socket_root, "p1", "i1")
+    sock.parent.mkdir(parents=True, exist_ok=True)
     server = _UnixEchoServer(sock)
     server.start()
     token = secrets.token_urlsafe(32)
@@ -83,10 +84,11 @@ def test_supervisor_cdp_websocket_forwards_to_agent_uds(short_root: Path) -> Non
 
     core = SimpleNamespace(
         _token_file=token_file,
+        socket_root=socket_root,
         _sessions={
             "p1": SimpleNamespace(runtime_instance_id="i1", observed_state="running")
         },
-        docker=SimpleNamespace(validator=PathValidator(root)),
+        docker=SimpleNamespace(validator=validator),
     )
     app = create_control_app(core=core, token_file=token_file)
     try:

@@ -36,7 +36,10 @@ from cbrowser.supervisor.core import (
     SupervisorCore,
 )
 from cbrowser.supervisor.docker_adapter import DockerSandboxError
-from cbrowser.supervisor.path_validator import short_unix_socket_path
+from cbrowser.supervisor.path_validator import (
+    managed_socket_target,
+    resolve_socket_root,
+)
 from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
 from cbrowser.supervisor.protocol import (
     ConvergeStreamsRequest,
@@ -466,22 +469,20 @@ def create_control_app(
                 generation=presented_generation,
             )
 
-        try:
-            runtime_dir = core.docker.validator.get_runtime_dir(profile_id)
-            sock_path = core.docker.validator.validate_runtime_source(
-                profile_id, runtime_dir / "agent.sock"
-            )
-        except Exception:  # noqa: BLE001 - invalid runtime path is closed without leaking details
-            await websocket.close(code=1011)
-            return
-        if not sock_path.is_socket():
-            await websocket.close(code=1011)
-            return
-
+        root = (
+            getattr(core, "socket_root", None)
+            or getattr(core.docker.validator, "socket_root", None)
+            or resolve_socket_root()
+        )
         upstream = None
         tasks: list[Any] = []
         try:
-            with short_unix_socket_path(sock_path) as uds_target:
+            with managed_socket_target(
+                root, profile_id, session.runtime_instance_id
+            ) as uds_target:
+                if not Path(uds_target).is_socket():
+                    await websocket.close(code=1011)
+                    return
                 upstream = await websockets.unix_connect(
                     uds_target,
                     uri="ws://localhost/cdp",

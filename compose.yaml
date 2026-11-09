@@ -92,6 +92,7 @@ services:
       CBROWSER_AGENT_KEY_FILE: /run/secrets/agent_key
       CBROWSER_GATEWAY_TOKEN_FILE: /run/secrets/gateway_key
       CBROWSER_DATA_ROOT: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
+      CBROWSER_SOCKET_ROOT: ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}
       CBROWSER_ENGINE_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache
       CBROWSER_GEOIP_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache/geoip
       CBROWSER_FONTS_DIR: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts
@@ -100,6 +101,7 @@ services:
     command: ["--host", "0.0.0.0", "--port", "8005"]
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
+      - ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}:${CBROWSER_SOCKET_ROOT:-/run/cb/socks}:rw
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/supervisor_key:/run/secrets/supervisor_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/agent_key:/run/secrets/agent_key:ro

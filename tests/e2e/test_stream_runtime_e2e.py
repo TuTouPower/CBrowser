@@ -19,6 +19,11 @@ from pathlib import Path
 import pytest
 from aiohttp import WSMsgType, web
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
+from cbrowser.runtime_agent.socket_root import (
+    AGENT_SOCKET_PATH_ENV,
+    AGENT_SOCKET_ROOT_ENV,
+    agent_socket_path,
+)
 from playwright.async_api import async_playwright
 from e2e_env import require_e2e_env
 from wait import poll_until, wait_until
@@ -367,8 +372,9 @@ def browser_eval(container: str, expression: str, target_id: str | None = None) 
 
 
 async def main():
+    from cbrowser.runtime_agent.socket_root import container_agent_socket_path
     async with websockets.unix_connect(
-        "/run/cbrowser/runtime/agent.sock", "ws://localhost/cdp"
+        container_agent_socket_path(), "ws://localhost/cdp"
     ) as ws:
         counter = 0
 
@@ -529,10 +535,25 @@ async def test_stream_runtime_direct_media_matrix(
     host_runtime_dir = work_dir / "runtime"
     host_exchange_dir = work_dir / "downloads"
     host_events_dir = work_dir / "events"
+    host_socket_root = work_dir / "sockets"
 
-    for d in (host_profile_dir, host_runtime_dir, host_exchange_dir, host_events_dir):
+    for d in (
+        host_profile_dir,
+        host_runtime_dir,
+        host_exchange_dir,
+        host_events_dir,
+        host_socket_root,
+    ):
         d.mkdir(parents=True, exist_ok=True)
         os.chmod(d, 0o777)
+
+    browser_instance_id = f"inst_{test_run_id}"
+    browser_agent_sock = str(
+        agent_socket_path(Path("/run/cb/socks"), profile_id, browser_instance_id)
+    )
+    host_agent_sock = host_socket_root / Path(browser_agent_sock).relative_to(
+        "/run/cb/socks"
+    )
 
     x11_dir = host_runtime_dir / "x11"
     pulse_dir = host_runtime_dir / "pulse"
@@ -639,11 +660,21 @@ async def test_stream_runtime_direct_media_matrix(
             f"{x11_dir}:/tmp/.X11-unix",
             "-v",
             f"{pulse_dir}:/pulse",
+            "-v",
+            f"{host_socket_root}:/run/cb/socks:rw",
+            "-e",
+            f"{AGENT_SOCKET_ROOT_ENV}=/run/cb/socks",
+            "-e",
+            f"{AGENT_SOCKET_PATH_ENV}={browser_agent_sock}",
+            "-e",
+            f"PROFILE_ID={profile_id}",
+            "-e",
+            f"RUNTIME_INSTANCE_ID={browser_instance_id}",
             browser_image,
             "--profile-id",
             profile_id,
             "--runtime-instance-id",
-            f"inst_{test_run_id}",
+            browser_instance_id,
             "--config-snapshot",
             "/run/cbrowser/runtime/snapshot.json",
             "--run-dir",
@@ -693,7 +724,7 @@ async def test_stream_runtime_direct_media_matrix(
         browser_hostname = b_inspect.stdout.strip()
 
         await wait_until(
-            lambda: (host_runtime_dir / "agent.sock").exists()
+            lambda: host_agent_sock.exists()
             and (host_runtime_dir / "runner_info.json").is_file(),
             timeout=30.0,
             interval=0.2,

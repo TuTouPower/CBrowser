@@ -73,7 +73,8 @@ from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
 from cbrowser.supervisor.path_validator import (
     PathSecurityError,
-    short_unix_socket_path,
+    managed_socket_target,
+    resolve_socket_root,
 )
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.protocol import (
@@ -128,7 +129,7 @@ def browser_runtime_ready(
     runtime_dir: Path, profile_id: str, instance_id: str, config_version: int
 ) -> bool:
     """Require current-instance readiness, not files left by a prior Browser."""
-    required = ("x11/X99", "pulse/pulse.sock", "Xauthority", "agent.sock")
+    required = ("x11/X99", "pulse/pulse.sock", "Xauthority")
     if not all((runtime_dir / path).exists() for path in required):
         return False
     try:
@@ -219,6 +220,8 @@ class SupervisorCore:
         self.gateway_container_id = gateway_container_id
 
         self._sessions: dict[str, ActiveSession] = {}
+        self.socket_root: Path | None = None
+        self._uds_instance_hints: dict[str, str] = {}
         self._preview_request_ids: dict[str, str] = {}
         self._preview_captured_at: dict[str, str | None] = {}
         self._locks: dict[str, asyncio.Lock] = {}
@@ -1763,7 +1766,11 @@ class SupervisorCore:
             return observed_state if delivered else None
 
         if container_status == "running":
-            health = await self._query_agent_health(profile_id)
+            self._uds_instance_hints[profile_id] = instance_id
+            try:
+                health = await self._query_agent_health(profile_id)
+            finally:
+                self._uds_instance_hints.pop(profile_id, None)
             if health is None:
                 return None
             if not (
@@ -1815,23 +1822,45 @@ class SupervisorCore:
 
         return None
 
+    def _socket_root(self) -> Path:
+        if self.socket_root is not None:
+            return Path(self.socket_root)
+        return Path(
+            getattr(self.docker.validator, "socket_root", None)
+            or resolve_socket_root()
+        )
+
+    def _instance_id(
+        self, profile_id: str, runtime_instance_id: str | None
+    ) -> str | None:
+        if runtime_instance_id is not None:
+            return runtime_instance_id
+        hint = self._uds_instance_hints.get(profile_id)
+        if hint is not None:
+            return hint
+        session = self.get_session(profile_id)
+        return session.runtime_instance_id if session else None
+
     @asynccontextmanager
     async def _agent_uds_client(
-        self, profile_id: str
+        self, profile_id: str, runtime_instance_id: str | None = None
     ) -> AsyncIterator[httpx.AsyncClient | None]:
-        """Yield an HTTP client bound to the runtime agent's UDS socket.
+        """Yield an HTTP client bound to the runtime agent's bounded UDS root.
 
-        Yields None when the socket does not exist. The runtime path is
-        validated exactly like the health probe; callers own error mapping.
+        Yields None when the managed socket does not exist. Directory-fd
+        consistency and ownership checks replace the old proc/relative path
+        shortening; callers own error mapping.
         """
-        runtime_dir = self.docker.validator.get_runtime_dir(profile_id)
-        sock_path = self.docker.validator.validate_runtime_source(
-            profile_id, runtime_dir / "agent.sock"
-        )
-        if not sock_path.is_socket():
+        instance_id = self._instance_id(profile_id, runtime_instance_id)
+        if instance_id is None:
             yield None
             return
-        with short_unix_socket_path(sock_path) as uds_target:
+        with managed_socket_target(
+            self._socket_root(), profile_id, instance_id
+        ) as uds_target:
+            if not Path(uds_target).is_socket():
+                yield None
+                return
             transport = httpx.AsyncHTTPTransport(uds=uds_target)
             async with httpx.AsyncClient(
                 transport=transport, base_url="http://uds", timeout=2.0

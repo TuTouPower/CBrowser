@@ -8,7 +8,7 @@ Authoritative Observation Architecture:
    Profile B healthy companion).
 3. API process is genuinely stopped (HTTP connection actively refused).
 4. Profile A Chrome is cleanly closed via in-container Agent UDS
-   /run/cbrowser/runtime/agent.sock RPC.
+   (container_agent_socket_path(), root /run/cb/socks) RPC.
 5. Supervisor background monitor detects exit, writes atomic spool file,
    and retains it on disk due to API offline.
 6. Supervisor is killed with SIGKILL and resurrected with same data_root
@@ -425,7 +425,8 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
             async def _probe_b_agent_health() -> dict:
                 script = (
                     "import httpx, json; "
-                    "t = httpx.HTTPTransport(uds='/run/cbrowser/runtime/agent.sock'); "
+                    "from cbrowser.runtime_agent.socket_root import container_agent_socket_path; "
+                    "t = httpx.HTTPTransport(uds=container_agent_socket_path()); "
                     "c = httpx.Client(transport=t, base_url='http://uds'); "
                     "r = c.get('/health'); "
                     "assert r.status_code == 200, f'HTTP {r.status_code}: {r.text}'; "

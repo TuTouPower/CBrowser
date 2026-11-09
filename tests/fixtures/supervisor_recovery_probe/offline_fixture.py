@@ -5,7 +5,7 @@ Encapsulates:
   SQLite WAL database.
 - RealSupervisorProcess: Manages independent Supervisor process runner.
 - RealBrowserActionProbe: Triggers in-container clean browser exit via
-  UDS /run/cbrowser/runtime/agent.sock.
+  UDS (container_agent_socket_path(), root /run/cb/socks).
 - SpoolDirectoryWatcher: Watches data_root/spool for atomic event
   persistence and subsequent consumption.
 - SandboxContainerTracker: Exact, bounded cleanup of owned Docker containers.
@@ -37,6 +37,10 @@ import httpx
 from e2e_env import require_e2e_env
 from api_auth import create_auth_context
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.runtime_agent.socket_root import (
+    AGENT_SOCKET_ROOT_ENV,
+    DEFAULT_AGENT_SOCKET_ROOT,
+)
 
 logger = logging.getLogger("cbrowser.tests.offline_recovery_probe")
 
@@ -427,6 +431,10 @@ class RealSupervisorContainer:
             "bind": "/var/run/docker.sock",
             "mode": "ro",
         }
+        mounts[DEFAULT_AGENT_SOCKET_ROOT] = {
+            "bind": DEFAULT_AGENT_SOCKET_ROOT,
+            "mode": "rw",
+        }
         return mounts
 
     def _build_command(
@@ -493,6 +501,7 @@ class RealSupervisorContainer:
             "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
                 "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
             ),
+            AGENT_SOCKET_ROOT_ENV: DEFAULT_AGENT_SOCKET_ROOT,
         }
 
         c_name = f"{self.prefix}-supervisor-{uuid.uuid4().hex[:6]}"
@@ -686,7 +695,8 @@ class RealBrowserActionProbe:
     def trigger_clean_close(browser_container_name: str) -> str:
         script = (
             "import httpx; "
-            "transport = httpx.HTTPTransport(uds='/run/cbrowser/runtime/agent.sock'); "
+            "from cbrowser.runtime_agent.socket_root import container_agent_socket_path; "
+            "transport = httpx.HTTPTransport(uds=container_agent_socket_path()); "
             "client = httpx.Client(transport=transport, base_url='http://uds'); "
             "r = client.post('/control', json={'action': 'close'}); "
             "assert r.status_code == 200, r.text; "

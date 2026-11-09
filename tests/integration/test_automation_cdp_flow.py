@@ -24,7 +24,7 @@ from cbrowser.api.app import create_app
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.runtime_agent.agent import create_agent_app
 from cbrowser.supervisor.control_server import create_control_app
-from cbrowser.supervisor.path_validator import PathValidator
+from cbrowser.supervisor.path_validator import PathValidator, agent_socket_path
 from fastapi.testclient import TestClient
 
 
@@ -161,16 +161,21 @@ async def test_automation_token_reaches_agent_uds_through_supervisor() -> None:
 
         runtime = root / "runtime" / profile_id
         runtime.mkdir(parents=True)
-        echo = _UnixEchoServer(runtime / "agent.sock")
+        validator = PathValidator(root)
+        socket_root = validator.socket_root
+        echo_sock = agent_socket_path(socket_root, profile_id, "i1")
+        echo_sock.parent.mkdir(parents=True, exist_ok=True)
+        echo = _UnixEchoServer(echo_sock)
         echo.start()
         core = SimpleNamespace(
             _token_file=supervisor_token_file,
+            socket_root=socket_root,
             _sessions={
                 profile_id: SimpleNamespace(
                     runtime_instance_id="i1", observed_state="running"
                 )
             },
-            docker=SimpleNamespace(validator=PathValidator(root)),
+            docker=SimpleNamespace(validator=validator),
         )
         supervisor = _UvicornThread(
             create_control_app(core, supervisor_token_file), supervisor_port
@@ -262,7 +267,10 @@ def test_supervisor_cdp_reaches_real_agent_app_and_fake_chrome() -> None:
     }
     (run_dir / "runner_info.json").write_text(json.dumps(runner_info), encoding="utf-8")
 
-    agent_sock = run_dir / "agent.sock"
+    validator = PathValidator(data_root)
+    socket_root = validator.socket_root
+    agent_sock = agent_socket_path(socket_root, "p1", "i1")
+    agent_sock.parent.mkdir(parents=True, exist_ok=True)
     agent_app = create_agent_app(
         run_dir=run_dir,
         default_download_dir=data_root / "downloads",
@@ -279,10 +287,11 @@ def test_supervisor_cdp_reaches_real_agent_app_and_fake_chrome() -> None:
     token_file.write_text(token, encoding="utf-8")
     token_file.chmod(0o600)
     core = SimpleNamespace(
+        socket_root=socket_root,
         _sessions={
             "p1": SimpleNamespace(runtime_instance_id="i1", observed_state="running")
         },
-        docker=SimpleNamespace(validator=PathValidator(data_root)),
+        docker=SimpleNamespace(validator=validator),
     )
     control_app = create_control_app(core, token_file)
 

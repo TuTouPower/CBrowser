@@ -367,8 +367,9 @@ def remote_cdp(container: str, commands: list[dict[str, Any]]) -> list[dict[str,
     script = """import asyncio, json, websockets
 
 async def main():
+    from cbrowser.runtime_agent.socket_root import container_agent_socket_path
     async with websockets.unix_connect(
-        "/run/cbrowser/runtime/agent.sock", "ws://localhost/cdp"
+        container_agent_socket_path(), "ws://localhost/cdp"
     ) as ws:
         counter = 0
 
