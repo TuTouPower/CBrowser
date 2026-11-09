@@ -51,7 +51,8 @@ export function ProxyListPage() {
   const { t } = useI18n();
   const client = useApiClient();
   const toast = useToast();
-  const { data: proxies = [] } = useProxiesQuery(client);
+  const proxiesQuery = useProxiesQuery(client);
+  const proxies = proxiesQuery.data ?? [];
   const deleteMutation = useDeleteProxyMutation(client);
 
   const [query, setQuery] = useState("");
@@ -62,6 +63,9 @@ export function ProxyListPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const visible = filterProxies(proxies, query, scheme);
+  const loadError = proxiesQuery.isError
+    ? (proxiesQuery.error?.message ?? t("runtimeStateUnknown"))
+    : null;
 
   const openCreate = () => {
     setEditing(null);
@@ -111,6 +115,19 @@ export function ProxyListPage() {
         onAdd={openCreate}
       />
 
+      {loadError && (
+        <Banner tone="danger" testId="proxy-list-load-error">
+          <span>{loadError}</span>
+          <Button
+            size="sm"
+            data-testid="proxy-list-retry"
+            onClick={() => void proxiesQuery.refetch()}
+          >
+            {t("retryAction")}
+          </Button>
+        </Banner>
+      )}
+
       {deleteError && (
         <Banner
           tone="danger"
@@ -149,7 +166,11 @@ export function ProxyListPage() {
         </div>
       )}
 
-      {visible.length === 0 ? (
+      {proxiesQuery.isPending ? (
+        <p className="font-ui text-body-md text-on-surface-muted">
+          {t("loading")}
+        </p>
+      ) : visible.length === 0 && !loadError ? (
         <EmptyState title={t("proxyEmpty")} />
       ) : (
         <ProxyTable

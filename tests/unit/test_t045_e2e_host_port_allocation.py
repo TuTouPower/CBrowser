@@ -85,7 +85,13 @@ def _pinned_cli_port_mappings(tree: ast.Module) -> list[str]:
                 part.value if isinstance(part, ast.Constant) else "{...}"
                 for part in node.values
             )
-            if "127.0.0.1:" in text and text.count("{...}") >= 2:
+            has_loopback = "127.0.0.1:" in text or "0.0.0.0:" in text
+            if not has_loopback:
+                continue
+            if "-p" in text:
+                if text.count("{...}") >= 1:
+                    hits.append(ast.unparse(node))
+            elif "127.0.0.1:" in text and text.count("{...}") >= 2:
                 hits.append(ast.unparse(node))
     return hits
 

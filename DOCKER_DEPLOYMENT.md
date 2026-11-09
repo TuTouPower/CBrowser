@@ -27,7 +27,7 @@ bash scripts/deploy_v2.sh            # 等同于 bash scripts/deploy_v2.sh deplo
 
 ## 3. Release 模型
 
-- 每次发布生成 `config/deploy/releases/<release_id>.json`（manifest：六个镜像的不可变 ID、compose/Caddyfile/前端产物指纹、数据库迁移版本、readiness 能力）与同名 `.env`（compose 用的固定变量）。
+- 每次发布生成 `config/deploy/releases/<release_id>.json`（manifest：六个镜像的不可变 ID、compose/`src/backend/cbrowser/network_config.py` 生成器/前端产物指纹、数据库迁移版本、readiness 能力）与同名 `.env`（compose 用的固定变量）。
 - `config/deploy/current_release` 与 `config/deploy/previous_release` 是指针文件，只在发布/回退通过 readiness 验收后才原子更新；失败发布不覆盖上一份有效 release，上一 release 的镜像仍在 daemon 中。
 - `bash scripts/deploy_v2.sh status` 查看当前/上一 release。
 - compose.yaml 的服务镜像全部来自 release env 且没有 build 块，手工 `docker compose --env-file config/deploy/releases/<id>.env -f compose.yaml up -d` 也不会触发构建。
@@ -41,7 +41,7 @@ npm run build --prefix src/frontend   # 前端有变化时
 bash scripts/deploy_v2.sh
 ```
 
-相同配置重复发布是幂等的：镜像与配置未变的服务不会被重建，Caddy 只在其配置指纹（Caddyfile 或前端产物）变化时才重建。
+相同配置重复发布是幂等的：镜像与配置未变的服务不会被重建，Caddy 只在其配置指纹（`network_config.py` 生成器或前端产物）变化时才重建。
 
 回退到上一 release（恢复其全部镜像与配置，不删除 Browser、Profile 数据或数据库）：
 

@@ -20,8 +20,31 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
   const resetMutation = useResetProfileMutation(client);
   const deleteMutation = useDeleteProfileMutation(client);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   const running = runtime ? runtime.observed_state !== "stopped" : true;
+
+  const reportError = (err: unknown, fallback: string) => {
+    setError(err instanceof Error ? err.message : fallback);
+  };
+
+  const handleDuplicate = (includeBrowserState: boolean) => {
+    setError(null);
+    duplicateMutation.mutate(
+      { id: profileId, includeBrowserState },
+      { onError: (err) => reportError(err, t("failedToDuplicateProfile")) },
+    );
+  };
+
+  const handleResetConfirm = async () => {
+    setError(null);
+    try {
+      await resetMutation.mutateAsync(profileId);
+      setConfirmingReset(false);
+    } catch (err: unknown) {
+      reportError(err, t("failedToResetProfile"));
+    }
+  };
 
   const handleDelete = async () => {
     setError(null);
@@ -60,24 +83,15 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
         <div className="flex flex-wrap gap-sm">
           <Button
             variant="secondary"
-            onClick={() =>
-              duplicateMutation.mutate({
-                id: profileId,
-                includeBrowserState: false,
-              })
-            }
+            disabled={duplicateMutation.isPending}
+            onClick={() => handleDuplicate(false)}
           >
             {t("maintenanceDuplicateConfigOnly")}
           </Button>
           <Button
             variant="secondary"
-            disabled={running}
-            onClick={() =>
-              duplicateMutation.mutate({
-                id: profileId,
-                includeBrowserState: true,
-              })
-            }
+            disabled={running || duplicateMutation.isPending}
+            onClick={() => handleDuplicate(true)}
           >
             {t("maintenanceDuplicateWithState")}
           </Button>
@@ -100,10 +114,34 @@ export function MaintenanceTab({ profileId }: { profileId: string }) {
           <li>{t("maintenanceResetClear")}</li>
           <li>{t("maintenanceResetKeep")}</li>
         </ul>
-        <div>
-          <Button variant="danger" onClick={() => resetMutation.mutate(profileId)}>
+        <div className="flex flex-wrap items-center gap-sm">
+          <Button
+            variant="danger"
+            disabled={resetMutation.isPending}
+            data-testid="profile-maintenance-reset-request"
+            onClick={() => setConfirmingReset(true)}
+          >
             {t("maintenanceResetConfirm")}
           </Button>
+          {confirmingReset && (
+            <>
+              <Button
+                variant="danger"
+                disabled={resetMutation.isPending}
+                data-testid="profile-maintenance-reset-confirm"
+                onClick={() => void handleResetConfirm()}
+              >
+                {t("maintenanceResetConfirm")}
+              </Button>
+              <Button
+                variant="secondary"
+                data-testid="profile-maintenance-reset-cancel"
+                onClick={() => setConfirmingReset(false)}
+              >
+                {t("cancel")}
+              </Button>
+            </>
+          )}
         </div>
       </section>
 

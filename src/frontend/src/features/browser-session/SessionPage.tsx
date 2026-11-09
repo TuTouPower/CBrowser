@@ -105,6 +105,10 @@ export function SessionPage(): JSX.Element {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const { focusMode, setFocusMode } = useSessionFocus();
 
+  useEffect(() => {
+    return () => setFocusMode(false);
+  }, [setFocusMode]);
+
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
   const applyMutation = useApplyDisplaySettingsMutation(client);

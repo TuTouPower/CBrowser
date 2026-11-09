@@ -93,7 +93,7 @@
 
 环境实时缩略图视同 Cookie 级私密数据：`latest.jpg` 内容与预览目录路径不进日志、错误响应与 SSE 事件，日志只记 error_type 与计数（AC-006）。文件 0600 原子写，独立挂载进 Browser 容器 `/data/preview`，不进入 user data dir；跨 Profile 读取由 `PathValidator` 归属校验与专属挂载阻断。
 
-`GET /api/v1/profiles/{id}/preview` 需登录会话，返回 `image/jpeg` + `Cache-Control: no-store` + ETag（`captured_at`），条件请求 304；无预览、策略已撤销或代次 / 实例不符统一返回 404，错误体不含路径与截图内容。`no-store` 保证私密帧不经浏览器或代理缓存留存。
+`GET /api/v1/profiles/{id}/preview` 需登录会话，返回 `image/jpeg` + `Cache-Control: no-store` + `X-Content-Type-Options: nosniff` + ETag（`captured_at` 经 `json.dumps` 的引用字符串），`If-None-Match` 命中即 304；读侧以 DB `policy_row[0]` 为权威（DB 关闭即 404，不只信文件 `policy.enabled`），无预览、策略已撤销或代次 / 实例不符统一返回 404，错误体不含路径与截图内容。`no-store` 保证私密帧不经浏览器或代理缓存留存。
 
 撤销与清除语义：关闭 `capture_preview` 即时停止采集、删除已有预览、接口随即 404，不需重启或应用配置；采集、落盘、通知、读取四环节以策略代次 + `runtime_instance_id` 围栏，关闭时截图正在进行、旧代次通知迟到、reset 后旧实例回传等迟到写入一律丢弃并清理残留，预览不会重新出现；reset / delete 清除预览目录与 `preview_captured_at`，Profile 停止保留最后一帧，「含浏览器状态」复制不复制预览。
 

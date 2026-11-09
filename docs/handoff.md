@@ -4,7 +4,7 @@
 
 ### 状态与工作区
 
-- branch `main`；交出时 head_commit `b3bb2f2`（本地领先 origin/main，未 push）。
+- branch `main`；交出时 head_commit `559077d`（本地领先 origin/main，未 push）。
 - task 状态以 `task.py effective-status` 为准：
     - `t037`–`t042`、`t044`–`t046` 全部为 `done | main`。
     - `docs/pending/todo/` 总账完全清空（`p051` 与 `p052` 已闭环并归档至 `docs/archive/pending/`）。
