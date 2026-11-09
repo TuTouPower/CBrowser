@@ -1531,7 +1531,39 @@ class ProfileRepository:
         async with self._session_maker() as session, write_transaction(session):
             row = await session.get(SettingModel, self.KEY_NETWORK_APPLIED)
             if row is not None:
-                return False
+                # Pre-A35 databases upgraded in place keep their applied
+                # version row while the execution generation stays missing or
+                # zero. The Gateway baseline generation is applied.version - 1
+                # and would reject the next apply as stale, so correct the
+                # seed here instead of only seeding on a fresh rebuild. The
+                # applied version itself is never touched: the seed only moves
+                # up to applied.version, never down.
+                try:
+                    applied_version = (
+                        AppliedNetworkAccessVersion.model_validate_json(row.value)
+                    )
+                except ValueError:
+                    return False
+                seed = applied_version.version
+                gen_row = await session.get(SettingModel, self.KEY_NETWORK_GENERATION)
+                try:
+                    current = int(gen_row.value) if gen_row is not None else -1
+                except (TypeError, ValueError):
+                    current = -1
+                if gen_row is not None and current >= seed:
+                    return False
+                if gen_row is not None:
+                    gen_row.value = str(seed)
+                    gen_row.updated_at = utc_now_iso()
+                else:
+                    session.add(
+                        SettingModel(
+                            key=self.KEY_NETWORK_GENERATION,
+                            value=str(seed),
+                            updated_at=utc_now_iso(),
+                        )
+                    )
+                return True
             state = read_applied_network_state(export_dir)
             if state is None:
                 return False
