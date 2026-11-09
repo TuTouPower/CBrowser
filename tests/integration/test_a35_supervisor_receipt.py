@@ -20,9 +20,11 @@ def control_env(tmp_path: Path):
     data_root = tmp_path / "data"
     ops_dir = data_root / "control" / "operations"
     ops_dir.mkdir(parents=True, exist_ok=True)
+    network_dir = data_root / "network"
+    network_dir.mkdir(parents=True, exist_ok=True)
     validator = MagicMock()
     validator.data_root = data_root
-    validator.validate_safe_path = MagicMock(return_value=ops_dir)
+    validator.validate_safe_path = MagicMock(side_effect=lambda p, **_kw: Path(p))
     docker = MagicMock()
     docker.validator = validator
     docker.rebuild_caddy_container = AsyncMock(return_value={"rebuilt": True})
@@ -37,7 +39,7 @@ def control_env(tmp_path: Path):
     token_file.chmod(0o600)
     app = create_control_app(core=core, token_file=token_file)
     client = TestClient(app)
-    return core, client, docker, ops_dir
+    return core, client, docker, ops_dir, network_dir
 
 
 def _headers(operation_id: str, generation: int, candidate_hash: str, *, restoring=False):
@@ -52,24 +54,24 @@ def _headers(operation_id: str, generation: int, candidate_hash: str, *, restori
     return headers
 
 
-def _body(caddyfile: Path):
+def _body(resource_name: str):
     return {
         "target_version": 2,
         "bind_host": "0.0.0.0",
         "https_port": 56661,
-        "caddyfile_path": str(caddyfile),
+        "caddyfile_path": resource_name,
     }
 
 
 def test_headers_produce_verified_journal_receipt(control_env, tmp_path: Path):
-    core, client, docker, _ops_dir = control_env
-    caddyfile = tmp_path / "Caddyfile"
-    caddyfile.write_text("candidate caddyfile", encoding="utf-8")
-    candidate_hash = compute_caddyfile_sha256(caddyfile.read_text(encoding="utf-8"))
+    core, client, docker, _ops_dir, network_dir = control_env
+    name = "Caddyfile.staging.op-1"
+    (network_dir / name).write_text("candidate caddyfile", encoding="utf-8")
+    candidate_hash = compute_caddyfile_sha256("candidate caddyfile")
 
     resp = client.post(
         "/supervisor/v1/network/rebuild-edge",
-        json=_body(caddyfile),
+        json=_body(name),
         headers=_headers("op-1", 3, candidate_hash),
     )
 
@@ -90,13 +92,14 @@ def test_headers_produce_verified_journal_receipt(control_env, tmp_path: Path):
 
 
 def test_missing_headers_do_not_claim_success_receipt(control_env, tmp_path: Path):
-    core, client, _docker, ops_dir = control_env
-    caddyfile = tmp_path / "Caddyfile"
-    caddyfile.write_text("candidate caddyfile", encoding="utf-8")
+    core, client, _docker, ops_dir, network_dir = control_env
+    (network_dir / "Caddyfile.staging.op-missing").write_text(
+        "candidate caddyfile", encoding="utf-8"
+    )
 
     resp = client.post(
         "/supervisor/v1/network/rebuild-edge",
-        json=_body(caddyfile),
+        json=_body("Caddyfile.staging.op-missing"),
         headers={"Authorization": f"Bearer {TOKEN}"},
     )
 
@@ -113,14 +116,14 @@ def test_missing_headers_do_not_claim_success_receipt(control_env, tmp_path: Pat
 
 
 def test_candidate_hash_mismatch_is_rejected_and_recorded(control_env, tmp_path: Path):
-    core, client, docker, _ops_dir = control_env
-    caddyfile = tmp_path / "Caddyfile"
-    caddyfile.write_text("real caddyfile content", encoding="utf-8")
+    core, client, docker, _ops_dir, network_dir = control_env
+    name = "Caddyfile.staging.op-hash"
+    (network_dir / name).write_text("real caddyfile content", encoding="utf-8")
     wrong_hash = "0" * 64
 
     resp = client.post(
         "/supervisor/v1/network/rebuild-edge",
-        json=_body(caddyfile),
+        json=_body(name),
         headers=_headers("op-hash", 5, wrong_hash),
     )
 
@@ -134,14 +137,13 @@ def test_candidate_hash_mismatch_is_rejected_and_recorded(control_env, tmp_path:
 
 
 def test_restore_header_routes_to_abort_compensation(control_env, tmp_path: Path):
-    core, client, docker, _ops_dir = control_env
-    caddyfile = tmp_path / "Caddyfile"
-    caddyfile.write_text("old caddyfile", encoding="utf-8")
-    candidate_hash = compute_caddyfile_sha256(caddyfile.read_text(encoding="utf-8"))
+    core, client, docker, _ops_dir, network_dir = control_env
+    (network_dir / "Caddyfile").write_text("old caddyfile", encoding="utf-8")
+    candidate_hash = compute_caddyfile_sha256("old caddyfile")
 
     resp = client.post(
         "/supervisor/v1/network/rebuild-edge",
-        json=_body(caddyfile),
+        json=_body("Caddyfile"),
         headers=_headers("op-abort", 4, candidate_hash, restoring=True),
     )
 
