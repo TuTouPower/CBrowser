@@ -85,6 +85,48 @@ def test_derive_origin_whitelist():
     assert "https://192.168.31.76:56661" in whitelist_lan
 
 
+def test_derive_origin_whitelist_default_port_443_omitted():
+    v = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False, https_port=443),
+        applied_at="2026-11-08T00:00:00+08:00",
+        caddyfile_sha256="dummy",
+        origin_whitelist=[],
+    )
+    whitelist = derive_origin_whitelist(v)
+    assert "https://127.0.0.1" in whitelist
+    assert "https://localhost" in whitelist
+    assert not any(o.endswith(":443") for o in whitelist)
+
+    v_lan = AppliedNetworkAccessVersion(
+        version=2,
+        config=NetworkAccessConfig(
+            lan_access_enabled=True,
+            lan_advertised_ip="192.168.31.76",
+            https_port=443,
+        ),
+        applied_at="2026-11-08T00:01:00+08:00",
+        caddyfile_sha256="dummy",
+        origin_whitelist=[],
+    )
+    whitelist_lan = derive_origin_whitelist(v_lan)
+    assert "https://192.168.31.76" in whitelist_lan
+    assert not any(o.endswith(":443") for o in whitelist_lan)
+
+
+def test_derive_origin_whitelist_non_default_port_kept():
+    v = AppliedNetworkAccessVersion(
+        version=1,
+        config=NetworkAccessConfig(lan_access_enabled=False, https_port=8443),
+        applied_at="2026-11-08T00:00:00+08:00",
+        caddyfile_sha256="dummy",
+        origin_whitelist=[],
+    )
+    whitelist = derive_origin_whitelist(v)
+    assert "https://127.0.0.1:8443" in whitelist
+    assert "https://localhost:8443" in whitelist
+
+
 def test_generate_caddyfile():
     v1 = AppliedNetworkAccessVersion(
         version=1,
