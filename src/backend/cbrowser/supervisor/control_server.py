@@ -601,10 +601,32 @@ def create_control_app(
             operation_id and generation is not None and candidate_hash
         )
 
+        try:
+            resolved_caddyfile = str(
+                core.resolve_network_caddyfile(req.caddyfile_path)
+            )
+        except DockerSandboxError as exc:
+            if verified:
+                _write_execution_receipt(
+                    operation_id,
+                    generation,
+                    candidate_hash,
+                    {
+                        "status": "rejected",
+                        "reason": str(exc),
+                        "docker_verified": False,
+                        "operation_id": operation_id,
+                        "execution_generation": generation,
+                        "candidate_hash": candidate_hash,
+                    },
+                    restoring=restoring,
+                )
+            raise HTTPException(409, str(exc)) from None
+
         if verified and not restoring:
             try:
                 actual_hash = compute_caddyfile_sha256(
-                    Path(req.caddyfile_path).read_text(encoding="utf-8")
+                    Path(resolved_caddyfile).read_text(encoding="utf-8")
                 )
             except (OSError, UnicodeError):
                 actual_hash = ""

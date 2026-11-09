@@ -1172,8 +1172,15 @@ class RuntimeCoordinator:
         candidate_hash: str | None = None,
         restoring: bool = False,
     ) -> dict[str, Any]:
+        """Forward an edge rebuild to the Supervisor (pure passthrough).
+
+        ``caddyfile_path`` is a logical network resource name
+        ("Caddyfile" or "Caddyfile.staging.<op_id>"), never a filesystem
+        path: this client performs no path resolution and forwards it
+        verbatim for the Supervisor to resolve against its own data_root.
+        """
         if not self.is_enabled():
-            return {"status": "ok", "mock": True}
+            return {"status": "ok", "mock": True, "rebuilt": True}
         import httpx
 
         if not self._client:
@@ -1253,8 +1260,12 @@ class RuntimeCoordinator:
         caddyfile_sha256: str,
         caddyfile_path: str | None = None,
     ) -> dict[str, Any]:
+        """Forward a restore to the Supervisor via rebuild_edge (passthrough).
+
+        ``caddyfile_path`` is the logical persistent name ("Caddyfile").
+        """
         if not self.is_enabled():
-            return {"status": "ok", "restored": 0}
+            return {"status": "ok", "restored": 0, "rebuilt": True, "mock": True}
         result = await self.rebuild_edge(
             target_version=old_version,
             bind_host=bind_host,

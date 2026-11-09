@@ -2017,6 +2017,14 @@ with path.open('w') as output:
     ) -> dict[str, Any]:
         """Rebuild edge reverse proxy container (Caddy) with atomic port re-binding."""
         caddy_name = f"{self.resource_prefix}-caddy"
+        # P1-2: the running Caddy must bind the persistent network/Caddyfile.
+        # Staging candidates are promoted by the Supervisor core before this
+        # point; binding a staging file here would break on post-commit
+        # cleanup, so refuse it explicitly.
+        if Path(caddyfile_path).name != "Caddyfile":
+            raise DockerSandboxError(
+                "Caddy must bind the persistent network/Caddyfile"
+            )
 
         def _do_rebuild() -> dict[str, Any]:
             try:

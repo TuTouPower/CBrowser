@@ -49,7 +49,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "body": body,
             }
         )
-        plan = sup.plans.pop(0) if sup.plans else {"status": 200, "body": {"status": "ok"}}
+        plan = sup.plans.pop(0) if sup.plans else {"status": 200, "body": {"status": "ok", "rebuilt": True}}
         if sup.expected_token is not None:
             expected = f"Bearer {sup.expected_token}"
             if self.headers.get("Authorization") != expected:
@@ -158,9 +158,9 @@ async def test_rebuild_edge_uses_shared_client_with_auth_and_exact_model(
             target_version=7,
             bind_host="0.0.0.0",
             https_port=56661,
-            caddyfile_path="/data/network/Caddyfile.staging.op",
+            caddyfile_path="Caddyfile.staging.op",
         )
-        assert result == {"status": "ok"}
+        assert result == {"status": "ok", "rebuilt": True}
         assert len(sup.requests) == 1
         req = sup.requests[0]
         assert req["path"] == "/supervisor/v1/network/rebuild-edge"
@@ -170,7 +170,7 @@ async def test_rebuild_edge_uses_shared_client_with_auth_and_exact_model(
             "target_version": 7,
             "bind_host": "0.0.0.0",
             "https_port": 56661,
-            "caddyfile_path": "/data/network/Caddyfile.staging.op",
+            "caddyfile_path": "Caddyfile.staging.op",
         }
         assert not hasattr(coord, "client")
         assert coord._client is not None
@@ -189,7 +189,7 @@ async def test_converge_network_streams_uses_shared_client_with_auth_and_exact_m
         result = await coord.converge_network_streams(
             target_version=7, bind_host="0.0.0.0", advertised_ip="192.168.31.76"
         )
-        assert result == {"status": "ok"}
+        assert result == {"status": "ok", "rebuilt": True}
         assert len(sup.requests) == 1
         req = sup.requests[0]
         assert req["path"] == "/supervisor/v1/network/converge-streams"
@@ -217,12 +217,12 @@ async def test_disabled_coordinator_does_not_emit_http(supervisor_token):
             target_version=1,
             bind_host="127.0.0.1",
             https_port=443,
-            caddyfile_path="/x",
+            caddyfile_path="Caddyfile.staging.x",
         )
         streams = await coord.converge_network_streams(
             target_version=1, bind_host="127.0.0.1", advertised_ip="127.0.0.1"
         )
-        assert edge == {"status": "ok", "mock": True}
+        assert edge == {"status": "ok", "mock": True, "rebuilt": True}
         assert streams == {"status": "ok", "rebuilt_streams": 0}
         assert sup.requests == []
     finally:

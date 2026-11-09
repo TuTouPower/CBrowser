@@ -47,6 +47,14 @@ def mock_docker_adapter(tmp_path):
 
 @pytest.mark.asyncio
 async def test_rebuild_edge_proxy(mock_docker_adapter, tmp_path):
+    from pathlib import Path
+
+    network_dir = tmp_path / "network"
+    network_dir.mkdir(parents=True, exist_ok=True)
+    (network_dir / "Caddyfile.staging.op-1").write_text("caddy-candidate")
+    mock_docker_adapter.validator.validate_safe_path = MagicMock(
+        side_effect=lambda p, allow_create=True: Path(p)
+    )
     core = SupervisorCore(
         docker_adapter=mock_docker_adapter,
         port_allocator=MagicMock(),
@@ -57,14 +65,37 @@ async def test_rebuild_edge_proxy(mock_docker_adapter, tmp_path):
         target_version=2,
         bind_host="0.0.0.0",
         https_port=56661,
-        caddyfile_path=str(tmp_path / "Caddyfile"),
+        caddyfile_path="Caddyfile.staging.op-1",
     )
     assert res["status"] == "ok"
+    assert res["rebuilt"] is True
+    # P1-2: the rebuild binds the persistent file, never the staging file.
     mock_docker_adapter.rebuild_caddy_container.assert_awaited_once_with(
         bind_host="0.0.0.0",
         https_port=56661,
-        caddyfile_path=str(tmp_path / "Caddyfile"),
+        caddyfile_path=str(network_dir / "Caddyfile"),
     )
+    assert (network_dir / "Caddyfile").read_text() == "caddy-candidate"
+
+
+@pytest.mark.asyncio
+async def test_rebuild_edge_proxy_rejects_absolute_path(
+    mock_docker_adapter, tmp_path
+):
+    core = SupervisorCore(
+        docker_adapter=mock_docker_adapter,
+        port_allocator=MagicMock(),
+        event_forwarder=MagicMock(),
+        api_client=MagicMock(),
+    )
+    with pytest.raises(Exception, match="basename"):
+        await core.rebuild_edge_proxy(
+            target_version=2,
+            bind_host="0.0.0.0",
+            https_port=56661,
+            caddyfile_path=str(tmp_path / "Caddyfile"),
+        )
+    mock_docker_adapter.rebuild_caddy_container.assert_not_awaited()
 
 
 @pytest.mark.asyncio
