@@ -1201,7 +1201,14 @@ class RuntimeCoordinator:
             "caddyfile_path": caddyfile_path,
         }
         try:
-            resp = await self._client.post(url, json=body, headers=headers)
+            resp = await asyncio.wait_for(
+                self._client.post(url, json=body, headers=headers),
+                timeout=30.0,
+            )
+        except TimeoutError as e:
+            raise RuntimeError(
+                "Supervisor rebuild-edge timed out"
+            ) from e
         except httpx.TransportError as e:
             raise RuntimeError(
                 f"Supervisor rebuild-edge unreachable: {type(e).__name__}"
@@ -1238,7 +1245,14 @@ class RuntimeCoordinator:
             "advertised_ip": advertised_ip,
         }
         try:
-            resp = await self._client.post(url, json=body, headers=headers)
+            resp = await asyncio.wait_for(
+                self._client.post(url, json=body, headers=headers),
+                timeout=30.0,
+            )
+        except TimeoutError as e:
+            raise RuntimeError(
+                "Supervisor converge-streams timed out"
+            ) from e
         except httpx.TransportError as e:
             raise RuntimeError(
                 f"Supervisor converge-streams unreachable: {type(e).__name__}"

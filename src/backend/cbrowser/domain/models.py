@@ -831,6 +831,13 @@ class NetworkAccessConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_lan_config(self) -> NetworkAccessConfig:
+        # LAN strip: whitespace around the advertised IP must never reach
+        # persistence, Caddyfile generation, or origin comparison. Strip
+        # unconditionally so a disabled-but-dirty value cannot resurface
+        # with whitespace after a later enable.
+        if isinstance(self.lan_advertised_ip, str):
+            stripped = self.lan_advertised_ip.strip()
+            self.lan_advertised_ip = stripped or None
         if self.lan_access_enabled:
             if not self.lan_advertised_ip:
                 raise ValueError("lan_advertised_ip is required when lan_access_enabled is True")

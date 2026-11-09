@@ -66,15 +66,31 @@ class OperationJournal:
         return previous
 
     def network_command_id(
-        self, operation_id: str, phase: str, resource: str
+        self,
+        operation_id: str,
+        phase: str,
+        resource: str,
+        request: dict | None = None,
     ) -> str:
-        return f"network:{operation_id}:{phase}:{resource}"
+        # P1-A generation fencing: the same operation/resource at different
+        # execution generations are different commands. The generation is
+        # derived from the request so callers cannot forget it; a request
+        # without any generation falls back to the legacy key (no fencing).
+        generation: object = None
+        if isinstance(request, dict):
+            generation = request.get("execution_generation")
+            if generation is None:
+                generation = request.get("generation")
+        if generation is None:
+            return f"network:{operation_id}:{phase}:{resource}"
+        return f"network:{operation_id}:{generation}:{phase}:{resource}"
 
     def begin_network_receipt(
         self, operation_id: str, phase: str, resource: str, request: dict
     ) -> dict | None:
         return self.begin(
-            self.network_command_id(operation_id, phase, resource), request
+            self.network_command_id(operation_id, phase, resource, request),
+            request,
         )
 
     def complete_network_receipt(
@@ -86,14 +102,17 @@ class OperationJournal:
         result: dict,
     ) -> None:
         self.complete(
-            self.network_command_id(operation_id, phase, resource), request, result
+            self.network_command_id(operation_id, phase, resource, request),
+            request,
+            result,
         )
 
     def network_receipt(
         self, operation_id: str, phase: str, resource: str, request: dict
     ) -> dict[str, Any] | None:
         return self.lookup(
-            self.network_command_id(operation_id, phase, resource), request
+            self.network_command_id(operation_id, phase, resource, request),
+            request,
         )
 
     def network_receipt_verified(

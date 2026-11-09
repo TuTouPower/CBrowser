@@ -308,8 +308,15 @@ def create_app(
                     continue
                 try:
                     current = await repo.get_current_network_transaction()
-                except Exception:
-                    current = None
+                except Exception as exc:
+                    # Transient DB failure must not look like a completed
+                    # recovery: keep retrying instead of returning.
+                    logger.warning(
+                        "Network recovery state read failed: error_type=%s; retrying",
+                        type(exc).__name__,
+                    )
+                    await asyncio.sleep(5.0)
+                    continue
                 if current is None or current.recovery_complete:
                     logger.info(
                         "Network recovery complete: verdict=%s attempt=%d",

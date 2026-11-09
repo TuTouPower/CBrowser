@@ -321,9 +321,30 @@ def test_journal_network_receipts_are_resource_scoped_and_not_a_global_decision(
         "op-1", "verifying", "gateway", request, {"status": "ok"}
     )
     assert journal.network_receipt_verified("op-1", "verifying", "gateway", request) is False
-    with pytest.raises(ValueError, match="different request"):
+    # P1-A generation fencing: same operation at a different generation is a
+    # different command (no conflict), while the same command with a
+    # different payload is still an idempotency conflict.
+    assert (
         journal.network_receipt(
             "op-1", "installing", "caddy", {"operation_id": "op-2"}
+        )
+        is None
+    )
+    assert (
+        journal.network_receipt(
+            "op-1",
+            "installing",
+            "caddy",
+            {"operation_id": "op-1", "generation": 4},
+        )
+        is None
+    )
+    with pytest.raises(ValueError, match="different request"):
+        journal.network_receipt(
+            "op-1",
+            "installing",
+            "caddy",
+            {"operation_id": "op-1", "generation": 3, "candidate_hash": "other"},
         )
 
 

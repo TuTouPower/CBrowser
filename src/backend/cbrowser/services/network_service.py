@@ -256,7 +256,8 @@ class NetworkService:
         new_entry_url = None
         target_port = target_config.https_port
         if target_config.lan_access_enabled and target_config.lan_advertised_ip:
-            new_entry_url = f"https://{target_config.lan_advertised_ip}:{target_port}"
+            lan_ip = target_config.lan_advertised_ip.strip()
+            new_entry_url = f"https://{lan_ip}:{target_port}"
         elif not target_config.lan_access_enabled:
             new_entry_url = f"https://127.0.0.1:{target_port}"
 
@@ -387,14 +388,17 @@ class NetworkService:
             ):
                 raise RuntimeError("Gateway publication not verifiable")
 
-            rebuild_result = await self.supervisor_client.rebuild_edge(
-                target_version=new_version.version,
-                bind_host=new_version.bind_host,
-                https_port=new_version.config.https_port,
-                caddyfile_path=staging_caddy.name,
-                operation_id=op_id,
-                execution_generation=generation,
-                candidate_hash=candidate_hash,
+            rebuild_result = await asyncio.wait_for(
+                self.supervisor_client.rebuild_edge(
+                    target_version=new_version.version,
+                    bind_host=new_version.bind_host,
+                    https_port=new_version.config.https_port,
+                    caddyfile_path=staging_caddy.name,
+                    operation_id=op_id,
+                    execution_generation=generation,
+                    candidate_hash=candidate_hash,
+                ),
+                timeout=30.0,
             )
             if (
                 not isinstance(rebuild_result, dict)
@@ -409,6 +413,16 @@ class NetworkService:
                     "Edge rebuild not verified"
                     + (f": {reason}" if reason else "")
                 )
+            # Fencing: a concurrent abort bumps the execution generation.
+            # A late rebuild success must not overwrite that decision —
+            # re-read the txn before trusting the rebuild result.
+            fresh = await self.repo.get_network_transaction(op_id)
+            if (
+                fresh is None
+                or fresh.decision != "pending"
+                or fresh.execution_generation != generation
+            ):
+                raise RuntimeError("Stale execution generation: superseded rebuild")
             component_hash = self._component_hash(
                 rebuild_result, candidate_hash, staging_caddy
             )
@@ -419,23 +433,35 @@ class NetworkService:
                 component_hash=component_hash,
             )
 
+            raw_advertised = new_version.config.lan_advertised_ip
             advertised_ip = (
-                new_version.config.lan_advertised_ip
-                if new_version.config.lan_access_enabled
+                raw_advertised.strip()
+                if new_version.config.lan_access_enabled and raw_advertised
                 else "127.0.0.1"
             )
-            converge_result = await self.supervisor_client.converge_network_streams(
-                target_version=new_version.version,
-                bind_host=new_version.bind_host,
-                advertised_ip=advertised_ip,
-                operation_id=op_id,
-                execution_generation=generation,
+            converge_result = await asyncio.wait_for(
+                self.supervisor_client.converge_network_streams(
+                    target_version=new_version.version,
+                    bind_host=new_version.bind_host,
+                    advertised_ip=advertised_ip,
+                    operation_id=op_id,
+                    execution_generation=generation,
+                ),
+                timeout=30.0,
             )
             if (
                 not isinstance(converge_result, dict)
                 or converge_result.get("status") != "ok"
             ):
                 raise RuntimeError("Stream convergence not verified")
+            # Fencing: a late converge must not cover a newer restore.
+            fresh = await self.repo.get_network_transaction(op_id)
+            if (
+                fresh is None
+                or fresh.decision != "pending"
+                or fresh.execution_generation != generation
+            ):
+                raise RuntimeError("Stale execution generation: superseded converge")
 
             await self.repo.advance_network_transaction(
                 op_id,
@@ -509,7 +535,19 @@ class NetworkService:
         The Supervisor promotes the staging candidate to the persistent
         file before rebinding Caddy, so abort/restore must reconstruct the
         old content first; otherwise restore would rebind the new file.
+
+        Root cause: the network directory is shared mutable state between
+        Supervisor (root, manage_ownership) and API (uid 1000). An in-place
+        write_text plus a root-owned file leaves the API unable to replace
+        it. The fix is ownership-aware atomic replacement: write a temp
+        file in the same directory and os.replace it (directory write is
+        sufficient for rename), so a root-owned old file never blocks the
+        API once the directory itself is owned by the runtime uid.
         """
+        import os
+
+        from cbrowser.supervisor.file_storage import atomic_write_text
+
         self.export_dir.mkdir(parents=True, exist_ok=True)
         content = generate_caddyfile(
             version,
@@ -517,8 +555,34 @@ class NetworkService:
             gateway_upstream=self.gateway_upstream,
         )
         persistent = self.export_dir / CADDYFILE_FILENAME
-        persistent.write_text(content, encoding="utf-8")
-        persistent.chmod(0o644)
+        atomic_write_text(persistent, content, mode=0o644)
+        # Best-effort: when running as root (tests / Supervisor-embedded
+        # paths), leave the file owned by the runtime uid so a later
+        # uid-1000 writer can still replace it via directory rename.
+        try:
+            if os.geteuid() == 0:
+                os.chown(persistent, 1000, 1000)
+        except OSError:
+            pass
+
+    def _is_terminal_missing(self, restored: Any, exc: Exception | None = None) -> bool:
+        """Caddy absent is an explicit terminal, not a retryable failure.
+
+        When the edge container does not exist there is no live Caddy to
+        rebind: the DB has already been rewound to the old applied version
+        and the persistent Caddyfile has been reconstructed, so recovery
+        is complete (the next deploy/apply will recreate the edge).
+        Keeping it incomplete would spin the recovery loop forever.
+        """
+        if isinstance(restored, dict):
+            reason = str(restored.get("reason") or "")
+            if restored.get("rebuilt") is False and (
+                reason == "not_found" or restored.get("terminal") is True
+            ):
+                return True
+        if exc is not None and "not_found" in str(exc).lower():
+            return True
+        return False
 
     async def _restore_old(self, txn: NetworkTransaction) -> bool:
         old = (
@@ -526,28 +590,59 @@ class NetworkService:
             if txn.old_applied
             else create_default_applied_version()
         )
+        # Restore must publish the normalized whitelist (443-form) even
+        # when the stored snapshot predates normalization.
+        normalized_whitelist = derive_origin_whitelist(old)
+        # Verify the reconstructed old content before rebinding: a
+        # generator change must never silently bind the wrong Caddyfile.
+        expected_old_content = generate_caddyfile(
+            old,
+            api_upstream=self.api_upstream,
+            gateway_upstream=self.gateway_upstream,
+        )
+        if old.caddyfile_sha256:
+            if compute_caddyfile_sha256(expected_old_content) != old.caddyfile_sha256:
+                logger.warning(
+                    "Old snapshot hash mismatch for %s; refusing to bind",
+                    txn.operation_id,
+                )
+                return False
         try:
             await self.publication.revoke(
                 txn.operation_id, txn.execution_generation, txn.candidate_hash
             )
             self._write_persistent_caddyfile(old)
-            restored = await self._maybe_await(
-                self.supervisor_client.restore_network_snapshot(
-                    operation_id=txn.operation_id,
-                    execution_generation=txn.execution_generation,
-                    old_version=old.version,
-                    bind_host=old.bind_host,
-                    https_port=old.config.https_port,
-                    caddyfile_sha256=old.caddyfile_sha256,
-                    caddyfile_path=CADDYFILE_FILENAME,
-                )
+            restore_call = self.supervisor_client.restore_network_snapshot(
+                operation_id=txn.operation_id,
+                execution_generation=txn.execution_generation,
+                old_version=old.version,
+                bind_host=old.bind_host,
+                https_port=old.config.https_port,
+                caddyfile_sha256=old.caddyfile_sha256,
+                caddyfile_path=CADDYFILE_FILENAME,
+            )
+            restored = await asyncio.wait_for(
+                self._maybe_await(restore_call), timeout=30.0
             )
             if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
+                if self._is_terminal_missing(restored):
+                    if callable(self.on_origins_updated):
+                        self.on_origins_updated(list(normalized_whitelist))
+                    return True
                 raise RuntimeError("Edge restore not verified")
             if callable(self.on_origins_updated):
-                self.on_origins_updated(list(old.origin_whitelist))
+                self.on_origins_updated(list(normalized_whitelist))
             return True
         except Exception as exc:
+            if self._is_terminal_missing(
+                None if isinstance(exc, RuntimeError) else None, exc
+            ):
+                if callable(self.on_origins_updated):
+                    try:
+                        self.on_origins_updated(list(normalized_whitelist))
+                    except Exception:
+                        pass
+                return True
             logger.warning(
                 "Recovery compensation incomplete for %s: error_type=%s",
                 txn.operation_id,
@@ -576,11 +671,68 @@ class NetworkService:
             "Apply operation %s aborting: error_type=%s", op_id, type(exc).__name__
         )
         recovery_complete = True
-        try:
-            await self.publication.revoke(op_id, generation, candidate_hash)
-            self._write_persistent_caddyfile(old_applied)
-            restored = await self._maybe_await(
-                self.supervisor_client.restore_network_snapshot(
+        normalized_old_whitelist = derive_origin_whitelist(old_applied)
+        if old_applied.caddyfile_sha256:
+            expected = generate_caddyfile(
+                old_applied,
+                api_upstream=self.api_upstream,
+                gateway_upstream=self.gateway_upstream,
+            )
+            if compute_caddyfile_sha256(expected) != old_applied.caddyfile_sha256:
+                logger.warning(
+                    "Old snapshot hash mismatch for %s; refusing to bind", op_id
+                )
+                recovery_complete = False
+            else:
+                try:
+                    await self.publication.revoke(op_id, generation, candidate_hash)
+                    self._write_persistent_caddyfile(old_applied)
+                    restore_call = self.supervisor_client.restore_network_snapshot(
+                        operation_id=op_id,
+                        execution_generation=generation,
+                        old_version=old_applied.version,
+                        bind_host=old_applied.bind_host,
+                        https_port=old_applied.config.https_port,
+                        caddyfile_sha256=old_applied.caddyfile_sha256,
+                        caddyfile_path=CADDYFILE_FILENAME,
+                    )
+                    restored = await asyncio.wait_for(
+                        self._maybe_await(restore_call), timeout=30.0
+                    )
+                    if (
+                        not isinstance(restored, dict)
+                        or restored.get("rebuilt") is not True
+                    ):
+                        if self._is_terminal_missing(restored):
+                            if callable(self.on_origins_updated):
+                                self.on_origins_updated(
+                                    list(normalized_old_whitelist)
+                                )
+                        else:
+                            raise RuntimeError("Edge restore not verified")
+                    elif callable(self.on_origins_updated):
+                        self.on_origins_updated(list(normalized_old_whitelist))
+                except Exception as comp_exc:
+                    if self._is_terminal_missing(None, comp_exc):
+                        if callable(self.on_origins_updated):
+                            try:
+                                self.on_origins_updated(
+                                    list(normalized_old_whitelist)
+                                )
+                            except Exception:
+                                pass
+                    else:
+                        recovery_complete = False
+                        logger.warning(
+                            "Apply operation %s compensation incomplete: error_type=%s",
+                            op_id,
+                            type(comp_exc).__name__,
+                        )
+        else:
+            try:
+                await self.publication.revoke(op_id, generation, candidate_hash)
+                self._write_persistent_caddyfile(old_applied)
+                restore_call = self.supervisor_client.restore_network_snapshot(
                     operation_id=op_id,
                     execution_generation=generation,
                     old_version=old_applied.version,
@@ -589,18 +741,31 @@ class NetworkService:
                     caddyfile_sha256=old_applied.caddyfile_sha256,
                     caddyfile_path=CADDYFILE_FILENAME,
                 )
-            )
-            if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
-                raise RuntimeError("Edge restore not verified")
-            if callable(self.on_origins_updated):
-                self.on_origins_updated(list(old_applied.origin_whitelist))
-        except Exception as comp_exc:
-            recovery_complete = False
-            logger.warning(
-                "Apply operation %s compensation incomplete: error_type=%s",
-                op_id,
-                type(comp_exc).__name__,
-            )
+                restored = await asyncio.wait_for(
+                    self._maybe_await(restore_call), timeout=30.0
+                )
+                if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
+                    if self._is_terminal_missing(restored):
+                        if callable(self.on_origins_updated):
+                            self.on_origins_updated(list(normalized_old_whitelist))
+                    else:
+                        raise RuntimeError("Edge restore not verified")
+                elif callable(self.on_origins_updated):
+                    self.on_origins_updated(list(normalized_old_whitelist))
+            except Exception as comp_exc:
+                if self._is_terminal_missing(None, comp_exc):
+                    if callable(self.on_origins_updated):
+                        try:
+                            self.on_origins_updated(list(normalized_old_whitelist))
+                        except Exception:
+                            pass
+                else:
+                    recovery_complete = False
+                    logger.warning(
+                        "Apply operation %s compensation incomplete: error_type=%s",
+                        op_id,
+                        type(comp_exc).__name__,
+                    )
         await self.repo.abort_network_transaction(
             operation_id=op_id,
             execution_generation=generation,
@@ -617,6 +782,9 @@ class NetworkService:
             return "commit"
         if txn.decision == "abort":
             if not txn.recovery_complete:
+                # Already bumped by the original abort; reuse the bumped txn
+                # so the Supervisor sees the current generation, not a stale
+                # one that the journal would reject.
                 complete = await self._restore_old(txn)
                 if complete:
                     await self.repo.abort_network_transaction(
@@ -626,17 +794,20 @@ class NetworkService:
                         recovery_complete=True,
                     )
             return "abort"
-        await self.repo.abort_network_transaction(
+        # No finality: bump once to fence the crashed generation, then
+        # restore exclusively with the bumped txn. Using the pre-bump txn
+        # would send a stale generation to the Supervisor.
+        bumped = await self.repo.abort_network_transaction(
             operation_id=txn.operation_id,
             execution_generation=txn.execution_generation,
             reason="recovery without finality",
             recovery_complete=False,
         )
-        complete = await self._restore_old(txn)
+        complete = await self._restore_old(bumped)
         if complete:
             await self.repo.abort_network_transaction(
-                operation_id=txn.operation_id,
-                execution_generation=txn.execution_generation,
+                operation_id=bumped.operation_id,
+                execution_generation=bumped.execution_generation,
                 reason="recovery",
                 recovery_complete=True,
             )
@@ -672,17 +843,22 @@ class NetworkService:
             return True, f"https://127.0.0.1:{port}"
 
         # Switching LAN IP when current client is on old LAN IP
+        lan_ip = (
+            target_config.lan_advertised_ip.strip()
+            if target_config.lan_access_enabled and target_config.lan_advertised_ip
+            else None
+        )
         if (
             target_config.lan_access_enabled
             and not is_loopback
-            and target_config.lan_advertised_ip
-            and host_clean != target_config.lan_advertised_ip
+            and lan_ip
+            and host_clean != lan_ip
         ):
-            return True, f"https://{target_config.lan_advertised_ip}:{port}"
+            return True, f"https://{lan_ip}:{port}"
 
         suggested = (
-            f"https://{target_config.lan_advertised_ip}:{port}"
-            if target_config.lan_access_enabled and target_config.lan_advertised_ip
+            f"https://{lan_ip}:{port}"
+            if target_config.lan_access_enabled and lan_ip
             else f"https://127.0.0.1:{port}"
         )
         return False, suggested

@@ -2030,8 +2030,15 @@ with path.open('w') as output:
             try:
                 caddy_c = self.client.containers.get(caddy_name)
             except NotFound:
+                # Explicit terminal: no edge container exists to rebind.
+                # Callers treat this as recovery-complete (nothing to
+                # restore) instead of retrying forever.
                 logger.warning("Caddy container %s not found for rebuild", caddy_name)
-                return {"rebuilt": False, "reason": "not_found"}
+                return {
+                    "rebuilt": False,
+                    "reason": "not_found",
+                    "terminal": True,
+                }
 
             inspect = self.client.api.inspect_container(caddy_c.id)
             config = inspect["Config"]

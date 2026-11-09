@@ -160,3 +160,43 @@ def test_restore_header_routes_to_abort_compensation(control_env, tmp_path: Path
     assert core.operations.network_execution_receipt(
         "op-abort", 4, candidate_hash, restoring=False
     ) is None
+
+
+def test_generation_bump_does_not_500_on_retry(control_env, tmp_path: Path):
+    """P1-A fencing: same operation with bumped generation is a new command.
+
+    Real reproduction for the journal 500: first installing rebuild with
+    generation N succeeds 200, then the retry with generation N+1 must
+    also succeed 200 instead of raising "Operation ID was already used
+    for a different request".
+    """
+    core, client, docker, _ops_dir, network_dir = control_env
+    name = "Caddyfile.staging.op-retry"
+    (network_dir / name).write_text("candidate caddyfile", encoding="utf-8")
+    candidate_hash = compute_caddyfile_sha256("candidate caddyfile")
+
+    first = client.post(
+        "/supervisor/v1/network/rebuild-edge",
+        json=_body(name),
+        headers=_headers("op-retry", 3, candidate_hash),
+    )
+    assert first.status_code == 200
+    assert first.json()["receipt_verified"] is True
+
+    second = client.post(
+        "/supervisor/v1/network/rebuild-edge",
+        json=_body(name),
+        headers=_headers("op-retry", 4, candidate_hash),
+    )
+    assert second.status_code == 200
+    assert second.json()["receipt_verified"] is True
+    assert second.json()["execution_generation"] == 4
+
+    assert (
+        core.operations.network_execution_receipt("op-retry", 3, candidate_hash)
+        is not None
+    )
+    assert (
+        core.operations.network_execution_receipt("op-retry", 4, candidate_hash)
+        is not None
+    )

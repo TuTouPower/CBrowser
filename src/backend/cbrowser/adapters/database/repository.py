@@ -1612,7 +1612,20 @@ class ProfileRepository:
                     raise RuntimeError(
                         "Applied network version is unreadable"
                     ) from None
-                if current_applied.version != old_applied.version:
+                # TOCTOU: version alone is not enough — two concurrent readers
+                # can mint the same target version with different configs.
+                # Fence on version + config + bind_host + content hash.
+                if (
+                    current_applied.version != old_applied.version
+                    or current_applied.config != old_applied.config
+                    or current_applied.bind_host != old_applied.bind_host
+                    or (
+                        bool(current_applied.caddyfile_sha256)
+                        and bool(old_applied.caddyfile_sha256)
+                        and current_applied.caddyfile_sha256
+                        != old_applied.caddyfile_sha256
+                    )
+                ):
                     raise RuntimeError(
                         "Stale applied network version: expected version "
                         f"{old_applied.version}, found version "
