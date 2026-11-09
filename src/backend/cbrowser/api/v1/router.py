@@ -74,10 +74,13 @@ async def _apply_preview_policy(
     # per-profile lock and re-read the authoritative DB policy inside it,
     # so a stale `enabled` read from before a newer commit can never
     # overwrite that newer policy file (old enabled vs new disabled).
+    # The 10s supervisor RPC stays outside the lock so the same-profile
+    # start/stop/bind/delete never blocks behind a slow dispatch.
     async with service._locks.lock(profile_id):
         fresh = await service.get_preview_policy(profile_id)
-        if fresh is not None:
-            enabled, epoch = fresh
+        if fresh is None:
+            return
+        enabled, epoch = fresh
         instance: str | None = None
         try:
             runtime = await service.get_runtime(profile_id)
@@ -90,22 +93,33 @@ async def _apply_preview_policy(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Preview storage unavailable",
             )
-        write_policy(
-            directory,
-            PreviewPolicy(
-                enabled=enabled,
-                epoch=epoch,
-                runtime_instance_id=instance,
-            ),
-        )
+        try:
+            write_policy(
+                directory,
+                PreviewPolicy(
+                    enabled=enabled,
+                    epoch=epoch,
+                    runtime_instance_id=instance,
+                ),
+            )
+        except OSError as exc:
+            logger.error(
+                "Preview policy write failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Preview storage unavailable",
+            ) from None
         if not enabled:
             clear_preview(directory)
             await service.clear_preview_capture(profile_id)
-        coordinator = getattr(request.app.state, "coordinator", None)
-        if coordinator is not None:
-            await coordinator.request_preview_policy(profile_id, enabled, epoch, instance)
-            if coordinator.has_pending_preview_policy(profile_id):
-                coordinator.trigger_reconcile(profile_id)
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None:
+        await coordinator.request_preview_policy(profile_id, enabled, epoch, instance)
+        if coordinator.has_pending_preview_policy(profile_id):
+            coordinator.trigger_reconcile(profile_id)
 
 
 v1_router = APIRouter(prefix="/api/v1")
@@ -399,10 +413,6 @@ async def update_profile(
     op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     patch_data = payload.model_dump(exclude_unset=True)
     preview_patch = "capture_preview" in patch_data
-    before_epoch: int | None = None
-    if preview_patch:
-        before = await service.get_preview_policy(profile_id)
-        before_epoch = before[1] if before is not None else None
     try:
         p = await service.update_profile(
             profile_id=profile_id,
@@ -418,9 +428,9 @@ async def update_profile(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Profile {profile_id} not found",
         )
-    if preview_patch and before_epoch is not None:
+    if preview_patch:
         after = await service.get_preview_policy(profile_id)
-        if after is not None and after[1] != before_epoch:
+        if after is not None:
             await _apply_preview_policy(profile_id, after[0], after[1], request, service)
     return ProfileResponse.from_domain(p)
 

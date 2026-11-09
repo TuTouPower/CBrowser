@@ -525,19 +525,19 @@ class ProfileService:
                     config_version,
                     expected_current_instance,
                 )
-            if not rt:
-                raise ProfileNotFoundError(profile_id)
-            policy_row = await self.get_preview_policy(profile_id)
-            directory = self.get_preview_dir(profile_id)
-            if policy_row is not None and directory is not None:
-                write_policy(
-                    directory,
-                    PreviewPolicy(
-                        enabled=policy_row[0],
-                        epoch=policy_row[1],
-                        runtime_instance_id=runtime_instance_id,
-                    ),
-                )
+                if not rt:
+                    raise ProfileNotFoundError(profile_id)
+                policy_row = await self.get_preview_policy(profile_id)
+                directory = self.get_preview_dir(profile_id)
+                if policy_row is not None and directory is not None:
+                    write_policy(
+                        directory,
+                        PreviewPolicy(
+                            enabled=policy_row[0],
+                            epoch=policy_row[1],
+                            runtime_instance_id=runtime_instance_id,
+                        ),
+                    )
             return rt
         except DBAPIError as e:
             self._handle_db_error(e)

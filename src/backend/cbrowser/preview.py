@@ -38,7 +38,9 @@ def preview_dir(data_root: Path | str, profile_id: str) -> Path:
     return Path(data_root) / "profiles" / profile_id / "preview"
 
 
-def _atomic_write(path: Path, payload: str | bytes) -> None:
+def _atomic_write(
+    path: Path, payload: str | bytes, *, uid: int | None = None, gid: int | None = None
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
@@ -47,6 +49,12 @@ def _atomic_write(path: Path, payload: str | bytes) -> None:
         else:
             tmp.write_text(payload, encoding="utf-8")
         os.chmod(tmp, 0o600)
+        if uid is not None or gid is not None:
+            os.chown(
+                tmp,
+                uid if uid is not None else -1,
+                gid if gid is not None else -1,
+            )
         os.replace(tmp, path)
     except BaseException:
         # Never leave a half-written staging file behind (cancellation,
@@ -69,8 +77,10 @@ def read_policy(directory: Path) -> PreviewPolicy | None:
         return None
 
 
-def write_policy(directory: Path, policy: PreviewPolicy) -> None:
-    _atomic_write(directory / POLICY_FILE, policy.model_dump_json())
+def write_policy(
+    directory: Path, policy: PreviewPolicy, *, uid: int | None = None, gid: int | None = None
+) -> None:
+    _atomic_write(directory / POLICY_FILE, policy.model_dump_json(), uid=uid, gid=gid)
 
 
 def read_meta(directory: Path) -> PreviewMeta | None:
