@@ -146,22 +146,31 @@ current_revision_chain() {
 }
 
 check_database_schema_generation() {
-  # AC-002 (t035): a database stamped with a retired 0001-0009 revision
-  # must NOT be deployed or rolled back against.  Inspect it read-only
-  # (python3 sqlite3) and fail closed, printing REBUILD_GUIDANCE, before
-  # any image is built, container started, or pointer moved.  An absent
-  # database, one without an alembic_version table, or one already at the
-  # baseline revision is left for the API to create/upgrade on startup.
-  # The database file is never opened for writing here.
-  local db_path="$DATA_ROOT/cbrowser.db" rc
+  # AC-002 (t035, P1-8): a database stamped with a retired 0001-0009
+  # revision must NOT be deployed or rolled back against.  Inspect it
+  # read-only (python3 sqlite3) and fail closed, printing
+  # REBUILD_GUIDANCE, before any image is built, container started, or
+  # pointer moved.  Membership is decided by the Alembic revision chain
+  # shipped in this source tree (current_revision_chain), not by a single
+  # BASELINE_REVISION equality: after the first deploy the live database
+  # is stamped at the chain head (0002/0003/0004...), and a baseline-only
+  # comparison would mis-kill every second deploy and rollback.  An
+  # absent database, one without an alembic_version table, or one stamped
+  # with any shipped chain member is left for the API to create/upgrade
+  # on startup.  The database file is never opened for writing here.
+  # Cross-generation rollback (live DB stamped outside the shipped chain,
+  # or rollback target head outside the shipped chain) is refused here and
+  # at the target check below: rebuild the data directory from scratch,
+  # no in-place cross-generation migration and no ALLOWED_ORIGINS compat.
+  local db_path="$DATA_ROOT/cbrowser.db" rc current chain
   [ -f "$db_path" ] || return 0
   set +e
-  python3 - "$db_path" "$BASELINE_REVISION" <<'PY'
+  current="$(python3 - "$db_path" <<'PY'
 import sqlite3
 import sys
 from urllib.parse import quote
 
-db, baseline = sys.argv[1], sys.argv[2]
+db = sys.argv[1]
 conn = None
 try:
     conn = sqlite3.connect("file:" + quote(db) + "?mode=ro", uri=True)
@@ -170,31 +179,35 @@ try:
         "AND name='alembic_version'"
     ).fetchone()
     if row is None:
-        sys.exit(0)
-    current = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-    sys.exit(3 if current is not None and current[0] != baseline else 0)
+        print("")
+    else:
+        stamped = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        print(stamped[0] if stamped is not None and stamped[0] else "")
 except sqlite3.DatabaseError:
     # Not a readable SQLite database: no stamped legacy schema to reject
     # here; the API startup path reports the real error.
-    sys.exit(0)
+    print("")
 finally:
     if conn is not None:
         conn.close()
 PY
+)"
   rc=$?
   set -e
-  case "$rc" in
-    0) return 0 ;;
-    3)
-      echo "Refusing to deploy: database $db_path is stamped with a retired schema revision (expected baseline $BASELINE_REVISION)." >&2
-      echo "$REBUILD_GUIDANCE" >&2
-      return 1
-      ;;
-    *)
-      echo "Failed to inspect database schema generation at $db_path (python3 exit $rc)." >&2
-      return 1
-      ;;
-  esac
+  if [ "$rc" -ne 0 ]; then
+    echo "Failed to inspect database schema generation at $db_path (python3 exit $rc)." >&2
+    return 1
+  fi
+  # Command substitution strips trailing newlines; an empty stamp means
+  # "no migration generation claimed" and is left to API startup.
+  current="$(printf '%s' "$current" | tr -d '[:space:]')"
+  [ -z "$current" ] && return 0
+  chain="$(current_revision_chain)"
+  if ! grep -qxF "$current" <<< "$chain"; then
+    echo "Refusing to deploy: database $db_path is stamped with revision '$current', which is not in the current Alembic revision chain." >&2
+    echo "$REBUILD_GUIDANCE" >&2
+    return 1
+  fi
 }
 
 atomic_write() {
@@ -546,10 +559,11 @@ cmd_rollback() {
   fi
   # The rollback floor is decided by the Alembic revision chain, not by
   # lexical string comparison.  Only a release whose migration head is a
-  # member of the shipped chain (the current schema generation, whose
-  # single head is the t035 baseline) may be a rollback target.  A release
-  # built from the retired 0001-0009 chain is refused here, before any
-  # container is started or pointer moved.
+  # member of the shipped chain (the current schema generation, rooted at
+  # the t035 baseline) may be a rollback target.  A release built from the
+  # retired 0001-0009 chain is refused here, before any container is
+  # started or pointer moved; cross-generation rollback has no
+  # ALLOWED_ORIGINS compat and must rebuild the data directory instead.
   chain="$(current_revision_chain)"
   if ! grep -qxF "$target_migration" <<< "$chain"; then
     echo "Refusing rollback to '$target': its migration head '$target_migration' is not in the current Alembic revision chain (baseline $BASELINE_REVISION)." >&2

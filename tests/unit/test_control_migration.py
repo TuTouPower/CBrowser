@@ -119,3 +119,82 @@ def test_revision_chain_matches_shipped_migration_files(tmp_path: Path) -> None:
     )
     assert BASELINE_REVISION not in retired_revisions
     assert all(legacy not in chain for legacy in retired_revisions)
+
+
+@pytest.mark.asyncio
+async def test_upgrade_from_0002_era_old_db_to_head(tmp_path: Path) -> None:
+    """P0-2: a database stamped at the 0002 revision (pre-0004, without the
+    four t039/t040 columns) upgrades to head with the columns present and
+    the ORM usable.  Existing tests only cover empty-DB upgrade; this guards
+    the 0004 backfill path for live 0002-era databases."""
+    db = tmp_path / "old2.db"
+    cfg = get_alembic_config(db)
+    command.upgrade(cfg, "c41f0a2b7d93")
+    conn = sqlite3.connect(db)
+    try:
+        profiles_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(profiles)").fetchall()
+        }
+        runtimes_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(profile_runtimes)").fetchall()
+        }
+        assert "capture_preview_epoch" not in profiles_cols
+        assert "backoff_started_at" not in runtimes_cols
+        assert "next_retry_at" not in runtimes_cols
+        assert "preview_captured_at" not in runtimes_cols
+        now = "2026-01-01T00:00:00+00:00"
+        conn.execute(
+            "INSERT INTO profiles (id, name, fingerprint_seed, user_data_dir,"
+            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("old-1", "Old", 7, "/data/profiles/old-1/profile", now, now),
+        )
+        conn.execute(
+            "INSERT INTO profile_runtimes (profile_id, updated_at)"
+            " VALUES (?, ?)",
+            ("old-1", now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    # Upgrade through 0003 + 0004 to the current head.
+    run_database_migrations(db)
+    conn = sqlite3.connect(db)
+    try:
+        profiles_cols = {
+            row[1] for row in conn.execute("PRAGMA table_info(profiles)").fetchall()
+        }
+        runtimes_cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(profile_runtimes)").fetchall()
+        }
+        assert "capture_preview_epoch" in profiles_cols
+        assert "backoff_started_at" in runtimes_cols
+        assert "next_retry_at" in runtimes_cols
+        assert "preview_captured_at" in runtimes_cols
+        row = conn.execute(
+            "SELECT capture_preview_epoch FROM profiles WHERE id = ?", ("old-1",)
+        ).fetchone()
+        assert row is not None and row[0] == 0
+        row = conn.execute(
+            "SELECT backoff_started_at, next_retry_at, preview_captured_at"
+            " FROM profile_runtimes WHERE profile_id = ?",
+            ("old-1",),
+        ).fetchone()
+        assert row == (None, None, None)
+    finally:
+        conn.close()
+    # ORM is usable on the upgraded database: old row reads, new row writes.
+    engine, maker = create_engine_and_maker(db)
+    try:
+        repo = ProfileRepository(maker)
+        old = await repo.get_profile("old-1")
+        assert old is not None
+        assert old.id == "old-1"
+        new = await repo.create_profile(ProfileConfig(name="New", fingerprint_seed=2))
+        assert new.id
+        fetched = await repo.get_profile(new.id)
+        assert fetched is not None
+    finally:
+        await engine.dispose()
+    command.check(get_alembic_config(db))
