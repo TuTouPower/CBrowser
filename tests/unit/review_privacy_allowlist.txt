@@ -3,7 +3,7 @@
 # to the exact file content fingerprint -- an exemption lapses as soon as
 # the file content changes, and new files never inherit one).
 # Format: <repo-relative path> sha256:<hex of file bytes>
-docs/archive/handoff.md sha256:1d933426ca524640febf081deae35d3630d1aeb079b43dc692642309cb8d04ef
+docs/archive/handoff.md sha256:0e0d77ba7e66693d68b40db85e330a181ce98ff2cb80193e20992787edc4c9a5
 docs/archive/spikes/s001_selkies_runtime/blackbox_review.md sha256:1dbe162d1a24df539b93ce9c8ea5d0408cc0ddf79225845ae9a1badf72907f2c
 docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py sha256:87be6dc641ae8dfe64699e1df9160e2536816ae851e6e10c9156016cf1ea0cf2
 docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py sha256:1b9c321a3ea06feb55f66f5f3e8f420e96630e7b475c12b229a3dbf3be0142fe
@@ -104,4 +104,6 @@ docs/tasks/t044_e2e_parallel_execution/review_code.md sha256:82134ef4bac1a5f7bcd
 docs/archive/tasks/t044_e2e_parallel_execution/review_code.md sha256:82134ef4bac1a5f7bcd0d3904db8754bf27eb39b13ebfc3cb525d20f29b5dafb
 docs/tasks/t044_e2e_parallel_execution/review_test.md sha256:1b197311bbaaf359f32faba8499fe64b25ba094fe82f94f89efa5abae8afdc4c
 docs/archive/tasks/t044_e2e_parallel_execution/review_test.md sha256:1b197311bbaaf359f32faba8499fe64b25ba094fe82f94f89efa5abae8afdc4c
+docs/archive/tasks/t047_ui_theme_omni_restyle/review_general.md sha256:fc34c0202d27443684d7aa28e7b9f7acc49ebc3ac744af8e1a07c70a9e39060e
+docs/archive/tasks/t047_ui_theme_omni_restyle/task.md sha256:08ce1bac64ffba0947a3b5415c2ef1b8c64c03ef172e5e7a633d451b895c32e2
 docs/reviews/review_20261108_153337/adoption_decision.md sha256:ff967d429c0155a43f299bccd84e771a12b149b65f1b5555a492ccedd3279bb4
