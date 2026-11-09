@@ -50,7 +50,7 @@ bash scripts/deploy.sh rollback              # 回到 previous_release
 bash scripts/deploy.sh rollback <release_id> # 回到指定 release
 ```
 
-回退同样执行 readiness 验收后才切换指针，且自动采用目标 release 记录的实例身份（项目、prefix、端口、数据根、secrets 目录）执行，不受你当前 shell 里这些环境变量的影响——默认实例直接裸命令 `rollback` 即可。唯一例外是 release 存放位置本身：若该实例发布时用了自定义 `CBROWSER_DEPLOY_DIR`（见第 6 节），回退时也要带上同一个 `CBROWSER_DEPLOY_DIR`，否则会命中默认实例的指针。以下情况回退会在任何变更前被拒绝并说明原因：目标 release 不具备 readiness 能力；目标 release 的迁移版本低于当前数据库版本（当前数据库版本以实际已应用的最高迁移为准：一次拉起后验收失败的发布可能已经把数据库升过版，即使它没有成为 current release；系统没有降级迁移，不要手工绕过）。
+回退同样执行 readiness 验收后才切换指针，且自动采用目标 release 记录的实例身份（项目、prefix、端口、数据根、secrets 目录）执行，不受你当前 shell 里这些环境变量的影响——默认实例直接裸命令 `rollback` 即可。唯一例外是 release 存放位置本身：若该实例发布时用了自定义 `CBROWSER_DEPLOY_DIR`（见第 6 节），回退时也要带上同一个 `CBROWSER_DEPLOY_DIR`，否则会命中默认实例的指针。以下情况回退会在任何变更前被拒绝并说明原因：目标 release 不具备 readiness 能力；目标 release 的迁移 head 与当前数据库实际 stamp 不等（无降级迁移：同代旧 head 与跨代旧 release 均拒绝，含需已删除 `ALLOWED_ORIGINS` 的旧 t042 release——拒绝即可，不做兼容，重建数据目录）；工作树 `compose.yaml` 指纹与目标 `compose_sha256` 不一致（防旧镜像配新 compose 混用）。当前数据库版本以只读读取的实际 `alembic_version` stamp 为准（空库留给 API 启动创建/升级）；一次拉起后验收失败的发布若已把数据库升版，stamp 已变，旧 head 回退同样拒绝，不要手工绕过。
 
 ## 5. 凭证
 

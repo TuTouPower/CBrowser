@@ -77,7 +77,33 @@ def _fixed_range_port_scans(tree: ast.Module) -> list[str]:
 
 
 def _pinned_cli_port_mappings(tree: ast.Module) -> list[str]:
-    """CLI ``-p 127.0.0.1:<host>:<container>`` with an explicit host port."""
+    """CLI ``-p 127.0.0.1:<host>:<container>`` with an explicit host port.
+
+    Covers f-strings (``JoinedStr``) and ordinary strings (``Constant``).
+    The daemon-allocated ``127.0.0.1::<container>`` / ``0.0.0.0::<container>``
+    form (empty host) is safe and never flagged.
+    """
+    import re
+
+    # Explicit host (digits or f-string placeholder), never empty (::).
+    _host = r"(?:\d+|\{\.\.\.\})"
+    _pinned_with_dash_p = re.compile(
+        r"(?:127\.0\.0\.1|0\.0\.0\.0):(?!:)" + _host
+    )
+    # Without an in-string "-p" (flag split across argv list), require the
+    # full host:container shape so plain URLs (single port, no second colon)
+    # are not flagged.
+    _pinned_bare = re.compile(
+        r"(?:127\.0\.0\.1|0\.0\.0\.0):(?!:)" + _host + r":"
+    )
+
+    def _check_text(text: str) -> bool:
+        if "127.0.0.1:" not in text and "0.0.0.0:" not in text:
+            return False
+        if "-p" in text:
+            return bool(_pinned_with_dash_p.search(text))
+        return bool(_pinned_bare.search(text))
+
     hits: list[str] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.JoinedStr):
@@ -85,13 +111,10 @@ def _pinned_cli_port_mappings(tree: ast.Module) -> list[str]:
                 part.value if isinstance(part, ast.Constant) else "{...}"
                 for part in node.values
             )
-            has_loopback = "127.0.0.1:" in text or "0.0.0.0:" in text
-            if not has_loopback:
-                continue
-            if "-p" in text:
-                if text.count("{...}") >= 1:
-                    hits.append(ast.unparse(node))
-            elif "127.0.0.1:" in text and text.count("{...}") >= 2:
+            if _check_text(text):
+                hits.append(ast.unparse(node))
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if _check_text(node.value):
                 hits.append(ast.unparse(node))
     return hits
 
@@ -124,3 +147,29 @@ def test_modules_with_pinned_host_ports_are_serial() -> None:
             assert _module_is_serial(tree), (
                 f"{path.name} pins a host port but is not marked serial"
             )
+
+
+def test_pinned_cli_detects_plain_strings_and_daemon_allocated_is_safe() -> None:
+    """Ordinary (non-f) strings with an explicit host are pinned; the
+    daemon-allocated ``127.0.0.1::<container>`` form is safe."""
+    pinned_plain = ast.parse(
+        'cmd = "docker run -d -p 127.0.0.1:8080:80 img"\n'
+    )
+    assert _pinned_cli_port_mappings(pinned_plain), "plain string pinned missed"
+
+    pinned_f = ast.parse(
+        'cmd = f"docker run -d -p 127.0.0.1:{port}:80 img"\n'
+    )
+    assert _pinned_cli_port_mappings(pinned_f), "f-string pinned missed"
+
+    bare_pinned = ast.parse('x = f"127.0.0.1:{host}:{container}"\n')
+    assert _pinned_cli_port_mappings(bare_pinned), "bare host:container missed"
+
+    safe_daemon = ast.parse('x = f"127.0.0.1::{port}"\n')
+    assert not _pinned_cli_port_mappings(safe_daemon), "daemon :: flagged"
+
+    safe_plain_daemon = ast.parse('x = "127.0.0.1::8080"\n')
+    assert not _pinned_cli_port_mappings(safe_plain_daemon), "plain :: flagged"
+
+    safe_url = ast.parse('url = f"http://127.0.0.1:{port}"\n')
+    assert not _pinned_cli_port_mappings(safe_url), "dynamic URL flagged"

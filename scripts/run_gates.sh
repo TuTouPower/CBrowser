@@ -60,10 +60,12 @@ prepare_env() {
   printf '%s' "$REQ_HASH" > "$STAMP"
 }
 
-# Clean clones lack .scratch/selkies_wheels (gitignored) while the unit
-# gate and the E2E adapter suites require the pinned wheel bytes; fetch it
-# once (SHA256-verified) before any suite so a clean clone runs as-is.
-# Warm runs reuse the cached file without any download.
+# The unit gate and the E2E adapter suites require the pinned wheel bytes
+# at .scratch/selkies_wheels (gitignored, so clean clones lack it).  This
+# pre-step is offline per gate_verification.md:53 / testing.md:372: it never
+# initiates a public download; a missing/mismatched cache fails closed with
+# a clear message before any suite (same rule as vendor allow_download=False
+# and the E2E preflight).  Populate the cache out of band and re-run.
 ensure_selkies_wheel_cache() {
   local cache="${CBROWSER_SELKIES_WHEEL_CACHE:-$REPO_ROOT/.scratch/selkies_wheels}"
   "$PY" -m scripts.ensure_selkies_wheel_cache --cache-dir "$cache"
@@ -101,6 +103,8 @@ run_gate_suite() {
 # run_suite <name> <display command> <command...>
 # Each suite records its own TSV fragment; finish_evidence concatenates
 # them in SUITE_ORDER so concurrent writes cannot scramble the manifest.
+# Redaction failure never leaves an unredacted raw log: the raw file is
+# always removed and a placeholder notes that the raw was withheld.
 run_suite() {
   local name="$1" display="$2"
   shift 2
@@ -108,7 +112,9 @@ run_suite() {
   local code=0
   echo "=== suite: $name: $display"
   "$@" >"$raw_log" 2>&1 || code=$?
-  "$PY" scripts/redact_evidence.py <"$raw_log" >"$EVIDENCE_DIR/logs/$name.log"
+  if ! "$PY" scripts/redact_evidence.py <"$raw_log" >"$EVIDENCE_DIR/logs/$name.log"; then
+    echo "log redaction failed for suite $name; raw log withheld from evidence" > "$EVIDENCE_DIR/logs/$name.log"
+  fi
   rm -f "$raw_log"
   printf '%s\t%s\t%s\n' "$name" "$code" "$display" > "$EVIDENCE_DIR/suites.d/$name.tsv"
   echo "=== suite: $name: exit $code"
@@ -169,7 +175,13 @@ finish_evidence() {
       GATE_FAILURES=1
     fi
   done
-  for f in "$EVIDENCE_DIR"/suites.d/*.tsv; do
+  # Only SUITE_ORDER fragments decide the verdict; stale extra TSVs (e.g.
+  # a previous run's e2e or a retired suite) are ignored here — evidence-dir
+  # reuse cleaning above already removed them, so they cannot false-green a
+  # missing suite nor false-red the current run.  Manifest is built from
+  # suites.tsv (SUITE_ORDER only), keeping exit code and manifest consistent.
+  for name in $SUITE_ORDER; do
+    f="$EVIDENCE_DIR/suites.d/$name.tsv"
     [ -f "$f" ] || continue
     code="$(cut -f2 "$f")"
     if [ "$code" != "0" ]; then GATE_FAILURES=1; fi
@@ -187,6 +199,13 @@ finish_evidence() {
 # ---------------- environment (t044 AC-009) ----------------
 if [ -n "$EVIDENCE_DIR" ]; then
   mkdir -p "$EVIDENCE_DIR/logs" "$EVIDENCE_DIR/junit" "$EVIDENCE_DIR/suites.d"
+  # Evidence-dir reuse must not go false-green on stale files: a suite
+  # that crashes before writing its TSV (or a suite not in this run's
+  # SUITE_ORDER, e.g. e2e when CBROWSER_RUN_E2E=0) must not inherit the
+  # previous run's pass.  Clear prior per-suite fragments, JUnit and logs
+  # before starting; finish_evidence then fails closed on any missing TSV.
+  rm -f "$EVIDENCE_DIR"/suites.d/*.tsv "$EVIDENCE_DIR"/junit/*.xml "$EVIDENCE_DIR"/logs/*.log "$EVIDENCE_DIR"/logs/*.raw.log
+  rm -f "$EVIDENCE_DIR/suites.tsv" "$EVIDENCE_DIR/manifest.json"
   : > "$EVIDENCE_DIR/logs/environment.raw.log"
   if ! { prepare_env && ensure_selkies_wheel_cache; } >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1; then
     if ! "$PY" scripts/redact_evidence.py <"$EVIDENCE_DIR/logs/environment.raw.log" >"$EVIDENCE_DIR/logs/environment.log" 2>/dev/null; then
