@@ -40,12 +40,12 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：亮暗两模式的页面背景、卡片、浮层、侧栏、会话 stage 与 accent / danger / warning / group 色呈现 omni 冷灰视觉；`npm run design:lint --prefix src/frontend` 为 0 error / 0 warning，全部组件文字与背景组合 ≥ 4.5:1。
-- [ ] AC-002：界面文本使用 Inter Variable 字体栈（含中文回退），技术数据使用 JetBrains Mono Variable 字体栈；两者经 `@fontsource` 自托管，构建产物含 woff2 且无外部字体 CDN 引用。
-- [ ] AC-003：标题 / 正文 / 标签的实际字号与 omni 层级一致（21 / 17 / 15 / 13.5 / 12.5 / 12.5 / 11.5 / 12.5 / 10.5），并呈现 600 / 550 / 450 字重、1.2–1.55 行高与对应字距；标题不再全部为 400 字重。
-- [ ] AC-004：圆角呈现 6 / 10 / 14 / 18 四档，浮层与弹窗在亮暗两模式使用 omni 柔和阴影；现有页面与组件无需逐页修改即生效。
-- [ ] AC-005：`npm run design:tokens --prefix src/frontend` 确定性生成 `design_tokens.css`，`npm run design:check --prefix src/frontend` 通过；生成器单测覆盖字体派生、字重 / 行高 / 字距与阴影输出。
-- [ ] AC-006：`npm test --prefix src/frontend` 通过；diff 仅包含 token 管线、`globals.css`、`Table.tsx` 的 `tracking-wide` 移除、字体依赖与文档，未改动页面布局或组件结构。
+- [x] AC-001：亮暗两模式的页面背景、卡片、浮层、侧栏、会话 stage 与 accent / danger / warning / group 色呈现 omni 冷灰视觉；`npm run design:lint --prefix src/frontend` 为 0 error / 0 warning，全部组件文字与背景组合 ≥ 4.5:1。
+- [x] AC-002：界面文本使用 Inter Variable 字体栈（含中文回退），技术数据使用 JetBrains Mono Variable 字体栈；两者经 `@fontsource` 自托管，构建产物含 woff2 且无外部字体 CDN 引用。
+- [x] AC-003：标题 / 正文 / 标签的实际字号与 omni 层级一致（21 / 17 / 15 / 13.5 / 12.5 / 12.5 / 11.5 / 12.5 / 10.5），并呈现 600 / 550 / 450 字重、1.2–1.55 行高与对应字距；标题不再全部为 400 字重。
+- [x] AC-004：圆角呈现 6 / 10 / 14 / 18 四档，浮层与弹窗在亮暗两模式使用 omni 柔和阴影；现有页面与组件无需逐页修改即生效。
+- [x] AC-005：`npm run design:tokens --prefix src/frontend` 确定性生成 `design_tokens.css`，`npm run design:check --prefix src/frontend` 通过；生成器单测覆盖字体派生、字重 / 行高 / 字距与阴影输出。
+- [x] AC-006：`npm test --prefix src/frontend` 通过；diff 仅包含 token 管线、`globals.css`、`Table.tsx` 的 `tracking-wide` 移除、字体依赖与文档，未改动页面布局或组件结构。
 
 ### 可测试性声明
 

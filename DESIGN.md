@@ -1,118 +1,119 @@
 ---
 name: CBrowser Design System
 colors:
-  primary: "#006EDC"
-  light-background: "#F0F5F1"
-  dark-background: "#080E0A"
-  light-surface: "#F7FBF8"
-  dark-surface: "#0E1411"
-  light-surface-raised: "#FDFFFD"
-  dark-surface-raised: "#141B17"
-  light-surface-subtle: "#E9EEEA"
-  dark-surface-subtle: "#1B231E"
-  light-surface-hover: "#E2E9E4"
-  dark-surface-hover: "#232B26"
-  light-sidebar: "#E7EDE9"
-  dark-sidebar: "#050A07"
-  light-stage: "#E4EBE6"
-  dark-stage: "#050A07"
-  light-on-surface: "#0D1611"
-  dark-on-surface: "#E6EDE8"
-  light-on-surface-muted: "#48534C"
-  dark-on-surface-muted: "#A1ABA4"
-  light-on-surface-subtle: "#656F69"
-  dark-on-surface-subtle: "#858F88"
-  light-outline: "#D3DCD6"
-  dark-outline: "#242C28"
-  light-outline-strong: "#BAC4BD"
-  dark-outline-strong: "#38433C"
-  light-accent: "#006EDC"
-  dark-accent: "#49A9FF"
-  light-accent-soft: "#DAEEFF"
-  dark-accent-soft: "#112A43"
-  light-on-accent: "#F8FAFD"
-  dark-on-accent: "#021020"
-  light-danger: "#D02C2E"
-  dark-danger: "#F66D64"
-  light-danger-soft: "#FFE6E2"
-  dark-danger-soft: "#391A17"
-  light-warning: "#A76100"
-  dark-warning: "#EBAE42"
-  light-warning-soft: "#FBEDD1"
-  dark-warning-soft: "#33230A"
-  light-overlay: "#050B0785"
-  dark-overlay: "#010201BD"
-  light-focus: "#006EDC"
-  dark-focus: "#49A9FF"
+  primary: "#2F66E0"
+  light-background: "#E7EAF1"
+  dark-background: "#0C0E13"
+  light-surface: "#FFFFFF"
+  dark-surface: "#1F232C"
+  light-surface-raised: "#FFFFFF"
+  dark-surface-raised: "#2B313C"
+  light-surface-subtle: "#F1F4F9"
+  dark-surface-subtle: "#262B34"
+  light-surface-hover: "#E9EDF4"
+  dark-surface-hover: "#363C48"
+  light-sidebar: "#F1F4F9"
+  dark-sidebar: "#090B10"
+  light-stage: "#DDE3EC"
+  dark-stage: "#07080A"
+  light-on-surface: "#232A38"
+  dark-on-surface: "#E9ECF3"
+  light-on-surface-muted: "#5C6478"
+  dark-on-surface-muted: "#A3ABBA"
+  light-on-surface-subtle: "#626A7D"
+  dark-on-surface-subtle: "#858D9C"
+  light-outline: "#E6EAF1"
+  dark-outline: "#2A2F3A"
+  light-outline-strong: "#D3D9E4"
+  dark-outline-strong: "#3A4150"
+  light-accent: "#2F66E0"
+  dark-accent: "#5B8DFF"
+  light-accent-soft: "#EEF3FF"
+  dark-accent-soft: "#29344E"
+  light-on-accent: "#FFFFFF"
+  dark-on-accent: "#0B1220"
+  light-danger: "#DC2626"
+  dark-danger: "#F0564D"
+  light-danger-soft: "#FEE2E2"
+  dark-danger-soft: "#3A1A18"
+  light-warning: "#F5A524"
+  dark-warning: "#F7B53C"
+  light-warning-soft: "#FDF1DC"
+  dark-warning-soft: "#33270F"
+  light-overlay: "#0B12208C"
+  dark-overlay: "#05070AC7"
+  light-focus: "#2F66E0"
+  dark-focus: "#5B8DFF"
   light-group-slate: "#64748B"
   dark-group-slate: "#94A3B8"
-  light-group-blue: "#2563EB"
-  dark-group-blue: "#60A5FA"
-  light-group-teal: "#0D9488"
-  dark-group-teal: "#2DD4BF"
+  light-group-blue: "#2F66E0"
+  dark-group-blue: "#5B8DFF"
+  light-group-teal: "#0EA5A3"
+  dark-group-teal: "#2CC9BD"
   light-group-green: "#16A34A"
-  dark-group-green: "#4ADE80"
-  light-group-amber: "#D97706"
-  dark-group-amber: "#FBBF24"
+  dark-group-green: "#34D27B"
+  light-group-amber: "#CA8A04"
+  dark-group-amber: "#F5C84B"
   light-group-orange: "#EA580C"
-  dark-group-orange: "#FB923C"
+  dark-group-orange: "#FF9D4D"
   light-group-red: "#DC2626"
-  dark-group-red: "#F87171"
-  light-group-violet: "#7C3AED"
-  dark-group-violet: "#A78BFA"
+  dark-group-red: "#FF6B6B"
+  light-group-violet: "#6F5CF6"
+  dark-group-violet: "#9A80FF"
 typography:
   headline-lg:
-    fontFamily: Space Grotesk Variable
-    fontSize: 24px
+    fontFamily: Inter Variable
+    fontSize: 21px
     fontWeight: 600
-    lineHeight: 30px
-    letterSpacing: -0.48px
+    lineHeight: "1.3"
+    letterSpacing: -0.01em
   headline-md:
-    fontFamily: Space Grotesk Variable
-    fontSize: 18px
+    fontFamily: Inter Variable
+    fontSize: 17px
     fontWeight: 600
-    lineHeight: 23px
+    lineHeight: "1.35"
+    letterSpacing: -0.01em
   title-sm:
-    fontFamily: Space Grotesk Variable
-    fontSize: 14px
+    fontFamily: Inter Variable
+    fontSize: 15px
     fontWeight: 600
-    lineHeight: 20px
+    lineHeight: "1.4"
   body-md:
-    fontFamily: Space Grotesk Variable
-    fontSize: 13px
-    fontWeight: 400
-    lineHeight: 20px
+    fontFamily: Inter Variable
+    fontSize: 13.5px
+    fontWeight: 450
+    lineHeight: "1.5"
   body-sm:
-    fontFamily: Space Grotesk Variable
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 18px
+    fontFamily: Inter Variable
+    fontSize: 12.5px
+    fontWeight: 450
+    lineHeight: "1.5"
   label-md:
-    fontFamily: Space Grotesk Variable
-    fontSize: 12px
-    fontWeight: 600
-    lineHeight: 12px
+    fontFamily: Inter Variable
+    fontSize: 12.5px
+    fontWeight: 550
+    lineHeight: "1.35"
   label-sm:
-    fontFamily: Space Grotesk Variable
-    fontSize: 11px
-    fontWeight: 500
-    lineHeight: 13px
+    fontFamily: Inter Variable
+    fontSize: 11.5px
+    fontWeight: 550
+    lineHeight: "1.35"
   mono-md:
-    fontFamily: IBM Plex Mono
-    fontSize: 12px
-    fontWeight: 400
-    lineHeight: 17px
+    fontFamily: JetBrains Mono Variable
+    fontSize: 12.5px
+    fontWeight: 450
+    lineHeight: "1.55"
   mono-caps:
-    fontFamily: IBM Plex Mono
-    fontSize: 10px
-    fontWeight: 500
-    lineHeight: 10px
-    letterSpacing: 0.4px
+    fontFamily: JetBrains Mono Variable
+    fontSize: 10.5px
+    fontWeight: 650
+    lineHeight: "1.2"
+    letterSpacing: 0.06em
 rounded:
-  sm: 4px
-  md: 7px
-  lg: 10px
-  xl: 13px
+  sm: 6px
+  md: 10px
+  lg: 14px
+  xl: 18px
   full: 9999px
 spacing:
   xs: 4px
@@ -682,21 +683,21 @@ components:
 
 ## Overview
 
-CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。业务代码只用语义 token，不写颜色字面量。
+CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。采用冷灰基调、Inter 字体、高字重标题与柔和阴影，业务代码只用语义 token，不写颜色字面量。
 
 ## Colors
 
-颜色全部以 hex 定义。`primary` 是与模式无关的品牌色，只由 `brand-mark` 引用。其余颜色角色以 `light-` / `dark-` 成对出现，两套角色名集合必须完全相同；组件以 `<component>-light` / `<component>-dark` 成对定义并只引用同模式 token。
+颜色全部以 hex 定义。`primary` 是与模式无关的品牌色（`#2F66E0`），只由 `brand-mark` 引用。其余颜色角色以 `light-` / `dark-` 成对出现，两套角色名集合必须完全相同；组件以 `<component>-light` / `<component>-dark` 成对定义并只引用同模式 token。
 
 ### Modes
 
 亮暗双模式约定（plan 4.2）：`primary` 为模式无关色；`light-<role>` 与 `dark-<role>` 成对且角色名集合相同；涉及颜色的组件成对定义 `<component>-light` / `<component>-dark`，状态变体写作 `<component>-<state>-light` / `<component>-<state>-dark`；字体、间距、圆角与模式无关，只定义一次。生成器在生成前校验角色集合相等、无未解析引用、且颜色 token 只能是 `primary` 或带模式前缀。上游规范支持多模式时只改 token 写法与生成器，业务代码不变。
 
-语义：`background` 页面底色、`surface` 卡片/表格/面板、`surface-raised` 浮层、`surface-subtle` 表头/次级区块、`surface-hover` 悬停、`sidebar` 侧栏、`stage` 会话画面区、`outline` 边框、`accent` 唯一强调色、`danger` 危险、`warning` 过渡态、`overlay` 遮罩、`focus` 焦点环、`group-<hue>` 8 个分组色相。状态必须有文字或图标，不能只靠颜色；两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。
+语义：`background` 页面底色（亮 `#E7EAF1` / 暗 `#0C0E13`）、`surface` 卡片/表格/面板（亮 `#FFFFFF` / 暗 `#1F232C`）、`surface-raised` 浮层（亮 `#FFFFFF` / 暗 `#2B313C`）、`surface-subtle` 表头/次级区块（亮 `#F1F4F9` / 暗 `#262B34`）、`surface-hover` 悬停（亮 `#E9EDF4` / 暗 `#363C48`）、`sidebar` 侧栏（亮 `#F1F4F9` / 暗 `#090B10`）、`stage` 会话画面区（亮 `#DDE3EC` / 暗 `#07080A`）、`outline` 边框（亮 `#E6EAF1` / 暗 `#2A2F3A`）、`outline-strong` 强调边框（亮 `#D3D9E4` / 暗 `#3A4150`）、`accent` 唯一强调色（亮 `#2F66E0` / 暗 `#5B8DFF`）、`accent-soft` 强调浅底（亮 `#EEF3FF` / 暗 `#29344E`）、`danger` 危险（亮 `#DC2626` / 暗 `#F0564D`）、`warning` 警示（亮 `#F5A524` / 暗 `#F7B53C`）、`overlay` 遮罩、`focus` 焦点环、`group-<hue>` 8 个分组色相。状态必须有文字或图标，不能只靠颜色；两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。
 
 ## Typography
 
-UI 字体 Space Grotesk Variable，技术数据字体 IBM Plex Mono，均经 `@fontsource` 随前端产物自托管。中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`。最小字号 11px，唯一例外是 mono 大写表头 `mono-caps` 10px。ID、端口、版本号、种子、host 一律用 mono 字体。行高与字距写在 `lineHeight` / `letterSpacing`，生成器只把 `fontSize` 落到 `--text-*` 变量。
+UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `@fontsource` 随前端产物自托管。中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`。最小字号 10.5px（`mono-caps`）。ID、端口、版本号、种子、host 一律用 mono 字体。生成器从 `body-md` 与 `mono-md` 派生字体栈，并将 `fontSize`、`fontWeight`、`lineHeight` 与 `letterSpacing` 统一落到 Tailwind 4 `--text-*` 变量体系。
 
 ## Layout
 
@@ -704,11 +705,16 @@ UI 字体 Space Grotesk Variable，技术数据字体 IBM Plex Mono，均经 `@f
 
 ## Elevation & Depth
 
-用深浅不同的底色与边框区分层级，阴影只用于浮层（popover、弹窗、toast）。规范 alpha 没有阴影 token，浮层阴影精确值：`0 12px 32px rgba(0,0,0,0.18)`（亮色）/ `0 12px 32px rgba(0,0,0,0.55)`（暗色），由 WP03 落到 Tailwind 主题。
+用深浅不同的底色与边框区分层级，阴影只用于浮层（popover、弹窗、toast）。由生成器解析本节表格并输出 `--shadow-*` 变量（亮色默认，`.dark` 覆盖），业务代码使用 `shadow-lg` / `shadow-xl` 工具类。
+
+|token|light|dark|
+|---|---|---|
+|lg|0 12px 38px rgba(20, 30, 60, 0.2)|0 12px 38px rgba(0, 0, 0, 0.55)|
+|xl|0 20px 60px -12px rgba(23, 33, 68, 0.28)|0 20px 60px -12px rgba(0, 0, 0, 0.65)|
 
 ## Shapes
 
-圆角 `sm 4`（状态标签、分组标签）、`md 7`（按钮、输入框）、`lg 10`（表格、卡片）、`xl 13`（弹窗）、`full`（圆形）。
+圆角 `sm 6`（状态标签、分组标签、复选框）、`md 10`（按钮、输入框、下拉框）、`lg 14`（表格、卡片、浮层）、`xl 18`（弹窗）、`full 9999`（圆形）。
 
 ## Components
 

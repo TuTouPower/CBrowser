@@ -2,7 +2,7 @@
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t036 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳」契约。前端不再有硬编码颜色，也不再有「顶栏 + Profile 搜索侧栏」的信息架构；路由按 `docs/plan_20261105_ui_redesign.md` 5.1 定稿。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`（AC-001~010）。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。非范围：环境列表 / 详情 / 代理库 / 会话页的新实现（t037 / t038 / t039）、命令面板、设置页网络访问区块（t042）。
+本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约。前端不再有硬编码颜色，也不再有「顶栏 + Profile 搜索侧栏」的信息架构；路由按 `docs/plan_20261105_ui_redesign.md` 5.1 定稿。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。非范围：环境列表 / 详情 / 代理库 / 会话页的新实现（t037 / t038 / t039）、命令面板、设置页网络访问区块（t042）。
 
 ## 2. 行为契约
 
@@ -16,7 +16,7 @@
 ### 2.2 Tailwind 4 与字体
 
 - `@tailwindcss/vite` 插件替代 PostCSS / autoprefixer / `tailwind.config.ts`；`@theme` 以 `--color-*: initial` 重置默认调色板，只暴露 `DESIGN.md` 生成的语义 token。旧页面在被 t037 / t039 替换前失去调色板样式（过渡期不要求可用），不设豁免机制，全局颜色门禁由 t039 启用。
-- UI 字体 Space Grotesk Variable、技术数据字体 IBM Plex Mono 经 `@fontsource` 随产物自托管，中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`；构建产物不引用任何外部字体或图标 CDN，字体文件随产物分发。
+- UI 字体 Inter Variable、技术数据字体 JetBrains Mono Variable 经 `@fontsource` 随产物自托管，中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`；构建产物不引用任何外部字体或图标 CDN，字体文件随产物分发。生成器从 `body-md` 与 `mono-md` 派生字体栈，输出字号、字重、行高与字距变量，并解析 `## Elevation & Depth` 阴影表输出 `--shadow-*` 变量。
 - 业务代码（外壳、`shared/ui`、登录页、设置页、手写样式）不含 Tailwind 默认调色板类与颜色字面量；生成产物 `design_tokens.css` 按设计权威含 hex，不列入业务源码扫描。
 
 ### 2.3 主题运行时

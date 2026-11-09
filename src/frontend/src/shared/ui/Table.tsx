@@ -45,7 +45,7 @@ export function TableHead({
     <th
       scope="col"
       className={cn(
-        "px-md py-sm text-left font-mono text-mono-caps uppercase tracking-wide text-on-surface-muted",
+        "px-md py-sm text-left font-mono text-mono-caps uppercase text-on-surface-muted",
         className,
       )}
       {...rest}

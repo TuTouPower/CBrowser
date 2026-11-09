@@ -129,6 +129,54 @@ describe("validateAndGenerate", () => {
     expect(() => validateAndGenerate(source)).toThrow(DesignValidationError);
   });
 
+  it("fails when body-md or mono-md font family is missing", () => {
+    const source = withReplacements([
+      ["  body-md:\n    fontFamily: Space Grotesk Variable\n    fontSize: 13px\n    fontWeight: 400\n    lineHeight: 1.5", ""],
+    ]);
+    expect(() => validateAndGenerate(source)).toThrow(DesignValidationError);
+    expect(() => validateAndGenerate(source)).toThrow(/body-md and mono-md font families/);
+  });
+
+  it("fails when typography font families mismatch within group", () => {
+    const source = withReplacements([
+      [
+        "  mono-md:\n    fontFamily: IBM Plex Mono\n    fontSize: 12px\n    fontWeight: 400\n    lineHeight: 1.4",
+        "  mono-md:\n    fontFamily: IBM Plex Mono\n    fontSize: 12px\n  mono-caps:\n    fontFamily: Other Mono\n    fontSize: 10px",
+      ],
+    ]);
+    expect(() => validateAndGenerate(source)).toThrow(DesignValidationError);
+    expect(() => validateAndGenerate(source)).toThrow(/must match mono-md/);
+  });
+
+  it("emits typography font-weight, line-height and letter-spacing variables", () => {
+    const source = withReplacements([
+      [
+        '    lineHeight: 1.5',
+        '    lineHeight: "1.5"\n    letterSpacing: -0.01em',
+      ],
+    ]);
+    const css = validateAndGenerate(source);
+    expect(css).toContain("--text-body-md: 13px;");
+    expect(css).toContain("--text-body-md--line-height: 1.5;");
+    expect(css).toContain("--text-body-md--font-weight: 400;");
+    expect(css).toContain("--text-body-md--letter-spacing: -0.01em;");
+  });
+
+  it("parses and emits shadow tokens for light and dark themes", () => {
+    const source = withReplacements([
+      [
+        "## Components",
+        `## Elevation & Depth\n\n| token | light | dark |\n|---|---|---|\n| lg | 0 12px 38px rgba(20, 30, 60, 0.2) | 0 12px 38px rgba(0, 0, 0, 0.55) |\n| xl | 0 20px 60px -12px rgba(23, 33, 68, 0.28) | 0 20px 60px -12px rgba(0, 0, 0, 0.65) |\n\n## Components`,
+      ],
+    ]);
+    const css = validateAndGenerate(source);
+    expect(css).toContain("--shadow-lg: 0 12px 38px rgba(20, 30, 60, 0.2);");
+    expect(css).toContain("--shadow-xl: 0 20px 60px -12px rgba(23, 33, 68, 0.28);");
+    const darkSection = css.slice(css.indexOf(".dark {"));
+    expect(darkSection).toContain("--shadow-lg: 0 12px 38px rgba(0, 0, 0, 0.55);");
+    expect(darkSection).toContain("--shadow-xl: 0 20px 60px -12px rgba(0, 0, 0, 0.65);");
+  });
+
   it("deterministically generates Tailwind 4 @theme with light defaults and .dark overrides", () => {
     const css = validateAndGenerate(VALID_SOURCE);
     expect(css).toBe(validateAndGenerate(VALID_SOURCE));
@@ -137,8 +185,8 @@ describe("validateAndGenerate", () => {
     expect(css).toContain("--color-background: #f0f5f1;");
     expect(css).toContain(".dark");
     expect(css).toContain("--color-background: #080e0a;");
-    expect(css).toContain("--font-ui:");
-    expect(css).toContain("--font-mono:");
+    expect(css).toContain('--font-ui: "Space Grotesk Variable", system-ui, "PingFang SC"');
+    expect(css).toContain('--font-mono: "IBM Plex Mono", ui-monospace, "SF Mono"');
     expect(css).toContain("--text-body-md: 13px;");
     expect(css).toContain("--radius-md: 7px;");
     expect(css).toContain("--spacing-md: 12px;");
