@@ -314,7 +314,7 @@
     2. Supervisor 作为单机唯一 Docker 协调者，接管边缘代理（Caddy）与媒体容器（Stream）的端口重建与版本对账。
     3. 仅修改反向代理规则，不修改 Docker Host Port 绑定。
 - 结论：采用选项 2。
-    - **端口绑定物理隔离**：本机模式下，HTTPS 端口（Caddy）与媒体 UDP mux（Stream）强制绑定 `127.0.0.1`，非回环访问在网络层物理不可达；局域网模式下，绑定 `0.0.0.0`，Selkies 注入局域网通告 IP 输出局域网 host candidate。
+    - **端口绑定物理隔离**：本机模式下，HTTPS 端口（Caddy）与媒体 UDP mux（Stream）强制绑定 `127.0.0.1`，非回环访问在网络层物理不可达；局域网模式（p053 暂搁，未接线）下，绑定 `0.0.0.0`，Selkies 注入局域网通告 IP 输出局域网 host candidate。
     - **Supervisor 统一接管边缘容器重建**：应用操作由 API 发起，Supervisor 执行原子重建。对 Caddy，Supervisor 保留原有 volume、network、image 与 compose 标签，仅重写 `PortBindings` 并原子替换容器；对 Stream，`_converge_session` 与启动对账比对当前运行容器标签中的绑定地址与通告 IP，漂移即重建。
     - **修订 ADR 013**：媒体链路依然无 STUN/TURN、无 ICE 重启机制，但由原「仅同机回环 127.0.0.1 直连」扩展为「本机回环 / 局域网 host 候选直连可配置」。
 - 复查条件：Docker 网络或网络后端架构变更、或需支持公网/NAT 穿透时重新评审。

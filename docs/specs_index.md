@@ -10,11 +10,11 @@
 |runtime_validation|t001|2026-11-01T00:00:00+08:00|
 |runtime_persistence|t002, t016, t021|2026-11-04T00:00:00+08:00|
 |runtime_lifecycle|t005, t007, t022, t026, t035|2026-11-05T00:00:00+08:00|
-|release_deployment|t027, t034, t035, t042|2026-11-08T00:00:00+08:00|
+|release_deployment|t027, t034, t035, t042|2026-11-09T18:21:05+08:00|
 |automation_compatibility|t029|2026-11-04T00:00:00+08:00|
 |agent_executor|t030|2026-11-04T00:00:00+08:00|
 |human_agent_control|t031|2026-11-04T00:00:00+08:00|
-|access_control|t006, t007, t008, t021, t023, t025, t042|2026-11-08T00:00:00+08:00|
+|access_control|t006, t007, t008, t021, t023, t025, t042|2026-11-09T18:21:05+08:00|
 |profile_management|t007, t013, t017, t020, t021, t023, t025, t035, t041, t037|2026-11-06T00:00:00+08:00|
 |fingerprint_platform|t041|2026-11-06T00:00:00+08:00|
 |ui_design_system|t036, t037|2026-11-06T00:00:00+08:00|

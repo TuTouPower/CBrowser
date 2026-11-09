@@ -349,7 +349,7 @@ def create_app(
         title="CBrowser Control API",
         version="2.0.0",
         description=(
-            "Minimal coherent v2 Control API for profile lifecycle and runtime "
+            "Minimal coherent Control API for profile lifecycle and runtime "
             "convergence."
         ),
         lifespan=lifespan,

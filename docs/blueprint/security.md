@@ -12,7 +12,7 @@
 
 - `POST /api/v1/auth/login` 成功后下发 `cbrowser_session`（`HttpOnly; Secure; SameSite=Strict; Path=/`）与非 HttpOnly 的 `cbrowser_csrf`，响应体返回 `csrf_token`。会话令牌为 32 字节随机值，库内只存 SHA-256，默认 12 小时过期；登出立即失效。失败登录按来源 5 次/分钟限速（429）。
 - 除 health、login 与内部服务路由外，`/api/v1` 全部需要有效会话。写方法另需 `X-CSRF-Token` 与会话绑定值一致，且 `Origin`（缺失时取 `Referer` 的 origin）属于当前已应用网络版本派生的白名单（仅限 `https://`，t042）。API 与 Gateway 读取同一不可变版本源，废弃 `CBROWSER_ALLOWED_ORIGINS` 环境变量；未列出的 Origin 严格返回 403。
-- Caddy CA 私钥隔离（t042）：`GET /api/v1/network/root-ca` 仅公开公钥根证书（`root.crt`）；API 服务容器挂载绝不包含 `caddy_data` 卷，严禁挂载或暴露 CA 私钥 `root.key`。
+- Caddy CA 私钥隔离（t042；下载端按 p053 暂搁，生产部署返回 404）：`GET /api/v1/network/root-ca` 仅公开公钥根证书（`root.crt`）；API 服务容器挂载绝不包含 `caddy_data` 卷，严禁挂载或暴露 CA 私钥 `root.key`。
 - Viewer 信令 WebSocket 在升级前由 Gateway 校验 Origin、经 API `viewer-authorize` 校验会话与 Profile；拒绝时不升级连接。master token 与 Selkies token 永不返回前端。
 - Origin 比较全链使用同一规范化（`cbrowser.gateway.endpoint.normalize_origin`，t021）：Gateway 入口归一化后，API 侧 `authorize_viewer` 对入参与允许列表同样归一化再比对，尾斜杠/默认端口/大小写变体不产生假拒绝，畸形 Origin 归为 `invalid_origin`；CSRF 来源校验对畸形 `Referer`（如非法 IPv6 字面量）返回 403 而非 500。
 - 内部服务未配置时返回 503 `service_not_configured`（`retryable=false`），与数据库忙的 `database_busy`（`retryable=true`）严格区分（t021）：Supervisor/Gateway/Artifact 三个内部面经同一 `ServiceNotConfiguredError` 通道。OpenAPI 按路径标注真实服务身份：`/internal/supervisor*`（含 Artifact 面）为 `SupervisorServiceBearer`、`/internal/gateway*` 为 `GatewayServiceBearer`，两把令牌互不通用。
