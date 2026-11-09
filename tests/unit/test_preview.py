@@ -171,6 +171,23 @@ def test_capture_screenshot_params_scale_to_width() -> None:
     assert CAPTURE_INTERVAL_SEC == 15.0
 
 
+def test_atomic_write_removes_tmp_on_failure(tmp_path: Path, monkeypatch) -> None:
+    import os as _os
+
+    def _fail_chmod(*_args, **_kwargs) -> None:
+        raise OSError("chmod failed")
+
+    monkeypatch.setattr(_os, "chmod", _fail_chmod)
+    directory = preview_dir(tmp_path, "p9")
+    with pytest.raises(OSError, match="chmod failed"):
+        write_policy(
+            directory,
+            PreviewPolicy(enabled=True, epoch=1, runtime_instance_id=None),
+        )
+    assert list(directory.glob(".*.tmp")) == []
+    assert not (directory / "policy.json").exists()
+
+
 def test_meta_json_never_contains_image_bytes(tmp_path: Path) -> None:
     directory = preview_dir(tmp_path, "p1")
     policy = PreviewPolicy(enabled=True, epoch=2, runtime_instance_id="inst-1")

@@ -8,7 +8,10 @@ import httpx
 import pytest
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.core import LifecycleConflictError
-from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
+from cbrowser.supervisor.port_allocator import (
+    PortAllocationBlockedError,
+    PortPoolExhaustedError,
+)
 
 TOKEN = "t" * 40
 
@@ -73,6 +76,14 @@ async def test_lifecycle_conflict_maps_to_409_without_internal_detail(
 async def test_port_exhaustion_maps_to_503(tmp_path) -> None:
     response = await _post_start(
         tmp_path, _core_with(PortPoolExhaustedError("pool empty"))
+    )
+    assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_port_blocked_maps_to_503(tmp_path) -> None:
+    response = await _post_start(
+        tmp_path, _core_with(PortAllocationBlockedError("blocked"))
     )
     assert response.status_code == 503
 

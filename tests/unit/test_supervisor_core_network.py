@@ -99,6 +99,108 @@ async def test_rebuild_edge_proxy_rejects_absolute_path(
 
 
 @pytest.mark.asyncio
+async def test_edge_receipt_claims_verified_only_after_docker(
+    mock_docker_adapter, tmp_path
+):
+    """docker_verified must not be ok before the Docker operation: a staged
+    receipt stays unverified when Docker fails and flips only on success."""
+    from pathlib import Path
+
+    from cbrowser.supervisor.docker_adapter import DockerSandboxError
+
+    network_dir = tmp_path / "network"
+    network_dir.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "control" / "operations").mkdir(parents=True, exist_ok=True)
+    mock_docker_adapter.validator.validate_safe_path = MagicMock(
+        side_effect=lambda p, allow_create=True: Path(p)
+    )
+    core = SupervisorCore(
+        docker_adapter=mock_docker_adapter,
+        port_allocator=MagicMock(),
+        event_forwarder=MagicMock(),
+        api_client=MagicMock(),
+    )
+
+    (network_dir / "Caddyfile.staging.op-ok").write_text("caddy-ok")
+    res = await core.rebuild_edge_proxy(
+        target_version=2,
+        bind_host="127.0.0.1",
+        https_port=56661,
+        caddyfile_path="Caddyfile.staging.op-ok",
+        operation_id="op-ok",
+        execution_generation=1,
+    )
+    assert res["status"] == "ok"
+    ok_request = {
+        "operation_id": "op-ok",
+        "execution_generation": 1,
+        "phase": "installing",
+        "resource": "caddy",
+    }
+    ok_receipt = core.operations.network_receipt(
+        "op-ok", "installing", "caddy", ok_request
+    )
+    assert ok_receipt["status"] == "ok"
+    assert ok_receipt["docker_verified"] is True
+
+    mock_docker_adapter.rebuild_caddy_container = AsyncMock(
+        side_effect=DockerSandboxError("docker down")
+    )
+    (network_dir / "Caddyfile.staging.op-bad").write_text("caddy-bad")
+    with pytest.raises(DockerSandboxError, match="docker down"):
+        await core.rebuild_edge_proxy(
+            target_version=3,
+            bind_host="127.0.0.1",
+            https_port=56661,
+            caddyfile_path="Caddyfile.staging.op-bad",
+            operation_id="op-bad",
+            execution_generation=2,
+        )
+    bad_request = {
+        "operation_id": "op-bad",
+        "execution_generation": 2,
+        "phase": "installing",
+        "resource": "caddy",
+    }
+    bad_receipt = core.operations.network_receipt(
+        "op-bad", "installing", "caddy", bad_request
+    )
+    assert bad_receipt["status"] == "staged"
+    assert bad_receipt["docker_verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_converge_network_streams_blocks_commit_on_replace_failure(
+    mock_docker_adapter, tmp_path
+):
+    from cbrowser.supervisor.docker_adapter import DockerSandboxError
+
+    core = SupervisorCore(
+        docker_adapter=mock_docker_adapter,
+        port_allocator=MagicMock(),
+        event_forwarder=MagicMock(),
+        api_client=MagicMock(),
+    )
+    session = ActiveSession(
+        profile_id="prof1",
+        runtime_instance_id="inst-1",
+        config_version=1,
+        udp_mux_port=30001,
+        browser_container_id="b-cid-1",
+        stream_container_id="s-cid-1",
+    )
+    core._sessions["prof1"] = session
+    core._replace_stream_only = AsyncMock(return_value=False)
+
+    with pytest.raises(DockerSandboxError, match="network commit blocked"):
+        await core.converge_network_streams(
+            target_version=2,
+            bind_host="0.0.0.0",
+            advertised_ip="192.168.31.76",
+        )
+
+
+@pytest.mark.asyncio
 async def test_converge_network_streams_detects_drift(mock_docker_adapter, tmp_path):
     core = SupervisorCore(
         docker_adapter=mock_docker_adapter,

@@ -128,6 +128,47 @@ async def test_network_service_apply_lifecycle(session_maker, mock_auth_service,
 
 
 @pytest.mark.asyncio
+async def test_network_service_apply_surfaces_stale_as_retryable(session_maker, mock_auth_service, mock_supervisor_client, tmp_path):
+    """Read-write pairing: a superseded settings snapshot fails at begin
+    with a retry directive instead of minting a duplicate version."""
+    from unittest.mock import AsyncMock
+
+    repo = ProfileRepository(session_maker)
+    svc = NetworkService(
+        repo=repo,
+        auth_service=mock_auth_service,
+        supervisor_client=mock_supervisor_client,
+        export_dir=tmp_path,
+    )
+    svc.repo.begin_network_transaction = AsyncMock(
+        side_effect=RuntimeError("Stale applied network version: expected 1, found 2")
+    )
+    with pytest.raises(RuntimeError, match="reload settings and retry"):
+        await svc.apply_configuration("correct_pw")
+
+
+@pytest.mark.asyncio
+async def test_network_service_apply_fails_when_streams_do_not_converge(session_maker, mock_auth_service, mock_supervisor_client, tmp_path):
+    """A failed stream replacement blocks the commit: the operation ends
+    FAILED instead of COMPLETED."""
+    repo = ProfileRepository(session_maker)
+    mock_supervisor_client.converge_network_streams = AsyncMock(
+        return_value={"status": "error", "reason": "stream down"}
+    )
+    svc = NetworkService(
+        repo=repo,
+        auth_service=mock_auth_service,
+        supervisor_client=mock_supervisor_client,
+        export_dir=tmp_path,
+    )
+    op = await svc.apply_configuration("correct_pw")
+    await svc.wait_for_operation(op.operation_id, timeout=3.0)
+    final_op = await svc.get_operation(op.operation_id)
+    assert final_op.phase == NetworkApplyPhase.FAILED
+    assert "convergence" in (final_op.error_reason or "")
+
+
+@pytest.mark.asyncio
 async def test_network_service_concurrency_rejected(session_maker, mock_auth_service, mock_supervisor_client, tmp_path):
     repo = ProfileRepository(session_maker)
     svc = NetworkService(

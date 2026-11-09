@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from cbrowser.api.app import create_app
 from cbrowser.api.v1.deps import get_profile_service
+from cbrowser.api.v1.router import _apply_preview_policy
 from cbrowser.preview import (
     PreviewMeta,
     PreviewPolicy,
@@ -193,3 +194,46 @@ def test_db_disabled_is_authoritative_over_enabled_file(ctx) -> None:
 
     response = ctx.client.get(f"/api/v1/profiles/{profile_id}/preview")
     assert response.status_code == 404
+
+
+async def test_apply_preview_policy_uses_fresh_db_state_under_lock(
+    tmp_path: Path,
+) -> None:
+    """Concurrent PATCH: the policy file write holds the per-profile lock
+    and re-reads the authoritative DB policy, so a stale `enabled` passed
+    by the caller cannot overwrite a newer `disabled` file."""
+    from cbrowser.services.profile_service import (
+        ProfileLockRegistry,
+        ProfileNotFoundError,
+    )
+
+    directory = tmp_path / "profiles" / "p-lock" / "preview"
+
+    class _StubService:
+        def __init__(self) -> None:
+            self._locks = ProfileLockRegistry()
+            self.cleared: list[str] = []
+
+        async def get_preview_policy(
+            self, _profile_id: str
+        ) -> tuple[bool, int] | None:
+            return (False, 7)
+
+        async def get_runtime(self, profile_id: str):
+            raise ProfileNotFoundError(profile_id)
+
+        def get_preview_dir(self, _profile_id: str) -> Path:
+            return directory
+
+        async def clear_preview_capture(self, profile_id: str) -> None:
+            self.cleared.append(profile_id)
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(coordinator=None))
+    )
+    service = _StubService()
+    await _apply_preview_policy("p-lock", True, 6, request, service)
+    assert read_policy(directory) == PreviewPolicy(
+        enabled=False, epoch=7, runtime_instance_id=None
+    )
+    assert service.cleared == ["p-lock"]

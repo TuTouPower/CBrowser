@@ -354,6 +354,50 @@ def _caddy_adapter(run_side_effect):
 
 
 @pytest.mark.asyncio
+async def test_begin_rejects_stale_old_applied_version(session_maker):
+    """TOCTOU: a begin carrying a superseded applied snapshot must fail
+    instead of minting a duplicate target version."""
+    repo = ProfileRepository(session_maker)
+    await repo.record_applied_network_version(_version(2))
+    with pytest.raises(RuntimeError, match="Stale applied network version"):
+        await repo.begin_network_transaction(
+            operation=_op("op-stale", target=3),
+            old_applied=_version(1),
+            target_applied=_version(3),
+            candidate_hash="stale",
+        )
+    # A begin carrying the current applied snapshot still succeeds.
+    txn = await repo.begin_network_transaction(
+        operation=_op("op-fresh", target=3),
+        old_applied=_version(2),
+        target_applied=_version(3),
+        candidate_hash="fresh",
+    )
+    assert txn.decision == "pending"
+
+
+@pytest.mark.asyncio
+async def test_initialize_from_disk_seeds_generation_from_applied_version(
+    session_maker, tmp_path: Path
+):
+    """DB rebuild from applied_network_version.json must seed the execution
+    generation from the applied version, or the next transaction dials from
+    0 and the Gateway rejects it as stale."""
+    write_applied_network_state(tmp_path, _version(5), "caddy-5")
+    repo = ProfileRepository(session_maker)
+    assert await repo.initialize_network_from_disk(tmp_path) is True
+    assert await repo.get_execution_generation() == 5
+    txn = await repo.begin_network_transaction(
+        operation=_op("op-seeded", target=6),
+        old_applied=_version(5),
+        target_applied=_version(6),
+        candidate_hash="seeded",
+    )
+    # Gateway baseline for applied v5 is generation 4; 6 stays ahead.
+    assert txn.execution_generation == 6
+
+
+@pytest.mark.asyncio
 async def test_caddy_rebuild_failure_restores_old_entry():
     from unittest.mock import MagicMock
 

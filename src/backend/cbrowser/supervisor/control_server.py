@@ -40,7 +40,10 @@ from cbrowser.supervisor.path_validator import (
     managed_socket_target,
     resolve_socket_root,
 )
-from cbrowser.supervisor.port_allocator import PortPoolExhaustedError
+from cbrowser.supervisor.port_allocator import (
+    PortAllocationBlockedError,
+    PortPoolExhaustedError,
+)
 from cbrowser.supervisor.protocol import (
     ConvergeStreamsRequest,
     ProfileRuntimeStatus,
@@ -173,6 +176,10 @@ def create_control_app(
             )
         except PortPoolExhaustedError:
             raise HTTPException(503, "UDP mux port pool exhausted") from None
+        except PortAllocationBlockedError:
+            raise HTTPException(
+                503, "UDP mux allocation blocked by unresolved managed Stream port"
+            ) from None
         except LifecycleConflictError:
             raise HTTPException(409, "Conflicting lifecycle operation") from None
         except Exception as e:  # noqa: BLE001 - runtime start failure mapped to 500 Internal Server Error

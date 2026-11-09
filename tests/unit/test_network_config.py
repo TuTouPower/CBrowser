@@ -54,6 +54,14 @@ def test_network_access_config_validation():
         NetworkAccessConfig(lan_access_enabled=True, lan_advertised_ip="127.0.0.1")
 
 
+def test_network_access_config_strips_advertised_ip():
+    cfg = NetworkAccessConfig(
+        lan_access_enabled=True,
+        lan_advertised_ip="  192.168.31.76  ",
+    )
+    assert cfg.lan_advertised_ip == "192.168.31.76"
+
+
 def test_derive_origin_whitelist():
     # Loopback only
     v1 = AppliedNetworkAccessVersion(

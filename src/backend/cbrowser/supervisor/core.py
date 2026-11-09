@@ -2967,14 +2967,45 @@ class SupervisorCore:
                 "phase": phase,
                 "resource": "caddy",
             }
+            # docker_verified must stay False here: Docker has not run yet
+            # (rebuild_caddy_container happens in the caller). Claiming ok
+            # before the Docker operation would let recovery treat an
+            # unapplied Caddyfile as verified. The caller overwrites this
+            # staged receipt with the verified result after Docker succeeds.
             self.operations.complete_network_receipt(
                 operation_id,
                 phase,
                 "caddy",
                 request,
-                {"status": "ok", "docker_verified": bool(content_hash), **receipt},
+                {"status": "staged", "docker_verified": False, **receipt},
             )
         return receipt
+
+    def _finalize_network_edge_receipt(
+        self,
+        operation_id: str | None,
+        execution_generation: int | None,
+        phase: str,
+        receipt: dict[str, Any],
+    ) -> None:
+        """Overwrite the staged receipt once Docker has applied the Caddyfile.
+
+        Only a post-Docker receipt may claim docker_verified: committing on
+        a pre-Docker ok would certify content Caddy never served.
+        """
+        if operation_id and self.operations is not None:
+            self.operations.complete_network_receipt(
+                operation_id,
+                phase,
+                "caddy",
+                {
+                    "operation_id": operation_id,
+                    "execution_generation": execution_generation,
+                    "phase": phase,
+                    "resource": "caddy",
+                },
+                {"status": "ok", "docker_verified": True, **receipt},
+            )
 
     async def rebuild_edge_proxy(
         self,
@@ -3024,6 +3055,9 @@ class SupervisorCore:
             https_port=https_port,
             caddyfile_path=str(persistent_path),
         )
+        self._finalize_network_edge_receipt(
+            operation_id, execution_generation, phase, receipt
+        )
         return {"status": "ok", "version": target_version, **receipt, **res}
 
     async def restore_edge_proxy(
@@ -3045,6 +3079,9 @@ class SupervisorCore:
             bind_host=bind_host,
             https_port=https_port,
             caddyfile_path=str(persistent_path),
+        )
+        self._finalize_network_edge_receipt(
+            operation_id, execution_generation, "compensating", receipt
         )
         return {
             "status": "ok",
@@ -3089,7 +3126,14 @@ class SupervisorCore:
                         bind_host,
                         advertised_ip,
                     )
-                    await self._replace_stream_only(profile_id, session, rebuild_network=False)
+                    ok = await self._replace_stream_only(
+                        profile_id, session, rebuild_network=False
+                    )
+                    if not ok:
+                        raise DockerSandboxError(
+                            "Stream replacement failed for "
+                            f"{profile_id}; network commit blocked"
+                        )
                     rebuilt += 1
                     touched.append(profile_id)
         receipt = {
