@@ -147,7 +147,7 @@ def _copy_tree(src: Path, dst: Path) -> None:
 def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
-    shutil.copy(ROOT / "scripts" / "deploy_v2.sh", repo / "scripts" / "deploy_v2.sh")
+    shutil.copy(ROOT / "scripts" / "deploy.sh", repo / "scripts" / "deploy.sh")
     shutil.copy(
         ROOT / "scripts" / "supervisor_readiness_probe.py",
         repo / "scripts" / "supervisor_readiness_probe.py",
@@ -205,7 +205,7 @@ def _run(
     if env_extra:
         env.update(env_extra)
     return subprocess.run(
-        ["bash", "scripts/deploy_v2.sh", *args],
+        ["bash", "scripts/deploy.sh", *args],
         cwd=repo,
         env=env,
         capture_output=True,

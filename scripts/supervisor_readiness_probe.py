@@ -1,6 +1,6 @@
 """Deployment readiness probe, executed INSIDE the Supervisor container.
 
-scripts/deploy_v2.sh pipes this file to
+scripts/deploy.sh pipes this file to
 ``docker compose exec -T supervisor python3 - verify <deadline_sec>`` so the
 host needs no supervisor secret and no new published port (t026 spec:
 "宿主机经容器内命令调用").  In ``verify`` mode the probe triggers the

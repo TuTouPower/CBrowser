@@ -16,7 +16,7 @@
 - `CBROWSER_API_TEST_IMAGE`：生产 API 镜像（`config/docker/api_runtime/Dockerfile`）构建后镜像 ID，由统一 harness 注入隔离容器拓扑。
 - `CBROWSER_GATEWAY_IMAGE`：生产 Gateway 镜像 ID（`config/docker/gateway_runtime/Dockerfile`）。
 
-镜像构建入口为 `config/docker/supervisor_runtime/Dockerfile` 与 `config/docker/api_runtime/Dockerfile`，由 `scripts/deploy_v2.sh` 构建；容器拓扑中的 Gateway 直接使用生产镜像。API 镜像依赖由 `config/docker/api_runtime/requirements.txt` 锁定，含 arm64 冷启动所需 greenlet；Supervisor 镜像不安装 SQLAlchemy。
+镜像构建入口为 `config/docker/supervisor_runtime/Dockerfile` 与 `config/docker/api_runtime/Dockerfile`，由 `scripts/deploy.sh` 构建；容器拓扑中的 Gateway 直接使用生产镜像。API 镜像依赖由 `config/docker/api_runtime/requirements.txt` 锁定，含 arm64 冷启动所需 greenlet；Supervisor 镜像不安装 SQLAlchemy。
 
 所有缓存、TMPDIR、pytest basetemp/cache_dir 都应放在允许写域内。先创建 TMPDIR，再启动解释器；避免回退系统临时目录。为本地 HTTP 测试清除当前测试进程的代理环境，不修改宿主机全局配置。使用 Python 3.15+ 和 `python -m pytest`，避免调用 PATH 中其他环境的 pytest。
 

@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "compose.yaml"
-DEPLOY = ROOT / "scripts" / "deploy_v2.sh"
+DEPLOY = ROOT / "scripts" / "deploy.sh"
 
 SECRET_ROOT = "/run/secrets"
 SERVICE_NAMES = ("api", "gateway", "supervisor")

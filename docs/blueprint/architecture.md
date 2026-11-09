@@ -6,19 +6,19 @@ CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系�
 
 ## 1. 现状与演进状态说明
 
-本文档明确区分系统当前代码实现与正式冻结的 v2 目标架构：
+本文档描述系统现行实现架构（历史演进见 ADR）：
 
-- **现有运行基线（Existing Legacy Runtime）**：当前生产代码库（`src/backend`、`src/frontend`）仍维持旧单容器实现、KasmVNC/noVNC/RFB 协议代理、FastAPI WebSocket 逐帧处理与旧数据模型。在 t001 阶段，现有生产代码保持完全不变（t001 时点陈述，后续 t005–t007 已新增 v2 链路），不执行破坏性重构或代码删除。
+- **历史基线（t001 时点）**：当时生产代码库仍维持旧单容器实现、KasmVNC/noVNC/RFB 协议代理、FastAPI WebSocket 逐帧处理与旧数据模型；t001 阶段生产代码保持不变，该基线已由后续 task 替换，现行实现见下。
 
-- **新增 v2 持久化基础（t002）**：`src/backend/cbrowser/api/main.py` 提供独立 `/api/v1` 入口，落实 Profile 配置/标签/不可变版本、运行意愿与观测状态、实例事件去重、SQLite WAL 与空库 Alembic 初始化。旧正式入口尚未切换；Docker 编排、认证、媒体与前端由后续 task 实施。该入口不得直接用于生产公开服务，正式鉴权与交付分别由 t006/t012 验收。
+- **持久化基础（t002）**：`src/backend/cbrowser/api/main.py` 提供独立 `/api/v1` 入口，落实 Profile 配置/标签/不可变版本、运行意愿与观测状态、实例事件去重、SQLite WAL 与空库 Alembic 初始化。Docker 编排、认证、媒体与前端由后续 task 实施。该入口鉴权与交付分别由 t006/t012 验收。
 
-- **冻结的 v2 目标架构（Frozen v2 Target Architecture）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、CDP UDS 等专题技术验证（s001–s009，d001–d014）后正式冻结的目标技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**后续任务（t002+）分步落地实施的目标契约**，**不代表上述完整拓扑已交付；当前已实现部分以本节任务状态为准**。
+- **目标架构（已落地为现行架构）**：基于 t001 阶段对 Selkies 2.1.0 WebRTC、Docker shareable IPC、CDP UDS 等专题技术验证（s001–s009，d001–d014）冻结的技术架构。本文档定义的组件（独立 Supervisor 容器、Stream Gateway、Alembic 迁移模型、双容器沙箱等）为**现行拓扑契约**，**已由后续任务分步落地；当前实现状态以本节任务状态为准**。
 
 - **t005/t006 已交付**：唯一 Docker 协调者 Supervisor（见 [Supervisor](supervisor.md)）、认证信令 Gateway（见 [Gateway](gateway.md)）、API 用户鉴权与自动化凭证（见 [安全与凭证边界](security.md)）。t015（ADR 013）已删除 coturn、TURN 凭证轮换与 ICE 代次接管，媒体改为同机直连；文件/CDP、Compose 交付与旧入口切换仍由后续 task 完成。
 
-- **t007 已交付**：v2 前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.4）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件移除归 t017（原记 t011；t011 已并入 t010）。
+- **t007 已交付**：前端（见 [前端](frontend.md)）、API 经 Runtime Coordinator 驱动 Supervisor 启停（见 5.4）、每 Profile Selkies master/controller token（见 [Stream Runtime](stream_runtime.md)）。旧 UI 组件移除归 t017（原记 t011；t011 已并入 t010）。
 
-Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
+Stream 组件边界、wire 协议与固定 SDK 适配见 [Stream Runtime](stream_runtime.md)。Browser/Stream 的正式编排和入口切换仍由后续任务完成，独立组件测试通过不能代表整套部署完成。
 
 ## 2. 上游来源与开源技术依赖矩阵
 
@@ -26,7 +26,7 @@ Stream 组件边界、v2 wire 协议与固定 SDK 适配见 [Stream Runtime](str
 
 |依赖层级|组件名称|开源/官方仓库|选型版本 / Commit|职责与架构边界|
 |---|---|---|---|---|
-|**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；v2 架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
+|**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；现行架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
 |**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.2.1`（t043 由 2.1.0 升级，ADR 022 / s012 spike）|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
 |**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由（`/api/*`、`/stream/*`）反向代理入口|
@@ -83,7 +83,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 3.1 发布与实例身份（t027）
 
-发布由 `scripts/deploy_v2.sh` 单一入口执行，交付物是不可变 release：六个镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）以镜像 ID 固定在 `config/deploy/releases/<release_id>.{env,json}`，连同 compose/Caddyfile/前端产物指纹与数据库迁移版本；compose 全部服务镜像只读 release 变量、无 build 块。发布与回退都以 t026 的 `reconcile_all` + `readiness` 为唯一验收（经 `docker compose exec` 在 Supervisor 容器内执行探针，宿主机不持密钥、无新增端口），验收通过后才原子移动 current/previous 指针。回退在目标 release 缺 readiness 能力或迁移版本低于当前数据库时变更前拒绝。实例身份（compose 项目、容器名、资源 prefix、edge 网络、数据根、secrets 目录、HTTPS 端口）全部参数化，第二实例可同 daemon 并存；prefix 被异项目占用时启动前拒绝。细节契约见 `docs/specs/release_deployment.md` 与 ADR 017。
+发布由 `scripts/deploy.sh` 单一入口执行，交付物是不可变 release：六个镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）以镜像 ID 固定在 `config/deploy/releases/<release_id>.{env,json}`，连同 compose/Caddyfile/前端产物指纹与数据库迁移版本；compose 全部服务镜像只读 release 变量、无 build 块。发布与回退都以 t026 的 `reconcile_all` + `readiness` 为唯一验收（经 `docker compose exec` 在 Supervisor 容器内执行探针，宿主机不持密钥、无新增端口），验收通过后才原子移动 current/previous 指针。回退在目标 release 缺 readiness 能力或迁移版本低于当前数据库时变更前拒绝。实例身份（compose 项目、容器名、资源 prefix、edge 网络、数据根、secrets 目录、HTTPS 端口）全部参数化，第二实例可同 daemon 并存；prefix 被异项目占用时启动前拒绝。细节契约见 `docs/specs/release_deployment.md` 与 ADR 017。
 
 ## 4. 核心模块与职责划分
 
@@ -149,7 +149,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 ### 5.5 协议兼容与 API 演进
 
 - 内部 UI API 统一规划在 `/api/v1/*`；
-- 旧的内部 Profile CRUD 路由在 v2 发布时作为破坏性变更移除；
+- 旧的内部 Profile CRUD 路由已作为破坏性变更移除；
 - 旧的 CDP 连接入口已彻底删除：`/api/profiles/{id}/cdp` 兼容适配器与隐藏挂载均不再注册，不保留重定向或旧路由代理；现行唯一入口为 `/api/v1/automation/profiles/{id}/cdp`，完整执行自动化令牌鉴权与控制权围栏。
 
 ## 6. 安全、网络与端口矩阵
