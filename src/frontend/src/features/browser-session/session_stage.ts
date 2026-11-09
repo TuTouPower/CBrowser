@@ -13,6 +13,10 @@ const TERMINAL_STAGES: SessionStage[] = [
   "stopping",
 ];
 
+// P1-E: 可恢复 terminal 态（有帧即可回 connected，无需手动 Reconnect）与
+// 最终态区分。media_no_frames 保持 diagnostics 采样，最终态才停采。
+const RECOVERABLE_TERMINAL_STAGES: SessionStage[] = ["media_no_frames"];
+
 export function deriveSessionStage(
   stage: SessionStage,
   observed: RuntimeObservedState | null | undefined
@@ -37,4 +41,12 @@ export function deriveSessionStage(
 
 export function isTerminalStage(stage: SessionStage): boolean {
   return TERMINAL_STAGES.includes(stage);
+}
+
+export function isRecoverableTerminalStage(stage: SessionStage): boolean {
+  return RECOVERABLE_TERMINAL_STAGES.includes(stage);
+}
+
+export function isFinalTerminalStage(stage: SessionStage): boolean {
+  return isTerminalStage(stage) && !isRecoverableTerminalStage(stage);
 }

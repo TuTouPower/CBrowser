@@ -129,11 +129,15 @@ function renderTab(client: StubClient) {
 }
 
 async function clickDelete() {
+  // P2: 删除需二次确认：先点请求，再点确认。
   const section = await screen.findByTestId('profile-maintenance-delete');
-  const button = within(section).getByRole('button', { name: en.delete });
-  await waitFor(() => expect(button).toBeEnabled());
-  fireEvent.click(button);
-  return button;
+  const request = within(section).getByTestId('profile-maintenance-delete-request');
+  await waitFor(() => expect(request).toBeEnabled());
+  fireEvent.click(request);
+  const confirm = await within(section).findByTestId('profile-maintenance-delete-confirm');
+  await waitFor(() => expect(confirm).toBeEnabled());
+  fireEvent.click(confirm);
+  return confirm;
 }
 
 describe('MaintenanceTab', () => {

@@ -7,14 +7,18 @@ export function Popover({
   children,
   ariaLabel,
   contentClassName,
+  open,
+  onOpenChange,
 }: {
   trigger: ReactNode;
   children: ReactNode;
   ariaLabel: string;
   contentClassName?: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   return (
-    <PopoverPrimitive.Root>
+    <PopoverPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <PopoverPrimitive.Trigger asChild>{trigger}</PopoverPrimitive.Trigger>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Content

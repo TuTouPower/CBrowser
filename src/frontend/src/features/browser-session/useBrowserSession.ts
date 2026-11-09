@@ -8,6 +8,7 @@ import {
 } from "./types";
 import {
   deriveSessionStage,
+  isRecoverableTerminalStage,
   isTerminalStage,
   type RuntimeObservedState,
 } from "./session_stage";
@@ -81,6 +82,7 @@ export function useBrowserSession(
   const prevRuntimeRef = useRef<RuntimeObservedState | null | undefined>(
     options.runtimeState
   );
+  const prevProfileIdRef = useRef<string>(profileId);
   const webLocksUnavailableRef = useRef<boolean>(false);
   const generationRef = useRef<number>(0);
   const lastGenerationKeyRef = useRef<string>("");
@@ -157,7 +159,10 @@ export function useBrowserSession(
         effectiveStageRef.current !== "stopping" &&
         effectiveStageRef.current !== "error"
       ) {
+        // P1-E: media_no_frames 等可恢复态有帧即回 connected，无需手动
+        // Reconnect；同时清除超时错误文案。
         setStage("connected");
+        setErrorMessage(null);
         clearTimer(mediaTimerRef);
       }
     },
@@ -178,7 +183,12 @@ export function useBrowserSession(
   }, [diagnosticsSource, generation]);
 
   useEffect(() => {
-    diagnosticsSource.setActive(!isTerminalStage(effectiveStage));
+    // P1-E: 可恢复 terminal 态（media_no_frames）保持采样以便有帧自愈；
+    // 最终态才停采。
+    diagnosticsSource.setActive(
+      !isTerminalStage(effectiveStage) ||
+        isRecoverableTerminalStage(effectiveStage)
+    );
   }, [diagnosticsSource, effectiveStage, generation]);
 
   useEffect(() => {
@@ -253,7 +263,14 @@ export function useBrowserSession(
   // P1-11: runtime 从非 running 进入 running/starting 时推进阶段或触发
   // reloadKey，stopped/starting 后 Launch 不再卡 runtime_not_ready。
   // 初挂载 prev 为 null/undefined 时不触发，避免首屏双重加载。
+  // P1-E: 跨 Profile 切换重置 prevRuntimeRef，避免旧 Profile 的 stopped
+  // 叠加新 Profile 的 running 误触发 reload。
   useEffect(() => {
+    if (prevProfileIdRef.current !== profileId) {
+      prevProfileIdRef.current = profileId;
+      prevRuntimeRef.current = options.runtimeState;
+      return;
+    }
     const prev = prevRuntimeRef.current;
     const next = options.runtimeState;
     if (prev === next) return;
@@ -276,7 +293,7 @@ export function useBrowserSession(
         setStage("connecting_signaling");
       }
     }
-  }, [options.runtimeState, reconnect]);
+  }, [profileId, options.runtimeState, reconnect]);
 
   const failSignaling = useCallback((code: number) => {
     setStage("signaling_failed");
@@ -348,15 +365,18 @@ export function useBrowserSession(
               state: observed || tRef.current("runtimeStateUnknown"),
             })
           );
-        } else if (observed !== "running") {
+        } else if (observed === "running" || observed === "starting") {
+          // P1-E: 首挂载 starting 直接走 connecting_signaling，不再显示
+          // 错误态 + Launch；running 分支清 errorMessage。
+          setStage("connecting_signaling");
+          setErrorMessage(null);
+        } else {
           setStage("runtime_not_ready");
           setErrorMessage(
             tRef.current("runtimeNotRunning", {
               state: observed || tRef.current("runtimeStateUnknown"),
             })
           );
-        } else {
-          setStage("connecting_signaling");
         }
       } catch (err) {
         if (!isCurrent(gen)) return;

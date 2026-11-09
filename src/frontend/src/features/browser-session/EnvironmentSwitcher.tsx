@@ -65,6 +65,7 @@ export function EnvironmentSwitcher({
   const { t } = useI18n();
   const client = useApiClient();
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
   const { data: runtime } = useProfileRuntimeQuery(currentProfileId, client);
@@ -73,6 +74,9 @@ export function EnvironmentSwitcher({
     queries: profiles.map((profile) => ({
       queryKey: profileKeys.runtime(profile.id),
       queryFn: () => client.profiles.getRuntime(profile.id),
+      // P2: 切换器列表查询加 enabled/staleTime，避免空列表空转与高频重取。
+      enabled: profiles.length > 0,
+      staleTime: 5000,
     })),
   });
   const observedById = new Map<string, string | undefined>();
@@ -116,6 +120,8 @@ export function EnvironmentSwitcher({
   return (
     <Popover
       ariaLabel={t("sessSwitcher")}
+      open={open}
+      onOpenChange={setOpen}
       trigger={
         <button
           type="button"
@@ -167,6 +173,7 @@ export function EnvironmentSwitcher({
                         <Link
                           data-testid={sessId("switcher-item", profile.id)}
                           to={`/session/${encodeURIComponent(profile.id)}`}
+                          onClick={() => setOpen(false)}
                           className="flex items-center justify-between gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                         >
                           <span className="truncate">{profile.name}</span>

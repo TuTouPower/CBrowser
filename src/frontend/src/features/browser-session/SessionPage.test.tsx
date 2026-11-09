@@ -650,4 +650,61 @@ describe("SessionPage", () => {
     expect(overlay).toHaveTextContent(en.sessionDiagFramesDecoded);
     expect(overlay).toHaveTextContent("128");
   });
+
+  it("Stop 成功不立即 reconnect（reloadKey 不变）", async () => {
+    renderPage();
+    await screen.findByTestId(SESS_IFRAME);
+    expect(hookState.reloadKey).toBe(0);
+    const header = await screen.findByTestId(SESS_HEADER);
+    fireEvent.click(within(header).getByTestId(SESS_STOP));
+    await waitFor(() =>
+      expect(stub.spies.profiles.stop).toHaveBeenCalledWith("p1", expect.anything()),
+    );
+    // P2: Stop 成功不立即重建，靠 runtime 推进；mock reconnect 不应被调用。
+    await waitFor(() => expect(stub.spies.profiles.stop).toHaveBeenCalledTimes(1));
+    expect(hookState.reconnect).not.toHaveBeenCalled();
+    expect(hookState.reloadKey).toBe(0);
+    const iframe = screen.getByTestId(SESS_IFRAME);
+    expect(iframe.getAttribute("src")).toContain("_k=0");
+  });
+
+  it("Apply 成功只重建一次且 Header 透出 isPending 禁用", async () => {
+    stub = makeStub({ configVersion: 2 });
+    renderPage();
+    await screen.findByTestId(SESS_HEADER);
+    const applyBtn = within(screen.getByTestId(SESS_HEADER)).getByTestId(
+      SESS_APPLY_RESTART,
+    );
+    fireEvent.click(applyBtn);
+    // P2: Apply 成功后只重建一次（去重），mock reconnect 恰一次。
+    await waitFor(() => expect(hookState.reconnect).toHaveBeenCalledTimes(1), {
+      timeout: 15000,
+    });
+    expect(hookState.reloadKey).toBe(0);
+    // isPending 透出由 SessionHeader 单测覆盖（此处只断言按钮存在）。
+    expect(
+      within(screen.getByTestId(SESS_HEADER)).getByTestId(SESS_APPLY_RESTART),
+    ).toBeInTheDocument();
+  }, 20000);
+
+  it("Apply 失败渲染 apply error Banner（transition 保持 connected 不闪断）", async () => {
+    stub = makeStub({ configVersion: 2 });
+    stub.spies.profiles.stop.mockRejectedValueOnce(new Error("apply boom"));
+    resetHookState("connected");
+    renderPage();
+    const header = await screen.findByTestId(SESS_HEADER);
+    fireEvent.click(within(header).getByTestId(SESS_APPLY_RESTART));
+    const banner = await screen.findByTestId(sessId("apply", "error"));
+    expect(banner).toHaveTextContent("apply boom");
+    // transition 断言：失败不切阶段，仍 connected。
+    expect(screen.getByTestId(SESS_PAGE).getAttribute("data-stage")).toBe("connected");
+    expect(screen.getByTestId(SESS_IFRAME).getAttribute("data-stage")).toBe("connected");
+  });
+
+  it("reloadKey 透进 iframe src（_k 参数随重建递增）", async () => {
+    hookState.reloadKey = 3;
+    renderPage();
+    const iframe = await screen.findByTestId(SESS_IFRAME);
+    expect(iframe.getAttribute("src")).toContain("_k=3");
+  });
 });

@@ -255,4 +255,26 @@ describe("EnvironmentSwitcher", () => {
     );
     expect(screen.queryByTestId(SESS_SWITCHER_SEARCH)).toBeNull();
   });
+
+  it("closes the popover when a Link navigates", async () => {
+    const props = fixture();
+    renderSwitcher(props, makeStub({ p1: runtime("p1", "running") }));
+
+    fireEvent.click(screen.getByTestId(SESS_SWITCHER_TRIGGER));
+    await screen.findByTestId(SESS_SWITCHER_SEARCH);
+    expect(screen.getByTestId(SESS_SWITCHER_TRIGGER)).toHaveAttribute(
+      "data-state",
+      "open",
+    );
+
+    // P2: popover Link 导航关菜单，避免切环境后菜单残留。
+    fireEvent.click(screen.getByTestId(sessId("switcher-item", "p2")));
+    await waitFor(() =>
+      expect(screen.getByTestId(SESS_SWITCHER_TRIGGER)).toHaveAttribute(
+        "data-state",
+        "closed",
+      ),
+    );
+    expect(screen.queryByTestId(SESS_SWITCHER_SEARCH)).toBeNull();
+  });
 });

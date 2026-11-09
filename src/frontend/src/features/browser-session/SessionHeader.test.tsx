@@ -367,4 +367,28 @@ describe("SessionHeader", () => {
       expect(callback).not.toHaveBeenCalled();
     }
   });
+
+  it("isPending 时 Stop 与 Apply 并重启禁用", () => {
+    renderHeader(
+      fixture({
+        runtime: runtime("p1", "running", { config_version: 2 }),
+        isPending: true,
+      }),
+    );
+
+    expect(screen.getByTestId(SESS_STOP)).toBeDisabled();
+    expect(screen.getByTestId(SESS_APPLY_RESTART)).toBeDisabled();
+  });
+
+  it("apply error 由 SessionPage 渲染（Header 只负责 pending 禁用）", () => {
+    // Header 本身不渲染 apply error，该断言锁定 Header 不越权；
+    // 真正的 apply error Banner 由 SessionPage.test 覆盖。
+    renderHeader(
+      fixture({
+        runtime: runtime("p1", "running", { config_version: 2 }),
+        isPending: false,
+      }),
+    );
+    expect(screen.getByTestId(SESS_APPLY_RESTART)).not.toBeDisabled();
+  });
 });

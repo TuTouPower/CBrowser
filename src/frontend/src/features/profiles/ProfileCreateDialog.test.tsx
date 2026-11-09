@@ -237,4 +237,71 @@ describe("ProfileCreateDialog", () => {
     expect(stub.profiles.create).not.toHaveBeenCalled();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
+
+  it("create success + start failure switches to retry/close without duplicate create", async () => {
+    const stub = makeStub();
+    stub.profiles.setDesiredState.mockRejectedValueOnce(new Error("start boom"));
+    const onOpenChange = vi.fn();
+    renderDialog(stub, onOpenChange);
+
+    await screen.findByTestId("env-new-dialog");
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Retry env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit-start"));
+
+    const error = await screen.findByTestId("env-new-error");
+    expect(error).toHaveTextContent("p-new");
+    expect(error).toHaveTextContent("start boom");
+    // P1-F: 错误文案走 i18n（en 模板断言）。
+    expect(error).toHaveTextContent(
+      en.profileCreateStartFailed
+        .replace("{id}", "p-new")
+        .replace("{error}", "start boom"),
+    );
+    expect(await screen.findByTestId("env-new-retry-start")).toHaveTextContent(
+      en.profileCreateRetryStart,
+    );
+    expect(screen.getByTestId("env-new-close")).toBeInTheDocument();
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(stub.profiles.create).toHaveBeenCalledTimes(1);
+
+    // 重试只调 start，不再重复 create（同名 409 消失）。
+    stub.profiles.setDesiredState.mockResolvedValueOnce(runtime());
+    fireEvent.click(screen.getByTestId("env-new-retry-start"));
+    await waitFor(() =>
+      expect(stub.profiles.setDesiredState).toHaveBeenCalledTimes(2),
+    );
+    expect(stub.profiles.create).toHaveBeenCalledTimes(1);
+    expect(stub.profiles.setDesiredState).toHaveBeenNthCalledWith(
+      2,
+      "p-new",
+      "running",
+      expect.any(String),
+    );
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("retry start failure keeps the dialog open for another retry", async () => {
+    const stub = makeStub();
+    stub.profiles.setDesiredState.mockRejectedValue(new Error("still down"));
+    const onOpenChange = vi.fn();
+    renderDialog(stub, onOpenChange);
+
+    await screen.findByTestId("env-new-dialog");
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Flaky env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit-start"));
+    await screen.findByTestId("env-new-retry-start");
+    expect(stub.profiles.create).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("env-new-retry-start"));
+    await waitFor(() =>
+      expect(stub.profiles.setDesiredState).toHaveBeenCalledTimes(2),
+    );
+    expect(await screen.findByTestId("env-new-retry-start")).toBeInTheDocument();
+    expect(stub.profiles.create).toHaveBeenCalledTimes(1);
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+  });
 });

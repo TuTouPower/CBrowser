@@ -112,6 +112,26 @@ export function SessionPage(): JSX.Element {
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
   const applyMutation = useApplyDisplaySettingsMutation(client);
+  // P2: Stop 成功不立即 reconnect（observed 仍 running 会误重建），靠
+  // runtime 推进；Apply 手动 + runtime 双重 reload 去重（只重建一次）。
+  const headerPending = stopMutation.isPending || applyMutation.isPending;
+  const reloadKeyRef = useRef(session.reloadKey);
+  reloadKeyRef.current = session.reloadKey;
+  const handleApplyRestart = useCallback(() => {
+    const before = reloadKeyRef.current;
+    applyMutation.mutate(id, {
+      onSuccess: () => {
+        // Dedup：runtime 推进已重建则跳过手动，避免双重 reload。
+        if (reloadKeyRef.current === before) session.reconnect();
+      },
+    });
+  }, [applyMutation, id, session]);
+  const applyErrorMessage =
+    applyMutation.error instanceof Error
+      ? applyMutation.error.message
+      : applyMutation.isError
+        ? t("runtimeStateUnknown")
+        : null;
 
   const handleDetailsOpenChange = useCallback((open: boolean) => {
     setDetailsOpen(open);
@@ -181,20 +201,13 @@ export function SessionPage(): JSX.Element {
             diagnosticsOpen={diagnosticsOpen}
             detailsOpen={detailsOpen}
             focusMode={focusMode}
+            isPending={headerPending}
             onAudioToggle={session.toggleAudio}
             onDiagnosticsToggle={() => setDiagnosticsOpen(!diagnosticsOpen)}
             onDetailsToggle={() => handleDetailsOpenChange(!detailsOpen)}
             onFocusToggle={() => setFocusMode(!focusMode)}
-            onStop={() =>
-              stopMutation.mutate(id, {
-                onSuccess: () => session.reconnect(),
-              })
-            }
-            onApplyRestart={() =>
-              applyMutation.mutate(id, {
-                onSuccess: () => session.reconnect(),
-              })
-            }
+            onStop={() => stopMutation.mutate(id)}
+            onApplyRestart={handleApplyRestart}
           />
         </div>
         <div className="flex min-h-0 flex-1">
@@ -224,6 +237,15 @@ export function SessionPage(): JSX.Element {
                           ? setDesiredStateMutation.error.message
                           : t("runtimeStateUnknown"),
                     })}
+                  </Banner>
+                </div>
+              </div>
+            ) : null}
+            {applyErrorMessage ? (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-md">
+                <div className="pointer-events-auto max-w-panel">
+                  <Banner tone="danger" testId={sessId("apply", "error")}>
+                    {t("displayApplyFailed", { error: applyErrorMessage })}
                   </Banner>
                 </div>
               </div>

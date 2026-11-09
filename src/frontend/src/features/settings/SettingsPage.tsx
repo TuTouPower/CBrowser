@@ -128,12 +128,15 @@ export function SettingsPage() {
     try {
       const rawPort = Number(httpsPort);
       if (!Number.isInteger(rawPort) || rawPort < 1 || rawPort > 65535) {
-        setActionError(t("proxyPortInvalid"));
+        // P2: 端口文案不再复用代理库 copy，用网络专属 key。
+        setActionError(t("httpsPortInvalid"));
         return;
       }
+      const trimmedIp = lanIp.trim();
       const config: NetworkAccessConfig = {
         lan_access_enabled: lanEnabled,
-        lan_advertised_ip: lanEnabled ? lanIp.trim() : null,
+        // P2: LAN 空值（空串/空白）一律落 null，不发空串。
+        lan_advertised_ip: lanEnabled && trimmedIp ? trimmedIp : null,
         https_port: rawPort,
       };
       await client.network.updateSettings(config);
@@ -317,9 +320,8 @@ export function SettingsPage() {
                   <span className="font-ui text-label-md text-on-surface">
                     {t("disconnectWarningTitle")}
                   </span>
-                  <span className="font-ui text-body-sm text-on-surface-muted">
-                    {t("applyFailed", { reason: t("healthUnreachable") })}
-                  </span>
+                  {/* P2: 去掉与标题重复的 applyFailed(healthUnreachable) 行，
+                      保留 lastPhase + 新地址描述 + 链接，避免重复提示。 */}
                   {lastPhase && (
                     <span
                       data-testid="network-last-phase"
@@ -353,7 +355,7 @@ export function SettingsPage() {
                 </span>
                 <span className="font-mono text-mono-md text-on-surface">
                   {netSettings?.applied_version?.config?.lan_access_enabled
-                    ? t("appliedLan", { ip: netSettings.applied_version.config.lan_advertised_ip ?? "" })
+                    ? t("appliedLan", { ip: netSettings.applied_version.config.lan_advertised_ip ?? "—" })
                     : t("appliedLocal")}
                 </span>
               </div>

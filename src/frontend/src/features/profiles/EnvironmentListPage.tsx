@@ -47,6 +47,9 @@ export function EnvironmentListPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
+  // P2: 单删 / 批量删除二次确认，避免误触。
+  const [pendingDeleteRow, setPendingDeleteRow] = useState<EnvironmentRow | null>(null);
+  const [confirmingBatchDelete, setConfirmingBatchDelete] = useState(false);
 
   const profilesQuery = useProfilesQuery(client);
   const groupsQuery = useGroupsQuery(client);
@@ -60,6 +63,9 @@ export function EnvironmentListPage() {
     queries: profiles.map((item) => ({
       queryKey: profileKeys.runtime(item.id),
       queryFn: () => client.profiles.getRuntime(item.id),
+      // P2: 列表运行时查询加 enabled/staleTime，避免空转与抖动。
+      enabled: profiles.length > 0,
+      staleTime: 5000,
     })),
   });
 
@@ -157,10 +163,8 @@ export function EnvironmentListPage() {
           );
           break;
         case "delete":
-          deleteMutation.mutate(id, {
-            onSuccess: () => clearSelection([id]),
-            onError,
-          });
+          // P2: 单删需二次确认，实际删除走确认框。
+          setPendingDeleteRow(row);
           break;
       }
     },
@@ -187,7 +191,14 @@ export function EnvironmentListPage() {
     ? (runtimeQueries.find((query) => query.isError)?.error?.message ??
       t("runtimeStateUnknown"))
     : null;
-  const listError = profilesError ?? runtimeError;
+  // P2: groups/proxies 聚合进列表错误态，避免静默空列表。
+  const groupsError = groupsQuery.isError
+    ? (groupsQuery.error?.message ?? t("runtimeStateUnknown"))
+    : null;
+  const proxiesError = proxiesQuery.isError
+    ? (proxiesQuery.error?.message ?? t("runtimeStateUnknown"))
+    : null;
+  const listError = profilesError ?? runtimeError ?? groupsError ?? proxiesError;
   const reloadList = () => {
     if (profilesQuery.isError) void profilesQuery.refetch();
     for (const query of runtimeQueries) {
@@ -195,6 +206,24 @@ export function EnvironmentListPage() {
     }
     if (groupsQuery.isError) void groupsQuery.refetch();
     if (proxiesQuery.isError) void proxiesQuery.refetch();
+  };
+
+  const confirmSingleDelete = () => {
+    if (!pendingDeleteRow) return;
+    const id = pendingDeleteRow.profile.id;
+    const onError = (error: Error) => toast.show(error.message);
+    deleteMutation.mutate(id, {
+      onSuccess: () => {
+        clearSelection([id]);
+        setPendingDeleteRow(null);
+      },
+      onError,
+    });
+  };
+
+  const confirmBatchDelete = () => {
+    setConfirmingBatchDelete(false);
+    void run("delete");
   };
 
   return (
@@ -263,9 +292,35 @@ export function EnvironmentListPage() {
             onStart={() => void run("start")}
             onStop={() => void run("stop")}
             onMove={() => setMoveMenuOpen(true)}
-            onDelete={() => void run("delete")}
+            onDelete={() => setConfirmingBatchDelete(true)}
             pending={pending}
           />
+          {confirmingBatchDelete && (
+            <div
+              data-testid="env-batch-delete-confirm"
+              className="fixed bottom-2xl left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-sm rounded-lg border border-outline bg-surface-raised px-md py-sm shadow-lg"
+            >
+              <span className="font-ui text-body-sm text-on-surface">
+                {t("envBatchDeleteConfirm", { count: selected.size })}
+              </span>
+              <Button
+                data-testid="env-batch-delete-accept"
+                size="sm"
+                variant="danger"
+                disabled={pending}
+                onClick={confirmBatchDelete}
+              >
+                {t("envBatchDelete")}
+              </Button>
+              <Button
+                data-testid="env-batch-delete-cancel"
+                size="sm"
+                onClick={() => setConfirmingBatchDelete(false)}
+              >
+                {t("cancel")}
+              </Button>
+            </div>
+          )}
           {moveMenuOpen && (
             <div
               data-testid="env-move-menu"
@@ -295,6 +350,32 @@ export function EnvironmentListPage() {
 
       <ProfileCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
       <GroupManagerDialog open={groupsOpen} onOpenChange={setGroupsOpen} />
+      {pendingDeleteRow && (
+        <div
+          data-testid="env-delete-confirm"
+          className="fixed bottom-2xl left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-sm rounded-lg border border-outline bg-surface-raised px-md py-sm shadow-lg"
+        >
+          <span className="font-ui text-body-sm text-on-surface">
+            {t("envDeleteConfirm", { name: pendingDeleteRow.profile.name })}
+          </span>
+          <Button
+            data-testid="env-delete-accept"
+            size="sm"
+            variant="danger"
+            disabled={deleteMutation.isPending}
+            onClick={confirmSingleDelete}
+          >
+            {t("envDelete")}
+          </Button>
+          <Button
+            data-testid="env-delete-cancel"
+            size="sm"
+            onClick={() => setPendingDeleteRow(null)}
+          >
+            {t("cancel")}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

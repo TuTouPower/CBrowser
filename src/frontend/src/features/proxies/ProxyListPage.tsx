@@ -170,7 +170,15 @@ export function ProxyListPage() {
         <p className="font-ui text-body-md text-on-surface-muted">
           {t("loading")}
         </p>
-      ) : visible.length === 0 && !loadError ? (
+      ) : loadError && visible.length === 0 ? (
+        // P2: 加载失败的空表不再渲染空 Table，保留顶栏错误 Banner 即错误态。
+        <p
+          data-testid="proxy-list-empty-error"
+          className="font-ui text-body-sm text-danger"
+        >
+          {loadError}
+        </p>
+      ) : visible.length === 0 ? (
         <EmptyState title={t("proxyEmpty")} />
       ) : (
         <ProxyTable
