@@ -107,11 +107,35 @@ def _list_network_names(client: Any) -> list[str]:
 def _list_container_labels(client: Any) -> dict[str, dict[str, str]]:
     result: dict[str, dict[str, str]] = {}
     for container in client.containers.list(all=True):
-        labels = getattr(container, "labels", None)
-        if labels is None and hasattr(container, "attrs"):
-            labels = container.attrs.get("Config", {}).get("Labels") or {}
-        result[getattr(container, "name", "")] = dict(labels or {})
+        try:
+            labels = getattr(container, "labels", None)
+            if labels is None and hasattr(container, "attrs"):
+                labels = container.attrs.get("Config", {}).get("Labels") or {}
+            result[getattr(container, "name", "")] = dict(labels or {})
+        except Exception as exc:
+            if (
+                "404" in str(exc)
+                or "NotFound" in type(exc).__name__
+                or "No such container" in str(exc)
+            ):
+                logger.debug(
+                    "container vanished during label lookup: %s",
+                    getattr(container, "name", ""),
+                )
+                continue
+            raise
     return result
+
+
+def _live_missing_names(client: Any, missing: list[str]) -> list[str]:
+    containers = getattr(client, "containers", None)
+    if containers is None or not hasattr(containers, "list"):
+        return list(missing)
+    try:
+        present = {getattr(c, "name", "") for c in containers.list(all=True)}
+    except Exception:
+        return list(missing)
+    return [name for name in missing if name in present]
 
 
 def collect_targets(client: Any) -> CleanupPlan:
@@ -125,10 +149,12 @@ def collect_targets(client: Any) -> CleanupPlan:
         ) from exc
     missing = [name for name in names if name not in labels]
     if missing:
-        raise LabelLookupError(
-            "container label lookup incomplete for: "
-            + ", ".join(sorted(missing)[:5])
-        )
+        live_missing = _live_missing_names(client, missing)
+        if live_missing:
+            raise LabelLookupError(
+                "container label lookup incomplete for: "
+                + ", ".join(sorted(live_missing)[:5])
+            )
     return select_cleanup_targets(names, networks, container_labels=labels)
 
 
