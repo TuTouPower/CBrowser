@@ -39,6 +39,8 @@ async def get_preview(
     policy_row = await service.get_preview_policy(profile_id)
     if policy_row is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
+    if not policy_row[0]:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND)
     epoch = policy_row[1]
     directory = service.get_preview_dir(profile_id)
     if directory is None:

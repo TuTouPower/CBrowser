@@ -118,10 +118,12 @@ async def test_apply_preview_policy_writes_policy_and_dispatches_control(
             "/control",
             {
                 "action": "preview_policy",
-                "enabled": True,
-                "epoch": 3,
-                "runtime_instance_id": "inst_1",
-                "request_id": "r1",
+                "params": {
+                    "enabled": True,
+                    "epoch": 3,
+                    "runtime_instance_id": "inst_1",
+                    "request_id": "r1",
+                },
             },
         )
     ]
@@ -360,3 +362,59 @@ async def test_apply_preview_policy_fences_stale_epoch_instance_and_duplicate(
         ),
     )
     assert len(control_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_preview_policy_control_payload_matches_agent_protocol(
+    tmp_path: Path,
+) -> None:
+    from cbrowser.runtime_agent.protocol import ControlRequest
+
+    core, _ = _core(tmp_path)
+    control_calls: list = []
+    core._agent_uds_client = _control_uds(control_calls)  # type: ignore[method-assign]
+
+    await core.apply_preview_policy(
+        "profile",
+        PreviewPolicySyncRequest(
+            enabled=True, epoch=3, runtime_instance_id="inst_1", request_id="r1"
+        ),
+    )
+
+    assert len(control_calls) == 1
+    # Agent-side ControlRequest is forbid + params-nested: the payload must
+    # validate strictly, i.e. no flat extra keys beside action/params.
+    parsed = ControlRequest.model_validate(control_calls[0][1])
+    assert parsed.action == "preview_policy"
+    assert parsed.params == {
+        "enabled": True,
+        "epoch": 3,
+        "runtime_instance_id": "inst_1",
+        "request_id": "r1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_apply_preview_policy_chowns_policy_to_runtime_uid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    core, _ = _core(tmp_path)
+    core.docker.manage_ownership = True  # type: ignore[attr-defined]
+    core.docker.runtime_uid = 1000  # type: ignore[attr-defined]
+    core.docker.runtime_gid = 1000  # type: ignore[attr-defined]
+    chowned: list = []
+
+    def _record(path, uid, gid, **kwargs):
+        chowned.append((str(path), uid, gid))
+
+    monkeypatch.setattr("os.chown", _record)
+    core._agent_uds_client = _control_uds([])  # type: ignore[method-assign]
+
+    await core.apply_preview_policy(
+        "profile",
+        PreviewPolicySyncRequest(
+            enabled=True, epoch=3, runtime_instance_id="inst_1", request_id="r1"
+        ),
+    )
+
+    assert chowned == [(str(_pdir(core) / "policy.json"), 1000, 1000)]
