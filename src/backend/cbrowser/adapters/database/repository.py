@@ -1348,7 +1348,7 @@ class ProfileRepository:
                 applied_version = AppliedNetworkAccessVersion.model_validate_json(applied_row.value)
             else:
                 from cbrowser.network_config import (
-                    create_default_applied_version,
+                    build_applied_network_version,
                     read_applied_network_state,
                 )
                 file_state = (
@@ -1357,7 +1357,10 @@ class ProfileRepository:
                 if file_state is not None:
                     applied_version = file_state[0]
                 else:
-                    applied_version = create_default_applied_version()
+                    applied_version, _ = build_applied_network_version(
+                        NetworkAccessConfig(lan_access_enabled=False),
+                        version=1,
+                    )
 
             # Active operation
             active_op_row = await session.get(SettingModel, self.KEY_NETWORK_ACTIVE_OP)
@@ -1619,12 +1622,8 @@ class ProfileRepository:
                     current_applied.version != old_applied.version
                     or current_applied.config != old_applied.config
                     or current_applied.bind_host != old_applied.bind_host
-                    or (
-                        bool(current_applied.caddyfile_sha256)
-                        and bool(old_applied.caddyfile_sha256)
-                        and current_applied.caddyfile_sha256
-                        != old_applied.caddyfile_sha256
-                    )
+                    or current_applied.caddyfile_sha256
+                    != old_applied.caddyfile_sha256
                 ):
                     raise RuntimeError(
                         "Stale applied network version: expected version "

@@ -714,10 +714,7 @@ export interface components {
             bind_host: string;
             /** Applied At */
             applied_at: string;
-            /**
-             * Caddyfile Sha256
-             * @default
-             */
+            /** Caddyfile Sha256 */
             caddyfile_sha256: string;
             /** Origin Whitelist */
             origin_whitelist?: string[];

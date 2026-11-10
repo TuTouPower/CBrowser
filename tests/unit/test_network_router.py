@@ -27,7 +27,7 @@ def mock_network_service():
             version=1,
             config=NetworkAccessConfig(lan_access_enabled=False),
             applied_at="2026-11-08T00:00:00+08:00",
-            caddyfile_sha256="",
+            caddyfile_sha256="a" * 64,
             origin_whitelist=["https://127.0.0.1:56661"],
         ),
         active_operation=None,

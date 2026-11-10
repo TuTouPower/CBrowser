@@ -151,7 +151,7 @@ class GatewayHarness:
             version=1,
             config=NetworkAccessConfig(lan_access_enabled=False),
             applied_at=utc_now_iso(),
-            caddyfile_sha256="",
+            caddyfile_sha256="a" * 64,
             origin_whitelist=["https://127.0.0.1:56661", "https://localhost:8443"],
         )
         write_applied_network_state(net_dir, v, "dummy caddyfile")

@@ -42,3 +42,4 @@
 - 删除仓库入库的静态 Caddyfile：Caddy 配置由已应用不可变版本从生成器 `src/backend/cbrowser/network_config.py` 确定性生成；release manifest 对生成器代码取指纹。
 - 端口绑定环境参数化：`compose.yaml` 中 Caddy 端口映射默认使用 `${CBROWSER_BIND_HOST:-127.0.0.1}:${CBROWSER_HTTPS_PORT:-56661}:443`；本机模式绑定 `127.0.0.1`，局域网模式绑定 `0.0.0.0`。
 - 运行时原子重建：网络模式切换由 Supervisor 接管 Caddy 容器原地原子重绑并重启；`compose.yaml` 中 Caddyfile 挂载对齐 `${CBROWSER_DATA_ROOT}/network/Caddyfile`。
+- 已应用网络版本构造即完整（t048）：`AppliedNetworkAccessVersion.caddyfile_sha256` 为必填的 64 位小写十六进制 SHA-256；版本只经 `build_applied_network_version(config, version=..., upstream...)` 构造，同一次调用生成 Caddyfile 文本、哈希与 origin whitelist。CLI init、repository 无数据回退、`_restore_old` 无快照回退与申请新版本都走该入口，不存在空哈希中间对象或跳过校验的分支；聚合同一 Caddyfile 的旧快照才允许重绑。

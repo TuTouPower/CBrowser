@@ -136,11 +136,17 @@ class ProductionGatewayService:
         self.api = api_client or FakeGatewayApiClient(runtime_lookup=runtime_lookup)
 
         if network_state_dir is None:
-            from cbrowser.network_config import create_default_applied_version, write_applied_network_state
+            from cbrowser.domain.models import NetworkAccessConfig
+            from cbrowser.network_config import (
+                build_applied_network_version,
+                write_applied_network_state,
+            )
             net_dir = self.agent_key_file.parent / "network"
             net_dir.mkdir(parents=True, exist_ok=True)
-            v = create_default_applied_version()
-            write_applied_network_state(net_dir, v, "caddyfile dummy")
+            v, caddyfile = build_applied_network_version(
+                NetworkAccessConfig(lan_access_enabled=False), version=1
+            )
+            write_applied_network_state(net_dir, v, caddyfile)
             network_state_dir = net_dir
 
         self.config = GatewayConfig(

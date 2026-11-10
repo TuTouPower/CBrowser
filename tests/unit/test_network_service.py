@@ -122,6 +122,16 @@ async def test_network_service_apply_lifecycle(session_maker, mock_auth_service,
     assert settings.applied_version.config.lan_access_enabled
     assert settings.applied_version.config.lan_advertised_ip == "192.168.31.76"
 
+    # t048 AC-005: the minted version is complete and matches the Caddyfile
+    # written for it; no empty-hash intermediate object is ever persisted.
+    from cbrowser.network_config import compute_caddyfile_sha256
+
+    written_caddyfile = (tmp_path / "Caddyfile").read_text(encoding="utf-8")
+    assert len(settings.applied_version.caddyfile_sha256) == 64
+    assert settings.applied_version.caddyfile_sha256 == compute_caddyfile_sha256(
+        written_caddyfile
+    )
+
     # Verify Supervisor calls
     mock_supervisor_client.rebuild_edge.assert_awaited_once()
     mock_supervisor_client.converge_network_streams.assert_awaited_once()

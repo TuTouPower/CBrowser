@@ -55,7 +55,7 @@ def test_gateway_baseline_is_explicit_and_mtime_does_not_switch(tmp_path: Path) 
         version=1,
         config=NetworkAccessConfig(lan_access_enabled=False),
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash1",
+        caddyfile_sha256="1" * 64,
         origin_whitelist=["https://127.0.0.1:56661", "https://localhost:56661"],
     )
     write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
@@ -69,7 +69,7 @@ def test_gateway_baseline_is_explicit_and_mtime_does_not_switch(tmp_path: Path) 
             lan_access_enabled=True, lan_advertised_ip="192.168.31.76"
         ),
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash2",
+        caddyfile_sha256="2" * 64,
         origin_whitelist=["https://127.0.0.1:56661", "https://192.168.31.76:56661"],
     )
     write_applied_network_state(net_dir, v2, "dummy caddyfile 2")
@@ -87,7 +87,7 @@ def test_gateway_requires_authorized_ack_to_activate_new_origins(
         version=1,
         config=NetworkAccessConfig(lan_access_enabled=False),
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash1",
+        caddyfile_sha256="1" * 64,
         origin_whitelist=["https://127.0.0.1:56661"],
     )
     write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
@@ -134,7 +134,7 @@ def test_gateway_mtime_is_only_a_reread_hint_for_active_publication(
         version=1,
         config=NetworkAccessConfig(lan_access_enabled=False),
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash1",
+        caddyfile_sha256="1" * 64,
         origin_whitelist=["https://127.0.0.1:56661"],
     )
     write_applied_network_state(net_dir, v1, "dummy caddyfile 1")

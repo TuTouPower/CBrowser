@@ -4,22 +4,6 @@
     "workspace": ".",
     "tasks": [
         {
-            "tid": "t048",
-            "slug": "network_version_hash_contract",
-            "title": "网络版本 caddyfile_sha256 构造即完整契约",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "",
-            "conflicts_with": "",
-            "note": "",
-            "dir": "docs/tasks/t048_network_version_hash_contract"
-        },
-        {
             "tid": "t049",
             "slug": "supervisor_restore_gateway_deadlock",
             "title": "Supervisor 存量沙箱恢复解耦网关可见性探测与带载升级自愈",

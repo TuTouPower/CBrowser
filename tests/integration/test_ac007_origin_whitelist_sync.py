@@ -39,10 +39,10 @@ async def test_non_default_port_origin_sync_and_acceptance(tmp_path: Path):
         config=NetworkAccessConfig(lan_access_enabled=False, https_port=custom_port),
         bind_host="127.0.0.1",
         applied_at=utc_now_iso(),
-        caddyfile_sha256="sha-custom",
+        caddyfile_sha256="c" * 64,
         origin_whitelist=[],
     )
-    v_custom.origin_whitelist = derive_origin_whitelist(v_custom)
+    v_custom.origin_whitelist = derive_origin_whitelist(v_custom.config)
 
     # Write to DB applied version
     engine, session_maker = create_engine_and_maker(db_file)
@@ -137,7 +137,7 @@ async def test_a35_gateway_process_origin_allowlist_follows_authorized_publicati
         config=NetworkAccessConfig(lan_access_enabled=False),
         bind_host="127.0.0.1",
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash1",
+        caddyfile_sha256="a" * 64,
         origin_whitelist=[BASELINE_ORIGIN],
     )
     write_applied_network_state(net_dir, v1, "caddyfile v1")

@@ -6036,8 +6036,8 @@
           },
           "caddyfile_sha256": {
             "type": "string",
-            "title": "Caddyfile Sha256",
-            "default": ""
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Caddyfile Sha256"
           },
           "origin_whitelist": {
             "items": {
@@ -6052,7 +6052,8 @@
         "required": [
           "version",
           "config",
-          "applied_at"
+          "applied_at",
+          "caddyfile_sha256"
         ],
         "title": "AppliedNetworkAccessVersion"
       },

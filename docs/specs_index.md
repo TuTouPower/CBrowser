@@ -10,7 +10,7 @@
 |runtime_validation|t001|2026-11-01|
 |runtime_persistence|t002, t016, t021|2026-11-04|
 |runtime_lifecycle|t005, t007, t022, t026, t035|2026-11-05|
-|release_deployment|t027, t034, t035, t042|2026-11-09|
+|release_deployment|t027, t034, t035, t042, t048|2026-11-10|
 |automation_compatibility|t029|2026-11-04|
 |agent_executor|t030|2026-11-04|
 |human_agent_control|t031|2026-11-04|
