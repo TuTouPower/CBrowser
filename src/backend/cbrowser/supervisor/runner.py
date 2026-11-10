@@ -153,6 +153,68 @@ async def run_supervisor(
         d_client.close()
 
 
+_TOPOLOGY_CONTAINER_ACTIONS = frozenset(
+    {
+        "create",
+        "start",
+        "restart",
+        "die",
+        "destroy",
+        "kill",
+        "stop",
+        "oom",
+        "pause",
+        "unpause",
+        "rename",
+    }
+)
+# Only containers whose lifecycle changes convergence inputs may wake the
+# scan loop. Supervisor-owned transient helpers (network-policy, x11
+# permissions, cache-init) and infrastructure services (api/caddy/
+# supervisor) are deliberately excluded: their events are either produced
+# by the reconciliation itself or irrelevant to sandbox topology.
+_CONVERGENCE_ROLES = frozenset({"browser", "stream", "gateway"})
+
+
+def container_event_triggers_scan(event: Any, prefix: str) -> bool:
+    """Whether a Docker container event can change the reconciled topology.
+
+    This is the semantic trigger policy for the event-driven accelerator.
+    Docker emits non-topology traffic on every supervised container:
+    healthcheck ``exec_*`` actions for the infrastructure services, and
+    the lifecycle of the Supervisor's own short-lived policy/x11/cache
+    helpers. Waking the scan on those is self-exciting: a scan verifies
+    policy by starting a helper, whose lifecycle event requests the next
+    scan. Only business container lifecycle changes in this deployment may
+    wake reconciliation (p057).
+    """
+    if not isinstance(event, dict):
+        return False
+    event_type = event.get("Type")
+    if event_type not in (None, "container"):
+        return False
+    action = str(event.get("Action") or event.get("status") or "")
+    if action.split(":", 1)[0] not in _TOPOLOGY_CONTAINER_ACTIONS:
+        return False
+    attributes = (event.get("Actor") or {}).get("Attributes") or {}
+    if attributes.get("com.cbrowser.prefix") != prefix:
+        return False
+    return attributes.get("com.cbrowser.role") in _CONVERGENCE_ROLES
+
+
+def _pump_container_events(
+    stream: Any,
+    prefix: str,
+    on_match: Any,
+    stop_event: threading.Event,
+) -> None:
+    for event in stream:
+        if container_event_triggers_scan(event, prefix):
+            on_match()
+        if stop_event.is_set():
+            break
+
+
 def media_network_event_matches(event: Any, prefix: str) -> bool:
     """True when a Docker network event concerns a media network."""
     if not isinstance(event, dict):
@@ -298,10 +360,12 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
 
             logger.info("Docker events stream subscribed for prefix=%s", prefix)
 
-            for _event in stream:
-                loop.call_soon_threadsafe(scan_wakeup.set)
-                if stop_event.is_set():
-                    break
+            _pump_container_events(
+                stream,
+                prefix,
+                lambda: loop.call_soon_threadsafe(scan_wakeup.set),
+                stop_event,
+            )
         except Exception as exc:  # noqa: BLE001 - docker events watching loop error isolated and logged
             logger.warning(
                 "Docker event stream stopped: error_type=%s", type(exc).__name__
