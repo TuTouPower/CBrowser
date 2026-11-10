@@ -3,7 +3,7 @@
 - task：`t049_supervisor_restore_gateway_deadlock`
 - spec：`docs/tasks/t049_supervisor_restore_gateway_deadlock/task.md`
 - diff_anchor：`13e631695e93182cd1f190223e6a8b9759967e89`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t049' diff 13e631695e93182cd1f190223e6a8b9759967e89`
+- target：`git -C '<repo>' diff 13e631695e93182cd1f190223e6a8b9759967e89`
 - round：2
 - reviewed_at：2026-11-10T14:57:28+08:00
 
