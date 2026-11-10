@@ -5,8 +5,12 @@
 Profile 配置三处缺陷集中在同一交付面（Profile 配置模型、`ProfileForm.tsx`、运行时 fontconfig），合并交付：
 
 1. **高级选项默认值（p067）**：用户要求新建环境时拟人化（`humanize`）与便携 Cookie（`portable_cookies`）默认开启；透明代理、自动启动保持默认关闭；允许第三方 Cookie、设 Google 为默认、剪贴板同步、恢复会话、采集预览保持默认开启。当前前端 `DEFAULT_PROFILE_CREATE_VALUES`、后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse` 与 ORM 默认值中 `humanize`、`portable_cookies` 均为 `false`。
+
 2. **时区与语言（p069）**：`ProfileForm.tsx` 的时区与语言是两个裸文本框，无候选、无校验、无联动；`timezone` 与 `locale` 是互相独立的自由文本，填错导致启动异常或指纹不一致。用户要求时区可打字过滤、未打字时可滚动浏览全部 IANA 时区；语言只支持中文（`zh-CN`）与英文（`en-US`），按时区自动联动——中文地区时区（`Asia/Shanghai`、`Asia/Chongqing`、`Asia/Urumqi`、`Asia/Harbin`、`Asia/Hong_Kong`、`Asia/Macau`、`Asia/Taipei` 等）选中文，其余选英文。
+
 3. **字体按语言分流（p069）**：当前平台字体集按操作系统整体挂载，Runner 生成的 fontconfig 白名单声明整个字体集目录；未绑定字体集时回退 `/opt/cbrowser-base-fonts`（含文泉驿正黑）。用户要求英文 Profile 不加载任何中文字体，中文 Profile 必须加载平台中文字体。
+
+4. **字体集链路审阅缺陷（`docs/reviews/review_20261110_200842/adoption_decision.md`）**：新建环境时字体集「无」不可选，前端按字符串排序自行推导默认集且不看完整性（A16）；Runner 生成 fontconfig 失败时回落系统配置，Linux 字体对指纹 Profile 重新可见且状态不感知（A18）；内容寻址字体集损坏后再导入不修复，Coordinator 把「集不存在」缓存为「无缺失」且永不失效（A19）；`used_by_count` 跨平台串加、列表平台取目录名不校验 manifest（A20）；会话详情把探测字体缺失展示为完整性损坏（A30）。
 
 用户 2026-11-10 已知悉 d033 / ADR 024 事实（真实 Windows / macOS 不论系统语言均预装原生中文字体，裁剪后英文 Profile 可能呈现“缺少系统原生字体”特征），仍确认按原需求裁剪。
 
@@ -22,6 +26,11 @@ Profile 配置三处缺陷集中在同一交付面（Profile 配置模型、`Pro
 - 字体分流：平台字体集内的中文字体（fontconfig 语言覆盖含任一中文 `zh-*` 的字体）在英文 Profile 的 fontconfig 白名单中被排除，在中文 Profile 中可见；未绑定字体集时的基础字体回退同样遵守该规则。
 - 运行时状态与 `GET /api/v1/font-sets` 等既有字体信息在语言分流后保持准确（对外报告的可见字体与实际一致）。
 - 语言变更生成新配置版本，下次启动生效。
+- 默认字体集（A16）：默认集只由后端按完整性规则决定，`GET /api/v1/font-sets` 返回各平台 `default_font_set_id`，创建表单以其预选；「无」为显式选项，提交显式 null，后端按显式 null 保存。
+- fontconfig 失败封闭（A18）：绑定了字体集时 fontconfig 生成失败即启动失败（`font_set_unavailable`），不回落系统配置。
+- 字体集修复与实时校验（A19）：导入时目标目录完整性不通过则以新内容原子替换；删除 Coordinator 字体运行时缓存，按 Supervisor 同一校验函数实时读取。
+- 平台隔离计数（A20）：引用计数按 (fingerprint_platform, font_set_id) 统计；列表校验 manifest 平台与目录一致，不一致标为完整性失败。
+- 缺失展示（A30）：会话详情区分「字体集完整性」与「探测字体未覆盖」两种文案。
 
 ### 非范围
 
@@ -49,6 +58,11 @@ Profile 配置三处缺陷集中在同一交付面（Profile 配置模型、`Pro
 - [ ] AC-008：Profile 语言修改后生成新配置版本，重启后字体可见性与 `navigator.language` 按新语言生效。
 - [ ] AC-009：运行时 `navigator.language` 等于 Profile 配置的语言，不被出口 IP 自动推断覆盖。
 - [ ] AC-010：[deploy] 真实部署后分别新建英文与中文 Profile 启动，页面内字体探测结果符合 AC-006 / AC-007。
+- [ ] AC-011：新建环境表单默认预选后端给出的默认字体集；用户选择「无」后保持为无并以 null 保存；后端默认集只取完整性通过的字体集。
+- [ ] AC-012：绑定字体集的 Profile 在 fontconfig 生成失败时启动失败并报告 `font_set_unavailable`，浏览器不以系统字体运行。
+- [ ] AC-013：字体集文件被删除或篡改后，以原始字体重新导入可恢复完整性；字体集缺失或损坏时，REST 与 SSE 立即报告缺失，无需重启 API。
+- [ ] AC-014：同一 set_id 同时存在于 windows 与 macos 时，两平台条目的引用数各自独立；manifest 平台与目录不一致的条目显示为完整性失败。
+- [ ] AC-015：字体集完整但未覆盖部分探测字体时，会话详情显示「探测字体未覆盖」而非完整性损坏。
 
 ### 可测试性声明
 
@@ -58,12 +72,12 @@ Profile 配置三处缺陷集中在同一交付面（Profile 配置模型、`Pro
 
 <!-- /规范 -->
 
-- AC-001..009：可自动测试（前后端默认值与校验单测、前端组件测试、fontconfig 白名单单测、真实引擎 E2E 字体探测，参照 `test_fingerprint_platform_e2e.py`）。
+- AC-001..009、AC-011..015：可自动测试（前后端默认值与校验单测、前端组件测试、fontconfig 白名单单测、真实引擎 E2E 字体探测，参照 `test_fingerprint_platform_e2e.py`）。
 - AC-010：真实部署验证；替代验证为部署后人工启动两种语言 Profile，记录 `fc-list` 与页面字体探测结果。
 
 ## 上下文区
 
-- 来源：p067、p069（2026-11-10 复核：`types.ts:41/51`、`domain/models.py:157/172/375/390/489/504`、ORM `models.py:98/128` 中 `humanize` / `portable_cookies` 默认 `false`，ORM 默认为 Python 侧默认无 server_default；`ProfileForm.tsx:432-442` 时区/语言为裸输入；`fontconfig.py` `profile_font_dirs` 只按目录白名单，未绑定时回退 `/opt/cbrowser-base-fonts`；本机 windows 字体集含 `msyh.ttc` / `simsun.ttc` / `msjh.ttc`，macos 字体集含 `PingFang.ttc` / `Hiragino Sans GB.ttc` / `STHeiti*.ttc` / `Songti.ttc`）。
+- 来源：p067、p069（2026-11-10 复核：`types.ts:41/51`、`domain/models.py:157/172/375/390/489/504`、ORM `models.py:98/128` 中 `humanize` / `portable_cookies` 默认 `false`，ORM 默认为 Python 侧默认无 server_default；`ProfileForm.tsx:432-442` 时区/语言为裸输入；`fontconfig.py` `profile_font_dirs` 只按目录白名单，未绑定时回退 `/opt/cbrowser-base-fonts`；本机 windows 字体集含 `msyh.ttc` / `simsun.ttc` / `msjh.ttc`，macos 字体集含 `PingFang.ttc` / `Hiragino Sans GB.ttc` / `STHeiti*.ttc` / `Songti.ttc`）；`docs/reviews/review_20261110_200842/adoption_decision.md` A16、A18、A19、A20、A30（审阅原文第 63–67、69、70、90 项）。
 - 已知取舍：d033 / ADR 024 记录真实平台不论语言均有原生中文字体；用户确认仍裁剪。本 task 需在 ADR 中记录该取舍，替代 ADR 024 中“字体集整体可见”的部分。
 - `geoip` 默认开启，CloakBrowser 在时区 / 语言为空时按出口 IP 推断；本 task 后语言恒为显式值。
 

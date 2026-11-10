@@ -1,7 +1,7 @@
 ---
 tid: "t051"
 slug: "runtime_deploy_reliability"
-title: "运行时与部署可靠性：控制面 DB 迁出 bind mount、字体挂载对齐与沙箱可诊断性"
+title: "运行时与部署可靠性：控制面 DB、字体挂载、沙箱诊断、实例归属与发布原子性"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
 conflicts_with: ""
-note: "来源 p059、p063、p066、p068；用户 2026-11-10 选仅 DB 移入 named volume"
+note: "来源 p059、p063、p066、p068；用户 2026-11-10 选仅 DB 移入 named volume; ；扩充 review_20261110_200842 A3 A22 A43 A44 A55 A57 A58 A59"
 ---
 
 # Task 进展

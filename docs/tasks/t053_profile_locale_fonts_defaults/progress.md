@@ -1,7 +1,7 @@
 ---
 tid: "t053"
 slug: "profile_locale_fonts_defaults"
-title: "Profile 配置：高级选项默认值、时区语言联动与按语言分流中文字体"
+title: "Profile 配置：默认值、时区语言联动、按语言分流中文字体与字体集链路收口"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -11,7 +11,7 @@ verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
 conflicts_with: "t051"
-note: "来源 p067、p069；用户 2026-11-10 确认英文 Profile 裁剪中文字体"
+note: "来源 p067、p069；用户 2026-11-10 确认英文 Profile 裁剪中文字体; ；扩充 review_20261110_200842 A16 A18 A19 A20 A30"
 ---
 
 # Task 进展
