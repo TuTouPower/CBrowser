@@ -37,14 +37,14 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：Supervisor 无该 Profile 内存 session、API 返回 desired=running 且实例一致、Gateway visibility 对该实例返回 503（Agent 未注册）时，一次对账即恢复该 Profile 的 session 并恢复其 UDP mux 端口。
-- [ ] AC-002：AC-001 场景中 Gateway 当前容器未挂载到该 Profile 合规媒体网络时，同一次对账内 Gateway 被挂载到固定端点，transport 状态为 `recovering`，不依赖下一轮对账。
-- [ ] AC-003：Gateway 容器缺失或控制接口不可达时，存量沙箱恢复不被中断，session 仍建立，transport 状态反映 `gateway_missing` / `gateway_unreachable`，容器不被拆除。
-- [ ] AC-004：API 不可达时，存量沙箱只做媒体网络挂载恢复，不建立 session、不上报生命周期，行为与改动前一致。
-- [ ] AC-005：媒体网络不存在或不合规时，恢复后的收敛走 Stream-only 替换（受替换预算约束），不对不合规网络执行挂载。
-- [ ] AC-006：实例 label 不一致或 API fence 不一致的沙箱仍不被恢复为 session。
-- [ ] AC-007：真实拓扑中 Profile 运行期间强制重建 Gateway 与 Supervisor 容器后，Supervisor readiness 在部署 readiness 截止时间（300s）内恢复 ready，诊断中不再出现 `session_instance_mismatch`、`gateway_not_attached_at_fixed_endpoint`、`agent_not_registered`，且该 Profile 可重新获得画面。
-- [ ] AC-008：全量门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）通过。
+- [x] AC-001：Supervisor 无该 Profile 内存 session、API 返回 desired=running 且实例一致、Gateway visibility 对该实例返回 503（Agent 未注册）时，一次对账即恢复该 Profile 的 session 并恢复其 UDP mux 端口。
+- [x] AC-002：AC-001 场景中 Gateway 当前容器未挂载到该 Profile 合规媒体网络时，同一次对账内 Gateway 被挂载到固定端点，transport 状态为 `recovering`，不依赖下一轮对账。
+- [x] AC-003：Gateway 容器缺失或控制接口不可达时，存量沙箱恢复不被中断，session 仍建立，transport 状态反映 `gateway_missing` / `gateway_unreachable`，容器不被拆除。
+- [x] AC-004：API 不可达时，存量沙箱只做媒体网络挂载恢复，不建立 session、不上报生命周期，行为与改动前一致。
+- [x] AC-005：媒体网络不存在或不合规时，恢复后的收敛走 Stream-only 替换（受替换预算约束），不对不合规网络执行挂载。
+- [x] AC-006：实例 label 不一致或 API fence 不一致的沙箱仍不被恢复为 session。
+- [x] AC-007：真实拓扑中 Profile 运行期间强制重建 Gateway 与 Supervisor 容器后，Supervisor readiness 在部署 readiness 截止时间（300s）内恢复 ready，诊断中不再出现 `session_instance_mismatch`、`gateway_not_attached_at_fixed_endpoint`、`agent_not_registered`，且该 Profile 可重新获得画面。
+- [x] AC-008：全量门禁（`CBROWSER_RUN_E2E=1 scripts/run_gates.sh`）通过。（用户 2026-11-10 豁免：unit/integration/frontend/build 已分别稳定全绿；E2E 在宿主被其他会话压到 load 160–300 时单次 run 随机 1–3 个超时用例，失败项每轮不同且单独复跑均通过；用户批准不要求一次完整全绿。）
 
 ### 可测试性声明
 

@@ -144,6 +144,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 - 用户只经 `/api/v1` 修改运行意愿（`PATCH /api/v1/profiles/{id}/runtime/desired-state` 或 stop）。API 先持久化意愿，再由进程内 Runtime Coordinator 经内部认证 RPC 请求 Supervisor 启动/停止该 Profile 的 Browser/Stream；前端与测试都不直调 Supervisor。
 - Supervisor 不可达或 RPC 失败时意愿保留，错误写入 `last_coordinator_error` 并经 API 响应与 SSE `runtime_state` 事件显式报告；Coordinator 按指数退避重试直至收敛，成功即清空错误；API 启动时对意愿与观测不一致的 Profile 同样发起收敛。
+- 存量沙箱恢复（Supervisor 重启或部署升级重建 Gateway/Supervisor）不依赖 Gateway 可见性或注册读数：按容器 label 与 API instance fence 判定实例一致后恢复端口与 session，并在同一轮扫描内完成媒体网络附着；Gateway 按 label 动态解析，媒体挂载收敛与内存 session 解耦（t049）。
 - Coordinator 需显式配置 `CBROWSER_SUPERVISOR_URL` 与 `CBROWSER_SUPERVISOR_TOKEN_FILE`。缺失时 API 仍可启动但 Coordinator 显式禁用：启动警告一次，且每次意愿变更以 `last_coordinator_error="Supervisor is not configured"` 报告。设置 `CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置使 API 启动失败；生产部署（t012）必须启用该模式。
 
 ### 5.5 协议兼容与 API 演进

@@ -510,7 +510,7 @@ class RealSupervisorContainer:
             "detach": True,
             "read_only": True,
             "cap_drop": ["ALL"],
-            "cap_add": ["FOWNER", "DAC_OVERRIDE"],
+            "cap_add": ["FOWNER", "DAC_OVERRIDE", "CHOWN"],
             "security_opt": ["no-new-privileges:true"],
             "tmpfs": {"/tmp": "rw,size=256m"},
             "environment": container_env,

@@ -38,6 +38,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import docker
+from wait import poll_until
 import httpx
 import pytest
 
@@ -568,32 +569,34 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             assert r_unblock.json()["failure_count"] == 0
             assert r_unblock.json()["restart_blocked"] is False
 
-            inst_4 = None
-            b4_name = None
-            for _ in range(60):
-                await asyncio.sleep(0.25)
+            async def unblocked_running() -> dict:
                 r_rt = await api_client.get(
                     f"/api/v1/internal/supervisor/profiles/{profile_id}/runtime"
                 )
                 rt_val = r_rt.json()
                 curr_inst = rt_val.get("runtime_instance_id")
-                if curr_inst and rt_val.get("observed_state") == "running":
-                    inst_4 = curr_inst
-                    active_containers = d_client.containers.list(
-                        filters={"label": f"com.cbrowser.prefix={prefix}"}
-                    )
-                    for c in active_containers:
-                        if (
-                            c.labels.get("com.cbrowser.instance-id") == inst_4
-                            and c.labels.get("com.cbrowser.role") == "browser"
-                        ):
-                            b4_name = c.name
-                            tracked_cids.append(c.id)
-                            break
-                    if b4_name:
-                        break
+                if not curr_inst or rt_val.get("observed_state") != "running":
+                    return {}
+                for c in d_client.containers.list(
+                    filters={"label": f"com.cbrowser.prefix={prefix}"}
+                ):
+                    if (
+                        c.labels.get("com.cbrowser.instance-id") == curr_inst
+                        and c.labels.get("com.cbrowser.role") == "browser"
+                    ):
+                        return {"instance": curr_inst, "name": c.name, "cid": c.id}
+                return {}
 
-            assert inst_4 is not None and b4_name is not None
+            recovered = await poll_until(
+                unblocked_running,
+                lambda value: bool(value),
+                timeout=120.0,
+                interval=0.25,
+                description="manual unblock recovery",
+            )
+            inst_4 = recovered["instance"]
+            b4_name = recovered["name"]
+            tracked_cids.append(recovered["cid"])
             logger.info(
                 "Manual unblock successfully recovered instance %s (%s)",
                 inst_4,

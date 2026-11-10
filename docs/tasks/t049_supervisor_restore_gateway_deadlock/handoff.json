@@ -1,0 +1,14 @@
+{
+  "tid": "t049",
+  "attempt": 1,
+  "execution_id": "2dae03f595854a98bc1095ac1a2b1220",
+  "status": "done",
+  "branch": "t049_supervisor_restore_gateway_deadlock",
+  "base_sha": "13e631695e93182cd1f190223e6a8b9759967e89",
+  "tests": "unit 1540 / integration 173 / frontend 499 / build 多次全绿；t049 单测 8 条红绿验证；升级 E2E 修复版 103s 通过",
+  "blackbox": "`tests/e2e/test_supervisor_upgrade_recovery_e2e.py` 通过；基线 supervisor 镜像复现 300s 超时与三类死锁诊断",
+  "review": "full 两轴 Round 2 PASS（reviewed_scope `ef51a572d2463cb9`）",
+  "review_scope": "ef51a572d2463cb9",
+  "pending": [],
+  "findings": []
+}

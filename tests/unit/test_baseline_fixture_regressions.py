@@ -433,7 +433,7 @@ def test_real_supervisor_container_security_options_match_container_graph(
     _, run_kwargs = mock_docker.containers.run.call_args
     assert run_kwargs["read_only"] is True
     assert run_kwargs["cap_drop"] == ["ALL"]
-    assert run_kwargs["cap_add"] == ["FOWNER", "DAC_OVERRIDE"]
+    assert run_kwargs["cap_add"] == ["FOWNER", "DAC_OVERRIDE", "CHOWN"]
     assert run_kwargs["security_opt"] == ["no-new-privileges:true"]
     assert run_kwargs["tmpfs"] == {"/tmp": "rw,size=256m"}
 

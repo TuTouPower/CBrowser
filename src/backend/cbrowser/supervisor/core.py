@@ -178,6 +178,26 @@ class RegistrationState:
     lost_at: float | None = None
 
 
+@dataclass(frozen=True)
+class MediaAttachmentOutcome:
+    """Result of the session-independent media attachment convergence.
+
+    ``status`` is one of the module-level ``MEDIA_ATTACH_*`` values; the
+    caller decides how to report it because the offline recovery path
+    must stay observation-free (t049 AC-004).
+    """
+
+    status: str
+    media: dict[str, Any] | None = None
+
+
+MEDIA_ATTACH_OK = "ok"
+MEDIA_ATTACH_DRIFT = "media_drift"
+MEDIA_ATTACH_INSPECT_FAILED = "inspect_failed"
+MEDIA_ATTACH_GATEWAY_MISSING = "gateway_missing"
+MEDIA_ATTACH_FAILED = "attach_failed"
+
+
 class SupervisorCore:
     def __init__(
         self,
@@ -360,6 +380,59 @@ class SupervisorCore:
             return True
         return now - state.lost_at < self._REGISTRATION_LOSS_GRACE_SEC
 
+    async def _ensure_media_attachment(
+        self, profile_id: str, instance_id: str
+    ) -> MediaAttachmentOutcome:
+        """Converge the Gateway attachment on the Profile media network.
+
+        This is infrastructure topology, not business state: it needs only
+        the label-verified runtime instance, never a live session nor any
+        Gateway visibility/registration reading (t049). The offline
+        recovery path and session convergence share it so a rebuilt
+        Gateway is re-attached regardless of which caller notices first.
+
+        An absent or non-conforming media network is reported as drift and
+        left untouched; the caller keeps the existing Stream-only
+        replacement semantics instead of mounting onto a drifted network.
+        """
+        try:
+            media = await asyncio.to_thread(
+                self.docker.inspect_media_network, profile_id
+            )
+        except DockerSandboxError:
+            return MediaAttachmentOutcome(MEDIA_ATTACH_INSPECT_FAILED)
+        plan = media.get("plan")
+        if plan is not None:
+            self._update_transport(
+                profile_id, gateway_endpoint=plan.gateway_endpoint
+            )
+        if not media["exists"] or not media["conforms"]:
+            return MediaAttachmentOutcome(MEDIA_ATTACH_DRIFT, media=media)
+        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        if gateway_id is None:
+            return MediaAttachmentOutcome(
+                MEDIA_ATTACH_GATEWAY_MISSING, media=media
+            )
+        if media["gateway_attached_id"] == gateway_id:
+            return MediaAttachmentOutcome(MEDIA_ATTACH_OK, media=media)
+        try:
+            attach = await asyncio.to_thread(
+                self.docker.attach_profile_infrastructure,
+                profile_id,
+                gateway_id,
+                self.gateway_port,
+            )
+        except DockerSandboxError:
+            return MediaAttachmentOutcome(MEDIA_ATTACH_FAILED, media=media)
+        self._update_transport(
+            profile_id,
+            runtime_instance_id=instance_id,
+            transport_state="recovering",
+            gateway_endpoint=attach["gateway_ip"],
+            last_attached_at=self._now_iso(),
+        )
+        return MediaAttachmentOutcome(MEDIA_ATTACH_OK, media=media)
+
     async def _converge_session(
         self,
         profile_id: str,
@@ -394,11 +467,10 @@ class SupervisorCore:
         stream_c = objects.get("stream")
         if browser_c is None or stream_c is None:
             return
-        try:
-            media = await asyncio.to_thread(
-                self.docker.inspect_media_network, profile_id
-            )
-        except DockerSandboxError:
+        attachment = await self._ensure_media_attachment(
+            profile_id, instance_id
+        )
+        if attachment.status == MEDIA_ATTACH_INSPECT_FAILED:
             self._update_transport(
                 profile_id,
                 transport_state="failed",
@@ -406,12 +478,9 @@ class SupervisorCore:
                 last_error_at=self._now_iso(),
             )
             return
+        media = attachment.media or {}
         plan = media.get("plan")
-        if plan is not None:
-            self._update_transport(
-                profile_id, gateway_endpoint=plan.gateway_endpoint
-            )
-        if not media["exists"] or not media["conforms"]:
+        if attachment.status == MEDIA_ATTACH_DRIFT:
             if self._stream_replacement_allowed(profile_id, instance_id):
                 logger.warning(
                     "Stream-only replacement: media_network_drift profile=%s "
@@ -432,8 +501,7 @@ class SupervisorCore:
                     last_error_at=self._now_iso(),
                 )
             return
-        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
-        if gateway_id is None:
+        if attachment.status == MEDIA_ATTACH_GATEWAY_MISSING:
             self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
@@ -442,31 +510,17 @@ class SupervisorCore:
                 last_error_at=self._now_iso(),
             )
             return
-        if media["gateway_attached_id"] != gateway_id:
-            try:
-                attach = await asyncio.to_thread(
-                    self.docker.attach_profile_infrastructure,
-                    profile_id,
-                    gateway_id,
-                    self.gateway_port,
-                )
-            except DockerSandboxError:
-                # Includes the fixed endpoint being held by another
-                # container (AC-003): explicit degraded state, not a
-                # scan-level warning only.
-                self._update_transport(
-                    profile_id,
-                    transport_state="failed",
-                    last_error="media_attach_failed",
-                    last_error_at=self._now_iso(),
-                )
-                return
+        if attachment.status == MEDIA_ATTACH_FAILED:
+            # Includes the fixed endpoint being held by another
+            # container: explicit degraded state, not a
+            # scan-level warning only.
             self._update_transport(
                 profile_id,
-                transport_state="recovering",
-                gateway_endpoint=attach["gateway_ip"],
-                last_attached_at=self._now_iso(),
+                transport_state="failed",
+                last_error="media_attach_failed",
+                last_error_at=self._now_iso(),
             )
+            return
         stream_spec = self.docker.stream_policy_spec(
             plan, self.gateway_port, session.udp_mux_port
         )
@@ -807,30 +861,7 @@ class SupervisorCore:
         )
         if instance_id is None:
             return
-        media = await asyncio.to_thread(
-            self.docker.inspect_media_network, profile_id
-        )
-        if not media["exists"] or not media["conforms"]:
-            return
-        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
-        if gateway_id is None or media["gateway_attached_id"] == gateway_id:
-            return
-        try:
-            attach = await asyncio.to_thread(
-                self.docker.attach_profile_infrastructure,
-                profile_id,
-                gateway_id,
-                self.gateway_port,
-            )
-        except DockerSandboxError:
-            return
-        self._update_transport(
-            profile_id,
-            runtime_instance_id=instance_id,
-            transport_state="recovering",
-            gateway_endpoint=attach["gateway_ip"],
-            last_attached_at=self._now_iso(),
-        )
+        await self._ensure_media_attachment(profile_id, instance_id)
 
     async def reconcile_all(self) -> ReconcileAllResponse:
         """One full convergence pass over every live pair (t026 AC-009)."""
@@ -1379,14 +1410,14 @@ class SupervisorCore:
                         reason="unprotected_sandbox",
                     )
                     return
-                if self.gateway_control is None:
-                    raise RuntimeError(
-                        "Gateway control RPC is required for readiness"
-                    )
-                try:
-                    await self.gateway_control.has_foreground_viewers(pid, b_inst)
-                except (httpx.HTTPError, OSError, ValueError):
-                    return
+                # t049: restoring an existing sandbox is a one-way,
+                # deterministic flow. Instance consistency is already
+                # established by the container labels above and the API
+                # fence, so nothing here may depend on Gateway business
+                # visibility or Agent registration: a rebuilt Gateway
+                # that has not (re)seen the Agent yet reports 503, and
+                # gating on that reading is what closed the upgrade
+                # deadlock.
                 # Restore UDP port from Stream container HostConfig port bindings
                 actual_port = None
                 try:
@@ -1436,6 +1467,20 @@ class SupervisorCore:
                     await self._report_observed(
                         pid, b_inst, "running", rt["config_version"]
                     )
+                # A freshly restored Supervisor has no registration
+                # history, so treat the first unregistered reading as the
+                # same recovery transient a live Supervisor sees after a
+                # Gateway restart: arm the grace before converging, or the
+                # next convergence would replace a Stream that only needs
+                # the Gateway attachment repaired.
+                self._registration[pid] = RegistrationState(
+                    lost_at=time.monotonic()
+                )
+                # Same pass convergence: the restored session immediately
+                # converges transport topology (Gateway re-attachment)
+                # rather than waiting for a later cycle.
+                session = self._sessions[pid]
+                await self._converge_session(pid, session, roles)
         elif resp.status_code == 404:
             # Only 404 means Profile was deleted permanently from API
             logger.info(

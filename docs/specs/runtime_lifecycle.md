@@ -47,6 +47,12 @@
 - Supervisor 提供经内部认证的 reconcile_all 与 readiness（宿主机经容器内命令调用，无新增发布端口）；契约经 schema 导出与一致性测试锁定。
 - 分层观测：运行响应与 SSE 暴露 browser/stream/transport 三层状态、版本与 build 标识、最近附着/注册/错误；仅内存保存，API 重启后为 unknown；按实例围栏呈现，异实例观测为 null。信令首次连接异常关闭在 transport recovering 时呈现恢复中，明确失败或超恢复窗口才失败。
 
+## 存量沙箱恢复与升级自愈（t049）
+
+- Supervisor 重启后的存量沙箱恢复是确定性单向流程：容器 label 与 API instance fence 校验 → policy_ready 宽限 → 从 Stream 容器端口绑定恢复 UDP mux 端口 → 实例化 session → 同一轮扫描立即收敛。恢复不读取 Gateway 业务可见性（visibility/注册状态），不因 Gateway 重建后返回 503 而中断。
+- 媒体网络附着收敛独立于内存 session 与业务可见性：按 label 解析当前 Gateway 容器并附着到 Profile 合规媒体网络的固定端点，由 API 离线恢复路径与稳态收敛共用同一实现；媒体网络缺失或不合规仍走既有 Stream-only 替换预算，不对不合规网络执行挂载。
+- Gateway 容器缺失或控制接口不可达时，存量 session 仍建立，transport 呈现 gateway_missing / gateway_unreachable，不拆除容器；重启后首个未注册读数按既有恢复宽限处理，避免立即替换健康的 Stream。
+
 ## 资源策略
 
 Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预算计算压力，结合真实前台可见性下发 Profile 级 FPS cap。缺失或失败样本不能当低负载，单个 Profile 采样或 RPC 失败不阻断其他 Profile；解除限制后由 Stream 活动策略决定恢复 8/30 FPS。全后台不误触发前台 cap，Viewer 心跳不建立控制租约。

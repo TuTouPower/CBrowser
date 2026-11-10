@@ -33,6 +33,7 @@ TEST_RESOURCE_PREFIXES: tuple[str, ...] = (
     "t006-",
     "t007-",
     "t028-",
+    "t049-",
     "baseline-exit-",
     "cbrowser-t003-",
     "cbrowser-t004-",
@@ -96,8 +97,43 @@ def select_cleanup_targets(
     )
 
 
+def _is_vanished(exc: BaseException) -> bool:
+    """Whether *exc* means a container disappeared while being enumerated."""
+    try:
+        import docker
+
+        if isinstance(exc, docker.errors.NotFound):
+            return True
+    except Exception:  # noqa: BLE001 - SDK import/type probing is best effort
+        pass
+    text = str(exc)
+    return "404" in text or "No such container" in text
+
+
+def _list_containers(client: Any) -> list[Any]:
+    """List containers, retrying past containers destroyed mid-enumeration.
+
+    A concurrent session (or the Supervisor policy helper) can remove a
+    container between Docker SDK enumeration steps, which surfaces as a
+    404/NotFound from ``containers.list``. That is churn, not an unreadable
+    ownership label: fail-closed only when the list cannot be obtained at
+    all.
+    """
+    last: BaseException | None = None
+    for _ in range(3):
+        try:
+            return list(client.containers.list(all=True))
+        except Exception as exc:  # noqa: BLE001 - retry only proven vanished races
+            if not _is_vanished(exc):
+                raise
+            last = exc
+    raise LabelLookupError(
+        f"container list churned during lookup: {type(last).__name__}: {last}"
+    )
+
+
 def _list_container_names(client: Any) -> list[str]:
-    return [container.name for container in client.containers.list(all=True)]
+    return [container.name for container in _list_containers(client)]
 
 
 def _list_network_names(client: Any) -> list[str]:
@@ -106,7 +142,7 @@ def _list_network_names(client: Any) -> list[str]:
 
 def _list_container_labels(client: Any) -> dict[str, dict[str, str]]:
     result: dict[str, dict[str, str]] = {}
-    for container in client.containers.list(all=True):
+    for container in _list_containers(client):
         try:
             labels = getattr(container, "labels", None)
             if labels is None and hasattr(container, "attrs"):
