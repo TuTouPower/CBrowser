@@ -2,5 +2,22 @@
     "generated_by": ".repo_template/scripts/task.py",
     "authority": "docs/tasks/{tid}_{slug}/progress.md front matter",
     "workspace": ".",
-    "tasks": []
+    "tasks": [
+        {
+            "tid": "t050",
+            "slug": "sandbox_compose_grouping",
+            "title": "Profile 沙箱容器聚合到独立 compose 分组",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "用户需求：所有 Profile 沙箱在 Docker UI 统一聚合到 <prefix>-profiles 分组，同时保持部署 prefix 冲突判断与清理语义",
+            "dir": "docs/tasks/t050_sandbox_compose_grouping"
+        }
+    ]
 }
