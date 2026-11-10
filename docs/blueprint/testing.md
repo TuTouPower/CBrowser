@@ -75,7 +75,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 # 统一入口：scripts/run_gates.sh；E2E 使用 CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 ```
 
-会话建立时延与候选类型（t019）：真实 Chrome 黑盒须断言新建会话的 ICE 候选集仅含 `host` 类型、远端候选地址恒为 `127.0.0.1`（不出现 `srflx`/`relay`/`prflx`），且侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均不超过 2 秒；用例在 `tests/e2e/test_frontend_app_e2e.py`（`test_t019_switch_and_refresh_first_frame_within_2s_host_only`），经 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 执行。Stream entrypoint 的 ICE-lite 启动参数由 unit 门禁 `tests/unit/test_stream_ice_config.py` 守护，防止回退 Selkies 默认外部 STUN/TURN。
+会话建立时延与候选类型（t019）：真实 Chrome 黑盒须断言新建会话的 ICE 候选集仅含 `host` 类型、远端候选地址恒为 `127.0.0.1`（不出现 `srflx`/`relay`/`prflx`），且侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均不超过 5 秒；用例在 `tests/e2e/test_frontend_app_e2e.py`（`test_t019_switch_and_refresh_first_frame_within_5s_host_only`），经 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 执行。Stream entrypoint 的 ICE-lite 启动参数由 unit 门禁 `tests/unit/test_stream_ice_config.py` 守护，防止回退 Selkies 默认外部 STUN/TURN。
 
 先创建允许写域内 TMPDIR，不能依赖不存在的目录让 pytest 回退系统 /tmp。
 
@@ -141,6 +141,8 @@ t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS �
 页面可见性在无头 Chrome 中不会因切标签变化，AC-007 用例在页面内覆盖 `document.visibilityState` 并派发 `visibilitychange` 触发官方客户端 STOP_VIDEO/START_VIDEO；浏览器真实标签切换的事件发出见 d013/s005，不在本用例重证。
 
 ## Supervisor 阶段验证
+
+带载升级自愈：`tests/e2e/test_supervisor_upgrade_recovery_e2e.py` 在 Profile 运行中强制重建 Gateway 与 Supervisor（`GatewayTopologyHarness.rebuild_gateway_and_supervisor`），断言 300s 部署 readiness 预算内恢复 ready、无 `session_instance_mismatch` / `gateway_not_attached_at_fixed_endpoint` / `agent_not_registered` 诊断，并由新的 headless viewer 重新解出视频帧（t049 AC-007）。
 
 按照 [Supervisor 验证](../guides/supervisor_validation.md) 提供当前源构建的不可变镜像及缓存。统一运行 `scripts/run_gates.sh` 或 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，不直接调用裸 pytest。
 

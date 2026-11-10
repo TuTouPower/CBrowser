@@ -191,6 +191,196 @@ class GatewayTopologyHarness:
         self.containers.append(container)
         return container
 
+    def _start_gateway_container(self) -> None:
+        self.gateway_container = self._run_container(
+            "gateway",
+            self.gateway_image,
+            read_only=True,
+            tmpfs={"/tmp": "rw,size=256m"},
+            environment={
+                "CBROWSER_GATEWAY_HOST": "0.0.0.0",
+                "CBROWSER_GATEWAY_PORT": str(DEFAULT_GATEWAY_PORT),
+                "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent_key",
+                "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
+                "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
+                "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
+                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
+                "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
+                    self.agent_heartbeat_timeout_sec
+                ),
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
+            },
+            volumes={
+                str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
+                str(self.data_dir / "network"): {"bind": "/data/network", "mode": "ro"},
+            },
+            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
+        )
+        self.gateway_container.reload()
+        self.gateway_ip = self.gateway_container.attrs["NetworkSettings"]["Networks"][
+            self.edge_network.name
+        ]["IPAddress"]
+
+    def _start_supervisor_container(self) -> None:
+        mounts = {
+            str(self.data_dir / name): {"bind": str(self.data_dir / name), "mode": "rw"}
+            for name in (
+                "engine_cache",
+                "profiles",
+                "runtime",
+                "runtime-events",
+                "artifacts",
+                "spool",
+                "control",
+            )
+        }
+        mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
+        mounts["/run/cb/socks"] = {"bind": "/run/cb/socks", "mode": "rw"}
+
+        self.supervisor_container = self._run_container(
+            "supervisor",
+            self.supervisor_image,
+            read_only=True,
+            cap_add=["FOWNER", "DAC_OVERRIDE"],
+            tmpfs={"/tmp": "rw,size=256m"},
+            environment={
+                "CBROWSER_BROWSER_IMAGE": self.browser_image,
+                "CBROWSER_STREAM_IMAGE": self.stream_image,
+                "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
+                # Lane isolation for concurrent t032 topology runs:
+                # separate Supervisor UDP mux ranges and media subnets.
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
+                "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
+                    "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
+                ),
+                "CBROWSER_SOCKET_ROOT": "/run/cb/socks",
+            },
+            volumes=mounts,
+            ports={"8005/tcp": ("127.0.0.1", None)},
+            command=[
+                "--api-url",
+                f"http://{self.api_ip}:8000",
+                "--gateway-control-url",
+                f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
+                "--gateway-port",
+                str(DEFAULT_GATEWAY_PORT),
+                # Production passes the stable container name; the Supervis-
+                # or resolves the live Gateway by labels on every scan, so
+                # a Gateway rebuilt at deployment time is followed without
+                # a restarted Supervisor pointing at a dead ID (t049).
+                "--gateway-container-id",
+                f"{self.prefix}-gateway",
+                "--prefix",
+                self.prefix,
+                "--data-root",
+                str(self.data_dir),
+                "--engine-cache",
+                str(self.data_dir / "engine_cache"),
+                "--token-file",
+                str(self.key_files["supervisor"]),
+                "--agent-key-file",
+                str(self.key_files["agent"]),
+                "--gateway-token-file",
+                str(self.key_files["gateway"]),
+                "--host",
+                "0.0.0.0",
+                "--port",
+                "8005",
+            ],
+        )
+
+        self.supervisor_container.reload()
+        sup_ports = self.supervisor_container.attrs["NetworkSettings"]["Ports"]
+        if "8005/tcp" not in sup_ports or not sup_ports["8005/tcp"]:
+            st = self.supervisor_container.status
+            raise RuntimeError(f"Supervisor container did not expose 8005/tcp ({st})")
+        sup_port = sup_ports["8005/tcp"][0]["HostPort"]
+        self.supervisor_url = f"http://127.0.0.1:{sup_port}"
+
+    def _remove_container(
+        self, container: docker.models.containers.Container | None
+    ) -> None:
+        if container is None:
+            return
+        container_id = container.id
+        try:
+            container.remove(force=True)
+        except docker.errors.NotFound:
+            pass
+        self.containers = [c for c in self.containers if c.id != container_id]
+
+    async def rebuild_gateway(self, timeout_sec: float = 60.0) -> None:
+        """Force-recreate the Gateway while profiles keep running (t049).
+
+        The old container is removed and a new one is started on the same
+        edge network under the same name, mirroring the deployment upgrade
+        that recreates the Gateway container.
+        """
+        self._remove_container(self.gateway_container)
+        self.gateway_container = None
+        self._start_gateway_container()
+        host_port = published_host_port(
+            self.gateway_container, f"{DEFAULT_GATEWAY_PORT}/tcp"
+        )
+        await wait_until_ready(
+            f"http://127.0.0.1:{host_port}",
+            "/gateway/v1/health",
+            timeout=timeout_sec,
+        )
+
+    async def rebuild_supervisor(self, timeout_sec: float = 60.0) -> None:
+        """Force-recreate the Supervisor while profiles keep running (t049)."""
+        self._remove_container(self.supervisor_container)
+        self.supervisor_container = None
+        self._start_supervisor_container()
+        await wait_until_ready(
+            self.supervisor_url,
+            "/supervisor/v1/health",
+            headers={"Authorization": f"Bearer {self.keys['supervisor']}"},
+            timeout=timeout_sec,
+        )
+
+    async def rebuild_gateway_and_supervisor(
+        self, timeout_sec: float = 60.0
+    ) -> None:
+        """Recreate both infrastructure containers together (t049 AC-007).
+
+        Mirrors a deployment upgrade (``docker compose up -d`` recreating
+        Gateway and Supervisor): the old Supervisor is gone before the new
+        Gateway starts, so no in-memory session can help, and the fresh
+        Gateway is not attached to any Profile media network yet.
+        """
+        self._remove_container(self.supervisor_container)
+        self.supervisor_container = None
+        self._remove_container(self.gateway_container)
+        self.gateway_container = None
+        self._start_gateway_container()
+        host_port = published_host_port(
+            self.gateway_container, f"{DEFAULT_GATEWAY_PORT}/tcp"
+        )
+        await wait_until_ready(
+            f"http://127.0.0.1:{host_port}",
+            "/gateway/v1/health",
+            timeout=timeout_sec,
+        )
+        self._start_supervisor_container()
+        await wait_until_ready(
+            self.supervisor_url,
+            "/supervisor/v1/health",
+            headers={"Authorization": f"Bearer {self.keys['supervisor']}"},
+            timeout=timeout_sec,
+        )
+
     async def start(self) -> None:
         try:
             await self._do_start()
@@ -307,120 +497,10 @@ class GatewayTopologyHarness:
         ]["IPAddress"]
 
         # 3. Gateway container
-        self.gateway_container = self._run_container(
-            "gateway",
-            self.gateway_image,
-            read_only=True,
-            tmpfs={"/tmp": "rw,size=256m"},
-            environment={
-                "CBROWSER_GATEWAY_HOST": "0.0.0.0",
-                "CBROWSER_GATEWAY_PORT": str(DEFAULT_GATEWAY_PORT),
-                "CBROWSER_AGENT_KEY_FILE": "/run/secrets/agent_key",
-                "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
-                "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
-                "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
-                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
-                "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
-                    self.agent_heartbeat_timeout_sec
-                ),
-                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
-                    "CBROWSER_E2E_UDP_BASE", "30000"
-                ),
-                "CBROWSER_UDP_MUX_MAX_PORT": str(
-                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
-                ),
-            },
-            volumes={
-                str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
-                str(self.data_dir / "network"): {"bind": "/data/network", "mode": "ro"},
-            },
-            ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
-        )
-        self.gateway_container.reload()
-        self.gateway_ip = self.gateway_container.attrs["NetworkSettings"]["Networks"][
-            self.edge_network.name
-        ]["IPAddress"]
-        gateway_host_port = published_host_port(
-            self.gateway_container, f"{DEFAULT_GATEWAY_PORT}/tcp"
-        )
-        gateway_internal_url = f"http://127.0.0.1:{gateway_host_port}"
+        self._start_gateway_container()
 
         # 4. Supervisor container
-        mounts = {
-            str(self.data_dir / name): {"bind": str(self.data_dir / name), "mode": "rw"}
-            for name in (
-                "engine_cache",
-                "profiles",
-                "runtime",
-                "runtime-events",
-                "artifacts",
-                "spool",
-                "control",
-            )
-        }
-        mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
-        mounts["/run/cb/socks"] = {"bind": "/run/cb/socks", "mode": "rw"}
-
-        self.supervisor_container = self._run_container(
-            "supervisor",
-            self.supervisor_image,
-            read_only=True,
-            cap_add=["FOWNER", "DAC_OVERRIDE"],
-            tmpfs={"/tmp": "rw,size=256m"},
-            environment={
-                "CBROWSER_BROWSER_IMAGE": self.browser_image,
-                "CBROWSER_STREAM_IMAGE": self.stream_image,
-                "CBROWSER_NETWORK_POLICY_IMAGE": self.supervisor_image,
-                # Lane isolation for concurrent t032 topology runs:
-                # separate Supervisor UDP mux ranges and media subnets.
-                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
-                    "CBROWSER_E2E_UDP_BASE", "30000"
-                ),
-                "CBROWSER_UDP_MUX_MAX_PORT": str(
-                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
-                ),
-                "CBROWSER_MEDIA_SUBNET_POOL": os.environ.get(
-                    "CBROWSER_E2E_MEDIA_POOL", "10.251.0.0/16"
-                ),
-                "CBROWSER_SOCKET_ROOT": "/run/cb/socks",
-            },
-            volumes=mounts,
-            ports={"8005/tcp": ("127.0.0.1", None)},
-            command=[
-                "--api-url",
-                f"http://{self.api_ip}:8000",
-                "--gateway-control-url",
-                f"http://{self.gateway_ip}:{DEFAULT_GATEWAY_PORT}",
-                "--gateway-port",
-                str(DEFAULT_GATEWAY_PORT),
-                "--gateway-container-id",
-                self.gateway_container.id,
-                "--prefix",
-                self.prefix,
-                "--data-root",
-                str(self.data_dir),
-                "--engine-cache",
-                str(self.data_dir / "engine_cache"),
-                "--token-file",
-                str(self.key_files["supervisor"]),
-                "--agent-key-file",
-                str(self.key_files["agent"]),
-                "--gateway-token-file",
-                str(self.key_files["gateway"]),
-                "--host",
-                "0.0.0.0",
-                "--port",
-                "8005",
-            ],
-        )
-
-        self.supervisor_container.reload()
-        sup_ports = self.supervisor_container.attrs["NetworkSettings"]["Ports"]
-        if "8005/tcp" not in sup_ports or not sup_ports["8005/tcp"]:
-            st = self.supervisor_container.status
-            raise RuntimeError(f"Supervisor container did not expose 8005/tcp ({st})")
-        sup_port = sup_ports["8005/tcp"][0]["HostPort"]
-        self.supervisor_url = f"http://127.0.0.1:{sup_port}"
+        self._start_supervisor_container()
 
         self.api_container.reload()
         api_ports = self.api_container.attrs["NetworkSettings"]["Ports"]

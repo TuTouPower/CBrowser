@@ -87,7 +87,15 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     control = data / "control"
     control.mkdir(parents=True)
     control.chmod(0o700)
-    for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
+    for name in (
+        "profiles",
+        "runtime",
+        "runtime-events",
+        "artifacts",
+        "spool",
+        "network",
+        "sockets",
+    ):
         (data / name).mkdir(parents=True, exist_ok=True)
         (data / name).chmod(0o777)
     from cbrowser.domain.models import NetworkAccessConfig
@@ -183,6 +191,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_GATEWAY_API_URL": f"http://{prefix}-api:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
                 "CBROWSER_NETWORK_STATE_DIR": "/data/network",
+                "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
+                    "CBROWSER_E2E_UDP_BASE", "30000"
+                ),
+                "CBROWSER_UDP_MUX_MAX_PORT": str(
+                    int(os.environ.get("CBROWSER_E2E_UDP_BASE", "30000")) + 991
+                ),
             },
             volumes={
                 str(keys["agent"]): {"bind": "/run/secrets/agent", "mode": "ro"},
@@ -217,13 +231,14 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "artifacts",
                 "spool",
                 "control",
+                "sockets",
             )
         }
         mounts["/var/run/docker.sock"] = {"bind": "/var/run/docker.sock", "mode": "ro"}
         supervisor = run(
             "supervisor",
             image("CBROWSER_SUPERVISOR_TEST_IMAGE"),
-            cap_add=["FOWNER", "DAC_OVERRIDE"],
+            cap_add=["FOWNER", "DAC_OVERRIDE", "CHOWN"],
             environment={
                 "CBROWSER_BROWSER_IMAGE": image("CBROWSER_RUNTIME_TEST_IMAGE"),
                 "CBROWSER_STREAM_IMAGE": image("CBROWSER_STREAM_TEST_IMAGE"),
