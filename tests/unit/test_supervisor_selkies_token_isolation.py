@@ -49,6 +49,7 @@ def test_secret_validation_rejects_files_inside_browser_runtime_dir(
     tmp_path: Path,
 ) -> None:
     adapter, _, _ = _adapter(tmp_path)
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     leaked = dirs["runtime"] / "selkies_tokens.json"
     leaked.write_text("{}", encoding="utf-8")
@@ -63,6 +64,7 @@ async def test_browser_container_mounts_never_include_secret_directory(
     tmp_path: Path,
 ) -> None:
     adapter, mock_client, _ = _adapter(tmp_path)
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     snapshot_path = dirs["runtime"] / "snapshot.json"
     snapshot_path.write_text(json.dumps({"version": 1, "config": {}}), encoding="utf-8")
@@ -99,6 +101,7 @@ async def test_stream_container_mounts_token_from_secret_directory(
     tmp_path: Path,
 ) -> None:
     adapter, mock_client, _ = _adapter(tmp_path)
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()
@@ -150,6 +153,7 @@ async def test_stream_container_mounts_token_from_secret_directory(
 @pytest.mark.asyncio
 async def test_stream_rejects_group_readable_agent_secret(tmp_path: Path) -> None:
     adapter, _mock_client, _ = _adapter(tmp_path)
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()

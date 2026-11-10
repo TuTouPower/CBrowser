@@ -63,6 +63,7 @@ function profile(): ProfileResponse {
   return {
     id: "p1",
     name: "Original",
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: null,
     proxy_id: null,
@@ -99,6 +100,7 @@ function profile(): ProfileResponse {
 function runtime(): ProfileRuntimeResponse {
   return {
     profile_id: "p-new",
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
     runtime_instance_id: "inst_1",

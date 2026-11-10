@@ -150,6 +150,19 @@ async def test_profile_crud_roundtrip_with_refs(db_context):
 
 
 @pytest.mark.asyncio
+async def test_display_numbers_are_not_reused_after_delete(db_context):
+    _engine, session_maker = db_context
+    repo = ProfileRepository(session_maker)
+    first = await repo.create_profile(config=ProfileConfig(name="one"))
+    second = await repo.create_profile(config=ProfileConfig(name="two"))
+    assert (first.display_number, second.display_number) == (1, 2)
+    assert await repo.delete_profile(second.id) is True
+    third = await repo.create_profile(config=ProfileConfig(name="three"))
+    assert third.display_number == 3
+    assert (await repo.get_profile(first.id)).display_number == 1
+
+
+@pytest.mark.asyncio
 async def test_actual_db_constraint_failure_rollback(db_context):
     _engine, session_maker = db_context
     repo = ProfileRepository(session_maker)

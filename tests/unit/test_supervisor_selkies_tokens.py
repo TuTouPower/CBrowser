@@ -71,6 +71,8 @@ async def test_start_stream_container_requires_selkies_tokens_file(
         policy_image=BROWSER,
     )
 
+    adapter.remember_profile_number("p1", 1)
+
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()
@@ -122,6 +124,8 @@ async def test_start_stream_container_enforces_0600_permissions(tmp_path: Path) 
         stream_image=STREAM,
         policy_image=BROWSER,
     )
+
+    adapter.remember_profile_number("p1", 1)
 
     dirs = adapter.prepare_profile_directories("p1")
     secret_dir = adapter.validator.get_secret_dir("p1")
@@ -190,6 +194,8 @@ async def test_start_stream_container_mounts_tokens_file_readonly(
         stream_image=STREAM,
         policy_image=BROWSER,
     )
+
+    adapter.remember_profile_number("p1", 1)
 
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()

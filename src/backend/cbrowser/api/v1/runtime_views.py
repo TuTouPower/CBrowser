@@ -73,6 +73,7 @@ async def make_runtime_response(
         font_set_id, missing_fonts = await coordinator.get_font_runtime(rt.profile_id)
     return ProfileRuntimeResponse(
         profile_id=rt.profile_id,
+        display_number=rt.display_number,
         desired_state=rt.desired_state,
         observed_state=rt.observed_state,
         runtime_instance_id=rt.runtime_instance_id,

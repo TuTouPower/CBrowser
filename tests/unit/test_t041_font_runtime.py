@@ -114,6 +114,8 @@ async def _start_browser(tmp_path: Path, config: dict) -> dict:
     adapter._validate_cache_paths = MagicMock()
     adapter._install_network_policy = MagicMock()
 
+    adapter.remember_profile_number("p1", 1)
+
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
         json.dumps({"version": 1, "config": config}), encoding="utf-8"

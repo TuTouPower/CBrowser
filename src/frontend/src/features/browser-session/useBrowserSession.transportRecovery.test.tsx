@@ -13,6 +13,7 @@ import type { ApiClient } from "../../shared/api/client";
 function setup(transportState: string, windowMs = 60000) {
   const getRuntime = vi.fn(async () => ({
     profile_id: "p1",
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
     transport: {

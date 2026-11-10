@@ -130,6 +130,7 @@ async def test_forged_normal_exit_journal_does_not_change_running_intent(
     _bind(server, token, profile, "inst_alive")
     data_root = tmp_path / "supervisor-data"
     docker = _FakeDocker(data_root)
+    docker.remember_profile_number(profile, 1)
     docker.containers.register(
         docker.get_browser_container_name(profile),
         FakeContainer("inst_alive", "running"),

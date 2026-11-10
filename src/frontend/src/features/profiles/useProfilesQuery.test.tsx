@@ -42,6 +42,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       {
         id: "p1",
         name: "Profile 1",
+        display_number: 1,
         fingerprint_seed: 100,
         screen_width: 1920,
         screen_height: 1080,
@@ -71,6 +72,7 @@ describe("useProfilesQuery & SSE Sync", () => {
       runtimeCallCount += 1;
       return {
         profile_id: id,
+        display_number: 1,
         desired_state: "stopped",
         observed_state: "stopped",
         runtime_instance_id: null,
@@ -84,6 +86,7 @@ describe("useProfilesQuery & SSE Sync", () => {
     mockApiClient.profiles.create = async (req) => ({
       id: "p2",
       name: req.name,
+      display_number: 1,
       fingerprint_seed: 200,
       screen_width: 1920,
       screen_height: 1080,
@@ -109,6 +112,7 @@ describe("useProfilesQuery & SSE Sync", () => {
     });
     mockApiClient.profiles.setDesiredState = async (id, state) => ({
       profile_id: id,
+      display_number: 1,
       desired_state: state,
       observed_state: "starting",
       runtime_instance_id: null,
@@ -201,6 +205,7 @@ describe("useProfilesQuery & SSE Sync", () => {
     const cachedRuntime = queryClient.getQueryData(profileKeys.runtime("p1"));
     expect(cachedRuntime).toMatchObject({
       profile_id: "p1",
+      display_number: 1,
       desired_state: "running",
       observed_state: "running",
       runtime_instance_id: "inst-999",
@@ -262,6 +267,7 @@ describe("useProfilesQuery & SSE Sync", () => {
   it("merges search_defaults from runtime events into the cached runtime", async () => {
     queryClient.setQueryData(profileKeys.runtime("p1"), {
       profile_id: "p1",
+      display_number: 1,
       desired_state: "running",
       observed_state: "running",
       runtime_instance_id: "inst-1",

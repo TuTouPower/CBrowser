@@ -1,6 +1,7 @@
 """Unit tests for RuntimeCoordinator in cbrowser/api/runtime_coordinator.py."""
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -116,7 +117,9 @@ async def test_coordinator_require_supervisor_raises(profile_service):
 
 @pytest.mark.asyncio
 async def test_coordinator_start_rpc_success(profile_service):
+    await profile_service.create_profile(ProfileConfig(name="warmup"))
     p = await profile_service.create_profile(ProfileConfig(name="test_p"))
+    assert p.display_number == 2
     await profile_service.set_desired_state(p.id, "running")
 
     recorded_requests = []
@@ -152,6 +155,8 @@ async def test_coordinator_start_rpc_success(profile_service):
         assert success is ReconcileOutcome.CONVERGED
         assert len(recorded_requests) == 1
         assert recorded_requests[0].url.path == "/supervisor/v1/profiles/start"
+        payload = json.loads(recorded_requests[0].content)
+        assert payload["profile_number"] == p.display_number
         assert coord.get_last_error(p.id) is None
     finally:
         await coord.stop()
@@ -308,6 +313,7 @@ async def test_reconcile_loop_keeps_retrying_until_convergence(
     """With the default (unbounded) retry policy, backoff is bounded but retries
     continue until the Supervisor converges, well past any fixed attempt count."""
     clock = _inject_clock(monkeypatch)
+    await profile_service.create_profile(ProfileConfig(name="warmup"))
     p = await profile_service.create_profile(ProfileConfig(name="p_unbounded"))
     await profile_service.set_desired_state(p.id, "running")
 

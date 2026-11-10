@@ -43,6 +43,7 @@ def _adapter(tmp_path: Path) -> tuple[DockerAdapter, dict[str, Path], Path]:
     )
     adapter._install_network_policy = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
+    adapter.remember_profile_number("p2", 1)
     dirs = adapter.prepare_profile_directories("p2")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()

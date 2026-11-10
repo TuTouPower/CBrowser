@@ -26,6 +26,7 @@ describe("ProfileEventsClient SSE", () => {
         // Send first event and then abruptly close
         res.write(`id: evt-001\ndata: ${JSON.stringify({
           profile_id: "p1",
+          display_number: 1,
           desired_state: "running",
           observed_state: "starting",
           failure_count: 0,
@@ -39,6 +40,7 @@ describe("ProfileEventsClient SSE", () => {
         // Second connection, send second event
         res.write(`id: evt-002\ndata: ${JSON.stringify({
           profile_id: "p1",
+          display_number: 1,
           desired_state: "running",
           observed_state: "running",
           failure_count: 0,
@@ -106,11 +108,13 @@ describe("ProfileEventsClient SSE", () => {
     expect(receivedEvents).toHaveLength(2);
     expect(receivedEvents[0]).toMatchObject({
       profile_id: "p1",
+      display_number: 1,
       desired_state: "running",
       observed_state: "starting",
     });
     expect(receivedEvents[1]).toMatchObject({
       profile_id: "p1",
+      display_number: 1,
       desired_state: "running",
       observed_state: "running",
     });

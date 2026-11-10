@@ -263,6 +263,7 @@ async def test_internal_gateway_endpoints(auth_env):
     async with session_maker() as session, write_transaction(session):
         session.add(
             ProfileModel(
+                display_number=1,
                 id=prof_id,
                 name="Gateway Profile",
                 fingerprint_seed=888999,

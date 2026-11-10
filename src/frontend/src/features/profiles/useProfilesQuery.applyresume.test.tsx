@@ -41,6 +41,7 @@ function makeBackend() {
   const snapshot = (): ProfileRuntimeResponse =>
     ({
       profile_id: "p1",
+      display_number: 1,
       desired_state: state.desired,
       observed_state: state.observed,
       runtime_instance_id: state.instance,

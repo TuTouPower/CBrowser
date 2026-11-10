@@ -48,11 +48,29 @@ def browser_command(
     ]
 
 
+def sandbox_compose_labels(prefix: str, service: str) -> dict[str, str]:
+    """Group every Profile sandbox under one pseudo compose project.
+
+    Docker Desktop groups containers by ``com.docker.compose.project`` and
+    offers no arbitrary-label grouping. Sandboxes are created dynamically
+    by the Supervisor, so they carry these labels explicitly to appear as
+    a single ``<prefix>-profiles`` group instead of unrelated containers.
+    The pseudo project is owned by this deployment: the deploy prefix
+    conflict check treats ``<project>-profiles`` with a sandbox role as
+    its own resource.
+    """
+    return {
+        "com.docker.compose.project": f"{prefix}-profiles",
+        "com.docker.compose.service": service,
+    }
+
+
 def browser_labels(
     prefix: str,
     profile_id: str,
     runtime_instance_id: str,
     config_version: Any,
+    profile_number: int,
 ) -> dict[str, str]:
     return {
         "com.cbrowser.managed-by": "supervisor",
@@ -62,6 +80,8 @@ def browser_labels(
         "com.cbrowser.network-policy": "v1",
         "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.prefix": prefix,
+        "com.cbrowser.profile-number": f"{profile_number:04d}",
+        **sandbox_compose_labels(prefix, "browser"),
     }
 
 
@@ -70,6 +90,7 @@ def stream_labels(
     profile_id: str,
     runtime_instance_id: str,
     config_version: Any,
+    profile_number: int,
     bind_host: str = "127.0.0.1",
     advertised_ip: str = "127.0.0.1",
 ) -> dict[str, str]:
@@ -83,6 +104,8 @@ def stream_labels(
         "com.cbrowser.prefix": prefix,
         "com.cbrowser.stream.bind-host": bind_host,
         "com.cbrowser.stream.advertised-ip": advertised_ip,
+        "com.cbrowser.profile-number": f"{profile_number:04d}",
+        **sandbox_compose_labels(prefix, "stream"),
     }
 
 

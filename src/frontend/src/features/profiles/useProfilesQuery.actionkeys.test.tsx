@@ -20,6 +20,7 @@ import {
 function runtime(id: string): ProfileRuntimeResponse {
   return {
     profile_id: id,
+    display_number: 1,
     desired_state: "running",
     observed_state: "starting",
     config_version: 1,

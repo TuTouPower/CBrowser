@@ -6267,6 +6267,10 @@
             "type": "string",
             "title": "Id"
           },
+          "display_number": {
+            "type": "integer",
+            "title": "Display Number"
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -6466,6 +6470,7 @@
         "type": "object",
         "required": [
           "id",
+          "display_number",
           "name",
           "fingerprint_seed",
           "user_data_dir",
@@ -6479,6 +6484,10 @@
           "profile_id": {
             "type": "string",
             "title": "Profile Id"
+          },
+          "display_number": {
+            "type": "integer",
+            "title": "Display Number"
           },
           "desired_state": {
             "type": "string",
@@ -6677,6 +6686,7 @@
         "type": "object",
         "required": [
           "profile_id",
+          "display_number",
           "desired_state",
           "observed_state",
           "runtime_instance_id",

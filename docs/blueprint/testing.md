@@ -142,6 +142,8 @@ t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS �
 
 ## Supervisor 阶段验证
 
+Profile 编号与沙箱分组（t050）：迁移回填/新分配/不复用由 unit 覆盖；容器名与标签（`<prefix>-<NNNN>-browser|stream`、`profile-number`、`<prefix>-profiles`）由 adapter 单测与真实拓扑 inspect 验证；部署 prefix 冲突对自有伪项目的放行与异项目拒绝由 fake Docker CLI 驱动 `scripts/deploy.sh` 覆盖；前端 Profile 列表展示编号由组件测试验证。真实部署后需重建一次沙箱以应用新命名。
+
 带载升级自愈：`tests/e2e/test_supervisor_upgrade_recovery_e2e.py` 在 Profile 运行中强制重建 Gateway 与 Supervisor（`GatewayTopologyHarness.rebuild_gateway_and_supervisor`），断言 300s 部署 readiness 预算内恢复 ready、无 `session_instance_mismatch` / `gateway_not_attached_at_fixed_endpoint` / `agent_not_registered` 诊断，并由新的 headless viewer 重新解出视频帧（t049 AC-007）。
 
 按照 [Supervisor 验证](../guides/supervisor_validation.md) 提供当前源构建的不可变镜像及缓存。统一运行 `scripts/run_gates.sh` 或 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，不直接调用裸 pytest。

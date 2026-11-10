@@ -29,6 +29,7 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
   return {
     id: "p1",
     name: "Alpha",
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: null,
     proxy_id: null,
@@ -69,6 +70,7 @@ function runtime(
 ): ProfileRuntimeResponse {
   return {
     profile_id: profileId,
+    display_number: 1,
     desired_state: observed === "running" ? "running" : "stopped",
     observed_state: observed,
     runtime_instance_id: "inst-1",

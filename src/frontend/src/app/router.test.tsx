@@ -17,6 +17,7 @@ const PROFILES: ProfileResponse[] = [
   {
     id: "p1",
     name: "Profile Alpha",
+    display_number: 1,
     fingerprint_seed: 101,
     screen_width: 1920,
     screen_height: 1080,
@@ -43,6 +44,7 @@ const PROFILES: ProfileResponse[] = [
   {
     id: "p2",
     name: "Profile Beta",
+    display_number: 1,
     fingerprint_seed: 102,
     screen_width: 1920,
     screen_height: 1080,
@@ -71,6 +73,7 @@ const PROFILES: ProfileResponse[] = [
 function runtimeFor(id: string, observed: string): ProfileRuntimeResponse {
   return {
     profile_id: id,
+    display_number: 1,
     desired_state: observed === "running" ? "running" : "stopped",
     observed_state: observed,
     runtime_instance_id: null,

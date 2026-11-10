@@ -53,6 +53,12 @@
 - 媒体网络附着收敛独立于内存 session 与业务可见性：按 label 解析当前 Gateway 容器并附着到 Profile 合规媒体网络的固定端点，由 API 离线恢复路径与稳态收敛共用同一实现；媒体网络缺失或不合规仍走既有 Stream-only 替换预算，不对不合规网络执行挂载。
 - Gateway 容器缺失或控制接口不可达时，存量 session 仍建立，transport 呈现 gateway_missing / gateway_unreachable，不拆除容器；重启后首个未注册读数按既有恢复宽限处理，避免立即替换健康的 Stream。
 
+## Profile 显示编号与沙箱身份（t050）
+
+- 每个 Profile 有部署内唯一、永不复用的显示编号（0001、0002…），创建时分配；删除不复用、其余不重排。API 的 Profile/内部 runtime 响应暴露 `display_number`，Runtime Coordinator 启动请求携带 `profile_number`。
+- 沙箱容器命名为 `<prefix>-<NNNN>-browser|stream`，带 `com.cbrowser.profile-number`；同一 Profile 停止/重启沿用同一编号与名称。容器发现、停止与清理以标签为准，不再依赖 UUID 命名。
+- 全部沙箱显式归入聚合 compose 项目 `<prefix>-profiles`（service=browser|stream），Docker Desktop 单组呈现；部署 prefix 冲突检查把该派生项目识别为本实例自有资源，异项目仍拒绝。
+
 ## 资源策略
 
 Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预算计算压力，结合真实前台可见性下发 Profile 级 FPS cap。缺失或失败样本不能当低负载，单个 Profile 采样或 RPC 失败不阻断其他 Profile；解除限制后由 Stream 活动策略决定恢复 8/30 FPS。全后台不误触发前台 cap，Viewer 心跳不建立控制租约。

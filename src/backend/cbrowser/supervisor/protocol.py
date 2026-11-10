@@ -17,6 +17,7 @@ UDP_MUX_MIN, UDP_MUX_MAX = udp_mux_bounds()
 class StartProfileRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     profile_id: str = Field(min_length=1, max_length=128)
+    profile_number: int = Field(ge=1)
     config_version: int = Field(default=1, ge=1)
     force: bool = False
     operation_id: str | None = Field(default=None, min_length=1, max_length=128)

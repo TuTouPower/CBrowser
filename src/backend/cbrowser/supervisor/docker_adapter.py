@@ -113,6 +113,18 @@ def _udp_mux_helper_environment() -> dict[str, str]:
     }
 
 
+def _parse_profile_number(raw: Any) -> int | None:
+    """Parse a zero-padded profile-number label; invalid means unusable."""
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw if raw >= 1 else None
+    if isinstance(raw, str) and raw.isdigit():
+        value = int(raw)
+        return value if value >= 1 else None
+    return None
+
+
 def _parse_config_version(raw: Any) -> int | None:
     """Parse a config-version label; missing or malformed means unusable."""
     if isinstance(raw, bool):
@@ -209,6 +221,7 @@ class DockerAdapter:
         self.runtime_uid = runtime_uid
         self.runtime_gid = runtime_gid
         self.manage_ownership = manage_ownership
+        self._profile_numbers: dict[str, int] = {}
         self.policy_image = policy_image or os.environ.get(
             "CBROWSER_NETWORK_POLICY_IMAGE"
         )
@@ -628,11 +641,31 @@ with path.open('w') as output:
                     mode = 0o640
                 path.chmod(mode)
 
+    def remember_profile_number(self, profile_id: str, number: int) -> None:
+        """Record the Profile's stable display number for name derivation."""
+        if number < 1:
+            raise DockerSandboxError("Profile display number must be positive")
+        self._profile_numbers[profile_id] = number
+
+    def _require_profile_number(self, profile_id: str) -> int:
+        number = self._profile_numbers.get(profile_id)
+        if number is None:
+            raise DockerSandboxError(
+                "Profile display number is unknown for this sandbox"
+            )
+        return number
+
     def get_browser_container_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-browser-{profile_id}"
+        return (
+            f"{self.resource_prefix}-{self._require_profile_number(profile_id):04d}"
+            "-browser"
+        )
 
     def get_stream_container_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-stream-{profile_id}"
+        return (
+            f"{self.resource_prefix}-{self._require_profile_number(profile_id):04d}"
+            "-stream"
+        )
 
     def get_network_name(self, profile_id: str) -> str:
         return profile_network_name(self.resource_prefix, profile_id)
@@ -1328,6 +1361,7 @@ with path.open('w') as output:
                     profile_id,
                     runtime_instance_id,
                     snapshot["version"],
+                    self._require_profile_number(profile_id),
                 ),
             )
             allowed_tcp = (
@@ -1532,6 +1566,7 @@ with path.open('w') as output:
                     profile_id,
                     runtime_instance_id,
                     config_version,
+                    self._require_profile_number(profile_id),
                     bind_host=bind_host,
                     advertised_ip=public_ip,
                 ),
@@ -1661,14 +1696,18 @@ with path.open('w') as output:
             c = self.client.containers.get(name)
             labels = c.labels or {}
             # Strict safety check: only remove container if it matches our prefix label
+            profile_number = _parse_profile_number(
+                labels.get("com.cbrowser.profile-number")
+            )
+            role = labels.get("com.cbrowser.role")
             if (
                 c.name == name
                 and labels.get("com.cbrowser.prefix") == self.resource_prefix
                 and labels.get("com.cbrowser.managed-by") == "supervisor"
-                and labels.get("com.cbrowser.role") in {"browser", "stream"}
+                and role in {"browser", "stream"}
+                and profile_number is not None
                 and name
-                == f"{self.resource_prefix}-{labels['com.cbrowser.role']}-"
-                f"{labels.get('com.cbrowser.profile-id')}"
+                == f"{self.resource_prefix}-{profile_number:04d}-{role}"
             ):
                 c.remove(force=True)
                 logger.info(f"Removed container {name}")
@@ -1977,12 +2016,16 @@ with path.open('w') as output:
                 config_version = _parse_config_version(
                     labels.get("com.cbrowser.config-version")
                 )
+                profile_number = _parse_profile_number(
+                    labels.get("com.cbrowser.profile-number")
+                )
                 if (
                     not isinstance(profile_id, str)
                     or not profile_id
                     or not isinstance(instance_id, str)
                     or not instance_id
                     or config_version is None
+                    or profile_number is None
                 ):
                     logger.warning(
                         "Container scan rejected a resource with unusable "
@@ -1990,6 +2033,7 @@ with path.open('w') as output:
                         role,
                     )
                     continue
+                self.remember_profile_number(profile_id, profile_number)
                 result.append(
                     {
                         "id": c.id,

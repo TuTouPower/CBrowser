@@ -61,6 +61,7 @@ def supervisor_setup(tmp_path: Path):
     # Mock API transport for supervisor's outgoing calls
     runtime_state = {
         "profile_id": "p_test",
+        "display_number": 1,
         "desired_state": "running",
         "observed_state": "stopped",
         "runtime_instance_id": None,
@@ -124,6 +125,9 @@ def supervisor_setup(tmp_path: Path):
         def __init__(self):
             self.validator = validator
             self.resource_prefix = "test-prefix"
+
+        def remember_profile_number(self, pid, number):
+            return None
 
         def get_browser_container_name(self, pid):
             return f"b_{pid}"
@@ -261,7 +265,7 @@ async def test_control_server_auth_and_routes(supervisor_setup):
         r_start = await client.post(
             "/supervisor/v1/profiles/start",
             headers=auth_headers,
-            json={"profile_id": "p_test", "config_version": 1},
+            json={"profile_id": "p_test", "profile_number": 1, "config_version": 1},
         )
         assert r_start.status_code == 200
         assert r_start.json()["status"] == "running"

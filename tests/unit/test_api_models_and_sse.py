@@ -11,6 +11,7 @@ from cbrowser.domain.models import (
 def test_profile_runtime_response_last_coordinator_error():
     rt = ProfileRuntimeResponse(
         profile_id="p1",
+        display_number=1,
         desired_state="running",
         observed_state="starting",
         runtime_instance_id="inst_1",
@@ -25,6 +26,7 @@ def test_profile_runtime_response_last_coordinator_error():
 
     rt_default = ProfileRuntimeResponse(
         profile_id="p1",
+        display_number=1,
         desired_state="stopped",
         observed_state="stopped",
         runtime_instance_id=None,

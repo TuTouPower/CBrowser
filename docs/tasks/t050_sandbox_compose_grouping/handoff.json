@@ -1,0 +1,16 @@
+{
+  "tid": "t050",
+  "attempt": 1,
+  "execution_id": "9d4e8f0bf92b45679b5bb77822e9a50a",
+  "status": "done",
+  "branch": "t050_sandbox_compose_grouping",
+  "base_sha": "4aae2d122a2c91d4c5f934caeceada87e6326f26",
+  "tests": "unit 1613 passed；integration 178 passed / 18 skipped；frontend 499 passed；前端 build 通过",
+  "blackbox": "真实 `scripts/deploy.sh deploy` readiness ready；Profile 停止删除 `cbrowser-0001-*`，重启复用 0001 且 observed=running；容器标签含 profile-number 与 cbrowser-profiles",
+  "review": "full 两轴 Round 4 PASS（reviewed_scope 9c4cae2a9465a9d9）",
+  "review_scope": "9c4cae2a9465a9d9",
+  "pending": [
+    "p058"
+  ],
+  "findings": []
+}

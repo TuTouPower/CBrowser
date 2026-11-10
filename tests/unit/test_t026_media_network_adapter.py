@@ -244,8 +244,11 @@ def test_get_profile_containers_returns_label_verified_pair(tmp_path):
     # production AttributeError in round 1.
     client = _client()
     adapter = _adapter(tmp_path, client)
+    adapter.remember_profile_number(PROFILE, 1)
     browser = _profile_container("c_browser", "browser")
     stream = _profile_container("c_stream", "stream")
+    browser.name = adapter.get_browser_container_name(PROFILE)
+    stream.name = adapter.get_stream_container_name(PROFILE)
     client.containers.by_id[browser.name] = browser
     client.containers.by_id[stream.name] = stream
 
@@ -258,6 +261,7 @@ def test_get_profile_containers_returns_label_verified_pair(tmp_path):
 def test_get_profile_containers_rejects_foreign_and_missing(tmp_path):
     client = _client()
     adapter = _adapter(tmp_path, client)
+    adapter.remember_profile_number(PROFILE, 1)
     foreign = _profile_container("c_foreign", "stream", profile="other_prof")
     stream_name = adapter.get_stream_container_name(PROFILE)
     client.containers.by_id[stream_name] = foreign

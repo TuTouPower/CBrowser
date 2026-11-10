@@ -104,6 +104,7 @@ function profile(id: string, name: string): ProfileResponse {
   return {
     id,
     name,
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: null,
     proxy_id: null,
@@ -143,6 +144,7 @@ function runtime(
 ): ProfileRuntimeResponse {
   return {
     profile_id: profileId,
+    display_number: 1,
     desired_state:
       observed === 'running' || observed === 'starting' ? 'running' : 'stopped',
     observed_state: observed,

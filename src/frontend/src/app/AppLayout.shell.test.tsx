@@ -24,6 +24,7 @@ const PROFILES: ProfileResponse[] = [
 function runtimeFor(id: string, observed = "stopped", error: string | null = null) {
   return {
     profile_id: id,
+    display_number: 1,
     desired_state: observed,
     observed_state: observed,
     runtime_instance_id: null,

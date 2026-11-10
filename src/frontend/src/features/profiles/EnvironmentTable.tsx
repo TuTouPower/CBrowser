@@ -209,7 +209,13 @@ export function EnvironmentTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-xs">
-                    <span className="font-ui text-body-md text-on-surface">
+                    <span className="flex items-baseline gap-xs font-ui text-body-md text-on-surface">
+                      <span
+                        data-testid={`env-number-${id}`}
+                        className="text-on-surface-muted"
+                      >
+                        #{String(row.profile.display_number).padStart(4, "0")}
+                      </span>
                       {row.profile.name}
                     </span>
                     {row.profile.notes && (

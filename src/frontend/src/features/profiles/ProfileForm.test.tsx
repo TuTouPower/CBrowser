@@ -106,6 +106,7 @@ function profile(): ProfileResponse {
   return {
     id: "p1",
     name: "Original",
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: null,
     proxy_id: null,

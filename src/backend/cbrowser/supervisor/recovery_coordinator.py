@@ -596,10 +596,16 @@ class RecoveryCoordinator:
                 profile_id,
                 config_version,
             )
+            display_number = profile_info.get("display_number")
+            if display_number is None:
+                raise ValueError(
+                    f"Profile {profile_id} lacks its display number"
+                )
             await self.core.start_profile(
                 profile_id=profile_id,
                 config=profile_config,
                 config_version=int(config_version),
+                profile_number=int(display_number),
             )
             logger.info("Recovery start succeeded for profile %s.", profile_id)
             self._cleanup_failures.pop(profile_id, None)

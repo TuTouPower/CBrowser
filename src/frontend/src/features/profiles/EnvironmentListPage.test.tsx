@@ -66,6 +66,7 @@ function profile(overrides: Partial<ProfileResponse> = {}): ProfileResponse {
   return {
     id: "p1",
     name: "Alpha",
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: null,
     proxy_id: null,
@@ -107,6 +108,7 @@ function runtime(
 ): ProfileRuntimeResponse {
   return {
     profile_id: profileId,
+    display_number: 1,
     desired_state:
       observed === "running" || observed === "starting" ? "running" : "stopped",
     observed_state: observed,
@@ -289,6 +291,7 @@ function fixture() {
     profile({
       id: "p2",
       name: "Beta",
+      display_number: 2,
       group_id: null,
       proxy_id: null,
       geoip: false,
@@ -356,6 +359,7 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(screen.getByText(en.envColActions)).toBeInTheDocument();
 
     const p1 = screen.getByTestId("env-row-p1");
+    expect(screen.getByTestId("env-number-p1").textContent).toBe("#0001");
     expect(p1.textContent).toContain("Alpha");
     expect(p1.textContent).toContain("primary");
     expect(p1.textContent).toContain("Work");
@@ -365,6 +369,7 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(p1.textContent).toContain("windows");
 
     const p2 = screen.getByTestId("env-row-p2");
+    expect(screen.getByTestId("env-number-p2").textContent).toBe("#0002");
     expect(p2.textContent).toContain(en.envUngrouped);
     expect(p2.textContent).not.toContain(en.envGeoipFollowProxy);
   });

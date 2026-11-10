@@ -10,6 +10,7 @@ type SessionOptions = NonNullable<Parameters<typeof useBrowserSession>[2]>;
 function setup(options: Partial<SessionOptions> = {}, profileId = "p1") {
   const getRuntime = vi.fn(async () => ({
     profile_id: profileId,
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
   }));

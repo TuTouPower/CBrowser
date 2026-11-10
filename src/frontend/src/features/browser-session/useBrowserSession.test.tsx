@@ -24,6 +24,7 @@ describe("useBrowserSession runtime stage mapping", () => {
         profiles: {
           getRuntime: vi.fn(async () => ({
             profile_id: "p1",
+            display_number: 1,
             desired_state: "running",
             observed_state: observed,
           })),
@@ -47,6 +48,7 @@ describe("useBrowserSession language switching (A17)", () => {
     localStorage.setItem("cbrowser.locale", "en");
     const getRuntime = vi.fn(async () => ({
       profile_id: "p1",
+      display_number: 1,
       desired_state: "running",
       observed_state: "running",
     }));

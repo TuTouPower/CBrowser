@@ -544,3 +544,36 @@ async def test_initialize_network_corrects_generation_when_applied_exists(
         )
     finally:
         await engine.dispose()
+
+
+def test_0005_backfills_display_numbers_in_creation_order(tmp_path: Path) -> None:
+    """t050 AC-001: existing rows get 1..N by created_at,id; allocator
+    continues past the backfilled maximum."""
+    db = tmp_path / "display.db"
+    cfg = get_alembic_config(db)
+    command.upgrade(cfg, "0e2ab6553470")
+    conn = sqlite3.connect(db)
+    try:
+        for pid, created in (
+            ("p-late", "2026-01-03T00:00:00Z"),
+            ("p-early", "2026-01-01T00:00:00Z"),
+        ):
+            conn.execute(
+                "INSERT INTO profiles (id, name, fingerprint_seed, user_data_dir,"
+                " created_at, updated_at) VALUES (?, ?, 1, ?, ?, ?)",
+                (pid, pid, f"/data/profiles/{pid}/profile", created, created),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    command.upgrade(cfg, "head")
+    conn = sqlite3.connect(db)
+    try:
+        rows = dict(conn.execute("SELECT id, display_number FROM profiles"))
+        sequence = conn.execute(
+            "SELECT value FROM profile_display_sequence WHERE id = 1"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert rows == {"p-early": 1, "p-late": 2}
+    assert sequence == 2
