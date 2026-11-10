@@ -2,7 +2,7 @@
 
 - 来源：DeepSeek V4.1 Flash 审阅报告（63 commits 未 push）+ 独立评审裁决；用户约束：个人用、无安全需求，架构铁律（根因重构、破坏性变更可、零兼容）。
 - 内容：本条为采纳项总清单，按此实施。不在清单的即不办：P1-4/P1-5（LAN，见 parked p053）、全部安全纵深项（P2-3.1-8、P2-3.2-1、P2-3.2-2、P1-10(b) symlink 加固、D-1 端口白名单、D-4 会话粒度）、P2-3.1-9 grace 变更（接受现状）、P1-7(a) 兼容方案（跨代回退已确认删除，见下）。
-- 处理：已落地（main b034b44；P0/P1 分 6 路 worktree 并发实施逐点合入，P2 分 2 路合入，receipt 测试 fix-forward 补齐；LAN 见 parked p053；跨代回退已删）。复审轮追加：P0-A（0004 幂等+1a6ec51 形态回归+data/v2 副本验证）、P1-A/B（journal fencing+原子写+P2 恢复批）、P1-C/D（rollback stamp 比较+schema 重生成+门禁 P2 批）、P2 预览失败语义 6 点、P1-E/F+前端 P2 批，均已合入；见复审报告建议顺序。
+- 处理：resolution=resolved；reason=P0/P1/P2 采纳项与复审追加批次均已合入 main（b034b44 起）；LAN 归 parked p053，跨代回退按决定删除
 
 ## P0（必修）
 

@@ -3,7 +3,7 @@
 - task：`t050_sandbox_compose_grouping`
 - spec：`docs/tasks/t050_sandbox_compose_grouping/task.md`
 - diff_anchor：`4aae2d122a2c91d4c5f934caeceada87e6326f26`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t050' diff 4aae2d122a2c91d4c5f934caeceada87e6326f26`
+- target：`git -C '<repo>' diff 4aae2d122a2c91d4c5f934caeceada87e6326f26`
 - round：4
 - reviewed_at：2026-11-10T18:01:01+08:00
     reviewed_scope: 9c4cae2a9465a9d9

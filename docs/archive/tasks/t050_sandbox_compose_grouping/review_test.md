@@ -3,15 +3,15 @@
 - task：`t050_sandbox_compose_grouping`
 - spec：`docs/tasks/t050_sandbox_compose_grouping/task.md`
 - diff_anchor：`4aae2d122a2c91d4c5f934caeceada87e6326f26`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t050' diff 4aae2d122a2c91d4c5f934caeceada87e6326f26`
+- target：`git -C '<repo>' diff 4aae2d122a2c91d4c5f934caeceada87e6326f26`
 - round：4
 - reviewed_at：2026-11-10T18:01:52+08:00
 
 reviewed_scope: 9c4cae2a9465a9d9
 
-本轮为 Round 4 最终复核（覆盖写入）。落点校验：`git rev-parse --show-toplevel` → `/Users/karson/kar/code/CBrowser_t050`，通过。指纹由 `repo_task.monitoring.review_scope_fingerprint` 对当前 worktree 重算为 `9c4cae2a9465a9d9`，与 prompt 注入值一致。
+本轮为 Round 4 最终复核（覆盖写入）。落点校验：`git rev-parse --show-toplevel` → `<repo>`，通过。指纹由 `repo_task.monitoring.review_scope_fingerprint` 对当前 worktree 重算为 `9c4cae2a9465a9d9`，与 prompt 注入值一致。
 
-独立复验（均在 `/Users/karson/kar/code/CBrowser_t050`，未运行重型全量/真实部署）：
+独立复验（均在 `<repo>`，未运行重型全量/真实部署）：
 
 - `git status --short`：交付文件均在 diff 内（`0005_profile_display_number.py` 为 `A`，`test_t050_sandbox_grouping.py` 为 `AM` 且已进入 diff）；仅余 `review_code.md` / `review_test.md` / `docs/pending/todo/p058_*.md` 为流程类文件，均不属于交付内容。
 - 后端定向实跑（`.venv/bin/python -m pytest -p no:cacheprovider`）：
