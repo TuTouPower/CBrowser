@@ -2,5 +2,54 @@
     "generated_by": ".repo_template/scripts/task.py",
     "authority": "docs/tasks/{tid}_{slug}/progress.md front matter",
     "workspace": ".",
-    "tasks": []
+    "tasks": [
+        {
+            "tid": "t051",
+            "slug": "runtime_deploy_reliability",
+            "title": "运行时与部署可靠性：控制面 DB 迁出 bind mount、字体挂载对齐与沙箱可诊断性",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "来源 p059、p063、p066、p068；用户 2026-11-10 选仅 DB 移入 named volume",
+            "dir": "docs/tasks/t051_runtime_deploy_reliability"
+        },
+        {
+            "tid": "t052",
+            "slug": "proxy_link_and_egress_observation",
+            "title": "代理以链接为唯一录入并按 Browser 同视角观测出口",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "",
+            "conflicts_with": "t051",
+            "note": "来源 p060，吸收 parked p040 出口 IP 部分；用户 2026-11-10 选 Supervisor 映射 loopback、保存后自动探测",
+            "dir": "docs/tasks/t052_proxy_link_and_egress_observation"
+        },
+        {
+            "tid": "t053",
+            "slug": "profile_locale_fonts_defaults",
+            "title": "Profile 配置：高级选项默认值、时区语言联动与按语言分流中文字体",
+            "status": "backlog",
+            "branch": "",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "",
+            "depends_on": "",
+            "conflicts_with": "t051",
+            "note": "来源 p067、p069；用户 2026-11-10 确认英文 Profile 裁剪中文字体",
+            "dir": "docs/tasks/t053_profile_locale_fonts_defaults"
+        }
+    ]
 }
