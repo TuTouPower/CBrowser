@@ -30,6 +30,7 @@ function dispatch(iframe: HTMLIFrameElement, data: Record<string, unknown>): voi
 function runtimeResponse(transportState?: string) {
   return {
     profile_id: "p1",
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
     transport: transportState

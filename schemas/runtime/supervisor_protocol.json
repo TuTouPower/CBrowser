@@ -668,6 +668,11 @@
           "title": "Profile Id",
           "type": "string"
         },
+        "profile_number": {
+          "minimum": 1,
+          "title": "Profile Number",
+          "type": "integer"
+        },
         "config_version": {
           "default": 1,
           "minimum": 1,
@@ -695,7 +700,8 @@
         }
       },
       "required": [
-        "profile_id"
+        "profile_id",
+        "profile_number"
       ],
       "title": "StartProfileRequest",
       "type": "object"

@@ -935,8 +935,10 @@ class RuntimeCoordinator:
         except Exception:  # noqa: BLE001 - config version query failure safely falls back to current runtime version
             latest_v = runtime.config_version
 
+        profile = await self.profile_service.get_profile(profile_id)
         req_body = {
             "profile_id": profile_id,
+            "profile_number": profile.display_number,
             "config_version": latest_v,
             "force": False,
             "operation_id": operation_id

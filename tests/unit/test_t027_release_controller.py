@@ -93,7 +93,13 @@ case "$cmd" in
     if [ -n "$fmt" ]; then cat "$f"; echo; fi
     ;;
   ps)
-    # Rows are "name<TAB>compose-project<TAB>prefix-label".
+    if [ "${FAKE_REQUIRE_ROLE_FORMAT:-0}" = "1" ]; then
+      case "$*" in
+        *com.cbrowser.role*) ;;
+        *) echo "ps format must request the role label" >&2; exit 9;;
+      esac
+    fi
+    # Rows are "name<TAB>compose-project<TAB>prefix-label<TAB>role".
     if [ -n "${FAKE_PS_ROWS:-}" ]; then
       printf '%s\n' "$FAKE_PS_ROWS"
     elif [ -n "${FAKE_CONFLICT_PROJECT:-}" ]; then
@@ -936,3 +942,76 @@ def test_same_generation_publish_and_rollback_with_incremental_chain(
     result = _run(repo, bin_dir, "rollback")
     assert result.returncode == 0, result.stderr
     assert _pointer(repo, "current_release") == "rel-001"
+
+
+# --- t050: sandbox pseudo compose project is owned by this instance -----
+
+
+def test_prefix_conflict_allows_own_sandbox_group(tmp_path: Path) -> None:
+    """A ``<project>-profiles`` Browser/Stream container is this
+    instance's sandbox grouping, not another instance claiming the
+    prefix (t050)."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser"
+    result = _deploy(
+        repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_prefix_conflict_still_refuses_foreign_project_with_sandbox_role(
+    tmp_path: Path,
+) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "cbrowser-browser-p1\tother-instance\tcbrowser\tbrowser"
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "prefix" in result.stderr
+    assert _builds(repo) == []
+
+
+def test_prefix_conflict_allows_sandbox_group_when_project_differs(
+    tmp_path: Path,
+) -> None:
+    """Sandbox grouping is derived from the resource prefix, not the
+    compose project name (t050)."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "inst-b-browser-p1\tinst-b-profiles\tinst-b\tbrowser"
+    result = _deploy(
+        repo,
+        bin_dir,
+        "rel-001",
+        FAKE_PS_ROWS=rows,
+        CBROWSER_PREFIX="inst-b",
+        CBROWSER_COMPOSE_PROJECT="proj-b",
+    )
+    assert result.returncode == 0, result.stderr
+    assert _builds(repo)
+
+
+def test_prefix_conflict_check_requests_role_label(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser"
+    result = _deploy(
+        repo,
+        bin_dir,
+        "rel-001",
+        FAKE_PS_ROWS=rows,
+        FAKE_REQUIRE_ROLE_FORMAT="1",
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_prefix_conflict_refuses_pseudo_project_with_non_sandbox_role(
+    tmp_path: Path,
+) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "cbrowser-supervisor-x\tcbrowser-profiles\tcbrowser\tsupervisor"
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "prefix" in result.stderr

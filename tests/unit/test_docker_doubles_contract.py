@@ -36,7 +36,9 @@ def _real_adapter(tmp_path: Path) -> DockerAdapter:
 def test_container_naming_matches_production(tmp_path: Path) -> None:
     real = _real_adapter(tmp_path)
     fake = FakeDockerAdapter(tmp_path)
-    for profile_id in ("p1", "profile-xyz"):
+    for number, profile_id in enumerate(("p1", "profile-xyz"), start=1):
+        real.remember_profile_number(profile_id, number)
+        fake.remember_profile_number(profile_id, number)
         assert fake.get_browser_container_name(profile_id) == (
             real.get_browser_container_name(profile_id)
         )
@@ -68,6 +70,7 @@ def _sdk_containers():
 
 def test_containers_collection_semantics_match_docker_sdk(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     sdk = _sdk_containers()
     # Same behavior matrix on both sides (t024 review f011: the comparison
     # must exercise the SDK collection, not only the double).

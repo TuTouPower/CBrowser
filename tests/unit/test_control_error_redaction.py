@@ -28,6 +28,8 @@ async def test_upstream_failure_redacts_response_and_logs(tmp_path, caplog, acti
     )
     app = create_control_app(core, key)
     body = {"profile_id": "p1"}
+    if action == "start":
+        body.update(profile_number=1)
     if action == "stop":
         body.update(runtime_instance_id="i1", operation_id="op1")
     with caplog.at_level(logging.WARNING):

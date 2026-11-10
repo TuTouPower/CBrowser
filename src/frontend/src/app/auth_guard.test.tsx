@@ -14,6 +14,7 @@ import { SESS_PAGE } from "../features/browser-session/session_keys";
 const PROFILE: ProfileResponse = {
   id: "p1",
   name: "Profile Alpha",
+  display_number: 1,
   fingerprint_seed: 101,
   screen_width: 1920,
   screen_height: 1080,
@@ -40,6 +41,7 @@ const PROFILE: ProfileResponse = {
 
 const RUNTIME: ProfileRuntimeResponse = {
   profile_id: "p1",
+  display_number: 1,
   desired_state: "stopped",
   observed_state: "stopped",
   runtime_instance_id: null,

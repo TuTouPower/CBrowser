@@ -32,6 +32,7 @@ function makeProfile(id: string, groupId: string | null): ProfileResponse {
   return {
     id,
     name: `Profile ${id}`,
+    display_number: 1,
     fingerprint_seed: 101,
     screen_width: 1920,
     screen_height: 1080,

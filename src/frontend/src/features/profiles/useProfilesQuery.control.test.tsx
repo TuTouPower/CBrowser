@@ -32,6 +32,7 @@ function makeFakeSse() {
 function runtimeWithControl(control: Record<string, unknown>) {
   return {
     profile_id: "p1",
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
     runtime_instance_id: "inst_1",

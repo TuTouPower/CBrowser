@@ -19,6 +19,9 @@ from docker.errors import NotFound
 class _FakeContainer:
     def __init__(self, instance_id, status, config_version=1):
         self.labels = {
+            "com.cbrowser.prefix": "cbrowser",
+            "com.cbrowser.profile-id": "p",
+            "com.cbrowser.role": "browser",
             "com.cbrowser.instance-id": instance_id,
             "com.cbrowser.config-version": str(config_version),
         }
@@ -41,8 +44,21 @@ class _FakeContainers:
             raise NotFound("no such container")
         return self._c[name]
 
+    def list(self, *args, filters=None, **kwargs):
+        wanted = {}
+        for value in (filters or {}).get("label", []):
+            key, _, val = value.partition("=")
+            wanted[key] = val
+        return [
+            c
+            for c in self._c.values()
+            if all((getattr(c, "labels", None) or {}).get(k) == v for k, v in wanted.items())
+        ]
+
 
 class _FakeDocker:
+    resource_prefix = "cbrowser"
+
     def __init__(self, data_root, container_status):
         self.validator = PathValidator(data_root)
         self.containers = _FakeContainers()

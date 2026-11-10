@@ -372,15 +372,22 @@ check_prefix_conflict() {
   # and attribute by container name and prefix label, not just by the
   # one labelled fixed service: an instance whose Gateway has exited
   # still owns its prefix through its Supervisor and Profile containers.
-  local rows name project row_prefix
-  rows="$(docker ps -a --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.cbrowser.prefix"}}')"
-  while IFS=$'\t' read -r name project row_prefix; do
+  local rows name project row_prefix role
+  rows="$(docker ps -a --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.cbrowser.prefix"}}\t{{.Label "com.cbrowser.role"}}')"
+  while IFS=$'\t' read -r name project row_prefix role; do
     [ -n "$name" ] || continue
     case "$name" in
       "$PREFIX"-*) ;;
       *) [ "$row_prefix" = "$PREFIX" ] || continue ;;
     esac
     if [ -n "$project" ] && [ "$project" != "$PROJECT" ]; then
+      # Profile sandboxes intentionally carry a pseudo compose project so
+      # Docker Desktop groups them together. It belongs to this instance,
+      # never to another one.
+      if [ "$project" = "$PREFIX-profiles" ] \
+        && { [ "$role" = "browser" ] || [ "$role" = "stream" ]; }; then
+        continue
+      fi
       echo "Refusing to start: resource prefix '$PREFIX' is already used by instance (compose project '$project', container '$name')." >&2
       echo "Choose a different CBROWSER_PREFIX/CBROWSER_COMPOSE_PROJECT for this instance." >&2
       exit 1

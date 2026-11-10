@@ -6,6 +6,7 @@ import { waitForRuntimeState } from "./useProfilesQuery";
 function runtime(state: "stopped" | "running"): ProfileRuntimeResponse {
   return {
     profile_id: "p1",
+    display_number: 1,
     desired_state: "running",
     observed_state: state,
     runtime_instance_id: null,

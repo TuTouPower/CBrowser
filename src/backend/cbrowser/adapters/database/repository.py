@@ -40,7 +40,7 @@ from cbrowser.domain.runtime_policy import (
     BLOCK_AFTER_RUNTIME_FAILURES,
 )
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -208,8 +208,26 @@ class ProfileRepository:
                     pid = audit.entity_id
                     udd = user_data_dir or f"/data/profiles/{pid}/profile"
 
+                await session.execute(
+                    text(
+                        "INSERT OR IGNORE INTO profile_display_sequence "
+                        "(id, value) VALUES (1, 0)"
+                    )
+                )
+                next_number = int(
+                    (
+                        await session.execute(
+                            text(
+                                "UPDATE profile_display_sequence "
+                                "SET value = value + 1 WHERE id = 1 "
+                                "RETURNING value"
+                            )
+                        )
+                    ).scalar_one()
+                )
                 p_model = ProfileModel(
                     id=pid,
+                    display_number=next_number,
                     name=config.name,
                     fingerprint_seed=config.fingerprint_seed,
                     group_id=config.group_id,
@@ -590,7 +608,12 @@ class ProfileRepository:
             m = await session.get(ProfileRuntimeModel, profile_id)
             if not m:
                 return None
-            return self._to_domain_runtime(m)
+            profile = await session.get(ProfileModel, profile_id)
+            if profile is None or profile.display_number is None:
+                raise RuntimeError("Profile is missing its display number")
+            return self._to_domain_runtime(
+                m, display_number=profile.display_number
+            )
 
     async def bind_runtime_instance(
         self,
@@ -633,7 +656,7 @@ class ProfileRepository:
                         f"to {config_version}"
                     )
                 # MUST NOT regress observed_state from running back to starting!
-                return self._to_domain_runtime(m)
+                return await self._runtime_with_number(session, m)
 
             # Check if runtime_instance_id was previously bound or exited
             prev_seen = (
@@ -809,7 +832,7 @@ class ProfileRepository:
                     m.desired_state = "stopped"
                     m.failure_count = 0
             m.updated_at = now
-            return self._to_domain_runtime(m)
+            return await self._runtime_with_number(session, m)
 
     async def set_desired_state(
         self, profile_id: str, desired_state: str, *, operation_id: str | None = None
@@ -834,7 +857,7 @@ class ProfileRepository:
                 )
                 if audit is not None:
                     # Idempotent replay: return current state without resetting failures
-                    return self._to_domain_runtime(m)
+                    return await self._runtime_with_number(session, m)
 
                 session.add(
                     AuditEventModel(
@@ -950,10 +973,19 @@ class ProfileRepository:
                     return "duplicate"
             raise
 
+    async def _runtime_with_number(self, session, m):
+        profile = await session.get(ProfileModel, m.profile_id)
+        if profile is None or profile.display_number is None:
+            raise RuntimeError("Profile is missing its display number")
+        return self._to_domain_runtime(m, display_number=profile.display_number)
+
     @staticmethod
-    def _to_domain_runtime(m: ProfileRuntimeModel) -> ProfileRuntime:
+    def _to_domain_runtime(
+        m: ProfileRuntimeModel, *, display_number: int
+    ) -> ProfileRuntime:
         return ProfileRuntime(
             profile_id=m.profile_id,
+            display_number=display_number,
             desired_state=m.desired_state,  # type: ignore
             observed_state=m.observed_state,  # type: ignore
             runtime_instance_id=m.runtime_instance_id,
@@ -1022,6 +1054,7 @@ class ProfileRepository:
         )
         return Profile(
             id=m.id,
+            display_number=m.display_number,
             config=cfg,
             user_data_dir=m.user_data_dir,
             sort_order=m.sort_order,

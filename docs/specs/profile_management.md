@@ -84,3 +84,7 @@
 - 分组管理弹窗：列表（色块、名称、使用环境数）、新建 / 改名 / 改色（8 色调色板）/ 拖动与键盘排序 / 删除（确认框显示受影响环境数，删除后这些环境显示为未分组）。
 - 旧页面组件（`ProfileNewPage` / `ProfileFilesPage` / `ProfileAutomationPage`）与旧 `data-testid` 全部删除，按 D16 重建、不保留兼容层；旧 `/profiles/new`、`/automation/:id`、`/?profileId=` 不再有任何特殊语义，未匹配的 `profileId` 按普通详情页处理。新页面结构下按 Profile 隔离动作状态、每个标签页独立目标、关闭页面不停止 Profile 均有测试覆盖。
 - 中文界面用「环境」，英文用「Profile」；en / zh 文案键同步补齐。业务代码只用语义 token，不含 Tailwind 默认调色板类与颜色字面量。
+
+## 显示编号（t050）
+
+- Profile 创建时分配部署内唯一显示编号（0001…），删除后不复用；API 返回 `display_number`，前端在列表与表格中与名称一同展示，便于对应 Docker 沙箱容器名。

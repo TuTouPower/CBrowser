@@ -201,6 +201,7 @@ class ProfileConfig(BaseModel):
 
 class Profile(BaseModel):
     id: str
+    display_number: int = 1
     config: ProfileConfig
     user_data_dir: str
     sort_order: int = 0
@@ -220,6 +221,7 @@ class ConfigVersionSnapshot(BaseModel):
 
 class ProfileRuntime(BaseModel):
     profile_id: str
+    display_number: int = 1
     desired_state: DesiredState = "stopped"
     observed_state: ObservedState = "stopped"
     runtime_instance_id: str | None = None
@@ -474,6 +476,7 @@ class ProfileUpdateRequest(BaseModel):
 
 class ProfileResponse(BaseModel):
     id: str
+    display_number: int
     name: str
     fingerprint_seed: int
     group_id: str | None = None
@@ -511,6 +514,7 @@ class ProfileResponse(BaseModel):
         cfg = p.config
         return cls(
             id=p.id,
+            display_number=p.display_number,
             name=cfg.name,
             fingerprint_seed=cfg.fingerprint_seed,
             group_id=cfg.group_id,
@@ -688,6 +692,7 @@ class AutomationTunnelData(BaseModel):
 
 class ProfileRuntimeResponse(BaseModel):
     profile_id: str
+    display_number: int
     desired_state: DesiredState
     observed_state: ObservedState
     runtime_instance_id: str | None

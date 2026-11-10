@@ -1276,6 +1276,8 @@ export interface components {
         ProfileResponse: {
             /** Id */
             id: string;
+            /** Display Number */
+            display_number: number;
             /** Name */
             name: string;
             /** Fingerprint Seed */
@@ -1391,6 +1393,8 @@ export interface components {
         ProfileRuntimeResponse: {
             /** Profile Id */
             profile_id: string;
+            /** Display Number */
+            display_number: number;
             /**
              * Desired State
              * @enum {string}

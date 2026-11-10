@@ -786,6 +786,22 @@
             "conflicts_with": "",
             "note": "",
             "dir": "docs/archive/tasks/t049_supervisor_restore_gateway_deadlock"
+        },
+        {
+            "tid": "t050",
+            "slug": "sandbox_compose_grouping",
+            "title": "Profile 沙箱容器聚合到独立 compose 分组",
+            "status": "done",
+            "branch": "t050_sandbox_compose_grouping",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "4aae2d122a2c91d4c5f934caeceada87e6326f26",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "用户需求：所有 Profile 沙箱在 Docker UI 统一聚合到 <prefix>-profiles 分组，同时保持部署 prefix 冲突判断与清理语义",
+            "dir": "docs/archive/tasks/t050_sandbox_compose_grouping"
         }
     ]
 }

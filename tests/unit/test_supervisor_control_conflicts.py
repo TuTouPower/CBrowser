@@ -56,7 +56,7 @@ async def _post_start(tmp_path, core) -> httpx.Response:
         return await client.post(
             "/supervisor/v1/profiles/start",
             headers={"Authorization": f"Bearer {TOKEN}"},
-            json={"profile_id": "profile_a", "config_version": 1},
+            json={"profile_id": "profile_a", "profile_number": 1, "config_version": 1},
         )
 
 

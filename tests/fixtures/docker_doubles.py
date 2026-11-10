@@ -76,12 +76,24 @@ class FakeDockerAdapter:
         # Keep the client's containers the same object as the adapter's so
         # tests can stage containers through either handle.
         self.client.containers = self.containers
+        self.profile_numbers: dict[str, int] = {}
+
+    def remember_profile_number(self, profile_id: str, number: int) -> None:
+        self.profile_numbers[profile_id] = number
+
+    def _profile_number(self, profile_id: str) -> int:
+        try:
+            return self.profile_numbers[profile_id]
+        except KeyError:
+            raise RuntimeError(
+                "FakeDockerAdapter requires remember_profile_number"
+            ) from None
 
     def get_browser_container_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-browser-{profile_id}"
+        return f"{self.resource_prefix}-{self._profile_number(profile_id):04d}-browser"
 
     def get_stream_container_name(self, profile_id: str) -> str:
-        return f"{self.resource_prefix}-stream-{profile_id}"
+        return f"{self.resource_prefix}-{self._profile_number(profile_id):04d}-stream"
 
     def scan_active_containers(self) -> list[dict]:
         return []

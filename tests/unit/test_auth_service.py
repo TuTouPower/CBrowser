@@ -186,6 +186,7 @@ async def _profile_with_session(service, session_maker) -> str:
     async with session_maker() as session, write_transaction(session):
         session.add(
             ProfileModel(
+                display_number=1,
                 id=PROF_ID,
                 name="Test Profile",
                 fingerprint_seed=123456,
@@ -494,6 +495,7 @@ async def test_automation_success_does_not_erase_failure_history(
     async with session_maker() as session, write_transaction(session):
         session.add(
             ProfileModel(
+                display_number=1,
                 id=prof_id,
                 name="Test Profile",
                 fingerprint_seed=123456,

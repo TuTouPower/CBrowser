@@ -16,6 +16,7 @@ function profile(): ProfileResponse {
   return {
     id: 'p1',
     name: 'Profile Alpha',
+    display_number: 1,
     fingerprint_seed: 101,
     group_id: 'g1',
     proxy_id: null,
@@ -54,6 +55,7 @@ function runtime(
 ): ProfileRuntimeResponse {
   return {
     profile_id: 'p1',
+    display_number: 1,
     desired_state: observed === 'stopped' ? 'stopped' : 'running',
     observed_state: observed,
     runtime_instance_id: 'inst_1',

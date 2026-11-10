@@ -125,6 +125,7 @@ def fake_clock(monkeypatch):
 def _profile(profile_id: str = "p1", current_config_version: int = 1) -> dict:
     return {
         "id": profile_id,
+        "display_number": 1,
         "name": "Profile 1",
         "current_config_version": current_config_version,
     }

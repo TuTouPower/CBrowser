@@ -152,6 +152,7 @@ async def test_browser_container_config_env_exposes_full_agent_socket_path(
     adapter._prepare_policy_gate = MagicMock(return_value=data_root / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._install_network_policy = MagicMock()
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
         json.dumps({"version": 1, "config": {}}), encoding="utf-8"
@@ -208,6 +209,7 @@ async def test_stream_container_config_env_exposes_full_agent_socket_path(
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
+    adapter.remember_profile_number("p2", 1)
     dirs = adapter.prepare_profile_directories("p2")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()

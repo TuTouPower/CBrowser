@@ -49,6 +49,7 @@ function runtimeWith(
 ): ProfileRuntimeResponse {
   return {
     profile_id: 'p1',
+    display_number: 1,
     desired_state: 'running',
     observed_state: 'running',
     runtime_instance_id: 'i1',

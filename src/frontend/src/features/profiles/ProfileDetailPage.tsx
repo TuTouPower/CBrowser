@@ -95,6 +95,14 @@ export function ProfileDetailPage() {
     >
       <header className="flex flex-wrap items-center gap-md">
         <h1 className="font-ui text-headline-md text-on-surface">
+          {profile?.display_number != null && (
+            <span
+              data-testid="profile-detail-number"
+              className="mr-xs text-on-surface-muted"
+            >
+              #{String(profile.display_number).padStart(4, "0")}
+            </span>
+          )}
           {profile?.name ?? ""}
         </h1>
         <div data-testid="profile-detail-status">

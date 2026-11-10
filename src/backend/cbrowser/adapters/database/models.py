@@ -60,10 +60,24 @@ class ProxyModel(Base):
     )
 
 
+class ProfileDisplaySequenceModel(Base):
+    """Monotonic allocator for Profile display numbers (t050).
+
+    Kept separate from ``profiles`` so deleting the highest-numbered
+    Profile never frees its number for reuse.
+    """
+
+    __tablename__ = "profile_display_sequence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, nullable=True, default=1)
+    value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class ProfileModel(Base):
     __tablename__ = "profiles"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     fingerprint_seed: Mapped[int] = mapped_column(Integer, nullable=False)
     group_id: Mapped[str | None] = mapped_column(
@@ -155,6 +169,7 @@ class ProfileModel(Base):
     )
 
     __table_args__ = (
+        Index("uq_profiles_display_number", "display_number", unique=True),
         Index("idx_profiles_group_id", "group_id"),
         Index("idx_profiles_proxy_id", "proxy_id"),
     )

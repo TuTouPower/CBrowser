@@ -1792,20 +1792,32 @@ class SupervisorCore:
         )
         if container_status is None:
             try:
-                container = await asyncio.to_thread(
-                    self.docker.client.containers.get,
-                    self.docker.get_browser_container_name(profile_id),
+                containers = await asyncio.to_thread(
+                    self.docker.client.containers.list,
+                    all=True,
+                    filters={
+                        "label": [
+                            f"com.cbrowser.prefix={self.docker.resource_prefix}",
+                            f"com.cbrowser.profile-id={profile_id}",
+                            f"com.cbrowser.instance-id={instance_id}",
+                            "com.cbrowser.role=browser",
+                        ]
+                    },
                 )
-                labels = getattr(container, "labels", None) or {}
-                if labels.get("com.cbrowser.instance-id") != instance_id:
-                    logger.warning(
-                        "Container instance mismatch: profile=%s docker=%s expected=%s",
-                        profile_id,
-                        labels.get("com.cbrowser.instance-id"),
-                        instance_id,
-                    )
-                    return None
-                container_status = getattr(container, "status", None)
+                if not containers:
+                    container_status = "not_found"
+                else:
+                    container = containers[0]
+                    labels = getattr(container, "labels", None) or {}
+                    if labels.get("com.cbrowser.instance-id") != instance_id:
+                        logger.warning(
+                            "Container instance mismatch: profile=%s docker=%s expected=%s",
+                            profile_id,
+                            labels.get("com.cbrowser.instance-id"),
+                            instance_id,
+                        )
+                        return None
+                    container_status = getattr(container, "status", None)
             except NotFound:
                 container_status = "not_found"
             except Exception:  # noqa: BLE001 - unexpected docker inspection error safely defaults status to None
@@ -2399,10 +2411,13 @@ class SupervisorCore:
         config_version: int = 1,
         force: bool = False,
         operation_id: str | None = None,
+        profile_number: int | None = None,
     ) -> ActiveSession:
         """Idempotently start dual-container runtime for profile_id."""
         if self.agent_credentials is None:
             raise ValueError("Explicit Agent authentication key file is required")
+        if profile_number is not None:
+            self.docker.remember_profile_number(profile_id, profile_number)
         lock = self._get_profile_lock(profile_id)
         async with lock:
             if profile_id in self._sessions:

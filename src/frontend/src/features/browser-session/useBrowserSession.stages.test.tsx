@@ -37,6 +37,7 @@ function dispatch(
 function setup(options: Partial<SessionOptions> = {}) {
   const getRuntime = vi.fn(async () => ({
     profile_id: "p1",
+    display_number: 1,
     desired_state: "running",
     observed_state: "running",
   }));

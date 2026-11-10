@@ -10,6 +10,7 @@ import {
 
 const runtimePayload = {
   profile_id: "p1",
+  display_number: 1,
   desired_state: "running",
   observed_state: "running",
   failure_count: 0,

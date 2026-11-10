@@ -160,6 +160,7 @@ def create_control_app(
             session = await core.start_profile(
                 profile_id=req.profile_id,
                 config=cfg,
+                profile_number=req.profile_number,
                 config_version=req.config_version,
                 force=req.force,
                 operation_id=req.operation_id,

@@ -427,6 +427,7 @@ async def test_browser_container_mounts_shared_socket_root(short_root: Path) -> 
     adapter._prepare_policy_gate = MagicMock(return_value=data_root / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._install_network_policy = MagicMock()
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
         json.dumps({"version": 1, "config": {}}), encoding="utf-8"

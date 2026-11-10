@@ -38,6 +38,7 @@ def _adapter(tmp_path):
 
 
 def _stage(adapter, mock_client, tmp_path):
+    adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["x11"] / "X99").touch()
     (dirs["runtime"] / "Xauthority").touch()

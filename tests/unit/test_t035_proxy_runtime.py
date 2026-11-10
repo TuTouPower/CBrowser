@@ -261,6 +261,7 @@ async def test_internal_credentials_endpoint_returns_secret_and_frozen_revision(
         )
         session.add(
             ProfileModel(
+                display_number=1,
                 id="p1",
                 name="p1",
                 fingerprint_seed=123456,
@@ -502,6 +503,8 @@ async def test_browser_container_mounts_credentials_read_only_and_resolves_egres
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("1.2.3.4", 1080)])
     adapter._install_network_policy = MagicMock()
+
+    adapter.remember_profile_number("p1", 1)
 
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(

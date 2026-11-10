@@ -40,6 +40,7 @@ def _labels(**overrides) -> dict:
         "com.cbrowser.profile-id": "profile_a",
         "com.cbrowser.instance-id": "instance_a",
         "com.cbrowser.config-version": "3",
+        "com.cbrowser.profile-number": "0001",
     }
     labels.update(overrides)
     return labels

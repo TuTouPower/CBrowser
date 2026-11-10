@@ -23,12 +23,14 @@ def _sdk_containers() -> ContainerCollection:
 
 def test_missing_name_raises_not_found(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     with pytest.raises(NotFound):
         fake.containers.get(fake.get_browser_container_name("p1"))
 
 
 def test_misspelled_name_raises_not_found_matching_sdk(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     browser = FakeContainer("inst-browser", "running")
     fake.containers.register(fake.get_browser_container_name("p1"), browser)
     typo = fake.get_browser_container_name("p1") + "-typo"
@@ -40,6 +42,7 @@ def test_misspelled_name_raises_not_found_matching_sdk(tmp_path: Path) -> None:
 
 def test_unregistered_name_never_falls_back(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     fake.containers.register(
         fake.get_browser_container_name("p1"),
         FakeContainer("inst-browser", "running"),
@@ -50,6 +53,7 @@ def test_unregistered_name_never_falls_back(tmp_path: Path) -> None:
 
 def test_browser_and_stream_same_profile_are_distinct(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     browser = FakeContainer("inst-browser", "running")
     stream = FakeContainer("inst-stream", "running")
     browser_name = fake.get_browser_container_name("p1")
@@ -66,7 +70,8 @@ def test_browser_and_stream_same_profile_are_distinct(tmp_path: Path) -> None:
 def test_two_profiles_do_not_cross_resolve(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
     registered = {}
-    for profile in ("p1", "p2"):
+    for number, profile in enumerate(("p1", "p2"), start=1):
+        fake.remember_profile_number(profile, number)
         for role, method in (
             ("browser", fake.get_browser_container_name),
             ("stream", fake.get_stream_container_name),
@@ -90,6 +95,7 @@ def test_two_profiles_do_not_cross_resolve(tmp_path: Path) -> None:
 
 def test_client_containers_share_the_registry(tmp_path: Path) -> None:
     fake = FakeDockerAdapter(tmp_path)
+    fake.remember_profile_number("p1", 1)
     browser = FakeContainer("inst-browser", "running")
     name = fake.get_browser_container_name("p1")
     fake.containers.register(name, browser)
