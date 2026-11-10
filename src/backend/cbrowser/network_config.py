@@ -52,57 +52,73 @@ def _format_origin(host: str, port: int, scheme: str = "https") -> str:
     return f"{scheme}://{host}:{port}"
 
 
-def derive_origin_whitelist(
-    version: AppliedNetworkAccessVersion,
-) -> list[str]:
-    """Derive allowed origin URLs strictly from the applied network access version (HTTPS only).
-    Port is taken directly from version.config.https_port (single source of truth).
+def derive_origin_whitelist(config: NetworkAccessConfig) -> list[str]:
+    """Derive allowed origin URLs strictly from the network access config (HTTPS only).
+    Port is taken directly from config.https_port (single source of truth).
     Default HTTPS port 443 is normalized to the port-less form to match
     request-side normalization; non-default ports are kept.
     """
-    port = version.config.https_port
+    port = config.https_port
     origins = [
         _format_origin("127.0.0.1", port),
         _format_origin("localhost", port),
     ]
-    if version.config.lan_access_enabled and version.config.lan_advertised_ip:
-        lan_ip = version.config.lan_advertised_ip.strip()
+    if config.lan_access_enabled and config.lan_advertised_ip:
+        lan_ip = config.lan_advertised_ip.strip()
         origins.append(_format_origin(lan_ip, port))
     return origins
 
 
-def create_default_applied_version(
-    https_port: int = DEFAULT_HTTPS_PORT,
-) -> AppliedNetworkAccessVersion:
-    """Create default immutable baseline version 1 (local-only, single source of port)."""
-    cfg = NetworkAccessConfig(lan_access_enabled=False, https_port=https_port)
-    ver = AppliedNetworkAccessVersion(
-        version=1,
-        config=cfg,
-        bind_host="127.0.0.1",
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="",
-        origin_whitelist=[],
+def _bind_host(config: NetworkAccessConfig) -> str:
+    return "0.0.0.0" if config.lan_access_enabled else "127.0.0.1"
+
+
+def build_applied_network_version(
+    config: NetworkAccessConfig,
+    *,
+    version: int,
+    api_upstream: str = "http://api:8000",
+    gateway_upstream: str = "http://gateway:18080",
+    frontend_dir: str = "/var/www/html",
+) -> tuple[AppliedNetworkAccessVersion, str]:
+    """Single construction entry for an applied network version.
+
+    Renders the Caddyfile from the config, hashes it, and derives the origin
+    whitelist in one step so no caller can persist an unhashed or
+    whitelist-inconsistent version.
+    """
+    caddyfile = generate_caddyfile(
+        config,
+        api_upstream=api_upstream,
+        gateway_upstream=gateway_upstream,
+        frontend_dir=frontend_dir,
     )
-    ver.origin_whitelist = derive_origin_whitelist(ver)
-    return ver
+    applied = AppliedNetworkAccessVersion(
+        version=version,
+        config=config,
+        bind_host=_bind_host(config),
+        applied_at=utc_now_iso(),
+        caddyfile_sha256=compute_caddyfile_sha256(caddyfile),
+        origin_whitelist=derive_origin_whitelist(config),
+    )
+    return applied, caddyfile
 
 
 def generate_caddyfile(
-    version: AppliedNetworkAccessVersion,
+    config: NetworkAccessConfig,
     api_upstream: str = "http://api:8000",
     gateway_upstream: str = "http://gateway:18080",
     frontend_dir: str = "/var/www/html",
 ) -> str:
-    """Deterministically generate a Caddyfile based strictly on the applied version.
+    """Deterministically generate a Caddyfile based strictly on the applied config.
     No hardcoded machine names or static external IPs.
     """
-    is_lan = version.config.lan_access_enabled and bool(version.config.lan_advertised_ip)
-    default_sni = version.config.lan_advertised_ip.strip() if is_lan else "127.0.0.1"
+    is_lan = config.lan_access_enabled and bool(config.lan_advertised_ip)
+    default_sni = config.lan_advertised_ip.strip() if is_lan else "127.0.0.1"
 
     site_addresses = ["https://127.0.0.1", "https://localhost"]
-    if is_lan and version.config.lan_advertised_ip:
-        site_addresses.append(f"https://{version.config.lan_advertised_ip.strip()}")
+    if is_lan and config.lan_advertised_ip:
+        site_addresses.append(f"https://{config.lan_advertised_ip.strip()}")
 
     sites_line = ", ".join(site_addresses)
 

@@ -90,9 +90,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
     for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
         (data / name).mkdir(parents=True, exist_ok=True)
         (data / name).chmod(0o777)
-    from cbrowser.network_config import create_default_applied_version, generate_caddyfile, write_applied_network_state
-    v1_init = create_default_applied_version()
-    write_applied_network_state(data / "network", v1_init, generate_caddyfile(v1_init))
+    from cbrowser.domain.models import NetworkAccessConfig
+    from cbrowser.network_config import build_applied_network_version, write_applied_network_state
+    v1_init, v1_caddyfile = build_applied_network_version(
+        NetworkAccessConfig(lan_access_enabled=False), version=1
+    )
+    write_applied_network_state(data / "network", v1_init, v1_caddyfile)
     cache = data / "engine_cache"
     shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
     shutil.copytree(

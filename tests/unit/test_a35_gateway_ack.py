@@ -55,7 +55,7 @@ async def gateway_env(tmp_path: Path):
         config=NetworkAccessConfig(lan_access_enabled=False),
         bind_host="127.0.0.1",
         applied_at=utc_now_iso(),
-        caddyfile_sha256="hash1",
+        caddyfile_sha256="a" * 64,
         origin_whitelist=[BASELINE_ORIGIN],
     )
     write_applied_network_state(net_dir, v1, "caddyfile v1")

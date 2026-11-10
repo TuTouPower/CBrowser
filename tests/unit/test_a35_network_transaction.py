@@ -45,7 +45,7 @@ def _version(num: int, port: int = 56661) -> AppliedNetworkAccessVersion:
         config=NetworkAccessConfig(lan_access_enabled=False, https_port=port),
         bind_host="127.0.0.1",
         applied_at=utc_now_iso(),
-        caddyfile_sha256=f"hash-{num}",
+        caddyfile_sha256=f"{num:064x}",
         origin_whitelist=[f"https://127.0.0.1:{port}"],
     )
 

@@ -324,36 +324,16 @@ async def test_idempotent_replay_does_not_bump_version_twice(session_maker, tmp_
 @pytest.mark.asyncio
 async def test_restart_with_abort_restores_old_config(session_maker, tmp_path):
     from cbrowser.domain.models import (
-        AppliedNetworkAccessVersion,
         NetworkApplyOperation,
         utc_now_iso,
     )
-    from cbrowser.network_config import compute_caddyfile_sha256, generate_caddyfile
+    from cbrowser.network_config import build_applied_network_version
 
     repo = ProfileRepository(session_maker)
-    old = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        bind_host="127.0.0.1",
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="old-hash",
-        origin_whitelist=["https://127.0.0.1:56661"],
+    old, _ = build_applied_network_version(
+        NetworkAccessConfig(lan_access_enabled=False), version=1
     )
-    # P2 restore verifies the old content hash: use the real hash so the
-    # restore path binds instead of refusing on a dummy mismatch.
-    old = old.model_copy(
-        update={
-            "caddyfile_sha256": compute_caddyfile_sha256(generate_caddyfile(old))
-        }
-    )
-    target = AppliedNetworkAccessVersion(
-        version=2,
-        config=_lan_pending(),
-        bind_host="0.0.0.0",
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="target-hash",
-        origin_whitelist=["https://192.168.31.76:56661"],
-    )
+    target, _ = build_applied_network_version(_lan_pending(), version=2)
     op = NetworkApplyOperation(
         operation_id="op-restart-abort",
         target_version=2,
@@ -365,7 +345,7 @@ async def test_restart_with_abort_restores_old_config(session_maker, tmp_path):
         operation=op,
         old_applied=old,
         target_applied=target,
-        candidate_hash="target-hash",
+        candidate_hash=target.caddyfile_sha256,
     )
     await repo.abort_network_transaction(
         operation_id="op-restart-abort",
@@ -387,21 +367,57 @@ async def test_restart_with_abort_restores_old_config(session_maker, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_restore_old_rejects_snapshot_hash_mismatch(session_maker, tmp_path):
+    """t048 AC-004: a tampered old snapshot is refused before rebinding.
+
+    The model contract makes every stored hash 64 lowercase hex, so the only
+    possible mismatch is a digest that does not match the regenerated
+    Caddyfile; there is no empty-hash bypass.
+    """
+    from cbrowser.domain.models import NetworkApplyOperation, utc_now_iso
+    from cbrowser.network_config import build_applied_network_version
+
+    repo = ProfileRepository(session_maker)
+    old, _ = build_applied_network_version(
+        NetworkAccessConfig(lan_access_enabled=False), version=1
+    )
+    target, _ = build_applied_network_version(_lan_pending(), version=2)
+    op = NetworkApplyOperation(
+        operation_id="op-hash-mismatch",
+        target_version=2,
+        phase=NetworkApplyPhase.PENDING,
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    )
+    txn = await repo.begin_network_transaction(
+        operation=op,
+        old_applied=old,
+        target_applied=target,
+        candidate_hash=target.caddyfile_sha256,
+    )
+    tampered = dict(txn.old_applied)
+    tampered["caddyfile_sha256"] = "b" * 64
+    txn.old_applied = tampered
+
+    fresh_supervisor = _supervisor()
+    _, service = _service(session_maker, fresh_supervisor, tmp_path)
+    assert await service._restore_old(txn) is False
+    fresh_supervisor.restore_network_snapshot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_restart_without_finality_makes_exclusive_abort_decision(
     session_maker, tmp_path
 ):
     from cbrowser.domain.models import (
-        AppliedNetworkAccessVersion,
         NetworkApplyOperation,
         utc_now_iso,
     )
+    from cbrowser.network_config import build_applied_network_version
 
     repo = ProfileRepository(session_maker)
-    old = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        bind_host="127.0.0.1",
-        applied_at=utc_now_iso(),
+    old, _ = build_applied_network_version(
+        NetworkAccessConfig(lan_access_enabled=False), version=1
     )
     op = NetworkApplyOperation(
         operation_id="op-no-finality",
@@ -441,25 +457,14 @@ async def test_restore_fails_once_then_retry_succeeds_with_bumped_generation(
     from unittest.mock import AsyncMock
 
     from cbrowser.domain.models import (
-        AppliedNetworkAccessVersion,
         NetworkApplyOperation,
         utc_now_iso,
     )
-    from cbrowser.network_config import compute_caddyfile_sha256, generate_caddyfile
+    from cbrowser.network_config import build_applied_network_version
 
     repo = ProfileRepository(session_maker)
-    old = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        bind_host="127.0.0.1",
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="",
-        origin_whitelist=["https://127.0.0.1:56661"],
-    )
-    old = old.model_copy(
-        update={
-            "caddyfile_sha256": compute_caddyfile_sha256(generate_caddyfile(old))
-        }
+    old, _ = build_applied_network_version(
+        NetworkAccessConfig(lan_access_enabled=False), version=1
     )
     op = NetworkApplyOperation(
         operation_id="op-restore-retry",

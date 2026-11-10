@@ -282,7 +282,9 @@ def create_app(
         if callable(initializer):
             await initializer(export_network_dir)
         applied_settings = await network_service.get_settings()
-        app.state.allowed_origins = derive_origin_whitelist(applied_settings.applied_version)
+        app.state.allowed_origins = derive_origin_whitelist(
+            applied_settings.applied_version.config
+        )
         publication_authority.import_baseline(
             list(app.state.allowed_origins),
             generation=applied_settings.applied_version.version - 1,

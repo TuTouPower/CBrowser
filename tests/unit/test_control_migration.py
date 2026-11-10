@@ -215,7 +215,7 @@ def _legacy_applied_payload(version: int) -> str:
         config=NetworkAccessConfig(lan_access_enabled=False),
         bind_host="127.0.0.1",
         applied_at="2026-01-01T00:00:00+00:00",
-        caddyfile_sha256=f"hash-{version}",
+        caddyfile_sha256=f"{version:064x}",
         origin_whitelist=["https://127.0.0.1:56661"],
     ).model_dump_json()
 

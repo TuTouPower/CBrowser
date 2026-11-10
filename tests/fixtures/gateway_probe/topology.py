@@ -17,9 +17,9 @@ import httpx
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env
+from cbrowser.domain.models import NetworkAccessConfig
 from cbrowser.network_config import (
-    create_default_applied_version,
-    generate_caddyfile,
+    build_applied_network_version,
     write_applied_network_state,
 )
 from .selkies_assets import prepare_selkies_web_assets
@@ -220,8 +220,9 @@ class GatewayTopologyHarness:
         self.networks.append(self.edge_network)
 
         caddyfile_path = self.work_dir / "Caddyfile"
-        caddyfile_content = generate_caddyfile(
-            create_default_applied_version(),
+        _, caddyfile_content = build_applied_network_version(
+            NetworkAccessConfig(lan_access_enabled=False),
+            version=1,
             api_upstream=f"http://{self.prefix}-api:8000",
             gateway_upstream=(
                 f"http://{self.prefix}-gateway:{DEFAULT_GATEWAY_PORT}"
@@ -258,7 +259,17 @@ class GatewayTopologyHarness:
             self.caddy_container, "443/tcp"
         )
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
-        v1 = create_default_applied_version(https_port=self.caddy_host_port)
+        v1, caddyfile_content = build_applied_network_version(
+            NetworkAccessConfig(
+                lan_access_enabled=False, https_port=self.caddy_host_port
+            ),
+            version=1,
+            api_upstream=f"http://{self.prefix}-api:8000",
+            gateway_upstream=(
+                f"http://{self.prefix}-gateway:{DEFAULT_GATEWAY_PORT}"
+            ),
+            frontend_dir="/var/www/html",
+        )
         write_applied_network_state(
             self.data_dir / "network", v1, caddyfile_content
         )

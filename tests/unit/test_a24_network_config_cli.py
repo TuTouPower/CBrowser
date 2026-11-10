@@ -5,13 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig
+from cbrowser.domain.models import NetworkAccessConfig
 from cbrowser.network_config import (
     APPLIED_VERSION_FILENAME,
     CADDYFILE_FILENAME,
+    build_applied_network_version,
     compute_caddyfile_sha256,
-    derive_origin_whitelist,
-    generate_caddyfile,
     write_applied_network_state,
 )
 
@@ -46,17 +45,7 @@ def _write_custom_state(network_dir, port, lan_ip):
         lan_advertised_ip=lan_ip,
         https_port=port,
     )
-    ver = AppliedNetworkAccessVersion(
-        version=7,
-        config=cfg,
-        bind_host="0.0.0.0" if lan_ip else "127.0.0.1",
-        applied_at="2026-11-09T00:00:00+08:00",
-        caddyfile_sha256="",
-        origin_whitelist=[],
-    )
-    caddy = generate_caddyfile(ver)
-    ver.caddyfile_sha256 = compute_caddyfile_sha256(caddy)
-    ver.origin_whitelist = derive_origin_whitelist(ver)
+    ver, caddy = build_applied_network_version(cfg, version=7)
     write_applied_network_state(network_dir, ver, caddy)
     return ver, caddy
 

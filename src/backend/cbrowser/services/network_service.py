@@ -26,8 +26,8 @@ from cbrowser.domain.models import (
 from cbrowser.gateway.config import NetworkPublicationAuthority
 from cbrowser.network_config import (
     CADDYFILE_FILENAME,
+    build_applied_network_version,
     compute_caddyfile_sha256,
-    create_default_applied_version,
     derive_origin_whitelist,
     generate_caddyfile,
     write_applied_network_state,
@@ -227,30 +227,14 @@ class NetworkService:
         old_applied = current_settings.applied_version
         target_config = current_settings.pending_config
         target_version_num = old_applied.version + 1
-        bind_host = "0.0.0.0" if target_config.lan_access_enabled else "127.0.0.1"
 
-        dummy_ver = AppliedNetworkAccessVersion(
+        new_version, caddy_content = build_applied_network_version(
+            target_config,
             version=target_version_num,
-            config=target_config,
-            bind_host=bind_host,
-            applied_at=utc_now_iso(),
-            caddyfile_sha256="",
-            origin_whitelist=[],
-        )
-        caddy_content = generate_caddyfile(
-            dummy_ver,
             api_upstream=self.api_upstream,
             gateway_upstream=self.gateway_upstream,
         )
-        caddy_sha = compute_caddyfile_sha256(caddy_content)
-        new_version = AppliedNetworkAccessVersion(
-            version=target_version_num,
-            config=target_config,
-            bind_host=bind_host,
-            applied_at=utc_now_iso(),
-            caddyfile_sha256=caddy_sha,
-            origin_whitelist=derive_origin_whitelist(dummy_ver),
-        )
+        caddy_sha = new_version.caddyfile_sha256
 
         op_id = str(uuid.uuid4())
         new_entry_url = None
@@ -511,7 +495,7 @@ class NetworkService:
     async def _finalize_commit(self, txn: NetworkTransaction) -> None:
         target = AppliedNetworkAccessVersion.model_validate(txn.target_applied)
         caddy_content = generate_caddyfile(
-            target,
+            target.config,
             api_upstream=self.api_upstream,
             gateway_upstream=self.gateway_upstream,
         )
@@ -550,7 +534,7 @@ class NetworkService:
 
         self.export_dir.mkdir(parents=True, exist_ok=True)
         content = generate_caddyfile(
-            version,
+            version.config,
             api_upstream=self.api_upstream,
             gateway_upstream=self.gateway_upstream,
         )
@@ -588,25 +572,31 @@ class NetworkService:
         old = (
             AppliedNetworkAccessVersion.model_validate(txn.old_applied)
             if txn.old_applied
-            else create_default_applied_version()
+            else build_applied_network_version(
+                NetworkAccessConfig(lan_access_enabled=False),
+                version=1,
+                api_upstream=self.api_upstream,
+                gateway_upstream=self.gateway_upstream,
+            )[0]
         )
         # Restore must publish the normalized whitelist (443-form) even
         # when the stored snapshot predates normalization.
-        normalized_whitelist = derive_origin_whitelist(old)
+        normalized_whitelist = derive_origin_whitelist(old.config)
         # Verify the reconstructed old content before rebinding: a
         # generator change must never silently bind the wrong Caddyfile.
+        # The hash is mandatory (model contract), so there is no
+        # empty-hash bypass.
         expected_old_content = generate_caddyfile(
-            old,
+            old.config,
             api_upstream=self.api_upstream,
             gateway_upstream=self.gateway_upstream,
         )
-        if old.caddyfile_sha256:
-            if compute_caddyfile_sha256(expected_old_content) != old.caddyfile_sha256:
-                logger.warning(
-                    "Old snapshot hash mismatch for %s; refusing to bind",
-                    txn.operation_id,
-                )
-                return False
+        if compute_caddyfile_sha256(expected_old_content) != old.caddyfile_sha256:
+            logger.warning(
+                "Old snapshot hash mismatch for %s; refusing to bind",
+                txn.operation_id,
+            )
+            return False
         try:
             await self.publication.revoke(
                 txn.operation_id, txn.execution_generation, txn.candidate_hash
@@ -671,63 +661,17 @@ class NetworkService:
             "Apply operation %s aborting: error_type=%s", op_id, type(exc).__name__
         )
         recovery_complete = True
-        normalized_old_whitelist = derive_origin_whitelist(old_applied)
-        if old_applied.caddyfile_sha256:
-            expected = generate_caddyfile(
-                old_applied,
-                api_upstream=self.api_upstream,
-                gateway_upstream=self.gateway_upstream,
+        normalized_old_whitelist = derive_origin_whitelist(old_applied.config)
+        expected = generate_caddyfile(
+            old_applied.config,
+            api_upstream=self.api_upstream,
+            gateway_upstream=self.gateway_upstream,
+        )
+        if compute_caddyfile_sha256(expected) != old_applied.caddyfile_sha256:
+            logger.warning(
+                "Old snapshot hash mismatch for %s; refusing to bind", op_id
             )
-            if compute_caddyfile_sha256(expected) != old_applied.caddyfile_sha256:
-                logger.warning(
-                    "Old snapshot hash mismatch for %s; refusing to bind", op_id
-                )
-                recovery_complete = False
-            else:
-                try:
-                    await self.publication.revoke(op_id, generation, candidate_hash)
-                    self._write_persistent_caddyfile(old_applied)
-                    restore_call = self.supervisor_client.restore_network_snapshot(
-                        operation_id=op_id,
-                        execution_generation=generation,
-                        old_version=old_applied.version,
-                        bind_host=old_applied.bind_host,
-                        https_port=old_applied.config.https_port,
-                        caddyfile_sha256=old_applied.caddyfile_sha256,
-                        caddyfile_path=CADDYFILE_FILENAME,
-                    )
-                    restored = await asyncio.wait_for(
-                        self._maybe_await(restore_call), timeout=30.0
-                    )
-                    if (
-                        not isinstance(restored, dict)
-                        or restored.get("rebuilt") is not True
-                    ):
-                        if self._is_terminal_missing(restored):
-                            if callable(self.on_origins_updated):
-                                self.on_origins_updated(
-                                    list(normalized_old_whitelist)
-                                )
-                        else:
-                            raise RuntimeError("Edge restore not verified")
-                    elif callable(self.on_origins_updated):
-                        self.on_origins_updated(list(normalized_old_whitelist))
-                except Exception as comp_exc:
-                    if self._is_terminal_missing(None, comp_exc):
-                        if callable(self.on_origins_updated):
-                            try:
-                                self.on_origins_updated(
-                                    list(normalized_old_whitelist)
-                                )
-                            except Exception:
-                                pass
-                    else:
-                        recovery_complete = False
-                        logger.warning(
-                            "Apply operation %s compensation incomplete: error_type=%s",
-                            op_id,
-                            type(comp_exc).__name__,
-                        )
+            recovery_complete = False
         else:
             try:
                 await self.publication.revoke(op_id, generation, candidate_hash)
@@ -744,10 +688,15 @@ class NetworkService:
                 restored = await asyncio.wait_for(
                     self._maybe_await(restore_call), timeout=30.0
                 )
-                if not isinstance(restored, dict) or restored.get("rebuilt") is not True:
+                if (
+                    not isinstance(restored, dict)
+                    or restored.get("rebuilt") is not True
+                ):
                     if self._is_terminal_missing(restored):
                         if callable(self.on_origins_updated):
-                            self.on_origins_updated(list(normalized_old_whitelist))
+                            self.on_origins_updated(
+                                list(normalized_old_whitelist)
+                            )
                     else:
                         raise RuntimeError("Edge restore not verified")
                 elif callable(self.on_origins_updated):
@@ -756,7 +705,9 @@ class NetworkService:
                 if self._is_terminal_missing(None, comp_exc):
                     if callable(self.on_origins_updated):
                         try:
-                            self.on_origins_updated(list(normalized_old_whitelist))
+                            self.on_origins_updated(
+                                list(normalized_old_whitelist)
+                            )
                         except Exception:
                             pass
                 else:

@@ -36,6 +36,21 @@ async def test_network_settings_defaults_and_pending_save(session_maker):
     assert not resp.applied_version.config.lan_access_enabled
     assert resp.active_operation is None
 
+    # t048 AC-003: the no-data fallback is a complete applied version, not a
+    # half-built object with an empty hash.
+    from cbrowser.network_config import (
+        compute_caddyfile_sha256,
+        derive_origin_whitelist,
+        generate_caddyfile,
+    )
+
+    fallback = resp.applied_version
+    assert len(fallback.caddyfile_sha256) == 64
+    assert fallback.caddyfile_sha256 == compute_caddyfile_sha256(
+        generate_caddyfile(fallback.config)
+    )
+    assert fallback.origin_whitelist == derive_origin_whitelist(fallback.config)
+
     # 2. Save pending changes only pending, applied remains unchanged (AC-001, AC-002)
     new_pending = NetworkAccessConfig(
         lan_access_enabled=True,
@@ -62,7 +77,7 @@ async def test_network_applied_version_and_operations(session_maker):
             lan_advertised_ip="192.168.31.76",
         ),
         applied_at="2026-11-08T05:00:00+08:00",
-        caddyfile_sha256="abc123hash",
+        caddyfile_sha256="a" * 64,
         origin_whitelist=["https://127.0.0.1:56661", "https://192.168.31.76:56661"],
     )
     await repo.record_applied_network_version(v2)
@@ -71,7 +86,7 @@ async def test_network_applied_version_and_operations(session_maker):
     assert resp.applied_version.version == 2
     assert resp.applied_version.config.lan_access_enabled
     assert resp.applied_version.config.lan_advertised_ip == "192.168.31.76"
-    assert resp.applied_version.caddyfile_sha256 == "abc123hash"
+    assert resp.applied_version.caddyfile_sha256 == "a" * 64
 
     # Operation persistence
     op = NetworkApplyOperation(

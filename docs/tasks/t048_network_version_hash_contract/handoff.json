@@ -1,0 +1,14 @@
+{
+  "tid": "t048",
+  "attempt": 1,
+  "execution_id": "98c339cdae174aa2824f1ec33fdc950a",
+  "status": "done",
+  "branch": "t048_network_version_hash_contract",
+  "base_sha": "13e631695e93182cd1f190223e6a8b9759967e89",
+  "tests": "定向 unit/integration 40 例通过；受影响关联用例 74 例通过；组合树（main 86e3f6b + t048 改动）非 E2E 全量门禁 8 个 suite 全绿（`/tmp/t048_gate_final/manifest.json`，unit 两个环境 flake 单独重跑通过），独立全量 unit `1578 passed`。",
+  "blackbox": "`CBROWSER_RUN_E2E=1` 因既有 Docker stream 容器启动基线故障（p056）无法收敛；AC-007 经用户批准缩窄为非 E2E 全量门禁，未声称 E2E 通过。",
+  "review": "code PASS（零 finding）；test PASS（2 条 minor 均撤回，附理由）。",
+  "review_scope": "a4af68f340690971",
+  "pending": [],
+  "findings": []
+}

@@ -5,14 +5,13 @@ import shlex
 import sys
 from pathlib import Path
 
-from cbrowser.domain.models import AppliedNetworkAccessVersion
+from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig
 from cbrowser.network_config import (
     APPLIED_VERSION_FILENAME,
     CADDYFILE_FILENAME,
+    build_applied_network_version,
     compute_caddyfile_sha256,
-    create_default_applied_version,
     derive_origin_whitelist,
-    generate_caddyfile,
     write_applied_network_state,
 )
 
@@ -65,17 +64,13 @@ def _load_validated(network_dir: Path) -> AppliedNetworkAccessVersion:
         raise ConfigCorrupt(
             f"malformed applied network state in {network_dir}: {e}"
         ) from e
-    if not ver.caddyfile_sha256:
-        raise ConfigCorrupt(
-            f"empty caddyfile_sha256 in {version_file}; refusing an unhashed state"
-        )
     actual = compute_caddyfile_sha256(caddy_text)
     if ver.caddyfile_sha256 != actual:
         raise ConfigCorrupt(
             f"caddyfile_sha256 mismatch in {network_dir}: "
             f"recorded {ver.caddyfile_sha256} != computed {actual}"
         )
-    if ver.origin_whitelist != derive_origin_whitelist(ver):
+    if ver.origin_whitelist != derive_origin_whitelist(ver.config):
         raise ConfigCorrupt(
             f"origin_whitelist inconsistent with applied config in {network_dir}"
         )
@@ -84,10 +79,10 @@ def _load_validated(network_dir: Path) -> AppliedNetworkAccessVersion:
 
 def _init(network_dir: Path, https_port: int) -> None:
     if _presence(network_dir) == "none":
-        ver = create_default_applied_version(https_port=https_port)
-        caddy_text = generate_caddyfile(ver)
-        ver.caddyfile_sha256 = compute_caddyfile_sha256(caddy_text)
-        ver.origin_whitelist = derive_origin_whitelist(ver)
+        ver, caddy_text = build_applied_network_version(
+            NetworkAccessConfig(lan_access_enabled=False, https_port=https_port),
+            version=1,
+        )
         write_applied_network_state(network_dir, ver, caddy_text)
         logger.info(
             "initialized applied network state in %s (port %s, sha256 %s)",

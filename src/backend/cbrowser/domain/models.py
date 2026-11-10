@@ -866,7 +866,7 @@ class AppliedNetworkAccessVersion(BaseModel):
     config: NetworkAccessConfig
     bind_host: str = Field(default="127.0.0.1")
     applied_at: str = Field(min_length=1)
-    caddyfile_sha256: str = Field(default="")
+    caddyfile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     origin_whitelist: list[str] = Field(default_factory=list)
 
 
