@@ -5,4 +5,4 @@
 - 根因：adapter 在 `start_browser_container` / `start_stream_container` 的 `DockerException` 包装中只保留异常类型，未保留脱敏后的 message。
 - 测试缺口：无“启动失败异常/日志携带 Docker 原始 message 且不含密钥、代理凭证、token”的断言。
 - 线索：`src/backend/cbrowser/supervisor/docker_adapter.py` 的 Browser/Stream 启动 `except DockerException` 包装；p056 历史失败证据。
-- 处理：未开（由 p056 拆分出的诊断缺口）。
+- 处理：t051；resolution=transferred；reason=已核实范围并转交该 task

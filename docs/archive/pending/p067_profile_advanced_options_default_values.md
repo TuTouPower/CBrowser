@@ -2,7 +2,7 @@
 
 - 来源：用户提出
 - 内容：用户在新建环境时，高级选项中的拟人化（`humanize`）和便携 Cookie（`portable_cookies`）调整为默认开启；透明代理（`transparent_proxy`）与自动启动（`auto_launch`）保持默认关闭；其余选项（允许第三方 Cookie、设 Google 为默认、剪贴板同步、恢复会话、采集预览）保持默认开启。
-- 处理：未开
+- 处理：t053；resolution=transferred；reason=已核实范围并转交该 task
 - 时间：2026-11-10T21:15:00+08:00
 
 ## 用户原始诉求与规则裁定

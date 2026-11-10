@@ -9,5 +9,5 @@
         已全量扫描代码库，无其他沙箱 Compose 标签生成位点。
 - 测试缺口：`tests/unit/test_t050_sandbox_grouping.py` 仅在单 Profile 场景下断言了静态值 `assert labels["com.docker.compose.service"] == "browser"`，缺乏多 Profile 容器 Service 命名区分性与编号映射断言。应在单元测试与沙箱启动断言中增加多 Profile 场景的 service 标签带编号验证。
 - 线索：`.scratch/reproduce_compose_service_labels.py`
-- 处理：未开
+- 处理：t051；resolution=transferred；reason=已核实范围并转交该 task
 - 时间：2026-11-10T19:50:00+08:00
