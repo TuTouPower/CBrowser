@@ -160,6 +160,28 @@ class RuntimeUnavailableError(RuntimeError):
     """
 
 
+_BROWSER_FOUND = "found"
+_BROWSER_MISSING = "missing"
+_BROWSER_INSTANCE_MISMATCH = "instance_mismatch"
+_BROWSER_LOOKUP_UNKNOWN = "unavailable"
+
+
+@dataclass(frozen=True)
+class BrowserContainerLookup:
+    """Outcome of locating the Browser container for one runtime instance.
+
+    ``missing`` means no Browser sandbox exists for this Profile at all;
+    ``instance_mismatch`` means a Browser exists for another instance (a
+    fence violation that must never be reported as this instance's exit);
+    ``unavailable`` means Docker facts could not be read and the caller
+    must stay unresolved.
+    """
+
+    outcome: str
+    container_status: str | None = None
+    observed_instance_id: str | None = None
+
+
 @dataclass
 class ActiveSession:
     profile_id: str
@@ -1775,6 +1797,48 @@ class SupervisorCore:
             self._save_event_cursors()
         return total_forwarded
 
+    async def _lookup_browser_container(
+        self, profile_id: str, instance_id: str
+    ) -> BrowserContainerLookup:
+        """Locate this Profile's Browser sandbox by ownership labels.
+
+        Unlike name-based lookup this works for restored and renamed
+        sandboxes; unlike a blind first-container read it distinguishes a
+        missing sandbox from another instance's sandbox (fence violation).
+        """
+        try:
+            containers = await asyncio.to_thread(
+                self.docker.client.containers.list,
+                all=True,
+                filters={
+                    "label": [
+                        f"com.cbrowser.prefix={self.docker.resource_prefix}",
+                        f"com.cbrowser.profile-id={profile_id}",
+                        "com.cbrowser.role=browser",
+                    ]
+                },
+            )
+        except NotFound:
+            return BrowserContainerLookup(_BROWSER_MISSING)
+        except Exception:  # noqa: BLE001 - Docker facts unavailable: stay unresolved
+            return BrowserContainerLookup(_BROWSER_LOOKUP_UNKNOWN)
+        if not containers:
+            return BrowserContainerLookup(_BROWSER_MISSING)
+        for container in containers:
+            labels = getattr(container, "labels", None) or {}
+            if labels.get("com.cbrowser.instance-id") == instance_id:
+                return BrowserContainerLookup(
+                    _BROWSER_FOUND,
+                    container_status=getattr(container, "status", None),
+                    observed_instance_id=instance_id,
+                )
+        observed = (getattr(containers[0], "labels", None) or {}).get(
+            "com.cbrowser.instance-id"
+        )
+        return BrowserContainerLookup(
+            _BROWSER_INSTANCE_MISMATCH, observed_instance_id=observed
+        )
+
     async def _reconcile_instance_observation(
         self,
         profile_id: str,
@@ -1791,36 +1855,20 @@ class SupervisorCore:
             profile_id, instance_id, config_version
         )
         if container_status is None:
-            try:
-                containers = await asyncio.to_thread(
-                    self.docker.client.containers.list,
-                    all=True,
-                    filters={
-                        "label": [
-                            f"com.cbrowser.prefix={self.docker.resource_prefix}",
-                            f"com.cbrowser.profile-id={profile_id}",
-                            f"com.cbrowser.instance-id={instance_id}",
-                            "com.cbrowser.role=browser",
-                        ]
-                    },
+            lookup = await self._lookup_browser_container(profile_id, instance_id)
+            if lookup.outcome == _BROWSER_INSTANCE_MISMATCH:
+                logger.warning(
+                    "Container instance mismatch: profile=%s docker=%s expected=%s",
+                    profile_id,
+                    lookup.observed_instance_id,
+                    instance_id,
                 )
-                if not containers:
-                    container_status = "not_found"
-                else:
-                    container = containers[0]
-                    labels = getattr(container, "labels", None) or {}
-                    if labels.get("com.cbrowser.instance-id") != instance_id:
-                        logger.warning(
-                            "Container instance mismatch: profile=%s docker=%s expected=%s",
-                            profile_id,
-                            labels.get("com.cbrowser.instance-id"),
-                            instance_id,
-                        )
-                        return None
-                    container_status = getattr(container, "status", None)
-            except NotFound:
+                return None
+            if lookup.outcome == _BROWSER_MISSING:
                 container_status = "not_found"
-            except Exception:  # noqa: BLE001 - unexpected docker inspection error safely defaults status to None
+            elif lookup.outcome == _BROWSER_FOUND:
+                container_status = lookup.container_status
+            else:
                 container_status = None
 
         if container_status in ("exited", "dead", "not_found"):
