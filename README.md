@@ -26,13 +26,13 @@ chmod 600 config/deploy/secrets/admin_password
 bash scripts/deploy.sh
 ```
 
-访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/v2`，密钥在 `config/deploy/secrets`，两者均不入库。每次发布生成不可变 release（`config/deploy/releases/`），回退用 `bash scripts/deploy.sh rollback`。
+访问 `https://127.0.0.1:56661`，管理密码见 `config/deploy/secrets/admin_password`。数据在 `data/instance`，密钥在 `config/deploy/secrets`，两者均不入库。每次发布生成不可变 release（`config/deploy/releases/`），回退用 `bash scripts/deploy.sh rollback`。
 
 ## 停用与备份
 
 ```bash
 docker compose --env-file config/deploy/releases/<release_id>.env -f compose.yaml down
-tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
+tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/instance
 ```
 
 完整部署、升级、备份恢复与故障定位见 `DOCKER_DEPLOYMENT.md`。

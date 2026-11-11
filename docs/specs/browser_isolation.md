@@ -2,7 +2,7 @@
 
 ## 1. 业务目标与适用范围
 
-本文档规定 CBrowser v2 Profile 容器化沙箱隔离与数据隔离契约。t003 实现 Browser Runtime；Stream、Supervisor 编排及正式部署由后续 task 集成，以下完整双容器拓扑是目标契约。
+本文档规定 CBrowser Profile 容器化沙箱隔离与数据隔离契约。t003 实现 Browser Runtime；Stream、Supervisor 编排及正式部署由后续 task 集成，以下完整双容器拓扑是目标契约。
 系统为每个浏览器 Profile 分配独立的沙箱环境（同 Profile 双容器：Browser Runtime 与 Stream Runtime），杜绝不同身份之间的进程、内存、网络、调试端口与存储冲突。
 
 ## 2. 行为契约
@@ -12,11 +12,11 @@
 - 每个 Profile 启动时由 Supervisor 编排为一对专属沙箱容器：
     - `{prefix}-browser-{profile_id}`：核心运行沙箱，以 `HostConfig.IpcMode=shareable` 和 1 GiB `/dev/shm` 运行真实 CloakBrowser、Xvfb、PulseAudio（48000Hz）与 UDS Agent。
     - `{prefix}-stream-{profile_id}`：远程显示沙箱，以 `IpcMode=container:{prefix}-browser-{profile_id}` 加入同 Profile IPC 命名空间，通过 MIT-SHM 共享内存捕获画面并进行 WebRTC 编码。
-- `{prefix}` 由 Supervisor 的 `--prefix` / `CBROWSER_PREFIX` 配置提供（默认 `cbrowser-t005`），用于隔离不同部署或测试栈的容器、网络与端口所有权。
+- `{prefix}` 由 Supervisor 的 `--prefix` / `CBROWSER_PREFIX` 配置提供（默认部署前缀 `cbrowser-t005`；t051 起部署输入的前缀须匹配 `^[a-z0-9][a-z0-9_]*$`，不含连字符），用于隔离不同部署或测试栈的容器、网络与端口所有权。
 - 容器标签必须包含：
     - `com.cbrowser.managed-by=supervisor`
     - `com.cbrowser.profile-id={profile_id}`
-    - `com.cbrowser.instance-id={runtime_instance_id}`
+    - `com.cbrowser.instance-id={instance_id}`（t051：部署身份，归属判定的唯一依据；运行时实例 id 不走标签，写入容器运行时配置——Stream 环境变量、gated entrypoint 与 Browser 命令参数）
     - `com.cbrowser.role=browser` 或 `stream`（Supervisor 的 cache-init / network-policy 辅助容器使用各自角色值）
     - `com.cbrowser.network-policy={policy_version}`（当前 `v1`）
     - `com.cbrowser.config-version={version}`

@@ -1,19 +1,25 @@
 #!/bin/bash
-# CBrowser release deployment (t027).
+# CBrowser release deployment (t027, t051).
 #
 # Replaces the historical "build twice, overwrite compose.env, restart
 # Caddy unconditionally, print the admin password" flow with immutable
 # releases:
 #
-#   deploy    build every runtime image exactly once, tag it with the
-#             release id, pin all six image IDs (incl. Caddy) plus the
-#             compose/Caddyfile/frontend fingerprints and the database
-#             migration version in a release manifest, `up --wait`
-#             (never builds), then verify through the Supervisor's single
-#             reconcile_all + readiness entry via `docker compose exec`.
-#             The current/previous release pointers only move after the
-#             readiness verification passes, so a failed deploy never
-#             overwrites the previous valid release.
+#   deploy    build the API image first, then inspect the live database
+#             stamp inside a throwaway API container (named volume, never
+#             the host file), refuse a retired-generation stamp, warn about
+#             a legacy host database left behind, warn about a missing or
+#             invalid font directory, back the live database up into
+#             config/deploy/backups, build the remaining images exactly
+#             once, tag them with the release id, pin all six image IDs
+#             (incl. Caddy) plus the compose/Caddyfile/frontend
+#             fingerprints, the database migration version and the backup
+#             path in a release manifest, `up --wait` (never builds), then
+#             verify through the Supervisor's single reconcile_all +
+#             readiness entry via `docker compose exec`.  The single JSON
+#             release pointer only moves after the readiness verification
+#             passes, so a failed deploy never overwrites the previous
+#             valid release.
 #   rollback  re-deploy the previous (or a named) release after checking
 #             it still offers the readiness capability, its migration
 #             head belongs to the current Alembic revision chain, and its
@@ -24,6 +30,9 @@
 #             file fingerprint must still match the working tree (no mixed
 #             old-images/new-compose); the same readiness verification
 #             runs before success is claimed.
+#   restore   stop the stack and copy a backup file back into the database
+#             volume (stale -wal/-shm removed first); the user re-deploys
+#             afterwards.  Never deletes the backup.
 #   status    print the current/previous release ids (never secrets).
 #
 # Credentials: the admin password is user-provided and must already exist
@@ -34,8 +43,15 @@
 #
 # Instance identity is parameterized (project, prefix, data root,
 # secrets dir, HTTPS port) so a second isolated instance can coexist on
-# the same Docker daemon (used by t032); a prefix already owned by a
-# different running compose project is refused before anything starts.
+# the same Docker daemon (used by t032).  The deployment instance id is
+# derived deterministically from (prefix, data root) and written to the
+# com.cbrowser.instance-id label on every control-plane service,
+# sandbox, helper and network: it is the sole ownership test for the
+# prefix-conflict check, replacing the old <prefix>-profiles project-name
+# exemption.  Each instance also derives a /16 media subnet pool from the
+# same identity; a foreign pool overlapping ours refuses the deploy.
+# A prefix already owned by a different deployment is refused before
+# anything starts; a malformed prefix is refused even earlier.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,15 +63,27 @@ if [ "$#" -gt 0 ]; then shift; fi
 PROJECT="${CBROWSER_COMPOSE_PROJECT:-cbrowser}"
 PREFIX="${CBROWSER_PREFIX:-cbrowser}"
 HTTPS_PORT="${CBROWSER_HTTPS_PORT:-56661}"
-DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/v2}"
+DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/instance}"
 SECRETS_DIR="${CBROWSER_SECRETS_DIR:-$ROOT/config/deploy/secrets}"
 DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
 RELEASES_DIR="$DEPLOY_DIR/releases"
-CURRENT_FILE="$DEPLOY_DIR/current_release"
-PREVIOUS_FILE="$DEPLOY_DIR/previous_release"
+BACKUP_DIR="$DEPLOY_DIR/backups"
+POINTER_FILE="$DEPLOY_DIR/release_pointer.json"
+FONTS_DIR="${CBROWSER_FONTS_DIR:-$ROOT/data/fonts}"
 CADDY_REF="${CBROWSER_CADDY_REF:-caddy@sha256:70b3180738b46cd88e49b300d790ae448a0aca3f58edef0f000bb57d619a9ab3}"
 UP_WAIT_TIMEOUT="${CBROWSER_DEPLOY_DEADLINE_SEC:-600}"
 VERIFY_DEADLINE="${CBROWSER_VERIFY_DEADLINE_SEC:-300}"
+
+# Filled by check_database_schema_generation / backup_database.
+CURRENT_DB_STAMP=""
+DATABASE_BACKUP_PATH=""
+
+# The resource prefix is a Docker label value and a compose project
+# fragment: validate it before any Docker operation (A22).
+if [[ ! "$PREFIX" =~ ^[a-z0-9][a-z0-9_]*$ ]]; then
+  echo "Refusing to start: CBROWSER_PREFIX '$PREFIX' is invalid (must match ^[a-z0-9][a-z0-9_]*\$)." >&2
+  exit 1
+fi
 
 NET_CONFIG_PY="${CBROWSER_PYTHON:-}"
 if [ -z "$NET_CONFIG_PY" ]; then
@@ -78,6 +106,53 @@ export CBROWSER_PREFIX="$PREFIX"
 export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
 export CBROWSER_DATA_ROOT="$DATA_ROOT"
 export CBROWSER_SECRETS_DIR="$SECRETS_DIR"
+export CBROWSER_FONTS_DIR="$FONTS_DIR"
+
+db_volume_name() {
+  # The named volume holding the control-plane database; must match the
+  # `db` volume name in compose.yaml.
+  printf '%s-db' "$PREFIX"
+}
+
+derive_instance_identity() {
+  # A59: the deployment instance id is deterministic in (prefix,
+  # data root) — stable across releases and checkouts, so a redeployed
+  # Supervisor still claims its running sandboxes; distinct per
+  # (prefix, data root).  The media subnet pool derives from the same
+  # digest: pool index = digest mod 64, pool = 10.(192+index).0.0/16.
+  # The material string is the contract: tests and the Supervisor side
+  # must reproduce it byte for byte.
+  local out
+  out="$(python3 - "$PREFIX" "$DATA_ROOT" <<'PY'
+import hashlib
+import sys
+
+prefix, data_root = sys.argv[1], sys.argv[2]
+material = ("cbrowser-instance-v1\0" + prefix + "\0" + data_root).encode()
+digest = hashlib.sha256(material).hexdigest()
+print(digest[:32])
+print("10.%d.0.0/16" % (192 + int(digest, 16) % 64))
+PY
+)"
+  CBROWSER_INSTANCE_ID="$(printf '%s' "$out" | sed -n '1p')"
+  CBROWSER_MEDIA_SUBNET_POOL="$(printf '%s' "$out" | sed -n '2p')"
+  export CBROWSER_INSTANCE_ID CBROWSER_MEDIA_SUBNET_POOL
+}
+
+pools_overlap() {
+  # pools_overlap <cidr-a> <cidr-b> : 0 when the two pools overlap.
+  python3 - "$1" "$2" <<'PY'
+import ipaddress
+import sys
+
+try:
+    a = ipaddress.ip_network(sys.argv[1])
+    b = ipaddress.ip_network(sys.argv[2])
+except ValueError:
+    raise SystemExit(1)
+raise SystemExit(0 if a.overlaps(b) else 1)
+PY
+}
 
 sha256_of_file() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -148,43 +223,24 @@ current_revision_chain() {
 }
 
 current_db_stamp() {
-  # Print the live database's Alembic stamp (empty when absent/unclaimed).
-  # Read-only (python3 sqlite3 mode=ro); fails closed on inspect error.
-  # The database file is never opened for writing here.
-  local db_path="$DATA_ROOT/cbrowser.db" rc stamp
-  [ -f "$db_path" ] || { printf ''; return 0; }
+  # current_db_stamp <api-image> : print the live database's Alembic
+  # stamp (empty when absent/unclaimed).  The database lives in the named
+  # volume; it is read inside a throwaway API-image container via
+  # scripts/db_inspect.py (read-only mount), so the host never opens the
+  # database file.  Fails closed when the volume holds a database that
+  # cannot be read (A44): an unreadable database is refused, never
+  # silently treated as "no database".
+  local api_image="$1" db_volume stamp rc
+  db_volume="$(db_volume_name)"
   set +e
-  stamp="$(python3 - "$db_path" <<'PY'
-import sqlite3
-import sys
-from urllib.parse import quote
-
-db = sys.argv[1]
-conn = None
-try:
-    conn = sqlite3.connect("file:" + quote(db) + "?mode=ro", uri=True)
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name='alembic_version'"
-    ).fetchone()
-    if row is None:
-        print("")
-    else:
-        stamped = conn.execute("SELECT version_num FROM alembic_version").fetchone()
-        print(stamped[0] if stamped is not None and stamped[0] else "")
-except sqlite3.DatabaseError:
-    # Not a readable SQLite database: no stamped legacy schema to reject
-    # here; the API startup path reports the real error.
-    print("")
-finally:
-    if conn is not None:
-        conn.close()
-PY
-)"
+  stamp="$(docker run --rm \
+    -v "$db_volume:/db:ro" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/db_inspect.py stamp --db /db/cbrowser.db)"
   rc=$?
   set -e
   if [ "$rc" -ne 0 ]; then
-    echo "Failed to inspect database schema generation at $db_path (python3 exit $rc)." >&2
+    echo "Failed to inspect database schema generation in volume $db_volume (db_inspect exit $rc)." >&2
     return 1
   fi
   # Command substitution strips trailing newlines; an empty stamp means
@@ -196,41 +252,103 @@ PY
 check_database_schema_generation() {
   # AC-002 (t035, P1-8): a database stamped with a retired 0001-0009
   # revision must NOT be deployed or rolled back against.  Inspect it
-  # read-only (python3 sqlite3) and fail closed, printing
-  # REBUILD_GUIDANCE, before any image is built, container started, or
-  # pointer moved.  Membership is decided by the Alembic revision chain
-  # shipped in this source tree (current_revision_chain), not by a single
-  # BASELINE_REVISION equality: after the first deploy the live database
-  # is stamped at the chain head (0002/0003/0004...), and a baseline-only
-  # comparison would mis-kill every second deploy and rollback.  An
-  # absent database, one without an alembic_version table, or one stamped
-  # with any shipped chain member is left for the API to create/upgrade
-  # on startup.  The database file is never opened for writing here.
-  # Cross-generation rollback (live DB stamped outside the shipped chain,
-  # or rollback target head outside the shipped chain) is refused here and
-  # at the target check below: rebuild the data directory from scratch,
-  # no in-place cross-generation migration and no ALLOWED_ORIGINS compat.
-  local db_path="$DATA_ROOT/cbrowser.db" current chain
-  if ! current="$(current_db_stamp)"; then
+  # read-only inside the API image (current_db_stamp) and fail closed,
+  # printing REBUILD_GUIDANCE, before any container is started or pointer
+  # moved.  The API image is built first for exactly this reason:
+  # building an image changes no data.  Membership is decided by the
+  # Alembic revision chain shipped in this source tree
+  # (current_revision_chain), not by a single BASELINE_REVISION
+  # equality: after the first deploy the live database is stamped at the
+  # chain head (0002/0003/0004...), and a baseline-only comparison would
+  # mis-kill every second deploy and rollback.  An absent database, one
+  # without an alembic_version table, or one stamped with any shipped
+  # chain member is left for the API to create/upgrade on startup.  The
+  # database file is never opened for writing here.  Cross-generation
+  # rollback (live DB stamped outside the shipped chain, or rollback
+  # target head outside the shipped chain) is refused here and at the
+  # target check below: rebuild the data directory from scratch, no
+  # in-place cross-generation migration and no ALLOWED_ORIGINS compat.
+  # Sets CURRENT_DB_STAMP for the backup / legacy-database steps.
+  local api_image="$1" current chain
+  if ! current="$(current_db_stamp "$api_image")"; then
     return 1
   fi
+  CURRENT_DB_STAMP="$current"
   # An empty stamp means "no migration generation claimed" and is left to
   # API startup.
   [ -z "$current" ] && return 0
   chain="$(current_revision_chain)"
   if ! grep -qxF "$current" <<< "$chain"; then
-    echo "Refusing to deploy: database $db_path is stamped with revision '$current', which is not in the current Alembic revision chain." >&2
+    echo "Refusing to deploy: database in volume $(db_volume_name) is stamped with revision '$current', which is not in the current Alembic revision chain." >&2
     echo "$REBUILD_GUIDANCE" >&2
     return 1
   fi
 }
 
+check_legacy_host_database() {
+  # AC-004: when the volume holds no database but a database file exists
+  # at a legacy host location, say so and how to use it — and never
+  # delete, move or overwrite it.  The deploy continues.
+  [ -n "$CURRENT_DB_STAMP" ] && return 0
+  local legacy seen=""
+  for legacy in "$ROOT/data/v2/cbrowser.db" "$DATA_ROOT/cbrowser.db"; do
+    case " $seen " in *" $legacy "*) continue ;; esac
+    seen+=" $legacy"
+    if [ -f "$legacy" ]; then
+      echo "NOTE: a database file from a previous data layout exists at $legacy, but the database volume is empty."
+      echo "  It was NOT moved or deleted. To use it, run: $0 restore $legacy (after this deploy), or move it aside."
+    fi
+  done
+}
+
+check_font_sets_preflight() {
+  # AC-009/AC-010: warn (never block) when the fonts directory is missing
+  # or holds no valid set; the deploy continues on the built-in fonts.
+  python3 "$ROOT/scripts/check_font_sets.py" --fonts-dir "$FONTS_DIR" || true
+}
+
+backup_database() {
+  # AC-003: back up the live database (SQLite online-backup API, read-only
+  # source) before `up` moves anything.  The backup path is recorded in
+  # the release manifest (DATABASE_BACKUP_PATH).  A fresh install (no live
+  # database) skips the backup.  A failed backup refuses the deploy.
+  local api_image="$1"
+  if [ -z "$CURRENT_DB_STAMP" ]; then
+    echo "No live database; skipping backup."
+    DATABASE_BACKUP_PATH=""
+    return 0
+  fi
+  mkdir -p "$BACKUP_DIR"
+  local stamp backup_file
+  stamp="$(date +%Y%m%d%H%M%S)"
+  backup_file="$BACKUP_DIR/cbrowser-$stamp.db"
+  if ! docker run --rm \
+    -v "$(db_volume_name):/db" \
+    -v "$BACKUP_DIR:/backup" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/db_backup.py \
+    --db /db/cbrowser.db --out "/backup/cbrowser-$stamp.db"; then
+    echo "Failed to back up the live database; refusing to deploy." >&2
+    return 1
+  fi
+  DATABASE_BACKUP_PATH="$backup_file"
+  echo "Database backed up to $backup_file."
+}
+
 atomic_write() {
   # atomic_write <path> ; content on stdin
-  local path="$1" tmp
-  tmp="$(mktemp "$path.tmp.XXXXXX")"
-  cat > "$tmp"
-  mv "$tmp" "$path"
+  # Crash-consistent via cbrowser.supervisor.file_storage.atomic_write_text
+  # (A43): the temp file is fsynced, renamed, and its parent directory is
+  # fsynced, so a crash leaves either the old content or the new one.
+  PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+    "$NET_CONFIG_PY" -c '
+import sys
+from pathlib import Path
+
+from cbrowser.supervisor.file_storage import atomic_write_text
+
+atomic_write_text(Path(sys.argv[1]), sys.stdin.read())
+' "$1"
 }
 
 network_config() {
@@ -256,10 +374,23 @@ network_config() {
 }
 
 read_pointer() {
-  local file="$1"
-  if [ -s "$file" ]; then
-    tr -d '[:space:]' < "$file"
-  fi
+  # read_pointer <pointer.json> [field=current] : the field's value, or "".
+  # A missing, empty or corrupt pointer file reads as "" (no release).
+  local file="$1" field="${2:-current}"
+  [ -s "$file" ] || return 0
+  PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+    "$NET_CONFIG_PY" -c '
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        data = json.load(handle)
+    value = data.get(sys.argv[2]) if isinstance(data, dict) else None
+    print(value if isinstance(value, str) else "")
+except (OSError, ValueError):
+    print("")
+' "$file" "$field"
 }
 
 manifest_field() {
@@ -317,13 +448,41 @@ deploy_up_and_verify() {
 
 activate_release() {
   # activate_release <release_id> : move current/previous pointers after
-  # a verified deploy or rollback.  Atomic, and never touches data.
-  local release_id="$1" current
-  current="$(read_pointer "$CURRENT_FILE")"
-  if [ -n "$current" ] && [ "$current" != "$release_id" ]; then
-    printf '%s\n' "$current" | atomic_write "$PREVIOUS_FILE"
-  fi
-  printf '%s\n' "$release_id" | atomic_write "$CURRENT_FILE"
+  # a verified deploy or rollback.  A single JSON pointer file, written
+  # once via the fsyncing atomic writer (A43, AC-017): a crash mid-write
+  # leaves either the old pointer or the new one, never a torn file and
+  # never a current without its previous.  Atomic, and never touches data.
+  local release_id="$1"
+  PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+    "$NET_CONFIG_PY" -c '
+import json
+import sys
+from pathlib import Path
+
+from cbrowser.supervisor.file_storage import atomic_write_text
+
+path = Path(sys.argv[1])
+release_id = sys.argv[2]
+current = previous = None
+if path.is_file():
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            current = data.get("current")
+            previous = data.get("previous")
+    except (OSError, ValueError):
+        pass
+if not isinstance(current, str):
+    current = None
+if not isinstance(previous, str):
+    previous = None
+if current and current != release_id:
+    previous = current
+atomic_write_text(
+    path,
+    json.dumps({"current": release_id, "previous": previous}) + "\n",
+)
+' "$POINTER_FILE" "$release_id"
 }
 
 check_prerequisites() {
@@ -366,32 +525,55 @@ ensure_internal_secrets() {
 }
 
 check_prefix_conflict() {
-  # Refuse when another compose project already owns our resource
-  # prefix: its Supervisor would treat this instance's Profiles as
-  # orphans (and vice versa).  Scan ALL containers (running or stopped)
-  # and attribute by container name and prefix label, not just by the
-  # one labelled fixed service: an instance whose Gateway has exited
-  # still owns its prefix through its Supervisor and Profile containers.
-  local rows name project row_prefix role
-  rows="$(docker ps -a --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.cbrowser.prefix"}}\t{{.Label "com.cbrowser.role"}}')"
-  while IFS=$'\t' read -r name project row_prefix role; do
+  # Refuse when another deployment already owns our resource prefix: its
+  # Supervisor would treat this instance's Profiles as orphans (and vice
+  # versa).  Scan ALL containers (running or stopped) and attribute by
+  # container name and prefix label, not just by the one labelled fixed
+  # service: an instance whose Gateway has exited still owns its prefix
+  # through its Supervisor and Profile containers.
+  #
+  # Ownership is decided ONLY by the com.cbrowser.instance-id label
+  # (A59/AC-021): a prefix-matching container is ours when — and only
+  # when — its instance-id equals this instance's
+  # CBROWSER_INSTANCE_ID, or when the label is missing AND its compose
+  # project is ours (containers created before the label existed, e.g.
+  # a data-root migration redeploy).  A present but mismatched
+  # instance-id is foreign in every case, including the same compose
+  # project: the old <prefix>-profiles project-name exemption is
+  # deleted, and the project name alone never proves ownership.
+  #
+  # Media subnet pools (A3) are checked on the same scan, independent of
+  # prefix: any other deployment whose pool overlaps ours refuses the
+  # deploy, even when its prefix differs.
+  local rows name project row_prefix role deployment_id pool
+  rows="$(docker ps -a --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.cbrowser.prefix"}}\t{{.Label "com.cbrowser.role"}}\t{{.Label "com.cbrowser.instance-id"}}\t{{.Label "com.cbrowser.media-subnet-pool"}}')"
+  while IFS=$'\t' read -r name project row_prefix role deployment_id pool; do
     [ -n "$name" ] || continue
+    if [ -n "$pool" ] && [ -n "$CBROWSER_MEDIA_SUBNET_POOL" ]; then
+      case "$deployment_id" in
+        "$CBROWSER_INSTANCE_ID") ;;
+        *)
+          if pools_overlap "$CBROWSER_MEDIA_SUBNET_POOL" "$pool"; then
+            echo "Refusing to start: media subnet pool '$CBROWSER_MEDIA_SUBNET_POOL' overlaps pool '$pool' used by container '$name' (another deployment)." >&2
+            echo "Choose a different CBROWSER_PREFIX/CBROWSER_DATA_ROOT for this instance (the pool derives from the instance identity)." >&2
+            exit 1
+          fi
+          ;;
+      esac
+    fi
     case "$name" in
       "$PREFIX"-*) ;;
       *) [ "$row_prefix" = "$PREFIX" ] || continue ;;
     esac
-    if [ -n "$project" ] && [ "$project" != "$PROJECT" ]; then
-      # Profile sandboxes intentionally carry a pseudo compose project so
-      # Docker Desktop groups them together. It belongs to this instance,
-      # never to another one.
-      if [ "$project" = "$PREFIX-profiles" ] \
-        && { [ "$role" = "browser" ] || [ "$role" = "stream" ]; }; then
-        continue
-      fi
-      echo "Refusing to start: resource prefix '$PREFIX' is already used by instance (compose project '$project', container '$name')." >&2
-      echo "Choose a different CBROWSER_PREFIX/CBROWSER_COMPOSE_PROJECT for this instance." >&2
-      exit 1
+    if [ -n "$CBROWSER_INSTANCE_ID" ] && [ "$deployment_id" = "$CBROWSER_INSTANCE_ID" ]; then
+      continue
     fi
+    if [ -z "$deployment_id" ] && [ -n "$project" ] && [ "$project" = "$PROJECT" ]; then
+      continue
+    fi
+    echo "Refusing to start: resource prefix '$PREFIX' is already used by instance (compose project '$project', container '$name')." >&2
+    echo "Choose a different CBROWSER_PREFIX/CBROWSER_COMPOSE_PROJECT for this instance." >&2
+    exit 1
   done <<< "$rows"
 }
 
@@ -410,7 +592,8 @@ load_release_identity() {
   while IFS= read -r line; do
     case "$line" in
       CBROWSER_COMPOSE_PROJECT=*|CBROWSER_PREFIX=*|CBROWSER_HTTPS_PORT=*|\
-      CBROWSER_BIND_HOST=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*)
+      CBROWSER_BIND_HOST=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*|\
+      CBROWSER_INSTANCE_ID=*|CBROWSER_MEDIA_SUBNET_POOL=*|CBROWSER_FONTS_DIR=*)
         key="${line%%=*}"
         value="${line#*=}"
         export "$key=$value"
@@ -423,31 +606,42 @@ load_release_identity() {
   BIND_HOST="${CBROWSER_BIND_HOST:-127.0.0.1}"
   DATA_ROOT="$CBROWSER_DATA_ROOT"
   SECRETS_DIR="$CBROWSER_SECRETS_DIR"
+  FONTS_DIR="${CBROWSER_FONTS_DIR:-$ROOT/data/fonts}"
 }
 
-build_and_record_release() {
-  # Builds each image once, writes <id>.env + <id>.json under releases/.
+build_api_image() {
+  # Build the API image first: the schema-generation check and the
+  # database backup run inside it, before any container is started.
+  # Building an image changes no data.  Sets API_IMAGE_ID.
   local release_id="$1"
-  local tag_api="cbrowser-api:$release_id" tag_gateway="cbrowser-gateway:$release_id"
-  local tag_supervisor="cbrowser-supervisor:$release_id" tag_browser="cbrowser-browser:$release_id"
-  local tag_stream="cbrowser-stream:$release_id"
-
+  local tag_api="cbrowser-api:$release_id"
   # Attestation manifests embed per-invocation build metadata, so an
   # otherwise identical rebuild would get a different image ID and force
   # compose to recreate healthy services. Disable them: the release
   # manifest pins the rootfs/config digest, which is what reproducibility
-  # and rollback identity depend on (t032 AC-001/AC-010).
+  # and rollback identity depend on (t032 AC-001/AC-010).  Same flags in
+  # build_and_record_release below.
+  docker build --provenance=false --sbom=false -t "$tag_api" -f config/docker/api_runtime/Dockerfile .
+  API_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$tag_api")"
+}
+
+build_and_record_release() {
+  # Builds each remaining image once, writes <id>.env + <id>.json under releases/.
+  local release_id="$1"
+  local tag_gateway="cbrowser-gateway:$release_id"
+  local tag_supervisor="cbrowser-supervisor:$release_id" tag_browser="cbrowser-browser:$release_id"
+  local tag_stream="cbrowser-stream:$release_id"
+
   docker build --provenance=false --sbom=false -t "$tag_browser" -f config/docker/browser_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_stream" -f config/docker/stream_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_supervisor" -f config/docker/supervisor_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_gateway" -f config/docker/gateway_runtime/Dockerfile .
-  docker build --provenance=false --sbom=false -t "$tag_api" -f config/docker/api_runtime/Dockerfile .
   if ! docker image inspect "$CADDY_REF" >/dev/null 2>&1; then
     docker pull "$CADDY_REF"
   fi
 
   local api_id gateway_id supervisor_id browser_id stream_id caddy_id
-  api_id="$(docker image inspect --format '{{.Id}}' "$tag_api")"
+  api_id="$API_IMAGE_ID"
   gateway_id="$(docker image inspect --format '{{.Id}}' "$tag_gateway")"
   supervisor_id="$(docker image inspect --format '{{.Id}}' "$tag_supervisor")"
   browser_id="$(docker image inspect --format '{{.Id}}' "$tag_browser")"
@@ -468,6 +662,9 @@ CBROWSER_HTTPS_PORT=$HTTPS_PORT
 CBROWSER_BIND_HOST=$BIND_HOST
 CBROWSER_DATA_ROOT=$DATA_ROOT
 CBROWSER_SECRETS_DIR=$SECRETS_DIR
+CBROWSER_FONTS_DIR=$FONTS_DIR
+CBROWSER_INSTANCE_ID=$CBROWSER_INSTANCE_ID
+CBROWSER_MEDIA_SUBNET_POOL=$CBROWSER_MEDIA_SUBNET_POOL
 CBROWSER_API_IMAGE=$api_id
 CBROWSER_GATEWAY_IMAGE=$gateway_id
 CBROWSER_SUPERVISOR_IMAGE=$supervisor_id
@@ -478,8 +675,13 @@ CBROWSER_CADDYFILE_SHA256=$caddyfile_sha
 CBROWSER_FRONTEND_SHA256=$frontend_sha
 ENV
 
-  local created_at
+  local created_at database_backup_json
   created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ -n "$DATABASE_BACKUP_PATH" ]; then
+    database_backup_json="\"$DATABASE_BACKUP_PATH\""
+  else
+    database_backup_json=null
+  fi
   cat <<JSON | atomic_write "$RELEASES_DIR/$release_id.json"
 {
   "release_id": "$release_id",
@@ -496,17 +698,16 @@ ENV
   "caddyfile_sha256": "$caddyfile_sha",
   "frontend_sha256": "$frontend_sha",
   "migration_version": "$migration",
+  "database_backup": $database_backup_json,
   "capabilities": {"readiness": true, "reconcile_all": true},
-  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT}
+  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT, "instance_id": "$CBROWSER_INSTANCE_ID", "media_subnet_pool": "$CBROWSER_MEDIA_SUBNET_POOL"}
 }
 JSON
 }
 
 cmd_deploy() {
   check_prerequisites
-  check_database_schema_generation
-  ensure_internal_secrets
-  mkdir -p "$DATA_ROOT"/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache/geoip}
+  derive_instance_identity
   check_prefix_conflict
 
   local release_id="${CBROWSER_RELEASE_ID:-}"
@@ -519,6 +720,18 @@ cmd_deploy() {
     echo "Refusing to overwrite existing release '$release_id' (releases are immutable); pick a new CBROWSER_RELEASE_ID." >&2
     exit 1
   fi
+
+  # The API image is built first so the schema check and the backup can
+  # run inside it; building an image changes no data, and no container
+  # is started and no pointer moves before the checks below pass.
+  build_api_image "$release_id"
+  check_database_schema_generation "$API_IMAGE_ID"
+  check_legacy_host_database
+  check_font_sets_preflight
+  backup_database "$API_IMAGE_ID"
+
+  ensure_internal_secrets
+  mkdir -p "$DATA_ROOT"/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache/geoip}
 
   eval "$(network_config init --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
   eval "$(network_config read --network-dir "$DATA_ROOT/network")"
@@ -538,7 +751,7 @@ cmd_deploy() {
 cmd_rollback() {
   local target="${1:-}"
   if [ -z "$target" ]; then
-    target="$(read_pointer "$PREVIOUS_FILE")"
+    target="$(read_pointer "$POINTER_FILE" previous)"
   fi
   if [ -z "$target" ]; then
     echo "No rollback target: no previous release recorded." >&2
@@ -553,10 +766,17 @@ cmd_rollback() {
   # data root, secrets) uses the target release's recorded identity.
   load_release_identity "$target_env"
   # AC-002 (t035): fail closed before anything changes when the live
-  # database belongs to the retired schema generation.
-  check_database_schema_generation
+  # database belongs to the retired schema generation.  The stamp is read
+  # inside the target release's API image.
+  local target_api
+  target_api="$(sed -n 's/^CBROWSER_API_IMAGE=//p' "$target_env")"
+  if [ -z "$target_api" ]; then
+    echo "Refusing rollback: CBROWSER_API_IMAGE missing from target release env." >&2
+    exit 1
+  fi
+  check_database_schema_generation "$target_api"
   local current
-  current="$(read_pointer "$CURRENT_FILE")"
+  current="$(read_pointer "$POINTER_FILE")"
   if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.json" ]; then
     echo "No current release recorded; nothing to roll back from." >&2
     exit 1
@@ -600,7 +820,7 @@ cmd_rollback() {
   # is provided — rebuild the data directory instead.  An absent/unstamped
   # database is left to API startup (fresh install path).
   local live_stamp
-  if ! live_stamp="$(current_db_stamp)"; then
+  if ! live_stamp="$(current_db_stamp "$target_api")"; then
     exit 1
   fi
   if [ -n "$live_stamp" ] && [ "$target_migration" != "$live_stamp" ]; then
@@ -631,10 +851,53 @@ cmd_rollback() {
   echo "  Manifest: $target_manifest"
 }
 
+cmd_restore() {
+  # restore <backup-file> : stop the stack and copy a backup back into the
+  # database volume (stale -wal/-shm removed first by db_restore.py).
+  # The backup file itself is never deleted.  The user re-deploys
+  # afterwards to start the stack against the restored database.
+  local backup_file="${1:-}"
+  if [ -z "$backup_file" ]; then
+    echo "usage: $0 restore <backup-file>" >&2
+    exit 2
+  fi
+  if [ ! -f "$backup_file" ]; then
+    echo "Restore backup '$backup_file' does not exist." >&2
+    exit 1
+  fi
+  local current
+  current="$(read_pointer "$POINTER_FILE")"
+  if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.env" ]; then
+    echo "No current release recorded; deploy once first so an API image exists to run the restore." >&2
+    exit 1
+  fi
+  # The restore runs against the current release's identity (its prefix
+  # names the database volume, its API image runs the restore container).
+  load_release_identity "$RELEASES_DIR/$current.env"
+  local api_image
+  api_image="$(sed -n 's/^CBROWSER_API_IMAGE=//p' "$RELEASES_DIR/$current.env")"
+  if [ -z "$api_image" ]; then
+    echo "Refusing restore: CBROWSER_API_IMAGE missing from current release env." >&2
+    exit 1
+  fi
+  compose_with "$RELEASES_DIR/$current.env" down
+  local backup_abs backup_name
+  backup_abs="$(cd "$(dirname "$backup_file")" && pwd)/$(basename "$backup_file")"
+  backup_name="$(basename "$backup_file")"
+  docker run --rm \
+    -v "$(db_volume_name):/db" \
+    -v "$(dirname "$backup_abs"):/backup:ro" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/db_restore.py \
+    --backup "/backup/$backup_name" --db /db/cbrowser.db
+  echo "Database restored from $backup_file into volume $(db_volume_name)."
+  echo "Re-deploy to start the stack against the restored database."
+}
+
 cmd_status() {
   local current previous
-  current="$(read_pointer "$CURRENT_FILE")"
-  previous="$(read_pointer "$PREVIOUS_FILE")"
+  current="$(read_pointer "$POINTER_FILE")"
+  previous="$(read_pointer "$POINTER_FILE" previous)"
   echo "current: ${current:-<none>}"
   echo "previous: ${previous:-<none>}"
   if [ -n "$current" ] && [ -f "$RELEASES_DIR/$current.json" ]; then
@@ -645,6 +908,7 @@ cmd_status() {
 case "$COMMAND" in
   deploy) cmd_deploy ;;
   rollback) cmd_rollback "$@" ;;
+  restore) cmd_restore "$@" ;;
   status) cmd_status ;;
-  *) echo "usage: $0 [deploy|rollback [release_id]|status]" >&2; exit 2 ;;
+  *) echo "usage: $0 [deploy|rollback [release_id]|restore <backup-file>|status]" >&2; exit 2 ;;
 esac

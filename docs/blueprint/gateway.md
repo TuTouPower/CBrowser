@@ -1,6 +1,6 @@
 # Stream Gateway
 
-本模块实现 CBrowser v2 独立认证信令 Gateway 与 Agent 健康状态转存服务（`cbrowser.gateway`）。网关作为独立 aiohttp 服务运行，对外暴露统一的 `/stream/*` 端点，对内提供 Supervisor 控制 RPC 与 API 鉴权联动。WebRTC 音视频媒体流经 host 候选直连（本机模式 `127.0.0.1`，局域网模式 `0.0.0.0`），无 TURN/coturn，绝不经过 Gateway（ADR 026 修订 ADR 013）。Origin 白名单由当前已应用的网络配置确定性派生。
+本模块实现 CBrowser 独立认证信令 Gateway 与 Agent 健康状态转存服务（`cbrowser.gateway`）。网关作为独立 aiohttp 服务运行，对外暴露统一的 `/stream/*` 端点，对内提供 Supervisor 控制 RPC 与 API 鉴权联动。WebRTC 音视频媒体流经 host 候选直连（本机模式 `127.0.0.1`，局域网模式 `0.0.0.0`），无 TURN/coturn，绝不经过 Gateway（ADR 026 修订 ADR 013）。Origin 白名单由当前已应用的网络配置确定性派生。
 
 ## 权限与部署边界
 

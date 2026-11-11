@@ -33,7 +33,10 @@
 - Agent 用 Profile 的 fontconfig 复核检测字体清单；runtime 响应与 SSE 下发实际使用的 `font_set_id` 与 `missing_fonts`，与复核结果一致（AC-007）。
 - `GET /api/v1/font-sets` 需登录会话，列出各字体集的平台、来源、版本、静态完整性（Windows 8 个 / Office 10 个 / Mac 20 个检测字体覆盖情况）与 `used_by_count`；文件被篡改或缺失时完整性显示不一致（AC-002）。导入工具生成带 manifest 的不可变字体集，相同内容重复导入得到同一 `set_id`（AC-001）。
 
-### 2.5 分发边界
+### 2.6 字体目录作为独立部署输入（t051）
+
+- 字体目录是独立部署输入，不再经 `${CBROWSER_DATA_ROOT}/fonts` 派生：compose 以 `${CBROWSER_FONTS_DIR}:/fonts:ro` 只读挂载（API 与 Supervisor 容器内 `CBROWSER_FONTS_DIR=/fonts`），`CBROWSER_FONTS_DIR` 写入 release env。默认部署时 `CBROWSER_FONTS_DIR` 指向主仓 `data/fonts`。
+- 部署时字体 preflight 只警告、永不阻塞：字体目录缺失或无有效字体集时，部署输出可执行提示（如何导入字体集），部署继续；`GET /api/v1/font-sets` 的返回以实际导入的字体集为准。
 
 - 平台字体只从官方渠道取得：macOS 取本机 `/System/Library/Fonts`、`Supplemental`、`/Library/Fonts` 与 `/System/Library/AssetsV2/` 下的苹方资源；Windows 取微软官方 Windows 11 企业评估版 ISO，经 `7zz` 从 `sources/install.wim` 提取 `Windows/Fonts`。不使用第三方字体站或 GitHub 镜像。
 - 字体不进入任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录；系统不提供字体集删除功能（AC-008）。

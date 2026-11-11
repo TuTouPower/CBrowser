@@ -12,11 +12,14 @@ services:
     image: ${CBROWSER_API_IMAGE:?run scripts/deploy.sh first}
     container_name: ${CBROWSER_PREFIX:-cbrowser}-api
     read_only: true
+    labels:
+      com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
+      com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     tmpfs:
       - /tmp:rw,size=256m
     environment:
-      CBROWSER_DB_PATH: /data/cbrowser.db
-      CBROWSER_FONTS_DIR: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts
+      CBROWSER_DB_PATH: /data/db/cbrowser.db
+      CBROWSER_FONTS_DIR: /fonts
       CBROWSER_SUPERVISOR_URL: http://supervisor:8005
       CBROWSER_REQUIRE_SUPERVISOR: "1"
       CBROWSER_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_key
@@ -24,7 +27,8 @@ services:
       CBROWSER_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:/data
-      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
+      - db:/data/db
+      - ${CBROWSER_FONTS_DIR:?set CBROWSER_FONTS_DIR}:/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/supervisor_key:/run/secrets/supervisor_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_api_key:/run/secrets/gateway_api_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/admin_password:/run/secrets/admin_password:ro
@@ -45,6 +49,8 @@ services:
       com.cbrowser.managed-by: supervisor
       com.cbrowser.role: gateway
       com.cbrowser.prefix: ${CBROWSER_PREFIX:-cbrowser}
+      com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
+      com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     tmpfs:
       - /tmp:rw,size=256m
     environment:
@@ -77,6 +83,9 @@ services:
     container_name: ${CBROWSER_PREFIX:-cbrowser}-supervisor
     read_only: true
     cap_add: [FOWNER, DAC_OVERRIDE]
+    labels:
+      com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
+      com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     tmpfs:
       - /tmp:rw,size=256m
     environment:
@@ -95,14 +104,16 @@ services:
       CBROWSER_SOCKET_ROOT: ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}
       CBROWSER_ENGINE_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache
       CBROWSER_GEOIP_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache/geoip
-      CBROWSER_FONTS_DIR: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts
+      CBROWSER_FONTS_DIR: /fonts
       CBROWSER_PREFIX: ${CBROWSER_PREFIX:-cbrowser}
+      CBROWSER_INSTANCE_ID: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
+      CBROWSER_MEDIA_SUBNET_POOL: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
       CBROWSER_MANAGE_OWNERSHIP: "1"
     command: ["--host", "0.0.0.0", "--port", "8005"]
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
       - ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}:${CBROWSER_SOCKET_ROOT:-/run/cb/socks}:rw
-      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/fonts:ro
+      - ${CBROWSER_FONTS_DIR:?set CBROWSER_FONTS_DIR}:/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/supervisor_key:/run/secrets/supervisor_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/agent_key:/run/secrets/agent_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_key:/run/secrets/gateway_key:ro
@@ -128,6 +139,9 @@ services:
   caddy:
     image: ${CBROWSER_CADDY_IMAGE:?run scripts/deploy.sh first}
     container_name: ${CBROWSER_PREFIX:-cbrowser}-caddy
+    labels:
+      com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
+      com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     environment:
       # Fingerprint carriers: when the Caddyfile or the frontend product
       # changes, only caddy's environment changes, so `up` recreates only
@@ -154,5 +168,7 @@ networks:
     name: ${CBROWSER_PREFIX:-cbrowser}-edge
 
 volumes:
+  db:
+    name: ${CBROWSER_PREFIX:-cbrowser}-db
   caddy_data:
   caddy_config:

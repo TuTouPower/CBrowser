@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- v2 五服务 Docker 拓扑：Caddy、API、Gateway、Supervisor 与双 Runtime。
+- 五服务 Docker 拓扑：Caddy、API、Gateway、Supervisor 与双 Runtime。
 - 正式 API production image、compose 部署脚本、Caddy 配置与迁移 CLI。
 - 同机 WebRTC 直连，无 coturn/TURN。
 

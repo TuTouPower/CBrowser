@@ -66,7 +66,7 @@ bash scripts/deploy.sh rollback <release_id> # 回到指定 release
 CBROWSER_COMPOSE_PROJECT=cbrowser-test \
 CBROWSER_PREFIX=cbrowser-test \
 CBROWSER_HTTPS_PORT=56662 \
-CBROWSER_DATA_ROOT=$PWD/data/test-v2 \
+CBROWSER_DATA_ROOT=$PWD/data/test-instance \
 CBROWSER_SECRETS_DIR=$PWD/config/deploy/test-secrets \
 CBROWSER_DEPLOY_DIR=$PWD/config/deploy/test-instance \
 bash scripts/deploy.sh
@@ -89,12 +89,12 @@ bash scripts/deploy.sh
 ## 8. 备份与恢复
 
 ```bash
-tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/v2
+tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/instance
 ```
 
-恢复：停止 compose，解压备份覆盖 `data/v2`，再发布。
+恢复：停止 compose，解压备份覆盖 `data/instance`，再发布。
 
-t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/v2`；legacy 迁移脚本已随该破坏性升级移除。
+t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/instance`；legacy 迁移脚本已随该破坏性升级移除。
 
 ## 9. 故障定位
 

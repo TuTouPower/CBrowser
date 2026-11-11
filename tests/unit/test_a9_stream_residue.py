@@ -75,7 +75,11 @@ def _stream_container(adapter, *, remove_error=None):
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.role": "stream",
         "com.cbrowser.profile-id": "p1",
-        "com.cbrowser.instance-id": "inst_1",
+    }
+    # The runtime instance id is verified from the container
+    # configuration (Stream env channel), not from labels.
+    container.attrs = {
+        "Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=inst_1"]}
     }
     if remove_error is not None:
         container.remove.side_effect = remove_error
@@ -145,7 +149,9 @@ async def test_unknown_identity_container_is_not_deleted(tmp_path):
     adapter, mock_client = _adapter(tmp_path)
     agent_secret, tokens_path = _stage(adapter, mock_client, tmp_path)
     container = _stream_container(adapter)
-    container.labels["com.cbrowser.instance-id"] = "different_instance"
+    container.attrs = {
+        "Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=different_instance"]}
+    }
     mock_client.containers.run.return_value = container
     adapter._install_network_policy = MagicMock(
         side_effect=DockerSandboxError("policy failed")

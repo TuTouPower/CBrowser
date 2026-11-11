@@ -86,7 +86,13 @@ def test_containers_collection_semantics_match_docker_sdk(tmp_path: Path) -> Non
     with pytest.raises(NotFound):
         fake.containers.get("any")
     assert fake.containers.list() == [staged]
-    assert staged.labels == {"com.cbrowser.instance-id": "inst-1"}
+    # The runtime instance id travels in the container configuration
+    # (production semantics), not in labels: labels start empty and the
+    # production extractor recovers the id from the Config env channel.
+    from cbrowser.supervisor.container_spec import container_runtime_instance_id
+
+    assert staged.labels == {}
+    assert container_runtime_instance_id(staged) == "inst-1"
     assert staged.status == "running"
 
 

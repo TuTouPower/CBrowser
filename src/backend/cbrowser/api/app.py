@@ -1,4 +1,4 @@
-"""FastAPI Application factory for CBrowser v2."""
+"""FastAPI Application factory for CBrowser."""
 
 from __future__ import annotations
 
@@ -48,9 +48,11 @@ from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
 from cbrowser.services.control_service import ProfileControlService
+from cbrowser.adapters.database.db_errors import classify_dbapi_error
 from cbrowser.services.profile_service import (
     ConstraintViolationError,
     DatabaseLockError,
+    DatabaseUnavailableError,
     ProfileService,
 )
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
@@ -169,7 +171,7 @@ def create_app(
             event_logger.addHandler(h)
 
         resolved_db = Path(
-            db_path or os.environ.get("CBROWSER_DB_PATH", "/data/cbrowser.db")
+            db_path or os.environ.get("CBROWSER_DB_PATH", "/data/db/cbrowser.db")
         ).resolve()
         resolved_db.parent.mkdir(parents=True, exist_ok=True)
         run_database_migrations(resolved_db)
@@ -390,8 +392,40 @@ def create_app(
 
     @app.exception_handler(DBAPIError)
     async def dbapi_error_handler(request: Request, exc: DBAPIError):
-        logger.exception(
-            "Database error: %s (%s)", type(exc).__name__, getattr(exc, "orig", "")
+        # Never log str(exc.orig): the DBAPI message carries SQL text and
+        # bound parameters.  Only the numeric code, the SQLite error name
+        # and the request line are safe to log.
+        classification = classify_dbapi_error(exc)
+        if classification.transient:
+            logger.warning(
+                "Transient database error: sqlite_errorcode=%s "
+                "sqlite_errorname=%s method=%s path=%s",
+                classification.primary_code,
+                classification.error_name,
+                request.method,
+                request.url.path,
+            )
+            message = (
+                "Database is temporarily locked, retryable operation"
+                if classification.kind in ("busy", "locked")
+                else "Database is temporarily unavailable, retryable operation"
+            )
+            return JSONResponse(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers={"Retry-After": "1"},
+                content={
+                    "error": classification.error_code,
+                    "message": message,
+                    "retryable": True,
+                },
+            )
+        logger.error(
+            "Database error: sqlite_errorcode=%s sqlite_errorname=%s "
+            "method=%s path=%s",
+            classification.primary_code,
+            classification.error_name,
+            request.method,
+            request.url.path,
         )
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -423,6 +457,20 @@ def create_app(
             content={
                 "error": "database_busy",
                 "message": "Database is temporarily locked, retryable operation",
+                "retryable": True,
+            },
+        )
+
+    @app.exception_handler(DatabaseUnavailableError)
+    async def db_unavailable_handler(
+        request: Request, exc: DatabaseUnavailableError
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            headers={"Retry-After": "1"},
+            content={
+                "error": "database_unavailable",
+                "message": "Database is temporarily unavailable, retryable operation",
                 "retryable": True,
             },
         )

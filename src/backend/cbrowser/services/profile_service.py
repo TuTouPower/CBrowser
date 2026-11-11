@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from cbrowser import font_sets
+from cbrowser.adapters.database.db_errors import classify_dbapi_error
 from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
@@ -51,6 +52,20 @@ class ProfileNotFoundError(ProfileServiceError):
 
 class DatabaseLockError(ProfileServiceError):
     def __init__(self, message: str = "Database busy or locked, retryable operation"):
+        super().__init__(message)
+
+
+class DatabaseUnavailableError(ProfileServiceError):
+    """SQLite I/O error (primary code 10): the database file is unreachable.
+
+    Distinct from a lock: the caller cannot fix this by waiting a second,
+    but the operation is still retryable, so the API answers 503 rather
+    than 500.
+    """
+
+    def __init__(
+        self, message: str = "Database temporarily unavailable, retryable operation"
+    ):
         super().__init__(message)
 
 
@@ -337,15 +352,14 @@ class ProfileService:
                 "Database constraint violation occurred"
             ) from None
 
-        orig = getattr(exc, "orig", None)
-        code = getattr(orig, "sqlite_errorcode", None)
-        name = getattr(orig, "sqlite_errorname", "")
-        if (code is not None and (code & 0xFF) in (5, 6)) or name in (
-            "SQLITE_BUSY",
-            "SQLITE_LOCKED",
-        ):
+        classification = classify_dbapi_error(exc)
+        if classification.kind in ("busy", "locked"):
             raise DatabaseLockError(
                 "Database is temporarily locked, please retry"
+            ) from None
+        if classification.kind == "io_error":
+            raise DatabaseUnavailableError(
+                "Database is temporarily unavailable, please retry"
             ) from None
         raise exc
 

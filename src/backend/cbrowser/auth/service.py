@@ -13,6 +13,7 @@ from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
+from cbrowser.adapters.database.db_errors import retry_transient_db_errors
 from cbrowser.adapters.database.models import (
     AdminModel,
     AuditEventModel,
@@ -48,6 +49,7 @@ class AuthService:
             "cbrowser_dummy_password_timing_defense_sentinel"
         )
 
+    @retry_transient_db_errors
     async def has_admin(self) -> bool:
         async with self._session_maker() as session:
             admin = (
@@ -106,6 +108,7 @@ class AuthService:
         valid, _ = await self.authenticate_admin(password, client_ip)
         return valid
 
+    @retry_transient_db_errors
     async def authenticate_admin(
         self, password: str, client_ip: str
     ) -> tuple[bool, str | None]:
@@ -158,6 +161,7 @@ class AuthService:
     def rate_limit_retry_after(self, client_ip: str) -> int:
         return self.rate_limiter.retry_after_seconds(client_ip)
 
+    @retry_transient_db_errors
     async def create_session(
         self, expire_hours: int = 12
     ) -> tuple[str, str, SessionModel]:
@@ -185,6 +189,7 @@ class AuthService:
 
         return raw_session_token, csrf_token, model
 
+    @retry_transient_db_errors
     async def get_valid_session(self, raw_session_token: str) -> SessionModel | None:
         """Validate session token against database and expiration time."""
         if not raw_session_token:
@@ -218,6 +223,7 @@ class AuthService:
 
             return row
 
+    @retry_transient_db_errors
     async def revoke_session(self, raw_session_token: str) -> bool:
         """Revoke a session by removing it from the database."""
         if not raw_session_token:
@@ -230,6 +236,7 @@ class AuthService:
             )
             return bool(res.rowcount and res.rowcount > 0)
 
+    @retry_transient_db_errors
     async def create_automation_token(
         self, name: str, profile_ids: list[str], expires_in_hours: float | None = None
     ) -> tuple[str, AutomationTokenModel]:
@@ -273,6 +280,7 @@ class AuthService:
 
         return raw_token, model
 
+    @retry_transient_db_errors
     async def list_automation_tokens(self) -> list[AutomationTokenModel]:
         """List all automation tokens without exposing secrets."""
         async with self._session_maker() as session:
@@ -289,6 +297,7 @@ class AuthService:
             )
             return list(rows)
 
+    @retry_transient_db_errors
     async def revoke_automation_token(self, token_id: str) -> bool:
         """Revoke an automation token and write audit record."""
         now = utc_now_iso()
@@ -310,6 +319,7 @@ class AuthService:
             session.add(audit)
             return True
 
+    @retry_transient_db_errors
     async def authorize_viewer(
         self,
         session_token: str,
@@ -344,6 +354,7 @@ class AuthService:
 
         return True, None
 
+    @retry_transient_db_errors
     async def resolve_automation_token_id(self, token: str) -> str | None:
         """Return the automation token row id for a presented token.
 
@@ -373,6 +384,7 @@ class AuthService:
             return None
         return row.id
 
+    @retry_transient_db_errors
     async def authorize_automation(
         self, token: str, profile_id: str, client_ip: str = "unknown"
     ) -> tuple[bool, str | None]:

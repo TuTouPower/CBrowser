@@ -22,8 +22,23 @@ class _FakeContainer:
             "com.cbrowser.prefix": "cbrowser",
             "com.cbrowser.profile-id": "p",
             "com.cbrowser.role": "browser",
-            "com.cbrowser.instance-id": instance_id,
             "com.cbrowser.config-version": str(config_version),
+        }
+        # The runtime instance id lives in the container configuration
+        # (gated entrypoint / command), as on production containers.
+        self.attrs = {
+            "Config": {
+                "Entrypoint": [
+                    "python3",
+                    "-m",
+                    "cbrowser.supervisor.gated_entrypoint",
+                    "--instance-id",
+                    instance_id,
+                    "--role",
+                    "browser",
+                ],
+                "Cmd": ["--runtime-instance-id", instance_id],
+            }
         }
         self.status = status
         self.id = f"c_{instance_id}"
@@ -58,6 +73,7 @@ class _FakeContainers:
 
 class _FakeDocker:
     resource_prefix = "cbrowser"
+    deployment_instance_id = None
 
     def __init__(self, data_root, container_status):
         self.validator = PathValidator(data_root)

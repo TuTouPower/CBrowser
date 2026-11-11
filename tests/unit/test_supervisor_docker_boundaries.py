@@ -28,9 +28,18 @@ def _adapter(tmp_path, client) -> DockerAdapter:
     )
 
 
-def _container(name: str, labels: dict) -> SimpleNamespace:
+def _container(
+    name: str, labels: dict, runtime_id: str | None = "instance_a"
+) -> SimpleNamespace:
+    env = (
+        [f"CBROWSER_RUNTIME_INSTANCE_ID={runtime_id}"] if runtime_id else []
+    )
     return SimpleNamespace(
-        id=f"id-{name}", name=name, status="running", labels=labels, attrs={"Mounts": []}
+        id=f"id-{name}",
+        name=name,
+        status="running",
+        labels=labels,
+        attrs={"Mounts": [], "Config": {"Env": env}},
     )
 
 
@@ -38,7 +47,6 @@ def _labels(**overrides) -> dict:
     labels = {
         "com.cbrowser.role": "browser",
         "com.cbrowser.profile-id": "profile_a",
-        "com.cbrowser.instance-id": "instance_a",
         "com.cbrowser.config-version": "3",
         "com.cbrowser.profile-number": "0001",
     }
@@ -47,18 +55,16 @@ def _labels(**overrides) -> dict:
 
 
 def test_scan_isolates_containers_with_bad_config_version(tmp_path) -> None:
-    """A10: missing/malformed config-version or identity labels reject only
-    that resource; valid resources in the same scan are still returned."""
+    """A10: missing/malformed config-version or identity (the runtime id
+    in the container configuration) reject only that resource; valid
+    resources in the same scan are still returned."""
     valid = _container("valid", _labels())
     missing_version = _container(
         "missing",
         {k: v for k, v in _labels().items() if "config-version" not in k},
     )
     malformed = _container("bad", _labels(**{"com.cbrowser.config-version": "abc"}))
-    no_instance = _container(
-        "ghost",
-        {k: v for k, v in _labels().items() if "instance-id" not in k},
-    )
+    no_instance = _container("ghost", _labels(), runtime_id=None)
     valid_stream = _container(
         "stream", _labels(**{"com.cbrowser.role": "stream"})
     )

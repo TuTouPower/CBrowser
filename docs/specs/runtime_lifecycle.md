@@ -57,7 +57,16 @@
 
 - 每个 Profile 有部署内唯一、永不复用的显示编号（0001、0002…），创建时分配；删除不复用、其余不重排。API 的 Profile/内部 runtime 响应暴露 `display_number`，Runtime Coordinator 启动请求携带 `profile_number`。
 - 沙箱容器命名为 `<prefix>-<NNNN>-browser|stream`，带 `com.cbrowser.profile-number`；同一 Profile 停止/重启沿用同一编号与名称。容器发现、停止与清理以标签为准，不再依赖 UUID 命名。
-- 全部沙箱显式归入聚合 compose 项目 `<prefix>-profiles`（service=browser|stream），Docker Desktop 单组呈现；部署 prefix 冲突检查把该派生项目识别为本实例自有资源，异项目仍拒绝。
+- 全部沙箱显式归入聚合 compose 项目 `<prefix>-profiles`（t051 起 service 为 `<NNNN>-browser` / `<NNNN>-stream`，见下），Docker Desktop 单组呈现；部署 prefix 冲突检查以 instance-id 标签为唯一归属依据：派生项目容器只有 instance-id 标签等于本实例 id（或标签缺失且项目为本实例项目时）才识别为本实例自有资源，标签存在且不符时拒绝。
+
+## 部署身份、沙箱归属与媒体网络超时（t051）
+
+- **部署身份标签**：部署时为实例生成确定性 `instance_id`（`sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`），写入 release 状态；compose 服务与 Supervisor 创建的全部沙箱、helper、网络都带 `com.cbrowser.instance-id=<instance_id>`（部署身份键）。运行时实例 id 不走标签，写入容器运行时配置（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取。
+- **归属唯一依据**：deploy.sh 的冲突判定与 Supervisor 的扫描都以「instance-id 标签值 == 本实例 instance_id」作为唯一归属依据，删除基于 project 名的豁免。伪造 project 标签但 instance-id 不符时拒绝；本实例沙箱缺少 instance-id 标签时不被认领（不采用、不删除）。
+- **沙箱 service 编号**：两个不同编号的 Profile 同时运行时，各自 Browser / Stream 容器的 `com.docker.compose.service` 分别为 `<NNNN>-browser` / `<NNNN>-stream` 且互不相同，`com.docker.compose.project` 仍为 `<prefix>-profiles`。
+- **前缀规则**：资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（小写、数字、下划线，不含连字符），默认 `cbrowser`（deploy.sh 与 compose 的默认值；Supervisor/runner/docker_adapter 的默认前缀为 `cbrowser-t005`）；deploy.sh 与 Supervisor 启动都在执行任何 Docker 操作前校验，含大写、空格、斜杠或连字符时失败并提示。
+- **媒体网络超时**：Docker 网络调用以超时为限（默认 30 秒，`CBROWSER_DOCKER_NETWORK_TIMEOUT` 可配）；挂起的调用使该次启动以明确错误失败，不阻塞其它 Profile 的网络创建。分配锁只覆盖 get+分配+预留阶段，不跨 Docker 创建持有；并发分配经预留子网集保证不同子网。创建冲突为错误，不重试。
+- **启动独占锁内回收**：回收严格匹配 prefix、managed-by、角色、随机名称与 instance-id 的遗留 cache-init/network-policy helper；异部署或无 instance-id 标签的 helper 不回收。
 
 ## 资源策略
 

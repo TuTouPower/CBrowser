@@ -273,7 +273,7 @@
 - 背景：`docs/plan_20261105_ui_redesign.md` WP06/WP07 要求 Profile 由「业务 Tag + 内嵌 proxy 字符串」改为「分组库 + 代理库引用」，代理密码需单一来源且不进快照/日志/SSE；同时迁移链 0001-0009 已累积 9 个修订，旧代 schema 与新模型不可增量兼容。AC-002 要求旧代 DB 失败封闭并输出重建指引。认证 SOCKS5 的引擎能力经正式 spike `s013_authenticated_socks5_engine_probe` 验证（finding `d031`）。
 - 选项：① 保留 0001-0009 链并新增增量迁移 + 兼容读取；② 折叠为单 baseline、旧代 DB 失败封闭；③ 代理密码随版本快照复制；④ 认证 SOCKS5 一律 422 拒绝。
 - 结论：
-    - **破坏性升级不留兼容层**：迁移目录只保留 `0001_baseline_v2.py`（revision `b7e1c9d4a2f3`，`down_revision=None`），删除 0001-0009。API 启动（`migrations.py` 的 `LegacySchemaError` + `REBUILD_GUIDANCE`）与 `scripts/deploy.sh`（只读探测 `alembic_version`）均对旧代 DB 失败封闭，不修改该 DB、不构建镜像、不移动 release 指针。**生产数据必须经用户批准的备份与迁移流程重建**，不自动升级、不静默删数据。
+    - **破坏性升级不留兼容层**：迁移目录只保留 `0001_baseline.py`（revision `b7e1c9d4a2f3`，`down_revision=None`），删除 0001-0009。API 启动（`migrations.py` 的 `LegacySchemaError` + `REBUILD_GUIDANCE`）与 `scripts/deploy.sh`（只读探测 `alembic_version`）均对旧代 DB 失败封闭，不修改该 DB、不构建镜像、不移动 release 指针。**生产数据必须经用户批准的备份与迁移流程重建**，不自动升级、不静默删数据。
     - **release controller 按修订链判回退下限**：`current_revision_chain()` 读取当前源码树的修订 id，旧代 release（退役 0001-0009 head）拒绝作为回退目标；同代 release 之间的发布与回退通过。删除原 `applied_migration_version` 字符串比较机制。
     - **Proxy 凭据单一来源**：密码只存 `proxies` 表；配置版本快照只存 `proxy_id` 与 `proxy_credential_revision`（无代理时为 `None`），不含密码。`update_proxy` 改连接字段时在同一事务为引用 Profile 生成新版本并广播 SSE；改 name/region/notes 不生成。Supervisor 经只读 internal 端点取凭据，Runner 挂载 0600 `proxy_credentials.json`，revision 不一致或文件缺失即失败封闭 `proxy_credentials_changed`。
     - **配置版本三分**：只改元数据（name/notes/sort_order/group_id）、只改即时策略 `capture_preview`、或提交与当前值相同的运行配置，都不生成新版本、运行中不出现待应用；只有运行配置字段值变化才生成。
@@ -329,3 +329,21 @@
     3. 彻底重构前端主题架构为 `data-theme` 与五档强调色切换。
 - 结论：采用选项 2。在不破坏任何业务代码与首帧机制的前提下，纯靠 token 管线升级完成整体视觉换肤；全部颜色对 100% 满足 WCAG AA 4.5:1 门禁；字体平滑迁移至 Inter Variable 与 JetBrains Mono Variable；圆角与阴影全局自动更新。选项 1 违背严格门禁质量铁律；选项 3 超出用户“只改主题背景字体字号、不动主界面”的明确需求范围。
 - 替代：本条修订 ADR 025 中的字体栈声明（Space Grotesk / IBM Plex 替换为 Inter / JetBrains Mono）与单字重假设（生成器扩展输出字重、行高、字距与阴影）。
+
+## 028 运行时与部署可靠性：控制面 DB 进 named volume、部署身份与发布原子性（2026-11-11，t051）
+
+- 背景：p068（2026-11-10 18:37–18:51 登录与 `/auth/session` 持续 500，日志 `disk I/O error`，自愈后 `integrity_check` 正常）根因高度疑似 WAL `-shm` wal-index 跨宿主/VM bind mount（macOS → OrbStack VM）的 mmap 与锁语义失稳；日志未记 SQLite 扩展错误码，无法区分 `SQLITE_IOERR_SHMMAP` 与 `SQLITE_IOERR_READ/WRITE`。同时应用层放大故障：`api/app.py` 的 `DBAPIError` 处理器把非 `IntegrityError` 一律映射为 500 `database_error` / `retryable=false`，`AuthService` 无重试，前端直接透传后端英文错误。review_20261110_200842 另指出：部署归属判定只凭可伪造标签（A59）、prefix 无校验且与派生命名空间重叠（A22）、发布指针两步写无 fsync（A43）、不可读库 fail-open（A44）、数据根仍带代际标识（A55）、证据与 Docker 错误脱敏规则分散（A58）。
+- 选项：
+    1. 数据库留在宿主 bind mount，只加错误码日志与重试。
+    2. 数据库迁入 compose named volume `db`，并补齐错误分级、备份/恢复、部署身份、指针原子化与去代际化（本 task 采用）。
+    3. 把 `com.cbrowser.instance-id` 复用为部署身份（A59 字面）。
+- 结论：采用选项 2。
+    - **数据库位置**：`cbrowser.db`（含 `-wal` / `-shm`）进 named volume `db`（`name: ${CBROWSER_PREFIX:-cbrowser}-db`），API 挂载 `db:/data/db`、`CBROWSER_DB_PATH=/data/db/cbrowser.db`；字体改为独立部署输入 `${CBROWSER_FONTS_DIR}:/fonts:ro`。WAL 的 `-shm` 与数据库始终同文件系统、同机。
+    - **部署身份**：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`（跨 release 稳定、跨实例区分），媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；写入 release env 与 manifest。归属判定以 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id 为唯一依据（AC-021 规定的键名），删除 project 名豁免。运行时 id 随之归位：每轮唯一的运行时实例 id 不再占用该标签，改由容器运行时配置承载（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取，两身份各行其道、互不冒充。（2026-11-11 用户裁定：初版实现以语义冲突为由自造 `com.cbrowser.deployment-id` 键、并把默认前缀改为 `cbrowser`，均被驳回；本 ADR 按规定键名与默认部署前缀 `cbrowser-t005` 落定。）
+    - **发布原子性**：`current_release` / `previous_release` 两文件改为单一 JSON `release_pointer.json`（`{"current": …, "previous": …|null}`），原子写含文件与父目录 fsync；损坏指针 fail-soft 替换。部署前容器内在线备份数据库并记入 manifest，`deploy.sh restore` 可恢复；旧宿主库只提示、不删除/移动。schema 检查先建 API 镜像再以只读挂载读 stamp，不可读库 fail-closed。
+    - **错误分级**：`SQLITE_BUSY` / `SQLITE_LOCKED` / `SQLITE_IOERR`（含扩展码，按扩展码 & 0xFF 取主码）为瞬时错误 → 503（`database_busy` / `database_unavailable`）、`retryable=true`、`Retry-After: 1`；确定性错误仍 500 / 409。`AuthService` 对瞬时错误有界重试（最多 3 次）；登录页对两类 503 显示本地化文案。日志只记 SQLite 错误码名 + 方法/路径，永不记 SQL 文本与绑定参数（`str(exc.orig)` 与 `logger.exception` 的 traceback 行都会带 SQL）。
+    - **前缀规则**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符，避免与 `<prefix>-profiles` / `<prefix>-<NNNN>` 命名空间重叠），deploy.sh 与 Supervisor 启动都在任何 Docker 操作前校验；默认部署前缀 `cbrowser-t005` 是编译内既定标识、先于该规则存在，不在校验之列（deploy.sh 自身的默认 `cbrowser` 满足规则，校验其输入不变）。
+    - **媒体网络超时**：Docker 网络调用以 30 秒为限（`CBROWSER_DOCKER_NETWORK_TIMEOUT` 可配）；分配锁只覆盖 get+分配+预留，创建在锁外执行，挂起时仅该次启动失败；创建冲突为错误，不重试。
+    - **去代际化**：产品无代际标识；迁移文件改名 `0001_baseline.py`（原名含代际后缀，revision `b7e1c9d4a2f3` 不变），现行文档/源码/脚本中的代际自指清除，由 hygiene 测试守护；例外仅 deploy.sh 的旧库探测（须写出真实旧路径）与对应断言。
+- 复查条件：真实部署（AC-013）、双实例真实 Docker（AC-014）、真实 Docker 挂起（AC-015）均未在本机验证（无 Docker 环境），须在用户机按 t032 演练补验；升级后 t051 之前创建的沙箱/网络无 instance-id 部署标签，新 Supervisor 不认领，属 A59 字面语义，由既有 orphan 路径处置。
+- 替代：选项 1 留下 bind mount 失稳根因，只治标；选项 3 破坏运行时实例查找。指针两文件 + 无 fsync、不可读库 fail-open、project 名豁免均不保留。

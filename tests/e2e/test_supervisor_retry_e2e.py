@@ -42,6 +42,8 @@ from wait import poll_until
 import httpx
 import pytest
 
+from cbrowser.supervisor.container_spec import container_runtime_instance_id
+
 from e2e_env import free_udp_port_span
 
 from e2e_env import require_e2e_env
@@ -290,7 +292,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                     )
                     for c in active_containers:
                         if (
-                            c.labels.get("com.cbrowser.instance-id") == inst_1
+                            container_runtime_instance_id(c) == inst_1
                             and c.labels.get("com.cbrowser.role") == "browser"
                         ):
                             b1_cid = c.id
@@ -399,7 +401,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                     )
                     for c in active_containers:
                         if (
-                            c.labels.get("com.cbrowser.instance-id") == inst_2
+                            container_runtime_instance_id(c) == inst_2
                             and c.labels.get("com.cbrowser.role") == "browser"
                         ):
                             b2_cid = c.id
@@ -491,7 +493,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                     )
                     for c in active_containers:
                         if (
-                            c.labels.get("com.cbrowser.instance-id") == inst_3
+                            container_runtime_instance_id(c) == inst_3
                             and c.labels.get("com.cbrowser.role") == "browser"
                         ):
                             b3_cid = c.id
@@ -581,7 +583,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
                     filters={"label": f"com.cbrowser.prefix={prefix}"}
                 ):
                     if (
-                        c.labels.get("com.cbrowser.instance-id") == curr_inst
+                        container_runtime_instance_id(c) == curr_inst
                         and c.labels.get("com.cbrowser.role") == "browser"
                     ):
                         return {"instance": curr_inst, "name": c.name, "cid": c.id}

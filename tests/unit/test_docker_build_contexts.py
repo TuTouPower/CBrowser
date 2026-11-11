@@ -142,8 +142,8 @@ def test_sensitive_paths_never_admitted_by_runtime_contexts() -> None:
     """t027 AC-002: data/, deploy secrets and scratch never enter any
     runtime build context, whatever the whitelist admits for COPY."""
     sensitive = [
-        "data/v2/cbrowser.db",
-        "data/v2/profiles/p1/profile/Default/Cookies",
+        "data/instance/cbrowser.db",
+        "data/instance/profiles/p1/profile/Default/Cookies",
         "config/deploy/secrets/admin_password",
         "config/deploy/secrets/supervisor_key",
         "config/deploy/compose.env",

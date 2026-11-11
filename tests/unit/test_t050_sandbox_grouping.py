@@ -14,28 +14,60 @@ PREFIX = "cbrowser"
 
 
 def test_browser_labels_carry_sandbox_group():
-    labels = browser_labels(PREFIX, "profile-1", "inst-1", 3, 1)
+    labels = browser_labels(PREFIX, "profile-1", 3, 1)
     assert labels["com.docker.compose.project"] == "cbrowser-profiles"
-    assert labels["com.docker.compose.service"] == "browser"
+    # t051 AC-012: the compose service carries the zero-padded profile
+    # number, so two Profiles' sandboxes are distinguishable inside the
+    # shared <prefix>-profiles group.
+    assert labels["com.docker.compose.service"] == "0001-browser"
     assert labels["com.cbrowser.profile-number"] == "0001"
     # Existing ownership labels remain the source of truth.
     assert labels["com.cbrowser.prefix"] == PREFIX
     assert labels["com.cbrowser.role"] == "browser"
     assert labels["com.cbrowser.profile-id"] == "profile-1"
-    assert labels["com.cbrowser.instance-id"] == "inst-1"
+    # No deployment identity configured: the instance-id label (the
+    # deployment instance id) is absent; runtime ids are never labels.
+    assert "com.cbrowser.instance-id" not in labels
 
 
 def test_stream_labels_carry_sandbox_group():
-    labels = stream_labels(PREFIX, "profile-1", "inst-1", 3, 1)
+    labels = stream_labels(PREFIX, "profile-1", 3, 1)
     assert labels["com.docker.compose.project"] == "cbrowser-profiles"
-    assert labels["com.docker.compose.service"] == "stream"
+    assert labels["com.docker.compose.service"] == "0001-stream"
     assert labels["com.cbrowser.profile-number"] == "0001"
     assert labels["com.cbrowser.prefix"] == PREFIX
     assert labels["com.cbrowser.role"] == "stream"
 
 
+def test_sandbox_labels_carry_instance_id():
+    """t051 AC-021: every sandbox and helper carries the deployment
+    identity under the com.cbrowser.instance-id label. The per-launch
+    runtime instance id is not a label at all; it travels in the
+    container's runtime configuration."""
+    from cbrowser.supervisor.container_spec import (
+        cache_init_labels,
+        policy_helper_labels,
+        x11_helper_labels,
+    )
+
+    browser = browser_labels(PREFIX, "profile-1", 3, 1, deployment_id="dep-1")
+    assert browser["com.cbrowser.instance-id"] == "dep-1"
+    stream = stream_labels(PREFIX, "profile-1", 3, 1, deployment_id="dep-1")
+    assert stream["com.cbrowser.instance-id"] == "dep-1"
+    assert stream["com.docker.compose.service"] == "0001-stream"
+    helper = policy_helper_labels(PREFIX, deployment_id="dep-1")
+    assert helper["com.cbrowser.instance-id"] == "dep-1"
+    assert x11_helper_labels(PREFIX, deployment_id="dep-1")["com.cbrowser.instance-id"] == "dep-1"
+    assert cache_init_labels(PREFIX, deployment_id="dep-1")["com.cbrowser.instance-id"] == "dep-1"
+    # No deployment id configured: the label is absent (not empty), so an
+    # unlabelled container is never claimed as ours.
+    assert "com.cbrowser.instance-id" not in browser_labels(
+        PREFIX, "profile-1", 3, 1
+    )
+
+
 def test_group_follows_deployment_prefix():
-    labels = browser_labels("inst-b", "profile-1", "inst-1", 1, 7)
+    labels = browser_labels("inst-b", "profile-1", 1, 7)
     assert labels["com.docker.compose.project"] == "inst-b-profiles"
     assert labels["com.cbrowser.profile-number"] == "0007"
 
@@ -114,10 +146,10 @@ def test_scan_recovers_number_from_labels_and_rejects_missing(tmp_path):
             "com.cbrowser.managed-by": "supervisor",
             "com.cbrowser.role": "browser",
             "com.cbrowser.profile-id": "p1",
-            "com.cbrowser.instance-id": "i1",
             "com.cbrowser.config-version": "1",
             "com.cbrowser.profile-number": "0003",
         },
+        attrs={"Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=i1"]}},
     )
     bad = SimpleNamespace(
         id="c2",
@@ -128,9 +160,9 @@ def test_scan_recovers_number_from_labels_and_rejects_missing(tmp_path):
             "com.cbrowser.managed-by": "supervisor",
             "com.cbrowser.role": "browser",
             "com.cbrowser.profile-id": "p2",
-            "com.cbrowser.instance-id": "i2",
             "com.cbrowser.config-version": "1",
         },
+        attrs={"Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=i2"]}},
     )
     client = MagicMock()
     client.containers.list.return_value = [good, bad]
@@ -206,12 +238,15 @@ def test_scan_keeps_number_and_name_across_restarts(tmp_path):
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.role": "browser",
         "com.cbrowser.profile-id": "p1",
-        "com.cbrowser.instance-id": "i1",
         "com.cbrowser.config-version": "1",
         "com.cbrowser.profile-number": "0005",
     }
     container = SimpleNamespace(
-        id="c1", name="legacy-name", status="running", labels=labels
+        id="c1",
+        name="legacy-name",
+        status="running",
+        labels=labels,
+        attrs={"Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=i1"]}},
     )
 
     def adapter():

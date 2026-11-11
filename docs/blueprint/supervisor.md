@@ -1,6 +1,6 @@
 # Runtime Supervisor
 
-本模块实现 t005 生命周期协调。正式 v2 入口、用户鉴权与 Gateway 交付分别由 t006/t012 集成；当前旧服务入口尚未切换。阶段验收状态以 t005 task、review 和交接记录为准。
+本模块实现 t005 生命周期协调。正式入口、用户鉴权与 Gateway 交付分别由 t006/t012 集成；当前旧服务入口尚未切换。阶段验收状态以 t005 task、review 和交接记录为准。
 
 ## 权限与数据所有权
 
@@ -19,6 +19,13 @@ Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。�
 媒体网络自 t026 起使用固定端点规格（d029）：Supervisor 从可配置地址池（默认 `10.251.0.0/16`、每 Profile 一个 /24）显式分配 subnet 与 ip_range（subnet 低半段），Gateway 固定附着在 subnet 内、range 外的端点（广播地址前一可用地址），规格以网络标签记录（`com.cbrowser.media-spec=fixed-endpoint-v1` 等）。分配必须避开全部既有 Docker 网络与宿主路由；池耗尽、subnet 冲突、端点被其他容器占用或标签/IPAM 不一致都显式失败，绝不退回 Docker 自动 subnet 或随机地址。既有不合规网络不做原地修改（Docker 不支持），由收敛器经 Stream-only 替换重建迁移。Gateway 身份每轮按标签（prefix + managed-by + role=gateway）重新解析，配置的静态容器 ID 只作兜底；Gateway 被替换后在同一固定端点重新附着，不重建 Browser/Stream。
 
 引擎初始化通过临时 helper 完成，然后以只读挂载交付 Browser。SDK 初始化显式 pin `get_chromium_version()`，与 Runtime 使用相同引擎版本；不在 helper 失败后用盲目重试掩盖初始化错误。
+
+## 部署身份、扫描归属与媒体网络超时（t051）
+
+- **部署身份**：部署时为实例生成确定性 `instance_id`（`sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`），经 `CBROWSER_INSTANCE_ID` 传入 Supervisor；compose 服务与 Supervisor 创建的全部沙箱、helper、网络都带 `com.cbrowser.instance-id=<instance_id>`（部署身份键）。每轮启动唯一的运行时 id 不走标签：写入容器运行时配置（Stream 环境变量、gated entrypoint、Browser 命令参数），扫描/查找/回收从配置读取。
+- **扫描归属**：容器扫描、helper 清理、Gateway 扫描与 Browser 查找都以「instance-id 标签值 == 本实例 instance_id」为唯一归属依据；缺失或不符的资源不认领、不删除、不清理。未配置 deployment id 时沿用旧行为（prefix 下全部资源视为己方）。
+- **前缀规则**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），默认部署前缀 `cbrowser-t005`；Supervisor 启动对显式提供的前缀（`--prefix` / `CBROWSER_PREFIX`）在持锁与任何 Docker 调用前校验，DockerAdapter 构造不校验（收到的已是校验后的值或编译内默认）。纯标签 helper 不校验（直接构造标签的测试不受影响）。
+- **媒体网络超时**：Docker 网络调用以超时为限（默认 30 秒，`CBROWSER_DOCKER_NETWORK_TIMEOUT` 可配）；`_ensure_media_network` 的分配锁只覆盖 get+分配+预留阶段，`networks.create` 在锁外经线程 join 超时执行，挂起时该次启动以明确错误失败，不阻塞其它 Profile。并发分配经预留子网集保证不同子网，成功/失败均释放预留；创建冲突为错误，不重试。同一 Profile 的创建在生产路径上由 core 的 per-profile 锁串行化。
 
 ## 平台字体集只读挂载与失败封闭（t041）
 
@@ -62,7 +69,7 @@ API 已绑定但尚无对应 Browser 的启动中断，通过稳定 missing_runt
 
 Browser 仅允许 loopback、已建立连接及公共目的地址，私有与保留地址默认拒绝；配置代理只按明确解析的地址和端口例外放行。Stream 仅允许实际 Gateway 地址/端口、本实例 UDP mux、显式白名单与同机直连所需流量；私有与保留地址仍拒绝。IPv6 仅放行带 hop-limit 255 的必要邻居发现类型，不全量放行 ICMPv6。端点 DNS 在 gated Runtime 内解析，私密代理 URL 不传入 helper。
 
-Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和匹配 ready 标记的 Runtime。启动独占锁内先清理严格匹配 prefix、managed-by、角色及随机名称的遗留 cache-init/network-policy helper；周期扫描不执行此清理，避免中断当前安装。
+Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和匹配 ready 标记的 Runtime。启动独占锁内先清理严格匹配 prefix、managed-by、角色、随机名称与 instance-id 的遗留 cache-init/network-policy helper；周期扫描不执行此清理，避免中断当前安装。
 
 真实无过滤 TCP 正负对照、IPv6 私有 echo 拒绝、策略重复安装拒绝及双 Profile 容器拓扑已取得定向证明。完整阶段状态仍以最终源门禁、独立 review 和 task 验收为准，不能以历史候选镜像通过代替当前源验证。
 

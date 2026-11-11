@@ -47,7 +47,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
       │     └── /stream/* ──► cbrowser-stream-gateway
       │
       ├── cbrowser-api（FastAPI，唯一 SQLite 写入者）
-      │     ├── SQLite (WAL, busy_timeout=5000) + Alembic 持久化
+      │     ├── SQLite (WAL, busy_timeout=5000) + Alembic 持久化（named volume `db`，`/data/db/cbrowser.db`，t051）
       │     ├── Profile Service / Artifact Service
       │     └── Runtime Coordinator（内部认证 RPC 通道）
       │           │
@@ -84,6 +84,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 ### 3.1 发布与实例身份（t027）
 
 发布由 `scripts/deploy.sh` 单一入口执行，交付物是不可变 release：六个镜像（API、Gateway、Supervisor、Browser、Stream、Caddy）以镜像 ID 固定在 `config/deploy/releases/<release_id>.{env,json}`，连同 compose/Caddyfile/前端产物指纹与数据库迁移版本；compose 全部服务镜像只读 release 变量、无 build 块。发布与回退都以 t026 的 `reconcile_all` + `readiness` 为唯一验收（经 `docker compose exec` 在 Supervisor 容器内执行探针，宿主机不持密钥、无新增端口），验收通过后才原子移动 current/previous 指针。回退在目标 release 缺 readiness 能力、目标 head 与当前 DB 实际 stamp 不等（无降级：同代旧 head 与跨代旧 release 均拒绝，含旧 t042，不做 `ALLOWED_ORIGINS` 兼容）、或工作树 compose 指纹与目标 `compose_sha256` 不一致时变更前拒绝。实例身份（compose 项目、容器名、资源 prefix、edge 网络、数据根、secrets 目录、HTTPS 端口）全部参数化，第二实例可同 daemon 并存；prefix 被异项目占用时启动前拒绝。细节契约见 `docs/specs/release_deployment.md` 与 ADR 017。
+
+### 3.2 部署身份、数据库位置与发布指针（t051）
+
+部署身份确定性派生：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`，媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；两者写入 release env 与 manifest。归属判定以 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id 为唯一依据（该键即部署身份键，AC-021）；每轮唯一的运行时实例 id 不走标签，写入容器运行时配置（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取。project 名豁免已删除。控制面数据库在 named volume `db`（`/data/db/cbrowser.db`），字体为独立部署输入（`${CBROWSER_FONTS_DIR}:/fonts:ro`）。发布指针为单一 JSON 文件 `config/deploy/release_pointer.json`（`{"current": …, "previous": …|null}`），原子写含文件与父目录 fsync。部署前对数据库做在线备份并记入 manifest，`deploy.sh restore` 可恢复。细节见 ADR 028。
 
 ## 4. 核心模块与职责划分
 
@@ -144,7 +148,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 - 用户只经 `/api/v1` 修改运行意愿（`PATCH /api/v1/profiles/{id}/runtime/desired-state` 或 stop）。API 先持久化意愿，再由进程内 Runtime Coordinator 经内部认证 RPC 请求 Supervisor 启动/停止该 Profile 的 Browser/Stream；前端与测试都不直调 Supervisor。
 - Supervisor 不可达或 RPC 失败时意愿保留，错误写入 `last_coordinator_error` 并经 API 响应与 SSE `runtime_state` 事件显式报告；Coordinator 按指数退避重试直至收敛，成功即清空错误；API 启动时对意愿与观测不一致的 Profile 同样发起收敛。
-- Profile 拥有部署内唯一、永不复用的 `display_number`（0001…）；Supervisor 用它命名沙箱容器 `<prefix>-<NNNN>-browser|stream`，写 `com.cbrowser.profile-number` 与聚合标签 `com.docker.compose.project=<prefix>-profiles` / `service=browser|stream`，使 Docker UI 单组展示全部沙箱且与产品编号对应（t050）。
+- Profile 拥有部署内唯一、永不复用的 `display_number`（0001…）；Supervisor 用它命名沙箱容器 `<prefix>-<NNNN>-browser|stream`，写 `com.cbrowser.profile-number` 与聚合标签 `com.docker.compose.project=<prefix>-profiles` / `service=<NNNN>-browser|<NNNN>-stream`（t051 前为 `service=browser|stream`），使 Docker UI 单组展示全部沙箱且与产品编号对应（t050）。
 - 存量沙箱恢复（Supervisor 重启或部署升级重建 Gateway/Supervisor）不依赖 Gateway 可见性或注册读数：按容器 label 与 API instance fence 判定实例一致后恢复端口与 session，并在同一轮扫描内完成媒体网络附着；Gateway 按 label 动态解析，媒体挂载收敛与内存 session 解耦（t049）。
 - Coordinator 需显式配置 `CBROWSER_SUPERVISOR_URL` 与 `CBROWSER_SUPERVISOR_TOKEN_FILE`。缺失时 API 仍可启动但 Coordinator 显式禁用：启动警告一次，且每次意愿变更以 `last_coordinator_error="Supervisor is not configured"` 报告。设置 `CBROWSER_REQUIRE_SUPERVISOR=1` 时缺失配置使 API 启动失败；生产部署（t012）必须启用该模式。
 

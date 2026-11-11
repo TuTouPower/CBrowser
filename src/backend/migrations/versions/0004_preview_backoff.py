@@ -1,6 +1,6 @@
 """0004: restore preview epoch and supervisor backoff columns (t040/t039).
 
-0001_baseline_v2.py is immutable (t035): the t039 backoff deadline facts
+0001_baseline.py is immutable (t035): the t039 backoff deadline facts
 (backoff_started_at/next_retry_at) and the t040 preview policy epoch plus
 preview capture timestamp (capture_preview_epoch/preview_captured_at) were
 added to 0001 in place and are moved here as an incremental migration.
@@ -9,7 +9,8 @@ column carries server_default="0" so existing rows are backfilled, the
 three runtime columns are nullable with no default.
 
 Idempotency: databases created from the 1a6ec51-era 0001 already contain
-all four columns while stamped at 0002/0003 (e.g. live data/v2). The
+all four columns while stamped at 0002/0003 (e.g. live databases
+from the 1a6ec51 era). The
 upgrade only adds columns reported missing by the inspector, and the
 downgrade only drops columns still present, so re-running this revision
 against either shape is a no-op instead of a duplicate-column failure.

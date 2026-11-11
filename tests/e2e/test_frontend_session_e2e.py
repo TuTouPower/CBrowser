@@ -22,6 +22,9 @@ from typing import Any
 
 import httpx  # noqa: E402
 import pytest  # noqa: E402
+from cbrowser.supervisor.container_spec import (  # noqa: E402
+    container_runtime_instance_id,
+)
 from frontend_probe.harness import FrontendTopologyHarness  # noqa: E402
 from gateway_probe.browser_oracle import browser_eval  # noqa: E402
 from playwright.async_api import Page, async_playwright  # noqa: E402
@@ -346,7 +349,7 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
                 f"{browser_box.status}"
             )
             assert (
-                browser_box.labels.get("com.cbrowser.instance-id")
+                container_runtime_instance_id(browser_box)
                 == profile["runtime_instance_id"]
             ), "Browser instance changed after closing viewer"
             stream_box = client.containers.get(profile["stream_container"])
@@ -355,7 +358,7 @@ async def test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close
                 f"{stream_box.status}"
             )
             assert (
-                stream_box.labels.get("com.cbrowser.instance-id")
+                container_runtime_instance_id(stream_box)
                 == profile["runtime_instance_id"]
             ), "Stream instance changed after closing viewer"
 

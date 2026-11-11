@@ -219,16 +219,20 @@ def test_container_spec_browser_volumes_and_labels(tmp_path: Path) -> None:
         "bind": "/data/engine-cache/geoip",
         "mode": "ro",
     }
-    labels = browser_labels("cb", "p1", "i1", 3, 1)
+    labels = browser_labels("cb", "p1", 3, 1)
     # t050 adds the sandbox grouping labels; the ownership contract below
     # is unchanged and remains the source of truth.
     assert labels.pop("com.docker.compose.project") == "cb-profiles"
     assert labels.pop("com.cbrowser.profile-number") == "0001"
-    assert labels.pop("com.docker.compose.service") == "browser"
+    # t051 AC-012: the compose service carries the zero-padded profile
+    # number (was the bare role "browser" before t051).
+    assert labels.pop("com.docker.compose.service") == "0001-browser"
+    # No deployment identity configured: no instance-id label (that key
+    # carries the deployment instance id only); runtime ids are never
+    # labels.
     assert labels == {
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.profile-id": "p1",
-        "com.cbrowser.instance-id": "i1",
         "com.cbrowser.role": "browser",
         "com.cbrowser.network-policy": "v1",
         "com.cbrowser.config-version": "3",
@@ -271,7 +275,7 @@ def test_container_spec_stream_specs(tmp_path: Path) -> None:
     for removed in ("SELKIES_STUN_HOST", "SELKIES_TURN_HOST", "SELKIES_TURN_PORT"):
         assert removed not in env
     assert stream_ports(30006) == {"30006/udp": ("127.0.0.1", 30006)}
-    assert stream_labels("cb", "p1", "i1", "3", 1)["com.cbrowser.role"] == "stream"
+    assert stream_labels("cb", "p1", "3", 1)["com.cbrowser.role"] == "stream"
 
 
 def test_container_spec_cache_specs() -> None:

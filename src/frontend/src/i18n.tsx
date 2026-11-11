@@ -40,6 +40,8 @@ export const en = {
   authenticating: "Authenticating...",
   unlock: "Unlock",
   loginFailed: "Login failed",
+  loginDatabaseUnavailable:
+    "Database temporarily unavailable. Please try again in a moment.",
   logOut: "Log out",
 
   // App chrome
@@ -531,6 +533,7 @@ export const zh = {
   authenticating: "验证中...",
   unlock: "解锁",
   loginFailed: "登录失败",
+  loginDatabaseUnavailable: "数据库暂时不可用，请稍后再试。",
   logOut: "退出登录",
 
   hideSidebar: "隐藏侧边栏",

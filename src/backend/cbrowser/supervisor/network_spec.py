@@ -22,17 +22,39 @@ def browser_network_name(prefix: str, profile_id: str) -> str:
     return f"{prefix}-browser-net-{profile_id}"
 
 
-def network_labels(prefix: str, profile_id: str) -> dict[str, str]:
-    return {
+def network_labels(
+    prefix: str,
+    profile_id: str,
+    *,
+    deployment_id: str | None = None,
+) -> dict[str, str]:
+    labels = {
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.profile-id": profile_id,
         "com.cbrowser.prefix": prefix,
     }
+    if deployment_id:
+        labels["com.cbrowser.instance-id"] = deployment_id
+    return labels
 
 
 def network_ownership_matches(
-    prefix: str, name: str, labels: dict[str, Any]
+    prefix: str,
+    name: str,
+    labels: dict[str, Any],
+    *,
+    deployment_id: str | None = None,
 ) -> bool:
+    """Ownership for a network from its labels and name (A59/AC-021).
+
+    Deployment identity is the sole test when either side provides it:
+    the network must carry the same instance-id value (the deployment
+    instance id). A missing or mismatched label means "not ours" --
+    never claim, never delete. With no deployment id on either side,
+    the legacy name+prefix+managed-by check applies.
+    """
+    if deployment_id is not None or "com.cbrowser.instance-id" in labels:
+        return labels.get("com.cbrowser.instance-id") == deployment_id
     profile_id = labels.get("com.cbrowser.profile-id")
     return (
         isinstance(profile_id, str)

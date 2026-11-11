@@ -471,7 +471,7 @@ class GatewayTopologyHarness:
             read_only=True,
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
-                "CBROWSER_DB_PATH": "/data/cbrowser.db",
+                "CBROWSER_DB_PATH": "/data/db/cbrowser.db",
                 # The automation tunnel is gated on the API coordinator
                 # being enabled (t031); the production stack sets both,
                 # so the harness must too or every CDP handshake closes

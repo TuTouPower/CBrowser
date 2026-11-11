@@ -19,10 +19,21 @@ from docker.errors import NotFound
 
 
 class FakeContainer:
-    """Minimal container record: labels + status, as the adapter reads."""
+    """Minimal container record: runtime config + status, as readers use.
+
+    The per-launch runtime instance id lives in the container's runtime
+    configuration (the Stream environment channel), mirroring
+    production; ``com.cbrowser.instance-id`` is a label only for the
+    deployment instance id, so labels start empty.
+    """
 
     def __init__(self, instance_id: str, status: str = "running") -> None:
-        self.labels = {"com.cbrowser.instance-id": instance_id}
+        self.labels: dict[str, str] = {}
+        self.attrs = {
+            "Config": {
+                "Env": [f"CBROWSER_RUNTIME_INSTANCE_ID={instance_id}"],
+            }
+        }
         self.status = status
 
 
@@ -71,6 +82,8 @@ class FakeDockerAdapter:
 
         self.validator = PathValidator(data_root)
         self.resource_prefix = resource_prefix
+        # Mirrors an unconfigured DockerAdapter: no deployment identity.
+        self.deployment_instance_id: str | None = None
         self.containers = FakeContainers()
         self.client = fake_docker_client()
         # Keep the client's containers the same object as the adapter's so

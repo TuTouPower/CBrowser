@@ -337,6 +337,34 @@ bash scripts/run_automation_probe.sh
 |AC-008|镜像层与 git 仓库无平台字体；部署 / 发布脚本不复制字体目录；task worktree 经 `.worktreeinclude` 共享同一字体目录|`docker save` 镜像层扫描 + 仓库扫描 + 脚本静态检查|
 |AC-009|`font_bundle` 字段、镜像字体包、代码与文档引用一并删除，扫描为空|全仓 grep 为空 + 增量迁移 `0002_fingerprint_platform.py` 删除列|
 
+## t051 运行时与部署可靠性验收映射
+
+下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
+
+|AC|行为|测试 / 证据|
+|---|---|---|
+|AC-001|数据库文件（含 `-wal` / `-shm`）不位于任何宿主 bind mount 上|compose 结构测试（`test_t027_release_controller.py` 的 compose 断言）|
+|AC-002|schema 代际检查在新存储位置上仍按原语义放行/拒绝，且不以写模式打开数据库|fake Docker 驱动 `deploy.sh`（旧代拒绝、合法代际放行）；`db_inspect.py` 单元测试|
+|AC-003|部署前备份产生宿主可取得的数据库副本；用该副本恢复后 API 正常启动且数据一致|fake Docker 备份+恢复往返测试；`db_backup.py` / `db_restore.py` 单元测试|
+|AC-004|volume 无库而宿主旧路径存在 `cbrowser.db` 时部署提示位置与处置方式，旧文件不被删除/覆盖|fake Docker 旧库提示测试|
+|AC-005|瞬时数据库错误（BUSY/LOCKED/IOERR 含扩展码）返回 503、稳定错误码、`retryable=true`；确定性错误响应不变|`test_t051_db_errors.py`（分级矩阵、API 503 形状）|
+|AC-006|登录建会话遇有限次瞬时故障后恢复则成功；持续超限返回可重试错误，不返回 500|真实 SQLite 库上的登录重试恢复 + 持久失败测试；`test_api_subprocess.py` 真实 busy 超时用例|
+|AC-007|数据库错误日志含 SQLite 错误码名、方法与路径，不含 SQL 参数值、密码、会话 token|`test_t051_db_errors.py`（日志断言）；`str(exc.orig)` 永不记入日志|
+|AC-008|登录页收到可重试数据库错误时显示当前界面语言的本地化文案，不显示后端英文原文|`LoginPage.test.tsx`（503 两类错误码 + 401 透传对照）|
+|AC-009|默认部署时 API 与 Supervisor 看到主仓 `data/fonts` 中的字体集；`CBROWSER_FONTS_DIR` 可覆盖|fake Docker 字体 preflight 测试；compose 结构测试|
+|AC-010|字体目录缺失或无有效集时部署输出可执行提示；字体路径一致性由测试断言|fake Docker 字体警告/有效集测试；`check_font_sets.py` 单元测试|
+|AC-011|Browser、Stream 及辅助容器启动失败时异常与日志含 Docker 原始错误信息，凭据类内容已脱敏|`test_t051_shared_redaction.py`、`test_t051_docker_error_detail.py`（脱敏形态矩阵）|
+|AC-012|两不同编号 Profile 的 Browser/Stream 的 `com.docker.compose.service` 分别为 `<NNNN>-browser` / `<NNNN>-stream`，project 仍为 `<prefix>-profiles`|`test_t050_sandbox_grouping.py`、`test_refactor_behavior_equivalence.py`|
+|AC-013|真实部署后登录、Profile 出图、named volume、设置页字体集、OrbStack 分组|**跳过（本机无 Docker）**；替代：AC-001 结构断言 + fake Docker 全流程测试；真实部署须在用户机验证|
+|AC-014|同一 daemon 两实例媒体子网池互不重叠，池重叠部署失败并提示；两实例并发启动 Profile 不因子网冲突失败|fake Docker 池重叠拒绝/放行测试；并发三 Profile 分配不同子网测试；**真实双实例 Docker 部分跳过**，须在用户机验证|
+|AC-015|Docker 网络 API 挂起超超时时该次启动明确失败，其它 Profile 网络创建不被阻塞|阻塞式 fake client 超时测试（0.2s 超时、并发 fast 成功、预留释放）；**真实 Docker 挂起部分跳过**，须在用户机验证|
+|AC-016|prefix 含大写、空格、斜杠或 `-` 时 deploy.sh 与 Supervisor 启动均在任何 Docker 操作前失败并提示|fake Docker prefix 校验测试；`test_t051_supervisor_identity.py`（校验矩阵、runner main 拒绝）|
+|AC-017|deploy.sh 写发布指针任意步骤中断后 current/previous 仍一致，rollback 可执行|fake Docker JSON 指针 + 损坏指针替换测试|
+|AC-018|数据库文件存在但不可读时 deploy 与 rollback 都在启动/替换任何容器前拒绝|fake Docker 不可读库 fail-closed 测试（`db_inspect.py` 单元测试）|
+|AC-019|默认数据根、现行文档、源码与脚本不含产品代际标识；新增时 hygiene 测试失败|`test_t051_generation_hygiene.py`（15 模式全仓扫描）|
+|AC-020|证据脱敏与 Docker 错误脱敏对 URL 内嵌凭据、任意 cookie 值、含空格敏感值与家目录路径均输出脱敏占位|`test_t051_shared_redaction.py`（参数化矩阵）|
+|AC-021|容器 project 标签伪造为本实例分组但 instance-id 不符时 deploy.sh 拒绝、Supervisor 不认领；缺 instance-id 标签不被认领|fake Docker 伪造 project 拒绝测试；`test_t051_supervisor_identity.py`（三处扫描过滤、helper 清理、core lookup 过滤器）|
+
 ## t044 门禁并行化与验证工具
 
 本节的机械锚点仍是上文 `doctor_cmd` / `test_cmd` / `blackbox_verify` 章节命令；日常全量门禁唯一入口 `scripts/run_gates.sh`，E2E 必需模式入口 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，命令形式不变。需求级契约见 `docs/specs/gate_verification.md`。

@@ -57,6 +57,7 @@ from cbrowser.runtime_agent.protocol import (
 )
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.supervisor.container_spec import container_runtime_instance_id
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
@@ -1805,18 +1806,29 @@ class SupervisorCore:
         Unlike name-based lookup this works for restored and renamed
         sandboxes; unlike a blind first-container read it distinguishes a
         missing sandbox from another instance's sandbox (fence violation).
+        Candidate ownership is filtered by labels; the per-launch runtime
+        instance is then matched from each candidate's runtime
+        configuration (``com.cbrowser.instance-id`` is the deployment
+        identity, not the runtime session).
         """
         try:
+            label_filters = [
+                f"com.cbrowser.prefix={self.docker.resource_prefix}",
+                f"com.cbrowser.profile-id={profile_id}",
+                "com.cbrowser.role=browser",
+            ]
+            # A59/AC-021: when this deployment has an identity, only its
+            # own sandboxes are candidates; another deployment's sandbox
+            # is never even returned for the runtime instance comparison.
+            if self.docker.deployment_instance_id:
+                label_filters.append(
+                    "com.cbrowser.instance-id="
+                    f"{self.docker.deployment_instance_id}"
+                )
             containers = await asyncio.to_thread(
                 self.docker.client.containers.list,
                 all=True,
-                filters={
-                    "label": [
-                        f"com.cbrowser.prefix={self.docker.resource_prefix}",
-                        f"com.cbrowser.profile-id={profile_id}",
-                        "com.cbrowser.role=browser",
-                    ]
-                },
+                filters={"label": label_filters},
             )
         except NotFound:
             return BrowserContainerLookup(_BROWSER_MISSING)
@@ -1825,16 +1837,13 @@ class SupervisorCore:
         if not containers:
             return BrowserContainerLookup(_BROWSER_MISSING)
         for container in containers:
-            labels = getattr(container, "labels", None) or {}
-            if labels.get("com.cbrowser.instance-id") == instance_id:
+            if container_runtime_instance_id(container) == instance_id:
                 return BrowserContainerLookup(
                     _BROWSER_FOUND,
                     container_status=getattr(container, "status", None),
                     observed_instance_id=instance_id,
                 )
-        observed = (getattr(containers[0], "labels", None) or {}).get(
-            "com.cbrowser.instance-id"
-        )
+        observed = container_runtime_instance_id(containers[0])
         return BrowserContainerLookup(
             _BROWSER_INSTANCE_MISMATCH, observed_instance_id=observed
         )

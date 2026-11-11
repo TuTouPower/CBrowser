@@ -2,7 +2,7 @@
 
 # 持久化架构与单写者契约 (persistence)
 
-本文定义 CBrowser v2 系统的持久化架构、数据库写入归属、t035 单一 baseline 修订创建的数据表模型、配置版本不可变快照及运行状态收敛契约。
+本文定义 CBrowser 系统的持久化架构、数据库写入归属、t035 单一 baseline 修订创建的数据表模型、配置版本不可变快照及运行状态收敛契约。
 
 ## 1. 架构定位与单写者边界
 
@@ -105,6 +105,14 @@
     - 退出原因（`exit_reason`）通过安全枚举白名单清洗，未知非白名单原因归一化为 `custom_reason`，阻止注入任意私密载荷。
     - 全局异常处理器不向日志或响应体泄漏 SQL 绑定参数或堆栈细节。
     - 请求校验失败（HTTP 422）响应体剔除原始输入反射，防止日志和错误体回显敏感密码、Token、Cookie 或剪贴板字符串。
+
+## 6. 控制面数据库存储位置与错误分级（t051）
+
+- **存储位置**：控制面数据库（含 `-wal` / `-shm`）位于 compose named volume `db`（`name: ${CBROWSER_PREFIX:-cbrowser}-db`），API 挂载 `db:/data/db`、`CBROWSER_DB_PATH=/data/db/cbrowser.db`；数据库文件不位于任何宿主 bind mount 上。根因：SQLite WAL 要求所有进程同机共享内存，`-shm` wal-index 跨宿主/VM bind mount（macOS → OrbStack VM）时 mmap 与锁语义失稳（p068：2026-11-10 登录持续 500 `disk I/O error`，自愈后 `integrity_check` 正常）；named volume 使数据库、WAL 与 `-shm` 始终同文件系统、同机。
+- **部署前备份与恢复**：`deploy.sh` 在 `up` 前对有 live stamp 的数据库做容器内在线备份（`sqlite3 Connection.backup()`），副本存宿主可取得的 `$DEPLOY_DIR/backups/cbrowser-<ts>.db`，路径记入 manifest `database_backup`；`deploy.sh restore <backup-file>` 可把备份拷回 volume（须有当前 release，永不删除备份文件）。volume 无库但宿主旧路径存在时部署提示旧库位置与处置方式，旧文件不被删除、移动或覆盖。
+- **错误分级**：`SQLITE_BUSY` / `SQLITE_LOCKED` / `SQLITE_IOERR`（含扩展码，按扩展码 & 0xFF 取主码）为瞬时错误，API 返回 503（`database_busy` / `database_unavailable`）、`retryable=true`、`Retry-After: 1`；确定性错误仍 500 `database_error` / `retryable=false`，`IntegrityError` 仍 409。锁争用超过 `busy_timeout=5000` 时仍按 §1 返回 503（错误码现为 `database_busy`）。
+- **日志定性**：数据库错误日志包含 SQLite 错误码名（`sqlite_errorcode` / `sqlite_errorname`）、请求方法与路径，不包含 SQL 文本、绑定参数值、密码或会话 token。`str(exc.orig)` 含 SQL 与绑定参数，禁止记入日志；`logger.exception` 的 traceback 行同样会带 SQL 文本，故数据库错误日志用不带 exc_info 的 `logger.error` / `logger.warning`。
+- **迁移文件**：单 baseline 修订 `b7e1c9d4a2f3` 的文件名为 `0001_baseline.py`（t051 由带代际后缀的旧名改名，revision 不变；产品无代际标识）。
 
 ## Profile 复制与重置的目录一致性
 

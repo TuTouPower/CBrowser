@@ -1,4 +1,4 @@
-"""Structured runtime-event logging for the v2 backend.
+"""Structured runtime-event logging for the backend.
 
 This module carries the runtime event log emitter that used to live in
 the legacy top-level ``diagnostics`` module (deleted with A42): the
