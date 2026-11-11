@@ -106,10 +106,8 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - i18n 在 `i18n.tsx` 的 en / zh 同步补 `proxy*` 键，`i18n.test.tsx` 键集相等与非空兜底。
 - 真实栈无头 E2E（`tests/e2e/test_proxy_library_e2e.py`，`serial`）覆盖 AC-008：UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经本地记录代理（日志 `PROXY_GET`），不依赖公网。
 
-## 9. 网络访问与设置（t042）
+## 9. 网络访问与设置（t042；t054 重写为只读）
 
-- 设置页 `/settings` 承载「网络访问 (Network Access)」区块：支持配置局域网开关（`lan_access_enabled`）与通告 IP（`lan_advertised_ip`，单播 IPv4 校验）。
-- 待应用与当前生效状态：双态并列对比展示，保存只更新待应用配置（`PUT /api/v1/network/settings`）；应用操作需管理员密码确认（`POST /api/v1/network/apply`）。
-- 入口变化提示（AC-009）：应用前调用 `GET /api/v1/network/check-disconnect`，若当前来源将不可达则弹出告警并提供重定向指引与新入口地址。
-- 根证书下载引导：提供 `GET /api/v1/network/root-ca` 直接下载链接与系统/浏览器根证书导入指引。
-- 国际化：中英文字典同步完备定义（`networkAccess*`, `lanAccess*`, `rootCa*`）。
+- 设置页 `/settings` 的「网络访问 (Network Access)」区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改；局域网开关、通告 IP 输入、保存/应用按钮、应用确认弹窗、root-ca 区块全部删除。
+- 无网络设置写端点：`PUT /api/v1/network/settings`、`POST /api/v1/network/apply`、`GET /api/v1/network/check-disconnect`、`GET /api/v1/network/root-ca` 均已删除；前端不发起任何网络配置请求。
+- 国际化：中英文字典同步定义只读文案（`networkAccess`、`networkAccessDesc`、`httpsPort`、`currentAccessAddress`、`networkDeployTimeNote`）。

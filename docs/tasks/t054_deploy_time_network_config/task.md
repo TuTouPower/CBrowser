@@ -36,16 +36,16 @@ ADR 026（t042）以 LAN 访问需求为前提，由 Supervisor 接管边缘重�
 
 <!-- /规范 -->
 
-- [ ] AC-001：API 不再提供任何修改网络配置的端点，也不提供 root-ca 下载端点；OpenAPI 中不存在 LAN 与网络 apply 相关字段与路径。
-- [ ] AC-002：设置页只显示当前访问地址与端口，无 LAN 开关、IP 输入、端口输入或「应用」操作。
-- [ ] AC-003：部署后 Caddy HTTPS 端口与全部 Stream UDP mux 端口只绑定 `127.0.0.1`；compose 结构测试与 Supervisor 容器规格测试对此断言。
-- [ ] AC-004：修改 `.env` 中 `CBROWSER_HTTPS_PORT` 后重新部署，新端口生效，API 与 Gateway 的 Origin 白名单同时更新为新端口，旧端口不可访问。
-- [ ] AC-005：仓库中默认 HTTPS 端口只在一处定义，其余位置引用它；测试对重复字面量做负向断言。
-- [ ] AC-006：只修改网络配置（端口）而不改源码时，部署指纹随之变化并触发 Caddy 重建；rollback 后 Caddy 绑定的端口与目标 release 记录一致。
-- [ ] AC-007：Supervisor 不再提供 `rebuild-edge` / `converge-streams` 端点；Gateway 不再接受 publication 协议请求；网络事务相关表经增量迁移删除。
-- [ ] AC-008：经 Caddy 进入的登录与 viewer 请求，限流按真实客户端来源计数：两个不同来源各自独立计数，一个来源被锁定不影响另一个。
-- [ ] AC-009：API 与 Gateway 使用同一 client_ip 解析实现；不在可信 CIDR 内的对端发送的 XFF 不被采信。
-- [ ] AC-010：[deploy] 真实部署后：本机浏览器可登录、启动 Profile 出图；从本机以外的接口访问 HTTPS 与 UDP 端口被拒绝；修改端口重新部署后可用新端口登录。
+- [x] AC-001：API 不再提供任何修改网络配置的端点，也不提供 root-ca 下载端点；OpenAPI 中不存在 LAN 与网络 apply 相关字段与路径。
+- [x] AC-002：设置页只显示当前访问地址与端口，无 LAN 开关、IP 输入、端口输入或「应用」操作。
+- [x] AC-003：部署后 Caddy HTTPS 端口与全部 Stream UDP mux 端口只绑定 `127.0.0.1`；compose 结构测试与 Supervisor 容器规格测试对此断言。
+- [x] AC-004：修改 `.env` 中 `CBROWSER_HTTPS_PORT` 后重新部署，新端口生效，API 与 Gateway 的 Origin 白名单同时更新为新端口，旧端口不可访问。
+- [x] AC-005：仓库中默认 HTTPS 端口只在一处定义，其余位置引用它；测试对重复字面量做负向断言。
+- [x] AC-006：只修改网络配置（端口）而不改源码时，部署指纹随之变化并触发 Caddy 重建；rollback 后 Caddy 绑定的端口与目标 release 记录一致。
+- [x] AC-007：Supervisor 不再提供 `rebuild-edge` / `converge-streams` 端点；Gateway 不再接受 publication 协议请求；网络事务相关表经增量迁移删除。
+- [x] AC-008：经 Caddy 进入的登录与 viewer 请求，限流按真实客户端来源计数：两个不同来源各自独立计数，一个来源被锁定不影响另一个。
+- [x] AC-009：API 与 Gateway 使用同一 client_ip 解析实现；不在可信 CIDR 内的对端发送的 XFF 不被采信。
+- [x] AC-010：[deploy] 真实部署后：本机浏览器可登录、启动 Profile 出图；从本机以外的接口访问 HTTPS 与 UDP 端口被拒绝；修改端口重新部署后可用新端口登录。
 
 ### 可测试性声明
 

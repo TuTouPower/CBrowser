@@ -11,7 +11,6 @@ is exactly what A28 replaces with daemon-side allocation plus read-back.
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -153,6 +152,10 @@ def _api_record(records: list) -> dict:
     return next(r for r in records if r["role"] == "api")
 
 
+def _gateway_record(records: list) -> dict:
+    return next(r for r in records if r["role"] == "gateway")
+
+
 def test_harness_has_no_host_port_scanning() -> None:
     source = HARNESS_PATH.read_text(encoding="utf-8")
     assert "def find_free_port" not in source
@@ -187,9 +190,11 @@ def test_published_host_port_missing_raises() -> None:
         topology.published_host_port(container, "443/tcp")
 
 
-def test_daemon_port_propagates_to_origin_env_and_network_state(
+def test_daemon_port_propagates_to_origin_env_and_deploy_port(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # t054: the daemon-assigned port reaches API + Gateway as the deploy
+    # port env var; there is no applied-network-state file anymore.
     records: list = []
     harness, _ = _make_harness(monkeypatch, tmp_path, 41234, records)
     asyncio.run(harness._do_start())
@@ -200,12 +205,10 @@ def test_daemon_port_propagates_to_origin_env_and_network_state(
     assert harness.caddy_host_port == 41234
     assert harness.origin == "https://127.0.0.1:41234"
     assert _api_record(records)["environment"]["CBROWSER_HTTPS_PORT"] == "41234"
-
-    state_file = (
-        tmp_path / "work" / "data" / "network" / "applied_network_version.json"
+    assert (
+        _gateway_record(records)["environment"]["CBROWSER_HTTPS_PORT"]
+        == "41234"
     )
-    version = json.loads(state_file.read_text(encoding="utf-8"))
-    assert version["config"]["https_port"] == 41234
 
 
 def test_concurrent_harnesses_get_distinct_daemon_ports(

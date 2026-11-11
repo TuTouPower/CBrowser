@@ -1,12 +1,19 @@
-"""Unit tests for Gateway configuration validation and applied origin derivation (t042 AC-007)."""
+"""Unit tests for Gateway configuration validation and Origin derivation (t054).
+
+The Origin whitelist is derived from the deployment HTTPS port
+(CBROWSER_HTTPS_PORT, default DEFAULT_HTTPS_PORT) — the same input the
+API uses. There is no network state directory, no disk baseline, and no
+publication handshake anymore: the whitelist is a pure function of the
+port, so it cannot drift and cannot be switched at runtime.
+"""
 
 import secrets
 from pathlib import Path
-import pytest
 
-from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig, utc_now_iso
+import pytest
+from pydantic import ValidationError
+
 from cbrowser.gateway.config import GatewayConfig
-from cbrowser.network_config import write_applied_network_state
 
 
 def _set_required_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -17,25 +24,13 @@ def _set_required_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CBROWSER_AGENT_KEY_FILE", str(tmp_path / "agent_key.txt"))
     monkeypatch.setenv("CBROWSER_GATEWAY_TOKEN_FILE", str(tmp_path / "gw_token.txt"))
     monkeypatch.setenv("CBROWSER_GATEWAY_API_URL", "http://127.0.0.1:8000")
-    monkeypatch.setenv("CBROWSER_GATEWAY_API_TOKEN_FILE", str(tmp_path / "api_token.txt"))
-    monkeypatch.setenv("CBROWSER_NETWORK_STATE_DIR", str(tmp_path / "network"))
+    monkeypatch.setenv(
+        "CBROWSER_GATEWAY_API_TOKEN_FILE", str(tmp_path / "api_token.txt")
+    )
     monkeypatch.setenv("CBROWSER_HTTPS_PORT", "56661")
 
 
-def test_gateway_config_from_env_defaults(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _set_required_env(tmp_path, monkeypatch)
-
-    cfg = GatewayConfig.from_env()
-
-    assert cfg.api_url == "http://127.0.0.1:8000"
-    # When network state file doesn't exist, origins is empty (fails closed per supervisory directive)
-    assert cfg.allowed_origins == []
-    assert cfg.agent_heartbeat_timeout_sec == 30.0
-
-
-def _gateway_config(tmp_path: Path, net_dir: Path) -> GatewayConfig:
+def _gateway_config(tmp_path: Path, **kwargs) -> GatewayConfig:
     key = tmp_path / "key.txt"
     key.write_text(secrets.token_urlsafe(32), encoding="utf-8")
     key.chmod(0o600)
@@ -44,114 +39,88 @@ def _gateway_config(tmp_path: Path, net_dir: Path) -> GatewayConfig:
         gateway_token_file=key,
         api_url="http://127.0.0.1:8000",
         api_token_file=key,
-        network_state_dir=net_dir,
+        **kwargs,
     )
 
 
-def test_gateway_baseline_is_explicit_and_mtime_does_not_switch(tmp_path: Path) -> None:
-    net_dir = tmp_path / "network"
-    net_dir.mkdir(parents=True, exist_ok=True)
-    v1 = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="1" * 64,
-        origin_whitelist=["https://127.0.0.1:56661", "https://localhost:56661"],
-    )
-    write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
+def test_gateway_config_from_env_derives_origins_from_deploy_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_required_env(tmp_path, monkeypatch)
 
-    cfg = _gateway_config(tmp_path, net_dir)
-    assert "https://127.0.0.1:56661" in cfg.allowed_origins
+    cfg = GatewayConfig.from_env()
 
-    v2 = AppliedNetworkAccessVersion(
-        version=2,
-        config=NetworkAccessConfig(
-            lan_access_enabled=True, lan_advertised_ip="192.168.31.76"
-        ),
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="2" * 64,
-        origin_whitelist=["https://127.0.0.1:56661", "https://192.168.31.76:56661"],
-    )
-    write_applied_network_state(net_dir, v2, "dummy caddyfile 2")
-
-    assert "https://192.168.31.76:56661" not in cfg.allowed_origins
-    assert cfg.active_publication()["operation_id"] == "baseline"
+    assert cfg.api_url == "http://127.0.0.1:8000"
+    assert cfg.https_port == 56661
+    assert cfg.allowed_origins == [
+        "https://127.0.0.1:56661",
+        "https://localhost:56661",
+    ]
+    assert cfg.agent_heartbeat_timeout_sec == 30.0
 
 
-def test_gateway_requires_authorized_ack_to_activate_new_origins(
+def test_gateway_config_from_env_uses_custom_deploy_port(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_required_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("CBROWSER_HTTPS_PORT", "58888")
+
+    cfg = GatewayConfig.from_env()
+
+    assert cfg.https_port == 58888
+    assert cfg.allowed_origins == [
+        "https://127.0.0.1:58888",
+        "https://localhost:58888",
+    ]
+
+
+def test_gateway_config_explicit_port_wins_over_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CBROWSER_HTTPS_PORT", "56661")
+    cfg = _gateway_config(tmp_path, https_port=58888)
+    assert cfg.allowed_origins == [
+        "https://127.0.0.1:58888",
+        "https://localhost:58888",
+    ]
+
+
+def test_gateway_config_defaults_to_default_port_without_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CBROWSER_HTTPS_PORT", raising=False)
+    cfg = _gateway_config(tmp_path)
+    assert cfg.https_port == 56661
+    assert cfg.allowed_origins == [
+        "https://127.0.0.1:56661",
+        "https://localhost:56661",
+    ]
+
+
+@pytest.mark.parametrize("value", [0, -1, 70000])
+def test_gateway_config_rejects_invalid_https_port(
+    tmp_path: Path, value
+) -> None:
+    with pytest.raises(ValidationError, match="https_port"):
+        _gateway_config(tmp_path, https_port=value)
+
+
+def test_gateway_config_has_no_network_state_dir_or_publication(
     tmp_path: Path,
 ) -> None:
-    net_dir = tmp_path / "network"
-    net_dir.mkdir(parents=True, exist_ok=True)
-    v1 = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="1" * 64,
-        origin_whitelist=["https://127.0.0.1:56661"],
-    )
-    write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
-    cfg = _gateway_config(tmp_path, net_dir)
-
-    cfg.authorize_publication(
-        "op-1", 3, "candidate-hash", ["https://lan.example:56661"]
-    )
-    assert "https://lan.example:56661" not in cfg.allowed_origins
-    ack = cfg.acknowledge_publication("op-1", 3, "candidate-hash")
-    assert ack["acked"] is True
-    assert "https://lan.example:56661" in cfg.allowed_origins
-    assert cfg.active_publication()["generation"] == 3
-
-    cfg.revoke_publication("op-1")
-    assert "https://lan.example:56661" not in cfg.allowed_origins
-    assert "https://127.0.0.1:56661" in cfg.allowed_origins
-
-
-def test_gateway_authorize_rejects_stale_generation(tmp_path: Path) -> None:
-    from cbrowser.gateway.config import NetworkPublicationAuthority
-
-    authority = NetworkPublicationAuthority()
-    authority.import_baseline(
-        ["https://127.0.0.1:56661"], generation=0, snapshot_hash="base"
-    )
-    assert authority.authorize("op-new", 4, "hash-new", ["https://lan:56661"])[
-        "authorized"
-    ] is True
-    assert authority.acknowledge("op-new", 4, "hash-new")["acked"] is True
-
-    stale = authority.authorize("op-stale", 3, "hash-stale", ["https://evil:56661"])
-    assert stale["authorized"] is False
-    assert authority.acknowledge("op-stale", 3, "hash-stale")["acked"] is False
-    assert "https://lan:56661" in authority.active()["origins"]
-
-
-def test_gateway_mtime_is_only_a_reread_hint_for_active_publication(
-    tmp_path: Path,
-) -> None:
-    net_dir = tmp_path / "network"
-    net_dir.mkdir(parents=True, exist_ok=True)
-    v1 = AppliedNetworkAccessVersion(
-        version=1,
-        config=NetworkAccessConfig(lan_access_enabled=False),
-        applied_at=utc_now_iso(),
-        caddyfile_sha256="1" * 64,
-        origin_whitelist=["https://127.0.0.1:56661"],
-    )
-    write_applied_network_state(net_dir, v1, "dummy caddyfile 1")
-    cfg = _gateway_config(tmp_path, net_dir)
-
-    before = cfg.active_publication()
-    v2 = v1.model_copy(
-        update={
-            "version": 2,
-            "origin_whitelist": ["https://192.168.31.76:56661"],
-        }
-    )
-    write_applied_network_state(net_dir, v2, "dummy caddyfile 2")
-    _ = cfg.allowed_origins
-
-    assert cfg.active_publication() == before
-    assert "https://192.168.31.76:56661" not in cfg.active_publication()["origins"]
+    with pytest.raises(ValidationError):
+        _gateway_config(tmp_path, network_state_dir=tmp_path / "network")
+    cfg = _gateway_config(tmp_path)
+    for name in (
+        "authorize_publication",
+        "acknowledge_publication",
+        "active_publication",
+        "revoke_publication",
+        "import_baseline_from_disk",
+        "note_network_state_mtime",
+    ):
+        assert not hasattr(cfg, name), name
+    assert "network_state_dir" not in GatewayConfig.model_fields
 
 
 @pytest.mark.parametrize("value", ["0", "-1", "nan", "inf"])

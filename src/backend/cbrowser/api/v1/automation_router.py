@@ -79,7 +79,7 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
         logger.warning("Automation CDP rejected: missing token")
         await websocket.close(code=4401)
         return
-    from cbrowser.auth.client_ip import resolve_client_ip
+    from cbrowser.shared.client_ip import resolve_client_ip
 
     client_ip = resolve_client_ip(
         websocket.client.host if websocket.client else None,

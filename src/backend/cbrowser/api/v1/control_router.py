@@ -16,7 +16,7 @@ import logging
 from typing import Annotated
 
 from cbrowser.adapters.database.models import SessionModel
-from cbrowser.auth.client_ip import resolve_client_ip
+from cbrowser.shared.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
     get_auth_service,
     require_csrf_and_origin,

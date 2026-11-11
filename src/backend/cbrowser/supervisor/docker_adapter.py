@@ -1933,8 +1933,6 @@ with path.open('w') as output:
         udp_mux_port: int,
         gateway_url: str | None = None,
         agent_secret_path: Path | None = None,
-        public_ip: str = "127.0.0.1",
-        bind_host: str = "127.0.0.1",
         display: str = ":99",
         selkies_tokens_path: Path | None = None,
         snapshot_json_path: Path | None = None,
@@ -2040,7 +2038,6 @@ with path.open('w') as output:
                 )
                 clipboard_sync = False
         env = stream_environment(
-            public_ip=public_ip,
             display=display,
             profile_id=profile_id,
             runtime_instance_id=runtime_instance_id,
@@ -2053,7 +2050,7 @@ with path.open('w') as output:
             build_id=os.environ.get("CBROWSER_BUILD_ID") or None,
         )
         env.update(self._agent_socket_environment(profile_id, runtime_instance_id))
-        ports = stream_ports(udp_mux_port, bind_host=bind_host)
+        ports = stream_ports(udp_mux_port)
 
         container = None
         try:
@@ -2080,8 +2077,6 @@ with path.open('w') as output:
                     profile_id,
                     config_version,
                     self._require_profile_number(profile_id),
-                    bind_host=bind_host,
-                    advertised_ip=public_ip,
                     deployment_id=self.deployment_instance_id,
                 ),
             )
@@ -2579,115 +2574,3 @@ with path.open('w') as output:
             raise DockerSandboxError(
                 f"Container scan failed: {type(e).__name__}"
             ) from None
-
-    async def rebuild_caddy_container(
-        self,
-        *,
-        bind_host: str,
-        https_port: int,
-        caddyfile_path: str,
-    ) -> dict[str, Any]:
-        """Rebuild edge reverse proxy container (Caddy) with atomic port re-binding."""
-        caddy_name = f"{self.resource_prefix}-caddy"
-        # P1-2: the running Caddy must bind the persistent network/Caddyfile.
-        # Staging candidates are promoted by the Supervisor core before this
-        # point; binding a staging file here would break on post-commit
-        # cleanup, so refuse it explicitly.
-        if Path(caddyfile_path).name != "Caddyfile":
-            raise DockerSandboxError(
-                "Caddy must bind the persistent network/Caddyfile"
-            )
-
-        def _do_rebuild() -> dict[str, Any]:
-            try:
-                caddy_c = self.client.containers.get(caddy_name)
-            except NotFound:
-                # Explicit terminal: no edge container exists to rebind.
-                # Callers treat this as recovery-complete (nothing to
-                # restore) instead of retrying forever.
-                logger.warning("Caddy container %s not found for rebuild", caddy_name)
-                return {
-                    "rebuilt": False,
-                    "reason": "not_found",
-                    "terminal": True,
-                }
-
-            inspect = self.client.api.inspect_container(caddy_c.id)
-            config = inspect["Config"]
-            host_config = inspect["HostConfig"]
-            old_port_bindings = host_config.get("PortBindings") or {}
-            old_binds = list(host_config.get("Binds") or [])
-            networks = inspect.get("NetworkSettings", {}).get("Networks", {})
-            network_name = (
-                list(networks.keys())[0]
-                if networks
-                else f"{self.resource_prefix}-edge"
-            )
-            image = config["Image"]
-            env = config.get("Env") or []
-            labels = config.get("Labels") or {}
-            old_binding = old_port_bindings.get("443/tcp") or [
-                {"HostIp": "127.0.0.1", "HostPort": str(https_port)}
-            ]
-            old_host_ip = old_binding[0].get("HostIp", "127.0.0.1")
-            old_host_port = int(old_binding[0].get("HostPort", https_port))
-
-            new_binds = []
-            caddyfile_mounted = False
-            for b in old_binds:
-                if ":/etc/caddy/Caddyfile" in b:
-                    new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
-                    caddyfile_mounted = True
-                else:
-                    new_binds.append(b)
-            if not caddyfile_mounted and caddyfile_path:
-                new_binds.append(f"{caddyfile_path}:/etc/caddy/Caddyfile:ro")
-
-            caddy_c.remove(force=True)
-            try:
-                new_c = self.client.containers.run(
-                    image,
-                    name=caddy_name,
-                    detach=True,
-                    network=network_name,
-                    ports={"443/tcp": (bind_host, https_port)},
-                    volumes=new_binds,
-                    environment=env,
-                    labels=labels,
-                    restart_policy={"Name": "unless-stopped"},
-                )
-            except DockerException as exc:
-                logger.warning(
-                    "Caddy rebuild failed, restoring old entry: error_type=%s",
-                    type(exc).__name__,
-                )
-                try:
-                    restored = self.client.containers.run(
-                        image,
-                        name=caddy_name,
-                        detach=True,
-                        network=network_name,
-                        ports={"443/tcp": (old_host_ip, old_host_port)},
-                        volumes=old_binds,
-                        environment=env,
-                        labels=labels,
-                        restart_policy={"Name": "unless-stopped"},
-                    )
-                except DockerException:
-                    raise DockerSandboxError(
-                        "Caddy rebuild failed and old entry could not be restored"
-                    ) from None
-                return {
-                    "rebuilt": False,
-                    "reason": "restore_old_entry",
-                    "container_id": restored.id,
-                    "old_entry_preserved": True,
-                }
-            return {
-                "rebuilt": True,
-                "container_id": new_c.id,
-                "bind_host": bind_host,
-                "old_entry_preserved": True,
-            }
-
-        return await asyncio.to_thread(_do_rebuild)

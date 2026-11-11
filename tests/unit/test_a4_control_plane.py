@@ -9,7 +9,7 @@ import pytest_asyncio
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.v1.control_router import require_automation_token
-from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
+from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.rate_limiter import LoginRateLimiter
 from cbrowser.auth.service import AuthService
 from fastapi import HTTPException

@@ -230,27 +230,6 @@ class ReadinessResponse(BaseModel):
     profiles: list[ProfileReadiness] = Field(default_factory=list)
 
 
-class RebuildEdgeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    target_version: int = Field(ge=1)
-    bind_host: str = Field(min_length=1, max_length=64)
-    https_port: int = Field(ge=1, le=65535)
-    # Logical network resource name resolved by the Supervisor against
-    # its own data_root/"network" (basename + containment check).
-    # Never an API-container absolute path: "Caddyfile" (persistent)
-    # or "Caddyfile.staging.<op_id>" (candidate snapshot).
-    caddyfile_path: str = Field(
-        min_length=1, max_length=128, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$"
-    )
-
-
-class ConvergeStreamsRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    target_version: int = Field(ge=1)
-    bind_host: str = Field(min_length=1, max_length=64)
-    advertised_ip: str = Field(min_length=1, max_length=64)
-
-
 SupervisorMessage = Union[
     StartProfileRequest,
     StartProfileResponse,
@@ -274,6 +253,4 @@ SupervisorMessage = Union[
     ReconcileAllResponse,
     ProfileReadiness,
     ReadinessResponse,
-    RebuildEdgeRequest,
-    ConvergeStreamsRequest,
 ]

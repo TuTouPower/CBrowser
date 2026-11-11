@@ -32,34 +32,8 @@ function renderPages(fontSets: FontSetFixture[] = []) {
     groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
     proxies: { list: vi.fn(async () => []) },
     fontSets: { list: vi.fn(async () => ({ items: fontSets, default_font_set_id: { windows: null, macos: null } })) },
-    network: {
-      getSettings: vi.fn(async () => ({
-        pending_config: {
-          lan_access_enabled: false,
-          lan_advertised_ip: null,
-          https_port: 56661,
-        },
-        applied_version: {
-          version: 1,
-          config: {
-            lan_access_enabled: false,
-            lan_advertised_ip: null,
-            https_port: 56661,
-          },
-          applied_at: "2026-11-08T00:00:00+08:00",
-          caddyfile_sha256: "",
-          origin_whitelist: [],
-        },
-        active_operation: null,
-      })),
-      updateSettings: vi.fn(async () => ({ status: "ok" })),
-      checkDisconnect: vi.fn(async () => ({
-        will_disconnect: false,
-        new_entry_url: "https://127.0.0.1:56661",
-      })),
-      apply: vi.fn(async () => ({})),
-      getOperation: vi.fn(async () => ({})),
-    },
+    // t054: no network stub — the Settings page makes no network-settings
+    // request anymore; the network section is read-only.
     request: vi.fn(async () => fontSets),
   } as unknown as ApiClient;
   return render(

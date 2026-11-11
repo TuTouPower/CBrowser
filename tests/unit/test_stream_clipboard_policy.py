@@ -9,7 +9,6 @@ from cbrowser.supervisor.container_spec import stream_environment
 
 def _env(clipboard_sync: bool):
     return stream_environment(
-        public_ip="127.0.0.1",
         display=":99",
         profile_id="p1",
         runtime_instance_id="i1",

@@ -62,7 +62,21 @@ if [ "$#" -gt 0 ]; then shift; fi
 
 PROJECT="${CBROWSER_COMPOSE_PROJECT:-cbrowser}"
 PREFIX="${CBROWSER_PREFIX:-cbrowser}"
-HTTPS_PORT="${CBROWSER_HTTPS_PORT:-56661}"
+
+NET_CONFIG_PY="${CBROWSER_PYTHON:-}"
+if [ -z "$NET_CONFIG_PY" ]; then
+  if [ -x "$ROOT/.venv/bin/python" ]; then
+    NET_CONFIG_PY="$ROOT/.venv/bin/python"
+  else
+    NET_CONFIG_PY="python3"
+  fi
+fi
+
+# t054: the default HTTPS port is the single constant in
+# cbrowser.network_config (DEFAULT_HTTPS_PORT) — no literal copy here.
+DEFAULT_HTTPS_PORT="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+  "$NET_CONFIG_PY" -c 'from cbrowser.network_config import DEFAULT_HTTPS_PORT; print(DEFAULT_HTTPS_PORT)')"
+HTTPS_PORT="${CBROWSER_HTTPS_PORT:-$DEFAULT_HTTPS_PORT}"
 DATA_ROOT="${CBROWSER_DATA_ROOT:-$ROOT/data/instance}"
 SECRETS_DIR="${CBROWSER_SECRETS_DIR:-$ROOT/config/deploy/secrets}"
 DEPLOY_DIR="${CBROWSER_DEPLOY_DIR:-$ROOT/config/deploy}"
@@ -83,15 +97,6 @@ DATABASE_BACKUP_PATH=""
 if [[ ! "$PREFIX" =~ ^[a-z0-9][a-z0-9_]*$ ]]; then
   echo "Refusing to start: CBROWSER_PREFIX '$PREFIX' is invalid (must match ^[a-z0-9][a-z0-9_]*\$)." >&2
   exit 1
-fi
-
-NET_CONFIG_PY="${CBROWSER_PYTHON:-}"
-if [ -z "$NET_CONFIG_PY" ]; then
-  if [ -x "$ROOT/.venv/bin/python" ]; then
-    NET_CONFIG_PY="$ROOT/.venv/bin/python"
-  else
-    NET_CONFIG_PY="python3"
-  fi
 fi
 
 # t035: the single baseline Alembic revision.  A database stamped with any
@@ -120,6 +125,10 @@ derive_instance_identity() {
   # Supervisor still claims its running sandboxes; distinct per
   # (prefix, data root).  The media subnet pool derives from the same
   # digest: pool index = digest mod 64, pool = 10.(192+index).0.0/16.
+  # The edge subnet derives from the same digest too (t054): index =
+  # digest mod 14, subnet = 172.(18+index).0.0/16 — a fixed per-instance
+  # /16 that never collides with Docker's default 172.17.0.0/16 bridge,
+  # so two instances can coexist on one daemon (t032 dual-instance).
   # The material string is the contract: tests and the Supervisor side
   # must reproduce it byte for byte.
   local out
@@ -132,11 +141,21 @@ material = ("cbrowser-instance-v1\0" + prefix + "\0" + data_root).encode()
 digest = hashlib.sha256(material).hexdigest()
 print(digest[:32])
 print("10.%d.0.0/16" % (192 + int(digest, 16) % 64))
+print("172.%d.0.0/16" % (18 + int(digest, 16) % 14))
 PY
 )"
   CBROWSER_INSTANCE_ID="$(printf '%s' "$out" | sed -n '1p')"
   CBROWSER_MEDIA_SUBNET_POOL="$(printf '%s' "$out" | sed -n '2p')"
-  export CBROWSER_INSTANCE_ID CBROWSER_MEDIA_SUBNET_POOL
+  # t054 R1 f001: an explicitly set CBROWSER_EDGE_SUBNET wins over the
+  # derived value — the conflict hint tells the operator to set one, so
+  # the derivation must not discard it. The explicit value still goes
+  # through check_edge_subnet_conflict below (an invalid CIDR is refused
+  # there, exit 2), and is recorded in the release env/manifest like the
+  # derived value, so rollback keeps using it.
+  if [ -z "${CBROWSER_EDGE_SUBNET:-}" ]; then
+    CBROWSER_EDGE_SUBNET="$(printf '%s' "$out" | sed -n '3p')"
+  fi
+  export CBROWSER_INSTANCE_ID CBROWSER_MEDIA_SUBNET_POOL CBROWSER_EDGE_SUBNET
 }
 
 pools_overlap() {
@@ -152,6 +171,27 @@ except ValueError:
     raise SystemExit(1)
 raise SystemExit(0 if a.overlaps(b) else 1)
 PY
+}
+
+check_edge_subnet_conflict() {
+  # t054: refuse before anything starts when the derived edge subnet
+  # overlaps an existing Docker network subnet or a host interface
+  # address. Docker would refuse the second bridge network at compose-up
+  # time; refusing here names the fix up front.
+  # t054 R2 test f005: exclude this instance's own edge network
+  # ("${PREFIX}-edge") when its subnet equals the candidate — after the
+  # first deploy that network already exists with exactly this subnet,
+  # and a redeploy or rollback must not be refused by its own network.
+  # The exclusion is name AND subnet (see check_edge_subnet.py): a
+  # same-name network with a different subnet is stale and is still
+  # refused, with its own remedy on stderr.
+  local detail
+  if detail="$(python3 "$ROOT/scripts/check_edge_subnet.py" "$CBROWSER_EDGE_SUBNET" --exclude-network "$PREFIX-edge" 2>&1)"; then
+    return 0
+  fi
+  echo "Refusing to start: $detail" >&2
+  echo "Choose a different CBROWSER_PREFIX/CBROWSER_DATA_ROOT for this instance (the edge subnet derives from the instance identity), or set an explicit CBROWSER_EDGE_SUBNET." >&2
+  exit 1
 }
 
 sha256_of_file() {
@@ -352,23 +392,16 @@ atomic_write_text(Path(sys.argv[1]), sys.stdin.read())
 }
 
 network_config() {
+  # t054: the only operation is `render` (deterministic Caddyfile for the
+  # deploy port). A render failure refuses the deploy with the CLI's exit
+  # code; there is no applied-state file to be missing or corrupt anymore.
   local op="${1:-}" read_output rc
   if read_output="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
       "$NET_CONFIG_PY" -m cbrowser.network_config_cli "$@")"; then
     printf '%s\n' "$read_output"
   else
     rc=$?
-    case "$rc" in
-      3)
-        echo "Refusing to deploy: applied network configuration is missing ($op); no default is applied." >&2
-        ;;
-      4)
-        echo "Refusing to deploy: applied network configuration is corrupt ($op); refusing to reset or overwrite it." >&2
-        ;;
-      *)
-        echo "Refusing to deploy: network_config $op failed (exit $rc)." >&2
-        ;;
-    esac
+    echo "Refusing to deploy: network_config $op failed (exit $rc)." >&2
     printf 'exit %d\n' "$rc"
   fi
 }
@@ -579,20 +612,22 @@ check_prefix_conflict() {
 
 load_release_identity() {
   # load_release_identity <env_file> : adopt the instance identity
-  # recorded in a release env (project, prefix, port, bind host, data
-  # root, secrets dir).  Compose interpolation prefers the shell
-  # environment over --env-file values, so a rollback must run with the
-  # TARGET release's identity, never with whatever the caller's shell
-  # exports.  Origin is NOT part of the identity: the Origin whitelist
-  # is derived from the applied network version (network_config), never
+  # recorded in a release env (project, prefix, port, edge subnet,
+  # trusted proxy CIDRs, data root, secrets dir).  Compose interpolation
+  # prefers the shell environment over --env-file values, so a rollback
+  # must run with the TARGET release's identity, never with whatever the
+  # caller's shell exports.  Origin is NOT part of the identity: the
+  # Origin whitelist is derived from the deployment port (t054), never
   # from CBROWSER_PUBLIC_ORIGIN / CBROWSER_ALLOWED_ORIGINS (t042: both
   # retired, no compat — old releases needing them are refused by the
-  # stamp check below, not adapted).
+  # stamp check below, not adapted).  There is no bind host anymore:
+  # Caddy and the Stream UDP mux always bind loopback.
   local env_file="$1" line key value
   while IFS= read -r line; do
     case "$line" in
       CBROWSER_COMPOSE_PROJECT=*|CBROWSER_PREFIX=*|CBROWSER_HTTPS_PORT=*|\
-      CBROWSER_BIND_HOST=*|CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*|\
+      CBROWSER_EDGE_SUBNET=*|CBROWSER_TRUSTED_PROXY_CIDRS=*|\
+      CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*|\
       CBROWSER_INSTANCE_ID=*|CBROWSER_MEDIA_SUBNET_POOL=*|CBROWSER_FONTS_DIR=*)
         key="${line%%=*}"
         value="${line#*=}"
@@ -603,7 +638,6 @@ load_release_identity() {
   PROJECT="$CBROWSER_COMPOSE_PROJECT"
   PREFIX="$CBROWSER_PREFIX"
   HTTPS_PORT="$CBROWSER_HTTPS_PORT"
-  BIND_HOST="${CBROWSER_BIND_HOST:-127.0.0.1}"
   DATA_ROOT="$CBROWSER_DATA_ROOT"
   SECRETS_DIR="$CBROWSER_SECRETS_DIR"
   FONTS_DIR="${CBROWSER_FONTS_DIR:-$ROOT/data/fonts}"
@@ -650,7 +684,11 @@ build_and_record_release() {
 
   local compose_sha caddyfile_sha frontend_sha migration
   compose_sha="$(sha256_of_file "$ROOT/compose.yaml")"
-  caddyfile_sha="$(sha256_of_file "$ROOT/src/backend/cbrowser/network_config.py")"
+  # t054: the fingerprint hashes the FINAL Caddyfile product rendered for
+  # this deploy (data root), never the generator source: a generator
+  # change that renders the same file leaves the fingerprint unchanged,
+  # while a port change re-renders and changes it.
+  caddyfile_sha="$(sha256_of_file "$DATA_ROOT/network/Caddyfile")"
   frontend_sha="$(frontend_fingerprint)"
   migration="$(migration_head)"
 
@@ -659,7 +697,8 @@ build_and_record_release() {
 CBROWSER_COMPOSE_PROJECT=$PROJECT
 CBROWSER_PREFIX=$PREFIX
 CBROWSER_HTTPS_PORT=$HTTPS_PORT
-CBROWSER_BIND_HOST=$BIND_HOST
+CBROWSER_EDGE_SUBNET=$CBROWSER_EDGE_SUBNET
+CBROWSER_TRUSTED_PROXY_CIDRS=$CBROWSER_EDGE_SUBNET
 CBROWSER_DATA_ROOT=$DATA_ROOT
 CBROWSER_SECRETS_DIR=$SECRETS_DIR
 CBROWSER_FONTS_DIR=$FONTS_DIR
@@ -700,7 +739,7 @@ ENV
   "migration_version": "$migration",
   "database_backup": $database_backup_json,
   "capabilities": {"readiness": true, "reconcile_all": true},
-  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT, "instance_id": "$CBROWSER_INSTANCE_ID", "media_subnet_pool": "$CBROWSER_MEDIA_SUBNET_POOL"}
+  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT, "instance_id": "$CBROWSER_INSTANCE_ID", "media_subnet_pool": "$CBROWSER_MEDIA_SUBNET_POOL", "edge_subnet": "$CBROWSER_EDGE_SUBNET"}
 }
 JSON
 }
@@ -709,6 +748,7 @@ cmd_deploy() {
   check_prerequisites
   derive_instance_identity
   check_prefix_conflict
+  check_edge_subnet_conflict
 
   local release_id="${CBROWSER_RELEASE_ID:-}"
   if [ -z "$release_id" ]; then
@@ -733,10 +773,12 @@ cmd_deploy() {
   ensure_internal_secrets
   mkdir -p "$DATA_ROOT"/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache/geoip}
 
-  eval "$(network_config init --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
-  eval "$(network_config read --network-dir "$DATA_ROOT/network")"
+  # t054: render the Caddyfile for the deploy port (the only network
+  # configuration step) and export the derived trusted proxy CIDRs
+  # (the edge subnet) for API + Gateway. No bind host: loopback only.
+  eval "$(network_config render --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
   export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
-  export CBROWSER_BIND_HOST="$BIND_HOST"
+  export CBROWSER_TRUSTED_PROXY_CIDRS="$CBROWSER_EDGE_SUBNET"
 
   build_and_record_release "$release_id"
   deploy_up_and_verify "$release_id"
@@ -845,6 +887,34 @@ cmd_rollback() {
   fi
 
   check_prefix_conflict
+  check_edge_subnet_conflict
+  # t054: rollback re-renders the Caddyfile from the TARGET release's
+  # recorded port and verifies it against the target manifest's
+  # caddyfile_sha256 before anything starts: a rollback must serve the
+  # target's edge, not the current release's. This runs after the
+  # conflict checks so a refused rollback leaves the disk untouched.
+  # t054 R1 f002: render into a scratch directory first and only move
+  # the file into $DATA_ROOT/network after the sha matches — rendering
+  # straight into the live directory rewrote the Caddyfile even when
+  # the sha check then refused the rollback.
+  local target_caddy_sha rendered_caddy_sha tmp_network_dir
+  target_caddy_sha="$(manifest_field "$target_manifest" caddyfile_sha256)"
+  if [ -z "$target_caddy_sha" ]; then
+    echo "Refusing rollback: caddyfile_sha256 missing from target release manifest." >&2
+    exit 1
+  fi
+  tmp_network_dir="$(mktemp -d)"
+  eval "$(network_config render --network-dir "$tmp_network_dir" --https-port "$HTTPS_PORT")"
+  rendered_caddy_sha="$CADDYFILE_SHA256"
+  if [ "$rendered_caddy_sha" != "$target_caddy_sha" ]; then
+    rm -rf "$tmp_network_dir"
+    echo "Refusing rollback: re-rendered Caddyfile sha256 $rendered_caddy_sha != target manifest caddyfile_sha256 $target_caddy_sha." >&2
+    exit 1
+  fi
+  mkdir -p "$DATA_ROOT/network"
+  cp "$tmp_network_dir/Caddyfile" "$DATA_ROOT/network/Caddyfile"
+  rm -rf "$tmp_network_dir"
+
   deploy_up_and_verify "$target"
   activate_release "$target"
   echo "Rolled back to release $target and readiness-verified."

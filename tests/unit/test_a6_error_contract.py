@@ -208,8 +208,11 @@ def test_real_422_and_404_are_structured(tmp_path: Path) -> None:
         assert isinstance(body["detail"], list)
         assert body["retryable"] is False
         assert isinstance(body["message"], str) and body["message"]
+        # t054: the old probe hit a deleted network route; a missing
+        # profile is the surviving real-404 probe.
         missing = client.get(
-            "/api/v1/network/operations/does-not-exist"
+            "/api/v1/profiles/does-not-exist",
+            headers=_login(client, ctx),
         )
         assert missing.status_code == 404
         not_found = missing.json()

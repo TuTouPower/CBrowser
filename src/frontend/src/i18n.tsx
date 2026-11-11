@@ -398,7 +398,6 @@ export const en = {
   envDeleteConfirm: "Delete environment {name}? This cannot be undone.",
   envBatchDeleteConfirm: "Delete {count} selected environments? This cannot be undone.",
   envDeleteConfirmTitle: "Confirm delete",
-  httpsPortInvalid: "HTTPS port must be 1-65535",
   groupManagerTitle: "Manage groups",
   groupNew: "New group",
   groupRename: "Rename",
@@ -495,32 +494,14 @@ export const en = {
   sessRunning: "Running",
   sessStopped: "Stopped",
 
-  // Network Access Settings (t042)
+  // Network access (t054): read-only. The port is fixed at deploy time;
+  // there is no LAN mode, no apply flow, and no root-CA download anymore.
   networkAccess: "Network Access",
-  networkAccessDesc: "Configure LAN accessibility and view applied status",
-  lanAccessToggle: "Allow LAN Access",
+  networkAccessDesc: "Current access address (read-only)",
+  currentAccessAddress: "Current access address",
   httpsPort: "HTTPS Port",
-  lanAdvertisedIp: "LAN Advertised IP",
-  lanAdvertisedIpPlaceholder: "e.g. 192.168.1.100",
-  invalidIpError: "Please enter a valid unicast IPv4 address",
-  pendingChanges: "Pending Changes",
-  appliedStatus: "Applied Status",
-  appliedLan: "LAN Mode ({ip})",
-  appliedLocal: "Local Only (127.0.0.1)",
-  savePending: "Save Changes",
-  savedSuccess: "Settings saved (pending apply)",
-  applyChanges: "Apply & Restart Services",
-  applying: "Applying...",
-  applySuccess: "Configuration applied successfully",
-  applyFailed: "Apply failed: {reason}",
-  adminPasswordPrompt: "Admin Password Required",
-  adminPassword: "Admin Password",
-  confirmApply: "Confirm & Apply",
-  disconnectWarningTitle: "Connection Loss Warning",
-  disconnectWarningDesc: "Switching to local mode or changing LAN IP will disconnect your current session. You must reconnect at: {url}",
-  downloadRootCa: "Download Root CA Certificate",
-  rootCaDesc: "Install this certificate on LAN devices to trust HTTPS without browser security warnings.",
-  rootCaInstructions: "Installation Guide: Import into System/Keychain or Browser Trusted Root Certification Authorities.",
+  networkDeployTimeNote:
+    "The HTTPS port is fixed at deploy time (CBROWSER_HTTPS_PORT). To change it, re-deploy; it cannot be changed here.",
 };
 
 export const zh = {
@@ -891,7 +872,6 @@ export const zh = {
   envDeleteConfirm: "确定删除环境 {name}？该操作不可撤销。",
   envBatchDeleteConfirm: "确定删除选中的 {count} 个环境？该操作不可撤销。",
   envDeleteConfirmTitle: "确认删除",
-  httpsPortInvalid: "HTTPS 端口须为 1-65535",
   groupManagerTitle: "管理分组",
   groupNew: "新建分组",
   groupRename: "改名",
@@ -987,32 +967,14 @@ export const zh = {
   sessRunning: "运行中",
   sessStopped: "已停止",
 
-  // Network Access Settings (t042)
+  // Network access (t054): read-only. The port is fixed at deploy time;
+  // there is no LAN mode, no apply flow, and no root-CA download anymore.
   networkAccess: "网络访问",
-  networkAccessDesc: "配置局域网访问权限并查看生效状态",
-  lanAccessToggle: "允许局域网访问",
+  networkAccessDesc: "当前访问地址（只读）",
+  currentAccessAddress: "当前访问地址",
   httpsPort: "HTTPS 端口",
-  lanAdvertisedIp: "局域网通告 IP",
-  lanAdvertisedIpPlaceholder: "例如 192.168.1.100",
-  invalidIpError: "请输入有效的单播 IPv4 地址",
-  pendingChanges: "待应用修改",
-  appliedStatus: "当前生效状态",
-  appliedLan: "局域网模式 ({ip})",
-  appliedLocal: "仅本机回环 (127.0.0.1)",
-  savePending: "保存修改",
-  savedSuccess: "配置已保存（待应用生效）",
-  applyChanges: "应用并重启边缘服务",
-  applying: "正在应用...",
-  applySuccess: "网络配置已成功应用",
-  applyFailed: "应用失败: {reason}",
-  adminPasswordPrompt: "需要管理员密码",
-  adminPassword: "管理员密码",
-  confirmApply: "确认并应用",
-  disconnectWarningTitle: "连接将中断警告",
-  disconnectWarningDesc: "切换到仅本机模式或更改通告 IP 将导致当前连接中断。请在新地址重新连接: {url}",
-  downloadRootCa: "下载本地 CA 根证书",
-  rootCaDesc: "在局域网设备上安装此证书，即可直接访问 HTTPS 且无安全警告。",
-  rootCaInstructions: "安装说明：导入至系统钥匙串/受信任的根证书颁发机构。",
+  networkDeployTimeNote:
+    "HTTPS 端口在部署时固定（CBROWSER_HTTPS_PORT）。改端口请重新部署，无法在此处修改。",
 } satisfies Record<TranslationKey, string>;
 
 export type TranslationKey = keyof typeof en;

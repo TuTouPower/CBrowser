@@ -39,7 +39,7 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
 外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`：
 
 1. **升级前三级校验**：
-    - **Origin 门禁**：Origin 必须在由当前已应用网络版本派生的白名单中（纯 https，从已应用版本启动时导入基线，运行期经 API 的 `GatewayPublicationClient` 发布通道 prepare/acknowledge 更新，见 `GatewayConfig.active_publication`），否则返回 HTTP 403。
+    - **Origin 门禁**：Origin 必须在由部署端口确定性派生的白名单中（纯 https，`derive_origin_whitelist(CBROWSER_HTTPS_PORT)`，默认端口 `56661`；API 与 Gateway 在启动时从同一部署输入派生，运行期无更新通道），否则返回 HTTP 403。
     - **会话鉴权**：提取 `cbrowser_session` Cookie，调 API `POST /api/v1/internal/gateway/viewer-authorize` 校验登录态与 Profile 授权，未授权返回 HTTP 401/403。
     - **就绪检查**：检查该 Profile 在网关内存中已有活跃 Agent，且 API 查询 `observed_state` 为 `running`（或 `ready`），否则返回 HTTP 503 并说明原因。
 2. **握手**：生成唯一 `connection_id`，记录其绑定的 `agent_session_id`，向 Agent 发送 `GatewayTunnelEnvelope(type="open", conn_id=connection_id)`；不再向页面下发任何 RTC/TURN 首帧。

@@ -30,7 +30,6 @@ def _active_lines() -> list[str]:
 
 def test_supervisor_stream_environment_enables_ice_lite() -> None:
     env = stream_environment(
-        public_ip="127.0.0.1",
         display=":99",
         profile_id="p1",
         runtime_instance_id="i1",
@@ -66,7 +65,6 @@ def test_supervisor_stream_environment_configures_no_external_stun_or_turn() -> 
     None
 ):
     env = stream_environment(
-        public_ip="127.0.0.1",
         display=":99",
         profile_id="p1",
         runtime_instance_id="i1",

@@ -33,18 +33,11 @@ from cbrowser.api.v1.control_router import (
     get_optional_control_service,
 )
 from cbrowser.api.v1.font_sets_router import font_set_router
-from cbrowser.api.v1.network_router import (
-    create_network_router,
-    get_network_service,
-)
 from cbrowser.api.v1.router import get_profile_service, v1_router
-from cbrowser.network_config import derive_origin_whitelist
-from cbrowser.services.network_service import GatewayPublicationClient, NetworkService
-from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs
+from cbrowser.network_config import DEFAULT_HTTPS_PORT, derive_origin_whitelist
+from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
-from cbrowser.gateway.config import NetworkPublicationAuthority
-from cbrowser.gateway.endpoint import normalize_origins
 from cbrowser.service_errors import ServiceNotConfiguredError
 from cbrowser.services.artifact_service import ArtifactService, ArtifactStore
 from cbrowser.services.control_service import ProfileControlService
@@ -62,6 +55,29 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 logger = logging.getLogger("cbrowser.api")
+
+
+def _deploy_https_port() -> int:
+    """Deployment HTTPS port: CBROWSER_HTTPS_PORT or the single default.
+
+    A malformed value fails startup loudly instead of silently serving a
+    different port's origins (t054): the port is a deploy-time input, and
+    a wrong Origin whitelist is a security-relevant misconfiguration.
+    """
+    raw = os.environ.get("CBROWSER_HTTPS_PORT")
+    if not raw:
+        return DEFAULT_HTTPS_PORT
+    try:
+        port = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"CBROWSER_HTTPS_PORT must be an integer, got {raw!r}"
+        ) from None
+    if not 1 <= port <= 65535:
+        raise ValueError(
+            f"CBROWSER_HTTPS_PORT must be between 1 and 65535, got {port}"
+        )
+    return port
 
 
 def _env_int(name: str, fallback: int) -> int:
@@ -258,97 +274,13 @@ def create_app(
         )
         await auth_service.init_admin_password(resolved_admin_pwd_file)
 
-        # t042: Network Access Service and Applied Configuration
-        export_network_dir = resolved_db.parent / "network"
-        publication_authority = NetworkPublicationAuthority()
-        gateway_publication_client = None
-        if app.state.gateway_token is not None:
-            gateway_publication_client = GatewayPublicationClient(
-                base_url=os.environ.get(
-                    "CBROWSER_GATEWAY_PUBLICATION_URL", "http://gateway:18080"
-                ),
-                token=app.state.gateway_token,
-            )
-        network_service = NetworkService(
-            repo=repo,
-            auth_service=auth_service,
-            supervisor_client=coordinator,
-            export_dir=export_network_dir,
-            on_origins_updated=lambda origins: setattr(app.state, "allowed_origins", list(origins)),
-            gateway=publication_authority,
-            gateway_client=gateway_publication_client,
-        )
-        app.state.network_service = network_service
-        app.state.network_publication_authority = publication_authority
-        app.dependency_overrides[get_network_service] = lambda: network_service
-        app.state.caddy_ca_dir = Path(
-            os.environ.get("CBROWSER_CADDY_CA_DIR", "/data/caddy/pki/authorities/local")
-        )
-
-        initializer = getattr(repo, "initialize_network_from_disk", None)
-        if callable(initializer):
-            await initializer(export_network_dir)
-        applied_settings = await network_service.get_settings()
-        app.state.allowed_origins = derive_origin_whitelist(
-            applied_settings.applied_version.config
-        )
-        publication_authority.import_baseline(
-            list(app.state.allowed_origins),
-            generation=applied_settings.applied_version.version - 1,
-            snapshot_hash=applied_settings.applied_version.caddyfile_sha256,
-        )
-        # P1-3: never run recovery once synchronously before Gateway /
-        # Supervisor are ready. Retry in the background until the pending
-        # transaction (if any) reaches a recovery-complete state, so a
-        # recovery_complete=False txn cannot block applies with 409 forever.
-        async def _network_recovery_loop() -> None:
-            attempt = 0
-            while True:
-                attempt += 1
-                try:
-                    verdict = await network_service.recover_pending_operation()
-                except Exception as exc:
-                    logger.warning(
-                        "Network recovery attempt %d failed: error_type=%s; retrying",
-                        attempt,
-                        type(exc).__name__,
-                    )
-                    await asyncio.sleep(5.0)
-                    continue
-                try:
-                    current = await repo.get_current_network_transaction()
-                except Exception as exc:
-                    # Transient DB failure must not look like a completed
-                    # recovery: keep retrying instead of returning.
-                    logger.warning(
-                        "Network recovery state read failed: error_type=%s; retrying",
-                        type(exc).__name__,
-                    )
-                    await asyncio.sleep(5.0)
-                    continue
-                if current is None or current.recovery_complete:
-                    logger.info(
-                        "Network recovery complete: verdict=%s attempt=%d",
-                        verdict,
-                        attempt,
-                    )
-                    return
-                logger.warning(
-                    "Network recovery incomplete: verdict=%s attempt=%d "
-                    "recovery_complete=False; retrying",
-                    verdict,
-                    attempt,
-                )
-                await asyncio.sleep(5.0)
-
-        recovery_task = asyncio.create_task(_network_recovery_loop())
+        # t054: the Origin whitelist is derived from the deployment
+        # HTTPS port (CBROWSER_HTTPS_PORT, default DEFAULT_HTTPS_PORT) —
+        # the same input Gateway uses. There is no runtime network state,
+        # no apply path, and no recovery loop.
+        app.state.allowed_origins = derive_origin_whitelist(_deploy_https_port())
 
         yield
-        recovery_task.cancel()
-        try:
-            await recovery_task
-        except (asyncio.CancelledError, Exception):
-            pass
         if coordinator:
             await coordinator.stop()
         if engine:
@@ -573,7 +505,6 @@ def create_app(
     app.include_router(font_set_router)
     app.include_router(artifact_router)
     app.include_router(preview_router)
-    app.include_router(create_network_router())
     app.include_router(automation_router)
     app.include_router(control_router)
     app.include_router(auth_router)

@@ -21,7 +21,7 @@
 ## 回退约束
 
 - 回退显式选择上一（或命名）release 重部署并跑同一 readiness 验收；不删除 Browser、Profile 数据或数据库。回退一律采用目标 release env 记录的实例身份执行（compose 插值中 shell 环境优先于 env 文件，调用方 shell 的身份值不得覆盖目标 release 的项目/prefix/数据根/secrets）。
-- 目标 release 不具备 readiness 能力、其迁移 head 与当前数据库实际 stamp 不等、或工作树 `compose.yaml` 指纹与目标 `compose_sha256` 不一致时，在任何变更前拒绝并说明原因；不存在降级迁移。当前数据库版本为只读读取的实际 `alembic_version` stamp（空库/无表留给 API 启动处理）：同代旧 head、跨代旧 release（含需已删除 `ALLOWED_ORIGINS` 的旧 t042 release，不做兼容）均因不等被拒绝；一次已拉起又验收失败的发布若已把数据库升版，stamp 已变，旧 head 回退同样拒绝。回退验收失败时不报成功、指针不变。
+- 目标 release 不具备 readiness 能力、其迁移 head 与当前数据库实际 stamp 不等、或工作树 `compose.yaml` 指纹与目标 `compose_sha256` 不一致时，在任何变更前拒绝并说明原因；不存在降级迁移。回退时按目标 release 记录的端口重渲染 Caddyfile，渲染产物 SHA-256 与目标 manifest 的 `caddyfile_sha256` 不一致同样拒绝（t054）。当前数据库版本为只读读取的实际 `alembic_version` stamp（空库/无表留给 API 启动处理）：同代旧 head、跨代旧 release（含需已删除 `ALLOWED_ORIGINS` 的旧 t042 release，不做兼容）均因不等被拒绝；一次已拉起又验收失败的发布若已把数据库升版，stamp 已变，旧 head 回退同样拒绝。回退验收失败时不报成功、指针不变。
 
 ## 凭证分级
 
@@ -30,19 +30,19 @@
 
 ## 实例隔离
 
-- 发布实例身份可参数化：compose 项目名、容器名、资源 prefix、edge 网络、数据根、secrets 目录与 HTTPS 端口由 release env 提供（`CBROWSER_COMPOSE_PROJECT`、`CBROWSER_PREFIX`、`CBROWSER_DATA_ROOT`、`CBROWSER_SECRETS_DIR`、`CBROWSER_HTTPS_PORT`），两个实例可在同一 daemon 并存且互不扫描、互不清理。
+- 发布实例身份可参数化：compose 项目名、容器名、资源 prefix、edge 网络、数据根、secrets 目录与 HTTPS 端口由 release env 提供（`CBROWSER_COMPOSE_PROJECT`、`CBROWSER_PREFIX`、`CBROWSER_DATA_ROOT`、`CBROWSER_SECRETS_DIR`、`CBROWSER_HTTPS_PORT`），两个实例可在同一 daemon 并存且互不扫描、互不清理。edge 子网（`CBROWSER_EDGE_SUBNET`）由 deploy.sh 按实例身份摘要派生并写入 release env 与 manifest 的 `instance` 块，受信代理 CIDR（`CBROWSER_TRUSTED_PROXY_CIDRS`）取同一值（t054）。
 - 目标 prefix 已被另一运行实例（不同 compose 项目、instance-id 不符）占用时，启动前拒绝；Supervisor 从不认领或 teardown 异部署沙箱（t051，见下）。
 
 ## 构建上下文
 
 - 全部运行时镜像的构建上下文受各自 `Dockerfile.dockerignore` 白名单限制：`data/`、`config/deploy/secrets`、`.scratch` 永不进入上下文；任一运行时镜像缺失 ignore 规则时门禁测试失败而非跳过（t027 起）。
 
-## 确定性 Caddyfile 生成与边缘端口重建（t042）
+## 确定性 Caddyfile 生成与部署期网络配置（t042；t054 重写）
 
-- 删除仓库入库的静态 Caddyfile：Caddy 配置由已应用不可变版本从生成器 `src/backend/cbrowser/network_config.py` 确定性生成；release manifest 对生成器代码取指纹。
-- 端口绑定环境参数化：`compose.yaml` 中 Caddy 端口映射默认使用 `${CBROWSER_BIND_HOST:-127.0.0.1}:${CBROWSER_HTTPS_PORT:-56661}:443`；本机模式绑定 `127.0.0.1`，局域网模式绑定 `0.0.0.0`。
-- 运行时原子重建：网络模式切换由 Supervisor 接管 Caddy 容器原地原子重绑并重启；`compose.yaml` 中 Caddyfile 挂载对齐 `${CBROWSER_DATA_ROOT}/network/Caddyfile`。
-- 已应用网络版本构造即完整（t048）：`AppliedNetworkAccessVersion.caddyfile_sha256` 为必填的 64 位小写十六进制 SHA-256；版本只经 `build_applied_network_version(config, version=..., upstream...)` 构造，同一次调用生成 Caddyfile 文本、哈希与 origin whitelist。CLI init、repository 无数据回退、`_restore_old` 无快照回退与申请新版本都走该入口，不存在空哈希中间对象或跳过校验的分支；聚合同一 Caddyfile 的旧快照才允许重绑。
+- 删除仓库入库的静态 Caddyfile：Caddy 配置由生成器 `src/backend/cbrowser/network_config.py` 在部署期确定性渲染（`network_config render --network-dir $DATA_ROOT/network --https-port $HTTPS_PORT`），写入 `$DATA_ROOT/network/Caddyfile`；运行期不存在网络配置变更入口（t054：t042 的运行时应用链、已应用版本、Supervisor 边缘重建全部删除）。
+- 端口只从部署输入来：默认端口收敛为唯一常量 `DEFAULT_HTTPS_PORT = 56661`；`compose.yaml` 中 Caddy 端口映射为 `127.0.0.1:${CBROWSER_HTTPS_PORT}:443`（固定回环绑定，无局域网模式）。部署指纹 `caddyfile_sha256` 改为渲染后 Caddyfile 产物的 SHA-256（生成器源码改动不改变指纹，端口改动改变指纹）；回退时按目标 release 记录的端口重渲染并校验与目标 manifest 一致。
+- Origin 白名单由部署端口确定性派生：`derive_origin_whitelist(https_port)`（`127.0.0.1` / `localhost` + 端口，纯 https）；API 与 Gateway 在启动时从同一 `CBROWSER_HTTPS_PORT` 派生。
+- edge 网络固定 IPAM 子网：`compose.yaml` 的 `edge` 网络按 `${CBROWSER_EDGE_SUBNET}` 固定子网；该值由 deploy.sh 按实例身份摘要派生（`172.{18 + digest mod 14}.0.0/16`），部署前预检与已存 Docker 网络子网、宿主接口地址的重叠；`CBROWSER_TRUSTED_PROXY_CIDRS` 取同一值并注入 API 与 Gateway。
 
 ## 控制面数据库进 named volume、部署身份与发布原子性（t051）
 

@@ -47,12 +47,12 @@
 - 客户端不存在可配置的跨源基地址：ApiClient 与 SSE 客户端均无 baseUrl/url 配置项，测试以同源夹具（注入 fetch 转发或同源 origin）访问测试服务器，不为测试开放生产跨源。
 - 注销失败处置：登出请求失败时本地会话一律结束——认证状态清除、内存 CSRF token 清除、SSE 停止；各注销调用点（SSE unauthorized 回调、页头登出）显式处置 logout 的 rejection，不产生 unhandled rejection。
 
-## 局域网访问与 Origin 派生规范（t042；LAN 部分按 p053 暂搁：Stream 未接线、生产 root-ca 404，暂不修）
+## 网络访问与 Origin 派生规范（t042；t054 重写：局域网彻底删除）
 
-- 网络访问配置权威：API 为唯一权威，区分「待应用配置（`pending_config`）」与「已应用不可变版本（`applied_version`）」。
-- Origin 白名单来源单一：API 与 Gateway 的 `allowed_origins` 均由当前已应用的不可变版本确定性派生；本机模式放行 `127.0.0.1` 与 `localhost`，局域网模式追加 `lan_advertised_ip`，两服务读取同一来源。
-- 根证书安全边界：`GET /api/v1/network/root-ca` 仅允许下载 Caddy 本地 CA 的公钥根证书（`root.crt`）；API 容器挂载中绝不挂载 `caddy_data` 卷，严禁暴露 `root.key` 私钥。
-- 入口变化提示：从局域网来源切换到本机模式前，接口与前端主动返回 `will_disconnect` 警告并给出新的可达地址。
+- 网络配置只在部署期存在：部署时渲染 Caddyfile，端口只从部署输入 `CBROWSER_HTTPS_PORT` 来；运行期不存在网络设置写端点、应用操作、待应用/已应用双态，也不存在断开预检与入口变化提示。
+- Origin 白名单来源单一：API 与 Gateway 的 `allowed_origins` 均由部署端口确定性派生（`derive_origin_whitelist`，`127.0.0.1` 与 `localhost` + 端口，纯 https）；两服务在启动时读取同一部署输入。
+- 局域网彻底不做：`lan_access_enabled` / `lan_advertised_ip` 字段与校验、LAN 媒体策略分支、Stream 绑定参数、root-ca 下载端点（`GET /api/v1/network/root-ca`）全部删除；Caddy 与 Stream 固定绑定 `127.0.0.1`。
+- 根证书安全边界：API 容器挂载中绝不挂载 `caddy_data` 卷，严禁暴露 Caddy CA 私钥 `root.key`。
 
 ## 数据库瞬时故障的可重试错误与登录友好提示（t051）
 

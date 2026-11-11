@@ -8,6 +8,9 @@
 !src/backend/cbrowser/domain/
 !src/backend/cbrowser/domain/*.py
 !src/backend/cbrowser/network_config.py
+!src/backend/cbrowser/shared/
+!src/backend/cbrowser/shared/__init__.py
+!src/backend/cbrowser/shared/client_ip.py
 !src/backend/cbrowser/gateway/
 !src/backend/cbrowser/gateway/*.py
 !src/backend/cbrowser/udp_mux.py

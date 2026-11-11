@@ -52,8 +52,6 @@ SUPERVISOR_OMISSIONS = frozenset(
         "AttendantDialogsResponse",
         "AnswerAttendantDialogRequest",
         "AnswerAttendantDialogResponse",
-        "RebuildEdgeRequest",
-        "ConvergeStreamsRequest",
     }
 )
 
@@ -267,17 +265,6 @@ def test_omitted_message_packets_validate():
             "profile_id": "p1",
             "dialog": {},
             "action": "accept",
-        },
-        "RebuildEdgeRequest": {
-            "target_version": 1,
-            "bind_host": "127.0.0.1",
-            "https_port": 443,
-            "caddyfile_path": "Caddyfile",
-        },
-        "ConvergeStreamsRequest": {
-            "target_version": 1,
-            "bind_host": "127.0.0.1",
-            "advertised_ip": "127.0.0.1",
         },
     }
     assert set(packets) == SUPERVISOR_OMISSIONS

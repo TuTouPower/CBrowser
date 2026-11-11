@@ -93,17 +93,10 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         "runtime-events",
         "artifacts",
         "spool",
-        "network",
         "sockets",
     ):
         (data / name).mkdir(parents=True, exist_ok=True)
         (data / name).chmod(0o777)
-    from cbrowser.domain.models import NetworkAccessConfig
-    from cbrowser.network_config import build_applied_network_version, write_applied_network_state
-    v1_init, v1_caddyfile = build_applied_network_version(
-        NetworkAccessConfig(lan_access_enabled=False), version=1
-    )
-    write_applied_network_state(data / "network", v1_init, v1_caddyfile)
     cache = data / "engine_cache"
     shutil.copytree(os.environ["CBROWSER_RUNTIME_ENGINE_CACHE"], cache)
     shutil.copytree(
@@ -190,7 +183,9 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway",
                 "CBROWSER_GATEWAY_API_URL": f"http://{prefix}-api:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
-                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
+                # t054: the deploy port (default 56661 here, matching
+                # the test auth context origin); no disk state anymore.
+                "CBROWSER_HTTPS_PORT": "56661",
                 "CBROWSER_UDP_MUX_MIN_PORT": os.environ.get(
                     "CBROWSER_E2E_UDP_BASE", "30000"
                 ),
@@ -205,7 +200,6 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     "bind": "/run/secrets/gateway_api",
                     "mode": "ro",
                 },
-                str(data / "network"): {"bind": "/data/network", "mode": "ro"},
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
