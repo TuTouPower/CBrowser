@@ -26,7 +26,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 ### 开工现场
 
-- attempt=1；execution_id=c738656d4a2144cc9643f66c1b4831e9；owner_id=root_v2_t004_20261028。branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6。登记worktree=/Users/karson/kar/code/CBrowser_t004，已claim，不重复start/reserve。
+- attempt=1；execution_id=c738656d4a2144cc9643f66c1b4831e9；owner_id=root_v2_t004_20261028。branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6。登记worktree=<repo>_t004，已claim，不重复start/reserve。
 - t003已done/执行commit/terminal/report/cleanup。主干集成失败为已删除scratch音频分析器未入库，9HTTP PASS、13Runtime中1FAIL12PASS，合并已撤销。保留原提交与失败证据，本task先补共同媒体fixture，不恢复临时文件伪造通过。
 - 沿已授权固定队列以t003完成分支为base，t003/t004链尾一起做最终主干验证；不增加成员、不改写t003历史。原六项独立Runtime能力证明有效，测试可移植性由本task闭环。
 - 生产写域为Stream模块/独立镜像/协议/新媒体测试；共享音频fixture及原Runtime E2E路径由Root独占修正。Browser Agent生产代码/API/SQLite/正式compose/前端应用不动。.env与真实用户数据不读不动。

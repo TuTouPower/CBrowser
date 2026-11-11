@@ -3,7 +3,7 @@
 - task：`t036_design_system_app_shell`
 - spec：`docs/tasks/t036_design_system_app_shell/task.md`
 - diff_anchor：`95cccfc9f328290cbb13090ef960b0f22a129782`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t036' diff --cached 95cccfc9f328290cbb13090ef960b0f22a129782`
+- target：`git -C '<repo>_t036' diff --cached 95cccfc9f328290cbb13090ef960b0f22a129782`
 - round：1
 - reviewed_at：2026-11-06T15:40:00+08:00
 

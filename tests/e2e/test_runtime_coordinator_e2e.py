@@ -18,7 +18,7 @@ from frontend_app_probe.harness import FrontendAppTopologyHarness
 from gateway_probe.topology import wait_until_ready
 from wait import poll_until, wait_until
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger("cbrowser.test_runtime_coordinator_e2e")
 
@@ -82,7 +82,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
 
             # Wait for Browser and Stream containers to disappear
             await wait_until(
-                lambda: harness.container_names(profile_id) is None,
+                lambda: harness.runtime_containers_gone(profile_id),
                 timeout=60.0,
                 interval=0.5,
                 description="runtime containers terminated after stop",
@@ -141,7 +141,7 @@ async def test_runtime_coordinator_docker_e2e(tmp_path: Path):
             # E. Cleanup: stop the running profile and wait for containers to terminate
             await api_client.post(f"/api/v1/profiles/{profile_id}/stop")
             await wait_until(
-                lambda: harness.container_names(profile_id) is None,
+                lambda: harness.runtime_containers_gone(profile_id),
                 timeout=60.0,
                 interval=0.5,
                 description="runtime containers removed after final stop",

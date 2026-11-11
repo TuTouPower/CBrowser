@@ -3,7 +3,7 @@
 - task：`t019_stream_ice_turn_connect_delay`
 - spec：`docs/tasks/t019_stream_ice_turn_connect_delay/task.md`
 - diff_anchor：`c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t019' diff c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
+- target：`git -C '<home>/workspace/CBrowser_t019' diff c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
 - round：1
 - reviewed_at：2026-11-03T22:46:06+08:00
 

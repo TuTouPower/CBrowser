@@ -3,7 +3,7 @@
 - task：`t008_v2_artifacts_automation`
 - spec：`docs/tasks/t008_v2_artifacts_automation/task.md`
 - diff_anchor：`63cbd08e40e5b0448829d06d1faed5851ce973ca`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t008' diff 63cbd08e40e5b0448829d06d1faed5851ce973ca`
+- target：`git -C '<repo>_t008' diff 63cbd08e40e5b0448829d06d1faed5851ce973ca`
 - round：1
 - reviewed_at：2026-11-02T09:59:48+08:00
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import tomllib
 from pathlib import Path
 
@@ -62,3 +64,5 @@ def test_vendored_tree_matches_reference_manifest() -> None:
     # index.html and keeps the pristine file as index.html.official, which
     # is what the manifest is checked against for that one file.
     verify_manifest(VENDORED_DIR, DEFAULT_MANIFEST_PATH, allow_patched=True)
+
+pytestmark = pytest.mark.e2e_images()

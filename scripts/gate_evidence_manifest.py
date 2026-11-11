@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ def main() -> int:
             "name": name,
             "command": command,
             "exit_code": int(exit_code),
+            "status": "skipped" if int(exit_code) == 77 else ("passed" if int(exit_code) == 0 else "failed"),
             "log": f"logs/{name}.log",
         }
         junit = evidence_dir / "junit" / f"{name}.xml"
@@ -56,6 +58,7 @@ def main() -> int:
         image_identity = {"error": f"{type(exc).__name__}: {exc}"}
 
     manifest = {
+        "run_id": os.environ.get("CBROWSER_GATE_RUN_ID"),
         "suites": suites,
         "image_identity": image_identity,
         "all_passed": all(entry["exit_code"] == 0 for entry in suites),

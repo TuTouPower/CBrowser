@@ -3,7 +3,7 @@
 - task：`t003_v2_browser_runtime`
 - spec：`docs/tasks/t003_v2_browser_runtime/task.md`
 - diff_anchor：`226c8453097fb982835ccb254cea8a3f26d131b3`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3`
+- target：`git -C '<repo>_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3`
 - round：1
 - reviewed_at：2026-10-28T16:00:00+08:00
 
@@ -13,9 +13,9 @@ reviewed_scope: e750897e76c5a667
 
 ### 审查概览
 
-本轮审查针对 `t003_v2_browser_runtime` 在 `git -C '/Users/karson/kar/code/CBrowser_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3` 引入的所有新增与变更测试代码，涵盖 6 个单元/协议测试文件（71 个 unit 测试用例）及 2 个大型容器沙箱 E2E 测试文件（12 个复杂场景用例，含 8 个核心生命周期/隔离断言与 5 个 Google 默认搜索引擎及持久化断言）。
+本轮审查针对 `t003_v2_browser_runtime` 在 `git -C '<repo>_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3` 引入的所有新增与变更测试代码，涵盖 6 个单元/协议测试文件（71 个 unit 测试用例）及 2 个大型容器沙箱 E2E 测试文件（12 个复杂场景用例，含 8 个核心生命周期/隔离断言与 5 个 Google 默认搜索引擎及持久化断言）。
 
-通过专属隔离测试执行套件 `bash /Users/karson/kar/code/CBrowser_t003/.scratch/t003_review_round1/test/verify.sh` 验证：
+通过专属隔离测试执行套件 `bash <repo>_t003/.scratch/t003_review_round1/test/verify.sh` 验证：
 - 71 个单元测试与 9 个已有 HTTP/领域集成测试（共 80 个用例）全部通过（0 失败，耗时 39.21s）。
 - 结合物理运行日志 `.scratch/t003_root_checks/project_doctor_test_03.log`、`.scratch/t003_root_checks/project_blackbox_03_final.log` 及 `.scratch/t003_e2e_lifecycle/targeted_proof.log` 核验 Docker E2E 测试实际通过记录。
 
@@ -92,7 +92,7 @@ reviewed_scope: e934e9a6bcba7ff4
    - 实际新增 2 个 E2E 测试文件（`test_browser_runtime_e2e.py` 包含 7 个测试函数/参数化展开共 8 个核心生命周期与隔离场景；`test_runtime_profile_defaults_e2e.py` 包含 5 个 Google 默认搜索引擎场景），真实 Docker E2E 总计 **13 个用例**（8 core + 5 Google），Round 1 概览中误计为 12 个，此处明确更正为 13 个。
    - 加上既有 9 个 HTTP/集成用例，独立单测运行总数精确为 80 个（71 unit + 9 integration）。
 2. **测试执行边界界定**：
-   - Reviewer 独立执行验证仅针对 `bash /Users/karson/kar/code/CBrowser_t003/.scratch/t003_review_round1/test/verify.sh`（71 unit + 9 HTTP/集成用例全部 PASS）。
+   - Reviewer 独立执行验证仅针对 `bash <repo>_t003/.scratch/t003_review_round1/test/verify.sh`（71 unit + 9 HTTP/集成用例全部 PASS）。
    - 13 个真实 Docker 容器沙箱 E2E 测试依赖完整 Docker 守护进程与本地 CloakBrowser 镜像/网络基础设施，已由 Root 真实执行验证通过（查证物理日志 `.scratch/t003_root_checks/project_doctor_test_03.log`、`project_blackbox_03_final.log` 及 `targeted_proof.log`）。Reviewer 对 E2E 部分的复核属于代码/测试实现逻辑、断言有效性与物理日志交叉核对，不声称 Reviewer 在本会话内独立重跑了 Docker 容器沙箱。
 3. **跳过机制（Skip）披露**：
    - 经全面代码扫描，`tests/e2e/test_runtime_profile_defaults_e2e.py` 的 fixture `require_prerequisites`（433-437 行）存在动态条件跳过：当 Docker 镜像、网络或测试工具缺失时调用 `pytest.skip`。

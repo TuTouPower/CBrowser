@@ -3,7 +3,7 @@
 - task：`t006_v2_gateway_auth_rtc`
 - spec：`docs/tasks/t006_v2_gateway_auth_rtc/task.md`
 - diff_anchor：`c33e55f77cb221510396628e792a08b905b2ebe0`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t006' diff c33e55f77cb221510396628e792a08b905b2ebe0`
+- target：`git -C '<repo>_t006' diff c33e55f77cb221510396628e792a08b905b2ebe0`
 - round：1
 - reviewed_at：2026-10-31T13:45:00+08:00
 

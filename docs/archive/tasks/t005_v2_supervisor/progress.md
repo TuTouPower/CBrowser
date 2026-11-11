@@ -49,7 +49,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 ### 开工现场与计划
 
-- branch=t005_v2_supervisor，base/diff_anchor=84f84311815bff330a51bcd35da150fc8b4990b3；attempt1，execution_id=8c2fd5e26cdc49f4bd8008edecd1d36e，owner_id=root_v2_t005_20261029。登记WT=/Users/karson/kar/code/CBrowser_t005，已reserve/claim，不重复启动。
+- branch=t005_v2_supervisor，base/diff_anchor=84f84311815bff330a51bcd35da150fc8b4990b3；attempt1，execution_id=8c2fd5e26cdc49f4bd8008edecd1d36e，owner_id=root_v2_t005_20261029。登记WT=<repo>_t005，已reserve/claim，不重复启动。
 - 前置t003/t004已合并；main实际169contract、384legacy、120unit、9HTTP、13Runtime、12Stream通过。原worktree已清理，不依赖其scratch fixture。可读稳定测试解释器在main/.scratch/t004_integration_gates/{project_venv,media_venv}/bin/python。
 - 主机只写~/kar/code；禁止读/source本WT的.env软链，不访问或停止既有cbrowser容器。实际数据根、容器和网络都用新前缀，失败后先查状态再精确回滚，不使用prune。
 - 定义认证RPC及持久事件/路径契约 → 真实HTTP拒绝和路径逃逸验证；唯一Docker协调器、幂等端口/网络/双容器生命周期 → 真实双Profile与并发/回滚；重启扫描、事件恢复、退出分类和2/10/30重试 → 独立API/Supervisor进程SIGKILL与离线重放；真实CPU窗口和配额 → 实际降帧/恢复、低负载和后台对照；全门禁、独立黑盒及full review → 一个执行commit、cleanup和本地合入。

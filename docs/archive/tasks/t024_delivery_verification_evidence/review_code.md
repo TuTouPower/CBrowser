@@ -3,7 +3,7 @@
 - task：`t024_delivery_verification_evidence`
 - spec：`docs/tasks/t024_delivery_verification_evidence/task.md`
 - diff_anchor：`597c09aff927c8cc54f72bfc405ac0336d58e22e`
-- target：`git -C '/home/hatch/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
+- target：`git -C '<home>/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
 - round：1
 - reviewed_at：2026-11-04T06:07:15+08:00
 
@@ -16,7 +16,7 @@ reviewed_scope: 8ecc8ed08998582d
 - 严重度：important
 - 锚点：AC-017（只有已批准具体历史文件/内容被豁免，新增归档不能继承目录级豁免）与 AC-002（旧 handoff 一节追加进归档）互相冲突且未调和；失败场景：合并后 unit 门禁即红
 - 位置：`docs/archive/handoff.md`（本 task +28 行追加）；`tests/unit/review_privacy_allowlist.txt:6`（该文件登记指纹仍为 anchor 版 sha256 `40e941ee…`）；`tests/unit/test_repo_hygiene.py:141`（断言失败点）
-- 问题：reviewer 在指纹范围内独立重跑 `.scratch/t024/venv/bin/python -m pytest tests/unit/test_repo_hygiene.py -q`（PYTHONPATH=src/backend:tests/fixtures、TMPDIR=/tmp/cbt024-rev），结果 1 failed / 5 passed：当前 `docs/archive/handoff.md` sha256 为 `fc587921…`，与 allowlist 登记的 anchor 指纹 `40e941ee…`（已核对等于 anchor 版文件哈希）不一致，豁免按守卫自身设计失效，文件内 37 处 `/Users/karson/` 存量泄漏全部被报出。追加的一节本身不含开发者路径（diff grep 为 0），根因是 AC-002 的追加动作改变了被豁免文件的字节，而实施方未同步处置：既未把追加后的文件作为新存量重新批准登记，也未在文档收敛（进度 4）后重跑守卫——note.md 进度 1 的「6 passed」是追加前的状态。与测试侧报告 `t024_test_f001` 为同一根因，彼处评 critical。
+- 问题：reviewer 在指纹范围内独立重跑 `.scratch/t024/venv/bin/python -m pytest tests/unit/test_repo_hygiene.py -q`（PYTHONPATH=src/backend:tests/fixtures、TMPDIR=/tmp/cbt024-rev），结果 1 failed / 5 passed：当前 `docs/archive/handoff.md` sha256 为 `fc587921…`，与 allowlist 登记的 anchor 指纹 `40e941ee…`（已核对等于 anchor 版文件哈希）不一致，豁免按守卫自身设计失效，文件内 37 处 `<home>/` 存量泄漏全部被报出。追加的一节本身不含开发者路径（diff grep 为 0），根因是 AC-002 的追加动作改变了被豁免文件的字节，而实施方未同步处置：既未把追加后的文件作为新存量重新批准登记，也未在文档收敛（进度 4）后重跑守卫——note.md 进度 1 的「6 passed」是追加前的状态。与测试侧报告 `t024_test_f001` 为同一根因，彼处评 critical。
 - 建议：将追加后的 `docs/archive/handoff.md` 作为新的已批准存量显式重新登记指纹（注明批准依据：追加节已核无开发者路径、其余为原已批准存量），随后重跑全量 unit 门禁留证；后续任何归档追加都必须与指纹登记同批完成。
 
 ### t024_code_f002 - AC-001/AC-015 的实现证据只有静态守卫，隔离/冷构建验证未做，与 AC 明文证据形态冲突

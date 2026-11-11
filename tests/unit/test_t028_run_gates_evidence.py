@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -20,7 +21,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-UV_STUB = """#!/bin/bash
+UV_STUB = r"""#!/bin/bash
 if [ "$1" = "export" ]; then
   echo "uv $*" >> "$GATE_STUB_LOG"
   grp=""
@@ -47,6 +48,7 @@ if [ "$1" = "venv" ]; then
   cat > "$target/bin/python" <<'PYEOF'
 #!/bin/bash
 echo "python $*" >> "$GATE_STUB_LOG"
+if [[ "$*" == *"gate_container_cleanup.py"* ]]; then exit 0; fi
 if [ "$1" != "-m" ]; then
   # Script invocations (redactor, manifest builder) run for real.
   exec "$GATE_STUB_REAL_PY" "$@"
@@ -56,7 +58,7 @@ for a in "$@"; do
     --junitxml=*)
       f="${a#--junitxml=}"
       mkdir -p "$(dirname "$f")"
-      printf '<testsuites/>' > "$f"
+      "$GATE_STUB_REAL_PY" -c 'import sys,os; from pathlib import Path; n=1700 if "tests/unit" in sys.argv[2] else 258 if ".repo_template" in sys.argv[2] else 196 if "tests/integration" in sys.argv[2] else 100; n=int(os.environ.get("GATE_STUB_CASE_COUNT",n)); Path(sys.argv[1]).write_text("<testsuites><testsuite tests=\"%d\">"%n+"<testcase name=\"stub\"/>"*n+"</testsuite></testsuites>")' "$f" "$*"
       ;;
   esac
 done
@@ -73,6 +75,14 @@ exit 0
 
 NPM_STUB = """#!/bin/bash
 echo "npm $*" >> "$GATE_STUB_LOG"
+if [ -n "${GATE_STUB_BLOCK_NPM:-}" ] && [[ "$*" == *"$GATE_STUB_BLOCK_NPM"* ]]; then
+  sleep 60 &
+  echo "$!" > "$GATE_STUB_CHILD_PID"
+  wait
+fi
+for a in "$@"; do
+  case "$a" in --outputFile=*) printf '{"numTotalTests":500}' > "${a#--outputFile=}" ;; esac
+done
 if [ -n "${GATE_STUB_NPM_FAIL:-}" ] && [[ "$*" == *"$GATE_STUB_NPM_FAIL"* ]]; then
   exit 4
 fi
@@ -91,9 +101,30 @@ def _stub_bin(tmp_path: Path) -> Path:
 
 
 def _run_gates(tmp_path: Path, extra_env: dict[str, str]) -> subprocess.CompletedProcess:
+    # Run the actual scripts in an isolated checkout. A parent gate owns
+    # its generated dist; nested unit drivers must never contend for it.
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
+    for name in ("scripts", "src/backend", "config/docker", "schemas"):
+        shutil.copytree(REPO_ROOT / name, checkout / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    fixtures = checkout / "tests/fixtures"
+    fixtures.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "tests/fixtures/e2e_env.py", fixtures)
+    for name in ("pyproject.toml", "uv.lock"):
+        if (REPO_ROOT / name).is_file():
+            shutil.copy2(REPO_ROOT / name, checkout / name)
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
     bin_dir = _stub_bin(tmp_path)
     env = dict(os.environ)
+    inherited_docker_bin = env.get("CBROWSER_GATE_DOCKER_BIN")
+    for key in list(env):
+        if key.startswith("CBROWSER_"):
+            env.pop(key)
+    if inherited_docker_bin:
+        env["CBROWSER_GATE_DOCKER_BIN"] = inherited_docker_bin
     env.pop("TMPDIR", None)
+    for key in ("CBROWSER_GATE_ENV_READY", "CBROWSER_GATE_RUN_ID", "CBROWSER_GATE_RUNS_DIR"):
+        env.pop(key, None)
     env.pop("CBROWSER_RUN_E2E", None)
     # A parent gate run exports its evidence directory; without clearing
     # it this nested run writes into the parent's evidence tree, deletes
@@ -108,7 +139,7 @@ def _run_gates(tmp_path: Path, extra_env: dict[str, str]) -> subprocess.Complete
     env.update(extra_env)
     return subprocess.run(
         ["bash", "scripts/run_gates.sh"],
-        cwd=REPO_ROOT,
+        cwd=checkout,
         env=env,
         capture_output=True,
         text=True,
@@ -121,7 +152,7 @@ def _stub_log(tmp_path: Path) -> str:
     return log.read_text(encoding="utf-8") if log.exists() else ""
 
 
-def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> None:
+def test_evidence_mode_runs_all_suites_and_records_failure_with_protocol_first(tmp_path: Path) -> None:
     evidence = tmp_path / "evidence"
     result = _run_gates(
         tmp_path,
@@ -146,6 +177,7 @@ def test_evidence_mode_runs_all_suites_and_records_failure(tmp_path: Path) -> No
     manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
     suites = {entry["name"]: entry for entry in manifest["suites"]}
     assert list(suites) == [
+        "protocol_drift_check",
         "requirements_check",
         "contract",
         "unit",
@@ -195,7 +227,7 @@ def test_evidence_mode_all_pass_exits_zero(tmp_path: Path) -> None:
 
 
 @pytest.mark.serial
-def test_evidence_dir_reuse_cleans_stale_files(tmp_path: Path) -> None:
+def test_evidence_dir_reuse_cleans_stale_files_with_protocol_first(tmp_path: Path) -> None:
     """Reusing an evidence dir must not go false-green on stale files: old
     suites.d/junit/logs fragments are cleared before the run.
 
@@ -229,6 +261,7 @@ def test_evidence_dir_reuse_cleans_stale_files(tmp_path: Path) -> None:
     assert not (evidence / "suites.d" / "e2e.tsv").exists()
     manifest = json.loads((evidence / "manifest.json").read_text(encoding="utf-8"))
     assert [s["name"] for s in manifest["suites"]] == [
+        "protocol_drift_check",
         "requirements_check",
         "contract",
         "unit",

@@ -2,69 +2,69 @@
 
 Reviewer: b0bf281d-2d7c-42f4-9e24-1095a58737ba
 
-- f_backend_runtime_adapters_01: agree — 亲自读 security.py 全文：is_flag_safe 只拦 RESERVED_PREFIXES(11)+UNSAFE_FLAGS(8)+IsolateOrigins 特例，其余一律放行；--load-extension/--js-flags 不在任何名单，位置参数仅查控制字符。runner.py 中 safe_user_args 拼在内置 extra_args 之后（extend 在末尾），用户 --fingerprint-* 可后置覆盖内置指纹。无反证。
-  - Evidence: src/backend/cbrowser/runtime_agent/security.py:12-94; src/backend/cbrowser/runtime_agent/runner.py:380-441
+- f_backend_runtime_adapters_01: agree — 亲自读 security.py 全文：is_flag_safe 只拦 RESERVED_PREFIXES(11)+UNSAFE_FLAGS(8)+IsolateOrigins 特例，其余一律放行；--load-extension/--js-flags 不在任何名单，位置参数仅查控制字符。runner.py 中 safe_user_args 拼在内置 extra_args 之后（extend 在末尾），用户 --fingerprint-\* 可后置覆盖内置指纹。无反证。
+    - Evidence: src/backend/cbrowser/runtime_agent/security.py:12-94; src/backend/cbrowser/runtime_agent/runner.py:380-441
 - f_backend_runtime_adapters_02: agree — 亲自核对：agent.py 的 async get_health 在事件循环内同步直调 check_display/check_audio/check_browser（agent.py:100,197-207），三者在 subsystems.py 内为同步 subprocess.run（xdpyinfo、pactl 两次）与 urllib.request.urlopen(timeout=1.5)；同文件 /cdp/version 已用 asyncio.to_thread，对照成立。阻塞量级属实（只多不少）。
-  - Evidence: src/backend/cbrowser/runtime_agent/agent.py:100-231; src/backend/cbrowser/runtime_agent/subsystems.py:15-146; src/backend/cbrowser/runtime_agent/agent.py:305
-- f_backend_runtime_adapters_18: agree — 亲自读 test_runtime_agent.py:29-77：reserved 名单只测 11 条中的 8 条、unsafe 名单与实现一一对应、safe 名单把 --enable-features=CDPScreenshotNewSurface 钉为应放行；全仓 grep 确认无任何测试把 --load-extension/--js-flags/--fingerprint-*/位置参数喂给清洗器断言被拒。测试自证性成立。
-  - Evidence: tests/unit/test_runtime_agent.py:29-77; src/backend/cbrowser/runtime_agent/security.py:12-40
+    - Evidence: src/backend/cbrowser/runtime_agent/agent.py:100-231; src/backend/cbrowser/runtime_agent/subsystems.py:15-146; src/backend/cbrowser/runtime_agent/agent.py:305
+- f_backend_runtime_adapters_18: agree — 亲自读 test_runtime_agent.py:29-77：reserved 名单只测 11 条中的 8 条、unsafe 名单与实现一一对应、safe 名单把 --enable-features=CDPScreenshotNewSurface 钉为应放行；全仓 grep 确认无任何测试把 --load-extension/--js-flags/--fingerprint-\*/位置参数喂给清洗器断言被拒。测试自证性成立。
+    - Evidence: tests/unit/test_runtime_agent.py:29-77; src/backend/cbrowser/runtime_agent/security.py:12-40
 - f_backend_tests_01: agree — 亲自核对 test_api.py 四处直接赋值：:143 与 :867 替换 browser_mgr.stop、:196/:206 替换 launch，均为普通赋值非 monkeypatch、无还原；:1082 real_lifecycle 夹具注释自述泄漏并手工装回真方法；test_system_status 需手工 running.clear() 并注释『leaked』。污染与顺序依赖成立。
-  - Evidence: src/backend/tests/test_api.py:143-206; src/backend/tests/test_api.py:242-244; src/backend/tests/test_api.py:867; src/backend/tests/test_api.py:1082-1089
+    - Evidence: src/backend/tests/test_api.py:143-206; src/backend/tests/test_api.py:242-244; src/backend/tests/test_api.py:867; src/backend/tests/test_api.py:1082-1089
 - f_backend_core_01: agree — 亲自读 serve_spa（main.py:1835-1843）：file_path = FRONTEND_DIR / full_path，仅 exists()/is_file() 即 FileResponse，无 resolve/包含校验；AuthMiddleware 对非 /api/ 路径直接放行（main.py:276）。可达性经 followup_q_system_properties_02 静态确认（uvicorn 解码点段、裸 FileResponse 不走 StaticFiles.lookup_path），与本人代码核对一致。
-  - Evidence: src/backend/main.py:1835-1843; src/backend/main.py:270-282
+    - Evidence: src/backend/main.py:1835-1843; src/backend/main.py:270-282
 - f_backend_core_02: agree — 亲自核对：set_clipboard 在 main.py:1301 以 INFO 记录 body.text[:60] 的 preview=%r，get_clipboard 在 :1399 同样记录 text[:60]；diagnostics.py:280 docstring 明示『Never logs … clipboard content』，实现与自身承诺直接矛盾。无反证。
-  - Evidence: src/backend/main.py:1301; src/backend/main.py:1399; src/backend/diagnostics.py:280
+    - Evidence: src/backend/main.py:1301; src/backend/main.py:1399; src/backend/diagnostics.py:280
 - f_backend_core_03: agree — 亲自核对：config/docker/entrypoint.sh:27 exec uvicorn backend.main:app（发货入口为 legacy）；legacy database.py:18 DB_PATH=DATA_DIR/profiles.db 手写 sqlite；v2 api/main.py:10 默认 CBROWSER_DB_PATH=/data/cbrowser.db。双栈双库并存属实。
-  - Evidence: config/docker/entrypoint.sh:27; src/backend/database.py:18; src/backend/cbrowser/api/main.py:10
+    - Evidence: config/docker/entrypoint.sh:27; src/backend/database.py:18; src/backend/cbrowser/api/main.py:10
 - f_backend_core_18: agree — 亲自对 src/backend/tests/ 全目录 grep serve_spa/FRONTEND_DIR/full_path 零命中，无任何测试请求静态路径；serve_spa 本体已在 f_backend_core_01 核对为无校验。穿越行为既无复现测试也无安全形态钉住，成立。
-  - Evidence: src/backend/main.py:1835-1843; src/backend/tests/（grep 零命中）
-- f_frontend_shell_01: agree — 亲自核对：src/main.tsx:3-4 只 import app/router 与 app/providers；全仓 grep 无任何文件 import src/App.tsx，v1 树（App.tsx+components/*）自入口不可达且与 v2 功能重复。死树并存成立。
-  - Evidence: src/frontend/src/main.tsx:3-4; src/frontend/src/App.tsx:1-16
+    - Evidence: src/backend/main.py:1835-1843; src/backend/tests/（grep 零命中）
+- f_frontend_shell_01: agree — 亲自核对：src/main.tsx:3-4 只 import app/router 与 app/providers；全仓 grep 无任何文件 import src/App.tsx，v1 树（App.tsx+components/\*）自入口不可达且与 v2 功能重复。死树并存成立。
+    - Evidence: src/frontend/src/main.tsx:3-4; src/frontend/src/App.tsx:1-16
 - f_frontend_shell_02: agree — 亲自读 ci.yml：frontend job working-directory=frontend、cache-dependency-path=frontend/package-lock.json；仓根不存在 frontend/ 目录（实际 src/frontend）。backend job 同样引用 backend/requirements.txt 与 backend/tests。前端门禁按现行布局无法运行，成立。
-  - Evidence: .github/workflows/ci.yml:24-39; .github/workflows/ci.yml:9-22
+    - Evidence: .github/workflows/ci.yml:24-39; .github/workflows/ci.yml:9-22
 - f_contracts_deploy_01: agree — 亲自核对：config/docker/Dockerfile:2 为 FROM cbrowser:latest，仓内无该基础镜像的定义/产出脚本；compose.yaml:5-9 又把构建产物命名为同一 tag cbrowser:latest，输入输出同名。未钉版、自引用成立。
-  - Evidence: config/docker/Dockerfile:1-2; compose.yaml:5-9
-- f_contracts_deploy_02: agree — 亲自核对全链：.env.example 明示 AUTH_TOKEN『Blank = open』且默认留空；compose.yaml 发布 0.0.0.0:${CBROWSER_PORT:-56661} 并透传空默认 AUTH_TOKEN；main.py:116 AUTH_TOKEN=None 时 _check_auth(:145) 对所有请求返回 True、中间件 :269 整体放行；/api/open-external(:1171)、/api/shutdown(:1220) 真实存在。默认部署无认证成立。
-  - Evidence: compose.yaml:10-17; .env.example:15-16; src/backend/main.py:116-165; src/backend/main.py:1171; src/backend/main.py:1220
+    - Evidence: config/docker/Dockerfile:1-2; compose.yaml:5-9
+- f_contracts_deploy_02: agree — 亲自核对全链：.env.example 明示 AUTH_TOKEN『Blank = open』且默认留空；compose.yaml 发布 0.0.0.0:${CBROWSER_PORT:-56661} 并透传空默认 AUTH_TOKEN；main.py:116 AUTH_TOKEN=None 时 \_check_auth(:145) 对所有请求返回 True、中间件 :269 整体放行；/api/open-external(:1171)、/api/shutdown(:1220) 真实存在。默认部署无认证成立。
+    - Evidence: compose.yaml:10-17; .env.example:15-16; src/backend/main.py:116-165; src/backend/main.py:1171; src/backend/main.py:1220
 - f_template_scripts_state_01: agree — 亲自读 ledger.py:22-57：损坏 JSON 行明确抛 TaskDataError fail-closed（注释自述防 attempt 号复用），但同一函数的 except OSError 直接 return []，文件不可读与账本不存在不可区分，attempt 分配可从 1 重启。不变量破坏成立。
-  - Evidence: .repo_template/scripts/repo_task/ledger.py:22-57
+    - Evidence: .repo_template/scripts/repo_task/ledger.py:22-57
 - f_tests_e2e_supervisor_01: agree — 亲自核对：test_supervisor_browser_network_e2e.py:15-27 在用例体内检查 CBROWSER_RUNTIME_TEST_IMAGE/CBROWSER_STREAM_TEST_IMAGE，缺失即 pytest.skip；grep ci.yml 无任何 TEST_IMAGE 变量提供。例行 CI 中该层静默 skip 成立。
-  - Evidence: tests/e2e/test_supervisor_browser_network_e2e.py:15-27; .github/workflows/ci.yml（grep 零命中）
+    - Evidence: tests/e2e/test_supervisor_browser_network_e2e.py:15-27; .github/workflows/ci.yml（grep 零命中）
 - f_tests_e2e_stream_frontend_01: agree — 亲自 grep 五个文件：test_stream_ice_failure/rtc_config(:15,:78)/ice_commit/ice_relay/x11_keymap 均为 pytest.skip('NOT_RUN: provide an immutable … image')，缺镜像 env 时整文件消失；同套件另有硬 assert 的相反口径。门禁可全绿零覆盖成立。
-  - Evidence: tests/e2e/test_stream_ice_failure_e2e.py:15; tests/e2e/test_stream_rtc_config_e2e.py:15; tests/e2e/test_stream_ice_relay_e2e.py:18; tests/e2e/test_stream_x11_keymap_e2e.py:17
+    - Evidence: tests/e2e/test_stream_ice_failure_e2e.py:15; tests/e2e/test_stream_rtc_config_e2e.py:15; tests/e2e/test_stream_ice_relay_e2e.py:18; tests/e2e/test_stream_x11_keymap_e2e.py:17
 - f_tests_e2e_stream_frontend_02: agree — 亲自核对：frontend_app_probe/harness.py:19-39 的 prepare_frontend_app 仅在 dist 缺失时报错、随后原样 copytree，无新鲜度校验；test_frontend_adapter_build.py:47-61 只断言 dist 产物存在与标记子串；.gitignore:16 忽略 src/frontend/dist/。对着过期构建全绿成立。
-  - Evidence: tests/fixtures/frontend_app_probe/harness.py:19-39; tests/e2e/test_frontend_adapter_build.py:47-61; .gitignore:16
-- f_tests_integration_fixtures_01: agree — 亲自核对两侧：夹具 gateway_fixture.py 的 _handle_visibility 用自身 _foreground_viewers 集合算 has_foreground_viewers（:161-163）；生产契约由 tests/integration/test_gateway_control.py 的 AC-007 钉死为『visibility 只返回 Agent 最近健康报告』，两者语义不同源。该夹具是 supervisor 离线/恢复套件的对手方，分叉成立。
-  - Evidence: tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:130-163; tests/integration/test_gateway_control.py:110-121
+    - Evidence: tests/fixtures/frontend_app_probe/harness.py:19-39; tests/e2e/test_frontend_adapter_build.py:47-61; .gitignore:16
+- f_tests_integration_fixtures_01: agree — 亲自核对两侧：夹具 gateway_fixture.py 的 \_handle_visibility 用自身 \_foreground_viewers 集合算 has_foreground_viewers（:161-163）；生产契约由 tests/integration/test_gateway_control.py 的 AC-007 钉死为『visibility 只返回 Agent 最近健康报告』，两者语义不同源。该夹具是 supervisor 离线/恢复套件的对手方，分叉成立。
+    - Evidence: tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:130-163; tests/integration/test_gateway_control.py:110-121
 - f_docs_current_01: agree — 亲自核对：docs/specs/storage_and_artifacts.md:25-29 以现在时陈述旧 profiles.db 迁移工具（含 --dry-run、保留 Cookie），:47 AC-002 已勾选 [x]；docs/tasks_index.json 中 t010 status=backlog；blueprint/decisions.md ADR 008 明言『正式用户数据迁移仍由 t010 负责』；src/backend/cbrowser/ 全树 grep dry_run 零命中。未来冒充当前成立。
-  - Evidence: docs/specs/storage_and_artifacts.md:25-29; docs/specs/storage_and_artifacts.md:47; docs/tasks_index.json（t010 status=backlog）; docs/blueprint/decisions.md:82
+    - Evidence: docs/specs/storage_and_artifacts.md:25-29; docs/specs/storage_and_artifacts.md:47; docs/tasks_index.json（t010 status=backlog）; docs/blueprint/decisions.md:82
 - f_repo_ops_01: agree — 与 f_frontend_shell_02 同一文件亲自复核：ci.yml backend job 引用 backend/requirements.txt、backend/tests，frontend job working-directory=frontend、frontend/package-lock.json，两目录均不存在（实际 src/backend、src/frontend）；根 pyproject 三处 testpaths 亦未被覆盖。仓库实际无 CI 门禁成立。
-  - Evidence: .github/workflows/ci.yml:8-39
-- f_repo_ops_02: agree — 亲自核对：release.yml:64/93/122 分别调用 packaging\build_windows.ps1、packaging/build_macos.sh、packaging/make_universal_app.sh；packaging/ 目录全仓不存在；release job(:552) needs [version, build-windows, universal, docker-manifest]，依赖必失败则 Release 永不创建。成立。
-  - Evidence: .github/workflows/release.yml:64; .github/workflows/release.yml:93; .github/workflows/release.yml:122; .github/workflows/release.yml:552
+    - Evidence: .github/workflows/ci.yml:8-39
+- f_repo_ops_02: agree — 亲自核对：release.yml:64/93/122 分别调用 packaging\\build_windows.ps1、packaging/build_macos.sh、packaging/make_universal_app.sh；packaging/ 目录全仓不存在；release job(:552) needs [version, build-windows, universal, docker-manifest]，依赖必失败则 Release 永不创建。成立。
+    - Evidence: .github/workflows/release.yml:64; .github/workflows/release.yml:93; .github/workflows/release.yml:122; .github/workflows/release.yml:552
 - f_repo_ops_03: agree — 亲自核对：release.yml:181 与 :191 两处 docker/build-push-action 只设 context:.、未设 file:；仓根无 Dockerfile（ls 确认），真实入口为 config/docker/Dockerfile（compose.yaml 明确）。默认路径构建必然失败，成立。
-  - Evidence: .github/workflows/release.yml:181-193; compose.yaml:7-9
-- f_global_system_properties_01: agree — Critical 的组合成立且每块都经本人独立复核：全仓仅根 compose.yaml 一个编排文件（find 确认）、0.0.0.0:56661、AUTH_TOKEN 默认空；entrypoint 跑 legacy；_check_auth 在 token 为 None 时全放行；open-external/shutdown 无凭据可达；README:40 把 token 写成可选项（『若配置了 AUTH_TOKEN』）。无第二种受支持部署形态可改选。合成未夸大。
-  - Evidence: compose.yaml:6-17; config/docker/entrypoint.sh:27; src/backend/main.py:145; README.md:40
+    - Evidence: .github/workflows/release.yml:181-193; compose.yaml:7-9
+- f_global_system_properties_01: agree — Critical 的组合成立且每块都经本人独立复核：全仓仅根 compose.yaml 一个编排文件（find 确认）、0.0.0.0:56661、AUTH_TOKEN 默认空；entrypoint 跑 legacy；\_check_auth 在 token 为 None 时全放行；open-external/shutdown 无凭据可达；README:40 把 token 写成可选项（『若配置了 AUTH_TOKEN』）。无第二种受支持部署形态可改选。合成未夸大。
+    - Evidence: compose.yaml:6-17; config/docker/entrypoint.sh:27; src/backend/main.py:145; README.md:40
 - f_global_strategy_01: agree — 亲自核对 docs/tasks_index.json：非归档任务恰为 t009/t010/t011/t012 且 status 全部 backlog，实施类 t001–t008/t013 已归档；部署入口仍为 legacy（entrypoint.sh:27 本人核对）；spec 冒充 t010 已交付见 f_docs_current_01 核对。收尾链整体停滞的合成属实。
-  - Evidence: docs/tasks_index.json（t009-t012 均 backlog）; config/docker/entrypoint.sh:27; docs/specs/storage_and_artifacts.md:25-29
+    - Evidence: docs/tasks_index.json（t009-t012 均 backlog）; config/docker/entrypoint.sh:27; docs/specs/storage_and_artifacts.md:25-29
 - f_global_strategy_02: agree — 事实前提经本人核对：AGENTS.md 定义产品为『单机 Docker 管理系统』；docs/v2_architecture_plan.md 自述公网/远程服务器不是交付目标（followup_q_strategy_01 confirmed）；t009 task.md:29 AC-005 公网穿透记 NOT_RUN/USER_WAIVED。五服务拓扑与单机单人前提的错配是基于在案决策的判断，未虚构需求。
-  - Evidence: AGENTS.md:3; docs/tasks/t009_v2_full_acceptance/task.md:29; docs/v2_architecture_plan.md:3
+    - Evidence: AGENTS.md:3; docs/tasks/t009_v2_full_acceptance/task.md:29; docs/v2_architecture_plan.md:3
 - f_global_architecture_01: agree — 亲自核对拼接链：config/docker/Dockerfile 把 src/frontend/dist/ 拷入镜像；entrypoint.sh:27 只跑 legacy backend.main:app；main.tsx 只挂 v2 app/router；grep 确认 legacy main.py 中 api/v1 出现 0 次、且不 import cbrowser 包，其路由面只有未版本化 /api/*，与 v2 前端调用的 /api/v1/* 不相交。出厂工件跨代拼接成立。
-  - Evidence: config/docker/Dockerfile:8-11; config/docker/entrypoint.sh:27; src/backend/main.py（grep api/v1 零命中）; src/frontend/src/main.tsx:3-4
+    - Evidence: config/docker/Dockerfile:8-11; config/docker/entrypoint.sh:27; src/backend/main.py（grep api/v1 零命中）; src/frontend/src/main.tsx:3-4
 - f_global_architecture_02: agree — 亲自核对：router.py:56 profile_router 唯一守卫为 require_csrf_and_origin，bind_runtime(:706)/report_observed_state(:758)/report_runtime_event(:807) 定义于其上；internal_supervisor.py:83-93 把同一批 handler 函数复用到 require_supervisor 守卫的内部 router，handler 内无授权依赖。followup_q_architecture_04 亦确认生产 Supervisor 只走内部面、会话面无真实调用方。授权取决于挂载位置成立。
-  - Evidence: src/backend/cbrowser/api/v1/router.py:56; src/backend/cbrowser/api/v1/router.py:706-835; src/backend/cbrowser/api/internal_supervisor.py:48-99
+    - Evidence: src/backend/cbrowser/api/v1/router.py:56; src/backend/cbrowser/api/v1/router.py:706-835; src/backend/cbrowser/api/internal_supervisor.py:48-99
 - f_global_system_properties_02: agree — 组合的三根支柱均经本人独立复核：FROM cbrowser:latest 自引用未钉版（f_contracts_deploy_01)、release.yml 引用已删 packaging/ 且 build-push 未指定 file:(f_repo_ops_02/03)。『干净克隆不存在可走通的构建/发布路径』的合成与证据相符。
-  - Evidence: config/docker/Dockerfile:1-2; .github/workflows/release.yml:64-122; .github/workflows/release.yml:181-193
+    - Evidence: config/docker/Dockerfile:1-2; .github/workflows/release.yml:64-122; .github/workflows/release.yml:181-193
 - f_global_system_properties_03: agree — 组合的每块都有本人复核或双单元独立印证：CI 双 job 路径全灭（本人读 ci.yml)、两组 E2E env 门控 skip（本人 grep 确认）、前端 E2E 消费未验新鲜度的 dist（本人读 harness)、夹具与生产 visibility 语义分叉（本人双向核对）、serve_spa 与清洗器穿透零回归网（f_backend_core_18/f_backend_runtime_adapters_18 本人核对）。『门禁系统性静默变绿』未夸大。
-  - Evidence: .github/workflows/ci.yml:21-36; tests/e2e/test_stream_ice_failure_e2e.py:15; tests/fixtures/frontend_app_probe/harness.py:19-39; tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:161-163
+    - Evidence: .github/workflows/ci.yml:21-36; tests/e2e/test_stream_ice_failure_e2e.py:15; tests/fixtures/frontend_app_probe/harness.py:19-39; tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:161-163
 - f_global_system_properties_04: agree — 四处失真中两处经本人直接核对：生效 spec 把未实施迁移写成已交付且 AC 已勾（f_docs_current_01)、diagnostics 承诺不记剪贴板而代码实记（f_backend_core_02)；failure_count 阈值一处与本人所见 ADR 008 原文一致（decisions.md 载第 4 次异常阻断，blueprint 仍写 >=3 系 docs_current 单元实证）；CHANGELOG 停在 0.1.9 本人读文件头确认。合成属实。
-  - Evidence: docs/specs/storage_and_artifacts.md:25-29; src/backend/diagnostics.py:280; src/backend/main.py:1301; CHANGELOG.md:7
-- f_global_system_properties_05: agree — 两块均核对：剪贴板正文落 manager.log 见 f_backend_core_02 本人核对（main.py:1301/1399)；adapter.ts:77-95 本人亲自读：全部非 resize 的 DataChannel 发送报文原文被 pushBounded 存入 window.__sentDataChannelMessages（上限留存、无通道过滤），含键入/剪贴板类输入。运行期隐私泄漏为默认行为成立。
-  - Evidence: src/backend/main.py:1301; src/backend/main.py:1399; src/frontend/src/features/browser-session/adapter.ts:77-95
+    - Evidence: docs/specs/storage_and_artifacts.md:25-29; src/backend/diagnostics.py:280; src/backend/main.py:1301; CHANGELOG.md:7
+- f_global_system_properties_05: agree — 两块均核对：剪贴板正文落 manager.log 见 f_backend_core_02 本人核对（main.py:1301/1399)；adapter.ts:77-95 本人亲自读：全部非 resize 的 DataChannel 发送报文原文被 pushBounded 存入 window.\_\_sentDataChannelMessages（上限留存、无通道过滤），含键入/剪贴板类输入。运行期隐私泄漏为默认行为成立。
+    - Evidence: src/backend/main.py:1301; src/backend/main.py:1399; src/frontend/src/features/browser-session/adapter.ts:77-95
 - f_global_evolution_01: agree — 亲自核对 tasks_index.json:t009–t012 全部 backlog；部署现实仍为 legacy 入口（本人核对 entrypoint）；finding 文本已纳入 followup_q_evolution_01 的修正（成本不来自 legacy 数据增长，而来自验收面增长与文档漂移），未保留被精查推翻的旧论据。合成与现状相符。
-  - Evidence: docs/tasks_index.json（t009-t012 均 backlog）; config/docker/entrypoint.sh:27
+    - Evidence: docs/tasks_index.json（t009-t012 均 backlog）; config/docker/entrypoint.sh:27
 - f_global_evolution_02: agree — 结构新鲜与语义失真的对照成立：spec 三态违规（本人核对 f_docs_current_01)、CHANGELOG 停在 [0.1.9]-2026-10-16（本人读文件头）、blueprint 阈值与 ADR 008 原文冲突（本人读 decisions.md 第 4 次阻断的结论）。『结构自纠正、语义自欺』的合成有据。
-  - Evidence: docs/specs/storage_and_artifacts.md:25-29; CHANGELOG.md:7; docs/blueprint/decisions.md:82
+    - Evidence: docs/specs/storage_and_artifacts.md:25-29; CHANGELOG.md:7; docs/blueprint/decisions.md:82
 - f_global_evolution_03: agree — 组合块经本人复核多块：夹具分叉生产语义（f_tests_integration_fixtures_01 双向核对）、两组 E2E 整层 env 门控 skip（本人 grep)、主要生产缺陷无回归网（f_backend_core_18/f_backend_runtime_adapters_18 本人核对）；followup_q_evolution_03 的分布统计（7 条私有耦合 finding 横跨 5/6 测试单元、质心在 coordinator）与局部记录一致。债务集中于切换关键面的判断成立。
-  - Evidence: tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:161-163; tests/e2e/test_stream_ice_failure_e2e.py:15; tests/unit/test_runtime_agent.py:29-77
+    - Evidence: tests/fixtures/supervisor_recovery_probe/gateway_fixture.py:161-163; tests/e2e/test_stream_ice_failure_e2e.py:15; tests/unit/test_runtime_agent.py:29-77

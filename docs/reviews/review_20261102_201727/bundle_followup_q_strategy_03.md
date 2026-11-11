@@ -7,10 +7,10 @@
 ## Findings
 
 - [Low][90] docs/tasks/t009_v2_full_acceptance/note.md — t009 的过程总账正文仍是空白模板，已执行的范围决定只存在于 handoff
-  - ID: f_followup_q_strategy_03_01; verification: static
-  - Evidence: docs/tasks/t009_v2_full_acceptance/note.md 的实施笔记为「无」、Review 处置与收尾报告均为模板原文，但其 front matter 的 depends_on 已改为 t013，说明状态层已被 task.py 更新、正文总账未同步。; 2026-11-02 的用户决定（t009 依赖改为 t013、AC-003 降级为真实 Chrome 手动清单、p015 以 transferred 归档到 t009、其余 AC 开工前再确认是否降级）只记录在 docs/handoff.md 的最新一节，t009 总账无一字。
-  - Impact: task 总账是 AGENTS.md 声明的状态权威，但关闭链的实际决策史只能从 handoff 重建；后续审阅者（或新会话）无法从 t009/t010/t011 自身判断链条为何停滞，「无阻塞记录」这类结论必须跨载体拼凑，降低流程账本的可审计性。
-  - Fix: 把 2026-11-02 关于 t009 的决定以实施笔记形式补记进 t009 note.md（含决定日期与出处 handoff 引用），此后范围变更同步记入对应 task 总账而非只记 handoff。（验证：重读 t009 note.md，实施笔记应能独立复述依赖变更与 AC-003 降级的决定、日期和理由。）
+    - ID: f_followup_q_strategy_03_01; verification: static
+    - Evidence: docs/tasks/t009_v2_full_acceptance/note.md 的实施笔记为「无」、Review 处置与收尾报告均为模板原文，但其 front matter 的 depends_on 已改为 t013，说明状态层已被 task.py 更新、正文总账未同步。; 2026-11-02 的用户决定（t009 依赖改为 t013、AC-003 降级为真实 Chrome 手动清单、p015 以 transferred 归档到 t009、其余 AC 开工前再确认是否降级）只记录在 docs/handoff.md 的最新一节，t009 总账无一字。
+    - Impact: task 总账是 AGENTS.md 声明的状态权威，但关闭链的实际决策史只能从 handoff 重建；后续审阅者（或新会话）无法从 t009/t010/t011 自身判断链条为何停滞，「无阻塞记录」这类结论必须跨载体拼凑，降低流程账本的可审计性。
+    - Fix: 把 2026-11-02 关于 t009 的决定以实施笔记形式补记进 t009 note.md（含决定日期与出处 handoff 引用），此后范围变更同步记入对应 task 总账而非只记 handoff。（验证：重读 t009 note.md，实施笔记应能独立复述依赖变更与 AC-003 降级的决定、日期和理由。）
 
 ## evidence
 

@@ -28,7 +28,7 @@
 
 ## 3. 路径与隐私规范
 
-- 已跟踪的非归档文本文件不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
+- 当前全部 tracked 文本与未跟踪且未忽略的新文件（含归档）不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
 - 归档 spike 只作历史证据，不在仓库内运行；先复制到 `.scratch/`，探针秘密与工作目录不得入库。
 
 ## 4. 编码与安全规范

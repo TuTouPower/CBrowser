@@ -2,7 +2,7 @@
 
 ## 背景
 
-用户要求前端参考 `/Users/karson/kar/code/omni_panel/DESIGN.md` 改造视觉：只改主题、背景、字体、字号、圆角与阴影，不动主要界面。当前系统为暖绿灰 + Space Grotesk / IBM Plex Mono，全站 400 字重；omni 为冷灰中性色 + Inter / JetBrains Mono，重度依赖字重层级与更大圆角。
+用户要求前端参考 `<home>/kar/code/omni_panel/DESIGN.md` 改造视觉：只改主题、背景、字体、字号、圆角与阴影，不动主要界面。当前系统为暖绿灰 + Space Grotesk / IBM Plex Mono，全站 400 字重；omni 为冷灰中性色 + Inter / JetBrains Mono，重度依赖字重层级与更大圆角。
 
 设计权威是根目录 `DESIGN.md`，经 `src/frontend/scripts/design_tokens.mjs` 生成 Tailwind 4 token。直接复制 omni 色值会触发两类门禁：
 
@@ -64,7 +64,7 @@
 
 ## 上下文区
 
-- 来源：用户 2026-11-09 需求（参考 `/Users/karson/kar/code/omni_panel/DESIGN.md`），已确认全部推荐决策：AA-safe 色板、字重 / 行高落地、omni 圆角、阴影覆盖、默认 dark 不变。
+- 来源：用户 2026-11-09 需求（参考 `<home>/kar/code/omni_panel/DESIGN.md`），已确认全部推荐决策：AA-safe 色板、字重 / 行高落地、omni 圆角、阴影覆盖、默认 dark 不变。
 
 ### 有意不测
 

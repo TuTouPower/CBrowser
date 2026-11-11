@@ -7,10 +7,10 @@
 ## Findings
 
 - [Low][85] tests/unit/test_gateway_registry.py; tests/unit/test_stream_agent_lifecycle.py; tests/integration/test_gateway_signaling.py; tests/e2e/test_supervisor_recovery_e2e.py — 批量重注册组合场景（>20 profile 撞 Gateway 注册节流）在三层测试中零覆盖，自愈性只有静态推演、无任何执行证据
-  - ID: f_followup_q_system_properties_03_01; verification: static
-  - Evidence: 节流与退避只被分开单测：test_gateway_registry.py:96-105 只测 RegistrationThrottle 原语的上限/过期；test_stream_agent_lifecycle.py:461-496 的退避用例用 MockGatewayServer 的 reject_registration（ACK 级拒绝），不是真实 Gateway 返回的 HTTP 429 握手拒绝; tests/integration/test_gateway_signaling.py 中唯一的 429 断言（:249）属于 viewer 授权节流用例，与 Agent 注册节流无关；无任何集成用例把注册桶打满后断言 Agent 最终注册成功; tests/e2e 恢复类用例最多 2 个 profile（test_supervisor_recovery_e2e.py:453），其余均为单 profile；无一用例重启 Gateway 或制造同源注册突发，更无完成时限断言
-  - Impact: 全机/网关重启后画面恢复时长是该系统最现实的整体可用性场景，其自愈性（退避重试 + 被拒不占额度 + 窗口滑动三机制的组合）若任一环被重构破坏（例如 allow() 改为记录被拒尝试、或 Agent 对 429 加特殊退出分支），现有测试全绿也发现不了，恢复可能从『延迟数分钟』退化为『永不恢复需人工介入』而无告警
-  - Fix: 加一条集成级用例：真实 Gateway（小桶参数如 max_attempts=3）+ 多个真实 StreamAgent 同源并发注册，断言全部在有界时间内注册成功；并加一条 e2e 或集成用例模拟 Gateway 重启后多 profile 分波重注册完成。或至少在 test_gateway_signaling 中补 Agent 注册节流打满→窗口过期→注册成功的链路断言
+    - ID: f_followup_q_system_properties_03_01; verification: static
+    - Evidence: 节流与退避只被分开单测：test_gateway_registry.py:96-105 只测 RegistrationThrottle 原语的上限/过期；test_stream_agent_lifecycle.py:461-496 的退避用例用 MockGatewayServer 的 reject_registration（ACK 级拒绝），不是真实 Gateway 返回的 HTTP 429 握手拒绝; tests/integration/test_gateway_signaling.py 中唯一的 429 断言（:249）属于 viewer 授权节流用例，与 Agent 注册节流无关；无任何集成用例把注册桶打满后断言 Agent 最终注册成功; tests/e2e 恢复类用例最多 2 个 profile（test_supervisor_recovery_e2e.py:453），其余均为单 profile；无一用例重启 Gateway 或制造同源注册突发，更无完成时限断言
+    - Impact: 全机/网关重启后画面恢复时长是该系统最现实的整体可用性场景，其自愈性（退避重试 + 被拒不占额度 + 窗口滑动三机制的组合）若任一环被重构破坏（例如 allow() 改为记录被拒尝试、或 Agent 对 429 加特殊退出分支），现有测试全绿也发现不了，恢复可能从『延迟数分钟』退化为『永不恢复需人工介入』而无告警
+    - Fix: 加一条集成级用例：真实 Gateway（小桶参数如 max_attempts=3）+ 多个真实 StreamAgent 同源并发注册，断言全部在有界时间内注册成功；并加一条 e2e 或集成用例模拟 Gateway 重启后多 profile 分波重注册完成。或至少在 test_gateway_signaling 中补 Agent 注册节流打满→窗口过期→注册成功的链路断言
 
 ## evidence
 

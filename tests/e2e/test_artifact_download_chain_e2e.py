@@ -108,3 +108,5 @@ async def test_chrome_download_reaches_api_artifact(tmp_path: Path) -> None:
         proof = tmp_path / "artifact_download_chain.json"
         if proof.exists():
             assert json.loads(proof.read_text(encoding="utf-8"))["sha256"]
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')

@@ -3,7 +3,7 @@
 - task：`t001_v2_runtime_validation`
 - spec：`docs/tasks/t001_v2_runtime_validation/task.md`
 - diff_anchor：`3c8bdbc55570e85aaeb6365a3d512da9c0ce180c`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t001' diff 3c8bdbc55570e85aaeb6365a3d512da9c0ce180c`
+- target：`git -C '<repo>_t001' diff 3c8bdbc55570e85aaeb6365a3d512da9c0ce180c`
 - round：1
 - reviewed_at：2026-10-27T19:28:00+08:00
 

@@ -53,6 +53,7 @@ from cbrowser.adapters.database.session import create_engine_and_maker  # noqa: 
 from cbrowser.api.app import create_app  # noqa: E402
 from cbrowser.domain.models import ProfileConfig  # noqa: E402
 from cbrowser.runtime_agent.agent import run_uds_agent  # noqa: E402
+from cbrowser.runtime_agent.socket_root import agent_socket_path, prepare_socket_dir  # noqa: E402
 from cbrowser.supervisor.control_server import create_control_app  # noqa: E402
 from cbrowser.supervisor.path_validator import PathValidator  # noqa: E402
 
@@ -114,14 +115,17 @@ class _Chain:
         (runtime_dir / "runner_info.json").write_text(
             json.dumps(runner_info), encoding="utf-8"
         )
+        socket_root = PathValidator(data_root).socket_root
+        prepare_socket_dir(socket_root, profile_id, "i1")
+        sock = agent_socket_path(socket_root, profile_id, "i1")
         self._agent_task = asyncio.create_task(
             run_uds_agent(
                 run_dir=runtime_dir,
                 default_download_dir=root / "data" / "downloads",
                 events_dir=events_dir,
+                uds_path=sock,
             )
         )
-        sock = runtime_dir / "agent.sock"
         for _ in range(100):
             if sock.is_socket():
                 break
@@ -218,6 +222,11 @@ class _Chain:
         await repository.create_profile(
             ProfileConfig(name="p1", fingerprint_seed=SEED), profile_id="p1"
         )
+        # The in-process Supervisor session wraps this live browser; seed
+        # the API with the same authoritative instance before it starts.
+        await repository.set_desired_state(profile_id, "running")
+        await repository.bind_runtime_instance(profile_id, "i1", config_version=1)
+        await repository.report_observed_state(profile_id, "i1", "running", config_version=1)
         await engine.dispose()
 
         admin_password = secrets.token_urlsafe(32)
@@ -225,7 +234,7 @@ class _Chain:
         admin_file = root / "admin"
         admin_file.write_text(admin_password, encoding="utf-8")
         admin_file.chmod(0o600)
-        origin = "http://127.0.0.1"
+        origin = "https://127.0.0.1:56661"
         api = create_app(
             db_path=db_file,
             admin_password_file=admin_file,
@@ -350,7 +359,7 @@ async def _control_state(chain: _Chain) -> dict:
         login.raise_for_status()
         headers = {
             "X-CSRF-Token": login.json()["csrf_token"],
-            "Origin": "http://127.0.0.1",
+            "Origin": "https://127.0.0.1:56661",
             "Cookie": f"cbrowser_session={login.cookies.get('cbrowser_session')}",
         }
         state = await client.get(
@@ -548,7 +557,7 @@ async def test_attendant_holds_dialog_and_release_restores_default() -> None:
                 session_cookie = login.cookies.get("cbrowser_session")
                 session_headers = {
                     "X-CSRF-Token": csrf,
-                    "Origin": "http://127.0.0.1",
+                    "Origin": "https://127.0.0.1:56661",
                     "Cookie": f"cbrowser_session={session_cookie}",
                 }
                 restore = await client.post(

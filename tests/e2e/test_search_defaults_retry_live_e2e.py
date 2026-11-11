@@ -103,3 +103,5 @@ async def test_search_defaults_retry_on_live_context(tmp_path: Path) -> None:
         )
     finally:
         await harness.cleanup()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')

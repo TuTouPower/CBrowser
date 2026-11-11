@@ -40,7 +40,7 @@
 3. **事件转发层是 v2 可靠性主线上的具体裂缝。** Supervisor 的 consume_disk_events 在事件被 API 拒绝时不推进游标、每秒无限重试（f_backend_supervisor_01）；EventForwarder 把全部非 200 的 4xx（含 401/403/429）一律分类为永久 REJECTED 并隔离，与产物转发器的可重试 4xx 集合口径不一致（f_backend_supervisor_02）。状态权威与幂等设计本身扎实，但投递分类这一环与整体基调不齐。
 4. **测试体系整体强，盲区呈系统性形态：「生产恒走、测试恒绕」。** 四个 tests 视角 partial 单元经补审后结论一致：套件在已覆盖处是行为级、断言扎实的（真实 git、真实 DB、失败路径与回滚、确定性时钟），但一批生产必经分支在测试中恒被绕开——PUT/PATCH 的 launch_args 校验（与双校验器矛盾叠加，f_backend_api_auth_09）、CSRF 的 Referer 回退分支、内部 RPC 未配令牌的 503 分支、宿主机控制端点 open-external/shutdown 的成功路径、repo_state.py 的子目录 CWD 调用（恰是其路径基准缺陷 f_template_scripts_state_01 的所在面）、board.js 1135 行零行为测试、registry.json 角色过滤分支从未执行、prompt 合并编号路径从未被驱动。另有测试可信度问题：模板 E2E 套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭（f_template_tests_01）；多处 fixture 重实现生产语义并与生产漂移（fixtures 的两套 Selkies shim 互相不一致、Gateway→API 假面无条件放行自动化授权、资源探针重实现配额投递链）；前端 dist 新鲜度门禁按文件名而非实际消费判定、多条 lane 可静默测旧 dist。
 5. **文档与归档的漂移集中在「记录未随事实修订」。** handoff.md 整体过期一轮（仍称下一步 t015、pending 为空）；findings 登记表未随 ADR 013 修订，8 篇 TURN/ICE 类 finding 仍标「有效」且含已失效指令；blueprint/artifacts.md 的 chown 回退口径与 ADR 014 及 security.md 直接冲突。归档层内部亦有口径矛盾：上一轮 adoption_decision.md 对交叉证伪条数同文件内 33 与 30 两种口径、同一穿越漏洞的核实等级在记录集内有 suspected / 静态确认 / 现网实测三档从未对齐；t018 的闭环证据退化（AC-004 在自声明必需验证从未执行时打勾关闭、Review 处置表样板化、19 轮审查超记录上限无授权留痕）。
-6. **模板工具链自身有真实缺陷，不只是文档问题。** repo_cleanup 主 walk 按仓库根相对路径剪枝、嵌套 node_modules 与 bulk 树不被剪枝，与其防误删承诺不符；user_prompts 编号在显示与 revoke 之间不是同一编号空间，revoke 可能作废错误条目且无回归测试；link-skills 路径下 _ensure_symlink 对真实目录直接 rmtree 且报告谎称原内容入回滚栈（该路径根本没有事务）；sync_opencode_commands 对 registry.json 用硬下标，缺登记时 KeyError 穿透 apply 的回滚例外集。
+6. **模板工具链自身有真实缺陷，不只是文档问题。** repo_cleanup 主 walk 按仓库根相对路径剪枝、嵌套 node_modules 与 bulk 树不被剪枝，与其防误删承诺不符；user_prompts 编号在显示与 revoke 之间不是同一编号空间，revoke 可能作废错误条目且无回归测试；link-skills 路径下 \_ensure_symlink 对真实目录直接 rmtree 且报告谎称原内容入回滚栈（该路径根本没有事务）；sync_opencode_commands 对 registry.json 用硬下标，缺登记时 KeyError 穿透 apply 的回滚例外集。
 
 ## 跨包冲突与待核实线索（保留原文，不擅自统一）
 
@@ -56,7 +56,7 @@
 
 - 纯静态审阅：未运行任何代码、测试、构建或 Docker 校验；套件在 HEAD 的实际通过状态未经执行验证，多处 flake / 时序类判断标为 suspected。
 - spikes 与 tasks 归档引用的运行证据（.scratch 下的门禁日志、黑盒原始 JSON）不在仓库内，归档单元只能核对账本间一致性与与当前代码的吻合，无法复核原始日志本身。
-- 上一轮审阅的 _meta 产物按仓规不入库，归档 bundle 的完整审计链部分依赖仓外产物（f_archive_reviews_05）；本轮对归档文档只判定其内部一致性，不改判其技术结论。
+- 上一轮审阅的 \_meta 产物按仓规不入库，归档 bundle 的完整审计链部分依赖仓外产物（f_archive_reviews_05）；本轮对归档文档只判定其内部一致性，不改判其技术结论。
 - 75 条单元 uncertainties 中，3 条（backend_core:2、template_scripts_state:1、template_scripts_ops:1）已由 synthesis 的 uncertainty_resolutions 处置（均为 tests 视角 partial 经独立补审闭合，有补审记录与新增 finding 为据）；其余未处置项按契约自动传播为最终报告的限制。
 - 本轮审阅不包含对上轮审阅结论的回归对照；归档文档作为本仓的普通文档单元按其自身一致性受审。
 

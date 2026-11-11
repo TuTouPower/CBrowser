@@ -3,13 +3,13 @@
 - task：`t035_profile_domain_model_rebuild`
 - spec：`docs/tasks/t035_profile_domain_model_rebuild/task.md`
 - diff_anchor：`eeffb8947b130185fd2bd5f3e4d565f5faae5bef`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t035' diff eeffb8947b130185fd2bd5f3e4d565f5faae5bef`
+- target：`git -C '<repo>_t035' diff eeffb8947b130185fd2bd5f3e4d565f5faae5bef`
 - round：1
 - reviewed_at：2026-11-06T02:43:24+08:00
 
 reviewed_scope: 8470a2b443de40dc
 
-落点校验通过：`git -C ... rev-parse --show-toplevel` 精确等于 `/Users/karson/kar/code/CBrowser_t035`。审查对象为相对 `eeffb8947b...` 的 75 个已跟踪交付改动（`git status --short` + 全量 `git diff` 逐段读取）、9 个 `??` 新增交付文件（`deps.py` / `groups_router.py` / `proxies_router.py` / `0001_baseline_v2.py` / `test_t035_profile_domain.py` / `test_t035_proxy_runtime.py` / `sse_t035_runtime_fields.test.ts` / finding `d031` / spike `s013`，直接 read 覆盖）与删除文件（0001–0009、`scripts/migrate_legacy.py`、`SettingsPage.test.tsx`）。实施方未对新增交付文件执行 `git add -N`，故 9 个未跟踪文件不进 `git diff`；已按用户要求直接读取覆盖全量，`review_scope_fingerprint` 按 worktree 内容计算（含未跟踪交付文件），写报告前重算 = `3cd91010480bf5ab`。按约束未跑 Docker E2E、完整门禁、`scripts/run_gates.sh`。
+落点校验通过：`git -C ... rev-parse --show-toplevel` 精确等于 `<repo>_t035`。审查对象为相对 `eeffb8947b...` 的 75 个已跟踪交付改动（`git status --short` + 全量 `git diff` 逐段读取）、9 个 `??` 新增交付文件（`deps.py` / `groups_router.py` / `proxies_router.py` / `0001_baseline_v2.py` / `test_t035_profile_domain.py` / `test_t035_proxy_runtime.py` / `sse_t035_runtime_fields.test.ts` / finding `d031` / spike `s013`，直接 read 覆盖）与删除文件（0001–0009、`scripts/migrate_legacy.py`、`SettingsPage.test.tsx`）。实施方未对新增交付文件执行 `git add -N`，故 9 个未跟踪文件不进 `git diff`；已按用户要求直接读取覆盖全量，`review_scope_fingerprint` 按 worktree 内容计算（含未跟踪交付文件），写报告前重算 = `3cd91010480bf5ab`。按约束未跑 Docker E2E、完整门禁、`scripts/run_gates.sh`。
 
 独立轻量复验：`git rev-parse --show-toplevel`；`git status --short`；`git diff --check`；`python3 -m py_compile`（16 个改动/新增 .py 全通过）；`npm run test:types --prefix src/frontend`（Node 26.13.0，通过）；前端 `sse_t035_runtime_fields.test.ts` 定向 `npm test -- --run`（5 passed）；定向 pytest（`.scratch/gate_scratch/venv/bin/python`，Python 3.15.2，`PYTHONPATH=src/backend`，9 个文件 132 passed，含 `test_upgrade_head_matches_orm_metadata` 的 `alembic command.check` 与 `test_t027_release_controller.py` 六个新语义用例）；OpenAPI 导出/live 一致性定向 2 passed；python 解析两份导出 OpenAPI 的分组值与 DTO 字段；AC-012 扫描复跑；`applied_migration_version` 生产代码残留 grep；scope 指纹写前/写后重算一致。部署态/真实栈/真实引擎证据（`.scratch/evidence_t035_final4/`、spike `s013`、四轮门禁 junit）按约束未重跑，相关 AC 标 `trust_prior`。
 

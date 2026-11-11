@@ -3,7 +3,7 @@
 - task：`t004_v2_stream_runtime`
 - spec：`docs/tasks/t004_v2_stream_runtime/task.md`
 - diff_anchor：`8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t004' diff 8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6`
+- target：`git -C '<repo>_t004' diff 8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6`
 - round：Round 1
 - reviewed_at：2026-10-29T10:15:00+08:00（勘误：前缀时间未核实，实际复核修正时间戳：2026-10-29T13:09:12+08:00）
 

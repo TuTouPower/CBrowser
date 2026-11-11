@@ -7,10 +7,10 @@
 ## Findings
 
 - [Low][90] tests/integration/test_v2_api_subprocess.py:485-698 — 规范级运行时收敛验收测试 (AC-003/AC-006) 经用户会话面行使 Supervisor 上报权, 把冗余暴露锁进测试基线
-  - ID: f_followup_q_architecture_04_01; verification: static
-  - Evidence: 该文件以管理员登录会话 (cbrowser_session) 调用 POST /api/v1/runtimes/bind|observed|events 模拟 Supervisor 上报 (行 485、495、544 等), 是全仓唯一使用会话面这三条路径的测试。; 其余 Supervisor 行为测试 (test_supervisor_rpc/manual_retry/status_truth 等) 均走 /api/v1/internal/supervisor 内部面, 证明同一语义完全可在内部面验收。; 后果: 摘除会话面挂载 (f_backend_api_auth_02 / f_global_architecture_02 的修复方向) 会先撞红这批 AC 级测试, 形成『为保测试而保留暴露』的反向锁定; 且该测试以用户会话成功伪造实例绑定与 observed 状态, 本身即是会话面越权的活体演示。
-  - Impact: 抬高收敛授权边界的修复成本, 并使测试基线持续为冗余暴露背书; 若未来有人以『有测试在用』为由保留挂载, 暴露将长期化。
-  - Fix: 将 test_v2_api_subprocess.py 中 bind/observed/events 调用迁至 /api/v1/internal/supervisor/* 并为其 server harness 配置 Supervisor 令牌 (其余用户面调用保持会话), 随后再从 profile_router 摘除这三条路由。
+    - ID: f_followup_q_architecture_04_01; verification: static
+    - Evidence: 该文件以管理员登录会话 (cbrowser_session) 调用 POST /api/v1/runtimes/bind|observed|events 模拟 Supervisor 上报 (行 485、495、544 等), 是全仓唯一使用会话面这三条路径的测试。; 其余 Supervisor 行为测试 (test_supervisor_rpc/manual_retry/status_truth 等) 均走 /api/v1/internal/supervisor 内部面, 证明同一语义完全可在内部面验收。; 后果: 摘除会话面挂载 (f_backend_api_auth_02 / f_global_architecture_02 的修复方向) 会先撞红这批 AC 级测试, 形成『为保测试而保留暴露』的反向锁定; 且该测试以用户会话成功伪造实例绑定与 observed 状态, 本身即是会话面越权的活体演示。
+    - Impact: 抬高收敛授权边界的修复成本, 并使测试基线持续为冗余暴露背书; 若未来有人以『有测试在用』为由保留挂载, 暴露将长期化。
+    - Fix: 将 test_v2_api_subprocess.py 中 bind/observed/events 调用迁至 /api/v1/internal/supervisor/\* 并为其 server harness 配置 Supervisor 令牌 (其余用户面调用保持会话), 随后再从 profile_router 摘除这三条路由。
 
 ## evidence
 

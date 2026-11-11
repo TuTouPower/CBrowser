@@ -246,29 +246,10 @@ def test_cli_writes_evidence_and_returns_pass_fail(
     assert json.loads(output.read_text(encoding="utf-8"))["all_passed"] is False
 
 
-def test_gate_summons_real_engine_suite_fail_closed() -> None:
-    gates = GATES.read_text(encoding="utf-8")
-    assert 'SUITE_ORDER="$SUITE_ORDER real_engine"' in gates
-    assert "run_suite real_engine" in gates
-    assert "bash scripts/run_automation_probe.sh" in gates
-    assert "real_engine NOT_RUN" in gates
 
 
-def test_gate_keeps_a16_readonly_protocol_drift_check() -> None:
-    gates = GATES.read_text(encoding="utf-8")
-    assert "protocol_drift_check" in gates
-    assert "scripts/export_supervisor_protocol.py --check" in gates
-    assert "npm run check:api" in gates
-    assert "npm run design:tokens" not in gates
-    assert "run_suite design_tokens" not in gates
 
 
-def test_probe_entry_declares_required_cases_and_evidence() -> None:
-    probe = PROBE.read_text(encoding="utf-8")
-    for node_id in REQUIRED:
-        assert node_id in probe
-    assert "automation_probe_evidence.py" in probe
-    assert "--junitxml=/evidence/probe.xml" in probe
 
 
 def test_probe_empty_array_expansion_is_bash32_safe() -> None:

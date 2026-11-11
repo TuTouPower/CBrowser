@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from supervisor_recovery_probe.offline_fixture import RealApiProcess  # noqa: E402
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_NETWORK_POLICY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 
 def _get_free_port() -> int:

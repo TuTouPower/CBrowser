@@ -15,7 +15,7 @@ import subprocess
 import time
 import pytest
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images()]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 

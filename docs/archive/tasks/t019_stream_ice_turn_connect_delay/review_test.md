@@ -3,7 +3,7 @@
 - task：`t019_stream_ice_turn_connect_delay`
 - spec：`docs/tasks/t019_stream_ice_turn_connect_delay/task.md`
 - diff_anchor：`c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t019' diff c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
+- target：`git -C '<home>/workspace/CBrowser_t019' diff c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a`
 - round：1
 - reviewed_at：2026-11-03T22:45:01+08:00
 
@@ -92,7 +92,7 @@ reviewed_scope: 3f6ff49e67ef77c7
 
 ### 本轮裁量范围
 
-本轮不重开已闭合的测试可信与危险模式审查（Round 1/2 已逐项扫过，本轮以当前 diff 复核未见变化），只裁量 Round 2 转 PASS 的两条路径在新事实 A–D 下是否仍成立、f001 应作何最终处置。落点仓库已核：`git rev-parse --show-toplevel`（workdir 为本 worktree 时）输出精确等于 `/home/hatch/workspace/CBrowser_t019`，分支 `t019_stream_ice_turn_connect_delay`，diff_anchor `c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a` 与 note front matter 一致。
+本轮不重开已闭合的测试可信与危险模式审查（Round 1/2 已逐项扫过，本轮以当前 diff 复核未见变化），只裁量 Round 2 转 PASS 的两条路径在新事实 A–D 下是否仍成立、f001 应作何最终处置。落点仓库已核：`git rev-parse --show-toplevel`（workdir 为本 worktree 时）输出精确等于 `<home>/workspace/CBrowser_t019`，分支 `t019_stream_ice_turn_connect_delay`，diff_anchor `c7ec89b02003fd32b7ce27b2369ed0f852d9cd4a` 与 note front matter 一致。
 
 ### 新事实 A–D 逐项独立复核
 

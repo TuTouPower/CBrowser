@@ -97,7 +97,7 @@
 
 - **main合并后全门禁PASS**：doctor、169contract、384legacy、120unit、9HTTP、**13实际Runtime E2E/167.97秒**、**12实际Stream E2E/151.56秒**；既有服务health仍ok。原t003隐藏scratch音频依赖已在worktree清理后的main真实复验关闭。日志与稳定可读解释器保留main/.scratch/t004_integration_gates/；project_venv/media_venv是原已验证依赖环境的硬链接副本，prefix已核，不依赖被清理路径。首轮HTTP因继承SOCKS代理且缺socksio在初始化失败，按流程merge abort后重新准备；只清本机测试进程代理变量重验，前后merge tree同为6bc7644285dde28cba3e0e5f119231c3c9d4c3a4，失败日志保留。该次失败留下的9个自有API子进程已核精确路径/PID后SIGTERM回收，未动其他服务；旧fixture setup异常清理缺口由后续t009测试整理时处理。
 
-- **当前t005已开工且strict preflight PASS**：worktree **/Users/karson/kar/code/CBrowser_t005**，branch=t005_v2_supervisor，base/diff_anchor=84f84311815bff330a51bcd35da150fc8b4990b3；**attempt1/execution_id=8c2fd5e26cdc49f4bd8008edecd1d36e/owner_id=root_v2_t005_20261029**。已reserve/claim，不重复start或reserve。task上下文已替换过时t001 active/通用UNVERIFIED-SPIKE为已验证002/003/004契约；认证RPC与CPU策略是本task自有实现，七AC尚全未勾。只读新validation WT=main/.scratch/v2_orchestration/t005_validation，branch=spike/t005_validation。
+- **当前t005已开工且strict preflight PASS**：worktree **<repo>_t005**，branch=t005_v2_supervisor，base/diff_anchor=84f84311815bff330a51bcd35da150fc8b4990b3；**attempt1/execution_id=8c2fd5e26cdc49f4bd8008edecd1d36e/owner_id=root_v2_t005_20261029**。已reserve/claim，不重复start或reserve。task上下文已替换过时t001 active/通用UNVERIFIED-SPIKE为已验证002/003/004契约；认证RPC与CPU策略是本task自有实现，七AC尚全未勾。只读新validation WT=main/.scratch/v2_orchestration/t005_validation，branch=spike/t005_validation。
 
 - **两个指定模型作者并行，写域互斥**：core wrapper42591/PID99949/session ses_e79dd4703ffe7lMlEknoXSms3l，仅Supervisor核心包（排除resource_policy.py）、supervisor Dockerfile/协议及专属core测试；resource wrapper77898/PID99965/session ses_e79dd430bffepsQhMtOCJRaRmI，仅resource_policy.py及专属resource测试。日志main/.scratch/v2_orchestration/t005\_{core,resource}\_implementation.jsonl。Root独占API内部RPC适配、API应用注册/OpenAPI、公共文档/Task/索引。作者先落core_contract.md/resource_contract.md并继续TDD/真实Docker，不将fixture或burner采样当全AC通过；20分钟首批可运行检查点。Root接下来收敛两接口并实现真实API侧RPC。禁止读.env软链、禁止改既有cbrowser/全局代理，写域仅~/kar/code。Docker资源再次实测10CPU/16819609600bytes，未扩大配额。
 
@@ -161,7 +161,7 @@
 
 - **t003合并后验证失败并已撤销合并**：doctor exit0；168 contract+1原有条件skip、384旧后端、71单元、9HTTP通过；Runtime E2E为1FAIL12PASS。唯一失败：tests/e2e/test_browser_runtime_e2e.py引用未入库.scratch/t003_implementation/audio_tools/audio_analyzer.py，原worktree现场掩盖依赖，清理后暴露。失败原日志.scratch/t003_integration_gates/declared_gates.log/result.json保留；main无pending merge，不恢复临时脚本伪造通过。
 
-- **当前t004 active**：worktree /Users/karson/kar/code/CBrowser_t004，branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6；attempt1，execution_id=c738656d4a2144cc9643f66c1b4831e9，owner_id=root_v2_t004_20261028，已reserve/claim，strict preflight PASS。固定队列未增加成员；按task-run后继以已完成前一分支为base，计划t003→t004链尾一起验收集成，保留t003历史。
+- **当前t004 active**：worktree <repo>_t004，branch=t004_v2_stream_runtime，base/diff_anchor=8ff9fd237dcd8e6d1093f3de7503f5b7f599b3e6；attempt1，execution_id=c738656d4a2144cc9643f66c1b4831e9，owner_id=root_v2_t004_20261028，已reserve/claim，strict preflight PASS。固定队列未增加成员；按task-run后继以已完成前一分支为base，计划t003→t004链尾一起验收集成，保留t003历史。
 
 - Root已在t004补正式共享tests/fixtures/runtime_probe/audio_analyzer.py（复用已验证s007算法），原Runtime E2E按文件定位并用sys.executable，不再引用历史scratch。全新worktree无audio_tools目录下，13项真实Runtime E2E全部PASS161.53秒；Ruff E/F/W/I和format通过，最后只做AST等价字符串换行。未提交，归入t004单次执行commit。证据t004/.scratch/t004_root_checks/runtime_clean_fixture_e2e.log/provenance；源归档未修改。
 
@@ -214,12 +214,12 @@
 - 已完成 identity：attempt=1，execution_id=f5cd74fec7234b418c76206a08cff06b；owner_id=root_v2_20261027。ledger已有terminal completed/report done/integrated；不再 reserve t001。
 - 正式Round2双轴最终PASS，指纹bdaea2ca98d286a6。code初审两条失实finding已撤回，一条minor供t006生产Gateway参考。test实际重跑Core/Native及媒体、隔离、下载、恢复、TURN负例；矩阵环境项单独查验。全部审查进程terminal exit0。
 - 原始过程证据：主仓 .scratch/v2_orchestration/ 中JSONL与merge_t001/gates.log；清理前另备份 t001_scratch_evidence.tar.gz（权限0600，排除缓存/临时目录；运行期socket不可归档，不作为测试资产）。scratch仅本机恢复，不替代Git/task状态。
-- t002：done / integrated，唯一执行提交ee2aa47155848a775a15c1ec94c26ad77b4c2021，merge=914dde5fb9d4。原登记/Users/karson/kar/code/CBrowser_t002已exact cleanup，分支t002_v2_backend_foundation由集成脚本删除。权威交付现为main的docs/archive/tasks/t002_v2_backend_foundation/，不得恢复旧路径或重复start。
+- t002：done / integrated，唯一执行提交ee2aa47155848a775a15c1ec94c26ad77b4c2021，merge=914dde5fb9d4。原登记<repo>_t002已exact cleanup，分支t002_v2_backend_foundation由集成脚本删除。权威交付现为main的docs/archive/tasks/t002_v2_backend_foundation/，不得恢复旧路径或重复start。
 - 已闭环identity：attempt=1，execution_id=13f1211c2c0046629e9f68c9741d2514，owner_id=root_v2_20261027；ledger已有terminal completed/report done/cleanup/integrated。
 - 最终验收：工作副本169契约+384旧后端+19单元+9真实HTTP通过；独立Verify Round4/5为9/9 PASS+SQL隐私PASS，manifest=c7e1228803978178adff71a7075f4de17226ea4bfa52c0a487600c07cd6c93ef。正式full Round2 code/test均PASS、0finding、scope=bfeffb3d43a6d56d，7视角/6AC独立复验；409文件监控无源变更。t002所有模型进程已终态。
 - 合并后全部声明命令块退出0：168契约通过/1按主仓既有sync_state条件跳过、384旧后端、19单元、9真实HTTP通过，旧健康ok，task list及repo_sync status正常。日志.scratch/v2_orchestration/merge_t002/gates.log。跳过条件与t001主仓相同，未改测试；不把主仓配置状态与工作副本未初始化混淆。
 - 过程证据：t002_evidence_before_cleanup.tar.gz（6556763字节、0600，排除缓存/临时目录，含固定候选和实际日志）；完整TDD及两轴审查消息保存在主仓.scratch/v2_orchestration/。前轮CWD错误、只读越界/checkout污染及恢复记录保留，不计有效PASS；schema已按冻结哈希恢复。CLI自然0与持久finish=stop分别核对。
-- t003已active：登记worktree=/Users/karson/kar/code/CBrowser_t003，branch=t003_v2_browser_runtime，base/diff_anchor=226c8453097fb982835ccb254cea8a3f26d131b3；attempt=1，execution_id=57e21d93a87e4ab1baf4f96f652bca99，owner_id=root_v2_20261027，start/reserve/claim均完成。根据已验证d002/d004/d006/d011及t002最终快照消除过时未知标记，require-verified preflight PASS；六项业务AC未改、尚未勾。
+- t003已active：登记worktree=<repo>_t003，branch=t003_v2_browser_runtime，base/diff_anchor=226c8453097fb982835ccb254cea8a3f26d131b3；attempt=1，execution_id=57e21d93a87e4ab1baf4f96f652bca99，owner_id=root_v2_20261027，start/reserve/claim均完成。根据已验证d002/d004/d006/d011及t002最终快照消除过时未知标记，require-verified preflight PASS；六项业务AC未改、尚未勾。
 - t003实施写域已拆分：Root独占Runner/参数安全/事件存储/模块入口及新增test_runtime_persistence_guards.py；Gemini进程48410/PID47419（session=ses_e7fbd2a96ffeyMAddPaIRGbucs，日志t003_split_uds_e2e.jsonl）仅改Agent/CDP/health、entrypoint/Dockerfile和真实E2E。77168因持久化失败被catch后仍宣称saved等具体偏差主动SIGINT（-2），确认旧进程结束后按新写域恢复；对子进程edit权限明确deny Root核心，禁止全目录格式化，避免重叠写。
 - 旧86758误用旧镜像默认entrypoint的临时容器7c2cbf1b3e17已核实仅匿名卷、无hostbind/portbindings后exactstop并确认自动删除；正式cbrowser healthy。新子进程权限拒绝旧镜像命令/prune/Git回退，全局配置未改。
 - Root核心阶段完成：先复现9项失败（另5通过），新增引擎两项失败和模块入口import失败，保留完整red日志。修复目录fsync所有错误failclosed、危险CSV feature过滤/私密输入不入日志、ID/版本前置校验、终态事件防误重启、持久化失败传播和主协程等待、过时run_agent入口。当前全tests/unit55 PASS，核心Ruff E/F/W/I与format通过；未改旧测试预期。
@@ -305,7 +305,7 @@
 - 修订后的计划文件已原样复制进 t006 WT（与 main 内容一致，integrate 时双方同改可干净合并；供 t006 实施与 review 读取最新 9.3）；其他 main 侧改动（handoff、t007–t014 task）不进 t006 交付，integrate 时由 merge 带入。
 - 已同步 task：t006 AC-007 改写与范围（WT 内）、t007 AC-004 改写+新增 AC-007/008、t008 新增 AC-003/004、t009 AC-004 补安全项、t014 范围收窄+新增 AC-005；t007–t012 与 t006 的“t001 仍 active”过时来源行已改为已完成。
 
-#### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f，worktree=/Users/karson/kar/code/CBrowser_t006）——暂停记录点 2026-10-30T20:46:00+08:00
+#### t006（branch=t006_v2_gateway_auth_rtc，base/diff_anchor=c33e55f，worktree=<repo>_t006）——暂停记录点 2026-10-30T20:46:00+08:00
 
 - identity：attempt1 / execution_id=79fa47d2f34e42f8b31f43ceb8cb52a9 / owner_id=claude_v2_14b38abc09f2（已 reserve+claim；不得重复 start/reserve；恢复会话若换 owner 须 `attempt claim --replace-owner claude_v2_14b38abc09f2 --confirm-stopped`）。strict preflight PASS（UNVERIFIED-SPIKE 已改写为已验证结论）。尚无执行 commit，七 AC 均未勾，正式 Verify/full review 0。
 - **未提交工作保存在 t006 WT**：68 个路径（+8199/-105，含计划修订后的 task.md/note.md 与同步的计划文件），新文件均已 `git add -N`。最新安全快照 `.scratch/v2_orchestration/t006/t006_wt_snapshot_20261030T2046.patch`（`git diff --binary c33e55f`，sha256 前缀 8a6605a735f2d126；旧快照 20261030T2032 保留），可在干净的 c33e55f 上 `git apply` 复原。
@@ -340,7 +340,7 @@
 
 - branch：main
 - head_commit：5c1f524（本次 docs 改动前）
-- 工作树：主仓（main）、t006 WT（/Users/karson/kar/code/CBrowser_t006）、E2E lane WT（/Users/karson/kar/code/CBrowser_t006_e2e2，分支 lane/t006_e2e2，seed=t006 WT 2026-10-30T21:06:56+08:00 状态，早于下述 ICE 提交确认修复）。
+- 工作树：主仓（main）、t006 WT（<repo>_t006）、E2E lane WT（<repo>_t006_e2e2，分支 lane/t006_e2e2，seed=t006 WT 2026-10-30T21:06:56+08:00 状态，早于下述 ICE 提交确认修复）。
 - 执行目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`）串行完成 `docs/v2_architecture_plan.md` 剩余内容，每 task 一个执行 commit，逐个合入本地 main；最终部署到本机 OrbStack，由本机官方 Chrome 访问。禁止 push 与外部发布。t001–t005 已完成并合入。
 - 已定决策：重试 2/10/30 秒三次、failure_count=4 阻断、手动重试清除（ADR 008）；管理员密码 `data/secrets/admin_password`（0600，只在生产首次启动读取，测试一律随机）；公网 WebRTC/TURN 与原生 Linux x86_64 为 NOT_RUN / USER_WAIVED；性能按本机 OrbStack + Chrome 实跑；计划修订（2026-10-30，9.3 可见性只走 Selkies 原生、Gateway 不聚合活动、显式 Selkies 设置）已获批。
 - 子 agent：OpenCode `cpa/gemini-3.8-flash --variant high`（思考强度 high，用户 21:00 重申），经 `.scratch/v2_orchestration/dispatch.py` → `run_opencode_observed.py`。
@@ -356,7 +356,7 @@
     - 主控审查修正 auth lane 遗留：`test_supervisor_recovery_e2e.py` 两个用例引用未定义 `stack`（运行即 NameError）；`test_supervisor_core_e2e.py` E402；两文件 format。
     - 主控审查发现并修复（21:16 记入 note）：Gateway 原把“answer 已转发”当成迁移成功并提交本代；现 Agent 等新 ICE 代真实接管（`ice_transport.wait_restart_commit`，20 秒）后回报新动作 `ice_restart_committed`，失败回报 error，Gateway 收到同代确认才提交，否则退避重试。RED→GREEN：Gateway 集成 2 项；真实 SDK `tests/e2e/test_stream_ice_commit_e2e.py`（修复后 Stream 镜像 sha256:a624db24… 1 passed，t004 ICE 失败回归 8 passed）。E2E lane 的 seed 早于此修复，合入后必须用当前源重建镜像复跑其 E2E。
 - 已验证（WT 当前态，Docker E2E 前）：unit+integration 296 passed（`CBrowser_t006/.scratch/t006_commit/green_unit_integration.log`）；Ruff E,F,W,I 16 项（均为 main 基线 test_v2_api_subprocess E501）；ruff format、`git diff --check`、md_format 通过。
-- E2E lane `t006_e2e2`（session ses_e73140c3bffezl2ty40n3Td8YL，WT /Users/karson/kar/code/CBrowser_t006_e2e2，分支 lane/t006_e2e2）：
+- E2E lane `t006_e2e2`（session ses_e73140c3bffezl2ty40n3Td8YL，WT <repo>_t006_e2e2，分支 lane/t006_e2e2）：
     - r1（2026-10-30T21:07:06+08:00 派发，pid 30580，日志 `.scratch/v2_orchestration/t006_e2e2_r1.jsonl`）：交付 `tests/e2e/test_gateway_ac001_auth_e2e.py`（lane 自报 GREEN 1 passed，待主控复跑）、`test_gateway_ac003_media_e2e.py`（最后一次 FAILED：页面 25 秒无视频帧）、`tests/fixtures/gateway_probe/**`。2026-10-31T00:22:37 有一条外部消息进入该 opencode 会话（“你把那些容器都关了吗？那些用于开发测试使用的容器”），lane 答复其前缀对象已清理后，00:23:29 因模型服务端 400（Requests ending with a model turn are not supported）退出（cli_exit 1）。
     - 主控 2026-10-31T01:15:01+08:00 前后处理：删除 lane 遗留的无名容器 jovial_brattain（Docker SDK `caddy version` 探针未 remove，创建于 21:35，已核对命令来源）；同时观察到 pensive_satoshi 已不存在、new-api-local 约 00:19 停止，均非本会话操作。把 t006 WT 新增修复同步进 lane WT 并在 lane 分支记基线提交 3f19371。
     - r2（同 session 续行，pid 53017，日志 `.scratch/v2_orchestration/t006_e2e2_r2.jsonl`，prompt `.scratch/v2_orchestration/t006_dispatch/t006_e2e2_resume1.md`）：要求用当前源重建 Stream/Gateway 镜像、测试设施容器去掉冒用的 `com.cbrowser.managed-by=supervisor` 标签、AC-003 失败路径留存诊断后定位，继续 AC-003/005/007。中断后续行仍用 `dispatch.py --session ses_e73140c3bffezl2ty40n3Td8YL --unguard-changed`，不得新开重复 lane。
@@ -373,7 +373,7 @@
 - supfix lane 已合入并 retire（主控回退 1 处计划外异常放宽）。门禁 round6（2026-10-31T11:12–11:32）：全部 Docker E2E 通过（runtime 13、stream 14、生命周期 6、启动恢复 2、容器图 8、网络策略 5、资源 5、Gateway E2E 5），contract 169、legacy 384、unit 255、integration 46；schema_openapi 失败为门禁脚本误用 `git diff --exit-code`（未提交改动必然有差），已修，导出 cmp 一致。证据 `CBrowser_t006/.scratch/t006_gates/round6/`。
 - 主控核对 round6 原始证据发现 AC-005 缺口：relay-only 下第 1 代初始连接选中对为 prflx↔srflx，非双端 relay（只有重启后的新代 relay↔relay）；lane 测试初始判据被放宽掩盖。另 `tests/fixtures/gateway_probe/evidence.py` 写死已退役 worktree 绝对路径（主控已把证据移入 round6 目录并删除仓库外游离目录）。
 - relay lane 已合入并 retire（主控收敛 Selkies 监控关闭逻辑、删 mock 单测）。门禁 round7 + round7b（Gateway E2E 复跑）全部通过：AC-005 第 1 代 relay↔relay，第 2/3 代轮换增量成立。七 AC 已按实证打勾，证据清单见 t006 note「门禁 round7 与 AC 实证打勾」；新增 finding d021–d023；strict preflight PASS。快照 `.scratch/v2_orchestration/t006/t006_wt_snapshot_20261031T1332.patch`。
-- 运行中的子 agent（2026-10-31T13:33–13:34 派发，均 Gemini）：code reviewer pid 72293（日志 `t006_review_code_r1.jsonl`，报告 `docs/tasks/t006_v2_gateway_auth_rtc/review_code.md`）、test reviewer pid 72294（`t006_review_test_r1.jsonl`，`review_test.md`），两者在 t006 WT 只读运行，期间主控不得改 t006 WT；黑盒 lane pid 72951（验证 WT /Users/karson/kar/code/CBrowser_t006_blackbox，候选 98 文件 SHA 一致，日志 `t006_blackbox_r1.jsonl`，报告 `.scratch/t006_blackbox/report.md`）。
+- 运行中的子 agent（2026-10-31T13:33–13:34 派发，均 Gemini）：code reviewer pid 72293（日志 `t006_review_code_r1.jsonl`，报告 `docs/tasks/t006_v2_gateway_auth_rtc/review_code.md`）、test reviewer pid 72294（`t006_review_test_r1.jsonl`，`review_test.md`），两者在 t006 WT 只读运行，期间主控不得改 t006 WT；黑盒 lane pid 72951（验证 WT <repo>_t006_blackbox，候选 98 文件 SHA 一致，日志 `t006_blackbox_r1.jsonl`，报告 `.scratch/t006_blackbox/report.md`）。
 - 下一步：
     1. 等 E2E lane 交付；主控逐行审查并亲自复跑，核原始 JSON（帧数、candidate 类型/地址、Generation committed 日志、Cookie 属性、visibility 端点原始响应），增量合入 t006 WT 后 retire。
     2. 复制 `.scratch/v2_orchestration/gates/run_gates_template.sh` 快照跑全套门禁，补 Gateway 镜像构建与 Gateway E2E；Stream/Gateway/Supervisor/API 镜像用当前源重建（不得复用下方临时镜像）；testing.md 补 Gateway E2E 命令。
@@ -412,9 +412,9 @@
 
 ### t007（前端会话）
 
-- 2026-10-31T14:38:57+08:00 start + reserve：branch=t007_v2_frontend_sessions，worktree=/Users/karson/kar/code/CBrowser_t007，diff_anchor=077778f；attempt1 / execution_id=1a08cbc562094e73ae64c8039127ed0a / owner_id=claude_v2_6e1f7a8e7a46（14:39:02 claim）。不得重复 start/reserve。范围已扩展纳入 p003（API→Supervisor 启停，AC-009）与 p004（Selkies 每 Profile token，AC-010），见 077778f。
+- 2026-10-31T14:38:57+08:00 start + reserve：branch=t007_v2_frontend_sessions，worktree=<repo>_t007，diff_anchor=077778f；attempt1 / execution_id=1a08cbc562094e73ae64c8039127ed0a / owner_id=claude_v2_6e1f7a8e7a46（14:39:02 claim）。不得重复 start/reserve。范围已扩展纳入 p003（API→Supervisor 启停，AC-009）与 p004（Selkies 每 Profile token，AC-010），见 077778f。
 
-- 2026-10-31T14:41 派发四个并行 Gemini lane（各自 WT `/Users/karson/kar/code/CBrowser_t007_<lane>`，分支 `lane/t007_<lane>`，日志 `.scratch/v2_orchestration/t007_<lane>_r1.jsonl`，prompt `.scratch/v2_orchestration/t007/t007_<lane>_prompt.md`，启动器 `.scratch/v2_orchestration/launch_lane.py`）：spike_token（opencode pid 24318，Selkies token 机制实验，只出报告）、be_coord（24319，AC-009 API→Supervisor 协调 + SSE）、fe_shell（24317，前端外壳与 Profile/设置页）、fe_session（24316，浏览会话/适配层/冻结恢复诊断）。Docker E2E 用 mkdir 锁 `.scratch/v2_orchestration/docker_e2e.lock` 互斥。镜像基线为 t006 合并后门禁 `.scratch/t006_postmerge/pm1/images.env`。
+- 2026-10-31T14:41 派发四个并行 Gemini lane（各自 WT `<repo>_t007_<lane>`，分支 `lane/t007_<lane>`，日志 `.scratch/v2_orchestration/t007_<lane>_r1.jsonl`，prompt `.scratch/v2_orchestration/t007/t007_<lane>_prompt.md`，启动器 `.scratch/v2_orchestration/launch_lane.py`）：spike_token（opencode pid 24318，Selkies token 机制实验，只出报告）、be_coord（24319，AC-009 API→Supervisor 协调 + SSE）、fe_shell（24317，前端外壳与 Profile/设置页）、fe_session（24316，浏览会话/适配层/冻结恢复诊断）。Docker E2E 用 mkdir 锁 `.scratch/v2_orchestration/docker_e2e.lock` 互斥。镜像基线为 t006 合并后门禁 `.scratch/t006_postmerge/pm1/images.env`。
 
 - 截至 2026-10-31T15:10：spike_token 完成并 retire（d024，主控复跑 5 passed，task.md 未知契约已改写）；fe_shell 完成、复核（Vitest 60 passed、构建成功）、合入 t007 WT 暂存区并 retire；运行中：be_coord（opencode pid 24319）、fe_session（56175，session ses_e6f4e8671ffe2gNTfGG7sXQ1zH，第 3 次续行）、stream_tokens（60155，AC-008/AC-010）。监控用 `python3 .scratch/v2_orchestration/watch_lanes.py`（读 `watch_pids.txt`）。镜像清单改名 `images_env.txt`（`*.env` 被 lane 读权限拒绝）。
 
@@ -422,9 +422,9 @@
 
 - 2026-10-31T16:2x：fe_session 已合入 t007 WT 并 retire（合并前端 Vitest 72 passed、构建成功）。be_coord 与 stream_tokens 自约 15:37 起模型请求挂起（Gemini 额度耗尽），主控停止进程、按前缀清理两者遗留的 10 个测试容器与网络，改用 `opencode-go/deepseek-v4.1-flash` 在原会话续行：be_coord opencode pid 92666（session ses_e6f4e8ca8ffeBbx5Peyv4NJHR6，日志 `t007_be_coord_r2.jsonl`），stream_tokens pid 92665（session ses_e6f37c365ffeqir0wNKzeCRmLv，日志 `t007_stream_tokens_r2.jsonl`）。`watch_lanes.py` 已加日志 10 分钟无更新的 STALL 报警。
 
-- 2026-10-31T16:5x：be_coord、stream_tokens 已复核并合入 t007 WT（后端 unit+integration 336 passed），全部 lane WT 已 retire；t007 WT 新文件已 `git add -N`（lane 种子只含已跟踪/意图添加的文件）。派发完整前端真实栈 E2E lane `t007_fe_e2e`（DeepSeek，opencode pid 14471，session ses_e6ed7fc48ffetsFEvPOyA6HQW9，WT /Users/karson/kar/code/CBrowser_t007_fe_e2e，日志 `t007_fe_e2e_r1.jsonl`）。待办：API Runtime Coordinator 为可选启用（`CBROWSER_SUPERVISOR_URL` + `CBROWSER_REQUIRE_SUPERVISOR=1`），t012 生产编排必须设置；`last_coordinator_error` 仅存内存。
+- 2026-10-31T16:5x：be_coord、stream_tokens 已复核并合入 t007 WT（后端 unit+integration 336 passed），全部 lane WT 已 retire；t007 WT 新文件已 `git add -N`（lane 种子只含已跟踪/意图添加的文件）。派发完整前端真实栈 E2E lane `t007_fe_e2e`（DeepSeek，opencode pid 14471，session ses_e6ed7fc48ffetsFEvPOyA6HQW9，WT <repo>_t007_fe_e2e，日志 `t007_fe_e2e_r1.jsonl`）。待办：API Runtime Coordinator 为可选启用（`CBROWSER_SUPERVISOR_URL` + `CBROWSER_REQUIRE_SUPERVISOR=1`），t012 生产编排必须设置；`last_coordinator_error` 仅存内存。
 
-- 2026-10-31T17:42:33+08:00：fe_e2e 完成（完整真实栈无头 E2E 5 passed，修复 PUT→PATCH、协调错误展示、诊断操作），已复核、合入 t007 WT 并 retire（证据 `CBrowser_t007/.scratch/lane_evidence/fe_e2e/`）；主控修正生成类型未重生成与硬编码文案。t007 全量门禁 r1 运行中（`.scratch/v2_orchestration/gates/run_gates_t007_r1.sh`，输出 `CBrowser_t007/.scratch/project_gates/r1/summary.txt`，持有 Docker 锁）。主控评审另发现两项 important，派 DeepSeek lane：adapter（opencode pid 30796，session ses_e6eac8d22ffeQBOIwi5BxNqCg6，WT `/Users/karson/kar/code/CBrowser_t007_adapter`，适配层收敛为 `adapter.ts` 单一来源）、auth（pid 32410，WT `/Users/karson/kar/code/CBrowser_t007_auth`，登录守卫/401 跳转/SSE 仅认证后运行）。t007 finalization 文档（frontend blueprint、profile_management spec、architecture 5.5、旧 chrome_external_tabs spec 归档）已写入 t007 WT。p005 不在 t007 契约内，保持开放。
+- 2026-10-31T17:42:33+08:00：fe_e2e 完成（完整真实栈无头 E2E 5 passed，修复 PUT→PATCH、协调错误展示、诊断操作），已复核、合入 t007 WT 并 retire（证据 `CBrowser_t007/.scratch/lane_evidence/fe_e2e/`）；主控修正生成类型未重生成与硬编码文案。t007 全量门禁 r1 运行中（`.scratch/v2_orchestration/gates/run_gates_t007_r1.sh`，输出 `CBrowser_t007/.scratch/project_gates/r1/summary.txt`，持有 Docker 锁）。主控评审另发现两项 important，派 DeepSeek lane：adapter（opencode pid 30796，session ses_e6eac8d22ffeQBOIwi5BxNqCg6，WT `<repo>_t007_adapter`，适配层收敛为 `adapter.ts` 单一来源）、auth（pid 32410，WT `<repo>_t007_auth`，登录守卫/401 跳转/SSE 仅认证后运行）。t007 finalization 文档（frontend blueprint、profile_management spec、architecture 5.5、旧 chrome_external_tabs spec 归档）已写入 t007 WT。p005 不在 t007 契约内，保持开放。
 
 - 2026-10-31T20:41:00+08:00：adapter、auth lane 已合入 t007 WT 并 retire（Vitest 82 passed）。门禁 r2（`CBrowser_t007/.scratch/project_gates/r2/`）除 coordinator E2E 因门禁脚本缺依赖外全部通过，补依赖复跑 1 passed（`r2_rerun/`）；门禁模板已修 PYTHONPATH/依赖、调整 vendor→build 顺序、增加前端生成类型漂移检查。lane 曾把编排 Docker 锁写进测试导致门禁自锁，已删除。AC 复核发现阻断缺口，派 DeepSeek lane：display（opencode pid 13335，session ses_e6e060640ffeZ0Svj3UCKCKDSJ，AC-004 Stream 分辨率写死 1920×1080 与“明确应用”）、media（pid 13336，session ses_e6e060645ffe92qomNF97ILFR5，经完整应用的可见性、AC-005 独立静音/内部标签页同步/音频故障状态）。
 
@@ -454,11 +454,11 @@ ______________________________________________________________________
 2. 跑合并后门禁（约 35 分钟）：
 
     ```bash
-    O=/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration
+    O=<repo>/.scratch/v2_orchestration
     cp $O/gates/run_gates_t007.sh $O/gates/run_gates_t007_pm2.sh
     until mkdir $O/docker_e2e.lock 2>/dev/null; do sleep 20; done
-    cd /Users/karson/kar/code/CBrowser && GATE_ROOT=/Users/karson/kar/code/CBrowser \
-      GATE_LANE=/Users/karson/kar/code/CBrowser/.scratch/t007_postmerge GATE_BASE=<integrate 前的 main HEAD> RUFF_BASELINE=0 \
+    cd <repo> && GATE_ROOT=<repo> \
+      GATE_LANE=<repo>/.scratch/t007_postmerge GATE_BASE=<integrate 前的 main HEAD> RUFF_BASELINE=0 \
       bash $O/gates/run_gates_t007_pm2.sh pm2 > $O/gates/t007_pm2.out 2>&1
     rmdir $O/docker_e2e.lock
     grep -v " rc=0 " .scratch/t007_postmerge/pm2/summary.txt
@@ -476,7 +476,7 @@ ______________________________________________________________________
 
 - 目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`，不得改成员与顺序；t013/t014 串行）完成 `docs/v2_architecture_plan.md`；每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Google Chrome 访问（登录 → 选 Profile → WebRTC 浏览）。完成判据：14 个 task 全部 done 并合入；只剩 main 分支与主 worktree；旧 VNC/RFB/原生桌面移除；生产构建本机可用；门禁与黑盒主控复核；`task.py goal-check` 输出 GOAL_QUEUE_COMPLETE。最终报告列每 task 的 commit、验证证据、USER_WAIVED 项与残余风险。
 - 只能写 `~/kar/code` 以内；临时文件写各 worktree 的 `.scratch/`，不写 /tmp、~/.cache。
-- 管理员密码 `/Users/karson/kar/code/CBrowser/data/secrets/admin_password`（0600，gitignore）：只在生产首次启动读取并以 Argon2id 保存；明文不得进日志、报告、测试快照；测试一律每次随机生成密码。缺其他 secret 停下来问用户，禁止自设默认值。
+- 管理员密码 `<repo>/data/secrets/admin_password`（0600，gitignore）：只在生产首次启动读取并以 Argon2id 保存；明文不得进日志、报告、测试快照；测试一律每次随机生成密码。缺其他 secret 停下来问用户，禁止自设默认值。
 - 公网 WebRTC/TURN 与原生 Linux x86_64 记 NOT_RUN / USER_WAIVED。只部署本机，禁止 git push 与任何外部发布。
 - task 状态只经 `.repo_template/scripts/task.py`；TDD 先红后绿；禁止就地改旧测试预期（旧语义失效整项删除并说明、另写新测试；本 task 新增的测试可补强）。`.repo_template` 工具链缺陷报告用户，不自行绕过或修改。
 - task 执行 commit 的 first parent 必须是 diff_anchor；禁止在 task worktree merge/rebase main。时间戳一律 `date -Iseconds` 实取。
@@ -536,7 +536,7 @@ ______________________________________________________________________
 
 ### 二、本次后续工作
 
-1. 用户要求按 `/Users/karson/kar/code/my_file/coding_agent/skills_mine/my-review/SKILL.md` 将 t001–t007 **全部累计改动合在一起审阅，不按 task 拆分**。
+1. 用户要求按 `<home>/kar/code/my_file/coding_agent/skills_mine/my-review/SKILL.md` 将 t001–t007 **全部累计改动合在一起审阅，不按 task 拆分**。
 2. 四路：Codex `gpt-6.1-sol`、OpenCode `cpa/gemini-3.8-flash`、`opencode-go/deepseek-v4.1-flash`、`opencode-go/muse-spark-1.3-contributor`；思考强度全部 high。用户确认每路上限 60 分钟。
 3. 每路审同一冻结累计范围，以 t001 diff_anchor `3c8bdbc55570e85aaeb6365a3d512da9c0ce180c` 为基线，target 为本次交接提交后的 main。只读源码，仅写独立 review 报告；不做修复、不启动 t008、不 push。
 4. my-review 原脚本仅内置 Claude/Kimi/Grok 路由；已向用户说明按指定 Codex/OpenCode 派发，保留输出目录、独立报告与超时状态流程。
@@ -546,7 +546,7 @@ ______________________________________________________________________
 
 - 目标：按冻结队列 t006 → t007 → t008 → t013 → t014 → t009 → t010 → t011 → t012（`docs/runtime/goal_queue.json`，不得改成员与顺序；t013/t014 串行）完成 `docs/v2_architecture_plan.md`；每 task 一个执行 commit，逐个合入本地 main；最终本机 OrbStack 部署、本机官方 Google Chrome 访问（登录 → 选 Profile → WebRTC 浏览）。完成判据：14 个 task 全部 done 并合入；只剩 main 分支与主 worktree；旧 VNC/RFB/原生桌面移除；生产构建本机可用；门禁与黑盒主控复核；`task.py goal-check` 输出 GOAL_QUEUE_COMPLETE。最终报告列每 task 的 commit、验证证据、USER_WAIVED 项与残余风险。
 - 只能写 `~/kar/code` 以内；临时文件写各 worktree 的 `.scratch/`，不写 /tmp、~/.cache。
-- 管理员密码 `/Users/karson/kar/code/CBrowser/data/secrets/admin_password`（0600，gitignore）：只在生产首次启动读取并以 Argon2id 保存；明文不得进日志、报告、测试快照；测试一律每次随机生成密码。缺其他 secret 停下来问用户，禁止自设默认值。
+- 管理员密码 `<repo>/data/secrets/admin_password`（0600，gitignore）：只在生产首次启动读取并以 Argon2id 保存；明文不得进日志、报告、测试快照；测试一律每次随机生成密码。缺其他 secret 停下来问用户，禁止自设默认值。
 - 公网 WebRTC/TURN 与原生 Linux x86_64 记 NOT_RUN / USER_WAIVED。只部署本机，禁止 git push 与任何外部发布。
 - task 状态只经 `.repo_template/scripts/task.py`；TDD 先红后绿；禁止就地改旧测试预期（旧语义失效整项删除并说明、另写新测试；本 task 新增的测试可补强）。`.repo_template` 工具链缺陷报告用户，不自行绕过或修改。
 - task 执行 commit 的 first parent 必须是 diff_anchor；禁止在 task worktree merge/rebase main。时间戳一律 `date -Iseconds` 实取。
@@ -737,7 +737,7 @@ ______________________________________________________________________
 - Stream：`stream.log`，17 passed、2 failed（142.13 秒）。失败：`test_stream_runtime_multi_viewer_e2e` 的精确挂载清单漏新增 `/tmp/selkies_credentials.json`；`test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome` 在 API 容器端口查询出现 KeyError `8000/tcp`。不得以放宽旧断言、缺镜像或未就绪充当有效负例。
 - root 初步归因：`root_failure_triage.json`。Supervisor/Gateway/API Dockerfile 白名单未复制已被导入的根模块 `cbrowser.secret_files`（API 还导入 Gateway endpoint）；静态缺口已核对，实际 import/退出日志尚待独占 Docker 验证，不能宣称实测根因。
 - Supervisor 门禁在 session 82335 中继续，已出现失败但尚未结束；后续 Gateway/前端 E2E 由同 runner 串行推进。当前未修改生产文件。
-- 独立只读 lane：`/Users/karson/kar/code/CBrowser_baseline_audit`（detached HEAD 7819d3a），OpenCode `cpa/gemini-3.8-flash --variant high`；dispatch PID 76042、wrapper PID 76237、CLI PID 76238，工具 session 59258。
+- 独立只读 lane：`<repo>_baseline_audit`（detached HEAD 7819d3a），OpenCode `cpa/gemini-3.8-flash --variant high`；dispatch PID 76042、wrapper PID 76237、CLI PID 76238，工具 session 59258。
 - lane 输出：主仓 `.scratch/v2_baseline_20261101/audit.jsonl`、`audit_wrapper.log`；报告目标为审核 worktree `.scratch/baseline_audit/report.md`。原 tracked 文件已 SHA 守卫，只允许写 lane scratch。XDG data/cache/state 重定向主仓 scratch，未改 observed wrapper；它只读全局 DB，因此仍以 JSON、CLI 实际退出与报告判定，不据外层 exit 0 采信成功。
 - 无新增 task、无 attempt identity；未变更冻结队列。审核 worktree 用完须先备份 scratch，再 worktree remove/prune；不得遗留到最终交付。
 
@@ -769,7 +769,7 @@ ______________________________________________________________________
 ### 资源、审核与下一步
 
 - 主控已核对并清理本轮16个残留容器、6个空网络；精确清单 `cleanup_plan.json`，关键异常行 `cleanup_error_*.txt`。旧生产cbrowser、kkmail/haiwa及来源不明历史对象保留。
-- 独立审核worktree：`/Users/karson/kar/code/CBrowser_baseline_audit`（detached HEAD 7819d3a），SHA守卫785文件，仅准写 `.scratch/baseline_audit/`；无tracked改动。
+- 独立审核worktree：`<repo>_baseline_audit`（detached HEAD 7819d3a），SHA守卫785文件，仅准写 `.scratch/baseline_audit/`；无tracked改动。
 - 模型 `cpa/gemini-3.8-flash --variant high`，CLI PID76238、wrapper76237、dispatch76042，工具session59258仍活跃。日志主仓 `audit.jsonl` / `audit_wrapper.log`；目标报告审核worktree `.scratch/baseline_audit/report.md`。XDG运行数据/缓存重定向主仓scratch；不改observed wrapper，成功以JSON、CLI实际退出和报告判定，非外层exit0。
 - 下一步：读取并复核独立审核，等待基线修复授权；获授权后独立worktree最小修复、review、重建并补跑全门禁，之后才start t008。审核结束备份scratch再worktree remove/prune。
 - 本轮未改 `.repo_template`，未重启OrbStack或扩大配额。公网/原生Linux x86_64为NOT_RUN / USER_WAIVED；8小时与1000次IME/剪贴板未执行，不预计通过。
@@ -841,7 +841,7 @@ ______________________________________________________________________
 - 证据备份 `.scratch/v2_baseline_20261101/audit_evidence/`（report.md、guard.json、permission.json）；JSON与wrapper日志留主仓。审核worktree tracked文件无变化，已git worktree remove + prune；最终仅main和主worktree，无新增分支。
 - 主控确认审核新增发现：supervisor/runner.py:187/192引用当前函数作用域不存在的d_client/docker_adapter，Ruff F821与源码对应；需补触达真实事件监听任务的RED测试后修复。policy.py中should_block_client_verb被动态重导出，禁止盲目ruff --fix删除。
 - 审核报告部分计数与主控原始日志矛盾（Runtime应13通过、Vitest应112通过、Supervisor应17通过9失败、前端应14通过4失败13错误），均以本交接及原始日志为准。共享pytest缓存导致污染的因果未经证实，不采信；单独执行build/contract/schema等证据有效，不以未集成同一个runner否定。
-- 当前实现lane：worktree `/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
+- 当前实现lane：worktree `<repo>_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
 - lane证据主仓 `.scratch/v2_baseline_20261101/fix_dispatch/`：prompt.md、allowed_paths.json、implementation.jsonl、wrapper.log、launch.json。只给已确认缺陷具体文件写权；lane报告 `.scratch/baseline_fix/report.md`。XDG data/cache/state在主仓scratch。
 - 主控已准备 `fix_dispatch/verify_candidate.py`（尚未运行）：先重建六镜像/实际import，再unit/integration/legacy、前端安装测试构建、schema/codegen、Ruff、文档及逐文件Docker/Chrome E2E。先修正运行器目录和PYTHONPATH准备；前端buildinfo还原原字节。
 - 下一步：观察同一CLI实际状态，待实现报告后审diff并主控复跑、独立review；完整门禁通过才启动t008。不得复用已结束的82335/59258等旧句柄。
@@ -879,7 +879,7 @@ ______________________________________________________________________
 - 证据备份 `.scratch/v2_baseline_20261101/audit_evidence/`（report.md、guard.json、permission.json）；JSON与wrapper日志留主仓。审核worktree tracked文件无变化，已git worktree remove + prune；最终仅main和主worktree，无新增分支。
 - 主控确认审核新增发现：supervisor/runner.py:187/192引用当前函数作用域不存在的d_client/docker_adapter，Ruff F821与源码对应；需补触达真实事件监听任务的RED测试后修复。policy.py中should_block_client_verb被动态重导出，禁止盲目ruff --fix删除。
 - 审核报告部分计数与主控原始日志矛盾（Runtime应13通过、Vitest应112通过、Supervisor应17通过9失败、前端应14通过4失败13错误），均以本交接及原始日志为准。共享pytest缓存导致污染的因果未经证实，不采信；单独执行build/contract/schema等证据有效，不以未集成同一个runner否定。
-- 当前实现lane：worktree `/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
+- 当前实现lane：worktree `<repo>_baseline_fix`，branch `fix/v2_baseline_gates`，base/diff_anchor `a673edf`；OpenCode cpa/gemini-3.8-flash high；dispatch PID79658、wrapper79668、CLI79669（启动时值，恢复须核对实时进程）。无task identity，不动ledger。
 - lane证据主仓 `.scratch/v2_baseline_20261101/fix_dispatch/`：prompt.md、allowed_paths.json、implementation.jsonl、wrapper.log、launch.json。只给已确认缺陷具体文件写权；lane报告 `.scratch/baseline_fix/report.md`。XDG data/cache/state在主仓scratch。
 - 主控已准备 `fix_dispatch/verify_candidate.py`（尚未运行）：先重建六镜像/实际import，再unit/integration/legacy、前端安装测试构建、schema/codegen、Ruff、文档及逐文件Docker/Chrome E2E。先修正运行器目录和PYTHONPATH准备；前端buildinfo还原原字节。
 - 下一步：观察同一CLI实际状态，待实现报告后审diff并主控复跑、独立review；完整门禁通过才启动t008。不得复用已结束的82335/59258等旧句柄。
@@ -905,9 +905,9 @@ ______________________________________________________________________
 
 ### 当前候选与工作区
 
-- 基准/diff_anchor：`a673edf`。core实现：`/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`；fixture实现：`/Users/karson/kar/code/CBrowser_baseline_fixtures`，branch `fix/v2_baseline_fixtures`。两路原始写域无重叠，fixture patch已经git apply --check后整合进core实现worktree。
+- 基准/diff_anchor：`a673edf`。core实现：`<repo>_baseline_fix`，branch `fix/v2_baseline_gates`；fixture实现：`<repo>_baseline_fixtures`，branch `fix/v2_baseline_fixtures`。两路原始写域无重叠，fixture patch已经git apply --check后整合进core实现worktree。
 - 联合候选：主仓 `.scratch/v2_baseline_20261101/fix_dispatch/combined_candidate.patch`，SHA256 `6f36cb5c8bff5876df38ca132653bcc41be464cc79ea481557e6dbe3e303a49a`。
-- 独立validation：`/Users/karson/kar/code/CBrowser_baseline_validation`（detached a673edf），完整patch哈希已与联合候选核对一致；3个新增测试已git add -N纳入diff。主控验证使用独立数据/进程/容器，不复用实现lane环境证据。
+- 独立validation：`<repo>_baseline_validation`（detached a673edf），完整patch哈希已与联合候选核对一致；3个新增测试已git add -N纳入diff。主控验证使用独立数据/进程/容器，不复用实现lane环境证据。
 - review worktree：`CBrowser_baseline_core_review`（core最终快照）、`CBrowser_baseline_fixture_review`（fixture最终快照）。均只读源码，报告写自身scratch；源码patch副本在主仓保存，最终清理前须备份证据并核对所有权。
 
 ### 已修复与实际证据
@@ -949,7 +949,7 @@ ______________________________________________________________________
 
 ### 真实联合门禁R2
 
-- 独立验证wt `/Users/karson/kar/code/CBrowser_baseline_validation`，旧联合patch SHA256 `6f36cb5c8bff5876df38ca132653bcc41be464cc79ea481557e6dbe3e303a49a`。
+- 独立验证wt `<repo>_baseline_validation`，旧联合patch SHA256 `6f36cb5c8bff5876df38ca132653bcc41be464cc79ea481557e6dbe3e303a49a`。
 - 驱动 `.scratch/v2_baseline_20261101/fix_dispatch/verify_candidate.py`，日志 `fix_dispatch/verify_candidate_r2.out`，逐项退出码、镜像ID、失败日志与basetemp在 `fix_round2/`。进程已自然退出1，非观察超时，禁止重启旧候选冒充新验证。
 - 6镜像构建、3实际import、contract169、unit399、integration62、legacy384、Vitest112、前端build、4schema+TS无漂移、Ruff E/F/W/I、md全部通过。Runtime13通过，Stream真实多viewer完整媒体通过。
 - 失败：Selkies tokens链路18097/18080未闭合；Supervisor容器图测试Gateway内部仍监听18097而发布18080；新SIGTERM用例漏实际Browser/Stream镜像env；offline recovery真实正常关闭后仍desired running；recovery三处inline CLI缺--gateway-port。
@@ -958,9 +958,9 @@ ______________________________________________________________________
 
 ### 当前修复与进程
 
-- core wt `/Users/karson/kar/code/CBrowser_baseline_fix`，branch `fix/v2_baseline_gates`，已整合旧fixture patch。session `ses_e6a911a65ffe3Y0VZs5R3JTF9x`；round7 exit0，补镜像env、权威端口与确定性订阅INFO；round8补门禁先决条件fail而非skip、关闭探测client，状态看 `fix_dispatch/core_round8_launch.json` 与wrapper实际cli_exit。写域不含fixture。
-- fixture wt `/Users/karson/kar/code/CBrowser_baseline_fixtures`，branch `fix/v2_baseline_fixtures`；session `ses_e6a7c7e18ffeNQzGW5g1MCQkco`；round4 exit0，闭合Gateway listener/publish/control/Caddy端口链，新增11项回归通过。round5修三个inline CLI与必要异常清理，状态看 `fixtures_round5_launch.json` 与wrapper。不要改offline recovery正确期望。
-- 正常退出独立lane wt `/Users/karson/kar/code/CBrowser_normal_exit_fix`，branch `fix/v2_normal_exit_observation`，session `ses_e68b60e1cffetua70w4uOzZVnU`；首轮dispatch31033/CLI31218，状态看 `normal_exit_wrapper.log` 与JSONL。仅core.py/recovery_coordinator.py/recovery_rules.py/runtime_agent/agent.py及两个新测试；与其它lane写域独立。
+- core wt `<repo>_baseline_fix`，branch `fix/v2_baseline_gates`，已整合旧fixture patch。session `ses_e6a911a65ffe3Y0VZs5R3JTF9x`；round7 exit0，补镜像env、权威端口与确定性订阅INFO；round8补门禁先决条件fail而非skip、关闭探测client，状态看 `fix_dispatch/core_round8_launch.json` 与wrapper实际cli_exit。写域不含fixture。
+- fixture wt `<repo>_baseline_fixtures`，branch `fix/v2_baseline_fixtures`；session `ses_e6a7c7e18ffeNQzGW5g1MCQkco`；round4 exit0，闭合Gateway listener/publish/control/Caddy端口链，新增11项回归通过。round5修三个inline CLI与必要异常清理，状态看 `fixtures_round5_launch.json` 与wrapper。不要改offline recovery正确期望。
+- 正常退出独立lane wt `<repo>_normal_exit_fix`，branch `fix/v2_normal_exit_observation`，session `ses_e68b60e1cffetua70w4uOzZVnU`；首轮dispatch31033/CLI31218，状态看 `normal_exit_wrapper.log` 与JSONL。仅core.py/recovery_coordinator.py/recovery_rules.py/runtime_agent/agent.py及两个新测试；与其它lane写域独立。
 - 生产根因线索：Chrome正常关闭后Agent/Xvfb容器仍running，core仅Docker exited/dead认可normal_exit；同instance恢复短路未读取Agent真实进程状态。修复须用既有UDS健康与实际进程监督核对身份/配置，磁盘事件仅诊断，不恢复裸exit0文件驱动意愿。API唯一DB写者、owner-loss误0错误语义保持。
 - 所有外部OpenCode使用已授权cpa/gemini-3.8-flash high，XDG/tmp/cache位于各scratch；外层wrapper exit0不是成功，以cli_exit、JSON错误、report核对。长JSONL触发OpenCode grep 64KiB限制，已披露，使用窄读/Python解析，未修改工具配置。
 
@@ -1039,7 +1039,7 @@ ______________________________________________________________________
 
 ### 当前实施进程与源码所有权
 
-- core实现wt `/Users/karson/kar/code/CBrowser_baseline_fix`（fix/v2_baseline_gates），目前无实现actor；独立validation `/Users/karson/kar/code/CBrowser_baseline_validation` 当前无活动gate。候选已整合旧fixture r3、normal r2、端口r3（motion准备），继续整合时须reverse精确对应旧component patch，防叠加/覆盖。
+- core实现wt `<repo>_baseline_fix`（fix/v2_baseline_gates），目前无实现actor；独立validation `<repo>_baseline_validation` 当前无活动gate。候选已整合旧fixture r3、normal r2、端口r3（motion准备），继续整合时须reverse精确对应旧component patch，防叠加/覆盖。
 - fixture wt `CBrowser_baseline_fixtures`，session `ses_e6a7c7e18ffeNQzGW5g1MCQkco`。R10 CLI启动database is locked/exit1，仅57字节错误，无工具执行，source SHA仍4cd6e2f；主控已立即报告用户，未改工具配置。R11有限同session重试当前dispatch15821/CLI15828，日志 `fixtures_round11.jsonl`；修Supervisor cache RW及五个恢复使用者将同步start/restart/sigkill/stop通过asyncio.to_thread移出宿主Gateway所在loop。仅offline fixture/自己新unit/三个恢复E2E写域。
 - normal wt `CBrowser_normal_exit_fix`，session `ses_e68b60e1cffetua70w4uOzZVnU`。R6已exit0；R7当前dispatch19267，CLI见 `normal_exit_round7.jsonl.wrapper.log`。在原7路径外唯一新增授权event_storage.py：False模式不得隐式事件恢复；显式True的Runner/start防重复generation用途保持；Health拒绝metadata/native版本矛盾，既有StorageError->503。新测试仅自己的unit/integration，不改旧storage unit预期。必须复跑既有storage tests和明确E/F/W/I，不改协议/配置/其它模块。
 - 端口/诊断wt `CBrowser_visibility_ports_fix`（detached a673），session `ses_e68924041ffe0GS6p3F6ChsLkd`。P4 exit0，仅加入运动源；P5当前dispatch17874，CLI见 `visibility_ports_round5.jsonl.wrapper.log`，只app E2E一个文件修采样条件。其它四端口测试修改已真跑通过，不再改。
@@ -1299,7 +1299,7 @@ ______________________________________________________________________
 - 统一留档：`.scratch/pre_t008_archive_20261102/`，约8.1MB。含七个完整binary patch、inventory.json、清理回执、worktree_evidence.tar.gz（121份文件）、baseline_test_evidence.tar.gz（336份测试证据）。
 - 未采用末轮两个测试文件的清理修补：未完成独立验证，且新引用控制器变量存在早期失败路径风险；原始内容保留在normal_exit_fix整包diff及报告中，不代表待自动采纳。
 - 七工作区scratch先迁移备份，提取有效证据后删除再生缓存/临时副本；本轮基线84组生成目录已删除。`.scratch/v2_baseline_20261101/`从约79GB降至774MB，保留原始日志、镜像清单、审计、调度记录及可复用OpenCode runtime。
-- 用户点名的 `/Users/karson/kar/code/.scratch` 中八个CBrowser临时目录已全部删除，父目录已移除。其它项目、正式data和用户凭据未动。
+- 用户点名的 `<home>/kar/code/.scratch` 中八个CBrowser临时目录已全部删除，父目录已移除。其它项目、正式data和用户凭据未动。
 - 主仓 `.scratch/v2_orchestration/` 的编排工具、已初始化Linux engine/GeoIP缓存，以及 `.scratch/project_gates/` 的依赖缓存继续保留，供t008使用；不再次复制出多套缓存。
 - 当前按com.cbrowser.prefix标签查询无测试容器残留。没有新启动任何测试进程。
 
@@ -1337,7 +1337,7 @@ ______________________________________________________________________
 ### 主仓与exact identity
 
 - main，交出时head_commit `63cbd08e40e5b0448829d06d1faed5851ce973ca`（本文单独提交）；此前有用基线执行18f1d6d、merge28f630c。七个旧worktree及临时分支已清除，完整diff/证据留 `.scratch/pre_t008_archive_20261102/`，不得整包重放。
-- 现有唯一task worktree `/Users/karson/kar/code/CBrowser_t008`，branch `t008_v2_artifacts_automation`，diff_anchor `63cbd08e40e5b0448829d06d1faed5851ce973ca`。未merge/rebase main进入task分支。
+- 现有唯一task worktree `<repo>_t008`，branch `t008_v2_artifacts_automation`，diff_anchor `63cbd08e40e5b0448829d06d1faed5851ce973ca`。未merge/rebase main进入task分支。
 - t008 status active；attempt 1；execution_id `4fa03b7185dd48399174522182fc4c4d`；owner_id `codex_t008_e066017f083d41fb`。主控持有owner与控制面，模型不运行task.py/finish/commit/merge。
 - exact identity与启动参数 `.scratch/v2_orchestration/t008/identity.json`。恢复必须核对现有attempt/owner/PID，不重复start/reserve。
 
@@ -1372,7 +1372,7 @@ ______________________________________________________________________
 
 ### t014 当前阻塞
 
-- worktree `/Users/karson/kar/code/CBrowser_t014`，branch `t014_v2_clipboard_input`，base `6d28f59`；attempt 1，execution_id `5c4ef9fdabd5406bb58816597111d2a1`，owner `opencode_t014_2f32e2581975`。attempt 已 terminal stopped、report blocked，worktree 保留。
+- worktree `<repo>_t014`，branch `t014_v2_clipboard_input`，base `6d28f59`；attempt 1，execution_id `5c4ef9fdabd5406bb58816597111d2a1`，owner `opencode_t014_2f32e2581975`。attempt 已 terminal stopped、report blocked，worktree 保留。
 - 已实现并通过：Profile `clipboard_sync` -> Selkies `enable_clipboard=true/false`、`enable_binary_clipboard=false|locked`、`clipboard_seamless=false|locked`；Stream 入口 CLI；前端只读权限提示（denied/prompt、监听权限变化、不读写剪贴板、按 Profile 关闭隐藏）。
 - 未完成：AC-002/003/004 未勾选。缺少本 task 真实 Chrome 证据：地址栏/普通输入框/受控输入框/富文本四类 composition/预编辑取消/标点/失败提示；纯文本粘贴无截断/重复；真实权限拒绝/后台恢复/切换 Profile 的剪贴板隔离。已登记 `docs/pending/todo/p015_t014_input_clipboard_e2e.md`。
 - review：两轴 Round 2 FAIL，缺上述证据；t014 不能 finish/merge。
@@ -1569,3 +1569,26 @@ ______________________________________________________________________
 
 1. 当前全部 backlog 与 todo 队列已清空，全部任务已合入本地主干 `main`。
 2. 遵守用户约束，本地保持未 push 状态，等待用户后续指令。
+
+## 2026-11-09T18:21:05+08:00 DS 复审轮复修合入主干：P0-A/P1-A~F 及 P2 批
+
+### 状态与工作区
+
+- branch `main`；交出时 head_commit `1ff4721`（本地领先 origin/main，未 push）。
+- `docs/pending/todo/`：p054（DS 采纳清单，复审轮追加已合入）；`docs/pending/parked/`：p053（LAN 暂搁）。
+- 主仓工作区干净，所有临时 worktree 已规范清理，无未暂存改动；`config/deploy/` 未跟踪、未动。
+
+### 本轮结果（均已验证）
+
+- **P0-A**：0004 幂等（inspector 查列）+ 1a6ec51 形态（0002 stamp + 四列已存在）回归测试 + data/v2 副本真实升级验证（stamp `c41f`→head，行保留）。
+- **P1-A/B**：journal generation 纳入命令身份 + bump 后 txn 统一 + restore 失败→成功测试；持久 Caddyfile 原子写 + 属主；P2 恢复批（DB 异常重试、not_found 终局、fencing/超时、converge 回滚、TOCTOU 比 hash、whitelist 归一化、旧 hash 校验、回执真实语义）。
+- **P1-C/D**：rollback 比对当前 DB stamp（target==stamp 否则拒绝，含跨代旧 release）+ compose_sha 混用拒绝 + 三文档同步；supervisor schema 重生成；router.test 两步确认；门禁 P2 批。
+- **P2 预览**：chown 先于 replace、dispatch 失败保留 pending、request_id 成功后记、锁内写 policy、同值重试收敛、RPC 移出锁。
+- **P1-E/F + 前端 P2**：可恢复 terminal 采样、starting 走 connecting、跨 Profile 重置、重试启动、确认框/错误态/i18n/裸 Link 批 + 新增 hook/对话框测试。
+- **门禁状态**：完整门禁待复跑确认；openapi 描述漂移（app.py）已对齐 checked-in JSON。
+
+### 下一步
+
+1. 跑完整 `scripts/run_gates.sh` 确认全绿后再议 push。
+2. push 前门槛（复审建议）：旧库副本升级 + 真实跨容器 apply + Caddy 重启后可用三类验证。
+3. 遵守用户约束：禁止 push/force-push，不动 remote。

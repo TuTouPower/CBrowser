@@ -3,7 +3,7 @@
 - task：`t047_ui_theme_omni_restyle`
 - spec：`docs/tasks/t047_ui_theme_omni_restyle/task.md`
 - diff_anchor：`ede48471178d9d69c6fe4903fea379ab9e3d6257`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t047' diff ede48471178d9d69c6fe4903fea379ab9e3d6257`
+- target：`git -C '<repo>_t047' diff ede48471178d9d69c6fe4903fea379ab9e3d6257`
 - round：1
 - reviewed_at：2026-11-09T22:15:00+08:00
 

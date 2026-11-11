@@ -3,7 +3,7 @@
 - task：`t044_e2e_parallel_execution`
 - spec：`docs/tasks/t044_e2e_parallel_execution/task.md`
 - diff_anchor：`98a9df796d46b2b451a5620f39e2801816155536`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t044' diff 98a9df796d46b2b451a5620f39e2801816155536`
+- target：`git -C '<repo>_t044' diff 98a9df796d46b2b451a5620f39e2801816155536`
 - round：1
 - reviewed_at：2026-11-06T21:47:45+08:00
 

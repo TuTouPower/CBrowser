@@ -1,7 +1,7 @@
 # 独立黑盒验证报告：CBrowser v2 Runtime Spike 运行环境原型
 
 - **测试执行时间**：2026-10-27T01:57:21+08:00
-- **工作目录**：`/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/review/.scratch/runtime_reproduce`
+- **工作目录**：`<repo>/.scratch/v2_orchestration/review/.scratch/runtime_reproduce`
 - **执行命令**：`bash run_spike.sh`
 - **退出码**：`0` (PASS)
 

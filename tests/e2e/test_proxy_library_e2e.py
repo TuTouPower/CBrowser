@@ -27,7 +27,7 @@ from typing import Any
 import pytest
 from wait import poll_until, wait_for_log
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 PROXY_HOST = "host.docker.internal"
 TARGET_HOST = "cbrowser-ac008.invalid"

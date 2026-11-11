@@ -129,15 +129,9 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
         return json.loads(files[0].read_text(encoding="utf-8"))
 
     def containers_for(self, profile_id: str) -> list[Any]:
-        try:
-            return self.docker_client.containers.list(
-                all=True,
-                filters={"label": f"com.cbrowser.profile-id={profile_id}"},
-            )
-        except docker.errors.NotFound:
-            # During container teardown, a container deleted between GET /containers/json
-            # and GET /containers/{id}/json is safely skipped.
-            return []
+        return self.docker_client.containers.list(
+            all=True, filters={"label": f"com.cbrowser.profile-id={profile_id}"},
+        )
 
     def container_names(self, profile_id: str) -> tuple[str, str] | None:
         """Returns (browser, stream) container names for a profile, if bound.
@@ -146,15 +140,10 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
         races when containers are in the middle of being stopped or removed.
         """
         found: dict[str, str] = {}
-        try:
-            raw_containers = self.docker_client.api.containers(
-                all=True,
-                filters={"label": f"com.cbrowser.profile-id={profile_id}"},
-            )
-        except docker.errors.NotFound:
-            return None
-        except Exception:
-            return None
+        raw_containers = self.docker_client.api.containers(
+            all=True,
+            filters={"label": f"com.cbrowser.profile-id={profile_id}"},
+        )
 
         for c_dict in raw_containers:
             labels = c_dict.get("Labels") or {}
@@ -167,3 +156,14 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
         if "browser" in found and "stream" in found:
             return found["browser"], found["stream"]
         return None
+
+    def container_presence(self, profile_id: str) -> dict[str, bool]:
+        """Report both roles; Docker failures are observation errors."""
+        rows = self.docker_client.api.containers(
+            all=True, filters={"label": f"com.cbrowser.profile-id={profile_id}"},
+        )
+        roles = {(row.get("Labels") or {}).get("com.cbrowser.role") for row in rows}
+        return {role: role in roles for role in ("browser", "stream")}
+
+    def runtime_containers_gone(self, profile_id: str) -> bool:
+        return not any(self.container_presence(profile_id).values())

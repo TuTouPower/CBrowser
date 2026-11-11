@@ -9,7 +9,7 @@ import pytest
 
 from e2e_env import require_e2e_env
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 
 @pytest.mark.asyncio

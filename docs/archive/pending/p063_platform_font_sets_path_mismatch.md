@@ -17,5 +17,5 @@
 - 线索：
     - `.scratch/repro_font_sets_path_mismatch.py`（最小复现脚本，实测 `data/fonts` 有 2 组完好字体集，而部署路径 `data/v2/fonts` 为 0）
     - 容器内验证：`docker exec cbrowser-api python3 -c "from cbrowser import font_sets; print(font_sets.list_font_sets())"` 结果为 `[]`
-    - 挂载比对：`docker inspect cbrowser-api` 显示挂载源为 `/Users/karson/kar/code/CBrowser/data/v2/fonts`（空），而非宿主存在的 `/Users/karson/kar/code/CBrowser/data/fonts`
+    - 挂载比对：`docker inspect cbrowser-api` 显示挂载源为 `<repo>/data/v2/fonts`（空），而非宿主存在的 `<repo>/data/fonts`
 - 处理：t051；resolution=transferred；reason=已核实范围并转交该 task

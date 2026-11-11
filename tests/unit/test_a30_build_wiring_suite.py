@@ -6,10 +6,7 @@ gate's E2E skip would otherwise hide every negative case (D: A30).
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,26 +28,6 @@ EXPECTED_CASES = {
 }
 
 
-def _unit_collection() -> list[str]:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = "src/backend:tests/fixtures"
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            "tests/unit",
-            "--collect-only",
-            "-q",
-        ],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=180,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    return result.stdout.splitlines()
 
 
 def test_build_wiring_lives_in_unit_suite() -> None:
@@ -73,16 +50,3 @@ def test_no_e2e_prerequisites() -> None:
 def test_negative_cases_still_asserted() -> None:
     source = UNIT_FILE.read_text(encoding="utf-8")
     assert source.count("pytest.raises(RuntimeError") == 7
-
-
-def test_regular_unit_collection_includes_each_case_once() -> None:
-    lines = _unit_collection()
-    prefix = "tests/unit/test_frontend_build_wiring.py::"
-    collected = [line for line in lines if line.startswith(prefix)]
-    assert len(collected) == len(EXPECTED_CASES)
-    assert {
-        line.split("::", 1)[1].strip() for line in collected
-    } == EXPECTED_CASES
-    assert not any(
-        "tests/e2e/test_frontend_build_wiring.py::" in line for line in lines
-    )

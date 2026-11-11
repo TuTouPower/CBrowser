@@ -3,7 +3,7 @@
 - task：`t002_v2_backend_foundation`
 - spec：`docs/tasks/t002_v2_backend_foundation/task.md`
 - diff_anchor：`d3ca80b0141c19a715a90c71ba2f5862c1c79711`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t002' diff d3ca80b0141c19a715a90c71ba2f5862c1c79711`
+- target：`git -C '<repo>_t002' diff d3ca80b0141c19a715a90c71ba2f5862c1c79711`
 - round：2
 - reviewed_at：2026-10-28T03:35:25+08:00
 

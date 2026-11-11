@@ -34,7 +34,7 @@ from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from api_auth import create_auth_context
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_NETWORK_POLICY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 logger = logging.getLogger("cbrowser.test_container_graph")
 
 
@@ -301,10 +301,12 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                     "/supervisor/v1/health", headers={"Authorization": "Bearer wrong"}
                 )
             ).status_code == 401
+            profile_numbers = {}
             for name in ("graph_a", "graph_b"):
                 response = await api_http.post("/api/v1/profiles", json={"name": name})
                 assert response.status_code == 201
                 profile = response.json()["id"]
+                profile_numbers[profile] = response.json()["display_number"]
                 profiles.add(profile)
                 assert (
                     await api_http.patch(
@@ -317,7 +319,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 *[
                     sup_http.post(
                         "/supervisor/v1/profiles/start",
-                        json={"profile_id": profile, "config_version": 1},
+                        json={"profile_id": profile, "config_version": 1, "profile_number": profile_numbers[profile]},
                     )
                     for profile in ordered
                 ]
@@ -343,7 +345,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 *[
                     sup_http.post(
                         "/supervisor/v1/profiles/start",
-                        json={"profile_id": ordered[1], "config_version": 1},
+                        json={"profile_id": ordered[1], "config_version": 1, "profile_number": profile_numbers[ordered[1]]},
                     )
                     for _ in range(3)
                 ]
@@ -554,7 +556,7 @@ sys.stdout.write(json.dumps(result))
             )
             replacement = await sup_http.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": target, "config_version": 1},
+                json={"profile_id": target, "config_version": 1, "profile_number": profile_numbers[target]},
             )
             assert replacement.status_code == 200
             current = replacement.json()

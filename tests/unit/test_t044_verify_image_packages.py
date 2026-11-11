@@ -132,3 +132,10 @@ def test_main_returns_0_when_all_packages_match(tmp_path, monkeypatch):
     )
     with patch.object(_vip, "image_freeze", return_value=["bar==2.0", "foo==1.0"]):
         assert main() == 0
+
+
+@pytest.fixture(autouse=True)
+def target_environment_stub(monkeypatch):
+    # Existing package-comparison cases retain their assertions; Docker
+    # environment acquisition is exercised independently in t060.
+    monkeypatch.setattr(_vip, "image_environment", lambda image: dict(TARGET_ENV))

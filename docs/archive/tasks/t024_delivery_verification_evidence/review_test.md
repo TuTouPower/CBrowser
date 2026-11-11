@@ -3,7 +3,7 @@
 - task：`t024_delivery_verification_evidence`
 - spec：`docs/tasks/t024_delivery_verification_evidence/task.md`
 - diff_anchor：`597c09aff927c8cc54f72bfc405ac0336d58e22e`
-- target：`git -C '/home/hatch/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
+- target：`git -C '<home>/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
 - round：1
 - reviewed_at：2026-11-04T05:59:15+08:00
 
@@ -16,7 +16,7 @@ reviewed_scope: 8ecc8ed08998582d
 - 严重度：critical
 - 锚点：AC-017——守卫本应证明当前树无开发者路径泄漏（除指纹绑定的已批准存量），交付树上该测试本身失败
 - 位置：`tests/unit/test_repo_hygiene.py:119`（`test_tracked_files_do_not_leak_developer_home_paths`）；`tests/unit/review_privacy_allowlist.txt:5`（`docs/archive/handoff.md sha256:40e941ee…`）
-- 问题：reviewer 独立重跑 `pytest tests/unit/test_repo_hygiene.py -q`（venv、TMPDIR=/tmp/cbt024-rev2）结果 1 failed / 5 passed：`docs/archive/handoff.md` 出现 32 处 `/Users/karson/` 泄漏未被豁免。该文件当前 sha256 为 `fc58792136c2a5b12ae446e5a7c89eb792394a9820c1350dae31117d478ff216`，allowlist 里的 `40e941ee…` 经核对正是 anchor 版该文件的 sha256——实施进度 4 把旧 handoff 一节追加进该归档文件后，内容指纹变化、豁免按其自身设计失效，但 allowlist 未同步、测试未在文档收敛后重跑（note.md 进度 1 的「6 passed」是追加前的状态）。失败场景：合并后产品门禁在 unit 层即红，AC-017 处于未通过状态。
+- 问题：reviewer 独立重跑 `pytest tests/unit/test_repo_hygiene.py -q`（venv、TMPDIR=/tmp/cbt024-rev2）结果 1 failed / 5 passed：`docs/archive/handoff.md` 出现 32 处 `<home>/` 泄漏未被豁免。该文件当前 sha256 为 `fc58792136c2a5b12ae446e5a7c89eb792394a9820c1350dae31117d478ff216`，allowlist 里的 `40e941ee…` 经核对正是 anchor 版该文件的 sha256——实施进度 4 把旧 handoff 一节追加进该归档文件后，内容指纹变化、豁免按其自身设计失效，但 allowlist 未同步、测试未在文档收敛后重跑（note.md 进度 1 的「6 passed」是追加前的状态）。失败场景：合并后产品门禁在 unit 层即红，AC-017 处于未通过状态。
 - 建议：二选一并重跑全量 unit 门禁后留证——追加进 archive 的一节先脱敏再入档；或将该文件的**新内容**作为已批准存量重新登记指纹（须说明批准依据，不能默认自批，见 f002）。
 
 ### t024_test_f002 - 隐私豁免只绑内容哈希、丢弃路径，与「路径+指纹双绑定」契约不符
@@ -88,7 +88,7 @@ reviewed_scope: 8ecc8ed08998582d
 - 严重度：minor
 - 锚点：AC-017——「固定容器路径有精确例外」
 - 位置：`tests/unit/test_repo_hygiene.py:65`（`token.startswith(prefix)`，prefix=`/root/.config/google-chrome`，`:27`）
-- 问题：`/root/.config/google-chrome-malicious/…`、`/root/.config/google-chrome.evil/…` 等同前缀异目录路径也会被整体豁免，例外边界未落在路径段上。现行树未见此类路径，故为 minor。
+- 问题：`<container_home>/…`、`<container_home>/…` 等同前缀异目录路径也会被整体豁免，例外边界未落在路径段上。现行树未见此类路径，故为 minor。
 - 建议：例外判定改为 `token == prefix or token.startswith(prefix + "/")`，并补合成负例。
 
 ## 结论
@@ -192,7 +192,7 @@ verdict: PASS
 ## Round 3 (2026-11-04T06:27:12+08:00)
 
 - round：3（定向复审）
-- 复审范围：仅 Round 2 之后两处增量——(1) t024_test_f011 修复（`tests/unit/test_docker_doubles_contract.py` 集合语义双侧对照）；(2) code 侧未进表观察增量（`tests/unit/test_stream_ice_config.py` 的 CWD 相对路径改 `__file__` 锚定）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `/home/hatch/workspace/CBrowser_t024`。
+- 复审范围：仅 Round 2 之后两处增量——(1) t024_test_f011 修复（`tests/unit/test_docker_doubles_contract.py` 集合语义双侧对照）；(2) code 侧未进表观察增量（`tests/unit/test_stream_ice_config.py` 的 CWD 相对路径改 `__file__` 锚定）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/CBrowser_t024`。
 
 reviewed_scope: 80f9ed5b1772c829
 
@@ -227,7 +227,7 @@ verdict: PASS
 ## Round 4 (2026-11-04T06:31:21+08:00)
 
 - round：4（recovery 定向复审）
-- 复审范围：仅 Round 3 双路 PASS（reviewed_scope `80f9ed5b1772c829`）之后的三项流程性增量——(1) `tests/unit/review_privacy_allowlist.txt` 追加 4 条 t024 review 报告登记；(2) `note.md` 的 Review 处置改为检查器要求的表格格式；(3) `task.py finish` 把任务目录归档到 `docs/archive/tasks/t024_delivery_verification_evidence/`（review 报告随之移动）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `/home/hatch/workspace/CBrowser_t024`。本轮不重开全量评审，交付语义沿 Round 3 结论。
+- 复审范围：仅 Round 3 双路 PASS（reviewed_scope `80f9ed5b1772c829`）之后的三项流程性增量——(1) `tests/unit/review_privacy_allowlist.txt` 追加 4 条 t024 review 报告登记；(2) `note.md` 的 Review 处置改为检查器要求的表格格式；(3) `task.py finish` 把任务目录归档到 `docs/archive/tasks/t024_delivery_verification_evidence/`（review 报告随之移动）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/CBrowser_t024`。本轮不重开全量评审，交付语义沿 Round 3 结论。
 
 reviewed_scope: 831bbb2a2638ea28
 

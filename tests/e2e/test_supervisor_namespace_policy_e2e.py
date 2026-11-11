@@ -46,7 +46,7 @@ import pytest
 from e2e_env import require_e2e_env
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger("cbrowser.test.namespace_policy_e2e")
 

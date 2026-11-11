@@ -33,7 +33,7 @@ from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_for_log
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -54,6 +54,7 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
 ) -> None:
     harness = GatewayTopologyHarness(tmp_path)
     proof: dict = {}
+    supervisor_paused = False
     try:
         await harness.start()
         profile = await harness.create_and_start_profile("quota_chain_profile")
@@ -61,6 +62,14 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
         instance_id = profile["runtime_instance_id"]
         browser_cname = profile["browser_container"]
         stream_cname = profile["stream_container"]
+
+        # This probe runs the production Supervisor client and resource monitor
+        # below in the host process. Pause its bootstrap Supervisor container so
+        # its autonomous resource loop cannot overwrite the probe's quota (two
+        # independent producers otherwise race on the same Gateway endpoint).
+        assert harness.supervisor_container.labels.get("com.cbrowser.prefix") == harness.prefix
+        await asyncio.to_thread(harness.supervisor_container.pause)
+        supervisor_paused = True
 
         # Load the motion media page inside the real Browser container.
         remote = await asyncio.to_thread(browser_eval, browser_cname, "true")
@@ -271,4 +280,8 @@ async def test_supervisor_quota_chain_reaches_real_chrome(
             docker_client.close()
     finally:
         save_evidence("quota_chain_proof", proof, tmp_path)
-        await harness.cleanup()
+        try:
+            if supervisor_paused:
+                await asyncio.to_thread(harness.supervisor_container.unpause)
+        finally:
+            await harness.cleanup()

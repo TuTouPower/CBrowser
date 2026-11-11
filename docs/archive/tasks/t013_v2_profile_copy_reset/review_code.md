@@ -3,7 +3,7 @@
 - task：`t013_v2_profile_copy_reset`
 - spec：`docs/tasks/t013_v2_profile_copy_reset/task.md`
 - diff_anchor：`986d3e2c1ff7783b6b66606e6591998e449f8b68`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t013' diff 986d3e2c1ff7783b6b66606e6591998e449f8b68`
+- target：`git -C '<repo>_t013' diff 986d3e2c1ff7783b6b66606e6591998e449f8b68`
 - round：1
 - reviewed_at：2026-11-02T11:58:55+08:00
 

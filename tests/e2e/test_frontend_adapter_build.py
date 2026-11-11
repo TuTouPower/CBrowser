@@ -8,6 +8,8 @@ only downloads/verifies official assets and injects the classic script tag.
 
 from __future__ import annotations
 
+import pytest
+
 import os
 import re
 import tempfile
@@ -159,3 +161,5 @@ def test_vendor_replaces_stale_destination_contents(tmp_path: Path) -> None:
     assert not (dest_dir / "selkies_adapter.js").exists()
     assert not (dest_dir / "leftover.txt").exists()
     assert (dest_dir / "index.html").is_file()
+
+pytestmark = pytest.mark.e2e_images()

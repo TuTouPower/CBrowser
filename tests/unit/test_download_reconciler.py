@@ -709,3 +709,50 @@ def test_recovery_coordinator_uses_shared_singleton_lock_names() -> None:
         "SingletonCookie",
         "SingletonSocket",
     )
+
+
+@pytest.mark.parametrize("relative", ["guid-host", "nested/subdir/guid-host"])
+def test_forwarder_maps_host_absolute_event_to_container_path(tmp_path, relative):
+    """Regression for 5dcb11d: API and Supervisor mounts differ."""
+    data_root = tmp_path / "data"
+    event_file = _write_download_event(data_root, "p1", "i1", "dl_host")
+    source = data_root / "artifacts/p1/downloads" / relative
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"payload")
+    event = json.loads(event_file.read_text())
+    event["download_path"] = str(source)
+    event_file.write_text(json.dumps(event))
+    calls = []
+
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={"outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://api") as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 1
+    assert calls[0]["path"] == "/exchange/downloads/" + relative
+
+
+@pytest.mark.parametrize("relative", ["../outside", "../../p2/downloads/guid", "nested/../../../outside"])
+def test_forwarder_rejects_host_absolute_path_escape(tmp_path, relative):
+    data_root = tmp_path / "data"
+    event_file = _write_download_event(data_root, "p1", "i1", "dl_host_escape")
+    event = json.loads(event_file.read_text())
+    event["download_path"] = str(data_root / "artifacts/p1/downloads" / relative)
+    event_file.write_text(json.dumps(event))
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"outcome": "created"})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="http://api") as client:
+            return await DownloadArtifactForwarder(data_root, client).forward_pending()
+
+    assert asyncio.run(run()) == 0
+    assert calls == []
+    assert list((data_root / "control/download-dead-letter/p1").glob("*.path_escape.*.json"))

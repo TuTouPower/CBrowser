@@ -17,6 +17,7 @@ from aiohttp import web
 from cbrowser.api.app import create_app
 
 from api_auth import create_auth_context
+from wait import poll_until
 
 
 def find_free_port() -> int:
@@ -339,12 +340,22 @@ async def test_ac009_api_supervisor_start_and_stop_coordination(coord_test_env):
         assert len(sup_mock.stop_calls) == 1
         assert sup_mock.stop_calls[0]["profile_id"] == profile_id
 
-        # Verify converged to stopped
-        rt_stopped = (
-            await client.get(
+        # A recorded RPC precedes its awaited API write. Observe the state
+        # convergence itself before retaining the original assertions.
+        async def read_stopped_runtime():
+            response = await client.get(
                 f"/api/v1/profiles/{profile_id}/runtime", headers=auth_headers
             )
-        ).json()
+            response.raise_for_status()
+            return response.json()
+
+        rt_stopped = await poll_until(
+            read_stopped_runtime,
+            lambda state: state.get("observed_state") == "stopped",
+            timeout=5.0,
+            interval=0.1,
+            description="stopped runtime after Supervisor stop RPC",
+        )
         assert rt_stopped["desired_state"] == "stopped"
         assert rt_stopped["observed_state"] == "stopped"
 

@@ -3,7 +3,7 @@
 - task：`t003_v2_browser_runtime`
 - spec：`docs/tasks/t003_v2_browser_runtime/task.md`
 - diff_anchor：`226c8453097fb982835ccb254cea8a3f26d131b3`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3`
+- target：`git -C '<repo>_t003' diff 226c8453097fb982835ccb254cea8a3f26d131b3`
 - round：Round 1
 - reviewed_at：2026-10-28T17:15:00+08:00
 

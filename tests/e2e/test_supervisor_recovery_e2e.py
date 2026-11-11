@@ -51,7 +51,7 @@ from supervisor_recovery_probe.gateway_service import (
 from supervisor_recovery_probe.offline_fixture import RealSupervisorContainer
 from wait import poll_until
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger(__name__)
 
@@ -285,6 +285,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         )
         assert r_create.status_code == 201
         profile_id = r_create.json()["id"]
+        profile_number = r_create.json()["display_number"]
         r_des = await api_client.patch(
             f"/api/v1/profiles/{profile_id}/runtime/desired-state",
             json={"desired_state": "running"},
@@ -336,7 +337,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
         # Start Profile via Supervisor control server
         r_start = await sup_client.post(
             "/supervisor/v1/profiles/start",
-            json={"profile_id": profile_id, "config_version": 1},
+            json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
         )
         assert r_start.status_code == 200
         start_info = r_start.json()
@@ -521,6 +522,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         )
         assert r_a.status_code == 201
         p_a = r_a.json()["id"]
+        p_a_number = r_a.json()["display_number"]
         await api_client.patch(
             f"/api/v1/profiles/{p_a}/runtime/desired-state",
             json={"desired_state": "running"},
@@ -531,6 +533,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
         )
         assert r_b.status_code == 201
         p_b = r_b.json()["id"]
+        p_b_number = r_b.json()["display_number"]
         await api_client.patch(
             f"/api/v1/profiles/{p_b}/runtime/desired-state",
             json={"desired_state": "running"},
@@ -587,7 +590,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             # Start Profile A (allocates the run-local base port)
             res_a = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": p_a, "config_version": 1},
+                json={"profile_id": p_a, "config_version": 1, "profile_number": p_a_number},
             )
             assert res_a.status_code == 200
             start_a = res_a.json()
@@ -601,7 +604,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
             # Start Profile B (allocates base + 1)
             res_b = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": p_b, "config_version": 1},
+                json={"profile_id": p_b, "config_version": 1, "profile_number": p_b_number},
             )
             assert res_b.status_code == 200
             start_b = res_b.json()
@@ -797,6 +800,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
         )
         assert r_create.status_code == 201
         profile_id = r_create.json()["id"]
+        profile_number = r_create.json()["display_number"]
         await api_client.patch(
             f"/api/v1/profiles/{profile_id}/runtime/desired-state",
             json={"desired_state": "running"},
@@ -846,7 +850,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
             # Start Profile via Supervisor control server
             res = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": profile_id, "config_version": 1},
+                json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
             )
             assert res.status_code == 200
             start_payload = res.json()

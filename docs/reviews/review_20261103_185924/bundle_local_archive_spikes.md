@@ -25,11 +25,11 @@
 
 ## dependencies
 
-- Selkies 2.1.0 internals, including name-mangled private attributes (_RTCIceTransport__*, _RTCPeerConnection__iceTransports) in s005/s008 adapters
+- Selkies 2.1.0 internals, including name-mangled private attributes (_RTCIceTransport_\_\*, \_RTCPeerConnection\_\_iceTransports) in s005/s008 adapters
 - CloakBrowser SDK 0.6.4 / Chromium 146 binary distribution (s001 runtime images reused by s006/s008/s009)
 - coturn (s002 probes, s008 server; image referenced as coturn/coturn:latest in s008 start_coturn.sh)
 - Docker + host Google Chrome at a hardcoded macOS path in s005/s006/s008/s009/s011 harnesses
-- s011 only: production backend package (cbrowser.domain.models, cbrowser.gateway.endpoint via PYTHONPATH=src/backend) and tests/fixtures/stream_probe/* outside this unit
+- s011 only: production backend package (cbrowser.domain.models, cbrowser.gateway.endpoint via PYTHONPATH=src/backend) and tests/fixtures/stream_probe/\* outside this unit
 
 ## flows
 
@@ -58,144 +58,165 @@
 
 - Independent reviews with SHA256 tables and real re-runs (exit codes, timings) accompany s005/s006/s007/s008/s009; s010 records a frozen source hash and pinned image ID
 - No real secret values found anywhere in the 102 files: TURN/agent secrets are generated per run into 0600 files (s008 turnserver.conf, s011 secret files) or token files (s006); sentinel strings in s007 are synthetic test markers by design
-- git check-ignore verified in this review: docs/archive/spikes/**/probe_work/ and docs/archive/spikes/**/*.secret cover the s008 secret/conf and s006 agent_token.secret paths
-- s006 agent audit log contains only direction/category/size and truncated SHA256 - no payloads (run_agent_client.py _record_audit)
+- git check-ignore verified in this review: docs/archive/spikes/**/probe_work/ and docs/archive/spikes/**/\*.secret cover the s008 secret/conf and s006 agent_token.secret paths
+- s006 agent audit log contains only direction/category/size and truncated SHA256 - no payloads (run_agent_client.py \_record_audit)
 - Positive patterns: s002 negative TURN cases require the actual 401 error strings; s004 uses in-container CDP DOM oracles with exact counts; s007 R5 replaced a silently-skippable historical-binary negative with a mandatory dynamic rate-mismatch calibration
 
 ## uncertainties
 
 - Static review only: no spike was executed, so all runtime PASS claims rest on the spikes' own recorded reviews and on logs stored outside this repository (.scratch), which were not re-verified
-- s011's external fixtures (tests/fixtures/stream_probe/*, media_page.html, clipboard_oracle.py, web_lock_shim.js) and the production backend modules it imports are outside this unit's 102 files; they were assessed only at their call sites in direct_media_probe.py
+- s011's external fixtures (tests/fixtures/stream_probe/\*, media_page.html, clipboard_oracle.py, web_lock_shim.js) and the production backend modules it imports are outside this unit's 102 files; they were assessed only at their call sites in direct_media_probe.py
 - Upstream Selkies/CloakBrowser sources cited by reviews (e.g. pinned selkies input_handler commit in s009) are not part of this unit and were not read
 - s001 image_manifest.json was read in full; it self-declares local/arm64 scope and does not prove reproducible builds - no other generated manifest required structure-level-only coverage
 
 ## Findings
 
 - [Medium][90] docs/archive/spikes/s001_selkies_runtime/code/run_spike.sh:231 — Spike entry scripts disable display/stream/audio authentication with no in-file warning
-  - ID: f_archive_spikes_01; verification: static
-  - Evidence: s001 run_spike.sh:231 Selkies --enable-basic-auth=false; s004 entrypoint_stream.sh:28, s008 stage2_stream_entrypoint.sh:28, s009 entrypoint_stream.sh:28 repeat the flag, the latter three with --addr 0.0.0.0; Xvfb with access control disabled: s005 entrypoint_browser.sh:7 '-listen tcp -ac' (TCP-listening, the strongest form), s004 entrypoint_browser.sh:17 and s008/s009 entrypoint_browser.sh:17 '-ac'; PulseAudio auth-anonymous=1: s001 entry_browser_full.sh:11, s006 media_fixture/entry_browser_full.sh:11, s008/s009 entrypoint_browser.sh:11; s006 run_verification.py starts its stream container with --enable-basic-auth=false; The only warning lives in docs/archive/spikes/README.md; no individual script carries a danger header, and host-side loopback port binding is the only containment if a script is copied out alone
-  - Impact: Anyone reusing a single entry script as a runtime starting point (the natural copy-paste path) inherits an unauthenticated screen/input/audio endpoint; the s005 variant additionally exposes X11 over TCP inside any shared container network.
-  - Fix: Add a short danger header to each affected entry script (or a shared sourced guard) stating it must only run inside the spike's isolated network, mirroring the archive README warning.
+
+    - ID: f_archive_spikes_01; verification: static
+    - Evidence: s001 run_spike.sh:231 Selkies --enable-basic-auth=false; s004 entrypoint_stream.sh:28, s008 stage2_stream_entrypoint.sh:28, s009 entrypoint_stream.sh:28 repeat the flag, the latter three with --addr 0.0.0.0; Xvfb with access control disabled: s005 entrypoint_browser.sh:7 '-listen tcp -ac' (TCP-listening, the strongest form), s004 entrypoint_browser.sh:17 and s008/s009 entrypoint_browser.sh:17 '-ac'; PulseAudio auth-anonymous=1: s001 entry_browser_full.sh:11, s006 media_fixture/entry_browser_full.sh:11, s008/s009 entrypoint_browser.sh:11; s006 run_verification.py starts its stream container with --enable-basic-auth=false; The only warning lives in docs/archive/spikes/README.md; no individual script carries a danger header, and host-side loopback port binding is the only containment if a script is copied out alone
+    - Impact: Anyone reusing a single entry script as a runtime starting point (the natural copy-paste path) inherits an unauthenticated screen/input/audio endpoint; the s005 variant additionally exposes X11 over TCP inside any shared container network.
+    - Fix: Add a short danger header to each affected entry script (or a shared sourced guard) stating it must only run inside the spike's isolated network, mirroring the archive README warning.
 
 - [Medium][90] docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:139 — Spike control planes accept unauthenticated state-changing commands
-  - ID: f_archive_spikes_02; verification: static
-  - Evidence: s008 stage2_stream_runner.py:139 binds an auxiliary HTTP server to 0.0.0.0:18092; handle_restart_ice (line 74) takes caller-supplied client_peer_id, ICE servers and credentials and forces a renegotiation - no authentication or allowlist anywhere in the file; s003 container_uds/container_cdp_probe.py RealCdpAgentUdsProxy forwards arbitrary CDP methods (incl. Browser.close, Browser.setDownloadBehavior) from any client of agent.sock; the same class is duplicated in code/test_cdp_real.py; s005 live_policy_agent.py:48 control UDS /tmp/capture_policy_agent.sock accepts record_input and full get_state (peer details + action history) from any local process; container_download_review.md S3.3 self-acknowledges the s003 limitation, but the code itself carries no warning; host publication is loopback-only in the launcher scripts, yet any peer container on the experiment network can reach these endpoints
-  - Impact: Within the experiment network (or any future reuse), an unauthenticated peer can hijack/close browser sessions, force ICE restarts with attacker-chosen TURN servers, or inject fake input activity into the capture policy.
-  - Fix: Bind aux control to a unix socket or loopback inside the container, require the run's random token on control requests, and note the restriction in the runner header; for the CDP proxy, add a method allowlist.
+
+    - ID: f_archive_spikes_02; verification: static
+    - Evidence: s008 stage2_stream_runner.py:139 binds an auxiliary HTTP server to 0.0.0.0:18092; handle_restart_ice (line 74) takes caller-supplied client_peer_id, ICE servers and credentials and forces a renegotiation - no authentication or allowlist anywhere in the file; s003 container_uds/container_cdp_probe.py RealCdpAgentUdsProxy forwards arbitrary CDP methods (incl. Browser.close, Browser.setDownloadBehavior) from any client of agent.sock; the same class is duplicated in code/test_cdp_real.py; s005 live_policy_agent.py:48 control UDS /tmp/capture_policy_agent.sock accepts record_input and full get_state (peer details + action history) from any local process; container_download_review.md S3.3 self-acknowledges the s003 limitation, but the code itself carries no warning; host publication is loopback-only in the launcher scripts, yet any peer container on the experiment network can reach these endpoints
+    - Impact: Within the experiment network (or any future reuse), an unauthenticated peer can hijack/close browser sessions, force ICE restarts with attacker-chosen TURN servers, or inject fake input activity into the capture policy.
+    - Fix: Bind aux control to a unix socket or loopback inside the container, require the run's random token on control requests, and note the restriction in the runner header; for the CDP proxy, add a method allowlist.
 
 - [Low][85] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:26 — Bearer tokens compared with plain string equality; one session token passed via process argv
-  - ID: f_archive_spikes_03; verification: static
-  - Evidence: roles.py:26 'if auth != f"Bearer {self.auth_token}"' - non-constant-time comparison (same pattern in s006 gateway_core.py:86 and s011 GatewayMockServer.handle_agent_register); s003 recovery_probe/test_orchestration.py generates the session token with secrets.token_hex and passes it to the API/Supervisor subprocesses as a --token command-line argument, visible in the host process list; Contrast: s006/s008 runners read tokens from files instead of argv, showing the safer pattern was known in the same unit
-  - Impact: Timing side channel on token checks (minor on loopback) and token disclosure to any local process listing during the s003 recovery runs.
-  - Fix: Use hmac.compare_digest for token checks and pass tokens via file or environment, as the s006/s008 harnesses already do.
+
+    - ID: f_archive_spikes_03; verification: static
+    - Evidence: roles.py:26 'if auth != f"Bearer {self.auth_token}"' - non-constant-time comparison (same pattern in s006 gateway_core.py:86 and s011 GatewayMockServer.handle_agent_register); s003 recovery_probe/test_orchestration.py generates the session token with secrets.token_hex and passes it to the API/Supervisor subprocesses as a --token command-line argument, visible in the host process list; Contrast: s006/s008 runners read tokens from files instead of argv, showing the safer pattern was known in the same unit
+    - Impact: Timing side channel on token checks (minor on loopback) and token disclosure to any local process listing during the s003 recovery runs.
+    - Fix: Use hmac.compare_digest for token checks and pass tokens via file or environment, as the s006/s008 harnesses already do.
 
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:140 — Run secrets persist in the probe working tree; s006 token file gets default permissions and is never deleted
-  - ID: f_archive_spikes_04; verification: static
-  - Evidence: run_verification.py:35,140 writes agent_token.secret into the probe directory with plain open('w') (umask-default permissions, no chmod 0600) and cleanup_all() never removes it; s008 probe_work/start_coturn.sh writes turn_secret.txt and turnserver.conf (both chmod 600) into code/probe_work/, but probe_work/cleanup.sh removes only containers/volumes/networks, leaving both secret files in any copied tree indefinitely; Verified in this review via git check-ignore: both locations are gitignored (docs/archive/spikes/**/probe_work/ and **/*.secret), so the exposure is local-disk persistence, not repository leakage
-  - Impact: Copied scratch trees accumulate live TURN/agent secrets on disk beyond the run; the s006 token is additionally readable by other local users due to default permissions.
-  - Fix: chmod 0600 the s006 token file and delete secret files in each spike's cleanup path.
+
+    - ID: f_archive_spikes_04; verification: static
+    - Evidence: run_verification.py:35,140 writes agent_token.secret into the probe directory with plain open('w') (umask-default permissions, no chmod 0600) and cleanup_all() never removes it; s008 probe_work/start_coturn.sh writes turn_secret.txt and turnserver.conf (both chmod 600) into code/probe_work/, but probe_work/cleanup.sh removes only containers/volumes/networks, leaving both secret files in any copied tree indefinitely; Verified in this review via git check-ignore: both locations are gitignored (docs/archive/spikes/\*\*/probe_work/ and \*\*/\*.secret), so the exposure is local-disk persistence, not repository leakage
+    - Impact: Copied scratch trees accumulate live TURN/agent secrets on disk beyond the run; the s006 token is additionally readable by other local users due to default permissions.
+    - Fix: chmod 0600 the s006 token file and delete secret files in each spike's cleanup path.
 
 - [Low][80] docs/archive/spikes/s007_profile_isolation/code/entry_browser.sh:47 — s007 Xauthority and PulseAudio cookies are world-readable inside the shared volumes
-  - ID: f_archive_spikes_05; verification: static
-  - Evidence: entry_browser.sh writes the random Pulse cookie (dd from /dev/urandom) and chmod 644; the X11 cookie.hex and Xauthority file are likewise chmod 644 in the shared /tmp/.X11-unix volume; The spike's own analysis names the Xauthority cookie a primary defense layer, with real isolation resting on volume separation; any process that gains read access to the volume obtains both cookies; The stream side does better: entry_stream.sh builds its derived xauth with chmod 600
-  - Impact: Weakens the cookie layer of the defense-in-depth the spike sets out to demonstrate; a read-only leak of the X11 volume exposes the exact credential the design relies on.
-  - Fix: chmod 600 the cookie files and rely on the shared group/UID (1000) for the stream container's read access, or pass the cookie through the already-600 stream xauth path only.
+
+    - ID: f_archive_spikes_05; verification: static
+    - Evidence: entry_browser.sh writes the random Pulse cookie (dd from /dev/urandom) and chmod 644; the X11 cookie.hex and Xauthority file are likewise chmod 644 in the shared /tmp/.X11-unix volume; The spike's own analysis names the Xauthority cookie a primary defense layer, with real isolation resting on volume separation; any process that gains read access to the volume obtains both cookies; The stream side does better: entry_stream.sh builds its derived xauth with chmod 600
+    - Impact: Weakens the cookie layer of the defense-in-depth the spike sets out to demonstrate; a read-only leak of the X11 volume exposes the exact credential the design relies on.
+    - Fix: chmod 600 the cookie files and rely on the shared group/UID (1000) for the stream container's read access, or pass the cookie through the already-600 stream xauth path only.
 
 - [Low][85] docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:83 — s003 CDP-over-UDS proxy: orphaned listener task, unlocked re-arm race, unbounded event buffer
-  - ID: f_archive_spikes_06; verification: static
-  - Evidence: container_cdp_probe.py:83 start() creates the _listen_agent_events task without storing a reference, so close() cannot cancel it (same code duplicated in code/test_cdp_real.py); Any client disconnect triggers an unconditional re-arm of Browser.setDownloadBehavior with no lock; concurrent clients race on a browser-global setting (partially self-acknowledged in container_download_review.md S3.2); download_events is an in-memory list appended for the process lifetime with no bound or persistence
-  - Impact: Leaked asyncio tasks after shutdown, cross-client interference on download behavior, and slow memory growth in long sessions - the class is a stated prototype for the production control plane.
-  - Fix: Store and cancel the listener task, serialize re-arm under a lock scoped per browser, and cap or stream the event buffer.
+
+    - ID: f_archive_spikes_06; verification: static
+    - Evidence: container_cdp_probe.py:83 start() creates the \_listen_agent_events task without storing a reference, so close() cannot cancel it (same code duplicated in code/test_cdp_real.py); Any client disconnect triggers an unconditional re-arm of Browser.setDownloadBehavior with no lock; concurrent clients race on a browser-global setting (partially self-acknowledged in container_download_review.md S3.2); download_events is an in-memory list appended for the process lifetime with no bound or persistence
+    - Impact: Leaked asyncio tasks after shutdown, cross-client interference on download behavior, and slow memory growth in long sessions - the class is a stated prototype for the production control plane.
+    - Fix: Store and cancel the listener task, serialize re-arm under a lock scoped per browser, and cap or stream the event buffer.
 
 - [Low][80] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:1 — s003 recovery roles: unbounded request body, silent no-op success, unlocked shared event file
-  - ID: f_archive_spikes_07; verification: static
-  - Evidence: roles.py ApiHttpHandler.do_POST reads the request body using the client-supplied Content-Length with no size cap; Exit events for unknown profiles UPDATE zero rows yet the API still reports the event as applied; logging can also report new_desired when the profile row is None; container_agent.py and roles.py both read/delete the shared events.jsonl without any file lock (race self-acknowledged in recovery_review.md S3.4), and queue draining leaves a 0-byte file that makes orchestration tests wait (self-acknowledged S3)
-  - Impact: Memory exhaustion via oversized POSTs, false-positive recovery signals for missing profiles, and lost/duplicated exit events under concurrent access - in the spike whose subject is crash recovery correctness.
-  - Fix: Cap body size, return an error when an event matches no profile row, and take an flock around events.jsonl read/delete.
+
+    - ID: f_archive_spikes_07; verification: static
+    - Evidence: roles.py ApiHttpHandler.do_POST reads the request body using the client-supplied Content-Length with no size cap; Exit events for unknown profiles UPDATE zero rows yet the API still reports the event as applied; logging can also report new_desired when the profile row is None; container_agent.py and roles.py both read/delete the shared events.jsonl without any file lock (race self-acknowledged in recovery_review.md S3.4), and queue draining leaves a 0-byte file that makes orchestration tests wait (self-acknowledged S3)
+    - Impact: Memory exhaustion via oversized POSTs, false-positive recovery signals for missing profiles, and lost/duplicated exit events under concurrent access - in the spike whose subject is crash recovery correctness.
+    - Fix: Cap body size, return an error when an event matches no profile row, and take an flock around events.jsonl read/delete.
 
 - [Low][70] docs/archive/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py:198 — s006 gateway: viewer registration race and one malformed frame tears down the agent
-  - ID: f_archive_spikes_08; verification: suspected
-  - Evidence: handle_viewer_signal checks profile_id in self.registered_agents and later does self.profile_viewers[profile_id].add(conn_id) without holding self._lock; the agent handler's finally block pops profile_viewers[profile_id] on deregistration, so an interleaved deregistration makes the viewer path raise KeyError; In handle_agent_register's multiplex loop, json.loads(msg.data) is unguarded: one malformed text frame from the agent raises into the outer except and deregisters the whole agent, dropping all its viewers
-  - Impact: Spurious 500s and full agent teardown from a single bad frame or an unlucky registration/deregistration interleave - in the component whose recovery behavior is the spike's subject.
-  - Fix: Hold the gateway lock across the check-and-register sequence (or use setdefault), and drop malformed frames with a warning instead of tearing down the registration.
+
+    - ID: f_archive_spikes_08; verification: suspected
+    - Evidence: handle_viewer_signal checks profile_id in self.registered_agents and later does self.profile_viewers[profile_id].add(conn_id) without holding self.\_lock; the agent handler's finally block pops profile_viewers[profile_id] on deregistration, so an interleaved deregistration makes the viewer path raise KeyError; In handle_agent_register's multiplex loop, json.loads(msg.data) is unguarded: one malformed text frame from the agent raises into the outer except and deregisters the whole agent, dropping all its viewers
+    - Impact: Spurious 500s and full agent teardown from a single bad frame or an unlucky registration/deregistration interleave - in the component whose recovery behavior is the spike's subject.
+    - Fix: Hold the gateway lock across the check-and-register sequence (or use setdefault), and drop malformed frames with a warning instead of tearing down the registration.
 
 - [Low][75] docs/archive/spikes/s008_turn_generation_media/code/stage2_adapter.py:92 — s008 adapter: failed prepare_restart leaves the transport monitor-less and leaks the new gatherer; runtime invariants use assert
-  - ID: f_archive_spikes_09; verification: static
-  - Evidence: prepare_restart cancels _RTCIceTransport__monitor_task and clears __start BEFORE gather(); when gather() raises (exactly the adversarial server-bad path), the new gatherer's connection is never closed and the old transport keeps running without its monitor task; independent_review_failed.md S4.6 already noted missing try/finally resource回收 for intermediate gatherers; the current code still raises without closing gatherer._connection; Operational invariants are enforced with assert (restart_pending guard in prepare_restart; send_rejected assertion in start()), which vanish under python -O
-  - Impact: After a rejected generation the transport is left in a degraded, partially-dismantled state even though old media keeps flowing - the failure mode the adversarial suite exercises most.
-  - Fix: Wrap gather in try/finally that closes the new gatherer on failure and restores the monitor, and replace operational asserts with explicit exceptions.
+
+    - ID: f_archive_spikes_09; verification: static
+    - Evidence: prepare_restart cancels \_RTCIceTransport\_\_monitor_task and clears \_\_start BEFORE gather(); when gather() raises (exactly the adversarial server-bad path), the new gatherer's connection is never closed and the old transport keeps running without its monitor task; independent_review_failed.md S4.6 already noted missing try/finally resource回收 for intermediate gatherers; the current code still raises without closing gatherer.\_connection; Operational invariants are enforced with assert (restart_pending guard in prepare_restart; send_rejected assertion in start()), which vanish under python -O
+    - Impact: After a rejected generation the transport is left in a degraded, partially-dismantled state even though old media keeps flowing - the failure mode the adversarial suite exercises most.
+    - Fix: Wrap gather in try/finally that closes the new gatherer on failure and restores the monitor, and replace operational asserts with explicit exceptions.
 
 - [Low][75] docs/archive/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:86 — UDS state queries truncate at 16 KiB while the returned action history grows unboundedly
-  - ID: f_archive_spikes_10; verification: static
-  - Evidence: query_uds_state() in s005 test_e2e_real_pipeline.py and native_visibility_e2e.py (and the same helper pattern in s006) does a single s.recv(16384) and json.loads on the result - no framing loop; live_policy_agent.py get_state embeds the full _action_history, which is append-only for the process lifetime (log_pipeline_action), so long runs can exceed 16 KiB and make state queries fail spuriously
-  - Impact: False test failures (or misleading state) in long sessions, plus steady memory growth in the policy agent.
-  - Fix: Read until newline with a buffered reader on the client side and cap/ring-buffer the action history server-side.
+
+    - ID: f_archive_spikes_10; verification: static
+    - Evidence: query_uds_state() in s005 test_e2e_real_pipeline.py and native_visibility_e2e.py (and the same helper pattern in s006) does a single s.recv(16384) and json.loads on the result - no framing loop; live_policy_agent.py get_state embeds the full \_action_history, which is append-only for the process lifetime (log_pipeline_action), so long runs can exceed 16 KiB and make state queries fail spuriously
+    - Impact: False test failures (or misleading state) in long sessions, plus steady memory growth in the policy agent.
+    - Fix: Read until newline with a buffered reader on the client side and cap/ring-buffer the action history server-side.
 
 - [Medium][85] docs/spikes/s011_direct_media_validation/code/direct_media_probe.py:976 — s011 visibility pause/resume is validated with a synthetic visibility signal, not a real hidden tab
-  - ID: f_archive_spikes_11; verification: static
-  - Evidence: set_visibility() (line 976) overrides document.visibilityState and document.hidden via Object.defineProperty and dispatches a synthetic 'visibilitychange' Event; assertions then check the hidden page's framesDecoded stays constant; The spike report lists '页面隐藏只暂停该页视频，可见页继续；恢复可见后继续出帧' as a success criterion and does not disclose that visibility was simulated in-page; Contrast within the same unit: s005 native_visibility_e2e.py proved the same behavior class with real Chrome tab activation and window minimization via CDP
-  - Impact: The chain is proven only from the visibilitychange event inward; a genuinely backgrounded tab (browser throttling, real hidden state, OS-level occlusion) is not covered, yet s011's adoption (t015, removing TURN) cites the full scenario matrix as closed.
-  - Fix: Repeat the visibility phase with real tab switching/minimization (as in s005's native suite) or amend the report to state the visibility signal was simulated.
+
+    - ID: f_archive_spikes_11; verification: static
+    - Evidence: set_visibility() (line 976) overrides document.visibilityState and document.hidden via Object.defineProperty and dispatches a synthetic 'visibilitychange' Event; assertions then check the hidden page's framesDecoded stays constant; The spike report lists '页面隐藏只暂停该页视频，可见页继续；恢复可见后继续出帧' as a success criterion and does not disclose that visibility was simulated in-page; Contrast within the same unit: s005 native_visibility_e2e.py proved the same behavior class with real Chrome tab activation and window minimization via CDP
+    - Impact: The chain is proven only from the visibilitychange event inward; a genuinely backgrounded tab (browser throttling, real hidden state, OS-level occlusion) is not covered, yet s011's adoption (t015, removing TURN) cites the full scenario matrix as closed.
+    - Fix: Repeat the visibility phase with real tab switching/minimization (as in s005's native suite) or amend the report to state the visibility signal was simulated.
 
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:268 — s006 verification contains weak or logically-implied checks presented as independent items
-  - ID: f_archive_spikes_12; verification: static
-  - Evidence: independent_agent_registered is marked PASS from agent_proc.poll() is None after a 2s sleep - process liveness, not a registration handshake (registration is only proven indirectly by later steps); Step 5's wrong-port negative re-evaluates the already-known candidate ports against 9999; once the strict 30007 check in Step 4 has passed, Step 5 cannot fail - it never exercises a validator function with a wrong expectation; Step 9 computes has_hello but the pass condition omits HELLO/SESSION despite the adjacent comment claiming they are required
-  - Impact: The 12-item matrix overstates the independence of three checks; a registration failure mode that keeps the process alive would be misreported at its own line item.
-  - Fix: Assert registration via the gateway's registered state, implement the port check as a callable validator and test it with a wrong expectation, and include HELLO in the trajectory gate or fix the comment.
+
+    - ID: f_archive_spikes_12; verification: static
+    - Evidence: independent_agent_registered is marked PASS from agent_proc.poll() is None after a 2s sleep - process liveness, not a registration handshake (registration is only proven indirectly by later steps); Step 5's wrong-port negative re-evaluates the already-known candidate ports against 9999; once the strict 30007 check in Step 4 has passed, Step 5 cannot fail - it never exercises a validator function with a wrong expectation; Step 9 computes has_hello but the pass condition omits HELLO/SESSION despite the adjacent comment claiming they are required
+    - Impact: The 12-item matrix overstates the independence of three checks; a registration failure mode that keeps the process alive would be misreported at its own line item.
+    - Fix: Assert registration via the gateway's registered state, implement the port check as a callable validator and test it with a wrong expectation, and include HELLO in the trajectory gate or fix the comment.
 
 - [Low][85] docs/archive/spikes/s001_selkies_runtime/code/test_mitshm.c:1 — Low-level capture positive checks assert success codes, not captured content
-  - ID: f_archive_spikes_13; verification: static
-  - Evidence: test_mitshm.c positive path (s001 original; s007 fixture/test_mitshm.c copy) prints three sample pixel bytes without validating them - a black or frozen frame passes; s001 first_review.md S2.3 criticized only the negative path and the positive path was never strengthened; s007 run_isolation_probe.py pixelflux stage asserts >=8 callback frames and PNG size >5000 bytes, not that frame contents change; Partial compensation exists at higher levels (s007 screenshot color analysis, s004 DOM oracles), so the gap is confined to the low-level probes
-  - Impact: A capture pipeline returning stale/blank frames satisfies the low-level gates these spikes use as building-block evidence.
-  - Fix: Validate a known on-screen pattern (e.g. the fixture page's background color) inside the SHM/pixelflux positive checks, as the screenshot stage already does.
+
+    - ID: f_archive_spikes_13; verification: static
+    - Evidence: test_mitshm.c positive path (s001 original; s007 fixture/test_mitshm.c copy) prints three sample pixel bytes without validating them - a black or frozen frame passes; s001 first_review.md S2.3 criticized only the negative path and the positive path was never strengthened; s007 run_isolation_probe.py pixelflux stage asserts >=8 callback frames and PNG size >5000 bytes, not that frame contents change; Partial compensation exists at higher levels (s007 screenshot color analysis, s004 DOM oracles), so the gap is confined to the low-level probes
+    - Impact: A capture pipeline returning stale/blank frames satisfies the low-level gates these spikes use as building-block evidence.
+    - Fix: Validate a known on-screen pattern (e.g. the fixture page's background color) inside the SHM/pixelflux positive checks, as the screenshot stage already does.
 
 - [Low][90] docs/archive/spikes/s009_native_ime_input/code/test_blank_cdp.py:1 — Observation-only scripts exit 0 with no assertions and no in-file warning
-  - ID: f_archive_spikes_14; verification: static
-  - Evidence: test_blank_cdp.py only prints the blank-page CDP event list; investigate_compositionend.py only writes a trace JSON - neither contains any assertion, so exit 0 means only 'ran'; The s009 report does warn that test_blank_cdp's exit 0 must not substitute for end-to-end validation, but neither script carries that warning in its own header
-  - Impact: Anyone running the s009 command list mechanically can read two green exits as verification results.
-  - Fix: Add an 'observation only - no assertions' header to both scripts, matching the report's own caveat.
+
+    - ID: f_archive_spikes_14; verification: static
+    - Evidence: test_blank_cdp.py only prints the blank-page CDP event list; investigate_compositionend.py only writes a trace JSON - neither contains any assertion, so exit 0 means only 'ran'; The s009 report does warn that test_blank_cdp's exit 0 must not substitute for end-to-end validation, but neither script carries that warning in its own header
+    - Impact: Anyone running the s009 command list mechanically can read two green exits as verification results.
+    - Fix: Add an 'observation only - no assertions' header to both scripts, matching the report's own caveat.
 
 - [Low][85] docs/archive/spikes/s010_cloakbrowser_exit_observation/code/probe.py:500 — s010 owner-loss check asserts the outcome its own criteria say must not be presupposed
-  - ID: f_archive_spikes_15; verification: static
-  - Evidence: The report's success criteria state the owner-loss run must record the timeline '不预设Chrome存活或终止' (without presupposing whether Chrome survives); probe.py check 5 hard-asserts timeline[-1]['chrome_state'] == 'gone' and wrapper status 'exited' - if a future SDK/Chrome build let Chrome survive owner loss, the suite would report FAIL instead of characterizing the new behavior
-  - Impact: The characterization probe is coupled to one observed outcome, so a legitimate upstream behavior change masquerades as a regression.
-  - Fix: Record survival vs exit as the check's measured result and gate only on timeline completeness and identity matching.
+
+    - ID: f_archive_spikes_15; verification: static
+    - Evidence: The report's success criteria state the owner-loss run must record the timeline '不预设Chrome存活或终止' (without presupposing whether Chrome survives); probe.py check 5 hard-asserts timeline[-1]['chrome_state'] == 'gone' and wrapper status 'exited' - if a future SDK/Chrome build let Chrome survive owner loss, the suite would report FAIL instead of characterizing the new behavior
+    - Impact: The characterization probe is coupled to one observed outcome, so a legitimate upstream behavior change masquerades as a regression.
+    - Fix: Record survival vs exit as the check's measured result and gate only on timeline completeness and identity matching.
 
 - [Low][90] docs/archive/spikes/s008_turn_generation_media/report_same_url.md:1 — s008 keeps two same-title reports that both claim to describe the final code
-  - ID: f_archive_spikes_16; verification: static
-  - Evidence: report_same_url.md has no range-update or superseded header and states the code is the '最终R3' per independent_review_final.md; report.md (with the range-update header) states the current code is the split-topology nine sources per independent_review_split.md and that the same-URL fixture was wholly replaced; A reader landing on report_same_url.md first receives a stale finality claim; only report.md explains the replacement
-  - Impact: Conflicting currency claims for the same spike undermine the otherwise consistent three-state documentation discipline in this archive.
-  - Fix: Add the standard range-update/superseded header to report_same_url.md pointing at report.md as the current report.
+
+    - ID: f_archive_spikes_16; verification: static
+    - Evidence: report_same_url.md has no range-update or superseded header and states the code is the '最终R3' per independent_review_final.md; report.md (with the range-update header) states the current code is the split-topology nine sources per independent_review_split.md and that the same-URL fixture was wholly replaced; A reader landing on report_same_url.md first receives a stale finality claim; only report.md explains the replacement
+    - Impact: Conflicting currency claims for the same spike undermine the otherwise consistent three-state documentation discipline in this archive.
+    - Fix: Add the standard range-update/superseded header to report_same_url.md pointing at report.md as the current report.
 
 - [Low][90] docs/archive/spikes/s007_profile_isolation/code/run_isolation_probe.py:3 — Stale revision and design descriptions inside spike code
-  - ID: f_archive_spikes_17; verification: static
-  - Evidence: run_isolation_probe.py module docstring still says 'Revision 2' and 'audio tone generation (440Hz vs 880Hz via paplay)' - paplay was removed in R3 and the current suite is R5 WebAudio; its generated-report template is likewise titled 'Revision 2'; s005 code/revision_03/test_e2e_real_pipeline.py still titles itself 'Production-grade Real End-to-End Test Suite' with no in-file retired marker (retirement is documented only in the parent report and directory name); s010 code/probe.py docstring calls the file 'probe_v2.py' and says probe.py 'remains intact', a leftover from its scratch origin
-  - Impact: Readers of the code snapshots get a wrong revision/design picture without opening the sibling reports.
-  - Fix: Refresh the docstrings/titles to the frozen revision, or add a one-line 'snapshot of revision N, see report.md' header.
+
+    - ID: f_archive_spikes_17; verification: static
+    - Evidence: run_isolation_probe.py module docstring still says 'Revision 2' and 'audio tone generation (440Hz vs 880Hz via paplay)' - paplay was removed in R3 and the current suite is R5 WebAudio; its generated-report template is likewise titled 'Revision 2'; s005 code/revision_03/test_e2e_real_pipeline.py still titles itself 'Production-grade Real End-to-End Test Suite' with no in-file retired marker (retirement is documented only in the parent report and directory name); s010 code/probe.py docstring calls the file 'probe_v2.py' and says probe.py 'remains intact', a leftover from its scratch origin
+    - Impact: Readers of the code snapshots get a wrong revision/design picture without opening the sibling reports.
+    - Fix: Refresh the docstrings/titles to the frozen revision, or add a one-line 'snapshot of revision N, see report.md' header.
 
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py:37 — s006 gateway static proxy serves the Selkies UI without auth, strips CSP, and hardcodes one profile
-  - ID: f_archive_spikes_18; verification: static
-  - Evidence: static_proxy forwards every path to the Selkies origin with no authentication check and deletes Content-Security-Policy (plus Content-Encoding/Transfer-Encoding) from responses before returning them; The injected WebSocket rewrite always targets '/stream/test-profile/signal' regardless of which profile a viewer asked for, so the proxy is silently single-profile; Mitigation in place: the runner binds 127.0.0.1 by default
-  - Impact: If the pattern is carried toward production, viewers get the streaming UI with weakened browser-side protections and multi-profile routing breaks silently.
-  - Fix: Keep the CSP header (adjust only what the injection strictly requires), derive the profile path from the request, and note the proxy is fixture-only.
+
+    - ID: f_archive_spikes_18; verification: static
+    - Evidence: static_proxy forwards every path to the Selkies origin with no authentication check and deletes Content-Security-Policy (plus Content-Encoding/Transfer-Encoding) from responses before returning them; The injected WebSocket rewrite always targets '/stream/test-profile/signal' regardless of which profile a viewer asked for, so the proxy is silently single-profile; Mitigation in place: the runner binds 127.0.0.1 by default
+    - Impact: If the pattern is carried toward production, viewers get the streaming UI with weakened browser-side protections and multi-profile routing breaks silently.
+    - Fix: Keep the CSP header (adjust only what the injection strictly requires), derive the profile path from the request, and note the proxy is fixture-only.
 
 - [Low][90] docs/archive/spikes/s003_selkies_control/code/test_cdp_real.py:1 — Substantial code duplicated across spikes, so fixes cannot propagate
-  - ID: f_archive_spikes_19; verification: static
-  - Evidence: RealCdpAgentUdsProxy (~200 lines) exists in near-identical copies in s003 code/test_cdp_real.py and code/container_uds/container_cdp_probe.py; The media fixture trio entry_browser_full.sh / gen_wav.py / test_cloak_loop.py is copied from s001 into s006 code/media_fixture/; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh are byte-identical (both spikes' reviews record the same SHA256 dcbc7d70...); test_mitshm.c is copied from s001 into s007 code/fixture/ with the denied-mode extension
-  - Impact: Snapshot duplication is expected in an archive, but identical harness files across four spikes mean a hazard fix (e.g. the auth flags in f_archive_spikes_01) must be applied in every copy and can silently diverge.
-  - Fix: No restructuring needed for the archive; record the duplication in the archive README so future fixture work starts from one canonical copy.
+
+    - ID: f_archive_spikes_19; verification: static
+    - Evidence: RealCdpAgentUdsProxy (~200 lines) exists in near-identical copies in s003 code/test_cdp_real.py and code/container_uds/container_cdp_probe.py; The media fixture trio entry_browser_full.sh / gen_wav.py / test_cloak_loop.py is copied from s001 into s006 code/media_fixture/; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh are byte-identical (both spikes' reviews record the same SHA256 dcbc7d70...); test_mitshm.c is copied from s001 into s007 code/fixture/ with the denied-mode extension
+    - Impact: Snapshot duplication is expected in an archive, but identical harness files across four spikes mean a hazard fix (e.g. the auth flags in f_archive_spikes_01) must be applied in every copy and can silently diverge.
+    - Fix: No restructuring needed for the archive; record the duplication in the archive README so future fixture work starts from one canonical copy.
 
 - [Low][80] docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py:1 — Prototype-grade resource churn: 50 ms fsync status writes, per-request HTTP sessions, unbounded packet queue
-  - ID: f_archive_spikes_20; verification: static
-  - Evidence: s003 browser_agent.py rewrites status.json (including a download_events snapshot) and fsyncs it every 50 ms for the whole session; s006 run_gateway_server.py static_proxy constructs a new aiohttp ClientSession for every proxied request; s008 stage2_adapter.py self.packets is an asyncio.Queue with no maxsize between the ICE pumps and the DTLS consumer
-  - Impact: Write amplification and connection churn in harnesses whose performance characteristics inform production design; unbounded queue growth if the consumer stalls.
-  - Fix: Throttle status writes or write on change, reuse one ClientSession per process, and bound the adapter queue with a drop/close policy.
+
+    - ID: f_archive_spikes_20; verification: static
+    - Evidence: s003 browser_agent.py rewrites status.json (including a download_events snapshot) and fsyncs it every 50 ms for the whole session; s006 run_gateway_server.py static_proxy constructs a new aiohttp ClientSession for every proxied request; s008 stage2_adapter.py self.packets is an asyncio.Queue with no maxsize between the ICE pumps and the DTLS consumer
+    - Impact: Write amplification and connection churn in harnesses whose performance characteristics inform production design; unbounded queue growth if the consumer stalls.
+    - Fix: Throttle status writes or write on change, reuse one ClientSession per process, and bound the adapter queue with a drop/close policy.
 
 - [Info][80] docs/spikes/s011_direct_media_validation/code/direct_media_probe.py:30 — s011 is coupled to live production code and re-implements the gateway protocol as a test mock
-  - ID: f_archive_spikes_21; verification: static
-  - Evidence: direct_media_probe.py imports cbrowser.domain.models and cbrowser.gateway.endpoint (run.sh puts src/backend on PYTHONPATH) and reads tests/fixtures/stream_probe/* - unlike the archived spikes it is not a self-contained snapshot and will drift or break as the backend evolves; Its GatewayMockServer re-implements the gateway protocol inside the test (with bare asserts on packet fields inside the WS handler and without the Origin/payload checks of s006 gateway_core.py), so protocol drift between the mock and the real gateway is invisible to this suite; This is consistent with its live-spike status feeding t015, but the coupling is not stated in the spike report
-  - Impact: Future failures of s011 may reflect backend/fixture drift rather than media behavior, and its PASS does not exercise the real gateway implementation.
-  - Fix: Note the coupling in the s011 report; when t015 lands, archive s011 with a frozen copy of the fixtures it depends on, like the other spikes.
+
+    - ID: f_archive_spikes_21; verification: static
+    - Evidence: direct_media_probe.py imports cbrowser.domain.models and cbrowser.gateway.endpoint (run.sh puts src/backend on PYTHONPATH) and reads tests/fixtures/stream_probe/\* - unlike the archived spikes it is not a self-contained snapshot and will drift or break as the backend evolves; Its GatewayMockServer re-implements the gateway protocol inside the test (with bare asserts on packet fields inside the WS handler and without the Origin/payload checks of s006 gateway_core.py), so protocol drift between the mock and the real gateway is invisible to this suite; This is consistent with its live-spike status feeding t015, but the coupling is not stated in the spike report
+    - Impact: Future failures of s011 may reflect backend/fixture drift rather than media behavior, and its PASS does not exercise the real gateway implementation.
+    - Fix: Note the coupling in the s011 report; when t015 lands, archive s011 with a frozen copy of the fixtures it depends on, like the other spikes.
 
 ## views
 

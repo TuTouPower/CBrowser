@@ -7,10 +7,10 @@
 ## Findings
 
 - [Medium][80] .repo_template/scripts/repo_task/validation.py:62-77 (run_checks) 与其全部调用点 — 门禁命令（doctor_cmd/test_cmd/blackbox_verify）在 task 流程内从不被执行，唯一执行器是模板同步路径
-  - ID: f_followup_q_evolution_02_01; verification: static
-  - Evidence: 全仓 grep 显示 validation.run_checks 仅被 repo_sync.py:1893 与 1961 调用（repo-template 同步 apply 流程）；task.py 的 preflight/finish/integrate 路径只调 load_policy/parse_policy 校验 testing.md 章节形状（lifecycle.py:434-439、530-531；integration.py:131-133、219-221），不执行命令本体。; 本仓其余自动执行路径均缺席：ci.yml 两 job 指向不存在的 backend/、frontend/ 路径且不引用 .repo_template；pre-commit hook 只做 md_format 且在本 clone 未激活（core.hooksPath 未设）。; 后果：testing.md 自述的『质量门禁』在本仓的实际触发完全依赖 repo_sync 运行或 agent 按 skill 口头流程手动执行，task 状态机自身从不验证门禁是否跑过——门禁存在性被 parse 校验冒充为门禁执行（与 template_tests 单元『fixture 中 configure_project_verification 禁用全部项目门禁』互为表里）。
-  - Impact: 项目以 AGENTS.md/testing.md 把 doctor_cmd/test_cmd 宣称为门禁锚点，但任何一次 task 收尾都可以在从未运行这些命令的情况下通过形状校验；契约套件与黑盒验证是否真的执行过，只能靠执行者自述，仓库内无机械证据。
-  - Fix: 在 task finish/preflight 的验证环节实际调用 run_checks（或记录其在 exact attempt 内的运行证据并由 finish 校验），至少让 test_cmd 成为收尾硬门；或在 testing.md/AGENTS.md 中如实降级表述为『由执行者手动运行的命令清单』而非门禁。（验证：static：grep run_checks/load_policy/parse_policy 全部调用点 + 阅读 lifecycle.py/integration.py 对应代码段确认无命令执行路径。）
+    - ID: f_followup_q_evolution_02_01; verification: static
+    - Evidence: 全仓 grep 显示 validation.run_checks 仅被 repo_sync.py:1893 与 1961 调用（repo-template 同步 apply 流程）；task.py 的 preflight/finish/integrate 路径只调 load_policy/parse_policy 校验 testing.md 章节形状（lifecycle.py:434-439、530-531；integration.py:131-133、219-221），不执行命令本体。; 本仓其余自动执行路径均缺席：ci.yml 两 job 指向不存在的 backend/、frontend/ 路径且不引用 .repo_template；pre-commit hook 只做 md_format 且在本 clone 未激活（core.hooksPath 未设）。; 后果：testing.md 自述的『质量门禁』在本仓的实际触发完全依赖 repo_sync 运行或 agent 按 skill 口头流程手动执行，task 状态机自身从不验证门禁是否跑过——门禁存在性被 parse 校验冒充为门禁执行（与 template_tests 单元『fixture 中 configure_project_verification 禁用全部项目门禁』互为表里）。
+    - Impact: 项目以 AGENTS.md/testing.md 把 doctor_cmd/test_cmd 宣称为门禁锚点，但任何一次 task 收尾都可以在从未运行这些命令的情况下通过形状校验；契约套件与黑盒验证是否真的执行过，只能靠执行者自述，仓库内无机械证据。
+    - Fix: 在 task finish/preflight 的验证环节实际调用 run_checks（或记录其在 exact attempt 内的运行证据并由 finish 校验），至少让 test_cmd 成为收尾硬门；或在 testing.md/AGENTS.md 中如实降级表述为『由执行者手动运行的命令清单』而非门禁。（验证：static：grep run_checks/load_policy/parse_policy 全部调用点 + 阅读 lifecycle.py/integration.py 对应代码段确认无命令执行路径。）
 
 ## evidence
 

@@ -181,7 +181,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
 
     try:
         # 2. Start Profile A in Supervisor
-        session_a = await core.start_profile(profile_a, cfg_a)
+        session_a = await core.start_profile(profile_a, cfg_a, profile_number=resp_a.json()["display_number"])
         assert session_a.udp_mux_port == udp_base
 
         # Reload & verify Browser container A
@@ -216,7 +216,7 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
         )
 
         # 3. Start Profile B concurrently
-        session_b = await core.start_profile(profile_b, cfg_b)
+        session_b = await core.start_profile(profile_b, cfg_b, profile_number=resp_b.json()["display_number"])
         assert session_b.udp_mux_port == udp_base + 1
         assert session_b.browser_container_id != session_a.browser_container_id
 
@@ -301,3 +301,5 @@ async def test_supervisor_dual_profile_real_docker_e2e(tmp_path: Path, real_api_
 
     active_final = docker_adapter.scan_active_containers()
     assert len(active_final) == 0, f"Leaked containers: {active_final}"
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')

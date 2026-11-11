@@ -3,7 +3,7 @@
 - task：`t008_v2_artifacts_automation`
 - spec：`docs/tasks/t008_v2_artifacts_automation/task.md`
 - diff_anchor：`63cbd08e40e5b0448829d06d1faed5851ce973ca`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t008' diff 63cbd08e40e5b0448829d06d1faed5851ce973ca`
+- target：`git -C '<repo>_t008' diff 63cbd08e40e5b0448829d06d1faed5851ce973ca`
 - round：1
 - reviewed_at：2026-11-02T09:54:20+08:00
 
@@ -140,7 +140,7 @@ reviewed_scope: 83fb2d9defce7ac5
 - AC-001：re_verified。重跑 `tests/unit/test_artifact_service.py`、`tests/integration/test_artifacts_api.py` 与前端全量（116 passed）；E2E 在容器内读取 `/exchange/uploads/visible.txt` 通过；上传文件→容器内 `{id}/{name}` 为分段验证，已在「未进表的提示」注明。
 - AC-002：re_verified。重跑 `tests/integration/test_automation_api.py`、`tests/integration/test_automation_cdp_flow.py` 与 E2E 真实下载入库；API automation token 到真实 Agent 的单流组合未单独运行，但各跳均有真实测试并通过。
 - AC-003：trust_prior。重跑 `tests/unit/test_selkies_file_transfers.py` 验证 `file_transfers=none` 生效入口；真实 Selkies 数据通道文件请求拒绝需要真实 Selkies 会话，本轮未运行。
-- AC-004：re_verified。独立重跑 `tests/e2e/test_browser_runtime_e2e.py::test_t008_download_reconcile_after_agent_restart`（`CBROWSER_RUNTIME_TEST_IMAGE=cbrowser-t008-browser:e2e`，`CBROWSER_RUNTIME_ENGINE_CACHE=/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/t003_engine_cache`）1 passed；真实容器重启、扫描事件与 API Artifact 断言均通过。
+- AC-004：re_verified。独立重跑 `tests/e2e/test_browser_runtime_e2e.py::test_t008_download_reconcile_after_agent_restart`（`CBROWSER_RUNTIME_TEST_IMAGE=cbrowser-t008-browser:e2e`，`CBROWSER_RUNTIME_ENGINE_CACHE=<repo>/.scratch/v2_orchestration/t003_engine_cache`）1 passed；真实容器重启、扫描事件与 API Artifact 断言均通过。
 
 coverage = 3 / 4
 
@@ -195,7 +195,7 @@ reviewed_scope: 80bdf0894cda099f
 - AC-001：re_verified。重跑 `tests/unit` 469 passed、`tests/integration` 79 passed、前端 116 passed，并重跑 t008 E2E；上传/列出/下载/删除、路径穿越与跨 Profile 拒绝由 `tests/integration/test_artifacts_api.py:61-146` 覆盖，前端页面三用例通过。API 上传→容器内 `{id}/{name}` 仍为分段验证。
 - AC-002：re_verified。重跑 `tests/integration/test_automation_api.py` 与 `test_automation_cdp_flow.py`（79 passed 内含），以及 E2E 真实 Chrome 下载入库；真实 Chrome loopback CDP 仍由既有 Agent UDS E2E 分段覆盖，非本轮新增证据。
 - AC-003：trust_prior。重跑 `tests/unit/test_selkies_file_transfers.py` 验证 `file_transfers=none` 生效入口；真实 Selkies 数据通道文件请求拒绝未运行，依赖 t007/官方 2.1.0 行为。
-- AC-004：re_verified。独立重跑 `tests/e2e/test_browser_runtime_e2e.py::test_t008_download_reconcile_after_agent_restart` 1 passed（镜像 `cbrowser-t008-browser:e2e`，缓存 `/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/t003_engine_cache`），真实容器重启、扫描事件与 Artifact 列表断言均通过。
+- AC-004：re_verified。独立重跑 `tests/e2e/test_browser_runtime_e2e.py::test_t008_download_reconcile_after_agent_restart` 1 passed（镜像 `cbrowser-t008-browser:e2e`，缓存 `<repo>/.scratch/v2_orchestration/t003_engine_cache`），真实容器重启、扫描事件与 Artifact 列表断言均通过。
 
 coverage = 3 / 4
 

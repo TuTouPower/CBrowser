@@ -36,7 +36,7 @@ if (current === null) {
   process.exit(1);
 }
 
-const min = />=?\s*([0-9]+(?:\.[0-9]+){0,2})/.exec(range);
+const min = /(>=?)\s*([0-9]+(?:\.[0-9]+){0,2})/.exec(range);
 const exclusiveMax = /<\s*([0-9]+(?:\.[0-9]+){0,2})/.exec(range);
 const inclusiveMax = /<=\s*([0-9]+(?:\.[0-9]+){0,2})/.exec(range);
 if (!min && !exclusiveMax && !inclusiveMax) {
@@ -47,7 +47,7 @@ if (!min && !exclusiveMax && !inclusiveMax) {
 }
 
 const bounds = [
-  min && { op: ">=", value: parse(min[1]) },
+  min && { op: min[1], value: parse(min[2]) },
   exclusiveMax && { op: "<", value: parse(exclusiveMax[1]) },
   inclusiveMax && { op: "<=", value: parse(inclusiveMax[1]) },
 ].filter(Boolean);
@@ -58,6 +58,7 @@ if (bounds.some((bound) => bound.value === null)) {
 
 const ok = bounds.every(({ op, value }) => {
   const cmp = compare(current, value);
+  if (op === ">") return cmp > 0;
   if (op === ">=") return cmp >= 0;
   if (op === "<") return cmp < 0;
   return cmp <= 0;

@@ -15,7 +15,7 @@ from gateway_probe.topology import GatewayTopologyHarness
 from playwright.async_api import async_playwright
 from wait import poll_until, wait_for_log
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 
 @pytest.mark.asyncio
