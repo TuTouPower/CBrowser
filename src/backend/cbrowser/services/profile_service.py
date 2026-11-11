@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import hashlib
 import json
 import logging
@@ -19,6 +20,11 @@ from cbrowser.adapters.database.db_errors import classify_dbapi_error
 from cbrowser.adapters.database.repository import (
     ProfileRepository,
 )
+from cbrowser.domain.egress_observation import (
+    OBSERVATION_TTL_SECONDS,
+    EgressObservation,
+    EgressProbeError,
+)
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
     Profile,
@@ -27,6 +33,8 @@ from cbrowser.domain.models import (
     RuntimeEvent,
     generate_fingerprint_seed,
 )
+from cbrowser.domain.proxy_endpoint import ProxyEndpoint
+from cbrowser.services.egress_probe import EgressProbeRunner
 from cbrowser.preview import (
     POLICY_FILE,
     PreviewPolicy,
@@ -254,12 +262,27 @@ class ProfileService:
         runtime_uid: int = 1000,
         runtime_gid: int = 1000,
         data_root: Path | None = None,
+        egress_probe_runner: EgressProbeRunner | None = None,
     ):
         self._repo = repo
         self.runtime_uid = runtime_uid
         self.runtime_gid = runtime_gid
         self._data_root = data_root
         self._locks = ProfileLockRegistry()
+        self._egress_probe_runner = egress_probe_runner
+        self._probe_tasks: set[asyncio.Task] = set()
+
+    def set_egress_probe_runner(self, runner: EgressProbeRunner | None) -> None:
+        """Wire the probe runner after construction (the Supervisor client
+        is built after the service in the app lifespan)."""
+        self._egress_probe_runner = runner
+
+    async def await_pending_probes(self) -> None:
+        """Wait for auto-probe background tasks (tests; production never
+        blocks on probes)."""
+        tasks = list(self._probe_tasks)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @property
     def locks_idle(self) -> bool:
@@ -844,12 +867,199 @@ class ProfileService:
         return await self._repo.get_proxy_credentials(proxy_id)
 
     async def create_proxy(self, req):
-        return await self._repo.create_proxy(req.model_dump())
+        """Create from a proxy link (t052): the link is the only entry;
+        the name defaults to ``host:port``; a pending observation is
+        recorded and an egress probe is scheduled in the background."""
+        endpoint = req.parsed_endpoint()
+        payload = {
+            "name": req.resolved_name(),
+            "scheme": endpoint.scheme,
+            "host": endpoint.host,
+            "port": endpoint.port,
+            "username": endpoint.username,
+            "password": endpoint.password,
+            "region_label": req.region_label,
+            "notes": req.notes,
+        }
+        created = await self._repo.create_proxy(payload)
+        await self._record_pending_observation(created.id, endpoint)
+        self._schedule_probe(created.id)
+        refreshed = await self._repo.get_proxy(created.id)
+        return refreshed if refreshed is not None else created
 
     async def update_proxy(self, proxy_id: str, req):
-        patch = req.model_dump(exclude_unset=True)
-        supplied = req.password_was_supplied()
-        return await self._repo.update_proxy(proxy_id, patch, supplied)
+        """PATCH from a proxy link (t052): an omitted ``proxy_url`` leaves
+        the endpoint (and password) untouched; a supplied one replaces it
+        wholesale and re-triggers the egress probe."""
+        patch: dict[str, Any] = {
+            key: value
+            for key, value in req.model_dump(exclude_unset=True).items()
+            if key != "proxy_url"
+        }
+        endpoint: ProxyEndpoint | None = None
+        password_supplied = False
+        if req.endpoint_was_supplied():
+            endpoint = req.parsed_endpoint()
+            patch.update(
+                {
+                    "scheme": endpoint.scheme,
+                    "host": endpoint.host,
+                    "port": endpoint.port,
+                    "username": endpoint.username,
+                    "password": endpoint.password,
+                }
+            )
+            password_supplied = True
+        proxy, affected = await self._repo.update_proxy(
+            proxy_id, patch, password_supplied
+        )
+        if proxy is None:
+            return None, []
+        if endpoint is not None:
+            await self._record_pending_observation(proxy.id, endpoint)
+            self._schedule_probe(proxy.id)
+            refreshed = await self._repo.get_proxy(proxy.id)
+            if refreshed is not None:
+                proxy = refreshed
+        return proxy, affected
+
+    async def probe_proxy_egress(self, proxy_id: str):
+        """Manual probe (t052): only the proxy id is accepted — the stored
+        endpoint and credentials are loaded server-side, so a caller can
+        never redirect the stored password to another host (AC-009)."""
+        endpoint_data = await self._repo.get_proxy_endpoint(proxy_id)
+        if endpoint_data is None:
+            return None
+        endpoint = ProxyEndpoint(
+            scheme=endpoint_data["scheme"],
+            host=endpoint_data["host"],
+            port=endpoint_data["port"],
+            username=endpoint_data["username"],
+            password=endpoint_data["password"],
+        )
+        fingerprint = endpoint_data["endpoint_fingerprint"]
+        revision = endpoint_data["credential_revision"]
+        await self._record_pending_observation(proxy_id, endpoint)
+        runner = self._egress_probe_runner
+        if runner is None:
+            await self._record_failed_observation(
+                proxy_id,
+                fingerprint,
+                revision,
+                "supervisor_unavailable",
+                datetime.datetime.now(datetime.timezone.utc),
+            )
+        else:
+            try:
+                result = await runner.probe(proxy_id, endpoint, revision)
+            except EgressProbeError as exc:
+                await self._record_failed_observation(
+                    proxy_id,
+                    fingerprint,
+                    revision,
+                    exc.code,
+                    datetime.datetime.now(datetime.timezone.utc),
+                )
+            except Exception as exc:
+                # A runner bug (or any unexpected failure) must never
+                # leave the pending observation hanging and must never
+                # surface as a 500: record a controlled failed row so
+                # the UI shows "unknown" and the probe can be retried.
+                logger.warning(
+                    "Egress probe failed unexpectedly: proxy=%s "
+                    "error_type=%s error=%s",
+                    proxy_id,
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
+                await self._record_failed_observation(
+                    proxy_id,
+                    fingerprint,
+                    revision,
+                    "probe_failed",
+                    datetime.datetime.now(datetime.timezone.utc),
+                )
+            else:
+                # observed_at is the time the probe *completed*: it must
+                # sort after the pending row recorded when the probe
+                # started, or "latest wins" would resurrect the pending
+                # state.
+                completed_at = datetime.datetime.now(datetime.timezone.utc)
+                await self._repo.record_egress_observation(
+                    proxy_id,
+                    EgressObservation(
+                        proxy_id=proxy_id,
+                        endpoint_fingerprint=fingerprint,
+                        credential_revision=revision,
+                        egress_ip=result.egress_ip,
+                        country_code=result.country_code,
+                        status="ok",
+                        observed_at=completed_at,
+                        expires_at=completed_at
+                        + datetime.timedelta(seconds=OBSERVATION_TTL_SECONDS),
+                    ),
+                )
+        return await self._repo.get_proxy(proxy_id)
+
+    async def _record_pending_observation(
+        self, proxy_id: str, endpoint: ProxyEndpoint
+    ) -> None:
+        data = await self._repo.get_proxy_endpoint(proxy_id)
+        if data is None:
+            return
+        now = datetime.datetime.now(datetime.timezone.utc)
+        await self._repo.record_egress_observation(
+            proxy_id,
+            EgressObservation(
+                proxy_id=proxy_id,
+                endpoint_fingerprint=data["endpoint_fingerprint"],
+                credential_revision=data["credential_revision"],
+                status="pending",
+                observed_at=now,
+            ),
+        )
+
+    async def _record_failed_observation(
+        self,
+        proxy_id: str,
+        fingerprint: str,
+        revision: int,
+        error_code: str,
+        now: datetime.datetime,
+    ) -> None:
+        await self._repo.record_egress_observation(
+            proxy_id,
+            EgressObservation(
+                proxy_id=proxy_id,
+                endpoint_fingerprint=fingerprint,
+                credential_revision=revision,
+                status="failed",
+                error_code=error_code,
+                observed_at=now,
+            ),
+        )
+
+    def _schedule_probe(self, proxy_id: str) -> None:
+        """Fire-and-forget auto-probe after save / endpoint change (AC-006).
+        The pending observation is already recorded; the task only upgrades
+        it to ok/failed.  Failures are recorded, never raised to the API
+        caller."""
+        task = asyncio.create_task(self._probe_safely(proxy_id))
+        self._probe_tasks.add(task)
+        task.add_done_callback(self._probe_tasks.discard)
+
+    async def _probe_safely(self, proxy_id: str) -> None:
+        try:
+            await self.probe_proxy_egress(proxy_id)
+        except Exception as exc:  # noqa: BLE001 - probe must never break the API
+            logger.warning(
+                "Background egress probe failed: proxy=%s error_type=%s error=%s",
+                proxy_id,
+                type(exc).__name__,
+                exc,
+                exc_info=True,
+            )
 
     async def delete_proxy(self, proxy_id: str):
         return await self._repo.delete_proxy(proxy_id)

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import threading
 import uuid
 from dataclasses import dataclass
@@ -18,6 +19,12 @@ from urllib.parse import urlsplit
 
 import docker
 import requests
+from cbrowser.domain.egress_observation import ECHO_URLS
+from cbrowser.domain.proxy_endpoint import (
+    HOST_GATEWAY_HOSTNAME,
+    ProxyEndpoint,
+    map_endpoint_for_container,
+)
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.redact import docker_error_detail
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
@@ -33,6 +40,7 @@ from cbrowser.supervisor.container_spec import (
     container_runtime_instance_id,
     gated_entrypoint,
     policy_helper_labels,
+    probe_helper_labels,
     stream_environment,
     stream_labels,
     stream_ports,
@@ -53,6 +61,7 @@ from cbrowser.supervisor.network_spec import (
     endpoint_port,
     network_labels,
     network_ownership_matches,
+    probe_network_name,
     profile_network_name,
 )
 from cbrowser.supervisor.path_validator import (
@@ -141,6 +150,26 @@ def _parse_config_version(raw: Any) -> int | None:
 
 class DockerSandboxError(Exception):
     pass
+
+
+class LoopbackMappingError(DockerSandboxError):
+    """The Docker daemon could not map a loopback proxy to the host
+    gateway (t052 AC-011): the Browser/probe must fail *before* starting,
+    with a remediation, never start successfully and then fail to connect.
+    """
+
+
+class EgressProbeFailure(Exception):
+    """The probe helper ran and reported a failure (t052).
+
+    ``code`` is the machine-readable probe error (``echo_unreachable``,
+    ``geoip_db_missing``, ...) and is recorded on the observation; it is
+    not a Docker/transport failure.
+    """
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -430,6 +459,299 @@ class DockerAdapter:
             json.dumps({"instance_id": instance_id, "role": role, "status": "ready"}),
             mode=0o644,
         )
+
+    def run_egress_probe(
+        self,
+        *,
+        proxy_id: str,
+        endpoint: ProxyEndpoint,
+        credentials: dict[str, Any],
+        echo_urls: tuple[str, ...] | list[str] | None = None,
+        timeout: float = 90.0,
+    ) -> tuple[str, str | None]:
+        """Run one egress probe in a short-lived helper container (t052).
+
+        The helper shares the Browser's network posture: its own bridge
+        network, a browser-role policy that allows only the (mapped)
+        proxy endpoint, and the same proxy parameters the Browser would
+        use.  It fetches an IP-echo endpoint through the proxy and
+        resolves the country against the local GeoLite2 database, then
+        prints one JSON object.  Returns ``(egress_ip, country_code)``.
+
+        Raises :class:`EgressProbeFailure` when the helper ran and
+        reported a probe error (recorded as a failed observation),
+        :class:`LoopbackMappingError` when a loopback endpoint cannot be
+        mapped to the host gateway, and :class:`DockerSandboxError` for
+        transport/container failures.
+        """
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", proxy_id or ""):
+            raise DockerSandboxError("Invalid proxy identity")
+        runtime_endpoint = map_endpoint_for_container(endpoint)
+        probe_id = uuid.uuid4().hex[:12]
+        probe_dir = self.validator.validate_safe_path(
+            self.validator.data_root / "control" / "probe" / probe_id,
+            allow_create=True,
+        )
+        probe_dir.mkdir(parents=True, mode=0o700, exist_ok=False)
+        gate = probe_dir / "gate"
+        gate.mkdir(mode=0o755, exist_ok=False)
+        net_name = probe_network_name(self.resource_prefix, probe_id)
+        helper = None
+        network = None
+        try:
+            creds_file = self._write_probe_credentials(
+                probe_dir, runtime_endpoint, credentials
+            )
+            network = self._create_probe_network(net_name, probe_id)
+            helper = self._create_probe_helper(
+                net_name, probe_id, creds_file, endpoint
+            )
+            self._install_probe_network_policy(
+                helper, runtime_endpoint, gate, probe_id
+            )
+            output = self._exec_probe_helper(
+                helper, self._probe_helper_command(echo_urls), timeout
+            )
+            return self._parse_probe_output(output)
+        finally:
+            self._cleanup_probe_resources(helper, network, probe_dir)
+
+    @staticmethod
+    def _write_probe_credentials(
+        probe_dir: Path,
+        runtime_endpoint: ProxyEndpoint,
+        credentials: dict[str, Any],
+    ) -> Path:
+        """Write the (mapped) endpoint + credentials for the helper.
+
+        The file is 0600 and lives under the probe dir, which is removed
+        together with the helper and network when the probe finishes."""
+        creds_file = probe_dir / PROXY_CREDENTIALS_FILENAME
+        atomic_write_text(
+            creds_file,
+            json.dumps(
+                {
+                    "scheme": runtime_endpoint.scheme,
+                    "host": runtime_endpoint.host,
+                    "port": runtime_endpoint.port,
+                    "username": runtime_endpoint.username,
+                    "password": credentials.get("password"),
+                    "credential_revision": credentials.get(
+                        "credential_revision"
+                    ),
+                }
+            ),
+            mode=0o600,
+        )
+        return creds_file
+
+    def _create_probe_network(self, net_name: str, probe_id: str):
+        """One throwaway bridge network per probe."""
+        try:
+            return self.client.networks.create(
+                net_name,
+                driver="bridge",
+                labels=network_labels(
+                    self.resource_prefix,
+                    f"probe-{probe_id}",
+                    deployment_id=self.deployment_instance_id,
+                ),
+            )
+        except (requests.exceptions.RequestException, DockerException) as exc:
+            raise DockerSandboxError(
+                "Egress probe network creation failed: "
+                + docker_error_detail(exc)
+            ) from None
+
+    def _create_probe_helper(
+        self,
+        net_name: str,
+        probe_id: str,
+        creds_file: Path,
+        endpoint: ProxyEndpoint,
+    ):
+        """Sleeping helper container on the probe network.
+
+        A loopback endpoint maps to the host gateway, so the helper can
+        reach the host-local proxy; a daemon that cannot honour
+        ``host-gateway`` extra hosts fails here as a LoopbackMappingError
+        with a remediation hint, never as a silently-unreachable probe.
+        """
+        is_loopback = endpoint.is_loopback
+        extra_hosts = (
+            {HOST_GATEWAY_HOSTNAME: "host-gateway"} if is_loopback else None
+        )
+        try:
+            return self.client.containers.run(
+                self.browser_image,
+                entrypoint=["python3", "-c", "import time; time.sleep(300)"],
+                name=f"{self.resource_prefix}-probe-{probe_id}",
+                detach=True,
+                user="1000:1000",
+                read_only=True,
+                cap_drop=["ALL"],
+                security_opt=["no-new-privileges"],
+                network=net_name,
+                extra_hosts=extra_hosts,
+                tmpfs={"/tmp": "rw,nosuid,nodev,size=4m"},
+                volumes={
+                    str(creds_file): {
+                        "bind": "/run/cbrowser/runtime/proxy_credentials.json",
+                        "mode": "ro",
+                    },
+                    str(self.geoip_cache): {
+                        "bind": "/data/engine-cache/geoip",
+                        "mode": "ro",
+                    },
+                },
+                labels=probe_helper_labels(
+                    self.resource_prefix,
+                    deployment_id=self.deployment_instance_id,
+                ),
+            )
+        except (requests.exceptions.RequestException, DockerException) as exc:
+            detail = docker_error_detail(exc)
+            if is_loopback and (
+                "host-gateway" in detail.lower()
+                or "extra_hosts" in detail.lower()
+            ):
+                raise LoopbackMappingError(
+                    "Loopback proxy mapping failed: the Docker daemon "
+                    "could not map host.docker.internal to the host "
+                    "gateway, so the probe cannot reach the host-local "
+                    f"proxy at {endpoint.host}:{endpoint.port}. "
+                    "Use a Docker daemon that supports host-gateway "
+                    "extra hosts (Docker 20.10+ / OrbStack), or move "
+                    "the proxy to a non-loopback address."
+                ) from None
+            raise DockerSandboxError(
+                "Egress probe helper creation failed: " + detail
+            ) from None
+
+    def _install_probe_network_policy(
+        self,
+        helper,
+        runtime_endpoint: ProxyEndpoint,
+        gate: Path,
+        probe_id: str,
+    ) -> None:
+        """Browser-role policy that allows only the (mapped) proxy endpoint."""
+        host_for_policy = runtime_endpoint.host
+        if ":" in host_for_policy and not host_for_policy.startswith("["):
+            host_for_policy = f"[{host_for_policy}]"
+        allowed = self._resolved_endpoint(
+            helper,
+            f"{runtime_endpoint.scheme}://{host_for_policy}:{runtime_endpoint.port}",
+        )
+        self._install_network_policy(
+            helper,
+            {"role": "browser", "allowed_tcp": allowed},
+            gate,
+            f"probe-{probe_id}",
+            "browser",
+        )
+
+    @staticmethod
+    def _probe_helper_command(
+        echo_urls: tuple[str, ...] | list[str] | None,
+    ) -> list[str]:
+        command = [
+            "python3",
+            "-m",
+            "cbrowser.runtime_agent.egress_probe",
+            "--credentials-file",
+            "/run/cbrowser/runtime/proxy_credentials.json",
+            "--geoip-db",
+            "/data/engine-cache/geoip/GeoLite2-City.mmdb",
+        ]
+        for url in echo_urls if echo_urls is not None else ECHO_URLS:
+            command += ["--echo-url", url]
+        return command
+
+    def _exec_probe_helper(
+        self, helper, command: list[str], timeout: float
+    ) -> str:
+        """Run the probe module in the helper with a hard timeout.
+
+        Returns the helper's stdout; a non-zero exit, a transport error
+        or a timeout is a DockerSandboxError (the helper never ran to a
+        probe verdict)."""
+        outcome: dict[str, Any] = {}
+        error: dict[str, BaseException] = {}
+
+        def _exec() -> None:
+            try:
+                result = helper.exec_run(command, user="1000:1000")
+                outcome["exit_code"] = result[0]
+                raw = result[1]
+                outcome["output"] = (
+                    raw.decode("utf-8", errors="replace")
+                    if isinstance(raw, (bytes, bytearray))
+                    else str(raw)
+                )
+            except BaseException as exc:  # noqa: BLE001 - re-raised below
+                error["error"] = exc
+
+        worker = threading.Thread(target=_exec, daemon=True)
+        worker.start()
+        worker.join(timeout=timeout)
+        if worker.is_alive():
+            raise DockerSandboxError("Egress probe timed out")
+        if "error" in error:
+            raise DockerSandboxError(
+                "Egress probe execution failed: "
+                + docker_error_detail(error["error"])
+            ) from None
+        if outcome.get("exit_code") != 0:
+            raise DockerSandboxError("Egress probe helper failed")
+        return outcome.get("output") or ""
+
+    @staticmethod
+    def _parse_probe_output(output: str) -> tuple[str, str | None]:
+        """One JSON line from the helper: a reported error_code becomes
+        an EgressProbeFailure (recorded as a failed observation); a
+        malformed line is a DockerSandboxError."""
+        try:
+            payload = json.loads(output.strip())
+        except ValueError:
+            raise DockerSandboxError(
+                "Egress probe helper returned invalid output"
+            ) from None
+        if not isinstance(payload, dict):
+            raise DockerSandboxError(
+                "Egress probe helper returned invalid output"
+            )
+        if "error_code" in payload:
+            raise EgressProbeFailure(str(payload["error_code"]))
+        egress_ip = payload.get("egress_ip")
+        if not isinstance(egress_ip, str) or not egress_ip:
+            raise DockerSandboxError(
+                "Egress probe helper returned no egress IP"
+            )
+        country = payload.get("country_code")
+        return egress_ip, country if isinstance(country, str) else None
+
+    @staticmethod
+    def _cleanup_probe_resources(helper, network, probe_dir: Path) -> None:
+        """Remove helper, network and probe dir; cleanup never masks the
+        probe outcome."""
+        if helper is not None:
+            try:
+                helper.remove(force=True)
+            except Exception as exc:  # noqa: BLE001 - cleanup never masks the outcome
+                logger.warning(
+                    "Failed to remove egress probe helper: error_type=%s",
+                    type(exc).__name__,
+                )
+        if network is not None:
+            try:
+                network.remove()
+            except Exception as exc:  # noqa: BLE001 - cleanup never masks the outcome
+                logger.warning(
+                    "Failed to remove egress probe network: error_type=%s",
+                    type(exc).__name__,
+                )
+        shutil.rmtree(probe_dir, ignore_errors=True)
 
     def _validate_cache_paths(self) -> None:
         for root in (self.engine_cache, self.geoip_cache):
@@ -1496,6 +1818,16 @@ with path.open('w') as output:
                     "mode": "ro",
                 }
         proxy = proxy_endpoint_from_credentials(creds_file)
+        # t052 AC-010: a loopback proxy is stored as 127.0.0.1/localhost
+        # but the credentials file handed to the container carries the
+        # host-gateway hostname (mapped in SupervisorCore); the container
+        # needs the extra_hosts entry so the name resolves to the host.
+        proxy_host = urlsplit(proxy).hostname if proxy else None
+        extra_hosts = (
+            {HOST_GATEWAY_HOSTNAME: "host-gateway"}
+            if proxy_host == HOST_GATEWAY_HOSTNAME
+            else None
+        )
         command = browser_command(profile_id, runtime_instance_id, display)
 
         try:
@@ -1513,6 +1845,7 @@ with path.open('w') as output:
                 ipc_mode="shareable",
                 shm_size="1g",
                 network=net_name,
+                extra_hosts=extra_hosts,
                 restart_policy={"Name": "no"},
                 tmpfs={
                     "/tmp": "rw,exec,nosuid,nodev,size=512m",
@@ -1545,8 +1878,23 @@ with path.open('w') as output:
             )
             return container
         except DockerException as e:
+            detail = docker_error_detail(e)
+            # t052 AC-011: a loopback proxy whose host-gateway mapping the
+            # daemon rejects must fail here with a remediation, never
+            # start successfully and then fail to connect.
+            if proxy_host == HOST_GATEWAY_HOSTNAME and (
+                "host-gateway" in detail.lower() or "extra_hosts" in detail.lower()
+            ):
+                raise LoopbackMappingError(
+                    "Loopback proxy mapping failed: the Docker daemon could "
+                    "not map host.docker.internal to the host gateway, so "
+                    f"the Browser cannot reach the host-local proxy at "
+                    f"{proxy}. Use a Docker daemon that supports "
+                    "host-gateway extra hosts (Docker 20.10+ / OrbStack), "
+                    "or move the proxy to a non-loopback address."
+                ) from e
             raise DockerSandboxError(
-                f"Failed to run browser container {b_name}: {docker_error_detail(e)}"
+                f"Failed to run browser container {b_name}: {detail}"
             ) from e
 
     def _bound_snapshot_geometry(

@@ -302,6 +302,31 @@ export interface paths {
         patch: operations["update_proxy_api_v1_proxies__proxy_id__patch"];
         trace?: never;
     };
+    "/api/v1/proxies/{proxy_id}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe Proxy
+         * @description Manual egress probe (t052 AC-006/AC-009).
+         *
+         *     The request carries no body: only the proxy id is accepted, and the
+         *     stored endpoint + credentials are loaded server-side, so a caller can
+         *     never redirect the stored password to another host, port, scheme or
+         *     username.  Any request body is rejected (AC-009 negative path).
+         */
+        post: operations["probe_proxy_api_v1_proxies__proxy_id__probe_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/font-sets": {
         parameters: {
             query?: never;
@@ -1544,31 +1569,31 @@ export interface components {
             /** Sort Order */
             sort_order?: number | null;
         };
-        /** ProxyCreateRequest */
+        /**
+         * ProxyCreateRequest
+         * @description Link-only entry (t052): the proxy link is the single source of
+         *     truth for the endpoint; ``name`` defaults to ``host:port``.
+         */
         ProxyCreateRequest: {
+            /** Proxy Url */
+            proxy_url: string;
             /** Name */
-            name: string;
-            /**
-             * Scheme
-             * @enum {string}
-             */
-            scheme: "http" | "https" | "socks5";
-            /** Host */
-            host: string;
-            /** Port */
-            port: number;
-            /** Username */
-            username?: string | null;
-            /** Password */
-            password?: string | null;
-            /** Country Code */
-            country_code?: string | null;
+            name?: string | null;
             /** Region Label */
             region_label?: string | null;
             /** Notes */
             notes?: string | null;
         };
-        /** ProxyResponse */
+        /**
+         * ProxyResponse
+         * @description Public proxy view (t052).
+         *
+         *     ``country_code`` / ``egress_ip`` / ``observation_status`` are read-only
+         *     observations: they come from the current valid egress observation for
+         *     the proxy's present endpoint fingerprint and credential revision, never
+         *     from a stored writable field.  ``proxy_url`` is the redacted link (no
+         *     password, ever); the password is never present in any response.
+         */
         ProxyResponse: {
             /** Id */
             id: string;
@@ -1595,8 +1620,20 @@ export interface components {
              * @default 1
              */
             credential_revision: number;
+            /** Proxy Url */
+            proxy_url: string;
             /** Country Code */
             country_code?: string | null;
+            /** Egress Ip */
+            egress_ip?: string | null;
+            /**
+             * Observation Status
+             * @default unknown
+             * @enum {string}
+             */
+            observation_status: "unknown" | "pending" | "ok" | "failed";
+            /** Observed At */
+            observed_at?: string | null;
             /** Region Label */
             region_label?: string | null;
             /** Notes */
@@ -1613,24 +1650,16 @@ export interface components {
         };
         /**
          * ProxyUpdateRequest
-         * @description PATCH semantics: ``password`` omitted = unchanged, null = clear,
-         *     string = set.  All other fields are optional tri-state fields.
+         * @description PATCH semantics (t052): ``proxy_url`` omitted = endpoint unchanged;
+         *     supplied = endpoint (including password) replaced wholesale.  All
+         *     other fields are optional; ``name``/``region_label``/``notes`` may be
+         *     set to null to clear.
          */
         ProxyUpdateRequest: {
+            /** Proxy Url */
+            proxy_url?: string | null;
             /** Name */
             name?: string | null;
-            /** Scheme */
-            scheme?: ("http" | "https" | "socks5") | null;
-            /** Host */
-            host?: string | null;
-            /** Port */
-            port?: number | null;
-            /** Username */
-            username?: string | null;
-            /** Password */
-            password?: string | null;
-            /** Country Code */
-            country_code?: string | null;
             /** Region Label */
             region_label?: string | null;
             /** Notes */
@@ -3496,6 +3525,73 @@ export interface operations {
                 "application/json": components["schemas"]["ProxyUpdateRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProxyResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Resource not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    probe_proxy_api_v1_proxies__proxy_id__probe_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proxy_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

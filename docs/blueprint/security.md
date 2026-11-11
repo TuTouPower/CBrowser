@@ -75,7 +75,12 @@
 - 媒体只走同机 `127.0.0.1` host 候选直连，不存在 TURN 凭证、轮换或中继（ADR 013）。
 - 日志不记录密码、会话、CSRF、Bearer 或 SDP 全文；Agent 报文日志按字段名脱敏。
 
-## 宿主目录权限与威胁模型
+## 代理链接录入与探测凭据外送防护（t052）
+
+- 代理链接是代理端点唯一的录入表示：完整链接（含密码）只在用户输入与提交请求体内出现一次；响应一律返回脱敏链接（`ProxyEndpoint.redacted_link()`，不含密码），`ProxyResponse` 不含 password 字段。前端链接输入框失焦时显示脱敏链接，聚焦编辑时才显示完整链接；已存密码永不写入表单 state、DOM、react-query 缓存、URL 与日志。
+- 密码只以只写秘密存在于值对象中：`ProxyEndpoint` 的 `__repr__` / `__str__`、指纹（sha256 的 scheme/host/port/username，不含密码）、日志与观测记录均不含密码。凭据只经两条内部路径流转：API → Supervisor 的内部端点 `GET /api/v1/internal/supervisor/proxies/{id}/credentials`（service-plane Bearer，不进 OpenAPI）与 Supervisor → Browser/probe helper 的 0600 凭证文件（只读挂载，`/run/cbrowser/runtime/proxy_credentials.json`）。
+- 探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID：任何非空请求体（除 `{}` 外）返回 422；服务端加载已存端点与凭据执行，调用方无法指定 host、port、scheme 或 username，因而无法把已存密码发往另一主机（SSRF + 凭据外送的负向路径由集成测试覆盖）。探测 helper 只向 stdout 打印一行 JSON（出口 IP 与国家，或错误码），密码不打印、不记日志。
+- 出口 IP 回显只发一次 HTTPS GET 取自身出口 IP（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`），不带凭据与身份信息；国家判定只用本机 GeoLite2 数据库，出口 IP 不发往第三方地理库。探测的 HTTP 客户端显式 `trust_env=False`，宿主环境变量中的代理不得劫持探测路径。
 
 - 受管部署中 Supervisor 以 root 创建 Profile 数据目录后立即 `chown 1000:1000`：`profiles/<id>/profile`、`runtime/<id>`、`runtime-events/<id>`、`artifacts/<id>/downloads`、`artifacts/<id>/uploads`、`runtime/<id>/pulse` 为 0750；`runtime/<id>/x11` 为 0750（Browser/Stream 同为 uid 1000）。engine-cache/geoip 只读挂载且由宿主维护，不随 Profile 写入。
 - Artifact Service 发布的上传/下载子目录与文件同样收敛到 UID/GID 1000：目录 0750、文件 0640；非 root 宿主开发路径保留开发者属主但仍使用精确 mode，不回退到全局可写，chown 失败即报错。

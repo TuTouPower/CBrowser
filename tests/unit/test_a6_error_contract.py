@@ -173,7 +173,7 @@ def test_real_entity_reference_conflict_keeps_used_by_count(tmp_path: Path) -> N
         headers = _login(client, ctx)
         proxy = client.post(
             "/api/v1/proxies",
-            json={"name": "px", "scheme": "http", "host": "127.0.0.1", "port": 8080},
+            json={"name": "px", "proxy_url": "http://127.0.0.1:8080"},
             headers=headers,
         )
         assert proxy.status_code == 201

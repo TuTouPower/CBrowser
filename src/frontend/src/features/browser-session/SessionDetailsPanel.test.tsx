@@ -98,6 +98,7 @@ function group(overrides: Partial<GroupResponse> = {}): GroupResponse {
 }
 
 function proxy(overrides: Partial<ProxyResponse> = {}): ProxyResponse {
+  const { proxy_url, observation_status, ...rest } = overrides;
   return {
     id: "px1",
     name: "US Proxy",
@@ -107,13 +108,15 @@ function proxy(overrides: Partial<ProxyResponse> = {}): ProxyResponse {
     username: null,
     has_password: false,
     credential_revision: 1,
+    proxy_url: proxy_url ?? "socks5://1.2.3.4:1080",
     country_code: "US",
+    observation_status: observation_status ?? "ok",
     region_label: "California",
     notes: null,
     used_by_count: 1,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -197,6 +200,18 @@ describe("SessionDetailsPanel", () => {
     expect(panel.textContent).toContain(en.sessDetails);
     expect(panel.textContent).not.toContain("inst-1");
     expect(screen.queryAllByTestId(SESS_COPY_VALUE)).toHaveLength(0);
+  });
+
+  it("shows detecting region while the proxy observation is pending", () => {
+    // test f003: pending (detecting) must not read as unknown.
+    renderPanel({
+      proxies: [
+        proxy({ observation_status: "pending", country_code: null }),
+      ],
+    });
+    const panel = screen.getByTestId(SESS_DETAILS_PANEL);
+    expect(panel.textContent).toContain(en.proxyCountryProbing);
+    expect(panel.textContent).not.toContain(en.proxyCountryUnknown);
   });
 
   it("toggles through onOpenChange", () => {

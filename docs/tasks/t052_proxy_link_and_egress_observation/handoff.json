@@ -1,0 +1,14 @@
+{
+  "tid": "t052",
+  "attempt": 1,
+  "execution_id": "c43801335abd485fb4cb42585cd3ef52",
+  "status": "done",
+  "branch": "t052_proxy_link_and_egress_observation",
+  "base_sha": "d07f5e332b2d3b904bf23a4c6e2391036b0ce761",
+  "tests": "后端全量分块回归（`tests/unit` 216 文件 + `tests/integration` 45 文件，`~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend`，分块实数见下）；t052 测试 123 passed（53 链接 + 18 观测 + 5 helper + 13 supervisor + 11 runner + 5 仓库观测 + 18 集成，含 Round 1 修复新增 16 与 Round 2 修复新增 1）；前端全量直接跑 vitest 533 passed / 0 failed（74 文件，本机 Node 24.22.1；`npm test` 的 pretest 门禁要求 Node ≥26，绕过 pretest）；`npm run test:types` 通过；`npm run build` 通过（本机系统 Node 24.22.1 不满足 build 的 check:node 门禁，改用新下载的 Node 26.13.0 `~/workspace/tools/node-26.13.0` 跑通；下载时 /tmp 曾满，已清我方 pytest basetemp 释放至 33%）；`npm run check:api` 通过；`git diff --check` clean",
+  "blackbox": "未跑——`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本机无 Docker/镜像/Chrome，无法执行；以相关非 E2E 套件（后端分块全量 + 前端全量 533 passed）替代，真实部署验证须在用户机进行",
+  "review": "Round 1 双路 verdict FAIL（code 6 条 + test 6 条，共 12 条，important 4 条）；已全部修复并重验（见「Review 处置」Round 1 表）。Round 2 双路 verdict FAIL，唯一驱动项为 AC-012 未勾选（code 新增 minor f007 1 条，test 0 新 finding）；f007 已修复并重验（见「Review 处置」Round 2 表），AC-012 按链口径跳过按 pass 计打勾，待 Round 3 复核",
+  "review_scope": "591b901c2b3f608a",
+  "pending": [],
+  "findings": []
+}

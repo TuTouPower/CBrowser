@@ -56,6 +56,7 @@ beforeAll(() => {
 });
 
 function proxy(overrides: Partial<ProxyResponse> = {}): ProxyResponse {
+  const { proxy_url, observation_status, ...rest } = overrides;
   return {
     id: "px1",
     name: "US Proxy",
@@ -65,13 +66,15 @@ function proxy(overrides: Partial<ProxyResponse> = {}): ProxyResponse {
     username: null,
     has_password: false,
     credential_revision: 1,
+    proxy_url: proxy_url ?? "socks5://1.2.3.4:1080",
     country_code: "US",
+    observation_status: observation_status ?? "ok",
     region_label: "California",
     notes: null,
     used_by_count: 0,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
-    ...overrides,
+    ...rest,
   };
 }
 
@@ -132,6 +135,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
       create: mockFn(async () => proxies[0]!),
       update: mockFn(async () => proxies[0]!),
       remove: mockFn(async () => undefined),
+      probe: mockFn(async () => proxies[0]!),
     },
     profiles: { list: mockFn(async () => []) },
     groups: { list: mockFn(async () => []) },
@@ -381,6 +385,59 @@ describe("ProxyListPage AC-006 使用环境数链接", () => {
       .getAttribute("href");
     expect(href).toContain("?proxy=");
     expect(href).not.toContain(" ");
+  });
+});
+
+describe("ProxyListPage 手动探测 (t052 AC-006)", () => {
+  it("shows unknown country when there is no valid observation", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    const px4 = screen.getByTestId("proxy-row-px4");
+    expect(within(px4).getByText(en.proxyCountryUnknown)).toBeInTheDocument();
+  });
+
+  it("shows detecting country while the observation is pending", async () => {
+    // test f003: pending (detecting) must not read as unknown.
+    stub = makeStub([
+      proxy({
+        id: "px9",
+        name: "Pending Proxy",
+        country_code: null,
+        observation_status: "pending",
+        region_label: null,
+      }),
+    ]);
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    const px9 = screen.getByTestId("proxy-row-px9");
+    expect(within(px9).getByText(en.proxyCountryProbing)).toBeInTheDocument();
+    expect(
+      within(px9).queryByText(en.proxyCountryUnknown),
+    ).not.toBeInTheDocument();
+  });
+
+  it("calls proxies.probe(id) and toasts success", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-px4"));
+
+    await waitFor(() =>
+      expect(stub.spies.proxies.probe).toHaveBeenCalledWith("px4"),
+    );
+    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
+      en.proxyProbeSuccess,
+    );
+  });
+
+  it("toasts failure when the probe rejects", async () => {
+    stub.spies.proxies.probe.mockRejectedValueOnce(new Error("probe down"));
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-px1"));
+
+    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
+      en.proxyProbeFailed,
+    );
   });
 });
 

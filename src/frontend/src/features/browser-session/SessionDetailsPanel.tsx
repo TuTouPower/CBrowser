@@ -155,7 +155,7 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
   const proxySummary = proxy ? `${proxy.name} · ${proxy.scheme}` : t("envDirect");
   const proxyEndpoint = proxy ? `${proxy.host}:${proxy.port}` : "-";
   const proxyRegion = proxy
-    ? `${display(proxy.country_code)} · ${display(proxy.region_label)}`
+    ? `${proxy.observation_status === "pending" ? t("proxyCountryProbing") : (proxy.country_code ?? t("proxyCountryUnknown"))} · ${display(proxy.region_label)}`
     : "-";
   const integrity = fontSet
     ? fontSet.integrity.ok

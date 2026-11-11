@@ -83,6 +83,15 @@ class GroupReorderRequest(BaseModel):
 
 
 class ProxyResponse(BaseModel):
+    """Public proxy view (t052).
+
+    ``country_code`` / ``egress_ip`` / ``observation_status`` are read-only
+    observations: they come from the current valid egress observation for
+    the proxy's present endpoint fingerprint and credential revision, never
+    from a stored writable field.  ``proxy_url`` is the redacted link (no
+    password, ever); the password is never present in any response.
+    """
+
     model_config = ConfigDict(extra="forbid")
     id: str
     name: str
@@ -92,7 +101,11 @@ class ProxyResponse(BaseModel):
     username: str | None = None
     has_password: bool = False
     credential_revision: int = 1
+    proxy_url: str
     country_code: str | None = None
+    egress_ip: str | None = None
+    observation_status: Literal["unknown", "pending", "ok", "failed"] = "unknown"
+    observed_at: str | None = None
     region_label: str | None = None
     notes: str | None = None
     used_by_count: int = 0
@@ -101,45 +114,69 @@ class ProxyResponse(BaseModel):
 
 
 class ProxyCreateRequest(BaseModel):
+    """Link-only entry (t052): the proxy link is the single source of
+    truth for the endpoint; ``name`` defaults to ``host:port``."""
+
     model_config = ConfigDict(extra="forbid")
-    name: str = Field(min_length=1, max_length=255)
-    scheme: PROXY_SCHEMES
-    host: str = Field(min_length=1, max_length=512)
-    port: int = Field(ge=1, le=65535)
-    username: str | None = Field(default=None, max_length=255)
-    password: str | None = None
-    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    proxy_url: str = Field(min_length=1, max_length=2048)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
     region_label: str | None = Field(default=None, max_length=255)
     notes: str | None = None
 
-    @field_validator("country_code")
-    @classmethod
-    def normalize_country_code(cls, v: str | None) -> str | None:
-        return v.upper() if v else v
+    @model_validator(mode="after")
+    def validate_proxy_link(self) -> ProxyCreateRequest:
+        from cbrowser.domain.proxy_endpoint import ProxyLinkError, parse_proxy_link
+
+        try:
+            parse_proxy_link(self.proxy_url)
+        except ProxyLinkError as exc:
+            raise ValueError(f"invalid proxy link: {exc.code}") from None
+        return self
+
+    def parsed_endpoint(self) -> ProxyEndpoint:
+        from cbrowser.domain.proxy_endpoint import parse_proxy_link
+
+        return parse_proxy_link(self.proxy_url)
+
+    def resolved_name(self) -> str:
+        if self.name is not None and self.name.strip():
+            return self.name.strip()
+        return self.parsed_endpoint().display_name()
 
 
 class ProxyUpdateRequest(BaseModel):
-    """PATCH semantics: ``password`` omitted = unchanged, null = clear,
-    string = set.  All other fields are optional tri-state fields."""
+    """PATCH semantics (t052): ``proxy_url`` omitted = endpoint unchanged;
+    supplied = endpoint (including password) replaced wholesale.  All
+    other fields are optional; ``name``/``region_label``/``notes`` may be
+    set to null to clear."""
 
     model_config = ConfigDict(extra="forbid")
+    proxy_url: str | None = Field(default=None, min_length=1, max_length=2048)
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    scheme: PROXY_SCHEMES | None = None
-    host: str | None = Field(default=None, min_length=1, max_length=512)
-    port: int | None = Field(default=None, ge=1, le=65535)
-    username: str | None = Field(default=None, max_length=255)
-    password: str | None = None
-    country_code: str | None = Field(default=None, min_length=2, max_length=2)
     region_label: str | None = None
     notes: str | None = None
 
-    @field_validator("country_code")
-    @classmethod
-    def normalize_country_code(cls, v: str | None) -> str | None:
-        return v.upper() if v else v
+    @model_validator(mode="after")
+    def validate_proxy_link(self) -> ProxyUpdateRequest:
+        if self.proxy_url is None:
+            return self
+        from cbrowser.domain.proxy_endpoint import ProxyLinkError, parse_proxy_link
 
-    def password_was_supplied(self) -> bool:
-        return "password" in self.model_fields_set
+        try:
+            parse_proxy_link(self.proxy_url)
+        except ProxyLinkError as exc:
+            raise ValueError(f"invalid proxy link: {exc.code}") from None
+        return self
+
+    def endpoint_was_supplied(self) -> bool:
+        return "proxy_url" in self.model_fields_set
+
+    def parsed_endpoint(self) -> ProxyEndpoint:
+        from cbrowser.domain.proxy_endpoint import parse_proxy_link
+
+        if self.proxy_url is None:
+            raise ValueError("proxy_url was not supplied")
+        return parse_proxy_link(self.proxy_url)
 
 
 class ProfileConfig(BaseModel):

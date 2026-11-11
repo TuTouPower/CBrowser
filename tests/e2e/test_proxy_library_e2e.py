@@ -154,11 +154,11 @@ async def _create_proxy_via_ui(
     await page.wait_for_selector('[data-testid="proxy-list-page"]', timeout=15000)
     await page.click('[data-testid="proxy-add"]')
     await page.wait_for_selector('[data-testid="proxy-form-dialog"]', timeout=15000)
+    # t052: the link is the only entry; the name lives in the (collapsed)
+    # advanced section and defaults to host:port when left untouched.
+    await page.fill('[data-testid="proxy-form-url"]', f"http://{host}:{port}")
+    await page.click('[data-testid="proxy-form-advanced-toggle"]')
     await page.fill('[data-testid="proxy-form-name"]', name)
-    await page.locator('[data-testid="proxy-form-scheme"] button').click()
-    await page.get_by_role("option", name="HTTP", exact=True).click()
-    await page.fill('[data-testid="proxy-form-host"]', host)
-    await page.fill('[data-testid="proxy-form-port"]', str(port))
     await page.click('[data-testid="proxy-form-submit"]')
     await page.wait_for_selector(
         '[data-testid="proxy-form-dialog"]', state="detached", timeout=15000

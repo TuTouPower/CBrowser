@@ -6,6 +6,7 @@ import type { ProxyResponse } from "../../shared/api/types";
 import { Banner, Button, EmptyState, useToast } from "../../shared/ui";
 import {
   useDeleteProxyMutation,
+  useProbeProxyMutation,
   useProxiesQuery,
 } from "../profiles/useProfilesQuery";
 import { ProxyFormDialog } from "./ProxyFormDialog";
@@ -54,6 +55,8 @@ export function ProxyListPage() {
   const proxiesQuery = useProxiesQuery(client);
   const proxies = proxiesQuery.data ?? [];
   const deleteMutation = useDeleteProxyMutation(client);
+  const probeMutation = useProbeProxyMutation(client);
+  const [probingId, setProbingId] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [scheme, setScheme] = useState<ProxySchemeFilter>("all");
@@ -101,6 +104,20 @@ export function ProxyListPage() {
           count === null ? error.message : t("proxyInUse", { count }),
         );
         setDeleteTarget(null);
+      },
+    });
+  };
+
+  const handleProbe = (proxy: ProxyResponse) => {
+    setProbingId(proxy.id);
+    probeMutation.mutate(proxy.id, {
+      onSuccess: () => {
+        toast.show(t("proxyProbeSuccess"));
+        setProbingId(null);
+      },
+      onError: (error: Error) => {
+        toast.show(`${t("proxyProbeFailed")}: ${error.message}`);
+        setProbingId(null);
       },
     });
   };
@@ -185,6 +202,8 @@ export function ProxyListPage() {
           proxies={visible}
           onEdit={openEdit}
           onDelete={requestDelete}
+          onProbe={handleProbe}
+          probingId={probingId}
         />
       )}
 

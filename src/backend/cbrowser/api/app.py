@@ -218,6 +218,11 @@ def create_app(
         )
         app.state.coordinator = coordinator
 
+        # t052: egress probes run in the Supervisor helper (Browser
+        # network perspective).  Without a Supervisor the service records
+        # a failed observation instead of probing from this process.
+        service.set_egress_probe_runner(coordinator.egress_probe_runner())
+
         # t031: human-priority control state. The API is the sole
         # business-DB writer; the service's hooks close tunnels (API
         # registry here, Supervisor over HTTP) and publish SSE before

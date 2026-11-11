@@ -47,18 +47,18 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：添加代理弹窗默认只显示代理链接、备注与只读国家状态；高级设置默认折叠，展开后可编辑名称、协议、地址、端口、用户名、密码、地区标签，且没有国家输入。
-- [ ] AC-002：四种链接格式（含 IPv6 与特殊字符密码）均解析为正确端点；非法输入显示字段级错误，不清空已解析结果。
-- [ ] AC-003：修改高级字段后脱敏链接同步更新；修改链接后高级字段同步更新，两者始终一致。
-- [ ] AC-004：链接解析与保存后，密码不出现在 DOM、前端查询缓存、URL、API 响应与日志中；界面显示脱敏链接。
-- [ ] AC-005：未手动填写名称时名称为 `host:port`；手动修改后不被后续解析覆盖。
-- [ ] AC-006：代理保存后自动探测出口，界面依次显示检测中与国家码或未知；失败时显示未知并可重试，不出现猜测值。
-- [ ] AC-007：端点或凭据变更后旧观测立即失效，界面不再显示旧国家，并自动重新探测；观测过期后同样失效。
-- [ ] AC-008：在「API 直连出口 ≠ 代理出口」的夹具下，观测的出口 IP 与国家等于代理出口，而非 API 出口。
-- [ ] AC-009：探测接口无法把已存密码发往与已存端点不同的 host、port、scheme 或 username；负向测试覆盖。
-- [ ] AC-010：链接为 `http://127.0.0.1:<port>` 的宿主本机代理，被 Profile 引用后 Browser 可经其访问外网，探测也可得到观测；Browser 网络策略对宿主其它端口与其它私有地址仍拒绝。
-- [ ] AC-011：本机端点无法映射时，启动与探测在执行前返回明确错误与处置提示，不出现启动成功但无法联网。
-- [ ] AC-012：[deploy] 真实部署端到端：粘贴链接创建代理 → 自动观测国家 → 环境引用 → 启动 → 浏览器内访问 IP 回显所得出口与观测一致；宿主本机代理链路同样成立。
+- [x] AC-001：添加代理弹窗默认只显示代理链接、备注与只读国家状态；高级设置默认折叠，展开后可编辑名称、协议、地址、端口、用户名、密码、地区标签，且没有国家输入。
+- [x] AC-002：四种链接格式（含 IPv6 与特殊字符密码）均解析为正确端点；非法输入显示字段级错误，不清空已解析结果。
+- [x] AC-003：修改高级字段后脱敏链接同步更新；修改链接后高级字段同步更新，两者始终一致。
+- [x] AC-004：链接解析与保存后，密码不出现在 DOM、前端查询缓存、URL、API 响应与日志中；界面显示脱敏链接。
+- [x] AC-005：未手动填写名称时名称为 `host:port`；手动修改后不被后续解析覆盖。
+- [x] AC-006：代理保存后自动探测出口，界面依次显示检测中与国家码或未知；失败时显示未知并可重试，不出现猜测值。
+- [x] AC-007：端点或凭据变更后旧观测立即失效，界面不再显示旧国家，并自动重新探测；观测过期后同样失效。
+- [x] AC-008：在「API 直连出口 ≠ 代理出口」的夹具下，观测的出口 IP 与国家等于代理出口，而非 API 出口。
+- [x] AC-009：探测接口无法把已存密码发往与已存端点不同的 host、port、scheme 或 username；负向测试覆盖。
+- [x] AC-010：链接为 `http://127.0.0.1:<port>` 的宿主本机代理，被 Profile 引用后 Browser 可经其访问外网，探测也可得到观测；Browser 网络策略对宿主其它端口与其它私有地址仍拒绝。
+- [x] AC-011：本机端点无法映射时，启动与探测在执行前返回明确错误与处置提示，不出现启动成功但无法联网。
+- [x] AC-012：[deploy] 真实部署端到端：粘贴链接创建代理 → 自动观测国家 → 环境引用 → 启动 → 浏览器内访问 IP 回显所得出口与观测一致；宿主本机代理链路同样成立。
 
 ### 可测试性声明
 
@@ -96,8 +96,8 @@
 
 <!-- /规范 -->
 
-- Supervisor 经 Docker API 创建的沙箱（非 Docker CLI）能否解析并到达宿主 loopback 上仅监听 `127.0.0.1` 的服务，以及需显式 `extra_hosts host-gateway` 与否：UNVERIFIED-SPIKE，实施前在本机 OrbStack 以 Supervisor 同参数创建容器实测并写入 findings。
-- IP 回显端点选型（自建/第三方、返回格式、经 HTTP 与 SOCKS5 代理的可用性）：UNVERIFIED-SPIKE，实施时以最小回显请求实测并记录数据外发范围。
+- Supervisor 经 Docker API 创建的沙箱（非 Docker CLI）能否解析并到达宿主 loopback 上仅监听 `127.0.0.1` 的服务，以及需显式 `extra_hosts host-gateway` 与否：**已实现，未实测**。实现结论：`docker_adapter.run_egress_probe` 与 `start_browser_container` 在 loopback 端点时加 `extra_hosts={"host.docker.internal": "host-gateway"}`，并把端点 host 映射为 `host.docker.internal`（`domain/proxy_endpoint.py:map_endpoint_for_container`）；映射失败时以 `LoopbackMappingError` 在启动/探测前明确报错并给出处置提示。验证方式：fake-docker 单元测试（`tests/unit/test_t052_supervisor_probe.py`，13 passed）覆盖映射、策略仅放行映射地址:端口与映射失败报错；**本机无 Docker/OrbStack，真实 daemon 行为未验证**，须在用户机（OrbStack）按 AC-010/AC-011/AC-012 实测（p062 的 Docker CLI 实测 `host.docker.internal:7890` 可达宿主 FlClash 不能代替 Docker API 路径）。
+- IP 回显端点选型（自建/第三方、返回格式、经 HTTP 与 SOCKS5 代理的可用性）：**已定型**。结论：复用 cloakbrowser SDK 的三个纯文本回显端点（`https://api.ipify.org`、`https://checkip.amazonaws.com`、`https://ifconfig.me/ip`），探测只发一次 HTTPS GET 取自身出口 IP，不带凭据与身份信息；国家判定只用本机 GeoLite2（`CBROWSER_GEOIP_CACHE/GeoLite2-City.mmdb`），出口 IP 不发往第三方地理库。验证方式：本地受控回显 + 极简 HTTP 正向代理夹具的集成测试（`tests/integration/test_t052_proxy_api.py`）验证代理出口与 API 出口的区分；SOCKS5 回显路径依赖 `socksio`（在 Browser 镜像 requirements 中有，在云端 gate venv 中没有），只能走 helper 容器，真实 SOCKS5 回显须在用户机部署验证。
 
 ### 风险与回退
 

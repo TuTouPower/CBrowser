@@ -35,6 +35,14 @@
       "$id": "#/$defs/ResetBlockedRequest",
       "$ref": "#/$defs/ResetBlockedRequest"
     },
+    "EgressProbeRequest": {
+      "$id": "#/$defs/EgressProbeRequest",
+      "$ref": "#/$defs/EgressProbeRequest"
+    },
+    "EgressProbeResponse": {
+      "$id": "#/$defs/EgressProbeResponse",
+      "$ref": "#/$defs/EgressProbeResponse"
+    },
     "CloseTunnelsRequest": {
       "$id": "#/$defs/CloseTunnelsRequest",
       "$ref": "#/$defs/CloseTunnelsRequest"
@@ -248,6 +256,137 @@
         "advertised_ip"
       ],
       "title": "ConvergeStreamsRequest",
+      "type": "object"
+    },
+    "EgressProbeRequest": {
+      "additionalProperties": false,
+      "description": "t052: Supervisor-side probe request (control plane only).\n\nCarries the stored endpoint + credentials so the helper container can\npresent them to the upstream proxy.  Never logged; never exposed on\nthe public API (which accepts only the proxy id).",
+      "properties": {
+        "scheme": {
+          "enum": [
+            "http",
+            "https",
+            "socks5"
+          ],
+          "title": "Scheme",
+          "type": "string"
+        },
+        "host": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Host",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        },
+        "username": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Username"
+        },
+        "password": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Password"
+        },
+        "credential_revision": {
+          "minimum": 1,
+          "title": "Credential Revision",
+          "type": "integer"
+        },
+        "endpoint_fingerprint": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Endpoint Fingerprint",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scheme",
+        "host",
+        "port",
+        "credential_revision",
+        "endpoint_fingerprint"
+      ],
+      "title": "EgressProbeRequest",
+      "type": "object"
+    },
+    "EgressProbeResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "proxy_id": {
+          "title": "Proxy Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "failed"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "egress_ip": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Egress Ip"
+        },
+        "country_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Country Code"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        }
+      },
+      "required": [
+        "proxy_id",
+        "status"
+      ],
+      "title": "EgressProbeResponse",
       "type": "object"
     },
     "PreviewPolicySyncResponse": {

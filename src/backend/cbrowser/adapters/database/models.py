@@ -49,7 +49,6 @@ class ProxyModel(Base):
     credential_revision: Mapped[int] = mapped_column(
         Integer, default=1, nullable=False
     )
-    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
     region_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(
@@ -57,6 +56,44 @@ class ProxyModel(Base):
     )
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
+    )
+
+
+class ProxyEgressObservationModel(Base):
+    """One egress observation (t052).
+
+    ``country_code`` is an observation, not a configuration: a row is only
+    current while its endpoint fingerprint and credential revision still
+    match the proxy and it has not expired (see
+    ``cbrowser.domain.egress_observation.observation_is_current``).  Old
+    rows are kept as history; validity is computed, never mutated in place
+    except by inserting a newer row.
+    """
+
+    __tablename__ = "proxy_egress_observations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proxy_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("proxies.id", ondelete="CASCADE"), nullable=False
+    )
+    endpoint_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    credential_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    perspective: Mapped[str] = mapped_column(String(32), default="browser", nullable=False)
+    egress_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    source: Mapped[str] = mapped_column(
+        String(64), default="supervisor_probe", nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observed_at: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str] = mapped_column(
+        String(64), default=utc_now_iso, nullable=False
+    )
+
+    __table_args__ = (
+        Index("idx_proxy_egress_observations_proxy_id", "proxy_id"),
     )
 
 

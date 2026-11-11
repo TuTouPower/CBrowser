@@ -518,6 +518,13 @@ export class ApiClient {
         },
       );
     },
+    /** Manual egress probe (t052 AC-006): body carries only the proxy id. */
+    probe: async (proxyId: string): Promise<ProxyResponse> => {
+      return this.request<ProxyResponse>(
+        `/api/v1/proxies/${encodeURIComponent(proxyId)}/probe`,
+        { method: "POST" },
+      );
+    },
   };
 
   readonly fontSets = {

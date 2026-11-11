@@ -18,9 +18,17 @@ export interface ProxyTableProps {
   proxies: ProxyResponse[];
   onEdit: (proxy: ProxyResponse) => void;
   onDelete: (proxy: ProxyResponse) => void;
+  onProbe: (proxy: ProxyResponse) => void;
+  probingId?: string | null;
 }
 
-export function ProxyTable({ proxies, onEdit, onDelete }: ProxyTableProps) {
+export function ProxyTable({
+  proxies,
+  onEdit,
+  onDelete,
+  onProbe,
+  probingId,
+}: ProxyTableProps) {
   const { t } = useI18n();
 
   return (
@@ -71,8 +79,16 @@ export function ProxyTable({ proxies, onEdit, onDelete }: ProxyTableProps) {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-sm">
-                    {proxy.country_code && (
+                    {proxy.observation_status === "pending" ? (
+                      <span className="font-ui text-body-sm text-on-surface-muted">
+                        {t("proxyCountryProbing")}
+                      </span>
+                    ) : proxy.country_code ? (
                       <RegionCode code={proxy.country_code} />
+                    ) : (
+                      <span className="font-ui text-body-sm text-on-surface-muted">
+                        {t("proxyCountryUnknown")}
+                      </span>
                     )}
                     {proxy.region_label && (
                       <span className="font-ui text-body-sm text-on-surface">
@@ -93,6 +109,14 @@ export function ProxyTable({ proxies, onEdit, onDelete }: ProxyTableProps) {
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-xs">
+                    <Button
+                      data-testid={`proxy-probe-${id}`}
+                      size="sm"
+                      disabled={probingId === id}
+                      onClick={() => onProbe(proxy)}
+                    >
+                      {t("proxyProbe")}
+                    </Button>
                     <Button
                       data-testid={`proxy-edit-${id}`}
                       size="sm"

@@ -19,5 +19,5 @@
 |fingerprint_platform|t041, t051|2026-11-11|
 |ui_design_system|t036, t037, t047|2026-11-09|
 |gate_verification|t044, t045, t046|2026-11-08|
-|proxy_management|t038|2026-11-07|
+|proxy_management|t038, t052|2026-11-11|
 |profile_preview|t040|2026-11-07|

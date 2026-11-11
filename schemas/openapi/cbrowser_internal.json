@@ -2630,6 +2630,95 @@
         ]
       }
     },
+    "/api/v1/proxies/{proxy_id}/probe": {
+      "post": {
+        "tags": [
+          "proxies"
+        ],
+        "summary": "Probe Proxy",
+        "description": "Manual egress probe (t052 AC-006/AC-009).\n\nThe request carries no body: only the proxy id is accepted, and the\nstored endpoint + credentials are loaded server-side, so a caller can\nnever redirect the stored password to another host, port, scheme or\nusername.  Any request body is rejected (AC-009 negative path).",
+        "operationId": "probe_proxy_api_v1_proxies__proxy_id__probe_post",
+        "parameters": [
+          {
+            "name": "proxy_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Proxy Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProxyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Authorization or CSRF check failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable or database busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": [],
+            "csrfHeader": []
+          }
+        ]
+      }
+    },
     "/api/v1/font-sets": {
       "get": {
         "tags": [
@@ -8586,68 +8675,24 @@
       },
       "ProxyCreateRequest": {
         "properties": {
+          "proxy_url": {
+            "type": "string",
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Proxy Url"
+          },
           "name": {
-            "type": "string",
-            "maxLength": 255,
-            "minLength": 1,
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Name"
-          },
-          "scheme": {
-            "type": "string",
-            "enum": [
-              "http",
-              "https",
-              "socks5"
-            ],
-            "title": "Scheme"
-          },
-          "host": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Host"
-          },
-          "port": {
-            "type": "integer",
-            "maximum": 65535.0,
-            "minimum": 1.0,
-            "title": "Port"
-          },
-          "username": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "password": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Password"
-          },
-          "country_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2,
-                "minLength": 2
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country Code"
           },
           "region_label": {
             "anyOf": [
@@ -8676,12 +8721,10 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "name",
-          "scheme",
-          "host",
-          "port"
+          "proxy_url"
         ],
-        "title": "ProxyCreateRequest"
+        "title": "ProxyCreateRequest",
+        "description": "Link-only entry (t052): the proxy link is the single source of\ntruth for the endpoint; ``name`` defaults to ``host:port``."
       },
       "ProxyResponse": {
         "properties": {
@@ -8731,6 +8774,10 @@
             "title": "Credential Revision",
             "default": 1
           },
+          "proxy_url": {
+            "type": "string",
+            "title": "Proxy Url"
+          },
           "country_code": {
             "anyOf": [
               {
@@ -8741,6 +8788,39 @@
               }
             ],
             "title": "Country Code"
+          },
+          "egress_ip": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Egress Ip"
+          },
+          "observation_status": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "pending",
+              "ok",
+              "failed"
+            ],
+            "title": "Observation Status",
+            "default": "unknown"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
           },
           "region_label": {
             "anyOf": [
@@ -8786,13 +8866,28 @@
           "scheme",
           "host",
           "port",
+          "proxy_url",
           "created_at",
           "updated_at"
         ],
-        "title": "ProxyResponse"
+        "title": "ProxyResponse",
+        "description": "Public proxy view (t052).\n\n``country_code`` / ``egress_ip`` / ``observation_status`` are read-only\nobservations: they come from the current valid egress observation for\nthe proxy's present endpoint fingerprint and credential revision, never\nfrom a stored writable field.  ``proxy_url`` is the redacted link (no\npassword, ever); the password is never present in any response."
       },
       "ProxyUpdateRequest": {
         "properties": {
+          "proxy_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proxy Url"
+          },
           "name": {
             "anyOf": [
               {
@@ -8805,84 +8900,6 @@
               }
             ],
             "title": "Name"
-          },
-          "scheme": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "http",
-                  "https",
-                  "socks5"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Scheme"
-          },
-          "host": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 512,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Host"
-          },
-          "port": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "maximum": 65535.0,
-                "minimum": 1.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Port"
-          },
-          "username": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 255
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Username"
-          },
-          "password": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Password"
-          },
-          "country_code": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 2,
-                "minLength": 2
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Country Code"
           },
           "region_label": {
             "anyOf": [
@@ -8910,7 +8927,7 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ProxyUpdateRequest",
-        "description": "PATCH semantics: ``password`` omitted = unchanged, null = clear,\nstring = set.  All other fields are optional tri-state fields."
+        "description": "PATCH semantics (t052): ``proxy_url`` omitted = endpoint unchanged;\nsupplied = endpoint (including password) replaced wholesale.  All\nother fields are optional; ``name``/``region_label``/``notes`` may be\nset to null to clear."
       },
       "RuntimeDesiredStateRequest": {
         "properties": {

@@ -75,6 +75,33 @@ class ResetBlockedRequest(BaseModel):
     profile_id: str = Field(min_length=1, max_length=128)
 
 
+class EgressProbeRequest(BaseModel):
+    """t052: Supervisor-side probe request (control plane only).
+
+    Carries the stored endpoint + credentials so the helper container can
+    present them to the upstream proxy.  Never logged; never exposed on
+    the public API (which accepts only the proxy id).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    scheme: Literal["http", "https", "socks5"]
+    host: str = Field(min_length=1, max_length=512)
+    port: int = Field(ge=1, le=65535)
+    username: str | None = Field(default=None, max_length=255)
+    password: str | None = None
+    credential_revision: int = Field(ge=1)
+    endpoint_fingerprint: str = Field(min_length=1, max_length=64)
+
+
+class EgressProbeResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    proxy_id: str
+    status: Literal["ok", "failed"]
+    egress_ip: str | None = None
+    country_code: str | None = None
+    error_code: str | None = None
+
+
 class CloseTunnelsRequest(BaseModel):
     """t031: close every Supervisor-layer tunnel for a profile.
 
@@ -233,6 +260,8 @@ SupervisorMessage = Union[
     SearchDefaultsStatusResponse,
     PreviewPolicySyncResponse,
     ResetBlockedRequest,
+    EgressProbeRequest,
+    EgressProbeResponse,
     CloseTunnelsRequest,
     CloseTunnelsResponse,
     AttendantDialogsResponse,
