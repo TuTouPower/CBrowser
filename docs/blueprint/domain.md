@@ -49,8 +49,9 @@
 ## 分组、代理与配置版本三分（t035）
 
 - **引用代替内嵌**：Profile 通过 `group_id` / `proxy_id` 引用分组库与代理库；引用不存在的分组或代理在写入边界被拒绝。业务 Tag 与 `ProfileConfig.proxy` 内嵌字段已移除（AC-012）。
+- **引用校验是字段级 422（t056 A28）**：创建或更新 Profile 时引用不存在的分组 / 代理，返回 422 `validation_error`，`details` 列出每个缺失字段的 `loc` / `msg` / `type`（两个字段同时缺失时一次报出两个）；PATCH 只校验请求中出现的引用键，显式 null 清除引用不查库。分组重排（`POST /groups/reorder`）必须提交全集：缺失、未知或重复 id 一律 422。
 - **配置版本三分**：修改分为「元数据」（`name` / `notes` / `sort_order` / `group_id`，即时生效且不生成新版本）、「即时策略」（`capture_preview`，不生成新版本）、「运行配置」（其余字段；值变化才生成新版本，运行中产生待应用版本）。提交与当前值相同的运行配置也不生成。
-- **代理连接变更的联动**：`update_proxy` 改连接字段（scheme/host/port/username/password）时，在同一事务内为每个引用它的 Profile 生成新版本并广播 SSE；只改 name/region/notes 不生成。快照中的 `proxy_credential_revision` 与代理库 `credential_revision` 对齐，Runner 据此判定凭据是否变更并失败封闭 `proxy_credentials_changed`。
+- **代理连接变更的联动（t056 A17 修订）**：`update_proxy` 改连接字段（scheme/host/port/username/password）时，在同一事务内只为**当前配置**引用它的 Profile 生成新版本并广播 SSE；只改 name/region/notes 不生成。仅被运行中绑定版本引用（当前配置已改绑他处）的 Profile 不生成新版本，只收到运行事件。快照中的 `proxy_credential_revision` 与代理库 `credential_revision` 对齐，Runner 据此判定凭据是否变更并失败封闭 `proxy_credentials_changed`。**冻结修订取实际引用者**：绑定快照冻结的修订号取该快照实际引用的代理的当前修订，不是被改代理的修订；凭据变更后旧绑定版本重启仍按冻结修订校验、失败封闭，应用新版本后启动成功。
 
 ## 代理链接录入与出口观测（t052）
 
@@ -63,6 +64,10 @@
 - **运行态扩展字段**：`ProfileRuntime` 增加 `last_started_at` / `last_stopped_at`（ISO 8601 带时区）、`browser_product` / `browser_user_agent`（来自容器内 CDP `Browser.getVersion`）；未运行时两浏览器字段为 null，进入 stopped/error 时清空。
 - **删除约束**：desired=running 或 observed 为 starting/running/stopping、或仍绑定实例的 Profile 删除返回 409 `profile_running`；observed=error 且无实例可删除。删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
 - **schema 代际**：迁移目录只有一个 baseline 修订 `b7e1c9d4a2f3`；旧代（0001-0009）DB 在 API 启动与部署时失败封闭并输出重建指引，发布回退按修订链判定下限。详见 ADR 023。
+
+## 显示编号必填（t056 A21）
+
+- `Profile.display_number: int` 为必填、无默认值；数据库列 NOT NULL（迁移 `0009`，增量回填后改约束）。读到 NULL 行时仓储抛明确错误，不静默补默认值；创建时仍由服务端分配部署内唯一编号（0001…），删除不复用。
 
 ## 语言、时区与高级选项默认值（t053）
 

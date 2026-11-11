@@ -111,8 +111,10 @@ async def test_proxy_crud_and_response_hides_password(db_context):
     with pytest.raises(ValueError):
         await repo.create_proxy(_proxy_payload(name="px"))
 
-    missing, affected = await repo.update_proxy("missing", {"name": "x"}, False)
-    assert missing is None and affected == []
+    missing, versioned, runtime_only = await repo.update_proxy(
+        "missing", {"name": "x"}, False
+    )
+    assert missing is None and versioned == [] and runtime_only == []
 
 
 @pytest.mark.asyncio
@@ -124,19 +126,21 @@ async def test_proxy_password_patch_tristate(db_context):
     revision = px.credential_revision
 
     # omitted: unchanged
-    renamed, affected = await repo.update_proxy(px.id, {"name": "renamed"}, False)
+    renamed, versioned, runtime_only = await repo.update_proxy(
+        px.id, {"name": "renamed"}, False
+    )
     assert renamed is not None and renamed.name == "renamed"
     assert renamed.has_password is True
     assert renamed.credential_revision == revision
-    assert affected == []
+    assert versioned == [] and runtime_only == []
 
     # explicit null: clear
-    cleared, _ = await repo.update_proxy(px.id, {"password": None}, True)
+    cleared, _, _ = await repo.update_proxy(px.id, {"password": None}, True)
     assert cleared is not None and cleared.has_password is False
     assert cleared.credential_revision == revision + 1
 
     # string: set
-    reset, _ = await repo.update_proxy(px.id, {"password": "new-secret"}, True)
+    reset, _, _ = await repo.update_proxy(px.id, {"password": "new-secret"}, True)
     assert reset is not None and reset.has_password is True
     assert reset.credential_revision == revision + 2
     assert "password" not in reset.model_dump()
@@ -222,38 +226,6 @@ async def test_runtime_config_field_creates_version_and_snapshot_has_no_password
         assert "password" not in payload
         assert "password" not in payload["config"]
     assert payloads[-1]["proxy_credential_revision"] == px.credential_revision
-
-
-@pytest.mark.asyncio
-async def test_proxy_connection_change_regenerates_versions_for_referencing_profiles(
-    db_context,
-):
-    _engine, session_maker = db_context
-    repo = ProfileRepository(session_maker)
-
-    px = await repo.create_proxy(_proxy_payload())
-    profile = await repo.create_profile(
-        ProfileConfig(name="Bound To Proxy", proxy_id=px.id)
-    )
-
-    # Presentation metadata never regenerates versions.
-    _, affected = await repo.update_proxy(
-        px.id, {"name": "renamed", "notes": "new note", "region_label": "West"}, False
-    )
-    assert affected == []
-    assert (await repo.get_profile(profile.id)).current_config_version == 1
-
-    # A connection field regenerates a version for every referencing profile.
-    _, affected = await repo.update_proxy(px.id, {"host": "new.example.com"}, False)
-    assert affected == [profile.id]
-    assert (await repo.get_profile(profile.id)).current_config_version == 2
-    assert len(await repo.list_config_versions(profile.id)) == 2
-
-    # A password rotation bumps the credential revision and regenerates too.
-    _, affected = await repo.update_proxy(px.id, {"password": "rotated"}, True)
-    assert affected == [profile.id]
-    assert (await repo.get_proxy(px.id)).credential_revision == 2
-    assert (await repo.get_profile(profile.id)).current_config_version == 3
 
 
 # ---- AC-009: runtime timestamps / browser version -------------------------

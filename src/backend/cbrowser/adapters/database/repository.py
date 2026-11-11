@@ -111,6 +111,51 @@ class ProfileRepository:
             )
         return audit
 
+    async def find_recorded_operation(
+        self, operation_id: str | None, action: str, target: str, payload: Any
+    ) -> str | None:
+        """Return the entity id recorded for a past operation, or None.
+
+        t056 A23: the service-side replay pre-check for the proxy methods
+        (which must skip their probe side effects on replay).  The
+        signature is interpreted here — the single place — never in the
+        service; a mismatched payload raises IdempotencyConflictError.
+        """
+        if not operation_id:
+            return None
+        sig_hash = _hash_request(action, target, payload)
+        async with self._session_maker() as session:
+            audit = await self._match_operation_audit(session, operation_id, sig_hash)
+        return audit.entity_id if audit is not None else None
+
+    @staticmethod
+    def _record_operation_audit(
+        session: AsyncSession,
+        *,
+        operation_id: str,
+        entity_type: str,
+        entity_id: str,
+        action: str,
+        sig_hash: str,
+        now: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Stage the audit row that makes a write replayable (t056 A23)."""
+        details: dict[str, Any] = {"sig_hash": sig_hash}
+        if extra:
+            details.update(extra)
+        session.add(
+            AuditEventModel(
+                id=operation_id,
+                entity_type=entity_type,
+                entity_id=entity_id,
+                action=action,
+                actor="system",
+                details=json.dumps(details),
+                created_at=now,
+            )
+        )
+
     @staticmethod
     async def _load_profile_model(
         session: AsyncSession, profile_id: str
@@ -1021,6 +1066,12 @@ class ProfileRepository:
             notes=m.notes,
             sort_order=m.sort_order,
         )
+        if m.display_number is None:
+            # t056 A21: display_number is NOT NULL since 0009; a NULL row
+            # is a corrupt database, never a defaultable 1.
+            raise RuntimeError(
+                f"Profile {m.id} is missing its display number"
+            )
         return Profile(
             id=m.id,
             display_number=m.display_number,
@@ -1053,48 +1104,177 @@ class ProfileRepository:
             result = await session.execute(stmt)
             return [self._to_domain_group(m) for m in result.scalars().all()]
 
+    async def get_group(self, group_id: str) -> GroupResponse | None:
+        """One group by id (t056 A28: reference validation)."""
+        async with self._session_maker() as session:
+            model = await session.get(ProfileGroupModel, group_id)
+            if model is None:
+                return None
+            return self._to_domain_group(model)
+
     async def create_group(
-        self, name: str, color: str, sort_order: int
+        self, name: str, color: str, sort_order: int, *, operation_id: str | None = None,
+        _allow_rebuild: bool = True,
     ) -> GroupResponse:
+        """Create a group (t056 A23: replayable via Idempotency-Key, like
+        create_profile).  A replay returns the first group; a replay after
+        deletion restores the same id."""
         now = utc_now_iso()
-        model = ProfileGroupModel(
-            id=str(uuid.uuid4()),
-            name=name,
-            color=color,
-            sort_order=sort_order,
-            created_at=now,
-            updated_at=now,
-        )
+        payload = {"name": name, "color": color, "sort_order": sort_order}
+        sig_hash = _hash_request("create_group", "", payload)
+        gid = str(uuid.uuid4())
+        audit_recorded = False
         try:
             async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    audit_recorded = True
+                    existing = await session.get(ProfileGroupModel, audit.entity_id)
+                    if existing is not None:
+                        return self._to_domain_group(existing)
+                    gid = audit.entity_id
+                model = ProfileGroupModel(
+                    id=gid,
+                    name=name,
+                    color=color,
+                    sort_order=sort_order,
+                    created_at=now,
+                    updated_at=now,
+                )
                 session.add(model)
+                if operation_id and not audit_recorded:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="group",
+                        entity_id=gid,
+                        action="create_group",
+                        sig_hash=sig_hash,
+                        now=now,
+                        extra={"name": name},
+                    )
+            return self._to_domain_group(model)
         except IntegrityError as exc:
+            # A concurrent submission of the same operation won the commit
+            # race: resolve through the same audit contract.
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    existing = await session.get(ProfileGroupModel, audit.entity_id)
+                    if existing is not None:
+                        return self._to_domain_group(existing)
+                    # The recorded entity was deleted: rebuild it under
+                    # the same id — unless the name is now taken by
+                    # another entity (t056_code_f002). Re-inserting
+                    # would hit the same unique-name constraint again,
+                    # so an unconditional retry recurses until
+                    # RecursionError and surfaces as 500 instead of a
+                    # clean 409 group_name_in_use. A rebuild is
+                    # attempted at most once.
+                    name_taken = (
+                        await session.execute(
+                            select(ProfileGroupModel.id)
+                            .where(ProfileGroupModel.name == name)
+                            .limit(1)
+                        )
+                    ).scalars().first() is not None
+                    if name_taken or not _allow_rebuild:
+                        raise ValueError("group name already exists") from exc
+                    return await self.create_group(
+                        name,
+                        color,
+                        sort_order,
+                        operation_id=operation_id,
+                        _allow_rebuild=False,
+                    )
             raise ValueError("group name already exists") from exc
-        return self._to_domain_group(model)
 
     async def update_group(
-        self, group_id: str, patch: dict[str, Any]
+        self, group_id: str, patch: dict[str, Any], *, operation_id: str | None = None
     ) -> GroupResponse | None:
+        """Update a group (t056 A23: replayable via Idempotency-Key)."""
         now = utc_now_iso()
+        sig_hash = _hash_request("update_group", group_id, {"patch": patch})
         try:
             async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    model = await session.get(ProfileGroupModel, group_id)
+                    if model is None:
+                        return None
+                    return self._to_domain_group(model)
                 model = await session.get(ProfileGroupModel, group_id)
                 if model is None:
                     return None
                 for key, value in patch.items():
                     setattr(model, key, value)
                 model.updated_at = now
+                if operation_id:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="group",
+                        entity_id=group_id,
+                        action="update_group",
+                        sig_hash=sig_hash,
+                        now=now,
+                    )
                 return self._to_domain_group(model)
         except IntegrityError as exc:
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    model = await session.get(ProfileGroupModel, group_id)
+                    if model is not None:
+                        return self._to_domain_group(model)
+                    return None
             raise ValueError("group name already exists") from exc
 
-    async def delete_group(self, group_id: str) -> bool:
-        async with self._session_maker() as session, write_transaction(session):
-            model = await session.get(ProfileGroupModel, group_id)
-            if model is None:
-                return False
-            await session.delete(model)
-            return True
+    async def delete_group(
+        self, group_id: str, *, operation_id: str | None = None
+    ) -> bool:
+        """Delete a group (t056 A23: replayable via Idempotency-Key — a
+        replay returns the recorded success, not 404)."""
+        now = utc_now_iso()
+        sig_hash = _hash_request("delete_group", group_id, {})
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    return True
+                model = await session.get(ProfileGroupModel, group_id)
+                if model is None:
+                    return False
+                await session.delete(model)
+                if operation_id:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="group",
+                        entity_id=group_id,
+                        action="delete_group",
+                        sig_hash=sig_hash,
+                        now=now,
+                    )
+                return True
+        except IntegrityError:
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    return True
+            raise
 
     async def reorder_groups(self, ordered_ids: list[str]) -> list[GroupResponse]:
         now = utc_now_iso()
@@ -1258,16 +1438,22 @@ class ProfileRepository:
             )
         return result
 
-    async def _proxy_used_by(
+    async def _proxy_used_by_current(
         self, session: AsyncSession, proxy_id: str
-    ) -> list[str]:
-        """Profiles whose current config OR runtime-bound version reference it."""
+    ) -> set[str]:
+        """Profiles whose CURRENT config references the proxy."""
         current = (
             await session.execute(
                 select(ProfileModel.id).where(ProfileModel.proxy_id == proxy_id)
             )
         ).scalars().all()
-        result = set(current)
+        return set(current)
+
+    async def _proxy_used_by_bound(
+        self, session: AsyncSession, proxy_id: str
+    ) -> set[str]:
+        """Profiles whose RUNNING bound version snapshot references the proxy."""
+        result: set[str] = set()
         runtimes = (
             await session.execute(select(ProfileRuntimeModel))
         ).scalars().all()
@@ -1286,7 +1472,31 @@ class ProfileRepository:
             cfg = parsed.get("config", parsed) if isinstance(parsed, dict) else parsed
             if isinstance(cfg, dict) and cfg.get("proxy_id") == proxy_id:
                 result.add(rt.profile_id)
+        return result
+
+    async def _proxy_used_by(
+        self, session: AsyncSession, proxy_id: str
+    ) -> list[str]:
+        """Profiles whose current config OR runtime-bound version reference it.
+
+        Union semantics are kept for delete-refusal and the used_by count:
+        a bound-only reference still blocks deletion (t056 A17).
+        """
+        result = await self._proxy_used_by_current(session, proxy_id)
+        result |= await self._proxy_used_by_bound(session, proxy_id)
         return sorted(result)
+
+    async def _proxy_used_by_bound_only(
+        self, session: AsyncSession, proxy_id: str
+    ) -> list[str]:
+        """Profiles whose ONLY reference is in a running bound version.
+
+        t056 A17: a password change on this proxy sends these profiles a
+        runtime event only — no new config version.
+        """
+        bound = await self._proxy_used_by_bound(session, proxy_id)
+        current = await self._proxy_used_by_current(session, proxy_id)
+        return sorted(bound - current)
 
     async def list_proxies(self) -> list[ProxyResponse]:
         async with self._session_maker() as session:
@@ -1411,36 +1621,145 @@ class ProfileRepository:
             rows = (await session.execute(stmt)).scalars().all()
             return [self._observation_to_domain(r) for r in rows]
 
-    async def create_proxy(self, payload: dict[str, Any]) -> ProxyResponse:
+    async def proxy_impact(self, proxy_id: str) -> tuple[list[str], list[str]]:
+        """Current-config refs and bound-only refs for a proxy (t056 A17).
+
+        Read-only impact lists, used by the service when replaying a
+        proxy update: the replay returns these lists without creating a
+        new version for anyone.
+        """
+        async with self._session_maker() as session:
+            current = sorted(await self._proxy_used_by_current(session, proxy_id))
+            bound_only = await self._proxy_used_by_bound_only(session, proxy_id)
+        return current, bound_only
+
+    async def create_proxy(
+        self, payload: dict[str, Any], *, operation_id: str | None = None,
+        _allow_rebuild: bool = True,
+    ) -> ProxyResponse:
+        """Create a proxy (t056 A23: replayable via Idempotency-Key, like
+        create_profile)."""
         now = utc_now_iso()
-        model = ProxyModel(
-            id=str(uuid.uuid4()),
-            created_at=now,
-            updated_at=now,
-            **payload,
+        sig_hash = _hash_request("create_proxy", "", payload)
+        pid = str(uuid.uuid4())
+        audit_recorded = False
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    audit_recorded = True
+                    existing = await session.get(ProxyModel, audit.entity_id)
+                    if existing is not None:
+                        return self._to_domain_proxy(
+                            existing,
+                            len(await self._proxy_used_by(session, existing.id)),
+                            await self._current_observation(session, existing),
+                        )
+                    pid = audit.entity_id
+                model = ProxyModel(
+                    id=pid,
+                    created_at=now,
+                    updated_at=now,
+                    **payload,
+                )
+                session.add(model)
+                if operation_id and not audit_recorded:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="proxy",
+                        entity_id=pid,
+                        action="create_proxy",
+                        sig_hash=sig_hash,
+                        now=now,
+                        extra={"name": payload.get("name")},
+                    )
+            return self._to_domain_proxy(model, 0)
+        except IntegrityError as exc:
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    existing = await session.get(ProxyModel, audit.entity_id)
+                    if existing is not None:
+                        return self._to_domain_proxy(
+                            existing,
+                            len(await self._proxy_used_by(session, existing.id)),
+                            await self._current_observation(session, existing),
+                        )
+                    # The recorded entity was deleted: rebuild it under
+                    # the same id — unless the name is now taken by
+                    # another entity (t056_code_f002). Re-inserting
+                    # would hit the same unique-name constraint again,
+                    # so an unconditional retry recurses until
+                    # RecursionError and surfaces as 500 instead of a
+                    # clean 409 proxy_name_in_use. A rebuild is
+                    # attempted at most once.
+                    name_taken = (
+                        await session.execute(
+                            select(ProxyModel.id)
+                            .where(ProxyModel.name == payload.get("name"))
+                            .limit(1)
+                        )
+                    ).scalars().first() is not None
+                    if name_taken or not _allow_rebuild:
+                        raise ValueError("proxy name already exists") from exc
+                    return await self.create_proxy(
+                        payload, operation_id=operation_id, _allow_rebuild=False
+                    )
+            raise ValueError("proxy name already exists") from exc
+
+    async def update_proxy(
+        self,
+        proxy_id: str,
+        patch: dict[str, Any],
+        password_supplied: bool,
+        *,
+        operation_id: str | None = None,
+    ) -> tuple[ProxyResponse | None, list[str], list[str]]:
+        """Update a proxy; when a connection field changes, regenerate a
+        config version only for profiles whose CURRENT config references
+        it (t056 A17).  Profiles whose only reference is in a running
+        bound version get no new version — they are returned separately
+        so the caller can notify them with a runtime event instead.
+
+        Returns (proxy, versioned_profile_ids, runtime_only_profile_ids).
+        The caller broadcasts SSE for both lists after the commit.
+
+        t056 A23: replayable via Idempotency-Key.  A replay returns the
+        current proxy with recomputed impact lists and creates no new
+        version for anyone.
+        """
+        now = utc_now_iso()
+        sig_hash = _hash_request(
+            "update_proxy",
+            proxy_id,
+            {"patch": patch, "password_supplied": password_supplied},
         )
         try:
             async with self._session_maker() as session, write_transaction(session):
-                session.add(model)
-        except IntegrityError as exc:
-            raise ValueError("proxy name already exists") from exc
-        return self._to_domain_proxy(model, 0)
-
-    async def update_proxy(
-        self, proxy_id: str, patch: dict[str, Any], password_supplied: bool
-    ) -> tuple[ProxyResponse | None, list[str]]:
-        """Update a proxy; when a connection field changes, regenerate a
-        config version for every referencing profile in the same transaction.
-
-        Returns (proxy, affected_profile_ids).  The caller broadcasts SSE
-        for the affected ids after the commit (AC-006).
-        """
-        now = utc_now_iso()
-        try:
-            async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    model = await session.get(ProxyModel, proxy_id)
+                    if model is None:
+                        return None, [], []
+                    return (
+                        self._to_domain_proxy(
+                            model,
+                            len(await self._proxy_used_by(session, proxy_id)),
+                            await self._current_observation(session, model),
+                        ),
+                        sorted(await self._proxy_used_by_current(session, proxy_id)),
+                        await self._proxy_used_by_bound_only(session, proxy_id),
+                    )
                 model = await session.get(ProxyModel, proxy_id)
                 if model is None:
-                    return None, []
+                    return None, [], []
                 connection_changed = False
                 old_password = model.password
                 for key, value in patch.items():
@@ -1452,10 +1771,16 @@ class ProfileRepository:
                     connection_changed = True
                 model.updated_at = now
 
-                affected: list[str] = []
+                versioned: list[str] = []
+                runtime_only: list[str] = []
                 if connection_changed:
-                    affected = await self._proxy_used_by(session, proxy_id)
-                    for pid in affected:
+                    versioned = sorted(
+                        await self._proxy_used_by_current(session, proxy_id)
+                    )
+                    runtime_only = await self._proxy_used_by_bound_only(
+                        session, proxy_id
+                    )
+                    for pid in versioned:
                         p_model = await session.get(ProfileModel, pid)
                         if p_model is None:
                             continue
@@ -1468,9 +1793,20 @@ class ProfileRepository:
                         ).scalar() or 0
                         new_version = max_v + 1
                         cfg = self._profile_config_from_model(p_model)
+                        # The frozen revision is the revision of the proxy
+                        # this snapshot's config actually references (t056
+                        # A17) — never the proxy being updated, which may
+                        # be a different proxy for a bound-only profile.
+                        proxy_credential_revision: int | None = None
+                        if cfg.proxy_id:
+                            proxy_model = await session.get(ProxyModel, cfg.proxy_id)
+                            if proxy_model is not None:
+                                proxy_credential_revision = (
+                                    proxy_model.credential_revision
+                                )
                         snapshot = {
                             "config": cfg.model_dump(),
-                            "proxy_credential_revision": model.credential_revision,
+                            "proxy_credential_revision": proxy_credential_revision,
                         }
                         session.add(
                             ProfileConfigVersionModel(
@@ -1483,28 +1819,91 @@ class ProfileRepository:
                         )
                         p_model.current_config_version = new_version
                         p_model.updated_at = now
+                if operation_id:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="proxy",
+                        entity_id=proxy_id,
+                        action="update_proxy",
+                        sig_hash=sig_hash,
+                        now=now,
+                    )
                 return (
                     self._to_domain_proxy(
                         model,
-                        len(affected),
+                        len(versioned) + len(runtime_only),
                         await self._current_observation(session, model),
                     ),
-                    affected,
+                    versioned,
+                    runtime_only,
                 )
         except IntegrityError as exc:
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    model = await session.get(ProxyModel, proxy_id)
+                    if model is not None:
+                        return (
+                            self._to_domain_proxy(
+                                model,
+                                len(await self._proxy_used_by(session, proxy_id)),
+                                await self._current_observation(session, model),
+                            ),
+                            sorted(
+                                await self._proxy_used_by_current(session, proxy_id)
+                            ),
+                            await self._proxy_used_by_bound_only(session, proxy_id),
+                        )
+                    return None, [], []
             raise ValueError("proxy name already exists") from exc
 
-    async def delete_proxy(self, proxy_id: str) -> tuple[bool, int]:
-        """Return (deleted, used_by_count).  A referenced proxy is refused."""
-        async with self._session_maker() as session, write_transaction(session):
-            model = await session.get(ProxyModel, proxy_id)
-            if model is None:
-                return False, 0
-            used_by = await self._proxy_used_by(session, proxy_id)
-            if used_by:
-                return False, len(used_by)
-            await session.delete(model)
-            return True, 0
+    async def delete_proxy(
+        self, proxy_id: str, *, operation_id: str | None = None
+    ) -> tuple[bool, int]:
+        """Return (deleted, used_by_count).  A referenced proxy is refused.
+
+        t056 A23: replayable via Idempotency-Key — a replay returns the
+        recorded success, not 404.  The audit row is recorded only when
+        the delete actually succeeds.
+        """
+        now = utc_now_iso()
+        sig_hash = _hash_request("delete_proxy", proxy_id, {})
+        try:
+            async with self._session_maker() as session, write_transaction(session):
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    return True, 0
+                model = await session.get(ProxyModel, proxy_id)
+                if model is None:
+                    return False, 0
+                used_by = await self._proxy_used_by(session, proxy_id)
+                if used_by:
+                    return False, len(used_by)
+                await session.delete(model)
+                if operation_id:
+                    self._record_operation_audit(
+                        session,
+                        operation_id=operation_id,
+                        entity_type="proxy",
+                        entity_id=proxy_id,
+                        action="delete_proxy",
+                        sig_hash=sig_hash,
+                        now=now,
+                    )
+                return True, 0
+        except IntegrityError:
+            async with self._session_maker() as session:
+                audit = await self._match_operation_audit(
+                    session, operation_id, sig_hash
+                )
+                if audit is not None:
+                    return True, 0
+            raise
 
     @staticmethod
     def _profile_config_from_model(m: ProfileModel) -> ProfileConfig:

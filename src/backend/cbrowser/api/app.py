@@ -47,12 +47,14 @@ from cbrowser.services.profile_service import (
     DatabaseLockError,
     DatabaseUnavailableError,
     ProfileService,
+    ReferenceValidationError,
 )
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import DBAPIError, IntegrityError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("cbrowser.api")
 
@@ -97,8 +99,11 @@ _STATUS_ERROR_NAMES = {
     403: "forbidden",
     404: "not_found",
     409: "conflict",
+    413: "payload_too_large",
     422: "validation_error",
+    429: "rate_limited",
     503: "database_busy",
+    507: "insufficient_storage",
 }
 
 _STATUS_MESSAGES = {
@@ -113,6 +118,15 @@ _STATUS_MESSAGES = {
 
 
 def _http_error_content(exc: HTTPException) -> dict[str, Any]:
+    """Build the unified ErrorResponse body for an HTTPException.
+
+    t056 A15: the body is always ``error`` / ``message`` / ``retryable``
+    plus optional structured ``details``.  A dict detail contributes its
+    ``code`` / ``message`` / ``retryable`` to the top level and any
+    *remaining* keys to ``details`` — the whole dict is never nested
+    again under ``detail``.  A 429 maps to ``rate_limited`` (the
+    Retry-After header travels on the response, set by the raiser).
+    """
     status_code = exc.status_code
     error_name = _STATUS_ERROR_NAMES.get(status_code, "http_error")
     generic_message = _STATUS_MESSAGES.get(status_code, "Request failed")
@@ -124,7 +138,7 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
         return {
             "error": "validation_error",
             "message": text,
-            "detail": [{"loc": ["body"], "msg": text, "type": "value_error"}],
+            "details": [{"loc": ["body"], "msg": text, "type": "value_error"}],
             "retryable": False,
         }
     if isinstance(detail, dict):
@@ -136,12 +150,19 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
         retryable = detail.get("retryable")
         if not isinstance(retryable, bool):
             retryable = status_code == 503
-        return {
+        body: dict[str, Any] = {
             "error": error,
             "message": message,
-            "detail": detail,
             "retryable": retryable,
         }
+        extra = {
+            key: value
+            for key, value in detail.items()
+            if key not in {"code", "message", "retryable"}
+        }
+        if extra:
+            body["details"] = extra
+        return body
     return {
         "error": error_name,
         "message": detail if isinstance(detail, str) else generic_message,
@@ -444,13 +465,29 @@ def create_app(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content={
                 "error": "validation_error",
-                "detail": [
+                "message": str(exc),
+                "details": [
                     {
                         "loc": ["body", "config_version"],
                         "msg": str(exc),
                         "type": "value_error",
                     }
                 ],
+                "retryable": False,
+            },
+        )
+
+    @app.exception_handler(ReferenceValidationError)
+    async def reference_validation_handler(
+        request: Request, exc: ReferenceValidationError
+    ):
+        # t056 A28: field-level 422, same shape as RequestValidationError.
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={
+                "error": "validation_error",
+                "message": str(exc),
+                "details": exc.details,
                 "retryable": False,
             },
         )
@@ -476,12 +513,15 @@ def create_app(
                 "message": _STATUS_MESSAGES.get(
                     status.HTTP_422_UNPROCESSABLE_CONTENT, "Request failed"
                 ),
-                "detail": sanitized_errors,
+                "details": sanitized_errors,
                 "retryable": False,
             },
         )
 
-    @app.exception_handler(HTTPException)
+    # Registered under Starlette's HTTPException (t056 A15): FastAPI's
+    # HTTPException subclasses it, so this catches both route-raised
+    # errors and routing 404s (which Starlette raises itself).
+    @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         return JSONResponse(
             status_code=exc.status_code,
@@ -536,9 +576,9 @@ def create_app(
             if isinstance(platform, dict):
                 platform.pop("default", None)
         components = schema.setdefault("components", {})
-        error_schema = components.setdefault("schemas", {}).get("ErrorResponse")
-        if isinstance(error_schema, dict):
-            error_schema.setdefault("properties", {})["detail"] = {}
+        # ErrorResponse carries its shape from the domain model
+        # (error/message/retryable + optional structured details); no
+        # hand-patched properties here.
         components.setdefault("securitySchemes", {}).update(
             {
                 "sessionCookie": {
@@ -621,6 +661,55 @@ def create_app(
                     responses.setdefault(
                         code, {"description": description, "content": {"application/json": {"schema": error_ref}}}
                     )
+        # t056 R1 f001: the runtime 422 body is the unified shape
+        # (error/message/details/retryable, i.e. ValidationErrorResponse),
+        # never FastAPI's auto-generated HTTPValidationError ({"detail":
+        # [...]}). setdefault() cannot overwrite the auto-generated 422
+        # entry, so every 422 response is assigned directly here — for
+        # operations that declare their own 422 as well as for the ones
+        # (GET routes, internal routes) that only have the generated one.
+        validation_ref = {"$ref": "#/components/schemas/ValidationErrorResponse"}
+        for path, methods in schema.get("paths", {}).items():
+            for method, operation in methods.items():
+                if method not in {"get", "post", "put", "patch", "delete"}:
+                    continue
+                responses = operation.get("responses", {})
+                if "422" not in responses:
+                    continue
+                responses["422"] = {
+                    "description": responses["422"].get("description")
+                    or "Invalid request payload",
+                    "content": {
+                        "application/json": {"schema": validation_ref}
+                    },
+                }
+        # The auto-generated validation error models are now unreferenced;
+        # drop them so no HTTPValidationError trace remains in the tree.
+        schemas = schema.get("components", {}).get("schemas", {})
+        refs: set[str] = set()
+
+        def _collect_refs(node: Any) -> None:
+            if isinstance(node, dict):
+                ref = node.get("$ref")
+                if isinstance(ref, str):
+                    refs.add(ref)
+                for value in node.values():
+                    _collect_refs(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _collect_refs(item)
+
+        _collect_refs(schema.get("paths", {}))
+        _collect_refs(
+            {
+                name: model
+                for name, model in schemas.items()
+                if name not in {"HTTPValidationError", "ValidationError"}
+            }
+        )
+        for orphan in ("HTTPValidationError", "ValidationError"):
+            if f"#/components/schemas/{orphan}" not in refs:
+                schemas.pop(orphan, None)
         app.openapi_schema = schema
         return schema
 

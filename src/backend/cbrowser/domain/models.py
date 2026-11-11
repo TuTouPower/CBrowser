@@ -29,10 +29,17 @@ ProfileLocale = Literal["zh-CN", "en-US"]
 
 
 class ErrorResponse(BaseModel):
+    """Unified error contract (t056 A15): every API error response carries
+    ``error`` / ``message`` / ``retryable``.  ``details`` holds optional
+    structured extras (field errors, counts, ...).  It never nests the
+    whole error package again: ``details`` must not repeat the top-level
+    ``error`` / ``message`` / ``retryable`` values."""
+
     model_config = ConfigDict(extra="forbid")
     error: str
     message: str
     retryable: bool = False
+    details: Any | None = None
 
 
 class ValidationErrorDetail(BaseModel):
@@ -45,7 +52,7 @@ class ValidationErrorResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     error: str = "validation_error"
     message: str | None = None
-    detail: list[ValidationErrorDetail] = Field(default_factory=list)
+    details: list[ValidationErrorDetail] = Field(default_factory=list)
     retryable: bool = False
 
 
@@ -250,7 +257,7 @@ class ProfileConfig(BaseModel):
 
 class Profile(BaseModel):
     id: str
-    display_number: int = 1
+    display_number: int
     config: ProfileConfig
     user_data_dir: str
     sort_order: int = 0
@@ -270,7 +277,7 @@ class ConfigVersionSnapshot(BaseModel):
 
 class ProfileRuntime(BaseModel):
     profile_id: str
-    display_number: int = 1
+    display_number: int
     desired_state: DesiredState = "stopped"
     observed_state: ObservedState = "stopped"
     runtime_instance_id: str | None = None

@@ -41,7 +41,7 @@ describe("AppProviders SSE unauthorized logout handling", () => {
         );
       }
       if (url.includes("/api/v1/events")) {
-        return new Response(JSON.stringify({ detail: "unauthorized" }), {
+        return new Response(JSON.stringify({ error: "unauthorized", message: "Not authenticated", retryable: false }), {
           status: 401,
           headers: { "content-type": "application/json" },
         });

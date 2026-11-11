@@ -390,6 +390,7 @@ async def test_runtime_view_helpers() -> None:
         observed_state="error",
         runtime_instance_id="i1",
         config_version=3,
+        display_number=1,
         failure_count=2,
         restart_blocked=True,
         last_exit_event_id="exit_1",

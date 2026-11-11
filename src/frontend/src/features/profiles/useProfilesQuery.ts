@@ -63,15 +63,19 @@ export function useProfileRuntimeQuery(
 
 export function useCreateProfileMutation(
   client: ApiClient = defaultApiClient,
+  keyOptions?: { keySource?: () => string },
 ): UseMutationResult<ProfileResponse, Error, ProfileCreateRequest> {
   const queryClient = useQueryClient();
-  return useActionKeyMutation({
-    mutationFn: ({ input, actionKey }) =>
-      client.profiles.create(input, actionKey),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+  return useActionKeyMutation(
+    {
+      mutationFn: ({ input, actionKey }) =>
+        client.profiles.create(input, actionKey),
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      },
     },
-  });
+    keyOptions,
+  );
 }
 
 export function useUpdateProfileMutation(
@@ -459,11 +463,25 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         );
       });
 
+    // t056 A31: another client's group/proxy write arrives as a
+    // reference event — invalidate the reference lists and the Profile
+    // list (a profile's group/proxy may have changed) and refetch.
+    const unsubscribeReference: (() => void) | undefined =
+      sseClient.onReferenceEvent?.((event) => {
+        if (event.event === "groups_changed") {
+          queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+        } else {
+          queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+        }
+        queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      });
+
     sseClient.start();
 
     return () => {
       unsubscribe();
       unsubscribePreview?.();
+      unsubscribeReference?.();
       sseClient.stop();
     };
   }, [sseClient, queryClient]);

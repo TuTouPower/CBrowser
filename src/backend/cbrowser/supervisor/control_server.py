@@ -64,8 +64,11 @@ from cbrowser.supervisor.protocol import (
     CloseTunnelsRequest,
     CloseTunnelsResponse,
 )
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, WebSocket, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import SecretStr
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger("cbrowser.supervisor.control_server")
 
@@ -75,11 +78,84 @@ def _bearer_token(authorization: str) -> str:
     return token.strip() if scheme.lower() == "bearer" else ""
 
 
+_SUPERVISOR_ERROR_NAMES = {
+    400: "bad_request",
+    401: "unauthorized",
+    403: "forbidden",
+    404: "not_found",
+    409: "conflict",
+    502: "bad_gateway",
+    503: "service_unavailable",
+}
+
+
+def _supervisor_error_content(status_code: int, message: str) -> dict:
+    """Unified ErrorResponse body (t056 A15): the same ``error`` /
+    ``message`` / ``retryable`` shape the API returns."""
+    return {
+        "error": _SUPERVISOR_ERROR_NAMES.get(status_code, "http_error"),
+        "message": message,
+        "retryable": status_code == 503,
+    }
+
+
 def create_control_app(
     core: SupervisorCore,
     token_file: Path | str,
 ) -> FastAPI:
     app = FastAPI(title="CBrowser Supervisor Control API", version="1.0.0")
+
+    # t056 A15: the Supervisor answers failures in the same ErrorResponse
+    # shape as the API, so the Coordinator can parse and preserve the
+    # downstream error code and message instead of a bare detail string.
+    # Registered under Starlette's HTTPException (t056 A15): FastAPI's
+    # HTTPException subclasses it, so this catches both route-raised
+    # errors and routing 404s (which Starlette raises itself).
+    @app.exception_handler(StarletteHTTPException)
+    async def supervisor_http_exception_handler(
+        request: Request, exc: HTTPException
+    ):
+        detail = exc.detail
+        message = detail if isinstance(detail, str) else "Request failed"
+        return JSONResponse(
+            status_code=exc.status_code,
+            headers=exc.headers,
+            content=_supervisor_error_content(exc.status_code, message),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def supervisor_validation_exception_handler(
+        request: Request, exc: RequestValidationError
+    ):
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={
+                "error": "validation_error",
+                "message": "Invalid request payload",
+                "details": [
+                    {
+                        "loc": err.get("loc", []),
+                        "msg": err.get("msg", "Invalid value"),
+                        "type": err.get("type", "value_error"),
+                    }
+                    for err in exc.errors()
+                ],
+                "retryable": False,
+            },
+        )
+
+    @app.exception_handler(Exception)
+    async def supervisor_generic_exception_handler(
+        request: Request, exc: Exception
+    ):
+        logger.error("Unhandled Supervisor error: %s", type(exc).__name__)
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content=_supervisor_error_content(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "An internal server error occurred",
+            ),
+        )
 
     # t031: live Supervisor-layer tunnels + the generation fence.
     # Direct Supervisor-token holders are infrastructure-trusted (the

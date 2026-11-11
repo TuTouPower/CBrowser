@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
@@ -8,13 +8,19 @@ import {
   useCreateProfileMutation,
   useProfileEventsSync,
   profileKeys,
+  groupKeys,
+  proxyKeys,
 } from "./useProfilesQuery";
 import { ApiClient } from "../../shared/api/client";
 import {
   DEFAULT_PROFILE_CREATE_VALUES,
   type ProfileRuntimeResponse,
 } from "../../shared/api/types";
-import { ProfileEventsClient, type ProfileRuntimeEvent } from "../../shared/api/sse";
+import {
+  ProfileEventsClient,
+  type ProfileRuntimeEvent,
+  type ReferenceChangedEvent,
+} from "../../shared/api/sse";
 
 describe("useProfilesQuery & SSE Sync", () => {
   let queryClient: QueryClient;
@@ -323,5 +329,59 @@ describe("useProfilesQuery & SSE Sync", () => {
       queryClient.getQueryData<ProfileRuntimeResponse>(profileKeys.runtime("p1"))
         ?.search_defaults,
     ).toEqual(status);
+  });
+
+  it("invalidates group and profile lists on a groups_changed event (t056 A31)", async () => {
+    let referenceCallback: ((event: ReferenceChangedEvent) => void) | null =
+      null;
+    mockSseClient.onReferenceEvent = (cb) => {
+      referenceCallback = cb;
+      return () => {
+        referenceCallback = null;
+      };
+    };
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      referenceCallback?.({ event: "groups_changed", entity_id: "g1" });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: groupKeys.lists(),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.lists(),
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: proxyKeys.lists(),
+    });
+  });
+
+  it("invalidates proxy and profile lists on a proxies_changed event (t056 A31)", async () => {
+    let referenceCallback: ((event: ReferenceChangedEvent) => void) | null =
+      null;
+    mockSseClient.onReferenceEvent = (cb) => {
+      referenceCallback = cb;
+      return () => {
+        referenceCallback = null;
+      };
+    };
+    renderHook(() => useProfileEventsSync(mockSseClient), {
+      wrapper: createWrapper(),
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    act(() => {
+      referenceCallback?.({ event: "proxies_changed", entity_id: null });
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: proxyKeys.lists(),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: profileKeys.lists(),
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: groupKeys.lists(),
+    });
   });
 });

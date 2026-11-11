@@ -11,8 +11,12 @@ from cbrowser.domain.models import (
     ProxyResponse,
     ProxyUpdateRequest,
 )
+from cbrowser.api.v1.runtime_views import (
+    publish_reference_change,
+    resolve_operation_id,
+)
 from cbrowser.services.profile_service import ProfileService
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 
 proxy_router = APIRouter(
     prefix="/proxies",
@@ -29,14 +33,24 @@ async def list_proxies(service: Service):
 
 
 @proxy_router.post("", response_model=ProxyResponse, status_code=status.HTTP_201_CREATED)
-async def create_proxy(payload: ProxyCreateRequest, service: Service):
+async def create_proxy(
+    payload: ProxyCreateRequest,
+    request: Request,
+    service: Service,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
+    operation_id: Annotated[str | None, Query()] = None,
+):
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
-        return await service.create_proxy(payload)
+        created = await service.create_proxy(payload, operation_id=op_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": "proxy_name_in_use", "message": str(exc)},
         ) from None
+    publish_reference_change(request, "proxies_changed", created.id)
+    return created
 
 
 @proxy_router.get("/{proxy_id}", response_model=ProxyResponse)
@@ -56,9 +70,15 @@ async def update_proxy(
     payload: ProxyUpdateRequest,
     request: Request,
     service: Service,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
+    operation_id: Annotated[str | None, Query()] = None,
 ):
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
     try:
-        proxy, affected = await service.update_proxy(proxy_id, payload)
+        proxy, versioned, runtime_only = await service.update_proxy(
+            proxy_id, payload, operation_id=op_id
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -71,8 +91,13 @@ async def update_proxy(
         )
     coordinator = getattr(request.app.state, "coordinator", None)
     if coordinator is not None:
-        for pid in affected:
+        # t056 A17: versioned profiles get a new config version; bound-only
+        # profiles get a runtime event only — both are notified over SSE so
+        # the frontend refreshes their runtime state.
+        for pid in [*versioned, *runtime_only]:
             coordinator.publish_profile_change_later(pid)
+    # t056 A31: the proxy reference itself changed for every list client.
+    publish_reference_change(request, "proxies_changed", proxy_id)
     return proxy
 
 
@@ -103,8 +128,16 @@ async def probe_proxy(proxy_id: str, request: Request, service: Service):
 
 
 @proxy_router.delete("/{proxy_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_proxy(proxy_id: str, service: Service):
-    deleted, used_by = await service.delete_proxy(proxy_id)
+async def delete_proxy(
+    proxy_id: str,
+    request: Request,
+    service: Service,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    x_operation_id: Annotated[str | None, Header(alias="X-Operation-ID")] = None,
+    operation_id: Annotated[str | None, Query()] = None,
+):
+    op_id = resolve_operation_id(idempotency_key, x_operation_id, operation_id)
+    deleted, used_by = await service.delete_proxy(proxy_id, operation_id=op_id)
     if not deleted and used_by:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -115,3 +148,4 @@ async def delete_proxy(proxy_id: str, service: Service):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Proxy {proxy_id} not found",
         )
+    publish_reference_change(request, "proxies_changed", proxy_id)

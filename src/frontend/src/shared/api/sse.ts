@@ -13,16 +13,39 @@ export interface ProfilePreviewEvent {
   captured_at: string;
 }
 
-export type ProfileSseEvent = ProfileRuntimeEvent | ProfilePreviewEvent;
+/** t056 A31: a group/proxy write on any client.  The payload carries only
+ * the changed entity id (null for a reorder); receivers invalidate their
+ * group/proxy/profile lists and refetch — the event itself is not data. */
+export interface ReferenceChangedEvent {
+  event: "groups_changed" | "proxies_changed";
+  entity_id: string | null;
+}
+
+export type ProfileSseEvent =
+  | ProfileRuntimeEvent
+  | ProfilePreviewEvent
+  | ReferenceChangedEvent;
 
 export type ProfileEventListener = (event: ProfileRuntimeEvent) => void;
 export type ProfilePreviewEventListener = (event: ProfilePreviewEvent) => void;
+export type ReferenceChangedEventListener = (
+  event: ReferenceChangedEvent,
+) => void;
 export type ProfileErrorListener = (error: unknown) => void;
 
 export function isProfilePreviewEvent(
   event: ProfileSseEvent,
 ): event is ProfilePreviewEvent {
   return "event" in event && event.event === "profile_preview";
+}
+
+export function isReferenceChangedEvent(
+  event: ProfileSseEvent,
+): event is ReferenceChangedEvent {
+  return (
+    "event" in event &&
+    (event.event === "groups_changed" || event.event === "proxies_changed")
+  );
 }
 
 const DESIRED_STATES = new Set(["stopped", "running"]);
@@ -174,6 +197,16 @@ export function parseProfilePreviewEvent(
   return raw as ProfilePreviewEvent;
 }
 
+export function parseReferenceChangedEvent(
+  raw: unknown,
+): ReferenceChangedEvent | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const e = raw as Record<string, unknown>;
+  if (e.event !== "groups_changed" && e.event !== "proxies_changed") return null;
+  if (e.entity_id !== null && typeof e.entity_id !== "string") return null;
+  return raw as ReferenceChangedEvent;
+}
+
 export interface ProfileEventsClientOptions {
   reconnectIntervalMs?: number;
   maxReconnectIntervalMs?: number;
@@ -197,6 +230,7 @@ export class ProfileEventsClient {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private listeners: Set<ProfileEventListener> = new Set();
   private previewListeners: Set<ProfilePreviewEventListener> = new Set();
+  private referenceListeners: Set<ReferenceChangedEventListener> = new Set();
   private errorListeners: Set<ProfileErrorListener> = new Set();
 
   constructor(options: ProfileEventsClientOptions = {}) {
@@ -215,6 +249,11 @@ export class ProfileEventsClient {
   onPreviewEvent(listener: ProfilePreviewEventListener): () => void {
     this.previewListeners.add(listener);
     return () => this.previewListeners.delete(listener);
+  }
+
+  onReferenceEvent(listener: ReferenceChangedEventListener): () => void {
+    this.referenceListeners.add(listener);
+    return () => this.referenceListeners.delete(listener);
   }
 
   setOnUnauthorized(callback?: () => void): void {
@@ -344,6 +383,17 @@ export class ProfileEventsClient {
             );
             return;
           }
+        } else if (
+          eventName === "groups_changed" ||
+          eventName === "proxies_changed"
+        ) {
+          event = parseReferenceChangedEvent(parsed);
+          if (!event) {
+            this.dispatchError(
+              new Error(`Malformed ${eventName} event payload`),
+            );
+            return;
+          }
         } else if (eventName === "runtime_state") {
           event = parseProfileRuntimeEvent(parsed);
           if (!event) {
@@ -412,7 +462,15 @@ export class ProfileEventsClient {
   }
 
   private dispatchEvent(event: ProfileSseEvent): void {
-    if (isProfilePreviewEvent(event)) {
+    if (isReferenceChangedEvent(event)) {
+      for (const listener of this.referenceListeners) {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error("Error in SSE reference event listener:", err);
+        }
+      }
+    } else if (isProfilePreviewEvent(event)) {
       for (const listener of this.previewListeners) {
         try {
           listener(event);

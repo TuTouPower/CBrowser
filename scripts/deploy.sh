@@ -99,10 +99,13 @@ if [[ ! "$PREFIX" =~ ^[a-z0-9][a-z0-9_]*$ ]]; then
   exit 1
 fi
 
-# t035: the single baseline Alembic revision.  A database stamped with any
-# other revision belongs to the retired 0001-0009 schema generation and must
-# be rebuilt, never upgraded in place.  Kept in sync with the API-side
-# constant in cbrowser/adapters/database/migrations.py.
+# t035: the single baseline Alembic revision.  Membership in the shipped
+# revision chain is decided by the chain itself, not by equality with this
+# baseline: after the first deploy the live database is stamped at the
+# chain head, and only a stamp outside the shipped chain belongs to the
+# retired 0001-0009 schema generation and must be rebuilt, never upgraded
+# in place.  Kept in sync with the API-side constant in
+# cbrowser/adapters/database/migrations.py.
 BASELINE_REVISION="b7e1c9d4a2f3"
 REBUILD_GUIDANCE="This database was created by a retired CBrowser schema generation (0001-0009). Rebuild the data directory from scratch: stop the stack, move the old data root aside, then start with an empty data directory so the baseline schema is created fresh. No in-place data migration is provided (project decision: no formal users before t035)."
 
@@ -301,9 +304,12 @@ check_database_schema_generation() {
   # equality: after the first deploy the live database is stamped at the
   # chain head (0002/0003/0004...), and a baseline-only comparison would
   # mis-kill every second deploy and rollback.  An absent database, one
-  # without an alembic_version table, or one stamped with any shipped
-  # chain member is left for the API to create/upgrade on startup.  The
-  # database file is never opened for writing here.  Cross-generation
+  # without an alembic_version table and without business tables, or one
+  # stamped with any shipped chain member is left for the API to
+  # create/upgrade on startup.  A database that already holds business
+  # tables but no usable stamp is refused by the API-side guard instead
+  # (LegacySchemaError with rebuild guidance, t056 A29).  The database
+  # file is never opened for writing here.  Cross-generation
   # rollback (live DB stamped outside the shipped chain, or rollback
   # target head outside the shipped chain) is refused here and at the
   # target check below: rebuild the data directory from scratch, no

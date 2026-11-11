@@ -343,11 +343,21 @@ describe("ProxyListPage AC-005 删除保护", () => {
     expect(stub.spies.proxies.remove).not.toHaveBeenCalled();
   });
 
-  it("reads code/used_by_count from the 409 detail and shows proxyInUse", async () => {
+  it("reads code/used_by_count from the 409 details and shows proxyInUse", async () => {
     stub.spies.proxies.remove.mockRejectedValueOnce(
-      new ApiError("Conflict", 409, {
-        detail: { code: "proxy_in_use", used_by_count: 3 },
-      }),
+      new ApiError(
+        "Proxy is in use by 3 profiles",
+        409,
+        {
+          error: "proxy_in_use",
+          message: "Proxy is in use by 3 profiles",
+          details: { used_by_count: 3 },
+          retryable: false,
+        },
+        "proxy_in_use",
+        false,
+        { used_by_count: 3 },
+      ),
     );
     renderPage();
     await screen.findByTestId("proxy-table");

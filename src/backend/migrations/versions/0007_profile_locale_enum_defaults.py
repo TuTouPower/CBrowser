@@ -44,18 +44,11 @@ def upgrade() -> None:
         )
 
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
+
 def downgrade() -> None:
-    with op.batch_alter_table("profiles", recreate="always") as batch_op:
-        batch_op.drop_constraint("ck_profiles_locale_enum", type_="check")
-        batch_op.alter_column(
-            "humanize",
-            existing_type=sa.Boolean(),
-            server_default="0",
-            existing_nullable=False,
-        )
-        batch_op.alter_column(
-            "portable_cookies",
-            existing_type=sa.Boolean(),
-            server_default="0",
-            existing_nullable=False,
-        )
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

@@ -237,6 +237,13 @@ class ProfileControlService:
         generation bump). A claim while another agent holds control, or
         while reclaim is blocked after a takeover, is a conflict.
         """
+        # t056 A2: publish only after the transaction commits.  The
+        # publish call is deliberately outside the write_transaction
+        # block: publishing inside it would broadcast an
+        # agent_session_id the database never persisted if the commit
+        # failed, and would hold the BEGIN IMMEDIATE write lock across
+        # an await.
+        publish = False
         async with self._session_maker() as session, write_transaction(session):
             row = await self._get_or_create_row(session, profile_id)
             if row.owner == "agent":
@@ -258,30 +265,31 @@ class ProfileControlService:
                 if upgraded:
                     row.agent_session_id = agent_session_id
                     row.updated_at = utc_now_iso()
+                    publish = True
                 data = _row_to_data(row)
-                if upgraded:
-                    await self._publish(profile_id)
-                return data, False
-            if agent_instance_id is None and agent_session_id is None:
-                raise ControlConflictError(
-                    "A claim requires an agent identity",
-                    code="control_no_identity",
-                )
-            if not row.agent_reclaim_allowed:
-                raise ControlConflictError(
-                    "Control was taken over; an explicit human restore "
-                    "is required before an agent may claim again",
-                    code="control_reclaim_blocked",
-                )
-            row.owner = "agent"
-            row.generation += 1
-            row.agent_instance_id = agent_instance_id
-            row.agent_session_id = agent_session_id
-            row.handoff_reason = None
-            row.handoff_detail = None
-            row.updated_at = utc_now_iso()
-            data = _row_to_data(row)
-        await self._publish(profile_id)
+            else:
+                if agent_instance_id is None and agent_session_id is None:
+                    raise ControlConflictError(
+                        "A claim requires an agent identity",
+                        code="control_no_identity",
+                    )
+                if not row.agent_reclaim_allowed:
+                    raise ControlConflictError(
+                        "Control was taken over; an explicit human restore "
+                        "is required before an agent may claim again",
+                        code="control_reclaim_blocked",
+                    )
+                row.owner = "agent"
+                row.generation += 1
+                row.agent_instance_id = agent_instance_id
+                row.agent_session_id = agent_session_id
+                row.handoff_reason = None
+                row.handoff_detail = None
+                row.updated_at = utc_now_iso()
+                data = _row_to_data(row)
+                publish = True
+        if publish:
+            await self._publish(profile_id)
         return data, False
 
     async def handoff(

@@ -45,19 +45,19 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：迁移在另一连接持有写事务时等待 busy_timeout 后完成切换，不立即返回 BUSY。
-- [ ] AC-002：control 恢复升级的事务提交失败时，SSE 订阅者收不到该次升级事件；提交成功时收到。
-- [ ] AC-003：API 所有错误响应都含 `error` 与 `message`，且不含与顶层重复的 detail 包；429 响应的 `error` 为 `rate_limited` 并带 `Retry-After`。
-- [ ] AC-004：Gateway 与 Supervisor 错误响应与 API 结构一致；Supervisor 返回的失败原因出现在 Profile 的 error_reason 中。
-- [ ] AC-005：Profile 绑定版引用代理 A、当前配置已改为代理 B 时，修改 A 的密码不会推进该 Profile 的配置版本；该 Profile 之后可正常启动。
-- [ ] AC-006：`display_number` 为 NULL 的行无法写入；领域模型缺少 display_number 时构造失败。
-- [ ] AC-007：分组 / 代理的 create、update、delete 以相同 Idempotency-Key 与相同参数重放时，返回首次结果且不产生重复记录；同键不同参数返回 409。
-- [ ] AC-008：代理表单、分组管理的写操作在途时，提交入口禁用；Profile 创建弹窗在途时关闭再打开并提交，不会产生第二个 Profile。
-- [ ] AC-009：旧版 running、新版启动失败时，多次读取运行时状态（REST 与 SSE 重连）都返回该错误，直到新版成功 running。
-- [ ] AC-010：创建或修改 Profile 时引用不存在的 group / proxy 返回 422 并指出字段；reorder 未提供全集时返回 422。
-- [ ] AC-011：有业务表但 alembic_version 为空的库启动时报 `LegacySchemaError` 与重建指引。
-- [ ] AC-012：一个客户端修改或删除分组 / 代理后，另一个已打开列表的客户端无需刷新即显示新状态。
-- [ ] AC-013：0004 在列已存在但定义不符时迁移失败而非静默跳过；任何 revision 的降级调用都失败并给出明确错误；全新库 upgrade 到 head 的结构与改动前一致。
+- [x] AC-001：迁移在另一连接持有写事务时等待 busy_timeout 后完成切换，不立即返回 BUSY。
+- [x] AC-002：control 恢复升级的事务提交失败时，SSE 订阅者收不到该次升级事件；提交成功时收到。
+- [x] AC-003：API 所有错误响应都含 `error` 与 `message`，且不含与顶层重复的 detail 包；429 响应的 `error` 为 `rate_limited` 并带 `Retry-After`。
+- [x] AC-004：Gateway 与 Supervisor 错误响应与 API 结构一致；Supervisor 返回的失败原因出现在 Profile 的 last_coordinator_error 中。
+- [x] AC-005：Profile 绑定版引用代理 A、当前配置已改为代理 B 时，修改 A 的密码不会推进该 Profile 的配置版本；该 Profile 之后可正常启动。
+- [x] AC-006：`display_number` 为 NULL 的行无法写入；领域模型缺少 display_number 时构造失败。
+- [x] AC-007：分组 / 代理的 create、update、delete 以相同 Idempotency-Key 与相同参数重放时，返回首次结果且不产生重复记录；同键不同参数返回 409。
+- [x] AC-008：代理表单、分组管理的写操作在途时，提交入口禁用；Profile 创建弹窗在途时关闭再打开并提交，不会产生第二个 Profile。
+- [x] AC-009：旧版 running、新版启动失败时，多次读取运行时状态（REST 与 SSE 重连）都返回该错误，直到新版成功 running。
+- [x] AC-010：创建或修改 Profile 时引用不存在的 group / proxy 返回 422 并指出字段；reorder 未提供全集时返回 422。
+- [x] AC-011：有业务表但 alembic_version 为空的库启动时报 `LegacySchemaError` 与重建指引。
+- [x] AC-012：一个客户端修改或删除分组 / 代理后，另一个已打开列表的客户端无需刷新即显示新状态。
+- [x] AC-013：0004 在列已存在但定义不符时迁移失败而非静默跳过；任何 revision 的降级调用都失败并给出明确错误；全新库 upgrade 到 head 的结构与改动前一致。
 
 ### 可测试性声明
 

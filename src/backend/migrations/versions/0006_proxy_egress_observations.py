@@ -72,9 +72,11 @@ def upgrade() -> None:
             batch_op.drop_column("country_code")
 
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
+
 def downgrade() -> None:
-    bind = op.get_bind()
-    bind.execute(sa.text("DROP TABLE IF EXISTS proxy_egress_observations"))
-    if "country_code" not in _existing_columns(bind, "proxies"):
-        with op.batch_alter_table("proxies") as batch_op:
-            batch_op.add_column(sa.Column("country_code", sa.String(2), nullable=True))
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

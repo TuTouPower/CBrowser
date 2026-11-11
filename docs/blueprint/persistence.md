@@ -11,6 +11,7 @@
 - **连接与并发策略**：
     - 强制开启 SQLite WAL 模式（`PRAGMA journal_mode=WAL`）。
     - 设置忙等待超时为 5000 毫秒（`PRAGMA busy_timeout=5000`）。
+    - **顺序（t056 A1）**：`busy_timeout` 必须先于 `journal_mode=WAL` 设置，且 WAL 切换本身不遵守 busy handler——切换失败时在 `busy_timeout` 窗口内有界重试，直至切换成功或超时。实测：只调换两行顺序仍会在锁争用时立即 `database is locked`。
     - 开启外键约束（`PRAGMA foreign_keys=ON`）。
     - 写入事务统一在连接层由 `BEGIN IMMEDIATE` 开启，确保读-改-写操作物理串行化执行，杜绝并发不相交 PATCH（如同时更新 name 与 notes）出现更新丢失（Lost Updates）。
     - 业务事务保持短小紧凑，**严格禁止在数据库事务内调用 Docker API 或等待浏览器/媒体管线启动**。
@@ -18,11 +19,15 @@
 
 ## 2. 核心数据表结构 (SQLAlchemy 2.0 + Alembic)
 
-迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
+迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。t056 追加增量迁移 `0009_profile_display_number_not_null.py`（revision `796adb0bf159`）：`display_number` 改为 NOT NULL。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
+
+- **只进不退（t056 A60）**：全部修订的 `downgrade()` 一律抛明确的 unsupported-downgrade 错误，不再提供回退路径；`0004_preview_backoff.py` 的「列已存在则跳过」分支与 `0003_network_transaction.py` 的历史混合形态补丁分支已删除（升级输出结构不变）。
+- **旧库守卫（t056 A29）**：数据库含业务表、但 `alembic_version` 表缺失 / 无行 / 版本号为空时，API 启动拒绝并抛 `LegacySchemaError` 附重建指引，不静默升级、不猜测版本。
 
 01. `profiles`：
-    - 字段：`id`, `name`, `fingerprint_seed`, `group_id`, `proxy_id`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `fingerprint_platform`, `font_set_id`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `current_config_version`, `created_at`, `updated_at`。
+    - 字段：`id`, `name`, `fingerprint_seed`, `group_id`, `proxy_id`, `timezone`, `locale`, `screen_width`, `screen_height`, `gpu_family`, `humanize`, `human_preset`, `geoip`, `clipboard_sync`, `auto_launch`, `color_scheme`, `fingerprint_platform`, `font_set_id`, `launch_args`, `extension_paths`, `allow_3p_cookies`, `set_google_default`, `capture_preview`, `restore_session`, `transparent_proxy`, `portable_cookies`, `notes`, `user_data_dir`, `sort_order`, `display_number`, `current_config_version`, `created_at`, `updated_at`。
     - `group_id` / `proxy_id` 为可空外键引用（t035），取代已删除的业务 Tag 表与内嵌 `proxy` 字段；删除分组时 `group_id` 置 null，代理被引用时删除受限。
+    - `display_number` 自 t056 起为 NOT NULL（迁移 `0009_profile_display_number_not_null.py`，revision `796adb0bf159`，增量迁移：先按确定性顺序回填存量 NULL 再改列约束）；领域模型 `Profile.display_number: int` 无默认值，读到 NULL 行时仓储抛明确错误，不静默补 1。
     - `fingerprint_platform` 默认 `windows`（`windows` / `macos`）；`font_set_id` 可空，引用同平台的不可变字体集；两者都属运行配置，修改任一生成新 `ProfileConfigVersion`（t041）。`font_bundle` 列已随 `0002_fingerprint_platform.py` 删除。默认 `user_data_dir` 为 `/data/profiles/{profileId}/profile`。
 02. `profile_groups`：
     - 字段：`id`, `name`, `color`, `sort_order`, `created_at`, `updated_at`；名称唯一、颜色取自调色板、可排序。
@@ -88,6 +93,7 @@
     - 若同一操作 ID 被复用于不同目标 Profile、不同动作或不同载荷，API 返回明确的 HTTP 409 Conflict（`idempotency_conflict`），阻止跨实体污染。
     - 重放启动意图（`desired_state=running`）的旧操作 ID 时，保持幂等重放语义，**严禁将崩溃累积的 `failure_count` 清零**；仅全新的手动启动请求可重置失败计数与阻断标记。
     - 三个写入点（create/update/set_desired_state）的审计匹配共用单一 helper（t021）；目标已删除后的重放有确定性语义：update 重放返回已删除（None），create 重放按审计中的实体 ID 确定性重建同一身份，不生成新 ID。
+    - **分组与代理同等语义（t056 A23）**：group / proxy 的 create / update / delete 同样支持 `Idempotency-Key`，同一 helper 与同一审计表；重放时不重复触发探测等副作用。`POST /groups/reorder` 不带幂等键（全量替换、服务层校验全集，见 domain.md）。
 - **查询加载边界（t021，t035 修订）**：
     - Profile 集合关系（versions/runtime/artifacts）统一 `lazy="noload"` + `passive_deletes=True`：删除走数据库外键级联（`ON DELETE CASCADE` + `foreign_keys` pragma），普通读取不隐式整表加载集合；`group_id` / `proxy_id` 是标量外键引用，不再有业务 Tag 集合（t035）。
     - 下载去重在 SQL 层按 `(profile, sha256, storage_path)` 精确过滤，不再把候选集拉回内存逐条比对。

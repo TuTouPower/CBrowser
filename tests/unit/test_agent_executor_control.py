@@ -103,3 +103,49 @@ async def test_run_program_stops_after_handoff_without_replay():
         "skipped": "control_handed_off",
     }
     assert output.get("error") is None
+
+
+@pytest.mark.asyncio
+async def test_control_post_409_reads_unified_error_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """t056 A15: a 409 from the control API carries the refusal code in
+    the unified top-level `error`; the legacy `detail.code` shape still
+    parses; a body with no code at all falls back to control_conflict."""
+
+    async def _run(body: dict) -> str:
+        class _Resp:
+            status_code = 409
+
+            def json(self) -> dict:
+                return body
+
+        class _Client:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def post(self, *args, **kwargs):
+                return _Resp()
+
+        monkeypatch.setattr(
+            "cbrowser.agent_executor.session.httpx.AsyncClient", _Client
+        )
+        session = _session("ws://127.0.0.1:9/api/v1/automation/profiles/p1/cdp")
+        with pytest.raises(SessionError) as exc:
+            await session._control_post("handoff", {"reason": "permission"})
+        assert exc.value.error_code == "control_conflict"
+        return str(exc.value)
+
+    assert "control_taken" in await _run(
+        {"error": "control_taken", "message": "taken", "retryable": False}
+    )
+    assert "control_taken" in await _run(
+        {"detail": {"code": "control_taken", "message": "taken"}}
+    )
+    assert (await _run({})).endswith("refused: control_conflict")

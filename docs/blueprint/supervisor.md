@@ -1,6 +1,6 @@
 # Runtime Supervisor
 
-本模块实现 t005 生命周期协调。正式入口、用户鉴权与 Gateway 交付分别由 t006/t012 集成；当前旧服务入口尚未切换。阶段验收状态以 t005 task、review 和交接记录为准。
+本模块实现 Profile 生命周期协调：Supervisor 是唯一挂载 Docker Socket 的服务，负责拉起、停止与收敛 Browser / Stream 实例，并经控制面接收 API 的指令、上报实例绑定、观测与事件。
 
 ## 权限与数据所有权
 

@@ -306,4 +306,93 @@ describe("ProfileCreateDialog", () => {
     expect(stub.profiles.create).toHaveBeenCalledTimes(1);
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
+
+  it("close/reopen during a pending create reuses the same key (t056 A23)", async () => {
+    // The create is in flight when the dialog closes; the first attempt
+    // then fails, and the reopened dialog resubmits with the SAME
+    // idempotency key, so the backend returns the first result instead
+    // of creating a second Profile.  One dialog instance stays mounted
+    // throughout (only its open state toggles), so its key ref survives.
+    const { useState } = await import("react");
+    const stub = makeStub();
+    let rejectCreate!: (err: unknown) => void;
+    const pending = new Promise<ProfileResponse>((_resolve, reject) => {
+      rejectCreate = reject;
+    });
+    stub.profiles.create.mockImplementationOnce(() => pending);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <QueryClientProvider client={queryClient}>
+          <I18nProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <ApiClientContext.Provider value={stub}>
+                  <MemoryRouter>
+                    <button data-testid="harness-close" onClick={() => setOpen(false)}>
+                      close
+                    </button>
+                    <button data-testid="harness-open" onClick={() => setOpen(true)}>
+                      open
+                    </button>
+                    <ProfileCreateDialog open={open} onOpenChange={setOpen} />
+                  </MemoryRouter>
+                </ApiClientContext.Provider>
+              </ToastProvider>
+            </ThemeProvider>
+          </I18nProvider>
+        </QueryClientProvider>
+      );
+    }
+    render(<Harness />);
+    await screen.findByTestId("env-new-dialog");
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Draft env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() =>
+      expect(stub.profiles.create).toHaveBeenCalledTimes(1),
+    );
+    const firstKey = stub.profiles.create.mock.calls[0]![1] as string;
+    expect(firstKey).not.toBe("");
+
+    fireEvent.click(screen.getByTestId("harness-close"));
+    rejectCreate(new Error("network down"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-new-dialog")).toBeNull(),
+    );
+    fireEvent.click(screen.getByTestId("harness-open"));
+    await screen.findByTestId("env-new-dialog");
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Draft env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() =>
+      expect(stub.profiles.create).toHaveBeenCalledTimes(2),
+    );
+    expect(stub.profiles.create.mock.calls[1]![1]).toBe(firstKey);
+  });
+
+  it("a double submit in one tick creates only once (t056 A23)", async () => {
+    const stub = makeStub();
+    const onOpenChange = vi.fn();
+    renderDialog(stub, onOpenChange);
+
+    await screen.findByTestId("env-new-dialog");
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Double env" },
+    });
+    // Two submits before React re-renders with isPending: the synchronous
+    // ref lock, not the (async) disabled state, must dedupe them.
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() =>
+      expect(stub.profiles.create).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(stub.profiles.create).toHaveBeenCalledTimes(1);
+  });
 });

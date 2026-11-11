@@ -97,3 +97,12 @@
 ## 显示编号（t050）
 
 - Profile 创建时分配部署内唯一显示编号（0001…），删除后不复用；API 返回 `display_number`，前端在列表与表格中与名称一同展示，便于对应 Docker 沙箱容器名。
+
+## API 契约与数据层（t056）
+
+- **显示编号必填（A21）**：`display_number` 为 NOT NULL（增量迁移 `0009`，先回填存量 NULL 再改约束）；领域模型 `Profile.display_number: int` 无默认值，读到 NULL 行时仓储抛明确错误，不静默补默认值。
+- **引用校验是字段级 422（A28）**：创建或更新 Profile 时引用不存在的分组 / 代理，返回 422 `validation_error`，`details` 列出每个缺失字段的 `loc` / `msg` / `type`（两字段同时缺失一次报出两个）；PATCH 只校验请求中出现的引用键，显式 null 清除引用不查库。分组重排必须提交全集：缺失、未知或重复 id 一律 422。
+- **分组与代理写操作幂等（A23）**：group / proxy 的 create / update / delete 支持 `Idempotency-Key`，与 Profile 同一审计语义；重放不重复触发探测等副作用。详见 `proxy_management.md` 第 8 节。
+- **Profile 创建锁（A23）**：创建提交是同步 ref 锁，同一 tick 内双击只发一次请求；幂等键绑定到当前打开的创建弹窗，关闭重开复用同一键直至创建成功，成功后才换新键。
+- **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`，前端使对应列表查询与 Profile 列表查询失效重取；探测不发事件。
+- **统一错误契约（A15）**：全部 API 错误响应体为 `ErrorResponse`（`error` / `message` / `retryable` + 可选结构化 `details`），422 的字段级错误列表进 `details`；429 为 `rate_limited` 并带 `Retry-After`。详见 `docs/blueprint/conventions.md` 第 7 节。

@@ -182,6 +182,30 @@ describe("ProxyFormDialog", () => {
     );
   });
 
+  it("disables the submit button while a create is in flight (t056 A23)", async () => {
+    let resolveCreate!: (value: ProxyResponse) => void;
+    const pending = new Promise<ProxyResponse>((resolve) => {
+      resolveCreate = resolve;
+    });
+    const stub = makeStub({ createImpl: () => pending });
+    const { onOpenChange } = renderDialog(stub);
+    await screen.findByTestId("proxy-form-dialog");
+
+    change("proxy-form-url", "socks5://user:pass@10.0.0.9:8080");
+    click("proxy-form-submit");
+    await waitFor(() =>
+      expect(stub.spies.proxies.create).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.getByTestId("proxy-form-submit")).toBeDisabled();
+    // A second click while disabled must not start a second create.
+    click("proxy-form-submit");
+    expect(stub.spies.proxies.create).toHaveBeenCalledTimes(1);
+
+    resolveCreate(proxyFixture());
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(stub.spies.proxies.create).toHaveBeenCalledTimes(1);
+  });
+
   it("shows only link, notes and read-only country status by default", async () => {
     const stub = makeStub();
     renderDialog(stub, { proxy: proxyFixture() });

@@ -46,6 +46,20 @@ from .registry import (
 logger = logging.getLogger("cbrowser.gateway.server")
 
 
+def _error_response(
+    status: int, error: str, message: str, *, retryable: bool = False
+) -> web.Response:
+    """Unified ErrorResponse body (t056 A15): the same ``error`` /
+    ``message`` / ``retryable`` shape the API returns, so a Gateway
+    failure is diagnosable with the same tooling.  WebSocket handshake
+    failures below still answer plain text: a WS upgrade cannot carry
+    a JSON error body."""
+    return web.json_response(
+        {"error": error, "message": message, "retryable": retryable},
+        status=status,
+    )
+
+
 class _QuotaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -105,19 +119,18 @@ def supervisor_fence_failure(
     proceed. Pure decision logic (t022 A48): handlers keep only the I/O.
     """
     if agent is None or agent.ws.closed:
-        return web.json_response(
-            {"detail": f"Agent for profile {profile_id} is unavailable"},
-            status=503,
+        return _error_response(
+            503,
+            "agent_unavailable",
+            f"Agent for profile {profile_id} is unavailable",
+            retryable=True,
         )
     if agent.instance_id != runtime_instance_id:
-        return web.json_response(
-            {
-                "detail": (
-                    f"Instance fence conflict: active instance is "
-                    f"{agent.instance_id}, requested {runtime_instance_id}"
-                )
-            },
-            status=409,
+        return _error_response(
+            409,
+            "instance_conflict",
+            f"Instance fence conflict: active instance is "
+            f"{agent.instance_id}, requested {runtime_instance_id}",
         )
     return None
 
@@ -274,15 +287,14 @@ def create_gateway_app(
     def _check_supervisor_auth(request: web.Request) -> web.Response | None:
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer "):
-            return web.json_response(
-                {"detail": "Missing or invalid Bearer authorization header"},
-                status=401,
+            return _error_response(
+                401,
+                "unauthorized",
+                "Missing or invalid Bearer authorization header",
             )
         provided = auth[len("Bearer ") :].strip().encode("utf-8")
         if not hmac.compare_digest(provided, control_token):
-            return web.json_response(
-                {"detail": "Unauthorized control token"}, status=401
-            )
+            return _error_response(401, "unauthorized", "Unauthorized control token")
         return None
 
     # ---------------- Health Route (t027) ----------------
@@ -301,9 +313,10 @@ def create_gateway_app(
         profile_id = request.match_info["profile_id"]
         runtime_instance_id = request.query.get("runtime_instance_id")
         if not runtime_instance_id:
-            return web.json_response(
-                {"detail": "runtime_instance_id query parameter is required"},
-                status=400,
+            return _error_response(
+                400,
+                "bad_request",
+                "runtime_instance_id query parameter is required",
             )
 
         agent = registry.get(profile_id)
@@ -315,9 +328,11 @@ def create_gateway_app(
 
         # Only the Agent's last health report (Selkies peer state) is returned.
         if agent.unpaused_video_consumers is None or agent.capture_running is None:
-            return web.json_response(
-                {"detail": f"Agent for profile {profile_id} has not reported yet"},
-                status=503,
+            return _error_response(
+                503,
+                "agent_unavailable",
+                f"Agent for profile {profile_id} has not reported yet",
+                retryable=True,
             )
         return web.json_response(
             {
@@ -358,9 +373,9 @@ def create_gateway_app(
         try:
             body = await request.json()
         except (ValueError, json.JSONDecodeError):
-            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+            return _error_response(400, "bad_request", "Invalid JSON body")
         if not isinstance(body, dict):
-            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+            return _error_response(400, "bad_request", "Invalid JSON body")
 
         try:
             quota_request = _QuotaRequest.model_validate(body)
@@ -371,7 +386,7 @@ def create_gateway_app(
                 }
             )
         except ValidationError:
-            return web.json_response({"detail": "Invalid supervisor quota"}, status=400)
+            return _error_response(400, "bad_request", "Invalid supervisor quota")
         runtime_instance_id = quota_request.runtime_instance_id
 
         agent = registry.get(profile_id)
@@ -382,8 +397,8 @@ def create_gateway_app(
             return fence_failure
 
         if not await deliver_supervisor_quota(agent, payload):
-            return web.json_response(
-                {"detail": "Failed to deliver quota to Agent"}, status=503
+            return _error_response(
+                503, "service_unavailable", "Failed to deliver quota to Agent", retryable=True
             )
         return web.json_response({"status": "ok"})
 
@@ -396,14 +411,14 @@ def create_gateway_app(
         try:
             body = await request.json()
         except (ValueError, json.JSONDecodeError):
-            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+            return _error_response(400, "bad_request", "Invalid JSON body")
         if not isinstance(body, dict):
-            return web.json_response({"detail": "Invalid JSON body"}, status=400)
+            return _error_response(400, "bad_request", "Invalid JSON body")
 
         try:
             disconnect_request = _DisconnectRequest.model_validate(body)
         except ValidationError:
-            return web.json_response({"detail": "Invalid disconnect request"}, status=400)
+            return _error_response(400, "bad_request", "Invalid disconnect request")
         runtime_instance_id = disconnect_request.runtime_instance_id
 
         agent = registry.get(profile_id)
@@ -418,9 +433,11 @@ def create_gateway_app(
             viewers, profile_id, agent
         )
         if send_failed:
-            return web.json_response(
-                {"detail": "Failed to notify Agent of viewer disconnect"},
-                status=503,
+            return _error_response(
+                503,
+                "service_unavailable",
+                "Failed to notify Agent of viewer disconnect",
+                retryable=True,
             )
         return web.json_response({"status": "ok"})
 

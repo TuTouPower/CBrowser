@@ -122,7 +122,7 @@ class ProfileModel(Base):
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    display_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    display_number: Mapped[int] = mapped_column(Integer, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     fingerprint_seed: Mapped[int] = mapped_column(Integer, nullable=False)
     group_id: Mapped[str | None] = mapped_column(

@@ -70,11 +70,14 @@ def test_create_rejects_other_locales(api_client) -> None:
             "/api/v1/profiles", json={"name": "Bad", "locale": bad}
         )
         assert response.status_code == 422, response.text
-        detail = response.json()["detail"]
+        # t056 A15: field errors live in the unified `details` list.
+        body = response.json()
+        assert body["error"] == "validation_error", body
+        details = body["details"]
         assert any(
             isinstance(item, dict) and "locale" in item.get("loc", [])
-            for item in detail
-        ), detail
+            for item in details
+        ), details
 
 
 def test_create_rejects_invalid_timezone(api_client) -> None:
@@ -82,11 +85,14 @@ def test_create_rejects_invalid_timezone(api_client) -> None:
         "/api/v1/profiles", json={"name": "Bad", "timezone": "Mars/Olympus"}
     )
     assert response.status_code == 422, response.text
-    detail = response.json()["detail"]
+    # t056 A15: field errors live in the unified `details` list.
+    body = response.json()
+    assert body["error"] == "validation_error", body
+    details = body["details"]
     assert any(
         isinstance(item, dict) and "timezone" in item.get("loc", [])
-        for item in detail
-    ), detail
+        for item in details
+    ), details
 
 
 def test_create_accepts_valid_timezone_and_locale(api_client) -> None:

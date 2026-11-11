@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Banner, Button, Dialog } from "../../shared/ui";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
+import { newIdempotencyKey } from "../../shared/api/client";
 import type {
   ProfileCreateRequest,
   ProfileUpdateRequest,
@@ -21,12 +22,30 @@ export function ProfileCreateDialog({
 }) {
   const { t } = useI18n();
   const client = useApiClient();
-  const createMutation = useCreateProfileMutation(client);
+  // t056 A23: the idempotency key binds to this dialog's draft, not to
+  // one mutate call.  It is minted once (lazily, at the first submit),
+  // survives close/reopen, and is cleared only when the create succeeds
+  // — so a resubmit after a lost response replays the first create
+  // instead of creating a second Profile.
+  const createActionKeyRef = useRef<string | null>(null);
+  const getOrMintCreateKey = () => {
+    if (createActionKeyRef.current === null) {
+      createActionKeyRef.current = newIdempotencyKey();
+    }
+    return createActionKeyRef.current;
+  };
+  const createMutation = useCreateProfileMutation(client, {
+    keySource: getOrMintCreateKey,
+  });
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const [createError, setCreateError] = useState<string | null>(null);
   // P1-F: 创建成功 + 启动失败后记住 created.id，主按钮切“重试启动/关闭”，
   // 重试只调 setDesiredState，不再重复 create（同名 409/改名多建消失）。
   const [createdId, setCreatedId] = useState<string | null>(null);
+  // t056 A23: the in-flight guard is a synchronous ref, not the (async)
+  // isPending render state — two submits landing before React re-renders
+  // must still create only once.
+  const submitLockRef = useRef(false);
   // P1-13: pending 合并禁用，防双击重复创建。
   const isPending =
     createMutation.isPending || setDesiredStateMutation.isPending;
@@ -70,39 +89,50 @@ export function ProfileCreateDialog({
   const handleSubmit = async (
     values: ProfileCreateRequest | ProfileUpdateRequest,
   ) => {
-    setCreateError(null);
-    const { __startAfterCreate, ...createData } =
-      values as ProfileCreateRequest & { __startAfterCreate?: boolean };
-    let created;
+    // t056 A23: synchronous in-flight guard — the disabled button alone
+    // cannot cover two submits landing before the next render.
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
     try {
-      created = await createMutation.mutateAsync(
-        createData as ProfileCreateRequest,
-      );
-    } catch (err) {
-      const reason =
-        err instanceof Error ? err.message : String(err ?? t("failedToCreateProfile"));
-      setCreateError(`${t("failedToCreateProfile")}: ${reason}`);
-      return;
-    }
-    if (__startAfterCreate) {
+      setCreateError(null);
+      const { __startAfterCreate, ...createData } =
+        values as ProfileCreateRequest & { __startAfterCreate?: boolean };
+      let created;
       try {
-        await setDesiredStateMutation.mutateAsync({
-          id: created.id,
-          state: "running",
-        });
-      } catch (err) {
-        // P1-F: 错误文案入 i18n，记住 id 切重试，不关窗。
-        const reason = err instanceof Error ? err.message : String(err);
-        setCreatedId(created.id);
-        setCreateError(
-          t("profileCreateStartFailed", { id: created.id, error: reason })
+        created = await createMutation.mutateAsync(
+          createData as ProfileCreateRequest,
         );
+      } catch (err) {
+        const reason =
+          err instanceof Error ? err.message : String(err ?? t("failedToCreateProfile"));
+        setCreateError(`${t("failedToCreateProfile")}: ${reason}`);
         return;
       }
+      // The create succeeded: this draft's key is spent.  A later create
+      // is a new logical creation and mints a fresh key.
+      createActionKeyRef.current = null;
+      if (__startAfterCreate) {
+        try {
+          await setDesiredStateMutation.mutateAsync({
+            id: created.id,
+            state: "running",
+          });
+        } catch (err) {
+          // P1-F: 错误文案入 i18n，记住 id 切重试，不关窗。
+          const reason = err instanceof Error ? err.message : String(err);
+          setCreatedId(created.id);
+          setCreateError(
+            t("profileCreateStartFailed", { id: created.id, error: reason })
+          );
+          return;
+        }
+      }
+      setCreateError(null);
+      setCreatedId(null);
+      onOpenChange(false);
+    } finally {
+      submitLockRef.current = false;
     }
-    setCreateError(null);
-    setCreatedId(null);
-    onOpenChange(false);
   };
 
   return (
