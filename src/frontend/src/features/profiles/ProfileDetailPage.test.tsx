@@ -145,7 +145,7 @@ function makeStub(observed = "running") {
       ]),
     },
     proxies: { list: vi.fn(async () => []) },
-    fontSets: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
   } as unknown as ApiClient & {
     profiles: {
       retrySearchDefaults: ReturnType<typeof vi.fn>;

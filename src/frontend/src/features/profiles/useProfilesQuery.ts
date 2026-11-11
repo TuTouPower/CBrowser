@@ -19,7 +19,7 @@ import type {
   ProxyResponse,
   ProxyCreateRequest,
   ProxyUpdateRequest,
-  FontSetInfo,
+  FontSetListResponse,
 } from "../../shared/api/types";
 import { ProfileEventsClient } from "../../shared/api/sse";
 
@@ -505,7 +505,7 @@ export function useProxiesQuery(
 
 export function useFontSetsQuery(
   client: ApiClient = defaultApiClient,
-): UseQueryResult<FontSetInfo[], Error> {
+): UseQueryResult<FontSetListResponse, Error> {
   return useQuery({
     queryKey: fontSetKeys.lists(),
     queryFn: () => client.fontSets.list(),

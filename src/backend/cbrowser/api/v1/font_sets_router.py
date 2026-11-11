@@ -41,6 +41,18 @@ class FontSetInfo(BaseModel):
     used_by_count: int = 0
 
 
+class FontSetListResponse(BaseModel):
+    """Font sets plus the backend-chosen default per platform (t053 A16).
+
+    ``default_font_set_id`` is decided only by the backend, from the same
+    integrity-ok rule as profile creation; the create form preselects it
+    and never derives a default of its own.
+    """
+
+    items: list[FontSetInfo]
+    default_font_set_id: dict[str, str | None] = Field(default_factory=dict)
+
+
 font_set_router = APIRouter(
     prefix="/api/v1/font-sets",
     tags=["profiles"],
@@ -68,20 +80,26 @@ async def _collect_font_sets() -> list[dict]:
         return await asyncio.to_thread(font_sets.list_font_sets)
 
 
-@font_set_router.get("", response_model=list[FontSetInfo])
-async def list_font_sets(service: Service) -> list[FontSetInfo]:
+@font_set_router.get("", response_model=FontSetListResponse)
+async def list_font_sets(service: Service) -> FontSetListResponse:
     usage = await service.font_set_usage_counts()
     items = await _collect_font_sets()
-    return [
-        FontSetInfo(
-            platform=item["platform"],
-            set_id=item["set_id"],
-            source=item.get("source"),
-            source_version=item.get("source_version"),
-            created_at=item.get("created_at"),
-            integrity=FontSetIntegrity(**item["integrity"]),
-            file_count=item["file_count"],
-            used_by_count=usage.get(item["set_id"], 0),
-        )
-        for item in items
-    ]
+    return FontSetListResponse(
+        items=[
+            FontSetInfo(
+                platform=item["platform"],
+                set_id=item["set_id"],
+                source=item.get("source"),
+                source_version=item.get("source_version"),
+                created_at=item.get("created_at"),
+                integrity=FontSetIntegrity(**item["integrity"]),
+                file_count=item["file_count"],
+                used_by_count=usage.get((item["platform"], item["set_id"]), 0),
+            )
+            for item in items
+        ],
+        default_font_set_id={
+            platform: font_sets.pick_default_font_set(items, platform)
+            for platform in font_sets.PLATFORMS
+        },
+    )

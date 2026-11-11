@@ -211,7 +211,7 @@ function makeStub(options: StubOptions = {}) {
       list: vi.fn(async () => []),
       get: vi.fn(async () => undefined),
     },
-    fontSets: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
     artifacts: { list: vi.fn(async () => []) },
     automation: { status: vi.fn(async () => undefined) },
     auth: { session: vi.fn(async () => undefined) },

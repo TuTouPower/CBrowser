@@ -989,6 +989,22 @@ export interface components {
                 [key: string]: components["schemas"]["FontDetection"];
             };
         };
+        /**
+         * FontSetListResponse
+         * @description Font sets plus the backend-chosen default per platform (t053 A16).
+         *
+         *     ``default_font_set_id`` is decided only by the backend, from the same
+         *     integrity-ok rule as profile creation; the create form preselects it
+         *     and never derives a default of its own.
+         */
+        FontSetListResponse: {
+            /** Items */
+            items: components["schemas"]["FontSetInfo"][];
+            /** Default Font Set Id */
+            default_font_set_id?: {
+                [key: string]: string | null;
+            };
+        };
         /** GroupCreateRequest */
         GroupCreateRequest: {
             /** Name */
@@ -1184,8 +1200,11 @@ export interface components {
             proxy_id?: string | null;
             /** Timezone */
             timezone?: string | null;
-            /** Locale */
-            locale?: string | null;
+            /**
+             * Locale
+             * @default en-US
+             */
+            locale: ("zh-CN" | "en-US") | null;
             /**
              * Screen Width
              * @default 1920
@@ -1204,7 +1223,7 @@ export interface components {
             gpu_family: "auto" | "nvidia" | "intel";
             /**
              * Humanize
-             * @default false
+             * @default true
              */
             humanize: boolean;
             /**
@@ -1268,7 +1287,7 @@ export interface components {
             transparent_proxy: boolean;
             /**
              * Portable Cookies
-             * @default false
+             * @default true
              */
             portable_cookies: boolean;
             /** Notes */
@@ -1314,7 +1333,7 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
             /** Locale */
-            locale?: string | null;
+            locale?: ("zh-CN" | "en-US") | null;
             /**
              * Screen Width
              * @default 1920
@@ -1332,7 +1351,7 @@ export interface components {
             gpu_family: string;
             /**
              * Humanize
-             * @default false
+             * @default true
              */
             humanize: boolean;
             /**
@@ -1392,7 +1411,7 @@ export interface components {
             transparent_proxy: boolean;
             /**
              * Portable Cookies
-             * @default false
+             * @default true
              */
             portable_cookies: boolean;
             /** Notes */
@@ -1525,7 +1544,7 @@ export interface components {
             /** Timezone */
             timezone?: string | null;
             /** Locale */
-            locale?: string | null;
+            locale?: ("zh-CN" | "en-US") | null;
             /** Screen Width */
             screen_width?: number | null;
             /** Screen Height */
@@ -3664,7 +3683,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["FontSetInfo"][];
+                    "application/json": components["schemas"]["FontSetListResponse"];
                 };
             };
             /** @description Authentication required */

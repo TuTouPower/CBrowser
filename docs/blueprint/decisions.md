@@ -363,3 +363,18 @@
     - **前端**：弹窗默认只显示代理链接、备注与只读国家状态，高级设置默认折叠；链接与高级字段双向同步；失焦显示脱敏链接；编辑端点而密码框留空时拦截提交（防静默清除已存密码）。
 - 复查条件：真实 Docker（OrbStack）上的 helper 启动、host-gateway 映射与策略放行须在用户机实测（本机无 Docker，fake-docker 单元测试不能代替；t052 AC-010/AC-011 真实部分与 AC-012）；`GeoLite2-City.mmdb` 在真实部署 engine-cache 中的存在性同样待用户机验证；IP 回显服务不可用时探测记 failed，不降级猜测。
 - 替代：选项 1 保留模型错误与视角错误；选项 3（egress broker / 内置 mihomo）属 p038，保持 parked。不做连通性与延迟检测（p040 剩余部分保持 parked）、不做保存前草稿探测、不允许人工声明国家。
+
+## 030 英文 Profile 裁剪中文字体（2026-11-11，t053）
+
+- 背景：p069 要求英文 Profile 不加载任何中文字体、中文 Profile 必须加载平台中文字体。ADR 024（t041）按操作系统整体挂载字体集，fontconfig 白名单只声明目录，英文 Profile 也会暴露微软雅黑 / 宋体 / 苹方 / 冬青黑体。d033 已实测：真实 Windows / macOS 不论系统语言均预装原生中文字体，裁剪后英文 Profile 可能呈现“缺少系统原生字体”特征；用户 2026-11-10 已知悉该事实，仍确认按原需求裁剪。
+- 选项：
+    1. 保留 ADR 024 的字体集整体可见，只在 UI 层面提示语言与字体不一致。
+    2. 按 Profile 语言生成 fontconfig：英文 Profile 在白名单之外追加 `<selectfont><rejectfont>`，按 fontconfig `lang` 覆盖排除中文标签字体；中文 Profile 不裁剪（本 task 采用）。
+    3. 按字体文件名单 / 来源系统裁剪（黑名单式维护中文字体清单）。
+- 结论：采用选项 2。
+    - **裁剪机制**：`locale == "en-US"` 时，对中文语言标签 `zh` / `zh-cn` / `zh-tw` / `zh-hk` / `zh-mo` / `zh-sg` 各追加一条 `<selectfont><rejectfont>`，排除 `lang` 覆盖含任一中文标签的字体；`locale == "zh-CN"` 时不追加。裁剪只看字体的 fontconfig `lang` 覆盖声明，不看文件名或来源；日文、韩文等非中文 CJK 字体除非其 `lang` 覆盖声明含中文，否则不被裁剪。未绑定字体集时回退 `/opt/cbrowser-base-fonts` 的场景同样遵守该规则。
+    - **语言是显式配置**：`locale` 收敛为封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`），非法值与非法时区在写入边界 422 拒绝；时区 → 语言规则为中文地区时区集合（`Asia/Shanghai` / `Asia/Chongqing` / `Asia/Urumqi` / `Asia/Harbin` / `Asia/Hong_Kong` / `Asia/Macau` / `Asia/Taipei`）→ `zh-CN`、其余 → `en-US`，时区为空时语言保持当前值。`locale` 属运行配置，变更生成新配置版本、重启生效。
+    - **已知取舍**：英文 Profile 访问中文页面时中文字符回退为方框，属用户确认取舍；按 `lang` 覆盖判定可能把部分同时声明中文覆盖的日文字体一并排除，以字体集清单逐项测试固定结果。指纹检测网站对“英文平台缺原生中文字体”的判定属外部风控行为，非本系统契约。
+    - **字体集链路收紧（同 task 审阅缺陷）**：默认集只由后端按完整性决定（`GET /api/v1/font-sets` 返回各平台 `default_font_set_id`，只取完整性通过的集），前端不再自行推导，「无」为显式 null；绑定集时 fontconfig 生成失败即启动失败 `font_set_unavailable`，不回落系统配置；损坏集重新导入原子替换，Coordinator 删除运行时缓存、按 Supervisor 同一校验函数实时读取；`used_by_count` 按 `(fingerprint_platform, font_set_id)` 统计，列表校验 manifest 平台与目录一致；会话详情区分「字体集完整性」与「探测字体未覆盖」两种文案。
+- 复查条件：Browser 镜像内 fontconfig 版本对 `.ttc` 集合的 `lang` 排除是否生效，须在用户机以 `fc-list` 实测（宿主 fontconfig 2.15.0 已验证机制成立）；真实引擎下 `navigator.language` 是否等于 Profile 语言且不被出口 IP 推断覆盖，须在用户机实测（本机无真实引擎，见 t053 环境跳过项）。
+- 替代：选项 1 留下指纹矛盾；选项 3 的文件名黑名单随字体集来源漂移、不可维护。**本条部分替代 ADR 024**：仅替代其中“字体集整体可见”的部分——英文 Profile 的 fontconfig 白名单排除覆盖中文的字体；ADR 024 其余结论（运行时只读挂载、不可变字体集、失败封闭、null 回退基础字体）全部保留。

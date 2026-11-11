@@ -274,7 +274,7 @@ export function SessionPage(): JSX.Element {
               runtime={runtime}
               groups={groupsQuery.data ?? []}
               proxies={proxiesQuery.data ?? []}
-              fontSets={fontSetsQuery.data ?? []}
+              fontSets={fontSetsQuery.data?.items ?? []}
               open={detailsOpen}
               onOpenChange={handleDetailsOpenChange}
             />

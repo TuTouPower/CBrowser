@@ -255,6 +255,13 @@ describe("SessionDetailsPanel", () => {
     expect(writeText).toHaveBeenCalledWith("Arial, SimSun");
   });
 
+  it("labels missing detection fonts as uncovered, not as integrity damage", () => {
+    renderPanel({ runtime: runtime({ missing_fonts: ["Arial", "SimSun"] }) });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain(en.fontSetDetectionMissing);
+    expect(alert.textContent).not.toContain(en.fontSetIntegrityBad);
+  });
+
   it("renders without crashing when runtime and joins are empty", () => {
     renderPanel({
       runtime: null,

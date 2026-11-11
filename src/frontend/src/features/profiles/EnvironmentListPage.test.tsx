@@ -232,7 +232,7 @@ function makeStub(options: StubOptions = {}) {
       list: mockFn(async () => proxies),
       get: mockFn(() => undefined),
     },
-    fontSets: { list: mockFn(async () => []) },
+    fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
     artifacts: { list: mockFn(async () => []) },
     automation: { status: mockFn(() => undefined) },
     auth: { session: mockFn(() => undefined) },

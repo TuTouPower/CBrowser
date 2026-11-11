@@ -375,19 +375,32 @@ class ProfileRepository:
             models = result.scalars().all()
             return [self._to_domain_profile(m) for m in models]
 
-    async def font_set_usage_counts(self) -> dict[str, int]:
-        """Count profiles bound to each non-empty font set id (t041 AC-002)."""
+    async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
+        """Count profiles bound to each non-empty font set id (t041 AC-002).
+
+        Keyed by (fingerprint_platform, font_set_id) (t053 A20): the same
+        content-addressed id can exist under both platforms, and their
+        reference counts are independent.
+        """
         async with self._session_maker() as session:
             stmt = (
-                select(ProfileModel.font_set_id, func.count())
+                select(
+                    ProfileModel.fingerprint_platform,
+                    ProfileModel.font_set_id,
+                    func.count(),
+                )
                 .where(
                     ProfileModel.font_set_id.is_not(None),
                     ProfileModel.font_set_id != "",
                 )
-                .group_by(ProfileModel.font_set_id)
+                .group_by(
+                    ProfileModel.fingerprint_platform, ProfileModel.font_set_id
+                )
             )
             result = await session.execute(stmt)
-            return {row[0]: row[1] for row in result.all() if row[0]}
+            return {
+                (row[0], row[1]): row[2] for row in result.all() if row[1]
+            }
 
     async def update_profile(
         self,

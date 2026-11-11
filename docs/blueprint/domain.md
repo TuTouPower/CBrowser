@@ -22,6 +22,8 @@
 |**文件交换区**|`ExchangeDirectory`|宿主机与容器共享的持久化上传/下载暂存目录，按 Profile 严格隔离。|
 |**指纹平台**|`ProfileConfig.fingerprint_platform`|Profile 绑定的反指纹目标平台，取值 `windows`（默认）/ `macos`；CloakBrowser 只支持这两种，无 Linux 平台。属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
 |**平台字体集**|`ProfileConfig.font_set_id`|对同平台、按内容寻址的不可变字体集的引用；null 表示未配置平台字体。字体集只在运行时只读挂载，不进镜像与仓库；属运行配置，变更产生新 `ProfileConfigVersion`（t041）。|
+|**语言**|`ProfileConfig.locale`|Profile 的浏览器语言，封闭枚举 `zh-CN` / `en-US`（新建默认 `en-US`）。属运行配置，变更产生新 `ProfileConfigVersion`，重启后生效（t053）。|
+|**时区**|`ProfileConfig.timezone`|Profile 的时区，合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区在写入边界 422 拒绝。时区只决定语言联动的输入，不直接决定浏览器时区以外的行为（t053）。|
 
 ## 状态转换规则
 
@@ -61,3 +63,11 @@
 - **运行态扩展字段**：`ProfileRuntime` 增加 `last_started_at` / `last_stopped_at`（ISO 8601 带时区）、`browser_product` / `browser_user_agent`（来自容器内 CDP `Browser.getVersion`）；未运行时两浏览器字段为 null，进入 stopped/error 时清空。
 - **删除约束**：desired=running 或 observed 为 starting/running/stopping、或仍绑定实例的 Profile 删除返回 409 `profile_running`；observed=error 且无实例可删除。删除成功后 DB 行、Artifact 与全部 Profile 专属目录都不存在。
 - **schema 代际**：迁移目录只有一个 baseline 修订 `b7e1c9d4a2f3`；旧代（0001-0009）DB 在 API 启动与部署时失败封闭并输出重建指引，发布回退按修订链判定下限。详见 ADR 023。
+
+## 语言、时区与高级选项默认值（t053）
+
+- **语言是封闭枚举**：`ProfileConfig.locale` / `ProfileCreateRequest.locale` / `ProfileUpdateRequest.locale` / `ProfileResponse.locale` 的类型为 `ProfileLocale = Literal["zh-CN", "en-US"]`，OpenAPI 呈现为封闭 enum，非法值在 DTO 边界即 422 拒绝（字段级错误）。数据库层迁移 `0007_profile_locale_enum_defaults.py`（revision `1a8db6b91744`）追加 `CHECK (locale IS NULL OR locale IN ('zh-CN', 'en-US'))`；存量行的 `locale` 一律不改写（历史遗留 null 照常读取，仍可通过 PATCH 改为枚举值）。
+- **时区校验**：`timezone` 只接受合法 IANA 时区名或 null（null 表示自动、随出口 IP）；非法时区名在写入边界 422 拒绝。校验以 `zoneinfo` 为准（`domain/profile_locale.py` 的 `validate_timezone`）。
+- **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
+- **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
+- **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。

@@ -68,7 +68,14 @@ def test_font_sets_lists_integrity_and_used_by_count(api_client) -> None:
     client, fonts = api_client
     response = client.get("/api/v1/font-sets")
     assert response.status_code == 200, response.text
-    items = response.json()
+    body = response.json()
+    # t053 A16: the response carries the backend-chosen default per
+    # platform alongside the items.
+    assert body["default_font_set_id"] == {
+        "windows": fonts["set_id"],
+        "macos": None,
+    }
+    items = body["items"]
     assert len(items) == 1
     item = items[0]
     assert item["platform"] == "windows"
@@ -83,7 +90,31 @@ def test_font_sets_lists_integrity_and_used_by_count(api_client) -> None:
     assert created.json()["font_set_id"] == fonts["set_id"]
 
     after = client.get("/api/v1/font-sets").json()
-    assert after[0]["used_by_count"] == 1
+    assert after["items"][0]["used_by_count"] == 1
+
+
+def test_create_with_explicit_null_font_set_stays_null(api_client) -> None:
+    """t053 A16: an explicit null font_set_id is honored, never replaced
+    by the backend default."""
+    client, fonts = api_client
+    created = client.post(
+        "/api/v1/profiles", json={"name": "none", "font_set_id": None}
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["font_set_id"] is None
+
+
+def test_default_font_set_id_requires_integrity_ok(api_client) -> None:
+    """t053 A16: a tampered set stops being the backend default."""
+    client, fonts = api_client
+    assert client.get("/api/v1/font-sets").json()["default_font_set_id"][
+        "windows"
+    ] == fonts["set_id"]
+
+    (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
+    after = client.get("/api/v1/font-sets").json()
+    assert after["items"][0]["integrity"]["ok"] is False
+    assert after["default_font_set_id"]["windows"] is None
 
 
 def test_create_profile_rejects_invalid_font_set_id(api_client) -> None:
@@ -109,9 +140,9 @@ def test_patch_profile_rejects_invalid_font_set_id(api_client) -> None:
 def test_font_set_integrity_reflects_tampering(api_client) -> None:
     client, fonts = api_client
     before = client.get("/api/v1/font-sets").json()
-    assert before[0]["integrity"]["ok"] is True
+    assert before["items"][0]["integrity"]["ok"] is True
 
     (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
     after = client.get("/api/v1/font-sets").json()
-    assert after[0]["integrity"]["ok"] is False
-    assert "arial.ttf" in after[0]["integrity"]["hash_mismatches"]
+    assert after["items"][0]["integrity"]["ok"] is False
+    assert "arial.ttf" in after["items"][0]["integrity"]["hash_mismatches"]

@@ -139,14 +139,14 @@ async def test_a5_concurrent_scans_are_bounded(monkeypatch) -> None:
 async def test_a5_tamper_is_reported_on_each_request(monkeypatch, fonts) -> None:
     service = _FakeService()
     first = await font_sets_router.list_font_sets(service)
-    assert first
-    assert first[0].integrity.ok is True
-    assert first[0].integrity.hash_mismatches == []
+    assert first.items
+    assert first.items[0].integrity.ok is True
+    assert first.items[0].integrity.hash_mismatches == []
     assert service.usage_calls == 1
 
     (fonts["set_dir"] / "arial.ttf").write_bytes(b"TAMPERED")
 
     second = await font_sets_router.list_font_sets(service)
-    assert second[0].integrity.ok is False
-    assert second[0].integrity.hash_mismatches == ["arial.ttf"]
+    assert second.items[0].integrity.ok is False
+    assert second.items[0].integrity.hash_mismatches == ["arial.ttf"]
     assert service.usage_calls == 2

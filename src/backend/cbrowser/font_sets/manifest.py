@@ -206,8 +206,12 @@ def import_font_set(
 ) -> dict:
     """Publish fonts as an immutable set under ``root/platform/set_id``.
 
-    An existing set directory is verified read-only and returned unchanged;
-    nothing is overwritten or deleted.
+    An existing set directory with passing integrity is verified read-only
+    and returned unchanged; nothing is overwritten or deleted.  A damaged
+    existing set (missing/tampered files, bad manifest) is repaired by
+    atomically replacing its content with the freshly imported files
+    (staging directory + rename swap, A19); the set id is content-derived
+    so a repair keeps the same id.
     """
     if platform not in PLATFORMS:
         raise ValueError(f"Invalid platform: {platform!r}")
@@ -222,8 +226,15 @@ def import_font_set(
     platform_dir = base / platform
     target = platform_dir / set_id
     if target.is_dir():
-        LOGGER.info("Font set already present, leaving it untouched: %s", target)
-        return _result(platform, set_id, target, False, check_font_set(target))
+        integrity = check_font_set(target)
+        if integrity["ok"]:
+            LOGGER.info("Font set already present, leaving it untouched: %s", target)
+            return _result(platform, set_id, target, False, integrity)
+        LOGGER.warning(
+            "Font set %s is damaged (%s); re-importing to repair it",
+            target,
+            "; ".join(integrity["problems"]),
+        )
 
     platform_dir.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=f".{set_id}-", dir=str(platform_dir)))
@@ -252,17 +263,36 @@ def import_font_set(
             encoding="utf-8",
         )
         if target.is_dir():
-            LOGGER.info(
-                "Font set appeared concurrently, leaving it untouched: %s", target
+            existing = check_font_set(target)
+            if existing["ok"]:
+                LOGGER.info(
+                    "Font set appeared concurrently, leaving it untouched: %s",
+                    target,
+                )
+                return _result(platform, set_id, target, False, existing)
+            # Damaged target: swap it aside, publish the staging
+            # directory, then drop the damaged copy. A failed publish
+            # restores the damaged directory instead of losing it.
+            backup = Path(
+                tempfile.mkdtemp(prefix=f".{set_id}-old-", dir=str(platform_dir))
             )
-            return _result(platform, set_id, target, False, check_font_set(target))
-        os.replace(str(staging), str(target))
-        LOGGER.info(
-            "Published font set %s/%s with %d files",
-            platform,
-            set_id,
-            len(entries),
-        )
+            backup.rmdir()
+            os.replace(str(target), str(backup))
+            try:
+                os.replace(str(staging), str(target))
+            except OSError:
+                os.replace(str(backup), str(target))
+                raise
+            shutil.rmtree(backup)
+            LOGGER.info("Repaired damaged font set %s/%s", platform, set_id)
+        else:
+            os.replace(str(staging), str(target))
+            LOGGER.info(
+                "Published font set %s/%s with %d files",
+                platform,
+                set_id,
+                len(entries),
+            )
     finally:
         if staging.exists():
             shutil.rmtree(staging)
@@ -358,6 +388,18 @@ def list_font_sets(root: Path | str | None = None) -> list[dict]:
                 continue
             integrity = check_font_set(set_dir)
             manifest = _read_manifest(set_dir)
+            # A20: the manifest platform must agree with the directory it
+            # was listed from; a mismatch is an integrity failure even when
+            # the files themselves hash cleanly. A manifest without a
+            # platform field carries no claim, so it is not a mismatch.
+            manifest_platform = manifest.get("platform")
+            if manifest_platform is not None and manifest_platform != platform:
+                integrity["problems"].append(
+                    "manifest platform "
+                    f"{manifest_platform!r} does not match directory "
+                    f"{platform!r}"
+                )
+                integrity["ok"] = False
             items.append(
                 {
                     "platform": platform,
@@ -373,11 +415,18 @@ def list_font_sets(root: Path | str | None = None) -> list[dict]:
     return items
 
 
-def default_font_set(platform: str, root: Path | str | None = None) -> str | None:
+def pick_default_font_set(items: list[dict], platform: str) -> str | None:
+    """Newest integrity-ok set id for ``platform`` from listed items.
+
+    The single default rule (A16): only integrity-ok sets are eligible,
+    and the newest by manifest ``created_at`` wins.  Shared by
+    :func:`default_font_set` and the ``GET /api/v1/font-sets`` response so
+    the service and the create form can never derive different defaults.
+    """
     if platform not in PLATFORMS:
         return None
     candidates: list[tuple[datetime, str]] = []
-    for item in list_font_sets(root):
+    for item in items:
         if item["platform"] != platform or not item["integrity"]["ok"]:
             continue
         created_at = item.get("created_at")
@@ -394,6 +443,10 @@ def default_font_set(platform: str, root: Path | str | None = None) -> str | Non
         return None
     candidates.sort(key=lambda pair: (pair[0], pair[1]))
     return candidates[-1][1]
+
+
+def default_font_set(platform: str, root: Path | str | None = None) -> str | None:
+    return pick_default_font_set(list_font_sets(root), platform)
 
 
 def get_font_set(

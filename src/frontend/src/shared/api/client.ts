@@ -16,7 +16,7 @@ import type {
   ProxyResponse,
   ProxyCreateRequest,
   ProxyUpdateRequest,
-  FontSetInfo,
+  FontSetListResponse,
   NetworkAccessConfig,
   NetworkAccessSettingsResponse,
   NetworkApplyOperation,
@@ -528,8 +528,8 @@ export class ApiClient {
   };
 
   readonly fontSets = {
-    list: async (): Promise<FontSetInfo[]> => {
-      return this.request<FontSetInfo[]>("/api/v1/font-sets");
+    list: async (): Promise<FontSetListResponse> => {
+      return this.request<FontSetListResponse>("/api/v1/font-sets");
     },
   };
 

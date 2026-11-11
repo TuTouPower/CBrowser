@@ -82,7 +82,7 @@ function makeClient(responder: () => Promise<OperationShape>) {
         };
       }
       if (path === "/api/v1/network/apply") return operation();
-      if (path === "/api/v1/font-sets") return [];
+      if (path === "/api/v1/font-sets") return { items: [], default_font_set_id: { windows: null, macos: null } };
       return {};
     },
   );

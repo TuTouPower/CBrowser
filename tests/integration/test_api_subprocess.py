@@ -222,7 +222,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         payload = {
             "name": "Alpha Production Profile",
             "timezone": "Europe/London",
-            "locale": "en-GB",
+            "locale": "en-US",
             "screen_width": 1440,
             "screen_height": 900,
             "gpu_family": "intel",
@@ -314,7 +314,7 @@ async def test_ac001_and_ac005_crud_restart_and_empty_dir_init_with_refs(
         assert reloaded["group_id"] is None
         assert reloaded["proxy_id"] is None
         assert reloaded["timezone"] == "Europe/London"
-        assert reloaded["locale"] == "en-GB"
+        assert reloaded["locale"] == "en-US"
         assert reloaded["screen_width"] == 1440
         assert reloaded["screen_height"] == 900
         assert reloaded["gpu_family"] == "intel"

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider, en } from "../../i18n";
@@ -10,6 +10,7 @@ import { ApiClientContext } from "../../shared/api/client_context";
 import type { ApiClient } from "../../shared/api/client";
 import type {
   FontSetInfo,
+  FontSetListResponse,
   GroupResponse,
   ProfileCreateRequest,
   ProfileResponse,
@@ -27,6 +28,12 @@ beforeAll(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => undefined;
+  }
+  // jsdom has PointerEvent but no pointer capture: Radix calls
+  // hasPointerCapture on the trigger in its pointerdown handler.
+  if (typeof Element.prototype.hasPointerCapture !== "function") {
+    Element.prototype.hasPointerCapture = () => false;
+    Element.prototype.releasePointerCapture = () => undefined;
   }
   if (!window.DOMRect) {
     vi.stubGlobal(
@@ -144,16 +151,30 @@ function profile(): ProfileResponse {
 
 function makeStub(opts: {
   fontSets?: FontSetInfo[];
+  defaultFontSetId?: Record<string, string | null>;
   groups?: GroupResponse[];
   proxies?: ProxyResponse[];
+  /** Override the font-sets query (e.g. a deferred promise). */
+  fontSetsList?: () => Promise<FontSetListResponse>;
 } = {}) {
+  const items = opts.fontSets ?? [];
+  const defaultFontSetId = opts.defaultFontSetId ?? {
+    windows:
+      items.find((item) => item.platform === "windows")?.set_id ?? null,
+    macos: items.find((item) => item.platform === "macos")?.set_id ?? null,
+  };
   return {
     groups: {
       list: vi.fn(async () => opts.groups ?? []),
       create: vi.fn(async (data: { name: string }) => ({ ...group(), ...data })),
     },
     proxies: { list: vi.fn(async () => opts.proxies ?? []) },
-    fontSets: { list: vi.fn(async () => opts.fontSets ?? []) },
+    fontSets: {
+      list: vi.fn(
+        opts.fontSetsList ??
+          (async () => ({ items, default_font_set_id: defaultFontSetId })),
+      ),
+    },
   } as unknown as ApiClient;
 }
 
@@ -224,7 +245,7 @@ describe("ProfileForm", () => {
     );
   });
 
-  it("filters font sets by platform and defaults to the newest", async () => {
+  it("preselects the backend default font set instead of deriving one", async () => {
     const winOld = fontSet({
       set_id: "win-old",
       platform: "windows",
@@ -245,7 +266,10 @@ describe("ProfileForm", () => {
     });
     renderForm({
       mode: "create",
-      stub: makeStub({ fontSets: [winOld, winNew, mac] }),
+      stub: makeStub({
+        fontSets: [winOld, winNew, mac],
+        defaultFontSetId: { windows: "win-old", macos: "mac-1" },
+      }),
     });
 
     const list = await screen.findByTestId("profile-form-fontset-list");
@@ -253,16 +277,337 @@ describe("ProfileForm", () => {
     expect(list.textContent).toContain("win-new");
     expect(list.textContent).not.toContain("mac-1");
 
+    // The backend default (win-old) wins over the newest set (win-new).
     await waitFor(() =>
       expect(
         screen.getByTestId("profile-form-fontset-selected").textContent,
-      ).toBe("win-new"),
+      ).toBe("win-old"),
     );
     expect(screen.getByTestId("profile-form-fontset-meta").textContent).toContain(
-      "v2",
+      "v1",
     );
     expect(screen.getByTestId("profile-form-fontset-meta").textContent).toContain(
       en.fontSetIntegrityOk,
+    );
+  });
+
+  it("keeps an explicit none font set instead of re-applying the default", async () => {
+    const win = fontSet({
+      set_id: "win-1",
+      platform: "windows",
+      created_at: "2026-01-01T00:00:00Z",
+      source_version: "v1",
+    });
+    // The font-sets query stays pending until the test releases it, so
+    // the user can pick "none" while the backend default is still in
+    // flight — the race the old 200ms wall-clock wait could not pin down.
+    let resolveList!: (value: FontSetListResponse) => void;
+    const listPromise = new Promise<FontSetListResponse>((resolve) => {
+      resolveList = resolve;
+    });
+    renderForm({
+      mode: "create",
+      stub: makeStub({
+        fontSets: [win],
+        defaultFontSetId: { windows: "win-1", macos: null },
+        fontSetsList: () => listPromise,
+      }),
+    });
+
+    // Faithful mouse sequence (t053_code_f005): a real browser dispatches
+    // pointerdown → pointerup → click, and Radix commits on pointerup and
+    // unmounts the menu synchronously — the click that follows is
+    // dispatched to an already-detached item and never reaches React.
+    // A bare fireEvent.click on the still-open option never exercises
+    // that path, so it passed while the guard was unreachable for real
+    // mouse users.
+    const trigger = within(
+      screen.getByTestId("profile-form-fontset"),
+    ).getByRole("combobox");
+    fireEvent.pointerDown(trigger, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(trigger, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    const noneOption = await screen.findByRole("option", {
+      name: en.formFontSetNone,
+    });
+    fireEvent.pointerDown(noneOption, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(noneOption, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    // Radix committed on pointerup and closed the menu: the option is
+    // already out of the tree when the browser dispatches the click.
+    expect(noneOption.isConnected).toBe(false);
+    fireEvent.click(noneOption, { button: 0 });
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+
+    // The backend default arrives after the explicit choice; the
+    // default-apply effect runs now and must not overwrite the pick.
+    await act(async () => {
+      resolveList({
+        items: [win],
+        default_font_set_id: { windows: "win-1", macos: null },
+      });
+      await listPromise;
+    });
+    // The default is now available (win-1 is offered) but must not be applied.
+    fireEvent.pointerDown(trigger, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(trigger, {
+      pointerType: "mouse",
+      button: 0,
+      pointerId: 1,
+    });
+    expect(
+      await screen.findByRole("option", { name: /win-1/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+  });
+
+  it("keeps an explicit none font set when picked by keyboard instead of re-applying the default", async () => {
+    const win = fontSet({
+      set_id: "win-1",
+      platform: "windows",
+      created_at: "2026-01-01T00:00:00Z",
+      source_version: "v1",
+    });
+    // Same deferred-query race as the mouse test, but the pick is made
+    // by keyboard: Radix fires no click event for an Enter/Space pick,
+    // so the guard must be fed by the keyboard path as well (t053_code_f004).
+    let resolveList!: (value: FontSetListResponse) => void;
+    const listPromise = new Promise<FontSetListResponse>((resolve) => {
+      resolveList = resolve;
+    });
+    renderForm({
+      mode: "create",
+      stub: makeStub({
+        fontSets: [win],
+        defaultFontSetId: { windows: "win-1", macos: null },
+        fontSetsList: () => listPromise,
+      }),
+    });
+
+    // Keyboard-open the dropdown and pick "none" with Enter while the
+    // backend default is still in flight.
+    const trigger = within(screen.getByTestId("profile-form-fontset")).getByRole(
+      "combobox",
+    );
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const noneOption = await screen.findByRole("option", {
+      name: en.formFontSetNone,
+    });
+    fireEvent.keyDown(noneOption, { key: "Enter" });
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+
+    // The backend default arrives after the explicit choice; the
+    // default-apply effect runs now and must not overwrite the pick.
+    await act(async () => {
+      resolveList({
+        items: [win],
+        default_font_set_id: { windows: "win-1", macos: null },
+      });
+      await listPromise;
+    });
+    // The default is now available (win-1 is offered) but must not be applied.
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-fontset")).getByRole("combobox"),
+    );
+    expect(
+      await screen.findByRole("option", { name: /win-1/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+  });
+
+  it("keeps an explicit none font set when picked by touch instead of re-applying the default", async () => {
+    const win = fontSet({
+      set_id: "win-1",
+      platform: "windows",
+      created_at: "2026-01-01T00:00:00Z",
+      source_version: "v1",
+    });
+    // Same deferred-query race as the mouse/keyboard tests, but the
+    // pick is made by touch: Radix commits touch picks on click, not
+    // on pointerup (t053_test_f007), so the guard must be fed by the
+    // click path as well.
+    let resolveList!: (value: FontSetListResponse) => void;
+    const listPromise = new Promise<FontSetListResponse>((resolve) => {
+      resolveList = resolve;
+    });
+    renderForm({
+      mode: "create",
+      stub: makeStub({
+        fontSets: [win],
+        defaultFontSetId: { windows: "win-1", macos: null },
+        fontSetsList: () => listPromise,
+      }),
+    });
+
+    // Touch-open the dropdown and pick "none" while the backend
+    // default is still in flight. Radix opens the menu on pointerdown
+    // only for mouse; a touch press opens it on the click that
+    // follows (dist :293-296 vs :303-305).
+    const trigger = within(
+      screen.getByTestId("profile-form-fontset"),
+    ).getByRole("combobox");
+    fireEvent.pointerDown(trigger, {
+      pointerType: "touch",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(trigger, {
+      pointerType: "touch",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.click(trigger, { button: 0 });
+    const noneOption = await screen.findByRole("option", {
+      name: en.formFontSetNone,
+    });
+    fireEvent.pointerDown(noneOption, {
+      pointerType: "touch",
+      button: 0,
+      pointerId: 1,
+    });
+    fireEvent.pointerUp(noneOption, {
+      pointerType: "touch",
+      button: 0,
+      pointerId: 1,
+    });
+    // Touch pointerup is a no-op for both Radix and the guard.
+    expect(noneOption.isConnected).toBe(true);
+    fireEvent.click(noneOption, { button: 0 });
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+
+    // The backend default arrives after the explicit choice; the
+    // default-apply effect runs now and must not overwrite the pick.
+    await act(async () => {
+      resolveList({
+        items: [win],
+        default_font_set_id: { windows: "win-1", macos: null },
+      });
+      await listPromise;
+    });
+    // The default is now available (win-1 is offered) but must not be applied.
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-fontset")).getByRole("combobox"),
+    );
+    expect(
+      await screen.findByRole("option", { name: /win-1/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe(en.formFontSetNone);
+  });
+
+  it("submits the new advanced-option defaults in the create form", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    renderForm({ mode: "create", stub: makeStub(), onSubmit });
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Defaults" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        humanize: true,
+        portable_cookies: true,
+        transparent_proxy: false,
+        auto_launch: false,
+        allow_3p_cookies: true,
+        set_google_default: true,
+        clipboard_sync: true,
+        restore_session: true,
+        capture_preview: true,
+        locale: "en-US",
+      }),
+    );
+  });
+
+  it("links language to the timezone and allows a manual override", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    renderForm({ mode: "create", stub: makeStub(), onSubmit });
+    const tz = screen.getByTestId("profile-form-timezone");
+    const localeBox = within(
+      screen.getByTestId("profile-form-locale"),
+    ).getByRole("combobox");
+
+    fireEvent.focus(tz);
+    fireEvent.change(tz, { target: { value: "Asia/Shanghai" } });
+    fireEvent.keyDown(tz, { key: "Enter" });
+    await waitFor(() => expect(tz).toHaveValue("Asia/Shanghai"));
+    expect(localeBox.textContent).toContain(en.formLocaleChinese);
+
+    fireEvent.focus(tz);
+    fireEvent.change(tz, { target: { value: "Europe/London" } });
+    fireEvent.keyDown(tz, { key: "Enter" });
+    await waitFor(() => expect(tz).toHaveValue("Europe/London"));
+    expect(localeBox.textContent).toContain(en.formLocaleEnglish);
+
+    fireEvent.click(localeBox);
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Linked" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: "Europe/London", locale: "zh-CN" }),
+    );
+  });
+
+  it("keeps the language when the timezone is cleared to auto", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    renderForm({ mode: "create", stub: makeStub(), onSubmit });
+    const tz = screen.getByTestId("profile-form-timezone");
+    fireEvent.focus(tz);
+    fireEvent.change(tz, { target: { value: "Asia/Shanghai" } });
+    fireEvent.keyDown(tz, { key: "Enter" });
+    await waitFor(() => expect(tz).toHaveValue("Asia/Shanghai"));
+    const localeBox = within(
+      screen.getByTestId("profile-form-locale"),
+    ).getByRole("combobox");
+    expect(localeBox.textContent).toContain(en.formLocaleChinese);
+
+    fireEvent.focus(tz);
+    fireEvent.change(tz, { target: { value: "" } });
+    fireEvent.keyDown(tz, { key: "Enter" });
+    await waitFor(() => expect(tz).toHaveValue(""));
+    expect(localeBox.textContent).toContain(en.formLocaleChinese);
+
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "Auto" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ timezone: null, locale: "zh-CN" }),
     );
   });
 
@@ -319,8 +664,12 @@ describe("ProfileForm", () => {
       stub: makeStub(),
     });
 
+    fireEvent.focus(screen.getByTestId("profile-form-timezone"));
     fireEvent.change(screen.getByTestId("profile-form-timezone"), {
       target: { value: "Asia/Shanghai" },
+    });
+    fireEvent.keyDown(screen.getByTestId("profile-form-timezone"), {
+      key: "Enter",
     });
     await waitFor(() =>
       expect(onDirtyRuntimeConfig).toHaveBeenCalledWith(true),

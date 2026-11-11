@@ -9,7 +9,6 @@ import { ToastProvider } from "../../shared/ui";
 import { ApiError, type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type {
-  FontSetInfo,
   GroupResponse,
   ProfileResponse,
   ProfileRuntimeResponse,
@@ -245,7 +244,7 @@ function makeStub(options: StubOptions = {}) {
     },
     groups: { list: vi.fn(async () => [] as GroupResponse[]) },
     proxies: { list: vi.fn(async () => [] as ProxyResponse[]) },
-    fontSets: { list: vi.fn(async () => [] as FontSetInfo[]) },
+    fontSets: { list: vi.fn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
   };
   return { client: spies as unknown as ApiClient, spies };
 }

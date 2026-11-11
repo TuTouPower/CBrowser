@@ -58,7 +58,7 @@ export function SettingsPage() {
   const settingsQuery = useNetworkSettingsQuery(client);
   const fontSetsQuery = useFontSetsQuery(client);
   const netSettings = settingsQuery.data ?? null;
-  const fontSets = fontSetsQuery.data ?? null;
+  const fontSets = fontSetsQuery.data?.items ?? null;
   const fontSetsError = fontSetsQuery.isError;
   const formSeededRef = useRef(false);
   const formDirtyRef = useRef(false);
