@@ -7,6 +7,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import socket
 import stat
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
@@ -37,7 +38,34 @@ def resolve_socket_root(env: Mapping[str, str] | None = None) -> Path:
         raise SocketRootError("Socket root must be absolute")
     if root.is_symlink():
         raise SocketRootError("Socket root cannot be a symlink")
+    # t055 A12: the longest possible slot path (20-char slot id +
+    # "agent.sock") must fit the sun_path bound at startup, so a
+    # deployment can never build an unconnectable socket path later.
+    longest = root / ("x" * SOCKET_SLOT_LENGTH) / AGENT_SOCKET_NAME
+    if len(os.fsencode(str(longest))) > SUN_PATH_BYTE_LIMIT:
+        raise SocketRootError(
+            "Socket root is too long for the longest socket slot path"
+        )
     return root
+
+
+def _socket_is_live(entry: Path) -> bool:
+    """True when the Unix socket at ``entry`` still accepts connections.
+
+    A refused or vanished socket is stale. Any other probe failure is
+    treated as live (fail-closed): an ambiguous entry is never unlinked.
+    """
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        probe.settimeout(1.0)
+        probe.connect(os.fsdecode(entry))
+        return True
+    except (ConnectionRefusedError, FileNotFoundError):
+        return False
+    except OSError:
+        return True
+    finally:
+        probe.close()
 
 
 def socket_slot(profile_id: str, instance_id: str) -> str:
@@ -119,8 +147,29 @@ def prepare_socket_dir(
         os.chown(directory, managed_uid, managed_gid)
     os.chmod(directory, 0o750)
     entry = directory / AGENT_SOCKET_NAME
-    if entry.is_symlink() or entry.exists():
-        entry.unlink()
+    if entry.is_symlink():
+        raise SocketRootError("Socket slot entry is a symlink")
+    if entry.exists():
+        # t055 A12: validate owner, type, and liveness before unlinking.
+        # Anything that is not our own stale socket is a conflict and is
+        # left in place; only a stale socket may be reclaimed.
+        try:
+            st = entry.stat()
+        except FileNotFoundError:
+            # The entry vanished between exists() and stat() (another
+            # process or an old instance's cleanup reclaimed the same
+            # slot concurrently); the slot is already clean.
+            return directory
+        if managed_uid is not None and st.st_uid != managed_uid:
+            raise SocketRootError("Socket slot owned by another user")
+        if not stat.S_ISSOCK(st.st_mode):
+            raise SocketRootError("Socket slot entry is not a socket")
+        if _socket_is_live(entry):
+            raise SocketRootError("Socket slot is still live")
+        try:
+            entry.unlink()
+        except FileNotFoundError:
+            pass
     return directory
 
 
@@ -132,6 +181,31 @@ def _socket_target(dir_fd: int, sock: Path) -> str:
     if _fd_proc_available(dir_fd):
         return f"{PROC_SELF_FD}/{dir_fd}/{AGENT_SOCKET_NAME}"
     return str(sock)
+
+
+def _validate_slot_dir(
+    fd_stat: os.stat_result,
+    path_stat: os.stat_result,
+    managed_uid: int | None,
+    managed_gid: int | None,
+) -> None:
+    """Raise unless the opened fd still names the same slot directory.
+
+    The fd and the path must agree (dev/ino), the target must be a
+    directory, it must not be group/other writable, and its owner and
+    group must match the managed identity when one is given. Messages
+    are part of the SocketRootError contract; keep them verbatim.
+    """
+    if (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
+        raise SocketRootError("Socket slot directory replaced after open")
+    if not stat.S_ISDIR(fd_stat.st_mode):
+        raise SocketRootError("Socket slot is not a directory")
+    if fd_stat.st_mode & 0o022:
+        raise SocketRootError("Socket slot directory is group/other writable")
+    if managed_uid is not None and fd_stat.st_uid != managed_uid:
+        raise SocketRootError("Socket slot directory owner mismatch")
+    if managed_gid is not None and fd_stat.st_gid != managed_gid:
+        raise SocketRootError("Socket slot directory group mismatch")
 
 
 @contextmanager
@@ -155,17 +229,17 @@ def managed_socket_target(
         raise SocketRootError("Socket slot directory open failed") from None
     try:
         fd_stat = os.fstat(dir_fd)
-        path_stat = os.lstat(str(directory))
-        if (fd_stat.st_dev, fd_stat.st_ino) != (path_stat.st_dev, path_stat.st_ino):
-            raise SocketRootError("Socket slot directory replaced after open")
-        if not stat.S_ISDIR(fd_stat.st_mode):
-            raise SocketRootError("Socket slot is not a directory")
-        if fd_stat.st_mode & 0o022:
-            raise SocketRootError("Socket slot directory is group/other writable")
-        if managed_uid is not None and fd_stat.st_uid != managed_uid:
-            raise SocketRootError("Socket slot directory owner mismatch")
-        if managed_gid is not None and fd_stat.st_gid != managed_gid:
-            raise SocketRootError("Socket slot directory group mismatch")
+        try:
+            path_stat = os.lstat(str(directory))
+        except FileNotFoundError:
+            # The slot directory vanished between open() and lstat()
+            # (another process or an old instance's cleanup reclaimed
+            # the same slot concurrently); treat the slot as
+            # unavailable, same as the open() ENOENT/ENOTDIR fallback
+            # above — callers treat a non-socket target as absent.
+            yield str(sock)
+            return
+        _validate_slot_dir(fd_stat, path_stat, managed_uid, managed_gid)
         try:
             sock_stat = os.stat(
                 AGENT_SOCKET_NAME, dir_fd=dir_fd, follow_symlinks=False

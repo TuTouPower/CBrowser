@@ -36,6 +36,7 @@ external client
 
 - Playwright `connect_over_cdp` 的 `no_defaults` 决定下载归属：True 时连接期间下载由 Agent 的 browser 级行为捕获、客户端无 download 事件；False 时 Playwright 覆盖默认 context 的下载行为，文件落客户端临时目录、绕过 Artifact 捕获。断开后 Agent rearm 恢复 browser 级捕获。
 - 安全断开不发送 `Browser.close`；t029 时隧道对外部 `Browser.close` 完全透明，外部客户端可直接停掉 Profile——该透明语义已被 t030 废止，见下节“Agent 执行器（t030）”。
+- 隧道关闭时对端关码透传（t055）：仅当对端主动关闭才向客户端透传关码，且在本地 close 之前读取（本地 close 后 websockets 报自发关码 1000）；客户端先断开时不透传；上游 close 抛错不阻断向客户端发送关码。
 - Dialog：opening 事件经隧道转发且 pending 期间可应答；prompt 的 promptText 回传不生效（页面得 null）；客户端退出遗留的 Dialog 不向新连接重放、新连接命令不被阻塞、遗留项被消解。
 - 指纹增量与输入比较的逐级结论见 spec；t030 采用某级能力前须确认该级在 spec 中为「无新增变化」，t032 真实镜像复测推翻时以 t032 为准。
 

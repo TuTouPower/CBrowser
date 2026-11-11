@@ -9,7 +9,7 @@
 |storage_and_artifacts|baseline, t008, t016, t021, t023|2026-11-04|
 |runtime_validation|t001|2026-11-01|
 |runtime_persistence|t002, t016, t021|2026-11-04|
-|runtime_lifecycle|t005, t007, t022, t026, t035, t049, t050, t051|2026-11-11|
+|runtime_lifecycle|t005, t007, t022, t026, t035, t049, t050, t051, t055|2026-11-11|
 |release_deployment|t027, t034, t035, t042, t048, t051, t054|2026-11-11|
 |automation_compatibility|t029|2026-11-04|
 |agent_executor|t030|2026-11-04|

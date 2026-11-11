@@ -32,16 +32,16 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：policy helper 删除失败时，调用方仍得到原校验结果，失败仅记日志；网络策略安装失败时，日志包含 helper 输出摘要且不含凭据。
-- [ ] AC-002：旧实例收尾清理事件时，同 Profile 新实例已登记的 native exit 记录保留，新实例终态按该记录分类。
-- [ ] AC-003：Gateway 扫描失败时，媒体 attach 返回失败状态，收敛与恢复流程继续执行并写入 transport 观测；离线恢复遇到非成功状态时有日志。
-- [ ] AC-004：恢复时 Agent 健康查询无结果，Profile 不报 running，CDP 代理在此期间拒绝连接；Agent 健康后转为 running。
-- [ ] AC-005：恢复后 Gateway 持续不可达时，Stream 替换在恢复时刻起 90s 内触发，不因每轮收敛而顺延。
-- [ ] AC-006：Docker API 故障导致 Browser 容器查找失败时有日志，且与「容器不存在」可区分；同 Profile 存在多个异实例容器时，观测报告全部异实例 id。
-- [ ] AC-007：客户端先断开 CDP 连接时，不向客户端透传对端关码；Supervisor 以 4403 主动关闭时，客户端收到 4403；`upstream.close()` 抛错时客户端仍收到关码。
-- [ ] AC-008：UDP mux 范围 env 为空时全部消费者使用默认值；非法值使 Supervisor 启动失败并给出明确错误；进程内各消费者使用的范围一致。
-- [ ] AC-009：slot 中已有属于另一在跑实例的活跃 socket 时，新启动报冲突且不删除该 socket；socket root 过长时 Supervisor 启动即失败。
-- [ ] AC-010：关停时 network watcher 收尾不关闭 container watcher 的流；container watcher 的停机竞态分支关流且不 pump，有测试断言。
+- [x] AC-001：policy helper 删除失败时，调用方仍得到原校验结果，失败仅记日志；网络策略安装失败时，日志包含 helper 输出摘要且不含凭据。
+- [x] AC-002：旧实例收尾清理事件时，同 Profile 新实例已登记的 native exit 记录保留，新实例终态按该记录分类。
+- [x] AC-003：Gateway 扫描失败时，媒体 attach 返回失败状态，收敛与恢复流程继续执行并写入 transport 观测；离线恢复遇到非成功状态时有日志。
+- [x] AC-004：恢复时 Agent 健康查询无结果，Profile 不报 running，CDP 代理在此期间拒绝连接；Agent 健康后转为 running。
+- [x] AC-005：恢复后 Gateway 持续不可达时，Stream 替换在恢复时刻起 90s 内触发，不因每轮收敛而顺延。
+- [x] AC-006：Docker API 故障导致 Browser 容器查找失败时有日志，且与「容器不存在」可区分；同 Profile 存在多个异实例容器时，观测报告全部异实例 id。
+- [x] AC-007：客户端先断开 CDP 连接时，不向客户端透传对端关码；Supervisor 以 4403 主动关闭时，客户端收到 4403；`upstream.close()` 抛错时客户端仍收到关码。
+- [x] AC-008：UDP mux 范围 env 为空时全部消费者使用默认值；非法值使 Supervisor 启动失败并给出明确错误；进程内各消费者使用的范围一致。
+- [x] AC-009：slot 中已有属于另一在跑实例的活跃 socket 时，新启动报冲突且不删除该 socket；socket root 过长时 Supervisor 启动即失败。
+- [x] AC-010：关停时 network watcher 收尾不关闭 container watcher 的流；container watcher 的停机竞态分支关流且不 pump，有测试断言。
 
 ### 可测试性声明
 
@@ -74,7 +74,7 @@
 
 <!-- /规范 -->
 
-- websockets 库在本地 close 之后 `close_code` 的取值语义：UNVERIFIED-SPIKE，实施时以最小 websocket 对端实验确认后再定读取点。
+- websockets 库在本地 close 之后 `close_code` 的取值语义：已验证（结论）。实验 `.scratch/spike_close_code.py`（websockets 17.4，验证 venv 实测）：(1) 对端先关 4403，本地 close 前读 `close_code`=4403；(2) 本地先 close（对端未关），close 后 `close_code`=1000（本地自发关码）；(3) 对端先关 4403 再本地 close，close 后仍为 4403。结论：读取点必须在本地 close 之前；客户端先断开时对端未关码，读得 None 即不透传。A10 读取点定为 `automation_router.py` finally 块内 `upstream.close()` 之前，并以“客户端先断开”标志抑制透传。
 
 ### 风险与回退
 

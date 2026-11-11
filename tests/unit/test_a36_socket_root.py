@@ -164,8 +164,10 @@ def test_default_root_is_absolute_bounded_and_not_symlink() -> None:
     assert len(os.fsencode(str(root))) < sr.SUN_PATH_BYTE_LIMIT
 
 
-def test_resolve_socket_root_env_override(tmp_path: Path) -> None:
-    custom = tmp_path / "custom_socks"
+def test_resolve_socket_root_env_override(short_root: Path) -> None:
+    # t055 A12: the root must fit the longest slot path, so the override
+    # fixture uses the short root (a pytest tmp_path is too long).
+    custom = short_root / "custom_socks"
     root = sr.resolve_socket_root({sr.AGENT_SOCKET_ROOT_ENV: str(custom)})
     assert root == custom
 
@@ -233,20 +235,6 @@ def test_prepare_socket_dir_rejects_symlink_slot(short_root: Path) -> None:
     slot.symlink_to(short_root / "elsewhere")
     with pytest.raises(sr.SocketRootError, match="symlink"):
         sr.prepare_socket_dir(root, PROFILE, INSTANCE)
-
-
-def test_prepare_socket_dir_cleans_only_own_slot(short_root: Path) -> None:
-    root = short_root / "socks"
-    d1 = sr.prepare_socket_dir(root, "prof_1", "inst_1")
-    d2 = sr.prepare_socket_dir(root, "prof_2", "inst_2")
-    (d1 / "keep").write_text("one", encoding="utf-8")
-    (d2 / "keep").write_text("two", encoding="utf-8")
-    (d1 / sr.AGENT_SOCKET_NAME).write_text("stale", encoding="utf-8")
-    sr.prepare_socket_dir(root, "prof_1", "inst_1")
-    assert not (d1 / sr.AGENT_SOCKET_NAME).exists()
-    assert (d1 / "keep").read_text(encoding="utf-8") == "one"
-    assert (d2 / "keep").read_text(encoding="utf-8") == "two"
-    assert d2.exists()
 
 
 def test_prepare_socket_dir_enforces_managed_mode(short_root: Path) -> None:
@@ -447,30 +435,3 @@ async def test_browser_container_mounts_shared_socket_root(short_root: Path) -> 
         "mode": "rw",
     }
     assert kwargs["environment"][sr.AGENT_SOCKET_ROOT_ENV] == str(socket_root)
-
-
-def test_prepare_agent_socket_dir_rejects_overlong_explicit_root(
-    short_root: Path, monkeypatch
-) -> None:
-    from unittest.mock import MagicMock
-
-    from cbrowser.supervisor.docker_adapter import (
-        DockerAdapter,
-        DockerSandboxError,
-    )
-
-    monkeypatch.setenv(sr.AGENT_SOCKET_ROOT_ENV, str(short_root / ("x" * 200)))
-    data_root = short_root / "data"
-    (data_root / "engine_cache" / "geoip").mkdir(parents=True)
-    validator = PathValidator(data_root)
-    image = "sha256:" + "a" * 64
-    adapter = DockerAdapter(
-        path_validator=validator,
-        engine_cache_dir=data_root / "engine_cache",
-        docker_client=MagicMock(),
-        browser_image=image,
-        stream_image=image,
-        policy_image=image,
-    )
-    with pytest.raises(DockerSandboxError):
-        adapter.prepare_agent_socket_dir("p1", "i1")

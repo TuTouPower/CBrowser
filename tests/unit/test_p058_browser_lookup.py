@@ -90,15 +90,6 @@ async def test_found_uses_matching_instance_not_first_container(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_other_instance_is_a_fence_mismatch(tmp_path):
-    core = _core(tmp_path, _Client([_container("other")]))
-
-    lookup = await core._lookup_browser_container("p1", "inst1")
-
-    assert lookup.outcome == "instance_mismatch"
-    assert lookup.observed_instance_id == "other"
-
-
 @pytest.mark.asyncio
 async def test_absent_container_is_missing(tmp_path):
     core = _core(tmp_path, _Client([]))

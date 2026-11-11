@@ -52,6 +52,8 @@
 - Supervisor 重启后的存量沙箱恢复是确定性单向流程：容器 label 与 API instance fence 校验 → policy_ready 宽限 → 从 Stream 容器端口绑定恢复 UDP mux 端口 → 实例化 session → 同一轮扫描立即收敛。恢复不读取 Gateway 业务可见性（visibility/注册状态），不因 Gateway 重建后返回 503 而中断。
 - 媒体网络附着收敛独立于内存 session 与业务可见性：按 label 解析当前 Gateway 容器并附着到 Profile 合规媒体网络的固定端点，由 API 离线恢复路径与稳态收敛共用同一实现；媒体网络缺失或不合规仍走既有 Stream-only 替换预算，不对不合规网络执行挂载。
 - Gateway 容器缺失或控制接口不可达时，存量 session 仍建立，transport 呈现 gateway_missing / gateway_unreachable，不拆除容器；重启后首个未注册读数按既有恢复宽限处理，避免立即替换健康的 Stream。
+- 恢复不预置 running（t055）：Agent 健康未知时 session 为 starting，CDP 代理拒绝连接；Agent 健康确认后升级为 running 并上报。注册宽限自恢复时刻起算 90 秒，Gateway 不可见不重置（恢复专属标记，宽限内到达的新注册立即替换）；宽限到期后未注册 Stream 走 Stream-only 替换。
+- 观测收口（t055）：Browser 容器查找失败（Docker API 故障）记日志，与“容器不存在”可区分；实例不匹配时观测报告全部异实例 id。媒体附着的 Gateway 解析失败转为 gateway_missing 状态，收敛继续；离线恢复遇非成功状态限频记日志。
 
 ## Profile 显示编号与沙箱身份（t050）
 
