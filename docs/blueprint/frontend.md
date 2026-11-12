@@ -113,3 +113,10 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - 设置页 `/settings` 的「网络访问 (Network Access)」区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改；局域网开关、通告 IP 输入、保存/应用按钮、应用确认弹窗、root-ca 区块全部删除。
 - 无网络设置写端点：`PUT /api/v1/network/settings`、`POST /api/v1/network/apply`、`GET /api/v1/network/check-disconnect`、`GET /api/v1/network/root-ca` 均已删除；前端不发起任何网络配置请求。
 - 国际化：中英文字典同步定义只读文案（`networkAccess`、`networkAccessDesc`、`httpsPort`、`currentAccessAddress`、`networkDeployTimeNote`）。
+
+## 10. 前端状态一致性（t058）
+
+- Profile 编辑只提交与初始值不同的字段（`ProfileForm` 以差分驱动提交，`ConfigTab` 不再按运行配置脏分支全量提交）；字段分类（元数据 / 即时 / 运行配置）以后端 `repository.py` 的三分常量为准，经生成类型（`scripts/export_profile_field_classification.py` → `shared/api/generated/profile_field_classification.ts`）同步，前后端逐值一致；仅改 `capture_preview`（唯一即时字段）不产生新配置版本。保存成功时先取消在途 detail 查询再写入缓存，不再 invalidate detail，在途旧 GET 不回填旧值。
+- 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入 `useBrowserSession`，hook 不再自行读取 runtime 写错误（挂载首检 `checkRuntime` 已删除）；`runtimeState` 为空时不写任何错误。帧信号仅在后端状态非 `stopped` / `error` 时推进连接态并启动音频管线。
+- 错误边界分层：`ErrorBoundary.componentDidCatch` 经前端日志通道（`shared/logging.ts`，有界内存环 + `window` 自定义事件）记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换（`location.key`）复位，渲染异常只影响该路由；根部保留兜底。
+- 首检完成前收到的 WS 关闭（`CBROWSER_WS_CLOSE`，含 1006）只记录诊断（`diagnostics.signalingCloseCode`），不启动恢复；首检定版为非 `running`（或其后变为 `stopped` / `error`）时取消同 generation 的恢复轮询。

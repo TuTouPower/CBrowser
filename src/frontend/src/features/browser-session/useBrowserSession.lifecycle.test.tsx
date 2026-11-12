@@ -131,6 +131,10 @@ describe("useBrowserSession unified runtime, generation fence, cleanup (A20)", (
         useBrowserSession("p1", ref, {
           apiClient,
           initialStage: "connecting_signaling",
+          // t058 A39: recovery only starts once the first runtime check
+          // has settled; without a runtime input the WS_CLOSE is recorded
+          // and no poll starts.
+          runtimeState: "running",
           transportRecoveryWindowMs: 60000,
         }),
       { wrapper }
@@ -191,24 +195,10 @@ describe("useBrowserSession unified runtime, generation fence, cleanup (A20)", (
     expect(getRuntime).not.toHaveBeenCalled();
   });
 
-  it("only the one-shot mount bootstrap touches getRuntime, never a periodic poll", async () => {
-    vi.useFakeTimers();
-    const { unmount, getRuntime } = setup();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    const atMount = getRuntime.mock.calls.length;
-    expect(atMount).toBeGreaterThan(0);
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(90000);
-    });
-    expect(getRuntime.mock.calls.length).toBe(atMount);
-
-    unmount();
-    expect(vi.getTimerCount()).toBe(0);
-  });
+  // t058 A25 deleted the one-shot mount bootstrap ("only the one-shot
+  // mount bootstrap touches getRuntime"): the hook no longer reads runtime
+  // at all. The replacement — the hook never calls getRuntime for
+  // stage/error — is covered by useBrowserSession.t058.test.tsx (AC-004).
 
   it("runtimeState is the single runtime-driven stage source, with no runtime poll", async () => {
     vi.useFakeTimers();

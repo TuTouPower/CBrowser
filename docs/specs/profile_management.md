@@ -106,3 +106,9 @@
 - **Profile 创建锁（A23）**：创建提交是同步 ref 锁，同一 tick 内双击只发一次请求；幂等键绑定到当前打开的创建弹窗，关闭重开复用同一键直至创建成功，成功后才换新键。
 - **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`，前端使对应列表查询与 Profile 列表查询失效重取；探测不发事件。
 - **统一错误契约（A15）**：全部 API 错误响应体为 `ErrorResponse`（`error` / `message` / `retryable` + 可选结构化 `details`），422 的字段级错误列表进 `details`；429 为 `rate_limited` 并带 `Retry-After`。详见 `docs/blueprint/conventions.md` 第 7 节。
+
+## 前端状态一致性（t058）
+
+- Profile 编辑只提交与初始值不同的字段；字段分类（元数据 / 即时 / 运行配置）以后端三分常量为准，经生成类型同步，前后端逐值一致。
+- 仅改 `capture_preview`（唯一即时字段）不产生新配置版本；保存成功时先取消在途 detail 查询再写入缓存，不再 invalidate detail，在途旧请求不回填旧值。
+- 保存不改变运行实例绑定的 `config_version`，`useUpdateProfileMutation` 不再 invalidate runtime 缓存；SSE 事件到达时仍按既有语义 invalidate runtime。

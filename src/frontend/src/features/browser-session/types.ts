@@ -88,4 +88,6 @@ export interface SessionDiagnosticsData {
   audioStatus?: AudioStatus;
   errorMessage?: string;
   lastUpdated?: string;
+  /** Last abnormal signaling close recorded before the runtime first check. */
+  signalingCloseCode?: number;
 }

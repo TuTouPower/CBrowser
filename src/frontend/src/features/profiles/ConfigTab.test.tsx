@@ -253,6 +253,12 @@ describe('ConfigTab', () => {
     expect(await screen.findByTestId('profile-config-save-success')).toHaveTextContent(
       'Profile updated successfully.',
     );
+    // t058 A24: 只改名字时 PATCH 只含名字字段，不回写整份快照。
+    expect(stub.profiles.update).toHaveBeenCalledWith(
+      'p1',
+      { name: 'Renamed By Save' },
+      expect.anything(),
+    );
     await waitFor(() =>
       expect(queryClient.getQueryData<ProfileResponse>(profileKeys.detail('p1'))).toEqual(
         expect.objectContaining({ name: 'Renamed By Save' }),

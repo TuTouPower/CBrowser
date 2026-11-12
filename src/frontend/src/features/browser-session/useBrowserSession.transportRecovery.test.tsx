@@ -37,6 +37,7 @@ function setup(transportState: string, windowMs = 60000) {
     () =>
       useBrowserSession("p1", ref, {
         apiClient,
+        runtimeState: "running",
         transportRecoveryWindowMs: windowMs,
       }),
     { wrapper },

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
 import React from "react";
 import { useBrowserSession } from "./useBrowserSession";
 import { I18nProvider } from "../../i18n";
@@ -98,22 +98,12 @@ describe("useBrowserSession stage logic (deleted BrowserSessionView layer)", () 
     expect(iframe.getAttribute("src")).toBe("about:blank");
   });
 
-  it("2. a 401 is delegated to the auth layer, never runtime_not_ready", async () => {
-    const onUnauthorized = vi.fn();
-    const client = new ApiClient({ onUnauthorized });
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: "unauthorized", message: "Unauthorized", retryable: false }), {
-        status: 401,
-        headers: { "content-type": "application/json" },
-      })
-    );
-    const { result } = setup({ apiClient: client });
-
-    await waitFor(() => expect(onUnauthorized).toHaveBeenCalledTimes(1));
-
-    expect(result.current.stage).toBe("checking_runtime");
-    expect(result.current.errorMessage).toBeNull();
-  });
+  // t058 A25 deleted test 2 ("a 401 is delegated to the auth layer"):
+  // the hook no longer reads runtime, so there is no hook-side 401 to
+  // delegate. The 401 path now belongs to the runtimeQuery in
+  // SessionPage (its unauthorized flow redirects to login); the hook
+  // contract that replaced it — no hook-side runtime read — is covered
+  // by useBrowserSession.t058.test.tsx (AC-004).
 
   it("3. unmount releases message and lifecycle listeners", () => {
     const removeWindow = vi.spyOn(window, "removeEventListener");

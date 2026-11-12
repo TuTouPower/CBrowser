@@ -33,6 +33,7 @@ import {
   useProxiesQuery,
 } from "./useProfilesQuery";
 import { localeForTimezone } from "./profile_locale";
+import { diffProfileValues } from "./profile_field_diff";
 import { TimezoneCombobox } from "./TimezoneCombobox";
 
 export type ProfileFormValues = ProfileCreateRequest;
@@ -44,20 +45,12 @@ export interface ProfileFormProps {
     values: ProfileCreateRequest | ProfileUpdateRequest,
   ) => Promise<void>;
   submitLabel?: string;
-  onDirtyRuntimeConfig?: (changed: boolean) => void;
   isPending?: boolean;
 }
 
 const EMPTY_GROUPS: GroupResponse[] = [];
 const EMPTY_PROXIES: ProxyResponse[] = [];
 const EMPTY_FONT_SETS: FontSetInfo[] = [];
-
-const METADATA_KEYS = new Set<keyof ProfileFormValues>([
-  "name",
-  "notes",
-  "sort_order",
-  "group_id",
-]);
 
 function normalizePlatform(value: string | undefined): "windows" | "macos" {
   return value === "macos" ? "macos" : "windows";
@@ -112,15 +105,6 @@ function toFormValues(initial?: ProfileResponse): ProfileFormValues {
     notes: initial.notes ?? null,
     sort_order: initial.sort_order,
   };
-}
-
-function hasRuntimeConfigChange(
-  current: ProfileFormValues,
-  baseline: ProfileFormValues,
-): boolean {
-  return (Object.keys(current) as Array<keyof ProfileFormValues>)
-    .filter((key) => !METADATA_KEYS.has(key))
-    .some((key) => JSON.stringify(current[key]) !== JSON.stringify(baseline[key]));
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -184,7 +168,6 @@ export function ProfileForm({
   initial,
   onSubmit,
   submitLabel,
-  onDirtyRuntimeConfig,
   isPending = false,
 }: ProfileFormProps) {
   const { t } = useI18n();
@@ -251,11 +234,6 @@ export function ProfileForm({
     );
   }, [mode, platform, fontSetsData, defaultFontSetId]);
 
-  useEffect(() => {
-    if (mode !== "edit" || !onDirtyRuntimeConfig) return;
-    onDirtyRuntimeConfig(hasRuntimeConfigChange(values, baselineRef.current));
-  }, [values, mode, onDirtyRuntimeConfig]);
-
   const selectedFontSet = platformFontSets.find(
     (fontSet) => fontSet.set_id === values.font_set_id,
   );
@@ -315,9 +293,15 @@ export function ProfileForm({
     try {
       const start = intentRef.current === "create-start";
       intentRef.current = "create";
-      const payload: ProfileCreateRequest | ProfileUpdateRequest = start
-        ? Object.assign({}, values, { __startAfterCreate: true })
-        : values;
+      // t058 A24: an edit submits only the fields that differ from the
+      // initial values, so another client's concurrent edits are never
+      // written back with stale values. Create still sends the full form.
+      const payload: ProfileCreateRequest | ProfileUpdateRequest =
+        mode === "edit"
+          ? diffProfileValues(values, baselineRef.current)
+          : start
+            ? Object.assign({}, values, { __startAfterCreate: true })
+            : values;
       await onSubmit(payload);
     } finally {
       setSubmitting(false);
