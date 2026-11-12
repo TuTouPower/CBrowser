@@ -49,3 +49,15 @@ async def test_record_preview_capture_fences_epoch_instance_and_clear(db_context
     await repo.clear_preview_capture(profile.id)
     runtime = await repo.get_runtime(profile.id)
     assert runtime.preview_captured_at is None
+
+
+@pytest.mark.asyncio
+async def test_disabled_same_epoch_rejects_capture(db_context):
+    _engine, maker = db_context
+    repo = ProfileRepository(maker)
+    profile = await repo.create_profile(ProfileConfig(name="Disabled", capture_preview=False))
+    await repo.bind_runtime_instance(profile.id, "inst-1", config_version=1)
+    enabled, epoch = await repo.get_preview_policy(profile.id)
+    assert enabled is False
+    assert await repo.record_preview_capture(profile.id, "late", "inst-1", epoch) is False
+    assert (await repo.get_runtime(profile.id)).preview_captured_at is None

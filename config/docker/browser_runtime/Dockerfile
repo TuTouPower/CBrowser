@@ -68,6 +68,11 @@ COPY config/docker/browser_runtime/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
+# Keep the strict frame checker separate from the stable browser dependency
+# layer so adding it does not reinstall the entire display/browser stack.
+RUN apt-get update && apt-get install -y --no-install-recommends jpeginfo && \
+    rm -rf /var/lib/apt/lists/*
+
 # Create non-root user 'cbrowser' with UID 1000 and GID 1000
 RUN groupadd -g 1000 cbrowser && \
     useradd -u 1000 -g 1000 -m -s /bin/bash cbrowser

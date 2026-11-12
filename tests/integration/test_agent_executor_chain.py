@@ -91,7 +91,7 @@ class _Chain:
         self._supervisor: _UvicornThread | None = None
         self._agent_task: asyncio.Task | None = None
 
-    async def start(self, *, browser_ws_url: str, profile_id: str = "p1") -> None:
+    async def start(self, *, browser_ws_url: str, display: str, xauth_path: Path | None = None, profile_id: str = "p1") -> None:
         root = self.root
         data_root = root / "data"
         runtime_dir = data_root / "runtime" / profile_id
@@ -99,12 +99,19 @@ class _Chain:
         runtime_dir.mkdir(parents=True)
         events_dir.mkdir(parents=True)
         cdp_port = urlparse(browser_ws_url).port
+        # Bare-Xvfb cases have no authentication; Runner cases pass its real
+        # private cookie. Neither fixture enables preview collection.
+        authority = xauth_path or runtime_dir / "Xauthority"
+        if xauth_path is None:
+            authority.touch(mode=0o600)
         runner_info = {
             "profile_id": profile_id,
             "runtime_instance_id": "i1",
             "config_version": 1,
             "cdp_port": cdp_port,
             "browser_ws_url": browser_ws_url,
+            "display": display,
+            "xauth_path": str(authority),
             "browser_pid": 1,
             "runner_pid": 1,
         }
@@ -364,7 +371,7 @@ async def test_executor_cli_chromium_end_to_end() -> None:
             await page.goto(observation.url + "/")
             pid = find_browser_pid(root / "profile")
             assert pid is not None
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":140")
             base = observation.url + "/"
 
             rc, listed, stderr = await _run_cli(
@@ -540,7 +547,7 @@ async def test_executor_dialog_pending_and_legacy() -> None:
             # disables auto-dismiss and leaves the dialog open for the
             # executor to answer over CDP.
             page.on("dialog", lambda dialog: None)
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":141")
             rc, listed, stderr = await _run_cli(
                 chain,
                 root,
@@ -714,7 +721,7 @@ async def test_executor_ref_stale_after_navigation_and_replace() -> None:
             pw, context = await _chromium_context(root, ":142")
             page = context.pages[0] if context.pages else await context.new_page()
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":142")
             rc, listed, stderr = await _run_cli(
                 chain,
                 root,
@@ -845,7 +852,7 @@ async def test_tunnel_rejections_and_session_download_capture() -> None:
             await page.goto(observation.url + "/")
             pid = find_browser_pid(root / "profile")
             assert pid is not None
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":143")
 
             # Raw client: every destructive command class gets a stable
             # CBrowser error and the browser survives.
@@ -941,7 +948,7 @@ async def test_tunnel_script_registration_cleaned_on_disconnect() -> None:
             pw, context = await _chromium_context(root, ":144")
             page = context.pages[0] if context.pages else await context.new_page()
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":144")
             ws_url = (
                 f"ws://127.0.0.1:{chain.api_port}"
                 "/api/v1/automation/profiles/p1/cdp"
@@ -1077,7 +1084,7 @@ async def test_executor_dialog_prompt_accepts_text() -> None:
             # without it Playwright auto-dismisses the prompt before the
             # executor can answer it.
             page.on("dialog", lambda dialog: None)
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":168")
             rc, listed, stderr = await _run_cli(
                 chain,
                 root,
@@ -1166,7 +1173,7 @@ async def test_executor_set_input_files() -> None:
             pw, context = await _chromium_context(root, ":169")
             page = context.pages[0] if context.pages else await context.new_page()
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":169")
             rc, run, stderr = await _run_cli(
                 chain,
                 root,
@@ -1264,7 +1271,7 @@ async def test_executor_target_engine_core_flow() -> None:
             await page.goto(observation.url + "/")
             pid = find_browser_pid(root / "profile")
             assert pid is not None
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":167")
             base = observation.url + "/"
             rc, listed, stderr = await _run_cli(
                 chain,
@@ -1394,7 +1401,7 @@ async def test_executor_target_timeout_cancel_preserves_user_page(mode: str) -> 
         assert context is not None
         user_page = context.pages[0]
         await user_page.goto("data:text/html,<title>User page</title>")
-        await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+        await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=display)
         session = ExecutorSession(
             endpoint=f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
             token=chain.token, profile_id="p1", runtime_instance_id="i1",
@@ -1462,7 +1469,7 @@ async def test_target_unknown_oopif_and_last_tab_protection() -> None:
             assert context is not None
             user_page = context.pages[0]
             await user_page.goto(observation.url)
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":172")
             session = ExecutorSession(
                 endpoint=f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
                 token=chain.token, profile_id="p1", runtime_instance_id="i1",

@@ -738,6 +738,7 @@ class ProfileRepository:
             if (
                 profile is None
                 or runtime is None
+                or not profile.capture_preview
                 or profile.capture_preview_epoch != policy_epoch
                 or runtime.runtime_instance_id != runtime_instance_id
             ):

@@ -11,6 +11,7 @@ from cbrowser.preview import (
     PreviewMeta,
     PreviewPolicy,
     commit_preview,
+    frame_path,
     preview_dir,
     read_meta,
     read_policy,
@@ -129,36 +130,6 @@ async def test_apply_preview_policy_writes_policy_and_dispatches_control(
     ]
 
 
-@pytest.mark.asyncio
-async def test_disabled_policy_clears_existing_preview(tmp_path: Path) -> None:
-    core, _ = _core(tmp_path)
-    core._agent_uds_client = _control_uds([])  # type: ignore[method-assign]
-    directory = _pdir(core)
-    policy = PreviewPolicy(enabled=True, epoch=2, runtime_instance_id="inst_1")
-    write_policy(directory, policy)
-    assert commit_preview(
-        directory,
-        b"\xff\xd8frame",
-        PreviewMeta(
-            captured_at="T0", runtime_instance_id="inst_1", policy_epoch=2
-        ),
-        policy,
-    )
-    assert (directory / "latest.jpg").is_file()
-    assert read_meta(directory) is not None
-
-    await core.apply_preview_policy(
-        "profile",
-        PreviewPolicySyncRequest(
-            enabled=False, epoch=3, runtime_instance_id="inst_1", request_id="r2"
-        ),
-    )
-
-    assert not (directory / "latest.jpg").exists()
-    assert not (directory / "meta.json").exists()
-    assert read_policy(directory) == PreviewPolicy(
-        enabled=False, epoch=3, runtime_instance_id="inst_1"
-    )
 
 
 @pytest.mark.asyncio
@@ -547,3 +518,93 @@ async def test_apply_preview_policy_duplicate_after_success_still_skipped(
     assert len(control_calls) == 1
     await core.apply_preview_policy("profile", req)
     assert len(control_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["http", "transport"])
+async def test_observation_failure_retries_same_frame(tmp_path, caplog, failure):
+    from cbrowser.runtime_agent.protocol import HealthResponse
+
+    core, api = _core(tmp_path)
+    directory = _pdir(core)
+    policy = PreviewPolicy(enabled=True, epoch=5, runtime_instance_id="inst_1")
+    write_policy(directory, policy)
+    commit_preview(directory, b"frame", PreviewMeta(captured_at="T1", runtime_instance_id="inst_1", policy_epoch=5), policy)
+    original = api.post
+    attempts = 0
+
+    async def flaky(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            if failure == "transport":
+                raise ConnectionError("private detail must not be logged")
+            return SimpleNamespace(status_code=503)
+        return await original(*args, **kwargs)
+
+    api.post = flaky
+    health = HealthResponse.model_validate(_health("T1"))
+    with caplog.at_level("WARNING"):
+        await core._observe_preview_capture("profile", health)
+        await core._observe_preview_capture("profile", health)
+        await core._observe_preview_capture("profile", health)
+    assert attempts == 2
+    assert core._preview_captured_at["profile"] == "T1"
+    assert any(r.levelname == "WARNING" and "Preview observation" in r.message for r in caplog.records)
+    assert "private detail" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_invalid_observation_does_not_poison_dedup(tmp_path):
+    from cbrowser.runtime_agent.protocol import HealthResponse
+
+    core, api = _core(tmp_path)
+    directory = _pdir(core)
+    policy = PreviewPolicy(enabled=True, epoch=5, runtime_instance_id="inst_1")
+    write_policy(directory, policy)
+    health = HealthResponse.model_validate(_health("T1"))
+    await core._observe_preview_capture("profile", health)
+    assert api.posts == []
+    commit_preview(directory, b"frame", PreviewMeta(captured_at="T1", runtime_instance_id="inst_1", policy_epoch=5), policy)
+    await core._observe_preview_capture("profile", health)
+    assert len(api.posts) == 1
+
+
+def test_preview_state_is_forgotten_with_runtime_generation(tmp_path):
+    core, _ = _core(tmp_path)
+    core._preview_request_ids["profile"] = "r"
+    core._preview_captured_at["profile"] = "T1"
+    core._preview_warning_at["profile"] = 1.0
+    core.forget_instance_events("profile", "inst_1")
+    assert "profile" not in core._preview_request_ids
+    assert "profile" not in core._preview_captured_at
+    assert "profile" not in core._preview_warning_at
+
+
+def test_observation_warning_is_rate_limited(tmp_path, caplog):
+    core, _ = _core(tmp_path)
+    with caplog.at_level("WARNING"):
+        for _ in range(3):
+            core._warn_preview_observation("profile", "ConnectionError")
+    assert len(caplog.records) == 1
+
+
+
+@pytest.mark.asyncio
+async def test_supervisor_revocation_removes_all_immutable_frames_and_metadata(tmp_path):
+    core, _ = _core(tmp_path)
+    core._agent_uds_client = _control_uds([])
+    directory = _pdir(core)
+    policy = PreviewPolicy(enabled=True,epoch=2,runtime_instance_id="inst_1")
+    write_policy(directory,policy)
+    frames=[]
+    for index in range(2):
+        meta=PreviewMeta(captured_at=f"T{index}",runtime_instance_id="inst_1",policy_epoch=2)
+        assert commit_preview(directory,f"frame-{index}".encode(),meta,policy)
+        frames.append(frame_path(directory,read_meta(directory)))
+    assert len(set(frames))==2 and all(p.is_file() for p in frames)
+    await core.apply_preview_policy("profile",PreviewPolicySyncRequest(enabled=False,epoch=3,runtime_instance_id="inst_1",request_id="revoke"))
+    assert all(not p.exists() for p in frames)
+    assert list(directory.glob("*.jpg"))==[]
+    assert read_meta(directory) is None
+    assert read_policy(directory)==PreviewPolicy(enabled=False,epoch=3,runtime_instance_id="inst_1")

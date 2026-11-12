@@ -450,10 +450,25 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
 
     const unsubscribePreview: (() => void) | undefined =
       sseClient.onPreviewEvent?.((event) => {
+        const detail = queryClient.getQueryData<ProfileResponse>(
+          profileKeys.detail(event.profile_id),
+        );
+        const listed = queryClient
+          .getQueryData<ProfileResponse[]>(profileKeys.lists())
+          ?.find((item) => item.id === event.profile_id);
+        if (detail?.capture_preview === false || listed?.capture_preview === false) return;
+        const profile = detail ?? listed;
+        if (profile?.capture_preview !== true) return;
+        const captured = Date.parse(event.captured_at);
+        if (!Number.isFinite(captured)) return;
         queryClient.setQueryData(
           profileKeys.runtime(event.profile_id),
           (old: ProfileRuntimeResponse | undefined) => {
             if (!old) return undefined;
+            const previous = old.preview_captured_at
+              ? Date.parse(old.preview_captured_at)
+              : NaN;
+            if (Number.isFinite(previous) && captured <= previous) return old;
             return { ...old, preview_captured_at: event.captured_at };
           },
         );

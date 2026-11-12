@@ -316,7 +316,7 @@ class DockerAdapter:
         helper = None
         cleanup_error = None
         try:
-            helper = self.client.containers.run(
+            helper = self.client.containers.create(
                 self.policy_image,
                 entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
                 command=[validated_policy.model_dump_json()],
@@ -335,6 +335,7 @@ class DockerAdapter:
                 },
                 labels=gate_labels(policy_helper_labels(self.resource_prefix, instance_id)),
             )
+            helper.start()
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
                 raise DockerSandboxError("Runtime network policy installation failed")
@@ -1894,7 +1895,7 @@ with path.open('w') as output:
             )
         helper = None
         try:
-            helper = self.client.containers.run(
+            helper = self.client.containers.create(
                 self.policy_image,
                 entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
                 command=command,
@@ -1916,6 +1917,7 @@ with path.open('w') as output:
                     (container.labels or {}).get("com.cbrowser.instance-id", ""),
                 )),
             )
+            helper.start()
             result = helper.wait(timeout=30)
             status_code = int(result.get("StatusCode", -1))
             if status_code != 0:

@@ -78,6 +78,9 @@ class _FakeHelper:
         self._status_code = status_code
         self.removed = False
 
+    def start(self) -> None:
+        return None
+
     def wait(self, timeout=None) -> dict:
         return {"StatusCode": self._status_code}
 
@@ -95,11 +98,11 @@ def test_policy_verification_helper_has_deterministic_managed_name(tmp_path) -> 
     helper = _FakeHelper(0)
     calls: dict = {}
 
-    def run(image, **kwargs):
+    def create(image, **kwargs):
         calls.update(kwargs)
         return helper
 
-    client = SimpleNamespace(containers=SimpleNamespace(run=run))
+    client = SimpleNamespace(containers=SimpleNamespace(create=create))
     adapter = _adapter(tmp_path, client)
     target = SimpleNamespace(
         id="target-id", labels={"com.cbrowser.instance-id": "inst_a"}

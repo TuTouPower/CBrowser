@@ -95,7 +95,7 @@ class _Chain:
         self._supervisor: _UvicornThread | None = None
         self._agent_task: asyncio.Task | None = None
 
-    async def start(self, *, browser_ws_url: str, profile_id: str = "p1") -> None:
+    async def start(self, *, browser_ws_url: str, display: str, xauth_path: Path | None = None, profile_id: str = "p1") -> None:
         root = self.root
         data_root = root / "data"
         runtime_dir = data_root / "runtime" / profile_id
@@ -103,12 +103,19 @@ class _Chain:
         runtime_dir.mkdir(parents=True)
         events_dir.mkdir(parents=True)
         cdp_port = urlparse(browser_ws_url).port
+        # Bare-Xvfb cases have no authentication; Runner cases pass its real
+        # private cookie. Neither fixture enables preview collection.
+        authority = xauth_path or runtime_dir / "Xauthority"
+        if xauth_path is None:
+            authority.touch(mode=0o600)
         runner_info = {
             "profile_id": profile_id,
             "runtime_instance_id": "i1",
             "config_version": 1,
             "cdp_port": cdp_port,
             "browser_ws_url": browser_ws_url,
+            "display": display,
+            "xauth_path": str(authority),
             "browser_pid": 1,
             "runner_pid": 1,
         }
@@ -389,7 +396,7 @@ async def test_attendant_holds_dialog_and_release_restores_default() -> None:
             # No-op listener only stops Playwright's own auto-dismiss;
             # it never answers a dialog.
             page.on("dialog", lambda dialog: None)
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":142")
             rc, listed, stderr = await _run_cli(
                 chain, root, {"version": 1, "steps": [{"action": "targets"}]}
             )
