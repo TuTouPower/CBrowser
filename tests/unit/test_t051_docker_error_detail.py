@@ -250,7 +250,7 @@ def test_policy_install_failure_keeps_docker_detail_redacted(tmp_path: Path) -> 
     client = MagicMock()
     adapter = _adapter(tmp_path, client)
     gate = adapter._prepare_policy_gate("p1", "inst_1", "browser")
-    client.containers.run.side_effect = DockerException(
+    client.containers.create.side_effect = DockerException(
         "iptables failed: proxy http://proxy-user:s3cret@proxy:8080"
     )
     container = SimpleNamespace(id="browser-id", labels={})
@@ -266,7 +266,7 @@ def test_policy_install_failure_keeps_docker_detail_redacted(tmp_path: Path) -> 
 def test_policy_helper_run_failure_keeps_docker_detail(tmp_path: Path) -> None:
     client = MagicMock()
     adapter = _adapter(tmp_path, client)
-    client.containers.run.side_effect = DockerException(
+    client.containers.create.side_effect = DockerException(
         "helper image not found: no such image sha256:deadbeef"
     )
     container = SimpleNamespace(id="browser-id", labels={})

@@ -56,6 +56,9 @@ class _Helper:
         self._logs = logs
         self.removed = False
 
+    def start(self):
+        self.started = True
+
     def wait(self, timeout=None):
         if self.wait_error is not None:
             raise self.wait_error
@@ -78,7 +81,10 @@ def _policy_adapter(tmp_path, helper):
     engine.mkdir(parents=True)
     (engine / "geoip").mkdir(parents=True)
     client = SimpleNamespace(
-        containers=SimpleNamespace(run=lambda *a, **kw: helper)
+        containers=SimpleNamespace(
+            run=lambda *a, **kw: helper,
+            create=lambda *a, **kw: helper,
+        )
     )
     return DockerAdapter(
         path_validator=PathValidator(root),

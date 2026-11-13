@@ -65,6 +65,9 @@ class _FakeContainer:
             return _ExecResult(0, json.dumps(payload).encode())
         raise AssertionError(f"unexpected exec: {cmd}")
 
+    def start(self):
+        self.started = True
+
     def wait(self, timeout=None):
         return {"StatusCode": 0}
 
@@ -98,6 +101,12 @@ class _FakeContainers:
             container = _FakeContainer("probe", self.calls)
         self.created.append(container)
         return container
+
+    def create(self, image, **kwargs):
+        # Policy helpers are launched via create()+start() since the t057
+        # leak fix; record the launch exactly like run() so the call-shape
+        # assertions in this file are unchanged.
+        return self.run(image, **kwargs)
 
 
 class _FakeNetworks:
