@@ -33,16 +33,14 @@ export function filterProxies(
 
 function proxyInUseCount(error: unknown): number | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null;
-  const data = error.data as { detail?: unknown } | null | undefined;
-  for (const candidate of [error.detail, data?.detail]) {
-    if (candidate && typeof candidate === "object") {
-      const detail = candidate as { code?: unknown; used_by_count?: unknown };
-      if (
-        detail.code === "proxy_in_use" &&
-        typeof detail.used_by_count === "number"
-      ) {
-        return detail.used_by_count;
-      }
+  // t056 A15: the code moved to the top-level `error` field and the
+  // count to structured `details`; the old `detail` package is gone.
+  if (error.errorCode !== "proxy_in_use") return null;
+  const data = error.data as { details?: unknown } | null | undefined;
+  for (const candidate of [error.details, data?.details]) {
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const usedByCount = (candidate as { used_by_count?: unknown }).used_by_count;
+      if (typeof usedByCount === "number") return usedByCount;
     }
   }
   return null;

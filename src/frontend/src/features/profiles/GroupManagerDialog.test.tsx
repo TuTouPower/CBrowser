@@ -158,6 +158,34 @@ describe('GroupManagerDialog', () => {
     expect(within(rows[1]!).getByTestId('group-used-by')).toHaveTextContent('Used by 1');
   });
 
+  it('disables the create button while a create is in flight (t056 A23)', async () => {
+    const client = makeStub();
+    let resolveCreate!: (value: GroupResponse) => void;
+    const pending = new Promise<GroupResponse>((resolve) => {
+      resolveCreate = resolve;
+    });
+    client.groups.create.mockImplementation(() => pending);
+    renderDialog(client);
+    await screen.findAllByTestId('group-row');
+    fireEvent.change(screen.getByTestId('group-new-name'), {
+      target: { value: 'Team A' },
+    });
+    fireEvent.click(screen.getByTestId('group-create-submit'));
+    await waitFor(() =>
+      expect(client.groups.create).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.getByTestId('group-create-submit')).toBeDisabled();
+    // A second click while disabled must not start a second create.
+    fireEvent.click(screen.getByTestId('group-create-submit'));
+    expect(client.groups.create).toHaveBeenCalledTimes(1);
+
+    resolveCreate(makeGroup('g-new', 'Team A', 'slate', 2));
+    await waitFor(() =>
+      expect(screen.getByTestId('group-new-name')).toHaveValue(''),
+    );
+    expect(client.groups.create).toHaveBeenCalledTimes(1);
+  });
+
   it('creates a group through client.groups.create with the chosen name and color', async () => {
     const client = makeStub();
     renderDialog(client);

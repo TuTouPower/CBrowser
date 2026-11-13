@@ -54,3 +54,12 @@
 - 业务代码（`shared/ui/`、`app/`、`features/*` 页面与手写 `globals.css`）只用语义 token 类（`bg-surface`、`text-on-surface`、`border-outline`、`rounded-md`、`px-md` 等），禁止 Tailwind 默认调色板类与 hex / rgb / hsl / oklch 颜色字面量；由 AC-003 源码与构建产物扫描约束。生成产物 `design_tokens.css` 按设计权威含 hex，不列入业务源码扫描。
 - 根目录 `DESIGN.md` 大写属社区约定例外；其余新建普通文件与目录统一 snake_case，缩进用空格。
 - `.design_reference/` 为 gitignore 只读参考原型，与 plan / `DESIGN.md` 冲突时以后两者为准。
+
+## 7. 统一错误契约（t056 A15）
+
+- **形状唯一**：全部 API、Gateway 与 Supervisor 的错误响应体均为 `ErrorResponse`：`error`（机器可读码）/ `message`（人类可读说明）/ `retryable`（布尔）三字段，另可附结构化 `details`（任意 JSON，422 时为字段级错误列表）。**不得**再把整包错误详情嵌套进 `detail`（旧形状 `{"detail": {"code": ..., ...}}` 已删除）；`details` 只放顶层三字段之外的剩余键，`error` / `message` / `retryable` 不在 `details` 内重复。
+- **429**：错误码固定 `rate_limited`，同时返回 `Retry-After` 响应头。
+- **422**：字段级错误列表进 `details`，每项含 `loc` / `msg` / `type`；引用不存在的分组或代理属此类（见 domain.md「分组、代理与配置版本三分」）。
+- **限流与冲突**：限流、冲突等业务错误同样走本形状（`proxy_in_use` 的 `used_by_count`、幂等冲突的 `idempotency_conflict` 均在 `details` 内）。
+- **下游错误透传**：Runtime Coordinator 记录的下游错误保留下游 `error` 与 `message`（格式 `"<error>: <message>"`），以 `last_coordinator_error` 呈现；Supervisors 混版本时旧形状 `detail` 与纯文本体仍被解析，不丢信息。
+- **契约来源**：OpenAPI（`schemas/openapi/`）与前端生成类型（`src/frontend/src/shared/api/generated/`）由脚本重新生成，禁止手改；前端 `ApiError` 的旧 `detail` 字段已改为 `details`。

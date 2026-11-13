@@ -157,7 +157,7 @@ export function GroupManagerDialog({
           <Button
             data-testid="group-create-submit"
             variant="primary"
-            disabled={newName.trim().length === 0}
+            disabled={newName.trim().length === 0 || createMutation.isPending}
             onClick={() => void handleCreate()}
           >
             {t('groupNew')}
@@ -213,6 +213,7 @@ export function GroupManagerDialog({
                       data-testid="group-rename-save"
                       size="sm"
                       variant="primary"
+                      disabled={updateMutation.isPending}
                       onClick={() => void submitRename(group.id)}
                     >
                       {t('groupSave')}
@@ -295,6 +296,7 @@ export function GroupManagerDialog({
                         data-testid="group-delete-accept"
                         size="sm"
                         variant="danger"
+                        disabled={deleteMutation.isPending}
                         onClick={() => void confirmDelete(group.id)}
                       >
                         {t('groupDelete')}

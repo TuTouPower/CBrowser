@@ -102,7 +102,7 @@ describe("useBrowserSession stage logic (deleted BrowserSessionView layer)", () 
     const onUnauthorized = vi.fn();
     const client = new ApiClient({ onUnauthorized });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "Unauthorized" }), {
+      new Response(JSON.stringify({ error: "unauthorized", message: "Unauthorized", retryable: false }), {
         status: 401,
         headers: { "content-type": "application/json" },
       })

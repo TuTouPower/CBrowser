@@ -10,6 +10,7 @@ from cbrowser.domain.models import (
     SearchDefaultsStatusData,
     TransportObservationData,
 )
+from fastapi import Request
 
 
 def fence_search_defaults(
@@ -104,3 +105,17 @@ def resolve_operation_id(
     operation_id: str | None,
 ) -> str | None:
     return idempotency_key or x_operation_id or operation_id
+
+
+def publish_reference_change(
+    request: Request, event_name: str, entity_id: str | None = None
+) -> None:
+    """Notify SSE subscribers that group/proxy reference data changed
+    (t056 A31).  No-op when no coordinator is attached (e.g. unit tests
+    that build the app standalone); never raises for a publish failure —
+    the coordinator owns its background task errors."""
+    coordinator = getattr(request.app.state, "coordinator", None)
+    if coordinator is not None:
+        publish = getattr(coordinator, "publish_reference_change_later", None)
+        if publish is not None:
+            publish(event_name, entity_id)

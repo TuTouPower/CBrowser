@@ -837,12 +837,21 @@ class ExecutorSession:
                 f"control {action} request failed: {type(exc).__name__}",
             ) from None
         if resp.status_code == 409:
-            detail = resp.json().get("detail", {})
-            code = (
-                detail.get("code")
-                if isinstance(detail, dict)
-                else "control_conflict"
-            )
+            # Unified ErrorResponse (t056 A15): the refusal code is the
+            # top-level `error`; keep the legacy `detail.code` read so a
+            # mixed-version API still parses.
+            body = resp.json()
+            code = body.get("error") if isinstance(body, dict) else None
+            if not isinstance(code, str) or not code:
+                details = body.get("details") if isinstance(body, dict) else None
+                if isinstance(details, dict):
+                    code = details.get("code")
+            if not isinstance(code, str) or not code:
+                legacy = body.get("detail") if isinstance(body, dict) else None
+                if isinstance(legacy, dict):
+                    code = legacy.get("code")
+            if not isinstance(code, str) or not code:
+                code = "control_conflict"
             raise SessionError(
                 "control_conflict",
                 f"control {action} refused: {code}",

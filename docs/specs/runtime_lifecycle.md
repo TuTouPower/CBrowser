@@ -70,6 +70,13 @@
 - **媒体网络超时**：Docker 网络调用以超时为限（默认 30 秒，`CBROWSER_DOCKER_NETWORK_TIMEOUT` 可配）；挂起的调用使该次启动以明确错误失败，不阻塞其它 Profile 的网络创建。分配锁只覆盖 get+分配+预留阶段，不跨 Docker 创建持有；并发分配经预留子网集保证不同子网。创建冲突为错误，不重试。
 - **启动独占锁内回收**：回收严格匹配 prefix、managed-by、角色、随机名称与 instance-id 的遗留 cache-init/network-policy helper；异部署或无 instance-id 标签的 helper 不回收。
 
+## 运行错误收敛与控制发布（t056）
+
+- **读错误不清错误（A26）**：读取运行错误（`get_last_error` / runtime 响应 / SSE 的 `last_coordinator_error`）是纯读，不清除已存错误；错误只在写路径清除。
+- **清除绑定目标版本（A26）**：错误清除只发生在同一 `config_version` 的实例成功到达 running 时；清除判定为 `runtime.config_version >= 错误目标版本`（新版本成功可 supersede 旧版本错误，旧版本运行中不结算新版本错误；无目标版本的错误在任意 running 到达时清除）。失败时记录的错误带目标版本（启动失败的目标版本为当时最新版本）；后续同版本重试失败不丢弃已记录的目标版本。
+- **控制续期先提交后发布（A2）**：控制租约续期升级（renew-upgrade）在事务提交成功后才发布控制变更事件；提交失败时不发布、不持久化升级。
+- **下游错误保留原样（A15）**：Coordinator 记录的下游错误保留下游 `error` 与 `message`（格式 `"<error>: <message>"`），经 `last_coordinator_error` 呈现；混版本 Supervisor 的旧形状 `detail` 与纯文本体仍被解析，不丢信息。
+
 ## 资源策略
 
 Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预算计算压力，结合真实前台可见性下发 Profile 级 FPS cap。缺失或失败样本不能当低负载，单个 Profile 采样或 RPC 失败不阻断其他 Profile；解除限制后由 Stream 活动策略决定恢复 8/30 FPS。全后台不误触发前台 cap，Viewer 心跳不建立控制租约。

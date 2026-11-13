@@ -1,0 +1,47 @@
+index|idx_artifacts_profile_id|CREATE INDEX idx_artifacts_profile_id ON artifacts (profile_id)
+index|idx_artifacts_profile_sha256|CREATE INDEX idx_artifacts_profile_sha256 ON artifacts (profile_id, sha256)
+index|idx_automation_tokens_token_hash|CREATE INDEX idx_automation_tokens_token_hash ON automation_tokens (token_hash)
+index|idx_profiles_group_id|CREATE INDEX idx_profiles_group_id ON profiles (group_id)
+index|idx_profiles_proxy_id|CREATE INDEX idx_profiles_proxy_id ON profiles (proxy_id)
+index|idx_proxy_egress_observations_proxy_id|CREATE INDEX idx_proxy_egress_observations_proxy_id ON proxy_egress_observations (proxy_id)
+index|idx_runtime_events_instance|CREATE INDEX idx_runtime_events_instance ON runtime_events (runtime_instance_id)
+index|idx_runtime_events_profile|CREATE INDEX idx_runtime_events_profile ON runtime_events (profile_id)
+index|idx_sessions_token_hash|CREATE INDEX idx_sessions_token_hash ON sessions (token_hash)
+index|sqlite_autoindex_admins_1|None
+index|sqlite_autoindex_admins_2|None
+index|sqlite_autoindex_alembic_version_1|None
+index|sqlite_autoindex_artifacts_1|None
+index|sqlite_autoindex_audit_events_1|None
+index|sqlite_autoindex_automation_tokens_1|None
+index|sqlite_autoindex_automation_tokens_2|None
+index|sqlite_autoindex_profile_config_versions_1|None
+index|sqlite_autoindex_profile_config_versions_2|None
+index|sqlite_autoindex_profile_controls_1|None
+index|sqlite_autoindex_profile_groups_1|None
+index|sqlite_autoindex_profile_groups_2|None
+index|sqlite_autoindex_profile_runtimes_1|None
+index|sqlite_autoindex_profiles_1|None
+index|sqlite_autoindex_proxies_1|None
+index|sqlite_autoindex_proxies_2|None
+index|sqlite_autoindex_proxy_egress_observations_1|None
+index|sqlite_autoindex_runtime_events_1|None
+index|sqlite_autoindex_sessions_1|None
+index|sqlite_autoindex_sessions_2|None
+index|sqlite_autoindex_settings_1|None
+index|uq_profiles_display_number|CREATE UNIQUE INDEX uq_profiles_display_number ON profiles (display_number)
+table|admins|CREATE TABLE admins (\n	id VARCHAR(64) NOT NULL, \n	username VARCHAR(64) NOT NULL, \n	password_hash VARCHAR(255) NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	UNIQUE (username)\n)
+table|alembic_version|CREATE TABLE alembic_version (\n	version_num VARCHAR(32) NOT NULL, \n	CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)\n)
+table|artifacts|CREATE TABLE artifacts (\n	id VARCHAR(64) NOT NULL, \n	profile_id VARCHAR(64) NOT NULL, \n	name VARCHAR(255) NOT NULL, \n	size INTEGER DEFAULT '0' NOT NULL, \n	kind VARCHAR(32) DEFAULT 'upload' NOT NULL, \n	state VARCHAR(32) DEFAULT 'ready' NOT NULL, \n	content_type VARCHAR(128), \n	picker_name VARCHAR(255), \n	sha256 VARCHAR(64), \n	storage_path VARCHAR(4096), \n	delete_requested_at VARCHAR(64), \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE\n)
+table|audit_events|CREATE TABLE audit_events (\n	id VARCHAR(128) NOT NULL, \n	entity_type VARCHAR(64) NOT NULL, \n	entity_id VARCHAR(128) NOT NULL, \n	action VARCHAR(64) NOT NULL, \n	actor VARCHAR(64) DEFAULT 'system' NOT NULL, \n	details TEXT DEFAULT '{}' NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id)\n)
+table|automation_tokens|CREATE TABLE automation_tokens (\n	id VARCHAR(64) NOT NULL, \n	name VARCHAR(255) NOT NULL, \n	token_hash VARCHAR(64) NOT NULL, \n	profile_ids TEXT DEFAULT '[]' NOT NULL, \n	revoked BOOLEAN DEFAULT '0' NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	revoked_at VARCHAR(64), \n	expires_at VARCHAR(64), \n	PRIMARY KEY (id), \n	UNIQUE (token_hash)\n)
+table|profile_config_versions|CREATE TABLE profile_config_versions (\n	id VARCHAR(64) NOT NULL, \n	profile_id VARCHAR(64) NOT NULL, \n	version INTEGER NOT NULL, \n	snapshot TEXT NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	CONSTRAINT uq_profile_version UNIQUE (profile_id, version), \n	FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE\n)
+table|profile_controls|CREATE TABLE profile_controls (\n	profile_id VARCHAR(64) NOT NULL, \n	owner VARCHAR(16) DEFAULT 'user' NOT NULL, \n	generation INTEGER DEFAULT '0' NOT NULL, \n	agent_instance_id VARCHAR(128), \n	agent_session_id VARCHAR(128), \n	handoff_reason VARCHAR(64), \n	handoff_detail VARCHAR(256), \n	agent_reclaim_allowed BOOLEAN DEFAULT '1' NOT NULL, \n	pending_supervisor_close BOOLEAN DEFAULT '0' NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (profile_id), \n	FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE\n)
+table|profile_display_sequence|CREATE TABLE profile_display_sequence (id INTEGER PRIMARY KEY, value INTEGER NOT NULL)
+table|profile_groups|CREATE TABLE profile_groups (\n	id VARCHAR(64) NOT NULL, \n	name VARCHAR(64) NOT NULL, \n	color VARCHAR(32) DEFAULT 'slate' NOT NULL, \n	sort_order INTEGER DEFAULT '0' NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	UNIQUE (name)\n)
+table|profile_runtimes|CREATE TABLE profile_runtimes (\n	profile_id VARCHAR(64) NOT NULL, \n	desired_state VARCHAR(32) DEFAULT 'stopped' NOT NULL, \n	observed_state VARCHAR(32) DEFAULT 'stopped' NOT NULL, \n	runtime_instance_id VARCHAR(128), \n	config_version INTEGER DEFAULT '1' NOT NULL, \n	failure_count INTEGER DEFAULT '0' NOT NULL, \n	restart_blocked BOOLEAN DEFAULT '0' NOT NULL, \n	last_exit_event_id VARCHAR(128), \n	last_started_at VARCHAR(64), \n	last_stopped_at VARCHAR(64), \n	browser_product VARCHAR(255), \n	browser_user_agent TEXT, \n	updated_at VARCHAR(64) NOT NULL, backoff_started_at VARCHAR(64), next_retry_at VARCHAR(64), preview_captured_at VARCHAR(64), \n	PRIMARY KEY (profile_id), \n	FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE\n)
+table|profiles|CREATE TABLE "profiles" (\n	id VARCHAR(64) NOT NULL, \n	name VARCHAR(255) NOT NULL, \n	fingerprint_seed INTEGER NOT NULL, \n	group_id VARCHAR(64), \n	proxy_id VARCHAR(64), \n	timezone VARCHAR(64), \n	locale VARCHAR(64), \n	screen_width INTEGER DEFAULT '1920' NOT NULL, \n	screen_height INTEGER DEFAULT '1080' NOT NULL, \n	gpu_family VARCHAR(32) DEFAULT 'auto' NOT NULL, \n	humanize BOOLEAN DEFAULT '1' NOT NULL, \n	human_preset VARCHAR(32) DEFAULT 'default' NOT NULL, \n	geoip BOOLEAN DEFAULT '1' NOT NULL, \n	clipboard_sync BOOLEAN DEFAULT '1' NOT NULL, \n	auto_launch BOOLEAN DEFAULT '0' NOT NULL, \n	color_scheme VARCHAR(32), \n	launch_args TEXT DEFAULT '[]' NOT NULL, \n	extension_paths TEXT DEFAULT '[]' NOT NULL, \n	allow_3p_cookies BOOLEAN DEFAULT '1' NOT NULL, \n	set_google_default BOOLEAN DEFAULT '1' NOT NULL, \n	capture_preview BOOLEAN DEFAULT '1' NOT NULL, \n	restore_session BOOLEAN DEFAULT '1' NOT NULL, \n	transparent_proxy BOOLEAN DEFAULT '0' NOT NULL, \n	portable_cookies BOOLEAN DEFAULT '1' NOT NULL, \n	notes TEXT, \n	user_data_dir VARCHAR(1024) NOT NULL, \n	sort_order INTEGER DEFAULT '0' NOT NULL, \n	current_config_version INTEGER DEFAULT '1' NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	fingerprint_platform VARCHAR(16) DEFAULT 'windows' NOT NULL, \n	font_set_id VARCHAR(64), \n	capture_preview_epoch INTEGER DEFAULT '0' NOT NULL, \n	display_number INTEGER, \n	PRIMARY KEY (id), \n	CONSTRAINT ck_profiles_locale_enum CHECK (locale IS NULL OR locale IN ('zh-CN', 'en-US')), \n	FOREIGN KEY(group_id) REFERENCES profile_groups (id) ON DELETE SET NULL, \n	FOREIGN KEY(proxy_id) REFERENCES proxies (id) ON DELETE RESTRICT\n)
+table|proxies|CREATE TABLE "proxies" (\n	id VARCHAR(64) NOT NULL, \n	name VARCHAR(255) NOT NULL, \n	scheme VARCHAR(16) NOT NULL, \n	host VARCHAR(512) NOT NULL, \n	port INTEGER NOT NULL, \n	username VARCHAR(255), \n	password TEXT, \n	credential_revision INTEGER DEFAULT '1' NOT NULL, \n	region_label VARCHAR(255), \n	notes TEXT, \n	created_at VARCHAR(64) NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	UNIQUE (name)\n)
+table|proxy_egress_observations|CREATE TABLE proxy_egress_observations (\n	id VARCHAR(64) NOT NULL, \n	proxy_id VARCHAR(64) NOT NULL, \n	endpoint_fingerprint VARCHAR(64) NOT NULL, \n	credential_revision INTEGER NOT NULL, \n	perspective VARCHAR(32) DEFAULT 'browser' NOT NULL, \n	egress_ip VARCHAR(64), \n	country_code VARCHAR(2), \n	source VARCHAR(64) DEFAULT 'supervisor_probe' NOT NULL, \n	status VARCHAR(16) DEFAULT 'pending' NOT NULL, \n	error_code VARCHAR(64), \n	observed_at VARCHAR(64) NOT NULL, \n	expires_at VARCHAR(64), \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	FOREIGN KEY(proxy_id) REFERENCES proxies (id) ON DELETE CASCADE\n)
+table|runtime_events|CREATE TABLE runtime_events (\n	event_id VARCHAR(128) NOT NULL, \n	profile_id VARCHAR(64) NOT NULL, \n	runtime_instance_id VARCHAR(128) NOT NULL, \n	event_type VARCHAR(64) DEFAULT 'exit' NOT NULL, \n	exit_code INTEGER, \n	exit_reason VARCHAR(255), \n	config_version INTEGER DEFAULT '1' NOT NULL, \n	payload TEXT DEFAULT '{}' NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (event_id), \n	FOREIGN KEY(profile_id) REFERENCES profiles (id) ON DELETE CASCADE\n)
+table|sessions|CREATE TABLE sessions (\n	id VARCHAR(64) NOT NULL, \n	token_hash VARCHAR(64) NOT NULL, \n	csrf_token VARCHAR(64) NOT NULL, \n	expires_at VARCHAR(64) NOT NULL, \n	created_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY (id), \n	UNIQUE (token_hash)\n)
+table|settings|CREATE TABLE settings (\n	"key" VARCHAR(128) NOT NULL, \n	value TEXT NOT NULL, \n	updated_at VARCHAR(64) NOT NULL, \n	PRIMARY KEY ("key")\n)

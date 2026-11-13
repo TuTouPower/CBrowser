@@ -7,11 +7,18 @@ were deleted wholesale, not rewritten to the new output.  Coverage added
 for the new semantics: a single baseline revision with a fresh identity,
 and an empty DB upgraded to head matching the ORM models (autogenerate).
 The backup/restore test is kept verbatim (no retired revision id in it).
+
+t056 (A60) deleted wholesale, not rewritten: the 0004 "skip if column
+exists" tolerance test (``test_upgrade_from_legacy_0001_with_columns_to_head``,
+including the 0004 downgrade walk) and the 0003 active-operation patch
+test (``test_0003_drops_terminal_or_orphan_active_operation``).  Their
+semantics are removed by the task: 0004 adds columns unconditionally and
+every revision's downgrade throws.  New coverage for the new semantics
+lives in test_t056_migrations.py.
 """
 
 from __future__ import annotations
 
-import json
 import shutil
 import sqlite3
 from pathlib import Path
@@ -201,165 +208,6 @@ async def test_upgrade_from_0002_era_old_db_to_head(tmp_path: Path) -> None:
         await engine.dispose()
     command.check(get_alembic_config(db))
 
-
-def _legacy_operation_payload(
-    operation_id: str = "op-crash",
-    target_version: int = 2,
-    phase: str = "pending",
-) -> str:
-    # Pre-A35 shape: a plain NetworkApplyOperation snapshot with no recovery
-    # fields (decision/transaction_phase/execution_generation/recovery_complete).
-    now = "2026-01-01T00:00:00+00:00"
-    return json.dumps(
-        {
-            "operation_id": operation_id,
-            "target_version": target_version,
-            "phase": phase,
-            "error_reason": None,
-            "new_entry_url": None,
-            "created_at": now,
-            "updated_at": now,
-        }
-    )
-
-
-def _add_legacy_1a6ec51_columns(conn: sqlite3.Connection) -> None:
-    """Add the four columns the 1a6ec51-era 0001 already carried, with the
-    same nullability/defaults the current 0004 restore uses."""
-    conn.execute(
-        "ALTER TABLE profiles ADD COLUMN capture_preview_epoch"
-        " INTEGER NOT NULL DEFAULT 0"
-    )
-    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN backoff_started_at VARCHAR(64)")
-    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN next_retry_at VARCHAR(64)")
-    conn.execute("ALTER TABLE profile_runtimes ADD COLUMN preview_captured_at VARCHAR(64)")
-    conn.commit()
-
-
-@pytest.mark.asyncio
-async def test_upgrade_from_legacy_0001_with_columns_to_head(tmp_path: Path) -> None:
-    """P0-A: a database stamped at 0002 whose tables already carry the four
-    t039/t040 columns (the 1a6ec51 in-place-0001 shape, i.e. the live
-database from that era)
-    upgrades to head without a duplicate-column failure, and the ORM stays
-    usable. The 0004 downgrade is equally guarded: it drops only columns
-    that are still present."""
-    db = tmp_path / "legacy-cols.db"
-    cfg = get_alembic_config(db)
-    command.upgrade(cfg, "c41f0a2b7d93")
-    conn = sqlite3.connect(db)
-    try:
-        _add_legacy_1a6ec51_columns(conn)
-        now = "2026-01-01T00:00:00+00:00"
-        conn.execute(
-            "INSERT INTO profiles (id, name, fingerprint_seed, user_data_dir,"
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-            ("legacy-1", "Legacy", 9, "/data/profiles/legacy-1/profile", now, now),
-        )
-        conn.execute(
-            "INSERT INTO profile_runtimes (profile_id, updated_at)"
-            " VALUES (?, ?)",
-            ("legacy-1", now),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    # Upgrade through 0003 + 0004 to the current head: must not raise.
-    run_database_migrations(db)
-    conn = sqlite3.connect(db)
-    try:
-        row = conn.execute(
-            "SELECT capture_preview_epoch FROM profiles WHERE id = ?",
-            ("legacy-1",),
-        ).fetchone()
-        assert row is not None and row[0] == 0
-        row = conn.execute(
-            "SELECT backoff_started_at, next_retry_at, preview_captured_at"
-            " FROM profile_runtimes WHERE profile_id = ?",
-            ("legacy-1",),
-        ).fetchone()
-        assert row == (None, None, None)
-    finally:
-        conn.close()
-    engine, maker = create_engine_and_maker(db)
-    try:
-        repo = ProfileRepository(maker)
-        old = await repo.get_profile("legacy-1")
-        assert old is not None
-        assert old.id == "legacy-1"
-        new = await repo.create_profile(ProfileConfig(name="New", fingerprint_seed=2))
-        assert new.id
-        assert await repo.get_profile(new.id) is not None
-    finally:
-        await engine.dispose()
-    # Re-running the migration entry point is a no-op.
-    run_database_migrations(db)
-    # 0004 downgrade drops only present columns, then re-upgrade restores them.
-    command.downgrade(cfg, "a35c0f1e7b42")
-    conn = sqlite3.connect(db)
-    try:
-        profiles_cols = {
-            row[1] for row in conn.execute("PRAGMA table_info(profiles)").fetchall()
-        }
-        runtimes_cols = {
-            row[1]
-            for row in conn.execute("PRAGMA table_info(profile_runtimes)").fetchall()
-        }
-        assert "capture_preview_epoch" not in profiles_cols
-        assert "backoff_started_at" not in runtimes_cols
-        assert "next_retry_at" not in runtimes_cols
-        assert "preview_captured_at" not in runtimes_cols
-    finally:
-        conn.close()
-    run_database_migrations(db)
-    command.check(get_alembic_config(db))
-
-
-@pytest.mark.asyncio
-async def test_0003_drops_terminal_or_orphan_active_operation(tmp_path: Path) -> None:
-    """A crash leftover active row that is already terminal, or that points
-    at a missing operation record, can never be consumed by recovery: drop it
-    instead of linking a pointer no abort path could clear."""
-    for case, active_payload in (
-        ("terminal", _legacy_operation_payload("op-done", phase="completed")),
-        ("orphan", _legacy_operation_payload("op-gone")),
-    ):
-        db = tmp_path / f"stale-active-{case}.db"
-        cfg = get_alembic_config(db)
-        command.upgrade(cfg, "c41f0a2b7d93")
-        conn = sqlite3.connect(db)
-        try:
-            now = "2026-01-01T00:00:00+00:00"
-            if case == "terminal":
-                conn.execute(
-                    "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-                    ("network.operation.op-done", _legacy_operation_payload("op-done"), now),
-                )
-            conn.execute(
-                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-                ("network.active_operation", active_payload, now),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-        run_database_migrations(db)
-        conn = sqlite3.connect(db)
-        try:
-            assert (
-                conn.execute(
-                    "SELECT value FROM settings WHERE key = 'network.active_operation'"
-                ).fetchone()
-                is None
-            )
-            assert (
-                conn.execute(
-                    "SELECT value FROM settings WHERE key = 'network.transaction.current'"
-                ).fetchone()
-                is None
-            )
-        finally:
-            conn.close()
-        command.check(get_alembic_config(db))
 
 
 def test_0005_backfills_display_numbers_in_creation_order(tmp_path: Path) -> None:

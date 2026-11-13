@@ -78,7 +78,7 @@ class GatewayControlClient:
         caller can distinguish "Gateway down" (never a reason to rebuild
         a Stream) from "Agent absent" (a replacement candidate). The
         visibility route's fence distinguishes the states: 409 is a
-        different live instance, a 503 "unavailable" detail is no agent,
+        different live instance, a 503 "unavailable" message is no agent,
         and a 503 "has not reported yet" still means registered.
         """
         try:
@@ -95,10 +95,17 @@ class GatewayControlClient:
             return False
         if response.status_code == 503:
             try:
-                detail = response.json().get("detail", "")
+                body = response.json()
             except ValueError:
-                detail = ""
-            return "unavailable" not in str(detail)
+                body = {}
+            # Unified ErrorResponse carries the reason in `message`; keep
+            # the legacy `detail` read so a mixed-version Gateway still
+            # parses (t056 A15).
+            if isinstance(body, dict):
+                text = body.get("message") or body.get("detail") or ""
+            else:
+                text = ""
+            return "unavailable" not in str(text)
         return None
 
     async def registration_status(self, profile_id: str) -> dict | None:

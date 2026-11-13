@@ -29,13 +29,13 @@
 ## 4. 删除与被引用保护（t038）
 
 - `used_by_count > 0` 时代理删除按钮禁用并提示先改绑。
-- 后端删除返回 409 时响应体为 `{"detail":{"code":"proxy_in_use","used_by_count":N}}`（非 `ErrorResponse`）；前端从 `ApiError.detail` / `.data` 读取引用数并展示，不依赖 `errorCode`。
+- 后端删除返回 409 时响应体为统一 `ErrorResponse`：`{"error":"proxy_in_use","message":"Conflict","details":{"used_by_count":N},"retryable":false}`；前端以 `errorCode === "proxy_in_use"` 判码、从 `ApiError.details` 取引用数并展示。
 - 使用环境数为链接，跳 `/?proxy=<id>`；环境列表的 `useEnvironmentFilters` 已支持 `proxy` URL 参数按代理筛选。
 
 ## 5. 带认证 SOCKS5（t038 / AC-007）
 
 - 依据 `docs/findings/d031_authenticated_socks5_supported.md`、spike s013 报告与 ADR 023（`docs/blueprint/decisions.md:280`）：CloakBrowser 0.6.4 / Chromium 146 **支持**带认证 SOCKS5；`src/backend` **不存在任何 socks5 拒绝分支**，API 永远不会返回该 422（`proxies_router.py` 的 409 仅 `proxy_in_use` / `proxy_name_in_use`）。
-- 带认证 SOCKS5 为**直接支持**：表单默认允许 `socks5` + 用户名/密码提交，前端无阻止、**无降级路径、无「引擎不支持」提示**。任何 422 或其它后端错误统一走 `describeError()` 的结构化错误展示（`ApiError.detail` / `.data`）。
+- 带认证 SOCKS5 为**直接支持**：表单默认允许 `socks5` + 用户名/密码提交，前端无阻止、**无降级路径、无「引擎不支持」提示**。任何 422 或其它后端错误统一走 `describeError()` 的结构化错误展示（`ApiError.details` / `.data`）。
 - task.md AC-007 字面「引擎不支持时阻止提交并说明原因」沿用 `docs/archive/plans/plan_20261105_ui_redesign.md` 的旧假设（已被 d031 实测推翻），该条件句的前提不成立，故不实现推测性降级代码。引擎 / 指纹平台升级后按 d031 复查条件重跑；若结论翻转，由后续 task 流程修订契约，不在当前代码预留兼容路径。
 
 ## 6. 文案与测试（t038）
@@ -51,3 +51,9 @@
 - 探测在 Browser 同视角执行：Supervisor 的短生命周期 helper（Browser 镜像、browser-role 网络策略、0600 凭证文件）访问 IP 回显端点取出口 IP，本机 GeoLite2 判定国家；出口 IP 不发往第三方地理库。手动探测 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID，任何非空请求体（除 `{}` 外）返回 422。
 - 宿主本机端点（`127.0.0.0/8` / `localhost` / `::1`）由 Supervisor 映射为 `host.docker.internal` 并单端口放行；映射失败时启动与探测在执行前明确报错并给出处置提示，不出现启动成功但无法联网。
 - 观测记录只追加历史行（`proxy_egress_observations`）；`GET /api/v1/proxies` 与单条响应均返回当前有效观测派生值。
+
+## 8. 密码变更影响集、幂等与引用事件（t056）
+
+- **密码变更只影响当前引用者（A17）**：改代理密码（或任一连接字段）时，只有当前配置引用该代理的 Profile 生成新配置版本；仅被运行中绑定版本引用（当前配置已改绑他处）的 Profile 不生成新版本，只收到运行事件。只改 name / region / notes 不生成新版本。绑定快照冻结的 `proxy_credential_revision` 取该快照实际引用的代理的当前修订；凭据变更后旧绑定版本重启按冻结修订校验、失败封闭 `proxy_credentials_changed`，应用新版本后启动成功。
+- **分组与代理写操作幂等（A23）**：group / proxy 的 create / update / delete 支持 `Idempotency-Key` / `X-Operation-ID` / `operation_id`，与 Profile 同一审计语义（同一键 + 同一目标 + 同一载荷重放既有结果；键复用于不同目标 / 动作 / 载荷返回 409 `idempotency_conflict`）。重放不重复触发探测等副作用。`POST /groups/reorder` 不带幂等键。
+- **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`（`entity_id` 为变更实体、重排时为 null），前端使对应列表查询与 Profile 列表查询失效重取；手动探测不发事件。

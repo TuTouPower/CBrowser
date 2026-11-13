@@ -325,3 +325,66 @@ async def test_handoff_for_identity_isolates_per_profile_failures(
         assert (await svc.get_state(pid)).owner == "agent"
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_renew_upgrade_publishes_only_after_commit(tmp_path, monkeypatch):
+    """t056 A2 / AC-002: a renew-upgrade publishes after the transaction
+    commits.  When the commit fails, no SSE event is emitted and the
+    session upgrade is not persisted."""
+    from contextlib import asynccontextmanager
+
+    from cbrowser.services import control_service as control_service_module
+
+    engine, maker, pid = await _context(tmp_path)
+    published: list[str] = []
+
+    async def record_publish(profile_id: str) -> None:
+        published.append(profile_id)
+
+    try:
+        svc = ProfileControlService(
+            maker, publish_profile_change=record_publish
+        )
+        # Instance-only claim: publish once.
+        state, _ = await svc.claim(pid, "tok-1", None)
+        assert state.agent_session_id is None
+        assert published == [pid]
+        # Renew-upgrade to session scope: publish again, after commit.
+        state, _ = await svc.claim(pid, "tok-1", "exec-1")
+        assert state.agent_session_id == "exec-1"
+        assert published == [pid, pid]
+
+        # A second profile whose commit fails: the upgrade must not publish.
+        profile2 = await ProfileRepository(maker).create_profile(
+            ProfileConfig(name="Control2", fingerprint_seed=2)
+        )
+        svc2 = ProfileControlService(
+            maker, publish_profile_change=record_publish
+        )
+        await svc2.claim(profile2.id, "tok-2", None)
+        assert published == [pid, pid, profile2.id]
+
+        real_write_transaction = control_service_module.write_transaction
+
+        @asynccontextmanager
+        async def failing_write_transaction(session):
+            async with real_write_transaction(session):
+                yield session
+                raise RuntimeError("simulated commit failure")
+
+        # The wrapper above yields inside the real transaction, then
+        # raises before the real commit runs: the outer context manager
+        # rolls back, so the upgrade never persists.
+        monkeypatch.setattr(
+            control_service_module,
+            "write_transaction",
+            failing_write_transaction,
+        )
+        with pytest.raises(RuntimeError, match="simulated commit failure"):
+            await svc2.claim(profile2.id, "tok-2", "exec-2")
+        assert published == [pid, pid, profile2.id]
+        after = await svc2.get_state(profile2.id)
+        assert after.agent_session_id is None
+    finally:
+        await engine.dispose()

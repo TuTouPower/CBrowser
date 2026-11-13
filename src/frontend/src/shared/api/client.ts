@@ -27,7 +27,7 @@ export class ApiError extends Error {
     public data?: unknown,
     public errorCode?: string,
     public retryable: boolean = false,
-    public detail?: unknown,
+    public details?: unknown,
   ) {
     super(message);
     this.name = "ApiError";
@@ -152,20 +152,18 @@ export class ApiClient {
         let errorData: unknown = null;
         try {
           errorData = await response.json();
-          if (
-            errorData &&
-            typeof errorData === "object" &&
-            "detail" in errorData &&
-            typeof (errorData as { detail: unknown }).detail === "string"
-          ) {
-            errorMessage = (errorData as { detail: string }).detail;
-          } else if (
-            errorData &&
-            typeof errorData === "object" &&
-            "message" in errorData &&
-            typeof (errorData as { message: unknown }).message === "string"
-          ) {
-            errorMessage = (errorData as { message: string }).message;
+          if (errorData && typeof errorData === "object") {
+            const record = errorData as Record<string, unknown>;
+            // t056 A15 unified shape: prefer `message`, then a string
+            // `details` (a 422 carries its field errors there as a list).
+            if (typeof record.message === "string" && record.message.length > 0) {
+              errorMessage = record.message;
+            } else if (
+              typeof record.details === "string" &&
+              record.details.length > 0
+            ) {
+              errorMessage = record.details;
+            }
           }
         } catch (err) {
           // A body read aborted by the timeout/external signal is not a
@@ -183,7 +181,7 @@ export class ApiClient {
           errorData,
           typeof payload?.error === "string" ? payload.error : undefined,
           Boolean(payload?.retryable),
-          payload?.detail,
+          payload?.details,
         );
       }
 

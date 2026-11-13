@@ -21,6 +21,11 @@ export interface ActionKeyVariables<TVariables> {
  *   variables, so a retry of one action reuses that action's key.
  * - Concurrent calls carry distinct keys, and no settle handler clears a
  *   shared ref, so one action can never clear or reuse another's key.
+ *
+ * t056 A23: a caller may supply `keySource` to bind the key to something
+ * longer-lived than one call — the Profile creation dialog binds its key
+ * to the currently-open draft, so close/reopen resubmits reuse the same
+ * key until the create succeeds.
  */
 export function useActionKeyMutation<
   TData,
@@ -34,8 +39,10 @@ export function useActionKeyMutation<
     ActionKeyVariables<TVariables>,
     TContext
   >,
+  keyOptions?: { keySource?: () => string },
 ): UseMutationResult<TData, TError, TVariables, TContext> {
   const mutation = useMutation(options);
+  const mintKey = keyOptions?.keySource ?? newIdempotencyKey;
   const result = {
     ...mutation,
     mutate: (
@@ -43,7 +50,7 @@ export function useActionKeyMutation<
       mutateOptions?: Parameters<typeof mutation.mutate>[1],
     ) => {
       mutation.mutate(
-        { input, actionKey: newIdempotencyKey() },
+        { input, actionKey: mintKey() },
         mutateOptions,
       );
     },
@@ -52,7 +59,7 @@ export function useActionKeyMutation<
       mutateOptions?: Parameters<typeof mutation.mutateAsync>[1],
     ) => {
       return mutation.mutateAsync(
-        { input, actionKey: newIdempotencyKey() },
+        { input, actionKey: mintKey() },
         mutateOptions,
       );
     },

@@ -188,9 +188,23 @@ function nullable(value: string): string | null {
 
 function readableDetail(value: unknown): string | null {
   if (typeof value === "string" && value.length > 0) return value;
+  if (Array.isArray(value)) {
+    // t056 A15: a 422 carries its field errors as a `details` list.
+    const messages = value
+      .map((item) => {
+        if (item && typeof item === "object") {
+          const record = item as Record<string, unknown>;
+          const msg = record.msg;
+          if (typeof msg === "string" && msg.length > 0) return msg;
+        }
+        return null;
+      })
+      .filter((msg): msg is string => msg !== null);
+    return messages.length > 0 ? messages.join("; ") : null;
+  }
   if (value && typeof value === "object") {
     const record = value as Record<string, unknown>;
-    for (const key of ["message", "detail", "error", "reason"]) {
+    for (const key of ["message", "details", "error", "reason"]) {
       const candidate = record[key];
       if (typeof candidate === "string" && candidate.length > 0) return candidate;
     }
@@ -208,7 +222,7 @@ function describeError(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
   }
   const detail =
-    readableDetail(err.detail) ?? readableDetail(err.data) ?? err.message;
+    readableDetail(err.details) ?? readableDetail(err.data) ?? err.message;
   return err.errorCode ? `${detail} (${err.errorCode})` : detail;
 }
 
@@ -642,6 +656,7 @@ export function ProxyFormDialog(props: ProxyFormDialogProps): JSX.Element {
               data-testid="proxy-form-submit"
               variant="primary"
               type="submit"
+              disabled={createMutation.isPending || updateMutation.isPending}
             >
               {isEdit ? t("proxySave") : t("proxyCreate")}
             </Button>

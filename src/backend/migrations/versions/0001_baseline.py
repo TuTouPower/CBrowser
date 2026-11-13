@@ -231,11 +231,11 @@ def upgrade() -> None:
     )
 
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
+
 def downgrade() -> None:
-    for name in (
-        "profile_controls", "automation_tokens", "sessions", "admins",
-        "audit_events", "runtime_events", "settings", "artifacts",
-        "profile_runtimes", "profile_config_versions", "profiles",
-        "proxies", "profile_groups",
-    ):
-        op.drop_table(name)
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

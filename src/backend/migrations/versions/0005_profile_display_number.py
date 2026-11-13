@@ -74,10 +74,11 @@ def upgrade() -> None:
     )
 
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
+
 def downgrade() -> None:
-    bind = op.get_bind()
-    bind.execute(sa.text("DROP TABLE IF EXISTS profile_display_sequence"))
-    bind.execute(sa.text("DROP INDEX IF EXISTS uq_profiles_display_number"))
-    if "display_number" in _existing_columns(bind, "profiles"):
-        with op.batch_alter_table("profiles") as batch_op:
-            batch_op.drop_column("display_number")
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

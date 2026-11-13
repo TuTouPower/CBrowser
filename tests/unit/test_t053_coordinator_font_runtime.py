@@ -20,6 +20,7 @@ def _profile(config: ProfileConfig) -> Profile:
     return Profile(
         id="p1",
         config=config,
+        display_number=1,
         user_data_dir="/data/profiles/p1/profile",
         created_at="2026-01-01T00:00:00+00:00",
         updated_at="2026-01-01T00:00:00+00:00",

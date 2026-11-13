@@ -10,6 +10,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import AsyncGenerator, Callable
+from dataclasses import dataclass
 from urllib.parse import quote
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -48,6 +49,50 @@ class SearchDefaultsConflictError(RuntimeError):
 
 class SearchDefaultsUnavailableError(RuntimeError):
     """The search-defaults operation cannot reach the runtime (HTTP 503)."""
+
+
+@dataclass
+class _LastError:
+    """A recorded coordinator error plus the config version it targets.
+
+    t056 A26: an error is recorded against the version the failed
+    operation targeted.  Clearing is bound to that version: only an
+    instance of the same (or a newer, superseding) version reaching
+    running clears it, so a new version's failure is never hidden by
+    an old version still running.
+    """
+
+    message: str
+    config_version: int | None = None
+
+
+def _downstream_error_text(resp: Any) -> str:
+    """Extract the downstream failure reason from a Supervisor response.
+
+    t056 A15: the Supervisor answers in the unified ErrorResponse shape,
+    so ``error`` and ``message`` are preserved together (``error:
+    message``) and stored as the coordinator's last error for the
+    profile — surfaced on the runtime view as ``last_coordinator_error``,
+    the Profile's error_reason.  A legacy ``detail`` body and raw text
+    remain as fallbacks for non-conforming bodies.
+    """
+    try:
+        body = resp.json()
+    except Exception:  # noqa: BLE001 - non-JSON body falls back to raw text
+        return resp.text
+    if isinstance(body, dict):
+        error = body.get("error")
+        message = body.get("message")
+        if isinstance(error, str) and error and isinstance(message, str) and message:
+            return f"{error}: {message}"
+        if isinstance(error, str) and error:
+            return error
+        if isinstance(message, str) and message:
+            return message
+        detail = body.get("detail")
+        if isinstance(detail, str) and detail:
+            return detail
+    return resp.text
 
 
 class RuntimeEventBroadcaster:
@@ -244,7 +289,7 @@ class RuntimeCoordinator:
         self.transport = transport
         self.broadcaster = event_broadcaster or RuntimeEventBroadcaster()
 
-        self._last_errors: dict[str, str | None] = {}
+        self._last_errors: dict[str, _LastError] = {}
         self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
         self._transport: dict[str, TransportObservationData | None] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
@@ -267,22 +312,93 @@ class RuntimeCoordinator:
             and getattr(runtime, "runtime_instance_id", None) is not None
         )
 
+    @staticmethod
+    def _is_error_converged(runtime: Any, error: _LastError) -> bool:
+        """Whether *runtime* shows the error's target version running.
+
+        t056 A26: an error is settled only when an instance of its
+        target version (or a newer, superseding one) is running.  A
+        version-less error (no known target) settles on any running
+        instance.  A runtime without a config_version cannot prove the
+        target version runs, so it never settles a versioned error.
+        """
+        if not RuntimeCoordinator._is_running_converged(runtime):
+            return False
+        if error.config_version is None:
+            return True
+        runtime_version = getattr(runtime, "config_version", None)
+        return (
+            isinstance(runtime_version, int)
+            and runtime_version >= error.config_version
+        )
+
     def get_last_error(
         self, profile_id: str, runtime: Any = None
     ) -> str | None:
-        if runtime is not None and self._is_running_converged(runtime):
-            self._last_errors.pop(profile_id, None)
+        """Read the last coordinator error.  A pure read: it never
+        clears (t056 A26).  When a runtime record is supplied and it
+        shows the error's target version running, there is nothing to
+        report; the stored entry itself is cleared only by a write
+        path (see clear_last_error_if_converged)."""
+        entry = self._last_errors.get(profile_id)
+        if entry is None:
             return None
-        return self._last_errors.get(profile_id)
+        if runtime is not None and self._is_error_converged(runtime, entry):
+            return None
+        return entry.message
 
-    def set_last_error(self, profile_id: str, error: str | None) -> None:
+    def set_last_error(
+        self,
+        profile_id: str,
+        error: str | None,
+        *,
+        config_version: int | None = None,
+    ) -> None:
+        """Record (or clear, when *error* is None) the last error.
+
+        When *config_version* is omitted, a previously recorded target
+        version is kept: a follow-up message about the same failure
+        (e.g. the retry-limit suffix) must not drop the version the
+        original error targeted.
+        """
         if error is None:
             self._last_errors.pop(profile_id, None)
-        else:
-            self._last_errors[profile_id] = error
+            return
+        previous = self._last_errors.get(profile_id)
+        target = (
+            config_version
+            if config_version is not None
+            else (previous.config_version if previous is not None else None)
+        )
+        self._last_errors[profile_id] = _LastError(error, target)
 
-    def clear_last_error(self, profile_id: str) -> None:
-        self._last_errors.pop(profile_id, None)
+    def clear_last_error(
+        self, profile_id: str, *, config_version: int | None = None
+    ) -> None:
+        """Clear the recorded error.
+
+        Without *config_version* the clear is unconditional (profile
+        gone, stopped intent converged).  With one, only an error whose
+        target is that version or older is cleared: a newer version's
+        failure is not erased by an older version's success.
+        """
+        if config_version is None:
+            self._last_errors.pop(profile_id, None)
+            return
+        entry = self._last_errors.get(profile_id)
+        if entry is None or entry.config_version is None:
+            self._last_errors.pop(profile_id, None)
+        elif config_version >= entry.config_version:
+            self._last_errors.pop(profile_id, None)
+
+    def clear_last_error_if_converged(
+        self, profile_id: str, runtime: Any
+    ) -> None:
+        """Write-path clear (t056 A26): drop the error only when the
+        supplied runtime record shows its target version running."""
+        entry = self._last_errors.get(profile_id)
+        if entry is not None and self._is_error_converged(runtime, entry):
+            self._last_errors.pop(profile_id, None)
 
     def egress_probe_runner(self):
         """Production egress-probe runner (t052): probes run in the
@@ -751,6 +867,21 @@ class RuntimeCoordinator:
         self._publish_tasks.add(task)
         task.add_done_callback(self._on_publish_task_done)
 
+    def publish_reference_change_later(
+        self, event_name: str, entity_id: str | None = None
+    ) -> None:
+        """Schedule a transient reference-data change event (t056 A31):
+        ``groups_changed`` / ``proxies_changed``.  The payload carries
+        only the changed entity id (or null for a reorder); receivers
+        invalidate their group/proxy/profile lists and refetch."""
+        task = asyncio.create_task(
+            self.broadcaster.publish_transient(
+                event_name, {"entity_id": entity_id}
+            )
+        )
+        self._publish_tasks.add(task)
+        task.add_done_callback(self._on_publish_task_done)
+
     async def publish_profile_change(self, profile_id: str) -> None:
         try:
             rt = await self.profile_service.get_runtime(profile_id)
@@ -935,18 +1066,11 @@ class RuntimeCoordinator:
     ) -> ReconcileOutcome:
         import httpx
 
-        if runtime.restart_blocked:
-            self.set_last_error(profile_id, "Restart blocked; manual retry required")
-            await self.publish_profile_change(profile_id)
-            return ReconcileOutcome.TERMINATED
-
-        if (
-            runtime.observed_state == "running"
-            and runtime.runtime_instance_id is not None
-        ):
-            self.clear_last_error(profile_id)
-            return ReconcileOutcome.CONVERGED
-
+        # t056 A26: the target version is the latest config version.
+        # Every error recorded and every clear in this method is bound
+        # to it, and convergence itself requires the running instance
+        # to be that version — an old version still running is not a
+        # converged new version.
         try:
             versions = await self.profile_service.list_config_versions(profile_id)
             latest_v = max(
@@ -954,6 +1078,23 @@ class RuntimeCoordinator:
             )
         except Exception:  # noqa: BLE001 - config version query failure safely falls back to current runtime version
             latest_v = runtime.config_version
+
+        if runtime.restart_blocked:
+            self.set_last_error(
+                profile_id,
+                "Restart blocked; manual retry required",
+                config_version=latest_v,
+            )
+            await self.publish_profile_change(profile_id)
+            return ReconcileOutcome.TERMINATED
+
+        if (
+            runtime.observed_state == "running"
+            and runtime.runtime_instance_id is not None
+            and runtime.config_version >= latest_v
+        ):
+            self.clear_last_error_if_converged(profile_id, runtime)
+            return ReconcileOutcome.CONVERGED
 
         profile = await self.profile_service.get_profile(profile_id)
         req_body = {
@@ -971,22 +1112,25 @@ class RuntimeCoordinator:
             resp = await self._client.post(url, json=req_body, headers=headers)
         except httpx.TransportError as e:
             err_msg = f"Supervisor unreachable: {type(e).__name__}"
-            self.set_last_error(profile_id, err_msg)
+            self.set_last_error(profile_id, err_msg, config_version=latest_v)
             await self.publish_profile_change(profile_id)
             return ReconcileOutcome.RETRYABLE
 
         if resp.status_code == 200:
-            self.clear_last_error(profile_id)
+            # The start for latest_v was accepted: an error recorded
+            # against that version (or an older one it supersedes) is
+            # settled.  An error targeting a newer version can never
+            # exist here — latest_v is the maximum — so this clear is
+            # version-bound by construction.
+            self.clear_last_error(profile_id, config_version=latest_v)
             await self.publish_profile_change(profile_id)
             return ReconcileOutcome.CONVERGED
 
-        detail = ""
-        try:
-            detail = resp.json().get("detail", resp.text)
-        except Exception:  # noqa: BLE001 - non-dict or invalid JSON fallback to raw text
-            detail = resp.text
-        err_msg = f"Supervisor start failed ({resp.status_code}): {detail}"
-        self.set_last_error(profile_id, err_msg)
+        err_msg = (
+            f"Supervisor start failed ({resp.status_code}): "
+            f"{_downstream_error_text(resp)}"
+        )
+        self.set_last_error(profile_id, err_msg, config_version=latest_v)
         await self.publish_profile_change(profile_id)
         return ReconcileOutcome.RETRYABLE
 
@@ -1019,7 +1163,10 @@ class RuntimeCoordinator:
             if st_resp.status_code == 200:
                 target_instance = st_resp.json().get("runtime_instance_id")
             elif st_resp.status_code != 404:
-                err_msg = f"Supervisor status failed ({st_resp.status_code})"
+                err_msg = (
+                    f"Supervisor status failed ({st_resp.status_code}): "
+                    f"{_downstream_error_text(st_resp)}"
+                )
                 self.set_last_error(profile_id, err_msg)
                 await self.publish_profile_change(profile_id)
                 return ReconcileOutcome.RETRYABLE
@@ -1081,12 +1228,10 @@ class RuntimeCoordinator:
             await self.publish_profile_change(profile_id)
             return ReconcileOutcome.RETRYABLE
 
-        detail = ""
-        try:
-            detail = resp.json().get("detail", resp.text)
-        except Exception:  # noqa: BLE001 - non-dict or invalid JSON fallback to raw text
-            detail = resp.text
-        err_msg = f"Supervisor stop failed ({resp.status_code}): {detail}"
+        err_msg = (
+            f"Supervisor stop failed ({resp.status_code}): "
+            f"{_downstream_error_text(resp)}"
+        )
         self.set_last_error(profile_id, err_msg)
         await self.publish_profile_change(profile_id)
         return ReconcileOutcome.RETRYABLE

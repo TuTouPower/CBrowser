@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -190,5 +190,41 @@ describe("per-action idempotency keys (A19)", () => {
     expect(keys[0]).not.toBe("");
     expect(keys[1]).not.toBe("");
     expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it("a caller-supplied key source reuses one key across calls (t056 A23)", async () => {
+    // The Profile creation dialog binds its idempotency key to the
+    // currently-open draft: close/reopen resubmits with the same key
+    // until the create succeeds.
+    const seen: string[] = [];
+    const client = {
+      profiles: {
+        create: async (_data: unknown, key?: string) => {
+          seen.push(key || "");
+          return { id: "p-new" };
+        },
+      },
+    } as unknown as ApiClient;
+    const queryClient = new QueryClient({
+      defaultOptions: { mutations: { retry: false } },
+    });
+    const keySource = vi.fn(() => "draft-key-1");
+    const { result } = renderHook(
+      () => useCreateProfileMutation(client, { keySource }),
+      { wrapper: makeWrapper(queryClient) },
+    );
+
+    await act(async () => {
+      await result.current.mutateAsync(
+        DEFAULT_PROFILE_CREATE_VALUES as never,
+      );
+    });
+    await act(async () => {
+      await result.current.mutateAsync(
+        DEFAULT_PROFILE_CREATE_VALUES as never,
+      );
+    });
+    expect(seen).toEqual(["draft-key-1", "draft-key-1"]);
+    expect(keySource).toHaveBeenCalled();
   });
 });

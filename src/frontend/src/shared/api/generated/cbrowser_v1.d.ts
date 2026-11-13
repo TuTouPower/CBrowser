@@ -818,7 +818,14 @@ export interface components {
             /** Agent Session Id */
             agent_session_id?: string | null;
         };
-        /** ErrorResponse */
+        /**
+         * ErrorResponse
+         * @description Unified error contract (t056 A15): every API error response carries
+         *     ``error`` / ``message`` / ``retryable``.  ``details`` holds optional
+         *     structured extras (field errors, counts, ...).  It never nests the
+         *     whole error package again: ``details`` must not repeat the top-level
+         *     ``error`` / ``message`` / ``retryable`` values.
+         */
         ErrorResponse: {
             /** Error */
             error: string;
@@ -829,7 +836,8 @@ export interface components {
              * @default false
              */
             retryable: boolean;
-            detail?: unknown;
+            /** Details */
+            details?: unknown | null;
         };
         /** FontDetection */
         FontDetection: {
@@ -949,11 +957,6 @@ export interface components {
             color?: ("slate" | "blue" | "teal" | "green" | "amber" | "orange" | "red" | "violet") | null;
             /** Sort Order */
             sort_order?: number | null;
-        };
-        /** HTTPValidationError */
-        HTTPValidationError: {
-            /** Detail */
-            detail?: components["schemas"]["ValidationError"][];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1607,19 +1610,6 @@ export interface components {
             /** Rejection Code */
             rejection_code?: string | null;
         };
-        /** ValidationError */
-        ValidationError: {
-            /** Location */
-            loc: (string | number)[];
-            /** Message */
-            msg: string;
-            /** Error Type */
-            type: string;
-            /** Input */
-            input?: unknown;
-            /** Context */
-            ctx?: Record<string, never>;
-        };
         /** ValidationErrorDetail */
         ValidationErrorDetail: {
             /** Loc */
@@ -1638,8 +1628,8 @@ export interface components {
             error: string;
             /** Message */
             message?: string | null;
-            /** Detail */
-            detail?: components["schemas"]["ValidationErrorDetail"][];
+            /** Details */
+            details?: components["schemas"]["ValidationErrorDetail"][];
             /**
              * Retryable
              * @default false
@@ -1748,7 +1738,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -1936,7 +1926,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2086,7 +2076,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2265,7 +2255,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2359,7 +2349,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2426,7 +2416,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2494,7 +2484,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2561,7 +2551,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2639,7 +2629,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Runtime or supervisor unavailable */
@@ -2805,7 +2795,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Database busy (retryable) */
@@ -2868,8 +2858,13 @@ export interface operations {
     };
     create_group_api_v1_groups_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2912,7 +2907,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -2972,7 +2967,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -2988,8 +2983,13 @@ export interface operations {
     };
     delete_group_api_v1_groups__group_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path: {
                 group_id: string;
             };
@@ -3037,7 +3037,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3053,8 +3053,13 @@ export interface operations {
     };
     update_group_api_v1_groups__group_id__patch: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path: {
                 group_id: string;
             };
@@ -3108,7 +3113,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3171,8 +3176,13 @@ export interface operations {
     };
     create_proxy_api_v1_proxies_post: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -3215,7 +3225,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3282,7 +3292,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3298,8 +3308,13 @@ export interface operations {
     };
     delete_proxy_api_v1_proxies__proxy_id__delete: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path: {
                 proxy_id: string;
             };
@@ -3347,7 +3362,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3363,8 +3378,13 @@ export interface operations {
     };
     update_proxy_api_v1_proxies__proxy_id__patch: {
         parameters: {
-            query?: never;
-            header?: never;
+            query?: {
+                operation_id?: string | null;
+            };
+            header?: {
+                "Idempotency-Key"?: string | null;
+                "X-Operation-ID"?: string | null;
+            };
             path: {
                 proxy_id: string;
             };
@@ -3418,7 +3438,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3485,7 +3505,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3617,7 +3637,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3713,7 +3733,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3808,7 +3828,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3901,7 +3921,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -3977,7 +3997,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4044,7 +4064,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4111,7 +4131,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4178,7 +4198,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4249,7 +4269,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4320,7 +4340,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4387,7 +4407,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4454,7 +4474,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4525,7 +4545,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4585,7 +4605,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Too many failed login attempts */
@@ -4650,7 +4670,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4804,7 +4824,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */
@@ -4869,7 +4889,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
                 };
             };
             /** @description Service unavailable or database busy */

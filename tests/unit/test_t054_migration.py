@@ -23,6 +23,10 @@ from cbrowser.adapters.database.migrations import (
 
 REVISION_0007 = "1a8db6b91744"
 REVISION_0008 = "3751fed02a4a"
+# t056 adds 0009 (display_number NOT NULL) as the new head; the 0008
+# assertions below still target 0008 as the revision that deletes the
+# network rows.
+REVISION_0009 = "796adb0bf159"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -45,8 +49,8 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0008_and_single(tmp_path: Path) -> None:
-    assert _revision_of_head(tmp_path) == REVISION_0008
+def test_head_is_0009_and_single(tmp_path: Path) -> None:
+    assert _revision_of_head(tmp_path) == REVISION_0009
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:

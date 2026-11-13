@@ -14,7 +14,7 @@ describe("ProfileEventsClient same-origin boundary", () => {
 
   it("never fetches a cross-origin events URL", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "unauthorized" }), {
+      new Response(JSON.stringify({ error: "unauthorized", message: "Not authenticated", retryable: false }), {
         status: 401,
         headers: { "content-type": "application/json" },
       }),
@@ -41,7 +41,7 @@ describe("ProfileEventsClient same-origin boundary", () => {
 
   it("never fetches a backslash-variant cross-origin events URL", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ detail: "unauthorized" }), {
+      new Response(JSON.stringify({ error: "unauthorized", message: "Not authenticated", retryable: false }), {
         status: 401,
         headers: { "content-type": "application/json" },
       }),

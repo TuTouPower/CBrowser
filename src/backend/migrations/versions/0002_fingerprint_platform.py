@@ -32,15 +32,11 @@ def upgrade() -> None:
         batch_op.drop_column("font_bundle")
 
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
+
 def downgrade() -> None:
-    with op.batch_alter_table("profiles") as batch_op:
-        batch_op.add_column(
-            sa.Column(
-                "font_bundle",
-                sa.String(length=32),
-                nullable=False,
-                server_default="none",
-            )
-        )
-        batch_op.drop_column("font_set_id")
-        batch_op.drop_column("fingerprint_platform")
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

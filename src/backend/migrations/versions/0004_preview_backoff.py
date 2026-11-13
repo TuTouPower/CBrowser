@@ -8,12 +8,10 @@ Definitions match 0001's (mutated) server_defaults: the single NOT NULL
 column carries server_default="0" so existing rows are backfilled, the
 three runtime columns are nullable with no default.
 
-Idempotency: databases created from the 1a6ec51-era 0001 already contain
-all four columns while stamped at 0002/0003 (e.g. live databases
-from the 1a6ec51 era). The
-upgrade only adds columns reported missing by the inspector, and the
-downgrade only drops columns still present, so re-running this revision
-against either shape is a no-op instead of a duplicate-column failure.
+The columns are added unconditionally (t056 A60): a database whose tables
+already carry one of these columns in a different shape is a historical
+mixed shape and must fail loudly instead of being silently stamped to
+head. Downgrade is unsupported: migrations only move forward.
 """
 
 from __future__ import annotations
@@ -41,46 +39,26 @@ _RUNTIME_COLUMNS: tuple[tuple[str, sa.Column], ...] = (
     ),
 )
 
-
-def _existing_columns(bind, table_name: str) -> set[str]:
-    insp = sa.inspect(bind)
-    try:
-        return {col["name"] for col in insp.get_columns(table_name)}
-    except sa.exc.NoSuchTableError:
-        return set()
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    if "capture_preview_epoch" not in _existing_columns(bind, "profiles"):
-        with op.batch_alter_table("profiles") as batch_op:
-            batch_op.add_column(
-                sa.Column(
-                    "capture_preview_epoch",
-                    sa.Integer(),
-                    nullable=False,
-                    server_default="0",
-                )
+    with op.batch_alter_table("profiles") as batch_op:
+        batch_op.add_column(
+            sa.Column(
+                "capture_preview_epoch",
+                sa.Integer(),
+                nullable=False,
+                server_default="0",
             )
-    missing = [
-        (name, column)
-        for name, column in _RUNTIME_COLUMNS
-        if name not in _existing_columns(bind, "profile_runtimes")
-    ]
-    if missing:
-        with op.batch_alter_table("profile_runtimes") as batch_op:
-            for _, column in missing:
-                batch_op.add_column(column)
+        )
+    with op.batch_alter_table("profile_runtimes") as batch_op:
+        for _, column in _RUNTIME_COLUMNS:
+            batch_op.add_column(column)
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
-    present = _existing_columns(bind, "profile_runtimes")
-    drop_runtimes = [name for name, _ in reversed(_RUNTIME_COLUMNS) if name in present]
-    if drop_runtimes:
-        with op.batch_alter_table("profile_runtimes") as batch_op:
-            for name in drop_runtimes:
-                batch_op.drop_column(name)
-    if "capture_preview_epoch" in _existing_columns(bind, "profiles"):
-        with op.batch_alter_table("profiles") as batch_op:
-            batch_op.drop_column("capture_preview_epoch")
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)

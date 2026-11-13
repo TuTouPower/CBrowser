@@ -110,6 +110,20 @@ class InvalidFontSetBindingError(ProfileServiceError):
     """A profile's font_set_id does not reference a usable font set."""
 
 
+class ReferenceValidationError(ProfileServiceError):
+    """A write references a group/proxy that does not exist, or a reorder
+    does not carry the full set (t056 A28).
+
+    Carries field-level ``details`` in the ValidationErrorDetail shape
+    (``loc`` / ``msg`` / ``type``); the API maps it to 422.
+    """
+
+    def __init__(self, details: list[dict[str, Any]]):
+        message = "; ".join(str(d.get("msg", "")) for d in details)
+        super().__init__(message)
+        self.details = details
+
+
 def _validate_font_set_binding(platform: str, font_set_id: str | None) -> None:
     """Reject a non-null binding whose set is missing, cross-platform, or
     fails its integrity check."""
@@ -386,6 +400,31 @@ class ProfileService:
             ) from None
         raise exc
 
+    async def _validate_references(
+        self, group_id: str | None, proxy_id: str | None
+    ) -> None:
+        """t056 A28: a non-null group/proxy reference must exist.  Both
+        missing fields are reported together, field-level."""
+        details: list[dict[str, Any]] = []
+        if group_id is not None and await self._repo.get_group(group_id) is None:
+            details.append(
+                {
+                    "loc": ["body", "group_id"],
+                    "msg": f"Group {group_id} does not exist",
+                    "type": "value_error",
+                }
+            )
+        if proxy_id is not None and await self._repo.get_proxy(proxy_id) is None:
+            details.append(
+                {
+                    "loc": ["body", "proxy_id"],
+                    "msg": f"Proxy {proxy_id} does not exist",
+                    "type": "value_error",
+                }
+            )
+        if details:
+            raise ReferenceValidationError(details)
+
     async def create_profile(
         self,
         config: ProfileConfig,
@@ -403,6 +442,7 @@ class ProfileService:
             if default is not None:
                 config = config.model_copy(update={"font_set_id": default})
         _validate_font_set_binding(config.fingerprint_platform, config.font_set_id)
+        await self._validate_references(config.group_id, config.proxy_id)
         try:
             return await self._repo.create_profile(
                 config=config,
@@ -453,6 +493,12 @@ class ProfileService:
                     "font_set_id", current.config.font_set_id
                 )
                 _validate_font_set_binding(platform, font_set_id)
+        # t056 A28: only keys present in the patch are validated; an
+        # explicit null clears the reference and needs no lookup.
+        if "group_id" in patch_dict or "proxy_id" in patch_dict:
+            await self._validate_references(
+                patch_dict.get("group_id"), patch_dict.get("proxy_id")
+            )
         try:
             profile = await self._repo.update_profile(
                 profile_id=profile_id,
@@ -848,18 +894,62 @@ class ProfileService:
     async def list_groups(self):
         return await self._repo.list_groups()
 
-    async def create_group(self, req):
-        return await self._repo.create_group(req.name, req.color, req.sort_order)
+    async def create_group(self, req, *, operation_id: str | None = None):
+        return await self._repo.create_group(
+            req.name, req.color, req.sort_order, operation_id=operation_id
+        )
 
-    async def update_group(self, group_id: str, req):
+    async def update_group(
+        self, group_id: str, req, *, operation_id: str | None = None
+    ):
         patch = req.model_dump(exclude_unset=True)
-        return await self._repo.update_group(group_id, patch)
+        return await self._repo.update_group(
+            group_id, patch, operation_id=operation_id
+        )
 
-    async def delete_group(self, group_id: str) -> bool:
-        return await self._repo.delete_group(group_id)
+    async def delete_group(
+        self, group_id: str, *, operation_id: str | None = None
+    ) -> bool:
+        return await self._repo.delete_group(group_id, operation_id=operation_id)
 
     async def reorder_groups(self, req):
-        return await self._repo.reorder_groups(req.ordered_ids)
+        # t056 A28: a reorder must carry the full set — same ids, no
+        # duplicates, no unknowns — otherwise 422.
+        ordered_ids: list[str] = list(req.ordered_ids)
+        existing = {g.id for g in await self._repo.list_groups()}
+        details: list[dict[str, Any]] = []
+        if len(set(ordered_ids)) != len(ordered_ids):
+            details.append(
+                {
+                    "loc": ["body", "ordered_ids"],
+                    "msg": "ordered_ids must not contain duplicates",
+                    "type": "value_error",
+                }
+            )
+        missing = sorted(set(ordered_ids) - existing)
+        if missing:
+            details.append(
+                {
+                    "loc": ["body", "ordered_ids"],
+                    "msg": f"Unknown group(s): {', '.join(missing)}",
+                    "type": "value_error",
+                }
+            )
+        omitted = sorted(existing - set(ordered_ids))
+        if omitted:
+            details.append(
+                {
+                    "loc": ["body", "ordered_ids"],
+                    "msg": (
+                        "ordered_ids must contain every group; "
+                        f"missing: {', '.join(omitted)}"
+                    ),
+                    "type": "value_error",
+                }
+            )
+        if details:
+            raise ReferenceValidationError(details)
+        return await self._repo.reorder_groups(ordered_ids)
 
     async def list_proxies(self):
         return await self._repo.list_proxies()
@@ -870,10 +960,14 @@ class ProfileService:
     async def get_proxy_credentials(self, proxy_id: str):
         return await self._repo.get_proxy_credentials(proxy_id)
 
-    async def create_proxy(self, req):
+    async def create_proxy(self, req, *, operation_id: str | None = None):
         """Create from a proxy link (t052): the link is the only entry;
         the name defaults to ``host:port``; a pending observation is
-        recorded and an egress probe is scheduled in the background."""
+        recorded and an egress probe is scheduled in the background.
+
+        t056 A23: replayable via Idempotency-Key.  A replay returns the
+        first proxy and schedules no second probe.
+        """
         endpoint = req.parsed_endpoint()
         payload = {
             "name": req.resolved_name(),
@@ -885,16 +979,31 @@ class ProfileService:
             "region_label": req.region_label,
             "notes": req.notes,
         }
-        created = await self._repo.create_proxy(payload)
+        if operation_id is not None:
+            entity_id = await self._repo.find_recorded_operation(
+                operation_id, "create_proxy", "", payload
+            )
+            if entity_id is not None:
+                existing = await self._repo.get_proxy(entity_id)
+                if existing is not None:
+                    return existing
+        created = await self._repo.create_proxy(payload, operation_id=operation_id)
         await self._record_pending_observation(created.id, endpoint)
         self._schedule_probe(created.id)
         refreshed = await self._repo.get_proxy(created.id)
         return refreshed if refreshed is not None else created
 
-    async def update_proxy(self, proxy_id: str, req):
+    async def update_proxy(
+        self, proxy_id: str, req, *, operation_id: str | None = None
+    ):
         """PATCH from a proxy link (t052): an omitted ``proxy_url`` leaves
         the endpoint (and password) untouched; a supplied one replaces it
-        wholesale and re-triggers the egress probe."""
+        wholesale and re-triggers the egress probe.
+
+        t056 A23: replayable via Idempotency-Key.  A replay returns the
+        current proxy with recomputed impact lists and schedules no
+        second probe.
+        """
         patch: dict[str, Any] = {
             key: value
             for key, value in req.model_dump(exclude_unset=True).items()
@@ -914,18 +1023,30 @@ class ProfileService:
                 }
             )
             password_supplied = True
-        proxy, affected = await self._repo.update_proxy(
-            proxy_id, patch, password_supplied
+        if operation_id is not None:
+            entity_id = await self._repo.find_recorded_operation(
+                operation_id,
+                "update_proxy",
+                proxy_id,
+                {"patch": patch, "password_supplied": password_supplied},
+            )
+            if entity_id is not None:
+                existing = await self._repo.get_proxy(proxy_id)
+                if existing is not None:
+                    versioned, runtime_only = await self._repo.proxy_impact(proxy_id)
+                    return existing, versioned, runtime_only
+        proxy, versioned, runtime_only = await self._repo.update_proxy(
+            proxy_id, patch, password_supplied, operation_id=operation_id
         )
         if proxy is None:
-            return None, []
+            return None, [], []
         if endpoint is not None:
             await self._record_pending_observation(proxy.id, endpoint)
             self._schedule_probe(proxy.id)
             refreshed = await self._repo.get_proxy(proxy.id)
             if refreshed is not None:
                 proxy = refreshed
-        return proxy, affected
+        return proxy, versioned, runtime_only
 
     async def probe_proxy_egress(self, proxy_id: str):
         """Manual probe (t052): only the proxy id is accepted — the stored
@@ -1065,5 +1186,7 @@ class ProfileService:
                 exc_info=True,
             )
 
-    async def delete_proxy(self, proxy_id: str):
-        return await self._repo.delete_proxy(proxy_id)
+    async def delete_proxy(
+        self, proxy_id: str, *, operation_id: str | None = None
+    ):
+        return await self._repo.delete_proxy(proxy_id, operation_id=operation_id)

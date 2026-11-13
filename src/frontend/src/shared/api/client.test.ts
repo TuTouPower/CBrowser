@@ -170,7 +170,13 @@ describe("ApiClient", () => {
 
     mockHandler = (_req, res) => {
       res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ detail: "Not authenticated" }));
+      res.end(
+        JSON.stringify({
+          error: "unauthorized",
+          message: "Not authenticated",
+          retryable: false,
+        }),
+      );
     };
 
     await expect(client.profiles.list()).rejects.toThrow(ApiError);
@@ -181,7 +187,13 @@ describe("ApiClient", () => {
     const client = new ApiClient();
     mockHandler = (_req, res) => {
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ detail: "Invalid profile name" }));
+      res.end(
+        JSON.stringify({
+          error: "bad_request",
+          message: "Invalid profile name",
+          retryable: false,
+        }),
+      );
     };
 
     await expect(
@@ -219,15 +231,16 @@ describe("ApiClient hardening", () => {
     }
   });
 
-  it("carries error code, retryable flag and detail", async () => {
+  it("carries error code, retryable flag and details", async () => {
     document.cookie = "";
     const client = new ApiClient();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
           error: "validation_error",
+          message: "Validation failed",
           retryable: false,
-          detail: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
+          details: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
         }),
         { status: 422, headers: { "content-type": "application/json" } },
       ),
@@ -237,21 +250,21 @@ describe("ApiClient hardening", () => {
         errorCode: "validation_error",
         retryable: false,
         status: 422,
-        detail: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
+        details: [{ loc: ["body", "launch_args"], msg: "not allowed" }],
       });
     } finally {
       fetchSpy.mockRestore();
     }
   });
 
-  it("reads the agreed business error code, detail and retryable flag", async () => {
+  it("reads the agreed business error code, details and retryable flag", async () => {
     document.cookie = "";
     const client = new ApiClient();
-    const detail = { code: "proxy_in_use", used_by_count: 3 };
+    const details = { used_by_count: 3 };
     const payload = {
       error: "proxy_in_use",
-      message: "Conflict",
-      detail,
+      message: "Proxy is in use by 3 profiles",
+      details,
       retryable: false,
     };
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -263,7 +276,7 @@ describe("ApiClient hardening", () => {
     try {
       await expect(client.proxies.remove("px1")).rejects.toMatchObject({
         errorCode: "proxy_in_use",
-        detail,
+        details,
         retryable: false,
         status: 409,
       });

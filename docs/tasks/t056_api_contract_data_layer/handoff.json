@@ -1,0 +1,14 @@
+{
+  "tid": "t056",
+  "attempt": 1,
+  "execution_id": "fa46eb36e79344b78dfbb74dc8ea8e57",
+  "status": "done",
+  "branch": "t056_api_contract_data_layer",
+  "base_sha": "3fbcec1754e6e1d9f4bd0978eefe6bd654df965a",
+  "tests": "Round 1 修复：受影响套件 95 passed；全量回归：后端 25 failed / 2140 passed / 8 skipped（失败与实施方全量逐名一致、零新增），前端 75 文件 546 测试全部通过；Round 2 审阅方独立重跑：后端 25 failed / 2140 passed / 8 skipped（与 t055 基线逐名一致），前端 546 passed / 0 failed（test 路一轮出现 2 个 5000ms 超时 flaky，单独重跑 16/16 通过，与 t056 无关）",
+  "blackbox": "本机跳过（见环境跳过项），用户机复核",
+  "review": "Round 2 双路 PASS（2026-11-12 05:50；code/test 均 PASS，0 新发现；R1 的 5 条 finding 全部消除并经还原则探针复核；check_review_status overall=PASS，next_action=finalize）",
+  "review_scope": "72cc8c4e992e1853",
+  "pending": [],
+  "findings": []
+}

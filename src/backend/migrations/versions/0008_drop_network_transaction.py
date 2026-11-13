@@ -10,11 +10,10 @@ rebuild-edge / converge-streams endpoints, and the repository network
 methods are all deleted in the same task — so the upgrade deletes every
 such row.
 
-Downgrade is a documented no-op, not a restore: the deleted rows have no
-restore path by design (the code that would read them is gone), and the
-migration test that walks the chain (test_control_migration.py) runs this
-downgrade on its way back to the 0003 baseline — raising here would break
-that walk without protecting any real data.
+Downgrade is unsupported (t056 A60): migrations only move forward, and
+the deleted rows have no restore path by design (the code that would read
+them is gone). Roll back with a release rollback and a data-directory
+rebuild instead.
 """
 
 from __future__ import annotations
@@ -26,12 +25,15 @@ down_revision: str | None = "1a8db6b91744"
 branch_labels: str | None = None
 depends_on: str | None = None
 
+_UNSUPPORTED_DOWNGRADE = (
+    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Roll back with a release rollback and a data-directory rebuild instead."
+)
+
 
 def upgrade() -> None:
     op.execute("DELETE FROM settings WHERE key LIKE 'network.%'")
 
 
 def downgrade() -> None:
-    # No-op by design: deleted network.* rows have no restore path (see
-    # the module docstring). The settings table keeps every other row.
-    return None
+    raise RuntimeError(_UNSUPPORTED_DOWNGRADE)
