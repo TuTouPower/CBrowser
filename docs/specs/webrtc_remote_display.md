@@ -70,6 +70,13 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - SSE 运行时事件以生成的 `ProfileRuntimeStatusEvent` 为唯一类型契约：投递前验证核心字段与状态枚举，畸形或未知事件只进错误通道、不投递给消费者。连接以代次隔离：重复 `start` 不新增连接，旧代次不得投递、报错或触发重连，`stop`（含登出）后不得重连。
 - 会话页严格区分加载中、加载失败（显式错误并可重试）、Profile 不存在（仅真实 404）与已停止待启动；请求失败不得呈现为已停止。切换界面语言只更新文案，不得重跑运行时检查或重置已连接会话。
 
+## 前端会话状态一致性（t058）
+
+- 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入会话 hook，hook 不再自行读取 runtime 写错误；`runtimeState` 为空时不写任何错误。
+- 帧信号仅在后端状态非 `stopped` / `error` 时推进连接态并启动音频管线。
+- 首检完成前收到的 WS 关闭（含 1006）只记录诊断，不启动恢复；首检定版为非 `running`（或其后变为 `stopped` / `error`）时取消同 generation 的恢复轮询。
+- 错误边界分层：渲染异常由日志通道记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换复位，异常只影响该路由；根部保留兜底。
+
 ## 媒体链路回环直连（t042；t054 重写：局域网直连删除）
 
 - 媒体直连只走本机回环：不使用 STUN/TURN 中继、无 ICE 重启机制；Stream 容器固定 `CBROWSER_WEBRTC_PUBLIC_IP=127.0.0.1`，UDP mux 端口固定绑定 `127.0.0.1`（t054 删除局域网 host 候选扩展，ADR 013 回到仅回环）。

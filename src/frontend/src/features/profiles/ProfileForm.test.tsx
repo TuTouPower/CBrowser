@@ -111,44 +111,6 @@ function proxy(): ProxyResponse {
   };
 }
 
-function profile(): ProfileResponse {
-  return {
-    id: "p1",
-    name: "Original",
-    display_number: 1,
-    fingerprint_seed: 101,
-    group_id: null,
-    proxy_id: null,
-    timezone: null,
-    locale: null,
-    screen_width: 1920,
-    screen_height: 1080,
-    gpu_family: "auto",
-    humanize: false,
-    human_preset: "default",
-    geoip: true,
-    clipboard_sync: true,
-    auto_launch: false,
-    color_scheme: null,
-    fingerprint_platform: "windows",
-    font_set_id: null,
-    launch_args: [],
-    extension_paths: [],
-    allow_3p_cookies: true,
-    set_google_default: true,
-    capture_preview: true,
-    restore_session: true,
-    transparent_proxy: false,
-    portable_cookies: false,
-    notes: null,
-    user_data_dir: "/data/p1",
-    sort_order: 0,
-    current_config_version: 1,
-    created_at: "2026-01-01T00:00:00Z",
-    updated_at: "2026-01-01T00:00:00Z",
-  };
-}
-
 function makeStub(opts: {
   fontSets?: FontSetInfo[];
   defaultFontSetId?: Record<string, string | null>;
@@ -185,7 +147,6 @@ function renderForm(opts: {
     values: ProfileCreateRequest | ProfileUpdateRequest,
   ) => Promise<void>;
   submitLabel?: string;
-  onDirtyRuntimeConfig?: (changed: boolean) => void;
   stub: ApiClient;
 }) {
   const queryClient = new QueryClient({
@@ -203,7 +164,6 @@ function renderForm(opts: {
                   initial={opts.initial}
                   onSubmit={opts.onSubmit ?? (async () => undefined)}
                   submitLabel={opts.submitLabel}
-                  onDirtyRuntimeConfig={opts.onDirtyRuntimeConfig}
                 />
               </MemoryRouter>
             </ApiClientContext.Provider>
@@ -639,60 +599,10 @@ describe("ProfileForm", () => {
     );
   });
 
-  it("does not report a runtime-config change for metadata-only edits", async () => {
-    const onDirtyRuntimeConfig = vi.fn();
-    renderForm({
-      mode: "edit",
-      initial: profile(),
-      onDirtyRuntimeConfig,
-      stub: makeStub(),
-    });
-
-    fireEvent.change(screen.getByTestId("profile-form-notes"), {
-      target: { value: "a note" },
-    });
-    await waitFor(() => expect(onDirtyRuntimeConfig).toHaveBeenCalled());
-    expect(onDirtyRuntimeConfig).not.toHaveBeenCalledWith(true);
-  });
-
-  it("reports a runtime-config change when a runtime field changes", async () => {
-    const onDirtyRuntimeConfig = vi.fn();
-    renderForm({
-      mode: "edit",
-      initial: profile(),
-      onDirtyRuntimeConfig,
-      stub: makeStub(),
-    });
-
-    fireEvent.focus(screen.getByTestId("profile-form-timezone"));
-    fireEvent.change(screen.getByTestId("profile-form-timezone"), {
-      target: { value: "Asia/Shanghai" },
-    });
-    fireEvent.keyDown(screen.getByTestId("profile-form-timezone"), {
-      key: "Enter",
-    });
-    await waitFor(() =>
-      expect(onDirtyRuntimeConfig).toHaveBeenCalledWith(true),
-    );
-  });
-
-  it("submits the full values in edit mode", async () => {
-    const onSubmit = vi.fn(async () => undefined);
-    renderForm({
-      mode: "edit",
-      initial: profile(),
-      onSubmit,
-      stub: makeStub(),
-    });
-
-    fireEvent.click(screen.getByTestId("profile-form-submit"));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "Original",
-        screen_width: 1920,
-        geoip: true,
-      }),
-    );
-  });
+  // t058 A24: the two onDirtyRuntimeConfig cases below were deleted with
+  // the prop (ConfigTab no longer splits the submit by dirty class; the
+  // diff carries it). The classification itself is covered by
+  // profile_field_diff.test.ts. The "submits the full values in edit
+  // mode" case was deleted because edit now submits only the diff; see
+  // ProfileForm.t058.test.tsx (AC-001/AC-002).
 });

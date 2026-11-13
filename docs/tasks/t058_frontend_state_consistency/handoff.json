@@ -1,0 +1,14 @@
+{
+  "tid": "t058",
+  "attempt": 1,
+  "execution_id": "76d54135af15418db5ffbceb0c0dae5e",
+  "status": "done",
+  "branch": "t058_frontend_state_consistency",
+  "base_sha": "8ede5099cecb6c4116757fb9f36864c8c0642f0f",
+  "tests": "目标测试 12 文件 83 项全过；后端分类测试 2 passed；前端全量 `npm test`（含类型门禁）575 passed / 0 failed；后端全量（审阅方独立重跑，/tmp/t058rv 短根）24 failed / 2143 passed / 8 skipped / 0 error——按名与 t056 基线逐项对比，零代码回归（t045×2 已通过，wheel 于 03:12:53 补齐；其余 23 项失败与基线逐名一致；t034×1 为调用方 PATH 缺 `uv` 的测量 artifact，补 PATH 后 5 项全过）；模板契约 257 passed / 1 skipped；design_lint 0 error / 0 warning；design_check 通过；`npm run build` 通过",
+  "blackbox": "本机跳过（无 Docker / 真实部署 / 真实 Chrome，见环境跳过项），用户机复核",
+  "review": "待主 agent 另行派发双路审阅（Round 1 code/test）",
+  "review_scope": "81de8955c56d4188",
+  "pending": [],
+  "findings": []
+}

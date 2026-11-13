@@ -1,6 +1,7 @@
 import { createBrowserRouter, Navigate, type RouteObject } from "react-router";
 import { AppErrorPage } from "./AppErrorPage";
 import { AppLayout } from "./AppLayout";
+import { RouteErrorBoundary } from "./ErrorBoundary";
 import { RequireAuth } from "./RequireAuth";
 import { SessionPage } from "../features/browser-session/SessionPage";
 import { SessionEntryPage } from "../features/browser-session/SessionEntryPage";
@@ -13,63 +14,113 @@ import { LoginPage } from "../features/auth/LoginPage";
 export const routes: RouteObject[] = [
   {
     path: "/login",
-    element: <LoginPage />,
+    element: (
+      <RouteErrorBoundary>
+        <LoginPage />
+      </RouteErrorBoundary>
+    ),
     errorElement: <AppErrorPage />,
   },
   {
     path: "/",
     element: (
-      <RequireAuth>
-        <AppLayout />
-      </RequireAuth>
+      <RouteErrorBoundary>
+        <RequireAuth>
+          <AppLayout />
+        </RequireAuth>
+      </RouteErrorBoundary>
     ),
     errorElement: <AppErrorPage />,
     children: [
       {
         index: true,
-        element: <EnvironmentListPage />,
+        element: (
+          <RouteErrorBoundary>
+            <EnvironmentListPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "session",
-        element: <SessionEntryPage />,
+        element: (
+          <RouteErrorBoundary>
+            <SessionEntryPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "session/:profileId",
-        element: <SessionPage />,
+        element: (
+          <RouteErrorBoundary>
+            <SessionPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "proxies",
-        element: <ProxyListPage />,
+        element: (
+          <RouteErrorBoundary>
+            <ProxyListPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "profiles/:profileId",
-        element: <Navigate to="config" replace />,
+        element: (
+          <RouteErrorBoundary>
+            <Navigate to="config" replace />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "profiles/:profileId/config",
-        element: <ProfileDetailPage />,
+        element: (
+          <RouteErrorBoundary>
+            <ProfileDetailPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "profiles/:profileId/files",
-        element: <ProfileDetailPage />,
+        element: (
+          <RouteErrorBoundary>
+            <ProfileDetailPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "profiles/:profileId/automation",
-        element: <ProfileDetailPage />,
+        element: (
+          <RouteErrorBoundary>
+            <ProfileDetailPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "profiles/:profileId/maintenance",
-        element: <ProfileDetailPage />,
+        element: (
+          <RouteErrorBoundary>
+            <ProfileDetailPage />
+          </RouteErrorBoundary>
+        ),
       },
       {
         path: "settings",
-        element: <SettingsPage />,
+        element: (
+          <RouteErrorBoundary>
+            <SettingsPage />
+          </RouteErrorBoundary>
+        ),
       },
     ],
   },
   {
     path: "*",
-    element: <Navigate to="/" replace />,
+    element: (
+      <RouteErrorBoundary>
+        <Navigate to="/" replace />
+      </RouteErrorBoundary>
+    ),
     errorElement: <AppErrorPage />,
   },
 ];

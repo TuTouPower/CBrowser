@@ -17,7 +17,7 @@ import {
   type ConnectionSnapshot,
 } from "./diagnostics_source";
 import { useI18n } from "../../i18n";
-import { ApiClient, ApiError, defaultApiClient } from "../../shared/api/client";
+import { ApiClient, defaultApiClient } from "../../shared/api/client";
 
 interface UseBrowserSessionOptions {
   initialStage?: SessionStage;
@@ -82,6 +82,16 @@ export function useBrowserSession(
   const prevRuntimeRef = useRef<RuntimeObservedState | null | undefined>(
     options.runtimeState
   );
+  const runtimeStateRef = useRef<RuntimeObservedState | null | undefined>(
+    options.runtimeState
+  );
+  runtimeStateRef.current = options.runtimeState;
+  // t058 A39: whether the runtime first check has settled for the current
+  // profile, and which generation's transport recovery poll a non-running
+  // verdict cancelled.
+  const runtimeCheckDoneRef = useRef<boolean>(false);
+  const runtimeCheckDoneProfileRef = useRef<string | null>(null);
+  const recoveryCancelledGenRef = useRef<number | null>(null);
   const prevProfileIdRef = useRef<string>(profileId);
   const webLocksUnavailableRef = useRef<boolean>(false);
   const generationRef = useRef<number>(0);
@@ -121,6 +131,17 @@ export function useBrowserSession(
     clearTimer(transportRecoveryTimerRef);
   }, [clearTimer]);
 
+  // t058 A39: cancel the transport recovery poll of one generation. The
+  // poll loop re-checks the flag after every await, so an in-flight poll
+  // stops at its next step instead of reconnecting a stopped profile.
+  const cancelRecoveryPoll = useCallback(
+    (gen: number) => {
+      recoveryCancelledGenRef.current = gen;
+      clearTimer(transportRecoveryTimerRef);
+    },
+    [clearTimer]
+  );
+
   const readStats = useCallback(async (): Promise<SelkiesStats | null> => {
     const win = iframeRef.current?.contentWindow as
       | SelkiesIframeWindow
@@ -157,7 +178,12 @@ export function useBrowserSession(
         connection.hasFrames &&
         stageRef.current !== "connected" &&
         effectiveStageRef.current !== "stopping" &&
-        effectiveStageRef.current !== "error"
+        effectiveStageRef.current !== "error" &&
+        // t058 A25: frames only advance the session while the backend is
+        // not stopped/error. A late frame signal for a stopped backend
+        // must not connect the session or start the audio pipeline.
+        runtimeStateRef.current !== "stopped" &&
+        runtimeStateRef.current !== "error"
       ) {
         // P1-E: media_no_frames 等可恢复态有帧即回 connected，无需手动
         // Reconnect；同时清除超时错误文案。
@@ -295,6 +321,34 @@ export function useBrowserSession(
     }
   }, [profileId, options.runtimeState, reconnect]);
 
+  // t058 A39: the runtime first check settles the first time runtimeState
+  // becomes non-null for the current profile. A non-running verdict — or a
+  // later move to stopped/error — cancels the same generation's transport
+  // recovery poll, so a stale poll can never overwrite the diagnosed
+  // state. A running verdict re-arms recovery for the generation.
+  useEffect(() => {
+    if (runtimeCheckDoneProfileRef.current !== profileId) {
+      runtimeCheckDoneProfileRef.current = profileId;
+      runtimeCheckDoneRef.current = false;
+      recoveryCancelledGenRef.current = null;
+    }
+    const observed = options.runtimeState;
+    if (observed == null) return;
+    if (observed === "running") {
+      runtimeCheckDoneRef.current = true;
+      recoveryCancelledGenRef.current = null;
+      return;
+    }
+    if (!runtimeCheckDoneRef.current) {
+      runtimeCheckDoneRef.current = true;
+      cancelRecoveryPoll(generationRef.current);
+      return;
+    }
+    if (observed === "stopped" || observed === "error") {
+      cancelRecoveryPoll(generationRef.current);
+    }
+  }, [profileId, options.runtimeState, cancelRecoveryPoll]);
+
   const failSignaling = useCallback((code: number) => {
     setStage("signaling_failed");
     setErrorMessage(tRef.current("signalingDisconnected", { code }));
@@ -314,6 +368,7 @@ export function useBrowserSession(
       setStage("reconnecting");
       const poll = async (): Promise<void> => {
         if (!isCurrent(gen)) return;
+        if (recoveryCancelledGenRef.current === gen) return;
         let transportState: string | undefined;
         try {
           const data = await apiClientRef.current.profiles.getRuntime(profileId);
@@ -322,6 +377,7 @@ export function useBrowserSession(
           transportState = undefined;
         }
         if (!isCurrent(gen)) return;
+        if (recoveryCancelledGenRef.current === gen) return;
         if (transportState === "ready") {
           reconnect();
           return;
@@ -346,59 +402,43 @@ export function useBrowserSession(
     ]
   );
 
-  // Check runtime status on mount if not provided with explicit initialStage
+  // t058 A25: stage and error message are derived from the runtimeQuery
+  // input (options.runtimeState), never from a hook-side runtime read.
+  // Only a stage still waiting on the runtime verdict moves; a live or
+  // diagnostic stage is left alone. No runtime data yet means no verdict
+  // and no error message: a single failed read must never surface as an
+  // error while the stage is healthy (AC-004).
   useEffect(() => {
-    const gen = generationRef.current;
-    const client = options.apiClient || defaultApiClient;
-    const checkRuntime = async () => {
-      try {
-        const data = await client.profiles.getRuntime(profileId);
-        if (!isCurrent(gen)) return;
-        const observed = data.observed_state;
-        if (observed === "stopping") {
-          setStage("stopping");
-          setErrorMessage(null);
-        } else if (observed === "error") {
-          setStage("error");
-          setErrorMessage(
-            tRef.current("runtimeReportedError", {
-              state: observed || tRef.current("runtimeStateUnknown"),
-            })
-          );
-        } else if (observed === "running" || observed === "starting") {
-          // P1-E: 首挂载 starting 直接走 connecting_signaling，不再显示
-          // 错误态 + Launch；running 分支清 errorMessage。
-          setStage("connecting_signaling");
-          setErrorMessage(null);
-        } else {
-          setStage("runtime_not_ready");
-          setErrorMessage(
-            tRef.current("runtimeNotRunning", {
-              state: observed || tRef.current("runtimeStateUnknown"),
-            })
-          );
-        }
-      } catch (err) {
-        if (!isCurrent(gen)) return;
-        if (err instanceof ApiError && err.status === 401) {
-          // The auth provider handles the redirect to login.
-          return;
-        }
-        const reason =
-          err instanceof ApiError
-            ? `${err.status} ${err.message}`
-            : err instanceof Error && err.message
-              ? err.message
-              : tRef.current("runtimeStateUnknown");
-        setStage("runtime_not_ready");
-        setErrorMessage(tRef.current("runtimeCheckUnavailable", { reason }));
-      }
-    };
-
-    if (!options.initialStage) {
-      void checkRuntime();
+    if (options.initialStage) return;
+    const observed = options.runtimeState;
+    if (observed == null) return;
+    const waiting =
+      stageRef.current === "checking_runtime" ||
+      stageRef.current === "runtime_not_ready" ||
+      stageRef.current === "reconnecting";
+    if (!waiting) return;
+    if (observed === "stopping") {
+      setStage("stopping");
+      setErrorMessage(null);
+    } else if (observed === "error") {
+      setStage("error");
+      setErrorMessage(
+        tRef.current("runtimeReportedError", {
+          state: observed,
+        })
+      );
+    } else if (observed === "running" || observed === "starting") {
+      setStage("connecting_signaling");
+      setErrorMessage(null);
+    } else {
+      setStage("runtime_not_ready");
+      setErrorMessage(
+        tRef.current("runtimeNotRunning", {
+          state: observed || tRef.current("runtimeStateUnknown"),
+        })
+      );
     }
-  }, [profileId, options.apiClient, options.initialStage, reloadKey, isCurrent]);
+  }, [profileId, options.runtimeState, options.initialStage, reloadKey]);
 
   // Handle postMessage events from iframe adapter
   useEffect(() => {
@@ -494,6 +534,10 @@ export function useBrowserSession(
                 reconnect();
               }
             }, 5000);
+          } else if (!runtimeCheckDoneRef.current) {
+            // t058 A39: the runtime first check has not settled yet — record
+            // the close and start no recovery; the settled check decides.
+            setDiagData((prev) => ({ ...prev, signalingCloseCode: code }));
           } else {
             handleInitialSignalingClose(code);
           }

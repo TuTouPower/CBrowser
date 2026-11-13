@@ -85,13 +85,17 @@ export function useUpdateProfileMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) =>
       client.profiles.update(input.id, input.data, actionKey),
-    onSuccess: (data, { input }) => {
-      // P1-12: 保存成功先用 mutation 返回值写缓存，再由调用方 remount，
-      // 避免 remount 时读到旧值回显覆盖。
+    onSuccess: async (data, { input }) => {
+      // t058 A24: cancel any in-flight detail fetch before writing the
+      // saved profile, so a stale GET resolving after the save cannot
+      // overwrite it. The detail query is not invalidated — invalidation
+      // would refetch and could reintroduce the same race — only the
+      // list is invalidated.
+      await queryClient.cancelQueries({
+        queryKey: profileKeys.detail(input.id),
+      });
       queryClient.setQueryData(profileKeys.detail(input.id), data);
       queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.detail(input.id) });
-      queryClient.invalidateQueries({ queryKey: profileKeys.runtime(input.id) });
     },
   });
 }

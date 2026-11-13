@@ -1,14 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, type ReactNode } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect, type ReactElement, type ReactNode } from "react";
 import {
   createMemoryRouter,
   RouterProvider,
   type RouteObject,
 } from "react-router";
 import { AppErrorPage, defaultRecoveryActions } from "./AppErrorPage";
-import { ErrorBoundary } from "./ErrorBoundary";
+import { ErrorBoundary, RouteErrorBoundary } from "./ErrorBoundary";
+import { frontendLog } from "../shared/logging";
 import { I18nProvider, en, zh } from "../i18n";
 import { routes } from "./router";
 
@@ -138,6 +139,120 @@ describe("ErrorBoundary", () => {
     expect(screen.getByTestId("probe")).toHaveTextContent("2");
     expect(mounts).toBe(1);
     expect(renders).toBeGreaterThan(1);
+  });
+});
+
+describe("ErrorBoundary logging and reset (t058 A27)", () => {
+  afterEach(() => {
+    frontendLog.clear();
+  });
+
+  it("records a render error on the frontend log channel", () => {
+    // Earlier cases in this file also throw through a boundary; start clean.
+    frontendLog.clear();
+    const logError = vi.spyOn(frontendLog, "logError");
+    render(
+      <ErrorBoundary>
+        <Bomb marker="sensitive-stack-trace-marker" />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByTestId("app-error-page")).toBeInTheDocument();
+    expect(logError).toHaveBeenCalledTimes(1);
+    const [error, context] = logError.mock.calls[0]!;
+    expect((error as Error).message).toBe("sensitive-stack-trace-marker");
+    expect(context).toEqual(
+      expect.objectContaining({ source: "ErrorBoundary" }),
+    );
+    expect((context as { componentStack?: string }).componentStack).toContain(
+      "Bomb",
+    );
+    expect(frontendLog.getEntries()).toHaveLength(1);
+    expect(frontendLog.getEntries()[0]!.message).toBe(
+      "sensitive-stack-trace-marker",
+    );
+  });
+
+  it("resets when resetKey changes so a fixed route renders again", () => {
+    function MaybeBomb({ explode }: { explode: boolean }): ReactNode {
+      if (explode) throw new Error("boom-once");
+      return <div data-testid="healthy-content">healthy</div>;
+    }
+    const view = render(
+      <ErrorBoundary resetKey="a">
+        <MaybeBomb explode />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByTestId("app-error-page")).toBeInTheDocument();
+
+    view.rerender(
+      <ErrorBoundary resetKey="b">
+        <MaybeBomb explode={false} />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByTestId("healthy-content")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-error-page")).not.toBeInTheDocument();
+  });
+});
+
+describe("RouteErrorBoundary (t058 A27, AC-006)", () => {
+  afterEach(() => {
+    frontendLog.clear();
+  });
+
+  it("isolates a route error and recovers on navigation", async () => {
+    const logError = vi.spyOn(frontendLog, "logError");
+    const testRoutes: RouteObject[] = [
+      {
+        path: "/boom",
+        element: (
+          <RouteErrorBoundary>
+            <Bomb marker="route-private-detail" />
+          </RouteErrorBoundary>
+        ),
+      },
+      {
+        path: "/ok",
+        element: (
+          <RouteErrorBoundary>
+            <div data-testid="ok-page">ok</div>
+          </RouteErrorBoundary>
+        ),
+      },
+    ];
+    const router = createMemoryRouter(testRoutes, {
+      initialEntries: ["/boom"],
+    });
+    render(
+      withI18n(<RouterProvider router={router} />),
+    );
+    expect(await screen.findByTestId("app-error-page")).toBeInTheDocument();
+    expect(logError).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await router.navigate("/ok");
+    });
+    expect(await screen.findByTestId("ok-page")).toBeInTheDocument();
+    expect(screen.queryByTestId("app-error-page")).not.toBeInTheDocument();
+  });
+
+  it("wraps every top-level route of the real router", () => {
+    expect(routes.length).toBeGreaterThan(0);
+    for (const route of routes) {
+      expect((route.element as ReactElement).type).toBe(RouteErrorBoundary);
+    }
+  });
+
+  it("wraps every nested child route too, so one route's error keeps the layout", () => {
+    const parents = routes.filter((route) => route.children !== undefined);
+    expect(parents.length).toBeGreaterThan(0);
+    for (const parent of parents) {
+      expect(parent.children!.length).toBeGreaterThan(0);
+      for (const child of parent.children!) {
+        expect((child.element as ReactElement).type).toBe(
+          RouteErrorBoundary,
+        );
+      }
+    }
   });
 });
 
