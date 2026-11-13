@@ -16,9 +16,6 @@ class _StubApi:
     async def get_profile_runtime(self, profile_id):
         return {"runtime_instance_id": "inst-1", "observed_state": "running"}
 
-    async def authorize_viewer(self, session_cookie, origin, profile_id):
-        return False, "no session"
-
     async def close(self):
         return None
 
@@ -39,6 +36,7 @@ def _build(tmp_path, monkeypatch, trusted_raw):
         gateway_token_file=token_file,
         api_url="http://127.0.0.1:1",
         api_token_file=api_token_file,
+        viewer_grant_key_file=api_token_file,
     )
     app = create_gateway_app(config, api_client=_StubApi())
     return TestClient(TestServer(app))

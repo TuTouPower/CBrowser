@@ -58,6 +58,27 @@ def test_automation_status_reports_authorized_endpoint(automation_env) -> None:
     assert body["token_header"].startswith("Authorization: Bearer")
 
 
+def test_ordinary_profile_surfaces_do_not_leak_cdp_endpoint_or_token(
+    automation_env,
+) -> None:
+    """t064 AC-004: the dedicated Automation status response is the only
+    profile surface carrying cdp_ws_path. Ordinary profile detail/list
+    responses used by the viewer UI contain neither that endpoint nor
+    the one-time automation token value."""
+    client = automation_env["client"]
+    profile_id = automation_env["profile_id"]
+
+    detail = client.get(f"/api/v1/profiles/{profile_id}")
+    assert detail.status_code == 200
+    assert "cdp_ws_path" not in detail.text
+    assert automation_env["token"] not in detail.text
+
+    listing = client.get("/api/v1/profiles")
+    assert listing.status_code == 200
+    assert "cdp_ws_path" not in listing.text
+    assert automation_env["token"] not in listing.text
+
+
 def test_automation_websocket_rejects_missing_or_foreign_token(
     automation_env,
 ) -> None:

@@ -229,10 +229,8 @@ async def test_supervisor_disconnect_closes_viewers_and_preserves_agent(
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie_val = f"sess_{secrets.token_urlsafe(32)}"
 
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie_val, profile_id, allowed=True)
         agent_token = harness.agent_credentials.token_for(profile_id, instance_id)
 
         session = aiohttp.ClientSession()
@@ -264,10 +262,7 @@ async def test_supervisor_disconnect_closes_viewers_and_preserves_agent(
         # Connect Viewer
         ws_viewer = await session.ws_connect(
             f"{harness.ws_url}/stream/{profile_id}/signal",
-            headers={
-                "Origin": "https://localhost:8443",
-                "Cookie": f"cbrowser_session={cookie_val}",
-            },
+            headers=harness.viewer_headers(profile_id),
         )
         await ws_agent.receive()  # tunnel open
 
@@ -308,9 +303,7 @@ async def test_viewer_frames_never_change_visibility_or_reach_agent_as_control(
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie = f"sess_{secrets.token_urlsafe(32)}"
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie, profile_id, allowed=True)
         ws_agent, session_id = await _register_agent(
             session, harness, profile_id, instance_id
         )
@@ -321,10 +314,7 @@ async def test_viewer_frames_never_change_visibility_or_reach_agent_as_control(
 
         ws_viewer = await session.ws_connect(
             f"{harness.ws_url}/stream/{profile_id}/signal",
-            headers={
-                "Origin": "https://localhost:8443",
-                "Cookie": f"cbrowser_session={cookie}",
-            },
+            headers=harness.viewer_headers(profile_id),
         )
         assert json.loads((await ws_agent.receive()).data)["type"] == "open"
 

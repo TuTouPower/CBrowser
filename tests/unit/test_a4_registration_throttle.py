@@ -40,6 +40,7 @@ def _build(tmp_path: Path, monkeypatch, trusted_raw):
         gateway_token_file=token_file,
         api_url="http://127.0.0.1:1",
         api_token_file=api_token_file,
+        viewer_grant_key_file=api_token_file,
     )
     app = create_gateway_app(config, api_client=_StubApi())
     return TestClient(TestServer(app)), key_file

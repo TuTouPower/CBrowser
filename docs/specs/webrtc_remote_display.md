@@ -53,6 +53,11 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 
 组件行为以 t004 的逐项 AC 和真实 E2E 为准，不能用 Mock Peer、编码器或合成音频替代。当前测试的外部 Chrome CDP composition 验证原生客户端路径；桌面输入法候选窗口、输入/剪贴板手动清单与最终整机容量仍需后续验收。公网和原生 Linux x86 执行仅按用户明确豁免记 NOT_RUN / USER_WAIVED，不计实测 PASS。
 
+## Viewer 边缘授权（t064）
+
+- 正式信令路径仍为 `/stream/{profileId}/signal`，但登录会话不再由 Gateway 携 Cookie 回 API 校验。Caddy 对该路由先删伪造授权头、经 API 边缘解析会话/Origin/Profile，再删 Cookie 并把 API 签发的 60 秒单 Profile grant 交给 Gateway 本地验签；其余升级前拒绝、每页独立隧道、Agent 就绪与媒体不经 Gateway 的语义不变。
+- 刷新与重连的每次新握手都重新走边缘解析，登出或会话撤销在下一次握手生效；已建立连接不因 grant 到期中途切断。`/stream/agent/register` 不经 viewer 边缘授权，继续使用独立 Agent 凭证恢复注册。
+
 ## 注册恢复、消息预算与配额（t022）
 
 - Gateway 注册节流为双预算：在途握手预留与失败窗口分离，成功不消耗失败额度，全部退出路径释放预留；Agent 重连退避带 jitter 且不超上限，网关重启后合法 Agent 可恢复注册。心跳使 registry 的 runtime_state 与 Agent 上报一致。Supervisor 断开按目标逐个隔离清理，发送失败明确 503。

@@ -88,32 +88,5 @@ class GatewayApiClient:
             )
             return None
 
-    async def authorize_viewer(
-        self, session_cookie: str, origin: str, profile_id: str
-    ) -> tuple[bool, str | None]:
-        """Validates session cookie, origin, and profile access with API."""
-        path = "/api/v1/internal/gateway/viewer-authorize"
-        try:
-            resp = await self._client.post(
-                path,
-                headers=self._headers(),
-                json={
-                    "session_cookie": session_cookie,
-                    "origin": origin,
-                    "profile_id": profile_id,
-                },
-            )
-            if resp.status_code in (200, 401, 403):
-                data = resp.json()
-                return bool(data.get("allowed", False)), data.get("reason")
-            return False, f"API authorization error ({resp.status_code})"
-        except Exception as e:  # noqa: BLE001 - transport failure fail-closes authorization
-            logger.warning(
-                "Viewer authorization call failed for profile %s: %s",
-                profile_id,
-                type(e).__name__,
-            )
-            return False, "API authorization unavailable"
-
     async def close(self) -> None:
         await self._client.aclose()

@@ -68,8 +68,42 @@ def generate_caddyfile(
 https://127.0.0.1, https://localhost {{
     tls internal
 
+    # t064: internal API surfaces are never reachable on the external
+    # listener. Caddy's own forward_auth subrequests go directly to the
+    # API upstream and do not re-enter this routing, so the viewer
+    # resolver stays available to the edge while external calls 404.
+    handle /api/v1/internal/* {{
+        respond 404
+    }}
+
     handle /api/* {{
         reverse_proxy {api_upstream}
+    }}
+
+    # t064: the viewer signal handshake is the only edge-authorized
+    # stream route. The route block is load-bearing: Caddy's default
+    # directive order runs forward_auth BEFORE request_header, which
+    # would delete the API-issued context right after forward_auth
+    # copies it in. Inside route, directives run in declaration order:
+    # client-supplied authorization headers are deleted first,
+    # forward_auth then resolves the session at the API and copies the
+    # API-issued context back in, and the session cookie is stripped
+    # before the request reaches the Gateway.
+    handle /stream/*/signal {{
+        route {{
+            request_header -X-CBrowser-Authorized-Profile
+            request_header -X-CBrowser-Viewer-Grant
+
+            forward_auth {api_upstream} {{
+                uri /api/v1/internal/edge/viewer-authorize
+                header_up X-CBrowser-Edge-Proof "{{env.CBROWSER_EDGE_PROOF_SECRET}}"
+                copy_headers X-CBrowser-Authorized-Profile X-CBrowser-Viewer-Grant
+            }}
+
+            reverse_proxy {gateway_upstream} {{
+                header_up -Cookie
+            }}
+        }}
     }}
 
     handle /stream/* {{

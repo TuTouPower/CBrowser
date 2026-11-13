@@ -17,7 +17,7 @@ from cbrowser.gateway.config import GatewayConfig
 
 
 def _set_required_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("agent_key", "gw_token", "api_token"):
+    for name in ("agent_key", "gw_token", "api_token", "grant_key"):
         path = tmp_path / f"{name}.txt"
         path.write_text(secrets.token_urlsafe(32), encoding="utf-8")
         path.chmod(0o600)
@@ -26,6 +26,9 @@ def _set_required_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CBROWSER_GATEWAY_API_URL", "http://127.0.0.1:8000")
     monkeypatch.setenv(
         "CBROWSER_GATEWAY_API_TOKEN_FILE", str(tmp_path / "api_token.txt")
+    )
+    monkeypatch.setenv(
+        "CBROWSER_VIEWER_GRANT_KEY_FILE", str(tmp_path / "grant_key.txt")
     )
     monkeypatch.setenv("CBROWSER_HTTPS_PORT", "56661")
 
@@ -39,6 +42,7 @@ def _gateway_config(tmp_path: Path, **kwargs) -> GatewayConfig:
         gateway_token_file=key,
         api_url="http://127.0.0.1:8000",
         api_token_file=key,
+        viewer_grant_key_file=key,
         **kwargs,
     )
 

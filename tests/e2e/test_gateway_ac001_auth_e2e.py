@@ -69,10 +69,15 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                 "httpOnly": session_cookie["httpOnly"],
                 "secure": session_cookie["secure"],
                 "sameSite": session_cookie["sameSite"],
+                "path": session_cookie["path"],
             }
-            # Assert HttpOnly, Secure, SameSite=Strict
+            # Assert HttpOnly, Secure, SameSite=Strict. t064 does not turn
+            # the management session cookie into a path-scoped cookie: the
+            # edge resolver still receives it on the signal route because
+            # its Path remains /.
             assert session_cookie["httpOnly"] is True, "Must be HttpOnly"
             assert session_cookie["secure"] is True, "Must be Secure"
+            assert session_cookie["path"] == "/"
             assert str(session_cookie["sameSite"]).lower() == "strict", (
                 f"sameSite must be Strict, got {session_cookie['sameSite']}"
             )
@@ -132,13 +137,15 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
         async with aiohttp.ClientSession(
             connector=aiohttp.TCPConnector(ssl=False)
         ) as session:
-            # 3a. Unauthenticated Viewer WS (no cookie) -> rejected 401
+            # 3a. Unauthenticated Viewer WS (no cookie) -> rejected 401.
+            # t064 resolves the session at Caddy's forward_auth hop, so
+            # this rejection happens at the edge before the Gateway sees
+            # the request; only the status is contractual here.
             resp_no_auth = await session.get(
                 http_url, headers={"Origin": harness.origin}
             )
             assert resp_no_auth.status == 401
             text_no_auth = await resp_no_auth.text()
-            assert "cbrowser_session cookie missing" in text_no_auth
 
             try:
                 async with session.ws_connect(
@@ -152,9 +159,41 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "body": text_no_auth,
                 }
 
-            # 3b. Wrong Origin Viewer WS -> rejected 403
-            bad_origin = "https://malicious.example.com"
+            # 3a2. Client-forged edge authorization headers do not replace
+            # the session: Caddy deletes them before forward_auth, so a
+            # request with only forged grant context is still rejected.
+            forged_headers = {
+                "Origin": harness.origin,
+                "X-CBrowser-Authorized-Profile": valid_profile_id,
+                "X-CBrowser-Viewer-Grant": "forged-grant",
+            }
+            resp_forged = await session.get(http_url, headers=forged_headers)
+            assert resp_forged.status == 401
+            evidence["forged_edge_headers_rejection"] = {
+                "status": resp_forged.status,
+            }
+
+            # 3a3. The resolver itself is internal-only: even an
+            # authenticated caller cannot reach it on the external
+            # listener.
             auth_cookie_val = session_cookie["value"]
+            resp_edge_external = await session.get(
+                f"{base_http}/api/v1/internal/edge/viewer-authorize",
+                headers={
+                    "Origin": harness.origin,
+                    "Cookie": f"cbrowser_session={auth_cookie_val}",
+                    "X-Forwarded-Uri": f"/stream/{valid_profile_id}/signal",
+                    "X-CBrowser-Edge-Proof": harness.keys["edge_proof"],
+                },
+            )
+            assert resp_edge_external.status == 404
+            evidence["external_edge_resolver_rejection"] = {
+                "status": resp_edge_external.status,
+            }
+
+            # 3b. Wrong Origin Viewer WS -> rejected 403 by the edge
+            # resolver (the API's single authorize_viewer decision point).
+            bad_origin = "https://malicious.example.com"
             resp_bad_origin = await session.get(
                 http_url,
                 headers={
@@ -164,7 +203,6 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
             )
             assert resp_bad_origin.status == 403
             text_bad_origin = await resp_bad_origin.text()
-            assert "Origin not allowed" in text_bad_origin
 
             try:
                 async with session.ws_connect(
@@ -182,11 +220,11 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "body": text_bad_origin,
                 }
 
-            # 3c. Unauthorized Profile Viewer WS -> rejected exactly 403
-            # (t024 AC-005/A26): the session is authenticated and the
-            # origin valid, so the API's viewer-authorize denial maps to
-            # 403; 503 would mean gateway unavailability, not an
-            # authorization verdict, and must not satisfy this case.
+            # 3c. Unauthorized Profile Viewer WS -> rejected exactly 403.
+            # The session is authenticated and the origin valid, so the
+            # edge resolver's Profile denial maps to 403; 503 would mean
+            # downstream unavailability, not an authorization verdict,
+            # and must not satisfy this case.
             unauthorized_pid = "unauthorized_profile_id_xyz"
             unauth_ws_url = f"{base_ws}/stream/{unauthorized_pid}/signal"
             unauth_http_url = f"{base_http}/stream/{unauthorized_pid}/signal"
@@ -217,24 +255,15 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "body": text_unauth,
                 }
 
-        # Verify rejection reasons from both client handshake and Gateway logs
-        assert (
-            "cbrowser_session cookie missing"
-            in evidence["unauthenticated_ws_rejection"]["body"]
-        )
-        assert "Origin not allowed" in evidence["bad_origin_ws_rejection"]["body"]
-        assert (
-            "profile_not_found" in evidence["unauthorized_profile_ws_rejection"]["body"]
-        )
-
-        gw_logs = harness.gateway_container.logs().decode("utf-8")
-        assert "401" in gw_logs, "Gateway access logs must record 401 rejection"
-        assert "403" in gw_logs, "Gateway access logs must record 403 rejection"
-        evidence["gateway_logs_sample"] = [
-            line
-            for line in gw_logs.splitlines()
-            if any(k in line for k in ("401", "403", "reject", "Origin"))
-        ]
+        # Edge rejections are decided before the Gateway. Their status
+        # mapping is the observable contract; the old Gateway-cookie
+        # denial bodies and Gateway access-log assertions belonged to
+        # the deleted direct-cookie flow and are not applicable here.
+        assert evidence["unauthenticated_ws_rejection"]["status"] == 401
+        assert evidence["forged_edge_headers_rejection"]["status"] == 401
+        assert evidence["external_edge_resolver_rejection"]["status"] == 404
+        assert evidence["bad_origin_ws_rejection"]["status"] == 403
+        assert evidence["unauthorized_profile_ws_rejection"]["status"] == 403
 
         save_evidence("ac001_auth_evidence", evidence, target_dir=tmp_path / "evidence")
 

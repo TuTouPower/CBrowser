@@ -440,7 +440,15 @@ manifest_field() {
 compose_with() {
   local env_file="$1"
   shift
-  docker compose --env-file "$env_file" -f compose.yaml "$@"
+  # t064: Caddy's forward_auth proof reaches compose interpolation only
+  # through this process environment, read from the secret file at call
+  # time; it is never written into the release env file or printed.
+  local edge_proof=""
+  if [ -n "${SECRETS_DIR:-}" ] && [ -s "$SECRETS_DIR/edge_proof_key" ]; then
+    edge_proof="$(cat "$SECRETS_DIR/edge_proof_key")"
+  fi
+  CBROWSER_EDGE_PROOF_SECRET="$edge_proof" \
+    docker compose --env-file "$env_file" -f compose.yaml "$@"
 }
 
 probe_exec() {
@@ -553,7 +561,7 @@ ensure_internal_secrets() {
   # printed.  The admin password is NOT handled here (user-provided).
   mkdir -p "$SECRETS_DIR"
   local name file
-  for name in supervisor_key agent_key gateway_key gateway_api_key; do
+  for name in supervisor_key agent_key gateway_key gateway_api_key edge_proof_key viewer_grant_key; do
     file="$SECRETS_DIR/$name"
     if [ ! -s "$file" ]; then
       ( umask 077; openssl rand -hex 32 > "$file" )

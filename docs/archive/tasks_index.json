@@ -836,6 +836,22 @@
             "dir": "docs/archive/tasks/t062_control_plane_boundaries"
         },
         {
+            "tid": "t064",
+            "slug": "session_auth_cdp_boundary",
+            "title": "会话入口鉴权与 CDP 自动化边界收敛",
+            "status": "done",
+            "branch": "t064_session_auth_cdp_boundary",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "680d850067075caf9356ee6c71771f6dc779c543",
+            "depends_on": "t062",
+            "conflicts_with": "t061,t062,t069",
+            "note": "来源 p075、p084；合并边缘鉴权、会话凭证与 CDP 隔离",
+            "dir": "docs/archive/tasks/t064_session_auth_cdp_boundary"
+        },
+        {
             "tid": "t067",
             "slug": "session_lifecycle_recovery",
             "title": "断线重连状态修复与无人连接环境保留",

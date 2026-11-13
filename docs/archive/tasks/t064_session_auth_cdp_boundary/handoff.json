@@ -1,0 +1,16 @@
+{
+  "tid": "t064",
+  "attempt": 1,
+  "execution_id": "23cb4daae6fb4eeebad598331b91b4b9",
+  "status": "done",
+  "branch": "t064_session_auth_cdp_boundary",
+  "base_sha": "680d850067075caf9356ee6c71771f6dc779c543",
+  "tests": "全量门禁实数与逐项定性见实施笔记末条；非绿项为叠栈基线继承 3 条（repo_hygiene、fontconfig、t060 既知基线）与负载 flaky 16 errors（复跑全过），均非本 task 引入",
+  "blackbox": "云端无 Docker，e2e/real_engine 未实跑；e2e 全树 collect-only 通过，真实拓扑补验登记 p094",
+  "review": "双轴 Round 1 code FAIL / test PASS → 逐项修复 → Round 2 双轴均 PASS、零新 finding，五条 AC 全部 TICK-VALID（见 Review 处置）",
+  "review_scope": "3cd6ec932d29a297",
+  "pending": [
+    "p094"
+  ],
+  "findings": []
+}

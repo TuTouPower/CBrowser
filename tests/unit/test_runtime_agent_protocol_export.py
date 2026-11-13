@@ -53,8 +53,19 @@ def test_internal_openapi_export_matches_checked_in_file():
     internal = live["paths"]["/api/v1/internal/supervisor/runtimes/bind"]["post"]
     assert internal["security"] == [{"SupervisorServiceBearer": []}]
     assert {"401", "403", "503"} <= set(internal["responses"])
-    gateway = live["paths"]["/api/v1/internal/gateway/viewer-authorize"]["post"]
+    gateway = live["paths"]["/api/v1/internal/gateway/profiles/{profile_id}/runtime"][
+        "get"
+    ]
     assert gateway["security"] == [{"GatewayServiceBearer": []}]
+    # t064: the Gateway-relayed viewer-authorize surface is deleted; the
+    # session is resolved at the edge resolver instead.
+    assert "/api/v1/internal/gateway/viewer-authorize" not in live["paths"]
+    edge = live["paths"]["/api/v1/internal/edge/viewer-authorize"]["get"]
+    assert edge["security"] == [{"sessionCookie": []}]
+    # The edge proof requirement is declared, not implicit: the resolver
+    # only answers Caddy's forward_auth, which presents this header.
+    edge_params = {(p["name"], p["in"]) for p in edge.get("parameters", [])}
+    assert ("X-CBrowser-Edge-Proof", "header") in edge_params
     ingest = live["paths"]["/api/v1/internal/supervisor/artifacts/downloads"]["post"]
     assert ingest["security"] == [{"SupervisorServiceBearer": []}]
 

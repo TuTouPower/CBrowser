@@ -20,6 +20,7 @@ from cbrowser.adapters.database.repository import (
 )
 from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.internal_artifacts import internal_artifact_router
+from cbrowser.api.internal_edge import edge_router, read_edge_proof
 from cbrowser.api.internal_gateway import gateway_router, read_gateway_token
 from cbrowser.api.internal_supervisor import read_supervisor_token, supervisor_router
 from cbrowser.api.runtime_coordinator import RuntimeCoordinator
@@ -36,6 +37,7 @@ from cbrowser.api.v1.font_sets_router import font_set_router
 from cbrowser.api.v1.router import get_profile_service, v1_router
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, derive_origin_whitelist
 from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs
+from cbrowser.shared.viewer_grants import ViewerGrantAuthority
 from cbrowser.auth.dependencies import get_auth_service
 from cbrowser.auth.service import AuthService
 from cbrowser.service_errors import ServiceNotConfiguredError
@@ -176,6 +178,8 @@ def create_app(
     supervisor_token_file: Path | str | None = None,
     admin_password_file: Path | str | None = None,
     gateway_token_file: Path | str | None = None,
+    edge_proof_file: Path | str | None = None,
+    viewer_grant_key_file: Path | str | None = None,
     supervisor_url: str | None = None,
     require_supervisor: bool = False,
     artifacts_root: Path | str | None = None,
@@ -196,6 +200,18 @@ def create_app(
         )
         app.state.gateway_token = read_gateway_token(
             gateway_token_file or os.environ.get("CBROWSER_GATEWAY_API_TOKEN_FILE")
+        )
+        # t064: edge authorization state for the Caddy forward_auth
+        # resolver. Unconfigured (no files) leaves both None and the
+        # resolver fails closed with 503.
+        app.state.edge_proof = read_edge_proof(
+            edge_proof_file or os.environ.get("CBROWSER_EDGE_PROOF_FILE")
+        )
+        grant_key_file = viewer_grant_key_file or os.environ.get(
+            "CBROWSER_VIEWER_GRANT_KEY_FILE"
+        )
+        app.state.viewer_grant_authority = (
+            ViewerGrantAuthority(grant_key_file) if grant_key_file else None
         )
         app.state.allowed_origins = []
 
@@ -557,6 +573,7 @@ def create_app(
     app.include_router(
         gateway_router, include_in_schema=include_internal_schema
     )
+    app.include_router(edge_router, include_in_schema=include_internal_schema)
 
     original_openapi = app.openapi
 

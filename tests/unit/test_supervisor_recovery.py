@@ -20,6 +20,10 @@ from wait import poll_until
 from aiohttp import ClientSession, WSMsgType
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.shared.agent_credentials import AgentCredentials
+from cbrowser.shared.viewer_grants import (
+    AUTHORIZED_PROFILE_HEADER,
+    VIEWER_GRANT_HEADER,
+)
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder
@@ -421,7 +425,6 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
     runtime_instance_id = "test-inst-1"
     fake_api = FakeGatewayApiClient()
     fake_api.set_profile_runtime(profile_id, runtime_instance_id)
-    fake_api.allow_all_viewers = True
 
     gateway = ProductionGatewayService(
         port=port,
@@ -436,7 +439,8 @@ async def test_production_gateway_contract_used_by_supervisor(tmp_path: Path):
     ws_base = f"ws://127.0.0.1:{port}"
     viewer_headers = {
         "Origin": "https://127.0.0.1:56661",
-        "Cookie": "cbrowser_session=test-session",
+        AUTHORIZED_PROFILE_HEADER: profile_id,
+        VIEWER_GRANT_HEADER: gateway.grant_authority.mint(profile_id),
     }
     agent_config = SimpleNamespace(
         profile_id=profile_id,

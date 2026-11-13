@@ -180,22 +180,6 @@
             "dir": "docs/tasks/t063_selkies_owned_extensions"
         },
         {
-            "tid": "t064",
-            "slug": "session_auth_cdp_boundary",
-            "title": "会话入口鉴权与 CDP 自动化边界收敛",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t062",
-            "conflicts_with": "t061,t062,t069",
-            "note": "来源 p075、p084；合并边缘鉴权、会话凭证与 CDP 隔离",
-            "dir": "docs/tasks/t064_session_auth_cdp_boundary"
-        },
-        {
             "tid": "t065",
             "slug": "proxy_credential_isolation",
             "title": "代理凭据隔离与认证转发失败封闭",

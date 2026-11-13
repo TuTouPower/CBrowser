@@ -36,6 +36,10 @@ services:
       CBROWSER_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_key
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
       CBROWSER_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # t064: edge authorization — the API verifies Caddy's forward_auth
+      # proof and mints the viewer grants the Gateway verifies.
+      CBROWSER_EDGE_PROOF_FILE: /run/secrets/edge_proof_key
+      CBROWSER_VIEWER_GRANT_KEY_FILE: /run/secrets/viewer_grant_key
       # t054: the Origin whitelist is derived from the deploy port; the
       # trusted proxy CIDRs are the edge subnet, both injected by deploy.sh.
       CBROWSER_HTTPS_PORT: ${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}
@@ -47,6 +51,8 @@ services:
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/supervisor_key:/run/secrets/supervisor_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_api_key:/run/secrets/gateway_api_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/admin_password:/run/secrets/admin_password:ro
+      - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/edge_proof_key:/run/secrets/edge_proof_key:ro
+      - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/viewer_grant_key:/run/secrets/viewer_grant_key:ro
     networks: [edge]
     restart: unless-stopped
     healthcheck:
@@ -76,6 +82,9 @@ services:
       CBROWSER_GATEWAY_TOKEN_FILE: /run/secrets/gateway_key
       CBROWSER_GATEWAY_API_URL: http://api:8000
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
+      # t064: the Gateway verifies API-minted viewer grants locally; it
+      # never receives the session cookie.
+      CBROWSER_VIEWER_GRANT_KEY_FILE: /run/secrets/viewer_grant_key
       # t054: same deploy port as the API (Origin whitelist derivation);
       # the trusted proxy CIDRs are the edge subnet. No network state
       # directory is mounted anymore: the Gateway reads no disk state.
@@ -85,6 +94,7 @@ services:
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/agent_key:/run/secrets/agent_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_key:/run/secrets/gateway_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_api_key:/run/secrets/gateway_api_key:ro
+      - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/viewer_grant_key:/run/secrets/viewer_grant_key:ro
     networks: [edge]
     depends_on:
       api:
@@ -169,6 +179,11 @@ services:
       # caddy; an unchanged configuration leaves caddy running (AC-005).
       CBROWSER_CADDYFILE_SHA256: ${CBROWSER_CADDYFILE_SHA256:-}
       CBROWSER_FRONTEND_SHA256: ${CBROWSER_FRONTEND_SHA256:-}
+      # t064: Caddy presents this deployment secret to the API on
+      # forward_auth subrequests (the rendered Caddyfile references it
+      # only as an {env.*} placeholder). deploy.sh supplies it from the
+      # edge_proof_key secret file; it is never rendered or recorded.
+      CBROWSER_EDGE_PROOF_SECRET: ${CBROWSER_EDGE_PROOF_SECRET:?run scripts/deploy.sh first}
     ports:
       # t054: loopback only — there is no bind host to configure anymore.
       - "127.0.0.1:${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}:443"

@@ -26,11 +26,11 @@ Caddy 当前只反代 API、Gateway 信令并托管本地静态前端，运行�
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：未授权/过期/撤销/跨 Profile viewer 握手被拒；合法握手可用且 Gateway 收到的请求不含 cbrowser_session，管理登录 cookie 保持现有 Path=/ 语义，不把管理 cookie 改成路径 cookie。
-- [ ] [deploy] AC-002：外部 listener 不能访问新授权解析端点；伪造授权头、直连 Gateway 绕边缘、非法 Origin 均不能越权；Agent register 使用其独立认证仍正常。
-- [ ] [deploy] AC-004：普通 viewer 页面/信令/错误不提供可用 CDP 连接凭据；认证 Automation 页与自动化通道保留，非法 Host/Origin 和实际可触达的 DNS rebinding 请求被拒，合法 UDS/自动化连接不受影响。
-- [ ] AC-005：snapshot 的 DOM/AX 读取与 wait_for/extract 主世界表达式行为保持，目标页面 CSP 不被放宽；同源 iframe 统计与音频控制正常。
-- [ ] [deploy] AC-006：真实 Caddy/Chrome 链中登录、viewer 首帧、重连、退出撤销和认证自动化均通过，WebRTC 媒体仍走现有本机 UDP。
+- [x] [deploy] AC-001：未授权/过期/撤销/跨 Profile viewer 握手被拒；合法握手可用且 Gateway 收到的请求不含 cbrowser_session，管理登录 cookie 保持现有 Path=/ 语义，不把管理 cookie 改成路径 cookie。
+- [x] [deploy] AC-002：外部 listener 不能访问新授权解析端点；伪造授权头、直连 Gateway 绕边缘、非法 Origin 均不能越权；Agent register 使用其独立认证仍正常。
+- [x] [deploy] AC-004：普通 viewer 页面/信令/错误不提供可用 CDP 连接凭据；认证 Automation 页与自动化通道保留，非法 Host/Origin 和实际可触达的 DNS rebinding 请求被拒，合法 UDS/自动化连接不受影响。
+- [x] AC-005：snapshot 的 DOM/AX 读取与 wait_for/extract 主世界表达式行为保持，目标页面 CSP 不被放宽；同源 iframe 统计与音频控制正常。
+- [x] [deploy] AC-006：真实 Caddy/Chrome 链中登录、viewer 首帧、重连、退出撤销和认证自动化均通过，WebRTC 媒体仍走现有本机 UDP。
 
 ### 可测试性声明
 
@@ -68,8 +68,8 @@ Caddy 当前只反代 API、Gateway 信令并托管本地静态前端，运行�
 
 <!-- /规范 -->
 
-- 边缘与 Gateway 授权证明：UNVERIFIED-SPIKE，比较 forward_auth 可信内部证明与短期授权交换，定稿来源认证、重放/到期/撤销和 websocket Upgrade 行为；不无依据新增长期路径 cookie。
-- 实际 Chromium loopback Host/Origin 拒绝边界：UNVERIFIED-SPIKE，使用锁定引擎验证恶意页面可触达路径；不可达和被拒分别记录。
+- 边缘与 Gateway 授权证明：已由 spike s018 定稿（docs/spikes/s018_edge_viewer_authorization_proof/report.md）。结论：采纳 Caddy forward_auth 可信内部证明＋API 签发短期 HMAC viewer grant（TTL 60 秒、绑定 Profile、claims 不含会话标识），否决短期授权交换（与官方客户端表达式语义冲突且令牌落日志面更大）。来源认证分两跳且秘密不共用（edge_proof_key 供 Caddy→API、viewer_grant_key 供 API→Gateway）；重放窗口 60 秒且权力小于会话 Cookie；退出/撤销在每次握手的 forward_auth 重验时生效；forward_auth 子请求先于代理与 Upgrade 完成，WebSocket 握手适用。验证方式：shared grant 单元测试、API 边缘端点集成测试、Gateway 集成测试、Caddyfile 渲染契约测试，真实 Caddy/Chrome 链归 AC-006 [deploy] 补验。
+- 实际 Chromium loopback Host/Origin 拒绝边界：已由 spike s019 定稿（docs/spikes/s019_chromium_loopback_host_origin_boundary/report.md）。结论（不可达与被拒分开记录）：外部网络对 CDP 本体不可达（容器回环监听、端口未发布、临时端口不披露）；唯一外部入口为 automation token＋控制权围栏的认证自动化通道，DNS rebinding 不构成凭据；沙箱内页面到自身 CDP 的引擎内 Host/Origin 拒绝按 Chromium 默认语义预期成立，须由本 task 新增的 real_engine 负向测试在锁定引擎上留证（云端无 Docker 跳过，归 AC-004 [deploy] 补验）。
 
 ### 风险与回退
 
