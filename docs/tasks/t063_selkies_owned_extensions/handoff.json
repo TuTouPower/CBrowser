@@ -1,0 +1,17 @@
+{
+  "tid": "t063",
+  "attempt": 1,
+  "execution_id": "1622e0704c61493e9b416b6b50cb3f7a",
+  "status": "done",
+  "branch": "t063_selkies_owned_extensions",
+  "base_sha": "501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90",
+  "tests": "run_gates.sh 全量——protocol/requirements（6/6）/contract（257 passed, 1 skipped）/integration（64 passed）PASS；unit 2079 passed、余 5 条基线既有失败（repo_hygiene、fontconfig write_failure、t060 geoip、t068 engine pinning ×2 云端平台差异，基线同签名），本 task 引入的 dockerignore 失败已修复并复跑通过；design_lint/design_check PASS；frontend_build PASS；frontend_test 5 条超时型失败经串行复跑定性为并行负载 flaky。新增单测：test_t063_selkies_controlled_build（7 项）与 test_t063_patched_keyboard_behavior（11 项）全过。",
+  "blackbox": "云端无 Docker/真实引擎，Stream 镜像内真实链（首帧、帧率仲裁、IME/剪贴板/resume、X11 键位 e2e）未跑，登记 p096 本地补验；受控包行为已以构建产物为对象在单测层实证（键盘三行为、工厂钩子三态、构建确定性与身份一致）。",
+  "review": "full 双路三轮。Round 1：code FAIL（1 important + 5 minor）/ test FAIL（2 important + 3 minor），AC-005 code 轴 TICK-VOID；11 条逐条修复后 Round 2 双路均 PASS、AC-004/AC-005 双路 TICK-VALID（reviewed_scope 176d8a26d73890a8），新出 minor（AC-004 守护拼写漏网）遗留 p097。因 [deploy] AC 打勾口径更正（见实施笔记末尾）触发 Round 3 确认审阅：双路均 PASS、零新 finding、AC 5/5 TICK-VALID，reviewed_scope 2554b9db3bc6b49f。处置逐条见「Review 处置」表。",
+  "review_scope": "2554b9db3bc6b49f",
+  "pending": [
+    "p096",
+    "p097"
+  ],
+  "findings": []
+}

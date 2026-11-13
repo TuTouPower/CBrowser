@@ -29,6 +29,24 @@ RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
+# t063: replace the stock Selkies install with the controlled build of the
+# same pinned wheel (fixed upstream wheel + recorded build-time patches;
+# identity manifest: config/selkies/selkies_controlled_build.json).  The
+# build fails closed on any hash or patch-context drift, and the installed
+# package's build stamp is checked against the manifest before proceeding.
+COPY scripts/build_selkies_controlled.py /tmp/build_selkies_controlled.py
+COPY config/selkies/patches/0001-webrtc-service-factory-hook.patch /tmp/selkies_patches/0001-webrtc-service-factory-hook.patch
+COPY config/selkies/patches/0002-x11-keyboard-keymap-coherence.patch /tmp/selkies_patches/0002-x11-keyboard-keymap-coherence.patch
+COPY config/selkies/selkies_controlled_build.json /tmp/selkies_controlled_build.json
+RUN python3 /tmp/build_selkies_controlled.py \
+        --manifest /tmp/selkies_controlled_build.json \
+        --patches-dir /tmp/selkies_patches \
+        --out-dir /tmp/selkies_controlled \
+        --allow-download && \
+    /opt/venv/bin/pip install --no-cache-dir --force-reinstall --no-deps \
+        /tmp/selkies_controlled/selkies-2.2.1+cbrowser.1-py3-none-any.whl && \
+    /opt/venv/bin/python -c "import importlib.metadata as m, importlib.util, json, pathlib; v = m.version('selkies'); man = json.loads(pathlib.Path('/tmp/selkies_controlled_build.json').read_text()); assert v == man['controlled']['version'], v; stamp = json.loads((pathlib.Path(importlib.util.find_spec('selkies').origin).parent / 'cbrowser_build.json').read_text()); assert stamp['upstream']['wheel_sha256'] == man['upstream']['wheel_sha256']; assert [p['sha256'] for p in stamp['patches']] == [p['sha256'] for p in man['patches']]; print('controlled selkies verified:', v)"
+
 FROM python:3.15-slim-trixie@sha256:8c13a3f37a6a5b71498228e902c4b9f51c1f7900d49fabf71f9a650c6120e0d0
 
 USER root

@@ -196,7 +196,8 @@ export SELKIES_AUDIO_DEVICE_NAME="${CBROWSER_AUDIO_DEVICE:-cbrowser_sink.monitor
 export SELKIES_PORT="${SELKIES_PORT:-18081}"
 export SELKIES_ADDR="127.0.0.1"
 
-# Launch StreamAgent with patched WebRTCService
+# Launch StreamAgent; the controlled Selkies build resolves its WebRTC
+# service factory (t063), no runtime patching is involved.
 exec python3 -m cbrowser.stream_agent.agent \
   --mode webrtc \
   --enable-basic-auth=false \

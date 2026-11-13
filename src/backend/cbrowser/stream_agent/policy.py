@@ -28,12 +28,46 @@ from .policy_rules import (
 __all__ = [
     "DISALLOWED_SETTINGS_KEYS",
     "LiveCapturePolicyAgent",
+    "bind_webrtc_service_factory",
     "classify_human_takeover_input",
+    "create_policy_service",
     "sanitize_settings_message",
     "should_block_client_verb",
 ]
 
 logger = logging.getLogger("cbrowser.stream_agent.policy")
+
+# t063: the controlled Selkies build (see scripts/build_selkies_controlled.py
+# and config/selkies/selkies_controlled_build.json) resolves the WebRTC
+# service through the factory named by SELKIES_WEBRTC_SERVICE_FACTORY at
+# startup.  agent.py binds the concrete factory -- which closes over the
+# live policy agent and stream agent -- before launching Selkies, and the
+# environment variable points at create_policy_service below.  This is the
+# only service-construction seam; nothing is replaced on upstream modules
+# at runtime.
+_webrtc_service_factory: Callable[[Any], Any] | None = None
+
+
+def bind_webrtc_service_factory(factory: Callable[[Any], Any]) -> None:
+    """Bind the process-wide WebRTC service factory (called once at startup)."""
+    global _webrtc_service_factory
+    _webrtc_service_factory = factory
+
+
+def create_policy_service(server: Any) -> Any:
+    """Entry point named by SELKIES_WEBRTC_SERVICE_FACTORY.
+
+    The controlled Selkies build imports this attribute when its server
+    starts and calls it with the stream server.  Startup must have bound
+    the factory first; an unbound call is a startup-order bug and fails
+    loudly instead of silently serving the stock service.
+    """
+    if _webrtc_service_factory is None:
+        raise RuntimeError(
+            "WebRTC service factory is not bound; StreamAgent startup must "
+            "bind it before launching Selkies"
+        )
+    return _webrtc_service_factory(server)
 
 
 # t031 human-priority takeover classification. Conservative by design:

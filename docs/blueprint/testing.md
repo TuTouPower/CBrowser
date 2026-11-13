@@ -227,7 +227,7 @@ AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置�
 |p024（t022）|X11 helper 权限收敛|`test_x11_helper_permissions_e2e.py`（t028 新建）；另见 `test_supervisor_orphan_helpers_e2e.py`|`DockerAdapter.setup_x11_permissions`|真实 Docker|skip（collect-only）|AC-006|
 |p024（t022）|缓存代次|`test_supervisor_cache_generations.py`|Supervisor 缓存代次封存/重验|unit|已跑通过|随 AC-014 复验|
 |p024（t022）|双族网络策略 DROP|`test_supervisor_namespace_policy_e2e.py`、`test_supervisor_ipv6_policy_e2e.py`、`test_supervisor_policy_failure_e2e.py`|netns 策略安装与失败封闭|真实拓扑|skip|AC-006|
-|p024（t022）|keymap 调用顺序|`test_stream_keymap_abi.py`、`test_stream_binding_guards.py`|Stream keymap ABI 适配层|unit|已跑通过|AC-006（真实调用顺序）|
+|p024（t022）|keymap 调用顺序|`test_t063_patched_keyboard_behavior.py`、`test_stream_binding_guards.py`|Stream keymap 行为（t063 起为受控构建包内实现，原 ABI 适配层已删除）|unit|已跑通过|AC-006（真实调用顺序）|
 |p024（t022）|多 Agent 注册预算|`test_gateway_registration_budget_e2e.py`（t028 新建）；集成层见 `test_gateway_signaling.py`|Gateway `RegistrationThrottle`（在途 4、失败 20/60s、重启恢复）|真实拓扑 + 集成|e2e skip（collect-only）；集成已跑|AC-006|
 |p024（t022）|search-defaults 真链|`test_search_defaults_retry_live_e2e.py`（t028 新建）；`test_api_search_defaults_routes.py`、`test_runtime_coordinator_integration.py`（integration）|API retry 路由（CSRF/幂等键）→ RuntimeCoordinator → Supervisor → 状态围栏|真实进程链 + 集成|e2e skip（collect-only）；集成已跑|AC-006|
 |p026（t023）|前端会话/请求语义与构建链|src/frontend Vitest（含 t025 残余回归）；`frontend_probe` harness（镜像身份只经 REQUIRED_E2E_ENV 注入，t028 删除 `.scratch` 旁路读取）|前端 ApiClient/SSE、host_builder 构建|前端 + 契约|已跑通过|AC-007|
@@ -418,6 +418,7 @@ bash scripts/run_automation_probe.sh
 - 门禁启动与 `EXIT` / `INT` / `TERM` 中断经同一套 trap 调用 `scripts/gate_container_cleanup.py`：仅按 `com.cbrowser.gate-run` 标签与本地运行租约清理已结束运行资源；容器和网络使用同一归属规则，无标签、未知租约或活跃租约一律不删，不再按名称放行；删除使用 Docker 不可变资源 ID，避免 sparse 列表缺少名称造成漏清理（`tests/unit/test_t045_gate_container_cleanup.py`）。
 - 前端 E2E 同文件共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈、天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
 - Selkies wheel：`CBROWSER_SELKIES_WHEEL_CACHE` 指向已锁定 SHA256 的本地缓存；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项（`tests/e2e/conftest.py`、`test_frontend_adapter_build.py`、`tests/unit/test_t045_selkies_wheel_cache.py`）。
+- Selkies 受控构建（t063，ADR 034）：`tests/unit/test_t063_selkies_controlled_build.py` 断言身份清单与 vendor pin、uv.lock、Web 客户端清单三方一致，构建两次字节一致且哈希与清单相等，产物差异面恰为声明的补丁目标＋METADATA 版本行＋包内构建戳，篡改补丁、补丁上下文漂移与上游哈希不符均失败封闭；`tests/unit/test_t063_patched_keyboard_behavior.py` 直接对构建产物执行键盘三行为（named 过滤、text_room 回退、prebind 容量与 reload/settle）、`__main__` 工厂钩子三态与策略工厂接缝断言，并守护启动路径无运行时全局替换与 `getsource` 扫描。Stream 镜像在 builder 阶段以同一脚本重建并校验安装戳；镜像内真实 X 行为由 `tests/e2e/test_stream_x11_keymap_e2e.py` 断言受控版本号与绑定保持。
 - 负载下时序判定改就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 或上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
 
 ## t046 E2E 基础设施重构与协议探针模型归一

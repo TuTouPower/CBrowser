@@ -62,7 +62,7 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 
 - Gateway 注册节流为双预算：在途握手预留与失败窗口分离，成功不消耗失败额度，全部退出路径释放预留；Agent 重连退避带 jitter 且不超上限，网关重启后合法 Agent 可恢复注册。心跳使 registry 的 runtime_state 与 Agent 上报一致。Supervisor 断开按目标逐个隔离清理，发送失败明确 503。
 - 隧道预算单一权威：原始 data 1MiB、序列化 envelope 2MiB+64KiB、WS 帧 6MiB+64KiB；超限以 1009 受控关闭单个连接，服务继续处理其他连接。
-- FPS 配额协议与策略同规：有限且 ∈ [min_fps, max_fps]，越界严格拒绝，None 仅解除限制。StreamAgent 仅保留可 await 的完整 stop（取消并等待全部后台任务、释放 Viewer 与 detached upstream、幂等）。Selkies 私有 API 只经适配层访问，钉版 ABI 不符明确报 unsupported。
+- FPS 配额协议与策略同规：有限且 ∈ [min_fps, max_fps]，越界严格拒绝，None 仅解除限制。StreamAgent 仅保留可 await 的完整 stop（取消并等待全部后台任务、释放 Viewer 与 detached upstream、幂等）。Selkies 扩展自 t063 起经受控构建包承载（见「Selkies 扩展边界（t063）」），不再经适配层访问私有 API、启动不做 ABI 校验。
 - SSE 快照为订阅私有数据并携带 live 基点，不写共享历史；窗口不足显式重建。
 
 ## 注册结构化拒绝与信令恢复呈现（t026）
@@ -93,3 +93,9 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - 已连接后信令 WS 异常关闭：先进入 reconnecting 并给官方客户端 5 秒以原 `resume_key` 恢复；5 秒恢复检查读取 WebRTC stats，媒体仍健康（stats.connected）且当前有效阶段仍为 reconnecting 时直接收敛回 connected 并清除错误文案，不重建 iframe、不动内部 Browser 与已有网页；媒体不健康才沿既有路径重建。诊断快照（ConnectionSnapshot）不变时诊断源不发新信号，故健康收敛出口在此检查内，检查结果受 generation fence 保护，旧 generation 的迟到结果不覆盖当前状态。后端已停止时异常关闭被忽略，不启动恢复。
 - 诊断呈现可区分正在恢复（reconnecting 轻量指示）与已经恢复（connected、无等待层残留）；恢复失败原因不含凭据。
 - 无 viewer 时环境保留：全部 viewer 断开后不停止、不重置、不删除环境与已有网页/浏览器数据；不存在 idle 期限、绝对期限或 viewer TTL 等自动回收。既有按活跃 consumer 暂停/恢复服务端采集编码的行为不变，再次连接可恢复观看。
+
+## Selkies 扩展边界（t063）
+
+- 服务端 Selkies 以受控构建包运行：固定上游 2.2.1 wheel＋构建期显式补丁（身份清单 `config/selkies/selkies_controlled_build.json`，ADR 034）。采集策略服务经构建期工厂钩子（`SELKIES_WEBRTC_SERVICE_FACTORY` → `cbrowser.stream_agent.policy:create_policy_service`）在启动时构造，仍经官方 HELLO / client_tab_id / resume_key 建立会话；运行时不替换上游模块、不解析上游源码、不校验私有 ABI。
+- 帧率仲裁语义不变：按 active_peers 与媒体 consumer 信号在静止 8 FPS、运动/输入 30 FPS 间仲裁，零 consumer 暂停可恢复，单个 consumer 暂停不压低其他 consumer。
+- X11 键盘行为（named spare 过滤、text_room 整池回退、prebind 容量保护与绑定后 keymap reload/settle）由受控包内实现，中文 IME、普通键盘、剪贴板与复制标签隔离、viewer resume 行为与 t063 前一致；真实链断言见 `tests/e2e/test_stream_x11_keymap_e2e.py`（含受控版本号断言）。

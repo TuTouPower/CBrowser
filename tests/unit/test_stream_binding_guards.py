@@ -169,14 +169,6 @@ async def test_queue_overflow_closes_gateway_viewer():
         await agent.stop()
 
 
-def test_missing_display_produces_safe_runtime_error(monkeypatch):
-    from cbrowser.stream_agent.x11_keymap import _read_keymap
-
-    monkeypatch.delenv("DISPLAY", raising=False)
-    with pytest.raises(RuntimeError, match="X11 keyboard map query failed"):
-        _read_keymap()
-
-
 def test_peer_lookup_rejects_non_native_entry_shape():
     agent = make_agent()
     agent._webrtc_service = SimpleNamespace(

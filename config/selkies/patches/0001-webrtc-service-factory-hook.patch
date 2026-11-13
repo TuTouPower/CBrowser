@@ -1,0 +1,47 @@
+--- a/selkies/__main__.py
++++ b/selkies/__main__.py
+@@ -29,6 +29,7 @@
+ import os
+ import signal
+ import asyncio
++import importlib
+ import logging
+ from importlib.metadata import PackageNotFoundError, version
+ 
+@@ -132,6 +133,27 @@
+             logger.debug("Cannot install a %s handler on this platform", signal_name)
+ 
+ 
++def _webrtc_service(server):
++    """Build the WebRTC service registered under the ``webrtc`` name.
++
++    An embedding application may name an alternate service factory via
++    the ``SELKIES_WEBRTC_SERVICE_FACTORY`` environment variable in
++    ``module:attribute`` form; the attribute must be a callable taking
++    the stream server and returning the service instance.  Without the
++    override the stock :class:`WebRTCService` is used.
++    """
++    factory_ref = os.environ.get("SELKIES_WEBRTC_SERVICE_FACTORY")
++    if not factory_ref:
++        return WebRTCService(server)
++    module_name, separator, attribute = factory_ref.partition(":")
++    if not separator or not module_name or not attribute:
++        raise ValueError(
++            "SELKIES_WEBRTC_SERVICE_FACTORY must be in module:attribute form"
++        )
++    factory = getattr(importlib.import_module(module_name), attribute)
++    return factory(server)
++
++
+ async def run() -> None:
+     """Build the stream server, register its services, and run until canceled.
+ 
+@@ -170,7 +192,7 @@
+     await asyncio.to_thread(settings.resolve_encoder_backends)
+     server = CentralizedStreamServer(settings)
+ 
+-    server.register_service("webrtc", WebRTCService(server))
++    server.register_service("webrtc", _webrtc_service(server))
+     server.register_service("websockets", DataStreamingServer(server))
+ 
+     logger.info(_startup_summary())
