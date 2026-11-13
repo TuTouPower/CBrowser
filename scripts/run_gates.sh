@@ -67,6 +67,12 @@ ensure_selkies_wheel_cache() {
   "$PY" -m scripts.ensure_selkies_wheel_cache --cache-dir "$cache"
 }
 
+ensure_jpeginfo() {
+  local dir
+  dir="$("$PY" -m scripts.ensure_jpeginfo --cache-dir "$REPO_ROOT/.scratch/jpeginfo")" || return 1
+  export PATH="$dir:$PATH"
+}
+
 # run_gate_suite <target> <pythonpath> <junit> <basetemp> [extra pytest args]
 # Phase A runs everything not marked `serial` on WORKERS xdist workers;
 # phase B runs only `serial` items in a single process, so timing-sensitive
@@ -219,7 +225,7 @@ if [ -n "$EVIDENCE_DIR" ]; then
   rm -f "$EVIDENCE_DIR"/suites.d/*.tsv "$EVIDENCE_DIR"/junit/*.xml "$EVIDENCE_DIR"/logs/*.log "$EVIDENCE_DIR"/logs/*.raw.log
   rm -f "$EVIDENCE_DIR/suites.tsv" "$EVIDENCE_DIR/manifest.json"
   : > "$EVIDENCE_DIR/logs/environment.raw.log"
-  if ! { prepare_env && ensure_selkies_wheel_cache; } >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1; then
+  if ! { prepare_env && ensure_selkies_wheel_cache && ensure_jpeginfo; } >>"$EVIDENCE_DIR/logs/environment.raw.log" 2>&1; then
     if ! "$PY" scripts/redact_evidence.py <"$EVIDENCE_DIR/logs/environment.raw.log" >"$EVIDENCE_DIR/logs/environment.log" 2>/dev/null; then
       echo "environment log redaction failed; raw log withheld from evidence" > "$EVIDENCE_DIR/logs/environment.log"
     fi
@@ -238,6 +244,7 @@ if [ -n "$EVIDENCE_DIR" ]; then
 else
   prepare_env
   ensure_selkies_wheel_cache
+  ensure_jpeginfo
 fi
 
 cleanup_containers

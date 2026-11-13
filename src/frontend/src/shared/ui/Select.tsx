@@ -20,29 +20,35 @@ export interface SelectProps {
    * this (t053: the font-set "none" pick made before the backend
    * default arrives).
    *
-   * All three commit paths are covered, matching the funnel Radix
-   * itself uses (2.4.1): mouse pointer picks via `onPointerUp`
-   * (only when `event.pointerType === "mouse"` and the press started
-   * on this same item — a pointerup that lands here after a press
-   * elsewhere is not a Radix commit and must not count as a pick),
-   * touch/pen picks via `onClick`, and keyboard picks (Enter/Space)
-   * via `onKeyDown` using the same selection keys Radix itself uses. Radix 2.4.1 has
-   * no `onSelect` prop on `SelectItem`, so there is no single Radix
-   * callback that fires for every commit — the three handlers
-   * together are the equivalent.
+   * Radix 2.4.1 has no `onSelect` prop on `SelectItem`, so no single
+   * callback covers every commit. `onOptionSelect` mirrors Radix's own
+   * commit criterion as one source of truth instead of tracking presses
+   * (dist :861-947): each item keeps a `pointerTypeRef` (initial
+   * "touch") that BOTH `pointerdown` and `pointermove` set to
+   * `event.pointerType`. Radix commits on `pointerup` when that ref is
+   * "mouse" (:909-916), on `click` when it is not "mouse" (:901-908),
+   * and on Enter/Space via `onKeyDown` (:933-942). The three handlers
+   * here fire for exactly those events. So a `pointerdown` on another
+   * item followed by a `pointermove` onto this one makes a `pointerup`
+   * here a Radix commit that is recorded too, even though no press
+   * started on this item (p070 D case) — a guard that only watched
+   * `pointerdown` missed these.
    *
-   * `onClick` alone cannot cover the mouse path: a real browser
-   * dispatches pointerdown → pointerup → click, Radix commits on
-   * pointerup and closes the menu synchronously, and the click that
-   * follows is dispatched to an item that is already unmounted, so
-   * React never sees it. The `onPointerUp` handler runs before
-   * Radix's own close (user handlers compose first), while the item
-   * is still mounted. The keyboard handler mirrors Radix's own guard
-   * (`event.target` must be the item itself); a Space pressed while a
-   * typeahead search is in progress still counts as a pick here
-   * (Radix would treat it as search continuation) — the only effect
-   * is that the currently shown value is recorded as explicitly
-   * chosen, which is the safe direction for a guard like this.
+   * `onClick` fires only when the ref is not "mouse", which keeps a
+   * mouse pick committed on `pointerup` from firing twice via the
+   * trailing `click` (touch/pen commit on that `click`). A real browser
+   * dispatches pointerdown → pointerup → click and Radix closes the
+   * menu on the mouse `pointerup`, so the trailing click usually lands
+   * on an already-unmounted item — this guard does not depend on that
+   * unmount. Radix never resets its ref on pointerup/pointerleave (the
+   * item unmounts on close and the ref is recreated on reopen), so
+   * neither do we: resetting would make the trailing mouse click look
+   * non-mouse and double-fire. The keyboard handler mirrors Radix's
+   * guard (`event.target` must be the item itself); a Space pressed
+   * while a typeahead search is in progress still counts as a pick
+   * here (Radix would treat it as search continuation) — the only
+   * effect is recording the shown value as explicitly chosen, which is
+   * the safe direction for a guard like this.
    */
   onOptionSelect?: (value: string) => void;
   options: SelectOption[];
@@ -109,38 +115,35 @@ function SelectItem({
   option: SelectOption;
   onOptionSelect?: (value: string) => void;
 }) {
-  // Whether the current mouse press started on this item. Radix only
-  // commits a mouse pick on pointerup when this item's own
-  // pointerTypeRef is "mouse" (dist :987-991: set by this item's own
-  // pointerdown/move, initial "touch"); a pointerup that lands here
-  // after a press elsewhere (drag-across release, or a press on the
-  // trigger dragged into the menu) is not a commit, so it must not
-  // count as an explicit pick (t053_code_f006). The ref is per item
-  // because the press state belongs to the item, not the list.
-  const pressedRef = useRef(false);
+  // Mirror Radix 2.4.1's per-item commit criterion as the single
+  // source of truth (dist :861-947). Both `pointerdown` and
+  // `pointermove` set this ref to `event.pointerType` (initial
+  // "touch"); Radix commits a mouse pick on `pointerup` when the ref
+  // is "mouse" (:909-916) and a touch/pen pick on `click` when it is
+  // not "mouse" (:901-908). onOptionSelect fires for exactly those
+  // events. Radix never resets the ref on pointerup/pointerleave —
+  // the item unmounts when the menu closes — and the `!== "mouse"`
+  // click guard is what stops a mouse pointerup pick from firing a
+  // second time via the trailing click; resetting would break both.
+  const pointerTypeRef = useRef("touch");
   return (
     <SelectPrimitive.Item
       value={option.value}
-      onClick={() => onOptionSelect?.(option.value)}
-      onPointerDown={(event) => {
-        if (event.pointerType === "mouse") {
-          pressedRef.current = true;
-        }
-      }}
-      onPointerUp={(event) => {
-        // Mouse only: Radix commits a mouse pick on pointerup
-        // (dist :979-985) and unmounts the menu before the
-        // click is dispatched, so this is the only handler
-        // that can see a mouse pick. Touch/pen stay on
-        // onClick (Radix commits those on click, :973-977).
-        // Only fire when the press started on this item.
-        if (event.pointerType === "mouse" && pressedRef.current) {
+      onClick={() => {
+        if (pointerTypeRef.current !== "mouse") {
           onOptionSelect?.(option.value);
         }
-        pressedRef.current = false;
       }}
-      onPointerLeave={() => {
-        pressedRef.current = false;
+      onPointerDown={(event) => {
+        pointerTypeRef.current = event.pointerType;
+      }}
+      onPointerMove={(event) => {
+        pointerTypeRef.current = event.pointerType;
+      }}
+      onPointerUp={() => {
+        if (pointerTypeRef.current === "mouse") {
+          onOptionSelect?.(option.value);
+        }
       }}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;

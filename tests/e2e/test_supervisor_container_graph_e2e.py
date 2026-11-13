@@ -74,7 +74,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         paths=("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"),
     )
     client = docker.from_env()
-    prefix = "t005-graph-" + uuid.uuid4().hex[:10]
+    prefix = "t005_graph_" + uuid.uuid4().hex[:10]
     containers = []
     profiles = set()
     data = tmp_path / "data"

@@ -121,7 +121,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
     )
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-off-{test_run_id}"
+    prefix = f"t005_off_{test_run_id}"
 
     tracker = SandboxContainerTracker()
     d_client = docker.from_env()

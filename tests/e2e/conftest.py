@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import os
 import secrets
 import socket
@@ -14,18 +13,10 @@ from pathlib import Path
 import httpx
 import pytest
 from api_auth import create_auth_context
-from e2e_env import (
-    REQUIRED_E2E_ENV,
-    required_e2e_names,
-    image_identity_problems,
-    worker_resource_offsets,
-)
+from e2e_env import worker_resource_offsets
+from e2e_prerequisites import enforce_e2e_prerequisites
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
-
-HOST_CHROME_PATH = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
 
 _PROXY_ENV = (
     "HTTP_PROXY",
@@ -72,28 +63,6 @@ def _loopback_tests_ignore_proxy_environment():
         os.environ.pop(name, None)
 
 
-def _item_needs_host_chrome(item) -> bool:
-    """True when the item's suite launches the host Google Chrome.
-
-    Host-Chrome consumers drive Playwright with ``channel="chrome"`` (or the
-    explicit CHROME_PATH constant); container-only suites (supervisor,
-    browser runtime) never touch a host browser, so the Chrome prerequisite
-    is scoped to the suites that actually need it (t024 AC-011/A33).
-    """
-    try:
-        source = Path(str(item.fspath)).read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-    return 'channel="chrome"' in source or "CHROME_PATH" in source
-
-
-def _missing_requirements(items) -> list[str]:
-    missing = [name for name in sorted(required_e2e_names(items)) if not os.environ.get(name)]
-    if any(_item_needs_host_chrome(item) for item in items) and not HOST_CHROME_PATH.is_file():
-        missing.append("Google Chrome at /Applications")
-    return missing
-
-
 _DIST_CONSUMER_MARKERS = (
     "frontend_app_probe",
     "frontend_probe",
@@ -116,8 +85,13 @@ def _item_consumes_dist(item) -> bool:
 
 
 def pytest_collection_modifyitems(config, items):
-    # Freshness is enforced at collection for suites that consume dist,
-    # and again at copy time inside the harnesses themselves.
+    """Frontend-dist freshness gate (pure: reads no E2E session state).
+
+    Enforced at collection for suites that consume dist, and again at copy
+    time inside the harnesses themselves.  E2E required-mode prerequisites
+    are a separate concern, enforced only in ``pytest_collection_finish`` so a
+    non-E2E collection can never be affected by ``CBROWSER_E2E_REQUIRED``.
+    """
     dist = REPO_ROOT / "src" / "frontend" / "dist"
     if items and dist.is_dir() and any(_item_consumes_dist(item) for item in items):
         from scripts.verify_frontend_dist import verify_frontend_build_freshness
@@ -127,99 +101,15 @@ def pytest_collection_modifyitems(config, items):
             REPO_ROOT / "src" / "frontend",
         )
 
-    if os.environ.get("CBROWSER_E2E_REQUIRED") != "1":
-        return
-    missing = _missing_requirements(items)
-    # Required mode is fail-closed on image identity (t028 AC-005): a set
-    # variable holding a tag, a malformed digest, or an ID that does not
-    # resolve locally fails the session exactly like a missing variable.
-    required = required_e2e_names(items)
-    identity = image_identity_problems(names=required)
 
-    # t044 AC-005: global prerequisites are collected before exiting so the
-    # report enumerates every missing item at once.  None may degrade into a
-    # per-test skip in required mode.
-    extra: list[str] = []
-    try:
-        import docker
+def pytest_collection_finish(session) -> None:
+    """E2E-session prerequisite gate (t044 AC-005).
 
-        client = docker.from_env()
-        try:
-            client.ping()
-        finally:
-            client.close()
-    except Exception as exc:  # daemon unreachable or SDK absent
-        extra.append(
-            f"Docker daemon unavailable: {type(exc).__name__}: {exc}"
-        )
-
-    for name in sorted(required & {"CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"}):
-        value = os.environ.get(name)
-        if not value or not Path(value).is_dir():
-            extra.append(f"{name}: not an existing directory: {value!r}")
-
-    if any(
-        Path(str(item.fspath)).name == "test_fingerprint_platform_e2e.py"
-        for item in items
-    ):
-        fonts_root = os.environ.get("CBROWSER_E2E_FONTS_DIR")
-        if not fonts_root or not Path(fonts_root).is_dir():
-            extra.append(
-                "CBROWSER_E2E_FONTS_DIR: not an existing directory: "
-                f"{fonts_root!r} (windows/macos font sets unavailable)"
-            )
-        else:
-            ok_platforms: set[str] = set()
-            try:
-                from cbrowser.font_sets import list_font_sets
-
-                ok_platforms = {
-                    item["platform"]
-                    for item in list_font_sets(fonts_root)
-                    if item["integrity"]["ok"]
-                }
-            except Exception as exc:
-                extra.append(
-                    f"CBROWSER_E2E_FONTS_DIR: cannot verify font sets: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-            for platform in ("windows", "macos"):
-                if platform not in ok_platforms:
-                    extra.append(
-                        f"CBROWSER_E2E_FONTS_DIR: missing complete imported "
-                        f"{platform} font set (ok=True)"
-                    )
-
-    if any(
-        Path(str(item.fspath)).name == 'test_frontend_adapter_build.py'
-        for item in items
-    ):
-        from scripts import vendor_selkies_web as vendor_module
-
-        cache = Path(
-            os.environ.get(
-                'CBROWSER_SELKIES_WHEEL_CACHE',
-                str(REPO_ROOT / '.scratch' / 'selkies_wheels'),
-            )
-        )
-        wheel = cache / vendor_module.PINNED_WHEEL_FILENAME
-        if not wheel.is_file():
-            extra.append(f'Local Selkies wheel cache missing: {wheel}')
-        else:
-            h = hashlib.sha256(wheel.read_bytes()).hexdigest()
-            if h != vendor_module.PINNED_WHEEL_SHA256:
-                extra.append(
-                    f'Local Selkies wheel SHA256 mismatch: {wheel}: '
-                    f'{vendor_module.PINNED_WHEEL_SHA256} != {h}'
-                )
-
-    if missing or identity or extra:
-        details = "\n".join(f"- {name}: {REQUIRED_E2E_ENV.get(name, 'Google Chrome')}" for name in missing)
-        if identity:
-            details += "\n" + "\n".join(f"- {problem}" for problem in identity)
-        if extra:
-            details += "\n" + "\n".join(f"- {problem}" for problem in extra)
-        pytest.exit(f"E2E required mode is missing prerequisites:\n{details}", returncode=2)
+    This conftest is scoped to ``tests/e2e/``; the gate additionally verifies
+    the collected content/config is an E2E session before enforcing, so a
+    mixed/non-E2E collection can never be hijacked by the required-mode switch.
+    """
+    enforce_e2e_prerequisites(session.config, session.items)
 
 
 @pytest.fixture

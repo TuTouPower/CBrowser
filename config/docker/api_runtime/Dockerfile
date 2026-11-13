@@ -15,7 +15,9 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -f /tmp/requiremen
 
 COPY src/backend /app
 
-RUN chown -R appuser:appgroup /app
+RUN chown -R appuser:appgroup /app && \
+    mkdir -p /data/db && \
+    chown 1000:1000 /data/db
 
 USER 1000:1000
 

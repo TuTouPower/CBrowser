@@ -492,7 +492,7 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
     from playwright.async_api import async_playwright
 
     harness = GatewayTopologyHarness(tmp_path)
-    harness.prefix = f"t007-stream-tokens-gw-{secrets.token_hex(4)}"
+    harness.prefix = f"t007_stream_tokens_gw_{secrets.token_hex(4)}"
     try:
         await harness.start()
         profile = await harness.create_and_start_profile("ac010_prof")

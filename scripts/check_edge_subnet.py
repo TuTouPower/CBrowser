@@ -94,8 +94,16 @@ def _docker_networks() -> list[tuple[str | None, ipaddress.IPv4Network]]:
     return subnets
 
 
-def _host_interface_networks() -> list[ipaddress.IPv4Network]:
-    """Host interface networks, best effort (empty when unenumerable)."""
+def _host_interface_networks(
+    docker_subnets: frozenset[ipaddress.IPv4Network],
+) -> list[ipaddress.IPv4Network]:
+    """Host interface networks, best effort (empty when unenumerable).
+
+    Interfaces mirroring an existing Docker network subnet (the bridge
+    interface OrbStack/macOS creates for a compose network) belong to that
+    Docker network, not to an independent host LAN; the Docker-network check
+    already covers them, so they must not be reported a second time here.
+    """
     try:
         out = subprocess.run(
             ["ip", "-j", "addr"],
@@ -115,7 +123,7 @@ def _host_interface_networks() -> list[ipaddress.IPv4Network]:
                             strict=False,
                         )
                     )
-            return networks
+            return [net for net in networks if net not in docker_subnets]
     except (OSError, subprocess.TimeoutExpired, ValueError, KeyError):
         pass
     try:
@@ -145,7 +153,7 @@ def _host_interface_networks() -> list[ipaddress.IPv4Network]:
         networks.append(
             ipaddress.ip_network(f"{ip}/{prefixlen}", strict=False)
         )
-    return networks
+    return [net for net in networks if net not in docker_subnets]
 
 
 class _UsageError(Exception):
@@ -238,7 +246,8 @@ def main(argv: list[str]) -> int:
     conflicts, stale_own = _classify_overlaps(
         existing, candidate, exclude_network
     )
-    for net in _host_interface_networks():
+    docker_subnets = frozenset(net for _name, net in existing)
+    for net in _host_interface_networks(docker_subnets):
         if net.overlaps(candidate):
             conflicts.append(("host interface", net))
     if not conflicts and not stale_own:

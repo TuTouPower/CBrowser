@@ -55,7 +55,7 @@ def prepare_frontend_app(dest_dir: Path) -> Path:
 class FrontendAppTopologyHarness(FrontendTopologyHarness):
     """Full application topology with API Runtime Coordinator enabled."""
 
-    prefix_base = "t007-fe-e2e"
+    prefix_base = "t007_fe_e2e"
     test_label = "t007-fe-e2e"
 
     def prepare_static(self) -> None:

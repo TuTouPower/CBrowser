@@ -7,6 +7,16 @@
 # parameterized so a second isolated instance can coexist on one daemon.
 name: ${CBROWSER_COMPOSE_PROJECT:-cbrowser}
 
+x-no-proxy-env: &no-proxy-env
+  HTTP_PROXY: ""
+  HTTPS_PROXY: ""
+  ALL_PROXY: ""
+  http_proxy: ""
+  https_proxy: ""
+  all_proxy: ""
+  NO_PROXY: "localhost,127.0.0.1,api,gateway,supervisor,caddy"
+  no_proxy: "localhost,127.0.0.1,api,gateway,supervisor,caddy"
+
 services:
   api:
     image: ${CBROWSER_API_IMAGE:?run scripts/deploy.sh first}
@@ -18,6 +28,7 @@ services:
     tmpfs:
       - /tmp:rw,size=256m
     environment:
+      <<: *no-proxy-env
       CBROWSER_DB_PATH: /data/db/cbrowser.db
       CBROWSER_FONTS_DIR: /fonts
       CBROWSER_SUPERVISOR_URL: http://supervisor:8005
@@ -58,6 +69,7 @@ services:
     tmpfs:
       - /tmp:rw,size=256m
     environment:
+      <<: *no-proxy-env
       CBROWSER_GATEWAY_HOST: 0.0.0.0
       CBROWSER_GATEWAY_PORT: "18080"
       CBROWSER_AGENT_KEY_FILE: /run/secrets/agent_key
@@ -96,6 +108,7 @@ services:
     tmpfs:
       - /tmp:rw,size=256m
     environment:
+      <<: *no-proxy-env
       CBROWSER_BROWSER_IMAGE: ${CBROWSER_BROWSER_IMAGE:?build browser image first}
       CBROWSER_STREAM_IMAGE: ${CBROWSER_STREAM_IMAGE:?build stream image first}
       CBROWSER_NETWORK_POLICY_IMAGE: ${CBROWSER_SUPERVISOR_IMAGE:?build supervisor image first}
@@ -150,6 +163,7 @@ services:
       com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}
       com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}
     environment:
+      <<: *no-proxy-env
       # Fingerprint carriers: when the Caddyfile or the frontend product
       # changes, only caddy's environment changes, so `up` recreates only
       # caddy; an unchanged configuration leaves caddy running (AC-005).

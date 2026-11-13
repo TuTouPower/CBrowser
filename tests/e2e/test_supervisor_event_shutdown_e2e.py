@@ -102,7 +102,7 @@ def test_supervisor_cli_graceful_shutdown_on_sigterm(tmp_path: Path) -> None:
     try:
         api.start()
         sup_port = _get_free_port()
-        prefix = "baseline-exit-" + secrets.token_hex(4)
+        prefix = "baseline_exit_" + secrets.token_hex(4)
 
         for name in ("data", "data/engine", "data/geoip"):
             (base / name).mkdir(parents=True, exist_ok=True)

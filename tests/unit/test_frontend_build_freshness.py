@@ -179,3 +179,45 @@ def test_e2e_collection_hook_ignores_stale_dist_for_non_consumers(tmp_path: Path
     # No consumer items collected: the stale dist must not block suites
     # that never touch it (AC-011 scoped prerequisites).
     hook(None, [Item()])
+
+
+def test_dist_hook_rejects_stale_frontend_under_e2e_required_mode(
+    tmp_path: Path, monkeypatch
+):
+    """AC-003 dist gate still fires with the E2E session switch set."""
+    monkeypatch.setenv("CBROWSER_E2E_REQUIRED", "1")
+    _make_repo_with_stale_dist(tmp_path)
+    hook, Item = _run_collection_hook(tmp_path, "test_frontend_app_e2e.py")
+    # Item exposes only fspath; a pure dist gate never needs iter_markers.
+    with pytest.raises(RuntimeError, match="stale"):
+        hook(None, [Item()])
+
+
+def test_dist_hook_is_independent_of_e2e_required_mode(
+    tmp_path: Path, monkeypatch
+):
+    """Regression for the coupled collection hook.
+
+    The former ``pytest_collection_modifyitems`` mixed the pure dist gate with
+    the E2E required-mode prerequisite check.  With ``CBROWSER_E2E_REQUIRED=1``
+    set globally, a non-E2E unit collection (a stand-in Item exposing only
+    ``fspath``) crashed inside ``required_e2e_names`` -> ``iter_markers``.
+    The split dist hook must be a pure gate: it reads no E2E session state and
+    never delegates to the E2E prerequisite gate, whatever that env var says.
+    """
+    monkeypatch.setenv("CBROWSER_E2E_REQUIRED", "1")
+    _make_repo_with_stale_dist(tmp_path)
+    hook, Item = _run_collection_hook(
+        tmp_path, "test_supervisor_core_e2e.py", consumes_dist=False
+    )
+
+    calls: list[object] = []
+
+    def _forbidden_gate(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("dist hook must not invoke the E2E prerequisite gate")
+
+    hook.__globals__["enforce_e2e_prerequisites"] = _forbidden_gate
+    # Non-consuming Item with only fspath: no dist check, and no E2E path.
+    hook(None, [Item()])
+    assert not calls

@@ -5,4 +5,4 @@
 - 根因：Radix 的提交条件是 pointerdown **或** pointermove 置位其 `pointerTypeRef`，我方 `pressedRef` 只在 pointerdown 置位。值变化路径由 `onValueChange` 兜底、无用户可见缺口；仅同值提交漏记。
 - 测试缺口：Select 级缺 D 案测试（pointerdown 落他项、pointermove 过本项、pointerup 落本项）；ProfileForm 级该组合当前不可达，无测试。
 - 线索：t053 Round 5 审阅报告（`docs/tasks/t053_profile_locale_fonts_defaults/review_code.md` Round 5 t053_code_f007；`review_test.md` Round 5 t053_test_f008，含 A/C/C2/D 案探针实测）。
-- 处理：未开
+- 处理：main；resolution=resolved；reason=Select.tsx 的 onOptionSelect 守卫判据已与 Radix 2.4.1 提交判据统一（pointerdown/pointermove 共同置位 pointerTypeRef，pointerup 依判据触发一次），补 D 案 Select 级测试；Select.test.tsx 16 passed、全量 vitest 613 passed、test:types 通过

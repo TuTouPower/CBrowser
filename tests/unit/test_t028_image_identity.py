@@ -95,33 +95,57 @@ def test_non_image_vars_are_ignored_by_identity_checks() -> None:
     assert e2e_env.collect_image_identity_evidence(env) == {}
 
 
-def _load_e2e_conftest():
-    added = str(FIXTURES)
-    if added not in sys.path:
-        sys.path.insert(0, added)
-    spec = importlib.util.spec_from_file_location(
-        "t028_e2e_conftest", REPO_ROOT / "tests" / "e2e" / "conftest.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_required_mode_session_fails_on_identity_problems(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    conftest = _load_e2e_conftest()
+    """E2E required mode exits 2 at collection when an image identity problem
+    is present, and the report names the concrete problem (t028 AC-005)."""
+    import functools
+
+    fixtures_path = str(FIXTURES)
+    if fixtures_path not in sys.path:
+        sys.path.insert(0, fixtures_path)
+    import e2e_prerequisites as prereq
+
     for name in e2e_env.REQUIRED_E2E_ENV:
         monkeypatch.setenv(name, VALID_ID)
+    monkeypatch.setenv("CBROWSER_RUNTIME_ENGINE_CACHE", str(tmp_path))
+    monkeypatch.setenv("CBROWSER_RUNTIME_GEOIP_CACHE", str(tmp_path))
     monkeypatch.setenv("CBROWSER_E2E_REQUIRED", "1")
+
+    class _Marker:
+        args = ("CBROWSER_GATEWAY_IMAGE",)
+
+    class _Item:
+        fspath = REPO_ROOT / "tests" / "e2e" / "test_identity_probe_e2e.py"
+        path = fspath
+
+        def iter_markers(self, name):
+            return [_Marker()] if name == "e2e_images" else []
+
+    real_collect = prereq.collect_prerequisite_problems
     monkeypatch.setattr(
-        conftest,
-        "image_identity_problems",
-        lambda **kwargs: ["CBROWSER_GATEWAY_IMAGE: image not present locally"],
+        prereq,
+        "collect_prerequisite_problems",
+        functools.partial(
+            real_collect,
+            image_exists=lambda _id: False,
+            docker_ping=lambda: None,
+        ),
     )
-    with pytest.raises(BaseException) as caught:
-        conftest.pytest_collection_modifyitems(None, [])
-    assert "not present locally" in str(caught.value)
+    exits: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        prereq.pytest,
+        "exit",
+        lambda msg, returncode=0: exits.append((str(msg), returncode)),
+    )
+
+    prereq.enforce_e2e_prerequisites(None, [_Item()])
+
+    assert len(exits) == 1
+    assert exits[0][1] == 2
+    assert "CBROWSER_GATEWAY_IMAGE" in exits[0][0]
+    assert "not present locally" in exits[0][0]
 
 
 def test_frontend_harness_never_loads_images_from_scratch(

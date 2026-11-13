@@ -35,14 +35,13 @@ project_configured
 
 ## doctor_cmd
 
-环境前置检查：契约测试可成功收集；另需 `md_kx` 与 `jpeginfo` 在 PATH。t057宿主帧校验使用与Browser镜像相同的严格检查工具；Mac可在任务scratch构建上游jpeginfo，通过PATH提供，不必修改系统安装。
+环境前置检查：契约测试可成功收集；另需 `md_kx` 在 PATH。预览帧的严格 JPEG 校验（`jpeginfo --check -`，d040）由门禁唯一入口 `scripts/run_gates.sh` 在环境准备阶段确定性提供：复用 PATH 内或 `.scratch/jpeginfo/` 缓存的二进制，并按 d040 契约实测（合法帧退出 0、补回 EOI 的截断帧非零），不满足即 fail closed。不做系统安装、不联网、不在 doctor 阶段人工提供。
 
 ```bash
 export TMPDIR="$(mktemp -d)"
 mkdir -p "$TMPDIR"
 pytest .repo_template/tests -q --collect-only -m contract
 command -v md_kx
-command -v jpeginfo
 ```
 
 ## test_cmd

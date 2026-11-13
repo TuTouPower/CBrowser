@@ -24,7 +24,13 @@ REQUIRED_E2E_ENV = {
 
 
 def required_e2e_names(items) -> set[str]:
-    """Union the collected cases' image declarations; unmarked is full."""
+    """Union the collected cases' image declarations; unmarked is full.
+
+    ``items`` is the list of **real pytest Items** collected for an E2E
+    session: each must expose ``iter_markers("e2e_images")`` and a valid
+    ``fspath``.  The E2E prerequisite gate only ever calls this with a real
+    collected Item list, never with partial stand-ins.
+    """
     required: set[str] = set()
     for item in items:
         markers = list(item.iter_markers("e2e_images"))

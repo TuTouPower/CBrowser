@@ -20,7 +20,7 @@ logger = logging.getLogger("cbrowser.frontend_probe.harness")
 class FrontendTopologyHarness(GatewayTopologyHarness):
     """Topology harness customized for t007 frontend session E2E tests."""
 
-    prefix_base = "t007-fe-session"
+    prefix_base = "t007_fe_session"
     test_label = "t007-fe-session"
 
     def __init__(
@@ -38,7 +38,7 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
         # Dedicated prefix for this lane
-        self.prefix = f"{self.prefix_base}-{uuid.uuid4().hex[:8]}"
+        self.prefix = f"{self.prefix_base}_{uuid.uuid4().hex[:8]}"
 
     def _run_container(
         self, role: str, image_id: str, **kwargs: Any

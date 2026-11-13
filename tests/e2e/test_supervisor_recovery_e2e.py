@@ -265,7 +265,7 @@ async def test_supervisor_sigkill_reconciliation_and_event_persistence(
     await gateway.start()
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-rec-{test_run_id}"
+    prefix = f"t005_rec_{test_run_id}"
 
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
@@ -503,7 +503,7 @@ async def test_supervisor_dual_profile_port_invariance_on_sigkill(
     await gateway.start()
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-inv-{test_run_id}"
+    prefix = f"t005_inv_{test_run_id}"
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 
@@ -780,7 +780,7 @@ async def test_supervisor_replays_diagnostic_spool_without_stopping_live_runtime
     await gateway.start()
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-dsp-{test_run_id}"
+    prefix = f"t005_dsp_{test_run_id}"
     d_client = docker.from_env()
     request.addfinalizer(lambda: cleanup_prefixed_resources(d_client, prefix))
 

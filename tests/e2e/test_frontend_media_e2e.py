@@ -43,7 +43,7 @@ logger = logging.getLogger("cbrowser.frontend_media.e2e")
 class MediaTopologyHarness(FrontendAppTopologyHarness):
     """Lane-scoped Docker prefix; no objects outside t007-media are created."""
 
-    prefix_base = "t007-media"
+    prefix_base = "t007_media"
     test_label = "t007-media"
 
 

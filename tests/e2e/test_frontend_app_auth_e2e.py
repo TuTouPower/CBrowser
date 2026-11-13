@@ -27,7 +27,7 @@ logger = logging.getLogger("cbrowser.frontend_app_auth.e2e")
 
 
 class AuthTopologyHarness(FrontendAppTopologyHarness):
-    prefix_base = "t007-auth"
+    prefix_base = "t007_auth"
     test_label = "t007-auth"
 
 

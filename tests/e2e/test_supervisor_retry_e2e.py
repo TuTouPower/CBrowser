@@ -135,7 +135,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
     gw_port = get_free_port()
 
     test_run_id = uuid.uuid4().hex[:6]
-    prefix = f"t005-retry-e2e-{test_run_id}"
+    prefix = f"t005_retry_e2e_{test_run_id}"
 
 
     root = Path(__file__).resolve().parents[2]

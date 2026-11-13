@@ -47,7 +47,7 @@ FORBIDDEN_DIAGNOSTICS = frozenset(
 class UpgradeTopologyHarness(FrontendAppTopologyHarness):
     """Lane-scoped prefix; only t049-upgrade objects are created."""
 
-    prefix_base = "t049-upgrade"
+    prefix_base = "t049_upgrade"
     test_label = "t049-upgrade"
 
 

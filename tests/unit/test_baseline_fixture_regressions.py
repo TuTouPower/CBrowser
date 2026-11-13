@@ -811,7 +811,7 @@ async def test_gateway_topology_harness_environment_and_ports_consistent(
         patch("gateway_probe.topology.wait_until_ready"),
     ):
         harness = GatewayTopologyHarness(work_dir=tmp_path / "work")
-        harness.prefix = "test-check"
+        harness.prefix = "test_check"
         monkeypatch.setattr(harness, "_run_container", fake_run)
 
         await harness.start()

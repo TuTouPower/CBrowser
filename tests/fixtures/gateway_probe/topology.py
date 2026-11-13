@@ -73,7 +73,7 @@ class GatewayTopologyHarness:
         self.agent_heartbeat_timeout_sec = agent_heartbeat_timeout_sec
 
         self.docker_client = docker.from_env()
-        self.prefix = f"t006-relay-{uuid.uuid4().hex[:8]}"
+        self.prefix = f"t006_relay_{uuid.uuid4().hex[:8]}"
 
         self.containers: list[docker.models.containers.Container] = []
         self.networks: list[docker.models.networks.Network] = []
@@ -176,12 +176,24 @@ class GatewayTopologyHarness:
         # Gateway requires managed-by=supervisor for infra validation
         if role == "gateway":
             labels["com.cbrowser.managed-by"] = "supervisor"
+        environment = {
+            "HTTP_PROXY": "",
+            "HTTPS_PROXY": "",
+            "ALL_PROXY": "",
+            "http_proxy": "",
+            "https_proxy": "",
+            "all_proxy": "",
+            "NO_PROXY": "",
+            "no_proxy": "",
+            **(kwargs.pop("environment", {}) or {}),
+        }
         container = self.docker_client.containers.run(
             image_id,
             name=f"{self.prefix}-{role}",
             detach=True,
             network=self.edge_network.name,
             labels=labels,
+            environment=environment,
             **kwargs,
         )
         self.containers.append(container)

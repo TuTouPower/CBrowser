@@ -10,6 +10,7 @@
 !src/backend/cbrowser/gateway/*.py
 !src/backend/cbrowser/udp_mux.py
 !src/backend/cbrowser/preview.py
+!src/backend/cbrowser/redact.py
 !src/backend/cbrowser/runtime_agent/
 !src/backend/cbrowser/network_config.py
 !src/backend/cbrowser/runtime_agent/*.py

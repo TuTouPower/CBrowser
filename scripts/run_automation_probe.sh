@@ -94,8 +94,9 @@ python3 - "$REPO_ROOT" "$snapshot" <<'PY_SNAPSHOT' || exit 2
 import pathlib, shutil, subprocess, sys
 root, target = map(pathlib.Path, sys.argv[1:])
 paths = subprocess.check_output([
-    "git", "ls-files", "-z", "--", "src/backend", "tests", "scripts",
-    "config", "schemas", "assets", "pyproject.toml",
+    "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard",
+    "--", "src/backend", "tests", "scripts", "config", "schemas",
+    "assets", "pyproject.toml",
 ], cwd=root).decode().split(chr(0))
 for name in filter(None, paths):
     source = root / name

@@ -32,7 +32,12 @@ What is NOT an exception: library versions (Pydantic v2, SQLAlchemy
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -79,7 +84,6 @@ ALLOWED: dict[str, set[str]] = {
     "docs/specs/release_deployment.md": {"data/v2"},
 }
 
-SKIP_PARTS = {"node_modules", ".git", "__pycache__", ".venv"}
 # This test file itself names every pattern (in PATTERNS and the docstring
 # above); it is the detector, not a surface.
 SKIP_FILES = {"tests/unit/test_t051_generation_hygiene.py"}
@@ -90,20 +94,23 @@ SKIP_SUFFIXES = {
 
 
 def _scan_files() -> list[Path]:
+    completed = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    )
+    targets = [Path(target) for target in SCAN_TARGETS]
     files: list[Path] = []
-    for target in SCAN_TARGETS:
-        path = REPO_ROOT / target
-        if path.is_file():
-            files.append(path)
-        elif path.is_dir():
-            for candidate in sorted(path.rglob("*")):
-                if not candidate.is_file():
-                    continue
-                if SKIP_PARTS & set(candidate.parts):
-                    continue
-                if candidate.suffix.lower() in SKIP_SUFFIXES:
-                    continue
-                files.append(candidate)
+    for chunk in completed.stdout.split(b"\0"):
+        if not chunk:
+            continue
+        rel = Path(os.fsdecode(chunk))
+        if rel.suffix.lower() in SKIP_SUFFIXES:
+            continue
+        if not any(rel == target or target in rel.parents for target in targets):
+            continue
+        files.append(REPO_ROOT / rel)
     return files
 
 
@@ -128,3 +135,96 @@ def test_no_generation_identifiers_in_current_surfaces() -> None:
         "product-generation identifiers found in current surfaces:\n"
         + "\n".join(hits)
     )
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+def _init_repo(repo: Path) -> None:
+    repo.mkdir(parents=True, exist_ok=True)
+    _git(repo, "init", "-q")
+
+
+def _relative_paths(paths: list[Path], root: Path) -> set[str]:
+    return {str(path.relative_to(root)) for path in paths}
+
+
+def test_scan_files_excludes_gitignored_deploy_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("config/deploy/releases/\n", encoding="utf-8")
+    _git(tmp_path, "add", ".gitignore")
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "clean.env").write_text(
+        "CBROWSER_DATA_ROOT=data/current\n", encoding="utf-8"
+    )
+    _git(tmp_path, "add", "config/clean.env")
+    releases = tmp_path / "config" / "deploy" / "releases"
+    releases.mkdir(parents=True)
+    (releases / "fake.env").write_text(
+        "CBROWSER_DATA_ROOT=.../data/v2\n", encoding="utf-8"
+    )
+    _git(tmp_path, "check-ignore", "config/deploy/releases/fake.env")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+    scanned = _relative_paths(_scan_files(), tmp_path)
+    assert "config/clean.env" in scanned
+    assert "config/deploy/releases/fake.env" not in scanned
+
+
+def test_scan_files_includes_tracked_hit_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_repo(tmp_path)
+    (tmp_path / "config").mkdir()
+    hit = tmp_path / "config" / "hit.env"
+    hit.write_text("CBROWSER_DATA_ROOT=.../data/v2\n", encoding="utf-8")
+    _git(tmp_path, "add", "config/hit.env")
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+    scanned = _relative_paths(_scan_files(), tmp_path)
+    assert "config/hit.env" in scanned
+
+
+def test_scan_files_fails_closed_when_git_ls_files_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    no_repo = tmp_path / "no_repo"
+    no_repo.mkdir()
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path))
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", no_repo)
+    with pytest.raises(subprocess.CalledProcessError):
+        _scan_files()
+
+    def unavailable(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError("git")
+
+    monkeypatch.setattr(subprocess, "run", unavailable)
+    with pytest.raises(FileNotFoundError):
+        _scan_files()
+
+
+def test_allowed_legacy_path_exceptions_still_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_repo(tmp_path)
+    for rel in ALLOWED:
+        path = tmp_path / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("legacy = data/v2/cbrowser.db\n", encoding="utf-8")
+        _git(tmp_path, "add", rel)
+    monkeypatch.setattr(sys.modules[__name__], "REPO_ROOT", tmp_path)
+    scanned = _relative_paths(_scan_files(), tmp_path)
+    assert set(ALLOWED) <= scanned
+    test_no_generation_identifiers_in_current_surfaces()
+
+    extra = "docs/specs/forbidden.md"
+    (tmp_path / extra).write_text("oops data/v2 here\n", encoding="utf-8")
+    _git(tmp_path, "add", extra)
+    with pytest.raises(AssertionError):
+        test_no_generation_identifiers_in_current_surfaces()
