@@ -24,6 +24,11 @@ from cbrowser.domain.proxy_endpoint import (
     ProxyEndpoint,
     map_endpoint_for_container,
 )
+from cbrowser.engine_artifacts import (
+    EngineArtifactError,
+    enforce_pinned_engine_env,
+    get_approved_artifact,
+)
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.shared.egress import ECHO_URLS
 from cbrowser.redact import docker_error_detail, redact
@@ -261,6 +266,8 @@ class DockerAdapter:
         media_subnet_pool: str | None = None,
         deployment_instance_id: str | None = None,
         network_timeout: float | None = None,
+        engine_build: str | None = None,
+        expected_binary_sha256: str | None = None,
     ):
         self.validator = path_validator
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
@@ -332,6 +339,19 @@ class DockerAdapter:
         self._media_network_lock = threading.Lock()
         self._binary_ready = False
         self._geoip_ready = False
+        requested_build = engine_build or os.environ.get("CBROWSER_ENGINE_BUILD") or None
+        artifact = get_approved_artifact(engine_build=requested_build)
+        self.engine_build = artifact.engine_build
+        requested_sha = expected_binary_sha256 or os.environ.get("CBROWSER_ENGINE_BINARY_SHA256") or None
+        if (
+            requested_sha
+            and artifact.binary_sha256
+            and requested_sha.strip().lower() != artifact.binary_sha256.lower()
+        ):
+            raise ValueError(
+                "Configured engine binary SHA-256 conflicts with approved ADR 021 artifact manifest"
+            )
+        self.expected_binary_sha256 = requested_sha or artifact.binary_sha256
 
     def _prepare_policy_gate(
         self, profile_id: str, instance_id: str, role: str
@@ -815,6 +835,8 @@ class DockerAdapter:
             fingerprint, entry_count = self._cache_tree_fingerprint(root)
             if fingerprint == record.fingerprint and entry_count == record.entry_count:
                 return
+        if root == self.engine_cache:
+            self._binary_ready = False
         for item in root.rglob("*"):
             self.validator.validate_safe_path(item)
         fingerprint, entry_count = self._cache_tree_fingerprint(root)
@@ -965,6 +987,16 @@ class DockerAdapter:
                 pass
 
     async def ensure_runtime_cache(self, need_geoip: bool) -> None:
+        try:
+            enforce_pinned_engine_env(
+                os.environ,
+                expected_build=self.engine_build,
+                expected_binary_sha256=self.expected_binary_sha256,
+            )
+        except EngineArtifactError as exc:
+            raise DockerSandboxError(
+                f"Engine artifact pinning check failed: {exc}"
+            ) from None
         async with self._cache_lock:
             if self._binary_ready and (not need_geoip or self._geoip_ready):
                 return
@@ -980,6 +1012,16 @@ class DockerAdapter:
             self._geoip_ready = self._geoip_ready or need_geoip
 
     def _initialize_cache(self, need_geoip: bool) -> None:
+        try:
+            enforce_pinned_engine_env(
+                os.environ,
+                expected_build=self.engine_build,
+                expected_binary_sha256=self.expected_binary_sha256,
+            )
+        except EngineArtifactError as exc:
+            raise DockerSandboxError(
+                f"Engine artifact pinning check failed: {exc}"
+            ) from None
         # Only the initializer receives writable cache mounts. Runtime consumers
         # see the completed cache read-only, including GeoIP data.
         (self.engine_cache / "geoip").mkdir(exist_ok=True)
@@ -988,17 +1030,34 @@ class DockerAdapter:
         marker = self.engine_cache / marker_name
         script = """import json, os
 from pathlib import Path
-from cloakbrowser.config import get_chromium_version
+from cbrowser.engine_artifacts import (
+    detect_auto_update_markers,
+    enforce_pinned_engine_env,
+    verify_extracted_engine_cache,
+    verify_wrapper_package,
+)
 from cloakbrowser.download import ensure_binary
-binary = Path(ensure_binary(browser_version=get_chromium_version()))
+
+cache_dir = Path('/data/engine-cache')
+pinned_build = os.environ['CBROWSER_ENGINE_BUILD']
+enforce_pinned_engine_env(
+    os.environ,
+    expected_build=pinned_build,
+    expected_binary_sha256=os.environ.get('CBROWSER_ENGINE_BINARY_SHA256'),
+)
+verify_wrapper_package()
+if detect_auto_update_markers(cache_dir):
+    raise RuntimeError('Forbidden auto-update marker present in engine cache')
+binary = Path(ensure_binary(browser_version=pinned_build))
 if not binary.is_file():
     raise RuntimeError('Browser binary initialization did not complete')
+verify_extracted_engine_cache(cache_dir, engine_build=pinned_build, run_version_probe=True)
 if os.environ['CBROWSER_INIT_GEOIP'] == '1':
     from cloakbrowser.geoip import _ensure_geoip_db
     database = _ensure_geoip_db()
     if database is None or not database.is_file():
         raise RuntimeError('GeoIP initialization did not complete')
-path = Path('/data/engine-cache') / os.environ['CBROWSER_INIT_MARKER']
+path = cache_dir / os.environ['CBROWSER_INIT_MARKER']
 with path.open('w') as output:
     json.dump({'run_id':os.environ['CBROWSER_INIT_RUN_ID']},output)
     output.flush()
@@ -1022,7 +1081,12 @@ with path.open('w') as output:
                     engine_cache=self.engine_cache,
                     geoip_cache=self.geoip_cache,
                 ),
-                environment=cache_init_environment(need_geoip, marker_name, run_id),
+                environment=cache_init_environment(
+                    need_geoip,
+                    marker_name,
+                    run_id,
+                    engine_build=self.engine_build,
+                ),
                 labels=gate_labels(cache_init_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
@@ -1861,7 +1925,12 @@ with path.open('w') as output:
             if proxy_host == HOST_GATEWAY_HOSTNAME
             else None
         )
-        command = browser_command(profile_id, runtime_instance_id, display)
+        command = browser_command(
+            profile_id,
+            runtime_instance_id,
+            display,
+            engine_build=self.engine_build,
+        )
 
         try:
             container = await asyncio.to_thread(

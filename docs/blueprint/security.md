@@ -127,3 +127,21 @@
 - 泄漏统一改写为 `<repo>`、`<home>`、`<container_home>` 等语义占位符；不使用整文件指纹或文件清单豁免。测试负例通过字符串片段组装，避免在测试源中再次泄漏。
 - 不改写 Git 历史，保留既有提交引用与审查溯源。历史文件原位脱敏属于归档只追加约定的必要隐私例外。
 - 容器固定账号及产品定义的容器路径属于接口常量，按语义判别，不视为开发者家路径；任意开发者路径不能借此获得文件级豁免。
+
+## 引擎制品信任边界（t068）
+
+- `cloakbrowser==0.6.4`（ADR 021）只对下载压缩包的 `SHA256SUMS` + 分离
+    `SHA256SUMS.sig` 做 Ed25519 验签（包内硬编码公钥），解压后目录无上游签名；
+    因此 CBrowser 不宣称对解压引擎文件有 Ed25519 覆盖，信任根如实拆为
+    「下载层 Ed25519 签名 + 仓库 per-file SHA-256 清单」。
+- `ensure_binary()` 命中已有可执行 `chrome` 即跳过完整性校验；故
+    `cbrowser.engine_artifacts.verify_extracted_engine_cache` 在
+    `deploy.sh` / Supervisor `cache_init` / `BrowserRunner` 三处独立复验
+    15 个文件 SHA-256、ELF machine 与 `--version`，不信任缓存命中或
+    `.cbrowser-cache-generation.json` 指纹（该 sidecar 只做路径/树变更探测）。
+- 强制 `CLOAKBROWSER_AUTO_UPDATE=false`；拒绝 `CLOAKBROWSER_DOWNLOAD_URL`
+    （关闭验签）、`CLOAKBROWSER_SKIP_CHECKSUM=true`（跳过校验）、
+    `CLOAKBROWSER_LICENSE_KEY`（free tier 丢弃版本 pin）、`latest_version*`
+    自动更新 marker 与未批准 `engine_build`，任一命中即 fail-closed。
+- 报告不得含运行元数据（临时路径、时间戳）作为指纹样本；证据只记录可复现
+    观测值，避免两次独立测量产生虚假漂移。

@@ -1,5 +1,6 @@
 **
 !src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/engine_artifacts.py
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/supervisor/*.py

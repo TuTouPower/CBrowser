@@ -16,6 +16,7 @@ from typing import Any
 import docker
 import httpx
 import uvicorn
+from cbrowser.engine_artifacts import enforce_pinned_engine_env, get_approved_artifact
 from cbrowser.shared.endpoints import DEFAULT_SUPERVISOR_PORT, gateway_port_from_env
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
@@ -71,6 +72,8 @@ async def run_supervisor(
     media_subnet_pool: str | None = None,
     deployment_instance_id: str | None = None,
     network_timeout: float | None = None,
+    engine_build: str | None = None,
+    expected_binary_sha256: str | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -98,6 +101,12 @@ async def run_supervisor(
         base_url=api_url, headers=headers, timeout=10.0, trust_env=False
     )
 
+    pinned_artifact = get_approved_artifact(engine_build=engine_build)
+    enforce_pinned_engine_env(
+        os.environ,
+        expected_build=pinned_artifact.engine_build,
+        expected_binary_sha256=expected_binary_sha256 or pinned_artifact.binary_sha256,
+    )
     docker_adapter = DockerAdapter(
         path_validator=validator,
         engine_cache_dir=engine_cache,
@@ -109,6 +118,8 @@ async def run_supervisor(
         media_subnet_pool=media_subnet_pool,
         deployment_instance_id=deployment_instance_id,
         network_timeout=network_timeout,
+        engine_build=pinned_artifact.engine_build,
+        expected_binary_sha256=expected_binary_sha256 or pinned_artifact.binary_sha256,
         manage_ownership=(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
@@ -659,6 +670,8 @@ def main():
                 media_subnet_pool=args.media_subnet_pool,
                 deployment_instance_id=args.deployment_instance_id,
                 network_timeout=args.docker_network_timeout,
+                engine_build=os.getenv("CBROWSER_ENGINE_BUILD") or None,
+                expected_binary_sha256=os.getenv("CBROWSER_ENGINE_BINARY_SHA256") or None,
             )
         )
 

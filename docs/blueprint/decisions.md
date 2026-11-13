@@ -412,3 +412,20 @@
     - **领域会话**：`AuthService` 返回领域对象 `AuthenticatedSession`（不含 token_hash 等存储细节），依赖与路由只消费领域对象，ORM 只留在 service 层内。
     - **镜像边界**：Dockerfile 按包粒度 COPY（API 改为 cbrowser 整包 + migrations），删除全部跨服务逐文件补丁；Gateway 镜像不再带 Supervisor 文件与 domain，Supervisor 镜像不再带 Gateway 包，Browser 镜像补 shared 整包与 secret_files 叶子一行。闭包验证分两层：单元层按各 Dockerfile 组装文件树逐模块实际导入（test_t062_image_closure）加 import 图边界守护（test_t062_boundaries），a26 的 Browser 闭包模型同步把 shared 作为 terminal 包（只展开其顶层叶子引用）；真实 Docker 构建与 readiness 属 [deploy] 验证，顺延本地（AC-005 登记）。
 - 替代：选项 1 留下双向依赖与多份权威实现，漂移面不收敛；选项 3 让 domain 承载 I/O 与基础设施，破坏领域层纯度且 Supervisor/Gateway 镜像仍需整包带 domain。**本条不改变** ADR 031 的部署期网络结论与 ADR 029 的同视角观测结论，只迁移其实现归属（`network_config` 仍为部署期模块、探针仍由 Browser 视角执行）。
+
+## 033 引擎制品解压清单固定与指纹升级默认阻断（2026-11-13，t068）
+
+- 背景：p081 调研建议 `CLOAKBROWSER_VERSION` 钉死 + `CLOAKBROWSER_AUTO_UPDATE=false` + Ed25519 校验下载，但实测暴露信任缝隙：`cloakbrowser==0.6.4` 只对**下载压缩包**的 `SHA256SUMS` + 分离 `SHA256SUMS.sig` 做 Ed25519 验签（包内硬编码公钥 `MKFKwIhUcKWq5xTuNA0Ovg99njcDEcEJvmWYYhApvaU=`），解压后目录无签名；`ensure_binary()` 命中已有可执行 `chrome` 即不校验 ELF/SHA-256/版本（实测损坏非 ELF 伪文件被直接返回）；`CLOAKBROWSER_DOWNLOAD_URL` 关闭验签、`CLOAKBROWSER_SKIP_CHECKSUM=true` 跳过校验、free-tier license key 丢弃版本 pin、`latest_version_<tag>` marker 在 `AUTO_UPDATE=false` 下仍能劫持无 pin 解析；`chrome --version` 只报四段无法区分补丁号。engine-cache 只读挂载不足以代替 cache_init/自动更新路径核验。
+- 选项：
+    1. 只加 `CLOAKBROWSER_VERSION` + `AUTO_UPDATE=false` 环境变量，信任 SDK 缓存（拒绝：缓存命中不校验，损坏/替换不可见）。
+    2. 在 deploy / cache_init / BrowserRunner 三处用仓库权威 per-file SHA-256 清单校验解压制品，强制禁用自动更新与所有绕过变量；指纹基线探针 + 差异门禁默认阻断（本 task 采用）。
+    3. 为实验下载第二套未批准 arm64 引擎做真实跨版本升级比对（拒绝：违反 ADR 021，且本机无该制品）。
+- 结论：采用选项 2。
+    - **单一权威清单**：`cbrowser/engine_artifacts.py` 登记 `linux-arm64/146.0.7680.177.3` 的 15 个文件 SHA-256（`chrome` = `3cf52315…`）、ELF machine 183、压缩包 `8b71ce53…`、信任来源；`linux-x64/146.0.7680.177.5` 只固定压缩包摘要并显式标注解压件未验证。
+    - **三处校验**：`deploy.sh` 发布前 `verify-cache --allow-empty`（空缓存延后到 cache_init）；Supervisor `cache_init` helper 容器内 `verify_wrapper_package` + `enforce_pinned_engine_env` + `ensure_binary(browser_version=pinned)` + `verify_extracted_engine_cache`；`BrowserRunner.resolve_engine_binary` 启动前全量复验。release manifest 写入 `engine` 块，`compose.yaml` 注入 `CLOAKBROWSER_AUTO_UPDATE=false` 与 `CBROWSER_ENGINE_BUILD`。
+    - **fail-closed**：损坏/缺文件/ELF 不符/版本不符/未批准 build/自动更新 marker/绕过环境变量/缓存树变更后未复验，一律拒绝启动或部署。
+    - **指纹升级门禁**：`cbrowser/fingerprint_verification/` 真实引擎四上下文（main/iframe/Worker/ServiceWorker）离线探针 + 本地 TLS `ClientHello` JA3/JA4；`comparator.compare_reports` 遇漂移/缺测/上下文翻转/未获批非确定方差/`inconclusive` 默认 `blocked`，仅显式批准规则可放行同制品重复。
+    - **TLS 结论**：BoringSSL 逐连接随机化扩展顺序，`ja3` 不可作跨连接一致判据；`ja4`（稳定两值：首次握手 / TLS1.3 PSK 复用）与 `ja3_sorted` 才是可复现身份；windows 与 macos 共用同一 Linux TLS 栈。不引用厂商通过率。
+    - **未能验证**：真实跨版本引擎升级放行（本机只有一套已获准 arm64 制品）、linux-x64 解压件完整性、公网第三方检测站。
+- 复查条件：出现第二套已获准 `linux-arm64` 制品时，用本探针产出两套基线并跑 `compare` 验证真实跨版本放行/阻断；cloakbrowser 升级或 `BINARY_SIGNING_PUBKEYS` 轮换时重跑验签与清单核对。
+- 替代：无（细化并收紧 ADR 021 的 cloakbrowser 锁定，不升级版本）。

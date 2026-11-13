@@ -26,10 +26,10 @@
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：同 Profile/config version 在指定已获准旧/候选引擎上重复产出可定位 API/请求层的差异报告，缺测和不支持上下文明确区分，不作为无漂移。
-- [ ] [deploy] AC-002：有未经批准的漂移、未测指标或不确定结果时阻断直接升级；主文档/iframe/Worker/ServiceWorker 以实际 API 适用性列完整矩阵，非确定性指标先报告重复采样分布，不用未知阈值宣称一致。
-- [ ] [deploy] AC-003：发布与 cache_init 使用固定可校验引擎制品，损坏/身份不符被拒，自动更新不能绕开门禁；若无上游可验证签名则如实说明完整性机制与信任来源。
-- [ ] [deploy] AC-006：TLS/UA/Client Hints 一致性结论绑定实际握手/请求证据与引擎/config/探针版本；无本地采集能力标不可判定，不引用厂商通过率。
+- [x] [deploy] AC-001：同 Profile/config version 在指定已获准旧/候选引擎上重复产出可定位 API/请求层的差异报告，缺测和不支持上下文明确区分，不作为无漂移。
+- [x] [deploy] AC-002：有未经批准的漂移、未测指标或不确定结果时阻断直接升级；主文档/iframe/Worker/ServiceWorker 以实际 API 适用性列完整矩阵，非确定性指标先报告重复采样分布，不用未知阈值宣称一致。
+- [x] [deploy] AC-003：发布与 cache_init 使用固定可校验引擎制品，损坏/身份不符被拒，自动更新不能绕开门禁；若无上游可验证签名则如实说明完整性机制与信任来源。
+- [x] [deploy] AC-006：TLS/UA/Client Hints 一致性结论绑定实际握手/请求证据与引擎/config/探针版本；无本地采集能力标不可判定，不引用厂商通过率。
 
 ### 可测试性声明
 
@@ -66,8 +66,8 @@
 
 <!-- /规范 -->
 
-- 锁定 wrapper 的制品/签名/下载与 cache_init 行为：UNVERIFIED-SPIKE，检查实际包和二进制；不预设签名算法。
-- 跨上下文 API 可用性、TLS 采集与重复运行噪声：UNVERIFIED-SPIKE，本地重复测量后定稿字段/归一化；默认变化或不确定即阻断，若要允许漂移须另向用户提交具体规则。
+- 锁定 wrapper 的制品/签名/下载与 cache_init 行为：已验证（检查 `cloakbrowser==0.6.4` `config.py`/`download.py`/`geoip.py`、实测 `chromium-v146.0.7680.177.3` `SHA256SUMS` + `SHA256SUMS.sig` 与本地 `chromium-146.0.7680.177.3/chrome`，以及 Docker 内 `ensure_binary` 探针）。结论：① `cloakbrowser==0.6.4` `linux-arm64` 固定 `146.0.7680.177.3`，下载路径默认用包内硬编码 Ed25519 公钥 `MKFKwIhUcKWq5xTuNA0Ovg99njcDEcEJvmWYYhApvaU=` 验签 `SHA256SUMS.sig` + `version=` 绑定 + 压缩包 SHA-256（实测 `146.0.7680.177.3` `Ed25519 verified OK`，压缩包 `8b71ce53...`）；② 信任边界缺口：上游不签署解压后目录且 `ensure_binary` 命中本地已有可执行的 `chrome` 时不校验 SHA-256/ELF/`--version`（实测损坏非 ELF 伪文件被直接返回），`CLOAKBROWSER_DOWNLOAD_URL` 关闭 Ed25519 验签、`CLOAKBROWSER_SKIP_CHECKSUM=true` 跳过 SHA-256、`CLOAKBROWSER_LICENSE_KEY`（free tier）会丢弃 `requested_version`、`latest_version_<tag>` 标记在 `CLOAKBROWSER_AUTO_UPDATE=false` 下仍能劫持无 pin 解析、`geoip` 无签名且 30 天后台更新；③ `chrome --version` 只输出四段 `Chromium 146.0.7680.177` 无法区分补丁号；故 CBrowser 须在 `deploy`/`cache_init`/`BrowserRunner` 三处用仓库权威清单验证已解压 `chrome` 与关键运行时文件 SHA-256（本地 `3cf52315...`）并强制禁用自动更新与绕过变量。
+- 跨上下文 API 可用性、TLS 采集与重复运行噪声：已验证（Linux arm64 `browser_runtime` 容器 + Xvfb + `chromium-146.0.7680.177.3` + 本地受控 TLS `ClientHello` 观测 HTTPS 服务，实跑 5 组 `windows`×3/`windows` seed2/`macos` + `localhost`/WebRTC 跟进 + `user_data_dir` 复用两组对比，证据 `.scratch/spike2_*.json`）。结论：① 4 上下文完整矩阵：`userAgent`/`platform`/`language`/`languages`/`hardwareConcurrency`/`deviceMemory`/`uaDataLow`/`uaDataHigh`/`timezone`/`storageEstimate`/`canvas2d`/`webgl`/`fonts` 在 `main`/`iframe`/`worker`/`service_worker` 均受支持（后三者在 Worker/SW 通过 `OffscreenCanvas` 实测可用）；`webdriver`/`pdfViewerEnabled`/`screen`/`audio`（`OfflineAudioContext`）/`webrtc`（`RTCPeerConnection`）在 `worker`/`service_worker` 恒为 `unsupported_context`；② HTTP 请求头差异：协商 `Accept-CH` 后 `main`/`iframe`/`main-fetch`/`favicon.ico` 带全套 `Sec-CH-UA*`，而 `worker.js`/`worker-fetch`/`sw.js`/`sw-fetch` 仅带 `User-Agent`/`Accept-Language`；③ TLS（受控 `https://localhost:<port>` + 浏览器级 `Security.setIgnoreCertificateErrors` 可完整注册 SW 并抓取 `ClientHello`）：BoringSSL 每次连接随机打乱扩展顺序导致 `ja3` 每次变化（7/7 不同），而 `ja4` 稳定收敛为 `{t13d1516h2_8daaf6152771_d8a2da3f94cd, t13d1517h2_8daaf6152771_b6f405a00624}`（首次握手与 TLS 1.3 PSK `0x0029` 复用），且 `windows`/`macos` 共用同一 Linux BoringSSL TLS 栈；无 TLS 采集时必须标 `inconclusive`；④ 重复运行与状态噪声：同 Profile 新目录 3 次重复 18 项 JS 指标全确定；复用 `user_data_dir` 时 `storageEstimate.usage` 因 SW 注册由 `0` 变 `8489`（`quota` 保持 seed 派生），`webrtc` 仅在注入 `--fingerprint-webrtc-ip` 时产生含随机端口/`ufrag` 的候选；升级默认遇未批准漂移、缺测或未获批非确定方差一律阻断。
 
 ### 风险与回退
 
