@@ -201,7 +201,12 @@ function makeStub(get: ReturnType<typeof vi.fn>): StubClient {
     },
     groups: { list: vi.fn(async () => [group()]) },
     proxies: { list: vi.fn(async () => [proxy()]) },
-    fontSets: { list: vi.fn(async () => [fontSet()]) },
+    fontSets: {
+      list: vi.fn(async () => ({
+        items: [fontSet()],
+        default_font_set_id: { windows: "fs-1", macos: null },
+      })),
+    },
   } as unknown as StubClient;
 }
 

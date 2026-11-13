@@ -5,6 +5,7 @@ from __future__ import annotations
 from cbrowser.domain.models import utc_now_iso
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     ForeignKey,
     Index,
     Integer,
@@ -113,6 +114,13 @@ class ProfileDisplaySequenceModel(Base):
 class ProfileModel(Base):
     __tablename__ = "profiles"
 
+    __table_args__ = (
+        CheckConstraint(
+            "locale IS NULL OR locale IN ('zh-CN', 'en-US')",
+            name="ck_profiles_locale_enum",
+        ),
+    )
+
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     display_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -132,7 +140,9 @@ class ProfileModel(Base):
     screen_width: Mapped[int] = mapped_column(Integer, default=1920, nullable=False)
     screen_height: Mapped[int] = mapped_column(Integer, default=1080, nullable=False)
     gpu_family: Mapped[str] = mapped_column(String(32), default="auto", nullable=False)
-    humanize: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    humanize: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
+    )
     human_preset: Mapped[str] = mapped_column(
         String(32), default="default", nullable=False
     )
@@ -163,7 +173,7 @@ class ProfileModel(Base):
         Boolean, default=False, nullable=False
     )
     portable_cookies: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
+        Boolean, default=True, server_default="1", nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_data_dir: Mapped[str] = mapped_column(String(1024), nullable=False)

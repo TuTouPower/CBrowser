@@ -34,7 +34,7 @@ describe("SettingsPage Network Access Block", () => {
       const path = args[0] as string;
       const options = args[1] as { method?: string } | undefined;
       if (path === "/api/v1/font-sets") {
-        return Promise.resolve([]);
+        return Promise.resolve({ items: [], default_font_set_id: { windows: null, macos: null } });
       }
       if (path === "/api/v1/network/settings") {
         if (options?.method === "PUT") {

@@ -2732,11 +2732,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FontSetInfo"
-                  },
-                  "type": "array",
-                  "title": "Response List Font Sets Api V1 Font Sets Get"
+                  "$ref": "#/components/schemas/FontSetListResponse"
                 }
               }
             }
@@ -6971,6 +6967,37 @@
         ],
         "title": "FontSetIntegrity"
       },
+      "FontSetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FontSetInfo"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "default_font_set_id": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Default Font Set Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "FontSetListResponse",
+        "description": "Font sets plus the backend-chosen default per platform (t053 A16).\n\n``default_font_set_id`` is decided only by the backend, from the same\nintegrity-ok rule as profile creation; the create form preselects it\nand never derives a default of its own."
+      },
       "GatewayRuntimeResponse": {
         "properties": {
           "profile_id": {
@@ -7536,13 +7563,18 @@
             "anyOf": [
               {
                 "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
                 "maxLength": 64
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Locale"
+            "title": "Locale",
+            "default": "en-US"
           },
           "screen_width": {
             "type": "integer",
@@ -7571,7 +7603,7 @@
           "humanize": {
             "type": "boolean",
             "title": "Humanize",
-            "default": false
+            "default": true
           },
           "human_preset": {
             "type": "string",
@@ -7674,7 +7706,7 @@
           "portable_cookies": {
             "type": "boolean",
             "title": "Portable Cookies",
-            "default": false
+            "default": true
           },
           "notes": {
             "anyOf": [
@@ -7791,7 +7823,11 @@
           "locale": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ]
               },
               {
                 "type": "null"
@@ -7817,7 +7853,7 @@
           "humanize": {
             "type": "boolean",
             "title": "Humanize",
-            "default": false
+            "default": true
           },
           "human_preset": {
             "type": "string",
@@ -7907,7 +7943,7 @@
           "portable_cookies": {
             "type": "boolean",
             "title": "Portable Cookies",
-            "default": false
+            "default": true
           },
           "notes": {
             "anyOf": [
@@ -8401,6 +8437,10 @@
             "anyOf": [
               {
                 "type": "string",
+                "enum": [
+                  "zh-CN",
+                  "en-US"
+                ],
                 "maxLength": 64
               },
               {

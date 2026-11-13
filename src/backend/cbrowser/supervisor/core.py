@@ -1941,6 +1941,8 @@ class SupervisorCore:
                     "process_lost"
                     if health.details.get("exit_reason")
                     == "process_observation_lost"
+                    else FONT_SET_UNAVAILABLE
+                    if health.details.get("exit_reason") == FONT_SET_UNAVAILABLE
                     else "agent_exit"
                 )
                 delivered = await self.report_terminal_observation(

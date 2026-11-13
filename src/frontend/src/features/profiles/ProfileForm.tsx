@@ -32,6 +32,8 @@ import {
   useGroupsQuery,
   useProxiesQuery,
 } from "./useProfilesQuery";
+import { localeForTimezone } from "./profile_locale";
+import { TimezoneCombobox } from "./TimezoneCombobox";
 
 export type ProfileFormValues = ProfileCreateRequest;
 
@@ -194,7 +196,8 @@ export function ProfileForm({
 
   const groups = groupsData ?? EMPTY_GROUPS;
   const proxies = proxiesData ?? EMPTY_PROXIES;
-  const fontSets = fontSetsData ?? EMPTY_FONT_SETS;
+  const fontSets = fontSetsData?.items ?? EMPTY_FONT_SETS;
+  const defaultFontSetId = fontSetsData?.default_font_set_id ?? {};
 
   const [values, setValues] = useState<ProfileFormValues>(() =>
     toFormValues(initial),
@@ -229,14 +232,24 @@ export function ProfileForm({
     [platformFontSets],
   );
 
+  // A16: the default font set comes only from the backend
+  // (`default_font_set_id` per platform, integrity-ok only). The form
+  // never derives a default of its own. The refs below make "none" a
+  // sticky, explicit choice: once the user picks it, the backend default
+  // is never re-applied over it.
+  const fontSetUserChosenRef = useRef(false);
+  const defaultFontSetAppliedRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (mode !== "create" || values.font_set_id != null) return;
-    const newest = sortedFontSets[0];
-    if (!newest) return;
+    if (mode !== "create" || fontSetUserChosenRef.current) return;
+    if (!fontSetsData) return;
+    if (defaultFontSetAppliedRef.current === platform) return;
+    defaultFontSetAppliedRef.current = platform;
+    const fallback = defaultFontSetId[platform] ?? null;
     setValues(
-      (prev) => ({ ...prev, font_set_id: newest.set_id }) as ProfileFormValues,
+      (prev) => ({ ...prev, font_set_id: fallback }) as ProfileFormValues,
     );
-  }, [mode, sortedFontSets, values.font_set_id]);
+  }, [mode, platform, fontSetsData, defaultFontSetId]);
 
   useEffect(() => {
     if (mode !== "edit" || !onDirtyRuntimeConfig) return;
@@ -266,6 +279,10 @@ export function ProfileForm({
       value: fontSet.set_id,
       label: `${fontSet.set_id} · ${fontSet.source_version ?? ""}`,
     })),
+  ];
+  const localeOptions: SelectOption[] = [
+    { value: "zh-CN", label: t("formLocaleChinese") },
+    { value: "en-US", label: t("formLocaleEnglish") },
   ];
   const platformOptions: SelectOption[] = [
     { value: "windows", label: t("formPlatformWindows") },
@@ -428,19 +445,36 @@ export function ProfileForm({
         />
         <div className="flex gap-sm">
           <Row label={t("formTimezone")}>
-            <Input
-              data-testid="profile-form-timezone"
-              aria-label={t("formTimezone")}
-              value={values.timezone ?? ""}
-              onChange={(event) => setField("timezone", event.target.value)}
+            <TimezoneCombobox
+              testId="profile-form-timezone"
+              ariaLabel={t("formTimezone")}
+              value={values.timezone ?? null}
+              onValueChange={(timezone) => {
+                setValues((prev) => {
+                  const locale =
+                    timezone == null
+                      ? prev.locale
+                      : localeForTimezone(timezone);
+                  return {
+                    ...prev,
+                    timezone,
+                    locale,
+                  } as ProfileFormValues;
+                });
+              }}
             />
           </Row>
           <Row label={t("formLocale")}>
-            <Input
-              aria-label={t("formLocale")}
-              value={values.locale ?? ""}
-              onChange={(event) => setField("locale", event.target.value)}
-            />
+            <div data-testid="profile-form-locale">
+              <Select
+                value={values.locale ?? "en-US"}
+                onValueChange={(value) =>
+                  setField("locale", value === "zh-CN" ? "zh-CN" : "en-US")
+                }
+                options={localeOptions}
+                ariaLabel={t("formLocale")}
+              />
+            </div>
           </Row>
         </div>
       </Section>
@@ -451,16 +485,19 @@ export function ProfileForm({
             <div data-testid="profile-form-platform">
               <Select
                 value={platform}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  const nextPlatform = normalizePlatform(value);
+                  fontSetUserChosenRef.current = false;
+                  defaultFontSetAppliedRef.current = nextPlatform;
                   setValues(
                     (prev) =>
                       ({
                         ...prev,
-                        fingerprint_platform: normalizePlatform(value),
-                        font_set_id: null,
+                        fingerprint_platform: nextPlatform,
+                        font_set_id: defaultFontSetId[nextPlatform] ?? null,
                       }) as ProfileFormValues,
-                  )
-                }
+                  );
+                }}
                 options={platformOptions}
                 ariaLabel={t("formPlatform")}
               />
@@ -470,9 +507,17 @@ export function ProfileForm({
             <div data-testid="profile-form-fontset">
               <Select
                 value={values.font_set_id ?? "__none__"}
-                onValueChange={(value) =>
-                  setField("font_set_id", value === "__none__" ? null : value)
-                }
+                onValueChange={(value) => {
+                  fontSetUserChosenRef.current = true;
+                  setField("font_set_id", value === "__none__" ? null : value);
+                }}
+                // The "none" pick must count as an explicit choice even
+                // when "none" is already showing (e.g. picked before
+                // the backend default arrives): Radix does not call
+                // onValueChange for a same-value pick, so record it here.
+                onOptionSelect={() => {
+                  fontSetUserChosenRef.current = true;
+                }}
                 options={fontSetOptions}
                 ariaLabel={t("formFontSet")}
               />

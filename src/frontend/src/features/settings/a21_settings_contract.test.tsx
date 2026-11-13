@@ -68,7 +68,7 @@ function makeClient(fontSetsReject = false): StubParts {
         };
       }
       if (path === "/api/v1/network/apply") return operation();
-      if (path === "/api/v1/font-sets") return [];
+      if (path === "/api/v1/font-sets") return { items: [], default_font_set_id: { windows: null, macos: null } };
       return {};
     },
   );
@@ -82,7 +82,7 @@ function makeClient(fontSetsReject = false): StubParts {
   const getOperation = vi.fn(async () => operation());
   const fontSetsList = vi.fn(async () => {
     if (fontSetsReject) throw new Error("font sets unavailable");
-    return [];
+    return { items: [], default_font_set_id: { windows: null, macos: null } };
   });
   const client = {
     request,

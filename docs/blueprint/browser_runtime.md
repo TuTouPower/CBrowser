@@ -62,6 +62,20 @@ Runner 为每个 Profile 生成 `FONTCONFIG_FILE`：绑定平台字体集时只�
 
 失败封闭：绑定的字体集缺失，或文件与 manifest 不一致，启动失败并报告 `font_set_unavailable`；`font_set_id` 为 null 时回退基础开源字体可见、正常启动，runtime 状态报告「平台字体未配置」并在 `missing_fonts` 标明当前暴露 Linux 基础字体。`font_bundle`（文泉驿按 Profile 三态）已删除，字段、镜像字体包、代码、文档与测试引用一并清理（AC-009）。字体缓存沿用镜像既有 `XDG_CACHE_HOME=/tmp/.cache`。
 
+## 语言分流与字体集链路收紧（t053）
+
+**按语言生成 fontconfig**：Runner 为每个 Profile 生成的 `FONTCONFIG_FILE` 在白名单目录之外再按语言裁剪。`locale == "en-US"` 时，对每个中文语言标签（`zh`、`zh-cn`、`zh-tw`、`zh-hk`、`zh-mo`、`zh-sg`）追加一条 `<selectfont><rejectfont>`，排除 fontconfig 语言覆盖含任一中文标签的字体；`locale == "zh-CN"` 时不追加，全部白名单字体可见。裁剪只看字体的 fontconfig `lang` 覆盖声明，不看文件名或来源；日文、韩文等非中文 CJK 字体除非其 `lang` 覆盖声明含中文，否则不被裁剪。未绑定字体集时回退 `/opt/cbrowser-base-fonts` 的场景同样遵守该规则。宿主 fontconfig 2.15.0 上以真实字体（NotoSansCJK `.ttc` + DejaVu）实测：英文配置隐藏全部 CJK 面、保留 DejaVu，中文配置两者皆见；Browser 镜像内 fontconfig 版本的实测待用户机补验（t053 环境跳过项）。
+
+**默认字体集只由后端决定（A16）**：`GET /api/v1/font-sets` 返回 `FontSetListResponse{items, default_font_set_id}`，每平台一个默认集——只取完整性通过的集，其中最新导入（`created_at` 最大）的胜出，无可用集时为 null。创建表单以其预选，绝不自行按创建时间推导；「无」为显式选项，提交显式 null，后端只在调用方完全未提供 `font_set_id` 时才套用默认，显式 null 按 null 保存。
+
+**fontconfig 生成失败即启动失败（A18）**：绑定了字体集时 `prepare_profile_fontconfig` 返回 None（生成失败）即启动失败：Runner 先保存终态 error 状态（`exit_reason="font_set_unavailable"`），再抛 `FontConfigUnavailableError`，浏览器不启动、不回落系统配置；Supervisor 观测路径把该原因原样透传为 `FONT_SET_UNAVAILABLE`。未绑定字体集时保持既有基础字体回退。
+
+**导入修复与实时校验（A19）**：已存在且完整性通过的字体集重复导入不改动；已存在但损坏（文件缺失或篡改）的集，重新导入以新内容原子替换（staging 目录 + rename 换位，失败恢复原状）。Coordinator 不再缓存字体运行时状态：`get_font_runtime` 每次实时调用与 Supervisor 启动时同一校验函数（`get_font_set` + `check_font_set`），字体集缺失或损坏时 REST 与 SSE 立即报告缺失，无需重启 API。检测字体缺失与完整性损坏是两个轴：文件被篡改不计入检测缺失，只记完整性问题。
+
+**平台隔离计数与列表校验（A20）**：`used_by_count` 按 `(fingerprint_platform, font_set_id)` 分组统计，同一 `set_id` 在 windows 与 macos 下的引用数各自独立。`GET /api/v1/font-sets` 列表校验 manifest 平台与目录平台一致，不一致标为完整性失败。
+
+**缺失展示区分（A30）**：会话详情的缺失字体横幅按轴区分文案——完整性损坏用「字体集完整性」文案，完整性完好但未覆盖部分探测字体时用「探测字体未覆盖」文案。
+
 ## 显示、音频与配置
 
 Xvfb 使用 Profile 分辨率、24位色深，启用 MIT-SHM/XTEST/XFIXES，关闭 TCP。启动实际 Chrome 后按其 PID 查找顶层窗口并设置尺寸、位置；只有显示、浏览器、PulseAudio 和 CDP 均就绪才发布 ready。DPR 固定1，不能用根窗口尺寸代替 Chrome 完整 UI 测量。

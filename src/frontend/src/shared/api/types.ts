@@ -23,6 +23,7 @@ export type ProxyCreateRequest = Schemas["ProxyCreateRequest"];
 export type ProxyUpdateRequest = Schemas["ProxyUpdateRequest"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
+export type FontSetListResponse = Schemas["FontSetListResponse"];
 export type NetworkApplyPhase = Schemas["NetworkApplyPhase"];
 export type NetworkAccessConfig = Schemas["NetworkAccessConfig"];
 export type AppliedNetworkAccessVersion = Schemas["AppliedNetworkAccessVersion"];
@@ -38,7 +39,7 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   screen_width: 1920,
   screen_height: 1080,
   gpu_family: "auto",
-  humanize: false,
+  humanize: true,
   human_preset: "default",
   geoip: true,
   clipboard_sync: true,
@@ -48,7 +49,7 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   capture_preview: true,
   restore_session: true,
   transparent_proxy: false,
-  portable_cookies: false,
+  portable_cookies: true,
   sort_order: 0,
   fingerprint_platform: "windows",
   font_set_id: null,
@@ -56,7 +57,7 @@ export const DEFAULT_PROFILE_CREATE_VALUES: Omit<ProfileCreateRequest, "name"> =
   proxy_id: null,
   notes: null,
   timezone: null,
-  locale: null,
+  locale: "en-US",
   color_scheme: null,
   launch_args: [],
   extension_paths: [],

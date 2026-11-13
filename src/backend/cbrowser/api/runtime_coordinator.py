@@ -247,9 +247,6 @@ class RuntimeCoordinator:
         self._last_errors: dict[str, str | None] = {}
         self._search_defaults: dict[str, SearchDefaultsStatusData | None] = {}
         self._transport: dict[str, TransportObservationData | None] = {}
-        self._font_runtime_cache: dict[
-            tuple[str, str], tuple[str | None, list[str]]
-        ] = {}
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
@@ -310,12 +307,16 @@ class RuntimeCoordinator:
 
         Derived from the Profile's own config with the same ``check_font_set``
         detection data the Agent reports in /health, so the REST response and
-        SSE agree with the in-container check. Font sets are content-addressed
-        and immutable, so the hash-heavy scan is cached per (platform, id).
-        Any read failure degrades to the set id with an empty missing list and
-        never breaks a runtime response.
+        SSE agree with the in-container check. The read is live on every
+        call (t053 A19): there is deliberately no cache, so a set that is
+        deleted or damaged is reported missing immediately, with no restart.
+        A missing set reports every detection font as uncovered; the
+        Supervisor's launch gate still fails closed on it separately.
+        Any read failure degrades to the set id with an empty missing list
+        and never breaks a runtime response.
         """
         from cbrowser import font_sets
+        from cbrowser.font_sets import DETECTION_FONTS
         from cbrowser.runtime_agent.fontconfig import PLATFORM_FONTS_UNCONFIGURED
 
         try:
@@ -329,23 +330,26 @@ class RuntimeCoordinator:
         platform = config.fingerprint_platform
         if platform not in _PLATFORM_DETECTION_LABELS:
             return str(font_set_id), []
-        key = (str(platform), str(font_set_id))
-        if key not in self._font_runtime_cache:
-            found = font_sets.get_font_set(platform, font_set_id)
-            if found is None:
-                self._font_runtime_cache[key] = (str(font_set_id), [])
-            else:
-                directory, _manifest = found
-                detection = font_sets.check_font_set(directory).get("detection", {})
-                missing = sorted(
-                    {
-                        name
-                        for label in _PLATFORM_DETECTION_LABELS[platform]
-                        for name in detection.get(label, {}).get("missing", [])
-                    }
-                )
-                self._font_runtime_cache[key] = (str(font_set_id), missing)
-        return self._font_runtime_cache[key]
+        labels = _PLATFORM_DETECTION_LABELS[platform]
+        found = font_sets.get_font_set(platform, font_set_id)
+        if found is None:
+            return str(font_set_id), sorted(
+                {
+                    name
+                    for label in labels
+                    for name in DETECTION_FONTS.get(label, ())
+                }
+            )
+        directory, _manifest = found
+        detection = font_sets.check_font_set(directory).get("detection", {})
+        missing = sorted(
+            {
+                name
+                for label in labels
+                for name in detection.get(label, {}).get("missing", [])
+            }
+        )
+        return str(font_set_id), missing
 
     def get_search_defaults(
         self, profile_id: str

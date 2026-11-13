@@ -393,8 +393,12 @@ class ProfileService:
         profile_id: str | None = None,
         operation_id: str | None = None,
         req_payload: dict[str, Any] | None = None,
+        font_set_id_supplied: bool = False,
     ) -> Profile:
-        if config.font_set_id is None:
+        # A16: the backend default font set applies only when the caller
+        # did not supply font_set_id at all. An explicit null ("no font
+        # set") is honored and never silently replaced by the default.
+        if config.font_set_id is None and not font_set_id_supplied:
             default = font_sets.default_font_set(config.fingerprint_platform)
             if default is not None:
                 config = config.model_copy(update={"font_set_id": default})
@@ -424,7 +428,7 @@ class ProfileService:
         except DBAPIError as e:
             self._handle_db_error(e)
 
-    async def font_set_usage_counts(self) -> dict[str, int]:
+    async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         return await self._repo.font_set_usage_counts()
 
     async def update_profile(

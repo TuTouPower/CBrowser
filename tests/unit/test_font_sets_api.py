@@ -164,4 +164,8 @@ async def test_font_set_usage_counts_groups_non_empty_bindings(
     await repo.create_profile(
         ProfileConfig(name="Bound2", font_set_id=fonts["set_id"])
     )
-    assert await repo.font_set_usage_counts() == {fonts["set_id"]: 2}
+    # t053 A20: counts are keyed by (fingerprint_platform, font_set_id);
+    # the fixture profiles default to the windows platform.
+    assert await repo.font_set_usage_counts() == {
+        ("windows", fonts["set_id"]): 2
+    }

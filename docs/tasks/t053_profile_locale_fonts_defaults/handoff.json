@@ -1,0 +1,16 @@
+{
+  "tid": "t053",
+  "attempt": 1,
+  "execution_id": "a95751a2ff1d44ff99a06ce45e941027",
+  "status": "done",
+  "branch": "t053_profile_locale_fonts_defaults",
+  "base_sha": "1e11e0fda2d2fda130e24e6bdef904c5b96c3516",
+  "tests": "后端全量 2089 passed / 27 failed（与 t052 基线按名一致，无新增）/ 8 skipped / 2 errors（基线既有 flaky teardown）；前端全量 556 passed / 0 failed；`check:api` 与 `build` 通过；Round 4 后端零改动未重跑",
+  "blackbox": "无（本机无 Docker / 真实引擎；AC-010 与 AC-006/007/008/009 真实引擎部分待用户机补验）",
+  "review": "Round 1 双路 FAIL（code 3 + test 5，8 条 finding）已修完并复审；Round 2 code FAIL（1 条 important 新 finding f004，test PASS 0 新 finding）已修完并复审；Round 3 code FAIL（1 条 important 新 finding f005，test PASS 0 新 finding）已修完并复审；Round 4 双路 PASS（code 1 条 minor 新 finding f006，test 2 条 minor 新 finding f006/f007），本轮修复完成（先红后绿，见「Review 处置」Round 4 表）；Round 5 双路 PASS（code 1 条 minor 新 finding f007，test 1 条 minor 新 finding f008，同根 pointermove 守卫判据窄；为最后一轮，记遗留 p070，不再新开修复轮，见「Review 处置」Round 5 表）",
+  "review_scope": "634fc4db6bd1d4cc",
+  "pending": [
+    "p070"
+  ],
+  "findings": []
+}

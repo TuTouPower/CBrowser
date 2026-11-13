@@ -26,6 +26,8 @@ from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
 from .fontconfig import (
+    FONT_SET_UNAVAILABLE,
+    FontConfigUnavailableError,
     profile_font_dirs,
     prepare_profile_fontconfig,
 )
@@ -580,7 +582,26 @@ class BrowserRunner:
         font_dirs = profile_font_dirs(
             cfg.fingerprint_platform, cfg.font_set_id
         )
-        self.fontconfig_path = prepare_profile_fontconfig(self.run_dir, font_dirs)
+        self.fontconfig_path = prepare_profile_fontconfig(
+            self.run_dir, font_dirs, locale=cfg.locale
+        )
+        if cfg.font_set_id and self.fontconfig_path is None:
+            # A18: a bound font set whose fontconfig cannot be generated
+            # fails closed. The browser is never launched, so no system
+            # font is ever visible to the Profile. The terminal error
+            # state carries the stable reason for the Agent/Supervisor
+            # observation path.
+            self.event_storage.save_state(
+                RuntimeStateRecord(
+                    profile_id=self.profile_id,
+                    runtime_instance_id=self.runtime_instance_id,
+                    config_version=self.config_version,
+                    state="error",
+                    exit_code=1,
+                    exit_reason=FONT_SET_UNAVAILABLE,
+                )
+            )
+            raise FontConfigUnavailableError()
         # SDK capability/proxy selection uses the real build version. Seed CDM
         # metadata with the real binary before the process-observation wrapper
         # changes the SDK executable path. The SDK remains the only launch path.
@@ -1109,6 +1130,9 @@ if __name__ == "__main__":
         main()
     except ProxyCredentialsChangedError:
         logger.error("Browser Runner refused to launch: proxy_credentials_changed")
+        raise SystemExit(1) from None
+    except FontConfigUnavailableError:
+        logger.error("Browser Runner refused to launch: font_set_unavailable")
         raise SystemExit(1) from None
     except Exception as exc:  # noqa: BLE001 - CLI top-level exception handler redacts credentials and exits status 1
         # SDK exceptions can embed launch arguments and proxy credentials.

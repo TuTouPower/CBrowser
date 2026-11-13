@@ -31,7 +31,7 @@ function renderPages(fontSets: FontSetFixture[] = []) {
     profiles: { create: vi.fn(async () => ({ id: "p-new" })) },
     groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
     proxies: { list: vi.fn(async () => []) },
-    fontSets: { list: vi.fn(async () => fontSets) },
+    fontSets: { list: vi.fn(async () => ({ items: fontSets, default_font_set_id: { windows: null, macos: null } })) },
     network: {
       getSettings: vi.fn(async () => ({
         pending_config: {

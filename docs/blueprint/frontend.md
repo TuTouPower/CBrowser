@@ -81,6 +81,8 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 
 - 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；`SharedProfileBanners` 在四个标签共享搜索失败与待应用提示，沿用 `useApplyDisplaySettingsMutation` 阶段跟踪。
 
+- 时区组合框与语言联动（t053）：`ProfileForm` 的时区字段由 `TimezoneCombobox` 承载——可键入过滤候选、未键入时展开并滚动浏览全部 IANA 时区（`Intl.supportedValuesOf("timeZone")`，常用 15 个时区置顶且恒可提供）、键盘 ArrowUp/Down/Home/End/Enter/Escape 可操作、aria combobox/listbox/option。首选项为「自动（随出口 IP）」，对应 `timezone: null`。选时区后语言按 `features/profiles/profile_locale.ts` 的 `localeForTimezone` 自动联动（与后端 `domain/profile_locale.py` 同一规则，中文地区时区 → `zh-CN`、其余 → `en-US`）；语言以中/英二选一 Select 展示，用户可手动覆盖；时区为空时语言保持当前值，新建默认 `en-US`。新建表单的字体集预选只用后端 `default_font_set_id[platform]`（完整性通过的集），「无」为显式 null 选项且选后不再被默认集覆盖；切换平台时套用新平台的后端默认集。会话详情的缺失字体横幅按轴区分文案：完整性损坏与「探测字体未覆盖」是两种文案（t053 A30）。
+
 - 测试：`npm test` 先 `tsc -p tsconfig.test.json`（严格类型、生成类型完整线形状夹具）再 Vitest；页面测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks。`src/test_setup.ts` 提供 Radix 所需 `ResizeObserver` / `matchMedia` polyfill。旧页面与其测试整体删除，按 D16 在 task `progress.md`「测试处置清单」逐用例登记去向。
 
 - 真实栈无头 E2E「新建 → 启动 → 打开会话」走新建弹窗 UI（`env-new` → `env-new-dialog` → `profile-form-name` → `profile-form-submit`），不再直接 POST API 伪造创建。

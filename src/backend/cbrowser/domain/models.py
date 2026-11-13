@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from cbrowser.domain.profile_locale import validate_locale, validate_timezone
 from cbrowser.launch_args import filter_launch_args, validate_launch_args
 
 
@@ -24,6 +25,7 @@ DesiredState = Literal["stopped", "running"]
 ObservedState = Literal["stopped", "starting", "running", "stopping", "error"]
 RuntimeEventType = Literal["exit", "heartbeat", "lifecycle"]
 FingerprintPlatform = Literal["windows", "macos"]
+ProfileLocale = Literal["zh-CN", "en-US"]
 
 
 class ErrorResponse(BaseModel):
@@ -187,11 +189,11 @@ class ProfileConfig(BaseModel):
     group_id: str | None = None
     proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
-    locale: str | None = Field(default=None, max_length=64)
+    locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
     gpu_family: Literal["auto", "nvidia", "intel"] = "auto"
-    humanize: bool = False
+    humanize: bool = True
     human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
@@ -206,9 +208,19 @@ class ProfileConfig(BaseModel):
     capture_preview: bool = True
     restore_session: bool = True
     transparent_proxy: bool = False
-    portable_cookies: bool = False
+    portable_cookies: bool = True
     notes: str | None = None
     sort_order: int = 0
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone_value(cls, v: str | None) -> str | None:
+        return validate_timezone(v)
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale_value(cls, v: str | None) -> str | None:
+        return validate_locale(v)
 
     @field_validator("name")
     @classmethod
@@ -405,11 +417,11 @@ class ProfileCreateRequest(BaseModel):
     group_id: str | None = None
     proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
-    locale: str | None = Field(default=None, max_length=64)
+    locale: ProfileLocale | None = Field(default="en-US", max_length=64)
     screen_width: int = Field(default=1920, ge=100, le=10000)
     screen_height: int = Field(default=1080, ge=100, le=10000)
     gpu_family: Literal["auto", "nvidia", "intel"] = "auto"
-    humanize: bool = False
+    humanize: bool = True
     human_preset: Literal["default", "careful"] = "default"
     geoip: bool = True
     clipboard_sync: bool = True
@@ -424,9 +436,19 @@ class ProfileCreateRequest(BaseModel):
     capture_preview: bool = True
     restore_session: bool = True
     transparent_proxy: bool = False
-    portable_cookies: bool = False
+    portable_cookies: bool = True
     notes: str | None = None
     sort_order: int = 0
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone_value(cls, v: str | None) -> str | None:
+        return validate_timezone(v)
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale_value(cls, v: str | None) -> str | None:
+        return validate_locale(v)
 
     @field_validator("name")
     @classmethod
@@ -459,7 +481,7 @@ class ProfileUpdateRequest(BaseModel):
     group_id: str | None = None
     proxy_id: str | None = None
     timezone: str | None = Field(default=None, max_length=64)
-    locale: str | None = Field(default=None, max_length=64)
+    locale: ProfileLocale | None = Field(default=None, max_length=64)
     screen_width: int | None = Field(default=None, ge=100, le=10000)
     screen_height: int | None = Field(default=None, ge=100, le=10000)
     gpu_family: Literal["auto", "nvidia", "intel"] | None = None
@@ -510,6 +532,16 @@ class ProfileUpdateRequest(BaseModel):
             raise ValueError("dimensions cannot be null")
         return value
 
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone_value(cls, v: str | None) -> str | None:
+        return validate_timezone(v)
+
+    @field_validator("locale")
+    @classmethod
+    def validate_locale_value(cls, v: str | None) -> str | None:
+        return validate_locale(v)
+
 
 class ProfileResponse(BaseModel):
     id: str
@@ -519,11 +551,11 @@ class ProfileResponse(BaseModel):
     group_id: str | None = None
     proxy_id: str | None = None
     timezone: str | None = None
-    locale: str | None = None
+    locale: ProfileLocale | None = None
     screen_width: int = 1920
     screen_height: int = 1080
     gpu_family: str = "auto"
-    humanize: bool = False
+    humanize: bool = True
     human_preset: str = "default"
     geoip: bool = True
     clipboard_sync: bool = True
@@ -538,7 +570,7 @@ class ProfileResponse(BaseModel):
     capture_preview: bool = True
     restore_session: bool = True
     transparent_proxy: bool = False
-    portable_cookies: bool = False
+    portable_cookies: bool = True
     notes: str | None = None
     user_data_dir: str
     sort_order: int = 0

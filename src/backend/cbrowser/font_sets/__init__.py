@@ -3,6 +3,7 @@
 from .manifest import (
     DETECTION_FONTS,
     FONT_EXTENSIONS,
+    PLATFORMS,
     check_font_set,
     compute_set_id,
     default_font_set,
@@ -10,11 +11,13 @@ from .manifest import (
     get_font_set,
     import_font_set,
     list_font_sets,
+    pick_default_font_set,
 )
 
 __all__ = [
     "DETECTION_FONTS",
     "FONT_EXTENSIONS",
+    "PLATFORMS",
     "check_font_set",
     "compute_set_id",
     "default_font_set",
@@ -22,4 +25,5 @@ __all__ = [
     "get_font_set",
     "import_font_set",
     "list_font_sets",
+    "pick_default_font_set",
 ]

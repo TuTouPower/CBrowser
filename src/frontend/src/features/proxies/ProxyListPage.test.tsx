@@ -139,7 +139,7 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
     },
     profiles: { list: mockFn(async () => []) },
     groups: { list: mockFn(async () => []) },
-    fontSets: { list: mockFn(async () => []) },
+    fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
   };
   return { client: spies as unknown as ApiClient, spies, proxies };
 }

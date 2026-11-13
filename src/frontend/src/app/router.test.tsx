@@ -118,7 +118,7 @@ function makeStubClient() {
     },
     groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
     proxies: { list: vi.fn(async () => []) },
-    fontSets: { list: vi.fn(async () => []) },
+    fontSets: { list: vi.fn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
     artifacts: {
       list: vi.fn(async () => []),
       upload: vi.fn(),

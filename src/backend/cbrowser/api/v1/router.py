@@ -303,7 +303,10 @@ async def create_profile(
     )
     try:
         profile = await service.create_profile(
-            config=config, operation_id=op_id, req_payload=payload.model_dump()
+            config=config,
+            operation_id=op_id,
+            req_payload=payload.model_dump(),
+            font_set_id_supplied="font_set_id" in payload.model_fields_set,
         )
     except InvalidFontSetBindingError as exc:
         raise HTTPException(
