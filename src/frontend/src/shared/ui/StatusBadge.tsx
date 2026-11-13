@@ -7,19 +7,19 @@ export type StatusTone = "running" | "transition" | "error" | "stopped";
 const TONES: Record<StatusTone, { className: string; icon: ReactNode }> = {
   running: {
     className: "bg-accent-soft text-on-surface",
-    icon: <CircleCheck aria-hidden="true" className="h-3 w-3" />,
+    icon: <CircleCheck aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
   transition: {
     className: "bg-warning-soft text-on-surface",
-    icon: <LoaderCircle aria-hidden="true" className="h-3 w-3 animate-pulse" />,
+    icon: <LoaderCircle aria-hidden="true" className="size-(--component-icon-xs-size) animate-pulse" />,
   },
   error: {
     className: "bg-danger-soft text-on-surface",
-    icon: <CircleX aria-hidden="true" className="h-3 w-3" />,
+    icon: <CircleX aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
   stopped: {
     className: "bg-surface-subtle text-on-surface-muted",
-    icon: <MinusCircle aria-hidden="true" className="h-3 w-3" />,
+    icon: <MinusCircle aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
 };
 
@@ -28,7 +28,7 @@ export function StatusBadge({ tone, label }: { tone: StatusTone; label: string }
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-xs rounded-sm px-sm py-0.5 font-ui text-label-sm",
+        "inline-flex items-center gap-xs rounded-sm px-sm py-2xs font-ui text-label-sm",
         toneStyle.className,
       )}
     >
@@ -67,8 +67,8 @@ export function GroupChip({
   hue?: GroupHue;
 }) {
   return (
-    <span className="inline-flex items-center gap-sm rounded-sm bg-surface-subtle px-sm py-0.5 font-ui text-label-sm text-on-surface">
-      <span className={cn("h-2 w-2 rounded-full", GROUP_HUES[hue])} aria-hidden="true" />
+    <span className="inline-flex items-center gap-sm rounded-sm bg-surface-subtle px-sm py-2xs font-ui text-label-sm text-on-surface">
+      <span className={cn("size-(--component-group-chip-size) rounded-full", GROUP_HUES[hue])} aria-hidden="true" />
       {label}
     </span>
   );
@@ -76,7 +76,7 @@ export function GroupChip({
 
 export function ProtocolChip({ protocol }: { protocol: string }) {
   return (
-    <span className="inline-flex items-center rounded-sm border border-outline px-sm py-0.5 font-mono text-mono-caps uppercase text-on-surface-muted">
+    <span className="inline-flex items-center rounded-sm border border-outline px-sm py-2xs font-mono text-mono-caps uppercase text-on-surface-muted">
       {protocol}
     </span>
   );
@@ -84,12 +84,12 @@ export function ProtocolChip({ protocol }: { protocol: string }) {
 
 export function RegionCode({ code }: { code: string }) {
   return (
-    <span className="inline-flex items-center rounded-sm bg-surface-subtle px-sm py-0.5 font-mono text-mono-md text-on-surface">
+    <span className="inline-flex items-center rounded-sm bg-surface-subtle px-sm py-2xs font-mono text-mono-md text-on-surface">
       {code}
     </span>
   );
 }
 
 export function WarningIcon({ className }: { className?: string }) {
-  return <AlertTriangle aria-hidden="true" className={cn("h-4 w-4", className)} />;
+  return <AlertTriangle aria-hidden="true" className={cn("size-(--component-icon-md-size)", className)} />;
 }

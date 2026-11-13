@@ -1,24 +1,28 @@
 @theme {
   --color-*: initial;
   --color-primary: #2f66e0;
+  --color-brand-gradient-start: #00f0ff;
+  --color-brand-gradient-mid: #0088ff;
+  --color-brand-gradient-end: #0052ff;
   --color-accent: #2f66e0;
   --color-accent-soft: #eef3ff;
   --color-background: #e7eaf1;
-  --color-danger: #dc2626;
+  --color-brand-ink: #000000;
+  --color-danger: #ca2323;
   --color-danger-soft: #fee2e2;
   --color-focus: #2f66e0;
-  --color-group-amber: #ca8a04;
+  --color-group-amber: #ac7603;
   --color-group-blue: #2f66e0;
-  --color-group-green: #16a34a;
-  --color-group-orange: #ea580c;
+  --color-group-green: #149443;
+  --color-group-orange: #de530b;
   --color-group-red: #dc2626;
   --color-group-slate: #64748b;
-  --color-group-teal: #0ea5a3;
+  --color-group-teal: #0c8f8e;
   --color-group-violet: #6f5cf6;
   --color-on-accent: #ffffff;
   --color-on-surface: #232a38;
   --color-on-surface-muted: #5c6478;
-  --color-on-surface-subtle: #626a7d;
+  --color-on-surface-subtle: #61687b;
   --color-outline: #e6eaf1;
   --color-outline-strong: #d3d9e4;
   --color-overlay: #0b12208c;
@@ -28,7 +32,7 @@
   --color-surface-hover: #e9edf4;
   --color-surface-raised: #ffffff;
   --color-surface-subtle: #f1f4f9;
-  --color-warning: #f5a524;
+  --color-warning: #8d5f15;
   --color-warning-soft: #fdf1dc;
   --font-ui: "Inter Variable", system-ui, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
@@ -67,6 +71,8 @@
   --radius-lg: 14px;
   --radius-xl: 18px;
   --radius-full: 9999px;
+  --spacing-none: 0px;
+  --spacing-2xs: 2px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
@@ -84,7 +90,104 @@
   --container-menu: 10rem;
   --container-select: 8rem;
   --container-control-sm: 1.875rem;
+  --container-badge: 3rem;
+  --container-table-select: 2.5rem;
+  --container-dropdown-list: 16rem;
+  --container-swatch: 1.5rem;
   --container-details: 18.75rem;
+}
+
+:root {
+  --component-app-radius: var(--radius-md);
+  --component-app-height: 48px;
+  --component-sidebar-radius: var(--radius-md);
+  --component-nav-item-radius: var(--radius-md);
+  --component-nav-item-height: 36px;
+  --component-nav-item-active-radius: var(--radius-md);
+  --component-card-radius: var(--radius-lg);
+  --component-environment-card-radius: var(--radius-lg);
+  --component-modal-radius: var(--radius-xl);
+  --component-popover-radius: var(--radius-lg);
+  --component-popover-width: 288px;
+  --component-toast-radius: var(--radius-lg);
+  --component-tooltip-radius: var(--radius-sm);
+  --component-table-header-radius: var(--radius-lg);
+  --component-table-row-radius: var(--radius-lg);
+  --component-table-row-height: 56px;
+  --component-table-row-selected-radius: var(--radius-lg);
+  --component-table-row-hover-radius: var(--radius-lg);
+  --component-input-radius: var(--radius-md);
+  --component-input-height: 36px;
+  --component-select-radius: var(--radius-md);
+  --component-select-height: 36px;
+  --component-search-field-radius: var(--radius-md);
+  --component-search-field-height: 36px;
+  --component-search-field-width: 224px;
+  --component-checkbox-radius: var(--radius-sm);
+  --component-checkbox-size: 16px;
+  --component-switch-radius: var(--radius-full);
+  --component-switch-height: 20px;
+  --component-switch-width: 36px;
+  --component-switch-size: 16px;
+  --component-icon-button-radius: var(--radius-md);
+  --component-icon-button-height: 36px;
+  --component-icon-button-width: 36px;
+  --component-button-ghost-radius: var(--radius-md);
+  --component-button-ghost-height: 36px;
+  --component-button-secondary-radius: var(--radius-md);
+  --component-button-secondary-height: 36px;
+  --component-menu-item-radius: var(--radius-sm);
+  --component-menu-item-height: 32px;
+  --component-empty-state-radius: var(--radius-lg);
+  --component-button-primary-radius: var(--radius-md);
+  --component-button-primary-height: 36px;
+  --component-button-connect-radius: var(--radius-md);
+  --component-button-connect-height: 36px;
+  --component-button-danger-radius: var(--radius-md);
+  --component-button-danger-height: 36px;
+  --component-button-stop-radius: var(--radius-md);
+  --component-button-stop-height: 36px;
+  --component-button-primary-hover-radius: var(--radius-md);
+  --component-button-primary-hover-height: 36px;
+  --component-button-primary-disabled-radius: var(--radius-md);
+  --component-button-primary-disabled-height: 36px;
+  --component-button-primary-small-radius: var(--radius-md);
+  --component-status-badge-running-radius: var(--radius-sm);
+  --component-status-badge-transition-radius: var(--radius-sm);
+  --component-status-badge-error-radius: var(--radius-sm);
+  --component-status-badge-stopped-radius: var(--radius-sm);
+  --component-group-chip-radius: var(--radius-sm);
+  --component-group-chip-size: 8px;
+  --component-protocol-chip-radius: var(--radius-sm);
+  --component-region-code-radius: var(--radius-sm);
+  --component-banner-warning-radius: var(--radius-md);
+  --component-banner-danger-radius: var(--radius-md);
+  --component-session-header-radius: var(--radius-md);
+  --component-session-stage-radius: var(--radius-md);
+  --component-session-details-panel-radius: var(--radius-md);
+  --component-brand-mark-radius: var(--radius-md);
+  --component-divider-radius: var(--radius-md);
+  --component-scrollbar-thumb-radius: var(--radius-md);
+  --component-modal-backdrop-radius: var(--radius-md);
+  --component-focus-ring-radius: var(--radius-md);
+  --component-danger-dot-radius: var(--radius-full);
+  --component-warning-dot-radius: var(--radius-full);
+  --component-helper-text-radius: var(--radius-md);
+  --component-group-swatch-slate-radius: var(--radius-md);
+  --component-group-swatch-blue-radius: var(--radius-md);
+  --component-group-swatch-teal-radius: var(--radius-md);
+  --component-group-swatch-green-radius: var(--radius-md);
+  --component-group-swatch-amber-radius: var(--radius-md);
+  --component-group-swatch-orange-radius: var(--radius-md);
+  --component-group-swatch-red-radius: var(--radius-md);
+  --component-group-swatch-violet-radius: var(--radius-md);
+  --component-icon-xs-size: 12px;
+  --component-icon-sm-size: 14px;
+  --component-icon-md-size: 16px;
+  --component-icon-lg-size: 20px;
+  --component-icon-xl-size: 24px;
+  --component-icon-2xl-size: 32px;
+  --component-icon-3xl-size: 48px;
 }
 
 @layer utilities {
@@ -115,6 +218,18 @@
   .h-control-sm { height: var(--container-control-sm); }
   .max-h-control-sm { max-height: var(--container-control-sm); }
   .min-h-control-sm { min-height: var(--container-control-sm); }
+  .h-badge { height: var(--container-badge); }
+  .max-h-badge { max-height: var(--container-badge); }
+  .min-h-badge { min-height: var(--container-badge); }
+  .h-table-select { height: var(--container-table-select); }
+  .max-h-table-select { max-height: var(--container-table-select); }
+  .min-h-table-select { min-height: var(--container-table-select); }
+  .h-dropdown-list { height: var(--container-dropdown-list); }
+  .max-h-dropdown-list { max-height: var(--container-dropdown-list); }
+  .min-h-dropdown-list { min-height: var(--container-dropdown-list); }
+  .h-swatch { height: var(--container-swatch); }
+  .max-h-swatch { max-height: var(--container-swatch); }
+  .min-h-swatch { min-height: var(--container-swatch); }
   .h-details { height: var(--container-details); }
   .max-h-details { max-height: var(--container-details); }
   .min-h-details { min-height: var(--container-details); }
@@ -122,9 +237,13 @@
 
 .dark {
   --color-primary: #2f66e0;
+  --color-brand-gradient-start: #00f0ff;
+  --color-brand-gradient-mid: #0088ff;
+  --color-brand-gradient-end: #0052ff;
   --color-accent: #5b8dff;
   --color-accent-soft: #29344e;
   --color-background: #0c0e13;
+  --color-brand-ink: #ffffff;
   --color-danger: #f0564d;
   --color-danger-soft: #3a1a18;
   --color-focus: #5b8dff;
@@ -139,7 +258,7 @@
   --color-on-accent: #0b1220;
   --color-on-surface: #e9ecf3;
   --color-on-surface-muted: #a3abba;
-  --color-on-surface-subtle: #858d9c;
+  --color-on-surface-subtle: #929aa7;
   --color-outline: #2a2f3a;
   --color-outline-strong: #3a4150;
   --color-overlay: #05070ac7;

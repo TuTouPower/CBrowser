@@ -174,16 +174,16 @@ export function AppLayout() {
 
   const sidebarContent: ReactNode = (
     <div className="flex h-full flex-col bg-sidebar text-on-surface">
-      <div className="flex h-12 shrink-0 items-center justify-between gap-sm border-b border-outline px-md">
+      <div className="flex h-(--component-app-height) shrink-0 items-center justify-between gap-sm border-b border-outline px-md">
         <Link to="/" className="flex items-center gap-sm overflow-hidden">
-          <img src="/menubar-icon.svg" alt="" className="h-5 w-5 shrink-0" />
+          <img src="/menubar-icon.svg" alt="" className="size-(--component-icon-lg-size) shrink-0" />
           {!collapsed && (
             <span className="truncate font-ui text-title-sm tracking-wide">CBrowser</span>
           )}
         </Link>
         {narrow ? (
           <IconButton label={t("closeNavigation")} onClick={() => setDrawerOpen(false)}>
-            <X aria-hidden="true" className="h-4 w-4" />
+            <X aria-hidden="true" className="size-(--component-icon-md-size)" />
           </IconButton>
         ) : (
           <IconButton
@@ -191,9 +191,9 @@ export function AppLayout() {
             onClick={() => setCollapsed(!collapsed)}
           >
             {collapsed ? (
-              <PanelLeft aria-hidden="true" className="h-4 w-4" />
+              <PanelLeft aria-hidden="true" className="size-(--component-icon-md-size)" />
             ) : (
-              <PanelLeftClose aria-hidden="true" className="h-4 w-4" />
+              <PanelLeftClose aria-hidden="true" className="size-(--component-icon-md-size)" />
             )}
           </IconButton>
         )}
@@ -213,9 +213,9 @@ export function AppLayout() {
                   aria-current={active ? "page" : undefined}
                   title={collapsed ? item.label : undefined}
                   onClick={() => setDrawerOpen(false)}
-                  className="flex h-9 items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface"
+                  className="flex h-(--component-nav-item-height) items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface"
                 >
-                  <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+                  <Icon aria-hidden="true" className="size-(--component-icon-md-size) shrink-0" />
                   {!collapsed && <span className="truncate">{item.label}</span>}
                 </Link>
               </li>
@@ -229,7 +229,7 @@ export function AppLayout() {
           data-testid="running-count"
           className="mb-sm flex items-center gap-sm rounded-md bg-surface-subtle px-sm py-sm font-ui text-label-sm text-on-surface"
         >
-          <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden="true" />
+          <span className="size-(--component-group-chip-size) shrink-0 rounded-full bg-accent" aria-hidden="true" />
           {!collapsed && <span className="truncate">{t("runningProfiles", { count: runningCount })}</span>}
         </div>
         <div className="flex items-center justify-between gap-xs">
@@ -237,7 +237,7 @@ export function AppLayout() {
             ariaLabel={t("switchTheme")}
             trigger={
               <IconButton label={t("switchTheme")}>
-                <SunMoon aria-hidden="true" className="h-4 w-4" />
+                <SunMoon aria-hidden="true" className="size-(--component-icon-md-size)" />
               </IconButton>
             }
             items={themeItems.map((item) => ({
@@ -250,11 +250,11 @@ export function AppLayout() {
             aria-label={t("switchLanguage")}
             onClick={() => setLocale(locale === "en" ? "zh" : "en")}
           >
-            <Languages aria-hidden="true" className="h-3.5 w-3.5" />
+            <Languages aria-hidden="true" className="size-(--component-icon-sm-size)" />
             {!collapsed && <span className="uppercase">{locale}</span>}
           </Button>
           <IconButton label={t("logOut")} onClick={handleLogout}>
-            <LogOut aria-hidden="true" className="h-4 w-4" />
+            <LogOut aria-hidden="true" className="size-(--component-icon-md-size)" />
           </IconButton>
         </div>
       </div>
@@ -267,16 +267,16 @@ export function AppLayout() {
     <div className="flex h-screen overflow-hidden bg-background text-on-surface">
       {narrow ? (
         <>
-          <div className={`flex h-12 shrink-0 items-center gap-sm border-b border-outline bg-sidebar px-md${focusMode ? " hidden" : ""}`}>
+          <div className={`flex h-(--component-app-height) shrink-0 items-center gap-sm border-b border-outline bg-sidebar px-md${focusMode ? " hidden" : ""}`}>
             <IconButton label={t("openNavigation")} onClick={() => setDrawerOpen(true)}>
-              <Menu aria-hidden="true" className="h-4 w-4" />
+              <Menu aria-hidden="true" className="size-(--component-icon-md-size)" />
             </IconButton>
             <span className="font-ui text-title-sm">CBrowser</span>
           </div>
           {drawerOpen && (
-            <div className={`fixed inset-0 z-40 flex${focusMode ? " hidden" : ""}`} data-testid="sidebar-drawer">
+            <div className={`fixed inset-none z-40 flex${focusMode ? " hidden" : ""}`} data-testid="sidebar-drawer">
               <div
-                className="absolute inset-0 bg-overlay"
+                className="absolute inset-none bg-overlay"
                 onClick={() => setDrawerOpen(false)}
                 aria-hidden="true"
               />
@@ -310,18 +310,18 @@ export function AppLayout() {
                 if (event.key === "ArrowLeft") setWidth(clampWidth(width - 8));
                 if (event.key === "ArrowRight") setWidth(clampWidth(width + 8));
               }}
-              className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize"
+              className="absolute -right-xs top-none z-10 h-full w-(--spacing-sm) cursor-col-resize"
             />
           )}
         </div>
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
+      <main className="flex min-w-none flex-1 flex-col overflow-y-auto">
         <div
           className={
             isSessionPage
-              ? "flex min-h-0 flex-1 flex-col"
-              : "mx-auto flex min-h-0 w-full max-w-page flex-1 flex-col px-lg py-lg"
+              ? "flex min-h-none flex-1 flex-col"
+              : "mx-auto flex min-h-none w-full max-w-page flex-1 flex-col px-lg py-lg"
           }
         >
           {coordinatorError && (
@@ -331,7 +331,7 @@ export function AppLayout() {
               </Banner>
             </div>
           )}
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-none flex-1 flex-col">
             <Outlet />
           </div>
         </div>

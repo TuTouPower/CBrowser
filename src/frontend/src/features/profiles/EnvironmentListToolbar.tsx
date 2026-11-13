@@ -89,7 +89,7 @@ export function EnvironmentListToolbar({
           placeholder={t("envSearch")}
           value={filters.q}
           onChange={(event) => setFilter("q", event.target.value)}
-          containerClassName="w-56"
+          containerClassName="w-(--component-search-field-width)"
         />
         <Select
           ariaLabel={t("envFilterAll")}

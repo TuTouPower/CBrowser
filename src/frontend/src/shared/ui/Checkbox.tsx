@@ -24,14 +24,14 @@ export function Checkbox({
       disabled={disabled}
       aria-label={label}
       className={cn(
-        "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-outline-strong bg-surface text-on-accent",
+        "inline-flex size-(--component-checkbox-size) shrink-0 items-center justify-center rounded-sm border border-outline-strong bg-surface text-on-accent",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50",
         "data-[state=checked]:bg-accent data-[state=checked]:border-accent",
         className,
       )}
     >
       <CheckboxPrimitive.Indicator>
-        <Check aria-hidden="true" className="h-3 w-3" />
+        <Check aria-hidden="true" className="size-(--component-icon-xs-size)" />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

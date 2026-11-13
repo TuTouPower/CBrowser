@@ -71,14 +71,14 @@ export function Select({
       <SelectPrimitive.Trigger
         aria-label={ariaLabel}
         className={cn(
-          "inline-flex h-9 items-center justify-between gap-sm rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface",
+          "inline-flex h-(--component-select-height) items-center justify-between gap-sm rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50",
           className,
         )}
       >
         <SelectPrimitive.Value placeholder={placeholder} />
         <SelectPrimitive.Icon>
-          <ChevronDown aria-hidden="true" className="h-4 w-4" />
+          <ChevronDown aria-hidden="true" className="size-(--component-icon-md-size)" />
         </SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
@@ -148,10 +148,10 @@ function SelectItem({
           onOptionSelect?.(option.value);
         }
       }}
-      className="relative flex h-8 cursor-default select-none items-center rounded-sm pl-xl pr-sm font-ui text-body-md outline-none data-[highlighted]:bg-surface-hover"
+      className="relative flex h-(--component-menu-item-height) cursor-default select-none items-center rounded-sm pl-xl pr-sm font-ui text-body-md outline-none data-[highlighted]:bg-surface-hover"
     >
       <SelectPrimitive.ItemIndicator className="absolute left-sm">
-        <Check aria-hidden="true" className="h-3.5 w-3.5" />
+        <Check aria-hidden="true" className="size-(--component-icon-sm-size)" />
       </SelectPrimitive.ItemIndicator>
       <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>

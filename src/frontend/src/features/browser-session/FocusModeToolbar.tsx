@@ -19,13 +19,13 @@ export function FocusModeToolbar(
 
   return (
     <div
-      className="fixed left-0 right-0 top-0 z-50"
+      className="fixed left-none right-none top-none z-50"
       onMouseLeave={() => setVisible(false)}
     >
       <div
         data-testid={HOTZONE_ID}
         aria-hidden="true"
-        className="h-2 w-full"
+        className="h-(--spacing-sm) w-full"
         onMouseEnter={() => setVisible(true)}
         onMouseMove={() => setVisible(true)}
       />

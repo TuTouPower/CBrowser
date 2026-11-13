@@ -25,7 +25,7 @@ export function Popover({
           aria-label={ariaLabel}
           sideOffset={4}
           className={cn(
-            "z-50 w-72 rounded-lg border border-outline bg-surface-raised p-md text-on-surface shadow-lg",
+            "z-50 w-(--component-popover-width) rounded-lg border border-outline bg-surface-raised p-md text-on-surface shadow-lg",
             "focus:outline-none",
             contentClassName,
           )}

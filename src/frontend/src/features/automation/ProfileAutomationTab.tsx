@@ -69,7 +69,7 @@ export function ProfileAutomationTab({ profileId }: { profileId: string }) {
     <div data-testid="profile-automation-tab" className="flex flex-col gap-lg">
       <div>
         <h2 className="flex items-center gap-sm font-ui text-headline-md text-on-surface">
-          <Cpu aria-hidden="true" className="h-5 w-5 text-accent" />
+          <Cpu aria-hidden="true" className="size-(--component-icon-lg-size) text-accent" />
           {t('automationPageTitle')}
         </h2>
         <p className="mt-xs font-ui text-body-sm text-on-surface-muted">
@@ -94,7 +94,7 @@ export function ProfileAutomationTab({ profileId }: { profileId: string }) {
             <div className="flex items-center gap-sm">
               <code
                 data-testid="automation-endpoint"
-                className="min-w-0 flex-1 truncate rounded-md border border-outline bg-surface-subtle px-md py-sm font-mono text-mono-md text-accent"
+                className="min-w-none flex-1 truncate rounded-md border border-outline bg-surface-subtle px-md py-sm font-mono text-mono-md text-accent"
               >
                 {endpoint}
               </code>
@@ -106,9 +106,9 @@ export function ProfileAutomationTab({ profileId }: { profileId: string }) {
                 onClick={() => void copyEndpoint()}
               >
                 {copied ? (
-                  <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                  <Check aria-hidden="true" className="size-(--component-icon-sm-size)" />
                 ) : (
-                  <Copy aria-hidden="true" className="h-3.5 w-3.5" />
+                  <Copy aria-hidden="true" className="size-(--component-icon-sm-size)" />
                 )}
                 {copied ? t('copied') : t('copy')}
               </Button>

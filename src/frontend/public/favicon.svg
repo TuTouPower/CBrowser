@@ -2,7 +2,7 @@
   <style>
     path { stroke: #000000; }
     @media (prefers-color-scheme: dark) {
-      path { stroke: #FFFFFF; }
+      path { stroke: #ffffff; }
     }
   </style>
 

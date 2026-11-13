@@ -70,9 +70,9 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
   return (
     <div data-testid="profile-files-tab" className="flex flex-col gap-lg">
       <div className="flex items-start justify-between gap-md">
-        <div className="min-w-0">
+        <div className="min-w-none">
           <h2 className="flex items-center gap-sm font-ui text-headline-md text-on-surface">
-            <FolderArchive aria-hidden="true" className="h-5 w-5 text-accent" />
+            <FolderArchive aria-hidden="true" className="size-(--component-icon-lg-size) text-accent" />
             {t('profileFiles')}
           </h2>
           <p className="mt-xs font-ui text-body-sm text-on-surface-muted">
@@ -95,7 +95,7 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
             onClick={() => inputRef.current?.click()}
             disabled={uploadMutation.isPending}
           >
-            <Upload aria-hidden="true" className="h-3.5 w-3.5" />
+            <Upload aria-hidden="true" className="size-(--component-icon-sm-size)" />
             {uploadMutation.isPending ? t('uploading') : t('uploadAFile')}
           </Button>
         </div>
@@ -128,7 +128,7 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
         <EmptyState
           title={t('profileFiles')}
           description={t('noFilesYet')}
-          icon={<FolderArchive aria-hidden="true" className="h-8 w-8" />}
+          icon={<FolderArchive aria-hidden="true" className="size-(--component-icon-2xl-size)" />}
         />
       ) : (
         <ul className="overflow-hidden rounded-lg border border-outline">
@@ -138,7 +138,7 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
               data-testid="artifact-item"
               className="flex items-center gap-md border-b border-outline bg-surface px-md py-sm last:border-b-0 hover:bg-surface-hover"
             >
-              <div className="min-w-0 flex-1">
+              <div className="min-w-none flex-1">
                 <div className="truncate font-ui text-body-md text-on-surface">
                   {artifact.name}
                 </div>
@@ -159,9 +159,9 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
                 href={client.artifacts.downloadUrl(profileId, artifact.id)}
                 download={artifact.name}
                 aria-label={t('downloadToComputer')}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                className="inline-flex h-(--component-icon-button-height) w-(--component-icon-button-width) shrink-0 items-center justify-center rounded-md bg-surface text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
               >
-                <Download aria-hidden="true" className="h-4 w-4" />
+                <Download aria-hidden="true" className="size-(--component-icon-md-size)" />
               </a>
               <IconButton
                 data-testid="artifact-delete"
@@ -169,7 +169,7 @@ export function ProfileFilesTab({ profileId }: { profileId: string }) {
                 onClick={() => void remove(artifact.id)}
                 disabled={deleteMutation.isPending}
               >
-                <Trash2 aria-hidden="true" className="h-4 w-4" />
+                <Trash2 aria-hidden="true" className="size-(--component-icon-md-size)" />
               </IconButton>
             </li>
           ))}

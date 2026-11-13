@@ -259,14 +259,14 @@ export function GroupManagerDialog({
                   label={t('groupReorderUp')}
                   onClick={() => void moveUp(group.id).catch(handleError)}
                 >
-                  <ArrowUp aria-hidden="true" className="h-4 w-4" />
+                  <ArrowUp aria-hidden="true" className="size-(--component-icon-md-size)" />
                 </IconButton>
                 <IconButton
                   data-testid="group-reorder-down"
                   label={t('groupReorderDown')}
                   onClick={() => void moveDown(group.id).catch(handleError)}
                 >
-                  <ArrowDown aria-hidden="true" className="h-4 w-4" />
+                  <ArrowDown aria-hidden="true" className="size-(--component-icon-md-size)" />
                 </IconButton>
                 <Button
                   data-testid="group-delete-open"

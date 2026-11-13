@@ -51,13 +51,13 @@ export function GroupColorPicker({
             data-testid={`group-color-${hue}`}
             onClick={() => onChange(hue)}
             className={cn(
-              'inline-flex h-6 w-6 items-center justify-center rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+              'inline-flex h-swatch w-swatch items-center justify-center rounded-full border-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
               HUE_CLASSES[hue],
               selected ? 'border-on-surface' : 'border-outline',
             )}
           >
             {selected && (
-              <Check aria-hidden="true" className="h-3 w-3 text-on-accent" />
+              <Check aria-hidden="true" className="size-(--component-icon-xs-size) text-on-accent" />
             )}
           </button>
         );

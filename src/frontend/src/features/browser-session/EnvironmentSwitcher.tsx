@@ -127,7 +127,7 @@ export function EnvironmentSwitcher({
           type="button"
           data-testid={SESS_SWITCHER_TRIGGER}
           aria-label={t("sessSwitcher")}
-          className="inline-flex h-9 items-center gap-sm rounded-md border border-outline bg-surface px-md font-ui text-label-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          className="inline-flex h-(--component-select-height) items-center gap-sm rounded-md border border-outline bg-surface px-md font-ui text-label-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           <span className="truncate">{current?.name ?? currentProfileId}</span>
           <StatusBadge tone={status.tone} label={status.label} />

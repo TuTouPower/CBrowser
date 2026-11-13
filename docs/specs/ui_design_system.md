@@ -2,13 +2,13 @@
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约。前端不再有硬编码颜色，也不再有「顶栏 + Profile 搜索侧栏」的信息架构；路由按 `docs/plan_20261105_ui_redesign.md` 5.1 定稿。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。非范围：环境列表 / 详情 / 代理库 / 会话页的新实现（t037 / t038 / t039）、命令面板、设置页网络访问区块（t042）。
+本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约，以及 t059 交付的「设计系统门禁扩展：圆角一致性、颜色范围、对比度三类全覆盖与尺寸全面 token 化」契约。前端不再有硬编码颜色，也不再有「顶栏 + Profile 搜索侧栏」的信息架构；路由按 `docs/plan_20261105_ui_redesign.md` 5.1 定稿。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`、`docs/tasks/t059_design_token_gates/task.md`。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。非范围：环境列表 / 详情 / 代理库 / 会话页的新实现（t037 / t038 / t039）、命令面板、设置页网络访问区块（t042）。
 
 ## 2. 行为契约
 
 ### 2.1 设计权威与生成器
 
-- 仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式，YAML front matter）是唯一颜色 / 字体 / 字号 / 间距 / 圆角 / 组件来源；章节顺序 Overview、Colors（含 `### Modes`）、Typography、Layout、Elevation & Depth、Shapes、Components、Do's and Don'ts。
+- 仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式，YAML front matter）是唯一颜色 / 字体 / 字号 / 间距 / 圆角 / 组件来源；章节顺序 Overview、Colors（含 `### Modes`）、Typography、Layout、Elevation & Depth、Shapes、Components、Contrast（t059 新增）、Do's and Don'ts。
 - `primary` 为模式无关品牌色（由 `brand-mark` 引用）；其余颜色角色以 `light-*` / `dark-*` 成对出现且两套角色名集合完全相同；涉及颜色的组件以 `<component>-light` / `<component>-dark` 成对定义并只引用同模式 token；字体、间距、圆角与模式无关只定义一次。
 - `npm run design:tokens` 精确调用 `@google/design.md@0.4.0` 的程序化 `lint()`，生成前校验：`light-*` / `dark-*` 角色集合相同、无未解析引用、不存在既非 `primary` 又无模式前缀的颜色 token；确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 以亮色为默认值、`.dark` 覆盖全部颜色变量，另含字体 / 字号 / 圆角 / 间距变量）。产物入库，禁止手改。
 - `npm run design:lint`（官方 lint，error 或 warning 任一非零即失败，info 允许）、`npm run design:check`（入库产物与重新生成结果不一致即失败）与 `design:tokens` 三条命令接入 `scripts/run_gates.sh` 前端阶段。生成器失败用例（角色集合不等 / 未解析引用 / 无前缀颜色 / 官方 lint 报错）先红后绿，确定性由测试覆盖。
@@ -37,6 +37,15 @@
 - 设置页：外观（主题三态）、语言（en / zh）、系统信息（只呈现真实探测对象 Control API 健康检查）、平台字体区块（数据来自 `GET /api/v1/font-sets`，按平台列出字体集、来源版本、完整性与使用环境数；完整性不一致的字体集显示告警）。
 - 新增与改动文案 en / zh 同步补键，键集由 en 字典派生、zh 编译期对齐。
 
+### 2.6 设计门禁扩展（t059）
+
+- 章节顺序新增 `## Contrast`（位于 Components 与 Do's and Don'ts 之间，官方 linter 章节序实测允许）：声明 components 之外、代码中直接以 token 类使用的文字对（4.5:1）与图形对（3.0:1），生成器逐对计算；装饰 / 结构元素（divider、scrollbar-thumb、modal-backdrop、session-stage）在该节声明不入对比度对。
+- 圆角一致性：Shapes 正文含逐 component 的机读映射表，生成器断言与 components 的 `rounded` 定义逐项一致；DESIGN.md components 的圆角按实现现状全量改齐，代码中的圆角刻度类即 token 引用。
+- 对比度门禁三类全覆盖：components 成对 text/bg（官方 linter + 生成器）、仅 textColor 的 component 对同模式 background / surface / surface-raised / surface-subtle 四种底色（4.5:1）、Contrast 表声明对。门禁发现的 8 个不达标 token 已修正（值见 ADR 027 修订）。
+- 颜色范围：品牌 token `brand-gradient-start/mid/end`（模式无关）与 `light/dark-brand-ink` 登记入 DESIGN.md；生成器按 token 生成 `public/` 的 logo 与 favicon 五件资产（几何保持原文件、仅颜色取 token 值），`design:check` 校验其新鲜度。颜色扫描扩展到 `public/**/*.{svg,html,js}` 与 `index.html`：`src` 字面量全禁，`public` 字面量必须是 token 值（`public/selkies/` 为 .gitignore 的官方 Selkies vendor 投放目录、自有品牌色，不在扫描内）。
+- 组件尺寸规格：components 条目以官方 `height` / `width` / `size` 字段登记尺寸（成对条目同值，生成器 counterpart 断言），导出 `--component-<name>-radius/-height/-width/-size` 变量，React 以 Tailwind 变量简写类消费；图标尺寸阶梯为仅尺寸条目 `icon-xs`（12）/ `icon-sm`（14）/ `icon-md`（16）/ `icon-lg`（20）/ `icon-xl`（24）/ `icon-2xl`（32）/ `icon-3xl`（48）。
+- 尺寸 / 间距数值类全禁：源码扫描禁止 p/m/gap/space/w/h/min/max/size/inset/定位/translate 族的数值型类与非 token 任意值（任意值仅允许 `var(--…)` 与 calc/min/max/clamp 组合）；零值与 2px 用 spacing token `none` / `2xs`；布局尺寸走 Container sizes（新增 `dropdown-list`、`badge`、`table-select`、`swatch`）。生成器校验另含：components 声明引用串与 linter 解析结果交叉断言防漂移、成对条目 counterpart 一致性（非颜色规格与字面量必须同值）。
+
 ## 3. 验收标准（摘要）
 
 完整 AC 与可测试性声明见关联 task `t036`；本 spec 只作需求级累积。
@@ -51,3 +60,11 @@
 - [x] AC-008：Radix 浮层焦点 / ARIA / Esc 与 Toast 全局单实例由组件测试覆盖。
 - [x] AC-009：产物无外部字体 / 图标 CDN，字体文件自托管随产物分发。
 - [x] AC-010：登录 / 设置页重做后鉴权、跳转、语言、系统信息与平台字体区块（含完整性告警）语义由测试覆盖。
+
+t059 的完整 AC 与可测试性声明见 `docs/tasks/t059_design_token_gates/task.md`，摘要：
+
+- [x] t059 AC-001：圆角一致性门禁（Shapes 表与 components 定义逐项断言），DESIGN 与实现全量改齐。
+- [x] t059 AC-002：品牌 token 登记、logo/favicon 五件资产生成器生成并校验新鲜度，颜色扫描扩展至 `public/` 与 `index.html`。
+- [x] t059 AC-003：对比度门禁三类全覆盖（成对 / 单 textColor 对四底色 / Contrast 声明表），8 个不达标 token 修正后全量通过。
+- [x] t059 AC-004：尺寸规格 components 字段登记 + 组件级变量导出，数值型与非 token 任意值尺寸 / 间距类全仓清零并由门禁拦截。
+- [x] t059 AC-005：无视觉回归——构建产物逐类核对新工具类生成与计算值，登录页 headless 截图与基线构建比对（差异仅对比度修正的文字像素）。

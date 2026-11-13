@@ -161,9 +161,9 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           onClick={onAudioToggle}
         >
           {audioMuted ? (
-            <VolumeX aria-hidden="true" className="h-4 w-4" />
+            <VolumeX aria-hidden="true" className="size-(--component-icon-md-size)" />
           ) : (
-            <Volume2 aria-hidden="true" className="h-4 w-4" />
+            <Volume2 aria-hidden="true" className="size-(--component-icon-md-size)" />
           )}
         </IconButton>
 
@@ -177,7 +177,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           aria-pressed={diagnosticsOpen}
           onClick={onDiagnosticsToggle}
         >
-          <Activity aria-hidden="true" className="h-4 w-4" />
+          <Activity aria-hidden="true" className="size-(--component-icon-md-size)" />
         </IconButton>
 
         <IconButton
@@ -186,7 +186,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           aria-pressed={detailsOpen}
           onClick={onDetailsToggle}
         >
-          <PanelRight aria-hidden="true" className="h-4 w-4" />
+          <PanelRight aria-hidden="true" className="size-(--component-icon-md-size)" />
         </IconButton>
 
         <IconButton
@@ -195,7 +195,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           aria-pressed={focusMode}
           onClick={onFocusToggle}
         >
-          <Maximize2 aria-hidden="true" className="h-4 w-4" />
+          <Maximize2 aria-hidden="true" className="size-(--component-icon-md-size)" />
         </IconButton>
 
         <Button
@@ -205,7 +205,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           disabled={isPending}
           onClick={onStop}
         >
-          <Square aria-hidden="true" className="h-4 w-4" />
+          <Square aria-hidden="true" className="size-(--component-icon-md-size)" />
         </Button>
       </div>
     </header>
