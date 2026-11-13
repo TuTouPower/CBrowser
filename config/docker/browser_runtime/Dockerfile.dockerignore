@@ -5,7 +5,9 @@
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/preview.py
+!src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/domain/*.py
+!src/backend/cbrowser/shared/*.py
 !src/backend/cbrowser/font_sets/*.py
 !src/backend/cbrowser/runtime_agent/*.py
 

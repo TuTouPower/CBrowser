@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.adapters.filesystem.artifact_store import (
     ArtifactError,
     ArtifactInsufficientStorage,
@@ -49,7 +49,7 @@ def _raise_artifact_error(exc: ArtifactError) -> None:
 )
 async def list_artifacts(
     profile_id: str,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ArtifactService, Depends(get_artifact_service)],
 ):
     artifacts = await service.list(profile_id)
@@ -67,7 +67,7 @@ async def list_artifacts(
 async def upload_artifact(
     profile_id: str,
     request: Request,
-    session: Annotated[SessionModel, Depends(require_csrf_and_origin)],
+    session: Annotated[AuthenticatedSession, Depends(require_csrf_and_origin)],
     service: Annotated[ArtifactService, Depends(get_artifact_service)],
     filename: Annotated[str, Query(min_length=1, max_length=255)],
 ):
@@ -112,7 +112,7 @@ async def upload_artifact(
 async def download_artifact(
     profile_id: str,
     artifact_id: str,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ArtifactService, Depends(get_artifact_service)],
 ):
     try:
@@ -137,7 +137,7 @@ async def download_artifact(
 async def delete_artifact(
     profile_id: str,
     artifact_id: str,
-    session: Annotated[SessionModel, Depends(require_csrf_and_origin)],
+    session: Annotated[AuthenticatedSession, Depends(require_csrf_and_origin)],
     service: Annotated[ArtifactService, Depends(get_artifact_service)],
 ):
     try:

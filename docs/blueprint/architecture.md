@@ -162,6 +162,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 - 旧的内部 Profile CRUD 路由已作为破坏性变更移除；
 - 旧的 CDP 连接入口已彻底删除：`/api/profiles/{id}/cdp` 兼容适配器与隐藏挂载均不再注册，不保留重定向或旧路由代理；现行唯一入口为 `/api/v1/automation/profiles/{id}/cdp`，完整执行自动化令牌鉴权与控制权围栏。
 
+### 5.6 跨服务中立模块与运行镜像边界（t062）
+
+被两个以上服务镜像消费的规则与实现只有一份权威，归属中立包 `cbrowser/shared/`：端点与 Origin 归一（`endpoints`）、Agent 凭证（`agent_credentials`）、原子写（`atomic_write`）、per-profile 锁注册表（`profile_locks`）、投递分类（`delivery`）、实例 fence（`fencing`）、出口探针 I/O（`egress`）、客户端 IP 解析（`client_ip`）。Gateway 与 Supervisor 互不 import；`shared` 除 `secret_files` 叶子外不 import 任何 cbrowser 模块，保证它在每个镜像内可独立导入。领域层只承载纯值对象与规则：认证返回领域会话对象 `AuthenticatedSession`，路由与依赖不接触 ORM `SessionModel`；`domain/egress_observation` 只留观测值对象与时效规则，探针的 httpx/GeoIP/文件 I/O 在 `shared/egress`。Supervisor 控制端口只有一个权威值 `shared.endpoints.DEFAULT_SUPERVISOR_PORT`（8005），runner、控制客户端、compose 与就绪探针全部派生或与之对齐校验。运行镜像按包粒度 COPY 后端代码（API 镜像为 `cbrowser` 整包 + `migrations`），禁止逐文件复制 shared 或跨服务借文件；镜像文件闭包由 `tests/unit/test_t062_image_closure.py` 按 Dockerfile 组装文件树实际导入验证，依赖方向由 `tests/unit/test_t062_boundaries.py` 守护。不同进程的锁注册表实例互不感知，per-profile 锁只是进程内协调、不是跨进程互斥；API 唯一 SQLite 写者、Supervisor 唯一 Docker Socket、Gateway 无 ORM 三条边界不变。
+
 ## 6. 安全、网络与端口矩阵
 
 |来源|目标|允许操作与协议|安全约束|

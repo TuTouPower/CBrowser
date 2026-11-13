@@ -16,7 +16,7 @@ from typing import Any
 import docker
 import httpx
 import uvicorn
-from cbrowser.gateway.endpoint import gateway_port_from_env
+from cbrowser.shared.endpoints import DEFAULT_SUPERVISOR_PORT, gateway_port_from_env
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 from cbrowser.supervisor.container_spec import validate_resource_prefix
@@ -60,7 +60,7 @@ async def run_supervisor(
     gateway_url: str | None = None,
     resource_prefix: str = "cbrowser-t005",
     host: str = "127.0.0.1",
-    port: int = 8005,
+    port: int = DEFAULT_SUPERVISOR_PORT,
     gateway_control_url: str | None = None,
     gateway_token_file: Path | None = None,
     gateway_container_id: str | None = None,
@@ -609,7 +609,7 @@ def main():
         default=os.getenv("CBROWSER_MEDIA_SUBNET_POOL"),
     )
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8005)
+    parser.add_argument("--port", type=int, default=DEFAULT_SUPERVISOR_PORT)
 
     args = parser.parse_args()
 

@@ -12,7 +12,7 @@ import json
 import httpx
 import pytest
 
-from cbrowser.domain.egress_observation import EgressProbeError
+from cbrowser.shared.egress import EgressProbeError
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from cbrowser.services.egress_probe import SupervisorEgressProbeRunner
 

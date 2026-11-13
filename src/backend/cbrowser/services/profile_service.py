@@ -10,8 +10,8 @@ import logging
 import os
 import shutil
 import uuid
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from pathlib import Path
 from typing import Any
 
@@ -23,7 +23,6 @@ from cbrowser.adapters.database.repository import (
 from cbrowser.domain.egress_observation import (
     OBSERVATION_TTL_SECONDS,
     EgressObservation,
-    EgressProbeError,
 )
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
@@ -35,6 +34,8 @@ from cbrowser.domain.models import (
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from cbrowser.services.egress_probe import EgressProbeRunner
+from cbrowser.shared.egress import EgressProbeError
+from cbrowser.shared.profile_locks import ProfileLockRegistry
 from cbrowser.preview import (
     POLICY_FILE,
     PreviewPolicy,
@@ -145,32 +146,6 @@ def _validate_font_set_binding(platform: str, font_set_id: str | None) -> None:
         raise InvalidFontSetBindingError(
             f"font set {font_set_id!r} failed its integrity check"
         )
-
-
-class ProfileLockRegistry:
-    """Per-profile locks whose entries disappear once no task uses them."""
-
-    def __init__(self) -> None:
-        self._locks: dict[str, asyncio.Lock] = {}
-
-    @property
-    def is_idle(self) -> bool:
-        """Whether no profile lock is currently registered."""
-        return not self._locks
-
-    @asynccontextmanager
-    async def lock(self, profile_id: str) -> AsyncIterator[None]:
-        lock = self._locks.setdefault(profile_id, asyncio.Lock())
-        try:
-            async with lock:
-                yield
-        finally:
-            if (
-                self._locks.get(profile_id) is lock
-                and not lock.locked()
-                and not getattr(lock, "_waiters", None)
-            ):
-                self._locks.pop(profile_id, None)
 
 
 _SKIP_COPY_FILES = frozenset({"SingletonLock", "SingletonCookie", "SingletonSocket"})
@@ -302,6 +277,15 @@ class ProfileService:
     def locks_idle(self) -> bool:
         """Whether no per-profile lock is registered."""
         return self._locks.is_idle
+
+    def profile_lock(self, profile_id: str) -> AbstractAsyncContextManager[None]:
+        """Serialize an external critical section on one profile.
+
+        The public coordination surface for callers (routes) that must
+        exclude this service's own per-profile mutations without
+        reaching into the registry.
+        """
+        return self._locks.lock(profile_id)
 
     def get_preview_dir(self, profile_id: str) -> Path | None:
         if self._data_root is None:

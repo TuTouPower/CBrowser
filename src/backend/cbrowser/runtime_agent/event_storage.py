@@ -6,10 +6,11 @@ import json
 import logging
 import os
 import threading
-import uuid
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+from cbrowser.shared.atomic_write import atomic_write_text
 
 from .protocol import DownloadEventRecord, RuntimeEventRecord, RuntimeStateRecord
 from .security import validate_runtime_id
@@ -56,19 +57,17 @@ def _ensure_directory(path: Path) -> None:
 
 
 def atomic_write_json(file_path: Path, data: dict[str, Any]) -> None:
-    """Atomically write JSON data to file with fsync and directory sync."""
-    tmp_path = file_path.with_name(f"{file_path.name}.tmp.{uuid.uuid4().hex}")
+    """Atomically write JSON data via the shared atomic-write primitive.
+
+    The write mechanism (exclusive temp file, fsync, replace, directory
+    fsync) is `cbrowser.shared.atomic_write` (t062); this wrapper keeps
+    the runtime store's directory creation and StorageError contract.
+    """
     try:
         _ensure_directory(file_path.parent)
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, file_path)
-
-        # A successful replace alone does not acknowledge durable directory
-        # metadata. Unsupported synchronization is a failure too.
-        _sync_directory(file_path.parent)
+        atomic_write_text(
+            file_path, json.dumps(data, ensure_ascii=False, indent=2)
+        )
     except StorageError:
         raise
     except Exception as exc:
@@ -76,11 +75,6 @@ def atomic_write_json(file_path: Path, data: dict[str, Any]) -> None:
             "Failed to atomic_write_json to %s: %s", file_path.name, type(exc).__name__
         )
         raise StorageError(f"Atomic write failed for {file_path.name}") from exc
-    finally:
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
 
 
 class EventStorage:

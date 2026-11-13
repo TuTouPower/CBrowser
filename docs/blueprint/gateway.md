@@ -95,3 +95,7 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 ## 公共 API 面边界
 
 公开 OpenAPI（`schemas/openapi/cbrowser_v1.json`）与前端生成类型只包含 `/api/v1` 用户面路由。`/api/v1/internal/supervisor/*` 与 `/api/v1/internal/gateway/*` 使用 `include_in_schema=False`，仅供持有独立 Bearer 凭证的 Supervisor/Gateway 服务调用，不进入公共契约。Runtime Agent UDS 协议由 `scripts/export_runtime_agent_protocol.py` 生成 `schemas/runtime/agent_protocol.json`，与 Supervisor 协议导出脚本保持同一逐字节校验模式；禁止手改生成文件。
+
+## 中立模块归属（t062）
+
+Gateway 的端点/Origin 归一、Agent 凭证校验与客户端 IP 解析均来自中立包 `cbrowser/shared/`（`endpoints`、`agent_credentials`、`client_ip`）；Gateway 不 import Supervisor 包、不携带 ORM 与 domain，镜像只打包 gateway 包、shared 整包与 stream_agent 的协议两文件。Origin 白名单由部署期 `network_config.derive_origin_whitelist` 以同一 `normalize_origin` 生成，与请求侧校验天然一致。

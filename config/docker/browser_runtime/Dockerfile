@@ -110,7 +110,9 @@ ENV HOME=/home/cbrowser \
 COPY src/backend/cbrowser/__init__.py /app/src/backend/cbrowser/__init__.py
 COPY src/backend/cbrowser/launch_args.py /app/src/backend/cbrowser/launch_args.py
 COPY src/backend/cbrowser/preview.py /app/src/backend/cbrowser/preview.py
+COPY src/backend/cbrowser/secret_files.py /app/src/backend/cbrowser/secret_files.py
 COPY src/backend/cbrowser/domain /app/src/backend/cbrowser/domain
+COPY src/backend/cbrowser/shared /app/src/backend/cbrowser/shared
 COPY src/backend/cbrowser/font_sets /app/src/backend/cbrowser/font_sets
 COPY src/backend/cbrowser/runtime_agent /app/src/backend/cbrowser/runtime_agent
 COPY config/docker/browser_runtime/entrypoint.sh /app/entrypoint.sh

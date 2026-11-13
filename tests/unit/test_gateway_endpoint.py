@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-from cbrowser.gateway.endpoint import (
+from cbrowser.shared.endpoints import (
     DEFAULT_GATEWAY_PORT,
     GatewayEndpoint,
     normalize_origin,

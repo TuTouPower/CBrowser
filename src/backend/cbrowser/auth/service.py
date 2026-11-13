@@ -23,8 +23,8 @@ from cbrowser.adapters.database.models import (
 )
 from cbrowser.adapters.database.session import write_transaction
 from cbrowser.auth.rate_limiter import LoginRateLimiter
-from cbrowser.domain.models import utc_now_iso
-from cbrowser.gateway.endpoint import normalize_origin
+from cbrowser.domain.models import AuthenticatedSession, utc_now_iso
+from cbrowser.shared.endpoints import normalize_origin
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -164,8 +164,8 @@ class AuthService:
     @retry_transient_db_errors
     async def create_session(
         self, expire_hours: int = 12
-    ) -> tuple[str, str, SessionModel]:
-        """Create a new session, returning (session_token, csrf_token, model)."""
+    ) -> tuple[str, str, AuthenticatedSession]:
+        """Create a new session: (session_token, csrf_token, domain session)."""
         raw_session_token = secrets.token_urlsafe(32)
         csrf_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_session_token.encode("utf-8")).hexdigest()
@@ -186,11 +186,17 @@ class AuthService:
                 delete(SessionModel).where(SessionModel.expires_at <= now.isoformat())
             )
             session.add(model)
+            await session.flush()
+            domain_session = AuthenticatedSession.model_validate(
+                model, from_attributes=True
+            )
 
-        return raw_session_token, csrf_token, model
+        return raw_session_token, csrf_token, domain_session
 
     @retry_transient_db_errors
-    async def get_valid_session(self, raw_session_token: str) -> SessionModel | None:
+    async def get_valid_session(
+        self, raw_session_token: str
+    ) -> AuthenticatedSession | None:
         """Validate session token against database and expiration time."""
         if not raw_session_token:
             return None
@@ -221,7 +227,7 @@ class AuthService:
             except (ValueError, TypeError):
                 return None
 
-            return row
+            return AuthenticatedSession.model_validate(row, from_attributes=True)
 
     @retry_transient_db_errors
     async def revoke_session(self, raw_session_token: str) -> bool:

@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Annotated
 
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.api.v1.control_router import get_optional_control_service
 from cbrowser.shared.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
@@ -149,7 +149,7 @@ async def logout(
     dependencies=[Depends(require_user_session)],
 )
 async def get_session(request: Request):
-    session: SessionModel = request.state.session
+    session: AuthenticatedSession = request.state.session
     return SessionResponse(authenticated=True, csrf_token=session.csrf_token)
 
 

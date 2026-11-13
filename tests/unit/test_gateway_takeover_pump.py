@@ -23,7 +23,7 @@ from cbrowser.stream_agent.protocol import (
     AgentRegisterPayload,
     HumanInputTakeoverPayload,
 )
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 
 
 class _StubApi:

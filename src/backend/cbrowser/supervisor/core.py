@@ -35,7 +35,8 @@ from cbrowser.domain.models import (
     PreviewPolicySyncRequest,
     ProfileConfig,
 )
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.shared.profile_locks import ProfileLockRegistry
 from cbrowser.preview import (
     PreviewPolicy,
     clear_preview,
@@ -51,7 +52,7 @@ from cbrowser.runtime_agent.protocol import (
     SearchDefaultsStatus,
 )
 from cbrowser.secret_files import read_secret_file
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 from cbrowser.supervisor.container_spec import container_runtime_instance_id
 from cbrowser.domain.proxy_endpoint import (
     ProxyEndpoint,
@@ -71,7 +72,7 @@ from cbrowser.supervisor.event_forwarder import (
     REJECTED,
     EventForwarder,
 )
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from cbrowser.supervisor.operation_journal import OperationJournal
 from cbrowser.supervisor.path_validator import (
@@ -279,7 +280,7 @@ class SupervisorCore:
         self._preview_request_ids: dict[str, str] = {}
         self._preview_captured_at: dict[str, str | None] = {}
         self._preview_warning_at: dict[str, float] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._profile_locks = ProfileLockRegistry()
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: dict[
             tuple[str, str, int], tuple[str, str]
@@ -334,10 +335,13 @@ class SupervisorCore:
         """Public health probe used by tests and diagnostics."""
         return await self._query_agent_health(profile_id)
 
-    def _get_profile_lock(self, profile_id: str) -> asyncio.Lock:
-        if profile_id not in self._locks:
-            self._locks[profile_id] = asyncio.Lock()
-        return self._locks[profile_id]
+    def profile_lock(self, profile_id: str) -> asyncio.Lock:
+        """The per-profile serialization lock (shared registry, t062)."""
+        return self._profile_locks.lock_for(profile_id)
+
+    def is_profile_locked(self, profile_id: str) -> bool:
+        """Whether some task currently holds ``profile_id``'s lock."""
+        return self._profile_locks.is_locked(profile_id)
 
     # ---------------- t026 convergence & observation ----------------
 
@@ -1205,7 +1209,7 @@ class SupervisorCore:
         self, pid: str, roles: dict[str, Any]
     ) -> None:
         """Reconcile one Profile; callers isolate failures per Profile."""
-        if self._get_profile_lock(pid).locked():
+        if self._profile_locks.is_locked(pid):
             return
         b_c = roles.get("browser")
         s_c = roles.get("stream")
@@ -1256,7 +1260,7 @@ class SupervisorCore:
 
         if resp.status_code == 200:
             rt = resp.json()
-            if self._get_profile_lock(pid).locked():
+            if self._profile_locks.is_locked(pid):
                 return
             desired = rt.get("desired_state", "stopped")
             api_inst = rt.get("runtime_instance_id")
@@ -1511,7 +1515,7 @@ class SupervisorCore:
                         "Existing Stream has no verified UDP mux mapping"
                     )
 
-                if self._get_profile_lock(pid).locked():
+                if self._profile_locks.is_locked(pid):
                     return
                 self._unprotected_since.pop(pid, None)
                 logger.info(
@@ -2640,7 +2644,7 @@ class SupervisorCore:
             raise ValueError("Explicit Agent authentication key file is required")
         if profile_number is not None:
             self.docker.remember_profile_number(profile_id, profile_number)
-        lock = self._get_profile_lock(profile_id)
+        lock = self._profile_locks.lock_for(profile_id)
         async with lock:
             if profile_id in self._sessions:
                 session = self._sessions[profile_id]
@@ -2930,7 +2934,7 @@ class SupervisorCore:
         4. Stop Browser container.
         5. Release UDP mux port.
         """
-        lock = self._get_profile_lock(profile_id)
+        lock = self._profile_locks.lock_for(profile_id)
         async with self._global_lock, lock:
             session = self._sessions.get(profile_id)
             target = expected_instance or (

@@ -238,6 +238,13 @@ class ArtifactStore:
                 await asyncio.to_thread(handle.flush)
                 await asyncio.to_thread(os.fsync, handle.fileno())
             os.replace(temp, target)
+            # Same durability contract as the shared atomic write: the
+            # rename is only durable once the directory is synced (t062).
+            directory_fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
             self._apply_runtime_permissions(target, directory=False)
             return total, digest.hexdigest(), target
         except BaseException:

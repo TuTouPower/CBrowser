@@ -10,7 +10,7 @@ from typing import Any
 from aiohttp import web
 from cbrowser.gateway.config import GatewayConfig
 from cbrowser.gateway.server import create_gateway_app
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 
 
 def find_free_port() -> int:

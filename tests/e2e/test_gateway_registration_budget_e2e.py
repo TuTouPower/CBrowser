@@ -17,13 +17,13 @@ from pathlib import Path
 
 import aiohttp
 import pytest
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 from cbrowser.stream_agent.protocol import (
     AgentRegisterEnvelope,
     AgentRegisterPayload,
     GatewayRegisterResponse,
 )
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from gateway_probe.topology import GatewayTopologyHarness
 from wait import poll_until

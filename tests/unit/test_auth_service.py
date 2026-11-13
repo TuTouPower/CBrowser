@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 from pathlib import Path
@@ -100,14 +101,24 @@ async def test_admin_auth_and_rate_limiting(auth_db, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_session_lifecycle_and_revocation(auth_db):
-    service, _ = auth_db
+    service, session_maker = auth_db
 
-    # Create session
-    raw_token, csrf_token, model = await service.create_session(expire_hours=12)
+    # Create session: the service hands back the domain session object,
+    # which carries no storage details (t062).
+    raw_token, csrf_token, domain_session = await service.create_session(
+        expire_hours=12
+    )
     assert raw_token is not None
     assert csrf_token is not None
+    assert domain_session.csrf_token == csrf_token
     # Token in DB is hashed with SHA-256
-    assert raw_token != model.token_hash
+    async with session_maker() as db:
+        stored = (await db.execute(select(SessionModel))).scalars().one()
+    assert stored.id == domain_session.id
+    assert stored.token_hash != raw_token
+    assert stored.token_hash == hashlib.sha256(
+        raw_token.encode("utf-8")
+    ).hexdigest()
 
     # Validate active session
     valid_session = await service.get_valid_session(raw_token)

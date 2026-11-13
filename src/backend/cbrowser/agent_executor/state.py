@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
 from pathlib import Path
+
+from cbrowser.shared.atomic_write import atomic_write_text
 
 from .ledger import PageRecord
 from .refs import RefEntry
@@ -99,18 +100,7 @@ def save_state(
         "snapshots": snapshots,
         "ledger": ledger,
     }
-    fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=path.name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle)
-        os.chmod(tmp_name, 0o600)
-        os.replace(tmp_name, path)
-    except BaseException:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    atomic_write_text(path, json.dumps(payload), mode=0o600)
 
 
 def decode_snapshots(raw: dict) -> dict[str, dict[str, RefEntry]]:

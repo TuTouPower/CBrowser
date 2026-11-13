@@ -145,7 +145,7 @@ class RecoveryCoordinator:
         self, docker_by_profile: dict[str, dict[str, dict[str, Any]]]
     ) -> None:
         for pid, roles in docker_by_profile.items():
-            if self.core._get_profile_lock(pid).locked():
+            if self.core.is_profile_locked(pid):
                 continue
 
             b_c = roles.get("browser")
@@ -268,7 +268,7 @@ class RecoveryCoordinator:
         for p_info in profiles_list:
             pid = p_info["id"]
             known_profiles.add(pid)
-            if self.core._get_profile_lock(pid).locked():
+            if self.core.is_profile_locked(pid):
                 continue
             runtime = await self._fetch_runtime(pid)
             if runtime is None:

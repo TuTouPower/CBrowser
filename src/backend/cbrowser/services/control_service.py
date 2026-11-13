@@ -13,7 +13,6 @@ restore are all required).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -24,6 +23,7 @@ from cbrowser.domain.models import (
     ProfileControlStateData,
     utc_now_iso,
 )
+from cbrowser.shared.profile_locks import ProfileLockRegistry
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,17 +143,10 @@ class ProfileControlService:
         self._close_api_tunnels = close_api_tunnels
         # Per-profile serialization (t031_code_f008): concurrent claims
         # for one profile must serialize into a 409 conflict, not a raw
-        # DB write error. Locks are created on first use; dict
-        # get-or-create runs synchronously between awaits, so no two
-        # tasks create different locks for the same profile.
-        self._locks: dict[str, asyncio.Lock] = {}
-
-    def _lock_for(self, profile_id: str) -> asyncio.Lock:
-        lock = self._locks.get(profile_id)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._locks[profile_id] = lock
-        return lock
+        # DB write error. The registry is the shared implementation
+        # (t062); get-or-create runs synchronously between awaits, so no
+        # two tasks create different locks for the same profile.
+        self._locks = ProfileLockRegistry()
 
     async def _publish(self, profile_id: str) -> None:
         if self._publish_profile_change is None:
@@ -219,7 +212,7 @@ class ProfileControlService:
         agent_session_id: str | None,
     ) -> tuple[ProfileControlStateData, bool]:
         """Move control to the calling agent (serialized per profile)."""
-        async with self._lock_for(profile_id):
+        async with self._locks.lock(profile_id):
             return await self._claim(
                 profile_id, agent_instance_id, agent_session_id
             )
@@ -301,7 +294,7 @@ class ProfileControlService:
         agent_session_id: str | None = None,
     ) -> tuple[ProfileControlStateData, bool]:
         """Move control back to the user (serialized per profile)."""
-        async with self._lock_for(profile_id):
+        async with self._locks.lock(profile_id):
             return await self._handoff(
                 profile_id,
                 reason,
@@ -387,7 +380,7 @@ class ProfileControlService:
         self, profile_id: str
     ) -> tuple[ProfileControlStateData, bool]:
         """Explicit human restore (serialized per profile)."""
-        async with self._lock_for(profile_id):
+        async with self._locks.lock(profile_id):
             return await self._restore(profile_id)
 
     async def _restore(
@@ -481,7 +474,7 @@ class ProfileControlService:
         self, profile_id: str
     ) -> bool | None:
         """Re-issue a pending Supervisor tunnel close (serialized)."""
-        async with self._lock_for(profile_id):
+        async with self._locks.lock(profile_id):
             return await self._retry_pending_supervisor_close(profile_id)
 
     async def _retry_pending_supervisor_close(

@@ -27,6 +27,7 @@ from cbrowser.domain.models import (
     TransportObservationData,
 )
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
+from cbrowser.shared.fencing import fence_by_instance
 from pydantic import SecretStr
 
 logger = logging.getLogger("cbrowser.api.runtime_coordinator")
@@ -482,12 +483,9 @@ class RuntimeCoordinator:
         switch can briefly broadcast the old instance's status under the
         new instance's id (review t022_code_f010).
         """
-        status = self._search_defaults.get(profile_id)
-        if status is None:
-            return None
-        if status.runtime_instance_id != runtime_instance_id:
-            return None
-        return status
+        return fence_by_instance(
+            self._search_defaults.get(profile_id), runtime_instance_id
+        )
 
     async def refresh_search_defaults(
         self, profile_id: str
@@ -663,12 +661,9 @@ class RuntimeCoordinator:
         never broadcast the old generation's transport state under the
         new instance's id.
         """
-        observation = self._transport.get(profile_id)
-        if observation is None:
-            return None
-        if observation.runtime_instance_id != runtime_instance_id:
-            return None
-        return observation
+        return fence_by_instance(
+            self._transport.get(profile_id), runtime_instance_id
+        )
 
     async def refresh_transport(
         self, profile_id: str

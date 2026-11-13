@@ -53,7 +53,7 @@ async def test_manual_reset_preempts_old_backoff_over_real_api(
     ) as api:
         locks = {}
         core = SimpleNamespace(
-            _get_profile_lock=lambda pid: locks.setdefault(pid, asyncio.Lock()),
+            is_profile_locked=lambda pid: locks.setdefault(pid, asyncio.Lock()).locked(),
             has_native_exit=lambda *_: False,
             api=api,
             _auth_headers=lambda: headers,

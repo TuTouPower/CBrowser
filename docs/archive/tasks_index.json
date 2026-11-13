@@ -820,6 +820,22 @@
             "dir": "docs/archive/tasks/t061_session_ui_clarity"
         },
         {
+            "tid": "t062",
+            "slug": "control_plane_boundaries",
+            "title": "跨服务中立模块与运行镜像边界收敛",
+            "status": "done",
+            "branch": "t062_control_plane_boundaries",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "c5f83296ece80a9a0ed9f1e48d957ce332f858c4",
+            "depends_on": "",
+            "conflicts_with": "t061,t063,t064,t065,t066,t068,t069",
+            "note": "p073；原严格契约 AC-001..004 转 t069；本 task 只交付包边界、公共规则与相关职责拆分",
+            "dir": "docs/archive/tasks/t062_control_plane_boundaries"
+        },
+        {
             "tid": "t067",
             "slug": "session_lifecycle_recovery",
             "title": "断线重连状态修复与无人连接环境保留",

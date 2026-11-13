@@ -3,7 +3,7 @@
 import secrets
 
 import pytest
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 
 
 def test_agent_tokens_are_distinct_for_each_profile_and_runtime(tmp_path):

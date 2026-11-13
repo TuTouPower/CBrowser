@@ -11,7 +11,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from cbrowser.gateway.config import GatewayConfig
 from cbrowser.gateway.server import create_gateway_app
 from cbrowser.stream_agent.protocol import AgentRegisterEnvelope, AgentRegisterPayload
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 
 _URL = "/stream/agent/register?profile_id=p1&runtime_instance_id=inst-1"
 

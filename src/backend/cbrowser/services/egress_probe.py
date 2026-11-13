@@ -18,11 +18,7 @@ from urllib.parse import quote
 
 import httpx
 
-from cbrowser.domain.egress_observation import (
-    EgressProbeError,
-    GeoIpLookup,
-    probe_egress,
-)
+from cbrowser.shared.egress import EgressProbeError, GeoIpLookup, probe_egress
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 
 logger = logging.getLogger("cbrowser.services.egress_probe")
@@ -43,7 +39,7 @@ class EgressProbeRunner(Protocol):
 class LocalEgressProbeRunner:
     """In-process probe (tests only).
 
-    Runs :func:`cbrowser.domain.egress_observation.probe_egress` in this
+    Runs :func:`cbrowser.shared.egress.probe_egress` in this
     process.  Correct for logic tests with controlled echo/proxy fixtures,
     wrong for production: this process does not share the Browser network
     perspective, so its egress IP is not the Browser's.
@@ -69,7 +65,7 @@ class LocalEgressProbeRunner:
             kwargs["echo_urls"] = self._echo_urls
         if self._geoip is not None:
             kwargs["geoip"] = self._geoip
-        egress_ip, country = probe_egress(endpoint, **kwargs)
+        egress_ip, country = probe_egress(endpoint.proxy_url(), **kwargs)
         return EgressProbeResult(egress_ip=egress_ip, country_code=country)
 
 

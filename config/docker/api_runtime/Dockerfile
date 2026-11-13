@@ -13,7 +13,9 @@ RUN groupadd -g 1000 appgroup && \
 COPY config/docker/api_runtime/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && rm -f /tmp/requirements.txt
 
-COPY src/backend /app
+COPY src/backend/__init__.py /app/__init__.py
+COPY src/backend/cbrowser /app/cbrowser
+COPY src/backend/migrations /app/migrations
 
 RUN chown -R appuser:appgroup /app && \
     mkdir -p /data/db && \

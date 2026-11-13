@@ -19,7 +19,7 @@ def response(code, data):
 def core_for(tmp_path, api_get, containers=()):
     locks = {}
     return SimpleNamespace(
-        _get_profile_lock=lambda pid: locks.setdefault(pid, asyncio.Lock()),
+        is_profile_locked=lambda pid: locks.setdefault(pid, asyncio.Lock()).locked(),
         has_native_exit=lambda *_: False,
         api=SimpleNamespace(get=api_get),
         _auth_headers=dict,

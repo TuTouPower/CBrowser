@@ -133,6 +133,63 @@ def test_supervisor_translates_container_path_and_forwards_once(
     assert calls[0]["name"] == "report.csv"
 
 
+@pytest.mark.parametrize(
+    ("status", "expected_calls"),
+    [
+        # Permanent rejection (shared delivery classification, t062):
+        # the event is marked processed and never re-posted.
+        (422, 1),
+        # Unavailable (5xx): the event stays pending and is retried on
+        # the next pass.
+        (503, 2),
+    ],
+)
+def test_forwarder_delivery_classification_outcomes(
+    tmp_path: Path, status: int, expected_calls: int
+) -> None:
+    data_root = tmp_path / "data"
+    downloads = data_root / "artifacts" / "p1" / "downloads"
+    downloads.mkdir(parents=True)
+    (downloads / "guid").write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+    events = data_root / "runtime-events" / "p1" / "events" / "downloads"
+    events.mkdir(parents=True)
+    event = {
+        "event_id": "dl_completed_1",
+        "profile_id": "p1",
+        "runtime_instance_id": "i1",
+        "guid": "guid",
+        "suggested_filename": "report.csv",
+        "download_path": "/exchange/downloads/guid",
+        "state": "completed",
+        "received_bytes": 7,
+        "total_bytes": 7,
+        "size_bytes": 7,
+        "sha256": digest,
+    }
+    (events / "dl_completed_1.json").write_text(json.dumps(event), encoding="utf-8")
+
+    calls: list = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(status, json={"status": "error"})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler), base_url="http://api"
+        ) as client:
+            forwarder = DownloadArtifactForwarder(data_root, client)
+            first = await forwarder.forward_pending()
+            second = await forwarder.forward_pending()
+            return first, second
+
+    first, second = asyncio.run(run())
+    assert first == 0
+    assert second == 0
+    assert len(calls) == expected_calls
+
+
 def test_translate_download_path_rejects_escapes(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         translate_download_path("/exchange/downloads/../../evil", tmp_path, "p1")

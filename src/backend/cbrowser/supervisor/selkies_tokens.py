@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 
 _INSTANCE_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 _CREDENTIALS_PREFIX = "selkies_tokens_"

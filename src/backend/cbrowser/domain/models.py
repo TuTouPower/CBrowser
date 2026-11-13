@@ -56,6 +56,21 @@ class ValidationErrorResponse(BaseModel):
     retryable: bool = False
 
 
+class AuthenticatedSession(BaseModel):
+    """Domain view of an authenticated user session (t062).
+
+    This is what auth dependencies hand to routes. It deliberately
+    excludes storage details (the session token hash): the ORM
+    ``SessionModel`` stays inside the auth service layer.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    csrf_token: str
+    expires_at: str
+    created_at: str
+
+
 GROUP_COLORS = Literal[
     "slate", "blue", "teal", "green", "amber", "orange", "red", "violet"
 ]

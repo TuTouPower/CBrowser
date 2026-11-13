@@ -257,7 +257,7 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
     # own sys.path to the fake tree, so font_sets must be copied whole.
     # NOTE: do NOT copy cbrowser/__init__.py or supervisor/__init__.py
     # here: the fake tree's `cbrowser` must stay a namespace package so
-    # imports in deploy.sh (atomic_write's file_storage, the network
+    # imports in deploy.sh (atomic_write's shared.atomic_write, the network
     # config CLI) keep resolving from the real tree via PYTHONPATH, as
     # they always have.  A regular __init__.py in the fake tree would
     # shadow the real package and break those imports.

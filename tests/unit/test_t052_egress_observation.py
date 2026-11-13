@@ -21,11 +21,13 @@ import pytest
 
 from cbrowser.domain.egress_observation import (
     EgressObservation,
+    observation_is_current,
+)
+from cbrowser.shared.egress import (
     EgressProbeError,
     GeoIpLookup,
     GeoIpUnavailableError,
     fetch_egress_ip,
-    observation_is_current,
     probe_egress,
 )
 from cbrowser.domain.proxy_endpoint import parse_proxy_link
@@ -273,7 +275,7 @@ def test_probe_egress_returns_ip_and_country(echo_pair, stub_geoip2):
     )
     lookup = GeoIpLookup(db_path=stub_geoip2)
     egress_ip, country = probe_egress(
-        endpoint,
+        endpoint.proxy_url(),
         echo_urls=[echo_pair["proxied_url"]],
         geoip=lookup,
     )
@@ -290,7 +292,7 @@ def test_probe_egress_geoip_missing_is_failed_not_guessed(
     lookup = GeoIpLookup(db_path=tmp_path / "GeoLite2-City.mmdb")
     with pytest.raises(EgressProbeError) as excinfo:
         probe_egress(
-            endpoint,
+            endpoint.proxy_url(),
             echo_urls=[echo_pair["proxied_url"]],
             geoip=lookup,
         )

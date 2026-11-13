@@ -202,10 +202,8 @@ async def test_apply_preview_policy_uses_fresh_db_state_under_lock(
     """Concurrent PATCH: the policy file write holds the per-profile lock
     and re-reads the authoritative DB policy, so a stale `enabled` passed
     by the caller cannot overwrite a newer `disabled` file."""
-    from cbrowser.services.profile_service import (
-        ProfileLockRegistry,
-        ProfileNotFoundError,
-    )
+    from cbrowser.services.profile_service import ProfileNotFoundError
+    from cbrowser.shared.profile_locks import ProfileLockRegistry
 
     directory = tmp_path / "profiles" / "p-lock" / "preview"
 
@@ -213,6 +211,9 @@ async def test_apply_preview_policy_uses_fresh_db_state_under_lock(
         def __init__(self) -> None:
             self._locks = ProfileLockRegistry()
             self.cleared: list[str] = []
+
+        def profile_lock(self, profile_id: str):
+            return self._locks.lock(profile_id)
 
         async def get_preview_policy(
             self, _profile_id: str
@@ -244,10 +245,8 @@ async def test_apply_releases_lock_before_rpc_and_skips_on_concurrent_delete(
 ) -> None:
     """The 10s supervisor RPC must not hold the per-profile lock, and a
     concurrently deleted profile (fresh is None) must not recreate files."""
-    from cbrowser.services.profile_service import (
-        ProfileLockRegistry,
-        ProfileNotFoundError,
-    )
+    from cbrowser.services.profile_service import ProfileNotFoundError
+    from cbrowser.shared.profile_locks import ProfileLockRegistry
 
     directory = tmp_path / "profiles" / "p-split" / "preview"
 
@@ -255,6 +254,9 @@ async def test_apply_releases_lock_before_rpc_and_skips_on_concurrent_delete(
         def __init__(self) -> None:
             self._locks = ProfileLockRegistry()
             self.cleared: list[str] = []
+
+        def profile_lock(self, profile_id: str):
+            return self._locks.lock(profile_id)
 
         async def get_preview_policy(
             self, _profile_id: str

@@ -11,8 +11,8 @@ from typing import Any
 
 import httpx
 from cbrowser.runtime_agent.protocol import DownloadEventRecord
-from cbrowser.supervisor.event_forwarder import RETRYABLE_4XX
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
+from cbrowser.shared.delivery import REJECTED, classify_delivery_status
 from cbrowser.supervisor.path_validator import PathSecurityError, validate_profile_id
 from pydantic import ValidationError
 
@@ -289,11 +289,9 @@ class DownloadArtifactForwarder:
                     forwarded += 1
                     self._mark_processed(profile_id, instance_id, key)
                     changed = True
-                elif 400 <= response.status_code < 500:
-                    if response.status_code in RETRYABLE_4XX:
-                        if changed:
-                            self._save_processed()
-                        return forwarded
+                elif (
+                    classify_delivery_status(response.status_code) == REJECTED
+                ):
                     logger.warning(
                         "Download event rejected: profile=%s status=%s",
                         profile_id,

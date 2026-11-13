@@ -35,9 +35,9 @@ class DummyResponse:
 def mock_core():
     core = MagicMock()
     locks = {}
-    core._get_profile_lock.side_effect = lambda pid: locks.setdefault(
+    core.is_profile_locked.side_effect = lambda pid: locks.setdefault(
         pid, asyncio.Lock()
-    )
+    ).locked()
     core.has_native_exit.return_value = False
     core._auth_headers.return_value = {"Authorization": "Bearer test-token"}
     core.api = MagicMock()

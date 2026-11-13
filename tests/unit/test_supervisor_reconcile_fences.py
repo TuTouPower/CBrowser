@@ -57,7 +57,7 @@ async def test_reconcile_does_not_publish_inflight_or_unprotected_pair(
         ),
     )
     core = SupervisorCore(adapter, PortAllocator(), None, api)
-    lock = core._get_profile_lock("p")
+    lock = core.profile_lock("p")
     if in_flight:
         await lock.acquire()
     try:

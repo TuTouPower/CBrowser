@@ -81,6 +81,10 @@
 
 Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预算计算压力，结合真实前台可见性下发 Profile 级 FPS cap。缺失或失败样本不能当低负载，单个 Profile 采样或 RPC 失败不阻断其他 Profile；解除限制后由 Stream 活动策略决定恢复 8/30 FPS。全后台不误触发前台 cap，Viewer 心跳不建立控制租约。
 
+## 跨服务中立模块与镜像边界（t062）
+
+Gateway 与 Supervisor 的双向依赖已删除：端点/Origin、Agent 凭证、原子写、per-profile 锁、投递分类与实例 fence 收敛到中立包 `cbrowser/shared/` 各一份实现，全部消费方（含 REST 视图与协调器的 fence、两个投递转发器、三个锁持有方）改走同一实现；Supervisor 控制端口以 `DEFAULT_SUPERVISOR_PORT` 为唯一权威（8091 分裂消除）。认证返回领域会话对象、egress 探针 I/O 移出 domain。运行镜像按包粒度打包，闭包以 Dockerfile 组装文件树实际导入验证（单元层）；真实镜像构建与 readiness 属部署验证，顺延本地执行（见 task t062 的 AC-005 登记）。
+
 ## 验证边界
 
 验证分为单元/真实 HTTP、独立 Supervisor 与 API 进程、完整 Docker 容器图、网络内核正负对照、CPU 采样和官方 Chrome 实际帧数。各层证据不互相替代。完整部署和容量/P95/8小时/1000次输入验收仍按架构计划后续阶段执行；公网与原生 Linux x86_64 仅两项记为 USER_WAIVED。

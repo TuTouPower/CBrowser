@@ -164,22 +164,6 @@
             "dir": "docs/tasks/t060_gate_infra_and_privacy"
         },
         {
-            "tid": "t062",
-            "slug": "control_plane_boundaries",
-            "title": "跨服务中立模块与运行镜像边界收敛",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "",
-            "conflicts_with": "t061,t063,t064,t065,t066,t068,t069",
-            "note": "p073；原严格契约 AC-001..004 转 t069；本 task 只交付包边界、公共规则与相关职责拆分",
-            "dir": "docs/tasks/t062_control_plane_boundaries"
-        },
-        {
             "tid": "t063",
             "slug": "selkies_owned_extensions",
             "title": "Selkies 采集与输入扩展改为自有稳定边界",

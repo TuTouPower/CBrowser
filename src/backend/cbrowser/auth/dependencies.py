@@ -6,9 +6,9 @@ import hmac
 from typing import Annotated
 from urllib.parse import urlsplit
 
-from cbrowser.adapters.database.models import SessionModel
 from cbrowser.auth.service import AuthService
-from cbrowser.gateway.endpoint import normalize_origin
+from cbrowser.domain.models import AuthenticatedSession
+from cbrowser.shared.endpoints import normalize_origin
 from fastapi import Depends, HTTPException, Request, status
 
 
@@ -25,7 +25,7 @@ def get_auth_service(request: Request) -> AuthService:
 async def require_user_session(
     request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
-) -> SessionModel:
+) -> AuthenticatedSession:
     """Validate that the request carries an active cbrowser_session cookie."""
     session_token = request.cookies.get("cbrowser_session")
     if not session_token:
@@ -47,8 +47,8 @@ async def require_user_session(
 
 async def require_csrf_and_origin(
     request: Request,
-    session: Annotated[SessionModel, Depends(require_user_session)],
-) -> SessionModel:
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
+) -> AuthenticatedSession:
     """Validate user session and verify CSRF token and allowed Origin for writes."""
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         # 1. CSRF Verification

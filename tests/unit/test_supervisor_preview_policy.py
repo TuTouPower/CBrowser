@@ -375,10 +375,13 @@ async def test_apply_preview_policy_chowns_policy_to_runtime_uid(
     core.docker.runtime_gid = 1000  # type: ignore[attr-defined]
     chowned: list = []
 
-    def _record(path, uid, gid, **kwargs):
-        chowned.append((str(path), uid, gid))
+    def _record(fd, uid, gid, **kwargs):
+        # fchown on the staging descriptor (shared atomic write, t062):
+        # record whether the final path was already visible at that
+        # moment — it must not be.
+        chowned.append((fd, uid, gid, (_pdir(core) / "policy.json").exists()))
 
-    monkeypatch.setattr("os.chown", _record)
+    monkeypatch.setattr("os.fchown", _record)
     core._agent_uds_client = _control_uds([])  # type: ignore[method-assign]
 
     await core.apply_preview_policy(
@@ -388,12 +391,11 @@ async def test_apply_preview_policy_chowns_policy_to_runtime_uid(
         ),
     )
 
-    # chown happens on the staging tmp before replace: no root:root 0600
-    # window on the final path.
+    # Ownership is set on the staging file before replace: no root:root
+    # 0600 window on the final path.
     assert len(chowned) == 1
-    assert chowned[0][1:] == (1000, 1000)
-    assert chowned[0][0].endswith(".tmp")
-    assert "policy.json" in chowned[0][0]
+    assert chowned[0][1:3] == (1000, 1000)
+    assert chowned[0][3] is False
     assert read_policy(_pdir(core)) == PreviewPolicy(
         enabled=True, epoch=3, runtime_instance_id="inst_1"
     )
@@ -414,7 +416,7 @@ async def test_apply_preview_policy_chown_failure_leaves_no_root_file(
     def _fail_chown(*_args, **_kwargs):
         raise OSError("chown failed")
 
-    monkeypatch.setattr("os.chown", _fail_chown)
+    monkeypatch.setattr("os.fchown", _fail_chown)
     core._agent_uds_client = _control_uds([])  # type: ignore[method-assign]
 
     with pytest.raises(DockerSandboxError):
@@ -426,7 +428,7 @@ async def test_apply_preview_policy_chown_failure_leaves_no_root_file(
         )
 
     assert not (_pdir(core) / "policy.json").exists()
-    assert list(_pdir(core).glob(".*.tmp")) == []
+    assert list(_pdir(core).glob("*.tmp")) == []
 
 
 def _failing_uds(calls: list, *, status: int = 500):

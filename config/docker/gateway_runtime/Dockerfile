@@ -17,16 +17,11 @@ COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
 COPY src/backend/cbrowser/udp_mux.py /app/cbrowser/udp_mux.py
 COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py
-COPY src/backend/cbrowser/domain /app/cbrowser/domain
 COPY src/backend/cbrowser/network_config.py /app/cbrowser/network_config.py
-COPY src/backend/cbrowser/shared/__init__.py /app/cbrowser/shared/__init__.py
-COPY src/backend/cbrowser/shared/client_ip.py /app/cbrowser/shared/client_ip.py
+COPY src/backend/cbrowser/shared /app/cbrowser/shared
 COPY src/backend/cbrowser/gateway /app/cbrowser/gateway
 COPY src/backend/cbrowser/stream_agent/__init__.py /app/cbrowser/stream_agent/__init__.py
 COPY src/backend/cbrowser/stream_agent/protocol.py /app/cbrowser/stream_agent/protocol.py
-COPY src/backend/cbrowser/supervisor/__init__.py /app/cbrowser/supervisor/__init__.py
-COPY src/backend/cbrowser/supervisor/agent_credentials.py /app/cbrowser/supervisor/agent_credentials.py
-COPY src/backend/cbrowser/supervisor/file_storage.py /app/cbrowser/supervisor/file_storage.py
 
 RUN chown -R appuser:appgroup /app
 

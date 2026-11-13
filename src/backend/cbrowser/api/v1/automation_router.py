@@ -9,7 +9,7 @@ from typing import Annotated
 from urllib.parse import quote, urlsplit
 
 import websockets
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.api.v1.router import get_profile_service
 from cbrowser.auth.dependencies import require_user_session
 from cbrowser.domain.models import AutomationEndpointResponse
@@ -37,7 +37,7 @@ def _bearer_token(authorization: str) -> str:
 async def automation_status(
     profile_id: str,
     request: Request,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     try:

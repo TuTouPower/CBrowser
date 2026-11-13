@@ -16,7 +16,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, derive_origin_whitelist
 from cbrowser.secret_files import read_secret_file
 

@@ -270,7 +270,7 @@ def _forwarder_with_status(tmp_path, status_code: int) -> EventForwarder:
 @pytest.mark.parametrize("status_code", [401, 403, 408, 429, 500, 503])
 async def test_retryable_statuses_keep_event_queued(tmp_path, status_code) -> None:
     """A8: auth/throttling/gateway failures are unavailable, never dead-letter."""
-    from cbrowser.supervisor.event_forwarder import UNAVAILABLE
+    from cbrowser.shared.delivery import UNAVAILABLE
 
     forwarder = _forwarder_with_status(tmp_path, status_code)
     try:
@@ -288,7 +288,7 @@ async def test_retryable_statuses_keep_event_queued(tmp_path, status_code) -> No
 @pytest.mark.parametrize("status_code", [400, 422])
 async def test_permanent_rejection_dead_letters_event(tmp_path, status_code) -> None:
     """A8: a definite semantic rejection dead-letters the spool copy once."""
-    from cbrowser.supervisor.event_forwarder import REJECTED
+    from cbrowser.shared.delivery import REJECTED
 
     forwarder = _forwarder_with_status(tmp_path, status_code)
     try:

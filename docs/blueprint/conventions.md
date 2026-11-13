@@ -21,6 +21,7 @@
 |---|---|---|
 |**跨服务接口契约**|OpenAPI 规范导出、Stream Gateway 信令协议|`schemas/openapi/`、`schemas/stream/`、`schemas/runtime/`|
 |**代码内数据契约**|Pydantic model、API 请求/响应 DTO|`src/backend/cbrowser/domain/`|
+|**跨服务中立实现**|端点/Origin、Agent 凭证、原子写、per-profile 锁、投递分类、实例 fence、出口探针 I/O|`src/backend/cbrowser/shared/`（除 `secret_files` 叶子外零 cbrowser import，见 architecture §5.6）|
 |**前端 API 类型**|由 OpenAPI 生成的 TypeScript 接口|`src/frontend/src/shared/api/generated/`|
 |**数据库 schema**|SQLAlchemy ORM Models、Alembic 迁移脚本|`src/backend/cbrowser/adapters/database/models.py`、`src/backend/migrations/versions/`|
 |**配置 schema**|运行时配置验证、环境变量定义|`src/backend/cbrowser/*/config.py`、`config/`|
@@ -47,6 +48,7 @@
 
 写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。
+后端运行时同理且只有一份实现：`from cbrowser.shared.atomic_write import atomic_write_text`（独占临时文件 + fsync + replace + 目录 fsync；失败不破坏旧文件、不误删他人暂存）。禁止在服务包内再写原子写变体；无法整载荷落盘的流式写（如 artifact 上传）为例外，但必须满足同一耐久契约（fsync + replace + 目录 fsync）。
 
 ## 6. DESIGN.md 落点与业务代码只用语义 token（t036）
 
