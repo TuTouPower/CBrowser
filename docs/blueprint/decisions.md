@@ -347,3 +347,19 @@
     - **去代际化**：产品无代际标识；迁移文件改名 `0001_baseline.py`（原名含代际后缀，revision `b7e1c9d4a2f3` 不变），现行文档/源码/脚本中的代际自指清除，由 hygiene 测试守护；例外仅 deploy.sh 的旧库探测（须写出真实旧路径）与对应断言。
 - 复查条件：真实部署（AC-013）、双实例真实 Docker（AC-014）、真实 Docker 挂起（AC-015）均未在本机验证（无 Docker 环境），须在用户机按 t032 演练补验；升级后 t051 之前创建的沙箱/网络无 instance-id 部署标签，新 Supervisor 不认领，属 A59 字面语义，由既有 orphan 路径处置。
 - 替代：选项 1 留下 bind mount 失稳根因，只治标；选项 3 破坏运行时实例查找。指针两文件 + 无 fsync、不可读库 fail-open、project 名豁免均不保留。
+
+## 029 代理链接为唯一录入，国家为 Browser 同视角观测（2026-11-11，t052）
+
+- 背景：代理弹窗暴露 9 个平铺字段 + 独立「从 URL 粘贴」框，链接与字段是两套可漂移的表示；`country_code` 被建模为可写静态配置，实际是出口 IP 的观测结果（有来源、时间、视角、端点指纹、凭据版本与失效条件）；从 API 进程经代理探测得到的是 API 网络路径，可能与 Browser 真实出口不同；`127.0.0.1` 是视角相关地址，宿主、API 容器、Browser 容器指向三个不同网络栈；探测接口若按请求 host 复用已存密码会形成 SSRF + 凭据外送。来源 p060（已归档）与 parked p040 的出口 IP 部分；用户 2026-11-10 裁决：loopback 端点由 Supervisor 按 Browser 网络视角映射到宿主并单端口放行（不引入 egress broker，p038 保持 parked）；出口国家在保存后自动探测，不提供保存前草稿探测接口。
+- 选项：
+    1. 保留平铺字段录入 + 前端粘贴辅助，国家仍手填或由 API 进程探测。
+    2. 链接为唯一录入（`ProxyEndpoint` 值对象 + 四格式解析器），国家改为 Supervisor 在 Browser 同视角的 helper 内探测、本机 GeoLite2 判定，loopback 端点由 Supervisor 映射并单端口放行（本 task 采用）。
+    3. 引入 egress broker 统一代理出口。
+- 结论：采用选项 2。
+    - **链接唯一录入**：`ProxyCreateRequest` / `ProxyUpdateRequest` 只接受 `proxy_url`（`extra="forbid"`）；四种格式（标准 URL、无协议 `host:port` 默认 http、`host:port:user:pass`、`user:pass@host:port`），IPv6 必须括号，密码 percent-decode；`ProxyResponse` 只返回脱敏链接与派生只读字段，密码永不进响应。名称省略时由 `host:port` 派生。PATCH 的 `proxy_url` 省略 = 端点不变，提供 = 整端点（含密码）整体替换。
+    - **国家是观测**：迁移 `0006` 删除 `proxies.country_code` 列（无真实用户，不做数据迁移）；新增 `proxy_egress_observations` 表（指纹、凭据版本、视角 `browser`、出口 IP、国家、来源、状态、错误码、观测/过期时间，TTL 24 小时）。端点指纹或凭据版本变化、观测过期时旧观测立即失效；探测失败记 failed 行、不猜国家。
+    - **Browser 同视角探测**：Supervisor 用 Browser 镜像建短生命周期 helper（专用 bridge 网络、browser-role 网络策略、0600 凭证文件、GeoIP 缓存只读挂载），经 `runtime_agent.egress_probe` 访问 IP 回显端点（复用 cloakbrowser SDK 的三个回显服务，只发一次 HTTPS GET 取自身出口 IP），国家由本机 GeoLite2 判定，出口 IP 不发往第三方地理库。探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID（非空 body 422），服务端加载已存端点与凭据执行。
+    - **loopback 映射**：`127.0.0.0/8` / `localhost` / `::1` 端点在库与指纹中保持原样，交给容器前映射为 `host.docker.internal` 并加 `extra_hosts={"host.docker.internal": "host-gateway"}`；网络策略只放行映射地址与该代理端口。映射失败时启动与探测在执行前以 `LoopbackMappingError` 明确报错并给出处置提示，绝不出现启动成功但无法联网。
+    - **前端**：弹窗默认只显示代理链接、备注与只读国家状态，高级设置默认折叠；链接与高级字段双向同步；失焦显示脱敏链接；编辑端点而密码框留空时拦截提交（防静默清除已存密码）。
+- 复查条件：真实 Docker（OrbStack）上的 helper 启动、host-gateway 映射与策略放行须在用户机实测（本机无 Docker，fake-docker 单元测试不能代替；t052 AC-010/AC-011 真实部分与 AC-012）；`GeoLite2-City.mmdb` 在真实部署 engine-cache 中的存在性同样待用户机验证；IP 回显服务不可用时探测记 failed，不降级猜测。
+- 替代：选项 1 保留模型错误与视角错误；选项 3（egress broker / 内置 mihomo）属 p038，保持 parked。不做连通性与延迟检测（p040 剩余部分保持 parked）、不做保存前草稿探测、不允许人工声明国家。

@@ -26,7 +26,6 @@ def _proxy_payload(name: str = "px", password: str | None = "s3cr3t") -> dict:
         "port": 1080,
         "username": "user",
         "password": password,
-        "country_code": "US",
         "region_label": "East",
         "notes": "primary",
     }
@@ -347,8 +346,13 @@ async def test_config_version_snapshot_exposes_proxy_credential_revision(
 
 
 def test_group_and_proxy_request_validation_rejects_invalid_values() -> None:
-    """AC-003/004: group name/color and proxy scheme/host/port are
-    validated at the request boundary before reaching the repository."""
+    """AC-003/004: group name/color and proxy link are validated at the
+    request boundary before reaching the repository.
+
+    t052: the proxy entry is link-only, so the old flat scheme/host/port
+    cases are replaced by link-validation cases with the same intent
+    (invalid values are rejected before the repository is touched).
+    """
     from pydantic import ValidationError
 
     from cbrowser.domain.models import GroupCreateRequest, ProxyCreateRequest
@@ -358,13 +362,14 @@ def test_group_and_proxy_request_validation_rejects_invalid_values() -> None:
     with pytest.raises(ValidationError):
         GroupCreateRequest(name="g", color="neon")  # type: ignore[arg-type]
     with pytest.raises(ValidationError):
-        ProxyCreateRequest(
-            name="p", scheme="ftp", host="h", port=8080  # type: ignore[arg-type]
-        )
+        ProxyCreateRequest(proxy_url="ftp://proxy.example.com:8080")
     with pytest.raises(ValidationError):
-        ProxyCreateRequest(name="p", scheme="http", host="h", port=0)
+        ProxyCreateRequest(proxy_url="http://proxy.example.com:0")
     with pytest.raises(ValidationError):
-        ProxyCreateRequest(name="p", scheme="http", host="", port=8080)
+        ProxyCreateRequest(proxy_url="")
+    with pytest.raises(ValidationError):
+        # Flat fields are no longer a valid entry shape (t052 link-only).
+        ProxyCreateRequest(proxy_url="http://h:8080", scheme="http")  # type: ignore[call-arg]
 
 
 @pytest.mark.asyncio

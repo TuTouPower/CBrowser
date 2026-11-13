@@ -22,6 +22,13 @@ def browser_network_name(prefix: str, profile_id: str) -> str:
     return f"{prefix}-browser-net-{profile_id}"
 
 
+def probe_network_name(prefix: str, probe_id: str) -> str:
+    """One-shot network for an egress probe helper (t052).  A fresh
+    network per probe keeps probes isolated from each other and from
+    profile networks; it is removed after the probe."""
+    return f"{prefix}-probe-net-{probe_id}"
+
+
 def network_labels(
     prefix: str,
     profile_id: str,

@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from cbrowser.adapters.database.models import (
@@ -15,11 +15,16 @@ from cbrowser.adapters.database.models import (
     ProfileGroupModel,
     ProfileModel,
     ProfileRuntimeModel,
+    ProxyEgressObservationModel,
     ProxyModel,
     RuntimeEventModel,
     SettingModel,
 )
 from cbrowser.adapters.database.session import write_transaction
+from cbrowser.domain.egress_observation import (
+    EgressObservation,
+    observation_is_current,
+)
 from cbrowser.domain.models import (
     ConfigVersionSnapshot,
     GroupResponse,
@@ -35,6 +40,7 @@ from cbrowser.domain.models import (
     NetworkApplyPhase,
     utc_now_iso,
 )
+from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
     BLOCK_AFTER_RUNTIME_FAILURES,
@@ -1141,7 +1147,18 @@ class ProfileRepository:
     # ---- Proxies (t035 AC-004 / AC-005 / AC-006) -----------------------
 
     @staticmethod
-    def _to_domain_proxy(m: ProxyModel, used_by_count: int) -> ProxyResponse:
+    def _to_domain_proxy(
+        m: ProxyModel,
+        used_by_count: int,
+        observation: EgressObservation | None = None,
+    ) -> ProxyResponse:
+        endpoint = ProxyEndpoint(
+            scheme=m.scheme,  # type: ignore[arg-type]
+            host=m.host,
+            port=m.port,
+            username=m.username,
+            password=None,
+        )
         return ProxyResponse(
             id=m.id,
             name=m.name,
@@ -1151,13 +1168,132 @@ class ProfileRepository:
             username=m.username,
             has_password=bool(m.password),
             credential_revision=m.credential_revision,
-            country_code=m.country_code,
+            proxy_url=endpoint.redacted_link(),
+            country_code=observation.country_code if observation else None,
+            egress_ip=observation.egress_ip if observation else None,
+            observation_status=observation.status if observation else "unknown",  # type: ignore[arg-type]
+            observed_at=observation.observed_at.isoformat()
+            if observation and observation.observed_at
+            else None,
             region_label=m.region_label,
             notes=m.notes,
             used_by_count=used_by_count,
             created_at=m.created_at,
             updated_at=m.updated_at,
         )
+
+    @staticmethod
+    def _observation_to_domain(m: ProxyEgressObservationModel) -> EgressObservation:
+        def _parse(value: str | None) -> datetime.datetime | None:
+            return datetime.fromisoformat(value) if value else None
+
+        return EgressObservation(
+            proxy_id=m.proxy_id,
+            endpoint_fingerprint=m.endpoint_fingerprint,
+            credential_revision=m.credential_revision,
+            perspective=m.perspective,
+            egress_ip=m.egress_ip,
+            country_code=m.country_code,
+            source=m.source,
+            status=m.status,  # type: ignore[arg-type]
+            error_code=m.error_code,
+            observed_at=_parse(m.observed_at),
+            expires_at=_parse(m.expires_at),
+        )
+
+    @staticmethod
+    def _visible_observation(
+        obs: EgressObservation, proxy: ProxyModel, now: datetime.datetime
+    ) -> EgressObservation | None:
+        """Apply the currency rule to one row: a pending/failed row is
+        still surfaced (its status drives the UI "detecting"/"unknown"
+        states); only a stale *ok* row is hidden (AC-007)."""
+        if obs.status != "ok":
+            return obs
+        endpoint = ProxyEndpoint(
+            scheme=proxy.scheme,  # type: ignore[arg-type]
+            host=proxy.host,
+            port=proxy.port,
+            username=proxy.username,
+        )
+        if observation_is_current(
+            obs, endpoint.fingerprint, proxy.credential_revision, now
+        ):
+            return obs
+        return None
+
+    async def _current_observation(
+        self, session: AsyncSession, proxy: ProxyModel
+    ) -> EgressObservation | None:
+        """Latest observation row, but only when it is still current for
+        the proxy's present endpoint fingerprint and credential revision
+        (AC-007: endpoint/credential change or expiry invalidates it)."""
+        stmt = (
+            select(ProxyEgressObservationModel)
+            .where(ProxyEgressObservationModel.proxy_id == proxy.id)
+            .order_by(
+                ProxyEgressObservationModel.observed_at.desc(),
+                ProxyEgressObservationModel.created_at.desc(),
+            )
+            .limit(1)
+        )
+        row = (await session.execute(stmt)).scalar_one_or_none()
+        if row is None:
+            return None
+        obs = self._observation_to_domain(row)
+        return self._visible_observation(obs, proxy, datetime.now(timezone.utc))
+
+    async def _current_observations(
+        self, session: AsyncSession, models: list[ProxyModel]
+    ) -> dict[str, EgressObservation | None]:
+        """Current observation per proxy in a single bounded query
+        (code f005/f007).
+
+        The per-row ``_current_observation`` inside ``list_proxies`` was
+        one SELECT per proxy; this fetches every proxy's latest row with
+        one ``WHERE proxy_id IN (...)``.  The first batch version fetched
+        *all* history rows and picked the latest in Python, so the
+        transfer grew with history (code f007).  The query below ranks
+        rows per proxy with ``ROW_NUMBER()`` and only returns the latest
+        row per proxy — one row per proxy, in a single SELECT — with the
+        same ordering as the single-row path (``observed_at`` desc,
+        ``created_at`` desc; ``id`` desc only breaks exact ties
+        deterministically).
+        """
+        result: dict[str, EgressObservation | None] = {m.id: None for m in models}
+        if not models:
+            return result
+        ranked = (
+            select(
+                ProxyEgressObservationModel.id,
+                func.row_number()
+                .over(
+                    partition_by=ProxyEgressObservationModel.proxy_id,
+                    order_by=[
+                        ProxyEgressObservationModel.observed_at.desc(),
+                        ProxyEgressObservationModel.created_at.desc(),
+                        ProxyEgressObservationModel.id.desc(),
+                    ],
+                )
+                .label("rn"),
+            )
+            .where(ProxyEgressObservationModel.proxy_id.in_([m.id for m in models]))
+            .subquery()
+        )
+        stmt = select(ProxyEgressObservationModel).where(
+            ProxyEgressObservationModel.id.in_(
+                select(ranked.c.id).where(ranked.c.rn == 1)
+            )
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+        now = datetime.now(timezone.utc)
+        by_id = {m.id: m for m in models}
+        for row in rows:
+            obs = self._observation_to_domain(row)
+            result[row.proxy_id] = self._visible_observation(
+                obs, by_id[row.proxy_id], now
+            )
+        return result
 
     async def _proxy_used_by(
         self, session: AsyncSession, proxy_id: str
@@ -1194,9 +1330,12 @@ class ProfileRepository:
             models = (
                 await session.execute(select(ProxyModel))
             ).scalars().all()
+            observations = await self._current_observations(session, models)
             return [
                 self._to_domain_proxy(
-                    m, len(await self._proxy_used_by(session, m.id))
+                    m,
+                    len(await self._proxy_used_by(session, m.id)),
+                    observations[m.id],
                 )
                 for m in models
             ]
@@ -1207,7 +1346,9 @@ class ProfileRepository:
             if m is None:
                 return None
             return self._to_domain_proxy(
-                m, len(await self._proxy_used_by(session, proxy_id))
+                m,
+                len(await self._proxy_used_by(session, proxy_id)),
+                await self._current_observation(session, m),
             )
 
     async def get_proxy_credentials(self, proxy_id: str) -> dict[str, Any] | None:
@@ -1229,6 +1370,83 @@ class ProfileRepository:
                 "password": m.password,
                 "credential_revision": m.credential_revision,
             }
+
+    async def get_proxy_endpoint(self, proxy_id: str) -> dict[str, Any] | None:
+        """Endpoint + fingerprint for the egress probe runner (t052).
+
+        Service-plane only: includes the password (the probe must present
+        it to the upstream proxy).  Never returned by the public API.
+        """
+        async with self._session_maker() as session:
+            m = await session.get(ProxyModel, proxy_id)
+            if m is None:
+                return None
+            endpoint = ProxyEndpoint(
+                scheme=m.scheme,  # type: ignore[arg-type]
+                host=m.host,
+                port=m.port,
+                username=m.username,
+                password=m.password,
+            )
+            return {
+                "scheme": endpoint.scheme,
+                "host": endpoint.host,
+                "port": endpoint.port,
+                "username": endpoint.username,
+                "password": endpoint.password,
+                "credential_revision": m.credential_revision,
+                "endpoint_fingerprint": endpoint.fingerprint,
+                "is_loopback": endpoint.is_loopback,
+            }
+
+    async def record_egress_observation(
+        self, proxy_id: str, observation: EgressObservation
+    ) -> EgressObservation:
+        """Append one observation row (history is kept; currency is
+        computed on read).  Returns the recorded observation."""
+        now = utc_now_iso()
+        model = ProxyEgressObservationModel(
+            id=str(uuid.uuid4()),
+            proxy_id=proxy_id,
+            endpoint_fingerprint=observation.endpoint_fingerprint,
+            credential_revision=observation.credential_revision,
+            perspective=observation.perspective,
+            egress_ip=observation.egress_ip,
+            country_code=observation.country_code,
+            source=observation.source,
+            status=observation.status,
+            error_code=observation.error_code,
+            observed_at=(
+                observation.observed_at.isoformat()
+                if observation.observed_at
+                else now
+            ),
+            expires_at=(
+                observation.expires_at.isoformat()
+                if observation.expires_at
+                else None
+            ),
+            created_at=now,
+        )
+        async with self._session_maker() as session, write_transaction(session):
+            session.add(model)
+        return observation
+
+    async def get_egress_observations(
+        self, proxy_id: str
+    ) -> list[EgressObservation]:
+        """Observation history, latest first (diagnostics / review)."""
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProxyEgressObservationModel)
+                .where(ProxyEgressObservationModel.proxy_id == proxy_id)
+                .order_by(
+                    ProxyEgressObservationModel.observed_at.desc(),
+                    ProxyEgressObservationModel.created_at.desc(),
+                )
+            )
+            rows = (await session.execute(stmt)).scalars().all()
+            return [self._observation_to_domain(r) for r in rows]
 
     async def create_proxy(self, payload: dict[str, Any]) -> ProxyResponse:
         now = utc_now_iso()
@@ -1303,7 +1521,11 @@ class ProfileRepository:
                         p_model.current_config_version = new_version
                         p_model.updated_at = now
                 return (
-                    self._to_domain_proxy(model, len(affected)),
+                    self._to_domain_proxy(
+                        model,
+                        len(affected),
+                        await self._current_observation(session, model),
+                    ),
                     affected,
                 )
         except IntegrityError as exc:

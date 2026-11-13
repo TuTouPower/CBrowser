@@ -287,6 +287,22 @@ class RuntimeCoordinator:
     def clear_last_error(self, profile_id: str) -> None:
         self._last_errors.pop(profile_id, None)
 
+    def egress_probe_runner(self):
+        """Production egress-probe runner (t052): probes run in the
+        Supervisor's helper container, which shares the Browser network
+        perspective.  Returns ``None`` when no Supervisor is configured —
+        the service then records a failed observation instead of probing
+        from the API process (whose egress would be the wrong one)."""
+        from cbrowser.services.egress_probe import SupervisorEgressProbeRunner
+
+        if not self.is_enabled():
+            return None
+        return SupervisorEgressProbeRunner(
+            supervisor_url=self.supervisor_url,
+            supervisor_token=self._token_str,
+            transport=self.transport,
+        )
+
     async def get_font_runtime(
         self, profile_id: str
     ) -> tuple[str | None, list[str]]:

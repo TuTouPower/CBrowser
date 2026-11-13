@@ -612,3 +612,16 @@ export function useDeleteProxyMutation(
     },
   });
 }
+
+export function useProbeProxyMutation(
+  client: ApiClient = defaultApiClient,
+): UseMutationResult<ProxyResponse, Error, string> {
+  const queryClient = useQueryClient();
+  return useActionKeyMutation({
+    mutationFn: ({ input }) => client.proxies.probe(input),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+    },
+  });
+}

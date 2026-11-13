@@ -219,6 +219,17 @@ def cache_init_labels(
     }
 
 
+def probe_helper_labels(
+    prefix: str, deployment_id: str | None = None
+) -> dict[str, str]:
+    return {
+        "com.cbrowser.prefix": prefix,
+        "com.cbrowser.role": "egress-probe",
+        "com.cbrowser.managed-by": "supervisor",
+        **_instance_label(deployment_id),
+    }
+
+
 def cache_init_environment(
     need_geoip: bool, marker_name: str, run_id: str
 ) -> dict[str, str]:

@@ -58,9 +58,16 @@ from cbrowser.runtime_agent.protocol import (
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.agent_credentials import AgentCredentials
 from cbrowser.supervisor.container_spec import container_runtime_instance_id
+from cbrowser.domain.proxy_endpoint import (
+    ProxyEndpoint,
+    ProxyLinkError,
+    map_endpoint_for_container,
+)
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
+    EgressProbeFailure,
+    LoopbackMappingError,
     StreamContainerResidueError,
     StreamResidue,
 )
@@ -2377,10 +2384,88 @@ class SupervisorCore:
             "proxy_credential_revision": frozen if frozen is not None else current,
         }
 
+    async def probe_proxy_egress(
+        self, proxy_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Run one egress probe for a proxy (t052).
+
+        ``payload`` carries the stored endpoint + credentials (from the
+        API, over the token-authenticated control plane); the public probe
+        API accepts only the proxy id.  The endpoint fingerprint in the
+        payload must match the endpoint, or the probe is refused.  The
+        result is always a dict — ``{"status": "ok", "egress_ip",
+        "country_code"}`` or ``{"status": "failed", "error_code"}`` — so
+        the API can record a failed observation instead of failing the
+        request.
+        """
+        try:
+            endpoint = ProxyEndpoint(
+                scheme=payload["scheme"],
+                host=payload["host"],
+                port=payload["port"],
+                username=payload.get("username"),
+                password=payload.get("password"),
+            )
+        except (KeyError, TypeError, ValueError, ProxyLinkError):
+            return {"status": "failed", "error_code": "invalid_endpoint"}
+        if endpoint.fingerprint != payload.get("endpoint_fingerprint"):
+            return {"status": "failed", "error_code": "endpoint_mismatch"}
+        credentials = {
+            "password": endpoint.password,
+            "credential_revision": payload.get("credential_revision"),
+        }
+        try:
+            egress_ip, country = await asyncio.to_thread(
+                self.docker.run_egress_probe,
+                proxy_id=proxy_id,
+                endpoint=endpoint,
+                credentials=credentials,
+            )
+        except EgressProbeFailure as exc:
+            return {"status": "failed", "error_code": exc.code}
+        except LoopbackMappingError:
+            return {"status": "failed", "error_code": "loopback_mapping_unavailable"}
+        except DockerSandboxError as exc:
+            logger.warning(
+                "Egress probe failed: proxy=%s error_type=%s",
+                proxy_id,
+                type(exc).__name__,
+            )
+            return {"status": "failed", "error_code": "probe_failed"}
+        return {
+            "status": "ok",
+            "egress_ip": egress_ip,
+            "country_code": country,
+        }
+
     def _write_proxy_credentials(
         self, path: Path, credentials: dict[str, Any]
     ) -> None:
-        atomic_write_text(path, json.dumps(credentials), mode=0o600)
+        """Write the runtime credentials file (0600).
+
+        t052 AC-010: a loopback host is rewritten to the host-gateway
+        hostname here, so the Browser container reaches the host-local
+        proxy.  The stored endpoint (and its fingerprint) keeps the
+        loopback host; only this runtime copy is mapped.
+        """
+        runtime_credentials = dict(credentials)
+        host = runtime_credentials.get("host")
+        if isinstance(host, str) and host:
+            try:
+                endpoint = ProxyEndpoint(
+                    scheme=runtime_credentials.get("scheme", "http"),
+                    host=host,
+                    port=runtime_credentials.get("port", 0),
+                    username=runtime_credentials.get("username"),
+                    password=runtime_credentials.get("password"),
+                )
+            except (ProxyLinkError, TypeError, ValueError):
+                endpoint = None
+            if endpoint is not None:
+                runtime_credentials["host"] = map_endpoint_for_container(
+                    endpoint
+                ).host
+        atomic_write_text(path, json.dumps(runtime_credentials), mode=0o600)
         if getattr(self.docker, "manage_ownership", False):
             try:
                 os.chown(

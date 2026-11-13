@@ -46,6 +46,8 @@ from cbrowser.supervisor.port_allocator import (
 )
 from cbrowser.supervisor.protocol import (
     ConvergeStreamsRequest,
+    EgressProbeRequest,
+    EgressProbeResponse,
     ProfileRuntimeStatus,
     ReadinessResponse,
     RebuildEdgeRequest,
@@ -211,6 +213,30 @@ def create_control_app(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Runtime stop failed",
             ) from None
+
+    @app.post(
+        "/supervisor/v1/proxies/{proxy_id}/probe",
+        response_model=EgressProbeResponse,
+        dependencies=[Depends(verify_token)],
+    )
+    async def probe_proxy(proxy_id: str, req: EgressProbeRequest):
+        """Egress probe (t052, control plane only).
+
+        The request carries the stored endpoint + credentials (the public
+        API accepts only the proxy id and loads them server-side).  The
+        probe runs in a helper container sharing the Browser network
+        perspective; the response never contains the password.
+        """
+        result = await core.probe_proxy_egress(
+            proxy_id, req.model_dump()
+        )
+        return EgressProbeResponse(
+            proxy_id=proxy_id,
+            status=result["status"],  # type: ignore[arg-type]
+            egress_ip=result.get("egress_ip"),
+            country_code=result.get("country_code"),
+            error_code=result.get("error_code"),
+        )
 
     @app.get(
         "/supervisor/v1/profiles/{profile_id}/status",

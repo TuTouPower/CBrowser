@@ -76,6 +76,32 @@ async def update_proxy(
     return proxy
 
 
+@proxy_router.post(
+    "/{proxy_id}/probe", response_model=ProxyResponse
+)
+async def probe_proxy(proxy_id: str, request: Request, service: Service):
+    """Manual egress probe (t052 AC-006/AC-009).
+
+    The request carries no body: only the proxy id is accepted, and the
+    stored endpoint + credentials are loaded server-side, so a caller can
+    never redirect the stored password to another host, port, scheme or
+    username.  Any request body is rejected (AC-009 negative path).
+    """
+    body = await request.body()
+    if body and body.strip() not in (b"", b"{}"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="probe accepts only the proxy id; no request body allowed",
+        )
+    proxy = await service.probe_proxy_egress(proxy_id)
+    if proxy is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Proxy {proxy_id} not found",
+        )
+    return proxy
+
+
 @proxy_router.delete("/{proxy_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_proxy(proxy_id: str, service: Service):
     deleted, used_by = await service.delete_proxy(proxy_id)
