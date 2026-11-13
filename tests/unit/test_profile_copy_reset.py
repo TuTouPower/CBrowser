@@ -61,6 +61,12 @@ def _write_state(profile_dir: Path) -> None:
     (profile_dir / "Cookies").write_bytes(b"cookie-data")
     (profile_dir / "Default").mkdir()
     (profile_dir / "Default" / "Preferences").write_text("{}", encoding="utf-8")
+    # Local State rides along verbatim in a state copy: the engine has
+    # no per-profile OSCrypt key root anchored in it (t066 spike), and
+    # the manifest equality assertions below cover its byte identity.
+    (profile_dir / "Local State").write_text(
+        '{"os_crypt": {}}', encoding="utf-8"
+    )
     (profile_dir / "SingletonLock").symlink_to("host-1234")
     (profile_dir / "SingletonCookie").symlink_to("cookie-target")
     (profile_dir / "SingletonSocket").symlink_to("socket-target")
@@ -154,6 +160,21 @@ async def test_reset_rerolls_seed_and_preserves_refs_without_touching_other_prof
         user_data_dir=str(other_dir),
     )
     _write_state(profile_dir)
+    artifacts = ArtifactRepository(maker)
+    artifact_path = tmp_path / "artifacts" / "p1" / "a1" / "keep.csv"
+    artifact_path.parent.mkdir(parents=True)
+    artifact_path.write_bytes(b"keep-me")
+    await artifacts.create_artifact(
+        profile_id="p1",
+        artifact_id="a1",
+        name="keep.csv",
+        size=7,
+        kind="upload",
+        state="ready",
+        content_type="text/csv",
+        sha256="0" * 64,
+        storage_path=str(artifact_path),
+    )
     try:
         updated = await service.reset_profile("p1")
         assert updated.config.fingerprint_seed != 12345
@@ -170,6 +191,10 @@ async def test_reset_rerolls_seed_and_preserves_refs_without_touching_other_prof
         assert list(profile_dir.iterdir()) == []
         assert (other_dir / "Cookies").read_bytes() == b"other"
         assert not list((tmp_path / "profiles" / "p1").glob(".reset-backup-*"))
+        # Independent Artifacts survive a reset untouched (AC-004).
+        remaining = await artifacts.list_artifacts("p1")
+        assert [a.id for a in remaining] == ["a1"]
+        assert artifact_path.read_bytes() == b"keep-me"
     finally:
         await engine.dispose()
 

@@ -1,0 +1,16 @@
+{
+  "tid": "t066",
+  "attempt": 1,
+  "execution_id": "615d74c02c93435593634b5cebd85cf3",
+  "status": "done",
+  "branch": "t066_profile_identity_state",
+  "base_sha": "680d850067075caf9356ee6c71771f6dc779c543",
+  "tests": "全量门禁（云端直跑分支，三轮实跑 + 定向复跑定性）：protocol_drift_check、requirements_check、design_lint、design_check、frontend_build 全 PASS；contract 257 passed / 1 skipped；unit 并行 2038 passed / 1 skipped / 3 failed + 串行 64 passed——3 条失败（t060 topology、fontconfig `os` 属性、repo_hygiene 对 t062 review 文件家路径的检出）均在 pristine 680d850 同签名复现，属叠栈基线继承、非本 task 引入；integration 并行 174 passed / 7 skipped / 14 errors + 串行 4 passed——14 个 error 全为隔离 API 子进程 10 秒启动超时，串行整批复跑 14/14 全过；frontend_test 621 passed / 2 failed——2 条 5 秒级超时，单文件复跑 18/18 全过。本 task 定向套件：restore_point 18、guards 5、wiring 3、copy_reset 23、t051_deploy_scripts 11。",
+  "blackbox": "e2e / real_engine 云端无 Docker，按本仓口径跳过记 pass 并记录在案；[deploy] 真实部署切片（AC-001/003/004/005/011 的真实引擎与 named volume 往返）顺延 p093 于本地合入前补验。",
+  "review": "full 级双轴。Round 1 双轴均 FAIL（code 2 important + 4 minor；test 1 important + 9 minor），实施侧撤回全部打勾逐条修复（含回滚 sidecar、create 收尾复查两处实现级修复）；Round 2 双轴均 PASS，AC 8/8 TICK-VALID，Round 2 新记 minor 一条（t066_test_f011）已当场补断言闭合。共 17 条 finding 全部已修，无遗留 finding。",
+  "review_scope": "2d41c54dcc846658",
+  "pending": [
+    "p093"
+  ],
+  "findings": []
+}

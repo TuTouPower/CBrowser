@@ -69,6 +69,14 @@
 
 - `Profile.display_number: int` 为必填、无默认值；数据库列 NOT NULL（迁移 `0009`，增量回填后改约束）。读到 NULL 行时仓储抛明确错误，不静默补默认值；创建时仍由服务端分配部署内唯一编号（0001…），删除不复用。
 
+## 环境数据保留、复制重置与 seed（t066）
+
+- **保存即保留**：任何普通配置保存（PATCH 配置、分组/代理引用、指纹参数）只写配置与版本，永不清空或重建浏览器用户数据目录；Cookie、localStorage、IndexedDB、缓存与登录态跨配置变更与重启保留。清状态只能来自用户明确确认的独立 reset 操作。
+- **reset 全清**：reset 在环境完全停止（desired/observed 均为 stopped 且无绑定 runtime 实例）后清空整个浏览器用户目录并按统一 seed 空间重新生成 seed；环境 ID、名称、代理等配置与独立 Artifact 保留；目录替换失败时旧目录与旧配置成套恢复。
+- **状态改写的两档写者判定**：实际写者判定 `_runtime_has_writer`（delete 与备份取点共用）：desired=running、observed 处于 starting/running/stopping、或 `runtime_instance_id` 仍绑定，任一成立即视为有实际写者而拒绝；observed=error 且 desired=stopped、无绑定不算写者，error 态环境可删除、可取恢复点。完全停止判定 `_require_fully_stopped`（duplicate 带状态与 reset 共用，口径更严）：desired 与 observed 必须均为 stopped 且无实例绑定，error 态同样拒绝。两档都把残留实例绑定视为实际写者的持久痕迹：desired/observed 看似 stopped 但绑定残留时一律拒绝。
+- **seed 单一空间**：指纹 seed 只有一个声明空间 100000..999999（`domain/models.py` 的 `FINGERPRINT_SEED_MIN/MAX`）；普通创建、普通 reset 与按 operation_id 的幂等 reset 全部由此空间取值，幂等路径用 `derive_fingerprint_seed(operation_id)` 确定性推导，同一操作 ID 重放同 seed；已保存的 seed 不被追溯改写。
+- **clone 与密钥根**：引擎（Chromium 146）在 Local State 中不设按 Profile 锚定的 OSCrypt 密钥根（t066 spike 实测），include-state clone 逐字复制即保持 Cookie 可用，不删 Local State；两态 clone（仅配置 / 带状态）失败或取消不残留目录与 DB 行，源目录不受影响。
+
 ## 语言、时区与高级选项默认值（t053）
 
 - **语言是封闭枚举**：`ProfileConfig.locale` / `ProfileCreateRequest.locale` / `ProfileUpdateRequest.locale` / `ProfileResponse.locale` 的类型为 `ProfileLocale = Literal["zh-CN", "en-US"]`，OpenAPI 呈现为封闭 enum，非法值在 DTO 边界即 422 拒绝（字段级错误）。数据库层迁移 `0007_profile_locale_enum_defaults.py`（revision `1a8db6b91744`）追加 `CHECK (locale IS NULL OR locale IN ('zh-CN', 'en-US'))`；存量行的 `locale` 一律不改写（历史遗留 null 照常读取，仍可通过 PATCH 改为枚举值）。

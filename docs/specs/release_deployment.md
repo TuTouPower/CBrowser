@@ -53,3 +53,10 @@
 - schema 代际检查在新存储位置上仍按原语义执行：先建 API 镜像，再以只读挂载的 volume 在容器内读 stamp（`db_inspect.py stamp`）；不可读库 fail-closed（部署前拒绝），不以写模式打开数据库。
 - 部署前备份：有 live stamp 时 `up` 前容器内在线备份至 `$DEPLOY_DIR/backups/cbrowser-<ts>.db`，路径记 manifest `database_backup`；`deploy.sh restore <backup-file>` 可把备份拷回 volume（须有当前 release，永不删除备份文件）。volume 无库但宿主旧路径（`$ROOT/data/v2/cbrowser.db` 或 `$DATA_ROOT/cbrowser.db`）存在时，部署输出明确提示旧库位置与处置方式，旧文件不被删除、移动或覆盖。
 - 前缀校验：deploy.sh 与 Supervisor 启动都在执行任何 Docker 操作前校验 prefix（`^[a-z0-9][a-z0-9_]*$`，不含连字符；默认 `cbrowser`，为 deploy.sh 与 compose 的默认值，Supervisor/runner/docker_adapter 的默认前缀为 `cbrowser-t005`）。
+
+## 环境恢复点（t066）
+
+- 环境级备份恢复唯一入口为恢复点：`scripts/deploy.sh env-backup [point-dir]` / `env-restore <point-dir>`，底层 `scripts/restore_point.py`（create/verify/restore）在一次性 API 镜像容器内挂载 named volume `db` 与数据根 `/data` 运行。
+- 恢复点 = 同一静默时刻的成套快照：DB（SQLite 在线 backup、integrity_check、schema stamp）+ 全部 Profile 用户数据目录（逐文件 SHA-256 manifest）+ 凭据前提清单（只记文件名/大小，凭据不进恢复点）。任一 Profile 有实际写者（运行/迁移态/实例绑定残留）时备份拒绝。
+- 恢复协议：先 staging 到目标旁并全量校验（哈希、完整性、schema stamp 与活库一致、空间足够），再按 journal 逐项 rename 成套切换；中断由下一次调用回滚到旧集并以退出码 3 报告，重跑完成恢复；恢复前整套数据保留在 `.pre-restore-<switch-id>`，不自动删除。跨代 stamp 拒绝恢复。
+- 旧 `tar data/instance` 备份漏 named volume DB，废止为环境备份手段；`deploy.sh restore` 仅作 DB 单件恢复。

@@ -88,11 +88,30 @@ bash scripts/deploy.sh
 
 ## 8. 备份与恢复
 
+环境级备份恢复走**恢复点**（t066）：一个恢复点是同一静默时刻的控制面数据库（在 named volume `db` 中，不在 `data/instance` 里——旧版 `tar data/instance` 会漏掉整个数据库，禁止再用它做环境备份）与全部 Profile 浏览器数据目录的成套快照，带逐文件 SHA-256 清单、数据库完整性与 schema 版本记录。凭据文件不进恢复点，清单只记恢复前提的文件名，恢复站点须另行备好 `config/deploy/secrets`。
+
+备份（所有 Profile 须已停止；任一 Profile 在运行或仍绑定运行时实例时命令拒绝执行）：
+
 ```bash
-tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/instance
+bash scripts/deploy.sh env-backup            # 默认写 data/backups/restore-points/point-<时间>
+bash scripts/deploy.sh env-backup <point-dir>
 ```
 
-恢复：停止 compose，解压备份覆盖 `data/instance`，再发布。
+校验一个恢复点（不触碰现行环境）：
+
+```bash
+docker run --rm -v "$PWD/scripts:/scripts:ro" -v "<point-dir>:/point:ro" \
+  <api-image> python3 /scripts/restore_point.py verify --point /point
+```
+
+恢复（命令会先停止 compose；恢复先全量校验清单、完整性、版本与磁盘空间，再成套切换；切换中断会在下次调用时先回滚到恢复前状态，恢复前的整套数据保留在原位置旁的 `.pre-restore-*` 目录/文件中，确认无误后可手工删除；恢复在 staging 阶段被中断时留下的 `.restore-staging-*` 残留会在下一次恢复开始时自动清扫，也可直接手工删除——它们不属于任何完整集）：
+
+```bash
+bash scripts/deploy.sh env-restore <point-dir>
+bash scripts/deploy.sh        # 重新发布，启动恢复后的环境
+```
+
+`deploy.sh restore <backup-file>` 只恢复数据库单件（发布流程的备份），不恢复 Profile 数据，不能替代环境恢复点。
 
 t035 起迁移链只有一个 baseline 修订（ADR 023）。旧 schema 代（0001-0009）数据库不受支持：API 启动与 `scripts/deploy.sh` 部署都会失败封闭并输出重建指引，不自动升级、不修改该库。生产数据须先备份，再经用户批准的迁移流程重建 `data/instance`；legacy 迁移脚本已随该破坏性升级移除。
 

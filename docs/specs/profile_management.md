@@ -112,3 +112,10 @@
 - Profile 编辑只提交与初始值不同的字段；字段分类（元数据 / 即时 / 运行配置）以后端三分常量为准，经生成类型同步，前后端逐值一致。
 - 仅改 `capture_preview`（唯一即时字段）不产生新配置版本；保存成功时先取消在途 detail 查询再写入缓存，不再 invalidate detail，在途旧请求不回填旧值。
 - 保存不改变运行实例绑定的 `config_version`，`useUpdateProfileMutation` 不再 invalidate runtime 缓存；SSE 事件到达时仍按既有语义 invalidate runtime。
+
+## 环境数据保留、复制重置与 seed 统一（t066）
+
+- 普通配置保存只写配置与版本，永不清空或重建浏览器用户数据目录；清状态只能来自明确确认的 reset，reset 全清用户目录、保留环境配置与独立 Artifact，失败时旧目录与配置成套恢复。
+- 状态改写分两档判定：duplicate（带状态）/ reset 须完全停止（desired/observed 均为 stopped 且无 runtime_instance_id 绑定，error 态亦拒绝）；delete 用实际写者判定（desired=running、observed 处于迁移态、或实例残留绑定任一成立即拒绝；error 态且无绑定可删）。
+- 指纹 seed 单一空间 100000..999999：创建、普通 reset、幂等 reset 同源；operation_id 经 SHA-256 确定性推导，重放同 seed，已保存 seed 不追溯改写。
+- include-state clone 逐字复制（跳过 Singleton rendezvous 文件）并以 manifest 全等校验；引擎无按 Profile 锚定的 OSCrypt 密钥根（t066 spike 实测 Chromium 146），不删 Local State。
