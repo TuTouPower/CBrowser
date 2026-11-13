@@ -3,7 +3,7 @@
 - task：`t052_proxy_link_and_egress_observation`
 - spec：`docs/tasks/t052_proxy_link_and_egress_observation/task.md`
 - diff_anchor：`d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
-- target：`git -C '/home/hatch/workspace/CBrowser_t052' diff d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
+- target：`git -C '<home>/workspace/CBrowser_t052' diff d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
 - round：1
 - reviewed_at：2026-11-11T12:50:35+08:00
 

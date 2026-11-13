@@ -3,7 +3,7 @@
 - task：`t053_profile_locale_fonts_defaults`
 - spec：`docs/tasks/t053_profile_locale_fonts_defaults/task.md`
 - diff_anchor：`1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
-- target：`git -C '/home/hatch/workspace/CBrowser_t053' diff 1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
+- target：`git -C '<home>/workspace/CBrowser_t053' diff 1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
 - round：1
 - reviewed_at：2026-11-11T15:56:37+08:00
 
@@ -298,7 +298,7 @@ verdict: PASS
 
 reviewed_scope: 634fc4db6bd1d4cc
 
-说明：落点仓库校验通过（不带 `-C` 的 `git rev-parse --show-toplevel` 输出为 `/home/hatch/workspace/CBrowser_t053`）；指纹已用 `.repo_template/scripts/repo_task/monitoring.py::review_scope_fingerprint` 独立重算，与本轮 prompt 给定指纹一致；`git status --short` 为 65 条（51 M + 14 ??），无 scratch/探针残留，不存在 reviewer 看不到的未跟踪交付文件。本轮结论未参考另一路审阅的任何结论；下述变异与探针证据均来自我自己的临时操作（变异后均从 `/tmp` 备份恢复并以 `diff -q` 核对一致，探针文件跑后即删，`git status` 已核对无残留）。
+说明：落点仓库校验通过（不带 `-C` 的 `git rev-parse --show-toplevel` 输出为 `<home>/workspace/CBrowser_t053`）；指纹已用 `.repo_template/scripts/repo_task/monitoring.py::review_scope_fingerprint` 独立重算，与本轮 prompt 给定指纹一致；`git status --short` 为 65 条（51 M + 14 ??），无 scratch/探针残留，不存在 reviewer 看不到的未跟踪交付文件。本轮结论未参考另一路审阅的任何结论；下述变异与探针证据均来自我自己的临时操作（变异后均从 `/tmp` 备份恢复并以 `diff -q` 核对一致，探针文件跑后即删，`git status` 已核对无残留）。
 
 ### 前轮 finding 复核
 

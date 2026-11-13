@@ -3,7 +3,7 @@
 - task：`t054_deploy_time_network_config`
 - spec：`docs/tasks/t054_deploy_time_network_config/task.md`
 - diff_anchor：`e9320341a8b5c93d136fca64b1aad25825ec2898`
-- target：`git -C '/home/hatch/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
+- target：`git -C '<home>/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
 - round：1
 - reviewed_at：2026-11-11T19:31:42+08:00
 
@@ -11,7 +11,7 @@
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `/home/hatch/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
 - 11 个新交付文件派审前未执行 `git add -N`，不在 `git diff e932034` 输出中（`scripts/check_edge_subnet.py`、`src/backend/cbrowser/shared/__init__.py`、`src/backend/migrations/versions/0008_drop_network_transaction.py`、8 个 `test_t054_*` 测试文件）；本审阅直接读盘核查全部 11 个文件，并以范围指纹验证内容自派发后未变（见结论段）。`git status` 另有 `review_code.md`（代码路报告，流程文件，不计入指纹）。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0）：
   - 新 t054 测试集（8 文件）：**38 passed**。
@@ -93,7 +93,7 @@ verdict: FAIL
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `/home/hatch/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
 - 本轮为 Round 1 修复复审：逐条复核 test f001–f004 是否真修（diff/代码/实跑，不采信处置表自述），并扫描修复 diff 引入的新问题。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
   - Round 1 修复相关测试（t027 新 5 例 + `test_t054_check_edge_subnet.py` 5 例 + `test_t054_shared_client_ip.py` 全文件 8 例）：**18 passed**。
@@ -160,7 +160,7 @@ verdict: FAIL
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `/home/hatch/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
 - 本轮为 Round 2 修复复审：逐条复核 test f005 是否真修（diff/代码/实跑，不采信处置表自述），复核 Round 1 的 f001–f004 是否仍消除，并扫描 f005 修复 diff 引入的新问题。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
   - f005 相关测试（t027 全文件 59 例 + `test_t054_check_edge_subnet.py` 9 例 + `test_t054_shared_client_ip.py` 8 例）：**76 passed**。
@@ -223,7 +223,7 @@ verdict: PASS
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `/home/hatch/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
 - 本轮为 Round 3 code f003 修复复审：`scripts/check_edge_subnet.py` 的 `main()` 圈复杂度约 23 → 拆分为 `_parse_args(argv)` 与 `_classify_overlaps(...)`；修复方未新增测试，称 9 例既有单测经 `main()` 覆盖抽出的分支、行为未变。本审阅不采信该自述，逐项实测核实。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
   - `test_t054_check_edge_subnet.py` 9 例：**9 passed**。
@@ -259,7 +259,7 @@ verdict: PASS
 - 改测方向复核：无迁就实现的改测。本轮修复 diff 未改任何测试文件（无新增、无修改、无删除）；危险模式扫描：三测试文件（`test_t054_check_edge_subnet.py` / `test_t027_release_controller.py` / `test_t054_shared_client_ip.py`）内无 `.skip` / `.only` / `# type: ignore`（grep 命中仅为注释与测试名中的 "only" 单词）；全仓唯一 `# type: ignore[call-arg]` 仍为 Round 1 已调查放行的 `test_network_policy.py:240`（未动）。
 - 本轮新发现：1 条（minor，f006）。
 - 未进表的提示：
-  - `test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 的违规集合现已包含 t054 自身的 `review_code.md` / `review_test.md`（与 t051–t053 相同原因：审阅报告内含 `/home/hatch/` 绝对路径）；该测试在基线中已红，属流程文件问题，不影响任务交付物；Round 1“零 t054 文件”的说法已不再成立，特此更正记录。
+  - `test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 的违规集合现已包含 t054 自身的 `review_code.md` / `review_test.md`（与 t051–t053 相同原因：审阅报告内含 `<home>/` 绝对路径）；该测试在基线中已红，属流程文件问题，不影响任务交付物；Round 1“零 t054 文件”的说法已不再成立，特此更正记录。
   - `/tmp` 探针（fake docker、`r4trace.py`、pytest basetemp）已清理，现 11%。
   - 引用逐项核对：本报告引用的文件、行号均已实地核对存在。
 - 总体判断：f003 重构行为未变、测试侧仍可信；仅 `_parse_args` 四个错误分支缺提交测试，minor 不阻断。
@@ -288,7 +288,7 @@ verdict: PASS
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `/home/hatch/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
 - 本轮为 Round 4 test f006 修复复审（最后一轮，max_review_round=5）：`tests/unit/test_t054_check_edge_subnet.py` 新增 1 例参数化测试 `test_parse_args_usage_errors_return_two`（:253），4 个入参覆盖 `_parse_args` 的 4 种 `_UsageError` 情形，各断言 exit 2 且 stderr 含 usage 文本，并以 guard 断言解析失败前不触 subprocess；修复方称未改任何生产代码。本审阅不采信该自述，逐项实测核实。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
   - `test_t054_check_edge_subnet.py`：**13 passed**（9 既有 + 4 新增）。
@@ -316,7 +316,7 @@ verdict: PASS
 - 本轮新发现：0 条。
 - 未进表的提示：
   - 后端全量首轮在 8 分 40 秒处被 runtime 重启打断（exec-log 0 字节、/tmp 日志随 tmpfs 清空，无确认结果）；已重跑，日志改写 `.scratch/r5_backend_full.log`（磁盘持久），得 2037/25/8/0。/tmp 探针文件已清理，现 43%。
-  - `test_repo_hygiene.py` 的 1 个失败仍为 Round 4 已记录的流程文件问题（审阅报告内含 `/home/hatch/` 绝对路径），基线已红，不影响任务交付物。
+  - `test_repo_hygiene.py` 的 1 个失败仍为 Round 4 已记录的流程文件问题（审阅报告内含 `<home>/` 绝对路径），基线已红，不影响任务交付物。
   - 引用逐项核对：本报告引用的文件、行号均已实地核对存在。
 - 总体判断：f006 的回归防护缺口已由真实可判别的参数化测试补齐；全量回归与命名锁死均无新增问题；本轮为最后一轮，双路均无未解决 finding，具备 finalize 条件。
 - 系统性 follow-up：无。

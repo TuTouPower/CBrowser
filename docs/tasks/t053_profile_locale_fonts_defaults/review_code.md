@@ -3,7 +3,7 @@
 - task：`t053_profile_locale_fonts_defaults`
 - spec：`docs/tasks/t053_profile_locale_fonts_defaults/task.md`
 - diff_anchor：`1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
-- target：`git -C '/home/hatch/workspace/CBrowser_t053' diff 1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
+- target：`git -C '<home>/workspace/CBrowser_t053' diff 1e11e0fda2d2fda130e24e6bdef904c5b96c3516`
 - round：1
 - reviewed_at：2026-11-11T16:03:04+08:00
 

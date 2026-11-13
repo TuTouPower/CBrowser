@@ -3,7 +3,7 @@
 - task：`t059_design_token_gates`
 - spec：`docs/tasks/t059_design_token_gates/task.md`
 - diff_anchor：`cf04d546162f6e040189c423c5b2afcf5ea43ed1`
-- target：`git -C '/home/hatch/workspace/CBrowser_t059' diff cf04d546162f6e040189c423c5b2afcf5ea43ed1`
+- target：`git -C '<home>/workspace/CBrowser_t059' diff cf04d546162f6e040189c423c5b2afcf5ea43ed1`
 - round：1
 - reviewed_at：2026-11-13T08:00:42+08:00
 
@@ -29,7 +29,7 @@ reviewed_scope: dc1cc4761168036d
 
 ## 复验记录（reviewer 独立执行）
 
-- 落点校验：以工作目录 `/home/hatch/workspace/CBrowser_t059` 执行 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t059`。
+- 落点校验：以工作目录 `<home>/workspace/CBrowser_t059` 执行 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t059`。
 - `npm run design:lint`：exit 0（94 个源码文件 + 7 个 public 文件 clean）；`npm run design:check`：exit 0（design_tokens.css 与五件品牌资产新鲜度通过）。
 - 负例验证（临时改动后全部恢复，恢复后 `git diff cf04d54` 的 md5 与验证前一致，均为 `cb556d1dc9e8140913ca75bcc02b816b`，`git status --short` 仍为 44 项交付变更、无多余改动）：
   - N1 对比度：`light-warning` 改回旧值 `#F5A524` → lint exit 1，报 `declared text pair light-warning on light-background: 1.69:1 < 4.5:1` 等对比度失败。

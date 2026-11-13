@@ -3,7 +3,7 @@
 - task：`t052_proxy_link_and_egress_observation`
 - spec：`docs/tasks/t052_proxy_link_and_egress_observation/task.md`
 - diff_anchor：`d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
-- target：`git -C '/home/hatch/workspace/CBrowser_t052' diff d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
+- target：`git -C '<home>/workspace/CBrowser_t052' diff d07f5e332b2d3b904bf23a4c6e2391036b0ce761`
 - round：1
 - reviewed_at：2026-11-11T12:41:28+08:00
 
@@ -99,7 +99,7 @@ verdict: FAIL
 
 reviewed_scope: 28e84db3286c2e6d
 
-复核方法：落点仓库校验通过（`git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t052`）；逐条按 diff/代码/实跑核实，不采信 `progress.md` 处置表自述。实跑：后端 t052 全套 7 个文件 122 passed（`~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=<worktree>/src/backend`，34.34s）；前端 4 个相关文件 96 passed（Node 26.13.0，`npx vitest run`，含解析矩阵 55）；f002 独立复现脚本（`httpx.MockTransport` 返回 `json=[]`）。
+复核方法：落点仓库校验通过（`git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t052`）；逐条按 diff/代码/实跑核实，不采信 `progress.md` 处置表自述。实跑：后端 t052 全套 7 个文件 122 passed（`~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=<worktree>/src/backend`，34.34s）；前端 4 个相关文件 96 passed（Node 26.13.0，`npx vitest run`，含解析矩阵 55）；f002 独立复现脚本（`httpx.MockTransport` 返回 `json=[]`）。
 
 ## Findings
 
@@ -158,7 +158,7 @@ verdict: FAIL
 
 reviewed_scope: 591b901c2b3f608a
 
-复核方法：落点仓库校验通过（`git -C '/home/hatch/workspace/CBrowser_t052' rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t052`）；逐条按 diff/代码/实跑核实，不采信 `progress.md` 处置表自述。实跑：后端 t052 全套 7 个文件 123 passed（`~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=<worktree>/src/backend`，34.19s，较 Round 2 的 122 passed 增加恰好 1 个，即 f007 新增测试）；前端 4 个相关文件 96 passed（Node 26.13.0，`npx vitest run`，11.49s，与 Round 2 持平）。
+复核方法：落点仓库校验通过（`git -C '<home>/workspace/CBrowser_t052' rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t052`）；逐条按 diff/代码/实跑核实，不采信 `progress.md` 处置表自述。实跑：后端 t052 全套 7 个文件 123 passed（`~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=<worktree>/src/backend`，34.19s，较 Round 2 的 122 passed 增加恰好 1 个，即 f007 新增测试）；前端 4 个相关文件 96 passed（Node 26.13.0，`npx vitest run`，11.49s，与 Round 2 持平）。
 
 ## Findings
 

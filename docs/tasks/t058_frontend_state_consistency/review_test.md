@@ -3,7 +3,7 @@
 - task：`t058_frontend_state_consistency`
 - spec：`docs/tasks/t058_frontend_state_consistency/task.md`
 - diff_anchor：`8ede5099cecb6c4116757fb9f36864c8c0642f0f`
-- target：`git -C '/home/hatch/workspace/CBrowser_t058' diff 8ede5099cecb6c4116757fb9f36864c8c0642f0f`
+- target：`git -C '<home>/workspace/CBrowser_t058' diff 8ede5099cecb6c4116757fb9f36864c8c0642f0f`
 - round：1
 - reviewed_at：2026-11-13T03:35:20+08:00
 

@@ -3,7 +3,7 @@
 - task：`t054_deploy_time_network_config`
 - spec：`docs/tasks/t054_deploy_time_network_config/task.md`
 - diff_anchor：`e9320341a8b5c93d136fca64b1aad25825ec2898`
-- target：`git -C '/home/hatch/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
+- target：`git -C '<home>/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
 - round：1
 - reviewed_at：2026-11-11T19:18:40+08:00
 
@@ -229,7 +229,7 @@ verdict: PASS
   - 复杂度提示：`main()` CC 10、`_docker_networks` CC 14、`_host_interface_networks` CC 10，均未达 15 的 minor 阈值，只列结论。
   - 命名锁死复核通过：`com.cbrowser.deployment-id` 在 src/scripts/compose.yaml/config 全树零命中；`56661` 字面量只剩 `network_config.py:15` 一处定义与 `.env.example:3` 示例值。
   - `git status` 无未跟踪文件（无 `??` 项），无 reviewer 看不到的未跟踪交付文件。探针临时文件（`/tmp/r5probe/*`、`/tmp/r5probe-basetemp*`）已删。
-  - 已知流程事项（test 路 Round 4 已记录，不进表）：`test_repo_hygiene.py` 的违规集合含各轮审阅报告（报告内含 `/home/hatch/` 绝对路径，系本提示词格式要求）；该测试在基线中已红，属流程文件问题，不影响任务交付物。
+  - 已知流程事项（test 路 Round 4 已记录，不进表）：`test_repo_hygiene.py` 的违规集合含各轮审阅报告（报告内含 `<home>/` 绝对路径，系本提示词格式要求）；该测试在基线中已红，属流程文件问题，不影响任务交付物。
 - 总体判断：f006 的回归防护缺口已真实补齐（4 种错误分支均有回归测试且经行覆盖证实），Round 1–4 的 finding 均仍消除；本轮 0 新发现，最后一轮收口。
 - 系统性 follow-up：无。
 

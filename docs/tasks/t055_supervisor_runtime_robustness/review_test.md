@@ -3,7 +3,7 @@
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：1
 - reviewed_at：2026-11-11T23:12:33+08:00
 
@@ -49,7 +49,7 @@
 - Spike 复现：`.scratch/spike_close_code.py`（websockets 17.4）已独立重跑，三场景输出与 task.md 结论逐字一致：[1] 对端先关 4403，close 前读得 4403；[2] 本地先 close，close 后读得 1000（本地自发关码）；[3] 对端先关再本地 close，仍为 4403。读取点定在 `automation_router.py` finally 块内 `upstream.close()` 之前，与实验结论一致。
 - A7 偏离说明（测试侧核实，非 finding）：实施未按审阅字面“两处一律保留 lost_at”，改用 `recovery_armed` 区分恢复宽限与过渡宽限。测试侧证实：t026 收敛测试全绿（见实跑），新测试覆盖新语义——恢复宽限在 gateway-unreachable 收敛后保留且 `lost_at` 不变、宽限内注册立即替换、宽限过期后替换。偏离有测试背书，属 code reviewer 的设计裁决范畴。
 - 本轮新发现：4 条，全部 minor，无 blocking。
-- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红（t051–t053 审阅报告含绝对路径）；本轮审阅报告按提示词模板同样含 `/home/hatch/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。`test_automation_cdp.py::test_supervisor_cdp_websocket_forwards_to_agent_uds` 为基线既存失败（见回归比对），与本 task 无关。
+- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红（t051–t053 审阅报告含绝对路径）；本轮审阅报告按提示词模板同样含 `<home>/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。`test_automation_cdp.py::test_supervisor_cdp_websocket_forwards_to_agent_uds` 为基线既存失败（见回归比对），与本 task 无关。
 - 总体判断：36 个新测试全部真实触达生产逻辑，10 条 AC 均有可信测试支撑；4 条 minor 均为覆盖精度缺口（标签错位、顺序未钉住、边界值未钉住、截断分支未覆盖），不阻断。
 - 系统性 follow-up：无。
 
@@ -99,7 +99,7 @@ verdict: PASS
 - 前轮 finding 复核：f001–f004 全部已消除（见上，逐条独立先红探针 + sha256 字节还原校验）。
 - 改测方向复核：本轮修复只改 4 个测试文件 docstring、fake 的 `close()` 语义、新增 4 例测试（宽限边界 2、截断 1、竞态 1），无既有断言改动、无“迁就实现”的改测。危险模式扫描：测试 diff 零命中——无 `.skip` / `.only` / `assert True` / `# type: ignore` / 恒真断言 / 条件跳过弱化断言；monkeypatch 只出现在系统边界（`Path.exists` 竞态模拟、`subprocess.run` 桩、fake websockets 上游），未 mock 被测逻辑本身。
 - 本轮新发现：0 条。
-- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红（t051–t054 审阅报告含绝对路径）；本轮审阅报告按提示词模板同样含 `/home/hatch/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。f002 的 fake 严格化已评估成立（见复核），不进 finding。
+- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红（t051–t054 审阅报告含绝对路径）；本轮审阅报告按提示词模板同样含 `<home>/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。f002 的 fake 严格化已评估成立（见复核），不进 finding。
 - 总体判断：Round 1 的 4 条 minor 全部真实消除，新测试均可判别；10 条 AC 均有可信测试支撑，无 blocking。
 - 系统性 follow-up：无。
 
@@ -152,7 +152,7 @@ verdict: PASS
 - 前轮 finding 复核：t055_code_f002 已消除（见上）；Round 1/2 的 5 条 minor 仍消除。
 - 改测方向复核：本轮修复只改生产 guard 一处 + 新增 1 例测试，无既有断言改动、无“迁就实现”的改测。危险模式扫描：测试 diff 零命中——无 `.skip` / `.only` / `assert True` / `# type: ignore` / 恒真断言 / 条件跳过弱化断言；monkeypatch 只出现在系统边界（`os.lstat` 桩，且委托真实实现），未 mock 被测逻辑本身。
 - 本轮新发现：0 条。
-- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红；本轮审阅报告按提示词模板同样含 `/home/hatch/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。AC-001 超时分支边界（`helper.wait(timeout=30)` 超时/传输错误时只报异常类型名、不抓 helper 日志）已在生产代码注释中说明意图（`docker_adapter.py:464-470`：wait 文本属传输层、可携带任意 URL，须保持脱敏），属有意边界，措辞收窄与否由 chain runner 裁决，progress.md 已记录，不进 finding。
+- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红；本轮审阅报告按提示词模板同样含 `<home>/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。AC-001 超时分支边界（`helper.wait(timeout=30)` 超时/传输错误时只报异常类型名、不抓 helper 日志）已在生产代码注释中说明意图（`docker_adapter.py:464-470`：wait 文本属传输层、可携带任意 URL，须保持脱敏），属有意边界，措辞收窄与否由 chain runner 裁决，progress.md 已记录，不进 finding。
 - 总体判断：f002 修复真实可判别，10 条 AC 均有可信测试支撑，无 blocking。
 - 系统性 follow-up：无。
 
@@ -207,7 +207,7 @@ verdict: PASS
 - 前轮 finding 复核：t055_code_f003 已消除（见上）；Round 1/2/3 的 6 条 minor 仍消除。
 - 改测方向复核：本轮修复只改生产重构一处（五处 if 改为一处 helper 调用）+ progress.md，未改任何测试文件，无既有断言改动、无“迁就实现”的改测。危险模式扫描：测试 diff 零命中——无 `.skip` / `.only` / `assert True` / `# type: ignore` / 恒真断言 / 条件跳过弱化断言；monkeypatch 只出现在系统边界（`Path.exists` 竞态模拟、`os.lstat` 桩、fake websockets 上游），未 mock 被测逻辑本身。
 - 本轮新发现：1 条，minor（t055_test_f005，新 helper 的 gid 分支零覆盖）。
-- 未进表的提示：`_validate_slot_dir` 的 ISDIR 分支通过公开路径不可达（`O_DIRECTORY` 保证），属既有防御性死代码，不计覆盖缺口；`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红，本轮审阅报告按提示词模板同样含 `/home/hatch/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物；AC-001 超时分支只报异常类型名、不抓 helper 日志是有意边界（`docker_adapter.py:464-470` 注释说明意图），措辞收窄与否由 chain runner 裁决，progress.md 已记录。
+- 未进表的提示：`_validate_slot_dir` 的 ISDIR 分支通过公开路径不可达（`O_DIRECTORY` 保证），属既有防御性死代码，不计覆盖缺口；`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红，本轮审阅报告按提示词模板同样含 `<home>/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物；AC-001 超时分支只报异常类型名、不抓 helper 日志是有意边界（`docker_adapter.py:464-470` 注释说明意图），措辞收窄与否由 chain runner 裁决，progress.md 已记录。
 - 总体判断：f003 重构真实降复杂度且行为未变，现有测试覆盖未丢失；仅 1 条 minor（新 helper 的 gid 分支零覆盖，当前生产亦不可达，属潜在风险），不阻断。
 - 系统性 follow-up：无。
 
@@ -262,7 +262,7 @@ verdict: PASS
 - 前轮 finding 复核：t055_test_f005 已真实消除（见上，行覆盖探针 + 中性化先红探针 + sha256 字节还原校验）；Round 1–4 的 7 条 minor 仍消除。
 - 改测方向复核：本轮修复只新增 3 例直接单测，未改任何生产代码、无既有断言改动、无“迁就实现”的改测。危险模式扫描：测试 diff 零命中——无 `.skip` / `.only` / `assert True` / `# type: ignore` / 恒真断言 / 条件跳过弱化断言；新测试未用 monkeypatch（`SimpleNamespace` 伪造的是 helper 的输入数据，helper 本体真实执行，未 mock 被测逻辑本身）。
 - 本轮新发现：0 条。
-- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红；本轮审阅报告按提示词模板同样含 `/home/hatch/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。AC-001 超时分支只报异常类型名、不抓 helper 日志是有意边界（`docker_adapter.py:464-470` 注释说明意图），措辞收窄与否由 chain runner 裁决，progress.md 已记录。
+- 未进表的提示：`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 在基线中已红；本轮审阅报告按提示词模板同样含 `<home>/` 绝对路径，会进入该测试的违规集合，属已知的流程文件问题，不影响任务交付物。AC-001 超时分支只报异常类型名、不抓 helper 日志是有意边界（`docker_adapter.py:464-470` 注释说明意图），措辞收窄与否由 chain runner 裁决，progress.md 已记录。
 - 总体判断：f005 修复真实可判别（覆盖探针 + 中性化先红），10 条 AC 均有可信测试支撑，无 blocking；本轮为最后一轮（max_review_round=5），无遗留 finding。
 - 系统性 follow-up：无。
 

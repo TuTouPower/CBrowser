@@ -3,7 +3,7 @@
 - task：`t051_runtime_deploy_reliability`
 - spec：`docs/tasks/t051_runtime_deploy_reliability/task.md`
 - diff_anchor：`3331ed3c12518849a416a0c74b6c844f033fc8c7`
-- target：`git -C '/home/hatch/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
+- target：`git -C '<home>/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
 - round：1
 - reviewed_at：2026-11-11T09:02:06+08:00
 
@@ -96,7 +96,7 @@ verdict: FAIL
 - task：`t051_runtime_deploy_reliability`
 - spec：`docs/tasks/t051_runtime_deploy_reliability/task.md`
 - diff_anchor：`3331ed3c12518849a416a0c74b6c844f033fc8c7`
-- target：`git -C '/home/hatch/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
+- target：`git -C '<home>/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
 - round：2
 - reviewed_at：2026-11-11T09:38:34+08:00
 

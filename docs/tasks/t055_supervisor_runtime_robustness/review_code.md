@@ -3,7 +3,7 @@
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：1
 - reviewed_at：2026-11-11T23:24:00+08:00
 
@@ -57,7 +57,7 @@ verdict: PASS
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：2
 - reviewed_at：2026-11-11T23:57:54+08:00
 
@@ -109,7 +109,7 @@ verdict: PASS
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：3
 - reviewed_at：2026-11-12T00:33:49+08:00
 
@@ -139,7 +139,7 @@ verdict: PASS
   - 圈复杂度：`prepare_socket_dir` CC=12（低于 15）；`_converge_session` 37、`_reconcile_profile` 61 为既有巨函数，本轮未再增分支，沿用 Round 1 的结论提示处理，不重立 finding。
   - 锁定项核查通过：`com.cbrowser.deployment-id` 在 `src/backend/cbrowser/{runtime_agent,supervisor,api}`、`scripts/`、`compose.yaml`、`config/` 全树零命中；默认前缀 `cbrowser-t005` 完好（`docker_adapter.py:254`）。
   - AC-001 措辞（Round 1 结论段遗留，未变）：超时分支不抓 helper 日志属有意边界，已记入 progress.md 实施笔记，不改契约、不进 finding。
-  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`/home/hatch/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误。
+  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`<home>/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误。
   - 本轮自跑实数（验证 venv，`PYTHONPATH=src/backend:tests`）：`test_t055_socket_slot_cleanup.py` 10 passed（含 f002 新测试）；其余 t055 文件 31 passed（robustness 20 + udp_mux 4 + watchers 3 + cdp 4）；先红探针 1 failed 后恢复，sha256 一致。
 - 总体判断：f002 已真实消除，仅 1 条新 minor（f003），无 critical / important，10 个 AC 全部复验通过，verdict PASS；minor 须在 progress.md 处置后由下一轮复核。
 - 系统性 follow-up：无
@@ -168,7 +168,7 @@ verdict: PASS
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：4
 - reviewed_at：2026-11-12T01:11:23+08:00
 
@@ -191,7 +191,7 @@ verdict: PASS
   - 圈复杂度：`prepare_socket_dir` CC=12、`_validate_slot_dir` CC=8，均低于 15；`_converge_session` 37、`_reconcile_profile` 61 为既有巨函数，本轮未再增分支，沿用 Round 1 的结论提示处理，不重立 finding。
   - 锁定项核查通过：`com.cbrowser.deployment-id` 在 `src/`、`scripts/`、`compose.yaml`、`config/`、`tests/` 全树零命中；默认前缀 `cbrowser-t005` 完好（`docker_adapter.py:254`）。
   - AC-001 措辞（Round 1 结论段遗留，未变）：超时分支不抓 helper 日志属有意边界，已记入 progress.md 实施笔记，不改契约、不进 finding。
-  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`/home/hatch/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误。指纹 `b05debcb03a5c46c` 已用 `repo_task.monitoring.review_scope_fingerprint` 直接重算验证，与提示词所印值一致。
+  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`<home>/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误。指纹 `b05debcb03a5c46c` 已用 `repo_task.monitoring.review_scope_fingerprint` 直接重算验证，与提示词所印值一致。
   - 本轮自跑实数（验证 venv，`PYTHONPATH=src/backend:tests`）：t055 新测试 5 文件共 **41 passed**（socket slot 10 + robustness 20 + udp_mux 4 + watchers 3 + cdp 4）；f002 先红探针 1 failed 后恢复，sha256 一致。未改任何实现、未提交、未合入、未 push；探针备份已删。
 - 总体判断：f003 已真实消除，本轮 0 新发现，无 critical / important，10 个 AC 全部复验通过，verdict PASS；Round 4 仍为复审轮，finalize 由 chain runner 按门禁脚本判定。
 - 系统性 follow-up：无
@@ -220,7 +220,7 @@ verdict: PASS
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：5
 - reviewed_at：2026-11-12T01:41:44+08:00
 
@@ -244,7 +244,7 @@ verdict: PASS
   - 圈复杂度：本轮为纯测试改动，未增任何生产分支；`managed_socket_target` CC=10、`_validate_slot_dir` CC=8（Round 4 已复核），`_converge_session` 37、`_reconcile_profile` 61 为既有巨函数，本轮未动，沿用 Round 1 的结论提示处理。
   - 锁定项核查通过：`com.cbrowser.deployment-id` 在 `src/`、`scripts/`、`compose.yaml`、`config/`、`tests/` 全树零命中；默认前缀 `cbrowser-t005` 完好（`docker_adapter.py:254`）。
   - AC-001 措辞（Round 1 结论段遗留，未变）：超时分支不抓 helper 日志属有意边界，已记入 progress.md 实施笔记，不改契约、不进 finding。
-  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`/home/hatch/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误（与 Round 3 审阅记录的同一环境情形）。
+  - 流程说明：提示词第 1 步要求的不带 `-C` 的 `git rev-parse --show-toplevel` 在本子任务环境无法按字面执行（exec 默认 cwd 为 /home/hatch，非 git 仓）；已改用 workdir=`<home>/workspace/CBrowser_t055` 校验，输出精确等于该路径；全部 git 操作均带 `-C`，落点仓库无误（与 Round 3 审阅记录的同一环境情形）。
   - 本轮自跑实数（验证 venv，`PYTHONPATH=src/backend:tests`）：socket slot 文件 **13 passed**；其余 t055 文件共 **31 passed**（robustness 20 + udp_mux 4 + watchers 3 + cdp 4）；gid 先红探针 1 failed 后恢复，sha256 一致。未改任何实现、未提交、未合入、未 push；探针临时文件已删。
 - 总体判断：f005 已真实消除，本轮 0 新发现，无 critical / important，10 个 AC 全部复验通过，verdict PASS；本轮为最后一轮（max_review_round=5），finalize 由 chain runner 按门禁脚本判定。
 - 系统性 follow-up：无

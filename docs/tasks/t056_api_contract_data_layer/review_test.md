@@ -3,7 +3,7 @@
 - task：`t056_api_contract_data_layer`
 - spec：`docs/tasks/t056_api_contract_data_layer/task.md`
 - diff_anchor：`3fbcec1754e6e1d9f4bd0978eefe6bd654df965a`
-- target：`git -C '/home/hatch/workspace/CBrowser_t056' diff 3fbcec1754e6e1d9f4bd0978eefe6bd654df965a`
+- target：`git -C '<home>/workspace/CBrowser_t056' diff 3fbcec1754e6e1d9f4bd0978eefe6bd654df965a`
 - round：1
 - reviewed_at：2026-11-12T04:53:45+08:00
 
