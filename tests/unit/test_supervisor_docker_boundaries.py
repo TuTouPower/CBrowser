@@ -25,6 +25,9 @@ def _adapter(tmp_path, client) -> DockerAdapter:
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        # t069: scans and the orphan reaper only claim resources whose
+        # instance-id label matches the configured deployment identity.
+        deployment_instance_id="dep-boundaries",
     )
 
 
@@ -49,6 +52,7 @@ def _labels(**overrides) -> dict:
         "com.cbrowser.profile-id": "profile_a",
         "com.cbrowser.config-version": "3",
         "com.cbrowser.profile-number": "0001",
+        "com.cbrowser.instance-id": "dep-boundaries",
     }
     labels.update(overrides)
     return labels
@@ -233,6 +237,7 @@ def test_x11_orphan_helper_is_reaped_at_startup(tmp_path) -> None:
             "com.cbrowser.prefix": prefix,
             "com.cbrowser.managed-by": "supervisor",
             "com.cbrowser.role": "x11-permissions",
+            "com.cbrowser.instance-id": "dep-boundaries",
         },
         removed=False,
     )

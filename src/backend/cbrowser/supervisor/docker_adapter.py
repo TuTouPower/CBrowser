@@ -931,17 +931,18 @@ class DockerAdapter:
         await asyncio.to_thread(self._cleanup_orphan_helpers)
 
     def _owns_deployment(self, labels: dict[str, Any]) -> bool:
-        """Deployment ownership test (A59/AC-021).
+        """Deployment ownership test (A59/AC-021, strict t069).
 
-        When this Supervisor has a deployment id, a resource belongs to
-        it only when its ``com.cbrowser.instance-id`` label carries the
-        same deployment instance id. Missing or mismatched labels mean
-        "not ours": skip, never claim, never delete. When unconfigured,
-        everything under the prefix is ours (legacy behaviour, no
-        deployment identity in play).
+        A resource belongs to this Supervisor only when its
+        ``com.cbrowser.instance-id`` label carries the same deployment
+        instance id. Missing or mismatched labels mean "not ours":
+        skip, never claim, never delete. An unconfigured Supervisor
+        owns nothing — configuration is required at startup
+        (``run_supervisor``), so this state must never arise in
+        production.
         """
-        if self.deployment_instance_id is None:
-            return True
+        if not self.deployment_instance_id:
+            return False
         return labels.get("com.cbrowser.instance-id") == self.deployment_instance_id
 
     def _cleanup_orphan_helpers(self) -> None:
@@ -1552,8 +1553,6 @@ with path.open('w') as output:
     def _require_network_ownership(self, network: Any, name: str) -> None:
         labels = network.attrs.get("Labels") or {}
         if network.name != name or not network_ownership_matches(
-            self.resource_prefix,
-            name,
             labels,
             deployment_id=self.deployment_instance_id,
         ):

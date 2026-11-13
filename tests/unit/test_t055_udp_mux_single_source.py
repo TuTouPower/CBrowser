@@ -75,6 +75,8 @@ async def test_empty_mux_env_uses_default_range(
         agent_key_file=agent_key,
         gateway_control_url="http://gateway.invalid",
         gateway_token_file=gateway_token,
+        # t069: a deployment instance id is a startup prerequisite.
+        deployment_instance_id="dep-t055",
     )
 
     assert len(_fake_serve) == 1
@@ -98,6 +100,8 @@ async def test_custom_mux_env_reaches_port_allocator(
         agent_key_file=agent_key,
         gateway_control_url="http://gateway.invalid",
         gateway_token_file=gateway_token,
+        # t069: a deployment instance id is a startup prerequisite.
+        deployment_instance_id="dep-t055",
     )
 
     assert len(_fake_serve) == 1
@@ -122,6 +126,7 @@ async def test_inverted_mux_range_fails_startup(
             agent_key_file=agent_key,
             gateway_control_url="http://gateway.invalid",
             gateway_token_file=gateway_token,
+            deployment_instance_id="dep-t055",
         )
 
 
@@ -142,4 +147,5 @@ async def test_non_integer_mux_env_fails_startup(
             agent_key_file=agent_key,
             gateway_control_url="http://gateway.invalid",
             gateway_token_file=gateway_token,
+            deployment_instance_id="dep-t055",
         )

@@ -178,22 +178,6 @@
             "conflicts_with": "t061,t062,t063,t066,t068,t069",
             "note": "来源 p082；Web 客户端托管已存在，只纳入代理凭据剩余缺口",
             "dir": "docs/tasks/t065_proxy_credential_isolation"
-        },
-        {
-            "tid": "t069",
-            "slug": "strict_control_contracts",
-            "title": "控制面严格契约与遗留兼容删除",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t062",
-            "conflicts_with": "t061,t062,t064,t065,t066",
-            "note": "从 t062 分出 p071；先完成 t062 模块边界，再收紧协议、归属与输入；保留文档化幂等键三源",
-            "dir": "docs/tasks/t069_strict_control_contracts"
         }
     ]
 }

@@ -30,8 +30,18 @@ def test_bypass_and_infrastructure_arguments_are_rejected(arg):
         validate_launch_args([arg])
 
 
-def test_profile_config_filters_legacy_launch_args():
-    assert ProfileConfig(launch_args=["--load-extension=/tmp/evil"]).launch_args == []
+def test_profile_config_rejects_legacy_launch_args():
+    # t069: ProfileConfig validates persisted launch_args with the same
+    # single strict validator; the old filter-and-load contract
+    # (filter_launch_args) is deleted, so an out-of-whitelist stored
+    # argument fails validation instead of being silently dropped.
+    with pytest.raises(ValidationError, match="is not allowed: --load-extension"):
+        ProfileConfig(launch_args=["--load-extension=/tmp/evil"])
+    with pytest.raises(ValidationError, match="is not allowed"):
+        ProfileConfig(launch_args=["--some-unknown-flag"])
+    with pytest.raises(ValidationError, match="is not allowed"):
+        ProfileConfig(launch_args=["--mute-audio=true"])
+    # Create requests were already strict (unchanged).
     from cbrowser.domain.models import ProfileCreateRequest
 
     with pytest.raises(ValidationError):

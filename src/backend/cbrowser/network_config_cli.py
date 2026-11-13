@@ -2,10 +2,10 @@
 
 ``render`` deterministically writes ``<network-dir>/Caddyfile`` for the
 given HTTPS port and prints the shell assignments deploy.sh evaluates
-(bind host is always loopback; the fingerprint is the hash of the
-rendered product, never of the generator source). There is no runtime
-state to initialize or read back: the Caddyfile itself is the record,
-and a deploy re-renders it from the deployment port every time.
+(only values deploy.sh actually consumes: the port and the fingerprint
+of the rendered product, never of the generator source). There is no
+runtime state to initialize or read back: the Caddyfile itself is the
+record, and a deploy re-renders it from the deployment port every time.
 """
 
 import argparse
@@ -17,7 +17,6 @@ from pathlib import Path
 from cbrowser.network_config import (
     CADDYFILE_FILENAME,
     compute_caddyfile_sha256,
-    derive_origin_whitelist,
     generate_caddyfile,
 )
 from cbrowser.shared.atomic_write import atomic_write_text
@@ -31,9 +30,7 @@ def _render(network_dir: Path, https_port: int) -> None:
     atomic_write_text(network_dir / CADDYFILE_FILENAME, content, mode=0o644)
     sha = compute_caddyfile_sha256(content)
     lines = [
-        "BIND_HOST=127.0.0.1",
         f"HTTPS_PORT={https_port}",
-        f"PUBLIC_ORIGIN={shlex.quote(derive_origin_whitelist(https_port)[0])}",
         f"CADDYFILE_SHA256={shlex.quote(sha)}",
     ]
     sys.stdout.write("\n".join(lines) + "\n")

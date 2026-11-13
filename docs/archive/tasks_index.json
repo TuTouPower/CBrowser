@@ -916,6 +916,22 @@
             "dir": "docs/archive/tasks/t068_profile_fingerprint_verification"
         },
         {
+            "tid": "t069",
+            "slug": "strict_control_contracts",
+            "title": "控制面严格契约与遗留兼容删除",
+            "status": "done",
+            "branch": "t069_strict_control_contracts",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90",
+            "depends_on": "t062",
+            "conflicts_with": "t061,t062,t064,t065,t066",
+            "note": "从 t062 分出 p071；先完成 t062 模块边界，再收紧协议、归属与输入；保留文档化幂等键三源",
+            "dir": "docs/archive/tasks/t069_strict_control_contracts"
+        },
+        {
             "tid": "t070",
             "slug": "profile_backup_restore",
             "title": "完整 Profile 备份与原子恢复闭环",

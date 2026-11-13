@@ -99,3 +99,6 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - 服务端 Selkies 以受控构建包运行：固定上游 2.2.1 wheel＋构建期显式补丁（身份清单 `config/selkies/selkies_controlled_build.json`，ADR 034）。采集策略服务经构建期工厂钩子（`SELKIES_WEBRTC_SERVICE_FACTORY` → `cbrowser.stream_agent.policy:create_policy_service`）在启动时构造，仍经官方 HELLO / client_tab_id / resume_key 建立会话；运行时不替换上游模块、不解析上游源码、不校验私有 ABI。
 - 帧率仲裁语义不变：按 active_peers 与媒体 consumer 信号在静止 8 FPS、运动/输入 30 FPS 间仲裁，零 consumer 暂停可恢复，单个 consumer 暂停不压低其他 consumer。
 - X11 键盘行为（named spare 过滤、text_room 整池回退、prebind 容量保护与绑定后 keymap reload/settle）由受控包内实现，中文 IME、普通键盘、剪贴板与复制标签隔离、viewer resume 行为与 t063 前一致；真实链断言见 `tests/e2e/test_stream_x11_keymap_e2e.py`（含受控版本号断言）。
+## viewer 身份单一通道（t069）
+
+- selkies 查看器身份只有一个文档化来源：宿主页生成的 iframe URL 查询参数 `profileId`。entry 缺失/为空即抛错；未文档化的 `profile_id` 参数出现即抛错；适配器安装要求非空安装期 id，检测到 `__CBROWSER_PROFILE_ID__` 全局注入即拒绝；WebSocket 信令 shim 只用安装期 id，不再回读页面 URL 或全局变量，不存在 "default" 身份。

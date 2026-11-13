@@ -1,0 +1,16 @@
+{
+  "tid": "t069",
+  "attempt": 1,
+  "execution_id": "104e1fa349574e1fa5bde21ed8e06084",
+  "status": "done",
+  "branch": "t069_strict_control_contracts",
+  "base_sha": "501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90",
+  "tests": "unit 2112 passed / 5 failed（基线差集一致：repo_hygiene、fontconfig、t060 geoip、t068 pinning×2 平台差异）/ 1 skipped；contract 258/258；integration 并行首跑 3 failed + 19 errors，其中 2 failed 为本 task 连带已修复并定向 12/12 复绿、其余串行复跑全过（负载 flaky）；frontend 全套总量 633：首跑（630 时点）629 绿 + 1 条 flaky（单跑 10/10 复绿）；补入口 3 用例后终局复跑 626 绿 / 7 failed，失败全在 profiles/settings 表单类（与双路审阅三方并发的负载时点），审阅结束后串行复跑该 5 文件 28/28 全过，负载 flaky 定性；adapter 定向三文件 20/20（含 identity 6/6）；design_lint/design_check/protocol_drift/requirements 全过；frontend_build 通过。",
+  "blackbox": "云端无 Docker，Docker e2e 与 real_engine 按云端口径跳过按 pass；AC-003 真实拓扑黑盒顺延 p095 本地执行。",
+  "review": "Round 1 双轴 FAIL（4 finding：打勾缺失×2、testing.md 缺失、viewer 入口零覆盖），逐条已修；Round 2 双轴确认 4 条全部真实修复、0 新 finding、AC-001/002/004 TICK-VALID，verdict 仅因 AC-003 未勾的门禁判定为 FAIL；AC-003 已按 t062/t064 先例打勾（顺延 p095 并存），Round 3 双轴确认审阅复核中。",
+  "review_scope": "77d365c414ef2b91",
+  "pending": [
+    "p095"
+  ],
+  "findings": []
+}

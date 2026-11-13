@@ -111,6 +111,9 @@ def _adapter(tmp_path, client, **kw) -> DockerAdapter:
     root = tmp_path / "data"
     engine = root / "engine_cache"
     (engine / "geoip").mkdir(parents=True)
+    # t069: production always configures a deployment identity, and
+    # network ownership is decided by its label alone.
+    kw.setdefault("deployment_instance_id", "dep-t026")
     return DockerAdapter(
         path_validator=PathValidator(root),
         engine_cache_dir=engine,
@@ -151,7 +154,7 @@ async def test_pre_spec_network_is_not_conforming(tmp_path):
     client = _client()
     client.networks.by_name[NET_NAME] = _FakeNetwork(
         NET_NAME,
-        network_labels(PREFIX, PROFILE),
+        network_labels(PREFIX, PROFILE, deployment_id="dep-t026"),
         [{"Subnet": "172.20.0.0/16", "IPRange": ""}],
     )
     adapter = _adapter(tmp_path, client)
@@ -339,7 +342,7 @@ async def test_rebuild_media_network_keeps_browser_attached(tmp_path):
     adapter = _adapter(tmp_path, client)
     old = _FakeNetwork(
         NET_NAME,
-        network_labels(PREFIX, PROFILE),
+        network_labels(PREFIX, PROFILE, deployment_id="dep-t026"),
         [{"Subnet": "172.20.0.0/16", "IPRange": ""}],
     )
     client.networks.by_name[NET_NAME] = old

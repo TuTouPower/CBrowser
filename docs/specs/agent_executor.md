@@ -159,6 +159,10 @@
     核对当前 CLI 表面、用动作程序 `version: 1` 调用本规约，凭证走
     `--token-file` 或环境变量；凭证不写入 Skill 或账本。
 
+## 控制调用错误严格解析（t069）
+
+- agent_executor 向控制 API 发起的 handoff 等调用，409 响应只认统一 `ErrorResponse` 形状：合法形状的 `error` 以 `control_conflict` 呈现；旧 `detail.code` 嵌套、`details.code` 与空体一律是 `control_protocol_error`，不再回退解析为业务拒绝。
+
 ## t032 交接（本 task 不判定）
 
 - 真实镜像（arm64、容器化 X11/Stream、Mac Chrome Viewer）下的页面、

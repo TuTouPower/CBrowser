@@ -1,7 +1,9 @@
 import { installSelkiesClientAdapter } from "./adapter";
+import { resolveSelkiesProfileId } from "./selkies_profile_id";
 
-const params = new URLSearchParams(window.location.search);
-const profileId =
-  params.get("profileId") || params.get("profile_id") || "default";
-
-installSelkiesClientAdapter(window, profileId);
+// The viewer's identity comes from resolveSelkiesProfileId (strict
+// single channel, t069); this entry only wires it into the adapter.
+installSelkiesClientAdapter(
+  window,
+  resolveSelkiesProfileId(window.location.search)
+);

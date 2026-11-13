@@ -80,9 +80,24 @@ function pairFrom(
 
 export function installSelkiesClientAdapter(
   targetWindow: Window = window,
-  profileId: string = "default"
+  profileId: string
 ): void {
   const win = targetWindow as SelkiesWindow;
+  // Strict viewer identity (t069): the install-time profileId — passed
+  // by the selkies adapter entry from the host page's documented
+  // ?profileId= channel — is the only identity source. A missing id or
+  // a global __CBROWSER_PROFILE_ID__ injection is rejected outright;
+  // there is no "default" profile and no other fallback.
+  if (!profileId) {
+    throw new Error(
+      "installSelkiesClientAdapter: a non-empty profileId is required"
+    );
+  }
+  if (win.__CBROWSER_PROFILE_ID__ !== undefined) {
+    throw new Error(
+      "installSelkiesClientAdapter: __CBROWSER_PROFILE_ID__ global injection is not accepted"
+    );
+  }
   if (installedWindows.has(win)) {
     return;
   }
@@ -252,13 +267,10 @@ export function installSelkiesClientAdapter(
     class ShimWebSocket extends BaseWebSocket {
       constructor(url: string | URL, protocols?: string | string[]) {
         const u = new URL(url, win.location?.href || "http://localhost");
-        const params = new URLSearchParams(win.location?.search || "");
-        const resolvedProfileId =
-          params.get("profileId") ||
-          params.get("profile_id") ||
-          win.__CBROWSER_PROFILE_ID__ ||
-          profileId ||
-          "default";
+        // Identity comes only from the install-time profileId closure
+        // (t069): query parameters and globals in this page are never
+        // re-read as identity sources.
+        const resolvedProfileId = profileId;
 
         if (
           u.pathname.includes("/signaling") ||

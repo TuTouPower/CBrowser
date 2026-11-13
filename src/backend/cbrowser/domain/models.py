@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cbrowser.domain.profile_locale import validate_locale, validate_timezone
-from cbrowser.launch_args import filter_launch_args, validate_launch_args
+from cbrowser.launch_args import validate_launch_args
 
 
 def utc_now_iso() -> str:
@@ -276,7 +276,10 @@ class ProfileConfig(BaseModel):
     @field_validator("launch_args")
     @classmethod
     def normalize_launch_arguments(cls, v: list[str]) -> list[str]:
-        return filter_launch_args(v)
+        # Single strict validation (t069): persisted launch_args are
+        # never silently filtered or rewritten; an out-of-whitelist
+        # stored value fails validation and names the argument.
+        return validate_launch_args(v)
 
     @field_validator("gpu_family", mode="before")
     @classmethod

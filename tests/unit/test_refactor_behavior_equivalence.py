@@ -292,14 +292,17 @@ def test_network_spec_names_labels_and_ownership() -> None:
         "com.cbrowser.profile-id": "p1",
         "com.cbrowser.prefix": "cb",
     }
+    # t069: ownership is decided by the instance-id label against the
+    # configured deployment id alone. Networks labelled without a
+    # deployment id (labels above) are never owned, and name/prefix no
+    # longer participate in the decision.
     labels = network_labels("cb", "p1")
-    assert network_ownership_matches("cb", "cb-net-p1", labels)
-    assert network_ownership_matches("cb", "cb-browser-net-p1", labels)
-    assert not network_ownership_matches("cb", "cb-net-p2", labels)
-    assert not network_ownership_matches("other", "cb-net-p1", labels)
-    assert not network_ownership_matches(
-        "cb", "cb-net-p1", {"com.cbrowser.profile-id": 1}
-    )
+    assert not network_ownership_matches(labels)
+    assert not network_ownership_matches(labels, deployment_id="dep-1")
+    owned = network_labels("cb", "p1", deployment_id="dep-1")
+    assert network_ownership_matches(owned, deployment_id="dep-1")
+    assert not network_ownership_matches(owned, deployment_id="dep-2")
+    assert not network_ownership_matches({"com.cbrowser.profile-id": 1})
     assert endpoint_port("http") == 80
     assert endpoint_port("wss") == 443
     assert endpoint_port("socks5h") == 1080

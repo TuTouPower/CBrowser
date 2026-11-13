@@ -106,14 +106,16 @@ async def test_run_program_stops_after_handoff_without_replay():
 
 
 @pytest.mark.asyncio
-async def test_control_post_409_reads_unified_error_shape(
+async def test_control_post_409_requires_unified_error_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """t056 A15: a 409 from the control API carries the refusal code in
-    the unified top-level `error`; the legacy `detail.code` shape still
-    parses; a body with no code at all falls back to control_conflict."""
+    """t069 (supersedes the t056 A15 expectations): a 409 from the control
+    API is parsed strictly. The unified ErrorResponse body surfaces its
+    `error` as a control_conflict; every other body shape — the legacy
+    `detail.code` nesting, a details-only body, or an empty body — is a
+    control_protocol_error, never a business refusal."""
 
-    async def _run(body: dict) -> str:
+    async def _run(body: dict) -> SessionError:
         class _Resp:
             status_code = 409
 
@@ -139,13 +141,18 @@ async def test_control_post_409_reads_unified_error_shape(
         session = _session("ws://127.0.0.1:9/api/v1/automation/profiles/p1/cdp")
         with pytest.raises(SessionError) as exc:
             await session._control_post("handoff", {"reason": "permission"})
-        assert exc.value.error_code == "control_conflict"
-        return str(exc.value)
+        return exc.value
 
-    assert "control_taken" in await _run(
+    unified = await _run(
         {"error": "control_taken", "message": "taken", "retryable": False}
     )
-    assert "control_taken" in await _run(
-        {"detail": {"code": "control_taken", "message": "taken"}}
-    )
-    assert (await _run({})).endswith("refused: control_conflict")
+    assert unified.error_code == "control_conflict"
+    assert "control_taken" in str(unified)
+
+    for legacy_body in (
+        {"detail": {"code": "control_taken", "message": "taken"}},
+        {"details": {"code": "control_taken"}},
+        {},
+    ):
+        protocol_error = await _run(legacy_body)
+        assert protocol_error.error_code == "control_protocol_error"

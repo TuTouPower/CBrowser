@@ -90,8 +90,21 @@ async def test_cli_claim_handoff_round_trip_and_stale_fence(stub_server):
 
 @pytest.mark.asyncio
 async def test_cli_claim_conflict_maps_to_control_conflict(stub_server):
+    # t069: the stub serves the API's real wire shape — the app-level
+    # HTTPException handler converts the route's detail dict into the
+    # unified ErrorResponse (error = the conflict code). The pre-t069
+    # stub served the raw {"detail": {"code": ...}} shape, which the
+    # strict client now treats as a protocol error.
     _StubHandler.responses = [
-        (409, {"detail": {"code": "control_reclaim_blocked"}}),
+        (
+            409,
+            {
+                "error": "control_reclaim_blocked",
+                "message": "Control was taken over; an explicit human "
+                "restore is required before an agent may claim again",
+                "retryable": False,
+            },
+        ),
     ]
     session = ExecutorSession(
         endpoint=f"ws://127.0.0.1:{stub_server}/api/v1/automation/profiles/p1/cdp",
@@ -102,6 +115,7 @@ async def test_cli_claim_conflict_maps_to_control_conflict(stub_server):
     with pytest.raises(SessionError) as exc:
         await session.control_claim()
     assert exc.value.error_code == "control_conflict"
+    assert "control_reclaim_blocked" in str(exc.value)
 
 
 @pytest.mark.asyncio

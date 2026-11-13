@@ -186,9 +186,15 @@ def _gateway_control(
 
 
 def _visibility_503() -> httpx.Response:
+    # t069: the Gateway's real supervisor-fence 503 carries the unified
+    # ErrorResponse shape (server.supervisor_fence_failure).
     return httpx.Response(
         503,
-        json={"detail": "Agent unavailable for this instance"},
+        json={
+            "error": "agent_unavailable",
+            "message": f"Agent for profile {PROFILE} is unavailable",
+            "retryable": True,
+        },
     )
 
 

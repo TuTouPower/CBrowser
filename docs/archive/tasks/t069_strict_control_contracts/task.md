@@ -25,10 +25,10 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：合法 ErrorResponse 保留字段；旧 detail、裸文本和缺字段响应产生稳定可观测协议错误，不作为合法业务结果解析。
-- [ ] AC-002：observed-state 的 422 不触发删 browser_product/browser_user_agent 重发；失败不会伪报收敛。
-- [ ] [deploy] AC-003：缺失/空/不匹配 instance-id 的容器与网络不被认领删除；Supervisor 配置缺失在 Docker 变更前失败，合法匹配资源可恢复清理。
-- [ ] AC-004：非法持久化 launch_args 在启动前被明确拒绝并指向可修复 Profile，不静默过滤或改写；viewer 缺失/混用未文档化身份参数被拒；合法 locale/timezone None 与文档化幂等键三源保持；BIND_HOST/PUBLIC_ORIGIN 死输出移除。
+- [x] AC-001：合法 ErrorResponse 保留字段；旧 detail、裸文本和缺字段响应产生稳定可观测协议错误，不作为合法业务结果解析。
+- [x] AC-002：observed-state 的 422 不触发删 browser_product/browser_user_agent 重发；失败不会伪报收敛。
+- [x] [deploy] AC-003：缺失/空/不匹配 instance-id 的容器与网络不被认领删除；Supervisor 配置缺失在 Docker 变更前失败，合法匹配资源可恢复清理。
+- [x] AC-004：非法持久化 launch_args 在启动前被明确拒绝并指向可修复 Profile，不静默过滤或改写；viewer 缺失/混用未文档化身份参数被拒；合法 locale/timezone None 与文档化幂等键三源保持；BIND_HOST/PUBLIC_ORIGIN 死输出移除。
 
 ### 可测试性声明
 

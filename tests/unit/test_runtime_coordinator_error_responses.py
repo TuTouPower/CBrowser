@@ -1,8 +1,12 @@
 """Production regression tests for runtime coordinator error response parsing.
 
 Validates that non-dict JSON (null, list, string, number) and non-JSON error
-bodies returned by Supervisor are safely handled without AttributeError,
-preserving HTTP status and raw response detail.
+bodies returned by Supervisor are safely handled without AttributeError.
+
+NOTE (t069): the pre-t069 contract preserved the raw response detail in the
+coordinator error. That passthrough is deleted: only a valid unified
+ErrorResponse body contributes its error/message; every body in this matrix
+is non-conforming, so each now yields the stable protocol-error marker.
 """
 
 from __future__ import annotations
@@ -17,7 +21,11 @@ import pytest
 from cbrowser.adapters.database.migrations import run_database_migrations
 from cbrowser.adapters.database.repository import ProfileRepository
 from cbrowser.adapters.database.session import create_engine_and_maker
-from cbrowser.api.runtime_coordinator import ReconcileOutcome, RuntimeCoordinator
+from cbrowser.api.runtime_coordinator import (
+    DOWNSTREAM_PROTOCOL_ERROR,
+    ReconcileOutcome,
+    RuntimeCoordinator,
+)
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.services.profile_service import ProfileService
 from pydantic import SecretStr
@@ -48,20 +56,19 @@ def _make_coordinator(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("body_bytes", "expected_detail"),
+    "body_bytes",
     [
-        (b"null", "null"),
-        (b"[\"item1\", \"item2\"]", "[\"item1\", \"item2\"]"),
-        (b"\"raw error string\"", "\"raw error string\""),
-        (b"12345", "12345"),
-        (b"<html>Bad Gateway</html>", "<html>Bad Gateway</html>"),
-        (b"{\"detail\": \"Custom dict detail\"}", "Custom dict detail"),
+        b"null",
+        b"[\"item1\", \"item2\"]",
+        b"\"raw error string\"",
+        b"12345",
+        b"<html>Bad Gateway</html>",
+        b"{\"detail\": \"Custom dict detail\"}",
     ],
 )
 async def test_reconcile_running_error_response_parsing(
     tmp_path: Path,
     body_bytes: bytes,
-    expected_detail: str,
 ) -> None:
     _db_path, engine, service = await _make_service(tmp_path)
     try:
@@ -88,7 +95,7 @@ async def test_reconcile_running_error_response_parsing(
         assert outcome is ReconcileOutcome.RETRYABLE
         assert error is not None
         assert "Coordinator error: AttributeError" not in error
-        expected_msg = f"Supervisor start failed (502): {expected_detail}"
+        expected_msg = f"Supervisor start failed (502): {DOWNSTREAM_PROTOCOL_ERROR}"
         assert error == expected_msg
 
         after_rt = await service.get_runtime(profile.id)
@@ -105,20 +112,19 @@ async def test_reconcile_running_error_response_parsing(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("body_bytes", "expected_detail"),
+    "body_bytes",
     [
-        (b"null", "null"),
-        (b"[\"stop_err1\", \"stop_err2\"]", "[\"stop_err1\", \"stop_err2\"]"),
-        (b"\"stop string error\"", "\"stop string error\""),
-        (b"67890", "67890"),
-        (b"<html>Stop Gateway Error</html>", "<html>Stop Gateway Error</html>"),
-        (b"{\"detail\": \"Custom stop detail\"}", "Custom stop detail"),
+        b"null",
+        b"[\"stop_err1\", \"stop_err2\"]",
+        b"\"stop string error\"",
+        b"67890",
+        b"<html>Stop Gateway Error</html>",
+        b"{\"detail\": \"Custom stop detail\"}",
     ],
 )
 async def test_reconcile_stopped_error_response_parsing(
     tmp_path: Path,
     body_bytes: bytes,
-    expected_detail: str,
 ) -> None:
     db_path, engine, service = await _make_service(tmp_path)
     try:
@@ -152,7 +158,7 @@ async def test_reconcile_stopped_error_response_parsing(
         assert outcome is ReconcileOutcome.RETRYABLE
         assert error is not None
         assert "Coordinator error: AttributeError" not in error
-        expected_msg = f"Supervisor stop failed (500): {expected_detail}"
+        expected_msg = f"Supervisor stop failed (500): {DOWNSTREAM_PROTOCOL_ERROR}"
         assert error == expected_msg
 
         after_rt = await service.get_runtime(profile.id)

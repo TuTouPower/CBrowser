@@ -3209,19 +3209,10 @@ class SupervisorCore:
                 headers=self._auth_headers(),
                 json={**payload, **version_fields},
             )
-            if resp.status_code == 422 and version_fields:
-                # The request model is strict (extra=forbid). If the API layer
-                # has not yet declared the two version fields, degrade to the
-                # original payload so runtime convergence is never blocked;
-                # the version facts simply stay unset until it does.
-                logger.warning(
-                    "Observed-state request rejected version fields; "
-                    "reporting without browser version: profile=%s",
-                    profile_id,
-                )
-                resp = await self.api.post(
-                    url, headers=self._auth_headers(), json=payload
-                )
+            # A 422 is a contract rejection, reported as not delivered
+            # (t069): the payload is never resent with fields dropped
+            # to appease an older request model, so a failed report
+            # cannot masquerade as convergence.
             return resp.status_code == 200
         except Exception as e:  # noqa: BLE001 - API state report network failure logged and returns False
             logger.warning(

@@ -621,14 +621,11 @@ check_prefix_conflict() {
   # through its Supervisor and Profile containers.
   #
   # Ownership is decided ONLY by the com.cbrowser.instance-id label
-  # (A59/AC-021): a prefix-matching container is ours when — and only
-  # when — its instance-id equals this instance's
-  # CBROWSER_INSTANCE_ID, or when the label is missing AND its compose
-  # project is ours (containers created before the label existed, e.g.
-  # a data-root migration redeploy).  A present but mismatched
-  # instance-id is foreign in every case, including the same compose
-  # project: the old <prefix>-profiles project-name exemption is
-  # deleted, and the project name alone never proves ownership.
+  # (A59/AC-021, strict t069): a prefix-matching container is ours
+  # when — and only when — its instance-id equals this instance's
+  # CBROWSER_INSTANCE_ID. A missing or mismatched instance-id is
+  # foreign in every case, including the same compose project: the
+  # project name alone never proves ownership.
   #
   # Media subnet pools (A3) are checked on the same scan, independent of
   # prefix: any other deployment whose pool overlaps ours refuses the
@@ -654,9 +651,6 @@ check_prefix_conflict() {
       *) [ "$row_prefix" = "$PREFIX" ] || continue ;;
     esac
     if [ -n "$CBROWSER_INSTANCE_ID" ] && [ "$deployment_id" = "$CBROWSER_INSTANCE_ID" ]; then
-      continue
-    fi
-    if [ -z "$deployment_id" ] && [ -n "$project" ] && [ "$project" = "$PROJECT" ]; then
       continue
     fi
     echo "Refusing to start: resource prefix '$PREFIX' is already used by instance (compose project '$project', container '$name')." >&2

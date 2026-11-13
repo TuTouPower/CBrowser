@@ -75,7 +75,7 @@
 - **读错误不清错误（A26）**：读取运行错误（`get_last_error` / runtime 响应 / SSE 的 `last_coordinator_error`）是纯读，不清除已存错误；错误只在写路径清除。
 - **清除绑定目标版本（A26）**：错误清除只发生在同一 `config_version` 的实例成功到达 running 时；清除判定为 `runtime.config_version >= 错误目标版本`（新版本成功可 supersede 旧版本错误，旧版本运行中不结算新版本错误；无目标版本的错误在任意 running 到达时清除）。失败时记录的错误带目标版本（启动失败的目标版本为当时最新版本）；后续同版本重试失败不丢弃已记录的目标版本。
 - **控制续期先提交后发布（A2）**：控制租约续期升级（renew-upgrade）在事务提交成功后才发布控制变更事件；提交失败时不发布、不持久化升级。
-- **下游错误保留原样（A15）**：Coordinator 记录的下游错误保留下游 `error` 与 `message`（格式 `"<error>: <message>"`），经 `last_coordinator_error` 呈现；混版本 Supervisor 的旧形状 `detail` 与纯文本体仍被解析，不丢信息。
+- **下游错误严格解析（A15，t069 收紧）**：Coordinator 记录的下游错误只在响应体为合法 `ErrorResponse` 时保留其 `error` 与 `message`（格式 `"<error>: <message>"`），经 `last_coordinator_error` 呈现；旧形状 `detail`、纯文本体与缺字段响应判为协议错误并记稳定标记，不再解析为业务错误。observed-state 上报 422 单次定论，不再去字段降级重发。
 
 ## 资源策略
 
@@ -84,6 +84,12 @@ Supervisor 聚合实际主机与容器 CPU 窗口，按最紧 cgroup/cpuset 预�
 ## 跨服务中立模块与镜像边界（t062）
 
 Gateway 与 Supervisor 的双向依赖已删除：端点/Origin、Agent 凭证、原子写、per-profile 锁、投递分类与实例 fence 收敛到中立包 `cbrowser/shared/` 各一份实现，全部消费方（含 REST 视图与协调器的 fence、两个投递转发器、三个锁持有方）改走同一实现；Supervisor 控制端口以 `DEFAULT_SUPERVISOR_PORT` 为唯一权威（8091 分裂消除）。认证返回领域会话对象、egress 探针 I/O 移出 domain。运行镜像按包粒度打包，闭包以 Dockerfile 组装文件树实际导入验证（单元层）；真实镜像构建与 readiness 属部署验证，顺延本地执行（见 task t062 的 AC-005 登记）。
+
+## 控制面严格契约（t069）
+
+- 错误响应只有 `ErrorResponse` 一种合法形状，解析唯一落点 `cbrowser/shared/error_response.py`：coordinator 下游透传、Supervisor 的 Gateway 可见性判定、agent_executor 控制调用全部经它；旧 `detail` 形状、裸文本与缺字段响应是协议错误，不作业务结果（可见性判未知、控制调用抛 `control_protocol_error`）。
+- observed-state 上报单次定论：422 不再触发去掉 `browser_product`/`browser_user_agent` 的降级重发，失败不伪报收敛。
+- 资源归属只认 `com.cbrowser.instance-id` 标签与配置的部署实例 ID 相等；未配置部署身份时不认领任何容器/网络，名称与前缀不再参与归属判定。
 
 ## 验证边界
 

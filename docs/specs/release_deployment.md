@@ -60,3 +60,9 @@
 - 恢复点 = 同一静默时刻的成套快照：DB（SQLite 在线 backup、integrity_check、schema stamp）+ 全部 Profile 用户数据目录（逐文件 SHA-256 manifest）+ 凭据前提清单（只记文件名/大小，凭据不进恢复点）。任一 Profile 有实际写者（运行/迁移态/实例绑定残留）时备份拒绝。
 - 恢复协议：先 staging 到目标旁并全量校验（哈希、完整性、schema stamp 与活库一致、空间足够），再按 journal 逐项 rename 成套切换；中断由下一次调用回滚到旧集并以退出码 3 报告，重跑完成恢复；恢复前整套数据保留在 `.pre-restore-<switch-id>`，不自动删除。跨代 stamp 拒绝恢复。
 - 旧 `tar data/instance` 备份漏 named volume DB，废止为环境备份手段；`deploy.sh restore` 仅作 DB 单件恢复。
+
+## 部署归属与配置严格化（t069）
+
+- 前缀冲突检查删除「instance-id 标签缺失但 compose project 匹配」的存量豁免：无标签的历史容器不再按 project 名认领或删除，与 Supervisor 的运行时归属口径一致（只认 instance-id 标签）。
+- Supervisor 部署实例 ID 是启动必填项：缺失/为空在启动入口即失败，先于任何 Docker 客户端构造与资源变更，不存在未配置降级运行。
+- `network_config_cli render` 只输出部署实际消费的赋值（`HTTPS_PORT`、`CADDYFILE_SHA256`）；无人消费的 `BIND_HOST`、`PUBLIC_ORIGIN` 死输出已删除。

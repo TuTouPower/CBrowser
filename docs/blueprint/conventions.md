@@ -63,5 +63,5 @@
 - **429**：错误码固定 `rate_limited`，同时返回 `Retry-After` 响应头。
 - **422**：字段级错误列表进 `details`，每项含 `loc` / `msg` / `type`；引用不存在的分组或代理属此类（见 domain.md「分组、代理与配置版本三分」）。
 - **限流与冲突**：限流、冲突等业务错误同样走本形状（`proxy_in_use` 的 `used_by_count`、幂等冲突的 `idempotency_conflict` 均在 `details` 内）。
-- **下游错误透传**：Runtime Coordinator 记录的下游错误保留下游 `error` 与 `message`（格式 `"<error>: <message>"`），以 `last_coordinator_error` 呈现；Supervisors 混版本时旧形状 `detail` 与纯文本体仍被解析，不丢信息。
+- **下游错误透传（t069 严格化）**：控制面只认本形状。Runtime Coordinator 记录的下游错误仅当响应体是合法 `ErrorResponse` 时保留其 `error` 与 `message`（格式 `"<error>: <message>"`），以 `last_coordinator_error` 呈现；旧形状 `detail`、纯文本体与缺字段响应一律判为协议错误，记稳定标记 `protocol_error: downstream response is not a valid ErrorResponse`，绝不作为合法业务结果解析。Supervisor 查 Gateway 可见性、agent_executor 控制调用同样只认本形状（非规范 503 判未知、非规范 409 抛 `control_protocol_error`）。解析实现唯一落点 `cbrowser/shared/error_response.py`，禁止各消费方自设兜底。
 - **契约来源**：OpenAPI（`schemas/openapi/`）与前端生成类型（`src/frontend/src/shared/api/generated/`）由脚本重新生成，禁止手改；前端 `ApiError` 的旧 `detail` 字段已改为 `details`。

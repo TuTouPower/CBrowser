@@ -27,6 +27,7 @@ from cbrowser.domain.models import (
     TransportObservationData,
 )
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
+from cbrowser.shared.error_response import parse_error_response
 from cbrowser.shared.fencing import fence_by_instance
 from pydantic import SecretStr
 
@@ -67,33 +68,34 @@ class _LastError:
     config_version: int | None = None
 
 
+#: Stable text recorded when a downstream body is not a valid
+#: ErrorResponse (t069): the failure stays observable on the runtime
+#: view as a protocol error instead of being parsed as a business
+#: result or silently replaced by raw body text.
+DOWNSTREAM_PROTOCOL_ERROR = (
+    "protocol_error: downstream response is not a valid ErrorResponse"
+)
+
+
 def _downstream_error_text(resp: Any) -> str:
     """Extract the downstream failure reason from a Supervisor response.
 
-    t056 A15: the Supervisor answers in the unified ErrorResponse shape,
-    so ``error`` and ``message`` are preserved together (``error:
+    The Supervisor answers in the unified ErrorResponse shape, so
+    ``error`` and ``message`` are preserved together (``error:
     message``) and stored as the coordinator's last error for the
     profile — surfaced on the runtime view as ``last_coordinator_error``,
-    the Profile's error_reason.  A legacy ``detail`` body and raw text
-    remain as fallbacks for non-conforming bodies.
+    the Profile's error_reason. Only that shape is parsed (t069): a
+    legacy ``detail`` body, raw text, or a body with missing fields is
+    a protocol error, recorded as :data:`DOWNSTREAM_PROTOCOL_ERROR`.
     """
     try:
         body = resp.json()
-    except Exception:  # noqa: BLE001 - non-JSON body falls back to raw text
-        return resp.text
-    if isinstance(body, dict):
-        error = body.get("error")
-        message = body.get("message")
-        if isinstance(error, str) and error and isinstance(message, str) and message:
-            return f"{error}: {message}"
-        if isinstance(error, str) and error:
-            return error
-        if isinstance(message, str) and message:
-            return message
-        detail = body.get("detail")
-        if isinstance(detail, str) and detail:
-            return detail
-    return resp.text
+    except Exception:  # noqa: BLE001 - non-JSON body is non-conforming
+        body = None
+    parsed = parse_error_response(body)
+    if parsed is None:
+        return DOWNSTREAM_PROTOCOL_ERROR
+    return f"{parsed.error}: {parsed.message}"
 
 
 class RuntimeEventBroadcaster:

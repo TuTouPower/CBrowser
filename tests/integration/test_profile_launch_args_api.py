@@ -3,7 +3,9 @@
 AC-001 (A2): ProfileUpdateRequest keeps only the strict validator; the
 PATCH tri-state for launch_args is absent=unchanged, null=clear,
 list=replace, and any out-of-whitelist entry fails the whole request 422.
-Historical rows keep being filtered on read by ProfileConfig.
+Historical rows are rejected on read (t069): the silent read filtering is
+deleted, and a stored out-of-whitelist entry fails the read loudly,
+naming the Profile, until the row is repaired.
 """
 
 from __future__ import annotations
@@ -121,7 +123,7 @@ def test_update_absent_launch_args_preserves_and_null_clears(api_client) -> None
 
 
 @pytest.mark.asyncio
-async def test_historical_row_launch_args_are_filtered_on_read(api_client) -> None:
+async def test_historical_row_launch_args_are_rejected_on_read(api_client) -> None:
     client, db_file = api_client
     profile_id = _create(client, GOOD)
     engine, session_maker = create_engine_and_maker(db_file)
@@ -129,5 +131,7 @@ async def test_historical_row_launch_args_are_filtered_on_read(api_client) -> No
         row = await session.get(ProfileModel, profile_id)
         row.launch_args = json.dumps([GOOD[0], EVIL])
     await engine.dispose()
-    # ProfileConfig read filtering drops the legacy out-of-whitelist entry.
-    assert _args(client, profile_id) == [GOOD[0]]
+    # t069: no silent filtering — the read fails and names the Profile
+    # (TestClient re-raises the server error; production returns 500).
+    with pytest.raises(RuntimeError, match="invalid stored launch_args"):
+        _args(client, profile_id)
