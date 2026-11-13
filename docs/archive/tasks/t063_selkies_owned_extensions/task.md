@@ -25,11 +25,11 @@ Selkies 的采集策略和键盘映射依赖动态子类、运行时全局替换
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：Stream 通过实际官方 HELLO/client_tab_id/resume_key 建立 WebRTC 首帧，无运行时全局替换上游类/实例方法。
-- [ ] [deploy] AC-002：按现行 active_peers/媒体 consumer 活跃信号仲裁静止 8 FPS、运动/输入 30 FPS，零活跃 consumer 时暂停并能恢复；单个暂停 consumer 不压低其他活跃 consumer，报告以实际信号命名。
-- [ ] [deploy] AC-003：中文 IME、普通键盘、剪贴板、复制标签隔离、viewer resume 保持既有行为。
-- [ ] AC-004：启动不再解析上游 AST/inspect.getsource 或私有 ABI 清单；自有策略单测不依赖上游私有类。
-- [ ] AC-005：服务端受控包可从固定上游制品和已记录补丁重复构建，最终哈希可核对；客户端静态资源保持独立完整性验证，两端来源关系可追溯。
+- [x] [deploy] AC-001：Stream 通过实际官方 HELLO/client_tab_id/resume_key 建立 WebRTC 首帧，无运行时全局替换上游类/实例方法。
+- [x] [deploy] AC-002：按现行 active_peers/媒体 consumer 活跃信号仲裁静止 8 FPS、运动/输入 30 FPS，零活跃 consumer 时暂停并能恢复；单个暂停 consumer 不压低其他活跃 consumer，报告以实际信号命名。
+- [x] [deploy] AC-003：中文 IME、普通键盘、剪贴板、复制标签隔离、viewer resume 保持既有行为。
+- [x] AC-004：启动不再解析上游 AST/inspect.getsource 或私有 ABI 清单；自有策略单测不依赖上游私有类。
+- [x] AC-005：服务端受控包可从固定上游制品和已记录补丁重复构建，最终哈希可核对；客户端静态资源保持独立完整性验证，两端来源关系可追溯。
 
 ### 可测试性声明
 
@@ -67,7 +67,7 @@ Selkies 的采集策略和键盘映射依赖动态子类、运行时全局替换
 
 <!-- /规范 -->
 
-- 公开扩展能力、许可证及受控包构建：UNVERIFIED-SPIKE，读取实际 2.2.1 制品验证公开扩展或构建期补丁方案；不预先声称 hook 一定不存在。
+- 公开扩展能力、许可证及受控包构建：已核实（s020）。结论：selkies 2.2.1 对 WebRTC 服务类与 \_XTestKeyboard 均无公开扩展点（`selkies/__main__.py:173` 硬编码构造、键盘在私有方法内直接实例化、全包无插件机制）；许可证为 MPL-2.0，允许修改再分发。采纳路线：固定上游 wheel（SHA256 与 uv.lock 一致）+ 构建期最小显式补丁的受控包，补丁后键盘三行为与现行 wrapper 逐项等价、制品可确定性重建，均经 s020 实验验证（`docs/spikes/s020_selkies_221_extension_points/report.md`）。
 
 ### 风险与回退
 

@@ -40,11 +40,11 @@ Agent 主动通过带 Bearer 凭证的 WebSocket 注册。所有包携带 versio
 
 ## 直连媒体与原生输入适配
 
-媒体只使用同机 `127.0.0.1` host 候选直连（ADR 013）：Stream UDP mux 发布到宿主回环，客户端与服务端均不配置 STUN/TURN。已删除 coturn、TURN 凭证与轮换、ICE 代次接管及对 Selkies 私有 ABI 的补丁；Selkies 不再被要求提供 ICE restart。s011/d026 验证了多页面、复制标签、刷新、关闭首 tab、可见性暂停/恢复与 Viewer 断线 resume。「不配置 STUN/TURN」在 Stream 启动参数层由 ICE-lite 落实（t019）：Supervisor `stream_environment` 注入 `SELKIES_WEBRTC_ICE_LITE=true`，Stream entrypoint 同步 export 该变量并向 Selkies 传 `--webrtc-ice-lite`；否则 Selkies 2.1.0 会回退其默认外部 STUN/TURN（OpenRelay），其 TURN allocation 超时使每个新 PeerConnection 的 offer 固定延迟约 5 秒。unit 门禁 `tests/unit/test_stream_ice_config.py` 断言该参数存在且 entrypoint 不出现任何外部 STUN/TURN 配置。
+媒体只使用同机 `127.0.0.1` host 候选直连（ADR 013）：Stream UDP mux 发布到宿主回环，客户端与服务端均不配置 STUN/TURN。已删除 coturn、TURN 凭证与轮换、ICE 代次接管适配器；Selkies 不再被要求提供 ICE restart。s011/d026 验证了多页面、复制标签、刷新、关闭首 tab、可见性暂停/恢复与 Viewer 断线 resume。「不配置 STUN/TURN」在 Stream 启动参数层由 ICE-lite 落实（t019）：Supervisor `stream_environment` 注入 `SELKIES_WEBRTC_ICE_LITE=true`，Stream entrypoint 同步 export 该变量并向 Selkies 传 `--webrtc-ice-lite`；否则 Selkies 2.1.0 会回退其默认外部 STUN/TURN（OpenRelay），其 TURN allocation 超时使每个新 PeerConnection 的 offer 固定延迟约 5 秒。unit 门禁 `tests/unit/test_stream_ice_config.py` 断言该参数存在且 entrypoint 不出现任何外部 STUN/TURN 配置。
 
-中文使用官方 composition/co,end → Native X11 输入，不使用剪贴板提交。x11_keymap.py 按运行时 XKB 非空名称过滤 spare，保留 Native 分配顺序；每次新绑定通过有界 xkbcomp reload 通知活跃 Chrome，并保留 SDK settle。按住的槽及当前 batch 已绑定槽不得重绑，无容量则拒绝。该路径有同步 subprocess 成本，P95、1000次输入与8小时稳定性须在 t009/t012 实测，当前不作性能承诺。细节见 d014/d017/d018。
+中文使用官方 composition/co,end → Native X11 输入，不使用剪贴板提交。受控构建的 Selkies 包（t063，ADR 034）在 `_XTestKeyboard` 内按运行时 XKB 非空名称过滤 spare，保留 Native 分配顺序；每次新绑定通过有界 xkbcomp reload 通知活跃 Chrome，并保留 SDK settle。按住的槽及当前 batch 已绑定槽不得重绑，无容量则拒绝。该路径有同步 subprocess 成本，P95、1000次输入与8小时稳定性须在 t009/t012 实测，当前不作性能承诺。细节见 d014/d017/d018。
 
-Selkies 私有 API 只经 `x11_keymap` 适配层访问（t022）：安装期校验当前钉版（t043 起为 2.2.1，`SUPPORTED_SELKIES_VERSION`）的完整私有面（prebind/text_room/\_find_spare_keycodes/\_layout_keycode 签名、`_BIND_SETTLE_S`、__init__ 实例属性），结构或签名不符明确报 unsupported ABI，不静默误判 driver dead；键池 None 时按 SDK 原规则惰性初始化同一有限键池，不当作无限容量。版本升级须先按 s012 spike 复核协议字符串与私有 ABI，不静默放行。
+Selkies 扩展自 t063 起由受控构建承担（ADR 034）：正式 spike s020 逐文件核查钉版 wheel 后确认，2.2.1 对 WebRTC 服务类与 `_XTestKeyboard` 均无公开扩展点，故服务端运行固定上游 wheel＋构建期最小显式补丁的受控包（版本 `2.2.1+cbrowser.1`）。身份清单 `config/selkies/selkies_controlled_build.json` 记录上游版本/文件名/SHA256/URL、补丁序列及各自 SHA256 与目标、最终包 SHA256，并登记 Web 客户端清单（`config/selkies/selkies_web_sha256.txt`，由同一上游 wheel 抽取）哈希以声明两端同源；构建脚本 `scripts/build_selkies_controlled.py` 确定性重建、任一漂移失败封闭，Stream 镜像在 builder 阶段构建并校验安装戳后才替换官方包。采集策略经 `SELKIES_WEBRTC_SERVICE_FACTORY` 命名的自有工厂（`cbrowser.stream_agent.policy:create_policy_service`，由 StreamAgent 启动期绑定具体工厂）在 Selkies 启动时解析构造，不替换任何上游模块全局；键盘三行为（named spare 过滤、text_room 整池回退、prebind 容量保护与绑定后 reload/settle）直接位于受控包内。运行时不再解析上游源码、不读取私有属性清单、不做 ABI 校验。版本升级须按 s020 流程重新核查扩展面与补丁锚点并复跑行为等价验证，锚点不命中即构建失败，不静默放行。
 
 ## 镜像构成（t024）
 

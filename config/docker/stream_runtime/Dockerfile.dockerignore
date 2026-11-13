@@ -1,6 +1,10 @@
 **
 !config/docker/stream_runtime/requirements.txt
 !config/docker/stream_runtime/entrypoint.sh
+!scripts/build_selkies_controlled.py
+!config/selkies/selkies_controlled_build.json
+!config/selkies/patches/0001-webrtc-service-factory-hook.patch
+!config/selkies/patches/0002-x11-keyboard-keymap-coherence.patch
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/udp_mux.py

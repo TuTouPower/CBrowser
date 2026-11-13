@@ -1,0 +1,123 @@
+--- a/selkies/input_handler.py
++++ b/selkies/input_handler.py
+@@ -1330,6 +1330,56 @@
+         self._release_resources()
+ 
+ 
++
++# --- Controlled-build additions: XKB keymap coherence -------------------
++# An active Chromium can retain its old map after core symbol changes.
++# Reloading that map broadcasts a keyboard replacement, provided every
++# spare has an XKB name: unnamed keys coalesce during serialization.
++
++_XKBCOMP_PATH = "/usr/bin/xkbcomp"
++
++
++def _read_xkb_keymap() -> bytes:
++    import subprocess
++
++    try:
++        return subprocess.run(
++            [_XKBCOMP_PATH, "-xkb", os.environ["DISPLAY"], "-"],
++            check=True,
++            capture_output=True,
++            timeout=2,
++        ).stdout
++    except (OSError, subprocess.SubprocessError, KeyError):
++        # Keyboard maps contain private text symbols; never attach output.
++        raise RuntimeError("X11 keyboard map query failed") from None
++
++
++def _xkb_named_keycodes() -> set:
++    """Keycodes carrying a non-empty XKB name in the live server map."""
++    return {
++        int(match.group(1))
++        for match in re.finditer(
++            rb"^\s*<[^>]+>\s*=\s*(\d+);", _read_xkb_keymap(), re.MULTILINE
++        )
++    }
++
++
++def _reload_xkb_keymap() -> None:
++    import subprocess
++
++    mapping = _read_xkb_keymap()
++    try:
++        subprocess.run(
++            [_XKBCOMP_PATH, "-", os.environ["DISPLAY"]],
++            input=mapping,
++            check=True,
++            capture_output=True,
++            timeout=2,
++        )
++    except (OSError, subprocess.SubprocessError, KeyError):
++        raise RuntimeError("X11 keyboard map refresh failed") from None
++
++
+ class _XTestKeyboard:
+     """Keyboard controller backed by the bundled python-xlib XTEST extension.
+ 
+@@ -1458,7 +1508,18 @@
+         text = [kc for kc in self._TEXT_SPARES if kc in self._spare_set]
+         keysym, evdev_kc = self._EVDEV_LEFT
+         self._text_codes = 0 if self._d.keysym_to_keycode(keysym) == evdev_kc else len(text)
+-        return text + [kc for kc in spares if kc not in text]
++        pool = text + [kc for kc in spares if kc not in text]
++        # Controlled build: unnamed keys coalesce when the map is
++        # serialized for a reload, so only XKB-named spares may serve as
++        # overlay keycodes.  Fail loudly when the live map has no names.
++        named = _xkb_named_keycodes()
++        if not named:
++            raise RuntimeError("X11 keyboard names unavailable")
++        preferred = set(pool[: self._text_codes])
++        pool = [kc for kc in pool if kc in named]
++        self._spare_set = frozenset(pool)
++        self._text_codes = sum(kc in preferred for kc in pool)
++        return pool
+ 
+     def _free_spares(self) -> list:
+         """Spare keycodes not currently bound, in pool order."""
+@@ -1522,7 +1583,13 @@
+         if self._spare_keycodes is None:
+             self._spare_keycodes = self._find_spare_keycodes()
+         held = set(self._pressed_kc.values())
+-        return sum(kc not in held for kc in self._spare_keycodes[:self._text_codes])
++        room = sum(kc not in held for kc in self._spare_keycodes[:self._text_codes])
++        if room:
++            return room
++        # Controlled build: on evdev keycodes _text_codes is 0 (binds are
++        # not kept to the text prefix), yet prebind draws on the whole
++        # pool; report free pool slots instead of a false zero.
++        return sum(kc not in held for kc in self._spare_keycodes)
+ 
+     def _alloc_overlay_keycode(self, keysym: int, keep: Iterable[int] = ()) -> int:
+         """Reserve a spare keycode for keysym and record the binding.
+@@ -1602,8 +1669,14 @@
+             return True
+         if self._spare_keycodes is None:
+             self._spare_keycodes = self._find_spare_keycodes()
+-        if len(missing) > len(self._spare_keycodes):
++        # Controlled build: keycodes already pressed or holding a batch
++        # keysym's binding are not capacity; never promise binds that
++        # would recycle them mid-batch.
++        protected = set(self._pressed_kc.values())
++        protected.update(self._overlay[ks] for ks in batch if ks in self._overlay)
++        if len(missing) > sum(kc not in protected for kc in self._spare_keycodes):
+             return False
++        previous_overlay = dict(self._overlay)
+         assigns = sorted((self._alloc_overlay_keycode(ks, keep=batch), ks) for ks in missing)
+         i = 0
+         while i < len(assigns):
+@@ -1617,6 +1690,12 @@
+         d.sync()
+         # One settle deadline for the whole batch, since one sync covers it.
+         self._settle_until = time.monotonic() + self._BIND_SETTLE_S
++        if previous_overlay != self._overlay:
++            # Controlled build: broadcast the replacement map so an active
++            # Chromium refetches it instead of reading a rebound keycode by
++            # its previous symbol; re-arm the same settle span afterwards.
++            _reload_xkb_keymap()
++            self._settle_until = time.monotonic() + self._BIND_SETTLE_S
+         return True
+ 
+     def bindings_intact(self, first_keycode: int, count: int) -> bool:

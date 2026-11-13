@@ -28,7 +28,7 @@ Stream 组件边界、wire 协议与固定 SDK 适配见 [Stream Runtime](stream
 |---|---|---|---|---|
 |**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；现行架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
-|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.2.1`（t043 由 2.1.0 升级，ADR 022 / s012 spike）|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
+|**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.2.1`（t043 由 2.1.0 升级，ADR 022 / s012 spike）|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有 ICE 接口适配器；采集策略与 X11 键盘行为自 t063 起由受控构建的 Selkies 包承载（固定上游 wheel＋构建期显式补丁，ADR 034），运行时无全局替换、无私有 ABI 门禁|
 |**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由反向代理入口；仅 viewer signal 路由执行边缘授权与 Cookie 剥离|
 |**模板与工作流**|repo_template|本地 `../repo_template`|当前工作流基线|消费仓规范：task 状态机驱动、轻量契约门禁、specs/blueprint 规范|
 |**文档格式化**|md_kx|[TuTouPower/md_kx](https://github.com/TuTouPower/md_kx)|PyPI `md-kx`|Markdown 文档自动化规范与一致性门禁检查|

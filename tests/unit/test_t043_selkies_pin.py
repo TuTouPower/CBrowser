@@ -1,4 +1,9 @@
-"""t043: Selkies version pin consistency across lock, vendor script and ABI gate."""
+"""t043: Selkies version pin consistency across lock and vendor script.
+
+(t063 removed the x11_keymap ABI adapter and its supported-version gate;
+controlled-build identity consistency is covered by
+tests/unit/test_t063_selkies_controlled_build.py.)
+"""
 
 from __future__ import annotations
 
@@ -25,17 +30,6 @@ def _locked_selkies() -> str:
     )
     assert pinned == locked
     return pinned
-
-
-def test_x11_keymap_version_gate_matches_lock() -> None:
-    """The ABI adapter's supported-version gate must follow uv.lock.
-
-    s012 spike verified the private ABI itself is unchanged between 2.1.0
-    and 2.2.1; only the hard-coded version check is allowed to move.
-    """
-    from cbrowser.stream_agent import x11_keymap
-
-    assert x11_keymap.SUPPORTED_SELKIES_VERSION == _locked_selkies()
 
 
 def test_web_client_sha_manifest_matches_vendor_pin() -> None:

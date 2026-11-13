@@ -164,22 +164,6 @@
             "dir": "docs/tasks/t060_gate_infra_and_privacy"
         },
         {
-            "tid": "t063",
-            "slug": "selkies_owned_extensions",
-            "title": "Selkies 采集与输入扩展改为自有稳定边界",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "",
-            "conflicts_with": "t061,t062,t065,t068",
-            "note": "来源 p072；保留纯 WebRTC，不纳入 p077 双模或 TURN 提议",
-            "dir": "docs/tasks/t063_selkies_owned_extensions"
-        },
-        {
             "tid": "t065",
             "slug": "proxy_credential_isolation",
             "title": "代理凭据隔离与认证转发失败封闭",

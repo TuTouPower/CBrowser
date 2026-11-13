@@ -836,6 +836,22 @@
             "dir": "docs/archive/tasks/t062_control_plane_boundaries"
         },
         {
+            "tid": "t063",
+            "slug": "selkies_owned_extensions",
+            "title": "Selkies 采集与输入扩展改为自有稳定边界",
+            "status": "done",
+            "branch": "t063_selkies_owned_extensions",
+            "worktree": "",
+            "review_level": "full",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90",
+            "depends_on": "",
+            "conflicts_with": "t061,t062,t065,t068",
+            "note": "来源 p072；保留纯 WebRTC，不纳入 p077 双模或 TURN 提议",
+            "dir": "docs/archive/tasks/t063_selkies_owned_extensions"
+        },
+        {
             "tid": "t064",
             "slug": "session_auth_cdp_boundary",
             "title": "会话入口鉴权与 CDP 自动化边界收敛",

@@ -5,6 +5,7 @@ Connects outbound to Stream Gateway and manages the WebRTC signaling bridge.
 
 import asyncio
 import importlib.metadata
+import importlib.util
 import json
 import logging
 import os
@@ -14,6 +15,7 @@ import sys
 import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -33,6 +35,7 @@ from .messaging import (
 )
 from .policy import (
     LiveCapturePolicyAgent,
+    bind_webrtc_service_factory,
     create_policy_controlled_service_class,
 )
 from .protocol import (
@@ -153,6 +156,47 @@ def resolve_selkies_version(configured_version: str | None = None) -> str:
         return importlib.metadata.version("selkies")
     except importlib.metadata.PackageNotFoundError:
         raise RuntimeError("selkies distribution is not installed") from None
+
+
+def verify_controlled_selkies_build(
+    selkies_origin: Path | None = None,
+    installed_version: str | None = None,
+) -> dict[str, Any]:
+    """Fail closed unless the installed Selkies is the t063 controlled build.
+
+    The stock 2.2.1 wheel never reads SELKIES_WEBRTC_SERVICE_FACTORY, so
+    running against it would silently serve without the capture policy.
+    The controlled build carries ``selkies/cbrowser_build.json``; require
+    the stamp, require its controlled version to equal the installed
+    distribution version, and require a recorded upstream identity.
+    """
+    if selkies_origin is None:
+        spec = importlib.util.find_spec("selkies")
+        if spec is None or spec.origin is None:
+            raise RuntimeError("selkies package is not installed")
+        selkies_origin = Path(spec.origin)
+    stamp_path = selkies_origin.parent / "cbrowser_build.json"
+    if not stamp_path.is_file():
+        raise RuntimeError(
+            "Selkies controlled build stamp missing "
+            f"({stamp_path}); the stock Selkies wheel must not be used"
+        )
+    try:
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Selkies controlled build stamp unreadable: {exc}"
+        ) from None
+    version = installed_version or resolve_selkies_version()
+    if stamp.get("controlled_version") != version:
+        raise RuntimeError(
+            "Selkies controlled build stamp version "
+            f"{stamp.get('controlled_version')!r} != installed {version!r}"
+        )
+    upstream = stamp.get("upstream") or {}
+    if not upstream.get("wheel_sha256"):
+        raise RuntimeError("Selkies controlled build stamp lacks upstream identity")
+    return stamp
 
 
 class ViewerWorkerEntry:
@@ -1147,22 +1191,20 @@ def run_standalone_service() -> None:
         )
         sys.exit(1)
 
-    # 1. Install the X11 keymap refresh hook required by native input.
-    try:
-        from .x11_keymap import install_x11_keymap_refresh
-
-        install_x11_keymap_refresh()
-    except Exception as e:  # noqa: BLE001 - X11 keymap hook installation failure on service startup
-        logger.error(
-            "X11_KEYMAP_ERROR: Failed to install X11 keymap refresh (%s).",
-            type(e).__name__,
-        )
-        sys.exit(1)
-
-    # 2. Patch selkies.__main__.WebRTCService
+    # 1. Build the policy/stream agents and bind the WebRTC service
+    # factory.  The X11 keymap behavior ships inside the controlled
+    # Selkies build (t063); there is no runtime hook to install.
+    # 2. Launch official selkies.main(): the controlled build resolves
+    # the service through the factory named by
+    # SELKIES_WEBRTC_SERVICE_FACTORY (cbrowser.stream_agent.policy:
+    # create_policy_service) instead of the stock class.
     try:
         import selkies.__main__ as selkies_main
         from selkies.webrtc_mode import WebRTCService as SelkiesWebRTCService
+
+        # Fail closed on a stock Selkies install: it would ignore the
+        # factory env var and serve without the capture policy (t063).
+        verify_controlled_selkies_build()
 
         ServiceCls = create_policy_controlled_service_class(SelkiesWebRTCService)
 
@@ -1177,7 +1219,7 @@ def run_standalone_service() -> None:
             upstream_url=f"ws://127.0.0.1:{upstream_port}/api/webrtc/signaling",
         )
 
-        def patched_factory(server: Any) -> Any:
+        def service_factory(server: Any) -> Any:
             svc = ServiceCls(server)
             policy_agent.bind_service(svc)
             agent.bind_webrtc_service(svc)
@@ -1192,8 +1234,13 @@ def run_standalone_service() -> None:
             svc.tasks.append(asyncio.create_task(run_agent()))
             return svc
 
-        selkies_main.WebRTCService = patched_factory
-        logger.info("Patched selkies.__main__.WebRTCService.")
+        bind_webrtc_service_factory(service_factory)
+        os.environ["SELKIES_WEBRTC_SERVICE_FACTORY"] = (
+            "cbrowser.stream_agent.policy:create_policy_service"
+        )
+        logger.info(
+            "Bound WebRTC service factory for the controlled Selkies build."
+        )
 
         # 3. Launch official selkies.main()
         selkies_main.main()

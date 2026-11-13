@@ -106,7 +106,8 @@ def test_native_keymap_reuse_preserves_every_binding(tmp_path: Path) -> None:
         )
         assert result.returncode == 0, result.stderr
         proof = json.loads(result.stdout.strip().splitlines()[-1])
-        assert proof["idempotent"] and len(proof["rounds"]) == 5
+        assert proof["controlled_build"] and len(proof["rounds"]) == 5
+        assert proof["stamp_verified"]
         assert proof["held_slots_unchanged"]
     finally:
         if created:
