@@ -1,4 +1,10 @@
-"""p058: Browser container lookup is label-based and fence-aware."""
+"""p058: Browser container lookup is ownership-filtered and fence-aware.
+
+Candidates are filtered by ownership labels (including the deployment
+identity, com.cbrowser.instance-id, when configured); the per-launch
+runtime instance is matched from each candidate's runtime
+configuration, never from labels.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +19,28 @@ from cbrowser.supervisor.port_allocator import PortAllocator
 
 
 def _container(instance: str, status: str = "running") -> SimpleNamespace:
+    # Mirrors a production Browser container: the runtime instance id is
+    # carried by the gated entrypoint / command in the configuration.
     return SimpleNamespace(
         status=status,
         labels={
             "com.cbrowser.prefix": "cb",
             "com.cbrowser.profile-id": "p1",
             "com.cbrowser.role": "browser",
-            "com.cbrowser.instance-id": instance,
+        },
+        attrs={
+            "Config": {
+                "Entrypoint": [
+                    "python3",
+                    "-m",
+                    "cbrowser.supervisor.gated_entrypoint",
+                    "--instance-id",
+                    instance,
+                    "--role",
+                    "browser",
+                ],
+                "Cmd": ["--runtime-instance-id", instance],
+            }
         },
     )
 
@@ -42,6 +63,7 @@ def _core(tmp_path, client: _Client) -> SupervisorCore:
     docker = SimpleNamespace(
         validator=PathValidator(tmp_path / "data"),
         resource_prefix="cb",
+        deployment_instance_id=None,
         client=SimpleNamespace(containers=client),
     )
     api = httpx.AsyncClient(

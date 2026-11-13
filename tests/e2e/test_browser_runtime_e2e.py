@@ -359,8 +359,6 @@ def run_docker_container(
         "cbrowser.task=t003",
         "--label",
         f"com.cbrowser.profile-id={profile_id}",
-        "--label",
-        f"com.cbrowser.instance-id={runtime_instance_id}",
         "--user",
         "1000:1000",
         "--read-only",

@@ -4,6 +4,7 @@ import { Lock } from "lucide-react";
 import { useAuth } from "./useAuth";
 import { sanitizeNextPath } from "./redirect";
 import { useI18n } from "../../i18n";
+import { ApiError } from "../../shared/api/client";
 import { Banner, Button, FieldLabel, Input } from "../../shared/ui";
 
 export function LoginPage() {
@@ -27,7 +28,18 @@ export function LoginPage() {
       await login({ password });
       navigate(target, { replace: true });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("loginFailed"));
+      // A transient database failure (503 database_busy /
+      // database_unavailable) is not the user's fault and the raw backend
+      // message says nothing actionable: show the friendly retry hint.
+      if (
+        err instanceof ApiError &&
+        (err.errorCode === "database_busy" ||
+          err.errorCode === "database_unavailable")
+      ) {
+        setError(t("loginDatabaseUnavailable"));
+      } else {
+        setError(err instanceof Error ? err.message : t("loginFailed"));
+      }
     } finally {
       setSubmitting(false);
     }

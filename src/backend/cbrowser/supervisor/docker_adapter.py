@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 import docker
 import requests
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.redact import docker_error_detail
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_PATH_ENV,
@@ -29,6 +30,7 @@ from cbrowser.supervisor.container_spec import (
     browser_labels,
     cache_init_environment,
     cache_init_labels,
+    container_runtime_instance_id,
     gated_entrypoint,
     policy_helper_labels,
     stream_environment,
@@ -150,10 +152,19 @@ class StreamResidue:
 
 
 class StreamContainerResidueError(DockerSandboxError):
-    def __init__(self, residue: StreamResidue, cause_type: str) -> None:
-        super().__init__("Stream container cleanup pending")
+    def __init__(
+        self,
+        residue: StreamResidue,
+        cause_type: str,
+        cause_detail: str | None = None,
+    ) -> None:
+        message = "Stream container cleanup pending"
+        if cause_detail:
+            message = f"{message}: {cause_detail}"
+        super().__init__(message)
         self.residue = residue
         self.cause_type = cause_type
+        self.cause_detail = cause_detail
 
 
 CACHE_GENERATION_FILENAME = ".cbrowser-cache-generation.json"
@@ -198,6 +209,8 @@ class DockerAdapter:
         runtime_gid: int = 1000,
         manage_ownership: bool = False,
         media_subnet_pool: str | None = None,
+        deployment_instance_id: str | None = None,
+        network_timeout: float | None = None,
     ):
         self.validator = path_validator
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
@@ -217,7 +230,34 @@ class DockerAdapter:
                 raise ValueError(
                     "Explicit immutable Browser and Stream images are required"
                 )
+        # A22: explicitly supplied prefixes are validated at the
+        # deployment entry points (deploy.sh and Supervisor startup in
+        # runner main). Construction is not an entry point: the value
+        # arriving here is already validated, or is the compiled-in
+        # default deployment prefix "cbrowser-t005", which predates the
+        # A22 pattern and is not deployment input.
         self.resource_prefix = resource_prefix
+        # Deployment identity (A59/AC-021): the deployment this Supervisor
+        # belongs to. It is written as the com.cbrowser.instance-id label
+        # on every resource this deployment creates, and scans only claim
+        # sandboxes, helpers, gateways and networks carrying this label
+        # value. Per-launch runtime instance ids are not labels; they
+        # travel in the containers' runtime configuration.
+        self.deployment_instance_id = deployment_instance_id or os.environ.get(
+            "CBROWSER_INSTANCE_ID"
+        ) or None
+        # AC-015: Docker calls for network allocation/creation must not
+        # hang the Supervisor forever; each call is bounded by this
+        # timeout (seconds), overridable via CBROWSER_DOCKER_NETWORK_TIMEOUT.
+        self.network_timeout = network_timeout
+        if self.network_timeout is None:
+            try:
+                self.network_timeout = float(
+                    os.environ.get("CBROWSER_DOCKER_NETWORK_TIMEOUT", "30")
+                )
+            except ValueError:
+                self.network_timeout = 30.0
+        self._reserved_subnets: set[str] = set()
         self.runtime_uid = runtime_uid
         self.runtime_gid = runtime_gid
         self.manage_ownership = manage_ownership
@@ -233,7 +273,12 @@ class DockerAdapter:
         self._cache_lock = asyncio.Lock()
         # Media subnet allocation reads Docker's network list and then
         # creates the allocation; concurrent launches must not pick the
-        # same subnet from the same snapshot.
+        # same subnet from the same snapshot. The lock guards only the
+        # snapshot+allocate+reserve phase; the Docker create itself runs
+        # outside it (AC-015: a hung create must not stall every Profile).
+        # Subnets reserved by an in-flight create are recorded in
+        # ``_reserved_subnets`` so a concurrent allocation never reuses
+        # them; a failed create discards its reservation.
         self._media_network_lock = threading.Lock()
         self._binary_ready = False
         self._geoip_ready = False
@@ -332,18 +377,37 @@ class DockerAdapter:
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",
                 },
-                labels=policy_helper_labels(self.resource_prefix, instance_id),
+                labels=policy_helper_labels(
+                    self.resource_prefix,
+                    deployment_id=self.deployment_instance_id,
+                ),
             )
+        except DockerSandboxError:
+            raise
+        except (requests.exceptions.RequestException, DockerException) as exc:
+            # AC-011: a helper container that fails to START keeps the
+            # redacted Docker root cause -- a Docker API error has known
+            # shapes and the shared rules cover its credential forms.
+            raise DockerSandboxError(
+                "Runtime network policy installation failed: "
+                + docker_error_detail(exc)
+            ) from None
+        except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
+            raise DockerSandboxError(
+                "Runtime network policy installation failed: "
+                + docker_error_detail(exc)
+            ) from None
+        try:
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
                 raise DockerSandboxError("Runtime network policy installation failed")
         except DockerSandboxError:
             raise
-        except (requests.exceptions.RequestException, DockerException) as exc:
-            raise DockerSandboxError(
-                "Runtime network policy installation failed: " + type(exc).__name__
-            ) from None
-        except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
+        except Exception as exc:  # noqa: BLE001 - A11: wait/transport errors stay redacted
+            # A11: a helper wait timeout or transport error must stay
+            # redacted -- its text is transport-level and can carry
+            # arbitrary URLs, so only the type name is reported, never
+            # the text.
             raise DockerSandboxError(
                 "Runtime network policy installation failed: " + type(exc).__name__
             ) from None
@@ -489,6 +553,20 @@ class DockerAdapter:
         """
         await asyncio.to_thread(self._cleanup_orphan_helpers)
 
+    def _owns_deployment(self, labels: dict[str, Any]) -> bool:
+        """Deployment ownership test (A59/AC-021).
+
+        When this Supervisor has a deployment id, a resource belongs to
+        it only when its ``com.cbrowser.instance-id`` label carries the
+        same deployment instance id. Missing or mismatched labels mean
+        "not ours": skip, never claim, never delete. When unconfigured,
+        everything under the prefix is ours (legacy behaviour, no
+        deployment identity in play).
+        """
+        if self.deployment_instance_id is None:
+            return True
+        return labels.get("com.cbrowser.instance-id") == self.deployment_instance_id
+
     def _cleanup_orphan_helpers(self) -> None:
         candidates = self.client.containers.list(
             all=True,
@@ -513,6 +591,7 @@ class DockerAdapter:
             if (
                 labels.get("com.cbrowser.prefix") != self.resource_prefix
                 or labels.get("com.cbrowser.managed-by") != "supervisor"
+                or not self._owns_deployment(labels)
                 or not re.fullmatch(
                     re.escape(f"{self.resource_prefix}-{name_role}-") + r"[0-9a-f]{12}",
                     container.name,
@@ -589,7 +668,10 @@ with path.open('w') as output:
                     geoip_cache=self.geoip_cache,
                 ),
                 environment=cache_init_environment(need_geoip, marker_name, run_id),
-                labels=cache_init_labels(self.resource_prefix),
+                labels=cache_init_labels(
+                    self.resource_prefix,
+                    deployment_id=self.deployment_instance_id,
+                ),
             )
             result = helper.wait(timeout=600)
             if result.get("StatusCode") != 0:
@@ -603,7 +685,7 @@ with path.open('w') as output:
                 raise DockerSandboxError("Runtime cache initializer did not complete")
         except DockerException as exc:
             raise DockerSandboxError(
-                f"Runtime cache initializer failed: {type(exc).__name__}"
+                f"Runtime cache initializer failed: {docker_error_detail(exc)}"
             ) from None
         finally:
             marker.unlink(missing_ok=True)
@@ -786,7 +868,10 @@ with path.open('w') as output:
                 cap_drop=["ALL"],
                 cap_add=["FOWNER"],
                 security_opt=["no-new-privileges:true"],
-                labels=x11_helper_labels(self.resource_prefix),
+                labels=x11_helper_labels(
+                    self.resource_prefix,
+                    deployment_id=self.deployment_instance_id,
+                ),
             )
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
@@ -797,19 +882,21 @@ with path.open('w') as output:
             raise
         except DockerException as exc:
             logger.error(
-                "Failed to setup X11 permissions: error_type=%s",
+                "Failed to setup X11 permissions: error_type=%s detail=%s",
                 type(exc).__name__,
+                docker_error_detail(exc),
             )
             raise DockerSandboxError(
-                f"X11 permission initialization failed: {type(exc).__name__}"
+                f"X11 permission initialization failed: {docker_error_detail(exc)}"
             ) from None
         except Exception as exc:  # noqa: BLE001 - wait/transport errors map to the same explicit outcome
             logger.error(
-                "Failed to setup X11 permissions: error_type=%s",
+                "Failed to setup X11 permissions: error_type=%s detail=%s",
                 type(exc).__name__,
+                docker_error_detail(exc),
             )
             raise DockerSandboxError(
-                f"X11 permission initialization failed: {type(exc).__name__}"
+                f"X11 permission initialization failed: {docker_error_detail(exc)}"
             ) from None
         finally:
             if helper is not None:
@@ -841,19 +928,61 @@ with path.open('w') as output:
             return self.client.networks.create(
                 net_name,
                 driver="bridge",
-                labels=network_labels(self.resource_prefix, profile_id),
+                labels=network_labels(
+                    self.resource_prefix,
+                    profile_id,
+                    deployment_id=self.deployment_instance_id,
+                ),
             )
         except DockerException as e:
-            raise DockerSandboxError(f"Failed to create network {net_name}: {e}") from e
+            raise DockerSandboxError(
+                f"Failed to create network {net_name}: {docker_error_detail(e)}"
+            ) from e
+
+    def _docker_call(self, fn: Any, *args: Any, **kwargs: Any) -> Any:
+        """Run one Docker call in a daemon thread, bounded by timeout.
+
+        AC-015: a Docker call that never returns (hung daemon, wedged
+        socket) must fail the caller after ``network_timeout`` seconds
+        instead of wedging the Supervisor. The hung call leaks one
+        daemon thread -- it can never block the caller again -- and the
+        caller's lock is released, so other Profiles keep starting.
+        The original exception (NotFound, APIError, ...) is re-raised
+        unchanged; only a timeout becomes DockerSandboxError.
+        """
+        outcome: dict[str, Any] = {}
+        error: dict[str, BaseException] = {}
+
+        def _run() -> None:
+            try:
+                outcome["value"] = fn(*args, **kwargs)
+            except BaseException as exc:  # noqa: BLE001 - re-raised below
+                error["error"] = exc
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        thread.join(timeout=self.network_timeout)
+        if thread.is_alive():
+            raise DockerSandboxError(
+                "Docker call timed out after "
+                f"{self.network_timeout:g}s: "
+                f"{getattr(fn, '__name__', repr(fn))}"
+            )
+        if "error" in error:
+            raise error["error"]
+        return outcome["value"]
 
     def _used_subnets(self) -> list[ipaddress.IPv4Network]:
         """Every subnet Docker already knows, plus host route targets."""
         used: list[ipaddress.IPv4Network] = []
         try:
-            networks = self.client.networks.list()
+            networks = self._docker_call(self.client.networks.list)
+        except DockerSandboxError:
+            raise
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to list networks for subnet allocation: {e}"
+                "Failed to list networks for subnet allocation: "
+                f"{docker_error_detail(e)}"
             ) from e
         for network in networks:
             config = (network.attrs.get("IPAM") or {}).get("Config") or []
@@ -867,6 +996,13 @@ with path.open('w') as output:
                     continue
                 if isinstance(parsed, ipaddress.IPv4Network):
                     used.append(parsed)
+        for subnet in self._reserved_subnets:
+            try:
+                parsed = ipaddress.ip_network(subnet)
+            except ValueError:
+                continue
+            if isinstance(parsed, ipaddress.IPv4Network):
+                used.append(parsed)
         used.extend(host_route_networks())
         return used
 
@@ -877,12 +1013,22 @@ with path.open('w') as output:
         inspection (reconcile migrates non-conforming networks by
         rebuild). New networks always get an allocated explicit subnet:
         allocation failure is explicit, never an auto-subnet fallback.
+
+        AC-015: the allocation lock guards only the get+allocate+reserve
+        phase. The Docker create runs outside it, bounded by
+        ``network_timeout`` via ``_docker_call``, so a hung create fails
+        this caller instead of stalling every Profile's network setup.
+        A create conflict is an error, never a retry: exactly one
+        create attempt is made, and its reservation is discarded on any
+        failure. The same Profile is never created concurrently in
+        production -- the core holds the per-profile lock across its
+        start path -- so a name conflict here means a genuine conflict.
         """
         net_name = self.get_network_name(profile_id)
         try:
             with self._media_network_lock:
                 try:
-                    existing = self.client.networks.get(net_name)
+                    existing = self._docker_call(self.client.networks.get, net_name)
                 except NotFound:
                     existing = None
                 if existing is not None:
@@ -892,26 +1038,43 @@ with path.open('w') as output:
                     plan = self.media_allocator.allocate(self._used_subnets())
                 except MediaPoolExhaustedError as e:
                     raise DockerSandboxError(str(e)) from e
-                ipam = docker.types.IPAMConfig(
-                    pool_configs=[
-                        docker.types.IPAMPool(
-                            subnet=plan.subnet, iprange=plan.ip_range
-                        )
-                    ]
-                )
-                return self.client.networks.create(
+                self._reserved_subnets.add(plan.subnet)
+            ipam = docker.types.IPAMConfig(
+                pool_configs=[
+                    docker.types.IPAMPool(
+                        subnet=plan.subnet, iprange=plan.ip_range
+                    )
+                ]
+            )
+            try:
+                created = self._docker_call(
+                    self.client.networks.create,
                     net_name,
                     driver="bridge",
                     ipam=ipam,
                     labels=media_network_labels(
-                        network_labels(self.resource_prefix, profile_id), plan
+                        network_labels(
+                            self.resource_prefix,
+                            profile_id,
+                            deployment_id=self.deployment_instance_id,
+                        ),
+                        plan,
                     ),
                 )
+            except Exception:
+                with self._media_network_lock:
+                    self._reserved_subnets.discard(plan.subnet)
+                raise
+            # The network now exists in Docker's list, so the reservation
+            # is no longer needed: only in-flight creates stay reserved.
+            with self._media_network_lock:
+                self._reserved_subnets.discard(plan.subnet)
+            return created
         except DockerSandboxError:
             raise
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to create network {net_name}: {e}"
+                f"Failed to create network {net_name}: {docker_error_detail(e)}"
             ) from e
 
     def inspect_media_network(self, profile_id: str) -> dict[str, Any]:
@@ -936,7 +1099,7 @@ with path.open('w') as output:
             return result
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to inspect network {net_name}: {e}"
+                f"Failed to inspect network {net_name}: {docker_error_detail(e)}"
             ) from e
         self._require_network_ownership(network, net_name)
         network.reload()
@@ -970,7 +1133,10 @@ with path.open('w') as output:
     def _require_network_ownership(self, network: Any, name: str) -> None:
         labels = network.attrs.get("Labels") or {}
         if network.name != name or not network_ownership_matches(
-            self.resource_prefix, name, labels
+            self.resource_prefix,
+            name,
+            labels,
+            deployment_id=self.deployment_instance_id,
         ):
             raise DockerSandboxError("Docker network ownership mismatch")
 
@@ -987,7 +1153,7 @@ with path.open('w') as output:
             ) from None
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to inspect infrastructure container {container_id}: {e}"
+                f"Failed to inspect infrastructure container {container_id}: {docker_error_detail(e)}"
             ) from e
 
         labels = container.labels or {}
@@ -1028,7 +1194,7 @@ with path.open('w') as output:
             return self._ensure_media_network(profile_id)
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to get network {net_name}: {e}"
+                f"Failed to get network {net_name}: {docker_error_detail(e)}"
             ) from e
         self._require_network_ownership(net, net_name)
         net.reload()
@@ -1039,7 +1205,7 @@ with path.open('w') as output:
             except DockerException as e:
                 raise DockerSandboxError(
                     f"Failed to inspect endpoint container {container_id} "
-                    f"in network {net_name}: {e}"
+                    f"in network {net_name}: {docker_error_detail(e)}"
                 ) from e
             labels = container.labels or {}
             if (
@@ -1059,7 +1225,7 @@ with path.open('w') as output:
             except DockerException as e:
                 raise DockerSandboxError(
                     f"Failed to disconnect {container.name} from "
-                    f"{net_name}: {e}"
+                    f"{net_name}: {docker_error_detail(e)}"
                 ) from e
         try:
             net.remove()
@@ -1070,7 +1236,7 @@ with path.open('w') as output:
                 except DockerException:
                     pass
             raise DockerSandboxError(
-                f"Failed to remove network {net_name}: {e}"
+                f"Failed to remove network {net_name}: {docker_error_detail(e)}"
             ) from e
         new_net = self._ensure_media_network(profile_id)
         for container in endpoints:
@@ -1081,7 +1247,7 @@ with path.open('w') as output:
             except DockerException as e:
                 raise DockerSandboxError(
                     f"Failed to reconnect {container.name} to "
-                    f"{net_name}: {e}"
+                    f"{net_name}: {docker_error_detail(e)}"
                 ) from e
         return new_net
 
@@ -1097,7 +1263,7 @@ with path.open('w') as output:
         except NotFound:
             raise DockerSandboxError(f"Profile network {net_name} not found") from None
         except DockerException as e:
-            raise DockerSandboxError(f"Failed to get network {net_name}: {e}") from e
+            raise DockerSandboxError(f"Failed to get network {net_name}: {docker_error_detail(e)}") from e
 
         self._require_network_ownership(net, net_name)
 
@@ -1199,7 +1365,7 @@ with path.open('w') as output:
             if isinstance(exc, DockerSandboxError):
                 raise
             raise DockerSandboxError(
-                f"Infrastructure attachment failed on {net_name}: {exc}"
+                f"Infrastructure attachment failed on {net_name}: {docker_error_detail(exc)}"
             ) from exc
 
     def disconnect_profile_infrastructure(
@@ -1213,7 +1379,7 @@ with path.open('w') as output:
         except NotFound:
             return
         except DockerException as e:
-            raise DockerSandboxError(f"Failed to get network {net_name}: {e}") from e
+            raise DockerSandboxError(f"Failed to get network {net_name}: {docker_error_detail(e)}") from e
 
         self._require_network_ownership(net, net_name)
         net.reload()
@@ -1244,7 +1410,7 @@ with path.open('w') as output:
                     net.disconnect(c)
                 except DockerException as e:
                     raise DockerSandboxError(
-                        f"Failed to disconnect {c.id} from {net_name}: {e}"
+                        f"Failed to disconnect {c.id} from {net_name}: {docker_error_detail(e)}"
                     ) from e
 
     async def start_browser_container(
@@ -1359,9 +1525,9 @@ with path.open('w') as output:
                 labels=browser_labels(
                     self.resource_prefix,
                     profile_id,
-                    runtime_instance_id,
                     snapshot["version"],
                     self._require_profile_number(profile_id),
+                    deployment_id=self.deployment_instance_id,
                 ),
             )
             allowed_tcp = (
@@ -1380,7 +1546,7 @@ with path.open('w') as output:
             return container
         except DockerException as e:
             raise DockerSandboxError(
-                f"Failed to run browser container {b_name}: {e}"
+                f"Failed to run browser container {b_name}: {docker_error_detail(e)}"
             ) from e
 
     def _bound_snapshot_geometry(
@@ -1564,11 +1730,11 @@ with path.open('w') as output:
                 labels=stream_labels(
                     self.resource_prefix,
                     profile_id,
-                    runtime_instance_id,
                     config_version,
                     self._require_profile_number(profile_id),
                     bind_host=bind_host,
                     advertised_ip=public_ip,
+                    deployment_id=self.deployment_instance_id,
                 ),
             )
             allowed_tcp.extend(
@@ -1597,18 +1763,18 @@ with path.open('w') as output:
                 )
                 if residue is not None:
                     raise StreamContainerResidueError(
-                        residue, type(exc).__name__
+                        residue, type(exc).__name__, docker_error_detail(exc)
                     ) from exc
             if isinstance(exc, DockerSandboxError):
                 raise
             if isinstance(exc, DockerException):
                 raise DockerSandboxError(
                     f"Failed to run stream container {s_name}: "
-                    f"{type(exc).__name__}"
+                    f"{docker_error_detail(exc)}"
                 ) from None
             raise DockerSandboxError(
                 f"Failed to initialize stream container {s_name}: "
-                f"{type(exc).__name__}"
+                f"{docker_error_detail(exc)}"
             ) from None
 
     def _reclaim_created_stream(
@@ -1629,7 +1795,7 @@ with path.open('w') as output:
             and labels.get("com.cbrowser.managed-by") == "supervisor"
             and labels.get("com.cbrowser.role") == "stream"
             and labels.get("com.cbrowser.profile-id") == profile_id
-            and labels.get("com.cbrowser.instance-id") == instance_id
+            and container_runtime_instance_id(container) == instance_id
         )
         if not verified:
             logger.warning(
@@ -1670,7 +1836,7 @@ with path.open('w') as output:
             or labels.get("com.cbrowser.managed-by") != "supervisor"
             or labels.get("com.cbrowser.role") != "stream"
             or labels.get("com.cbrowser.profile-id") != residue.profile_id
-            or labels.get("com.cbrowser.instance-id")
+            or container_runtime_instance_id(container)
             != residue.runtime_instance_id
         ):
             logger.warning(
@@ -1733,7 +1899,7 @@ with path.open('w') as output:
                 except DockerException as e:
                     raise DockerSandboxError(
                         f"Failed to inspect endpoint container {cid} in "
-                        f"network {name}: {e}"
+                        f"network {name}: {docker_error_detail(e)}"
                     ) from e
                 labels = c.labels or {}
                 prefix = labels.get("com.cbrowser.prefix")
@@ -1760,7 +1926,7 @@ with path.open('w') as output:
                     net.disconnect(c)
                 except DockerException as e:
                     raise DockerSandboxError(
-                        f"Failed to disconnect endpoint {c.name} from {name}: {e}"
+                        f"Failed to disconnect endpoint {c.name} from {name}: {docker_error_detail(e)}"
                     ) from e
             net.remove()
             logger.info(f"Removed network {name}")
@@ -1791,8 +1957,10 @@ with path.open('w') as output:
         if labels.get("com.cbrowser.network-policy") != "v1":
             return False
         profile = labels.get("com.cbrowser.profile-id")
-        instance = labels.get("com.cbrowser.instance-id")
+        instance = container_runtime_instance_id(container)
         role = labels.get("com.cbrowser.role")
+        if not profile or not instance or not role:
+            return False
         try:
             expected = (
                 self.validator.data_root / "control" / "gates" / profile / instance
@@ -1840,6 +2008,7 @@ with path.open('w') as output:
             if (
                 labels.get("com.cbrowser.managed-by") == "supervisor"
                 and labels.get("com.cbrowser.role") == "gateway"
+                and self._owns_deployment(labels)
                 and container.status == "running"
             ):
                 result.append(container)
@@ -1912,7 +2081,7 @@ with path.open('w') as output:
                 },
                 labels=policy_helper_labels(
                     self.resource_prefix,
-                    (container.labels or {}).get("com.cbrowser.instance-id", ""),
+                    deployment_id=self.deployment_instance_id,
                 ),
             )
             result = helper.wait(timeout=30)
@@ -1930,7 +2099,7 @@ with path.open('w') as output:
             return status_code
         except DockerException as exc:
             raise DockerSandboxError(
-                "Runtime network policy helper failed: " + type(exc).__name__
+                "Runtime network policy helper failed: " + docker_error_detail(exc)
             ) from None
         finally:
             if helper is not None:
@@ -1983,7 +2152,7 @@ with path.open('w') as output:
                 continue
             except DockerException as e:
                 raise DockerSandboxError(
-                    f"Failed to inspect {role} container {name}: {e}"
+                    f"Failed to inspect {role} container {name}: {docker_error_detail(e)}"
                 ) from e
             labels = container.labels or {}
             if (
@@ -2007,12 +2176,13 @@ with path.open('w') as output:
                 role = labels.get("com.cbrowser.role")
                 if role not in {"browser", "stream"}:
                     continue
-                # Scan boundary: a resource whose identity or config-version
-                # labels are missing or malformed is rejected on its own —
+                # Scan boundary: a resource whose identity (profile label
+                # or runtime configuration) or config-version label is
+                # missing or malformed is rejected on its own —
                 # never adopted, never bulk-deleted, and never allowed to
                 # abort the scan of the remaining resources.
                 profile_id = labels.get("com.cbrowser.profile-id")
-                instance_id = labels.get("com.cbrowser.instance-id")
+                instance_id = container_runtime_instance_id(c)
                 config_version = _parse_config_version(
                     labels.get("com.cbrowser.config-version")
                 )
@@ -2031,6 +2201,16 @@ with path.open('w') as output:
                         "Container scan rejected a resource with unusable "
                         "identity labels: role=%s",
                         role,
+                    )
+                    continue
+                # A59/AC-021: a sandbox from another deployment (or
+                # predating deployment labels) is not ours: skip it,
+                # never claim it for this deployment.
+                if not self._owns_deployment(labels):
+                    logger.warning(
+                        "Container scan rejected a resource from another "
+                        "deployment: profile=%s",
+                        profile_id,
                     )
                     continue
                 self.remember_profile_number(profile_id, profile_number)

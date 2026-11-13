@@ -1,6 +1,6 @@
 # 前端
 
-v2 前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。t017 已删除 v1 前端树、旧测试、noVNC 类型与仅其使用的依赖；路由只保留 `react-router` 8 单包实现（t033 由 `react-router-dom` 换包，DOM API 全部由单包导出）。
+前端为 `src/frontend` 下的 React 19.3 + Vite 8 单页应用，由 Caddy 作为静态资源托管，只经 `/api/v1` 与 `/stream/{profileId}/signal` 访问后端。t017 已删除 v1 前端树、旧测试、noVNC 类型与仅其使用的依赖；路由只保留 `react-router` 8 单包实现（t033 由 `react-router-dom` 换包，DOM API 全部由单包导出）。
 
 ## 1. 外壳与数据
 

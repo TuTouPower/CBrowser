@@ -53,3 +53,10 @@
 - Origin 白名单来源单一：API 与 Gateway 的 `allowed_origins` 均由当前已应用的不可变版本确定性派生；本机模式放行 `127.0.0.1` 与 `localhost`，局域网模式追加 `lan_advertised_ip`，两服务读取同一来源。
 - 根证书安全边界：`GET /api/v1/network/root-ca` 仅允许下载 Caddy 本地 CA 的公钥根证书（`root.crt`）；API 容器挂载中绝不挂载 `caddy_data` 卷，严禁暴露 `root.key` 私钥。
 - 入口变化提示：从局域网来源切换到本机模式前，接口与前端主动返回 `will_disconnect` 警告并给出新的可达地址。
+
+## 数据库瞬时故障的可重试错误与登录友好提示（t051）
+
+- 数据库瞬时错误分级：`SQLITE_BUSY` / `SQLITE_LOCKED` / `SQLITE_IOERR`（含扩展码，按扩展码 & 0xFF 取主码判定）为瞬时错误，API 返回 503（BUSY/LOCKED → `database_busy`，IOERR → `database_unavailable`）、`retryable=true`、`Retry-After: 1`；`IntegrityError` 等确定性错误响应不变（409 / 500 `database_error` / `retryable=false`）。
+- 登录建会话遇到有限次瞬时数据库故障后恢复时登录成功；故障持续超过重试上限（3 次、有界退避）时返回上述可重试 503，不返回 500。重试整方法重跑、每次新会话；速率限制在数据库访问前判定，重试不重复计数。
+- 数据库错误日志包含 SQLite 错误码名（`sqlite_errorcode` / `sqlite_errorname`）、请求方法与路径，不包含 SQL 文本、绑定参数值、密码或会话 token（`str(exc.orig)` 含 SQL 与绑定参数，禁止记入日志；traceback 行同样会带 SQL，故不用 `logger.exception`）。
+- 登录页收到 `database_busy` / `database_unavailable` 时显示当前界面语言的本地化文案（`loginDatabaseUnavailable`），不显示后端英文原文；其它错误保持原有透传。

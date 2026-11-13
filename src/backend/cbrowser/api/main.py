@@ -1,4 +1,4 @@
-"""Production entrypoint for CBrowser Control API v2."""
+"""Production entrypoint for CBrowser Control API."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cbrowser.api.app import create_app
 
-db_path = os.environ.get("CBROWSER_DB_PATH", "/data/cbrowser.db")
+db_path = os.environ.get("CBROWSER_DB_PATH", "/data/db/cbrowser.db")
 app = create_app(db_path=Path(db_path))
 
 if __name__ == "__main__":

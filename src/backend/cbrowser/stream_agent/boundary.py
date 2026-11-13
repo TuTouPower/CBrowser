@@ -24,6 +24,7 @@ PROHIBITED_PATHS = (
     "/run/cbrowser/runtime/userdata",
     "/run/cbrowser/runtime/events",
     "/data/cbrowser.db",
+    "/data/db/cbrowser.db",
     "/app/data/cbrowser.db",
 )
 

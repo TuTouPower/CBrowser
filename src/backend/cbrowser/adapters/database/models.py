@@ -1,4 +1,4 @@
-"""SQLAlchemy 2.0 ORM models for CBrowser v2."""
+"""SQLAlchemy 2.0 ORM models for CBrowser."""
 
 from __future__ import annotations
 

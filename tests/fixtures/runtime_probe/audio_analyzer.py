@@ -2,7 +2,7 @@
 # SHA256: a8337f5b446f40659fdd43c0f5a28d1921aaff381c93eb010e4d77937ff06e3b.
 """
 audio_analyzer.py
-Strict, standalone sample-spec-aware audio PCM analyzer for CBrowser v2 isolation probe.
+Strict, standalone sample-spec-aware audio PCM analyzer for CBrowser isolation probe.
 Performs:
 - Raw S16LE stereo PCM decoding
 - Non-zero byte and RMS silence validation

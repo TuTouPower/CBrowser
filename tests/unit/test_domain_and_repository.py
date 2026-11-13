@@ -1,4 +1,4 @@
-"""Unit tests for v2 backend foundation.
+"""Unit tests for backend foundation.
 
 Tests domain, repository, 8 tables, and event convergence.
 """

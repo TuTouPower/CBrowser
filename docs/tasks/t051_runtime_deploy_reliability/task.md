@@ -56,27 +56,27 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：部署后控制面数据库文件（含 `-wal` / `-shm`）不位于任何宿主 bind mount 上；compose 结构测试对此断言。
-- [ ] AC-002：`deploy.sh` 的 schema 代际检查在新存储位置上仍按原语义放行合法代际、拒绝退役代际，且检查过程不以写模式打开数据库。
-- [ ] AC-003：部署前备份产生宿主可取得的数据库副本；用该副本恢复后 API 正常启动且数据一致。
-- [ ] AC-004：volume 中无数据库而宿主旧路径存在 `cbrowser.db` 时，部署输出明确提示旧库位置与处置方式，旧文件不被删除或覆盖。
-- [ ] AC-005：数据库操作抛出 `SQLITE_IOERR`、`SQLITE_BUSY`、`SQLITE_LOCKED`（含扩展码）时，API 返回 503、稳定错误码且 `retryable=true`；`IntegrityError` 等确定性错误响应不变。
-- [ ] AC-006：登录建会话遇到有限次瞬时数据库故障后恢复时，登录成功；故障持续超过重试上限时返回 AC-005 的可重试错误，不返回 500。
-- [ ] AC-007：数据库错误日志包含 SQLite 错误码名、请求方法与路径，不包含 SQL 参数值、密码、会话 token。
-- [ ] AC-008：登录页收到可重试数据库错误时显示当前界面语言的本地化文案，不显示后端英文原文。
-- [ ] AC-009：`deploy.sh` 默认部署时 API 与 Supervisor 看到主仓 `data/fonts` 中的字体集，`GET /api/v1/font-sets` 返回已导入字体集；字体目录可经 `CBROWSER_FONTS_DIR` 覆盖。
-- [ ] AC-010：字体目录缺失或无有效字体集时，部署输出可执行提示；compose / deploy 的字体路径与 `.worktreeinclude` 一致性由测试断言。
-- [ ] AC-011：Browser、Stream 及其辅助容器启动失败时，抛出的异常与日志包含 Docker 原始错误信息；若原文含代理凭据、URL userinfo、token 或密钥类环境变量值，输出中均被替换为脱敏占位。
-- [ ] AC-012：两个不同编号的 Profile 同时运行时，各自 Browser / Stream 容器的 `com.docker.compose.service` 分别为 `<NNNN>-browser` / `<NNNN>-stream` 且互不相同，`com.docker.compose.project` 仍为 `<prefix>-profiles`。
-- [ ] AC-013：[deploy] 真实部署后：登录、Profile 启动出图正常；`docker inspect` 显示数据库在 named volume；设置页显示平台字体集；OrbStack 分组中可按编号区分沙箱 service。
-- [ ] AC-014：同一 daemon 上两个实例的媒体子网池互不重叠，部署第二个实例时若池重叠则部署失败并提示；两实例并发启动 Profile 不因子网冲突失败。
-- [ ] AC-015：Docker 网络 API 调用挂起超过超时时间时，该次启动以明确错误失败，其它 Profile 的网络创建不被阻塞。
-- [ ] AC-016：prefix 含大写、空格、斜杠或 `-` 时，deploy.sh 与 Supervisor 启动均在执行任何 Docker 操作前失败并提示。
-- [ ] AC-017：在 deploy.sh 写发布指针的任意步骤中断后，current / previous 仍指向一致的 release 组合，rollback 可执行。
-- [ ] AC-018：数据库文件存在但不可读时，deploy 与 rollback 都在启动或替换任何容器之前拒绝。
-- [ ] AC-019：默认部署的数据根路径、现行文档、源码与脚本中不含产品代际标识；新增代际标识时 hygiene 测试失败。
-- [ ] AC-020：证据脱敏与 Docker 错误脱敏对 URL 内嵌凭据、任意 cookie 值、含空格的敏感值与家目录路径均输出脱敏占位。
-- [ ] AC-021：容器 project 标签伪造为本实例分组但 `instance-id` 不符时，deploy.sh 拒绝部署，Supervisor 不认领；本实例沙箱缺少 `instance-id` 标签时不被认领为本实例资源。
+- [x] AC-001：部署后控制面数据库文件（含 `-wal` / `-shm`）不位于任何宿主 bind mount 上；compose 结构测试对此断言。
+- [x] AC-002：`deploy.sh` 的 schema 代际检查在新存储位置上仍按原语义放行合法代际、拒绝退役代际，且检查过程不以写模式打开数据库。
+- [x] AC-003：部署前备份产生宿主可取得的数据库副本；用该副本恢复后 API 正常启动且数据一致。
+- [x] AC-004：volume 中无数据库而宿主旧路径存在 `cbrowser.db` 时，部署输出明确提示旧库位置与处置方式，旧文件不被删除或覆盖。
+- [x] AC-005：数据库操作抛出 `SQLITE_IOERR`、`SQLITE_BUSY`、`SQLITE_LOCKED`（含扩展码）时，API 返回 503、稳定错误码且 `retryable=true`；`IntegrityError` 等确定性错误响应不变。
+- [x] AC-006：登录建会话遇到有限次瞬时数据库故障后恢复时，登录成功；故障持续超过重试上限时返回 AC-005 的可重试错误，不返回 500。
+- [x] AC-007：数据库错误日志包含 SQLite 错误码名、请求方法与路径，不包含 SQL 参数值、密码、会话 token。
+- [x] AC-008：登录页收到可重试数据库错误时显示当前界面语言的本地化文案，不显示后端英文原文。
+- [x] AC-009：`deploy.sh` 默认部署时 API 与 Supervisor 看到主仓 `data/fonts` 中的字体集，`GET /api/v1/font-sets` 返回已导入字体集；字体目录可经 `CBROWSER_FONTS_DIR` 覆盖。
+- [x] AC-010：字体目录缺失或无有效字体集时，部署输出可执行提示；compose / deploy 的字体路径与 `.worktreeinclude` 一致性由测试断言。
+- [x] AC-011：Browser、Stream 及其辅助容器启动失败时，抛出的异常与日志包含 Docker 原始错误信息；若原文含代理凭据、URL userinfo、token 或密钥类环境变量值，输出中均被替换为脱敏占位。
+- [x] AC-012：两个不同编号的 Profile 同时运行时，各自 Browser / Stream 容器的 `com.docker.compose.service` 分别为 `<NNNN>-browser` / `<NNNN>-stream` 且互不相同，`com.docker.compose.project` 仍为 `<prefix>-profiles`。
+- [x] AC-013：[deploy] 真实部署后：登录、Profile 启动出图正常；`docker inspect` 显示数据库在 named volume；设置页显示平台字体集；OrbStack 分组中可按编号区分沙箱 service。
+- [x] AC-014：同一 daemon 上两个实例的媒体子网池互不重叠，部署第二个实例时若池重叠则部署失败并提示；两实例并发启动 Profile 不因子网冲突失败。
+- [x] AC-015：Docker 网络 API 调用挂起超过超时时间时，该次启动以明确错误失败，其它 Profile 的网络创建不被阻塞。
+- [x] AC-016：prefix 含大写、空格、斜杠或 `-` 时，deploy.sh 与 Supervisor 启动均在执行任何 Docker 操作前失败并提示。
+- [x] AC-017：在 deploy.sh 写发布指针的任意步骤中断后，current / previous 仍指向一致的 release 组合，rollback 可执行。
+- [x] AC-018：数据库文件存在但不可读时，deploy 与 rollback 都在启动或替换任何容器之前拒绝。
+- [x] AC-019：默认部署的数据根路径、现行文档、源码与脚本中不含产品代际标识；新增代际标识时 hygiene 测试失败。
+- [x] AC-020：证据脱敏与 Docker 错误脱敏对 URL 内嵌凭据、任意 cookie 值、含空格的敏感值与家目录路径均输出脱敏占位。
+- [x] AC-021：容器 project 标签伪造为本实例分组但 `instance-id` 不符时，deploy.sh 拒绝部署，Supervisor 不认领；本实例沙箱缺少 `instance-id` 标签时不被认领为本实例资源。
 
 ### 可测试性声明
 

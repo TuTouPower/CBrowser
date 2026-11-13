@@ -92,6 +92,67 @@ case "$cmd" in
     if [ ! -f "$f" ]; then echo "Error: No such image: $ref" >&2; exit 1; fi
     if [ -n "$fmt" ]; then cat "$f"; echo; fi
     ;;
+  run)
+    # Execute a container-side `python3 /scripts/<name>.py ...` on the
+    # host with -v mount translation: <host-path>:<container-path> maps
+    # to the host path, <volume-name>:<container-path> maps to
+    # $STATE/volumes/<volume-name> (created on demand, mirroring Docker
+    # auto-creating a named volume on first use).
+    mounts=""
+    image=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --rm) shift;;
+        -v)
+          spec="$2"; shift 2
+          host="${spec%%:*}"; rest="${spec#*:}"; cont="${rest%%:*}"
+          case "$host" in
+            */*) host_path="$host";;
+            *) host_path="$STATE/volumes/$host"; mkdir -p "$host_path";;
+          esac
+          mounts+="$cont"$'\t'"$host_path"$'\n'
+          ;;
+        --*) shift;;
+        *)
+          if [ -z "$image" ]; then image="$1"; shift; else break; fi
+          ;;
+      esac
+    done
+    if [ "${1:-}" != "python3" ]; then
+      echo "fake docker run supports only python3 commands" >&2; exit 1
+    fi
+    shift
+    translated=()
+    for arg in "$@"; do
+      new_arg="$arg"
+      while IFS=$'\t' read -r cont host_path; do
+        [ -n "$cont" ] || continue
+        case "$new_arg" in
+          "$cont") new_arg="$host_path"; break;;
+          "$cont"/*) new_arg="$host_path/${new_arg#"$cont"/}"; break;;
+        esac
+      done <<< "$mounts"
+      translated+=("$new_arg")
+    done
+    # A real `docker run` exits with the container command's status; the
+    # fake must propagate it too — the deploy/rollback stamp check
+    # (db_inspect.py) fails closed on a non-zero exit, so swallowing it
+    # would let an unreadable database deploy (t051 review f003).
+    python3 "${translated[@]}"
+    exit $?
+    ;;
+  volume)
+    sub="${1:-}"; if [ $# -gt 0 ]; then shift; fi
+    case "$sub" in
+      inspect)
+        if [ -d "$STATE/volumes/${1:-}" ]; then exit 0; else exit 1; fi
+        ;;
+      create)
+        mkdir -p "$STATE/volumes/${1:-}"
+        ;;
+      *) echo "unsupported volume subcommand: $sub" >&2; exit 1;;
+    esac
+    ;;
   ps)
     if [ "${FAKE_REQUIRE_ROLE_FORMAT:-0}" = "1" ]; then
       case "$*" in
@@ -122,6 +183,9 @@ case "$cmd" in
       up)
         echo "up $*" >> "$LOG.compose"
         if [ "${FAKE_FAIL_UP:-0}" = "1" ]; then echo "service unhealthy" >&2; exit 1; fi
+        ;;
+      down)
+        echo "down $*" >> "$LOG.compose"
         ;;
       exec)
         cat >/dev/null
@@ -158,6 +222,8 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "scripts" / "supervisor_readiness_probe.py",
         repo / "scripts" / "supervisor_readiness_probe.py",
     )
+    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py"):
+        shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
     _copy_tree(ROOT / "config" / "docker", repo / "config" / "docker")
     net_dir = repo / "src" / "backend" / "cbrowser"
@@ -165,6 +231,18 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
     shutil.copy(
         ROOT / "src" / "backend" / "cbrowser" / "network_config.py",
         net_dir / "network_config.py",
+    )
+    # The font-set preflight (scripts/check_font_sets.py) bootstraps its
+    # own sys.path to the fake tree, so font_sets must be copied whole.
+    # NOTE: do NOT copy cbrowser/__init__.py or supervisor/__init__.py
+    # here: the fake tree's `cbrowser` must stay a namespace package so
+    # imports in deploy.sh (atomic_write's file_storage, the network
+    # config CLI) keep resolving from the real tree via PYTHONPATH, as
+    # they always have.  A regular __init__.py in the fake tree would
+    # shadow the real package and break those imports.
+    _copy_tree(
+        ROOT / "src" / "backend" / "cbrowser" / "font_sets",
+        repo / "src" / "backend" / "cbrowser" / "font_sets",
     )
     _copy_tree(
         ROOT / "src" / "backend" / "migrations",
@@ -237,8 +315,18 @@ def _manifest(repo: Path, release_id: str) -> dict:
 
 
 def _pointer(repo: Path, name: str) -> str:
-    path = repo / "config" / "deploy" / name
-    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+    # t051: the two pointer files are one JSON pointer file.
+    path = repo / "config" / "deploy" / "release_pointer.json"
+    if not path.exists():
+        return ""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    field = "current" if name == "current_release" else "previous"
+    return data.get(field) or ""
+
+
+def _pointer_file(repo: Path, deploy_dir: Path | None = None) -> dict:
+    path = (deploy_dir or repo / "config" / "deploy") / "release_pointer.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _compose_log(repo: Path) -> str:
@@ -457,7 +545,7 @@ def _deploy_instance_b(repo: Path, bin_dir: Path, release_id: str) -> subprocess
         env_extra={
             "CBROWSER_RELEASE_ID": release_id,
             "CBROWSER_COMPOSE_PROJECT": "inst-b",
-            "CBROWSER_PREFIX": "inst-b",
+            "CBROWSER_PREFIX": "inst_b",
             "CBROWSER_DATA_ROOT": str(repo / "data-b"),
             "CBROWSER_SECRETS_DIR": str(secrets_b),
         },
@@ -473,7 +561,7 @@ def test_rollback_adopts_target_release_identity(tmp_path: Path) -> None:
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy_instance_b(repo, bin_dir, "b-001").returncode == 0
     assert _deploy_instance_b(repo, bin_dir, "b-002").returncode == 0
-    rows = "inst-b-gateway\tinst-b\tinst-b"
+    rows = "inst_b-gateway\tinst-b\tinst_b"
     result = _run(
         repo,
         bin_dir,
@@ -491,7 +579,7 @@ def test_rollback_conflict_checked_against_release_prefix(tmp_path: Path) -> Non
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy_instance_b(repo, bin_dir, "b-001").returncode == 0
     assert _deploy_instance_b(repo, bin_dir, "b-002").returncode == 0
-    rows = "inst-b-supervisor\tother-proj\tinst-b"
+    rows = "inst_b-supervisor\tother-proj\tinst_b"
     result = _run(
         repo,
         bin_dir,
@@ -524,7 +612,7 @@ def test_instance_identity_parameterized_and_independent(
         env_extra={
             "CBROWSER_RELEASE_ID": "b-001",
             "CBROWSER_COMPOSE_PROJECT": "inst-b",
-            "CBROWSER_PREFIX": "inst-b",
+            "CBROWSER_PREFIX": "inst_b",
             "CBROWSER_HTTPS_PORT": "56662",
             "CBROWSER_DATA_ROOT": str(repo / "data-b"),
             "CBROWSER_SECRETS_DIR": str(secrets_b),
@@ -535,15 +623,21 @@ def test_instance_identity_parameterized_and_independent(
     manifest_b = json.loads(
         (deploy_dir_b / "releases" / "b-001.json").read_text(encoding="utf-8")
     )
+    instance_id_b, pool_b = _instance_identity(repo, "inst_b", repo / "data-b")
     assert manifest_b["instance"] == {
         "project": "inst-b",
-        "prefix": "inst-b",
+        "prefix": "inst_b",
         "https_port": 56662,
+        "instance_id": instance_id_b,
+        "media_subnet_pool": pool_b,
     }
     env_b = (deploy_dir_b / "releases" / "b-001.env").read_text(encoding="utf-8")
     assert f"CBROWSER_DATA_ROOT={repo}/data-b" in env_b
     assert f"CBROWSER_SECRETS_DIR={secrets_b}" in env_b
-    assert (deploy_dir_b / "current_release").read_text().strip() == "b-001"
+    assert f"CBROWSER_INSTANCE_ID={instance_id_b}" in env_b
+    assert f"CBROWSER_MEDIA_SUBNET_POOL={pool_b}" in env_b
+    assert f"CBROWSER_FONTS_DIR={repo}/data/fonts" in env_b
+    assert _pointer_file(repo, deploy_dir_b).get("current") == "b-001"
     # The internal keys must actually be generated into the parameterized
     # secrets dir (test f007), not only recorded there in the env file.
     for name in ("supervisor_key", "agent_key", "gateway_key", "gateway_api_key"):
@@ -554,7 +648,7 @@ def test_instance_identity_parameterized_and_independent(
     # The default instance deploys independently; neither pointer moves.
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
     assert _pointer(repo, "current_release") == "rel-001"
-    assert (deploy_dir_b / "current_release").read_text().strip() == "b-001"
+    assert _pointer_file(repo, deploy_dir_b).get("current") == "b-001"
 
 
 def test_caddy_fingerprints_recorded_and_change_sensitive(
@@ -607,17 +701,19 @@ def test_rollback_preserves_profile_data_and_database(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
-    data_root = repo / "data" / "v2"
+    data_root = repo / "data" / "instance"
     profile_file = data_root / "profiles" / "p1" / "profile" / "Cookies"
     profile_file.parent.mkdir(parents=True, exist_ok=True)
     profile_file.write_text("cookie-bytes", encoding="utf-8")
-    db_file = data_root / "cbrowser.db"
-    db_file.write_text("db-bytes", encoding="utf-8")
+    # The database lives in the named volume now; seed a valid stamped
+    # one (a plain-text file would fail the container-side stamp check).
+    db = _stamp_db(repo, _migration_head(repo))
+    before = db.read_bytes()
     assert _deploy(repo, bin_dir, "rel-002").returncode == 0
     result = _run(repo, bin_dir, "rollback")
     assert result.returncode == 0, result.stderr
     assert profile_file.read_text(encoding="utf-8") == "cookie-bytes"
-    assert db_file.read_text(encoding="utf-8") == "db-bytes"
+    assert db.read_bytes() == before
 
 
 def test_rollback_readiness_failure_reports_no_success(tmp_path: Path) -> None:
@@ -789,6 +885,51 @@ def test_compose_yaml_release_contract() -> None:
     assert "com.cbrowser.prefix: ${CBROWSER_PREFIX:-cbrowser}" in text
 
 
+def test_compose_yaml_t051_db_fonts_labels_contract() -> None:
+    """t051 AC-001/AC-009/AC-010/AC-021: DB named volume, independent fonts
+    dir, deployment labels on every control-plane service."""
+    text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
+    # DB lives in a named volume, not the DATA_ROOT bind mount.
+    assert "  db:\n    name: ${CBROWSER_PREFIX:-cbrowser}-db" in text
+    assert "/data/cbrowser.db" not in text
+    assert "/data/db/cbrowser.db" in text
+    api_block = _service_block(text, "api")
+    assert "db:/data/db" in api_block
+    assert "CBROWSER_DB_PATH: /data/db/cbrowser.db" in api_block
+    # Fonts are an independent deploy input, mounted at /fonts:ro.
+    assert "CBROWSER_DATA_ROOT}/fonts" not in text
+    for service in ("api", "supervisor"):
+        block = _service_block(text, service)
+        assert "${CBROWSER_FONTS_DIR:?set CBROWSER_FONTS_DIR}:/fonts:ro" in block
+        assert "CBROWSER_FONTS_DIR: /fonts" in block
+    # Deployment identity labels on every control-plane service.
+    for service in ("api", "gateway", "supervisor", "caddy"):
+        block = _service_block(text, service)
+        assert (
+            "com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?" in block
+        ), service
+        assert (
+            "com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?"
+            in block
+        ), service
+    # The Supervisor container must also receive the deployment identity
+    # and media pool as environment (t051 review f002): the runner main
+    # and DockerAdapter env fallbacks (CBROWSER_INSTANCE_ID /
+    # CBROWSER_MEDIA_SUBNET_POOL) only take effect when compose actually
+    # passes them into the container.  CBROWSER_DOCKER_NETWORK_TIMEOUT
+    # is deliberately not passed: deploy.sh does not write it to the
+    # release env, so there is no value to forward.
+    supervisor_block = _service_block(text, "supervisor")
+    assert (
+        "CBROWSER_INSTANCE_ID: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}"
+        in supervisor_block
+    )
+    assert (
+        "CBROWSER_MEDIA_SUBNET_POOL: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}"
+        in supervisor_block
+    )
+
+
 # ---------------------------------------------------------------------------
 # t035 AC-002: schema-generation fail-closed + revision-chain rollback floor
 # These replace the removed old-generation assertions/tests above and cover
@@ -797,13 +938,23 @@ def test_compose_yaml_release_contract() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _stamp_db(repo: Path, revision: str) -> Path:
-    """Create a database stamped with the given alembic_version at the
-    instance data root, as the API would leave it on disk."""
-    data_root = repo / "data" / "v2"
-    data_root.mkdir(parents=True, exist_ok=True)
-    db = data_root / "cbrowser.db"
-    conn = sqlite3.connect(str(db))
+def _instance_identity(
+    repo: Path, prefix: str = "cbrowser", data_root: Path | None = None
+) -> tuple[str, str]:
+    """The deterministic (instance_id, media_subnet_pool) deploy.sh derives
+    from (prefix, data root).  Mirrors the material string in deploy.sh
+    byte for byte: "cbrowser-instance-v1\\0<prefix>\\0<data_root>"."""
+    if data_root is None:
+        data_root = repo / "data" / "instance"
+    material = b"cbrowser-instance-v1\0" + prefix.encode() + b"\0" + str(data_root).encode()
+    digest = hashlib.sha256(material).hexdigest()
+    return digest[:32], f"10.{192 + int(digest, 16) % 64}.0.0/16"
+
+
+def _stamp_db_path(path: Path, revision: str) -> Path:
+    """Stamp an arbitrary path with the given alembic_version."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path))
     try:
         conn.execute(
             "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
@@ -814,7 +965,24 @@ def _stamp_db(repo: Path, revision: str) -> Path:
         conn.commit()
     finally:
         conn.close()
-    return db
+    return path
+
+
+def _read_stamp(path: Path) -> str:
+    conn = sqlite3.connect(str(path))
+    try:
+        row = conn.execute("SELECT version_num FROM alembic_version").fetchone()
+        return row[0] if row else ""
+    finally:
+        conn.close()
+
+
+def _stamp_db(repo: Path, revision: str, prefix: str = "cbrowser") -> Path:
+    """Create a database stamped with the given alembic_version in the
+    named volume, as the API would leave it on disk."""
+    vol_dir = repo / ".fake-state" / "volumes" / f"{prefix}-db"
+    vol_dir.mkdir(parents=True, exist_ok=True)
+    return _stamp_db_path(vol_dir / "cbrowser.db", revision)
 
 
 def test_deploy_refuses_legacy_generation_database(tmp_path: Path) -> None:
@@ -826,9 +994,36 @@ def test_deploy_refuses_legacy_generation_database(tmp_path: Path) -> None:
     assert result.returncode != 0
     assert "rebuild" in result.stderr.lower()
     assert "data directory" in result.stderr.lower()
-    # Fail closed: database untouched, nothing built, no release activated.
+    # Fail closed: database untouched, no container started, no pointer
+    # moved.  Exactly one build ran: the schema check needs the API image,
+    # so it is built first; building an image changes no data, and the
+    # safety property (nothing started, nothing moved, DB untouched) is
+    # preserved — the old `_builds == []` assertion cannot hold under the
+    # container-side stamp check.
     assert db.read_bytes() == before
-    assert _builds(repo) == []
+    builds = _builds(repo)
+    assert len(builds) == 1, builds
+    assert "api_runtime/Dockerfile" in builds[0]
+    assert _pointer(repo, "current_release") == ""
+
+
+def test_deploy_refuses_corrupt_database(tmp_path: Path) -> None:
+    """AC-018 (t051 review f003): a volume database that exists but is
+    not a readable SQLite file refuses the deploy before any container
+    starts — the stamp check fails closed, like the retired-generation
+    refusal, except the API image build it needs is the only build."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    db = _stamp_db(repo, BASELINE_REVISION)
+    db.write_text("corrupt replacement", encoding="utf-8")
+    before = db.read_bytes()
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode != 0
+    assert db.read_bytes() == before
+    assert "up -d" not in _compose_log(repo)
+    builds = _builds(repo)
+    assert len(builds) == 1, builds
+    assert "api_runtime/Dockerfile" in builds[0]
     assert _pointer(repo, "current_release") == ""
 
 
@@ -851,6 +1046,25 @@ def test_rollback_refuses_legacy_generation_database(tmp_path: Path) -> None:
     result = _run(repo, bin_dir, "rollback")
     assert result.returncode != 0
     assert "rebuild" in result.stderr.lower()
+    assert db.read_bytes() == before
+    assert _compose_log(repo).count("up -d") == ups_before
+    assert _pointer(repo, "current_release") == "rel-002"
+
+
+def test_rollback_refuses_corrupt_database(tmp_path: Path) -> None:
+    """AC-018 (t051 review f003): a volume database that exists but is
+    not a readable SQLite file refuses the rollback before any container
+    is started or replaced — the stamp check fails closed."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    db = _stamp_db(repo, BASELINE_REVISION)
+    db.write_text("corrupt replacement", encoding="utf-8")
+    before = db.read_bytes()
+    ups_before = _compose_log(repo).count("up -d")
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode != 0
     assert db.read_bytes() == before
     assert _compose_log(repo).count("up -d") == ups_before
     assert _pointer(repo, "current_release") == "rel-002"
@@ -950,10 +1164,12 @@ def test_same_generation_publish_and_rollback_with_incremental_chain(
 def test_prefix_conflict_allows_own_sandbox_group(tmp_path: Path) -> None:
     """A ``<project>-profiles`` Browser/Stream container is this
     instance's sandbox grouping, not another instance claiming the
-    prefix (t050)."""
+    prefix (t050).  Ownership is proven by the instance-id label now
+    (t051 AC-021): the row carries this instance's deployment id."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    rows = "cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser"
+    instance_id, _ = _instance_identity(repo)
+    rows = f"cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser\t{instance_id}"
     result = _deploy(
         repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows
     )
@@ -976,16 +1192,18 @@ def test_prefix_conflict_allows_sandbox_group_when_project_differs(
     tmp_path: Path,
 ) -> None:
     """Sandbox grouping is derived from the resource prefix, not the
-    compose project name (t050)."""
+    compose project name (t050).  Ownership is proven by the
+    instance-id label now (t051 AC-021)."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    rows = "inst-b-browser-p1\tinst-b-profiles\tinst-b\tbrowser"
+    instance_id, _ = _instance_identity(repo, "inst_b")
+    rows = f"inst_b-browser-p1\tinst_b-profiles\tinst_b\tbrowser\t{instance_id}"
     result = _deploy(
         repo,
         bin_dir,
         "rel-001",
         FAKE_PS_ROWS=rows,
-        CBROWSER_PREFIX="inst-b",
+        CBROWSER_PREFIX="inst_b",
         CBROWSER_COMPOSE_PROJECT="proj-b",
     )
     assert result.returncode == 0, result.stderr
@@ -995,7 +1213,8 @@ def test_prefix_conflict_allows_sandbox_group_when_project_differs(
 def test_prefix_conflict_check_requests_role_label(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    rows = "cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser"
+    instance_id, _ = _instance_identity(repo)
+    rows = f"cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser\t{instance_id}"
     result = _deploy(
         repo,
         bin_dir,
@@ -1015,3 +1234,295 @@ def test_prefix_conflict_refuses_pseudo_project_with_non_sandbox_role(
     result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
     assert result.returncode != 0
     assert "prefix" in result.stderr
+
+
+# --- t051: deployment identity, named-volume DB, JSON pointer ----------
+
+
+def test_prefix_validation_refuses_invalid_prefix(tmp_path: Path) -> None:
+    """A22: a malformed prefix fails closed before any Docker operation."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    for bad in ("Bad Prefix!", "inst-b", "-lead", "UPPER"):
+        result = _deploy(repo, bin_dir, "rel-001", CBROWSER_PREFIX=bad)
+        assert result.returncode != 0, bad
+        assert "prefix" in result.stderr.lower(), bad
+    assert _builds(repo) == []
+
+
+def test_pointer_is_single_json_file(tmp_path: Path) -> None:
+    """A43/AC-017: current/previous live in one JSON pointer file; the
+    old two files are gone."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    deploy_dir = repo / "config" / "deploy"
+    assert not (deploy_dir / "current_release").exists()
+    assert not (deploy_dir / "previous_release").exists()
+    pointer = json.loads((deploy_dir / "release_pointer.json").read_text())
+    assert pointer == {"current": "rel-002", "previous": "rel-001"}
+
+
+def test_corrupt_pointer_file_is_replaced_not_fatal(tmp_path: Path) -> None:
+    """AC-017: a torn/corrupt pointer file (external damage; the atomic
+    writer makes a crash-torn pointer impossible) does not block the
+    deploy — activate replaces it.  The previous release is lost with
+    the torn file; that loss is the documented fail-soft behaviour."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    (repo / "config" / "deploy" / "release_pointer.json").write_text(
+        "{torn json", encoding="utf-8"
+    )
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    assert _pointer(repo, "current_release") == "rel-002"
+    assert _pointer(repo, "previous_release") == ""
+
+
+def _other_pool(pool: str) -> str:
+    """A /16 in the same 10.192-10.255 range that cannot overlap `pool`."""
+    third = int(pool.split(".")[1])
+    other = third + 1 if third < 255 else 192
+    return f"10.{other}.0.0/16"
+
+
+def test_media_pool_overlap_refused(tmp_path: Path) -> None:
+    """A3: a foreign deployment whose media pool overlaps ours refuses
+    the deploy even when its prefix differs."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, pool = _instance_identity(repo)
+    rows = f"other-api\tother-proj\tother\tapi\tother-instance-id\t{pool}"
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "pool" in result.stderr.lower()
+    assert _builds(repo) == []
+
+
+def test_media_pool_non_overlap_allowed(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, pool = _instance_identity(repo)
+    rows = (
+        "other-api\tother-proj\tother\tapi\tother-instance-id\t"
+        f"{_other_pool(pool)}"
+    )
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode == 0, result.stderr
+
+
+def test_prefix_conflict_forged_project_wrong_instance_id_refused(
+    tmp_path: Path,
+) -> None:
+    """AC-021: a different compose project with a mismatched instance
+    id is foreign, even when it claims our prefix."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = (
+        "cbrowser-browser-p1\tother-instance\tcbrowser\tbrowser\t"
+        "deadbeefdeadbeefdeadbeefdeadbeef"
+    )
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "prefix" in result.stderr
+    assert _builds(repo) == []
+
+
+def test_prefix_conflict_missing_instance_id_not_claimed(
+    tmp_path: Path,
+) -> None:
+    """AC-021: a container with no instance-id label is not claimed —
+    the old <prefix>-profiles project-name exemption is gone."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = "cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser"
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "prefix" in result.stderr
+    assert _builds(repo) == []
+
+
+def test_prefix_conflict_same_project_wrong_instance_id_refused(
+    tmp_path: Path,
+) -> None:
+    """AC-021 (t051 review f001): a same-project container whose
+    instance-id label is present but mismatched is foreign — the
+    compose project name is not an exemption."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    rows = (
+        "cbrowser-api\tcbrowser\tcbrowser\tapi\t"
+        "deadbeefdeadbeefdeadbeefdeadbeef"
+    )
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode != 0
+    assert "prefix" in result.stderr
+    assert _builds(repo) == []
+
+
+def test_prefix_conflict_same_project_matching_instance_id_allowed(
+    tmp_path: Path,
+) -> None:
+    """AC-021 (t051 review f001): a same-project container whose
+    instance-id label equals this instance's id is ours."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    instance_id, _ = _instance_identity(repo)
+    rows = f"cbrowser-api\tcbrowser\tcbrowser\tapi\t{instance_id}"
+    result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
+    assert result.returncode == 0, result.stderr
+
+
+def test_backup_and_restore_round_trip(tmp_path: Path) -> None:
+    """AC-003/AC-016: a deploy backs the live database up (recorded in
+    the manifest) and `deploy.sh restore` copies it back."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    head = _migration_head(repo)
+    db = _stamp_db(repo, head)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    manifest = _manifest(repo, "rel-001")
+    backup = manifest["database_backup"]
+    assert backup, "backup path must be recorded in the manifest"
+    backup_path = Path(backup)
+    assert backup_path.is_file()
+    assert _read_stamp(backup_path) == head
+    # Corrupt the live database, then restore from the backup.
+    db.write_text("corrupt replacement", encoding="utf-8")
+    result = _run(repo, bin_dir, "restore", backup)
+    assert result.returncode == 0, result.stderr
+    assert _read_stamp(db) == head
+    assert "down" in _compose_log(repo)
+
+
+def test_restore_without_current_release_refused(tmp_path: Path) -> None:
+    """AC-003: restore with no current release recorded is refused.
+    The backup file exists here so the refusal comes from the
+    no-current-release branch (deploy.sh checks the backup file first),
+    not the missing-backup branch."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    backup = tmp_path / "backup.db"
+    backup.write_text("not a database", encoding="utf-8")
+    result = _run(repo, bin_dir, "restore", str(backup))
+    assert result.returncode != 0
+    assert "No current release" in result.stderr
+
+
+def test_restore_missing_backup_file_refused(tmp_path: Path) -> None:
+    """AC-003 (t051 review f002): restore refuses when the backup file
+    itself does not exist, even with a current release recorded."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    result = _run(repo, bin_dir, "restore", str(tmp_path / "no-such-backup.db"))
+    assert result.returncode != 0
+    assert "does not exist" in result.stderr
+
+
+def test_old_host_database_prompt(tmp_path: Path) -> None:
+    """AC-004: a legacy host database is reported with its disposition
+    and never moved or deleted; the deploy continues."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    head = _migration_head(repo)
+    legacy = repo / "data" / "v2" / "cbrowser.db"
+    _stamp_db_path(legacy, head)
+    before = legacy.read_bytes()
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode == 0, result.stderr
+    output = result.stdout + result.stderr
+    assert "data/v2/cbrowser.db" in output
+    assert "restore" in output.lower()
+    assert "NOT moved" in output
+    assert legacy.read_bytes() == before
+    assert not (
+        repo / ".fake-state" / "volumes" / "cbrowser-db" / "cbrowser.db"
+    ).exists()
+
+
+def _valid_font_set(root: Path) -> None:
+    font = b"fake font bytes"
+    set_dir = root / "windows" / "set-1"
+    set_dir.mkdir(parents=True)
+    (set_dir / "Arial.ttf").write_bytes(font)
+    manifest = {
+        "files": [
+            {"name": "Arial.ttf", "sha256": hashlib.sha256(font).hexdigest()}
+        ]
+    }
+    (set_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+
+def test_fonts_preflight_warns_and_continues(tmp_path: Path) -> None:
+    """AC-009/AC-010: a missing fonts directory warns but never blocks."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode == 0, result.stderr
+    assert "WARNING" in result.stdout
+    assert "fonts directory" in result.stdout
+
+
+def test_fonts_preflight_ok_with_valid_set(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _valid_font_set(repo / "data" / "fonts")
+    result = _deploy(repo, bin_dir, "rel-001")
+    assert result.returncode == 0, result.stderr
+    assert "font sets ok" in result.stdout
+    assert "windows/set-1" in result.stdout
+
+
+def test_instance_identity_deterministic_across_releases(
+    tmp_path: Path,
+) -> None:
+    """A59: the instance id and media pool are stable across releases
+    and recorded in the manifest and the release env."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    first, second = _manifest(repo, "rel-001"), _manifest(repo, "rel-002")
+    assert first["instance"]["instance_id"] == second["instance"]["instance_id"]
+    assert (
+        first["instance"]["media_subnet_pool"]
+        == second["instance"]["media_subnet_pool"]
+    )
+    instance_id, pool = _instance_identity(repo)
+    assert first["instance"]["instance_id"] == instance_id
+    assert first["instance"]["media_subnet_pool"] == pool
+    env1 = (repo / "config" / "deploy" / "releases" / "rel-001.env").read_text(
+        encoding="utf-8"
+    )
+    assert f"CBROWSER_INSTANCE_ID={instance_id}" in env1
+    assert f"CBROWSER_MEDIA_SUBNET_POOL={pool}" in env1
+    assert first["database_backup"] is None
+
+
+def test_db_volume_inspectable_after_deploy(tmp_path: Path) -> None:
+    """AC-001: the deploy uses the named database volume."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    state = repo / ".fake-state"
+    env = {
+        "PATH": f"{bin_dir}:/usr/local/bin:/usr/bin:/bin",
+        "FAKE_DOCKER_LOG": str(state / "docker.log"),
+        "FAKE_DOCKER_STATE": str(state),
+    }
+    found = subprocess.run(
+        [str(bin_dir / "docker"), "volume", "inspect", "cbrowser-db"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert found.returncode == 0
+    missing = subprocess.run(
+        [str(bin_dir / "docker"), "volume", "inspect", "cbrowser-db-missing"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert missing.returncode != 0

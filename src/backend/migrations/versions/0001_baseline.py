@@ -1,4 +1,4 @@
-"""CBrowser v2 baseline schema (t035).
+"""CBrowser baseline schema (t035).
 
 Single baseline revision replacing the 0001-0009 chain.  The revision id
 is deliberately new: any database stamped with an old revision belongs to

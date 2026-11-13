@@ -19,6 +19,7 @@ import uvicorn
 from cbrowser.gateway.endpoint import gateway_port_from_env
 from cbrowser.secret_files import read_secret_file
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
+from cbrowser.supervisor.container_spec import validate_resource_prefix
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.coordinator_lock import CoordinatorLock
 from cbrowser.supervisor.core import SupervisorCore
@@ -67,6 +68,8 @@ async def run_supervisor(
     runtime_gid: int = 1000,
     manage_ownership: bool | None = None,
     media_subnet_pool: str | None = None,
+    deployment_instance_id: str | None = None,
+    network_timeout: float | None = None,
 ):
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
@@ -103,6 +106,8 @@ async def run_supervisor(
         runtime_uid=runtime_uid,
         runtime_gid=runtime_gid,
         media_subnet_pool=media_subnet_pool,
+        deployment_instance_id=deployment_instance_id,
+        network_timeout=network_timeout,
         manage_ownership=(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
@@ -533,8 +538,19 @@ def main():
     parser.add_argument(
         "--gateway-container-id", default=os.getenv("CBROWSER_GATEWAY_CONTAINER_ID")
     )
+    parser.add_argument("--prefix", default=None)
     parser.add_argument(
-        "--prefix", default=os.getenv("CBROWSER_PREFIX", "cbrowser-t005")
+        "--deployment-instance-id",
+        default=os.getenv("CBROWSER_INSTANCE_ID"),
+        help="Deployment identity (A59/AC-021); compose sets it from the "
+        "release identity. Sandboxes without this label are not claimed.",
+    )
+    parser.add_argument(
+        "--docker-network-timeout",
+        type=float,
+        default=None,
+        help="Seconds a Docker network call may hang before failing "
+        "(AC-015); default 30, or CBROWSER_DOCKER_NETWORK_TIMEOUT.",
     )
     parser.add_argument(
         "--runtime-uid",
@@ -560,6 +576,16 @@ def main():
 
     args = parser.parse_args()
 
+    # A22: fail fast on an invalid explicitly supplied prefix (via
+    # --prefix or CBROWSER_PREFIX), before the lock and before any
+    # Docker call. With nothing supplied, the compiled-in default
+    # deployment prefix "cbrowser-t005" applies; it predates the A22
+    # pattern and is not deployment input, so it is not validated.
+    supplied_prefix = args.prefix or os.getenv("CBROWSER_PREFIX")
+    resource_prefix = supplied_prefix or "cbrowser-t005"
+    if supplied_prefix is not None:
+        validate_resource_prefix(resource_prefix)
+
     validator = PathValidator(Path(args.data_root))
     lock_path = validator.validate_safe_path(
         validator.data_root / "control" / "supervisor.lock",
@@ -577,7 +603,7 @@ def main():
                 if args.agent_key_file
                 else None,
                 gateway_url=args.gateway_url,
-                resource_prefix=args.prefix,
+                resource_prefix=resource_prefix,
                 host=args.host,
                 port=args.port,
                 gateway_control_url=args.gateway_control_url,
@@ -594,6 +620,8 @@ def main():
                     else args.manage_ownership == "1"
                 ),
                 media_subnet_pool=args.media_subnet_pool,
+                deployment_instance_id=args.deployment_instance_id,
+                network_timeout=args.docker_network_timeout,
             )
         )
 

@@ -257,7 +257,8 @@ def _add_legacy_1a6ec51_columns(conn: sqlite3.Connection) -> None:
 @pytest.mark.asyncio
 async def test_upgrade_from_legacy_0001_with_columns_to_head(tmp_path: Path) -> None:
     """P0-A: a database stamped at 0002 whose tables already carry the four
-    t039/t040 columns (the 1a6ec51 in-place-0001 shape, i.e. live data/v2)
+    t039/t040 columns (the 1a6ec51 in-place-0001 shape, i.e. the live
+database from that era)
     upgrades to head without a duplicate-column failure, and the ORM stays
     usable. The 0004 downgrade is equally guarded: it drops only columns
     that are still present."""

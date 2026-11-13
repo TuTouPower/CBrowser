@@ -1,0 +1,17 @@
+{
+  "tid": "t051",
+  "attempt": 1,
+  "execution_id": "acb12dc9680b498d8a6376b25629f9bf",
+  "status": "done",
+  "branch": "t051_runtime_deploy_reliability",
+  "base_sha": "3331ed3c12518849a416a0c74b6c844f033fc8c7",
+  "tests": "Round 1 修复后重跑——t027 控制器 51 passed（原 46 + 新增 5）；t051 六套件 103 tests（shared_redaction 21、deploy_scripts 11、db_errors 26、docker_error_detail 11、supervisor_identity 33、generation_hygiene 1）全绿；改动面回归 17 文件合跑 217 passed；全量 `tests/unit` + `tests/integration`（不含 t027，PYTHONPATH 指 `src/backend`）：1850 passed / 29 failed / 8 skipped / 2 errors，失败清单与基线分类逐项一致、无新增（见「命名偏离修正后复验」订正）；前端未动，vitest/tsc 沿用实施期结果（vitest 8 passed、tsc 0 错）；`git diff --check` clean；默认 ruff 0.17.4 自查：我引入的 12 项已修，余 5 项为基线已有（见 Area J）。",
+  "blackbox": "未跑——`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 本机无 Docker/镜像/Chrome，无法执行；以相关非 E2E 套件（上述聚焦 217 passed + t027 51 passed）替代，真实部署验证须在用户机进行。",
+  "review": "Round 1 实况——code FAIL（3 important + 2 minor）、test PASS（3 minor），8 条 finding 已全部修复并重验；Round 2 实况——code PASS（0 finding）、test PASS（1 minor t051_test_f004，经字节级复核证实为误报已撤回，见「Review 处置」Round 2）。两路均 PASS。",
+  "review_scope": "591cca7ccc950238",
+  "pending": [],
+  "findings": [
+    "d037",
+    "d038"
+  ]
+}

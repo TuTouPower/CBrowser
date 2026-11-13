@@ -1,4 +1,4 @@
-"""Runtime Coordinator and SSE Broadcaster for CBrowser v2 Control API."""
+"""Runtime Coordinator and SSE Broadcaster for CBrowser Control API."""
 
 from __future__ import annotations
 
