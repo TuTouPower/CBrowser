@@ -23,6 +23,7 @@ from cbrowser.adapters.database.session import create_engine_and_maker
 from cbrowser.api.app import create_app
 from cbrowser.domain.models import ProfileConfig
 from cbrowser.runtime_agent.agent import create_agent_app
+from cbrowser.runtime_agent.socket_root import prepare_socket_dir
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.path_validator import PathValidator, agent_socket_path
 from fastapi.testclient import TestClient
@@ -164,7 +165,7 @@ async def test_automation_token_reaches_agent_uds_through_supervisor() -> None:
         validator = PathValidator(root)
         socket_root = validator.socket_root
         echo_sock = agent_socket_path(socket_root, profile_id, "i1")
-        echo_sock.parent.mkdir(parents=True, exist_ok=True)
+        prepare_socket_dir(socket_root, profile_id, "i1")
         echo = _UnixEchoServer(echo_sock)
         echo.start()
         core = SimpleNamespace(
@@ -270,7 +271,7 @@ def test_supervisor_cdp_reaches_real_agent_app_and_fake_chrome() -> None:
     validator = PathValidator(data_root)
     socket_root = validator.socket_root
     agent_sock = agent_socket_path(socket_root, "p1", "i1")
-    agent_sock.parent.mkdir(parents=True, exist_ok=True)
+    prepare_socket_dir(socket_root, "p1", "i1")
     agent_app = create_agent_app(
         run_dir=run_dir,
         default_download_dir=data_root / "downloads",

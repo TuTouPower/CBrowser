@@ -30,6 +30,7 @@ import httpx
 import pytest
 import uvicorn
 from cbrowser.runtime_agent.agent import create_agent_app
+from cbrowser.runtime_agent.socket_root import prepare_socket_dir
 from cbrowser.runtime_agent.event_storage import EventStorage
 from cbrowser.runtime_agent.protocol import RuntimeStateRecord
 from cbrowser.supervisor.core import SupervisorCore
@@ -46,6 +47,11 @@ class _FakeContainer:
         self.labels = {
             "com.cbrowser.instance-id": instance_id,
             "com.cbrowser.config-version": str(config_version),
+        }
+        # container_runtime_instance_id() recovers the runtime instance id
+        # from the inspected config Env, never from labels.
+        self.attrs = {
+            "Config": {"Env": [f"RUNTIME_INSTANCE_ID={instance_id}"]},
         }
         self.status = status
         self.id = f"c_{instance_id}"
@@ -66,6 +72,9 @@ class _FakeContainers:
             raise NotFound(f"container {name} not found")
         return self._containers[name]
 
+    def list(self, all: bool = False, filters: dict | None = None) -> list:
+        return list(self._containers.values())
+
 
 class _FakeDocker:
     def __init__(self, data_root: Path) -> None:
@@ -83,6 +92,7 @@ class _FakeDocker:
             api=SimpleNamespace(inspect_container=_inspect),
         )
         self.resource_prefix = "test"
+        self.deployment_instance_id = None
         self._active: list[dict] = []
         self.torn_down_profiles: list[str] = []
 
@@ -94,6 +104,28 @@ class _FakeDocker:
 
     def scan_active_containers(self) -> list[dict]:
         return list(self._active)
+
+    def inspect_media_network(self, profile_id: str) -> dict:
+        return {
+            "exists": True,
+            "conforms": True,
+            "plan": None,
+            "gateway_attached_id": None,
+            "gateway_ip": None,
+            "endpoints": {},
+        }
+
+    def get_profile_containers(self, profile_id: str) -> dict:
+        result: dict = {"browser": None, "stream": None}
+        for role, name in (
+            ("browser", self.get_browser_container_name(profile_id)),
+            ("stream", self.get_stream_container_name(profile_id)),
+        ):
+            try:
+                result[role] = self.containers.get(name)
+            except NotFound:
+                pass
+        return result
 
     def prepare_profile_directories(self, profile_id: str) -> dict[str, Path]:
         runtime_dir = self.validator.get_runtime_dir(profile_id)
@@ -130,7 +162,11 @@ def _bind(
 
 def _agent_sock(docker, profile_id: str, instance_id: str) -> Path:
     sock = docker.validator.get_agent_socket_path(profile_id, instance_id)
-    sock.parent.mkdir(parents=True, exist_ok=True)
+    # The production agent prepares its slot via prepare_socket_dir
+    # (mode 0o750); a bare mkdir inherits the ambient umask and the
+    # Supervisor's managed_socket_target rightfully rejects a
+    # group/other-writable slot directory.
+    prepare_socket_dir(docker.validator.socket_root, profile_id, instance_id)
     return sock
 
 

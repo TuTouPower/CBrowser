@@ -13,6 +13,7 @@ import pytest
 import tempfile
 from collections.abc import Iterator
 import websockets
+from cbrowser.runtime_agent.socket_root import prepare_socket_dir
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.path_validator import PathValidator, agent_socket_path
 from fastapi.testclient import TestClient
@@ -74,7 +75,7 @@ def test_supervisor_cdp_websocket_forwards_to_agent_uds(short_root: Path) -> Non
     validator = PathValidator(root)
     socket_root = validator.socket_root
     sock = agent_socket_path(socket_root, "p1", "i1")
-    sock.parent.mkdir(parents=True, exist_ok=True)
+    prepare_socket_dir(socket_root, "p1", "i1")
     server = _UnixEchoServer(sock)
     server.start()
     token = secrets.token_urlsafe(32)

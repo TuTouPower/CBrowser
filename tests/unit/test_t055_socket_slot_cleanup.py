@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import errno
 import os
+import shutil
 import socket
 import stat
+import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,6 +30,23 @@ from cbrowser.supervisor.path_validator import PathValidator
 
 PROFILE = "prof1"
 INSTANCE = "inst1"
+
+
+@pytest.fixture
+def short_root() -> Iterator[Path]:
+    """Short /tmp root for tests that bind or length-validate real UDS paths.
+
+    pytest tmp_path under xdist (popen-gwN- prefix) pushes
+    <root>/<slot>/agent.sock past the sun_path bound; the production
+    socket root is short by design (/run/cb/socks), so these tests use
+    a short mkdtemp root instead (same pattern as the p019 fixture in
+    test_normal_exit_replay.py).
+    """
+    root = Path(tempfile.mkdtemp(prefix="cbx-sock-", dir="/tmp"))
+    try:
+        yield root
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
 
 
 def _stale_socket(root: Path) -> Path:
@@ -50,9 +70,9 @@ def _live_socket(root: Path):
     return s, sock
 
 
-def test_prepare_socket_dir_cleans_stale_socket_and_leaves_other_slots(tmp_path):
+def test_prepare_socket_dir_cleans_stale_socket_and_leaves_other_slots(short_root):
     """AC-009: a stale socket in the target slot is cleaned; other slots stay."""
-    root = tmp_path / "socks"
+    root = short_root / "socks"
     stale = _stale_socket(root)
     other = agent_socket_path(root, "other-prof", "other-inst")
     other.parent.mkdir(parents=True, exist_ok=True)
@@ -66,12 +86,12 @@ def test_prepare_socket_dir_cleans_stale_socket_and_leaves_other_slots(tmp_path)
 
 
 def test_prepare_socket_dir_tolerates_entry_vanishing_between_exists_and_stat(
-    tmp_path, monkeypatch
+    short_root, monkeypatch
 ):
     """AC-009: an entry deleted between exists() and stat() (concurrent
     cleanup of the same slot) is treated as already cleaned, not a bare
     FileNotFoundError leaking out of prepare_socket_dir."""
-    root = tmp_path / "socks"
+    root = short_root / "socks"
     stale = _stale_socket(root)
     real_exists = Path.exists
 
@@ -90,9 +110,9 @@ def test_prepare_socket_dir_tolerates_entry_vanishing_between_exists_and_stat(
     assert directory == stale.parent
 
 
-def test_prepare_socket_dir_rejects_live_socket(tmp_path):
+def test_prepare_socket_dir_rejects_live_socket(short_root):
     """AC-009: a live socket is a conflict and is left in place."""
-    root = tmp_path / "socks"
+    root = short_root / "socks"
     server, sock = _live_socket(root)
     try:
         with pytest.raises(SocketRootError):
@@ -102,9 +122,9 @@ def test_prepare_socket_dir_rejects_live_socket(tmp_path):
     assert sock.is_socket()
 
 
-def test_prepare_socket_dir_rejects_foreign_uid(tmp_path):
+def test_prepare_socket_dir_rejects_foreign_uid(short_root):
     """AC-009: an entry owned by another uid is a conflict."""
-    root = tmp_path / "socks"
+    root = short_root / "socks"
     stale = _stale_socket(root)
     foreign_uid = os.geteuid() + 1
 
@@ -170,14 +190,14 @@ def test_path_validator_construction_rejects_overlong_socket_root(
 
 
 def test_managed_socket_target_tolerates_directory_vanishing_between_open_and_lstat(
-    tmp_path, monkeypatch
+    short_root, monkeypatch
 ):
     """A12 (socket_root read path, not the AC-009 slot-cleanup path): a
     slot directory deleted between open() and lstat() (concurrent cleanup
     of the same slot) falls back to the plain socket path, same as the
     open() ENOENT/ENOTDIR fallback — callers treat a non-socket target
     as absent — instead of leaking a bare FileNotFoundError."""
-    root = tmp_path / "socks"
+    root = short_root / "socks"
     sock = agent_socket_path(root, PROFILE, INSTANCE)
     directory = sock.parent
     directory.mkdir(parents=True, exist_ok=True)
