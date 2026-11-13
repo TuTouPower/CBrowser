@@ -3,10 +3,15 @@
 import asyncio
 import json
 import secrets
+import time
 from pathlib import Path
 
 import aiohttp
 import pytest
+from cbrowser.shared.viewer_grants import (
+    AUTHORIZED_PROFILE_HEADER,
+    VIEWER_GRANT_HEADER,
+)
 from cbrowser.stream_agent.protocol import (
     AgentHeartbeatEnvelope,
     AgentRegisterEnvelope,
@@ -142,51 +147,95 @@ async def test_viewer_handshake_rejections_leave_no_session(tmp_path: Path) -> N
     await harness.start()
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
+        other_profile = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie_val = f"sess_{secrets.token_urlsafe(32)}"
         url = f"{harness.ws_url}/stream/{profile_id}/signal"
 
         async with aiohttp.ClientSession() as session:
+            # A disallowed Origin is refused before authorization.
+            bad_origin = harness.viewer_headers(profile_id)
+            bad_origin["Origin"] = "https://malicious.example.com"
             with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
-                await session.ws_connect(
-                    url,
-                    headers={
-                        "Origin": "https://malicious.example.com",
-                        "Cookie": f"cbrowser_session={cookie_val}",
-                    },
-                )
+                await session.ws_connect(url, headers=bad_origin)
             assert exc_info.value.status == 403
 
+            # No grant at all -> 401.
             with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
                 await session.ws_connect(
                     url, headers={"Origin": "https://localhost:8443"}
                 )
             assert exc_info.value.status == 401
 
-            harness.api_service.set_viewer_auth(
-                cookie_val, profile_id, allowed=False, reason="Banned"
-            )
+            # A session cookie alone no longer authorizes (t064): the
+            # Gateway does not accept authorization from cookies, even a
+            # well-formed one.
             with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
                 await session.ws_connect(
                     url,
                     headers={
                         "Origin": "https://localhost:8443",
-                        "Cookie": f"cbrowser_session={cookie_val}",
+                        "Cookie": f"cbrowser_session={secrets.token_urlsafe(32)}",
                     },
+                )
+            assert exc_info.value.status == 401
+
+            # Forged grant material -> 403.
+            forged = {
+                "Origin": "https://localhost:8443",
+                AUTHORIZED_PROFILE_HEADER: profile_id,
+                VIEWER_GRANT_HEADER: "forged.grant-value",
+            }
+            with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
+                await session.ws_connect(url, headers=forged)
+            assert exc_info.value.status == 403
+
+            # A grant minted for another profile -> 403 (cross-Profile).
+            with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
+                await session.ws_connect(
+                    url, headers=harness.viewer_headers(other_profile)
                 )
             assert exc_info.value.status == 403
 
-            harness.api_service.set_viewer_auth(cookie_val, profile_id, allowed=True)
+            # A grant whose copied authorized-profile header disagrees
+            # with the route profile -> 403.
+            mismatched = harness.viewer_headers(profile_id)
+            mismatched[AUTHORIZED_PROFILE_HEADER] = other_profile
+            with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
+                await session.ws_connect(url, headers=mismatched)
+            assert exc_info.value.status == 403
+
+            # An expired grant (minted beyond its 60-second TTL) -> 403.
+            expired = {
+                "Origin": "https://localhost:8443",
+                AUTHORIZED_PROFILE_HEADER: profile_id,
+                VIEWER_GRANT_HEADER: harness.grant_authority.mint(
+                    profile_id, now=time.time() - 3600
+                ),
+            }
+            with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
+                await session.ws_connect(url, headers=expired)
+            assert exc_info.value.status == 403
+
+            # Rejection responses carry no CDP material (t064 AC-004):
+            # neither the automation endpoint nor any credential appears
+            # in the plain-HTTP forms of the same denials.
+            resp = await session.get(
+                url, headers={"Origin": "https://localhost:8443"}
+            )
+            assert resp.status == 401
+            assert "cdp" not in (await resp.text()).lower()
+            resp = await session.get(url, headers=forged)
+            assert resp.status == 403
+            assert "cdp" not in (await resp.text()).lower()
+
+            # Valid grant, but the agent is not connected -> 503.
             with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
                 await session.ws_connect(
-                    url,
-                    headers={
-                        "Origin": "https://localhost:8443",
-                        "Cookie": f"cbrowser_session={cookie_val}",
-                    },
+                    url, headers=harness.viewer_headers(profile_id)
                 )
             assert exc_info.value.status == 503
 
+            # Valid grant, agent connected, runtime not yet running -> 503.
             harness.api_service.set_profile_runtime(
                 profile_id, instance_id, observed_state="starting"
             )
@@ -195,11 +244,7 @@ async def test_viewer_handshake_rejections_leave_no_session(tmp_path: Path) -> N
             )
             with pytest.raises(aiohttp.WSServerHandshakeError) as exc_info:
                 await session.ws_connect(
-                    url,
-                    headers={
-                        "Origin": "https://localhost:8443",
-                        "Cookie": f"cbrowser_session={cookie_val}",
-                    },
+                    url, headers=harness.viewer_headers(profile_id)
                 )
             assert exc_info.value.status == 503
             await ws_agent.close()
@@ -212,11 +257,7 @@ async def test_viewer_handshake_rejections_leave_no_session(tmp_path: Path) -> N
                 session, harness, profile_id, instance_id
             )
             ws_viewer = await session.ws_connect(
-                url,
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_val}",
-                },
+                url, headers=harness.viewer_headers(profile_id)
             )
             opened = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent.receive()).data
@@ -261,11 +302,7 @@ async def test_two_viewers_independent_tunnels_and_isolation(
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie_1 = f"sess_1_{secrets.token_urlsafe(32)}"
-        cookie_2 = f"sess_2_{secrets.token_urlsafe(32)}"
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie_1, profile_id, allowed=True)
-        harness.api_service.set_viewer_auth(cookie_2, profile_id, allowed=True)
 
         async with aiohttp.ClientSession() as session:
             ws_agent, session_id = await _register_agent(
@@ -274,10 +311,7 @@ async def test_two_viewers_independent_tunnels_and_isolation(
             viewer_url = f"{harness.ws_url}/stream/{profile_id}/signal"
             ws_viewer1 = await session.ws_connect(
                 viewer_url,
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_1}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open1 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent.receive()).data
@@ -286,10 +320,7 @@ async def test_two_viewers_independent_tunnels_and_isolation(
 
             ws_viewer2 = await session.ws_connect(
                 viewer_url,
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_2}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open2 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent.receive()).data
@@ -351,10 +382,8 @@ async def test_agent_identity_isolation_between_profiles(tmp_path: Path) -> None
         profile_b = f"prof_b_{secrets.token_hex(4)}"
         inst_a = f"inst_a_{secrets.token_hex(4)}"
         inst_b = f"inst_b_{secrets.token_hex(4)}"
-        cookie_b = f"sess_b_{secrets.token_urlsafe(32)}"
         for profile, instance in ((profile_a, inst_a), (profile_b, inst_b)):
             harness.api_service.set_profile_runtime(profile, instance, "running")
-        harness.api_service.set_viewer_auth(cookie_b, profile_b, allowed=True)
 
         async with aiohttp.ClientSession() as session:
             ws_agent_a, _ = await _register_agent(
@@ -365,10 +394,7 @@ async def test_agent_identity_isolation_between_profiles(tmp_path: Path) -> None
             )
             ws_viewer_b = await session.ws_connect(
                 f"{harness.ws_url}/stream/{profile_b}/signal",
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_b}",
-                },
+                headers=harness.viewer_headers(profile_b),
             )
             opened = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent_b.receive()).data
@@ -447,11 +473,7 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie_v1 = f"sess_v1_{secrets.token_urlsafe(32)}"
-        cookie_v2 = f"sess_v2_{secrets.token_urlsafe(32)}"
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie_v1, profile_id, allowed=True)
-        harness.api_service.set_viewer_auth(cookie_v2, profile_id, allowed=True)
 
         async with aiohttp.ClientSession() as session:
             ws_agent_1, sess_1 = await _register_agent(
@@ -459,10 +481,7 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
             )
             ws_viewer_1 = await session.ws_connect(
                 f"{harness.ws_url}/stream/{profile_id}/signal",
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_v1}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open_1 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent_1.receive()).data
@@ -482,10 +501,7 @@ async def test_agent_replacement_closes_old_viewers(tmp_path: Path) -> None:
 
             ws_viewer_2 = await session.ws_connect(
                 f"{harness.ws_url}/stream/{profile_id}/signal",
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_v2}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open_2 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent_2.receive()).data
@@ -554,19 +570,14 @@ async def test_oversized_viewer_frame_is_rejected_at_transport(tmp_path: Path) -
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie = f"sess_{secrets.token_urlsafe(32)}"
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie, profile_id, allowed=True)
         async with aiohttp.ClientSession() as session:
             ws_agent, _ = await _register_agent(
                 session, harness, profile_id, instance_id
             )
             ws_viewer = await session.ws_connect(
                 f"{harness.ws_url}/stream/{profile_id}/signal",
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie}",
-                },
+                headers=harness.viewer_headers(profile_id),
                 max_msg_size=8 * 1024 * 1024,
             )
             await ws_agent.receive()  # tunnel open
@@ -604,11 +615,7 @@ async def test_viewer_message_over_data_budget_closes_1009_only_that_viewer(
     try:
         profile_id = f"prof_{secrets.token_hex(4)}"
         instance_id = f"inst_{secrets.token_hex(4)}"
-        cookie_1 = f"sess_1_{secrets.token_urlsafe(32)}"
-        cookie_2 = f"sess_2_{secrets.token_urlsafe(32)}"
         harness.api_service.set_profile_runtime(profile_id, instance_id, "running")
-        harness.api_service.set_viewer_auth(cookie_1, profile_id, allowed=True)
-        harness.api_service.set_viewer_auth(cookie_2, profile_id, allowed=True)
 
         async with aiohttp.ClientSession() as session:
             ws_agent, _session_id = await _register_agent(
@@ -617,20 +624,14 @@ async def test_viewer_message_over_data_budget_closes_1009_only_that_viewer(
             viewer_url = f"{harness.ws_url}/stream/{profile_id}/signal"
             ws_viewer1 = await session.ws_connect(
                 viewer_url,
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_1}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open1 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent.receive()).data
             )
             ws_viewer2 = await session.ws_connect(
                 viewer_url,
-                headers={
-                    "Origin": "https://localhost:8443",
-                    "Cookie": f"cbrowser_session={cookie_2}",
-                },
+                headers=harness.viewer_headers(profile_id),
             )
             open2 = GatewayTunnelEnvelope.model_validate_json(
                 (await ws_agent.receive()).data

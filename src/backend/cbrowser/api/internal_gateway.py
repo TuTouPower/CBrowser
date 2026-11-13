@@ -8,8 +8,6 @@ from typing import Annotated
 
 from cbrowser.api.v1.control_router import get_control_service
 from cbrowser.api.v1.router import get_profile_service
-from cbrowser.auth.dependencies import get_auth_service
-from cbrowser.auth.service import AuthService
 from cbrowser.domain.models import (
     ControlTakeoverReport,
     DesiredState,
@@ -64,48 +62,12 @@ gateway_router = APIRouter(
 )
 
 
-class ViewerAuthorizeRequest(BaseModel):
-    session_token: str | None = None
-    session_cookie: str | None = None
-    origin: str
-    profile_id: str
-
-
-class ViewerAuthorizeResponse(BaseModel):
-    allowed: bool
-    reason: str | None = None
-
-
 class GatewayRuntimeResponse(BaseModel):
     profile_id: str
     runtime_instance_id: str | None = None
     config_version: int
     desired_state: DesiredState
     observed_state: ObservedState
-
-
-@gateway_router.post(
-    "/viewer-authorize",
-    response_model=ViewerAuthorizeResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def viewer_authorize(
-    payload: ViewerAuthorizeRequest,
-    request: Request,
-    auth_service: Annotated[AuthService, Depends(get_auth_service)],
-):
-    token = payload.session_token or payload.session_cookie
-    if not token:
-        return ViewerAuthorizeResponse(allowed=False, reason="missing_session")
-
-    allowed_origins = getattr(request.app.state, "allowed_origins", [])
-    allowed, reason = await auth_service.authorize_viewer(
-        session_token=token,
-        origin=payload.origin,
-        profile_id=payload.profile_id,
-        allowed_origins=allowed_origins,
-    )
-    return ViewerAuthorizeResponse(allowed=allowed, reason=reason)
 
 
 @gateway_router.get(

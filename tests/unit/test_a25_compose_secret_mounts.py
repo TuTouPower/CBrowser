@@ -140,6 +140,23 @@ def test_foreign_secret_files_are_not_mounted() -> None:
     assert "admin_password" not in declared_by_service["supervisor"]
 
 
+def test_edge_authorization_secrets_are_scoped_to_their_pairs() -> None:
+    """t064: each new secret reaches exactly the two parties of its hop.
+
+    edge_proof_key is verified by the API only (Caddy presents it from
+    its process environment, never a mount); viewer_grant_key is shared
+    by the API (mint) and the Gateway (verify) and nobody else.
+    """
+    blocks = _service_blocks(COMPOSE.read_text(encoding="utf-8"))
+    declared_by_service = {n: _declared_secrets(blocks[n]) for n in SERVICE_NAMES}
+    assert "edge_proof_key" in declared_by_service["api"]
+    assert "edge_proof_key" not in declared_by_service["gateway"]
+    assert "edge_proof_key" not in declared_by_service["supervisor"]
+    assert "viewer_grant_key" in declared_by_service["api"]
+    assert "viewer_grant_key" in declared_by_service["gateway"]
+    assert "viewer_grant_key" not in declared_by_service["supervisor"]
+
+
 def test_data_root_volumes_do_not_reintroduce_secrets() -> None:
     deploy = DEPLOY.read_text(encoding="utf-8")
     data_default = re.search(

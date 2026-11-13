@@ -31,6 +31,10 @@ from cbrowser.stream_agent.messaging import (  # noqa: E402
     iso_now,
 )
 from cbrowser.shared.agent_credentials import AgentCredentials  # noqa: E402
+from cbrowser.shared.viewer_grants import (  # noqa: E402
+    AUTHORIZED_PROFILE_HEADER,
+    VIEWER_GRANT_HEADER,
+)
 from gateway_probe.topology import GatewayTopologyHarness  # noqa: E402
 from supervisor_recovery_probe.gateway_service import (  # noqa: E402
     FakeGatewayApiClient,
@@ -1153,7 +1157,6 @@ async def test_production_gateway_forwards_non_dict_viewer_json(
     credentials = AgentCredentials(key_file)
     fake_api = FakeGatewayApiClient()
     fake_api.set_profile_runtime(profile_id, runtime_instance_id)
-    fake_api.allow_all_viewers = True
     gateway = ProductionGatewayService(
         port=0,
         agent_key_file=key_file,
@@ -1195,7 +1198,8 @@ async def test_production_gateway_forwards_non_dict_viewer_json(
                 f"/stream/{profile_id}/signal",
                 headers={
                     "Origin": "https://127.0.0.1:56661",
-                    "Cookie": "cbrowser_session=test-session",
+                    AUTHORIZED_PROFILE_HEADER: profile_id,
+                    VIEWER_GRANT_HEADER: gateway.grant_authority.mint(profile_id),
                 },
             ) as viewer_ws:
                 opened = await agent_ws.receive_json()

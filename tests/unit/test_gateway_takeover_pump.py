@@ -63,6 +63,7 @@ def _gateway_client(tmp_path: Path, api: _StubApi) -> TestClient:
         gateway_token_file=token_file,
         api_url="http://127.0.0.1:1",
         api_token_file=api_token_file,
+        viewer_grant_key_file=api_token_file,
     )
     app = create_gateway_app(config, api_client=api)
     return TestClient(TestServer(app))

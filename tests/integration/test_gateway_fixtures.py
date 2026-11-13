@@ -11,6 +11,11 @@ from aiohttp import web
 from cbrowser.gateway.config import GatewayConfig
 from cbrowser.gateway.server import create_gateway_app
 from cbrowser.shared.agent_credentials import AgentCredentials
+from cbrowser.shared.viewer_grants import (
+    AUTHORIZED_PROFILE_HEADER,
+    VIEWER_GRANT_HEADER,
+    ViewerGrantAuthority,
+)
 
 
 def find_free_port() -> int:
@@ -20,30 +25,22 @@ def find_free_port() -> int:
 
 
 class FakeApiService:
-    """Minimal fake API implementing /api/v1/internal/gateway/* for gateway tests."""
+    """Minimal fake API implementing /api/v1/internal/gateway/* for gateway tests.
 
-    # The origin every viewer grant in this harness defaults to; it matches
-    # the GatewayHarness allowed_origins entry the suites connect with.
-    DEFAULT_VIEWER_ORIGIN = "https://localhost:8443"
+    Viewer authorization is not part of this surface anymore (t064): the
+    Gateway verifies API-minted grants locally, so the fake API only
+    serves the runtime-state endpoint the Gateway still calls.
+    """
 
     def __init__(self, port: int, token: str) -> None:
         self.port = port
         self.token = token
         self.app = web.Application()
         self.profile_runtimes: dict[str, dict[str, Any]] = {}
-        # Authorization is keyed by (cookie, origin, profile_id) and denied
-        # by default, mirroring the production internal API and the recovery
-        # lane's FakeGatewayApiClient (t024 AC-004/A25): a grant for one
-        # origin never authorizes another.
-        self.viewer_auths: dict[tuple[str, str, str], tuple[bool, str | None]] = {}
 
         self.app.router.add_get(
             "/api/v1/internal/gateway/profiles/{profile_id}/runtime",
             self.handle_profile_runtime,
-        )
-        self.app.router.add_post(
-            "/api/v1/internal/gateway/viewer-authorize",
-            self.handle_viewer_authorize,
         )
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
@@ -63,17 +60,6 @@ class FakeApiService:
             "observed_state": observed_state,
         }
 
-    def set_viewer_auth(
-        self,
-        cookie: str,
-        profile_id: str,
-        allowed: bool = True,
-        reason: str | None = None,
-        *,
-        origin: str = DEFAULT_VIEWER_ORIGIN,
-    ) -> None:
-        self.viewer_auths[(cookie, origin, profile_id)] = (allowed, reason)
-
     async def handle_profile_runtime(self, request: web.Request) -> web.Response:
         auth = request.headers.get("Authorization", "")
         if auth != f"Bearer {self.token}":
@@ -83,19 +69,6 @@ class FakeApiService:
         if not info:
             return web.json_response({"detail": "Profile not found"}, status=404)
         return web.json_response(info)
-
-    async def handle_viewer_authorize(self, request: web.Request) -> web.Response:
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {self.token}":
-            return web.json_response({"detail": "Unauthorized API token"}, status=401)
-        body = await request.json()
-        cookie = body.get("session_cookie", "")
-        origin = body.get("origin", "")
-        profile_id = body.get("profile_id", "")
-        allowed, reason = self.viewer_auths.get(
-            (cookie, origin, profile_id), (False, "Unauthorized session")
-        )
-        return web.json_response({"allowed": allowed, "reason": reason})
 
     async def start(self) -> None:
         self.runner = web.AppRunner(self.app)
@@ -136,7 +109,12 @@ class GatewayHarness:
         self.api_token_file.write_text(self.api_token_str, encoding="utf-8")
         self.api_token_file.chmod(0o600)
 
+        self.grant_key_file = tmp_path / "viewer_grant_key.txt"
+        self.grant_key_file.write_text(secrets.token_urlsafe(32), encoding="utf-8")
+        self.grant_key_file.chmod(0o600)
+
         self.agent_credentials = AgentCredentials(self.agent_key_file)
+        self.grant_authority = ViewerGrantAuthority(self.grant_key_file)
 
         self.api_port = find_free_port()
         self.gw_port = find_free_port()
@@ -153,6 +131,7 @@ class GatewayHarness:
             gateway_token_file=self.gw_token_file,
             api_url=f"http://127.0.0.1:{self.api_port}",
             api_token_file=self.api_token_file,
+            viewer_grant_key_file=self.grant_key_file,
             https_port=8443,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
@@ -168,6 +147,18 @@ class GatewayHarness:
     @property
     def ws_url(self) -> str:
         return f"ws://127.0.0.1:{self.gw_port}"
+
+    def viewer_headers(
+        self, profile_id: str, origin: str = "https://localhost:8443"
+    ) -> dict[str, str]:
+        """Handshake headers as the edge delivers them (t064): the API
+        has authorized this profile and the grant proves it; no cookie
+        is ever sent to the Gateway."""
+        return {
+            "Origin": origin,
+            AUTHORIZED_PROFILE_HEADER: profile_id,
+            VIEWER_GRANT_HEADER: self.grant_authority.mint(profile_id),
+        }
 
     async def start(self) -> None:
         await self.api_service.start()

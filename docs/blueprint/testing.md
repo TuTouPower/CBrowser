@@ -140,6 +140,14 @@ t006 认证信令 Gateway 的真实拓扑 E2E：Caddy（`tls internal`）HTTPS �
 
 页面可见性在无头 Chrome 中不会因切标签变化，AC-007 用例在页面内覆盖 `document.visibilityState` 并派发 `visibilitychange` 触发官方客户端 STOP_VIDEO/START_VIDEO；浏览器真实标签切换的事件发出见 d013/s005，不在本用例重证。
 
+### t064 Viewer 边缘授权、Cookie 剥离与 CDP 负向验证
+
+- 单元层：`tests/unit/test_shared_viewer_grants.py` 守 grant 的签发/验签、到期、跨 Profile 与坏输入恒拒绝；`tests/unit/test_t064_edge_caddyfile.py` 守渲染 Caddyfile 的内部路径 404、伪造头删除、`forward_auth`、Cookie 删除与 Agent register 普通代理例外；compose 秘密挂载由 `tests/unit/test_a25_compose_secret_mounts.py` 守两跳秘密的最小分发。
+- 集成层：`tests/integration/test_edge_viewer_authorize.py` 走真实 API HTTP 覆盖边缘证明、会话、Origin、Profile、登出撤销、未配置 503 与旧端点 404；`tests/integration/test_gateway_signaling.py` 走真实 Gateway 覆盖无 grant、只有 Cookie、伪造/跨 Profile grant、可信头不一致、坏 Origin 与就绪后建隧道；`tests/integration/test_automation_api.py` 守普通 Profile 响应不泄漏 `cdp_ws_path`/token 与专用 Automation 状态端点的唯一披露面。
+- 真实拓扑层：`tests/e2e/test_gateway_ac001_auth_e2e.py` 经真实 Caddy 校验 Cookie 的 `Path=/`、无会话 401、伪造边缘头 401、外部解析端点 404、坏 Origin 与跨 Profile 403；完整登录、首帧、重连、退出撤销与认证自动化仍须在真实 Caddy/Chrome/Gateway 拓扑中判定，不能由单元、集成或 Caddyfile 渲染结果替代。
+- CDP 真实引擎层：`tests/e2e/test_browser_runtime_e2e.py::test_t064_cdp_loopback_host_origin_boundaries` 在 Browser 容器内以合法回环 Host/Origin 为正例，断言域名 Host 的 `/json/version`（含带端口形态）返回 403、跨 Origin CDP WebSocket 握手返回 403；同文件的 AC-003 继续证明 peer 容器不能直达 CDP。合法 UDS 与认证自动化通道由既有 runtime/automation E2E 守，不因负向例放宽。
+- 同源与主世界回归：t064 不改变 Selkies 同源 iframe、统计函数跨 frame 访问、audio postMessage、snapshot 的 DOM/AX 读取或 `wait_for`/`extract` 的页面主世界表达式语义，也不放宽目标页面 CSP；这些行为继续由 agent executor 链、frontend media/session E2E 与全量门禁回归，任何失败不得归因于边缘授权而放行。
+
 ## Supervisor 阶段验证
 
 Profile 编号与沙箱分组（t050）：迁移回填/新分配/不复用由 unit 覆盖；容器名与标签（`<prefix>-<NNNN>-browser|stream`、`profile-number`、`<prefix>-profiles`）由 adapter 单测与真实拓扑 inspect 验证；部署 prefix 冲突对自有伪项目的放行与异项目拒绝由 fake Docker CLI 驱动 `scripts/deploy.sh` 覆盖；前端 Profile 列表展示编号由组件测试验证。真实部署后需重建一次沙箱以应用新命名。

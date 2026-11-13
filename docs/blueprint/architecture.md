@@ -29,7 +29,7 @@ Stream 组件边界、wire 协议与固定 SDK 适配见 [Stream Runtime](stream
 |**上游衍生来源**|CloakBrowser-Manager|[CloakHQ/CloakBrowser-Manager](https://github.com/CloakHQ/CloakBrowser-Manager)|0.1.8+ (分支基线)|业务模型原型；现行架构彻底切断对上游 UI 与单容器 VNC 运行时的依赖，独立演进|
 |**隐私指纹引擎**|CloakBrowser Engine|[PyPI: cloakbrowser](https://pypi.org/project/cloakbrowser/)|`>=0.6.3`|底层真实隐身浏览器内核与指纹随机对抗引擎（许可参见 `BINARY-LICENSE.md`）|
 |**远程画面捕获**|Selkies WebRTC|[selkies-project/selkies](https://github.com/selkies-project/selkies)|Release `2.2.1`（t043 由 2.1.0 升级，ADR 022 / s012 spike）|捕获 Xvfb 画面、低延迟软件视频/音频编码、WebRTC 媒体协商与输入控制协议。官方 2.1.0 缺乏原生公共 ICE restart API（d003）；原同 PC 凭证轮换/ICE 代次机制（d010, d012）已由 ADR 013 删除，媒体改为同机直连，不再依赖 Selkies 私有接口适配器|
-|**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由（`/api/*`、`/stream/*`）反向代理入口|
+|**边缘反向代理**|Caddy|[caddyserver/caddy](https://github.com/caddyserver/caddy)|`2-alpine`|自动化 TLS、SPA 前端静态资源服务与固定路由反向代理入口；仅 viewer signal 路由执行边缘授权与 Cookie 剥离|
 |**模板与工作流**|repo_template|本地 `../repo_template`|当前工作流基线|消费仓规范：task 状态机驱动、轻量契约门禁、specs/blueprint 规范|
 |**文档格式化**|md_kx|[TuTouPower/md_kx](https://github.com/TuTouPower/md_kx)|PyPI `md-kx`|Markdown 文档自动化规范与一致性门禁检查|
 
@@ -93,10 +93,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 |模块|容器/服务角色|职责与安全边界|
 |---|---|---|
-|**Caddy**|边缘反向代理（常驻）|统一暴露 HTTPS 端口，托管前端静态资源；仅反向代理固定路径（`/api/*`、`/stream/*`），不动态扫描 Docker，不处理视频与信令内容|
-|**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
+|**Caddy**|边缘反向代理（常驻）|统一暴露 HTTPS 端口，托管前端静态资源；仅反向代理固定路径（`/api/*`、`/stream/*`），不动态扫描 Docker，不处理视频与信令内容。外部 `/api/v1/internal/*` 一律 404；只有 `/stream/*/signal` 先删伪造授权头、经 API 解析会话，再删除 Cookie 后代理到 Gateway|
+|**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务；viewer 握手时经内部边缘解析端点复用 `AuthService.authorize_viewer` 作唯一会话/Origin/Profile 判定，并签发短期 viewer grant。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
 |**Runtime Supervisor**|`cbrowser-supervisor` 容器（常驻）|**宿主机唯一持有 Docker Socket 的服务**。仅响应内部受限认证 RPC，负责 Profile 双容器生命周期、网络与 UDP 端口分配；通过受控 UDS 代理 CDP 与事件回传。**严格禁止读写或挂载 SQLite**|
-|**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
+|**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；viewer 握手只在本地验证 API 签发的短期 grant、Profile 绑定与 Origin，不接收或解析管理会话 Cookie；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
 |**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`|
 |**Stream Runtime**|`stream-runtime-{id}` 容器（动态）|特定 Profile 的远程显示沙箱。加入对应 Browser Runtime 的专属 IPC 命名空间，通过 XShm 共享内存捕获画面；负责音频/视频编码与 WebRTC 传输；分配独立 UDP mux 端口。**严格禁止挂载浏览器用户数据目录**|
 |**Browser Agent**|Browser 容器内守护进程|通过专属挂载目录的 `agent.sock`（UDS）暴露受控 RPC：监听 CDP 下载事件、代理授权 CDP 流、上报正常退出事件并自动恢复默认下载策略|
@@ -162,12 +162,19 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 被两个以上服务镜像消费的规则与实现只有一份权威，归属中立包 `cbrowser/shared/`：端点与 Origin 归一（`endpoints`）、Agent 凭证（`agent_credentials`）、原子写（`atomic_write`）、per-profile 锁注册表（`profile_locks`）、投递分类（`delivery`）、实例 fence（`fencing`）、出口探针 I/O（`egress`）、客户端 IP 解析（`client_ip`）。Gateway 与 Supervisor 互不 import；`shared` 除 `secret_files` 叶子外不 import 任何 cbrowser 模块，保证它在每个镜像内可独立导入。领域层只承载纯值对象与规则：认证返回领域会话对象 `AuthenticatedSession`，路由与依赖不接触 ORM `SessionModel`；`domain/egress_observation` 只留观测值对象与时效规则，探针的 httpx/GeoIP/文件 I/O 在 `shared/egress`。Supervisor 控制端口只有一个权威值 `shared.endpoints.DEFAULT_SUPERVISOR_PORT`（8005），runner、控制客户端、compose 与就绪探针全部派生或与之对齐校验。运行镜像按包粒度 COPY 后端代码（API 镜像为 `cbrowser` 整包 + `migrations`），禁止逐文件复制 shared 或跨服务借文件；镜像文件闭包由 `tests/unit/test_t062_image_closure.py` 按 Dockerfile 组装文件树实际导入验证，依赖方向由 `tests/unit/test_t062_boundaries.py` 守护。不同进程的锁注册表实例互不感知，per-profile 锁只是进程内协调、不是跨进程互斥；API 唯一 SQLite 写者、Supervisor 唯一 Docker Socket、Gateway 无 ORM 三条边界不变。
 
+### 5.7 Viewer 边缘授权与 CDP 边界（t064）
+
+- viewer 授权分两跳且秘密不共用：Caddy 对 `/stream/{profileId}/signal` 删除客户端自带的 `X-CBrowser-Authorized-Profile` 与 `X-CBrowser-Viewer-Grant`，再以 `edge_proof_key` 向 API 的 `GET /api/v1/internal/edge/viewer-authorize` 发起 `forward_auth`；API 校验边缘证明与转发 URI 后，由 `AuthService.authorize_viewer` 唯一判定会话、Origin 与 Profile，并以 `viewer_grant_key` 签发 60 秒 HMAC grant。grant claims 仅含版本、Profile、随机 grant id 与到期时间，不含会话标识。
+- Caddy 只把 API 回注的 authorized Profile 与 grant 复制到待代理握手，并删除整个 Cookie 头；Gateway 使用同一 `cbrowser/shared/viewer_grants.py` 在本地验签、验期与验 Profile 绑定，再检查 Agent 与 runtime 就绪。每次新握手都重走 `forward_auth`，登出或撤销在下一次握手生效。直连 Gateway、伪造授权头或只有 Cookie 的请求都没有有效 grant，不能越权。
+- 边缘解析端点只存在于内部 schema 与服务网络：渲染后的 Caddyfile 对外部 `/api/v1/internal/*` 显式 404，Caddy 的 `forward_auth` 子请求直达 API upstream、不重入外部站点路由。`/stream/agent/register` 不套用 viewer 授权，继续使用独立 Agent 凭证与 API runtime 绑定校验。
+- CDP 本体只由 Browser 容器以临时端口监听 `127.0.0.1`，端口不发布且不向普通 viewer 披露。唯一外部自动化入口仍是带 automation token 与控制权围栏的 `/api/v1/automation/profiles/{profileId}/cdp`；管理会话经专用 Automation 状态端点才可看到 `cdp_ws_path`，普通 Profile 响应不含该字段或 token。引擎内以域名 Host 发起的回环请求（DNS rebinding 的可观察形态）与跨 Origin CDP WebSocket 必须由真实引擎负向测试拒绝。
+
 ## 6. 安全、网络与端口矩阵
 
 |来源|目标|允许操作与协议|安全约束|
 |---|---|---|---|
 |外部 Chrome|Caddy|HTTPS 页面、REST API 与 WSS 信令|强制 HTTPS，Cookie 设置 `HttpOnly; Secure; SameSite=Strict`，校验 CSRF 与 Origin|
-|Caddy|API / Gateway|HTTP 反向代理、WebSocket 代理|仅代理固定路径，不动态暴露 Docker 内部接口|
+|Caddy|API / Gateway|HTTP 反向代理、WebSocket 代理|仅代理固定路径，不动态暴露 Docker 内部接口；signal 路由先以边缘证明调用 API 解析端点，Gateway 方向只带 API 回注的 grant 上下文且不带 Cookie|
 |API|SQLite|SQLAlchemy 2 WAL 读写|**唯一业务数据库写入者**，事务短小，禁止在事务内等待 Docker 或浏览器|
 |API|Supervisor|内部受限认证 RPC|生命周期管理、状态查询、CDP 授权隧道；**API 绝不持有 Docker Socket**|
 |Supervisor|Docker Engine|Docker Engine API (`/var/run/docker.sock`)|**宿主机唯一持有 Docker Socket 的服务**；强制校验与规范化挂载路径|

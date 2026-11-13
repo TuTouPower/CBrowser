@@ -30,6 +30,11 @@ from cbrowser.stream_agent.protocol import (
     validate_agent_envelope,
 )
 from cbrowser.shared.agent_credentials import AgentCredentials
+from cbrowser.shared.viewer_grants import (
+    AUTHORIZED_PROFILE_HEADER,
+    VIEWER_GRANT_HEADER,
+    ViewerGrantAuthority,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .api_client import GatewayApiClient
@@ -203,6 +208,7 @@ def create_gateway_app(
         )
 
     credentials = AgentCredentials(config.agent_key_file)
+    grant_authority = ViewerGrantAuthority(config.viewer_grant_key_file)
     try:
         control_token = read_secret_file(
             config.gateway_token_file,
@@ -777,19 +783,27 @@ def create_gateway_app(
             authorization_throttle.record_failure(source, profile_id)
             return web.Response(status=403, text="Origin not allowed")
 
-        # 2. Session cookie verification
-        session_cookie = request.cookies.get("cbrowser_session")
-        if not session_cookie:
+        # 2. Viewer grant verification (t064). The management session
+        # was authenticated at the edge (Caddy forward_auth -> API
+        # resolver); the session cookie never reaches the Gateway. The
+        # API minted a short-lived grant bound to this profile and the
+        # edge copied it onto this handshake; verify signature, expiry
+        # and profile binding locally. A request that arrives without
+        # the edge context — forged headers, an internal-network bypass
+        # — cannot present a valid grant and is rejected here.
+        grant = request.headers.get(VIEWER_GRANT_HEADER)
+        if not grant:
             authorization_throttle.record_failure(source, profile_id)
             return web.Response(
                 status=401,
-                text="Authentication required: cbrowser_session cookie missing",
+                text="Authentication required: viewer grant missing",
             )
 
-        allowed, reason = await api.authorize_viewer(session_cookie, origin, profile_id)
-        if not allowed:
+        claims = grant_authority.verify(grant, profile_id)
+        authorized_profile = request.headers.get(AUTHORIZED_PROFILE_HEADER)
+        if claims is None or authorized_profile != profile_id:
             authorization_throttle.record_failure(source, profile_id)
-            return web.Response(status=403, text=reason or "Viewer unauthorized")
+            return web.Response(status=403, text="Viewer unauthorized")
 
         # 3. Agent readiness & API observed_state check
         agent = registry.get(profile_id)

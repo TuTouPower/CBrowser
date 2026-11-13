@@ -282,53 +282,29 @@ async def test_internal_gateway_endpoints(auth_env):
         )
     await engine.dispose()
 
-    # 1. Gateway auth enforcement
-    no_auth = client.post(
-        "/api/v1/internal/gateway/viewer-authorize",
-        json={"session_token": "abc", "origin": allowed_origin, "profile_id": prof_id},
-    )
+    # 1. Gateway auth enforcement (probed on the runtime surface)
+    runtime_path = f"/api/v1/internal/gateway/profiles/{prof_id}/runtime"
+    no_auth = client.get(runtime_path)
     assert no_auth.status_code == 401
 
-    bad_auth = client.post(
-        "/api/v1/internal/gateway/viewer-authorize",
-        json={"session_token": "abc", "origin": allowed_origin, "profile_id": prof_id},
-        headers={"Authorization": "Bearer wrong_token_123456789012345678901234"},
+    bad_auth = client.get(
+        runtime_path,
+        headers={"Authorization": "Bearer wrong-token-value"},
     )
     assert bad_auth.status_code == 401
 
     gw_headers = {"Authorization": f"Bearer {gateway_token}"}
 
-    # Login to obtain valid user session
-    login_resp = client.post("/api/v1/auth/login", json={"password": admin_pass})
-    session_token = login_resp.cookies.get("cbrowser_session")
-    csrf_token = login_resp.json()["csrf_token"]
-
-    # 2. viewer-authorize: valid
-    v_ok = client.post(
+    # 2. The internal viewer-authorize surface was removed (t064): the
+    # Gateway no longer relays the session cookie; viewer authorization
+    # is resolved at the edge (see test_edge_viewer_authorize.py). The
+    # route must be gone.
+    removed_viewer = client.post(
         "/api/v1/internal/gateway/viewer-authorize",
-        json={
-            "session_token": session_token,
-            "origin": allowed_origin,
-            "profile_id": prof_id,
-        },
+        json={"session_token": "abc", "origin": allowed_origin, "profile_id": prof_id},
         headers=gw_headers,
     )
-    assert v_ok.status_code == 200
-    assert v_ok.json()["allowed"] is True
-
-    # viewer-authorize: bad origin
-    v_bad_origin = client.post(
-        "/api/v1/internal/gateway/viewer-authorize",
-        json={
-            "session_token": session_token,
-            "origin": "https://attacker.site",
-            "profile_id": prof_id,
-        },
-        headers=gw_headers,
-    )
-    assert v_bad_origin.status_code == 200
-    assert v_bad_origin.json()["allowed"] is False
-    assert v_bad_origin.json()["reason"] == "invalid_origin"
+    assert removed_viewer.status_code == 404
 
     # 3. The internal automation-authorize surface was removed (A42): it
     # had no production consumer — the real CDP entry point is the v1

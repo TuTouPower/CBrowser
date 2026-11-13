@@ -150,7 +150,16 @@ class GatewayTopologyHarness:
             shutil.copytree(self.engine_cache_src, cache)
             shutil.copytree(self.geoip_cache_src, cache / "geoip", dirs_exist_ok=True)
 
-        for name in ("supervisor", "agent", "gateway", "gateway_api"):
+        for name in (
+            "supervisor",
+            "agent",
+            "gateway",
+            "gateway_api",
+            # t064: the two edge-authorization hops (Caddy->API proof and
+            # API->Gateway viewer grant key).
+            "edge_proof",
+            "viewer_grant",
+        ):
             val = secrets.token_urlsafe(32)
             f = self.control_dir / f"{name}_key"
             f.write_text(val, encoding="utf-8")
@@ -213,6 +222,8 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
+                # t064: local verification key for API-minted viewer grants.
+                "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
                 # t054: the deploy port (dynamic Docker-assigned host port
                 # here); the Gateway derives its Origin whitelist from it.
                 "CBROWSER_HTTPS_PORT": str(self.caddy_host_port),
@@ -434,6 +445,11 @@ class GatewayTopologyHarness:
             "caddy",
             self.caddy_image,
             read_only=True,
+            # t064: the rendered Caddyfile references the edge proof only
+            # as an {env.*} placeholder; the value arrives here.
+            environment={
+                "CBROWSER_EDGE_PROOF_SECRET": self.keys["edge_proof"],
+            },
             tmpfs={
                 "/tmp": "rw,size=64m",
                 "/config": "rw,size=32m",
@@ -476,6 +492,9 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_password",
                 "CBROWSER_HTTPS_PORT": str(self.caddy_host_port),
+                # t064: edge proof verification + viewer grant minting.
+                "CBROWSER_EDGE_PROOF_FILE": "/run/secrets/edge_proof_key",
+                "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
                 **self.api_environment_extra(),
             },
             volumes={

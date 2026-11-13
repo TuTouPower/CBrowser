@@ -1249,6 +1249,129 @@ print(json.dumps({{'route_positive': True, 'cdp_refused': True}}))
 
 
 @pytest.mark.asyncio
+async def test_t064_cdp_loopback_host_origin_boundaries(http_server: str) -> None:
+    """t064 AC-004: the real engine rejects forged Host/Origin at CDP.
+
+    AC-003 proves the CDP port is not reachable from a peer container.
+    This companion case reaches the engine from inside its own container
+    (the only place the loopback port exists) and proves Chromium's own
+    request boundary: a DNS-rebinding request arrives with a domain
+    ``Host`` after the name resolves to loopback, so the forged-Host
+    HTTP request is the observable rebinding case; a cross-origin
+    WebSocket upgrade is rejected while the loopback control succeeds.
+    """
+    run_id = uuid.uuid4().hex[:8]
+    c_name = f"cbrowser-t064-cdp-boundary-{run_id}"
+    created_containers: list[str] = [c_name]
+    dir_work = SCRATCH_ROOT / f"t064_cdp_{run_id}"
+
+    snap_file = dir_work / "snapshot.json"
+    create_snapshot_file(
+        snap_file,
+        profile_id="profile_cdp_boundary",
+        version=1,
+        screen_width=1280,
+        screen_height=720,
+    )
+    disp = f":{170 + (int(run_id[:4], 16) % 300)}"
+
+    try:
+        run_docker_container(
+            name=c_name,
+            host_profile_dir=dir_work / "profile",
+            host_runtime_dir=dir_work / "runtime",
+            host_exchange_dir=dir_work / "downloads",
+            snapshot_path=snap_file,
+            profile_id="profile_cdp_boundary",
+            runtime_instance_id=f"inst_cdp_{run_id}",
+            display=disp,
+        )
+        health = wait_for_uds_ready(c_name, timeout=35.0)
+        cdp_port = health["details"]["cdp_port"]
+
+        script_template = """
+import asyncio, json
+from http.client import HTTPConnection
+import websockets
+
+PORT = __CDP_PORT__
+
+def get_version(host, origin=None):
+    connection = HTTPConnection("127.0.0.1", PORT, timeout=5)
+    headers = {"Host": host}
+    if origin is not None:
+        headers["Origin"] = origin
+    connection.request("GET", "/json/version", headers=headers)
+    response = connection.getresponse()
+    body = response.read()
+    connection.close()
+    payload = {}
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        pass
+    return response.status, payload
+
+valid_status, valid_payload = get_version(f"127.0.0.1:{PORT}")
+rebinding_status, _ = get_version("rebinding.example")
+rebinding_port_status, _ = get_version(f"rebinding.example:{PORT}")
+ws_url = valid_payload["webSocketDebuggerUrl"]
+
+async def ws_probe(origin):
+    try:
+        async with websockets.connect(ws_url, origin=origin, open_timeout=5) as ws:
+            await ws.send(json.dumps({"id": 1, "method": "Browser.getVersion"}))
+            message = json.loads(await asyncio.wait_for(ws.recv(), timeout=5))
+            return {
+                "connected": True,
+                "product": message.get("result", {}).get("product", ""),
+            }
+    except Exception as error:
+        response = getattr(error, "response", None)
+        return {
+            "connected": False,
+            "error_type": type(error).__name__,
+            "status": getattr(response, "status_code", None),
+        }
+
+print(json.dumps({
+    "valid_status": valid_status,
+    "valid_browser": valid_payload.get("Browser", ""),
+    "rebinding_status": rebinding_status,
+    "rebinding_port_status": rebinding_port_status,
+    "bad_origin_ws": asyncio.run(ws_probe("https://malicious.example.com")),
+    "valid_origin_ws": asyncio.run(ws_probe(f"http://127.0.0.1:{PORT}")),
+}))
+"""
+        script = script_template.replace("__CDP_PORT__", str(cdp_port))
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            ["docker", "exec", c_name, "python3", "-c", script],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        )
+        result = json.loads(proc.stdout.strip())
+        assert result["valid_status"] == 200
+        assert result["valid_browser"]
+        assert result["rebinding_status"] == 403
+        assert result["rebinding_port_status"] == 403
+        assert result["bad_origin_ws"]["connected"] is False
+        assert result["bad_origin_ws"]["status"] == 403
+        assert result["valid_origin_ws"]["connected"] is True
+        assert result["valid_origin_ws"]["product"]
+    except Exception:
+        save_container_failure_log(c_name, "test_t064_cdp_boundary")
+        raise
+    finally:
+        for cid in created_containers:
+            stop_and_rm_container(cid)
+        if dir_work.exists():
+            shutil.rmtree(dir_work, ignore_errors=True)
+
+
+@pytest.mark.asyncio
 async def test_ac004_download_capture_and_recovery(http_server: str) -> None:
     """AC-004: HTTP download capture and recovery after disconnect."""
     run_id = uuid.uuid4().hex[:8]

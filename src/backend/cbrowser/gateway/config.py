@@ -41,6 +41,7 @@ class GatewayConfig(BaseModel):
     gateway_token_file: Path
     api_url: str
     api_token_file: Path
+    viewer_grant_key_file: Path
     agent_heartbeat_timeout_sec: float = 30.0
     build_id: str = "dev"
     https_port: int = DEFAULT_HTTPS_PORT
@@ -96,6 +97,10 @@ class GatewayConfig(BaseModel):
             "CBROWSER_GATEWAY_API_TOKEN_FILE",
             get_required("CBROWSER_GATEWAY_API_TOKEN_FILE"),
         )
+        viewer_grant_key_file = _read_and_verify_key_file(
+            "CBROWSER_VIEWER_GRANT_KEY_FILE",
+            get_required("CBROWSER_VIEWER_GRANT_KEY_FILE"),
+        )
 
         api_url = get_required("CBROWSER_GATEWAY_API_URL").rstrip("/")
 
@@ -114,6 +119,7 @@ class GatewayConfig(BaseModel):
             gateway_token_file=gateway_token_file,
             api_url=api_url,
             api_token_file=api_token_file,
+            viewer_grant_key_file=viewer_grant_key_file,
             agent_heartbeat_timeout_sec=hb_timeout,
             build_id=(os.environ.get("CBROWSER_BUILD_ID") or "dev").strip(),
         )

@@ -50,6 +50,7 @@ def test_api_and_gateway_derive_identical_whitelist_from_deploy_port(
         gateway_token_file=gw_key,
         api_url="http://127.0.0.1:8000",
         api_token_file=gw_key,
+        viewer_grant_key_file=gw_key,
         https_port=custom_port,
     )
     assert gw_cfg.allowed_origins == expected
@@ -80,9 +81,6 @@ def test_api_and_gateway_derive_identical_whitelist_from_deploy_port(
 
 
 class _StubApi:
-    async def authorize_viewer(self, *args, **kwargs):
-        return True, None
-
     async def get_profile_runtime(self, *args, **kwargs):
         return None
 
@@ -103,6 +101,7 @@ async def test_gateway_viewer_gate_uses_deploy_port_origins(
         gateway_token_file=key,
         api_url="http://127.0.0.1:8000",
         api_token_file=key,
+        viewer_grant_key_file=key,
         https_port=58888,
     )
     assert config.allowed_origins == [
@@ -118,8 +117,8 @@ async def test_gateway_viewer_gate_uses_deploy_port_origins(
                 resp = await probe.get(signal_url, headers={"Origin": origin})
                 return resp.status_code
 
-            # Deploy-port origin passes the origin gate (401: no session
-            # cookie), any other port is rejected at the gate (403).
+            # Deploy-port origin passes the origin gate (401: no viewer
+            # grant), any other port is rejected at the gate (403).
             assert await status("https://127.0.0.1:58888") == 401
             assert await status("https://localhost:58888") == 401
             assert await status("https://127.0.0.1:56661") == 403

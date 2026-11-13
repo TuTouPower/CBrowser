@@ -1,12 +1,15 @@
 """Production Gateway harness for Supervisor integration and recovery tests.
 
 The harness runs the real ``cbrowser.gateway.server.create_gateway_app`` and only
-supplies a minimal fake API client for the two Gateway -> API calls.
+supplies a minimal fake API client for the remaining Gateway -> API call
+(runtime state; viewer authorization is verified locally from API-minted
+grants since t064 and needs no fake).
 """
 
 from __future__ import annotations
 
 import logging
+import secrets
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -15,6 +18,7 @@ import httpx
 from aiohttp import web
 from cbrowser.gateway.config import GatewayConfig
 from cbrowser.gateway.server import create_gateway_app
+from cbrowser.shared.viewer_grants import ViewerGrantAuthority
 
 logger = logging.getLogger("cbrowser.fixtures.production_gateway")
 
@@ -55,16 +59,11 @@ class ApiRuntimeLookup:
 
 
 class FakeGatewayApiClient:
-    """Minimal fake for the Gateway -> API authorization surface."""
+    """Minimal fake for the Gateway -> API runtime-state surface."""
 
     def __init__(self, runtime_lookup: ApiRuntimeLookup | None = None) -> None:
         self.runtime_lookup = runtime_lookup
         self.profile_runtimes: dict[str, dict[str, Any]] = {}
-        self.allow_all_viewers = False
-        self.viewer_authorizations: dict[
-            tuple[str, str, str], tuple[bool, str | None]
-        ] = {}
-        self.viewer_authorize_calls: list[tuple[str, str, str]] = []
 
     def set_profile_runtime(
         self,
@@ -82,35 +81,11 @@ class FakeGatewayApiClient:
             "observed_state": observed_state,
         }
 
-    def set_viewer_authorization(
-        self,
-        session_cookie: str,
-        origin: str,
-        profile_id: str,
-        allowed: bool = True,
-        reason: str | None = None,
-    ) -> None:
-        self.viewer_authorizations[(session_cookie, origin, profile_id)] = (
-            allowed,
-            reason,
-        )
-
     async def get_profile_runtime(self, profile_id: str) -> dict[str, Any] | None:
         if self.runtime_lookup is not None:
             return await self.runtime_lookup(profile_id)
         info = self.profile_runtimes.get(profile_id)
         return dict(info) if info is not None else None
-
-    async def authorize_viewer(
-        self, session_cookie: str, origin: str, profile_id: str
-    ) -> tuple[bool, str | None]:
-        self.viewer_authorize_calls.append((session_cookie, origin, profile_id))
-        if self.allow_all_viewers and session_cookie:
-            return True, None
-        return self.viewer_authorizations.get(
-            (session_cookie, origin, profile_id),
-            (False, "Viewer unauthorized"),
-        )
 
     async def close(self) -> None:
         if self.runtime_lookup is not None:
@@ -128,11 +103,21 @@ class ProductionGatewayService:
         runtime_lookup: ApiRuntimeLookup | None = None,
         api_client: FakeGatewayApiClient | None = None,
         agent_heartbeat_timeout_sec: float = 30.0,
+        viewer_grant_key_file: Path | None = None,
     ) -> None:
         self.port = port
         self.agent_key_file = Path(agent_key_file)
         self.gateway_token_file = Path(gateway_token_file)
         self.api = api_client or FakeGatewayApiClient(runtime_lookup=runtime_lookup)
+        if viewer_grant_key_file is None:
+            viewer_grant_key_file = Path(
+                f"{self.gateway_token_file}.viewer_grant_key"
+            )
+            viewer_grant_key_file.write_text(
+                secrets.token_urlsafe(32), encoding="utf-8"
+            )
+            viewer_grant_key_file.chmod(0o600)
+        self.grant_authority = ViewerGrantAuthority(viewer_grant_key_file)
 
         # t054: the Gateway derives its Origin whitelist from the deploy
         # port; there is no network state directory to seed anymore.
@@ -143,6 +128,7 @@ class ProductionGatewayService:
             gateway_token_file=self.gateway_token_file,
             api_url="http://api.invalid",
             api_token_file=self.gateway_token_file,
+            viewer_grant_key_file=viewer_grant_key_file,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
         self.app = create_gateway_app(self.config, api_client=self.api)

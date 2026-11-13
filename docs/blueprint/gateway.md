@@ -9,7 +9,8 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
 1. **凭证隔离**：
     - Gateway 与 Supervisor 间控制面 RPC 使用 `CBROWSER_GATEWAY_TOKEN_FILE` 提供的 Bearer 凭证（≥32 字节，常量时间比较）。
     - Gateway 与 Stream Agent 间注册使用 `CBROWSER_AGENT_KEY_FILE` 驱动的 HMAC 实例凭证校验（`AgentCredentials`）。
-    - Gateway 与 CBrowser API 间内部授权使用 `CBROWSER_GATEWAY_API_TOKEN_FILE` Bearer 凭证。
+    - Gateway 与 CBrowser API 间 runtime 绑定与观测状态查询使用 `CBROWSER_GATEWAY_API_TOKEN_FILE` Bearer 凭证；viewer 会话不再由 Gateway 携 Cookie 回 API 授权。
+    - Gateway 与 API 共享 `CBROWSER_VIEWER_GRANT_KEY_FILE`（≥32 字节）：API 在边缘解析成功后签发短期 viewer grant，Gateway 只在本地验签，不持有管理会话。
 2. **进程隔离**：
     - Gateway 重启或异常 SIGKILL 不影响运行中的 Browser Runtime 与 Stream Runtime。
     - Stream Agent 具备自动退避重连机制，网关恢复后自动重注册；外部页面刷新或重连即可恢复信令。
@@ -36,16 +37,20 @@ Gateway 运行于非 root、只读文件系统容器沙箱内，不挂载 Docker
 
 ## Viewer 隧道与连接隔离 (`/stream/{profile_id}/signal`)
 
-外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`：
+外部 Chrome 页面建立 WebRTC 信令连接时访问 `GET /stream/{profile_id}/signal`。会话判定发生在 Caddy 边缘，Gateway 只验证边缘交付的短期授权：
 
-1. **升级前三级校验**：
+1. **边缘解析（Caddy + API）**：Caddy 先删除客户端自带的 `X-CBrowser-Authorized-Profile` 与 `X-CBrowser-Viewer-Grant`，再对该单一 signal 路由执行 `forward_auth`。渲染后的 signal 块整体包在 `route` 内保声明序——Caddy 默认指令序把 `forward_auth` 排在 `request_header` 之前，不保序会把刚回注的授权头随即删掉。API 的内部边缘解析端点校验独立的边缘证明与 signal URI，由 `AuthService.authorize_viewer` 判定 `cbrowser_session`、Origin 与 Profile；失败时 Caddy 不代理，成功时只复制 API 回注的 authorized Profile 与 60 秒 viewer grant，并删除待代理请求的整个 Cookie 头。管理 Cookie 的 `Path=/` 语义不变，它只在浏览器到 Caddy 与 Caddy 到 API 解析子请求这两段出现。
+2. **Gateway 升级前校验**：
+    - **授权节流**：先按来源与 Profile 检查既有失败预算，超限返回 HTTP 429。
     - **Origin 门禁**：Origin 必须在由部署端口确定性派生的白名单中（纯 https，`derive_origin_whitelist(CBROWSER_HTTPS_PORT)`，默认端口 `56661`；API 与 Gateway 在启动时从同一部署输入派生，运行期无更新通道），否则返回 HTTP 403。
-    - **会话鉴权**：提取 `cbrowser_session` Cookie，调 API `POST /api/v1/internal/gateway/viewer-authorize` 校验登录态与 Profile 授权，未授权返回 HTTP 401/403。
+    - **grant 验签**：缺 `X-CBrowser-Viewer-Grant` 返回 HTTP 401；使用 `cbrowser/shared/viewer_grants.py` 验 HMAC、60 秒到期、claims 的 Profile 绑定，并要求 `X-CBrowser-Authorized-Profile` 与路径 Profile 完全一致，任一不符返回 HTTP 403。Gateway 不读取 Cookie、不调用已删除的 viewer-authorize 端点；直连 Gateway 或伪造上述头部不能伪造有效 grant。
     - **就绪检查**：检查该 Profile 在网关内存中已有活跃 Agent，且 API 查询 `observed_state` 为 `running`（或 `ready`），否则返回 HTTP 503 并说明原因。
-2. **握手**：生成唯一 `connection_id`，记录其绑定的 `agent_session_id`，向 Agent 发送 `GatewayTunnelEnvelope(type="open", conn_id=connection_id)`；不再向页面下发任何 RTC/TURN 首帧。
-3. **拒绝顺序**：Origin、会话鉴权、Agent 就绪与 API 观测状态全部在 `ws.prepare()` 与 viewer 注册之前完成；拒绝时返回 HTTP 403/401/503，网关内不残留 viewer 条目。Viewer 授权失败按来源与 Profile 限流，超限返回 429。
-4. **隧道隔离**：页面发往 Gateway 的文本中，含 `"cbrowser"` 控制键的帧直接丢弃，绝不转发给 Agent；其余文本原样经 `GatewayTunnelEnvelope(type="msg")` 转发。每个 Viewer 拥有完全独立的隧道与 connection_id；关闭任一 Viewer 连接不影响同 Profile 下的其他连接。
-5. **帧上限**：Agent 与 Viewer 两侧 WebSocket 均设置 6 MiB + 64 KiB 的 `max_msg_size`，超限帧在传输层被拒绝。
+3. **握手**：生成唯一 `connection_id`，记录其绑定的 `agent_session_id`，向 Agent 发送 `GatewayTunnelEnvelope(type="open", conn_id=connection_id)`；不再向页面下发任何 RTC/TURN 首帧。
+4. **拒绝顺序**：节流、Origin、grant、Agent 就绪与 API 观测状态全部在 `ws.prepare()` 与 viewer 注册之前完成；拒绝时网关内不残留 viewer 条目。每次新握手都重新经边缘解析，登出或会话撤销在下一次握手生效；已建立连接不因 grant 到期被中途切断。
+5. **隧道隔离**：页面发往 Gateway 的文本中，含 `"cbrowser"` 控制键的帧直接丢弃，绝不转发给 Agent；其余文本原样经 `GatewayTunnelEnvelope(type="msg")` 转发。每个 Viewer 拥有完全独立的隧道与 connection_id；关闭任一 Viewer 连接不影响同 Profile 下的其他连接。
+6. **帧上限**：Agent 与 Viewer 两侧 WebSocket 均设置 6 MiB + 64 KiB 的 `max_msg_size`，超限帧在传输层被拒绝。
+
+`/stream/agent/register` 是明确例外：它不经 viewer `forward_auth`、不要求会话 Cookie 或 viewer grant，继续按本文件上一节的 Agent 实例凭证与 API runtime 绑定独立认证。
 
 ## 前台状态来源 (AC-007)
 
@@ -80,8 +85,8 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 |`CBROWSER_AGENT_KEY_FILE`|path|-|Agent HMAC 认证主密钥文件（≥32字节）|
 |`CBROWSER_GATEWAY_TOKEN_FILE`|path|-|Supervisor 控制 RPC Bearer 凭证文件（≥32字节）|
 |`CBROWSER_GATEWAY_API_URL`|url|-|CBrowser API 基础地址（如 `http://api:8000`）|
-|`CBROWSER_GATEWAY_API_TOKEN_FILE`|path|-|Gateway 调 API 内部鉴权 Bearer 凭证文件（≥32字节）|
-|`CBROWSER_NETWORK_STATE_DIR`|path|`/data/network`|已应用网络版本与 Origin 白名单共享目录（只读挂载）|
+|`CBROWSER_GATEWAY_API_TOKEN_FILE`|path|-|Gateway 调 API runtime 绑定与观测状态的 Bearer 凭证文件（≥32字节）|
+|`CBROWSER_VIEWER_GRANT_KEY_FILE`|path|-|API 与 Gateway 共享的 viewer grant HMAC 密钥文件（≥32字节）|
 |`CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC`|float|`30.0`|Agent 心跳失联判定超时阈值|
 
 ## 日志与脱敏
@@ -94,8 +99,8 @@ Supervisor 经内部网络调用 Gateway 控制端点（使用 `CBROWSER_GATEWAY
 
 ## 公共 API 面边界
 
-公开 OpenAPI（`schemas/openapi/cbrowser_v1.json`）与前端生成类型只包含 `/api/v1` 用户面路由。`/api/v1/internal/supervisor/*` 与 `/api/v1/internal/gateway/*` 使用 `include_in_schema=False`，仅供持有独立 Bearer 凭证的 Supervisor/Gateway 服务调用，不进入公共契约。Runtime Agent UDS 协议由 `scripts/export_runtime_agent_protocol.py` 生成 `schemas/runtime/agent_protocol.json`，与 Supervisor 协议导出脚本保持同一逐字节校验模式；禁止手改生成文件。
+公开 OpenAPI（`schemas/openapi/cbrowser_v1.json`）与前端生成类型只包含 `/api/v1` 用户面路由。内部面只进入内部 schema：Supervisor/Gateway 路由使用各自独立 Bearer 凭证；边缘解析端点 `/api/v1/internal/edge/viewer-authorize` 不使用服务 Bearer，而以 Caddy 独占呈现的边缘证明与浏览器会话共同授权，且渲染后的 Caddyfile 对外部 `/api/v1/internal/*` 显式 404。Runtime Agent UDS 协议由 `scripts/export_runtime_agent_protocol.py` 生成 `schemas/runtime/agent_protocol.json`，与 Supervisor 协议导出脚本保持同一逐字节校验模式；禁止手改生成文件。
 
 ## 中立模块归属（t062）
 
-Gateway 的端点/Origin 归一、Agent 凭证校验与客户端 IP 解析均来自中立包 `cbrowser/shared/`（`endpoints`、`agent_credentials`、`client_ip`）；Gateway 不 import Supervisor 包、不携带 ORM 与 domain，镜像只打包 gateway 包、shared 整包与 stream_agent 的协议两文件。Origin 白名单由部署期 `network_config.derive_origin_whitelist` 以同一 `normalize_origin` 生成，与请求侧校验天然一致。
+Gateway 的端点/Origin 归一、Agent 凭证校验、客户端 IP 解析与 viewer grant 验签均来自中立包 `cbrowser/shared/`（`endpoints`、`agent_credentials`、`client_ip`、`viewer_grants`）；Gateway 不 import Supervisor 包、不携带 ORM 与 domain，镜像只打包 gateway 包、shared 整包与 stream_agent 的协议两文件。Origin 白名单由部署期 `network_config.derive_origin_whitelist` 以同一 `normalize_origin` 生成，与请求侧校验天然一致。

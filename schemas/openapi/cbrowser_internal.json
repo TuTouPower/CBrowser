@@ -5719,82 +5719,6 @@
         ]
       }
     },
-    "/api/v1/internal/gateway/viewer-authorize": {
-      "post": {
-        "tags": [
-          "internal-gateway"
-        ],
-        "summary": "Viewer Authorize",
-        "operationId": "viewer_authorize_api_v1_internal_gateway_viewer_authorize_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ViewerAuthorizeRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ViewerAuthorizeResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ValidationErrorResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Authentication required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Service authorization denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "GatewayServiceBearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/internal/gateway/profiles/{profile_id}/runtime": {
       "get": {
         "tags": [
@@ -5978,6 +5902,88 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/internal/edge/viewer-authorize": {
+      "get": {
+        "tags": [
+          "internal-edge"
+        ],
+        "summary": "Edge Viewer Authorize",
+        "operationId": "edge_viewer_authorize_api_v1_internal_edge_viewer_authorize_get",
+        "parameters": [
+          {
+            "name": "X-CBrowser-Edge-Proof",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Cbrowser-Edge-Proof"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Service authorization denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ]
       }
     }
   },
@@ -9194,70 +9200,6 @@
         "additionalProperties": false,
         "type": "object",
         "title": "ValidationErrorResponse"
-      },
-      "ViewerAuthorizeRequest": {
-        "properties": {
-          "session_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Session Token"
-          },
-          "session_cookie": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Session Cookie"
-          },
-          "origin": {
-            "type": "string",
-            "title": "Origin"
-          },
-          "profile_id": {
-            "type": "string",
-            "title": "Profile Id"
-          }
-        },
-        "type": "object",
-        "required": [
-          "origin",
-          "profile_id"
-        ],
-        "title": "ViewerAuthorizeRequest"
-      },
-      "ViewerAuthorizeResponse": {
-        "properties": {
-          "allowed": {
-            "type": "boolean",
-            "title": "Allowed"
-          },
-          "reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reason"
-          }
-        },
-        "type": "object",
-        "required": [
-          "allowed"
-        ],
-        "title": "ViewerAuthorizeResponse"
       }
     },
     "securitySchemes": {

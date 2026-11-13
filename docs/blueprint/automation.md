@@ -9,7 +9,7 @@
 - 自动化凭证由登录用户经 `POST /api/v1/automation/tokens` 创建，格式 `cbat_...`，只在创建响应返回明文；凭证限定可访问的 Profile。
 - 客户端必须发送 `Authorization: Bearer <token>`；登录 Cookie 不被接受。Bearer 方案名大小写不敏感。
 - 未授权、非授权 Profile、凭证撤销关闭码 4401；Supervisor 未配置或上游失败关闭 1011。
-- 授权只经上述 v1 入口由 `AuthService.authorize_automation` 执行（t021）：内部 Gateway 面曾有的 `automation-authorize` RPC 无任何生产消费者，已整体删除（含 DTO 与内部 OpenAPI 条目）；Gateway 只调用 `viewer-authorize`。不得再新增平行的内部自动化授权面。
+- 授权只经上述 v1 入口由 `AuthService.authorize_automation` 执行（t021）：内部 Gateway 面曾有的 `automation-authorize` RPC 无任何生产消费者，已整体删除（含 DTO 与内部 OpenAPI 条目）；t064 后 Gateway 也不再承担 viewer 会话授权，viewer grant 由 API 边缘解析签发、Gateway 本地验签。不得再新增平行的内部自动化授权面。
 
 ## 转发链
 

@@ -80,14 +80,7 @@ def test_supervisor_surface_unconfigured(unconfigured_client) -> None:
 
 def test_gateway_surface_unconfigured(unconfigured_client) -> None:
     _assert_service_not_configured(
-        unconfigured_client.post(
-            "/api/v1/internal/gateway/viewer-authorize",
-            json={
-                "session_token": "abc",
-                "origin": ORIGIN,
-                "profile_id": "prof-x",
-            },
-        )
+        unconfigured_client.get("/api/v1/internal/gateway/profiles/prof-x/runtime")
     )
 
 
@@ -123,9 +116,8 @@ def test_wrong_and_missing_tokens_are_401(configured_client) -> None:
         response = client.get("/api/v1/internal/supervisor/health", headers=headers)
         assert response.status_code == 401
         assert response.json()["error"] != "service_not_configured"
-        response = client.post(
-            "/api/v1/internal/gateway/viewer-authorize",
-            json={"session_token": "abc", "origin": ORIGIN, "profile_id": "prof-x"},
+        response = client.get(
+            "/api/v1/internal/gateway/profiles/prof-x/runtime",
             headers=headers,
         )
         assert response.status_code == 401
@@ -140,20 +132,19 @@ def test_service_tokens_are_independent_identities(configured_client) -> None:
     assert client.get("/api/v1/internal/supervisor/health", headers=supervisor).status_code == 200
     assert client.get("/api/v1/internal/supervisor/health", headers=gateway).status_code == 401
     assert (
-        client.post(
-            "/api/v1/internal/gateway/viewer-authorize",
-            json={"session_token": "abc", "origin": ORIGIN, "profile_id": "prof-x"},
+        client.get(
+            "/api/v1/internal/gateway/profiles/prof-x/runtime",
             headers=supervisor,
         ).status_code
         == 401
     )
-    viewer = client.post(
-        "/api/v1/internal/gateway/viewer-authorize",
-        json={"session_token": "abc", "origin": ORIGIN, "profile_id": "prof-x"},
+    # The Gateway identity reaches its own surface: prof-x does not
+    # exist, so a passed bearer check surfaces as 404, not 401.
+    runtime = client.get(
+        "/api/v1/internal/gateway/profiles/prof-x/runtime",
         headers=gateway,
     )
-    assert viewer.status_code == 200
-    assert viewer.json()["allowed"] is False
+    assert runtime.status_code == 404
 
     # Artifact ingest rides the Supervisor identity, not the Gateway one.
     assert (
