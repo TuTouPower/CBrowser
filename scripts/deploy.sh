@@ -33,6 +33,16 @@
 #   restore   stop the stack and copy a backup file back into the database
 #             volume (stale -wal/-shm removed first); the user re-deploys
 #             afterwards.  Never deletes the backup.
+#   env-backup [point-dir]
+#             capture a full environment restore point (database volume
+#             plus every Profile user data directory, one quiescent set
+#             with a verifiable manifest) via scripts/restore_point.py;
+#             refuses while any Profile has an actual writer.  Credential
+#             files are prerequisites listed by name only, never copied.
+#   env-restore <point-dir>
+#             stop the stack and restore an environment restore point as
+#             one validated set (staging validation, journaled switch,
+#             pre-restore set retained); the user re-deploys afterwards.
 #   status    print the current/previous release ids (never secrets).
 #
 # Credentials: the admin password is user-provided and must already exist
@@ -978,6 +988,79 @@ cmd_restore() {
   echo "Re-deploy to start the stack against the restored database."
 }
 
+cmd_env_backup() {
+  # env-backup [point-dir] : see the header.  Runs restore_point.py in a
+  # throwaway API container with the database volume, the data root
+  # (mounted at /data, the API container's own view, so recorded
+  # user_data_dir values resolve) and the scripts directory mounted.
+  local current api_image point_dir point_name
+  current="$(read_pointer "$POINTER_FILE")"
+  if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.env" ]; then
+    echo "No current release recorded; deploy once first so an API image exists to run the backup." >&2
+    exit 1
+  fi
+  load_release_identity "$RELEASES_DIR/$current.env"
+  api_image="$(sed -n 's/^CBROWSER_API_IMAGE=//p' "$RELEASES_DIR/$current.env")"
+  if [ -z "$api_image" ]; then
+    echo "Refusing env-backup: CBROWSER_API_IMAGE missing from current release env." >&2
+    exit 1
+  fi
+  point_dir="${1:-$ROOT/data/backups/restore-points/point-$(date +%Y%m%dT%H%M%S)}"
+  mkdir -p "$(dirname "$point_dir")"
+  point_name="$(basename "$point_dir")"
+  docker run --rm \
+    -v "$(db_volume_name):/db" \
+    -v "$DATA_ROOT:/data" \
+    -v "$SECRETS_DIR:/secrets:ro" \
+    -v "$(dirname "$point_dir"):/points" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/restore_point.py create \
+      --db /db/cbrowser.db --data-root /data \
+      --out "/points/$point_name" --secrets-dir /secrets --label deploy.sh
+  echo "Restore point written to $point_dir."
+}
+
+cmd_env_restore() {
+  # env-restore <point-dir> : see the header.  The stack is stopped
+  # first (the restore tool's precondition, same as cmd_restore); the
+  # switch journal lives in the data root so an interrupted switch is
+  # rolled back by the next invocation before anything else happens.
+  local point_dir="${1:-}"
+  if [ -z "$point_dir" ]; then
+    echo "usage: $0 env-restore <point-dir>" >&2
+    exit 2
+  fi
+  if [ ! -f "$point_dir/manifest.json" ]; then
+    echo "Restore point '$point_dir' does not exist or has no manifest.json." >&2
+    exit 1
+  fi
+  local current api_image point_abs point_name
+  current="$(read_pointer "$POINTER_FILE")"
+  if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.env" ]; then
+    echo "No current release recorded; deploy once first so an API image exists to run the restore." >&2
+    exit 1
+  fi
+  load_release_identity "$RELEASES_DIR/$current.env"
+  api_image="$(sed -n 's/^CBROWSER_API_IMAGE=//p' "$RELEASES_DIR/$current.env")"
+  if [ -z "$api_image" ]; then
+    echo "Refusing env-restore: CBROWSER_API_IMAGE missing from current release env." >&2
+    exit 1
+  fi
+  compose_with "$RELEASES_DIR/$current.env" down
+  point_abs="$(cd "$point_dir" && pwd)"
+  point_name="$(basename "$point_abs")"
+  docker run --rm \
+    -v "$(db_volume_name):/db" \
+    -v "$DATA_ROOT:/data" \
+    -v "$(dirname "$point_abs"):/points:ro" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/restore_point.py restore \
+      --point "/points/$point_name" --db /db/cbrowser.db \
+      --data-root /data --journal /data/restore-journal.json
+  echo "Environment restored from $point_dir into volume $(db_volume_name) and $DATA_ROOT."
+  echo "Re-deploy to start the stack against the restored environment."
+}
+
 cmd_status() {
   local current previous
   current="$(read_pointer "$POINTER_FILE")"
@@ -993,6 +1076,8 @@ case "$COMMAND" in
   deploy) cmd_deploy ;;
   rollback) cmd_rollback "$@" ;;
   restore) cmd_restore "$@" ;;
+  env-backup) cmd_env_backup "$@" ;;
+  env-restore) cmd_env_restore "$@" ;;
   status) cmd_status ;;
-  *) echo "usage: $0 [deploy|rollback [release_id]|restore <backup-file>|status]" >&2; exit 2 ;;
+  *) echo "usage: $0 [deploy|rollback [release_id]|restore <backup-file>|env-backup [point-dir]|env-restore <point-dir>|status]" >&2; exit 2 ;;
 esac

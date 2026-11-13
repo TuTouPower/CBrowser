@@ -32,7 +32,8 @@ bash scripts/deploy.sh
 
 ```bash
 docker compose --env-file config/deploy/releases/<release_id>.env -f compose.yaml down
-tar -czf data/backups/cbrowser-$(date +%Y%m%dT%H%M%S).tar.gz data/instance
+bash scripts/deploy.sh env-backup     # 环境恢复点：数据库（named volume）+ 全部 Profile 数据
+bash scripts/deploy.sh env-restore data/backups/restore-points/<point-dir>   # 恢复
 ```
 
 完整部署、升级、备份恢复与故障定位见 `DOCKER_DEPLOYMENT.md`。

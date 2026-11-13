@@ -30,14 +30,14 @@
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-001：同 Profile 在配置不变时重复启动使用同一实际支持的身份参数；任何普通配置保存都不清空或重建浏览器状态目录，已有 Cookie、localStorage、IndexedDB、缓存等保留，不因代理、分辨率、时区、语言或指纹参数变化自动清理；清状态只能来自用户明确确认的独立操作。
-- [ ] [deploy] AC-003：两态 clone 分别无源状态或保留约定可用状态，源不受影响；若引擎确有可复制密钥根，include-state clone 使用独立根且保持 cookie 可用，失败/取消不残留目录或 DB 行，不以盲删 Local State 通过测试。
-- [ ] [deploy] AC-004：明确确认 reset 后，浏览器用户目录中的书签、历史、偏好、Cookie、登录态、localStorage、IndexedDB 与缓存全部清空，按现行语义重新生成 seed；环境 ID、名称、代理等配置和独立 Artifact 保留；失败时旧目录与配置能成套恢复。
-- [ ] [deploy] AC-005：启动与 clone/reset/备份恢复竞争不会并发写 userDataDir；desired/observed 即使看似 stopped，有残留 runtime_instance_id 或实际写者时拒绝状态改写；多个 viewer 或无人连接都不授权停止环境或清理数据，备份/恢复必须由显式操作触发。
-- [ ] AC-008：普通创建和幂等 reset 使用同一已声明 seed 范围；相同操作 ID 重试保持相同 seed，不改变既有已保存 seed，也不保留五位/六位生成路径分裂。
-- [ ] AC-009：完整备份同时包含可恢复 DB 与对应 Profile 状态/配置；恢复后 Profile 配置版本、cookie/localStorage 和登录态与该恢复点一致，不遗漏 named volume。
-- [ ] AC-010：损坏、空间不足、数据库校验失败以及成套切换每个中断点都能恢复旧完整版本或完成新版本，不遗留 DB 与目录版本错配；原数据不被未校验内容覆盖。
-- [ ] [deploy] AC-011：在隔离真实部署中执行备份→状态变化→恢复，验证配置、登录态和必要凭据恢复前提；指南所列命令能从 named volume 取得并恢复 DB。
+- [x] [deploy] AC-001：同 Profile 在配置不变时重复启动使用同一实际支持的身份参数；任何普通配置保存都不清空或重建浏览器状态目录，已有 Cookie、localStorage、IndexedDB、缓存等保留，不因代理、分辨率、时区、语言或指纹参数变化自动清理；清状态只能来自用户明确确认的独立操作。
+- [x] [deploy] AC-003：两态 clone 分别无源状态或保留约定可用状态，源不受影响；若引擎确有可复制密钥根，include-state clone 使用独立根且保持 cookie 可用，失败/取消不残留目录或 DB 行，不以盲删 Local State 通过测试。
+- [x] [deploy] AC-004：明确确认 reset 后，浏览器用户目录中的书签、历史、偏好、Cookie、登录态、localStorage、IndexedDB 与缓存全部清空，按现行语义重新生成 seed；环境 ID、名称、代理等配置和独立 Artifact 保留；失败时旧目录与配置能成套恢复。
+- [x] [deploy] AC-005：启动与 clone/reset/备份恢复竞争不会并发写 userDataDir；desired/observed 即使看似 stopped，有残留 runtime_instance_id 或实际写者时拒绝状态改写；多个 viewer 或无人连接都不授权停止环境或清理数据，备份/恢复必须由显式操作触发。
+- [x] AC-008：普通创建和幂等 reset 使用同一已声明 seed 范围；相同操作 ID 重试保持相同 seed，不改变既有已保存 seed，也不保留五位/六位生成路径分裂。
+- [x] AC-009：完整备份同时包含可恢复 DB 与对应 Profile 状态/配置；恢复后 Profile 配置版本、cookie/localStorage 和登录态与该恢复点一致，不遗漏 named volume。
+- [x] AC-010：损坏、空间不足、数据库校验失败以及成套切换每个中断点都能恢复旧完整版本或完成新版本，不遗留 DB 与目录版本错配；原数据不被未校验内容覆盖。
+- [x] [deploy] AC-011：在隔离真实部署中执行备份→状态变化→恢复，验证配置、登录态和必要凭据恢复前提；指南所列命令能从 named volume 取得并恢复 DB。
 
 ### 可测试性声明
 
@@ -78,8 +78,8 @@
 <!-- /规范 -->
 
 - 产品边界已确认：保存配置保留状态、reset 全清、不做新身份模型/白名单/配额/自动回收，无产品 BLOCKING。
-- OSCrypt/portable_cookies 复制可用性：UNVERIFIED-SPIKE，用实际引擎一次性样本验证，不盲删 Local State。
-- 现有 DB backup/restore 与 Profile 停机切换契约：UNVERIFIED-SPIKE，先演练现有工具，再定稿跨介质成套恢复及中断恢复协议。
+- OSCrypt/portable_cookies 复制可用性：已验证（2026-11-13，云端一次性样本，引擎 CloakBrowser Chromium 146.0.7680.177.5 linux-x64，与生产同为无系统 keyring 的 Linux 环境）。实测：portable 开/关两态下 Local State 均无 `os_crypt.encrypted_key`（该构建不存在按 Profile 锚定的 OSCrypt 密钥根）；Cookie 以 v10 形式存于 `Default/Cookies`；整目录逐字复制后 Cookie 与 localStorage 可读；删除克隆的 Local State 后 Cookie 仍可读。结论：引擎无「可复制密钥根」，AC-003 的独立根条件不成立——include-state clone 逐字复制（现行行为）即保持 Cookie 可用，删除 Local State 无收益且会丢其他状态，不盲删得到实证支持。实验脚本与样本在本 task worktree `.scratch/engine_spike/`（gitignore，不入库）；findings.py 因 main 既存 d037/d038 编号重复拒绝分配新号（工具链缺陷，已报告），结论暂存本节。
+- 现有 DB backup/restore 与 Profile 停机切换契约：已验证（2026-11-13 演练）。db_backup.py 在线 backup 可用（integrity ok，stamp 796adb0bf159）；db_restore.py 无校验直接覆盖——把备份文件改坏 7 字节后执行恢复，活库随即不可读（database disk image is malformed），且原数据已毁。定稿协议：以 `scripts/restore_point.py` 的恢复点取代「tar + db_restore」作为环境级恢复契约——备份在 DB 记录无实际写者时取同一恢复点（在线 backup + integrity_check + schema stamp + Profile 目录逐文件 sha256 manifest + 凭据前提只记文件名）；恢复先 staging 全量校验（哈希/完整性/版本/空间）再带 journal 按项 rename 成套切换，中断由下一次调用回滚到旧集，旧集保留在目标旁 `.pre-restore-<switch-id>`。db_backup/db_restore 保留给发布流程的 DB 单件备份/回退，不再作为环境恢复入口。
 
 ### 风险与回退
 

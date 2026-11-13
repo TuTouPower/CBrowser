@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 from enum import Enum
+import hashlib
 import random
 from typing import Any, Literal
 
@@ -17,8 +18,23 @@ def utc_now_iso() -> str:
     return datetime.datetime.now(datetime.UTC).isoformat()
 
 
+# The one declared fingerprint-seed space (t066 AC-008).  Profile creation,
+# plain reset and idempotent reset all draw from this range; no second
+# five-/six-digit generation path exists.
+FINGERPRINT_SEED_MIN = 100000
+FINGERPRINT_SEED_MAX = 999999
+
+
 def generate_fingerprint_seed() -> int:
-    return random.randint(100000, 999999)
+    return random.randint(FINGERPRINT_SEED_MIN, FINGERPRINT_SEED_MAX)
+
+
+def derive_fingerprint_seed(operation_id: str) -> int:
+    """Deterministically map an idempotency operation id to a seed in the
+    declared space, so retrying one operation replays the same seed."""
+    digest = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()
+    span = FINGERPRINT_SEED_MAX - FINGERPRINT_SEED_MIN + 1
+    return FINGERPRINT_SEED_MIN + int(digest, 16) % span
 
 
 DesiredState = Literal["stopped", "running"]

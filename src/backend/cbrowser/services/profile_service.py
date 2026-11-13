@@ -30,6 +30,7 @@ from cbrowser.domain.models import (
     ProfileConfig,
     ProfileRuntime,
     RuntimeEvent,
+    derive_fingerprint_seed,
     generate_fingerprint_seed,
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
@@ -149,6 +150,34 @@ def _validate_font_set_binding(platform: str, font_set_id: str | None) -> None:
 
 
 _SKIP_COPY_FILES = frozenset({"SingletonLock", "SingletonCookie", "SingletonSocket"})
+
+
+def _runtime_has_writer(runtime: ProfileRuntime) -> bool:
+    """Whether a browser process may still write the user data directory.
+
+    A bound ``runtime_instance_id`` is the durable trace of an actual
+    writer: desired/observed can both read ``stopped`` while an instance
+    binding survives (Supervisor unreachable, observation lost), and the
+    directory must not be rewritten underneath that process (t066 AC-005).
+    """
+    return (
+        runtime.runtime_instance_id is not None
+        or runtime.desired_state == "running"
+        or runtime.observed_state in ("starting", "running", "stopping")
+    )
+
+
+def _require_fully_stopped(
+    runtime: ProfileRuntime, profile_id: str, operation: str
+) -> None:
+    """Refuse a state-rewriting operation unless the profile is fully
+    stopped with no bound runtime instance (t066 AC-005)."""
+    if (
+        runtime.desired_state != "stopped"
+        or runtime.observed_state != "stopped"
+        or runtime.runtime_instance_id is not None
+    ):
+        raise ProfileRunningError(profile_id, operation)
 
 
 def _manifest(root: Path) -> dict[str, tuple[str, int | str]]:
@@ -528,12 +557,7 @@ class ProfileService:
                 if profile is None:
                     raise ProfileNotFoundError(profile_id)
                 runtime = await self._repo.get_runtime(profile_id)
-                if runtime is not None and (
-                    runtime.desired_state == "running"
-                    or runtime.observed_state
-                    in ("starting", "running", "stopping")
-                    or runtime.runtime_instance_id is not None
-                ):
+                if runtime is not None and _runtime_has_writer(runtime):
                     raise ProfileRunningError(profile_id, "delete")
                 deleted = await self._repo.delete_profile(profile_id)
                 if not deleted:
@@ -708,11 +732,9 @@ class ProfileService:
                     return replayed
                 if include_browser_state:
                     runtime = await self.get_runtime(profile_id)
-                    if not (
-                        runtime.desired_state == "stopped"
-                        and runtime.observed_state == "stopped"
-                    ):
-                        raise ProfileRunningError(profile_id, "copying browser state")
+                    _require_fully_stopped(
+                        runtime, profile_id, "copying browser state"
+                    )
 
                 clone_id = str(uuid.uuid4())
                 clone_dir = self._clone_dir(source, clone_id)
@@ -733,13 +755,9 @@ class ProfileService:
                                 "Copied browser state does not match the source"
                             )
                         runtime = await self.get_runtime(profile_id)
-                        if not (
-                            runtime.desired_state == "stopped"
-                            and runtime.observed_state == "stopped"
-                        ):
-                            raise ProfileRunningError(
-                                profile_id, "copying browser state"
-                            )
+                        _require_fully_stopped(
+                            runtime, profile_id, "copying browser state"
+                        )
                     config = ProfileConfig(
                         **{
                             **source.config.model_dump(),
@@ -805,11 +823,7 @@ class ProfileService:
                 if replayed is not None:
                     return replayed
                 runtime = await self.get_runtime(profile_id)
-                if not (
-                    runtime.desired_state == "stopped"
-                    and runtime.observed_state == "stopped"
-                ):
-                    raise ProfileRunningError(profile_id, "resetting")
+                _require_fully_stopped(runtime, profile_id, "resetting")
 
                 source_dir = Path(source.user_data_dir)
                 backup = source_dir.with_name(f".reset-backup-{uuid.uuid4().hex}")
@@ -828,11 +842,7 @@ class ProfileService:
                         self.runtime_gid,
                     )
                     runtime = await self.get_runtime(profile_id)
-                    if not (
-                        runtime.desired_state == "stopped"
-                        and runtime.observed_state == "stopped"
-                    ):
-                        raise ProfileRunningError(profile_id, "resetting")
+                    _require_fully_stopped(runtime, profile_id, "resetting")
                     seed = (
                         self._seed_for_operation(operation_id)
                         if operation_id
@@ -870,8 +880,7 @@ class ProfileService:
 
     @staticmethod
     def _seed_for_operation(operation_id: str) -> int:
-        digest = hashlib.sha256(operation_id.encode("utf-8")).hexdigest()
-        return 10000 + int(digest, 16) % 90000
+        return derive_fingerprint_seed(operation_id)
 
     # ---- Group / Proxy (t035) -----------------------------------------
 

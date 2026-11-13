@@ -196,22 +196,6 @@
             "dir": "docs/tasks/t065_proxy_credential_isolation"
         },
         {
-            "tid": "t066",
-            "slug": "profile_identity_state",
-            "title": "环境数据保留、复制重置与备份恢复",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t062",
-            "conflicts_with": "t061,t062,t065,t069",
-            "note": "合并 t070；p074/p089/p080 有效范围；保存配置保留数据、reset 全清、完整备份；取消身份模型与配额",
-            "dir": "docs/tasks/t066_profile_identity_state"
-        },
-        {
             "tid": "t068",
             "slug": "profile_fingerprint_verification",
             "title": "本地指纹基线与引擎升级回归门禁",

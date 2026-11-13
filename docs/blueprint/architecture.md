@@ -89,6 +89,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 部署身份确定性派生：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`，媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；两者写入 release env 与 manifest。归属判定以 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id 为唯一依据（该键即部署身份键，AC-021）；每轮唯一的运行时实例 id 不走标签，写入容器运行时配置（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取。project 名豁免已删除。控制面数据库在 named volume `db`（`/data/db/cbrowser.db`），字体为独立部署输入（`${CBROWSER_FONTS_DIR}:/fonts:ro`）。发布指针为单一 JSON 文件 `config/deploy/release_pointer.json`（`{"current": …, "previous": …|null}`），原子写含文件与父目录 fsync。部署前对数据库做在线备份并记入 manifest，`deploy.sh restore` 可恢复。细节见 ADR 028。
 
+### 3.3 环境恢复点（t066）
+
+环境级备份恢复的唯一契约是恢复点（`scripts/restore_point.py`，经 `deploy.sh env-backup` / `env-restore` 以一次性 API 镜像容器挂载 named volume `db` 与数据根运行）：一个恢复点 = 同一静默时刻的控制面 DB（SQLite 在线 backup + integrity_check + schema stamp）与全部 Profile 用户数据目录（逐文件 SHA-256 manifest），外加只记文件名/大小的凭据前提清单。备份在 DB 记录存在实际写者时拒绝。恢复先把整套内容 staging 到目标旁并全量校验（哈希/完整性/版本一致/空间），再按 journal 逐项 rename 成套切换；跨介质（DB 卷与数据根）的切换不是单一原子事务，靠 journal + 旧集保留（`.pre-restore-<switch-id>`）保证任一中断点收敛为完整旧集或完整新集，下一次调用先回滚未完成切换。旧的「tar data/instance + db_restore.py 直覆」不构成环境恢复（tar 漏 named volume DB、直覆不校验），仅保留 db_backup/db_restore 作发布流程的 DB 单件备份。契约细节见 `docs/specs/release_deployment.md` 的 t066 节。
+
 ## 4. 核心模块与职责划分
 
 |模块|容器/服务角色|职责与安全边界|

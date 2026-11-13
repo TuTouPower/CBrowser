@@ -115,6 +115,12 @@
 
 单元与真实 HTTP/WS 集成测试覆盖凭证校验、会话与 CSRF、限速、审计脱敏和 Gateway 控制面；t064 另以 Caddyfile 渲染契约、API 边缘解析集成、Gateway grant 集成分别守住 Cookie 剥离、伪造头、跨 Profile、登出撤销与外部解析端点 404。真实 HTTPS、Chrome Cookie 属性、真实 Caddy 边缘链、首帧/重连与真实引擎 CDP Host/Origin 负向例由 Docker E2E 验证，不能以 mock 或渲染契约替代。公网 TLS 证书与公网穿透属 USER_WAIVED 范围外，本机以 Caddy 内部 CA 验证。
 
+## 恢复点与凭据前提（t066）
+
+- 环境恢复点（`scripts/restore_point.py`）只含控制面 DB 与 Profile 用户数据目录；**凭据永不进恢复点**：manifest 的 `credential_prerequisites` 只记 secrets 目录内文件名与大小，恢复站点必须另行提供同名凭据文件，缺失时环境恢复后相关服务按缺失凭据失败封闭，不由恢复点兜底。
+- 恢复点完整性即信任边界：manifest 逐文件 SHA-256 + DB `integrity_check` + schema stamp 三重校验在任何活数据被触碰前完成；校验失败、stamp 跨代、空间不足一律拒绝，活数据不被未校验内容覆盖。
+- 备份的写者门禁与 delete 共用实际写者判定 `_runtime_has_writer`（两档判定见 domain.md t066 节）：DB 记录有实际写者时拒绝取恢复点；取点在目录复制完成后按同一判定与配置版本再复查一次，备份窗口内出现写者或配置漂移即弃点，保证 DB 与目录来自同一静默时刻。
+
 ## 仓库隐私口径（t060）
 
 - 当前 tracked 树与新提交不得包含开发者家路径或凭据；归档文档也纳入扫描。未跟踪且未忽略的新文本同样在 `test_repo_hygiene.py` 扫描范围内。
