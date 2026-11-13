@@ -88,4 +88,4 @@ Round 1 两轴均为 FAIL（打勾缺失 + 两处实质缺口），已按上表�
 ### 长期文档闭环
 
 - specs_index：webrtc_remote_display、runtime_lifecycle、release_deployment、agent_executor、access_control、profile_management 六行已登记 t069（2026-11-14）。
-- blueprint：conventions.md §7 严格口径、architecture.md §5.5 严格契约、security.md 归属与输入拒绝、testing.md 严格契约验证、decisions.md 新增 034；specs 五文件（runtime_lifecycle/release_deployment/profile_management/webrtc_remote_display/agent_executor）已累积 t069 条目并修正两处过时表述（A15 透传、历史行过滤）。
+- blueprint：conventions.md §7 严格口径、architecture.md §5.5 严格契约、security.md 归属与输入拒绝、testing.md 严格契约验证、decisions.md 新增 035（合入时由 034 顺延：034 已被 t063 占用）；specs 五文件（runtime_lifecycle/release_deployment/profile_management/webrtc_remote_display/agent_executor）已累积 t069 条目并修正两处过时表述（A15 透传、历史行过滤）。
