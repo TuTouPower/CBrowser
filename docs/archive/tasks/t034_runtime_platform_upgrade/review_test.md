@@ -3,7 +3,7 @@
 - task：`t034_runtime_platform_upgrade`
 - spec：`docs/tasks/t034_runtime_platform_upgrade/task.md`
 - diff_anchor：`00f828e9cdf4db729c39f36a12ee303cbb7a5910`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t034' diff 00f828e9cdf4db729c39f36a12ee303cbb7a5910`
+- target：`git -C '<repo>_t034' diff 00f828e9cdf4db729c39f36a12ee303cbb7a5910`
 - round：1
 - reviewed_at：2026-11-05T17:35:21+08:00
 
@@ -89,7 +89,7 @@ coverage = 3 / 6
 
 ## reviewer 复跑记录
 
-- 步骤 1 落点校验：`git rev-parse --show-toplevel`（workdir=t034）→ `/Users/karson/kar/code/CBrowser_t034`；`git -C ... diff --name-status 00f828e9` 与 `status --short` 确认全部交付为 staged、anchor=HEAD。
+- 步骤 1 落点校验：`git rev-parse --show-toplevel`（workdir=t034）→ `<repo>_t034`；`git -C ... diff --name-status 00f828e9` 与 `status --short` 确认全部交付为 staged、anchor=HEAD。
 - 轻量单测（3.15 venv）：`.scratch/venv315/bin/python -m pytest tests/unit/test_t034_dependency_lock.py tests/unit/test_t034_runtime_paths.py tests/unit/test_vendor_selkies_security.py tests/unit/test_t028_run_gates_evidence.py -q` → `19 passed in 4.97s`。
 - 生成物一致性：`bash scripts/generate_requirements.sh --check` → 6 组 `requirements ok`、`EXIT=0`、`Using CPython 3.15.2 interpreter`（mise）。
 - markers 边界实证：`.scratch/venv315/bin/python` 调用 `verify_image_packages.normalise()` → 仅单引号 win32 被跳过，`implementation_name`/`platform_python_implementation`/darwin/`python_version`/双引号 Windows 全部保留，`implementation-name == 'pypy'` 分支不命中。

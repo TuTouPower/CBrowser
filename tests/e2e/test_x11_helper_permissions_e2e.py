@@ -11,7 +11,6 @@ left behind.  Target-environment execution is t032's.
 
 from __future__ import annotations
 
-import stat
 import uuid
 from pathlib import Path
 
@@ -35,7 +34,7 @@ def _leftover_helpers(client: docker.DockerClient, prefix: str) -> list:
     )
 
 
-def test_x11_helper_fixes_permissions_in_real_container(
+def test_x11_helper_converges_linux_mount_permissions_after_drift(
     tmp_path: Path,
 ) -> None:
     image = require_e2e_env("CBROWSER_RUNTIME_TEST_IMAGE")[
@@ -60,18 +59,22 @@ def test_x11_helper_fixes_permissions_in_real_container(
         )
         x11_dir = tmp_path / "x11"
         x11_dir.mkdir()
-        x11_dir.chmod(0o700)
-        try:
-            adapter.setup_x11_permissions(x11_dir)
-            assert stat.S_IMODE(x11_dir.stat().st_mode) == 0o750
-            assert _leftover_helpers(client, prefix) == []
 
-            # A second run over a drifted directory converges again and
-            # still leaves no helper behind.
-            x11_dir.chmod(0o711)
-            adapter.setup_x11_permissions(x11_dir)
-            assert stat.S_IMODE(x11_dir.stat().st_mode) == 0o750
-            assert _leftover_helpers(client, prefix) == []
+        def mount_command(entrypoint, command):
+            return client.containers.run(
+                image, entrypoint=entrypoint, command=command,
+                volumes={str(x11_dir): {"bind": "/x11", "mode": "rw"}},
+                user="0:0", read_only=True, cap_drop=["ALL"], cap_add=["FOWNER"],
+                security_opt=["no-new-privileges:true"], remove=True,
+            )
+
+        try:
+            for drift in ("0700", "0711"):
+                mount_command("chmod", [drift, "/x11"])
+                assert int(mount_command("stat", ["-c", "%a", "/x11"]).strip(), 8) == int(drift, 8)
+                adapter.setup_x11_permissions(x11_dir)
+                assert int(mount_command("stat", ["-c", "%a", "/x11"]).strip(), 8) == 0o750
+                assert _leftover_helpers(client, prefix) == []
         finally:
             for container in _leftover_helpers(client, prefix):
                 container.remove(force=True)
@@ -106,3 +109,5 @@ def test_x11_helper_failure_is_explicit_with_real_daemon(
         assert _leftover_helpers(client, prefix) == []
     finally:
         client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE')

@@ -28,7 +28,7 @@
 
 ## 3. 路径与隐私规范
 
-- 已跟踪的非归档文本文件不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
+- 当前全部 tracked 文本与未跟踪且未忽略的新文件（含归档）不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
 - 归档 spike 只作历史证据，不在仓库内运行；先复制到 `.scratch/`，探针秘密与工作目录不得入库。
 - **产品无代际标识（t051）**：默认数据根、现行文档、源码与脚本不得出现产品代际自指，模式清单见 `tests/unit/test_t051_generation_hygiene.py` 的 `PATTERNS`；例外仅 `scripts/deploy.sh` 的旧库探测（AC-004，须写出真实旧路径）与对应断言。协议版本（Stream/Agent `version="v2"`）、库版本（Pydantic v2、SQLAlchemy 2.x）、API `version="2.0.0"` 与 SemVer 发布头不在此限。
 - **部署身份与前缀（t051）**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），由 deploy.sh 与 Supervisor 启动在任何 Docker 操作前校验；默认部署前缀为 `cbrowser-t005`（编译内既定标识，不在校验之列，DockerAdapter 构造不校验）；部署身份为确定性 `instance_id`，归属判定只凭 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id（该键即部署身份键；运行时实例 id 写入容器运行时配置，不走标签）。

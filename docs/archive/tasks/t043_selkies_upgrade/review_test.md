@@ -3,7 +3,7 @@
 - task：`t043_selkies_upgrade`
 - spec：`docs/tasks/t043_selkies_upgrade/task.md`
 - diff_anchor：`2e9558147b6c8ce0a6357115e23c003593f37327`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t043' diff 2e9558147b6c8ce0a6357115e23c003593f37327`
+- target：`git -C '<repo>_t043' diff 2e9558147b6c8ce0a6357115e23c003593f37327`
 - round：1
 - reviewed_at：2026-11-05T19:30:08+08:00
 
@@ -68,7 +68,7 @@ coverage = 3 / 4
 
 ## reviewer 复跑记录
 
-- 落点校验：`git rev-parse --show-toplevel` → `/Users/karson/kar/code/CBrowser_t043`。
+- 落点校验：`git rev-parse --show-toplevel` → `<repo>_t043`。
 - diff 全量：`git -C … diff 2e9558147b6c8ce0a6357115e23c003593f37327`（24 文件，含测试 4 改 1 增）、`git -C … diff --name-only <anchor>`（确认 `test_t028_run_gates_evidence.py` / `test_frontend_build_wiring.py` 未改）、`git status --short`。
 - 轻量单测（`.scratch/venv315/bin/python`，`PYTHONPATH=src/backend`）：`pytest tests/unit/test_t043_selkies_pin.py tests/unit/test_stream_keymap_abi.py tests/e2e/test_frontend_session_vendor.py tests/unit/test_repo_hygiene.py -q` → 20 passed；`pytest tests/e2e/test_frontend_adapter_build.py -q` → 4 passed（真下载 2.2.1 wheel 并 vendor）。
 - spike 实跑：`.scratch/venv315/bin/python docs/spikes/s012_selkies_2_2_upgrade_contract/code/compare.py` → 两版本 31 模块、ABI 全一致、`native pins` 2.2.1/2.2.0 → 2.2.3/2.2.1、`HELLO client ` 为 `False`（见 f003）。

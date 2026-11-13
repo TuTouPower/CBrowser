@@ -3,7 +3,7 @@
 - task：`t018_v2_test_gates_hygiene`
 - spec：`docs/tasks/t018_v2_test_gates_hygiene/task.md`
 - diff_anchor：`5a3da225fbccf59d410e708a3754e7ab2160e12b`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t018' diff 5a3da225fbccf59d410e708a3754e7ab2160e12b`
+- target：`git -C '<repo>_t018' diff 5a3da225fbccf59d410e708a3754e7ab2160e12b`
 - round：1
 - reviewed_at：2026-11-03T10:38:14+08:00
 
@@ -104,7 +104,7 @@ reviewed_scope: bdba5aa92c5411d1
 - 严重度：minor
 - 锚点：AC-007「已跟踪的非归档文本文件不含家目录绝对路径（由测试守护）」
 - 位置：`tests/unit/test_repo_hygiene.py:24`、`tests/unit/test_repo_hygiene.py:12-15`、`tests/unit/test_repo_hygiene.py:27`
-- 问题：守卫整体排除 `docs/reviews/`，而该目录当前仍有 7 处 `/Users/karson/`（例如 `docs/reviews/review_20261102_201727/review_intensive.md:861`）；同时只扫描固定后缀，`Dockerfile`、`.gitignore` 等无后缀文本不在扫描范围。A44 只批准历史文档不改，不批准未来 review 文档不守护。
+- 问题：守卫整体排除 `docs/reviews/`，而该目录当前仍有 7 处 `<home>/`（例如 `docs/reviews/review_20261102_201727/review_intensive.md:861`）；同时只扫描固定后缀，`Dockerfile`、`.gitignore` 等无后缀文本不在扫描范围。A44 只批准历史文档不改，不批准未来 review 文档不守护。
 - 建议：把历史具体文件放入 allowlist，而不是排除整个 `docs/reviews/`；无后缀文本按 git 文本文件处理或显式加入 `Dockerfile`/`.gitignore`。
 
 ### t018_test_f013 - AC-007 新增 vendor 解包安全逻辑无测试
@@ -160,7 +160,7 @@ verdict: FAIL
 - 严重度：important
 - 锚点：AC-007「已跟踪的非归档文本文件不含家目录绝对路径（由测试守护）」；AC-006「本地全量门禁……全绿」
 - 位置：`tests/unit/test_repo_hygiene.py:18-48`、`tests/unit/review_privacy_allowlist.txt:1-5`
-- 问题：守卫已从整体排除 `docs/reviews/` 改为 allowlist，但 allowlist 漏掉两个已跟踪历史文件：`docs/reviews/review_20261102_201727/bundle_global_system_properties.md`（1 处 `/Users/karson/`）与 `bundle_local_archive_tasks.md`（2 处）。这两个文件在 diff anchor 已存在，不依赖本轮 review 产物。实跑 `pytest tests/unit` 得 `1 failed, 539 passed`；失败项即 `test_tracked_files_do_not_leak_developer_home_paths`。实跑 `bash scripts/run_gates.sh` 同样在该步失败，AC-006 的单入口门禁当前为红；CI 的 `v2 unit tests` 步骤也会在同一测试失败。此外当前任务 `review_code.md` / `review_test.md` 的模板要求写入 `git -C '/Users/karson/...'`，也被守卫判为违规，说明守卫未区分「项目内容」与「review 过程文档」。
+- 问题：守卫已从整体排除 `docs/reviews/` 改为 allowlist，但 allowlist 漏掉两个已跟踪历史文件：`docs/reviews/review_20261102_201727/bundle_global_system_properties.md`（1 处 `<home>/`）与 `bundle_local_archive_tasks.md`（2 处）。这两个文件在 diff anchor 已存在，不依赖本轮 review 产物。实跑 `pytest tests/unit` 得 `1 failed, 539 passed`；失败项即 `test_tracked_files_do_not_leak_developer_home_paths`。实跑 `bash scripts/run_gates.sh` 同样在该步失败，AC-006 的单入口门禁当前为红；CI 的 `v2 unit tests` 步骤也会在同一测试失败。此外当前任务 `review_code.md` / `review_test.md` 的模板要求写入 `git -C '<home>/...'`，也被守卫判为违规，说明守卫未区分「项目内容」与「review 过程文档」。
 - 建议：把两个遗漏的历史 review 文件补进 allowlist；明确 review 过程文档的处置（排除 `docs/tasks/**/review_*.md` 或在报告模板中去掉本机绝对路径），确保干净 checkout 下 `pytest tests/unit` 与 `scripts/run_gates.sh` 均可绿。
 
 ### t018_test_f016 - postbuild 接线断言由精确等值弱化为子串包含

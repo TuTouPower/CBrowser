@@ -3,7 +3,7 @@
 - task：`t034_runtime_platform_upgrade`
 - spec：`docs/tasks/t034_runtime_platform_upgrade/task.md`
 - diff_anchor：`00f828e9cdf4db729c39f36a12ee303cbb7a5910`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t034' diff 00f828e9cdf4db729c39f36a12ee303cbb7a5910`
+- target：`git -C '<repo>_t034' diff 00f828e9cdf4db729c39f36a12ee303cbb7a5910`
 - round：1
 - reviewed_at：2026-11-05T17:33:13+08:00
 
@@ -26,7 +26,7 @@ reviewed_scope: 4230c0bb95b7ec52
 - 严重度：minor
 - 锚点：`行为缺陷` —— 当 `mise` 不在 PATH 或 `.mise.toml` 固定的 3.15.2 未安装时，`mise which python` 失败被 `export` 包装吞掉，`UV_PYTHON` 静默置空且不报错，脚本继续到 `uv export` 才以「no interpreter found」间接失败，根因被掩盖。
 - 位置：`scripts/generate_requirements.sh:17`
-- 问题：bash 中 `export VAR="$(cmd)"` 的退出码取 `export`（恒 0），命令替换的失败不会触发脚本首行的 `set -euo pipefail`；`mise which python` 报错或输出空时 `UV_PYTHON=""` 被导出，脚本不显式校验。实测本机 `mise which python` 正常（→ `/Users/karson/.local/share/mise/installs/python/3.15.2/bin/python`），故当前不触发；属健壮性缺口。该脚本不在门禁链（见 f001），影响面限于开发者重新生成 requirements 的诊断体验。
+- 问题：bash 中 `export VAR="$(cmd)"` 的退出码取 `export`（恒 0），命令替换的失败不会触发脚本首行的 `set -euo pipefail`；`mise which python` 报错或输出空时 `UV_PYTHON=""` 被导出，脚本不显式校验。实测本机 `mise which python` 正常（→ `<home>/.local/share/mise/installs/python/3.15.2/bin/python`），故当前不触发；属健壮性缺口。该脚本不在门禁链（见 f001），影响面限于开发者重新生成 requirements 的诊断体验。
 - 建议：拆分赋值与导出并显式校验，如 `UV_PYTHON="$(mise which python)" || { echo "mise python 3.15.2 不可用" >&2; exit 1; }; export UV_PYTHON`，或 `export UV_PYTHON; : "${UV_PYTHON:?mise python 3.15.2 不可用}"`。
 
 ### t034_code_f003 - `verify_image_packages.py` 吞掉 pip 错误且 marker 归一化不通用

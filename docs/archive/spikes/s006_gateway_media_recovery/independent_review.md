@@ -1,7 +1,7 @@
 # StreamGateway & StreamAgent 独立 Review 与真实黑盒审查报告
 
 **审查记录时间**: `2026-10-27T10:28:52+08:00`（实测 `date -Iseconds` 获取）\
-**测试临时目录隔离**: `TMPDIR=/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/gateway_review/.scratch/gateway_media_probe/tmp`（确保 Playwright 临时文件及 Profile 限制在 worktree 内，不假定无宿主污染）\
+**测试临时目录隔离**: `TMPDIR=<repo>/.scratch/v2_orchestration/gateway_review/.scratch/gateway_media_probe/tmp`（确保 Playwright 临时文件及 Profile 限制在 worktree 内，不假定无宿主污染）\
 **黑盒运行环境实测证据**:
 
 - **操作系统平台**: macOS Darwin 24.3.0 (arm64)

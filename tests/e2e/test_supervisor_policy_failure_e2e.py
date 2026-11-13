@@ -159,7 +159,8 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
         # 1. SupervisorCore.start_profile MUST raise DockerSandboxError
         with pytest.raises(DockerSandboxError):
             await core.start_profile(
-                profile_id=created_pid, config=cfg, config_version=1
+                profile_id=created_pid, config=cfg, config_version=1,
+                profile_number=create_resp.json()["display_number"]
             )
 
         # 2. Check startup gate ready marker was NEVER created
@@ -253,3 +254,5 @@ async def test_policy_installation_failure_fail_closed_and_cleanup(
     assert not cleanup_errors, "Owned resource cleanup failed: " + ",".join(
         cleanup_errors
     )
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_INVALID_POLICY_TEST_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')

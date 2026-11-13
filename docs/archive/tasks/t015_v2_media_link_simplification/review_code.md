@@ -3,7 +3,7 @@
 - task：`t015_v2_media_link_simplification`
 - spec：`docs/tasks/t015_v2_media_link_simplification/task.md`
 - diff_anchor：`9ee4a1146be8e42bc552f1150beb8063582ab466`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t015' diff 9ee4a1146be8e42bc552f1150beb8063582ab466`
+- target：`git -C '<repo>_t015' diff 9ee4a1146be8e42bc552f1150beb8063582ab466`
 - round：1
 - reviewed_at：2026-11-03T00:01:36+08:00
 
@@ -390,7 +390,7 @@ reviewed_scope: 10dbf23b358176db
 
 | AC | 类别 | 证据 |
 |---|---|---|
-| AC-001 | trust_prior | 依赖 s011/d026 的真实 Chrome + OrbStack 证据；本轮直接核验 `/Users/karson/kar/code/.scratch/s011/basetemp/test_s011_direct_media_matrix0/run_3af865e5/media_proof.json` 的 `no_turn_topology=true`、两页 127.0.0.1 host/udp 候选、帧与音频增长、可见性/复制标签/resume/IME 记录，但未重跑媒体部署 |
+| AC-001 | trust_prior | 依赖 s011/d026 的真实 Chrome + OrbStack 证据；本轮直接核验 `<home>/kar/code/.scratch/s011/basetemp/test_s011_direct_media_matrix0/run_3af865e5/media_proof.json` 的 `no_turn_topology=true`、两页 127.0.0.1 host/udp 候选、帧与音频增长、可见性/复制标签/resume/IME 记录，但未重跑媒体部署 |
 | AC-002 | re_verified | 全仓 grep 无 TURN/coturn/rtc_config/ice_transport 引用；`tests/unit` 474 passed，`tests/integration` 79 passed |
 | AC-003 | re_verified | `server.py:282-309` 升级前 400/401/403 拒绝；`tests/integration` 79 passed |
 | AC-004 | re_verified | 心跳与捕获仲裁逐次隔离异常并由 supervised 循环退避重启；`tests/unit` 474 passed |
@@ -411,7 +411,7 @@ coverage = 8 / 9
   - 圈复杂度：radon 报 `LiveCapturePolicyAgent.reconcile_capture_state` E、`StreamAgent._viewer_upstream_worker` E、`connect_and_run` C 等；本 task 未给这些函数新增分支（`connect_and_run` 仅改注册 URL 与监督包装），按规则只提示。
   - `BrowserSessionView.tsx:31-35` 缩进不一致，属纯风格。
   - `docs/archive/tasks/t015_v2_media_link_simplification/note.md` 与 `handoff.json` 仍写 unit 473，当前实测 474；流程证据滞后，非实现缺陷。
-  - `docs/findings/d026_direct_media_local_only.md` 的证据路径 `.scratch/s011/...` 在本 worktree 不可解析，实际文件位于 `/Users/karson/kar/code/.scratch/s011/...`；建议注明相对根或改为可解析路径。
+  - `docs/findings/d026_direct_media_local_only.md` 的证据路径 `.scratch/s011/...` 在本 worktree 不可解析，实际文件位于 `<home>/kar/code/.scratch/s011/...`；建议注明相对根或改为可解析路径。
 - 总体判断：PASS。当前 tip 无未解决 critical / important；唯一新发现 f017 为非阻断 minor，前轮 16 条 finding 均已消除。
 - 系统性 follow-up：无。
 

@@ -35,7 +35,7 @@ from wait import poll_until
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT  # noqa: E402
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger("cbrowser.frontend_media.e2e")
 

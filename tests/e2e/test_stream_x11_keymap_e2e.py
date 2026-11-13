@@ -1,5 +1,7 @@
 """Real Xvfb/Stream images must preserve native text bindings across reuse."""
 
+import pytest
+
 import json
 import subprocess
 import uuid
@@ -114,3 +116,5 @@ def test_native_keymap_reuse_preserves_every_binding(tmp_path: Path) -> None:
                 timeout=10,
                 check=False,
             )
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')

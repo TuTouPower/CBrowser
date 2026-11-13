@@ -1,10 +1,13 @@
 # Intensive Review
 
 - Coverage: completed_with_limitations
-- Scope: {"mode": "paths", "base": null, "head": null, "include_untracked": false, "paths": ["."], "exclude_paths": ["docs/reviews/review_20261102_201727/_meta", "docs/reviews/review_20261103_185924"]}
+
+- Scope: {"mode": "paths", "base": null, "head": null, "include_untracked": false, "paths": ["."], "exclude_paths": ["docs/reviews/review_20261102_201727/\_meta", "docs/reviews/review_20261103_185924"]}
+
 - Targets: 822; units: 22
 
 - Verdict: REQUEST CHANGES
+
 - Findings: {"Critical": 0, "High": 9, "Medium": 67, "Low": 173, "Info": 51}
 
 ## Global conclusions
@@ -17,1805 +20,1805 @@
 ## Findings
 
 - [High][95] src/backend/main.py:1301 — 剪贴板正文被写入 manager.log，与 diagnostics 的脱敏承诺直接冲突
-  - Sources: bundle_local_backend_core.md (f_backend_core_01)
-  - f_backend_core_01: main.py:1301 set_clipboard 在检查 profile 是否运行之前就执行 logger.info("Clipboard SET ... preview=%r", ..., body.text[:60])，剪贴板前 60 字符原文进日志；404 的请求同样落盘; main.py:1399 get_clipboard 的 CDP 读取路径同样以 preview=%r 记录 text[:60]; diagnostics.py:280 emit_runtime_event_log 的 docstring 明示 "Never logs passwords, tokens, cookies, clipboard content, or private strings"——同一日志体系内的承诺与实现相反; diagnostics.py 模块 docstring 表明 manager.log 的设计用途就是供用户在支持场景中提交/分享（make a crash diagnosable from the rotating manager.log alone），剪贴板常含密码等凭据，落盘即随日志外发
-    - Impact: 用户复制的任意文本（含密码、令牌、私密内容）以明文进入 2MB×3 轮转的 manager.log；该文件正是项目设计上要被发给支持方的诊断材料，构成凭据随日志泄漏的现实通道；且日志行在鉴权后的业务校验之前执行，未运行 profile 的伪造请求也能把任意文本写进日志（日志注入/污染）。
-    - Fix: 删除两处 preview=%r，只保留 text_len 与 profile_id；如需调试内容，改为记录长度与不可逆摘要（如 sha256 前 8 位）。同时排查 cbrowser.events 之外的其他 logger 是否还有同类正文记录。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_01)
+    - f_backend_core_01: main.py:1301 set_clipboard 在检查 profile 是否运行之前就执行 logger.info("Clipboard SET ... preview=%r", ..., body.text[:60])，剪贴板前 60 字符原文进日志；404 的请求同样落盘; main.py:1399 get_clipboard 的 CDP 读取路径同样以 preview=%r 记录 text[:60]; diagnostics.py:280 emit_runtime_event_log 的 docstring 明示 "Never logs passwords, tokens, cookies, clipboard content, or private strings"——同一日志体系内的承诺与实现相反; diagnostics.py 模块 docstring 表明 manager.log 的设计用途就是供用户在支持场景中提交/分享（make a crash diagnosable from the rotating manager.log alone），剪贴板常含密码等凭据，落盘即随日志外发
+        - Impact: 用户复制的任意文本（含密码、令牌、私密内容）以明文进入 2MB×3 轮转的 manager.log；该文件正是项目设计上要被发给支持方的诊断材料，构成凭据随日志泄漏的现实通道；且日志行在鉴权后的业务校验之前执行，未运行 profile 的伪造请求也能把任意文本写进日志（日志注入/污染）。
+        - Fix: 删除两处 preview=%r，只保留 text_len 与 profile_id；如需调试内容，改为记录长度与不可逆摘要（如 sha256 前 8 位）。同时排查 cbrowser.events 之外的其他 logger 是否还有同类正文记录。
+        - Verification: static
 - [High][85] src/backend/main.py:1835-1843 — serve_spa 兜底路由无路径包含校验，疑似可未授权穿越读取应用文件
-  - Sources: bundle_local_backend_core.md (f_backend_core_02)
-  - f_backend_core_02: serve_spa 实现：file_path = FRONTEND_DIR / full_path；仅判 exists() 与 is_file() 即 FileResponse 返回，无 resolve() 后的 containment 校验；full_path 为 Starlette path 转换器捕获的解码后路径; AuthMiddleware（main.py:305-330）对非 /api/ 路径直接放行，SPA 路由不在鉴权范围内——穿越一旦可达即未授权; uvicorn 将请求目标百分号解码后写入 scope path，Starlette 路由不对 path 参数做点段折叠；以 ..%2f / %2e%2e%2f 形式构造的 full_path 可使 FRONTEND_DIR / full_path 指向 dist 之外（源码、profiles.db、.env 所在层级取决于部署布局）; 本轮为静态审阅，未做运行复现；随仓 fastapi/starlette 无版本锁定（requirements.txt 为 >= 浮动），具体构建的解码行为决定最终可利用性
-    - Impact: 若穿越可达，局域网/本地任意未授权请求可读取 Manager 进程可读的任意文件，包括后端源码、含全部 profile 配置与代理凭据的 profiles.db、.env 中的 AUTH_TOKEN 与 license key——拿到 AUTH_TOKEN 后整个 /api 面随之失守。
-    - Fix: serve_spa 改为先 resolved = (FRONTEND_DIR / full_path).resolve()，仅当 resolved 位于 FRONTEND_DIR.resolve() 之内且为文件时返回，否则回退 index.html；或改用 StaticFiles(html=True) 挂载（其 lookup_path 自带包含校验）。同时补 %2e%2e%2f 与 ../ 两类穿越的回归测试。
-    - Verification: suspected
+    - Sources: bundle_local_backend_core.md (f_backend_core_02)
+    - f_backend_core_02: serve_spa 实现：file_path = FRONTEND_DIR / full_path；仅判 exists() 与 is_file() 即 FileResponse 返回，无 resolve() 后的 containment 校验；full_path 为 Starlette path 转换器捕获的解码后路径; AuthMiddleware（main.py:305-330）对非 /api/ 路径直接放行，SPA 路由不在鉴权范围内——穿越一旦可达即未授权; uvicorn 将请求目标百分号解码后写入 scope path，Starlette 路由不对 path 参数做点段折叠；以 ..%2f / %2e%2e%2f 形式构造的 full_path 可使 FRONTEND_DIR / full_path 指向 dist 之外（源码、profiles.db、.env 所在层级取决于部署布局）; 本轮为静态审阅，未做运行复现；随仓 fastapi/starlette 无版本锁定（requirements.txt 为 >= 浮动），具体构建的解码行为决定最终可利用性
+        - Impact: 若穿越可达，局域网/本地任意未授权请求可读取 Manager 进程可读的任意文件，包括后端源码、含全部 profile 配置与代理凭据的 profiles.db、.env 中的 AUTH_TOKEN 与 license key——拿到 AUTH_TOKEN 后整个 /api 面随之失守。
+        - Fix: serve_spa 改为先 resolved = (FRONTEND_DIR / full_path).resolve()，仅当 resolved 位于 FRONTEND_DIR.resolve() 之内且为文件时返回，否则回退 index.html；或改用 StaticFiles(html=True) 挂载（其 lookup_path 自带包含校验）。同时补 %2e%2e%2f 与 ../ 两类穿越的回归测试。
+        - Verification: suspected
 - [High][90] config/docker/supervisor_runtime/Dockerfile.dockerignore — Supervisor image build is broken: Dockerfile COPYs launch_args.py but its dockerignore whitelist excludes it
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_01)
-  - f_contracts_deploy_01: config/docker/supervisor_runtime/Dockerfile:18 `COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py`.; config/docker/supervisor_runtime/Dockerfile.dockerignore starts with `**` (exclude everything) and its negation whitelist re-includes only __init__.py, secret_files.py, supervisor/*.py, domain/*.py, gateway/*.py, runtime_agent/*.py and config/docker/supervisor_runtime/requirements.txt — launch_args.py is never re-included, so it is absent from the build context and the COPY cannot succeed.; Contrast: config/docker/gateway_runtime/Dockerfile.dockerignore's whitelist matches its Dockerfile's COPY list exactly, showing the supervisor file is the outlier, not the pattern.
-    - Impact: The supervisor runtime image cannot be built at all: the build fails at the launch_args.py COPY step. Any deployment or CI path that builds the v2 supervisor image is broken until the whitelist is fixed, and nothing in this unit (no CI build of the image) would have caught it.
-    - Fix: Add `!src/backend/cbrowser/launch_args.py` to config/docker/supervisor_runtime/Dockerfile.dockerignore, and add a CI/local gate step that builds every runtime image (or at least checks each Dockerfile COPY source against its dockerignore whitelist) so this class of drift fails fast.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_01)
+    - f_contracts_deploy_01: config/docker/supervisor_runtime/Dockerfile:18 `COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py`.; config/docker/supervisor_runtime/Dockerfile.dockerignore starts with `**` (exclude everything) and its negation whitelist re-includes only __init__.py, secret_files.py, supervisor/*.py, domain/*.py, gateway/*.py, runtime_agent/*.py and config/docker/supervisor_runtime/requirements.txt — launch_args.py is never re-included, so it is absent from the build context and the COPY cannot succeed.; Contrast: config/docker/gateway_runtime/Dockerfile.dockerignore's whitelist matches its Dockerfile's COPY list exactly, showing the supervisor file is the outlier, not the pattern.
+        - Impact: The supervisor runtime image cannot be built at all: the build fails at the launch_args.py COPY step. Any deployment or CI path that builds the v2 supervisor image is broken until the whitelist is fixed, and nothing in this unit (no CI build of the image) would have caught it.
+        - Fix: Add `!src/backend/cbrowser/launch_args.py` to config/docker/supervisor_runtime/Dockerfile.dockerignore, and add a CI/local gate step that builds every runtime image (or at least checks each Dockerfile COPY source against its dockerignore whitelist) so this class of drift fails fast.
+        - Verification: static
 - [High][85] config/docker/Dockerfile:2 — Legacy production Dockerfile is self-referential: FROM cbrowser:latest is the same tag compose assigns to its own output
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_02)
-  - f_contracts_deploy_02: config/docker/Dockerfile:1-2: comment 'Production image based on verified cbrowser foundation' followed by `FROM cbrowser:latest`.; compose.yaml:6 tags the service built from this Dockerfile as `image: cbrowser:latest` — the build output and the base image are the same tag.; There is no root .dockerignore and no other file in this unit that builds or publishes a distinct `cbrowser` foundation image for the FROM line to resolve against.
-    - Impact: On a fresh machine `docker compose up --build` fails because cbrowser:latest does not exist yet; on a machine that already has an old cbrowser:latest, the build silently layers onto the stale previous build instead of the intended foundation, producing non-reproducible images whose contents depend on build history.
-    - Fix: Point the legacy Dockerfile's FROM at a real, versioned base (e.g. the pinned python/debian foundation the other runtime Dockerfiles use, by digest), or rename the foundation image/tag so it cannot collide with the compose service image; document the bootstrap order if a two-stage build is intended.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_02)
+    - f_contracts_deploy_02: config/docker/Dockerfile:1-2: comment 'Production image based on verified cbrowser foundation' followed by `FROM cbrowser:latest`.; compose.yaml:6 tags the service built from this Dockerfile as `image: cbrowser:latest` — the build output and the base image are the same tag.; There is no root .dockerignore and no other file in this unit that builds or publishes a distinct `cbrowser` foundation image for the FROM line to resolve against.
+        - Impact: On a fresh machine `docker compose up --build` fails because cbrowser:latest does not exist yet; on a machine that already has an old cbrowser:latest, the build silently layers onto the stale previous build instead of the intended foundation, producing non-reproducible images whose contents depend on build history.
+        - Fix: Point the legacy Dockerfile's FROM at a real, versioned base (e.g. the pinned python/debian foundation the other runtime Dockerfiles use, by digest), or rename the foundation image/tag so it cannot collide with the compose service image; document the bootstrap order if a two-stage build is intended.
+        - Verification: static
 - [High][80] compose.yaml；docs/tasks_index.json（t012/t009/t010）；src/backend/main.py 提交历史 — 交付倒挂：唯一可部署产物是已冻结的 legacy，五服务 v2 无部署路径且发布链已解锁仍未启动
-  - Sources: bundle_global_strategy.md (f_global_strategy_01)
-  - f_global_strategy_01: compose.yaml:6-11 唯一服务构建 legacy 单体（image cbrowser:latest、dockerfile config/docker/Dockerfile），f_contracts_deploy_04 确认四份 v2 运行时镜像无任何部署路径; f_contracts_deploy_02：legacy 生产 Dockerfile `FROM cbrowser:latest` 与 compose 自身输出同名标签自引用，全新环境构建依赖一个预先存在的同名基础镜像；f_contracts_deploy_01：Supervisor 镜像按当前 Dockerfile/.dockerignore 组合构建即缺 launch_args.py; git log 实测：src/backend/main.py 自 2026-10-26 重组提交 524e34e 后未再修改（冻结）；同期 v2 在 2026-11-02/03 完成 t015–t018 整改波（68816d8、6432a7a、5252f75 等）; docs/tasks_index.json：t012（v2 正式部署产物与部署文档）→t009（正式拓扑验收）→t010（数据迁移、legacy 下线与正式切换）三任务全部 backlog；t012 任务书已于 2026-11-02 按用户批准的 adoption 重构定稿、范围与 AC 完整，其前置依赖 t018 已完成——发布链处于可启动而未启动状态; 本轮缺陷分布与交付面重合：2 个 backend High（f_backend_core_01 剪贴板明文日志、f_backend_core_02 serve_spa 疑似穿越）及鉴权 opt-in、open-external 缺 CSRF、整表重建静默丢数据、配额可并发绕过（f_backend_core_03–06）全部位于 legacy；f_contracts_deploy_03 显示 legacy 的 AUTH_TOKEN 在 compose 插值中默认空（认证关闭）与其模板「Required」注释矛盾；f_contracts_deploy_05 显示 DOCKER_DEPLOYMENT.md 描述的部署与 compose 现状矛盾; 体量对照（git ls-files + wc 实测）：v2 后端 src/backend/cbrowser 19,991 行 + 前端 14,947 行 + tests/ 43,784 行的投入，在 t012 启动前不产生任何用户可见收益
-    - Impact: 用户实际运行的系统是缺陷密度最高、维护已冻结的代际；投入最深的系统从未交付。每多一轮对未部署系统的深化审阅与整改，都在扩大「投入的系统」与「运行的系统」之间的风险差；且 legacy 构建自引用意味着新环境连这个过渡产物都无法确定性构建。缓解事实：compose 默认回环绑定（127.0.0.1:56661）与单机单人包络压低了暴露面，故未定 Critical。
-    - Fix: 把 t012 提升为队列首项并启动，t009、t010 顺链跟进；发布链完成前冻结 v2 新增内部整改（阻断 t012 的缺陷除外）。切换完成前对 legacy 只做安全阻断级修复（AUTH_TOKEN 默认与模板口径、剪贴板日志脱敏、serve_spa 路径包含），并在 README 与 DOCKER_DEPLOYMENT 中明确标注 legacy 的过渡地位与切换计划，使文档描述与唯一可部署产物一致。
-    - Verification: static
+    - Sources: bundle_global_strategy.md (f_global_strategy_01)
+    - f_global_strategy_01: compose.yaml:6-11 唯一服务构建 legacy 单体（image cbrowser:latest、dockerfile config/docker/Dockerfile），f_contracts_deploy_04 确认四份 v2 运行时镜像无任何部署路径; f_contracts_deploy_02：legacy 生产 Dockerfile `FROM cbrowser:latest` 与 compose 自身输出同名标签自引用，全新环境构建依赖一个预先存在的同名基础镜像；f_contracts_deploy_01：Supervisor 镜像按当前 Dockerfile/.dockerignore 组合构建即缺 launch_args.py; git log 实测：src/backend/main.py 自 2026-10-26 重组提交 524e34e 后未再修改（冻结）；同期 v2 在 2026-11-02/03 完成 t015–t018 整改波（68816d8、6432a7a、5252f75 等）; docs/tasks_index.json：t012（v2 正式部署产物与部署文档）→t009（正式拓扑验收）→t010（数据迁移、legacy 下线与正式切换）三任务全部 backlog；t012 任务书已于 2026-11-02 按用户批准的 adoption 重构定稿、范围与 AC 完整，其前置依赖 t018 已完成——发布链处于可启动而未启动状态; 本轮缺陷分布与交付面重合：2 个 backend High（f_backend_core_01 剪贴板明文日志、f_backend_core_02 serve_spa 疑似穿越）及鉴权 opt-in、open-external 缺 CSRF、整表重建静默丢数据、配额可并发绕过（f_backend_core_03–06）全部位于 legacy；f_contracts_deploy_03 显示 legacy 的 AUTH_TOKEN 在 compose 插值中默认空（认证关闭）与其模板「Required」注释矛盾；f_contracts_deploy_05 显示 DOCKER_DEPLOYMENT.md 描述的部署与 compose 现状矛盾; 体量对照（git ls-files + wc 实测）：v2 后端 src/backend/cbrowser 19,991 行 + 前端 14,947 行 + tests/ 43,784 行的投入，在 t012 启动前不产生任何用户可见收益
+        - Impact: 用户实际运行的系统是缺陷密度最高、维护已冻结的代际；投入最深的系统从未交付。每多一轮对未部署系统的深化审阅与整改，都在扩大「投入的系统」与「运行的系统」之间的风险差；且 legacy 构建自引用意味着新环境连这个过渡产物都无法确定性构建。缓解事实：compose 默认回环绑定（127.0.0.1:56661）与单机单人包络压低了暴露面，故未定 Critical。
+        - Fix: 把 t012 提升为队列首项并启动，t009、t010 顺链跟进；发布链完成前冻结 v2 新增内部整改（阻断 t012 的缺陷除外）。切换完成前对 legacy 只做安全阻断级修复（AUTH_TOKEN 默认与模板口径、剪贴板日志脱敏、serve_spa 路径包含），并在 README 与 DOCKER_DEPLOYMENT 中明确标注 legacy 的过渡地位与切换计划，使文档描述与唯一可部署产物一致。
+        - Verification: static
 - [High][85] compose.yaml；config/docker/（五个 Dockerfile）；docs/blueprint 与 AGENTS.md 声明的 v2 架构 — 可部署工件只交付 legacy 一代：v2 五服务架构在仓库内没有可达的部署拓扑，被部署的系统与被设计的系统不是同一个
-  - Sources: bundle_global_architecture.md (f_global_architecture_01)
-  - f_global_architecture_01: contracts_deploy 单元判定：compose.yaml 的唯一服务仍部署 legacy 单体（config/docker/Dockerfile + entrypoint.sh，容器内端口 8080），四个 v2 运行时镜像（browser/stream/gateway/supervisor）从未被 compose 引用，无任何部署路径（f_contracts_deploy_04）; Supervisor 镜像按当前 Dockerfile 与 .dockerignore 白名单组合构建即缺 launch_args.py（f_contracts_deploy_01，High），即便有人手工编排该镜像也无法建成; legacy 生产 Dockerfile 的 FROM cbrowser:latest 与 compose 给自身输出的同名标签构成自引用（f_contracts_deploy_02，High），legacy 这一代的部署链本身亦不自洽; DOCKER_DEPLOYMENT.md 对绑定地址、暴露面、前置条件与架构的描述与 compose 现状全面矛盾（f_contracts_deploy_05），照文档操作得到的是另一套系统; 仓库 AGENTS.md 将产品定义为『独立 Docker 容器沙箱 + Selkies WebRTC』的 v2 架构，blueprint/decisions.md 的 ADR 013/014 均以 v2 运行时为对象——文档与决策层描述的架构与部署层交付的架构互不对应
-    - Impact: 架构投入（五服务划分、协议契约、四镜像、配套测试）无法从仓库工件转化为运行系统；实际运行面停留在 legacy 单体，其缺陷（见 f_global_architecture_03）即为产品的真实暴露面。任何基于『v2 已上线』假设的后续决策（安全评估、运维、演进规划）都会建立在错误前提上。
-    - Fix: 二选一并落到工件层：或为 v2 五服务补齐可达的编排（如 compose profiles 或独立 compose 文件，含镜像构建修复与部署文档同步），使声明架构成为可部署架构；或在 blueprint/AGENTS.md 中明确 v2 为未交付状态、legacy 为当前产品面，并据此重排两侧的维护与安全投入。在此之前，DOCKER_DEPLOYMENT.md 应先与 compose 现状对齐，消除文档与工件的矛盾。
-    - Verification: static
-- [High][85] compose.yaml；config/docker/Dockerfile:2；config/docker/supervisor_runtime/Dockerfile:18 与其 Dockerfile.dockerignore；docs/reviews/review_20261103_185924/_meta/local_contracts_deploy.json（f_contracts_deploy_01/02/04） — 冷启动部署链对两代系统都不闭合：仓库工件无法从零部署任一代系统，现网可运行依赖仓外状态
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_01)
-  - f_global_system_properties_01: compose.yaml 只有一个服务：build config/docker/Dockerfile、image 为 cbrowser:latest、端口 127.0.0.1:${CBROWSER_PORT:-56661}:8080；config/docker/Dockerfile 首行 FROM cbrowser:latest，与 compose 给自身输出的标签同名自引用——全新机器上该基础镜像不存在，构建无从开始（f_contracts_deploy_02）; Supervisor 运行时 Dockerfile COPY src/backend/cbrowser/launch_args.py，但其 Dockerfile.dockerignore 白名单未放行该文件，按当前组合构建即缺文件失败（f_contracts_deploy_01，本轮已回查 Dockerfile:18 的 COPY 行确认）; v2 的四个运行时镜像（browser/stream/gateway/supervisor runtime）在 compose.yaml 中从未被引用，无任何部署路径（f_contracts_deploy_04）; 三条局部结论组合后才显现的整体性质：legacy 的唯一部署路径自引用、v2 的部署路径缺失且关键镜像不可构建——仓库自身工件对两代系统都不构成可复现的冷启动路径；任何现网实例能运行，必然依赖构建机上先行存在的同名镜像或其他仓外状态
-    - Impact: 「从仓库重新部署」这一基本系统性质不成立：新机器、灾难恢复、换机迁移时按仓库文档与工件操作无法把任一代系统干净地跑起来；同时意味着审阅与测试所验证的代码状态与现网运行的二进制之间没有可复现的对应关系，现网镜像的真实内容不可由仓库单独证明。
-    - Fix: legacy Dockerfile 改为基于钉版的基础镜像或多阶段自包含构建，消除与 compose 输出标签的自引用；补齐 supervisor_runtime 的 dockerignore 白名单并在门禁中实际构建四镜像；为 v2 增加可用的 compose/部署工件（或明确标注 v2 未交付部署），并加一条 CI 冷构建校验保证部署链持续闭合。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_01)
+    - f_global_architecture_01: contracts_deploy 单元判定：compose.yaml 的唯一服务仍部署 legacy 单体（config/docker/Dockerfile + entrypoint.sh，容器内端口 8080），四个 v2 运行时镜像（browser/stream/gateway/supervisor）从未被 compose 引用，无任何部署路径（f_contracts_deploy_04）; Supervisor 镜像按当前 Dockerfile 与 .dockerignore 白名单组合构建即缺 launch_args.py（f_contracts_deploy_01，High），即便有人手工编排该镜像也无法建成; legacy 生产 Dockerfile 的 FROM cbrowser:latest 与 compose 给自身输出的同名标签构成自引用（f_contracts_deploy_02，High），legacy 这一代的部署链本身亦不自洽; DOCKER_DEPLOYMENT.md 对绑定地址、暴露面、前置条件与架构的描述与 compose 现状全面矛盾（f_contracts_deploy_05），照文档操作得到的是另一套系统; 仓库 AGENTS.md 将产品定义为『独立 Docker 容器沙箱 + Selkies WebRTC』的 v2 架构，blueprint/decisions.md 的 ADR 013/014 均以 v2 运行时为对象——文档与决策层描述的架构与部署层交付的架构互不对应
+        - Impact: 架构投入（五服务划分、协议契约、四镜像、配套测试）无法从仓库工件转化为运行系统；实际运行面停留在 legacy 单体，其缺陷（见 f_global_architecture_03）即为产品的真实暴露面。任何基于『v2 已上线』假设的后续决策（安全评估、运维、演进规划）都会建立在错误前提上。
+        - Fix: 二选一并落到工件层：或为 v2 五服务补齐可达的编排（如 compose profiles 或独立 compose 文件，含镜像构建修复与部署文档同步），使声明架构成为可部署架构；或在 blueprint/AGENTS.md 中明确 v2 为未交付状态、legacy 为当前产品面，并据此重排两侧的维护与安全投入。在此之前，DOCKER_DEPLOYMENT.md 应先与 compose 现状对齐，消除文档与工件的矛盾。
+        - Verification: static
+- [High][85] compose.yaml；config/docker/Dockerfile:2；config/docker/supervisor_runtime/Dockerfile:18 与其 Dockerfile.dockerignore；docs/reviews/review_20261103_185924/\_meta/local_contracts_deploy.json（f_contracts_deploy_01/02/04） — 冷启动部署链对两代系统都不闭合：仓库工件无法从零部署任一代系统，现网可运行依赖仓外状态
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_01)
+    - f_global_system_properties_01: compose.yaml 只有一个服务：build config/docker/Dockerfile、image 为 cbrowser:latest、端口 127.0.0.1:${CBROWSER_PORT:-56661}:8080；config/docker/Dockerfile 首行 FROM cbrowser:latest，与 compose 给自身输出的标签同名自引用——全新机器上该基础镜像不存在，构建无从开始（f_contracts_deploy_02）; Supervisor 运行时 Dockerfile COPY src/backend/cbrowser/launch_args.py，但其 Dockerfile.dockerignore 白名单未放行该文件，按当前组合构建即缺文件失败（f_contracts_deploy_01，本轮已回查 Dockerfile:18 的 COPY 行确认）; v2 的四个运行时镜像（browser/stream/gateway/supervisor runtime）在 compose.yaml 中从未被引用，无任何部署路径（f_contracts_deploy_04）; 三条局部结论组合后才显现的整体性质：legacy 的唯一部署路径自引用、v2 的部署路径缺失且关键镜像不可构建——仓库自身工件对两代系统都不构成可复现的冷启动路径；任何现网实例能运行，必然依赖构建机上先行存在的同名镜像或其他仓外状态
+        - Impact: 「从仓库重新部署」这一基本系统性质不成立：新机器、灾难恢复、换机迁移时按仓库文档与工件操作无法把任一代系统干净地跑起来；同时意味着审阅与测试所验证的代码状态与现网运行的二进制之间没有可复现的对应关系，现网镜像的真实内容不可由仓库单独证明。
+        - Fix: legacy Dockerfile 改为基于钉版的基础镜像或多阶段自包含构建，消除与 compose 输出标签的自引用；补齐 supervisor_runtime 的 dockerignore 白名单并在门禁中实际构建四镜像；为 v2 增加可用的 compose/部署工件（或明确标注 v2 未交付部署），并加一条 CI 冷构建校验保证部署链持续闭合。
+        - Verification: static
 - [High][75] src/backend/main.py:112-165（AUTH_TOKEN 逻辑）；.env.example:17 与 config/.env.example:17；DOCKER_DEPLOYMENT.md:12-27；compose.yaml 端口绑定；local_backend_core.json（f_backend_core_01/03/04）、local_contracts_deploy.json（f_contracts_deploy_03/05） — 系统有效安全边界由部署约定而非代码决定：唯一可部署的 legacy 面鉴权 opt-in、模板默认空令牌、部署文档又宣称局域网绑定
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_02)
-  - f_global_system_properties_02: main.py:116 AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or None；中间件在 AUTH_TOKEN is None 时对全部请求放行（main.py:145 起）——鉴权是代码级 opt-in，未配置即全开放（f_backend_core_03）; .env.example:17 的 AUTH_TOKEN 模板默认空，而其自身注释称其为 Required（f_contracts_deploy_03）；compose 仅透传该变量，不提供强制校验; DOCKER_DEPLOYMENT.md:13/16/27 宣称网络监听绑定 0.0.0.0:56661 并给出局域网访问方式，与 compose.yaml 实际的 127.0.0.1 回环绑定直接矛盾（f_contracts_deploy_05）——照文档口径理解部署的操作者会以为局域网暴露是预期姿态; 同一 legacy 面上另有：剪贴板正文前 60 字符写入 manager.log（f_backend_core_01，High，与 diagnostics 脱敏承诺冲突）、/api/open-external 缺 /api/shutdown 已有的同源 CSRF 防护（f_backend_core_04）; 组合结论：默认 compose 路径（回环+空令牌）下风险被回环绑定兜住；但令牌默认空、代码默认放行、文档宣称局域网绑定三者叠加后，只要部署按文档口径改为局域网绑定且未另行注入 AUTH_TOKEN，宿主机控制端点（shutdown/open-external）、profile 数据与 VNC/CDP 代理即构成无鉴权局域网控制面——是否暴露完全取决于部署者是否同时做对两件代码不强制的事
-    - Impact: 系统的安全性质无法由代码与默认工件推出，只能由每个部署现场的约定推出；文档与默认值还在向不安全方向引导。任何依据「仓库默认部署是安全的」作出的整体安全结论都不成立。
-    - Fix: legacy 启动时在绑定非回环地址且 AUTH_TOKEN 未设置的情况下拒绝启动（把 v2 的 fail-closed 基调下沉到 legacy）；.env.example 与 compose 增加令牌非空校验；修正 DOCKER_DEPLOYMENT.md 的绑定地址与暴露面描述与 compose 一致；剪贴板日志改为只记元数据。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_02)
+    - f_global_system_properties_02: main.py:116 AUTH_TOKEN = os.environ.get("AUTH_TOKEN") or None；中间件在 AUTH_TOKEN is None 时对全部请求放行（main.py:145 起）——鉴权是代码级 opt-in，未配置即全开放（f_backend_core_03）; .env.example:17 的 AUTH_TOKEN 模板默认空，而其自身注释称其为 Required（f_contracts_deploy_03）；compose 仅透传该变量，不提供强制校验; DOCKER_DEPLOYMENT.md:13/16/27 宣称网络监听绑定 0.0.0.0:56661 并给出局域网访问方式，与 compose.yaml 实际的 127.0.0.1 回环绑定直接矛盾（f_contracts_deploy_05）——照文档口径理解部署的操作者会以为局域网暴露是预期姿态; 同一 legacy 面上另有：剪贴板正文前 60 字符写入 manager.log（f_backend_core_01，High，与 diagnostics 脱敏承诺冲突）、/api/open-external 缺 /api/shutdown 已有的同源 CSRF 防护（f_backend_core_04）; 组合结论：默认 compose 路径（回环+空令牌）下风险被回环绑定兜住；但令牌默认空、代码默认放行、文档宣称局域网绑定三者叠加后，只要部署按文档口径改为局域网绑定且未另行注入 AUTH_TOKEN，宿主机控制端点（shutdown/open-external）、profile 数据与 VNC/CDP 代理即构成无鉴权局域网控制面——是否暴露完全取决于部署者是否同时做对两件代码不强制的事
+        - Impact: 系统的安全性质无法由代码与默认工件推出，只能由每个部署现场的约定推出；文档与默认值还在向不安全方向引导。任何依据「仓库默认部署是安全的」作出的整体安全结论都不成立。
+        - Fix: legacy 启动时在绑定非回环地址且 AUTH_TOKEN 未设置的情况下拒绝启动（把 v2 的 fail-closed 基调下沉到 legacy）；.env.example 与 compose 增加令牌非空校验；修正 DOCKER_DEPLOYMENT.md 的绑定地址与暴露面描述与 compose 一致；剪贴板日志改为只记元数据。
+        - Verification: static
 - [High][90] docs/tasks_index.json；compose.yaml；config/docker/supervisor_runtime/Dockerfile.dockerignore — legacy→v2 切换链全部停留在 backlog 且链首前置条件未就绪，双轨并存期无收敛时点
-  - Sources: bundle_global_evolution.md (f_global_evolution_01)
-  - f_global_evolution_01: docs/tasks_index.json：t012（v2 正式部署产物与部署文档，depends_on t018）→ t009（正式拓扑验收，depends_on t012）→ t010（数据迁移、legacy 下线与正式切换，depends_on t009）三者 status 均为 backlog; f_contracts_deploy_04：compose.yaml 从不引用四个 v2 运行时镜像，v2 拓扑在本仓部署面内无任何成套运行方式；compose 唯一服务仍是 legacy 单容器（image cbrowser:latest + config/docker/Dockerfile）; f_contracts_deploy_01：Supervisor 镜像 Dockerfile COPY launch_args.py 但 .dockerignore 白名单未放行，链首 task（t012 部署产物）要交付的镜像按现工件构建即缺文件; blueprint decisions.md 记载『正式用户数据迁移仍由 t010 负责，当前仅隔离 v2 测试数据』；回查 src/backend/cbrowser/ 全包对 profiles.db 零引用，不存在任何现存迁移代码; 切换未完成期间 legacy 仍是唯一生产面，其缺陷面（f_backend_core_01/02 两条 High 及鉴权 opt-in、配额绕过等 Medium）持续暴露，且 profiles.db 存量数据随使用单调增长，最终迁移的存量规模只增不减
-    - Impact: 项目主线（v2 正式切换）没有已启动的执行路径：不是缺设计，而是整条三环依赖链无一环开工，且第一环的输入工件就是坏的。双轨并存不是静态状态而是持续计息的状态——每多运行一轮 legacy，最终迁移要搬运的存量数据更多、legacy 面的安全与数据缺陷暴露更久、两套数据库与两套运行语义的维护面继续双倍存在。若无外力排期，这是全仓最大的长期成本来源。
-    - Fix: 把 t012 的前置缺陷（镜像构建、compose v2 编排）作为链首小步先行落地并以真实 build 验证，再按 t012→t009→t010 顺序启动切换链；在切换完成前，明确 legacy 为『冻结演进、仅修安全/数据类缺陷』的维护口径，避免继续向 legacy 投入新功能加深存量绑定。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_01)
+    - f_global_evolution_01: docs/tasks_index.json：t012（v2 正式部署产物与部署文档，depends_on t018）→ t009（正式拓扑验收，depends_on t012）→ t010（数据迁移、legacy 下线与正式切换，depends_on t009）三者 status 均为 backlog; f_contracts_deploy_04：compose.yaml 从不引用四个 v2 运行时镜像，v2 拓扑在本仓部署面内无任何成套运行方式；compose 唯一服务仍是 legacy 单容器（image cbrowser:latest + config/docker/Dockerfile）; f_contracts_deploy_01：Supervisor 镜像 Dockerfile COPY launch_args.py 但 .dockerignore 白名单未放行，链首 task（t012 部署产物）要交付的镜像按现工件构建即缺文件; blueprint decisions.md 记载『正式用户数据迁移仍由 t010 负责，当前仅隔离 v2 测试数据』；回查 src/backend/cbrowser/ 全包对 profiles.db 零引用，不存在任何现存迁移代码; 切换未完成期间 legacy 仍是唯一生产面，其缺陷面（f_backend_core_01/02 两条 High 及鉴权 opt-in、配额绕过等 Medium）持续暴露，且 profiles.db 存量数据随使用单调增长，最终迁移的存量规模只增不减
+        - Impact: 项目主线（v2 正式切换）没有已启动的执行路径：不是缺设计，而是整条三环依赖链无一环开工，且第一环的输入工件就是坏的。双轨并存不是静态状态而是持续计息的状态——每多运行一轮 legacy，最终迁移要搬运的存量数据更多、legacy 面的安全与数据缺陷暴露更久、两套数据库与两套运行语义的维护面继续双倍存在。若无外力排期，这是全仓最大的长期成本来源。
+        - Fix: 把 t012 的前置缺陷（镜像构建、compose v2 编排）作为链首小步先行落地并以真实 build 验证，再按 t012→t009→t010 顺序启动切换链；在切换完成前，明确 legacy 为『冻结演进、仅修安全/数据类缺陷』的维护口径，避免继续向 legacy 投入新功能加深存量绑定。
+        - Verification: static
 - [Medium][95] docs/reviews/review_20261102_201727/adoption_decision.md（卷首基线表、「基线与现场」段 vs「合并说明」第 1 条） — adoption_decision.md 对交叉证伪条数自相矛盾：同文件内 33 条与 30 条两种口径
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_01)
-  - f_archive_reviews_01: adoption_decision.md 卷首与基线段两处均称 33 条 Critical/High 经独立证伪全部 agree；「合并说明」第 1 条却写「交叉证伪抽查 30 条全部 agree」。; bundle_cross_validation.md 实际逐条列出 33 条且全为 agree；bundle_repository_summary.md 第 3 节亦称「All 33 Critical/High rows returned result=agree」。; 362 条构成中 Critical 1 + High 32 = 33，与 33 条口径吻合，30 条无任何出处。
-    - Impact: 决策文档是后续整改的立项凭证，其自述的证伪覆盖数与审阅记录本身不符：只读合并说明的读者会低估证伪覆盖，且该错误位于解释 362→54 合并方法的核心段落，削弱整份决策记录的数字可信度。
-    - Fix: 将合并说明第 1 条的「30 条」更正为「33 条」，并注明证伪对象为全部 Critical/High（非抽查）；后续轮次的决策文档在落笔前以程序化计数复算此类总数。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_01)
+    - f_archive_reviews_01: adoption_decision.md 卷首与基线段两处均称 33 条 Critical/High 经独立证伪全部 agree；「合并说明」第 1 条却写「交叉证伪抽查 30 条全部 agree」。; bundle_cross_validation.md 实际逐条列出 33 条且全为 agree；bundle_repository_summary.md 第 3 节亦称「All 33 Critical/High rows returned result=agree」。; 362 条构成中 Critical 1 + High 32 = 33，与 33 条口径吻合，30 条无任何出处。
+        - Impact: 决策文档是后续整改的立项凭证，其自述的证伪覆盖数与审阅记录本身不符：只读合并说明的读者会低估证伪覆盖，且该错误位于解释 362→54 合并方法的核心段落，削弱整份决策记录的数字可信度。
+        - Fix: 将合并说明第 1 条的「30 条」更正为「33 条」，并注明证伪对象为全部 Critical/High（非抽查）；后续轮次的决策文档在落笔前以程序化计数复算此类总数。
+        - Verification: static
 - [Medium][90] docs/reviews/review_20261102_201727/bundle_local_backend_core.md（f_backend_core_01）；bundle_followup_q_system_properties_02.md；adoption_decision.md「基线与现场」段 — 同一穿越漏洞的核实等级在记录集内有三档（suspected / 静态确认 / 现网实测 200），从未对齐
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_02)
-  - f_archive_reviews_02: bundle_local_backend_core.md 中 f_backend_core_01 的 verification 为 suspected，uncertainties 明言未做运行时复现。; bundle_followup_q_system_properties_02.md 的结论是静态可达性确认（uvicorn 解码、Starlette 不折叠点段、serve_spa 无包含校验），仍非运行时复现；bundle_cross_validation.md 对 f_backend_core_01 的 agree 理由亦只引用该静态精查。; adoption_decision.md 却记录：对在跑旧版容器的未带凭据请求返回 200 并读出容器 hostname——这是 reproduced 级的实测陈述，只出现在决策文档一处，任何 bundle、精查或证伪记录均未收录该证据。
-    - Impact: 同一事实在归档记录里同时以三种证据等级存在：按 bundle 读到的是「疑似」，按 adoption 读到的是「已实测可利用」。后续读者无法判断该漏洞在审阅时点究竟被证实到哪一层；若实测属实，审阅记录低估了证据强度，若不属实，决策文档夸大了基线事实——两种情况都损害记录的裁决效力。
-    - Fix: 在 adoption 或 review_intensive 的勘误位置注明该实测的执行时间、环境与结果，并把 f_backend_core_01 的核实等级在记录中统一表述（如「静态确认 + 决策阶段补充现网实测」），使三档口径可追溯地衔接。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_02)
+    - f_archive_reviews_02: bundle_local_backend_core.md 中 f_backend_core_01 的 verification 为 suspected，uncertainties 明言未做运行时复现。; bundle_followup_q_system_properties_02.md 的结论是静态可达性确认（uvicorn 解码、Starlette 不折叠点段、serve_spa 无包含校验），仍非运行时复现；bundle_cross_validation.md 对 f_backend_core_01 的 agree 理由亦只引用该静态精查。; adoption_decision.md 却记录：对在跑旧版容器的未带凭据请求返回 200 并读出容器 hostname——这是 reproduced 级的实测陈述，只出现在决策文档一处，任何 bundle、精查或证伪记录均未收录该证据。
+        - Impact: 同一事实在归档记录里同时以三种证据等级存在：按 bundle 读到的是「疑似」，按 adoption 读到的是「已实测可利用」。后续读者无法判断该漏洞在审阅时点究竟被证实到哪一层；若实测属实，审阅记录低估了证据强度，若不属实，决策文档夸大了基线事实——两种情况都损害记录的裁决效力。
+        - Fix: 在 adoption 或 review_intensive 的勘误位置注明该实测的执行时间、环境与结果，并把 f_backend_core_01 的核实等级在记录中统一表述（如「静态确认 + 决策阶段补充现网实测」），使三档口径可追溯地衔接。
+        - Verification: static
 - [Medium][95] docs/reviews/review_20261102_201727/bundle_local_backend_core.md；bundle_local_backend_supervisor.md；bundle_local_backend_runtime_adapters.md；bundle_local_backend_stream_gateway.md（均为 evidence 节的 viewfix 段落） — 多份 local bundle 的 evidence 段被截断在词中/句中，归档记录静默丢失 viewfix 补审证据
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_03)
-  - f_archive_reviews_03: bundle_local_backend_supervisor.md 的 viewfix 段落止于「resource faul」——词中截断，其后内容缺失。; bundle_local_backend_core.md 的 viewfix 段落止于「SPA catch-all 静态托管（全套件零测试」，句中截断。; bundle_local_backend_runtime_adapters.md 止于「此外 repo」；bundle_local_backend_stream_gateway.md 止于一个 fixture 文件路径中途。四处均为 tests 视角补审（viewfix）的证据总结段落。
-    - Impact: 归档 bundle 是该轮审阅唯一入库的证据形态；被截断的恰是四个单元 tests 视角的补审结论，读者无法从入库记录得知补审的完整覆盖结论，只能看到半截陈述。这类静默截断与文档集自述的「证据链完整可核」定位不符，且无任何截断标记提示读者。
-    - Fix: 定位渲染截断成因（渲染器字段长度上限或源 JSON 截断），在后续轮次的 bundle 渲染中对超长 evidence 做完整输出或显式标注「（截断，见 _meta 源文件）」；本轮记录可追加勘误说明列明受影响的四个单元。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_03)
+    - f_archive_reviews_03: bundle_local_backend_supervisor.md 的 viewfix 段落止于「resource faul」——词中截断，其后内容缺失。; bundle_local_backend_core.md 的 viewfix 段落止于「SPA catch-all 静态托管（全套件零测试」，句中截断。; bundle_local_backend_runtime_adapters.md 止于「此外 repo」；bundle_local_backend_stream_gateway.md 止于一个 fixture 文件路径中途。四处均为 tests 视角补审（viewfix）的证据总结段落。
+        - Impact: 归档 bundle 是该轮审阅唯一入库的证据形态；被截断的恰是四个单元 tests 视角的补审结论，读者无法从入库记录得知补审的完整覆盖结论，只能看到半截陈述。这类静默截断与文档集自述的「证据链完整可核」定位不符，且无任何截断标记提示读者。
+        - Fix: 定位渲染截断成因（渲染器字段长度上限或源 JSON 截断），在后续轮次的 bundle 渲染中对超长 evidence 做完整输出或显式标注「（截断，见 \_meta 源文件）」；本轮记录可追加勘误说明列明受影响的四个单元。
+        - Verification: static
 - [Medium][90] docs/archive/spikes/s001_selkies_runtime/code/run_spike.sh:231 — Spike entry scripts disable display/stream/audio authentication with no in-file warning
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_01)
-  - f_archive_spikes_01: s001 run_spike.sh:231 Selkies --enable-basic-auth=false; s004 entrypoint_stream.sh:28, s008 stage2_stream_entrypoint.sh:28, s009 entrypoint_stream.sh:28 repeat the flag, the latter three with --addr 0.0.0.0; Xvfb with access control disabled: s005 entrypoint_browser.sh:7 '-listen tcp -ac' (TCP-listening, the strongest form), s004 entrypoint_browser.sh:17 and s008/s009 entrypoint_browser.sh:17 '-ac'; PulseAudio auth-anonymous=1: s001 entry_browser_full.sh:11, s006 media_fixture/entry_browser_full.sh:11, s008/s009 entrypoint_browser.sh:11; s006 run_verification.py starts its stream container with --enable-basic-auth=false; The only warning lives in docs/archive/spikes/README.md; no individual script carries a danger header, and host-side loopback port binding is the only containment if a script is copied out alone
-    - Impact: Anyone reusing a single entry script as a runtime starting point (the natural copy-paste path) inherits an unauthenticated screen/input/audio endpoint; the s005 variant additionally exposes X11 over TCP inside any shared container network.
-    - Fix: Add a short danger header to each affected entry script (or a shared sourced guard) stating it must only run inside the spike's isolated network, mirroring the archive README warning.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_01)
+    - f_archive_spikes_01: s001 run_spike.sh:231 Selkies --enable-basic-auth=false; s004 entrypoint_stream.sh:28, s008 stage2_stream_entrypoint.sh:28, s009 entrypoint_stream.sh:28 repeat the flag, the latter three with --addr 0.0.0.0; Xvfb with access control disabled: s005 entrypoint_browser.sh:7 '-listen tcp -ac' (TCP-listening, the strongest form), s004 entrypoint_browser.sh:17 and s008/s009 entrypoint_browser.sh:17 '-ac'; PulseAudio auth-anonymous=1: s001 entry_browser_full.sh:11, s006 media_fixture/entry_browser_full.sh:11, s008/s009 entrypoint_browser.sh:11; s006 run_verification.py starts its stream container with --enable-basic-auth=false; The only warning lives in docs/archive/spikes/README.md; no individual script carries a danger header, and host-side loopback port binding is the only containment if a script is copied out alone
+        - Impact: Anyone reusing a single entry script as a runtime starting point (the natural copy-paste path) inherits an unauthenticated screen/input/audio endpoint; the s005 variant additionally exposes X11 over TCP inside any shared container network.
+        - Fix: Add a short danger header to each affected entry script (or a shared sourced guard) stating it must only run inside the spike's isolated network, mirroring the archive README warning.
+        - Verification: static
 - [Medium][90] docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:139 — Spike control planes accept unauthenticated state-changing commands
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_02)
-  - f_archive_spikes_02: s008 stage2_stream_runner.py:139 binds an auxiliary HTTP server to 0.0.0.0:18092; handle_restart_ice (line 74) takes caller-supplied client_peer_id, ICE servers and credentials and forces a renegotiation - no authentication or allowlist anywhere in the file; s003 container_uds/container_cdp_probe.py RealCdpAgentUdsProxy forwards arbitrary CDP methods (incl. Browser.close, Browser.setDownloadBehavior) from any client of agent.sock; the same class is duplicated in code/test_cdp_real.py; s005 live_policy_agent.py:48 control UDS /tmp/capture_policy_agent.sock accepts record_input and full get_state (peer details + action history) from any local process; container_download_review.md S3.3 self-acknowledges the s003 limitation, but the code itself carries no warning; host publication is loopback-only in the launcher scripts, yet any peer container on the experiment network can reach these endpoints
-    - Impact: Within the experiment network (or any future reuse), an unauthenticated peer can hijack/close browser sessions, force ICE restarts with attacker-chosen TURN servers, or inject fake input activity into the capture policy.
-    - Fix: Bind aux control to a unix socket or loopback inside the container, require the run's random token on control requests, and note the restriction in the runner header; for the CDP proxy, add a method allowlist.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_02)
+    - f_archive_spikes_02: s008 stage2_stream_runner.py:139 binds an auxiliary HTTP server to 0.0.0.0:18092; handle_restart_ice (line 74) takes caller-supplied client_peer_id, ICE servers and credentials and forces a renegotiation - no authentication or allowlist anywhere in the file; s003 container_uds/container_cdp_probe.py RealCdpAgentUdsProxy forwards arbitrary CDP methods (incl. Browser.close, Browser.setDownloadBehavior) from any client of agent.sock; the same class is duplicated in code/test_cdp_real.py; s005 live_policy_agent.py:48 control UDS /tmp/capture_policy_agent.sock accepts record_input and full get_state (peer details + action history) from any local process; container_download_review.md S3.3 self-acknowledges the s003 limitation, but the code itself carries no warning; host publication is loopback-only in the launcher scripts, yet any peer container on the experiment network can reach these endpoints
+        - Impact: Within the experiment network (or any future reuse), an unauthenticated peer can hijack/close browser sessions, force ICE restarts with attacker-chosen TURN servers, or inject fake input activity into the capture policy.
+        - Fix: Bind aux control to a unix socket or loopback inside the container, require the run's random token on control requests, and note the restriction in the runner header; for the CDP proxy, add a method allowlist.
+        - Verification: static
 - [Medium][85] docs/spikes/s011_direct_media_validation/code/direct_media_probe.py:976 — s011 visibility pause/resume is validated with a synthetic visibility signal, not a real hidden tab
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_11)
-  - f_archive_spikes_11: set_visibility() (line 976) overrides document.visibilityState and document.hidden via Object.defineProperty and dispatches a synthetic 'visibilitychange' Event; assertions then check the hidden page's framesDecoded stays constant; The spike report lists '页面隐藏只暂停该页视频，可见页继续；恢复可见后继续出帧' as a success criterion and does not disclose that visibility was simulated in-page; Contrast within the same unit: s005 native_visibility_e2e.py proved the same behavior class with real Chrome tab activation and window minimization via CDP
-    - Impact: The chain is proven only from the visibilitychange event inward; a genuinely backgrounded tab (browser throttling, real hidden state, OS-level occlusion) is not covered, yet s011's adoption (t015, removing TURN) cites the full scenario matrix as closed.
-    - Fix: Repeat the visibility phase with real tab switching/minimization (as in s005's native suite) or amend the report to state the visibility signal was simulated.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_11)
+    - f_archive_spikes_11: set_visibility() (line 976) overrides document.visibilityState and document.hidden via Object.defineProperty and dispatches a synthetic 'visibilitychange' Event; assertions then check the hidden page's framesDecoded stays constant; The spike report lists '页面隐藏只暂停该页视频，可见页继续；恢复可见后继续出帧' as a success criterion and does not disclose that visibility was simulated in-page; Contrast within the same unit: s005 native_visibility_e2e.py proved the same behavior class with real Chrome tab activation and window minimization via CDP
+        - Impact: The chain is proven only from the visibilitychange event inward; a genuinely backgrounded tab (browser throttling, real hidden state, OS-level occlusion) is not covered, yet s011's adoption (t015, removing TURN) cites the full scenario matrix as closed.
+        - Fix: Repeat the visibility phase with real tab switching/minimization (as in s005's native suite) or amend the report to state the visibility signal was simulated.
+        - Verification: static
 - [Medium][95] docs/archive/tasks/t018_v2_test_gates_hygiene/task.md:43 — t018 的 AC-004 在从未执行其自声明必需验证的情况下打勾关闭（trust_prior）
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_01)
-  - f_archive_tasks_01: task.md 可测试性声明（:43）：「AC-004 的单次资源隔离需真实 Docker 跑一轮门禁验证」；AC-004 本体（:30）已勾 [x]。; note.md 收尾报告（:135）：「结果：全部满足；AC-004 为 trust_prior（真实 Docker 单次门禁未在本环境执行）」；黑盒栏：「默认 E2E 19 passed / 62 skipped……完整 Docker/Chrome E2E 未执行」。; handoff.json blackbox：「Full Docker/Chrome E2E not executed in this environment; AC-004 relies on static checks and prior implementation evidence (trust_prior)」；必需模式仅做了 collection 检查（exit 2 列出 9 个缺失前置），从未绿跑。; 对照同仓兄弟任务的一贯口径（如 t003/t005 task.md：「缺失时保持未通过，不用模拟替代」），AC-004 应保持未勾并单列未运行，而非计入「全部满足」。
-    - Impact: t018 是后续所有任务的门禁基线任务，其 AC-004（端口/显示号/容器名派生、仅回环绑定、单次门禁资源隔离）恰是防测试互相污染的核心保证；以 trust_prior 打勾使「门禁可信」的根声明有一条未经实测，后续任务引用该基线时证据强度被高估。披露是诚实的，但勾选与结论口径不符。
-    - Fix: 将 AC-004 改回未勾并标注 NOT_RUN（或在真实 Docker 环境补跑一轮 run_gates.sh 必需模式后补记证据再勾）；收尾结论改为「AC-004 未验证」而非「全部满足」。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_01)
+    - f_archive_tasks_01: task.md 可测试性声明（:43）：「AC-004 的单次资源隔离需真实 Docker 跑一轮门禁验证」；AC-004 本体（:30）已勾 [x]。; note.md 收尾报告（:135）：「结果：全部满足；AC-004 为 trust_prior（真实 Docker 单次门禁未在本环境执行）」；黑盒栏：「默认 E2E 19 passed / 62 skipped……完整 Docker/Chrome E2E 未执行」。; handoff.json blackbox：「Full Docker/Chrome E2E not executed in this environment; AC-004 relies on static checks and prior implementation evidence (trust_prior)」；必需模式仅做了 collection 检查（exit 2 列出 9 个缺失前置），从未绿跑。; 对照同仓兄弟任务的一贯口径（如 t003/t005 task.md：「缺失时保持未通过，不用模拟替代」），AC-004 应保持未勾并单列未运行，而非计入「全部满足」。
+        - Impact: t018 是后续所有任务的门禁基线任务，其 AC-004（端口/显示号/容器名派生、仅回环绑定、单次门禁资源隔离）恰是防测试互相污染的核心保证；以 trust_prior 打勾使「门禁可信」的根声明有一条未经实测，后续任务引用该基线时证据强度被高估。披露是诚实的，但勾选与结论口径不符。
+        - Fix: 将 AC-004 改回未勾并标注 NOT_RUN（或在真实 Docker 环境补跑一轮 run_gates.sh 必需模式后补记证据再勾）；收尾结论改为「AC-004 未验证」而非「全部满足」。
+        - Verification: static
 - [Medium][90] docs/archive/tasks/t018_v2_test_gates_hygiene/note.md:53 — t018 的 Review 处置表退化为样板文本，且 19 轮审查超出记录上限 5 轮无授权留痕、attempt 2 无记录
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_02)
-  - f_archive_tasks_02: note.md 的处置表（:53 起「Round 19」）约 68 行中，除 f017/f029 撤回与 test_f021 遗留外，其余每行 severity 均为模板字面量「critical/important/minor」、rationale 均为同一句「Round 19 全量 diff 复核通过」、fix_ref 均为「b02df0b」；Rounds 1-18 在账本中没有任何处置行。; note.md front matter（:9-10）与 tasks_index.json 均记录 review_limit=5、verify_limit=5；review_code.md 实际有 Round 13/16/17/18/19 等共 16 个 Round 节，最终 Round 19 PASS。账本全文未记录上限上调或用户批准（对照 t016 在 tasks_index 中显式记录「review_limit: 5->6」及理由）。; handoff.json（:3）显示 attempt=2，而 note.md 通篇没有 attempt 1 的任何记录或重启说明。; 细节并未丢失：review_code.md/review_test.md 内有逐条真实 severity 与逐轮 verdict（含多轮 FAIL），故这是账本层处置记录失效，而非审查本身缺失。
-    - Impact: note.md 处置表是 finish 门禁与后续读者核对「每个 finding 如何关闭」的第一入口；t018 的表无法回答任何单条 finding 的 severity 与关闭方式，且预算/attempt 账目与实际不符，削弱整套任务账本制度的可审计性。
-    - Fix: 按 review_code/review_test 原文为 t018 补齐逐条处置行（真实 severity、各自 rationale 与 fix_ref）；在 note 中补记 review_limit 上调的批准依据与 attempt 2 的起因（若确无批准，应如实记录为流程偏差）。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_02)
+    - f_archive_tasks_02: note.md 的处置表（:53 起「Round 19」）约 68 行中，除 f017/f029 撤回与 test_f021 遗留外，其余每行 severity 均为模板字面量「critical/important/minor」、rationale 均为同一句「Round 19 全量 diff 复核通过」、fix_ref 均为「b02df0b」；Rounds 1-18 在账本中没有任何处置行。; note.md front matter（:9-10）与 tasks_index.json 均记录 review_limit=5、verify_limit=5；review_code.md 实际有 Round 13/16/17/18/19 等共 16 个 Round 节，最终 Round 19 PASS。账本全文未记录上限上调或用户批准（对照 t016 在 tasks_index 中显式记录「review_limit: 5->6」及理由）。; handoff.json（:3）显示 attempt=2，而 note.md 通篇没有 attempt 1 的任何记录或重启说明。; 细节并未丢失：review_code.md/review_test.md 内有逐条真实 severity 与逐轮 verdict（含多轮 FAIL），故这是账本层处置记录失效，而非审查本身缺失。
+        - Impact: note.md 处置表是 finish 门禁与后续读者核对「每个 finding 如何关闭」的第一入口；t018 的表无法回答任何单条 finding 的 severity 与关闭方式，且预算/attempt 账目与实际不符，削弱整套任务账本制度的可审计性。
+        - Fix: 按 review_code/review_test 原文为 t018 补齐逐条处置行（真实 severity、各自 rationale 与 fix_ref）；在 note 中补记 review_limit 上调的批准依据与 attempt 2 的起因（若确无批准，应如实记录为流程偏差）。
+        - Verification: static
 - [Medium][90] tests/integration/test_v2_api_subprocess.py:188（仅创建路径）；更新路径无对应用例 — 更新路径（PUT/PATCH）的 launch_args 白名单校验零测试覆盖，与 f_01 的双校验器矛盾叠加后更新语义无任何回归网
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_09)
-  - f_backend_api_auth_09: 全仓测试中对越界 launch_args 的负例只有一处：test_v2_api_subprocess.py:188 在 POST /api/v1/profiles 以 --load-extension=/tmp/evil 断言 422，钉住的是 ProfileCreateRequest（models.py:252-255 仅 validate_launch_args 严格拒绝）; grep tests/ 与 src/backend/tests/：没有任何用例以 PUT/PATCH 提交 launch_args（更无越界值），ProfileUpdateRequest 也从未被测试直接引用；test_profile_patch_semantics.py 只覆盖 name/tags 的 PATCH 语义; ProfileUpdateRequest 对同一字段同时挂 validate_launch_args（models.py:305-308）与 filter_launch_args（models.py:349-354）两个 after 校验器（见 f_backend_api_auth_01），实际生效语义取决于校验器执行顺序这一实现细节
-    - Impact: 更新路径提交越界 launch_args 到底是 422 还是 200 静默丢弃，目前由未声明的校验器顺序决定且无测试钉住；任一侧重构（删校验器、调整顺序、pydantic 升级改变校验器语义）都能无声翻转这个安全白名单字段的写入语义，测试全绿也发现不了。
-    - Fix: 在 f_backend_api_auth_01 收敛为单一语义后补回归网：HTTP 层 PUT 与 PATCH 各一条越界 launch_args（如 --load-extension=）用例，断言收敛后的唯一预期（422，或参数被丢弃且响应与落库均不含该值）；另补 DTO 层参数化用例直接钉住 ProfileUpdateRequest 的校验结果。
-    - Verification: static
-- [Medium][90] src/backend/main.py:143-147 — legacy 应用鉴权为代码级 opt-in：AUTH_TOKEN 未设置时全部 /api/* 无条件放行
-  - Sources: bundle_local_backend_core.md (f_backend_core_03)
-  - f_backend_core_03: _check_auth 在 AUTH_TOKEN is None 时直接 return True（main.py:146）；AuthMiddleware 在 not AUTH_TOKEN 时对所有 scope 直通（main.py:309）; 文件头注释明示该语义："If not set, all routes are open (local dev)"; 放行面包括 /api/shutdown、/api/open-external、profile 的 CDP/VNC 代理与文件上传下载——即浏览器身份的 cookie 目录可达面; 单元外上下文：根 compose.yaml 已绑 127.0.0.1 并注入 AUTH_TOKEN（compose.yaml:11,17），出厂 Docker 路径有缓解；但原生冻结应用与直接 uvicorn 启动同样加载本文件，其绑定与 token 注入不在本应用控制内
-    - Impact: 任何不经该 compose 的启动方式（原生应用、开发直跑、第三方改编 compose）都会得到一个零凭据的管理面；『空 token = 开放』的语义靠部署纪律兜底，而非应用自身 fail-closed。
-    - Fix: 将默认改为 fail-closed：AUTH_TOKEN 未设置时仅监听回环并在日志中明确警告，或直接拒绝启动并给出生成方式；至少把『开放模式』改为显式环境变量（如 CBROWSER_ALLOW_NO_AUTH=1）而非空值默认。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_09)
+    - f_backend_api_auth_09: 全仓测试中对越界 launch_args 的负例只有一处：test_v2_api_subprocess.py:188 在 POST /api/v1/profiles 以 --load-extension=/tmp/evil 断言 422，钉住的是 ProfileCreateRequest（models.py:252-255 仅 validate_launch_args 严格拒绝）; grep tests/ 与 src/backend/tests/：没有任何用例以 PUT/PATCH 提交 launch_args（更无越界值），ProfileUpdateRequest 也从未被测试直接引用；test_profile_patch_semantics.py 只覆盖 name/tags 的 PATCH 语义; ProfileUpdateRequest 对同一字段同时挂 validate_launch_args（models.py:305-308）与 filter_launch_args（models.py:349-354）两个 after 校验器（见 f_backend_api_auth_01），实际生效语义取决于校验器执行顺序这一实现细节
+        - Impact: 更新路径提交越界 launch_args 到底是 422 还是 200 静默丢弃，目前由未声明的校验器顺序决定且无测试钉住；任一侧重构（删校验器、调整顺序、pydantic 升级改变校验器语义）都能无声翻转这个安全白名单字段的写入语义，测试全绿也发现不了。
+        - Fix: 在 f_backend_api_auth_01 收敛为单一语义后补回归网：HTTP 层 PUT 与 PATCH 各一条越界 launch_args（如 --load-extension=）用例，断言收敛后的唯一预期（422，或参数被丢弃且响应与落库均不含该值）；另补 DTO 层参数化用例直接钉住 ProfileUpdateRequest 的校验结果。
+        - Verification: static
+- [Medium][90] src/backend/main.py:143-147 — legacy 应用鉴权为代码级 opt-in：AUTH_TOKEN 未设置时全部 /api/\* 无条件放行
+    - Sources: bundle_local_backend_core.md (f_backend_core_03)
+    - f_backend_core_03: \_check_auth 在 AUTH_TOKEN is None 时直接 return True（main.py:146）；AuthMiddleware 在 not AUTH_TOKEN 时对所有 scope 直通（main.py:309）; 文件头注释明示该语义："If not set, all routes are open (local dev)"; 放行面包括 /api/shutdown、/api/open-external、profile 的 CDP/VNC 代理与文件上传下载——即浏览器身份的 cookie 目录可达面; 单元外上下文：根 compose.yaml 已绑 127.0.0.1 并注入 AUTH_TOKEN（compose.yaml:11,17），出厂 Docker 路径有缓解；但原生冻结应用与直接 uvicorn 启动同样加载本文件，其绑定与 token 注入不在本应用控制内
+        - Impact: 任何不经该 compose 的启动方式（原生应用、开发直跑、第三方改编 compose）都会得到一个零凭据的管理面；『空 token = 开放』的语义靠部署纪律兜底，而非应用自身 fail-closed。
+        - Fix: 将默认改为 fail-closed：AUTH_TOKEN 未设置时仅监听回环并在日志中明确警告，或直接拒绝启动并给出生成方式；至少把『开放模式』改为显式环境变量（如 CBROWSER_ALLOW_NO_AUTH=1）而非空值默认。
+        - Verification: static
 - [Medium][80] src/backend/main.py:1171-1183 — /api/open-external 缺少 /api/shutdown 已有的同源 CSRF 防护，可被跨站简单请求触发打开宿主浏览器
-  - Sources: bundle_local_backend_core.md (f_backend_core_04)
-  - f_backend_core_04: shutdown_manager（main.py 约 :1237 起）专门调用 _same_origin_request 并注释说明 bodyless POST 是 CORS 简单请求、无预检即可跨站命中; open_external 同为状态改变型 POST 且无任何 Origin 校验；其 payload 为 dict，Starlette 按 JSON 解析请求体而不看 Content-Type，跨站 fetch 以 text/plain 发送 JSON 文本即构成简单请求、无需预检; 效果是 webbrowser.open 在宿主打开攻击者选定的任意 http(s) URL；同文件 /api/profiles/test-proxy 同样无 Origin 校验，可使服务端经任意代理发起连接（受害面较小）; AUTH_TOKEN 开启时 auth_token cookie 为 SameSite=strict，跨站请求不带 cookie，此路径主要在 auth 关闭（见 f_backend_core_03 的默认）时成立
-    - Impact: 用户在原生应用模式下浏览任意恶意网页时，该网页可静默让宿主浏览器打开钓鱼/恶意 URL；在 auth 关闭的局域网部署下，同网段主机也可直接调用。与 f_backend_core_03 叠加时是默认配置下可达的跨站操作面。
-    - Fix: 对 open_external（及 test-proxy 等无副作用豁免理由的 POST）统一应用 _same_origin_request 校验，与 shutdown 保持同一防护口径；或将同源校验提升为中间件级、覆盖全部状态改变型 /api POST。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_04)
+    - f_backend_core_04: shutdown_manager（main.py 约 :1237 起）专门调用 \_same_origin_request 并注释说明 bodyless POST 是 CORS 简单请求、无预检即可跨站命中; open_external 同为状态改变型 POST 且无任何 Origin 校验；其 payload 为 dict，Starlette 按 JSON 解析请求体而不看 Content-Type，跨站 fetch 以 text/plain 发送 JSON 文本即构成简单请求、无需预检; 效果是 webbrowser.open 在宿主打开攻击者选定的任意 http(s) URL；同文件 /api/profiles/test-proxy 同样无 Origin 校验，可使服务端经任意代理发起连接（受害面较小）; AUTH_TOKEN 开启时 auth_token cookie 为 SameSite=strict，跨站请求不带 cookie，此路径主要在 auth 关闭（见 f_backend_core_03 的默认）时成立
+        - Impact: 用户在原生应用模式下浏览任意恶意网页时，该网页可静默让宿主浏览器打开钓鱼/恶意 URL；在 auth 关闭的局域网部署下，同网段主机也可直接调用。与 f_backend_core_03 叠加时是默认配置下可达的跨站操作面。
+        - Fix: 对 open_external（及 test-proxy 等无副作用豁免理由的 POST）统一应用 \_same_origin_request 校验，与 shutdown 保持同一防护口径；或将同源校验提升为中间件级、覆盖全部状态改变型 /api POST。
+        - Verification: static
 - [Medium][90] src/backend/database.py:122 — init_db 整表重建静默丢弃列集之外的全部列数据，无日志无备份
-  - Sources: bundle_local_backend_core.md (f_backend_core_05)
-  - f_backend_core_05: init_db 以 old_columns != set(_PROFILE_COLUMNS) 为唯一触发条件进入 _rebuild_profiles；重建时 copied = [c for c in _PROFILE_COLUMNS if c in old_columns]，不在当前列集中的列（如另一 schema 代际写过的 runtime_mode/viewer_mode/current_config_version，或未来版本新增列）的数据不复制、随 DROP TABLE 消失; database.py 全文无 logging：丢弃发生时不留任何记录，运维无从察觉；重建前也不做 profiles.db 备份; 本仓恰有双轨 schema 并存（legacy 手写层与 v2 Alembic 0001 的 profiles 表含 current_config_version 等额外列），一个被 v2 侧碰过的 profiles.db 回到 legacy 启动即触发此路径; 对照：gpu_vendor/gpu_renderer 的旧值有专门的 CASE 映射保留逻辑，说明『保留用户数据』是该函数的既定意图，未知列的静默丢弃与之不一致
-    - Impact: 跨版本/跨栈切换启动一次即可永久丢失列集外数据且无声无息；对以 profile 配置（代理、指纹、备注）为核心资产的应用，这是升级路径上的静默数据损失点。
-    - Fix: _rebuild_profiles 前先把将被丢弃的列名与行数写日志，并把原表改名保留为 profiles_backup_<timestamp> 而非直接 DROP；或对未知列直接中止启动并报错，让迁移走显式 Alembic/脚本路径。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_05)
+    - f_backend_core_05: init_db 以 old_columns != set(\_PROFILE_COLUMNS) 为唯一触发条件进入 \_rebuild_profiles；重建时 copied = [c for c in \_PROFILE_COLUMNS if c in old_columns]，不在当前列集中的列（如另一 schema 代际写过的 runtime_mode/viewer_mode/current_config_version，或未来版本新增列）的数据不复制、随 DROP TABLE 消失; database.py 全文无 logging：丢弃发生时不留任何记录，运维无从察觉；重建前也不做 profiles.db 备份; 本仓恰有双轨 schema 并存（legacy 手写层与 v2 Alembic 0001 的 profiles 表含 current_config_version 等额外列），一个被 v2 侧碰过的 profiles.db 回到 legacy 启动即触发此路径; 对照：gpu_vendor/gpu_renderer 的旧值有专门的 CASE 映射保留逻辑，说明『保留用户数据』是该函数的既定意图，未知列的静默丢弃与之不一致
+        - Impact: 跨版本/跨栈切换启动一次即可永久丢失列集外数据且无声无息；对以 profile 配置（代理、指纹、备注）为核心资产的应用，这是升级路径上的静默数据损失点。
+        - Fix: _rebuild_profiles 前先把将被丢弃的列名与行数写日志，并把原表改名保留为 profiles_backup_<timestamp> 而非直接 DROP；或对未知列直接中止启动并报错，让迁移走显式 Alembic/脚本路径。
+        - Verification: static
 - [Medium][85] src/backend/main.py:909-937 — 产物配额检查与建行分离，并发上传可绕过每-profile 数量与总量上限
-  - Sources: bundle_local_backend_core.md (f_backend_core_06)
-  - f_backend_core_06: 上传顺序：check_quota(declared) → save_stream 落盘 → check_quota(真实 size) → db.create_artifact 建行；artifacts.check_quota 的计数依据是 db.list_artifacts 的现有行数与 ready 行 size 之和; 两次检查时本次上传的行都还不存在；两个并发上传同一 profile 时，各自看到的都是上传前状态，可双双通过，最终行数与总字节同时越限; chunked 请求 declared 为 None 时预检 incoming=0，数量上限在建行前对任何并发都无约束；发布后复检同样看不到对方未建行的字节; artifacts.save_stream 本身只执行单文件 MAX_ARTIFACT_BYTES 上限，不做 profile 级记账
-    - Impact: 在本机/局域网可达的管理面上，并发上传可把单 profile 产物数量推过 200、总量推过 2GiB 上限，配额从硬约束降为串行场景下的软约束；磁盘占满会连带影响同数据盘上的 profiles.db 与浏览器状态。
-    - Fix: 把配额记账前移到落盘之前并串行化：例如先以 pending 行占位（size=预估/0）再流式写入、发布时以 replacing 语义复检（downloads._publish 已采用此模式），或对 check+create 加 per-profile 锁。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_06)
+    - f_backend_core_06: 上传顺序：check_quota(declared) → save_stream 落盘 → check_quota(真实 size) → db.create_artifact 建行；artifacts.check_quota 的计数依据是 db.list_artifacts 的现有行数与 ready 行 size 之和; 两次检查时本次上传的行都还不存在；两个并发上传同一 profile 时，各自看到的都是上传前状态，可双双通过，最终行数与总字节同时越限; chunked 请求 declared 为 None 时预检 incoming=0，数量上限在建行前对任何并发都无约束；发布后复检同样看不到对方未建行的字节; artifacts.save_stream 本身只执行单文件 MAX_ARTIFACT_BYTES 上限，不做 profile 级记账
+        - Impact: 在本机/局域网可达的管理面上，并发上传可把单 profile 产物数量推过 200、总量推过 2GiB 上限，配额从硬约束降为串行场景下的软约束；磁盘占满会连带影响同数据盘上的 profiles.db 与浏览器状态。
+        - Fix: 把配额记账前移到落盘之前并串行化：例如先以 pending 行占位（size=预估/0）再流式写入、发布时以 replacing 语义复检（downloads.\_publish 已采用此模式），或对 check+create 加 per-profile 锁。
+        - Verification: static
 - [Medium][80] src/backend/main.py:1835-1843 — serve_spa 与剪贴板日志行为在本单元自有测试落点中零覆盖（据定点 grep）
-  - Sources: bundle_local_backend_core.md (f_backend_core_15)
-  - f_backend_core_15: grep src/backend/tests（本单元代码的包内测试落点）对 serve_spa/full_path 零命中——SPA 兜底的正常服务与穿越拒绝两个方向都没有任何用例钉住; test_api.py 等文件出现 clipboard 字样，但本轮未逐行核对断言内容；f_backend_core_01 的日志泄漏行为没有任何 caplog 类断言被本单元审阅所见; 本单元 tests 视角因此标 partial：断言级裁决在 backend_tests 单元，此处仅记录可定点验证的缺席事实
-    - Impact: f_backend_core_01/02 这类缺陷即使被修复，也没有任何本单元落点的回归网阻止其复发；SPA 服务路径重构（换 StaticFiles、改挂载顺序）时无测试能发现穿越面或正常面被打坏。
-    - Fix: 在 src/backend/tests/test_api.py 补 serve_spa 用例：正常静态文件、index.html 回退、api/ 前缀 404、../ 与 %2e%2e%2f 穿越拒绝；并给剪贴板端点加 caplog 断言（日志只含长度、不含正文）。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_15)
+    - f_backend_core_15: grep src/backend/tests（本单元代码的包内测试落点）对 serve_spa/full_path 零命中——SPA 兜底的正常服务与穿越拒绝两个方向都没有任何用例钉住; test_api.py 等文件出现 clipboard 字样，但本轮未逐行核对断言内容；f_backend_core_01 的日志泄漏行为没有任何 caplog 类断言被本单元审阅所见; 本单元 tests 视角因此标 partial：断言级裁决在 backend_tests 单元，此处仅记录可定点验证的缺席事实
+        - Impact: f_backend_core_01/02 这类缺陷即使被修复，也没有任何本单元落点的回归网阻止其复发；SPA 服务路径重构（换 StaticFiles、改挂载顺序）时无测试能发现穿越面或正常面被打坏。
+        - Fix: 在 src/backend/tests/test_api.py 补 serve_spa 用例：正常静态文件、index.html 回退、api/ 前缀 404、../ 与 %2e%2e%2f 穿越拒绝；并给剪贴板端点加 caplog 断言（日志只含长度、不含正文）。
+        - Verification: static
 - [Medium][90] src/backend/main.py:1171（open-external）、src/backend/main.py:1220（shutdown） — 宿主机控制端点测试缺口：/api/open-external 零测试，/api/shutdown 只测了拒绝路径
-  - Sources: bundle_local_backend_core.md (f_backend_core_16)
-  - f_backend_core_16: 对 open-external / open_external 在 src/backend/tests、tests/unit、tests/integration 三处 grep 均为零命中——该端点在整个测试树中没有任何一例测试。; test_api.py:669-681 对 /api/shutdown 只有跨源、跨端口两条 403 拒绝用例，另有 _same_origin_request 纯函数用例（test_api.py:684-708）；同源请求真正进入关闭流程的成功路径从未被测。; 与 f_backend_core_04 对照：open-external 恰是缺了 shutdown 已有同源 CSRF 防护的那个端点，最需要回归网的端点反而一例测试都没有。
-    - Impact: 这两个端点直接作用于宿主机（在宿主上打开外部浏览器、终止 Manager 进程）。open-external 的防护现状或 shutdown 的同源成功路径若被后续改动悄悄改坏（例如中间件调整误伤 _same_origin_request 的复用），没有任何测试会变红。
-    - Fix: 为 /api/open-external 补跨源拒绝与同源成功（mock 掉实际打开动作）成对用例；为 /api/shutdown 补同源请求进入关闭流程的用例（mock 掉实际退出动作），与现有拒绝用例成对。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_16)
+    - f_backend_core_16: 对 open-external / open_external 在 src/backend/tests、tests/unit、tests/integration 三处 grep 均为零命中——该端点在整个测试树中没有任何一例测试。; test_api.py:669-681 对 /api/shutdown 只有跨源、跨端口两条 403 拒绝用例，另有 \_same_origin_request 纯函数用例（test_api.py:684-708）；同源请求真正进入关闭流程的成功路径从未被测。; 与 f_backend_core_04 对照：open-external 恰是缺了 shutdown 已有同源 CSRF 防护的那个端点，最需要回归网的端点反而一例测试都没有。
+        - Impact: 这两个端点直接作用于宿主机（在宿主上打开外部浏览器、终止 Manager 进程）。open-external 的防护现状或 shutdown 的同源成功路径若被后续改动悄悄改坏（例如中间件调整误伤 \_same_origin_request 的复用），没有任何测试会变红。
+        - Fix: 为 /api/open-external 补跨源拒绝与同源成功（mock 掉实际打开动作）成对用例；为 /api/shutdown 补同源请求进入关闭流程的用例（mock 掉实际退出动作），与现有拒绝用例成对。
+        - Verification: static
 - [Medium][90] src/backend/cbrowser/adapters/database/models.py:75-100 — Every profile read eager-loads the full config-version history and artifact rows via selectin relationships
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_01)
-  - f_backend_runtime_adapters_01: models.py:75-100 defines ProfileModel.tags, .versions, .runtime and .artifacts all with lazy='selectin', so any SELECT of ProfileModel rows also loads all four collections.; repository.py get_profile() and list_profiles() select ProfileModel and convert with _to_domain_profile(), which only consumes m.tags — the version snapshots (each a full JSON config blob, unbounded history) and artifact rows are loaded and discarded.; ProfileService.get_profile() is called as an existence/identity check at the head of nearly every service operation (bind, report, desired-state, versions, duplicate, reset), so the heavy load runs on hot paths, not just on profile listing.
-    - Impact: Read cost and memory grow with each profile's accumulated version history and artifact count rather than with the data actually returned; list_profiles() multiplies this across all profiles. On a long-lived install with many edits per profile, routine runtime polling and list calls degrade steadily.
-    - Fix: Use lazy='raise' or 'noload' for versions/artifacts on the read paths and load them explicitly only in list_config_versions/get_config_version and artifact flows (e.g. selectinload only tags in get_profile/list_profiles, or load_only plus explicit relationship loads where needed).
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_01)
+    - f_backend_runtime_adapters_01: models.py:75-100 defines ProfileModel.tags, .versions, .runtime and .artifacts all with lazy='selectin', so any SELECT of ProfileModel rows also loads all four collections.; repository.py get_profile() and list_profiles() select ProfileModel and convert with \_to_domain_profile(), which only consumes m.tags — the version snapshots (each a full JSON config blob, unbounded history) and artifact rows are loaded and discarded.; ProfileService.get_profile() is called as an existence/identity check at the head of nearly every service operation (bind, report, desired-state, versions, duplicate, reset), so the heavy load runs on hot paths, not just on profile listing.
+        - Impact: Read cost and memory grow with each profile's accumulated version history and artifact count rather than with the data actually returned; list_profiles() multiplies this across all profiles. On a long-lived install with many edits per profile, routine runtime polling and list calls degrade steadily.
+        - Fix: Use lazy='raise' or 'noload' for versions/artifacts on the read paths and load them explicitly only in list_config_versions/get_config_version and artifact flows (e.g. selectinload only tags in get_profile/list_profiles, or load_only plus explicit relationship loads where needed).
+        - Verification: static
 - [Medium][85] src/backend/cbrowser/runtime_agent/runner.py:564-568 — Cosmetic default-search-engine setup sits on the critical launch path and can fail an otherwise healthy browser start
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_02)
-  - f_backend_runtime_adapters_02: runner.py start() awaits initialize_profile_defaults(...) at :564 after the browser context is launched but before runner_info.json is written (:600) and before is_running is set (:572); an exception propagates out of start().; profile_defaults.py drives chrome://settings/searchEngines with fixed sleeps (1.5s/1.0s) and multi-strategy DOM/shadow-DOM scraping (_MAKE_GOOGLE_DEFAULT_JS has three fallback selector strategies including localized 'Make default'/Chinese label matching), and converts any failure — dialog not found, button never enabled, verification mismatch — into ProfileDefaultsError.; A marker-file hit is the only fast path; any profile with set_google_default enabled whose marker was lost (e.g. fresh copy of a used data dir) re-runs the full UI automation on next launch.
-    - Impact: A Chrome UI change, localization difference, or timing flake in a purely cosmetic preference step aborts the whole runtime generation after Chrome has already started, leaving the generation in 'starting' state (which start() itself treats as requiring a new instance id). Launch reliability is coupled to the most fragile automation in the unit.
-    - Fix: Move initialize_profile_defaults off the readiness path: launch, publish runner_info, mark running, then apply defaults best-effort in the background with failures logged and the marker left unwritten so a later launch retries; or at minimum catch ProfileDefaultsError in start() and continue.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_02)
+    - f_backend_runtime_adapters_02: runner.py start() awaits initialize_profile_defaults(...) at :564 after the browser context is launched but before runner_info.json is written (:600) and before is_running is set (:572); an exception propagates out of start().; profile_defaults.py drives chrome://settings/searchEngines with fixed sleeps (1.5s/1.0s) and multi-strategy DOM/shadow-DOM scraping (\_MAKE_GOOGLE_DEFAULT_JS has three fallback selector strategies including localized 'Make default'/Chinese label matching), and converts any failure — dialog not found, button never enabled, verification mismatch — into ProfileDefaultsError.; A marker-file hit is the only fast path; any profile with set_google_default enabled whose marker was lost (e.g. fresh copy of a used data dir) re-runs the full UI automation on next launch.
+        - Impact: A Chrome UI change, localization difference, or timing flake in a purely cosmetic preference step aborts the whole runtime generation after Chrome has already started, leaving the generation in 'starting' state (which start() itself treats as requiring a new instance id). Launch reliability is coupled to the most fragile automation in the unit.
+        - Fix: Move initialize_profile_defaults off the readiness path: launch, publish runner_info, mark running, then apply defaults best-effort in the background with failures logged and the marker left unwritten so a later launch retries; or at minimum catch ProfileDefaultsError in start() and continue.
+        - Verification: static
 - [Medium][90] src/backend/cbrowser/runtime_agent/cdp_proxy.py:190-253 — After a CDP reconnect, download capture is reported healthy without the rearm command ever being acknowledged
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_03)
-  - f_backend_runtime_adapters_03: The initial arm is strict: start() -> rearm_download_capture() -> send_command() raises unless the response contains a result (cdp_proxy.py:69-108).; The reconnect path inside _listen_events (:216-235) instead increments _next_cmd_id, sends Browser.setDownloadBehavior fire-and-forget, increments rearm_count and sets self._last_rearm_ok = True unconditionally; the comment explains the ACK cannot be awaited from the sole reader coroutine.; The rearm response id is never registered in pending_cmd_futures, so when the listener later consumes it, an 'error' response from Chrome is silently dropped (only ids present in pending_cmd_futures are matched).; capture_alive (:57-67) — which agent.py get_health uses for cdp_ready — therefore returns True after reconnect even if Chrome rejected or never applied the download behavior.
-    - Impact: Health can report cdp_ready while download capture is actually disarmed after a transient CDP drop: downloads then land with default Chrome behavior and are only recovered if their files appear in the reconciler's directory scan; downloadWillBegin/downloadProgress events (and their guided file names) are lost for that period without any signal.
-    - Fix: Track the reconnect rearm id and resolve _last_rearm_ok from its actual response when the listener consumes it (set _last_rearm_ok=False at send time, flip to True only on a result-bearing response with the matching id, False on error/timeout).
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_03)
+    - f_backend_runtime_adapters_03: The initial arm is strict: start() -> rearm_download_capture() -> send_command() raises unless the response contains a result (cdp_proxy.py:69-108).; The reconnect path inside \_listen_events (:216-235) instead increments \_next_cmd_id, sends Browser.setDownloadBehavior fire-and-forget, increments rearm_count and sets self.\_last_rearm_ok = True unconditionally; the comment explains the ACK cannot be awaited from the sole reader coroutine.; The rearm response id is never registered in pending_cmd_futures, so when the listener later consumes it, an 'error' response from Chrome is silently dropped (only ids present in pending_cmd_futures are matched).; capture_alive (:57-67) — which agent.py get_health uses for cdp_ready — therefore returns True after reconnect even if Chrome rejected or never applied the download behavior.
+        - Impact: Health can report cdp_ready while download capture is actually disarmed after a transient CDP drop: downloads then land with default Chrome behavior and are only recovered if their files appear in the reconciler's directory scan; downloadWillBegin/downloadProgress events (and their guided file names) are lost for that period without any signal.
+        - Fix: Track the reconnect rearm id and resolve \_last_rearm_ok from its actual response when the listener consumes it (set \_last_rearm_ok=False at send time, flip to True only on a result-bearing response with the matching id, False on error/timeout).
+        - Verification: static
 - [Medium][75] src/backend/cbrowser/gateway/server.py:313-315; src/backend/cbrowser/gateway/registry.py:104-130 — Agent 注册节流仅按来源地址计数，同机所有 Agent 共享一个额度桶，批量重启时合法注册会被 429 拒绝
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_01)
-  - f_backend_stream_gateway_01: server.py handle_agent_register 以 registration_throttle.allow(request.remote) 为闸门，键只有来源地址，无 profile/instance 维度; registry.py RegistrationThrottle 默认 max_attempts=20、window_seconds=60.0，allow() 对同一 key 的全部尝试（含合法注册）计数; 本系统为单机 Docker 部署（仓库 AGENTS.md 声明），各 Stream 容器经同一桥接地址到达 Gateway，request.remote 对所有 Agent 相同或高度集中; Agent 侧 connect_and_run 以 1..30s 退避重试（agent.py BACKOFF_SCHEDULE），被 429 后不会立即恢复
-    - Impact: Gateway 或宿主重启后，若超过 20 个 Profile 的 Agent 在 60 秒窗口内集中重注册，后到者收到 429，必须等窗口滑动/退避后才能注册成功，画面恢复时间被拉长；Profile 数量越多越严重。节流本意是挡未授权尝试，但当前实现把合法注册也计入同一桶。
-    - Fix: 将节流键改为按来源+声称身份（profile_id/instance_id）计数，或仅对凭据验证失败的尝试计数（把 allow/record 拆开，成功注册不占额度）；至少提高默认值并在部署文档中声明该耦合。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_01)
+    - f_backend_stream_gateway_01: server.py handle_agent_register 以 registration_throttle.allow(request.remote) 为闸门，键只有来源地址，无 profile/instance 维度; registry.py RegistrationThrottle 默认 max_attempts=20、window_seconds=60.0，allow() 对同一 key 的全部尝试（含合法注册）计数; 本系统为单机 Docker 部署（仓库 AGENTS.md 声明），各 Stream 容器经同一桥接地址到达 Gateway，request.remote 对所有 Agent 相同或高度集中; Agent 侧 connect_and_run 以 1..30s 退避重试（agent.py BACKOFF_SCHEDULE），被 429 后不会立即恢复
+        - Impact: Gateway 或宿主重启后，若超过 20 个 Profile 的 Agent 在 60 秒窗口内集中重注册，后到者收到 429，必须等窗口滑动/退避后才能注册成功，画面恢复时间被拉长；Profile 数量越多越严重。节流本意是挡未授权尝试，但当前实现把合法注册也计入同一桶。
+        - Fix: 将节流键改为按来源+声称身份（profile_id/instance_id）计数，或仅对凭据验证失败的尝试计数（把 allow/record 拆开，成功注册不占额度）；至少提高默认值并在部署文档中声明该耦合。
+        - Verification: static
 - [Medium][80] src/backend/cbrowser/supervisor/core.py:640-682 — API-rejected disk runtime events are retried every second forever: consume_disk_events never advances the cursor when EventForwarder reports REJECTED
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_01)
-  - f_backend_supervisor_01: core.py consume_disk_events: `delivered = await self.events.emit_event(...)`; `if not delivered: continue` — the per-instance cursor is only advanced (and the file only archived) on the delivered path.; event_forwarder.py emit_event returns False for both UNAVAILABLE and REJECTED; _send_to_api maps any non-200 status < 500 to REJECTED (e.g. 404 for a deleted profile, 400/401/403 for a semantically or credentially rejected exit event).; runner.py background_monitoring_loop calls consume_disk_events every ~1s, so one permanently rejected journal entry is re-read, re-spooled (same sha256 filename), re-POSTed and re-quarantined indefinitely, with warning logs each pass.; Contrast: schema-invalid disk events in the same function are quarantined AND cursor-advanced, so only the API-rejection path lacks a terminal disposition.
-    - Impact: A single poison exit event (e.g. for a profile deleted from the API, yielding 404) creates an unbounded 1 Hz retry/log loop for the life of the process and repeatedly re-quarantines spool copies; it also head-of-line blocks nothing but wastes API quota and obscures real failures in logs.
-    - Fix: Give emit_event a tri-state result (or expose the outcome) and in consume_disk_events treat REJECTED like the invalid-event path: quarantine the disk journal via _quarantine_event_file with reason 'api_rejected', advance the cursor, and persist cursors. Keep UNAVAILABLE as retry-without-advance.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_01)
+    - f_backend_supervisor_01: core.py consume_disk_events: `delivered = await self.events.emit_event(...)`; `if not delivered: continue` — the per-instance cursor is only advanced (and the file only archived) on the delivered path.; event_forwarder.py emit_event returns False for both UNAVAILABLE and REJECTED; \_send_to_api maps any non-200 status < 500 to REJECTED (e.g. 404 for a deleted profile, 400/401/403 for a semantically or credentially rejected exit event).; runner.py background_monitoring_loop calls consume_disk_events every ~1s, so one permanently rejected journal entry is re-read, re-spooled (same sha256 filename), re-POSTed and re-quarantined indefinitely, with warning logs each pass.; Contrast: schema-invalid disk events in the same function are quarantined AND cursor-advanced, so only the API-rejection path lacks a terminal disposition.
+        - Impact: A single poison exit event (e.g. for a profile deleted from the API, yielding 404) creates an unbounded 1 Hz retry/log loop for the life of the process and repeatedly re-quarantines spool copies; it also head-of-line blocks nothing but wastes API quota and obscures real failures in logs.
+        - Fix: Give emit_event a tri-state result (or expose the outcome) and in consume_disk_events treat REJECTED like the invalid-event path: quarantine the disk journal via \_quarantine_event_file with reason 'api_rejected', advance the cursor, and persist cursors. Keep UNAVAILABLE as retry-without-advance.
+        - Verification: static
 - [Medium][85] src/backend/cbrowser/supervisor/event_forwarder.py:175-196 — EventForwarder classifies every non-200 status below 500 (including 401/403/429) as permanently REJECTED and quarantines the event, unlike the artifact forwarder's retryable-4xx set
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_02)
-  - f_backend_supervisor_02: event_forwarder.py _send_to_api: `return REJECTED if resp.status_code < 500 else UNAVAILABLE`; emit_event on REJECTED calls _quarantine_event_file, and replay_spooled_events only scans spool-root *.json, so quarantined events are never retried.; artifact_forwarder.py in the same unit defines RETRYABLE_4XX = {401, 403, 408, 429} and returns early (retry next pass) for those statuses — the two forwarders disagree on the meaning of the same statuses.; A 200 response whose body lacks status='ok' with a known outcome is also mapped to REJECTED and quarantined.
-    - Impact: Transient conditions — supervisor token rotation/reload lag (401/403) or API rate limiting (429) — permanently divert runtime exit events into quarantine, so the API can miss terminal observations that drive failure counting and retry blocking; recovery then depends on the slower Docker-scan synthesis path.
-    - Fix: Align event_forwarder with artifact_forwarder: treat 401/403/408/429 (and transport-level 5xx) as UNAVAILABLE/retryable, reserve REJECTED-quarantine for definitive 4xx validation failures, and log the status code (not just its class) when quarantining.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_02)
+    - f_backend_supervisor_02: event_forwarder.py \_send_to_api: `return REJECTED if resp.status_code < 500 else UNAVAILABLE`; emit_event on REJECTED calls \_quarantine_event_file, and replay_spooled_events only scans spool-root \*.json, so quarantined events are never retried.; artifact_forwarder.py in the same unit defines RETRYABLE_4XX = {401, 403, 408, 429} and returns early (retry next pass) for those statuses — the two forwarders disagree on the meaning of the same statuses.; A 200 response whose body lacks status='ok' with a known outcome is also mapped to REJECTED and quarantined.
+        - Impact: Transient conditions — supervisor token rotation/reload lag (401/403) or API rate limiting (429) — permanently divert runtime exit events into quarantine, so the API can miss terminal observations that drive failure counting and retry blocking; recovery then depends on the slower Docker-scan synthesis path.
+        - Fix: Align event_forwarder with artifact_forwarder: treat 401/403/408/429 (and transport-level 5xx) as UNAVAILABLE/retryable, reserve REJECTED-quarantine for definitive 4xx validation failures, and log the status code (not just its class) when quarantining.
+        - Verification: static
 - [Medium][70] src/backend/cbrowser/supervisor/core.py:1090-1102 — stop_profile journals a durable 'stopped' result for a requested instance it never inspected or tore down when the in-memory session tracks a different instance
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_03)
-  - f_backend_supervisor_03: core.py stop_profile: after operations.begin, `if session is not None and session.runtime_instance_id != target: self.operations.complete(command_id, request, result); return result` — result claims status 'stopped' for the requested instance without any Docker scan or teardown of that instance.; The session-is-None branch right below does the opposite: it scans Docker, verifies all owned containers match the target instance, and only then completes — showing the mismatch branch skips a verification the author considered necessary elsewhere.; RecoveryCoordinator._execute_retry relies on stop_profile(expected_instance=old_inst) to remove the residual pair before restart; if a newer session is tracked, cleanup reports success while the old pair can persist, and _reconcile_profile's fence-mismatch path only logs and returns, so the orphan pair is not removed there either.
-    - Impact: An orphaned Browser/Stream pair from a superseded generation can survive a 'successful' stop/cleanup, holding its networks and host ports; the journaled completion also makes the false result durable, so replaying the same operation id will never re-attempt the teardown.
-    - Fix: In the session-mismatch branch, fall through to the same Docker-scan verification used when session is None: complete the journal only if no containers carry the requested instance id; if matching containers exist, tear them down (or raise the mixed-instance error) instead of reporting stopped.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_03)
+    - f_backend_supervisor_03: core.py stop_profile: after operations.begin, `if session is not None and session.runtime_instance_id != target: self.operations.complete(command_id, request, result); return result` — result claims status 'stopped' for the requested instance without any Docker scan or teardown of that instance.; The session-is-None branch right below does the opposite: it scans Docker, verifies all owned containers match the target instance, and only then completes — showing the mismatch branch skips a verification the author considered necessary elsewhere.; RecoveryCoordinator.\_execute_retry relies on stop_profile(expected_instance=old_inst) to remove the residual pair before restart; if a newer session is tracked, cleanup reports success while the old pair can persist, and \_reconcile_profile's fence-mismatch path only logs and returns, so the orphan pair is not removed there either.
+        - Impact: An orphaned Browser/Stream pair from a superseded generation can survive a 'successful' stop/cleanup, holding its networks and host ports; the journaled completion also makes the false result durable, so replaying the same operation id will never re-attempt the teardown.
+        - Fix: In the session-mismatch branch, fall through to the same Docker-scan verification used when session is None: complete the journal only if no containers carry the requested instance id; if matching containers exist, tear them down (or raise the mixed-instance error) instead of reporting stopped.
+        - Verification: static
 - [Medium][95] src/backend/tests/test_api.py:143 — Tests replace the global browser_mgr singleton's launch/stop by direct assignment and never restore them, making suite outcomes order-dependent
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_01)
-  - f_backend_tests_01: src/backend/tests/test_api.py:143 test_delete_profile_stops_running does `main.browser_mgr.stop = AsyncMock(...)`; :196 and :206 do the same for `launch` (test_launch_invalid_proxy_400, test_launch_failure_500); :867 repeats the stop swap in test_reset_profile_stops_running. None use monkeypatch, so nothing restores the real methods at test end.; The file itself documents the consequence: the real_lifecycle fixture at src/backend/tests/test_api.py:1082-1088 exists because 'Earlier tests swap browser_mgr.launch/stop for AsyncMocks and never put them back; these tests need the real state machine'.; src/backend/tests/test_api.py:243 test_system_status begins with the comment 'Clear any leaked running profiles from prior tests' and clears browser_mgr.running — leaked-state cleanup is handled ad hoc per test.; Tests that run after the swaps and do not opt into real_lifecycle (e.g. test_reset_profile_returns_updated_profile) silently execute against whichever mock an earlier test installed.
-    - Impact: Test results depend on execution order and selection: running a subset (-k filters, single file, xdist sharding, or a future reordering) changes which implementation of launch/stop later tests exercise, so the suite can pass in CI order while the real launch/stop path is broken, or fail spuriously when order changes. The workaround fixture fixes only the tests that remember to use it.
-    - Fix: Replace the direct assignments at test_api.py:143/196/206/867 with monkeypatch.setattr(main.browser_mgr, 'launch'/'stop', ...) so teardown restores the real methods, then delete the real_lifecycle workaround fixture and the leaked-state clearing in test_system_status once nothing leaks.
-    - Verification: static
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_01)
+    - f_backend_tests_01: src/backend/tests/test_api.py:143 test_delete_profile_stops_running does `main.browser_mgr.stop = AsyncMock(...)`; :196 and :206 do the same for `launch` (test_launch_invalid_proxy_400, test_launch_failure_500); :867 repeats the stop swap in test_reset_profile_stops_running. None use monkeypatch, so nothing restores the real methods at test end.; The file itself documents the consequence: the real_lifecycle fixture at src/backend/tests/test_api.py:1082-1088 exists because 'Earlier tests swap browser_mgr.launch/stop for AsyncMocks and never put them back; these tests need the real state machine'.; src/backend/tests/test_api.py:243 test_system_status begins with the comment 'Clear any leaked running profiles from prior tests' and clears browser_mgr.running — leaked-state cleanup is handled ad hoc per test.; Tests that run after the swaps and do not opt into real_lifecycle (e.g. test_reset_profile_returns_updated_profile) silently execute against whichever mock an earlier test installed.
+        - Impact: Test results depend on execution order and selection: running a subset (-k filters, single file, xdist sharding, or a future reordering) changes which implementation of launch/stop later tests exercise, so the suite can pass in CI order while the real launch/stop path is broken, or fail spuriously when order changes. The workaround fixture fixes only the tests that remember to use it.
+        - Fix: Replace the direct assignments at test_api.py:143/196/206/867 with monkeypatch.setattr(main.browser_mgr, 'launch'/'stop', ...) so teardown restores the real methods, then delete the real_lifecycle workaround fixture and the leaked-state clearing in test_system_status once nothing leaks.
+        - Verification: static
 - [Medium][90] src/backend/tests/test_api.py:599 — Cross-origin WebSocket rejection tests accept any exception, so they would still pass if the CSWSH origin guard were deleted
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_02)
-  - f_backend_tests_02: src/backend/tests/test_api.py:599 and :614 (test_vnc_ws_rejects_cross_origin, test_cdp_ws_rejects_cross_origin) wrap websocket_connect in `pytest.raises(Exception)` — any failure satisfies the test.; The mocked running profiles point at ws_port 6100 / cdp_port 5100 where nothing listens (test_api.py _mock_running_profile and inline mocks), so if the origin check in backend/main.py (_check_websocket_origin, closes with 4403) were removed, the accepted connection would fail moments later in the proxy connect and raise an exception all the same.; The companion acceptance tests (test_ws_allows_same_origin, test_ws_allows_no_origin) only assert that '4403' does not appear in the exception string, so the pair of test groups cannot distinguish 'rejected by the guard' from 'failed downstream'.
-    - Impact: The only tests covering the cross-site WebSocket hijacking guard on the /vnc and /cdp endpoints cannot fail when the guard regresses or is removed; a security control would lose its regression net while the suite stays green.
-    - Fix: Assert the specific rejection: catch the TestClient WebSocketDisconnect and assert its code == 4403 for the cross-origin cases, and for the same-origin/no-origin cases assert the handshake is accepted (or at minimum that any disconnect code is not 4403) with the upstream made connectable or the proxy connect mocked to succeed.
-    - Verification: static
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_02)
+    - f_backend_tests_02: src/backend/tests/test_api.py:599 and :614 (test_vnc_ws_rejects_cross_origin, test_cdp_ws_rejects_cross_origin) wrap websocket_connect in `pytest.raises(Exception)` — any failure satisfies the test.; The mocked running profiles point at ws_port 6100 / cdp_port 5100 where nothing listens (test_api.py \_mock_running_profile and inline mocks), so if the origin check in backend/main.py (\_check_websocket_origin, closes with 4403) were removed, the accepted connection would fail moments later in the proxy connect and raise an exception all the same.; The companion acceptance tests (test_ws_allows_same_origin, test_ws_allows_no_origin) only assert that '4403' does not appear in the exception string, so the pair of test groups cannot distinguish 'rejected by the guard' from 'failed downstream'.
+        - Impact: The only tests covering the cross-site WebSocket hijacking guard on the /vnc and /cdp endpoints cannot fail when the guard regresses or is removed; a security control would lose its regression net while the suite stays green.
+        - Fix: Assert the specific rejection: catch the TestClient WebSocketDisconnect and assert its code == 4403 for the cross-origin cases, and for the same-origin/no-origin cases assert the handshake is accepted (or at minimum that any disconnect code is not 4403) with the upstream made connectable or the proxy connect mocked to succeed.
+        - Verification: static
 - [Medium][90] .env.example:15 — AUTH_TOKEN defaults to empty (authentication disabled) while its own template comment calls it 'Required'
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_03)
-  - f_contracts_deploy_03: .env.example:15 comment (credential variable, value not recorded): 'Required: bearer <kind: auth token> / cookie for the Manager. Blank disables authentication' — the same sentence calls the token required and says blank disables authentication entirely.; compose.yaml:17 injects the token with the `${AUTH_TOKEN:-}` form (empty-string default; verified the interpolation is `:-`, not the fail-fast `:?` form), so an unset host variable yields an empty token in the container.; compose.yaml:11 binds the port to 127.0.0.1 only, which limits exposure to the local host but does not restore authentication for any local process or port-forward scenario.
-    - Impact: A deployer who follows the template and leaves the token blank gets a Manager with authentication fully disabled, while the comment's 'Required' wording gives false confidence that a token is in force. The loopback bind reduces but does not remove the risk (any local process, SSRF pivot, or user-added port mapping reaches an unauthenticated control plane).
-    - Fix: Make compose fail fast when the token is unset (e.g. `${AUTH_TOKEN:?AUTH_TOKEN must be set}`), and rewrite the .env.example comment to state one consistent rule: token required, blank is rejected — or, if unauthenticated local mode is intentional, say so plainly and drop the word 'Required'.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_03)
+    - f_contracts_deploy_03: .env.example:15 comment (credential variable, value not recorded): 'Required: bearer \<kind: auth token> / cookie for the Manager. Blank disables authentication' — the same sentence calls the token required and says blank disables authentication entirely.; compose.yaml:17 injects the token with the `${AUTH_TOKEN:-}` form (empty-string default; verified the interpolation is `:-`, not the fail-fast `:?` form), so an unset host variable yields an empty token in the container.; compose.yaml:11 binds the port to 127.0.0.1 only, which limits exposure to the local host but does not restore authentication for any local process or port-forward scenario.
+        - Impact: A deployer who follows the template and leaves the token blank gets a Manager with authentication fully disabled, while the comment's 'Required' wording gives false confidence that a token is in force. The loopback bind reduces but does not remove the risk (any local process, SSRF pivot, or user-added port mapping reaches an unauthenticated control plane).
+        - Fix: Make compose fail fast when the token is unset (e.g. `${AUTH_TOKEN:?AUTH_TOKEN must be set}`), and rewrite the .env.example comment to state one consistent rule: token required, blank is rejected — or, if unauthenticated local mode is intentional, say so plainly and drop the word 'Required'.
+        - Verification: static
 - [Medium][80] compose.yaml — Four v2 runtime images have no deployment path: compose.yaml never references them
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_04)
-  - f_contracts_deploy_04: compose.yaml defines exactly one service (the legacy image from config/docker/Dockerfile, image cbrowser:latest, port 127.0.0.1:${CBROWSER_PORT:-56661}:8080).; No service in compose.yaml references config/docker/browser_runtime/Dockerfile, config/docker/stream_runtime/Dockerfile, config/docker/gateway_runtime/Dockerfile, or config/docker/supervisor_runtime/Dockerfile, and no other file in this unit (DOCKER_DEPLOYMENT.md, scripts/*) builds or runs them.
-    - Impact: Within the deployment surface this unit defines, the entire v2 multi-runtime topology (browser/stream/gateway/supervisor) is unbuildable-as-a-system: the images exist and the protocol schemas describe them talking to each other, but there is no declared way to run them together. Operators following the repo's deployment artifacts get only the legacy single container.
-    - Fix: Either add compose services (or a documented compose profile / build script) for the four v2 runtime images, or mark the runtime Dockerfiles as not-yet-deployable in DOCKER_DEPLOYMENT.md so readers do not assume a working multi-service deployment exists.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_04)
+    - f_contracts_deploy_04: compose.yaml defines exactly one service (the legacy image from config/docker/Dockerfile, image cbrowser:latest, port 127.0.0.1:${CBROWSER_PORT:-56661}:8080).; No service in compose.yaml references config/docker/browser_runtime/Dockerfile, config/docker/stream_runtime/Dockerfile, config/docker/gateway_runtime/Dockerfile, or config/docker/supervisor_runtime/Dockerfile, and no other file in this unit (DOCKER_DEPLOYMENT.md, scripts/\*) builds or runs them.
+        - Impact: Within the deployment surface this unit defines, the entire v2 multi-runtime topology (browser/stream/gateway/supervisor) is unbuildable-as-a-system: the images exist and the protocol schemas describe them talking to each other, but there is no declared way to run them together. Operators following the repo's deployment artifacts get only the legacy single container.
+        - Fix: Either add compose services (or a documented compose profile / build script) for the four v2 runtime images, or mark the runtime Dockerfiles as not-yet-deployable in DOCKER_DEPLOYMENT.md so readers do not assume a working multi-service deployment exists.
+        - Verification: static
 - [Medium][85] DOCKER_DEPLOYMENT.md — DOCKER_DEPLOYMENT.md contradicts the actual deployment: bind address, exposure, prerequisites, and architecture are all stale
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_05)
-  - f_contracts_deploy_05: DOCKER_DEPLOYMENT.md describes the host port as reachable on 0.0.0.0:56661 / LAN-accessible and the deployment as a single container bundling Xvfb/KasmVNC; compose.yaml:11 actually binds 127.0.0.1:${CBROWSER_PORT:-56661} (loopback only, configurable port).; .gitignore ignores src/frontend/dist/, and scripts/verify_frontend_dist.py exists because the legacy image build needs a prebuilt dist with a manifest — but DOCKER_DEPLOYMENT.md's quick-start is just `docker compose up --build` with no frontend build or vendor step, so a fresh clone following the doc fails.; DOCKER_DEPLOYMENT.md never mentions the v2 runtime images, the Selkies WebRTC stack (config/selkies/, config/docker/*_runtime/), or the vendoring script scripts/vendor_selkies_web.py.
-    - Impact: The only deployment document in the repo misstates the network exposure (in the alarming direction — it claims LAN exposure that the config no longer has, and omits the auth-token caveat), omits a build prerequisite that makes the documented quick-start fail on a fresh clone, and documents an architecture (single-container KasmVNC) that the config tree has moved beyond.
-    - Fix: Rewrite DOCKER_DEPLOYMENT.md against the current compose.yaml: loopback bind and CBROWSER_PORT, the required frontend build step before image build, the AUTH_TOKEN requirement, and a section stating the v2 runtimes' deployment status.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_05)
+    - f_contracts_deploy_05: DOCKER_DEPLOYMENT.md describes the host port as reachable on 0.0.0.0:56661 / LAN-accessible and the deployment as a single container bundling Xvfb/KasmVNC; compose.yaml:11 actually binds 127.0.0.1:${CBROWSER_PORT:-56661} (loopback only, configurable port).; .gitignore ignores src/frontend/dist/, and scripts/verify_frontend_dist.py exists because the legacy image build needs a prebuilt dist with a manifest — but DOCKER_DEPLOYMENT.md's quick-start is just `docker compose up --build` with no frontend build or vendor step, so a fresh clone following the doc fails.; DOCKER_DEPLOYMENT.md never mentions the v2 runtime images, the Selkies WebRTC stack (config/selkies/, config/docker/\*\_runtime/), or the vendoring script scripts/vendor_selkies_web.py.
+        - Impact: The only deployment document in the repo misstates the network exposure (in the alarming direction — it claims LAN exposure that the config no longer has, and omits the auth-token caveat), omits a build prerequisite that makes the documented quick-start fail on a fresh clone, and documents an architecture (single-container KasmVNC) that the config tree has moved beyond.
+        - Fix: Rewrite DOCKER_DEPLOYMENT.md against the current compose.yaml: loopback bind and CBROWSER_PORT, the required frontend build step before image build, the AUTH_TOKEN requirement, and a section stating the v2 runtimes' deployment status.
+        - Verification: static
 - [Medium][90] scripts/run_gates.sh:19 — run_gates.sh assembles its test environment from unpinned packages, so the local gate is not reproducible
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_06)
-  - f_contracts_deploy_06: scripts/run_gates.sh:19-29 builds each gate environment ad hoc with `uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets ...` — none of pytest, fastapi, pydantic, httpx, sqlalchemy, alembic, uvicorn, etc. carries a version constraint.; The single pinned dependency in the whole script is `cloakbrowser==0.6.4` (run_gates.sh:22 and :27), proving pinning was possible and applied selectively.; Contrast with the runtime images in this same unit, whose requirements.txt files are fully hash/version locked — the gate environment is held to a weaker standard than the artifacts it gates.
-    - Impact: Gate results are not reproducible over time: an upstream release of pytest, fastapi, or pydantic can change gate behaviour or break the gate environment itself, so a red gate may mean 'the internet changed' rather than 'the code regressed', and a green gate today does not certify the same environment tomorrow.
-    - Fix: Pin the gate environment: commit a lockfile (e.g. uv lock / a requirements file with exact versions) for each gate invocation in run_gates.sh, or run the gates inside the already-locked runtime environments.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_06)
+    - f_contracts_deploy_06: scripts/run_gates.sh:19-29 builds each gate environment ad hoc with `uv run --no-project --python ">=3.12" --with pytest --with pytest-asyncio --with fastapi --with pydantic --with httpx --with websockets ...` — none of pytest, fastapi, pydantic, httpx, sqlalchemy, alembic, uvicorn, etc. carries a version constraint.; The single pinned dependency in the whole script is `cloakbrowser==0.6.4` (run_gates.sh:22 and :27), proving pinning was possible and applied selectively.; Contrast with the runtime images in this same unit, whose requirements.txt files are fully hash/version locked — the gate environment is held to a weaker standard than the artifacts it gates.
+        - Impact: Gate results are not reproducible over time: an upstream release of pytest, fastapi, or pydantic can change gate behaviour or break the gate environment itself, so a red gate may mean 'the internet changed' rather than 'the code regressed', and a green gate today does not certify the same environment tomorrow.
+        - Fix: Pin the gate environment: commit a lockfile (e.g. uv lock / a requirements file with exact versions) for each gate invocation in run_gates.sh, or run the gates inside the already-locked runtime environments.
+        - Verification: static
 - [Medium][95] docs/handoff.md:5,9,26,29,31 — handoff.md 已整体过期一轮：仍称下一步 t015、head fc38a1d、pending 为空
-  - Sources: bundle_local_docs_current.md (f_docs_current_01)
-  - f_docs_current_01: docs/handoff.md:5 最新一节日期 2026-11-02T21:55，标题称『下一步 t015』；:9 交出 head_commit 为 fc38a1d；:26 队列为 t015 → t016 → t017 → t018 → t012 → t009 → t010；:31 称 docs/pending/todo/ 为空。; docs/specs_index.md 显示 t015 已更新 webrtc_remote_display（2026-11-02T23:30）、t016 已更新 storage_and_artifacts 与 runtime_persistence（2026-11-03T03:00）、t017 已更新 profile_management（2026-11-03T05:15），即 t015–t018 均已实际执行。; docs/pending/todo/ 现有 p016、p017、p018、p019 四个文件，与 handoff:31『为空』直接矛盾；当前仓库 HEAD 为 b473408，远在 fc38a1d 之后。; docs/handoff.md:3 自述『本文件只保留当前有效一节』，CBrowser AGENTS.md 亦规定 handoff 只保留当前有效一节。
-    - Impact: 接手者按 handoff 会误判项目状态：以为 t015 未开始、队列未动、pending 为空，从而重复规划或漏掉 p016–p019 的未开清理项；交接文档作为当前状态单一入口失效。
-    - Fix: 按约定将本节追加到 docs/archive/handoff.md 并写入当前有效一节：更新 head_commit、已完成 t015–t018 的收尾状态、当前队列（t012 → t009 → t010）与 pending 现有 p016–p019。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_01)
+    - f_docs_current_01: docs/handoff.md:5 最新一节日期 2026-11-02T21:55，标题称『下一步 t015』；:9 交出 head_commit 为 fc38a1d；:26 队列为 t015 → t016 → t017 → t018 → t012 → t009 → t010；:31 称 docs/pending/todo/ 为空。; docs/specs_index.md 显示 t015 已更新 webrtc_remote_display（2026-11-02T23:30）、t016 已更新 storage_and_artifacts 与 runtime_persistence（2026-11-03T03:00）、t017 已更新 profile_management（2026-11-03T05:15），即 t015–t018 均已实际执行。; docs/pending/todo/ 现有 p016、p017、p018、p019 四个文件，与 handoff:31『为空』直接矛盾；当前仓库 HEAD 为 b473408，远在 fc38a1d 之后。; docs/handoff.md:3 自述『本文件只保留当前有效一节』，CBrowser AGENTS.md 亦规定 handoff 只保留当前有效一节。
+        - Impact: 接手者按 handoff 会误判项目状态：以为 t015 未开始、队列未动、pending 为空，从而重复规划或漏掉 p016–p019 的未开清理项；交接文档作为当前状态单一入口失效。
+        - Fix: 按约定将本节追加到 docs/archive/handoff.md 并写入当前有效一节：更新 head_commit、已完成 t015–t018 的收尾状态、当前队列（t012 → t009 → t010）与 pending 现有 p016–p019。
+        - Verification: static
 - [Medium][90] docs/findings/d003_selkies_ice_restart_gap.md:11; docs/findings/d019_turn_loopback_mapping.md:9; docs/findings/d021_selkies_ice_restart_commit_is_async.md:7; docs/findings/d022_selkies_rtc_config_url_contract.md:7（另 d009、d010、d012、d018 同类） — findings 登记表未随 ADR 013 修订：8 篇 TURN/ICE 类 finding 仍标『有效』且含已失效指令
-  - Sources: bundle_local_docs_current.md (f_docs_current_02)
-  - f_docs_current_02: docs/blueprint/decisions.md ADR 013（2026-11-02）结论：删除 coturn、TURN 凭证与轮换、ICE 代次接管与 Selkies 私有 ABI 补丁，媒体只走同机直连，并明确『替代：010』。; d003、d019、d021、d022 的『现状』仍标『有效』（d021/d022 标『有效，限固定 Selkies 2.1.0』），d009/d010/d012/d018 同样未加被替代标注。; 其中含已失效的操作指令：d003 影响段要求保持原 ICE restart 验收、未通过前不冻结架构；d019 称后续 t006/t012 沿代栅栏复验；d021 称 Gateway 须等待 ice_restart_committed；d022 称 Stream TURN 只经 Gateway→Agent 下发、前端适配层须保持 Gateway 下发的 iceServers。; 反证对照：docs/blueprint/stream_runtime.md:33 明确现行协议已无 rtc_config/ice_restart/visibility_update；docs/blueprint/frontend.md:25 明确适配层不再处理 RTC/TURN 配置或 ICE restart；docs/specs/v2_runtime_validation.md:184-186 的 §2.4 已正确标注被 ADR 013 取代，说明登记表本可同步修订。
-    - Impact: findings/ 是实验事实与后续设计依据的登记表；按现文执行会把已删除的 TURN 轮换/ICE 代次机制当作仍需满足的约束，误导 t012 部署与后续验收，甚至可能复活 ADR 013 已删除的机制。
-    - Fix: 为 d003、d009、d010、d012、d018、d019、d021、d022 追加状态标注（如『机制已由 ADR 013 删除，本条仅作历史事实保留』），并删除或改写其中指向未来 task 的失效指令；与 v2_runtime_validation §2.4 的既有标注方式保持一致。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_02)
+    - f_docs_current_02: docs/blueprint/decisions.md ADR 013（2026-11-02）结论：删除 coturn、TURN 凭证与轮换、ICE 代次接管与 Selkies 私有 ABI 补丁，媒体只走同机直连，并明确『替代：010』。; d003、d019、d021、d022 的『现状』仍标『有效』（d021/d022 标『有效，限固定 Selkies 2.1.0』），d009/d010/d012/d018 同样未加被替代标注。; 其中含已失效的操作指令：d003 影响段要求保持原 ICE restart 验收、未通过前不冻结架构；d019 称后续 t006/t012 沿代栅栏复验；d021 称 Gateway 须等待 ice_restart_committed；d022 称 Stream TURN 只经 Gateway→Agent 下发、前端适配层须保持 Gateway 下发的 iceServers。; 反证对照：docs/blueprint/stream_runtime.md:33 明确现行协议已无 rtc_config/ice_restart/visibility_update；docs/blueprint/frontend.md:25 明确适配层不再处理 RTC/TURN 配置或 ICE restart；docs/specs/v2_runtime_validation.md:184-186 的 §2.4 已正确标注被 ADR 013 取代，说明登记表本可同步修订。
+        - Impact: findings/ 是实验事实与后续设计依据的登记表；按现文执行会把已删除的 TURN 轮换/ICE 代次机制当作仍需满足的约束，误导 t012 部署与后续验收，甚至可能复活 ADR 013 已删除的机制。
+        - Fix: 为 d003、d009、d010、d012、d018、d019、d021、d022 追加状态标注（如『机制已由 ADR 013 删除，本条仅作历史事实保留』），并删除或改写其中指向未来 task 的失效指令；与 v2_runtime_validation §2.4 的既有标注方式保持一致。
+        - Verification: static
 - [Medium][92] docs/blueprint/artifacts.md:14 — blueprint/artifacts.md 仍写 chown 失败回退 0755/0644，与 ADR 014 及 security.md 直接冲突
-  - Sources: bundle_local_docs_current.md (f_docs_current_03)
-  - f_docs_current_03: docs/blueprint/artifacts.md:14：『发布后的目录与文件应用 Browser runtime UID/GID（默认 1000），目录 0750、文件 0640；无法 chown 的宿主开发环境回退到 0755/0644，保证容器 UID 1000 可读。』; docs/blueprint/decisions.md ADR 014（2026-11-03）：背景明确指出 0777/0666 类回退导致『Cookie、登录态与运行时文件对宿主其他用户可读写』，结论为目录 0700/0750、文件 0600/0640、chown 失败即报错，删除全局可写回退。; docs/blueprint/security.md:33 规定 Artifact Service 发布目录同样收敛 0750/0640、『不回退到全局可写，chown 失败即报错』；:35 明言『不存在 0777/0666 回退』。; docs/pending/todo/p017_t016_minor_cleanup.md:4 已把『删除 artifacts.md 中 0755/0644 回退描述』列为清理项，但处理状态为『未开』，现行 blueprint 未改。
-    - Impact: blueprint 是项目约定的当前长期真相；在其中保留一条已被 ADR 以安全理由明令删除的回退路径，后续实现者或审阅者按 artifacts.md 落地即可重新引入宿主其他用户可读 Artifact（含下载文件）的权限面，且两篇现行文档互相矛盾使验收无所适从。
-    - Fix: 删除 artifacts.md:14 的回退句，改写为与 ADR 014/security.md:33 一致的表述（0750/0640、chown 失败即报错、非 root 开发路径保留开发者属主但使用精确 mode）；同步关闭 p017 的对应条目。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_03)
+    - f_docs_current_03: docs/blueprint/artifacts.md:14：『发布后的目录与文件应用 Browser runtime UID/GID（默认 1000），目录 0750、文件 0640；无法 chown 的宿主开发环境回退到 0755/0644，保证容器 UID 1000 可读。』; docs/blueprint/decisions.md ADR 014（2026-11-03）：背景明确指出 0777/0666 类回退导致『Cookie、登录态与运行时文件对宿主其他用户可读写』，结论为目录 0700/0750、文件 0600/0640、chown 失败即报错，删除全局可写回退。; docs/blueprint/security.md:33 规定 Artifact Service 发布目录同样收敛 0750/0640、『不回退到全局可写，chown 失败即报错』；:35 明言『不存在 0777/0666 回退』。; docs/pending/todo/p017_t016_minor_cleanup.md:4 已把『删除 artifacts.md 中 0755/0644 回退描述』列为清理项，但处理状态为『未开』，现行 blueprint 未改。
+        - Impact: blueprint 是项目约定的当前长期真相；在其中保留一条已被 ADR 以安全理由明令删除的回退路径，后续实现者或审阅者按 artifacts.md 落地即可重新引入宿主其他用户可读 Artifact（含下载文件）的权限面，且两篇现行文档互相矛盾使验收无所适从。
+        - Fix: 删除 artifacts.md:14 的回退句，改写为与 ADR 014/security.md:33 一致的表述（0750/0640、chown 失败即报错、非 root 开发路径保留开发者属主但使用精确 mode）；同步关闭 p017 的对应条目。
+        - Verification: static
 - [Medium][85] .repo_template/scripts/repo_cleanup.py:114-124,158-172 — cleanup 主 walk 的剪枝按仓库根相对路径匹配，嵌套 node_modules 与 bulk 目录树不被剪枝，与 docstring 的防误删承诺不符
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_01)
-  - f_template_scripts_ops_01: _prune(relroot, names, excluded) 以完整相对路径 rel 与 excluded 比对；prune 集合为 {".git", ".scratch", "artifacts", "data"} 及未点名时的 "node_modules"，只命中仓库根一级同名目录; 嵌套路径如 src/frontend/node_modules、pkg/.scratch 的 rel 为多段路径，不在 prune 集合中，os.walk 继续下钻; 文件头 docstring 明示『默认扫描不进入未点名的 node_modules 与这三棵目录树（防误删未点名内容）』; 下钻后嵌套 node_modules 内的 *.pyc/*.log/__pycache__ 会被默认类别（pycache/logs）命中并在 apply 时删除；嵌套 .git 内的同类文件同理
-    - Impact: 默认 scan/apply 会进入并清理未点名类别的嵌套目录树，违背脚本自述的安全契约；同时全量 walk 巨型 node_modules 使 scan 显著变慢。删除对象多为依赖内缓存/日志，实际损失有限，但契约与实现不一致会误导审批者对 dry-run 结果的信任。
-    - Fix: 在 _prune 中按目录名（而非完整相对路径）剪枝 node_modules/三棵 bulk 目录名与 .git，或在 walk 中以 name in prune_names 判断；补嵌套 node_modules 的回归用例。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_01)
+    - f_template_scripts_ops_01: \_prune(relroot, names, excluded) 以完整相对路径 rel 与 excluded 比对；prune 集合为 {".git", ".scratch", "artifacts", "data"} 及未点名时的 "node_modules"，只命中仓库根一级同名目录; 嵌套路径如 src/frontend/node_modules、pkg/.scratch 的 rel 为多段路径，不在 prune 集合中，os.walk 继续下钻; 文件头 docstring 明示『默认扫描不进入未点名的 node_modules 与这三棵目录树（防误删未点名内容）』; 下钻后嵌套 node_modules 内的 *.pyc/*.log/__pycache__ 会被默认类别（pycache/logs）命中并在 apply 时删除；嵌套 .git 内的同类文件同理
+        - Impact: 默认 scan/apply 会进入并清理未点名类别的嵌套目录树，违背脚本自述的安全契约；同时全量 walk 巨型 node_modules 使 scan 显著变慢。删除对象多为依赖内缓存/日志，实际损失有限，但契约与实现不一致会误导审批者对 dry-run 结果的信任。
+        - Fix: 在 \_prune 中按目录名（而非完整相对路径）剪枝 node_modules/三棵 bulk 目录名与 .git，或在 walk 中以 name in prune_names 判断；补嵌套 node_modules 的回归用例。
+        - Verification: static
 - [Medium][80] .repo_template/scripts/repo_sync.py:1606,1682,1969-2011 — user_prompts 编号在 status/plan 与 prompt list/revoke 之间不是同一编号空间，revoke 可能作废错误条目
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_02)
-  - f_template_scripts_ops_02: cmd_status:1606 与 cmd_plan:1682 均以 enumerate(active_prompts(state)) 编号——active_prompts 过滤 revoked 并合并 local state 与 sync_policy 的共享 prompts; cmd_prompt 的 list/revoke 以 data.get("user_prompts") 原始列表（未过滤、仅当前 scope）下标为准，revoke 按该下标置 revoked; 只要存在任一已 revoked 条目或共享 prompt，status/plan 打印的 #N 与 prompt revoke --id N 指向不同条目; user_prompts 的 tags 直接驱动 merge_gitignore 的拦截子串（prompt_substrings），作废错条目会改变 .gitignore 同步行为
-    - Impact: 操作者按 status/plan 展示的编号执行 revoke，会静默作废另一条站立指令（或漏作废目标条目），且输出无从察觉；站立指令影响后续所有 apply 的 .gitignore 裁定，后果跨轮次持续。
-    - Fix: 统一编号语义：status/plan 改为展示原始列表下标（与 revoke 一致），或 prompt list/revoke 改按 active 序号并在输出标注 scope/来源；二选一并在三处输出口径对齐。
-    - Verification: static
-- [Medium][75] .repo_template/scripts/repo_sync.py:823-838,2063-2073 — link-skills 路径下 _ensure_symlink 对宿主位真实目录直接 rmtree 且报告谎称『原内容入回滚栈』，该路径根本没有事务
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_03)
-  - f_template_scripts_ops_03: _ensure_symlink:834 对 link.is_dir() 的真实目录执行 shutil.rmtree(link)，reports 固定文案为『旧真实目录已转软链（原内容入回滚栈）』; cmd_link_skills:2063 直接调用 repair_symlinks，未建立 FileTransaction，不存在回滚栈; apply 路径下 FileTransaction.begin 对 .claude/skills/.agents/skills 做了快照（repo_task/file_transaction.py:27-29），文案在该路径才成立; 宿主位真实目录可能是未入库的本地 skill 副本，rmtree 后除 git 已跟踪部分外不可恢复
-    - Impact: 用户运行只读语义预期的 link-skills『校验并修复软链』即可永久删除宿主位真实目录内容，且报告误导其以为可回滚；与 apply 路径同一函数两种安全等级，调用方无从区分。
-    - Fix: link-skills 路径下遇真实目录时改为报错/跳过并提示走 apply，或先把原目录改名为带时间戳的本机备份再转软链；回滚栈文案只在事务内输出。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_02)
+    - f_template_scripts_ops_02: cmd_status:1606 与 cmd_plan:1682 均以 enumerate(active_prompts(state)) 编号——active_prompts 过滤 revoked 并合并 local state 与 sync_policy 的共享 prompts; cmd_prompt 的 list/revoke 以 data.get("user_prompts") 原始列表（未过滤、仅当前 scope）下标为准，revoke 按该下标置 revoked; 只要存在任一已 revoked 条目或共享 prompt，status/plan 打印的 #N 与 prompt revoke --id N 指向不同条目; user_prompts 的 tags 直接驱动 merge_gitignore 的拦截子串（prompt_substrings），作废错条目会改变 .gitignore 同步行为
+        - Impact: 操作者按 status/plan 展示的编号执行 revoke，会静默作废另一条站立指令（或漏作废目标条目），且输出无从察觉；站立指令影响后续所有 apply 的 .gitignore 裁定，后果跨轮次持续。
+        - Fix: 统一编号语义：status/plan 改为展示原始列表下标（与 revoke 一致），或 prompt list/revoke 改按 active 序号并在输出标注 scope/来源；二选一并在三处输出口径对齐。
+        - Verification: static
+- [Medium][75] .repo_template/scripts/repo_sync.py:823-838,2063-2073 — link-skills 路径下 \_ensure_symlink 对宿主位真实目录直接 rmtree 且报告谎称『原内容入回滚栈』，该路径根本没有事务
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_03)
+    - f_template_scripts_ops_03: \_ensure_symlink:834 对 link.is_dir() 的真实目录执行 shutil.rmtree(link)，reports 固定文案为『旧真实目录已转软链（原内容入回滚栈）』; cmd_link_skills:2063 直接调用 repair_symlinks，未建立 FileTransaction，不存在回滚栈; apply 路径下 FileTransaction.begin 对 .claude/skills/.agents/skills 做了快照（repo_task/file_transaction.py:27-29），文案在该路径才成立; 宿主位真实目录可能是未入库的本地 skill 副本，rmtree 后除 git 已跟踪部分外不可恢复
+        - Impact: 用户运行只读语义预期的 link-skills『校验并修复软链』即可永久删除宿主位真实目录内容，且报告误导其以为可回滚；与 apply 路径同一函数两种安全等级，调用方无从区分。
+        - Fix: link-skills 路径下遇真实目录时改为报错/跳过并提示走 apply，或先把原目录改名为带时间戳的本机备份再转软链；回滚栈文案只在事务内输出。
+        - Verification: static
 - [Medium][70] .repo_template/scripts/repo_sync.py:1096-1097,1919 — sync_opencode_commands 对 registry.json 用 roles[name] 硬下标，registry 缺登记时 KeyError 穿透 apply 的回滚例外集
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_04)
-  - f_template_scripts_ops_04: sync_opencode_commands:1096-1097 以 json.loads(...)["skills"] 与 roles[name]["role"] 硬下标过滤 public skill；目录存在但 registry 未登记的 skill 触发 KeyError; 同文件 opencode_commands_status:1018 的对应逻辑用 roles.get(name, {}) 防御，两条路径防御等级不一致; cmd_apply:1919 的回滚捕捉集为 (OSError, ValueError, SyncError, subprocess.SubprocessError)，main 的兜底为 (SyncError, TaskDataError) 与 OSError；KeyError 均不在其中; sync_opencode_commands 在 _apply_sync_write 内、FileTransaction 已 begin 之后执行
-    - Impact: registry 与 skills 目录不一致（模板演进中的常见中间态）时 apply 中途以裸 traceback 崩溃：已写文件不回滚、事务悬挂为 begun 状态，后续 apply/transaction 操作需人工清理。skill_registry.py 本会在独立校验时以 ValueError 报告该不一致，但 apply 路径未先行调用它。
-    - Fix: sync_opencode_commands 改用 roles.get(name, {}) 并对缺登记给出 SyncError（或在 _apply_sync_write 前先跑 registry 一致性校验）；同时考虑把 KeyError 纳入 apply 回滚捕捉或在事务边界统一包装。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_04)
+    - f_template_scripts_ops_04: sync_opencode_commands:1096-1097 以 json.loads(...)["skills"] 与 roles[name]["role"] 硬下标过滤 public skill；目录存在但 registry 未登记的 skill 触发 KeyError; 同文件 opencode_commands_status:1018 的对应逻辑用 roles.get(name, {}) 防御，两条路径防御等级不一致; cmd_apply:1919 的回滚捕捉集为 (OSError, ValueError, SyncError, subprocess.SubprocessError)，main 的兜底为 (SyncError, TaskDataError) 与 OSError；KeyError 均不在其中; sync_opencode_commands 在 \_apply_sync_write 内、FileTransaction 已 begin 之后执行
+        - Impact: registry 与 skills 目录不一致（模板演进中的常见中间态）时 apply 中途以裸 traceback 崩溃：已写文件不回滚、事务悬挂为 begun 状态，后续 apply/transaction 操作需人工清理。skill_registry.py 本会在独立校验时以 ValueError 报告该不一致，但 apply 路径未先行调用它。
+        - Fix: sync_opencode_commands 改用 roles.get(name, {}) 并对缺登记给出 SyncError（或在 \_apply_sync_write 前先跑 registry 一致性校验）；同时考虑把 KeyError 纳入 apply 回滚捕捉或在事务边界统一包装。
+        - Verification: static
 - [Medium][92] .repo_template/tests/test_repo_sync.py:119 — prompt 编号双空间缺陷（f_template_scripts_ops_02）无任何回归测试：显示编号路径从未被驱动
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_13)
-  - f_template_scripts_ops_13: 生产侧已核：cmd_status（repo_sync.py:1606）与 cmd_plan（repo_sync.py:1682）按 active_prompts(state) 枚举打印 #{i}，active_prompts（repo_sync.py:239）返回 local 未作废 + _shared_user_prompts 未作废的合并列表；而 cmd_prompt revoke（repo_sync.py:2004-2010）按 data['user_prompts'] 原始本地列表（含已 revoked 条目）下标作废——两套编号空间只在『存在 shared 条目或已 revoked 条目』时分岔。; 现有 prompt 测试只有 test_prompt_add_supersede_revoke 与 test_prompt_substrings_only_active（test_repo_sync.py:119-146），全部直接以原始列表下标调用 cmd_prompt revoke（id=2 / id=1），从不渲染 status/plan 的编号再据此 revoke。; 全套件唯一的 shared-scope 用例 test_design_regressions.py::test_shared_sync_policy_and_version_survive_local_state_loss 只断言 active_prompts() 按 text 成员包含 shared 条目（验其在 apply/丢 state/重 init 后存活），不涉及编号、列表输出或 revoke。; grep .repo_template/tests 全部 *.py：cmd_status/cmd_plan 仅在无 user_prompts 的场景被调用（test_repo_sync.py:433、1150-1151），带 prompt 的编号输出零断言。
-    - Impact: f_02 的错误作废路径（按 status/plan 展示编号 revoke 到另一条站立指令，进而错误驱动 .gitignore 拦截）在测试层完全无网：任何后续重构都无法从测试发现编号空间再次分岔，该 Medium 缺陷只能靠人工复现发现。
-    - Fix: 在 test_repo_sync.py 增加用例：构造 local 2 条（其一 revoked）+ shared 1 条的混合 state，捕获 cmd_status/cmd_plan 输出的 prompt 编号，再以该编号调用 prompt revoke，断言被作废的正是展示的那一条；并为 cmd_prompt list 的编号口径补一条与 revoke 一致性的断言。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_13)
+    - f_template_scripts_ops_13: 生产侧已核：cmd_status（repo_sync.py:1606）与 cmd_plan（repo_sync.py:1682）按 active_prompts(state) 枚举打印 #{i}，active_prompts（repo_sync.py:239）返回 local 未作废 + \_shared_user_prompts 未作废的合并列表；而 cmd_prompt revoke（repo_sync.py:2004-2010）按 data['user_prompts'] 原始本地列表（含已 revoked 条目）下标作废——两套编号空间只在『存在 shared 条目或已 revoked 条目』时分岔。; 现有 prompt 测试只有 test_prompt_add_supersede_revoke 与 test_prompt_substrings_only_active（test_repo_sync.py:119-146），全部直接以原始列表下标调用 cmd_prompt revoke（id=2 / id=1），从不渲染 status/plan 的编号再据此 revoke。; 全套件唯一的 shared-scope 用例 test_design_regressions.py::test_shared_sync_policy_and_version_survive_local_state_loss 只断言 active_prompts() 按 text 成员包含 shared 条目（验其在 apply/丢 state/重 init 后存活），不涉及编号、列表输出或 revoke。; grep .repo_template/tests 全部 \*.py：cmd_status/cmd_plan 仅在无 user_prompts 的场景被调用（test_repo_sync.py:433、1150-1151），带 prompt 的编号输出零断言。
+        - Impact: f_02 的错误作废路径（按 status/plan 展示编号 revoke 到另一条站立指令，进而错误驱动 .gitignore 拦截）在测试层完全无网：任何后续重构都无法从测试发现编号空间再次分岔，该 Medium 缺陷只能靠人工复现发现。
+        - Fix: 在 test_repo_sync.py 增加用例：构造 local 2 条（其一 revoked）+ shared 1 条的混合 state，捕获 cmd_status/cmd_plan 输出的 prompt 编号，再以该编号调用 prompt revoke，断言被作废的正是展示的那一条；并为 cmd_prompt list 的编号口径补一条与 revoke 一致性的断言。
+        - Verification: static
 - [Medium][95] .repo_template/scripts/repo_sync.py:1096 — registry.json 角色过滤分支在测试套件中从未执行：sync_opencode_commands 的 roles[name] 硬下标（f_04）与状态侧 .get 的分岔零覆盖
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_14)
-  - f_template_scripts_ops_14: opencode_commands_status（repo_sync.py:1015-1019）与 sync_opencode_commands（repo_sync.py:1093-1097）都只在 SKILLS_SRC/registry.json 存在时才做 public 角色过滤；后者用 roles[name]['role'] 硬下标（f_04 的 KeyError 位点），前者用 roles.get 安全取值——同一过滤两套容错。; grep .repo_template/tests 全部 *.py：字符串 'registry.json' 零命中；test_repo_sync.py 的 env fixture 只在 consumer .repo_template/skills 下建裸 skill 目录（task-run/nodesc），从不放 registry.json，故两处过滤分支在 repo_sync 测试中从未进入。; skill_registry.py 本体仅有 test_design_regressions.py::test_registry_has_complete_roles_and_real_composition_edges 一条用例：对真实仓库 registry 调 render_registry() 断言含特定名字 + CLI 子进程退出 0；无 fixture 化的缺失/畸形 registry 输入，f_08 的 usage.md 缺标记裸 ValueError 路径同样无用例。
-    - Impact: 真实消费仓的 skills 目录恰恰带 registry.json（生产路径恒走过滤分支），而测试恒走无 registry 的旁路：角色过滤失效、registry 与目录不一致时的 KeyError 穿透回滚例外集（f_04）都不会被任何测试拦下，属于『测试环境与生产环境分支不一致』的系统性盲区。
-    - Fix: 在 test_repo_sync.py 的 env 中补 registry.json fixture：含 public/internal 两类角色与一条『registry 有名、目录无 skill』的不一致条目，分别断言 opencode_commands_status 与 sync_opencode_commands 的过滤结果一致且不抛 KeyError；skill_registry 侧补 usage.md 缺标记时报出可诊断错误的用例。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_14)
+    - f_template_scripts_ops_14: opencode_commands_status（repo_sync.py:1015-1019）与 sync_opencode_commands（repo_sync.py:1093-1097）都只在 SKILLS_SRC/registry.json 存在时才做 public 角色过滤；后者用 roles[name]['role'] 硬下标（f_04 的 KeyError 位点），前者用 roles.get 安全取值——同一过滤两套容错。; grep .repo_template/tests 全部 \*.py：字符串 'registry.json' 零命中；test_repo_sync.py 的 env fixture 只在 consumer .repo_template/skills 下建裸 skill 目录（task-run/nodesc），从不放 registry.json，故两处过滤分支在 repo_sync 测试中从未进入。; skill_registry.py 本体仅有 test_design_regressions.py::test_registry_has_complete_roles_and_real_composition_edges 一条用例：对真实仓库 registry 调 render_registry() 断言含特定名字 + CLI 子进程退出 0；无 fixture 化的缺失/畸形 registry 输入，f_08 的 usage.md 缺标记裸 ValueError 路径同样无用例。
+        - Impact: 真实消费仓的 skills 目录恰恰带 registry.json（生产路径恒走过滤分支），而测试恒走无 registry 的旁路：角色过滤失效、registry 与目录不一致时的 KeyError 穿透回滚例外集（f_04）都不会被任何测试拦下，属于『测试环境与生产环境分支不一致』的系统性盲区。
+        - Fix: 在 test_repo_sync.py 的 env 中补 registry.json fixture：含 public/internal 两类角色与一条『registry 有名、目录无 skill』的不一致条目，分别断言 opencode_commands_status 与 sync_opencode_commands 的过滤结果一致且不抛 KeyError；skill_registry 侧补 usage.md 缺标记时报出可诊断错误的用例。
+        - Verification: static
 - [Medium][75] .repo_template/scripts/repo_state.py:44-57,86-101,156-186 — repo_state.py 混用 CWD 相对与仓库根相对的路径基准，在子目录运行时静默给出错误结果
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_01)
-  - f_template_scripts_state_01: _git() 不指定 cwd，全部 git 调用继承进程 CWD；_untracked_files 用 `git ls-files --others`（默认输出相对 CWD 的路径），_diff_name_only 用 `git diff --name-only`（默认输出相对仓库根的路径），两者在 cmd_changed_files 中直接拼接去重并用同一组 fnmatch --exclude 匹配——CWD 非仓库根时同一文件以两种相对形式出现、exclude 匹配口径不一致。; cmd_added_lines 对 _untracked_files 返回的路径执行 Path(path).is_file()/read_text（相对 CWD 解析），与 ls-files 的路径基准叠加后，未跟踪文件全文可能被静默跳过（is_file 为假即 continue，无警告）。; cmd_deliverable 的 path.exists() 相对 CWD，而其 git diff --stat 以仓库根语义解释同一参数；本仓其他脚本一律以 context.REPO_ROOT 锚定路径，repo_state.py 是唯一例外，其 docstring 也未声明必须在仓库根运行。; 该脚本输出喂给 task 收尾的 deliverable 核对与清洁度 grep 计数（文件头 docstring 明示），路径基准错位会造成 deliverable 误报 missing 或新增行漏计，且无任何报错。
-    - Impact: 在仓库子目录（或被其他工具以任意 CWD 调用）时，changed-files/added-lines/deliverable 结果不可靠且静默降级，可能让收尾清洁度检查漏过未提交改动或误判交付物缺失。
-    - Fix: 在 repo_state.py 启动时解析仓库根（git rev-parse --show-toplevel）并 chdir 或对所有路径做根锚定；ls-files 加 --full-name 统一为根相对路径，Path 解析一律以仓库根为基准。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_01)
+    - f_template_scripts_state_01: \_git() 不指定 cwd，全部 git 调用继承进程 CWD；\_untracked_files 用 `git ls-files --others`（默认输出相对 CWD 的路径），\_diff_name_only 用 `git diff --name-only`（默认输出相对仓库根的路径），两者在 cmd_changed_files 中直接拼接去重并用同一组 fnmatch --exclude 匹配——CWD 非仓库根时同一文件以两种相对形式出现、exclude 匹配口径不一致。; cmd_added_lines 对 \_untracked_files 返回的路径执行 Path(path).is_file()/read_text（相对 CWD 解析），与 ls-files 的路径基准叠加后，未跟踪文件全文可能被静默跳过（is_file 为假即 continue，无警告）。; cmd_deliverable 的 path.exists() 相对 CWD，而其 git diff --stat 以仓库根语义解释同一参数；本仓其他脚本一律以 context.REPO_ROOT 锚定路径，repo_state.py 是唯一例外，其 docstring 也未声明必须在仓库根运行。; 该脚本输出喂给 task 收尾的 deliverable 核对与清洁度 grep 计数（文件头 docstring 明示），路径基准错位会造成 deliverable 误报 missing 或新增行漏计，且无任何报错。
+        - Impact: 在仓库子目录（或被其他工具以任意 CWD 调用）时，changed-files/added-lines/deliverable 结果不可靠且静默降级，可能让收尾清洁度检查漏过未提交改动或误判交付物缺失。
+        - Fix: 在 repo_state.py 启动时解析仓库根（git rev-parse --show-toplevel）并 chdir 或对所有路径做根锚定；ls-files 加 --full-name 统一为根相对路径，Path 解析一律以仓库根为基准。
+        - Verification: static
 - [Medium][90] .repo_template/tests/test_repo_state.py:22-30 — repo_state.py 的测试从未在子目录 CWD 下运行，恰好绕开本单元 f_01 的缺陷面
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_17)
-  - f_template_scripts_state_17: test_repo_state.py 的 _run() 恒以 cwd=repo（仓库根）启动脚本，全部 8 个测试无一从子目录调用；deliverable/changed-files/added-lines 的断言都建立在 CWD=仓库根的前提上。; 本单元 correctness 视角的 f_template_scripts_state_01 已静态确认：CWD 非仓库根时 ls-files（CWD 相对）与 diff --name-only（根相对）路径基准混杂、未跟踪文件可能被静默跳过——该行为在现有测试下不可见，修与不修测试结果相同。; 同文件已有对调用环境差异的回归意识（test_added_lines_exclude_robust_to_diff_prefix_config 覆盖用户 git config 改变 diff 前缀、test_non_ascii_paths_raw_and_exclude_consistent 覆盖非 ASCII 路径），说明调用环境维度本在该文件的测试设计范围内，子目录 CWD 只是未覆盖。
-    - Impact: repo_state.py 是 task 收尾 deliverable 核对与清洁度计数的取数脚本；其唯一已知缺陷面（子目录调用）没有任何测试信号，既无法印证 f_01，也无法防止按 f_01 修复后同类路径基准问题无声回归。
-    - Fix: 在 test_repo_state.py 增加从 repo 子目录（如 docs/）调用三个子命令的用例，断言输出与仓库根运行时一致（含 --exclude 命中与未跟踪文件全文计入 added-lines）。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_17)
+    - f_template_scripts_state_17: test_repo_state.py 的 \_run() 恒以 cwd=repo（仓库根）启动脚本，全部 8 个测试无一从子目录调用；deliverable/changed-files/added-lines 的断言都建立在 CWD=仓库根的前提上。; 本单元 correctness 视角的 f_template_scripts_state_01 已静态确认：CWD 非仓库根时 ls-files（CWD 相对）与 diff --name-only（根相对）路径基准混杂、未跟踪文件可能被静默跳过——该行为在现有测试下不可见，修与不修测试结果相同。; 同文件已有对调用环境差异的回归意识（test_added_lines_exclude_robust_to_diff_prefix_config 覆盖用户 git config 改变 diff 前缀、test_non_ascii_paths_raw_and_exclude_consistent 覆盖非 ASCII 路径），说明调用环境维度本在该文件的测试设计范围内，子目录 CWD 只是未覆盖。
+        - Impact: repo_state.py 是 task 收尾 deliverable 核对与清洁度计数的取数脚本；其唯一已知缺陷面（子目录调用）没有任何测试信号，既无法印证 f_01，也无法防止按 f_01 修复后同类路径基准问题无声回归。
+        - Fix: 在 test_repo_state.py 增加从 repo 子目录（如 docs/）调用三个子命令的用例，断言输出与仓库根运行时一致（含 --exclude 命中与未跟踪文件全文计入 added-lines）。
+        - Verification: static
 - [Medium][95] .repo_template/scripts/repo_task/view_static/board.js:1-1135；.repo_template/tests/test_view_server.py:55 — board.js 1135 行前端逻辑零行为测试，仅有路径字符串存在性断言
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_18)
-  - f_template_scripts_state_18: 全部测试中对 board.js 的唯一引用是 test_view_server.py:55 的 assert "/static/board.js" in html——只证明看板 HTML 引用了该路径，不加载、不解析、不执行 board.js 任何一行；board.css（701 行）同样无任何校验。; 同目录的 chain_plan.js（展示辅助子集）有专门的 node 用例集 test_chain_plan_cases.js 并由 test_chain_plan.py 驱动；board.js 的渲染、拖拽、SVG 连线与分类展示逻辑没有任何等价测试物。; 本单元 f_template_scripts_state_12（board.js 每次 pointermove 整表重建 SVG 的性能缺陷）正位于这片无测试区，其存废与修复均无测试信号。
-    - Impact: board.js 是本单元行数最大的文件；它出现语法错误或逻辑回归时，模板契约套件与全部 Python 测试仍全绿，看板前端会静默损坏而无人察觉。
-    - Fix: 仿 test_chain_plan_cases.js 为 board.js 的纯函数部分（分类映射、边/SVG 几何、文本拼装）建 node 用例集并由 pytest 驱动；至少加一条 node --check 语法冒烟纳入契约套件。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_18)
+    - f_template_scripts_state_18: 全部测试中对 board.js 的唯一引用是 test_view_server.py:55 的 assert "/static/board.js" in html——只证明看板 HTML 引用了该路径，不加载、不解析、不执行 board.js 任何一行；board.css（701 行）同样无任何校验。; 同目录的 chain_plan.js（展示辅助子集）有专门的 node 用例集 test_chain_plan_cases.js 并由 test_chain_plan.py 驱动；board.js 的渲染、拖拽、SVG 连线与分类展示逻辑没有任何等价测试物。; 本单元 f_template_scripts_state_12（board.js 每次 pointermove 整表重建 SVG 的性能缺陷）正位于这片无测试区，其存废与修复均无测试信号。
+        - Impact: board.js 是本单元行数最大的文件；它出现语法错误或逻辑回归时，模板契约套件与全部 Python 测试仍全绿，看板前端会静默损坏而无人察觉。
+        - Fix: 仿 test_chain_plan_cases.js 为 board.js 的纯函数部分（分类映射、边/SVG 几何、文本拼装）建 node 用例集并由 pytest 驱动；至少加一条 node --check 语法冒烟纳入契约套件。
+        - Verification: static
 - [Medium][80] .repo_template/tests/review_support.py:13-35 — 真实 git 端到端套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭，生产侧『审阅产出证据+执行项目验证命令』路径从未被端到端执行
-  - Sources: bundle_local_template_tests.md (f_template_tests_01)
-  - f_template_tests_01: ensure_review_evidence 计算真实 scope 指纹后，直接写出内容为 '## Round 1\nreviewed_scope: {scope}\nverdict: PASS' 的 review_code.md/review_test.md/review_general.md，不存在任何审阅者环节; configure_project_verification 把每个真实 git fixture 仓的 testing.md 中 doctor_cmd/test_cmd/blackbox_verify 全部写为『无』，并给每个 task 追加 specs_index not_applicable 豁免行；test_dispatch_integration、test_task_start_flow、test_task_scheduling、test_goal、test_evidence_repair 等全部真实 git 套件都调用它; 缓解事实：指纹是按真实内容算出的（非写死），且函数明确不覆盖已存在的 stale/FAIL 证据；test_check_review_status、test_evidence_repair、test_review_scope_fingerprint 对门禁校验逻辑本身（stale 拒绝、FAIL 拒绝、amend 修复）有扎实覆盖——缺的是『证据由真实审阅产生』与『项目验证命令被真实执行』这两环
-    - Impact: task 工作流最核心的质量门禁（review 证据产生、项目 test_cmd/blackbox 命令执行）在整套 E2E 中恒为合成 PASS/无命令状态：若生产代码在调用审阅者、解析真实 review 报告或执行项目验证命令的环节退化，这套测试仍会全绿。门禁校验逻辑有覆盖，但门禁的上游产出链没有。
-    - Fix: 至少补少量冒烟级端到端用例：fixture 仓配置真实可执行的 test_cmd（如一条必然通过/必然失败的命令），断言 finish/report 流真的执行该命令且失败时被门禁拒绝；review 证据侧保留合成方式时，在 review_support docstring 与套件文档中显式声明该边界，避免读者高估覆盖。
-    - Verification: static
+    - Sources: bundle_local_template_tests.md (f_template_tests_01)
+    - f_template_tests_01: ensure_review_evidence 计算真实 scope 指纹后，直接写出内容为 '## Round 1\\nreviewed_scope: {scope}\\nverdict: PASS' 的 review_code.md/review_test.md/review_general.md，不存在任何审阅者环节; configure_project_verification 把每个真实 git fixture 仓的 testing.md 中 doctor_cmd/test_cmd/blackbox_verify 全部写为『无』，并给每个 task 追加 specs_index not_applicable 豁免行；test_dispatch_integration、test_task_start_flow、test_task_scheduling、test_goal、test_evidence_repair 等全部真实 git 套件都调用它; 缓解事实：指纹是按真实内容算出的（非写死），且函数明确不覆盖已存在的 stale/FAIL 证据；test_check_review_status、test_evidence_repair、test_review_scope_fingerprint 对门禁校验逻辑本身（stale 拒绝、FAIL 拒绝、amend 修复）有扎实覆盖——缺的是『证据由真实审阅产生』与『项目验证命令被真实执行』这两环
+        - Impact: task 工作流最核心的质量门禁（review 证据产生、项目 test_cmd/blackbox 命令执行）在整套 E2E 中恒为合成 PASS/无命令状态：若生产代码在调用审阅者、解析真实 review 报告或执行项目验证命令的环节退化，这套测试仍会全绿。门禁校验逻辑有覆盖，但门禁的上游产出链没有。
+        - Fix: 至少补少量冒烟级端到端用例：fixture 仓配置真实可执行的 test_cmd（如一条必然通过/必然失败的命令），断言 finish/report 流真的执行该命令且失败时被门禁拒绝；review 证据侧保留合成方式时，在 review_support docstring 与套件文档中显式声明该边界，避免读者高估覆盖。
+        - Verification: static
 - [Medium][85] .repo_template/tests/test_task_start_flow.py:1234-1265 — test_drop_keeps_archived_state_when_index_rebuild_fails 未驱动 cmd_drop 本身且最终断言为析取式，标题声称的回归实际未被覆盖
-  - Sources: bundle_local_template_tests.md (f_template_tests_02)
-  - f_template_tests_02: 用例没有调用 lifecycle.cmd_drop：它手动 store.load_task 后用 shutil.move 把目录搬到 archive，再直接调用被 monkeypatch 成抛 OSError 的 rebuild_index，验证的只是『rebuild_index 抛错不改 front matter』; 函数前半段定义的 fake_rebuild_index 与 calls 计数器从未被使用（死脚手架），注释自承『改为在主仓 patch 后经进程内调用验证』; 关键断言为 assert got['status'] in ('dropped', 'backlog')：无论 drop 实现把状态写成 dropped 还是干脆没写，都通过，无法区分『归档状态保持』与『状态根本没落盘』; 对照：紧邻的 test_drop_moves_back_front_matter_when_archive_move_fails（1267 行起）确实驱动了 cmd_drop 并断言确切状态，说明本用例的写法是孤例而非套件惯例
-    - Impact: 『drop 在索引重建失败时保持已归档状态并报告索引待修复』这一行为若在 cmd_drop 内退化（如重建失败时反向搬回目录、或异常被吞），不会有任何用例变红；该用例给人已覆盖的印象，属于验证假行为。
-    - Fix: 改用子进程或进程内调用真实 cmd_drop：在 drop 完成目录移动后让 rebuild_index 抛错（patch lifecycle 模块内引用），断言退出信息含『索引待修复』类提示、目录留在 archive、front matter status 恰为 'dropped'（单一值断言），并删除未使用的 fake_rebuild_index 脚手架。
-    - Verification: static
+    - Sources: bundle_local_template_tests.md (f_template_tests_02)
+    - f_template_tests_02: 用例没有调用 lifecycle.cmd_drop：它手动 store.load_task 后用 shutil.move 把目录搬到 archive，再直接调用被 monkeypatch 成抛 OSError 的 rebuild_index，验证的只是『rebuild_index 抛错不改 front matter』; 函数前半段定义的 fake_rebuild_index 与 calls 计数器从未被使用（死脚手架），注释自承『改为在主仓 patch 后经进程内调用验证』; 关键断言为 assert got['status'] in ('dropped', 'backlog')：无论 drop 实现把状态写成 dropped 还是干脆没写，都通过，无法区分『归档状态保持』与『状态根本没落盘』; 对照：紧邻的 test_drop_moves_back_front_matter_when_archive_move_fails（1267 行起）确实驱动了 cmd_drop 并断言确切状态，说明本用例的写法是孤例而非套件惯例
+        - Impact: 『drop 在索引重建失败时保持已归档状态并报告索引待修复』这一行为若在 cmd_drop 内退化（如重建失败时反向搬回目录、或异常被吞），不会有任何用例变红；该用例给人已覆盖的印象，属于验证假行为。
+        - Fix: 改用子进程或进程内调用真实 cmd_drop：在 drop 完成目录移动后让 rebuild_index 抛错（patch lifecycle 模块内引用），断言退出信息含『索引待修复』类提示、目录留在 archive、front matter status 恰为 'dropped'（单一值断言），并删除未使用的 fake_rebuild_index 脚手架。
+        - Verification: static
 - [Medium][85] tests/e2e/conftest.py:32 — Dist freshness gate is keyed on test filename containing 'frontend', not on actual dist consumption
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_01)
-  - f_tests_e2e_stream_frontend_01: tests/e2e/conftest.py:31-39 - pytest_collection_modifyitems computes frontend_items = [item for item in items if "frontend" in Path(str(item.fspath)).name] and only then calls verify_frontend_build_freshness; the check is skipped entirely when no collected file matches the substring.; tests/fixtures/frontend_app_probe/harness.py (prepare_frontend_app) copies src/frontend/dist verbatim into the static root with no freshness check of its own, so the collection hook is the only barrier between a stale dist and the app/auth/display/media suites.; tests/fixtures/frontend_probe/host_builder.py (ensure_frontend_build) builds the frontend only when dist files are missing, never when they are stale; the session lane therefore also depends solely on the filename-triggered hook.; tests/unit/test_frontend_build_freshness.py:62-67 - the hook's own unit test exercises exactly one synthetic item (test_frontend_app_e2e.py), so the filename-filter behavior itself (which files trigger, which escape) is untested.
-    - Impact: Today every dist-consuming suite happens to have 'frontend' in its filename, so the gate works; but the guarantee is a naming coincidence. Renaming a suite, or adding a new dist-consuming suite without 'frontend' in its name, silently re-opens the stale-dist hole this mechanism was built to close, with no failing test to reveal it.
-    - Fix: Trigger the freshness check on actual dist consumption instead of filename: e.g. run it unconditionally for the tests/e2e tree, or have the harnesses that copy dist call verify_frontend_build_freshness in prepare_static/prepare_frontend_app, and extend the hook unit test with a non-frontend-named dist consumer case.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_01)
+    - f_tests_e2e_stream_frontend_01: tests/e2e/conftest.py:31-39 - pytest_collection_modifyitems computes frontend_items = [item for item in items if "frontend" in Path(str(item.fspath)).name] and only then calls verify_frontend_build_freshness; the check is skipped entirely when no collected file matches the substring.; tests/fixtures/frontend_app_probe/harness.py (prepare_frontend_app) copies src/frontend/dist verbatim into the static root with no freshness check of its own, so the collection hook is the only barrier between a stale dist and the app/auth/display/media suites.; tests/fixtures/frontend_probe/host_builder.py (ensure_frontend_build) builds the frontend only when dist files are missing, never when they are stale; the session lane therefore also depends solely on the filename-triggered hook.; tests/unit/test_frontend_build_freshness.py:62-67 - the hook's own unit test exercises exactly one synthetic item (test_frontend_app_e2e.py), so the filename-filter behavior itself (which files trigger, which escape) is untested.
+        - Impact: Today every dist-consuming suite happens to have 'frontend' in its filename, so the gate works; but the guarantee is a naming coincidence. Renaming a suite, or adding a new dist-consuming suite without 'frontend' in its name, silently re-opens the stale-dist hole this mechanism was built to close, with no failing test to reveal it.
+        - Fix: Trigger the freshness check on actual dist consumption instead of filename: e.g. run it unconditionally for the tests/e2e tree, or have the harnesses that copy dist call verify_frontend_build_freshness in prepare_static/prepare_frontend_app, and extend the hook unit test with a non-frontend-named dist consumer case.
+        - Verification: static
 - [Medium][90] tests/e2e/test_stream_selkies_tokens_e2e.py:341 — AC-010 'agent token injection' test re-implements the StreamAgent in the test instead of exercising production agent code
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_03)
-  - f_tests_e2e_stream_frontend_03: tests/e2e/test_stream_selkies_tokens_e2e.py:341-346 - agent_forward_hello is a local Python function whose docstring says it 'Emulates StreamAgent upstream worker HELLO token injection'; it inserts the controller token into the HELLO dict and the test sends the result directly to the Selkies server.; The test named test_e2e_ac010_agent_controller_token_injection_and_coexistence therefore proves the Selkies server's token/coexistence/resume semantics given an already-injected token, but never runs the production Stream Agent forwarding path it is named after.; Partial mitigation in the same file: the final gateway-topology test drives the real chain (Chrome -> Gateway -> Agent -> Selkies) and verifies decode and input, but it does not cover the multi-tab coexistence, resume-supersede (close 4001 'Superseded by a new connection.'), or cloned-tab cases that the emulated test asserts.
-    - Impact: A regression in the real agent's HELLO forwarding (wrong token injected, metadata dropped, injection skipped for reconnects) would leave this suite green while the feature is broken; the test's name and docstring overstate the coverage a reader or CI dashboard would attribute to it.
-    - Fix: Route at least the coexistence/resume scenarios through the real Stream Agent (as the gateway-topology test in the same file does), or rename/re-document the emulated test to state it covers server-side token semantics only.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_03)
+    - f_tests_e2e_stream_frontend_03: tests/e2e/test_stream_selkies_tokens_e2e.py:341-346 - agent_forward_hello is a local Python function whose docstring says it 'Emulates StreamAgent upstream worker HELLO token injection'; it inserts the controller token into the HELLO dict and the test sends the result directly to the Selkies server.; The test named test_e2e_ac010_agent_controller_token_injection_and_coexistence therefore proves the Selkies server's token/coexistence/resume semantics given an already-injected token, but never runs the production Stream Agent forwarding path it is named after.; Partial mitigation in the same file: the final gateway-topology test drives the real chain (Chrome -> Gateway -> Agent -> Selkies) and verifies decode and input, but it does not cover the multi-tab coexistence, resume-supersede (close 4001 'Superseded by a new connection.'), or cloned-tab cases that the emulated test asserts.
+        - Impact: A regression in the real agent's HELLO forwarding (wrong token injected, metadata dropped, injection skipped for reconnects) would leave this suite green while the feature is broken; the test's name and docstring overstate the coverage a reader or CI dashboard would attribute to it.
+        - Fix: Route at least the coexistence/resume scenarios through the real Stream Agent (as the gateway-topology test in the same file does), or rename/re-document the emulated test to state it covers server-side token semantics only.
+        - Verification: static
 - [Medium][80] tests/e2e/test_stream_runtime_e2e.py:94 — Stream runtime suite validates tab/media semantics against an in-test GatewayMockServer and a Web Locks shim, not the production gateway/adapter
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_04)
-  - f_tests_e2e_stream_frontend_04: tests/e2e/test_stream_runtime_e2e.py:94 - class GatewayMockServer is a test-local re-implementation of the gateway side of the signaling protocol; the suite's dual-tab identity, cloned-tab remapping, reconnect/re-register, and media-matrix assertions are all evaluated against this mock.; tests/e2e/test_stream_runtime_e2e.py:33 - WEB_LOCK_SHIM_JS loads tests/fixtures/stream_probe/web_lock_shim.js and injects it into pages, replacing the browser's Web Locks behavior that production tab-identity logic relies on; lock-contention outcomes are therefore shim-defined.; Browser-side scripts in the same file rewrite the WebSocket path to bypass the production gateway route, so the production adapter-to-gateway wiring is outside this suite's evidence.
-    - Impact: If the mock or shim diverges from production gateway/adapter behavior (message shapes, lock semantics, close codes), the suite passes against the divergence and can also fail spuriously when production changes legitimately. Real-topology suites (gateway AC-003/007, frontend session/app) cover parts of the production path, but the specific tab-identity and IME/clipboard invariants asserted here rest on the mock.
-    - Fix: Port the highest-value invariants (tab identity, cloned-tab remap, resume) to the real gateway topology harness, or add a contract test pinning GatewayMockServer's protocol surface against the production gateway implementation so divergence fails loudly.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_04)
+    - f_tests_e2e_stream_frontend_04: tests/e2e/test_stream_runtime_e2e.py:94 - class GatewayMockServer is a test-local re-implementation of the gateway side of the signaling protocol; the suite's dual-tab identity, cloned-tab remapping, reconnect/re-register, and media-matrix assertions are all evaluated against this mock.; tests/e2e/test_stream_runtime_e2e.py:33 - WEB_LOCK_SHIM_JS loads tests/fixtures/stream_probe/web_lock_shim.js and injects it into pages, replacing the browser's Web Locks behavior that production tab-identity logic relies on; lock-contention outcomes are therefore shim-defined.; Browser-side scripts in the same file rewrite the WebSocket path to bypass the production gateway route, so the production adapter-to-gateway wiring is outside this suite's evidence.
+        - Impact: If the mock or shim diverges from production gateway/adapter behavior (message shapes, lock semantics, close codes), the suite passes against the divergence and can also fail spuriously when production changes legitimately. Real-topology suites (gateway AC-003/007, frontend session/app) cover parts of the production path, but the specific tab-identity and IME/clipboard invariants asserted here rest on the mock.
+        - Fix: Port the highest-value invariants (tab identity, cloned-tab remap, resume) to the real gateway topology harness, or add a contract test pinning GatewayMockServer's protocol surface against the production gateway implementation so divergence fails loudly.
+        - Verification: static
 - [Medium][95] tests/e2e/test_supervisor_startup_recovery_e2e.py:15-21 — Module docstring states the opposite of the asserted A1 semantics for native-exit spool replay
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_01)
-  - f_tests_e2e_supervisor_01: File header, Case 3 (lines 19-21): 'Once the proxy allows normal forwarding, spool replay delivers the normal exit, converging the profile runtime to stopped with no restart.'; The test body asserts the reverse (lines 457-475): after replay_spooled_events() returns 1, the runtime still has runtime_instance_id == native_inst, observed_state == 'starting', failure_count == 0 and last_exit_event_id is None, with the comment 'Disk events are diagnostics and must not converge lifecycle state.'; The sibling suite encodes the same A1 rule explicitly (offline_recovery asserts last_exit_event_id stays None for normal exits because it is 'strictly an abnormal retry fence'), confirming the docstring, not the assertion, is the stale side.
-    - Impact: The file header is the stated contract for the suite; a reader (or a future editor 'fixing' the test to match the docstring) would reintroduce exactly the bug A1 removed — a diagnostic disk journal entry converging lifecycle state to stopped. Documentation/implementation contradiction on a safety-relevant semantic.
-    - Fix: Rewrite Case 3 in the module docstring to the A1 semantics actually asserted: the replayed native-exit event is persisted as a diagnostic, the bound runtime is left untouched (no convergence to stopped, no last_exit_event_id), and missing-runtime synthesis is suppressed while a native exit is registered.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_01)
+    - f_tests_e2e_supervisor_01: File header, Case 3 (lines 19-21): 'Once the proxy allows normal forwarding, spool replay delivers the normal exit, converging the profile runtime to stopped with no restart.'; The test body asserts the reverse (lines 457-475): after replay_spooled_events() returns 1, the runtime still has runtime_instance_id == native_inst, observed_state == 'starting', failure_count == 0 and last_exit_event_id is None, with the comment 'Disk events are diagnostics and must not converge lifecycle state.'; The sibling suite encodes the same A1 rule explicitly (offline_recovery asserts last_exit_event_id stays None for normal exits because it is 'strictly an abnormal retry fence'), confirming the docstring, not the assertion, is the stale side.
+        - Impact: The file header is the stated contract for the suite; a reader (or a future editor 'fixing' the test to match the docstring) would reintroduce exactly the bug A1 removed — a diagnostic disk journal entry converging lifecycle state to stopped. Documentation/implementation contradiction on a safety-relevant semantic.
+        - Fix: Rewrite Case 3 in the module docstring to the A1 semantics actually asserted: the replayed native-exit event is persisted as a diagnostic, the bound runtime is left untouched (no convergence to stopped, no last_exit_event_id), and missing-runtime synthesis is suppressed while a native exit is registered.
+        - Verification: static
 - [Medium][85] tests/fixtures/wait.py:1-8 — Shared bounded-polling helpers are unused by this unit; waits are ad-hoc loops and fixed sleeps, including before contract assertions
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_02)
-  - f_tests_e2e_supervisor_02: No file in the unit imports wait_until/poll_until/wait_for_log/wait_until_sync (grep over tests/e2e/test_supervisor_*.py and conftest.py returns no match), although wait.py exists precisely to remove trigger/observation races.; Hand-rolled duplicates: test_supervisor_core_e2e.py:201 and :228 (two 'for _ in range(50)' + sleep(0.2) registration waits with no timeout diagnostic), test_supervisor_recovery_e2e.py (three separate 100-iteration health loops), test_supervisor_container_graph_e2e.py defines its own ready() helper, test_supervisor_event_shutdown_e2e.py hand-polls health and log contents.; Fixed delays used as synchronisation before assertions: test_supervisor_offline_recovery_e2e.py:253, :290, :312 ('await asyncio.sleep(2.0)' before asserting spool retention / companion health) and test_supervisor_policy_failure_e2e.py:180 ('await asyncio.sleep(0.5)' after replay_spooled_events() before asserting API failure state).
-    - Impact: Fixed sleeps make pass/fail depend on host load: a slower Supervisor makes the offline-recovery retention checks read state before the system has acted (false confidence) or after a transient has passed; the duplicated loops each encode different timeouts and none reports the last observed value on timeout, so failures are hard to diagnose. This is the exact flake class wait.py's docstring says the helpers exist to eliminate.
-    - Fix: Route the unit's readiness/state waits through tests/fixtures/wait.py (poll_until/wait_for_log with the last value in the timeout message), and replace the offline_recovery/policy_failure fixed sleeps with polls on the observable condition (spool file presence over a window, API runtime fields reaching the expected values).
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_02)
+    - f_tests_e2e_supervisor_02: No file in the unit imports wait_until/poll_until/wait_for_log/wait_until_sync (grep over tests/e2e/test_supervisor\_\*.py and conftest.py returns no match), although wait.py exists precisely to remove trigger/observation races.; Hand-rolled duplicates: test_supervisor_core_e2e.py:201 and :228 (two 'for _ in range(50)' + sleep(0.2) registration waits with no timeout diagnostic), test_supervisor_recovery_e2e.py (three separate 100-iteration health loops), test_supervisor_container_graph_e2e.py defines its own ready() helper, test_supervisor_event_shutdown_e2e.py hand-polls health and log contents.; Fixed delays used as synchronisation before assertions: test_supervisor_offline_recovery_e2e.py:253, :290, :312 ('await asyncio.sleep(2.0)' before asserting spool retention / companion health) and test_supervisor_policy_failure_e2e.py:180 ('await asyncio.sleep(0.5)' after replay_spooled_events() before asserting API failure state).
+        - Impact: Fixed sleeps make pass/fail depend on host load: a slower Supervisor makes the offline-recovery retention checks read state before the system has acted (false confidence) or after a transient has passed; the duplicated loops each encode different timeouts and none reports the last observed value on timeout, so failures are hard to diagnose. This is the exact flake class wait.py's docstring says the helpers exist to eliminate.
+        - Fix: Route the unit's readiness/state waits through tests/fixtures/wait.py (poll_until/wait_for_log with the last value in the timeout message), and replace the offline_recovery/policy_failure fixed sleeps with polls on the observable condition (spool file presence over a window, API runtime fields reaching the expected values).
+        - Verification: static
 - [Medium][90] tests/e2e/conftest.py:22-28 — Required-mode gate demands the macOS Chrome app path for the whole E2E session, blocking the Docker-only supervisor suite on any non-macOS host
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_03)
-  - f_tests_e2e_supervisor_03: _missing_requirements() unconditionally appends 'Google Chrome at /Applications' when /Applications/Google Chrome.app/Contents/MacOS/Google Chrome is absent (lines 22-28).; pytest_collection_modifyitems calls pytest.exit(returncode=2) with that list whenever CBROWSER_E2E_REQUIRED=1 and anything is missing (lines 41-47); the check is not scoped to items that launch a local browser.; No test in this unit uses a host Chrome binary — all browsers run inside the pinned runtime image; the same hook already demonstrates item-scoped gating by special-casing 'frontend' items for the dist-freshness check (lines 33-39).
-    - Impact: On a Linux CI runner (the natural host for a Docker-based suite, and the Supervisor's own production environment) required mode can never start: the session exits before any supervisor test runs, so the fail-closed gate silently disables the entire E2E safety net outside one developer's Mac.
-    - Fix: Scope the Chrome prerequisite to the items that need it (e.g. only frontend items, mirroring the existing dist-freshness branch), or drop the host-Chrome check from the supervisor collection path and let the frontend unit own it.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_03)
+    - f_tests_e2e_supervisor_03: \_missing_requirements() unconditionally appends 'Google Chrome at /Applications' when /Applications/Google Chrome.app/Contents/MacOS/Google Chrome is absent (lines 22-28).; pytest_collection_modifyitems calls pytest.exit(returncode=2) with that list whenever CBROWSER_E2E_REQUIRED=1 and anything is missing (lines 41-47); the check is not scoped to items that launch a local browser.; No test in this unit uses a host Chrome binary — all browsers run inside the pinned runtime image; the same hook already demonstrates item-scoped gating by special-casing 'frontend' items for the dist-freshness check (lines 33-39).
+        - Impact: On a Linux CI runner (the natural host for a Docker-based suite, and the Supervisor's own production environment) required mode can never start: the session exits before any supervisor test runs, so the fail-closed gate silently disables the entire E2E safety net outside one developer's Mac.
+        - Fix: Scope the Chrome prerequisite to the items that need it (e.g. only frontend items, mirroring the existing dist-freshness branch), or drop the host-Chrome check from the supervisor collection path and let the frontend unit own it.
+        - Verification: static
 - [Medium][85] tests/fixtures/supervisor_resource_probe/stream_monitor.py:27 — Resource probe re-implements the production supervisor->gateway->agent quota delivery instead of exercising it
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_01)
-  - f_tests_integration_fixtures_01: stream_monitor.py:27-60 reads gateway.agent_instances / gateway.registered_agents (dicts of a test-local fake gateway defined in tests/e2e/test_stream_runtime_e2e.py, not production attributes) and hand-builds the wire envelope {'version': 'v2', 'action': 'supervisor_quota', agent_session_id, runtime_instance_id, ...} sent directly over the agent socket.; Production path is different: supervisor GatewayControlClient.set_quota -> gateway handle_supervisor_quota (src/backend/cbrowser/gateway/server.py:169) which itself constructs the AgentAction.SUPERVISOR_QUOTA envelope (server.py:213) from the gateway's own registry and fencing state.; The fixture hand-rolls its own instance fencing check (agent_instances[pid] == runtime_instance_id) duplicating the gateway's fencing semantics.
-    - Impact: The CPU-policy verification validates the fixture's own copy of quota delivery. If the production envelope shape, action name or fencing rules change, this probe can keep passing against its hand-made message while the real Supervisor->Gateway->Agent chain is broken; conversely a legitimate production change can break the probe for non-behavioral reasons.
-    - Fix: Deliver quota through the production path in this probe (real GatewayControlClient against a real gateway, or at minimum construct the envelope via the production protocol types in cbrowser.stream_agent.protocol) and drop direct access to the fake gateway's socket registry.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_01)
+    - f_tests_integration_fixtures_01: stream_monitor.py:27-60 reads gateway.agent_instances / gateway.registered_agents (dicts of a test-local fake gateway defined in tests/e2e/test_stream_runtime_e2e.py, not production attributes) and hand-builds the wire envelope {'version': 'v2', 'action': 'supervisor_quota', agent_session_id, runtime_instance_id, ...} sent directly over the agent socket.; Production path is different: supervisor GatewayControlClient.set_quota -> gateway handle_supervisor_quota (src/backend/cbrowser/gateway/server.py:169) which itself constructs the AgentAction.SUPERVISOR_QUOTA envelope (server.py:213) from the gateway's own registry and fencing state.; The fixture hand-rolls its own instance fencing check (agent_instances[pid] == runtime_instance_id) duplicating the gateway's fencing semantics.
+        - Impact: The CPU-policy verification validates the fixture's own copy of quota delivery. If the production envelope shape, action name or fencing rules change, this probe can keep passing against its hand-made message while the real Supervisor->Gateway->Agent chain is broken; conversely a legitimate production change can break the probe for non-behavioral reasons.
+        - Fix: Deliver quota through the production path in this probe (real GatewayControlClient against a real gateway, or at minimum construct the envelope via the production protocol types in cbrowser.stream_agent.protocol) and drop direct access to the fake gateway's socket registry.
+        - Verification: static
 - [Medium][80] tests/fixtures/gateway_probe/selkies_assets.py:22 — Two divergent test-local Selkies client shims re-implement the production adapter's tab-identity semantics, and disagree with each other
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_02)
-  - f_tests_integration_fixtures_02: selkies_assets.py:22 CLIENT_SHIM_SCRIPT embeds a full client re-implementation (WebSocket/RTCPeerConnection wrapping, Web Locks tab arbitration, HELLO rewriting) injected into the official Selkies page; at lines 114-122 it creates a selkies_tab_id in sessionStorage when one is missing.; tests/fixtures/stream_probe/web_lock_shim.js:48-49 implements the same tab-lock idea differently: when no selkies_tab_id exists it closes the socket with 1008 'tab_identity_required' instead of creating an id, and it does not rewrite signaling URLs the way CLIENT_SHIM_SCRIPT does.; A third implementation — the production frontend adapter (src/frontend/src/features/browser-session/adapter.ts, which also manages selkies_tab_id) — is what the frontend lanes exercise, so gateway/stream E2E lanes validate shim behavior rather than the shipped adapter's identity arbitration.
-    - Impact: Tab-collision / single-foreground-tab behavior verified in the gateway and stream lanes is the behavior of two mutually inconsistent test shims, not of the production adapter; a regression in the real adapter's arbitration (or a shim/adapter drift) would not be caught by these lanes, and the two lanes can legitimately disagree about the missing-id case.
-    - Fix: Drive at least the gateway lane with the real built adapter (as frontend_probe does with dist selkies_adapter.js), or generate both shims from one shared source and document them as protocol probes only, not as adapter behavior coverage.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_02)
+    - f_tests_integration_fixtures_02: selkies_assets.py:22 CLIENT_SHIM_SCRIPT embeds a full client re-implementation (WebSocket/RTCPeerConnection wrapping, Web Locks tab arbitration, HELLO rewriting) injected into the official Selkies page; at lines 114-122 it creates a selkies_tab_id in sessionStorage when one is missing.; tests/fixtures/stream_probe/web_lock_shim.js:48-49 implements the same tab-lock idea differently: when no selkies_tab_id exists it closes the socket with 1008 'tab_identity_required' instead of creating an id, and it does not rewrite signaling URLs the way CLIENT_SHIM_SCRIPT does.; A third implementation — the production frontend adapter (src/frontend/src/features/browser-session/adapter.ts, which also manages selkies_tab_id) — is what the frontend lanes exercise, so gateway/stream E2E lanes validate shim behavior rather than the shipped adapter's identity arbitration.
+        - Impact: Tab-collision / single-foreground-tab behavior verified in the gateway and stream lanes is the behavior of two mutually inconsistent test shims, not of the production adapter; a regression in the real adapter's arbitration (or a shim/adapter drift) would not be caught by these lanes, and the two lanes can legitimately disagree about the missing-id case.
+        - Fix: Drive at least the gateway lane with the real built adapter (as frontend_probe does with dist selkies_adapter.js), or generate both shims from one shared source and document them as protocol probes only, not as adapter behavior coverage.
+        - Verification: static
 - [Medium][75] tests/integration/test_gateway_fixtures.py:93 — Two divergent fakes of the same Gateway->API internal surface; the HTTP fake unconditionally allows automation authorization and ignores viewer origin
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_03)
-  - f_tests_integration_fixtures_03: test_gateway_fixtures.py:93-103 FakeApiService.handle_automation_authorize returns allowed=True for any token/profile, and handle_viewer_authorize (line 81) keys authorization without the origin field the production API checks (cf. test_auth_api.py invalid_origin cases).; tests/fixtures/supervisor_recovery_probe/gateway_service.py FakeGatewayApiClient implements the same surface with opposite defaults: deny by default, authorization keyed by (cookie_value, origin, profile_id), explicit allow-list helpers.; Both fakes hand-maintain the response shapes of the production internal API with no shared contract fixture.
-    - Impact: Gateway behavior verified in the GatewayHarness lane runs against weaker authorization semantics than the recovery lane and than production: an automation-auth or origin-check regression on the gateway side would be masked by the always-allow HTTP fake, and the two lanes can drift apart as the production API contract evolves.
-    - Fix: Unify on one fake implementation (or generate both from a shared contract definition), make automation-authorize deny-by-default with explicit grants mirroring FakeGatewayApiClient, and include origin in the viewer-authorize key.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_03)
+    - f_tests_integration_fixtures_03: test_gateway_fixtures.py:93-103 FakeApiService.handle_automation_authorize returns allowed=True for any token/profile, and handle_viewer_authorize (line 81) keys authorization without the origin field the production API checks (cf. test_auth_api.py invalid_origin cases).; tests/fixtures/supervisor_recovery_probe/gateway_service.py FakeGatewayApiClient implements the same surface with opposite defaults: deny by default, authorization keyed by (cookie_value, origin, profile_id), explicit allow-list helpers.; Both fakes hand-maintain the response shapes of the production internal API with no shared contract fixture.
+        - Impact: Gateway behavior verified in the GatewayHarness lane runs against weaker authorization semantics than the recovery lane and than production: an automation-auth or origin-check regression on the gateway side would be masked by the always-allow HTTP fake, and the two lanes can drift apart as the production API contract evolves.
+        - Fix: Unify on one fake implementation (or generate both from a shared contract definition), make automation-authorize deny-by-default with explicit grants mirroring FakeGatewayApiClient, and include origin in the viewer-authorize key.
+        - Verification: static
 - [Medium][85] tests/fixtures/frontend_probe/host_builder.py:19 — Frontend build freshness is claimed but not checked: lanes can silently test a stale dist
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_04)
-  - f_tests_integration_fixtures_04: host_builder.py:19-20 ensure_frontend_build docstring says it 'Ensures Vite production build exists and is up to date', but the implementation only checks existence of dist/index.html, the selkies directory and selkies_adapter.js — no mtime or hash comparison against src/.; tests/fixtures/frontend_app_probe/harness.py prepare_frontend_app likewise accepts any pre-existing dist and only errors when artifacts are absent.
-    - Impact: After any frontend source change, the frontend E2E lanes keep passing (or failing) against the previous build without any signal, so the suite can certify adapter/UI behavior that is no longer what ships.
-    - Fix: Record a build stamp (source tree hash or max mtime) at build time and rebuild or fail loudly when the stamp is stale; or always invoke the build in the harness when a cheap staleness check fails.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_04)
+    - f_tests_integration_fixtures_04: host_builder.py:19-20 ensure_frontend_build docstring says it 'Ensures Vite production build exists and is up to date', but the implementation only checks existence of dist/index.html, the selkies directory and selkies_adapter.js — no mtime or hash comparison against src/.; tests/fixtures/frontend_app_probe/harness.py prepare_frontend_app likewise accepts any pre-existing dist and only errors when artifacts are absent.
+        - Impact: After any frontend source change, the frontend E2E lanes keep passing (or failing) against the previous build without any signal, so the suite can certify adapter/UI behavior that is no longer what ships.
+        - Fix: Record a build stamp (source tree hash or max mtime) at build time and rebuild or fail loudly when the stamp is stale; or always invoke the build in the harness when a cheap staleness check fails.
+        - Verification: static
 - [Medium][85] tests/unit、tests/integration、tests/e2e；src/backend/tests；tests/e2e/conftest.py required 门禁 — 验证投入与已交付风险成反比：最重测试资产压在未部署的 v2 与单一宿主锁定的 E2E，交付面高危点零覆盖
-  - Sources: bundle_global_strategy.md (f_global_strategy_02)
-  - f_global_strategy_02: 体量实测：tests/unit 17,201 行 + tests/integration 6,131 行 + tests/e2e 16,884 行 ≈ 40.2k 行测试几乎全部面向未部署的 v2；legacy 自有套件 src/backend/tests 仅 4,732 行; f_backend_core_15、f_backend_core_16：legacy 的 serve_spa 与剪贴板日志行为在其自有测试落点零覆盖，/api/open-external 零测试、/api/shutdown 只测拒绝路径——即本轮两个 backend High 的所在面恰是覆盖空白; f_tests_e2e_supervisor_03：E2E required 模式门禁要求 macOS Chrome 应用路径，Docker-only 的 supervisor 套件在任何非 macOS 宿主上都无法进入 required 模式；最重的 E2E 资产（16.9k 行）被单一宿主环境锁定，与 Linux 部署形态无交集; f_template_tests_01：模板 E2E 套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭；汇总主线 4 另记录多处 fixture 重实现生产语义并与生产漂移（两套 Selkies shim 互相不一致、Gateway→API 假面无条件放行自动化授权、dist 新鲜度门禁按文件名判定可静默测旧 dist）
-    - Impact: 测试绿灯最强的区域恰是用户从未运行的区域，已交付面的回归防线最薄；验证体系给出的「系统很稳固」信号与用户实际承担的风险不对应，容易误导后续投入继续向未交付面倾斜。
-    - Fix: 切换前为 legacy 高危点补最小行为测试：serve_spa 路径包含校验、剪贴板日志脱敏断言、shutdown/open-external 同源成功路径。将 E2E required 门禁按套件拆分，Docker-only 套件不要求宿主 Chrome 路径，使重资产至少能在部署同族环境（Linux/Docker）上以 required 模式运行。
-    - Verification: static
+    - Sources: bundle_global_strategy.md (f_global_strategy_02)
+    - f_global_strategy_02: 体量实测：tests/unit 17,201 行 + tests/integration 6,131 行 + tests/e2e 16,884 行 ≈ 40.2k 行测试几乎全部面向未部署的 v2；legacy 自有套件 src/backend/tests 仅 4,732 行; f_backend_core_15、f_backend_core_16：legacy 的 serve_spa 与剪贴板日志行为在其自有测试落点零覆盖，/api/open-external 零测试、/api/shutdown 只测拒绝路径——即本轮两个 backend High 的所在面恰是覆盖空白; f_tests_e2e_supervisor_03：E2E required 模式门禁要求 macOS Chrome 应用路径，Docker-only 的 supervisor 套件在任何非 macOS 宿主上都无法进入 required 模式；最重的 E2E 资产（16.9k 行）被单一宿主环境锁定，与 Linux 部署形态无交集; f_template_tests_01：模板 E2E 套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭；汇总主线 4 另记录多处 fixture 重实现生产语义并与生产漂移（两套 Selkies shim 互相不一致、Gateway→API 假面无条件放行自动化授权、dist 新鲜度门禁按文件名判定可静默测旧 dist）
+        - Impact: 测试绿灯最强的区域恰是用户从未运行的区域，已交付面的回归防线最薄；验证体系给出的「系统很稳固」信号与用户实际承担的风险不对应，容易误导后续投入继续向未交付面倾斜。
+        - Fix: 切换前为 legacy 高危点补最小行为测试：serve_spa 路径包含校验、剪贴板日志脱敏断言、shutdown/open-external 同源成功路径。将 E2E required 门禁按套件拆分，Docker-only 套件不要求宿主 Chrome 路径，使重资产至少能在部署同族环境（Linux/Docker）上以 required 模式运行。
+        - Verification: static
 - [Medium][80] .repo_template/；docs/（blueprint、findings 登记、handoff.md、archive 账本） — 治理与文档体系已与产品本体同体量，其人工维护流在当前规模下已被多处漂移实证跟不上
-  - Sources: bundle_global_strategy.md (f_global_strategy_03)
-  - f_global_strategy_03: 体量实测（git ls-files + wc）：.repo_template 27,556 行（102 个文件，其中 py/js 24,947 行、自有测试 11,390 行）、docs 48,007 行；对照产品本体 v2 后端 19,991 + 前端 14,947 + legacy 后端约 10.5k ≈ 45k 行——治理与文档面合计约为产品本体的 1.7 倍; 漂移实证：f_docs_current_01（handoff.md 整体过期一轮，仍称下一步 t015、pending 为空）、f_docs_current_02（findings 登记表未随 ADR 013 修订，8 篇 TURN/ICE 类 finding 仍标有效且含已失效指令）、f_docs_current_03（blueprint/artifacts.md 的 chown 回退口径与 ADR 014 及 security.md 直接冲突）、f_docs_current_05/06（v2_architecture_plan 与 blueprint/architecture 内部表述与现状矛盾）; 归档层同类问题：上一轮 adoption_decision.md 对交叉证伪条数同文件内 33 与 30 两种口径、同一穿越漏洞核实等级三档从未对齐（汇总主线 5）；f_archive_tasks_02（t018 Review 处置表退化为样板文本、19 轮审查超记录上限无授权留痕）; 工具链自身缺陷具产品级破坏性：link-skills 路径下 _ensure_symlink 对真实目录直接 rmtree 且报告谎称原内容入回滚栈（该路径无事务）、user_prompts 编号双空间使 revoke 可能作废错误条目、sync_opencode_commands 硬下标 KeyError 穿透回滚例外集（汇总主线 6）——治理层缺陷可直接销毁工作区内容，其修复同样要走完整的 task/review 流程
-    - Impact: 单人维护下，治理层每产生一处漂移或缺陷，都消耗与产品开发同级的审查与修复预算；文档「长期真相」的可信度随漂移累积下降，每个后续 task 的上下文成本随之上升。注：.repo_template 若由多仓分摊，其体量论据需按分摊后重估（见 q_strategy_01）；但漂移与维护流跟不上的证据全部在本仓内独立成立，不依赖分摊答案。
-    - Fix: 把高频漂移点从人工维护改为机械生成或门禁校验：handoff 最新节与 tasks_index/pending 的一致性、findings 登记与 ADR 替代链的一致性，在 task 收尾门禁中自动核对而非靠顺手更新。给模板工具链设简化触发条件：只保留有真实消费者的能力，破坏性路径（rmtree 类）按产品代码同级要求事务保护与回归测试。
-    - Verification: static
+    - Sources: bundle_global_strategy.md (f_global_strategy_03)
+    - f_global_strategy_03: 体量实测（git ls-files + wc）：.repo_template 27,556 行（102 个文件，其中 py/js 24,947 行、自有测试 11,390 行）、docs 48,007 行；对照产品本体 v2 后端 19,991 + 前端 14,947 + legacy 后端约 10.5k ≈ 45k 行——治理与文档面合计约为产品本体的 1.7 倍; 漂移实证：f_docs_current_01（handoff.md 整体过期一轮，仍称下一步 t015、pending 为空）、f_docs_current_02（findings 登记表未随 ADR 013 修订，8 篇 TURN/ICE 类 finding 仍标有效且含已失效指令）、f_docs_current_03（blueprint/artifacts.md 的 chown 回退口径与 ADR 014 及 security.md 直接冲突）、f_docs_current_05/06（v2_architecture_plan 与 blueprint/architecture 内部表述与现状矛盾）; 归档层同类问题：上一轮 adoption_decision.md 对交叉证伪条数同文件内 33 与 30 两种口径、同一穿越漏洞核实等级三档从未对齐（汇总主线 5）；f_archive_tasks_02（t018 Review 处置表退化为样板文本、19 轮审查超记录上限无授权留痕）; 工具链自身缺陷具产品级破坏性：link-skills 路径下 \_ensure_symlink 对真实目录直接 rmtree 且报告谎称原内容入回滚栈（该路径无事务）、user_prompts 编号双空间使 revoke 可能作废错误条目、sync_opencode_commands 硬下标 KeyError 穿透回滚例外集（汇总主线 6）——治理层缺陷可直接销毁工作区内容，其修复同样要走完整的 task/review 流程
+        - Impact: 单人维护下，治理层每产生一处漂移或缺陷，都消耗与产品开发同级的审查与修复预算；文档「长期真相」的可信度随漂移累积下降，每个后续 task 的上下文成本随之上升。注：.repo_template 若由多仓分摊，其体量论据需按分摊后重估（见 q_strategy_01）；但漂移与维护流跟不上的证据全部在本仓内独立成立，不依赖分摊答案。
+        - Fix: 把高频漂移点从人工维护改为机械生成或门禁校验：handoff 最新节与 tasks_index/pending 的一致性、findings 登记与 ADR 替代链的一致性，在 task 收尾门禁中自动核对而非靠顺手更新。给模板工具链设简化触发条件：只保留有真实消费者的能力，破坏性路径（rmtree 类）按产品代码同级要求事务保护与回归测试。
+        - Verification: static
 - [Medium][90] src/backend/database.py（legacy 手写 DDL）；src/backend/cbrowser/adapters/database/（v2 SQLAlchemy/Alembic）；src/backend/artifacts.py 与 src/backend/cbrowser/adapters/filesystem/artifact_store.py — 两套数据权威同仓并存且互不感知：legacy profiles.db 与 v2 cbrowser.db 各自演进，配额、文件名净化、下载捕获等跨切面策略双份实现并已分叉
-  - Sources: bundle_global_architecture.md (f_global_architecture_02)
-  - f_global_architecture_02: backend_core 单元约束记录：legacy 与 v2 两套数据库同仓并存，schema 演进互不感知；legacy init_db 以列集相等为唯一版本判据、整表重建迁移，v2 走 Alembic 链（0001–0006），两侧无任何同步或映射机制; 同一产品概念双份实现：legacy artifacts.py/downloads.py 实现每-profile 产物存储（流式落盘、配额、CDP 下载状态机），v2 artifact_store.py/ArtifactService 实现同一职责（原子发布、配额、下载 ingest），safe_filename 净化规则亦各有一份; 双份实现已经分叉：legacy 上传路径配额检查与建行分离、并发可绕过上限（f_backend_core_06），v2 上传路径在建行前即刻复检配额（backend_runtime_adapters 单元 Flow 记录）——同一策略在两代中 rigor 不同; legacy init_db 整表重建静默丢弃列集之外的全部列数据、无日志无备份（f_backend_core_05），v2 侧则以不可变配置版本 + Alembic 管理演进，两代的数据演进纪律不在同一水平
-    - Impact: 任何跨切面策略的修订都必须在两处同步实施且无机制保证同步，实际已出现一侧修好一侧未修的分叉；两套 profile/artifact 语义并存使『哪个是权威』在迁移完成前长期含糊，数据迁移路径（legacy profiles.db → cbrowser.db）亦无工件承接。
-    - Fix: 在 blueprint 中明确双轨的终局与迁移路径（legacy 数据是否迁移、两代并存的期限与边界），并把配额、文件名净化等跨切面策略抽为两侧共用的单一实现或至少建立对照清单；在迁移完成前，策略级缺陷修复应强制双侧核对。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_02)
+    - f_global_architecture_02: backend_core 单元约束记录：legacy 与 v2 两套数据库同仓并存，schema 演进互不感知；legacy init_db 以列集相等为唯一版本判据、整表重建迁移，v2 走 Alembic 链（0001–0006），两侧无任何同步或映射机制; 同一产品概念双份实现：legacy artifacts.py/downloads.py 实现每-profile 产物存储（流式落盘、配额、CDP 下载状态机），v2 artifact_store.py/ArtifactService 实现同一职责（原子发布、配额、下载 ingest），safe_filename 净化规则亦各有一份; 双份实现已经分叉：legacy 上传路径配额检查与建行分离、并发可绕过上限（f_backend_core_06），v2 上传路径在建行前即刻复检配额（backend_runtime_adapters 单元 Flow 记录）——同一策略在两代中 rigor 不同; legacy init_db 整表重建静默丢弃列集之外的全部列数据、无日志无备份（f_backend_core_05），v2 侧则以不可变配置版本 + Alembic 管理演进，两代的数据演进纪律不在同一水平
+        - Impact: 任何跨切面策略的修订都必须在两处同步实施且无机制保证同步，实际已出现一侧修好一侧未修的分叉；两套 profile/artifact 语义并存使『哪个是权威』在迁移完成前长期含糊，数据迁移路径（legacy profiles.db → cbrowser.db）亦无工件承接。
+        - Fix: 在 blueprint 中明确双轨的终局与迁移路径（legacy 数据是否迁移、两代并存的期限与边界），并把配额、文件名净化等跨切面策略抽为两侧共用的单一实现或至少建立对照清单；在迁移完成前，策略级缺陷修复应强制双侧核对。
+        - Verification: static
 - [Medium][90] src/backend/main.py:143-147（AuthMiddleware）；src/backend/cbrowser/auth/（v2 身份域）；.env.example:15 — 两代信任边界基调断裂：v2 全链 fail-closed 与 legacy 的 opt-in 鉴权分属两个互不相认的身份域，产品整体信任姿态由较弱一代决定
-  - Sources: bundle_global_architecture.md (f_global_architecture_03)
-  - f_global_architecture_03: legacy 唯一访问控制是 AUTH_TOKEN，未设置时全部 /api/* 无条件放行（f_backend_core_03），代码注释自述为 local dev 语义，但该进程同时承载宿主机控制端点（shutdown/open-external）与剪贴板中继; 部署模板 .env.example 中 AUTH_TOKEN 默认空，而其自身注释称该项为 'Required'（f_contracts_deploy_03）——缓解完全依赖部署者自觉注入与 compose 回环绑定，均不在代码权威内; legacy 内部防护亦不齐：/api/open-external 缺少 /api/shutdown 已有的同源 CSRF 防护（f_backend_core_04）；剪贴板正文写进 manager.log 与同代 diagnostics 模块的脱敏承诺直接冲突（f_backend_core_01，High）; v2 身份域为独立的一套：Argon2 管理员会话 + 按 profile 授权的自动化 token + 文件型服务令牌，与 legacy 的 AUTH_TOKEN 互不相认；同一产品、同一用户面对两个身份系统，无共享的安全基线抽象
-    - Impact: 只要 legacy 面仍是可部署面（见 f_global_architecture_01），产品的实际信任边界就由 opt-in 一代决定：一次未注入 AUTH_TOKEN 的部署即得到无鉴权的局域网远程控制面，v2 侧再严密的 fail-closed 设计也无法收口这一暴露。两套身份域并存还使权限审计与凭据轮换无统一抓手。
-    - Fix: 为两代设立共同的最低安全基线并落到代码：legacy 启动时 AUTH_TOKEN 为空应默认拒绝启动或至少拒绝宿主机控制端点（与 v2『未配置即 503/拒启动』口径一致）；open-external 补齐与 shutdown 相同的同源校验；剪贴板日志按 diagnostics 既有脱敏承诺收口。长期以 f_global_architecture_01 的部署收敛消除双身份域。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_03)
+    - f_global_architecture_03: legacy 唯一访问控制是 AUTH_TOKEN，未设置时全部 /api/\* 无条件放行（f_backend_core_03），代码注释自述为 local dev 语义，但该进程同时承载宿主机控制端点（shutdown/open-external）与剪贴板中继; 部署模板 .env.example 中 AUTH_TOKEN 默认空，而其自身注释称该项为 'Required'（f_contracts_deploy_03）——缓解完全依赖部署者自觉注入与 compose 回环绑定，均不在代码权威内; legacy 内部防护亦不齐：/api/open-external 缺少 /api/shutdown 已有的同源 CSRF 防护（f_backend_core_04）；剪贴板正文写进 manager.log 与同代 diagnostics 模块的脱敏承诺直接冲突（f_backend_core_01，High）; v2 身份域为独立的一套：Argon2 管理员会话 + 按 profile 授权的自动化 token + 文件型服务令牌，与 legacy 的 AUTH_TOKEN 互不相认；同一产品、同一用户面对两个身份系统，无共享的安全基线抽象
+        - Impact: 只要 legacy 面仍是可部署面（见 f_global_architecture_01），产品的实际信任边界就由 opt-in 一代决定：一次未注入 AUTH_TOKEN 的部署即得到无鉴权的局域网远程控制面，v2 侧再严密的 fail-closed 设计也无法收口这一暴露。两套身份域并存还使权限审计与凭据轮换无统一抓手。
+        - Fix: 为两代设立共同的最低安全基线并落到代码：legacy 启动时 AUTH_TOKEN 为空应默认拒绝启动或至少拒绝宿主机控制端点（与 v2『未配置即 503/拒启动』口径一致）；open-external 补齐与 shutdown 相同的同源校验；剪贴板日志按 diagnostics 既有脱敏承诺收口。长期以 f_global_architecture_01 的部署收敛消除双身份域。
+        - Verification: static
 - [Medium][95] src/backend/cbrowser/supervisor/event_forwarder.py:175-196；src/backend/cbrowser/supervisor/core.py:640-682 — 事件投递语义无单一权威：两个 forwarder 对 API 4xx 的失败分类口径矛盾，runtime 事件被拒后游标不推进、每秒无限重试
-  - Sources: bundle_global_architecture.md (f_global_architecture_04)
-  - f_global_architecture_04: EventForwarder 把全部非 200 且低于 500 的状态（含 401/403/429）一律分类为永久 REJECTED 并隔离事件，与 DownloadArtifactForwarder 的可重试 4xx 集合口径不一致（f_backend_supervisor_02）——同一进程内两条投递链对同一失败语义各表一枝; consume_disk_events 在 EventForwarder 报告 REJECTED 时不推进 (mtime_ns, name) 游标，被拒事件每秒重复投递、无限重试（f_backend_supervisor_01），与 spool-first + 隔离的既定设计意图互相抵消; 对照面：事件的身份与状态语义本身有单一权威——UUIDv5 确定性 ID、(profile_id, runtime_instance_id, config_version) 栅栏、API 侧 consume_runtime_event 去重在三方一致；唯独投递失败分类这一环没有任何模块或契约声明为权威
-    - Impact: 令牌过期/轮换（401）或限流（429）这类可恢复失败会被当作永久拒绝：事件进隔离区或陷入 1s 重试循环，运行时终局观测（失败计数、restart_blocked）可能延迟或丢失，侵蚀 desired/observed 收敛这一核心机制的可信度。
-    - Fix: 把投递失败分类收敛为单一实现供两个 forwarder 共用：401/403/429 与 5xx 按可重试处理（退避重试），仅 400/422 类语义拒绝进隔离；REJECTED 终局必须推进磁盘游标并留审计记录，避免同一事件无限重投。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_04)
+    - f_global_architecture_04: EventForwarder 把全部非 200 且低于 500 的状态（含 401/403/429）一律分类为永久 REJECTED 并隔离事件，与 DownloadArtifactForwarder 的可重试 4xx 集合口径不一致（f_backend_supervisor_02）——同一进程内两条投递链对同一失败语义各表一枝; consume_disk_events 在 EventForwarder 报告 REJECTED 时不推进 (mtime_ns, name) 游标，被拒事件每秒重复投递、无限重试（f_backend_supervisor_01），与 spool-first + 隔离的既定设计意图互相抵消; 对照面：事件的身份与状态语义本身有单一权威——UUIDv5 确定性 ID、(profile_id, runtime_instance_id, config_version) 栅栏、API 侧 consume_runtime_event 去重在三方一致；唯独投递失败分类这一环没有任何模块或契约声明为权威
+        - Impact: 令牌过期/轮换（401）或限流（429）这类可恢复失败会被当作永久拒绝：事件进隔离区或陷入 1s 重试循环，运行时终局观测（失败计数、restart_blocked）可能延迟或丢失，侵蚀 desired/observed 收敛这一核心机制的可信度。
+        - Fix: 把投递失败分类收敛为单一实现供两个 forwarder 共用：401/403/429 与 5xx 按可重试处理（退避重试），仅 400/422 类语义拒绝进隔离；REJECTED 终局必须推进磁盘游标并留审计记录，避免同一事件无限重投。
+        - Verification: static
 - [Medium][90] src/backend/cbrowser/supervisor/core.py:1090-1102 — 持久化操作日志可为未检查、未拆卸的实例记下 'stopped' 终局，与『observed 权威须源于实际观测』的设计原则相悖
-  - Sources: bundle_global_architecture.md (f_global_architecture_05)
-  - f_global_architecture_05: stop_profile 在内存 session 追踪的是另一实例时，会为请求中的实例直接写入 OperationJournal 的 durable 'stopped' 结果，而从未检查或拆卸该实例（f_backend_supervisor_03）; 同单元的设计声明与此相反：API 是意图与失败核算的权威，Supervisor 只合成有栅栏的终局观测；Agent 健康状态须经实时 PID/CDP 探针交叉验证后才被信任（backend_runtime_adapters 单元约束记录）——观测必须源于实测是贯穿 v2 的原则; OperationJournal 的定位是 durable idempotency 依据（stop 流程以 journal complete 收尾），一条未源于实测的终局记录会被后续对账与恢复逻辑当作事实消费
-    - Impact: 持久层出现『账面已停、实际未停』的权威记录，恢复协调器与对账回路据此可能跳过对真实运行中实例的清理，形成孤儿容器与状态漂移；且该记录具备 durable 形式，比内存态不一致更难被发现和纠正。
-    - Fix: stop_profile 在 session 追踪实例与请求实例不一致时，应先按请求实例做实际检查（Docker 标签扫描/状态查询）再决定 journal 内容；无法确认时记为未执行/需对账而非 'stopped'，让 OperationJournal 的每条终局都可追溯到一次实际观测。
-    - Verification: static
-- [Medium][85] schemas/（openapi/cbrowser_v1.json、cbrowser_internal.json，runtime/ 与 stream/ 协议 schema）；scripts/export_*.py；scripts/run_gates.sh — 契约层是单向生成物而非权威：导出 schema 无新鲜度门禁，且导出形式丢失判别力，与实现各自漂移无从察觉
-  - Sources: bundle_global_architecture.md (f_global_architecture_06)
-  - f_global_architecture_06: 契约生成流为单向导出：源码模型 → 四个 export 脚本 → 入库 schema；contracts_deploy 单元依赖记录明确『被审单元内没有任何机制校验新鲜度』，run_gates.sh 不含 schema 新鲜度检查（其单元 uncertainty 亦同）; 协议 schema 导出为无判别 anyOf 联合，校验无法区分消息类型（f_contracts_deploy_07）；版本字段不一致——runtime agent schema 有 version、supervisor 与 stream schema 没有（f_contracts_deploy_08）; 内部 OpenAPI 定义了 per-service 的 bearer <redacted> 但无任何实现使用，全部操作塌缩为单一 serviceBearer（f_contracts_deploy_09），与实现侧确实存在的三套独立服务令牌（Supervisor/Gateway/API）不对应; 同一状态字段在契约两侧形态不一：v1 OpenAPI 中 profile runtime 状态是裸字符串，supervisor 协议中同字段是枚举（f_contracts_deploy_10）; 覆盖不均：stream 协议在测试层有『pydantic 模型 / 导出 schema / 线上流量』三层等价钉扎（tests_unit_stream_api 单元记录），OpenAPI 与 supervisor/runtime 协议没有同等闭环
-    - Impact: schemas/ 在仓规中被定为跨服务接口契约（改契约走 task 流程），但门禁缺位使入库 schema 可以静默落后于实现，消费方（前端手写客户端、测试 harness、外部调用者）按过期或弱化契约工作时不会有任何信号；无判别联合与裸字符串使契约层无法承担跨服务校验职责，权威实际仍在各服务代码内部，契约只是其不保鲜的投影。
-    - Fix: 在 run_gates.sh 或 CI 中加 schema 新鲜度门禁（重跑 export 后 diff 非空即失败）；协议 schema 导出时保留 discriminator 并统一版本字段策略；内部 OpenAPI 的安全方案与实现的三令牌现实对齐，或删去未被使用的 per-service 方案声明；runtime 状态字段在 v1 OpenAPI 中改为与协议侧一致的枚举。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_05)
+    - f_global_architecture_05: stop_profile 在内存 session 追踪的是另一实例时，会为请求中的实例直接写入 OperationJournal 的 durable 'stopped' 结果，而从未检查或拆卸该实例（f_backend_supervisor_03）; 同单元的设计声明与此相反：API 是意图与失败核算的权威，Supervisor 只合成有栅栏的终局观测；Agent 健康状态须经实时 PID/CDP 探针交叉验证后才被信任（backend_runtime_adapters 单元约束记录）——观测必须源于实测是贯穿 v2 的原则; OperationJournal 的定位是 durable idempotency 依据（stop 流程以 journal complete 收尾），一条未源于实测的终局记录会被后续对账与恢复逻辑当作事实消费
+        - Impact: 持久层出现『账面已停、实际未停』的权威记录，恢复协调器与对账回路据此可能跳过对真实运行中实例的清理，形成孤儿容器与状态漂移；且该记录具备 durable 形式，比内存态不一致更难被发现和纠正。
+        - Fix: stop_profile 在 session 追踪实例与请求实例不一致时，应先按请求实例做实际检查（Docker 标签扫描/状态查询）再决定 journal 内容；无法确认时记为未执行/需对账而非 'stopped'，让 OperationJournal 的每条终局都可追溯到一次实际观测。
+        - Verification: static
+- [Medium][85] schemas/（openapi/cbrowser_v1.json、cbrowser_internal.json，runtime/ 与 stream/ 协议 schema）；scripts/export\_\*.py；scripts/run_gates.sh — 契约层是单向生成物而非权威：导出 schema 无新鲜度门禁，且导出形式丢失判别力，与实现各自漂移无从察觉
+    - Sources: bundle_global_architecture.md (f_global_architecture_06)
+    - f_global_architecture_06: 契约生成流为单向导出：源码模型 → 四个 export 脚本 → 入库 schema；contracts_deploy 单元依赖记录明确『被审单元内没有任何机制校验新鲜度』，run_gates.sh 不含 schema 新鲜度检查（其单元 uncertainty 亦同）; 协议 schema 导出为无判别 anyOf 联合，校验无法区分消息类型（f_contracts_deploy_07）；版本字段不一致——runtime agent schema 有 version、supervisor 与 stream schema 没有（f_contracts_deploy_08）; 内部 OpenAPI 定义了 per-service 的 bearer <redacted> 但无任何实现使用，全部操作塌缩为单一 serviceBearer（f_contracts_deploy_09），与实现侧确实存在的三套独立服务令牌（Supervisor/Gateway/API）不对应; 同一状态字段在契约两侧形态不一：v1 OpenAPI 中 profile runtime 状态是裸字符串，supervisor 协议中同字段是枚举（f_contracts_deploy_10）; 覆盖不均：stream 协议在测试层有『pydantic 模型 / 导出 schema / 线上流量』三层等价钉扎（tests_unit_stream_api 单元记录），OpenAPI 与 supervisor/runtime 协议没有同等闭环
+        - Impact: schemas/ 在仓规中被定为跨服务接口契约（改契约走 task 流程），但门禁缺位使入库 schema 可以静默落后于实现，消费方（前端手写客户端、测试 harness、外部调用者）按过期或弱化契约工作时不会有任何信号；无判别联合与裸字符串使契约层无法承担跨服务校验职责，权威实际仍在各服务代码内部，契约只是其不保鲜的投影。
+        - Fix: 在 run_gates.sh 或 CI 中加 schema 新鲜度门禁（重跑 export 后 diff 非空即失败）；协议 schema 导出时保留 discriminator 并统一版本字段策略；内部 OpenAPI 的安全方案与实现的三令牌现实对齐，或删去未被使用的 per-service 方案声明；runtime 状态字段在 v1 OpenAPI 中改为与协议侧一致的枚举。
+        - Verification: static
 - [Medium][85] src/backend/cbrowser/supervisor/event_forwarder.py:190；src/backend/cbrowser/supervisor/artifact_forwarder.py:22；local_backend_supervisor.json（f_backend_supervisor_01/02）；local_backend_api_auth.json（f_backend_api_auth_06）；src/backend/cbrowser/api/internal_supervisor.py（require_supervisor 的 503） — 事件投递层没有统一的永久/暂时故障分类：同一状态码在不同组件下分别被永久隔离、无限重试与误报可重试，desired/observed 收敛在故障窗口内不成立
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_03)
-  - f_global_system_properties_03: event_forwarder.py:190：非 200 且 <500 一律 REJECTED 并隔离进 quarantine（本轮已回查源码），401/403/429 这类典型暂时故障（令牌轮换窗口、限速）会被当作永久拒绝，运行事件永久丢失; artifact_forwarder.py:22 恰恰相反：RETRYABLE_4XX = {401, 403, 408, 429}，同一进程内的产物转发器把同一组状态码判为可重试——两个转发器对同一故障给出相反分类（f_backend_supervisor_02）; 磁盘事件路径 consume_disk_events 在 EventForwarder 报告 REJECTED 时不推进游标，被判永久拒绝的事件反而被每秒无限重试（f_backend_supervisor_01）——同一「API 说不」在 spool 路径是永久丢弃、在磁盘路径是活锁式重试; 另一端同样错位：内部 RPC 未配置令牌时返回 503（永久性配置错误），而统一错误处理器把全部 503 标为 database_busy 且 retryable=true（f_backend_api_auth_06），永久错误被呈现为暂时故障诱导无限重试; 组合后果：运行事件是 API 侧 observed 状态的权威输入；故障窗口（如令牌文件轮换、API 短暂 403/429）内的退出/状态事件一部分被永久隔离、一部分无限重试，窗口过后 desired/observed 无法靠事件自愈收敛，且两种失败模式都不向操作者呈现为可区分的告警
-    - Impact: v2 的核心可靠性承诺（状态权威 + 幂等事件 → 最终收敛）在恰恰最需要它的故障窗口内不成立：会出现浏览器实例实际已退出而 API 长期显示运行中（或反之）的静默漂移，且投递子系统整体没有单一可述的投递语义（at-least-once / at-most-once 均不成立）。
-    - Fix: 在 supervisor 侧定义一份共享的投递分类契约（哪些状态码可重试、退避上限、隔离条件），event/artifact 两个转发器与磁盘消费游标共用；REJECTED 必须推进游标并落可观测的死信记录；API 错误契约区分永久配置错误（503 不标 retryable）与暂时不可用。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_03)
+    - f_global_system_properties_03: event_forwarder.py:190：非 200 且 \<500 一律 REJECTED 并隔离进 quarantine（本轮已回查源码），401/403/429 这类典型暂时故障（令牌轮换窗口、限速）会被当作永久拒绝，运行事件永久丢失; artifact_forwarder.py:22 恰恰相反：RETRYABLE_4XX = {401, 403, 408, 429}，同一进程内的产物转发器把同一组状态码判为可重试——两个转发器对同一故障给出相反分类（f_backend_supervisor_02）; 磁盘事件路径 consume_disk_events 在 EventForwarder 报告 REJECTED 时不推进游标，被判永久拒绝的事件反而被每秒无限重试（f_backend_supervisor_01）——同一「API 说不」在 spool 路径是永久丢弃、在磁盘路径是活锁式重试; 另一端同样错位：内部 RPC 未配置令牌时返回 503（永久性配置错误），而统一错误处理器把全部 503 标为 database_busy 且 retryable=true（f_backend_api_auth_06），永久错误被呈现为暂时故障诱导无限重试; 组合后果：运行事件是 API 侧 observed 状态的权威输入；故障窗口（如令牌文件轮换、API 短暂 403/429）内的退出/状态事件一部分被永久隔离、一部分无限重试，窗口过后 desired/observed 无法靠事件自愈收敛，且两种失败模式都不向操作者呈现为可区分的告警
+        - Impact: v2 的核心可靠性承诺（状态权威 + 幂等事件 → 最终收敛）在恰恰最需要它的故障窗口内不成立：会出现浏览器实例实际已退出而 API 长期显示运行中（或反之）的静默漂移，且投递子系统整体没有单一可述的投递语义（at-least-once / at-most-once 均不成立）。
+        - Fix: 在 supervisor 侧定义一份共享的投递分类契约（哪些状态码可重试、退避上限、隔离条件），event/artifact 两个转发器与磁盘消费游标共用；REJECTED 必须推进游标并落可观测的死信记录；API 错误契约区分永久配置错误（503 不标 retryable）与暂时不可用。
+        - Verification: static
 - [Medium][80] local_template_tests.json（f_template_tests_01）；local_tests_integration_fixtures.json（f_tests_integration_fixtures_02/03/04）；local_tests_e2e_stream_frontend.json（f_tests_e2e_stream_frontend_01/03/04）；local_backend_api_auth.json（f_backend_api_auth_09/10/11/12）；local_contracts_deploy.json（f_contracts_deploy_06）；local_template_scripts_state.json（f_template_scripts_state_17/18） — 「测试/门禁通过」的证明力被多层组合折损：生产恒走分支被恒绕、fixture 重实现生产语义且互不一致、PASS 证据可合成、门禁环境未钉版
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_04)
-  - f_global_system_properties_04: 恒绕层：PUT/PATCH 的 launch_args 校验、CSRF 的 Referer 回退分支、内部 RPC 未配令牌的 503 分支、viewer-authorize 的 Origin 规范化变体四处生产必经分支零测试覆盖（f_backend_api_auth_09/10/11/12）；repo_state.py 的子目录 CWD 调用、board.js 1135 行零行为测试（f_template_scripts_state_17/18）；宿主机控制端点成功路径零覆盖（f_backend_core_16）; 重实现层：集成 fixture 的两套 Selkies 客户端 shim 重实现生产适配器的标签身份语义且彼此不一致（f_tests_integration_fixtures_02）；Gateway→API 假面有两套、其中 HTTP 假面无条件放行 automation 授权且忽略 viewer origin（f_tests_integration_fixtures_03）；E2E 侧 AC-010 在测试内重实现 StreamAgent、流运行时套件对着测试内 GatewayMockServer 验证（f_tests_e2e_stream_frontend_03/04）——这些套件通过证明的是替身的行为，不是生产代码的行为; 证据合成层：模板真实 git E2E 套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭，生产侧「审阅产出证据 + 执行项目验证命令」路径从未被端到端执行（f_template_tests_01）; 新鲜度与可复现层：前端 dist 新鲜度门禁按测试文件名含 'frontend' 判定而非实际消费、多条 lane 可静默测旧 dist（f_tests_e2e_stream_frontend_01、f_tests_integration_fixtures_04）；run_gates.sh 从未钉版包组装测试环境，本地门禁结果不可复现（f_contracts_deploy_06）; 组合结论：单看每一层都是局部缺口；叠加后，一次全绿的套件/门禁运行无法区分「生产代码正确」与「替身自洽 + 证据合成 + 旧产物 + 恰好未绕开的分支没出错」，与仓规 AGENTS.md 自述的 TDD 纪律（测试须触达生产逻辑）之间存在系统级落差
-    - Impact: 仓库工作流把测试与门禁绿灯当作 task 闭环与发布判断的主要依据；该依据的实际证明范围明显小于其被使用的范围，尤其在授权、CSRF、令牌未配置等安全分支上绿灯不提供任何保证。后续任何「已通过测试」的结论都需要逐项核对触达的是生产代码还是替身。
-    - Fix: 为恒绕清单逐项补真实覆盖（内部 503、Referer 回退、Origin 变体、PUT/PATCH launch_args、子目录 CWD）；fixture 假面改为复用生产实现或做契约一致性测试钉住分歧点，authorization 假面禁止无条件放行；dist 新鲜度按实际消费判定并 fail-closed；run_gates.sh 钉版依赖；模板 E2E 至少保留一条不合成证据、不关闭项目门禁的端到端路径。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_04)
+    - f_global_system_properties_04: 恒绕层：PUT/PATCH 的 launch_args 校验、CSRF 的 Referer 回退分支、内部 RPC 未配令牌的 503 分支、viewer-authorize 的 Origin 规范化变体四处生产必经分支零测试覆盖（f_backend_api_auth_09/10/11/12）；repo_state.py 的子目录 CWD 调用、board.js 1135 行零行为测试（f_template_scripts_state_17/18）；宿主机控制端点成功路径零覆盖（f_backend_core_16）; 重实现层：集成 fixture 的两套 Selkies 客户端 shim 重实现生产适配器的标签身份语义且彼此不一致（f_tests_integration_fixtures_02）；Gateway→API 假面有两套、其中 HTTP 假面无条件放行 automation 授权且忽略 viewer origin（f_tests_integration_fixtures_03）；E2E 侧 AC-010 在测试内重实现 StreamAgent、流运行时套件对着测试内 GatewayMockServer 验证（f_tests_e2e_stream_frontend_03/04）——这些套件通过证明的是替身的行为，不是生产代码的行为; 证据合成层：模板真实 git E2E 套件的 review PASS 证据由测试支持代码合成、项目验证门禁被整体关闭，生产侧「审阅产出证据 + 执行项目验证命令」路径从未被端到端执行（f_template_tests_01）; 新鲜度与可复现层：前端 dist 新鲜度门禁按测试文件名含 'frontend' 判定而非实际消费、多条 lane 可静默测旧 dist（f_tests_e2e_stream_frontend_01、f_tests_integration_fixtures_04）；run_gates.sh 从未钉版包组装测试环境，本地门禁结果不可复现（f_contracts_deploy_06）; 组合结论：单看每一层都是局部缺口；叠加后，一次全绿的套件/门禁运行无法区分「生产代码正确」与「替身自洽 + 证据合成 + 旧产物 + 恰好未绕开的分支没出错」，与仓规 AGENTS.md 自述的 TDD 纪律（测试须触达生产逻辑）之间存在系统级落差
+        - Impact: 仓库工作流把测试与门禁绿灯当作 task 闭环与发布判断的主要依据；该依据的实际证明范围明显小于其被使用的范围，尤其在授权、CSRF、令牌未配置等安全分支上绿灯不提供任何保证。后续任何「已通过测试」的结论都需要逐项核对触达的是生产代码还是替身。
+        - Fix: 为恒绕清单逐项补真实覆盖（内部 503、Referer 回退、Origin 变体、PUT/PATCH launch_args、子目录 CWD）；fixture 假面改为复用生产实现或做契约一致性测试钉住分歧点，authorization 假面禁止无条件放行；dist 新鲜度按实际消费判定并 fail-closed；run_gates.sh 钉版依赖；模板 E2E 至少保留一条不合成证据、不关闭项目门禁的端到端路径。
+        - Verification: static
 - [Medium][85] docs/specs_index.md（在表即生效规则）；local_docs_current.json（f_docs_current_01/02/03/05/06）；local_archive_reviews.json（f_archive_reviews_05）；local_archive_tasks.json（f_archive_tasks_01/02） — 文档权威链组合后不自洽：生效规则指向的长期真相与决策层直接冲突且无 superseded 标记，含文件权限安全参数
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_05)
-  - f_global_system_properties_05: blueprint/artifacts.md 仍写 chown 失败回退 0755/0644，与 ADR 014（统一 uid 1000、目录 0750/文件 0640、chown 失败即报错、删除全局可写回退）及 blueprint/security.md 直接冲突（f_docs_current_03）——按「blueprint 是长期真相」行事的实现者会重新引入 ADR 明确删除的全局可读回退; findings 登记表未随 ADR 013 修订：8 篇 TURN/ICE 类 finding 仍标『有效』且正文含已失效指令（f_docs_current_02）；v2_architecture_plan.md 与 blueprint/architecture.md 亦保留 coturn/凭证轮换为现行设计的表述且无替代标注（f_docs_current_05/06）; docs/handoff.md 整体过期一轮：仍称下一步 t015、head 为旧提交、pending 为空（f_docs_current_01），而 AGENTS.md 规定 handoff 是项目级交接面; 归档证据层同病：上一轮审阅归档中的审计哈希链指向未入库的 _meta 产物，仓内读者无法复算验证（f_archive_reviews_05）；t018 账本出现 AC 在自声明必需验证从未执行时打勾关闭、Review 处置表样板化（f_archive_tasks_01/02）; 组合结论：仓库的权威规则（specs_index 在表即生效、blueprint 为长期真相、findings 为已验证事实登记、archive 为只追加证据层）各自单看成立，但层与层之间没有一致性维护机制——新决定（ADR）落盘后不回写旧层、旧层不标 superseded，于是按自家规则查阅的读者与自动化会被系统性引向已废止口径，其中至少一处是安全参数
-    - Impact: 文档体系作为事实来源的整体可信度受损：任何单篇文档的陈述都不能默认与当前决定一致，跨文档结论必须逐条核对 ADR 日期与替代关系；更实际的风险是后续实现或运维按 blueprint/findings 的过期口径落地安全相关行为。
-    - Fix: 建立 ADR 落盘时的连带修订清单（受影响的 blueprint/specs/findings 条目同步改写或加 superseded 标注并指向新 ADR）；findings 登记表按 ADR 013 批量修订状态；handoff.md 纳入 task 收尾的强制更新点；归档审计链改为只引用已入库产物或把被引 _meta 一并入库。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_05)
+    - f_global_system_properties_05: blueprint/artifacts.md 仍写 chown 失败回退 0755/0644，与 ADR 014（统一 uid 1000、目录 0750/文件 0640、chown 失败即报错、删除全局可写回退）及 blueprint/security.md 直接冲突（f_docs_current_03）——按「blueprint 是长期真相」行事的实现者会重新引入 ADR 明确删除的全局可读回退; findings 登记表未随 ADR 013 修订：8 篇 TURN/ICE 类 finding 仍标『有效』且正文含已失效指令（f_docs_current_02）；v2_architecture_plan.md 与 blueprint/architecture.md 亦保留 coturn/凭证轮换为现行设计的表述且无替代标注（f_docs_current_05/06）; docs/handoff.md 整体过期一轮：仍称下一步 t015、head 为旧提交、pending 为空（f_docs_current_01），而 AGENTS.md 规定 handoff 是项目级交接面; 归档证据层同病：上一轮审阅归档中的审计哈希链指向未入库的 \_meta 产物，仓内读者无法复算验证（f_archive_reviews_05）；t018 账本出现 AC 在自声明必需验证从未执行时打勾关闭、Review 处置表样板化（f_archive_tasks_01/02）; 组合结论：仓库的权威规则（specs_index 在表即生效、blueprint 为长期真相、findings 为已验证事实登记、archive 为只追加证据层）各自单看成立，但层与层之间没有一致性维护机制——新决定（ADR）落盘后不回写旧层、旧层不标 superseded，于是按自家规则查阅的读者与自动化会被系统性引向已废止口径，其中至少一处是安全参数
+        - Impact: 文档体系作为事实来源的整体可信度受损：任何单篇文档的陈述都不能默认与当前决定一致，跨文档结论必须逐条核对 ADR 日期与替代关系；更实际的风险是后续实现或运维按 blueprint/findings 的过期口径落地安全相关行为。
+        - Fix: 建立 ADR 落盘时的连带修订清单（受影响的 blueprint/specs/findings 条目同步改写或加 superseded 标注并指向新 ADR）；findings 登记表按 ADR 013 批量修订状态；handoff.md 纳入 task 收尾的强制更新点；归档审计链改为只引用已入库产物或把被引 \_meta 一并入库。
+        - Verification: static
 - [Medium][90] src/backend/database.py:122；src/backend/cbrowser/adapters/database/migrations.py — 唯一生产面的数据层无版本化迁移：列集相等整表重建静默丢列、无日志无备份，与 v2 Alembic 形成演进双轨
-  - Sources: bundle_global_evolution.md (f_global_evolution_02)
-  - f_global_evolution_02: f_backend_core_05：legacy init_db 以列集相等为唯一版本判据，列集不符即整表重建，列集之外的全部列数据被静默丢弃，无日志、无备份; backend_core 单元约束记录：『legacy 与 v2 两套数据库（profiles.db 手写 DDL vs cbrowser.db + Alembic）同仓并存，schema 演进互不感知』; v2 侧已有正轨机制：decisions.md 记载嵌入式 SQLite + WAL + Alembic 版本化迁移，migrations.py 在仓；但该机制只覆盖尚无正式用户数据的 v2 面; legacy 承载的是 profile 配置这一核心资产（代理凭据、指纹、备注），且在 t010 落地前它是唯一生产数据面，任何跨版本/跨栈切换启动一次即触发重建判定
-    - Impact: 升级路径上存在不可恢复的静默数据损失点，且它位于当前唯一生产面：用户升级一次 legacy 版本就可能永久丢失列集外的 profile 资产且无任何告警或回滚材料。与 f_global_evolution_01 叠加：切换链推迟越久，legacy 存量越大，这一重建机制在存量上的单次破坏面也越大。v2 的 Alembic 投资无法对冲此风险，因为它管不到 legacy 的数据。
-    - Fix: 在 t010 落地前给 legacy init_db 加最小护栏：重建前自动备份原库文件、丢弃列数据时写日志并计数、列集差异时优先 ALTER 增列而非整表重建；长期仍以 t010 的正式迁移收口，不再扩展 legacy schema。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_02)
+    - f_global_evolution_02: f_backend_core_05：legacy init_db 以列集相等为唯一版本判据，列集不符即整表重建，列集之外的全部列数据被静默丢弃，无日志、无备份; backend_core 单元约束记录：『legacy 与 v2 两套数据库（profiles.db 手写 DDL vs cbrowser.db + Alembic）同仓并存，schema 演进互不感知』; v2 侧已有正轨机制：decisions.md 记载嵌入式 SQLite + WAL + Alembic 版本化迁移，migrations.py 在仓；但该机制只覆盖尚无正式用户数据的 v2 面; legacy 承载的是 profile 配置这一核心资产（代理凭据、指纹、备注），且在 t010 落地前它是唯一生产数据面，任何跨版本/跨栈切换启动一次即触发重建判定
+        - Impact: 升级路径上存在不可恢复的静默数据损失点，且它位于当前唯一生产面：用户升级一次 legacy 版本就可能永久丢失列集外的 profile 资产且无任何告警或回滚材料。与 f_global_evolution_01 叠加：切换链推迟越久，legacy 存量越大，这一重建机制在存量上的单次破坏面也越大。v2 的 Alembic 投资无法对冲此风险，因为它管不到 legacy 的数据。
+        - Fix: 在 t010 落地前给 legacy init_db 加最小护栏：重建前自动备份原库文件、丢弃列数据时写日志并计数、列集差异时优先 ALTER 增列而非整表重建；长期仍以 t010 的正式迁移收口，不再扩展 legacy schema。
+        - Verification: static
 - [Medium][95] scripts/run_gates.sh；scripts/export_openapi.py 等四个导出脚本；schemas/ — 入库契约无新鲜度门禁：导出脚本靠人工重跑，门禁不做重导出 diff，漂移既无检测也难协商
-  - Sources: bundle_global_evolution.md (f_global_evolution_03)
-  - f_global_evolution_03: 回查 scripts/run_gates.sh 全文：不含任何 export_openapi / export_*_protocol / schemas 引用，本地门禁从不重跑导出脚本或比对 diff（与 contracts_deploy 单元 uncertainties 中『no freshness gate exists in run_gates.sh』一致）; 契约面规模：两份 OpenAPI + 三份协议 JSON Schema 均由源码模型生成并入库，是五个服务间唯一的机器可读契约; f_contracts_deploy_08：三份协议 schema 的版本字段不一致（runtime agent 有 version，supervisor 与 stream 无），消费者无法统一做兼容协商; f_contracts_deploy_10：v1 OpenAPI 中 profile 运行时状态为裸字符串，而 supervisor 协议对同一字段用枚举，两面状态词汇漂移不会被 schema 检查发现；f_contracts_deploy_07：导出协议 schema 为未判别的 anyOf 联合，边界校验强度低于进程内 pydantic 模型
-    - Impact: 服务还在演进期、协议字段仍在增删时，入库契约与源码模型脱节只是时间问题，且脱节发生时没有任何门禁会变红：消费方（前端生成类型、协议校验、后续新服务）会按过期契约开发，问题要到联调或运行时才暴露。版本字段不一致又使漂移发生后连『对端是什么版本』都无法统一判定，协商成本被迫靠人工。
-    - Fix: 在 run_gates.sh（及 CI 对应环节）加入契约新鲜度门：重跑四个导出脚本后 git diff --exit-code schemas/，非空即红；同时统一三份协议 schema 的 version 字段约定，并让 v1 OpenAPI 的状态字段引用与 supervisor 协议同源的枚举定义。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_03)
+    - f_global_evolution_03: 回查 scripts/run_gates.sh 全文：不含任何 export_openapi / export\_\*\_protocol / schemas 引用，本地门禁从不重跑导出脚本或比对 diff（与 contracts_deploy 单元 uncertainties 中『no freshness gate exists in run_gates.sh』一致）; 契约面规模：两份 OpenAPI + 三份协议 JSON Schema 均由源码模型生成并入库，是五个服务间唯一的机器可读契约; f_contracts_deploy_08：三份协议 schema 的版本字段不一致（runtime agent 有 version，supervisor 与 stream 无），消费者无法统一做兼容协商; f_contracts_deploy_10：v1 OpenAPI 中 profile 运行时状态为裸字符串，而 supervisor 协议对同一字段用枚举，两面状态词汇漂移不会被 schema 检查发现；f_contracts_deploy_07：导出协议 schema 为未判别的 anyOf 联合，边界校验强度低于进程内 pydantic 模型
+        - Impact: 服务还在演进期、协议字段仍在增删时，入库契约与源码模型脱节只是时间问题，且脱节发生时没有任何门禁会变红：消费方（前端生成类型、协议校验、后续新服务）会按过期契约开发，问题要到联调或运行时才暴露。版本字段不一致又使漂移发生后连『对端是什么版本』都无法统一判定，协商成本被迫靠人工。
+        - Fix: 在 run_gates.sh（及 CI 对应环节）加入契约新鲜度门：重跑四个导出脚本后 git diff --exit-code schemas/，非空即红；同时统一三份协议 schema 的 version 字段约定，并让 v1 OpenAPI 的状态字段引用与 supervisor 协议同源的枚举定义。
+        - Verification: static
 - [Medium][90] docs/findings/；docs/blueprint/；docs/specs/；docs/v2_architecture_plan.md；docs/handoff.md；docs/tasks/t009_v2_full_acceptance/ — 架构决策向下游文档的传播全靠人工且已在 ADR 013 一役多面漏改，后续每次架构变更都要重复支付全额传播成本
-  - Sources: bundle_global_evolution.md (f_global_evolution_04)
-  - f_global_evolution_04: f_docs_current_02：ADR 013 删除 coturn/TURN 凭证轮换/ICE 代次接管后，findings 登记表中 8 篇 TURN/ICE 类 finding 仍标『有效』且含已失效指令，按现文执行可能复活已删除机制; f_docs_current_03：blueprint/artifacts.md 仍写 chown 失败回退 0755/0644，与 ADR 014 及 security.md 直接冲突——安全类删除决定在被约定为『当前长期真相』的文档里未传播; f_docs_current_05/06/07：v2_architecture_plan.md 正文仍以 TURN 轮换为现行设计且无替代标注；blueprint/architecture.md 两处残留旧表述；specs/webrtc_remote_display.md 仍称适配层处理已被删除的 RTC 配置; f_docs_current_04：t009（全量验收 task）的 AC-005 仍要求验证已删除的 coturn/凭证切换，字面不可执行，验收期必然临时改口径; f_docs_current_01：handoff.md 整体过期一轮（仍称下一步 t015、pending 为空）；f_docs_current_09：CHANGELOG 最新条目止于 v2 之前的 [0.1.9]（2026-10-16）
-    - Impact: 文档体系的层级设计本身合理（ADR 定夺、blueprint 为长期真相、specs 在表即生效、findings 登记事实），但决定作出后的横向修订没有任何机械检查点，传播成本是 O(受影响文档面数）的人工逐处比对，且已实证会漏：漏改面不是无关紧要的角落，而是后续 task 的约束来源（findings)、验收口径（spec/AC）与实现依据（blueprint)。架构还在快速演进期（ADR 已至 014），每次变更都按同一模式重复支付并重复漏改，读者对『现行文档可信』的信心会被持续侵蚀，最终使整套文档制度贬值。
-    - Fix: 给架构级 ADR 增加收尾清单机制：ADR 条目必须列出受影响的 blueprint/spec/findings/plan/AC 面并逐项勾销（可由 task 收尾门禁校验 ADR 中声明的传播面已修订）；对 findings 登记表增加与 ADR 的交叉引用字段，状态修订随 ADR 落地同 commit 完成。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_04)
+    - f_global_evolution_04: f_docs_current_02：ADR 013 删除 coturn/TURN 凭证轮换/ICE 代次接管后，findings 登记表中 8 篇 TURN/ICE 类 finding 仍标『有效』且含已失效指令，按现文执行可能复活已删除机制; f_docs_current_03：blueprint/artifacts.md 仍写 chown 失败回退 0755/0644，与 ADR 014 及 security.md 直接冲突——安全类删除决定在被约定为『当前长期真相』的文档里未传播; f_docs_current_05/06/07：v2_architecture_plan.md 正文仍以 TURN 轮换为现行设计且无替代标注；blueprint/architecture.md 两处残留旧表述；specs/webrtc_remote_display.md 仍称适配层处理已被删除的 RTC 配置; f_docs_current_04：t009（全量验收 task）的 AC-005 仍要求验证已删除的 coturn/凭证切换，字面不可执行，验收期必然临时改口径; f_docs_current_01：handoff.md 整体过期一轮（仍称下一步 t015、pending 为空）；f_docs_current_09：CHANGELOG 最新条目止于 v2 之前的 [0.1.9]（2026-10-16）
+        - Impact: 文档体系的层级设计本身合理（ADR 定夺、blueprint 为长期真相、specs 在表即生效、findings 登记事实），但决定作出后的横向修订没有任何机械检查点，传播成本是 O(受影响文档面数）的人工逐处比对，且已实证会漏：漏改面不是无关紧要的角落，而是后续 task 的约束来源（findings)、验收口径（spec/AC）与实现依据（blueprint)。架构还在快速演进期（ADR 已至 014），每次变更都按同一模式重复支付并重复漏改，读者对『现行文档可信』的信心会被持续侵蚀，最终使整套文档制度贬值。
+        - Fix: 给架构级 ADR 增加收尾清单机制：ADR 条目必须列出受影响的 blueprint/spec/findings/plan/AC 面并逐项勾销（可由 task 收尾门禁校验 ADR 中声明的传播面已修订）；对 findings 登记表增加与 ADR 的交叉引用字段，状态修订随 ADR 落地同 commit 完成。
+        - Verification: static
 - [Medium][90] tests/fixtures/；tests/e2e/；tests/integration/ — 测试资产以『重实现生产语义』的 fixture 为主要形态，同步负担随生产演进持续放大且漂移方向是假绿
-  - Sources: bundle_global_evolution.md (f_global_evolution_05)
-  - f_global_evolution_05: f_tests_integration_fixtures_02：两套测试本地 Selkies client shim 重实现生产 adapter 的标签身份语义且彼此不一致，被验证的其实是 shim 的行为而非生产 adapter; f_tests_integration_fixtures_03：同一 Gateway→API 内部面有两套不一致的 fake，其中 HTTP fake 无条件放行 automation 授权且忽略 viewer origin，弱于生产语义; f_tests_integration_fixtures_07：Supervisor 的 Docker 边界在单元内有至少四套手搓 fake，各自独立漂移；f_tests_integration_fixtures_01：资源探针重实现 supervisor→gateway→agent 配额投递链而非行使生产链; f_tests_e2e_stream_frontend_03/04：AC-010 在测试内重实现 StreamAgent、stream 运行时套件以 GatewayMockServer + Web Locks shim 验证标签/媒体语义，均非生产代码; 新鲜度保障同样脆弱：f_tests_e2e_stream_frontend_01 的 dist 门禁按测试文件名含 'frontend' 判定而非实际消费（今日成立纯属命名巧合）；f_tests_integration_fixtures_04 多条 lane 声称查 freshness 实则未查，可静默测旧 dist
-    - Impact: 这批 fixture 不是简单的测试代码重复，而是生产语义的第二份、第三份实现：生产每次修改协议信封、授权判定、标签仲裁或配额投递，这些副本都必须有人记得手工跟随；漏跟随的后果不是测试变红，而是测试继续全绿地验证旧语义——测试资产从演进护栏转为演进负债的速度取决于生产变更频率，而本仓正处协议与拓扑仍在变动的阶段。维护成本随生产演进超线性增长（副本数 × 变更面），是长期成本中最隐蔽的一项。
-    - Fix: 按『离生产越近越优先』的顺序收敛副本：Gateway→API 假面与 Selkies shim 各保留一套并由生产类型/契约 schema 驱动校验，资源探针与 AC-010 改为行使生产投递链与生产 agent；dist freshness 门禁改为按 lane 实际消费声明（harness 层统一断言 build stamp）而非文件名约定。
-    - Verification: static
-- [Medium][88] .repo_template/scripts/repo_sync.py（sync_opencode_commands、sync_dir/sync_skill、_ensure_symlink） — 模板分发同步机制的失败模式集中在演进中间态，且失败后留悬挂事务需人工善后
-  - Sources: bundle_global_evolution.md (f_global_evolution_06)
-  - f_global_evolution_06: f_template_scripts_ops_04：sync_opencode_commands 对 registry.json 用 roles[name] 硬下标，registry 与 skills 目录不一致（模板演进中的常见中间态）时 KeyError 穿透 apply 的回滚例外集，apply 中途崩溃、已写文件不回滚、事务悬挂为 begun 状态，后续操作需人工清理; f_template_scripts_ops_05：sync_dir/sync_skill 复制时不处理目标侧文件软链，copy2 跟随软链写出 .repo_template 树外，该目标不在 FileTransaction 快照清单内，回滚覆盖不到; f_template_scripts_ops_03：link-skills 路径下 _ensure_symlink 对宿主位真实目录直接 rmtree 且报告谎称『原内容入回滚栈』，该路径根本没有事务——与 apply 共用同一函数却无同等安全等级; f_template_scripts_ops_14：registry.json 角色过滤分支（生产恒走）在测试套件中从未执行，模板演进最常触及的这条路径无回归网
-    - Impact: .repo_template 是要持续向本仓及未来消费仓分发演进的工具链，sync 不是一次性动作而是每次模板升级都要重复走的路径。当前失败模式的触发条件恰是演进本身（registry 与目录短暂不一致、消费侧残留软链），失败代价也不是『修正后重试』而是人工清理悬挂事务与核对未回滚的半成品写入。演进频率越高，这条链的期望善后成本越高，且会在消费仓侧放大（每个消费仓各付一份）。
-    - Fix: apply 开始前先跑 skill_registry 的一致性校验（其本就能以 ValueError 报告 registry/目录不一致），把中间态拦截在写盘之前；roles 访问统一改 .get 并显式报错；为 link-skills 路径接入与 apply 同级的事务或至少在 rmtree 前强制备份并如实报告；补 registry 过滤分支的回归测试。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_05)
+    - f_global_evolution_05: f_tests_integration_fixtures_02：两套测试本地 Selkies client shim 重实现生产 adapter 的标签身份语义且彼此不一致，被验证的其实是 shim 的行为而非生产 adapter; f_tests_integration_fixtures_03：同一 Gateway→API 内部面有两套不一致的 fake，其中 HTTP fake 无条件放行 automation 授权且忽略 viewer origin，弱于生产语义; f_tests_integration_fixtures_07：Supervisor 的 Docker 边界在单元内有至少四套手搓 fake，各自独立漂移；f_tests_integration_fixtures_01：资源探针重实现 supervisor→gateway→agent 配额投递链而非行使生产链; f_tests_e2e_stream_frontend_03/04：AC-010 在测试内重实现 StreamAgent、stream 运行时套件以 GatewayMockServer + Web Locks shim 验证标签/媒体语义，均非生产代码; 新鲜度保障同样脆弱：f_tests_e2e_stream_frontend_01 的 dist 门禁按测试文件名含 'frontend' 判定而非实际消费（今日成立纯属命名巧合）；f_tests_integration_fixtures_04 多条 lane 声称查 freshness 实则未查，可静默测旧 dist
+        - Impact: 这批 fixture 不是简单的测试代码重复，而是生产语义的第二份、第三份实现：生产每次修改协议信封、授权判定、标签仲裁或配额投递，这些副本都必须有人记得手工跟随；漏跟随的后果不是测试变红，而是测试继续全绿地验证旧语义——测试资产从演进护栏转为演进负债的速度取决于生产变更频率，而本仓正处协议与拓扑仍在变动的阶段。维护成本随生产演进超线性增长（副本数 × 变更面），是长期成本中最隐蔽的一项。
+        - Fix: 按『离生产越近越优先』的顺序收敛副本：Gateway→API 假面与 Selkies shim 各保留一套并由生产类型/契约 schema 驱动校验，资源探针与 AC-010 改为行使生产投递链与生产 agent；dist freshness 门禁改为按 lane 实际消费声明（harness 层统一断言 build stamp）而非文件名约定。
+        - Verification: static
+- [Medium][88] .repo_template/scripts/repo_sync.py（sync_opencode_commands、sync_dir/sync_skill、\_ensure_symlink） — 模板分发同步机制的失败模式集中在演进中间态，且失败后留悬挂事务需人工善后
+    - Sources: bundle_global_evolution.md (f_global_evolution_06)
+    - f_global_evolution_06: f_template_scripts_ops_04：sync_opencode_commands 对 registry.json 用 roles[name] 硬下标，registry 与 skills 目录不一致（模板演进中的常见中间态）时 KeyError 穿透 apply 的回滚例外集，apply 中途崩溃、已写文件不回滚、事务悬挂为 begun 状态，后续操作需人工清理; f_template_scripts_ops_05：sync_dir/sync_skill 复制时不处理目标侧文件软链，copy2 跟随软链写出 .repo_template 树外，该目标不在 FileTransaction 快照清单内，回滚覆盖不到; f_template_scripts_ops_03：link-skills 路径下 \_ensure_symlink 对宿主位真实目录直接 rmtree 且报告谎称『原内容入回滚栈』，该路径根本没有事务——与 apply 共用同一函数却无同等安全等级; f_template_scripts_ops_14：registry.json 角色过滤分支（生产恒走）在测试套件中从未执行，模板演进最常触及的这条路径无回归网
+        - Impact: .repo_template 是要持续向本仓及未来消费仓分发演进的工具链，sync 不是一次性动作而是每次模板升级都要重复走的路径。当前失败模式的触发条件恰是演进本身（registry 与目录短暂不一致、消费侧残留软链），失败代价也不是『修正后重试』而是人工清理悬挂事务与核对未回滚的半成品写入。演进频率越高，这条链的期望善后成本越高，且会在消费仓侧放大（每个消费仓各付一份）。
+        - Fix: apply 开始前先跑 skill_registry 的一致性校验（其本就能以 ValueError 报告 registry/目录不一致），把中间态拦截在写盘之前；roles 访问统一改 .get 并显式报错；为 link-skills 路径接入与 apply 同级的事务或至少在 rmtree 前强制备份并如实报告；补 registry 过滤分支的回归测试。
+        - Verification: static
 - [Low][85] docs/reviews/review_20261102_201727/adoption_decision.md（A13 行、「合并说明」第 3 条、文末附表 backend_core 节） — adoption 的决策项覆盖计数与文末附表映射不一致（A13 自称 6 条、附表实际映射 ≥8 条；「62 条子项」与附表 362 条规模不符）
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_04)
-  - f_archive_reviews_04: A13 行自称「覆盖：6 条」并逐一列名（f_backend_core_05、f_backend_api_auth_08、f_contracts_deploy_02、Critical 本体、f_global_strategy_05、f_global_evolution_05）。; 文末附表 backend_core 节另把 f_backend_core_04 与 f_backend_core_12 也映射到 A13，即 A13 实际承接至少 8 条，与其行内自称的 6 条不符，且多出的两条未在 A13 的处置说明中出现。; 「合并说明」第 3 条称「62 条子项逐条映射见文末附表」，但附表按 bundle 分节的小计合计为 362 条，「62 条子项」的所指无法从文档内任何口径复算得出。
-    - Impact: 按决策项统计整改进度（如「A13 完成即关闭 6 条」）会与按附表逐条销账的结果对不上；62 与 362 的规模落差使读者无法确认附表究竟是全量映射还是子集，逐条审计时必须自行全文复算。
-    - Fix: 统一口径：决策行的覆盖数改为与附表映射一致的计数（或明确区分「主项/并入项」两类并分别计数），并把「62 条子项」更正为与附表规模一致的表述。
-    - Verification: static
-- [Low][90] docs/reviews/review_20261102_201727/bundle_global_*.md（question_decisions 的 followup_sha256）；bundle_cross_validation.md（finding_sha256）；bundle_repository_summary.md（synthesis 绑定说明） — 归档记录中的审计哈希链指向未入库的 _meta 产物，仓内读者无法复算验证
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_05)
-  - f_archive_reviews_05: 四份 global bundle 的 question_decisions 均带 followup_sha256，其哈希对象是精查的 _meta JSON 定稿，而非同目录入库的 bundle_followup_*.md 渲染件。; bundle_cross_validation.md 每条记录带 finding_sha256，其来源 finding_index 同样是 _meta 产物；_meta/ 按仓规 gitignore 不入库（本轮新 OUTDIR 的 _meta 亦同）。; 结果是：只持有公开仓的读者能看到哈希值，却没有任何被哈希的原文可供复算，哈希链在归档形态下只剩装饰性。
-    - Impact: 文档集以哈希绑定作为「结论绑定到确切证据版本」的完整性机制，但归档后该机制不可验证：读者无法区分哈希是对的但原文缺失，还是记录本身被改动过。审计价值低于其呈现形式给人的印象。
-    - Fix: 在报告目录内落一份可复算的清单（如各 bundle 文件自身的 SHA-256 清单文件入库），或在 repository_summary 中明示哈希对象为未入库的 _meta 产物、归档读者应以 bundle 文本为准，避免高估可验证性。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_04)
+    - f_archive_reviews_04: A13 行自称「覆盖：6 条」并逐一列名（f_backend_core_05、f_backend_api_auth_08、f_contracts_deploy_02、Critical 本体、f_global_strategy_05、f_global_evolution_05）。; 文末附表 backend_core 节另把 f_backend_core_04 与 f_backend_core_12 也映射到 A13，即 A13 实际承接至少 8 条，与其行内自称的 6 条不符，且多出的两条未在 A13 的处置说明中出现。; 「合并说明」第 3 条称「62 条子项逐条映射见文末附表」，但附表按 bundle 分节的小计合计为 362 条，「62 条子项」的所指无法从文档内任何口径复算得出。
+        - Impact: 按决策项统计整改进度（如「A13 完成即关闭 6 条」）会与按附表逐条销账的结果对不上；62 与 362 的规模落差使读者无法确认附表究竟是全量映射还是子集，逐条审计时必须自行全文复算。
+        - Fix: 统一口径：决策行的覆盖数改为与附表映射一致的计数（或明确区分「主项/并入项」两类并分别计数），并把「62 条子项」更正为与附表规模一致的表述。
+        - Verification: static
+- [Low][90] docs/reviews/review_20261102_201727/bundle_global\_\*.md（question_decisions 的 followup_sha256）；bundle_cross_validation.md（finding_sha256）；bundle_repository_summary.md（synthesis 绑定说明） — 归档记录中的审计哈希链指向未入库的 \_meta 产物，仓内读者无法复算验证
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_05)
+    - f_archive_reviews_05: 四份 global bundle 的 question_decisions 均带 followup_sha256，其哈希对象是精查的 _meta JSON 定稿，而非同目录入库的 bundle_followup_\*.md 渲染件。; bundle_cross_validation.md 每条记录带 finding_sha256，其来源 finding_index 同样是 \_meta 产物；\_meta/ 按仓规 gitignore 不入库（本轮新 OUTDIR 的 \_meta 亦同）。; 结果是：只持有公开仓的读者能看到哈希值，却没有任何被哈希的原文可供复算，哈希链在归档形态下只剩装饰性。
+        - Impact: 文档集以哈希绑定作为「结论绑定到确切证据版本」的完整性机制，但归档后该机制不可验证：读者无法区分哈希是对的但原文缺失，还是记录本身被改动过。审计价值低于其呈现形式给人的印象。
+        - Fix: 在报告目录内落一份可复算的清单（如各 bundle 文件自身的 SHA-256 清单文件入库），或在 repository_summary 中明示哈希对象为未入库的 \_meta 产物、归档读者应以 bundle 文本为准，避免高估可验证性。
+        - Verification: static
 - [Low][85] docs/reviews/review_20261102_201727/review_intensive.md（卷首 Coverage 行、Gaps 节、Limitations 节） — review_intensive.md 宣告「Gaps: None」与同文件的 completed_with_limitations 及长 Limitations 列表并存
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_06)
-  - f_archive_reviews_06: 卷首 Coverage 为 completed_with_limitations，Limitations 节逐条传播了各单元约六十条限制与未核事项（未运行验证、key 级覆盖、跨单元未确认等）。; 同文件 Gaps 节却只有一句「None.」，未对「gap」与「limitation」的区分作任何说明。
-    - Impact: 只读汇总节的读者会得到「无缺口」的结论，与同文件后段大量未核事项并存时构成自相张力的完整性表述；后续轮次若沿用该口径，覆盖缺口的登记纪律会被稀释。
-    - Fix: 在 Gaps 节注明其口径（如「无单元级覆盖缺口；方法级限制见 Limitations」），或把生成型大文件的 key 级覆盖等事项按其性质登记为 gap 而非仅 limitation。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_06)
+    - f_archive_reviews_06: 卷首 Coverage 为 completed_with_limitations，Limitations 节逐条传播了各单元约六十条限制与未核事项（未运行验证、key 级覆盖、跨单元未确认等）。; 同文件 Gaps 节却只有一句「None.」，未对「gap」与「limitation」的区分作任何说明。
+        - Impact: 只读汇总节的读者会得到「无缺口」的结论，与同文件后段大量未核事项并存时构成自相张力的完整性表述；后续轮次若沿用该口径，覆盖缺口的登记纪律会被稀释。
+        - Fix: 在 Gaps 节注明其口径（如「无单元级覆盖缺口；方法级限制见 Limitations」），或把生成型大文件的 key 级覆盖等事项按其性质登记为 gap 而非仅 limitation。
+        - Verification: static
 - [Low][90] docs/reviews/review_20261102_201727/adoption_decision.md（R2 行 vs A26 行） — adoption 内的跨轮编号碰撞：R2 理由引用的「A26」是上一轮编号，与本文自己的 A26 指向不同事项
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_07)
-  - f_archive_reviews_07: R2（契约冻结不采纳）的理由写「specs/blueprint 的 A26 已同步」，此处 A26 指 2026-11-01 轮 adoption 的同名编号（契约同步回写项）。; 本文自己的 A26 是另一事项（f_docs_current_17：storage spec 表清单漏列 settings 表）。同一文档内「A26」一词两种所指，无任何轮次限定标注。
-    - Impact: 按编号回查的读者（包括按 A 编号跟踪整改的 task 记录）会落到错误条目；随着轮次增多，两套 A/R 编号在同一仓内并存，碰撞只会加重。
-    - Fix: 跨轮引用一律带轮次前缀（如「20261101-A26」），或在 R2 理由中把所指写成事项名而非裸编号；本文 A 编号在被其他文档引用时亦建议带本轮日期前缀。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_07)
+    - f_archive_reviews_07: R2（契约冻结不采纳）的理由写「specs/blueprint 的 A26 已同步」，此处 A26 指 2026-11-01 轮 adoption 的同名编号（契约同步回写项）。; 本文自己的 A26 是另一事项（f_docs_current_17：storage spec 表清单漏列 settings 表）。同一文档内「A26」一词两种所指，无任何轮次限定标注。
+        - Impact: 按编号回查的读者（包括按 A 编号跟踪整改的 task 记录）会落到错误条目；随着轮次增多，两套 A/R 编号在同一仓内并存，碰撞只会加重。
+        - Fix: 跨轮引用一律带轮次前缀（如「20261101-A26」），或在 R2 理由中把所指写成事项名而非裸编号；本文 A 编号在被其他文档引用时亦建议带本轮日期前缀。
+        - Verification: static
 - [Low][80] docs/reviews/review_20261102_201727/adoption_decision.md「基线与现场」段 — adoption 在修复落地前，把对当时现网部署可直接使用的未授权穿越请求路径写进了公开仓记录
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_08)
-  - f_archive_reviews_08: 该段原文给出了完整的编码穿越请求路径（/%2e%2e/…/etc/hostname 形态）并确认对在跑容器返回 200；该文档随审阅报告 commit 进入公开仓库时，对应修复尚未落地（修复属其后整改轮次）。; 同记录集的其他文件对同一漏洞只作代码级描述（serve_spa 无包含校验），唯 adoption 提供了可直接照抄的现网验证路径与成功结果。
-    - Impact: 在漏洞仍可利用的窗口内，公开记录等于向任何仓库读者提供了现成的未授权文件读取入口与「已验证可用」的背书；对默认部署在局域网的身份存储应用，这缩短了从发现到利用的距离。定级 Low 是因为利用仍需能触达部署所在网络。
-    - Fix: 后续轮次的决策/基线文档对未修复漏洞只记录验证结论与环境，不写可照抄的完整利用路径；确需留存复现细节时放不入库的过程区（_meta），修复落地后再补入公开记录。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_08)
+    - f_archive_reviews_08: 该段原文给出了完整的编码穿越请求路径（/%2e%2e/…/etc/hostname 形态）并确认对在跑容器返回 200；该文档随审阅报告 commit 进入公开仓库时，对应修复尚未落地（修复属其后整改轮次）。; 同记录集的其他文件对同一漏洞只作代码级描述（serve_spa 无包含校验），唯 adoption 提供了可直接照抄的现网验证路径与成功结果。
+        - Impact: 在漏洞仍可利用的窗口内，公开记录等于向任何仓库读者提供了现成的未授权文件读取入口与「已验证可用」的背书；对默认部署在局域网的身份存储应用，这缩短了从发现到利用的距离。定级 Low 是因为利用仍需能触达部署所在网络。
+        - Fix: 后续轮次的决策/基线文档对未修复漏洞只记录验证结论与环境，不写可照抄的完整利用路径；确需留存复现细节时放不入库的过程区（\_meta），修复落地后再补入公开记录。
+        - Verification: static
 - [Low][85] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:26 — Bearer tokens compared with plain string equality; one session token passed via process argv
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_03)
-  - f_archive_spikes_03: roles.py:26 'if auth != f"Bearer {self.auth_token}"' - non-constant-time comparison (same pattern in s006 gateway_core.py:86 and s011 GatewayMockServer.handle_agent_register); s003 recovery_probe/test_orchestration.py generates the session token with secrets.token_hex and passes it to the API/Supervisor subprocesses as a --token command-line argument, visible in the host process list; Contrast: s006/s008 runners read tokens from files instead of argv, showing the safer pattern was known in the same unit
-    - Impact: Timing side channel on token checks (minor on loopback) and token disclosure to any local process listing during the s003 recovery runs.
-    - Fix: Use hmac.compare_digest for token checks and pass tokens via file or environment, as the s006/s008 harnesses already do.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_03)
+    - f_archive_spikes_03: roles.py:26 'if auth != f"Bearer {self.auth_token}"' - non-constant-time comparison (same pattern in s006 gateway_core.py:86 and s011 GatewayMockServer.handle_agent_register); s003 recovery_probe/test_orchestration.py generates the session token with secrets.token_hex and passes it to the API/Supervisor subprocesses as a --token command-line argument, visible in the host process list; Contrast: s006/s008 runners read tokens from files instead of argv, showing the safer pattern was known in the same unit
+        - Impact: Timing side channel on token checks (minor on loopback) and token disclosure to any local process listing during the s003 recovery runs.
+        - Fix: Use hmac.compare_digest for token checks and pass tokens via file or environment, as the s006/s008 harnesses already do.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:140 — Run secrets persist in the probe working tree; s006 token file gets default permissions and is never deleted
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_04)
-  - f_archive_spikes_04: run_verification.py:35,140 writes agent_token.secret into the probe directory with plain open('w') (umask-default permissions, no chmod 0600) and cleanup_all() never removes it; s008 probe_work/start_coturn.sh writes turn_secret.txt and turnserver.conf (both chmod 600) into code/probe_work/, but probe_work/cleanup.sh removes only containers/volumes/networks, leaving both secret files in any copied tree indefinitely; Verified in this review via git check-ignore: both locations are gitignored (docs/archive/spikes/**/probe_work/ and **/*.secret), so the exposure is local-disk persistence, not repository leakage
-    - Impact: Copied scratch trees accumulate live TURN/agent secrets on disk beyond the run; the s006 token is additionally readable by other local users due to default permissions.
-    - Fix: chmod 0600 the s006 token file and delete secret files in each spike's cleanup path.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_04)
+    - f_archive_spikes_04: run_verification.py:35,140 writes agent_token.secret into the probe directory with plain open('w') (umask-default permissions, no chmod 0600) and cleanup_all() never removes it; s008 probe_work/start_coturn.sh writes turn_secret.txt and turnserver.conf (both chmod 600) into code/probe_work/, but probe_work/cleanup.sh removes only containers/volumes/networks, leaving both secret files in any copied tree indefinitely; Verified in this review via git check-ignore: both locations are gitignored (docs/archive/spikes/\*\*/probe_work/ and \*\*/\*.secret), so the exposure is local-disk persistence, not repository leakage
+        - Impact: Copied scratch trees accumulate live TURN/agent secrets on disk beyond the run; the s006 token is additionally readable by other local users due to default permissions.
+        - Fix: chmod 0600 the s006 token file and delete secret files in each spike's cleanup path.
+        - Verification: static
 - [Low][80] docs/archive/spikes/s007_profile_isolation/code/entry_browser.sh:47 — s007 Xauthority and PulseAudio cookies are world-readable inside the shared volumes
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_05)
-  - f_archive_spikes_05: entry_browser.sh writes the random Pulse cookie (dd from /dev/urandom) and chmod 644; the X11 cookie.hex and Xauthority file are likewise chmod 644 in the shared /tmp/.X11-unix volume; The spike's own analysis names the Xauthority cookie a primary defense layer, with real isolation resting on volume separation; any process that gains read access to the volume obtains both cookies; The stream side does better: entry_stream.sh builds its derived xauth with chmod 600
-    - Impact: Weakens the cookie layer of the defense-in-depth the spike sets out to demonstrate; a read-only leak of the X11 volume exposes the exact credential the design relies on.
-    - Fix: chmod 600 the cookie files and rely on the shared group/UID (1000) for the stream container's read access, or pass the cookie through the already-600 stream xauth path only.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_05)
+    - f_archive_spikes_05: entry_browser.sh writes the random Pulse cookie (dd from /dev/urandom) and chmod 644; the X11 cookie.hex and Xauthority file are likewise chmod 644 in the shared /tmp/.X11-unix volume; The spike's own analysis names the Xauthority cookie a primary defense layer, with real isolation resting on volume separation; any process that gains read access to the volume obtains both cookies; The stream side does better: entry_stream.sh builds its derived xauth with chmod 600
+        - Impact: Weakens the cookie layer of the defense-in-depth the spike sets out to demonstrate; a read-only leak of the X11 volume exposes the exact credential the design relies on.
+        - Fix: chmod 600 the cookie files and rely on the shared group/UID (1000) for the stream container's read access, or pass the cookie through the already-600 stream xauth path only.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:83 — s003 CDP-over-UDS proxy: orphaned listener task, unlocked re-arm race, unbounded event buffer
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_06)
-  - f_archive_spikes_06: container_cdp_probe.py:83 start() creates the _listen_agent_events task without storing a reference, so close() cannot cancel it (same code duplicated in code/test_cdp_real.py); Any client disconnect triggers an unconditional re-arm of Browser.setDownloadBehavior with no lock; concurrent clients race on a browser-global setting (partially self-acknowledged in container_download_review.md S3.2); download_events is an in-memory list appended for the process lifetime with no bound or persistence
-    - Impact: Leaked asyncio tasks after shutdown, cross-client interference on download behavior, and slow memory growth in long sessions - the class is a stated prototype for the production control plane.
-    - Fix: Store and cancel the listener task, serialize re-arm under a lock scoped per browser, and cap or stream the event buffer.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_06)
+    - f_archive_spikes_06: container_cdp_probe.py:83 start() creates the \_listen_agent_events task without storing a reference, so close() cannot cancel it (same code duplicated in code/test_cdp_real.py); Any client disconnect triggers an unconditional re-arm of Browser.setDownloadBehavior with no lock; concurrent clients race on a browser-global setting (partially self-acknowledged in container_download_review.md S3.2); download_events is an in-memory list appended for the process lifetime with no bound or persistence
+        - Impact: Leaked asyncio tasks after shutdown, cross-client interference on download behavior, and slow memory growth in long sessions - the class is a stated prototype for the production control plane.
+        - Fix: Store and cancel the listener task, serialize re-arm under a lock scoped per browser, and cap or stream the event buffer.
+        - Verification: static
 - [Low][80] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:1 — s003 recovery roles: unbounded request body, silent no-op success, unlocked shared event file
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_07)
-  - f_archive_spikes_07: roles.py ApiHttpHandler.do_POST reads the request body using the client-supplied Content-Length with no size cap; Exit events for unknown profiles UPDATE zero rows yet the API still reports the event as applied; logging can also report new_desired when the profile row is None; container_agent.py and roles.py both read/delete the shared events.jsonl without any file lock (race self-acknowledged in recovery_review.md S3.4), and queue draining leaves a 0-byte file that makes orchestration tests wait (self-acknowledged S3)
-    - Impact: Memory exhaustion via oversized POSTs, false-positive recovery signals for missing profiles, and lost/duplicated exit events under concurrent access - in the spike whose subject is crash recovery correctness.
-    - Fix: Cap body size, return an error when an event matches no profile row, and take an flock around events.jsonl read/delete.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_07)
+    - f_archive_spikes_07: roles.py ApiHttpHandler.do_POST reads the request body using the client-supplied Content-Length with no size cap; Exit events for unknown profiles UPDATE zero rows yet the API still reports the event as applied; logging can also report new_desired when the profile row is None; container_agent.py and roles.py both read/delete the shared events.jsonl without any file lock (race self-acknowledged in recovery_review.md S3.4), and queue draining leaves a 0-byte file that makes orchestration tests wait (self-acknowledged S3)
+        - Impact: Memory exhaustion via oversized POSTs, false-positive recovery signals for missing profiles, and lost/duplicated exit events under concurrent access - in the spike whose subject is crash recovery correctness.
+        - Fix: Cap body size, return an error when an event matches no profile row, and take an flock around events.jsonl read/delete.
+        - Verification: static
 - [Low][70] docs/archive/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py:198 — s006 gateway: viewer registration race and one malformed frame tears down the agent
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_08)
-  - f_archive_spikes_08: handle_viewer_signal checks profile_id in self.registered_agents and later does self.profile_viewers[profile_id].add(conn_id) without holding self._lock; the agent handler's finally block pops profile_viewers[profile_id] on deregistration, so an interleaved deregistration makes the viewer path raise KeyError; In handle_agent_register's multiplex loop, json.loads(msg.data) is unguarded: one malformed text frame from the agent raises into the outer except and deregisters the whole agent, dropping all its viewers
-    - Impact: Spurious 500s and full agent teardown from a single bad frame or an unlucky registration/deregistration interleave - in the component whose recovery behavior is the spike's subject.
-    - Fix: Hold the gateway lock across the check-and-register sequence (or use setdefault), and drop malformed frames with a warning instead of tearing down the registration.
-    - Verification: suspected
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_08)
+    - f_archive_spikes_08: handle_viewer_signal checks profile_id in self.registered_agents and later does self.profile_viewers[profile_id].add(conn_id) without holding self.\_lock; the agent handler's finally block pops profile_viewers[profile_id] on deregistration, so an interleaved deregistration makes the viewer path raise KeyError; In handle_agent_register's multiplex loop, json.loads(msg.data) is unguarded: one malformed text frame from the agent raises into the outer except and deregisters the whole agent, dropping all its viewers
+        - Impact: Spurious 500s and full agent teardown from a single bad frame or an unlucky registration/deregistration interleave - in the component whose recovery behavior is the spike's subject.
+        - Fix: Hold the gateway lock across the check-and-register sequence (or use setdefault), and drop malformed frames with a warning instead of tearing down the registration.
+        - Verification: suspected
 - [Low][75] docs/archive/spikes/s008_turn_generation_media/code/stage2_adapter.py:92 — s008 adapter: failed prepare_restart leaves the transport monitor-less and leaks the new gatherer; runtime invariants use assert
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_09)
-  - f_archive_spikes_09: prepare_restart cancels _RTCIceTransport__monitor_task and clears __start BEFORE gather(); when gather() raises (exactly the adversarial server-bad path), the new gatherer's connection is never closed and the old transport keeps running without its monitor task; independent_review_failed.md S4.6 already noted missing try/finally resource回收 for intermediate gatherers; the current code still raises without closing gatherer._connection; Operational invariants are enforced with assert (restart_pending guard in prepare_restart; send_rejected assertion in start()), which vanish under python -O
-    - Impact: After a rejected generation the transport is left in a degraded, partially-dismantled state even though old media keeps flowing - the failure mode the adversarial suite exercises most.
-    - Fix: Wrap gather in try/finally that closes the new gatherer on failure and restores the monitor, and replace operational asserts with explicit exceptions.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_09)
+    - f_archive_spikes_09: prepare_restart cancels \_RTCIceTransport\_\_monitor_task and clears \_\_start BEFORE gather(); when gather() raises (exactly the adversarial server-bad path), the new gatherer's connection is never closed and the old transport keeps running without its monitor task; independent_review_failed.md S4.6 already noted missing try/finally resource回收 for intermediate gatherers; the current code still raises without closing gatherer.\_connection; Operational invariants are enforced with assert (restart_pending guard in prepare_restart; send_rejected assertion in start()), which vanish under python -O
+        - Impact: After a rejected generation the transport is left in a degraded, partially-dismantled state even though old media keeps flowing - the failure mode the adversarial suite exercises most.
+        - Fix: Wrap gather in try/finally that closes the new gatherer on failure and restores the monitor, and replace operational asserts with explicit exceptions.
+        - Verification: static
 - [Low][75] docs/archive/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:86 — UDS state queries truncate at 16 KiB while the returned action history grows unboundedly
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_10)
-  - f_archive_spikes_10: query_uds_state() in s005 test_e2e_real_pipeline.py and native_visibility_e2e.py (and the same helper pattern in s006) does a single s.recv(16384) and json.loads on the result - no framing loop; live_policy_agent.py get_state embeds the full _action_history, which is append-only for the process lifetime (log_pipeline_action), so long runs can exceed 16 KiB and make state queries fail spuriously
-    - Impact: False test failures (or misleading state) in long sessions, plus steady memory growth in the policy agent.
-    - Fix: Read until newline with a buffered reader on the client side and cap/ring-buffer the action history server-side.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_10)
+    - f_archive_spikes_10: query_uds_state() in s005 test_e2e_real_pipeline.py and native_visibility_e2e.py (and the same helper pattern in s006) does a single s.recv(16384) and json.loads on the result - no framing loop; live_policy_agent.py get_state embeds the full \_action_history, which is append-only for the process lifetime (log_pipeline_action), so long runs can exceed 16 KiB and make state queries fail spuriously
+        - Impact: False test failures (or misleading state) in long sessions, plus steady memory growth in the policy agent.
+        - Fix: Read until newline with a buffered reader on the client side and cap/ring-buffer the action history server-side.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:268 — s006 verification contains weak or logically-implied checks presented as independent items
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_12)
-  - f_archive_spikes_12: independent_agent_registered is marked PASS from agent_proc.poll() is None after a 2s sleep - process liveness, not a registration handshake (registration is only proven indirectly by later steps); Step 5's wrong-port negative re-evaluates the already-known candidate ports against 9999; once the strict 30007 check in Step 4 has passed, Step 5 cannot fail - it never exercises a validator function with a wrong expectation; Step 9 computes has_hello but the pass condition omits HELLO/SESSION despite the adjacent comment claiming they are required
-    - Impact: The 12-item matrix overstates the independence of three checks; a registration failure mode that keeps the process alive would be misreported at its own line item.
-    - Fix: Assert registration via the gateway's registered state, implement the port check as a callable validator and test it with a wrong expectation, and include HELLO in the trajectory gate or fix the comment.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_12)
+    - f_archive_spikes_12: independent_agent_registered is marked PASS from agent_proc.poll() is None after a 2s sleep - process liveness, not a registration handshake (registration is only proven indirectly by later steps); Step 5's wrong-port negative re-evaluates the already-known candidate ports against 9999; once the strict 30007 check in Step 4 has passed, Step 5 cannot fail - it never exercises a validator function with a wrong expectation; Step 9 computes has_hello but the pass condition omits HELLO/SESSION despite the adjacent comment claiming they are required
+        - Impact: The 12-item matrix overstates the independence of three checks; a registration failure mode that keeps the process alive would be misreported at its own line item.
+        - Fix: Assert registration via the gateway's registered state, implement the port check as a callable validator and test it with a wrong expectation, and include HELLO in the trajectory gate or fix the comment.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s001_selkies_runtime/code/test_mitshm.c:1 — Low-level capture positive checks assert success codes, not captured content
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_13)
-  - f_archive_spikes_13: test_mitshm.c positive path (s001 original; s007 fixture/test_mitshm.c copy) prints three sample pixel bytes without validating them - a black or frozen frame passes; s001 first_review.md S2.3 criticized only the negative path and the positive path was never strengthened; s007 run_isolation_probe.py pixelflux stage asserts >=8 callback frames and PNG size >5000 bytes, not that frame contents change; Partial compensation exists at higher levels (s007 screenshot color analysis, s004 DOM oracles), so the gap is confined to the low-level probes
-    - Impact: A capture pipeline returning stale/blank frames satisfies the low-level gates these spikes use as building-block evidence.
-    - Fix: Validate a known on-screen pattern (e.g. the fixture page's background color) inside the SHM/pixelflux positive checks, as the screenshot stage already does.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_13)
+    - f_archive_spikes_13: test_mitshm.c positive path (s001 original; s007 fixture/test_mitshm.c copy) prints three sample pixel bytes without validating them - a black or frozen frame passes; s001 first_review.md S2.3 criticized only the negative path and the positive path was never strengthened; s007 run_isolation_probe.py pixelflux stage asserts >=8 callback frames and PNG size >5000 bytes, not that frame contents change; Partial compensation exists at higher levels (s007 screenshot color analysis, s004 DOM oracles), so the gap is confined to the low-level probes
+        - Impact: A capture pipeline returning stale/blank frames satisfies the low-level gates these spikes use as building-block evidence.
+        - Fix: Validate a known on-screen pattern (e.g. the fixture page's background color) inside the SHM/pixelflux positive checks, as the screenshot stage already does.
+        - Verification: static
 - [Low][90] docs/archive/spikes/s009_native_ime_input/code/test_blank_cdp.py:1 — Observation-only scripts exit 0 with no assertions and no in-file warning
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_14)
-  - f_archive_spikes_14: test_blank_cdp.py only prints the blank-page CDP event list; investigate_compositionend.py only writes a trace JSON - neither contains any assertion, so exit 0 means only 'ran'; The s009 report does warn that test_blank_cdp's exit 0 must not substitute for end-to-end validation, but neither script carries that warning in its own header
-    - Impact: Anyone running the s009 command list mechanically can read two green exits as verification results.
-    - Fix: Add an 'observation only - no assertions' header to both scripts, matching the report's own caveat.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_14)
+    - f_archive_spikes_14: test_blank_cdp.py only prints the blank-page CDP event list; investigate_compositionend.py only writes a trace JSON - neither contains any assertion, so exit 0 means only 'ran'; The s009 report does warn that test_blank_cdp's exit 0 must not substitute for end-to-end validation, but neither script carries that warning in its own header
+        - Impact: Anyone running the s009 command list mechanically can read two green exits as verification results.
+        - Fix: Add an 'observation only - no assertions' header to both scripts, matching the report's own caveat.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s010_cloakbrowser_exit_observation/code/probe.py:500 — s010 owner-loss check asserts the outcome its own criteria say must not be presupposed
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_15)
-  - f_archive_spikes_15: The report's success criteria state the owner-loss run must record the timeline '不预设Chrome存活或终止' (without presupposing whether Chrome survives); probe.py check 5 hard-asserts timeline[-1]['chrome_state'] == 'gone' and wrapper status 'exited' - if a future SDK/Chrome build let Chrome survive owner loss, the suite would report FAIL instead of characterizing the new behavior
-    - Impact: The characterization probe is coupled to one observed outcome, so a legitimate upstream behavior change masquerades as a regression.
-    - Fix: Record survival vs exit as the check's measured result and gate only on timeline completeness and identity matching.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_15)
+    - f_archive_spikes_15: The report's success criteria state the owner-loss run must record the timeline '不预设Chrome存活或终止' (without presupposing whether Chrome survives); probe.py check 5 hard-asserts timeline[-1]['chrome_state'] == 'gone' and wrapper status 'exited' - if a future SDK/Chrome build let Chrome survive owner loss, the suite would report FAIL instead of characterizing the new behavior
+        - Impact: The characterization probe is coupled to one observed outcome, so a legitimate upstream behavior change masquerades as a regression.
+        - Fix: Record survival vs exit as the check's measured result and gate only on timeline completeness and identity matching.
+        - Verification: static
 - [Low][90] docs/archive/spikes/s008_turn_generation_media/report_same_url.md:1 — s008 keeps two same-title reports that both claim to describe the final code
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_16)
-  - f_archive_spikes_16: report_same_url.md has no range-update or superseded header and states the code is the '最终R3' per independent_review_final.md; report.md (with the range-update header) states the current code is the split-topology nine sources per independent_review_split.md and that the same-URL fixture was wholly replaced; A reader landing on report_same_url.md first receives a stale finality claim; only report.md explains the replacement
-    - Impact: Conflicting currency claims for the same spike undermine the otherwise consistent three-state documentation discipline in this archive.
-    - Fix: Add the standard range-update/superseded header to report_same_url.md pointing at report.md as the current report.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_16)
+    - f_archive_spikes_16: report_same_url.md has no range-update or superseded header and states the code is the '最终R3' per independent_review_final.md; report.md (with the range-update header) states the current code is the split-topology nine sources per independent_review_split.md and that the same-URL fixture was wholly replaced; A reader landing on report_same_url.md first receives a stale finality claim; only report.md explains the replacement
+        - Impact: Conflicting currency claims for the same spike undermine the otherwise consistent three-state documentation discipline in this archive.
+        - Fix: Add the standard range-update/superseded header to report_same_url.md pointing at report.md as the current report.
+        - Verification: static
 - [Low][90] docs/archive/spikes/s007_profile_isolation/code/run_isolation_probe.py:3 — Stale revision and design descriptions inside spike code
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_17)
-  - f_archive_spikes_17: run_isolation_probe.py module docstring still says 'Revision 2' and 'audio tone generation (440Hz vs 880Hz via paplay)' - paplay was removed in R3 and the current suite is R5 WebAudio; its generated-report template is likewise titled 'Revision 2'; s005 code/revision_03/test_e2e_real_pipeline.py still titles itself 'Production-grade Real End-to-End Test Suite' with no in-file retired marker (retirement is documented only in the parent report and directory name); s010 code/probe.py docstring calls the file 'probe_v2.py' and says probe.py 'remains intact', a leftover from its scratch origin
-    - Impact: Readers of the code snapshots get a wrong revision/design picture without opening the sibling reports.
-    - Fix: Refresh the docstrings/titles to the frozen revision, or add a one-line 'snapshot of revision N, see report.md' header.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_17)
+    - f_archive_spikes_17: run_isolation_probe.py module docstring still says 'Revision 2' and 'audio tone generation (440Hz vs 880Hz via paplay)' - paplay was removed in R3 and the current suite is R5 WebAudio; its generated-report template is likewise titled 'Revision 2'; s005 code/revision_03/test_e2e_real_pipeline.py still titles itself 'Production-grade Real End-to-End Test Suite' with no in-file retired marker (retirement is documented only in the parent report and directory name); s010 code/probe.py docstring calls the file 'probe_v2.py' and says probe.py 'remains intact', a leftover from its scratch origin
+        - Impact: Readers of the code snapshots get a wrong revision/design picture without opening the sibling reports.
+        - Fix: Refresh the docstrings/titles to the frozen revision, or add a one-line 'snapshot of revision N, see report.md' header.
+        - Verification: static
 - [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py:37 — s006 gateway static proxy serves the Selkies UI without auth, strips CSP, and hardcodes one profile
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_18)
-  - f_archive_spikes_18: static_proxy forwards every path to the Selkies origin with no authentication check and deletes Content-Security-Policy (plus Content-Encoding/Transfer-Encoding) from responses before returning them; The injected WebSocket rewrite always targets '/stream/test-profile/signal' regardless of which profile a viewer asked for, so the proxy is silently single-profile; Mitigation in place: the runner binds 127.0.0.1 by default
-    - Impact: If the pattern is carried toward production, viewers get the streaming UI with weakened browser-side protections and multi-profile routing breaks silently.
-    - Fix: Keep the CSP header (adjust only what the injection strictly requires), derive the profile path from the request, and note the proxy is fixture-only.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_18)
+    - f_archive_spikes_18: static_proxy forwards every path to the Selkies origin with no authentication check and deletes Content-Security-Policy (plus Content-Encoding/Transfer-Encoding) from responses before returning them; The injected WebSocket rewrite always targets '/stream/test-profile/signal' regardless of which profile a viewer asked for, so the proxy is silently single-profile; Mitigation in place: the runner binds 127.0.0.1 by default
+        - Impact: If the pattern is carried toward production, viewers get the streaming UI with weakened browser-side protections and multi-profile routing breaks silently.
+        - Fix: Keep the CSP header (adjust only what the injection strictly requires), derive the profile path from the request, and note the proxy is fixture-only.
+        - Verification: static
 - [Low][90] docs/archive/spikes/s003_selkies_control/code/test_cdp_real.py:1 — Substantial code duplicated across spikes, so fixes cannot propagate
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_19)
-  - f_archive_spikes_19: RealCdpAgentUdsProxy (~200 lines) exists in near-identical copies in s003 code/test_cdp_real.py and code/container_uds/container_cdp_probe.py; The media fixture trio entry_browser_full.sh / gen_wav.py / test_cloak_loop.py is copied from s001 into s006 code/media_fixture/; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh are byte-identical (both spikes' reviews record the same SHA256 dcbc7d70...); test_mitshm.c is copied from s001 into s007 code/fixture/ with the denied-mode extension
-    - Impact: Snapshot duplication is expected in an archive, but identical harness files across four spikes mean a hazard fix (e.g. the auth flags in f_archive_spikes_01) must be applied in every copy and can silently diverge.
-    - Fix: No restructuring needed for the archive; record the duplication in the archive README so future fixture work starts from one canonical copy.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_19)
+    - f_archive_spikes_19: RealCdpAgentUdsProxy (~200 lines) exists in near-identical copies in s003 code/test_cdp_real.py and code/container_uds/container_cdp_probe.py; The media fixture trio entry_browser_full.sh / gen_wav.py / test_cloak_loop.py is copied from s001 into s006 code/media_fixture/; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh are byte-identical (both spikes' reviews record the same SHA256 dcbc7d70...); test_mitshm.c is copied from s001 into s007 code/fixture/ with the denied-mode extension
+        - Impact: Snapshot duplication is expected in an archive, but identical harness files across four spikes mean a hazard fix (e.g. the auth flags in f_archive_spikes_01) must be applied in every copy and can silently diverge.
+        - Fix: No restructuring needed for the archive; record the duplication in the archive README so future fixture work starts from one canonical copy.
+        - Verification: static
 - [Low][80] docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py:1 — Prototype-grade resource churn: 50 ms fsync status writes, per-request HTTP sessions, unbounded packet queue
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_20)
-  - f_archive_spikes_20: s003 browser_agent.py rewrites status.json (including a download_events snapshot) and fsyncs it every 50 ms for the whole session; s006 run_gateway_server.py static_proxy constructs a new aiohttp ClientSession for every proxied request; s008 stage2_adapter.py self.packets is an asyncio.Queue with no maxsize between the ICE pumps and the DTLS consumer
-    - Impact: Write amplification and connection churn in harnesses whose performance characteristics inform production design; unbounded queue growth if the consumer stalls.
-    - Fix: Throttle status writes or write on change, reuse one ClientSession per process, and bound the adapter queue with a drop/close policy.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_20)
+    - f_archive_spikes_20: s003 browser_agent.py rewrites status.json (including a download_events snapshot) and fsyncs it every 50 ms for the whole session; s006 run_gateway_server.py static_proxy constructs a new aiohttp ClientSession for every proxied request; s008 stage2_adapter.py self.packets is an asyncio.Queue with no maxsize between the ICE pumps and the DTLS consumer
+        - Impact: Write amplification and connection churn in harnesses whose performance characteristics inform production design; unbounded queue growth if the consumer stalls.
+        - Fix: Throttle status writes or write on change, reuse one ClientSession per process, and bound the adapter queue with a drop/close policy.
+        - Verification: static
 - [Low][90] docs/archive/tasks/t015_v2_media_link_simplification/note.md:58 — t015 两条 test finding 在处置表标「已修」，但测试审查者连续三轮记录残余未消除且无后续去向
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_03)
-  - f_archive_tasks_03: note.md 处置表（:58-59）：t015_test_f005、t015_test_f006 均标「已修」。; review_test.md Round 3（:163-164）、Round 4（:231）、Round 5（:277-278）反复记录：「t015_test_f005 minor 残余仍在……只断言重启发生且首次退避为 [1.0]，未断言错误日志与 2/4/8 秒递增退避」「t015_test_f006 minor 残余仍在……未覆盖 timeout 完成路径」，且 Round 3 前轮复核（:196）明言「f005、f006 主体已修，minor 残余仍在」。; t015 唯一的遗留 pending p016 只承接 f007/f012/f013；live p017/p018/p019 分别是 t016/t017/t018 的余项，均不承接这两条残余。
-    - Impact: 两处测试覆盖深度缺口（退避日志与递增间隔断言、超时完成路径断言）被账面关闭后无任何在册跟踪，后续触及 Stream 监督循环或会话超时逻辑时不会再被提醒补测。
-    - Fix: 将两条残余改记为遗留并登记到 live pending（或在 note 处置表中把状态改为「主体已修，残余遗留」并指向承接项）。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_03)
+    - f_archive_tasks_03: note.md 处置表（:58-59）：t015_test_f005、t015_test_f006 均标「已修」。; review_test.md Round 3（:163-164）、Round 4（:231）、Round 5（:277-278）反复记录：「t015_test_f005 minor 残余仍在……只断言重启发生且首次退避为 [1.0]，未断言错误日志与 2/4/8 秒递增退避」「t015_test_f006 minor 残余仍在……未覆盖 timeout 完成路径」，且 Round 3 前轮复核（:196）明言「f005、f006 主体已修，minor 残余仍在」。; t015 唯一的遗留 pending p016 只承接 f007/f012/f013；live p017/p018/p019 分别是 t016/t017/t018 的余项，均不承接这两条残余。
+        - Impact: 两处测试覆盖深度缺口（退避日志与递增间隔断言、超时完成路径断言）被账面关闭后无任何在册跟踪，后续触及 Stream 监督循环或会话超时逻辑时不会再被提醒补测。
+        - Fix: 将两条残余改记为遗留并登记到 live pending（或在 note 处置表中把状态改为「主体已修，残余遗留」并指向承接项）。
+        - Verification: static
 - [Low][95] docs/archive/tasks/t015_v2_media_link_simplification/note.md:105 — t015 的 note 收尾与 handoff.json 仍称「Round 2 PASS」，与实际 6/5 轮、且 Round 3 曾推翻该 PASS 的过程不符
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_04)
-  - f_archive_tasks_04: note.md 收尾报告（:105）：「review：full code/test 两路 Round 2 均 PASS」；handoff.json（:10）：「Full code/test review Round 2 PASS both axes」。; review_code.md Round 3 发现 post-Round-2 修复引入 critical 回归（Stream 镜像漏 COPY secret_files.py，Agent 启动即失败），总体判断 FAIL 并明言「Round 2 的 PASS 不再成立」（:240）；其后经 Round 4-6（code）与 Round 3-5（test）复审才最终 PASS，处置表亦延伸到 Round 5/6。; 最终关闭本身有 Round 6/Round 5 PASS 支撑，不是无证关闭；问题仅在两处摘要记录停留在 Round 2。
-    - Impact: 收尾报告与 handoff.json 是归档后最先被查阅的两处摘要，读者会误以为 t015 只经两轮审查且无 critical 回归史，低估该任务实际的风险与修复过程。
-    - Fix: 将 note 收尾与 handoff.json 的 review 字段更正为最终轮次与 scope（code Round 6 / test Round 5 PASS，并注明 Round 3 曾因镜像回归 FAIL）。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_04)
+    - f_archive_tasks_04: note.md 收尾报告（:105）：「review：full code/test 两路 Round 2 均 PASS」；handoff.json（:10）：「Full code/test review Round 2 PASS both axes」。; review_code.md Round 3 发现 post-Round-2 修复引入 critical 回归（Stream 镜像漏 COPY secret_files.py，Agent 启动即失败），总体判断 FAIL 并明言「Round 2 的 PASS 不再成立」（:240）；其后经 Round 4-6（code）与 Round 3-5（test）复审才最终 PASS，处置表亦延伸到 Round 5/6。; 最终关闭本身有 Round 6/Round 5 PASS 支撑，不是无证关闭；问题仅在两处摘要记录停留在 Round 2。
+        - Impact: 收尾报告与 handoff.json 是归档后最先被查阅的两处摘要，读者会误以为 t015 只经两轮审查且无 critical 回归史，低估该任务实际的风险与修复过程。
+        - Fix: 将 note 收尾与 handoff.json 的 review 字段更正为最终轮次与 scope（code Round 6 / test Round 5 PASS，并注明 Round 3 曾因镜像回归 FAIL）。
+        - Verification: static
 - [Low][90] docs/archive/pending/p011_t007_test_minor_followups.md:9 — p011 以 resolved 关闭，但其 f012 子项自认未做且在 live 文档中无任何承接
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_05)
-  - f_archive_tasks_05: p011 处置行（:9）：resolution=resolved，reason 末尾明言「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」——即三条子项中 f011/f013 已做、f012 未做。; 对照 live 状态：docs/tasks/、docs/pending/todo/p016-p019、docs/handoff.md 中均无 t007_test_f012 的任何引用（本次 grep 核实）；该子项针对的宽松断言字符串在当前 tests/e2e/test_frontend_session_e2e.py 中已不存在（文件其后被改写），但无任何账本把这一消失与 f012 关联，属无声 moot。
-    - Impact: 归档 pending 的 resolved 语义被稀释：子项未完成时应保持开放或拆分登记；现在的记录使「p011 全部关闭」与事实不符，且 f012 是已做、被他处覆盖还是被放弃，三种可能都无从判定。
-    - Fix: 在 p011 记录中补注 f012 的最终去向（若已被后续改写覆盖，注明覆盖提交/任务；若放弃，注明决策），或将其重新登记为 live pending。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_05)
+    - f_archive_tasks_05: p011 处置行（:9）：resolution=resolved，reason 末尾明言「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」——即三条子项中 f011/f013 已做、f012 未做。; 对照 live 状态：docs/tasks/、docs/pending/todo/p016-p019、docs/handoff.md 中均无 t007_test_f012 的任何引用（本次 grep 核实）；该子项针对的宽松断言字符串在当前 tests/e2e/test_frontend_session_e2e.py 中已不存在（文件其后被改写），但无任何账本把这一消失与 f012 关联，属无声 moot。
+        - Impact: 归档 pending 的 resolved 语义被稀释：子项未完成时应保持开放或拆分登记；现在的记录使「p011 全部关闭」与事实不符，且 f012 是已做、被他处覆盖还是被放弃，三种可能都无从判定。
+        - Fix: 在 p011 记录中补注 f012 的最终去向（若已被后续改写覆盖，注明覆盖提交/任务；若放弃，注明决策），或将其重新登记为 live pending。
+        - Verification: static
 - [Low][95] docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5 — p001 的关闭理由与 p005 逐字相同，是以 p005 为主语的批量关闭文本
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_06)
-  - f_archive_tasks_06: p001（:5）与 p005（:11）的「处理」行逐字一致，文本主语是「p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」；p001 本体是 RecoveryCoordinator.tick 复杂度（t005_code_f001），其关闭理由没有一条以自身为对象陈述证据。; 实体结论经本次对照当前代码属实：recovery_coordinator.py 已拆出 _observe_profiles/_scan_containers/_classify_abnormal_exits/_schedule_retries，container_spec.py/volume_spec.py/network_spec.py 已提取，stream_agent/messaging.py 存在——故这是记录质量问题，不是虚假关闭。
-    - Impact: 批量粘贴的关闭理由使单项审计时无法从 p001 自身记录确认其关闭依据；若 A25 的某一子项日后被发现未落地，无法从记录区分受影响的是 p001 还是 p005。
-    - Fix: 为 p001 补写以自身为对象的关闭说明（tick 拆分的具体方法与所在文件），与 p005 的记录脱钩。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_06)
+    - f_archive_tasks_06: p001（:5）与 p005（:11）的「处理」行逐字一致，文本主语是「p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」；p001 本体是 RecoveryCoordinator.tick 复杂度（t005_code_f001），其关闭理由没有一条以自身为对象陈述证据。; 实体结论经本次对照当前代码属实：recovery_coordinator.py 已拆出 \_observe_profiles/\_scan_containers/\_classify_abnormal_exits/\_schedule_retries，container_spec.py/volume_spec.py/network_spec.py 已提取，stream_agent/messaging.py 存在——故这是记录质量问题，不是虚假关闭。
+        - Impact: 批量粘贴的关闭理由使单项审计时无法从 p001 自身记录确认其关闭依据；若 A25 的某一子项日后被发现未落地，无法从记录区分受影响的是 p001 还是 p005。
+        - Fix: 为 p001 补写以自身为对象的关闭说明（tick 拆分的具体方法与所在文件），与 p005 的记录脱钩。
+        - Verification: static
 - [Low][90] docs/archive/tasks/t006_v2_gateway_auth_rtc/note.md:147 — t006 的 AC-001 在其 master-token 条款为空满足时整条打勾关闭
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_07)
-  - f_archive_tasks_07: note.md AC 证据节（:119）：「『master token 不返回前端』：当前 Stream 未配置任何 Selkies token，属空满足，见 p004（t007 前定案）」；收尾报告（:147）自认「AC-001 的 master token 条款为空满足」，而 task.md 中 AC-001 已勾 [x]、结论为「全部满足」。; 该条款的真实交付在下一个任务：p004 由 t007 AC-010 完成（Selkies master/controller token，d024），p004 已归档 resolved——最终结果无缺口，问题在 t006 关闭时点的勾选口径。
-    - Impact: AC 勾选语义被稀释为「本任务内能做的都做了」；若 p004 未被 t007 承接，这条安全条款（master token 不得出现在前端）会无声丢失。当时靠 p004 登记兜底，未造成实际遗漏。
-    - Fix: 口径上应将此类 AC 标为部分满足并在 task.md 行内注明条款转 p004，而非整条打勾后仅在 note 中说明。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_07)
+    - f_archive_tasks_07: note.md AC 证据节（:119）：「『master token 不返回前端』：当前 Stream 未配置任何 Selkies token，属空满足，见 p004（t007 前定案）」；收尾报告（:147）自认「AC-001 的 master token 条款为空满足」，而 task.md 中 AC-001 已勾 [x]、结论为「全部满足」。; 该条款的真实交付在下一个任务：p004 由 t007 AC-010 完成（Selkies master/controller token，d024），p004 已归档 resolved——最终结果无缺口，问题在 t006 关闭时点的勾选口径。
+        - Impact: AC 勾选语义被稀释为「本任务内能做的都做了」；若 p004 未被 t007 承接，这条安全条款（master token 不得出现在前端）会无声丢失。当时靠 p004 登记兜底，未造成实际遗漏。
+        - Fix: 口径上应将此类 AC 标为部分满足并在 task.md 行内注明条款转 p004，而非整条打勾后仅在 note 中说明。
+        - Verification: static
 - [Low][95] docs/archive/tasks/t011_v2_remove_legacy/note.md:46 — 两个 dropped 任务的自有账本仍是未填写的模板，t014 还缺 handoff.json
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_08)
-  - f_archive_tasks_08: t011 note.md 收尾报告仍为模板原文（:46「结果：全部满足 / 未满足」、测试/黑盒/review 均为「待执行时填写」），处置表只剩模板示例行；其 drop 依据只在 front matter 的 note 字段「merged into t010」与 tasks_index.json 中。实体承接是完整的：live t010 task.md 已把 t011 的 AC-001~004 编为 AC-006~009 并标注 adoption 来源。; t014 note.md 收尾报告同样为模板原文（:78），且 t014 是 16 个归档任务中唯一没有 handoff.json 的；其 drop 决策记录在 front matter note、tasks_index.json、archive handoff.md 与 p015→live t009 AC-003 中，链条完整但本账本内无一字收尾。
-    - Impact: 归档账本自身不自洽：只读 archive 的人无法从 t011/t014 的 note.md 得知任务终局与决策，必须跨查 index、handoff 与 live 任务才能拼出，与「note.md 为任务过程总账」的定位不符。
-    - Fix: 为 t011/t014 的 note.md 补一节简短的 drop 收尾（决策时间、决策人、承接位置），或至少把模板收尾段替换为指向承接记录的说明。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_08)
+    - f_archive_tasks_08: t011 note.md 收尾报告仍为模板原文（:46「结果：全部满足 / 未满足」、测试/黑盒/review 均为「待执行时填写」），处置表只剩模板示例行；其 drop 依据只在 front matter 的 note 字段「merged into t010」与 tasks_index.json 中。实体承接是完整的：live t010 task.md 已把 t011 的 AC-001~004 编为 AC-006~009 并标注 adoption 来源。; t014 note.md 收尾报告同样为模板原文（:78），且 t014 是 16 个归档任务中唯一没有 handoff.json 的；其 drop 决策记录在 front matter note、tasks_index.json、archive handoff.md 与 p015→live t009 AC-003 中，链条完整但本账本内无一字收尾。
+        - Impact: 归档账本自身不自洽：只读 archive 的人无法从 t011/t014 的 note.md 得知任务终局与决策，必须跨查 index、handoff 与 live 任务才能拼出，与「note.md 为任务过程总账」的定位不符。
+        - Fix: 为 t011/t014 的 note.md 补一节简短的 drop 收尾（决策时间、决策人、承接位置），或至少把模板收尾段替换为指向承接记录的说明。
+        - Verification: static
 - [Low][90] docs/archive/handoff.md:289 — 公开仓库的归档区集中留存开发者环境痕迹，且 t018 的路径隐私守卫按设计把归档区排除在外
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_09)
-  - f_archive_tasks_09: 本次扫描（仅计位置与种类，不抄值）：38 个归档文件含开发者本机绝对路径（/Users/karson/kar/code/…，如各 review_*.md 的 target 行）；6 个文件含共 69 个 OpenCode 会话 id；多处含进程 PID、Docker 网桥 IP（如 coturn relay 地址）、宿主机能力备注（t001 note 中唯一 x86_64 机器的内存/swap 与使用限制）；handoff.md（:289、:345）记录了生产管理员密码的文件路径（仅路径）。; 全仓未发现任何凭据明文值（token/secret 字面量扫描为空，规格中使用 <redacted>）。; t018 AC-007 的隐私守卫只覆盖「已跟踪的非归档文本文件」，note 中亦记录「路径隐私守卫纳入 reviews（历史文件 allowlist）」——即以白名单豁免历史文件，而非清理归档本身。
-    - Impact: 该仓为公开 fork：开发者用户名、本机目录结构、内部拓扑与运维细节随归档长期公开，且守卫的范围设计使这类痕迹今后仍会随新归档持续累积。无凭据值泄露，故定级 Low。
-    - Fix: 将路径隐私守卫扩展到 docs/archive/（或在归档时对本机路径/会话 id 做脱敏替换）；对存量归档做一次路径与会话 id 的批量脱敏。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_09)
+    - f_archive_tasks_09: 本次扫描（仅计位置与种类，不抄值）：38 个归档文件含开发者本机绝对路径（<home>/kar/code/…，如各 review\_\*.md 的 target 行）；6 个文件含共 69 个 OpenCode 会话 id；多处含进程 PID、Docker 网桥 IP（如 coturn relay 地址）、宿主机能力备注（t001 note 中唯一 x86_64 机器的内存/swap 与使用限制）；handoff.md（:289、:345）记录了生产管理员密码的文件路径（仅路径）。; 全仓未发现任何凭据明文值（token/secret 字面量扫描为空，规格中使用 <redacted>）。; t018 AC-007 的隐私守卫只覆盖「已跟踪的非归档文本文件」，note 中亦记录「路径隐私守卫纳入 reviews（历史文件 allowlist）」——即以白名单豁免历史文件，而非清理归档本身。
+        - Impact: 该仓为公开 fork：开发者用户名、本机目录结构、内部拓扑与运维细节随归档长期公开，且守卫的范围设计使这类痕迹今后仍会随新归档持续累积。无凭据值泄露，故定级 Low。
+        - Fix: 将路径隐私守卫扩展到 docs/archive/（或在归档时对本机路径/会话 id 做脱敏替换）；对存量归档做一次路径与会话 id 的批量脱敏。
+        - Verification: static
 - [Low][80] src/backend/cbrowser/domain/models.py:307-352 — ProfileUpdateRequest 对 launch_args 同时注册严格拒绝与静默丢弃两个校验器，更新语义自相矛盾
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_01)
-  - f_backend_api_auth_01: ProfileUpdateRequest.validate_updated_launch_arguments（models.py:307）调用 validate_launch_args：越界参数抛 InvalidLaunchArgument（→422）; 同一 DTO 的 normalize_launch_arguments（models.py:351）调用 filter_launch_args：同一越界参数被静默丢弃；其注释自述用途是『旧行读取时丢弃』，但该类是写入请求 DTO 而非读取模型; 两个 after 校验器同挂一个字段时必有一个被另一个短路：若 filter 先行，validate 永远看不到越界值、严格拒绝成为死代码，且与 ProfileCreateRequest（仅 validate、返回 422）行为不一致；若 validate 先行，filter 在 API 路径上成为死代码; 对照 ProfileConfig.normalize_launch_arguments（models.py:91）只用 filter、ProfileCreateRequest 只用 validate，分工原本清晰，更新 DTO 同时背两者属复制粘连
-    - Impact: PATCH /profiles/{id} 提交越界 launch_args 时到底是 422 还是 200 静默丢弃，取决于 pydantic 校验器执行顺序这一实现细节，与 DTO 注释宣称的『新写入严格校验』契约不符；客户端可能误以为参数已生效。白名单本身在两种顺序下都不会被穿透，故无安全影响。
-    - Fix: 删除 ProfileUpdateRequest.normalize_launch_arguments（更新路径与创建路径统一走 validate_launch_args 严格拒绝）；读取侧的 filter 保留在 ProfileConfig/仓储层即可。若产品意图是更新时静默丢弃，则应反之删除 validate 并同步修改注释与创建路径口径，二者只能留一。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_01)
+    - f_backend_api_auth_01: ProfileUpdateRequest.validate_updated_launch_arguments（models.py:307）调用 validate_launch_args：越界参数抛 InvalidLaunchArgument（→422）; 同一 DTO 的 normalize_launch_arguments（models.py:351）调用 filter_launch_args：同一越界参数被静默丢弃；其注释自述用途是『旧行读取时丢弃』，但该类是写入请求 DTO 而非读取模型; 两个 after 校验器同挂一个字段时必有一个被另一个短路：若 filter 先行，validate 永远看不到越界值、严格拒绝成为死代码，且与 ProfileCreateRequest（仅 validate、返回 422）行为不一致；若 validate 先行，filter 在 API 路径上成为死代码; 对照 ProfileConfig.normalize_launch_arguments（models.py:91）只用 filter、ProfileCreateRequest 只用 validate，分工原本清晰，更新 DTO 同时背两者属复制粘连
+        - Impact: PATCH /profiles/{id} 提交越界 launch_args 时到底是 422 还是 200 静默丢弃，取决于 pydantic 校验器执行顺序这一实现细节，与 DTO 注释宣称的『新写入严格校验』契约不符；客户端可能误以为参数已生效。白名单本身在两种顺序下都不会被穿透，故无安全影响。
+        - Fix: 删除 ProfileUpdateRequest.normalize_launch_arguments（更新路径与创建路径统一走 validate_launch_args 严格拒绝）；读取侧的 filter 保留在 ProfileConfig/仓储层即可。若产品意图是更新时静默丢弃，则应反之删除 validate 并同步修改注释与创建路径口径，二者只能留一。
+        - Verification: static
 - [Low][75] src/backend/cbrowser/auth/service.py:298-320 — authorize_viewer 用未规范化的 Origin 原字符串与已规范化的 allowed_origins 精确比对，与 CSRF 路径的 Origin 校验口径不一致
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_02)
-  - f_backend_api_auth_02: app.py lifespan 用 normalize_origins() 生成 app.state.allowed_origins（gateway/endpoint.py:31-41：小写 host、剥离默认端口与尾斜杠）; AuthService.authorize_viewer（service.py:310）直接 `if origin not in allowed_origins`，origin 来自 Gateway 的 ViewerAuthorizeRequest 原样转发，未调用 normalize_origin; 对照 auth/dependencies.py:66-74 的 CSRF/Origin 校验先 normalize_origin(origin) 再比对——同一系统两条 Origin 判定口径不同
-    - Impact: 若 Gateway 转发的 Origin 带有默认端口（如 https://host:443）、尾斜杠或大小写差异，合法 viewer 会被 invalid_origin 拒绝（fail-closed 方向，不构成绕过）；是否实际触发取决于 Gateway 的转发形式，本单元外未核对。
-    - Fix: authorize_viewer 内先对 origin 做 normalize_origin（ValueError 时按 invalid_origin 拒绝），与 dependencies 的判定共用同一规范化函数。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_02)
+    - f_backend_api_auth_02: app.py lifespan 用 normalize_origins() 生成 app.state.allowed_origins（gateway/endpoint.py:31-41：小写 host、剥离默认端口与尾斜杠）; AuthService.authorize_viewer（service.py:310）直接 `if origin not in allowed_origins`，origin 来自 Gateway 的 ViewerAuthorizeRequest 原样转发，未调用 normalize_origin; 对照 auth/dependencies.py:66-74 的 CSRF/Origin 校验先 normalize_origin(origin) 再比对——同一系统两条 Origin 判定口径不同
+        - Impact: 若 Gateway 转发的 Origin 带有默认端口（如 https://host:443）、尾斜杠或大小写差异，合法 viewer 会被 invalid_origin 拒绝（fail-closed 方向，不构成绕过）；是否实际触发取决于 Gateway 的转发形式，本单元外未核对。
+        - Fix: authorize_viewer 内先对 origin 做 normalize_origin（ValueError 时按 invalid_origin 拒绝），与 dependencies 的判定共用同一规范化函数。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/api/internal_gateway.py:115-125 — Gateway 内部 automation 授权把 client_ip 硬编码为常量，per-source 限速桶被全体客户端共享
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_03)
-  - f_backend_api_auth_03: internal_gateway.automation_authorize 调用 authorize_automation 时传 client_ip="internal-gateway"（internal_gateway.py:123），不透传真实客户端来源; AuthService._automation_limiter 按 client_ip 分桶（service.py:322-397）：经 Gateway 的全部自动化授权共用一个桶，任一来源 10 次失败/60s 即让所有经 Gateway 的授权被 rate_limited; authorize_automation 成功时 record_success(client_ip) 直接清除该桶全部失败记录（rate_limiter.py:87-89），任一成功又会清掉其他来源累积的失败计数，per-source 语义双向失效; 对照直连 WS 路径 automation_router.automation_cdp 使用 resolve_client_ip 解析真实来源——两条授权路径口径不一致
-    - Impact: 经 Gateway 的自动化准入失去按来源节流能力：单个坏 token 的重试可对全体 Gateway 客户端造成长达约一分钟的授权拒绝；失败计数也可被任意成功请求清零，削弱在线猜测的累积阻断。
-    - Fix: 在 AutomationAuthorizeRequest 中增加可选 client_ip 字段由 Gateway 透传其解析出的客户端来源；缺省时退化为按 token 哈希分桶，而非全体共享一个常量子桶。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_03)
+    - f_backend_api_auth_03: internal_gateway.automation_authorize 调用 authorize_automation 时传 client_ip="internal-gateway"（internal_gateway.py:123），不透传真实客户端来源; AuthService.\_automation_limiter 按 client_ip 分桶（service.py:322-397）：经 Gateway 的全部自动化授权共用一个桶，任一来源 10 次失败/60s 即让所有经 Gateway 的授权被 rate_limited; authorize_automation 成功时 record_success(client_ip) 直接清除该桶全部失败记录（rate_limiter.py:87-89），任一成功又会清掉其他来源累积的失败计数，per-source 语义双向失效; 对照直连 WS 路径 automation_router.automation_cdp 使用 resolve_client_ip 解析真实来源——两条授权路径口径不一致
+        - Impact: 经 Gateway 的自动化准入失去按来源节流能力：单个坏 token 的重试可对全体 Gateway 客户端造成长达约一分钟的授权拒绝；失败计数也可被任意成功请求清零，削弱在线猜测的累积阻断。
+        - Fix: 在 AutomationAuthorizeRequest 中增加可选 client_ip 字段由 Gateway 透传其解析出的客户端来源；缺省时退化为按 token 哈希分桶，而非全体共享一个常量子桶。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/auth/service.py:100-141 — Argon2 口令校验在 async 登录路径上同步执行，阻塞事件循环
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_04)
-  - f_backend_api_auth_04: AuthService.authenticate_admin 是 async 方法，但 self.ph.verify(...)（service.py:129、136）为 CPU 密集的同步调用，未经 run_in_executor/to_thread 卸载; LoginRequest.password（auth_router.py:22）无 max_length 约束，超长口令输入同样直接进入 Argon2 校验，放大单次阻塞成本; 同一进程内还承载 SSE 长连接与 RuntimeCoordinator 的对账/发布任务，登录尝试（含被限速前的每次失败）都会让整个 API 停顿一个 Argon2 时长（默认参数约百毫秒级）
-    - Impact: 影响有界：限速器在校验前判定，单来源 5 次/分钟、全局 20 次/15 分钟后不再进入校验；但窗口内每次尝试仍造成全 API 可感知的停顿，且合法管理员登录本身也必付此成本。属健壮性/性能瑕疵，非可用性事故。
-    - Fix: 将 ph.verify/ph.hash 放入 asyncio.to_thread 执行；同时给 LoginRequest.password 加合理的 max_length（如 1024）。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_04)
+    - f_backend_api_auth_04: AuthService.authenticate_admin 是 async 方法，但 self.ph.verify(...)（service.py:129、136）为 CPU 密集的同步调用，未经 run_in_executor/to_thread 卸载; LoginRequest.password（auth_router.py:22）无 max_length 约束，超长口令输入同样直接进入 Argon2 校验，放大单次阻塞成本; 同一进程内还承载 SSE 长连接与 RuntimeCoordinator 的对账/发布任务，登录尝试（含被限速前的每次失败）都会让整个 API 停顿一个 Argon2 时长（默认参数约百毫秒级）
+        - Impact: 影响有界：限速器在校验前判定，单来源 5 次/分钟、全局 20 次/15 分钟后不再进入校验；但窗口内每次尝试仍造成全 API 可感知的停顿，且合法管理员登录本身也必付此成本。属健壮性/性能瑕疵，非可用性事故。
+        - Fix: 将 ph.verify/ph.hash 放入 asyncio.to_thread 执行；同时给 LoginRequest.password 加合理的 max_length（如 1024）。
+        - Verification: static
 - [Low][80] src/backend/cbrowser/api/runtime_coordinator.py:73-131 — SSE 订阅在广播锁内构建全量快照且快照事件挤占历史环，订阅/重连会短暂阻塞全体事件发布
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_05)
-  - f_backend_api_auth_05: RuntimeEventBroadcaster.subscribe 在持有 self._lock 期间 await initial_snapshot_provider()（runtime_coordinator.py:102-122），而 v1/router.py 的 get_initial_snapshots 对每个 Profile 逐个做 DB 查询（get_runtime）; publish() 需要同一把锁（runtime_coordinator.py:56-71）：任一无 Last-Event-ID 的新订阅在快照构建期间会阻塞所有实时事件发布，快照规模随 Profile 数线性增长; 快照事件以正式事件 ID 写入 maxlen=1000 的 _history 环（runtime_coordinator.py:111-121）：每次全新订阅注入 N 条快照事件，真实事件被更快挤出回放窗口，Last-Event-ID 续传的可用范围随之缩短; 锁内构建的注释说明其目的是避免快照与实时事件之间的缺口——取舍本身有据，但代价未被限制（无快照规模上限、无锁外预构建）
-    - Impact: 单机单管理员场景下表现为 UI 重连瞬间事件延迟与偶发续传失效（客户端退回全量刷新），不构成数据错误；Profile 数量增长后该抖动线性放大。
-    - Fix: 快照数据在锁外预先查询，锁内只做订阅注册与『快照基点序号』记录、随后补发基点之后的实时事件；或给快照事件使用独立通道不写入回放历史环。具体方案需与前端续传语义一并验证。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_05)
+    - f_backend_api_auth_05: RuntimeEventBroadcaster.subscribe 在持有 self.\_lock 期间 await initial_snapshot_provider()（runtime_coordinator.py:102-122），而 v1/router.py 的 get_initial_snapshots 对每个 Profile 逐个做 DB 查询（get_runtime）; publish() 需要同一把锁（runtime_coordinator.py:56-71）：任一无 Last-Event-ID 的新订阅在快照构建期间会阻塞所有实时事件发布，快照规模随 Profile 数线性增长; 快照事件以正式事件 ID 写入 maxlen=1000 的 \_history 环（runtime_coordinator.py:111-121）：每次全新订阅注入 N 条快照事件，真实事件被更快挤出回放窗口，Last-Event-ID 续传的可用范围随之缩短; 锁内构建的注释说明其目的是避免快照与实时事件之间的缺口——取舍本身有据，但代价未被限制（无快照规模上限、无锁外预构建）
+        - Impact: 单机单管理员场景下表现为 UI 重连瞬间事件延迟与偶发续传失效（客户端退回全量刷新），不构成数据错误；Profile 数量增长后该抖动线性放大。
+        - Fix: 快照数据在锁外预先查询，锁内只做订阅注册与『快照基点序号』记录、随后补发基点之后的实时事件；或给快照事件使用独立通道不写入回放历史环。具体方案需与前端续传语义一并验证。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/api/app.py:296-348 — 统一错误处理器把全部 503 标为 database_busy 且 retryable=true，永久性配置错误被误报为可重试
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_06)
-  - f_backend_api_auth_06: http_exception_handler 的映射表（app.py:296-305）将 503 固定映射为 error="database_busy"，且 retryable 按 status_code==503 置 true（app.py:343-348）; 但本单元多处 503 与数据库无关且为永久性配置问题：require_supervisor/require_gateway 的『RPC is not configured』（internal_supervisor.py:36、internal_gateway.py:33-36）、get_auth_service/get_artifact_service 的『is not configured』（dependencies.py:15-21、artifact_router.py:26-31）; 反之 401/403/429 不在映射表内、一律回退为含糊的 http_error，与 contracted_openapi 对外宣称的统一 ErrorResponse 语义（逐状态码描述）不完全对应
-    - Impact: 客户端（含 Supervisor/Gateway 的重试逻辑与前端）会把『服务令牌未配置』这类需人工介入的错误当作数据库忙而无限重试/误报状态，掩盖真实故障原因；属契约准确性问题，不影响鉴权与数据。
-    - Fix: 让 503 的 error 名与 retryable 由抛出方区分：数据库忙走 DatabaseLockError 专用处理器（已有），配置类 503 应使用独立 error 名（如 service_not_configured）且 retryable=false；或在 HTTPException detail 中携带机器可读的 error 代码由处理器透传。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_06)
+    - f_backend_api_auth_06: http_exception_handler 的映射表（app.py:296-305）将 503 固定映射为 error="database_busy"，且 retryable 按 status_code==503 置 true（app.py:343-348）; 但本单元多处 503 与数据库无关且为永久性配置问题：require_supervisor/require_gateway 的『RPC is not configured』（internal_supervisor.py:36、internal_gateway.py:33-36）、get_auth_service/get_artifact_service 的『is not configured』（dependencies.py:15-21、artifact_router.py:26-31）; 反之 401/403/429 不在映射表内、一律回退为含糊的 http_error，与 contracted_openapi 对外宣称的统一 ErrorResponse 语义（逐状态码描述）不完全对应
+        - Impact: 客户端（含 Supervisor/Gateway 的重试逻辑与前端）会把『服务令牌未配置』这类需人工介入的错误当作数据库忙而无限重试/误报状态，掩盖真实故障原因；属契约准确性问题，不影响鉴权与数据。
+        - Fix: 让 503 的 error 名与 retryable 由抛出方区分：数据库忙走 DatabaseLockError 专用处理器（已有），配置类 503 应使用独立 error 名（如 service_not_configured）且 retryable=false；或在 HTTPException detail 中携带机器可读的 error 代码由处理器透传。
+        - Verification: static
 - [Low][65] src/backend/cbrowser/api/internal_artifacts.py:24-53 — 下载 artifact 上报携带的 runtime_instance_id 从未被校验，内部入库路径不对当前实例设围栏
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_07)
-  - f_backend_api_auth_07: ArtifactDownloadReport（domain/models.py:189-203）强制要求 runtime_instance_id 字段，表明契约意图把上报绑定到产生下载的运行时实例; report_download（internal_artifacts.py:30-53）调用 service.ingest_download 时只传 profile_id/path/name/sha256/size/content_type，runtime_instance_id 被完全忽略，未与该 Profile 当前绑定的实例比对; 对照运行时状态面上报（bind/observed）有 StaleInstanceError/expected_current_instance 的实例围栏（router.py:594-660 与 service 层），下载入库路径没有对应围栏
-    - Impact: 已终止实例迟到的下载上报仍会被入库（同文件重复上报由 ArtifactService 的去重结果 duplicate 兜底，属本单元外实现）；若旧实例与新实例先后在同一 Profile 产生同名不同内容的下载，旧上报可能把过期文件登记为该 Profile 的 artifact。调用方仅限持有 Supervisor 令牌的服务进程，故为纵深防御缺口而非外部可达漏洞。
-    - Fix: report_download 在入库前校验 payload.runtime_instance_id 与 Profile 当前 runtime_instance_id 一致（或把该参数下传 ingest_download 在服务层校验），不一致时返回 outcome=rejected 并记录原因。
-    - Verification: suspected
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_07)
+    - f_backend_api_auth_07: ArtifactDownloadReport（domain/models.py:189-203）强制要求 runtime_instance_id 字段，表明契约意图把上报绑定到产生下载的运行时实例; report_download（internal_artifacts.py:30-53）调用 service.ingest_download 时只传 profile_id/path/name/sha256/size/content_type，runtime_instance_id 被完全忽略，未与该 Profile 当前绑定的实例比对; 对照运行时状态面上报（bind/observed）有 StaleInstanceError/expected_current_instance 的实例围栏（router.py:594-660 与 service 层），下载入库路径没有对应围栏
+        - Impact: 已终止实例迟到的下载上报仍会被入库（同文件重复上报由 ArtifactService 的去重结果 duplicate 兜底，属本单元外实现）；若旧实例与新实例先后在同一 Profile 产生同名不同内容的下载，旧上报可能把过期文件登记为该 Profile 的 artifact。调用方仅限持有 Supervisor 令牌的服务进程，故为纵深防御缺口而非外部可达漏洞。
+        - Fix: report_download 在入库前校验 payload.runtime_instance_id 与 Profile 当前 runtime_instance_id 一致（或把该参数下传 ingest_download 在服务层校验），不一致时返回 outcome=rejected 并记录原因。
+        - Verification: suspected
 - [Low][90] src/backend/cbrowser/auth/dependencies.py:65-67（require_csrf_and_origin 的 Referer 回退分支） — CSRF/Origin 依赖的 Referer 回退分支无任何测试覆盖
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_10)
-  - f_backend_api_auth_10: dependencies.py:48-67：写请求缺 Origin 时回退解析 Referer 头，按其 scheme+netloc 与 allowed_origins 比对; grep tests/ 与 src/backend/tests/ 全文无 Referer/referer 出现；现有负例（test_auth_api.py 中 logout 无 Origin→403、desired-state 错 Origin→403）都是 Origin 与 Referer 双缺、或 Origin 明确错误，从未走回退分支
-    - Impact: 回退分支若回归（误收外站 Referer、或误拒合法的 Referer-only 客户端），现有测试全绿无感；该分支是同源校验的第二条代码路径，长期无覆盖容易与主路径口径漂移（如 f_backend_api_auth_02 式的规范化不一致）。
-    - Fix: 补三条用例：无 Origin + 允许列表内 Referer → 写请求放行；无 Origin + 外站 Referer → 403；无 Origin + 畸形 Referer → 403。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_10)
+    - f_backend_api_auth_10: dependencies.py:48-67：写请求缺 Origin 时回退解析 Referer 头，按其 scheme+netloc 与 allowed_origins 比对; grep tests/ 与 src/backend/tests/ 全文无 Referer/referer 出现；现有负例（test_auth_api.py 中 logout 无 Origin→403、desired-state 错 Origin→403）都是 Origin 与 Referer 双缺、或 Origin 明确错误，从未走回退分支
+        - Impact: 回退分支若回归（误收外站 Referer、或误拒合法的 Referer-only 客户端），现有测试全绿无感；该分支是同源校验的第二条代码路径，长期无覆盖容易与主路径口径漂移（如 f_backend_api_auth_02 式的规范化不一致）。
+        - Fix: 补三条用例：无 Origin + 允许列表内 Referer → 写请求放行；无 Origin + 外站 Referer → 403；无 Origin + 畸形 Referer → 403。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/api/internal_supervisor.py:36、internal_gateway.py:36-37、internal_artifacts.py:23 — 内部 RPC 未配置令牌时的 503 fail-closed 分支无测试覆盖
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_11)
-  - f_backend_api_auth_11: 三个内部路由模块在服务令牌/服务未配置时分别 raise 503（Supervisor/Gateway/Artifact RPC is not configured），原审阅将其列为结构性 fail-closed 保障; 所有调用内部端点的测试 fixture 都先写好令牌文件（tests/integration/conftest.py 的 supervisor_api、test_auth_api.py 的 auth_env、test_artifacts_api.py 的 artifact_env）；未配令牌建 app 的用例（test_automation_api.py、test_api_sse_events.py、test_sse_epoch_integration.py）从不请求内部端点; grep 测试全文无对这三处 503 状态/文案的断言；唯一相邻覆盖是 AuthService 依赖缺失的 503（test_auth_service.py::test_missing_auth_service_returns_503），属不同代码路径
-    - Impact: fail-closed 默认若回归为 401/500 或未捕获异常，测试无感；且与 f_backend_api_auth_06（全部 503 被统一标为 database_busy 且 retryable）叠加时，该分支实际返回的错误形态也从未被断言钉住。
-    - Fix: 以未传 supervisor_token_file/gateway_token_file 的 create_app 各补一条用例：对三个内部面各取一个端点，断言 503 及统一错误体形态。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_11)
+    - f_backend_api_auth_11: 三个内部路由模块在服务令牌/服务未配置时分别 raise 503（Supervisor/Gateway/Artifact RPC is not configured），原审阅将其列为结构性 fail-closed 保障; 所有调用内部端点的测试 fixture 都先写好令牌文件（tests/integration/conftest.py 的 supervisor_api、test_auth_api.py 的 auth_env、test_artifacts_api.py 的 artifact_env）；未配令牌建 app 的用例（test_automation_api.py、test_api_sse_events.py、test_sse_epoch_integration.py）从不请求内部端点; grep 测试全文无对这三处 503 状态/文案的断言；唯一相邻覆盖是 AuthService 依赖缺失的 503（test_auth_service.py::test_missing_auth_service_returns_503），属不同代码路径
+        - Impact: fail-closed 默认若回归为 401/500 或未捕获异常，测试无感；且与 f_backend_api_auth_06（全部 503 被统一标为 database_busy 且 retryable）叠加时，该分支实际返回的错误形态也从未被断言钉住。
+        - Fix: 以未传 supervisor_token_file/gateway_token_file 的 create_app 各补一条用例：对三个内部面各取一个端点，断言 503 及统一错误体形态。
+        - Verification: static
 - [Low][85] tests/integration/test_auth_api.py::test_internal_gateway_endpoints（viewer-authorize 用例组） — viewer-authorize 的 Origin 规范化变体（尾斜杠等）无测试，f_02 的比对口径不一致无回归网
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_12)
-  - f_backend_api_auth_12: 现有 viewer-authorize 用例只用与 allowed_origins 逐字相同的 Origin 和完全外站的 https://attacker.site 两种取值（test_auth_api.py::test_internal_gateway_endpoints、test_auth_service.py::test_viewer_and_automation_authorize）; CSRF 路径已有尾斜杠变体被接受的专门用例（test_auth_api.py::test_allowed_origin_with_trailing_slash_is_accepted），而走 authorize_viewer 的 Gateway 内部路径没有对应变体用例; f_backend_api_auth_02 已指出 authorize_viewer 用未规范化的 Origin 原字符串与已规范化的 allowed_origins 精确比对；该不一致目前无任何测试能暴露
-    - Impact: Gateway 转发的 Origin 只要带尾斜杠等规范化差异，合法 viewer 即被拒（invalid_origin），且该行为无论修复还是恶化都不会被测试捕获；原审阅留下的『Gateway 转发 Origin 是否恒为规范序列化形式』不确定项也因此无从收敛。
-    - Fix: 在 test_internal_gateway_endpoints 补 viewer-authorize 的尾斜杠 Origin 用例，断言与 CSRF 路径一致的预期（规范化后命中即 allowed=true），并在 f_backend_api_auth_02 修复后保留为回归网。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_12)
+    - f_backend_api_auth_12: 现有 viewer-authorize 用例只用与 allowed_origins 逐字相同的 Origin 和完全外站的 https://attacker.site 两种取值（test_auth_api.py::test_internal_gateway_endpoints、test_auth_service.py::test_viewer_and_automation_authorize）; CSRF 路径已有尾斜杠变体被接受的专门用例（test_auth_api.py::test_allowed_origin_with_trailing_slash_is_accepted），而走 authorize_viewer 的 Gateway 内部路径没有对应变体用例; f_backend_api_auth_02 已指出 authorize_viewer 用未规范化的 Origin 原字符串与已规范化的 allowed_origins 精确比对；该不一致目前无任何测试能暴露
+        - Impact: Gateway 转发的 Origin 只要带尾斜杠等规范化差异，合法 viewer 即被拒（invalid_origin），且该行为无论修复还是恶化都不会被测试捕获；原审阅留下的『Gateway 转发 Origin 是否恒为规范序列化形式』不确定项也因此无从收敛。
+        - Fix: 在 test_internal_gateway_endpoints 补 viewer-authorize 的尾斜杠 Origin 用例，断言与 CSRF 路径一致的预期（规范化后命中即 allowed=true），并在 f_backend_api_auth_02 修复后保留为回归网。
+        - Verification: static
 - [Low][90] src/backend/database.py:66-76 — 同步 sqlite 与文件系统调用遍布 async handler，且 list_profiles 为 N+1 标签查询
-  - Sources: bundle_local_backend_core.md (f_backend_core_07)
-  - f_backend_core_07: get_db 每次调用新建连接并重复执行 WAL/foreign_keys pragma；全部 db.* 函数为同步实现，被 main.py 的 async 端点直接调用，无一处 to_thread 卸载; _hydrate_profile 对每行单独查 profile_tags，list_profiles 为 N+1；get_system_status、auto_launch_all 均走此路径; upload/download/delete 端点在事件循环内联调用 artifacts.sync_picker_view（iterdir + 逐个 resolve 符号链接）与 refresh_picker_bookmarks（全量重建）; 单用户小规模下影响有限，但产物多、profile 多时单次列表/上传会以同步 IO 阻塞全部会话（含 WS 代理的心跳与帧转发）
-    - Impact: 规模增长后表现为全应用级卡顿而非单请求变慢：任一重列表/大批量产物操作都会冻结同进程的 VNC/CDP 代理转发。
-    - Fix: list_profiles 的标签查询改为一次 IN 查询后按 profile_id 分组；重型同步段（picker 视图重建、list_profiles 全量水合）经 asyncio.to_thread 卸载，或给连接加缓存复用。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_07)
+    - f_backend_core_07: get_db 每次调用新建连接并重复执行 WAL/foreign_keys pragma；全部 db.\* 函数为同步实现，被 main.py 的 async 端点直接调用，无一处 to_thread 卸载; \_hydrate_profile 对每行单独查 profile_tags，list_profiles 为 N+1；get_system_status、auto_launch_all 均走此路径; upload/download/delete 端点在事件循环内联调用 artifacts.sync_picker_view（iterdir + 逐个 resolve 符号链接）与 refresh_picker_bookmarks（全量重建）; 单用户小规模下影响有限，但产物多、profile 多时单次列表/上传会以同步 IO 阻塞全部会话（含 WS 代理的心跳与帧转发）
+        - Impact: 规模增长后表现为全应用级卡顿而非单请求变慢：任一重列表/大批量产物操作都会冻结同进程的 VNC/CDP 代理转发。
+        - Fix: list_profiles 的标签查询改为一次 IN 查询后按 profile_id 分组；重型同步段（picker 视图重建、list_profiles 全量水合）经 asyncio.to_thread 卸载，或给连接加缓存复用。
+        - Verification: static
 - [Low][85] src/backend/models.py:13-44 — ProfileCreate/Update 缺数值范围与长度校验，异常值直达 Xvnc 几何与 Chromium 参数
-  - Sources: bundle_local_backend_core.md (f_backend_core_08)
-  - f_backend_core_08: screen_width/screen_height 为裸 int（可负、可为天文数字），fingerprint_seed 为任意 int，name/notes/proxy 无 max_length，launch_args/extension_paths 列表长度与单项长度均无上限; 这些值未经范围检查即进入 vnc_manager.start_vnc 的 -geometry 参数、browser_manager 的 --window-size 与 --fingerprint-screen-* 参数（browser_manager._build_fingerprint_args）; 对照同文件 ClipboardRequest 有 max_length、ProxyTestRequest 有 min/max_length——校验口径在模型间不一致; 结果多为启动期失败（Xvnc 以非法 geometry 退出、launch 500）而非数据损坏，故定 Low
-    - Impact: 误填或恶意构造的 profile 配置可让启动路径以难懂的底层错误失败（Xvnc 退出日志、CDP 超时），排障成本高；超长字段还会撑大 profiles.db 与列表响应。
-    - Fix: 给 screen_width/height 加合理区间（如 320–7680）、name/notes/proxy 加 max_length、launch_args/extension_paths 加列表与单项长度上限，与 ClipboardRequest 的既有口径对齐。
-    - Verification: static
-- [Low][90] src/backend/browser_manager.py:56-71 — _normalize_proxy 以冒号切分启发式解析，含冒号/＠的凭据与 IPv6 主机会被误解析
-  - Sources: bundle_local_backend_core.md (f_backend_core_09)
-  - f_backend_core_09: _normalize_proxy 对 host:port:user:pass 形式做 raw.split(":")，密码含 ':' 时段数不为 4，整串原样返回，随后 _validate_proxy 以 scheme 缺失等不相干理由报错；密码含 '@' 时即使走 http:// 直通路径，后续 urlparse 也会错位主机; 拼装 f"http://{user}:{passwd}@{host}:{port}" 时 user/passwd 未做 URL 编码，含特殊字符的凭据会改变 URL 结构; IPv6 主机（含多个冒号）在任何分支下都无法正确处理; test_proxy 与 launch 共用此函数，错误在两处一致地表现为『代理不可用』类误报
-    - Impact: 使用含特殊字符密码的常见住宅代理格式会静默失败或连到错误端点，用户只能得到与真实原因无关的验证错误；属正确性缺陷而非安全问题（输入来自 profile 所有者本人）。
-    - Fix: 四段式解析改为从右侧切分（rsplit）并对凭据做 quote 后再拼 URL，或要求四段式先按 host:port 与 user:pass 两组各切一次；补含 ':'/'@' 密码与 IPv6 的单测用例。
-    - Verification: static
-- [Low][90] src/backend/artifacts.py:22-24 — _env_int 对畸形环境变量未捕获 ValueError，模块导入期即崩溃且报错不指向配置项
-  - Sources: bundle_local_backend_core.md (f_backend_core_10)
-  - f_backend_core_10: _env_int 直接 int(os.environ.get(name) or default)，ARTIFACT_MAX_BYTES/ARTIFACT_MAX_COUNT/ARTIFACT_MAX_TOTAL_BYTES 任一被设为非数字（如带单位的 '512M'）即在 import artifacts 时抛 ValueError; artifacts 被 main.py 顶层导入，异常使整个应用启动失败，traceback 只指向 int() 转换，不含变量名上下文; 同文件其余配置路径（picker、quota）都有明确的异常类型与文案，此处口径不一致
-    - Impact: 运维误配一个环境变量即全站无法启动，且排障线索最差（导入期裸 traceback）。概率低、后果集中在可用性。
-    - Fix: _env_int 捕获 ValueError 后抛带变量名与原始值的 RuntimeError，或回退默认值并 logger.warning 记录被忽略的畸形值。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_08)
+    - f_backend_core_08: screen_width/screen_height 为裸 int（可负、可为天文数字），fingerprint_seed 为任意 int，name/notes/proxy 无 max_length，launch_args/extension_paths 列表长度与单项长度均无上限; 这些值未经范围检查即进入 vnc_manager.start_vnc 的 -geometry 参数、browser_manager 的 --window-size 与 --fingerprint-screen-\* 参数（browser_manager.\_build_fingerprint_args）; 对照同文件 ClipboardRequest 有 max_length、ProxyTestRequest 有 min/max_length——校验口径在模型间不一致; 结果多为启动期失败（Xvnc 以非法 geometry 退出、launch 500）而非数据损坏，故定 Low
+        - Impact: 误填或恶意构造的 profile 配置可让启动路径以难懂的底层错误失败（Xvnc 退出日志、CDP 超时），排障成本高；超长字段还会撑大 profiles.db 与列表响应。
+        - Fix: 给 screen_width/height 加合理区间（如 320–7680）、name/notes/proxy 加 max_length、launch_args/extension_paths 加列表与单项长度上限，与 ClipboardRequest 的既有口径对齐。
+        - Verification: static
+- [Low][90] src/backend/browser_manager.py:56-71 — \_normalize_proxy 以冒号切分启发式解析，含冒号/＠的凭据与 IPv6 主机会被误解析
+    - Sources: bundle_local_backend_core.md (f_backend_core_09)
+    - f_backend_core_09: \_normalize_proxy 对 host:port:user:pass 形式做 raw.split(":")，密码含 ':' 时段数不为 4，整串原样返回，随后 \_validate_proxy 以 scheme 缺失等不相干理由报错；密码含 '@' 时即使走 http:// 直通路径，后续 urlparse 也会错位主机; 拼装 f"http://{user}:{passwd}@{host}:{port}" 时 user/passwd 未做 URL 编码，含特殊字符的凭据会改变 URL 结构; IPv6 主机（含多个冒号）在任何分支下都无法正确处理; test_proxy 与 launch 共用此函数，错误在两处一致地表现为『代理不可用』类误报
+        - Impact: 使用含特殊字符密码的常见住宅代理格式会静默失败或连到错误端点，用户只能得到与真实原因无关的验证错误；属正确性缺陷而非安全问题（输入来自 profile 所有者本人）。
+        - Fix: 四段式解析改为从右侧切分（rsplit）并对凭据做 quote 后再拼 URL，或要求四段式先按 host:port 与 user:pass 两组各切一次；补含 ':'/'@' 密码与 IPv6 的单测用例。
+        - Verification: static
+- [Low][90] src/backend/artifacts.py:22-24 — \_env_int 对畸形环境变量未捕获 ValueError，模块导入期即崩溃且报错不指向配置项
+    - Sources: bundle_local_backend_core.md (f_backend_core_10)
+    - f_backend_core_10: \_env_int 直接 int(os.environ.get(name) or default)，ARTIFACT_MAX_BYTES/ARTIFACT_MAX_COUNT/ARTIFACT_MAX_TOTAL_BYTES 任一被设为非数字（如带单位的 '512M'）即在 import artifacts 时抛 ValueError; artifacts 被 main.py 顶层导入，异常使整个应用启动失败，traceback 只指向 int() 转换，不含变量名上下文; 同文件其余配置路径（picker、quota）都有明确的异常类型与文案，此处口径不一致
+        - Impact: 运维误配一个环境变量即全站无法启动，且排障线索最差（导入期裸 traceback）。概率低、后果集中在可用性。
+        - Fix: \_env_int 捕获 ValueError 后抛带变量名与原始值的 RuntimeError，或回退默认值并 logger.warning 记录被忽略的畸形值。
+        - Verification: static
 - [Low][95] src/backend/requirements.txt:1-9 — requirements.txt 与 pyproject.toml 依赖声明漂移：同一包版本约束冲突且集合互不一致
-  - Sources: bundle_local_backend_core.md (f_backend_core_11)
-  - f_backend_core_11: cloakbrowser[geoip]：pyproject.toml 钉 ==0.6.4，requirements.txt 写 >=0.6.3; requirements.txt 不含 pyproject 的 sqlalchemy/alembic/aiosqlite/docker/argon2-cffi/aiohttp，却多出 pyproject 没有的 pywebview；实际装哪套取决于入口（各 runtime Dockerfile 在其他单元）; requirements.txt 全部为 >= 浮动约束且无 lock 文件，legacy 栈的实际解析版本随安装时点漂移（pyproject 侧同样多为 >=，仅 cloakbrowser 钉版）
-    - Impact: 同一代码在不同安装路径下解析出不同依赖组合，『在我这能跑』类问题难以归因；框架行为差异（如 Starlette 路径解码）还会让 f_backend_core_02 这类结论的可达性随安装路径变化。
-    - Fix: 明确单一权威依赖源（pyproject + 生成的 lock），requirements.txt 改为由其生成或删除；至少把 cloakbrowser 的约束对齐为 ==0.6.4 并注明 pywebview 仅属原生入口。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_11)
+    - f_backend_core_11: cloakbrowser[geoip]：pyproject.toml 钉 ==0.6.4，requirements.txt 写 >=0.6.3; requirements.txt 不含 pyproject 的 sqlalchemy/alembic/aiosqlite/docker/argon2-cffi/aiohttp，却多出 pyproject 没有的 pywebview；实际装哪套取决于入口（各 runtime Dockerfile 在其他单元）; requirements.txt 全部为 >= 浮动约束且无 lock 文件，legacy 栈的实际解析版本随安装时点漂移（pyproject 侧同样多为 >=，仅 cloakbrowser 钉版）
+        - Impact: 同一代码在不同安装路径下解析出不同依赖组合，『在我这能跑』类问题难以归因；框架行为差异（如 Starlette 路径解码）还会让 f_backend_core_02 这类结论的可达性随安装路径变化。
+        - Fix: 明确单一权威依赖源（pyproject + 生成的 lock），requirements.txt 改为由其生成或删除；至少把 cloakbrowser 的约束对齐为 ==0.6.4 并注明 pywebview 仅属原生入口。
+        - Verification: static
 - [Low][55] src/backend/main.py:1560-1600 — VNC 代理以 WebSocket 帧数而非 RFB 字节流计数握手，前 3 帧假设与分片方式耦合
-  - Sources: bundle_local_backend_core.md (f_backend_core_12)
-  - f_backend_core_12: client_to_vnc 以 handshake 计数器按 WS 消息递增，前 3 条消息原样转发、之后才走 _filter_rfb_client_messages；RFB 握手是字节流协议，帧边界由 noVNC 的发送方式偶然决定; 若客户端把握手字节拆成 4 条以上 WS 消息，第 4 条起的握手残余会被当作普通客户端消息过滤（未知类型即截断丢弃），可致协商损坏、连接建立失败; 反之若首帧合并了握手与后续消息，整帧原样放行会绕过编码白名单过滤（当前实现对此情形无防护，但 KasmVNC 对 SetEncodings 的处理在握手后消息中才有意义，影响有限）; 本轮静态审阅未构造实际分片序列复现，noVNC 1.4 的默认发送方式是否触发未知
-    - Impact: 在 noVNC 或网络层改变分片方式时，VNC 连接可能以『握手后立即断开』的难复现方式失败；属健壮性隐患而非当前已证故障。
-    - Fix: 改为按字节流状态机识别握手完成（ProtocolVersion 12 字节 + SecurityTypes 协商结束）后再启用过滤，或把过滤器改为对未完成握手前缀透传并缓存残余字节。
-    - Verification: suspected
+    - Sources: bundle_local_backend_core.md (f_backend_core_12)
+    - f_backend_core_12: client_to_vnc 以 handshake 计数器按 WS 消息递增，前 3 条消息原样转发、之后才走 \_filter_rfb_client_messages；RFB 握手是字节流协议，帧边界由 noVNC 的发送方式偶然决定; 若客户端把握手字节拆成 4 条以上 WS 消息，第 4 条起的握手残余会被当作普通客户端消息过滤（未知类型即截断丢弃），可致协商损坏、连接建立失败; 反之若首帧合并了握手与后续消息，整帧原样放行会绕过编码白名单过滤（当前实现对此情形无防护，但 KasmVNC 对 SetEncodings 的处理在握手后消息中才有意义，影响有限）; 本轮静态审阅未构造实际分片序列复现，noVNC 1.4 的默认发送方式是否触发未知
+        - Impact: 在 noVNC 或网络层改变分片方式时，VNC 连接可能以『握手后立即断开』的难复现方式失败；属健壮性隐患而非当前已证故障。
+        - Fix: 改为按字节流状态机识别握手完成（ProtocolVersion 12 字节 + SecurityTypes 协商结束）后再启用过滤，或把过滤器改为对未完成握手前缀透传并缓存残余字节。
+        - Verification: suspected
 - [Low][90] src/backend/main.py:583（test-proxy）、:1184（update-check）、:1335（center-window）、:1622（screenshot） — 四个 legacy 路由在 backend_tests 中零覆盖：test-proxy、update-check、center-window、screenshot
-  - Sources: bundle_local_backend_core.md (f_backend_core_17)
-  - f_backend_core_17: 对 test-proxy/test_proxy、update-check/update_check、center-window/center_window、/screenshot 在 src/backend/tests 中 grep 均为零命中；通读该单元全部 11 个文件亦无这四个端点的调用（screenshot 仅以 user_data_dir 内的 last_screenshot.jpg 文件名出现）。; 对照之下，同文件的 profile CRUD、files、clipboard、settings、duplicate、CDP 代理等路由均有成组行为测试，这四个端点是路由表中的整片空白。
-    - Impact: test-proxy 是创建 profile 前的代理连通性检查、update-check 驱动升级提示、screenshot 是前端预览图来源；它们多是对外部服务/子进程的薄封装，最容易被依赖升级或封装改动悄悄改坏响应形状与状态码，而本地测试无一拦截。
-    - Fix: 给四个端点各补最小行为测试：依赖以 mock 注入，断言状态码与关键响应字段；test-proxy 额外覆盖代理不可达时的失败形状。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_17)
+    - f_backend_core_17: 对 test-proxy/test_proxy、update-check/update_check、center-window/center_window、/screenshot 在 src/backend/tests 中 grep 均为零命中；通读该单元全部 11 个文件亦无这四个端点的调用（screenshot 仅以 user_data_dir 内的 last_screenshot.jpg 文件名出现）。; 对照之下，同文件的 profile CRUD、files、clipboard、settings、duplicate、CDP 代理等路由均有成组行为测试，这四个端点是路由表中的整片空白。
+        - Impact: test-proxy 是创建 profile 前的代理连通性检查、update-check 驱动升级提示、screenshot 是前端预览图来源；它们多是对外部服务/子进程的薄封装，最容易被依赖升级或封装改动悄悄改坏响应形状与状态码，而本地测试无一拦截。
+        - Fix: 给四个端点各补最小行为测试：依赖以 mock 注入，断言状态码与关键响应字段；test-proxy 额外覆盖代理不可达时的失败形状。
+        - Verification: static
 - [Low][85] src/backend/main.py:1434（vnc_proxy） — VNC 代理转发回路无端到端测试：纯函数层覆盖扎实，接线层空白，与 CDP 代理覆盖不对称
-  - Sources: bundle_local_backend_core.md (f_backend_core_18)
-  - f_backend_core_18: test_rfb.py（341 行）对 _rfb_msg_length、_filter_rfb_client_messages、_rewrite_set_encodings、_rewrite_pointer_event、_parse_kasmvnc_clipboard、_build_server_cut_text 有细粒度断言，纯函数层覆盖扎实。; test_api.py:592-659 对 /vnc WebSocket 只有 Origin 拒绝/放行四例，连接建立后即断开；从未接入假 KasmVNC 上游验证帧转发、过滤在真实流中的效果，或 KasmVNC 剪贴板消息（type 180）→ ServerCutText 的转换路径（main.py:1545-1549）。; 对照：CDP 代理回路有完整的假上游测试（test_api.py:1288 起的 _FakeUpstream 与 re-arm 系列），两条代理的覆盖明显不对称。
-    - Impact: 过滤/改写逻辑与代理循环的接线（缓冲切分、偏移、剪贴板转换触发条件）若回归，纯函数测试仍会全绿；剪贴板中继是本单元的隐私敏感面，其端到端行为没有任何测试钉住。
-    - Fix: 仿 CDP 的 _FakeUpstream 模式为 vnc_proxy 补假上游测试：标准帧透传、扩展消息剥离、KasmVNC 剪贴板消息转换三条路径各一例。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_18)
+    - f_backend_core_18: test_rfb.py（341 行）对 \_rfb_msg_length、\_filter_rfb_client_messages、\_rewrite_set_encodings、\_rewrite_pointer_event、\_parse_kasmvnc_clipboard、\_build_server_cut_text 有细粒度断言，纯函数层覆盖扎实。; test_api.py:592-659 对 /vnc WebSocket 只有 Origin 拒绝/放行四例，连接建立后即断开；从未接入假 KasmVNC 上游验证帧转发、过滤在真实流中的效果，或 KasmVNC 剪贴板消息（type 180）→ ServerCutText 的转换路径（main.py:1545-1549）。; 对照：CDP 代理回路有完整的假上游测试（test_api.py:1288 起的 \_FakeUpstream 与 re-arm 系列），两条代理的覆盖明显不对称。
+        - Impact: 过滤/改写逻辑与代理循环的接线（缓冲切分、偏移、剪贴板转换触发条件）若回归，纯函数测试仍会全绿；剪贴板中继是本单元的隐私敏感面，其端到端行为没有任何测试钉住。
+        - Fix: 仿 CDP 的 \_FakeUpstream 模式为 vnc_proxy 补假上游测试：标准帧透传、扩展消息剥离、KasmVNC 剪贴板消息转换三条路径各一例。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/runtime_agent/event_storage.py:130-144 — One corrupt runtime event file hard-fails all runtime-event reads, unlike download events which are quarantined
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_04)
-  - f_backend_runtime_adapters_04: _read_runtime_events raises StorageError on the first unparseable/invalid file (:141-143); get_runtime_events, the Agent's GET /events/runtime handler, and get_instance_state(recover_terminal=True) all flow through it.; The download side of the same class handles the identical situation by quarantining the corrupt file and continuing (_rebuild_download_index :225-233, get_download_events :296-305).; BrowserRunner.start() calls get_instance_state(..., recover_terminal=True) before anything else, so a single corrupt event JSON in the instance's directory prevents that generation's state from being read at all (start aborts via StorageError -> 503 in the Agent, exception in the Runner).
-    - Impact: Atomic writes make corruption unlikely, but any torn/foreign/older-format file in events/runtime/<instance>/ permanently blocks the events endpoint and terminal recovery for that instance instead of degrading to the remaining valid events; the operator's only remedy is manual file removal.
-    - Fix: Apply the download-side policy to runtime events: quarantine unparseable files and continue with the valid ones, reserving StorageError for identity mismatches (profile/instance/version conflicts), which are genuine integrity signals.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_04)
+    - f_backend_runtime_adapters_04: \_read_runtime_events raises StorageError on the first unparseable/invalid file (:141-143); get_runtime_events, the Agent's GET /events/runtime handler, and get_instance_state(recover_terminal=True) all flow through it.; The download side of the same class handles the identical situation by quarantining the corrupt file and continuing (\_rebuild_download_index :225-233, get_download_events :296-305).; BrowserRunner.start() calls get_instance_state(..., recover_terminal=True) before anything else, so a single corrupt event JSON in the instance's directory prevents that generation's state from being read at all (start aborts via StorageError -> 503 in the Agent, exception in the Runner).
+        - Impact: Atomic writes make corruption unlikely, but any torn/foreign/older-format file in events/runtime/<instance>/ permanently blocks the events endpoint and terminal recovery for that instance instead of degrading to the remaining valid events; the operator's only remedy is manual file removal.
+        - Fix: Apply the download-side policy to runtime events: quarantine unparseable files and continue with the valid ones, reserving StorageError for identity mismatches (profile/instance/version conflicts), which are genuine integrity signals.
+        - Verification: static
 - [Low][90] src/backend/cbrowser/runtime_agent/agent.py:440-460 — Agent startup crashes with KeyError when runner_info.json exists but never gains browser_ws_url
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_05)
-  - f_backend_runtime_adapters_05: run_uds_agent polls runner_info.json up to 100 times, breaking only when 'browser_ws_url' is present in the parsed dict (:440-449); a file that parses successfully but lacks the key leaves runner_info as a non-empty dict.; The missing-info guard is `if not runner_info:` (:451), which does not fire for that partial dict, and CdpProxyManager is then constructed with runner_info['browser_ws_url'] (:459), raising KeyError instead of the intended RuntimeError('Runner info missing...').
-    - Impact: A Runner that wrote partial/stale runner_info (e.g. killed mid-write from an older format, or a hand-placed file) makes the Agent die with an opaque KeyError after the full ~20s poll, and the __main__ handler logs only the exception type, slowing diagnosis. Behavior differs from the clean not-found path for no reason.
-    - Fix: Treat 'no browser_ws_url after polling' as missing: change the guard to `if 'browser_ws_url' not in runner_info:` before constructing CdpProxyManager.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_05)
+    - f_backend_runtime_adapters_05: run_uds_agent polls runner_info.json up to 100 times, breaking only when 'browser_ws_url' is present in the parsed dict (:440-449); a file that parses successfully but lacks the key leaves runner_info as a non-empty dict.; The missing-info guard is `if not runner_info:` (:451), which does not fire for that partial dict, and CdpProxyManager is then constructed with runner_info['browser_ws_url'] (:459), raising KeyError instead of the intended RuntimeError('Runner info missing...').
+        - Impact: A Runner that wrote partial/stale runner_info (e.g. killed mid-write from an older format, or a hand-placed file) makes the Agent die with an opaque KeyError after the full ~20s poll, and the __main__ handler logs only the exception type, slowing diagnosis. Behavior differs from the clean not-found path for no reason.
+        - Fix: Treat 'no browser_ws_url after polling' as missing: change the guard to `if 'browser_ws_url' not in runner_info:` before constructing CdpProxyManager.
+        - Verification: static
 - [Low][75] src/backend/cbrowser/runtime_agent/runner.py:744-752 — Exit classification depends on Playwright/SDK private internals; any shape change silently flips clean exits to observation-lost errors
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_06)
-  - f_backend_runtime_adapters_06: _sdk_driver_alive() reaches through browser_context._impl_obj._connection._transport._proc — three levels of underscore-private attributes of the pinned cloakbrowser/Playwright stack — and returns False on any AttributeError/OSError/IndexError.; _wait_for_chrome_exit (:693-706) treats 'not _sdk_driver_alive()' with exit_code 0 as infrastructure_failure, rewriting the reason to process_observation_lost, persisting state 'error' instead of 'stopped', and raising RuntimeError.
-    - Impact: If an SDK patch release renames or restructures those internals, every normal browser close is misclassified as an infrastructure failure: the API side counts a runtime failure (report_observed_state failure path), users see errors for intentional closes, and repeated occurrences can trip restart_blocked. The failure mode is silent — the probe cannot distinguish 'internals changed' from 'driver actually dead'.
-    - Fix: Prefer an observable liveness signal that does not depend on private attributes (e.g. CDP ws responsiveness plus /proc checks on PIDs the Runner itself owns), and log distinctly when the private-attribute probe itself fails so a shape change is diagnosable rather than indistinguishable from a dead driver.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_06)
+    - f_backend_runtime_adapters_06: \_sdk_driver_alive() reaches through browser_context.\_impl_obj.\_connection.\_transport.\_proc — three levels of underscore-private attributes of the pinned cloakbrowser/Playwright stack — and returns False on any AttributeError/OSError/IndexError.; \_wait_for_chrome_exit (:693-706) treats 'not \_sdk_driver_alive()' with exit_code 0 as infrastructure_failure, rewriting the reason to process_observation_lost, persisting state 'error' instead of 'stopped', and raising RuntimeError.
+        - Impact: If an SDK patch release renames or restructures those internals, every normal browser close is misclassified as an infrastructure failure: the API side counts a runtime failure (report_observed_state failure path), users see errors for intentional closes, and repeated occurrences can trip restart_blocked. The failure mode is silent — the probe cannot distinguish 'internals changed' from 'driver actually dead'.
+        - Fix: Prefer an observable liveness signal that does not depend on private attributes (e.g. CDP ws responsiveness plus /proc checks on PIDs the Runner itself owns), and log distinctly when the private-attribute probe itself fails so a shape change is diagnosable rather than indistinguishable from a dead driver.
+        - Verification: static
 - [Low][85] src/backend/cbrowser/adapters/filesystem/artifact_store.py:131-139 — Executable-type blocking is declared-metadata only, and the two ingest paths enforce it inconsistently
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_07)
-  - f_backend_runtime_adapters_07: validate_content_type() only inspects the caller-supplied content_type string against DANGEROUS_CONTENT_TYPES; uploaded bytes are never sniffed in write_upload (artifact_store.py) or ArtifactService.upload.; ArtifactService.upload rejects a dangerous declared type (exception propagates), while ingest_download catches ArtifactInvalidContentType and silently relabels the artifact 'application/octet-stream' (artifact_service.py:224-227), i.e. downloads are always accepted regardless of type.; For downloads the type is derived from the filename extension via mimetypes.guess_type, so an executable payload named without a known extension also passes as octet-stream.
-    - Impact: The dangerous-type list gives the appearance of an executable-upload control, but any client can store an executable by declaring a benign content type; the stored content_type is later trusted when serving the artifact back. The upload/download inconsistency means the policy is neither uniformly enforced nor uniformly advisory.
-    - Fix: Decide the policy explicitly: either document the check as advisory metadata hygiene (and drop the security framing), or enforce it on both paths using the same rule — for downloads, reject or quarantine dangerous detected types instead of relabeling, and consider magic-byte sniffing for the small dangerous set if the control is meant to be real.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_07)
+    - f_backend_runtime_adapters_07: validate_content_type() only inspects the caller-supplied content_type string against DANGEROUS_CONTENT_TYPES; uploaded bytes are never sniffed in write_upload (artifact_store.py) or ArtifactService.upload.; ArtifactService.upload rejects a dangerous declared type (exception propagates), while ingest_download catches ArtifactInvalidContentType and silently relabels the artifact 'application/octet-stream' (artifact_service.py:224-227), i.e. downloads are always accepted regardless of type.; For downloads the type is derived from the filename extension via mimetypes.guess_type, so an executable payload named without a known extension also passes as octet-stream.
+        - Impact: The dangerous-type list gives the appearance of an executable-upload control, but any client can store an executable by declaring a benign content type; the stored content_type is later trusted when serving the artifact back. The upload/download inconsistency means the policy is neither uniformly enforced nor uniformly advisory.
+        - Fix: Decide the policy explicitly: either document the check as advisory metadata hygiene (and drop the security framing), or enforce it on both paths using the same rule — for downloads, reject or quarantine dangerous detected types instead of relabeling, and consider magic-byte sniffing for the small dangerous set if the control is meant to be real.
+        - Verification: static
 - [Low][95] src/backend/cbrowser/adapters/database/artifact_repository.py:34-36 — ArtifactRepository.get_profile leaks the SQLAlchemy ORM model across the repository boundary
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_08)
-  - f_backend_runtime_adapters_08: get_profile returns `await session.get(ProfileModel, profile_id)` — a live ORM object tied to a session that is closed when the method returns — while every other method in both repositories converts to domain models (_to_domain / _to_domain_profile).; Its only in-unit caller, ArtifactService, uses it purely as an existence check (`is None`) in upload() and ingest_download(), so the ORM object itself is never needed.
-    - Impact: The leaked model invites future callers to read attributes on a detached ORM instance (risking lazy-load errors outside a session, especially with selectin relationships) and breaks the unit's otherwise consistent rule that the database layer speaks domain types.
-    - Fix: Replace with an existence query (select(1) / session.get returning bool) named e.g. profile_exists, and update ArtifactService call sites.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_08)
+    - f_backend_runtime_adapters_08: get_profile returns `await session.get(ProfileModel, profile_id)` — a live ORM object tied to a session that is closed when the method returns — while every other method in both repositories converts to domain models (\_to_domain / \_to_domain_profile).; Its only in-unit caller, ArtifactService, uses it purely as an existence check (`is None`) in upload() and ingest_download(), so the ORM object itself is never needed.
+        - Impact: The leaked model invites future callers to read attributes on a detached ORM instance (risking lazy-load errors outside a session, especially with selectin relationships) and breaks the unit's otherwise consistent rule that the database layer speaks domain types.
+        - Fix: Replace with an existence query (select(1) / session.get returning bool) named e.g. profile_exists, and update ArtifactService call sites.
+        - Verification: static
 - [Low][90] src/backend/cbrowser/adapters/database/artifact_repository.py:63-84 — find_download_duplicate fetches all (profile, sha256) rows and filters storage_path in Python despite a composite index
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_09)
-  - f_backend_runtime_adapters_09: The query filters only profile_id, kind and sha256, materializes all matching rows, then loops comparing row.storage_path == storage_path (:81-83).; models.py:211 already defines Index('idx_artifacts_profile_sha256', 'profile_id', 'sha256'); adding storage_path to the WHERE clause is a one-line change.
-    - Impact: Minor: extra row materialization per download ingest; only grows if many same-content downloads accumulate under one profile (bounded by the 200-artifact quota), so impact is small but the fix is free.
-    - Fix: Add ArtifactModel.storage_path == storage_path to the select() predicates and return the first row.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_09)
+    - f_backend_runtime_adapters_09: The query filters only profile_id, kind and sha256, materializes all matching rows, then loops comparing row.storage_path == storage_path (:81-83).; models.py:211 already defines Index('idx_artifacts_profile_sha256', 'profile_id', 'sha256'); adding storage_path to the WHERE clause is a one-line change.
+        - Impact: Minor: extra row materialization per download ingest; only grows if many same-content downloads accumulate under one profile (bounded by the 200-artifact quota), so impact is small but the fix is free.
+        - Fix: Add ArtifactModel.storage_path == storage_path to the select() predicates and return the first row.
+        - Verification: static
 - [Low][80] src/backend/cbrowser/adapters/database/repository.py:190-208 — Idempotency commit-race recovery is copy-pasted between create_profile and update_profile; utc_now_iso is also defined twice
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_10)
-  - f_backend_runtime_adapters_10: The `except IntegrityError:` block that re-reads the audit row, compares sig_hash and returns the existing profile appears nearly verbatim in create_profile (:190-208) and update_profile (:415-433), on top of the already-duplicated in-transaction replay check in both methods.; utc_now_iso is defined in adapters/database/models.py:16-17 and independently in cbrowser.domain.models; repository.py and artifact_repository.py import the domain one while models.py uses its own for column defaults.
-    - Impact: Any fix to the replay/conflict logic (e.g. the deleted-profile fall-through, where an audit row exists but the profile is gone and execution falls into a fresh insert that re-raises) must be made in two places and can drift; the duplicate time helper invites format drift between column defaults and explicitly written timestamps.
-    - Fix: Extract a shared helper (e.g. _resolve_idempotency_race(session_maker, operation_id, sig_hash, profile_id)) used by both methods, and import utc_now_iso from one canonical module.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_10)
+    - f_backend_runtime_adapters_10: The `except IntegrityError:` block that re-reads the audit row, compares sig_hash and returns the existing profile appears nearly verbatim in create_profile (:190-208) and update_profile (:415-433), on top of the already-duplicated in-transaction replay check in both methods.; utc_now_iso is defined in adapters/database/models.py:16-17 and independently in cbrowser.domain.models; repository.py and artifact_repository.py import the domain one while models.py uses its own for column defaults.
+        - Impact: Any fix to the replay/conflict logic (e.g. the deleted-profile fall-through, where an audit row exists but the profile is gone and execution falls into a fresh insert that re-raises) must be made in two places and can drift; the duplicate time helper invites format drift between column defaults and explicitly written timestamps.
+        - Fix: Extract a shared helper (e.g. \_resolve_idempotency_race(session_maker, operation_id, sig_hash, profile_id)) used by both methods, and import utc_now_iso from one canonical module.
+        - Verification: static
 - [Low][90] src/backend/cbrowser/services/profile_service.py:29 — profile_service imports a top-level 'diagnostics' module, unlike every other import in the unit
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_11)
-  - f_backend_runtime_adapters_11: Line 29: `from diagnostics import emit_runtime_event_log` — a bare top-level import that only resolves if the backend source root (src/backend) is on sys.path.; All other intra-project imports in the unit are absolute cbrowser.* (repository.py, artifact_service.py) or package-relative (runtime_agent/*); the backend test suite's own convention (tests import the package as backend.* with the parent on sys.path, per the backend_tests unit) shows import roots already vary by entry point.
-    - Impact: Importing cbrowser.services.profile_service from any context whose sys.path lacks src/backend (a different launcher, an embedding tool, a test harness rooted at the package parent) fails with ModuleNotFoundError at import time, before any logic runs.
-    - Fix: Move emit_runtime_event_log under the cbrowser package (e.g. cbrowser.diagnostics) and import it as cbrowser.diagnostics, or use the correct absolute path for its actual location.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_11)
+    - f_backend_runtime_adapters_11: Line 29: `from diagnostics import emit_runtime_event_log` — a bare top-level import that only resolves if the backend source root (src/backend) is on sys.path.; All other intra-project imports in the unit are absolute cbrowser.\* (repository.py, artifact_service.py) or package-relative (runtime_agent/*); the backend test suite's own convention (tests import the package as backend.* with the parent on sys.path, per the backend_tests unit) shows import roots already vary by entry point.
+        - Impact: Importing cbrowser.services.profile_service from any context whose sys.path lacks src/backend (a different launcher, an embedding tool, a test harness rooted at the package parent) fails with ModuleNotFoundError at import time, before any logic runs.
+        - Fix: Move emit_runtime_event_log under the cbrowser package (e.g. cbrowser.diagnostics) and import it as cbrowser.diagnostics, or use the correct absolute path for its actual location.
+        - Verification: static
 - [Low][80] src/backend/cbrowser/runtime_agent/runner.py:225-242 — Stale-X11 cleanup unlinks the lock and socket unconditionally when the lock file content is unparseable
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_12)
-  - f_backend_runtime_adapters_12: _clear_stale_x11_state only proves the display is free when the lock file parses to a PID and that PID is gone (ProcessLookupError -> pass, live/PermissionError -> raise).; When int() parsing fails or the read raises OSError, holder stays None and execution falls through to lock_path.unlink + sock_path.unlink (:241-242) — the same path taken for a proven-stale lock.
-    - Impact: If a live Xvfb's lock file is momentarily unreadable or partially written, a second Runner for the same display deletes the live server's socket file; the existing server keeps running but becomes unreachable, and the new Xvfb may then start on the same display number with split-brain state. Narrow race, but the fail-safe direction is backwards: unproven ownership should stop, not delete.
-    - Fix: Treat an existing-but-unparseable lock file as 'display in use' (raise) or re-read/retry briefly before deciding; only unlink when staleness is proven (parseable PID that no longer exists) or when neither file exists.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_12)
+    - f_backend_runtime_adapters_12: \_clear_stale_x11_state only proves the display is free when the lock file parses to a PID and that PID is gone (ProcessLookupError -> pass, live/PermissionError -> raise).; When int() parsing fails or the read raises OSError, holder stays None and execution falls through to lock_path.unlink + sock_path.unlink (:241-242) — the same path taken for a proven-stale lock.
+        - Impact: If a live Xvfb's lock file is momentarily unreadable or partially written, a second Runner for the same display deletes the live server's socket file; the existing server keeps running but becomes unreachable, and the new Xvfb may then start on the same display number with split-brain state. Narrow race, but the fail-safe direction is backwards: unproven ownership should stop, not delete.
+        - Fix: Treat an existing-but-unparseable lock file as 'display in use' (raise) or re-read/retry briefly before deciding; only unlink when staleness is proven (parseable PID that no longer exists) or when neither file exists.
+        - Verification: static
 - [Low][80] src/backend/cbrowser/services/artifact_service.py:168-176 — Artifact delete removes the database row before deleting the file, and a directory-valued storage_path raises after the row is gone
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_13)
-  - f_backend_runtime_adapters_13: ArtifactService.delete() awaits repository.delete_artifact() first, then store.delete() in a thread (:171-175).; ArtifactStore.delete() calls target.unlink(missing_ok=True) without guarding IsADirectoryError; unlink on a directory raises IsADirectoryError (an OSError not suppressed by missing_ok), which propagates out of delete().; storage_path normally points at a file written by this unit, so the trigger requires a corrupted/foreign row — but the ordering means any store.delete failure reports an API error for an artifact whose metadata is already deleted.
-    - Impact: Mostly consistency hygiene: a failed file removal surfaces as a failed delete even though the artifact no longer exists in the database; a directory at storage_path would also leak (never removed) while the caller believes deletion was attempted.
-    - Fix: In ArtifactStore.delete, treat a directory target explicitly (rmdir/rmtree the artifact directory, mirroring discard_upload) and make store deletion failure-tolerant with logging, since the DB row is already committed as deleted.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_13)
+    - f_backend_runtime_adapters_13: ArtifactService.delete() awaits repository.delete_artifact() first, then store.delete() in a thread (:171-175).; ArtifactStore.delete() calls target.unlink(missing_ok=True) without guarding IsADirectoryError; unlink on a directory raises IsADirectoryError (an OSError not suppressed by missing_ok), which propagates out of delete().; storage_path normally points at a file written by this unit, so the trigger requires a corrupted/foreign row — but the ordering means any store.delete failure reports an API error for an artifact whose metadata is already deleted.
+        - Impact: Mostly consistency hygiene: a failed file removal surfaces as a failed delete even though the artifact no longer exists in the database; a directory at storage_path would also leak (never removed) while the caller believes deletion was attempted.
+        - Fix: In ArtifactStore.delete, treat a directory target explicitly (rmdir/rmtree the artifact directory, mirroring discard_upload) and make store deletion failure-tolerant with logging, since the DB row is already committed as deleted.
+        - Verification: static
 - [Low][85] src/backend/cbrowser/gateway/server.py:585-605; src/backend/cbrowser/stream_agent/protocol.py:62-67; src/backend/cbrowser/stream_agent/agent.py:41-43,607-617 — 隧道帧大小上限三层不一致：viewer 超 1MB 文本帧使 Gateway 转发循环抛 ValidationError 突然断连，Agent 侧原始 envelope 1MB 上限会静默丢弃转义膨胀后的合法帧
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_02)
-  - f_backend_stream_gateway_02: protocol.py GatewayTunnelEnvelope.validate_data 限制 data 字段 <= 1MB（UTF-8 字节）; server.py viewer 转发循环直接以 GatewayTunnelEnvelope(..., data=text) 构造模型，未捕获 ValidationError；异常穿透 async for 循环，仅靠 finally 做清理，连接以未处理异常方式终止而非受控 close 码; agent.py _handle_gateway_envelope 以 MAX_PAYLOAD_SIZE=1MB 检查原始 envelope 字节数；data 接近 1MB 且含大量需 JSON 转义的字符时，合法 data 的 envelope 序列化后可超过 1MB，被 Agent 静默丢弃（仅 warning 日志）; 两端 WS max_msg_size 又同为 MAX_STREAM_FRAME_SIZE（约 6.3MB），与上述 1MB 上限并存，无注释说明层级关系
-    - Impact: 接近边界的大帧（例如大数据量信令/剪贴板类文本）行为不确定：viewer 侧表现为连接异常断开，Agent 侧表现为消息无声丢失，两端日志都不足以定位为同一根因。
-    - Fix: 统一口径：或将 data 上限与原始 envelope 上限对齐并在 Gateway 转发前显式检查长度、超限时以 1009 受控关闭并记日志；或在 viewer 循环中捕获 ValidationError 单独处理。并在 protocol.py 注释三层上限的关系。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_02)
+    - f_backend_stream_gateway_02: protocol.py GatewayTunnelEnvelope.validate_data 限制 data 字段 \<= 1MB（UTF-8 字节）; server.py viewer 转发循环直接以 GatewayTunnelEnvelope(..., data=text) 构造模型，未捕获 ValidationError；异常穿透 async for 循环，仅靠 finally 做清理，连接以未处理异常方式终止而非受控 close 码; agent.py \_handle_gateway_envelope 以 MAX_PAYLOAD_SIZE=1MB 检查原始 envelope 字节数；data 接近 1MB 且含大量需 JSON 转义的字符时，合法 data 的 envelope 序列化后可超过 1MB，被 Agent 静默丢弃（仅 warning 日志）; 两端 WS max_msg_size 又同为 MAX_STREAM_FRAME_SIZE（约 6.3MB），与上述 1MB 上限并存，无注释说明层级关系
+        - Impact: 接近边界的大帧（例如大数据量信令/剪贴板类文本）行为不确定：viewer 侧表现为连接异常断开，Agent 侧表现为消息无声丢失，两端日志都不足以定位为同一根因。
+        - Fix: 统一口径：或将 data 上限与原始 envelope 上限对齐并在 Gateway 转发前显式检查长度、超限时以 1009 受控关闭并记日志；或在 viewer 循环中捕获 ValidationError 单独处理。并在 protocol.py 注释三层上限的关系。
+        - Verification: static
 - [Low][85] src/backend/cbrowser/gateway/server.py:221-222,266-288 — Supervisor 控制端点对下游发送/关闭失败无防护，quota 与 disconnect 在 Agent/viewer 套接字异常时以未处理 500 中断且后续 viewer 不再处理
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_03)
-  - f_backend_stream_gateway_03: handle_supervisor_quota 结尾 await agent.ws.send_str(env.model_dump_json()) 无 try/except，Agent 恰在 fence 校验后断开时异常直接穿透为 500; handle_supervisor_disconnect 循环内 await v_entry.ws.close(...) 与 await agent.ws.send_str(...) 均无防护，任一 viewer 关闭抛错即中断循环，剩余 viewers 既不关闭也不通知 Agent，接口返回 500; 对照同文件 close_viewers_for_session（server.py:98-115）对每个 viewer 的 close 都做了 best-effort try/except，说明本文件既定风格就是防护单点失败
-    - Impact: Supervisor 在竞态时刻调用 disconnect/quota 时得到含义模糊的 500，且 disconnect 可能只执行一半：部分 viewer 已断、部分仍连在 Agent 上，与 Supervisor 的预期状态不一致，需要额外对账。
-    - Fix: 将 quota 的 send 与 disconnect 循环内的 close/send 改为逐项 best-effort（记录失败 conn_id），处理完所有目标后再统一返回结果；Agent WS 发送失败时返回 503 与 visibility/quota 既有口径一致。
-    - Verification: static
-- [Low][80] src/backend/cbrowser/stream_agent/policy.py:263-291; src/backend/cbrowser/stream_agent/protocol.py:83-92 — LiveCapturePolicyAgent.set_supervisor_quota 只校验正数与 <=max_fps，接受低于 8 FPS 下限的配额，与协议层 [8.0, 30.0] 约束不一致
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_04)
-  - f_backend_stream_gateway_04: protocol.py SupervisorQuotaPayload.validate_quota_cap 明确要求 max_fps_cap 有限且在 [8.0, 30.0]; policy.py set_supervisor_quota 仅拒绝 NaN/inf/<=0，随后 bounded_cap = min(cap_val, self.max_fps)，如 cap=2.0 会被原样接受; reconcile_capture_state Rule 3 以 desired_fps = min(desired, cap) 应用配额，可把帧率压到 min_fps=8.0 的产品下限以下; 当前生产路径只有 Gateway 经协议校验后下发一条，但 set_supervisor_quota 是策略类公开方法，其他调用方（含测试与未来控制面）可绕过协议层约束
-    - Impact: 纵深防御缺口：任一未经协议模型校验的调用即可让捕获帧率跌破 8 FPS 下限，与 StreamAgentConfig/协议宣称的不变量冲突，且不会有任何日志提示越界。
-    - Fix: 在 set_supervisor_quota 中按同一口径拒绝或钳制到 [self.min_fps, self.max_fps]，越界时记录 warning 并说明被拒绝/钳制后的值。
-    - Verification: static
-- [Low][45] src/backend/cbrowser/stream_agent/x11_keymap.py:71-77 — x11_keymap 的 text_room 回退路径在 _spare_keycodes 尚未赋值时可能对 None 求和抛 TypeError
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_05)
-  - f_backend_stream_gateway_05: text_room 补丁：original_room 返回 0（注释称 native evdev 无界）时执行 sum(key not in held for key in keyboard._spare_keycodes); _spare_keycodes 仅在 find_named_spares（_find_spare_keycodes 补丁）或 prebind_with_refresh 的 missing 分支中被赋值；若 SDK 在首次查找备用键位前调用 text_room，该属性为初始值（SDK 侧预计为 None）; 同文件 prebind_with_refresh 对 _spare_keycodes is None 做了显式判空，说明作者意识到该属性可为 None，但 text_room 路径未做同样防护
-    - Impact: 若 SDK 调用时序命中该路径，文本输入房间计算会在 Selkies 输入处理内抛 TypeError，可能中断当次文本键入甚至污染输入处理状态；是否可达取决于 Selkies 2.1.0 内部调用顺序（单元外，未核实），故标 suspected。
-    - Fix: text_room 中先取 spares = keyboard._spare_keycodes，若为 None 直接返回 original_room 的结果（或 0 的无界语义），与 prebind 路径的判空口径一致。
-    - Verification: suspected
-- [Low][50] src/backend/cbrowser/stream_agent/agent.py:1055-1062（close 方法，文件末尾 run_standalone_service 之前） — StreamAgent.close() 只置 _running 并关 Gateway WS，不停心跳与策略后台循环，作为终止手段使用时会泄漏后台任务
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_06)
-  - f_backend_stream_gateway_06: close() 实现仅 self._running=False 与 asyncio.create_task(self._gw_ws.close())，未取消 _heartbeat_task、未调 policy.stop()、未排空 viewer workers 与 detached upstreams; 对照 stop()（同文件）完整执行心跳取消、WS 关闭、_cleanup_all_viewers(detach=False)、_close_all_detached_upstreams、policy.stop(); 心跳循环靠 while self._running 退出但会先睡满当前 heartbeat_interval；policy 的 reconciliation/motion 监督循环无 _running 检查，只靠 stop() 取消
-    - Impact: 若任何嵌入方以 close() 作为最终关闭（其命名与同步签名容易给人此印象），策略循环与 detached upstream 计时器会继续存活并操作已关闭的服务对象；当前仓库内生产路径走 stop()，实际影响取决于单元外调用方，故标 suspected。
-    - Fix: 明确 close() 语义：或删除该方法只保留 stop()，或让其至少同步取消心跳任务并调度 policy.stop()，并在 docstring 写明它不是完整关闭。
-    - Verification: suspected
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_03)
+    - f_backend_stream_gateway_03: handle_supervisor_quota 结尾 await agent.ws.send_str(env.model_dump_json()) 无 try/except，Agent 恰在 fence 校验后断开时异常直接穿透为 500; handle_supervisor_disconnect 循环内 await v_entry.ws.close(...) 与 await agent.ws.send_str(...) 均无防护，任一 viewer 关闭抛错即中断循环，剩余 viewers 既不关闭也不通知 Agent，接口返回 500; 对照同文件 close_viewers_for_session（server.py:98-115）对每个 viewer 的 close 都做了 best-effort try/except，说明本文件既定风格就是防护单点失败
+        - Impact: Supervisor 在竞态时刻调用 disconnect/quota 时得到含义模糊的 500，且 disconnect 可能只执行一半：部分 viewer 已断、部分仍连在 Agent 上，与 Supervisor 的预期状态不一致，需要额外对账。
+        - Fix: 将 quota 的 send 与 disconnect 循环内的 close/send 改为逐项 best-effort（记录失败 conn_id），处理完所有目标后再统一返回结果；Agent WS 发送失败时返回 503 与 visibility/quota 既有口径一致。
+        - Verification: static
+- [Low][80] src/backend/cbrowser/stream_agent/policy.py:263-291; src/backend/cbrowser/stream_agent/protocol.py:83-92 — LiveCapturePolicyAgent.set_supervisor_quota 只校验正数与 \<=max_fps，接受低于 8 FPS 下限的配额，与协议层 [8.0, 30.0] 约束不一致
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_04)
+    - f_backend_stream_gateway_04: protocol.py SupervisorQuotaPayload.validate_quota_cap 明确要求 max_fps_cap 有限且在 [8.0, 30.0]; policy.py set_supervisor_quota 仅拒绝 NaN/inf/\<=0，随后 bounded_cap = min(cap_val, self.max_fps)，如 cap=2.0 会被原样接受; reconcile_capture_state Rule 3 以 desired_fps = min(desired, cap) 应用配额，可把帧率压到 min_fps=8.0 的产品下限以下; 当前生产路径只有 Gateway 经协议校验后下发一条，但 set_supervisor_quota 是策略类公开方法，其他调用方（含测试与未来控制面）可绕过协议层约束
+        - Impact: 纵深防御缺口：任一未经协议模型校验的调用即可让捕获帧率跌破 8 FPS 下限，与 StreamAgentConfig/协议宣称的不变量冲突，且不会有任何日志提示越界。
+        - Fix: 在 set_supervisor_quota 中按同一口径拒绝或钳制到 [self.min_fps, self.max_fps]，越界时记录 warning 并说明被拒绝/钳制后的值。
+        - Verification: static
+- [Low][45] src/backend/cbrowser/stream_agent/x11_keymap.py:71-77 — x11_keymap 的 text_room 回退路径在 \_spare_keycodes 尚未赋值时可能对 None 求和抛 TypeError
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_05)
+    - f_backend_stream_gateway_05: text_room 补丁：original_room 返回 0（注释称 native evdev 无界）时执行 sum(key not in held for key in keyboard.\_spare_keycodes); \_spare_keycodes 仅在 find_named_spares（\_find_spare_keycodes 补丁）或 prebind_with_refresh 的 missing 分支中被赋值；若 SDK 在首次查找备用键位前调用 text_room，该属性为初始值（SDK 侧预计为 None）; 同文件 prebind_with_refresh 对 \_spare_keycodes is None 做了显式判空，说明作者意识到该属性可为 None，但 text_room 路径未做同样防护
+        - Impact: 若 SDK 调用时序命中该路径，文本输入房间计算会在 Selkies 输入处理内抛 TypeError，可能中断当次文本键入甚至污染输入处理状态；是否可达取决于 Selkies 2.1.0 内部调用顺序（单元外，未核实），故标 suspected。
+        - Fix: text_room 中先取 spares = keyboard.\_spare_keycodes，若为 None 直接返回 original_room 的结果（或 0 的无界语义），与 prebind 路径的判空口径一致。
+        - Verification: suspected
+- [Low][50] src/backend/cbrowser/stream_agent/agent.py:1055-1062（close 方法，文件末尾 run_standalone_service 之前） — StreamAgent.close() 只置 \_running 并关 Gateway WS，不停心跳与策略后台循环，作为终止手段使用时会泄漏后台任务
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_06)
+    - f_backend_stream_gateway_06: close() 实现仅 self.\_running=False 与 asyncio.create_task(self.\_gw_ws.close())，未取消 \_heartbeat_task、未调 policy.stop()、未排空 viewer workers 与 detached upstreams; 对照 stop()（同文件）完整执行心跳取消、WS 关闭、\_cleanup_all_viewers(detach=False)、\_close_all_detached_upstreams、policy.stop(); 心跳循环靠 while self.\_running 退出但会先睡满当前 heartbeat_interval；policy 的 reconciliation/motion 监督循环无 \_running 检查，只靠 stop() 取消
+        - Impact: 若任何嵌入方以 close() 作为最终关闭（其命名与同步签名容易给人此印象），策略循环与 detached upstream 计时器会继续存活并操作已关闭的服务对象；当前仓库内生产路径走 stop()，实际影响取决于单元外调用方，故标 suspected。
+        - Fix: 明确 close() 语义：或删除该方法只保留 stop()，或让其至少同步取消心跳任务并调度 policy.stop()，并在 docstring 写明它不是完整关闭。
+        - Verification: suspected
 - [Low][90] src/backend/cbrowser/supervisor/docker_adapter.py:494-510 — X11 permission helper container runs as root with default capabilities, bypassing the hardening every other helper container gets
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_04)
-  - f_backend_supervisor_04: setup_x11_permissions runs the browser image with entrypoint 'chmod', user='0:0', a read-write mount of the profile x11 dir, and remove=True — with no cap_drop, no security_opt no-new-privileges, no read_only rootfs and no name/labels.; By contrast _install_network_policy's helper sets cap_drop=['ALL'], cap_add=['NET_ADMIN'] only, security_opt no-new-privileges, read_only=True and ownership labels; _initialize_cache's helper sets cap_drop=['ALL'] with only DAC_OVERRIDE/FOWNER added and no-new-privileges.
-    - Impact: Defense-in-depth inconsistency: a compromised or unexpected entrypoint path in the pinned browser image would execute with Docker's default capability set as root during every profile start; the unlabelled helper also escapes the orphan-helper ownership audit in _cleanup_orphan_helpers.
-    - Fix: Align setup_x11_permissions with the other helpers: cap_drop=['ALL'], cap_add=['CHOWN','FOWNER','DAC_OVERRIDE'] as needed for chmod, security_opt=['no-new-privileges:true'], read_only=True, and policy/cache-style labels.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_04)
+    - f_backend_supervisor_04: setup_x11_permissions runs the browser image with entrypoint 'chmod', user='0:0', a read-write mount of the profile x11 dir, and remove=True — with no cap_drop, no security_opt no-new-privileges, no read_only rootfs and no name/labels.; By contrast \_install_network_policy's helper sets cap_drop=['ALL'], cap_add=['NET_ADMIN'] only, security_opt no-new-privileges, read_only=True and ownership labels; \_initialize_cache's helper sets cap_drop=['ALL'] with only DAC_OVERRIDE/FOWNER added and no-new-privileges.
+        - Impact: Defense-in-depth inconsistency: a compromised or unexpected entrypoint path in the pinned browser image would execute with Docker's default capability set as root during every profile start; the unlabelled helper also escapes the orphan-helper ownership audit in \_cleanup_orphan_helpers.
+        - Fix: Align setup_x11_permissions with the other helpers: cap_drop=['ALL'], cap_add=['CHOWN','FOWNER','DAC_OVERRIDE'] as needed for chmod, security_opt=['no-new-privileges:true'], read_only=True, and policy/cache-style labels.
+        - Verification: static
 - [Low][85] src/backend/cbrowser/supervisor/docker_adapter.py:210-214 — Every Browser launch recursively revalidates the entire engine cache tree, making start latency grow with cache size
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_05)
-  - f_backend_supervisor_05: _validate_cache_paths iterates `root.rglob('*')` over both engine_cache and geoip_cache and calls PathValidator.validate_safe_path per entry (each doing resolve() plus an ancestor symlink walk).; It is called in __init__, after every ensure_runtime_cache initialization, and again inside start_browser_container (`self._validate_cache_paths()` just before building volumes) — i.e. once per profile start, over a Chromium binary/cache tree that can contain thousands of files.
-    - Impact: Profile start (and every recovery restart) pays an O(files x path-depth) syscall tax that grows with the shared cache; under recovery storms this adds avoidable latency inside the startup path, though it is not a correctness risk.
-    - Fix: Validate cache paths once at construction and after cache initialization only; on the per-start path, validate the two roots without recursion, or cache a validated fingerprint (e.g. root identity + mtime) and skip re-walking unchanged trees.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_05)
+    - f_backend_supervisor_05: \_validate_cache_paths iterates `root.rglob('*')` over both engine_cache and geoip_cache and calls PathValidator.validate_safe_path per entry (each doing resolve() plus an ancestor symlink walk).; It is called in __init__, after every ensure_runtime_cache initialization, and again inside start_browser_container (`self._validate_cache_paths()` just before building volumes) — i.e. once per profile start, over a Chromium binary/cache tree that can contain thousands of files.
+        - Impact: Profile start (and every recovery restart) pays an O(files x path-depth) syscall tax that grows with the shared cache; under recovery storms this adds avoidable latency inside the startup path, though it is not a correctness risk.
+        - Fix: Validate cache paths once at construction and after cache initialization only; on the per-start path, validate the two roots without recursion, or cache a validated fingerprint (e.g. root identity + mtime) and skip re-walking unchanged trees.
+        - Verification: static
 - [Low][75] src/backend/cbrowser/supervisor/docker_adapter.py:1040-1052 — scan_active_containers emits config_version=None for label-less containers, and downstream int(None) conversions abort recovery classification for all profiles in the tick
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_06)
-  - f_backend_supervisor_06: scan_active_containers builds dicts with `'config_version': labels.get('com.cbrowser.config-version')`, which is None when the label is absent (containers pre-dating the label, or partially labelled).; recovery_coordinator._classify_abnormal_exits calls `int(b_c.get('config_version', 1))` — dict.get's default does not apply because the key exists with value None, so int(None) raises TypeError, which is not caught in tick/_classify_abnormal_exits and aborts the whole classification pass (only the runner's generic loop handler catches it).; core.stop_profile has the same pattern: `config_version = int(matching[0]['config_version'])`.; Related brittleness: start_stream_container indexes b_inspect['Config']['Labels']['com.cbrowser.config-version'] directly, raising KeyError instead of DockerSandboxError for a label-less Browser container.
-    - Impact: One legacy or partially labelled container pair can suppress abnormal-exit classification (and hence synthetic exit reporting) for every profile on every tick until it disappears; the failure surfaces only as a generic 'Reconciliation failed' warning with an error_type, hiding the cause.
-    - Fix: Normalize at the source: in scan_active_containers coerce the label to int with a safe default (skip or flag containers whose config-version label is missing/non-numeric), and replace downstream int(...) conversions with a shared tolerant parser that treats None as 'unknown' and skips fencing-sensitive actions for that container.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_06)
+    - f_backend_supervisor_06: scan_active_containers builds dicts with `'config_version': labels.get('com.cbrowser.config-version')`, which is None when the label is absent (containers pre-dating the label, or partially labelled).; recovery_coordinator.\_classify_abnormal_exits calls `int(b_c.get('config_version', 1))` — dict.get's default does not apply because the key exists with value None, so int(None) raises TypeError, which is not caught in tick/\_classify_abnormal_exits and aborts the whole classification pass (only the runner's generic loop handler catches it).; core.stop_profile has the same pattern: `config_version = int(matching[0]['config_version'])`.; Related brittleness: start_stream_container indexes b_inspect['Config']['Labels']['com.cbrowser.config-version'] directly, raising KeyError instead of DockerSandboxError for a label-less Browser container.
+        - Impact: One legacy or partially labelled container pair can suppress abnormal-exit classification (and hence synthetic exit reporting) for every profile on every tick until it disappears; the failure surfaces only as a generic 'Reconciliation failed' warning with an error_type, hiding the cause.
+        - Fix: Normalize at the source: in scan_active_containers coerce the label to int with a safe default (skip or flag containers whose config-version label is missing/non-numeric), and replace downstream int(...) conversions with a shared tolerant parser that treats None as 'unknown' and skips fencing-sensitive actions for that container.
+        - Verification: static
 - [Low][85] src/backend/cbrowser/supervisor/control_server.py:118-160 — Control start endpoint maps lifecycle conflicts to HTTP 500 while the stop endpoint maps its conflict to 409
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_07)
-  - f_backend_supervisor_07: start_profile catches generic Exception from core.start_profile and raises HTTP 500 'Runtime start failed'; core.start_profile raises RuntimeError for client-visible conflicts: 'API running intent is required before starting a runtime', 'Automatic retries exhausted; manual retry required', 'Existing runtime must finish cleanup before a new start'.; stop_profile in the same file maps ValueError to 409 'Conflicting lifecycle operation', showing the API distinguishes conflicts elsewhere.; Only PortPoolExhaustedError gets a precise mapping (503) in the start endpoint.
-    - Impact: API callers cannot distinguish 'retry later / user action needed' (blocked, wrong intent, cleanup in progress) from a genuine supervisor fault; monitoring alerting on 500s will page on routine lifecycle conflicts.
-    - Fix: Introduce typed lifecycle-conflict errors in core (or match on the existing RuntimeError categories) and map them to 409 in the start endpoint, reserving 500 for unexpected failures; keep the error detail free of internals as today.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_07)
+    - f_backend_supervisor_07: start_profile catches generic Exception from core.start_profile and raises HTTP 500 'Runtime start failed'; core.start_profile raises RuntimeError for client-visible conflicts: 'API running intent is required before starting a runtime', 'Automatic retries exhausted; manual retry required', 'Existing runtime must finish cleanup before a new start'.; stop_profile in the same file maps ValueError to 409 'Conflicting lifecycle operation', showing the API distinguishes conflicts elsewhere.; Only PortPoolExhaustedError gets a precise mapping (503) in the start endpoint.
+        - Impact: API callers cannot distinguish 'retry later / user action needed' (blocked, wrong intent, cleanup in progress) from a genuine supervisor fault; monitoring alerting on 500s will page on routine lifecycle conflicts.
+        - Fix: Introduce typed lifecycle-conflict errors in core (or match on the existing RuntimeError categories) and map them to 409 in the start endpoint, reserving 500 for unexpected failures; keep the error detail free of internals as today.
+        - Verification: static
 - [Low][80] src/backend/cbrowser/supervisor/artifact_forwarder.py:262-281 — Processed download-event IDs are only pruned for instances seen in the latest scan, so the persisted cursor set grows without bound across instance churn
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_08)
-  - f_backend_supervisor_08: forward_pending builds `present` only from event files currently on disk and calls _prune(present) solely when something changed; _prune intersects processed IDs per (profile, instance) present in `present`.; Instances whose event files have all been archived/deleted by other paths never appear in `present`, so their processed ID sets are never intersected away; _save_processed rewrites the whole structure to download_cursors.json on every change.; Each runtime instance contributes a fresh instance_id key (inst_<uuid12> per start in core.start_profile), so normal restart churn accumulates entries monotonically.
-    - Impact: Long-lived supervisors accumulate stale per-instance processed sets in memory and in the 0600 cursor file, making every save O(total history) and slowly bloating a file on the forwarding hot path; functionally delivery stays correct.
-    - Fix: Prune against the instances that exist on disk (events_root profile dirs / instance subdirs) rather than only those with files in this pass, or drop processed entries for instances absent from the events tree for a full pass, and skip _save_processed when the serialized payload is unchanged.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_08)
+    - f_backend_supervisor_08: forward_pending builds `present` only from event files currently on disk and calls \_prune(present) solely when something changed; \_prune intersects processed IDs per (profile, instance) present in `present`.; Instances whose event files have all been archived/deleted by other paths never appear in `present`, so their processed ID sets are never intersected away; _save_processed rewrites the whole structure to download_cursors.json on every change.; Each runtime instance contributes a fresh instance_id key (inst_<uuid12> per start in core.start_profile), so normal restart churn accumulates entries monotonically.
+        - Impact: Long-lived supervisors accumulate stale per-instance processed sets in memory and in the 0600 cursor file, making every save O(total history) and slowly bloating a file on the forwarding hot path; functionally delivery stays correct.
+        - Fix: Prune against the instances that exist on disk (events_root profile dirs / instance subdirs) rather than only those with files in this pass, or drop processed entries for instances absent from the events tree for a full pass, and skip \_save_processed when the serialized payload is unchanged.
+        - Verification: static
 - [Low][80] src/backend/cbrowser/supervisor/network_policy.py:230-259 — apply_policy discards iptables-restore diagnostics and can leave a half-installed policy (IPv4 applied, IPv6 failed) with no rollback or family identification
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_09)
-  - f_backend_supervisor_09: apply_policy runs iptables-restore then ip6tables-restore with capture_output=True and, on non-zero exit, raises RuntimeError('Network filter installation failed') without including stderr or which family failed.; The IPv4 ruleset remains installed in the namespace when the IPv6 restore fails; nothing removes it (fail-closed for traffic, but the namespace state no longer matches either the old or the intended policy).; main() maps the failure to exit code 3 with only error_type logged, so operators cannot tell a bad rule from a missing binary.
-    - Impact: Debuggability and atomicity gap in a security-critical installer: partial installs are safe-by-default here (chains default DROP) but a failed helper leaves an undocumented mixed policy, and the discarded stderr forces reproduction under a debugger to diagnose rule errors.
-    - Fix: Include the failing tool name and a truncated stderr in the raised error/log, and on second-family failure attempt a best-effort flush/restore of the first family (or document explicitly why leaving the DROP-default IPv4 ruleset is the intended terminal state).
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_09)
+    - f_backend_supervisor_09: apply_policy runs iptables-restore then ip6tables-restore with capture_output=True and, on non-zero exit, raises RuntimeError('Network filter installation failed') without including stderr or which family failed.; The IPv4 ruleset remains installed in the namespace when the IPv6 restore fails; nothing removes it (fail-closed for traffic, but the namespace state no longer matches either the old or the intended policy).; main() maps the failure to exit code 3 with only error_type logged, so operators cannot tell a bad rule from a missing binary.
+        - Impact: Debuggability and atomicity gap in a security-critical installer: partial installs are safe-by-default here (chains default DROP) but a failed helper leaves an undocumented mixed policy, and the discarded stderr forces reproduction under a debugger to diagnose rule errors.
+        - Fix: Include the failing tool name and a truncated stderr in the raised error/log, and on second-family failure attempt a best-effort flush/restore of the first family (or document explicitly why leaving the DROP-default IPv4 ruleset is the intended terminal state).
+        - Verification: static
 - [Low][90] src/backend/cbrowser/supervisor/recovery_coordinator.py:520-540 — Chromium singleton-lock filename list is maintained in three places; recovery hardcodes its own copy instead of importing SINGLETON_LOCK_NAMES
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_10)
-  - f_backend_supervisor_10: volume_spec.py defines SINGLETON_LOCK_NAMES = ('SingletonLock', 'SingletonCookie', 'SingletonSocket') and docker_adapter.start_browser_container imports and uses it before launching a new Browser.; recovery_coordinator._execute_retry repeats the literal tuple ('SingletonLock', 'SingletonCookie', 'SingletonSocket') inline when clearing stale locks before a recovery start.; core.py does not clear the locks itself but relies on these two paths, so the invariant 'locks cleared before every Browser start' depends on both copies staying in sync.
-    - Impact: If Chromium introduces or renames a singleton artifact, updating the shared constant fixes the normal start path while the recovery path silently keeps clearing the old set — precisely the path exercised after crashes, where a stale lock blocks restart.
-    - Fix: Import SINGLETON_LOCK_NAMES from cbrowser.supervisor.volume_spec in recovery_coordinator and delete the inline tuple.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_10)
+    - f_backend_supervisor_10: volume_spec.py defines SINGLETON_LOCK_NAMES = ('SingletonLock', 'SingletonCookie', 'SingletonSocket') and docker_adapter.start_browser_container imports and uses it before launching a new Browser.; recovery_coordinator.\_execute_retry repeats the literal tuple ('SingletonLock', 'SingletonCookie', 'SingletonSocket') inline when clearing stale locks before a recovery start.; core.py does not clear the locks itself but relies on these two paths, so the invariant 'locks cleared before every Browser start' depends on both copies staying in sync.
+        - Impact: If Chromium introduces or renames a singleton artifact, updating the shared constant fixes the normal start path while the recovery path silently keeps clearing the old set — precisely the path exercised after crashes, where a stale lock blocks restart.
+        - Fix: Import SINGLETON_LOCK_NAMES from cbrowser.supervisor.volume_spec in recovery_coordinator and delete the inline tuple.
+        - Verification: static
 - [Low][60] src/backend/tests/test_api.py:748 — Settings tests use a full-format license-key-shaped literal as fixture data in a public repository
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_03)
-  - f_backend_tests_03: A 35-character literal in the production CloakBrowser license-key format (cb_ prefix followed by hex) is used as the test license key at src/backend/tests/test_api.py:748 (test_get_settings_masks_key), again as the `key` value in test_put_settings_persists_and_hot_applies (~:761) and test_put_settings_clears_key (~:774); the masking assertion also embeds that same literal's head and tail fragments as the expected masked string.; Statically the literal is indistinguishable from a real issued key: it is not an obvious placeholder (not all-same-character, not 'test'/'example' shaped), unlike the clearly fake 'cb_test' and 'cb_x' values used elsewhere in the suite.; This is a public/open repository, so anything committed here is published; the value itself is deliberately not reproduced in this finding.
-    - Impact: If the literal is a real license key, it is a leaked credential in git history: anyone can use it until revoked, and history rewriting would be needed to remove it. If it is synthetic, it still trains readers to treat real-format keys as acceptable test data.
-    - Fix: Replace the literal with an obviously synthetic value of the same shape class (e.g. a repeated-pattern fake that still exercises the masking positions), and if the current value was ever a real key, rotate/revoke it and treat the history copy as exposed.
-    - Verification: suspected
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_03)
+    - f_backend_tests_03: A 35-character literal in the production CloakBrowser license-key format (cb\_ prefix followed by hex) is used as the test license key at src/backend/tests/test_api.py:748 (test_get_settings_masks_key), again as the `key` value in test_put_settings_persists_and_hot_applies (~:761) and test_put_settings_clears_key (~:774); the masking assertion also embeds that same literal's head and tail fragments as the expected masked string.; Statically the literal is indistinguishable from a real issued key: it is not an obvious placeholder (not all-same-character, not 'test'/'example' shaped), unlike the clearly fake 'cb_test' and 'cb_x' values used elsewhere in the suite.; This is a public/open repository, so anything committed here is published; the value itself is deliberately not reproduced in this finding.
+        - Impact: If the literal is a real license key, it is a leaked credential in git history: anyone can use it until revoked, and history rewriting would be needed to remove it. If it is synthetic, it still trains readers to treat real-format keys as acceptable test data.
+        - Fix: Replace the literal with an obviously synthetic value of the same shape class (e.g. a repeated-pattern fake that still exercises the masking positions), and if the current value was ever a real key, rotate/revoke it and treat the history copy as exposed.
+        - Verification: suspected
 - [Low][90] src/backend/tests/test_browser_manager.py:216 — Launch-args tests perform the production append inside the test body instead of exercising BrowserManager.launch
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_04)
-  - f_backend_tests_04: src/backend/tests/test_browser_manager.py:216-244: test_launch_args_appended_to_fingerprint_args and its empty/None variants build args via _mgr._build_fingerprint_args(profile) and then execute `args += profile.get('launch_args') or []` in the test itself before asserting membership — the behaviour under test is the test's own line.; The production behaviour lives in BrowserManager.launch (src/backend/browser_manager.py:505-528): it rejects manager-owned debugging flags from user launch_args, builds fingerprint args, and only then appends user args. The dedicated tests bypass both the rejection filter and the ordering.; Real-path coverage exists only incidentally: test_launch_passes_license_config checks one flag's ordering through launch(), and test_launch_rejects_user_debugging_flags checks rejection — neither is the test that claims to cover launch_args appending.
-    - Impact: If launch() stopped appending user launch_args, appended them before the fingerprint args (breaking override semantics), or dropped the debugging-flag filter, the three tests named for this behaviour would still pass; the coverage signal for a fingerprint/stealth-relevant code path is illusory.
-    - Fix: Drive these cases through manager.launch() with launch_persistent_context_async mocked (as the neighbouring launch tests already do) and assert on the final args list passed to the launcher, including ordering after fingerprint args and rejection of --remote-debugging-* flags.
-    - Verification: static
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_04)
+    - f_backend_tests_04: src/backend/tests/test_browser_manager.py:216-244: test_launch_args_appended_to_fingerprint_args and its empty/None variants build args via \_mgr.\_build_fingerprint_args(profile) and then execute `args += profile.get('launch_args') or []` in the test itself before asserting membership — the behaviour under test is the test's own line.; The production behaviour lives in BrowserManager.launch (src/backend/browser_manager.py:505-528): it rejects manager-owned debugging flags from user launch_args, builds fingerprint args, and only then appends user args. The dedicated tests bypass both the rejection filter and the ordering.; Real-path coverage exists only incidentally: test_launch_passes_license_config checks one flag's ordering through launch(), and test_launch_rejects_user_debugging_flags checks rejection — neither is the test that claims to cover launch_args appending.
+        - Impact: If launch() stopped appending user launch_args, appended them before the fingerprint args (breaking override semantics), or dropped the debugging-flag filter, the three tests named for this behaviour would still pass; the coverage signal for a fingerprint/stealth-relevant code path is illusory.
+        - Fix: Drive these cases through manager.launch() with launch_persistent_context_async mocked (as the neighbouring launch tests already do) and assert on the final args list passed to the launcher, including ordering after fingerprint args and rejection of --remote-debugging-\* flags.
+        - Verification: static
 - [Low][95] src/backend/tests/test_auth.py:133 — test_logout_clears_cookie never verifies the cookie is actually cleared
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_05)
-  - f_backend_tests_05: src/backend/tests/test_auth.py:133-139 logs in, posts /api/auth/logout, and asserts only status 200 and {"ok": True}; it never inspects the Set-Cookie header, the client's cookie jar, or a follow-up authenticated request.; The neighbouring test_login_correct_sets_cookie (test_auth.py:124-128) does assert the cookie exists in resp.cookies, so the asymmetric gap is specific to logout.
-    - Impact: A logout regression that returns ok without expiring the auth_token cookie — leaving the session fully valid — would pass this test despite its name claiming the opposite.
-    - Fix: After logout, assert the auth_token cookie is gone/expired in the response (or that a subsequent GET /api/profiles with the previously set cookie returns 401 while AUTH_TOKEN is set).
-    - Verification: static
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_05)
+    - f_backend_tests_05: src/backend/tests/test_auth.py:133-139 logs in, posts /api/auth/logout, and asserts only status 200 and {"ok": True}; it never inspects the Set-Cookie header, the client's cookie jar, or a follow-up authenticated request.; The neighbouring test_login_correct_sets_cookie (test_auth.py:124-128) does assert the cookie exists in resp.cookies, so the asymmetric gap is specific to logout.
+        - Impact: A logout regression that returns ok without expiring the auth_token cookie — leaving the session fully valid — would pass this test despite its name claiming the opposite.
+        - Fix: After logout, assert the auth_token cookie is gone/expired in the response (or that a subsequent GET /api/profiles with the previously set cookie returns 401 while AUTH_TOKEN is set).
+        - Verification: static
 - [Low][75] schemas/runtime/supervisor_protocol.json — Exported protocol schemas are undiscriminated anyOf unions, so validation cannot distinguish message types
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_07)
-  - f_contracts_deploy_07: scripts/export_supervisor_protocol.py (and the sibling exporters) generate schemas/runtime/supervisor_protocol.json as a flat anyOf union of all message models with no discriminator field.; In schemas/runtime/supervisor_protocol.json, ResetBlockedRequest carries only profile_id — a payload that also satisfies ProfileRuntimeStatus-shaped and StartProfileRequest-shaped members of the union, so schema validation alone cannot determine which message type a payload is.; The same anyOf-union shape is used in schemas/runtime/agent_protocol.json and schemas/stream/agent_protocol.json.
-    - Impact: Consumers validating protocol messages against these exported schemas get weaker guarantees than the pydantic models provide in-process: structurally ambiguous payloads validate against the wrong message type, so the exported contract cannot catch misrouted or malformed messages at a service boundary.
-    - Fix: Add a discriminating field (e.g. a required literal `type`/`kind` per message) or export per-message schemas keyed by message name, so validators can reject cross-type payloads instead of accepting anything matching any member.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_07)
+    - f_contracts_deploy_07: scripts/export_supervisor_protocol.py (and the sibling exporters) generate schemas/runtime/supervisor_protocol.json as a flat anyOf union of all message models with no discriminator field.; In schemas/runtime/supervisor_protocol.json, ResetBlockedRequest carries only profile_id — a payload that also satisfies ProfileRuntimeStatus-shaped and StartProfileRequest-shaped members of the union, so schema validation alone cannot determine which message type a payload is.; The same anyOf-union shape is used in schemas/runtime/agent_protocol.json and schemas/stream/agent_protocol.json.
+        - Impact: Consumers validating protocol messages against these exported schemas get weaker guarantees than the pydantic models provide in-process: structurally ambiguous payloads validate against the wrong message type, so the exported contract cannot catch misrouted or malformed messages at a service boundary.
+        - Fix: Add a discriminating field (e.g. a required literal `type`/`kind` per message) or export per-message schemas keyed by message name, so validators can reject cross-type payloads instead of accepting anything matching any member.
+        - Verification: static
 - [Low][90] schemas/runtime/supervisor_protocol.json — Protocol schema versioning is inconsistent: runtime agent schema has a version field, supervisor and stream schemas have none
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_08)
-  - f_contracts_deploy_08: schemas/runtime/agent_protocol.json top level contains `"version": "2.0.0"` (verified by grep).; The same grep finds no version field at the top level of schemas/runtime/supervisor_protocol.json or schemas/stream/agent_protocol.json — the three exporters (scripts/export_runtime_agent_protocol.py, export_supervisor_protocol.py, export_stream_protocol.py) do not emit a consistent envelope.
-    - Impact: Tooling that versions or negotiates protocol compatibility cannot treat the three exported contracts uniformly: one carries a version, two carry none, so consumers must special-case which schema they are reading before they can even check compatibility.
-    - Fix: Make all three protocol exporters emit the same top-level envelope (including a version field sourced from the same constant), and regenerate the three schema files.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_08)
+    - f_contracts_deploy_08: schemas/runtime/agent_protocol.json top level contains `"version": "2.0.0"` (verified by grep).; The same grep finds no version field at the top level of schemas/runtime/supervisor_protocol.json or schemas/stream/agent_protocol.json — the three exporters (scripts/export_runtime_agent_protocol.py, export_supervisor_protocol.py, export_stream_protocol.py) do not emit a consistent envelope.
+        - Impact: Tooling that versions or negotiates protocol compatibility cannot treat the three exported contracts uniformly: one carries a version, two carry none, so consumers must special-case which schema they are reading before they can even check compatibility.
+        - Fix: Make all three protocol exporters emit the same top-level envelope (including a version field sourced from the same constant), and regenerate the three schema files.
+        - Verification: static
 - [Low][95] schemas/openapi/cbrowser_internal.json — Internal OpenAPI defines per-service bearer schemes that nothing uses: all operations collapse to one generic serviceBearer
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_09)
-  - f_contracts_deploy_09: schemas/openapi/cbrowser_internal.json defines three bearer security schemes in components: serviceBearer, SupervisorServiceBearer, and GatewayServiceBearer (one occurrence each — their definitions).; All 14 security references across the internal operations point at the generic serviceBearer; SupervisorServiceBearer and GatewayServiceBearer are referenced zero times (verified by counting occurrences in the file).
-    - Impact: The internal API contract suggests per-service credentials (a supervisor token distinct from a gateway token), but as exported, any holder of the single generic service bearer satisfies every internal operation — the contract overstates the identity separation that actually exists, and generated clients/servers will not enforce per-service identity.
-    - Fix: Either wire each internal operation to the scheme matching the service identity it expects (supervisor vs gateway), or delete the two unused schemes so the contract honestly states that one shared bearer identity is used.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_09)
+    - f_contracts_deploy_09: schemas/openapi/cbrowser_internal.json defines three bearer security schemes in components: serviceBearer, SupervisorServiceBearer, and GatewayServiceBearer (one occurrence each — their definitions).; All 14 security references across the internal operations point at the generic serviceBearer; SupervisorServiceBearer and GatewayServiceBearer are referenced zero times (verified by counting occurrences in the file).
+        - Impact: The internal API contract suggests per-service credentials (a supervisor token distinct from a gateway token), but as exported, any holder of the single generic service bearer satisfies every internal operation — the contract overstates the identity separation that actually exists, and generated clients/servers will not enforce per-service identity.
+        - Fix: Either wire each internal operation to the scheme matching the service identity it expects (supervisor vs gateway), or delete the two unused schemes so the contract honestly states that one shared bearer identity is used.
+        - Verification: static
 - [Low][80] schemas/openapi/cbrowser_v1.json — v1 OpenAPI leaves profile runtime states as bare strings while the supervisor protocol enums the same fields
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_10)
-  - f_contracts_deploy_10: In schemas/openapi/cbrowser_v1.json, ProfileRuntimeResponse's desired_state and observed_state are plain strings with no enum constraint.; schemas/runtime/supervisor_protocol.json models the same lifecycle states as enums for the supervisor protocol, so the vocabulary exists in the contract set but is not applied at the v1 API surface.
-    - Impact: v1 API consumers cannot rely on a closed set of runtime states: any string is contract-valid, so client code must defensively handle unknown states that the internal protocol would have rejected, and state-vocabulary drift between the API and the supervisor protocol will not be caught by schema checks.
-    - Fix: Export desired_state/observed_state in cbrowser_v1.json with the same enum used by the supervisor protocol (generated from the shared model), so v1 clients get the closed state vocabulary.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_10)
+    - f_contracts_deploy_10: In schemas/openapi/cbrowser_v1.json, ProfileRuntimeResponse's desired_state and observed_state are plain strings with no enum constraint.; schemas/runtime/supervisor_protocol.json models the same lifecycle states as enums for the supervisor protocol, so the vocabulary exists in the contract set but is not applied at the v1 API surface.
+        - Impact: v1 API consumers cannot rely on a closed set of runtime states: any string is contract-valid, so client code must defensively handle unknown states that the internal protocol would have rejected, and state-vocabulary drift between the API and the supervisor protocol will not be caught by schema checks.
+        - Fix: Export desired_state/observed_state in cbrowser_v1.json with the same enum used by the supervisor protocol (generated from the shared model), so v1 clients get the closed state vocabulary.
+        - Verification: static
 - [Low][95] .env.example — Environment template is duplicated byte-for-byte at repo root and config/ with no sync mechanism
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_11)
-  - f_contracts_deploy_11: .env.example and config/.env.example are byte-identical today: both 26 lines, identical MD5 (f264a87c…) — verified by checksum, not just visual comparison.; Nothing in this unit (no script in scripts/, no gate in run_gates.sh) checks that the two copies stay in sync.
-    - Impact: Two independently editable copies of the environment template will eventually drift: a variable added or a warning edited in one copy silently fails to reach users of the other, and the AUTH_TOKEN wording (see f_contracts_deploy_03) is exactly the kind of text that gets fixed in one place only.
-    - Fix: Keep one canonical template and generate or symlink the other, or add a trivial equality check to run_gates.sh; alternatively document which copy each consumer reads and delete the unused one.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_11)
+    - f_contracts_deploy_11: .env.example and config/.env.example are byte-identical today: both 26 lines, identical MD5 (f264a87c…) — verified by checksum, not just visual comparison.; Nothing in this unit (no script in scripts/, no gate in run_gates.sh) checks that the two copies stay in sync.
+        - Impact: Two independently editable copies of the environment template will eventually drift: a variable added or a warning edited in one copy silently fails to reach users of the other, and the AUTH_TOKEN wording (see f_contracts_deploy_03) is exactly the kind of text that gets fixed in one place only.
+        - Fix: Keep one canonical template and generate or symlink the other, or add a trivial equality check to run_gates.sh; alternatively document which copy each consumer reads and delete the unused one.
+        - Verification: static
 - [Low][85] config/docker/stream_runtime/Dockerfile — Stream runtime production image ships a full build toolchain and -dev packages
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_12)
-  - f_contracts_deploy_12: config/docker/stream_runtime/Dockerfile installs build-essential and multiple -dev packages into the final (only) stage — there is no multi-stage split separating build tooling from the runtime image.; The same Dockerfile both uses an apt cache mount and runs `rm -rf /var/lib/apt/lists/*`, a belt-and-braces combination that suggests the layer hygiene was not thought through.; Contrast: the browser/gateway/supervisor runtime Dockerfiles in this unit do not carry a compiler toolchain in the final image.
-    - Impact: The production stream image is larger and carries a full compiler toolchain and development headers — unnecessary attack surface (a compromised service can compile exploit code in-place) and slower pulls/deploys for every stream instance.
-    - Fix: Split the stream image into a builder stage (toolchain + -dev packages, compile native deps into wheels) and a runtime stage that copies only the built artifacts and runtime libraries.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_12)
+    - f_contracts_deploy_12: config/docker/stream_runtime/Dockerfile installs build-essential and multiple -dev packages into the final (only) stage — there is no multi-stage split separating build tooling from the runtime image.; The same Dockerfile both uses an apt cache mount and runs `rm -rf /var/lib/apt/lists/*`, a belt-and-braces combination that suggests the layer hygiene was not thought through.; Contrast: the browser/gateway/supervisor runtime Dockerfiles in this unit do not carry a compiler toolchain in the final image.
+        - Impact: The production stream image is larger and carries a full compiler toolchain and development headers — unnecessary attack surface (a compromised service can compile exploit code in-place) and slower pulls/deploys for every stream instance.
+        - Fix: Split the stream image into a builder stage (toolchain + -dev packages, compile native deps into wheels) and a runtime stage that copies only the built artifacts and runtime libraries.
+        - Verification: static
 - [Low][90] docs/tasks/t009_v2_full_acceptance/task.md:29,71 — t009 AC-005 仍要求验证已删除的 coturn/凭证切换，AC 正文未按其自注改写
-  - Sources: bundle_local_docs_current.md (f_docs_current_04)
-  - f_docs_current_04: docs/tasks/t009_v2_full_acceptance/task.md:29 AC-005：『通过真实本机/容器网络验证UDP映射、候选、coturn UDP/TCP/TLS和relay-to-relay凭证切换……』; 同文件:71 上下文自注：『AC-005中coturn与凭证切换相关验证按t015结论改写』，且 handoff.md:29 亦记『AC-005 的 coturn/凭证切换项待 t015 结论后改写』。; t015 已收尾：ADR 013 删除 coturn 与 TURN 轮换，specs_index 显示 webrtc_remote_display 已由 t015 于 2026-11-02T23:30 更新；但 AC-005 正文至今未改写。
-    - Impact: t009 是全量验收 task，其 AC 是硬门禁；按现文，验收要求验证一个已不存在的组件（coturn 已删、无凭证可切换），AC-005 字面不可执行，执行期必然临时改口径，削弱验收契约的权威性。
-    - Fix: 按 ADR 013/t015 结论改写 AC-005：删除 coturn UDP/TCP/TLS 与 relay-to-relay 凭证切换项，替换为同机直连拓扑下的 UDP mux 映射、host 候选与直连媒体验证项。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_04)
+    - f_docs_current_04: docs/tasks/t009_v2_full_acceptance/task.md:29 AC-005：『通过真实本机/容器网络验证UDP映射、候选、coturn UDP/TCP/TLS和relay-to-relay凭证切换……』; 同文件:71 上下文自注：『AC-005中coturn与凭证切换相关验证按t015结论改写』，且 handoff.md:29 亦记『AC-005 的 coturn/凭证切换项待 t015 结论后改写』。; t015 已收尾：ADR 013 删除 coturn 与 TURN 轮换，specs_index 显示 webrtc_remote_display 已由 t015 于 2026-11-02T23:30 更新；但 AC-005 正文至今未改写。
+        - Impact: t009 是全量验收 task，其 AC 是硬门禁；按现文，验收要求验证一个已不存在的组件（coturn 已删、无凭证可切换），AC-005 字面不可执行，执行期必然临时改口径，削弱验收契约的权威性。
+        - Fix: 按 ADR 013/t015 结论改写 AC-005：删除 coturn UDP/TCP/TLS 与 relay-to-relay 凭证切换项，替换为同机直连拓扑下的 UDP mux 映射、host 候选与直连媒体验证项。
+        - Verification: static
 - [Low][82] docs/v2_architecture_plan.md:§3 固定常驻服务清单; §7.5 内部协议边界表; §10.4–10.6; §16 安全与网络矩阵; §19.4 — v2_architecture_plan.md 未记录 ADR 013 修订：正文仍以 coturn/TURN 轮换为现行设计且无替代标注
-  - Sources: bundle_local_docs_current.md (f_docs_current_05)
-  - f_docs_current_05: 文首修订节止于 2026-11-02 剪贴板决定（ADR 012），无 ADR 013（同日稍晚、同属架构级删除）的修订条目；2026-11-01 修订节反而还写『TURN 轮换：future 校验 generation；current 过期 fail-closed』等保留 TURN 的修订。; §3 固定常驻服务仍列 coturn；§7.5 协议表『Agent 注册与信令隧道』职责仍含『TURN 配置、配额、ICE 轮换』；§10.4–10.6 仍为 coturn 部署、RtcConfigService 与 TURN 凭证 24h/12h 刷新的现行设计；§16 矩阵仍有『Stream Runtime → coturn』行；§19.4 验收仍含『coturn、ICE 和 UDP 端口映射通过真实网络测试』。; 同文对其他被替代内容有明确标注先例：§8.4 与 §19.3 均有『已被 2026-11-02 用户决定替代』的显式注记；2026-11-01 修订节亦声明『当前实现细节以 docs/blueprint/ 与 docs/specs/ 为准』。上述 TURN 章节无任何同类标注。
-    - Impact: 该文标题为『最终技术架构修订与实施方案』，新读者或后续 task 按 §3/§10/§16 落地会重新引入 coturn 与 TURN 轮换，与 ADR 013 的删除决定相悖；标注不一致使『哪些章节已作废』只能靠读者自行比对 blueprint 才能判断。
-    - Fix: 在文首补 ADR 013 修订条目，并给 §3 清单、§7.5 表、§10.4–10.6、§16 矩阵行、§19.4 相关项加与 §8.4/§19.3 同格式的『已被替代』标注（或整段移入历史原文区）。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_05)
+    - f_docs_current_05: 文首修订节止于 2026-11-02 剪贴板决定（ADR 012），无 ADR 013（同日稍晚、同属架构级删除）的修订条目；2026-11-01 修订节反而还写『TURN 轮换：future 校验 generation；current 过期 fail-closed』等保留 TURN 的修订。; §3 固定常驻服务仍列 coturn；§7.5 协议表『Agent 注册与信令隧道』职责仍含『TURN 配置、配额、ICE 轮换』；§10.4–10.6 仍为 coturn 部署、RtcConfigService 与 TURN 凭证 24h/12h 刷新的现行设计；§16 矩阵仍有『Stream Runtime → coturn』行；§19.4 验收仍含『coturn、ICE 和 UDP 端口映射通过真实网络测试』。; 同文对其他被替代内容有明确标注先例：§8.4 与 §19.3 均有『已被 2026-11-02 用户决定替代』的显式注记；2026-11-01 修订节亦声明『当前实现细节以 docs/blueprint/ 与 docs/specs/ 为准』。上述 TURN 章节无任何同类标注。
+        - Impact: 该文标题为『最终技术架构修订与实施方案』，新读者或后续 task 按 §3/§10/§16 落地会重新引入 coturn 与 TURN 轮换，与 ADR 013 的删除决定相悖；标注不一致使『哪些章节已作废』只能靠读者自行比对 blueprint 才能判断。
+        - Fix: 在文首补 ADR 013 修订条目，并给 §3 清单、§7.5 表、§10.4–10.6、§16 矩阵行、§19.4 相关项加与 §8.4/§19.3 同格式的『已被替代』标注（或整段移入历史原文区）。
+        - Verification: static
 - [Low][88] docs/blueprint/architecture.md:19,31 — blueprint/architecture.md 两处表述与现状自相矛盾（t011 移除旧 UI、Selkies 凭证轮换依赖行）
-  - Sources: bundle_local_docs_current.md (f_docs_current_06)
-  - f_docs_current_06: architecture.md 已交付节称『旧 UI 组件在 t011 移除』；但 t011 已被合并入 t010（docs/tasks_index.json 中 t010 条目 note 与 docs/handoff.md:30『t010 已合并原 t011』），任务清单中已无独立 t011。; v1 前端树实际由 t017 删除：docs/blueprint/frontend.md 记载 t017 前端收敛删 v1 死树，docs/specs_index.md 显示 profile_management 经 t017 更新于 2026-11-03T05:15。; 同文件 §2 依赖矩阵 Selkies 行仍述『同 PC 凭证轮换依赖显式私有接口适配器（d010, d012），该机制属于固定 SDK 版本下的内部维护约束』；而同文件已交付节自述 t015（ADR 013）已删除 TURN 凭证轮换与 ICE 代次接管——凭证轮换已不存在，所谓依赖无从谈起。
-    - Impact: architecture.md 是全仓架构总览，两处残留会让读者误判旧 UI 的移除归属与当前媒体链路的维护约束，尤其 Selkies 行会把已删除的私有 ABI 适配机制继续当作现行内部约束。
-    - Fix: 改写两处：旧 UI 移除归属改为 t017（并注明 t011 已并入 t010）；Selkies 依赖行删除凭证轮换/私有接口适配器表述，改为同机直连口径并指向 ADR 013/d026。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_06)
+    - f_docs_current_06: architecture.md 已交付节称『旧 UI 组件在 t011 移除』；但 t011 已被合并入 t010（docs/tasks_index.json 中 t010 条目 note 与 docs/handoff.md:30『t010 已合并原 t011』），任务清单中已无独立 t011。; v1 前端树实际由 t017 删除：docs/blueprint/frontend.md 记载 t017 前端收敛删 v1 死树，docs/specs_index.md 显示 profile_management 经 t017 更新于 2026-11-03T05:15。; 同文件 §2 依赖矩阵 Selkies 行仍述『同 PC 凭证轮换依赖显式私有接口适配器（d010, d012），该机制属于固定 SDK 版本下的内部维护约束』；而同文件已交付节自述 t015（ADR 013）已删除 TURN 凭证轮换与 ICE 代次接管——凭证轮换已不存在，所谓依赖无从谈起。
+        - Impact: architecture.md 是全仓架构总览，两处残留会让读者误判旧 UI 的移除归属与当前媒体链路的维护约束，尤其 Selkies 行会把已删除的私有 ABI 适配机制继续当作现行内部约束。
+        - Fix: 改写两处：旧 UI 移除归属改为 t017（并注明 t011 已并入 t010）；Selkies 依赖行删除凭证轮换/私有接口适配器表述，改为同机直连口径并指向 ADR 013/d026。
+        - Verification: static
 - [Low][88] docs/specs/webrtc_remote_display.md:26 — specs/webrtc_remote_display.md 仍称适配层处理 RTC 配置，与 frontend.md 的现行职责矛盾
-  - Sources: bundle_local_docs_current.md (f_docs_current_07)
-  - f_docs_current_07: docs/specs/webrtc_remote_display.md:26（前端会话节）：『薄适配层只改写信令地址、处理 Gateway 控制帧与 RTC 配置、锁定远端尺寸/DPR……』; docs/blueprint/frontend.md:25（现行职责）：『媒体为同机直连，适配层不再处理 RTC/TURN 配置或 ICE restart。』; specs_index.md 显示 webrtc_remote_display 已由 t015 于 2026-11-02T23:30 更新，但该句未随 ADR 013 一并修订。
-    - Impact: spec 是生效契约（specs_index 约定在表即生效）；按 spec 字面，验收会要求适配层处理已被删除的 RTC 配置下发，与实现与 blueprint 均不符，产生假验收项。
-    - Fix: 删除该句中『与 RTC 配置』或改写为与 frontend.md:25 一致的职责描述（信令改写、Gateway 控制帧、尺寸/DPR 锁定）。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_07)
+    - f_docs_current_07: docs/specs/webrtc_remote_display.md:26（前端会话节）：『薄适配层只改写信令地址、处理 Gateway 控制帧与 RTC 配置、锁定远端尺寸/DPR……』; docs/blueprint/frontend.md:25（现行职责）：『媒体为同机直连，适配层不再处理 RTC/TURN 配置或 ICE restart。』; specs_index.md 显示 webrtc_remote_display 已由 t015 于 2026-11-02T23:30 更新，但该句未随 ADR 013 一并修订。
+        - Impact: spec 是生效契约（specs_index 约定在表即生效）；按 spec 字面，验收会要求适配层处理已被删除的 RTC 配置下发，与实现与 blueprint 均不符，产生假验收项。
+        - Fix: 删除该句中『与 RTC 配置』或改写为与 frontend.md:25 一致的职责描述（信令改写、Gateway 控制帧、尺寸/DPR 锁定）。
+        - Verification: static
 - [Low][95] docs/blueprint/domain.md:12,27 — blueprint/domain.md 状态图用 failed，与同文件 ObservedState 枚举的 error 不一致
-  - Sources: bundle_local_docs_current.md (f_docs_current_08)
-  - f_docs_current_08: docs/blueprint/domain.md:12 ObservedState 枚举为 stopped / starting / running / stopping / error。; 同文件:27 的 Profile 生命周期状态图中，starting 的失败分支标为 failed，与枚举不一致。; docs/pending/todo/p017_t016_minor_cleanup.md:4 已登记『把 domain.md 状态图中的 failed 改为 error』，处理状态『未开』。
-    - Impact: 状态枚举是 API/持久化/前端共同消费的契约词汇；图与枚举两名并存会让实现者误以为存在第六个状态或单独的 failed 语义。
-    - Fix: 将状态图中的 failed 改为 error，与枚举统一；同步关闭 p017 对应条目。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_08)
+    - f_docs_current_08: docs/blueprint/domain.md:12 ObservedState 枚举为 stopped / starting / running / stopping / error。; 同文件:27 的 Profile 生命周期状态图中，starting 的失败分支标为 failed，与枚举不一致。; docs/pending/todo/p017_t016_minor_cleanup.md:4 已登记『把 domain.md 状态图中的 failed 改为 error』，处理状态『未开』。
+        - Impact: 状态枚举是 API/持久化/前端共同消费的契约词汇；图与枚举两名并存会让实现者误以为存在第六个状态或单独的 failed 语义。
+        - Fix: 将状态图中的 failed 改为 error，与枚举统一；同步关闭 p017 对应条目。
+        - Verification: static
 - [Low][70] src/frontend/src/features/profiles/useProfilesQuery.ts:60-77, src/frontend/src/features/artifacts/useArtifacts.ts:35-53 — Idempotency-Key 按 hook 实例共享：同一实例的并发异参调用会复用同一把 key
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_01)
-  - f_frontend_features_01: 全部 mutation hooks（profiles 八个 + apply 的 stop/start + artifacts 两个）都用单个 useRef 保存 actionKey，mutationFn 无论 variables 是什么都取 `(actionKey.current ??= newIdempotencyKey())`，仅在 onSettled 时清零; useMutation 的 mutate/mutateAsync 在前一次未 settle 时再次调用会并发执行 mutationFn，两次不同目标/不同请求体的写操作（如先启动 profile A、未完成时又对 profile B 发起 setDesiredState）将携带同一 Idempotency-Key; 现有 UI 缓解：已知调用点（AppLayout、BrowserSessionPage、详情页）多以 isPending 禁用按钮，但这是调用点约定而非 hook 契约；hook 本身不按 variables 区分 key; 对照正面证据：useProfilesQuery.retry.test.tsx 锁定了「React Query 重试间复用同一 key」这一预期语义，问题只在跨调用复用
-    - Impact: 后端若按 key 做去重/回放，第二个异参写操作可能被当作第一个的重试而被吞掉或返回首个响应，造成用户操作静默失效；影响触发需要同实例并发异参调用，当前 UI 下窗口较窄，故定 Low。
-    - Fix: key 应按逻辑动作生成：mutationFn 内以 variables（目标 id + 操作 + 关键载荷哈希）为作用域生成/缓存 key，或为每次 mutate 调用生成 key 并仅在 React Query 内部重试间复用（把 key 存入 mutation 的 meta/context 而非 hook 级 ref）。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_01)
+    - f_frontend_features_01: 全部 mutation hooks（profiles 八个 + apply 的 stop/start + artifacts 两个）都用单个 useRef 保存 actionKey，mutationFn 无论 variables 是什么都取 `(actionKey.current ??= newIdempotencyKey())`，仅在 onSettled 时清零; useMutation 的 mutate/mutateAsync 在前一次未 settle 时再次调用会并发执行 mutationFn，两次不同目标/不同请求体的写操作（如先启动 profile A、未完成时又对 profile B 发起 setDesiredState）将携带同一 Idempotency-Key; 现有 UI 缓解：已知调用点（AppLayout、BrowserSessionPage、详情页）多以 isPending 禁用按钮，但这是调用点约定而非 hook 契约；hook 本身不按 variables 区分 key; 对照正面证据：useProfilesQuery.retry.test.tsx 锁定了「React Query 重试间复用同一 key」这一预期语义，问题只在跨调用复用
+        - Impact: 后端若按 key 做去重/回放，第二个异参写操作可能被当作第一个的重试而被吞掉或返回首个响应，造成用户操作静默失效；影响触发需要同实例并发异参调用，当前 UI 下窗口较窄，故定 Low。
+        - Fix: key 应按逻辑动作生成：mutationFn 内以 variables（目标 id + 操作 + 关键载荷哈希）为作用域生成/缓存 key，或为每次 mutate 调用生成 key 并仅在 React Query 内部重试间复用（把 key 存入 mutation 的 meta/context 而非 hook 级 ref）。
+        - Verification: static
 - [Low][75] src/frontend/src/features/auth/redirect.ts:9-11 — sanitizeNextPath 只拦截精确的 /login，/login/ 与大小写变体可造成登录页自跳转循环
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_02)
-  - f_frontend_features_02: redirect.ts:9-11 仅以 path === "/login" 判断回环，未处理尾斜杠与大小写；react-router 路由匹配默认大小写不敏感且容忍尾斜杠; LoginPage.tsx:19,48-50：已登录时直接 <Navigate to={target}>，target 为 /login/ 或 /LOGIN 时会再次命中登录路由并再次 Navigate，形成渲染级重定向循环; 其余清洗项完备：// 前缀、/\ 前缀、控制字符均已拦截，loginRedirectPath 对 /login 本身也返回纯 /login
-    - Impact: 已登录用户打开被构造的 /login?next=/login/（或大小写变体）链接时标签页陷入重定向循环；属自伤型问题、无跨用户影响，故定 Low。
-    - Fix: 比较前先规范化：path.toLowerCase() 并去除尾斜杠后再与 "/login" 比较，或对一切以 /login 开头后接 /,?,# 边界的路径返回 null。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_02)
+    - f_frontend_features_02: redirect.ts:9-11 仅以 path === "/login" 判断回环，未处理尾斜杠与大小写；react-router 路由匹配默认大小写不敏感且容忍尾斜杠; LoginPage.tsx:19,48-50：已登录时直接 <Navigate to={target}>，target 为 /login/ 或 /LOGIN 时会再次命中登录路由并再次 Navigate，形成渲染级重定向循环; 其余清洗项完备：// 前缀、/\\ 前缀、控制字符均已拦截，loginRedirectPath 对 /login 本身也返回纯 /login
+        - Impact: 已登录用户打开被构造的 /login?next=/login/（或大小写变体）链接时标签页陷入重定向循环；属自伤型问题、无跨用户影响，故定 Low。
+        - Fix: 比较前先规范化：path.toLowerCase() 并去除尾斜杠后再与 "/login" 比较，或对一切以 /login 开头后接 /,?,# 边界的路径返回 null。
+        - Verification: static
 - [Low][80] src/frontend/src/features/profiles/BrowserSessionPage.tsx:22-25 — runtime 查询失败被当作「未运行」：会话页对 runtime 端点错误无任何呈现
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_03)
-  - f_frontend_features_03: BrowserSessionPage.tsx:23 只解构 useProfileRuntimeQuery 的 data/isLoading，未取 error；:74 以 runtime?.observed_state === "running" 判活; runtime 查询失败（500/网络错误）时 runtime 为 undefined 且 isRuntimeLoading 为 false，页面落入未运行分支，展示带 Launch 按钮的「运行时未就绪」页，把后端故障误报为已停止状态; 对照：同页 profile 查询失败有 !profile 分支、启动 mutation 失败有 session-start-error 渲染，唯独 runtime 查询错误无分支
-    - Impact: 后端 runtime 面故障时用户看到的是可点击启动的停止态页面，点击后才可能从 mutation 错误间接得知，状态呈现失真；不影响数据，故定 Low。
-    - Fix: 解构 runtime 查询的 error 并增加错误分支（展示错误与重试），或至少在 runtime 为 undefined 且非加载中时不渲染 Launch 而渲染状态未知。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_03)
+    - f_frontend_features_03: BrowserSessionPage.tsx:23 只解构 useProfileRuntimeQuery 的 data/isLoading，未取 error；:74 以 runtime?.observed_state === "running" 判活; runtime 查询失败（500/网络错误）时 runtime 为 undefined 且 isRuntimeLoading 为 false，页面落入未运行分支，展示带 Launch 按钮的「运行时未就绪」页，把后端故障误报为已停止状态; 对照：同页 profile 查询失败有 !profile 分支、启动 mutation 失败有 session-start-error 渲染，唯独 runtime 查询错误无分支
+        - Impact: 后端 runtime 面故障时用户看到的是可点击启动的停止态页面，点击后才可能从 mutation 错误间接得知，状态呈现失真；不影响数据，故定 Low。
+        - Fix: 解构 runtime 查询的 error 并增加错误分支（展示错误与重试），或至少在 runtime 为 undefined 且非加载中时不渲染 Launch 而渲染状态未知。
+        - Verification: static
 - [Low][85] src/frontend/src/features/browser-session/BrowserSessionView.test.tsx:253-303 — 会话视图测试多处依赖真实定时器与多秒睡眠，慢且在负载下易抖
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_04)
-  - f_frontend_features_04: 「transient ICE disconnect」用例真实等待 1000ms + 5500ms（:253-269），「persistent ICE disconnect」waitFor 超时 8000ms（:272-287），「WS_CLOSE rebuild」同样 8000ms（:290-303），三个用例均声明 12_000ms 的 it 超时; 被测的 5s ICE 宽限与 5s WS 健康检查都走生产常量、未注入可缩放的测试时钟；useBrowserSession 已提供 iceDisconnectGraceMs/mediaTimeoutMs 注入点但用例未用; 同文件其余用例以 waitFor/act 同步驱动，风格不一致
-    - Impact: 单文件即贡献 20s 量级的真实等待，CI 负载下 8s 的 waitFor 与 5s 宽限的相对时序可能翻转导致偶发失败，削弱套件可信度；非生产缺陷，故定 Low。
-    - Fix: 对时序用例注入 iceDisconnectGraceMs 的小值（如 50ms）或使用 vi.useFakeTimers 并推进时钟；保留一条真实定时器的冒烟用例即可。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_04)
+    - f_frontend_features_04: 「transient ICE disconnect」用例真实等待 1000ms + 5500ms（:253-269），「persistent ICE disconnect」waitFor 超时 8000ms（:272-287），「WS_CLOSE rebuild」同样 8000ms（:290-303），三个用例均声明 12_000ms 的 it 超时; 被测的 5s ICE 宽限与 5s WS 健康检查都走生产常量、未注入可缩放的测试时钟；useBrowserSession 已提供 iceDisconnectGraceMs/mediaTimeoutMs 注入点但用例未用; 同文件其余用例以 waitFor/act 同步驱动，风格不一致
+        - Impact: 单文件即贡献 20s 量级的真实等待，CI 负载下 8s 的 waitFor 与 5s 宽限的相对时序可能翻转导致偶发失败，削弱套件可信度；非生产缺陷，故定 Low。
+        - Fix: 对时序用例注入 iceDisconnectGraceMs 的小值（如 50ms）或使用 vi.useFakeTimers 并推进时钟；保留一条真实定时器的冒烟用例即可。
+        - Verification: static
 - [Low][85] src/frontend/src/features/profiles/BrowserSessionPage.test.tsx:8-32, src/frontend/src/features/profiles/ProfileDetailPage.test.tsx:16-25 — 两个页面测试整体 mock 掉 useProfilesQuery 模块，页面主要流程无测试覆盖
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_05)
-  - f_frontend_features_05: BrowserSessionPage.test.tsx 以 vi.mock("./useProfilesQuery") 固定返回 stopped 运行时，全文件仅一条用例（启动错误渲染）；running→挂载会话视图、Launch 点击触发 setDesiredState、无 profileId 的引导分支均未覆盖; ProfileDetailPage.test.tsx 同样整模块 mock，全文件仅一条用例（dirty 字段不被刷新覆盖）；保存提交、删除确认、duplicate/reset 面板、display-pending 与 apply 按钮均未覆盖; 形成对照：同单元的 hooks 层测试（useProfilesQuery 四个文件）在 client 边界 mock 并覆盖扎实，缺口集中在页面层
-    - Impact: 页面级回归（如分流条件、按钮接线、确认流程）只能靠 e2e 或人工发现；mock 的是被测页面自身的数据层模块，测试对真实 hook 契约变化不敏感。按测试视角启发式属覆盖缺口，定 Low。
-    - Fix: 页面测试改为在 ApiClient 边界 stub（参照 artifacts/automation 页面测试的做法），补 running 分流、Launch、删除/复制/重置与 apply 的行为用例；保留现有 dirty 字段用例。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_05)
+    - f_frontend_features_05: BrowserSessionPage.test.tsx 以 vi.mock("./useProfilesQuery") 固定返回 stopped 运行时，全文件仅一条用例（启动错误渲染）；running→挂载会话视图、Launch 点击触发 setDesiredState、无 profileId 的引导分支均未覆盖; ProfileDetailPage.test.tsx 同样整模块 mock，全文件仅一条用例（dirty 字段不被刷新覆盖）；保存提交、删除确认、duplicate/reset 面板、display-pending 与 apply 按钮均未覆盖; 形成对照：同单元的 hooks 层测试（useProfilesQuery 四个文件）在 client 边界 mock 并覆盖扎实，缺口集中在页面层
+        - Impact: 页面级回归（如分流条件、按钮接线、确认流程）只能靠 e2e 或人工发现；mock 的是被测页面自身的数据层模块，测试对真实 hook 契约变化不敏感。按测试视角启发式属覆盖缺口，定 Low。
+        - Fix: 页面测试改为在 ApiClient 边界 stub（参照 artifacts/automation 页面测试的做法），补 running 分流、Launch、删除/复制/重置与 apply 的行为用例；保留现有 dirty 字段用例。
+        - Verification: static
 - [Low][60] src/frontend/src/features/browser-session/useBrowserSession.ts:194-200 — runtime 检查 effect 依赖 t（i18n 函数），语言切换会重跑检查并回退会话 stage
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_09)
-  - f_frontend_features_09: useBrowserSession.ts:157-200 的挂载检查 effect 依赖数组包含 t；checkRuntime 在 runtime 为 running/ready 时无条件 setStage("connecting_signaling")，不区分当前是否已 connected; t 的身份随 locale 变化而变化；会话存续期间若发生语言切换（t 换新），effect 重跑，已 connected 的会话会被打回 connecting_signaling 并闪现诊断浮层，直到下一次 stats 轮询（1s 内）以 framesDecoded>0 拉回 connected; 同文件 message/media-timeout 两处 effect 也依赖 t，但仅重注册监听/重置计时，后果可忽略；问题集中在检查 effect 的 stage 回写
-    - Impact: 语言切换时会话画面短暂被浮层遮挡、stage 抖动一次；自愈且无数据影响，故定 Low、置信 60（t 身份变化的实际频率取决于 i18n 实现，属 frontend_shell 单元）。
-    - Fix: 检查 effect 移除 t 依赖（错误文案改由渲染期按当前语言生成，或将 t 存 ref），或在 checkRuntime 写 stage 前判断 stageRef.current 已是 connected/media_waiting 时不回退。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_09)
+    - f_frontend_features_09: useBrowserSession.ts:157-200 的挂载检查 effect 依赖数组包含 t；checkRuntime 在 runtime 为 running/ready 时无条件 setStage("connecting_signaling")，不区分当前是否已 connected; t 的身份随 locale 变化而变化；会话存续期间若发生语言切换（t 换新），effect 重跑，已 connected 的会话会被打回 connecting_signaling 并闪现诊断浮层，直到下一次 stats 轮询（1s 内）以 framesDecoded>0 拉回 connected; 同文件 message/media-timeout 两处 effect 也依赖 t，但仅重注册监听/重置计时，后果可忽略；问题集中在检查 effect 的 stage 回写
+        - Impact: 语言切换时会话画面短暂被浮层遮挡、stage 抖动一次；自愈且无数据影响，故定 Low、置信 60（t 身份变化的实际频率取决于 i18n 实现，属 frontend_shell 单元）。
+        - Fix: 检查 effect 移除 t 依赖（错误文案改由渲染期按当前语言生成，或将 t 存 ref），或在 checkRuntime 写 stage 前判断 stageRef.current 已是 connected/media_waiting 时不回退。
+        - Verification: static
 - [Low][85] src/frontend/src/features/browser-session/media_controls.test.tsx:32-44 — 音频 pipelineControl 测试未钉住 postMessage 的目标 origin
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_11)
-  - f_frontend_features_11: media_controls.test.tsx:33-43 两次断言 postMessage 参数时，origin 只写 expect.any(String)；生产代码 sendAudioPipelineControl 传入的是 window.location.origin（audio_control.ts:14-23）这一具体值; 对照同单元 adapter_restart.test.ts 与 BrowserSessionView.test.tsx 对 parent postMessage 均断言了具体 origin 字符串，此处标准不一致; 若实现回归为 "*" 通配 origin，该测试仍会通过
-    - Impact: 跨窗口消息的目标 origin 是安全相关参数，测试未钉住意味着通配符回归不可检；属测试强度缺口，定 Low。
-    - Fix: 断言改为 expect.objectContaining 后第二参数等于 window.location.origin 的具体值。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_11)
+    - f_frontend_features_11: media_controls.test.tsx:33-43 两次断言 postMessage 参数时，origin 只写 expect.any(String)；生产代码 sendAudioPipelineControl 传入的是 window.location.origin（audio_control.ts:14-23）这一具体值; 对照同单元 adapter_restart.test.ts 与 BrowserSessionView.test.tsx 对 parent postMessage 均断言了具体 origin 字符串，此处标准不一致; 若实现回归为 "\*" 通配 origin，该测试仍会通过
+        - Impact: 跨窗口消息的目标 origin 是安全相关参数，测试未钉住意味着通配符回归不可检；属测试强度缺口，定 Low。
+        - Fix: 断言改为 expect.objectContaining 后第二参数等于 window.location.origin 的具体值。
+        - Verification: static
 - [Low][70] src/frontend/src/shared/api/sse.ts:74-77 — ProfileEventsClient 无连接代次防护，stop 后快速 start 可能留下双读循环
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_01)
-  - f_frontend_shell_01: start() 无条件置 isClosed=false 并调用 connect()（sse.ts:74-77）；connect() 开头把 this.abortController 直接覆写为新控制器（sse.ts:100），stop() 只能 abort 最新一个（sse.ts:82-93）。; 旧 connect() 循环在被 abort 后进入 catch/finally 时读的是共享的 this.isClosed（sse.ts:195-205）：若期间已再次 start()，isClosed 已被重置为 false，旧循环会 dispatchError 并 scheduleReconnect，从而与新循环并存、共享 lastEventId 与 reconnectTimeout。; 调用方确有 stop→start 相邻时序：providers.tsx:19-25 的 SseSyncBridge 清理调用 stop()，useProfileEventsSync（features/profiles/useProfilesQuery.ts:305-310）在 effect 中 start()、清理中 stop()；登录态翻转与 main.tsx StrictMode 的开发期双 effect 都会产生相邻的 stop/start。; 本单元 sse.test.ts 只覆盖单次生命周期与重连；sse_hardening.test.ts（属 frontend_features 清单）覆盖 401 停连与尾事件 flush，均未覆盖 stop→start 或重复 start。
-    - Impact: 竞态命中时同一单例出现两条 SSE 连接：事件重复投递（缓存写入与失效重复执行，数据本身幂等）、多占一条服务器连接；更坏时 stop() 无法终止旧循环，登出后连接残留到服务器侧关闭。生产触发需亚毫秒级登录态翻转，开发期 StrictMode 下更易命中。
-    - Fix: 在 ProfileEventsClient 引入连接代次（generation 计数）：start/stop 时自增，connect() 捕获自身代次并在每次 await 后、catch 与 finally 中校验代次是否仍有效，无效则直接退出不调度重连；或让 start() 在已有活跃循环时先 stop 并等待其退出。补一条 stop→start 立即重启只保留一条连接的测试。
-    - Verification: suspected
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_01)
+    - f_frontend_shell_01: start() 无条件置 isClosed=false 并调用 connect()（sse.ts:74-77）；connect() 开头把 this.abortController 直接覆写为新控制器（sse.ts:100），stop() 只能 abort 最新一个（sse.ts:82-93）。; 旧 connect() 循环在被 abort 后进入 catch/finally 时读的是共享的 this.isClosed（sse.ts:195-205）：若期间已再次 start()，isClosed 已被重置为 false，旧循环会 dispatchError 并 scheduleReconnect，从而与新循环并存、共享 lastEventId 与 reconnectTimeout。; 调用方确有 stop→start 相邻时序：providers.tsx:19-25 的 SseSyncBridge 清理调用 stop()，useProfileEventsSync（features/profiles/useProfilesQuery.ts:305-310）在 effect 中 start()、清理中 stop()；登录态翻转与 main.tsx StrictMode 的开发期双 effect 都会产生相邻的 stop/start。; 本单元 sse.test.ts 只覆盖单次生命周期与重连；sse_hardening.test.ts（属 frontend_features 清单）覆盖 401 停连与尾事件 flush，均未覆盖 stop→start 或重复 start。
+        - Impact: 竞态命中时同一单例出现两条 SSE 连接：事件重复投递（缓存写入与失效重复执行，数据本身幂等）、多占一条服务器连接；更坏时 stop() 无法终止旧循环，登出后连接残留到服务器侧关闭。生产触发需亚毫秒级登录态翻转，开发期 StrictMode 下更易命中。
+        - Fix: 在 ProfileEventsClient 引入连接代次（generation 计数）：start/stop 时自增，connect() 捕获自身代次并在每次 await 后、catch 与 finally 中校验代次是否仍有效，无效则直接退出不调度重连；或让 start() 在已有活跃循环时先 stop 并等待其退出。补一条 stop→start 立即重启只保留一条连接的测试。
+        - Verification: suspected
 - [Low][80] src/frontend/src/shared/api/client.ts:118-145 — 调用方主动 abort 被统一误报为可重试的「Request timed out」
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_02)
-  - f_frontend_shell_02: request() 把 init.signal 的 abort 转发给内部 controller（client.ts:120-125），catch 中只要 controller.signal.aborted 就抛 ApiError("Request timed out", errorCode=timeout, retryable=true)（client.ts:138-143），不区分超时与外部取消。; providers.tsx:57-59 把 mutations 的 retry 设为 shouldRetryRequest，而 shouldRetryRequest 对 retryable 的 ApiError 允许重试 2 次（client.ts:32-37）——被取消的写请求存在被重试的通道。; 本轮 grep 确认当前仓内无调用方给 request() 传 signal，故影响为潜伏：公开 API 契约已把取消语义写错，首个接入 signal 的调用方（如查询取消、上传取消）即会踩到误报与误重试。
-    - Impact: 错误文案与统计把用户/框架取消记为超时，掩盖真实失败分布；若未来有调用方用 signal 取消写操作，React Query 重试可能使已取消的写请求再次发出（带幂等键时可控，未带时重复提交）。
-    - Fix: 在 catch 中区分来源：externalSignal?.aborted 且非内部计时器触发时，透传原始 AbortError（或抛不可重试的 ApiError errorCode=aborted）；仅计时器触发才映射为 timeout。补外部 signal 取消的单测。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_02)
+    - f_frontend_shell_02: request() 把 init.signal 的 abort 转发给内部 controller（client.ts:120-125），catch 中只要 controller.signal.aborted 就抛 ApiError("Request timed out", errorCode=timeout, retryable=true)（client.ts:138-143），不区分超时与外部取消。; providers.tsx:57-59 把 mutations 的 retry 设为 shouldRetryRequest，而 shouldRetryRequest 对 retryable 的 ApiError 允许重试 2 次（client.ts:32-37）——被取消的写请求存在被重试的通道。; 本轮 grep 确认当前仓内无调用方给 request() 传 signal，故影响为潜伏：公开 API 契约已把取消语义写错，首个接入 signal 的调用方（如查询取消、上传取消）即会踩到误报与误重试。
+        - Impact: 错误文案与统计把用户/框架取消记为超时，掩盖真实失败分布；若未来有调用方用 signal 取消写操作，React Query 重试可能使已取消的写请求再次发出（带幂等键时可控，未带时重复提交）。
+        - Fix: 在 catch 中区分来源：externalSignal?.aborted 且非内部计时器触发时，透传原始 AbortError（或抛不可重试的 ApiError errorCode=aborted）；仅计时器触发才映射为 timeout。补外部 signal 取消的单测。
+        - Verification: static
 - [Low][95] src/frontend/src/styles/globals.css:44-66 — globals.css 的 @layer components 组件类（.btn/.input/.label 等）全仓零使用，是死 CSS
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_03)
-  - f_frontend_shell_03: globals.css:44-66 定义 .btn、.btn-primary、.btn-secondary、.btn-danger、.input、textarea.input、.label 共 7 个组件类。; 本轮 grep 全仓 src/**/*.tsx 的 className（含模板字符串）对 btn/input/label 组件类的使用为 0 处；btn-primary 等仅出现在 globals.css 定义自身。features 页面一律内联 Tailwind 工具类拼装样式。; 这些类经 @tailwind components 进入最终 CSS 产物，持续占用 bundle 并向新贡献者暗示存在一套并不存在的共享组件类规范。
-    - Impact: 死样式随每次构建发布；更主要的是误导后续开发按 .btn/.input 约定写新页面，与实际内联工具类的主流写法分叉。
-    - Fix: 删除整个 @layer components 块；若团队希望保留组件类规范，则反过来把高频按钮/输入迁移到这些类并在 blueprint/conventions 中登记，二选一，不要保留无消费者的定义。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_03)
+    - f_frontend_shell_03: globals.css:44-66 定义 .btn、.btn-primary、.btn-secondary、.btn-danger、.input、textarea.input、.label 共 7 个组件类。; 本轮 grep 全仓 src/\*\*/\*.tsx 的 className（含模板字符串）对 btn/input/label 组件类的使用为 0 处；btn-primary 等仅出现在 globals.css 定义自身。features 页面一律内联 Tailwind 工具类拼装样式。; 这些类经 @tailwind components 进入最终 CSS 产物，持续占用 bundle 并向新贡献者暗示存在一套并不存在的共享组件类规范。
+        - Impact: 死样式随每次构建发布；更主要的是误导后续开发按 .btn/.input 约定写新页面，与实际内联工具类的主流写法分叉。
+        - Fix: 删除整个 @layer components 块；若团队希望保留组件类规范，则反过来把高频按钮/输入迁移到这些类并在 blueprint/conventions 中登记，二选一，不要保留无消费者的定义。
+        - Verification: static
 - [Low][85] src/frontend/src/shared/components/BrowserSessionMount.tsx:1-9 — shared 层反向依赖 features 层，且 BrowserSessionMount 本地重声明 props 类型造成漂移面
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_04)
-  - f_frontend_shell_04: BrowserSessionMount.tsx:1 从 ../../features/browser-session/BrowserSessionView 导入组件——shared/ 目录内其余模块（client/sse/types）均不依赖 features，此处是 shared→features 的反向依赖，破坏 shared 作为底层共享层的单向分层。; 该文件第 3-7 行本地重声明 BrowserSessionViewProps（profileId/clipboardSync/onCheckRuntimeStatus），而非从 BrowserSessionView 导入其 props 类型；BrowserSessionView 若新增可选 prop，经此挂载点的唯一消费者（features/profiles/BrowserSessionPage.tsx:61）将静默无法传递。; 包装层本身仅加一层 div（data-testid + flex 类）并原样转发三个 props，无其他逻辑。
-    - Impact: 分层反转使 shared 不再可独立演进/复用；props 双份定义是典型的静默漂移源，新增会话能力时容易漏接挂载层。
-    - Fix: 把 BrowserSessionMount 移入 features/browser-session 或 features/profiles（与其唯一消费者同层），shared/ 只保留无业务依赖的模块；props 类型改为从 BrowserSessionView 处 import type 复用同一定义。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_04)
+    - f_frontend_shell_04: BrowserSessionMount.tsx:1 从 ../../features/browser-session/BrowserSessionView 导入组件——shared/ 目录内其余模块（client/sse/types）均不依赖 features，此处是 shared→features 的反向依赖，破坏 shared 作为底层共享层的单向分层。; 该文件第 3-7 行本地重声明 BrowserSessionViewProps（profileId/clipboardSync/onCheckRuntimeStatus），而非从 BrowserSessionView 导入其 props 类型；BrowserSessionView 若新增可选 prop，经此挂载点的唯一消费者（features/profiles/BrowserSessionPage.tsx:61）将静默无法传递。; 包装层本身仅加一层 div（data-testid + flex 类）并原样转发三个 props，无其他逻辑。
+        - Impact: 分层反转使 shared 不再可独立演进/复用；props 双份定义是典型的静默漂移源，新增会话能力时容易漏接挂载层。
+        - Fix: 把 BrowserSessionMount 移入 features/browser-session 或 features/profiles（与其唯一消费者同层），shared/ 只保留无业务依赖的模块；props 类型改为从 BrowserSessionView 处 import type 复用同一定义。
+        - Verification: static
 - [Low][90] src/frontend/tsconfig.json:23 — 测试文件被 tsconfig 整体排除，构建与测试链路均不类型检查测试代码
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_05)
-  - f_frontend_shell_05: tsconfig.json:22-23 include 仅 src 且 exclude src/**/*.test.ts(x)；package.json:11 的 build 用 tsc -b 只查非测试代码，vitest 仅转译不做类型检查——本单元 5 个测试文件（约 920 行）无任何类型门禁。; 具体残留：router.test.tsx:13-19 在 beforeEach 中构造 queryClient 变量但从未使用（renderWithRouter 内部自建 testQueryClient），若测试在 include 内，noUnusedLocals（tsconfig.json:16）本应报错。; 后果已可见于测试代码的类型松紧不一：router.test.tsx 直接给 defaultApiClient 的 readonly 对象属性赋普通 async 函数，auth_guard.test.tsx 用 as unknown as 强转伪造 ProfileEventsClient，均在无类型检查下累积。
-    - Impact: 测试中的类型错误、过期签名与死代码只能靠 IDE 偶然发现；重构生产 API 时测试侧的类型漂移不会让 build 变红，削弱测试作为契约证据的可信度。
-    - Fix: 新增 tsconfig.test.json（include 测试文件、noEmit）并在 test 脚本或门禁中加 tsc -p tsconfig.test.json；或直接把测试纳入主 tsconfig 并为 vitest/globals 配置 types。先清理 router.test.tsx 的未用变量。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_05)
+    - f_frontend_shell_05: tsconfig.json:22-23 include 仅 src 且 exclude src/\*\*/\*.test.ts(x)；package.json:11 的 build 用 tsc -b 只查非测试代码，vitest 仅转译不做类型检查——本单元 5 个测试文件（约 920 行）无任何类型门禁。; 具体残留：router.test.tsx:13-19 在 beforeEach 中构造 queryClient 变量但从未使用（renderWithRouter 内部自建 testQueryClient），若测试在 include 内，noUnusedLocals（tsconfig.json:16）本应报错。; 后果已可见于测试代码的类型松紧不一：router.test.tsx 直接给 defaultApiClient 的 readonly 对象属性赋普通 async 函数，auth_guard.test.tsx 用 as unknown as 强转伪造 ProfileEventsClient，均在无类型检查下累积。
+        - Impact: 测试中的类型错误、过期签名与死代码只能靠 IDE 偶然发现；重构生产 API 时测试侧的类型漂移不会让 build 变红，削弱测试作为契约证据的可信度。
+        - Fix: 新增 tsconfig.test.json（include 测试文件、noEmit）并在 test 脚本或门禁中加 tsc -p tsconfig.test.json；或直接把测试纳入主 tsconfig 并为 vitest/globals 配置 types。先清理 router.test.tsx 的未用变量。
+        - Verification: static
 - [Low][95] src/frontend/src/i18n.tsx:328 — i18n 无 en/zh 键对齐的自动守卫，zh 字典的开放 Record 类型使缺键对 tsc 不可见
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_06)
-  - f_frontend_shell_06: zh 与 en 同为 MessageDict = Record<string, string>（i18n.tsx:15、zh 定义处），TranslationKey 只约束 en 的键；t() 在 zh 缺键时静默回退 en（i18n.tsx:412-415），因此 zh 漏键不会产生任何构建或测试失败，只会在界面上混入英文。; i18n.test.tsx 仅 1 条用例（旧键迁移 + document.lang 同步），无键对齐断言。; 本轮以脚本核对当前状态：en/zh 各 150 键、双向差集为空——现状对齐，本条针对的是缺失回归守卫而非现存漂移。
-    - Impact: 后续新增文案只加 en 时，中文界面会静默混杂英文且无任何信号，与仓库其余契约面（OpenAPI 有漂移守卫测试）的防护标准不一致。
-    - Fix: 给 zh 标注类型为 Record<TranslationKey, string>（或 satisfies），让缺键/多键在 tsc 阶段报错；并在 i18n.test.tsx 增加一条键集相等断言作为双保险。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_06)
+    - f_frontend_shell_06: zh 与 en 同为 MessageDict = Record\<string, string>（i18n.tsx:15、zh 定义处），TranslationKey 只约束 en 的键；t() 在 zh 缺键时静默回退 en（i18n.tsx:412-415），因此 zh 漏键不会产生任何构建或测试失败，只会在界面上混入英文。; i18n.test.tsx 仅 1 条用例（旧键迁移 + document.lang 同步），无键对齐断言。; 本轮以脚本核对当前状态：en/zh 各 150 键、双向差集为空——现状对齐，本条针对的是缺失回归守卫而非现存漂移。
+        - Impact: 后续新增文案只加 en 时，中文界面会静默混杂英文且无任何信号，与仓库其余契约面（OpenAPI 有漂移守卫测试）的防护标准不一致。
+        - Fix: 给 zh 标注类型为 Record\<TranslationKey, string>（或 satisfies），让缺键/多键在 tsc 阶段报错；并在 i18n.test.tsx 增加一条键集相等断言作为双保险。
+        - Verification: static
 - [Low][90] src/frontend/src/shared/api/client.test.ts:71-82 — client.test.ts 两条用例的标题声称了未被断言的行为（credentials 与 retries）
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_07)
-  - f_frontend_shell_07: client.test.ts:71-82 用例名为 "sends credentials: 'include' on GET requests"，断言只有 method 与 url；其真实本地 HTTP 服务器只能观察请求头/行，fetch 的 credentials 标志在该装置下不可观察，cookie 也不会由 Node 侧 fetch 依据 jsdom 的 document.cookie 自动附带——credentials 行为实际未被验证。; client.test.ts:241-258 用例名为 "uses the caller-supplied action key for retries"，内容是手工连续调用两次 create 并断言两次都带同一 Idempotency-Key，全程没有发生任何 retry。; 被声称的行为在 client.ts 中确实实现（client.ts:106、各写方法透传 idempotencyKey），问题在测试证据与标题不符：日后 credentials 或重试接线回归时这两条仍会绿。
-    - Impact: 测试名义覆盖与实际覆盖不一致，误导后续维护者以为凭据携带与重试幂等已被锁定，属于验证假行为类的弱化信号。
-    - Fix: 把两条用例改名为与断言一致的表述（如 "sends Idempotency-Key header when provided"）；credentials 行为改在 jsdom 内以 fetch spy 断言 init.credentials === 'include'（sse/client 的其他 hardening 用例已有 fetch spy 先例）。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_07)
+    - f_frontend_shell_07: client.test.ts:71-82 用例名为 "sends credentials: 'include' on GET requests"，断言只有 method 与 url；其真实本地 HTTP 服务器只能观察请求头/行，fetch 的 credentials 标志在该装置下不可观察，cookie 也不会由 Node 侧 fetch 依据 jsdom 的 document.cookie 自动附带——credentials 行为实际未被验证。; client.test.ts:241-258 用例名为 "uses the caller-supplied action key for retries"，内容是手工连续调用两次 create 并断言两次都带同一 Idempotency-Key，全程没有发生任何 retry。; 被声称的行为在 client.ts 中确实实现（client.ts:106、各写方法透传 idempotencyKey），问题在测试证据与标题不符：日后 credentials 或重试接线回归时这两条仍会绿。
+        - Impact: 测试名义覆盖与实际覆盖不一致，误导后续维护者以为凭据携带与重试幂等已被锁定，属于验证假行为类的弱化信号。
+        - Fix: 把两条用例改名为与断言一致的表述（如 "sends Idempotency-Key header when provided"）；credentials 行为改在 jsdom 内以 fetch spy 断言 init.credentials === 'include'（sse/client 的其他 hardening 用例已有 fetch spy 先例）。
+        - Verification: static
 - [Low][85] src/frontend/src/app/auth_guard.test.tsx:67-107 — 外壳测试以直接赋值方式 monkey-patch 共享 defaultApiClient 单例且从不还原
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_08)
-  - f_frontend_shell_08: auth_guard.test.tsx:67-107 把 defaultApiClient.auth.session/login/logout、profiles.* 逐个赋值为 vi.fn，甚至整体替换 setOnUnauthorized 方法本身；afterEach（:140-143）只有 cleanup() 与 vi.restoreAllMocks()，后者不撤销普通属性赋值。; router.test.tsx:22-118 同样直接赋值 defaultApiClient 的方法，无任何还原。; 当前之所以不出问题，靠的是 vitest 默认 per-file 模块隔离 + 每个文件 beforeEach 重新赋值全套方法这一隐含约定；新测试若漏给某个方法重新赋值，或将来为性能关闭 isolate，假实现会跨用例/跨文件泄漏。
-    - Impact: 测试隔离依赖未声明的约定而非机制，假认证/假 Profile 数据有串扰到其他用例的风险，且失败时会以与被测代码无关的方式变红，侵蚀套件可信度。
-    - Fix: 改用 AppProviders 已预留的 apiClient 注入点传入每个用例独立构造的假 ApiClient（providers.tsx:39-44 已支持），或在 afterEach 中用 vi.restoreAllMocks 配合 spyOn 形式（vi.spyOn 返回的 mock 才可被 restore）；避免直接改写单例属性。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_08)
+    - f_frontend_shell_08: auth_guard.test.tsx:67-107 把 defaultApiClient.auth.session/login/logout、profiles.\* 逐个赋值为 vi.fn，甚至整体替换 setOnUnauthorized 方法本身；afterEach（:140-143）只有 cleanup() 与 vi.restoreAllMocks()，后者不撤销普通属性赋值。; router.test.tsx:22-118 同样直接赋值 defaultApiClient 的方法，无任何还原。; 当前之所以不出问题，靠的是 vitest 默认 per-file 模块隔离 + 每个文件 beforeEach 重新赋值全套方法这一隐含约定；新测试若漏给某个方法重新赋值，或将来为性能关闭 isolate，假实现会跨用例/跨文件泄漏。
+        - Impact: 测试隔离依赖未声明的约定而非机制，假认证/假 Profile 数据有串扰到其他用例的风险，且失败时会以与被测代码无关的方式变红，侵蚀套件可信度。
+        - Fix: 改用 AppProviders 已预留的 apiClient 注入点传入每个用例独立构造的假 ApiClient（providers.tsx:39-44 已支持），或在 afterEach 中用 vi.restoreAllMocks 配合 spyOn 形式（vi.spyOn 返回的 mock 才可被 restore）；避免直接改写单例属性。
+        - Verification: static
 - [Low][65] .repo_template/scripts/repo_sync.py:761-768,812-819 — sync_dir/sync_skill 复制普通文件时不处理目标侧文件软链，copy2 跟随软链写出树外
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_05)
-  - f_template_scripts_ops_05: sync_dir 对『目标是目录软链且源是真实目录』显式拒绝，但源为普通文件时仅检查 target.exists()/_file_differs 后 shutil.copy2(entry, target)，copy2 默认跟随目标软链; _file_differs 对软链比较 resolve() 结果：消费侧同名路径是指向仓外文件的软链且内容不同时，copy2 会覆写仓外目标文件本体而非替换软链; sync_skill:819 的文件复制分支同样无目标软链检查; 同仓 export_template 与 repo_cleanup 对软链 containment 均有专门防线，此处防御等级不一致
-    - Impact: 消费仓在模板同步路径上预置软链（人为或旧布局残留）时，一次 apply 可把模板内容写到 .repo_template 树之外的任意可写路径，绕过 FileTransaction 对清单路径的快照范围（被写出的目标不在事务清单内，回滚也覆盖不到）。触发需消费侧预置软链，影响限于本机文件覆写。
-    - Fix: 文件复制前若 target 是软链则先 unlink 再 copy（与软链条目分支一致），或显式拒绝并报错；sync_dir 与 sync_skill 两处统一。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_05)
+    - f_template_scripts_ops_05: sync_dir 对『目标是目录软链且源是真实目录』显式拒绝，但源为普通文件时仅检查 target.exists()/\_file_differs 后 shutil.copy2(entry, target)，copy2 默认跟随目标软链; \_file_differs 对软链比较 resolve() 结果：消费侧同名路径是指向仓外文件的软链且内容不同时，copy2 会覆写仓外目标文件本体而非替换软链; sync_skill:819 的文件复制分支同样无目标软链检查; 同仓 export_template 与 repo_cleanup 对软链 containment 均有专门防线，此处防御等级不一致
+        - Impact: 消费仓在模板同步路径上预置软链（人为或旧布局残留）时，一次 apply 可把模板内容写到 .repo_template 树之外的任意可写路径，绕过 FileTransaction 对清单路径的快照范围（被写出的目标不在事务清单内，回滚也覆盖不到）。触发需消费侧预置软链，影响限于本机文件覆写。
+        - Fix: 文件复制前若 target 是软链则先 unlink 再 copy（与软链条目分支一致），或显式拒绝并报错；sync_dir 与 sync_skill 两处统一。
+        - Verification: static
 - [Low][90] .repo_template/scripts/md_format.py:195 — md_format CLI 对点名传入的黑名单路径静默过滤，与 format_paths 的显式拒绝契约不一致
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_06)
-  - f_template_scripts_ops_06: main:195 `rels = [p for p in args.paths if not _is_blacklisted(p)]`：点名 docs/archive/ 下路径被无声丢弃，最终打印『无改动』且退出 0; format_paths:118-121 对同一输入抛 MdFormatError『在黑名单，拒绝格式化』，文件头注释亦称黑名单在脚本内解决; pre-commit 等调用方若点名传入 archive 路径，会得到假成功而非预期拒绝
-    - Impact: 显式点名格式化被保护路径时静默 no-op，调用方无法区分『已格式化/无漂移』与『被拒绝』；与库函数语义分裂，后续维护者易踩。
-    - Fix: main 的 paths 分支删除静默过滤，交给 format_paths 统一抛错；或至少对被过滤路径逐条打印拒绝提示并非 0 退出。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_06)
+    - f_template_scripts_ops_06: main:195 `rels = [p for p in args.paths if not _is_blacklisted(p)]`：点名 docs/archive/ 下路径被无声丢弃，最终打印『无改动』且退出 0; format_paths:118-121 对同一输入抛 MdFormatError『在黑名单，拒绝格式化』，文件头注释亦称黑名单在脚本内解决; pre-commit 等调用方若点名传入 archive 路径，会得到假成功而非预期拒绝
+        - Impact: 显式点名格式化被保护路径时静默 no-op，调用方无法区分『已格式化/无漂移』与『被拒绝』；与库函数语义分裂，后续维护者易踩。
+        - Fix: main 的 paths 分支删除静默过滤，交给 format_paths 统一抛错；或至少对被过滤路径逐条打印拒绝提示并非 0 退出。
+        - Verification: static
 - [Low][85] .repo_template/scripts/repo_sync.py:1990-2002 — prompt add 按 tag 交集静默作废既有站立指令且不汇报
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_07)
-  - f_template_scripts_ops_07: cmd_prompt add:1996-1999 遍历既有 prompts，凡 tags 与新 prompt 有交集且未 revoked 者直接置 revoked=True; 输出只打印新登记条目（2001），不列出被连带作废的条目编号与正文; 被作废条目的 tags 不再进入 prompt_substrings，其 .gitignore 拦截规则自下一轮 apply 起失效
-    - Impact: 添加一条新站立指令可能无声撤销多条旧指令，操作者事后只能逐条 list 比对 revoked 标记才发现；与 f_template_scripts_ops_02 的编号漂移叠加后，prompt 账目可审计性差。
-    - Fix: add 输出中逐条打印被连带作废的 #id 与 text，或要求显式 --revoke-overlapping 确认后再作废。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_07)
+    - f_template_scripts_ops_07: cmd_prompt add:1996-1999 遍历既有 prompts，凡 tags 与新 prompt 有交集且未 revoked 者直接置 revoked=True; 输出只打印新登记条目（2001），不列出被连带作废的条目编号与正文; 被作废条目的 tags 不再进入 prompt_substrings，其 .gitignore 拦截规则自下一轮 apply 起失效
+        - Impact: 添加一条新站立指令可能无声撤销多条旧指令，操作者事后只能逐条 list 比对 revoked 标记才发现；与 f_template_scripts_ops_02 的编号漂移叠加后，prompt 账目可审计性差。
+        - Fix: add 输出中逐条打印被连带作废的 #id 与 text，或要求显式 --revoke-overlapping 确认后再作废。
+        - Verification: static
 - [Low][80] .repo_template/scripts/skill_registry.py:40-46 — skill_registry 在 usage.md 缺注册表标记时以裸 ValueError 崩溃，无诊断信息
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_08)
-  - f_template_scripts_ops_08: main:44-45 `text.split(START, 1)` 与 `tail.split(END, 1)` 在标记缺失时抛 ValueError: not enough values to unpack，无任何上下文提示; render_registry 对 registry 条目缺 role 字段同样以 KeyError 崩溃（entry["role"]）; 该脚本是 usage.md 注册表段的唯一校验/生成入口，崩溃信息无法区分『标记被删』『文件损坏』『registry 结构漂移』
-    - Impact: 模板演进或人工编辑 usage.md 误删标记后，校验只给 traceback，定位成本高；不影响数据安全，故 Low。
-    - Fix: split 前显式检查 START/END 存在性并抛带文件路径与期望标记的错误；entry 字段用 .get 并报告缺字段的 skill 名。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_08)
+    - f_template_scripts_ops_08: main:44-45 `text.split(START, 1)` 与 `tail.split(END, 1)` 在标记缺失时抛 ValueError: not enough values to unpack，无任何上下文提示; render_registry 对 registry 条目缺 role 字段同样以 KeyError 崩溃（entry["role"]）; 该脚本是 usage.md 注册表段的唯一校验/生成入口，崩溃信息无法区分『标记被删』『文件损坏』『registry 结构漂移』
+        - Impact: 模板演进或人工编辑 usage.md 误删标记后，校验只给 traceback，定位成本高；不影响数据安全，故 Low。
+        - Fix: split 前显式检查 START/END 存在性并抛带文件路径与期望标记的错误；entry 字段用 .get 并报告缺字段的 skill 名。
+        - Verification: static
 - [Low][55] .repo_template/scripts/repo_hygiene.py:65-76 — archive-handoff 按任意行首『## 』切节，不识别 fenced code block 内的伪标题
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_09)
-  - f_template_scripts_ops_09: _split_handoff 以 line.startswith("## ") 收集节边界，未跟踪代码围栏状态; cmd_archive_handoff 据此把 sections[:-1] 整段迁入 archive 并重写 handoff.md; handoff 节正文若含 fenced 代码块且块内有行首『## 』（如粘贴的 Markdown 示例），会被误判为新节，迁移后 handoff 保留的『最新节』可能只是某节的后半段
-    - Impact: 触发条件窄（handoff 正文粘贴含 ## 行的代码块），一旦触发会把半截节留在 handoff、另半截迁入 archive，内容被拆散且 dry-run 输出按错误节标题展示，审批者不易察觉。
-    - Fix: _split_handoff 增加与 render_review_prompts.extract_section 相同的围栏跟踪（``` / ~~~ 开闭）后再判 H2 边界。
-    - Verification: suspected
-- [Low][70] .repo_template/scripts/_id_scan.py:199-216,232-273 — 每次 allocate 在全局 ID 锁内对全部本地分支逐个 ls-tree 并扫描全部 worktree，锁持有时间随分支数线性增长
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_10)
-  - f_template_scripts_ops_10: scan_max_id 对 local_branches() 每个分支执行 git ls-tree -r（另加每个 legacy 文件一次 git show），并对每个 worktree 做 rglob/iterdir 扫描; allocate/allocate_dir 在 id_lock 内调用 scan_max_id，扫描全程持锁; pending/findings/spikes/task 四类分配共用同一把 git 公共目录锁，分支多的仓里单次分配可达数十个 git 子进程
-    - Impact: 并行 task worktree 场景下编号分配互相排队，慢但不错；属可扩展性上限提示，非正确性问题。分支数达到百级时单次 new 操作延迟会明显可感。
-    - Fix: 可缓存单次 CLI 调用内的扫描结果，或先以 for-each-ref + 一次性 ls-tree 多分支批量取数；锁内只保留『复查 max + 落盘』最小临界区。
-    - Verification: static
-- [Low][90] .repo_template/scripts/repo_sync.py:2063 — cmd_link_skills（唯一无事务入口，f_03 的实际暴露面）从未被测试调用，_ensure_symlink 的『入回滚栈』报告真实性亦无断言
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_15)
-  - f_template_scripts_ops_15: cmd_link_skills（repo_sync.py:2063-2072）直接调 repair_symlinks + sync_opencode_commands，全程无 FileTransaction；grep .repo_template/tests 全部 *.py：'link-skills'、'_ensure_symlink'、'cmd_link' 均零命中，该入口从未被任一测试驱动。; _ensure_symlink 的真实目录 rmtree 分支（repo_sync.py:832-840）仅经 test_repair_symlinks_converts_stale_real_dir 间接覆盖：该用例断言软链结果与报告含『旧真实目录已转软链』子串，但不断言报告后半句『原内容入回滚栈』的真实性，也未验证被删 SKILL.md 内容在任一路径下可恢复。; apply 路径下同一分支有事务兜底（test_apply_test_failure_rolls_back_keeps_backup_and_prints_changed 验回滚），link-skills 路径下无兜底这一差异没有任何用例标记或锁定。
-    - Impact: f_03 的数据丢失场景恰好只发生在未被测试的入口上：若有人误以为 link-skills 与 apply 等价安全而在其文档/提示中沿用『入回滚栈』措辞，测试层不会给出任何信号；报告措辞与实际可恢复性长期脱节也无网可拦。
-    - Fix: 补 cmd_link_skills 级用例：宿主位放带内容的真实目录，调用后断言目录转软链、报告措辞与实际（无备份产生）一致；或在修 f_03 后以该用例锁定『先备份再转链』的新语义。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_09)
+    - f_template_scripts_ops_09: \_split_handoff 以 line.startswith("## ") 收集节边界，未跟踪代码围栏状态; cmd_archive_handoff 据此把 sections[:-1] 整段迁入 archive 并重写 handoff.md; handoff 节正文若含 fenced 代码块且块内有行首『## 』（如粘贴的 Markdown 示例），会被误判为新节，迁移后 handoff 保留的『最新节』可能只是某节的后半段
+        - Impact: 触发条件窄（handoff 正文粘贴含 ## 行的代码块），一旦触发会把半截节留在 handoff、另半截迁入 archive，内容被拆散且 dry-run 输出按错误节标题展示，审批者不易察觉。
+        - Fix: \_split_handoff 增加与 render_review_prompts.extract_section 相同的围栏跟踪（\`\`\` / ~~~ 开闭）后再判 H2 边界。
+        - Verification: suspected
+- [Low][70] .repo_template/scripts/\_id_scan.py:199-216,232-273 — 每次 allocate 在全局 ID 锁内对全部本地分支逐个 ls-tree 并扫描全部 worktree，锁持有时间随分支数线性增长
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_10)
+    - f_template_scripts_ops_10: scan_max_id 对 local_branches() 每个分支执行 git ls-tree -r（另加每个 legacy 文件一次 git show），并对每个 worktree 做 rglob/iterdir 扫描; allocate/allocate_dir 在 id_lock 内调用 scan_max_id，扫描全程持锁; pending/findings/spikes/task 四类分配共用同一把 git 公共目录锁，分支多的仓里单次分配可达数十个 git 子进程
+        - Impact: 并行 task worktree 场景下编号分配互相排队，慢但不错；属可扩展性上限提示，非正确性问题。分支数达到百级时单次 new 操作延迟会明显可感。
+        - Fix: 可缓存单次 CLI 调用内的扫描结果，或先以 for-each-ref + 一次性 ls-tree 多分支批量取数；锁内只保留『复查 max + 落盘』最小临界区。
+        - Verification: static
+- [Low][90] .repo_template/scripts/repo_sync.py:2063 — cmd_link_skills（唯一无事务入口，f_03 的实际暴露面）从未被测试调用，\_ensure_symlink 的『入回滚栈』报告真实性亦无断言
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_15)
+    - f_template_scripts_ops_15: cmd_link_skills（repo_sync.py:2063-2072）直接调 repair_symlinks + sync_opencode_commands，全程无 FileTransaction；grep .repo_template/tests 全部 \*.py：'link-skills'、'\_ensure_symlink'、'cmd_link' 均零命中，该入口从未被任一测试驱动。; \_ensure_symlink 的真实目录 rmtree 分支（repo_sync.py:832-840）仅经 test_repair_symlinks_converts_stale_real_dir 间接覆盖：该用例断言软链结果与报告含『旧真实目录已转软链』子串，但不断言报告后半句『原内容入回滚栈』的真实性，也未验证被删 SKILL.md 内容在任一路径下可恢复。; apply 路径下同一分支有事务兜底（test_apply_test_failure_rolls_back_keeps_backup_and_prints_changed 验回滚），link-skills 路径下无兜底这一差异没有任何用例标记或锁定。
+        - Impact: f_03 的数据丢失场景恰好只发生在未被测试的入口上：若有人误以为 link-skills 与 apply 等价安全而在其文档/提示中沿用『入回滚栈』措辞，测试层不会给出任何信号；报告措辞与实际可恢复性长期脱节也无网可拦。
+        - Fix: 补 cmd_link_skills 级用例：宿主位放带内容的真实目录，调用后断言目录转软链、报告措辞与实际（无备份产生）一致；或在修 f_03 后以该用例锁定『先备份再转链』的新语义。
+        - Verification: static
 - [Low][95] .repo_template/scripts/md_format.py:195 — md_format CLI 点名路径的黑名单静默过滤（f_06）无测试：main() 在套件中只被以 --check 全量模式调用过
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_16)
-  - f_template_scripts_ops_16: md_format.py:195 main() 对点名路径做 rels = [p for p in args.paths if not _is_blacklisted(p)] 静默过滤，与 format_paths 在 md_format.py:107 的显式 MdFormatError 拒绝口径相反（f_06）。; test_md_format.py 对 format_paths 的黑名单拒绝有专门用例（test_format_rejects_blacklist），但对 main() 的唯一调用是第 131 行 main(['--check'])（隐含 collect_all 全量模式）；grep 确认全套件无任何以显式路径参数调用 main() 的用例。; test_precommit_hook.py 的 test_blacklisted_md_skipped 覆盖的是 hook 侧 staged 过滤（返回 0 且文件未动），与 CLI 点名路径是不同代码路径，不能替代。
-    - Impact: 用户点名格式化归档 .md 时 CLI 静默跳过且报『无改动』，与库函数口径矛盾的行为没有任何测试锁定；将来统一口径（改 CLI 报错或改 format_paths 放行）时无回归网判断哪边是预期。
-    - Fix: 在 test_md_format.py 补 main(['docs/archive/keep.md']) 用例，断言其行为与最终裁定的口径一致（报错退出或明确提示跳过），并与 test_format_rejects_blacklist 互相引用注明两层口径。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_16)
+    - f_template_scripts_ops_16: md_format.py:195 main() 对点名路径做 rels = [p for p in args.paths if not \_is_blacklisted(p)] 静默过滤，与 format_paths 在 md_format.py:107 的显式 MdFormatError 拒绝口径相反（f_06）。; test_md_format.py 对 format_paths 的黑名单拒绝有专门用例（test_format_rejects_blacklist），但对 main() 的唯一调用是第 131 行 main(['--check'])（隐含 collect_all 全量模式）；grep 确认全套件无任何以显式路径参数调用 main() 的用例。; test_precommit_hook.py 的 test_blacklisted_md_skipped 覆盖的是 hook 侧 staged 过滤（返回 0 且文件未动），与 CLI 点名路径是不同代码路径，不能替代。
+        - Impact: 用户点名格式化归档 .md 时 CLI 静默跳过且报『无改动』，与库函数口径矛盾的行为没有任何测试锁定；将来统一口径（改 CLI 报错或改 format_paths 放行）时无回归网判断哪边是预期。
+        - Fix: 在 test_md_format.py 补 main(['docs/archive/keep.md']) 用例，断言其行为与最终裁定的口径一致（报错退出或明确提示跳过），并与 test_format_rejects_blacklist 互相引用注明两层口径。
+        - Verification: static
 - [Low][95] .repo_template/tests/test_repo_cleanup.py:148 — repo_cleanup 嵌套未点名目录树（f_01 的确切形状）无测试：防误删承诺的回归网只覆盖仓库根深度 1
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_17)
-  - f_template_scripts_ops_17: _prune 按仓库根相对路径比对排除集（repo_cleanup.py:114-121、158-165）：rel='src/node_modules' 不等于 'node_modules'，深度 ≥2 的同名 bulk 树不被剪枝，主 walk 会进入并按默认类别命中其内文件（f_01）。; test_repo_cleanup.py 两处 bulk 构造都在仓库根一级：fixture tree 的 node_modules/.scratch/artifacts/data（第 40-52 行）与 test_default_categories_do_not_enter_unnamed_dirs（第 148-171 行）的 artifacts/out/__pycache__ 等——后者验的是『根级 bulk 树内部』不被命中，并非『嵌套 bulk 树』。; 全文件 grep 'node_modules' 仅 7 处，全部为根级路径；无 src/node_modules、pkg/.scratch、a/b/artifacts 之类嵌套构造。
-    - Impact: docstring『默认扫描不进入未点名目录树』的安全承诺在嵌套 monorepo/子项目布局下已被 f_01 证伪，而测试只钉住根级情形，给出『承诺已测』的假象；修复 f_01（改按名剪枝或逐级剪枝）时也没有现成用例可扩展验证不回归根级行为之外的深度。
-    - Fix: 在 test_default_categories_do_not_enter_unnamed_dirs 旁补嵌套变体：src/vendor/node_modules/pkg/.DS_Store、pkg/.scratch/exp/note.log 等构造，断言默认类别零命中、点名类别仍可整树处理。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_17)
+    - f_template_scripts_ops_17: \_prune 按仓库根相对路径比对排除集（repo_cleanup.py:114-121、158-165）：rel='src/node_modules' 不等于 'node_modules'，深度 ≥2 的同名 bulk 树不被剪枝，主 walk 会进入并按默认类别命中其内文件（f_01）。; test_repo_cleanup.py 两处 bulk 构造都在仓库根一级：fixture tree 的 node_modules/.scratch/artifacts/data（第 40-52 行）与 test_default_categories_do_not_enter_unnamed_dirs（第 148-171 行）的 artifacts/out/__pycache__ 等——后者验的是『根级 bulk 树内部』不被命中，并非『嵌套 bulk 树』。; 全文件 grep 'node_modules' 仅 7 处，全部为根级路径；无 src/node_modules、pkg/.scratch、a/b/artifacts 之类嵌套构造。
+        - Impact: docstring『默认扫描不进入未点名目录树』的安全承诺在嵌套 monorepo/子项目布局下已被 f_01 证伪，而测试只钉住根级情形，给出『承诺已测』的假象；修复 f_01（改按名剪枝或逐级剪枝）时也没有现成用例可扩展验证不回归根级行为之外的深度。
+        - Fix: 在 test_default_categories_do_not_enter_unnamed_dirs 旁补嵌套变体：src/vendor/node_modules/pkg/.DS_Store、pkg/.scratch/exp/note.log 等构造，断言默认类别零命中、点名类别仍可整树处理。
+        - Verification: static
 - [Low][90] .repo_template/scripts/repo_sync.py:819 — sync_dir/sync_skill 目标侧单个文件软链（f_05 的 copy2 跟随位点）无测试：软链覆盖只测了目录根与 cleanup 侧
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_18)
-  - f_template_scripts_ops_18: sync_dir 的文件分支（repo_sync.py:817-820）对目标直接 shutil.copy2(entry, target)，目标为指向树外文件的软链时跟随写入树外（f_05）；sync_skill 复用同一复制路径。; 现有软链用例覆盖的是相邻面：test_sync_dir_rejects_symlink_destination 只验 sync_dir 目标『根目录』本身为软链时拒绝；cleanup 侧 test_cleanup_does_not_follow_directory_symlink_outside_repo 验的是删除不跟随；repair_symlinks 系列验的是宿主 skill 软链管理。; test_repo_sync.py 全文无『同步树内部某目标文件预置为软链』的构造，test_hard_sync_override_and_delete、test_skill_override_preserves_sync_state 的目标都是普通文件。
-    - Impact: 消费仓内若有人把 .repo_template 内某文件替换成指向仓外的软链，下一次 apply 会静默改写仓外文件且 changed 清单只记软链路径——这一越界写路径没有任何测试看守，与已钉死的目录根拒绝形成不对称防线。
-    - Fix: 在 test_repo_sync.py 补用例：同步目标树内放一个指向仓外哨兵文件的文件软链，断言 sync_dir/sync_skill 拒绝或只替换软链本体、哨兵内容不变，与 test_sync_dir_rejects_symlink_destination 的目录根口径对齐。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_18)
+    - f_template_scripts_ops_18: sync_dir 的文件分支（repo_sync.py:817-820）对目标直接 shutil.copy2(entry, target)，目标为指向树外文件的软链时跟随写入树外（f_05）；sync_skill 复用同一复制路径。; 现有软链用例覆盖的是相邻面：test_sync_dir_rejects_symlink_destination 只验 sync_dir 目标『根目录』本身为软链时拒绝；cleanup 侧 test_cleanup_does_not_follow_directory_symlink_outside_repo 验的是删除不跟随；repair_symlinks 系列验的是宿主 skill 软链管理。; test_repo_sync.py 全文无『同步树内部某目标文件预置为软链』的构造，test_hard_sync_override_and_delete、test_skill_override_preserves_sync_state 的目标都是普通文件。
+        - Impact: 消费仓内若有人把 .repo_template 内某文件替换成指向仓外的软链，下一次 apply 会静默改写仓外文件且 changed 清单只记软链路径——这一越界写路径没有任何测试看守，与已钉死的目录根拒绝形成不对称防线。
+        - Fix: 在 test_repo_sync.py 补用例：同步目标树内放一个指向仓外哨兵文件的文件软链，断言 sync_dir/sync_skill 拒绝或只替换软链本体、哨兵内容不变，与 test_sync_dir_rejects_symlink_destination 的目录根口径对齐。
+        - Verification: static
 - [Low][90] .repo_template/tests/test_repo_hygiene.py:50 — repo_hygiene archive-handoff 对 fenced code block 内伪标题（f_09）无测试：同仓另两个解析器都有围栏用例、独此一切节器没有
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_19)
-  - f_template_scripts_ops_19: f_09 已核：archive-handoff 按任意行首『## 』切节，不识别 fenced code block，handoff 节正文里代码块中的『## 』行会被误当新节标题切走。; test_repo_hygiene.py 的 6 个 archive-handoff 用例（第 50-121 行）构造的 handoff 全是普通文本分节，无一在节正文内放置带『## 』行的 ``` 代码块。; 对照同仓：check_review_status 的 extract_verdicts 与 render_review_prompts 的 extract_section 都有专门围栏用例（test_extract_verdicts_ignores_fenced_and_quoted_examples、test_extract_section_ignores_fenced_heading 等），围栏意识在套件内是既定标准，独 archive-handoff 的切节器未被同标准检验。
-    - Impact: 真实 handoff 节常含命令/日志代码块，其中出现『## 』开头行（markdown 示例、脚本注释）即触发误切，把半节内容错迁进 archive 且 handoff 本体静默变短；该解析缺陷在测试层无任何拦截，修复时也无现成用例可依。
-    - Fix: 在 test_repo_hygiene.py 补用例：最新节正文含 ``` 块且块内有『## 伪标题』行，断言 cmd_archive_handoff 后该节完整保留在 handoff、archive 只得旧节全文。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_19)
+    - f_template_scripts_ops_19: f_09 已核：archive-handoff 按任意行首『## 』切节，不识别 fenced code block，handoff 节正文里代码块中的『## 』行会被误当新节标题切走。; test_repo_hygiene.py 的 6 个 archive-handoff 用例（第 50-121 行）构造的 handoff 全是普通文本分节，无一在节正文内放置带『## 』行的 \`\`\` 代码块。; 对照同仓：check_review_status 的 extract_verdicts 与 render_review_prompts 的 extract_section 都有专门围栏用例（test_extract_verdicts_ignores_fenced_and_quoted_examples、test_extract_section_ignores_fenced_heading 等），围栏意识在套件内是既定标准，独 archive-handoff 的切节器未被同标准检验。
+        - Impact: 真实 handoff 节常含命令/日志代码块，其中出现『## 』开头行（markdown 示例、脚本注释）即触发误切，把半节内容错迁进 archive 且 handoff 本体静默变短；该解析缺陷在测试层无任何拦截，修复时也无现成用例可依。
+        - Fix: 在 test_repo_hygiene.py 补用例：最新节正文含 \`\`\` 块且块内有『## 伪标题』行，断言 cmd_archive_handoff 后该节完整保留在 handoff、archive 只得旧节全文。
+        - Verification: static
 - [Low][95] .repo_template/scripts/repo_task/lifecycle.py:838-854 (cmd_show) — cmd_show 输出的 task_md 字段实际指向 note.md
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_02)
-  - f_template_scripts_state_02: ref 分支：fields["note_md"] 与 fields["task_md"] 都赋值为 f"{ref_name}:{task['dir']}/note.md"（lifecycle.py:846-847）。; 本地分支：path 来自 load_task（即 note.md 路径），fields["note_md"] 与 fields["task_md"] 都赋值为 ctx._rel(path)（lifecycle.py:852-853）。; task.md 是同目录另一文件，show 输出中没有任何字段指向它；view_server 的 _DOC_NAMES 映射（task→task.md）是正确的同名概念实现，可对照。
-    - Impact: show 的消费者（含按字段取 task.md 路径的 agent/脚本）会打开 note.md 当作 spec，误读契约区内容；仅展示元数据错误，不影响状态机本身。
-    - Fix: cmd_show 两分支把 task_md 改为 task['dir'] + '/task.md'（ref 形式加 ref 前缀），并补一条 show 输出字段的回归测试。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_02)
+    - f_template_scripts_state_02: ref 分支：fields["note_md"] 与 fields["task_md"] 都赋值为 f"{ref_name}:{task['dir']}/note.md"（lifecycle.py:846-847）。; 本地分支：path 来自 load_task（即 note.md 路径），fields["note_md"] 与 fields["task_md"] 都赋值为 ctx.\_rel(path)（lifecycle.py:852-853）。; task.md 是同目录另一文件，show 输出中没有任何字段指向它；view_server 的 \_DOC_NAMES 映射（task→task.md）是正确的同名概念实现，可对照。
+        - Impact: show 的消费者（含按字段取 task.md 路径的 agent/脚本）会打开 note.md 当作 spec，误读契约区内容；仅展示元数据错误，不影响状态机本身。
+        - Fix: cmd_show 两分支把 task_md 改为 task['dir'] + '/task.md'（ref 形式加 ref 前缀），并补一条 show 输出字段的回归测试。
+        - Verification: static
 - [Low][90] .repo_template/scripts/repo_task/view_server.py:61-67,285-303 — /task-doc 的会话 token 随看板首页下发给任何可达客户端，不构成访问控制
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_03)
-  - f_template_scripts_state_03: _build_model() 把 _SESSION_TOKEN 写入 model['token']，_render_html 将整个 model JSON 注入首页 HTML；任何能 GET / 的客户端同时拿到 token。; /task-doc 唯一的校验是 token == _SESSION_TOKEN；首页与 /static/* 无任何校验。绑定非 loopback 时（--allow-non-loopback，代码以 WARNING 放行），网络内任意主机取首页即得 token，进而读取全部 task spec/正文。; loopback 默认下风险有限，但 token 给出的『有令牌保护』表象与实际可达性不符；同源策略可挡普通跨站读取，却挡不住能直连端口的网络对端与 DNS-rebinding 场景。
-    - Impact: 使用者可能误以为 /task-doc 受令牌保护而在非 loopback 绑定时暴露 task 文档；实际保密性等同于首页本身的可达性。
-    - Fix: 若 token 意在防本机其他进程/页面误触，在 serve 的非 loopback 警告与模块 docstring 中明确其非鉴权定位；若需真鉴权，应改为启动时打印的一次性 URL 且不随首页 JSON 下发，或要求请求头携带而非查询参数。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_03)
+    - f_template_scripts_state_03: \_build_model() 把 \_SESSION_TOKEN 写入 model['token']，\_render_html 将整个 model JSON 注入首页 HTML；任何能 GET / 的客户端同时拿到 token。; /task-doc 唯一的校验是 token == \_SESSION_TOKEN；首页与 /static/\* 无任何校验。绑定非 loopback 时（--allow-non-loopback，代码以 WARNING 放行），网络内任意主机取首页即得 token，进而读取全部 task spec/正文。; loopback 默认下风险有限，但 token 给出的『有令牌保护』表象与实际可达性不符；同源策略可挡普通跨站读取，却挡不住能直连端口的网络对端与 DNS-rebinding 场景。
+        - Impact: 使用者可能误以为 /task-doc 受令牌保护而在非 loopback 绑定时暴露 task 文档；实际保密性等同于首页本身的可达性。
+        - Fix: 若 token 意在防本机其他进程/页面误触，在 serve 的非 loopback 警告与模块 docstring 中明确其非鉴权定位；若需真鉴权，应改为启动时打印的一次性 URL 且不随首页 JSON 下发，或要求请求头携带而非查询参数。
+        - Verification: static
 - [Low][90] .repo_template/scripts/repo_task/view_static/chain_plan.js:36-94 与 .repo_template/scripts/repo_task/plan.py:1-7 — chain_plan.js 仍复刻了 Python 的链停止原因算法，与『看板 JS 不复刻算法』的声明矛盾
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_04)
-  - f_template_scripts_state_04: plan.py 模块 docstring 明示：『算法权威在本模块 compute_batch_plan……看板 JS 只做展示，不复刻本算法』；chain_plan.js 文件头亦自称『本文件不再实现批计划算法，避免与 Python 双实现漂移』。; 但 chain_plan.js 的 chainStopInfo 完整重写了 Python chain_stop_info 的判定（后继枚举、暂缓/他链/汇合点分支与文案），board.js 在 chain.stop_reason 缺失时以它兜底（buildChainCard），与 Python 版存在细节差异（如 Python 对 upstream 父节点的 unfinished 判定走 cat_of 类别、JS 走 blocksDownstream 类别集合，措辞与分支顺序亦非逐字一致）。; 同一文件内 CHAIN_COLORS/chainName/chainLetter/chainText 也与 plan.py 同名常量/函数双份定义，靠人工同步。
-    - Impact: 服务端未写 stop_reason 的数据形态下，看板展示的停因可能与 task.py plan 的输出不一致，形成双实现漂移——正是文件头声称要避免的情形。
-    - Fix: 删除 chainStopInfo 兜底或将其降为纯展示（stop_reason 缺失时显示空），常量/命名函数改为由服务端 model 注入；至少修正 chain_plan.js 文件头与 plan.py docstring 的声明与现状一致。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_04)
+    - f_template_scripts_state_04: plan.py 模块 docstring 明示：『算法权威在本模块 compute_batch_plan……看板 JS 只做展示，不复刻本算法』；chain_plan.js 文件头亦自称『本文件不再实现批计划算法，避免与 Python 双实现漂移』。; 但 chain_plan.js 的 chainStopInfo 完整重写了 Python chain_stop_info 的判定（后继枚举、暂缓/他链/汇合点分支与文案），board.js 在 chain.stop_reason 缺失时以它兜底（buildChainCard），与 Python 版存在细节差异（如 Python 对 upstream 父节点的 unfinished 判定走 cat_of 类别、JS 走 blocksDownstream 类别集合，措辞与分支顺序亦非逐字一致）。; 同一文件内 CHAIN_COLORS/chainName/chainLetter/chainText 也与 plan.py 同名常量/函数双份定义，靠人工同步。
+        - Impact: 服务端未写 stop_reason 的数据形态下，看板展示的停因可能与 task.py plan 的输出不一致，形成双实现漂移——正是文件头声称要避免的情形。
+        - Fix: 删除 chainStopInfo 兜底或将其降为纯展示（stop_reason 缺失时显示空），常量/命名函数改为由服务端 model 注入；至少修正 chain_plan.js 文件头与 plan.py docstring 的声明与现状一致。
+        - Verification: static
 - [Low][85] .repo_template/scripts/repo_task/integration.py:157-158 (cmd_start) — cmd_start 手工拆分 depends_on/conflicts_with，不 strip 空格也不校验 tid 格式
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_05)
-  - f_template_scripts_state_05: cmd_start 用 [t for t in str(ref_fm.get('depends_on','')).split(',') if t.strip()] 解析依赖——元素本身不 strip，' t002'（逗号后空格）会原样进入依赖判定，随后 effective.get(' t002') 落空并被报告为『依赖未满足：t002(缺失)』类误导信息。; 全仓其余路径统一用 documents.parse_tid_list（strip + TID_RE.fullmatch 校验 + 去重排序），front matter 由 dump_tid_list 写出时无空格，但 AGENTS.md 允许人工维护 note.md，手写带空格的列表是现实输入。; 同函数对 conflicts_with 同样手工拆分，running_conflicts 判定会静默漏掉带空格的冲突项（放行本应警告的并行）。
-    - Impact: 手改 front matter 后 start 可能误报依赖缺失，或漏报正在运行的冲突 task；错误信息指向不存在的『缺失』依赖，排障成本高。
-    - Fix: cmd_start 改用 parse_tid_list 解析两字段（与 scheduling/lifecycle 一致），非法格式直接以字段名报错。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_05)
+    - f_template_scripts_state_05: cmd_start 用 [t for t in str(ref_fm.get('depends_on','')).split(',') if t.strip()] 解析依赖——元素本身不 strip，' t002'（逗号后空格）会原样进入依赖判定，随后 effective.get(' t002') 落空并被报告为『依赖未满足：t002(缺失)』类误导信息。; 全仓其余路径统一用 documents.parse_tid_list（strip + TID_RE.fullmatch 校验 + 去重排序），front matter 由 dump_tid_list 写出时无空格，但 AGENTS.md 允许人工维护 note.md，手写带空格的列表是现实输入。; 同函数对 conflicts_with 同样手工拆分，running_conflicts 判定会静默漏掉带空格的冲突项（放行本应警告的并行）。
+        - Impact: 手改 front matter 后 start 可能误报依赖缺失，或漏报正在运行的冲突 task；错误信息指向不存在的『缺失』依赖，排障成本高。
+        - Fix: cmd_start 改用 parse_tid_list 解析两字段（与 scheduling/lifecycle 一致），非法格式直接以字段名报错。
+        - Verification: static
 - [Low][85] .repo_template/scripts/repo_task/attempts.py:74-75 (project_attempts) — project_attempts 对 execution_claimed 事件直接下标取 owner_id，结构不合法的账本行会以 KeyError 崩溃而非 fail-closed
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_06)
-  - f_template_scripts_state_06: ledger._read_unlocked 只校验每行是 JSON 对象，不校验事件字段结构；project_attempts 对 attempt_reserved 等事件用 event.get 宽容读取，唯独 execution_claimed 分支写 record['owner_id'] = event['owner_id'] 直接下标。; 账本的既定基调是 fail-closed：损坏 JSON 行直接 TaskDataError 拒绝继续（ledger.py:44-52），但一条 JSON 合法、缺 owner_id 的 execution_claimed 行（手改、旧版本或外部工具写入）会让 ps/recovery/integrate 等所有投影消费者抛裸 KeyError，绕过 cli.py 的 TaskDataError 统一出口变成 traceback。; 同文件 _require_identity_values 等校验只作用于命令入参，不作用于账本回放。
-    - Impact: 账本出现单条结构异常事件时，全部依赖投影的只读命令（ps/recovery/goal-check）不可用且错误信息不指向账本行号，恢复成本高于设计预期。
-    - Fix: project_attempts 对 execution_claimed 用 event.get('owner_id') 并在缺失时抛带 tid/attempt 上下文的 TaskDataError，或在 _read_unlocked 增加事件级结构校验。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_06)
+    - f_template_scripts_state_06: ledger.\_read_unlocked 只校验每行是 JSON 对象，不校验事件字段结构；project_attempts 对 attempt_reserved 等事件用 event.get 宽容读取，唯独 execution_claimed 分支写 record['owner_id'] = event['owner_id'] 直接下标。; 账本的既定基调是 fail-closed：损坏 JSON 行直接 TaskDataError 拒绝继续（ledger.py:44-52），但一条 JSON 合法、缺 owner_id 的 execution_claimed 行（手改、旧版本或外部工具写入）会让 ps/recovery/integrate 等所有投影消费者抛裸 KeyError，绕过 cli.py 的 TaskDataError 统一出口变成 traceback。; 同文件 \_require_identity_values 等校验只作用于命令入参，不作用于账本回放。
+        - Impact: 账本出现单条结构异常事件时，全部依赖投影的只读命令（ps/recovery/goal-check）不可用且错误信息不指向账本行号，恢复成本高于设计预期。
+        - Fix: project_attempts 对 execution_claimed 用 event.get('owner_id') 并在缺失时抛带 tid/attempt 上下文的 TaskDataError，或在 \_read_unlocked 增加事件级结构校验。
+        - Verification: static
 - [Low][60] .repo_template/scripts/pending.py:141-153、findings.py:51-62、spikes.py:38-48 — 三个条目脚本的 new 子命令对 --slug 无本地校验，与 rename 的严格校验不一致
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_07)
-  - f_template_scripts_state_07: pending.cmd_new / findings.cmd_new / spikes.cmd_new 直接把 args.slug 传给 _id_scan.allocate/allocate_dir，本单元文件内无任何 slug 格式校验。; 同文件的 rename 子命令却都先以 re.fullmatch(r'[a-z0-9]+(_[a-z0-9]+)*', slug) 严格校验（pending.py:290、findings.py:71），说明 slug 格式是既定契约，new 路径只是把校验完全外包。; _id_scan.py 不在本单元文件清单内，其 allocate 是否校验 slug 无法核对；若未校验，'../x'、'Foo Bar' 等 slug 可生成越界路径或不合规条目名，且 ENTRY_FILE_RE 后续 list 时会静默漏掉这些条目。
-    - Impact: 取决于 _id_scan 的实现：最坏情况下 new 可创建目录外文件或永远列不出的条目；最好情况下只是校验权威分散、rename 与 new 口径不一致。
-    - Fix: 在三个 cmd_new 入口复用 rename 的同一 slug 正则先行校验（或在 _id_scan.allocate 内校验并由本单元注明该契约），使两条路径口径一致。
-    - Verification: suspected
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_07)
+    - f_template_scripts_state_07: pending.cmd_new / findings.cmd_new / spikes.cmd_new 直接把 args.slug 传给 _id_scan.allocate/allocate_dir，本单元文件内无任何 slug 格式校验。; 同文件的 rename 子命令却都先以 re.fullmatch(r'[a-z0-9]+(_[a-z0-9]+)\*', slug) 严格校验（pending.py:290、findings.py:71），说明 slug 格式是既定契约，new 路径只是把校验完全外包。; \_id_scan.py 不在本单元文件清单内，其 allocate 是否校验 slug 无法核对；若未校验，'../x'、'Foo Bar' 等 slug 可生成越界路径或不合规条目名，且 ENTRY_FILE_RE 后续 list 时会静默漏掉这些条目。
+        - Impact: 取决于 \_id_scan 的实现：最坏情况下 new 可创建目录外文件或永远列不出的条目；最好情况下只是校验权威分散、rename 与 new 口径不一致。
+        - Fix: 在三个 cmd_new 入口复用 rename 的同一 slug 正则先行校验（或在 \_id_scan.allocate 内校验并由本单元注明该契约），使两条路径口径一致。
+        - Verification: suspected
 - [Low][65] .repo_template/scripts/repo_state.py:93-101,120-121,166-172 — repo_state.py 把 baseline 作为裸位置参数传给 git，未防以短横线开头的选项注入
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_08)
-  - f_template_scripts_state_08: _diff_name_only 执行 git diff --name-only -z <baseline>、cmd_added_lines 执行 git diff <baseline>、cmd_deliverable 执行 git diff --stat <baseline> -- <path>，均未在 baseline 前加 '--' 分隔（deliverable 仅对 path 加了 --）且未拒绝以 '-' 开头的值。; baseline 语义上应是 commit sha（调用方常取自 front matter diff_anchor 这类仓内数据），以 '-' 开头时会被 git 解析为选项（如 diff 的 --output=<file> 可写文件），git_ops.resolve_local_branch 对分支名有同类防护（拒绝 '-' 开头），repo_state.py 没有。; _baseline_ok 的 rev-parse --verify 校验只在部分路径先行：cmd_changed_files/cmd_added_lines 在 baseline 不可解析时是降级继续而非拒绝，注入参数仍会到达后续 git 调用。
-    - Impact: 仓内数据（diff_anchor）被污染或调用方误传时，git 选项注入可改变命令行为，最坏以 --output 写任意文件；本地工具威胁模型下概率低，但与同仓其他模块的防护基线不一致。
-    - Fix: repo_state.py 对 baseline 先做 rev-parse --verify 强制校验或拒绝 '-' 开头，并在 diff 调用中把 baseline 放在 '--' 之前按 rev 语义固定（git diff <rev> -- 路径）。
-    - Verification: suspected
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_08)
+    - f_template_scripts_state_08: \_diff_name_only 执行 git diff --name-only -z <baseline>、cmd_added_lines 执行 git diff <baseline>、cmd_deliverable 执行 git diff --stat <baseline> -- <path>，均未在 baseline 前加 '--' 分隔（deliverable 仅对 path 加了 --）且未拒绝以 '-' 开头的值。; baseline 语义上应是 commit sha（调用方常取自 front matter diff_anchor 这类仓内数据），以 '-' 开头时会被 git 解析为选项（如 diff 的 --output=<file> 可写文件），git_ops.resolve_local_branch 对分支名有同类防护（拒绝 '-' 开头），repo_state.py 没有。; \_baseline_ok 的 rev-parse --verify 校验只在部分路径先行：cmd_changed_files/cmd_added_lines 在 baseline 不可解析时是降级继续而非拒绝，注入参数仍会到达后续 git 调用。
+        - Impact: 仓内数据（diff_anchor）被污染或调用方误传时，git 选项注入可改变命令行为，最坏以 --output 写任意文件；本地工具威胁模型下概率低，但与同仓其他模块的防护基线不一致。
+        - Fix: repo_state.py 对 baseline 先做 rev-parse --verify 强制校验或拒绝 '-' 开头，并在 diff 调用中把 baseline 放在 '--' 之前按 rev 语义固定（git diff <rev> -- 路径）。
+        - Verification: suspected
 - [Low][80] .repo_template/scripts/repo_task/lifecycle.py:614-615,806-822 — cmd_finish 与 list --rebuild 未持控制面锁，与同类变更命令不一致
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_09)
-  - f_template_scripts_state_09: lifecycle.py 中 cmd_add/cmd_edit/cmd_drop/cmd_rewind/cmd_purge 均有 @control_locked，唯独 cmd_finish（lifecycle.py:614）无装饰器，而它与 cmd_drop 共用 _close_task：写 front matter、移动 task 目录、（dropped 路径外）影响派生索引。; cmd_list 的 --rebuild 分支调用 rebuild_index 写两个派生 JSON，同样无锁；并发的 finish/rebuild 或两个 rebuild 交错时，索引内容取决于最后写入者，atomic_write 只防截断不防语义交错。; control.py 的 attempt 命令与 integration 的 start/cleanup/integrate 均持锁，说明控制面串行化是既定纪律，finish 是缺口而非有意例外（其 worktree 侧操作有 require_own_task_worktree 约束，但归档移动与索引重建发生在主仓共享面）。
-    - Impact: 多会话并发（一个 finish、一个 rebuild/其他变更命令）时可能出现索引与目录状态短暂不一致，需要再跑一次 rebuild 修复；不会损坏状态权威（note.md/目录），故定级 Low。
-    - Fix: 给 cmd_finish 与 cmd_list 的 rebuild 分支加 @control_locked（或在 _close_task 内部持锁），与 cmd_drop 对齐。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_09)
+    - f_template_scripts_state_09: lifecycle.py 中 cmd_add/cmd_edit/cmd_drop/cmd_rewind/cmd_purge 均有 @control_locked，唯独 cmd_finish（lifecycle.py:614）无装饰器，而它与 cmd_drop 共用 \_close_task：写 front matter、移动 task 目录、（dropped 路径外）影响派生索引。; cmd_list 的 --rebuild 分支调用 rebuild_index 写两个派生 JSON，同样无锁；并发的 finish/rebuild 或两个 rebuild 交错时，索引内容取决于最后写入者，atomic_write 只防截断不防语义交错。; control.py 的 attempt 命令与 integration 的 start/cleanup/integrate 均持锁，说明控制面串行化是既定纪律，finish 是缺口而非有意例外（其 worktree 侧操作有 require_own_task_worktree 约束，但归档移动与索引重建发生在主仓共享面）。
+        - Impact: 多会话并发（一个 finish、一个 rebuild/其他变更命令）时可能出现索引与目录状态短暂不一致，需要再跑一次 rebuild 修复；不会损坏状态权威（note.md/目录），故定级 Low。
+        - Fix: 给 cmd_finish 与 cmd_list 的 rebuild 分支加 @control_locked（或在 \_close_task 内部持锁），与 cmd_drop 对齐。
+        - Verification: static
 - [Low][80] .repo_template/scripts/repo_task/documents.py:55-75 (parse_front_matter_text) — front matter 结束分隔符用子串查找，会把以 --- 开头的任意行误判为结束
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_10)
-  - f_template_scripts_state_10: parse_front_matter_text 用 text.find('\n---', 3) 定位结束分隔符，'\n----'、'\n--- foo' 等行都会命中前缀，front matter 值中若出现以 --- 开头的行（分隔线、YAML 文档标记风格内容）会提前截断，后续键被当作正文。; 解析循环还对重复键静默覆盖（fm[key] = ...），与 dump_front_matter 全键重写的往返组合下，手写 note.md 的重复键/伪分隔符不会得到任何报错，状态字段以截断后的值为准参与全部门禁。; store._task_record 对 tid/status 等关键字段有合法性校验，可挡住部分后果，但 title/note/depends_on 等字段的静默截断无校验覆盖。
-    - Impact: 手写或外部工具生成的 note.md 在边界格式下被静默误解析，表现为依赖丢失、标题截断等难定位问题；工具自身 dump 的文件格式规整，触发条件主要是人工编辑。
-    - Fix: 按行解析并要求结束行恰为 '---'（允许尾随空白），重复键时抛 TaskDataError，与 fail-closed 基调一致。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_10)
+    - f_template_scripts_state_10: parse_front_matter_text 用 text.find('\\n---', 3) 定位结束分隔符，'\\n----'、'\\n--- foo' 等行都会命中前缀，front matter 值中若出现以 --- 开头的行（分隔线、YAML 文档标记风格内容）会提前截断，后续键被当作正文。; 解析循环还对重复键静默覆盖（fm[key] = ...），与 dump_front_matter 全键重写的往返组合下，手写 note.md 的重复键/伪分隔符不会得到任何报错，状态字段以截断后的值为准参与全部门禁。; store.\_task_record 对 tid/status 等关键字段有合法性校验，可挡住部分后果，但 title/note/depends_on 等字段的静默截断无校验覆盖。
+        - Impact: 手写或外部工具生成的 note.md 在边界格式下被静默误解析，表现为依赖丢失、标题截断等难定位问题；工具自身 dump 的文件格式规整，触发条件主要是人工编辑。
+        - Fix: 按行解析并要求结束行恰为 '---'（允许尾随空白），重复键时抛 TaskDataError，与 fail-closed 基调一致。
+        - Verification: static
 - [Low][90] .repo_template/scripts/pending.py:262-272 (cmd_park) 对比 237-259 (cmd_archive) — pending park 接受空 --reason，与 archive 的非空校验口径不一致
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_11)
-  - f_template_scripts_state_11: cmd_archive 显式 strip 并拒绝空 reason（『归档必须提供非空 --reason』），且对 fix_ref/reason/resolution 逐项查换行。; cmd_park 只查 reason 是否含换行，空字符串（--reason '' 或全空白）直接通过，最终写入『- 暂搁：』空理由并把处理字段置为『不办』，条目进入 parked 后原因永久缺失。; parked 语义是『用户确认暂搁』，理由是后续 revive/审计的唯一依据，空理由与 archive 的闭环依据要求形成明显落差。
-    - Impact: 暂搁条目可无理由落盘，日后无法判断暂搁依据；属数据质量问题，不影响状态机正确性。
-    - Fix: cmd_park 复用 cmd_archive 的非空校验（strip 后为空即 IdScanError）。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_11)
+    - f_template_scripts_state_11: cmd_archive 显式 strip 并拒绝空 reason（『归档必须提供非空 --reason』），且对 fix_ref/reason/resolution 逐项查换行。; cmd_park 只查 reason 是否含换行，空字符串（--reason '' 或全空白）直接通过，最终写入『- 暂搁：』空理由并把处理字段置为『不办』，条目进入 parked 后原因永久缺失。; parked 语义是『用户确认暂搁』，理由是后续 revive/审计的唯一依据，空理由与 archive 的闭环依据要求形成明显落差。
+        - Impact: 暂搁条目可无理由落盘，日后无法判断暂搁依据；属数据质量问题，不影响状态机正确性。
+        - Fix: cmd_park 复用 cmd_archive 的非空校验（strip 后为空即 IdScanError）。
+        - Verification: static
 - [Low][85] .repo_template/scripts/repo_task/view_static/board.js:renderDag 与 pointermove 处理（bindEvents） — board.js 在每次 pointermove/mouseenter 时整表重建 SVG，规模大时拖拽与悬停明显卡顿
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_12)
-  - f_template_scripts_state_12: canvasEl 的 pointermove 处理每事件调用 renderDag()，renderDag 每次 computeLayout()（含 6 轮 barycenter 扫描）并把 canvasEl.innerHTML 清空后重建全部边/节点 DOM 与事件监听。; 节点 mouseenter/mouseleave 同样触发 renderDag + renderArchive + renderChainPanel 三个全量渲染。; 无节流/防抖，也未把平移限定为只更新 <g> 的 transform 属性（view 变换本可只改一个属性完成）。
-    - Impact: task 数量达到数百量级时，拖拽平移与悬停高亮会掉帧；看板是只读展示工具，不影响数据正确性，故定级 Low。
-    - Fix: 拖拽期间只更新 svg <g> 的 transform，pointerup 后再全量渲染；悬停渲染加 requestAnimationFrame 节流或仅切换受影响节点属性。
-    - Verification: static
-- [Low][85] .repo_template/scripts/repo_task/store.py:244-308 (scan_tasks_at_ref / _discover_effective_entries) — 有效状态发现对每个未合并分支/每个 worktree 做全量扫描，git 子进程数量随 task 数线性放大
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_13)
-  - f_template_scripts_state_13: _discover_effective_entries 对每个未合并 task 分支调 scan_tasks_at_ref：一次 ls-tree 加每个 task 目录一次 git show；对每个登记 worktree 调 scan_tasks_in_worktree 读取全部 note.md。; compute_schedule 每次调用都走 discover_effective_tasks + scan_tasks 两遍全量扫描；view_server 每请求重算（仅 500ms 渲染缓存），cmd_ps/cmd_view/recovery/goal-check 等只读命令也都触发。; monitoring.compute_ps_rows 还对每个 terminal 记录调 verify_integrate_ready（多次 git 调用 + 临时目录写 review 文件），ps 类命令总开销叠加放大。
-    - Impact: task 与分支数量增长后，只读命令与看板刷新延迟线性上升；功能正确性不受影响。
-    - Fix: scan_tasks_at_ref 改为单次 git cat-file --batch 批量取 note.md；发现结果按 ledger/HEAD 指纹做进程内或文件级缓存（monitoring.repository_fingerprint 已有可复用机制）。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_12)
+    - f_template_scripts_state_12: canvasEl 的 pointermove 处理每事件调用 renderDag()，renderDag 每次 computeLayout()（含 6 轮 barycenter 扫描）并把 canvasEl.innerHTML 清空后重建全部边/节点 DOM 与事件监听。; 节点 mouseenter/mouseleave 同样触发 renderDag + renderArchive + renderChainPanel 三个全量渲染。; 无节流/防抖，也未把平移限定为只更新 <g> 的 transform 属性（view 变换本可只改一个属性完成）。
+        - Impact: task 数量达到数百量级时，拖拽平移与悬停高亮会掉帧；看板是只读展示工具，不影响数据正确性，故定级 Low。
+        - Fix: 拖拽期间只更新 svg <g> 的 transform，pointerup 后再全量渲染；悬停渲染加 requestAnimationFrame 节流或仅切换受影响节点属性。
+        - Verification: static
+- [Low][85] .repo_template/scripts/repo_task/store.py:244-308 (scan_tasks_at_ref / \_discover_effective_entries) — 有效状态发现对每个未合并分支/每个 worktree 做全量扫描，git 子进程数量随 task 数线性放大
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_13)
+    - f_template_scripts_state_13: \_discover_effective_entries 对每个未合并 task 分支调 scan_tasks_at_ref：一次 ls-tree 加每个 task 目录一次 git show；对每个登记 worktree 调 scan_tasks_in_worktree 读取全部 note.md。; compute_schedule 每次调用都走 discover_effective_tasks + scan_tasks 两遍全量扫描；view_server 每请求重算（仅 500ms 渲染缓存），cmd_ps/cmd_view/recovery/goal-check 等只读命令也都触发。; monitoring.compute_ps_rows 还对每个 terminal 记录调 verify_integrate_ready（多次 git 调用 + 临时目录写 review 文件），ps 类命令总开销叠加放大。
+        - Impact: task 与分支数量增长后，只读命令与看板刷新延迟线性上升；功能正确性不受影响。
+        - Fix: scan_tasks_at_ref 改为单次 git cat-file --batch 批量取 note.md；发现结果按 ledger/HEAD 指纹做进程内或文件级缓存（monitoring.repository_fingerprint 已有可复用机制）。
+        - Verification: static
 - [Low][85] .repo_template/scripts/track_worktree.py:16-19,139-152,186-196 — track_worktree 的 tid 提取与校验弱于其 docstring 声明
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_14)
-  - f_template_scripts_state_14: 文件头 docstring 称 marker 模式『Validates the tid』，但 main 只校验 --tid 非空，无 TID_RE 格式校验（repo_task.context.TID_RE 存在且全仓通用，本脚本未用）。; hook 模式的 extract_tid 用正则 \bstart\s+(t\d+) 扫描任意 Bash 命令文本：任何含『start tNNN』字样的无关命令（如脚本参数、注释、echo 字符串）都会被当作 task start 触发 worktree 解析与状态栏记录写入。; --tid[= ](\S+) 取首个匹配的任意非空串，命令中出现的路径/参数可抢占真实 tid（fallback 顺序使然）。
-    - Impact: 状态栏 worktree 标记可能误记/漏记，仅影响展示与 agent 提示，不触及 task 状态权威；但 docstring 与实现不一致会误导维护者高估其可靠性。
-    - Fix: marker 与 hook 两路都用 ^t[0-9]+$ 校验 tid；hook 提取限定命令以 task.py/task 路径开头或含 track_worktree 调用时才采用位置参数形式，并修正 docstring 措辞。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_14)
+    - f_template_scripts_state_14: 文件头 docstring 称 marker 模式『Validates the tid』，但 main 只校验 --tid 非空，无 TID_RE 格式校验（repo_task.context.TID_RE 存在且全仓通用，本脚本未用）。; hook 模式的 extract_tid 用正则 \\bstart\\s+(t\\d+) 扫描任意 Bash 命令文本：任何含『start tNNN』字样的无关命令（如脚本参数、注释、echo 字符串）都会被当作 task start 触发 worktree 解析与状态栏记录写入。; --tid[= ](%5CS+) 取首个匹配的任意非空串，命令中出现的路径/参数可抢占真实 tid（fallback 顺序使然）。
+        - Impact: 状态栏 worktree 标记可能误记/漏记，仅影响展示与 agent 提示，不触及 task 状态权威；但 docstring 与实现不一致会误导维护者高估其可靠性。
+        - Fix: marker 与 hook 两路都用 ^t[0-9]+$ 校验 tid；hook 提取限定命令以 task.py/task 路径开头或含 track_worktree 调用时才采用位置参数形式，并修正 docstring 措辞。
+        - Verification: static
 - [Low][80] .repo_template/scripts/repo_task/cli.py:246-253 与 documents.py:97-124 — CLI 统一异常出口漏掉 ValueError，个别路径会裸 traceback
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_15)
-  - f_template_scripts_state_15: cli.main 只捕获 ctx.TaskDataError 与 OSError 两类；documents.atomic_write_text 对软链目标抛 ValueError（『does not support writing to symlink』），write_front_matter/write_front_matter_many 是 edit/limits/图合并等命令的公共写路径，note.md 被软链（模板仓软链部署形态下并不罕见）时命令以 traceback 结束。; file_transaction.FileTransaction 的方法以 ValueError 表达事务状态错误，graph.cmd_merge_backlog/cmd_graph_transaction 已做转换，但这是逐调用点纪律而非入口兜底，后续新增调用点易遗漏。; 同仓其他入口（pending.py/findings.py）以 sys.exit(str(e)) 收口，对照之下 task.py 的出口覆盖面最窄。
-    - Impact: 异常形态不一致：用户看到 Python traceback 而非可行动的错误信息；不影响数据安全（写入在抛错前未发生）。
-    - Fix: cli.main 增加对 ValueError 的捕获并转统一错误输出，或把 atomic_write_text 的软链错误改为 TaskDataError 家族。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_15)
+    - f_template_scripts_state_15: cli.main 只捕获 ctx.TaskDataError 与 OSError 两类；documents.atomic_write_text 对软链目标抛 ValueError（『does not support writing to symlink』），write_front_matter/write_front_matter_many 是 edit/limits/图合并等命令的公共写路径，note.md 被软链（模板仓软链部署形态下并不罕见）时命令以 traceback 结束。; file_transaction.FileTransaction 的方法以 ValueError 表达事务状态错误，graph.cmd_merge_backlog/cmd_graph_transaction 已做转换，但这是逐调用点纪律而非入口兜底，后续新增调用点易遗漏。; 同仓其他入口（pending.py/findings.py）以 sys.exit(str(e)) 收口，对照之下 task.py 的出口覆盖面最窄。
+        - Impact: 异常形态不一致：用户看到 Python traceback 而非可行动的错误信息；不影响数据安全（写入在抛错前未发生）。
+        - Fix: cli.main 增加对 ValueError 的捕获并转统一错误输出，或把 atomic_write_text 的软链错误改为 TaskDataError 家族。
+        - Verification: static
 - [Low][85] .repo_template/scripts/repo_task/ledger.py:29-66；.repo_template/scripts/repo_task/attempts.py:34-96 — 账本内容损坏（非 JSON 行/结构非法事件）无任何测试，f_06 的 KeyError 路径正落在该空白区
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_19)
-  - f_template_scripts_state_19: 现有账本失败测试覆盖的是「文件缺失/回滚」一侧：test_design_regressions.py 的 lost-ledger import 与 runtime_missing 相位、各处 ledger.unlink() 场景、test_review_report_regressions.py 把账本回滚为旧字节；没有任何测试向 dispatch_ledger.jsonl 写入非 JSON 行或结构非法的事件行。; grep 全测试目录：project_attempts 仅出现在 test_task_modularization.py 的门面缺席名单中，无直接行为测试；ledger_read 的直接测试（test_dispatch_integration.py:757）只喂格式完好的行验证 tid 预过滤与 attempt 分配。; 本单元 summary 把 ledger.py:29-66「损坏行 fail-closed」列为正面证据，但该行为无测试钉住；attempts.project_attempts 对 execution_claimed 行直接下标取 owner_id（f_template_scripts_state_06）在结构非法输入下抛 KeyError 而非 fail-closed，同样无测试暴露。
-    - Impact: 账本是执行身份与恢复相位的事实来源；损坏行处理若回归（静默跳过、误投影、裸异常），recovery/cleanup 门禁可能在真实账本损坏时给出错误相位或崩溃，而测试层无任何信号。
-    - Fix: 为 ledger_read 与 project_attempts/recovery 增加损坏输入用例：非 JSON 行、缺 event 字段行、execution_claimed 缺 owner_id 行各一，断言统一 fail-closed（TaskDataError 或明确的 needs_attention 相位）且不改写账本。
-    - Verification: static
-- [Low][90] .repo_template/scripts/repo_task/view_server.py（serve/_Handler）；.repo_template/tests/test_view_server.py；.repo_template/tests/pytest.ini:3 — view_server 无任何真实 HTTP 端到端测试，首页与静态资源路由连 handler 级测试也没有
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_20)
-  - f_template_scripts_state_20: pytest.ini 对 contract 标记的声明即「不起真实 HTTP 服务」；test_view_server.py 中 serve() 的测试全部以 FakeServer 替换 ThreadingHTTPServer，_Handler 的测试以 FakeHandler/DummyHandler 手工驱动 do_GET/_send_bytes，socket 监听→请求解析→响应写回的完整链路从未跑通一次。; _route_get 的直接测试只有 /task-doc 一条路由（test_task_doc_endpoint_requires_valid_session_token）；首页 "/" 渲染路由与 /static/board.js、board.css 的静态文件路由没有任何 handler 级用例——_render_html 的纯函数测试不经过路由、Content-Type 与缓存头路径。; test_find_free_port_and_serve_ipv6_loopback 真实调用了 _find_free_port，但 serve 本体仍走 FakeServer，未验证真实绑定与并发请求下的渲染缓存去抖（test_rendered_html_cache_debounce 亦为 monkeypatch _build_model 的纯函数级验证）。
-    - Impact: 路由表、静态目录解析或响应头在真实服务路径上的回归（如静态文件 404、MIME 错误）不会被任何测试发现；看板是 task 状态的只读权威视图，静默损坏会误导执行决策。
-    - Fix: 在非 contract 层补一条真实回环 HTTP 冒烟：随机端口起 serve（或直接 ThreadingHTTPServer+_Handler），断言 GET / 返回 200 且含 window.__BOARD__、GET /static/board.js 返回 200 且字节与源文件一致、未知路径返回 404。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_19)
+    - f_template_scripts_state_19: 现有账本失败测试覆盖的是「文件缺失/回滚」一侧：test_design_regressions.py 的 lost-ledger import 与 runtime_missing 相位、各处 ledger.unlink() 场景、test_review_report_regressions.py 把账本回滚为旧字节；没有任何测试向 dispatch_ledger.jsonl 写入非 JSON 行或结构非法的事件行。; grep 全测试目录：project_attempts 仅出现在 test_task_modularization.py 的门面缺席名单中，无直接行为测试；ledger_read 的直接测试（test_dispatch_integration.py:757）只喂格式完好的行验证 tid 预过滤与 attempt 分配。; 本单元 summary 把 ledger.py:29-66「损坏行 fail-closed」列为正面证据，但该行为无测试钉住；attempts.project_attempts 对 execution_claimed 行直接下标取 owner_id（f_template_scripts_state_06）在结构非法输入下抛 KeyError 而非 fail-closed，同样无测试暴露。
+        - Impact: 账本是执行身份与恢复相位的事实来源；损坏行处理若回归（静默跳过、误投影、裸异常），recovery/cleanup 门禁可能在真实账本损坏时给出错误相位或崩溃，而测试层无任何信号。
+        - Fix: 为 ledger_read 与 project_attempts/recovery 增加损坏输入用例：非 JSON 行、缺 event 字段行、execution_claimed 缺 owner_id 行各一，断言统一 fail-closed（TaskDataError 或明确的 needs_attention 相位）且不改写账本。
+        - Verification: static
+- [Low][90] .repo_template/scripts/repo_task/view_server.py（serve/\_Handler）；.repo_template/tests/test_view_server.py；.repo_template/tests/pytest.ini:3 — view_server 无任何真实 HTTP 端到端测试，首页与静态资源路由连 handler 级测试也没有
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_20)
+    - f_template_scripts_state_20: pytest.ini 对 contract 标记的声明即「不起真实 HTTP 服务」；test_view_server.py 中 serve() 的测试全部以 FakeServer 替换 ThreadingHTTPServer，\_Handler 的测试以 FakeHandler/DummyHandler 手工驱动 do_GET/\_send_bytes，socket 监听→请求解析→响应写回的完整链路从未跑通一次。; \_route_get 的直接测试只有 /task-doc 一条路由（test_task_doc_endpoint_requires_valid_session_token）；首页 "/" 渲染路由与 /static/board.js、board.css 的静态文件路由没有任何 handler 级用例——\_render_html 的纯函数测试不经过路由、Content-Type 与缓存头路径。; test_find_free_port_and_serve_ipv6_loopback 真实调用了 \_find_free_port，但 serve 本体仍走 FakeServer，未验证真实绑定与并发请求下的渲染缓存去抖（test_rendered_html_cache_debounce 亦为 monkeypatch \_build_model 的纯函数级验证）。
+        - Impact: 路由表、静态目录解析或响应头在真实服务路径上的回归（如静态文件 404、MIME 错误）不会被任何测试发现；看板是 task 状态的只读权威视图，静默损坏会误导执行决策。
+        - Fix: 在非 contract 层补一条真实回环 HTTP 冒烟：随机端口起 serve（或直接 ThreadingHTTPServer+\_Handler），断言 GET / 返回 200 且含 window.__BOARD__、GET /static/board.js 返回 200 且字节与源文件一致、未知路径返回 404。
+        - Verification: static
 - [Low][90] .repo_template/skills/bug-to-pending/SKILL.md:20 — bug-to-pending 声称 task-work 是其 analysis-only 模式的内部调用方，但注册表无此调用边且 task-work 正文从不引用它
-  - Sources: bundle_local_template_support.md (f_template_support_01)
-  - f_template_support_01: .repo_template/skills/bug-to-pending/SKILL.md:20 称 analysis-only 模式「供 `task-work`、`pending-record` 等内部调用」; .repo_template/skills/registry.json 的 calls 数组中指向 bug-to-pending 的边只有 task-from-pending→bug-to-pending 与 pending-record→bug-to-pending，无 task-work→bug-to-pending; grep 核实 task-work 与 task-run 的 SKILL.md 全文均未出现 bug-to-pending；task-work 实施步 6 只泛称「登记 pending 或 finding」; usage.md 与 architecture.md 均声明 registry.json 是角色/调用图唯一事实源、「只接受注册调用边」
-    - Impact: 权威注册表与 skill 正文对同一调用关系给出相反结论：按正文行事的 agent 会走一条未注册的组合路径，按注册表行事则该模式的一个声称调用方永远不会触发；后续维护者无法判断应补注册边还是删正文声明，组合契约的可信度被削弱。
-    - Fix: 二选一并保持单一权威：若 task-work 确应在遇 bug 时走 analysis-only，则在 registry.json 补 task-work→bug-to-pending 边并在 task-work 正文写明调用点；否则删除 bug-to-pending 第 20 行中对 task-work 的声称。
-    - Verification: static
+    - Sources: bundle_local_template_support.md (f_template_support_01)
+    - f_template_support_01: .repo_template/skills/bug-to-pending/SKILL.md:20 称 analysis-only 模式「供 `task-work`、`pending-record` 等内部调用」; .repo_template/skills/registry.json 的 calls 数组中指向 bug-to-pending 的边只有 task-from-pending→bug-to-pending 与 pending-record→bug-to-pending，无 task-work→bug-to-pending; grep 核实 task-work 与 task-run 的 SKILL.md 全文均未出现 bug-to-pending；task-work 实施步 6 只泛称「登记 pending 或 finding」; usage.md 与 architecture.md 均声明 registry.json 是角色/调用图唯一事实源、「只接受注册调用边」
+        - Impact: 权威注册表与 skill 正文对同一调用关系给出相反结论：按正文行事的 agent 会走一条未注册的组合路径，按注册表行事则该模式的一个声称调用方永远不会触发；后续维护者无法判断应补注册边还是删正文声明，组合契约的可信度被削弱。
+        - Fix: 二选一并保持单一权威：若 task-work 确应在遇 bug 时走 analysis-only，则在 registry.json 补 task-work→bug-to-pending 边并在 task-work 正文写明调用点；否则删除 bug-to-pending 第 20 行中对 task-work 的声称。
+        - Verification: static
 - [Low][95] .repo_template/docs/usage.md:51 — usage.md 称 commit 由 pre-commit hook「强制」执行 md 格式门禁，但本仓未启用 hooksPath，门禁实际未生效
-  - Sources: bundle_local_template_support.md (f_template_support_02)
-  - f_template_support_02: .repo_template/docs/usage.md:51 写「commit 由 pre-commit hook 强制（.repo_template/hooks/pre-commit …）」，同句后半才提到需先 repo_sync.py install-hooks 启用 core.hooksPath; 本仓实查：git config core.hooksPath 未设置（退出码 1），.git/hooks/ 下只有 *.sample 文件，无生效的 pre-commit; AGENTS.md 与 usage.md 多处流程（md 格式统一、commit 前 --check 为绿）以该 hook 的强制存在为前提叙述
-    - Impact: 在当前消费仓克隆中，md_kx 格式门禁并不像文档所述那样被强制：未格式化的 Markdown 可直接提交，后续同步/合并时才以格式漂移形式暴露；「强制」表述使读者高估门禁的实际覆盖（hooksPath 是逐克隆本地配置，任何新克隆默认同样未启用）。
-    - Fix: 在本仓执行 install-hooks 启用门禁，或把 usage.md 的表述改为与状态一致的条件式说明（如「启用 hooksPath 后，commit 由 pre-commit hook 强制」），并在消费仓接入清单中把 install-hooks 列为必做项。
-    - Verification: static
+    - Sources: bundle_local_template_support.md (f_template_support_02)
+    - f_template_support_02: .repo_template/docs/usage.md:51 写「commit 由 pre-commit hook 强制（.repo_template/hooks/pre-commit …）」，同句后半才提到需先 repo_sync.py install-hooks 启用 core.hooksPath; 本仓实查：git config core.hooksPath 未设置（退出码 1），.git/hooks/ 下只有 \*.sample 文件，无生效的 pre-commit; AGENTS.md 与 usage.md 多处流程（md 格式统一、commit 前 --check 为绿）以该 hook 的强制存在为前提叙述
+        - Impact: 在当前消费仓克隆中，md_kx 格式门禁并不像文档所述那样被强制：未格式化的 Markdown 可直接提交，后续同步/合并时才以格式漂移形式暴露；「强制」表述使读者高估门禁的实际覆盖（hooksPath 是逐克隆本地配置，任何新克隆默认同样未启用）。
+        - Fix: 在本仓执行 install-hooks 启用门禁，或把 usage.md 的表述改为与状态一致的条件式说明（如「启用 hooksPath 后，commit 由 pre-commit hook 强制」），并在消费仓接入清单中把 install-hooks 列为必做项。
+        - Verification: static
 - [Low][85] .repo_template/hooks/pre-commit:18 — pre-commit 在模块顶层无条件 import md_format，模块缺失或导入失败时将阻断全部提交（含不涉及 .md 的提交）
-  - Sources: bundle_local_template_support.md (f_template_support_03)
-  - f_template_support_03: .repo_template/hooks/pre-commit:15-18 在顶层组装 sys.path 并 `import md_format`，发生在 main() 的「staged 无 .md 时快速放行」判断（第 49-52 行）之前; 文件 docstring 声明的行为是「staged 无 .md 时快速放行；有 .md 但格式化失败（含 md_kx 缺失）阻断提交并引导安装」——md_kx 二进制缺失由 format_paths 抛 MdFormatError 处理（第 60-63 行），但 md_format 模块本身缺失/损坏不在此列; 模板被部分复制、scripts/ 不完整或 md_format.py 引入新的导入错误时，hook 以未捕获的 ImportError 栈退出非零，git 对所有 commit 一律拒绝
-    - Impact: 门禁脚本的故障域大于其职责域：一个只应管 Markdown 格式的 hook 能在模板状态异常时冻结整个仓库的提交能力，且报错是 Python 栈而非 docstring 承诺的安装引导，增加排查成本。
-    - Fix: 把 import md_format 延迟到 staged_md() 确认存在 staged .md 之后（或包一层 try/except，导入失败时输出与 MdFormatError 一致的引导信息再退出 1）；无 .md 的提交应在任何模板模块加载前直接放行。
-    - Verification: static
+    - Sources: bundle_local_template_support.md (f_template_support_03)
+    - f_template_support_03: .repo_template/hooks/pre-commit:15-18 在顶层组装 sys.path 并 `import md_format`，发生在 main() 的「staged 无 .md 时快速放行」判断（第 49-52 行）之前; 文件 docstring 声明的行为是「staged 无 .md 时快速放行；有 .md 但格式化失败（含 md_kx 缺失）阻断提交并引导安装」——md_kx 二进制缺失由 format_paths 抛 MdFormatError 处理（第 60-63 行），但 md_format 模块本身缺失/损坏不在此列; 模板被部分复制、scripts/ 不完整或 md_format.py 引入新的导入错误时，hook 以未捕获的 ImportError 栈退出非零，git 对所有 commit 一律拒绝
+        - Impact: 门禁脚本的故障域大于其职责域：一个只应管 Markdown 格式的 hook 能在模板状态异常时冻结整个仓库的提交能力，且报错是 Python 栈而非 docstring 承诺的安装引导，增加排查成本。
+        - Fix: 把 import md_format 延迟到 staged_md() 确认存在 staged .md 之后（或包一层 try/except，导入失败时输出与 MdFormatError 一致的引导信息再退出 1）；无 .md 的提交应在任何模板模块加载前直接放行。
+        - Verification: static
 - [Low][75] .repo_template/hooks/pre-commit:31 — pre-commit 的 staged 文件选择用 --diff-filter=ACM，纯重命名或重命名加修改的 .md 会绕过格式门禁
-  - Sources: bundle_local_template_support.md (f_template_support_04)
-  - f_template_support_04: .repo_template/hooks/pre-commit:31 用 `git diff --cached --name-only -z --diff-filter=ACM -- *.md` 选文件，过滤器不含 R（rename）; Git 在 diff 中默认开启重命名检测（diff.renames 自 Git 2.9 默认 true）：重命名且改内容的 .md 以 R 状态出现，被 ACM 过滤静默排除，既不格式化也不做 dirty_vs_index 检查; docstring 与 usage.md 对该 hook 的描述均为「格式化本次 commit 涉及的 .md」，未声明排除重命名
-    - Impact: 通过 git mv 并顺手改内容的 Markdown 文件可未经 md_kx 格式化进入仓库，与门禁宣称的覆盖范围不符；影响仅限格式一致性，故评 Low。注：若消费仓显式关闭 diff.renames，文件会以 A+D 出现而被捕获，故该缺口与本地 git 配置相关。
-    - Fix: 将过滤器改为 ACMR（或去掉 --diff-filter 并在代码中排除 D），并对 R 的新路径取 diff 的目标路径格式化；同时补一条重命名场景的说明或测试。
-    - Verification: static
-- [Low][90] .repo_template/tests/test_contract_suite.py:99-105 — 用 __code__.co_names 字节码名字表断言 repo_sync._run_tests 引用了 CONSUMER_TEST_COMMAND，是白盒脆弱断言
-  - Sources: bundle_local_template_tests.md (f_template_tests_03)
-  - f_template_tests_03: test_sync_apply_runs_contract_suite 取 rs._run_tests.__code__.co_names 并断言 'CONSUMER_TEST_COMMAND' 在其中，只证明函数字节码的名字表里出现过该常量名，不证明运行时真的用它拼了测试命令; 等价重构（别名导入、getattr、把常量内联到另一 helper）会让用例变红而行为不变；反之保留一个无用引用也能让用例保持绿而行为已改
-    - Impact: 契约套件中最关键的一条『sync apply 真跑契约测试命令』保证实际由实现细节而非行为背书，重构时产生假红、行为漂移时可能假绿，侵蚀 contract marker 子集的可信度。
-    - Fix: 改为行为断言：在 tmp 仓上以可观察方式运行 _run_tests/apply 路径（如注入假的命令执行记录点或用一个只含契约模块的最小仓断言其实际执行的命令与 CONSUMER_TEST_COMMAND 相等），或至少断言 _run_tests 源码经 inspect 解析后该常量出现在命令构造表达式中。
-    - Verification: static
+    - Sources: bundle_local_template_support.md (f_template_support_04)
+    - f_template_support_04: .repo_template/hooks/pre-commit:31 用 `git diff --cached --name-only -z --diff-filter=ACM -- *.md` 选文件，过滤器不含 R（rename）; Git 在 diff 中默认开启重命名检测（diff.renames 自 Git 2.9 默认 true）：重命名且改内容的 .md 以 R 状态出现，被 ACM 过滤静默排除，既不格式化也不做 dirty_vs_index 检查; docstring 与 usage.md 对该 hook 的描述均为「格式化本次 commit 涉及的 .md」，未声明排除重命名
+        - Impact: 通过 git mv 并顺手改内容的 Markdown 文件可未经 md_kx 格式化进入仓库，与门禁宣称的覆盖范围不符；影响仅限格式一致性，故评 Low。注：若消费仓显式关闭 diff.renames，文件会以 A+D 出现而被捕获，故该缺口与本地 git 配置相关。
+        - Fix: 将过滤器改为 ACMR（或去掉 --diff-filter 并在代码中排除 D），并对 R 的新路径取 diff 的目标路径格式化；同时补一条重命名场景的说明或测试。
+        - Verification: static
+- [Low][90] .repo_template/tests/test_contract_suite.py:99-105 — 用 __code__.co_names 字节码名字表断言 repo_sync.\_run_tests 引用了 CONSUMER_TEST_COMMAND，是白盒脆弱断言
+    - Sources: bundle_local_template_tests.md (f_template_tests_03)
+    - f_template_tests_03: test_sync_apply_runs_contract_suite 取 rs.\_run_tests.__code__.co_names 并断言 'CONSUMER_TEST_COMMAND' 在其中，只证明函数字节码的名字表里出现过该常量名，不证明运行时真的用它拼了测试命令; 等价重构（别名导入、getattr、把常量内联到另一 helper）会让用例变红而行为不变；反之保留一个无用引用也能让用例保持绿而行为已改
+        - Impact: 契约套件中最关键的一条『sync apply 真跑契约测试命令』保证实际由实现细节而非行为背书，重构时产生假红、行为漂移时可能假绿，侵蚀 contract marker 子集的可信度。
+        - Fix: 改为行为断言：在 tmp 仓上以可观察方式运行 \_run_tests/apply 路径（如注入假的命令执行记录点或用一个只含契约模块的最小仓断言其实际执行的命令与 CONSUMER_TEST_COMMAND 相等），或至少断言 \_run_tests 源码经 inspect 解析后该常量出现在命令构造表达式中。
+        - Verification: static
 - [Low][85] tests/unit/test_repo_hygiene.py:9-33 — 开发者 home 路径隐私守卫的覆盖边界多处收窄：仅匹配 /(Users|home)/<name>/、二进制判定只看前 8192 字节、docs/archive/ 整体豁免
-  - Sources: bundle_local_template_tests.md (f_template_tests_04)
-  - f_template_tests_04: HOME_PATH = re.compile(r'/(?:Users|home)/([A-Za-z0-9._-]+)/')：不匹配 /root/、Windows 盘符路径（C:\\Users\\...）、~ 相对写法与转义过的路径形态; tracked_text_files 只读文件前 8192 字节查 NUL 判二进制：文本文件若在前 8192 字节内含 NUL 会被整体跳过，其后出现的 home 路径泄漏不被检查；反之大文件第 8192 字节之后的泄漏虽能查到，但分类依据仅此一次嗅探; name.startswith('docs/archive/') 的文件整体跳过，注释称历史快照按约定不可变（A44）——属明示取舍，但意味着归档区新增内容同样不受守卫约束; allowlist 文件 review_privacy_allowlist.txt 在测试内被无条件读取，若该文件缺失整个守卫以异常失败而非跳过（fail-closed，可接受，但与守卫『静默守护』定位有张力）
-    - Impact: 该守卫是公开仓防开发者路径泄漏的唯一自动化防线（视角1 开源隐私项）；其盲区形态（/root/、Windows 路径、含 NUL 的文本文件）恰是跨平台开发者最易真实泄漏的形态，守卫全绿不等于无泄漏。
-    - Fix: 扩展正则覆盖 /root/ 与 Windows Users 路径；二进制判定改为对候选文本文件全量扫描（仓库规模下成本可控）或按扩展名+嗅探双判；对 docs/archive/ 豁免保留但在测试 docstring 中显式列明盲区清单，让豁免成为可审计的决定而非隐含行为。
-    - Verification: static
+    - Sources: bundle_local_template_tests.md (f_template_tests_04)
+    - f_template_tests_04: HOME_PATH = re.compile(r'/(?:Users|home)/([A-Za-z0-9.\_-]+)/')：不匹配 /root/、Windows 盘符路径（C:\\Users\\...）、~ 相对写法与转义过的路径形态; tracked_text_files 只读文件前 8192 字节查 NUL 判二进制：文本文件若在前 8192 字节内含 NUL 会被整体跳过，其后出现的 home 路径泄漏不被检查；反之大文件第 8192 字节之后的泄漏虽能查到，但分类依据仅此一次嗅探; name.startswith('docs/archive/') 的文件整体跳过，注释称历史快照按约定不可变（A44）——属明示取舍，但意味着归档区新增内容同样不受守卫约束; allowlist 文件 review_privacy_allowlist.txt 在测试内被无条件读取，若该文件缺失整个守卫以异常失败而非跳过（fail-closed，可接受，但与守卫『静默守护』定位有张力）
+        - Impact: 该守卫是公开仓防开发者路径泄漏的唯一自动化防线（视角1 开源隐私项）；其盲区形态（/root/、Windows 路径、含 NUL 的文本文件）恰是跨平台开发者最易真实泄漏的形态，守卫全绿不等于无泄漏。
+        - Fix: 扩展正则覆盖 /root/ 与 Windows Users 路径；二进制判定改为对候选文本文件全量扫描（仓库规模下成本可控）或按扩展名+嗅探双判；对 docs/archive/ 豁免保留但在测试 docstring 中显式列明盲区清单，让豁免成为可审计的决定而非隐含行为。
+        - Verification: static
 - [Low][75] .repo_template/tests/test_workflow_contracts.py:7-10 — 测试模块间直接 import 另一测试模块的私有 helper 与 fixture，且 test_task_start_flow 另有一份近重复脚手架，双份维护易漂移
-  - Sources: bundle_local_template_tests.md (f_template_tests_05)
-  - f_template_tests_05: test_workflow_contracts 从 test_dispatch_integration import git_repo fixture 及 _git、_task_cli、_prepare_done、_cleanup、_worktree、_reserve、_identity_args、_handoff、_read_ledger 共十个名字，其中九个是下划线私有 helper; test_task_start_flow.py 则自带一份功能高度重叠的 git_repo fixture 与 _git/_task_cli/_reserve/_handoff/_terminal/_worktree_path 实现（细节不同：模板拷贝方式、task 集合、testing.md 注入点均有差异），两份脚手架对同一被测流的准备步骤各行其是; test 收集依赖模块级 import 成功：test_dispatch_integration 顶层若引入导入期副作用或改名 helper，test_workflow_contracts 会在收集期整体失败而非单用例失败
-    - Impact: 同一工作流的 fixture 语义存在两个权威版本：一处修了准备步骤（如 handoff 字段、review 证据注入方式）另一处不跟随，会造成两套测试对同一生产行为给出不同前提，回归定位成本上升；跨模块私有 import 也使重命名/拆分测试文件的成本被低估。
-    - Fix: 把共享的 git_repo fixture 与 CLI/ledger helper 下沉到 conftest.py 或 review_support 一类的测试支持模块，两个套件共同引用；test_task_start_flow 的差异部分以参数或局部 fixture 覆盖表达，而不是整份复制。
-    - Verification: static
+    - Sources: bundle_local_template_tests.md (f_template_tests_05)
+    - f_template_tests_05: test_workflow_contracts 从 test_dispatch_integration import git_repo fixture 及 \_git、\_task_cli、\_prepare_done、\_cleanup、\_worktree、\_reserve、\_identity_args、\_handoff、\_read_ledger 共十个名字，其中九个是下划线私有 helper; test_task_start_flow.py 则自带一份功能高度重叠的 git_repo fixture 与 \_git/\_task_cli/\_reserve/\_handoff/\_terminal/\_worktree_path 实现（细节不同：模板拷贝方式、task 集合、testing.md 注入点均有差异），两份脚手架对同一被测流的准备步骤各行其是; test 收集依赖模块级 import 成功：test_dispatch_integration 顶层若引入导入期副作用或改名 helper，test_workflow_contracts 会在收集期整体失败而非单用例失败
+        - Impact: 同一工作流的 fixture 语义存在两个权威版本：一处修了准备步骤（如 handoff 字段、review 证据注入方式）另一处不跟随，会造成两套测试对同一生产行为给出不同前提，回归定位成本上升；跨模块私有 import 也使重命名/拆分测试文件的成本被低估。
+        - Fix: 把共享的 git_repo fixture 与 CLI/ledger helper 下沉到 conftest.py 或 review_support 一类的测试支持模块，两个套件共同引用；test_task_start_flow 的差异部分以参数或局部 fixture 覆盖表达，而不是整份复制。
+        - Verification: static
 - [Low][65] scripts/verify_frontend_dist.py:42 — Source hash silently skips missing allowlisted inputs and ignores non-allowlisted build inputs at the frontend root
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_02)
-  - f_tests_e2e_stream_frontend_02: scripts/verify_frontend_dist.py:30-46 - frontend_source_hash hashes a fixed allowlist (index.html, package.json, package-lock.json, five named config files) plus everything under src/ and public/; the loop body is guarded by 'if not path.is_file(): continue', so an allowlisted input that disappears between stamp and check contributes nothing instead of failing.; Build inputs living at the frontend root outside the allowlist (for example a newly introduced .env file or an additional vite config variant) are never hashed, so changing them leaves the stamp valid while the built output can differ.
-    - Impact: A dist can pass the freshness check while no longer reflecting all inputs that influenced (or should influence) the build - a narrow but real bypass of the fail-closed intent, reachable by ordinary config evolution rather than by an attacker.
-    - Fix: Fail the hash computation when an allowlisted path that existed at stamp time is missing (or record the file list in the stamp and compare sets), and hash any additional build-relevant root files (e.g. .env*, *.config.*) or document the allowlist as exhaustive.
-    - Verification: suspected
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_02)
+    - f_tests_e2e_stream_frontend_02: scripts/verify_frontend_dist.py:30-46 - frontend_source_hash hashes a fixed allowlist (index.html, package.json, package-lock.json, five named config files) plus everything under src/ and public/; the loop body is guarded by 'if not path.is_file(): continue', so an allowlisted input that disappears between stamp and check contributes nothing instead of failing.; Build inputs living at the frontend root outside the allowlist (for example a newly introduced .env file or an additional vite config variant) are never hashed, so changing them leaves the stamp valid while the built output can differ.
+        - Impact: A dist can pass the freshness check while no longer reflecting all inputs that influenced (or should influence) the build - a narrow but real bypass of the fail-closed intent, reachable by ordinary config evolution rather than by an attacker.
+        - Fix: Fail the hash computation when an allowlisted path that existed at stamp time is missing (or record the file list in the stamp and compare sets), and hash any additional build-relevant root files (e.g. .env\*, *.config.*) or document the allowlist as exhaustive.
+        - Verification: suspected
 - [Low][90] tests/e2e/test_stream_selkies_tokens_e2e.py:204 — AC-008 'positive' WebRTC signaling check accepts any message type, including connection close
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_05)
-  - f_tests_e2e_stream_frontend_05: tests/e2e/test_stream_selkies_tokens_e2e.py:196-204 - after connecting to /api/webrtc/signaling and sending 'INVALID PROTOCOL TEST', the assertion is msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.TEXT), commented 'WebSocket connected and handled message'.; A server that immediately closes every signaling connection satisfies this assertion, so the positive half of AC-008 does not demonstrate that WebRTC signaling remains functional with dual mode disabled (the negative half - /api/switch returns 403 with the exact message - is asserted precisely).
-    - Impact: The AC-008 regression net has a hole exactly on its positive claim: dual mode could be disabled in a way that also breaks normal WebRTC signaling and this test would stay green.
-    - Fix: Assert a protocol-meaningful response (e.g. a TEXT protocol error frame, or complete a minimal valid HELLO exchange) instead of accepting CLOSE/CLOSED.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_05)
+    - f_tests_e2e_stream_frontend_05: tests/e2e/test_stream_selkies_tokens_e2e.py:196-204 - after connecting to /api/webrtc/signaling and sending 'INVALID PROTOCOL TEST', the assertion is msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.TEXT), commented 'WebSocket connected and handled message'.; A server that immediately closes every signaling connection satisfies this assertion, so the positive half of AC-008 does not demonstrate that WebRTC signaling remains functional with dual mode disabled (the negative half - /api/switch returns 403 with the exact message - is asserted precisely).
+        - Impact: The AC-008 regression net has a hole exactly on its positive claim: dual mode could be disabled in a way that also breaks normal WebRTC signaling and this test would stay green.
+        - Fix: Assert a protocol-meaningful response (e.g. a TEXT protocol error frame, or complete a minimal valid HELLO exchange) instead of accepting CLOSE/CLOSED.
+        - Verification: static
 - [Low][80] tests/e2e/test_gateway_ac001_auth_e2e.py:197 — Unauthorized-profile viewer WebSocket assertion accepts 503, conflating correct rejection with gateway unavailability
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_06)
-  - f_tests_e2e_stream_frontend_06: tests/e2e/test_gateway_ac001_auth_e2e.py:185-210 - case 3c asserts resp_unauth.status in (403, 404, 503) and repeats the same set for the error variant; neighboring cases in the same test are precise (401 for unauthenticated, 403 for wrong Origin, exact cookie flags, exact log lines).; 503 is the gateway's own 'not ready/unavailable' outcome, so a broken or mis-wired gateway satisfies the authorization assertion.
-    - Impact: The authorization boundary for per-profile viewer access can silently degrade to an availability failure while the AC-001 suite reports success; the wide status set also hides which behavior production actually implements, weakening the test as a contract.
-    - Fix: Determine the single intended status for an authenticated-but-unauthorized profile (403 or 404) and assert it exactly; treat 503 as a harness readiness failure to be waited out before the assertion.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_06)
+    - f_tests_e2e_stream_frontend_06: tests/e2e/test_gateway_ac001_auth_e2e.py:185-210 - case 3c asserts resp_unauth.status in (403, 404, 503) and repeats the same set for the error variant; neighboring cases in the same test are precise (401 for unauthenticated, 403 for wrong Origin, exact cookie flags, exact log lines).; 503 is the gateway's own 'not ready/unavailable' outcome, so a broken or mis-wired gateway satisfies the authorization assertion.
+        - Impact: The authorization boundary for per-profile viewer access can silently degrade to an availability failure while the AC-001 suite reports success; the wide status set also hides which behavior production actually implements, weakening the test as a contract.
+        - Fix: Determine the single intended status for an authenticated-but-unauthorized profile (403 or 404) and assert it exactly; treat 503 as a harness readiness failure to be waited out before the assertion.
+        - Verification: static
 - [Low][80] tests/e2e/test_browser_runtime_e2e.py:1032 — Immediacy and rearm assertions in the browser runtime suite rest on fixed sleeps instead of polling
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_07)
-  - f_tests_e2e_stream_frontend_07: tests/e2e/test_browser_runtime_e2e.py:1029-1045 - AC-002 kills PulseAudio (pkill -9) and Xvfb, then awaits asyncio.sleep(1.0) and asserts /health already reports ready False with the specific subsystem flag False; the docstring claim is that health must 'immediately' reflect the failure, but the 1.0s window is neither polled nor justified.; tests/e2e/test_browser_runtime_e2e.py:1334 - AC-004 waits a fixed sleep(1.5) for download-behavior rearm after the external client disconnects, then immediately triggers the recovery download whose landing directory is the assertion.; Elsewhere the same unit predominantly uses poll_until/wait_until helpers (e.g. wait_for_uds_ready, poll loops with deadlines), so these fixed windows are local inconsistencies rather than a suite-wide convention.
-    - Impact: On a loaded CI host, health propagation or rearm slower than the fixed window produces false failures; conversely the windows silently tolerate regressions up to 1.0-1.5s in failure-detection latency that the AC wording claims is immediate.
-    - Fix: Poll /health until the degraded state appears with a bounded deadline (keeping a separate, explicit upper bound if immediacy is itself a requirement), and poll for the rearmed state or first post-rearm download with a deadline instead of sleeping 1.5s.
-    - Verification: static
-- [Low][60] tests/e2e/test_frontend_app_e2e.py:685 — Hard wall-clock latency budgets (input <= 3000ms, first frame <= 8000ms) asserted on shared CI hardware
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_08)
-  - f_tests_e2e_stream_frontend_08: tests/e2e/test_frontend_app_e2e.py:629 - assert first_frame_ms <= 8000; tests/e2e/test_frontend_app_e2e.py:685 - assert input_latency_ms <= 3000. Both are single-sample hard asserts measured through a multi-container real topology on the CI host.; No retry, percentile, or load-normalization accompanies the thresholds in the surrounding test code.
-    - Impact: These are the suite's only quantitative performance gates and the most load-sensitive asserts in the unit; under host contention they are the likeliest source of intermittent red runs, which historically trains teams to ignore or widen them until they stop detecting real regressions.
-    - Fix: Keep the budgets but measure over a few samples and assert on the median (or mark the test with a documented flake-retry policy reserved for these two asserts), and record measured values in CI output so threshold drift is visible.
-    - Verification: suspected
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_07)
+    - f_tests_e2e_stream_frontend_07: tests/e2e/test_browser_runtime_e2e.py:1029-1045 - AC-002 kills PulseAudio (pkill -9) and Xvfb, then awaits asyncio.sleep(1.0) and asserts /health already reports ready False with the specific subsystem flag False; the docstring claim is that health must 'immediately' reflect the failure, but the 1.0s window is neither polled nor justified.; tests/e2e/test_browser_runtime_e2e.py:1334 - AC-004 waits a fixed sleep(1.5) for download-behavior rearm after the external client disconnects, then immediately triggers the recovery download whose landing directory is the assertion.; Elsewhere the same unit predominantly uses poll_until/wait_until helpers (e.g. wait_for_uds_ready, poll loops with deadlines), so these fixed windows are local inconsistencies rather than a suite-wide convention.
+        - Impact: On a loaded CI host, health propagation or rearm slower than the fixed window produces false failures; conversely the windows silently tolerate regressions up to 1.0-1.5s in failure-detection latency that the AC wording claims is immediate.
+        - Fix: Poll /health until the degraded state appears with a bounded deadline (keeping a separate, explicit upper bound if immediacy is itself a requirement), and poll for the rearmed state or first post-rearm download with a deadline instead of sleeping 1.5s.
+        - Verification: static
+- [Low][60] tests/e2e/test_frontend_app_e2e.py:685 — Hard wall-clock latency budgets (input \<= 3000ms, first frame \<= 8000ms) asserted on shared CI hardware
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_08)
+    - f_tests_e2e_stream_frontend_08: tests/e2e/test_frontend_app_e2e.py:629 - assert first_frame_ms \<= 8000; tests/e2e/test_frontend_app_e2e.py:685 - assert input_latency_ms \<= 3000. Both are single-sample hard asserts measured through a multi-container real topology on the CI host.; No retry, percentile, or load-normalization accompanies the thresholds in the surrounding test code.
+        - Impact: These are the suite's only quantitative performance gates and the most load-sensitive asserts in the unit; under host contention they are the likeliest source of intermittent red runs, which historically trains teams to ignore or widen them until they stop detecting real regressions.
+        - Fix: Keep the budgets but measure over a few samples and assert on the median (or mark the test with a documented flake-retry policy reserved for these two asserts), and record measured values in CI output so threshold drift is visible.
+        - Verification: suspected
 - [Low][85] tests/e2e/test_frontend_session_vendor.py:13 — Selkies vendor test asserts only that two imported constants equal literal strings
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_09)
-  - f_tests_e2e_stream_frontend_09: tests/e2e/test_frontend_session_vendor.py:13-15 - the entire 17-line file asserts PINNED_SELKIES_VERSION == "2.1.0" and PINNED_WHEEL_SHA256 == a literal hash string, both imported from the production vendoring module.; Nothing in the test verifies that the pinned wheel is the artifact actually vendored into dist, that the manifest verification consumes these constants, or that a deliberate pin bump is the only way the test can fail.
-    - Impact: The test is a change-detector for the pin values, not a verification of vendoring: the wheel actually served to browsers could diverge from the pin (stale vendor output, manifest drift) while this test stays green; that behavior is covered, if at all, by test_frontend_build_wiring.py's manifest checks in another file.
-    - Fix: Extend the test to run the manifest verification against the vendored tree (or assert the vendored wheel file's real SHA-256 equals PINNED_WHEEL_SHA256), keeping the literal pin assertions as the change alarm.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_09)
+    - f_tests_e2e_stream_frontend_09: tests/e2e/test_frontend_session_vendor.py:13-15 - the entire 17-line file asserts PINNED_SELKIES_VERSION == "2.1.0" and PINNED_WHEEL_SHA256 == a literal hash string, both imported from the production vendoring module.; Nothing in the test verifies that the pinned wheel is the artifact actually vendored into dist, that the manifest verification consumes these constants, or that a deliberate pin bump is the only way the test can fail.
+        - Impact: The test is a change-detector for the pin values, not a verification of vendoring: the wheel actually served to browsers could diverge from the pin (stale vendor output, manifest drift) while this test stays green; that behavior is covered, if at all, by test_frontend_build_wiring.py's manifest checks in another file.
+        - Fix: Extend the test to run the manifest verification against the vendored tree (or assert the vendored wheel file's real SHA-256 equals PINNED_WHEEL_SHA256), keeping the literal pin assertions as the change alarm.
+        - Verification: static
 - [Low][75] tests/e2e/test_runtime_profile_defaults_e2e.py:444 — Profile-defaults suite still skips on missing prerequisites by default, unlike fail-closed siblings in the same unit
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_10)
-  - f_tests_e2e_stream_frontend_10: tests/e2e/test_runtime_profile_defaults_e2e.py:444-446 - when prerequisites are missing, the helper raises only if os.environ.get("CBROWSER_E2E_REQUIRED") == "1" and otherwise calls pytest.skip(message); in a default run the whole file (search-engine defaults, marker atomicity/corruption, cross-restart preservation) silently does not execute.; Contrast within the same unit: tests/e2e/test_stream_selkies_tokens_e2e.py uses an autouse fixture calling require_e2e_env(...) unconditionally, and the browser/gateway suites resolve image IDs via require_e2e_env-style assertions rather than skipping.
-    - Impact: Unless CI sets CBROWSER_E2E_REQUIRED=1 (decided outside this unit), an environment regression that removes the runtime image turns this suite green-by-skip and the profile-defaults behavior loses its only real-Docker coverage without any signal.
-    - Fix: Align with the unit's fail-closed pattern: resolve prerequisites through require_e2e_env, or invert the default so absence of the image fails unless an explicit opt-out variable is set.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_10)
+    - f_tests_e2e_stream_frontend_10: tests/e2e/test_runtime_profile_defaults_e2e.py:444-446 - when prerequisites are missing, the helper raises only if os.environ.get("CBROWSER_E2E_REQUIRED") == "1" and otherwise calls pytest.skip(message); in a default run the whole file (search-engine defaults, marker atomicity/corruption, cross-restart preservation) silently does not execute.; Contrast within the same unit: tests/e2e/test_stream_selkies_tokens_e2e.py uses an autouse fixture calling require_e2e_env(...) unconditionally, and the browser/gateway suites resolve image IDs via require_e2e_env-style assertions rather than skipping.
+        - Impact: Unless CI sets CBROWSER_E2E_REQUIRED=1 (decided outside this unit), an environment regression that removes the runtime image turns this suite green-by-skip and the profile-defaults behavior loses its only real-Docker coverage without any signal.
+        - Fix: Align with the unit's fail-closed pattern: resolve prerequisites through require_e2e_env, or invert the default so absence of the image fails unless an explicit opt-out variable is set.
+        - Verification: static
 - [Low][90] tests/e2e/test_supervisor_startup_recovery_e2e.py:246 — Assertions and driving hooks coupled to private internals of SupervisorCore/RecoveryCoordinator
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_04)
-  - f_tests_e2e_supervisor_04: test_supervisor_startup_recovery_e2e.py:246 drives core._get_profile_lock(profile_id) to manufacture the lock-held case; :280 asserts 'profile_id in coordinator._in_flight_tasks'; :455 asserts 'native_inst not in coordinator._reported_dead_instances'; the flow at :431 depends on core.has_native_exit backed by _native_exit_instances.; test_supervisor_resource_monitor_e2e.py asserts observed[-1]['container_samples'][0][3] == 500_000_000, a positional tuple index into the monitor's internal sample record.
-    - Impact: The behavioural outcomes are also asserted through the API, but the private-state assertions make the suite fail on internal refactors that preserve behaviour (renaming the in-flight registry, changing the sample tuple shape), and the lock case can only be produced by reaching into Core — the test's maintenance cost tracks implementation details rather than the contract.
-    - Fix: Where an equivalent observable signal exists, assert on it (API runtime fields, supervisor status endpoint); keep private access only where no external oracle exists and mark those spots with a comment naming the missing public seam.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_04)
+    - f_tests_e2e_supervisor_04: test_supervisor_startup_recovery_e2e.py:246 drives core.\_get_profile_lock(profile_id) to manufacture the lock-held case; :280 asserts 'profile_id in coordinator.\_in_flight_tasks'; :455 asserts 'native_inst not in coordinator.\_reported_dead_instances'; the flow at :431 depends on core.has_native_exit backed by \_native_exit_instances.; test_supervisor_resource_monitor_e2e.py asserts observed[-1]['container_samples'][0][3] == 500_000_000, a positional tuple index into the monitor's internal sample record.
+        - Impact: The behavioural outcomes are also asserted through the API, but the private-state assertions make the suite fail on internal refactors that preserve behaviour (renaming the in-flight registry, changing the sample tuple shape), and the lock case can only be produced by reaching into Core — the test's maintenance cost tracks implementation details rather than the contract.
+        - Fix: Where an equivalent observable signal exists, assert on it (API runtime fields, supervisor status endpoint); keep private access only where no external oracle exists and mark those spots with a comment naming the missing public seam.
+        - Verification: static
 - [Low][95] tests/e2e/test_supervisor_retry_e2e.py:7-14 — Retry suite docstring describes a subprocess harness and a -9 returncode check that the test does not contain
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_05)
-  - f_tests_e2e_supervisor_05: Docstring lines 7 and 13-14: 'Real independent Supervisor subprocess (RealSupervisorProcess running cbrowser.supervisor.runner)' and 'SIGKILL Supervisor subprocess (verifying returncode == -9)'.; Implementation imports RealSupervisorContainer (line 55) and constructs it at line 170; the mid-backoff kill is sup_proc.sigkill() on the container and the only identity assertion is that the restarted container id differs — no returncode is ever read.
-    - Impact: A reader trusting the header believes exit-code -9 propagation is covered when it is not; if runner-level SIGKILL exit semantics regress, this suite would not notice despite claiming to verify them.
-    - Fix: Update the docstring to the container harness actually used and drop the returncode claim, or add the returncode assertion where a real subprocess is used (the event_shutdown suite covers CLI SIGTERM exit 0 separately).
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_05)
+    - f_tests_e2e_supervisor_05: Docstring lines 7 and 13-14: 'Real independent Supervisor subprocess (RealSupervisorProcess running cbrowser.supervisor.runner)' and 'SIGKILL Supervisor subprocess (verifying returncode == -9)'.; Implementation imports RealSupervisorContainer (line 55) and constructs it at line 170; the mid-backoff kill is sup_proc.sigkill() on the container and the only identity assertion is that the restarted container id differs — no returncode is ever read.
+        - Impact: A reader trusting the header believes exit-code -9 propagation is covered when it is not; if runner-level SIGKILL exit semantics regress, this suite would not notice despite claiming to verify them.
+        - Fix: Update the docstring to the container harness actually used and drop the returncode claim, or add the returncode assertion where a real subprocess is used (the event_shutdown suite covers CLI SIGTERM exit 0 separately).
+        - Verification: static
 - [Low][80] tests/e2e/test_supervisor_container_graph_e2e.py:83 — Topology test chmods data and metadata directories to 0777 while elsewhere asserting strict 0600/0700 hygiene
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_06)
-  - f_tests_e2e_supervisor_06: Lines 80-83: control dir is chmod 0700, then profiles/runtime/runtime-events/artifacts/spool are created and chmod'ed 0o777; line 99 chmods the API metadata dir (holding control.db) 0o777.; The same file carefully asserts key files are exactly 0600 (lines 92-96) and that secret mounts are read-only and absent from the Browser container, i.e. least-privilege is part of the contract being modelled.
-    - Impact: On a shared Docker host, world-writable spool/runtime/metadata directories let another local user inject spool events or tamper with the control DB the test treats as authoritative; it also normalises 0777 as the way to make multi-container sharing work, which can leak into deployment examples copied from the test.
-    - Fix: Use the owning uid/gid or ACLs/group permissions actually required by the container users instead of 0777, or add a comment stating 0777 is a test-only concession and which production mechanism replaces it.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_06)
+    - f_tests_e2e_supervisor_06: Lines 80-83: control dir is chmod 0700, then profiles/runtime/runtime-events/artifacts/spool are created and chmod'ed 0o777; line 99 chmods the API metadata dir (holding control.db) 0o777.; The same file carefully asserts key files are exactly 0600 (lines 92-96) and that secret mounts are read-only and absent from the Browser container, i.e. least-privilege is part of the contract being modelled.
+        - Impact: On a shared Docker host, world-writable spool/runtime/metadata directories let another local user inject spool events or tamper with the control DB the test treats as authoritative; it also normalises 0777 as the way to make multi-container sharing work, which can leak into deployment examples copied from the test.
+        - Fix: Use the owning uid/gid or ACLs/group permissions actually required by the container users instead of 0777, or add a comment stating 0777 is a test-only concession and which production mechanism replaces it.
+        - Verification: static
 - [Low][85] tests/e2e/test_supervisor_namespace_policy_e2e.py:530 — Hard assertion on live public Internet egress (1.1.1.1:80) makes the policy suite fail in offline environments
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_07)
-  - f_tests_e2e_supervisor_07: Step 6 (lines 528-533) probes 1.1.1.1:80 from inside the target container and asserts success ('Public IPv4 egress was blocked'), with a 3.0s timeout.; Unlike the image/cache prerequisites, this environmental dependency has no gate: require_e2e_env can fail/skip for missing images, but nothing checks or skips for egress availability before the assertion.
-    - Impact: In sandboxed CI or any offline development environment the kernel-policy suite fails for reasons unrelated to the policy under test, training developers to ignore or skip the whole file — including its isolation assertions.
-    - Fix: Gate the public-egress step on an explicit env flag or a reachability pre-check that skips only that step, keeping the isolation assertions mandatory.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_07)
+    - f_tests_e2e_supervisor_07: Step 6 (lines 528-533) probes 1.1.1.1:80 from inside the target container and asserts success ('Public IPv4 egress was blocked'), with a 3.0s timeout.; Unlike the image/cache prerequisites, this environmental dependency has no gate: require_e2e_env can fail/skip for missing images, but nothing checks or skips for egress availability before the assertion.
+        - Impact: In sandboxed CI or any offline development environment the kernel-policy suite fails for reasons unrelated to the policy under test, training developers to ignore or skip the whole file — including its isolation assertions.
+        - Fix: Gate the public-egress step on an explicit env flag or a reachability pre-check that skips only that step, keeping the isolation assertions mandatory.
+        - Verification: static
 - [Low][90] tests/e2e/test_supervisor_container_graph_e2e.py:371-380 — Stream secret-mount read-only guarantee is conditional; disappearance of the mount would pass silently
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_08)
-  - f_tests_e2e_supervisor_08: Lines 371-380: for '/tmp/secret.txt' and '/tmp/selkies_credentials.json', the read-only assertion runs only 'if sec_target in stream_destinations'; the unconditional part asserts only that the targets are absent from the Browser container's mounts.; The credential file is a live secret channel (Selkies credentials), so its mount mode in the Stream container is one of the isolation invariants this test exists to prove.
-    - Impact: A regression that drops the credentials mount from the Stream container (breaking authenticated streaming) — or remounts it under a different destination — evades this assertion entirely; the test would still pass while the invariant it names is gone.
-    - Fix: Assert the expected presence set explicitly: require the credentials destination to exist in the Stream mounts with RW False, and keep the browser-absence assertion as is.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_08)
+    - f_tests_e2e_supervisor_08: Lines 371-380: for '/tmp/secret.txt' and '/tmp/selkies_credentials.json', the read-only assertion runs only 'if sec_target in stream_destinations'; the unconditional part asserts only that the targets are absent from the Browser container's mounts.; The credential file is a live secret channel (Selkies credentials), so its mount mode in the Stream container is one of the isolation invariants this test exists to prove.
+        - Impact: A regression that drops the credentials mount from the Stream container (breaking authenticated streaming) — or remounts it under a different destination — evades this assertion entirely; the test would still pass while the invariant it names is gone.
+        - Fix: Assert the expected presence set explicitly: require the credentials destination to exist in the Stream mounts with RW False, and keep the browser-absence assertion as is.
+        - Verification: static
 - [Low][60] tests/e2e/test_supervisor_ipv6_policy_e2e.py:150-154 — Zero-leak assertion runs on the Docker client after the finally block has closed it
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_09)
-  - f_tests_e2e_supervisor_09: The finally block ends with client.close() (line 150); the statement after the try/finally, 'assert not client.containers.list(all=True, filters=...)' (lines 152-154), reuses that closed client for the leak check.; Whether a closed docker-py client still serves requests depends on the SDK version's session handling, which is not pinned anywhere in this unit.
-    - Impact: The test's final leak guarantee may raise a client error instead of verifying cleanup, or behave differently across docker SDK upgrades — the assertion most meant to catch leaked containers is itself the fragile one.
-    - Fix: Move the leak assertion inside the try (before close) or perform it with a fresh client, so the check runs against a live connection.
-    - Verification: suspected
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_09)
+    - f_tests_e2e_supervisor_09: The finally block ends with client.close() (line 150); the statement after the try/finally, 'assert not client.containers.list(all=True, filters=...)' (lines 152-154), reuses that closed client for the leak check.; Whether a closed docker-py client still serves requests depends on the SDK version's session handling, which is not pinned anywhere in this unit.
+        - Impact: The test's final leak guarantee may raise a client error instead of verifying cleanup, or behave differently across docker SDK upgrades — the assertion most meant to catch leaked containers is itself the fragile one.
+        - Fix: Move the leak assertion inside the try (before close) or perform it with a fresh client, so the check runs against a live connection.
+        - Verification: suspected
 - [Low][90] tests/integration/test_normal_exit_replay.py:1 — Module docstring promises an offline-API recovery scenario the file does not implement; tests write into the working tree instead of tmp_path
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_05)
-  - f_tests_integration_fixtures_05: The module docstring's scenario 3 is 'Offline API recovery: API is offline when clean exit occurs, Supervisor restarts, API recovers', but the third test in the file is a dual-Profile isolation test with the API online throughout; no test takes the API offline.; All four tests build data roots under the repo-relative .scratch/normal_exit_fix directory while accepting a tmp_path fixture parameter they never use.; The file also hard-codes behavior in _FakeDocker._inspect by container-name substring ('target_a'/'clean' -> ports 30001/30002).
-    - Impact: Readers (and coverage accounting) believe the offline-recovery replay case is covered by this file when it is not; repo-relative scratch roots risk cross-run residue and collisions if the suite is ever run in parallel or from a read-only checkout.
-    - Fix: Correct the docstring to describe the implemented scenarios (or implement the offline case), and switch the data roots to the already-accepted tmp_path fixture.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_05)
+    - f_tests_integration_fixtures_05: The module docstring's scenario 3 is 'Offline API recovery: API is offline when clean exit occurs, Supervisor restarts, API recovers', but the third test in the file is a dual-Profile isolation test with the API online throughout; no test takes the API offline.; All four tests build data roots under the repo-relative .scratch/normal_exit_fix directory while accepting a tmp_path fixture parameter they never use.; The file also hard-codes behavior in \_FakeDocker.\_inspect by container-name substring ('target_a'/'clean' -> ports 30001/30002).
+        - Impact: Readers (and coverage accounting) believe the offline-recovery replay case is covered by this file when it is not; repo-relative scratch roots risk cross-run residue and collisions if the suite is ever run in parallel or from a read-only checkout.
+        - Fix: Correct the docstring to describe the implemented scenarios (or implement the offline case), and switch the data roots to the already-accepted tmp_path fixture.
+        - Verification: static
 - [Low][85] tests/integration/test_normal_exit_replay.py:811 — Integration tests assert and seed production objects' private internals
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_06)
-  - f_tests_integration_fixtures_06: test_normal_exit_replay.py:811-821 asserts core.ports._allocated and membership in core._sessions.; tests/integration/test_supervisor_status_truth.py seeds core._sessions[profile] directly; tests/integration/test_supervisor_manual_retry.py:68 reads recovery._in_flight_tasks.; tests/integration/test_recovery_snapshot_failure.py:28-31 calls the private coordinator._load_profile_config with SimpleNamespace(api=api, _auth_headers=dict) — the builtin dict type passed as the headers callable, which only works incidentally because dict() returns {}.; tests/integration/test_automation_cdp_flow.py and others assemble subjects from SimpleNamespace objects shaped after private attribute layouts (_token_file, _sessions, _get_profile_lock, _load_profile_config).
-    - Impact: Internal refactors of SupervisorCore/RecoveryCoordinator that change no behavior will break these tests, and the dict-as-callable construction can silently produce wrong headers if the production call signature changes; the tests verify implementation layout rather than contract.
-    - Fix: Prefer status/RPC-level assertions (the suites already have supervisor status and spool readers) and construct test subjects through production factories or small explicit stub classes with typed surfaces instead of SimpleNamespace mirrors of private attributes.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_06)
+    - f_tests_integration_fixtures_06: test_normal_exit_replay.py:811-821 asserts core.ports.\_allocated and membership in core.\_sessions.; tests/integration/test_supervisor_status_truth.py seeds core.\_sessions[profile] directly; tests/integration/test_supervisor_manual_retry.py:68 reads recovery.\_in_flight_tasks.; tests/integration/test_recovery_snapshot_failure.py:28-31 calls the private coordinator.\_load_profile_config with SimpleNamespace(api=api, \_auth_headers=dict) — the builtin dict type passed as the headers callable, which only works incidentally because dict() returns {}.; tests/integration/test_automation_cdp_flow.py and others assemble subjects from SimpleNamespace objects shaped after private attribute layouts (\_token_file, \_sessions, \_get_profile_lock, \_load_profile_config).
+        - Impact: Internal refactors of SupervisorCore/RecoveryCoordinator that change no behavior will break these tests, and the dict-as-callable construction can silently produce wrong headers if the production call signature changes; the tests verify implementation layout rather than contract.
+        - Fix: Prefer status/RPC-level assertions (the suites already have supervisor status and spool readers) and construct test subjects through production factories or small explicit stub classes with typed surfaces instead of SimpleNamespace mirrors of private attributes.
+        - Verification: static
 - [Low][80] tests/integration/test_supervisor_observation_authority.py:57 — The Supervisor Docker boundary is re-faked in at least four divergent hand-rolled forms inside the unit
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_07)
-  - f_tests_integration_fixtures_07: Two unrelated _FakeDocker classes: test_normal_exit_replay.py:67 (with substring-based _inspect) and test_supervisor_observation_authority.py:57 (minimal subset), plus SimpleNamespace docker adapters in test_supervisor_manual_retry.py, test_supervisor_start_capacity.py and test_supervisor_status_truth.py, each implementing a different subset of the production adapter surface.; The same pattern repeats for small helpers: find_free_port/port-probing is re-implemented in at least six files (topology.py, offline_fixture.py, test_gateway_fixtures.py, conftest.py, test_v2_api_subprocess.py, test_supervisor_gateway_control_auth.py), and login/cookie parsing is duplicated between api_auth.py (sync and async copies), topology.py login_api and the two SSE test modules.
-    - Impact: When the production DockerAdapter (or auth helper) surface changes, each fake drifts independently; a change can be masked by whichever subset a given fake implements, and fixes must be repeated across copies.
-    - Fix: Consolidate one shared fake DockerAdapter and one free-port/login helper under tests/fixtures and have the supervisor suites import them, deleting the per-module copies.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_07)
+    - f_tests_integration_fixtures_07: Two unrelated \_FakeDocker classes: test_normal_exit_replay.py:67 (with substring-based \_inspect) and test_supervisor_observation_authority.py:57 (minimal subset), plus SimpleNamespace docker adapters in test_supervisor_manual_retry.py, test_supervisor_start_capacity.py and test_supervisor_status_truth.py, each implementing a different subset of the production adapter surface.; The same pattern repeats for small helpers: find_free_port/port-probing is re-implemented in at least six files (topology.py, offline_fixture.py, test_gateway_fixtures.py, conftest.py, test_v2_api_subprocess.py, test_supervisor_gateway_control_auth.py), and login/cookie parsing is duplicated between api_auth.py (sync and async copies), topology.py login_api and the two SSE test modules.
+        - Impact: When the production DockerAdapter (or auth helper) surface changes, each fake drifts independently; a change can be masked by whichever subset a given fake implements, and fixes must be repeated across copies.
+        - Fix: Consolidate one shared fake DockerAdapter and one free-port/login helper under tests/fixtures and have the supervisor suites import them, deleting the per-module copies.
+        - Verification: static
 - [Low][80] tests/integration/test_supervisor_gateway_client.py:13 — Gateway-control client wire tests run against a stub that re-implements the gateway's auth/fence semantics
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_08)
-  - f_tests_integration_fixtures_08: test_supervisor_gateway_client.py defines a catch-all aiohttp server that itself decides 401 (bad token) and 409 (stale fence) responses, duplicating semantics owned by the production gateway's control handlers.; The real gateway side of the same contract is covered elsewhere in the unit (test_gateway_control.py, test_supervisor_gateway_control_auth.py), which mitigates but does not remove the duplication.
-    - Impact: If the production gateway changes its control-plane status codes or fence rules, the SupervisorGatewayClient tests keep passing against the stub's frozen copy while the client/gateway pair may no longer agree.
-    - Fix: Point the client tests at a real create_gateway_app instance for the auth/fence cases (as test_supervisor_gateway_control_auth.py already does for the token matrix) and keep the stub only for transport-level cases (timeouts, malformed bodies).
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_08)
+    - f_tests_integration_fixtures_08: test_supervisor_gateway_client.py defines a catch-all aiohttp server that itself decides 401 (bad token) and 409 (stale fence) responses, duplicating semantics owned by the production gateway's control handlers.; The real gateway side of the same contract is covered elsewhere in the unit (test_gateway_control.py, test_supervisor_gateway_control_auth.py), which mitigates but does not remove the duplication.
+        - Impact: If the production gateway changes its control-plane status codes or fence rules, the SupervisorGatewayClient tests keep passing against the stub's frozen copy while the client/gateway pair may no longer agree.
+        - Fix: Point the client tests at a real create_gateway_app instance for the auth/fence cases (as test_supervisor_gateway_control_auth.py already does for the token matrix) and keep the stub only for transport-level cases (timeouts, malformed bodies).
+        - Verification: static
 - [Low][75] tests/integration/test_v2_api_subprocess.py:793 — AC-004 verifies SQLite busy_timeout behavior with wall-clock windows that are load-sensitive
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_09)
-  - f_tests_integration_fixtures_09: test_v2_api_subprocess.py:793 asserts 1.4 <= elapsed < 4.5 for a lock-wait case and line 822 asserts 4.5 <= elapsed_timeout <= 6.5 for the timeout case, against a real subprocess and real lock contention.; The margins assume the contending writer holds the lock for a fixed ~1.5s/5s; under CI load or slow disks the scheduling jitter can push measured elapsed outside these windows without any product regression.
-    - Impact: Intermittent failures in the API subprocess contract suite would train developers to ignore or retry the suite, weakening the very gate t018 was meant to restore.
-    - Fix: Assert on outcomes rather than elapsed windows where possible (second writer succeeds after release; timeout case raises the expected busy error), keeping only loose sanity bounds (e.g. elapsed >= lock-hold time, elapsed < 3x timeout) if timing must be checked at all.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_09)
+    - f_tests_integration_fixtures_09: test_v2_api_subprocess.py:793 asserts 1.4 \<= elapsed < 4.5 for a lock-wait case and line 822 asserts 4.5 \<= elapsed_timeout \<= 6.5 for the timeout case, against a real subprocess and real lock contention.; The margins assume the contending writer holds the lock for a fixed ~1.5s/5s; under CI load or slow disks the scheduling jitter can push measured elapsed outside these windows without any product regression.
+        - Impact: Intermittent failures in the API subprocess contract suite would train developers to ignore or retry the suite, weakening the very gate t018 was meant to restore.
+        - Fix: Assert on outcomes rather than elapsed windows where possible (second writer succeeds after release; timeout case raises the expected busy error), keeping only loose sanity bounds (e.g. elapsed >= lock-hold time, elapsed < 3x timeout) if timing must be checked at all.
+        - Verification: static
 - [Low][85] tests/fixtures/gateway_probe/topology.py:137 — Topology harness makes profile-bearing data directories world-writable (0o777)
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_10)
-  - f_tests_integration_fixtures_10: topology.py:137-141 chmods the data subdirectories (profiles, runtime, runtime-events, artifacts, spool) and metadata_dir to 0o777 while the control directory holding secrets is 0o700 with 0600 files.; Related fixture hygiene: tests/fixtures/runtime_probe/test_mitshm.c:68 creates its SysV shared-memory segment with IPC_CREAT | 0777 in a probe whose subject is display isolation.
-    - Impact: During E2E runs these directories hold real browser profile data; on a shared dev/CI machine any local user can read or tamper with them for the duration of the run. Impact is limited to test environments, hence Low.
-    - Fix: Restrict to the minimum the container uid mapping actually needs (e.g. 0o770 with a shared group, or document why 0o777 is required and confine the tree under a 0o700 parent), and create the mitshm segment with 0600.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_10)
+    - f_tests_integration_fixtures_10: topology.py:137-141 chmods the data subdirectories (profiles, runtime, runtime-events, artifacts, spool) and metadata_dir to 0o777 while the control directory holding secrets is 0o700 with 0600 files.; Related fixture hygiene: tests/fixtures/runtime_probe/test_mitshm.c:68 creates its SysV shared-memory segment with IPC_CREAT | 0777 in a probe whose subject is display isolation.
+        - Impact: During E2E runs these directories hold real browser profile data; on a shared dev/CI machine any local user can read or tamper with them for the duration of the run. Impact is limited to test environments, hence Low.
+        - Fix: Restrict to the minimum the container uid mapping actually needs (e.g. 0o770 with a shared group, or document why 0o777 is required and confine the tree under a 0o700 parent), and create the mitshm segment with 0600.
+        - Verification: static
 - [Low][90] tests/unit/test_stream_selkies_tokens.py:253 — Entrypoint-content tests read config/docker/stream_runtime/entrypoint.sh via a cwd-relative path, unlike the __file__-anchored pattern used in the same unit
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_01)
-  - f_tests_unit_stream_api_01: tests/unit/test_stream_selkies_tokens.py:253-254: entrypoint_path = Path("config/docker/stream_runtime/entrypoint.sh") — resolved against the pytest process working directory.; tests/unit/test_selkies_file_transfers.py:30 does the same relative read for the same file.; The sibling test in the same unit anchors correctly: tests/unit/test_stream_clipboard_policy.py:20-24 builds the path from Path(__file__).resolve().parents[2], and test_stream_protocol_schema.py:11 anchors its schema path the same way — so the unit is internally inconsistent.
-    - Impact: These tests assert security-relevant entrypoint directives (file transfers disabled, dual mode off, master token file at 0600). Run from any working directory other than the repo root (IDE runner, subdirectory invocation, changed rootdir), they error with FileNotFoundError unrelated to the code under test; run from a different checkout's root they would silently validate the wrong tree's entrypoint.
-    - Fix: Anchor both reads the way test_stream_clipboard_policy.py already does: Path(__file__).resolve().parents[2] / "config/docker/stream_runtime/entrypoint.sh".
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_01)
+    - f_tests_unit_stream_api_01: tests/unit/test_stream_selkies_tokens.py:253-254: entrypoint_path = Path("config/docker/stream_runtime/entrypoint.sh") — resolved against the pytest process working directory.; tests/unit/test_selkies_file_transfers.py:30 does the same relative read for the same file.; The sibling test in the same unit anchors correctly: tests/unit/test_stream_clipboard_policy.py:20-24 builds the path from Path(__file__).resolve().parents[2], and test_stream_protocol_schema.py:11 anchors its schema path the same way — so the unit is internally inconsistent.
+        - Impact: These tests assert security-relevant entrypoint directives (file transfers disabled, dual mode off, master token file at 0600). Run from any working directory other than the repo root (IDE runner, subdirectory invocation, changed rootdir), they error with FileNotFoundError unrelated to the code under test; run from a different checkout's root they would silently validate the wrong tree's entrypoint.
+        - Fix: Anchor both reads the way test_stream_clipboard_policy.py already does: Path(__file__).resolve().parents[2] / "config/docker/stream_runtime/entrypoint.sh".
+        - Verification: static
 - [Low][90] tests/unit/test_auth_client_ip.py:47 — Two files monkeypatch the stdlib time module itself (time.time / time.monotonic), so every in-process clock reader sees the fake clock during those tests
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_02)
-  - f_tests_unit_stream_api_02: tests/unit/test_auth_client_ip.py:47: monkeypatch.setattr(time, "time", lambda: now[0]) patches the stdlib time module object imported at file top.; tests/unit/test_stream_capture_policy.py:156 and :181: monkeypatch.setattr(policy_module.time, "monotonic", ...) — policy_module.time is the same stdlib time module, so this freezes time.monotonic process-wide for the test's duration.; The lifecycle tests in the same unit demonstrate the contained alternative: _ClockAsyncio replaces only the agent module's asyncio reference (test_stream_agent_lifecycle.py:83-101).
-    - Impact: During these tests, any other code that consults time.time/time.monotonic — asyncio bookkeeping that looks the function up dynamically, logging, httpx/sqlalchemy internals, or future production code paths added to the objects under test — observes frozen/manual time. That makes outcomes sensitive to what else runs inside the test window and can mask real timing behavior; monkeypatch does restore the attribute afterwards, so the risk is intra-test coupling, not cross-test leakage.
-    - Fix: Give LoginRateLimiter and the capture policy an injectable clock (or patch the consuming module's own namespace binding, e.g. cbrowser.auth.rate_limiter.time) instead of mutating the shared stdlib module object.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_02)
+    - f_tests_unit_stream_api_02: tests/unit/test_auth_client_ip.py:47: monkeypatch.setattr(time, "time", lambda: now[0]) patches the stdlib time module object imported at file top.; tests/unit/test_stream_capture_policy.py:156 and :181: monkeypatch.setattr(policy_module.time, "monotonic", ...) — policy_module.time is the same stdlib time module, so this freezes time.monotonic process-wide for the test's duration.; The lifecycle tests in the same unit demonstrate the contained alternative: \_ClockAsyncio replaces only the agent module's asyncio reference (test_stream_agent_lifecycle.py:83-101).
+        - Impact: During these tests, any other code that consults time.time/time.monotonic — asyncio bookkeeping that looks the function up dynamically, logging, httpx/sqlalchemy internals, or future production code paths added to the objects under test — observes frozen/manual time. That makes outcomes sensitive to what else runs inside the test window and can mask real timing behavior; monkeypatch does restore the attribute afterwards, so the risk is intra-test coupling, not cross-test leakage.
+        - Fix: Give LoginRateLimiter and the capture policy an injectable clock (or patch the consuming module's own namespace binding, e.g. cbrowser.auth.rate_limiter.time) instead of mutating the shared stdlib module object.
+        - Verification: static
 - [Low][95] tests/unit/test_stream_transport_hardening.py:303 — Real-WebSocket hardening test binds a hard-coded port 18491 instead of an ephemeral port
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_03)
-  - f_tests_unit_stream_api_03: tests/unit/test_stream_transport_hardening.py:303 binds web.TCPSite(runner, "127.0.0.1", 18491); the same literal is baked into the config and upstream URLs at :310 and :315.; Sibling files avoid this: test_stream_agent_lifecycle.py's unique_port fixture binds port 0 to obtain a free port, and test_stream_resume.py's FakeSelkies binds port 0 and reads back the assigned port.
-    - Impact: A leftover process from a previous run, a parallel xdist worker, or any other suite using 18491 makes this test fail with address-in-use — a spurious failure in the file that carries the protocol-hardening evidence. The failure mode is loud, so this is a flakiness/maintenance issue, not a silent-green one.
-    - Fix: Bind port 0 and read the assigned port from the site (as FakeSelkies.start does), then format the gateway/upstream URLs from it.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_03)
+    - f_tests_unit_stream_api_03: tests/unit/test_stream_transport_hardening.py:303 binds web.TCPSite(runner, "127.0.0.1", 18491); the same literal is baked into the config and upstream URLs at :310 and :315.; Sibling files avoid this: test_stream_agent_lifecycle.py's unique_port fixture binds port 0 to obtain a free port, and test_stream_resume.py's FakeSelkies binds port 0 and reads back the assigned port.
+        - Impact: A leftover process from a previous run, a parallel xdist worker, or any other suite using 18491 makes this test fail with address-in-use — a spurious failure in the file that carries the protocol-hardening evidence. The failure mode is loud, so this is a flakiness/maintenance issue, not a silent-green one.
+        - Fix: Bind port 0 and read the assigned port from the site (as FakeSelkies.start does), then format the gateway/upstream URLs from it.
+        - Verification: static
 - [Low][90] tests/unit/test_auth_service.py:192 — test_viewer_and_automation_authorize packs nine distinct authorization behaviors into one sequentially stateful test
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_04)
-  - f_tests_unit_stream_api_04: tests/unit/test_auth_service.py:192-311 single test covers, in order: viewer authorization (valid/invalid origin, invalid session, missing profile), automation authorization, session-token-as-automation rejection, no-audit-on-unknown-token accounting, expired token, session expiry pruning, forged-token throttling (10 attempts then rate_limited), profile_unauthorized, token_revoked, and finally the authorize_denied audit-secret scan.; Later assertions depend on state created or destroyed by earlier ones in the same function (the automation token is revoked near the end; audit counts are taken mid-test), and the function also performs mid-body imports (from sqlalchemy import select at :252) duplicating the file's top-level imports.
-    - Impact: A regression in any early behavior aborts the test and masks all later checks, so one failure hides the state of eight other security behaviors; when it fails, the failing behavior is hard to localize from the test name. The shared-state sequencing also means the checks cannot be run or reordered independently.
-    - Fix: Split into focused tests (viewer authorize, automation authorize happy/denied paths, expiry, throttling, revocation, audit hygiene) sharing the auth_db fixture and small token/profile factory helpers.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_04)
+    - f_tests_unit_stream_api_04: tests/unit/test_auth_service.py:192-311 single test covers, in order: viewer authorization (valid/invalid origin, invalid session, missing profile), automation authorization, session-token-as-automation rejection, no-audit-on-unknown-token accounting, expired token, session expiry pruning, forged-token throttling (10 attempts then rate_limited), profile_unauthorized, token_revoked, and finally the authorize_denied audit-secret scan.; Later assertions depend on state created or destroyed by earlier ones in the same function (the automation token is revoked near the end; audit counts are taken mid-test), and the function also performs mid-body imports (from sqlalchemy import select at :252) duplicating the file's top-level imports.
+        - Impact: A regression in any early behavior aborts the test and masks all later checks, so one failure hides the state of eight other security behaviors; when it fails, the failing behavior is hard to localize from the test name. The shared-state sequencing also means the checks cannot be run or reordered independently.
+        - Fix: Split into focused tests (viewer authorize, automation authorize happy/denied paths, expiry, throttling, revocation, audit hygiene) sharing the auth_db fixture and small token/profile factory helpers.
+        - Verification: static
 - [Low][90] tests/unit/test_artifact_service.py:396 — Ownership-failure test asserts with pytest.raises(Exception), the broadest possible exception class
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_05)
-  - f_tests_unit_stream_api_05: tests/unit/test_artifact_service.py:396: with pytest.raises(Exception, match="ownership") — any Exception whose message contains 'ownership' satisfies the test, including an unrelated failure raised from a different layer that happens to mention ownership.; Sibling tests in the same file assert the specific domain exceptions (ArtifactTooLarge, ArtifactQuotaExceeded, ArtifactInsufficientStorage, ArtifactInvalidName), so the broad form is an outlier.
-    - Impact: If the chown-denial path regresses to raise a different error (or an incidental error containing the word appears earlier in upload), the test can pass while the intended ownership-failure contract — raise, and register nothing — is only half checked (the list==[] assertion still holds, but the error identity is unverified).
-    - Fix: Assert the concrete exception type the store raises for ownership failures (or PermissionError if that is the contract), keeping the message match as a secondary check.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_05)
+    - f_tests_unit_stream_api_05: tests/unit/test_artifact_service.py:396: with pytest.raises(Exception, match="ownership") — any Exception whose message contains 'ownership' satisfies the test, including an unrelated failure raised from a different layer that happens to mention ownership.; Sibling tests in the same file assert the specific domain exceptions (ArtifactTooLarge, ArtifactQuotaExceeded, ArtifactInsufficientStorage, ArtifactInvalidName), so the broad form is an outlier.
+        - Impact: If the chown-denial path regresses to raise a different error (or an incidental error containing the word appears earlier in upload), the test can pass while the intended ownership-failure contract — raise, and register nothing — is only half checked (the list==[] assertion still holds, but the error identity is unverified).
+        - Fix: Assert the concrete exception type the store raises for ownership failures (or PermissionError if that is the contract), keeping the message match as a secondary check.
+        - Verification: static
 - [Low][80] tests/unit/test_gateway_config.py:73 — Short-secret gateway config test points two token-file env vars at files that are never created, coupling the test to validation order
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_06)
-  - f_tests_unit_stream_api_06: tests/unit/test_gateway_config.py:73 and :75 set CBROWSER_GATEWAY_TOKEN_FILE and CBROWSER_GATEWAY_API_TOKEN_FILE to tmp_path / "dummy.txt"; no line in the test creates dummy.txt.; The test expects ValueError matching 'at least 32 bytes' (the agent-key length branch) at :80-81, which only surfaces if GatewayConfig.from_env reads and validates the agent key file before opening the two token files.
-    - Impact: The test silently encodes an implementation-order assumption in the gateway unit: reorder validation (e.g. read all files first) and this test fails with a missing-file error despite the short-secret behavior being unchanged — a false failure that points at the wrong cause. It cannot silently pass for the wrong reason (the message match prevents that), so the risk is brittleness, not false confidence.
-    - Fix: Create dummy.txt with a valid-length secret (as _set_required_env does for the other gateway tests) so the only invalid input is the short agent key.
-    - Verification: static
-- [Low][90] tests/unit/test_automation_cdp.py:51 — _short_root ignores the tmp_path fixture, hand-rolls a /tmp directory, and never cleans it up
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_07)
-  - f_tests_unit_stream_api_07: tests/unit/test_automation_cdp.py:51-56: _short_root(tmp_path) never uses its argument; it mkdtemps under /tmp, immediately rmtree's the fresh parent with ignore_errors=True, and returns parent/'data' which does not exist until callers mkdir it.; Neither caller (test_supervisor_cdp_websocket_forwards_to_agent_uds, test_supervisor_cdp_rejects_missing_or_foreign_token) removes the created /tmp/cbrowser-t008-uds-* tree afterwards, bypassing pytest's tmp_path retention/cleanup conventions.
-    - Impact: Every run leaks a token file (mode 0600) and runtime directories under /tmp on the test machine, and the setup-time rmtree of a just-created unique directory is dead work that obscures intent. The AF_UNIX length motivation is legitimate, but the lifecycle handling is not.
-    - Fix: Use pytest's tmp_path with a short base (e.g. the basetemp configuration) or keep mkdtemp but register cleanup via a fixture/finalizer that removes the tree; drop the unused parameter and the setup rmtree.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_06)
+    - f_tests_unit_stream_api_06: tests/unit/test_gateway_config.py:73 and :75 set CBROWSER_GATEWAY_TOKEN_FILE and CBROWSER_GATEWAY_API_TOKEN_FILE to tmp_path / "dummy.txt"; no line in the test creates dummy.txt.; The test expects ValueError matching 'at least 32 bytes' (the agent-key length branch) at :80-81, which only surfaces if GatewayConfig.from_env reads and validates the agent key file before opening the two token files.
+        - Impact: The test silently encodes an implementation-order assumption in the gateway unit: reorder validation (e.g. read all files first) and this test fails with a missing-file error despite the short-secret behavior being unchanged — a false failure that points at the wrong cause. It cannot silently pass for the wrong reason (the message match prevents that), so the risk is brittleness, not false confidence.
+        - Fix: Create dummy.txt with a valid-length secret (as \_set_required_env does for the other gateway tests) so the only invalid input is the short agent key.
+        - Verification: static
+- [Low][90] tests/unit/test_automation_cdp.py:51 — \_short_root ignores the tmp_path fixture, hand-rolls a /tmp directory, and never cleans it up
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_07)
+    - f_tests_unit_stream_api_07: tests/unit/test_automation_cdp.py:51-56: \_short_root(tmp_path) never uses its argument; it mkdtemps under /tmp, immediately rmtree's the fresh parent with ignore_errors=True, and returns parent/'data' which does not exist until callers mkdir it.; Neither caller (test_supervisor_cdp_websocket_forwards_to_agent_uds, test_supervisor_cdp_rejects_missing_or_foreign_token) removes the created /tmp/cbrowser-t008-uds-\* tree afterwards, bypassing pytest's tmp_path retention/cleanup conventions.
+        - Impact: Every run leaks a token file (mode 0600) and runtime directories under /tmp on the test machine, and the setup-time rmtree of a just-created unique directory is dead work that obscures intent. The AF_UNIX length motivation is legitimate, but the lifecycle handling is not.
+        - Fix: Use pytest's tmp_path with a short base (e.g. the basetemp configuration) or keep mkdtemp but register cleanup via a fixture/finalizer that removes the tree; drop the unused parameter and the setup rmtree.
+        - Verification: static
 - [Low][95] tests/unit/test_supervisor_core.py:1 — Module docstring claims AC-004/AC-005 tests that do not exist in this file
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_01)
-  - f_tests_unit_supervisor_runtime_01: Docstring lines 6-7 list '3. Retry policy 2/10/30 backoff and 3-strikes blocking (AC-005)' and '4. Event forwarder offline spooling and recovery deduplication (AC-004)'.; The file contains only two tests: test_path_validator_symlink_and_traversal (line 17) and test_port_allocator_exhaustion_and_reuse (line 47).
-    - Impact: Anyone auditing coverage from the docstring overstates this file's scope. The behaviors are covered elsewhere in the unit (event delivery spool tests, recovery coordinator cooldown tests), so this is documentation drift, not a coverage hole.
-    - Fix: Trim the docstring to the two tests actually present, or move the AC-004/AC-005 items to the files that implement them.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_01)
+    - f_tests_unit_supervisor_runtime_01: Docstring lines 6-7 list '3. Retry policy 2/10/30 backoff and 3-strikes blocking (AC-005)' and '4. Event forwarder offline spooling and recovery deduplication (AC-004)'.; The file contains only two tests: test_path_validator_symlink_and_traversal (line 17) and test_port_allocator_exhaustion_and_reuse (line 47).
+        - Impact: Anyone auditing coverage from the docstring overstates this file's scope. The behaviors are covered elsewhere in the unit (event delivery spool tests, recovery coordinator cooldown tests), so this is documentation drift, not a coverage hole.
+        - Fix: Trim the docstring to the two tests actually present, or move the AC-004/AC-005 items to the files that implement them.
+        - Verification: static
 - [Low][90] tests/unit/test_runtime_agent.py:306 — Residual wall-clock timing assertions can flake under load
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_02)
-  - f_tests_unit_supervisor_runtime_02: test_runtime_agent.py lines 306-316: three health probes each time.sleep(0.25), then assert elapsed < 0.6 to prove concurrency.; test_domain_and_repository.py line 465: WAL reader parallelism test asserts elapsed < 1.0 while a write lock is held.
-    - Impact: On a heavily loaded CI runner the agent concurrency assertion (0.6s budget vs 0.75s serialized floor) can fail spuriously; most of the unit has moved to injected clocks and condition waits, leaving these as the residual flake surface.
-    - Fix: Prove concurrency structurally (e.g. overlapping-interval recording in the probe handler) instead of an elapsed-time budget; keep the WAL bound but derive it from lock-hold duration rather than an absolute 1.0s.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_02)
+    - f_tests_unit_supervisor_runtime_02: test_runtime_agent.py lines 306-316: three health probes each time.sleep(0.25), then assert elapsed < 0.6 to prove concurrency.; test_domain_and_repository.py line 465: WAL reader parallelism test asserts elapsed < 1.0 while a write lock is held.
+        - Impact: On a heavily loaded CI runner the agent concurrency assertion (0.6s budget vs 0.75s serialized floor) can fail spuriously; most of the unit has moved to injected clocks and condition waits, leaving these as the residual flake surface.
+        - Fix: Prove concurrency structurally (e.g. overlapping-interval recording in the probe handler) instead of an elapsed-time budget; keep the WAL bound but derive it from lock-hold duration rather than an absolute 1.0s.
+        - Verification: static
 - [Low][90] tests/unit/test_runtime_coordinator_background_tasks.py:48 — Fixed-interval polling loops remain in a few async tests
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_03)
-  - f_tests_unit_supervisor_runtime_03: test_runtime_coordinator_background_tasks.py lines 48-51: for _ in range(100): await asyncio.sleep(0.01) waiting for _publish_tasks to drain.; test_runtime_coordinator_stop_paths.py lines 220-223: 300 x sleep(0.01) waiting for loop liveness change.; test_supervisor_recovery.py lines 500-507: 50 x sleep(0.05) waiting for heartbeat observability (with pytest.fail fallback).
-    - Impact: The loops are condition-bounded (not bare sleep-then-assert), so the risk is limited: on slow machines the fixed budget can expire before the condition holds, producing intermittent failures that are hard to attribute.
-    - Fix: Adopt the _wait_until/ManualClock predicate-wait pattern already used in test_stream_runtime.py and test_api_runtime_coordinator.py for these remaining sites.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_03)
+    - f_tests_unit_supervisor_runtime_03: test_runtime_coordinator_background_tasks.py lines 48-51: for _ in range(100): await asyncio.sleep(0.01) waiting for \_publish_tasks to drain.; test_runtime_coordinator_stop_paths.py lines 220-223: 300 x sleep(0.01) waiting for loop liveness change.; test_supervisor_recovery.py lines 500-507: 50 x sleep(0.05) waiting for heartbeat observability (with pytest.fail fallback).
+        - Impact: The loops are condition-bounded (not bare sleep-then-assert), so the risk is limited: on slow machines the fixed budget can expire before the condition holds, producing intermittent failures that are hard to attribute.
+        - Fix: Adopt the \_wait_until/ManualClock predicate-wait pattern already used in test_stream_runtime.py and test_api_runtime_coordinator.py for these remaining sites.
+        - Verification: static
 - [Low][85] tests/unit/test_supervisor_event_cursor.py:34 — Test helper returns a SupervisorCore whose API client is already closed; cursor assertion accepts two values
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_04)
-  - f_tests_unit_supervisor_runtime_04: _core() (lines 34-44) constructs SupervisorCore inside 'async with httpx.AsyncClient(...)' (line 37) and returns it after the block exits, so core's api client is closed; current tests pass only because consume_disk_events never uses that client.; Line 63: assert cursors['p1']['inst_1'][1] in {'e1.json', 'e2.json'} accepts either filename as the cursor position.
-    - Impact: Latent fragility: any future test in this file that exercises a core path using the api client fails with a confusing closed-client error; the two-value cursor assertion weakens the precision guarantee the cursor mechanism exists to provide.
-    - Fix: Build the client outside the helper's async-with (or construct the core with a caller-managed client), and assert the exact expected cursor filename for the seeded event order.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_04)
+    - f_tests_unit_supervisor_runtime_04: \_core() (lines 34-44) constructs SupervisorCore inside 'async with httpx.AsyncClient(...)' (line 37) and returns it after the block exits, so core's api client is closed; current tests pass only because consume_disk_events never uses that client.; Line 63: assert cursors['p1']['inst_1'][1] in {'e1.json', 'e2.json'} accepts either filename as the cursor position.
+        - Impact: Latent fragility: any future test in this file that exercises a core path using the api client fails with a confusing closed-client error; the two-value cursor assertion weakens the precision guarantee the cursor mechanism exists to provide.
+        - Fix: Build the client outside the helper's async-with (or construct the core with a caller-managed client), and assert the exact expected cursor filename for the seeded event order.
+        - Verification: static
 - [Low][90] tests/unit/test_runtime_protocol.py:23 — Schema validity test depends on CWD via a relative path
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_05)
-  - f_tests_unit_supervisor_runtime_05: Line 23: schema_path = Path('schemas/runtime/agent_protocol.json') in test_schema_json_file_validity.; Sibling tests in this unit anchor paths with Path(__file__).parents[2] instead of relying on the working directory.
-    - Impact: Running pytest from any directory other than the repo root makes this test fail for environmental reasons, which either hides in CI configuration assumptions or produces misleading failures for developers.
-    - Fix: Anchor the path to the repo root via Path(__file__).resolve().parents[2], as the sibling tests do.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_05)
+    - f_tests_unit_supervisor_runtime_05: Line 23: schema_path = Path('schemas/runtime/agent_protocol.json') in test_schema_json_file_validity.; Sibling tests in this unit anchor paths with Path(__file__).parents[2] instead of relying on the working directory.
+        - Impact: Running pytest from any directory other than the repo root makes this test fail for environmental reasons, which either hides in CI configuration assumptions or produces misleading failures for developers.
+        - Fix: Anchor the path to the repo root via Path(__file__).resolve().parents[2], as the sibling tests do.
+        - Verification: static
 - [Low][80] tests/unit/test_runtime_persistence_guards.py:144 — Storage-failure injection via chmod 0o500 is environment-dependent (root bypasses it)
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_06)
-  - f_tests_unit_supervisor_runtime_06: Line 144: event_directory.chmod(0o500) is used to force a write failure for the terminal-storage-failure propagation test (restored to 0o700 at line 150).; POSIX permission bits do not block writes for UID 0, so under a root test runner the injected failure never occurs.
-    - Impact: In a containerized root CI the test either fails spuriously or, worse, is silently skipped around; the failure-propagation behavior it guards is security-relevant (terminal state must not be swallowed).
-    - Fix: Inject the failure at the storage seam (monkeypatch the write method to raise) instead of relying on filesystem permissions, keeping a permission-based variant only when os.geteuid() != 0.
-    - Verification: suspected
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_06)
+    - f_tests_unit_supervisor_runtime_06: Line 144: event_directory.chmod(0o500) is used to force a write failure for the terminal-storage-failure propagation test (restored to 0o700 at line 150).; POSIX permission bits do not block writes for UID 0, so under a root test runner the injected failure never occurs.
+        - Impact: In a containerized root CI the test either fails spuriously or, worse, is silently skipped around; the failure-propagation behavior it guards is security-relevant (terminal state must not be swallowed).
+        - Fix: Inject the failure at the storage seam (monkeypatch the write method to raise) instead of relying on filesystem permissions, keeping a permission-based variant only when os.geteuid() != 0.
+        - Verification: suspected
 - [Low][85] tests/unit/test_supervisor_normal_exit_observation.py:316 — Suite-wide coupling to private internals as test seams
-  - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_07)
-  - f_tests_unit_supervisor_runtime_07: Tests routinely replace or read private members: core._query_agent_health assignment and core._sessions seeding (test_supervisor_normal_exit_observation.py), coordinator._publish_tasks/_active_tasks polling (coordinator tests), recovery._cleanup_failures, adapter._teardown_profile_sync, gw_control._client swap.; test_runtime_coordinator_error_responses.py and test_runtime_coordinator_stop_paths.py fabricate runtime state with raw sqlite3 UPDATE statements (acknowledged in in-file comments).
-    - Impact: Assertions overwhelmingly check behavioral outcomes, so correctness signal is good; the cost is maintainability — internal refactors that preserve behavior will still break many tests, and raw-SQL state fabrication can drift from the real write path's invariants.
-    - Fix: Where a seam is load-bearing (agent health query, session seeding), promote it to a named test-facing constructor/fixture parameter; prefer repository APIs over raw SQL for state fabrication.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_supervisor_runtime.md (f_tests_unit_supervisor_runtime_07)
+    - f_tests_unit_supervisor_runtime_07: Tests routinely replace or read private members: core.\_query_agent_health assignment and core.\_sessions seeding (test_supervisor_normal_exit_observation.py), coordinator.\_publish_tasks/\_active_tasks polling (coordinator tests), recovery.\_cleanup_failures, adapter.\_teardown_profile_sync, gw_control.\_client swap.; test_runtime_coordinator_error_responses.py and test_runtime_coordinator_stop_paths.py fabricate runtime state with raw sqlite3 UPDATE statements (acknowledged in in-file comments).
+        - Impact: Assertions overwhelmingly check behavioral outcomes, so correctness signal is good; the cost is maintainability — internal refactors that preserve behavior will still break many tests, and raw-SQL state fabrication can drift from the real write path's invariants.
+        - Fix: Where a seam is load-bearing (agent health query, session seeding), promote it to a named test-facing constructor/fixture parameter; prefer repository APIs over raw SQL for state fabrication.
+        - Verification: static
 - [Low][90] src/backend/cbrowser/domain/models.py:307-352；src/backend/cbrowser/launch_args.py — launch_args 白名单的『拒绝还是丢弃』策略权威不单一：更新 DTO 同时注册严格与宽松两个校验器，语义取决于 pydantic 校验器执行顺序
-  - Sources: bundle_global_architecture.md (f_global_architecture_07)
-  - f_global_architecture_07: ProfileUpdateRequest 同时挂 validate_launch_args（越界抛 422）与 filter_launch_args（越界静默丢弃）两个 after 校验器，必有一个被另一个短路成死代码，更新路径的实际语义取决于校验器顺序这一实现细节（f_backend_api_auth_01）; 对照分工原本清晰：ProfileCreateRequest 只用 validate、ProfileConfig 读取路径只用 filter、Runner 启动前再做一次 validate（backend_runtime_adapters 单元约束记录）——规则实现单一（launch_args.py 一处），但策略选择散落在各 DTO 上; 该路径零测试覆盖（f_backend_api_auth_09），语义即便因重构翻转也不会被察觉
-    - Impact: 同一安全白名单在创建与更新两条路径上可能给出 422 与 200 静默丢弃两种结果，客户端会误以为越界参数已生效；策略权威不单一使后续维护者无法从任何一处代码断定系统的对外承诺。
-    - Fix: 更新 DTO 只保留一个校验器（建议与创建路径统一为 validate 严格拒绝），filter 仅保留在历史数据读取路径；把『写入严格、读取宽容』的策略声明写回 launch_args.py 模块文档，使策略权威回到规则实现处。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_07)
+    - f_global_architecture_07: ProfileUpdateRequest 同时挂 validate_launch_args（越界抛 422）与 filter_launch_args（越界静默丢弃）两个 after 校验器，必有一个被另一个短路成死代码，更新路径的实际语义取决于校验器顺序这一实现细节（f_backend_api_auth_01）; 对照分工原本清晰：ProfileCreateRequest 只用 validate、ProfileConfig 读取路径只用 filter、Runner 启动前再做一次 validate（backend_runtime_adapters 单元约束记录）——规则实现单一（launch_args.py 一处），但策略选择散落在各 DTO 上; 该路径零测试覆盖（f_backend_api_auth_09），语义即便因重构翻转也不会被察觉
+        - Impact: 同一安全白名单在创建与更新两条路径上可能给出 422 与 200 静默丢弃两种结果，客户端会误以为越界参数已生效；策略权威不单一使后续维护者无法从任何一处代码断定系统的对外承诺。
+        - Fix: 更新 DTO 只保留一个校验器（建议与创建路径统一为 validate 严格拒绝），filter 仅保留在历史数据读取路径；把『写入严格、读取宽容』的策略声明写回 launch_args.py 模块文档，使策略权威回到规则实现处。
+        - Verification: static
 - [Low][80] src/frontend（profiles 数据层 hook）；src/backend/cbrowser/adapters/database/repository.py（audit-row sig_hash 幂等） — 幂等键契约的键作用域两端无主：前端按 hook 实例共享 Idempotency-Key，后端按『一 key 对应一逻辑操作』校验 sig_hash，合法异参并发会被判为幂等冲突
-  - Sources: bundle_global_architecture.md (f_global_architecture_08)
-  - f_global_architecture_08: 前端 Idempotency-Key 按 hook 实例共享，同一实例的并发异参调用会复用同一把 key（f_frontend_features_01）; 后端幂等以 audit_events 行的 sig_hash（action+target+payload 的 sha256）判定：同 key 重放同载荷返回已提交结果，载荷不一致抛 IdempotencyConflictError（backend_runtime_adapters 单元 Decisions 记录）; 两端组合的结果是：用户在同一页面内的两个不同合法操作若并发发出，会以 409 幂等冲突告终——该行为在任何一侧的单元审阅内都未闭环，双方都假设对方的键使用方式与自己预期一致
-    - Impact: 幂等契约缺少键作用域的共同定义（每操作一 key 还是每会话一 key），前端的键生成策略与后端的冲突语义直接相撞时，失败表现为莫名 409，用户与排障者都难以归因；后续任一端调整键策略都会静默改变全链语义。
-    - Fix: 在契约层明确键作用域为『每逻辑操作一 key』：前端在每次 mutation 调用时生成新 key（重试同一操作时才复用），并把该约定写入内部 OpenAPI 的 Idempotency-Key 参数说明；后端保持现有 sig_hash 校验不变。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_08)
+    - f_global_architecture_08: 前端 Idempotency-Key 按 hook 实例共享，同一实例的并发异参调用会复用同一把 key（f_frontend_features_01）; 后端幂等以 audit_events 行的 sig_hash（action+target+payload 的 sha256）判定：同 key 重放同载荷返回已提交结果，载荷不一致抛 IdempotencyConflictError（backend_runtime_adapters 单元 Decisions 记录）; 两端组合的结果是：用户在同一页面内的两个不同合法操作若并发发出，会以 409 幂等冲突告终——该行为在任何一侧的单元审阅内都未闭环，双方都假设对方的键使用方式与自己预期一致
+        - Impact: 幂等契约缺少键作用域的共同定义（每操作一 key 还是每会话一 key），前端的键生成策略与后端的冲突语义直接相撞时，失败表现为莫名 409，用户与排障者都难以归因；后续任一端调整键策略都会静默改变全链语义。
+        - Fix: 在契约层明确键作用域为『每逻辑操作一 key』：前端在每次 mutation 调用时生成新 key（重试同一操作时才复用），并把该约定写入内部 OpenAPI 的 Idempotency-Key 参数说明；后端保持现有 sig_hash 校验不变。
+        - Verification: static
 - [Low][85] tests/unit/test_gateway_registry.py; tests/unit/test_stream_agent_lifecycle.py; tests/integration/test_gateway_signaling.py; tests/e2e/test_supervisor_recovery_e2e.py — 批量重注册组合场景（>20 profile 撞 Gateway 注册节流）在三层测试中零覆盖，自愈性只有静态推演、无任何执行证据
-  - Sources: bundle_followup_q_system_properties_03.md (f_followup_q_system_properties_03_01)
-  - f_followup_q_system_properties_03_01: 节流与退避只被分开单测：test_gateway_registry.py:96-105 只测 RegistrationThrottle 原语的上限/过期；test_stream_agent_lifecycle.py:461-496 的退避用例用 MockGatewayServer 的 reject_registration（ACK 级拒绝），不是真实 Gateway 返回的 HTTP 429 握手拒绝; tests/integration/test_gateway_signaling.py 中唯一的 429 断言（:249）属于 viewer 授权节流用例，与 Agent 注册节流无关；无任何集成用例把注册桶打满后断言 Agent 最终注册成功; tests/e2e 恢复类用例最多 2 个 profile（test_supervisor_recovery_e2e.py:453），其余均为单 profile；无一用例重启 Gateway 或制造同源注册突发，更无完成时限断言
-    - Impact: 全机/网关重启后画面恢复时长是该系统最现实的整体可用性场景，其自愈性（退避重试 + 被拒不占额度 + 窗口滑动三机制的组合）若任一环被重构破坏（例如 allow() 改为记录被拒尝试、或 Agent 对 429 加特殊退出分支），现有测试全绿也发现不了，恢复可能从『延迟数分钟』退化为『永不恢复需人工介入』而无告警
-    - Fix: 加一条集成级用例：真实 Gateway（小桶参数如 max_attempts=3）+ 多个真实 StreamAgent 同源并发注册，断言全部在有界时间内注册成功；并加一条 e2e 或集成用例模拟 Gateway 重启后多 profile 分波重注册完成。或至少在 test_gateway_signaling 中补 Agent 注册节流打满→窗口过期→注册成功的链路断言
-    - Verification: static
+    - Sources: bundle_followup_q_system_properties_03.md (f_followup_q_system_properties_03_01)
+    - f_followup_q_system_properties_03_01: 节流与退避只被分开单测：test_gateway_registry.py:96-105 只测 RegistrationThrottle 原语的上限/过期；test_stream_agent_lifecycle.py:461-496 的退避用例用 MockGatewayServer 的 reject_registration（ACK 级拒绝），不是真实 Gateway 返回的 HTTP 429 握手拒绝; tests/integration/test_gateway_signaling.py 中唯一的 429 断言（:249）属于 viewer 授权节流用例，与 Agent 注册节流无关；无任何集成用例把注册桶打满后断言 Agent 最终注册成功; tests/e2e 恢复类用例最多 2 个 profile（test_supervisor_recovery_e2e.py:453），其余均为单 profile；无一用例重启 Gateway 或制造同源注册突发，更无完成时限断言
+        - Impact: 全机/网关重启后画面恢复时长是该系统最现实的整体可用性场景，其自愈性（退避重试 + 被拒不占额度 + 窗口滑动三机制的组合）若任一环被重构破坏（例如 allow() 改为记录被拒尝试、或 Agent 对 429 加特殊退出分支），现有测试全绿也发现不了，恢复可能从『延迟数分钟』退化为『永不恢复需人工介入』而无告警
+        - Fix: 加一条集成级用例：真实 Gateway（小桶参数如 max_attempts=3）+ 多个真实 StreamAgent 同源并发注册，断言全部在有界时间内注册成功；并加一条 e2e 或集成用例模拟 Gateway 重启后多 profile 分波重注册完成。或至少在 test_gateway_signaling 中补 Agent 注册节流打满→窗口过期→注册成功的链路断言
+        - Verification: static
 - [Low][85] src/frontend/src/features/profiles/useProfilesQuery.ts:60-77；src/frontend/src/features/artifacts/useArtifacts.ts:35-53；src/backend/cbrowser/adapters/database/repository.py:52-56,88-100；src/backend/cbrowser/api/app.py:229-236；local_frontend_features.json（f_frontend_features_01） — 幂等契约两端键作用域不一致：组合行为已可静态闭环——合法并发写会被 409 响亮拒绝，而非静默吞掉或回放
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_06)
-  - f_global_system_properties_06: 前端全部 mutation hooks 以单个 useRef 保存 actionKey，mutationFn 不区分 variables、仅在 onSettled 时清零：同 hook 实例在前一次未 settle 时发起的异目标/异载荷并发调用会复用同一 Idempotency-Key（f_frontend_features_01）; 后端以 operation_id 为审计记录主键全局查存（repository.py:89 session.get(AuditEventModel, operation_id)），sig_hash = sha256(action, target, payload)（repository.py:52-56）；同 key 异签名即抛 IdempotencyConflictError（repository.py:92-95）; 该异常在 API 层映射为 HTTP 409、error=idempotency_conflict（app.py:229-236，本轮已回查）; 组合闭环：前端复用 key + 后端全局键空间 + 签名校验三者叠加后，用户可见行为是确定的——第二个合法写操作收到 409 冲突错误，不会被当作第一个操作的重试静默吞掉、也不会回放首个响应；汇总阶段悬置的『冲突报错还是静默回放』之问就此静态定谳。残余问题是可用性层面的误拒（触发窗口为同实例并发异参调用，现有 UI 多以 isPending 禁用按钮缓解，但属调用点约定而非 hook 契约）
-    - Impact: 数据完整性不受损（后端响亮失败），但用户在快速连续操作不同 profile 时可能遇到莫名 409；且该行为未被任何一端的测试钉住（前端 retry 测试只锁定同一次调用的 React Query 重试复用 key），未来任一端修改键作用域都可能把误拒变成静默回放而无回归网。
-    - Fix: 前端改为按每次 mutate 调用生成 key（仅在 React Query 内部重试间复用，把 key 存入 mutation meta/context 而非 hook 级 ref）；补一条跨端契约测试：同 key 异载荷必须 409、同 key 同载荷必须回放首响应。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_06)
+    - f_global_system_properties_06: 前端全部 mutation hooks 以单个 useRef 保存 actionKey，mutationFn 不区分 variables、仅在 onSettled 时清零：同 hook 实例在前一次未 settle 时发起的异目标/异载荷并发调用会复用同一 Idempotency-Key（f_frontend_features_01）; 后端以 operation_id 为审计记录主键全局查存（repository.py:89 session.get(AuditEventModel, operation_id)），sig_hash = sha256(action, target, payload)（repository.py:52-56）；同 key 异签名即抛 IdempotencyConflictError（repository.py:92-95）; 该异常在 API 层映射为 HTTP 409、error=idempotency_conflict（app.py:229-236，本轮已回查）; 组合闭环：前端复用 key + 后端全局键空间 + 签名校验三者叠加后，用户可见行为是确定的——第二个合法写操作收到 409 冲突错误，不会被当作第一个操作的重试静默吞掉、也不会回放首个响应；汇总阶段悬置的『冲突报错还是静默回放』之问就此静态定谳。残余问题是可用性层面的误拒（触发窗口为同实例并发异参调用，现有 UI 多以 isPending 禁用按钮缓解，但属调用点约定而非 hook 契约）
+        - Impact: 数据完整性不受损（后端响亮失败），但用户在快速连续操作不同 profile 时可能遇到莫名 409；且该行为未被任何一端的测试钉住（前端 retry 测试只锁定同一次调用的 React Query 重试复用 key），未来任一端修改键作用域都可能把误拒变成静默回放而无回归网。
+        - Fix: 前端改为按每次 mutate 调用生成 key（仅在 React Query 内部重试间复用，把 key 存入 mutation meta/context 而非 hook 级 ref）；补一条跨端契约测试：同 key 异载荷必须 409、同 key 同载荷必须回放首响应。
+        - Verification: static
 - [Low][75] local_backend_runtime_adapters.json（f_backend_runtime_adapters_01）；local_backend_supervisor.json（f_backend_supervisor_05/08）；local_backend_api_auth.json（f_backend_api_auth_05）；local_backend_core.json（f_backend_core_07） — 多子系统成本随累积历史单调增长且无一处有保留上限：长期运行实例会持续变慢，与当前负载无关
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_07)
-  - f_global_system_properties_07: 每次 profile 读取 eager-load 全部配置版本历史与产物行（selectin），而配置版本是不可变只追加的——读成本随版本数线性增长（f_backend_runtime_adapters_01）; 每次 Browser 启动递归重验整个引擎缓存树，启动延迟随缓存规模增长（f_backend_supervisor_05）; 已处理下载事件 ID 集只按最近一次扫描中出现的实例剪枝，持久化游标集随实例 churn 无界增长（f_backend_supervisor_08）; SSE 订阅在广播锁内构建全量快照且快照事件挤占历史环，重连时刻会短暂阻塞全体事件发布（f_backend_api_auth_05）；legacy 侧 list_profiles 为 N+1 标签查询且同步 IO 遍布 async handler（f_backend_core_07）; 组合性质：四处分属不同子系统、各自 Low，但共享同一形态——成本耦合于累积状态（版本数、缓存大小、历史实例数）而非当前请求量，且没有任何一处有保留期、分页或剪枝上限；在单机单人部署包络内短期无感，长期不重启、不清理的实例会单调衰减
-    - Impact: 性能承诺无下限保证：同一部署用得越久越慢，且衰减与用户行为（频繁改配置、频繁启停短命实例）正相关；由于无一处设上限，无法给出任何「规模 X 以内性能 Y」式的整体陈述。
-    - Fix: profile 读取改分页/懒加载版本史；引擎缓存校验改增量或按需；下载事件 ID 集按时间或总量剪枝；SSE 快照移出广播锁。至少为四处各设一个明确上限或保留策略，使成本重新耦合于当前负载。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_07)
+    - f_global_system_properties_07: 每次 profile 读取 eager-load 全部配置版本历史与产物行（selectin），而配置版本是不可变只追加的——读成本随版本数线性增长（f_backend_runtime_adapters_01）; 每次 Browser 启动递归重验整个引擎缓存树，启动延迟随缓存规模增长（f_backend_supervisor_05）; 已处理下载事件 ID 集只按最近一次扫描中出现的实例剪枝，持久化游标集随实例 churn 无界增长（f_backend_supervisor_08）; SSE 订阅在广播锁内构建全量快照且快照事件挤占历史环，重连时刻会短暂阻塞全体事件发布（f_backend_api_auth_05）；legacy 侧 list_profiles 为 N+1 标签查询且同步 IO 遍布 async handler（f_backend_core_07）; 组合性质：四处分属不同子系统、各自 Low，但共享同一形态——成本耦合于累积状态（版本数、缓存大小、历史实例数）而非当前请求量，且没有任何一处有保留期、分页或剪枝上限；在单机单人部署包络内短期无感，长期不重启、不清理的实例会单调衰减
+        - Impact: 性能承诺无下限保证：同一部署用得越久越慢，且衰减与用户行为（频繁改配置、频繁启停短命实例）正相关；由于无一处设上限，无法给出任何「规模 X 以内性能 Y」式的整体陈述。
+        - Fix: profile 读取改分页/懒加载版本史；引擎缓存校验改增量或按需；下载事件 ID 集按时间或总量剪枝；SSE 快照移出广播锁。至少为四处各设一个明确上限或保留策略，使成本重新耦合于当前负载。
+        - Verification: static
 - [Low][90] .repo_template/scripts/repo_task/ledger.py:13-58；.repo_template/scripts/repo_task/attempts.py:36-46；.repo_template/scripts/repo_sync.py:496-509（强制迁移范围仅 task 目录） — dispatch ledger 行格式不在成文兼容政策与 sync 强制迁移覆盖内：无 version 字段、无迁移分支，旧格式行靠投影 skip 静默容忍，与 usage.md『不保留双轨解析、直接拒绝旧字段』口径不一致
-  - Sources: bundle_followup_q_evolution_04.md (f_followup_q_evolution_04_01)
-  - f_followup_q_evolution_04_01: ledger.py:13-20 事件写入（_sanitize）只补 ts，不写任何 version/格式标识；ledger.py:23-58 读取逐行 json.loads，无版本识别与旧格式分支; attempts.py:36-46 project_attempts 对缺 execution_id 等关键身份字段的行直接 continue——execution_id 即是已经历过的一次格式演进（旧行无此字段），其处置是静默跳过而非迁移或显式拒绝; repo_sync.py 全文 grep 'ledger|dispatch' 零命中；force_migrate_workflow_tasks 的覆盖范围由 _collect_workflow_task_dirs（:496-509）限定为 docs/tasks 与 docs/archive/tasks，docs/runtime/dispatch_ledger.jsonl 不在内; .repo_template/docs/usage.md:104 成文政策对 workflow schema 声明『更新后工具链直接拒绝旧字段和旧状态，不保留双轨解析』，ledger 的 skip 容忍与该口径不一致且无文档说明此例外
-    - Impact: 若 ledger 行格式再演进（新增必填字段或事件类型重命名），消费仓存量旧行不会被迁移、不会报错，只会在 project_attempts 投影时被静默丢弃，attempt 历史与身份链出现无声缺口；与 front matter 侧『强制迁移 + 显式拒绝』的确定性处置相比，ledger 侧的失败模式是静默数据损失而非 fail-closed。
-    - Fix: 二选一并成文：或把 ledger 纳入 sync 强制迁移/版本识别（如事件加 version 字段、project_attempts 对已知旧版本显式迁移、对未知版本显式拒绝），或在 usage.md:104 的政策段明确 ledger 例外及其 skip 容忍语义与风险接受。
-    - Verification: static
+    - Sources: bundle_followup_q_evolution_04.md (f_followup_q_evolution_04_01)
+    - f_followup_q_evolution_04_01: ledger.py:13-20 事件写入（\_sanitize）只补 ts，不写任何 version/格式标识；ledger.py:23-58 读取逐行 json.loads，无版本识别与旧格式分支; attempts.py:36-46 project_attempts 对缺 execution_id 等关键身份字段的行直接 continue——execution_id 即是已经历过的一次格式演进（旧行无此字段），其处置是静默跳过而非迁移或显式拒绝; repo_sync.py 全文 grep 'ledger|dispatch' 零命中；force_migrate_workflow_tasks 的覆盖范围由 \_collect_workflow_task_dirs（:496-509）限定为 docs/tasks 与 docs/archive/tasks，docs/runtime/dispatch_ledger.jsonl 不在内; .repo_template/docs/usage.md:104 成文政策对 workflow schema 声明『更新后工具链直接拒绝旧字段和旧状态，不保留双轨解析』，ledger 的 skip 容忍与该口径不一致且无文档说明此例外
+        - Impact: 若 ledger 行格式再演进（新增必填字段或事件类型重命名），消费仓存量旧行不会被迁移、不会报错，只会在 project_attempts 投影时被静默丢弃，attempt 历史与身份链出现无声缺口；与 front matter 侧『强制迁移 + 显式拒绝』的确定性处置相比，ledger 侧的失败模式是静默数据损失而非 fail-closed。
+        - Fix: 二选一并成文：或把 ledger 纳入 sync 强制迁移/版本识别（如事件加 version 字段、project_attempts 对已知旧版本显式迁移、对未知版本显式拒绝），或在 usage.md:104 的政策段明确 ledger 例外及其 skip 容忍语义与风险接受。
+        - Verification: static
 - [Low][85] docs/archive/tasks/；docs/archive/reviews/；docs/archive/pending/ — 归档只追加纪律的纠正机制未被实际执行，记录可信度随轮次单调衰减且编号空间随轮次必然碰撞
-  - Sources: bundle_global_evolution.md (f_global_evolution_07)
-  - f_global_evolution_07: 仓规（AGENTS.md）：docs/archive/ 内部文件只准新增，账本错误只能以勘误节纠正——纠正成本被制度性地定为『追加一份新记录并期望读者交叉阅读』; f_archive_tasks_02/04：t018 Review 处置表退化为样板文本、19 轮审查超记录上限 5 轮无授权留痕；t015 收尾与 handoff.json 仍称 Round 2 PASS，与实际 6/5 轮且 Round 3 曾推翻该 PASS 不符——两处均未见勘误节追加; f_archive_tasks_05/06：p011 以 resolved 关闭但子项自认未做且无承接；p001 的关闭理由与 p005 逐字相同、以 p005 为主语，单项审计无法确认其关闭依据; f_archive_reviews_01/04/07：adoption_decision.md 对交叉证伪条数同文件内 33 与 30 两种口径并存；决策项计数与附表映射不一致；跨轮 A/R 编号碰撞（上一轮 A26 与本轮 A26 指向不同事项），且单元明确指出『随着轮次增多，两套编号在同一仓内并存，碰撞只会加重』; f_archive_tasks_11：多份归档账本保留模板示例行，污染 finding id 空间，自动解析处置表的工具会读到不存在的 finding
-    - Impact: 归档层是后续整改立项与审计回查的依据层，其价值完全取决于记录可信度。现行纪律把纠错成本设得很高（原文不可改、只能追加勘误），而收尾环节又没有对勘误落地的校验，于是已发现的错误大多原地保留：读者每引用一份旧账本都要自行甄别其口径。编号不按轮次隔离命名空间，使碰撞成为随轮次必然加重的结构性问题。这不是单点文档卫生，而是审计基础设施随时间贬值的演进成本。
-    - Fix: 给 task/review 收尾门禁增加账本一致性校验（处置表逐条可解析、轮次与预算账目与 attempt 记录对齐、关闭理由非模板复制）；决策编号改为带轮次前缀的命名空间（如 R20261103-A26）并在新轮 adoption 中只引用带前缀编号；已发现的现存错误按纪律补写勘误节而非留待读者甄别。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_07)
+    - f_global_evolution_07: 仓规（AGENTS.md）：docs/archive/ 内部文件只准新增，账本错误只能以勘误节纠正——纠正成本被制度性地定为『追加一份新记录并期望读者交叉阅读』; f_archive_tasks_02/04：t018 Review 处置表退化为样板文本、19 轮审查超记录上限 5 轮无授权留痕；t015 收尾与 handoff.json 仍称 Round 2 PASS，与实际 6/5 轮且 Round 3 曾推翻该 PASS 不符——两处均未见勘误节追加; f_archive_tasks_05/06：p011 以 resolved 关闭但子项自认未做且无承接；p001 的关闭理由与 p005 逐字相同、以 p005 为主语，单项审计无法确认其关闭依据; f_archive_reviews_01/04/07：adoption_decision.md 对交叉证伪条数同文件内 33 与 30 两种口径并存；决策项计数与附表映射不一致；跨轮 A/R 编号碰撞（上一轮 A26 与本轮 A26 指向不同事项），且单元明确指出『随着轮次增多，两套编号在同一仓内并存，碰撞只会加重』; f_archive_tasks_11：多份归档账本保留模板示例行，污染 finding id 空间，自动解析处置表的工具会读到不存在的 finding
+        - Impact: 归档层是后续整改立项与审计回查的依据层，其价值完全取决于记录可信度。现行纪律把纠错成本设得很高（原文不可改、只能追加勘误），而收尾环节又没有对勘误落地的校验，于是已发现的错误大多原地保留：读者每引用一份旧账本都要自行甄别其口径。编号不按轮次隔离命名空间，使碰撞成为随轮次必然加重的结构性问题。这不是单点文档卫生，而是审计基础设施随时间贬值的演进成本。
+        - Fix: 给 task/review 收尾门禁增加账本一致性校验（处置表逐条可解析、轮次与预算账目与 attempt 记录对齐、关闭理由非模板复制）；决策编号改为带轮次前缀的命名空间（如 R20261103-A26）并在新轮 adoption 中只引用带前缀编号；已发现的现存错误按纪律补写勘误节而非留待读者甄别。
+        - Verification: static
 - [Low][85] scripts/run_gates.sh:19；src/backend/requirements.txt 与 pyproject.toml；.env.example 与 config/.env.example — 版本基线多处不锁定或双份维护，长期复现性随上游与时间漂移
-  - Sources: bundle_global_evolution.md (f_global_evolution_08)
-  - f_global_evolution_08: f_contracts_deploy_06：run_gates.sh 用未 pin 的包组装测试环境，门禁结果随上游发版漂移，『红』可能只是环境变了而非代码回归，绿也不能证明环境与既往一致; f_backend_core_11：legacy requirements.txt 与 pyproject.toml 依赖声明漂移，同一包版本约束冲突且集合互不一致，不同安装路径解析出不同依赖组合（且框架行为差异会改变如 serve_spa 穿越可达性等结论的前提）; f_contracts_deploy_13：四个 v2 运行时中 stream 镜像的 pydantic patch 版本与其余三者漂移，同一协议负载在不同服务上由不同 pydantic 构建校验/序列化; f_contracts_deploy_11：.env.example 在仓库根与 config/ 各存一份字节相同副本且无同步机制，两份可独立编辑，迟早漂移（AUTH_TOKEN『Required』措辞正是只会改一处的典型文本）
-    - Impact: 单项都很小，但形态一致：同一事实（依赖版本、环境模板）存在两个以上无机械绑定的副本或不锁定来源。时间越久，『在我这能跑』『门禁时红时绿』类不可复现问题的归因成本越高，并会侵蚀门禁作为演进护栏的信号价值——与 f_global_evolution_03/05 同属『靠纪律维持一致性』的负债，只是落在版本面。
-    - Fix: 门禁环境改用仓内锁文件安装（与运行时 requirements.in→txt 同一机制）；legacy 二选一保留单一依赖声明源（pyproject 为准、requirements 由其生成）；.env.example 只保留一份、另一处改软链或在门禁中 diff 两份。
-    - Verification: static
+    - Sources: bundle_global_evolution.md (f_global_evolution_08)
+    - f_global_evolution_08: f_contracts_deploy_06：run_gates.sh 用未 pin 的包组装测试环境，门禁结果随上游发版漂移，『红』可能只是环境变了而非代码回归，绿也不能证明环境与既往一致; f_backend_core_11：legacy requirements.txt 与 pyproject.toml 依赖声明漂移，同一包版本约束冲突且集合互不一致，不同安装路径解析出不同依赖组合（且框架行为差异会改变如 serve_spa 穿越可达性等结论的前提）; f_contracts_deploy_13：四个 v2 运行时中 stream 镜像的 pydantic patch 版本与其余三者漂移，同一协议负载在不同服务上由不同 pydantic 构建校验/序列化; f_contracts_deploy_11：.env.example 在仓库根与 config/ 各存一份字节相同副本且无同步机制，两份可独立编辑，迟早漂移（AUTH_TOKEN『Required』措辞正是只会改一处的典型文本）
+        - Impact: 单项都很小，但形态一致：同一事实（依赖版本、环境模板）存在两个以上无机械绑定的副本或不锁定来源。时间越久，『在我这能跑』『门禁时红时绿』类不可复现问题的归因成本越高，并会侵蚀门禁作为演进护栏的信号价值——与 f_global_evolution_03/05 同属『靠纪律维持一致性』的负债，只是落在版本面。
+        - Fix: 门禁环境改用仓内锁文件安装（与运行时 requirements.in→txt 同一机制）；legacy 二选一保留单一依赖声明源（pyproject 为准、requirements 由其生成）；.env.example 只保留一份、另一处改软链或在门禁中 diff 两份。
+        - Verification: static
 - [Info][95] docs/reviews/review_20261102_201727/adoption_decision.md（决策表「finding」列与文末附表定位列） — adoption 附表以 bundle 行号作为 finding 定位锚点，生成产物行号不稳定
-  - Sources: bundle_local_archive_reviews.md (f_archive_reviews_09)
-  - f_archive_reviews_09: 决策表与附表大量使用「bundle_local_backend_core.md L63–L67」式定位；bundle 为 _meta JSON 的渲染产物，任一 finding 文本变动都会使后续行号整体漂移。; 同一文档内 finding id 本已唯一且稳定（如 f_backend_core_04），行号定位不提供额外信息却引入失效模式。
-    - Impact: 本轮记录因基线冻结尚可使用；但任何对 bundle 的再生成或修订都会使 adoption 的全部行号引用静默失效，且失效无从察觉。
-    - Fix: 后续轮次的决策文档只以 finding id 为定位锚点，行号至多作为落笔时的一次性辅助并注明生成时点。
-    - Verification: static
+    - Sources: bundle_local_archive_reviews.md (f_archive_reviews_09)
+    - f_archive_reviews_09: 决策表与附表大量使用「bundle_local_backend_core.md L63–L67」式定位；bundle 为 \_meta JSON 的渲染产物，任一 finding 文本变动都会使后续行号整体漂移。; 同一文档内 finding id 本已唯一且稳定（如 f_backend_core_04），行号定位不提供额外信息却引入失效模式。
+        - Impact: 本轮记录因基线冻结尚可使用；但任何对 bundle 的再生成或修订都会使 adoption 的全部行号引用静默失效，且失效无从察觉。
+        - Fix: 后续轮次的决策文档只以 finding id 为定位锚点，行号至多作为落笔时的一次性辅助并注明生成时点。
+        - Verification: static
 - [Info][80] docs/spikes/s011_direct_media_validation/code/direct_media_probe.py:30 — s011 is coupled to live production code and re-implements the gateway protocol as a test mock
-  - Sources: bundle_local_archive_spikes.md (f_archive_spikes_21)
-  - f_archive_spikes_21: direct_media_probe.py imports cbrowser.domain.models and cbrowser.gateway.endpoint (run.sh puts src/backend on PYTHONPATH) and reads tests/fixtures/stream_probe/* - unlike the archived spikes it is not a self-contained snapshot and will drift or break as the backend evolves; Its GatewayMockServer re-implements the gateway protocol inside the test (with bare asserts on packet fields inside the WS handler and without the Origin/payload checks of s006 gateway_core.py), so protocol drift between the mock and the real gateway is invisible to this suite; This is consistent with its live-spike status feeding t015, but the coupling is not stated in the spike report
-    - Impact: Future failures of s011 may reflect backend/fixture drift rather than media behavior, and its PASS does not exercise the real gateway implementation.
-    - Fix: Note the coupling in the s011 report; when t015 lands, archive s011 with a frozen copy of the fixtures it depends on, like the other spikes.
-    - Verification: static
+    - Sources: bundle_local_archive_spikes.md (f_archive_spikes_21)
+    - f_archive_spikes_21: direct_media_probe.py imports cbrowser.domain.models and cbrowser.gateway.endpoint (run.sh puts src/backend on PYTHONPATH) and reads tests/fixtures/stream_probe/\* - unlike the archived spikes it is not a self-contained snapshot and will drift or break as the backend evolves; Its GatewayMockServer re-implements the gateway protocol inside the test (with bare asserts on packet fields inside the WS handler and without the Origin/payload checks of s006 gateway_core.py), so protocol drift between the mock and the real gateway is invisible to this suite; This is consistent with its live-spike status feeding t015, but the coupling is not stated in the spike report
+        - Impact: Future failures of s011 may reflect backend/fixture drift rather than media behavior, and its PASS does not exercise the real gateway implementation.
+        - Fix: Note the coupling in the s011 report; when t015 lands, archive s011 with a frozen copy of the fixtures it depends on, like the other spikes.
+        - Verification: static
 - [Info][95] docs/archive/specs/chrome_external_tabs.md:1 — 归档 spec chrome_external_tabs 的 5 条 AC 全部未勾且文件内无 superseded 标记
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_10)
-  - f_archive_tasks_10: 该 spec 的 5 条 AC 均为未勾选状态，其 ControlSession 租约模型与 t007 实际交付形态不同；它被移入 archive 的事实只记录在 t007 note.md 的长期文档闭环一节（「旧 chrome_external_tabs（控制租约模型）移入 docs/archive/specs/」），spec 文件本身没有任何已废弃/被替代的标注。
-    - Impact: 只读归档 spec 的人无法判断它是未完成的需求还是已被替代的历史设计，可能被误当作待实现契约引用。
-    - Fix: 在 spec 文首补一行 superseded 标注，指向 t007 与现行 webrtc_remote_display spec。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_10)
+    - f_archive_tasks_10: 该 spec 的 5 条 AC 均为未勾选状态，其 ControlSession 租约模型与 t007 实际交付形态不同；它被移入 archive 的事实只记录在 t007 note.md 的长期文档闭环一节（「旧 chrome_external_tabs（控制租约模型）移入 docs/archive/specs/」），spec 文件本身没有任何已废弃/被替代的标注。
+        - Impact: 只读归档 spec 的人无法判断它是未完成的需求还是已被替代的历史设计，可能被误当作待实现契约引用。
+        - Fix: 在 spec 文首补一行 superseded 标注，指向 t007 与现行 webrtc_remote_display spec。
+        - Verification: static
 - [Info][95] docs/archive/tasks/t008_v2_artifacts_automation/note.md:41 — 多份归档账本保留模板示例行，污染 finding id 空间
-  - Sources: bundle_local_archive_tasks.md (f_archive_tasks_11)
-  - f_archive_tasks_11: t008 note.md（:41）与 t013 note.md（:39）的 Review 处置表中都保留着模板示例行「t000_code_f001 | critical/important/minor | 已修/遗留/撤回 | 一句话 | 文件:行 / pNNN / tid」；t011/t014 的账本中亦然（见 f_archive_tasks_08）。
-    - Impact: 纯文档卫生问题：自动解析处置表的工具会读到一条不存在的 finding；也反映收尾时未做账本清理。
-    - Fix: 删除各归档账本中的模板示例行（归档只追加的仓规下，可在各 note 末尾以勘误方式声明该行为模板残留）。
-    - Verification: static
+    - Sources: bundle_local_archive_tasks.md (f_archive_tasks_11)
+    - f_archive_tasks_11: t008 note.md（:41）与 t013 note.md（:39）的 Review 处置表中都保留着模板示例行「t000_code_f001 | critical/important/minor | 已修/遗留/撤回 | 一句话 | 文件:行 / pNNN / tid」；t011/t014 的账本中亦然（见 f_archive_tasks_08）。
+        - Impact: 纯文档卫生问题：自动解析处置表的工具会读到一条不存在的 finding；也反映收尾时未做账本清理。
+        - Fix: 删除各归档账本中的模板示例行（归档只追加的仓规下，可在各 note 末尾以勘误方式声明该行为模板残留）。
+        - Verification: static
 - [Info][85] src/backend/cbrowser/auth/service.py:322-397 — 自动化授权拒绝的审计覆盖不对称：高频猜测路径不留痕，部分拒绝路径每次写一条审计记录
-  - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_08)
-  - f_backend_api_auth_08: authorize_automation 对 token_revoked/token_expired/profile_unauthorized/profile_not_found 四种拒绝调用 _record_auth_denied 写 AuditEventModel（service.py:353-377），每次拒绝多一次 DB 写事务; 而 token_not_found（service.py:344-350）与格式非法（service.py:327-333）两种拒绝只记 logger.warning 不写审计——恰是令牌在线猜测时最常见的返回路径，审计系统对其不可见; 被审计的拒绝写放大受 _automation_limiter 全局 200 次/分钟上限约束，上限不低：持续拒绝流量可产生同等速率的审计行增长
-    - Impact: 审计轨迹在最需要取证的猜测场景缺失、在其他场景又以逐条写库方式增长；功能与安全边界不受影响，属可观测性一致性问题。
-    - Fix: 统一策略：或将 token_not_found/格式非法也纳入审计（并对同 token+同原因做聚合/采样以控量），或把逐条审计降级为限速器计数+结构化日志、仅保留状态迁移类事件（吊销/过期命中）入库。二选一并在代码注释中写明口径。
-    - Verification: static
+    - Sources: bundle_local_backend_api_auth.md (f_backend_api_auth_08)
+    - f_backend_api_auth_08: authorize_automation 对 token_revoked/token_expired/profile_unauthorized/profile_not_found 四种拒绝调用 \_record_auth_denied 写 AuditEventModel（service.py:353-377），每次拒绝多一次 DB 写事务; 而 token_not_found（service.py:344-350）与格式非法（service.py:327-333）两种拒绝只记 logger.warning 不写审计——恰是令牌在线猜测时最常见的返回路径，审计系统对其不可见; 被审计的拒绝写放大受 \_automation_limiter 全局 200 次/分钟上限约束，上限不低：持续拒绝流量可产生同等速率的审计行增长
+        - Impact: 审计轨迹在最需要取证的猜测场景缺失、在其他场景又以逐条写库方式增长；功能与安全边界不受影响，属可观测性一致性问题。
+        - Fix: 统一策略：或将 token_not_found/格式非法也纳入审计（并对同 token+同原因做聚合/采样以控量），或把逐条审计降级为限速器计数+结构化日志、仅保留状态迁移类事件（吊销/过期命中）入库。二选一并在代码注释中写明口径。
+        - Verification: static
 - [Info][90] src/backend/settings_store.py:22-29 — settings_store 对损坏 JSON 静默回退为空设置，license key 无声失效且无日志
-  - Sources: bundle_local_backend_core.md (f_backend_core_13)
-  - f_backend_core_13: load_settings 捕获 FileNotFoundError/JSONDecodeError/OSError 一律返回 {}，不区分『从未设置』与『文件损坏』，也无任何日志; main.py 在导入期以 _STORED_SETTINGS 解析 LICENSE_KEY，文件损坏时应用以 keyless 模式启动，用户只会看到 tier 变化而不知原因; settings.json 内含 license key 明文（save_settings 经 mkstemp 落盘，POSIX 下为 0600），属原生应用的既定取舍，此处仅记录
-    - Impact: 设置文件损坏的故障形态是『Pro 功能静默消失』，排障需比对文件内容才有线索；与本仓其他模块的显式报错口径不一致。
-    - Fix: JSONDecodeError 时 logger.warning 记录文件路径与异常，并把损坏文件改名保留（如 settings.json.corrupt-<ts>）后再回退空设置。
-    - Verification: static
-- [Info][95] src/backend/main.py:1690-1705 — 跨模块私有成员耦合：main.py 直读 vnc._allocated 并回写 browser_mgr._auto_launch_task
-  - Sources: bundle_local_backend_core.md (f_backend_core_14)
-  - f_backend_core_14: vnc_proxy 的收尾路径以 browser_mgr.vnc._allocated.get(running.display) 判断 Xvnc 存活，绕过 VNCManager 已有的 active_displays/get_ws_port 公共面（但公共面不提供 process 存活状态，这正是耦合的成因）; lifespan 中 main.py 直接赋值 browser_mgr._auto_launch_task；browser_manager 侧多处读 context 的 _cloak_denial_path 私有属性（上游 wrapper 约定）; 当前均能工作，但任一侧重构私有结构都会以 AttributeError 形式在运行期暴露，无类型/契约层面的约束
-    - Impact: 可维护性风险：VNC 存活判断与任务句柄管理的所有权分散在两个模块，后续修改 VNCManager 内部结构时容易漏改 main.py 的直读点。
-    - Fix: 在 VNCManager 上补 is_alive(display) 公共方法供代理收尾使用；_auto_launch_task 改由 BrowserManager 提供 start_auto_launch()/属性 setter 管理。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_13)
+    - f_backend_core_13: load_settings 捕获 FileNotFoundError/JSONDecodeError/OSError 一律返回 {}，不区分『从未设置』与『文件损坏』，也无任何日志; main.py 在导入期以 \_STORED_SETTINGS 解析 LICENSE_KEY，文件损坏时应用以 keyless 模式启动，用户只会看到 tier 变化而不知原因; settings.json 内含 license key 明文（save_settings 经 mkstemp 落盘，POSIX 下为 0600），属原生应用的既定取舍，此处仅记录
+        - Impact: 设置文件损坏的故障形态是『Pro 功能静默消失』，排障需比对文件内容才有线索；与本仓其他模块的显式报错口径不一致。
+        - Fix: JSONDecodeError 时 logger.warning 记录文件路径与异常，并把损坏文件改名保留（如 settings.json.corrupt-<ts>）后再回退空设置。
+        - Verification: static
+- [Info][95] src/backend/main.py:1690-1705 — 跨模块私有成员耦合：main.py 直读 vnc.\_allocated 并回写 browser_mgr.\_auto_launch_task
+    - Sources: bundle_local_backend_core.md (f_backend_core_14)
+    - f_backend_core_14: vnc_proxy 的收尾路径以 browser_mgr.vnc.\_allocated.get(running.display) 判断 Xvnc 存活，绕过 VNCManager 已有的 active_displays/get_ws_port 公共面（但公共面不提供 process 存活状态，这正是耦合的成因）; lifespan 中 main.py 直接赋值 browser_mgr.\_auto_launch_task；browser_manager 侧多处读 context 的 \_cloak_denial_path 私有属性（上游 wrapper 约定）; 当前均能工作，但任一侧重构私有结构都会以 AttributeError 形式在运行期暴露，无类型/契约层面的约束
+        - Impact: 可维护性风险：VNC 存活判断与任务句柄管理的所有权分散在两个模块，后续修改 VNCManager 内部结构时容易漏改 main.py 的直读点。
+        - Fix: 在 VNCManager 上补 is_alive(display) 公共方法供代理收尾使用；\_auto_launch_task 改由 BrowserManager 提供 start_auto_launch()/属性 setter 管理。
+        - Verification: static
 - [Info][90] src/backend/env_file.py — env_file.py 在全部测试树中零覆盖
-  - Sources: bundle_local_backend_core.md (f_backend_core_19)
-  - f_backend_core_19: 对 env_file 在 src/backend/tests、tests/unit、tests/integration 三处 grep 均为零命中。; 该模块（39 行）在 import 期把 manager 根 .env 载入 os.environ，是 AUTH_TOKEN 等配置进入进程的通道之一（与 f_backend_core_03 的鉴权默认行为相邻）。
-    - Impact: 畸形行、引号与空值的解析行为若回归，只会在真实部署启动时暴露；解析逻辑简单，影响面小，故记 Info。
-    - Fix: 补少量解析单测：键值、引号、空行/注释，以及与已存在环境变量同名时的当前语义各一例。
-    - Verification: static
+    - Sources: bundle_local_backend_core.md (f_backend_core_19)
+    - f_backend_core_19: 对 env_file 在 src/backend/tests、tests/unit、tests/integration 三处 grep 均为零命中。; 该模块（39 行）在 import 期把 manager 根 .env 载入 os.environ，是 AUTH_TOKEN 等配置进入进程的通道之一（与 f_backend_core_03 的鉴权默认行为相邻）。
+        - Impact: 畸形行、引号与空值的解析行为若回归，只会在真实部署启动时暴露；解析逻辑简单，影响面小，故记 Info。
+        - Fix: 补少量解析单测：键值、引号、空行/注释，以及与已存在环境变量同名时的当前语义各一例。
+        - Verification: static
 - [Info][95] src/backend/cbrowser/runtime_agent/agent.py:296-460 — Agent control and CDP endpoints have no per-request authentication; the UDS file permissions are the entire trust boundary
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_14)
-  - f_backend_runtime_adapters_14: create_agent_app exposes POST /control (close_browser, rearm_downloads) and the WS /cdp full-browser-control tunnel with no token, origin, or peer-credential check; protection is entirely the socket setup in run_uds_agent (umask 077 bind, sock chmod 0660, parent chmod 0750, agent.py:505-525).; This matches the documented design (Supervisor and Agent share the runtime volume; the sandbox boundary is the container), and no additional exposure was found — the socket is never bound to TCP.
-    - Impact: Any process that gains read/write access to the profile's runtime directory (or runs in a container sharing that volume) obtains full CDP control of the browser and can close it or read all events. Acceptable under the current single-host container model, but it means volume-mount configuration mistakes elsewhere silently become browser-takeover paths.
-    - Fix: No change required for the current topology; if the runtime volume is ever shared more broadly, add SO_PEERCRED checking or a per-generation token file (0600) required on /control and /cdp.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_14)
+    - f_backend_runtime_adapters_14: create_agent_app exposes POST /control (close_browser, rearm_downloads) and the WS /cdp full-browser-control tunnel with no token, origin, or peer-credential check; protection is entirely the socket setup in run_uds_agent (umask 077 bind, sock chmod 0660, parent chmod 0750, agent.py:505-525).; This matches the documented design (Supervisor and Agent share the runtime volume; the sandbox boundary is the container), and no additional exposure was found — the socket is never bound to TCP.
+        - Impact: Any process that gains read/write access to the profile's runtime directory (or runs in a container sharing that volume) obtains full CDP control of the browser and can close it or read all events. Acceptable under the current single-host container model, but it means volume-mount configuration mistakes elsewhere silently become browser-takeover paths.
+        - Fix: No change required for the current topology; if the runtime volume is ever shared more broadly, add SO_PEERCRED checking or a per-generation token file (0600) required on /control and /cdp.
+        - Verification: static
 - [Info][85] src/backend/cbrowser/adapters/database/migrations.py:24-38 — Migration docstring overstates busy_timeout configuration; the pragma is set on a throwaway connection
-  - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_15)
-  - f_backend_runtime_adapters_15: run_database_migrations' docstring says it 'Configures database with WAL and busy_timeout=5000', but the code opens a raw sqlite3 connection, executes the pragmas and closes it (:33-38) before Alembic runs on its own connections.; journal_mode=WAL persists in the database file, but busy_timeout is per-connection and does not persist; the busy_timeout that actually protects the application comes from session.py's connect listener, not from this function.
-    - Impact: Documentation accuracy only: a reader could believe Alembic migrations themselves run under busy_timeout=5000 (they rely on Alembic/SQLAlchemy defaults), and could remove session.py's listener believing migrations already configured the database.
-    - Fix: Correct the docstring to state WAL is persisted here and busy_timeout is applied per-connection by the engine factory in session.py; drop the no-op pragma or keep it with an accurate comment.
-    - Verification: static
+    - Sources: bundle_local_backend_runtime_adapters.md (f_backend_runtime_adapters_15)
+    - f_backend_runtime_adapters_15: run_database_migrations' docstring says it 'Configures database with WAL and busy_timeout=5000', but the code opens a raw sqlite3 connection, executes the pragmas and closes it (:33-38) before Alembic runs on its own connections.; journal_mode=WAL persists in the database file, but busy_timeout is per-connection and does not persist; the busy_timeout that actually protects the application comes from session.py's connect listener, not from this function.
+        - Impact: Documentation accuracy only: a reader could believe Alembic migrations themselves run under busy_timeout=5000 (they rely on Alembic/SQLAlchemy defaults), and could remove session.py's listener believing migrations already configured the database.
+        - Fix: Correct the docstring to state WAL is persisted here and busy_timeout is applied per-connection by the engine factory in session.py; drop the no-op pragma or keep it with an accurate comment.
+        - Verification: static
 - [Info][90] src/backend/cbrowser/gateway/registry.py:12-24; src/backend/cbrowser/gateway/server.py:455-463 — Gateway 注册表中的 runtime_state 在注册后永不更新，心跳携带的 runtime_state 被处理代码丢弃
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_07)
-  - f_backend_stream_gateway_07: RegisteredAgent 含 runtime_state 字段，注册时由 AgentRegisterPayload.runtime_state 填充; server.py 消息泵处理 HEARTBEAT 时只取 payload 的 unpaused_video_consumers 与 capture_running 写入 agent，未同步 beat.runtime_state 到 agent.runtime_state; AgentHeartbeatPayload 明确含 runtime_state 字段（protocol.py:203-211），即协议设计意图包含该状态的上报通道
-    - Impact: registry 中 runtime_state 恒为注册瞬间值（当前注册负载恒为 ready，影响小），但任何未来读取该字段做决策的代码都会拿到陈旧状态，形成隐性误导。
-    - Fix: 在 HEARTBEAT 处理中同步 agent.runtime_state = beat.runtime_state；或删除 RegisteredAgent.runtime_state 字段以免误用。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_07)
+    - f_backend_stream_gateway_07: RegisteredAgent 含 runtime_state 字段，注册时由 AgentRegisterPayload.runtime_state 填充; server.py 消息泵处理 HEARTBEAT 时只取 payload 的 unpaused_video_consumers 与 capture_running 写入 agent，未同步 beat.runtime_state 到 agent.runtime_state; AgentHeartbeatPayload 明确含 runtime_state 字段（protocol.py:203-211），即协议设计意图包含该状态的上报通道
+        - Impact: registry 中 runtime_state 恒为注册瞬间值（当前注册负载恒为 ready，影响小），但任何未来读取该字段做决策的代码都会拿到陈旧状态，形成隐性误导。
+        - Fix: 在 HEARTBEAT 处理中同步 agent.runtime_state = beat.runtime_state；或删除 RegisteredAgent.runtime_state 字段以免误用。
+        - Verification: static
 - [Info][90] src/backend/cbrowser/stream_agent/messaging.py:17-18; src/backend/cbrowser/stream_agent/policy_rules.py:33-34,64-68; src/backend/cbrowser/stream_agent/policy.py:608-616; src/backend/cbrowser/stream_agent/protocol.py:43-67,109-127,156-169 — 同义逻辑多处重复实现：iso_now 双定义、身份校验器在四个协议模型中复制、客户端 verb 拦截存在两套实现
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_08)
-  - f_backend_stream_gateway_08: iso_now 在 messaging.py 与 policy_rules.py 各定义一份（实现相同），policy.py 又分别从 policy_rules 导入两个别名; should_block_client_verb（policy_rules.py）用 startswith(FORBIDDEN_PEER_PREFIXES) 实现拦截，但 policy.py 的服务子类 _on_peer_data_message 直接内联 msg.startswith(self.FORBIDDEN_PEER_PREFIXES)，未调用该函数；函数仅经包 __init__ 再导出; profile_id / runtime_instance_id / conn_id 三个校验器在 GatewayTunnelEnvelope、GatewayControlEnvelope、_AgentEnvelope 等模型中逐字复制四份
-    - Impact: 规则变更（如新增禁止 verb 前缀、放宽身份字符集）需多处同步修改，漏改一处即出现 Gateway 与 Agent、或不同 envelope 之间口径漂移；当前各副本内容一致，属维护性风险而非现行缺陷。
-    - Fix: 抽取共享的校验函数/mixin 供各 envelope 复用；_on_peer_data_message 改为调用 should_block_client_verb；iso_now 只保留一处定义、另一处导入复用。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_08)
+    - f_backend_stream_gateway_08: iso_now 在 messaging.py 与 policy_rules.py 各定义一份（实现相同），policy.py 又分别从 policy_rules 导入两个别名; should_block_client_verb（policy_rules.py）用 startswith(FORBIDDEN_PEER_PREFIXES) 实现拦截，但 policy.py 的服务子类 \_on_peer_data_message 直接内联 msg.startswith(self.FORBIDDEN_PEER_PREFIXES)，未调用该函数；函数仅经包 __init__ 再导出; profile_id / runtime_instance_id / conn_id 三个校验器在 GatewayTunnelEnvelope、GatewayControlEnvelope、\_AgentEnvelope 等模型中逐字复制四份
+        - Impact: 规则变更（如新增禁止 verb 前缀、放宽身份字符集）需多处同步修改，漏改一处即出现 Gateway 与 Agent、或不同 envelope 之间口径漂移；当前各副本内容一致，属维护性风险而非现行缺陷。
+        - Fix: 抽取共享的校验函数/mixin 供各 envelope 复用；\_on_peer_data_message 改为调用 should_block_client_verb；iso_now 只保留一处定义、另一处导入复用。
+        - Verification: static
 - [Info][95] src/backend/cbrowser/gateway/server.py:343-349 — Agent 注册包解码处 except (ValidationError, Exception) 冗余捕获，掩盖预期的窄异常分类
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_09)
-  - f_backend_stream_gateway_09: handle_agent_register 中 reg_raw = json.loads(msg.data) 与 AgentRegisterEnvelope.model_validate 的异常捕获写作 except (ValidationError, Exception)，ValidationError 本就是 Exception 子类，该元组等价于裸 except Exception; 同文件其他解码边界（如 _handle_gateway_envelope 在 agent.py 对应侧）均有明确注释说明宽捕获的隔离意图，此处无注释，读者无法判断是有意全捕获还是笔误
-    - Impact: 无功能影响（行为与全捕获一致且结果为关闭连接+1008），但会让后续维护者误以为 ValidationError 有特殊处理路径，也使静态检查工具对此文件的同类问题脱敏。
-    - Fix: 改为 except Exception 并补注与同文件其他边界一致的隔离意图注释，或只捕获 (ValidationError, ValueError) 并为其余异常留日志。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_09)
+    - f_backend_stream_gateway_09: handle_agent_register 中 reg_raw = json.loads(msg.data) 与 AgentRegisterEnvelope.model_validate 的异常捕获写作 except (ValidationError, Exception)，ValidationError 本就是 Exception 子类，该元组等价于裸 except Exception; 同文件其他解码边界（如 \_handle_gateway_envelope 在 agent.py 对应侧）均有明确注释说明宽捕获的隔离意图，此处无注释，读者无法判断是有意全捕获还是笔误
+        - Impact: 无功能影响（行为与全捕获一致且结果为关闭连接+1008），但会让后续维护者误以为 ValidationError 有特殊处理路径，也使静态检查工具对此文件的同类问题脱敏。
+        - Fix: 改为 except Exception 并补注与同文件其他边界一致的隔离意图注释，或只捕获 (ValidationError, ValueError) 并为其余异常留日志。
+        - Verification: static
 - [Info][85] src/backend/cbrowser/gateway/server.py:68-683 — Gateway 全部路由处理器为 create_gateway_app 内的闭包，无法独立导入或单测，本单元亦无任何测试文件
-  - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_10)
-  - f_backend_stream_gateway_10: handle_agent_register / handle_viewer_signal / handle_supervisor_* 均为 create_gateway_app 内部闭包，捕获 registry、viewers、credentials、api 等每应用状态，模块级不可见; 构造应用必须先成功读取三份密钥文件并实例化 GatewayApiClient（server.py:80-91），轻量 handler 级测试也绕不开完整装配; 本单元 16 个文件经盘点全部为生产代码；其测试分布在其他审阅单元，本单元范围内无法自证覆盖
-    - Impact: handler 级回归只能靠启完整应用的集成测试覆盖，编写与运行成本高，容易使身份 fence、节流、替换语义这类纯逻辑分支缺少快速回归网；属可测性结构观察，非现行功能缺陷。
-    - Fix: 可将纯逻辑（身份比对、fence 判定、节流键构造）抽为可导入的模块级函数供 handler 调用与单测，handler 闭包只保留 I/O 编排。
-    - Verification: static
+    - Sources: bundle_local_backend_stream_gateway.md (f_backend_stream_gateway_10)
+    - f_backend_stream_gateway_10: handle_agent_register / handle_viewer_signal / handle_supervisor\_\* 均为 create_gateway_app 内部闭包，捕获 registry、viewers、credentials、api 等每应用状态，模块级不可见; 构造应用必须先成功读取三份密钥文件并实例化 GatewayApiClient（server.py:80-91），轻量 handler 级测试也绕不开完整装配; 本单元 16 个文件经盘点全部为生产代码；其测试分布在其他审阅单元，本单元范围内无法自证覆盖
+        - Impact: handler 级回归只能靠启完整应用的集成测试覆盖，编写与运行成本高，容易使身份 fence、节流、替换语义这类纯逻辑分支缺少快速回归网；属可测性结构观察，非现行功能缺陷。
+        - Fix: 可将纯逻辑（身份比对、fence 判定、节流键构造）抽为可导入的模块级函数供 handler 调用与单测，handler 闭包只保留 I/O 编排。
+        - Verification: static
 - [Info][60] src/backend/cbrowser/supervisor/resource_policy.py:36-73 — calculate_cpu_percent appears to be dead code: no caller exists in the backend package; the live path uses calculate_quota_normalized_percent
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_11)
-  - f_backend_supervisor_11: grep over src/backend/cbrowser finds calculate_cpu_percent only at its definition in resource_policy.py; record_stats and sample paths call calculate_quota_normalized_percent instead.; The two functions implement overlapping contracts (the docstring of calculate_cpu_percent describes a 'preserved mathematical contract'), which invites future fixes being applied to the unused variant.
-    - Impact: Maintenance hazard only: duplicated CPU math can drift, and reviewers cannot tell which function is authoritative without a caller search.
-    - Fix: Remove calculate_cpu_percent if no external/test caller exists, or add a comment naming its intended consumers; keep calculate_quota_normalized_percent as the single implementation.
-    - Verification: suspected
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_11)
+    - f_backend_supervisor_11: grep over src/backend/cbrowser finds calculate_cpu_percent only at its definition in resource_policy.py; record_stats and sample paths call calculate_quota_normalized_percent instead.; The two functions implement overlapping contracts (the docstring of calculate_cpu_percent describes a 'preserved mathematical contract'), which invites future fixes being applied to the unused variant.
+        - Impact: Maintenance hazard only: duplicated CPU math can drift, and reviewers cannot tell which function is authoritative without a caller search.
+        - Fix: Remove calculate_cpu_percent if no external/test caller exists, or add a comment naming its intended consumers; keep calculate_quota_normalized_percent as the single implementation.
+        - Verification: suspected
 - [Info][95] src/backend/cbrowser/supervisor/port_allocator.py:1-6 — PortAllocator docstring claims thread-safety but the implementation is guarded only by an asyncio.Lock
-  - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_12)
-  - f_backend_supervisor_12: Module docstring: 'Thread-safe / asyncio-safe, idempotent...'; the implementation protects _allocated/_used_ports solely with asyncio.Lock and performs unsynchronized reads in get_port/is_port_used.; All in-unit callers use it from the event loop (core.start_profile/stop_profile/reconcile), so current behavior is safe; the claim is broader than the guarantee.
-    - Impact: Documentation inaccuracy: a future caller from a worker thread (the codebase uses asyncio.to_thread extensively for Docker calls) could rely on the docstring and introduce a data race on port ownership.
-    - Fix: Correct the docstring to 'asyncio-safe (single event loop)' or back the claim with a threading lock; also document that get_port/is_port_used are unsynchronized snapshots.
-    - Verification: static
+    - Sources: bundle_local_backend_supervisor.md (f_backend_supervisor_12)
+    - f_backend_supervisor_12: Module docstring: 'Thread-safe / asyncio-safe, idempotent...'; the implementation protects \_allocated/\_used_ports solely with asyncio.Lock and performs unsynchronized reads in get_port/is_port_used.; All in-unit callers use it from the event loop (core.start_profile/stop_profile/reconcile), so current behavior is safe; the claim is broader than the guarantee.
+        - Impact: Documentation inaccuracy: a future caller from a worker thread (the codebase uses asyncio.to_thread extensively for Docker calls) could rely on the docstring and introduce a data race on port ownership.
+        - Fix: Correct the docstring to 'asyncio-safe (single event loop)' or back the claim with a threading lock; also document that get_port/is_port_used are unsynchronized snapshots.
+        - Verification: static
 - [Info][90] src/backend/tests/test_auth.py:17 — Auth fixtures duplicate conftest app_client's lifespan-neutralising patches instead of reusing it
-  - Sources: bundle_local_backend_tests.md (f_backend_tests_06)
-  - f_backend_tests_06: src/backend/tests/test_auth.py:17-42: client_no_auth and client_auth each repeat the same four monkeypatch lines used by conftest.py's app_client (vnc.validate_available, browser_mgr.cleanup_stale, cleanup_all, vnc.cleanup_stale), differing only in the AUTH_TOKEN value.; conftest.py:66-88 already centralises those patches; the auth fixtures cannot reuse app_client as-is only because they also need to set main.AUTH_TOKEN, which a small wrapper fixture could add.
-    - Impact: If the app lifespan gains another host requirement that must be neutralised in tests, three fixtures need the same edit; miss one and the auth tests fail (or worse, diverge) for reasons unrelated to auth.
-    - Fix: Base client_no_auth/client_auth on the app_client fixture (or a shared helper in conftest) and only add the AUTH_TOKEN monkeypatch on top.
-    - Verification: static
+    - Sources: bundle_local_backend_tests.md (f_backend_tests_06)
+    - f_backend_tests_06: src/backend/tests/test_auth.py:17-42: client_no_auth and client_auth each repeat the same four monkeypatch lines used by conftest.py's app_client (vnc.validate_available, browser_mgr.cleanup_stale, cleanup_all, vnc.cleanup_stale), differing only in the AUTH_TOKEN value.; conftest.py:66-88 already centralises those patches; the auth fixtures cannot reuse app_client as-is only because they also need to set main.AUTH_TOKEN, which a small wrapper fixture could add.
+        - Impact: If the app lifespan gains another host requirement that must be neutralised in tests, three fixtures need the same edit; miss one and the auth tests fail (or worse, diverge) for reasons unrelated to auth.
+        - Fix: Base client_no_auth/client_auth on the app_client fixture (or a shared helper in conftest) and only add the AUTH_TOKEN monkeypatch on top.
+        - Verification: static
 - [Info][90] config/docker/stream_runtime/requirements.txt — Cross-image dependency drift: stream runtime pins a different pydantic patch version than the other three runtimes
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_13)
-  - f_contracts_deploy_13: config/docker/stream_runtime/requirements.txt pins pydantic 2.14.1 / pydantic-core 2.50.1, while config/docker/browser_runtime/requirements.txt, gateway_runtime/requirements.txt, and supervisor_runtime/requirements.txt pin pydantic 2.14.2 / pydantic-core 2.50.2 (compared across the four locked files in this unit).; All four images exchange the protocol messages defined by the schemas in this unit, so serialization behaviour is a cross-image concern.
-    - Impact: Minor today (a patch-level difference), but the services validate and serialize the same protocol payloads with different pydantic builds; edge-case validation/serialization differences would surface as cross-service inconsistencies that are hard to attribute. It also signals the four lockfiles are regenerated independently with no shared constraint.
-    - Fix: Regenerate the stream runtime lockfile so all four runtimes share the same pydantic/pydantic-core versions, and consider a single shared constraints file for the common dependencies.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_13)
+    - f_contracts_deploy_13: config/docker/stream_runtime/requirements.txt pins pydantic 2.14.1 / pydantic-core 2.50.1, while config/docker/browser_runtime/requirements.txt, gateway_runtime/requirements.txt, and supervisor_runtime/requirements.txt pin pydantic 2.14.2 / pydantic-core 2.50.2 (compared across the four locked files in this unit).; All four images exchange the protocol messages defined by the schemas in this unit, so serialization behaviour is a cross-image concern.
+        - Impact: Minor today (a patch-level difference), but the services validate and serialize the same protocol payloads with different pydantic builds; edge-case validation/serialization differences would surface as cross-service inconsistencies that are hard to attribute. It also signals the four lockfiles are regenerated independently with no shared constraint.
+        - Fix: Regenerate the stream runtime lockfile so all four runtimes share the same pydantic/pydantic-core versions, and consider a single shared constraints file for the common dependencies.
+        - Verification: static
 - [Info][70] config/docker/supervisor_runtime/Dockerfile — Supervisor runtime image runs as root with no USER directive and no documented privilege rationale
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_14)
-  - f_contracts_deploy_14: config/docker/supervisor_runtime/Dockerfile has no USER directive (verified: no USER line in the file) and installs iptables, which typically implies the container is expected to hold NET_ADMIN and/or a Docker socket — a privileged posture that no file in this unit documents or justifies.; The sibling runtime Dockerfiles in this unit do drop privileges / define their runtime user explicitly, making the supervisor the outlier.
-    - Impact: The most privileged component in the topology (it supervises other containers and manipulates networking) runs as root by default with its privilege needs undocumented; deployers cannot apply least-privilege settings, and a supervisor compromise is immediately a root compromise inside its container.
-    - Fix: Document the supervisor's privilege requirements (capabilities, socket mounts) in DOCKER_DEPLOYMENT.md and the Dockerfile, and if full root is not required, run as a dedicated user with only the needed capabilities granted by the (future) compose service.
-    - Verification: suspected
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_14)
+    - f_contracts_deploy_14: config/docker/supervisor_runtime/Dockerfile has no USER directive (verified: no USER line in the file) and installs iptables, which typically implies the container is expected to hold NET_ADMIN and/or a Docker socket — a privileged posture that no file in this unit documents or justifies.; The sibling runtime Dockerfiles in this unit do drop privileges / define their runtime user explicitly, making the supervisor the outlier.
+        - Impact: The most privileged component in the topology (it supervises other containers and manipulates networking) runs as root by default with its privilege needs undocumented; deployers cannot apply least-privilege settings, and a supervisor compromise is immediately a root compromise inside its container.
+        - Fix: Document the supervisor's privilege requirements (capabilities, socket mounts) in DOCKER_DEPLOYMENT.md and the Dockerfile, and if full root is not required, run as a dedicated user with only the needed capabilities granted by the (future) compose service.
+        - Verification: suspected
 - [Info][70] config/docker/browser_runtime/Dockerfile — Browser runtime's default CMD asks for --help but its entrypoint rejects unknown arguments with exit 1
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_15)
-  - f_contracts_deploy_15: config/docker/browser_runtime/Dockerfile sets the default command to `--help` (CMD ["--help"]).; config/docker/browser_runtime/entrypoint.sh dispatches on its arguments and exits 1 on unrecognized input rather than printing usage — so the image's own default invocation takes the error path.
-    - Impact: Running the browser runtime image with no arguments — the natural smoke test for a freshly built image — exits non-zero and looks like a broken image, wasting operator time and potentially failing naive deployment health checks that start the container bare.
-    - Fix: Make the entrypoint handle --help/-h explicitly by printing usage and exiting 0, or change the default CMD to a real no-op/health invocation that the entrypoint accepts.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_15)
+    - f_contracts_deploy_15: config/docker/browser_runtime/Dockerfile sets the default command to `--help` (CMD ["--help"]).; config/docker/browser_runtime/entrypoint.sh dispatches on its arguments and exits 1 on unrecognized input rather than printing usage — so the image's own default invocation takes the error path.
+        - Impact: Running the browser runtime image with no arguments — the natural smoke test for a freshly built image — exits non-zero and looks like a broken image, wasting operator time and potentially failing naive deployment health checks that start the container bare.
+        - Fix: Make the entrypoint handle --help/-h explicitly by printing usage and exiting 0, or change the default CMD to a real no-op/health invocation that the entrypoint accepts.
+        - Verification: static
 - [Info][95] scripts/export_openapi.py — export_openapi.py omits the trailing newline that the other three export scripts all write
-  - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_16)
-  - f_contracts_deploy_16: scripts/export_openapi.py writes the JSON payload without appending a trailing newline.; scripts/export_runtime_agent_protocol.py, scripts/export_stream_protocol.py, and scripts/export_supervisor_protocol.py each append "\n" to their output — four sibling exporters, two conventions.
-    - Impact: Trivial but real: generated files that lack a trailing newline produce noisy diffs and trip POSIX-text-file linters/formatters, and the inconsistency means a future repo-wide format gate will flag one exporter or the other unpredictably.
-    - Fix: Align export_openapi.py with the other exporters (append the trailing newline) and regenerate schemas/openapi/*.json.
-    - Verification: static
+    - Sources: bundle_local_contracts_deploy.md (f_contracts_deploy_16)
+    - f_contracts_deploy_16: scripts/export_openapi.py writes the JSON payload without appending a trailing newline.; scripts/export_runtime_agent_protocol.py, scripts/export_stream_protocol.py, and scripts/export_supervisor_protocol.py each append "\\n" to their output — four sibling exporters, two conventions.
+        - Impact: Trivial but real: generated files that lack a trailing newline produce noisy diffs and trip POSIX-text-file linters/formatters, and the inconsistency means a future repo-wide format gate will flag one exporter or the other unpredictably.
+        - Fix: Align export_openapi.py with the other exporters (append the trailing newline) and regenerate schemas/openapi/\*.json.
+        - Verification: static
 - [Info][90] CHANGELOG.md:7 — CHANGELOG 未跟进 v2：最新条目止于 [0.1.9] 2026-10-16
-  - Sources: bundle_local_docs_current.md (f_docs_current_09)
-  - f_docs_current_09: CHANGELOG.md:7 最新条目为 [0.1.9] - 2026-10-16（上游 fork 的语言切换），其后 v2 重构（t001–t007）、上轮审阅整改与 t015–t018 均无条目。; docs/tasks/t012_v2_docker_release/task.md 的 AC-003 要求 CHANGELOG 记录 v2 阶段变更，属该 task 待落实项，故仅记 Info。
-    - Impact: 外部读者从 CHANGELOG 无法得知 v2 架构与安全整改已发生；影响有限且已有 task 承接。
-    - Fix: 随 t012 落实：将 v2 阶段变更（架构重构、ADR 013 媒体链路收敛、ADR 014 权限收敛、鉴权整改）补入 CHANGELOG 的 Unreleased/新版本节。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_09)
+    - f_docs_current_09: CHANGELOG.md:7 最新条目为 [0.1.9] - 2026-10-16（上游 fork 的语言切换），其后 v2 重构（t001–t007）、上轮审阅整改与 t015–t018 均无条目。; docs/tasks/t012_v2_docker_release/task.md 的 AC-003 要求 CHANGELOG 记录 v2 阶段变更，属该 task 待落实项，故仅记 Info。
+        - Impact: 外部读者从 CHANGELOG 无法得知 v2 架构与安全整改已发生；影响有限且已有 task 承接。
+        - Fix: 随 t012 落实：将 v2 阶段变更（架构重构、ADR 013 媒体链路收敛、ADR 014 权限收敛、鉴权整改）补入 CHANGELOG 的 Unreleased/新版本节。
+        - Verification: static
 - [Info][85] docs/reviews/review_local_benchmark_20261027/review_benchmark.md:78 — benchmark 冻结报告的『1000 次验收未减免』结论已被 2026-11-02 用户决定覆盖（冻结原文，仅提示）
-  - Sources: bundle_local_docs_current.md (f_docs_current_10)
-  - f_docs_current_10: review_benchmark.md:78（2026-10-27）：『1000 次中文组合输入与 1000 次纯文本剪贴板验收……均未因调整硬件基准而删除或减免。』; 2026-11-02 用户决定已覆盖：docs/v2_architecture_plan.md 文首修订节与 ADR 012 将 1000 次输入/剪贴板改为 t009 手动清单验收、取消自动压测；t009 task.md/note.md 已按此更新，用户确认不恢复。; 该报告为冻结快照，docs/reviews/review_v2_scope_20261027/review_disposition.md:3 约定历史报告原文保留，故不要求改写原文，仅作 Info 提示。
-    - Impact: 后来读者若只读该报告会误以为 1000 次自动压测仍是现行验收门禁；实际决策链完整存在于 plan 修订节/ADR/t009 中，风险低。
-    - Fix: 无需改动冻结原文；如需进一步防误读，可在该目录旁注或索引处加一行指向 ADR 012 与 t009 现行口径的指针（可选）。
-    - Verification: static
+    - Sources: bundle_local_docs_current.md (f_docs_current_10)
+    - f_docs_current_10: review_benchmark.md:78（2026-10-27）：『1000 次中文组合输入与 1000 次纯文本剪贴板验收……均未因调整硬件基准而删除或减免。』; 2026-11-02 用户决定已覆盖：docs/v2_architecture_plan.md 文首修订节与 ADR 012 将 1000 次输入/剪贴板改为 t009 手动清单验收、取消自动压测；t009 task.md/note.md 已按此更新，用户确认不恢复。; 该报告为冻结快照，docs/reviews/review_v2_scope_20261027/review_disposition.md:3 约定历史报告原文保留，故不要求改写原文，仅作 Info 提示。
+        - Impact: 后来读者若只读该报告会误以为 1000 次自动压测仍是现行验收门禁；实际决策链完整存在于 plan 修订节/ADR/t009 中，风险低。
+        - Fix: 无需改动冻结原文；如需进一步防误读，可在该目录旁注或索引处加一行指向 ADR 012 与 t009 现行口径的指针（可选）。
+        - Verification: static
 - [Info][90] src/frontend/src/features/browser-session/clipboard_bridge.ts:22-38 — readClipboardPermission 已无生产调用方，仅被自身测试引用
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_06)
-  - f_frontend_features_06: 全仓 grep：readClipboardPermission 仅出现于 clipboard_bridge.ts 定义与 clipboard_bridge.test.tsx 两条断言；生产组件 ClipboardPermissionHint 使用的是同文件 watchClipboardPermission; 两者逻辑重复（同样的 granted/denied/prompt 归约），保留双份实现有漂移风险
-    - Impact: 死代码与重复逻辑，增加维护面；无运行影响。
-    - Fix: 删除 readClipboardPermission 及其测试，或让 watchClipboardPermission 复用同一归约函数并删除独立实现。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_06)
+    - f_frontend_features_06: 全仓 grep：readClipboardPermission 仅出现于 clipboard_bridge.ts 定义与 clipboard_bridge.test.tsx 两条断言；生产组件 ClipboardPermissionHint 使用的是同文件 watchClipboardPermission; 两者逻辑重复（同样的 granted/denied/prompt 归约），保留双份实现有漂移风险
+        - Impact: 死代码与重复逻辑，增加维护面；无运行影响。
+        - Fix: 删除 readClipboardPermission 及其测试，或让 watchClipboardPermission 复用同一归约函数并删除独立实现。
+        - Verification: static
 - [Info][95] src/frontend/src/features/browser-session/types.ts:48 — BrowserSessionViewProps.onSessionError 声明后从未被消费
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_07)
-  - f_frontend_features_07: types.ts:48 声明 onSessionError?: (err: Error) => void；BrowserSessionView.tsx:16-26 的解构与 useBrowserSession 的 options 均不包含该字段，全仓无其他引用; 会话错误实际经 stage/errorMessage 呈现，回调通道不存在
-    - Impact: 公开接口存在假承诺：调用方传入 onSessionError 会被静默忽略。无运行影响，故定 Info。
-    - Fix: 从 BrowserSessionViewProps 删除该字段，或在 useBrowserSession 的错误迁移处真正调用它并补测试。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_07)
+    - f_frontend_features_07: types.ts:48 声明 onSessionError?: (err: Error) => void；BrowserSessionView.tsx:16-26 的解构与 useBrowserSession 的 options 均不包含该字段，全仓无其他引用; 会话错误实际经 stage/errorMessage 呈现，回调通道不存在
+        - Impact: 公开接口存在假承诺：调用方传入 onSessionError 会被静默忽略。无运行影响，故定 Info。
+        - Fix: 从 BrowserSessionViewProps 删除该字段，或在 useBrowserSession 的错误迁移处真正调用它并补测试。
+        - Verification: static
 - [Info][70] src/frontend/src/features/browser-session/host_entry.tsx:11-24 — 测试宿主页入口 host_entry.tsx 位于生产 feature 源码树内且无 test-only 标识
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_08)
-  - f_frontend_features_08: host_entry.tsx 把 onCheckRuntimeStatus 实现为仅置位 window.__statusBtnClicked 的桩，并设置 __cbrowserHostLoaded 全局量；文件无任何注释说明其为测试 fixture 入口; 其消费者是 tests/fixtures/frontend_probe/host_builder.py（前端 e2e 探针构建），生产入口（main.tsx/router）不 import 它；是否进入生产 bundle 取决于构建配置（不在本单元范围，未能确认）
-    - Impact: 读者无法从源码判断该入口的性质；若构建接线误将其纳入出货产物，「查看状态」按钮将是无实际动作的假按钮。当前无证据表明已出货，故定 Info。
-    - Fix: 在文件头注明 test-fixture-only 及其构建方（host_builder.py），或将其迁至 tests 侧目录由 fixture 构建引用。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_08)
+    - f_frontend_features_08: host_entry.tsx 把 onCheckRuntimeStatus 实现为仅置位 window.\_\_statusBtnClicked 的桩，并设置 \_\_cbrowserHostLoaded 全局量；文件无任何注释说明其为测试 fixture 入口; 其消费者是 tests/fixtures/frontend_probe/host_builder.py（前端 e2e 探针构建），生产入口（main.tsx/router）不 import 它；是否进入生产 bundle 取决于构建配置（不在本单元范围，未能确认）
+        - Impact: 读者无法从源码判断该入口的性质；若构建接线误将其纳入出货产物，「查看状态」按钮将是无实际动作的假按钮。当前无证据表明已出货，故定 Info。
+        - Fix: 在文件头注明 test-fixture-only 及其构建方（host_builder.py），或将其迁至 tests 侧目录由 fixture 构建引用。
+        - Verification: static
 - [Info][80] src/frontend/src/features/settings/SettingsPage.tsx:12-16 — 设置页以单个 /api/v1/health 探活结果冒充「网关与服务」整体状态
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_10)
-  - f_frontend_features_10: SettingsPage.tsx:12-16 仅调用 defaultApiClient.health.check()（GET /api/v1/health）一次，二值映射 healthy/error; 页面文案（i18n systemGatewayControlApi/systemApiServicesStatus，测试锁定为「系统网关与控制 API」「v2 API 服务状态」）声称的是网关与多服务状态，单个 API 存活探针不能支撑该断言（网关/Supervisor/Stream 故障时此探针仍可能健康）
-    - Impact: 运维误判面：状态徽章可能在媒体链故障时显示「正常」。纯呈现层问题，故定 Info。
-    - Fix: 文案收窄为「控制 API 状态」，或改为聚合后端提供的多组件健康端点后再声称整体状态。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_10)
+    - f_frontend_features_10: SettingsPage.tsx:12-16 仅调用 defaultApiClient.health.check()（GET /api/v1/health）一次，二值映射 healthy/error; 页面文案（i18n systemGatewayControlApi/systemApiServicesStatus，测试锁定为「系统网关与控制 API」「v2 API 服务状态」）声称的是网关与多服务状态，单个 API 存活探针不能支撑该断言（网关/Supervisor/Stream 故障时此探针仍可能健康）
+        - Impact: 运维误判面：状态徽章可能在媒体链故障时显示「正常」。纯呈现层问题，故定 Info。
+        - Fix: 文案收窄为「控制 API 状态」，或改为聚合后端提供的多组件健康端点后再声称整体状态。
+        - Verification: static
 - [Info][85] src/frontend/src/features/artifacts/ProfileFilesPage.tsx:44-54 — 多文件上传中途失败时已上传文件无部分成功提示
-  - Sources: bundle_local_frontend_features.md (f_frontend_features_12)
-  - f_frontend_features_12: ProfileFilesPage.tsx:44-54 pickFiles 顺序上传，首个失败即 setError 并 return；此前已成功上传的文件只靠列表 invalidate 刷新可见，notice 不出现，用户无法从文案得知「N 个中已成功 M 个」; 失败文件之后的文件被静默跳过（ input 已清空，需重新挑选）
-    - Impact: 批量上传部分成功时状态表达不完整，用户可能重复上传已成功文件（有 Idempotency-Key 与列表可见性兜底，后果轻微），故定 Info。
-    - Fix: 失败时在错误文案中带上已成功计数，或改为逐个收集结果后统一汇总成功/失败明细。
-    - Verification: static
+    - Sources: bundle_local_frontend_features.md (f_frontend_features_12)
+    - f_frontend_features_12: ProfileFilesPage.tsx:44-54 pickFiles 顺序上传，首个失败即 setError 并 return；此前已成功上传的文件只靠列表 invalidate 刷新可见，notice 不出现，用户无法从文案得知「N 个中已成功 M 个」; 失败文件之后的文件被静默跳过（ input 已清空，需重新挑选）
+        - Impact: 批量上传部分成功时状态表达不完整，用户可能重复上传已成功文件（有 Idempotency-Key 与列表可见性兜底，后果轻微），故定 Info。
+        - Fix: 失败时在错误文案中带上已成功计数，或改为逐个收集结果后统一汇总成功/失败明细。
+        - Verification: static
 - [Info][95] src/frontend/src/app/AppLayout.tsx:65 — AppLayout 中标签回调参数命名为 t，遮蔽了 i18n 的 t() 函数
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_09)
-  - f_frontend_shell_09: AppLayout.tsx:62-68 的 filteredProfiles 中 some((t) => ...) 以 tag 对象/字符串遮蔽外层 const { t } = useI18n()；:258 的 p.tags.map((t) => ...) 同样遮蔽。; 当前两处回调内部没有调用 t()，行为无误；但该组件 render 通篇依赖 t()，未来在这些回调内补文案调用会直接把 tag 值当函数调用或得到错误结果。
-    - Impact: 可读性与后续编辑的踩坑面，无当前行为影响。
-    - Fix: 把两处回调参数改名为 tag，与数据模型 Tag 的命名一致。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_09)
+    - f_frontend_shell_09: AppLayout.tsx:62-68 的 filteredProfiles 中 some((t) => ...) 以 tag 对象/字符串遮蔽外层 const { t } = useI18n()；:258 的 p.tags.map((t) => ...) 同样遮蔽。; 当前两处回调内部没有调用 t()，行为无误；但该组件 render 通篇依赖 t()，未来在这些回调内补文案调用会直接把 tag 值当函数调用或得到错误结果。
+        - Impact: 可读性与后续编辑的踩坑面，无当前行为影响。
+        - Fix: 把两处回调参数改名为 tag，与数据模型 Tag 的命名一致。
+        - Verification: static
 - [Info][95] src/frontend/tailwind.config.ts:21-28 — tailwind 色板中 accent 与 primary 是同值双名，代码在两名之间分裂使用
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_10)
-  - f_frontend_shell_10: tailwind.config.ts:21-28 accent 与 primary 均为 DEFAULT #6366f1 / hover #818cf8，primary-foreground 单列白色。; globals.css 的组件类用 accent（focus:ring-accent、bg-accent），AppLayout 用 primary（bg-primary、border-primary/30、focus:border-primary），同一品牌色在外壳内就有两套叫法。
-    - Impact: 换肤/调色时必须同步改两处且容易漏改其一，造成界面色值分叉；无当前视觉影响。
-    - Fix: 保留一个权威名（建议 primary），accent 改为引用同一值或删除，globals.css 与组件统一到一个名下。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_10)
+    - f_frontend_shell_10: tailwind.config.ts:21-28 accent 与 primary 均为 DEFAULT #6366f1 / hover #818cf8，primary-foreground 单列白色。; globals.css 的组件类用 accent（focus:ring-accent、bg-accent），AppLayout 用 primary（bg-primary、border-primary/30、focus:border-primary），同一品牌色在外壳内就有两套叫法。
+        - Impact: 换肤/调色时必须同步改两处且容易漏改其一，造成界面色值分叉；无当前视觉影响。
+        - Fix: 保留一个权威名（建议 primary），accent 改为引用同一值或删除，globals.css 与组件统一到一个名下。
+        - Verification: static
 - [Info][90] src/frontend/src/shared/api/sse.ts:1-10 — SSE 事件类型 ProfileRuntimeEvent 为手写重复定义，未复用生成的 ProfileRuntimeStatusEvent
-  - Sources: bundle_local_frontend_shell.md (f_frontend_shell_11)
-  - f_frontend_shell_11: sse.ts:1-10 手写 ProfileRuntimeEvent 接口；生成文件 components.schemas 中已有 ProfileRuntimeStatusEvent（由 /api/v1/events 的 text/event-stream 内容类型生成），types.ts 未导出该别名，sse.ts 也未引用。; 两份定义字段大体一致但可选性不同（如 failure_count 在生成型为必填、手写型为可选），后端事件结构演进时 generate:api 只会更新生成型，手写型无任何漂移信号。
-    - Impact: 同一线协议两份类型定义，事件字段增减时 SSE 消费侧可能静默按旧形状解析；当前字段集兼容，无行为影响。
-    - Fix: 在 types.ts 导出 ProfileRuntimeStatusEvent 别名，sse.ts 以其为基础（必要时用 Partial/Pick 表达线上可选性）替换手写接口，或在 sse.ts 注释中声明与生成型的对应关系并加一条类型层断言（Expect<Equal<...>> 风格的编译期校验）。
-    - Verification: static
+    - Sources: bundle_local_frontend_shell.md (f_frontend_shell_11)
+    - f_frontend_shell_11: sse.ts:1-10 手写 ProfileRuntimeEvent 接口；生成文件 components.schemas 中已有 ProfileRuntimeStatusEvent（由 /api/v1/events 的 text/event-stream 内容类型生成），types.ts 未导出该别名，sse.ts 也未引用。; 两份定义字段大体一致但可选性不同（如 failure_count 在生成型为必填、手写型为可选），后端事件结构演进时 generate:api 只会更新生成型，手写型无任何漂移信号。
+        - Impact: 同一线协议两份类型定义，事件字段增减时 SSE 消费侧可能静默按旧形状解析；当前字段集兼容，无行为影响。
+        - Fix: 在 types.ts 导出 ProfileRuntimeStatusEvent 别名，sse.ts 以其为基础（必要时用 Partial/Pick 表达线上可选性）替换手写接口，或在 sse.ts 注释中声明与生成型的对应关系并加一条类型层断言（Expect\<Equal\<...>> 风格的编译期校验）。
+        - Verification: static
 - [Info][90] .repo_template/scripts/repo_sync.py:78-80 — AGENTS_INTRO_HEADING 常量与 MERGE 标题同值且从未被引用，是误导性死常量
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_11)
-  - f_template_scripts_ops_11: repo_sync.py:78-80 定义 AGENTS_INTRO_HEADING 与 AGENTS_MERGE_HEADING 均为 "## 目录与读写规则"; 全文件仅 AGENTS_MERGE_HEADING/AGENTS_FORCE_HEADING 被 _agents_parts 使用；intro 区实际以『merge 标题之前全部内容』推导; 常量名暗示 intro 有独立标题锚点，后续维护者按名索骥会误判分区协议
-    - Impact: 仅可读性/误导风险，无行为影响。
-    - Fix: 删除 AGENTS_INTRO_HEADING，或改为注释说明 intro 无标题锚点、按 merge 标题前内容界定。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_11)
+    - f_template_scripts_ops_11: repo_sync.py:78-80 定义 AGENTS_INTRO_HEADING 与 AGENTS_MERGE_HEADING 均为 "## 目录与读写规则"; 全文件仅 AGENTS_MERGE_HEADING/AGENTS_FORCE_HEADING 被 \_agents_parts 使用；intro 区实际以『merge 标题之前全部内容』推导; 常量名暗示 intro 有独立标题锚点，后续维护者按名索骥会误判分区协议
+        - Impact: 仅可读性/误导风险，无行为影响。
+        - Fix: 删除 AGENTS_INTRO_HEADING，或改为注释说明 intro 无标题锚点、按 merge 标题前内容界定。
+        - Verification: static
 - [Info][85] .repo_template/scripts/check_review_status.py:13-37 — check_review_status.py 从 repo_task.review 导入十余个未在本文件使用的名字，掩盖真实依赖面
-  - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_12)
-  - f_template_scripts_ops_12: 第 35-37 行的导入列表含 read、visible_markdown_lines、extract_verdicts、regression_rounds、extract_h2_lines、table_cells、is_separator_row、disposition_stats、disposed_findings、reported_findings、reviewed_scope、reviewed_scope_hint 等，本文件正文均未引用; 本文件实际只用 parse_front_matter、VALID_REVIEW_LEVELS、evaluate_review、review_limits、ReviewDataError; REPO_ROOT 赋值夹在两个 import 块之间（第 33 行），导入顺序亦不规整
-    - Impact: 读者无法从导入面判断该 CLI 的真实耦合；若为兼容性再导出，应注释声明。仅可维护性问题。
-    - Fix: 删除未用导入（或集中注释为兼容再导出），并把 REPO_ROOT 赋值移到导入块之后。
-    - Verification: static
-- [Info][90] .repo_template/scripts/repo_task/ledger.py:44-56 (_read_unlocked) — 账本损坏错误信息恒指默认账本路径，与实际读取的自定义路径不符
-  - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_16)
-  - f_template_scripts_state_16: _read_unlocked(path, ...) 接受调用方传入 path（ledger_read(path=...) 被 preflight 等以主仓账本路径调用），但损坏行/非对象行的报错文案写死 ctx._rel(ctx.LEDGER_PATH)，未用实际 path。; 在 worktree/测试等以非默认路径读账本时，报错会把维护者指向错误文件。
-    - Impact: 仅排障指引错误，无功能影响。
-    - Fix: 报错文案改用实际读取的 path 参数。
-    - Verification: static
+    - Sources: bundle_local_template_scripts_ops.md (f_template_scripts_ops_12)
+    - f_template_scripts_ops_12: 第 35-37 行的导入列表含 read、visible_markdown_lines、extract_verdicts、regression_rounds、extract_h2_lines、table_cells、is_separator_row、disposition_stats、disposed_findings、reported_findings、reviewed_scope、reviewed_scope_hint 等，本文件正文均未引用; 本文件实际只用 parse_front_matter、VALID_REVIEW_LEVELS、evaluate_review、review_limits、ReviewDataError; REPO_ROOT 赋值夹在两个 import 块之间（第 33 行），导入顺序亦不规整
+        - Impact: 读者无法从导入面判断该 CLI 的真实耦合；若为兼容性再导出，应注释声明。仅可维护性问题。
+        - Fix: 删除未用导入（或集中注释为兼容再导出），并把 REPO_ROOT 赋值移到导入块之后。
+        - Verification: static
+- [Info][90] .repo_template/scripts/repo_task/ledger.py:44-56 (\_read_unlocked) — 账本损坏错误信息恒指默认账本路径，与实际读取的自定义路径不符
+    - Sources: bundle_local_template_scripts_state.md (f_template_scripts_state_16)
+    - f_template_scripts_state_16: \_read_unlocked(path, ...) 接受调用方传入 path（ledger_read(path=...) 被 preflight 等以主仓账本路径调用），但损坏行/非对象行的报错文案写死 ctx.\_rel(ctx.LEDGER_PATH)，未用实际 path。; 在 worktree/测试等以非默认路径读账本时，报错会把维护者指向错误文件。
+        - Impact: 仅排障指引错误，无功能影响。
+        - Fix: 报错文案改用实际读取的 path 参数。
+        - Verification: static
 - [Info][80] .repo_template/docs/spike_report_template.md:27 — spike 报告模板用「如 t001」作后续 task 示例编号，与 usage.md「占位示例不得占用真实 tid」的命名规则相冲突
-  - Sources: bundle_local_template_support.md (f_template_support_05)
-  - f_template_support_05: .repo_template/docs/spike_report_template.md:27 写「后续 task：{采纳时填写 {tid}，如 t001；否则写“无”}」，把真实编号段的 t001 用作示例; .repo_template/docs/usage.md 命名与格式节规定「占位示例（模板、示例行）不得占用真实 tid / sid / pNNN，也不得当作 active 工作项执行」; 同为模板的 task_template/note.md 则使用 t000 作占位 tid，与规则一致，两模板口径不一致
-    - Impact: 影响极小：读者可能把示例 t001 误认作真实引用目标，或在复制模板时把示例值带入正式 spike 报告，造成一条指向无关 task 的假关联。
-    - Fix: 把 spike_report_template.md 的示例改为不占用真实编号的写法（如「如 {tid}」或 t000），与 task_template 的占位口径统一。
-    - Verification: static
+    - Sources: bundle_local_template_support.md (f_template_support_05)
+    - f_template_support_05: .repo_template/docs/spike_report_template.md:27 写「后续 task：{采纳时填写 {tid}，如 t001；否则写“无”}」，把真实编号段的 t001 用作示例; .repo_template/docs/usage.md 命名与格式节规定「占位示例（模板、示例行）不得占用真实 tid / sid / pNNN，也不得当作 active 工作项执行」; 同为模板的 task_template/note.md 则使用 t000 作占位 tid，与规则一致，两模板口径不一致
+        - Impact: 影响极小：读者可能把示例 t001 误认作真实引用目标，或在复制模板时把示例值带入正式 spike 报告，造成一条指向无关 task 的假关联。
+        - Fix: 把 spike_report_template.md 的示例改为不占用真实编号的写法（如「如 {tid}」或 t000），与 task_template 的占位口径统一。
+        - Verification: static
 - [Info][90] .repo_template/tests/test_check_review_status.py:351 — check_review_status 的 CLI/main 路径用例大面积 monkeypatch current_scope_fingerprint，CLI 层从不与真实指纹联跑（真实指纹在另一模块单独覆盖）
-  - Sources: bundle_local_template_tests.md (f_template_tests_06)
-  - f_template_tests_06: 351、419、489、506、521、538、558、574、589、613 行等十余处把 crs.current_scope_fingerprint 替换为返回常量 SCOPE 或 '0'*16 的 lambda，main 系列用例的 scope 真值全部来自替身; 真实指纹的性质（排除 review 流程文件、note 正文不入指纹、模式位/软链入指纹、畸形元数据 fail-closed）由 test_review_scope_fingerprint.py 在函数层完整覆盖，因此这是分工事实而非覆盖空白
-    - Impact: 若 check_review_status 与 monitoring 指纹实现之间的接线（参数顺序、anchor 传递、task_dir 相对路径）漂移，函数层与 CLI 层各自的测试都可能保持绿而集成已断；影响有限，记录为信息项供全局审阅参考。
-    - Fix: 可保留现状；若要补强，只需在 test_check_review_status 增加一条不打 patch、走真实 git fixture 的 main 冒烟用例（stale 与 fresh 各一），把接线纳入回归。
-    - Verification: static
+    - Sources: bundle_local_template_tests.md (f_template_tests_06)
+    - f_template_tests_06: 351、419、489、506、521、538、558、574、589、613 行等十余处把 crs.current_scope_fingerprint 替换为返回常量 SCOPE 或 '0'\*16 的 lambda，main 系列用例的 scope 真值全部来自替身; 真实指纹的性质（排除 review 流程文件、note 正文不入指纹、模式位/软链入指纹、畸形元数据 fail-closed）由 test_review_scope_fingerprint.py 在函数层完整覆盖，因此这是分工事实而非覆盖空白
+        - Impact: 若 check_review_status 与 monitoring 指纹实现之间的接线（参数顺序、anchor 传递、task_dir 相对路径）漂移，函数层与 CLI 层各自的测试都可能保持绿而集成已断；影响有限，记录为信息项供全局审阅参考。
+        - Fix: 可保留现状；若要补强，只需在 test_check_review_status 增加一条不打 patch、走真实 git fixture 的 main 冒烟用例（stale 与 fresh 各一），把接线纳入回归。
+        - Verification: static
 - [Info][80] tests/e2e/test_stream_selkies_tokens_e2e.py:96 — Selkies test runner container omits the capability hardening sibling suites in this unit apply
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_11)
-  - f_tests_e2e_stream_frontend_11: tests/e2e/test_stream_selkies_tokens_e2e.py:96-113 - SelkiesE2ERunner starts the stream image with --read-only and a tmpfs, but without --cap-drop ALL or --security-opt no-new-privileges.; Sibling suites in the same unit consistently add both: test_browser_runtime_e2e.py container launches and peer probes use --cap-drop ALL + no-new-privileges:true, and test_stream_x11_keymap_e2e.py uses --network none --read-only --cap-drop ALL.
-    - Impact: Test-only exposure (loopback-bound port, ephemeral container), so impact is minimal; the inconsistency matters because these runners are routinely copied as templates for new suites, propagating the weaker baseline.
-    - Fix: Add --cap-drop ALL and --security-opt no-new-privileges:true to the runner's docker arguments if the Selkies server tolerates them, or note in the class docstring why it cannot run with them.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_11)
+    - f_tests_e2e_stream_frontend_11: tests/e2e/test_stream_selkies_tokens_e2e.py:96-113 - SelkiesE2ERunner starts the stream image with --read-only and a tmpfs, but without --cap-drop ALL or --security-opt no-new-privileges.; Sibling suites in the same unit consistently add both: test_browser_runtime_e2e.py container launches and peer probes use --cap-drop ALL + no-new-privileges:true, and test_stream_x11_keymap_e2e.py uses --network none --read-only --cap-drop ALL.
+        - Impact: Test-only exposure (loopback-bound port, ephemeral container), so impact is minimal; the inconsistency matters because these runners are routinely copied as templates for new suites, propagating the weaker baseline.
+        - Fix: Add --cap-drop ALL and --security-opt no-new-privileges:true to the runner's docker arguments if the Selkies server tolerates them, or note in the class docstring why it cannot run with them.
+        - Verification: static
 - [Info][55] tests/fixtures/frontend_probe/adapter_probe.py:45 — Adapter probe retains only the last 500 DataChannel messages, silently evicting early messages tests may assert on
-  - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_12)
-  - f_tests_e2e_stream_frontend_12: tests/fixtures/frontend_probe/adapter_probe.py:45 - the injected probe caps window.__sentDataChannelMessages at 500 entries with rolling eviction (shift) once the cap is exceeded.; Multiple suites in this unit read this buffer back to assert which control messages the page sent (e.g. visibility/activity frames in the media and session suites); a long or chatty session can evict the very messages an assertion looks for, producing a false failure indistinguishable from a product bug.
-    - Impact: Latent flake/false-negative source in the probe's consumers; harmless for the short sessions in the current suites, but the failure mode would be misleading if session lengths grow.
-    - Fix: Record per-type counters or a separate never-evicted log for the control message types under assertion, or document the 500-message bound at the probe's consumers.
-    - Verification: suspected
+    - Sources: bundle_local_tests_e2e_stream_frontend.md (f_tests_e2e_stream_frontend_12)
+    - f_tests_e2e_stream_frontend_12: tests/fixtures/frontend_probe/adapter_probe.py:45 - the injected probe caps window.\_\_sentDataChannelMessages at 500 entries with rolling eviction (shift) once the cap is exceeded.; Multiple suites in this unit read this buffer back to assert which control messages the page sent (e.g. visibility/activity frames in the media and session suites); a long or chatty session can evict the very messages an assertion looks for, producing a false failure indistinguishable from a product bug.
+        - Impact: Latent flake/false-negative source in the probe's consumers; harmless for the short sessions in the current suites, but the failure mode would be misleading if session lengths grow.
+        - Fix: Record per-type counters or a separate never-evicted log for the control message types under assertion, or document the 500-message bound at the probe's consumers.
+        - Verification: suspected
 - [Info][85] tests/e2e/test_supervisor_policy_failure_e2e.py:127 — Dummy gateway endpoints and image-digest strictness drift across files, obscuring which values are contractual
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_10)
-  - f_tests_e2e_supervisor_10: policy_failure constructs SupervisorCore with gateway_url='ws://127.0.0.1:18097' (line 127) — the legacy port that container_graph's header says was deprecated and replaced for asserting stale assumptions; startup_recovery uses 'ws://127.0.0.1:9999' for the same never-connected purpose.; Digest validation alternates between requiring startswith('sha256:') (most files) and accepting 'sha256:' anywhere via '@sha256:' in test_supervisor_orphan_helpers_e2e.py and policy_failure's _get_required_env_image.
-    - Impact: No behavioural impact in these tests (the gateway URL is never dialled in the failure path), but the drift makes it unclear whether 18097 still has meaning anywhere, and weakens the otherwise uniform 'immutable digest' gate the suite advertises.
-    - Fix: Use one obviously-dummy gateway URL constant for never-connected cores and one shared digest assertion helper in e2e_env.py.
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_10)
+    - f_tests_e2e_supervisor_10: policy_failure constructs SupervisorCore with gateway_url='ws://127.0.0.1:18097' (line 127) — the legacy port that container_graph's header says was deprecated and replaced for asserting stale assumptions; startup_recovery uses 'ws://127.0.0.1:9999' for the same never-connected purpose.; Digest validation alternates between requiring startswith('sha256:') (most files) and accepting 'sha256:' anywhere via '@sha256:' in test_supervisor_orphan_helpers_e2e.py and policy_failure's \_get_required_env_image.
+        - Impact: No behavioural impact in these tests (the gateway URL is never dialled in the failure path), but the drift makes it unclear whether 18097 still has meaning anywhere, and weakens the otherwise uniform 'immutable digest' gate the suite advertises.
+        - Fix: Use one obviously-dummy gateway URL constant for never-connected cores and one shared digest assertion helper in e2e_env.py.
+        - Verification: static
 - [Info][95] tests/e2e/test_supervisor_policy_failure_e2e.py:59 — Stale fixture type annotation: real_api_server annotated as a 3-tuple while conftest yields 4 values
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_11)
-  - f_tests_e2e_supervisor_11: policy_failure annotates the parameter 'real_api_server: tuple[str, str, Path]' (line 59) and immediately unpacks four values (api_url, auth_token, token_file, auth_headers).; conftest.py's real_api_server yields exactly that 4-tuple (api_url, token, token_file, auth_headers).
-    - Impact: Cosmetic but misleading for anyone editing the fixture contract; type checkers over the test tree would flag or, worse, silently accept the wrong shape elsewhere.
-    - Fix: Update the annotation to tuple[str, str, Path, dict] (or drop it, as the other consumers do).
-    - Verification: static
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_11)
+    - f_tests_e2e_supervisor_11: policy_failure annotates the parameter 'real_api_server: tuple[str, str, Path]' (line 59) and immediately unpacks four values (api_url, auth_token, token_file, auth_headers).; conftest.py's real_api_server yields exactly that 4-tuple (api_url, token, token_file, auth_headers).
+        - Impact: Cosmetic but misleading for anyone editing the fixture contract; type checkers over the test tree would flag or, worse, silently accept the wrong shape elsewhere.
+        - Fix: Update the annotation to tuple[str, str, Path, dict] (or drop it, as the other consumers do).
+        - Verification: static
 - [Info][65] tests/fixtures/e2e_env.py:41-57 — free_udp_port_span probes then releases the ports, so the returned span is not reserved (TOCTOU)
-  - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_12)
-  - f_tests_e2e_supervisor_12: free_udp_port_span binds the candidate UDP sockets, then closes them all in the finally block before returning the base port (lines 45-56); callers (core, recovery, retry, offline suites) treat the span as theirs for PortAllocator ranges minutes later.; Only UDP is probed; nothing rechecks the span at allocation time inside the helper.
-    - Impact: On a busy host another process can claim a probed port between the probe and the Supervisor's bind, producing rare, hard-to-reproduce E2E flakes that look like allocator bugs. In the isolated environments the suite targets this is unlikely, hence Info.
-    - Fix: Document the race in the docstring as an accepted test-only limitation, or have callers retry start-up on bind failure with a fresh span.
-    - Verification: suspected
+    - Sources: bundle_local_tests_e2e_supervisor.md (f_tests_e2e_supervisor_12)
+    - f_tests_e2e_supervisor_12: free_udp_port_span binds the candidate UDP sockets, then closes them all in the finally block before returning the base port (lines 45-56); callers (core, recovery, retry, offline suites) treat the span as theirs for PortAllocator ranges minutes later.; Only UDP is probed; nothing rechecks the span at allocation time inside the helper.
+        - Impact: On a busy host another process can claim a probed port between the probe and the Supervisor's bind, producing rare, hard-to-reproduce E2E flakes that look like allocator bugs. In the isolated environments the suite targets this is unlikely, hence Info.
+        - Fix: Document the race in the docstring as an accepted test-only limitation, or have callers retry start-up on bind failure with a fresh span.
+        - Verification: suspected
 - [Info][80] tests/fixtures/gateway_probe/evidence.py:14 — Evidence redaction does not cover session identifiers, and the default evidence directory is a predictable shared tmp path
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_11)
-  - f_tests_integration_fixtures_11: evidence.py _redact masks keys matching token/secret/password/cookie/resume_key, but agent_session_id / session_id values are written to evidence JSON unredacted.; DEFAULT_EVIDENCE_DIR is tempfile.gettempdir()/cbrowser_e2e_evidence, shared across runs and users on the machine, with artifacts persisting until manually removed.
-    - Impact: Session identifiers are routing capabilities for the stream tunnel; leaving them in long-lived, world-readable-by-default evidence files is a minor information-hygiene gap in an otherwise careful redaction helper.
-    - Fix: Add 'session' to the redaction markers and default the evidence dir to a per-run directory under the harness tmp root (keeping the env override).
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_11)
+    - f_tests_integration_fixtures_11: evidence.py \_redact masks keys matching token/secret/password/cookie/resume_key, but agent_session_id / session_id values are written to evidence JSON unredacted.; DEFAULT_EVIDENCE_DIR is tempfile.gettempdir()/cbrowser_e2e_evidence, shared across runs and users on the machine, with artifacts persisting until manually removed.
+        - Impact: Session identifiers are routing capabilities for the stream tunnel; leaving them in long-lived, world-readable-by-default evidence files is a minor information-hygiene gap in an otherwise careful redaction helper.
+        - Fix: Add 'session' to the redaction markers and default the evidence dir to a per-run directory under the harness tmp root (keeping the env override).
+        - Verification: static
 - [Info][85] tests/integration/test_v2_api_subprocess.py:24 — Module-level scratch directory is created at import time and the OpenAPI spec is re-read on every validation call
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_12)
-  - f_tests_integration_fixtures_12: test_v2_api_subprocess.py:24 SCRATCH_DIR = Path(tempfile.mkdtemp(...)) executes at import/collection time, creating state even when no test in the module runs, and is shared by all tests in the module (contrast conftest.py's per-fixture tmp_path usage).; _validate_schema re-reads and re-parses the full OpenAPI document from the server on each call instead of caching it per module.
-    - Impact: Collection-time side effects and cross-test shared scratch make ordering/interference bugs possible and slow the suite marginally; no behavioral incorrectness observed.
-    - Fix: Create the scratch dir in a module-scoped fixture and cache the parsed OpenAPI document after the first fetch.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_12)
+    - f_tests_integration_fixtures_12: test_v2_api_subprocess.py:24 SCRATCH_DIR = Path(tempfile.mkdtemp(...)) executes at import/collection time, creating state even when no test in the module runs, and is shared by all tests in the module (contrast conftest.py's per-fixture tmp_path usage).; \_validate_schema re-reads and re-parses the full OpenAPI document from the server on each call instead of caching it per module.
+        - Impact: Collection-time side effects and cross-test shared scratch make ordering/interference bugs possible and slow the suite marginally; no behavioral incorrectness observed.
+        - Fix: Create the scratch dir in a module-scoped fixture and cache the parsed OpenAPI document after the first fetch.
+        - Verification: static
 - [Info][70] tests/fixtures/stream_probe/clipboard_oracle.py:1 — Stream probes depend on private internals of the vendored selkies library
-  - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_13)
-  - f_tests_integration_fixtures_13: clipboard_oracle.py drives selkies' private _X11ClipboardMonitor; x11_keymap_probe.py reaches into the keyboard object's private _overlay/_prebind surface.; The library is pinned (selkies 2.1.0 assets are sha256-verified in selkies_assets.py), which bounds the drift risk.
-    - Impact: A selkies upgrade can break the probes for non-behavioral reasons; failures would be loud (assertions), so this is a maintenance note rather than a correctness risk.
-    - Fix: None required now; when the selkies pin is next bumped, re-check these two probes first and prefer the library's public surface if one appears.
-    - Verification: static
+    - Sources: bundle_local_tests_integration_fixtures.md (f_tests_integration_fixtures_13)
+    - f_tests_integration_fixtures_13: clipboard_oracle.py drives selkies' private \_X11ClipboardMonitor; x11_keymap_probe.py reaches into the keyboard object's private \_overlay/\_prebind surface.; The library is pinned (selkies 2.1.0 assets are sha256-verified in selkies_assets.py), which bounds the drift risk.
+        - Impact: A selkies upgrade can break the probes for non-behavioral reasons; failures would be loud (assertions), so this is a maintenance note rather than a correctness risk.
+        - Fix: None required now; when the selkies pin is next bumped, re-check these two probes first and prefer the library's public surface if one appears.
+        - Verification: static
 - [Info][85] tests/unit/test_api_models_and_sse.py:64 — SSE broadcaster coverage stops at the initial snapshot chunk
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_08)
-  - f_tests_unit_stream_api_08: tests/unit/test_api_models_and_sse.py:64-82: the only broadcaster test subscribes with a snapshot provider and asserts on the first chunk only ('event: runtime_state', profile id present).; No test in this file publishes an event after subscription, exercises a second concurrent subscriber, or probes the maxlen=10 buffer's eviction behavior, although RuntimeEventBroadcaster is the push path for runtime status changes.
-    - Impact: Within this unit, the broadcaster's live-delivery behavior — the part most likely to regress (dropped events, cross-subscriber interference, unbounded buffering) — is unverified; the test would stay green if post-snapshot events were never delivered. Coverage may exist in integration/e2e units outside this file set (recorded as an uncertainty).
-    - Fix: Add tests that publish after subscribing and assert the second chunk, fan out to two subscribers, and overflow maxlen to pin eviction semantics.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_08)
+    - f_tests_unit_stream_api_08: tests/unit/test_api_models_and_sse.py:64-82: the only broadcaster test subscribes with a snapshot provider and asserts on the first chunk only ('event: runtime_state', profile id present).; No test in this file publishes an event after subscription, exercises a second concurrent subscriber, or probes the maxlen=10 buffer's eviction behavior, although RuntimeEventBroadcaster is the push path for runtime status changes.
+        - Impact: Within this unit, the broadcaster's live-delivery behavior — the part most likely to regress (dropped events, cross-subscriber interference, unbounded buffering) — is unverified; the test would stay green if post-snapshot events were never delivered. Coverage may exist in integration/e2e units outside this file set (recorded as an uncertainty).
+        - Fix: Add tests that publish after subscribing and assert the second chunk, fan out to two subscribers, and overflow maxlen to pin eviction semantics.
+        - Verification: static
 - [Info][95] tests/unit/test_download_reconciler.py:33 — Dead duplicate code in tests: repeated function-local 'import asyncio' and a duplicated consecutive assignment
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_09)
-  - f_tests_unit_stream_api_09: tests/unit/test_download_reconciler.py imports asyncio at top level (line 5) and again inside test bodies at lines 33, 118, 358 and 431 — four no-op re-imports.; tests/unit/test_stream_resume.py:199-200 assigns agent.agent_session_id = "sess_test" twice in consecutive lines in test_detached_session_expires_after_grace.
-    - Impact: No behavioral effect; the duplicates are copy-paste residue that adds noise when reading the forwarder/resume tests and suggests the surrounding blocks were duplicated without a cleanup pass.
-    - Fix: Delete the four local re-imports and the duplicated assignment line.
-    - Verification: static
-- [Info][90] tests/unit/test_profile_copy_reset.py:88 — Profile copy/reset tests reach into ProfileRepository's private _session_maker to build the artifact repository
-  - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_10)
-  - f_tests_unit_stream_api_10: tests/unit/test_profile_copy_reset.py:88, :117 and :370 construct ArtifactRepository(repo._session_maker) — a private attribute of ProfileRepository — because the test context does not retain the session maker it originally created in _context (lines 25-31).; The same file's other white-box accesses are deliberate production seams (monkeypatching profile_service._copy_user_data), whereas _session_maker is incidental plumbing.
-    - Impact: Renaming or restructuring the repository's session-maker attribute breaks three tests despite unchanged behavior; the fix is trivial since _context already has the maker in scope before constructing the repository.
-    - Fix: Return the session maker from _context and pass it to ArtifactRepository directly.
-    - Verification: static
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_09)
+    - f_tests_unit_stream_api_09: tests/unit/test_download_reconciler.py imports asyncio at top level (line 5) and again inside test bodies at lines 33, 118, 358 and 431 — four no-op re-imports.; tests/unit/test_stream_resume.py:199-200 assigns agent.agent_session_id = "sess_test" twice in consecutive lines in test_detached_session_expires_after_grace.
+        - Impact: No behavioral effect; the duplicates are copy-paste residue that adds noise when reading the forwarder/resume tests and suggests the surrounding blocks were duplicated without a cleanup pass.
+        - Fix: Delete the four local re-imports and the duplicated assignment line.
+        - Verification: static
+- [Info][90] tests/unit/test_profile_copy_reset.py:88 — Profile copy/reset tests reach into ProfileRepository's private \_session_maker to build the artifact repository
+    - Sources: bundle_local_tests_unit_stream_api.md (f_tests_unit_stream_api_10)
+    - f_tests_unit_stream_api_10: tests/unit/test_profile_copy_reset.py:88, :117 and :370 construct ArtifactRepository(repo.\_session_maker) — a private attribute of ProfileRepository — because the test context does not retain the session maker it originally created in \_context (lines 25-31).; The same file's other white-box accesses are deliberate production seams (monkeypatching profile_service.\_copy_user_data), whereas \_session_maker is incidental plumbing.
+        - Impact: Renaming or restructuring the repository's session-maker attribute breaks three tests despite unchanged behavior; the fix is trivial since \_context already has the maker in scope before constructing the repository.
+        - Fix: Return the session maker from \_context and pass it to ArtifactRepository directly.
+        - Verification: static
 - [Info][90] docs/archive/spikes/s002、s005、s008；docs/spikes/s011；blueprint/decisions.md ADR 013 — 协议层验证投入曾集中于后被 ADR 013 删除的 TURN/ICE 路线，且最深投入落在上游私有内部结构上
-  - Sources: bundle_global_strategy.md (f_global_strategy_04)
-  - f_global_strategy_04: archive_spikes 单元：s002 为 TURN auth/ICE restart 协议探针，s008 为整套 TURN 凭证代次接管（含对抗性单侧失效矩阵），s005/s008 的适配器依赖 Selkies name-mangled 私有属性（_RTCIceTransport__* 等）; ADR 013（2026-11-02）删除 coturn、TURN 凭证轮换、ICE 代次接管与 Selkies 私有 ABI 补丁，媒体改同机直连，替代 ADR 010；docs_current 单元确认该替代链已按约定标注; 删除依据来自 spike 机制自身：s011 直连回环媒体矩阵证明同机直连可行，成为 t015 删除 TURN 的依据——探针先行起到了止损作用
-    - Impact: 这是已发生的沉没投入而非现存缺陷，spike 机制本身完成了纠偏。留下的战略教训是单向的：对第三方上游私有内部结构（name-mangled 属性、私有 ABI）的适配是全部投入中上游变更风险最高的一类，s005/s008 的深度恰好集中于此。
-    - Fix: 无需对现存代码动作；后续 spike 立项时在报告中显式标注对上游私有 API/内部结构的依赖面，并将其作为采纳门槛的一部分，避免再次在最高上游风险面做最深投入。
-    - Verification: static
+    - Sources: bundle_global_strategy.md (f_global_strategy_04)
+    - f_global_strategy_04: archive_spikes 单元：s002 为 TURN auth/ICE restart 协议探针，s008 为整套 TURN 凭证代次接管（含对抗性单侧失效矩阵），s005/s008 的适配器依赖 Selkies name-mangled 私有属性（_RTCIceTransport_\_\* 等）; ADR 013（2026-11-02）删除 coturn、TURN 凭证轮换、ICE 代次接管与 Selkies 私有 ABI 补丁，媒体改同机直连，替代 ADR 010；docs_current 单元确认该替代链已按约定标注; 删除依据来自 spike 机制自身：s011 直连回环媒体矩阵证明同机直连可行，成为 t015 删除 TURN 的依据——探针先行起到了止损作用
+        - Impact: 这是已发生的沉没投入而非现存缺陷，spike 机制本身完成了纠偏。留下的战略教训是单向的：对第三方上游私有内部结构（name-mangled 属性、私有 ABI）的适配是全部投入中上游变更风险最高的一类，s005/s008 的深度恰好集中于此。
+        - Fix: 无需对现存代码动作；后续 spike 立项时在报告中显式标注对上游私有 API/内部结构的依赖面，并将其作为采纳门槛的一部分，避免再次在最高上游风险面做最深投入。
+        - Verification: static
 - [Info][98] src/backend/cbrowser/secret_files.py:25；src/backend/cbrowser/gateway/server.py:80-84；src/backend/cbrowser/gateway/api_client.py:22-24 — 线索核对闭环：read_secret_file 内部已做 strip，Gateway 控制令牌『恒不匹配』不成立，残留仅为同一函数两处调用约定不一致
-  - Sources: bundle_global_architecture.md (f_global_architecture_09)
-  - f_global_architecture_09: 本视角回查源码：read_secret_file 的实现为 target.read_text(encoding='utf-8').strip() 后再校验最小长度并返回（src/backend/cbrowser/secret_files.py），函数内部已经剥离尾随空白; gateway/server.py 将返回值直接 .encode() 作控制令牌比对、api_client.py 对同一函数结果再显式 .strip()——两者结果恒等，汇总 backend_stream_gateway:0 所担心的『令牌文件带尾随换行时 Bearer 比对恒不匹配』不成立; 残留问题仅为可维护性：同一函数的后处理约定在两个调用点不一致，容易让后续读者重复产生本轮这种跨单元疑虑
-    - Impact: 无功能影响；记录此项为该跨包线索的正式关闭依据，避免后续审阅重复立项。调用约定不一致本身可能在未来某次重构（如下沉 strip 到调用方）时引入真实分叉。
-    - Fix: 删除 api_client.py 的冗余 .strip() 并在 read_secret_file 的 docstring 中明示『返回值已 strip』，使约定单点声明。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_09)
+    - f_global_architecture_09: 本视角回查源码：read_secret_file 的实现为 target.read_text(encoding='utf-8').strip() 后再校验最小长度并返回（src/backend/cbrowser/secret_files.py），函数内部已经剥离尾随空白; gateway/server.py 将返回值直接 .encode() 作控制令牌比对、api_client.py 对同一函数结果再显式 .strip()——两者结果恒等，汇总 backend_stream_gateway:0 所担心的『令牌文件带尾随换行时 Bearer 比对恒不匹配』不成立; 残留问题仅为可维护性：同一函数的后处理约定在两个调用点不一致，容易让后续读者重复产生本轮这种跨单元疑虑
+        - Impact: 无功能影响；记录此项为该跨包线索的正式关闭依据，避免后续审阅重复立项。调用约定不一致本身可能在未来某次重构（如下沉 strip 到调用方）时引入真实分叉。
+        - Fix: 删除 api_client.py 的冗余 .strip() 并在 read_secret_file 的 docstring 中明示『返回值已 strip』，使约定单点声明。
+        - Verification: static
 - [Info][75] .repo_template/scripts/repo_task/（lifecycle start 与 ledger/attempts） — repo_task 双权威链上 start 事件为 best-effort 写入，是执行权威中唯一的非 fail-closed 环节，完整性依赖事后 import 重建
-  - Sources: bundle_global_architecture.md (f_global_architecture_10)
-  - f_global_architecture_10: 执行主线记录：start 阶段写 ledger start 事件为 best-effort（template_scripts_state 单元 Flow），而同包其他审计写入失败即中止状态迁移（同单元约束记录：审计写失败中止状态迁移、ledger 损坏行拒绝继续）; 双权威划分本身自洽且多处校验一致：文档状态以 front matter 为准、执行状态以 ledger exact identity 为准、派生索引可重建、integrate 门禁做 base_sha/diff_anchor/分支 tip 三方等值校验（同单元 Decisions 记录）; ledger 丢失时存在 import 重建路径（有 done 分支与 handoff 时重建三事件），但针对『仅 start 事件缺失、其余事件齐全』的局部缺口没有专门校验点
-    - Impact: 执行权威链的完整性在一个环节上依赖事后补救而非写入时保证：start 事件静默缺失时，attempt/reserve 之后的事件链失去起点锚，recovery 分类与审计追溯需靠 import 路径兜底，属于设计一致性上的单点例外而非现行故障。
-    - Fix: 将 start 的 ledger 写入改为与其他审计写入一致的 fail-closed（写失败即中止 start），或在 reserve 时校验 start 事件存在性并显式报错，使执行权威链无静默缺口。
-    - Verification: static
+    - Sources: bundle_global_architecture.md (f_global_architecture_10)
+    - f_global_architecture_10: 执行主线记录：start 阶段写 ledger start 事件为 best-effort（template_scripts_state 单元 Flow），而同包其他审计写入失败即中止状态迁移（同单元约束记录：审计写失败中止状态迁移、ledger 损坏行拒绝继续）; 双权威划分本身自洽且多处校验一致：文档状态以 front matter 为准、执行状态以 ledger exact identity 为准、派生索引可重建、integrate 门禁做 base_sha/diff_anchor/分支 tip 三方等值校验（同单元 Decisions 记录）; ledger 丢失时存在 import 重建路径（有 done 分支与 handoff 时重建三事件），但针对『仅 start 事件缺失、其余事件齐全』的局部缺口没有专门校验点
+        - Impact: 执行权威链的完整性在一个环节上依赖事后补救而非写入时保证：start 事件静默缺失时，attempt/reserve 之后的事件链失去起点锚，recovery 分类与审计追溯需靠 import 路径兜底，属于设计一致性上的单点例外而非现行故障。
+        - Fix: 将 start 的 ledger 写入改为与其他审计写入一致的 fail-closed（写失败即中止 start），或在 reserve 时校验 start 事件存在性并显式报错，使执行权威链无静默缺口。
+        - Verification: static
 - [Info][95] src/backend/cbrowser/secret_files.py:8-29；src/backend/cbrowser/gateway/server.py:73-80；src/backend/cbrowser/gateway/api_client.py:22-24；src/backend/cbrowser/supervisor/gateway_client.py:16；src/backend/cbrowser/supervisor/agent_credentials.py:15 — 正向确认：内部凭据读取链为单一实现、全链一致，局部阶段悬置的 Gateway 控制令牌 strip 疑点经源码核对不成立
-  - Sources: bundle_global_system_properties.md (f_global_system_properties_08)
-  - f_global_system_properties_08: secret_files.py:23：read_secret_file 对文件内容统一 .strip() 后再校验最小长度，且强制拒绝 group/other 可读（stat.st_mode & 0o077 检查）——全仓内部凭据只有这一个读取实现; gateway/server.py 将 read_secret_file(gateway_token_file) 的返回值直接 .encode() 作控制令牌比对；因函数内部已 strip，尾随换行不会造成不匹配——backend_stream_gateway 单元留给跨单元核对的 uncertainties[0] 就此消解; gateway/api_client.py:22-24 对同一函数结果再调 .strip() 属冗余但无害；supervisor 侧 gateway_client、agent_credentials、control_server、core、event_forwarder、runner 六处调用点全部经同一 read_secret_file 读取各自令牌/密钥文件（本轮 grep 回查）; 组合结论：Supervisor↔Gateway 控制令牌、Gateway→API 令牌、Agent 凭据三条跨服务凭据链在读取与规范化这一环是单一事实源，不存在各服务各自解析凭据文件的漂移面；这是 v2 fail-closed 基调中经组合核对仍成立的一环
-    - Impact: 无负面影响。记录此项为的是关闭一条跨单元悬置线索，避免后续审阅重复怀疑；api_client 的冗余 .strip() 可保留（防御性）或清理，不影响正确性。
-    - Fix: 无需修复。可选：删除 api_client.py 中冗余的 .strip() 或加注释说明 read_secret_file 已保证规范化，避免后来者误以为各调用点需自行处理。
-    - Verification: static
+    - Sources: bundle_global_system_properties.md (f_global_system_properties_08)
+    - f_global_system_properties_08: secret_files.py:23：read_secret_file 对文件内容统一 .strip() 后再校验最小长度，且强制拒绝 group/other 可读（stat.st_mode & 0o077 检查）——全仓内部凭据只有这一个读取实现; gateway/server.py 将 read_secret_file(gateway_token_file) 的返回值直接 .encode() 作控制令牌比对；因函数内部已 strip，尾随换行不会造成不匹配——backend_stream_gateway 单元留给跨单元核对的 uncertainties[0] 就此消解; gateway/api_client.py:22-24 对同一函数结果再调 .strip() 属冗余但无害；supervisor 侧 gateway_client、agent_credentials、control_server、core、event_forwarder、runner 六处调用点全部经同一 read_secret_file 读取各自令牌/密钥文件（本轮 grep 回查）; 组合结论：Supervisor↔Gateway 控制令牌、Gateway→API 令牌、Agent 凭据三条跨服务凭据链在读取与规范化这一环是单一事实源，不存在各服务各自解析凭据文件的漂移面；这是 v2 fail-closed 基调中经组合核对仍成立的一环
+        - Impact: 无负面影响。记录此项为的是关闭一条跨单元悬置线索，避免后续审阅重复怀疑；api_client 的冗余 .strip() 可保留（防御性）或清理，不影响正确性。
+        - Fix: 无需修复。可选：删除 api_client.py 中冗余的 .strip() 或加注释说明 read_secret_file 已保证规范化，避免后来者误以为各调用点需自行处理。
+        - Verification: static
 
 ## Gaps
 
@@ -1825,13 +1828,13 @@ None.
 
 - 纯静态审阅：未运行任何代码、测试、构建或 Docker 校验；运行期行为结论（flake、时序、框架传播语义、Starlette/uvicorn 路径解码）均未实证，相关 finding 标 static 或 suspected。
 - spikes 与 tasks 归档引用的运行证据位于仓外 .scratch（门禁日志、黑盒原始 JSON），本轮无法复核原始日志，只能核对账本间一致性与当前代码吻合度。
-- 上一轮审阅的 _meta 产物按仓规不入库，归档 bundle 的完整审计链部分依赖仓外产物；对归档文档只判定内部一致性，不改判其技术结论。
+- 上一轮审阅的 \_meta 产物按仓规不入库，归档 bundle 的完整审计链部分依赖仓外产物；对归档文档只判定内部一致性，不改判其技术结论。
 - 部署规模、并发 profile 数与宿主机环境未由用户给出；涉及规模与性能的判断以代码结构与文档声明为据。
 - archive_reviews:0: adoption 附表声称 362 条 finding 逐条且恰好映射一次：本单元抽查了多个 bundle 的小计与映射行（合计与小计均对齐），但未对 362 行做全量程序化去重核对，个别重复/漏映射不能完全排除。
 - archive_reviews:1: f_archive_reviews_02 中 adoption 记录的现网实测（穿越返回 200）是否确曾执行、执行环境为何，文档集内无第二处记录可互证；本单元只判定其与同一记录集内其他两处核实等级表述不一致。
-- archive_reviews:2: bundle 渲染截断（f_archive_reviews_03）的成因（渲染器长度上限或源 JSON 本身截断）无法从归档文档判定，_meta 源文件不在本单元文件清单内。
+- archive_reviews:2: bundle 渲染截断（f_archive_reviews_03）的成因（渲染器长度上限或源 JSON 本身截断）无法从归档文档判定，\_meta 源文件不在本单元文件清单内。
 - archive_spikes:0: Static review only: no spike was executed, so all runtime PASS claims rest on the spikes' own recorded reviews and on logs stored outside this repository (.scratch), which were not re-verified
-- archive_spikes:1: s011's external fixtures (tests/fixtures/stream_probe/*, media_page.html, clipboard_oracle.py, web_lock_shim.js) and the production backend modules it imports are outside this unit's 102 files; they were assessed only at their call sites in direct_media_probe.py
+- archive_spikes:1: s011's external fixtures (tests/fixtures/stream_probe/\*, media_page.html, clipboard_oracle.py, web_lock_shim.js) and the production backend modules it imports are outside this unit's 102 files; they were assessed only at their call sites in direct_media_probe.py
 - archive_spikes:2: Upstream Selkies/CloakBrowser sources cited by reviews (e.g. pinned selkies input_handler commit in s009) are not part of this unit and were not read
 - archive_spikes:3: s001 image_manifest.json was read in full; it self-declares local/arm64 scope and does not prove reproducible builds - no other generated manifest required structure-level-only coverage
 - archive_tasks:0: 账本引用的 .scratch 证据（门禁日志、黑盒原始 JSON、编排 JSONL）不在仓库内，本次只能核对账本间相互一致性与当前代码实况，无法复核原始日志本身。
@@ -1840,22 +1843,22 @@ None.
 - backend_api_auth:0: Supervisor 内部面的鉴权完全依赖 FastAPI 路由级 dependencies 对 add_api_route 注册路由的传播语义：本轮按框架既定语义与兄弟单元集成测试（test_supervisor_observation_authority.py 等实际引用该面）静态判定其生效，未运行验证；若传播不成立，该面将无鉴权——影响面大，建议全局/测试阶段以运行证据复核。
 - backend_api_auth:1: artifact 上传对无 Content-Length 的 chunked 请求（size_hint=0）是否在流式读取中强制单文件上限，取决于 ArtifactService 实现（本单元外），本层预检仅覆盖带长度头的请求。
 - backend_api_auth:2: Gateway 向 viewer-authorize 转发的 Origin 是否恒为浏览器规范序列化形式，决定 f_backend_api_auth_02 是实际可用性缺陷还是仅不一致风险；Gateway 代码在本单元外，未核对。
-- backend_api_auth:3: tests 视角由独立 viewfix 补审完成（原审阅者因本单元不含测试文件将其标为 partial）：补审逐行阅读了 tests/unit/test_auth_service.py、test_auth_client_ip.py、test_auth_models.py、test_api_models_and_sse.py、test_automation_cdp.py、test_api_runtime_coordinator.py、test_runtime_coordinator_error_responses.py，tests/integration/test_auth_api.py、test_automation_api.py、test_automation_cdp_flow.py、test_artifacts_api.py、test_api_sse_events.py、test_sse_epoch_integration.py、test_supervisor_rpc.py、test_supervisor_observation_authority.py、test_profile_patch_semantics.py、test_runtime_coordinator_integration.py、test_v2_api_subprocess.py，以及 test_runtime_agent_protocol_export.py 中的 OpenAPI 契约用例，并以 grep 核对 launch_args 更新路径、Referer、内部 503 三个覆盖点；结论为 completed，新增测试视角 findings f_backend_api_auth_09 至 _12。附带确认：src/backend/tests/（backend_tests 单元）全部 import 的是 legacy backend.* 包，对本单元 cbrowser.* 代码零覆盖，本单元的实际测试全部位于 tests/ 下。
+- backend_api_auth:3: tests 视角由独立 viewfix 补审完成（原审阅者因本单元不含测试文件将其标为 partial）：补审逐行阅读了 tests/unit/test_auth_service.py、test_auth_client_ip.py、test_auth_models.py、test_api_models_and_sse.py、test_automation_cdp.py、test_api_runtime_coordinator.py、test_runtime_coordinator_error_responses.py，tests/integration/test_auth_api.py、test_automation_api.py、test_automation_cdp_flow.py、test_artifacts_api.py、test_api_sse_events.py、test_sse_epoch_integration.py、test_supervisor_rpc.py、test_supervisor_observation_authority.py、test_profile_patch_semantics.py、test_runtime_coordinator_integration.py、test_v2_api_subprocess.py，以及 test_runtime_agent_protocol_export.py 中的 OpenAPI 契约用例，并以 grep 核对 launch_args 更新路径、Referer、内部 503 三个覆盖点；结论为 completed，新增测试视角 findings f_backend_api_auth_09 至 \_12。附带确认：src/backend/tests/（backend_tests 单元）全部 import 的是 legacy backend.\* 包，对本单元 cbrowser.\* 代码零覆盖，本单元的实际测试全部位于 tests/ 下。
 - backend_core:0: f_backend_core_02（serve_spa 穿越）的运行期可达性取决于随仓 Starlette/uvicorn 对 %2e%2e%2f 的解码与点段处理，本轮静态审阅未做运行复现，verification 标 suspected
 - backend_core:1: 生产启动路径中是否存在不经 compose 的 legacy 入口（原生冻结应用同样加载 main.py，其监听绑定与 AUTH_TOKEN 注入由本单元之外的入口决定），决定 f_backend_core_03 的实际暴露面
-- backend_core:3: tests 视角由独立 viewfix 补审完成（原审阅者仅做定点 grep）：补审全量通读 backend_tests 单元 11 个文件（src/backend/tests/*，约 4,700 行），并对 main.py 全部路由及 open-external/shutdown/serve_spa/env_file 等关键字在 src/backend/tests、tests/unit、tests/integration 三处做定点 grep 核对；结论基于静态阅读，未运行测试。v2 迁移链（migrations/）的覆盖位于 tests/unit 的模型↔迁移漂移检查、不在 backend_tests 单元内，本补审未逐行复核该部分；secret_files.py 的覆盖同样在 tests/unit（test_secret_file_permissions.py），已定点确认存在。
-- backend_runtime_adapters:0: This unit contains no test files; test coverage for these modules lives in other units (backend_tests, tests_*), so the tests view is based on testability of the code as read, not on coverage measurement.
+- backend_core:3: tests 视角由独立 viewfix 补审完成（原审阅者仅做定点 grep）：补审全量通读 backend_tests 单元 11 个文件（src/backend/tests/\*，约 4,700 行），并对 main.py 全部路由及 open-external/shutdown/serve_spa/env_file 等关键字在 src/backend/tests、tests/unit、tests/integration 三处做定点 grep 核对；结论基于静态阅读，未运行测试。v2 迁移链（migrations/）的覆盖位于 tests/unit 的模型↔迁移漂移检查、不在 backend_tests 单元内，本补审未逐行复核该部分；secret_files.py 的覆盖同样在 tests/unit（test_secret_file_permissions.py），已定点确认存在。
+- backend_runtime_adapters:0: This unit contains no test files; test coverage for these modules lives in other units (backend_tests, tests\_\*), so the tests view is based on testability of the code as read, not on coverage measurement.
 - backend_runtime_adapters:1: duplicate_profile copies the source fingerprint_seed unchanged into the clone (profile_service.py duplicate_profile builds ProfileConfig from source.model_dump() changing only the name). Whether a clone intentionally shares the source's browser fingerprint or should receive a fresh seed cannot be decided from this unit alone — it depends on the product definition of 'duplicate'.
-- backend_runtime_adapters:2: ProfileService.update_profile merges a caller-supplied dict into the current config and constructs ProfileConfig(**merged); whether unexpected patch keys can reach it depends on ProfileConfig's extra-field policy and the API layer, both outside this unit.
+- backend_runtime_adapters:2: ProfileService.update_profile merges a caller-supplied dict into the current config and constructs ProfileConfig(\*\*merged); whether unexpected patch keys can reach it depends on ProfileConfig's extra-field policy and the API layer, both outside this unit.
 - backend_runtime_adapters:3: Whether the Supervisor polls /health frequently enough for the per-call subprocess probes (xdpyinfo + two pactl calls, subsystems.py) to matter operationally is determined by Supervisor code outside this unit.
-- backend_stream_gateway:0: cbrowser.secret_files.read_secret_file 是否 strip 尾部空白未在本单元核对：gateway/server.py:80-84 将 read_secret_file(gateway_token_file) 的返回值直接 .encode() 作为控制令牌比对，而 gateway/api_client.py:22-24 对同一函数结果显式 .strip()；若该函数不 strip 且令牌文件带尾随换行，Supervisor 控制端点的 Bearer 比对可能恒不匹配。影响：决定 handle_supervisor_* 三端点是否可用，需跨单元（secret_files 与 Supervisor 调用方）核对。
+- backend_stream_gateway:0: cbrowser.secret_files.read_secret_file 是否 strip 尾部空白未在本单元核对：gateway/server.py:80-84 将 read_secret_file(gateway_token_file) 的返回值直接 .encode() 作为控制令牌比对，而 gateway/api_client.py:22-24 对同一函数结果显式 .strip()；若该函数不 strip 且令牌文件带尾随换行，Supervisor 控制端点的 Bearer 比对可能恒不匹配。影响：决定 handle_supervisor\_\* 三端点是否可用，需跨单元（secret_files 与 Supervisor 调用方）核对。
 - backend_stream_gateway:1: StreamAgent.close()（agent.py 末尾）是否有生产调用方未在本单元核对：run_standalone_service 的关闭路径走 svc.tasks 取消 + agent.stop()，close() 若仅为嵌入式回退则 f_backend_stream_gateway_06 影响有限。
-- backend_stream_gateway:2: Selkies SDK 内部 text_room 与 _find_spare_keycodes 的调用时序在单元外：f_backend_stream_gateway_05 是否可达取决于 SDK 是否会在 _spare_keycodes 赋值前调用 text_room。
+- backend_stream_gateway:2: Selkies SDK 内部 text_room 与 \_find_spare_keycodes 的调用时序在单元外：f_backend_stream_gateway_05 是否可达取决于 SDK 是否会在 \_spare_keycodes 赋值前调用 text_room。
 - backend_stream_gateway:3: AgentCredentials.verify 的凭据派生/轮换语义在 supervisor 单元，本单元只核对到其被调用且失败返回 401。
-- backend_stream_gateway:4: 本单元 16 个文件全部为生产代码、无测试文件；针对本单元的测试位于 tests_*/backend_tests 等其他单元，本轮未交叉核对其覆盖充分性，tests 视角仅就可测性与单元内事实作出判断。
+- backend_stream_gateway:4: 本单元 16 个文件全部为生产代码、无测试文件；针对本单元的测试位于 tests\_\*/backend_tests 等其他单元，本轮未交叉核对其覆盖充分性，tests 视角仅就可测性与单元内事实作出判断。
 - backend_supervisor:0: Stream INPUT iptables policy accepts only loopback, established and the UDP mux port; whether the Gateway ever initiates a new TCP connection to Selkies (SELKIES_PORT 18096) cannot be confirmed from this unit — the design appears to assume Stream-initiated signaling to CBROWSER_GATEWAY_URL, but the Stream/Gateway implementations live in other units.
 - backend_supervisor:1: On startup failure core.start_profile both reports a terminal observation (reason=startup_failure) and emits an exit event with exit_code=1 for the same instance; whether the API counts these as one failure or two depends on API-side semantics outside this unit.
-- backend_supervisor:2: docker-py Container.name / labels behavior against a real daemon (e.g. name leading slash) affects cleanup_container_by_name and _cleanup_orphan_helpers comparisons; unit tests mock these, and no runtime Docker evidence was available to this static review.
+- backend_supervisor:2: docker-py Container.name / labels behavior against a real daemon (e.g. name leading slash) affects cleanup_container_by_name and \_cleanup_orphan_helpers comparisons; unit tests mock these, and no runtime Docker evidence was available to this static review.
 - backend_supervisor:3: calculate_cpu_percent (resource_policy.py) may be exercised by test code outside the backend package; the dead-code suspicion is limited to src/backend/cbrowser where grep found no caller.
 - backend_tests:0: Whether the full-format license-key-shaped literal used as fixture data in the settings tests (f_backend_tests_03) is a real CloakBrowser license key cannot be determined statically; it is reported as a hygiene risk, not a confirmed leak.
 - backend_tests:1: pytest-asyncio mode/configuration lives in packaging files outside this unit; async tests carry explicit marks, but whether the suite is collected with the same ordering/isolation in CI is outside this unit's files.
@@ -1874,8 +1877,8 @@ None.
 - frontend_shell:2: selkies adapter 构建产物与 dist 新鲜度校验属 contracts_deploy 单元脚本，本单元仅核对 package.json 钩子接线，未审脚本本身。
 - template_scripts_ops:0: FileTransaction 的快照/回滚实现细节在 template_scripts_state 单元，本轮仅以 grep 确认 begin 时对清单路径 copytree/copy2 快照；f_template_scripts_ops_03 中『apply 路径下 rmtree 内容入回滚栈』的判断以此为据，未逐行审 file_transaction.py。
 - template_scripts_ops:2: md_kx 本体不在本仓，--check 退出码语义（1=漂移）按 md_format.py 的用法推定，未核 md_kx 实现。
-- template_scripts_ops:3: tests 视角由独立 viewfix 补审完成（原审阅者因本单元不含测试文件标 partial）：补审通读了实际行使本单元代码的测试——.repo_template/tests/test_repo_cleanup.py、test_repo_sync.py、test_repo_hygiene.py、test_check_review_status.py、test_render_review_prompts.py、test_md_format.py、test_precommit_hook.py、review_support.py 全文，以及 test_pending.py（_id_scan）、test_design_regressions.py、test_review_report_regressions.py（export_template / skill_registry / shared prompt）中的相关段落，并回查 repo_sync.py、repo_cleanup.py、md_format.py 对应实现行逐项核对覆盖缺口；新增 finding f_template_scripts_ops_13..19 均为测试覆盖缺口（与原 finding 一一对应），结论仅基于静态阅读，未运行任何测试。总体判断：cleanup/hygiene/check_review_status/render_prompts/md_format 的行为级与失败路径覆盖扎实（真实 git、回滚、超时、围栏解析、契约漂移均有用例），_id_scan 与 export_template 虽无同名专用文件但在 test_pending / 回归套件中被实质覆盖；盲区集中在『生产恒走、测试恒绕』的分支——prompt 合并编号、registry 角色过滤、无事务 link-skills 入口、CLI 点名黑名单、嵌套 bulk 树、目标侧文件软链、handoff 围栏切节。
-- template_scripts_state:0: _id_scan.py 不在本单元：allocate/allocate_dir 是否校验 slug、id_lock 与 locks.TASK_ID_LOCK_NAME 是否同一把锁无法核对（影响 f_template_scripts_state_07 的定级）。
+- template_scripts_ops:3: tests 视角由独立 viewfix 补审完成（原审阅者因本单元不含测试文件标 partial）：补审通读了实际行使本单元代码的测试——.repo_template/tests/test_repo_cleanup.py、test_repo_sync.py、test_repo_hygiene.py、test_check_review_status.py、test_render_review_prompts.py、test_md_format.py、test_precommit_hook.py、review_support.py 全文，以及 test_pending.py（\_id_scan）、test_design_regressions.py、test_review_report_regressions.py（export_template / skill_registry / shared prompt）中的相关段落，并回查 repo_sync.py、repo_cleanup.py、md_format.py 对应实现行逐项核对覆盖缺口；新增 finding f_template_scripts_ops_13..19 均为测试覆盖缺口（与原 finding 一一对应），结论仅基于静态阅读，未运行任何测试。总体判断：cleanup/hygiene/check_review_status/render_prompts/md_format 的行为级与失败路径覆盖扎实（真实 git、回滚、超时、围栏解析、契约漂移均有用例），\_id_scan 与 export_template 虽无同名专用文件但在 test_pending / 回归套件中被实质覆盖；盲区集中在『生产恒走、测试恒绕』的分支——prompt 合并编号、registry 角色过滤、无事务 link-skills 入口、CLI 点名黑名单、嵌套 bulk 树、目标侧文件软链、handoff 围栏切节。
+- template_scripts_state:0: \_id_scan.py 不在本单元：allocate/allocate_dir 是否校验 slug、id_lock 与 locks.TASK_ID_LOCK_NAME 是否同一把锁无法核对（影响 f_template_scripts_state_07 的定级）。
 - template_scripts_state:2: repo_state.py 的路径基准问题（f_template_scripts_state_01）依赖 git 在子目录下 ls-files/diff 的路径输出基准，未实测 git 行为，仅按 git 文档语义静态推断。
 - template_scripts_state:3: /task-doc 的会话 token 定位（真鉴权还是防误触）代码与注释未声明，f_template_scripts_state_03 按其实际可达性定级。
 - template_scripts_state:4: tests 视角由独立 viewfix 补审完成（原审阅者因本单元 34 个文件不含测试文件标 partial）：补审通读了 template_tests 单元中实际测试本单元代码的测试文件——test_repo_state.py、test_pending.py、test_goal.py、test_plan.py、test_task_scheduling.py、test_task_start_flow.py、test_dispatch_integration.py、test_evidence_repair.py、test_workflow_contracts.py、test_design_regressions.py、test_review_report_regressions.py、test_check_review_status.py、test_review_scope_fingerprint.py、test_task_document_validation.py、test_task_save.py、test_task_archive_dir.py、test_task_unverified.py、test_task_modularization.py、test_view_server.py、test_chain_plan.py/test_chain_plan_cases.js、test_contract_suite.py 与 review_support.py——并以 grep 核对本单元各模块的测试引用分布。结论：CLI/账本/集成层为真实 git 端到端覆盖、断言为行为级，空白集中在 repo_state 子目录调用、board.js、账本损坏输入与 view_server 真实 HTTP 四处（见 f_template_scripts_state_17..20）。另注：真实 E2E 夹具经 review_support 合成 PASS 证据并关闭项目门禁命令这一覆盖 caveat 已由 template_tests 单元自有 finding 记录，本视角不重复立项，仅标注其同样适用于本单元的 finish/cleanup/integrate 覆盖。
@@ -1889,7 +1892,7 @@ None.
 - tests_e2e_stream_frontend:1: Whether CI actually sets CBROWSER_E2E_REQUIRED=1 is decided outside this unit; that setting determines whether the profile-defaults skip path is a live coverage hole.
 - tests_e2e_stream_frontend:2: web_lock_shim.js and GatewayTopologyHarness internals belong to the tests_integration_fixtures unit; the mock/shim divergence finding is judged from usage sites in test_stream_runtime_e2e.py, not from a full read of those fixtures.
 - tests_e2e_stream_frontend:3: No test was run (static review constraint), so flake-related findings are marked suspected where they depend on machine load or timing.
-- tests_e2e_supervisor:0: Internals of supervisor_recovery_probe/*, gateway_probe.topology.cleanup_prefixed_resources, api_auth.create_auth_context and scripts.verify_frontend_dist are outside this unit's file list and were not read; claims that depend on them (e.g. RealSupervisorContainer.sigkill semantics, cleanup completeness) are taken from the call sites' usage and naming.
+- tests_e2e_supervisor:0: Internals of supervisor_recovery_probe/\*, gateway_probe.topology.cleanup_prefixed_resources, api_auth.create_auth_context and scripts.verify_frontend_dist are outside this unit's file list and were not read; claims that depend on them (e.g. RealSupervisorContainer.sigkill semantics, cleanup completeness) are taken from the call sites' usage and naming.
 - tests_e2e_supervisor:1: Whether CBROWSER_E2E_REQUIRED=1 is ever run on a non-macOS host is not evidenced inside the unit; finding f_tests_e2e_supervisor_03's impact is conditional on that (the gate code itself is unconditional).
 - tests_e2e_supervisor:2: docker-py semantics of calling containers.list on a client after close() (finding f_tests_e2e_supervisor_09) depend on the pinned docker SDK version, which is not part of this unit; hence suspected, not static-confirmed.
 - tests_integration_fixtures:0: Whether any CI lane actually runs the Docker-gated suites in this unit could not be verified statically from these files alone.

@@ -16,6 +16,7 @@ import pytest
 from api_auth import create_auth_context
 from e2e_env import (
     REQUIRED_E2E_ENV,
+    required_e2e_names,
     image_identity_problems,
     worker_resource_offsets,
 )
@@ -87,7 +88,7 @@ def _item_needs_host_chrome(item) -> bool:
 
 
 def _missing_requirements(items) -> list[str]:
-    missing = [name for name in REQUIRED_E2E_ENV if not os.environ.get(name)]
+    missing = [name for name in sorted(required_e2e_names(items)) if not os.environ.get(name)]
     if any(_item_needs_host_chrome(item) for item in items) and not HOST_CHROME_PATH.is_file():
         missing.append("Google Chrome at /Applications")
     return missing
@@ -132,7 +133,8 @@ def pytest_collection_modifyitems(config, items):
     # Required mode is fail-closed on image identity (t028 AC-005): a set
     # variable holding a tag, a malformed digest, or an ID that does not
     # resolve locally fails the session exactly like a missing variable.
-    identity = image_identity_problems()
+    required = required_e2e_names(items)
+    identity = image_identity_problems(names=required)
 
     # t044 AC-005: global prerequisites are collected before exiting so the
     # report enumerates every missing item at once.  None may degrade into a
@@ -151,10 +153,7 @@ def pytest_collection_modifyitems(config, items):
             f"Docker daemon unavailable: {type(exc).__name__}: {exc}"
         )
 
-    for name in (
-        "CBROWSER_RUNTIME_ENGINE_CACHE",
-        "CBROWSER_RUNTIME_GEOIP_CACHE",
-    ):
+    for name in sorted(required & {"CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"}):
         value = os.environ.get(name)
         if not value or not Path(value).is_dir():
             extra.append(f"{name}: not an existing directory: {value!r}")

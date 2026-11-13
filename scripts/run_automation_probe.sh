@@ -19,32 +19,39 @@ preflight_file="$report_dir/preflight.txt"
 add_problem() { printf '%s\n' "$1" >> "$preflight_file"; }
 
 version="${CBROWSER_T029_TARGET_ENGINE_VERSION:-146.0.7680.177.3}"
-if [[ ! "$CBROWSER_PROBE_TEST_IMAGE" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-  add_problem "probe image must be an immutable sha256 ID"
-fi
 architecture="$(
   docker image inspect --format '{{.Os}}/{{.Architecture}}' \
     "$CBROWSER_PROBE_TEST_IMAGE" 2>/dev/null || true
 )"
-[ "$architecture" = "linux/arm64" ] || \
-  add_problem "expected linux/arm64, got ${architecture:-unresolvable}"
-[ -d "$CBROWSER_T029_ENGINE_CACHE" ] || \
-  add_problem "engine cache directory missing"
-[ -x "$CBROWSER_T029_ENGINE_CACHE/chromium-$version/chrome" ] || \
-  add_problem "selected engine missing: chromium-$version/chrome"
 other_files="$(ls -A "$report_dir" | grep -v -x 'preflight.txt' || true)"
-[ -z "$other_files" ] || add_problem "evidence directory must be empty"
+runtime_probe=""
 if [ "$architecture" = "linux/arm64" ]; then
   runtime_probe="$(
     docker run --rm --entrypoint /bin/sh "$CBROWSER_PROBE_TEST_IMAGE" \
       -c 'printf "xvfb=%s\n" "$(command -v Xvfb || true)"; printf "uid=%s\n" "$(id -u cbrowser || true)"' \
       2>/dev/null || true
   )"
-  echo "$runtime_probe" | grep -q '^xvfb=.' || \
-    add_problem "Xvfb missing in probe image"
-  echo "$runtime_probe" | grep -q '^uid=.' || \
-    add_problem "probe image missing cbrowser user (permissions)"
 fi
+engine_present=0
+[ -x "$CBROWSER_T029_ENGINE_CACHE/chromium-$version/chrome" ] && engine_present=1
+xvfb_present=0
+printf '%s\n' "$runtime_probe" | grep -q '^xvfb=.' && xvfb_present=1
+permissions_ok=0
+printf '%s\n' "$runtime_probe" | grep -q '^uid=.' && permissions_ok=1
+# Shell preflight and evidence CLI share the same validation function.
+PYTHONPATH="$REPO_ROOT${PYTHONPATH:+:$PYTHONPATH}" python3 - \
+  "$CBROWSER_PROBE_TEST_IMAGE" "$architecture" "$engine_present" \
+  "$xvfb_present" "$permissions_ok" "$other_files" > "$preflight_file" <<'CHECK'
+import sys
+from scripts.automation_probe_evidence import preflight_problems
+for problem in preflight_problems(
+    image_id=sys.argv[1], image_os_arch=sys.argv[2],
+    engine_present=sys.argv[3] == "1", xvfb_present=sys.argv[4] == "1",
+    permissions_ok=sys.argv[5] == "1", report_dir_empty=not sys.argv[6],
+):
+    print(problem)
+CHECK
+if [ "$?" != 0 ]; then add_problem "shared preflight validator failed"; fi
 
 docker image inspect \
   --format '{"id":{{json .Id}},"os":{{json .Os}},"architecture":{{json .Architecture}}}' \

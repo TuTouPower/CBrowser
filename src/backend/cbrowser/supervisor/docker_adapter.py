@@ -32,6 +32,14 @@ from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_PATH_ENV,
     agent_socket_path,
 )
+from cbrowser.supervisor.address_pool import (
+    MediaNetworkPlan,
+    MediaPoolExhaustedError,
+    MediaSubnetAllocator,
+    host_route_networks,
+    media_network_labels,
+    plan_from_labels,
+)
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -46,15 +54,8 @@ from cbrowser.supervisor.container_spec import (
     stream_ports,
     x11_helper_labels,
 )
-from cbrowser.supervisor.address_pool import (
-    MediaNetworkPlan,
-    MediaPoolExhaustedError,
-    MediaSubnetAllocator,
-    host_route_networks,
-    media_network_labels,
-    plan_from_labels,
-)
 from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.supervisor.gate_identity import gate_labels
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.network_spec import (
     browser_network_name,
@@ -426,10 +427,10 @@ class DockerAdapter:
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",
                 },
-                labels=policy_helper_labels(
+                labels=gate_labels(policy_helper_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
         except DockerSandboxError:
             raise
@@ -1018,10 +1019,10 @@ with path.open('w') as output:
                     geoip_cache=self.geoip_cache,
                 ),
                 environment=cache_init_environment(need_geoip, marker_name, run_id),
-                labels=cache_init_labels(
+                labels=gate_labels(cache_init_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
             result = helper.wait(timeout=600)
             if result.get("StatusCode") != 0:
@@ -1218,10 +1219,10 @@ with path.open('w') as output:
                 cap_drop=["ALL"],
                 cap_add=["FOWNER"],
                 security_opt=["no-new-privileges:true"],
-                labels=x11_helper_labels(
+                labels=gate_labels(x11_helper_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
@@ -1278,11 +1279,11 @@ with path.open('w') as output:
             return self.client.networks.create(
                 net_name,
                 driver="bridge",
-                labels=network_labels(
+                labels=gate_labels(network_labels(
                     self.resource_prefix,
                     profile_id,
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
         except DockerException as e:
             raise DockerSandboxError(
@@ -1402,14 +1403,14 @@ with path.open('w') as output:
                     net_name,
                     driver="bridge",
                     ipam=ipam,
-                    labels=media_network_labels(
+                    labels=gate_labels(media_network_labels(
                         network_labels(
                             self.resource_prefix,
                             profile_id,
                             deployment_id=self.deployment_instance_id,
                         ),
                         plan,
-                    ),
+                    )),
                 )
             except Exception:
                 with self._media_network_lock:
@@ -1883,13 +1884,13 @@ with path.open('w') as output:
                 environment=self._agent_socket_environment(
                     profile_id, runtime_instance_id
                 ),
-                labels=browser_labels(
+                labels=gate_labels(browser_labels(
                     self.resource_prefix,
                     profile_id,
                     snapshot["version"],
                     self._require_profile_number(profile_id),
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
             allowed_tcp = (
                 await asyncio.to_thread(self._resolved_endpoint, container, proxy)
@@ -2100,13 +2101,13 @@ with path.open('w') as output:
                 tmpfs={"/tmp": "rw,exec,nosuid,nodev,size=256m"},
                 volumes=volumes,
                 environment=env,
-                labels=stream_labels(
+                labels=gate_labels(stream_labels(
                     self.resource_prefix,
                     profile_id,
                     config_version,
                     self._require_profile_number(profile_id),
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
             allowed_tcp.extend(
                 await asyncio.to_thread(
@@ -2450,10 +2451,10 @@ with path.open('w') as output:
                     "/run": "rw,nosuid,nodev,size=4m",
                     "/tmp": "rw,nosuid,nodev,size=4m",
                 },
-                labels=policy_helper_labels(
+                labels=gate_labels(policy_helper_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
-                ),
+                )),
             )
             result = helper.wait(timeout=30)
             status_code = int(result.get("StatusCode", -1))

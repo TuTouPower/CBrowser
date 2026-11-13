@@ -559,9 +559,14 @@ class GatewayTopologyHarness:
             verify=False,
             trust_env=False,
         ) as api_http:
-            resp = await api_http.post("/api/v1/profiles", json={"name": name})
+            # Local media/session probes do not measure public IP lookup. Keep
+            # external GeoIP latency outside the unchanged readiness budget.
+            resp = await api_http.post(
+                "/api/v1/profiles", json={"name": name, "geoip": False}
+            )
             assert resp.status_code == 201, f"Failed to create profile: {resp.text}"
             profile_id = resp.json()["id"]
+            profile_number = resp.json()["display_number"]
 
             resp = await api_http.patch(
                 f"/api/v1/profiles/{profile_id}/runtime/desired-state",
@@ -578,7 +583,7 @@ class GatewayTopologyHarness:
         ) as sup_http:
             resp = await sup_http.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": profile_id, "config_version": 1},
+                json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
             )
             if resp.status_code != 200:
                 sup_logs = self.supervisor_container.logs().decode("utf-8")

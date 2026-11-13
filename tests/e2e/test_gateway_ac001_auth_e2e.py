@@ -240,3 +240,5 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
 
     finally:
         await harness.cleanup()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')

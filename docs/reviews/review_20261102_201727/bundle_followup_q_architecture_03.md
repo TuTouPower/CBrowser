@@ -7,16 +7,18 @@
 ## Findings
 
 - [Medium][95] src/backend/cbrowser/supervisor/artifact_forwarder.py:115-135 — DownloadArtifactForwarder 对无法解析/版本错位的下载事件文件静默永久丢弃：无日志、无隔离、游标持久标记已处理
-  - ID: f_followup_q_architecture_03_01; verification: static
-  - Evidence: artifact_forwarder.py:118-126：except (OSError, ValueError, ValidationError, UnicodeError) 后 event=None、key=f"unparsed:{event_file.name}"，except 分支内无任何 logger 调用; artifact_forwarder.py:128-135：event is None 时 _mark_processed 后 continue，_save_processed 将该标记以 0o600 原子写入 download_cursors.json 持久化；后续 forward_pending 经 _is_processed 永远跳过该文件名，即使文件内容已被修复; DownloadEventRecord 为 extra="forbid"（runtime_agent/protocol.py:73），Runtime Agent 与 Supervisor 版本错位时新版新增字段即触发此路径，已完成下载的 artifact 注册（/artifacts/downloads 投递）无声丢失
-  - Impact: 滚动替换或双版本并存期间，格式错位的 completed 下载事件不会被登记为 artifact，且不留任何可观测痕迹，运维无法发现、无法重放；与 EventForwarder 的 quarantine 做法和 EventStorage 的 fail-loud 做法相比，这是全仓磁盘信封中最差的失败姿态。
-  - Fix: 解析失败时至少：记录 warning（含文件名与错误类型）、把文件移入隔离目录或以独立 dead-letter 标记而非计入 processed 集合、且不要把 unparsed 标记持久化为终局状态（允许修复后重试）。
+
+    - ID: f_followup_q_architecture_03_01; verification: static
+    - Evidence: artifact_forwarder.py:118-126：except (OSError, ValueError, ValidationError, UnicodeError) 后 event=None、key=f"unparsed:{event_file.name}"，except 分支内无任何 logger 调用; artifact_forwarder.py:128-135：event is None 时 \_mark_processed 后 continue，\_save_processed 将该标记以 0o600 原子写入 download_cursors.json 持久化；后续 forward_pending 经 \_is_processed 永远跳过该文件名，即使文件内容已被修复; DownloadEventRecord 为 extra="forbid"（runtime_agent/protocol.py:73），Runtime Agent 与 Supervisor 版本错位时新版新增字段即触发此路径，已完成下载的 artifact 注册（/artifacts/downloads 投递）无声丢失
+    - Impact: 滚动替换或双版本并存期间，格式错位的 completed 下载事件不会被登记为 artifact，且不留任何可观测痕迹，运维无法发现、无法重放；与 EventForwarder 的 quarantine 做法和 EventStorage 的 fail-loud 做法相比，这是全仓磁盘信封中最差的失败姿态。
+    - Fix: 解析失败时至少：记录 warning（含文件名与错误类型）、把文件移入隔离目录或以独立 dead-letter 标记而非计入 processed 集合、且不要把 unparsed 标记持久化为终局状态（允许修复后重试）。
 
 - [Low][90] src/backend/cbrowser/supervisor/event_forwarder.py:117-133,168-178 — EventForwarder spool 信封无版本治理：extra=forbid 校验使版本错位时排队事件被整体隔离，且 schema 隔离分支无测试
-  - ID: f_followup_q_architecture_03_02; verification: static
-  - Evidence: emit_event 写入的 spool dict 无 version 键（event_forwarder.py:121-130），_validate_spooled_event 用 extra="forbid" 的 RuntimeEventReportRequest 校验（domain/models.py:488），任一未知字段即失败并 quarantine(reason="schema"); tests/unit/test_supervisor_event_delivery.py 与 tests/integration/test_normal_exit_replay.py 中无任何用例覆盖 quarantine 分支（grep quarantine 无命中），错位行为未被钉住; schemas/runtime/agent_protocol.json 的文档级 "version": "2.0.0" 从未写入 spool 文件或被读取侧校验，不能充当信封版本
-  - Impact: spool 的存在意义就是 API 不可达/进程替换期间保住事件；但容器滚动替换后若先升级写入方再回滚（或模型新增必填字段），排队中的 exit 事件会在重放时被整批隔离，恢复路径恰在版本切换这一最可能需要它的时刻失效。文件保留在 quarantine 可人工恢复，故定 Low。
-  - Fix: 为 spool 信封加显式 version 字段并在读取侧按版本做兼容/拒绝分支（或将模型改为 extra="ignore" + 必填字段显式校验的容忍策略，二选一并写明）；补一条向 spool 写入未知字段/缺字段文件的重放测试钉住选定行为。
+
+    - ID: f_followup_q_architecture_03_02; verification: static
+    - Evidence: emit_event 写入的 spool dict 无 version 键（event_forwarder.py:121-130），\_validate_spooled_event 用 extra="forbid" 的 RuntimeEventReportRequest 校验（domain/models.py:488），任一未知字段即失败并 quarantine(reason="schema"); tests/unit/test_supervisor_event_delivery.py 与 tests/integration/test_normal_exit_replay.py 中无任何用例覆盖 quarantine 分支（grep quarantine 无命中），错位行为未被钉住; schemas/runtime/agent_protocol.json 的文档级 "version": "2.0.0" 从未写入 spool 文件或被读取侧校验，不能充当信封版本
+    - Impact: spool 的存在意义就是 API 不可达/进程替换期间保住事件；但容器滚动替换后若先升级写入方再回滚（或模型新增必填字段），排队中的 exit 事件会在重放时被整批隔离，恢复路径恰在版本切换这一最可能需要它的时刻失效。文件保留在 quarantine 可人工恢复，故定 Low。
+    - Fix: 为 spool 信封加显式 version 字段并在读取侧按版本做兼容/拒绝分支（或将模型改为 extra="ignore" + 必填字段显式校验的容忍策略，二选一并写明）；补一条向 spool 写入未知字段/缺字段文件的重放测试钉住选定行为。
 
 ## evidence
 

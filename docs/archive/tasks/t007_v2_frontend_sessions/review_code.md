@@ -3,7 +3,7 @@
 - task：`t007_v2_frontend_sessions`
 - spec：`docs/tasks/t007_v2_frontend_sessions/task.md`
 - diff_anchor：`077778fef84f22312e6b18583c547c8b5f418617`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t007' diff 077778fef84f22312e6b18583c547c8b5f418617`
+- target：`git -C '<repo>_t007' diff 077778fef84f22312e6b18583c547c8b5f418617`
 - round：1
 - reviewed_at：2026-10-31T22:53:36+08:00
 

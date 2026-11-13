@@ -3,7 +3,7 @@
 - task：`t017_v2_frontend_convergence`
 - spec：`docs/tasks/t017_v2_frontend_convergence/task.md`
 - diff_anchor：`5252f75ab2bd726f65f98dfa0a644c9a64d53fb2`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t017' diff 5252f75ab2bd726f65f98dfa0a644c9a64d53fb2`
+- target：`git -C '<repo>_t017' diff 5252f75ab2bd726f65f98dfa0a644c9a64d53fb2`
 - round：1
 - reviewed_at：2026-11-03T05:21:17+08:00
 

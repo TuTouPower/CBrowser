@@ -3,7 +3,7 @@
 - task：`t033_frontend_toolchain_upgrade`
 - spec：`docs/tasks/t033_frontend_toolchain_upgrade/task.md`
 - diff_anchor：`483071a01e818ce94d6b51b70b8bc2f04b2a4f3f`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t033' diff 483071a01e818ce94d6b51b70b8bc2f04b2a4f3f`
+- target：`git -C '<repo>_t033' diff 483071a01e818ce94d6b51b70b8bc2f04b2a4f3f`
 - round：1
 - reviewed_at：2026-11-05T14:45:43+08:00
 
@@ -66,7 +66,7 @@ coverage = 4 / 5
 
 ## reviewer 复跑记录
 
-- `git -C /Users/karson/kar/code/CBrowser_t033 rev-parse --show-toplevel` → `/Users/karson/kar/code/CBrowser_t033`（落点校验通过）；`git -C ... log --oneline -3` → HEAD `483071a` 即 diff_anchor，故用 plain `git diff <anchor>`（不用 `...HEAD`，后者为空）。
+- `git -C <repo>_t033 rev-parse --show-toplevel` → `<repo>_t033`（落点校验通过）；`git -C ... log --oneline -3` → HEAD `483071a` 即 diff_anchor，故用 plain `git diff <anchor>`（不用 `...HEAD`，后者为空）。
 - `git -C ... status --short --untracked-files=all` → 35 个文件 staged（A/M/MM），无未跟踪交付文件（无 `??`），新交付 `.mise.toml` / `check_node.mjs` 已进 index、出现在 `git diff <anchor>` 中。
 - `git -C ... diff 483071a01e818ce94d6b51b70b8bc2f04b2a4f3f -- . ':!src/frontend/package-lock.json'` → 全量审查 36 个可读文件；`git -C ... diff --cached --stat` → 37 文件。
 - `git -C ... grep -n react-router-dom -- ':!src/frontend/package-lock.json'` → 命中仅 archive/reviews/plan/progress 等历史与说明文本，源码与 lockfile 零残留（`grep -c` on lockfile = 0）；`git -C ... grep -n 'no-experimental-webstorage\|NODE_OPTIONS'` → 命中 archive/d001/plan/task 历史及 `testing.md:124`（f003）。

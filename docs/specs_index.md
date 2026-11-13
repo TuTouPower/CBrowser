@@ -18,6 +18,6 @@
 |profile_management|t007, t013, t017, t020, t021, t023, t025, t035, t041, t037, t050, t053, t056, t058|2026-11-13|
 |fingerprint_platform|t041, t051, t053|2026-11-11|
 |ui_design_system|t036, t037, t047, t059|2026-11-13|
-|gate_verification|t044, t045, t046|2026-11-08|
+|gate_verification|t044, t045, t046, t060|2026-11-11|
 |proxy_management|t038, t052, t056|2026-11-12|
 |profile_preview|t040|2026-11-07|

@@ -666,3 +666,5 @@ async def test_e2e_ac010_gateway_topology_runtime_in_secure_mode_with_chrome(
             )
     finally:
         await harness.cleanup()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')

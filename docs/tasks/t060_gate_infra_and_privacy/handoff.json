@@ -1,0 +1,16 @@
+{
+  "tid": "t060",
+  "attempt": 1,
+  "execution_id": "f47d1f3fb2344126ad7f50cc98e11abd",
+  "status": "done",
+  "branch": "t060_gate_infra_and_privacy",
+  "base_sha": "12380b25a51fc0dc51a7b00306e93684715f6b3f",
+  "tests": "L 与最终并发 M 均通过；后端 unit 1654 passed / 0 failed，integration 178 passed / 0 failed / 18 host skips，frontend 499 passed / 0 failed，contract 257 passed / 0 failed / 1 policy skip；设计 lint/check、类型与构建、协议、requirements、五镜像包检查通过。全仓 Markdown、新增/重写脚本与回归 Ruff、diff whitespace 检查通过。",
+  "blackbox": "真实 Docker/Chrome E2E 103 passed / 0 failed / 2 optional probe skips；独立真实引擎 2 passed / 0 skipped，内部 chain 16 passed，L0–L6 完整；独立 Chromium 与目标引擎容器补充集成链 18 passed / 0 skipped。五镜像原生上下文 5 passed，双进程锁与真实活跃容器/网络保护已验。",
+  "review": "Round1 code/test均FAIL，5条finding全部修复；Round2 code/test均PASS，无新finding，两轴13/13 AC独立复核成立。代码轴102、测试轴147项独立验证通过，最终scope=c899ece7b48f99a1。",
+  "review_scope": "c899ece7b48f99a1",
+  "pending": [],
+  "findings": [
+    "d037"
+  ]
+}

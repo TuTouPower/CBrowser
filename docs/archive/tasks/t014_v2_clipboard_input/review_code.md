@@ -3,7 +3,7 @@
 - task：`t014_v2_clipboard_input`
 - spec：`docs/tasks/t014_v2_clipboard_input/task.md`
 - diff_anchor：`6d28f59bc554743fa7e4cd3c987173a4b1b41df7`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t014' diff 6d28f59bc554743fa7e4cd3c987173a4b1b41df7`
+- target：`git -C '<repo>_t014' diff 6d28f59bc554743fa7e4cd3c987173a4b1b41df7`
 - round：1
 - reviewed_at：2026-11-02T13:55:00+08:00
 

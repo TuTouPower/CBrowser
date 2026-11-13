@@ -3,7 +3,7 @@
 - task：`t027_release_controller_readiness`
 - spec：`docs/tasks/t027_release_controller_readiness/task.md`
 - diff_anchor：`1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
-- target：`git -C '/home/hatch/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
+- target：`git -C '<home>/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
 - round：1
 - reviewed_at：2026-11-04T11:29:45+08:00
 
@@ -84,7 +84,7 @@ verdict: FAIL
 ## Round 2 (2026-11-04T11:36:38+08:00)
 
 - round：2
-- target：`git -C '/home/hatch/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
+- target：`git -C '<home>/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
 
 reviewed_scope: dadc672d2cc85ac6
 
@@ -134,7 +134,7 @@ verdict: PASS
 ## Round 3 (2026-11-04T11:41:00+08:00)
 
 - round：3
-- target：`git -C '/home/hatch/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
+- target：`git -C '<home>/workspace/CBrowser_t027' diff 1e9c7ba73626ae7a00f56fa0578eb06beda98c61`
 
 reviewed_scope: d7fb73e3494f6c66
 

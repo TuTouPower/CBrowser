@@ -24,7 +24,7 @@ import websockets
 from e2e_env import require_e2e_env
 from gateway_probe.topology import GatewayTopologyHarness
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 
 async def _setup(tmp_path: Path):

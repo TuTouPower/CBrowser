@@ -29,7 +29,7 @@ from e2e_env import require_e2e_env
 from wait import poll_until, wait_until
 
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')]
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = next(

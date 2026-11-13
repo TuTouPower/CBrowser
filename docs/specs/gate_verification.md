@@ -1,6 +1,6 @@
 # 门禁与验证体系
 
-需求级 spec，累积 t044。权威入口为 `docs/blueprint/testing.md` 的 `doctor_cmd` / `test_cmd` / `blackbox_verify` 章节命令；本文定义行为契约。
+需求级 spec，累积 t044、t045、t046、t060。权威入口为 `docs/blueprint/testing.md` 的 `doctor_cmd` / `test_cmd` / `blackbox_verify` 章节命令；本文定义行为契约。
 
 ## 1. 并行执行（t044）
 
@@ -48,7 +48,7 @@
 ## 9. 门禁稳定性与 E2E 遗留缺陷收口（t045）
 
 - `run_gate_suite` 并行阶段（c1）与串行阶段（c2）对 pytest exit 5（no tests collected）对称处理：用例全标 `serial` 的 suite 不再假失败；两阶段都为空时判失败并列出缺项，junit 仍由 `scripts/merge_junit.py` 合并串行结果。
-- 门禁启动与 `SIGTERM` / `SIGINT` / `EXIT` 中断执行同一套清理：`scripts/gate_container_cleanup.py` 按精确测试前缀白名单清理上一轮遗留容器与网络；`cbrowser-api` / `cbrowser-gateway` / `cbrowser-supervisor` / `cbrowser-caddy` 生产部署容器与其它会话命名资源不删。前缀匹配为纯函数，Docker 边界由单测 stub 覆盖。
+- 门禁启动与 `SIGTERM` / `SIGINT` / `EXIT` 中断执行同一套清理：`scripts/gate_container_cleanup.py` 仅按运行标签和本地文件租约清理已结束运行的容器与网络，不再按名称授权；活跃或未知运行资源不删。归属选择由纯函数与真实 Docker 并发验证覆盖。
 - 前端 E2E 文件内共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈，天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
 - Selkies wheel 从 `CBROWSER_SELKIES_WHEEL_CACHE` 指向的本地已锁定 SHA256 缓存读取；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起任何公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项、非必跑模式才 skip，不回落公网。
 - 负载下时序判定统一改为就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 兜底、不上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
@@ -59,3 +59,15 @@
 - 整个 `tests/e2e/` 目录严禁单个测试文件自建 Docker 编排、私有 API 子进程管理或自写 `finally: remove` 清理循环。
 - `tests/e2e/test_runtime_coordinator_e2e.py` 完整重构接入统一的 `FrontendAppTopologyHarness`；所有容器与网络资源纳入统一生命周期管理与 `cleanup_prefixed_resources` / `CBROWSER_E2E_DELETION_LOG` 结构化审计。
 - `tests/e2e/test_stream_selkies_tokens_e2e.py` 中协议探针客户端对被驱逐连接使用并发事件监听，确保在握手期间实时接收 Close Frame，保持 4001 与 `Superseded by a new connection.` 精确强断言，消除底层 Transport 异常掐断导致的 1006 假失败。
+
+## 11. 门禁与隐私边界（t060）
+
+- venv 检查、重建和安装持排他 preparation 锁；测试期持共享运行锁。并发热门禁可同时完成，任何重建不能破坏运行读者。
+- 同 checkout 互斥使用生成产物，不同 worktree 继续并发共享 venv。测试容器不继承宿主 Docker 配置代理；内部流量直连隔离网络。
+- 每轮 run_id 贯穿 CLI / SDK / Supervisor 创建的容器与网络。启动清理只删除已登记且租约结束的运行资源，Docker 归属查询失败不得回退到名称匹配。
+- protocol drift 检查作为首个 evidence suite；失败仍生成完整 manifest。pytest / Vitest 收集下限见 testing.md，低于基线、报告缺失或损坏即失败。完整门禁缺少任一运行镜像时 image_packages 为 skipped 且总失败。
+- E2E 必跑模式按模块镜像 marker 并集检查，未声明的用例仍按全部前置检查；Browser / Stream 停止观测须分别为不存在，Docker API 异常单列为错误。
+- evidence CLI 拒绝非法 image ID、缺失或与预期 os/arch 不符的元数据；shell 预检使用同一验证实现。
+- Node engines 的 `>` 严格拒绝相等版本；镜像 requirements marker 不可解析时失败，marker 环境全部取目标镜像。
+- 五个镜像构建上下文排除 bytecode；Supervisor services 仅准入实际 COPY 的文件。Artifact 转发保留宿主绝对路径输入中的相对子目录，并拒绝越界。
+- 当前 tracked 树及新文件不含开发者家路径与凭据；历史文档原位改写为占位符，删除隐私豁免机制，不改写 Git 历史。交接只保留最新一节，branch 与 head_commit 记录写入时真实值。

@@ -3,7 +3,7 @@
 - task：`t015_v2_media_link_simplification`
 - spec：`docs/tasks/t015_v2_media_link_simplification/task.md`
 - diff_anchor：`9ee4a1146be8e42bc552f1150beb8063582ab466`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t015' diff 9ee4a1146be8e42bc552f1150beb8063582ab466`
+- target：`git -C '<repo>_t015' diff 9ee4a1146be8e42bc552f1150beb8063582ab466`
 - round：1
 - reviewed_at：2026-11-02T23:50:52+08:00
 
@@ -313,7 +313,7 @@ reviewed_scope: 10dbf23b358176db
 
 | AC | 类别 | 证据 |
 |---|---|---|
-| AC-001 | trust_prior | 复核 `docs/spikes/s011_direct_media_validation/report.md`、`docs/findings/d026_direct_media_local_only.md` 与 `/Users/karson/kar/code/.scratch/s011/.../media_proof.json`、`/Users/karson/kar/code/.scratch/t015_stream_e2e/basetemp2/.../media_proof.json`：127.0.0.1 host 候选、音频/视频增长、可见性、resume、IME 证据均存在；未在本轮重跑真实 Chrome 部署 |
+| AC-001 | trust_prior | 复核 `docs/spikes/s011_direct_media_validation/report.md`、`docs/findings/d026_direct_media_local_only.md` 与 `<home>/kar/code/.scratch/s011/.../media_proof.json`、`<home>/kar/code/.scratch/t015_stream_e2e/basetemp2/.../media_proof.json`：127.0.0.1 host 候选、音频/视频增长、可见性、resume、IME 证据均存在；未在本轮重跑真实 Chrome 部署 |
 | AC-002 | re_verified | 活跃源码/config/schemas/scripts grep 无运行时 TURN/coturn/rtc_config/ice_restart；`tests/unit` 491 passed、`tests/integration` 85 passed |
 | AC-003 | re_verified（有 minor 提示） | `tests/integration` 85 passed，含握手拒绝、身份隔离与替换用例；替换测试丢补充断言见 f012 |
 | AC-004 | re_verified（有 minor 提示） | 重跑 supervised heartbeat/policy 重启测试通过；未断言错误日志与完整退避序列（f005 残余） |

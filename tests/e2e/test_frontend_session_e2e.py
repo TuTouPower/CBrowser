@@ -30,7 +30,7 @@ from gateway_probe.browser_oracle import browser_eval  # noqa: E402
 from playwright.async_api import Page, async_playwright  # noqa: E402
 from wait import poll_until  # noqa: E402
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger("cbrowser.frontend_session.e2e")
 

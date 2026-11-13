@@ -3,7 +3,7 @@
 - task：`t018_v2_test_gates_hygiene`
 - spec：`docs/tasks/t018_v2_test_gates_hygiene/task.md`
 - diff_anchor：`5a3da225fbccf59d410e708a3754e7ab2160e12b`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t018' diff 5a3da225fbccf59d410e708a3754e7ab2160e12b`
+- target：`git -C '<repo>_t018' diff 5a3da225fbccf59d410e708a3754e7ab2160e12b`
 - round：1
 - reviewed_at：2026-11-03T10:44:35+08:00
 
@@ -80,7 +80,7 @@ reviewed_scope: bdba5aa92c5411d1
 - 严重度：important
 - 锚点：AC-007
 - 位置：`tests/unit/test_repo_hygiene.py:24`、`docs/blueprint/conventions.md:29`
-- 问题：守卫测试在扫描前跳过所有 `docs/reviews/` 文件，但 `docs/reviews` 不属于 `docs/archive`，AC-007 与 conventions 都要求“已跟踪的非归档文本文件”不含家目录绝对路径。现存 `docs/reviews/review_20261101_075819/review_opencode_cpa_gemini_3_8_flash.md:348` 仍含 `/Users/karson/...`；更关键的是，新增的审阅文档写入同样路径也会被整体跳过，守卫无法阻止后续泄露。A44 只豁免历史快照，不能推导出整个目录永久豁免。
+- 问题：守卫测试在扫描前跳过所有 `docs/reviews/` 文件，但 `docs/reviews` 不属于 `docs/archive`，AC-007 与 conventions 都要求“已跟踪的非归档文本文件”不含家目录绝对路径。现存 `docs/reviews/review_20261101_075819/review_opencode_cpa_gemini_3_8_flash.md:348` 仍含 `<home>/...`；更关键的是，新增的审阅文档写入同样路径也会被整体跳过，守卫无法阻止后续泄露。A44 只豁免历史快照，不能推导出整个目录永久豁免。
 - 建议：只 allowlist 历史文件，或先把历史 review 快照迁入 `docs/archive/reviews/` 后扫描其余 `docs/reviews`；至少让新增审阅文件受守卫约束。
 
 ### t018_code_f010 - ProductionGatewayService.stop 未关闭 ApiRuntimeLookup 的 httpx 客户端

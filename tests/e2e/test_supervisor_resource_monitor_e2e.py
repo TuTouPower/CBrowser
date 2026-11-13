@@ -145,3 +145,5 @@ async def test_monitor_samples_real_container_without_blocking_loop(tmp_path):
         if container is not None:
             container.remove(force=True)
         client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_STREAM_TEST_IMAGE')

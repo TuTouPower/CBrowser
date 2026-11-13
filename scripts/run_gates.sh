@@ -2,6 +2,10 @@
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
+export GATE_PYTHON_MINOR="3.15"
+if [ "${CBROWSER_GATE_ENV_READY:-0}" != "1" ]; then
+  exec python3 "$REPO_ROOT/scripts/gate_run.py" "$@"
+fi
 
 # t044 AC-009: reuse a persistent shared uv cache and gate venv across
 # runs. A changed gate-requirements.txt invalidates the venv stamp, so a
@@ -39,25 +43,17 @@ mkdir -p "$TMPDIR"
 cd "$REPO_ROOT"
 
 EVIDENCE_DIR="${CBROWSER_GATE_EVIDENCE_DIR:-}"
-GATE_PYTHON_MINOR="3.15"
 PY="$GATE_VENV/bin/python"
 WORKERS="${CBROWSER_GATE_WORKERS:-4}"
-REQ_HASH="$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' scripts/gate-requirements.txt)"
-STAMP="$GATE_VENV/.requirements.sha256"
+
 
 # Fixed order keeps evidence reproducible even though the backend and
 # frontend groups run concurrently (t044 AC-004/AC-008).
-SUITE_ORDER="requirements_check contract unit integration design_lint design_check frontend_test frontend_build"
+SUITE_ORDER="protocol_drift_check requirements_check contract unit integration design_lint design_check frontend_test frontend_build"
 
 prepare_env() {
-  if [ -x "$PY" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$REQ_HASH" ]; then
-    echo "gate env: reuse cached venv $GATE_VENV (no dependency download)"
-    return 0
-  fi
-  echo "gate env: build venv $GATE_VENV (python $GATE_PYTHON_MINOR)"
-  uv venv --clear --python "$GATE_PYTHON_MINOR" "$GATE_VENV"
-  uv pip install --python "$PY" -r scripts/gate-requirements.txt
-  printf '%s' "$REQ_HASH" > "$STAMP"
+  # gate_run.py owns the shared venv lease for this process and all suites.
+  echo "gate env: reuse cached venv $GATE_VENV (no dependency download)"
 }
 
 # The unit gate and the E2E adapter suites require the pinned wheel bytes
@@ -97,7 +93,20 @@ run_gate_suite() {
   if [ "$c1" = 5 ] && [ "$c2" = 5 ]; then return 5; fi
   if [ "$c1" != 0 ] && [ "$c1" != 5 ]; then return "$c1"; fi
   if [ "$c2" != 0 ] && [ "$c2" != 5 ]; then return "$c2"; fi
-  return 0
+  "$PY" scripts/check_gate_count.py --suite "$(basename "$target")" --junit "$junit"
+}
+
+run_contract_suite() {
+  local junit="$1" code=0
+  "$PY" -m pytest .repo_template/tests -q -m contract --junitxml="$junit" || code=$?
+  [ "$code" = 0 ] || return "$code"
+  "$PY" scripts/check_gate_count.py --suite contract --junit "$junit"
+}
+
+run_frontend_test() {
+  local report="$SCRATCH/frontend_tests.json"
+  npm test --prefix src/frontend -- --reporter=default --reporter=json --outputFile="$report" || return "$?"
+  "$PY" scripts/check_gate_count.py --suite frontend_test --vitest "$report"
 }
 
 # run_suite <name> <display command> <command...>
@@ -135,7 +144,10 @@ verify_image_packages_all() {
     var="${pair%%:*}"
     req="${pair#*:}"
     id="${!var:-}"
-    if [ -n "$id" ]; then
+    if [ -z "$id" ]; then
+      echo "image_packages: skipped ($var unset)" >&2
+      rc=77
+    else
       "$PY" scripts/verify_image_packages.py --image "$id" --requirements "$req" || rc=1
     fi
   done
@@ -244,7 +256,6 @@ fi
 # directory through the dedicated CBROWSER_E2E_FONTS_DIR instead.
 unset CBROWSER_FONTS_DIR
 
-protocol_drift_check
 
 if [ "${CBROWSER_REQUIRE_REAL_ENGINE:-0}" != "1" ]; then
   echo "gate: real_engine NOT_RUN (set CBROWSER_REQUIRE_REAL_ENGINE=1 for the container probe suite)"
@@ -255,13 +266,13 @@ if [ -n "$EVIDENCE_DIR" ]; then
   # t045: attribute any mid-test container disappearance to its cleanup
   # caller + xdist worker in the evidence directory.
   export CBROWSER_E2E_DELETION_LOG="$EVIDENCE_DIR/container_deletions.jsonl"
+  run_suite protocol_drift_check "protocol_drift_check" protocol_drift_check
   run_suite requirements_check "scripts/generate_requirements.sh --check" \
     bash scripts/generate_requirements.sh --check
 
   backend_group() {
     run_suite contract "$PY -m pytest .repo_template/tests -q -m contract" \
-      "$PY" -m pytest .repo_template/tests -q -m contract \
-      --junitxml="$EVIDENCE_DIR/junit/contract.xml"
+      run_contract_suite "$EVIDENCE_DIR/junit/contract.xml"
     run_suite unit "env PYTHONPATH=src/backend pytest tests/unit -q -n $WORKERS" \
       run_gate_suite tests/unit src/backend "$EVIDENCE_DIR/junit/unit.xml" "$SCRATCH/basetemp/unit"
     run_suite integration "env PYTHONPATH=src/backend pytest tests/integration -q -n $WORKERS" \
@@ -270,7 +281,7 @@ if [ -n "$EVIDENCE_DIR" ]; then
   frontend_group() {
     run_suite design_lint "npm run design:lint --prefix src/frontend" npm run design:lint --prefix src/frontend
     run_suite design_check "npm run design:check --prefix src/frontend" npm run design:check --prefix src/frontend
-    run_suite frontend_test "npm test --prefix src/frontend" npm test --prefix src/frontend
+    run_suite frontend_test "npm test --prefix src/frontend" run_frontend_test
     run_suite frontend_build "npm run build --prefix src/frontend" npm run build --prefix src/frontend
   }
   backend_group &
@@ -295,16 +306,18 @@ if [ -n "$EVIDENCE_DIR" ]; then
 fi
 
 # ---------------- default mode: serial fail-fast ----------------
+protocol_drift_check
 bash scripts/generate_requirements.sh --check
-"$PY" -m pytest .repo_template/tests -q -m contract
+run_contract_suite "$SCRATCH/junit/contract.xml"
 run_gate_suite tests/unit src/backend "$SCRATCH/junit/unit.xml" "$SCRATCH/basetemp/unit"
 run_gate_suite tests/integration src/backend "$SCRATCH/junit/integration.xml" "$SCRATCH/basetemp/integration"
 npm run design:lint --prefix src/frontend
 npm run design:check --prefix src/frontend
-npm test --prefix src/frontend
+run_frontend_test
 npm run build --prefix src/frontend
 
 if [ "${CBROWSER_RUN_E2E:-0}" = "1" ]; then
+  verify_image_packages_all
   run_e2e_suite "$SCRATCH/junit/e2e.xml" "$SCRATCH/basetemp/e2e"
 fi
 

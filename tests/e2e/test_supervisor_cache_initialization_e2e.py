@@ -74,3 +74,5 @@ async def test_fresh_pinned_engine_and_geoip_cache_complete_once(tmp_path):
         ):
             container.remove(force=True)
         client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')

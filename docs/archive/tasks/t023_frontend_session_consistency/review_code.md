@@ -3,7 +3,7 @@
 - task：`t023_frontend_session_consistency`
 - spec：`docs/tasks/t023_frontend_session_consistency/task.md`
 - diff_anchor：`aca792e864548c0c234baf34ca49ef08b821c418`
-- target：`git -C '/home/hatch/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`
+- target：`git -C '<home>/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`
 - round：1
 - reviewed_at：2026-11-04T04:47:31+08:00
 
@@ -65,7 +65,7 @@ verdict: FAIL
 
 - round：2
 - reviewed_at：2026-11-04T04:58:10+08:00
-- target：`git -C '/home/hatch/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`（全量回归扫描）＋ Round 1 四条 finding 的修复代码与新增测试逐项复核
+- target：`git -C '<home>/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`（全量回归扫描）＋ Round 1 四条 finding 的修复代码与新增测试逐项复核
 
 reviewed_scope: 1b7466a84b7e073f
 
@@ -101,7 +101,7 @@ verdict: PASS
 
 - round：3（定向复审）
 - reviewed_at：2026-11-04T05:01:52+08:00
-- target：`git -C '/home/hatch/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`，范围严格限定于 Round 2 唯一残余 t023_code_f004 的修复复核（`hasValidCoreFields` 抽取）、校验语义比对与自 Round 2 指纹以来的 diff 漂移检查
+- target：`git -C '<home>/workspace/CBrowser_t023' diff aca792e864548c0c234baf34ca49ef08b821c418`，范围严格限定于 Round 2 唯一残余 t023_code_f004 的修复复核（`hasValidCoreFields` 抽取）、校验语义比对与自 Round 2 指纹以来的 diff 漂移检查
 
 reviewed_scope: 03ee67642d1ffbd4
 

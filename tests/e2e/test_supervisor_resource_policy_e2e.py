@@ -335,3 +335,5 @@ def test_docker_background_profile_with_high_cpu_not_throttled(docker_client):
                 logger.warning(
                     "Container remove failed for %s: %s", cid, type(exc).__name__
                 )
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_STREAM_TEST_IMAGE')

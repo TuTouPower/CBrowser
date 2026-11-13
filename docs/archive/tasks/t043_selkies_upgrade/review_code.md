@@ -3,7 +3,7 @@
 - task：`t043_selkies_upgrade`
 - spec：`docs/tasks/t043_selkies_upgrade/task.md`
 - diff_anchor：`2e9558147b6c8ce0a6357115e23c003593f37327`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t043' diff 2e9558147b6c8ce0a6357115e23c003593f37327`
+- target：`git -C '<repo>_t043' diff 2e9558147b6c8ce0a6357115e23c003593f37327`
 - round：1
 - reviewed_at：2026-11-05T19:21:12+08:00
 

@@ -30,10 +30,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ENABLED = os.environ.get("CBROWSER_T029_PROBE_E2E") == "1"
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.skipif(
     not ENABLED,
     reason="t029 probe recheck runs only under CBROWSER_T029_PROBE_E2E=1 (t032)",
-)
+), pytest.mark.e2e_images()]
 
 
 def _run_pytest_subset(report_dir: Path, *node_ids: str) -> None:

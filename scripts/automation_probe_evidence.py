@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 REQUIRED_PROBE_NODE_IDS: tuple[str, ...] = (
-    "tests/e2e/test_automation_compatibility_probe_e2e.py"
-    "::test_t032_probe_chain_and_dialog_recheck",
-    "tests/e2e/test_automation_compatibility_probe_e2e.py"
-    "::test_t032_probe_levels_recheck",
+    ("tests/e2e/test_automation_compatibility_probe_e2e.py"
+     "::test_t032_probe_chain_and_dialog_recheck"),
+    ("tests/e2e/test_automation_compatibility_probe_e2e.py"
+     "::test_t032_probe_levels_recheck"),
 )
 
 _IMAGE_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -78,13 +78,14 @@ def preflight_problems(
     xvfb_present: bool,
     permissions_ok: bool,
     report_dir_empty: bool,
+    expected_platform: str = "linux/arm64",
 ) -> list[str]:
     problems: list[str] = []
     if not image_id or not _IMAGE_ID_RE.match(image_id):
         problems.append("probe image must be an immutable sha256:<64 hex> ID")
-    if image_os_arch != "linux/arm64":
+    if image_os_arch != expected_platform:
         problems.append(
-            f"probe image must be linux/arm64, got {image_os_arch!r}"
+            f"probe image must be {expected_platform}, got {image_os_arch!r}"
         )
     if not engine_present:
         problems.append("selected target engine executable missing")
@@ -133,14 +134,21 @@ def evaluate_evidence(
     image_identity: dict | None,
     selected_node_ids: list[str],
     log_paths: list[str] | None = None,
+    expected_platform: str = "linux/arm64",
 ) -> ProbeVerdict:
     reasons: list[str] = [f"preflight: {problem}" for problem in preflight]
     if interrupted:
         reasons.append("interrupted: probe run did not finish")
     if exit_code != 0:
         reasons.append(f"exit_code: probe pytest returned {exit_code}")
-    if not image_identity:
-        reasons.append("image_identity: missing from evidence")
+    identity = image_identity if isinstance(image_identity, dict) else {}
+    for problem in preflight_problems(
+        image_id=identity.get("id"),
+        image_os_arch=f"{identity.get('os')}/{identity.get('architecture')}",
+        engine_present=True, xvfb_present=True, permissions_ok=True, report_dir_empty=True,
+        expected_platform=expected_platform,
+    ):
+        reasons.append(f"image_identity: {problem}")
 
     required = set(REQUIRED_PROBE_NODE_IDS)
     selection_missing = sorted(required - set(selected_node_ids))
@@ -221,6 +229,7 @@ def _lines(path: Path) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--expected-platform", default="linux/arm64")
     parser.add_argument("--junit", required=True)
     parser.add_argument("--image-json", required=True)
     parser.add_argument("--exit-code", type=int, required=True)
@@ -243,14 +252,22 @@ def main(argv: list[str] | None = None) -> int:
         except (json.JSONDecodeError, OSError):
             image_identity = None
 
+    identity = image_identity if isinstance(image_identity, dict) else {}
+    preflight = preflight_problems(
+        image_id=identity.get("id"),
+        image_os_arch=f"{identity.get('os')}/{identity.get('architecture')}",
+        engine_present=True, xvfb_present=True, permissions_ok=True, report_dir_empty=True,
+        expected_platform=args.expected_platform,
+    )
     verdict = evaluate_evidence(
         exit_code=args.exit_code,
         interrupted=args.interrupted,
-        preflight=_lines(Path(args.preflight)) if args.preflight else [],
+        preflight=preflight + (_lines(Path(args.preflight)) if args.preflight else []),
         junit_text=junit_text,
         image_identity=image_identity,
         selected_node_ids=_lines(Path(args.selected)),
         log_paths=args.log,
+        expected_platform=args.expected_platform,
     )
     Path(args.output).write_text(
         json.dumps(verdict.to_dict(), indent=2) + "\n", encoding="utf-8"

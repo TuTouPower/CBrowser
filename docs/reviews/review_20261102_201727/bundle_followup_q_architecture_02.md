@@ -7,10 +7,10 @@
 ## Findings
 
 - [Medium][90] tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile；docs/guides/supervisor_validation.md:19 — v2 API 常驻服务的唯一镜像定义是测试 fixture，验证指南将其列为正式构建入口
-  - ID: f_followup_q_architecture_02_01; verification: static
-  - Evidence: 全仓 Dockerfile 清单核对：config/docker/ 下有 supervisor/gateway/stream/browser 四个 v2 runtime 的生产 Dockerfile，唯独 API 没有；API 镜像定义仅存在于 tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile。; docs/guides/supervisor_validation.md:19 将该 fixture Dockerfile 与 supervisor 生产 Dockerfile 并列为『三个构建入口』，未标注其测试属性。
-  - Impact: 生产与测试的边界在 API 这一常驻服务上完全重合：任何想在 fixture 之外运行 v2 的人只能借用测试镜像定义（其依赖与上下文按测试需要裁剪，如指南所述为 arm64 冷启动补 greenlet），且没有生产侧的版本/钉版治理点；这也是 f_global_architecture_03『拓扑只存在于 fixture』的一个具体锚点。
-  - Fix: 在 t012 落地前，至少把 API 的生产 Dockerfile 迁入 config/docker/api_runtime/ 并让 fixture 改为消费它（或显式继承），使五个常驻服务的镜像定义同处一地、同一治理方式。（验证：config/docker/ 下出现 api_runtime/Dockerfile；fixture 改为引用它；指南同步更新构建入口清单。）
+    - ID: f_followup_q_architecture_02_01; verification: static
+    - Evidence: 全仓 Dockerfile 清单核对：config/docker/ 下有 supervisor/gateway/stream/browser 四个 v2 runtime 的生产 Dockerfile，唯独 API 没有；API 镜像定义仅存在于 tests/fixtures/supervisor_container_probe/api_runtime.Dockerfile。; docs/guides/supervisor_validation.md:19 将该 fixture Dockerfile 与 supervisor 生产 Dockerfile 并列为『三个构建入口』，未标注其测试属性。
+    - Impact: 生产与测试的边界在 API 这一常驻服务上完全重合：任何想在 fixture 之外运行 v2 的人只能借用测试镜像定义（其依赖与上下文按测试需要裁剪，如指南所述为 arm64 冷启动补 greenlet），且没有生产侧的版本/钉版治理点；这也是 f_global_architecture_03『拓扑只存在于 fixture』的一个具体锚点。
+    - Fix: 在 t012 落地前，至少把 API 的生产 Dockerfile 迁入 config/docker/api_runtime/ 并让 fixture 改为消费它（或显式继承），使五个常驻服务的镜像定义同处一地、同一治理方式。（验证：config/docker/ 下出现 api_runtime/Dockerfile；fixture 改为引用它；指南同步更新构建入口清单。）
 
 ## evidence
 

@@ -3,7 +3,7 @@
 - task：`t016_v2_backend_hardening`
 - spec：`docs/tasks/t016_v2_backend_hardening/task.md`
 - diff_anchor：`fb6185c46f41500a9089e526a1773774a7cd6c67`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t016' diff fb6185c46f41500a9089e526a1773774a7cd6c67`
+- target：`git -C '<repo>_t016' diff fb6185c46f41500a9089e526a1773774a7cd6c67`
 - round：1
 - reviewed_at：2026-11-03T03:22:45+08:00
 

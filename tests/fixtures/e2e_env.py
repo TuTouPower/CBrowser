@@ -23,6 +23,23 @@ REQUIRED_E2E_ENV = {
 }
 
 
+def required_e2e_names(items) -> set[str]:
+    """Union the collected cases' image declarations; unmarked is full."""
+    required: set[str] = set()
+    for item in items:
+        markers = list(item.iter_markers("e2e_images"))
+        if not markers:
+            return set(REQUIRED_E2E_ENV)
+        for marker in markers:
+            for name in marker.args:
+                if not is_image_env_var(name):
+                    raise pytest.UsageError(f"unknown E2E image declaration: {name}")
+                required.add(name)
+    if "CBROWSER_RUNTIME_TEST_IMAGE" in required:
+        required.update(("CBROWSER_RUNTIME_ENGINE_CACHE", "CBROWSER_RUNTIME_GEOIP_CACHE"))
+    return required
+
+
 def _required_mode() -> bool:
     return os.environ.get("CBROWSER_E2E_REQUIRED") == "1"
 
@@ -215,6 +232,7 @@ def _docker_image_exists(image_id: str) -> bool:
 def image_identity_problems(
     environ: Mapping[str, str] | None = None,
     image_exists: Callable[[str], bool] | None = None,
+    names: set[str] | None = None,
 ) -> list[str]:
     """Fail-closed identity checks for every E2E image variable that is set.
 
@@ -227,7 +245,7 @@ def image_identity_problems(
     env = os.environ if environ is None else environ
     exists = _docker_image_exists if image_exists is None else image_exists
     problems: list[str] = []
-    for name in REQUIRED_E2E_ENV:
+    for name in (REQUIRED_E2E_ENV if names is None else names):
         if not is_image_env_var(name):
             continue
         value = env.get(name)

@@ -200,3 +200,5 @@ def test_delete_intent_resumes_after_real_process_restart(
         assert not artifact_file.exists()
     finally:
         proc.stop()
+
+pytestmark = pytest.mark.e2e_images()

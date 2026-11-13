@@ -30,11 +30,11 @@ cf343324d087a3534a01fce66ea5796cd7cfecf59167d742636e29a9e5c3adb1  probe_work/cle
 
 | 步骤 | 执行命令 | 耗时 | 退出码 | 判定 |
 |---|---|---|---|---|
-| **1. 启动 Coturn** | `/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/review/.scratch/split_rtc_review/probe_work/start_coturn.sh` | 2.8s | 0 | 成功启动独立网络与私网 IP 172.29.0.10 |
-| **2. 启动服务容器** | `/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/review/.scratch/split_rtc_review/stage2_containers.sh` | 3.1s | 0 | 浏览器与 Selkies 流服务容器就绪，辅助控制端口 18092 响应正常 |
+| **1. 启动 Coturn** | `<repo>/.scratch/v2_orchestration/review/.scratch/split_rtc_review/probe_work/start_coturn.sh` | 2.8s | 0 | 成功启动独立网络与私网 IP 172.29.0.10 |
+| **2. 启动服务容器** | `<repo>/.scratch/v2_orchestration/review/.scratch/split_rtc_review/stage2_containers.sh` | 3.1s | 0 | 浏览器与 Selkies 流服务容器就绪，辅助控制端口 18092 响应正常 |
 | **3. 双代重启正常探针** | `TMPDIR=.../tmp uv run --no-project --with playwright --with websockets python3 stage2_media_restart_probe.py` | 17.5s | 0 | 验证双代重启、对象引用不变性与换代后独立媒体流量增长 |
 | **4. 单侧失效对抗探针** | `TMPDIR=.../tmp uv run --no-project --with playwright --with websockets python3 stage2_adversarial_probe.py` | 33.3s | 1 | 契约预期退出码 1（两组单侧失效均被有效拦截，无 False Green） |
-| **5. 资源清理** | `/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/review/.scratch/split_rtc_review/probe_work/cleanup.sh` | 1.9s | 0 | `cbrowser-spike-rtc-split-*` 容器、网络与卷全部清理完毕 |
+| **5. 资源清理** | `<repo>/.scratch/v2_orchestration/review/.scratch/split_rtc_review/probe_work/cleanup.sh` | 1.9s | 0 | `cbrowser-spike-rtc-split-*` 容器、网络与卷全部清理完毕 |
 
 ---
 

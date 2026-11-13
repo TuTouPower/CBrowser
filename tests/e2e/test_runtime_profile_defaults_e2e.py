@@ -446,3 +446,5 @@ class TestRuntimeProfileDefaultsE2E:
         """Runner consumes the flag without an explicit helper call."""
         result = _run_docker_e2e("runtime_startup_defaults")
         assert result["status"] == "PASS"
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE')

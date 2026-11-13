@@ -2,7 +2,7 @@
 
 ## Summary
 
-怀疑（实现疏漏）不成立：克隆沿用源 fingerprint_seed 是仓内两处权威文档明文规定的产品定义，且实现与之完全一致。生效 spec（docs/specs/profile_management.md「复制与重置」节）明文写明配置复制『保留全部有效配置字段、标签与同一指纹种子』；blueprint（docs/blueprint/persistence.md）独立复述同一口径『配置复制只写数据库：新 Profile ID、配置版本、标签与同一指纹种子』。两份文档在紧邻条目中对 reset 给出相反口径（『更新指纹种子』），证明 duplicate 与 reset 的 seed 策略是被有意区分的：复制=保留同一指纹身份，重置=换新指纹身份。交付该功能的 t013 归档记录亦记载按此实现（配置复制保留种子、重置重新生成种子）。实现侧核对：profile_service.py 的 duplicate_profile 以 source.config.model_dump() 仅覆写 name 构建新配置（L524-530），seed 原样沿用，与 spec 一致；reset_profile（L608-617）则以 _seed_for_operation(operation_id) 或 generate_fingerprint_seed() 生成新 seed 并 patch，与 spec 的 reset 口径一致。阴性检索：对 docs/specs 与 docs/blueprint 全量 grep『指纹种子/fingerprint_seed』，无任何条目要求克隆新发 seed；全仓 seed 规则只有三条——创建时未提供则随机生成（runtime_persistence.md:19）、复制保留同一 seed、重置重新生成。文档与实现无矛盾，不立 finding。
+怀疑（实现疏漏）不成立：克隆沿用源 fingerprint_seed 是仓内两处权威文档明文规定的产品定义，且实现与之完全一致。生效 spec（docs/specs/profile_management.md「复制与重置」节）明文写明配置复制『保留全部有效配置字段、标签与同一指纹种子』；blueprint（docs/blueprint/persistence.md）独立复述同一口径『配置复制只写数据库：新 Profile ID、配置版本、标签与同一指纹种子』。两份文档在紧邻条目中对 reset 给出相反口径（『更新指纹种子』），证明 duplicate 与 reset 的 seed 策略是被有意区分的：复制=保留同一指纹身份，重置=换新指纹身份。交付该功能的 t013 归档记录亦记载按此实现（配置复制保留种子、重置重新生成种子）。实现侧核对：profile_service.py 的 duplicate_profile 以 source.config.model_dump() 仅覆写 name 构建新配置（L524-530），seed 原样沿用，与 spec 一致；reset_profile（L608-617）则以 \_seed_for_operation(operation_id) 或 generate_fingerprint_seed() 生成新 seed 并 patch，与 spec 的 reset 口径一致。阴性检索：对 docs/specs 与 docs/blueprint 全量 grep『指纹种子/fingerprint_seed』，无任何条目要求克隆新发 seed；全仓 seed 规则只有三条——创建时未提供则随机生成（runtime_persistence.md:19）、复制保留同一 seed、重置重新生成。文档与实现无矛盾，不立 finding。
 
 ## Findings
 

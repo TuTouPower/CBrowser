@@ -54,7 +54,7 @@ from supervisor_recovery_probe.gateway_service import (
     ProductionGatewayService,
 )
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -187,6 +187,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
                 f"Failed to create Profile A: {r_create_a.text}"
             )
             profile_a_id = r_create_a.json()["id"]
+            profile_a_number = r_create_a.json()["display_number"]
             r_des_a = await api_client.patch(
                 f"/api/v1/profiles/{profile_a_id}/runtime/desired-state",
                 json={"desired_state": "running"},
@@ -200,6 +201,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
                 f"Failed to create Profile B: {r_create_b.text}"
             )
             profile_b_id = r_create_b.json()["id"]
+            profile_b_number = r_create_b.json()["display_number"]
             r_des_b = await api_client.patch(
                 f"/api/v1/profiles/{profile_b_id}/runtime/desired-state",
                 json={"desired_state": "running"},
@@ -211,7 +213,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
         ) as sup_client:
             res_a = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": profile_a_id, "config_version": 1},
+                json={"profile_id": profile_a_id, "config_version": 1, "profile_number": profile_a_number},
             )
             assert res_a.status_code == 200, (
                 f"Supervisor failed to start Profile A: {res_a.text}"
@@ -226,7 +228,7 @@ async def test_supervisor_authoritative_api_offline_replay_and_recovery_e2e(
 
             res_b = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": profile_b_id, "config_version": 1},
+                json={"profile_id": profile_b_id, "config_version": 1, "profile_number": profile_b_number},
             )
             assert res_b.status_code == 200, (
                 f"Supervisor failed to start Profile B: {res_b.text}"

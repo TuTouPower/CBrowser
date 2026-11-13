@@ -399,7 +399,7 @@ bash scripts/run_automation_probe.sh
 需求级契约见 `docs/specs/gate_verification.md` 第 9 节；`doctor_cmd` / `test_cmd` / `blackbox_verify` 机械锚点命令形式不变。
 
 - `run_gate_suite` 两阶段对 pytest exit 5 对称：并行阶段用例全标 `serial` 时不再假失败，两阶段皆空判失败并列出缺项，junit 仍合并串行结果（`scripts/run_gates.sh`）。
-- 门禁启动与 `EXIT` / `INT` / `TERM` 中断经同一套 trap 调用 `scripts/gate_container_cleanup.py`：按精确测试前缀白名单清理上一轮遗留容器 / 网络，`cbrowser-api` / `cbrowser-gateway` / `cbrowser-supervisor` / `cbrowser-caddy` 生产部署与其它会话命名资源不删；匹配为纯函数，单测 stub Docker 边界（`tests/unit/test_t045_gate_container_cleanup.py`）。
+- 门禁启动与 `EXIT` / `INT` / `TERM` 中断经同一套 trap 调用 `scripts/gate_container_cleanup.py`：仅按 `com.cbrowser.gate-run` 标签与本地运行租约清理已结束运行资源；容器和网络使用同一归属规则，无标签、未知租约或活跃租约一律不删，不再按名称放行；删除使用 Docker 不可变资源 ID，避免 sparse 列表缺少名称造成漏清理（`tests/unit/test_t045_gate_container_cleanup.py`）。
 - 前端 E2E 同文件共享一套容器栈：`test_frontend_session_e2e.py` 改 module-scope `SharedContainerStack`，用例间以 `reset_profile_state`（stop + delete profile）只重置状态；`test_frontend_app_e2e` / `test_frontend_media_e2e` / `test_frontend_display_apply_e2e` / `test_frontend_app_auth_e2e` 核实本就是 module-scope 共享栈、天然满足，不重复改造。隔离语义由 `tests/unit/test_t045_e2e_shared_stack.py` 覆盖。
 - Selkies wheel：`CBROWSER_SELKIES_WHEEL_CACHE` 指向已锁定 SHA256 的本地缓存；`vendor_selkies_web(..., allow_download=False)` 与 E2E 用例不发起公网请求；必跑模式 collection 期校验缓存存在与哈希，缺失时失败封闭列出缺项（`tests/e2e/conftest.py`、`test_frontend_adapter_build.py`、`tests/unit/test_t045_selkies_wheel_cache.py`）。
 - 负载下时序判定改就绪条件驱动：`tests/fixtures/wait.py` 的 `poll_until` / `wait_until_sync`（deadline + 最后观测），不靠固定 sleep 或上调超时。ac007 媒体帧以「stage 文案 + RTP 增长 + worker 已丢弃编码帧」复合就绪谓词判定；supervisor dual_profile 的 API / Supervisor health 以就绪条件收敛后再 POST。
@@ -408,3 +408,35 @@ bash scripts/run_automation_probe.sh
 
 - **全仓唯一 Docker E2E Harness 铁律**：`tests/e2e/test_runtime_coordinator_e2e.py` 彻底重构接入标准的 `FrontendAppTopologyHarness`；彻底移除测试用例内私有 API 子进程、私有 Docker 启动与自建 `finally` 遍历删除逻辑。所有测试容器、网络、卷的分配、运行、观察与清理严格收敛于 `GatewayTopologyHarness` / `FrontendAppTopologyHarness` 与 `cleanup_prefixed_resources`，受 `CBROWSER_E2E_DELETION_LOG` 统一结构化审计。
 - **协议探针异步事件流模型**：`tests/e2e/test_stream_selkies_tokens_e2e.py` 中被驱逐旧连接的客户端使用后台并发任务异步监听 Close Frame，确保实时响应服务端 RFC 6455 关闭握手，消除底层 Transport 提早掐断导致的 `1006 ABNORMAL_CLOSURE` 假失败；严格维持 `close_code == 4001` 与 `Superseded by a new connection.` 精确断言。
+
+## t060 门禁运行归属、用例下限与隐私扫描
+
+- `scripts/gate_run.py` 在 venv 父目录持排他 preparation 锁完成检查、重建和安装；运行锁在重建期排他、suite 执行期共享。热门禁可同时读取同一 venv，requirements 变化后的重建必须等全部运行读者退出。macOS 与 Linux 均通过 `fcntl.flock`，不依赖外部 `flock` CLI。
+- 同一 checkout 的门禁持独占锁直至全部产物消费者退出，防止 Vite 清空另一轮正在验证的 dist；不同 worktree 仍可共享 venv 并发运行。接线单测在独立仓库副本执行，避免嵌套门禁竞争父进程工作区。
+- Docker SDK 禁用 `use_config_proxy`，CLI adapter 显式清空注入代理并设置内部网络直连，避免本机 Docker 配置向测试容器注入代理。显式 Profile 代理配置仍由产品 API 管理，不改宿主 Docker 配置。
+- 每轮生成 UUID run_id，在共同 Git 目录 `gate_runs/` 持文件租约。Docker CLI adapter、测试 SDK fixture 和 Supervisor 创建路径传播 `com.cbrowser.gate-run` 标签。启动清理只删本机登记且租约已结束的资源；缺少标签或租约、租约仍活跃、归属查询异常均不授权删除。中断后继承描述符的子进程继续受租约保护。退出清理失败保留非零退出码并写入 manifest。
+- `protocol_drift_check` 是 evidence 首个 suite，按 Supervisor 协议、Stream 协议、OpenAPI 前端类型顺序执行。它失败时仍产生全部 suite 的脱敏日志和完整 manifest；默认模式保持 fail-fast。
+- 下表是当前测试收集基线。pytest 按合并 JUnit 的实际 testcase 数校验（不能拿 XML 声明总数冒充）；Vitest 按 JSON 报告 `numTotalTests` 校验。任一报告缺失、损坏或低于下限即失败。测试集合变化必须重新收集并同步代码与本表，不降低阈值掩盖漏跑。
+
+|suite|最小用例数|计数来源|
+|---|---|---|
+|contract|258|pytest JUnit|
+|unit|1654|并行与 serial 合并 JUnit|
+|integration|196|并行与 serial 合并 JUnit|
+|frontend_test|499|Vitest JSON|
+|e2e|105|并行与 serial 合并 JUnit|
+|real_engine|2|必需 node ID 与 probe JUnit 双向核对|
+
+- 命令型 suite 不存在 pytest 收集数：`protocol_drift_check`、`requirements_check`、`design_lint`、`design_check`、`frontend_build` 最小为一次完整成功执行，任一内部命令失败即 suite 失败；`image_packages` 必须完整校验五个运行镜像，缺少任何变量返回 skipped（77），完整门禁视为失败。缺少 suite 结果仍由 `finish_evidence` 拒绝，不以旧 TSV 补齐。
+
+- E2E 模块用 `pytest.mark.e2e_images(*names)` 声明镜像依赖；必跑模式只检查所收集用例的声明并集，未声明用例退回全部前置。需要 Browser 的用例同时要求引擎和 GeoIP 缓存。非消费者不要求额外镜像；实际 fixture 仍通过 `require_e2e_env` / `require_e2e_available` 失败封闭。
+
+- Browser / Stream 存在性分别观测。停止须两者都不存在；单个残留与 Docker API 错误均不得归一为已停止。
+
+- 真实引擎 shell 预检与 evidence CLI 共用 `preflight_problems`，CLI 及 verdict 均检查不可变 image ID 和本轮预期 os/arch；伪造或缺失镜像元数据不能得到 all_passed。
+
+- `verify_image_packages.py` 在目标镜像读取完整 PEP 508 环境（含 platform_machine），不从 Mac 宿主补缺省键；不可解析 marker 与不完整目标环境直接失败。
+
+- 隐私扫描覆盖当前全部 tracked 树（含 archive）与未跟踪且未忽略的新文件；用户名后紧跟结尾或引号仍检出。不保留隐私豁免清单或整文件指纹放行，口径见 `security.md`。
+
+- t060 review 收口：bootstrap 在环境准备前撤销旧 manifest；venv 创建或 pip 安装失败生成绑定当前 run_id 的失败 manifest 与非敏感环境日志，不能遗留上一轮 PASS。隐私匹配只识别绝对 home 根，不把公开 URL 中的 routes/home 路径段当作机器目录；file URI 中的真实家路径仍检出。

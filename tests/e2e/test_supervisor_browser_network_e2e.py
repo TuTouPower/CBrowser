@@ -45,6 +45,7 @@ async def test_browser_egress_has_its_own_owned_bridge(tmp_path):
         assert media.id != browser.id
         assert browser.name == adapter.get_browser_network_name("profile")
         assert (await adapter.create_browser_network("profile")).id == browser.id
+        adapter.remember_profile_number("profile", 1)
         await adapter.teardown_profile("profile")
         for network_id in (media.id, browser.id):
             with pytest.raises(docker.errors.NotFound):
@@ -55,3 +56,5 @@ async def test_browser_egress_has_its_own_owned_bridge(tmp_path):
         ):
             adapter.cleanup_network_by_name(network.name)
         client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')

@@ -63,3 +63,5 @@ async def test_owned_network_creation_is_idempotent_and_cleanup_is_exact(tmp_pat
         ):
             network.remove()
         client.close()
+
+pytestmark = pytest.mark.e2e_images()

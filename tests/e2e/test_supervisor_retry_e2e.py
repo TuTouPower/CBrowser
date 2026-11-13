@@ -59,7 +59,7 @@ from supervisor_recovery_probe.offline_fixture import (
     get_free_port,
 )
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger(__name__)
 
@@ -225,6 +225,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             )
             assert r_create.status_code == 201
             profile_id = r_create.json()["id"]
+            profile_number = r_create.json()["display_number"]
 
             r_des = await api_client.patch(
                 f"/api/v1/profiles/{profile_id}/runtime/desired-state",
@@ -235,7 +236,7 @@ async def test_supervisor_real_container_retry_e2e(tmp_path: Path):
             # 2. Launch initial profile via Supervisor Control RPC
             r_start = await sup_client.post(
                 "/supervisor/v1/profiles/start",
-                json={"profile_id": profile_id, "config_version": 1},
+                json={"profile_id": profile_id, "config_version": 1, "profile_number": profile_number},
             )
             assert r_start.status_code == 200
             start_info = r_start.json()

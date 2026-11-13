@@ -94,3 +94,5 @@ async def test_locked_startup_reaps_helpers_without_touching_other_containers(
                     pass
         finally:
             client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE')

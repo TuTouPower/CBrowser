@@ -1,5 +1,7 @@
 """Sampler must discover the actual container limit without caller hints."""
 
+import pytest
+
 import time
 import uuid
 
@@ -58,3 +60,5 @@ def test_sampler_discovers_real_container_cpu_limit():
         if container is not None:
             container.remove(force=True)
         client.close()
+
+pytestmark = pytest.mark.e2e_images('CBROWSER_STREAM_TEST_IMAGE')

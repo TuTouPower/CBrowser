@@ -27,7 +27,7 @@ from wait import poll_until
 
 from frontend_app_probe.harness import FrontendAppTopologyHarness  # noqa: E402
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_API_TEST_IMAGE', 'CBROWSER_CADDY_TEST_IMAGE', 'CBROWSER_GATEWAY_IMAGE', 'CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
 logger = logging.getLogger("cbrowser.frontend_app.e2e")
 
@@ -314,7 +314,7 @@ async def wait_runtime_containers_gone(
 ) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not harness.containers_for(profile_id):
+        if harness.runtime_containers_gone(profile_id):
             return
         await asyncio.sleep(0.5)
     raise TimeoutError("Runtime containers still present after stop")

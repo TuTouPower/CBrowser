@@ -3,7 +3,7 @@
 - task：`t020_profile_font_bundles`
 - spec：`docs/tasks/t020_profile_font_bundles/task.md`
 - diff_anchor：`30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
-- target：`git -C '/home/hatch/workspace/CBrowser_t020' diff 30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
+- target：`git -C '<home>/workspace/CBrowser_t020' diff 30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
 - round：1
 - reviewed_at：2026-11-04T01:09:39+08:00
 

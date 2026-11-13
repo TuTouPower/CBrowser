@@ -3,7 +3,7 @@
 - task：`t025_frontend_request_session_safety`
 - spec：`docs/tasks/t025_frontend_request_session_safety/task.md`
 - diff_anchor：`e171d1a1a3268afa3693626c8e72e80feca3b0b9`
-- target：`git -C '/home/hatch/workspace/CBrowser_t025' diff e171d1a1a3268afa3693626c8e72e80feca3b0b9`
+- target：`git -C '<home>/workspace/CBrowser_t025' diff e171d1a1a3268afa3693626c8e72e80feca3b0b9`
 - round：1
 - reviewed_at：2026-11-04T00:52:32+08:00
 

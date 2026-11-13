@@ -44,10 +44,10 @@ def _daemon_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
+pytestmark = [pytest.mark.skipif(
     not (_daemon_available() and IMAGE),
     reason="requires a real Docker daemon and CBROWSER_RUNTIME_TEST_IMAGE",
-)
+), pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE')]
 
 
 def _adapter(tmp_path: Path, **kw) -> DockerAdapter:

@@ -2,29 +2,27 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-ALLOWLIST = ROOT / "tests/unit/review_privacy_allowlist.txt"
 
 # Developer home-path shapes across platforms (t024 AC-017/A52).  The POSIX
 # form captures the account segment; the /root/ form captures the whole path
 # token so fixed in-container paths can be exempted precisely; the Windows
 # forms cover both separator styles.
-POSIX_HOME_PATH = re.compile(r"/(?:Users|home)/([A-Za-z0-9._-]+)/")
+POSIX_HOME_PATH = re.compile(r"(?<![A-Za-z0-9._~-])(?:file://[A-Za-z0-9.-]*)?/(?:Users|home)/([A-Za-z0-9._-]+)(?:/|(?=$|[\'\"\s]))")
 ROOT_HOME_PATH = re.compile(r"/root/[A-Za-z0-9._\-/]+")
 WINDOWS_HOME_PATHS = (
-    re.compile(r"[A-Za-z]:\\Users\\([A-Za-z0-9._% \-]+)\\"),
-    re.compile(r"[A-Za-z]:/Users/([A-Za-z0-9._% \-]+)/"),
+    re.compile(r"[A-Za-z]:\\Users\\([A-Za-z0-9._% \-]+)(?:\\|/|(?=$|[\'\"\s]))"),
+    re.compile(r"[A-Za-z]:/Users/([A-Za-z0-9._% \-]+)(?:/|(?=$|[\'\"\s]))"),
 )
-CONTAINER_USERS = {"cbrowser", "appuser", "selkies", "pulse", "root", "runner", "docker"}
+CONTAINER_USERS = {"cbrowser", "appuser", "selkies", "pulse", "root", "runner", "docker", "streamuser"}
 WINDOWS_SYSTEM_PROFILES = {"Public", "Default", "Default User", "All Users"}
 # Exact in-container paths that are part of the product, not a developer's
 # machine (the Browser image runs Chrome as root with this config dir).
-CONTAINER_FIXED_PATH_PREFIXES = ("/root/.config/google-chrome",)
+CONTAINER_FIXED_PATH_PREFIXES = ("/root/.config/google-chrome", "/root/.cloakbrowser")
 BINARY_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp", ".woff", ".woff2",
     ".ttf", ".otf", ".ttc", ".eot", ".zip", ".gz", ".bz2", ".xz", ".7z",
@@ -87,48 +85,14 @@ def decode_candidate_text(path: Path, data: bytes) -> str | None:
         return data.decode("utf-8", errors="ignore")
 
 
-def approved_snapshots(lines: list[str] | None = None) -> set[tuple[str, str]]:
-    """Approved historical snapshots as (path, sha256) pairs (A44/AC-017).
-
-    Each allowlist entry binds one specific path to the sha256 of its
-    approved bytes: the exemption follows neither content nor location
-    alone — the same bytes at an unlisted path are NOT exempt, and any
-    content change at a listed path lapses its exemption.  When a file is
-    moved (e.g. task files archived at finish), its entry's path must be
-    updated to the new location in the same change.
-    """
-    if lines is None:
-        lines = ALLOWLIST.read_text(encoding="utf-8").splitlines()
-    pairs: set[tuple[str, str]] = set()
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        path, _, fingerprint = line.rpartition(" sha256:")
-        assert fingerprint and len(fingerprint) == 64, f"allowlist entry lacks fingerprint: {line!r}"
-        pairs.add((path, fingerprint))
-    return pairs
-
-
-def is_approved_snapshot(name: str, data: bytes, approved: set[tuple[str, str]]) -> bool:
-    return (name, hashlib.sha256(data).hexdigest()) in approved
-
-
 def tracked_files() -> list[str]:
     output = subprocess.check_output(
-        ["git", "ls-files", "-z"], cwd=ROOT, text=False
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT, text=False
     ).decode("utf-8")
-    return [name for name in output.split("\0") if name]
+    return sorted({name for name in output.split("\0") if name})
 
 
 def test_tracked_files_do_not_leak_developer_home_paths():
-    # Historical snapshots are exempt only by exact (path, content
-    # fingerprint) pairs (A44: history is not rewritten).  There is no
-    # directory-level exemption: new files under docs/archive/ or
-    # docs/reviews/ are scanned like everything else, copying an exempt
-    # file to a new path does not exempt the copy, and editing an exempt
-    # file lapses its exemption.
-    approved = approved_snapshots()
     violations: list[str] = []
     for name in tracked_files():
         path = ROOT / name
@@ -137,8 +101,6 @@ def test_tracked_files_do_not_leak_developer_home_paths():
         try:
             data = path.read_bytes()
         except OSError:
-            continue
-        if is_approved_snapshot(name, data, approved):
             continue
         text = decode_candidate_text(path, data)
         if text is None:
@@ -184,24 +146,6 @@ def test_hygiene_guard_scans_past_nul_bytes_and_binary_classification():
     assert text is not None
     assert find_developer_path_leaks(text) == [_joined("", "home", "dev", "")]
     assert decode_candidate_text(Path("font.ttc"), b"\x00\x01\x02\xff") is None
-
-
-def test_snapshot_exemption_lapses_when_content_changes():
-    mac = _joined("", "Users", "dev", "proj")
-    original = f"snapshot with '{mac}' inside".encode()
-    pairs = approved_snapshots([f"docs/reviews/x.md sha256:{hashlib.sha256(original).hexdigest()}"])
-    assert is_approved_snapshot("docs/reviews/x.md", original, pairs)
-    assert not is_approved_snapshot("docs/reviews/x.md", original + b"edited", pairs)
-
-
-def test_snapshot_exemption_does_not_follow_content_to_a_new_path():
-    mac = _joined("", "Users", "dev", "proj")
-    original = f"snapshot with '{mac}' inside".encode()
-    pairs = approved_snapshots([f"docs/reviews/x.md sha256:{hashlib.sha256(original).hexdigest()}"])
-    # Identical bytes at an unlisted path are not exempt (AC-017 double
-    # binding: path AND fingerprint).
-    assert not is_approved_snapshot("docs/reviews/y.md", original, pairs)
-    assert not is_approved_snapshot("src/copy.md", original, pairs)
 
 
 def test_container_prefix_exemption_respects_segment_boundary():

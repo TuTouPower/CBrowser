@@ -15,7 +15,7 @@
 - **容器启动**：`bash start_containers.sh`（exit 0，创建独立网络 `cbrowser-spike-ime-net`、卷 `cbrowser-spike-ime-x11`/`pulse`，绑定端口 `127.0.0.1:18095`、`127.0.0.1:30018/udp`）。
 - **执行命令**：
   ```bash
-  TMPDIR="/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/control/.scratch/ime_review/tmp/opencode" \
+  TMPDIR="<repo>/.scratch/v2_orchestration/control/.scratch/ime_review/tmp/opencode" \
   uv run --no-project --with playwright python ime_native_probe.py
   ```
 - **执行指标**：

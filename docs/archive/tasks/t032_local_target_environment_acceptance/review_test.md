@@ -3,17 +3,17 @@
 - task：`t032_local_target_environment_acceptance`
 - spec：`docs/tasks/t032_local_target_environment_acceptance/task.md`
 - diff_anchor：`c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t032' diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
+- target：`git -C '<repo>_t032' diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
 - round：1
 - reviewed_at：2026-11-05T12:09:11+08:00
 
 reviewed_scope: f1db825439450c73
 
-按 read-only 边界执行：`git rev-parse --show-toplevel` 落点为 `/Users/karson/kar/code/CBrowser_t032`；未跑 Docker E2E、未重跑完整门禁、未改任何代码/测试/文档（本报告除外）。核验手段为 `git -C ... diff c0ab32d...` 逐文件审读、本地单测复跑、`shasum -a 256` 实测、以及证据目录（`.scratch/t032/resume/` 下 `evidence-final3/`、`probe-final/`、`probe-final-reach/`）的 JUnit/JSON 原文核对。`git status --short` 中 19 个交付文件均已暂存（`A `/`M `），另有 `review_code.md` 为他人报告（不在本人写权范围）。
+按 read-only 边界执行：`git rev-parse --show-toplevel` 落点为 `<repo>_t032`；未跑 Docker E2E、未重跑完整门禁、未改任何代码/测试/文档（本报告除外）。核验手段为 `git -C ... diff c0ab32d...` 逐文件审读、本地单测复跑、`shasum -a 256` 实测、以及证据目录（`.scratch/t032/resume/` 下 `evidence-final3/`、`probe-final/`、`probe-final-reach/`）的 JUnit/JSON 原文核对。`git status --short` 中 19 个交付文件均已暂存（`A `/`M `），另有 `review_code.md` 为他人报告（不在本人写权范围）。
 
 ## 交付文件清单（diff --cached --stat）
 
-`git -C /Users/karson/kar/code/CBrowser_t032 diff --cached --stat` 实测 19 个交付文件：
+`git -C <repo>_t032 diff --cached --stat` 实测 19 个交付文件：
 
 ```
  config/docker/automation_probe/Dockerfile          |  11 ++
@@ -115,13 +115,13 @@ coverage = 7 / 15
 ## reviewer 复跑记录
 
 - 本地单测复跑（在 worktree 目录内）：
-    `cd /Users/karson/kar/code/CBrowser_t032 && /Users/karson/kar/code/CBrowser/.scratch/t032/resume/gate-complete/venv/bin/python -m pytest tests/unit/test_automation_probe_harness.py tests/unit/test_t026_supervisor_convergence.py -q`
+    `cd <repo>_t032 && <repo>/.scratch/t032/resume/gate-complete/venv/bin/python -m pytest tests/unit/test_automation_probe_harness.py tests/unit/test_t026_supervisor_convergence.py -q`
     → `45 passed in 1.14s`（= 收敛单测 32 passed + 探针单测 13 passed，与口径一致）。
 - 隐私白名单实测：
     `shasum -a 256 docs/archive/handoff.md docs/archive/tasks/t004_v2_stream_runtime/progress.md docs/archive/tasks/t005_v2_supervisor/progress.md`
     → `343c6a2c...` / `728b0ab2...` / `ce522769...`，与 `tests/unit/review_privacy_allowlist.txt` 三行完全一致。
-- 交付文件清单：`git -C /Users/karson/kar/code/CBrowser_t032 diff --cached --stat` → 19 files changed, 665 insertions(+), 181 deletions(-)。
-- 改测/危险模式：`git -C /Users/karson/kar/code/CBrowser_t032 diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a -- tests/ config/docker/automation_probe/ scripts/run_automation_probe.sh` 逐 hunk 审读 + 关键符号 `grep -n` 定位，结论见上文。
+- 交付文件清单：`git -C <repo>_t032 diff --cached --stat` → 19 files changed, 665 insertions(+), 181 deletions(-)。
+- 改测/危险模式：`git -C <repo>_t032 diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a -- tests/ config/docker/automation_probe/ scripts/run_automation_probe.sh` 逐 hunk 审读 + 关键符号 `grep -n` 定位，结论见上文。
 - JUnit/证据：读取 `evidence-final3/manifest.json`、`junit/e2e.xml`（testsuite 计数）、`probe-final/probe.xml`、`probe-final/pytest/test_t032_probe_chain_and_dial0/chain.xml`、`probe-final/pytest/test_t032_probe_levels_recheck0/levels.json`（python 统计八组样本数/summary/zoom）、`probe-final/image.json`、`probe-final-reach/reachability.json` 原文核对，结论见「证据核对」。
 - 未跑 Docker E2E、未重跑 `run_gates.sh`、未重跑容器探针（按约束为轻量只读核验）。
 

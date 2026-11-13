@@ -1,9 +1,10 @@
 """Build-context guards for the runtime images (t024 AC-001/A1).
 
-STATIC PRECHECK ONLY: these tests approximate dockerignore admission and
-COPY-source existence; they are not the AC-001 acceptance evidence.  The
-acceptance (isolated image build + in-image import/run of launch_args) is
-tracked by pending p027 for a Docker-capable environment.
+Fast static checks cover the pattern shapes used by these allowlists.
+Native BuildKit admission is independently verified by
+``tests/e2e/test_native_build_contexts_e2e.py``; runtime images are also built
+and exercised by the Docker/Chrome gate. See finding d037 for the native
+parent-directory exception behavior that this model must preserve.
 
 Every COPY source declared by a runtime Dockerfile that ships a
 Dockerfile.dockerignore whitelist must actually be admitted by that
@@ -13,8 +14,9 @@ encodes the semantics the repository's whitelists rely on:
 
 - patterns are evaluated in file order, the last pattern matching the
   candidate path itself decides;
-- a pattern with a trailing slash (``!src/``) only re-opens the walk into
-  that directory -- files under it still need their own matching pattern;
+- a directory exception (including ``!src/``) admits its descendants;
+  exact file exceptions can traverse excluded parents without broadly
+  admitting the parent subtree;
 - a slash-less directory pattern (``!src/backend``) re-includes the whole
   subtree rooted there;
 - ``*`` never crosses ``/``; ``**`` matches any number of segments.
@@ -61,32 +63,26 @@ def _match_parts(pat_parts: list[str], path_parts: list[str]) -> bool:
 class Dockerignore:
     """Admission check with the semantics documented in the module docstring.
 
-    A pattern decides a candidate when it matches the candidate path or one
-    of its ancestor prefixes (per-segment matching, ``**`` crossing
-    segments); the last deciding pattern in file order wins.  Patterns
-    written with a trailing slash are directory walk gates only: they let
-    the walker descend but never decide a file's own admission, so a file
-    under a re-opened directory still needs its own matching pattern.
+    A directory exception applies to descendants too, matching native
+    Docker behavior. Whitelists should use leaf paths/globs instead of
+    re-including all parent directories merely to reach those leaves.
     """
 
     def __init__(self, text: str) -> None:
-        self.rules: list[tuple[bool, str, bool]] = []  # (negated, pattern, dir_only)
+        self.rules: list[tuple[bool, str]] = []
         for raw in text.splitlines():
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
             negated = line.startswith("!")
             pattern = line[1:] if negated else line
-            dir_only = pattern.endswith("/")
-            self.rules.append((negated, pattern.strip("/"), dir_only))
+            self.rules.append((negated, pattern.strip("/")))
 
     def admits(self, rel_path: str) -> bool:
         rel = rel_path.strip("/")
         path_parts = rel.split("/")
         admitted = True
-        for negated, pattern, dir_only in self.rules:
-            if dir_only:
-                continue
+        for negated, pattern in self.rules:
             pat_parts = [p for p in pattern.split("/") if p not in ("", ".")]
             if any(
                 _match_parts(pat_parts, path_parts[:cut])

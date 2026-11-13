@@ -1,16 +1,9 @@
 **
-!config/
-!config/docker/
-!config/docker/stream_runtime/
 !config/docker/stream_runtime/requirements.txt
 !config/docker/stream_runtime/entrypoint.sh
-!src/
-!src/backend/
-!src/backend/cbrowser/
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/udp_mux.py
-!src/backend/cbrowser/stream_agent/
 !src/backend/cbrowser/stream_agent/**
 
 **/__pycache__

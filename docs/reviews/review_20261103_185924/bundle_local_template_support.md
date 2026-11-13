@@ -9,7 +9,7 @@
 
 - registry.json：skills 角色表（public 12 / internal 3）+ calls 调用边 7 条，是 skill 组合契约的唯一权威
 - SKILL.md front matter：name/description/disable-model-invocation；internal 技能另带 user-invocable: false；全部带 metadata.opencode/autoinvoke=false
-- .opencode/commands/*.md：自动生成 stub（标注 repo_sync.py 生成、勿手改），经宿主 skill 工具加载对应 SKILL.md，透传 $ARGUMENTS
+- .opencode/commands/\*.md：自动生成 stub（标注 repo_sync.py 生成、勿手改），经宿主 skill 工具加载对应 SKILL.md，透传 $ARGUMENTS
 - review prompt 占位符集：{tid}/{slug}/{repo_root}/{diff_anchor}/{spec_path}/{task_dir}/{review_level}/{contract_section}/{context_section}/{review_scope_fingerprint}，由渲染器注入后派给 reviewer
 - task_template/note.md front matter schema：tid/slug/title/status/branch/worktree/review_level/review_limit/verify_limit/diff_anchor/depends_on/conflicts_with，只经 task.py 修改
 - pre-commit hook 进程契约：exit 0 放行 / exit 1 阻断并在 stderr 给出原因与修复提示
@@ -59,34 +59,39 @@
 ## Findings
 
 - [Low][90] .repo_template/skills/bug-to-pending/SKILL.md:20 — bug-to-pending 声称 task-work 是其 analysis-only 模式的内部调用方，但注册表无此调用边且 task-work 正文从不引用它
-  - ID: f_template_support_01; verification: static
-  - Evidence: .repo_template/skills/bug-to-pending/SKILL.md:20 称 analysis-only 模式「供 `task-work`、`pending-record` 等内部调用」; .repo_template/skills/registry.json 的 calls 数组中指向 bug-to-pending 的边只有 task-from-pending→bug-to-pending 与 pending-record→bug-to-pending，无 task-work→bug-to-pending; grep 核实 task-work 与 task-run 的 SKILL.md 全文均未出现 bug-to-pending；task-work 实施步 6 只泛称「登记 pending 或 finding」; usage.md 与 architecture.md 均声明 registry.json 是角色/调用图唯一事实源、「只接受注册调用边」
-  - Impact: 权威注册表与 skill 正文对同一调用关系给出相反结论：按正文行事的 agent 会走一条未注册的组合路径，按注册表行事则该模式的一个声称调用方永远不会触发；后续维护者无法判断应补注册边还是删正文声明，组合契约的可信度被削弱。
-  - Fix: 二选一并保持单一权威：若 task-work 确应在遇 bug 时走 analysis-only，则在 registry.json 补 task-work→bug-to-pending 边并在 task-work 正文写明调用点；否则删除 bug-to-pending 第 20 行中对 task-work 的声称。
+
+    - ID: f_template_support_01; verification: static
+    - Evidence: .repo_template/skills/bug-to-pending/SKILL.md:20 称 analysis-only 模式「供 `task-work`、`pending-record` 等内部调用」; .repo_template/skills/registry.json 的 calls 数组中指向 bug-to-pending 的边只有 task-from-pending→bug-to-pending 与 pending-record→bug-to-pending，无 task-work→bug-to-pending; grep 核实 task-work 与 task-run 的 SKILL.md 全文均未出现 bug-to-pending；task-work 实施步 6 只泛称「登记 pending 或 finding」; usage.md 与 architecture.md 均声明 registry.json 是角色/调用图唯一事实源、「只接受注册调用边」
+    - Impact: 权威注册表与 skill 正文对同一调用关系给出相反结论：按正文行事的 agent 会走一条未注册的组合路径，按注册表行事则该模式的一个声称调用方永远不会触发；后续维护者无法判断应补注册边还是删正文声明，组合契约的可信度被削弱。
+    - Fix: 二选一并保持单一权威：若 task-work 确应在遇 bug 时走 analysis-only，则在 registry.json 补 task-work→bug-to-pending 边并在 task-work 正文写明调用点；否则删除 bug-to-pending 第 20 行中对 task-work 的声称。
 
 - [Low][95] .repo_template/docs/usage.md:51 — usage.md 称 commit 由 pre-commit hook「强制」执行 md 格式门禁，但本仓未启用 hooksPath，门禁实际未生效
-  - ID: f_template_support_02; verification: static
-  - Evidence: .repo_template/docs/usage.md:51 写「commit 由 pre-commit hook 强制（.repo_template/hooks/pre-commit …）」，同句后半才提到需先 repo_sync.py install-hooks 启用 core.hooksPath; 本仓实查：git config core.hooksPath 未设置（退出码 1），.git/hooks/ 下只有 *.sample 文件，无生效的 pre-commit; AGENTS.md 与 usage.md 多处流程（md 格式统一、commit 前 --check 为绿）以该 hook 的强制存在为前提叙述
-  - Impact: 在当前消费仓克隆中，md_kx 格式门禁并不像文档所述那样被强制：未格式化的 Markdown 可直接提交，后续同步/合并时才以格式漂移形式暴露；「强制」表述使读者高估门禁的实际覆盖（hooksPath 是逐克隆本地配置，任何新克隆默认同样未启用）。
-  - Fix: 在本仓执行 install-hooks 启用门禁，或把 usage.md 的表述改为与状态一致的条件式说明（如「启用 hooksPath 后，commit 由 pre-commit hook 强制」），并在消费仓接入清单中把 install-hooks 列为必做项。
+
+    - ID: f_template_support_02; verification: static
+    - Evidence: .repo_template/docs/usage.md:51 写「commit 由 pre-commit hook 强制（.repo_template/hooks/pre-commit …）」，同句后半才提到需先 repo_sync.py install-hooks 启用 core.hooksPath; 本仓实查：git config core.hooksPath 未设置（退出码 1），.git/hooks/ 下只有 \*.sample 文件，无生效的 pre-commit; AGENTS.md 与 usage.md 多处流程（md 格式统一、commit 前 --check 为绿）以该 hook 的强制存在为前提叙述
+    - Impact: 在当前消费仓克隆中，md_kx 格式门禁并不像文档所述那样被强制：未格式化的 Markdown 可直接提交，后续同步/合并时才以格式漂移形式暴露；「强制」表述使读者高估门禁的实际覆盖（hooksPath 是逐克隆本地配置，任何新克隆默认同样未启用）。
+    - Fix: 在本仓执行 install-hooks 启用门禁，或把 usage.md 的表述改为与状态一致的条件式说明（如「启用 hooksPath 后，commit 由 pre-commit hook 强制」），并在消费仓接入清单中把 install-hooks 列为必做项。
 
 - [Low][85] .repo_template/hooks/pre-commit:18 — pre-commit 在模块顶层无条件 import md_format，模块缺失或导入失败时将阻断全部提交（含不涉及 .md 的提交）
-  - ID: f_template_support_03; verification: static
-  - Evidence: .repo_template/hooks/pre-commit:15-18 在顶层组装 sys.path 并 `import md_format`，发生在 main() 的「staged 无 .md 时快速放行」判断（第 49-52 行）之前; 文件 docstring 声明的行为是「staged 无 .md 时快速放行；有 .md 但格式化失败（含 md_kx 缺失）阻断提交并引导安装」——md_kx 二进制缺失由 format_paths 抛 MdFormatError 处理（第 60-63 行），但 md_format 模块本身缺失/损坏不在此列; 模板被部分复制、scripts/ 不完整或 md_format.py 引入新的导入错误时，hook 以未捕获的 ImportError 栈退出非零，git 对所有 commit 一律拒绝
-  - Impact: 门禁脚本的故障域大于其职责域：一个只应管 Markdown 格式的 hook 能在模板状态异常时冻结整个仓库的提交能力，且报错是 Python 栈而非 docstring 承诺的安装引导，增加排查成本。
-  - Fix: 把 import md_format 延迟到 staged_md() 确认存在 staged .md 之后（或包一层 try/except，导入失败时输出与 MdFormatError 一致的引导信息再退出 1）；无 .md 的提交应在任何模板模块加载前直接放行。
+
+    - ID: f_template_support_03; verification: static
+    - Evidence: .repo_template/hooks/pre-commit:15-18 在顶层组装 sys.path 并 `import md_format`，发生在 main() 的「staged 无 .md 时快速放行」判断（第 49-52 行）之前; 文件 docstring 声明的行为是「staged 无 .md 时快速放行；有 .md 但格式化失败（含 md_kx 缺失）阻断提交并引导安装」——md_kx 二进制缺失由 format_paths 抛 MdFormatError 处理（第 60-63 行），但 md_format 模块本身缺失/损坏不在此列; 模板被部分复制、scripts/ 不完整或 md_format.py 引入新的导入错误时，hook 以未捕获的 ImportError 栈退出非零，git 对所有 commit 一律拒绝
+    - Impact: 门禁脚本的故障域大于其职责域：一个只应管 Markdown 格式的 hook 能在模板状态异常时冻结整个仓库的提交能力，且报错是 Python 栈而非 docstring 承诺的安装引导，增加排查成本。
+    - Fix: 把 import md_format 延迟到 staged_md() 确认存在 staged .md 之后（或包一层 try/except，导入失败时输出与 MdFormatError 一致的引导信息再退出 1）；无 .md 的提交应在任何模板模块加载前直接放行。
 
 - [Low][75] .repo_template/hooks/pre-commit:31 — pre-commit 的 staged 文件选择用 --diff-filter=ACM，纯重命名或重命名加修改的 .md 会绕过格式门禁
-  - ID: f_template_support_04; verification: static
-  - Evidence: .repo_template/hooks/pre-commit:31 用 `git diff --cached --name-only -z --diff-filter=ACM -- *.md` 选文件，过滤器不含 R（rename）; Git 在 diff 中默认开启重命名检测（diff.renames 自 Git 2.9 默认 true）：重命名且改内容的 .md 以 R 状态出现，被 ACM 过滤静默排除，既不格式化也不做 dirty_vs_index 检查; docstring 与 usage.md 对该 hook 的描述均为「格式化本次 commit 涉及的 .md」，未声明排除重命名
-  - Impact: 通过 git mv 并顺手改内容的 Markdown 文件可未经 md_kx 格式化进入仓库，与门禁宣称的覆盖范围不符；影响仅限格式一致性，故评 Low。注：若消费仓显式关闭 diff.renames，文件会以 A+D 出现而被捕获，故该缺口与本地 git 配置相关。
-  - Fix: 将过滤器改为 ACMR（或去掉 --diff-filter 并在代码中排除 D），并对 R 的新路径取 diff 的目标路径格式化；同时补一条重命名场景的说明或测试。
+
+    - ID: f_template_support_04; verification: static
+    - Evidence: .repo_template/hooks/pre-commit:31 用 `git diff --cached --name-only -z --diff-filter=ACM -- *.md` 选文件，过滤器不含 R（rename）; Git 在 diff 中默认开启重命名检测（diff.renames 自 Git 2.9 默认 true）：重命名且改内容的 .md 以 R 状态出现，被 ACM 过滤静默排除，既不格式化也不做 dirty_vs_index 检查; docstring 与 usage.md 对该 hook 的描述均为「格式化本次 commit 涉及的 .md」，未声明排除重命名
+    - Impact: 通过 git mv 并顺手改内容的 Markdown 文件可未经 md_kx 格式化进入仓库，与门禁宣称的覆盖范围不符；影响仅限格式一致性，故评 Low。注：若消费仓显式关闭 diff.renames，文件会以 A+D 出现而被捕获，故该缺口与本地 git 配置相关。
+    - Fix: 将过滤器改为 ACMR（或去掉 --diff-filter 并在代码中排除 D），并对 R 的新路径取 diff 的目标路径格式化；同时补一条重命名场景的说明或测试。
 
 - [Info][80] .repo_template/docs/spike_report_template.md:27 — spike 报告模板用「如 t001」作后续 task 示例编号，与 usage.md「占位示例不得占用真实 tid」的命名规则相冲突
-  - ID: f_template_support_05; verification: static
-  - Evidence: .repo_template/docs/spike_report_template.md:27 写「后续 task：{采纳时填写 {tid}，如 t001；否则写“无”}」，把真实编号段的 t001 用作示例; .repo_template/docs/usage.md 命名与格式节规定「占位示例（模板、示例行）不得占用真实 tid / sid / pNNN，也不得当作 active 工作项执行」; 同为模板的 task_template/note.md 则使用 t000 作占位 tid，与规则一致，两模板口径不一致
-  - Impact: 影响极小：读者可能把示例 t001 误认作真实引用目标，或在复制模板时把示例值带入正式 spike 报告，造成一条指向无关 task 的假关联。
-  - Fix: 把 spike_report_template.md 的示例改为不占用真实编号的写法（如「如 {tid}」或 t000），与 task_template 的占位口径统一。
+
+    - ID: f_template_support_05; verification: static
+    - Evidence: .repo_template/docs/spike_report_template.md:27 写「后续 task：{采纳时填写 {tid}，如 t001；否则写“无”}」，把真实编号段的 t001 用作示例; .repo_template/docs/usage.md 命名与格式节规定「占位示例（模板、示例行）不得占用真实 tid / sid / pNNN，也不得当作 active 工作项执行」; 同为模板的 task_template/note.md 则使用 t000 作占位 tid，与规则一致，两模板口径不一致
+    - Impact: 影响极小：读者可能把示例 t001 误认作真实引用目标，或在复制模板时把示例值带入正式 spike 报告，造成一条指向无关 task 的假关联。
+    - Fix: 把 spike_report_template.md 的示例改为不占用真实编号的写法（如「如 {tid}」或 t000），与 task_template 的占位口径统一。
 
 ## views
 

@@ -3,7 +3,7 @@
 - task：`t005_v2_supervisor`
 - spec：`docs/tasks/t005_v2_supervisor/task.md`
 - diff_anchor：`84f84311815bff330a51bcd35da150fc8b4990b3`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
+- target：`git -C '<repo>_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
 - round：1
 - reviewed_at：2026-10-30T06:30:00+08:00
 

@@ -52,6 +52,7 @@ testpaths = [
 ]
 markers = [
     "contract: lightweight repository contract tests",
+    "e2e_images(*names): immutable image variables required by this module",
     "serial: timing-sensitive tests that must not run concurrently with others",
 ]
 filterwarnings = [

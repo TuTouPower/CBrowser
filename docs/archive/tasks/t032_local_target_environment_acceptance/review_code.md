@@ -3,7 +3,7 @@
 - task：`t032_local_target_environment_acceptance`
 - spec：`docs/tasks/t032_local_target_environment_acceptance/task.md`
 - diff_anchor：`c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t032' diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
+- target：`git -C '<repo>_t032' diff c0ab32d7ba453ef520cb9fbbeb7a6991d7f82f6a`
 - round：1
 - reviewed_at：2026-11-05T11:44:36+08:00
 

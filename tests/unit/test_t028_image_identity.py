@@ -117,7 +117,7 @@ def test_required_mode_session_fails_on_identity_problems(
     monkeypatch.setattr(
         conftest,
         "image_identity_problems",
-        lambda: ["CBROWSER_GATEWAY_IMAGE: image not present locally"],
+        lambda **kwargs: ["CBROWSER_GATEWAY_IMAGE: image not present locally"],
     )
     with pytest.raises(BaseException) as caught:
         conftest.pytest_collection_modifyitems(None, [])

@@ -42,19 +42,19 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：`test_repo_hygiene.py` 在全部 tracked 文件上通过，且仓库中不存在任何隐私豁免清单或指纹豁免逻辑。
-- [ ] AC-002：路径以用户名结尾、紧跟引号，或位于未跟踪且未忽略的新文件中时，扫描器均能检出。
-- [ ] AC-003：同机两个门禁进程并发运行时，venv 不被另一方重建破坏，双方都能完成。
-- [ ] AC-004：一个门禁运行期间启动第二个门禁，第二个的启动清理不删除第一个正在使用的容器与网络。
-- [ ] AC-005：E2E 中 browser 已删、stream 仍在时，停止断言失败；Docker API 异常时断言报错而非通过。
-- [ ] AC-006：某 suite 收集的用例数低于其下限时门禁失败；image_packages 未设镜像变量时在完整门禁中失败；protocol_drift_check 失败时 evidence 目录生成完整 manifest 且记为失败。
-- [ ] AC-007：以伪造的 image.json（id 格式不符或 arch 不符）调用证据 CLI 时结论为失败。
-- [ ] AC-008：接线测试在脚本中把前置步骤移到其它 suite 之后时失败；unit 套件中不再存在嵌套全量收集子进程。
-- [ ] AC-009：单独运行一个 E2E 模块时，只要求该模块声明的镜像变量；缺少其声明的镜像时 collection 失败。
-- [ ] AC-010：engines 为 `>26.0.0` 时 26.0.0 被拒绝；marker 不可解析时 verify_image_packages 失败退出。
-- [ ] AC-011：五个镜像的构建上下文均不含 `__pycache__` / `.pyc`；supervisor 构建上下文只含其 Dockerfile COPY 的 services 文件。
-- [ ] AC-012：artifact 事件以宿主绝对路径与嵌套子目录输入时，换算出的容器相对路径正确；越界路径被拒绝。
-- [ ] AC-013：`docs/handoff.md` 只有一节，记录的 head_commit 与 branch 与写入时一致。
+- [x] AC-001：`test_repo_hygiene.py` 在全部 tracked 文件上通过，且仓库中不存在任何隐私豁免清单或指纹豁免逻辑。
+- [x] AC-002：路径以用户名结尾、紧跟引号，或位于未跟踪且未忽略的新文件中时，扫描器均能检出。
+- [x] AC-003：同机两个门禁进程并发运行时，venv 不被另一方重建破坏，双方都能完成。
+- [x] AC-004：一个门禁运行期间启动第二个门禁，第二个的启动清理不删除第一个正在使用的容器与网络。
+- [x] AC-005：E2E 中 browser 已删、stream 仍在时，停止断言失败；Docker API 异常时断言报错而非通过。
+- [x] AC-006：某 suite 收集的用例数低于其下限时门禁失败；image_packages 未设镜像变量时在完整门禁中失败；protocol_drift_check 失败时 evidence 目录生成完整 manifest 且记为失败。
+- [x] AC-007：以伪造的 image.json（id 格式不符或 arch 不符）调用证据 CLI 时结论为失败。
+- [x] AC-008：接线测试在脚本中把前置步骤移到其它 suite 之后时失败；unit 套件中不再存在嵌套全量收集子进程。
+- [x] AC-009：单独运行一个 E2E 模块时，只要求该模块声明的镜像变量；缺少其声明的镜像时 collection 失败。
+- [x] AC-010：engines 为 `>26.0.0` 时 26.0.0 被拒绝；marker 不可解析时 verify_image_packages 失败退出。
+- [x] AC-011：五个镜像的构建上下文均不含 `__pycache__` / `.pyc`；supervisor 构建上下文只含其 Dockerfile COPY 的 services 文件。
+- [x] AC-012：artifact 事件以宿主绝对路径与嵌套子目录输入时，换算出的容器相对路径正确；越界路径被拒绝。
+- [x] AC-013：`docs/handoff.md` 只有一节，记录的 head_commit 与 branch 与写入时一致。
 
 ### 可测试性声明
 

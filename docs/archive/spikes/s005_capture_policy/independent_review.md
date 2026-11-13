@@ -2,7 +2,7 @@
 
 **评审基准与环境约束**：
 
-- 审查目录：`/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/policy_review/.scratch/capture_policy_probe`
+- 审查目录：`<repo>/.scratch/v2_orchestration/policy_review/.scratch/capture_policy_probe`
 - 评审角色：独立 Reviewer / 黑盒验证者（不 commit、不改生产代码、不访问其它 worktree、不替 author 修复实现与预期）
 - 审计对象：
     - `live_policy_agent.py`（捕获策略 Agent 与 WebRTCService 适配层）

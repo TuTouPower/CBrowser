@@ -3,7 +3,7 @@
 - **Reviewer**: Independent Blackbox Reviewer / Architecture Auditor
 - **Model**: `cpa/gemini-3.8-flash`
 - **Execution Date**: 2026-10-27
-- **Worktree Scratch Path**: `/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/review/.scratch/media_final_review`
+- **Worktree Scratch Path**: `<repo>/.scratch/v2_orchestration/review/.scratch/media_final_review`
 - **Audit Target**: `media_e2e_probe.py`, `entrypoint_browser.sh`, `entrypoint_stream.sh`, `start_containers.sh`, `stop_containers.sh`
 
 ______________________________________________________________________

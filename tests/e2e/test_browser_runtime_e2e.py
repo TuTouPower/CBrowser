@@ -50,7 +50,7 @@ from cbrowser.runtime_agent.socket_root import (
 from cbrowser.supervisor.artifact_forwarder import DownloadArtifactForwarder
 
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE')]
 logger = logging.getLogger(__name__)
 
 IMAGE_TAG = os.environ.get("CBROWSER_RUNTIME_TEST_IMAGE", "")

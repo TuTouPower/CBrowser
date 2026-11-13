@@ -49,7 +49,7 @@ from cbrowser.supervisor.path_validator import PathValidator
 from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
 
-pytestmark = pytest.mark.serial
+pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_STREAM_TEST_IMAGE')]
 
 logger = logging.getLogger(__name__)
 

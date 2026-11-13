@@ -3,7 +3,7 @@
 - task：`t005_v2_supervisor`
 - spec：`docs/tasks/t005_v2_supervisor/task.md`
 - diff_anchor：`84f84311815bff330a51bcd35da150fc8b4990b3`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
+- target：`git -C '<repo>_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
 - round：1
 - reviewed_at：2026-10-30T06:15:00+08:00
 
@@ -60,7 +60,7 @@ verdict: PASS
 - task：`t005_v2_supervisor`
 - spec：`docs/tasks/t005_v2_supervisor/task.md`
 - diff_anchor：`84f84311815bff330a51bcd35da150fc8b4990b3`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
+- target：`git -C '<repo>_t005' diff 84f84311815bff330a51bcd35da150fc8b4990b3`
 - round：2
 - reviewed_at：2026-10-30T10:05:07+08:00
 
@@ -73,7 +73,7 @@ reviewed_scope: 0c131820c44b993e
 ### 本轮增量复核
 
 1. `tests/fixtures/supervisor_recovery_probe/gateway_contract.md`：仅按 pre-commit md_kx 规范调整列表缩进（由 2 空格改为 4 空格），无契约语义变化。
-2. `tests/e2e/test_supervisor_policy_failure_e2e.py`：响应 test reviewer 提出的 `t005_test_f001`，将 `if gates_root.is_dir():` 与 `if runtime_dir.is_dir():` 条件防御弱化断言移除，改为对 `ready_markers` 与 `runner_info` 的无条件断言（验证列表长度为 0）。查证主控真实运行日志 `/Users/karson/kar/code/CBrowser_t005/.scratch/t005_final/round1/policy_failure_p002.log`，测试 1 passed（5.65s），无副作用与逻辑破损。
+2. `tests/e2e/test_supervisor_policy_failure_e2e.py`：响应 test reviewer 提出的 `t005_test_f001`，将 `if gates_root.is_dir():` 与 `if runtime_dir.is_dir():` 条件防御弱化断言移除，改为对 `ready_markers` 与 `runner_info` 的无条件断言（验证列表长度为 0）。查证主控真实运行日志 `<repo>_t005/.scratch/t005_final/round1/policy_failure_p002.log`，测试 1 passed（5.65s），无副作用与逻辑破损。
 
 ### 本轮新发现
 

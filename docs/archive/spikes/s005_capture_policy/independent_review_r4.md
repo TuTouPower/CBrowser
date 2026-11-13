@@ -30,7 +30,7 @@ c0120cd81fb5a8b848835887209f35bdbefaa573f2b90afd7846703ac7a9af5a  report.md
 
 - **执行命令**：
   ```bash
-  TMPDIR="/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/policy_review/.scratch/native_policy_review_r4/tmp" uv run --no-project --with playwright --with websockets python test_e2e_real_pipeline.py
+  TMPDIR="<repo>/.scratch/v2_orchestration/policy_review/.scratch/native_policy_review_r4/tmp" uv run --no-project --with playwright --with websockets python test_e2e_real_pipeline.py
   ```
 - **实际退出码**：`0` (PASS)
 - **执行耗时**：71.4 秒
@@ -53,7 +53,7 @@ c0120cd81fb5a8b848835887209f35bdbefaa573f2b90afd7846703ac7a9af5a  report.md
 
 - **执行命令**：
   ```bash
-  TMPDIR="/Users/karson/kar/code/CBrowser/.scratch/v2_orchestration/policy_review/.scratch/native_policy_review_r4/tmp" uv run --no-project --with websockets python native_visibility_e2e.py
+  TMPDIR="<repo>/.scratch/v2_orchestration/policy_review/.scratch/native_policy_review_r4/tmp" uv run --no-project --with websockets python native_visibility_e2e.py
   ```
 - **实际退出码**：`0` (PASS)
 - **执行耗时**：24.9 秒
