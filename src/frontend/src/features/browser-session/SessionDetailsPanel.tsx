@@ -8,12 +8,8 @@ import type {
   ProxyResponse,
 } from "../../shared/api/types";
 import { Banner, Button, MonoValue } from "../../shared/ui";
-import {
-  SESS_COPY_VALUE,
-  SESS_DETAILS_PANEL,
-  SESS_DETAILS_TOGGLE,
-  sessId,
-} from "./session_keys";
+import { SESS_COPY_VALUE, SESS_DETAILS_PANEL, sessId } from "./session_keys";
+import { transportStateLabelKey } from "./transport_state";
 
 export interface SessionDetailsPanelProps {
   profile: ProfileResponse;
@@ -22,7 +18,6 @@ export interface SessionDetailsPanelProps {
   proxies: ProxyResponse[];
   fontSets: FontSetInfo[];
   open: boolean;
-  onOpenChange: (open: boolean) => void;
 }
 
 function display(value: unknown): string {
@@ -109,7 +104,7 @@ function Section({
 export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Element {
   const { t } = useI18n();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const { profile, runtime, groups, proxies, fontSets, open, onOpenChange } = props;
+  const { profile, runtime, groups, proxies, fontSets, open } = props;
 
   const copyValue = (key: string, value: string) => {
     const clipboard = navigator.clipboard;
@@ -163,29 +158,18 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
       : t("fontSetIntegrityBad")
     : "-";
 
+  // t061 AC-001: the panel is a pure content container. The header
+  // details button is the only toggle; the panel carries no title or
+  // second switch, and when closed it renders nothing so it occupies
+  // no width.
+  if (!open) return <></>;
+
   return (
     <aside
       data-testid={SESS_DETAILS_PANEL}
       aria-label={t("sessDetails")}
       className="flex h-full w-details flex-col gap-md border-l border-outline bg-surface p-md"
     >
-      <div className="flex items-center justify-between gap-sm">
-        <h2 className="font-ui text-headline-md text-on-surface">
-          {t("sessDetails")}
-        </h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          data-testid={SESS_DETAILS_TOGGLE}
-          aria-expanded={open}
-          onClick={() => onOpenChange(!open)}
-        >
-          {open ? t("sessDetailsClose") : t("sessDetailsOpen")}
-        </Button>
-      </div>
-
-      {open && (
         <div className="flex flex-col gap-lg overflow-y-auto">
           <Section
             title={t("navEnvironments")}
@@ -290,9 +274,8 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
               renderRow("config_version", configVersion, "config_version", true),
               renderRow(
                 "transport_state",
-                display(transport?.transport_state),
+                t(transportStateLabelKey(transport?.transport_state)),
                 "transport_state",
-                true,
               ),
               renderRow(
                 "last_coordinator_error",
@@ -315,7 +298,6 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
             }
           />
         </div>
-      )}
     </aside>
   );
 }

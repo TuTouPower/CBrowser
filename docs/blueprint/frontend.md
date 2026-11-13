@@ -34,18 +34,18 @@
 
 ## 4. 会话阶段与恢复
 
-- 阶段：`checking_runtime`、`runtime_not_ready`、`connecting_signaling`、`signaling_failed`、`web_locks_unavailable`、`connecting_ice`、`ice_failed`、`media_waiting`、`media_no_frames`、`connected`、`reconnecting`。运行时检查经统一 API 客户端：401 由鉴权层跳转登录，网络/服务不可达进入带原因的 `runtime_not_ready`；Web Locks 不可用进入专门阶段。失败阶段给出可执行操作（重连、查看运行状态），不出现无解释黑屏，不新增媒体回退通道。
+- 阶段：`checking_runtime`、`runtime_not_ready`、`stopping`、`connecting_signaling`、`signaling_failed`、`web_locks_unavailable`、`ice_failed`、`media_waiting`、`media_no_frames`、`connected`、`reconnecting`、`error`（以 `SessionStage` 类型为唯一权威，不存在 `connecting_ice` 阶段）。运行时检查经统一 API 客户端：401 由鉴权层跳转登录，网络/服务不可达进入带原因的 `runtime_not_ready`；Web Locks 不可用进入专门阶段。阶段呈现分级（t061）：等待态（`checking_runtime`、`connecting_signaling`、`media_waiting`、`reconnecting`）只显示轻量指示，不渲染居中诊断表或操作按钮；故障态（`signaling_failed`、`ice_failed`、`media_no_frames`、`web_locks_unavailable`、`error`）保留诊断与适用重连动作；`runtime_not_ready` 保留启动与查看状态；`stopping` 只显示停止提示与查看状态入口。不出现无解释黑屏，不新增媒体回退通道。
 - 会话页加载状态严格区分：加载中、加载失败（显式错误加重试）、Profile 不存在（仅真实 404）、已停止待启动；请求失败不得呈现为已停止。语言切换只改变文案，不得重跑运行时检查或重置已连接会话（效果依赖不含翻译函数身份，经 ref 读取最新翻译）。
 - 诊断取自 `RTCPeerConnection` 状态与 `getStats()`（选中候选对类型、RTT、接收字节）。
-- Page Lifecycle `freeze`/`resume` 与 bfcache `pageshow` 后检查信令与 PeerConnection，失效则重建 iframe（同一 `client_tab_id`，官方客户端生成新 `resume_key`）；信令 WS 异常关闭时先给官方客户端 5 秒以原 `resume_key` 重连，仍不健康再重建。
+- Page Lifecycle `freeze`/`resume` 与 bfcache `pageshow` 后检查信令与 PeerConnection，失效则重建 iframe（同一 `client_tab_id`，官方客户端生成新 `resume_key`）；信令 WS 异常关闭时先给官方客户端 5 秒以原 `resume_key` 重连，5 秒恢复检查确认媒体仍健康（`stats.connected`）即收敛回 `connected`、不重建 iframe——诊断快照不变时诊断源不发新信号，健康收敛出口就在此检查内，且受 generation fence 保护，旧代次迟到结果不覆盖当前状态；媒体不健康才重建（t061）。
 - ICE：`failed` 立即进入 `ice_failed`；`disconnected` 持续 5 秒（`iceDisconnectGraceMs`）才判失败，期间恢复则不报。
 - 宿主只接受来自本会话 iframe（`event.source`）且同源的 postMessage；适配层向父窗口发送时指定具体 origin。
 - 会话目标由 `/session/:profileId` 决定；导航侧栏不再列 Profile，「会话」项在本标签页已有目标时回跳该会话，否则进 `/session`。
 - 剪贴板：`ClipboardPermissionHint` 在宿主会话页中按需探测权限（与 `/selkies` iframe 同源），拒绝/提示状态显示可执行说明；自身不调用 `navigator.clipboard` 读写，复制粘贴同步由 iframe 内官方 Selkies seamless 客户端完成（decisions 012）。
 - 音频：每页静音按钮经官方 `pipelineControl` audio（`STOP_AUDIO`/`START_AUDIO`）；音频状态（`audio_status.ts`）由 getStats 推导，与视频阶段独立：`normal`/`muted`/`no_track`/`no_data`/`unknown`，内容静音不判故障。
 - 显示设置：运行时 `config_version` 与 Profile 当前配置版本不同即显示待应用提示与“应用并重启”（经 API stop → running）。该动作带阶段跟踪（按动作键保存 stop 前实例与 start 已发出标记）：自动重试先观测运行时再续跑——stop 已生效不重发不重等、start 已生效而响应丢失时收敛到新实例的 running（不等待 stopped、不停止或重建新实例）、未生效步骤以同一操作键续跑、状态查询持续失败有界报错。
-- 会话页画面区由 `SessionPage` 承载：iframe 铺满、不绘制模拟浏览器框（ADR 003/006）。全部非 `connected` 阶段显示居中状态面板（`SessionStagePanel`），给出阶段原因与可执行操作（重连 / 查看运行状态 / 启动），`connected` 不显示面板；阶段清单以 blueprint 本节为权威——`connecting_ice` 在 `types.ts` 未定义，`SessionStagePanel` 以字符串字面量分支保留该 stage，逻辑层（`useBrowserSession`）暂不产生它（t039）。
-- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 网络 / 指纹 / 运行四区（指纹含平台、字体集与缺失字体告警；运行含浏览器版本与 UA、实例 ID、配置版本、transport 状态、最近错误、启动时间），每个值可复制（t039）。
+- 会话页画面区由 `SessionPage` 承载：iframe 铺满、不绘制模拟浏览器框（ADR 003/006）。阶段呈现按本节分级矩阵由 `SessionStagePanel` 渲染（等待态轻量指示、故障态居中诊断面板），`connected` 不显示面板；阶段清单以 `SessionStage` 类型为权威（t061，取代 t039 的全阶段居中面板与 `connecting_ice` 字面量分支）。页头 transport 状态与详情面板统一经单一映射显示本地化文案（ready/recovering/failed/unknown 均有中英文案，未知或缺失值回落本地化「未知」，不显示原始机器码）；环境切换器触发器只显示环境名称、不带状态徽标，顶栏运行状态只出现一次，各环境状态保留在下拉条目内（t061）。
+- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 网络 / 指纹 / 运行四区（指纹含平台、字体集与缺失字体告警；运行含浏览器版本与 UA、实例 ID、配置版本、transport 状态、最近错误、启动时间），每个值可复制（t039）。开关只有页头详情按钮一个：面板内无标题与第二开关，关闭时不渲染、不占宽度（t061）。
 - 剪贴板权限提示（`ClipboardPermissionHint`）、音频状态与诊断浮层按设计系统重建、行为语义不变：剪贴板只探测权限不读写本机剪贴板，音频经官方 `pipelineControl` 的 `STOP_AUDIO` / `START_AUDIO`，诊断取自 `RTCPeerConnection` 状态与 `getStats()`（t039）。
 - 旧会话页组件（`BrowserSessionPage` / `BrowserSessionView` / `BrowserSessionMount` 及旧测试）整体删除；`data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），会话 E2E 与组件测试选择器同步改写（t039）。
 - 旧页面全部替换后启用全局颜色门禁：`npm run design:lint` 的 `--lint` 经 `runLintSources(sources)` 同时跑尺寸断言与颜色断言，扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 testing.md「t039 全局颜色门禁」）。

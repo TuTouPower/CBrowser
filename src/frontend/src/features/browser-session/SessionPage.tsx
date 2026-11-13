@@ -276,7 +276,6 @@ export function SessionPage(): JSX.Element {
               proxies={proxiesQuery.data ?? []}
               fontSets={fontSetsQuery.data?.items ?? []}
               open={detailsOpen}
-              onOpenChange={handleDetailsOpenChange}
             />
           </div>
         </div>

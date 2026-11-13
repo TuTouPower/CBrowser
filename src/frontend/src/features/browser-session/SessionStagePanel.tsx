@@ -18,10 +18,9 @@ export interface SessionStagePanelProps {
   onLaunch?: () => void;
 }
 
-type StageKey = SessionStage | "connecting_ice";
 type ActionId = "reconnect" | "view-status" | "launch";
 
-const STAGE_TITLE_KEYS: Record<StageKey, TranslationKey> = {
+const STAGE_TITLE_KEYS: Record<SessionStage, TranslationKey> = {
   checking_runtime: "sessionStageCheckingRuntime",
   runtime_not_ready: "sessionStageRuntimeNotReady",
   stopping: "sessionStageStopping",
@@ -34,25 +33,36 @@ const STAGE_TITLE_KEYS: Record<StageKey, TranslationKey> = {
   connected: "sessionStageConnected",
   reconnecting: "sessionStageReconnecting",
   error: "sessionStageError",
-  connecting_ice: "sessionStageConnectingSignaling",
 };
 
-const RECONNECT_EXEMPT_STAGES: readonly StageKey[] = [
-  "stopping",
+// t061 AC-002: normal handshake/waiting stages are transient progress,
+// not faults. They render only a lightweight indicator — no centered
+// diagnostic table and no action buttons. Fault, not-ready and
+// stopping stages keep the diagnostic card below.
+const WAITING_STAGES: readonly SessionStage[] = [
+  "checking_runtime",
+  "connecting_signaling",
+  "media_waiting",
   "reconnecting",
 ];
-const LAUNCH_STAGES: readonly StageKey[] = [
-  "checking_runtime",
-  "runtime_not_ready",
-  "ice_failed",
-  "error",
-];
 
-function stageActions(stage: StageKey): ActionId[] {
-  if (RECONNECT_EXEMPT_STAGES.includes(stage)) return ["view-status"];
-  const actions: ActionId[] = ["reconnect", "view-status"];
-  if (LAUNCH_STAGES.includes(stage)) actions.push("launch");
-  return actions;
+// t061 AC-003 action matrix for the diagnostic card:
+// - failure stages keep diagnostics plus the applicable reconnect
+//   action (364d191's reconnect contract is preserved here);
+// - runtime_not_ready keeps launch (its applicable recovery) and the
+//   status entry — reconnecting a stopped runtime only reloads the
+//   viewer into the same not-ready state;
+// - stopping shows the stop notice and the existing status entry,
+//   never launch or reconnect.
+function stageActions(stage: SessionStage): ActionId[] {
+  switch (stage) {
+    case "stopping":
+      return ["view-status"];
+    case "runtime_not_ready":
+      return ["launch", "view-status"];
+    default:
+      return ["reconnect", "view-status"];
+  }
 }
 
 const ACTION_LABEL_KEYS: Record<ActionId, TranslationKey> = {
@@ -61,7 +71,7 @@ const ACTION_LABEL_KEYS: Record<ActionId, TranslationKey> = {
   launch: "launchRemoteBrowser",
 };
 
-const ERROR_STAGES: StageKey[] = [
+const ERROR_STAGES: SessionStage[] = [
   "runtime_not_ready",
   "signaling_failed",
   "web_locks_unavailable",
@@ -114,10 +124,32 @@ export function SessionStagePanel(props: SessionStagePanelProps): JSX.Element {
 
   if (stage === "connected") return <></>;
 
-  const stageKey = stage as StageKey;
-  const titleKey = STAGE_TITLE_KEYS[stageKey] ?? "sessionStageError";
-  const actionIds = stageActions(stageKey);
-  const isError = ERROR_STAGES.includes(stageKey);
+  const titleKey = STAGE_TITLE_KEYS[stage] ?? "sessionStageError";
+
+  if (WAITING_STAGES.includes(stage)) {
+    return (
+      <div
+        data-testid={SESS_STAGE_PANEL}
+        className="pointer-events-none absolute inset-none flex items-center justify-center p-lg"
+      >
+        <div className="flex items-center gap-sm">
+          <LoaderCircle
+            aria-hidden="true"
+            className="size-(--component-icon-md-size) shrink-0 animate-pulse text-accent"
+          />
+          <span
+            data-testid={SESS_STAGE_TITLE}
+            className="font-ui text-body-md text-on-surface-muted"
+          >
+            {t(titleKey)}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  const actionIds = stageActions(stage);
+  const isError = ERROR_STAGES.includes(stage);
   const rows = diagnosticRows(diagnostics);
 
   const callbacks: Record<ActionId, (() => void) | undefined> = {

@@ -31,9 +31,9 @@
 - 远端浏览器内部标签页切换经同一画面同步显示到所有页面。
 - 首帧预算（t019，2026-11-10 用户决定调整）：侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均 ≤5 秒；本机 Mac/OrbStack + Chrome 156 在基线 supervisor 镜像下实测 3.4–3.7 秒，原 2 秒预算不再满足，故按用户决定更新为此契约。ICE host-only 候选与同机直连约束不变；性能容量与 P95 仍由后续性能任务验收。
 - 初次画面与操作延迟可测（t007 本机记录，不设阈值，阈值由性能任务验收）。
-- 会话页为独立页面 `/session/:profileId`（t039）：单行页头含环境切换器（Popover 内可搜索、按分组列出环境与状态、条目为真实链接）、observed state 与 transport 状态、待应用标记与「应用并重启」，以及音频、诊断、详情面板、专注模式、停止操作；切换器链接在新标签打开后两标签会话互不影响。
-- 画面区只承载铺满的 Selkies iframe，不绘制模拟浏览器框（标签栏 / 地址栏 / 书签 / 缩放，ADR 003/006）；全部非 `connected` 阶段显示居中状态面板与阶段原因、可执行操作。
-- 详情面板为右侧 300px、默认收起，展开状态存 `cbrowser.session.details_open`（刷新保持），分环境 / 网络 / 指纹 / 运行四区，每个值可复制。
+- 会话页为独立页面 `/session/:profileId`（t039）：单行页头含环境切换器（Popover 内可搜索、按分组列出环境与状态、条目为真实链接）、observed state 与 transport 状态、待应用标记与「应用并重启」，以及音频、诊断、详情面板、专注模式、停止操作；切换器链接在新标签打开后两标签会话互不影响。环境切换器触发器只显示环境名称、不带状态徽标，顶栏运行状态只出现一次，各环境状态保留在下拉条目内（t061）。transport 状态（ready/recovering/failed/unknown）在页头与详情面板均显示当前界面语言的本地化文案，未知或缺失值回落本地化「未知」，不显示原始机器码（t061）。
+- 画面区只承载铺满的 Selkies iframe，不绘制模拟浏览器框（标签栏 / 地址栏 / 书签 / 缩放，ADR 003/006）；阶段呈现分级（t061）：等待态（checking_runtime、connecting_signaling、media_waiting、reconnecting）只显示轻量指示，不渲染居中诊断表或操作按钮；故障态（signaling_failed、ice_failed、media_no_frames、web_locks_unavailable、error）保留居中诊断面板与适用重连动作；runtime_not_ready 保留启动与查看状态；stopping 只显示停止提示与查看状态入口；connected 不显示等待层。
+- 详情面板为右侧 300px、默认收起，展开状态存 `cbrowser.session.details_open`（刷新保持），分环境 / 网络 / 指纹 / 运行四区，每个值可复制。详情开关只有页头详情按钮一个，面板内无标题与第二开关，关闭时面板不渲染、不占宽度（t061）。
 - 专注模式隐藏侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端）；进入与退出不重建 iframe、不中断远端输入。
 - `/session` 会话入口在本标签页无目标时列出运行中环境供选择；侧栏「会话」导航在已有目标时回跳该会话。
 - 会话页 `data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），组件与 E2E 选择器同步改写；旧会话页组件整体删除。
@@ -81,3 +81,10 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 
 - 媒体直连只走本机回环：不使用 STUN/TURN 中继、无 ICE 重启机制；Stream 容器固定 `CBROWSER_WEBRTC_PUBLIC_IP=127.0.0.1`，UDP mux 端口固定绑定 `127.0.0.1`（t054 删除局域网 host 候选扩展，ADR 013 回到仅回环）。
 - 容器网络漂移自愈（AC-005）中的网络版本比对已删除：运行期不存在已应用网络版本，`_converge_session` 与启动对账不再比对绑定地址与通告 IP；媒体策略放行只剩链路本地范围（`169.254.0.0/16` / `fe80::/10`）。
+
+## 会话阶段呈现与断线恢复收敛（t061）
+
+- 阶段集合以 `SessionStage` 类型为唯一权威，共 12 个阶段（含 stopping、error）；`connecting_ice` 不是阶段，组件层不再保留该字面量分支。
+- 已连接后信令 WS 异常关闭：先进入 reconnecting 并给官方客户端 5 秒以原 `resume_key` 恢复；5 秒恢复检查读取 WebRTC stats，媒体仍健康（stats.connected）且当前有效阶段仍为 reconnecting 时直接收敛回 connected 并清除错误文案，不重建 iframe、不动内部 Browser 与已有网页；媒体不健康才沿既有路径重建。诊断快照（ConnectionSnapshot）不变时诊断源不发新信号，故健康收敛出口在此检查内，检查结果受 generation fence 保护，旧 generation 的迟到结果不覆盖当前状态。后端已停止时异常关闭被忽略，不启动恢复。
+- 诊断呈现可区分正在恢复（reconnecting 轻量指示）与已经恢复（connected、无等待层残留）；恢复失败原因不含凭据。
+- 无 viewer 时环境保留：全部 viewer 断开后不停止、不重置、不删除环境与已有网页/浏览器数据；不存在 idle 期限、绝对期限或 viewer TTL 等自动回收。既有按活跃 consumer 暂停/恢复服务端采集编码的行为不变，再次连接可恢复观看。

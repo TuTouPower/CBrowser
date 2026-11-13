@@ -493,6 +493,10 @@ export const en = {
   sessUngrouped: "Ungrouped",
   sessRunning: "Running",
   sessStopped: "Stopped",
+  transportStateReady: "Ready",
+  transportStateRecovering: "Recovering",
+  transportStateFailed: "Failed",
+  transportStateUnknown: "Unknown",
 
   // Network access (t054): read-only. The port is fixed at deploy time;
   // there is no LAN mode, no apply flow, and no root-CA download anymore.
@@ -966,6 +970,10 @@ export const zh = {
   sessUngrouped: "未分组",
   sessRunning: "运行中",
   sessStopped: "已停止",
+  transportStateReady: "正常",
+  transportStateRecovering: "恢复中",
+  transportStateFailed: "失败",
+  transportStateUnknown: "未知",
 
   // Network access (t054): read-only. The port is fixed at deploy time;
   // there is no LAN mode, no apply flow, and no root-CA download anymore.

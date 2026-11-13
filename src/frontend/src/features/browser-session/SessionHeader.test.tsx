@@ -3,7 +3,7 @@ import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider, en } from "../../i18n";
+import { I18nProvider, en, zh } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
 import { type ApiClient } from "../../shared/api/client";
@@ -223,32 +223,72 @@ describe("SessionHeader", () => {
     ).toBeInTheDocument();
     expect(within(header).getByText(en.sessTransport)).toBeInTheDocument();
     expect(
-      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText("ready"),
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
+        en.transportStateReady,
+      ),
     ).toBeInTheDocument();
   });
 
-  it.each(["ready", "recovering", "failed", "unknown"] as const)(
-    "transport 状态 %s 以文字呈现",
-    (transportState) => {
-      const props = fixture({
-        runtime: runtime("p1", "running", {
-          transport: {
-            profile_id: "p1",
-            browser_state: "running",
-            stream_state: "running",
-            transport_state: transportState,
-          },
-        }),
-      });
-      renderHeader(props);
+  // t061 AC-004: the badge renders the localized label for each
+  // transport state, never the raw machine value (the pre-t061 suite
+  // asserted the raw values verbatim).
+  it.each([
+    ["ready", en.transportStateReady],
+    ["recovering", en.transportStateRecovering],
+    ["failed", en.transportStateFailed],
+    ["unknown", en.transportStateUnknown],
+  ] as const)("transport 状态 %s 显示本地化文案", (transportState, label) => {
+    const props = fixture({
+      runtime: runtime("p1", "running", {
+        transport: {
+          profile_id: "p1",
+          browser_state: "running",
+          stream_state: "running",
+          transport_state: transportState,
+        },
+      }),
+    });
+    renderHeader(props);
 
-      expect(
-        within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
-          transportState,
-        ),
-      ).toBeInTheDocument();
-    },
-  );
+    expect(
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(label),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).queryByText(
+        transportState,
+      ),
+    ).toBeNull();
+  });
+
+  it("中文界面下 transport 显示中文文案（AC-004）", () => {
+    localStorage.setItem("cbrowser.locale", "zh");
+    renderHeader(fixture());
+
+    expect(
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
+        zh.transportStateReady,
+      ),
+    ).toBeInTheDocument();
+    expect(zh.transportStateReady).toBe("正常");
+  });
+
+  it("未知或缺失的 transport 值回落本地化 unknown，不泄漏原始机器码", () => {
+    const props = fixture({
+      runtime: runtime("p1", "running", {
+        transport: {
+          profile_id: "p1",
+          browser_state: "running",
+          stream_state: "running",
+          transport_state: "half_open" as never,
+        },
+      }),
+    });
+    renderHeader(props);
+
+    const badge = screen.getByTestId(TRANSPORT_STATE_ID);
+    expect(within(badge).getByText(en.transportStateUnknown)).toBeInTheDocument();
+    expect(within(badge).queryByText("half_open")).toBeNull();
+  });
 
   it("runtime 为空时 observed 回落 stopped、transport 回落 unknown，无待应用标记", () => {
     renderHeader(fixture({ runtime: null }));
@@ -257,7 +297,9 @@ describe("SessionHeader", () => {
       within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(en.sessStopped),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText("unknown"),
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
+        en.transportStateUnknown,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId(APPLY_PENDING_ID)).toBeNull();
   });

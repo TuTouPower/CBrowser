@@ -335,14 +335,37 @@ describe("SessionPage", () => {
     expect(container.querySelector("iframe")).toBe(iframeBefore);
   });
 
-  it("detailsOpen 写 localStorage 并在重挂载后保持", async () => {
+  // t061 replacement note: the pre-t061 version located the toggle
+  // inside the details panel after remount. AC-001 makes the header
+  // button the only details switch on the page, so the toggle is now
+  // located in the header and asserted unique page-wide.
+  it("detailsOpen 写 localStorage 并在重挂载后保持，详情开关全页唯一", async () => {
     const first = renderPage();
-    fireEvent.click(within(await screen.findByTestId(SESS_HEADER)).getByTestId(SESS_DETAILS_TOGGLE));
+    const header = await screen.findByTestId(SESS_HEADER);
+    fireEvent.click(within(header).getByTestId(SESS_DETAILS_TOGGLE));
     expect(localStorage.getItem("cbrowser.session.details_open")).toBe("1");
+    expect(await screen.findByTestId(SESS_DETAILS_PANEL)).toBeInTheDocument();
     first.unmount();
     renderPage();
-    const panelToggle = within(await screen.findByTestId(SESS_DETAILS_PANEL)).getByTestId(SESS_DETAILS_TOGGLE);
-    expect(panelToggle.getAttribute("aria-expanded")).toBe("true");
+    const headerAfterRemount = await screen.findByTestId(SESS_HEADER);
+    const toggles = screen.getAllByTestId(SESS_DETAILS_TOGGLE);
+    expect(toggles).toHaveLength(1);
+    expect(headerAfterRemount.contains(toggles[0]!)).toBe(true);
+    expect(toggles[0]!.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId(SESS_DETAILS_PANEL)).toBeInTheDocument();
+  });
+
+  it("详情关闭时面板不渲染、不占位（AC-001）", async () => {
+    renderPage();
+    await screen.findByTestId(SESS_IFRAME);
+    expect(screen.queryByTestId(SESS_DETAILS_PANEL)).toBeNull();
+    const header = await screen.findByTestId(SESS_HEADER);
+    fireEvent.click(within(header).getByTestId(SESS_DETAILS_TOGGLE));
+    expect(await screen.findByTestId(SESS_DETAILS_PANEL)).toBeInTheDocument();
+    fireEvent.click(within(header).getByTestId(SESS_DETAILS_TOGGLE));
+    await waitFor(() =>
+      expect(screen.queryByTestId(SESS_DETAILS_PANEL)).toBeNull(),
+    );
   });
 
   it("停止与音频回调触发", async () => {

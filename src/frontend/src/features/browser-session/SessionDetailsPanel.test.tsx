@@ -150,7 +150,6 @@ function renderPanel(overrides: Partial<SessionDetailsPanelProps> = {}) {
     proxies: [proxy()],
     fontSets: [fontSet()],
     open: true,
-    onOpenChange: vi.fn(),
     ...overrides,
   };
   const view = render(
@@ -189,17 +188,28 @@ describe("SessionDetailsPanel", () => {
     expect(panel.textContent).toContain("Chrome 131");
     expect(panel.textContent).toContain("Mozilla/5.0 Test");
     expect(panel.textContent).toContain("inst-1");
-    expect(panel.textContent).toContain("ready");
+    // t061 AC-004: transport_state renders its localized label, never
+    // the raw machine value.
+    expect(panel.textContent).toContain(en.transportStateReady);
+    expect(panel.textContent).not.toContain("ready");
     expect(panel.textContent).toContain("2026-01-01T10:00:00Z");
   });
 
-  it("keeps the container but hides content when closed", () => {
+  // t061 replacement note: the pre-t061 test "keeps the container but
+  // hides content when closed" asserted the closed panel still occupies
+  // its fixed-width container. AC-001 replaces that contract: the top
+  // header button is the only toggle and a closed panel renders
+  // nothing, so it occupies no width.
+  it("renders nothing at all when closed (AC-001)", () => {
     renderPanel({ open: false });
-    const panel = screen.getByTestId(SESS_DETAILS_PANEL);
-    expect(panel).toBeInTheDocument();
-    expect(panel.textContent).toContain(en.sessDetails);
-    expect(panel.textContent).not.toContain("inst-1");
+    expect(screen.queryByTestId(SESS_DETAILS_PANEL)).toBeNull();
     expect(screen.queryAllByTestId(SESS_COPY_VALUE)).toHaveLength(0);
+  });
+
+  it("carries no internal title or second toggle (AC-001)", () => {
+    renderPanel({ open: true });
+    expect(screen.queryByTestId(SESS_DETAILS_TOGGLE)).toBeNull();
+    expect(screen.queryByText(en.sessDetails)).toBeNull();
   });
 
   it("shows detecting region while the proxy observation is pending", () => {
@@ -212,13 +222,6 @@ describe("SessionDetailsPanel", () => {
     const panel = screen.getByTestId(SESS_DETAILS_PANEL);
     expect(panel.textContent).toContain(en.proxyCountryProbing);
     expect(panel.textContent).not.toContain(en.proxyCountryUnknown);
-  });
-
-  it("toggles through onOpenChange", () => {
-    const onOpenChange = vi.fn();
-    renderPanel({ open: false, onOpenChange });
-    fireEvent.click(screen.getByTestId(SESS_DETAILS_TOGGLE));
-    expect(onOpenChange).toHaveBeenCalledWith(true);
   });
 
   it("copies each value through the clipboard and confirms", async () => {

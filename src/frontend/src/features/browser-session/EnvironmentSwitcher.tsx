@@ -16,7 +16,6 @@ import {
 } from "../../shared/ui";
 import {
   profileKeys,
-  useProfileRuntimeQuery,
 } from "../profiles/useProfilesQuery";
 import {
   SESS_SWITCHER_GROUP,
@@ -68,8 +67,10 @@ export function EnvironmentSwitcher({
   const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
-  const { data: runtime } = useProfileRuntimeQuery(currentProfileId, client);
-  const status = currentStatus(runtime?.observed_state, t);
+  // t061 AC-005: the trigger shows the environment name only — no status
+  // badge — so the current profile's runtime query that only fed that
+  // badge is gone. Per-environment status stays in the dropdown items,
+  // served by the item runtime queries below.
   const itemRuntimes = useQueries({
     queries: profiles.map((profile) => ({
       queryKey: profileKeys.runtime(profile.id),
@@ -130,7 +131,6 @@ export function EnvironmentSwitcher({
           className="inline-flex h-(--component-select-height) items-center gap-sm rounded-md border border-outline bg-surface px-md font-ui text-label-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
           <span className="truncate">{current?.name ?? currentProfileId}</span>
-          <StatusBadge tone={status.tone} label={status.label} />
         </button>
       }
     >

@@ -22,6 +22,10 @@ import {
 } from "../../shared/ui";
 import { EnvironmentSwitcher } from "./EnvironmentSwitcher";
 import {
+  transportStateLabelKey,
+  transportStateTone,
+} from "./transport_state";
+import {
   SESS_APPLY_RESTART,
   SESS_AUDIO_TOGGLE,
   SESS_DIAG_TOGGLE,
@@ -71,19 +75,6 @@ function observedStatus(
   }
 }
 
-function transportTone(state: string): StatusTone {
-  switch (state) {
-    case "ready":
-      return "running";
-    case "recovering":
-      return "transition";
-    case "failed":
-      return "error";
-    default:
-      return "stopped";
-  }
-}
-
 export function SessionHeader(props: SessionHeaderProps): JSX.Element {
   const {
     profile,
@@ -104,7 +95,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
   } = props;
   const { t } = useI18n();
   const observed = observedStatus(runtime?.observed_state, t);
-  const transportState = runtime?.transport?.transport_state ?? "unknown";
+  const transportState = runtime?.transport?.transport_state;
   const applyPending = Boolean(
     runtime && runtime.config_version !== profile.current_config_version,
   );
@@ -132,8 +123,8 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
           {t("sessTransport")}
         </span>
         <StatusBadge
-          tone={transportTone(transportState)}
-          label={transportState}
+          tone={transportStateTone(transportState)}
+          label={t(transportStateLabelKey(transportState))}
         />
       </div>
 

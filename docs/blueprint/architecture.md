@@ -119,6 +119,10 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
     - 新标签页采用 `<a target="_blank" rel="noopener">` 打开；
     - 复制标签页时利用同 Origin 的 Web Locks 机制探测并重映射冲突 ID，防止将新页面误认为重连而踢掉原有活跃连接（d007）；
     - 关闭任一外部标签页不会中断同一 Profile 下其他页面的音视频播放，亦绝不关闭底层浏览器进程。
+- **长驻 Browser 与连接恢复的职责边界（t061）**：
+    - BrowserRuntime 的存续只由运行意愿（desired_state）与 Supervisor 决策决定；ViewerConnection 的连接、断开与恢复是纯呈现/传输层事件，前端阶段收敛（信令异常后媒体健康即回 connected）只改页面呈现，不触发 Browser 的启动、停止、重置或数据删除。
+    - 不存在按无人连接或时间触发的自动回收：全部 viewer 断开后环境、已有网页与浏览器数据继续保留，无 idle 期限、绝对期限或 viewer TTL；再次连接直接恢复观看。
+    - 无人连接时唯一的服务端行为是 5.2 的采集暂停：所有连接均后台或断开时 Stream Agent 暂停画面捕获与视频编码，任一连接回前台即恢复；暂停采集不等于停止环境。
 
 ### 5.2 Profile 级单一共享编码管线与 8/30 动态仲裁
 
