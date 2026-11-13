@@ -1,0 +1,14 @@
+{
+  "tid": "t055",
+  "attempt": 1,
+  "execution_id": "3947a65c419a4c03b374c3794043fc7f",
+  "status": "done",
+  "branch": "t055_supervisor_runtime_robustness",
+  "base_sha": "1c0963845705e355ccdd7e1c3963533c9df7437a",
+  "tests": "后端全量 `tests/unit tests/integration`：2067 通过 / 28 失败 / 8 跳过（542.72s，日志 `.scratch/t055_backend_full.log`）；28 个失败中 25 个与 t054 基线同名（agent_executor_chain 7、t028 4、normal_exit_replay 4、automation_probe_chain 3、t034 2、automation_cdp_flow 2、repo_hygiene 1、automation_cdp 1、control_attendant_chain 1），另 3 个为环境件缺失（t045 wheel 缓存 2、a16 需前端 node_modules 1），补齐后重跑全部通过 → 有效回归 2070 通过 / 25 失败 / 8 跳过 / 0 错误，与基线一致，零新增失败。Round 1 修复后：定向测试 40 个全绿（t055 新测试 36 个 + 竞态 1 + 宽限边界 2 + 截断 1）；后端全量第六轮 2074 通过 / 25 失败 / 8 跳过 / 0 错误（531.99s，日志 `.scratch/t055_r1fix_backend_full.log`，2074 = 2070 + 4 新增用例，25 个失败逐名与基线一致）；前端全量：538 通过 / 0 失败（74 文件，`npm test`，Node 26.13.0）。Round 2 修复后：定向测试 70 个全绿（t055 新测试 41 个 + p058/a36 相关批 29 个）；后端全量第七轮 2075 通过 / 25 失败 / 8 跳过 / 0 错误（429.34s，日志 `.scratch/t055_r2fix_backend_full.log`，2075 = 2074 + 1 新增用例，25 个失败逐名与基线一致，分组为 executor chain 7、t028 4、normal_exit_replay 4、probe chain 3、t034 2、cdp_flow 2、repo_hygiene 1、automation_cdp 1、attendant chain 1，零 t055 相关失败）；前端全量重跑：538 通过 / 0 失败（74 文件）。Round 3 修复后：定向测试 70 个全绿（t055 新测试 41 个 + p058/a36 相关批 29 个）；后端全量第八轮 2075 通过 / 25 失败 / 8 跳过 / 0 错误（430.49s，日志 `.scratch/t055_r3fix_backend_full.log`，2075 与 R2 修复轮一致，25 个失败逐名与基线完全相同）；前端全量重跑：538 通过 / 0 失败（74 文件，日志 `.scratch/t055_r3fix_frontend_full.log`）。注：首轮全量后端曾出 2 个 `test_api_subprocess.py` teardown ERROR（2073 通过 / 2 错误），单跑该文件 4 绿、第二轮全量 0 错误，属子进程类 flaky teardown（与 t051 基线同类），非回归。Round 4 修复后：定向测试 73 个全绿（t055 新测试 44 个 + p058/a36 相关批 29 个）；后端全量第九轮 2078 通过 / 25 失败 / 8 跳过 / 0 错误（532.78s，日志 `.scratch/t055_r4fix_backend_full.log`，2078 = 2075 + 3 新增用例，25 个失败与 R3 修复轮日志逐名完全相同，零 t055 相关失败）；前端全量重跑：538 通过 / 0 失败（74 文件，日志 `.scratch/t055_r4fix_frontend_full.log`）。",
+  "blackbox": "`CBROWSER_RUN_E2E=1 scripts/run_gates.sh` 需真实 Docker/Chrome，本机无，已跳过（计 pass，见环境跳过项）。",
+  "review": "Round 1 双路 PASS（code 1 条 minor f001、test 4 条 minor f001–f004），5 条 finding 已全部修复并重验（见「Review 处置」Round 1 表）；Round 2 双路 PASS（code 1 条 minor f002、test 0 新发现），f002 已修复并重验（见「Review 处置」Round 2 表）；Round 3 双路 PASS（code 1 条 minor f003、test 0 新发现），f003 已修复并重验（见「Review 处置」Round 3 表）；Round 4 双路 PASS（code 0 新发现、test 1 条 minor f005），f005 已修复并重验（见「Review 处置」Round 4 表），待 chain runner 派发 Round 5 复审。",
+  "review_scope": "5aa4d0669a575f9b",
+  "pending": [],
+  "findings": []
+}

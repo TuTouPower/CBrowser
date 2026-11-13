@@ -233,21 +233,43 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
                 task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        # t055 A10: read the peer's close code BEFORE the local close.
+        # After a local close websockets reports our own 1000 when the
+        # peer never closed, so a later read would propagate a code the
+        # peer never sent. A client that left first suppresses
+        # propagation even when a code is present: the client is gone,
+        # and the code no longer describes this tunnel's ending.
+        peer_close_code = (
+            upstream.close_code if upstream is not None else None
+        )
+        client_initiated_close = any(
+            task.get_name() == "client_to_supervisor"
+            and task.done()
+            and not task.cancelled()
+            and task.exception() is None
+            for task in tasks
+        )
         if upstream is not None:
-            await upstream.close()
+            try:
+                await upstream.close()
+            except Exception as exc:  # noqa: BLE001 - a failing close must not block the client close
+                logger.warning(
+                    "Automation CDP upstream close failed: profile=%s error_type=%s",
+                    profile_id,
+                    type(exc).__name__,
+                )
         if tunnel_record is not None and registry is not None:
             registry.unregister(tunnel_record.tunnel_id)
         try:
             # Propagate the control-revoked close from the Supervisor
             # proxy; dropping it would turn a 4403 takeover into a
             # generic 1000 for the client.
-            close_code = (
-                upstream.close_code
-                if upstream is not None and upstream.close_code is not None
-                else None
-            )
-            if close_code is not None and close_code != 1005:
-                await websocket.close(code=close_code)
+            if (
+                peer_close_code is not None
+                and peer_close_code != 1005
+                and not client_initiated_close
+            ):
+                await websocket.close(code=peer_close_code)
             else:
                 await websocket.close()
         except Exception:  # noqa: BLE001 - already-closed client socket is harmless

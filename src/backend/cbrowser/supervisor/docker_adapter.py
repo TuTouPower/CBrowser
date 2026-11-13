@@ -26,7 +26,7 @@ from cbrowser.domain.proxy_endpoint import (
     map_endpoint_for_container,
 )
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
-from cbrowser.redact import docker_error_detail
+from cbrowser.redact import docker_error_detail, redact
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_PATH_ENV,
@@ -122,6 +122,26 @@ def _udp_mux_helper_environment() -> dict[str, str]:
         "CBROWSER_UDP_MUX_MIN_PORT": str(minimum),
         "CBROWSER_UDP_MUX_MAX_PORT": str(maximum),
     }
+
+
+_HELPER_LOG_TAIL_BYTES = 2000
+
+
+def _helper_log_tail(helper: Any) -> str:
+    """Truncated, redacted tail of a policy helper's output for logging.
+
+    A failing ``logs()`` never masks the primary outcome: it yields an
+    empty summary instead.
+    """
+    try:
+        raw = helper.logs()
+    except Exception:  # noqa: BLE001 - a failing logs() never masks the primary outcome
+        return ""
+    if isinstance(raw, bytes):
+        output = raw[-_HELPER_LOG_TAIL_BYTES:].decode("utf-8", errors="replace")
+    else:
+        output = str(raw)[-_HELPER_LOG_TAIL_BYTES:]
+    return redact(output)
 
 
 def _parse_profile_number(raw: Any) -> int | None:
@@ -429,6 +449,14 @@ class DockerAdapter:
         try:
             result = helper.wait(timeout=30)
             if result.get("StatusCode") != 0:
+                # t055 A4: capture the helper output BEFORE the finally
+                # below removes the helper; the log carries a truncated,
+                # redacted summary, never raw output.
+                logger.error(
+                    "Network policy installation failed: exit=%s helper_output=%s",
+                    result.get("StatusCode"),
+                    _helper_log_tail(helper),
+                )
                 raise DockerSandboxError("Runtime network policy installation failed")
         except DockerSandboxError:
             raise
@@ -2430,14 +2458,10 @@ with path.open('w') as output:
             result = helper.wait(timeout=30)
             status_code = int(result.get("StatusCode", -1))
             if status_code != 0:
-                try:
-                    output = helper.logs()[-2000:].decode("utf-8", errors="replace")
-                except DockerException:
-                    output = ""
                 logger.warning(
                     "Network policy helper exit=%s output=%s",
                     status_code,
-                    output,
+                    _helper_log_tail(helper),
                 )
             return status_code
         except DockerException as exc:
@@ -2446,7 +2470,15 @@ with path.open('w') as output:
             ) from None
         finally:
             if helper is not None:
-                helper.remove(force=True)
+                try:
+                    helper.remove(force=True)
+                except Exception as exc:  # noqa: BLE001 - cleanup never masks the primary outcome
+                    # t055 A4: a cleanup failure must not overwrite the
+                    # exit code the caller is about to receive.
+                    logger.warning(
+                        "Failed to remove network policy helper: error_type=%s",
+                        type(exc).__name__,
+                    )
 
     def verify_container_policy(
         self, container: Any, policy: dict[str, Any]

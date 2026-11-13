@@ -32,6 +32,7 @@ from cbrowser.supervisor.port_allocator import PortAllocator
 from cbrowser.supervisor.recovery_coordinator import RecoveryCoordinator
 from cbrowser.supervisor.resource_monitor import ResourceMonitor
 from cbrowser.supervisor.resource_policy import ResourcePolicyService
+from cbrowser.udp_mux import udp_mux_bounds
 
 
 class RuntimeLogFormatter(logging.Formatter):
@@ -112,10 +113,12 @@ async def run_supervisor(
             os.geteuid() == 0 if manage_ownership is None else manage_ownership
         ),
     )
-    port_allocator = PortAllocator(
-        min_port=int(os.environ.get("CBROWSER_UDP_MUX_MIN_PORT", PortAllocator.MIN_PORT)),
-        max_port=int(os.environ.get("CBROWSER_UDP_MUX_MAX_PORT", PortAllocator.MAX_PORT)),
-    )
+    # t055 A11: the UDP mux range is parsed once, at process start, by
+    # the shared udp_mux_bounds(); every consumer (protocol validation,
+    # network policy, allocator, runner) shares it, so an empty value
+    # falls back to the default and an illegal value fails startup here.
+    mux_min, mux_max = udp_mux_bounds()
+    port_allocator = PortAllocator(min_port=mux_min, max_port=mux_max)
     event_forwarder = EventForwarder(
         api_base_url=api_url,
         events_spool_dir=data_root / "spool",
@@ -248,7 +251,7 @@ def _watch_network_events(
     stop_event: threading.Event | asyncio.Event,
     register_stream: Any,
     wake: Any,
-    close_streams: Any,
+    close_stream: Any,
 ) -> None:
     try:
         stream = client.events(decode=True, filters={"type": "network"})
@@ -257,7 +260,7 @@ def _watch_network_events(
             # Shutdown raced the subscription: the caller's finally-path
             # may already have run its close pass, so close here instead
             # of leaking a stream nobody will ever close.
-            close_streams()
+            close_stream()
             return
         logger.info("Docker network events stream subscribed")
         _pump_network_events(stream, prefix, wake, stop_event)
@@ -265,6 +268,45 @@ def _watch_network_events(
         logger.warning(
             "Docker network event stream stopped: error_type=%s",
             type(exc).__name__,
+        )
+
+
+def _watch_container_events(
+    client: Any,
+    prefix: str,
+    stop_event: threading.Event | asyncio.Event,
+    register_stream: Any,
+    wake: Any,
+    close_stream: Any,
+) -> None:
+    """Container watcher, symmetric with ``_watch_network_events``.
+
+    t055 A13: the shutdown race that used to live inline in
+    ``serve_supervisor`` (close the stream and return without pumping
+    when stop lands between subscription and the stop check) is the
+    same shape as the network version, so it lives here with the same
+    contract: the race branch closes only this watcher's stream.
+    """
+    try:
+        stream = client.events(
+            decode=True,
+            filters={
+                "type": "container",
+                "label": f"com.cbrowser.prefix={prefix}",
+            },
+        )
+        register_stream(stream)
+        if stop_event.is_set():
+            # Shutdown raced the subscription: the caller's finally-path
+            # may already have run its close pass, so close here instead
+            # of leaking a stream nobody will ever close.
+            close_stream()
+            return
+        logger.info("Docker events stream subscribed for prefix=%s", prefix)
+        _pump_container_events(stream, prefix, wake, stop_event)
+    except Exception as exc:  # noqa: BLE001 - docker events watching loop error isolated and logged
+        logger.warning(
+            "Docker event stream stopped: error_type=%s", type(exc).__name__
         )
 
 
@@ -309,21 +351,36 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     network_events_stream: Any = None
     stream_lock = threading.Lock()
 
-    def _close_stream_sync() -> None:
-        nonlocal events_stream, network_events_stream
+    def _close_target(target: Any) -> None:
+        if target is not None and hasattr(target, "close"):
+            try:
+                target.close()
+            except Exception as exc:  # noqa: BLE001 - docker event stream close failure during cleanup logged
+                logger.warning(
+                    "Docker event stream close failed: %s",
+                    type(exc).__name__,
+                )
+
+    def _close_container_stream_sync() -> None:
+        # t055 A13: each watcher closes only its own stream; the
+        # container watcher's shutdown must never close the network
+        # watcher's stream (and vice versa). Idempotent: taking the
+        # stream clears the slot, so a repeated close is a no-op.
+        nonlocal events_stream
         with stream_lock:
-            targets = [events_stream, network_events_stream]
-            events_stream = None
-            network_events_stream = None
-        for target in targets:
-            if target is not None and hasattr(target, "close"):
-                try:
-                    target.close()
-                except Exception as exc:  # noqa: BLE001 - docker event stream close failure during cleanup logged
-                    logger.warning(
-                        "Docker event stream close failed: %s",
-                        type(exc).__name__,
-                    )
+            target, events_stream = events_stream, None
+        _close_target(target)
+
+    def _close_network_stream_sync() -> None:
+        nonlocal network_events_stream
+        with stream_lock:
+            target, network_events_stream = network_events_stream, None
+        _close_target(target)
+
+    def _close_stream_sync() -> None:
+        # Supervisor shutdown final pass: both streams.
+        _close_container_stream_sync()
+        _close_network_stream_sync()
 
     def handle_signal():
         logger.info("Received shutdown signal.")
@@ -340,43 +397,23 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
     scan_wakeup = asyncio.Event()
 
     def watch_docker_events() -> None:
-        nonlocal events_stream
-        try:
-            prefix = core.docker.resource_prefix
-            stream = core.docker.client.events(
-                decode=True,
-                filters={
-                    "type": "container",
-                    "label": f"com.cbrowser.prefix={prefix}",
-                },
-            )
+        def _register(stream: Any) -> None:
+            nonlocal events_stream
             with stream_lock:
-                if stop_event.is_set():
-                    if hasattr(stream, "close"):
-                        try:
-                            stream.close()
-                        except Exception as exc:  # noqa: BLE001 - docker event stream close failure on early abort logged
-                            logger.warning(
-                                "Docker event stream close failed: %s",
-                                type(exc).__name__,
-                            )
-                    return
                 events_stream = stream
 
-            logger.info("Docker events stream subscribed for prefix=%s", prefix)
-
-            _pump_container_events(
-                stream,
-                prefix,
-                lambda: loop.call_soon_threadsafe(scan_wakeup.set),
+        try:
+            _watch_container_events(
+                core.docker.client,
+                core.docker.resource_prefix,
                 stop_event,
-            )
-        except Exception as exc:  # noqa: BLE001 - docker events watching loop error isolated and logged
-            logger.warning(
-                "Docker event stream stopped: error_type=%s", type(exc).__name__
+                _register,
+                lambda: loop.call_soon_threadsafe(scan_wakeup.set),
+                _close_container_stream_sync,
             )
         finally:
-            _close_stream_sync()
+            # t055 A13: the container watcher closes only its own stream.
+            _close_container_stream_sync()
 
     def watch_docker_network_events() -> None:
         # t026 AC-002: media network create/remove/disconnect events wake
@@ -395,7 +432,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
             stop_event,
             _register,
             lambda: loop.call_soon_threadsafe(scan_wakeup.set),
-            _close_stream_sync,
+            _close_network_stream_sync,
         )
 
     docker_events_task = asyncio.create_task(asyncio.to_thread(watch_docker_events))

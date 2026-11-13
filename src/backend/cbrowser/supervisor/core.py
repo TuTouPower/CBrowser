@@ -92,7 +92,7 @@ from cbrowser.supervisor.recovery_rules import (
 )
 from cbrowser.supervisor.resource_monitor import ProfileResourceTarget, ResourceMonitor
 from cbrowser.supervisor.selkies_tokens import SelkiesTokens
-from docker.errors import APIError, DockerException, NotFound
+from docker.errors import APIError, DockerException
 from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.core")
@@ -182,7 +182,10 @@ class BrowserContainerLookup:
 
     outcome: str
     container_status: str | None = None
-    observed_instance_id: str | None = None
+    # t055 A8: every foreign instance id on mismatch (a single id is a
+    # one-element tuple); the caller must be able to tell "several
+    # foreign instances" from "one foreign instance".
+    observed_instance_id: tuple[str, ...] | None = None
 
 
 @dataclass
@@ -201,6 +204,12 @@ class ActiveSession:
 class RegistrationState:
     known: bool = False
     lost_at: float | None = None
+    # t055 A7: set only by the restore path. The grace belongs to a
+    # recovery, not to a lost registration: a restore-armed state
+    # survives gateway-unreachable passes (without re-arming), while a
+    # transition-armed state is still dropped at the lifecycle boundary
+    # (t026 stale-grace regression).
+    recovery_armed: bool = False
 
 
 @dataclass(frozen=True)
@@ -279,6 +288,7 @@ class SupervisorCore:
         # from the same scans that rebuild sessions).
         self._transport: dict[str, TransportObservation] = {}
         self._registration: dict[str, RegistrationState] = {}
+        self._offline_attach_log_at: dict[str, float] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
         self._pending_stream_residue: dict[str, StreamResidue] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
@@ -349,6 +359,9 @@ class SupervisorCore:
     # plus registration roundtrip and converge passes. A profile that
     # was never registered is unaffected and still replaces immediately.
     _REGISTRATION_LOSS_GRACE_SEC = 90.0
+    # t055 A6: offline attachment recovery logs a non-OK status at most
+    # once per profile per interval; the pass itself retries every cycle.
+    _OFFLINE_ATTACH_LOG_INTERVAL_SEC = 60.0
 
     @staticmethod
     def _now_iso() -> str:
@@ -433,7 +446,15 @@ class SupervisorCore:
             )
         if not media["exists"] or not media["conforms"]:
             return MediaAttachmentOutcome(MEDIA_ATTACH_DRIFT, media=media)
-        gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        try:
+            gateway_id = await asyncio.to_thread(self._resolve_gateway_id)
+        except DockerSandboxError:
+            # t055 A6: a gateway scan failure is a transient topology
+            # fact, not a crash: report it as a missing gateway so the
+            # caller converges to "recovering" instead of failing the pass.
+            return MediaAttachmentOutcome(
+                MEDIA_ATTACH_GATEWAY_MISSING, media=media
+            )
         if gateway_id is None:
             return MediaAttachmentOutcome(
                 MEDIA_ATTACH_GATEWAY_MISSING, media=media
@@ -527,7 +548,13 @@ class SupervisorCore:
                 )
             return
         if attachment.status == MEDIA_ATTACH_GATEWAY_MISSING:
-            self._registration.pop(profile_id, None)
+            # t055 A7: a restore-armed grace survives this boundary
+            # (the grace belongs to the recovery); any other state is
+            # dropped wholesale so a same-name restart replaces
+            # immediately instead of deferring on a stale grace (t026).
+            state = self._registration.get(profile_id)
+            if state is None or not state.recovery_armed:
+                self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 transport_state="recovering",
@@ -631,7 +658,12 @@ class SupervisorCore:
             profile_id, instance_id
         )
         if registered is None:
-            self._registration.pop(profile_id, None)
+            # t055 A7: same retention as the gateway-missing branch
+            # above: a restore-armed grace survives, anything else is
+            # dropped wholesale (t026 stale-grace).
+            state = self._registration.get(profile_id)
+            if state is None or not state.recovery_armed:
+                self._registration.pop(profile_id, None)
             self._update_transport(
                 profile_id,
                 transport_state="recovering",
@@ -879,7 +911,19 @@ class SupervisorCore:
         )
         if instance_id is None:
             return
-        await self._ensure_media_attachment(profile_id, instance_id)
+        outcome = await self._ensure_media_attachment(profile_id, instance_id)
+        # t055 A6: consume the return value; a non-OK status is logged
+        # (rate-limited per profile) instead of being silently dropped.
+        if outcome.status != MEDIA_ATTACH_OK:
+            now = time.monotonic()
+            last = self._offline_attach_log_at.get(profile_id)
+            if last is None or now - last >= self._OFFLINE_ATTACH_LOG_INTERVAL_SEC:
+                self._offline_attach_log_at[profile_id] = now
+                logger.warning(
+                    "Offline attachment recovery: profile=%s status=%s",
+                    profile_id,
+                    outcome.status,
+                )
 
     async def reconcile_all(self) -> ReconcileAllResponse:
         """One full convergence pass over every live pair (t026 AC-009)."""
@@ -1283,18 +1327,21 @@ class SupervisorCore:
                     obs == "running"
                     and session is not None
                     and session.runtime_instance_id == b_inst
-                    and session.observed_state == "error"
+                    and session.observed_state in ("error", "starting")
                 ):
-                    # Release a locally latched container_exit error:
-                    # the authoritative observation (Browser running +
-                    # Agent health for this very instance) supersedes
-                    # it. Without the release, the same-instance branch
-                    # below can neither report running nor converge
-                    # again for this instance (t026_code_f014). The
-                    # terminal-observation dedupe key goes with it: the
-                    # generation demonstrably did not terminate, so a
-                    # later terminal fact for this same instance must be
-                    # reportable again (t026_code_f015).
+                    # Release a locally latched container_exit error, or
+                    # confirm a restored session whose health was unknown
+                    # (t055 A7: restore presets "starting", never
+                    # "running"): the authoritative observation (Browser
+                    # running + Agent health for this very instance)
+                    # supersedes it. Without the release, the
+                    # same-instance branch below can neither report
+                    # running nor converge again for this instance
+                    # (t026_code_f014). The terminal-observation dedupe
+                    # key goes with the release: the generation
+                    # demonstrably did not terminate, so a later terminal
+                    # fact for this same instance must be reportable
+                    # again (t026_code_f015).
                     session.observed_state = "running"
                     self._terminal_observations = {
                         item
@@ -1479,20 +1526,21 @@ class SupervisorCore:
                     browser_container_id=b_c["id"],
                     stream_container_id=s_c["id"],
                     desired_state="running",
-                    observed_state="running",
+                    # t055 A7: Agent health is unknown at restore time;
+                    # never preset "running". Normal convergence upgrades
+                    # this to "running" once health confirms it, and the
+                    # CDP proxy rejects connections until then.
+                    observed_state="starting",
                 )
-                if rt.get("observed_state") == "starting":
-                    await self._report_observed(
-                        pid, b_inst, "running", rt["config_version"]
-                    )
                 # A freshly restored Supervisor has no registration
                 # history, so treat the first unregistered reading as the
                 # same recovery transient a live Supervisor sees after a
                 # Gateway restart: arm the grace before converging, or the
                 # next convergence would replace a Stream that only needs
-                # the Gateway attachment repaired.
+                # the Gateway attachment repaired. The grace starts at
+                # the restore time and is armed for this recovery only.
                 self._registration[pid] = RegistrationState(
-                    lost_at=time.monotonic()
+                    lost_at=time.monotonic(), recovery_armed=True
                 )
                 # Same pass convergence: the restored session immediately
                 # converges transport topology (Gateway re-attachment)
@@ -1669,7 +1717,9 @@ class SupervisorCore:
         self._native_exit_instances = {
             key: value
             for key, value in self._native_exit_instances.items()
-            if key[0] != profile_id
+            # t055 A5: keys are (profile_id, instance_id, config_version);
+            # drop only this instance's records, never the whole profile.
+            if not (key[0] == profile_id and key[1] == runtime_instance_id)
         }
         self._terminal_observations = {
             item
@@ -1825,9 +1875,16 @@ class SupervisorCore:
                 all=True,
                 filters={"label": label_filters},
             )
-        except NotFound:
-            return BrowserContainerLookup(_BROWSER_MISSING)
-        except Exception:  # noqa: BLE001 - Docker facts unavailable: stay unresolved
+        except Exception as exc:  # noqa: BLE001 - Docker facts unavailable: stay unresolved
+            # t055 A8: the NotFound branch was unreachable (docker-py
+            # list returns [] for a missing container, it never raises
+            # NotFound), so it is deleted; any other failure is logged
+            # with its type instead of being swallowed silently.
+            logger.warning(
+                "Browser container lookup failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
             return BrowserContainerLookup(_BROWSER_LOOKUP_UNKNOWN)
         if not containers:
             return BrowserContainerLookup(_BROWSER_MISSING)
@@ -1836,9 +1893,22 @@ class SupervisorCore:
                 return BrowserContainerLookup(
                     _BROWSER_FOUND,
                     container_status=getattr(container, "status", None),
-                    observed_instance_id=instance_id,
+                    observed_instance_id=(instance_id,),
                 )
-        observed = container_runtime_instance_id(containers[0])
+        # t055 A8: report every foreign instance id, not just the first
+        # container's, so the caller can tell several foreign instances
+        # from one.
+        observed = tuple(
+            dict.fromkeys(
+                filter(
+                    None,
+                    (
+                        container_runtime_instance_id(container)
+                        for container in containers
+                    ),
+                )
+            )
+        )
         return BrowserContainerLookup(
             _BROWSER_INSTANCE_MISMATCH, observed_instance_id=observed
         )
@@ -1864,7 +1934,7 @@ class SupervisorCore:
                 logger.warning(
                     "Container instance mismatch: profile=%s docker=%s expected=%s",
                     profile_id,
-                    lookup.observed_instance_id,
+                    ", ".join(lookup.observed_instance_id or ()),
                     instance_id,
                 )
                 return None
