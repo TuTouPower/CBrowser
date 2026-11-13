@@ -5,4 +5,4 @@
 - 根因：产品设计与组件分级缺陷。t039 会话页重构时，`SessionPage.tsx:253` 以 `stage !== "connected"` 无差别挂载 `SessionStagePanelConnected`，且 `SessionStagePanel.tsx` 虽区分 `ERROR_STAGES`，但仅用于切换头部图标，大卡片外层容器、WebRTC 底层指标列表（`diagnosticRows`）和操作按钮（`sess-stage-action`）全量渲染，将故障诊断与恢复面板误当作正常流转的等待加载态使用。
 - 测试缺口：现有测试（`SessionStagePanel.test.tsx:57-121`）显式断言“全部 12 个非 connected 阶段均渲染包含标题与操作按钮的居中面板”；E2E 测试亦把“面板消失”当作就绪信号，缺乏对“正常连接过渡态仅展示轻量无阻断 spinner、不弹出诊断卡片与按钮”的断言。应在组件层（`SessionStagePanel.test.tsx` / `SessionPage.test.tsx`）补测过渡态轻量渲染与真正故障态（如 `media_no_frames`、`ice_failed`）居中面板分级展示。
 - 线索：`.scratch/test_media_waiting_repro.test.tsx` + `.scratch/vitest.config.ts` 最小复现断言确认 `media_waiting` 下渲染包含标题「等待媒体流渲染」、诊断表 `sess-stage-diagnostics` 与 `reconnect` / `view-status` 按钮的完整面板；`src/frontend/src/features/browser-session/SessionStagePanel.tsx`、`SessionPage.tsx:253-262`、`useBrowserSession.ts:465`。
-- 处理：未开
+- 处理：t061；resolution=transferred；reason=已核实当前代码与有效 task，按同一交付面聚合转交 t061；过时描述与剩余范围见 task spec，归档仅表示转办

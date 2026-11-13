@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P0-2、P2-19），借鉴 SealSkin 控制面/数据面分离与 Caddy `forward_auth`
 - 内容：全仓 grep 无 `forward_auth`；鉴权在应用层（`gateway/server.py` Origin、`auth/dependencies.py` CSRF+Origin+session），Caddyfile 部署期生成、不入库。SealSkin 把鉴权、凭证注入、cookie 剥离、CSP 全部收口到 Caddy：会话容器不发布宿主端口，`/<session>/*` 每个请求经 `forward_auth` 问 `/internal/resolve_session/<id>` 后才反代，一次性 `access_token` 换路径作用域 `HttpOnly`/`Secure` cookie，`/internal/*` 在 public listener 被拒绝，官方明确「no code of an image runs on the origin that holds the cookie」。本次为只读调研，未授权改生产代码；涉及部署期生成的 Caddyfile 与鉴权链路，需专项 task 与真链 E2E。
-- 处理：未开
+- 处理：t064；resolution=transferred；reason=已核实当前代码与有效 task，按同一交付面聚合转交 t064；过时描述与剩余范围见 task spec，归档仅表示转办
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p025（archive，网关节流/身份复检）、p004（archive，Selkies profile tokens）、p054（archive，Root CA 文档批）、p053（parked，LAN + 根证书下载，用户已明确暂搁，本条不复活其范围）
 

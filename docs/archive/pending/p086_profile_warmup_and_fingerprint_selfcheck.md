@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P2-15），借鉴 Multilogin pre-farmed cookies、GoLogin/Dolphin Cookie Robot、CloakBrowser-Manager 首次启动书签
 - 内容：per-Profile 首次启动前 warm-up（访问若干站点积累历史/cookie，对抗「空 jar 可疑」）；把 Pixelscan / Iphey / CreepJS / BrowserScan / BrowserLeaks TLS / reCAPTCHA / Turnstile 做成一键自检页，且自检测「跨 API 自洽 + 群体分布」而非刷单站 PASS——storage quota 二选一即证明两家检测站查的是相反方向，单站 PASS 不构成结论。本次为只读调研，未授权改生产代码。
-- 处理：未开
+- 处理：t068；resolution=transferred；reason=已核实当前代码与有效 task，按同一交付面聚合转交 t068；过时描述与剩余范围见 task spec，归档仅表示转办
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p040（parked，代理连通性与出口 IP 检测）、p028（archive，CDP fingerprint harness）、p074（原子身份 bundle）、p081（回归基线）、p085（群体分布）
 
