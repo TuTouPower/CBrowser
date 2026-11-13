@@ -81,16 +81,16 @@ Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和
 
 ## 预览目录独立挂载、策略即时下发与 health 变化通知（t040）
 
-预览目录 `data_root/profiles/{id}/preview/` 由 Supervisor 单独挂载进 Browser 容器 `/data/preview`，不进入 `/data/profiles/{id}/profile`（user data dir）；`PathValidator` 按同一数据根与 Profile 归属校验，目录内 `policy.json` / `latest.jpg` / `meta.json` 全部 0600 原子写。该分离使「含浏览器状态」复制不带走预览，停止后保留最后一帧。
+预览目录 `data_root/profiles/{id}/preview/` 由 Supervisor 单独挂载进 Browser 容器 `/data/preview`，不进入 `/data/profiles/{id}/profile`（user data dir）；`PathValidator` 按同一数据根与 Profile 归属校验，目录内 `policy.json` / `frame_<timestamp_key>_<image_sha256>.jpg` / `meta.json` 全部 0600 原子写。该分离使「含浏览器状态」复制不带走预览，停止后保留最后一帧。
 
 `capture_preview` 为即时策略，不进入配置版本。策略变化链路：
 
 |环节|行为|
 |---|---|
 |API PATCH|本地写 policy，关闭时清除已有预览|
-|`RuntimeCoordinator.request_preview_policy`|POST `/supervisor/v1/profiles/{id}/preview-policy`（`PreviewPolicySyncRequest`，带 request_id）|
+|`RuntimeCoordinator.request_preview_policy`|POST `/supervisor/v1/profiles/{id}/preview-policy`（`PreviewPolicySyncRequest`，pending保存首次request_id并在重发时复用，成功仅比较后删除对应pending）|
 |Supervisor `apply_preview_policy`|写 policy，经 Agent UDS `/control` 以 `action=preview_policy` 即时下发|
 
 下发以 runtime_instance_id + request_id 双重围栏，旧实例与重复请求丢弃；**不重启、不应用配置**。
 
-Agent `/health` 的 details 携带 `preview_captured_at`。Supervisor 观测到变化且校验 `meta.policy_epoch == policy.epoch` 与 instance 匹配后，POST API 内部端点 `/api/v1/internal/supervisor/profiles/{id}/preview`（`PreviewObservedRequest`）；不复用 Artifact 的事件文件 + 游标模式（面向持久下载，不适合每 15 秒覆盖写）。API 侧 `record_preview_capture` 再校验代次与实例，失败丢弃并清预览。
+Agent `/health` 的 details 携带 `preview_captured_at`。Supervisor仅在校验与API上报成功后写入去重缓存。瞬时失败保留同帧重试机会，warning按Profile限频30秒且只记录错误类型；Profile删除或运行代次结束清理预览去重与warning状态。观测到变化且校验 `meta.policy_epoch == policy.epoch` 与 instance 匹配后，POST API 内部端点 `/api/v1/internal/supervisor/profiles/{id}/preview`（`PreviewObservedRequest`）；不复用 Artifact 的事件文件 + 游标模式（面向持久下载，不适合每 15 秒覆盖写）。API侧`record_preview_capture`再校验capture_preview开启、代次与实例，失败丢弃并清预览。

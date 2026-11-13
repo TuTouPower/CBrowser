@@ -1,0 +1,19 @@
+{
+  "tid": "t057",
+  "attempt": 4,
+  "execution_id": "eb4aef1a07394f27b06a6c000a4a44c0",
+  "status": "done",
+  "branch": "t057_preview_pipeline_integrity",
+  "base_sha": "ff253095dec4ba070c22d69e221730db383ec30b",
+  "tests": "完整B的unit1676 passed/0 failed、integration180 passed/0 failed/18 host skips、frontend502 passed/0 failed、contract257 passed/0 failed/1 policy skip；协议、依赖锁、设计lint/check、类型、构建及五镜像包检查通过。d041修复后按用户明确要求不重复全量，仅定向复验；旧unit夹具仅适配create/start，原断言保持。当前变更范围Ruff零新问题，54项未变基线诊断保留；变更Markdown已校验。",
+  "blackbox": "完整B真实E2E102 passed/1 failed/2 optional skips，唯一失败为既有策略helper在OCI启动异常后残留created容器。用户授权纳入最小修复后，原失败E2E原样定向复验1 passed/0 failed/0 skipped（6.41秒），证明失败封闭、API状态收敛、端口释放及容器/网络零残留。B原始all_passed=false如实保留，不将分轮结果冒充最终全量重跑。独立真实引擎2 passed/0 failed/0 skipped，evidence all_passed=true；宿主跳过18项已在容器专项补验18 passed。",
+  "review": "full双路Round2均PASS，最终scope=b75df5c9c154d64d；checker的review_scope=ok、ac_review=ok、next_action=finalize。五项历史finding均已修复独立复验，新增finding0；两份报告保留首轮FAIL历史。代码轴复核8/8，测试轴7/8独立复核，AC-006实际Docker执行据实依赖既有证据。",
+  "review_scope": "b75df5c9c154d64d",
+  "pending": [],
+  "findings": [
+    "d038",
+    "d039",
+    "d040",
+    "d041"
+  ]
+}

@@ -398,3 +398,51 @@ async def test_reconcile_loop_respects_explicit_retry_cap(
         assert clock.delays
     finally:
         await coord.stop()
+
+
+async def test_preview_retry_reuses_request_id(profile_service):
+    bodies = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        return httpx.Response(503 if len(bodies) == 1 else 200)
+
+    coord = RuntimeCoordinator(supervisor_url="http://supervisor", supervisor_token=SecretStr("test"), profile_service=profile_service, transport=httpx.MockTransport(handler))
+    try:
+        await coord.request_preview_policy("p", True, 7, "instance")
+        assert coord.has_pending_preview_policy("p")
+        await coord.flush_pending_preview_policy("p")
+        assert bodies[0]["request_id"] == bodies[1]["request_id"]
+        assert not coord.has_pending_preview_policy("p")
+    finally:
+        await coord.stop()
+
+
+async def test_preview_old_success_cannot_remove_new_pending(profile_service):
+    old_started, release_old = asyncio.Event(), asyncio.Event()
+    bodies = []
+
+    async def handler(request):
+        body = json.loads(request.content)
+        bodies.append(body)
+        if body["epoch"] == 6:
+            old_started.set()
+            await release_old.wait()
+            return httpx.Response(200)
+        return httpx.Response(503)
+
+    coord = RuntimeCoordinator(supervisor_url="http://supervisor", supervisor_token=SecretStr("test"), profile_service=profile_service, transport=httpx.MockTransport(handler))
+    try:
+        old = asyncio.create_task(coord.request_preview_policy("p", True, 6, "instance"))
+        await asyncio.wait_for(old_started.wait(), 1)
+        await coord.request_preview_policy("p", False, 7, "instance")
+        release_old.set()
+        await old
+        assert coord.has_pending_preview_policy("p")
+        await coord.flush_pending_preview_policy("p")
+        assert [b["epoch"] for b in bodies] == [6, 7, 7]
+        assert bodies[1]["request_id"] == bodies[2]["request_id"]
+    finally:
+        release_old.set()
+        await coord.stop()

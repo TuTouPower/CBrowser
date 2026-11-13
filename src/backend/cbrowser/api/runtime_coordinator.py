@@ -295,7 +295,7 @@ class RuntimeCoordinator:
         self._active_tasks: dict[str, asyncio.Task] = {}
         self._publish_tasks: set[asyncio.Task[None]] = set()
         self._client: httpx.AsyncClient | None = None
-        self._pending_preview_policy: dict[str, tuple[bool, int, str | None]] = {}
+        self._pending_preview_policy: dict[str, PreviewPolicySyncRequest] = {}
         self._running: bool = False
         # t031: set by app lifespan after the control service is built.
         # None in tests that construct the coordinator standalone.
@@ -925,9 +925,7 @@ class RuntimeCoordinator:
     async def _post_preview_policy(
         self,
         profile_id: str,
-        enabled: bool,
-        epoch: int,
-        instance: str | None,
+        pending: PreviewPolicySyncRequest,
     ) -> None:
         import httpx
 
@@ -940,12 +938,7 @@ class RuntimeCoordinator:
             f"{quote(profile_id, safe='')}/preview-policy"
         )
         headers = {"Authorization": f"Bearer {self._token_str}"}
-        body = PreviewPolicySyncRequest(
-            enabled=enabled,
-            epoch=epoch,
-            runtime_instance_id=instance,
-            request_id=uuid.uuid4().hex,
-        ).model_dump()
+        body = pending.model_dump()
         resp = await self._client.post(url, json=body, headers=headers)
         if resp.status_code != 200:
             raise RuntimeError(f"Preview policy sync failed ({resp.status_code})")
@@ -957,28 +950,26 @@ class RuntimeCoordinator:
         epoch: int,
         instance: str | None,
     ) -> None:
-        if not self.is_enabled():
-            self._pending_preview_policy[profile_id] = (enabled, epoch, instance)
+        pending = self._pending_preview_policy.get(profile_id)
+        if pending is not None and pending.epoch > epoch:
             return
-        try:
-            await self._post_preview_policy(profile_id, enabled, epoch, instance)
-        except Exception as exc:  # noqa: BLE001 - keep a pending dispatch
-            self._pending_preview_policy[profile_id] = (enabled, epoch, instance)
-            logger.warning(
-                "Preview policy dispatch pending: profile=%s error_type=%s",
-                profile_id,
-                type(exc).__name__,
+        if pending is None or (
+            pending.enabled, pending.epoch, pending.runtime_instance_id
+        ) != (enabled, epoch, instance):
+            self._pending_preview_policy[profile_id] = PreviewPolicySyncRequest(
+                enabled=enabled,
+                epoch=epoch,
+                runtime_instance_id=instance,
+                request_id=uuid.uuid4().hex,
             )
-        else:
-            self._pending_preview_policy.pop(profile_id, None)
+        await self.flush_pending_preview_policy(profile_id)
 
     async def flush_pending_preview_policy(self, profile_id: str) -> None:
         pending = self._pending_preview_policy.get(profile_id)
         if pending is None or not self.is_enabled():
             return
-        enabled, epoch, instance = pending
         try:
-            await self._post_preview_policy(profile_id, enabled, epoch, instance)
+            await self._post_preview_policy(profile_id, pending)
         except Exception as exc:  # noqa: BLE001 - retry on the next reconcile
             logger.warning(
                 "Preview policy reconcile retry failed: profile=%s error_type=%s",
@@ -986,7 +977,8 @@ class RuntimeCoordinator:
                 type(exc).__name__,
             )
             return
-        self._pending_preview_policy.pop(profile_id, None)
+        if self._pending_preview_policy.get(profile_id) is pending:
+            self._pending_preview_policy.pop(profile_id, None)
 
     def has_pending_preview_policy(self, profile_id: str) -> bool:
         return profile_id in self._pending_preview_policy

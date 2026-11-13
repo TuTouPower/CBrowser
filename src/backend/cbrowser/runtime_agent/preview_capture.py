@@ -1,65 +1,89 @@
-"""Runtime Agent preview capture loop (t040)."""
+"""Capture the Profile's isolated X11 display, including browser chrome."""
 
 from __future__ import annotations
 
 import asyncio
-import base64
-import json
+import io
 import logging
+import re
+import subprocess
+import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Awaitable, Callable
 
 from cbrowser.preview import (
     CAPTURE_INTERVAL_SEC,
+    JPEG_QUALITY,
+    PREVIEW_WIDTH,
     PreviewMeta,
     PreviewPolicy,
-    capture_screenshot_params,
     commit_preview,
     read_policy,
 )
 from cbrowser.runtime_agent.protocol import utc_now_iso
+from PIL import Image, ImageGrab
 
 logger = logging.getLogger("cbrowser.runtime_agent.preview_capture")
-
 PREVIEW_MOUNT_DIR = Path("/data/preview")
+Capture = Callable[[str], tuple[bytes, tuple[int, int]]]
 
-CdpSend = Callable[[str, dict[str, Any], str | None], Awaitable[dict[str, Any]]]
+
+def capture_display(display: str) -> tuple[bytes, tuple[int, int]]:
+    # Explicit X display disables Pillow's desktop-helper fallback. Never
+    # allow an absent display to fall through to a macOS host screenshot.
+    if not isinstance(display, str) or re.fullmatch(r":\d+(?:\.\d+)?", display) is None:
+        raise ValueError("Preview requires an explicit local X11 display")
+    if sys.platform != "linux":
+        raise RuntimeError("Preview capture requires the isolated Linux display")
+    with ImageGrab.grab(xdisplay=display) as image:
+        size = (
+            PREVIEW_WIDTH,
+            max(1, round(image.height * PREVIEW_WIDTH / image.width)),
+        )
+        with (
+            image.convert("RGB").resize(size, Image.Resampling.LANCZOS) as thumbnail,
+            io.BytesIO() as output,
+        ):
+            thumbnail.save(output, "JPEG", quality=JPEG_QUALITY)
+            return output.getvalue(), size
 
 
-def cdp_send_from_proxy(cdp_proxy: Any) -> CdpSend:
-    async def send(
-        method: str, params: dict[str, Any], session: str | None = None
-    ) -> dict[str, Any]:
-        if not cdp_proxy.agent_ws or cdp_proxy.shutting_down:
-            raise RuntimeError("CDP proxy is not connected")
-        async with cdp_proxy._lock:
-            cid = cdp_proxy._allocate_cmd_id()
-        req: dict[str, Any] = {"id": cid, "method": method, "params": params or {}}
-        if session is not None:
-            req["sessionId"] = session
-        loop = asyncio.get_running_loop()
-        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
-        cdp_proxy.pending_cmd_futures[cid] = fut
-        try:
-            await cdp_proxy.agent_ws.send(json.dumps(req))
-            resp = await asyncio.wait_for(fut, timeout=5.0)
-        finally:
-            cdp_proxy.pending_cmd_futures.pop(cid, None)
-            if not fut.done():
-                fut.cancel()
-        if "error" in resp or "result" not in resp:
-            raise RuntimeError("CDP command was not acknowledged")
-        return resp["result"]
-
-    return send
+def valid_frame(jpeg: bytes, size: tuple[int, int]) -> bool:
+    if size[0] != PREVIEW_WIDTH or size[1] <= 0 or not jpeg.endswith(b"\xff\xd9"):
+        return False
+    try:
+        with Image.open(io.BytesIO(jpeg)) as image:
+            if image.format != "JPEG" or image.size != size:
+                return False
+            image.load()
+    except OSError, ValueError, Image.DecompressionBombError:
+        return False
+    try:
+        checked = subprocess.run(
+            ["jpeginfo", "--check", "-"],
+            input=jpeg,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2.0,
+            check=False,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return False
+    return checked.returncode == 0
 
 
 class PreviewCaptureLoop:
     def __init__(
-        self, data_root: Path | str, cdp_send: CdpSend, instance_id: str
+        self,
+        data_root: Path | str,
+        display: str,
+        instance_id: str,
+        *,
+        capture: Capture = capture_display,
     ) -> None:
         self.directory = Path(data_root)
-        self.cdp_send = cdp_send
+        self.display = display
+        self.capture = capture
         self.instance_id = instance_id
         self._policy: PreviewPolicy | None = None
         self.last_captured_at: str | None = None
@@ -87,67 +111,29 @@ class PreviewCaptureLoop:
         self._wake.set()
 
     async def capture_once(self) -> None:
-        policy = self._policy or read_policy(self.directory)
-        if policy is None or not policy.enabled or policy.runtime_instance_id is None:
+        current = read_policy(self.directory)
+        policy = self._policy or current
+        if (
+            policy is None
+            or not policy.enabled
+            or policy.runtime_instance_id != self.instance_id
+            or current is None
+            or not current.enabled
+            or current.epoch != policy.epoch
+            or current.runtime_instance_id != self.instance_id
+        ):
             return
-
-        targets = await self.cdp_send("Target.getTargets", {}, None)
-        page = next(
-            (
-                t
-                for t in targets.get("targetInfos", [])
-                if t.get("type") == "page"
-            ),
-            None,
+        jpeg, size = await asyncio.to_thread(self.capture, self.display)
+        if not await asyncio.to_thread(valid_frame, jpeg, size):
+            logger.warning("Preview frame rejected: error_type=invalid_jpeg")
+            return
+        meta = PreviewMeta(
+            captured_at=utc_now_iso(),
+            runtime_instance_id=self.instance_id,
+            policy_epoch=policy.epoch,
         )
-        if page is None:
-            return
-        target_id = page.get("targetId")
-        if not isinstance(target_id, str) or not target_id:
-            return
-        attached = await self.cdp_send(
-            "Target.attachToTarget",
-            {"targetId": target_id, "flatten": True},
-            None,
-        )
-        session = attached.get("sessionId")
-        if not isinstance(session, str) or not session:
-            return
-        try:
-            metrics = await self.cdp_send("Page.getLayoutMetrics", {}, session)
-            viewport = (
-                metrics.get("cssLayoutViewport")
-                or metrics.get("layoutViewport")
-                or {}
-            )
-            vw = int(viewport.get("clientWidth", 0) or 0)
-            vh = int(viewport.get("clientHeight", 0) or 0)
-            if vw <= 0 or vh <= 0:
-                return
-            shot = await self.cdp_send(
-                "Page.captureScreenshot",
-                capture_screenshot_params(vw, vh),
-                session,
-            )
-            jpeg = base64.b64decode(shot["data"])
-            meta = PreviewMeta(
-                captured_at=utc_now_iso(),
-                runtime_instance_id=policy.runtime_instance_id,
-                policy_epoch=policy.epoch,
-            )
-            if commit_preview(self.directory, jpeg, meta, policy):
-                self.last_captured_at = meta.captured_at
-        finally:
-            try:
-                await self.cdp_send(
-                    "Target.detachFromTarget",
-                    {"sessionId": session},
-                    None,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Preview detach failed: error_type=%s", type(exc).__name__
-                )
+        if commit_preview(self.directory, jpeg, meta, policy):
+            self.last_captured_at = meta.captured_at
 
     async def run(self) -> None:
         while True:
@@ -155,7 +141,7 @@ class PreviewCaptureLoop:
                 await self.capture_once()
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - keep the capture loop alive with redacted diagnostics
                 self.error_count += 1
                 logger.debug(
                     "Preview capture failed: error_type=%s failures=%d",
@@ -163,9 +149,7 @@ class PreviewCaptureLoop:
                     self.error_count,
                 )
             try:
-                await asyncio.wait_for(
-                    self._wake.wait(), timeout=CAPTURE_INTERVAL_SEC
-                )
+                await asyncio.wait_for(self._wake.wait(), timeout=CAPTURE_INTERVAL_SEC)
                 self._wake.clear()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass

@@ -98,9 +98,12 @@ beforeEach(() => {
   });
 });
 
-function tree(previewCapturedAt: string | null | undefined): ReactElement {
+function tree(
+  previewCapturedAt: string | null | undefined,
+  overrides: Partial<ProfileResponse> = {},
+): ReactElement {
   const row: EnvironmentRow = {
-    profile: profile({ id: "p1", name: "Alpha" }),
+    profile: profile({ id: "p1", name: "Alpha", ...overrides }),
     runtime: runtime("p1", "running"),
   };
   return (
@@ -123,17 +126,14 @@ function tree(previewCapturedAt: string | null | undefined): ReactElement {
 }
 
 describe("EnvironmentCard preview thumbnail", () => {
-  it("renders a versioned img when preview_captured_at is present", () => {
+  it("keeps the authenticated versioned URL and lazy loading for full-frame previews", () => {
     const capturedAt = "2026-01-01T00:00:05Z";
     render(tree(capturedAt));
-
-    const img = screen.getByTestId("env-card-preview-img-p1");
-    expect(img.tagName).toBe("IMG");
+    const img = screen.getByRole("img", { name: "Alpha" });
     expect(img.getAttribute("src")).toBe(
       `/api/v1/profiles/p1/preview?v=${encodeURIComponent(capturedAt)}`,
     );
     expect(img.getAttribute("loading")).toBe("lazy");
-    expect(img.className).toContain("object-cover");
   });
 
   it("renders the placeholder and no img when the value is null", () => {
@@ -175,5 +175,12 @@ describe("EnvironmentCard preview thumbnail", () => {
     expect(img.getAttribute("src")).toBe(
       `/api/v1/profiles/p1/preview?v=${encodeURIComponent(capturedAt2)}`,
     );
+  });
+  it("hides an old frame immediately when the cached preview switch is disabled", () => {
+    render(tree("2026-01-01T00:00:05Z", { capture_preview: false }));
+    expect(screen.queryByTestId("env-card-preview-img-p1")).toBeNull();
+    const placeholder = screen.getByTestId("env-card-preview-p1");
+    expect(placeholder.querySelector("img")).toBeNull();
+    expect(placeholder.textContent).toBe("");
   });
 });

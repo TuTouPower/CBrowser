@@ -397,3 +397,23 @@ def test_bind_writes_preview_policy_inside_profile_lock(ctx) -> None:
     assert read_policy(directory) == PreviewPolicy(
         enabled=False, epoch=1, runtime_instance_id="inst-bind-1"
     )
+
+
+def test_response_remains_consistent_if_files_are_cleared_before_send(ctx, monkeypatch):
+    import hashlib
+
+    import cbrowser.api.v1.preview_router as module
+    from cbrowser.preview import clear_preview
+    _login(ctx)
+    profile_id = _create(ctx)
+    directory = _write_valid_preview(ctx.service, profile_id)
+    original = module.Response
+    def clear_before_send(*args, **kwargs):
+        clear_preview(directory)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(module, "Response", clear_before_send)
+    result = ctx.client.get(f"/api/v1/profiles/{profile_id}/preview")
+    assert result.status_code == 200
+    assert result.content == JPEG_BYTES
+    assert hashlib.sha256(JPEG_BYTES).hexdigest() in result.headers["etag"]
+    assert list(directory.glob("*.jpg")) == []

@@ -21,7 +21,6 @@ from .cdp_proxy import CdpProxyManager
 from .preview_capture import (
     PREVIEW_MOUNT_DIR,
     PreviewCaptureLoop,
-    cdp_send_from_proxy,
 )
 from .fontconfig import FONT_SET_MOUNT_ROOT, PLATFORM_FONTS_UNCONFIGURED
 from .dialog_attendant import DialogAttendantService
@@ -730,6 +729,12 @@ async def run_uds_agent(
         # Non-empty but incomplete or mistyped metadata is rejected with a
         # redacted error instead of crashing on a raw key lookup.
         runner_info = _validated_runner_info(runner_info)
+        # The Agent is a separate process from Runner. Its XCB connection
+        # needs the same per-Profile cookie before any capture threads start.
+        authority = runner_info.get("xauth_path")
+        if not isinstance(authority, str) or not Path(authority).is_file():
+            raise StorageError("Invalid preview display credentials")
+        os.environ["XAUTHORITY"] = authority
 
         cdp_proxy = CdpProxyManager(
             browser_ws_url=runner_info["browser_ws_url"],
@@ -757,8 +762,8 @@ async def run_uds_agent(
     if cdp_proxy is not None:
         preview_loop = PreviewCaptureLoop(
             data_root=PREVIEW_MOUNT_DIR,
-            cdp_send=cdp_send_from_proxy(cdp_proxy),
-            instance_id=expected_instance or "",
+            display=runner_info["display"],
+            instance_id=runner_info["runtime_instance_id"],
         )
 
     app = create_agent_app(

@@ -33,7 +33,9 @@ export function EnvironmentCard({
   const [failedCapturedAt, setFailedCapturedAt] = useState<string | null>(null);
   const capturedAt = previewCapturedAt ?? null;
   const previewUrl =
-    capturedAt && failedCapturedAt !== capturedAt
+    row.profile.capture_preview === true &&
+    capturedAt &&
+    failedCapturedAt !== capturedAt
       ? `/api/v1/profiles/${id}/preview?v=${encodeURIComponent(capturedAt)}`
       : null;
 
@@ -51,7 +53,7 @@ export function EnvironmentCard({
             src={previewUrl}
             alt={row.profile.name}
             loading="lazy"
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             onError={() => setFailedCapturedAt(capturedAt)}
             data-testid={`env-card-preview-img-${id}`}
           />
@@ -59,7 +61,10 @@ export function EnvironmentCard({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-sm">
         <span className="flex items-baseline gap-xs font-ui text-body-md text-on-surface">
-          <span data-testid={`env-number-${id}`} className="text-on-surface-muted">
+          <span
+            data-testid={`env-number-${id}`}
+            className="text-on-surface-muted"
+          >
             #{String(row.profile.display_number).padStart(4, "0")}
           </span>
           {row.profile.name}

@@ -410,65 +410,69 @@ class DockerAdapter:
         helper = None
         cleanup_error = None
         try:
-            helper = self.client.containers.run(
-                self.policy_image,
-                entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-                command=[validated_policy.model_dump_json()],
-                name=f"{self.resource_prefix}-policy-{uuid.uuid4().hex[:12]}",
-                detach=True,
-                user="0:0",
-                read_only=True,
-                cap_drop=["ALL"],
-                cap_add=["NET_ADMIN"],
-                security_opt=["no-new-privileges:true"],
-                network_mode=f"container:{container.id}",
-                environment=_udp_mux_helper_environment(),
-                tmpfs={
-                    "/run": "rw,nosuid,nodev,size=4m",
-                    "/tmp": "rw,nosuid,nodev,size=4m",
-                },
-                labels=gate_labels(policy_helper_labels(
-                    self.resource_prefix,
-                    deployment_id=self.deployment_instance_id,
-                )),
-            )
-        except DockerSandboxError:
-            raise
-        except (requests.exceptions.RequestException, DockerException) as exc:
-            # AC-011: a helper container that fails to START keeps the
-            # redacted Docker root cause -- a Docker API error has known
-            # shapes and the shared rules cover its credential forms.
-            raise DockerSandboxError(
-                "Runtime network policy installation failed: "
-                + docker_error_detail(exc)
-            ) from None
-        except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
-            raise DockerSandboxError(
-                "Runtime network policy installation failed: "
-                + docker_error_detail(exc)
-            ) from None
-        try:
-            result = helper.wait(timeout=30)
-            if result.get("StatusCode") != 0:
-                # t055 A4: capture the helper output BEFORE the finally
-                # below removes the helper; the log carries a truncated,
-                # redacted summary, never raw output.
-                logger.error(
-                    "Network policy installation failed: exit=%s helper_output=%s",
-                    result.get("StatusCode"),
-                    _helper_log_tail(helper),
+            try:
+                helper = self.client.containers.create(
+                    self.policy_image,
+                    entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
+                    command=[validated_policy.model_dump_json()],
+                    name=f"{self.resource_prefix}-policy-{uuid.uuid4().hex[:12]}",
+                    detach=True,
+                    user="0:0",
+                    read_only=True,
+                    cap_drop=["ALL"],
+                    cap_add=["NET_ADMIN"],
+                    security_opt=["no-new-privileges:true"],
+                    network_mode=f"container:{container.id}",
+                    environment=_udp_mux_helper_environment(),
+                    tmpfs={
+                        "/run": "rw,nosuid,nodev,size=4m",
+                        "/tmp": "rw,nosuid,nodev,size=4m",
+                    },
+                    labels=gate_labels(policy_helper_labels(
+                        self.resource_prefix,
+                        deployment_id=self.deployment_instance_id,
+                    )),
                 )
-                raise DockerSandboxError("Runtime network policy installation failed")
-        except DockerSandboxError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - A11: wait/transport errors stay redacted
-            # A11: a helper wait timeout or transport error must stay
-            # redacted -- its text is transport-level and can carry
-            # arbitrary URLs, so only the type name is reported, never
-            # the text.
-            raise DockerSandboxError(
-                "Runtime network policy installation failed: " + type(exc).__name__
-            ) from None
+                helper.start()
+            except DockerSandboxError:
+                raise
+            except (requests.exceptions.RequestException, DockerException) as exc:
+                # AC-011: a helper container that fails to START keeps the
+                # redacted Docker root cause -- a Docker API error has known
+                # shapes and the shared rules cover its credential forms.
+                raise DockerSandboxError(
+                    "Runtime network policy installation failed: "
+                    + docker_error_detail(exc)
+                ) from None
+            except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
+                raise DockerSandboxError(
+                    "Runtime network policy installation failed: "
+                    + docker_error_detail(exc)
+                ) from None
+            try:
+                result = helper.wait(timeout=30)
+                if result.get("StatusCode") != 0:
+                    # t055 A4: capture the helper output BEFORE the finally
+                    # below removes the helper; the log carries a truncated,
+                    # redacted summary, never raw output.
+                    logger.error(
+                        "Network policy installation failed: exit=%s helper_output=%s",
+                        result.get("StatusCode"),
+                        _helper_log_tail(helper),
+                    )
+                    raise DockerSandboxError(
+                        "Runtime network policy installation failed"
+                    )
+            except DockerSandboxError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - A11: wait/transport errors stay redacted
+                # A11: a helper wait timeout or transport error must stay
+                # redacted -- its text is transport-level and can carry
+                # arbitrary URLs, so only the type name is reported, never
+                # the text.
+                raise DockerSandboxError(
+                    "Runtime network policy installation failed: " + type(exc).__name__
+                ) from None
         finally:
             if helper is not None:
                 try:
@@ -2434,7 +2438,7 @@ with path.open('w') as output:
             )
         helper = None
         try:
-            helper = self.client.containers.run(
+            helper = self.client.containers.create(
                 self.policy_image,
                 entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
                 command=command,
@@ -2456,6 +2460,7 @@ with path.open('w') as output:
                     deployment_id=self.deployment_instance_id,
                 )),
             )
+            helper.start()
             result = helper.wait(timeout=30)
             status_code = int(result.get("StatusCode", -1))
             if status_code != 0:

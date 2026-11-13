@@ -8,7 +8,7 @@ from typing import Annotated
 from cbrowser.adapters.database.models import SessionModel
 from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.auth.dependencies import require_user_session
-from cbrowser.preview import IMAGE_FILE, is_current_preview, read_meta, read_policy
+from cbrowser.preview import read_policy, read_preview
 from cbrowser.services.profile_service import ProfileNotFoundError, ProfileService
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
@@ -48,21 +48,17 @@ async def get_preview(
     policy = read_policy(directory)
     if policy is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-    meta = read_meta(directory)
     try:
         runtime = await service.get_runtime(profile_id)
     except ProfileNotFoundError:
         raise HTTPException(status_code=404, detail=_NOT_FOUND) from None
-    runtime_instance_id = runtime.runtime_instance_id
-    if runtime_instance_id is None and meta is not None:
-        runtime_instance_id = meta.runtime_instance_id
-    if not is_current_preview(
-        directory, policy, epoch=epoch, runtime_instance_id=runtime_instance_id
-    ):
+    snapshot = read_preview(
+        directory, policy, epoch=epoch, runtime_instance_id=runtime.runtime_instance_id
+    )
+    if snapshot is None:
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
-
-    captured_at = meta.captured_at if meta is not None else ""
-    etag = json.dumps(captured_at)
+    meta, jpeg = snapshot
+    etag = json.dumps(f"{meta.captured_at}:{meta.image_sha256}")
     headers = {
         "Cache-Control": "no-store",
         "X-Content-Type-Options": "nosniff",
@@ -70,8 +66,8 @@ async def get_preview(
     }
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=headers)
-    return FileResponse(
-        directory / IMAGE_FILE,
+    return Response(
+        jpeg,
         media_type="image/jpeg",
         headers=headers,
     )

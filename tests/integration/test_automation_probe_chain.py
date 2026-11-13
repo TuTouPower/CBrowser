@@ -133,7 +133,7 @@ class _Chain:
         self._supervisor: _UvicornThread | None = None
         self._agent_task: asyncio.Task | None = None
 
-    async def start(self, *, browser_ws_url: str, profile_id: str = "p1") -> None:
+    async def start(self, *, browser_ws_url: str, display: str, xauth_path: Path | None = None, profile_id: str = "p1") -> None:
         root = self.root
         data_root = root / "data"
         runtime_dir = data_root / "runtime" / profile_id
@@ -141,12 +141,19 @@ class _Chain:
         runtime_dir.mkdir(parents=True)
         events_dir.mkdir(parents=True)
         cdp_port = urlparse(browser_ws_url).port
+        # Bare-Xvfb cases have no authentication; Runner cases pass its real
+        # private cookie. Neither fixture enables preview collection.
+        authority = xauth_path or runtime_dir / "Xauthority"
+        if xauth_path is None:
+            authority.touch(mode=0o600)
         runner_info = {
             "profile_id": profile_id,
             "runtime_instance_id": "i1",
             "config_version": 1,
             "cdp_port": cdp_port,
             "browser_ws_url": browser_ws_url,
+            "display": display,
+            "xauth_path": str(authority),
             "browser_pid": 1,
             "runner_pid": 1,
         }
@@ -351,7 +358,7 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
             await runner.start()
             page = runner.browser_context.pages[0]
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=str(runner.browser_ws_url))
+            await chain.start(browser_ws_url=str(runner.browser_ws_url), display=runner.display, xauth_path=runner.xauth_path)
             bridge = CdpBridge(
                 f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
                 headers={"Authorization": f"Bearer {chain.token}"},
@@ -512,7 +519,7 @@ async def test_probe_chain_ordinary_chromium_matrix() -> None:
             ws_url = devtools_ws_url(root / "profile")
             pid = find_browser_pid(root / "profile")
             assert pid is not None
-            await chain.start(browser_ws_url=ws_url)
+            await chain.start(browser_ws_url=ws_url, display=":127")
             bridge = CdpBridge(
                 f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
                 headers={"Authorization": f"Bearer {chain.token}"},
@@ -602,7 +609,7 @@ async def test_probe_chain_dialog_contract() -> None:
             )
             page = context.pages[0] if context.pages else await context.new_page()
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":129")
             bridge = CdpBridge(
                 f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
                 headers={"Authorization": f"Bearer {chain.token}"},
@@ -900,7 +907,7 @@ async def test_probe_chain_client_killed_mid_connection_survival() -> None:
             await page.goto(observation.url + "/")
             pid = find_browser_pid(root / "profile")
             assert pid is not None
-            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"))
+            await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":131")
             bridge = CdpBridge(
                 f"ws://127.0.0.1:{chain.api_port}/api/v1/automation/profiles/p1/cdp",
                 headers={"Authorization": f"Bearer {chain.token}"},
@@ -989,7 +996,7 @@ async def test_probe_chain_external_browser_close_rejected() -> None:
             await runner.start()
             page = runner.browser_context.pages[0]
             await page.goto(observation.url + "/")
-            await chain.start(browser_ws_url=str(runner.browser_ws_url))
+            await chain.start(browser_ws_url=str(runner.browser_ws_url), display=runner.display, xauth_path=runner.xauth_path)
             async with websockets.connect(
                 f"ws://127.0.0.1:{chain.api_port}"
                 "/api/v1/automation/profiles/p1/cdp",

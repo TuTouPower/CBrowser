@@ -278,6 +278,7 @@ class SupervisorCore:
         self._uds_instance_hints: dict[str, str] = {}
         self._preview_request_ids: dict[str, str] = {}
         self._preview_captured_at: dict[str, str | None] = {}
+        self._preview_warning_at: dict[str, float] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._global_lock = asyncio.Lock()
         self._native_exit_instances: dict[
@@ -1553,6 +1554,7 @@ class SupervisorCore:
                 "Cleaning orphan sandbox after API 404: profile=%s",
                 pid,
             )
+            self._forget_preview_state(pid)
             await self.docker.teardown_profile(pid)
             if await self._confirm_sandbox_gone(pid):
                 await self.ports.release(pid)
@@ -1714,6 +1716,7 @@ class SupervisorCore:
         self, profile_id: str, runtime_instance_id: str
     ) -> None:
         """Drop per-instance memory when a runtime generation ends."""
+        self._forget_preview_state(profile_id)
         self._native_exit_instances = {
             key: value
             for key, value in self._native_exit_instances.items()
@@ -2080,6 +2083,22 @@ class SupervisorCore:
         await self._observe_preview_capture(profile_id, health)
         return health
 
+    def _forget_preview_state(self, profile_id: str) -> None:
+        self._preview_request_ids.pop(profile_id, None)
+        self._preview_captured_at.pop(profile_id, None)
+        self._preview_warning_at.pop(profile_id, None)
+
+    def _warn_preview_observation(self, profile_id: str, error_type: str) -> None:
+        now = time.monotonic()
+        last = self._preview_warning_at.get(profile_id)
+        if last is None or now - last >= 30.0:
+            self._preview_warning_at[profile_id] = now
+            logger.warning(
+                "Preview observation failed: profile=%s error_type=%s",
+                profile_id,
+                error_type,
+            )
+
     async def _observe_preview_capture(
         self, profile_id: str, health: HealthResponse
     ) -> None:
@@ -2089,7 +2108,6 @@ class SupervisorCore:
                 captured_at = None
             if self._preview_captured_at.get(profile_id) == captured_at:
                 return
-            self._preview_captured_at[profile_id] = captured_at
             if captured_at is None:
                 return
             directory = preview_dir(self.docker.validator.data_root, profile_id)
@@ -2100,6 +2118,11 @@ class SupervisorCore:
             if meta.policy_epoch != policy.epoch:
                 return
             if meta.runtime_instance_id != health.runtime_instance_id:
+                return
+            if (
+                policy.runtime_instance_id != health.runtime_instance_id
+                or meta.captured_at != captured_at
+            ):
                 return
             request = PreviewObservedRequest(
                 captured_at=captured_at,
@@ -2114,15 +2137,12 @@ class SupervisorCore:
                 url, headers=self._auth_headers(), json=request.model_dump()
             )
             if resp.status_code != 200:
-                logger.debug(
-                    "Preview observation rejected: profile=%s", profile_id
-                )
+                self._warn_preview_observation(profile_id, "http_rejected")
+                return
+            self._preview_captured_at[profile_id] = captured_at
+            self._preview_warning_at.pop(profile_id, None)
         except Exception as exc:  # noqa: BLE001 - observation failure never blocks the health path
-            logger.debug(
-                "Preview observation failed: profile=%s error_type=%s",
-                profile_id,
-                type(exc).__name__,
-            )
+            self._warn_preview_observation(profile_id, type(exc).__name__)
 
     async def get_search_defaults(
         self, profile_id: str
@@ -2918,6 +2938,7 @@ class SupervisorCore:
             )
             if target is None:
                 self._registration.pop(profile_id, None)
+                self._forget_preview_state(profile_id)
                 return {
                     "profile_id": profile_id,
                     "status": "already_absent",

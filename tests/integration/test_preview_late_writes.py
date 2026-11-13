@@ -20,7 +20,6 @@ from cbrowser.domain.models import (
     ProfileRuntimeStatusEvent,
 )
 from cbrowser.preview import (
-    IMAGE_FILE,
     PreviewMeta,
     PreviewPolicy,
     clear_preview,
@@ -82,7 +81,7 @@ def _seed_preview(env, profile_id: str) -> Path:
 
 def _late_frame(directory: Path) -> None:
     clear_preview(directory)
-    (directory / IMAGE_FILE).write_bytes(b"jpeg-late")
+    (directory / "frame_late.jpg").write_bytes(b"jpeg-late")
 
 
 async def _assert_discarded(
@@ -114,7 +113,7 @@ async def _assert_discarded(
     )
     assert response == {"status": "ok"}
     assert published == []
-    assert not (directory / IMAGE_FILE).exists()
+    assert list(directory.glob("*.jpg")) == []
     runtime = await env.service.get_runtime(profile_id)
     assert runtime.preview_captured_at != notification.captured_at
 
@@ -186,30 +185,6 @@ async def test_old_instance_after_reset_is_dropped(env, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_duplicate_with_browser_state_does_not_copy_preview(env) -> None:
-    profile_id = "dup-src"
-    udd = env.tmp_path / "profiles" / profile_id / "profile"
-    udd.mkdir(parents=True, exist_ok=True)
-    (udd / "state.txt").write_text("browser-state", encoding="utf-8")
-    profile = await env.repo.create_profile(
-        ProfileConfig(name="P"),
-        profile_id=profile_id,
-        user_data_dir=str(udd),
-    )
-    directory = _seed_preview(env, profile.id)
-    assert (directory / IMAGE_FILE).exists()
-
-    clone = await env.service.duplicate_profile(
-        profile.id, include_browser_state=True, name="Clone"
-    )
-    clone_preview = env.service.get_preview_dir(clone.id)
-    assert not (clone_preview / IMAGE_FILE).exists()
-    assert not (clone_preview / "policy.json").exists()
-    clone_udd = env.tmp_path / "profiles" / clone.id / "profile"
-    assert (clone_udd / "state.txt").read_text(encoding="utf-8") == "browser-state"
-
-
-@pytest.mark.asyncio
 async def test_valid_observation_publishes_preview(env, monkeypatch) -> None:
     profile_id = await _new_bound_profile(env)
     published: list[tuple[str, str]] = []
@@ -242,9 +217,7 @@ def _runtime_event(profile_id: str) -> ProfileRuntimeStatusEvent:
 @pytest.mark.asyncio
 async def test_preview_frames_never_enter_replay_history(env) -> None:
     broadcaster = env.broadcaster
-    published = [
-        await broadcaster.publish(_runtime_event(f"p{i}")) for i in range(4)
-    ]
+    published = [await broadcaster.publish(_runtime_event(f"p{i}")) for i in range(4)]
     baseline = len(broadcaster._history)
     assert baseline == 4
 
@@ -258,9 +231,7 @@ async def test_preview_frames_never_enter_replay_history(env) -> None:
     frames = []
     try:
         for _ in range(3):
-            frames.append(
-                await asyncio.wait_for(generator.__anext__(), timeout=1.0)
-            )
+            frames.append(await asyncio.wait_for(generator.__anext__(), timeout=1.0))
     finally:
         await generator.aclose()
 
@@ -268,8 +239,7 @@ async def test_preview_frames_never_enter_replay_history(env) -> None:
     assert all("event: runtime_state" in frame for frame in frames)
     assert all("profile_preview" not in frame for frame in frames)
     assert all(
-        f"id: {event.id}" in frame
-        for frame, event in zip(frames, published[1:])
+        f"id: {event.id}" in frame for frame, event in zip(frames, published[1:])
     )
 
 
@@ -290,3 +260,65 @@ async def test_transient_frame_reaches_live_subscriber_without_history(env) -> N
     assert '"profile_id":"p1"' in frame
     assert '"captured_at":"t-live"' in frame
     assert len(broadcaster._history) == 0
+
+
+async def test_disabled_policy_same_epoch_never_notifies_or_updates(env, monkeypatch):
+    profile = await env.repo.create_profile(
+        ProfileConfig(name="Disabled", capture_preview=False)
+    )
+    await env.repo.bind_runtime_instance(profile.id, "inst-1")
+    enabled, epoch = await env.repo.get_preview_policy(profile.id)
+    assert enabled is False
+    published = []
+
+    async def publish(*args):
+        published.append(args)
+
+    monkeypatch.setattr(env.coordinator, "publish_profile_preview", publish)
+    response = await report_preview_observation(
+        profile.id,
+        PreviewObservedRequest(
+            captured_at="late", runtime_instance_id="inst-1", policy_epoch=epoch
+        ),
+        env.request,
+        env.service,
+    )
+    assert response == {"status": "ok"}
+    assert published == []
+    assert (await env.repo.get_runtime(profile.id)).preview_captured_at is None
+
+
+@pytest.mark.asyncio
+async def test_browser_state_clone_excludes_current_and_retained_preview_frames(env):
+    from cbrowser.preview import frame_path, read_meta
+
+    source_id = "dup-src"
+    udd = env.tmp_path / "profiles" / source_id / "profile"
+    udd.mkdir(parents=True)
+    (udd / "state.txt").write_text("browser-state")
+    profile = await env.repo.create_profile(
+        ProfileConfig(name="Source"), profile_id=source_id, user_data_dir=str(udd)
+    )
+    directory = _seed_preview(env, profile.id)
+    policy = PreviewPolicy(enabled=True, epoch=0, runtime_instance_id="inst-1")
+    assert commit_preview(
+        directory,
+        b"new-frame",
+        PreviewMeta(captured_at="next", runtime_instance_id="inst-1", policy_epoch=0),
+        policy,
+    )
+    originals = list(directory.glob("frame_*.jpg"))
+    assert len(originals) == 2
+    selected = frame_path(directory, read_meta(directory))
+    clone = await env.service.duplicate_profile(
+        profile.id, include_browser_state=True, name="Clone"
+    )
+    target = env.service.get_preview_dir(clone.id)
+    assert list(target.glob("*.jpg")) == []
+    assert not (target / "meta.json").exists()
+    assert not (target / "policy.json").exists()
+    assert (
+        env.tmp_path / "profiles" / clone.id / "profile" / "state.txt"
+    ).read_text() == "browser-state"
+    assert all(p.is_file() for p in originals)
+    assert selected.read_bytes() == b"new-frame"
