@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from urllib.parse import quote
 
 import httpx
 from cbrowser.secret_files import read_secret_file
+from cbrowser.shared.error_response import parse_error_response
 from pydantic import SecretStr
+
+logger = logging.getLogger("cbrowser.supervisor.gateway_client")
 
 
 class GatewayControlClient:
@@ -74,12 +78,15 @@ class GatewayControlClient:
     ) -> bool | None:
         """Whether this exact instance is registered with the Gateway.
 
-        Returns None when the Gateway itself cannot be reached, so the
-        caller can distinguish "Gateway down" (never a reason to rebuild
-        a Stream) from "Agent absent" (a replacement candidate). The
-        visibility route's fence distinguishes the states: 409 is a
-        different live instance, a 503 "unavailable" message is no agent,
-        and a 503 "has not reported yet" still means registered.
+        Returns None when the Gateway itself cannot be reached, or
+        when its 503 body is not a valid ErrorResponse (t069: a
+        non-conforming body is a protocol error, logged, and never
+        parsed as a business result), so the caller can distinguish
+        "Gateway down" (never a reason to rebuild a Stream) from
+        "Agent absent" (a replacement candidate). The visibility
+        route's fence distinguishes the states: 409 is a different
+        live instance, a 503 "unavailable" message is no agent, and a
+        503 "has not reported yet" still means registered.
         """
         try:
             response = await self._client.get(
@@ -97,15 +104,19 @@ class GatewayControlClient:
             try:
                 body = response.json()
             except ValueError:
-                body = {}
-            # Unified ErrorResponse carries the reason in `message`; keep
-            # the legacy `detail` read so a mixed-version Gateway still
-            # parses (t056 A15).
-            if isinstance(body, dict):
-                text = body.get("message") or body.get("detail") or ""
-            else:
-                text = ""
-            return "unavailable" not in str(text)
+                body = None
+            # Only the unified ErrorResponse is parsed (t069): the
+            # reason lives in `message`; a legacy `detail` body or any
+            # other non-conforming shape is a protocol error.
+            parsed = parse_error_response(body)
+            if parsed is None:
+                logger.warning(
+                    "Gateway visibility 503 body is not a valid "
+                    "ErrorResponse: profile=%s",
+                    profile_id,
+                )
+                return None
+            return "unavailable" not in parsed.message
         return None
 
     async def registration_status(self, profile_id: str) -> dict | None:

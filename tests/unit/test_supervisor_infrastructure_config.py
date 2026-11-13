@@ -70,6 +70,7 @@ def test_attach_profile_infrastructure_connects_gateway_only(tmp_path: Path):
         browser_image="sha256:" + "a" * 64,
         stream_image="sha256:" + "b" * 64,
         resource_prefix="t006-unit",
+        deployment_instance_id="dep-infra",
     )
 
     mock_net = MagicMock()
@@ -78,6 +79,7 @@ def test_attach_profile_infrastructure_connects_gateway_only(tmp_path: Path):
         "Labels": {
             "com.cbrowser.prefix": "t006-unit",
             "com.cbrowser.managed-by": "supervisor",
+            "com.cbrowser.instance-id": "dep-infra",
             "com.cbrowser.profile-id": "prof1",
         },
         "Containers": {},

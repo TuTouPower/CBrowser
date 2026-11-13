@@ -65,16 +65,3 @@ def validate_launch_args(args: list[str] | None) -> list[str]:
     if not args:
         return []
     return [validate_launch_arg(arg) for arg in args]
-
-
-def filter_launch_args(args: list[str] | None) -> list[str]:
-    """Drop arguments no longer in the whitelist (legacy DB rows/snapshots)."""
-    if not args:
-        return []
-    accepted: list[str] = []
-    for arg in args:
-        try:
-            accepted.append(validate_launch_arg(arg))
-        except InvalidLaunchArgument:
-            continue
-    return accepted

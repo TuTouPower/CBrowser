@@ -478,3 +478,17 @@ bash scripts/run_automation_probe.sh
 - 本机只有一套已获准 `linux-arm64` 制品，故不跑真实跨版本升级放行；
     完整测量数据与未能验证项见
     `docs/tasks/t068_profile_fingerprint_verification/measurement_report.md`。
+
+## 严格契约与归属拒绝验证（t069）
+
+- 错误形状契约以生产函数负矩阵验证：`cbrowser/shared/error_response.py`
+    的解析器对旧 `detail` 形状、裸文本、缺字段、类型错误逐项判协议
+    错误，三处消费方（coordinator 透传、Gateway 可见性、agent 控制
+    调用）各有合规保留与非规范拒绝的对称用例；observed-state 上报以
+    请求计数断言 422 只发一次且不去字段重发。
+- 归属与输入拒绝以 fake Docker 的「先拒绝后零变更」验证：缺失/空/
+    不匹配 instance-id 的候选在 scan、prune、孤儿清理、网络认领四条
+    路径均零删除零认领；Supervisor 启动缺部署身份在任何 Docker 动作
+    前失败；存量非法 `launch_args` 在 repository 加载边界指名拒绝。
+    真实 Docker 拓扑验收（合法资源恢复清理、无标签资源保持未动）
+    属 [deploy] 层，不以 mock 证据替代，顺延登记见 p095。

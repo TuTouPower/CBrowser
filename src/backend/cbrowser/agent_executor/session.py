@@ -19,6 +19,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from cbrowser.shared.error_response import parse_error_response
+
 from .dialogs import DialogRecord, DialogTracker, permission_needs_human_payload
 from .ledger import PageLedger, PageRecord
 from .refs import (
@@ -837,24 +839,25 @@ class ExecutorSession:
                 f"control {action} request failed: {type(exc).__name__}",
             ) from None
         if resp.status_code == 409:
-            # Unified ErrorResponse (t056 A15): the refusal code is the
-            # top-level `error`; keep the legacy `detail.code` read so a
-            # mixed-version API still parses.
-            body = resp.json()
-            code = body.get("error") if isinstance(body, dict) else None
-            if not isinstance(code, str) or not code:
-                details = body.get("details") if isinstance(body, dict) else None
-                if isinstance(details, dict):
-                    code = details.get("code")
-            if not isinstance(code, str) or not code:
-                legacy = body.get("detail") if isinstance(body, dict) else None
-                if isinstance(legacy, dict):
-                    code = legacy.get("code")
-            if not isinstance(code, str) or not code:
-                code = "control_conflict"
+            # Unified ErrorResponse (t056 A15, strict since t069): the
+            # refusal code is the top-level `error`. Any other shape —
+            # a legacy `detail` body, missing fields, a non-JSON body —
+            # is a protocol error, never a parsed refusal and never a
+            # silently assumed `control_conflict`.
+            try:
+                body = resp.json()
+            except Exception:  # noqa: BLE001 - non-JSON body is non-conforming
+                body = None
+            parsed = parse_error_response(body)
+            if parsed is None:
+                raise SessionError(
+                    "control_protocol_error",
+                    f"control {action} refused with a non-conforming "
+                    "error response (HTTP 409)",
+                )
             raise SessionError(
                 "control_conflict",
-                f"control {action} refused: {code}",
+                f"control {action} refused: {parsed.error}",
             )
         if resp.status_code != 200:
             raise SessionError(

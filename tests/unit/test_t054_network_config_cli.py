@@ -2,9 +2,10 @@
 
 deploy.sh calls exactly one subcommand, ``render``: it writes the
 deterministic Caddyfile for the deployment port into the network directory
-and prints the shell assignments deploy.sh evaluates (bind host is always
-loopback; the fingerprint is the hash of the rendered product, never of
-the generator source). The old init/read applied-state protocol is gone.
+and prints the shell assignments deploy.sh evaluates (only the values it
+actually consumes; the fingerprint is the hash of the rendered product,
+never of the generator source). The old init/read applied-state protocol
+is gone.
 """
 
 from __future__ import annotations
@@ -49,12 +50,15 @@ def test_render_writes_caddyfile_and_prints_assignments(tmp_path: Path) -> None:
     assert caddyfile.is_file()
     assert caddyfile.read_text(encoding="utf-8") == generate_caddyfile(56661)
     values = _assignments(result.stdout)
-    assert values["BIND_HOST"] == "127.0.0.1"
     assert values["HTTPS_PORT"] == "56661"
-    assert values["PUBLIC_ORIGIN"] == "https://127.0.0.1:56661"
     assert values["CADDYFILE_SHA256"] == compute_caddyfile_sha256(
         generate_caddyfile(56661)
     )
+    # t069: BIND_HOST / PUBLIC_ORIGIN were dead outputs (nothing ever
+    # consumed them); render now prints only what deploy.sh uses.
+    assert set(values) == {"HTTPS_PORT", "CADDYFILE_SHA256"}
+    assert "BIND_HOST" not in result.stdout
+    assert "PUBLIC_ORIGIN" not in result.stdout
     assert "LAN" not in result.stdout
 
 

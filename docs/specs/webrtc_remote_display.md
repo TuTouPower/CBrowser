@@ -93,3 +93,7 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - 已连接后信令 WS 异常关闭：先进入 reconnecting 并给官方客户端 5 秒以原 `resume_key` 恢复；5 秒恢复检查读取 WebRTC stats，媒体仍健康（stats.connected）且当前有效阶段仍为 reconnecting 时直接收敛回 connected 并清除错误文案，不重建 iframe、不动内部 Browser 与已有网页；媒体不健康才沿既有路径重建。诊断快照（ConnectionSnapshot）不变时诊断源不发新信号，故健康收敛出口在此检查内，检查结果受 generation fence 保护，旧 generation 的迟到结果不覆盖当前状态。后端已停止时异常关闭被忽略，不启动恢复。
 - 诊断呈现可区分正在恢复（reconnecting 轻量指示）与已经恢复（connected、无等待层残留）；恢复失败原因不含凭据。
 - 无 viewer 时环境保留：全部 viewer 断开后不停止、不重置、不删除环境与已有网页/浏览器数据；不存在 idle 期限、绝对期限或 viewer TTL 等自动回收。既有按活跃 consumer 暂停/恢复服务端采集编码的行为不变，再次连接可恢复观看。
+
+## viewer 身份单一通道（t069）
+
+- selkies 查看器身份只有一个文档化来源：宿主页生成的 iframe URL 查询参数 `profileId`。entry 缺失/为空即抛错；未文档化的 `profile_id` 参数出现即抛错；适配器安装要求非空安装期 id，检测到 `__CBROWSER_PROFILE_ID__` 全局注入即拒绝；WebSocket 信令 shim 只用安装期 id，不再回读页面 URL 或全局变量，不存在 "default" 身份。

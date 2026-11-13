@@ -148,6 +148,7 @@ def test_scan_recovers_number_from_labels_and_rejects_missing(tmp_path):
             "com.cbrowser.profile-id": "p1",
             "com.cbrowser.config-version": "1",
             "com.cbrowser.profile-number": "0003",
+            "com.cbrowser.instance-id": "dep-t050",
         },
         attrs={"Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=i1"]}},
     )
@@ -161,6 +162,7 @@ def test_scan_recovers_number_from_labels_and_rejects_missing(tmp_path):
             "com.cbrowser.role": "browser",
             "com.cbrowser.profile-id": "p2",
             "com.cbrowser.config-version": "1",
+            "com.cbrowser.instance-id": "dep-t050",
         },
         attrs={"Config": {"Env": ["CBROWSER_RUNTIME_INSTANCE_ID=i2"]}},
     )
@@ -173,6 +175,7 @@ def test_scan_recovers_number_from_labels_and_rejects_missing(tmp_path):
         browser_image="sha256:" + "a" * 64,
         stream_image="sha256:" + "b" * 64,
         resource_prefix="cbrowser",
+        deployment_instance_id="dep-t050",
     )
     adapter._runtime_policy_ready = MagicMock(return_value=True)
 
@@ -240,6 +243,7 @@ def test_scan_keeps_number_and_name_across_restarts(tmp_path):
         "com.cbrowser.profile-id": "p1",
         "com.cbrowser.config-version": "1",
         "com.cbrowser.profile-number": "0005",
+        "com.cbrowser.instance-id": "dep-t050",
     }
     container = SimpleNamespace(
         id="c1",
@@ -259,6 +263,7 @@ def test_scan_keeps_number_and_name_across_restarts(tmp_path):
             browser_image="sha256:" + "a" * 64,
             stream_image="sha256:" + "b" * 64,
             resource_prefix="cbrowser",
+            deployment_instance_id="dep-t050",
         )
         instance._runtime_policy_ready = MagicMock(return_value=True)
         return instance

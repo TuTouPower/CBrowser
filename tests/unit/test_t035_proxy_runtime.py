@@ -441,9 +441,13 @@ async def test_report_observed_non_running_omits_version_fields() -> None:
     assert "browser_user_agent" not in posted[0]
 
 
-async def test_report_observed_falls_back_when_api_rejects_version_fields(
+async def test_report_observed_422_is_final_and_never_degrades(
     tmp_path: Path,
 ) -> None:
+    # t069 (supersedes the pre-t069 fallback expectation): a 422 from the
+    # API is a contract rejection. The report is sent exactly once, with
+    # the version fields, and reported as not delivered — the payload is
+    # never resent with browser_product/browser_user_agent dropped.
     (tmp_path / "runner_info.json").write_text(
         json.dumps({"browser_product": "Chrome/146", "browser_user_agent": "UA"}),
         encoding="utf-8",
@@ -453,9 +457,7 @@ async def test_report_observed_falls_back_when_api_rejects_version_fields(
     def handler(req: httpx.Request) -> httpx.Response:
         body = json.loads(req.content)
         posted.append(body)
-        if "browser_product" in body:
-            return httpx.Response(422, json={"error": "validation_error"})
-        return httpx.Response(200, json={})
+        return httpx.Response(422, json={"error": "validation_error"})
 
     transport = httpx.MockTransport(handler)
     async with httpx.AsyncClient(
@@ -467,9 +469,10 @@ async def test_report_observed_falls_back_when_api_rejects_version_fields(
         core.docker = SimpleNamespace(
             validator=SimpleNamespace(get_runtime_dir=lambda _p: tmp_path)
         )
-        assert await core._report_observed("p1", "inst_1", "running", 1)
-    assert "browser_product" in posted[0]
-    assert "browser_product" not in posted[1]
+        assert not await core._report_observed("p1", "inst_1", "running", 1)
+    assert len(posted) == 1
+    assert posted[0]["browser_product"] == "Chrome/146"
+    assert posted[0]["browser_user_agent"] == "UA"
 
 
 # ---- Browser container mount + egress policy (AC-007 / AC-008) ----------

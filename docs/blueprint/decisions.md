@@ -429,3 +429,19 @@
     - **未能验证**：真实跨版本引擎升级放行（本机只有一套已获准 arm64 制品）、linux-x64 解压件完整性、公网第三方检测站。
 - 复查条件：出现第二套已获准 `linux-arm64` 制品时，用本探针产出两套基线并跑 `compare` 验证真实跨版本放行/阻断；cloakbrowser 升级或 `BINARY_SIGNING_PUBKEYS` 轮换时重跑验签与清单核对。
 - 替代：无（细化并收紧 ADR 021 的 cloakbrowser 锁定，不升级版本）。
+
+## 034 控制面遗留兼容清零：严格契约、单一归属与单一校验（2026-11-14，t069）
+
+- 背景：t056 统一错误形状、t051 部署实例身份、t054 部署期网络配置落地后，消费侧仍留有混版本兼容：下游错误解析在三处各自保留 `detail`/裸文本兜底；observed-state 422 时去字段降级重发；网络/容器归属在缺部署身份时回退名称/前缀认领，deploy.sh 对「标签缺失但 compose project 匹配」有删除豁免；`launch_args` 持久化加载走静默过滤而创建/更新走严格校验，双轨并存；viewer 身份有 URL 双参数名、全局注入与 "default" 四路来源。这些回退让错误被当成功、异部署资源被误删、非法存量被掩盖。
+- 选项：
+    1. 保留兼容并逐处加警告日志（拒绝：回退路径本身就是缺陷面，日志不改变误判与误删结果）。
+    2. 一次性删除全部回退：错误只认 `ErrorResponse` 单一形状并协议错误化、归属只认 instance-id 标签、输入只留单一严格校验、viewer 只留单一文档化通道（本 task 采用，符合零兼容性负担）。
+- 结论：采用选项 2。
+    - **错误形状**：解析收归 `cbrowser/shared/error_response.py`；非规范响应在 coordinator 记稳定协议错误标记、在 Gateway 可见性查询判未知、在 agent 控制调用抛 `control_protocol_error`；observed-state 422 单次定论不重发。
+    - **归属**：`network_ownership_matches` 与 `DockerAdapter._owns_deployment` 只比较 instance-id；Supervisor 启动缺部署身份即失败（先于 Docker 变更）；deploy.sh 删除标签缺失豁免段。
+    - **输入**：删除 `filter_launch_args`，`ProfileConfig` 与创建/更新共用 `validate_launch_args`；存量非法值在 repository 加载边界指名 Profile 拒绝。
+    - **viewer**：entry 只读 `?profileId=`，install 期拒绝空 id 与全局注入，信令 shim 只用安装期 id；删除 "default" 身份。
+    - **保持面**：文档化幂等键三源及优先级、locale/timezone 的 None 自动推导、PATCH 缺省语义不在本决策范围，保持不变。
+    - **未能验证**：AC-003 的真实 Docker 拓扑验收（存量无标签容器不被认领删除、合法匹配资源可恢复清理）需真实部署环境，云端顺延 pending 登记。
+- 复查条件：任一服务出现新的错误响应生产者时，先核其输出是否为 `ErrorResponse` 单一形状；新增部署资源类型时，认领逻辑必须复用 instance-id 单一证据，不得新设名称/前缀回退。
+- 替代：无（收尾 t056/t051 两条契约的消费侧兼容残留）。

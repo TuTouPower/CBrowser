@@ -35,6 +35,7 @@ from cbrowser.domain.models import (
     utc_now_iso,
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
+from cbrowser.launch_args import InvalidLaunchArgument, validate_launch_args
 from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
     BLOCK_AFTER_RUNTIME_FAILURES,
@@ -1038,6 +1039,16 @@ class ProfileRepository:
 
     @staticmethod
     def _to_domain_profile(m: ProfileModel) -> Profile:
+        stored_launch_args = json.loads(m.launch_args) if m.launch_args else []
+        try:
+            validate_launch_args(stored_launch_args)
+        except InvalidLaunchArgument as exc:
+            # t069: an out-of-whitelist stored launch argument is a
+            # fixable Profile row, never silently filtered away: reject
+            # before the Profile can start and name the Profile.
+            raise RuntimeError(
+                f"Profile {m.id} has invalid stored launch_args: {exc}"
+            ) from exc
         cfg = ProfileConfig(
             name=m.name,
             fingerprint_seed=m.fingerprint_seed,
@@ -1056,7 +1067,7 @@ class ProfileRepository:
             color_scheme=m.color_scheme,  # type: ignore
             fingerprint_platform=m.fingerprint_platform,  # type: ignore
             font_set_id=m.font_set_id,  # type: ignore
-            launch_args=json.loads(m.launch_args) if m.launch_args else [],
+            launch_args=stored_launch_args,
             extension_paths=json.loads(m.extension_paths) if m.extension_paths else [],
             allow_3p_cookies=m.allow_3p_cookies,
             set_google_default=m.set_google_default,

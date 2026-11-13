@@ -14,7 +14,7 @@
 
 ## 启动参数校验与 PATCH 三态（t021）
 
-- 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取时的过滤保持不变。
+- 更新 DTO 对 `launch_args` / `extension_paths` 只做严格校验（条数、单条长度、危险参数拒绝），不再在校验阶段过滤合法条目；历史行读取同样严格（t069）：存量 `launch_args` 不合法时加载即拒绝并指名 Profile，不再静默过滤。
 - PATCH 语义三态：字段缺失 = 不变；显式 `null` = 清空为 `[]`；给出列表 = 整体替换。`ProfileConfig` 把显式 null 的这两个列表归一为 `[]`，仓储合并不得因此 500；越界内容返回 422。
 
 ## 页面独立选择
@@ -119,3 +119,7 @@
 - 状态改写分两档判定：duplicate（带状态）/ reset 须完全停止（desired/observed 均为 stopped 且无 runtime_instance_id 绑定，error 态亦拒绝）；delete 用实际写者判定（desired=running、observed 处于迁移态、或实例残留绑定任一成立即拒绝；error 态且无绑定可删）。
 - 指纹 seed 单一空间 100000..999999：创建、普通 reset、幂等 reset 同源；operation_id 经 SHA-256 确定性推导，重放同 seed，已保存 seed 不追溯改写。
 - include-state clone 逐字复制（跳过 Singleton rendezvous 文件）并以 manifest 全等校验；引擎无按 Profile 锚定的 OSCrypt 密钥根（t066 spike 实测 Chromium 146），不删 Local State。
+
+## launch_args 单一严格校验（t069）
+
+- `launch_args` 全系统只有 `validate_launch_args` 一处校验：创建、更新与持久化加载（`ProfileConfig`）共用；删除原加载侧的静默过滤（`filter_launch_args`）。存量行含白名单外参数时，repository 加载即抛指名该 Profile 的错误，要求先修复数据；合法的 locale/timezone None 自动推导与 PATCH 缺省语义不变。

@@ -165,6 +165,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 - 内部 UI API 统一规划在 `/api/v1/*`；
 - 旧的内部 Profile CRUD 路由已作为破坏性变更移除；
 - 旧的 CDP 连接入口已彻底删除：`/api/profiles/{id}/cdp` 兼容适配器与隐藏挂载均不再注册，不保留重定向或旧路由代理；现行唯一入口为 `/api/v1/automation/profiles/{id}/cdp`，完整执行自动化令牌鉴权与控制权围栏。
+- 控制面严格契约（t069，零兼容）：服务间错误只有 `ErrorResponse` 一种合法形状，消费方经 `cbrowser/shared/error_response.py` 唯一解析；旧 `detail` 形状、裸文本与缺字段响应一律是协议错误（coordinator 记稳定标记、Gateway 可见性查询判未知、控制调用抛 `control_protocol_error`），不作业务结果。observed-state 上报单次定论：422 不再触发去字段降级重发，失败不伪报收敛。部署资源归属只认 `com.cbrowser.instance-id` 标签与配置的部署实例 ID 相等：缺失、为空或不匹配即不认领、不删除，Supervisor 未配置部署身份时不认领任何资源，且部署身份缺失在启动期（任何 Docker 变更前）即失败。持久化输入单一严格校验：`launch_args` 只有 `validate_launch_args` 一处校验，存量非法值在 Profile 加载时明确拒绝并指名 Profile，不静默过滤或改写。viewer 身份只有宿主页 `?profileId=` 一个文档化通道：缺失/空、未文档化的 `profile_id` 参数与 `__CBROWSER_PROFILE_ID__` 全局注入全部拒绝，不存在 "default" 身份。文档化的例外保持不变：幂等键三源（`Idempotency-Key` / `X-Operation-ID` / `operation_id`）及优先级、locale/timezone 的 None 自动推导。
 
 ### 5.6 跨服务中立模块与运行镜像边界（t062）
 

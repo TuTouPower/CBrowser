@@ -75,6 +75,15 @@ async def run_supervisor(
     engine_build: str | None = None,
     expected_binary_sha256: str | None = None,
 ):
+    # t069: the deployment instance id is the sole ownership
+    # credential for every Docker resource this process may claim or
+    # delete; a Supervisor started without one must fail here, before
+    # any Docker client or mutation exists.
+    if deployment_instance_id is None or not deployment_instance_id.strip():
+        raise ValueError(
+            "Explicit deployment instance id "
+            "(--deployment-instance-id or CBROWSER_INSTANCE_ID) is required"
+        )
     if agent_key_file is None or not Path(agent_key_file).is_file():
         raise ValueError(
             "Explicit Agent authentication key file (--agent-key-file) is required"

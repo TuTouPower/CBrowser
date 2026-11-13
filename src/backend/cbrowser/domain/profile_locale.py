@@ -85,7 +85,7 @@ def validate_timezone(value: str | None) -> str | None:
 
 
 def validate_locale(value: str | None) -> str | None:
-    """Pydantic validator: ``zh-CN`` / ``en-US``, or ``None`` for legacy."""
+    """Pydantic validator: ``zh-CN`` / ``en-US``, or ``None`` for auto."""
     if value is None:
         return None
     if value not in SUPPORTED_LOCALES:

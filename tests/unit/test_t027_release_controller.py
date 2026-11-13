@@ -166,7 +166,11 @@ case "$cmd" in
     elif [ -n "${FAKE_CONFLICT_PROJECT:-}" ]; then
       printf 'cbrowser-gateway\t%s\tcbrowser\n' "$FAKE_CONFLICT_PROJECT"
     elif [ -n "${FAKE_OWN_PROJECT:-}" ]; then
-      printf 'cbrowser-api\t%s\tcbrowser\n' "$FAKE_OWN_PROJECT"
+      # This instance's own earlier containers: since t051 they carry
+      # the instance-id label, and since t069 that label is the ONLY
+      # ownership evidence deploy.sh accepts (no project fallback), so
+      # the fake reports it from the exported deployment identity.
+      printf 'cbrowser-api\t%s\tcbrowser\tapi\t%s\n' "$FAKE_OWN_PROJECT" "${CBROWSER_INSTANCE_ID:-}"
     fi
     ;;
   network)
@@ -778,7 +782,11 @@ def test_rollback_adopts_target_release_identity(tmp_path: Path) -> None:
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy_instance_b(repo, bin_dir, "b-001").returncode == 0
     assert _deploy_instance_b(repo, bin_dir, "b-002").returncode == 0
-    rows = "inst_b-gateway\tinst-b\tinst_b"
+    # t069: the target instance's own gateway container proves ownership
+    # only through its instance-id label (the compose-project fallback
+    # exemption is deleted), so the row carries instance B's real id.
+    instance_id_b, *_ = _instance_identity(repo, "inst_b", repo / "data-b")
+    rows = f"inst_b-gateway\tinst-b\tinst_b\tgateway\t{instance_id_b}"
     result = _run(
         repo,
         bin_dir,

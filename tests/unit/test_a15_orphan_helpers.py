@@ -22,12 +22,15 @@ class _Container:
         self.removed = True
 
 
-def _labels(role, prefix):
-    return {
+def _labels(role, prefix, deployment_id=None):
+    labels = {
         "com.cbrowser.prefix": prefix,
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.role": role,
     }
+    if deployment_id is not None:
+        labels["com.cbrowser.instance-id"] = deployment_id
+    return labels
 
 
 def _adapter(tmp_path, candidates):
@@ -45,6 +48,9 @@ def _adapter(tmp_path, candidates):
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        # t069: cleanup only claims resources whose instance-id label
+        # matches the configured deployment identity.
+        deployment_instance_id="dep-a15",
     )
 
 
@@ -52,13 +58,15 @@ def test_mixed_candidates_only_strict_owner_is_deleted(tmp_path):
     adapter = _adapter(tmp_path, [])
     prefix = adapter.resource_prefix
     legal = _Container(
-        f"{prefix}-policy-abcdef012345", _labels("network-policy", prefix)
+        f"{prefix}-policy-abcdef012345",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     wrong_name = _Container(
-        f"{prefix}-policy-NOTHEXVALUE", _labels("network-policy", prefix)
+        f"{prefix}-policy-NOTHEXVALUE",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     unrelated = _Container(
-        "external-container", _labels("database", prefix)
+        "external-container", _labels("database", prefix, "dep-a15")
     )
     adapter.client.containers.list = lambda **kwargs: [
         legal,
@@ -80,7 +88,8 @@ def test_single_bad_candidate_does_not_abort_remaining_scan(tmp_path):
         f"{prefix}-cache-NOTHEXVALUE", _labels("cache-init", prefix)
     )
     later_legal = _Container(
-        f"{prefix}-x11-0123456789ab", _labels("x11-permissions", prefix)
+        f"{prefix}-x11-0123456789ab",
+        _labels("x11-permissions", prefix, "dep-a15"),
     )
     adapter.client.containers.list = lambda **kwargs: [bad, later_legal]
 
@@ -110,16 +119,20 @@ def test_strict_name_match_is_not_relaxed(tmp_path):
     adapter = _adapter(tmp_path, [])
     prefix = adapter.resource_prefix
     near_miss = _Container(
-        f"{prefix}-policy-abcdef01234", _labels("network-policy", prefix)
+        f"{prefix}-policy-abcdef01234",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     long_tail = _Container(
-        f"{prefix}-policy-abcdef0123456", _labels("network-policy", prefix)
+        f"{prefix}-policy-abcdef0123456",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     uppercase = _Container(
-        f"{prefix}-policy-ABCDEF012345", _labels("network-policy", prefix)
+        f"{prefix}-policy-ABCDEF012345",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     legal = _Container(
-        f"{prefix}-policy-abcdef012345", _labels("network-policy", prefix)
+        f"{prefix}-policy-abcdef012345",
+        _labels("network-policy", prefix, "dep-a15"),
     )
     adapter.client.containers.list = lambda **kwargs: [
         near_miss,

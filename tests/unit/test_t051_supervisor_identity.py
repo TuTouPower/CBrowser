@@ -141,7 +141,10 @@ def test_scan_active_containers_filters_by_deployment_id(tmp_path: Path):
     assert scanned[0]["instance_id"] == "inst-1"
 
 
-def test_scan_active_containers_accepts_all_when_unconfigured(tmp_path: Path):
+def test_scan_active_containers_claims_nothing_when_unconfigured(tmp_path: Path):
+    # t069: an unconfigured supervisor has no identity to claim with;
+    # the old prefix/name acceptance fallback is deleted, so nothing is
+    # adopted regardless of the candidate labels.
     client = MagicMock()
     client.containers.list.return_value = [
         _container("a", _sandbox_labels("browser", "p1", "dep-1")),
@@ -150,7 +153,7 @@ def test_scan_active_containers_accepts_all_when_unconfigured(tmp_path: Path):
     adapter = _adapter(tmp_path, client)
     adapter._runtime_policy_ready = MagicMock(return_value=True)
     scanned = adapter.scan_active_containers()
-    assert [item["profile_id"] for item in scanned] == ["p1", "p2"]
+    assert scanned == []
 
 
 def test_cleanup_orphan_helpers_removes_only_own_deployment(tmp_path: Path):
@@ -240,22 +243,15 @@ async def test_browser_start_carries_instance_id_and_numbered_service(
 def test_network_labels_and_ownership_with_deployment_id():
     labels = network_labels("cbrowser", "p1", deployment_id="dep-1")
     assert labels["com.cbrowser.instance-id"] == "dep-1"
-    assert network_ownership_matches(
-        "cbrowser", "cbrowser-net-p1", labels, deployment_id="dep-1"
-    )
+    assert network_ownership_matches(labels, deployment_id="dep-1")
+    assert not network_ownership_matches(labels, deployment_id="dep-2")
     assert not network_ownership_matches(
-        "cbrowser", "cbrowser-net-p1", labels, deployment_id="dep-2"
+        network_labels("cbrowser", "p1"), deployment_id="dep-1"
     )
-    assert not network_ownership_matches(
-        "cbrowser",
-        "cbrowser-net-p1",
-        network_labels("cbrowser", "p1"),
-        deployment_id="dep-1",
-    )
-    # No deployment id configured: the old prefix/name check still applies.
-    assert network_ownership_matches(
-        "cbrowser", "cbrowser-net-p1", network_labels("cbrowser", "p1")
-    )
+    # t069: no deployment id configured means nothing is owned; the
+    # old prefix/name fallback check is deleted.
+    assert not network_ownership_matches(network_labels("cbrowser", "p1"))
+    assert not network_ownership_matches(labels)
 
 
 # ---------------------------------------------------------------- media network timeouts
