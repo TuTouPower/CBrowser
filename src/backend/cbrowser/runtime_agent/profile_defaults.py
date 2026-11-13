@@ -28,7 +28,11 @@ MARKER_VERSION = 1
 SEARCH_DEFAULTS_STATUS_FILE = "search_defaults_status.json"
 SEARCH_DEFAULTS_RETRY_FILE = "search_defaults_retry.json"
 SEARCH_DEFAULTS_STATES = ("applied", "failed", "disabled", "pending")
-DEFAULT_SEARCH_INIT_TIMEOUT_S = 20.0
+# The chrome://settings UI flow takes ~21s on the pinned target engine. The
+# budget is only a watchdog against a genuinely hung Playwright call; it must
+# not truncate a real initialization, which would leave the success marker
+# unwritten.
+DEFAULT_SEARCH_INIT_TIMEOUT_S = 60.0
 
 
 def write_search_defaults_status(

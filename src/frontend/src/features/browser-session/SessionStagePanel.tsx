@@ -37,21 +37,23 @@ const STAGE_TITLE_KEYS: Record<StageKey, TranslationKey> = {
   connecting_ice: "sessionStageConnectingSignaling",
 };
 
-const STAGE_ACTIONS: Record<StageKey, ActionId[]> = {
-  checking_runtime: ["view-status", "launch"],
-  runtime_not_ready: ["launch", "view-status", "reconnect"],
-  stopping: ["view-status"],
-  connecting_signaling: ["view-status", "reconnect"],
-  signaling_failed: ["reconnect", "view-status"],
-  web_locks_unavailable: ["reconnect", "view-status"],
-  ice_failed: ["reconnect", "view-status", "launch"],
-  media_waiting: ["view-status", "reconnect"],
-  media_no_frames: ["reconnect", "view-status"],
-  connected: [],
-  reconnecting: ["view-status"],
-  error: ["reconnect", "view-status", "launch"],
-  connecting_ice: ["view-status", "reconnect"],
-};
+const RECONNECT_EXEMPT_STAGES: readonly StageKey[] = [
+  "stopping",
+  "reconnecting",
+];
+const LAUNCH_STAGES: readonly StageKey[] = [
+  "checking_runtime",
+  "runtime_not_ready",
+  "ice_failed",
+  "error",
+];
+
+function stageActions(stage: StageKey): ActionId[] {
+  if (RECONNECT_EXEMPT_STAGES.includes(stage)) return ["view-status"];
+  const actions: ActionId[] = ["reconnect", "view-status"];
+  if (LAUNCH_STAGES.includes(stage)) actions.push("launch");
+  return actions;
+}
 
 const ACTION_LABEL_KEYS: Record<ActionId, TranslationKey> = {
   reconnect: "sessionReconnect",
@@ -114,7 +116,7 @@ export function SessionStagePanel(props: SessionStagePanelProps): JSX.Element {
 
   const stageKey = stage as StageKey;
   const titleKey = STAGE_TITLE_KEYS[stageKey] ?? "sessionStageError";
-  const actionIds = STAGE_ACTIONS[stageKey] ?? (["view-status"] as ActionId[]);
+  const actionIds = stageActions(stageKey);
   const isError = ERROR_STAGES.includes(stageKey);
   const rows = diagnosticRows(diagnostics);
 

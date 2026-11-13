@@ -187,6 +187,17 @@ describe("SessionStagePanel", () => {
     );
   });
 
+  it.each(
+    ALL_PANEL_STAGES.filter(
+      ({ stage }) => stage !== "stopping" && stage !== "reconnecting",
+    ),
+  )("offers reconnect for diagnostic stage $stage", ({ stage }) => {
+    renderPanel({ stage });
+    expect(
+      screen.getByTestId(sessId("stage-action", "reconnect")),
+    ).toBeInTheDocument();
+  });
+
   it("stopping shows status only and never offers reconnect", () => {
     renderPanel({ stage: "stopping" });
     expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(
