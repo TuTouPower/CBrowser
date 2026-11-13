@@ -49,7 +49,7 @@ export function DiagnosticsOverlay({
   return (
     <div
       data-testid={sessId("diag", "overlay")}
-      className="pointer-events-none absolute inset-0 flex justify-end p-md"
+      className="pointer-events-none absolute inset-none flex justify-end p-md"
     >
       <div className="pointer-events-auto flex w-details self-start flex-col gap-sm rounded-lg border border-outline bg-surface p-md">
         <div className="flex items-center justify-between gap-sm">

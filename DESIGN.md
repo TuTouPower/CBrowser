@@ -2,6 +2,9 @@
 name: CBrowser Design System
 colors:
   primary: "#2F66E0"
+  brand-gradient-start: "#00F0FF"
+  brand-gradient-mid: "#0088FF"
+  brand-gradient-end: "#0052FF"
   light-background: "#E7EAF1"
   dark-background: "#0C0E13"
   light-surface: "#FFFFFF"
@@ -20,8 +23,8 @@ colors:
   dark-on-surface: "#E9ECF3"
   light-on-surface-muted: "#5C6478"
   dark-on-surface-muted: "#A3ABBA"
-  light-on-surface-subtle: "#626A7D"
-  dark-on-surface-subtle: "#858D9C"
+  light-on-surface-subtle: "#61687B"
+  dark-on-surface-subtle: "#929AA7"
   light-outline: "#E6EAF1"
   dark-outline: "#2A2F3A"
   light-outline-strong: "#D3D9E4"
@@ -32,11 +35,11 @@ colors:
   dark-accent-soft: "#29344E"
   light-on-accent: "#FFFFFF"
   dark-on-accent: "#0B1220"
-  light-danger: "#DC2626"
+  light-danger: "#CA2323"
   dark-danger: "#F0564D"
   light-danger-soft: "#FEE2E2"
   dark-danger-soft: "#3A1A18"
-  light-warning: "#F5A524"
+  light-warning: "#8D5F15"
   dark-warning: "#F7B53C"
   light-warning-soft: "#FDF1DC"
   dark-warning-soft: "#33270F"
@@ -44,17 +47,19 @@ colors:
   dark-overlay: "#05070AC7"
   light-focus: "#2F66E0"
   dark-focus: "#5B8DFF"
+  light-brand-ink: "#000000"
+  dark-brand-ink: "#FFFFFF"
   light-group-slate: "#64748B"
   dark-group-slate: "#94A3B8"
   light-group-blue: "#2F66E0"
   dark-group-blue: "#5B8DFF"
-  light-group-teal: "#0EA5A3"
+  light-group-teal: "#0C8F8E"
   dark-group-teal: "#2CC9BD"
-  light-group-green: "#16A34A"
+  light-group-green: "#149443"
   dark-group-green: "#34D27B"
-  light-group-amber: "#CA8A04"
+  light-group-amber: "#AC7603"
   dark-group-amber: "#F5C84B"
-  light-group-orange: "#EA580C"
+  light-group-orange: "#DE530B"
   dark-group-orange: "#FF9D4D"
   light-group-red: "#DC2626"
   dark-group-red: "#FF6B6B"
@@ -116,6 +121,8 @@ rounded:
   xl: 18px
   full: 9999px
 spacing:
+  none: 0px
+  2xs: 2px
   xs: 4px
   sm: 8px
   md: 12px
@@ -128,11 +135,13 @@ components:
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "48px"
   app-dark:
     backgroundColor: "{colors.dark-background}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "48px"
   sidebar-light:
     backgroundColor: "{colors.light-sidebar}"
     textColor: "{colors.light-on-surface}"
@@ -148,11 +157,13 @@ components:
     textColor: "{colors.light-on-surface-muted}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   nav-item-dark:
     backgroundColor: "{colors.dark-sidebar}"
     textColor: "{colors.dark-on-surface-muted}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   nav-item-active-light:
     backgroundColor: "{colors.light-accent-soft}"
     textColor: "{colors.light-on-surface}"
@@ -166,263 +177,305 @@ components:
   card-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   card-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   environment-card-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   environment-card-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   modal-light:
     backgroundColor: "{colors.light-surface-raised}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.xl}"
     padding: "{spacing.md}"
   modal-dark:
     backgroundColor: "{colors.dark-surface-raised}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.xl}"
     padding: "{spacing.md}"
   popover-light:
     backgroundColor: "{colors.light-surface-raised}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
+    width: "288px"
   popover-dark:
     backgroundColor: "{colors.dark-surface-raised}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
+    width: "288px"
   toast-light:
     backgroundColor: "{colors.light-surface-raised}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   toast-dark:
     backgroundColor: "{colors.dark-surface-raised}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   tooltip-light:
     backgroundColor: "{colors.light-surface-raised}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   tooltip-dark:
     backgroundColor: "{colors.dark-surface-raised}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   table-header-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   table-header-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   table-row-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
+    height: "56px"
   table-row-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
+    height: "56px"
   table-row-selected-light:
     backgroundColor: "{colors.light-accent-soft}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   table-row-selected-dark:
     backgroundColor: "{colors.dark-accent-soft}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   table-row-hover-light:
     backgroundColor: "{colors.light-surface-hover}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   table-row-hover-dark:
     backgroundColor: "{colors.dark-surface-hover}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   input-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   input-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   select-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   select-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   search-field-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
+    width: "224px"
   search-field-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
+    width: "224px"
   checkbox-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    size: "16px"
   checkbox-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    size: "16px"
   switch-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
+    width: "36px"
+    height: "20px"
+    size: "16px"
   switch-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
+    width: "36px"
+    height: "20px"
+    size: "16px"
   icon-button-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
+    width: "36px"
   icon-button-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
+    width: "36px"
   button-ghost-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-ghost-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-secondary-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-secondary-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   menu-item-light:
     backgroundColor: "{colors.light-surface}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    height: "32px"
   menu-item-dark:
     backgroundColor: "{colors.dark-surface}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    height: "32px"
   empty-state-light:
     backgroundColor: "{colors.light-background}"
     textColor: "{colors.light-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   empty-state-dark:
     backgroundColor: "{colors.dark-background}"
     textColor: "{colors.dark-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.lg}"
     padding: "{spacing.md}"
   button-primary-light:
     backgroundColor: "{colors.light-accent}"
     textColor: "{colors.light-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-dark:
     backgroundColor: "{colors.dark-accent}"
     textColor: "{colors.dark-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-connect-light:
     backgroundColor: "{colors.light-accent}"
     textColor: "{colors.light-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-connect-dark:
     backgroundColor: "{colors.dark-accent}"
     textColor: "{colors.dark-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-danger-light:
     backgroundColor: "{colors.light-danger}"
     textColor: "{colors.light-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-danger-dark:
     backgroundColor: "{colors.dark-danger}"
     textColor: "{colors.dark-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-stop-light:
     backgroundColor: "{colors.light-danger}"
     textColor: "{colors.light-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-stop-dark:
     backgroundColor: "{colors.dark-danger}"
     textColor: "{colors.dark-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-hover-light:
     backgroundColor: "{colors.light-accent}"
     textColor: "{colors.light-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-hover-dark:
     backgroundColor: "{colors.dark-accent}"
     textColor: "{colors.dark-on-accent}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-disabled-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface-muted}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-disabled-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface-muted}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+    height: "36px"
   button-primary-small-light:
     backgroundColor: "{colors.light-accent}"
     textColor: "{colors.light-on-accent}"
@@ -436,72 +489,74 @@ components:
   status-badge-running-light:
     backgroundColor: "{colors.light-accent-soft}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-running-dark:
     backgroundColor: "{colors.dark-accent-soft}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-transition-light:
     backgroundColor: "{colors.light-warning-soft}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-transition-dark:
     backgroundColor: "{colors.dark-warning-soft}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-error-light:
     backgroundColor: "{colors.light-danger-soft}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-error-dark:
     backgroundColor: "{colors.dark-danger-soft}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-stopped-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-stopped-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   group-chip-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    size: "8px"
   group-chip-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
+    size: "8px"
   protocol-chip-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   protocol-chip-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   region-code-light:
     backgroundColor: "{colors.light-surface-subtle}"
     textColor: "{colors.light-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   region-code-dark:
     backgroundColor: "{colors.dark-surface-subtle}"
     textColor: "{colors.dark-on-surface-muted}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   banner-warning-light:
     backgroundColor: "{colors.light-warning-soft}"
@@ -593,19 +648,19 @@ components:
     padding: "{spacing.md}"
   danger-dot-light:
     backgroundColor: "{colors.light-danger}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
   danger-dot-dark:
     backgroundColor: "{colors.dark-danger}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
   warning-dot-light:
     backgroundColor: "{colors.light-warning}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
   warning-dot-dark:
     backgroundColor: "{colors.dark-warning}"
-    rounded: "{rounded.md}"
+    rounded: "{rounded.full}"
     padding: "{spacing.md}"
   helper-text-light:
     textColor: "{colors.light-on-surface-subtle}"
@@ -679,6 +734,31 @@ components:
     backgroundColor: "{colors.dark-group-violet}"
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
+  icon-xs:
+    size: "12px"
+  icon-sm:
+    size: "14px"
+  icon-md:
+    size: "16px"
+  icon-lg:
+    size: "20px"
+  icon-xl:
+    size: "24px"
+  icon-2xl:
+    size: "32px"
+  icon-3xl:
+    size: "48px"
+  brand-swatch-gradient-start:
+    backgroundColor: "{colors.brand-gradient-start}"
+  brand-swatch-gradient-mid:
+    backgroundColor: "{colors.brand-gradient-mid}"
+  brand-swatch-gradient-end:
+    backgroundColor: "{colors.brand-gradient-end}"
+  favicon-light:
+    backgroundColor: "{colors.light-brand-ink}"
+  favicon-dark:
+    backgroundColor: "{colors.dark-brand-ink}"
+
 ---
 
 ## Overview
@@ -691,9 +771,9 @@ CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、�
 
 ### Modes
 
-亮暗双模式约定（plan 4.2）：`primary` 为模式无关色；`light-<role>` 与 `dark-<role>` 成对且角色名集合相同；涉及颜色的组件成对定义 `<component>-light` / `<component>-dark`，状态变体写作 `<component>-<state>-light` / `<component>-<state>-dark`；字体、间距、圆角与模式无关，只定义一次。生成器在生成前校验角色集合相等、无未解析引用、且颜色 token 只能是 `primary` 或带模式前缀。上游规范支持多模式时只改 token 写法与生成器，业务代码不变。
+亮暗双模式约定（plan 4.2）：`primary` 与 `brand-*`（logo 渐变 `brand-gradient-start/mid/end`、favicon 与菜单栏图标墨色 `brand-ink` 的亮暗值）为品牌色，`primary` 模式无关、`brand-ink` 按模式成对；`light-<role>` 与 `dark-<role>` 成对且角色名集合相同；涉及颜色的组件成对定义 `<component>-light` / `<component>-dark`，状态变体写作 `<component>-<state>-light` / `<component>-<state>-dark`；字体、间距、圆角与模式无关，只定义一次。生成器在生成前校验角色集合相等、无未解析引用、且颜色 token 只能是 `primary`、`brand-*` 或带模式前缀。上游规范支持多模式时只改 token 写法与生成器，业务代码不变。logo 与 favicon 由生成器按品牌 token 生成到 `public/`，`public/`、`index.html` 与 `theme_boot.js` 中的颜色字面量必须是 token 值（生成器扫描，非 token 值即失败；`public/selkies/` 为构建投放的官方 Selkies 网页资产，不在扫描内）。
 
-语义：`background` 页面底色（亮 `#E7EAF1` / 暗 `#0C0E13`）、`surface` 卡片/表格/面板（亮 `#FFFFFF` / 暗 `#1F232C`）、`surface-raised` 浮层（亮 `#FFFFFF` / 暗 `#2B313C`）、`surface-subtle` 表头/次级区块（亮 `#F1F4F9` / 暗 `#262B34`）、`surface-hover` 悬停（亮 `#E9EDF4` / 暗 `#363C48`）、`sidebar` 侧栏（亮 `#F1F4F9` / 暗 `#090B10`）、`stage` 会话画面区（亮 `#DDE3EC` / 暗 `#07080A`）、`outline` 边框（亮 `#E6EAF1` / 暗 `#2A2F3A`）、`outline-strong` 强调边框（亮 `#D3D9E4` / 暗 `#3A4150`）、`accent` 唯一强调色（亮 `#2F66E0` / 暗 `#5B8DFF`）、`accent-soft` 强调浅底（亮 `#EEF3FF` / 暗 `#29344E`）、`danger` 危险（亮 `#DC2626` / 暗 `#F0564D`）、`warning` 警示（亮 `#F5A524` / 暗 `#F7B53C`）、`overlay` 遮罩、`focus` 焦点环、`group-<hue>` 8 个分组色相。状态必须有文字或图标，不能只靠颜色；两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。
+语义：`background` 页面底色（亮 `#E7EAF1` / 暗 `#0C0E13`）、`surface` 卡片/表格/面板（亮 `#FFFFFF` / 暗 `#1F232C`）、`surface-raised` 浮层（亮 `#FFFFFF` / 暗 `#2B313C`）、`surface-subtle` 表头/次级区块（亮 `#F1F4F9` / 暗 `#262B34`）、`surface-hover` 悬停（亮 `#E9EDF4` / 暗 `#363C48`）、`sidebar` 侧栏（亮 `#F1F4F9` / 暗 `#090B10`）、`stage` 会话画面区（亮 `#DDE3EC` / 暗 `#07080A`）、`outline` 边框（亮 `#E6EAF1` / 暗 `#2A2F3A`）、`outline-strong` 强调边框（亮 `#D3D9E4` / 暗 `#3A4150`）、`accent` 唯一强调色（亮 `#2F66E0` / 暗 `#5B8DFF`）、`accent-soft` 强调浅底（亮 `#EEF3FF` / 暗 `#29344E`）、`danger` 危险（亮 `#CA2323` / 暗 `#F0564D`）、`warning` 警示（亮 `#8D5F15` / 暗 `#F7B53C`）、`overlay` 遮罩、`focus` 焦点环、`group-<hue>` 8 个分组色相。状态必须有文字或图标，不能只靠颜色；两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。
 
 ## Typography
 
@@ -714,11 +794,146 @@ UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `
 
 ## Shapes
 
-圆角 `sm 6`（状态标签、分组标签、复选框）、`md 10`（按钮、输入框、下拉框）、`lg 14`（表格、卡片、浮层）、`xl 18`（弹窗）、`full 9999`（圆形）。
+圆角 `sm 6`（状态标签、分组标签、复选框）、`md 10`（按钮、输入框、下拉框）、`lg 14`（表格、卡片、浮层）、`xl 18`（弹窗）、`full 9999`（圆形）。每个 component 的圆角归属见下表，生成器逐项断言表中归属与 components 定义一致，不一致时 `design:check` 失败。
+
+|component|rounded|
+|---|---|
+|app|md|
+|sidebar|md|
+|nav-item|md|
+|nav-item-active|md|
+|card|lg|
+|environment-card|lg|
+|modal|xl|
+|popover|lg|
+|toast|lg|
+|tooltip|sm|
+|table-header|lg|
+|table-row|lg|
+|table-row-selected|lg|
+|table-row-hover|lg|
+|input|md|
+|select|md|
+|search-field|md|
+|checkbox|sm|
+|switch|full|
+|icon-button|md|
+|button-ghost|md|
+|button-secondary|md|
+|menu-item|sm|
+|empty-state|lg|
+|button-primary|md|
+|button-connect|md|
+|button-danger|md|
+|button-stop|md|
+|button-primary-hover|md|
+|button-primary-disabled|md|
+|button-primary-small|md|
+|status-badge-running|sm|
+|status-badge-transition|sm|
+|status-badge-error|sm|
+|status-badge-stopped|sm|
+|group-chip|sm|
+|protocol-chip|sm|
+|region-code|sm|
+|banner-warning|md|
+|banner-danger|md|
+|session-header|md|
+|session-stage|md|
+|session-details-panel|md|
+|brand-mark|md|
+|divider|md|
+|scrollbar-thumb|md|
+|modal-backdrop|md|
+|focus-ring|md|
+|danger-dot|full|
+|warning-dot|full|
+|helper-text|md|
+|group-swatch-slate|md|
+|group-swatch-blue|md|
+|group-swatch-teal|md|
+|group-swatch-green|md|
+|group-swatch-amber|md|
+|group-swatch-orange|md|
+|group-swatch-red|md|
+|group-swatch-violet|md|
 
 ## Components
 
 组件按 4.2 成对定义：按钮族（`button-primary`、`button-secondary`、`button-ghost`、`button-danger`、`button-connect`、`button-stop` 及 hover/disabled/小号变体）、`icon-button`、`input`、`select`、`search-field`、`checkbox`、`switch`、`nav-item`、`nav-item-active`、`sidebar`、`table-header`、`table-row`、`table-row-selected`、`card`、`environment-card`、四态 `status-badge`、`group-chip`、`protocol-chip`、`region-code`、`modal`、`popover`、`menu-item`、`toast`、`tooltip`、`empty-state`、`banner-warning`、`banner-danger`、`session-header`、`session-stage`、`session-details-panel`、`brand-mark`，以及分组色板 `group-swatch-*` 与纯色标记 `divider` / `scrollbar-thumb` / `modal-backdrop` / `focus-ring` / `danger-dot` / `warning-dot`。Dialog、DropdownMenu、Popover、Tooltip 基于 Radix 原语，Toast 全局单实例。
+
+组件尺寸规格（控件高度、浮层宽度、图标尺寸等）写在 components 条目的 `height` / `width` / `size` 字段（官方子 token），与模式无关、成对条目取值相同；生成器导出 `--component-<name>-<prop>` 组件级变量（圆角同时导出 `-radius`），业务代码引用变量，不写数值尺寸。图标尺寸阶梯为仅尺寸条目 `icon-xs`（12）/ `icon-sm`（14）/ `icon-md`（16）/ `icon-lg`（20）/ `icon-xl`（24）/ `icon-2xl`（32）/ `icon-3xl`（48）。`brand-swatch-gradient-*` 与 `favicon-light/dark` 为品牌 token 的登记条目，使品牌色被组件引用。
+
+## Contrast
+
+对比度门禁（WCAG AA）：正文文字对阈值 4.5:1，承载信息的图形对阈值 3.0:1。components 中成对的 textColor / backgroundColor 由官方 linter 与生成器共同校验；仅 textColor 的 component 对同模式 background / surface / surface-raised / surface-subtle 四种底色校验。下表声明 components 之外、代码中直接以 token 类使用的角色对（`text-warning` 等文字色与状态点、分组色点、焦点环等图形色），生成器逐对计算，任一低于阈值即失败。divider、scrollbar-thumb、modal-backdrop、session-stage 为装饰或结构元素，不承载信息，不入对比度对。
+
+|foreground|background|kind|
+|---|---|---|
+|{colors.light-warning}|{colors.light-background}|text|
+|{colors.light-warning}|{colors.light-surface}|text|
+|{colors.dark-warning}|{colors.dark-background}|text|
+|{colors.dark-warning}|{colors.dark-surface}|text|
+|{colors.light-danger}|{colors.light-background}|text|
+|{colors.light-danger}|{colors.light-surface}|text|
+|{colors.dark-danger}|{colors.dark-background}|text|
+|{colors.dark-danger}|{colors.dark-surface}|text|
+|{colors.light-accent}|{colors.light-surface}|text|
+|{colors.light-accent}|{colors.light-surface-subtle}|text|
+|{colors.dark-accent}|{colors.dark-surface}|text|
+|{colors.dark-accent}|{colors.dark-surface-subtle}|text|
+|{colors.light-warning}|{colors.light-background}|graphic|
+|{colors.light-warning}|{colors.light-surface}|graphic|
+|{colors.dark-warning}|{colors.dark-background}|graphic|
+|{colors.dark-warning}|{colors.dark-surface}|graphic|
+|{colors.light-danger}|{colors.light-background}|graphic|
+|{colors.light-danger}|{colors.light-surface}|graphic|
+|{colors.light-danger}|{colors.light-stage}|graphic|
+|{colors.dark-danger}|{colors.dark-background}|graphic|
+|{colors.dark-danger}|{colors.dark-surface}|graphic|
+|{colors.dark-danger}|{colors.dark-stage}|graphic|
+|{colors.light-accent}|{colors.light-background}|graphic|
+|{colors.light-accent}|{colors.light-surface}|graphic|
+|{colors.light-accent}|{colors.light-stage}|graphic|
+|{colors.dark-accent}|{colors.dark-background}|graphic|
+|{colors.dark-accent}|{colors.dark-surface}|graphic|
+|{colors.dark-accent}|{colors.dark-stage}|graphic|
+|{colors.light-focus}|{colors.light-background}|graphic|
+|{colors.light-focus}|{colors.light-surface}|graphic|
+|{colors.dark-focus}|{colors.dark-background}|graphic|
+|{colors.dark-focus}|{colors.dark-surface}|graphic|
+|{colors.light-group-slate}|{colors.light-background}|graphic|
+|{colors.light-group-slate}|{colors.light-surface}|graphic|
+|{colors.dark-group-slate}|{colors.dark-background}|graphic|
+|{colors.dark-group-slate}|{colors.dark-surface}|graphic|
+|{colors.light-group-blue}|{colors.light-background}|graphic|
+|{colors.light-group-blue}|{colors.light-surface}|graphic|
+|{colors.dark-group-blue}|{colors.dark-background}|graphic|
+|{colors.dark-group-blue}|{colors.dark-surface}|graphic|
+|{colors.light-group-teal}|{colors.light-background}|graphic|
+|{colors.light-group-teal}|{colors.light-surface}|graphic|
+|{colors.dark-group-teal}|{colors.dark-background}|graphic|
+|{colors.dark-group-teal}|{colors.dark-surface}|graphic|
+|{colors.light-group-green}|{colors.light-background}|graphic|
+|{colors.light-group-green}|{colors.light-surface}|graphic|
+|{colors.dark-group-green}|{colors.dark-background}|graphic|
+|{colors.dark-group-green}|{colors.dark-surface}|graphic|
+|{colors.light-group-amber}|{colors.light-background}|graphic|
+|{colors.light-group-amber}|{colors.light-surface}|graphic|
+|{colors.dark-group-amber}|{colors.dark-background}|graphic|
+|{colors.dark-group-amber}|{colors.dark-surface}|graphic|
+|{colors.light-group-orange}|{colors.light-background}|graphic|
+|{colors.light-group-orange}|{colors.light-surface}|graphic|
+|{colors.dark-group-orange}|{colors.dark-background}|graphic|
+|{colors.dark-group-orange}|{colors.dark-surface}|graphic|
+|{colors.light-group-red}|{colors.light-background}|graphic|
+|{colors.light-group-red}|{colors.light-surface}|graphic|
+|{colors.dark-group-red}|{colors.dark-background}|graphic|
+|{colors.dark-group-red}|{colors.dark-surface}|graphic|
+|{colors.light-group-violet}|{colors.light-background}|graphic|
+|{colors.light-group-violet}|{colors.light-surface}|graphic|
+|{colors.dark-group-violet}|{colors.dark-background}|graphic|
+|{colors.dark-group-violet}|{colors.dark-surface}|graphic|
 
 ## Do's and Don'ts
 
@@ -744,4 +959,8 @@ tokens instead. The generator emits them into the independent
 |menu|10rem|
 |select|8rem|
 |control-sm|1.875rem|
+|badge|3rem|
+|table-select|2.5rem|
+|dropdown-list|16rem|
+|swatch|1.5rem|
 |details|18.75rem|

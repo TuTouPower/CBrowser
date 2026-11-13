@@ -67,7 +67,7 @@ export function PlatformIcon({
   const value = platform ?? "windows";
   const Icon =
     value === "macos" ? Laptop : value === "linux" ? Monitor : AppWindow;
-  return <Icon aria-hidden="true" className="h-4 w-4 text-on-surface-muted" />;
+  return <Icon aria-hidden="true" className="size-(--component-icon-md-size) text-on-surface-muted" />;
 }
 
 export function EnvironmentRowActions({
@@ -166,7 +166,7 @@ export function EnvironmentTable({
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10">
+            <TableHead className="w-table-select">
               <span data-testid="env-select-all">
                 <Checkbox
                   checked={allSelected}

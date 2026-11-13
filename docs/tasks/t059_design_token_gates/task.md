@@ -31,11 +31,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：DESIGN.md 中卡片与弹窗圆角只有一个口径，实现中的卡片与弹窗圆角来自该定义；正文与 components 不一致时 `design:check` 失败。
-- [ ] AC-002：在 `public/`、`index.html` 或 `theme_boot.js` 中写入非 token 颜色时，`design:check` 失败；logo 与 favicon 颜色随品牌 token 变化。
-- [ ] AC-003：任一声明的颜色角色对低于对应对比度阈值时，`design:check` 失败；当前亮暗两种模式下全部角色对通过。
-- [ ] AC-004：业务代码中出现数值型或任意值写法的尺寸、间距工具类时，`design:check` 失败；当前代码全部通过。
-- [ ] AC-005：替换后各页面主要组件的尺寸与间距与替换前一致（对比度修正导致的颜色变化除外）。
+- [x] AC-001：DESIGN.md 中卡片与弹窗圆角只有一个口径，实现中的卡片与弹窗圆角来自该定义；正文与 components 不一致时 `design:check` 失败。
+- [x] AC-002：在 `public/`、`index.html` 或 `theme_boot.js` 中写入非 token 颜色时，`design:check` 失败；logo 与 favicon 颜色随品牌 token 变化。
+- [x] AC-003：任一声明的颜色角色对低于对应对比度阈值时，`design:check` 失败；当前亮暗两种模式下全部角色对通过。
+- [x] AC-004：业务代码中出现数值型或任意值写法的尺寸、间距工具类时，`design:check` 失败；当前代码全部通过。
+- [x] AC-005：替换后各页面主要组件的尺寸与间距与替换前一致（对比度修正导致的颜色变化除外）。
 
 ### 可测试性声明
 
@@ -70,7 +70,7 @@
 
 <!-- /规范 -->
 
-- `@google/design.md` alpha 格式对 components 中自定义尺寸字段的 lint 行为（是否视为 warning 阻断门禁）：UNVERIFIED-SPIKE，实施时以官方 linter 实测，必要时在生成器侧扩展而不改官方格式。
+- `@google/design.md` alpha 格式对 components 中自定义尺寸字段的 lint 行为：已实测（2026-11-13，实验在 `.scratch/spike/`）。结论：官方 linter 合法子 token 恰为 `backgroundColor, textColor, typography, rounded, padding, size, height, width` 八个，`height/width/size` 写字面量或 `{spacing.*}` 引用均无 finding 并解析为 dimension；自定义字段名（如 `iconSize`、`borderColor`）产生 warning，而生成器将 warning 视为阻断。实施口径：尺寸规格只用官方 `height/width/size` 字段，生成器侧读取解析值导出组件级变量，不改官方格式。
 
 ### 风险与回退
 

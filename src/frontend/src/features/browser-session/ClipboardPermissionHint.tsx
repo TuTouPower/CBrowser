@@ -38,7 +38,7 @@ export function ClipboardPermissionHint(): JSX.Element {
       className="pointer-events-none absolute bottom-md left-md z-10 flex max-w-panel flex-col gap-xs rounded-md border border-outline bg-surface p-md"
     >
       <span className="inline-flex items-center gap-sm font-ui text-label-sm text-on-surface">
-        <Clipboard aria-hidden="true" className="h-4 w-4 shrink-0" />
+        <Clipboard aria-hidden="true" className="size-(--component-icon-md-size) shrink-0" />
         {denied ? t("clipboardPermissionDenied") : t("clipboardPermissionPrompt")}
       </span>
       <span className="font-ui text-body-sm text-on-surface-muted">

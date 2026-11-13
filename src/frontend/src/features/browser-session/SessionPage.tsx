@@ -190,7 +190,7 @@ export function SessionPage(): JSX.Element {
     );
   } else {
     pageBody = (
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-none flex-1 flex-col">
         <div className={focusMode ? "hidden" : "shrink-0"}>
           <SessionHeader
             profile={profile}
@@ -210,11 +210,11 @@ export function SessionPage(): JSX.Element {
             onApplyRestart={handleApplyRestart}
           />
         </div>
-        <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-none flex-1">
           <div
             data-testid={SESS_STAGE}
             data-stage={stage}
-            className="relative min-w-0 flex-1 overflow-hidden bg-stage"
+            className="relative min-w-none flex-1 overflow-hidden bg-stage"
           >
             <iframe
               key="session-iframe"
@@ -223,12 +223,12 @@ export function SessionPage(): JSX.Element {
               data-stage={stage}
               src={`/selkies/index.html?profileId=${encodeURIComponent(id)}&_k=${session.reloadKey}`}
               allow="autoplay; fullscreen; clipboard-read; clipboard-write"
-              className="absolute inset-0 h-full w-full border-none"
+              className="absolute inset-none h-full w-full border-none"
               title={t("sessTitle")}
             />
             {stage === "connected" ? <ClipboardPermissionHint /> : null}
             {setDesiredStateMutation.isError ? (
-              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-md">
+              <div className="pointer-events-none absolute inset-x-none top-none z-10 flex justify-center p-md">
                 <div className="pointer-events-auto max-w-panel">
                   <Banner tone="danger" testId={sessId("launch", "error")}>
                     {t("sessionStartFailed", {
@@ -242,7 +242,7 @@ export function SessionPage(): JSX.Element {
               </div>
             ) : null}
             {applyErrorMessage ? (
-              <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center p-md">
+              <div className="pointer-events-none absolute inset-x-none top-none z-10 flex justify-center p-md">
                 <div className="pointer-events-auto max-w-panel">
                   <Banner tone="danger" testId={sessId("apply", "error")}>
                     {t("displayApplyFailed", { error: applyErrorMessage })}
@@ -286,7 +286,7 @@ export function SessionPage(): JSX.Element {
   }
 
   return (
-    <div data-testid={SESS_PAGE} data-stage={stage} className="flex h-full min-h-0 flex-col bg-background">
+    <div data-testid={SESS_PAGE} data-stage={stage} className="flex h-full min-h-none flex-col bg-background">
       {pageBody}
     </div>
   );

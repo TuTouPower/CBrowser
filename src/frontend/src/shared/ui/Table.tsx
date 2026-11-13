@@ -64,7 +64,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "h-14 border-b border-outline hover:bg-surface-hover",
+        "h-(--component-table-row-height) border-b border-outline hover:bg-surface-hover",
         selected && "bg-accent-soft",
         className,
       )}

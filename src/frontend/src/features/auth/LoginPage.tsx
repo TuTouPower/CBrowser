@@ -67,8 +67,8 @@ export function LoginPage() {
     >
       <div className="w-full max-w-panel rounded-lg border border-outline bg-surface p-xl">
         <div className="mb-lg flex flex-col items-center">
-          <div className="mb-md flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft text-on-surface">
-            <Lock aria-hidden="true" className="h-6 w-6" />
+          <div className="mb-md flex h-badge w-badge items-center justify-center rounded-full bg-accent-soft text-on-surface">
+            <Lock aria-hidden="true" className="size-(--component-icon-xl-size)" />
           </div>
           <h1 className="font-ui text-headline-lg text-on-surface">CBrowser</h1>
           <p className="mt-sm font-ui text-body-sm text-on-surface-muted">

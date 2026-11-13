@@ -1,0 +1,14 @@
+{
+  "tid": "t059",
+  "attempt": 1,
+  "execution_id": "0eaf158d32834117a8a2f3a8851dac98",
+  "status": "done",
+  "branch": "t059_design_token_gates",
+  "base_sha": "cf04d546162f6e040189c423c5b2afcf5ea43ed1",
+  "tests": "全量门禁 `scripts/run_gates.sh`（证据目录 /tmp/t059_gates2）：contract 0（258 tests）、design_lint 0、design_check 0、frontend_build 0；frontend_test 606/607（基线 575/0，新增 32 为生成器门禁测试，含 selkies 范围回归 1）；unit+integration 2175 tests、8 skipped 与基线同构。基线对账（cf04d54 干净直跑实测）：后端基线 26 个失败名，我方 29 个中 24 个与基线同名、基线独有 2 个（test_a16_protocol_drift、test_t034_dependency_lock）在我方通过、我方独有 5 个（test_t055_socket_slot_cleanup 的 prepare_socket_dir 4 个 + test_stream_transport_hardening 的 ws gateway 1 个）逐名单跑全部通过（14/14，0.60s）——本 task diff 不含任何后端代码，判定为门禁内部并行（后端与前端套件同机并发）在 1.5 CPU 上的超时假象，零代码回归。frontend_test 唯一失败 ProfileForm「renders the four sections…」同理（两轮门禁各失败一次、对象在两轮间漂移；无负载全量手动跑 606/606、该文件单跑 17/17 通过）。requirements_check exit 1 为环境限制（本机未装 mise，基线同），其权威漂移检查 test_t034 在 unit suite 内在我方通过。",
+  "blackbox": "未跑（`CBROWSER_RUN_E2E=1` 需真实 Docker/Chrome，本机无 Docker，按口径跳过；历任 task 均以非 E2E 门禁为 finish 依据）。",
+  "review": "single 级独立 reviewer Round 1 overall PASS（AC 5/5 re_verified），2 条 minor（DESIGN 正文旧值残留、selkies 扫描口径）均已修并经补审更新指纹，见下方 Review 处置。",
+  "review_scope": "dc1cc4761168036d",
+  "pending": [],
+  "findings": []
+}

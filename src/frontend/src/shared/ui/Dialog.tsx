@@ -22,7 +22,7 @@ export function Dialog({
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Trigger asChild>{trigger}</DialogPrimitive.Trigger>
       <DialogPrimitive.Portal>
-        <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-overlay" />
+        <DialogPrimitive.Overlay className="fixed inset-none z-40 bg-overlay" />
         <DialogPrimitive.Content
           aria-modal="true"
           aria-describedby={undefined}
@@ -40,9 +40,9 @@ export function Dialog({
             <button
               type="button"
               aria-label="Close"
-              className="absolute right-md top-md rounded-sm p-1 text-on-surface-muted hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-focus"
+              className="absolute right-md top-md rounded-sm p-xs text-on-surface-muted hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-focus"
             >
-              <X aria-hidden="true" className="h-4 w-4" />
+              <X aria-hidden="true" className="size-(--component-icon-md-size)" />
             </button>
           </DialogPrimitive.Close>
         </DialogPrimitive.Content>

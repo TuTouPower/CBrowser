@@ -40,7 +40,7 @@ export function Button({
       type={type}
       className={cn(
         "inline-flex items-center justify-center gap-sm rounded-md font-ui text-label-md transition-colors",
-        size === "sm" ? "h-control-sm px-sm" : "h-9 px-md",
+        size === "sm" ? "h-control-sm px-sm" : "h-(--component-button-primary-height) px-md",
         VARIANTS[variant],
         "disabled:cursor-not-allowed disabled:opacity-50",
         FOCUS,
@@ -70,7 +70,7 @@ export function IconButton({
       type={type}
       aria-label={label}
       className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-md bg-surface text-on-surface hover:bg-surface-hover",
+        "inline-flex h-(--component-icon-button-height) w-(--component-icon-button-width) items-center justify-center rounded-md bg-surface text-on-surface hover:bg-surface-hover",
         FOCUS,
         className,
       )}

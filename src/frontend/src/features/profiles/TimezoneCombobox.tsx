@@ -135,7 +135,7 @@ export function TimezoneCombobox({
         }
         aria-autocomplete="list"
         autoComplete="off"
-        className="h-9 w-full rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface placeholder:text-on-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50"
+        className="h-(--component-input-height) w-full rounded-md border border-outline bg-surface px-md font-ui text-body-md text-on-surface placeholder:text-on-surface-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:opacity-50"
         value={query}
         placeholder={t("formTimezoneAuto")}
         onFocus={() => {
@@ -164,7 +164,7 @@ export function TimezoneCombobox({
           id={listboxId}
           role="listbox"
           data-testid={testId ? `${testId}-listbox` : undefined}
-          className="absolute z-50 mt-sm max-h-64 w-full overflow-y-auto rounded-lg border border-outline bg-surface-raised text-on-surface shadow-lg"
+          className="absolute z-50 mt-sm max-h-dropdown-list w-full overflow-y-auto rounded-lg border border-outline bg-surface-raised text-on-surface shadow-lg"
         >
           {options.length === 0 ? (
             <div className="px-md py-sm font-ui text-body-md text-on-surface-muted">

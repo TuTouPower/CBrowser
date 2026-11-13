@@ -16,7 +16,7 @@ export function Tooltip({
           <TooltipPrimitive.Content
             role="tooltip"
             sideOffset={4}
-            className="z-[70] rounded-sm bg-surface-raised px-sm py-0.5 font-ui text-label-sm text-on-surface shadow-lg"
+            className="z-[70] rounded-sm bg-surface-raised px-sm py-2xs font-ui text-label-sm text-on-surface shadow-lg"
           >
             {content}
           </TooltipPrimitive.Content>

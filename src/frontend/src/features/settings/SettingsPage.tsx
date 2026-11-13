@@ -73,13 +73,13 @@ export function SettingsPage() {
   return (
     <div data-testid="settings-page" className="mx-auto max-w-3xl">
       <div className="mb-lg flex items-center gap-md">
-        <SettingsIcon aria-hidden="true" className="h-6 w-6 text-on-surface-muted" />
+        <SettingsIcon aria-hidden="true" className="size-(--component-icon-xl-size) text-on-surface-muted" />
         <h1 className="font-ui text-headline-lg text-on-surface">{t("settings")}</h1>
       </div>
 
       <div className="flex flex-col gap-lg">
         <Section
-          icon={<Palette aria-hidden="true" className="h-5 w-5" />}
+          icon={<Palette aria-hidden="true" className="size-(--component-icon-lg-size)" />}
           title={t("appearance")}
           description={t("theme")}
         >
@@ -92,7 +92,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
-          icon={<Globe aria-hidden="true" className="h-5 w-5" />}
+          icon={<Globe aria-hidden="true" className="size-(--component-icon-lg-size)" />}
           title={t("language")}
           description={t("switchLanguage")}
         >
@@ -113,7 +113,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
-          icon={<ShieldCheck aria-hidden="true" className="h-5 w-5" />}
+          icon={<ShieldCheck aria-hidden="true" className="size-(--component-icon-lg-size)" />}
           title={t("controlApiStatusTitle")}
           description={t("controlApiStatusHint")}
         >
@@ -136,7 +136,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
-          icon={<Network aria-hidden="true" className="h-5 w-5" />}
+          icon={<Network aria-hidden="true" className="size-(--component-icon-lg-size)" />}
           title={t("networkAccess")}
           description={t("networkAccessDesc")}
         >
@@ -172,7 +172,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
-          icon={<Type aria-hidden="true" className="h-5 w-5" />}
+          icon={<Type aria-hidden="true" className="size-(--component-icon-lg-size)" />}
           title={t("platformFontSets")}
           description={t("platformFontSets")}
         >

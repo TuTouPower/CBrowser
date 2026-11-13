@@ -2,9 +2,9 @@
   <defs>
     <!-- 亮蓝色指纹渐变（纯蓝色系，零紫色） -->
     <linearGradient id="brand-gradient" x1="280" y1="340" x2="720" y2="780" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#00F0FF"/>
-      <stop offset="50%" stop-color="#0088FF"/>
-      <stop offset="100%" stop-color="#0052FF"/>
+      <stop offset="0%" stop-color="#00f0ff"/>
+      <stop offset="50%" stop-color="#0088ff"/>
+      <stop offset="100%" stop-color="#0052ff"/>
     </linearGradient>
   </defs>
 

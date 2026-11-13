@@ -133,16 +133,16 @@ export function SessionStagePanel(props: SessionStagePanelProps): JSX.Element {
   return (
     <div
       data-testid={SESS_STAGE_PANEL}
-      className="pointer-events-none absolute inset-0 flex items-center justify-center p-lg"
+      className="pointer-events-none absolute inset-none flex items-center justify-center p-lg"
     >
       <div className="pointer-events-auto flex w-full max-w-panel flex-col gap-md rounded-lg border border-outline bg-surface p-lg">
         <div className="flex items-center gap-sm">
           {isError ? (
-            <CircleX aria-hidden="true" className="h-4 w-4 shrink-0 text-danger" />
+            <CircleX aria-hidden="true" className="size-(--component-icon-md-size) shrink-0 text-danger" />
           ) : (
             <LoaderCircle
               aria-hidden="true"
-              className="h-4 w-4 shrink-0 animate-pulse text-accent"
+              className="size-(--component-icon-md-size) shrink-0 animate-pulse text-accent"
             />
           )}
           <h2
