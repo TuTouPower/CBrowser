@@ -1,0 +1,17 @@
+{
+  "tid": "t061",
+  "attempt": 1,
+  "execution_id": "93c565c5d7a744d6bfb79b1fb0bf5d47",
+  "status": "done",
+  "branch": "t061_session_ui_clarity",
+  "base_sha": "c5f83296ece80a9a0ed9f1e48d957ce332f858c4",
+  "tests": "证据模式全量门禁（manifest 在 worktree `.scratch/gate_evidence_20261113/`）：protocol_drift/requirements/design_lint/design_check/frontend_build PASS，contract 257 passed/1 skipped；unit 1991+64 passed、1 failed（t060 topology 用例，主仓 pristine 基线同法复现、非本 task 引入）；integration 173+4 passed、15 errors（子进程就绪超时型负载 flaky，逐例隔离复核均通过）；frontend_test 623 passed/4 failed（5000ms 超时 flaky，受影响文件单跑 23/23、全量单跑 627/627）。本 task 直接相关测试：browser-session 22 文件 181 例全过（双路 reviewer 独立复跑一致），含新增 wsRecovery 4 例。",
+  "blackbox": "云端无 Docker，e2e 与 real_engine 未运行、按本仓口径跳过按 pass 计；AC-006/AC-008 的真实 Chrome/Stream 黑盒验证顺延本地（Mac）合入前补验，已登记 p090，不以组件测试替代其结论。",
+  "review": "Round 1 双路 PASS（code 轴 1 minor、test 轴 4 minor，均为 minor）；AC 复验 16 项次全部 TICK-VALID、无 TICK-VOID；5 条 finding 处置见上表（1 已修、4 遗留至 p090/p091）。",
+  "review_scope": "c5fe8b9c25e5b811",
+  "pending": [
+    "p090",
+    "p091"
+  ],
+  "findings": []
+}

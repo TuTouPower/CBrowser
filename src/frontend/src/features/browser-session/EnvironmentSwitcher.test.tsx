@@ -196,11 +196,16 @@ describe("EnvironmentSwitcher", () => {
 
     const trigger = screen.getByTestId(SESS_SWITCHER_TRIGGER);
     expect(trigger.textContent).toContain("Alpha");
-    await waitFor(() =>
-      expect(trigger.textContent).toContain(en.sessRunning),
-    );
-
+    // t061 AC-005: the trigger shows the environment name only — no
+    // status badge (the pre-t061 assertion expected the running label
+    // inside the trigger). Status stays on the dropdown items below.
     fireEvent.click(trigger);
+    const firstItem = await screen.findByTestId(sessId("switcher-item", "p1"));
+    await waitFor(() =>
+      expect(firstItem.textContent).toContain(en.sessRunning),
+    );
+    expect(trigger.textContent).not.toContain(en.sessRunning);
+
     const search = await screen.findByTestId(SESS_SWITCHER_SEARCH);
 
     const headers = screen

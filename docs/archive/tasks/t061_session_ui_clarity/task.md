@@ -29,14 +29,14 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：顶部按钮关闭后详情面板不占宽度，再次点击恢复；刷新保持开关状态，面板内部无标题/第二开关，页面唯一详情开关的定位无歧义。
-- [ ] AC-002：checking_runtime、connecting_signaling、media_waiting、reconnecting 四种等待态仅显示轻量指示，不渲染居中诊断表或操作按钮；connected 不显示等待层。connecting_ice 不属于 SessionStage，不新增该运行态。
-- [ ] AC-003：signaling_failed、ice_failed、media_no_frames、web_locks_unavailable、error 保留诊断及适用重连动作；runtime_not_ready 保留启动与状态提示；stopping 显示停止提示及现有查看状态入口，不提供启动/重连。
-- [ ] AC-004：中/英文界面中 ready/recovering/failed/unknown 在顶栏与详情均显示对应翻译；未知或缺失值有本地化兜底，不展示原始机器码。
-- [ ] AC-005：环境触发器不含状态徽标，顶栏运行状态只显示一次；下拉项仍显示各环境状态，移除触发器当前状态后不保留仅服务该徽标的查询。
-- [ ] [deploy] AC-006：已连接后异常 WS 关闭，现有 5 秒恢复检查确认媒体仍健康时，即使 ConnectionSnapshot 未变也退出 reconnecting 到 connected；不重建内部 Browser/现有网页/环境数据。媒体不健康时沿现有重连路径恢复，旧 generation 迟到结果不覆盖当前状态。
-- [ ] AC-007：诊断与界面可区分正在恢复和已经恢复；健康媒体恢复后不残留无限等待提示，失败原因不含凭据。
-- [ ] [deploy] AC-008：全部 viewer 断开后 Browser 环境及已有网页/数据继续保留，不因无人连接或时间经过被新增逻辑停止、重置或删除；再次连接可恢复，既有按活跃 consumer 暂停/恢复采集行为保持。
+- [x] AC-001：顶部按钮关闭后详情面板不占宽度，再次点击恢复；刷新保持开关状态，面板内部无标题/第二开关，页面唯一详情开关的定位无歧义。
+- [x] AC-002：checking_runtime、connecting_signaling、media_waiting、reconnecting 四种等待态仅显示轻量指示，不渲染居中诊断表或操作按钮；connected 不显示等待层。connecting_ice 不属于 SessionStage，不新增该运行态。
+- [x] AC-003：signaling_failed、ice_failed、media_no_frames、web_locks_unavailable、error 保留诊断及适用重连动作；runtime_not_ready 保留启动与状态提示；stopping 显示停止提示及现有查看状态入口，不提供启动/重连。
+- [x] AC-004：中/英文界面中 ready/recovering/failed/unknown 在顶栏与详情均显示对应翻译；未知或缺失值有本地化兜底，不展示原始机器码。
+- [x] AC-005：环境触发器不含状态徽标，顶栏运行状态只显示一次；下拉项仍显示各环境状态，移除触发器当前状态后不保留仅服务该徽标的查询。
+- [x] [deploy] AC-006：已连接后异常 WS 关闭，现有 5 秒恢复检查确认媒体仍健康时，即使 ConnectionSnapshot 未变也退出 reconnecting 到 connected；不重建内部 Browser/现有网页/环境数据。媒体不健康时沿现有重连路径恢复，旧 generation 迟到结果不覆盖当前状态。
+- [x] AC-007：诊断与界面可区分正在恢复和已经恢复；健康媒体恢复后不残留无限等待提示，失败原因不含凭据。
+- [x] [deploy] AC-008：全部 viewer 断开后 Browser 环境及已有网页/数据继续保留，不因无人连接或时间经过被新增逻辑停止、重置或删除；再次连接可恢复，既有按活跃 consumer 暂停/恢复采集行为保持。
 
 ### 可测试性声明
 
@@ -76,7 +76,7 @@
 
 <!-- /规范 -->
 
-- 媒体健康但阶段卡住及恢复回调顺序：UNVERIFIED-SPIKE，用真实 hook 最小复现现行 timeout/generation fence 后修复并真链验证；产品边界已明确，无产品 BLOCKING。
+- 媒体健康但阶段卡住及恢复回调顺序：已核实（2026-11-13，云端 SPIKE，真实 hook + 可控 timer 复现于 `useBrowserSession.wsRecovery.test.tsx`）。结论：已连接后异常 WS 关闭进入 reconnecting 时，`useBrowserSession` 的 5 秒恢复检查只处理媒体不健康分支（reconnect 重建），健康分支无动作；而另一条回 connected 的路径 `handleConnectionSignal` 仅在 `SessionDiagnosticsSource` 的 ConnectionSnapshot 发生变化时触发，信令层关闭不改变 WebRTC stats 快照，故快照不变时阶段永久卡在 reconnecting。修复口径：5 秒恢复检查在确认媒体健康（stats.connected）且当前有效阶段仍为 reconnecting 时直接收敛到 connected 并清除错误文案；不健康沿用既有 reconnect 路径；检查结果经 generation fence 校验，旧 generation 的迟到健康结果不覆盖当前状态（复现测试已覆盖不健康、迟到 generation 与后端停止三个负向分支）。真链（真实 Chrome）验证属 [deploy] 范围，云端不执行、按跳过登记。产品边界已明确，无产品 BLOCKING。
 
 ### 风险与回退
 

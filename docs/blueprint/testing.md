@@ -192,6 +192,12 @@ AC-003 扫描：20 个业务文件（外壳、`shared/ui`、登录页、设置�
 
 `design_tokens.test.mjs` 覆盖 3 例纯函数断言（`assertNoColorViolations` 颜色正则的命中与放行）与 2 例集成测试（`mkdtempSync` 临时目录 + `collectSources` 走真实门禁路径，违规文件使 `runLintSources` 抛错、干净目录通过）。`doctor_cmd` / `test_cmd` / `blackbox_verify` / `gate_timeout_seconds` 章节名与命令形式不变。
 
+### t061 会话阶段呈现与断线恢复验证
+
+组件与页面测试（Vitest）覆盖会话阶段呈现矩阵：等待态（checking_runtime、connecting_signaling、media_waiting、reconnecting）只有轻量指示、无诊断表与操作按钮；故障态保留诊断与适用重连动作；runtime_not_ready 只有启动与查看状态；stopping 只有停止提示与查看状态；connected 无等待层（`SessionStagePanel.test.tsx`）。详情面板开关唯一性与布局：全页只有一个详情开关（页头按钮）、面板内无标题与第二开关、关闭不渲染不占位、开关状态经 `cbrowser.session.details_open` 刷新保持（`SessionPage.test.tsx`、`SessionDetailsPanel.test.tsx`）。本地化：transport 四态在页头与详情均显示当前语言文案、未知/缺失值回落本地化未知（`SessionHeader.test.tsx`、`SessionDetailsPanel.test.tsx`）；环境切换器触发器无状态徽标、下拉条目保留各环境状态（`EnvironmentSwitcher.test.tsx`）。
+
+断线恢复以真实 hook + 可控 timer 复现（`useBrowserSession.wsRecovery.test.tsx`）：已连接后异常 WS 关闭、stats 始终健康且 ConnectionSnapshot 不变时，5 秒恢复检查后阶段收敛回 connected 且不重建 iframe；媒体不健康走既有重建路径；旧 generation 的迟到健康结果不覆盖当前状态；后端已停止时异常关闭被忽略。真实 Chrome 下的媒体健康断线恢复与无人连接保留属 [deploy] 黑盒范围（`CBROWSER_RUN_E2E=1`），云端无 Docker 时不执行、按跳过登记，不以组件测试替代其结论。
+
 ## 历史实跑覆盖矩阵（t028）
 
 下表把 p016 原行为与 p021–p024、p026、p027 的逐项义务映射到现行入口：只引用既有或 t028 新建入口，不为凑行数新造。云端结果为 t028 执行环境（无 Docker）实测；「skip」指 collect-only 通过、因无 Docker 未实跑，不得记为已验。

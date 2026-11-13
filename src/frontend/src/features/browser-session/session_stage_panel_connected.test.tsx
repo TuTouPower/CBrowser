@@ -76,8 +76,15 @@ async function flush(): Promise<void> {
   });
 }
 
+// t061 replacement note: these A40 tests originally ran at
+// stage="media_waiting" and read the live samples from the stage
+// panel's diagnostic table. AC-002 removes the diagnostic table from
+// waiting stages (lightweight indicator only), so the leaf-update
+// property is now verified at a diagnostic stage (ice_failed), where
+// the panel still renders source-fed diagnostics.
+
 function makeDiagnostics(): SessionDiagnosticsData {
-  return { stage: "media_waiting", profileId: "p1" };
+  return { stage: "ice_failed", profileId: "p1" };
 }
 
 beforeEach(() => {
@@ -109,7 +116,7 @@ describe("SessionStagePanelConnected high-frequency diagnostics (A40)", () => {
     render(
       <I18nProvider>
         <SessionStagePanelConnected
-          stage="media_waiting"
+          stage="ice_failed"
           diagnostics={makeDiagnostics()}
           source={source}
           onReconnect={vi.fn()}
@@ -167,7 +174,7 @@ describe("SessionStagePanelConnected high-frequency diagnostics (A40)", () => {
             title="session"
           />
           <SessionStagePanelConnected
-            stage="media_waiting"
+            stage="ice_failed"
             diagnostics={makeDiagnostics()}
             source={source}
           />

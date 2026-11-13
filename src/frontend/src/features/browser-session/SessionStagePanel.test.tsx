@@ -14,6 +14,15 @@ import {
 } from "./session_keys";
 import type { SessionDiagnosticsData, SessionStage } from "./types";
 
+// t061 replacement note: the pre-t061 suite asserted that EVERY
+// non-connected stage renders the centered diagnostic card with
+// action buttons (the 364d191 visual contract). AC-002/AC-003 replace
+// that contract with a stage matrix — waiting stages render only a
+// lightweight indicator, fault/not-ready/stopping stages keep the
+// diagnostic card with a per-stage action set — so the all-stage
+// panel/reconnect assertions were replaced wholesale below instead of
+// being edited to follow the new output.
+
 function diagnostics(
   overrides: Partial<SessionDiagnosticsData> = {},
 ): SessionDiagnosticsData {
@@ -54,46 +63,64 @@ function actionButtons(container: HTMLElement): HTMLElement[] {
   );
 }
 
-const NON_CONNECTED: Array<{ stage: SessionStage; title: string }> = [
+const WAITING_STAGES: Array<{ stage: SessionStage; title: string }> = [
   { stage: "checking_runtime", title: en.sessionStageCheckingRuntime },
   { stage: "connecting_signaling", title: en.sessionStageConnectingSignaling },
   { stage: "media_waiting", title: en.sessionStageMediaWaiting },
   { stage: "reconnecting", title: en.sessionStageReconnecting },
+];
+
+const FAILURE_STAGES: SessionStage[] = [
+  "signaling_failed",
+  "ice_failed",
+  "media_no_frames",
+  "web_locks_unavailable",
+  "error",
+];
+
+const CARD_STAGES: Array<{ stage: SessionStage; title: string }> = [
+  { stage: "runtime_not_ready", title: en.sessionStageRuntimeNotReady },
+  { stage: "stopping", title: en.sessionStageStopping },
+  { stage: "signaling_failed", title: en.sessionStageSignalingFailed },
+  {
+    stage: "web_locks_unavailable",
+    title: en.sessionStageWebLocksUnavailable,
+  },
   { stage: "ice_failed", title: en.sessionStageIceFailed },
+  { stage: "media_no_frames", title: en.sessionStageMediaNoFrames },
   { stage: "error", title: en.sessionStageError },
 ];
 
-const ALL_PANEL_STAGES: Array<{ stage: SessionStage; reason: string }> = [
-  { stage: "checking_runtime", reason: en.sessionStageCheckingRuntime },
-  { stage: "runtime_not_ready", reason: en.sessionStageRuntimeNotReady },
-  { stage: "stopping", reason: en.sessionStageStopping },
-  { stage: "connecting_signaling", reason: en.sessionStageConnectingSignaling },
-  { stage: "signaling_failed", reason: en.sessionStageSignalingFailed },
-  {
-    stage: "web_locks_unavailable",
-    reason: en.sessionStageWebLocksUnavailable,
-  },
-  { stage: "ice_failed", reason: en.sessionStageIceFailed },
-  { stage: "media_waiting", reason: en.sessionStageMediaWaiting },
-  { stage: "media_no_frames", reason: en.sessionStageMediaNoFrames },
-  { stage: "reconnecting", reason: en.sessionStageReconnecting },
-  { stage: "error", reason: en.sessionStageError },
-  {
-    stage: "connecting_ice" as unknown as SessionStage,
-    reason: en.sessionStageConnectingSignaling,
-  },
-];
-
 describe("SessionStagePanel", () => {
-  it.each(NON_CONNECTED)(
-    "shows a centered panel, reason title and action for $stage",
+  it.each(WAITING_STAGES)(
+    "waiting stage $stage shows only a lightweight indicator (AC-002)",
     ({ stage, title }) => {
       renderPanel({ stage });
-      expect(screen.getByTestId(SESS_STAGE_PANEL)).toBeInTheDocument();
+      const panel = screen.getByTestId(SESS_STAGE_PANEL);
+      expect(panel).toBeInTheDocument();
+      expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(title);
+      // No centered diagnostic table and no action buttons while waiting.
+      expect(
+        screen.queryByTestId(sessId("stage", "diagnostics")),
+      ).toBeNull();
+      expect(screen.queryByTestId(SESS_STAGE_ACTION)).toBeNull();
+      expect(actionButtons(panel)).toHaveLength(0);
+      expect(panel.textContent).not.toContain(en.sessionDiagConnectionState);
+    },
+  );
+
+  it.each(CARD_STAGES)(
+    "diagnostic stage $stage keeps the card with diagnostics (AC-003)",
+    ({ stage, title }) => {
+      renderPanel({ stage });
+      const panel = screen.getByTestId(SESS_STAGE_PANEL);
+      expect(panel).toBeInTheDocument();
       expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(title);
       expect(
-        actionButtons(screen.getByTestId(SESS_STAGE_ACTION)).length,
-      ).toBeGreaterThan(0);
+        screen.getByTestId(sessId("stage", "diagnostics")),
+      ).toBeInTheDocument();
+      expect(panel.textContent).toContain(en.sessionDiagConnectionState);
+      expect(screen.getByTestId(SESS_STAGE_ACTION)).toBeInTheDocument();
     },
   );
 
@@ -103,37 +130,9 @@ describe("SessionStagePanel", () => {
     expect(screen.queryByTestId(SESS_STAGE_TITLE)).toBeNull();
   });
 
-  it("keeps a visible panel for every non-error connecting stage", () => {
-    for (const { stage, reason } of ALL_PANEL_STAGES) {
-      const view = renderPanel({ stage });
-      const panel = screen.getByTestId(SESS_STAGE_PANEL);
-      expect(panel).toBeInTheDocument();
-      expect(screen.getByTestId(SESS_STAGE_TITLE)).toBeInTheDocument();
-      expect(panel.textContent).toContain(reason);
-      expect(panel.textContent).toContain(en.sessionDiagConnectionState);
-      const actionRegion = screen.getByTestId(SESS_STAGE_ACTION);
-      expect(
-        actionButtons(actionRegion).length > 0 ||
-          screen.queryByTestId(sessId("stage-action", "hint")) !== null,
-      ).toBe(true);
-      view.unmount();
-    }
-  });
-
-  it("handles the future connecting_ice string literal", () => {
-    renderPanel({ stage: "connecting_ice" as unknown as SessionStage });
-    const panel = screen.getByTestId(SESS_STAGE_PANEL);
-    expect(panel).toBeInTheDocument();
-    expect(screen.getByTestId(SESS_STAGE_TITLE)).toBeInTheDocument();
-    expect(screen.getByTestId(SESS_STAGE_ACTION).textContent).toContain(
-      en.sessionViewStatus,
-    );
-    expect(panel.textContent).toContain(en.sessionDiagIceState);
-  });
-
-  it("shows ICE/signaling/frames diagnostics as the reason", () => {
+  it("shows ICE/signaling/frames diagnostics on a failure stage", () => {
     renderPanel({
-      stage: "media_waiting",
+      stage: "ice_failed",
       diagnostics: diagnostics({
         iceConnectionState: "checking",
         signalingState: "stable",
@@ -187,18 +186,21 @@ describe("SessionStagePanel", () => {
     );
   });
 
-  it.each(
-    ALL_PANEL_STAGES.filter(
-      ({ stage }) => stage !== "stopping" && stage !== "reconnecting",
-    ),
-  )("offers reconnect for diagnostic stage $stage", ({ stage }) => {
-    renderPanel({ stage });
-    expect(
-      screen.getByTestId(sessId("stage-action", "reconnect")),
-    ).toBeInTheDocument();
-  });
+  it.each(FAILURE_STAGES)(
+    "failure stage $stage offers reconnect and status, never launch (AC-003)",
+    (stage) => {
+      renderPanel({ stage });
+      expect(
+        screen.getByTestId(sessId("stage-action", "reconnect")),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId(sessId("stage-action", "view-status")),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId(sessId("stage-action", "launch"))).toBeNull();
+    },
+  );
 
-  it("stopping shows status only and never offers reconnect", () => {
+  it("stopping shows status only and never offers reconnect or launch", () => {
     renderPanel({ stage: "stopping" });
     expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(
       en.sessionStageStopping,
@@ -206,19 +208,7 @@ describe("SessionStagePanel", () => {
     expect(
       screen.queryByTestId(sessId("stage-action", "reconnect")),
     ).toBeNull();
-    expect(
-      screen.getByTestId(sessId("stage-action", "view-status")),
-    ).toBeInTheDocument();
-  });
-
-  it("error offers both reconnect and status actions", () => {
-    renderPanel({ stage: "error" });
-    expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(
-      en.sessionStageError,
-    );
-    expect(
-      screen.getByTestId(sessId("stage-action", "reconnect")),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId(sessId("stage-action", "launch"))).toBeNull();
     expect(
       screen.getByTestId(sessId("stage-action", "view-status")),
     ).toBeInTheDocument();
@@ -249,7 +239,7 @@ describe("SessionStagePanel", () => {
     expect(screen.queryByTestId(sessId("stage-action", "launch"))).toBeNull();
   });
 
-  it("runtime_not_ready offers a launch action to recover the runtime", () => {
+  it("runtime_not_ready offers launch and status, not reconnect (AC-003)", () => {
     renderPanel({ stage: "runtime_not_ready" });
     expect(screen.getByTestId(SESS_STAGE_TITLE)).toHaveTextContent(
       en.sessionStageRuntimeNotReady,
@@ -258,8 +248,11 @@ describe("SessionStagePanel", () => {
       screen.getByTestId(sessId("stage-action", "launch")),
     ).toBeInTheDocument();
     expect(
-      screen.getByTestId(sessId("stage-action", "reconnect")),
+      screen.getByTestId(sessId("stage-action", "view-status")),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(sessId("stage-action", "reconnect")),
+    ).toBeNull();
   });
 
   it("surfaces the selected candidate pair type and remote endpoint", () => {

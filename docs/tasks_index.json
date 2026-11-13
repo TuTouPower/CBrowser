@@ -164,22 +164,6 @@
             "dir": "docs/tasks/t060_gate_infra_and_privacy"
         },
         {
-            "tid": "t061",
-            "slug": "session_ui_clarity",
-            "title": "会话界面与断线重连修复",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "",
-            "conflicts_with": "t062,t063,t064,t065,t066,t069",
-            "note": "合并 t067；来源 p061/p064/p065 及 p079/p083 断线范围；无人连接保留环境，不新增生命周期功能",
-            "dir": "docs/tasks/t061_session_ui_clarity"
-        },
-        {
             "tid": "t062",
             "slug": "control_plane_boundaries",
             "title": "跨服务中立模块与运行镜像边界收敛",

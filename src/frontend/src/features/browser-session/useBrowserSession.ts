@@ -520,6 +520,7 @@ export function useBrowserSession(
             if (wsCloseTimerRef.current) clearTimeout(wsCloseTimerRef.current);
             wsCloseTimerRef.current = setTimeout(async () => {
               wsCloseTimerRef.current = null;
+              if (!isCurrent(gen)) return;
               const win = iframeRef.current?.contentWindow as
                 | SelkiesIframeWindow
                 | null
@@ -532,6 +533,14 @@ export function useBrowserSession(
               }
               if (!healthy) {
                 reconnect();
+              } else if (effectiveStageRef.current === "reconnecting") {
+                // t061 AC-006: the media never broke — only the signaling
+                // socket did. The diagnostics source stays silent because
+                // the ConnectionSnapshot is unchanged, so this check is
+                // the only exit from the recovery presentation: converge
+                // back to connected without rebuilding the iframe.
+                setStage("connected");
+                setErrorMessage(null);
               }
             }, 5000);
           } else if (!runtimeCheckDoneRef.current) {
