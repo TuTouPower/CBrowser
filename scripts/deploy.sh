@@ -353,6 +353,37 @@ check_font_sets_preflight() {
   python3 "$ROOT/scripts/check_font_sets.py" --fonts-dir "$FONTS_DIR" || true
 }
 
+check_engine_artifact_preflight() {
+  local out
+  if ! out="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+      "$NET_CONFIG_PY" -m cbrowser.engine_artifacts describe --shell)"; then
+    echo "Refusing to start: pinned engine artifact verification failed." >&2
+    exit 1
+  fi
+  eval "$out"
+  CBROWSER_ENGINE_PLATFORM="${CBROWSER_ENGINE_PLATFORM:-}"
+  CBROWSER_ENGINE_BUILD="${CBROWSER_ENGINE_BUILD:-}"
+  CBROWSER_ENGINE_VERSION="${CBROWSER_ENGINE_VERSION:-}"
+  CBROWSER_ENGINE_ARCHIVE_SHA256="${CBROWSER_ENGINE_ARCHIVE_SHA256:-}"
+  CBROWSER_ENGINE_BINARY_SHA256="${CBROWSER_ENGINE_BINARY_SHA256:-}"
+  CBROWSER_ENGINE_INTEGRITY_MECHANISM="${CBROWSER_ENGINE_INTEGRITY_MECHANISM:-}"
+  CBROWSER_ENGINE_TRUST_SOURCE="${CBROWSER_ENGINE_TRUST_SOURCE:-}"
+  CBROWSER_CLOAKBROWSER_PACKAGE="${CBROWSER_CLOAKBROWSER_PACKAGE:-}"
+  CLOAKBROWSER_AUTO_UPDATE="${CLOAKBROWSER_AUTO_UPDATE:-false}"
+  if [ -d "$DATA_ROOT/engine-cache" ]; then
+    if ! PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
+        "$NET_CONFIG_PY" -m cbrowser.engine_artifacts verify-cache \
+        --cache-dir "$DATA_ROOT/engine-cache" --allow-empty --no-version-probe >/dev/null; then
+      echo "Refusing to start: engine cache verification failed at $DATA_ROOT/engine-cache." >&2
+      exit 1
+    fi
+  fi
+  export CBROWSER_ENGINE_PLATFORM CBROWSER_ENGINE_BUILD CBROWSER_ENGINE_VERSION \
+    CBROWSER_ENGINE_ARCHIVE_SHA256 CBROWSER_ENGINE_BINARY_SHA256 \
+    CBROWSER_ENGINE_INTEGRITY_MECHANISM CBROWSER_ENGINE_TRUST_SOURCE \
+    CBROWSER_CLOAKBROWSER_PACKAGE CLOAKBROWSER_AUTO_UPDATE
+}
+
 backup_database() {
   # AC-003: back up the live database (SQLite online-backup API, read-only
   # source) before `up` moves anything.  The backup path is recorded in
@@ -634,7 +665,9 @@ load_release_identity() {
       CBROWSER_COMPOSE_PROJECT=*|CBROWSER_PREFIX=*|CBROWSER_HTTPS_PORT=*|\
       CBROWSER_EDGE_SUBNET=*|CBROWSER_TRUSTED_PROXY_CIDRS=*|\
       CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*|\
-      CBROWSER_INSTANCE_ID=*|CBROWSER_MEDIA_SUBNET_POOL=*|CBROWSER_FONTS_DIR=*)
+      CBROWSER_INSTANCE_ID=*|CBROWSER_MEDIA_SUBNET_POOL=*|CBROWSER_FONTS_DIR=*|\
+      CBROWSER_ENGINE_BUILD=*|CBROWSER_ENGINE_VERSION=*|\
+      CBROWSER_ENGINE_BINARY_SHA256=*|CLOAKBROWSER_AUTO_UPDATE=*)
         key="${line%%=*}"
         value="${line#*=}"
         export "$key=$value"
@@ -718,15 +751,33 @@ CBROWSER_STREAM_IMAGE=$stream_id
 CBROWSER_CADDY_IMAGE=$caddy_id
 CBROWSER_CADDYFILE_SHA256=$caddyfile_sha
 CBROWSER_FRONTEND_SHA256=$frontend_sha
+CLOAKBROWSER_AUTO_UPDATE=$CLOAKBROWSER_AUTO_UPDATE
+CBROWSER_ENGINE_BUILD=$CBROWSER_ENGINE_BUILD
+CBROWSER_ENGINE_VERSION=$CBROWSER_ENGINE_VERSION
+CBROWSER_ENGINE_BINARY_SHA256=$CBROWSER_ENGINE_BINARY_SHA256
 ENV
 
-  local created_at database_backup_json
+  local created_at database_backup_json engine_json
   created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if [ -n "$DATABASE_BACKUP_PATH" ]; then
     database_backup_json="\"$DATABASE_BACKUP_PATH\""
   else
     database_backup_json=null
   fi
+  engine_json="$(PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" "$NET_CONFIG_PY" -c '
+import json, os
+print(json.dumps({
+    "cloakbrowser_package": os.environ.get("CBROWSER_CLOAKBROWSER_PACKAGE", ""),
+    "platform_tag": os.environ.get("CBROWSER_ENGINE_PLATFORM", ""),
+    "engine_build": os.environ.get("CBROWSER_ENGINE_BUILD", ""),
+    "archive_sha256": os.environ.get("CBROWSER_ENGINE_ARCHIVE_SHA256", ""),
+    "binary_sha256": os.environ.get("CBROWSER_ENGINE_BINARY_SHA256", "") or None,
+    "integrity_mechanism": os.environ.get("CBROWSER_ENGINE_INTEGRITY_MECHANISM", ""),
+    "trust_source": os.environ.get("CBROWSER_ENGINE_TRUST_SOURCE", ""),
+    "auto_update_disabled": True,
+}))
+')"
+  engine_json="${engine_json:-null}"
   cat <<JSON | atomic_write "$RELEASES_DIR/$release_id.json"
 {
   "release_id": "$release_id",
@@ -739,6 +790,7 @@ ENV
     "stream": "$stream_id",
     "caddy": "$caddy_id"
   },
+  "engine": $engine_json,
   "compose_sha256": "$compose_sha",
   "caddyfile_sha256": "$caddyfile_sha",
   "frontend_sha256": "$frontend_sha",
@@ -752,6 +804,7 @@ JSON
 
 cmd_deploy() {
   check_prerequisites
+  check_engine_artifact_preflight
   derive_instance_identity
   check_prefix_conflict
   check_edge_subnet_conflict
@@ -813,6 +866,7 @@ cmd_rollback() {
   # From here on, everything (conflict check, compose interpolation,
   # data root, secrets) uses the target release's recorded identity.
   load_release_identity "$target_env"
+  check_engine_artifact_preflight
   # AC-002 (t035): fail closed before anything changes when the live
   # database belongs to the retired schema generation.  The stamp is read
   # inside the target release's API image.

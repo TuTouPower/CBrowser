@@ -6,7 +6,6 @@ import asyncio
 import json
 import logging
 import os
-import platform
 import re
 import signal
 import subprocess
@@ -20,9 +19,13 @@ from urllib.parse import quote
 
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.domain.runtime_policy import ExitReason
+from cbrowser.engine_artifacts import (
+    current_linux_platform_tag,
+    enforce_pinned_engine_env,
+    verify_extracted_engine_cache,
+)
 from cloakbrowser import launch_persistent_context_async
 from cloakbrowser.browser import seed_widevine_hint
-from cloakbrowser.config import PLATFORM_CHROMIUM_VERSIONS
 
 from .event_storage import EventStorage, atomic_write_json
 from .fontconfig import (
@@ -200,6 +203,7 @@ class BrowserRunner:
         self.browser_ws_url: str | None = None
         self.browser_context: Any = None
         self.browser_version: str | None = None
+        self.engine_artifact_info: dict[str, Any] | None = None
         self.is_running = False
         self.exit_task: asyncio.Task[None] | None = None
         self._search_defaults_retry_task: asyncio.Task[None] | None = None
@@ -210,52 +214,22 @@ class BrowserRunner:
         )
 
     def resolve_engine_binary(self) -> Path:
-        """Use the SDK's exact Linux build and reject an incompatible cache."""
-        machine = platform.machine().lower()
-        if machine in ("arm64", "aarch64"):
-            target, elf_machine = "linux-arm64", 183
-        elif machine in ("x86_64", "amd64"):
-            target, elf_machine = "linux-x64", 62
-        else:
-            raise RuntimeError("Unsupported runtime engine architecture")
-
-        build = self.engine_build or PLATFORM_CHROMIUM_VERSIONS[target]
-        version = build.removesuffix("-pro")
-        cache = self.engine_cache_dir.resolve()
-        candidate = cache / f"chromium-{build}" / "chrome"
-        try:
-            binary = candidate.resolve(strict=True)
-            binary.relative_to(cache)
-            if binary.parent.name != f"chromium-{build}" or binary.name != "chrome":
-                raise ValueError("Unexpected engine cache target")
-            if not binary.is_file() or not os.access(binary, os.X_OK):
-                raise ValueError("Engine is not executable")
-            with binary.open("rb") as source:
-                header = source.read(64)
-            if (
-                len(header) < 64
-                or header[:7] != b"\x7fELF\x02\x01\x01"
-                or int.from_bytes(header[18:20], "little") != elf_machine
-            ):
-                raise ValueError("Engine ELF architecture mismatch")
-            result = subprocess.run(
-                [str(binary), "--version"],
-                env=dict(os.environ),
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=True,
-            )
-            chromium_version = ".".join(version.split(".")[:4])
-            if chromium_version not in re.findall(
-                r"\b\d+\.\d+\.\d+\.\d+\b", result.stdout
-            ):
-                raise ValueError("Engine Chromium version mismatch")
-        except (OSError, ValueError, subprocess.SubprocessError):
-            raise RuntimeError("Missing or incompatible unified engine cache") from None
-
-        self.browser_version = version
-        return binary
+        """Verify and resolve the approved pinned Linux build; fail closed on drift."""
+        target = current_linux_platform_tag()
+        enforce_pinned_engine_env(
+            os.environ,
+            expected_build=self.engine_build,
+            allow_binary_override=False,
+        )
+        verification = verify_extracted_engine_cache(
+            self.engine_cache_dir,
+            platform_tag=target,
+            engine_build=self.engine_build,
+            run_version_probe=True,
+        )
+        self.browser_version = verification.engine_build
+        self.engine_artifact_info = verification.to_dict()
+        return Path(verification.binary_path)
 
     def setup_pulse(self) -> tuple[Path, Path]:
         """Configure and start PulseAudio daemon with 48000Hz null sink."""
@@ -484,6 +458,12 @@ class BrowserRunner:
     ) -> dict[str, str]:
         """Build an explicit child environment instead of mutating ``os.environ``."""
         env = dict(os.environ)
+        for forbidden_var in (
+            "CLOAKBROWSER_DOWNLOAD_URL",
+            "CLOAKBROWSER_SKIP_CHECKSUM",
+            "CLOAKBROWSER_LICENSE_KEY",
+        ):
+            env.pop(forbidden_var, None)
         env.update(
             {
                 "DISPLAY": self.display,
@@ -492,8 +472,12 @@ class BrowserRunner:
                 "PULSE_COOKIE": str(pulse_cookie),
                 "CLOAKBROWSER_BINARY_PATH": str(wrapper_path),
                 "CLOAKBROWSER_CACHE_DIR": str(self.engine_cache_dir),
+                "CLOAKBROWSER_AUTO_UPDATE": "false",
             }
         )
+        pinned_build = self.browser_version or self.engine_build
+        if pinned_build:
+            env["CLOAKBROWSER_VERSION"] = pinned_build
         # A profile only sees its CJK bundle when a generated fontconfig file
         # was prepared for it; otherwise the variable must not leak in from
         # the runner's own environment.
@@ -779,6 +763,7 @@ class BrowserRunner:
             "browser_pid": self.chrome_pid,
             "runner_pid": os.getpid(),
             "engine_build": self.engine_build or self.browser_version,
+            "engine_artifact": self.engine_artifact_info,
             "browser_product": browser_product,
             "browser_user_agent": browser_user_agent,
         }

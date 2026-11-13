@@ -108,10 +108,12 @@ ENV HOME=/home/cbrowser \
 
 # Copy backend codebase and entrypoint
 COPY src/backend/cbrowser/__init__.py /app/src/backend/cbrowser/__init__.py
+COPY src/backend/cbrowser/engine_artifacts.py /app/src/backend/cbrowser/engine_artifacts.py
 COPY src/backend/cbrowser/launch_args.py /app/src/backend/cbrowser/launch_args.py
 COPY src/backend/cbrowser/preview.py /app/src/backend/cbrowser/preview.py
 COPY src/backend/cbrowser/domain /app/src/backend/cbrowser/domain
 COPY src/backend/cbrowser/font_sets /app/src/backend/cbrowser/font_sets
+COPY src/backend/cbrowser/fingerprint_verification /app/src/backend/cbrowser/fingerprint_verification
 COPY src/backend/cbrowser/runtime_agent /app/src/backend/cbrowser/runtime_agent
 COPY config/docker/browser_runtime/entrypoint.sh /app/entrypoint.sh
 COPY --from=xshm_probe_builder /test_mitshm /usr/local/bin/test_mitshm

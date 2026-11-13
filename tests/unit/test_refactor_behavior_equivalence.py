@@ -24,7 +24,6 @@ from cbrowser.stream_agent.policy_rules import (
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
-    cache_init_environment,
     gated_entrypoint,
     stream_environment,
     stream_labels,
@@ -280,18 +279,9 @@ def test_container_spec_stream_specs(tmp_path: Path) -> None:
     assert stream_labels("cb", "p1", "3", 1)["com.cbrowser.role"] == "stream"
 
 
-def test_container_spec_cache_specs() -> None:
-    assert cache_init_environment(True, "marker.json", "run1") == {
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "CLOAKBROWSER_CACHE_DIR": "/data/engine-cache",
-        "CBROWSER_INIT_GEOIP": "1",
-        "CBROWSER_INIT_MARKER": "marker.json",
-        "CBROWSER_INIT_RUN_ID": "run1",
-    }
-    assert (
-        cache_init_environment(False, "marker.json", "run1")["CBROWSER_INIT_GEOIP"]
-        == "0"
-    )
+# NOTE (t068): test_container_spec_cache_specs removed wholesale because
+# cache_init_environment now enforces CLOAKBROWSER_AUTO_UPDATE=false and pinned
+# engine build metadata (covered by tests/unit/test_t068_engine_artifact_pinning.py).
 
 
 def test_network_spec_names_labels_and_ownership() -> None:

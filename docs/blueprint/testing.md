@@ -440,3 +440,25 @@ bash scripts/run_automation_probe.sh
 - 隐私扫描覆盖当前全部 tracked 树（含 archive）与未跟踪且未忽略的新文件；用户名后紧跟结尾或引号仍检出。不保留隐私豁免清单或整文件指纹放行，口径见 `security.md`。
 
 - t060 review 收口：bootstrap 在环境准备前撤销旧 manifest；venv 创建或 pip 安装失败生成绑定当前 run_id 的失败 manifest 与非敏感环境日志，不能遗留上一轮 PASS。隐私匹配只识别绝对 home 根，不把公开 URL 中的 routes/home 路径段当作机器目录；file URI 中的真实家路径仍检出。
+
+## t068 本地指纹基线与引擎升级回归门禁
+
+- 引擎制品完整性是测试前置：`cbrowser.engine_artifacts` 的批准清单在
+    unit（`test_t068_engine_artifact_pinning.py`）与真实 Docker E2E
+    （`tests/e2e/test_t068_fingerprint_gate_e2e.py::test_ac003_*`）两处复验；
+    `cache_init` helper 与 `BrowserRunner` 的拒绝路径（损坏文件、ELF 不符、
+    marker、绕过环境变量、未批准 build）均有负向用例，不以只读缓存冒充已验。
+- 指纹探针 `cbrowser.fingerprint_verification` 走真实 `BrowserRunner` +
+    Xvfb + 同机受控 HTTPS（TLS `MSG_PEEK` 抓 `ClientHello`），采集
+    main/iframe/Worker/ServiceWorker 四上下文 18 项 API、请求头与 JA3/JA4。
+    unit 用合成 ClientHello 验证 GREASE 过滤、扩展洗牌下 `ja4`/`ja3_sorted`
+    稳定而 raw `ja3` 变化，并用真实 HTTPS server 回归 `get_request` 解析。
+- 门禁默认阻断：`compare_reports` 对未批准漂移、缺测、上下文支持翻转、
+    未获批非确定方差、`inconclusive` 一律 `blocked`；同制品重复须显式
+    `tls_extension_shuffle_via_ja4` 规则才 `approved`。E2E 覆盖
+    strict / approved / HTTP-only（TLS 不可判定）/ seed 漂移四场景。
+- 报告干净性：探针证据不得把临时路径/时间戳等运行元数据混进信号样本；
+    已由 `fontconfig_file` → `fontconfig_present` 的根因修正回归守护。
+- 本机只有一套已获准 `linux-arm64` 制品，故不跑真实跨版本升级放行；
+    完整测量数据与未能验证项见
+    `docs/tasks/t068_profile_fingerprint_verification/measurement_report.md`。

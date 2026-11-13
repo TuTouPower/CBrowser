@@ -21,3 +21,4 @@
 |gate_verification|t044, t045, t046, t060|2026-11-11|
 |proxy_management|t038, t052, t056|2026-11-12|
 |profile_preview|t040,t057|2026-11-12|
+|engine_upgrade_fingerprint_gate|t068|2026-11-13|

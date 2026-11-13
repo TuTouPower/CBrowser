@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm -f /tmp/requirements.txt
 
 COPY src/backend/cbrowser/__init__.py /app/cbrowser/__init__.py
+COPY src/backend/cbrowser/engine_artifacts.py /app/cbrowser/engine_artifacts.py
 COPY src/backend/cbrowser/udp_mux.py /app/cbrowser/udp_mux.py
 COPY src/backend/cbrowser/secret_files.py /app/cbrowser/secret_files.py
 COPY src/backend/cbrowser/launch_args.py /app/cbrowser/launch_args.py

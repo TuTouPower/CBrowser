@@ -3,10 +3,12 @@
 !config/docker/browser_runtime/requirements.txt
 !config/docker/browser_runtime/entrypoint.sh
 !src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/engine_artifacts.py
 !src/backend/cbrowser/launch_args.py
 !src/backend/cbrowser/preview.py
 !src/backend/cbrowser/domain/*.py
 !src/backend/cbrowser/font_sets/*.py
+!src/backend/cbrowser/fingerprint_verification/*.py
 !src/backend/cbrowser/runtime_agent/*.py
 
 **/__pycache__

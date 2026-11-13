@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from cbrowser.engine_artifacts import get_approved_artifact
 from cbrowser.udp_mux import udp_mux_bounds
 
 # A22: one prefix rule shared by deploy.sh and the Supervisor. Lowercase
@@ -51,9 +52,13 @@ def gated_entrypoint(instance_id: str, role: str) -> list[str]:
 
 
 def browser_command(
-    profile_id: str, runtime_instance_id: str, display: str
+    profile_id: str,
+    runtime_instance_id: str,
+    display: str,
+    *,
+    engine_build: str | None = None,
 ) -> list[str]:
-    return [
+    cmd = [
         "--profile-id",
         profile_id,
         "--runtime-instance-id",
@@ -73,6 +78,9 @@ def browser_command(
         "--display",
         display,
     ]
+    if engine_build:
+        cmd.extend(["--engine-build", engine_build])
+    return cmd
 
 
 def sandbox_compose_labels(
@@ -229,15 +237,26 @@ def probe_helper_labels(
 
 
 def cache_init_environment(
-    need_geoip: bool, marker_name: str, run_id: str
+    need_geoip: bool,
+    marker_name: str,
+    run_id: str,
+    *,
+    engine_build: str | None = None,
 ) -> dict[str, str]:
-    return {
+    artifact = get_approved_artifact(engine_build=engine_build)
+    env = {
         "PYTHONDONTWRITEBYTECODE": "1",
         "CLOAKBROWSER_CACHE_DIR": "/data/engine-cache",
+        "CLOAKBROWSER_AUTO_UPDATE": "false",
+        "CLOAKBROWSER_VERSION": artifact.engine_build,
+        "CBROWSER_ENGINE_BUILD": artifact.engine_build,
         "CBROWSER_INIT_GEOIP": "1" if need_geoip else "0",
         "CBROWSER_INIT_MARKER": marker_name,
         "CBROWSER_INIT_RUN_ID": run_id,
     }
+    if artifact.binary_sha256:
+        env["CBROWSER_ENGINE_BINARY_SHA256"] = artifact.binary_sha256
+    return env
 
 
 def stream_environment(

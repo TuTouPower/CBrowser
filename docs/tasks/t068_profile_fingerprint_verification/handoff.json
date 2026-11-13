@@ -1,0 +1,14 @@
+{
+  "tid": "t068",
+  "attempt": 1,
+  "execution_id": "f08a59e0fe66490a8d076e9a72de4a85",
+  "status": "done",
+  "branch": "t068_profile_fingerprint_verification",
+  "base_sha": "c5f83296ece80a9a0ed9f1e48d957ce332f858c4",
+  "tests": "Round 2/3 最终源码通过 `verify_image_packages.py`（三镜像 exit 0）与 128 项相关单测+卫生/构建回归（含 t068 17 项单测、test_a26 替换与 test_repo_hygiene）；R1 修复后门禁（`.scratch/t068/gate_evidence_r2/manifest.json`，`run_id=fdcc5d7518f247d7ac370846969305c3`）contract 258/257 passed/1 skipped、unit 2073/2067 passed/1 failed（仅 main 既有 `test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip`）/5 skipped、integration 199/181 passed/18 skipped、frontend_test 81 文件 623 passed、protocol_drift_check/requirements_check/design_lint/design_check/frontend_build 均 exit 0、`run_automation_probe.sh`（`.scratch/t068/real_engine_r2/evidence.json`）2 passed（`all_passed=true`）；首轮全量门禁（`5c22ebc247cc414eb849078dde924af1`）e2e 103/90 passed/11 failed（均 main 既有基线）/2 skipped。",
+  "blackbox": "真实 Docker/Chrome/引擎拓扑执行（最新重建镜像 `sha256:cf7a4dd7383e3c2c1aab2f2a0c38a437ba9bbbcf510a39ca077b4296fd46b1b4`）。t068 与 supervisor `cache_init` 专项 E2E 3 passed（31.02s，`.scratch/t068/gate_evidence_r2/junit/e2e_targeted_r3.xml`），覆盖 `cache_init` 真实 helper、容器内外制品损坏/marker/绕过负向与四场景门禁；首轮全量 E2E 11 failed 全为 main 既有基线（`test_artifact_download_chain` / `test_profile_preview`×2 / `test_browser_runtime`×3 / `test_frontend_app`×4 / `test_stream_runtime`，`local_verify_20261113.md` 已记录同源失败），非本 task 引入，不冒充全绿、不放宽断言、不替换故障镜像。",
+  "review": "Round 1 code FAIL / test PASS（6 finding 已修）；Round 2 code PASS（`t068_code_f005` minor 已修） / test PASS（0 finding）；Round 3 双路（`review_code.md` / `review_test.md`）均 `PASS`，零新 finding，`reviewed_scope: 61a38f1d38c2afba`，`check_review_status.py` `overall=PASS`。",
+  "review_scope": "61a38f1d38c2afba",
+  "pending": [],
+  "findings": []
+}

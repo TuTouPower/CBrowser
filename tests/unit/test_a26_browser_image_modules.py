@@ -1,4 +1,5 @@
-"""A26: the Browser image ships only the runtime_agent import closure.
+"""A26/t068: the Browser image ships the runtime_agent import closure plus the
+t068 offline fingerprint probe package.
 
 Static import-closure analysis over the tracked Browser Dockerfile and its
 dockerignore. Image build and in-image health/font/preview/CDP/download/stop
@@ -30,6 +31,11 @@ FEATURE_FILES = {
     ),
     "font_sets": ("manifest.py",),
 }
+
+# t068: the offline fingerprint probe is a measurement tool that must run in
+# the same Linux/Xvfb/engine environment as the real Browser. It ships in the
+# Browser image but is not part of the runtime_agent import closure.
+PROBE_PACKAGES = {"fingerprint_verification"}
 
 
 def _top_level_cbrowser_refs(py_file: Path) -> set[str]:
@@ -109,9 +115,17 @@ def _copied_toplevel() -> set[str]:
     return out
 
 
-def test_browser_image_ships_only_runtime_closure() -> None:
-    expected = _expected_toplevel(_cbrowser_closure())
+def test_browser_image_ships_runtime_closure_and_offline_probe() -> None:
+    """t068: the old 'only import closure' assertion was retired wholesale
+    (see progress.md). The image now additionally ships the offline
+    fingerprint probe; this test covers the new deliverable set and still
+    rejects anything outside closure + probe packages."""
+    expected = _expected_toplevel(_cbrowser_closure()) | PROBE_PACKAGES
     assert _copied_toplevel() == expected
+    for package in PROBE_PACKAGES:
+        assert (CBROWSER / package / "__init__.py").is_file(), (
+            f"offline probe package missing: {package}"
+        )
 
 
 def test_browser_image_omits_unrelated_service_entries() -> None:

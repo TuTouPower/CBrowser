@@ -78,14 +78,21 @@
 ## 代理链接录入与探测凭据外送防护（t052）
 
 - 代理链接是代理端点唯一的录入表示：完整链接（含密码）只在用户输入与提交请求体内出现一次；响应一律返回脱敏链接（`ProxyEndpoint.redacted_link()`，不含密码），`ProxyResponse` 不含 password 字段。前端链接输入框失焦时显示脱敏链接，聚焦编辑时才显示完整链接；已存密码永不写入表单 state、DOM、react-query 缓存、URL 与日志。
+
 - 密码只以只写秘密存在于值对象中：`ProxyEndpoint` 的 `__repr__` / `__str__`、指纹（sha256 的 scheme/host/port/username，不含密码）、日志与观测记录均不含密码。凭据只经两条内部路径流转：API → Supervisor 的内部端点 `GET /api/v1/internal/supervisor/proxies/{id}/credentials`（service-plane Bearer，不进 OpenAPI）与 Supervisor → Browser/probe helper 的 0600 凭证文件（只读挂载，`/run/cbrowser/runtime/proxy_credentials.json`）。
+
 - 探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID：任何非空请求体（除 `{}` 外）返回 422；服务端加载已存端点与凭据执行，调用方无法指定 host、port、scheme 或 username，因而无法把已存密码发往另一主机（SSRF + 凭据外送的负向路径由集成测试覆盖）。探测 helper 只向 stdout 打印一行 JSON（出口 IP 与国家，或错误码），密码不打印、不记日志。
+
 - 出口 IP 回显只发一次 HTTPS GET 取自身出口 IP（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`），不带凭据与身份信息；国家判定只用本机 GeoLite2 数据库，出口 IP 不发往第三方地理库。探测的 HTTP 客户端显式 `trust_env=False`，宿主环境变量中的代理不得劫持探测路径。
 
 - 受管部署中 Supervisor 以 root 创建 Profile 数据目录后立即 `chown 1000:1000`：`profiles/<id>/profile`、`runtime/<id>`、`runtime-events/<id>`、`artifacts/<id>/downloads`、`artifacts/<id>/uploads`、`runtime/<id>/pulse` 为 0750；`runtime/<id>/x11` 为 0750（Browser/Stream 同为 uid 1000）。engine-cache/geoip 只读挂载且由宿主维护，不随 Profile 写入。
+
 - Artifact Service 发布的上传/下载子目录与文件同样收敛到 UID/GID 1000：目录 0750、文件 0640；非 root 宿主开发路径保留开发者属主但仍使用精确 mode，不回退到全局可写，chown 失败即报错。
+
 - Browser/Stream 以 uid/gid 1000 运行，只能访问本 Profile 目录；其他宿主 UID 无读写权。跨 Profile 读取不依赖网络命名空间。
+
 - 宿主直跑 Supervisor（开发/测试）在非 root 时不做跨 uid chown，仅使用精确 mode；可用 `CBROWSER_MANAGE_OWNERSHIP=1` 强制受管权限、`CBROWSER_RUNTIME_UID/GID` 指定属主。不存在 0777/0666 回退。
+
 - 威胁模型假设：能控制本 Profile 网页的进程已处于该 Profile 信任域，可读本 Profile 的 Browser 可写目录；目标是阻止跨 Profile 访问、阻止 Browser 读取 Agent/Selkies 凭证、阻止未受策略保护的沙箱长期运行。事件伪造不改变生命周期权威（见 [Supervisor](supervisor.md) 与 d016）。
 
 ## 平台字体来源与分发边界（t041）
@@ -112,3 +119,21 @@
 - 泄漏统一改写为 `<repo>`、`<home>`、`<container_home>` 等语义占位符；不使用整文件指纹或文件清单豁免。测试负例通过字符串片段组装，避免在测试源中再次泄漏。
 - 不改写 Git 历史，保留既有提交引用与审查溯源。历史文件原位脱敏属于归档只追加约定的必要隐私例外。
 - 容器固定账号及产品定义的容器路径属于接口常量，按语义判别，不视为开发者家路径；任意开发者路径不能借此获得文件级豁免。
+
+## 引擎制品信任边界（t068）
+
+- `cloakbrowser==0.6.4`（ADR 021）只对下载压缩包的 `SHA256SUMS` + 分离
+    `SHA256SUMS.sig` 做 Ed25519 验签（包内硬编码公钥），解压后目录无上游签名；
+    因此 CBrowser 不宣称对解压引擎文件有 Ed25519 覆盖，信任根如实拆为
+    「下载层 Ed25519 签名 + 仓库 per-file SHA-256 清单」。
+- `ensure_binary()` 命中已有可执行 `chrome` 即跳过完整性校验；故
+    `cbrowser.engine_artifacts.verify_extracted_engine_cache` 在
+    `deploy.sh` / Supervisor `cache_init` / `BrowserRunner` 三处独立复验
+    15 个文件 SHA-256、ELF machine 与 `--version`，不信任缓存命中或
+    `.cbrowser-cache-generation.json` 指纹（该 sidecar 只做路径/树变更探测）。
+- 强制 `CLOAKBROWSER_AUTO_UPDATE=false`；拒绝 `CLOAKBROWSER_DOWNLOAD_URL`
+    （关闭验签）、`CLOAKBROWSER_SKIP_CHECKSUM=true`（跳过校验）、
+    `CLOAKBROWSER_LICENSE_KEY`（free tier 丢弃版本 pin）、`latest_version*`
+    自动更新 marker 与未批准 `engine_build`，任一命中即 fail-closed。
+- 报告不得含运行元数据（临时路径、时间戳）作为指纹样本；证据只记录可复现
+    观测值，避免两次独立测量产生虚假漂移。
