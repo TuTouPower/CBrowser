@@ -1,7 +1,7 @@
 ---
 tid: "t068"
 slug: "profile_fingerprint_verification"
-title: "Profile 指纹基线、persona 分布与显式自检"
+title: "本地指纹基线与引擎升级回归门禁"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -10,8 +10,8 @@ review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
-conflicts_with: ""
-note: "来源 p081、p085、p086；共用测量口径，升级、创建与自检合并验收"
+conflicts_with: "t062,t063,t065"
+note: "p081 引擎升级工程门禁；p085 Persona、p086 预热自检已按用户要求取消，t071/t072 dropped"
 ---
 
 # Task 进展
@@ -24,9 +24,15 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p081、p085、p086，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议身份版本依赖 t066；参考数据与阈值确认前不可 start。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：原 AC-004 转 t071 AC-001，AC-005 与自检部分转 t072；AC-006 仅保留本地 TLS/请求层证据，退休编号不复用。拒绝 t066↔t068 循环依赖，以现有 config version 解除耦合。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：基线使用当前配置版本，无新身份模型依赖；引擎/Dockerfile/runner 与 t062/t063/t065 重叠；Persona/预热/用户自检已取消。
+
+- 用户最新裁决：Persona/预热/用户自检取消，t071/t072 已 dropped，不转 pending；保留引擎升级工程门禁。
 
 ## Review 处置
 

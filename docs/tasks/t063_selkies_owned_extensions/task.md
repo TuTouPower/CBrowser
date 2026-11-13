@@ -2,19 +2,20 @@
 
 ## 背景
 
-Selkies 扩展目前靠 WebRTCService 运行时替换、动态子类与 \_XTestKeyboard 私有 ABI 校验。目标是把采集策略和输入映射落到项目可维护边界，删除私有运行时补丁，同时保持已验行为。
+Selkies 的采集策略和键盘映射依赖动态子类、运行时全局替换和私有 ABI 扫描。本 task 将扩展改为可审计的受控制品，保留实际媒体和输入行为。
 
 ## 契约区
 
 ### 范围
 
-- 验证锁定 Selkies 制品的公开扩展能力；不足时采用源码受控 vendor/fork 并明确维护边界，直接替换旧注入路径。
-- 采集帧率、可见性及键盘映射由自有可测试实现承担；同步入口、依赖导出、官方客户端适配与升级说明。
+- 先验证公开扩展点；不足时使用固定上游 wheel/sdist + 构建期最小显式补丁，或独立受控本地包；不将完整上游源码平铺进业务源码目录。
+- 制品身份包含上游版本/哈希、补丁序列及哈希、构建过程、最终包哈希；前端静态清单单独校验，声明其与服务端来源关系。
+- 采集策略与键盘映射由明确自有边界承担，移除运行时 monkey patch、上游源码 AST 和私有属性清单门禁。
 
 ### 非范围
 
-- 不启用 p077 双模回退，不恢复 TURN/coturn 或 ICE 代次接管；不升级到未验证的上游 main。
-- 不取消可复现制品版本与 SHA256 固定；删除的是私有 ABI 运行时耦合，不承诺任意未来版本无需验证。
+- 不启用 p077 双模、TURN 或未验证 main；不承诺任意未来版本无需回归。
+- active_peers 的现行可见性信号不足以证明宿主浏览器 tab 前台状态；不在本 task 增加新可见性协议。
 
 ### 验收标准
 
@@ -24,11 +25,11 @@ Selkies 扩展目前靠 WebRTCService 运行时替换、动态子类与 \_XTestK
 
 <!-- /规范 -->
 
-- [ ] AC-001：Stream 启动后可建立官方 HELLO/client_tab_id/resume_key 信令与真实 WebRTC 首帧，无运行时全局替换上游类或实例私有方法。
-- [ ] AC-002：前台静止/运动按现行 8/30 FPS 策略仲裁，全后台暂停捕获，恢复前台重新出帧；后台 viewer 不压低前台流。
-- [ ] AC-003：中文 IME、普通键盘、剪贴板、复制标签隔离及 viewer resume 保持既有行为。
-- [ ] AC-004：Stream 启动不再通过解析上游 Python AST、inspect.getsource 或私有属性清单验证键盘 ABI；自有策略层单测无需导入上游私有类。
-- [ ] AC-005：受控源制品与客户端完整性可复验；升级流程可定位项目维护改动，不需执行旧 monkey patch ABI 校验流程。
+- [ ] [deploy] AC-001：Stream 通过实际官方 HELLO/client_tab_id/resume_key 建立 WebRTC 首帧，无运行时全局替换上游类/实例方法。
+- [ ] [deploy] AC-002：按现行 active_peers/媒体 consumer 活跃信号仲裁静止 8 FPS、运动/输入 30 FPS，零活跃 consumer 时暂停并能恢复；单个暂停 consumer 不压低其他活跃 consumer，报告以实际信号命名。
+- [ ] [deploy] AC-003：中文 IME、普通键盘、剪贴板、复制标签隔离、viewer resume 保持既有行为。
+- [ ] AC-004：启动不再解析上游 AST/inspect.getsource 或私有 ABI 清单；自有策略单测不依赖上游私有类。
+- [ ] AC-005：服务端受控包可从固定上游制品和已记录补丁重复构建，最终哈希可核对；客户端静态资源保持独立完整性验证，两端来源关系可追溯。
 
 ### 可测试性声明
 
@@ -38,21 +39,25 @@ Selkies 扩展目前靠 WebRTCService 运行时替换、动态子类与 \_XTestK
 
 <!-- /规范 -->
 
-全部 AC 可自动测试；涉及真实 Chrome、引擎、Docker 或网络行为的 AC 使用隔离真实环境探针，不以 mock 结果替代。界面视觉补人工核验，第三方公网检查仅显式 opt-in。
+- AC-001：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-002：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-003：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-004：可自动测试，触达生产函数或实际工具入口。
+- AC-005：可自动测试，触达生产函数或实际工具入口。
 
 ## 上下文区
 
-- 来源：`p072`。2026-11-13 核实 stream_agent/agent.py 对 selkies_main.WebRTCService 赋值，policy.py 动态子类，x11_keymap.py 的 SUPPORTED_SELKIES_VERSION/inspect/ast。tests/unit/test_stream_keymap_abi.py 与 ADR 022 固化旧边界，实施时整体替换失效测试并说明。
+- 来源：2026-11-13 审阅复核：p072；复核 agent.py/policy.py/x11_keymap.py。架构中“不再依赖 Selkies 私有接口适配器”只适用于已删除的 ICE 代次适配器，不能泛化为采集/键盘已无私有扩展。
 
 ### 有意不测
 
-- 不启用 p077 双模回退，不恢复 TURN/coturn 或 ICE 代次接管；不升级到未验证的上游 main。：超出本 task 范围；其余已声明 AC 不豁免。
+- 非范围中的新增产品功能不作为本 task 验收；已声明 AC 不豁免。
 
 ### 测试策略
 
-- 先做锁定制品的扩展边界 spike，验证启动/信令不变式；结果入 findings 后定稿实现。
-- 纯策略单测 + 真 Chrome/真引擎 WebRTC E2E，覆盖多 viewer、可见性仲裁、帧率、输入法、剪贴板、resume；全量项目门禁。
-- 项目门禁：按 docs/blueprint/testing.md 的 doctor_cmd / test_cmd / blackbox_verify 执行；本批创建仅验证文档结构，不代表实现验收。
+- 扩展与制品 spike 后再实施；真 Chrome/引擎覆盖帧率、consumer 暂停恢复、中文输入、复制标签和 resume。
+- 整体替换失效 test_stream_keymap_abi.py、test_t043_selkies_pin.py 的旧补丁假设并说明理由；同时复验依赖锁、vendor 静态清单、hygiene 和镜像安装包身份，不以全部放宽扫描规避 vendor 边界。
+- 按 docs/blueprint/testing.md 的 doctor_cmd/test_cmd/blackbox_verify 执行；本次仅改 backlog，创建校验不代表实现验收。
 
 ### 未知契约清单
 
@@ -62,19 +67,18 @@ Selkies 扩展目前靠 WebRTCService 运行时替换、动态子类与 \_XTestK
 
 <!-- /规范 -->
 
-- Selkies 锁定制品公开扩展点及源码重分发约束：UNVERIFIED-SPIKE，读取实际 wheel/源码与许可证并完成最小启动验证，确定公开扩展或受控源码方案。
+- 公开扩展能力、许可证及受控包构建：UNVERIFIED-SPIKE，读取实际 2.2.1 制品验证公开扩展或构建期补丁方案；不预先声称 hook 一定不存在。
 
 ### 风险与回退
 
-- 风险：替换入口可能破坏信令、X11 或采集生命周期；无真实链证据不得声称行为等价。
-- 回退：回退整个不可变 release 与客户端匹配制品；不在新实现内保留旧 ABI fallback。
+- 风险：跨模块/制品或状态变更需按上述负向测试与 spike 验证；产品 BLOCKING 未消除不得实施。
+- 回退：回退本 task 的完整实现 release；涉及数据先停写者并从已验证成套备份恢复，禁止仅降级数据库或以旧兼容分支兜底。
 
 ### 依赖与约束
 
-- 保持本机 Docker/OrbStack 与唯一外部 Chrome 客户端边界；不复活 parked 条目。依赖建议见 progress.md；产品 BLOCKING 未确认前不可 start，SPIKE 先验证后回填。
+- 硬依赖和冲突以 progress.md 的 task.py 调度字段为准；不把文件重叠当硬依赖。plan 仅输出图上候选，不能替代 preflight；产品 BLOCKING 必须先确认，SPIKE 先验证并回填。
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/architecture.md、docs/blueprint/stream_runtime.md：自有扩展边界。
-- docs/blueprint/decisions.md：修订 ADR 007/013/022 的现行描述并记录新决策。
-- docs/blueprint/testing.md：替代 ABI 扫描的行为验收与升级门禁。
+- docs/blueprint/architecture.md、docs/blueprint/stream_runtime.md：明确删除的是 ICE 代次适配器，纠正 stream_runtime.md 现行私有接口陈述。
+- docs/blueprint/decisions.md、docs/blueprint/testing.md：扩展制品身份、升级与行为门禁。

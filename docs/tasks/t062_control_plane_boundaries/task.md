@@ -2,22 +2,22 @@
 
 ## 背景
 
-控制面兼容分支与跨服务纯代码归属混乱构成同一模块边界整改。错误解析、归属判定、输入校验与基础设施 helper 应只有一个权威实现；镜像不应为跨包 import 维护逐文件补丁。
+从原 t062 拆出 p071 严格契约到 t069。本 task 只交付中立共享边界、相关职责拆分和镜像打包，保持当前外部行为，避免打包重构与协议收紧同次回退。
 
 ## 契约区
 
 ### 范围
 
-- 删除旧错误形状、裸文本兼容读取与 422 删字段重发，非规范下游响应转为显式协议错误。
-- 部署/资源归属仅凭非空 instance-id；删除无标签或未配置时的 prefix/project 认领。严格输入校验替代历史行静默过滤、多参数别名及死输出；对合法可空业务字段先核实语义，不因 legacy 注释直接删除。
-- 中立包承载共享端点、origin、凭证 DTO、原子写及锁基础设施；保留各服务独立实例与锁域，不能把不同进程锁误当跨进程互斥。
-- 收口 fence、投递分类、默认端口/路径，拆开现有大类中与上述边界相关的职责；HTTP 不使用 ORM 类型或 service 私有属性，domain 不承担 httpx/文件 I/O。统一镜像打包并守护依赖方向。
+- 将端点/origin、Agent 凭证 DTO、原子写、锁基础设施移至中立归属，删除 Gateway/Supervisor 双向依赖与重复权威实现。
+- 收口 fence、投递分类、端口/路径常量；只拆本次边界相关职责，不以行数拆全仓大类。
+- 认证返回领域会话对象，路由不依赖 ORM SessionModel；通过 service 公开方法使用锁；将 egress 的 httpx/GeoIP/文件操作移出 domain。
+- 统一运行镜像包依赖闭包；新增共享模块不需多份 Dockerfile 跨包逐文件 COPY。
 
 ### 非范围
 
-- 不改变 API 唯一 SQLite 写者、Supervisor 唯一 Docker Socket、Gateway 无 ORM 等权限边界。
-- 不创建兼容层，不改变数据库降级禁令，不重建已存在的幂等与 reconcile。
-- 不按文件行数做无关重构；不清除 gitignored 本地部署数据。
+- 严格 ErrorResponse、422 删字段重发、部署归属和持久化输入策略由 t069 交付；本 task 不提前改变拒绝/兼容行为。
+- 保持 API 唯一 SQLite 写者、Supervisor 唯一 Docker Socket、Gateway 无 ORM；不同进程锁不被当作跨进程互斥。
+- 不扩大为所有 God class 全面重写。
 
 ### 验收标准
 
@@ -27,13 +27,10 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：下游合法 ErrorResponse 保留 error/message/retryable/details；旧 detail、裸文本、缺失必填字段产生可观测协议错误，不再被当作有效业务结果。
-- [ ] AC-002：observed-state 返回 422 时同一次上报只发送一次，不丢弃 browser_product/browser_user_agent 重试；失败保持可观测且不会伪报收敛。
-- [ ] AC-003：缺失、不匹配或空 instance-id 的容器/网络不会被认领或删除；部署身份缺失时在资源变更前失败，匹配身份仍可恢复与清理。
-- [ ] AC-004：非法持久化 launch_args、旧参数别名与缺少必要身份的会话输入被明确拒绝；当前合法 locale/timezone 自动推导语义不被误删；network_config CLI 不再输出无消费方字段。
-- [ ] AC-005：Gateway、Supervisor、API 与部署工具只从中立模块导入跨服务纯逻辑；增加共享模块后无需向多个 Dockerfile 添加跨服务逐文件 COPY，全部运行镜像可独立导入并启动。
-- [ ] AC-006：原子写失败注入不破坏旧文件；同锁域同 Profile 串行、不同 Profile 可并行；origin、fence、投递分类在全部消费方产生一致结果且无重复权威实现。
-- [ ] AC-007：HTTP 响应保持声明 DTO 形状，不直接暴露 ORM 或访问 service 私有锁；domain 模块导入不触发网络或文件 I/O。
+- [ ] [deploy] AC-005：服务间共享纯逻辑从中立包导入，Gateway/Supervisor 不相互导入实现包；共享模块增加不要求多处跨服务逐文件 COPY，全部运行镜像可独立导入并就绪。
+- [ ] AC-006：原子写异常不破坏旧文件；同锁域同 Profile 串行、不同 Profile 可并行；origin、fence、投递分类在各消费方结果一致，只有一份权威规则。
+- [ ] AC-007：API 路由与认证依赖不导入或返回 ORM SessionModel，使用领域会话对象；路由通过 service 公开接口协调操作；domain 不承载 httpx、GeoIP 或文件 I/O 实现，相关业务结果保持一致。
+- [ ] AC-008：Supervisor CLI、runner、compose 对默认控制端口使用同一权威值，不再出现 8091/8005 分裂；公共路径由同一值对象/常量派生，覆盖非默认配置时行为一致。
 
 ### 可测试性声明
 
@@ -43,21 +40,24 @@
 
 <!-- /规范 -->
 
-全部 AC 可自动测试；涉及真实 Chrome、引擎、Docker 或网络行为的 AC 使用隔离真实环境探针，不以 mock 结果替代。界面视觉补人工核验，第三方公网检查仅显式 opt-in。
+- AC-005：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-006：可自动测试，触达生产函数或实际工具入口。
+- AC-007：可自动测试，触达生产函数或实际工具入口。
+- AC-008：可自动测试，触达生产函数或实际工具入口。
 
 ## 上下文区
 
-- 来源：`p071`、`p073`。2026-11-13 核实 runtime_coordinator.\_downstream_error_text、gateway_client 旧 detail、core.py 422 重发、network_spec.network_ownership_matches、DockerAdapter.\_owns_deployment、deploy.sh 缺标签豁免；确认 Supervisor→gateway.endpoint 与 Gateway→supervisor.agent_credentials 双向依赖及 Dockerfile 补 COPY。profile_locale 的 None 同时承载自动推导，须逐调用方辨析。
+- 来源：2026-11-13 审阅复核：p073；原 t062 AC-005..007 留在本 task，新增 AC-008。gateway.server→supervisor.agent_credentials 与 supervisor→gateway.endpoint 均成立；SessionModel 是认证注入返回值，原“HTTP 响应暴露 ORM”归因错误；domain 缺陷是承载 I/O 实现，不是导入即执行 I/O。
 
 ### 有意不测
 
-- 不改变 API 唯一 SQLite 写者、Supervisor 唯一 Docker Socket、Gateway 无 ORM 等权限边界。：超出本 task 范围；其余已声明 AC 不豁免。
+- 非范围中的新增产品功能不作为本 task 验收；已声明 AC 不豁免。
 
 ### 测试策略
 
-- 先复现严格契约、资源归属和输入校验缺口，扫描对称调用方；测试须调用生产函数。
-- 补 import 方向与镜像导入门禁、原子写失败与锁并发测试；复用 test_t051_supervisor_identity.py、test_t056_coordinator_errors.py、network_policy 和服务层集成测试，真实六镜像构建及 readiness 冒烟。
-- 项目门禁：按 docs/blueprint/testing.md 的 doctor_cmd / test_cmd / blackbox_verify 执行；本批创建仅验证文档结构，不代表实现验收。
+- 生产函数行为回归、依赖方向/镜像 import 检查、原子写失败注入与锁域并发；不能只用源码子串证明职责拆分正确。
+- 构建全部运行镜像并 readiness 冒烟；固定端口和非默认端口贯穿 CLI/runner/compose 验证。
+- 按 docs/blueprint/testing.md 的 doctor_cmd/test_cmd/blackbox_verify 执行；本次仅改 backlog，创建校验不代表实现验收。
 
 ### 未知契约清单
 
@@ -67,20 +67,18 @@
 
 <!-- /规范 -->
 
-- 跨镜像共享包最小依赖闭包：UNVERIFIED-SPIKE，执行期在隔离构建环境做全部服务 import/readiness 探针，确定包边界后删除旧落点。
+- 跨镜像依赖闭包：UNVERIFIED-SPIKE，在隔离构建环境先验证最小中立包及各镜像导入；不得把 API 全量 COPY 当作完成包隔离。
 
 ### 风险与回退
 
-- 风险：错误契约收紧、资源归属与打包同时变化可能导致拒绝启动或误清理；负向归属测试和无资源变更预检优先。
-- 回退：停止新服务后回退本 task release；先验证数据备份可恢复，不恢复无标签资源自动认领逻辑，不自动删除孤儿资源。
+- 风险：跨模块/制品或状态变更需按上述负向测试与 spike 验证；产品 BLOCKING 未消除不得实施。
+- 回退：回退本 task 的完整实现 release；涉及数据先停写者并从已验证成套备份恢复，禁止仅降级数据库或以旧兼容分支兜底。
 
 ### 依赖与约束
 
-- 保持本机 Docker/OrbStack 与唯一外部 Chrome 客户端边界；不复活 parked 条目。依赖建议见 progress.md；产品 BLOCKING 未确认前不可 start，SPIKE 先验证后回填。
+- 硬依赖和冲突以 progress.md 的 task.py 调度字段为准；不把文件重叠当硬依赖。plan 仅输出图上候选，不能替代 preflight；产品 BLOCKING 必须先确认，SPIKE 先验证并回填。
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/architecture.md：跨服务依赖、资源归属与严格协议边界。
-- docs/blueprint/conventions.md：共享模块、原子写与单一 ErrorResponse；移除混版本兼容表述。
-- docs/blueprint/supervisor.md、docs/blueprint/gateway.md：拆分后的模块职责与镜像打包。
-- docs/blueprint/decisions.md：记录直接替换旧路径的 ADR。
+- docs/blueprint/architecture.md、docs/blueprint/conventions.md：中立包、领域边界与公共 helper。
+- docs/blueprint/supervisor.md、docs/blueprint/gateway.md、docs/blueprint/decisions.md：模块与镜像依赖。

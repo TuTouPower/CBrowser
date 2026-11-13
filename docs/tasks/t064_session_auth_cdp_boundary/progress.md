@@ -9,8 +9,8 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: ""
-conflicts_with: ""
+depends_on: "t062"
+conflicts_with: "t061,t062,t069"
 note: "来源 p075、p084；合并边缘鉴权、会话凭证与 CDP 隔离"
 ---
 
@@ -24,9 +24,13 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p075、p084，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议 t062 先确定共享契约；与 t067 的 viewer cookie/TTL/协议提示存在修改冲突。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：删除虚设 AC-003，不复用编号；AC-005 改为现状回归。保留一项安全边界交付，不机械拆成两个独立任务。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：消费 t062 的领域认证/端点公共边界；Gateway 握手和自动化鉴权同 t061/t069 重叠。
 
 ## Review 处置
 

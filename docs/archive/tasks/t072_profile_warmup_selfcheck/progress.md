@@ -1,17 +1,17 @@
 ---
-tid: "t067"
-slug: "session_lifecycle_recovery"
-title: "会话重连与启动恢复生命周期治理"
-status: "backlog"
+tid: "t072"
+slug: "profile_warmup_selfcheck"
+title: "显式 Profile 预热与指纹自检入口"
+status: "dropped"
 branch: ""
 worktree: ""
 review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: ""
-conflicts_with: ""
-note: "来源 p079、p083；复用现有幂等、reconcile 与 viewer resume，补生命周期缺口"
+depends_on: "t068"
+conflicts_with: "t068"
+note: "从 t068 分出 p086；默认不外发流量，产品与站点策略未确认，保留 BLOCKING; dropped: 用户明确不做 Persona、预热及自检；取消整项范围，不转 pending，不实施"
 ---
 
 # Task 进展
@@ -24,9 +24,15 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p079、p083，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议 t062/t063/t064 先定稿服务、媒体与授权接口；配额和时限与 t066 需统一定义，不做循环依赖。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：独立阻塞 backlog；原 p086 归档通过 t068 导航到本 task，不绑定 persona 工厂开发。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：消费 t068 测量/报告；无需 Persona 工厂才进行单 Profile 自检，与 t071 的创建/前端配置和共享探针重叠。
+
+- 用户明确取消：不做 Persona、不做预热、不做用户自检；原 AC 全部取消实施，保留文档作为历史，不转为新的 pending。
 
 ## Review 处置
 

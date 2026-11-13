@@ -1,7 +1,7 @@
 ---
 tid: "t066"
 slug: "profile_identity_state"
-title: "Profile 原子身份与可恢复状态生命周期"
+title: "环境数据保留、复制重置与备份恢复"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -9,9 +9,9 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: ""
-conflicts_with: ""
-note: "来源 p074、p080、p089；身份轮换、clone/reset、备份恢复与配额同一持久化交付"
+depends_on: "t062"
+conflicts_with: "t061,t062,t065,t069"
+note: "合并 t070；p074/p089/p080 有效范围；保存配置保留数据、reset 全清、完整备份；取消身份模型与配额"
 ---
 
 # Task 进展
@@ -24,9 +24,19 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p074、p080、p089，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议 t062/t065 先明确共享锁与凭据引用；为 t068 提供身份版本；产品取舍仍阻塞开工。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：原 AC-006 转 t070 AC-001..004；原 AC-007 配额退出本批实施，p080 原建议保留待产品评估，编号不复用；新增 AC-008 统一 seed。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：消费 t062 的公共服务/原子写边界；备份恢复已在本 task 内，与数据操作共用排他与回退协议，不再依赖已合入的 t070；与 t061/t065/t069 重叠。
+
+- 用户已确认：修改配置参数保留 Cookie、浏览器内部存储与登录态；清状态只能来自明确确认的独立操作。reset 保留书签等属于待解释的新增建议，不代表现行能力。
+
+- 用户最新裁决：改配置保留数据；reset 全清书签/偏好/Cookie/存储，保留环境配置与独立 Artifact。原 AC-002 身份轮换退出且编号退休；AC-004 定稿全清。取消全部产品 BLOCKING，仅保留技术 spike。
+
+- 合并确认：用户已明确批准 t070 合入 t066；t070 AC-001/002/003/004 分别映射到本 task AC-009/005/010/011。保留配置数据、reset 全清，不做身份模型或配额。
 
 ## Review 处置
 

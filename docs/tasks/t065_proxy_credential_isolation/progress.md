@@ -9,8 +9,8 @@ review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
-depends_on: ""
-conflicts_with: ""
+depends_on: "t062"
+conflicts_with: "t061,t062,t063,t066,t068,t069"
 note: "来源 p082；Web 客户端托管已存在，只纳入代理凭据剩余缺口"
 ---
 
@@ -24,9 +24,13 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p082，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议 t062 先确定打包边界；独立于仍待决策的 p078，不等待全局出口产品改造。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：采纳第二暴露面及拓扑影响；AC-004 统一为默认无可测退化，预算属先测后决的技术取舍，删除无测量依据的通用 BLOCKING。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：消费 t062 的运行镜像打包/中立端点；条件代理组件与 Browser 启动、挂载、恢复和镜像验证任务重叠。
 
 ## Review 处置
 

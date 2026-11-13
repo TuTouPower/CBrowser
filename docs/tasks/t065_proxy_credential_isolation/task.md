@@ -2,19 +2,20 @@
 
 ## 背景
 
-代理凭据由 runner 编码进 --proxy-server，属于浏览器进程命令行可见数据。凭据必须移至 Browser 不可读的认证转发边界；p082 的 Web 托管子项已有固定 wheel 与 SHA256 实现，不重复建设。
+代理凭据同时出现在 runner 的 --proxy-server 和 Browser 可读的 proxy_credentials.json；仅移走 argv 不足以隔离。受控认证组件需位于 Browser 容器之外，并消除共享父目录的间接泄漏。
 
 ## 契约区
 
 ### 范围
 
-- 用无凭据本地入口与隔离认证转发路径替代 Chromium userinfo；凭据文件只挂到认证组件，不进 Browser 文件系统、argv、环境或诊断。
-- 转发不可用、认证拒绝、DNS/连接异常时代理模式失败封闭；记录不含秘密的可观测原因。复用已存在 vendor_selkies_web 的完整性门禁。
+- 外置认证转发组件提供 Browser 可用的无凭据入口；移除 Browser 的代理凭据专用挂载及整个 runtime 父目录中同文件的可读性，秘密只挂到认证组件。
+- 需要额外代理容器时纳入创建/分组/标签/网络白名单/readiness/reconcile/stop/重启/孤儿清理/资源计数，未配代理 Profile 仍保持 Browser+Stream。
+- 真实验证 HTTP、HTTPS、SOCKS5 上游认证、DNS 行为与首包/407 往返；故障封闭且脱敏，不静默改变启动行为。
 
 ### 非范围
 
-- 不执行 p078 的强制全 Profile 代理、独立出口分配或未配置代理模式改造；不承诺不同 Profile 自动拥有不同公网 IP。
-- 不更换已存在的 Selkies wheel vendor、本地托管或 SHA256 清单机制。
+- 不实施 p078 的无代理强制出口、独立公网 IP 分配；Selkies Web 已有托管和完整性门禁只回归不重建。
+- 不以 Browser 内多 UID 隔离满足秘密不可读；现有 UID 1000、cap_drop/no-new-privileges 不提供该边界。
 
 ### 验收标准
 
@@ -24,11 +25,11 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：真实 Browser 容器 argv、/proc、ps、环境、日志和异常不含代理账号密码，Browser 文件系统与其可读挂载不能读取认证组件密钥文件。
-- [ ] AC-002：有账号密码的 HTTP/SOCKS 代理在实际引擎内能认证访问目标；URL 编码、IPv6 与特殊字符凭据处理正确且不进入诊断输出。
-- [ ] AC-003：认证转发组件停止、认证失败或上游不可达时，代理模式无法回退宿主直连，返回可诊断的脱敏失败；未配置代理模式仍按现行契约运行。
-- [ ] AC-004：同一测试目标与代理下，认证成功率不低于现状，首包时延差异有可复验报告并满足实施前确认的预算。
-- [ ] AC-005：已托管 Selkies Web 资源仍通过固定制品和 SHA256 校验；被篡改资源在构建/发布验证阶段被拒绝，不新增外部 CDN。
+- [ ] [deploy] AC-001：Browser 的 argv、/proc、ps、环境、日志、异常及全部可读挂载无代理凭据；包括移除专用 bind 后不能经 runtime 父挂载读取同一文件。
+- [ ] [deploy] AC-002：实际引擎通过无认证本地入口使用 HTTP/HTTPS/SOCKS5 上游，特殊字符、IPv6 与 SOCKS 远端 DNS 语义正确，凭据不进入 Browser 或诊断。
+- [ ] [deploy] AC-003：认证组件停止、认证拒绝、DNS/上游连接失败时代理 Profile 不回退宿主直连；创建失败、stop、重启与孤儿恢复不留无归属代理组件，未配代理模式保持原行为。
+- [ ] [deploy] AC-004：相同拓扑/目标/样本下认证成功率不低于基线；报告首包延迟、407 往返与可观测协议差异，默认不接受超出测量噪声的性能退化或认证行为变化，若无法满足须带证据请求用户批准后修订 AC，不能按任意预算放行。
+- [ ] AC-005：现有 Selkies Web 固定制品和 SHA256 校验继续生效，篡改资源在既有校验入口被拒，不新增 CDN。
 
 ### 可测试性声明
 
@@ -38,21 +39,26 @@
 
 <!-- /规范 -->
 
-全部 AC 可自动测试；涉及真实 Chrome、引擎、Docker 或网络行为的 AC 使用隔离真实环境探针，不以 mock 结果替代。界面视觉补人工核验，第三方公网检查仅显式 opt-in。
+- AC-001：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-002：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-003：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-004：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-005：可自动测试，触达生产函数或实际工具入口。
 
 ## 上下文区
 
-- 来源：`p082`。2026-11-13 核实 runtime_agent/runner.py build_proxy_server_arg 组装含 userinfo 的 --proxy-server。scripts/vendor_selkies_web.py 已钉死 2.2.1 wheel SHA256、校验逐文件清单并注入本地适配器，tests/unit/test_vendor_selkies_security.py 已有完整性测试。未实测的 renderer RCE 能力不作为已确认事实。
+- 来源：2026-11-13 审阅复核：p082；docker_adapter.py 除代理凭据 ro bind 外还挂整个 runtime 目录；ro 只防写不防读。现行固定双容器假设需在此显式扩展；vendor 客户端已完成。
 
 ### 有意不测
 
-- 不执行 p078 的强制全 Profile 代理、独立出口分配或未配置代理模式改造；不承诺不同 Profile 自动拥有不同公网 IP。：超出本 task 范围；其余已声明 AC 不豁免。
+- 非范围中的新增产品功能不作为本 task 验收；已声明 AC 不豁免。
 
 ### 测试策略
 
-- 在 .scratch 先调用真实参数构造器复现凭据入 argv，再验证新路径的 Browser 容器负向可读性；任何探针秘密用运行期随机值，不入库。
-- 真 Docker+引擎覆盖代理协议/认证、组件崩溃与公网不可达，复用 vendor 安全测试；延迟基线按相同拓扑重复测量。
-- 项目门禁：按 docs/blueprint/testing.md 的 doctor_cmd / test_cmd / blackbox_verify 执行；本批创建仅验证文档结构，不代表实现验收。
+- 先在隔离真实 Docker/引擎验证凭据全路径不可读，覆盖专用 bind、父目录、环境与进程；仅日志脱敏不能证明隔离。
+- 认证拓扑 spike 含三种上游协议、无凭据本地协议、egress 白名单与 DNS，故障注入覆盖第三容器全部生命周期。
+- 复用分散在 vendor 安全、Selkies pin/asset probe/wheel cache 的完整性回归；认证延迟用同机重复样本报告噪声，不凭空要求绝对零开销。
+- 按 docs/blueprint/testing.md 的 doctor_cmd/test_cmd/blackbox_verify 执行；本次仅改 backlog，创建校验不代表实现验收。
 
 ### 未知契约清单
 
@@ -62,20 +68,18 @@
 
 <!-- /规范 -->
 
-- 锁定引擎与现有代理方案的 HTTP/SOCKS 认证行为、首包基线：UNVERIFIED-SPIKE，真实代理探针比较旧链与隔离转发链。
-- 认证首包时延可接受预算：UNVERIFIED-BLOCKING，先取得同机重复测量报告，再由用户确认允许的退化上限，不能擅自把不退化改成任意阈值。
+- 外置认证拓扑、上游协议/DNS、首包和 407 基线：UNVERIFIED-SPIKE，实际引擎与本地受控代理验证，并盘点所有双容器假设及父目录挂载；出现不可接受退化时再提交具体取舍，不预先制造用户无法回答的延迟 BLOCKING。
 
 ### 风险与回退
 
-- 风险：转发新增网络与进程边界，可能改变代理握手或泄漏凭据；需故障封闭和真实负向证据。
-- 回退：停止受影响 Profile 后回退 release；恢复旧 release 前明确告知其命令行凭据风险，不在新实现保留自动 fallback。
+- 风险：跨模块/制品或状态变更需按上述负向测试与 spike 验证；产品 BLOCKING 未消除不得实施。
+- 回退：回退本 task 的完整实现 release；涉及数据先停写者并从已验证成套备份恢复，禁止仅降级数据库或以旧兼容分支兜底。
 
 ### 依赖与约束
 
-- 保持本机 Docker/OrbStack 与唯一外部 Chrome 客户端边界；不复活 parked 条目。依赖建议见 progress.md；产品 BLOCKING 未确认前不可 start，SPIKE 先验证后回填。
+- 硬依赖和冲突以 progress.md 的 task.py 调度字段为准；不把文件重叠当硬依赖。plan 仅输出图上候选，不能替代 preflight；产品 BLOCKING 必须先确认，SPIKE 先验证并回填。
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/security.md：代理凭据可读性与认证组件权限。
-- docs/blueprint/supervisor.md、docs/blueprint/architecture.md：认证转发拓扑及失败封闭。
-- docs/blueprint/testing.md：真实代理凭据负向测试和延迟基线。
+- docs/blueprint/architecture.md、docs/blueprint/supervisor.md：代理 Profile 条件第三容器与完整生命周期。
+- docs/blueprint/security.md、docs/blueprint/testing.md：凭据挂载、协议/DNS、首包基线与失败封闭。

@@ -1,7 +1,7 @@
 ---
 tid: "t062"
 slug: "control_plane_boundaries"
-title: "控制面单一契约与跨服务模块边界重构"
+title: "跨服务中立模块与运行镜像边界收敛"
 status: "backlog"
 branch: ""
 worktree: ""
@@ -10,8 +10,8 @@ review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
-conflicts_with: ""
-note: "来源 p071、p073；严格契约、共享基础设施与镜像边界合并交付"
+conflicts_with: "t061,t063,t064,t065,t066,t068,t069"
+note: "p073；原严格契约 AC-001..004 转 t069；本 task 只交付包边界、公共规则与相关职责拆分"
 ---
 
 # Task 进展
@@ -24,9 +24,13 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p071、p073，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：无硬前置；与 t064/t065/t066/t067 的服务层与打包路径重叠，建议先完成。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：原 AC-001..004 转入 t069 AC-001..004，编号不复用；p071 归档原引用仍可经 t062 找到 t069。修正 ORM/I/O 归因，新增端口/路径验收。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：中立包、认证依赖、服务锁与 Dockerfile 为 t064/t065/t066/t069 提供公共边界；与会话、Selkies、引擎构建存在文件/集成验证冲突。
 
 ## Review 处置
 

@@ -10,7 +10,7 @@ review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
-conflicts_with: ""
+conflicts_with: "t061,t062,t065,t068"
 note: "来源 p072；保留纯 WebRTC，不纳入 p077 双模或 TURN 提议"
 ---
 
@@ -24,9 +24,13 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p072，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：建议 t062 先收口共享依赖；与 t067 的媒体恢复接口重叠。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：采纳受控构建制品建议，保留技术 spike 选择，不武断指定全量 fork；原 AC-001..005 保留编号。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：Stream 启动/依赖与 Docker 构建同 t062/t065/t068 重叠，媒体恢复验证同合并后的 t061 重叠；无已证明的硬产物依赖。
 
 ## Review 处置
 

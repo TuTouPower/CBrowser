@@ -2,22 +2,21 @@
 
 ## 背景
 
-升级前后指纹测量、创建期 persona 一致性与用户自检共用同一份探针及身份版本。合并避免三套测量口径；现有 CDP/字体探针可复用，调研中的补丁数量、通过率与固定 seed 空间均不能视为事实。
+缩减为本地指纹测量与引擎升级回归门禁；Persona、预热与用户自检已由用户明确取消，t071/t072 取消归档；本 task 仅保留引擎升级工程回归门禁。当前已有 ProfileConfigVersion 可标识基线，无需等待尚不存在的 IdentityBundle。
 
 ## 契约区
 
 ### 范围
 
-- 建立 Profile/身份版本/引擎制品绑定的基线与差异报告，覆盖 canvas/WebGL/audio、GPU/hardware/memory/screen、UA/CH、storage quota、请求头、TLS 与页面 WebRTC 出口观测。
-- 引擎固定不可变版本、关闭隐式更新并核实下载完整性/签名；升级存在未经批准漂移时阻断，给出保留旧引擎、显式轮换或重新基线处置。
-- persona 工厂基于有来源和版本的参考分布生成引擎支持的合理组合；seed 资源去重/耗尽显式失败，与 bundle 单身份一致性共享规则。
-- 显式 opt-in 的 warm-up 和一键自检走该 Profile 网络视角；第三方访问列出目标、时间和数据边界，默认不访问公网检测站，不外送凭据。
+- 复用离线 CDP/字体探针，报告 Profile id、当前 config version/配置摘要、引擎制品、探针版本与采集上下文；使用现有配置版本，本 task 不增加身份模型或依赖 t066。
+- 测量实际支持 API、主文档/iframe/Worker/ServiceWorker 与请求头差异；TLS/JA3/JA4 仅在本地受控采集可验证时给结论。
+- 固定引擎制品并验证下载/cache_init/自动更新路径，升级遇变化、缺测或不确定结论默认阻断，禁止用未确认阈值放行。
 
 ### 非范围
 
-- 不复活 parked p045 的 UA-CH arch 改造；现有已知不一致只记录或阻断相关 persona，不暗中覆盖架构字段。
-- 不承诺第三方反爬通过率或完全不可检测，不把单站 PASS 当整体结论。
-- 不采信调研所称固定五位数 seed、GPU 池或 TLS 厂商宣称；不要求不同 Profile 永不共享真实设备组合，判断依据为整体分布。
+- 不实现 Persona 工厂、预热爬虫或自检 UI；不修改生成 seed 范围，统一工作属 t066。
+- 不复活 parked p045，不把六位普通 seed 断言套到当前五位 reset 路径，不宣称所有引擎字段可控或有 Ed25519 签名。
+- 不为实验下载/升级到违反 ADR 021 的商业/并发受限版本；使用已获准制品。
 
 ### 验收标准
 
@@ -27,12 +26,10 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：同一 Profile 在指定旧/新引擎制品上可重复产出带时间、身份版本、探针版本和上下文的报告；变化能定位具体 API/请求层，缺少观测记不可测而非 PASS。
-- [ ] AC-002：未批准的身份漂移阻断该 Profile 的直接升级，报告可执行处置；无漂移验证包含主文档、iframe、Worker、ServiceWorker 及对应请求头，API 不适用的上下文明确标注。
-- [ ] AC-003：发布使用已固定且可校验的引擎制品，下载损坏或签名/完整性失败不会运行，隐式自动更新不能绕过回归门禁。
-- [ ] AC-004：同一输入参考分布和生成种子可复现批量 persona；组合自洽，按确认的样本量/统计阈值检查分布；seed 碰撞重试、空间耗尽明确失败，不承诺概率意义上的绝对无聚类。
-- [ ] AC-005：用户未显式启用 warm-up/公网检测时不访问第三方；启用后只走所选 Profile 出口，不出现新 localhost 暴露端口或 viewer CDP 泄漏。
-- [ ] AC-006：自检分开报告跨 API 一致性、群体分布与第三方单站观测，全部关联 Profile 身份/引擎/时间；TLS/UA/CH 结论有实际握手证据，无采集条件时显示不可判定。
+- [ ] [deploy] AC-001：同 Profile/config version 在指定已获准旧/候选引擎上重复产出可定位 API/请求层的差异报告，缺测和不支持上下文明确区分，不作为无漂移。
+- [ ] [deploy] AC-002：有未经批准的漂移、未测指标或不确定结果时阻断直接升级；主文档/iframe/Worker/ServiceWorker 以实际 API 适用性列完整矩阵，非确定性指标先报告重复采样分布，不用未知阈值宣称一致。
+- [ ] [deploy] AC-003：发布与 cache_init 使用固定可校验引擎制品，损坏/身份不符被拒，自动更新不能绕开门禁；若无上游可验证签名则如实说明完整性机制与信任来源。
+- [ ] [deploy] AC-006：TLS/UA/Client Hints 一致性结论绑定实际握手/请求证据与引擎/config/探针版本；无本地采集能力标不可判定，不引用厂商通过率。
 
 ### 可测试性声明
 
@@ -42,22 +39,24 @@
 
 <!-- /规范 -->
 
-全部 AC 可自动测试；涉及真实 Chrome、引擎、Docker 或网络行为的 AC 使用隔离真实环境探针，不以 mock 结果替代。界面视觉补人工核验，第三方公网检查仅显式 opt-in。
+- AC-001：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-002：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-003：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-006：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
 
 ## 上下文区
 
-- 来源：`p081`、`p085`、`p086`。2026-11-13 核实 generate_fingerprint_seed 为 random.randint(100000, 999999)，reset 幂等路径另有派生范围；不能采用 p085 的 9 万种子作为现行事实。ProfileConfig 已有 platform/font_set/seed/screen/gpu 等字段；t029 与字体 E2E 已提供部分探针，但未发现 persona/warmup/identity_bundle 实现。当前代码未显式设置引擎自动更新变量，实际 wrapper/二进制更新与签名能力待测。
+- 来源：2026-11-13 审阅复核：p081；原 p085/p086 曾分到 t071/t072，现按用户明确指令取消，不转回 pending。generate_fingerprint_seed 六位、幂等 reset 五位均存在，不能说现行 seed 一律六位。wrapper 锁定 0.6.4（ADR 021），cache_init 仍 ensure_binary；只读 engine-cache 不足以代替初始化更新路径核验。
 
 ### 有意不测
 
-- 不复活 parked p045 的 UA-CH arch 改造；现有已知不一致只记录或阻断相关 persona，不暗中覆盖架构字段。：超出本 task 范围；其余已声明 AC 不豁免。
+- 非范围中的新增产品功能不作为本 task 验收；已声明 AC 不豁免。
 
 ### 测试策略
 
-- 复用本地离线指纹/字体探针，真实两引擎制品差异、漂移阻断及损坏制品测试；不通过第三方网站通过率验收。
-- 固定样本输入验证 persona 可重复生成与统计检验，测 seed 碰撞/耗尽和非法组合。
-- 通过本地受控测试站验证 warm-up、网络视角、上下文覆盖与凭据不外送，真实公网检测只在用户明确 opt-in 后进行。
-- 项目门禁：按 docs/blueprint/testing.md 的 doctor_cmd / test_cmd / blackbox_verify 执行；本批创建仅验证文档结构，不代表实现验收。
+- 本地受控站点、离线探针及两套已授权制品报告；用变化/缺测/损坏输入验证拒绝升级，真实运行比对替代源码变量检查。
+- 分别记录确定性字段与跨运行噪声；不设置虚构可接受漂移。第三方公网结果不参与本 task 门禁。
+- 按 docs/blueprint/testing.md 的 doctor_cmd/test_cmd/blackbox_verify 执行；本次仅改 backlog，创建校验不代表实现验收。
 
 ### 未知契约清单
 
@@ -67,20 +66,19 @@
 
 <!-- /规范 -->
 
-- 引擎二进制更新、签名算法/公钥和可控制 seed/GPU/硬件字段：UNVERIFIED-SPIKE，检查当前锁定 wrapper 与实际制品；若不支持 Ed25519 不虚构保证，记录可验证完整性方案。
-- 可合法使用的真实设备参考分布、persona 平台范围、统计 N/阈值与允许漂移规则：UNVERIFIED-BLOCKING，需提供有来源/版本的数据集及明确判定方案后由用户确认，不编造市场份额。
-- TLS/JA3/JA4 采集能力及 Worker/ServiceWorker 中各 API 可用性：UNVERIFIED-SPIKE，在本地受控目标和实际引擎测量，不把缺指标当无漂移。
+- 锁定 wrapper 的制品/签名/下载与 cache_init 行为：UNVERIFIED-SPIKE，检查实际包和二进制；不预设签名算法。
+- 跨上下文 API 可用性、TLS 采集与重复运行噪声：UNVERIFIED-SPIKE，本地重复测量后定稿字段/归一化；默认变化或不确定即阻断，若要允许漂移须另向用户提交具体规则。
 
 ### 风险与回退
 
-- 风险：过度随机、误判分布或外部自检会增加可关联流量；所有报告标注观测范围与数据来源。
-- 回退：保留旧引擎、旧基线和可恢复 Profile 快照；关闭显式 warm-up，回退生成器版本，不覆盖已存在身份。
+- 风险：跨模块/制品或状态变更需按上述负向测试与 spike 验证；产品 BLOCKING 未消除不得实施。
+- 回退：回退本 task 的完整实现 release；涉及数据先停写者并从已验证成套备份恢复，禁止仅降级数据库或以旧兼容分支兜底。
 
 ### 依赖与约束
 
-- 保持本机 Docker/OrbStack 与唯一外部 Chrome 客户端边界；不复活 parked 条目。依赖建议见 progress.md；产品 BLOCKING 未确认前不可 start，SPIKE 先验证后回填。
+- 硬依赖和冲突以 progress.md 的 task.py 调度字段为准；不把文件重叠当硬依赖。plan 仅输出图上候选，不能替代 preflight；产品 BLOCKING 必须先确认，SPIKE 先验证并回填。
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/testing.md、docs/blueprint/security.md：探针口径、升级阻断与公网 opt-in 数据边界。
-- docs/blueprint/domain.md、docs/blueprint/decisions.md：persona 参考分布、seed 与漂移处置；同步 fingerprint_platform spec。
+- docs/blueprint/testing.md、docs/blueprint/security.md：本地基线、缺测/噪声与升级封闭。
+- docs/blueprint/decisions.md：引擎制品信任来源与 ADR 021 约束。

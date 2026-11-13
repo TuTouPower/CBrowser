@@ -2,21 +2,21 @@
 
 ## 背景
 
-Caddy 当前仅反代，Origin/CSRF/session 鉴权分散在 API 与 Gateway。将会话入口鉴权与自动化 CDP 边界合并交付，避免引入第二条可绕过的入口。现有鉴权与 loopback CDP 已成立，需求属于边界收敛与负向验证，不把已有功能写成缺失。
+Caddy 当前只反代 API、Gateway 信令并托管本地静态前端，运行容器无 HTML/HTTP 反代。收缩为 viewer 握手去管理 Cookie 与 CDP loopback 负向边界；保留同源官方客户端及自动化页面表达式语义。
 
 ## 契约区
 
 ### 范围
 
-- 部署期生成会话路径 forward_auth 与内部解析端点；管理凭证、路径会话凭证和容器凭证分离，一次性授权交换路径作用域安全 cookie。
-- 内部端点在外部 listener 拒绝；剥离转发到运行容器的管理 cookie，约束容器响应运行 origin、CSP、COOP、CORS、Origin/Sec-Fetch-Site 与 Service-Worker-Allowed。
-- viewer 不获取 CDP；保留经认证的自动化 API/UDS 通道，核实 Host/origin 与 DNS rebinding 防护。系统 DOM 读取使用隔离执行上下文，不放宽目标页面 CSP。
+- 仅对 /stream/{profileId}/signal 的 viewer 握手进行控制面授权，Gateway 不接收 cbrowser_session；Caddy/API 建立可信授权上下文，Gateway 验证可信来源、Profile 绑定、Origin、授权时效/撤销与 runtime/Agent 就绪。
+- 内部解析端点在外部 listener 显式拒绝；伪造转发头在边缘删除，Gateway 内网绕过也不能伪造授权；/stream/agent/register 继续走独立 Agent 凭据，不套 viewer cookie 授权。
+- CDP 保留唯一认证自动化入口，验证 Browser loopback 的 Host/Origin/DNS rebinding 防护；普通 viewer 配置不泄漏可用 CDP 凭据/endpoint。
 
 ### 非范围
 
-- 不把 DTLS-SRTP/UDP 经 forward_auth，不删除本机 WebRTC UDP mux。
-- 不复活 parked p053 的 LAN、证书分发或跨设备范围；不改 CDP 自动化产品入口。
-- 不把宿主 sleep 与页面等待方式的厂商检测宣称写成保证，不为认证收口取消必要的应用内权限检查。
+- 删除原“容器 HTTP 响应 origin/CSP/Service Worker 隔离”假前提；不改变 /selkies/ 同源 iframe、统计函数跨 frame 访问或 audio postMessage origin。
+- 不强制 wait_for/extract 切 isolated world；snapshot 保持 DOM/AX 协议读取，用户表达式保留页面主世界访问。
+- 管理 UI Automation 页面经权限校验展示 cdp_ws_path 属现行功能，不按普通 viewer 泄漏处理；不将所有 /stream/\* 套 forward_auth。
 
 ### 验收标准
 
@@ -26,12 +26,11 @@ Caddy 当前仅反代，Origin/CSRF/session 鉴权分散在 API 与 Gateway。�
 
 <!-- /规范 -->
 
-- [ ] AC-001：缺少或伪造会话凭证访问会话 HTTP/WSS 路径均被拒绝；合法一次性授权只能交换一次，得到 HttpOnly/Secure 且作用域限定的 cookie，长期凭据不进入 URL/Referer/访问日志。
-- [ ] AC-002：外部 listener 访问内部解析端点被拒；伪造内部鉴权头、跨 Profile cookie、跨站 Origin 与不允许的 Fetch 来源不能越权。
-- [ ] AC-003：反代运行容器时不传管理 cookie，容器可控响应不能在持管理凭证 origin 执行脚本或扩大 Service Worker 作用域；安全头与资源加载行为相容。
-- [ ] AC-004：普通 viewer 响应、页面配置、WS 消息及错误不暴露 CDP endpoint；认证自动化通道仍可连接，未认证直连与 DNS rebinding/非法 Host-origin 组合被拒。
-- [ ] AC-005：系统 DOM 读取不在页面主世界注入探测全局变量、不放宽 CSP；主页面与 iframe 能取得授权范围内的结果。
-- [ ] AC-006：真实 Chrome 登录、自动化、WebRTC 首帧及 viewer 重连通过新鉴权链，媒体仍走现行本机 UDP。
+- [ ] [deploy] AC-001：未授权/过期/撤销/跨 Profile viewer 握手被拒；合法握手可用且 Gateway 收到的请求不含 cbrowser_session，管理登录 cookie 保持现有 Path=/ 语义，不把管理 cookie 改成路径 cookie。
+- [ ] [deploy] AC-002：外部 listener 不能访问新授权解析端点；伪造授权头、直连 Gateway 绕边缘、非法 Origin 均不能越权；Agent register 使用其独立认证仍正常。
+- [ ] [deploy] AC-004：普通 viewer 页面/信令/错误不提供可用 CDP 连接凭据；认证 Automation 页与自动化通道保留，非法 Host/Origin 和实际可触达的 DNS rebinding 请求被拒，合法 UDS/自动化连接不受影响。
+- [ ] AC-005：snapshot 的 DOM/AX 读取与 wait_for/extract 主世界表达式行为保持，目标页面 CSP 不被放宽；同源 iframe 统计与音频控制正常。
+- [ ] [deploy] AC-006：真实 Caddy/Chrome 链中登录、viewer 首帧、重连、退出撤销和认证自动化均通过，WebRTC 媒体仍走现有本机 UDP。
 
 ### 可测试性声明
 
@@ -41,21 +40,25 @@ Caddy 当前仅反代，Origin/CSRF/session 鉴权分散在 API 与 Gateway。�
 
 <!-- /规范 -->
 
-全部 AC 可自动测试；涉及真实 Chrome、引擎、Docker 或网络行为的 AC 使用隔离真实环境探针，不以 mock 结果替代。界面视觉补人工核验，第三方公网检查仅显式 opt-in。
+- AC-001：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-002：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-004：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
+- AC-005：可自动测试，触达生产函数或实际工具入口。
+- AC-006：需隔离真实 Docker/Chrome/引擎拓扑验收，可自动化但不可用 mock 替代；[deploy] 不授权生产发布。
 
 ## 上下文区
 
-- 来源：`p075`、`p084`。2026-11-13 核实 network_config.py 生成路由无 forward_auth；auth/dependencies.py 与 gateway/server.py 已有 Origin/session 校验；architecture.md 5.3/5.5 明确 CDP loopback、UDS 和唯一 automation API。agent_executor 中未发现 createIsolatedWorld 调用，需逐 DOM 读取点核实上下文。
+- 来源：2026-11-13 审阅复核：p075、p084；network_config.py 仅 /api/*、/stream/* 反代及本地 file_server；gateway 当前直接读 cbrowser_session 并回 API authorize_viewer；/stream/agent/register 为独立路由。session.py 的 snapshot 用 DOM/AX，wait_for/extract 用 Runtime.evaluate。
 
 ### 有意不测
 
-- 不把 DTLS-SRTP/UDP 经 forward_auth，不删除本机 WebRTC UDP mux。：超出本 task 范围；其余已声明 AC 不豁免。
+- 非范围中的新增产品功能不作为本 task 验收；已声明 AC 不豁免。
 
 ### 测试策略
 
-- 真实 Caddy 容器集成验证认证路由、安全头与请求头剥离；覆盖 cookie path、重放、跨站、跨 Profile 与内部头伪造。
-- CDP 主世界/隔离世界与 Host/origin 负向探针，复用 automation CDP 链；Chrome E2E 检查首帧和恢复。
-- 项目门禁：按 docs/blueprint/testing.md 的 doctor_cmd / test_cmd / blackbox_verify 执行；本批创建仅验证文档结构，不代表实现验收。
+- 真实 Caddy/Gateway/API 验证授权头伪造、绕过边缘、cookie 剥离、Profile 绑定、退出撤销与 Agent register 回归。
+- CDP 真实引擎负向测试覆盖 Host、Origin、DNS rebinding 可触达性及合法认证通道；主世界表达式、iframe stats/audio 和首帧/重连回归。
+- 按 docs/blueprint/testing.md 的 doctor_cmd/test_cmd/blackbox_verify 执行；本次仅改 backlog，创建校验不代表实现验收。
 
 ### 未知契约清单
 
@@ -65,21 +68,19 @@ Caddy 当前仅反代，Origin/CSRF/session 鉴权分散在 API 与 Gateway。�
 
 <!-- /规范 -->
 
-- Caddy forward_auth 对 WSS Upgrade、cookie 路径及请求头的实际行为：UNVERIFIED-SPIKE，按仓库固定 Caddy 制品搭建最小验证。
-- 容器可控响应与管理 cookie 的 origin 隔离方案：UNVERIFIED-SPIKE，先枚举实际会话响应与 iframe 资源来源，验证 origin/CSP 方案后替换路由，不能只靠一条 CSP 宣称隔离。
-- 锁定 Chromium 的 isolated world、Host/origin 支持边界：UNVERIFIED-SPIKE，使用实际引擎验证，不套用上游最新文档。
+- 边缘与 Gateway 授权证明：UNVERIFIED-SPIKE，比较 forward_auth 可信内部证明与短期授权交换，定稿来源认证、重放/到期/撤销和 websocket Upgrade 行为；不无依据新增长期路径 cookie。
+- 实际 Chromium loopback Host/Origin 拒绝边界：UNVERIFIED-SPIKE，使用锁定引擎验证恶意页面可触达路径；不可达和被拒分别记录。
 
 ### 风险与回退
 
-- 风险：鉴权收口可能中断 WS、iframe 或自动化；安全头组合可能使官方客户端无法初始化。
-- 回退：回退完整匹配 release 与 Caddy 配置，撤销新路径授权；禁止回退时开放内部端点。
+- 风险：跨模块/制品或状态变更需按上述负向测试与 spike 验证；产品 BLOCKING 未消除不得实施。
+- 回退：回退本 task 的完整实现 release；涉及数据先停写者并从已验证成套备份恢复，禁止仅降级数据库或以旧兼容分支兜底。
 
 ### 依赖与约束
 
-- 保持本机 Docker/OrbStack 与唯一外部 Chrome 客户端边界；不复活 parked 条目。依赖建议见 progress.md；产品 BLOCKING 未确认前不可 start，SPIKE 先验证后回填。
+- 硬依赖和冲突以 progress.md 的 task.py 调度字段为准；不把文件重叠当硬依赖。plan 仅输出图上候选，不能替代 preflight；产品 BLOCKING 必须先确认，SPIKE 先验证并回填。
 
 ### Finalization 时更新的 blueprint
 
-- docs/blueprint/architecture.md、docs/blueprint/gateway.md：会话授权与 CDP 数据流。
-- docs/blueprint/security.md：cookie/origin、内部 listener、隔离 DOM 与负向边界。
-- docs/blueprint/decisions.md：鉴权收口 ADR；同步 access_control 与 automation_compatibility spec。
+- docs/blueprint/architecture.md、docs/blueprint/gateway.md、docs/blueprint/security.md：边缘/API/Gateway 授权职责和 Agent register 例外。
+- docs/blueprint/testing.md：Cookie 剥离、CDP 负向与同源回归。

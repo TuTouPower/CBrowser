@@ -1,17 +1,17 @@
 ---
 tid: "t061"
 slug: "session_ui_clarity"
-title: "会话页面状态展示与详情交互收敛"
+title: "会话界面与断线重连修复"
 status: "backlog"
 branch: ""
 worktree: ""
-review_level: "single"
+review_level: "full"
 review_limit: "5"
 verify_limit: "5"
 diff_anchor: ""
 depends_on: ""
-conflicts_with: ""
-note: "来源 p061、p064、p065；按单一会话 UI 交付聚合；保留已有工作区改动"
+conflicts_with: "t062,t063,t064,t065,t066,t069"
+note: "合并 t067；来源 p061/p064/p065 及 p079/p083 断线范围；无人连接保留环境，不新增生命周期功能"
 ---
 
 # Task 进展
@@ -24,9 +24,15 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-13 创建：聚合 p061、p064、p065，仅 backlog，不 start、不实现。已按当前代码修正过时断言；归档仅代表转办，不代表修复。
-- 依赖建议：无硬前置；与 t063/t067 的会话组件及恢复测试存在修改冲突，建议串行。
-- 依赖建议尚未写入 depends_on/conflicts_with；本次未调用 task-schedule，正式拓扑需按最终契约复核。
+- 2026-11-13 审阅修订：采纳视觉契约冲突和遗漏测试意见；AC-001..005 保持编号，AC-002 明确四个等待态，AC-003 单列 runtime_not_ready/stopping。
+
+- 本次仅维护 backlog；不 start、不实现；旧归档来源只追加转办链，不改写历史。
+
+- 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
+
+- 调度依据：会话视觉与断线恢复已合为同一交付；与服务/媒体/鉴权/代理/数据/严格输入任务存在页面接线或同链 E2E 修改冲突，图字段已改指合并目标。
+
+- 合并确认：用户已明确批准 t067 合入 t061；会话视觉 AC-001..005 保留，t067 AC-001/006/008 分别映射到本 task AC-006/007/008；其余已取消功能不并入。
 
 ## Review 处置
 
