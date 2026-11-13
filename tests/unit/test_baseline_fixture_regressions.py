@@ -17,8 +17,7 @@ import docker.errors
 import httpx
 import pytest
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
-from cbrowser.domain.models import NetworkAccessConfig
-from cbrowser.network_config import generate_caddyfile
+from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_ROOT_ENV,
     DEFAULT_AGENT_SOCKET_ROOT,
@@ -759,13 +758,13 @@ async def test_gateway_topology_harness_start_failure_with_cleanup_failure_chain
 
 def test_caddyfile_generator_uses_authoritative_gateway_port() -> None:
     """generate_caddyfile must proxy /stream/* to DEFAULT_GATEWAY_PORT."""
-    cfg = NetworkAccessConfig(lan_access_enabled=False)
-    content = generate_caddyfile(cfg)
+    # t054: generate_caddyfile takes the deploy port, not a config object.
+    content = generate_caddyfile(DEFAULT_HTTPS_PORT)
     assert f":{DEFAULT_GATEWAY_PORT}" in content
     assert "18097" not in content
 
     custom = generate_caddyfile(
-        cfg,
+        DEFAULT_HTTPS_PORT,
         gateway_upstream="http://gateway:18088",
     )
     assert ":18088" in custom

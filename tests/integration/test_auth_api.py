@@ -434,11 +434,11 @@ def test_public_runtime_endpoints_require_auth_and_csrf(auth_env):
     assert resp_bad_origin.status_code == 403
 
 
-# TDD removal note: test_startup_requires_explicit_allowed_origins removed because
-# CBROWSER_ALLOWED_ORIGINS and create_app(allowed_origins=...) were retired per t042 AC-007;
-# Origin whitelist is now derived strictly and deterministically from AppliedNetworkAccessVersion.
-def test_applied_network_origin_single_source_and_unlisted_rejected(tmp_path: Path) -> None:
-    """t042 AC-007: Origin whitelist is derived from applied network version, unlisted is 403."""
+# t054: the Origin whitelist is derived strictly and deterministically
+# from the deployment HTTPS port (CBROWSER_HTTPS_PORT, default 56661) —
+# the same input the Gateway uses. No applied network version exists anymore.
+def test_deploy_port_origin_single_source_and_unlisted_rejected(tmp_path: Path) -> None:
+    """t054: Origin whitelist is derived from the deploy port, unlisted is 403."""
     db_file = tmp_path / "origin_strict.db"
     run_database_migrations(db_file)
     admin_pass = secrets.token_urlsafe(32)
@@ -451,7 +451,7 @@ def test_applied_network_origin_single_source_and_unlisted_rejected(tmp_path: Pa
         admin_password_file=admin_pwd_file,
     )
     with TestClient(app, base_url="https://127.0.0.1:56661") as client:
-        # Applied whitelist has https://127.0.0.1:56661
+        # Deploy-port whitelist has https://127.0.0.1:56661
         login = client.post("/api/v1/auth/login", json={"password": admin_pass})
         assert login.status_code == 200
         csrf = login.json()["csrf_token"]

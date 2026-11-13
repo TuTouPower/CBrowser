@@ -1,0 +1,14 @@
+{
+  "tid": "t054",
+  "attempt": 1,
+  "execution_id": "b7fda669558e46a18c94163e899b9d31",
+  "status": "done",
+  "branch": "t054_deploy_time_network_config",
+  "base_sha": "e9320341a8b5c93d136fca64b1aad25825ec2898",
+  "tests": "后端全量第六轮 2037 passed / 25 failed / 8 skipped / 0 errors（520.95s，日志 `.scratch/t054_r4fix_backend_full.log`；25 个失败另以 9 个失败文件子集重跑逐名核对，与 R3 日志 `FAILED` 行逐行完全相同，按组：agent_executor_chain 7、t028 4、normal_exit_replay 4、automation_probe_chain 3、t034 2、automation_cdp_flow 2、repo_hygiene 1、automation_cdp 1、control_attendant_chain 1，无新增，零 t054/check_edge_subnet 相关失败）；前端全量 538 passed / 0 failed（74 文件）；新 t054 测试集 53 passed（原 49 + check_edge_subnet 参数解析 4），另 t027 新增 8 例（R1 5 + R2 f005 3）；改写文件分批见“测试结果”",
+  "blackbox": "无（本机无 Docker、无真实引擎；真实部署与真实引擎验证属 AC-010，须用户机按 t032 演练补验）",
+  "review": "Round 1 双路 FAIL（code 2 条：f001 important + f002 minor；test 4 条：f001 important + f002/f003/f004 minor），6 条已修并重验（见「Review 处置」Round 1 表）；Round 2 code PASS（0 新 finding，f001/f002 核实消除）、test FAIL（1 条 important 新 finding f005），f005 已修并重验（见「Review 处置」Round 2 表）；Round 3 双路 PASS（code 1 条 minor 新 finding f003，test 0 新 finding；f005 核实消除，AC-004/006/010 打勾依据恢复），f003 已修并重验（见「Review 处置」Round 3 表）；Round 4 双路 PASS（code 0 新 finding，test 1 条 minor 新 finding f006），f006 已修并重验（见「Review 处置」Round 4 表），待 Round 5 复审",
+  "review_scope": "1e4028e691635540",
+  "pending": [],
+  "findings": []
+}

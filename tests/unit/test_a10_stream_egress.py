@@ -19,16 +19,15 @@ DNS_V4 = ("10.251.7.253", 53)
 DNS_V6 = ("fdcb::253", 53)
 
 V4_LOCAL = ["169.254.0.0/16"]
-V4_LAN = ["169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 V6_LOCAL = ["fe80::/10"]
-V6_LAN = ["fe80::/10", "fc00::/7"]
 
 
-def _stream_spec(lan: bool = False) -> NetworkPolicySpec:
+def _stream_spec() -> NetworkPolicySpec:
+    # t054: no LAN media allowance exists anymore; the stream media set
+    # is link-local only.
     return NetworkPolicySpec(
         role="stream",
         udp_mux_port=MUX,
-        allow_lan_media=lan,
         allowed_tcp=[GATEWAY_V4, GATEWAY_V6],
         allowed_udp=[DNS_V4, DNS_V6],
     )
@@ -88,11 +87,11 @@ def test_stream_control_endpoints_allowed_both_families() -> None:
 
 
 def test_stream_has_explicit_terminal_drop_and_no_unconditional_accept() -> None:
-    for spec in (_stream_spec(), _stream_spec(lan=True)):
-        for render in (render_iptables_rules, render_ip6tables_rules):
-            rules = render(spec)
-            assert "-A OUTPUT -j ACCEPT" not in rules
-            assert "-A OUTPUT -j DROP" in rules
+    spec = _stream_spec()
+    for render in (render_iptables_rules, render_ip6tables_rules):
+        rules = render(spec)
+        assert "-A OUTPUT -j ACCEPT" not in rules
+        assert "-A OUTPUT -j DROP" in rules
 
 
 def test_stream_local_media_networks_are_link_local_only() -> None:
@@ -101,27 +100,21 @@ def test_stream_local_media_networks_are_link_local_only() -> None:
     assert _media_destinations(render_ip6tables_rules(spec)) == V6_LOCAL
 
 
-def test_stream_lan_media_adds_private_networks() -> None:
-    spec = _stream_spec(lan=True)
-    assert _media_destinations(render_iptables_rules(spec)) == V4_LAN
-    assert _media_destinations(render_ip6tables_rules(spec)) == V6_LAN
-
-
 def test_stream_media_rules_limited_to_destination_networks() -> None:
-    for spec in (_stream_spec(), _stream_spec(lan=True)):
-        for render in (render_iptables_rules, render_ip6tables_rules):
-            rules = render(spec)
-            assert f"-A OUTPUT -p udp --sport {MUX} -j ACCEPT" not in rules
-            assert "-A OUTPUT -p tcp -j ACCEPT" not in rules
-            assert "-A OUTPUT -p udp -j ACCEPT" not in rules
-            assert "-A OUTPUT -j ACCEPT" not in rules
-            for dest in _media_destinations(rules):
-                assert dest not in ("0.0.0.0/0", "::/0")
-            assert rules.rstrip().endswith("COMMIT")
+    spec = _stream_spec()
+    for render in (render_iptables_rules, render_ip6tables_rules):
+        rules = render(spec)
+        assert f"-A OUTPUT -p udp --sport {MUX} -j ACCEPT" not in rules
+        assert "-A OUTPUT -p tcp -j ACCEPT" not in rules
+        assert "-A OUTPUT -p udp -j ACCEPT" not in rules
+        assert "-A OUTPUT -j ACCEPT" not in rules
+        for dest in _media_destinations(rules):
+            assert dest not in ("0.0.0.0/0", "::/0")
+        assert rules.rstrip().endswith("COMMIT")
 
 
 def test_stream_media_rules_precede_blocked_drops() -> None:
-    spec = _stream_spec(lan=True)
+    spec = _stream_spec()
     for render in (render_iptables_rules, render_ip6tables_rules):
         lines = render(spec).splitlines()
         media_idx = [

@@ -378,3 +378,21 @@
     - **字体集链路收紧（同 task 审阅缺陷）**：默认集只由后端按完整性决定（`GET /api/v1/font-sets` 返回各平台 `default_font_set_id`，只取完整性通过的集），前端不再自行推导，「无」为显式 null；绑定集时 fontconfig 生成失败即启动失败 `font_set_unavailable`，不回落系统配置；损坏集重新导入原子替换，Coordinator 删除运行时缓存、按 Supervisor 同一校验函数实时读取；`used_by_count` 按 `(fingerprint_platform, font_set_id)` 统计，列表校验 manifest 平台与目录一致；会话详情区分「字体集完整性」与「探测字体未覆盖」两种文案。
 - 复查条件：Browser 镜像内 fontconfig 版本对 `.ttc` 集合的 `lang` 排除是否生效，须在用户机以 `fc-list` 实测（宿主 fontconfig 2.15.0 已验证机制成立）；真实引擎下 `navigator.language` 是否等于 Profile 语言且不被出口 IP 推断覆盖，须在用户机实测（本机无真实引擎，见 t053 环境跳过项）。
 - 替代：选项 1 留下指纹矛盾；选项 3 的文件名黑名单随字体集来源漂移、不可维护。**本条部分替代 ADR 024**：仅替代其中“字体集整体可见”的部分——英文 Profile 的 fontconfig 白名单排除覆盖中文的字体；ADR 024 其余结论（运行时只读挂载、不可变字体集、失败封闭、null 回退基础字体）全部保留。
+
+## 031 网络配置收归部署期：删除局域网与运行时网络应用（2026-11-11，t054）
+
+- 背景：review_20261110_200842 的 A61（用户 2026-11-10 选方案 C）与 A14 要求：网络配置回到部署期，删除运行时的网络应用链；同时 p053 的前提已变——局域网访问不再是“暂搁待接线”，而是彻底不做：t042 建起的整条链（Settings 局域网开关与通告 IP、`NetworkService` 事务、Gateway 发布协议、Supervisor `rebuild-edge` / `converge-streams`、恢复围栏、操作日志网络收据、双文件已应用状态、LAN 媒体策略、root-ca 下载）全部删除，无保留、无兼容。默认端口此前在后端、脚本、前端三处各写一份字面量（`56661`），已收敛为唯一常量 `DEFAULT_HTTPS_PORT`。
+- 选项：
+    1. 保留运行时应用链，只把局域网开关藏起来（前端隐藏、后端保留）。
+    2. 网络配置收归部署期：部署时渲染 Caddyfile、端口只从部署输入来，运行期无任何网络变更入口（本 task 采用）。
+    3. 保留局域网但改由部署期开关（部署时决定绑定地址）。
+- 结论：采用选项 2。
+    - **删除局域网**：`lan_access_enabled` / `lan_advertised_ip` 字段与两处校验、`allow_lan_media` 与 LAN 媒体策略分支、Stream 的 `bind_host` / `advertised_ip` 参数与标签、root-ca 下载端点与前端链接全部删除；Caddy HTTPS 端口与 Stream UDP mux 固定绑定 `127.0.0.1`，媒体放行只剩链路本地 `169.254.0.0/16` / `fe80::/10`。
+    - **删除运行时网络应用**：网络设置写端点、应用/断开预检、`NetworkService`、Gateway 发布协议（authorize/ACK/revoke）、Supervisor `rebuild-edge` / `converge-streams`、恢复围栏、日志网络收据、双文件已应用状态全部删除；增量迁移 `0008`（`3751fed02a4a`）删除全部 `settings` 表 `network.%` 行（降级为有文档说明的 no-op：已删行无恢复路径）。
+    - **端口只从部署输入来**：唯一常量 `DEFAULT_HTTPS_PORT = 56661`（`network_config.py`）；`CBROWSER_HTTPS_PORT` 只在部署期从 `.env` 读入，deploy.sh 默认值直接运行该常量得出；后端入口默认值、deploy.sh、前端均不再写字面量。`network_config` CLI 只剩 `render`（`--network-dir`、`--https-port`）：确定性写出部署端口的 Caddyfile 并打印 `BIND_HOST=127.0.0.1` / `HTTPS_PORT` / `PUBLIC_ORIGIN` / `CADDYFILE_SHA256`；渲染失败即以 CLI 退出码拒绝部署。
+    - **Origin 白名单由部署配置确定性派生**：`derive_origin_whitelist(https_port)`（`127.0.0.1` / `localhost` + 端口，纯 https）；API 启动时从 `CBROWSER_HTTPS_PORT` 派生、Gateway 从同一环境变量派生，两服务读同一部署输入；Gateway 读盘重载的死代码删除。
+    - **指纹改为最终产物**：release manifest 与 env 的 `caddyfile_sha256` 改为渲染后 `$DATA_ROOT/network/Caddyfile` 的 SHA-256（生成器源码改动不再改变指纹，端口改动改变指纹）；回退时按目标 release 记录的端口重渲染并校验 sha 与目标 manifest 一致，不一致拒绝。
+    - **受信代理来源**：compose `edge` 网络固定 IPAM 子网，deploy.sh 按实例身份摘要派生（`172.{18 + digest mod 14}.0.0/16`，避开 Docker 默认 `172.17.0.0/16`，双实例可共存），写入 `CBROWSER_EDGE_SUBNET`，并以同一值注入 API 与 Gateway 的 `CBROWSER_TRUSTED_PROXY_CIDRS`；部署前预检该子网与已存 Docker 网络子网、宿主接口地址的重叠，重叠即拒绝并提示改 prefix / 数据根或显式指定子网。`client_ip` 两份字节相同拷贝合并为唯一共享模块 `cbrowser.shared.client_ip`，Gateway 镜像经 Dockerfile 白名单引入。
+    - **设置页只读**：网络区块只显示当前访问地址与端口（取 `window.location`），表单、保存/应用按钮、应用确认弹窗、root-ca 区块全部删除。
+- 复查条件：真实部署（AC-010）、真实引擎下的 Origin 与端口行为（AC-006/007/008/009 真实部分）、各平台真实字体名均未在本机验证（无 Docker、无真实引擎），须在用户机按 t032 演练补验。
+- 替代：选项 1 留下整条死链与漂移面；选项 3 保留局域网攻击面，与“彻底不做”的前提相背。**本条替代 ADR 026 的运行时边缘重建部分**：Supervisor 不再接管 Caddy / Stream 的端口重建与版本对账，运行期端口绑定不可变更；ADR 026 其余结论（端口物理隔离的实测结论、单机免外部守护原则）保留；ADR 013 的媒体直连回到仅回环（局域网 host 候选扩展随本条删除）。p053 的“暂搁”前提随本条作废。

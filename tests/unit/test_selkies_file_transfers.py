@@ -9,7 +9,6 @@ from cbrowser.supervisor.container_spec import stream_environment
 
 def test_supervisor_explicitly_disables_selkies_file_transfers() -> None:
     env = stream_environment(
-        public_ip="127.0.0.1",
         display=":99",
         profile_id="p1",
         runtime_instance_id="i1",

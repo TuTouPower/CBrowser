@@ -17,12 +17,6 @@ import type {
   ProxyCreateRequest,
   ProxyUpdateRequest,
   FontSetListResponse,
-  NetworkAccessConfig,
-  NetworkAccessSettingsResponse,
-  NetworkApplyOperation,
-  NetworkApplyRequest,
-  NetworkSettingsUpdateResponse,
-  NetworkDisconnectCheckResponse,
 } from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
 
@@ -530,42 +524,6 @@ export class ApiClient {
   readonly fontSets = {
     list: async (): Promise<FontSetListResponse> => {
       return this.request<FontSetListResponse>("/api/v1/font-sets");
-    },
-  };
-
-  readonly network = {
-    getSettings: async (): Promise<NetworkAccessSettingsResponse> => {
-      return this.request<NetworkAccessSettingsResponse>(
-        "/api/v1/network/settings",
-      );
-    },
-    updateSettings: async (
-      config: NetworkAccessConfig,
-    ): Promise<NetworkSettingsUpdateResponse> => {
-      return this.request<NetworkSettingsUpdateResponse>(
-        "/api/v1/network/settings",
-        { method: "PUT", body: JSON.stringify(config) },
-      );
-    },
-    checkDisconnect: async (): Promise<NetworkDisconnectCheckResponse> => {
-      return this.request<NetworkDisconnectCheckResponse>(
-        "/api/v1/network/check-disconnect",
-      );
-    },
-    apply: async (data: NetworkApplyRequest): Promise<NetworkApplyOperation> => {
-      return this.request<NetworkApplyOperation>("/api/v1/network/apply", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
-    },
-    getOperation: async (
-      operationId: string,
-      signal?: AbortSignal,
-    ): Promise<NetworkApplyOperation> => {
-      return this.request<NetworkApplyOperation>(
-        `/api/v1/network/operations/${encodeURIComponent(operationId)}`,
-        signal ? { signal } : {},
-      );
     },
   };
 

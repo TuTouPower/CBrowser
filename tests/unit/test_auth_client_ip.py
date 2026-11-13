@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from cbrowser.auth.client_ip import parse_trusted_proxy_cidrs, resolve_client_ip
+from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs, resolve_client_ip
 from cbrowser.auth.rate_limiter import LoginRateLimiter
 
 

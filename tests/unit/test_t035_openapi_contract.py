@@ -19,7 +19,6 @@ PUBLIC_GROUPS = {
     "automation",
     "control",
     "groups",
-    "network",
     "profiles",
     "proxies",
 }

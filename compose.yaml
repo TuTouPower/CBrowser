@@ -25,6 +25,10 @@ services:
       CBROWSER_SUPERVISOR_TOKEN_FILE: /run/secrets/supervisor_key
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
       CBROWSER_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      # t054: the Origin whitelist is derived from the deploy port; the
+      # trusted proxy CIDRs are the edge subnet, both injected by deploy.sh.
+      CBROWSER_HTTPS_PORT: ${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}
+      CBROWSER_TRUSTED_PROXY_CIDRS: ${CBROWSER_TRUSTED_PROXY_CIDRS:?run scripts/deploy.sh first}
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}:/data
       - db:/data/db
@@ -60,9 +64,12 @@ services:
       CBROWSER_GATEWAY_TOKEN_FILE: /run/secrets/gateway_key
       CBROWSER_GATEWAY_API_URL: http://api:8000
       CBROWSER_GATEWAY_API_TOKEN_FILE: /run/secrets/gateway_api_key
-      CBROWSER_NETWORK_STATE_DIR: /data/network
+      # t054: same deploy port as the API (Origin whitelist derivation);
+      # the trusted proxy CIDRs are the edge subnet. No network state
+      # directory is mounted anymore: the Gateway reads no disk state.
+      CBROWSER_HTTPS_PORT: ${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}
+      CBROWSER_TRUSTED_PROXY_CIDRS: ${CBROWSER_TRUSTED_PROXY_CIDRS:?run scripts/deploy.sh first}
     volumes:
-      - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/network:/data/network:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/agent_key:/run/secrets/agent_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_key:/run/secrets/gateway_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/gateway_api_key:/run/secrets/gateway_api_key:ro
@@ -149,7 +156,8 @@ services:
       CBROWSER_CADDYFILE_SHA256: ${CBROWSER_CADDYFILE_SHA256:-}
       CBROWSER_FRONTEND_SHA256: ${CBROWSER_FRONTEND_SHA256:-}
     ports:
-      - "${CBROWSER_BIND_HOST:?run scripts/deploy.sh first}:${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}:443"
+      # t054: loopback only — there is no bind host to configure anymore.
+      - "127.0.0.1:${CBROWSER_HTTPS_PORT:?run scripts/deploy.sh first}:443"
     volumes:
       - ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/network/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./src/frontend/dist:/var/www/html:ro
@@ -166,6 +174,12 @@ services:
 networks:
   edge:
     name: ${CBROWSER_PREFIX:-cbrowser}-edge
+    # t054: fixed per-instance IPAM subnet derived by deploy.sh from the
+    # instance identity; the same value is injected as
+    # CBROWSER_TRUSTED_PROXY_CIDRS into API + Gateway.
+    ipam:
+      config:
+        - subnet: ${CBROWSER_EDGE_SUBNET:?run scripts/deploy.sh first}
 
 volumes:
   db:

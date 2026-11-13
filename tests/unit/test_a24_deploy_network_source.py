@@ -1,3 +1,12 @@
+"""t054: deploy.sh renders the Caddyfile at deploy time via `render`.
+
+The old applied-state protocol (`init`/`read`, rc 3 missing / rc 4
+corrupt, BIND_HOST re-export) is gone: deploy.sh renders the Caddyfile
+for the deploy port with a single `network_config render` call, refuses
+the deploy with the CLI's exit code when rendering fails, and exports
+the derived trusted proxy CIDRs (the edge subnet) instead of a bind host.
+"""
+
 import shutil
 import subprocess
 import sys
@@ -32,15 +41,27 @@ def test_no_grep_bind_host_parsing():
 def test_calls_python_network_entrypoint():
     text = _text()
     assert "-m cbrowser.network_config_cli" in text
-    assert 'init --network-dir "$DATA_ROOT/network"' in text
-    assert 'read --network-dir "$DATA_ROOT/network"' in text
-    assert 'eval "$(network_config read' in text
+    # t054: the only operation is `render`.
+    assert 'render --network-dir "$DATA_ROOT/network"' in text
+    assert 'eval "$(network_config render' in text
+    assert 'init --network-dir' not in text
+    assert 'read --network-dir' not in text
 
 
 def test_authoritative_values_reexported():
     text = _text()
     assert 'export CBROWSER_HTTPS_PORT="$HTTPS_PORT"' in text
-    assert 'export CBROWSER_BIND_HOST="$BIND_HOST"' in text
+    # t054: the trusted proxy CIDRs are the edge subnet, derived at deploy.
+    assert 'export CBROWSER_TRUSTED_PROXY_CIDRS="$CBROWSER_EDGE_SUBNET"' in text
+    assert "CBROWSER_BIND_HOST" not in text
+
+
+def test_render_failure_refuses_deploy_with_cli_exit_code():
+    text = _text()
+    assert "Refusing to deploy: network_config $op failed (exit $rc)." in text
+    assert "printf 'exit %d\\n' \"$rc\"" in text
+    # No missing/corrupt applied-state distinction anymore.
+    assert 'case "$rc" in' not in text
 
 
 def test_bash_syntax_ok():
@@ -53,6 +74,10 @@ echo "docker $*" >> "${FAKE_DOCKER_LOG:?}"
 case "${1:-}" in
   compose) [ "${2:-}" = "version" ] && exit 0; exit 1 ;;
   ps) exit 0 ;;
+  network) exit 0 ;;
+  build) exit 0 ;;
+  image) echo "sha256:fakeapimage" ;;
+  run) exit 0 ;;
   *) exit 1 ;;
 esac
 """
@@ -60,18 +85,21 @@ esac
 PY_STUB = (
     "import os\n"
     "import sys\n"
-    "if \"read\" in sys.argv[1:]:\n"
-    "    rc = int(os.environ.get(\"STUB_READ_RC\", \"4\"))\n"
+    "if \"render\" in sys.argv[1:]:\n"
+    "    rc = int(os.environ.get(\"STUB_RENDER_RC\", \"2\"))\n"
     "    sys.stderr.write(\"stub: simulated cli failure rc=%d\\n\" % rc)\n"
     "    sys.exit(rc)\n"
     "sys.exit(0)\n"
 )
 
 
-def _run_isolated_deploy(tmp_path, read_rc):
+def _run_isolated_deploy(tmp_path, render_rc):
     repo = tmp_path / "repo"
     (repo / "scripts").mkdir(parents=True)
     shutil.copy(SCRIPT, repo / "scripts" / "deploy.sh")
+    # t054: deploy.sh calls the subnet-conflict helper before rendering.
+    shutil.copy(ROOT / "scripts" / "check_edge_subnet.py",
+                repo / "scripts" / "check_edge_subnet.py")
     net_dir = repo / "src" / "backend" / "cbrowser"
     net_dir.mkdir(parents=True)
     (net_dir / "network_config.py").write_text("", encoding="utf-8")
@@ -110,12 +138,15 @@ def _run_isolated_deploy(tmp_path, read_rc):
         "PATH": f"{bins}:/usr/bin:/bin",
         "HOME": str(tmp_path),
         "FAKE_DOCKER_LOG": str(docker_log),
+        # The stub python prints nothing for `-c`, so the port default
+        # derivation comes out empty; the deploy port is set explicitly.
+        "CBROWSER_HTTPS_PORT": "56661",
         "CBROWSER_PYTHON": str(stub),
         "CBROWSER_DEPLOY_DIR": str(deploy),
         "CBROWSER_SECRETS_DIR": str(secrets),
         "CBROWSER_DATA_ROOT": str(tmp_path / "data"),
         "CBROWSER_RELEASE_ID": "a24-rc-guard",
-        "STUB_READ_RC": str(read_rc),
+        "STUB_RENDER_RC": str(render_rc),
         "PYTHONPATH": str(repo / "src" / "backend"),
     }
     result = subprocess.run(
@@ -129,33 +160,13 @@ def _run_isolated_deploy(tmp_path, read_rc):
     return result, docker_log, deploy
 
 
-def test_read_corrupt_rc_not_swallowed_and_no_publish(tmp_path):
-    result, docker_log, deploy = _run_isolated_deploy(tmp_path, 4)
-    assert result.returncode == 4, result.stderr
-    assert "corrupt" in result.stderr.lower()
-    assert "is missing" not in result.stderr.lower()
+def test_render_failure_refuses_deploy_and_publishes_nothing(tmp_path):
+    # A render failure (exit 2 here) refuses the deploy with the CLI's
+    # exit code; no container is started and no release is recorded.
+    result, docker_log, deploy = _run_isolated_deploy(tmp_path, 2)
+    assert result.returncode == 2, result.stderr
+    assert "Refusing to deploy" in result.stderr
     log = docker_log.read_text(encoding="utf-8") if docker_log.exists() else ""
     assert "compose up" not in log
-    assert "docker build" not in log
     assert not deploy.exists()
-
-
-def test_read_missing_rc_not_swallowed_and_no_publish(tmp_path):
-    result, docker_log, deploy = _run_isolated_deploy(tmp_path, 3)
-    assert result.returncode == 3, result.stderr
-    assert "missing" in result.stderr.lower()
-    assert "is corrupt" not in result.stderr.lower()
-    log = docker_log.read_text(encoding="utf-8") if docker_log.exists() else ""
-    assert "compose up" not in log
-    assert "docker build" not in log
-    assert not deploy.exists()
-
-
-def test_network_config_rc_is_checked_and_differentiated():
-    text = _text()
-    assert 'if read_output="$(PYTHONPATH=' in text
-    assert "rc=$?" in text
-    assert 'case "$rc" in' in text
-    assert "printf 'exit %d" in text
-    assert "missing" in text.lower()
-    assert "corrupt" in text.lower()
+    assert not (tmp_path / "data" / "network" / "Caddyfile").exists()

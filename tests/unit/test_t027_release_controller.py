@@ -169,6 +169,27 @@ case "$cmd" in
       printf 'cbrowser-api\t%s\tcbrowser\n' "$FAKE_OWN_PROJECT"
     fi
     ;;
+  network)
+    sub="${1:-}"; if [ $# -gt 0 ]; then shift; fi
+    case "$sub" in
+      ls)
+        if [ -n "${FAKE_NETWORK_IDS:-}" ]; then printf '%s\n' "$FAKE_NETWORK_IDS"; fi
+        # t054 R2 test f005: model this instance's own edge network,
+        # created by an earlier deploy with the same prefix and subnet.
+        # The name follows compose.yaml: ${CBROWSER_PREFIX}-edge;
+        # deploy.sh exports CBROWSER_PREFIX, so the fake inherits it.
+        if [ -n "${FAKE_OWN_EDGE_SUBNET:-}" ]; then printf '%s\n' "own-edge-net"; fi
+        ;;
+      inspect)
+        if [ -n "${FAKE_OWN_EDGE_SUBNET:-}" ]; then
+          FAKE_OWN_EDGE_NAME="${CBROWSER_PREFIX:-cbrowser}-edge" python3 -c 'import json, os; records = json.loads(os.environ.get("FAKE_NETWORK_SUBNETS", "[]")); records.append({"Name": os.environ["FAKE_OWN_EDGE_NAME"], "IPAM": {"Config": [{"Subnet": os.environ["FAKE_OWN_EDGE_SUBNET"]}]}}); print(json.dumps(records))'
+        else
+          printf '%s' "${FAKE_NETWORK_SUBNETS:-[]}"
+        fi
+        ;;
+      *) echo "unsupported network subcommand: $sub" >&2; exit 1;;
+    esac
+    ;;
   compose)
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -222,7 +243,7 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "scripts" / "supervisor_readiness_probe.py",
         repo / "scripts" / "supervisor_readiness_probe.py",
     )
-    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py"):
+    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py"):
         shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
     _copy_tree(ROOT / "config" / "docker", repo / "config" / "docker")
@@ -490,6 +511,202 @@ def test_prefix_conflict_refused_before_build(tmp_path: Path) -> None:
     assert _builds(repo) == []
 
 
+def test_deploy_refuses_when_derived_edge_subnet_overlaps_existing_network(
+    tmp_path: Path,
+) -> None:
+    """t054 R1 f001/test f001(a): the edge-subnet conflict precheck refuses
+    the deploy when the derived subnet overlaps an existing Docker
+    network, names the explicit-subnet escape hatch, and records no
+    release (refused before any build)."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, _, edge_subnet = _instance_identity(repo)
+    subnets = json.dumps([{"IPAM": {"Config": [{"Subnet": edge_subnet}]}}])
+    result = _deploy(
+        repo,
+        bin_dir,
+        "rel-001",
+        FAKE_NETWORK_IDS="existing-net",
+        FAKE_NETWORK_SUBNETS=subnets,
+    )
+    assert result.returncode != 0
+    assert "edge subnet" in result.stderr
+    assert "CBROWSER_EDGE_SUBNET" in result.stderr
+    assert not (repo / "config" / "deploy" / "releases" / "rel-001.json").exists()
+    assert _builds(repo) == []
+
+
+def test_deploy_uses_explicit_edge_subnet_when_set(tmp_path: Path) -> None:
+    """t054 R1 f001/test f001(b): an explicitly set CBROWSER_EDGE_SUBNET
+    is kept (not overwritten by the derived value) and is recorded in
+    the release env and manifest, with the trusted proxy CIDRs equal to
+    the explicit value."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, _, derived = _instance_identity(repo)
+    # 172.40.0.0/16 can never equal the derived value (172.18-31.0.0/16),
+    # so this test cannot pass by accident when derivation wins.
+    explicit = "172.40.0.0/16"
+    assert explicit != derived
+    result = _deploy(repo, bin_dir, "rel-001", CBROWSER_EDGE_SUBNET=explicit)
+    assert result.returncode == 0, result.stderr
+    manifest = _manifest(repo, "rel-001")
+    assert manifest["instance"]["edge_subnet"] == explicit
+    env_text = (
+        repo / "config" / "deploy" / "releases" / "rel-001.env"
+    ).read_text(encoding="utf-8")
+    assert f"CBROWSER_EDGE_SUBNET={explicit}" in env_text
+    assert f"CBROWSER_TRUSTED_PROXY_CIDRS={explicit}" in env_text
+
+
+def test_deploy_refuses_when_explicit_edge_subnet_overlaps(
+    tmp_path: Path,
+) -> None:
+    """t054 R1 f001/test f001(c): the conflict precheck runs against the
+    EXPLICIT subnet, not the derived one — an explicit subnet overlapping
+    an existing Docker network is refused even though the derived subnet
+    is free."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    explicit = "172.40.0.0/16"
+    subnets = json.dumps([{"IPAM": {"Config": [{"Subnet": explicit}]}}])
+    result = _deploy(
+        repo,
+        bin_dir,
+        "rel-001",
+        CBROWSER_EDGE_SUBNET=explicit,
+        FAKE_NETWORK_IDS="existing-net",
+        FAKE_NETWORK_SUBNETS=subnets,
+    )
+    assert result.returncode != 0
+    assert "edge subnet" in result.stderr
+    assert "CBROWSER_EDGE_SUBNET" in result.stderr
+    assert not (repo / "config" / "deploy" / "releases" / "rel-001.json").exists()
+    assert _builds(repo) == []
+
+
+def test_redeploy_succeeds_when_only_own_edge_network_exists(
+    tmp_path: Path,
+) -> None:
+    """t054 R2 test f005(a): a second deploy of the same instance is not
+    refused by its own edge network. After rel-001, the edge network
+    named ``cbrowser-edge`` exists with the derived subnet; rel-002 must
+    still deploy and become current."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, _, edge_subnet = _instance_identity(repo)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    result = _deploy(
+        repo, bin_dir, "rel-002", FAKE_OWN_EDGE_SUBNET=edge_subnet
+    )
+    assert result.returncode == 0, result.stderr
+    assert _pointer(repo, "current_release") == "rel-002"
+    assert _pointer(repo, "previous_release") == "rel-001"
+    assert _manifest(repo, "rel-002")["instance"]["edge_subnet"] == edge_subnet
+
+
+def test_rollback_succeeds_when_only_own_edge_network_exists(
+    tmp_path: Path,
+) -> None:
+    """t054 R2 test f005(b): rollback after a deploy is not refused by
+    the instance's own edge network — the target release's recorded
+    subnet equals the existing own network's subnet."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, _, edge_subnet = _instance_identity(repo)
+    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
+    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    result = _run(
+        repo,
+        bin_dir,
+        "rollback",
+        env_extra={"FAKE_OWN_EDGE_SUBNET": edge_subnet},
+    )
+    assert result.returncode == 0, result.stderr
+    assert _pointer(repo, "current_release") == "rel-001"
+
+
+def test_deploy_still_refuses_foreign_overlap_when_own_network_exists(
+    tmp_path: Path,
+) -> None:
+    """t054 R2 test f005(c): the own-network exclusion is scoped by name
+    AND subnet, not by subnet alone — a FOREIGN network with the same
+    subnet is still refused even while the own edge network exists."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    _, _, edge_subnet = _instance_identity(repo)
+    subnets = json.dumps(
+        [{"Name": "other-edge", "IPAM": {"Config": [{"Subnet": edge_subnet}]}}]
+    )
+    result = _deploy(
+        repo,
+        bin_dir,
+        "rel-001",
+        FAKE_NETWORK_IDS="existing-net",
+        FAKE_NETWORK_SUBNETS=subnets,
+        FAKE_OWN_EDGE_SUBNET=edge_subnet,
+    )
+    assert result.returncode != 0
+    assert "edge subnet" in result.stderr
+    assert "CBROWSER_EDGE_SUBNET" in result.stderr
+    assert not (repo / "config" / "deploy" / "releases" / "rel-001.json").exists()
+    assert _builds(repo) == []
+
+
+def test_rollback_restores_target_port_not_current_port(
+    tmp_path: Path,
+) -> None:
+    """t054 R1 test f002: rollback re-renders the Caddyfile from the
+    TARGET release's recorded port. Deploying rel-001 at 56661 and
+    rel-002 at 56662, then rolling back, must serve 56661 — a rollback
+    that reused the current port would serve 56662 and fail here."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(
+        repo, bin_dir, "rel-001", CBROWSER_HTTPS_PORT="56661"
+    ).returncode == 0
+    assert _deploy(
+        repo, bin_dir, "rel-002", CBROWSER_HTTPS_PORT="56662"
+    ).returncode == 0
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode == 0, result.stderr
+    assert _pointer(repo, "current_release") == "rel-001"
+    caddyfile = repo / "data" / "instance" / "network" / "Caddyfile"
+    first_line = caddyfile.read_text(encoding="utf-8").splitlines()[0]
+    assert "https_port 56661" in first_line
+    assert "56662" not in first_line
+    rendered_sha = hashlib.sha256(caddyfile.read_bytes()).hexdigest()
+    assert rendered_sha == _manifest(repo, "rel-001")["caddyfile_sha256"]
+
+
+def test_rollback_refuses_on_caddyfile_sha_mismatch_without_touching_disk(
+    tmp_path: Path,
+) -> None:
+    """t054 R1 test f002: a target manifest whose caddyfile_sha256 does
+    not match the re-rendered Caddyfile refuses the rollback AND leaves
+    the on-disk Caddyfile and the release pointer untouched."""
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    assert _deploy(
+        repo, bin_dir, "rel-001", CBROWSER_HTTPS_PORT="56661"
+    ).returncode == 0
+    assert _deploy(
+        repo, bin_dir, "rel-002", CBROWSER_HTTPS_PORT="56662"
+    ).returncode == 0
+    caddyfile = repo / "data" / "instance" / "network" / "Caddyfile"
+    before = caddyfile.read_bytes()
+    assert b"https_port 56662" in before.splitlines()[0]
+    manifest_path = repo / "config" / "deploy" / "releases" / "rel-001.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["caddyfile_sha256"] = "0" * 64
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    result = _run(repo, bin_dir, "rollback")
+    assert result.returncode != 0
+    assert "caddyfile_sha256" in result.stderr
+    assert caddyfile.read_bytes() == before
+    assert _pointer(repo, "current_release") == "rel-002"
+
+
 def test_rollback_success_redeploys_previous_and_verifies(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
@@ -623,19 +840,22 @@ def test_instance_identity_parameterized_and_independent(
     manifest_b = json.loads(
         (deploy_dir_b / "releases" / "b-001.json").read_text(encoding="utf-8")
     )
-    instance_id_b, pool_b = _instance_identity(repo, "inst_b", repo / "data-b")
+    instance_id_b, pool_b, edge_b = _instance_identity(repo, "inst_b", repo / "data-b")
     assert manifest_b["instance"] == {
         "project": "inst-b",
         "prefix": "inst_b",
         "https_port": 56662,
         "instance_id": instance_id_b,
         "media_subnet_pool": pool_b,
+        "edge_subnet": edge_b,
     }
     env_b = (deploy_dir_b / "releases" / "b-001.env").read_text(encoding="utf-8")
     assert f"CBROWSER_DATA_ROOT={repo}/data-b" in env_b
     assert f"CBROWSER_SECRETS_DIR={secrets_b}" in env_b
     assert f"CBROWSER_INSTANCE_ID={instance_id_b}" in env_b
     assert f"CBROWSER_MEDIA_SUBNET_POOL={pool_b}" in env_b
+    assert f"CBROWSER_EDGE_SUBNET={edge_b}" in env_b
+    assert f"CBROWSER_TRUSTED_PROXY_CIDRS={edge_b}" in env_b
     assert f"CBROWSER_FONTS_DIR={repo}/data/fonts" in env_b
     assert _pointer_file(repo, deploy_dir_b).get("current") == "b-001"
     # The internal keys must actually be generated into the parameterized
@@ -655,8 +875,11 @@ def test_caddy_fingerprints_recorded_and_change_sensitive(
     tmp_path: Path,
 ) -> None:
     """AC-005 / test f002: the release env carries the real Caddyfile and
-    frontend fingerprints; changing the Caddyfile changes exactly that
-    fingerprint on the next release while image IDs stay stable."""
+    frontend fingerprints. t054: the fingerprint hashes the RENDERED
+    Caddyfile product, not the generator source — a comment appended to
+    the generator leaves the fingerprint unchanged, while a port change
+    (which re-renders the product) changes exactly that fingerprint and
+    image IDs stay stable."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
@@ -669,11 +892,12 @@ def test_caddy_fingerprints_recorded_and_change_sensitive(
             line.split("=", 1) for line in text.splitlines() if "=" in line
         )
 
+    def _rendered_caddy_sha(env: dict[str, str]) -> str:
+        caddyfile = Path(env["CBROWSER_DATA_ROOT"]) / "network" / "Caddyfile"
+        return hashlib.sha256(caddyfile.read_bytes()).hexdigest()
+
     env1 = _env("rel-001")
-    expected_caddy = hashlib.sha256(
-        (repo / "src" / "backend" / "cbrowser" / "network_config.py").read_bytes()
-    ).hexdigest()
-    assert env1["CBROWSER_CADDYFILE_SHA256"] == expected_caddy
+    assert env1["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env1)
     dist = repo / "src" / "frontend" / "dist"
     listing = "".join(
         f"{path.relative_to(dist)} {hashlib.sha256(path.read_bytes()).hexdigest()}\n"
@@ -683,16 +907,37 @@ def test_caddy_fingerprints_recorded_and_change_sensitive(
     expected_frontend = hashlib.sha256(listing.encode()).hexdigest()
     assert env1["CBROWSER_FRONTEND_SHA256"] == expected_frontend
 
+    # A generator-source change that renders the same product must NOT
+    # change the fingerprint. The fake tree's network_config.py is the
+    # generator the deploy renders with when it leads PYTHONPATH (the
+    # fake tree stays a namespace package, so the rest still resolves
+    # from the real tree).
     net_config = repo / "src" / "backend" / "cbrowser" / "network_config.py"
     net_config.write_text(
         net_config.read_text(encoding="utf-8") + "\n# drill change\n",
         encoding="utf-8",
     )
-    assert _deploy(repo, bin_dir, "rel-002").returncode == 0
+    fake_pythonpath = (
+        f"{repo / 'src' / 'backend'}:{ROOT / 'src' / 'backend'}"
+    )
+    result = _deploy(
+        repo, bin_dir, "rel-002", PYTHONPATH=fake_pythonpath
+    )
+    assert result.returncode == 0, result.stderr
     env2 = _env("rel-002")
-    assert env2["CBROWSER_CADDYFILE_SHA256"] != env1["CBROWSER_CADDYFILE_SHA256"]
+    assert env2["CBROWSER_CADDYFILE_SHA256"] == env1["CBROWSER_CADDYFILE_SHA256"]
+    assert env2["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env2)
     assert env2["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
     assert env2["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
+
+    # A port change re-renders the product and MUST change the fingerprint.
+    result = _deploy(repo, bin_dir, "rel-003", CBROWSER_HTTPS_PORT="56662")
+    assert result.returncode == 0, result.stderr
+    env3 = _env("rel-003")
+    assert env3["CBROWSER_CADDYFILE_SHA256"] != env1["CBROWSER_CADDYFILE_SHA256"]
+    assert env3["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env3)
+    assert env3["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
+    assert env3["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
 
 
 def test_rollback_preserves_profile_data_and_database(tmp_path: Path) -> None:
@@ -940,15 +1185,20 @@ def test_compose_yaml_t051_db_fonts_labels_contract() -> None:
 
 def _instance_identity(
     repo: Path, prefix: str = "cbrowser", data_root: Path | None = None
-) -> tuple[str, str]:
-    """The deterministic (instance_id, media_subnet_pool) deploy.sh derives
-    from (prefix, data root).  Mirrors the material string in deploy.sh
-    byte for byte: "cbrowser-instance-v1\\0<prefix>\\0<data_root>"."""
+) -> tuple[str, str, str]:
+    """The deterministic (instance_id, media_subnet_pool, edge_subnet)
+    deploy.sh derives from (prefix, data root).  Mirrors the material
+    string in deploy.sh byte for byte:
+    "cbrowser-instance-v1\\0<prefix>\\0<data_root>"."""
     if data_root is None:
         data_root = repo / "data" / "instance"
     material = b"cbrowser-instance-v1\0" + prefix.encode() + b"\0" + str(data_root).encode()
     digest = hashlib.sha256(material).hexdigest()
-    return digest[:32], f"10.{192 + int(digest, 16) % 64}.0.0/16"
+    return (
+        digest[:32],
+        f"10.{192 + int(digest, 16) % 64}.0.0/16",
+        f"172.{18 + int(digest, 16) % 14}.0.0/16",
+    )
 
 
 def _stamp_db_path(path: Path, revision: str) -> Path:
@@ -1168,7 +1418,7 @@ def test_prefix_conflict_allows_own_sandbox_group(tmp_path: Path) -> None:
     (t051 AC-021): the row carries this instance's deployment id."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    instance_id, _ = _instance_identity(repo)
+    instance_id, *_ = _instance_identity(repo)
     rows = f"cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser\t{instance_id}"
     result = _deploy(
         repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows
@@ -1196,7 +1446,7 @@ def test_prefix_conflict_allows_sandbox_group_when_project_differs(
     instance-id label now (t051 AC-021)."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    instance_id, _ = _instance_identity(repo, "inst_b")
+    instance_id, *_ = _instance_identity(repo, "inst_b")
     rows = f"inst_b-browser-p1\tinst_b-profiles\tinst_b\tbrowser\t{instance_id}"
     result = _deploy(
         repo,
@@ -1213,7 +1463,7 @@ def test_prefix_conflict_allows_sandbox_group_when_project_differs(
 def test_prefix_conflict_check_requests_role_label(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    instance_id, _ = _instance_identity(repo)
+    instance_id, *_ = _instance_identity(repo)
     rows = f"cbrowser-browser-p1\tcbrowser-profiles\tcbrowser\tbrowser\t{instance_id}"
     result = _deploy(
         repo,
@@ -1292,7 +1542,7 @@ def test_media_pool_overlap_refused(tmp_path: Path) -> None:
     the deploy even when its prefix differs."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    _, pool = _instance_identity(repo)
+    _, pool, _ = _instance_identity(repo)
     rows = f"other-api\tother-proj\tother\tapi\tother-instance-id\t{pool}"
     result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
     assert result.returncode != 0
@@ -1303,7 +1553,7 @@ def test_media_pool_overlap_refused(tmp_path: Path) -> None:
 def test_media_pool_non_overlap_allowed(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    _, pool = _instance_identity(repo)
+    _, pool, _ = _instance_identity(repo)
     rows = (
         "other-api\tother-proj\tother\tapi\tother-instance-id\t"
         f"{_other_pool(pool)}"
@@ -1368,7 +1618,7 @@ def test_prefix_conflict_same_project_matching_instance_id_allowed(
     instance-id label equals this instance's id is ours."""
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
-    instance_id, _ = _instance_identity(repo)
+    instance_id, *_ = _instance_identity(repo)
     rows = f"cbrowser-api\tcbrowser\tcbrowser\tapi\t{instance_id}"
     result = _deploy(repo, bin_dir, "rel-001", FAKE_PS_ROWS=rows)
     assert result.returncode == 0, result.stderr
@@ -1490,14 +1740,17 @@ def test_instance_identity_deterministic_across_releases(
         first["instance"]["media_subnet_pool"]
         == second["instance"]["media_subnet_pool"]
     )
-    instance_id, pool = _instance_identity(repo)
+    instance_id, pool, edge_subnet = _instance_identity(repo)
     assert first["instance"]["instance_id"] == instance_id
     assert first["instance"]["media_subnet_pool"] == pool
+    assert first["instance"]["edge_subnet"] == edge_subnet
     env1 = (repo / "config" / "deploy" / "releases" / "rel-001.env").read_text(
         encoding="utf-8"
     )
     assert f"CBROWSER_INSTANCE_ID={instance_id}" in env1
     assert f"CBROWSER_MEDIA_SUBNET_POOL={pool}" in env1
+    assert f"CBROWSER_EDGE_SUBNET={edge_subnet}" in env1
+    assert f"CBROWSER_TRUSTED_PROXY_CIDRS={edge_subnet}" in env1
     assert first["database_backup"] is None
 
 

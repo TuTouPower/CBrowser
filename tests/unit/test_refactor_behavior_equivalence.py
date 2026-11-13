@@ -258,8 +258,9 @@ def test_container_spec_stream_specs(tmp_path: Path) -> None:
         "mode": "ro",
     }
 
+    # t054: stream_environment no longer takes public_ip; the WebRTC
+    # public IP is hardcoded to loopback (no LAN advertisement anymore).
     env = stream_environment(
-        public_ip="203.0.113.1",
         display=":99",
         profile_id="p1",
         runtime_instance_id="i1",
@@ -269,6 +270,7 @@ def test_container_spec_stream_specs(tmp_path: Path) -> None:
         screen_width=1280,
         screen_height=720,
     )
+    assert env["CBROWSER_WEBRTC_PUBLIC_IP"] == "127.0.0.1"
     assert env["CBROWSER_CONFIG_VERSION"] == "3"
     assert env["CBROWSER_SCREEN_WIDTH"] == "1280"
     assert env["CBROWSER_SCREEN_HEIGHT"] == "720"

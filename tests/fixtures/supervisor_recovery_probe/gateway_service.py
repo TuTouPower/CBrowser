@@ -127,7 +127,6 @@ class ProductionGatewayService:
         gateway_token_file: Path,
         runtime_lookup: ApiRuntimeLookup | None = None,
         api_client: FakeGatewayApiClient | None = None,
-        network_state_dir: Path | None = None,
         agent_heartbeat_timeout_sec: float = 30.0,
     ) -> None:
         self.port = port
@@ -135,20 +134,8 @@ class ProductionGatewayService:
         self.gateway_token_file = Path(gateway_token_file)
         self.api = api_client or FakeGatewayApiClient(runtime_lookup=runtime_lookup)
 
-        if network_state_dir is None:
-            from cbrowser.domain.models import NetworkAccessConfig
-            from cbrowser.network_config import (
-                build_applied_network_version,
-                write_applied_network_state,
-            )
-            net_dir = self.agent_key_file.parent / "network"
-            net_dir.mkdir(parents=True, exist_ok=True)
-            v, caddyfile = build_applied_network_version(
-                NetworkAccessConfig(lan_access_enabled=False), version=1
-            )
-            write_applied_network_state(net_dir, v, caddyfile)
-            network_state_dir = net_dir
-
+        # t054: the Gateway derives its Origin whitelist from the deploy
+        # port; there is no network state directory to seed anymore.
         self.config = GatewayConfig(
             host="127.0.0.1",
             port=port,
@@ -156,7 +143,6 @@ class ProductionGatewayService:
             gateway_token_file=self.gateway_token_file,
             api_url="http://api.invalid",
             api_token_file=self.gateway_token_file,
-            network_state_dir=network_state_dir,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
         self.app = create_gateway_app(self.config, api_client=self.api)

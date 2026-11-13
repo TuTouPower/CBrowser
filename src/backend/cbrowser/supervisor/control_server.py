@@ -27,7 +27,6 @@ from cbrowser.domain.models import (
     ProfileConfig,
     ProfileRuntimeResponse,
 )
-from cbrowser.network_config import compute_caddyfile_sha256
 from cbrowser.secret_files import read_secret_file
 from cbrowser.services.tunnel_registry import AutomationTunnelRegistry
 from cbrowser.supervisor.core import (
@@ -35,7 +34,6 @@ from cbrowser.supervisor.core import (
     RuntimeUnavailableError,
     SupervisorCore,
 )
-from cbrowser.supervisor.docker_adapter import DockerSandboxError
 from cbrowser.supervisor.path_validator import (
     managed_socket_target,
     resolve_socket_root,
@@ -45,12 +43,10 @@ from cbrowser.supervisor.port_allocator import (
     PortPoolExhaustedError,
 )
 from cbrowser.supervisor.protocol import (
-    ConvergeStreamsRequest,
     EgressProbeRequest,
     EgressProbeResponse,
     ProfileRuntimeStatus,
     ReadinessResponse,
-    RebuildEdgeRequest,
     ReconcileAllResponse,
     ResetBlockedRequest,
     ResetBlockedResponse,
@@ -585,248 +581,5 @@ def create_control_app(
                 await websocket.close()
             except Exception:  # noqa: BLE001 - already-closed client socket is harmless
                 pass
-
-    def _write_execution_receipt(
-        operation_id: str,
-        generation: int,
-        candidate_hash: str,
-        result: dict,
-        *,
-        restoring: bool,
-    ) -> None:
-        journal = getattr(core, "operations", None)
-        if journal is None:
-            return
-        journal.record_network_execution(
-            operation_id,
-            generation,
-            candidate_hash,
-            result,
-            restoring=restoring,
-        )
-
-    @app.post(
-        "/supervisor/v1/network/rebuild-edge",
-        dependencies=[Depends(verify_token)],
-    )
-    async def rebuild_edge(
-        req: RebuildEdgeRequest,
-        operation_id: Annotated[
-            str | None, Header(alias="X-CBrowser-Operation-Id")
-        ] = None,
-        execution_generation: Annotated[
-            str | None, Header(alias="X-CBrowser-Execution-Generation")
-        ] = None,
-        candidate_hash: Annotated[
-            str | None, Header(alias="X-CBrowser-Candidate-Hash")
-        ] = None,
-        restore: Annotated[
-            str | None, Header(alias="X-CBrowser-Restore")
-        ] = None,
-    ):
-        generation: int | None = None
-        if execution_generation is not None:
-            try:
-                generation = int(execution_generation)
-            except ValueError:
-                generation = None
-        restoring = restore == "1"
-        verified = bool(
-            operation_id and generation is not None and candidate_hash
-        )
-
-        try:
-            resolved_caddyfile = str(
-                core.resolve_network_caddyfile(req.caddyfile_path)
-            )
-        except DockerSandboxError as exc:
-            if verified:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "rejected",
-                        "reason": str(exc),
-                        "docker_verified": False,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                    },
-                    restoring=restoring,
-                )
-            raise HTTPException(409, str(exc)) from None
-
-        if verified and not restoring:
-            try:
-                actual_hash = compute_caddyfile_sha256(
-                    Path(resolved_caddyfile).read_text(encoding="utf-8")
-                )
-            except (OSError, UnicodeError):
-                actual_hash = ""
-            if actual_hash != candidate_hash:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "rejected",
-                        "reason": "candidate snapshot hash mismatch",
-                        "docker_verified": False,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                        "caddyfile_sha256": actual_hash,
-                    },
-                    restoring=False,
-                )
-                raise HTTPException(409, "candidate snapshot hash mismatch")
-
-        if verified and restoring:
-            # Restore must rebind the old content, not a stale/new file.
-            # Verify the persistent snapshot still matches the expected old
-            # hash before Docker runs; a mismatch means the file was
-            # overwritten by a concurrent installing rebuild.
-            try:
-                actual_old_hash = compute_caddyfile_sha256(
-                    Path(resolved_caddyfile).read_text(encoding="utf-8")
-                )
-            except (OSError, UnicodeError):
-                actual_old_hash = ""
-            if actual_old_hash != candidate_hash:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "rejected",
-                        "reason": "old snapshot hash mismatch",
-                        "docker_verified": False,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                        "caddyfile_sha256": actual_old_hash,
-                    },
-                    restoring=True,
-                )
-                raise HTTPException(409, "old snapshot hash mismatch")
-
-        try:
-            if restoring:
-                result = await core.restore_edge_proxy(
-                    old_version=req.target_version,
-                    bind_host=req.bind_host,
-                    https_port=req.https_port,
-                    caddyfile_path=req.caddyfile_path,
-                    operation_id=operation_id,
-                    execution_generation=generation,
-                )
-            else:
-                result = await core.rebuild_edge_proxy(
-                    target_version=req.target_version,
-                    bind_host=req.bind_host,
-                    https_port=req.https_port,
-                    caddyfile_path=req.caddyfile_path,
-                    operation_id=operation_id,
-                    execution_generation=generation,
-                    candidate_hash=candidate_hash if verified else None,
-                    restoring=restoring,
-                )
-        except DockerSandboxError as exc:
-            if verified:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "rejected",
-                        "reason": str(exc),
-                        "docker_verified": False,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                    },
-                    restoring=restoring,
-                )
-            raise HTTPException(409, str(exc)) from None
-
-        if verified:
-            rebuilt_ok = (
-                isinstance(result, dict) and result.get("rebuilt") is True
-            )
-            if rebuilt_ok:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "ok",
-                        "docker_verified": True,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                        "restoring": restoring,
-                    },
-                    restoring=restoring,
-                )
-            else:
-                _write_execution_receipt(
-                    operation_id,
-                    generation,
-                    candidate_hash,
-                    {
-                        "status": "rejected",
-                        "reason": result.get("reason", "edge not rebuilt")
-                        if isinstance(result, dict)
-                        else "edge not rebuilt",
-                        "docker_verified": False,
-                        "operation_id": operation_id,
-                        "execution_generation": generation,
-                        "candidate_hash": candidate_hash,
-                        "restoring": restoring,
-                    },
-                    restoring=restoring,
-                )
-        return {
-            **result,
-            "receipt_verified": bool(
-                verified
-                and isinstance(result, dict)
-                and result.get("rebuilt") is True
-            ),
-            "operation_id": operation_id,
-            "execution_generation": generation,
-            "candidate_hash": candidate_hash,
-        }
-
-    @app.post(
-        "/supervisor/v1/network/converge-streams",
-        dependencies=[Depends(verify_token)],
-    )
-    async def converge_streams(
-        req: ConvergeStreamsRequest,
-        operation_id: Annotated[
-            str | None, Header(alias="X-CBrowser-Operation-Id")
-        ] = None,
-        execution_generation: Annotated[
-            str | None, Header(alias="X-CBrowser-Execution-Generation")
-        ] = None,
-    ):
-        generation: int | None = None
-        if execution_generation is not None:
-            try:
-                generation = int(execution_generation)
-            except ValueError:
-                generation = None
-        try:
-            return await core.converge_network_streams(
-                target_version=req.target_version,
-                bind_host=req.bind_host,
-                advertised_ip=req.advertised_ip,
-                operation_id=operation_id,
-                execution_generation=generation,
-            )
-        except DockerSandboxError as exc:
-            raise HTTPException(409, str(exc)) from None
 
     return app

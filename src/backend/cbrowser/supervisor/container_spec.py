@@ -167,10 +167,10 @@ def stream_labels(
     profile_id: str,
     config_version: Any,
     profile_number: int,
-    bind_host: str = "127.0.0.1",
-    advertised_ip: str = "127.0.0.1",
     deployment_id: str | None = None,
 ) -> dict[str, str]:
+    # The Stream UDP mux binds loopback only (t054): no bind/advertised
+    # labels exist anymore; the binding is fixed, not a runtime input.
     return {
         "com.cbrowser.managed-by": "supervisor",
         "com.cbrowser.profile-id": profile_id,
@@ -178,8 +178,6 @@ def stream_labels(
         "com.cbrowser.network-policy": "v1",
         "com.cbrowser.config-version": str(config_version),
         "com.cbrowser.prefix": prefix,
-        "com.cbrowser.stream.bind-host": bind_host,
-        "com.cbrowser.stream.advertised-ip": advertised_ip,
         "com.cbrowser.profile-number": f"{profile_number:04d}",
         **_instance_label(deployment_id),
         **sandbox_compose_labels(prefix, "stream", profile_number),
@@ -244,7 +242,6 @@ def cache_init_environment(
 
 def stream_environment(
     *,
-    public_ip: str,
     display: str,
     profile_id: str,
     runtime_instance_id: str,
@@ -259,7 +256,8 @@ def stream_environment(
     udp_mux_min, udp_mux_max = udp_mux_bounds()
     env = {
         "PYTHONDONTWRITEBYTECODE": "1",
-        "CBROWSER_WEBRTC_PUBLIC_IP": public_ip,
+        # WebRTC advertises loopback only (t054).
+        "CBROWSER_WEBRTC_PUBLIC_IP": "127.0.0.1",
         "DISPLAY": display,
         "XAUTHORITY": "/tmp/.Xauthority",
         "CBROWSER_PROFILE_ID": profile_id,
@@ -293,5 +291,6 @@ def stream_environment(
     return env
 
 
-def stream_ports(udp_mux_port: int, bind_host: str = "127.0.0.1") -> dict[str, tuple[str, int]]:
-    return {f"{udp_mux_port}/udp": (bind_host, udp_mux_port)}
+def stream_ports(udp_mux_port: int) -> dict[str, tuple[str, int]]:
+    # Loopback only (t054): the UDP mux never binds a LAN address.
+    return {f"{udp_mux_port}/udp": ("127.0.0.1", udp_mux_port)}

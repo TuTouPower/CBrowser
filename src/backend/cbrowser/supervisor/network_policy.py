@@ -86,7 +86,6 @@ class NetworkPolicySpec(BaseModel):
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
     udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
-    allow_lan_media: bool = False
 
     @field_validator("allowed_tcp", "allowed_udp", mode="before")
     @classmethod
@@ -110,32 +109,23 @@ class NetworkPolicySpec(BaseModel):
             )
         if self.role == "browser" and self.udp_mux_port is not None:
             raise ValueError("udp_mux_port must not be specified for browser role")
-        if self.role == "browser" and self.allow_lan_media:
-            raise ValueError("allow_lan_media is only permitted for stream role")
         return self
 
 
 def _render_output_tail(spec: NetworkPolicySpec, version: int) -> list[str]:
     if version == 4:
         blocked = BLOCKED_IPV4_RANGES
+        # Link-local only (t054): LAN ranges are never reachable from a
+        # stream; the LAN media allowance is deleted, not defaulted off.
         media_local = [ipaddress.ip_network("169.254.0.0/16")]
-        media_lan = [
-            ipaddress.ip_network("10.0.0.0/8"),
-            ipaddress.ip_network("172.16.0.0/12"),
-            ipaddress.ip_network("192.168.0.0/16"),
-        ]
     else:
         blocked = BLOCKED_IPV6_RANGES
         media_local = [ipaddress.ip_network("fe80::/10")]
-        media_lan = [ipaddress.ip_network("fc00::/7")]
 
     lines: list[str] = []
     if spec.role == "stream":
         assert spec.udp_mux_port is not None
-        media_networks = list(media_local)
-        if spec.allow_lan_media:
-            media_networks.extend(media_lan)
-        for net in media_networks:
+        for net in media_local:
             lines.append(
                 f"-A OUTPUT -p udp --sport {spec.udp_mux_port} -d {net} -j ACCEPT"
             )

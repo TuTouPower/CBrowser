@@ -216,34 +216,26 @@ def test_stream_local_media_is_link_local_only_both_families() -> None:
     assert sorted(_media_destinations(render_ip6tables_rules(spec))) == ["fe80::/10"]
 
 
-def test_stream_lan_media_adds_private_networks_both_families() -> None:
-    spec = NetworkPolicySpec(
-        role="stream", udp_mux_port=30025, allow_lan_media=True
-    )
-    assert sorted(_media_destinations(render_iptables_rules(spec))) == sorted([
-        "169.254.0.0/16",
-        "10.0.0.0/8",
-        "172.16.0.0/12",
-        "192.168.0.0/16",
-    ])
-    assert sorted(_media_destinations(render_ip6tables_rules(spec))) == sorted([
-        "fe80::/10",
-        "fc00::/7",
-    ])
-
-
 def test_stream_media_accepts_are_destination_scoped_both_families() -> None:
-    for lan in (False, True):
-        spec = NetworkPolicySpec(
-            role="stream", udp_mux_port=30025, allow_lan_media=lan
+    # t054: there is no LAN media allowance anymore; the single remaining
+    # media set is link-local in both families.
+    spec = NetworkPolicySpec(role="stream", udp_mux_port=30025)
+    for render in (render_iptables_rules, render_ip6tables_rules):
+        media = [
+            line.strip()
+            for line in render(spec).splitlines()
+            if line.strip().startswith("-A OUTPUT")
+            and "--sport 30025" in line
+            and line.strip().endswith("-j ACCEPT")
+        ]
+        assert media
+        assert all("-d " in rule for rule in media)
+
+
+def test_allow_lan_media_field_is_rejected() -> None:
+    # t054: the deleted field must not silently survive as an ignored
+    # extra — NetworkPolicySpec forbids extras, so passing it fails.
+    with pytest.raises(ValidationError):
+        NetworkPolicySpec(
+            role="stream", udp_mux_port=30025, allow_lan_media=True  # type: ignore[call-arg]
         )
-        for render in (render_iptables_rules, render_ip6tables_rules):
-            media = [
-                line.strip()
-                for line in render(spec).splitlines()
-                if line.strip().startswith("-A OUTPUT")
-                and "--sport 30025" in line
-                and line.strip().endswith("-j ACCEPT")
-            ]
-            assert media
-            assert all("-d " in rule for rule in media)

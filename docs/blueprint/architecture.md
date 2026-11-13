@@ -175,7 +175,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |运行容器|Docker Socket|**禁止**|所有运行容器严禁挂载 `/var/run/docker.sock`|
 |外部网络|容器 CDP 端口|**禁止**|CDP 仅监听回环 `127.0.0.1`，必须经 API 鉴权代理访问|
 
-已应用网络版本（`AppliedNetworkAccessVersion`）构造即完整：`caddyfile_sha256` 必填为 64 位小写十六进制，版本与 Caddyfile、origin whitelist 由单一构造入口同时产出；恢复/回滚只接受重新生成内容哈希一致的旧快照，无空哈希豁免路径（t048）。
+部署期网络配置（t054）：Caddyfile 在部署期由 `network_config render` 按部署端口渲染，`caddyfile_sha256` 为渲染后产物的 SHA-256（必填 64 位小写十六进制）；回退时按目标 release 记录的端口重渲染并校验与目标 manifest 一致。已应用网络版本（`AppliedNetworkAccessVersion`）与运行时应用链已删除，无空哈希豁免路径。
 
 ## 7. 目标部署环境、基准配额与豁免说明
 

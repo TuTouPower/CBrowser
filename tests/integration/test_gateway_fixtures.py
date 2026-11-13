@@ -143,19 +143,9 @@ class GatewayHarness:
 
         self.api_service = FakeApiService(port=self.api_port, token=self.api_token_str)
 
-        from cbrowser.domain.models import AppliedNetworkAccessVersion, NetworkAccessConfig, utc_now_iso
-        from cbrowser.network_config import write_applied_network_state
-        net_dir = tmp_path / "network"
-        net_dir.mkdir(parents=True, exist_ok=True)
-        v = AppliedNetworkAccessVersion(
-            version=1,
-            config=NetworkAccessConfig(lan_access_enabled=False),
-            applied_at=utc_now_iso(),
-            caddyfile_sha256="a" * 64,
-            origin_whitelist=["https://127.0.0.1:56661", "https://localhost:8443"],
-        )
-        write_applied_network_state(net_dir, v, "dummy caddyfile")
-
+        # t054: the Gateway derives its Origin whitelist from the deploy
+        # port; the harness viewer origin is https://localhost:8443, so the
+        # deploy port here is 8443 (was: seeded applied-state whitelist).
         self.config = GatewayConfig(
             host="127.0.0.1",
             port=self.gw_port,
@@ -163,7 +153,7 @@ class GatewayHarness:
             gateway_token_file=self.gw_token_file,
             api_url=f"http://127.0.0.1:{self.api_port}",
             api_token_file=self.api_token_file,
-            network_state_dir=net_dir,
+            https_port=8443,
             agent_heartbeat_timeout_sec=agent_heartbeat_timeout_sec,
         )
 

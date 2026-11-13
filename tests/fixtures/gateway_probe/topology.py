@@ -17,11 +17,7 @@ import httpx
 from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env
-from cbrowser.domain.models import NetworkAccessConfig
-from cbrowser.network_config import (
-    build_applied_network_version,
-    write_applied_network_state,
-)
+from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile
 from .selkies_assets import prepare_selkies_web_assets
 
 logger = logging.getLogger("cbrowser.gateway_probe.topology")
@@ -143,7 +139,7 @@ class GatewayTopologyHarness:
         self.work_dir.chmod(0o700)
         self.control_dir.mkdir(parents=True, exist_ok=True)
         self.control_dir.chmod(0o700)
-        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool", "network"):
+        for name in ("profiles", "runtime", "runtime-events", "artifacts", "spool"):
             d = self.data_dir / name
             d.mkdir(parents=True, exist_ok=True)
             d.chmod(0o777)
@@ -204,7 +200,9 @@ class GatewayTopologyHarness:
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway_key",
                 "CBROWSER_GATEWAY_API_URL": f"http://{self.api_ip}:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api_key",
-                "CBROWSER_NETWORK_STATE_DIR": "/data/network",
+                # t054: the deploy port (dynamic Docker-assigned host port
+                # here); the Gateway derives its Origin whitelist from it.
+                "CBROWSER_HTTPS_PORT": str(self.caddy_host_port),
                 "CBROWSER_AGENT_HEARTBEAT_TIMEOUT_SEC": str(
                     self.agent_heartbeat_timeout_sec
                 ),
@@ -217,7 +215,6 @@ class GatewayTopologyHarness:
             },
             volumes={
                 str(self.control_dir): {"bind": "/run/secrets", "mode": "ro"},
-                str(self.data_dir / "network"): {"bind": "/data/network", "mode": "ro"},
             },
             ports={f"{DEFAULT_GATEWAY_PORT}/tcp": ("127.0.0.1", None)},
         )
@@ -410,9 +407,8 @@ class GatewayTopologyHarness:
         self.networks.append(self.edge_network)
 
         caddyfile_path = self.work_dir / "Caddyfile"
-        _, caddyfile_content = build_applied_network_version(
-            NetworkAccessConfig(lan_access_enabled=False),
-            version=1,
+        caddyfile_content = generate_caddyfile(
+            DEFAULT_HTTPS_PORT,
             api_upstream=f"http://{self.prefix}-api:8000",
             gateway_upstream=(
                 f"http://{self.prefix}-gateway:{DEFAULT_GATEWAY_PORT}"
@@ -449,21 +445,6 @@ class GatewayTopologyHarness:
             self.caddy_container, "443/tcp"
         )
         self.origin = f"https://127.0.0.1:{self.caddy_host_port}"
-        v1, caddyfile_content = build_applied_network_version(
-            NetworkAccessConfig(
-                lan_access_enabled=False, https_port=self.caddy_host_port
-            ),
-            version=1,
-            api_upstream=f"http://{self.prefix}-api:8000",
-            gateway_upstream=(
-                f"http://{self.prefix}-gateway:{DEFAULT_GATEWAY_PORT}"
-            ),
-            frontend_dir="/var/www/html",
-        )
-        write_applied_network_state(
-            self.data_dir / "network", v1, caddyfile_content
-        )
-
         # 1. API container
         self.api_container = self._run_container(
             "api",

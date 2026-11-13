@@ -90,14 +90,6 @@
     "ReadinessResponse": {
       "$id": "#/$defs/ReadinessResponse",
       "$ref": "#/$defs/ReadinessResponse"
-    },
-    "RebuildEdgeRequest": {
-      "$id": "#/$defs/RebuildEdgeRequest",
-      "$ref": "#/$defs/RebuildEdgeRequest"
-    },
-    "ConvergeStreamsRequest": {
-      "$id": "#/$defs/ConvergeStreamsRequest",
-      "$ref": "#/$defs/ConvergeStreamsRequest"
     }
   },
   "$defs": {
@@ -227,35 +219,6 @@
         "generation"
       ],
       "title": "CloseTunnelsResponse",
-      "type": "object"
-    },
-    "ConvergeStreamsRequest": {
-      "additionalProperties": false,
-      "properties": {
-        "target_version": {
-          "minimum": 1,
-          "title": "Target Version",
-          "type": "integer"
-        },
-        "bind_host": {
-          "maxLength": 64,
-          "minLength": 1,
-          "title": "Bind Host",
-          "type": "string"
-        },
-        "advertised_ip": {
-          "maxLength": 64,
-          "minLength": 1,
-          "title": "Advertised Ip",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_version",
-        "bind_host",
-        "advertised_ip"
-      ],
-      "title": "ConvergeStreamsRequest",
       "type": "object"
     },
     "EgressProbeRequest": {
@@ -576,43 +539,6 @@
         }
       },
       "title": "ReadinessResponse",
-      "type": "object"
-    },
-    "RebuildEdgeRequest": {
-      "additionalProperties": false,
-      "properties": {
-        "target_version": {
-          "minimum": 1,
-          "title": "Target Version",
-          "type": "integer"
-        },
-        "bind_host": {
-          "maxLength": 64,
-          "minLength": 1,
-          "title": "Bind Host",
-          "type": "string"
-        },
-        "https_port": {
-          "maximum": 65535,
-          "minimum": 1,
-          "title": "Https Port",
-          "type": "integer"
-        },
-        "caddyfile_path": {
-          "maxLength": 128,
-          "minLength": 1,
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
-          "title": "Caddyfile Path",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_version",
-        "bind_host",
-        "https_port",
-        "caddyfile_path"
-      ],
-      "title": "RebuildEdgeRequest",
       "type": "object"
     },
     "ReconcileAllResponse": {
