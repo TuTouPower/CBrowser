@@ -2,19 +2,14 @@
 !src/backend/cbrowser/__init__.py
 !src/backend/cbrowser/secret_files.py
 !src/backend/cbrowser/launch_args.py
-!src/backend/cbrowser/domain/*.py
 !src/backend/cbrowser/network_config.py
 !src/backend/cbrowser/shared/
-!src/backend/cbrowser/shared/__init__.py
-!src/backend/cbrowser/shared/client_ip.py
+!src/backend/cbrowser/shared/*.py
 !src/backend/cbrowser/gateway/
 !src/backend/cbrowser/gateway/*.py
 !src/backend/cbrowser/udp_mux.py
 !src/backend/cbrowser/stream_agent/__init__.py
 !src/backend/cbrowser/stream_agent/protocol.py
-!src/backend/cbrowser/supervisor/__init__.py
-!src/backend/cbrowser/supervisor/agent_credentials.py
-!src/backend/cbrowser/supervisor/file_storage.py
 !config/docker/gateway_runtime/requirements.txt
 
 **/__pycache__

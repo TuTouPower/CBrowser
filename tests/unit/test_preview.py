@@ -47,14 +47,16 @@ def test_atomic_write_removes_tmp_on_failure(tmp_path: Path, monkeypatch) -> Non
     def _fail_chmod(*_args, **_kwargs) -> None:
         raise OSError("chmod failed")
 
-    monkeypatch.setattr(_os, "chmod", _fail_chmod)
+    # The write mechanism is the shared atomic-write primitive (t062),
+    # which sets the mode with fchmod on the staging descriptor.
+    monkeypatch.setattr(_os, "fchmod", _fail_chmod)
     directory = preview_dir(tmp_path, "p9")
     with pytest.raises(OSError, match="chmod failed"):
         write_policy(
             directory,
             PreviewPolicy(enabled=True, epoch=1, runtime_instance_id=None),
         )
-    assert list(directory.glob(".*.tmp")) == []
+    assert list(directory.glob("*.tmp")) == []
     assert not (directory / "policy.json").exists()
 
 
@@ -174,9 +176,13 @@ def test_exclusive_staging_collision_never_deletes_another_writer(
     from cbrowser import preview
 
     tmp_path.mkdir(exist_ok=True)
-    occupied = tmp_path / ".policy.json.collision.tmp"
+    occupied = tmp_path / "collision.tmp"
     occupied.write_bytes(b"another writer")
-    monkeypatch.setattr(preview.uuid, "uuid4", lambda: SimpleNamespace(hex="collision"))
+    from cbrowser.shared import atomic_write
+
+    monkeypatch.setattr(
+        atomic_write.uuid, "uuid4", lambda: SimpleNamespace(hex="collision")
+    )
     with pytest.raises(FileExistsError):
         write_policy(tmp_path, PreviewPolicy(enabled=True, epoch=1))
     assert occupied.read_bytes() == b"another writer"

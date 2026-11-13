@@ -100,7 +100,11 @@ def test_text_only_fixture_test_removed() -> None:
 def test_production_api_image_covers_fixture_runtime_role() -> None:
     dockerfile = PROD_DOCKERFILE.read_text(encoding="utf-8")
     assert "FROM python:3.15-slim-trixie@sha256:" in dockerfile
-    assert "COPY src/backend /app" in dockerfile
+    # t062: the API image copies by package, never the whole backend
+    # tree, so its file set is explicit.
+    assert "COPY src/backend /app" not in dockerfile
+    assert "COPY src/backend/cbrowser /app/cbrowser" in dockerfile
+    assert "COPY src/backend/migrations /app/migrations" in dockerfile
     assert "EXPOSE 8000" in dockerfile
     assert "cbrowser.api.main:app" in dockerfile
     assert '--port", "8000"' in dockerfile

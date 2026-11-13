@@ -383,7 +383,7 @@ backup_database() {
 
 atomic_write() {
   # atomic_write <path> ; content on stdin
-  # Crash-consistent via cbrowser.supervisor.file_storage.atomic_write_text
+  # Crash-consistent via cbrowser.shared.atomic_write.atomic_write_text
   # (A43): the temp file is fsynced, renamed, and its parent directory is
   # fsynced, so a crash leaves either the old content or the new one.
   PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
@@ -391,7 +391,7 @@ atomic_write() {
 import sys
 from pathlib import Path
 
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 
 atomic_write_text(Path(sys.argv[1]), sys.stdin.read())
 ' "$1"
@@ -498,7 +498,7 @@ import json
 import sys
 from pathlib import Path
 
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 
 path = Path(sys.argv[1])
 release_id = sys.argv[2]

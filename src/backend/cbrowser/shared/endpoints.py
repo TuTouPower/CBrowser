@@ -1,4 +1,10 @@
-"""Single source for Gateway endpoint and browser Origin normalization."""
+"""Neutral home for endpoint value objects, Origin normalization and the
+control-plane port constants shared by every service image.
+
+Nothing in this module imports another ``cbrowser`` package: Gateway,
+Supervisor, API and the deploy tooling all depend on it, never the
+reverse (t062).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +14,13 @@ from urllib.parse import urlsplit
 
 DEFAULT_GATEWAY_PORT = 18080
 DEFAULT_GATEWAY_HOST = "host.docker.internal"
+
+#: The one authoritative default for the Supervisor control plane.
+#: The Supervisor runner/CLI, compose and every client derive from this
+#: value; a divergent literal (the old 8091 in the control client) is a
+#: bug, not a configuration.
+DEFAULT_SUPERVISOR_PORT = 8005
+DEFAULT_SUPERVISOR_URL = f"http://127.0.0.1:{DEFAULT_SUPERVISOR_PORT}"
 
 
 def normalize_origin(value: str) -> str:

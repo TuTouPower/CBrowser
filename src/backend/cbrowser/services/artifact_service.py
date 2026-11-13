@@ -21,7 +21,7 @@ from cbrowser.adapters.filesystem.artifact_store import (
     validate_content_type,
 )
 from cbrowser.domain.models import Artifact
-from cbrowser.services.profile_service import ProfileLockRegistry
+from cbrowser.shared.profile_locks import ProfileLockRegistry
 
 logger = logging.getLogger("cbrowser.services.artifacts")
 

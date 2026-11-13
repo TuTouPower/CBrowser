@@ -9,7 +9,8 @@ No new host port or reverse-proxy route is introduced: the caller reaches
 the control API over the container's own loopback through ``exec``.
 Configuration comes from the environment:
 
-- ``CBROWSER_SUPERVISOR_URL`` — base URL (default ``http://127.0.0.1:8091``)
+- ``CBROWSER_SUPERVISOR_URL`` — base URL (default: the shared
+  ``DEFAULT_SUPERVISOR_URL``, derived from ``DEFAULT_SUPERVISOR_PORT``)
 - ``CBROWSER_SUPERVISOR_TOKEN_FILE`` — control token file path
 
 Exit codes: ``readiness`` exits 0 when ready, 1 when not ready or the
@@ -28,8 +29,9 @@ from pathlib import Path
 import httpx
 
 from cbrowser.secret_files import read_secret_file
+from cbrowser.shared.endpoints import DEFAULT_SUPERVISOR_URL
 
-DEFAULT_SUPERVISOR_URL = "http://127.0.0.1:8091"
+__all__ = ["DEFAULT_SUPERVISOR_URL"]
 
 
 def _client() -> httpx.Client:

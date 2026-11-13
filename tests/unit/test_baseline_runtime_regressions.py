@@ -31,8 +31,12 @@ def test_supervisor_runtime_packaging_integrity():
     assert "COPY src/backend/cbrowser/secret_files.py" in content, (
         "Supervisor Dockerfile must copy secret_files.py"
     )
-    assert "COPY src/backend/cbrowser/gateway" in content, (
-        "Supervisor Dockerfile must copy gateway package for endpoint resolution"
+    assert "COPY src/backend/cbrowser/shared" in content, (
+        "Supervisor Dockerfile must copy the shared package: endpoint "
+        "resolution lives in cbrowser.shared.endpoints since t062"
+    )
+    assert "COPY src/backend/cbrowser/gateway" not in content, (
+        "Supervisor Dockerfile must not copy the gateway package (t062)"
     )
     assert "COPY src/backend/cbrowser/runtime_agent" in content, (
         "Supervisor Dockerfile must copy runtime_agent package for event records"

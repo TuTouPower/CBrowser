@@ -7,13 +7,14 @@
 !src/backend/cbrowser/services/tunnel_registry.py
 !src/backend/cbrowser/domain/*.py
 !src/backend/cbrowser/font_sets/*.py
-!src/backend/cbrowser/gateway/*.py
 !src/backend/cbrowser/udp_mux.py
 !src/backend/cbrowser/preview.py
 !src/backend/cbrowser/redact.py
 !src/backend/cbrowser/runtime_agent/
 !src/backend/cbrowser/network_config.py
 !src/backend/cbrowser/runtime_agent/*.py
+!src/backend/cbrowser/shared/
+!src/backend/cbrowser/shared/*.py
 !config/docker/supervisor_runtime/requirements.txt
 
 **/__pycache__

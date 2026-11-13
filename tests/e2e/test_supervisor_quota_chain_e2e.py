@@ -25,7 +25,7 @@ from pathlib import Path
 
 import docker
 import pytest
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 from cbrowser.supervisor.gateway_client import GatewayControlClient
 from gateway_probe.browser_oracle import browser_eval
 from gateway_probe.evidence import save_evidence

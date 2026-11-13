@@ -94,3 +94,7 @@ Supervisor 重启仅接管拥有可信策略标签、所属只读 gate 挂载和
 下发以 runtime_instance_id + request_id 双重围栏，旧实例与重复请求丢弃；**不重启、不应用配置**。
 
 Agent `/health` 的 details 携带 `preview_captured_at`。Supervisor仅在校验与API上报成功后写入去重缓存。瞬时失败保留同帧重试机会，warning按Profile限频30秒且只记录错误类型；Profile删除或运行代次结束清理预览去重与warning状态。观测到变化且校验 `meta.policy_epoch == policy.epoch` 与 instance 匹配后，POST API 内部端点 `/api/v1/internal/supervisor/profiles/{id}/preview`（`PreviewObservedRequest`）；不复用 Artifact 的事件文件 + 游标模式（面向持久下载，不适合每 15 秒覆盖写）。API侧`record_preview_capture`再校验capture_preview开启、代次与实例，失败丢弃并清预览。
+
+## 共享规则与控制端口权威（t062）
+
+Supervisor 消费的跨服务规则全部来自中立包 `cbrowser/shared/`：Gateway 端点与 Origin（`endpoints`）、Agent 凭证（`agent_credentials`）、原子写（`atomic_write`）、per-profile 锁注册表（`profile_locks`，核心与恢复协调器共用同一注册表与公开探查方法）、事件/工件投递分类（`delivery`，两个转发器同一分类函数）。控制面默认端口唯一权威为 `shared.endpoints.DEFAULT_SUPERVISOR_PORT`（8005）：runner 的 `--port` 默认值与容器内控制客户端的默认 URL 直接派生自该常量；compose 与就绪探针等非 Python 表面保留字面量，但由边界测试逐一与权威值对齐锁定，禁止出现不一致的字面量（历史 8091 分裂已消除）。Supervisor 镜像不再打包 Gateway 包，Gateway 镜像也不再借 Supervisor 文件；镜像闭包由 t062 闭包测试按 Dockerfile 组装验证。

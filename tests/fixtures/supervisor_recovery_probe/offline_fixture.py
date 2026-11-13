@@ -36,7 +36,7 @@ import httpx
 
 from e2e_env import require_e2e_env
 from api_auth import create_auth_context
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_ROOT_ENV,
     DEFAULT_AGENT_SOCKET_ROOT,

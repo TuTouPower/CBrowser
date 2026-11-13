@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.auth.dependencies import require_user_session
 from cbrowser.preview import read_policy, read_preview
@@ -33,7 +33,7 @@ _NOT_FOUND = "Preview not found"
 async def get_preview(
     profile_id: str,
     request: Request,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ProfileService, Depends(get_profile_service)],
 ):
     policy_row = await service.get_preview_policy(profile_id)

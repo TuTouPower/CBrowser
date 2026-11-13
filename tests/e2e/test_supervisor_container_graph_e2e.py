@@ -30,7 +30,7 @@ import pytest
 
 from e2e_env import require_e2e_env
 from wait import poll_until
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 
 from api_auth import create_auth_context
 

@@ -27,10 +27,10 @@
 
 <!-- /规范 -->
 
-- [ ] [deploy] AC-005：服务间共享纯逻辑从中立包导入，Gateway/Supervisor 不相互导入实现包；共享模块增加不要求多处跨服务逐文件 COPY，全部运行镜像可独立导入并就绪。
-- [ ] AC-006：原子写异常不破坏旧文件；同锁域同 Profile 串行、不同 Profile 可并行；origin、fence、投递分类在各消费方结果一致，只有一份权威规则。
-- [ ] AC-007：API 路由与认证依赖不导入或返回 ORM SessionModel，使用领域会话对象；路由通过 service 公开接口协调操作；domain 不承载 httpx、GeoIP 或文件 I/O 实现，相关业务结果保持一致。
-- [ ] AC-008：Supervisor CLI、runner、compose 对默认控制端口使用同一权威值，不再出现 8091/8005 分裂；公共路径由同一值对象/常量派生，覆盖非默认配置时行为一致。
+- [x] [deploy] AC-005：服务间共享纯逻辑从中立包导入，Gateway/Supervisor 不相互导入实现包；共享模块增加不要求多处跨服务逐文件 COPY，全部运行镜像可独立导入并就绪。
+- [x] AC-006：原子写异常不破坏旧文件；同锁域同 Profile 串行、不同 Profile 可并行；origin、fence、投递分类在各消费方结果一致，只有一份权威规则。
+- [x] AC-007：API 路由与认证依赖不导入或返回 ORM SessionModel，使用领域会话对象；路由通过 service 公开接口协调操作；domain 不承载 httpx、GeoIP 或文件 I/O 实现，相关业务结果保持一致。
+- [x] AC-008：Supervisor CLI、runner、compose 对默认控制端口使用同一权威值，不再出现 8091/8005 分裂；公共路径由同一值对象/常量派生，覆盖非默认配置时行为一致。
 
 ### 可测试性声明
 
@@ -67,7 +67,7 @@
 
 <!-- /规范 -->
 
-- 跨镜像依赖闭包：UNVERIFIED-SPIKE，在隔离构建环境先验证最小中立包及各镜像导入；不得把 API 全量 COPY 当作完成包隔离。
+- 跨镜像依赖闭包：已验证（2026-11-13，云端）。结论：中立包落点为既有 `cbrowser/shared/` 整包；成立的硬约束是 shared 除 `secret_files` 叶子外必须零 cbrowser import——若 shared 依赖 domain 叶子，Gateway 镜像（不带 domain）内 shared 模块即不可导入（组装树实测复现）。验证方式：`tests/unit/test_t062_image_closure.py` 按每个 Dockerfile 的 COPY 清单把文件组装到临时树、以镜像 PYTHONPATH 在子进程逐模块实际导入（第三方依赖以门禁 venv 近似镜像 requirements），五镜像全过；依赖方向由 `tests/unit/test_t062_boundaries.py` 的 AST import 图守护。API 镜像已改按包 COPY（cbrowser 整包 + migrations），不再全量复制后端目录。真实 Docker 构建与 readiness 不在云端验证范围，按 AC-005 [deploy] 顺延本地（p092 登记）。
 
 ### 风险与回退
 

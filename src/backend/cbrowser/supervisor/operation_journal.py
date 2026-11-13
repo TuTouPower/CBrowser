@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 
 logger = logging.getLogger("cbrowser.supervisor.operation_journal")
 

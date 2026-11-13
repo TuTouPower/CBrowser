@@ -248,7 +248,7 @@ async def test_supervisor_authoritative_observation_and_retry_e2e(
         assert rt_data["last_exit_event_id"] is None
 
         # Case 2 check first: Acquire profile lock and tick -> must NOT synthesize exit
-        profile_lock = core._get_profile_lock(profile_id)
+        profile_lock = core.profile_lock(profile_id)
         await profile_lock.acquire()
         try:
             await coordinator.tick()

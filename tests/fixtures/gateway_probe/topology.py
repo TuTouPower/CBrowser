@@ -15,7 +15,7 @@ from typing import Any
 
 import docker
 import httpx
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 
 from e2e_env import require_e2e_env
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile

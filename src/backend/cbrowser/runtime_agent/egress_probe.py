@@ -22,7 +22,7 @@ import json
 import sys
 from pathlib import Path
 
-from cbrowser.domain.egress_observation import (
+from cbrowser.shared.egress import (
     ECHO_URLS,
     EgressProbeError,
     GeoIpLookup,
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     echo_urls = tuple(args.echo_url) if args.echo_url else ECHO_URLS
     try:
         egress_ip, country = probe_egress(
-            endpoint,
+            endpoint.proxy_url(),
             echo_urls=echo_urls,
             geoip=GeoIpLookup(db_path=args.geoip_db),
             timeout=args.timeout,

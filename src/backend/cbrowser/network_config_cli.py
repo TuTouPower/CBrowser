@@ -20,7 +20,7 @@ from cbrowser.network_config import (
     derive_origin_whitelist,
     generate_caddyfile,
 )
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 
 logger = logging.getLogger("cbrowser.network_config_cli")
 

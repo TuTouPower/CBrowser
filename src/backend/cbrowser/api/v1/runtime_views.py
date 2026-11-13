@@ -11,6 +11,7 @@ from cbrowser.domain.models import (
     TransportObservationData,
 )
 from fastapi import Request
+from cbrowser.shared.fencing import fence_by_instance
 
 
 def fence_search_defaults(
@@ -18,14 +19,10 @@ def fence_search_defaults(
     runtime_instance_id: str | None,
 ) -> SearchDefaultsStatusData | None:
     """A status recorded for a previous instance is stale: never present
-    it as the current instance's outcome. Single implementation shared by
-    the REST view and the SSE snapshot assembly (the coordinator's live
-    publish path applies the same rule via its own fenced accessor)."""
-    if status is None:
-        return None
-    if status.runtime_instance_id != runtime_instance_id:
-        return None
-    return status
+    it as the current instance's outcome. The rule itself is the shared
+    fence (`cbrowser.shared.fencing`), applied identically by the REST
+    view, the SSE snapshot assembly and the coordinator's live publish."""
+    return fence_by_instance(status, runtime_instance_id)
 
 
 def fence_transport(
@@ -33,11 +30,7 @@ def fence_transport(
     runtime_instance_id: str | None,
 ) -> TransportObservationData | None:
     """Same instance fence as search-defaults, for transport state."""
-    if observation is None:
-        return None
-    if observation.runtime_instance_id != runtime_instance_id:
-        return None
-    return observation
+    return fence_by_instance(observation, runtime_instance_id)
 
 
 async def make_runtime_response(

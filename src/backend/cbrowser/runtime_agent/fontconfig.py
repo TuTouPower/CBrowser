@@ -25,9 +25,10 @@ Japanese-only, Korean-only, ...) are untouched.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from xml.sax.saxutils import escape
+
+from cbrowser.shared.atomic_write import atomic_write_text
 
 logger = logging.getLogger("cbrowser.runtime_agent.fontconfig")
 
@@ -137,30 +138,15 @@ def prepare_profile_fontconfig(
     or (when unbound) the base font directory, plus the Profile locale so
     the language split applies. Returns ``None`` only when generation
     fails; the caller decides whether that is fatal (a bound font set,
-    A18) or falls back (unbound). The file lands via tmp + ``os.replace``
-    + fsync.
+    A18) or falls back (unbound). The file lands via the shared
+    atomic write (cbrowser.shared.atomic_write).
     """
     target = run_dir / PROFILE_FONTCONFIG_FILENAME
-    tmp = run_dir / (PROFILE_FONTCONFIG_FILENAME + ".tmp")
     try:
         xml = build_fontconfig_xml(dirs, locale=locale, cache_dir=cache_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
-        with tmp.open("w", encoding="utf-8") as handle:
-            handle.write(xml)
-            handle.flush()
-            os.fsync(handle.fileno())
-        tmp.chmod(0o600)
-        os.replace(tmp, target)
-        dir_fd = os.open(run_dir, os.O_RDONLY)
-        try:
-            os.fsync(dir_fd)
-        finally:
-            os.close(dir_fd)
+        atomic_write_text(target, xml, mode=0o600)
     except (OSError, ValueError):
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
         logger.error(
             "Failed to write profile fontconfig; the caller decides "
             "whether to fail closed (bound font set) or fall back"

@@ -19,13 +19,13 @@ from urllib.parse import urlsplit
 
 import docker
 import requests
-from cbrowser.domain.egress_observation import ECHO_URLS
 from cbrowser.domain.proxy_endpoint import (
     HOST_GATEWAY_HOSTNAME,
     ProxyEndpoint,
     map_endpoint_for_container,
 )
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
+from cbrowser.shared.egress import ECHO_URLS
 from cbrowser.redact import docker_error_detail, redact
 from cbrowser.runtime_agent.fontconfig import FONT_SET_MOUNT_ROOT
 from cbrowser.runtime_agent.socket_root import (
@@ -54,7 +54,7 @@ from cbrowser.supervisor.container_spec import (
     stream_ports,
     x11_helper_labels,
 )
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
 from cbrowser.supervisor.gate_identity import gate_labels
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.network_spec import (

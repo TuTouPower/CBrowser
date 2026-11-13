@@ -11,11 +11,11 @@ import fcntl
 import hashlib
 import os
 import time
-import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from cbrowser.shared.atomic_write import atomic_write_bytes
 from pydantic import BaseModel, Field
 
 PREVIEW_WIDTH = 480
@@ -54,36 +54,12 @@ def preview_dir(data_root: Path | str, profile_id: str) -> Path:
 def _atomic_write(
     path: Path, payload: str | bytes, *, uid: int | None = None, gid: int | None = None
 ) -> None:
+    # The write mechanism itself is the shared atomic-write primitive
+    # (t062); this wrapper only adds the preview store's directory
+    # creation and str/bytes payload handling.
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    owned = False
-    try:
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        owned = True
-        with os.fdopen(fd, "wb") as stream:
-            stream.write(
-                payload if isinstance(payload, bytes) else payload.encode("utf-8")
-            )
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(tmp, 0o600)
-        if uid is not None or gid is not None:
-            os.chown(
-                tmp,
-                uid if uid is not None else -1,
-                gid if gid is not None else -1,
-            )
-        os.replace(tmp, path)
-    except BaseException:
-        # Never leave a half-written staging file behind (cancellation,
-        # disk errors); a stale tmp could otherwise be mistaken for a
-        # pending write by later readers.
-        try:
-            if owned:
-                tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise
+    data = payload if isinstance(payload, bytes) else payload.encode("utf-8")
+    atomic_write_bytes(path, data, mode=0o600, uid=uid, gid=gid)
 
 
 def read_policy(directory: Path) -> PreviewPolicy | None:

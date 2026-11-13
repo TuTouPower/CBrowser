@@ -1,0 +1,16 @@
+{
+  "tid": "t062",
+  "attempt": 1,
+  "execution_id": "18a73dbdfb684edeb670850932121466",
+  "status": "done",
+  "branch": "t062_control_plane_boundaries",
+  "base_sha": "c5f83296ece80a9a0ed9f1e48d957ce332f858c4",
+  "tests": "证据模式全量门禁（manifest 在 worktree `.scratch/gate_evidence_20261113/`）：protocol_drift_check PASS、requirements_check PASS、contract 257 passed/1 skipped PASS、design_lint PASS、design_check PASS、frontend_build PASS；unit 2012 passed/1 failed/1 skipped——唯一 failed 为 `test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip`，主仓 pristine c5f8329 同法同错误复现的既存基线失败（本链既定留终局处置、非本 task 引入）；integration 186 passed/7 skipped/2 errors——2 errors 均为隔离 API 子进程就绪超时（并行负载），串行复跑 2/2 passed，定性负载 flaky；frontend_test 618 passed/5 failed——5 条均为 5.5s+ 超时（profiles/settings 文件），受影响 5 文件单跑 45/45 passed，且本 task 零前端改动，定性负载 flaky。门禁首轮另有三组真实失败已逐项修复并复验：deploy.sh 内嵌 Python 仍 import 已删的 supervisor.file_storage（t027 文件 41 条连带失败，改指 shared.atomic_write 后整文件 74 passed）；preview 策略 chown 两条用例的注入点随原子写机制搬家更新（os.chown→os.fchown，契约断言保留）；a31 与 baseline 两条打包完整性测试断言的正是本 task 废除的旧打包形态（API 全量 COPY、Supervisor 借 Gateway 包），已按新契约改写并通过。",
+  "blackbox": "云端无 Docker，e2e 与 real_engine 未运行（run_gates 未启 CBROWSER_RUN_E2E、real_engine NOT_RUN），按本链口径跳过按 pass 计；真实镜像构建/readiness 与非默认端口真实贯穿顺延本地（p092）。",
+  "review": "见上 Review 处置（full：code/test 双轴）。",
+  "review_scope": "6feea54970e59850",
+  "pending": [
+    "p092"
+  ],
+  "findings": []
+}

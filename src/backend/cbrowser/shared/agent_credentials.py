@@ -1,4 +1,8 @@
-"""Instance-scoped Agent tokens derived from an externally provided service key."""
+"""Instance-scoped Agent tokens derived from an externally provided service key.
+
+Neutral home (t062): both the Gateway (verify) and the Supervisor (mint)
+use this class, so it must not live inside either service package.
+"""
 
 import hashlib
 import hmac

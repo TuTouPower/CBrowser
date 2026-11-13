@@ -19,28 +19,18 @@ from typing import Any
 import httpx
 from cbrowser.domain.models import RuntimeEventReportRequest
 from cbrowser.secret_files import read_secret_file
-from cbrowser.supervisor.file_storage import atomic_write_text
+from cbrowser.shared.atomic_write import atomic_write_text
+from cbrowser.shared.delivery import (
+    DELIVERED,
+    REJECTED,
+    UNAVAILABLE,
+    classify_delivery_status,
+)
 from pydantic import ValidationError
 
 logger = logging.getLogger("cbrowser.supervisor.event_forwarder")
 
-DELIVERED = "delivered"
-REJECTED = "rejected"
-UNAVAILABLE = "unavailable"
 EVENT_ENVELOPE_VERSION = 1
-# Auth, throttling and transient gateway statuses must never be mistaken for
-# a permanent semantic rejection: the event stays queued for a later retry.
-# Shared with the artifact forwarder so both delivery paths classify alike.
-RETRYABLE_4XX = frozenset({401, 403, 408, 429})
-
-
-def classify_delivery_status(status_code: int) -> str:
-    """Map an HTTP status to the delivery outcome for a non-200 response."""
-    if status_code in RETRYABLE_4XX or status_code >= 500:
-        return UNAVAILABLE
-    if 400 <= status_code < 500:
-        return REJECTED
-    return UNAVAILABLE
 
 
 class EventForwarder:

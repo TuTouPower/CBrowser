@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import hashlib
 
+from cbrowser.shared.endpoints import normalize_origin
+
 DEFAULT_HTTPS_PORT = 56661
 CADDYFILE_FILENAME = "Caddyfile"
 
@@ -22,18 +24,6 @@ def _validate_port(https_port: int) -> int:
     return https_port
 
 
-def _format_origin(host: str, port: int, scheme: str = "https") -> str:
-    """Format scheme://host[:port], omitting default ports (https/443, http/80).
-
-    Keeps parity with request-side ``normalize_origin`` which strips default
-    ports, so whitelist entries compare equal without caller changes.
-    """
-    default_port = 443 if scheme == "https" else 80
-    if port == default_port:
-        return f"{scheme}://{host}"
-    return f"{scheme}://{host}:{port}"
-
-
 def derive_origin_whitelist(https_port: int) -> list[str]:
     """Derive allowed origin URLs strictly from the deployment HTTPS port.
 
@@ -42,9 +32,11 @@ def derive_origin_whitelist(https_port: int) -> list[str]:
     value, so their whitelists cannot drift.
     """
     port = _validate_port(https_port)
+    # Whitelist entries are produced by the one request-side origin
+    # normalization (t062), so they compare equal by construction.
     return [
-        _format_origin("127.0.0.1", port),
-        _format_origin("localhost", port),
+        normalize_origin(f"https://127.0.0.1:{port}"),
+        normalize_origin(f"https://localhost:{port}"),
     ]
 
 

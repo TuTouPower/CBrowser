@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.shared.client_ip import resolve_client_ip
 from cbrowser.auth.dependencies import (
     get_auth_service,
@@ -115,7 +115,7 @@ def _handle_control_error(exc: Exception) -> HTTPException:
 )
 async def get_control_state(
     profile_id: str,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ProfileControlService, Depends(get_control_service)],
 ):
     try:
@@ -131,7 +131,7 @@ async def get_control_state(
 async def list_control_tunnels(
     request: Request,
     profile_id: str,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ProfileControlService, Depends(get_control_service)],
 ):
     try:
@@ -195,7 +195,7 @@ async def handoff_control(
 )
 async def restore_control(
     profile_id: str,
-    session: Annotated[SessionModel, Depends(require_csrf_and_origin)],
+    session: Annotated[AuthenticatedSession, Depends(require_csrf_and_origin)],
     service: Annotated[ProfileControlService, Depends(get_control_service)],
 ):
     try:

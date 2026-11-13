@@ -54,6 +54,7 @@ def mock_core():
         return core._locks[pid]
 
     core._get_profile_lock = get_lock
+    core.is_profile_locked = lambda pid: get_lock(pid).locked()
     core._native_exits = set()
     core.has_native_exit = lambda pid, inst, ver: (pid, inst, ver) in core._native_exits
     return core
@@ -115,7 +116,7 @@ async def test_missing_runtime_reports_error_observation_once(mock_core):
 
 @pytest.mark.asyncio
 async def test_core_profile_lock_held_skips_exit_synthesis(mock_core):
-    """When Core._get_profile_lock(pid).locked(), synthetic exits must be skipped."""
+    """When the profile lock is held, synthetic exits must be skipped."""
     pid = "p_locked"
     inst = "inst_active_launching"
 

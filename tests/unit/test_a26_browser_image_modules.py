@@ -20,7 +20,7 @@ COPY_PREFIX = "src/backend/cbrowser"
 UNRELATED = {
     "adapters", "agent_executor", "api", "auth", "gateway", "services",
     "stream_agent", "supervisor", "network_config.py", "runtime_event_log.py",
-    "secret_files.py", "service_errors.py", "udp_mux.py",
+    "service_errors.py", "udp_mux.py",
 }
 
 FEATURE_FILES = {
@@ -35,11 +35,18 @@ FEATURE_FILES = {
 def _top_level_cbrowser_refs(py_file: Path) -> set[str]:
     refs: set[str] = set()
     tree = ast.parse(py_file.read_text(encoding="utf-8"))
+    containing = ["cbrowser", *py_file.relative_to(CBROWSER).parts[:-1]]
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            if node.module == "cbrowser":
+        if isinstance(node, ast.ImportFrom):
+            if node.level:
+                base = containing[: len(containing) - node.level + 1]
+                if node.module:
+                    base = [*base, *node.module.split(".")]
+                if len(base) > 1 and base[0] == "cbrowser":
+                    refs.add(base[1])
+            elif node.module == "cbrowser":
                 refs.update(alias.name.split(".")[0] for alias in node.names)
-            elif node.module.startswith("cbrowser."):
+            elif node.module and node.module.startswith("cbrowser."):
                 refs.add(node.module.split(".")[1])
         elif isinstance(node, ast.Import):
             for alias in node.names:
@@ -58,6 +65,15 @@ def _package_files(name: str) -> list[Path]:
     return []
 
 
+# Packages shipped whole into every image whose outbound references must
+# not expand this image's closure: ``shared`` is the neutral package
+# (t062); its modules serve several images, so e.g. its credentials
+# module referencing ``secret_files`` does not make ``secret_files`` part
+# of the Browser runtime. The shared package's own dependency discipline
+# (no service-package imports) is guarded by test_t062_boundaries.
+TERMINAL_PACKAGES = {"shared"}
+
+
 def _cbrowser_closure() -> set[str]:
     closure: set[str] = set()
     pending = ["runtime_agent"]
@@ -68,8 +84,15 @@ def _cbrowser_closure() -> set[str]:
         closure.add(name)
         for py_file in _package_files(name):
             for ref in _top_level_cbrowser_refs(py_file):
-                if ref not in closure:
-                    pending.append(ref)
+                if ref in closure:
+                    continue
+                if name in TERMINAL_PACKAGES and (CBROWSER / ref).is_dir():
+                    # A terminal package's references to other packages
+                    # serve the other images, not this one; only its
+                    # top-level leaf modules (e.g. secret_files) travel
+                    # with it into every image.
+                    continue
+                pending.append(ref)
     return closure
 
 

@@ -24,7 +24,7 @@ from fastapi.testclient import TestClient
 from api_auth import create_auth_context
 from cbrowser.api.app import create_app
 from cbrowser.api.v1.deps import get_profile_service
-from cbrowser.domain.egress_observation import EgressProbeError, GeoIpLookup
+from cbrowser.shared.egress import EgressProbeError, GeoIpLookup
 from cbrowser.services.egress_probe import (
     EgressProbeResult,
     LocalEgressProbeRunner,

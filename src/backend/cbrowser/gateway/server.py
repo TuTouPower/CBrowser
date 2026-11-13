@@ -29,13 +29,13 @@ from cbrowser.stream_agent.protocol import (
     serialize_tunnel_envelope,
     validate_agent_envelope,
 )
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .api_client import GatewayApiClient
 from cbrowser.shared.client_ip import parse_trusted_proxy_cidrs, resolve_client_ip
 from .config import GatewayConfig
-from .endpoint import normalize_origin
+from cbrowser.shared.endpoints import normalize_origin
 from .registry import (
     AgentRegistry,
     AuthorizationThrottle,

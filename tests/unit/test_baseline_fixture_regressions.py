@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import docker.errors
 import httpx
 import pytest
-from cbrowser.gateway.endpoint import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile
 from cbrowser.runtime_agent.socket_root import (
     AGENT_SOCKET_ROOT_ENV,
@@ -30,7 +30,7 @@ from cbrowser.stream_agent.messaging import (  # noqa: E402
     build_register_payload,
     iso_now,
 )
-from cbrowser.supervisor.agent_credentials import AgentCredentials  # noqa: E402
+from cbrowser.shared.agent_credentials import AgentCredentials  # noqa: E402
 from gateway_probe.topology import GatewayTopologyHarness  # noqa: E402
 from supervisor_recovery_probe.gateway_service import (  # noqa: E402
     FakeGatewayApiClient,

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from cbrowser.adapters.database.models import SessionModel
+from cbrowser.domain.models import AuthenticatedSession
 from cbrowser.adapters.database.repository import (
     InstanceConflictError,
     InvalidConfigVersionError,
@@ -76,7 +76,7 @@ async def _apply_preview_policy(
     # overwrite that newer policy file (old enabled vs new disabled).
     # The 10s supervisor RPC stays outside the lock so the same-profile
     # start/stop/bind/delete never blocks behind a slow dispatch.
-    async with service._locks.lock(profile_id):
+    async with service.profile_lock(profile_id):
         fresh = await service.get_preview_policy(profile_id)
         if fresh is None:
             return
@@ -154,7 +154,7 @@ async def health_check():
 )
 async def subscribe_runtime_events(
     request: Request,
-    session: Annotated[SessionModel, Depends(require_user_session)],
+    session: Annotated[AuthenticatedSession, Depends(require_user_session)],
     service: Annotated[ProfileService, Depends(get_profile_service)],
     control_service: Annotated[
         ProfileControlService | None, Depends(get_optional_control_service)

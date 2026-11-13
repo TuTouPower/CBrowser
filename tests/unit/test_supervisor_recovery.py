@@ -19,7 +19,7 @@ import pytest
 from wait import poll_until
 from aiohttp import ClientSession, WSMsgType
 from cbrowser.domain.models import ProfileConfig
-from cbrowser.supervisor.agent_credentials import AgentCredentials
+from cbrowser.shared.agent_credentials import AgentCredentials
 from cbrowser.supervisor.control_server import create_control_app
 from cbrowser.supervisor.core import SupervisorCore
 from cbrowser.supervisor.event_forwarder import EventForwarder

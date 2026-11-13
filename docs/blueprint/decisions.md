@@ -397,3 +397,18 @@
     - **设置页只读**：网络区块只显示当前访问地址与端口（取 `window.location`），表单、保存/应用按钮、应用确认弹窗、root-ca 区块全部删除。
 - 复查条件：真实部署（AC-010）、真实引擎下的 Origin 与端口行为（AC-006/007/008/009 真实部分）、各平台真实字体名均未在本机验证（无 Docker、无真实引擎），须在用户机按 t032 演练补验。
 - 替代：选项 1 留下整条死链与漂移面；选项 3 保留局域网攻击面，与“彻底不做”的前提相背。**本条替代 ADR 026 的运行时边缘重建部分**：Supervisor 不再接管 Caddy / Stream 的端口重建与版本对账，运行期端口绑定不可变更；ADR 026 其余结论（端口物理隔离的实测结论、单机免外部守护原则）保留；ADR 013 的媒体直连回到仅回环（局域网 host 候选扩展随本条删除）。p053 的“暂搁”前提随本条作废。
+
+## 032 跨服务共享规则收归中立包，镜像按包粒度打包（2026-11-13，t062）
+
+- 背景：p073 登记的跨服务共享代码无中立归属问题全面暴露：Gateway 与 Supervisor 双向 import（端点模块在 Gateway、Agent 凭证在 Supervisor）；原子写有 1 份规范实现加 4 份手写变体（其中一份无 fsync、一份固定暂存名）；per-profile 锁有 3 份独立实现且路由直接访问 service 私有锁注册表；Origin 格式化在部署期另有一份手工实现靠注释维持与请求侧一致；实例 fence 在 REST 视图与协调器各写一份；投递分类在事件转发器定义、工件转发器只借常量手写判断；Supervisor 控制端口出现 8091/8005 两份默认值，控制客户端的 8091 实际无人监听；认证依赖与路由直接以 ORM `SessionModel` 为契约；egress 的 httpx/GeoIP/文件 I/O 住在 domain。各运行镜像为此逐文件 COPY 跨包补丁（三行 Supervisor 文件进 Gateway 镜像、整包 Gateway 进 Supervisor 镜像、API 镜像全量复制后端目录）。
+- 选项：
+    1. 保留现状，只修 8091 错值与最痛的重复（锁）。
+    2. 建中立包收敛全部共享规则与实现，镜像按包粒度打包，依赖方向以测试守护（本 task 采用）。
+    3. 把共享代码下沉到 domain 包统一承载。
+- 结论：采用选项 2。
+    - **中立归属**：`cbrowser/shared/` 为唯一中立包，承载 endpoints（端点/Origin/控制端口权威值）、agent_credentials、atomic_write、profile_locks、delivery、fencing、egress（探针 I/O 与其词汇 ECHO_URLS/错误类型）、client_ip。Gateway 与 Supervisor 互不 import；shared 除 `secret_files` 叶子外零 cbrowser import——这是镜像闭包的硬约束：shared 若依赖 domain，Gateway 镜像（不带 domain）内的 shared 模块将不可导入（闭包测试实测驱动此收敛，探针签名因此由收 ProxyEndpoint 改为收其 proxy_url 字符串）。
+    - **单一实现**：原子写全仓一份（独占临时文件 + fsync + replace + 目录 fsync；按 preview 旧实现的所有权语义修正规范实现会在 O_EXCL 碰撞时误删他人暂存的缺陷）；手写点（preview、runtime_agent event_storage/fontconfig、agent_executor state）全部改走 shared，流式 artifact 写为例外但补目录 fsync 对齐耐久契约。per-profile 锁全仓一份注册表，API 侧 ProfileService 以公开方法 `profile_lock()` 供路由协调，Supervisor 核心与恢复协调器共用同一注册表与 `is_profile_locked` 探查。Origin 白名单改由同一 `normalize_origin` 构造；fence 与投递分类各一份函数、全部消费方委托。
+    - **端口权威**：`DEFAULT_SUPERVISOR_PORT = 8005` 与派生的 `DEFAULT_SUPERVISOR_URL` 为唯一权威，runner/控制客户端/compose/就绪探针全部对齐，8091 字面量全仓清除并由测试锁定。
+    - **领域会话**：`AuthService` 返回领域对象 `AuthenticatedSession`（不含 token_hash 等存储细节），依赖与路由只消费领域对象，ORM 只留在 service 层内。
+    - **镜像边界**：Dockerfile 按包粒度 COPY（API 改为 cbrowser 整包 + migrations），删除全部跨服务逐文件补丁；Gateway 镜像不再带 Supervisor 文件与 domain，Supervisor 镜像不再带 Gateway 包，Browser 镜像补 shared 整包与 secret_files 叶子一行。闭包验证分两层：单元层按各 Dockerfile 组装文件树逐模块实际导入（test_t062_image_closure）加 import 图边界守护（test_t062_boundaries），a26 的 Browser 闭包模型同步把 shared 作为 terminal 包（只展开其顶层叶子引用）；真实 Docker 构建与 readiness 属 [deploy] 验证，顺延本地（AC-005 登记）。
+- 替代：选项 1 留下双向依赖与多份权威实现，漂移面不收敛；选项 3 让 domain 承载 I/O 与基础设施，破坏领域层纯度且 Supervisor/Gateway 镜像仍需整包带 domain。**本条不改变** ADR 031 的部署期网络结论与 ADR 029 的同视角观测结论，只迁移其实现归属（`network_config` 仍为部署期模块、探针仍由 Browser 视角执行）。
