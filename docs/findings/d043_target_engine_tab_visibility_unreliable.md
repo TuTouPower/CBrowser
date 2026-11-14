@@ -1,4 +1,4 @@
-# d038 当前目标引擎多标签可见性不能唯一识别活动页
+# d043 当前目标引擎多标签可见性不能唯一识别活动页
 
 - 来源：t057_preview_pipeline_integrity 的 UNVERIFIED-SPIKE 实测，base main@12380b2。
 - 结论：Chromium 146.0.7680.177（缓存构建146.0.7680.177.3）在本机Docker arm64 / Xvfb非headless模式下，同一浏览器窗口的三个测试标签在轮流bring_to_front后仍全部报告document.visibilityState=visible；主世界与CDP隔离世界一致。普通Playwright与生产SDK launch_persistent_context_async两条路径均如此，不能从该信号选择唯一活动页。

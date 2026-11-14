@@ -71,7 +71,7 @@
 
 <!-- /规范 -->
 
-- 已完成真实引擎实验，见`docs/findings/d038_target_engine_tab_visibility_unreliable.md`：多标签可见性信号不能识别活动页。2026-11-12用户明确裁定改采容器内整张浏览器画面，原可见性选页方案不再采用。
+- 已完成真实引擎实验，见`docs/findings/d043_target_engine_tab_visibility_unreliable.md`：多标签可见性信号不能识别活动页。2026-11-12用户明确裁定改采容器内整张浏览器画面，原可见性选页方案不再采用。
 
 - 容器内Pillow 13.0.0/XCB已实测：独立Xvfb 1280×800，生产SDK启动真实Chromium146，两个结构页面切换0→1→0，整张画面缩放为480×300 JPEG，前台内容与浏览器界面均保留。证据：.scratch/t057/display_probe.py及display_probe.log；无宿主截图回退。
 

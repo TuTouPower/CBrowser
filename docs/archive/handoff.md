@@ -1609,5 +1609,5 @@ ______________________________________________________________________
 - L 完整门禁与最终并发 M 均 all_passed=true，cleanup_exit_code=0；unit 1654 passed、integration 178 passed / 18 host skips、frontend 499 passed、contract 257 passed / 1 policy skip，全部 0 failed。类型、构建、设计 lint/check、协议、requirements、五镜像包验证通过。
 - 真实 Docker/Chrome E2E 103 passed / 0 failed / 2 optional probe skips；独立 real_engine 2 passed / 0 skipped，内部 chain 16 passed，L0–L6 完整。
 - 宿主 integration 18 项依赖缺失未记已验；独立 Chromium 与目标引擎在容器内补验 18 passed / 0 skipped。默认 E2E 两项探针由独立 real_engine 补验；contract 一项为项目策略下不适用检查。
-- 首轮review发现的bootstrap旧PASS残留、脱敏吞元数据及公开URL误改已修；t060 的 13/13 AC 与详细收尾验证见 task/progress；Dockerignore 原生构建语义登记 d037。证据保存在主仓忽略目录 `<main_repo>/artifacts/t060/`。
+- 首轮review发现的bootstrap旧PASS残留、脱敏吞元数据及公开URL误改已修；t060 的 13/13 AC 与详细收尾验证见 task/progress；Dockerignore 原生构建语义登记 d042。证据保存在主仓忽略目录 `<main_repo>/artifacts/t060/`。
 - 仅在任务分支 finish；按用户授权最终 push origin 任务分支，不合入 main、不执行其它 task。

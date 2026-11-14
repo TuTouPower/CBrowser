@@ -102,7 +102,7 @@ Chrome CDP 仅监听容器回环，禁止宿主端口映射或容器网络直连
 
 ## 缩略图采集与策略代次（t040）
 
-环境实时缩略图由 Runtime Agent 的 `PreviewCaptureLoop` 在浏览器ready且策略允许时每15秒采集该Profile独立Xvfb完整显示画面，包含标签栏、地址栏及当前可见页面。2026-11-12用户在t057明确调整截图范围，替代t040的CDP网页viewport限定。Pillow/XCB只连接runner提供的显式容器display，不回退宿主截图、外部截图命令或CDP选页；d035/s016/d038仅作旧方案实验依据。图像缩放至480px宽、保持比例、JPEG质量70，Pillow完整解码校验格式及尺寸，再通过镜像内jpeginfo `--check -`拒绝码流警告后提交；字节只经stdin传入、输出丢弃，2秒超时且缺工具失败封闭；不激活标签或改变焦点。
+环境实时缩略图由 Runtime Agent 的 `PreviewCaptureLoop` 在浏览器ready且策略允许时每15秒采集该Profile独立Xvfb完整显示画面，包含标签栏、地址栏及当前可见页面。2026-11-12用户在t057明确调整截图范围，替代t040的CDP网页viewport限定。Pillow/XCB只连接runner提供的显式容器display，不回退宿主截图、外部截图命令或CDP选页；d035/s016/d043仅作旧方案实验依据。图像缩放至480px宽、保持比例、JPEG质量70，Pillow完整解码校验格式及尺寸，再通过镜像内jpeginfo `--check -`拒绝码流警告后提交；字节只经stdin传入、输出丢弃，2秒超时且缺工具失败封闭；不激活标签或改变焦点。
 
 `capture_preview` 是即时策略，不进入 `ProfileConfigVersion`，不触发重启或应用配置。`ProfileModel.capture_preview_epoch` 每次 PATCH 变化 +1，只作 DB 内部代次，不暴露到 `ProfileResponse` 或前端。共享模块 `src/backend/cbrowser/preview.py` 定义 `PreviewPolicy(enabled, epoch, runtime_instance_id)` 与 `PreviewMeta(captured_at, runtime_instance_id, policy_epoch, image_sha256)`：`commit_preview` 落盘前重读 policy 校验 enabled / epoch / instance，任一不一致即拒绝，不删除其它已发布的新帧；`read_preview`在同一帧快照上校验代次、实例及摘要。采集、落盘、通知、读取四环节都校验策略代次与 runtime 实例。
 

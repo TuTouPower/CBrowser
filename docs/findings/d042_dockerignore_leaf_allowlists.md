@@ -1,4 +1,4 @@
-# d037 Dockerignore 父目录否定规则会递归放行内容
+# d042 Dockerignore 父目录否定规则会递归放行内容
 
 - 来源：t060_gate_infra_and_privacy，原生 BuildKit COPY 实验。
 - 结论：`!src/`、`!config/` 等父目录否定规则会重新纳入子树；它们不是“仅允许遍历目录”。白名单应直接列叶子文件或必要子树，Docker 会为叶子例外遍历被排除的父目录。

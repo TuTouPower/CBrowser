@@ -85,7 +85,7 @@ reviewed_scope: b75df5c9c154d64d
 |性能与资源|截图与严格检查均在工作线程；jpeginfo限时且不落中间图片；未发布孤帧及过期帧回收，目录fd与文件fd均关闭。|
 |架构与可维护性|共享预览模块统一文件规则，未新增锁文件或自写JPEG解析器；独立实测确认目录锁仅同一Linux内核互斥，未夸大为跨VM策略事务。|
 |健壮性与可观测|API上报失败可重试且warning限频；坏帧失败封闭；策略helper启动异常能进入原清理逻辑，原错误/等待边界未扩大。|
-|文档与规格|task、spec/index、相关blueprint及d038–d041事实记录与最终行为一致；handoff明确B失败与定向补验、证据保留位置。无新未处置finding。|
+|文档与规格|task、spec/index、相关blueprint及d039–d041、d043事实记录与最终行为一致；handoff明确B失败与定向补验、证据保留位置。无新未处置finding。|
 
 ### 结论
 

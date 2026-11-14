@@ -82,7 +82,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 收口新增两项边界：两个清理器同时删除同一已结束运行时，对明确的 Docker NotFound 按已完成处理，其余错误继续失败；两个负例先红，修复后 cleanup 7 passed。中断旧 wrapper 只通知 Bash、遗留 suite 子进程，真实进程回归先红（10 秒收不到退出），改为独立进程组并向全组转发信号后，终止与清理集合 8 passed。新增 3 个回归使 unit 当前收集下限为 1650；原先 1647 全绿结论保留。
 
-- AC-011 撤回重验：原生 Docker 证明原静态 matcher 将目录否定误当遍历门，未声明 services 文件实际可 COPY。修正 matcher 后旧规则测试先红 2 failed / 5 passed；改用叶子白名单后 38 passed，原生五镜像上下文测试 5 passed（5 正例 / 26 反例）。完整镜像重建完成后再勾 AC-011。跨任务事实登记 d037。
+- AC-011 撤回重验：原生 Docker 证明原静态 matcher 将目录否定误当遍历门，未声明 services 文件实际可 COPY。修正 matcher 后旧规则测试先红 2 failed / 5 passed；改用叶子白名单后 38 passed，原生五镜像上下文测试 5 passed（5 正例 / 26 反例）。完整镜像重建完成后再勾 AC-011。跨任务事实登记 d042。
 
 - 完整门禁 G：普通套件保持全绿，真实引擎 2 passed（chain 16 passed、L0–L6 all_passed=true）；E2E 为 96 passed / 2 failed / 2 skipped。失败分别为共享会话第三个 Profile 的 Browser 就绪超时，以及直接 15 fps 配额观测到 57 帧 / 2 秒（原上限 40）。继续保留原断言与超时定位，不记 G 为通过。新增原生上下文五项后 E2E 收集下限同步为 105。
 
@@ -162,5 +162,5 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - `docs/specs/gate_verification.md` 累积 t060 行为，`docs/specs_index.md` 已登记 t060。
 - `docs/blueprint/testing.md` 更新锁、归属、收集下限、镜像前置与目标环境；`security.md` / `conventions.md` 声明隐私口径。
-- 原生 Dockerignore 结论登记 `docs/findings/d037_dockerignore_leaf_allowlists.md`；无新 spike。
+- 原生 Dockerignore 结论登记 `docs/findings/d042_dockerignore_leaf_allowlists.md`；无新 spike。
 - `docs/handoff.md` 旧节迁入 archive，仅保留本轮一节，branch 与 head_commit 经写入时 Git 查询核对。

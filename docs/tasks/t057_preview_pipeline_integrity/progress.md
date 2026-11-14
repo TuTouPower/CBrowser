@@ -34,7 +34,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 来源第100项涉及5209eec / 73b9c41，Git对象均存在且类型commit；12380b2亦核对为commit。审阅第92–100项及未证实_preview\_\*状态清理疑点已对应A32–A38核对。
 
-- 2026-11-12T05:52:29+08:00：真实Docker/Xvfb引擎实验完成，普通Playwright与生产SDK两路径各3次切前台，三个测试标签的主世界/隔离世界始终全部visible，且每路径window_id相同。d038已通过findings.py分配并写入实测结论；task未知契约由UNVERIFIED-SPIKE改为已验证事实与待裁定的UNVERIFIED-BLOCKING，未改任何AC。探针容器已退出且无残留。
+- 2026-11-12T05:52:29+08:00：真实Docker/Xvfb引擎实验完成，普通Playwright与生产SDK两路径各3次切前台，三个测试标签的主世界/隔离世界始终全部visible，且每路径window_id相同。d043已通过findings.py分配并写入实测结论；task未知契约由UNVERIFIED-SPIKE改为已验证事实与待裁定的UNVERIFIED-BLOCKING，未改任何AC。探针容器已退出且无残留。
 
 - 当时两项裁定等待中（后续base裁定见恢复记录）：①指定base原有隐私门禁失败是否获明确基线豁免；②A36可见性判定与AC-006多标签行为目标冲突如何处理。未修改产品代码或测试，AC仍0/8，不将准备和实验冒充实施完成。
 
@@ -148,5 +148,5 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 ### 长期文档闭环
 
 - profile_preview spec与specs_index已登记t057；browser_runtime、supervisor、security、testing已同步采集范围、认证、严格校验及一致性契约。
-- d038记录多标签可见性与采集认证；d039记录OrbStack目录锁边界；d040记录JPEG容错与严格检查依据；d041记录策略helper启动泄漏修复与真实验证。
+- d043记录多标签可见性与采集认证；d039记录OrbStack目录锁边界；d040记录JPEG容错与严格检查依据；d041记录策略helper启动泄漏修复与真实验证。
 - docs/handoff.md仅保留最新t057一节，记录实际写入时branch与HEAD；继承的旧交接段落原样追加到archive/handoff.md，历史内容未改写。
