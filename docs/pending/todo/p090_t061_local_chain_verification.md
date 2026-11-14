@@ -5,4 +5,11 @@
     1. AC-006 [deploy]：真实 Chrome 会话已连接后制造信令 WS 异常关闭，媒体保持健康时页面在 5 秒恢复检查后回到 connected 且不重建 iframe/Browser/已有网页；媒体置不健康时沿既有路径重建恢复。
     2. AC-008 [deploy]：全部 viewer 断开后长时间保留，环境与已有网页/数据不被停止、重置或删除；再次连接可恢复观看；采集按活跃 consumer 暂停/恢复行为保持。
     3. AC-001：真实 Chrome 布局下关闭详情后面板宽度实测归零、顶栏唯一开关定位与刷新保持（云端只有 jsdom 不渲染证据与结构论证，缺真实布局宽度断言）。
-- 处理：未开
+- 处理：部分补验，未闭环；三项 [deploy]/真实布局 AC 仍待专门场景
+- 时间：2026-11-14T19:07:00+08:00
+
+## 本地补验证据（gate4）
+
+- 门禁：`.scratch/local_verify_terminal_gate4/`（WORKERS=1、CBROWSER_RUN_E2E=1、CBROWSER_REQUIRE_REAL_ENGINE=1），12/13 套件 exit 0；e2e 104 用例 99 passed / 3 failed / 2 skipped；提交 `da2974d` / `ee94faf`。
+- 已验：真实 Caddy+Docker+Chrome 拓扑下 viewer 生命周期链可用——`test_frontend_app_e2e.py` 6 例、`test_frontend_media_e2e.py` 4 例全绿，`test_frontend_session_e2e.py` 3 例中 2 例绿；首帧/重连/双标签/输入静音/诊断浮层均有真实浏览器断言。
+- 卡点：AC-006「信令 WS 异常关闭 5 秒恢复且不重建 iframe/Browser/已有网页」、AC-008「全部 viewer 断开后长期保留且活跃 consumer 暂停/恢复」、AC-001「关闭详情后面板宽度实测归零、顶栏唯一开关定位与刷新保持」三项无直接断言与留证，需专门 deploy 场景用例 + 真实 Chrome 布局测量。本批未启动 `scripts/deploy.sh` 生产栈（此前重跑被中止），不冒充已验。
