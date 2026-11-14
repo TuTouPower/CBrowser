@@ -2,8 +2,14 @@
 
 - 来源：t064 遗留
 - 内容：t064 的云端执行环境无 Docker，AC-001、AC-002、AC-004（真实引擎部分）与 AC-006 只能完成代码、单元、集成、Caddyfile 渲染契约和 E2E collect-only，不能冒充真实部署已验。合入后须在本地 Mac 的隔离 Docker/Chrome 拓扑中运行 `CBROWSER_RUN_E2E=1 scripts/run_gates.sh`，至少实跑并留证：`tests/e2e/test_gateway_ac001_auth_e2e.py` 的真实 Caddy 边缘拒绝与 Cookie `Path=/`；合法 viewer 登录、首帧、重连、退出后新握手撤销；Agent register 独立认证回归；认证 automation 通道可用；`tests/e2e/test_browser_runtime_e2e.py::test_t064_cdp_loopback_host_origin_boundaries` 的合法回环正例、域名 Host 403 与跨 Origin CDP WebSocket 403。
-- 处理：边缘授权链已补验通过；CDP host-origin 边界暴露产品缺陷，未闭环（须新建 task+spec）
-- 时间：2026-11-14T19:07:00+08:00
+- 处理：683aa10；resolution=resolved；reason=gate5 全绿：CDP host-origin 守护已实现，t064 CDP 边界 E2E 与 gateway_ac001 边缘授权整文件在真实 Caddy+Docker+Chrome 拓扑实跑通过
+- 时间：2026-11-14T22:36:00+08:00
+
+## 终局补验证据（gate5 / 真实部署栈，最终结论；取代下方 gate4 阶段性记录）
+
+- `src/backend/cbrowser/runtime_agent/cdp_guard.py`（提交 `683aa10`）新增 CDP 边界守护：Chrome DevTools 仅绑内部端口，守护独占对外 `cdp_port`（仅 127.0.0.1），HTTP 校验 Host、WS 升级校验 Origin，合法请求反代（含 `webSocketDebuggerUrl` 改写与 WS 字节透传），域名 Host / 跨 Origin / 畸形头一律 403 且不泄漏版本、不抛 500；内部 UDS 认证通道与 runtime_agent 自身 CDP 客户端不经守护、保持可用；守护未就绪不写 `runner_info`，fail-closed。
+- `test_browser_runtime_e2e.py::test_t064_cdp_loopback_host_origin_boundaries` 用重建后的 browser 镜像（`4a9e1bfe`）单跑 `1 passed`；`test_gateway_ac001_auth_e2e.py` 整文件通过（真实 Caddy 边缘拒绝、Cookie `Path=/`、viewer 登录/首帧/重连/退出后撤销、Agent register）。`ee94faf` 修掉 `network_config.py:97-101` 的 `forward_auth` 对 WS 升级子请求误传 `Upgrade`/`Connection` 导致 403（应 401）。
+- gate5（`.scratch/local_verify_terminal_gate5/`）`GATE_EXIT=0`，e2e 105 用例 0 failed / 2 skipped、unit 2278、integration 209、contract 258、real_engine 2 passed；新增 `tests/unit/test_cdp_guard.py`（36 例）与 `tests/integration/test_cdp_guard_chain.py` 全绿。本项要求的全部 [deploy]/E2E 切片已留证。
 
 ## 本地补验证据（gate4）
 

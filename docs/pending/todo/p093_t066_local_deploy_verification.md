@@ -8,8 +8,17 @@
     4. AC-005 [deploy]：启动与 clone/reset/备份恢复交错的真实拓扑验证（含残留 runtime 实例绑定时拒绝、viewer 连接不触发停止或清理）。
     5. AC-011 [deploy]：隔离实例执行 `deploy.sh env-backup` → 改状态 → `deploy.sh env-restore` 完整往返，验证配置、登录态恢复到恢复点，凭据前提清单所列文件齐备时服务正常启动；确认指南命令能从 named volume 取得并恢复 DB。
     6. findings 补录：findings.py 在 main 上因既存 d037/d038 编号重复拒绝分配新号（工具链缺陷，与 t068 报告同源）；编号冲突解决后，把 t066 task.md 已回填的两条 spike 结论（引擎 Cookie 密钥根、db_restore 无校验直覆）正式登记为 findings 条目。
-- 处理：5 项 [deploy] AC 切片未跑；findings 编号重复已核实，工具链缺陷不在本批范围
-- 时间：2026-11-14T19:07:00+08:00
+- 处理：AC-011 / AC-001（配置持久化）/ AC-004（reset）已补验；AC-003 / AC-005 仍需真实引擎状态往返；findings 编号重复工具链缺陷未修
+- 时间：2026-11-14T22:36:00+08:00
+
+## 终局补验证据（gate5 / 真实部署栈，最终结论；取代下方 gate4 阶段性记录）
+
+- 真实部署：`scripts/deploy.sh deploy` 成功（Release `20261114212243-78d4f8c`），4 容器 healthy，`api_health=200`。
+- AC-011 完整往返（`.scratch/terminal_deploy_slices/p093_env_roundtrip.log` / `p093_env_roundtrip2.log`）：`env-backup` 生成恢复点，manifest 含 `credential_prerequisites` 7 项（admin_password/agent_key/edge_proof_key/gateway_api_key/gateway_key/supervisor_key/viewer_grant_key）与 `profiles`；经 API 真实创建 Profile 改状态（201）→ `env-restore` 停栈并恢复（previous set 保留）→ 用同一 release env 重新 `up -d --no-build --wait` → 4 容器 healthy、`GET /api/v1/profiles` 回到空集（mutant 消失）、`api_health=200`、`deploy.sh status` release 不变。
+- AC-001（配置持久化）：真实 Profile `PATCH /api/v1/profiles/{id}` 写入 timezone=Asia/Tokyo、locale=zh-CN、1600x900、fingerprint_seed=424242、notes，返回 `current_config_version=2` 且各字段一致（`.scratch/terminal_deploy_slices/p093_state.log`）。
+- AC-004（reset）：`POST /api/v1/profiles/{id}/reset {"confirm":true}` 返回 200，状态目录 `profiles/{id}/profile` 创建且为空（全清），timezone/locale/分辨率/notes/user_data_dir 全部保留（`ac004_config_preserved True`），`fingerprint_seed` 按 p089 契约重 roll（`ac004_seed_rerolled_by_design True`），`current_config_version=3`。
+- 卡点：AC-001 的完整 Cookie/localStorage/IndexedDB/书签 + 引擎参数一致、AC-003 两态 clone 往返、AC-005 启动与 clone/reset/备份恢复交错拓扑，需运行中的真实 Browser 与引擎状态注入脚本，本批未构造。
+- findings 缺陷（未修）：`findings.py list` 中 `d037`/`d038` 各重复 2 条，导致 `findings.py new` 拒绝分配新号，t066 task.md 已回填的两条 spike 结论无法正式登记；按批次口径属工具链缺陷，仅说明现状。
 
 ## 本地补验证据（gate4）
 

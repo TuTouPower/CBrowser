@@ -5,8 +5,15 @@
     1. AC-006 [deploy]：真实 Chrome 会话已连接后制造信令 WS 异常关闭，媒体保持健康时页面在 5 秒恢复检查后回到 connected 且不重建 iframe/Browser/已有网页；媒体置不健康时沿既有路径重建恢复。
     2. AC-008 [deploy]：全部 viewer 断开后长时间保留，环境与已有网页/数据不被停止、重置或删除；再次连接可恢复观看；采集按活跃 consumer 暂停/恢复行为保持。
     3. AC-001：真实 Chrome 布局下关闭详情后面板宽度实测归零、顶栏唯一开关定位与刷新保持（云端只有 jsdom 不渲染证据与结构论证，缺真实布局宽度断言）。
-- 处理：部分补验，未闭环；三项 [deploy]/真实布局 AC 仍待专门场景
-- 时间：2026-11-14T19:07:00+08:00
+- 处理：部分补验，AC-001 已由真实 Chrome 闭环；AC-006/AC-008 仍需专门注入式场景
+- 时间：2026-11-14T22:36:00+08:00
+
+## 终局补验证据（gate5 / 真实部署栈，最终结论；取代下方 gate4 阶段性记录）
+
+- 门禁：`.scratch/local_verify_terminal_gate5/`（WORKERS=1、CBROWSER_RUN_E2E=1、CBROWSER_REQUIRE_REAL_ENGINE=1）`GATE_EXIT=0`，13/13 套件 0；e2e 105 用例 0 failed / 2 skipped、unit 2278、integration 209、contract 258、real_engine 2 passed。提交 `683aa10` / `ee94faf` / `da2974d`。
+- AC-001 已验：真实部署栈 `https://127.0.0.1:56661` 用官方 Chrome（Playwright）实测真实 Profile 详情面板：打开宽度 300px、关闭后 DOM 移除（宽度归零）、刷新后保持关闭、顶栏 `sess-details-toggle` 全程唯一（count=1）。证据 `.scratch/terminal_deploy_slices/p090_p100_real_profile.log`。
+- t061 AC-003 矩阵实证：同一真实停止 Profile 的 `runtime_not_ready` 诊断卡渲染 `sess-stage-action-launch` + `sess-stage-action-view-status`，无 `sess-stage-action-reconnect`（title「运行时未就绪」）。证据同上。
+- 卡点：AC-006（信令 WS 异常关闭后 5 秒恢复且不重建 iframe/Browser/网页）、AC-008（全部 viewer 断开后长期保留 + 活跃 consumer 暂停/恢复）需故障注入与长时观测脚本，本批未构造；不冒充已验。
 
 ## 本地补验证据（gate4）
 
