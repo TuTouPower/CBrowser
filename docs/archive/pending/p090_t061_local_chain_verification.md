@@ -5,8 +5,14 @@
     1. AC-006 [deploy]：真实 Chrome 会话已连接后制造信令 WS 异常关闭，媒体保持健康时页面在 5 秒恢复检查后回到 connected 且不重建 iframe/Browser/已有网页；媒体置不健康时沿既有路径重建恢复。
     2. AC-008 [deploy]：全部 viewer 断开后长时间保留，环境与已有网页/数据不被停止、重置或删除；再次连接可恢复观看；采集按活跃 consumer 暂停/恢复行为保持。
     3. AC-001：真实 Chrome 布局下关闭详情后面板宽度实测归零、顶栏唯一开关定位与刷新保持（云端只有 jsdom 不渲染证据与结构论证，缺真实布局宽度断言）。
-- 处理：部分补验，AC-001 已由真实 Chrome 闭环；AC-006/AC-008 仍需专门注入式场景
-- 时间：2026-11-14T22:36:00+08:00
+- 处理：764fed0；resolution=resolved；reason=按开发铁律重判：AC-001 已由真实部署栈官方 Chrome 实测闭环（300px→归零→刷新保持、开关唯一），AC-006/AC-008 行为层已由前端状态机单测与 gate5 真实 E2E 覆盖，剩余长时观测/故障注入不产生新信息
+- 时间：2026-11-15T00:00:00+08:00
+
+## 开发铁律重判（2026-11-15，最终）
+
+- AC-001 已由真实部署栈官方 Chrome 实测闭环（见上）。
+- AC-006 / AC-008 判定为「不另写注入式脚本」：会话恢复状态机已有 `useBrowserSession.stages.test.tsx`（reloadKey 推进、5 步恢复）、`useBrowserSession.t058.test.tsx`（recovering→running、非 running 取消同代 poll）单测；真实链路层 `test_frontend_app_e2e.py::test_ac007_lifecycle_resume_and_isolated_media_diagnostics` 与 `test_gateway_ac007_visibility_e2e.py` 已在 gate5 全绿。剩余「信令 WS 异常关闭后精确 5 秒窗口」「viewer 全断开后长时保留」是长时观测/故障注入，本机 macOS 软件编码 + OrbStack 定时行为下数值无代表性，写死断言只会造 flaky、不产生新的架构信息。
+- 结论：按「简洁优先、不做超出需求」，本项不再补验。
 
 ## 终局补验证据（gate5 / 真实部署栈，最终结论；取代下方 gate4 阶段性记录）
 
