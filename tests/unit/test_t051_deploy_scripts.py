@@ -87,6 +87,50 @@ def test_db_inspect_unreadable_db_fails_closed(tmp_path: Path):
     assert "cbrowser.db" in result.stderr
 
 
+def test_db_inspect_wal_db_in_readonly_dir_prints_revision(tmp_path: Path):
+    """Simulates a stopped API container whose WAL-mode SQLite file sits in a
+    `:ro` volume mount without a pre-existing -shm file."""
+    ro_dir = tmp_path / "ro_db"
+    ro_dir.mkdir(parents=True)
+    db = ro_dir / "cbrowser.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(
+            "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO alembic_version (version_num) VALUES (?)",
+            ("796adb0bf159",),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    (ro_dir / "cbrowser.db-wal").unlink(missing_ok=True)
+    (ro_dir / "cbrowser.db-shm").unlink(missing_ok=True)
+    ro_dir.chmod(0o555)
+    try:
+        result = _run("db_inspect.py", "stamp", "--db", str(db))
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "796adb0bf159"
+    finally:
+        ro_dir.chmod(0o755)
+
+
+def test_db_inspect_corrupt_wal_db_in_readonly_dir_still_fails_closed(tmp_path: Path):
+    ro_dir = tmp_path / "ro_bad"
+    ro_dir.mkdir(parents=True)
+    db = ro_dir / "cbrowser.db"
+    db.write_text("not a sqlite database", encoding="utf-8")
+    ro_dir.chmod(0o555)
+    try:
+        result = _run("db_inspect.py", "stamp", "--db", str(db))
+        assert result.returncode != 0
+        assert "cbrowser.db" in result.stderr
+    finally:
+        ro_dir.chmod(0o755)
+
+
 # ---------------------------------------------------------------- db_backup
 
 def test_db_backup_round_trip_preserves_stamp_and_source(tmp_path: Path):

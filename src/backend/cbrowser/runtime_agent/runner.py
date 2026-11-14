@@ -453,6 +453,20 @@ class BrowserRunner:
         # was prepared for it; otherwise the variable must not leak in from
         # the runner's own environment.
         env.pop("FONTCONFIG_FILE", None)
+        # Strip ambient container/daemon proxy variables (e.g. OrbStack transparent
+        # proxy injection) so a Profile only ever uses the explicit --proxy-server
+        # flag resolved from its own proxy binding, never an ambient host proxy.
+        for proxy_var in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "no_proxy",
+        ):
+            env.pop(proxy_var, None)
         if fontconfig_path is not None:
             env["FONTCONFIG_FILE"] = str(fontconfig_path)
         return env
@@ -719,6 +733,17 @@ class BrowserRunner:
         browser_product, browser_user_agent = await self._resolve_browser_version()
 
         await self._configure_window(width, height)
+        # Default-search setup is best-effort (D1=B) and runs before
+        # publishing runner_info.json / running state so the temporary
+        # chrome://settings page is closed before any Agent or CDP consumer
+        # sees readiness (fast DOM fill keeps this around ~4s).
+        await run_search_defaults_initialization(
+            self.browser_context,
+            self.user_data_dir,
+            self.run_dir,
+            set_google_default=cfg.set_google_default,
+            runtime_instance_id=self.runtime_instance_id,
+        )
         self.is_running = True
 
         # Write runner_info.json for the independent Agent process to consume
@@ -739,23 +764,6 @@ class BrowserRunner:
             "browser_product": browser_product,
             "browser_user_agent": browser_user_agent,
         }
-        # Publish Agent readiness first: the independent Agent process reads
-        # this file to arm download capture and preview, so it must not wait
-        # for the best-effort default-search setup below.
-        atomic_write_json(self.runner_info_file, runner_info)
-
-        # Default-search setup is best-effort (D1=B). It opens a temporary
-        # chrome://settings page, so it stays on the start() path (not a
-        # detached task) to keep the page topology stable before control-plane
-        # state becomes running; a failure or timeout only records an
-        # independent status and leaves the browser usable.
-        await run_search_defaults_initialization(
-            self.browser_context,
-            self.user_data_dir,
-            self.run_dir,
-            set_google_default=self.profile_config.set_google_default,
-            runtime_instance_id=self.runtime_instance_id,
-        )
         self.event_storage.save_state(
             RuntimeStateRecord(
                 profile_id=self.profile_id,
@@ -765,6 +773,7 @@ class BrowserRunner:
                 browser_pid=self.chrome_pid,
             )
         )
+        atomic_write_json(self.runner_info_file, runner_info)
         logger.info("Runner ready (browser_pid=%d)", self.chrome_pid)
 
         # Monitor Chrome process exit in background

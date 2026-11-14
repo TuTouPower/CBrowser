@@ -146,6 +146,7 @@ def real_api_server(tmp_path: Path):
         PYTHONDONTWRITEBYTECODE="1",
         TMPDIR=str(tmp_path),
         CBROWSER_DB_PATH=str(tmp_path / "control.db"),
+        CBROWSER_DATA_ROOT=str(tmp_path),
         CBROWSER_SUPERVISOR_TOKEN_FILE=str(token_file),
         **auth_ctx.env,
     )

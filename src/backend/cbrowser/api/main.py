@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from cbrowser.api.app import create_app
 from cbrowser.network_config import DEFAULT_HTTPS_PORT
 
-db_path = os.environ.get("CBROWSER_DB_PATH", "/data/db/cbrowser.db")
-app = create_app(db_path=Path(db_path))
+app = create_app()
 
 if __name__ == "__main__":
     import uvicorn

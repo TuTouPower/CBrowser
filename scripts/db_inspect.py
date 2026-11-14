@@ -20,19 +20,17 @@ Semantics (A44, fail-closed):
 from __future__ import annotations
 
 import argparse
+import shutil
 import sqlite3
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import quote
 
 
-def stamp(db_path: Path) -> str | None:
-    """Return the Alembic revision, "" when unstamped/absent, None on error."""
-    if not db_path.is_file():
-        return ""
-    conn = None
+def _read_stamp(db_path: Path) -> str:
+    conn = sqlite3.connect("file:" + quote(str(db_path)) + "?mode=ro", uri=True)
     try:
-        conn = sqlite3.connect("file:" + quote(str(db_path)) + "?mode=ro", uri=True)
         row = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table' "
             "AND name='alembic_version'"
@@ -41,11 +39,35 @@ def stamp(db_path: Path) -> str | None:
             return ""
         stamped = conn.execute("SELECT version_num FROM alembic_version").fetchone()
         return stamped[0] if stamped is not None and stamped[0] else ""
+    finally:
+        conn.close()
+
+
+def stamp(db_path: Path) -> str | None:
+    """Return the Alembic revision, "" when unstamped/absent, None on error."""
+    if not db_path.is_file():
+        return ""
+    try:
+        return _read_stamp(db_path)
+    except sqlite3.OperationalError:
+        try:
+            with db_path.open("rb") as handle:
+                handle.read(1)
+        except OSError:
+            return None
+        try:
+            with tempfile.TemporaryDirectory() as scratch:
+                tmp_db = Path(scratch) / db_path.name
+                shutil.copy2(db_path, tmp_db)
+                for suffix in ("-wal", "-shm"):
+                    sidecar = Path(f"{db_path}{suffix}")
+                    if sidecar.is_file():
+                        shutil.copy2(sidecar, Path(f"{tmp_db}{suffix}"))
+                return _read_stamp(tmp_db)
+        except (OSError, sqlite3.DatabaseError):
+            return None
     except sqlite3.DatabaseError:
         return None
-    finally:
-        if conn is not None:
-            conn.close()
 
 
 def main(argv: list[str] | None = None) -> int:

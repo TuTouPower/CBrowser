@@ -30,6 +30,7 @@ services:
     environment:
       <<: *no-proxy-env
       CBROWSER_DB_PATH: /data/db/cbrowser.db
+      CBROWSER_DATA_ROOT: /data
       CBROWSER_FONTS_DIR: /fonts
       CBROWSER_SUPERVISOR_URL: http://supervisor:8005
       CBROWSER_REQUIRE_SUPERVISOR: "1"

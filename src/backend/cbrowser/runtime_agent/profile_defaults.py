@@ -28,11 +28,7 @@ MARKER_VERSION = 1
 SEARCH_DEFAULTS_STATUS_FILE = "search_defaults_status.json"
 SEARCH_DEFAULTS_RETRY_FILE = "search_defaults_retry.json"
 SEARCH_DEFAULTS_STATES = ("applied", "failed", "disabled", "pending")
-# The chrome://settings UI flow takes ~21s on the pinned target engine. The
-# budget is only a watchdog against a genuinely hung Playwright call; it must
-# not truncate a real initialization, which would leave the success marker
-# unwritten.
-DEFAULT_SEARCH_INIT_TIMEOUT_S = 60.0
+DEFAULT_SEARCH_INIT_TIMEOUT_S = 20.0
 
 
 def write_search_defaults_status(
@@ -150,6 +146,31 @@ _CLICK_ADD_BUTTON_JS = """() => {
     });
     walk(document);
     return clicked;
+}"""
+
+_FILL_ADD_DIALOG_JS = """([name, kw, url]) => {
+    const setInput = (hostId, val) => {
+        let host = null;
+        const walk = (root) => root.querySelectorAll('*').forEach(el => {
+            if (el.shadowRoot) walk(el.shadowRoot);
+            if (el.tagName === 'CR-INPUT' && el.id === hostId) host = el;
+        });
+        walk(document);
+        if (!host) return false;
+        const inp = host.shadowRoot
+            ? host.shadowRoot.querySelector('input')
+            : host.querySelector('input');
+        if (!inp) return false;
+        inp.focus();
+        inp.value = val;
+        host.value = val;
+        inp.dispatchEvent(new Event('input', {bubbles: true, composed: true}));
+        inp.dispatchEvent(new Event('change', {bubbles: true, composed: true}));
+        return true;
+    };
+    return setInput('searchEngine', name)
+        && setInput('keyword', kw)
+        && setInput('queryUrl', url);
 }"""
 
 _IS_ADD_ACTION_ENABLED_JS = """() => {
@@ -351,15 +372,20 @@ async def initialize_profile_defaults(
             raise ProfileDefaultsError("Failed to trigger Add search engine dialog")
         await asyncio.sleep(1.0)
 
-        # 2. Fill dialog inputs via trusted locator fills
+        # 2. Fill dialog inputs directly via DOM value + Polymer input events so
+        # humanize=True typing simulation on chrome://settings never eats ~16s of
+        # the startup readiness budget.
         try:
-            await page.locator("cr-input#searchEngine input").first.fill(
-                SEARCH_ENGINE_NAME
+            filled = await page.evaluate(
+                _FILL_ADD_DIALOG_JS,
+                [SEARCH_ENGINE_NAME, SEARCH_ENGINE_KEYWORD, SEARCH_ENGINE_URL],
             )
-            await page.locator("cr-input#keyword input").first.fill(
-                SEARCH_ENGINE_KEYWORD
-            )
-            await page.locator("cr-input#queryUrl input").first.fill(SEARCH_ENGINE_URL)
+            if not filled:
+                raise ProfileDefaultsError(
+                    "Failed to fill Add search engine dialog fields"
+                )
+        except ProfileDefaultsError:
+            raise
         except Exception as exc:  # noqa: BLE001 - Playwright input fill error wrapped into ProfileDefaultsError
             logger.error("Failed filling search engine inputs: %s", type(exc).__name__)
             raise ProfileDefaultsError(

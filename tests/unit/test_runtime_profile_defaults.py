@@ -307,3 +307,61 @@ async def test_existing_success_marker_preserves_later_manual_choice(
     await initialize_profile_defaults(
         _ExplodingContext(), tmp_path, set_google_default=True
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fill_ok", [True, False])
+async def test_initialize_profile_defaults_dom_fill_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill_ok: bool
+) -> None:
+    async def _fast_sleep(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+
+    class _AddFlowPage:
+        def __init__(self) -> None:
+            self.active: str | None = "nosearch"
+            self.filled_args: list[str] | None = None
+            self.closed = False
+
+        async def goto(self, _url: str) -> None:
+            return None
+
+        async def evaluate(self, script: str, arg=None):
+            if "getSearchEnginesList" in script:
+                return {"name": "Google", "keyword": self.active}
+            if "addSearchEngine" in script:
+                return True
+            if "setInput" in script:
+                self.filled_args = arg
+                return fill_ok
+            if "actionButton" in script and "disabled" in script:
+                if "click()" in script:
+                    return True
+                return True
+            if "makeDefault" in script:
+                self.active = "google.com"
+                return True
+            return False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    page = _AddFlowPage()
+
+    class _Ctx:
+        async def new_page(self):
+            return page
+
+    if fill_ok:
+        await initialize_profile_defaults(_Ctx(), tmp_path, set_google_default=True)
+        marker = json.loads((tmp_path / SEARCH_ENGINE_MARKER_FILE).read_text())
+        assert marker["google_default_applied"] is True
+        assert page.filled_args is not None and "google.com" in page.filled_args
+        assert page.closed is True
+    else:
+        with pytest.raises(ProfileDefaultsError, match="dialog fields"):
+            await initialize_profile_defaults(_Ctx(), tmp_path, set_google_default=True)
+        assert not (tmp_path / SEARCH_ENGINE_MARKER_FILE).exists()
+        assert page.closed is True

@@ -856,3 +856,59 @@ async def test_rearm_id_allocation_is_shared_with_send_command(
             assert second > first
         finally:
             await manager.close()
+
+
+def test_browser_environment_strips_ambient_proxy_variables(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Ambient container proxy env must never leak into launched browsers."""
+    from cbrowser.runtime_agent.runner import BrowserRunner
+
+    snapshot = tmp_path / "snapshot.json"
+    snapshot.write_text(
+        json.dumps(
+            {
+                "id": "snap_proxy_env",
+                "profile_id": "profile_a",
+                "version": 1,
+                "config": {"name": "Direct"},
+                "created_at": "2026-11-13T00:00:00+00:00",
+            }
+        )
+    )
+    runner = BrowserRunner(
+        "profile_a",
+        "instance_a",
+        snapshot,
+        tmp_path / "run",
+        tmp_path / "profile",
+        events_dir=tmp_path / "events",
+        engine_cache_dir=tmp_path / "engine_cache",
+    )
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ):
+        monkeypatch.setenv(var, "http://host.docker.internal:7890")
+    env = runner._browser_environment(
+        tmp_path / "pulse.sock",
+        tmp_path / "pulse.cookie",
+        tmp_path / "chrome_wrapper.sh",
+    )
+    for var in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+        "no_proxy",
+    ):
+        assert var not in env

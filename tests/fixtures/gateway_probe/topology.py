@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import secrets
@@ -482,6 +481,7 @@ class GatewayTopologyHarness:
             tmpfs={"/tmp": "rw,size=256m"},
             environment={
                 "CBROWSER_DB_PATH": "/data/db/cbrowser.db",
+                "CBROWSER_DATA_ROOT": "/data",
                 # The automation tunnel is gated on the API coordinator
                 # being enabled (t031); the production stack sets both,
                 # so the harness must too or every CDP handshake closes
@@ -665,27 +665,6 @@ class GatewayTopologyHarness:
                 await asyncio.sleep(0.3)
             else:
                 raise TimeoutError("Stream Agent did not register in 30s")
-
-        # Default-search setup is best-effort (D1=B) and opens a temporary
-        # chrome://settings page. Agent readiness is published before it
-        # finishes, so wait for its observable status before returning: CDP
-        # page probes require a stable page topology.
-        status_path = (
-            self.data_dir / "runtime" / profile_id / "search_defaults_status.json"
-        )
-        deadline = asyncio.get_running_loop().time() + 90.0
-        while asyncio.get_running_loop().time() < deadline:
-            try:
-                state = json.loads(status_path.read_text(encoding="utf-8")).get(
-                    "state"
-                )
-            except (OSError, ValueError):
-                state = None
-            if state in ("applied", "failed", "disabled"):
-                break
-            await asyncio.sleep(0.2)
-        else:
-            raise TimeoutError("search-defaults status was never published")
 
         return {
             "profile_id": profile_id,

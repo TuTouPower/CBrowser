@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -172,6 +173,48 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
     }
 
 
+def resolve_storage_paths(
+    *,
+    db_path: Path | str | None = None,
+    data_root: Path | str | None = None,
+    artifacts_root: Path | str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[Path, Path, Path]:
+    """Resolve DB path, shared data root, and artifacts root cleanly.
+
+    In containerized deployments the control-plane DB sits on its own named
+    volume (``/data/db/cbrowser.db``) while shared runtime state (profiles,
+    previews, downloaded artifacts) lives under ``CBROWSER_DATA_ROOT``
+    (``/data``).  Deriving ``data_root`` from ``db_path.parent`` silently puts
+    previews and artifacts inside the private DB volume, so ``data_root`` is
+    resolved explicitly and only falls back to ``db_path.parent`` when an
+    isolated test supplies a custom ``db_path`` without ``CBROWSER_DATA_ROOT``.
+    """
+    env = os.environ if environ is None else environ
+    raw_db = db_path if db_path is not None else env.get("CBROWSER_DB_PATH")
+    resolved_db = Path(raw_db or "/data/db/cbrowser.db").resolve()
+
+    raw_data = data_root if data_root is not None else env.get("CBROWSER_DATA_ROOT")
+    if raw_data is not None and str(raw_data) != "":
+        resolved_data = Path(raw_data).resolve()
+    elif raw_db is None or str(raw_db) == "":
+        resolved_data = Path("/data").resolve()
+    else:
+        resolved_data = resolved_db.parent
+
+    raw_artifacts = (
+        artifacts_root
+        if artifacts_root is not None
+        else env.get("CBROWSER_ARTIFACTS_ROOT")
+    )
+    resolved_artifacts = (
+        Path(raw_artifacts).resolve()
+        if raw_artifacts is not None and str(raw_artifacts) != ""
+        else resolved_data / "artifacts"
+    )
+    return resolved_db, resolved_data, resolved_artifacts
+
+
 def create_app(
     db_path: Path | str | None = None,
     service: ProfileService | None = None,
@@ -187,6 +230,7 @@ def create_app(
     max_artifacts_per_profile: int = 200,
     max_profile_artifact_bytes: int = 2 * 1024 * 1024 * 1024,
     include_internal_schema: bool = False,
+    data_root: Path | str | None = None,
 ) -> FastAPI:
     docs_enabled = os.environ.get("CBROWSER_API_DOCS", "0") == "1"
 
@@ -223,19 +267,18 @@ def create_app(
             h.setFormatter(logging.Formatter("%(message)s"))
             event_logger.addHandler(h)
 
-        resolved_db = Path(
-            db_path or os.environ.get("CBROWSER_DB_PATH", "/data/db/cbrowser.db")
-        ).resolve()
+        resolved_db, resolved_data_root, resolved_artifacts_root = resolve_storage_paths(
+            db_path=db_path,
+            data_root=data_root,
+            artifacts_root=artifacts_root,
+        )
         resolved_db.parent.mkdir(parents=True, exist_ok=True)
         run_database_migrations(resolved_db)
         engine, session_maker = create_engine_and_maker(resolved_db)
 
         repo = getattr(service, "repo", None) or ProfileRepository(session_maker)
         if service is None:
-            service = ProfileService(repo, data_root=resolved_db.parent)
-        resolved_artifacts_root = Path(
-            artifacts_root or resolved_db.parent / "artifacts"
-        )
+            service = ProfileService(repo, data_root=resolved_data_root)
         app.state.artifact_service = ArtifactService(
             ArtifactRepository(session_maker),
             ArtifactStore(resolved_artifacts_root),
