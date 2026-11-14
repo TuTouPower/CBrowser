@@ -12,7 +12,7 @@
 
 - AC-004「认证成功率不低于基线、首包延迟/407 往返对比」**无可比基线对象**（云端 smoke 只是 5 次 loopback 存活样本），且 spec 原文规定「若无法满足须带证据请求用户批准后修订 AC」—— 属过度设计，砍除，不再补验。
 - AC-001（Browser 容器内凭据全路径不可读）、AC-002（HTTP / HTTPS CONNECT / SOCKS5 三协议上游认证 + 407 失败封闭）、AC-003（上游不可达/转发器退出时无响应体、无直连、reconcile 仅重建转发器）是**真实安全边界**，会产生新信息，值得做。
-- 设施已具备：`/Users/karson/kar/code/temp123/mihomo_proxy` 是 94 个 `mixed` 监听（21000–21093，同时兼容 HTTP 与 SOCKS5、支持 CONNECT）+ 88 个真实海外节点，容器 `mihomo-proxy` 常驻、`host.docker.internal` 可达。此前「需额外上游代理设施」的卡点不成立。
+- 设施已具备：`<home>/kar/code/temp123/mihomo_proxy` 是 94 个 `mixed` 监听（21000–21093，同时兼容 HTTP 与 SOCKS5、支持 CONNECT）+ 88 个真实海外节点，容器 `mihomo-proxy` 常驻、`host.docker.internal` 可达。此前「需额外上游代理设施」的卡点不成立。
 - 跑通条件：通过 API 建三类 proxy 指向该 mixed 端口 → 建 Profile 引用 → 启动真实 Browser → 验证 egress 与容器内无凭据；故障封闭用错端口/停转发器注入。407 认证失败需另起带认证的上游（mihomo 本身无认证）。
 - 时间：2026-11-14T22:36:00+08:00
 
