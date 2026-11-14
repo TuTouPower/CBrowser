@@ -59,6 +59,10 @@ from cbrowser.domain.proxy_endpoint import (
     ProxyLinkError,
     map_endpoint_for_container,
 )
+from cbrowser.proxy_forwarder.forwarder import (
+    PROXY_FORWARDER_FILENAME,
+    PROXY_FORWARDER_PORT,
+)
 from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
@@ -292,6 +296,10 @@ class SupervisorCore:
         self._registration: dict[str, RegistrationState] = {}
         self._offline_attach_log_at: dict[str, float] = {}
         self._stream_replace_attempts: dict[str, list[float]] = {}
+        # t065: same replacement budget shape as the Stream, keyed
+        # separately so a flapping forwarder cannot consume the Stream
+        # budget (or vice versa).
+        self._forwarder_replace_attempts: dict[str, list[float]] = {}
         self._pending_stream_residue: dict[str, StreamResidue] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
         self._unprotected_since: dict[str, float] = {}
@@ -405,6 +413,21 @@ class SupervisorCore:
     def _record_stream_replacement(self, profile_id: str, instance_id: str) -> None:
         key = f"{profile_id}:{instance_id}"
         self._stream_replace_attempts.setdefault(key, []).append(time.monotonic())
+
+    def _forwarder_replacement_allowed(self, profile_id: str, instance_id: str) -> bool:
+        key = f"{profile_id}:{instance_id}"
+        now = time.monotonic()
+        attempts = [
+            stamp
+            for stamp in self._forwarder_replace_attempts.get(key, [])
+            if now - stamp <= self._STREAM_REPLACE_WINDOW_SEC
+        ]
+        self._forwarder_replace_attempts[key] = attempts
+        return len(attempts) < self._STREAM_REPLACE_MAX
+
+    def _record_forwarder_replacement(self, profile_id: str, instance_id: str) -> None:
+        key = f"{profile_id}:{instance_id}"
+        self._forwarder_replace_attempts.setdefault(key, []).append(time.monotonic())
 
     def _within_registration_recovery_grace(self, profile_id: str) -> bool:
         """Whether a registration loss is still within the recovery grace.
@@ -895,6 +918,53 @@ class SupervisorCore:
             )
             return False
 
+    async def _replace_proxy_forwarder_only(
+        self, profile_id: str, session: ActiveSession
+    ) -> bool:
+        """Rebuild only the proxy-forwarder of a running pair (t065).
+
+        The Browser container, Stream, Profile data, runtime instance
+        and ports are untouched. The credentials file (secret dir) and
+        the endpoint file (runtime dir) survive, so the forwarder is
+        recreated against the same upstream and revision; the Browser
+        keeps its --proxy-server argument and reconnects to the new
+        container under the same deterministic name.
+        """
+        instance_id = session.runtime_instance_id
+        self._record_forwarder_replacement(profile_id, instance_id)
+        self._update_transport(
+            profile_id,
+            transport_state="recovering",
+            last_error="proxy_forwarder_replacement",
+            last_error_at=self._now_iso(),
+        )
+        try:
+            await self.docker.create_proxy_forwarder(
+                profile_id, instance_id, session.config_version
+            )
+            self._update_transport(
+                profile_id,
+                transport_state="ready",
+                last_error=None,
+            )
+            return True
+        except (DockerSandboxError, OSError, ValueError) as exc:
+            logger.warning(
+                "Proxy-forwarder replacement failed: profile=%s error_type=%s",
+                profile_id,
+                type(exc).__name__,
+            )
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error=(
+                    "proxy_forwarder_replacement_failed:"
+                    f"{type(exc).__name__}"
+                ),
+                last_error_at=self._now_iso(),
+            )
+            return False
+
     async def _recover_attachment_offline(
         self, profile_id: str, scan_instance_id: str | None = None
     ) -> None:
@@ -1028,6 +1098,23 @@ class SupervisorCore:
             and roles.get("stream") is not None
             and roles["stream"].status == "running"
         )
+        # t065: a proxy Profile is marked by the endpoint file in the
+        # runtime dir; its forwarder must be running. A Profile without
+        # an endpoint file has no forwarder to check (vacuous pass).
+        endpoint_file = (
+            self.docker.validator.get_runtime_dir(profile_id)
+            / PROXY_FORWARDER_FILENAME
+        )
+        if endpoint_file.is_file():
+            checks["proxy-forwarder"] = bool(
+                roles
+                and roles.get("proxy-forwarder") is not None
+                and roles["proxy-forwarder"].status == "running"
+            )
+            if not checks["proxy-forwarder"]:
+                diagnostics.append("proxy_forwarder_not_running")
+        else:
+            checks["proxy-forwarder"] = True
         media = await asyncio.to_thread(
             self.docker.inspect_media_network, profile_id
         )
@@ -1064,7 +1151,20 @@ class SupervisorCore:
                     roles["browser"],
                     browser_spec,
                 )
-                checks["policy"] = bool(stream_ok and browser_ok)
+                policy_ok = bool(stream_ok and browser_ok)
+                if roles.get("proxy-forwarder") is not None:
+                    forwarder_spec = await asyncio.to_thread(
+                        self.docker.proxy_forwarder_policy_spec,
+                        profile_id,
+                        roles["proxy-forwarder"],
+                    )
+                    forwarder_ok = await asyncio.to_thread(
+                        self.docker.verify_container_policy,
+                        roles["proxy-forwarder"],
+                        forwarder_spec,
+                    )
+                    policy_ok = bool(policy_ok and forwarder_ok)
+                checks["policy"] = policy_ok
             except DockerSandboxError:
                 checks["policy"] = None
                 diagnostics.append("policy_verify_unavailable")
@@ -1164,7 +1264,7 @@ class SupervisorCore:
             return False
         return not any(
             item.get("profile_id") == profile_id
-            and item.get("role") in ("browser", "stream")
+            and item.get("role") in ("browser", "stream", "proxy-forwarder")
             for item in containers
         )
 
@@ -1321,6 +1421,33 @@ class SupervisorCore:
                     "profile=%s",
                     pid,
                 )
+                return
+            f_c = roles.get("proxy-forwarder")
+            endpoint_file = (
+                self.docker.validator.get_runtime_dir(pid)
+                / PROXY_FORWARDER_FILENAME
+            )
+            if (
+                desired == "running"
+                and endpoint_file.is_file()
+                and (f_c is None or f_c.get("status") != "running")
+                and session is not None
+                and session.runtime_instance_id == b_inst
+            ):
+                # The endpoint file marks a proxy Profile: the
+                # forwarder is gone (or exited) while the pair is
+                # tracked and desired running — rebuild only the
+                # forwarder; the Browser keeps running untouched and
+                # reconnects to the same deterministic container name.
+                if not self._forwarder_replacement_allowed(pid, b_inst):
+                    self._update_transport(
+                        pid,
+                        transport_state="failed",
+                        last_error="proxy_forwarder_missing_budget_exhausted",
+                        last_error_at=self._now_iso(),
+                    )
+                    return
+                await self._replace_proxy_forwarder_only(pid, session)
                 return
             if desired == "running":
                 obs = await self._reconcile_instance_observation(
@@ -2522,13 +2649,32 @@ class SupervisorCore:
             "country_code": country,
         }
 
+    def _write_proxy_forwarder_endpoint(
+        self, path: Path, profile_id: str, credential_revision: int
+    ) -> None:
+        """Write the credentialless forwarder endpoint file (t065).
+
+        Lives in the Browser-readable runtime dir. It carries no secret:
+        scheme is always http, host is the forwarder container name, port
+        is the fixed listen port, and the revision is the frozen
+        credential revision the Runner re-checks before launching
+        Chromium. A stale revision is a fail-closed launch refusal.
+        """
+        endpoint = {
+            "scheme": "http",
+            "host": self.docker.get_proxy_forwarder_container_name(profile_id),
+            "port": PROXY_FORWARDER_PORT,
+            "credential_revision": credential_revision,
+        }
+        atomic_write_text(path, json.dumps(endpoint), mode=0o644)
+
     def _write_proxy_credentials(
         self, path: Path, credentials: dict[str, Any]
     ) -> None:
-        """Write the runtime credentials file (0600).
+        """Write the credentials file (0600) to the Profile secret dir.
 
         t052 AC-010: a loopback host is rewritten to the host-gateway
-        hostname here, so the Browser container reaches the host-local
+        hostname here, so the forwarder container reaches the host-local
         proxy.  The stored endpoint (and its fingerprint) keeps the
         loopback host; only this runtime copy is mapped.
         """
@@ -2688,7 +2834,15 @@ class SupervisorCore:
             dirs = self.docker.prepare_profile_directories(profile_id)
 
             snap_path = dirs["runtime"] / "snapshot.json"
-            creds_path = dirs["runtime"] / PROXY_CREDENTIALS_FILENAME
+            # t065: credentials live in the Profile secret dir (outside
+            # every Browser mount) and are mounted read-only into the
+            # proxy-forwarder container alone. The Browser-readable
+            # runtime dir carries only the credentialless endpoint file.
+            secret_dir = self.docker.validator.get_secret_dir(profile_id)
+            secret_dir.mkdir(parents=True, exist_ok=True)
+            secret_dir.chmod(0o700)
+            creds_path = secret_dir / PROXY_CREDENTIALS_FILENAME
+            endpoint_path = dirs["runtime"] / PROXY_FORWARDER_FILENAME
 
             # Bind runtime instance via internal supervisor API
             try:
@@ -2726,6 +2880,16 @@ class SupervisorCore:
                     created_at=datetime.now(UTC).isoformat(),
                 )
                 self._write_runtime_snapshot(snap_path, snapshot)
+                # Pre-t065 the credentials file lived in the
+                # Browser-mounted runtime dir; the Browser still mounts
+                # that whole directory read-write, so a leftover file
+                # would stay readable inside the Browser. Delete it
+                # unconditionally on every start (same precedent as the
+                # agent_secret.txt move below): the secret dir is the
+                # only credentials location now.
+                (dirs["runtime"] / PROXY_CREDENTIALS_FILENAME).unlink(
+                    missing_ok=True
+                )
                 if proxy_credentials is not None:
                     self._write_proxy_credentials(
                         creds_path,
@@ -2740,8 +2904,20 @@ class SupervisorCore:
                             ],
                         },
                     )
+                    # The endpoint file freezes the revision the Runner
+                    # re-checks before launching Chromium; it carries no
+                    # secret (scheme http, forwarder container name,
+                    # fixed listen port).
+                    self._write_proxy_forwarder_endpoint(
+                        endpoint_path,
+                        profile_id,
+                        proxy_credentials["credential_revision"],
+                    )
                 else:
+                    # No proxy: never leave a stale secret or a stale
+                    # endpoint behind for the next generation to read.
                     creds_path.unlink(missing_ok=True)
+                    endpoint_path.unlink(missing_ok=True)
 
                 port = await self.ports.allocate(profile_id)
                 await self.docker.create_profile_network(profile_id)
@@ -2757,6 +2933,19 @@ class SupervisorCore:
                 await self._report_observed(
                     profile_id, runtime_instance_id, "starting", config_version
                 )
+
+                if proxy_credentials is not None:
+                    # The forwarder must exist before the Browser: the
+                    # Browser's egress policy resolves the forwarder name
+                    # by Docker DNS, and the Runner reads the endpoint
+                    # file at launch. Any failure here fails the start
+                    # closed — the Browser never starts without its
+                    # proxy, and the launch-failure path tears the
+                    # forwarder down with the rest of the sandbox.
+                    await self.docker.create_browser_network(profile_id)
+                    await self.docker.create_proxy_forwarder(
+                        profile_id, runtime_instance_id, config_version
+                    )
 
                 b_container = await self.docker.start_browser_container(
                     profile_id=profile_id,

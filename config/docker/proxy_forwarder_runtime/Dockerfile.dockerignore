@@ -1,0 +1,8 @@
+**
+!config/docker/proxy_forwarder_runtime/entrypoint.sh
+!src/backend/cbrowser/__init__.py
+!src/backend/cbrowser/redact.py
+!src/backend/cbrowser/proxy_forwarder/**
+
+**/__pycache__
+**/*.pyc

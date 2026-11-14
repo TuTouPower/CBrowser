@@ -121,6 +121,7 @@ services:
       <<: *no-proxy-env
       CBROWSER_BROWSER_IMAGE: ${CBROWSER_BROWSER_IMAGE:?build browser image first}
       CBROWSER_STREAM_IMAGE: ${CBROWSER_STREAM_IMAGE:?build stream image first}
+      CBROWSER_PROXY_FORWARDER_IMAGE: ${CBROWSER_PROXY_FORWARDER_IMAGE:?build proxy-forwarder image first}
       CBROWSER_NETWORK_POLICY_IMAGE: ${CBROWSER_SUPERVISOR_IMAGE:?build supervisor image first}
       CBROWSER_API_URL: http://api:8000
       CBROWSER_GATEWAY_URL: ws://gateway:18080

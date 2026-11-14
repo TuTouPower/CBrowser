@@ -192,6 +192,32 @@ def stream_labels(
     }
 
 
+def proxy_forwarder_labels(
+    prefix: str,
+    profile_id: str,
+    config_version: Any,
+    profile_number: int,
+    deployment_id: str | None = None,
+) -> dict[str, str]:
+    """Labels for the per-profile proxy auth-forwarder container (t065).
+
+    Same identity shape as the Browser/Stream pair, role
+    ``proxy-forwarder``: the scan claims it, reconcile groups it, and
+    teardown removes it by name.
+    """
+    return {
+        "com.cbrowser.managed-by": "supervisor",
+        "com.cbrowser.profile-id": profile_id,
+        "com.cbrowser.role": "proxy-forwarder",
+        "com.cbrowser.network-policy": "v1",
+        "com.cbrowser.config-version": str(config_version),
+        "com.cbrowser.prefix": prefix,
+        "com.cbrowser.profile-number": f"{profile_number:04d}",
+        **_instance_label(deployment_id),
+        **sandbox_compose_labels(prefix, "proxy-forwarder", profile_number),
+    }
+
+
 def policy_helper_labels(
     prefix: str, deployment_id: str | None = None
 ) -> dict[str, str]:

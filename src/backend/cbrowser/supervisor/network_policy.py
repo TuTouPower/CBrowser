@@ -11,6 +11,12 @@ AC / Implementation Contract:
   Stream: incoming permits loopback, established, and its own UDP mux port.
   Stream: outgoing permits the trusted Gateway and explicit endpoints.
   Stream direct media: public ICE egress permitted for local viewers.
+  Proxy-forwarder: incoming permits loopback, established, and its own
+  listen port (the Browser network only reaches it on the isolated
+  per-profile bridge). Outgoing permits only the upstream proxy endpoint
+  plus Docker DNS (127.0.0.11:53/udp) so the upstream hostname resolves
+  through the same server the Supervisor pre-resolves for the allow-list;
+  everything else drops, including any direct origin connection.
 - Atomic restore per address family using iptables-restore / ip6tables-restore.
 """
 
@@ -82,10 +88,14 @@ class NetworkPolicySpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    role: Literal["browser", "stream"]
+    role: Literal["browser", "stream", "proxy-forwarder"]
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
     udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
+    # TCP ports the container accepts NEW inbound connections on. Only the
+    # proxy-forwarder uses this (its listen port, reached by the Browser on
+    # the same isolated bridge network); browser/stream must leave it empty.
+    input_tcp_ports: list[int] = Field(default_factory=list)
 
     @field_validator("allowed_tcp", "allowed_udp", mode="before")
     @classmethod
@@ -100,6 +110,20 @@ class NetworkPolicySpec(BaseModel):
                 raise ValueError(f"Invalid endpoint format: {item}")  # noqa: TRY004
         return validated
 
+    @field_validator("input_tcp_ports", mode="before")
+    @classmethod
+    def validate_input_ports(cls, v: list[Any]) -> list[int]:
+        if not isinstance(v, list):
+            raise ValueError("input_tcp_ports must be a list")  # noqa: TRY004
+        validated: list[int] = []
+        for item in v:
+            if type(item) is not int or not 1 <= item <= 65535:
+                raise ValueError(f"input port must be an integer 1..65535, got {item!r}")
+            validated.append(item)
+        if len(set(validated)) != len(validated):
+            raise ValueError("input_tcp_ports must not repeat a port")
+        return validated
+
     @model_validator(mode="after")
     def validate_role_mux_port(self) -> NetworkPolicySpec:
         if self.role == "stream" and self.udp_mux_port is None:
@@ -109,6 +133,19 @@ class NetworkPolicySpec(BaseModel):
             )
         if self.role == "browser" and self.udp_mux_port is not None:
             raise ValueError("udp_mux_port must not be specified for browser role")
+        if self.role == "proxy-forwarder" and self.udp_mux_port is not None:
+            raise ValueError(
+                "udp_mux_port must not be specified for proxy-forwarder role"
+            )
+        if self.role == "proxy-forwarder" and not self.input_tcp_ports:
+            raise ValueError(
+                "input_tcp_ports is required for proxy-forwarder role "
+                "(the Browser must be able to open new connections to it)"
+            )
+        if self.role != "proxy-forwarder" and self.input_tcp_ports:
+            raise ValueError(
+                "input_tcp_ports is only allowed for proxy-forwarder role"
+            )
         return self
 
 
@@ -159,6 +196,9 @@ def render_iptables_rules(spec: NetworkPolicySpec) -> str:
     if spec.role == "stream":
         assert spec.udp_mux_port is not None
         lines.append(f"-A INPUT -p udp --dport {spec.udp_mux_port} -j ACCEPT")
+    if spec.role == "proxy-forwarder":
+        for port in spec.input_tcp_ports:
+            lines.append(f"-A INPUT -p tcp --dport {port} -j ACCEPT")
 
     # OUTPUT rules: explicitly allowed endpoints
     for ip_str, port in spec.allowed_tcp:
@@ -202,6 +242,9 @@ def render_ip6tables_rules(spec: NetworkPolicySpec) -> str:
     if spec.role == "stream":
         assert spec.udp_mux_port is not None
         lines.append(f"-A INPUT -p udp --dport {spec.udp_mux_port} -j ACCEPT")
+    if spec.role == "proxy-forwarder":
+        for port in spec.input_tcp_ports:
+            lines.append(f"-A INPUT -p tcp --dport {port} -j ACCEPT")
 
     # OUTPUT rules for allowed IPv6 endpoints
     for ip_str, port in spec.allowed_tcp:

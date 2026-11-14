@@ -19,7 +19,6 @@ from cbrowser.api.internal_supervisor import get_proxy_credentials
 from cbrowser.runtime_agent.runner import (
     PROXY_CREDENTIALS_CHANGED,
     ProxyCredentialsChangedError as RunnerProxyChanged,
-    build_proxy_server_arg,
     resolve_proxy_server_arg,
 )
 from cbrowser.supervisor.core import (
@@ -72,64 +71,16 @@ def _core_with_response(payload: dict, status: int = 200) -> SupervisorCore:
     return core
 
 
-# ---- --proxy-server construction (AC-008) --------------------------------
-
-
-def test_authenticated_socks5_proxy_server_arg() -> None:
-    assert build_proxy_server_arg(CREDS) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
-    )
-
-
-def test_no_auth_http_proxy_server_arg() -> None:
-    assert build_proxy_server_arg(
-        {
-            "scheme": "http",
-            "host": "10.0.0.5",
-            "port": 8080,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-        }
-    ) == "--proxy-server=http://10.0.0.5:8080"
-
-
-def test_special_chars_are_percent_encoded() -> None:
-    arg = build_proxy_server_arg(
-        {
-            "scheme": "socks5",
-            "host": "2001:db8::1",
-            "port": 1080,
-            "username": "a@b",
-            "password": "p:q=x",
-            "credential_revision": 1,
-        }
-    )
-    assert "a%40b" in arg
-    assert "p%3Aq%3Dx" in arg
-    assert "[2001:db8::1]:1080" in arg
-
-
-@pytest.mark.parametrize(
-    "bad",
-    [
-        {"scheme": "ftp", "host": "h", "port": 1080},
-        {"scheme": "socks5", "host": "", "port": 1080},
-        {"scheme": "socks5", "host": "h", "port": 0},
-        {"scheme": "socks5", "host": "h", "port": 70000},
-        {"scheme": "socks5", "host": "h", "port": 1080, "password": "pw"},
-        "not-a-dict",
-    ],
-)
-def test_invalid_credentials_fail_closed_without_secret(bad) -> None:
-    with pytest.raises(RunnerProxyChanged) as exc:
-        build_proxy_server_arg(bad)
-    assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
-    assert "s3cr3t" not in str(exc.value)
-    assert "pw" not in str(exc.value)
-
-
 # ---- Runner fail-closed paths (AC-007) -----------------------------------
+# NOTE (t065): the four build_proxy_server_arg tests that asserted an
+# inline-credential --proxy-server argument, and
+# test_matching_revision_returns_proxy_arg, were deleted wholesale here:
+# t065 removes inline credentials entirely — the Runner now reads only
+# the credentialless forwarder endpoint file. The new behaviour is
+# covered by tests/unit/test_t065_proxy_forwarder_mounts.py
+# (test_runner_resolves_credentialless_forwarder_arg and
+# test_runner_fails_closed_on_endpoint_problems). The remaining tests
+# below still prove the fail-closed paths on a missing/malformed file.
 
 
 def test_no_proxy_id_never_injects_proxy(tmp_path: Path) -> None:
@@ -156,14 +107,6 @@ def test_credentials_revision_mismatch_fails_closed(tmp_path: Path) -> None:
         resolve_proxy_server_arg(_config("px1"), _snapshot(2), path)
     assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
     assert "s3cr3t" not in str(exc.value)
-
-
-def test_matching_revision_returns_proxy_arg(tmp_path: Path) -> None:
-    path = tmp_path / "proxy_credentials.json"
-    _write_creds(path)
-    assert resolve_proxy_server_arg(_config("px1"), _snapshot(2), path) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
-    )
 
 
 def test_corrupt_credentials_file_fails_closed(tmp_path: Path) -> None:
@@ -358,34 +301,17 @@ def test_read_browser_version_from_runner_info(tmp_path: Path) -> None:
 
 
 # ---- Cross-process consistency: supervisor writes, runner reads ----------
-
-
-def test_supervisor_written_credentials_are_accepted_by_runner(
-    tmp_path: Path,
-) -> None:
-    from cbrowser.supervisor.core import SupervisorCore
-
-    creds_path = tmp_path / "proxy_credentials.json"
-    core = SupervisorCore.__new__(SupervisorCore)
-    core.docker = SimpleNamespace(manage_ownership=False)
-    core._write_proxy_credentials(
-        creds_path,
-        {
-            "scheme": "socks5",
-            "host": "proxy.example.com",
-            "port": 1080,
-            "username": "user",
-            "password": "s3cr3t",
-            "credential_revision": 2,
-        },
-    )
-    assert (creds_path.stat().st_mode & 0o777) == 0o600
-    # The frozen revision stamped into the bound snapshot must equal the
-    # revision of the credentials file, which is what the Runner re-checks.
-    snapshot = _snapshot(2)
-    assert resolve_proxy_server_arg(_config("px1"), snapshot, creds_path) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
-    )
+# NOTE (t065): test_supervisor_written_credentials_are_accepted_by_runner
+# was deleted wholesale here: it asserted the Runner accepts the
+# supervisor-written credentials file and returns an inline-credential
+# --proxy-server argument. t065 removes that path entirely — the
+# Supervisor now writes credentials to the Profile secret dir (readable
+# only by the forwarder) plus a credentialless endpoint file, and the
+# Runner reads only the endpoint file. The new cross-process contract
+# is covered by tests/unit/test_t065_proxy_forwarder_mounts.py
+# (test_runner_resolves_credentialless_forwarder_arg,
+# test_runner_fails_closed_on_endpoint_problems) and by the t065
+# start_profile test there.
 
 
 async def test_report_observed_running_carries_browser_version(
@@ -476,191 +402,18 @@ async def test_report_observed_422_is_final_and_never_degrades(
 
 
 # ---- Browser container mount + egress policy (AC-007 / AC-008) ----------
-
-
-async def test_browser_container_mounts_credentials_read_only_and_resolves_egress(
-    tmp_path: Path,
-) -> None:
-    from unittest.mock import AsyncMock, MagicMock
-
-    from cbrowser.supervisor.docker_adapter import DockerAdapter
-    from cbrowser.supervisor.path_validator import PathValidator
-
-    browser_image = "sha256:" + "a" * 64
-    stream_image = "sha256:" + "b" * 64
-    root = (tmp_path / "data").resolve()
-    (root / "engine_cache" / "geoip").mkdir(parents=True)
-    adapter = DockerAdapter(
-        path_validator=PathValidator(root),
-        engine_cache_dir=root / "engine_cache",
-        docker_client=MagicMock(),
-        browser_image=browser_image,
-        stream_image=stream_image,
-        policy_image=browser_image,
-    )
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("1.2.3.4", 1080)])
-    adapter._install_network_policy = MagicMock()
-
-    adapter.remember_profile_number("p1", 1)
-
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["runtime"] / "snapshot.json").write_text(
-        json.dumps({"version": 1, "config": {"proxy_id": "px1", "geoip": True}}),
-        encoding="utf-8",
-    )
-    creds = dirs["runtime"] / "proxy_credentials.json"
-    _write_creds(creds)
-    container = MagicMock()
-    container.id = "cid"
-    adapter.client.containers.run = MagicMock(return_value=container)
-
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        snapshot_json_path=dirs["runtime"] / "snapshot.json",
-    )
-    volumes = adapter.client.containers.run.call_args.kwargs["volumes"]
-    assert volumes[str(creds)] == {
-        "bind": "/run/cbrowser/runtime/proxy_credentials.json",
-        "mode": "ro",
-    }
-    assert volumes[str(dirs["runtime"])]["bind"] == "/run/cbrowser/runtime"
-    assert adapter._resolved_endpoint.call_args.args[1] == (
-        "socks5://proxy.example.com:1080"
-    )
-
-
-async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
-    from unittest.mock import AsyncMock, MagicMock
-
-    from cbrowser.supervisor.path_validator import PathValidator
-    from cbrowser.supervisor.port_allocator import PortAllocator
-
-    root = (tmp_path / "data").resolve()
-    (root / "engine_cache" / "geoip").mkdir(parents=True)
-    validator = PathValidator(root)
-    dirs = {
-        "profile": root / "profiles" / "p1",
-        "runtime": root / "runtime" / "p1",
-        "events": root / "events" / "p1",
-        "exchange": root / "exchange" / "p1",
-        "x11": root / "runtime" / "p1" / "x11",
-        "pulse": root / "runtime" / "p1" / "pulse",
-    }
-    for d in dirs.values():
-        d.mkdir(parents=True, exist_ok=True)
-    key_file = tmp_path / "agent_key"
-    key_file.write_text("01234567890123456789012345678901", encoding="utf-8")
-    key_file.chmod(0o600)
-
-    stream_c = MagicMock()
-    stream_c.id = "s_id"
-    stream_c.name = "stream_c"
-    stream_c.status = "running"
-    stream_c.reload = MagicMock()
-    browser_c = MagicMock()
-    browser_c.id = "b_id"
-    browser_c.name = "browser_c"
-
-    def write_runner_info(profile_id, runtime_instance_id, snapshot_json_path):
-        (dirs["runtime"] / "x11" / "X99").touch()
-        (dirs["runtime"] / "pulse" / "pulse.sock").touch()
-        (dirs["runtime"] / "Xauthority").touch()
-        (dirs["runtime"] / "agent.sock").touch()
-        (dirs["runtime"] / "runner_info.json").write_text(
-            json.dumps(
-                {
-                    "profile_id": profile_id,
-                    "runtime_instance_id": runtime_instance_id,
-                    "config_version": 1,
-                    "browser_pid": 12345,
-                    "browser_product": "Chrome/146.0.0.0",
-                    "browser_user_agent": "Mozilla/5.0",
-                }
-            ),
-            encoding="utf-8",
-        )
-        return browser_c
-
-    adapter = SimpleNamespace(
-        validator=validator,
-        manage_ownership=False,
-        prepare_profile_directories=lambda _: dirs,
-        create_profile_network=AsyncMock(),
-        attach_profile_infrastructure=MagicMock(return_value={}),
-        start_browser_container=AsyncMock(side_effect=write_runner_info),
-        start_stream_container=AsyncMock(return_value=stream_c),
-        teardown_profile=AsyncMock(),
-        cleanup_profile_processes=MagicMock(),
-        ensure_runtime_cache=AsyncMock(),
-    )
-    events = SimpleNamespace(
-        drain_runtime_events=AsyncMock(return_value=0),
-        forward_exit_event=AsyncMock(),
-        emit_event=AsyncMock(),
-    )
-    gateway = SimpleNamespace(
-        has_foreground_viewers=AsyncMock(return_value=True),
-        disconnect_viewers=AsyncMock(),
-    )
-
-    def handler(req: httpx.Request) -> httpx.Response:
-        if "/proxies/" in req.url.path and req.url.path.endswith("/credentials"):
-            return httpx.Response(
-                200,
-                json={
-                    "scheme": "socks5",
-                    "host": "proxy.example.com",
-                    "port": 1080,
-                    "username": "u",
-                    "password": "pw",
-                    "credential_revision": 2,
-                    "proxy_credential_revision": 2,
-                },
-            )
-        return httpx.Response(
-            200,
-            json={
-                "status": "ok",
-                "desired_state": "running",
-                "restart_blocked": False,
-            },
-        )
-
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api"
-    ) as api:
-        core = SupervisorCore(
-            docker_adapter=adapter,
-            port_allocator=PortAllocator(30000, 30010),
-            event_forwarder=events,
-            api_client=api,
-            gateway_url="ws://supervisor-host-gw:18097",
-            token_file=None,
-            agent_key_file=key_file,
-            gateway_control=gateway,
-        )
-        session = await core.start_profile(
-            "p1", ProfileConfig(name="p1", proxy_id="px1")
-        )
-    assert session.observed_state == "running"
-
-    snapshot = json.loads((dirs["runtime"] / "snapshot.json").read_text())
-    assert snapshot["proxy_credential_revision"] == 2
-    creds = dirs["runtime"] / "proxy_credentials.json"
-    assert (creds.stat().st_mode & 0o777) == 0o600
-    assert resolve_proxy_server_arg(
-        ProfileConfig(name="p1", proxy_id="px1"),
-        ConfigVersionSnapshot.model_validate(snapshot),
-        creds,
-    ) == "--proxy-server=socks5://u:pw@proxy.example.com:1080"
+# NOTE (t065): test_browser_container_mounts_credentials_read_only_and_
+# resolves_egress and test_start_profile_with_proxy_end_to_end were
+# deleted wholesale here: both asserted the old contract — the Browser
+# container mounts proxy_credentials.json read-only and the Runner
+# returns an inline-credential --proxy-server argument. t065 removes
+# that contract: the Browser never mounts the credentials file, its
+# egress policy points at the credentialless forwarder endpoint, and
+# the Runner reads only the endpoint file. Replacement coverage lives
+# in tests/unit/test_t065_proxy_forwarder_mounts.py
+# (test_browser_container_mounts_no_credentials,
+# test_create_proxy_forwarder_wires_secret_only,
+# test_start_profile_with_proxy_writes_secret_and_endpoint).
 
 
 async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) -> None:

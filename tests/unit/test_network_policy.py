@@ -88,6 +88,37 @@ def test_render_iptables_rules_stream() -> None:
     assert "-A OUTPUT -d 10.0.0.0/8 -j DROP" in rules
 
 
+def test_render_iptables_rules_proxy_forwarder() -> None:
+    """t065: the forwarder accepts NEW inbound TCP only on its listen
+    port, egresses only to the upstream endpoint plus Docker DNS, and
+    drops everything else (OUTPUT default DROP, unlike the Browser)."""
+    spec = NetworkPolicySpec(
+        role="proxy-forwarder",
+        allowed_tcp=[("203.0.113.7", 18081)],
+        allowed_udp=[("127.0.0.11", 53)],
+        input_tcp_ports=[18080],
+    )
+    rules = render_iptables_rules(spec)
+    assert "-A INPUT -p tcp --dport 18080 -j ACCEPT" in rules
+    assert "-A OUTPUT -p tcp -d 203.0.113.7 --dport 18081 -j ACCEPT" in rules
+    assert "-A OUTPUT -p udp -d 127.0.0.11 --dport 53 -j ACCEPT" in rules
+    assert "-A OUTPUT -j DROP" in rules
+    assert "-A OUTPUT -j ACCEPT" not in rules
+    rules6 = render_ip6tables_rules(spec)
+    assert "-A INPUT -p tcp --dport 18080 -j ACCEPT" in rules6
+    assert "-A OUTPUT -j DROP" in rules6
+
+    # Forwarder without its listen port fails; other roles cannot carry one.
+    with pytest.raises(ValidationError):
+        NetworkPolicySpec(role="proxy-forwarder", allowed_tcp=[])
+    with pytest.raises(ValidationError):
+        NetworkPolicySpec(role="browser", input_tcp_ports=[18080])
+    with pytest.raises(ValidationError):
+        NetworkPolicySpec(
+            role="proxy-forwarder", input_tcp_ports=[18080], udp_mux_port=30050
+        )
+
+
 def test_startup_gate_logic(tmp_path: Path) -> None:
     gate_dir = tmp_path / "gate"
     gate_dir.mkdir()

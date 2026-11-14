@@ -108,7 +108,7 @@ def _run_isolated_deploy(tmp_path, render_rc):
     (dist / "index.html").write_text("<html>app</html>", encoding="utf-8")
     for name in (
         "browser_runtime", "stream_runtime", "supervisor_runtime",
-        "gateway_runtime", "api_runtime",
+        "gateway_runtime", "api_runtime", "proxy_forwarder_runtime",
     ):
         dockerfile_dir = repo / "config" / "docker" / name
         dockerfile_dir.mkdir(parents=True)
