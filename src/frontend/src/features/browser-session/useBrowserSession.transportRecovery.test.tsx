@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { useBrowserSession } from "./useBrowserSession";
-import { I18nProvider } from "../../i18n";
+import { I18nProvider, en } from "../../i18n";
 import type { ApiClient } from "../../shared/api/client";
 
 // t026 AC-011: a first-connection signaling drop (e.g. WS 1006 while the
@@ -97,5 +97,40 @@ describe("useBrowserSession transport recovery (t026 AC-011)", () => {
     await waitFor(() =>
       expect(result.current.stage).toBe("connecting_signaling"),
     );
+  });
+
+  it("AC-007: 信令失败只以固定 i18n 文案加关闭码呈现，忽略含凭据的关闭原因", async () => {
+    const { result, iframe } = setup("failed");
+    await waitFor(() =>
+      expect(result.current.stage).toBe("connecting_signaling"),
+    );
+    const sensitiveReason =
+      "auth token=SECRET-123 password=hunter2 session=sess-9 resume_key=rk-1";
+    await act(async () => {
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: {
+            type: "CBROWSER_WS_CLOSE",
+            code: 1006,
+            reason: sensitiveReason,
+          },
+          origin: window.location.origin,
+          source: iframe.contentWindow,
+        } as MessageEventInit),
+      );
+    });
+    await waitFor(() => expect(result.current.stage).toBe("signaling_failed"));
+
+    const message = result.current.errorMessage ?? "";
+    expect(message).toBe(
+      en.signalingDisconnected.replace("{code}", "1006"),
+    );
+    expect(message).toContain("1006");
+    expect(message).not.toMatch(
+      /token|password|session|secret|credential|resume_key|bearer|auth/i,
+    );
+    expect(message).not.toContain(sensitiveReason);
+    expect(message).not.toContain("SECRET-123");
+    expect(message).not.toContain("hunter2");
   });
 });

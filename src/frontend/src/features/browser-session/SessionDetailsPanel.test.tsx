@@ -195,6 +195,31 @@ describe("SessionDetailsPanel", () => {
     expect(panel.textContent).toContain("2026-01-01T10:00:00Z");
   });
 
+  it.each([
+    [null, "undefined"],
+    ["half_open", "half_open"],
+  ] as const)(
+    "transport 原始值 %s 时详情 transport_state 回落本地化 unknown（AC-004）",
+    (rawState, leakedRaw) => {
+      renderPanel({
+        runtime: runtime({
+          transport:
+            rawState === null
+              ? null
+              : {
+                  profile_id: "p1",
+                  browser_state: "running",
+                  stream_state: "running",
+                  transport_state: rawState as never,
+                },
+        }),
+      });
+      const panel = screen.getByTestId(SESS_DETAILS_PANEL);
+      expect(panel.textContent).toContain(en.transportStateUnknown);
+      expect(panel.textContent).not.toContain(leakedRaw);
+    },
+  );
+
   // t061 replacement note: the pre-t061 test "keeps the container but
   // hides content when closed" asserted the closed panel still occupies
   // its fixed-width container. AC-001 replaces that contract: the top

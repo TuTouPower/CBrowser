@@ -272,6 +272,32 @@ describe("SessionHeader", () => {
     expect(zh.transportStateReady).toBe("正常");
   });
 
+  it.each([
+    ["recovering", zh.transportStateRecovering],
+    ["failed", zh.transportStateFailed],
+    ["unknown", zh.transportStateUnknown],
+  ] as const)(
+    "中文界面下 transport 状态 %s 显示中文文案（AC-004）",
+    (transportState, label) => {
+      localStorage.setItem("cbrowser.locale", "zh");
+      const props = fixture({
+        runtime: runtime("p1", "running", {
+          transport: {
+            profile_id: "p1",
+            browser_state: "running",
+            stream_state: "running",
+            transport_state: transportState,
+          },
+        }),
+      });
+      renderHeader(props);
+
+      const badge = screen.getByTestId(TRANSPORT_STATE_ID);
+      expect(within(badge).getByText(label)).toBeInTheDocument();
+      expect(within(badge).queryByText(transportState)).toBeNull();
+    },
+  );
+
   it("未知或缺失的 transport 值回落本地化 unknown，不泄漏原始机器码", () => {
     const props = fixture({
       runtime: runtime("p1", "running", {

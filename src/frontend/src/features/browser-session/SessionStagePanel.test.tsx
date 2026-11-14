@@ -186,6 +186,23 @@ describe("SessionStagePanel", () => {
     );
   });
 
+  it("AC-007: 故障原因渲染固定 i18n 文案（仅关闭码参数），不含凭据类子串", () => {
+    const failureText = en.signalingDisconnected.replace("{code}", "1006");
+    renderPanel({
+      stage: "signaling_failed",
+      diagnostics: diagnostics({ errorMessage: failureText }),
+    });
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain(failureText);
+    expect(alert.textContent).toContain("1006");
+    expect(alert.textContent).not.toMatch(
+      /token|password|session|secret|credential|resume_key|bearer/i,
+    );
+    expect(screen.getByTestId(SESS_STAGE_PANEL).textContent).not.toMatch(
+      /token|password|session|secret|credential|resume_key|bearer/i,
+    );
+  });
+
   it.each(FAILURE_STAGES)(
     "failure stage $stage offers reconnect and status, never launch (AC-003)",
     (stage) => {

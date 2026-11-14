@@ -170,134 +170,134 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
       aria-label={t("sessDetails")}
       className="flex h-full w-details flex-col gap-md border-l border-outline bg-surface p-md"
     >
-        <div className="flex flex-col gap-lg overflow-y-auto">
-          <Section
-            title={t("navEnvironments")}
-            id="environment"
-            rows={[
-              renderRow(t("envColName"), display(profile.name), "profile.name"),
-              renderRow("id", display(profile.id), "profile.id", true),
-              renderRow(
-                t("sessGroup"),
-                display(group?.name ?? t("sessUngrouped")),
-                "group.name",
-              ),
-              renderRow(
-                "created_at",
-                display(profile.created_at),
-                "profile.created_at",
-                true,
-              ),
-            ]}
-          />
+      <div className="flex flex-col gap-lg overflow-y-auto">
+        <Section
+          title={t("navEnvironments")}
+          id="environment"
+          rows={[
+            renderRow(t("envColName"), display(profile.name), "profile.name"),
+            renderRow("id", display(profile.id), "profile.id", true),
+            renderRow(
+              t("sessGroup"),
+              display(group?.name ?? t("sessUngrouped")),
+              "group.name",
+            ),
+            renderRow(
+              "created_at",
+              display(profile.created_at),
+              "profile.created_at",
+              true,
+            ),
+          ]}
+        />
 
-          <Section
-            title={t("envColNetwork")}
-            id="network"
-            rows={[
-              renderRow(t("envColNetwork"), proxySummary, "proxy.summary"),
-              renderRow("host:port", proxyEndpoint, "proxy.endpoint", true),
-              renderRow("region", proxyRegion, "proxy.region"),
-              renderRow(
-                "gateway_endpoint",
-                display(transport?.gateway_endpoint),
-                "transport.gateway_endpoint",
-                true,
-              ),
-            ]}
-          />
+        <Section
+          title={t("envColNetwork")}
+          id="network"
+          rows={[
+            renderRow(t("envColNetwork"), proxySummary, "proxy.summary"),
+            renderRow("host:port", proxyEndpoint, "proxy.endpoint", true),
+            renderRow("region", proxyRegion, "proxy.region"),
+            renderRow(
+              "gateway_endpoint",
+              display(transport?.gateway_endpoint),
+              "transport.gateway_endpoint",
+              true,
+            ),
+          ]}
+        />
 
-          <Section
-            title={t("envColFingerprint")}
-            id="fingerprint"
-            rows={[
-              renderRow(
-                "fingerprint_platform",
-                display(profile.fingerprint_platform),
-                "profile.fingerprint_platform",
-                true,
-              ),
-              renderRow("font_set_id", display(fontSetId), "font_set_id", true),
-              renderRow(t("fontSetIntegrity"), integrity, "font_set_integrity"),
-            ]}
-            extra={
-              missingFonts.length > 0 ? (
-                <Banner
-                  tone="warning"
-                  testId={sessId("details", "missing-fonts")}
-                >
-                  <div className="flex items-center justify-between gap-sm">
-                    <span className="font-ui text-body-sm">
-                      {t("fontSetDetectionMissing")}: {missingFonts.join(", ")}
-                    </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      data-testid={SESS_COPY_VALUE}
-                      onClick={() =>
-                        copyValue("missing_fonts", missingFonts.join(", "))
-                      }
-                    >
-                      {copiedKey === "missing_fonts"
-                        ? t("sessCopied")
-                        : t("sessCopy")}
-                    </Button>
-                  </div>
-                </Banner>
-              ) : undefined
-            }
-          />
+        <Section
+          title={t("envColFingerprint")}
+          id="fingerprint"
+          rows={[
+            renderRow(
+              "fingerprint_platform",
+              display(profile.fingerprint_platform),
+              "profile.fingerprint_platform",
+              true,
+            ),
+            renderRow("font_set_id", display(fontSetId), "font_set_id", true),
+            renderRow(t("fontSetIntegrity"), integrity, "font_set_integrity"),
+          ]}
+          extra={
+            missingFonts.length > 0 ? (
+              <Banner
+                tone="warning"
+                testId={sessId("details", "missing-fonts")}
+              >
+                <div className="flex items-center justify-between gap-sm">
+                  <span className="font-ui text-body-sm">
+                    {t("fontSetDetectionMissing")}: {missingFonts.join(", ")}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    data-testid={SESS_COPY_VALUE}
+                    onClick={() =>
+                      copyValue("missing_fonts", missingFonts.join(", "))
+                    }
+                  >
+                    {copiedKey === "missing_fonts"
+                      ? t("sessCopied")
+                      : t("sessCopy")}
+                  </Button>
+                </div>
+              </Banner>
+            ) : undefined
+          }
+        />
 
-          <Section
-            title={t("automationRuntimeState")}
-            id="runtime"
-            rows={[
-              renderRow(
-                "browser_product",
-                display(runtime?.browser_product),
-                "browser_product",
-                true,
-              ),
-              renderRow(
-                "browser_user_agent",
-                display(runtime?.browser_user_agent),
-                "browser_user_agent",
-                true,
-              ),
-              renderRow(
-                "runtime_instance_id",
-                display(runtime?.runtime_instance_id),
-                "runtime_instance_id",
-                true,
-              ),
-              renderRow("config_version", configVersion, "config_version", true),
-              renderRow(
-                "transport_state",
-                t(transportStateLabelKey(transport?.transport_state)),
-                "transport_state",
-              ),
-              renderRow(
-                "last_coordinator_error",
-                display(runtime?.last_coordinator_error),
-                "last_coordinator_error",
-              ),
-              renderRow(
-                "last_started_at",
-                display(runtime?.last_started_at),
-                "last_started_at",
-                true,
-              ),
-            ]}
-            extra={
-              configPending ? (
-                <p className="rounded-md border border-warning bg-warning-soft px-md py-sm font-ui text-label-sm text-on-surface">
-                  {t("sessApplyPending")}
-                </p>
-              ) : undefined
-            }
-          />
-        </div>
+        <Section
+          title={t("automationRuntimeState")}
+          id="runtime"
+          rows={[
+            renderRow(
+              "browser_product",
+              display(runtime?.browser_product),
+              "browser_product",
+              true,
+            ),
+            renderRow(
+              "browser_user_agent",
+              display(runtime?.browser_user_agent),
+              "browser_user_agent",
+              true,
+            ),
+            renderRow(
+              "runtime_instance_id",
+              display(runtime?.runtime_instance_id),
+              "runtime_instance_id",
+              true,
+            ),
+            renderRow("config_version", configVersion, "config_version", true),
+            renderRow(
+              "transport_state",
+              t(transportStateLabelKey(transport?.transport_state)),
+              "transport_state",
+            ),
+            renderRow(
+              "last_coordinator_error",
+              display(runtime?.last_coordinator_error),
+              "last_coordinator_error",
+            ),
+            renderRow(
+              "last_started_at",
+              display(runtime?.last_started_at),
+              "last_started_at",
+              true,
+            ),
+          ]}
+          extra={
+            configPending ? (
+              <p className="rounded-md border border-warning bg-warning-soft px-md py-sm font-ui text-label-sm text-on-surface">
+                {t("sessApplyPending")}
+              </p>
+            ) : undefined
+          }
+        />
+      </div>
     </aside>
   );
 }

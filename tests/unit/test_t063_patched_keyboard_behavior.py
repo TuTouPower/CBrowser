@@ -12,6 +12,7 @@ attributes at runtime.
 
 from __future__ import annotations
 
+import ast as _ast
 import json
 import os
 import subprocess as real_subprocess
@@ -25,7 +26,7 @@ import pytest
 from scripts import build_selkies_controlled as build_module
 from scripts import vendor_selkies_web as vendor_module
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path.home() / "kar" / "code" / "CBrowser"
 MANIFEST_PATH = REPO_ROOT / "config" / "selkies" / "selkies_controlled_build.json"
 PATCHES_DIR = REPO_ROOT / "config" / "selkies" / "patches"
 WHEEL_CACHE = Path(
@@ -374,6 +375,70 @@ def test_built_main_registers_service_through_the_hook(built_wheel: Path) -> Non
 # ---------------------------------------------------------------------------
 
 
+def _selkies_root_names(tree: _ast.Module) -> set[str]:
+    """Local names bound by imports whose module path is rooted in selkies."""
+    roots: set[str] = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Import):
+            for alias in node.names:
+                top = alias.name.split(".")[0]
+                if top == "selkies":
+                    roots.add(alias.asname or top)
+        elif isinstance(node, _ast.ImportFrom):
+            module = node.module or ""
+            if module == "selkies" or module.startswith("selkies."):
+                for alias in node.names:
+                    if alias.name != "*":
+                        roots.add(alias.asname or alias.name)
+    return roots
+
+
+def _is_selkies_attribute_write(node: _ast.AST, roots: set[str]) -> bool:
+    """True when node writes through a name traceable to a selkies import."""
+    def root_name(expr: _ast.AST) -> str | None:
+        while isinstance(expr, _ast.Attribute):
+            expr = expr.value
+        return expr.id if isinstance(expr, _ast.Name) else None
+
+    if isinstance(node, (_ast.Assign, _ast.AugAssign, _ast.AnnAssign)):
+        targets = node.targets if isinstance(node, _ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, _ast.Attribute) and root_name(target) in roots:
+                return True
+    if isinstance(node, _ast.Call):
+        func = node.func
+        if (
+            isinstance(func, _ast.Name)
+            and func.id == "setattr"
+            and node.args
+            and root_name(node.args[0]) in roots
+        ):
+            return True
+    return False
+
+
+def _selkies_guard_violations(tree: _ast.Module) -> list[str]:
+    """AC-004 static guard over one parsed module: return violation strings."""
+    roots = _selkies_root_names(tree)
+    violations: list[str] = []
+    for node in _ast.walk(tree):
+        where = getattr(node, "lineno", 0)
+        if isinstance(node, _ast.Import):
+            if any(alias.name == "inspect" for alias in node.names):
+                violations.append(f"L{where}: inspect import")
+        elif isinstance(node, _ast.ImportFrom):
+            if node.module == "inspect":
+                violations.append(f"L{where}: inspect import")
+        elif _is_selkies_attribute_write(node, roots):
+            violations.append(f"L{where}: assignment to selkies attribute")
+        elif isinstance(node, _ast.Name) and node.id == "SUPPORTED_SELKIES_VERSION":
+            violations.append(f"L{where}: ABI version gate symbol")
+        elif isinstance(node, _ast.Constant) and isinstance(node.value, str):
+            if "SUPPORTED_SELKIES_VERSION" in node.value:
+                violations.append(f"L{where}: ABI version gate symbol")
+    return violations
+
+
 def test_policy_factory_seam_fails_loud_until_bound() -> None:
     import cbrowser.stream_agent.policy as policy_module
 
@@ -414,8 +479,6 @@ def test_controlled_build_startup_verification(tmp_path: Path) -> None:
 
 
 def test_startup_has_no_runtime_patch_or_upstream_source_parsing() -> None:
-    import ast as _ast
-
     agent_source = (
         REPO_ROOT / "src/backend/cbrowser/stream_agent/agent.py"
     ).read_text(encoding="utf-8")
@@ -431,48 +494,51 @@ def test_startup_has_no_runtime_patch_or_upstream_source_parsing() -> None:
     assert offenders == []
     assert not (src_root / "backend/cbrowser/stream_agent/x11_keymap.py").exists()
 
-    # AST-level guard over the whole stream_agent package: no assignment
-    # to an attribute of a selkies-rooted name (any spelling, including
+    # AST-level guard over the whole stream_agent package: no runtime
+    # write to a selkies-rooted attribute (any depth, any spelling incl.
     # setattr), no inspect import, and no private-ABI gate symbols.
     package = src_root / "backend/cbrowser/stream_agent"
     violations: list[str] = []
     for path in sorted(package.rglob("*.py")):
         tree = _ast.parse(path.read_text(encoding="utf-8"))
-        for node in _ast.walk(tree):
-            where = f"{path.name}:{getattr(node, 'lineno', 0)}"
-            if isinstance(node, _ast.Import):
-                if any(alias.name == "inspect" for alias in node.names):
-                    violations.append(f"{where}: inspect import")
-            elif isinstance(node, _ast.ImportFrom):
-                if node.module == "inspect":
-                    violations.append(f"{where}: inspect import")
-            elif isinstance(node, (_ast.Assign, _ast.AugAssign, _ast.AnnAssign)):
-                targets = node.targets if isinstance(node, _ast.Assign) else [node.target]
-                for target in targets:
-                    # A module-attribute write is exactly one Attribute
-                    # level on the module name (selkies_main.WebRTCService);
-                    # deeper chains and plain locals are instance state.
-                    if (
-                        isinstance(target, _ast.Attribute)
-                        and isinstance(target.value, _ast.Name)
-                        and "selkies" in target.value.id
-                    ):
-                        violations.append(f"{where}: assignment to selkies attribute")
-            elif isinstance(node, _ast.Call):
-                func = node.func
-                if isinstance(func, _ast.Name) and func.id == "setattr" and node.args:
-                    first = node.args[0]
-                    if isinstance(first, _ast.Name) and "selkies" in first.id:
-                        violations.append(f"{where}: setattr on selkies module")
-                    elif (
-                        isinstance(first, _ast.Attribute)
-                        and isinstance(first.value, _ast.Name)
-                        and "selkies" in first.value.id
-                    ):
-                        violations.append(f"{where}: setattr on selkies module")
-            elif isinstance(node, _ast.Name) and node.id == "SUPPORTED_SELKIES_VERSION":
-                violations.append(f"{where}: ABI version gate symbol")
-            elif isinstance(node, _ast.Constant) and isinstance(node.value, str):
-                if "SUPPORTED_SELKIES_VERSION" in node.value:
-                    violations.append(f"{where}: ABI version gate symbol")
+        violations.extend(f"{path.name}:{v}" for v in _selkies_guard_violations(tree))
     assert violations == []
+
+
+_SELKIES_PATCH_SPELLINGS = {
+    "dotted_module_path": "import selkies\nselkies.__main__.WebRTCService = f\n",
+    "from_import_module": "from selkies import input_handler\ninput_handler._XTestKeyboard = f\n",
+    "bare_imported_class": (
+        "from selkies.input_handler import _XTestKeyboard\n"
+        "_XTestKeyboard.prebind = f\n"
+    ),
+    "aliased_setattr": 'import selkies as m\nsetattr(m, "WebRTCService", f)\n',
+}
+
+
+@pytest.mark.parametrize(
+    "spelling,source", sorted(_SELKIES_PATCH_SPELLINGS.items())
+)
+def test_ac004_guard_catches_selkies_attribute_write_spellings(
+    spelling: str, source: str
+) -> None:
+    violations = _selkies_guard_violations(_ast.parse(source))
+    assert any("selkies attribute" in v for v in violations), (spelling, violations)
+
+
+def test_ac004_guard_ignores_selkies_substring_lookalikes() -> None:
+    source = (
+        "selkies_metrics = build_metrics()\n"
+        "selkies_metrics.value = 1\n"
+        "selkies_main = object()\n"
+        "setattr(selkies_main, 'WebRTCService', f)\n"
+    )
+    assert _selkies_guard_violations(_ast.parse(source)) == []
+
+
+def test_ac004_guard_has_no_false_positive_on_real_package() -> None:
+    package = REPO_ROOT / "src" / "backend" / "cbrowser" / "stream_agent"
+    assert package.is_dir()
+    for path in sorted(package.rglob("*.py")):
+        tree = _ast.parse(path.read_text(encoding="utf-8"))
+        assert _selkies_guard_violations(tree) == [], path.name
