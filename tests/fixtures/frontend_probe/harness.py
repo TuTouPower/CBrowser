@@ -49,6 +49,7 @@ class FrontendTopologyHarness(GatewayTopologyHarness):
                 "com.cbrowser.prefix": self.prefix,
                 "com.cbrowser.test": self.test_label,
                 "com.cbrowser.role": role,
+                "com.cbrowser.instance-id": self.deployment_instance_id,
             }
         )
         if role == "gateway":

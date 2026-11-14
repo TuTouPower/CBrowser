@@ -1,6 +1,7 @@
 """Startup reaps only positively owned transient helpers using real Docker."""
 
 import logging
+import os
 import uuid
 
 import docker
@@ -33,9 +34,19 @@ async def test_locked_startup_reaps_helpers_without_touching_other_containers(
         stream_image=image,
         resource_prefix=prefix,
     )
+    instance_id = os.environ["CBROWSER_INSTANCE_ID"]
     containers = []
 
-    def launch(name, role, *, managed="supervisor", owned_prefix=prefix):
+    def launch(
+        name, role, *, managed="supervisor", owned_prefix=prefix, instance_id=None
+    ):
+        labels = {
+            "com.cbrowser.prefix": owned_prefix,
+            "com.cbrowser.managed-by": managed,
+            "com.cbrowser.role": role,
+        }
+        if instance_id is not None:
+            labels["com.cbrowser.instance-id"] = instance_id
         container = client.containers.run(
             image,
             entrypoint="python3",
@@ -47,19 +58,21 @@ async def test_locked_startup_reaps_helpers_without_touching_other_containers(
             read_only=True,
             cap_drop=["ALL"],
             security_opt=["no-new-privileges:true"],
-            labels={
-                "com.cbrowser.prefix": owned_prefix,
-                "com.cbrowser.managed-by": managed,
-                "com.cbrowser.role": role,
-            },
+            labels=labels,
         )
         containers.append(container)
         return container
 
     try:
-        cache_helper = launch(prefix + "-cache-" + uuid.uuid4().hex[:12], "cache-init")
+        cache_helper = launch(
+            prefix + "-cache-" + uuid.uuid4().hex[:12],
+            "cache-init",
+            instance_id=instance_id,
+        )
         policy_helper = launch(
-            prefix + "-policy-" + uuid.uuid4().hex[:12], "network-policy"
+            prefix + "-policy-" + uuid.uuid4().hex[:12],
+            "network-policy",
+            instance_id=instance_id,
         )
         policy_helper.stop(timeout=1)
         runtime = launch(prefix + "-browser-profile", "browser")

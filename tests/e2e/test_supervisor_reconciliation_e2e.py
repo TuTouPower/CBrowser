@@ -76,6 +76,7 @@ def _run_gateway_container(name: str):
             "com.cbrowser.managed-by": "supervisor",
             "com.cbrowser.prefix": PREFIX,
             "com.cbrowser.role": "gateway",
+            "com.cbrowser.instance-id": os.environ["CBROWSER_INSTANCE_ID"],
         },
     )
 

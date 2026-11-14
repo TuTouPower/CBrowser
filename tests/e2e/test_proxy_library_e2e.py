@@ -8,9 +8,10 @@ Runtime Coordinator -> Supervisor -> Browser/Stream containers), driven by
 headless official Mac Google Chrome.  The recording proxy is a host thread
 listening on an OS-assigned port; the Browser container reaches it through
 ``host.docker.internal`` (Docker Desktop / OrbStack host gateway), so no public
-network and no extra container/network attachment is required.  Supervisor
-writes the proxy host verbatim into ``proxy_credentials.json`` and derives the
-Chrome ``--proxy-server`` endpoint plus its fail-closed allow rule from it.
+network and no extra container/network attachment is required.  t065: the
+Supervisor runs an auth-forwarder container, writes the credentialless
+``proxy_forwarder.json`` endpoint (forwarder container :18080) for the Browser,
+and keeps the upstream credentials in the forwarder's secret dir.
 """
 
 from __future__ import annotations

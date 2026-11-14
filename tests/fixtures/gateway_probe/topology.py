@@ -75,7 +75,7 @@ class GatewayTopologyHarness:
         self.docker_client = docker.from_env()
         self.prefix = f"t006_relay_{uuid.uuid4().hex[:8]}"
         self.deployment_instance_id = worker_resource_offsets()[
-            "CBROWSER_E2E_INSTANCE_ID"
+            "CBROWSER_INSTANCE_ID"
         ]
 
         self.containers: list[docker.models.containers.Container] = []

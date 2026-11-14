@@ -69,6 +69,7 @@ def test_supervisor_cli_graceful_shutdown_on_sigterm(tmp_path: Path) -> None:
     env.update(
         PYTHONPATH=str(REPO_ROOT / "src/backend"),
         PYTHONDONTWRITEBYTECODE="1",
+        CBROWSER_INSTANCE_ID=os.environ["CBROWSER_INSTANCE_ID"],
         CBROWSER_BROWSER_IMAGE=browser_image,
         CBROWSER_STREAM_IMAGE=stream_image,
     )

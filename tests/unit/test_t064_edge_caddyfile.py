@@ -74,3 +74,29 @@ def test_rendering_stays_deterministic_and_secret_free() -> None:
     first = generate_caddyfile(56661)
     assert generate_caddyfile(56661) == first
     assert "{env.CBROWSER_EDGE_PROOF_SECRET}" in first
+
+
+def test_signal_auth_subrequest_is_a_plain_get_without_upgrade_headers() -> None:
+    content = generate_caddyfile(56661)
+    signal = _block(content, "handle /stream/*/signal {")
+    auth = signal[
+        signal.index("forward_auth http://api:8000") : signal.index(
+            "reverse_proxy http://gateway:18080"
+        )
+    ]
+    assert "method GET" in auth
+    upgraded_fields = (
+        "Upgrade",
+        "Connection",
+        "Sec-WebSocket-Key",
+        "Sec-WebSocket-Version",
+        "Sec-WebSocket-Protocol",
+    )
+    for field in upgraded_fields:
+        assert f"header_up -{field}" in auth
+
+    proxied = signal[signal.index("reverse_proxy http://gateway:18080") :]
+    assert "method GET" not in proxied
+    for field in upgraded_fields:
+        assert f"header_up -{field}" not in proxied
+    assert "header_up -Cookie" in proxied

@@ -61,6 +61,16 @@ class FrontendAppTopologyHarness(FrontendTopologyHarness):
     def prepare_static(self) -> None:
         prepare_frontend_app(self.static_dir)
 
+    def _run_container(self, role: str, image_id: str, **kwargs: Any) -> Any:
+        if role == "supervisor":
+            environment = dict(kwargs.get("environment") or {})
+            environment.setdefault(
+                "CBROWSER_PROXY_FORWARDER_IMAGE",
+                self._get_image("CBROWSER_PROXY_FORWARDER_IMAGE"),
+            )
+            kwargs["environment"] = environment
+        return super()._run_container(role, image_id, **kwargs)
+
     def api_environment_extra(self) -> dict[str, str]:
         return {
             "CBROWSER_SUPERVISOR_URL": f"http://{self.prefix}-supervisor:8005",

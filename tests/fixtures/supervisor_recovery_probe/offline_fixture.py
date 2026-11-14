@@ -34,7 +34,7 @@ import docker
 import docker.errors
 import httpx
 
-from e2e_env import require_e2e_env
+from e2e_env import require_e2e_env, worker_resource_offsets
 from api_auth import create_auth_context
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT, GatewayEndpoint
 from cbrowser.runtime_agent.socket_root import (
@@ -43,6 +43,13 @@ from cbrowser.runtime_agent.socket_root import (
 )
 
 logger = logging.getLogger("cbrowser.tests.offline_recovery_probe")
+
+
+def _resolve_instance_id() -> str:
+    injected = os.environ.get("CBROWSER_INSTANCE_ID")
+    if injected:
+        return injected
+    return worker_resource_offsets()["CBROWSER_INSTANCE_ID"]
 
 
 def get_e2e_prerequisites() -> tuple[str, str, Path, Path]:
@@ -490,7 +497,9 @@ class RealSupervisorContainer:
         mounts = self._build_mounts()
         cmd = self._build_command(sup_token_p, agent_p, gw_token_p)
 
+        instance_id = _resolve_instance_id()
         container_env = {
+            "CBROWSER_INSTANCE_ID": instance_id,
             "CBROWSER_BROWSER_IMAGE": os.environ.get(
                 "CBROWSER_RUNTIME_TEST_IMAGE", ""
             ),
@@ -521,6 +530,7 @@ class RealSupervisorContainer:
                 "com.cbrowser.prefix": self.prefix,
                 "com.cbrowser.managed-by": "supervisor",
                 "com.cbrowser.role": "supervisor",
+                "com.cbrowser.instance-id": instance_id,
             },
         }
         if self.network:

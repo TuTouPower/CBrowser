@@ -96,6 +96,12 @@ https://127.0.0.1, https://localhost {{
 
             forward_auth {api_upstream} {{
                 uri /api/v1/internal/edge/viewer-authorize
+                method GET
+                header_up -Upgrade
+                header_up -Connection
+                header_up -Sec-WebSocket-Key
+                header_up -Sec-WebSocket-Version
+                header_up -Sec-WebSocket-Protocol
                 header_up X-CBrowser-Edge-Proof "{{env.CBROWSER_EDGE_PROOF_SECRET}}"
                 copy_headers X-CBrowser-Authorized-Profile X-CBrowser-Viewer-Grant
             }}

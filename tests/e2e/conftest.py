@@ -41,7 +41,7 @@ def pytest_configure(config) -> None:
     """
     worker = os.environ.get("PYTEST_XDIST_WORKER")
     for name, value in worker_resource_offsets().items():
-        if worker:
+        if worker or name == "CBROWSER_INSTANCE_ID":
             os.environ[name] = value
         else:
             os.environ.setdefault(name, value)

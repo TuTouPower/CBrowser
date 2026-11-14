@@ -31,6 +31,7 @@ import pytest
 from e2e_env import require_e2e_env
 from wait import poll_until
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
+from cbrowser.shared.viewer_grants import ViewerGrantAuthority
 
 from api_auth import create_auth_context
 
@@ -103,7 +104,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
         os.environ["CBROWSER_RUNTIME_GEOIP_CACHE"], cache / "geoip", dirs_exist_ok=True
     )
     keys = {}
-    for name in ("supervisor", "agent", "gateway", "gateway_api"):
+    for name in ("supervisor", "agent", "gateway", "gateway_api", "viewer_grant"):
         key = control / (name + "_key")
         key.write_text(secrets.token_urlsafe(32))
         key.chmod(0o600)
@@ -137,6 +138,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "com.cbrowser.prefix": prefix,
                 "com.cbrowser.managed-by": "supervisor",
                 "com.cbrowser.role": role,
+                "com.cbrowser.instance-id": os.environ["CBROWSER_INSTANCE_ID"],
             },
             **kwargs,
         )
@@ -160,6 +162,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_SUPERVISOR_TOKEN_FILE": "/run/secrets/key",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
                 "CBROWSER_ADMIN_PASSWORD_FILE": "/run/secrets/admin_pass",
+                "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
             },
             volumes={
                 str(metadata): {"bind": "/metadata", "mode": "rw"},
@@ -170,6 +173,10 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 },
                 str(auth_ctx.admin_password_file): {
                     "bind": "/run/secrets/admin_pass",
+                    "mode": "ro",
+                },
+                str(keys["viewer_grant"]): {
+                    "bind": "/run/secrets/viewer_grant_key",
                     "mode": "ro",
                 },
             },
@@ -183,6 +190,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 "CBROWSER_GATEWAY_TOKEN_FILE": "/run/secrets/gateway",
                 "CBROWSER_GATEWAY_API_URL": f"http://{prefix}-api:8000",
                 "CBROWSER_GATEWAY_API_TOKEN_FILE": "/run/secrets/gateway_api",
+                "CBROWSER_VIEWER_GRANT_KEY_FILE": "/run/secrets/viewer_grant_key",
                 # t054: the deploy port (default 56661 here, matching
                 # the test auth context origin); no disk state anymore.
                 "CBROWSER_HTTPS_PORT": "56661",
@@ -198,6 +206,10 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
                 str(keys["gateway"]): {"bind": "/run/secrets/gateway", "mode": "ro"},
                 str(keys["gateway_api"]): {
                     "bind": "/run/secrets/gateway_api",
+                    "mode": "ro",
+                },
+                str(keys["viewer_grant"]): {
+                    "bind": "/run/secrets/viewer_grant_key",
                     "mode": "ro",
                 },
             },
@@ -234,6 +246,7 @@ async def test_authoritative_gateway_port_credentials_and_instance_fenced_lifecy
             image("CBROWSER_SUPERVISOR_TEST_IMAGE"),
             cap_add=["FOWNER", "DAC_OVERRIDE", "CHOWN"],
             environment={
+                "CBROWSER_INSTANCE_ID": os.environ["CBROWSER_INSTANCE_ID"],
                 "CBROWSER_BROWSER_IMAGE": image("CBROWSER_RUNTIME_TEST_IMAGE"),
                 "CBROWSER_STREAM_IMAGE": image("CBROWSER_STREAM_TEST_IMAGE"),
                 "CBROWSER_NETWORK_POLICY_IMAGE": image(
@@ -509,6 +522,10 @@ sys.stdout.write(json.dumps(result))
                 headers={
                     "Origin": auth_ctx.allowed_origin,
                     "Cookie": auth_headers["Cookie"],
+                    "X-CBrowser-Authorized-Profile": target,
+                    "X-CBrowser-Viewer-Grant": ViewerGrantAuthority(
+                        keys["viewer_grant"]
+                    ).mint(target),
                 },
                 autoclose=False,
             )

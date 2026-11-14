@@ -3198,7 +3198,7 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
         "from http.server import BaseHTTPRequestHandler, HTTPServer\n"
         "import urllib.request\n"
         + inspect.getsource(_T035RecordingProxyHandler)
-        + "\nHTTPServer(('0.0.0.0', 8080), _T035RecordingProxyHandler).serve_forever()\n"
+        + "\nHTTPServer(('0.0.0.0', 18080), _T035RecordingProxyHandler).serve_forever()\n"
     )
     subprocess.run(
         [
@@ -3219,22 +3219,19 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
     snapshot_payload["proxy_credential_revision"] = 1
     snap_file.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
 
-    creds_file = runtime_dir / "proxy_credentials.json"
-    creds_file.write_text(
+    endpoint_file = runtime_dir / "proxy_forwarder.json"
+    endpoint_file.write_text(
         json.dumps(
             {
                 "scheme": "http",
                 "host": proxy_name,
-                "port": 8080,
-                "username": None,
-                "password": None,
+                "port": 18080,
                 "credential_revision": 1,
-                "proxy_credential_revision": 1,
             }
         ),
         encoding="utf-8",
     )
-    os.chmod(creds_file, 0o644)
+    os.chmod(endpoint_file, 0o644)
 
     cid = run_docker_container(
         c_name, profile_dir, runtime_dir, exchange, snap_file,
