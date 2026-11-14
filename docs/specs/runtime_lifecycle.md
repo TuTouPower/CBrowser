@@ -94,3 +94,11 @@ Gateway 与 Supervisor 的双向依赖已删除：端点/Origin、Agent 凭证�
 ## 验证边界
 
 验证分为单元/真实 HTTP、独立 Supervisor 与 API 进程、完整 Docker 容器图、网络内核正负对照、CPU 采样和官方 Chrome 实际帧数。各层证据不互相替代。完整部署和容量/P95/8小时/1000次输入验收仍按架构计划后续阶段执行；公网与原生 Linux x86_64 仅两项记为 USER_WAIVED。
+
+## 代理认证转发器生命周期（t065）
+
+- 启动顺序：网络 → 转发器 → Browser → Stream。转发器在 Browser 之前创建并等就绪（监听端口可连通）后才启动 Browser：Browser 的出站策略需在容器内以 Docker DNS 解析转发器名，Runner 在启动时读端点文件；任一环节失败即启动失败封闭，Browser 不启动，失败清理经 teardown 一并清除转发器。
+- 凭据与端点文件：启动时凭据写 secret 目录（0600），端点文件写 runtime 目录（无秘密，冻结 credential_revision）；无代理时两者均删除，不留 stale 文件给下一代读到。
+- 收敛：转发器缺失/退出而 Browser/Stream 仍在、且 API 意愿为 running 时，reconcile 只重建转发器（`_replace_proxy_forwarder_only`，与 Stream 替换同型预算：300 秒窗口内最多 3 次）；Browser 容器、Stream、Profile 数据、runtime 实例与端口均不动。
+- 就绪：`_profile_readiness` 增加 `proxy-forwarder` 检查（有端点文件的 Profile 要求转发器 running，无端点文件时空过）与转发器策略复核（`proxy_forwarder_policy_spec`＋`verify_container_policy`）；`_confirm_sandbox_gone` 计入转发器角色。
+- 停止：`stop_profile` 经 `teardown_profile` 清除转发器容器（与 Browser/Stream 同名清理的归属校验）。

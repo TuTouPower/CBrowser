@@ -32,6 +32,7 @@ IMAGES = {
     "supervisor": "config/docker/supervisor_runtime/Dockerfile",
     "browser": "config/docker/browser_runtime/Dockerfile",
     "stream": "config/docker/stream_runtime/Dockerfile",
+    "proxy-forwarder": "config/docker/proxy_forwarder_runtime/Dockerfile",
 }
 
 

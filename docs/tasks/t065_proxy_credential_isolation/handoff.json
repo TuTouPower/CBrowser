@@ -1,0 +1,16 @@
+{
+  "tid": "t065",
+  "attempt": 1,
+  "execution_id": "e52c9bdfeb68469f8f0d22d6a0418766",
+  "status": "done",
+  "branch": "t065_proxy_credential_isolation",
+  "base_sha": "a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4",
+  "tests": "protocol_drift 通过（修复后重跑）；requirements 通过；contract 257 passed / 0 failed / 1 skipped（258 例，重跑后刷新 junit，无变化）；unit 2222 passed / 5 failed / 1 skipped（2228 例，重跑后刷新 junit），5 failed 与 501ac0b 基线逐条同签名（fontconfig write_failure、repo_hygiene 家路径、t060 geoip、t068 pinning 2 条云端 x64 平台差异），无新增（修复后新增 17 测试：协议 6、生命周期 11，全部通过）；integration 201 passed / 0 failed / 7 skipped（208 例）；design_lint 0 error（修复后重跑）、design_check 通过（修复后重跑）、frontend_build 通过；frontend_test 并行 628 passed / 5 failed：4 条 5000ms 超时＋1 条 ProfileForm.t058 mock 调用次数断言失败（期望 1 次、实调 2 次），并行负载 flake，与 t065 改动无关——4 个文件单跑 18/18 通过，日志归档 `logs/frontend_test_single_run.log`。证据 `.scratch/gate_evidence_t065/`（suites.d 各套件 exit、junit 三份）；说明：evidence 模式全量跑中途遇运行环境重启中断，integration 未及跑完，已用与 `run_gates.sh` 相同的两段命令（并行 197 passed / 7 skipped、串行 4 passed）手动补跑并合并 junit，算术 208 例＝201 passed＋7 skipped；审阅修复后第二次两段重跑：并行段 189 passed / 7 skipped / 8 个 setup error（均为 supervisor_api fixture 的 “isolated API process did not become ready”，并行负载下 API 子进程 10 秒就绪超时，时值 omni t613 vitest 并发、load 约 6；非测试本体失败、与 t065 改动无关），8 条按仓内惯例串行单跑复核 8/8 通过（日志 `logs/integration_rerun_serial_8.log`），串行段 4/4，合计 201 passed / 7 skipped，junit 算术保持闭合；补跑日志归档 `logs/integration_parallel.log`、`logs/integration_serial.log`，`integration.tsv` 命令列为实际两段命令＋合并步骤；unit 两段与 contract 重跑日志归档 `logs/unit_parallel.log`、`logs/unit_serial.log`、`logs/contract.log`；其余套件结果出自该次 evidence 运行。",
+  "blackbox": "云端无 Docker，Docker e2e 与 real_engine 按云端口径跳过记 pass；云端证据为本地桩协议测试（fake 上游）与容器接线测试（fake Docker 客户端、真实执行 adapter 内部方法），不是真实拓扑证据；AC-001～004 真实拓扑黑盒顺延 p098 本地执行，不冒充已验。",
+  "review": "Round 4 双 PASS（指纹 4dd19121e8e93b53，两轴一致；review_level=full；code 轴 9/9 前轮 finding 消除，test 轴 7/7 消除；Round 3 新发现 code f010 已消除，无新 finding；check_review_status.py 实测 code_verdict=PASS、test_verdict=PASS、overall=PASS、review_scope=ok、ac_review=ok、round=4、next_action=finalize）。AC 判定表两轴一致：AC-001～005 全部 TICK-VALID（AC-004 为 trust_prior，按父级 09:46 裁决：基线对比属 p098 第 4 项）。",
+  "review_scope": "4dd19121e8e93b53",
+  "pending": [
+    "p098"
+  ],
+  "findings": []
+}

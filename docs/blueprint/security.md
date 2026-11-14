@@ -81,7 +81,7 @@
 
 - 代理链接是代理端点唯一的录入表示：完整链接（含密码）只在用户输入与提交请求体内出现一次；响应一律返回脱敏链接（`ProxyEndpoint.redacted_link()`，不含密码），`ProxyResponse` 不含 password 字段。前端链接输入框失焦时显示脱敏链接，聚焦编辑时才显示完整链接；已存密码永不写入表单 state、DOM、react-query 缓存、URL 与日志。
 
-- 密码只以只写秘密存在于值对象中：`ProxyEndpoint` 的 `__repr__` / `__str__`、指纹（sha256 的 scheme/host/port/username，不含密码）、日志与观测记录均不含密码。凭据只经两条内部路径流转：API → Supervisor 的内部端点 `GET /api/v1/internal/supervisor/proxies/{id}/credentials`（service-plane Bearer，不进 OpenAPI）与 Supervisor → Browser/probe helper 的 0600 凭证文件（只读挂载，`/run/cbrowser/runtime/proxy_credentials.json`）。
+- 密码只以只写秘密存在于值对象中：`ProxyEndpoint` 的 `__repr__` / `__str__`、指纹（sha256 的 scheme/host/port/username，不含密码）、日志与观测记录均不含密码。凭据只经三条内部路径流转：API → Supervisor 的内部端点 `GET /api/v1/internal/supervisor/proxies/{id}/credentials`（service-plane Bearer，不进 OpenAPI）；Supervisor → 转发器的 0600 凭证文件（只读挂载，secret 目录，容器内路径 `/run/cbrowser/proxy_credentials.json`，除转发器外无容器挂载）；Supervisor → Browser 的无凭据端点文件 `proxy_forwarder.json`（scheme http、转发器容器名、端口 18080、冻结修订号，无秘密）。Browser 的 `--proxy-server` 不再含 userinfo；出口探测 helper 仍是唯一例外——它是一次性短生命周期容器，直接收凭据执行探测（见 t052 节）。
 
 - 探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID：任何非空请求体（除 `{}` 外）返回 422；服务端加载已存端点与凭据执行，调用方无法指定 host、port、scheme 或 username，因而无法把已存密码发往另一主机（SSRF + 凭据外送的负向路径由集成测试覆盖）。探测 helper 只向 stdout 打印一行 JSON（出口 IP 与国家，或错误码），密码不打印、不记日志。
 

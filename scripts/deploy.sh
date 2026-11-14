@@ -586,7 +586,7 @@ check_prerequisites() {
   [ -f "$ROOT/src/backend/cbrowser/network_config.py" ] || \
     missing+=("network config generator: src/backend/cbrowser/network_config.py")
   local name
-  for name in browser_runtime stream_runtime supervisor_runtime gateway_runtime api_runtime; do
+  for name in browser_runtime stream_runtime supervisor_runtime gateway_runtime api_runtime proxy_forwarder_runtime; do
     [ -f "$ROOT/config/docker/$name/Dockerfile" ] || missing+=("Dockerfile: config/docker/$name/Dockerfile")
     [ -f "$ROOT/config/docker/$name/Dockerfile.dockerignore" ] || missing+=("build-context rules: config/docker/$name/Dockerfile.dockerignore")
   done
@@ -716,21 +716,24 @@ build_and_record_release() {
   local tag_gateway="cbrowser-gateway:$release_id"
   local tag_supervisor="cbrowser-supervisor:$release_id" tag_browser="cbrowser-browser:$release_id"
   local tag_stream="cbrowser-stream:$release_id"
+  local tag_proxy_forwarder="cbrowser-proxy-forwarder:$release_id"
 
   docker build --provenance=false --sbom=false -t "$tag_browser" -f config/docker/browser_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_stream" -f config/docker/stream_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_supervisor" -f config/docker/supervisor_runtime/Dockerfile .
   docker build --provenance=false --sbom=false -t "$tag_gateway" -f config/docker/gateway_runtime/Dockerfile .
+  docker build --provenance=false --sbom=false -t "$tag_proxy_forwarder" -f config/docker/proxy_forwarder_runtime/Dockerfile .
   if ! docker image inspect "$CADDY_REF" >/dev/null 2>&1; then
     docker pull "$CADDY_REF"
   fi
 
-  local api_id gateway_id supervisor_id browser_id stream_id caddy_id
+  local api_id gateway_id supervisor_id browser_id stream_id proxy_forwarder_id caddy_id
   api_id="$API_IMAGE_ID"
   gateway_id="$(docker image inspect --format '{{.Id}}' "$tag_gateway")"
   supervisor_id="$(docker image inspect --format '{{.Id}}' "$tag_supervisor")"
   browser_id="$(docker image inspect --format '{{.Id}}' "$tag_browser")"
   stream_id="$(docker image inspect --format '{{.Id}}' "$tag_stream")"
+  proxy_forwarder_id="$(docker image inspect --format '{{.Id}}' "$tag_proxy_forwarder")"
   caddy_id="$(docker image inspect --format '{{.Id}}' "$CADDY_REF")"
 
   local compose_sha caddyfile_sha frontend_sha migration
@@ -760,6 +763,7 @@ CBROWSER_GATEWAY_IMAGE=$gateway_id
 CBROWSER_SUPERVISOR_IMAGE=$supervisor_id
 CBROWSER_BROWSER_IMAGE=$browser_id
 CBROWSER_STREAM_IMAGE=$stream_id
+CBROWSER_PROXY_FORWARDER_IMAGE=$proxy_forwarder_id
 CBROWSER_CADDY_IMAGE=$caddy_id
 CBROWSER_CADDYFILE_SHA256=$caddyfile_sha
 CBROWSER_FRONTEND_SHA256=$frontend_sha
@@ -800,6 +804,7 @@ print(json.dumps({
     "supervisor": "$supervisor_id",
     "browser": "$browser_id",
     "stream": "$stream_id",
+    "proxy-forwarder": "$proxy_forwarder_id",
     "caddy": "$caddy_id"
   },
   "engine": $engine_json,

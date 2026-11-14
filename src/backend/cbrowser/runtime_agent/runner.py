@@ -15,7 +15,6 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.domain.runtime_policy import ExitReason
@@ -40,15 +39,18 @@ from .profile_defaults import (
 )
 from .protocol import RuntimeEventRecord, RuntimeStateRecord
 from cbrowser.launch_args import validate_launch_args
+from cbrowser.proxy_forwarder.forwarder import (
+    PROXY_FORWARDER_FILENAME,
+    ForwarderConfigError,
+    read_forwarder_endpoint,
+)
 
 from .security import validate_runtime_id
 
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
 
-PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
 PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
-_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
 
 class ProxyCredentialsChangedError(RuntimeError):
@@ -62,65 +64,34 @@ class ProxyCredentialsChangedError(RuntimeError):
         super().__init__(PROXY_CREDENTIALS_CHANGED)
 
 
-def build_proxy_server_arg(credentials: dict[str, Any]) -> str:
-    """Build ``--proxy-server=...`` from validated proxy credentials.
-
-    Chromium accepts inline credentials in the proxy URL (verified for
-    authenticated SOCKS5 in finding d031). Credentials are percent-encoded so
-    special characters cannot break URL parsing. The secret is only ever used
-    inside the returned launch argument, never in an error or log message.
-    """
-    if not isinstance(credentials, dict):
-        raise ProxyCredentialsChangedError()
-    scheme = credentials.get("scheme")
-    host = credentials.get("host")
-    port = credentials.get("port")
-    if scheme not in _PROXY_SCHEMES or not isinstance(host, str) or not host:
-        raise ProxyCredentialsChangedError()
-    if type(port) is not int or not 1 <= port <= 65535:
-        raise ProxyCredentialsChangedError()
-    username = credentials.get("username")
-    password = credentials.get("password")
-    if username is not None and not isinstance(username, str):
-        raise ProxyCredentialsChangedError()
-    if password is not None and not isinstance(password, str):
-        raise ProxyCredentialsChangedError()
-    if username is None and password is not None:
-        raise ProxyCredentialsChangedError()
-    userinfo = ""
-    if username is not None:
-        encoded_user = quote(username, safe="")
-        if password is not None:
-            userinfo = f"{encoded_user}:{quote(password, safe='')}@"
-        else:
-            userinfo = f"{encoded_user}@"
-    netloc_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
-    return f"--proxy-server={scheme}://{userinfo}{netloc_host}:{port}"
-
-
 def resolve_proxy_server_arg(
     config: ProfileConfig,
     snapshot: ConfigVersionSnapshot,
-    credentials_path: Path,
+    endpoint_path: Path,
 ) -> str | None:
-    """Return the proxy launch arg, or fail closed on missing/stale credentials.
+    """Return the proxy launch arg, or fail closed on a missing/stale endpoint.
 
-    A profile without a proxy id gets no proxy argument. Otherwise the mounted
-    credentials file must exist and its revision must match the frozen revision
-    in the bound config snapshot; any drift is a fail-closed
-    ``proxy_credentials_changed`` error.
+    A profile without a proxy id gets no proxy argument. Otherwise the
+    credentialless forwarder endpoint file must exist, be well-formed
+    (scheme http, bare forwarder hostname, fixed listen port) and carry
+    the frozen credential revision from the bound config snapshot; any
+    drift is a fail-closed ``proxy_credentials_changed`` error.
+
+    The returned argument never carries credentials: Chromium connects
+    to the local auth-forwarder, which injects the upstream
+    authentication itself (t065). The credentials file is never read
+    here — the Runner process runs inside the Browser container, which
+    must not see the secret at all.
     """
     if not config.proxy_id:
         return None
     try:
-        credentials = json.loads(credentials_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        url, revision = read_forwarder_endpoint(endpoint_path)
+    except ForwarderConfigError:
         raise ProxyCredentialsChangedError() from None
-    if not isinstance(credentials, dict):
+    if revision != snapshot.proxy_credential_revision:
         raise ProxyCredentialsChangedError()
-    if credentials.get("credential_revision") != snapshot.proxy_credential_revision:
-        raise ProxyCredentialsChangedError()
-    return build_proxy_server_arg(credentials)
+    return f"--proxy-server={url}"
 
 
 def load_config_snapshot(
@@ -540,13 +511,14 @@ class BrowserRunner:
                 return
             raise RuntimeError("Runtime instance is already initialized")
 
-        # Resolve proxy credentials before starting any subsystem. A missing
-        # file or a stale credential revision fails closed without launching
-        # the browser (AC-007 / AC-008).
+        # Resolve the credentialless forwarder endpoint before starting
+        # any subsystem. A missing file or a stale credential revision
+        # fails closed without launching the browser (AC-007 / AC-008).
+        # The Runner never reads the credentials file itself (t065).
         proxy_arg = resolve_proxy_server_arg(
             cfg,
             self.snapshot,
-            self.config_snapshot_path.parent / PROXY_CREDENTIALS_FILENAME,
+            self.config_snapshot_path.parent / PROXY_FORWARDER_FILENAME,
         )
 
         chrome_bin = self.resolve_engine_binary()

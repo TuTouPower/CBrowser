@@ -66,6 +66,25 @@ def stream_volumes(
     }
 
 
+def proxy_forwarder_volumes(
+    *,
+    gate: Path,
+    creds_file: Path,
+) -> dict[str, dict[str, str]]:
+    """Volumes for the proxy auth-forwarder container (t065).
+
+    Exactly two mounts: the policy gate (read-only) and the upstream
+    credentials file (read-only, from the Profile secret dir). The
+    credentials file is mounted here and nowhere else in the sandbox:
+    the Browser container never sees it, neither as a dedicated bind nor
+    through the runtime parent directory (which does not contain it).
+    """
+    return {
+        str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
+        str(creds_file): {"bind": "/run/cbrowser/proxy_credentials.json", "mode": "ro"},
+    }
+
+
 def cache_init_volumes(
     *, engine_cache: Path, geoip_cache: Path
 ) -> dict[str, dict[str, str]]:

@@ -456,3 +456,53 @@
     - **未能验证**：AC-003 的真实 Docker 拓扑验收（存量无标签容器不被认领删除、合法匹配资源可恢复清理）需真实部署环境，云端顺延 pending 登记。
 - 复查条件：任一服务出现新的错误响应生产者时，先核其输出是否为 `ErrorResponse` 单一形状；新增部署资源类型时，认领逻辑必须复用 instance-id 单一证据，不得新设名称/前缀回退。
 - 替代：无（收尾 t056/t051 两条契约的消费侧兼容残留）。
+
+## 036 代理凭据隔离：Browser 永不见凭据，认证由独立转发器注入（2026-11-14，t065）
+
+- 背景：代理凭据同时出现在 Runner 的 `--proxy-server`（内联 userinfo，
+  `argv`/`/proc` 可见）和 Browser 可读的 `proxy_credentials.json`；
+  `docker_adapter.py` 除凭据 ro bind 外还挂整个 runtime 目录——ro 只防写
+  不防读（来源审阅 p082）。spike s021 逐协议验证转发器可行（见
+  `docs/spikes/s021_proxy_auth_forwarder_topology/report.md`）。
+- 选项：① Browser 内多 UID 隔离（拒绝：同一容器内秘密仍可读，不满足
+  「秘密不可读」）；② 凭据继续放 runtime 目录但改挂载为 tmpfs/只读
+  （拒绝：只防写不防读，隔离失败的根因未动）；③ 每 Profile 一个独立
+  认证转发器容器，凭据只进 secret 目录与转发器，Browser 只连无凭据的
+  本地端点（本条采用）。
+- 结论：采用选项 3。
+    - **秘密落点唯一**：凭据文件只写 `data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`
+      （0600），只以 ro 挂载进转发器容器；Browser 的任何挂载源（runtime
+      目录及其父目录）都不含凭据文件。升级前写在 runtime 目录的旧凭据
+      文件在每次 `start_profile` 写端点时无条件删除（`unlink(missing_ok=True)`），
+      不依赖“忽略”——被 rw 挂载的父目录里留有旧文件即仍可读。
+    - **转发器**：`src/backend/cbrowser/proxy_forwarder/`（stdlib only，
+      监听 18080，镜像 `config/docker/proxy_forwarder_runtime/`，deploy.sh
+      构建并以 `CBROWSER_PROXY_FORWARDER_IMAGE` 不可变 id 传入 Supervisor）。
+      HTTP/HTTPS 上游走 CONNECT 隧道＋注入 Proxy-Authorization（407 即
+      失败封闭）、absolute-form 直发；SOCKS5 上游走用户名/密码认证、目标
+      域名以 domain 地址直通（远端 DNS，本地永不解析目标名）。任何上游
+      不可达/407/认证失败/畸形客户端请求均关闭连接、无响应体、无直连尝试；
+      日志经 `cbrowser.redact`，永不记密码/Basic token。
+    - **无凭据端点**：Supervisor 在 runtime 目录写 `proxy_forwarder.json`
+      （scheme 恒 http、转发器容器 hostname、端口 18080、冻结
+      credential_revision，无秘密）；Runner 只读该文件、修订号漂移即
+      `proxy_credentials_changed` 失败封闭，`--proxy-server` 不再含
+      userinfo；`build_proxy_server_arg`（内联凭据构造）整体删除。
+    - **网络策略**：转发器角色 `proxy-forwarder`（`NetworkPolicySpec`
+      新增 `input_tcp_ports`）：入站只允 18080，出站只允上游端点（IP
+      字面量，容器内 Docker DNS 预解析）＋ Docker DNS（127.0.0.11:53/udp）；
+      OUTPUT 默认 DROP。Browser 的代理出站只允转发器端点；loopback
+      上游的 host-gateway 映射与 `extra_hosts` 改由转发器承担，Browser
+      不再获得该映射。
+    - **生命周期**：启动顺序为网络 → 转发器 → Browser → Stream；
+      转发器缺失/退出时 reconcile 只重建转发器（`_replace_proxy_forwarder_only`，
+      与 Stream 替换同型预算）；readiness 增加 `proxy-forwarder` 检查与
+      转发器策略复核；teardown 与 `_confirm_sandbox_gone` 计入转发器；
+      启动 gate 的 `--role` 接受 `proxy-forwarder`。
+    - **未能验证**：AC-001～004 的真实 Docker/Chrome/引擎拓扑验收（凭据
+      全路径不可读、三协议上游认证、故障封闭、性能基线对比）需真实部署
+      环境，云端顺延 pending p098 登记。
+- 复查条件：新增出站协议或上游认证方式时，先按 s021 流程在转发器层
+  验证失败封闭语义，再改 `UpstreamConfig` 白名单；任何一方重新引入
+  Browser 可读凭据（argv、环境、挂载、日志）即违反本决策。
+- 替代：无（p082 的封闭要求无兼容路径）。

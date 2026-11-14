@@ -28,7 +28,7 @@ def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument(
         "--role",
         required=True,
-        choices=["browser", "stream"],
+        choices=["browser", "stream", "proxy-forwarder"],
         help="Runtime container role",
     )
     parser.add_argument(

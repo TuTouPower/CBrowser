@@ -27,6 +27,7 @@ COPY src/backend/cbrowser/domain /app/cbrowser/domain
 COPY src/backend/cbrowser/font_sets /app/cbrowser/font_sets
 COPY src/backend/cbrowser/shared /app/cbrowser/shared
 COPY src/backend/cbrowser/runtime_agent /app/cbrowser/runtime_agent
+COPY src/backend/cbrowser/proxy_forwarder /app/cbrowser/proxy_forwarder
 
 ENV PYTHONPATH=/app
 

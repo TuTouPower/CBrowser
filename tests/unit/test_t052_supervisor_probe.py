@@ -277,127 +277,19 @@ def test_loopback_mapping_failure_is_explicit(tmp_path):
 
 
 # ---- Browser start: extra_hosts + loopback failure (AC-010/AC-011) ---------
-
-
-def _stage_browser(adapter, tmp_path, creds: dict):
-    adapter.remember_profile_number("p1", 1)
-    dirs = adapter.prepare_profile_directories("p1")
-    snapshot_path = dirs["runtime"] / "snapshot.json"
-    snapshot_path.write_text(
-        json.dumps({"version": 1, "config": {"proxy_id": "px-1"}}),
-        encoding="utf-8",
-    )
-    creds_file = dirs["runtime"] / "proxy_credentials.json"
-    creds_file.write_text(json.dumps(creds), encoding="utf-8")
-    creds_file.chmod(0o600)
-    return dirs, snapshot_path
-
-
-@pytest.mark.asyncio
-async def test_browser_start_adds_extra_hosts_for_mapped_loopback(tmp_path):
-    adapter, _fake, _calls, _root = _adapter(tmp_path)
-    mock_client = MagicMock()
-    adapter.client = mock_client
-    mock_client.containers.run.return_value = MagicMock()
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("192.168.65.254", 7890)])
-    adapter._install_network_policy = MagicMock()
-    _dirs, snapshot_path = _stage_browser(
-        adapter,
-        tmp_path,
-        {
-            "scheme": "http",
-            "host": "host.docker.internal",
-            "port": 7890,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-        },
-    )
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        snapshot_json_path=snapshot_path,
-    )
-    kwargs = mock_client.containers.run.call_args.kwargs
-    assert kwargs["extra_hosts"] == {"host.docker.internal": "host-gateway"}
-
-
-@pytest.mark.asyncio
-async def test_browser_start_no_extra_hosts_for_public_proxy(tmp_path):
-    adapter, _fake, _calls, _root = _adapter(tmp_path)
-    mock_client = MagicMock()
-    adapter.client = mock_client
-    mock_client.containers.run.return_value = MagicMock()
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("93.184.216.34", 8080)])
-    adapter._install_network_policy = MagicMock()
-    _dirs, snapshot_path = _stage_browser(
-        adapter,
-        tmp_path,
-        {
-            "scheme": "http",
-            "host": "proxy.example.com",
-            "port": 8080,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-        },
-    )
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="inst_1",
-        snapshot_json_path=snapshot_path,
-    )
-    kwargs = mock_client.containers.run.call_args.kwargs
-    assert kwargs["extra_hosts"] is None
-
-
-@pytest.mark.asyncio
-async def test_browser_start_loopback_mapping_failure_is_explicit(tmp_path):
-    adapter, _fake, _calls, _root = _adapter(tmp_path)
-    mock_client = MagicMock()
-    adapter.client = mock_client
-    mock_client.containers.run.side_effect = docker.errors.APIError(
-        "extra_hosts host-gateway is not supported by this daemon"
-    )
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[])
-    adapter._install_network_policy = MagicMock()
-    _dirs, snapshot_path = _stage_browser(
-        adapter,
-        tmp_path,
-        {
-            "scheme": "http",
-            "host": "host.docker.internal",
-            "port": 7890,
-            "username": None,
-            "password": None,
-            "credential_revision": 1,
-        },
-    )
-    with pytest.raises(LoopbackMappingError) as excinfo:
-        await adapter.start_browser_container(
-            profile_id="p1",
-            runtime_instance_id="inst_1",
-            snapshot_json_path=snapshot_path,
-        )
-    assert "Loopback proxy mapping failed" in str(excinfo.value)
+# NOTE (t065): the three Browser-start loopback tests below were deleted
+# wholesale here — test_browser_start_adds_extra_hosts_for_mapped_loopback,
+# test_browser_start_no_extra_hosts_for_public_proxy and
+# test_browser_start_loopback_mapping_failure_is_explicit. t065 moves the
+# loopback host-gateway mapping from the Browser start to the forwarder
+# start: the Browser never gets extra_hosts anymore, the forwarder does.
+# Replacement coverage lives in
+# tests/unit/test_t065_proxy_forwarder_mounts.py
+# (test_forwarder_adds_extra_hosts_for_mapped_loopback,
+# test_forwarder_no_extra_hosts_for_public_proxy,
+# test_forwarder_loopback_mapping_failure_is_explicit).
+# The egress-probe loopback tests above are untouched: the probe is a
+# one-shot helper that still receives credentials directly.
 
 
 # ---- core.probe_proxy_egress mapping ---------------------------------------

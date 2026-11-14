@@ -14,7 +14,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 import docker
@@ -45,6 +45,12 @@ from cbrowser.supervisor.address_pool import (
     media_network_labels,
     plan_from_labels,
 )
+from cbrowser.proxy_forwarder.forwarder import (
+    PROXY_FORWARDER_FILENAME,
+    PROXY_FORWARDER_PORT,
+    ForwarderConfigError,
+    read_forwarder_endpoint,
+)
 from cbrowser.supervisor.container_spec import (
     browser_command,
     browser_labels,
@@ -54,6 +60,7 @@ from cbrowser.supervisor.container_spec import (
     gated_entrypoint,
     policy_helper_labels,
     probe_helper_labels,
+    proxy_forwarder_labels,
     stream_environment,
     stream_labels,
     stream_ports,
@@ -82,6 +89,7 @@ from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
     browser_volumes,
     cache_init_volumes,
+    proxy_forwarder_volumes,
     stream_volumes,
 )
 from cbrowser.udp_mux import udp_mux_bounds
@@ -257,6 +265,7 @@ class DockerAdapter:
         docker_client: docker.DockerClient | None = None,
         browser_image: str | None = None,
         stream_image: str | None = None,
+        proxy_forwarder_image: str | None = None,
         resource_prefix: str = "cbrowser-t005",
         geoip_cache_dir: Path | str | None = None,
         policy_image: str | None = None,
@@ -282,6 +291,13 @@ class DockerAdapter:
         self.client = docker_client or docker.from_env()
         self.browser_image = browser_image or os.environ.get("CBROWSER_BROWSER_IMAGE")
         self.stream_image = stream_image or os.environ.get("CBROWSER_STREAM_IMAGE")
+        # The forwarder image is validated lazily at create time, not here:
+        # most adapter constructions in tests and non-proxy paths never
+        # start a forwarder, and a constructor requirement would fail them
+        # all. create_proxy_forwarder is the fail-closed point.
+        self.proxy_forwarder_image = proxy_forwarder_image or os.environ.get(
+            "CBROWSER_PROXY_FORWARDER_IMAGE"
+        )
         for image in (self.browser_image, self.stream_image):
             if not image or not (image.startswith("sha256:") or "@sha256:" in image):
                 raise ValueError(
@@ -1169,6 +1185,12 @@ with path.open('w') as output:
             "-stream"
         )
 
+    def get_proxy_forwarder_container_name(self, profile_id: str) -> str:
+        return (
+            f"{self.resource_prefix}-{self._require_profile_number(profile_id):04d}"
+            "-proxy-forwarder"
+        )
+
     def get_network_name(self, profile_id: str) -> str:
         return profile_network_name(self.resource_prefix, profile_id)
 
@@ -1878,25 +1900,17 @@ with path.open('w') as output:
         )
         socket_dir = self.prepare_agent_socket_dir(profile_id, runtime_instance_id)
         volumes[str(socket_dir)] = {"bind": str(socket_dir), "mode": "rw"}
-        creds_file = dirs["runtime"] / PROXY_CREDENTIALS_FILENAME
+        # t065: the Browser container never mounts the credentials file.
+        # The file lives in the Profile secret dir (outside every Browser
+        # mount) and is mounted read-only into the proxy-forwarder
+        # container alone; the Browser reaches the forwarder through the
+        # credentialless endpoint file below. A legacy credentials file
+        # left in the runtime dir by a pre-t065 start is deleted by
+        # start_profile before the Browser starts, so it cannot be
+        # present here.
         has_proxy = isinstance(snapshot.get("config"), dict) and bool(
             snapshot["config"].get("proxy_id")
         )
-        if has_proxy and creds_file.is_file():
-            validated_creds = self.validator.validate_runtime_source(
-                profile_id, creds_file
-            )
-            if (validated_creds.stat().st_mode & 0o077) != 0:
-                raise DockerSandboxError(
-                    "Proxy credentials file must have 0600 permissions"
-                )
-            # The whole runtime directory is already mounted rw for the
-            # Runner; shadow the credentials file with a dedicated read-only
-            # bind so the sandbox cannot rewrite its own proxy secret.
-            volumes[str(validated_creds)] = {
-                "bind": "/run/cbrowser/runtime/proxy_credentials.json",
-                "mode": "ro",
-            }
         cfg = snapshot.get("config")
         if isinstance(cfg, dict):
             font_set_id = cfg.get("font_set_id")
@@ -1913,17 +1927,27 @@ with path.open('w') as output:
                     "bind": str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
                     "mode": "ro",
                 }
-        proxy = proxy_endpoint_from_credentials(creds_file)
-        # t052 AC-010: a loopback proxy is stored as 127.0.0.1/localhost
-        # but the credentials file handed to the container carries the
-        # host-gateway hostname (mapped in SupervisorCore); the container
-        # needs the extra_hosts entry so the name resolves to the host.
-        proxy_host = urlsplit(proxy).hostname if proxy else None
-        extra_hosts = (
-            {HOST_GATEWAY_HOSTNAME: "host-gateway"}
-            if proxy_host == HOST_GATEWAY_HOSTNAME
-            else None
-        )
+        # t065: the Browser's only proxy egress is the forwarder, named
+        # by the credentialless endpoint file the Supervisor wrote to
+        # the runtime dir. Resolving it from inside the Browser
+        # container (Docker DNS on the per-profile bridge network)
+        # yields the forwarder IP the policy must admit past the
+        # private-range deny. No endpoint file means no forwarder
+        # egress at all: the allow-list stays empty, and the Runner
+        # independently refuses to launch without the endpoint file,
+        # so a missing forwarder can never degrade into a direct
+        # upstream connection.
+        forwarder_url: str | None = None
+        endpoint_file = dirs["runtime"] / PROXY_FORWARDER_FILENAME
+        if has_proxy:
+            try:
+                forwarder_url, _revision = read_forwarder_endpoint(endpoint_file)
+            except ForwarderConfigError:
+                logger.warning(
+                    "Proxy forwarder endpoint unreadable for %s; "
+                    "Browser starts with no proxy egress",
+                    profile_id,
+                )
         command = browser_command(
             profile_id,
             runtime_instance_id,
@@ -1946,7 +1970,6 @@ with path.open('w') as output:
                 ipc_mode="shareable",
                 shm_size="1g",
                 network=net_name,
-                extra_hosts=extra_hosts,
                 restart_policy={"Name": "no"},
                 tmpfs={
                     "/tmp": "rw,exec,nosuid,nodev,size=512m",
@@ -1965,8 +1988,10 @@ with path.open('w') as output:
                 )),
             )
             allowed_tcp = (
-                await asyncio.to_thread(self._resolved_endpoint, container, proxy)
-                if proxy
+                await asyncio.to_thread(
+                    self._resolved_endpoint, container, forwarder_url
+                )
+                if forwarder_url
                 else []
             )
             await asyncio.to_thread(
@@ -1979,23 +2004,9 @@ with path.open('w') as output:
             )
             return container
         except DockerException as e:
-            detail = docker_error_detail(e)
-            # t052 AC-011: a loopback proxy whose host-gateway mapping the
-            # daemon rejects must fail here with a remediation, never
-            # start successfully and then fail to connect.
-            if proxy_host == HOST_GATEWAY_HOSTNAME and (
-                "host-gateway" in detail.lower() or "extra_hosts" in detail.lower()
-            ):
-                raise LoopbackMappingError(
-                    "Loopback proxy mapping failed: the Docker daemon could "
-                    "not map host.docker.internal to the host gateway, so "
-                    f"the Browser cannot reach the host-local proxy at "
-                    f"{proxy}. Use a Docker daemon that supports "
-                    "host-gateway extra hosts (Docker 20.10+ / OrbStack), "
-                    "or move the proxy to a non-loopback address."
-                ) from e
             raise DockerSandboxError(
-                f"Failed to run browser container {b_name}: {detail}"
+                f"Failed to run browser container {b_name}: "
+                f"{docker_error_detail(e)}"
             ) from e
 
     def _bound_snapshot_geometry(
@@ -2221,6 +2232,278 @@ with path.open('w') as output:
                 f"{docker_error_detail(exc)}"
             ) from None
 
+    async def create_proxy_forwarder(
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        config_version: Any,
+        creds_file: Path | None = None,
+    ) -> Any:
+        """Create the per-profile proxy auth-forwarder container (t065).
+
+        The forwarder is the only container that ever sees proxy
+        credentials: it mounts the credentials file read-only from the
+        Profile secret dir and terminates the Browser's unauthenticated
+        local proxy traffic, re-issuing it upstream with the credentials
+        injected. The Browser connects to it over the isolated
+        per-profile bridge network and never learns the credentials.
+
+        ``creds_file`` defaults to the secret-dir credentials file; the
+        parameter exists so tests can point at a fixture without
+        touching the validator's directory layout.
+
+        Startup order (fail closed): validate the image (immutable),
+        validate the secret source (must live in the secret dir) and
+        its 0600 mode, clean any stale same-name container, run the
+        gated container, pre-resolve the upstream endpoint from inside
+        the container, install the fail-closed policy (inbound only the
+        listen port, outbound only the upstream endpoint plus Docker
+        DNS), then wait for the listen socket before returning.
+        """
+        image = self._validate_forwarder_image()
+        creds_file, upstream = self._load_forwarder_upstream(
+            profile_id, creds_file
+        )
+        name = self.get_proxy_forwarder_container_name(profile_id)
+        container = None
+        try:
+            container, gate = await self._run_forwarder_container(
+                profile_id,
+                runtime_instance_id,
+                config_version,
+                image,
+                creds_file,
+                upstream,
+                name,
+            )
+            await self._install_forwarder_policy(
+                container, gate, runtime_instance_id, upstream
+            )
+            return container
+        except Exception as exc:  # noqa: BLE001 - initialization failure is owned by the creator
+            self._reclaim_failed_forwarder(container, name, upstream, exc)
+
+    def _validate_forwarder_image(self) -> str:
+        """Require an explicit immutable forwarder image (lazy check:
+        the adapter is constructed for profiles that never use a proxy,
+        so the requirement binds only when a forwarder is created)."""
+        image = self.proxy_forwarder_image
+        if not image or not (image.startswith("sha256:") or "@sha256:" in image):
+            raise DockerSandboxError(
+                "Explicit immutable proxy-forwarder image is required "
+                "(CBROWSER_PROXY_FORWARDER_IMAGE)"
+            )
+        return image
+
+    def _load_forwarder_upstream(
+        self, profile_id: str, creds_file: Path | None
+    ) -> tuple[Path, str]:
+        """Resolve and validate the secret-dir credentials file.
+
+        Returns ``(creds_file, upstream)`` where the upstream is the
+        credentialless endpoint URL the policy allow-list is built
+        from. Any missing/foreign/loose/empty credential fails closed
+        here, before any container is created.
+        """
+        if creds_file is None:
+            creds_file = (
+                self.validator.get_secret_dir(profile_id)
+                / PROXY_CREDENTIALS_FILENAME
+            )
+        self.validator.validate_secret_source(profile_id, creds_file)
+        try:
+            mode = creds_file.stat().st_mode & 0o777
+        except OSError as exc:
+            raise DockerSandboxError(
+                f"Proxy credentials file unreadable for {profile_id}: "
+                f"{type(exc).__name__}"
+            ) from exc
+        if mode != 0o600:
+            raise DockerSandboxError(
+                f"Proxy credentials file for {profile_id} must be 0600, got {oct(mode)}"
+            )
+        upstream = proxy_endpoint_from_credentials(creds_file)
+        if upstream is None:
+            raise DockerSandboxError(
+                f"No proxy endpoint configured for {profile_id}; refusing to "
+                "start the auth-forwarder without an upstream"
+            )
+        return creds_file, upstream
+
+    async def _run_forwarder_container(
+        self,
+        profile_id: str,
+        runtime_instance_id: str,
+        config_version: Any,
+        image: str,
+        creds_file: Path,
+        upstream: str,
+        name: str,
+    ) -> tuple[Any, Path]:
+        """Clean any stale same-name container, then run the gated
+        forwarder container. Returns ``(container, gate_dir)``."""
+        await asyncio.to_thread(self.cleanup_container_by_name, name)
+        gate = self._prepare_policy_gate(
+            profile_id, runtime_instance_id, "proxy-forwarder"
+        )
+        net_name = self.get_browser_network_name(profile_id)
+        # The credentials file already carries the host-gateway hostname
+        # for a loopback upstream (mapped in SupervisorCore); the
+        # container needs the extra_hosts entry so the name resolves to
+        # the host. Non-loopback upstreams need no mapping.
+        extra_hosts: dict[str, str] = {}
+        if urlsplit(upstream).hostname == HOST_GATEWAY_HOSTNAME:
+            extra_hosts = {HOST_GATEWAY_HOSTNAME: "host-gateway"}
+        container = await asyncio.to_thread(
+            self.client.containers.run,
+            image,
+            command=[
+                "python3",
+                "-m",
+                "cbrowser.proxy_forwarder",
+                "--config",
+                "/run/cbrowser/proxy_credentials.json",
+                "--listen-host",
+                "0.0.0.0",
+                "--listen-port",
+                str(PROXY_FORWARDER_PORT),
+            ],
+            entrypoint=self._gated_entrypoint(
+                runtime_instance_id, "proxy-forwarder"
+            ),
+            name=name,
+            detach=True,
+            user="1000:1000",
+            read_only=True,
+            cap_drop=["ALL"],
+            security_opt=["no-new-privileges"],
+            hostname=f"{profile_id}-proxy-forwarder",
+            network=net_name,
+            extra_hosts=extra_hosts or None,
+            restart_policy={"Name": "no"},
+            tmpfs={"/tmp": "rw,nosuid,nodev,size=4m"},
+            volumes=proxy_forwarder_volumes(gate=gate, creds_file=creds_file),
+            environment={"PYTHONDONTWRITEBYTECODE": "1"},
+            labels=gate_labels(proxy_forwarder_labels(
+                self.resource_prefix,
+                profile_id,
+                config_version,
+                self._require_profile_number(profile_id),
+                deployment_id=self.deployment_instance_id,
+            )),
+        )
+        return container, gate
+
+    async def _install_forwarder_policy(
+        self,
+        container: Any,
+        gate: Path,
+        runtime_instance_id: str,
+        upstream: str,
+    ) -> None:
+        """Resolve the upstream from inside the container, install the
+        fail-closed policy, then wait for the listen socket."""
+        allowed_tcp = await asyncio.to_thread(
+            self._resolved_endpoint, container, upstream
+        )
+        await asyncio.to_thread(
+            self._install_network_policy,
+            container,
+            {
+                "role": "proxy-forwarder",
+                "allowed_tcp": allowed_tcp,
+                # Docker's embedded DNS so the forwarder can resolve
+                # the upstream hostname through the same server the
+                # allow-list was resolved from; no other egress.
+                "allowed_udp": [("127.0.0.11", 53)],
+                "input_tcp_ports": [PROXY_FORWARDER_PORT],
+                "udp_mux_port": None,
+            },
+            gate,
+            runtime_instance_id,
+            "proxy-forwarder",
+        )
+        await self._wait_for_proxy_forwarder_ready(container)
+
+    def _reclaim_failed_forwarder(
+        self, container: Any, name: str, upstream: str, exc: BaseException
+    ) -> NoReturn:
+        """Remove a half-created forwarder, then map the failure.
+
+        A loopback proxy whose host-gateway mapping the daemon rejects
+        fails with an explicit remediation, never a silent proxy
+        failure (t052 AC-011, moved here from the Browser start with
+        the forwarder).
+        """
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception:  # noqa: BLE001 - reclaim is best effort
+                logger.warning(
+                    "Proxy-forwarder reclaim failed: container=%s",
+                    getattr(container, "id", None),
+                )
+        if isinstance(exc, DockerSandboxError):
+            raise exc
+        if isinstance(exc, DockerException):
+            detail = docker_error_detail(exc)
+            if urlsplit(upstream).hostname == HOST_GATEWAY_HOSTNAME and (
+                "host-gateway" in detail.lower()
+                or "extra_hosts" in detail.lower()
+            ):
+                raise LoopbackMappingError(
+                    "Loopback proxy mapping failed: the Docker daemon "
+                    "could not map host.docker.internal to the host "
+                    "gateway, so the forwarder cannot reach the "
+                    f"host-local proxy at {redact(upstream)}. Use a "
+                    "Docker daemon that supports host-gateway extra "
+                    "hosts (Docker 20.10+ / OrbStack), or move the "
+                    "proxy to a non-loopback address."
+                ) from exc
+            raise DockerSandboxError(
+                f"Failed to run proxy-forwarder container {name}: {detail}"
+            ) from None
+        raise DockerSandboxError(
+            f"Failed to initialize proxy-forwarder container {name}: "
+            f"{docker_error_detail(exc)}"
+        ) from None
+
+    async def _wait_for_proxy_forwarder_ready(
+        self, container: Any, timeout_s: float = 30.0
+    ) -> None:
+        """Wait until the forwarder listen socket accepts a connection.
+
+        The gated entrypoint releases the main process only after the
+        policy is installed, so a successful TCP connect proves the
+        process is up and the policy is in place. A plain open/close
+        sends no HTTP data and the forwarder logs nothing for it.
+        """
+        deadline = asyncio.get_running_loop().time() + timeout_s
+        last_error: str | None = None
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                result = await asyncio.to_thread(
+                    container.exec_run,
+                    [
+                        "python3",
+                        "-c",
+                        "import socket; s=socket.create_connection(("
+                        "'127.0.0.1', "
+                        f"{PROXY_FORWARDER_PORT}), timeout=2); s.close()",
+                    ],
+                    user="1000:1000",
+                )
+                if result.exit_code == 0:
+                    return
+                last_error = f"exit_code={result.exit_code}"
+            except DockerException as exc:
+                last_error = docker_error_detail(exc)
+            await asyncio.sleep(0.25)
+        raise DockerSandboxError(
+            "Proxy-forwarder did not become ready: "
+            f"{last_error or 'timeout'}"
+        )
+
     def _reclaim_created_stream(
         self, container: Any, profile_id: str, instance_id: str
     ) -> StreamResidue | None:
@@ -2314,7 +2597,7 @@ with path.open('w') as output:
                 c.name == name
                 and labels.get("com.cbrowser.prefix") == self.resource_prefix
                 and labels.get("com.cbrowser.managed-by") == "supervisor"
-                and role in {"browser", "stream"}
+                and role in {"browser", "stream", "proxy-forwarder"}
                 and profile_number is not None
                 and name
                 == f"{self.resource_prefix}-{profile_number:04d}-{role}"
@@ -2353,7 +2636,7 @@ with path.open('w') as output:
                     raise DockerSandboxError(
                         f"Unknown endpoint container {c.name} ({cid}) in network {name}"
                     )
-                if role in {"browser", "stream"}:
+                if role in {"browser", "stream", "proxy-forwarder"}:
                     raise DockerSandboxError(
                         f"Cannot cleanup network {name}: runtime container "
                         f"{c.name} (role={role}) is still attached"
@@ -2389,10 +2672,12 @@ with path.open('w') as output:
     def _teardown_profile_sync(self, profile_id: str) -> None:
         s_name = self.get_stream_container_name(profile_id)
         b_name = self.get_browser_container_name(profile_id)
+        f_name = self.get_proxy_forwarder_container_name(profile_id)
         net_name = self.get_network_name(profile_id)
 
         self.cleanup_container_by_name(s_name)
         self.cleanup_container_by_name(b_name)
+        self.cleanup_container_by_name(f_name)
         self.cleanup_network_by_name(net_name)
         self.cleanup_network_by_name(self.get_browser_network_name(profile_id))
 
@@ -2483,16 +2768,53 @@ with path.open('w') as output:
     ) -> dict[str, Any]:
         """Expected live Browser netfilter spec for convergence checks.
 
-        Rebuilt from the same inputs as startup application: the mounted
-        proxy credentials file, resolved from inside the Browser container.
+        Rebuilt from the same inputs as startup application: the
+        credentialless forwarder endpoint file, resolved from inside
+        the Browser container. A missing or unreadable endpoint file
+        yields an empty allow-list (no forwarder egress).
         """
-        creds_file = self.validator.get_runtime_dir(profile_id) / PROXY_CREDENTIALS_FILENAME
-        proxy = proxy_endpoint_from_credentials(creds_file)
-        allowed_tcp = self._resolved_endpoint(container, proxy) if proxy else []
+        endpoint_file = (
+            self.validator.get_runtime_dir(profile_id) / PROXY_FORWARDER_FILENAME
+        )
+        try:
+            forwarder_url, _revision = read_forwarder_endpoint(endpoint_file)
+        except ForwarderConfigError:
+            forwarder_url = None
+        allowed_tcp = (
+            self._resolved_endpoint(container, forwarder_url)
+            if forwarder_url
+            else []
+        )
         return {
             "role": "browser",
             "allowed_tcp": allowed_tcp,
             "allowed_udp": [],
+            "udp_mux_port": None,
+        }
+
+    def proxy_forwarder_policy_spec(
+        self, profile_id: str, container: Any
+    ) -> dict[str, Any]:
+        """Expected live forwarder netfilter spec for convergence checks.
+
+        Rebuilt from the same inputs as startup application: the
+        upstream credentials file in the Profile secret dir, resolved
+        from inside the forwarder container, plus the Docker DNS
+        allowance and the fixed listen port. A missing or unreadable
+        credentials file yields an empty TCP allow-list.
+        """
+        creds_file = (
+            self.validator.get_secret_dir(profile_id) / PROXY_CREDENTIALS_FILENAME
+        )
+        upstream = proxy_endpoint_from_credentials(creds_file)
+        allowed_tcp = (
+            self._resolved_endpoint(container, upstream) if upstream else []
+        )
+        return {
+            "role": "proxy-forwarder",
+            "allowed_tcp": allowed_tcp,
+            "allowed_udp": [("127.0.0.11", 53)],
+            "input_tcp_ports": [PROXY_FORWARDER_PORT],
             "udp_mux_port": None,
         }
 
@@ -2589,10 +2911,15 @@ with path.open('w') as output:
         only returned when its labels bind it to this prefix, Profile
         and role — anything else reads as missing rather than adopted.
         """
-        result: dict[str, Any] = {"browser": None, "stream": None}
+        result: dict[str, Any] = {
+            "browser": None,
+            "stream": None,
+            "proxy-forwarder": None,
+        }
         names = {
             "browser": self.get_browser_container_name(profile_id),
             "stream": self.get_stream_container_name(profile_id),
+            "proxy-forwarder": self.get_proxy_forwarder_container_name(profile_id),
         }
         for role, name in names.items():
             try:
@@ -2623,7 +2950,7 @@ with path.open('w') as output:
             for c in containers:
                 labels = c.labels or {}
                 role = labels.get("com.cbrowser.role")
-                if role not in {"browser", "stream"}:
+                if role not in {"browser", "stream", "proxy-forwarder"}:
                     continue
                 # Scan boundary: a resource whose identity (profile label
                 # or runtime configuration) or config-version label is

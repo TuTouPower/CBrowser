@@ -12,6 +12,8 @@
 !src/backend/cbrowser/font_sets/*.py
 !src/backend/cbrowser/fingerprint_verification/*.py
 !src/backend/cbrowser/runtime_agent/*.py
+!src/backend/cbrowser/redact.py
+!src/backend/cbrowser/proxy_forwarder/*.py
 
 **/__pycache__
 **/*.pyc
