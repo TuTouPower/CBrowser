@@ -3,7 +3,7 @@
 - task：`t061_session_ui_clarity`
 - spec：`docs/tasks/t061_session_ui_clarity/task.md`
 - diff_anchor：`c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t061' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
+- target：`git -C '<home>/workspace/CBrowser_t061' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
 - round：1
 - reviewed_at：2026-11-13T21:48:24+08:00
 

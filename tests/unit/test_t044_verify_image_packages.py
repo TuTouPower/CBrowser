@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -20,6 +21,7 @@ sys.modules[_spec.name] = _vip
 _spec.loader.exec_module(_vip)
 normalise = _vip.normalise
 image_freeze = _vip.image_freeze
+compare_packages = _vip.compare_packages
 main = _vip.main
 TARGET_ENV = _vip.TARGET_ENV
 
@@ -70,7 +72,8 @@ def test_image_freeze_runs_docker_pip_freeze_with_timeout():
     cmd = args[0]
     assert cmd[:5] == ["docker", "run", "--rm", "--entrypoint", "sh"]
     assert "stream:test" in cmd
-    assert any("pip freeze" in part for part in cmd)
+    assert any("pip list --format=freeze" in part for part in cmd)
+    assert not any("pip freeze ||" in part for part in cmd)
     assert kwargs["capture_output"] is True
     assert kwargs["text"] is True
     assert kwargs["timeout"] == 180
@@ -84,6 +87,17 @@ def test_image_freeze_raises_runtime_error_on_nonzero_exit():
     with patch("subprocess.run", return_value=proc):
         with pytest.raises(RuntimeError):
             image_freeze("stream:test")
+
+
+def test_image_freeze_fails_closed_on_pip_list_failure(monkeypatch):
+    proc = subprocess.CompletedProcess(
+        args=[], returncode=1, stdout="", stderr="pip list failed"
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: proc)
+    with pytest.raises(RuntimeError) as exc:
+        image_freeze("stream:test")
+    assert "rc=1" in str(exc.value)
+    assert "pip list failed" in str(exc.value)
 
 
 def _write_requirements(tmp_path: Path, text: str) -> Path:
@@ -132,6 +146,74 @@ def test_main_returns_0_when_all_packages_match(tmp_path, monkeypatch):
     )
     with patch.object(_vip, "image_freeze", return_value=["bar==2.0", "foo==1.0"]):
         assert main() == 0
+
+
+def test_compare_packages_uses_specifier_semantics():
+    expected = {"foo==1.0", "selkies==2.2.1"}
+    local_build = {"foo==1.0", "selkies==2.2.1+cbrowser.1"}
+    assert compare_packages(expected, local_build) == ([], [])
+    higher = {"selkies==2.2.2"}
+    assert compare_packages(expected, higher) == (["foo==1.0", "selkies==2.2.1"], [])
+    with_extra = {*local_build, "rogue==9.9"}
+    assert compare_packages(expected, with_extra) == ([], ["rogue==9.9"])
+
+
+def test_local_version_satisfies_export_pin(tmp_path, monkeypatch):
+    req = _write_requirements(tmp_path, "selkies==2.2.1\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_image_packages.py",
+            "--image",
+            "stream:test",
+            "--requirements",
+            str(req),
+        ],
+    )
+    with patch.object(_vip, "image_freeze", return_value=["selkies==2.2.1+cbrowser.1"]):
+        assert main() == 0
+
+
+def test_version_outside_export_pin_is_reported_as_missing(tmp_path, monkeypatch, caplog):
+    req = _write_requirements(tmp_path, "selkies==2.2.1\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_image_packages.py",
+            "--image",
+            "stream:test",
+            "--requirements",
+            str(req),
+        ],
+    )
+    with patch.object(_vip, "image_freeze", return_value=["selkies==2.2.2"]):
+        with caplog.at_level(logging.ERROR):
+            assert main() == 1
+    assert "missing=['selkies==2.2.1']" in caplog.text
+    assert "extra=[]" in caplog.text
+    assert "selkies==2.2.2" not in caplog.text
+
+
+def test_missing_and_extra_packages_are_reported(tmp_path, monkeypatch, caplog):
+    req = _write_requirements(tmp_path, "foo==1.0\nbar==2.0\n")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_image_packages.py",
+            "--image",
+            "stream:test",
+            "--requirements",
+            str(req),
+        ],
+    )
+    with patch.object(_vip, "image_freeze", return_value=["bar==2.0", "baz==3.0"]):
+        with caplog.at_level(logging.ERROR):
+            assert main() == 1
+    assert "missing=['foo==1.0']" in caplog.text
+    assert "extra=['baz==3.0']" in caplog.text
 
 
 @pytest.fixture(autouse=True)

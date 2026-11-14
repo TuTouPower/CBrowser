@@ -16,7 +16,7 @@ import docker
 import httpx
 from cbrowser.shared.endpoints import DEFAULT_GATEWAY_PORT
 
-from e2e_env import require_e2e_env
+from e2e_env import require_e2e_env, worker_resource_offsets
 from cbrowser.network_config import DEFAULT_HTTPS_PORT, generate_caddyfile
 from .selkies_assets import prepare_selkies_web_assets
 
@@ -74,6 +74,9 @@ class GatewayTopologyHarness:
 
         self.docker_client = docker.from_env()
         self.prefix = f"t006_relay_{uuid.uuid4().hex[:8]}"
+        self.deployment_instance_id = worker_resource_offsets()[
+            "CBROWSER_E2E_INSTANCE_ID"
+        ]
 
         self.containers: list[docker.models.containers.Container] = []
         self.networks: list[docker.models.networks.Network] = []
@@ -180,6 +183,7 @@ class GatewayTopologyHarness:
                 "com.cbrowser.prefix": self.prefix,
                 "com.cbrowser.test": "t006-relay",
                 "com.cbrowser.role": role,
+                "com.cbrowser.instance-id": self.deployment_instance_id,
             }
         )
         # Gateway requires managed-by=supervisor for infra validation
@@ -302,6 +306,8 @@ class GatewayTopologyHarness:
                 f"{self.prefix}-gateway",
                 "--prefix",
                 self.prefix,
+                "--deployment-instance-id",
+                self.deployment_instance_id,
                 "--data-root",
                 str(self.data_dir),
                 "--engine-cache",
@@ -425,7 +431,10 @@ class GatewayTopologyHarness:
 
         self.edge_network = self.docker_client.networks.create(
             f"{self.prefix}-edge",
-            labels={"com.cbrowser.prefix": self.prefix},
+            labels={
+                "com.cbrowser.prefix": self.prefix,
+                "com.cbrowser.instance-id": self.deployment_instance_id,
+            },
         )
         self.networks.append(self.edge_network)
 

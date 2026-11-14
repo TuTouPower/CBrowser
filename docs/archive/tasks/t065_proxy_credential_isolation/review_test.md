@@ -3,7 +3,7 @@
 - task：`t065_proxy_credential_isolation`
 - spec：`docs/tasks/t065_proxy_credential_isolation/task.md`
 - diff_anchor：`a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t065' diff a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
+- target：`git -C '<home>/workspace/CBrowser_t065' diff a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
 - round：5
 - reviewed_at：2026-11-14T11:19:54+08:00
 
@@ -161,7 +161,7 @@ reviewed_scope: 96b7ac3770b9beb7
 
 ## Round 2 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；Round 1 后实施方零改动（指纹复算 `96b7ac3770b9beb7` 与 Round 1 一致）。
+- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；Round 1 后实施方零改动（指纹复算 `96b7ac3770b9beb7` 与 Round 1 一致）。
 - 后端第一批（主仓 gate venv，`PYTHONPATH=src/backend`，`CBROWSER_GATE_ENV_READY=1`，`--basetemp` 落仓内 `.scratch/tmp/r2unit`）：13 个文件合跑 169 passed（120 秒，0 skipped）：两个 t065 新测试文件、Selkies AC-005 五件（t043 pin、t044 asset probe、t045 wheel cache、t063 controlled build、vendor selkies security）、t035 proxy runtime、network policy、t027 release controller、a24 deploy network source、t052 supervisor probe、t062 image closure。
 - contract 套件（同环境，`.repo_template/tests -q -m contract`）：257 passed、1 skipped（3.6 秒），与 progress.md 数字一致。
 - 前端 4 文件单文件串行重跑（src/frontend 下 `./node_modules/.bin/vitest run <file>`）：ConfigTab.test.tsx 3 passed、ProfileCreateDialog.test.tsx 7 passed、ProfileForm.t058.test.tsx 5 passed（含 f006 的断言失败用例）、SettingsPage.test.tsx 3 passed，合计 18/18 通过。
@@ -216,7 +216,7 @@ reviewed_scope: c6aaa3c19097122d
 
 ## Round 3 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；本轮指纹 `c6aaa3c19097122d`（Round 1/2 指纹 `96b7ac3770b9beb7` 已变，实施方确有改动）。
+- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；本轮指纹 `c6aaa3c19097122d`（Round 1/2 指纹 `96b7ac3770b9beb7` 已变，实施方确有改动）。
 - 后端 t065 三文件合跑（主仓 gate venv，`PYTHONPATH=src/backend`，`CBROWSER_GATE_ENV_READY=1`，`--basetemp` 落仓内 `.scratch/tmp/r3unit`）：45 passed（协议 17、挂载 17、生命周期 11，0 skipped）。
 - AC-005 相关 11 文件合跑（同环境，`.scratch/tmp/r3ac5`）：140 passed（Selkies pin/asset probe/wheel cache/controlled build/vendor 安全五件、t035 proxy runtime、network policy、t027 release controller、a24 deploy network source、t052 supervisor probe、t062 image closure）。
 - 门禁 junit 独立解析（`.scratch/gate_evidence_t065/junit/integration.xml`）：208 例、208 唯一、0 failure、0 error、7 skipped（＝201 passed）。
@@ -249,7 +249,7 @@ reviewed_scope: 4dd19121e8e93b53
 
 ## 结论
 
-- t065_code_f010：消除。直读与独立重跑证据如下（全部以绝对路径复核，`HOME=/home/hatch` 已确认；中间相对路径 grep 曾短暂看到缺失行的旧视图，系 exec 跨调用 HOME 不稳定所致，已用绝对路径重核排除，不影响结论）：
+- t065_code_f010：消除。直读与独立重跑证据如下（全部以绝对路径复核，`HOME=<home>` 已确认；中间相对路径 grep 曾短暂看到缺失行的旧视图，系 exec 跨调用 HOME 不稳定所致，已用绝对路径重核排除，不影响结论）：
   - 生产修复在位：`src/backend/cbrowser/proxy_forwarder/forwarder.py:475`，`_open_http_upstream` 的 CONNECT 握手 `readuntil` 的 except 元组已含 `asyncio.LimitOverrunError`（附注释“f010: third readuntil site; f007 fixed the other two”），转 `UpstreamError("upstream closed the CONNECT handshake")` 并先 `_close(writer)`，失败封闭；其余两处 `readuntil`（211/375 行）为 f007 已修，无同类残留。SOCKS5 段只用 `readexactly`，与处置行说法一致。
   - 新测试真实断言失败封闭，非空转。直读 `tests/unit/test_t065_proxy_forwarder.py:785-831` `test_oversized_connect_response_head_fails_closed`：fake 上游先读 CONNECT 请求头并记录，断言 `received == ["CONNECT 127.0.0.1:443 HTTP/1.1"]`（CONNECT 确已发出）；随后回 `HTTP/1.1 200 Connection Established` 加 70000 字节 `X-Pad`（超 64 KiB StreamReader 上限），并保持连接 0.5 秒（挂起的 CONNECT 会表现为挂起而非快速关闭）；Browser 侧 `reader.read()` 加 10 秒超时，断言 `data == b""`（收到空＝失败封闭）、`caplog`（asyncio logger、ERROR 级）中无 `LimitOverrunError`（无未处理异常）。
   - 反向验证已由本轮独立重复：临时删掉 475 行后单测失败，`asyncio.exceptions.LimitOverrunError: Separator is found, but chunk is longer than limit` 自 `readuntil` 经 `_open_http_upstream` 外泄（与声称的反向验证一致）；恢复后该行在位（grep 命中 475 行），单测 1 passed。恢复后又全量重跑三件套 46 passed，文件无残留改动。
@@ -261,7 +261,7 @@ reviewed_scope: 4dd19121e8e93b53
 
 ## Round 4 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：绝对路径 `git rev-parse --show-toplevel` 输出 `/home/hatch/workspace/CBrowser_t065`；基线 `a4726b3`；本轮指纹 `4dd19121e8e93b53`。
+- 落点仓库校验：绝对路径 `git rev-parse --show-toplevel` 输出 `<home>/workspace/CBrowser_t065`；基线 `a4726b3`；本轮指纹 `4dd19121e8e93b53`。
 - 后端 t065 三文件合跑（主仓 gate venv，`PYTHONPATH=src/backend`，`CBROWSER_GATE_ENV_READY=1`，`--basetemp` 落仓内 `.scratch/tmp/r4unit2`）：46 passed（协议 18、挂载 17、生命周期 11，0 skipped）；逐文件收集计数同为 18/17/11。
 - f010 反向验证：删 475 行后 `test_oversized_connect_response_head_fails_closed` 1 failed（`LimitOverrunError` 外泄）；恢复后 1 passed。
 - 处置行计数：`progress.md` 中 `t065_code_f010` 恰好 1 处。
@@ -306,7 +306,7 @@ reviewed_scope: 4dd19121e8e93b53
 
 ## Round 5 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；本轮指纹 `4dd19121e8e93b53`（与 Round 4 一致，实施方/主会话均无被审内容改动）。
+- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t065`；当前分支 `t065_proxy_credential_isolation`；基线 `a4726b3`；本轮指纹 `4dd19121e8e93b53`（与 Round 4 一致，实施方/主会话均无被审内容改动）。
 - 指纹复算：`repo_task.monitoring.review_scope_fingerprint('a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4', 'docs/tasks/t065_proxy_credential_isolation')` 直接返回 `4dd19121e8e93b53`；`check_review_status.py` 复跑输出 review_level=full、code_verdict=PASS、test_verdict=PASS、overall=PASS、review_scope=ok、ac_review=ok、round=4、next_action=finalize（本轮 Round 5 落盘前）。
 - 后端 t065 三文件合跑（主仓 gate venv，`PYTHONPATH=src/backend`，`CBROWSER_GATE_ENV_READY=1`，`--basetemp` 落仓内 `.scratch/tmp/r5unit`）：46 passed（协议 18、挂载 17、生命周期 11，0 skipped）。
 - 门禁 junit 独立解析（`.scratch/gate_evidence_t065/junit/`）：unit 2228 例 5 失败 1 跳过、contract 258 例 0 失败 1 跳过、integration 208 例 0 失败 7 跳过；5 条 unit 失败签名逐条核对为基线。

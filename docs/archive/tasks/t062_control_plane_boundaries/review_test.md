@@ -3,7 +3,7 @@
 - task：`t062_control_plane_boundaries`
 - spec：`docs/tasks/t062_control_plane_boundaries/task.md`
 - diff_anchor：`c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
+- target：`git -C '<home>/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
 - round：1
 - reviewed_at：2026-11-13T22:58:53+08:00
 
@@ -76,7 +76,7 @@ verdict: FAIL
 - task：`t062_control_plane_boundaries`
 - spec：`docs/tasks/t062_control_plane_boundaries/task.md`
 - diff_anchor：`c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`（交付已全部暂存，`git diff --cached` 可见完整交付，105 文件）
+- target：`git -C '<home>/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`（交付已全部暂存，`git diff --cached` 可见完整交付，105 文件）
 - round：2
 - reviewed_at：2026-11-13T23:10:55+08:00
 
@@ -96,7 +96,7 @@ verdict: FAIL
 
 - 前轮 finding 复核：5 条全部处置成立（2 important + 3 minor），逐条依据见上，均由直读文件、状态命令与测试自跑支撑，未采信处置表自述。
 - 本轮新发现：0 条。
-- 复验摘要（本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（cd 进 worktree 后执行）= `/home/hatch/workspace/CBrowser_t062`、分支 `t062_control_plane_boundaries`、HEAD 为基线 `c5f8329`（交付在 index 中）；以 gate venv（`/home/hatch/workspace/CBrowser/.scratch/gate_venv`，Python 3.15.2）+ `PYTHONPATH=src/backend` + `TMPDIR=.scratch/tmp` 自跑七个文件共 70 passed、0 failed——`test_t062_boundaries.py` 9 passed、`test_t062_image_closure.py` 5 passed（五镜像组装树实际导入）、`test_shared_atomic_write.py` 3 passed、`test_t062_shared_rules.py` 5 passed、`test_a26_browser_image_modules.py` 5 passed、`test_download_reconciler.py` 25 passed、`test_auth_service.py` 18 passed（领域会话对象与 ORM 存储对账）。
+- 复验摘要（本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（cd 进 worktree 后执行）= `<home>/workspace/CBrowser_t062`、分支 `t062_control_plane_boundaries`、HEAD 为基线 `c5f8329`（交付在 index 中）；以 gate venv（`<home>/workspace/CBrowser/.scratch/gate_venv`，Python 3.15.2）+ `PYTHONPATH=src/backend` + `TMPDIR=.scratch/tmp` 自跑七个文件共 70 passed、0 failed——`test_t062_boundaries.py` 9 passed、`test_t062_image_closure.py` 5 passed（五镜像组装树实际导入）、`test_shared_atomic_write.py` 3 passed、`test_t062_shared_rules.py` 5 passed、`test_a26_browser_image_modules.py` 5 passed、`test_download_reconciler.py` 25 passed、`test_auth_service.py` 18 passed（领域会话对象与 ORM 存储对账）。
 - 基线失败定性复核：抽跑 `test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip` 单例，仍为 FAILED，签名与 Round 1 在 pristine 基线树的证据逐字一致——`tests/fixtures/gateway_probe/topology.py:655` 的 `AttributeError: 'GatewayTopologyHarness' object has no attribute 'data_dir'`。定性记录（基线既存、非本 task 引入、留终局处置）与当前状态一致。
 - 未进表的提示：① `progress.md` 实施笔记称 browser 镜像「加 shared 整包一行与 adapters 两行（__init__ + egress_probe.py）」，本轮 grep 复核最终 `config/docker/browser_runtime/Dockerfile` 无任何 adapters COPY（egress 已落 shared、adapters 不再需要）——笔记与最终交付仍不符，沿用 Round 1 定性：实施侧订正事项，不影响测试结论、不阻断本轴判定。② integration 2 errors 与 frontend 5 failed 的负载 flaky 定性沿用 Round 1 口径（证据在 `.scratch/gate_evidence_20261113/`），本轮未重跑全量门禁。
 - 总体判断：Round 1 的 FAIL 两主因（AC 打勾闭环未完成、AC-008 端口守护盲区）与三条 minor 均已真实修复并经独立复跑验证，四条 AC 打勾与实现、测试证据、progress 口径三者一致，无 critical/important/minor 遗留，test 轴 verdict PASS。AC-005 [deploy] 真实镜像验证与 AC-008 非默认端口真实贯穿仍待本地 p092 补验，属已登记顺延、不阻断本轴判定。

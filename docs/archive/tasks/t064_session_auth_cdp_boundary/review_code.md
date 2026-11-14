@@ -3,7 +3,7 @@
 - task：`t064_session_auth_cdp_boundary`
 - spec：`docs/tasks/t064_session_auth_cdp_boundary/task.md`
 - diff_anchor：`680d850067075caf9356ee6c71771f6dc779c543`
-- target：`git -C '/home/hatch/workspace/CBrowser_t064' diff 680d850067075caf9356ee6c71771f6dc779c543`
+- target：`git -C '<home>/workspace/CBrowser_t064' diff 680d850067075caf9356ee6c71771f6dc779c543`
 - round：1
 - reviewed_at：2026-11-14T00:39:05+08:00
 
@@ -39,9 +39,9 @@ reviewed_scope: e979cc1914d912d9
 
 - 本轮新发现：3 条（1 critical、2 minor）
 - 未进表的提示：文件过大——`src/backend/cbrowser/gateway/server.py` 1010 行，超实现源码 800 行阈值，本 task 净增 14 行（+21/−7）；`src/backend/cbrowser/api/app.py` 734 行，超 400 行 minor 阈值，本 task 净增约 17 行；两者均为基线既存大文件的小幅增量，按降级规则只在此提示、不进 finding 表。新文件 `src/backend/cbrowser/shared/viewer_grants.py` 125 行、`src/backend/cbrowser/api/internal_edge.py` 107 行、`src/backend/cbrowser/network_config.py` 118 行均未超阈值。圈复杂度：本 task 新增函数（grant mint/verify、边缘解析 handler）手算 CC 均 \<10，无 ≥15 函数。范围外观察：无。
-- 基线失败归因抽查（应简报要求，不记 finding）：本 reviewer 在本 worktree 实跑复现三条且签名与简报一致——`tests/unit/test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 失败点名 `docs/tasks/t062_control_plane_boundaries/review_code.md`/`review_test.md` 含 `/home/hatch/`（grep 实见该文件 :6、:70、:93 等行），t064 diff 未触该文件；`tests/unit/test_fontconfig.py::test_prepare_write_failure_returns_none_and_leaves_no_tmp` 失败，t064 diff 未触 fontconfig 实现与该测试；`tests/unit/test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip` 失败为 `AttributeError: 'GatewayTopologyHarness' object has no attribute 'data_dir'`（`tests/fixtures/gateway_probe/topology.py:674`），t064 对该文件的改动仅新增两把秘密名与三处 env 注入（diff hunk 在 :150/:213/:434/:476 附近），未触 data_dir 定义（:100）与 :674 逻辑。三条归因成立。
+- 基线失败归因抽查（应简报要求，不记 finding）：本 reviewer 在本 worktree 实跑复现三条且签名与简报一致——`tests/unit/test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths` 失败点名 `docs/tasks/t062_control_plane_boundaries/review_code.md`/`review_test.md` 含 `<home>/`（grep 实见该文件 :6、:70、:93 等行），t064 diff 未触该文件；`tests/unit/test_fontconfig.py::test_prepare_write_failure_returns_none_and_leaves_no_tmp` 失败，t064 diff 未触 fontconfig 实现与该测试；`tests/unit/test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip` 失败为 `AttributeError: 'GatewayTopologyHarness' object has no attribute 'data_dir'`（`tests/fixtures/gateway_probe/topology.py:674`），t064 对该文件的改动仅新增两把秘密名与三处 env 注入（diff hunk 在 :150/:213/:434/:476 附近），未触 data_dir 定义（:100）与 :674 逻辑。三条归因成立。
 - findings.py 阻断说法核实：`docs/findings/` 下确有 `d037_dockerignore_leaf_allowlists.md` 与 `d037_sqlite_extended_error_codes_and_log_safety.md`、`d038_deterministic_deployment_identity_and_media_pools.md` 与 `d038_target_engine_tab_visibility_unreliable.md` 两组同号不同条目（ls 实查），编号重复属基线既存。spike 报告质量：s018 对两候选按来源认证/重放窗口/到期撤销/Upgrade/客户端改动五维逐项对比并给出两跳秘密与唯一判定点结论，s019 对三条 CDP 路径分别给出不可达/被拒判定与配置级证据、引擎内拒绝明确顺延实测——结论均已回填 task.md 未知契约清单（无 UNVERIFIED 残留），以 spike 报告承载结论可接受。
-- 复验摘要（实现层，本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（worktree 内）= `/home/hatch/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850`。自跑三组全过：grants/caddyfile/edge/compose 秘密挂载 32 passed；Gateway signaling/control/config/viewer throttle 40 passed（无 grant 401、只有 Cookie 401、伪造/跨 Profile/可信头不一致 403、就绪后建隧道、Agent register 独立认证回归均在内）；automation/auth/internal service config 29 passed（含 AC-004 新增普通 Profile detail/list 不含 cdp_ws_path 与 token 的断言）。逐项核对：grant 为 HMAC-SHA256（payload_b64 签名、compare_digest、先验签后解码、TTL 60 秒、claims 仅 v/profile_id/grant_id/exp、坏输入恒 None）；边缘端点先验证明（缺/错 403、未配置 503）、URI 正则锚定 + urlsplit 去 query + unquote、会话/Origin/Profile 只经 AuthService.authorize_viewer 判定、登出撤销后 401；旧端点与 GatewayApiClient.authorize_viewer 已删净（src grep 仅剩新 edge 端点与文档叙述，内部 schema 旧路径消失、新 edge 路径出现）；两跳秘密分发经 compose 复核为 edge_proof_key 仅 API 文件 + Caddy 进程环境、viewer_grant_key 仅 API+Gateway 文件，deploy.sh 只在 compose_with 调用时从秘密文件读入进程环境、不落盘不打印；Gateway 配置新增必填 viewer_grant_key_file，唯一入口 `gateway/__main__.py` 走 from_env，compose 与各测试 harness 均已接线；Agent register 处理函数与路由未被本 task 触及（diff 无该段改动且回归通过）；AC-005 面（snapshot/wait_for/extract、Selkies 同源、CSP、前端）在 diff 文件清单中零触及。唯一阻断项是 f001：上述每一跳单独都对，但经真实 Caddy 适配后的执行序把合法路径切断。
+- 复验摘要（实现层，本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（worktree 内）= `<home>/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850`。自跑三组全过：grants/caddyfile/edge/compose 秘密挂载 32 passed；Gateway signaling/control/config/viewer throttle 40 passed（无 grant 401、只有 Cookie 401、伪造/跨 Profile/可信头不一致 403、就绪后建隧道、Agent register 独立认证回归均在内）；automation/auth/internal service config 29 passed（含 AC-004 新增普通 Profile detail/list 不含 cdp_ws_path 与 token 的断言）。逐项核对：grant 为 HMAC-SHA256（payload_b64 签名、compare_digest、先验签后解码、TTL 60 秒、claims 仅 v/profile_id/grant_id/exp、坏输入恒 None）；边缘端点先验证明（缺/错 403、未配置 503）、URI 正则锚定 + urlsplit 去 query + unquote、会话/Origin/Profile 只经 AuthService.authorize_viewer 判定、登出撤销后 401；旧端点与 GatewayApiClient.authorize_viewer 已删净（src grep 仅剩新 edge 端点与文档叙述，内部 schema 旧路径消失、新 edge 路径出现）；两跳秘密分发经 compose 复核为 edge_proof_key 仅 API 文件 + Caddy 进程环境、viewer_grant_key 仅 API+Gateway 文件，deploy.sh 只在 compose_with 调用时从秘密文件读入进程环境、不落盘不打印；Gateway 配置新增必填 viewer_grant_key_file，唯一入口 `gateway/__main__.py` 走 from_env，compose 与各测试 harness 均已接线；Agent register 处理函数与路由未被本 task 触及（diff 无该段改动且回归通过）；AC-005 面（snapshot/wait_for/extract、Selkies 同源、CSP、前端）在 diff 文件清单中零触及。唯一阻断项是 f001：上述每一跳单独都对，但经真实 Caddy 适配后的执行序把合法路径切断。
 - 总体判断：每一跳的实现（grant 密码学、边缘端点、Gateway 验签、秘密分发、旧面删除）经独立复验均成立，但渲染 Caddyfile 的指令重排缺陷使真实边缘链的合法握手恒被拒，AC-001/AC-006 的打勾在当前交付上不成立，verdict FAIL；按 f001 建议以 route 包裹修复并补渲染契约断言后可重派复审，p094 的真实拓扑补验仍须在修复后执行。
 - 系统性 follow-up：无（[deploy] 补验已登记 `docs/pending/todo/p094_t064_local_edge_cdp_verification.md`，实存且内容覆盖 AC-001/002/004 引擎部分/006；f001 的真实链验证并入 p094 第 1、2 项即可，不另立）
 
@@ -62,7 +62,7 @@ verdict: FAIL
 - round：2
 - reviewed_at：2026-11-14T00:48:02+08:00
 - 复核范围：Round 1 三条 finding（t064_code_f001/f002/f003）的修复成立性、本轮其余改动抽查（test_gateway_signaling 新增断言、gateway.md route 说明句）、AC-001/AC-006 重新判定；其余 AC 沿用 Round 1 判定并注明。
-- 落点校验：`git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`（同 Round 1）；实跑均在 worktree 内以 `PYTHONPATH=src/backend:tests/fixtures` + gate venv Python 执行。
+- 落点校验：`git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`（同 Round 1）；实跑均在 worktree 内以 `PYTHONPATH=src/backend:tests/fixtures` + gate venv Python 执行。
 
 ### Finding 复核
 
@@ -113,7 +113,7 @@ verdict: PASS
 - round：3
 - reviewed_at：2026-11-14T02:38:11+08:00
 - 性质：确认轮（非全量重审）。触发原因：finish 门禁判 INCOMPLETE——本文件与 review_test.md 的 `reviewed_scope:` 均仍停在 Round 1 时点指纹，门禁要求最后一轮报告指纹等于最终交付指纹。本轮只做三件事：独立复算指纹、核对 Round 2 审阅字节与当前交付字节的同一性、抽验 Round 2 结论在当前字节上仍成立；不改 Round 1/2 任何内容，不新增 finding 审阅。
-- 落点校验：`git rev-parse --show-toplevel`（worktree 内）= `/home/hatch/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`（同 Round 1/2）。
+- 落点校验：`git rev-parse --show-toplevel`（worktree 内）= `<home>/workspace/CBrowser_t064`、分支 `t064_session_auth_cdp_boundary`、diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`（同 Round 1/2）。
 
 reviewed_scope: 3cd6ec932d29a297
 

@@ -192,7 +192,9 @@ def worker_resource_offsets(
 
     ``gw0`` (or no worker variable) keeps the historical single-lane
     defaults; higher workers get disjoint UDP/HTTP port bases and media
-    subnets so parallel lanes on one Docker daemon cannot collide.
+    subnets so parallel lanes on one Docker daemon cannot collide.  Each
+    lane also gets a deterministic, non-empty deployment identity
+    (``CBROWSER_E2E_INSTANCE_ID``) for the t069 ownership label.
     """
     env = os.environ if environ is None else environ
     worker = env.get("PYTEST_XDIST_WORKER", "")
@@ -211,6 +213,7 @@ def worker_resource_offsets(
         "CBROWSER_E2E_UDP_BASE": str(udp_base),
         "CBROWSER_E2E_HTTP_BASE": str(http_base),
         "CBROWSER_E2E_MEDIA_POOL": f"10.{octet}.0.0/16",
+        "CBROWSER_E2E_INSTANCE_ID": f"e2e-lane-{idx}",
     }
 
 

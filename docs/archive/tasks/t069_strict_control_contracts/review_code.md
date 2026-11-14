@@ -3,7 +3,7 @@
 - task：`t069_strict_control_contracts`
 - spec：`docs/tasks/t069_strict_control_contracts/task.md`
 - diff_anchor：`501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
-- target：`git -C '/home/hatch/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
+- target：`git -C '<home>/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
 - round：1
 - reviewed_at：2026-11-14T05:57:07+08:00
 
@@ -53,7 +53,7 @@ verdict: FAIL
 
 - task：`t069_strict_control_contracts`
 - diff_anchor：`501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
-- target：`git -C '/home/hatch/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
+- target：`git -C '<home>/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
 
 reviewed_scope: d6a502ead0b5dbf2
 
@@ -88,7 +88,7 @@ verdict: FAIL
 
 - task：`t069_strict_control_contracts`
 - diff_anchor：`501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
-- target：`git -C '/home/hatch/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
+- target：`git -C '<home>/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
 
 reviewed_scope: 9b0299b2a9e03c58
 
@@ -124,7 +124,7 @@ verdict: PASS
 
 - task：`t069_strict_control_contracts`
 - diff_anchor：`501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
-- target：`git -C '/home/hatch/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`（本轮以暂存树 `git diff --cached` 为准）
+- target：`git -C '<home>/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`（本轮以暂存树 `git diff --cached` 为准）
 
 reviewed_scope: 77d365c414ef2b91
 

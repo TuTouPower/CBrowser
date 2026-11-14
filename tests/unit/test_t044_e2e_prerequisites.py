@@ -203,16 +203,19 @@ def test_worker_resource_offsets_are_distinct_and_deterministic():
         "CBROWSER_E2E_UDP_BASE": "30000",
         "CBROWSER_E2E_HTTP_BASE": "35000",
         "CBROWSER_E2E_MEDIA_POOL": "10.251.0.0/16",
+        "CBROWSER_E2E_INSTANCE_ID": "e2e-lane-0",
     }
     assert offsets[1] == {
         "CBROWSER_E2E_UDP_BASE": "31000",
         "CBROWSER_E2E_HTTP_BASE": "36000",
         "CBROWSER_E2E_MEDIA_POOL": "10.252.0.0/16",
+        "CBROWSER_E2E_INSTANCE_ID": "e2e-lane-1",
     }
     assert offsets[2] == {
         "CBROWSER_E2E_UDP_BASE": "32000",
         "CBROWSER_E2E_HTTP_BASE": "37000",
         "CBROWSER_E2E_MEDIA_POOL": "10.253.0.0/16",
+        "CBROWSER_E2E_INSTANCE_ID": "e2e-lane-2",
     }
     assert len({o["CBROWSER_E2E_UDP_BASE"] for o in offsets}) == 3
     assert len({o["CBROWSER_E2E_HTTP_BASE"] for o in offsets}) == 3
@@ -230,6 +233,7 @@ def test_worker_resource_offsets_default_without_worker():
         "CBROWSER_E2E_UDP_BASE": "30000",
         "CBROWSER_E2E_HTTP_BASE": "35000",
         "CBROWSER_E2E_MEDIA_POOL": "10.251.0.0/16",
+        "CBROWSER_E2E_INSTANCE_ID": "e2e-lane-0",
     }
 
 

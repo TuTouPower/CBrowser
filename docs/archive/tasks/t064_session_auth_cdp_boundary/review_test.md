@@ -3,7 +3,7 @@
 - task：`t064_session_auth_cdp_boundary`
 - spec：`docs/tasks/t064_session_auth_cdp_boundary/task.md`
 - diff_anchor：`680d850067075caf9356ee6c71771f6dc779c543`
-- target：`git -C '/home/hatch/workspace/CBrowser_t064' diff 680d850067075caf9356ee6c71771f6dc779c543`
+- target：`git -C '<home>/workspace/CBrowser_t064' diff 680d850067075caf9356ee6c71771f6dc779c543`
 - round：1
 - reviewed_at：2026-11-14T00:37:00+08:00
 
@@ -39,7 +39,7 @@ reviewed_scope: e979cc1914d912d9
 
 - 改测方向复核：逐项核对了 diff 中全部既有测试改写，结论为「整体换语义」而非就地改预期追随输出，无迁就实现的改测。具体判定：① `tests/integration/test_gateway_signaling.py` 保留原测试名与结构（基线与现版同为 `test_viewer_handshake_rejections_leave_no_session` 等），拒绝矩阵由 Cookie 语义整体换成 grant 语义且断言加密（新增只有 Cookie 401、伪造 403、跨 Profile 403、可信头不一致 403、未就绪两段 503），理由已在 progress 预告；② `tests/integration/test_auth_api.py::test_internal_gateway_endpoints` 删除旧 viewer-authorize 的 valid/bad-origin 断言、改为运行时面鉴权探针＋旧端点 404，被删语义由新文件 `tests/integration/test_edge_viewer_authorize.py` 在边缘层等价补回（happy path、坏 Origin、未知 Profile、登出撤销）；③ `tests/integration/test_internal_service_config.py` 探针面由 viewer-authorize 换成 runtime 端点，token 独立性断言由「viewer 200/allowed False」换成「runtime 404（已过 bearer 校验）」，未配置 503 语义由边缘端点未配置用例补回；④ Gateway harness（`tests/integration/test_gateway_fixtures.py`、`tests/fixtures/supervisor_recovery_probe/gateway_service.py`、`tests/unit/test_baseline_fixture_regressions.py`）删 FakeApi 的 viewer-authorize 面、改本地用生产 `ViewerGrantAuthority` 签发 grant，是机制迁移的夹具跟随，断言未弱化；⑤ e2e `test_gateway_ac001_auth_e2e.py` 删除旧 Gateway Cookie 拒绝体与 Gateway 日志断言（拒绝已前移到边缘、旧前提失效，progress 已说明），代之以状态码契约断言并新增伪造边缘头 401 与外部解析端点 404 两例、管理 Cookie 新增 `path == "/"` 断言——属已披露的语义迁移，但该文件云端未实跑（见 AC-006 顺延），其断言正确性待 p094 实跑证伪/证实。
 - 危险模式扫描：新增与改动的测试中未命中恒真断言、删/反转 expect（上条已逐项归因的规格迁移除外）、注释掉断言、弱化断言、`.skip`/`.only`/`pytest.mark.skip` 新增、`type: ignore` 新增、mock 被测逻辑、阈值掩盖或条件跳过弱化断言；删除的测试面（旧 viewer-authorize HTTP 层、FakeApi viewer 面）均有新语义层等价或更高层替代，覆盖未丢。新测试均触达生产实现：grant 单元直测生产 `ViewerGrantAuthority`、边缘集成走真实 `create_app`＋TestClient＋真实 DB 登录/登出、Gateway 集成走真实 `create_gateway_app` 的 aiohttp 握手、Caddyfile 契约测生产 `generate_caddyfile` 渲染产物，mock 仅在 HTTP/容器边界。
-- 复验摘要（本 reviewer 独立执行，落点 `git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t064`，gate venv Python、`PYTHONPATH=src/backend:tests/fixtures`、`-n 0` 串行）：① `test_shared_viewer_grants.py`＋`test_t064_edge_caddyfile.py`＋`test_edge_viewer_authorize.py` 共 27 passed（与 progress 声称的 grant 15 例、边缘 8 例逐项对上：grant 文件 8 个测试函数＋7 例参数化垃圾输入 = 15）；② `test_gateway_signaling.py` 三例（拒绝矩阵、Agent register 坏 token、viewer 节流）＋`test_automation_api.py` 全文件＋`test_auth_api.py::test_internal_gateway_endpoints`＋`test_internal_service_config.py` 全文件共 18 passed；③ AC-005 回归抽跑 `test_agent_executor_refs.py`＋`test_agent_executor_cli.py` 共 27 passed；④ e2e 两文件 collect-only 14 例无错误（全树 102 例的数字未独立复跑，属 trust_prior）。合计独立实跑 72 passed＋14 collect。
+- 复验摘要（本 reviewer 独立执行，落点 `git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t064`，gate venv Python、`PYTHONPATH=src/backend:tests/fixtures`、`-n 0` 串行）：① `test_shared_viewer_grants.py`＋`test_t064_edge_caddyfile.py`＋`test_edge_viewer_authorize.py` 共 27 passed（与 progress 声称的 grant 15 例、边缘 8 例逐项对上：grant 文件 8 个测试函数＋7 例参数化垃圾输入 = 15）；② `test_gateway_signaling.py` 三例（拒绝矩阵、Agent register 坏 token、viewer 节流）＋`test_automation_api.py` 全文件＋`test_auth_api.py::test_internal_gateway_endpoints`＋`test_internal_service_config.py` 全文件共 18 passed；③ AC-005 回归抽跑 `test_agent_executor_refs.py`＋`test_agent_executor_cli.py` 共 27 passed；④ e2e 两文件 collect-only 14 例无错误（全树 102 例的数字未独立复跑，属 trust_prior）。合计独立实跑 72 passed＋14 collect。
 - 非绿定性核实：`test_t060_gate_boundaries.py::test_local_topology_profile_does_not_require_public_geoip` 本轮单跑仍 FAILED，签名与 progress 声称逐字一致（`tests/fixtures/gateway_probe/topology.py:674` 的 `AttributeError: 'GatewayTopologyHarness' object has no attribute 'data_dir'`），定性为基线继承成立。其余非绿项（repo_hygiene/fontconfig 的 pristine 同签名复现、a16 的 npm ci 后单文件 15 passed、integration 16 errors 的串行分批复跑全过、前端四套件与 protocol_drift 修正环境后复跑全过、全量门禁总数 257/2031+64/183+2）本轮未逐项复跑，依赖 progress 记录与证据模式，属 trust_prior，不影响本 task 新增测试的可信判定。
 - 本轮新发现：3 条（0 critical、0 important、3 minor）。
 - 未进表的提示：① progress 实施笔记称 supervisor_recovery_probe 的 `FakeGatewayApiClient` 存在「重复类定义（第二份遮蔽第一份）已删被遮蔽份」，但直查基线 680d850 的 `tests/fixtures/supervisor_recovery_probe/gateway_service.py` 只有一份该类定义（基线第 57 行、现版第 61 行，类内方法亦无重复），该笔记与基线不符——属实施记录订正事项（code 轴/实施侧），不影响测试覆盖与本轴判定。② AC-001 中「过期会话」在边缘层无专门用例（只有缺失/伪造会话 401 与登出撤销 401），会话过期判定由未改动的 `AuthService.authorize_viewer` 既有覆盖承接，组合成立，仅作提示。
@@ -64,7 +64,7 @@ verdict: PASS
 
 - round：2
 - reviewed_at：2026-11-14T00:49:00+08:00
-- 落点：`git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t064`，分支 `t064_session_auth_cdp_boundary`；Python 为 `/home/hatch/workspace/CBrowser/.scratch/gate_venv/bin/python`，`PYTHONPATH=src/backend:tests/fixtures`，全部复跑串行 `-n 0`。
+- 落点：`git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t064`，分支 `t064_session_auth_cdp_boundary`；Python 为 `<home>/workspace/CBrowser/.scratch/gate_venv/bin/python`，`PYTHONPATH=src/backend:tests/fixtures`，全部复跑串行 `-n 0`。
 - 范围：只复核 Round 1 本轴三条 minor 的修复、抽验 code 轴 f001 的修复证据面、核对 progress 的 Round 1 修复复验数字，并对 AC-001 与 AC-006 重新判定 TICK；其余 AC 沿用 Round 1 判定并注明。本轮未改实现、测试或除本文件外的任何文档。
 
 ### 逐条复核结论
@@ -77,7 +77,7 @@ verdict: PASS
 
 ### 实跑命令与实数
 
-落点均为 `cd ~/workspace/CBrowser_t064` 之后，命令前缀统一为 `PYTHONPATH=src/backend:tests/fixtures /home/hatch/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest <targets> -n 0 -q`：
+落点均为 `cd ~/workspace/CBrowser_t064` 之后，命令前缀统一为 `PYTHONPATH=src/backend:tests/fixtures <home>/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest <targets> -n 0 -q`：
 
 |目标|结果|
 |---|---|
@@ -111,7 +111,7 @@ verdict: PASS
 - round：3
 - reviewed_at：2026-11-14T02:38:37+08:00
 - reviewed_scope: 3cd6ec932d29a297
-- 落点：`git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t064`，分支 `t064_session_auth_cdp_boundary`，diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`。
+- 落点：`git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t064`，分支 `t064_session_auth_cdp_boundary`，diff 基线 `680d850067075caf9356ee6c71771f6dc779c543`。
 - 确认范围与方法：本轮为确认轮，不全量重审、不改实现。只做三件事——独立复算 reviewed_scope 指纹、核对 Round 2 审阅字节与当前交付字节的同一性、独立复跑 progress.md 记载的两组定向套件；AC 判定沿用 Round 2 结论，仅按门禁格式在本轮小节重新逐条列出。
 - 指纹复算：在 worktree 内运行 `review_scope_fingerprint('680d850067075caf9356ee6c71771f6dc779c543', 'docs/tasks/t064_session_auth_cdp_boundary')`（`.repo_template/scripts` 的 `repo_task.monitoring`），独立复算值为 `3cd6ec932d29a297`，与主会话实算值一致；Round 1/2 报告中的旧指纹 `e979cc1914d912d9` 为 Round 1 修复前的时点指纹，本轮以复算值替换确认。
 - 字节同一性核对：交付内容文件（实现、测试与长期文档，不含 progress/review 过程文件）的最新 mtime 为 2026-11-14 00:44:32 CST（`docs/blueprint/gateway.md`），其余均不晚于此时点，全部早于 Round 2 两份报告的落盘时间（review_test.md 00:49:40 CST、review_code.md 00:51:37 CST）。即 Round 2 审阅的字节与当前交付字节为同一批，Round 1 修复后未再发生交付内容变更，字节同一性成立。

@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from packaging.markers import Marker
+from packaging.specifiers import SpecifierSet
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +67,21 @@ def normalise(lines: list[str], environment: dict[str, str] | None = None) -> se
 
 
 def image_freeze(image: str) -> list[str]:
+    """Return installed distributions as ``name==version`` pins.
+
+    ``pip freeze`` emits PEP 508 direct references (``name @ url``) for wheels
+    installed from a local build, which carry no comparable version.  The gate
+    compares installed versions against exported pins, so ``pip list
+    --format=freeze`` is used instead: it reports the installed version of
+    every distribution, including PEP 440 local labels.  Bootstrapping tools
+    are excluded to mirror ``pip freeze``'s default package set.  On failure
+    this raises ``RuntimeError``; it never falls back to ``pip freeze``, whose
+    direct references are not comparable.
+    """
     proc = subprocess.run(
         ["docker", "run", "--rm", "--entrypoint", "sh", image,
-         "-c", "pip freeze || /opt/venv/bin/pip freeze"],
+         "-c", "pip list --format=freeze --exclude pip --exclude setuptools "
+               "--exclude wheel --exclude distribute"],
         capture_output=True,
         text=True,
         timeout=180,
@@ -76,7 +89,7 @@ def image_freeze(image: str) -> list[str]:
     )
     if proc.returncode != 0:
         raise RuntimeError(
-            f"pip freeze failed in {image} (rc={proc.returncode}): "
+            f"pip list --format=freeze failed in {image} (rc={proc.returncode}): "
             f"{(proc.stdout + proc.stderr)[-1000:]}"
         )
     return proc.stdout.splitlines()
@@ -105,6 +118,37 @@ print(json.dumps(dict(os_name=os.name, sys_platform=sys.platform,
     return json.loads(proc.stdout)
 
 
+def compare_packages(expected: set[str], actual: set[str]) -> tuple[list[str], list[str]]:
+    """Compare exported pins against installed packages by PEP 440 specifier.
+
+    A pin is satisfied when the installed version matches ``==<pin>``.  Per
+    PEP 440 the ``==`` operator ignores local version labels, so a controlled
+    build such as ``2.2.1+cbrowser.1`` still satisfies an exported ``2.2.1``
+    pin.  ``missing`` holds unsatisfied exported pins, ``extra`` holds
+    installed pins whose package name is absent from the export.
+    """
+
+    def by_name(pins: set[str]) -> dict[str, str]:
+        grouped: dict[str, str] = {}
+        for pin in pins:
+            name, version = pin.split("==", 1)
+            grouped[name] = version
+        return grouped
+
+    actual_by_name = by_name(actual)
+    expected_names = {pin.split("==", 1)[0] for pin in expected}
+    missing = []
+    for pin in expected:
+        name, version = pin.split("==", 1)
+        installed = actual_by_name.get(name)
+        if installed is None or not SpecifierSet(f"=={version}").contains(
+            installed, prereleases=True
+        ):
+            missing.append(pin)
+    extra = [pin for pin in actual if pin.split("==", 1)[0] not in expected_names]
+    return sorted(missing), sorted(extra)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--image", required=True)
@@ -120,8 +164,7 @@ def main() -> int:
     except (ValueError, RuntimeError) as exc:
         logger.error("FAIL %s: %s", args.image, exc)
         return 1
-    missing = sorted(expected - actual)
-    extra = sorted(actual - expected)
+    missing, extra = compare_packages(expected, actual)
     if missing or extra:
         logger.error("FAIL %s: missing=%s extra=%s", args.image, missing, extra)
         return 1
@@ -130,4 +173,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     sys.exit(main())

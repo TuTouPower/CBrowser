@@ -108,10 +108,10 @@ def test_prepare_write_failure_returns_none_and_leaves_no_tmp(
 ) -> None:
     run_dir = tmp_path / "runtime"
 
-    def fail_replace(_src, _dst):
-        raise OSError("replace failed")
+    def fail_write(*_args, **_kwargs):
+        raise OSError("write failed")
 
-    monkeypatch.setattr(fontconfig_module.os, "replace", fail_replace)
+    monkeypatch.setattr(fontconfig_module, "atomic_write_text", fail_write)
     assert prepare_profile_fontconfig(run_dir, [FONT_SET_MOUNT_ROOT / "windows" / "x"]) is None
     assert not (run_dir / (PROFILE_FONTCONFIG_FILENAME + ".tmp")).exists()
     assert list(run_dir.iterdir()) == []

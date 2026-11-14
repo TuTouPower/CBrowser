@@ -3,7 +3,7 @@
 - task：`t062_control_plane_boundaries`
 - spec：`docs/tasks/t062_control_plane_boundaries/task.md`
 - diff_anchor：`c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
+- target：`git -C '<home>/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
 - round：1
 - reviewed_at：2026-11-13T22:58:18+08:00
 
@@ -67,7 +67,7 @@ verdict: FAIL
 - task：`t062_control_plane_boundaries`
 - spec：`docs/tasks/t062_control_plane_boundaries/task.md`
 - diff_anchor：`c5f83296ece80a9a0ed9f1e48d957ce332f858c4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`（交付已全部暂存，`git diff --cached` 可见完整交付，105 文件）
+- target：`git -C '<home>/workspace/CBrowser_t062' diff c5f83296ece80a9a0ed9f1e48d957ce332f858c4`（交付已全部暂存，`git diff --cached` 可见完整交付，105 文件）
 - round：2
 - reviewed_at：2026-11-13T23:03:51+08:00
 
@@ -90,7 +90,7 @@ verdict: FAIL
 
 - 前轮 finding 复核：4 条全部处置成立（1 important + 3 minor），逐条依据见上，均由直读文件 + grep + 导入/`get_type_hints` 实测 + 测试自跑支撑，未采信处置表自述。
 - 本轮新发现：0 条。
-- 复验摘要（本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（在 worktree 内、不带 `-C`）= `/home/hatch/workspace/CBrowser_t062`、分支 `t062_control_plane_boundaries`、基线 `c5f8329`；以 gate venv + `PYTHONPATH=src/backend` + `TMPDIR=.scratch/tmp` 自跑 `test_t062_boundaries.py`、`test_t062_shared_rules.py`、`test_shared_atomic_write.py`、`test_t062_image_closure.py`、`test_download_reconciler.py` 共 47 passed；另以同一 venv 做 `profile_service`/`control_service`/`fontconfig` 三模块导入与标注求值验证，全过。
+- 复验摘要（本 reviewer 独立执行）：落点校验 `git rev-parse --show-toplevel`（在 worktree 内、不带 `-C`）= `<home>/workspace/CBrowser_t062`、分支 `t062_control_plane_boundaries`、基线 `c5f8329`；以 gate venv + `PYTHONPATH=src/backend` + `TMPDIR=.scratch/tmp` 自跑 `test_t062_boundaries.py`、`test_t062_shared_rules.py`、`test_shared_atomic_write.py`、`test_t062_image_closure.py`、`test_download_reconciler.py` 共 47 passed；另以同一 venv 做 `profile_service`/`control_service`/`fontconfig` 三模块导入与标注求值验证，全过。
 - 总体判断：Round 1 的 FAIL 主因（AC 打勾闭环）与三条 minor 均已真实修复，四条 AC 打勾与实现、progress 口径三者一致，无 critical/important/minor 遗留，code 轴 verdict PASS。AC-005 [deploy] 真实镜像验证与 AC-008 非默认端口真实贯穿仍待本地 p092 补验，属已登记顺延、不阻断本轴判定。
 - 系统性 follow-up：无（顺延事项已登记 p092，不重复建议）。
 

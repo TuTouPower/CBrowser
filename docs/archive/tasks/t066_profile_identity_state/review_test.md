@@ -130,7 +130,7 @@ ______________________________________________________________________
 - task：`t066_profile_identity_state`
 - round：2（复审 Round 1 的 10 条 finding 修复与 AC 重新打勾）
 - reviewed_at：2026-11-14（CST）
-- 落点校验（worktree 内实测）：`git rev-parse --show-toplevel` = `/home/hatch/workspace/CBrowser_t066`，`git log --oneline -1` = `680d850`，分支 `t066_profile_identity_state`；审阅范围 = `git diff --cached 680d850`，共 22 个文件（与任务口径一致），`git status --short` 中未跟踪项为 0。
+- 落点校验（worktree 内实测）：`git rev-parse --show-toplevel` = `<home>/workspace/CBrowser_t066`，`git log --oneline -1` = `680d850`，分支 `t066_profile_identity_state`；审阅范围 = `git diff --cached 680d850`，共 22 个文件（与任务口径一致），`git status --short` 中未跟踪项为 0。
 
 ### 复跑实数（本 reviewer 独立执行，非引用实施侧自报）
 

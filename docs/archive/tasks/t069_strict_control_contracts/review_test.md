@@ -3,7 +3,7 @@
 - task：`t069_strict_control_contracts`
 - spec：`docs/tasks/t069_strict_control_contracts/task.md`
 - diff_anchor：`501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
-- target：`git -C '/home/hatch/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
+- target：`git -C '<home>/workspace/CBrowser_t069' diff 501ac0ba0c477cefd2a68a3b93abb8c2cf69eb90`
 - round：1
 - reviewed_at：2026-11-14T05:59:28+08:00
 
@@ -126,7 +126,7 @@ reviewed_scope: 9b0299b2a9e03c58
 
 ## Round 3 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t069`。
+- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t069`。
 - 后端（gate_venv，PYTHONPATH=src/backend）：`tests/unit/test_t069_strict_control_contracts.py` 单跑 40 passed。
 - 前端串行抽查（src/frontend 下 `npx vitest run`，低负载时点）：`ProfileForm.test.tsx` 单文件 10/10 passed（终局日志中该文件的 2 条超时失败用例串行下分别约 928ms/443ms 通过）；其余 4 个终局失败文件（ConfigTab、ProfileCreateDialog、ProfileForm.t058、SettingsPage）合跑 18/18 passed。两者合计覆盖终局 7 条失败所在的全部 5 个文件、共 28/28 全过，独立坐实「负载 flaky、审阅后复跑全过」的定性（文件数为 5 而非 progress 所写 4，见未进表的提示）。
 - 原始日志直读：`.scratch/frontend_test2.log` 汇总行 `Tests 7 failed | 626 passed (633)`，失败文件清单与失败形态（均为 5000ms 超时）已逐条核对。
@@ -168,7 +168,7 @@ reviewed_scope: 77d365c414ef2b91
 
 ## Round 4 Reviewer 独立重跑记录（证据）
 
-- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `/home/hatch/workspace/CBrowser_t069`；当前分支 `t069_strict_control_contracts`。
+- 落点仓库校验：以 workdir 为仓库目录执行不带 `-C` 的 `git rev-parse --show-toplevel`，输出精确等于 `<home>/workspace/CBrowser_t069`；当前分支 `t069_strict_control_contracts`。
 - 暂存一致性：`git diff --cached` 与 `git diff`（相对基线 501ac0b）对 `tests/ src/frontend/` 的 stat 逐行一致；`git status --porcelain` 52 条全部已暂存，无未暂存/未跟踪项。
 - 后端（gate_venv，PYTHONPATH=src/backend）：`tests/unit/test_t069_strict_control_contracts.py` 单跑 40 passed（与 Round 3 单跑数字一致）。
 - 前端（src/frontend 下临时 symlink node_modules 后 `npx vitest run`，审后已删除链接，`git status` 与审前一致）：`adapter_identity.test.ts` 6 passed、`adapter_restart.test.ts` 8 passed、`adapter_types.test.ts` 6 passed，合计 20 passed（与 Round 2/3 数字一致，含 identity 入口解析 3 用例）。

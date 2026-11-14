@@ -3,7 +3,7 @@
 - task：`t065_proxy_credential_isolation`
 - spec：`docs/tasks/t065_proxy_credential_isolation/task.md`
 - diff_anchor：`a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
-- target：`git -C '/home/hatch/workspace/CBrowser_t065' diff a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
+- target：`git -C '<home>/workspace/CBrowser_t065' diff a4726b33bbfa3e2262a7b5a450271f2c6fdeebe4`
 - round：5
 - reviewed_at：2026-11-14T11:20:06+08:00
 
@@ -151,7 +151,7 @@ verdict: FAIL
 
 code 轴·确认轮。
 
-本节为确认轮：独立复核 Round 1 两份 code 审阅的 9 条 finding（f001～f009）是否真正消除，不采信 progress.md 处置表自述。方法：逐条读声称修改的生产代码（文件:行），核对配套测试是否真实断言所称行为（非 mock 掉被测逻辑），并用 gate venv（`/home/hatch/workspace/CBrowser/.scratch/gate_venv/bin/python`，`PYTHONPATH=src/backend`）独立重跑三件套 `tests/unit/test_t065_proxy_forwarder.py`、`tests/unit/test_t065_proxy_forwarder_mounts.py`、`tests/unit/test_t065_proxy_forwarder_lifecycle.py`：**45 passed**（协议 17、挂载 17、生命周期 11）。
+本节为确认轮：独立复核 Round 1 两份 code 审阅的 9 条 finding（f001～f009）是否真正消除，不采信 progress.md 处置表自述。方法：逐条读声称修改的生产代码（文件:行），核对配套测试是否真实断言所称行为（非 mock 掉被测逻辑），并用 gate venv（`<home>/workspace/CBrowser/.scratch/gate_venv/bin/python`，`PYTHONPATH=src/backend`）独立重跑三件套 `tests/unit/test_t065_proxy_forwarder.py`、`tests/unit/test_t065_proxy_forwarder_mounts.py`、`tests/unit/test_t065_proxy_forwarder_lifecycle.py`：**45 passed**（协议 17、挂载 17、生命周期 11）。
 
 reviewed_scope: c6aaa3c19097122d
 
@@ -216,7 +216,7 @@ reviewed_scope: 4dd19121e8e93b53
 
 ### 三件套重跑
 
-- 命令：`PYTHONPATH=src/backend /home/hatch/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest tests/unit/test_t065_proxy_forwarder.py tests/unit/test_t065_proxy_forwarder_mounts.py tests/unit/test_t065_proxy_forwarder_lifecycle.py -q`
+- 命令：`PYTHONPATH=src/backend <home>/workspace/CBrowser/.scratch/gate_venv/bin/python -m pytest tests/unit/test_t065_proxy_forwarder.py tests/unit/test_t065_proxy_forwarder_mounts.py tests/unit/test_t065_proxy_forwarder_lifecycle.py -q`
 - 结果：46 passed（协议 18、挂载 17、生命周期 11），与实现者所称 46/46 一致；新测试单跑通过，反向验证单跑失败（见上）。
 
 ### AC 表
@@ -251,7 +251,7 @@ reviewed_scope: 4dd19121e8e93b53
 
 - f010 消除状态仍在位：`forwarder.py:469-477` CONNECT 握手 except 含 `asyncio.LimitOverrunError`（附 f010 注释，注明为三处 `readuntil` 中第三处），先 `_close(writer)` 再转 `UpstreamError("upstream closed the CONNECT handshake")`；SOCKS5 段只用定长 `readexactly`，无同类问题。
 - f001～f009 修复点抽查仍在位：`core.py:2890-2892` 无条件删除 runtime 目录旧凭据文件（附注释说明 rw 父目录挂载下残留仍可读）；`forwarder.py:424-433` `_tls_context`（https 上游包 TLS，`:416`/`:452` 两处传入）；`:522-534` SOCKS5 IPv6 先 `socket.inet_pton(AF_INET6)` 走 ATYP 0x04；`basic_auth` 恒拼冒号（RFC 7617）；`create_proxy_forwarder` 与 `UpstreamConfig.from_dict` 已拆分为小编排器与小校验函数。
-- 三件套重跑：`PYTHONPATH=src/backend` + gate venv（`/home/hatch/workspace/CBrowser/.scratch/gate_venv/bin/python`），`tests/unit/test_t065_proxy_forwarder.py tests/unit/test_t065_proxy_forwarder_mounts.py tests/unit/test_t065_proxy_forwarder_lifecycle.py -q` → **46 passed**（协议 18、挂载 17、生命周期 11），与 Round 4 的 46/46 一致。
+- 三件套重跑：`PYTHONPATH=src/backend` + gate venv（`<home>/workspace/CBrowser/.scratch/gate_venv/bin/python`），`tests/unit/test_t065_proxy_forwarder.py tests/unit/test_t065_proxy_forwarder_mounts.py tests/unit/test_t065_proxy_forwarder_lifecycle.py -q` → **46 passed**（协议 18、挂载 17、生命周期 11），与 Round 4 的 46/46 一致。
 - 本轮无新 finding。
 
 ### 结论
