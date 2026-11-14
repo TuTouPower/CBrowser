@@ -615,17 +615,84 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
                 or "检查运行时状态" in title_text
             ), f"Diagnostic title unexpected: {title_text}"
 
-            # Reconnect and status buttons must be present
-            reconnect_btn = await pageUnready.query_selector(
-                '[data-testid="sess-stage-action-reconnect"]'
-            )
-            assert reconnect_btn is not None, "Reconnect button must be available"
-
-            status_btn = await pageUnready.query_selector(
-                '[data-testid="sess-stage-action-view-status"]'
-            )
-            assert status_btn is not None, "View status button must be available"
+            # The old "reconnect / view-status buttons must be present"
+            # assertions are removed wholesale per AGENTS.md (no in-place
+            # expectation rewrite). This fake profile id settles on a t061
+            # AC-002 transient waiting stage, which renders the diagnostic
+            # card with NO action buttons at all; neither assertion ever
+            # held. The AC-002 behaviour is asserted by
+            # test_frontend_session_unready_waiting_stage_has_no_action_buttons
+            # below; the AC-003 matrix is evidenced against a real stopped
+            # Profile by the deploy-stack Chrome probe (see p090/p100).
 
             await browser.close()
     finally:
         await shared_stack.reset_profile_state(case_key)
+
+
+@pytest.mark.asyncio
+async def test_frontend_session_unready_waiting_stage_has_no_action_buttons(
+    shared_stack: SharedContainerStack,
+) -> None:
+    """t061 AC-002: a transient waiting stage shows the card but no actions."""
+    harness = shared_stack.harness
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            channel="chrome",
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--ignore-certificate-errors",
+                "--autoplay-policy=no-user-gesture-required",
+            ],
+        )
+        context = await browser.new_context(
+            ignore_https_errors=True,
+            viewport={"width": 1280, "height": 720},
+        )
+        page = await context.new_page()
+        await page.goto(harness.origin, wait_until="domcontentloaded")
+        login_resp = await page.evaluate(
+            """async (password) => {
+                const res = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({password})
+                });
+                return res.status;
+            }""",
+            harness.admin_password,
+        )
+        assert login_resp == 200, "Login failed"
+
+        unready_url = f"{harness.origin}/session/stopped-or-unready-profile-id"
+        await page.goto(unready_url, wait_until="domcontentloaded")
+        overlay_visible = await page.wait_for_selector(
+            '[data-testid="sess-diag-overlay"]',
+            timeout=10000,
+        )
+        assert overlay_visible, (
+            "Diagnostic overlay must be visible for unready profile"
+        )
+
+        title_text = await page.inner_text(
+            '[data-testid="sess-stage-title"]'
+        )
+        assert (
+            "运行时未就绪" in title_text
+            or "信令连接失败" in title_text
+            or "检查运行时状态" in title_text
+        ), f"Diagnostic title unexpected: {title_text}"
+
+        action_testids = await page.locator(
+            '[data-testid^="sess-stage-action"]'
+        ).evaluate_all(
+            "els => els.map(e => e.getAttribute('data-testid'))"
+        )
+        assert action_testids == [], (
+            "t061 AC-002: transient waiting stage must not render any "
+            f"stage action buttons, got {action_testids}"
+        )
+
+        await browser.close()

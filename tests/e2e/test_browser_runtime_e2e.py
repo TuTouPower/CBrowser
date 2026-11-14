@@ -1192,7 +1192,8 @@ async def test_ac003_controlled_uds_and_allowlist(http_server: str) -> None:
         script = f"""
 import errno, json, socket, urllib.request
 
-with urllib.request.urlopen({http_server!r} + '/download-1.txt', timeout=5) as response:
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))
+with opener.open({http_server!r} + '/download-1.txt', timeout=5) as response:
     assert response.status == 200
 with socket.socket() as connection:
     connection.settimeout(2)

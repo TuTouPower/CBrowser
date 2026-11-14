@@ -46,6 +46,7 @@ from cbrowser.proxy_forwarder.forwarder import (
 )
 
 from .security import validate_runtime_id
+from .cdp_guard import CdpGuard
 
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
@@ -171,6 +172,8 @@ class BrowserRunner:
         self.openbox_proc: subprocess.Popen[Any] | None = None
         self.chrome_pid: int | None = None
         self.cdp_port: int | None = None
+        self._chrome_port: int = 0
+        self._cdp_guard: CdpGuard | None = None
         self.browser_ws_url: str | None = None
         self.browser_context: Any = None
         self.browser_version: str | None = None
@@ -702,17 +705,17 @@ class BrowserRunner:
                 try:
                     lines = active_port_file.read_text().splitlines()
                     if lines:
-                        self.cdp_port = int(lines[0])
+                        self._chrome_port = int(lines[0])
                         break
                 except (OSError, ValueError, IndexError):
                     pass
             await asyncio.sleep(0.1)
 
-        if not self.cdp_port:
+        if not self._chrome_port:
             raise RuntimeError(f"Failed to resolve CDP port from {active_port_file}")
 
         # Discover webSocketDebuggerUrl
-        url = f"http://127.0.0.1:{self.cdp_port}/json/version"
+        url = f"http://127.0.0.1:{self._chrome_port}/json/version"
 
         def _get_ws_url() -> str | None:
             with urllib.request.urlopen(url, timeout=1.0) as resp:
@@ -729,6 +732,9 @@ class BrowserRunner:
 
         if not self.browser_ws_url:
             raise RuntimeError("Failed to obtain webSocketDebuggerUrl from Chrome")
+
+        self._cdp_guard = CdpGuard(self._chrome_port)
+        self.cdp_port = await self._cdp_guard.start()
 
         browser_product, browser_user_agent = await self._resolve_browser_version()
 
@@ -1009,6 +1015,9 @@ class BrowserRunner:
                 await self.exit_task
             except asyncio.CancelledError:
                 pass
+        if self._cdp_guard is not None:
+            await self._cdp_guard.close()
+            self._cdp_guard = None
         if self.browser_context:
             try:
                 await self.browser_context.close()
