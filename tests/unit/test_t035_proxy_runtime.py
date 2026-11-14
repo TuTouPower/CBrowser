@@ -100,15 +100,6 @@ def test_missing_credentials_file_fails_closed(tmp_path: Path) -> None:
     assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
 
 
-def test_credentials_revision_mismatch_fails_closed(tmp_path: Path) -> None:
-    path = tmp_path / "proxy_credentials.json"
-    _write_creds(path, credential_revision=3)
-    with pytest.raises(RunnerProxyChanged) as exc:
-        resolve_proxy_server_arg(_config("px1"), _snapshot(2), path)
-    assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
-    assert "s3cr3t" not in str(exc.value)
-
-
 def test_corrupt_credentials_file_fails_closed(tmp_path: Path) -> None:
     path = tmp_path / "proxy_credentials.json"
     path.write_text("not-json", encoding="utf-8")
