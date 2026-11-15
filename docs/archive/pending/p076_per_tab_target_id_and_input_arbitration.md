@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P0-3、P1-10），借鉴 neko 控制权模型、Browserless liveURL、Browserbase session live view
 - 内容：会话为权威状态、页面只是 viewer 句柄。控制平面维护 `profile_id → targets[]`（`targetId/url/title/active`），`mode=tab` 钉住 / `mode=follow` 跟随，且 Browserless 明确「Selecting a target does not switch automation's active tab」；全会话唯一 control token + `REQUEST/RELEASE/GIVE` + 隐式抢占（首次交互暂存输入、授权后回放）+ `control_protection`；viewer 权限位拆分（`can_watch`/`can_host`/`can_access_clipboard` 等），只读链接不可反向升级为可写；每链接并发硬上限（Browserless 为 5、超限 429）、重连重叠窗口、凭据填充/支付/登录提交主动踢 viewer；高频输入走二进制通道、控制状态走 JSON WebSocket。本次为只读调研，未授权改生产代码。
-- 处理：未开
+- 处理：f04293f；resolution=obsolete；reason=用户裁决：本产品是单人单机使用的隐私浏览器，切换环境即切换一个完整的浏览器，浏览器内部页面由用户自己操控；标签页绑定、多 viewer 输入仲裁、control token、踢 viewer 属多人协作产品形态，与本产品不符，不做。p076 与 ADR 007 并发输入契约冲突一并消失，无需裁决
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p029（archive，人机接管与控制权）、p033（archive，Tab 归属与生命周期）、p009（archive，multi-viewer E2E）、p008（archive，Selkies resume）
 

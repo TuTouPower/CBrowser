@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P2-17），借鉴 Kasm RBI `kasm_url` / `/go?kasm_url=`
 - 内容：提供 Caddy 路由 + 前端 postMessage，在既有 Profile 会话内打开目标 URL、创建/切换对应 tab 并激活 viewer；只在 resume 既有会话时触发，不静默新建 Profile。Kasm 的 seamless browsing 工作流是拦截原请求 → 重定向到隔离平台并把原 URL 编码进 `kasm_url` → 隔离容器内浏览器打开该 URL；本条只取「反向入口」这一交互形态，不引入前向代理改写。本次为只读调研，未授权改生产代码。
-- 处理：未开
+- 处理：f04293f；resolution=obsolete；reason=用户裁决：单人单机看到网址直接在浏览器地址栏粘贴访问即可，URL 驱动的反向入口（Caddy 路由 + postMessage 在既有会话打开 URL）无产品价值，且与标签页绑定共用同一张表一并删除
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p076（per-tab targetId 映射，共用同一张表）、p075（Caddy 路由与鉴权收口）、p037（archive，LAN/HTTP 切换）、p053（parked，LAN 多设备，不复活）
 

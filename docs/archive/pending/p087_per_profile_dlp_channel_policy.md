@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P2-16），借鉴 Kasm DLP
 - 内容：把剪贴板上下行 + mimetype 白名单（`chromium/x-web-custom-data` / `text/html` / `image/png`）、上传下载固定目录、音频/麦克风/摄像头、水印、区域遮蔽、键盘限速做成 Group/Profile 级开关，并加「服务崩溃即重启整个容器」fail-secure。现状已有 `clipboard_sync` 开关与会话内 `file_transfers=none`，但缺 per-Profile 通道策略与崩溃 fail-secure。本次为只读调研，未授权改生产代码。
-- 处理：未开
+- 处理：f04293f；resolution=obsolete；reason=用户裁决：核实现状后立论不成立——每个环境本来就有独立开关（ProfileConfig.clipboard_sync 按环境各自传入容器），不是一套开关所有环境共用；同一个外部 Chrome 多标签连不同环境时剪贴板共用属用户自己操控，不做 per-Profile DLP 通道策略、崩溃重启与跨环境负向隔离
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p015（archive，input/clipboard E2E）、p067（archive，clipboard_sync 默认值）、p055（archive，privacy allowlist）、p076（viewer 权限位）、p078（跨 Profile 泄漏面）
 

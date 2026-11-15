@@ -2,7 +2,7 @@
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P0-6、本仓风险节），借鉴 TransparentTorProxy、Chrome `WebRtcIPHandling` 策略、SealSkin 零宿主端口思路
 - 内容：本地源码实读（非网上调研结论，需实测复核）：`network_policy.py:136-139` 对 Browser 角色公网出口 `-A OUTPUT -j ACCEPT` 全放行，`--proxy-server` 只在 Chromium 进程层生效；未配代理 Profile（`runner.py:110-111` 直接不加 `--proxy-server`）与其它未配代理 Profile 共享宿主出口 IP；代理端点不可达而 iptables 规则仍在时会从「走代理」降级为「裸奔宿主 IP」，现有 `verify_policy()` + `install_fail_closed()` 只对策略漂移，未见代理进程 watchdog。全仓未设 `WebRtcIPHandling` / `--host-resolver-rules` / `--proxy-bypass-list` / 禁 QUIC，DNS/DoH/QUIC 未拦 UDP/53、未统一 resolver。页面发起的 WebRTC `srflx` 候选与 Selkies 画面 WebRTC 是两条独立路径，ICE-lite 只管后者；mDNS `.local` 只护 host 候选不护 `srflx`。本次为只读调研，未授权改生产代码。
-- 处理：未开
+- 处理：f04293f；resolution=resolved；reason=用户裁决收缩：没有配代理的环境用本机真实 IP 是预期行为，不是风险，该立论删除。配了代理但代理挂掉不得暴露真实 IP：已完成——NetworkPolicySpec 加 proxy_enforced，Supervisor 在有代理时把浏览器容器出口改为只放代理端点（尾部 DROP），代理不可达即全部断掉、直接报错，不回退真实 IP；无代理环境保持本机出口。不需要 watchdog、srflx/QUIC/DNS 单独拦截那套花活。单测覆盖代理态 DROP 与无代理态保持本机出口。按裁决不做标签页/多人/跨环境剪贴板等无关范围
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p041（parked，独立桌面 app，已明确暂搁，不复活）、p062（archive，macOS OrbStack 网关透明代理，不同根因）、p016（archive，网络隔离与配额 E2E）、p055（archive，privacy allowlist）
 
