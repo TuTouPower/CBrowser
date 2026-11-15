@@ -6,9 +6,21 @@
     2. AC-002 三协议上游认证：同一代理分别以 HTTP、HTTPS（CONNECT）、SOCKS5 上游真实出站，转发器注入凭据后认证成功；上游认证失败（错密码/407）时失败封闭。
     3. AC-003 故障封闭：上游不可达、407、SOCKS5 认证失败、转发器容器退出时，Browser 无响应体、无直连源站尝试；转发器缺失/退出时 reconcile 只重建转发器（`_replace_proxy_forwarder_only`），Browser 不动。
     4. AC-004 性能：相同拓扑/目标/样本下，认证成功率不低于基线，报告首包延迟、407 往返与可观测协议差异；默认不接受超出测量噪声的退化，若无法满足须带证据请求用户批准后修订 AC。云端 smoke 测试（`test_first_byte_smoke_reports_latency_samples`）只做存活验证（5 次 loopback 取回成功并报告首包样本），不作基线对比证据；基线对比的测量与判定均在本项完成。
-- 处理：AC-004 性能基线按铁律砍除；AC-001/002/003 安全边界保留（设施现成，可做）
+- 处理：c1df58a；resolution=obsolete；reason=用户裁决删除外置认证转发器（容器/镜像/编排/文档全删），Browser 直连上游代理且凭据由 Browser 直接使用；AC-001~004 的验收对象整体消失，四条 AC 全部失去对象，不再补验
 
-## 开发铁律重判（2026-11-15）
+## 裁决（2026-11-15）：转发器删除，本项 obsolete
+
+用户裁决拆掉外置认证转发器：删除转发器容器、镜像及其创建/分组/标签/网络白名单/readiness/reconcile/stop/孤儿清理/资源计数全部代码与文档；Browser 改为直连上游代理，凭据由 Browser 直接使用（`--proxy-server=scheme://user:pass@host:port`，见 `docs/findings/d031_authenticated_socks5_supported.md` 与 ADR 037）。
+
+本项 AC-001～004 的验收对象（外置转发器、「Browser 永不见凭据」、「转发器退出时 reconcile 只重建转发器」）在新架构下**整体不存在**，四条 AC 全部失去对象：
+- AC-001「凭据只存在于 secret 目录与转发器容器内」→ 凭据本就由 Browser 使用，断言反转。
+- AC-002「转发器注入凭据后认证成功」→ 无转发器，凭据由 Chromium 原生处理。
+- AC-003「转发器缺失/退出时只重建转发器」→ 无转发器，`_replace_proxy_forwarder_only` 已删除。
+- AC-004 性能基线已于上一轮按铁律砍除。
+
+`credential_revision` 失败封闭、`proxy_credentials.json` 权限与 loopback→host-gateway 映射保留，由 `docs/specs/proxy_management.md` 与 `tests/unit/test_t035_proxy_runtime.py` 承载。本项按 `resolution=obsolete` 归档，不再补验；转发器设计待定状态解除。
+
+## 开发铁律重判（2026-11-15，历史记录，已被上方裁决取代）
 
 - AC-004「认证成功率不低于基线、首包延迟/407 往返对比」**无可比基线对象**（云端 smoke 只是 5 次 loopback 存活样本），且 spec 原文规定「若无法满足须带证据请求用户批准后修订 AC」—— 属过度设计，砍除，不再补验。
 - AC-001（Browser 容器内凭据全路径不可读）、AC-002（HTTP / HTTPS CONNECT / SOCKS5 三协议上游认证 + 407 失败封闭）、AC-003（上游不可达/转发器退出时无响应体、无直连、reconcile 仅重建转发器）是**真实安全边界**，会产生新信息，值得做。
