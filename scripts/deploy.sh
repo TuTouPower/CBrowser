@@ -632,8 +632,11 @@ check_prefix_conflict() {
   # prefix: any other deployment whose pool overlaps ours refuses the
   # deploy, even when its prefix differs.
   local rows name project row_prefix role deployment_id pool
-  rows="$(docker ps -a --format '{{.Names}}\t{{.Label "com.docker.compose.project"}}\t{{.Label "com.cbrowser.prefix"}}\t{{.Label "com.cbrowser.role"}}\t{{.Label "com.cbrowser.instance-id"}}\t{{.Label "com.cbrowser.media-subnet-pool"}}')"
-  while IFS=$'\t' read -r name project row_prefix role deployment_id pool; do
+  rows="$(docker ps -a --format '{{.Names}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.cbrowser.prefix"}}|{{.Label "com.cbrowser.role"}}|{{.Label "com.cbrowser.instance-id"}}|{{.Label "com.cbrowser.media-subnet-pool"}}')"
+  # '|' is a non-whitespace IFS char: empty labels stay as empty fields.
+  # A tab delimiter would be folded by read (tab is IFS whitespace), which
+  # shifts every field left and makes deployment_id read as empty.
+  while IFS='|' read -r name project row_prefix role deployment_id pool; do
     [ -n "$name" ] || continue
     if [ -n "$pool" ] && [ -n "$CBROWSER_MEDIA_SUBNET_POOL" ]; then
       case "$deployment_id" in
