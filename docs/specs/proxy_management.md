@@ -61,7 +61,7 @@
 ## 9. 运行时凭据与代理直连（ADR 037）
 
 - 凭据文件唯一为 `proxy_credentials.json`：Supervisor 写 Profile secret 目录（`data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`，0600，chown runtime_uid:runtime_gid），字段 `{scheme,host,port,username,password,credential_revision}`；仅以只读 bind 挂进 Browser 容器 `/run/cbrowser/proxy_credentials.json`。升级前写在 runtime 目录的旧凭据文件在每次 `start_profile` 无条件删除（`unlink(missing_ok=True)`，旧版遗留清理）。
-- Runner 读凭据文件并拼装 `--proxy-server=scheme://user:pass@host:port`（Chromium 146 原生支持带认证 HTTP/HTTPS/SOCKS5，d031），userinfo 以 `urllib.parse.quote(s, safe="")` 编码防注入；无用户名/密码时省略认证段，无 `proxy_id` 时不设代理。凭据绝不进日志、异常消息与上报状态。
+- Runner 读凭据文件并拼装 `--proxy-server=scheme://user:pass@host:port`：内联 `user:pass@` 凭据**仅 `socks5` 成立**（d031 + 真 407 认证代理实测复核），userinfo 以 `urllib.parse.quote(s, safe="")` 编码防注入；无用户名/密码时省略认证段，无 `proxy_id` 时不设代理。**`http` / `https` 上游不支持带用户名密码**：引擎拒绝带 userinfo 的 `--proxy-server`（`ERR_NO_SUPPORTED_PROXIES`，连代理 TCP 都不发起），属引擎限制；配置此类上游时 Runner 以固定错误码 `proxy_http_auth_unsupported` 明确拒绝启动，不静默生成不可用参数、不降级。带认证上游请用 `socks5`，或让 HTTP/HTTPS 上游免认证。凭据绝不进日志、异常消息与上报状态。
 - 校验与失败封闭：读文件/字段校验（scheme ∈ {http,https,socks5}、bare 主机名、port 1..65535、整型 `credential_revision`）或 `credential_revision` 与绑定快照不符，任一异常即 `ProxyCredentialsChangedError()`，固定消息 `PROXY_CREDENTIALS_CHANGED`。
 - 网络策略：Browser 出站只放上游端点（`scheme://host:port`，不含凭据，容器内 `_resolved_endpoint` 解析）＋ Docker DNS（127.0.0.11:53/udp）以解析上游域名，OUTPUT 默认 DROP；loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
 - 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理或凭据异常即失败封闭、Browser 不启动。

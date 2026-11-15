@@ -18,7 +18,9 @@ from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.api.internal_supervisor import get_proxy_credentials
 from cbrowser.runtime_agent.runner import (
     PROXY_CREDENTIALS_CHANGED,
+    PROXY_HTTP_AUTH_UNSUPPORTED,
     ProxyCredentialsChangedError as RunnerProxyChanged,
+    ProxyHttpAuthUnsupportedError,
     build_proxy_server_arg,
     resolve_proxy_server_arg,
 )
@@ -92,6 +94,67 @@ def test_no_auth_http_proxy_server_arg() -> None:
             "credential_revision": 1,
         }
     ) == "--proxy-server=http://10.0.0.5:8080"
+
+
+@pytest.mark.parametrize("scheme", ["http", "https"])
+@pytest.mark.parametrize(
+    "auth",
+    [
+        {"username": "user", "password": "s3cr3t"},
+        {"username": "user", "password": None},
+        {"username": None, "password": "s3cr3t"},
+    ],
+)
+def test_authenticated_http_https_proxy_is_refused(scheme: str, auth: dict) -> None:
+    with pytest.raises(ProxyHttpAuthUnsupportedError) as exc:
+        build_proxy_server_arg(
+            {
+                "scheme": scheme,
+                "host": "10.0.0.5",
+                "port": 8080,
+                "credential_revision": 1,
+                **auth,
+            }
+        )
+    assert str(exc.value) == PROXY_HTTP_AUTH_UNSUPPORTED
+    assert "user" not in str(exc.value)
+    assert "s3cr3t" not in str(exc.value)
+
+
+def test_supported_proxy_shapes_are_unchanged() -> None:
+    assert build_proxy_server_arg(CREDS) == (
+        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
+    )
+    assert build_proxy_server_arg(
+        {
+            "scheme": "http",
+            "host": "10.0.0.5",
+            "port": 8080,
+            "username": None,
+            "password": None,
+            "credential_revision": 1,
+        }
+    ) == "--proxy-server=http://10.0.0.5:8080"
+    assert build_proxy_server_arg(
+        {
+            "scheme": "https",
+            "host": "10.0.0.5",
+            "port": 8443,
+            "username": None,
+            "password": None,
+            "credential_revision": 1,
+        }
+    ) == "--proxy-server=https://10.0.0.5:8443"
+    assert build_proxy_server_arg(
+        {
+            "scheme": "socks5",
+            "host": "10.0.0.5",
+            "port": 1080,
+            "username": None,
+            "password": None,
+            "credential_revision": 1,
+        }
+    ) == "--proxy-server=socks5://10.0.0.5:1080"
 
 
 def test_special_chars_are_percent_encoded() -> None:

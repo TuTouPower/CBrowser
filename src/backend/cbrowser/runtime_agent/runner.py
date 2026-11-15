@@ -48,6 +48,7 @@ logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
 
 PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
+PROXY_HTTP_AUTH_UNSUPPORTED = "proxy_http_auth_unsupported"
 PROXY_CREDENTIALS_PATH = Path("/run/cbrowser/proxy_credentials.json")
 _PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
@@ -63,13 +64,32 @@ class ProxyCredentialsChangedError(RuntimeError):
         super().__init__(PROXY_CREDENTIALS_CHANGED)
 
 
+class ProxyHttpAuthUnsupportedError(RuntimeError):
+    """Fail closed when an HTTP/HTTPS upstream carries inline credentials.
+
+    Chromium does not accept userinfo in an ``http://``/``https://``
+    ``--proxy-server`` URL: the engine rejects it with
+    ``ERR_NO_SUPPORTED_PROXIES`` and never opens a TCP connection to the
+    upstream (real 407 authenticated-proxy probe, 2026-11-15). Emitting such
+    a launch argument would silently start a browser that cannot reach the
+    proxy, so the Runner refuses to launch with a fixed reason string. The
+    message carries no credentials.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(PROXY_HTTP_AUTH_UNSUPPORTED)
+
+
 def build_proxy_server_arg(credentials: dict[str, Any]) -> str:
     """Build ``--proxy-server=...`` from validated proxy credentials.
 
-    Chromium 146 accepts inline credentials in the proxy URL (d031).
-    Credentials are percent-encoded so special characters cannot break URL
-    parsing. The secret is only ever used inside the returned launch
-    argument, never in an error or log message.
+    Inline ``user:pass@`` credentials are supported only for ``socks5``
+    (d031). Chromium does not accept userinfo in an ``http://``/``https://``
+    proxy URL, so an HTTP/HTTPS upstream carrying credentials is rejected
+    with ``ProxyHttpAuthUnsupportedError`` rather than silently producing an
+    unusable launch argument; use ``socks5`` or make the upstream
+    credential-free. Credentials are percent-encoded so special characters
+    cannot break URL parsing, and never appear in an error or log message.
     """
     if not isinstance(credentials, dict):
         raise ProxyCredentialsChangedError()
@@ -88,6 +108,10 @@ def build_proxy_server_arg(credentials: dict[str, Any]) -> str:
         raise ProxyCredentialsChangedError()
     if password is not None and not isinstance(password, str):
         raise ProxyCredentialsChangedError()
+    if scheme in {"http", "https"} and (
+        username is not None or password is not None
+    ):
+        raise ProxyHttpAuthUnsupportedError()
     if username is None and password is not None:
         raise ProxyCredentialsChangedError()
     userinfo = ""
@@ -106,12 +130,15 @@ def resolve_proxy_server_arg(
     snapshot: ConfigVersionSnapshot,
     credentials_path: Path,
 ) -> str | None:
-    """Return the proxy launch arg, or fail closed on missing/stale credentials.
+    """Return the proxy launch arg, or fail closed on an unusable proxy binding.
 
     A profile without a proxy id gets no proxy argument. Otherwise the
     mounted credentials file must exist, be well-formed, and carry the
     frozen credential revision from the bound config snapshot; any drift
-    is a fail-closed ``proxy_credentials_changed`` error. Credentials
+    is a fail-closed ``proxy_credentials_changed`` error. Inline URL
+    credentials are valid only for ``socks5``: an HTTP/HTTPS upstream with
+    credentials is refused with ``proxy_http_auth_unsupported`` (use
+    ``socks5`` or a credential-free upstream), never downgraded. Credentials
     never reach a log line, exception message, or reported state.
     """
     if not config.proxy_id:
@@ -1144,8 +1171,8 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except ProxyCredentialsChangedError:
-        logger.error("Browser Runner refused to launch: proxy_credentials_changed")
+    except (ProxyCredentialsChangedError, ProxyHttpAuthUnsupportedError) as exc:
+        logger.error("Browser Runner refused to launch: %s", exc)
         raise SystemExit(1) from None
     except FontConfigUnavailableError:
         logger.error("Browser Runner refused to launch: font_set_unavailable")
