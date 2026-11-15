@@ -103,7 +103,7 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
   return (
     <header
       data-testid={SESS_HEADER}
-      className="flex items-center gap-md border-b border-outline bg-surface-raised px-md py-sm"
+      className="flex items-center gap-sm border-b border-outline bg-surface-raised px-sm py-xs"
     >
       <EnvironmentSwitcher
         currentProfileId={profile.id}
@@ -112,16 +112,12 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
       />
 
       <div data-testid={OBSERVED_STATE_ID} className="flex items-center gap-xs">
-        <span className="font-ui text-label-sm text-on-surface-muted">
-          {t("sessObservedState")}
-        </span>
+        <span className="sr-only">{t("sessObservedState")}</span>
         <StatusBadge tone={observed.tone} label={observed.label} />
       </div>
 
       <div data-testid={TRANSPORT_STATE_ID} className="flex items-center gap-xs">
-        <span className="font-ui text-label-sm text-on-surface-muted">
-          {t("sessTransport")}
-        </span>
+        <span className="sr-only">{t("sessTransport")}</span>
         <StatusBadge
           tone={transportStateTone(transportState)}
           label={t(transportStateLabelKey(transportState))}

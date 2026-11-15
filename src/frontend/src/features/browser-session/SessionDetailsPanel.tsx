@@ -8,6 +8,8 @@ import type {
   ProxyResponse,
 } from "../../shared/api/types";
 import { Banner, Button, MonoValue } from "../../shared/ui";
+import { formatFontSetDisplayName } from "../settings/SettingsPage";
+import { formatPlatformLabel } from "../profiles/EnvironmentTable";
 import { SESS_COPY_VALUE, SESS_DETAILS_PANEL, sessId } from "./session_keys";
 import { transportStateLabelKey } from "./transport_state";
 
@@ -146,22 +148,21 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
   const transport = runtime?.transport ?? null;
   const configPending =
     runtime !== null && runtime.config_version !== profile.current_config_version;
-  const configVersion = `${display(runtime?.config_version)} / ${display(profile.current_config_version)}`;
-  const proxySummary = proxy ? `${proxy.name} · ${proxy.scheme}` : t("envDirect");
+  const proxySummary = proxy ? proxy.name : t("envDirect");
   const proxyEndpoint = proxy ? `${proxy.host}:${proxy.port}` : "-";
   const proxyRegion = proxy
     ? `${proxy.observation_status === "pending" ? t("proxyCountryProbing") : (proxy.country_code ?? t("proxyCountryUnknown"))} · ${display(proxy.region_label)}`
     : "-";
+  const platformLabel = formatPlatformLabel(profile.fingerprint_platform, t);
+  const fontSetLabel = fontSet
+    ? formatFontSetDisplayName(fontSet, t)
+    : t("formFontSetNone");
   const integrity = fontSet
     ? fontSet.integrity.ok
       ? t("fontSetIntegrityOk")
       : t("fontSetIntegrityBad")
     : "-";
 
-  // t061 AC-001: the panel is a pure content container. The header
-  // details button is the only toggle; the panel carries no title or
-  // second switch, and when closed it renders nothing so it occupies
-  // no width.
   if (!open) return <></>;
 
   return (
@@ -176,14 +177,13 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
           id="environment"
           rows={[
             renderRow(t("envColName"), display(profile.name), "profile.name"),
-            renderRow("id", display(profile.id), "profile.id", true),
             renderRow(
               t("sessGroup"),
               display(group?.name ?? t("sessUngrouped")),
               "group.name",
             ),
             renderRow(
-              "created_at",
+              t("envSortCreated"),
               display(profile.created_at),
               "profile.created_at",
               true,
@@ -196,10 +196,10 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
           id="network"
           rows={[
             renderRow(t("envColNetwork"), proxySummary, "proxy.summary"),
-            renderRow("host:port", proxyEndpoint, "proxy.endpoint", true),
-            renderRow("region", proxyRegion, "proxy.region"),
+            renderRow(t("proxyColAddress"), proxyEndpoint, "proxy.endpoint", true),
+            renderRow(t("proxyColRegion"), proxyRegion, "proxy.region"),
             renderRow(
-              "gateway_endpoint",
+              t("sessionDiagRemoteEndpoint"),
               display(transport?.gateway_endpoint),
               "transport.gateway_endpoint",
               true,
@@ -212,12 +212,11 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
           id="fingerprint"
           rows={[
             renderRow(
-              "fingerprint_platform",
-              display(profile.fingerprint_platform),
+              t("formPlatform"),
+              platformLabel,
               "profile.fingerprint_platform",
-              true,
             ),
-            renderRow("font_set_id", display(fontSetId), "font_set_id", true),
+            renderRow(t("formFontSet"), fontSetLabel, "font_set_id"),
             renderRow(t("fontSetIntegrity"), integrity, "font_set_integrity"),
           ]}
           extra={
@@ -254,36 +253,24 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
           id="runtime"
           rows={[
             renderRow(
-              "browser_product",
+              t("appVersion"),
               display(runtime?.browser_product),
               "browser_product",
               true,
             ),
             renderRow(
-              "browser_user_agent",
+              "User-Agent",
               display(runtime?.browser_user_agent),
               "browser_user_agent",
               true,
             ),
             renderRow(
-              "runtime_instance_id",
-              display(runtime?.runtime_instance_id),
-              "runtime_instance_id",
-              true,
-            ),
-            renderRow("config_version", configVersion, "config_version", true),
-            renderRow(
-              "transport_state",
+              t("sessTransport"),
               t(transportStateLabelKey(transport?.transport_state)),
               "transport_state",
             ),
             renderRow(
-              "last_coordinator_error",
-              display(runtime?.last_coordinator_error),
-              "last_coordinator_error",
-            ),
-            renderRow(
-              "last_started_at",
+              t("envColLastActive"),
               display(runtime?.last_started_at),
               "last_started_at",
               true,

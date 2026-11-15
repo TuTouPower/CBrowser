@@ -112,8 +112,6 @@ export function SessionPage(): JSX.Element {
   const setDesiredStateMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
   const applyMutation = useApplyDisplaySettingsMutation(client);
-  // P2: Stop 成功不立即 reconnect（observed 仍 running 会误重建），靠
-  // runtime 推进；Apply 手动 + runtime 双重 reload 去重（只重建一次）。
   const headerPending = stopMutation.isPending || applyMutation.isPending;
   const reloadKeyRef = useRef(session.reloadKey);
   reloadKeyRef.current = session.reloadKey;
@@ -121,7 +119,6 @@ export function SessionPage(): JSX.Element {
     const before = reloadKeyRef.current;
     applyMutation.mutate(id, {
       onSuccess: () => {
-        // Dedup：runtime 推进已重建则跳过手动，避免双重 reload。
         if (reloadKeyRef.current === before) session.reconnect();
       },
     });
@@ -144,11 +141,6 @@ export function SessionPage(): JSX.Element {
 
   const profile = profileQuery.data ?? null;
   const runtime = runtimeQuery.data ?? null;
-  // t039: single stage source. The host bridges the live API observed_state
-  // onto the WebRTC session stage so every consumer (stage panel, data-stage
-  // on the shell / stage wrapper / iframe, diagnostics view) sees one value.
-  // stopping, error and stopped each map to their own stage with the right
-  // recovery actions instead of being flattened to runtime_not_ready.
   const stage: SessionStage = deriveSessionStage(
     session.stage,
     runtime?.observed_state
@@ -210,11 +202,17 @@ export function SessionPage(): JSX.Element {
             onApplyRestart={handleApplyRestart}
           />
         </div>
-        <div className="flex min-h-none flex-1">
+        <div
+          className={`flex min-h-none flex-1 ${
+            focusMode ? "p-none" : "gap-xs p-xs"
+          }`}
+        >
           <div
             data-testid={SESS_STAGE}
             data-stage={stage}
-            className="relative min-w-none flex-1 overflow-hidden bg-stage"
+            className={`relative min-w-none flex-1 overflow-hidden bg-stage ${
+              focusMode ? "" : "rounded-md border border-outline"
+            }`}
           >
             <iframe
               key="session-iframe"

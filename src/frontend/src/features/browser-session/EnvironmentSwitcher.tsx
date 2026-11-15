@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
+import { ChevronDown } from "lucide-react";
 import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
@@ -38,7 +39,7 @@ interface SwitcherSection {
   items: ProfileResponse[];
 }
 
-function currentStatus(
+export function currentStatus(
   observed: string | undefined,
   t: ReturnType<typeof useI18n>["t"],
 ): { tone: StatusTone; label: string } {
@@ -56,6 +57,19 @@ function currentStatus(
   }
 }
 
+export function statusDotClass(tone: StatusTone): string {
+  switch (tone) {
+    case "running":
+      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-accent";
+    case "transition":
+      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-warning";
+    case "error":
+      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-danger";
+    default:
+      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-on-surface-muted";
+  }
+}
+
 export function EnvironmentSwitcher({
   currentProfileId,
   profiles,
@@ -67,15 +81,10 @@ export function EnvironmentSwitcher({
   const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
-  // t061 AC-005: the trigger shows the environment name only — no status
-  // badge — so the current profile's runtime query that only fed that
-  // badge is gone. Per-environment status stays in the dropdown items,
-  // served by the item runtime queries below.
   const itemRuntimes = useQueries({
     queries: profiles.map((profile) => ({
       queryKey: profileKeys.runtime(profile.id),
       queryFn: () => client.profiles.getRuntime(profile.id),
-      // P2: 切换器列表查询加 enabled/staleTime，避免空列表空转与高频重取。
       enabled: profiles.length > 0,
       staleTime: 5000,
     })),
@@ -88,6 +97,11 @@ export function EnvironmentSwitcher({
         ?.observed_state,
     );
   });
+
+  const currentItemStatus = currentStatus(
+    observedById.get(currentProfileId),
+    t,
+  );
 
   const sections = useMemo<SwitcherSection[]>(() => {
     const normalized = query.trim().toLowerCase();
@@ -130,7 +144,16 @@ export function EnvironmentSwitcher({
           aria-label={t("sessSwitcher")}
           className="inline-flex h-(--component-select-height) items-center gap-sm rounded-md border border-outline bg-surface px-md font-ui text-label-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
         >
+          <span
+            data-testid="sess-switcher-trigger-dot"
+            aria-hidden="true"
+            className={statusDotClass(currentItemStatus.tone)}
+          />
           <span className="truncate">{current?.name ?? currentProfileId}</span>
+          <ChevronDown
+            aria-hidden="true"
+            className="size-(--component-icon-sm-size) shrink-0 text-on-surface-muted"
+          />
         </button>
       }
     >
@@ -176,7 +199,14 @@ export function EnvironmentSwitcher({
                           onClick={() => setOpen(false)}
                           className="flex items-center justify-between gap-sm rounded-sm px-sm py-xs font-ui text-body-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                         >
-                          <span className="truncate">{profile.name}</span>
+                          <span className="flex min-w-none items-center gap-sm truncate">
+                            <span
+                              data-testid={sessId("switcher-dot", profile.id)}
+                              aria-hidden="true"
+                              className={statusDotClass(itemStatus.tone)}
+                            />
+                            <span className="truncate">{profile.name}</span>
+                          </span>
                           <StatusBadge
                             tone={itemStatus.tone}
                             label={itemStatus.label}
