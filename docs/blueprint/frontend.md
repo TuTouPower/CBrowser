@@ -4,25 +4,25 @@
 
 ## 1. 外壳与数据
 
-- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境列表）、`/session`（会话入口）、`/session/:profileId`（会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`、`/settings`；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。`/` 由 t037 环境列表承载、`/proxies` 由 t038 代理库承载；`/session` 为会话入口页（t039：本标签页无目标时列出运行中环境供选择）、`/session/:profileId` 为 t039 重新设计的新会话页。t039 已启用全局颜色门禁（见 testing.md）。
+- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境管理）、`/session`（工作台入口）、`/session/:profileId`（工作台会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`（代理管理）、`/settings`（设置）；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。t039 已启用全局颜色门禁（见 testing.md）。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `details`（统一错误契约，见 conventions.md §7；旧 `detail` 字段已删除）。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键；**例外：Profile 创建的幂等键绑定到当前打开的创建弹窗**（见第 7 节），关闭重开复用同一键直至创建成功。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。引用数据变更事件（t056 A31）：分组或代理写成功后服务端经同一 SSE 流推送 `groups_changed` / `proxies_changed`（`entity_id` 为变更实体、无实体时为 null），前端使对应列表查询与 Profile 列表查询失效重取；探测不发事件。
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
-- `/profiles/:profileId/files` 为 Artifact 管理页：经 `shared/api/client.ts` 的 `artifacts` 方法列出、上传、下载、删除文件，展示 `container_path`，写操作带 CSRF。多文件上传顺序执行、首个失败即停止，失败文案须给出已成功数、失败文件名与未处理数（不输出文件内容）。
-- 设置页的健康状态只呈现其真实探测对象——Control API 健康检查，不声称网关或其它服务的状态。
+- `/profiles/:profileId/files` 为 Artifact 管理页：经 `shared/api/client.ts` 的 `artifacts` 方法列出、上传、下载、删除文件，支持图标化的列表/卡片视图切换，写操作带 CSRF。多文件上传顺序执行、首个失败即停止，失败文案须给出已成功数、失败文件名与未处理数（不输出文件内容）。
+- 设置页的健康状态只呈现其真实探测对象——Control API 健康检查，并提供退出登录入口。
 - `/profiles/:profileId/automation` 为自动化页：经 `automation.status()` 展示授权 WS 端点、运行状态、运行实例、Supervisor 配置状态与 `Authorization: Bearer <cbat_...>` 头格式；不展示任何明文凭证。
 - Profile 详情页提供复制与重置面板：复制可选仅配置或含浏览器状态（运行中禁用状态复制并提示停止）；重置面板明确列出将清除的 Cookie、站点数据、缓存、登录状态与指纹身份，并说明保留设置与 Artifact。
 - 会话、页头与 Profile 主表单文案经 `i18n.tsx` 的 `t()`（en/zh）；语言偏好存储键为 `cbrowser.locale`，切换时同步 `document.documentElement.lang`。翻译键集由 en 字典派生（`TranslationKey = keyof typeof en`），zh 字典以 `satisfies Record<TranslationKey, string>` 编译期对齐，并有键集相等测试兜底；新增文案必须 en/zh 同步补键。
 
 ## 2. 页面独立状态
 
-- 每个 Chrome 标签页独立维护会话目标（`/session/:profileId` path param，写入 `sessionStorage` 的 `cbrowser.session.target` 供侧栏「会话」导航回跳）、ViewerConnection 与会话阶段；切换 Profile 只改变本页目标与连接。禁止跨标签页共享的 `localStorage.currentProfileId`。
+- 每个 Chrome 标签页独立维护会话目标（`/session/:profileId` path param，写入 `sessionStorage` 的 `cbrowser.session.target` 供侧栏「工作台」导航回跳）、ViewerConnection 与会话阶段；切换 Profile 只改变本页目标与连接。禁止跨标签页共享的 `localStorage.currentProfileId`。
 - 页面与布局的动作状态（error/pending）按动作目标 Profile 隔离呈现（`scopeMutationToProfile`）：常驻组件（AppLayout、会话页、详情页）只显示目标为当前 Profile 的动作状态，其他 Profile 的错误、pending 与迟到响应不进入当前视图，本地结果横幅不跨 Profile 携带。
 - 同一 Profile 可有多个页面同时连接，全部为 controller；前端不维护租约或唯一控制者状态。
 - 页面关闭、刷新或切换目标只关闭自身 PeerConnection 与信令，不调用 Profile stop；只有用户明确停止 Profile 才停止 Browser。
 - 详情面板展开状态持久化在 `cbrowser.session.details_open`（刷新后保持），默认收起（t039）。
-- 专注模式隐藏导航侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端 iframe）；专注状态经 `SessionFocusProvider` 提升到 `AppProviders`（`app/providers.tsx` 的 `AuthProvider` 内）供 `AppLayout` 与会话页共享读取，专注期间不条件卸载 iframe 与 `useBrowserSession`，不重建连接、不中断远端输入（t039）。
-- `/session` 会话入口在本标签页无目标时列出运行中环境（真实链接）；侧栏「会话」导航在本标签页已有目标时回跳该会话（t039）。
+- 全屏隐私浏览器（专注模式）隐藏导航侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端 iframe）；专注状态经 `SessionFocusProvider` 提升到 `AppProviders`（`app/providers.tsx` 的 `AuthProvider` 内）供 `AppLayout` 与会话页共享读取，专注期间不条件卸载 iframe 与 `useBrowserSession`，不重建连接、不中断远端输入（t039）。
+- `/session` 会话入口在本标签页无目标时列出运行中环境（真实链接）；侧栏「工作台」导航在本标签页已有目标时回跳该会话（t039）。
 
 ## 3. Selkies 官方客户端薄适配
 
@@ -40,12 +40,12 @@
 - Page Lifecycle `freeze`/`resume` 与 bfcache `pageshow` 后检查信令与 PeerConnection，失效则重建 iframe（同一 `client_tab_id`，官方客户端生成新 `resume_key`）；信令 WS 异常关闭时先给官方客户端 5 秒以原 `resume_key` 重连，5 秒恢复检查确认媒体仍健康（`stats.connected`）即收敛回 `connected`、不重建 iframe——诊断快照不变时诊断源不发新信号，健康收敛出口就在此检查内，且受 generation fence 保护，旧代次迟到结果不覆盖当前状态；媒体不健康才重建（t061）。
 - ICE：`failed` 立即进入 `ice_failed`；`disconnected` 持续 5 秒（`iceDisconnectGraceMs`）才判失败，期间恢复则不报。
 - 宿主只接受来自本会话 iframe（`event.source`）且同源的 postMessage；适配层向父窗口发送时指定具体 origin。
-- 会话目标由 `/session/:profileId` 决定；导航侧栏不再列 Profile，「会话」项在本标签页已有目标时回跳该会话，否则进 `/session`。
+- 会话目标由 `/session/:profileId` 决定；导航侧栏不再列 Profile，「工作台」项在本标签页已有目标时回跳该会话，否则进 `/session`。
 - 剪贴板：`ClipboardPermissionHint` 在宿主会话页中按需探测权限（与 `/selkies` iframe 同源），拒绝/提示状态显示可执行说明；自身不调用 `navigator.clipboard` 读写，复制粘贴同步由 iframe 内官方 Selkies seamless 客户端完成（decisions 012）。
 - 音频：每页静音按钮经官方 `pipelineControl` audio（`STOP_AUDIO`/`START_AUDIO`）；音频状态（`audio_status.ts`）由 getStats 推导，与视频阶段独立：`normal`/`muted`/`no_track`/`no_data`/`unknown`，内容静音不判故障。
 - 显示设置：运行时 `config_version` 与 Profile 当前配置版本不同即显示待应用提示与“应用并重启”（经 API stop → running）。该动作带阶段跟踪（按动作键保存 stop 前实例与 start 已发出标记）：自动重试先观测运行时再续跑——stop 已生效不重发不重等、start 已生效而响应丢失时收敛到新实例的 running（不等待 stopped、不停止或重建新实例）、未生效步骤以同一操作键续跑、状态查询持续失败有界报错。
-- 会话页画面区由 `SessionPage` 承载：iframe 铺满、不绘制模拟浏览器框（ADR 003/006）。阶段呈现按本节分级矩阵由 `SessionStagePanel` 渲染（等待态轻量指示、故障态居中诊断面板），`connected` 不显示面板；阶段清单以 `SessionStage` 类型为权威（t061，取代 t039 的全阶段居中面板与 `connecting_ice` 字面量分支）。页头 transport 状态与详情面板统一经单一映射显示本地化文案（ready/recovering/failed/unknown 均有中英文案，未知或缺失值回落本地化「未知」，不显示原始机器码）；环境切换器触发器只显示环境名称、不带状态徽标，顶栏运行状态只出现一次，各环境状态保留在下拉条目内（t061）。
-- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 网络 / 指纹 / 运行四区（指纹含平台、字体集与缺失字体告警；运行含浏览器版本与 UA、实例 ID、配置版本、transport 状态、最近错误、启动时间），每个值可复制（t039）。开关只有页头详情按钮一个：面板内无标题与第二开关，关闭时不渲染、不占宽度（t061）。
+- 会话页画面区由 `SessionPage` 承载：iframe 铺满并仅保留 `xs`（4px）外边距、不绘制模拟浏览器框（ADR 003/006）。阶段呈现按本节分级矩阵由 `SessionStagePanel` 渲染（等待态轻量指示、故障态居中诊断面板），`connected` 不显示面板；阶段清单以 `SessionStage` 类型为权威（t061）。页头 transport 状态与详情面板统一经单一映射显示本地化文案（ready/recovering/failed/unknown 均有中英文案，未知或缺失值回落本地化「未知」，不显示原始机器码）；环境切换器触发器与下拉列表内每个环境项前均渲染状态指示灯（圆点），触发器不带文字状态徽标，顶栏文字运行状态只出现一次，各环境文字状态徽标保留在下拉条目内（t061+）。
+- 详情面板（`SessionDetailsPanel`）右侧 300px、默认收起，分环境 / 代理 / 指纹 / 运行状态四区（全部标签与平台/字体包名称均显示本地化可读文案，不暴露内部 ID），每个值可复制（t039+）。开关只有页头详情按钮一个：面板内无标题与第二开关，关闭时不渲染、不占宽度（t061）。
 - 剪贴板权限提示（`ClipboardPermissionHint`）、音频状态与诊断浮层按设计系统重建、行为语义不变：剪贴板只探测权限不读写本机剪贴板，音频经官方 `pipelineControl` 的 `STOP_AUDIO` / `START_AUDIO`，诊断取自 `RTCPeerConnection` 状态与 `getStats()`（t039）。
 - 旧会话页组件（`BrowserSessionPage` / `BrowserSessionView` / `BrowserSessionMount` 及旧测试）整体删除；`data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），会话 E2E 与组件测试选择器同步改写（t039）。
 - 旧页面全部替换后启用全局颜色门禁：`npm run design:lint` 的 `--lint` 经 `runLintSources(sources)` 同时跑尺寸断言与颜色断言，扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 testing.md「t039 全局颜色门禁」）。
@@ -61,62 +61,37 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - Vitest 5（`npm test --prefix src/frontend`，无需 `NODE_OPTIONS`）覆盖 API 客户端、SSE、路由与会话组件；`npm test` 先执行 `test:types`（`tsc -p tsconfig.test.json`）对全部测试文件做严格类型检查，再运行 Vitest。页面与守卫测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks 接线，禁止 mock 数据 hooks 模块、禁止对共享单例做方法赋值；测试夹具与事件字面量须使用生成类型的完整线形状。
 - 真实栈 E2E 用构建产物 + 官方 Selkies 资源，经 Caddy/API（启用 Runtime Coordinator）/Supervisor/Gateway/Browser/Stream 与无头 Google Chrome（无 coturn）：`tests/e2e/test_frontend_app_e2e.py`、`test_frontend_session_e2e.py`、`test_frontend_session_vendor.py`。所有浏览器测试必须无头。
 
-## 6. 设计系统与应用外壳（t036, t047, t059）
+## 6. 设计系统与应用外壳（t036, t047, t059+）
 
 - 设计权威：仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式，YAML front matter）。章节顺序 Overview / Colors（含 `### Modes`）/ Typography / Layout / Elevation & Depth / Shapes / Components / Contrast / Do's and Don'ts。`primary` 与 `brand-*`（logo 渐变三色与 `brand-ink` 墨色）为品牌色，其余颜色角色以 `light-*` / `dark-*` 成对出现且角色集合相同，组件以 `<component>-light` / `<component>-dark` 成对定义；字体、间距、圆角与模式无关只定义一次。Shapes 正文含逐 component 的圆角映射表，Contrast 正文含 components 之外文字 / 图形角色对声明表，两表均为机读门禁输入。组件尺寸规格（控件高度、浮层宽度、图标尺寸阶梯 `icon-xs`–`icon-3xl` 等）写在 components 条目的官方 `height` / `width` / `size` 字段。业务代码只用语义 token，不写颜色字面量。
-- 生成与门禁：`npm run design:tokens` 调用 `@google/design.md@0.4.0` 的 `lint()` 读取 `DESIGN.md`，校验角色集合相等、无未解析引用、颜色 token 只能是 `primary`、`brand-*` 或带模式前缀、字体栈由 `body-md` 与 `mono-md` 派生，确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 以亮色为默认值、`.dark` 覆盖全部颜色与阴影变量，另含字号、字重、行高、字距、圆角、间距与阴影变量），并按品牌 token 生成 `public/` 下 logo 与 favicon 五件资产（几何不变、仅颜色取 token 值）；产物入库。生成器在官方 lint 之外自校验：components 声明与 linter 解析交叉断言、成对条目互为模式对应（counterpart）、Shapes 圆角表与 components 定义逐项一致、组件级变量导出（`--component-<name>-radius/-height/-width/-size`，React 以变量简写类消费）。对比度门禁（WCAG AA）三类全覆盖：components 成对 text/bg、仅 textColor 的 component 对同模式四种底色、Contrast 表声明的文字对（4.5:1）与图形对（3.0:1），任一不达标即失败。源码扫描覆盖 `src/` 与 `public/`、`index.html`：`src` 颜色字面量全禁、`public` 字面量必须是 token 值（`public/selkies/` 为 .gitignore 的官方 Selkies vendor 投放目录、自有品牌色，不在扫描内）；数值型与非 token 任意值尺寸 / 间距类全禁（见第 7 节）。`npm run design:lint`（error 或 warning 任一非零即失败）、`npm run design:check`（CSS 与品牌资产与重新生成结果不一致即失败）与 `design:tokens` 三条命令接入 `scripts/run_gates.sh` 前端阶段。
+- 生成与门禁：`npm run design:tokens` 调用 `@google/design.md@0.4.0` 的 `lint()` 读取 `DESIGN.md`，校验角色集合相等、无未解析引用、颜色 token 只能是 `primary`、`brand-*` 或带模式前缀、字体栈由 `body-md` 与 `mono-md` 派生，确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 以亮色为默认值、`.dark` 覆盖全部颜色与阴影变量，另含字号、字重、行高、字距、圆角、间距与阴影变量），并按品牌 token 生成 `public/` 下 logo 与 favicon 五件资产（几何不变、仅颜色取 token 值）；产物入库。
 - Tailwind 4：`@tailwindcss/vite` 插件，删除 PostCSS / autoprefixer / `tailwind.config.ts`；`@theme` 以 `--color-*: initial` 重置默认调色板，只暴露设计 token。Inter Variable 与 JetBrains Mono Variable 经 `@fontsource` 自托管，中文回退栈按 4.4 节，产物不引用外部字体 / 图标 CDN。
 - 主题运行时：偏好 `system` / `light` / `dark`，默认 `dark`，存 `localStorage` 的 `cbrowser.theme`；`public/theme_boot.js` 为 `<head>` 中外链经典脚本，首帧前设置 `<html>` 的 `dark` / `light` class 与 `color-scheme`，页面不含内联脚本；`system` 模式监听 `prefers-color-scheme` 变化。UI 主题与 Profile 的 `color_scheme` 互不影响。
-- 应用外壳：导航侧栏（环境 / 代理 / 会话 / 设置；品牌标识；底部运行中环境数随 SSE 更新，并放主题切换、语言切换、退出登录），可折叠为 72px 图标栏、200–360px 拖宽，状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
-- 基础组件在 `src/frontend/src/shared/ui/`：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语（焦点陷阱、焦点归还、Esc 关闭与 ARIA 角色由原语保证）。
-- 登录页与设置页按设计系统重做；设置页新增平台字体区块，数据来自 `GET /api/v1/font-sets`，完整性不一致显示告警。
+- 应用外壳：导航侧栏顶部为主导航（环境管理 / 代理管理 / 工作台），底部左下角固定放置「设置」入口（主题切换、语言切换与退出登录统一收纳于设置页内）；侧栏可折叠为 72px 图标栏（折叠态隐藏折叠按钮，点击左上角品牌图标展开）、200–360px 拖宽（双击重置默认宽度），状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
+- 基础组件在 `src/frontend/src/shared/ui/`：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语。
+- 登录页与设置页按设计系统重做；设置页平台字体区块展示人类可读字体包名称与本地化平台名称，完整性不一致显示告警。
 
-## 7. 环境管理界面（t037）
+## 7. 环境管理界面（t037+）
 
-- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载（替换 t036 占位页）；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向新 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 仍重定向 `config`。`/proxies` 由 t038 代理库页面承载（见第 8 节），`session` 占位页留给 t039。
+- 首页 `/` 由 `features/profiles/EnvironmentListPage.tsx` 承载；`app/router.tsx` 的 `/profiles/:profileId/{config,files,automation,maintenance}` 四个路由统一指向 `ProfileDetailPage`（按 `useLocation().pathname` 渲染对应 Tab），`/profiles/:profileId` 重定向 `config`。
+- 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、代理列（仅显示代理名或「直连」）、备注 Tooltip 图标与本地化平台/时区由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。不向用户展示 `#0001` 内部显示编号。
+- `useEnvironmentFilters`（支持搜索、状态、分组、系统平台 `windows`/`macos`、代理 `direct`/具体代理与排序，同步 URL 查询参数）、`useEnvironmentLayout`（localStorage，由图标按钮切换列表/卡片视图）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；「分组管理」作为独立按钮置于工具栏右侧。
+- 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；种子范围（`100000 – 999999`）通过感叹号图标悬浮 Tooltip 展示，重摇种子使用图标化刷新按钮；选择代理、切换语言或切换系统平台时自动对齐对应的时区、语言、平台字体包（展示可读名称而非 SHA256 哈希）与默认分辨率。
 
-- 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、网络列（代理名 / 协议 / 地区）与分组使用环境数由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。`ApiClient` 新增 `groups` / `proxies` / `fontSets` 三个命名空间，只复用 `request()` 与生成类型，不手写契约。
+## 8. 代理管理界面（t038+）
 
-- `useEnvironmentFilters`（URL 查询参数）、`useEnvironmentLayout`（localStorage）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；页面组件只用语义 token 类与 `shared/ui` 组件族。
-
-- 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；`SharedProfileBanners` 在四个标签共享搜索失败与待应用提示，沿用 `useApplyDisplaySettingsMutation` 阶段跟踪。
-
-- 创建锁与弹窗绑定幂等键（t056 A23）：新建环境弹窗的创建提交是同步 ref 锁，同一 tick 内双击只发一次请求；幂等键绑定到当前打开的创建弹窗，关闭重开复用同一键直至创建成功，成功后才换新键。分组管理弹窗与代理弹窗的写入口同样在请求进行中禁用对应按钮（新建 / 改名保存 / 删除确认 / 代理保存）。
-
-- 时区组合框与语言联动（t053）：`ProfileForm` 的时区字段由 `TimezoneCombobox` 承载——可键入过滤候选、未键入时展开并滚动浏览全部 IANA 时区（`Intl.supportedValuesOf("timeZone")`，常用 15 个时区置顶且恒可提供）、键盘 ArrowUp/Down/Home/End/Enter/Escape 可操作、aria combobox/listbox/option。首选项为「自动（随出口 IP）」，对应 `timezone: null`。选时区后语言按 `features/profiles/profile_locale.ts` 的 `localeForTimezone` 自动联动（与后端 `domain/profile_locale.py` 同一规则，中文地区时区 → `zh-CN`、其余 → `en-US`）；语言以中/英二选一 Select 展示，用户可手动覆盖；时区为空时语言保持当前值，新建默认 `en-US`。新建表单的字体集预选只用后端 `default_font_set_id[platform]`（完整性通过的集），「无」为显式 null 选项且选后不再被默认集覆盖；切换平台时套用新平台的后端默认集。会话详情的缺失字体横幅按轴区分文案：完整性损坏与「探测字体未覆盖」是两种文案（t053 A30）。
-
-- 测试：`npm test` 先 `tsc -p tsconfig.test.json`（严格类型、生成类型完整线形状夹具）再 Vitest；页面测试在 ApiClient 边界注入每例独立 stub 并走真实 hooks。`src/test_setup.ts` 提供 Radix 所需 `ResizeObserver` / `matchMedia` polyfill。旧页面与其测试整体删除，按 D16 在 task `progress.md`「测试处置清单」逐用例登记去向。
-
-- 真实栈无头 E2E「新建 → 启动 → 打开会话」走新建弹窗 UI（`env-new` → `env-new-dialog` → `profile-form-name` → `profile-form-submit`），不再直接 POST API 伪造创建。
-
-- 尺寸语义 token（`DESIGN.md` 的 `## Container sizes`）：`--container-*` 独立于 `--spacing-*`，业务代码只用 `max-w-dialog`/`w-dialog-width`/`max-w-panel`/`max-w-page`/`min-w-menu`/`h-control-sm` 等语义类；`npm run design:lint` 的 `assertNoSizeTokenHijack` 禁止命名尺寸类（`max-w-lg` 等会被 spacing token 劫持）与任意尺寸值（`max-w-[...]`）。t059 起尺寸 / 间距全面 token 化：`assertNoNumericSizeOrSpacing` 禁止全部数值型尺寸 / 间距类（p/m/gap/space/w/h/min/max/size/inset/定位/translate 族）与非 token 任意值（仅允许由 `var(--…)` 与 calc/min/max/clamp 组成的任意值），零值与 2px 分别用 spacing token `none` / `2xs`；组件级尺寸（按钮 / 输入框 / 图标按钮高度、表格行高、浮层宽度、开关与复选框尺寸、图标阶梯等）由 components 规格导出 `--component-*` 变量消费，布局尺寸走 `--container-*`（含 `dropdown-list` 下拉列表最大高、`badge` 徽章、`table-select` 表格选择列、`swatch` 分组色板）。
-
-## 8. 代理库界面（t038）
-
-- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载（替换 t036 占位页）；`ProxyListToolbar` 提供搜索（名称 / host / 地区标签，大小写不敏感）与协议筛选（http / https / socks5）可组合，`ProxyTable` 列 = 名称 / 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 认证（有 / 无，文字不可只靠颜色）/ 地区（`RegionCode` + 标签）/ 使用环境数 / 操作。页面沿用环境列表的全量客户端过滤、无分页。
-- 使用环境数为 `<Link to={"/?proxy=" + id}>`：`useEnvironmentFilters` 已读 `proxy` URL 参数，环境列表无需改动即可按代理筛选（AC-006）。
-- 添加 / 编辑用受控 `Dialog`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读国家状态（有有效观测显示 `RegionCode` + 出口 IP，无有效观测显示「未知」）；高级设置默认折叠，展开后可编辑名称、协议、地址、端口、用户名、只写密码、地区标签，**没有国家输入**。链接与高级字段由同一端点值对象渲染与回写，不存在第二份真相：链接输入解析成功即同步高级字段，高级字段修改即重序列化链接，两者始终一致；非法链接显示字段级错误，已解析结果保持不变。
-- 链接解析由纯函数 `features/proxies/parseProxyUrl.ts` 完成，与后端 `domain/proxy_endpoint.py` 逐项对齐（四种格式：标准 URL、无协议 `host:port` 默认 http、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单归一、IPv6 方括号与压缩归一、百分号编码账密解码且非法转义报错、port 1..65535、错误码与后端一致）。链接输入框失焦时显示脱敏链接（`redactedProxyUrl`，不含密码），聚焦编辑时显示完整链接；提交只发一次完整链接（`ProxyCreateRequest.proxy_url`），密码不进 DOM、query cache、URL 与日志。
-- 名称派生：链接解析成功且名称未手动填写时，名称自动填为 `host:port`（IPv6 加括号）；手动修改后不被后续解析覆盖。创建提交 name 为空时省略该键，后端派生；编辑时 name 恒为派生值或手动值。
-- 密码只写：`ProxyResponse` 不含 password；编辑态只凭 `has_password` 显示「已设置，留空不修改」，提供「清除密码」。提交语义（t052）：`proxy_url` 省略 = 端点（含密码）不变；提供 = 整端点（含密码）整体替换。编辑端点而密码框留空且未点清除时，前端以 `proxyPasswordRequiredOnEndpointChange` 拦截提交（否则会静默清除已存密码）；清除密码即提交不含密码的链接。已存密码不进入表单 state / DOM / query cache / URL，关闭弹窗清空本地 state。
-- 地区列无有效观测时显示「未知」（`proxyCountryUnknown`）；会话详情的代理地区同样以观测 country_code 为准，无观测显示「未知」。
-- 手动探测：列表每行有「重新探测」按钮，调 `ApiClient.proxies.probe`（`POST /api/v1/proxies/{id}/probe`，无 body）+ `useProbeProxyMutation`（成功失效代理与 Profile 列表，toast `proxyProbeSuccess`；失败 toast `proxyProbeFailed` + 错误信息）。保存后自动探测由后端触发，前端只呈现观测状态（pending 显示检测中、ok 显示国家、failed/过期显示未知）。
-- 校验与后端 `ProxyCreateRequest` / `ProxyUpdateRequest` 一致（链接可解析、name ≤ 255、username/region_label ≤ 255、port 1..65535 整数），错误在字段旁与底部汇总。保存成功后 `proxyKeys.lists()` 与 `profileKeys.lists()` 失效，列表即时更新。旧「从 URL 粘贴」框与国家输入已删除（t052）。
-- 删除保护：`used_by_count > 0` 时删除按钮禁用并提示先改绑；后端 409 响应体为统一 `ErrorResponse`：`{"error":"proxy_in_use","message":"Conflict","details":{"used_by_count":N},"retryable":false}`，前端以 `errorCode === "proxy_in_use"` 判码、从 `ApiError.details` 取引用数展示。
-- 带认证 SOCKS5（AC-007）：依据 `docs/findings/d031_authenticated_socks5_supported.md` 与 ADR 023（`decisions.md`），CloakBrowser 0.6.4 / Chromium 146 支持带认证 SOCKS5；后端无任何 socks5 拒绝分支、API 永不返回该 422。表单直接允许 `socks5` + 用户名/密码提交，**无降级路径、无「引擎不支持」提示**；所有后端错误统一走 `describeError()` 结构化展示。task.md 中「引擎不支持时阻止提交」沿用旧假设、前提不成立，不实现推测性代码（详见 `docs/specs/proxy_management.md` 第 5 节）。
-- `ApiClient.proxies` 在 t037 的 `list`/`get` 之外补 `create`/`update`/`remove`（照 `groups` 同构、写操作带 `Idempotency-Key`）与 `probe`（t052，`POST /proxies/{id}/probe`，无 body、不带幂等键），`useProfilesQuery.ts` 补 `useCreateProxyMutation` / `useUpdateProxyMutation` / `useDeleteProxyMutation` / `useProbeProxyMutation`（`useActionKeyMutation` 独立幂等键、失效代理与 Profile 列表）；`shared/api/types.ts` 补 `ProxyCreateRequest` / `ProxyUpdateRequest` 生成类型别名，不改 generated 产物。
-- i18n 在 `i18n.tsx` 的 en / zh 同步补 `proxy*` 键，`i18n.test.tsx` 键集相等与非空兜底。
-- 真实栈无头 E2E（`tests/e2e/test_proxy_library_e2e.py`，`serial`）覆盖 AC-008：UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经本地记录代理（日志 `PROXY_GET`），不依赖公网。
+- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载；`ProxyListToolbar` 提供搜索（名称 / host / 地区标签，大小写不敏感）、协议筛选（http / https / socks5）与位置筛选可组合，右侧提供批量闪电测速按钮（`Zap` 图标）、图标化列表/卡片视图切换器与「添加代理」主按钮。
+- `ProxyTable` 展示 6 列 = 名称（备注以感叹号图标悬浮 Tooltip 展示）/ 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 位置（`RegionCode` + 地区标签 + 测速可用性与延迟徽标）/ 使用环境数 / 操作（闪电测速 `Zap` 图标按钮 / 编辑图标按钮 / 删除图标按钮），**不展示认证列**。
+- 使用环境数为 `<Link to={"/?proxy=" + id}>`：`useEnvironmentFilters` 已读 `proxy` URL 参数，环境列表直接按代理筛选。
+- 添加 / 编辑用受控 `Dialog`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读位置状态；高级设置默认折叠，链接与高级字段由同一端点值对象双向同步。
+- 单条与批量闪电测速调用 `ApiClient.proxies.probe`（`POST /api/v1/proxies/{id}/probe`，无 body）+ `useProbeProxyMutation`，测速完成后展示可用状态与延迟毫秒数并弹出 toast。
 
 ## 9. 网络访问与设置（t042；t054 重写为只读）
 
-- 设置页 `/settings` 的「网络访问 (Network Access)」区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改；局域网开关、通告 IP 输入、保存/应用按钮、应用确认弹窗、root-ca 区块全部删除。
-- 无网络设置写端点：`PUT /api/v1/network/settings`、`POST /api/v1/network/apply`、`GET /api/v1/network/check-disconnect`、`GET /api/v1/network/root-ca` 均已删除；前端不发起任何网络配置请求。
-- 国际化：中英文字典同步定义只读文案（`networkAccess`、`networkAccessDesc`、`httpsPort`、`currentAccessAddress`、`networkDeployTimeNote`）。
+- 设置页 `/settings` 的「网络访问 (Network Access)」区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改。
 
 ## 10. 前端状态一致性（t058）
 
-- Profile 编辑只提交与初始值不同的字段（`ProfileForm` 以差分驱动提交，`ConfigTab` 不再按运行配置脏分支全量提交）；字段分类（元数据 / 即时 / 运行配置）以后端 `repository.py` 的三分常量为准，经生成类型（`scripts/export_profile_field_classification.py` → `shared/api/generated/profile_field_classification.ts`）同步，前后端逐值一致；仅改 `capture_preview`（唯一即时字段）不产生新配置版本。保存成功时先取消在途 detail 查询再写入缓存，不再 invalidate detail，在途旧 GET 不回填旧值。
-- 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入 `useBrowserSession`，hook 不再自行读取 runtime 写错误（挂载首检 `checkRuntime` 已删除）；`runtimeState` 为空时不写任何错误。帧信号仅在后端状态非 `stopped` / `error` 时推进连接态并启动音频管线。
-- 错误边界分层：`ErrorBoundary.componentDidCatch` 经前端日志通道（`shared/logging.ts`，有界内存环 + `window` 自定义事件）记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换（`location.key`）复位，渲染异常只影响该路由；根部保留兜底。
-- 首检完成前收到的 WS 关闭（`CBROWSER_WS_CLOSE`，含 1006）只记录诊断（`diagnostics.signalingCloseCode`），不启动恢复；首检定版为非 `running`（或其后变为 `stopped` / `error`）时取消同 generation 的恢复轮询。
+- Profile 编辑只提交与初始值不同的字段（`ProfileForm` 以差分驱动提交）；字段分类（元数据 / 即时 / 运行配置）以后端 `repository.py` 的三分常量为准，经生成类型同步，前后端逐值一致。
+- 会话阶段与错误文案的单一权威是 `runtimeQuery`：`SessionPage` 把 `runtimeQuery.data?.observed_state` 作为唯一 `runtimeState` 传入 `useBrowserSession`。
+- 错误边界分层：`ErrorBoundary.componentDidCatch` 经前端日志通道记录；路由内容由 `RouteErrorBoundary` 包裹，随路由切换复位。

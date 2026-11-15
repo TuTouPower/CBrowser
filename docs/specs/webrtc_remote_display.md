@@ -33,11 +33,11 @@
 - 远端浏览器内部标签页切换经同一画面同步显示到所有页面。
 - 首帧预算（t019，2026-11-10 用户决定调整）：侧边栏切换已运行 Profile 与同 Profile 刷新重建会话到首帧均 ≤5 秒；本机 Mac/OrbStack + Chrome 156 在基线 supervisor 镜像下实测 3.4–3.7 秒，原 2 秒预算不再满足，故按用户决定更新为此契约。ICE host-only 候选与同机直连约束不变；性能容量与 P95 仍由后续性能任务验收。
 - 初次画面与操作延迟可测（t007 本机记录，不设阈值，阈值由性能任务验收）。
-- 会话页为独立页面 `/session/:profileId`（t039）：单行页头含环境切换器（Popover 内可搜索、按分组列出环境与状态、条目为真实链接）、observed state 与 transport 状态、待应用标记与「应用并重启」，以及音频、诊断、详情面板、专注模式、停止操作；切换器链接在新标签打开后两标签会话互不影响。环境切换器触发器只显示环境名称、不带状态徽标，顶栏运行状态只出现一次，各环境状态保留在下拉条目内（t061）。transport 状态（ready/recovering/failed/unknown）在页头与详情面板均显示当前界面语言的本地化文案，未知或缺失值回落本地化「未知」，不显示原始机器码（t061）。
-- 画面区只承载铺满的 Selkies iframe，不绘制模拟浏览器框（标签栏 / 地址栏 / 书签 / 缩放，ADR 003/006）；阶段呈现分级（t061）：等待态（checking_runtime、connecting_signaling、media_waiting、reconnecting）只显示轻量指示，不渲染居中诊断表或操作按钮；故障态（signaling_failed、ice_failed、media_no_frames、web_locks_unavailable、error）保留居中诊断面板与适用重连动作；runtime_not_ready 保留启动与查看状态；stopping 只显示停止提示与查看状态入口；connected 不显示等待层。
-- 详情面板为右侧 300px、默认收起，展开状态存 `cbrowser.session.details_open`（刷新保持），分环境 / 网络 / 指纹 / 运行四区，每个值可复制。详情开关只有页头详情按钮一个，面板内无标题与第二开关，关闭时面板不渲染、不占宽度（t061）。
-- 专注模式隐藏侧栏与页头，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端）；进入与退出不重建 iframe、不中断远端输入。
-- `/session` 会话入口在本标签页无目标时列出运行中环境供选择；侧栏「会话」导航在已有目标时回跳该会话。
+- 会话页为独立页面 `/session/:profileId`（t039+）：紧凑单行页头含左上角环境切换器（触发器与下拉列表内每个环境名称前均带有对应状态的颜色指示灯，Popover 内可搜索、按分组列出环境与状态、条目为真实链接）、本地化 observed state 与 transport 状态徽标、待应用标记与「应用并重启」，以及右上角音频、诊断、详情面板与**全屏隐私浏览器（专注模式）**、停止操作；切换器链接在新标签打开后两标签会话互不影响。环境切换器触发器只显示状态指示灯与环境名称、不带文字状态徽标，顶栏运行状态只出现一次，各环境文字状态保留在下拉条目内（t061）。transport 状态（ready/recovering/failed/unknown）在页头与详情面板均显示当前界面语言的本地化文案，未知或缺失值回落本地化「未知」，不显示原始机器码（t061）。
+- 画面区最大化承载铺满的 Selkies iframe（仅与侧边栏和外框保留 `xs` 4px 紧凑留白边距），不绘制模拟浏览器框（标签栏 / 地址栏 / 书签 / 缩放，ADR 003/006）；阶段呈现分级（t061）：等待态（checking_runtime、connecting_signaling、media_waiting、reconnecting）只显示轻量指示，不渲染居中诊断表或操作按钮；故障态（signaling_failed、ice_failed、media_no_frames、web_locks_unavailable、error）保留居中诊断面板与适用重连动作；runtime_not_ready 保留启动与查看状态；stopping 只显示停止提示与查看状态入口；connected 不显示等待层。
+- 详情面板为右侧 300px、默认收起，展开状态存 `cbrowser.session.details_open`（刷新保持），分环境 / 代理 / 指纹 / 运行状态四区，全部字段标签与平台/字体包名称均显示当前界面语言的本地化文案，不暴露内部 ID（Profile ID、实例 ID、字体集 SHA256），每个值可复制。详情开关只有页头详情按钮一个，面板内无标题与第二开关，关闭时面板不渲染、不占宽度（t061）。
+- 全屏隐私浏览器（专注模式）隐藏侧栏与页头，画面无边距铺满全屏，鼠标悬停顶部边缘显示悬浮退出工具条，**不用 Esc 退出**（Esc 与常用组合键留给远端）；进入与退出不重建 iframe、不中断远端输入。
+- `/session` 会话入口在本标签页无目标时列出运行中环境供选择；侧栏「工作台」导航在已有目标时回跳该会话。
 - 会话页 `data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），组件与 E2E 选择器同步改写；旧会话页组件整体删除。
 - 旧页面全部替换后启用全局颜色门禁（`npm run design:lint` 的 `--lint`），扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 `docs/blueprint/testing.md`）。
 

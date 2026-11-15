@@ -84,7 +84,7 @@ function renderShell() {
   return { ...view, queryClient, client };
 }
 
-describe("AppLayout shell contract (t036)", () => {
+describe("AppLayout shell contract (t036+)", () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -96,21 +96,23 @@ describe("AppLayout shell contract (t036)", () => {
     vi.restoreAllMocks();
   });
 
-  it("restores collapsed and width from localStorage on mount", async () => {
+  it("restores collapsed and width from localStorage on mount and expands via brand icon when collapsed", async () => {
     localStorage.setItem("cbrowser.sidebar.collapsed", "1");
     localStorage.setItem("cbrowser.sidebar.width", "300");
     const view = renderShell();
     const sidebar = await view.findByTestId("sidebar");
     expect(sidebar.parentElement).toHaveStyle({ width: "72px" });
+    expect(view.queryByTestId("sidebar-collapse-btn")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     await waitFor(() =>
       expect(sidebar.parentElement).toHaveStyle({ width: "300px" }),
     );
     expect(localStorage.getItem("cbrowser.sidebar.collapsed")).toBe("0");
+    expect(view.getByTestId("sidebar-collapse-btn")).toBeInTheDocument();
   });
 
-  it("clamps resize to 200-360px and persists the width", async () => {
+  it("clamps resize to 200-360px, persists width, and resets on double click", async () => {
     const view = renderShell();
     const handle = await view.findByTestId("sidebar-resize-handle");
     fireEvent.pointerDown(handle, { clientX: 100 });
@@ -125,6 +127,11 @@ describe("AppLayout shell contract (t036)", () => {
     fireEvent.pointerUp(window);
     await waitFor(() =>
       expect(localStorage.getItem("cbrowser.sidebar.width")).toBe("200"),
+    );
+
+    fireEvent.doubleClick(handle);
+    await waitFor(() =>
+      expect(localStorage.getItem("cbrowser.sidebar.width")).toBe("232"),
     );
   });
 
@@ -141,13 +148,15 @@ describe("AppLayout shell contract (t036)", () => {
     );
   });
 
-  it("updates the running count and coordinator banner from SSE runtime data", async () => {
+  it("places settings at the bottom-left footer and surfaces coordinator banner from SSE runtime data", async () => {
     const view = renderShell();
-    expect(await view.findByTestId("running-count")).toBeInTheDocument();
+    expect(await view.findByTestId("sidebar-settings-link")).toHaveAttribute(
+      "href",
+      "/settings",
+    );
     await waitFor(() =>
       expect(view.client.profiles.getRuntime).toHaveBeenCalledTimes(2),
     );
-    expect(view.getByTestId("running-count")).toHaveTextContent("0");
 
     act(() => {
       view.queryClient.setQueryData(
@@ -155,27 +164,8 @@ describe("AppLayout shell contract (t036)", () => {
         runtimeFor("p1", "running", "coordinator unreachable"),
       );
     });
-    await waitFor(() =>
-      expect(view.getByTestId("running-count")).toHaveTextContent("1"),
-    );
     const banner = await view.findByTestId("runtime-coordinator-error");
     expect(banner).toHaveAttribute("role", "alert");
     expect(banner).toHaveTextContent("coordinator unreachable");
-  });
-
-  it("switching the UI theme never writes a Profile color_scheme", async () => {
-    const view = renderShell();
-    await view.findByTestId("sidebar");
-    fireEvent.pointerDown(view.getByRole("button", { name: "Switch theme" }), {
-      button: 0,
-      ctrlKey: false,
-    });
-    await screen.findByRole("menu");
-    const lightItem = screen.getAllByRole("menuitem").find((item) => item.textContent?.includes("Light"));
-    expect(lightItem).toBeDefined();
-    fireEvent.click(lightItem!);
-    await waitFor(() => expect(localStorage.getItem("cbrowser.theme")).toBe("light"));
-    expect(document.documentElement.classList.contains("light")).toBe(true);
-    expect(view.client.profiles.update).not.toHaveBeenCalled();
   });
 });

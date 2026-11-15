@@ -298,6 +298,7 @@ function fixture() {
       group_id: null,
       proxy_id: null,
       geoip: false,
+      fingerprint_platform: "macos",
       sort_order: 0,
       created_at: "2026-01-01T00:00:00Z",
     }),
@@ -348,7 +349,7 @@ beforeEach(() => {
 });
 
 describe("EnvironmentListPage AC-001 列展示", () => {
-  it("renders eight columns with name, notes, group, network and fingerprint", async () => {
+  it("renders eight columns with name, note tooltip trigger, group, proxy and localized platform without exposing internal IDs", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     const heads = document.querySelectorAll("thead th");
@@ -362,28 +363,28 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(screen.getByText(en.envColActions)).toBeInTheDocument();
 
     const p1 = screen.getByTestId("env-row-p1");
-    expect(screen.getByTestId("env-number-p1").textContent).toBe("#0001");
+    expect(screen.queryByTestId("env-number-p1")).toBeNull();
     expect(p1.textContent).toContain("Alpha");
-    expect(p1.textContent).toContain("primary");
+    expect(screen.getByTestId("env-note-trigger-p1")).toHaveAttribute(
+      "aria-label",
+      "primary",
+    );
     expect(p1.textContent).toContain("Work");
     expect(p1.textContent).toContain("US Proxy");
-    expect(p1.textContent).toContain("socks5");
-    expect(p1.textContent).toContain("US");
-    expect(p1.textContent).toContain("windows");
+    expect(p1.textContent).toContain("Windows");
 
     const p2 = screen.getByTestId("env-row-p2");
-    expect(screen.getByTestId("env-number-p2").textContent).toBe("#0002");
+    expect(screen.queryByTestId("env-number-p2")).toBeNull();
     expect(p2.textContent).toContain(en.envUngrouped);
+    expect(p2.textContent).toContain("macOS");
     expect(p2.textContent).not.toContain(en.envGeoipFollowProxy);
   });
 
-  it("shows a direct-connection warning and the geoip follow-proxy hint", async () => {
+  it("shows direct proxy label and geoip follow-proxy hint", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     const direct = screen.getByTestId("env-direct-p2");
     expect(direct.textContent).toContain(en.envDirect);
-    expect(direct.textContent).toContain(en.envDirectWarning);
-    expect(direct.querySelector("svg")).toBeTruthy();
     expect(screen.queryByTestId("env-direct-p1")).toBeNull();
 
     const p1 = screen.getByTestId("env-row-p1");
@@ -426,9 +427,6 @@ describe("EnvironmentListPage AC-001 列展示", () => {
       en.statusStopped,
     );
     expect(screen.getByTestId("env-error-tooltip-s4")).toBeInTheDocument();
-    expect(screen.getByTestId("env-error-reason-s4").textContent).toContain(
-      "coordinator down",
-    );
     expect(screen.queryByTestId("env-error-tooltip-s3")).toBeNull();
   });
 
@@ -455,7 +453,7 @@ describe("EnvironmentListPage AC-001 列展示", () => {
 
 describe("EnvironmentListPage AC-002 组合筛选与 URL", () => {
   it("restores combined filters from URL query parameters", async () => {
-    renderPage(["/?q=Alpha&status=running&group=g1&proxy=px1&sort=name"]);
+    renderPage(["/?q=Alpha&status=running&group=g1&platform=windows&proxy=px1&sort=name"]);
     await screen.findByTestId("env-table");
     expect(rowIds()).toEqual(["env-row-p1"]);
     expect(screen.getByTestId("location-search").textContent).toContain(
@@ -468,6 +466,9 @@ describe("EnvironmentListPage AC-002 组合筛选与 URL", () => {
       "group=g1",
     );
     expect(screen.getByTestId("location-search").textContent).toContain(
+      "platform=windows",
+    );
+    expect(screen.getByTestId("location-search").textContent).toContain(
       "proxy=px1",
     );
     expect(screen.getByTestId("location-search").textContent).toContain(
@@ -475,10 +476,16 @@ describe("EnvironmentListPage AC-002 组合筛选与 URL", () => {
     );
   });
 
-  it("filters by status, ungrouped, proxy and search text independently", async () => {
+  it("filters by status, ungrouped, platform, proxy and search text independently", async () => {
     renderPage(["/?status=error"]);
     await screen.findByTestId("env-table");
     expect(rowIds()).toEqual(["env-row-p3"]);
+  });
+
+  it("filters by platform", async () => {
+    renderPage(["/?platform=macos"]);
+    await screen.findByTestId("env-table");
+    expect(rowIds()).toEqual(["env-row-p2"]);
   });
 
   it("filters ungrouped profiles", async () => {
@@ -487,7 +494,7 @@ describe("EnvironmentListPage AC-002 组合筛选与 URL", () => {
     expect(rowIds()).toEqual(["env-row-p2"]);
   });
 
-  it("filters by proxy id", async () => {
+  it("filters by proxy id and direct proxy", async () => {
     renderPage(["/?proxy=px2"]);
     await screen.findByTestId("env-table");
     expect(rowIds()).toEqual(["env-row-p3"]);
@@ -575,7 +582,7 @@ describe("EnvironmentListPage AC-003 布局与卡片", () => {
     expect(card.textContent).toContain("Alpha");
     expect(card.textContent).toContain("Work");
     expect(card.textContent).toContain("US Proxy");
-    expect(card.textContent).toContain("windows");
+    expect(card.textContent).toContain("Windows");
     const placeholder = screen.getByTestId("env-card-preview-p1");
     expect(placeholder.textContent).toBe("");
     expect(grid).toBeInTheDocument();
@@ -689,7 +696,6 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     selectRow("p1");
     selectRow("p2");
     await screen.findByTestId("env-batch-bar");
-    // P2: 批量删除需二次确认。
     fireEvent.click(screen.getByTestId("env-batch-delete"));
     fireEvent.click(await screen.findByTestId("env-batch-delete-accept"));
     await waitFor(() =>

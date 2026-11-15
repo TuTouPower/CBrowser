@@ -10,6 +10,10 @@ import { ApiClientContext } from "../../shared/api/client_context";
 import { I18nProvider } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ logout: vi.fn(async () => undefined) }),
+}));
+
 interface FontSetFixture {
   platform: string;
   set_id: string;
@@ -24,16 +28,12 @@ function renderPages(fontSets: FontSetFixture[] = []) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  // Per-test stub injected at the ApiClient boundary (A22); the production
-  // singleton is never mutated by tests.
   const stubClient = {
     health: { check: vi.fn(async () => undefined) },
     profiles: { create: vi.fn(async () => ({ id: "p-new" })) },
     groups: { list: vi.fn(async () => []), create: vi.fn(async () => ({})) },
     proxies: { list: vi.fn(async () => []) },
     fontSets: { list: vi.fn(async () => ({ items: fontSets, default_font_set_id: { windows: null, macos: null } })) },
-    // t054: no network stub — the Settings page makes no network-settings
-    // request anymore; the network section is read-only.
     request: vi.fn(async () => fontSets),
   } as unknown as ApiClient;
   return render(
@@ -52,7 +52,7 @@ function renderPages(fontSets: FontSetFixture[] = []) {
   );
 }
 
-describe("settings and profile form i18n (t035)", () => {
+describe("settings and profile form i18n (t035+)", () => {
   beforeEach(() => {
     localStorage.setItem("cbrowser.locale", "zh");
   });
@@ -62,29 +62,23 @@ describe("settings and profile form i18n (t035)", () => {
     vi.restoreAllMocks();
   });
 
-  // The old "switches every previously hardcoded label and placeholder"
-  // case also asserted the four t035-removed tags/proxy labels; that whole
-  // case was deleted. This new case keeps the i18n switch coverage for the
-  // labels that still exist (AC-012 removal is not a reason to lose it).
   it("switches remaining i18n labels and placeholders", async () => {
     renderPages();
 
     expect(screen.getByText("控制 API")).toBeTruthy();
-    expect(screen.getByText("控制 API 健康检查")).toBeTruthy();
-    expect(screen.getByText("名称")).toBeTruthy();
+    expect(screen.getByText("环境名称")).toBeTruthy();
     expect(screen.getByLabelText("宽度 (px)")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("正常")).toBeTruthy());
 
     fireEvent.click(screen.getByText("English"));
 
     expect(screen.getByText("Control API")).toBeTruthy();
-    expect(screen.getByText("Control API health check")).toBeTruthy();
     expect(screen.getByText("Name")).toBeTruthy();
     expect(screen.getByLabelText("Width (px)")).toBeTruthy();
   });
 });
 
-describe("settings platform font sets (t036)", () => {
+describe("settings platform font sets (t036+)", () => {
   beforeEach(() => {
     localStorage.clear();
   });
@@ -93,7 +87,7 @@ describe("settings platform font sets (t036)", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders font set data from GET /api/v1/font-sets", async () => {
+  it("renders font set data from GET /api/v1/font-sets with human-readable font pack names", async () => {
     renderPages([
       {
         platform: "windows",

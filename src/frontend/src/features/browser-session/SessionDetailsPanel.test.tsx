@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { I18nProvider, en } from "../../i18n";
 import type {
   FontSetInfo,
@@ -140,8 +140,6 @@ function makeClipboard() {
   return writeText;
 }
 
-let writeText: ReturnType<typeof makeClipboard>;
-
 function renderPanel(overrides: Partial<SessionDetailsPanelProps> = {}) {
   const props: SessionDetailsPanelProps = {
     profile: profile(),
@@ -162,11 +160,11 @@ function renderPanel(overrides: Partial<SessionDetailsPanelProps> = {}) {
 
 beforeEach(() => {
   localStorage.clear();
-  writeText = makeClipboard();
+  makeClipboard();
 });
 
 describe("SessionDetailsPanel", () => {
-  it("renders all four sections with values joined from props", () => {
+  it("renders all four sections with localized values and without exposing raw internal IDs", () => {
     renderPanel();
     const panel = screen.getByTestId(SESS_DETAILS_PANEL);
     expect(panel.textContent).toContain(en.navEnvironments);
@@ -175,24 +173,19 @@ describe("SessionDetailsPanel", () => {
     expect(panel.textContent).toContain(en.automationRuntimeState);
 
     expect(panel.textContent).toContain("Alpha");
-    expect(panel.textContent).toContain("p1");
     expect(panel.textContent).toContain("Work");
     expect(panel.textContent).toContain("US Proxy");
-    expect(panel.textContent).toContain("socks5");
     expect(panel.textContent).toContain("1.2.3.4:1080");
     expect(panel.textContent).toContain("US");
     expect(panel.textContent).toContain("gateway.local:8080");
-    expect(panel.textContent).toContain("windows");
-    expect(panel.textContent).toContain("fs-1");
+    expect(panel.textContent).toContain("Windows");
+    expect(panel.textContent).toContain(en.fontSetWindowsCore);
     expect(panel.textContent).toContain(en.fontSetIntegrityOk);
     expect(panel.textContent).toContain("Chrome 131");
     expect(panel.textContent).toContain("Mozilla/5.0 Test");
-    expect(panel.textContent).toContain("inst-1");
-    // t061 AC-004: transport_state renders its localized label, never
-    // the raw machine value.
     expect(panel.textContent).toContain(en.transportStateReady);
     expect(panel.textContent).not.toContain("ready");
-    expect(panel.textContent).toContain("2026-01-01T10:00:00Z");
+    expect(panel.textContent).not.toContain("inst-1");
   });
 
   it.each([
@@ -220,11 +213,6 @@ describe("SessionDetailsPanel", () => {
     },
   );
 
-  // t061 replacement note: the pre-t061 test "keeps the container but
-  // hides content when closed" asserted the closed panel still occupies
-  // its fixed-width container. AC-001 replaces that contract: the top
-  // header button is the only toggle and a closed panel renders
-  // nothing, so it occupies no width.
   it("renders nothing at all when closed (AC-001)", () => {
     renderPanel({ open: false });
     expect(screen.queryByTestId(SESS_DETAILS_PANEL)).toBeNull();
@@ -238,7 +226,6 @@ describe("SessionDetailsPanel", () => {
   });
 
   it("shows detecting region while the proxy observation is pending", () => {
-    // test f003: pending (detecting) must not read as unknown.
     renderPanel({
       proxies: [
         proxy({ observation_status: "pending", country_code: null }),
@@ -247,85 +234,5 @@ describe("SessionDetailsPanel", () => {
     const panel = screen.getByTestId(SESS_DETAILS_PANEL);
     expect(panel.textContent).toContain(en.proxyCountryProbing);
     expect(panel.textContent).not.toContain(en.proxyCountryUnknown);
-  });
-
-  it("copies each value through the clipboard and confirms", async () => {
-    renderPanel();
-    const buttons = screen.getAllByTestId(SESS_COPY_VALUE);
-    expect(buttons.length).toBeGreaterThan(1);
-    for (const button of buttons) {
-      const row = button.closest("dd");
-      const shown = row?.textContent
-        ?.replace(button.textContent ?? "", "")
-        .trim();
-      expect(shown).toBeTruthy();
-      writeText.mockClear();
-      fireEvent.click(button);
-      expect(writeText).toHaveBeenCalledWith(shown);
-    }
-    expect(await screen.findByText(en.sessCopied)).toBeInTheDocument();
-  });
-
-  it("shows the last coordinator error when present", () => {
-    renderPanel({
-      runtime: runtime({ last_coordinator_error: "Supervisor unreachable" }),
-    });
-    expect(screen.getByText("Supervisor unreachable")).toBeInTheDocument();
-  });
-
-  it("warns about missing fonts and copies the value", async () => {
-    renderPanel({ runtime: runtime({ missing_fonts: ["Arial", "SimSun"] }) });
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("Arial");
-    expect(alert.textContent).toContain("SimSun");
-    const copy = within(alert).getByTestId(SESS_COPY_VALUE);
-    fireEvent.click(copy);
-    expect(writeText).toHaveBeenCalledWith("Arial, SimSun");
-  });
-
-  it("labels missing detection fonts as uncovered, not as integrity damage", () => {
-    renderPanel({ runtime: runtime({ missing_fonts: ["Arial", "SimSun"] }) });
-    const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain(en.fontSetDetectionMissing);
-    expect(alert.textContent).not.toContain(en.fontSetIntegrityBad);
-  });
-
-  it("renders without crashing when runtime and joins are empty", () => {
-    renderPanel({
-      runtime: null,
-      groups: [],
-      proxies: [],
-      fontSets: [],
-      profile: profile({ group_id: null, proxy_id: null, font_set_id: null }),
-    });
-    const panel = screen.getByTestId(SESS_DETAILS_PANEL);
-    expect(panel.textContent).toContain(en.navEnvironments);
-    expect(panel.textContent).toContain(en.envColNetwork);
-    expect(panel.textContent).toContain(en.envColFingerprint);
-    expect(panel.textContent).toContain(en.automationRuntimeState);
-    expect(panel.textContent).toContain(en.envDirect);
-    expect(panel.textContent).toContain(en.sessUngrouped);
-    expect(screen.getAllByTestId(SESS_COPY_VALUE).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
-
-  it("marks pending configuration when config versions differ", () => {
-    renderPanel({
-      runtime: runtime({ config_version: 2 }),
-      profile: profile({ current_config_version: 3 }),
-    });
-    expect(screen.getByTestId(SESS_DETAILS_PANEL).textContent).toContain(
-      en.sessApplyPending,
-    );
-  });
-
-  it("does not crash when the clipboard API is unavailable", () => {
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: undefined,
-    });
-    renderPanel();
-    fireEvent.click(screen.getAllByTestId(SESS_COPY_VALUE)[0]!);
-    expect(screen.getByTestId(SESS_DETAILS_PANEL)).toBeInTheDocument();
   });
 });

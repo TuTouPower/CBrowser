@@ -5,4 +5,4 @@
 |slug|task 清单|最后更新时间|
 |---|---|---|
 |browser_isolation|baseline, t003, t041, t051|2026-11-11|
-|webrtc_remote_display|baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042, t054, t058, t061, t064, t063, t069|2026-11-14|
+|webrtc_remote_display|baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042, t054, t058, t061, t064, t063, t069|2026-11-15|

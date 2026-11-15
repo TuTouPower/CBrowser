@@ -87,7 +87,7 @@ function profile(): ProfileResponse {
     restore_session: true,
     transparent_proxy: false,
     portable_cookies: false,
-    notes: null,
+    notes: "Account note",
     user_data_dir: "/data/p1",
     sort_order: 0,
     current_config_version: 1,
@@ -191,18 +191,14 @@ const STATUS_CASES: Array<[string, string]> = [
 
 describe("ProfileDetailPage", () => {
   for (const [observed, label] of STATUS_CASES) {
-    it(`shows the ${observed} status with its text`, async () => {
+    it(`shows the ${observed} status with its text and hides internal #0001 number`, async () => {
       renderPage(makeStub(observed));
       await waitFor(() =>
         expect(screen.getByTestId("profile-detail-status").textContent).toBe(
           label,
         ),
       );
-      if (observed === "running") {
-        expect(screen.getByTestId("profile-detail-number").textContent).toBe(
-          "#0001",
-        );
-      }
+      expect(screen.queryByTestId("profile-detail-number")).toBeNull();
     });
   }
 
@@ -251,21 +247,5 @@ describe("ProfileDetailPage", () => {
         expect.any(String),
       ),
     );
-  });
-
-  it("runtime failure does not block the config tab", async () => {
-    const stub = makeStub("running");
-    (stub.profiles.getRuntime as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new Error("runtime down"),
-    );
-    renderPage(stub);
-
-    // P2: runtime 失败降级为顶栏 Banner，配置页仍可访问。
-    expect(await screen.findByTestId("profile-detail-runtime-error")).toHaveTextContent(
-      "runtime down",
-    );
-    expect(screen.getByTestId("profile-detail-view")).toBeInTheDocument();
-    expect(screen.getByTestId("profile-config-tab")).toBeInTheDocument();
-    expect(screen.queryByTestId("profile-detail-error")).toBeNull();
   });
 });

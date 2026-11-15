@@ -188,36 +188,48 @@ beforeEach(() => {
 });
 
 describe("ProxyListPage AC-001 列展示", () => {
-  it("renders the seven columns with name, protocol, address, auth, region, used-by and actions", async () => {
+  it("renders six columns (name, protocol, address, location, used-by, actions) without an Auth column", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
-    expect(document.querySelectorAll("thead th")).toHaveLength(7);
+    expect(document.querySelectorAll("thead th")).toHaveLength(6);
     for (const key of [
       "proxyColName",
       "proxyColScheme",
       "proxyColAddress",
-      "proxyColAuth",
       "proxyColRegion",
       "proxyColUsedBy",
       "proxyColActions",
     ] as const) {
       expect(screen.getByText(en[key])).toBeInTheDocument();
     }
+    expect(screen.queryByText(en.proxyColAuth)).toBeNull();
 
     const px1 = screen.getByTestId("proxy-row-px1");
     expect(px1.textContent).toContain("US Proxy");
     expect(px1.textContent).toContain("socks5");
     expect(px1.textContent).toContain("1.2.3.4:1080");
-    expect(within(px1).getByText(en.proxyAuthNo)).toBeInTheDocument();
     expect(px1.textContent).toContain("US");
     expect(px1.textContent).toContain("California");
     expect(px1.textContent).toContain("2");
 
     const px2 = screen.getByTestId("proxy-row-px2");
-    expect(within(px2).getByText(en.proxyAuthYes)).toBeInTheDocument();
     expect(px2.textContent).toContain("10.0.0.1:8080");
     expect(px2.textContent).toContain("Berlin");
     expect(px2.textContent).toContain("DE");
+    expect(screen.getByTestId("proxy-note-trigger-px2")).toHaveAttribute(
+      "aria-label",
+      "primary",
+    );
+  });
+
+  it("supports switching between list and card layouts", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-layout-card"));
+    expect(await screen.findByTestId("proxy-card-grid")).toBeInTheDocument();
+    expect(screen.queryByTestId("proxy-table")).toBeNull();
+    fireEvent.click(screen.getByTestId("proxy-layout-list"));
+    expect(await screen.findByTestId("proxy-table")).toBeInTheDocument();
   });
 
   it("shows an empty state when the list is empty", async () => {
@@ -242,7 +254,7 @@ describe("ProxyListPage AC-001 列展示", () => {
   });
 });
 
-describe("ProxyListPage 搜索与协议筛选", () => {
+describe("ProxyListPage 搜索、协议与位置筛选", () => {
   it("filters by name, host and region label (case-insensitive)", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
@@ -279,7 +291,7 @@ describe("ProxyListPage 搜索与协议筛选", () => {
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
   });
 
-  it("filterProxies combines scheme and query and matches name/host/region", () => {
+  it("filterProxies combines scheme, region and query", () => {
     const proxies = fixture();
     expect(
       filterProxies(proxies, "proxy", "all").map((item) => item.id),
@@ -288,11 +300,11 @@ describe("ProxyListPage 搜索与协议筛选", () => {
       filterProxies(proxies, "proxy", "http").map((item) => item.id),
     ).toEqual(["px2"]);
     expect(
+      filterProxies(proxies, "", "all", "DE").map((item) => item.id),
+    ).toEqual(["px2"]);
+    expect(
       filterProxies(proxies, "", "socks5").map((item) => item.id),
     ).toEqual(["px1", "px4"]);
-    expect(
-      filterProxies(proxies, "berlin", "socks5").map((item) => item.id),
-    ).toEqual([]);
   });
 });
 
@@ -398,7 +410,7 @@ describe("ProxyListPage AC-006 使用环境数链接", () => {
   });
 });
 
-describe("ProxyListPage 手动探测 (t052 AC-006)", () => {
+describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
   it("shows unknown country when there is no valid observation", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
@@ -406,8 +418,7 @@ describe("ProxyListPage 手动探测 (t052 AC-006)", () => {
     expect(within(px4).getByText(en.proxyCountryUnknown)).toBeInTheDocument();
   });
 
-  it("shows detecting country while the observation is pending", async () => {
-    // test f003: pending (detecting) must not read as unknown.
+  it("shows testing status while the observation is pending", async () => {
     stub = makeStub([
       proxy({
         id: "px9",
@@ -426,7 +437,7 @@ describe("ProxyListPage 手动探测 (t052 AC-006)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("calls proxies.probe(id) and toasts success", async () => {
+  it("calls proxies.probe(id) on single speed test and toasts success", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
     fireEvent.click(screen.getByTestId("proxy-probe-px4"));
@@ -439,7 +450,17 @@ describe("ProxyListPage 手动探测 (t052 AC-006)", () => {
     );
   });
 
-  it("toasts failure when the probe rejects", async () => {
+  it("calls proxies.probe(id) for all visible proxies when clicking batch Zap button", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-all"));
+
+    await waitFor(() =>
+      expect(stub.spies.proxies.probe).toHaveBeenCalledTimes(4),
+    );
+  });
+
+  it("toasts failure when the speed test rejects", async () => {
     stub.spies.proxies.probe.mockRejectedValueOnce(new Error("probe down"));
     renderPage();
     await screen.findByTestId("proxy-table");

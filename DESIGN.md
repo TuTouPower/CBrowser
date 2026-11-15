@@ -763,7 +763,7 @@ components:
 
 ## Overview
 
-CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。采用冷灰基调、Inter 字体、高字重标题与柔和阴影，业务代码只用语义 token，不写颜色字面量。
+CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。面向单用户极简高效体验，采用冷灰基调、Inter 字体、高字重标题与柔和阴影，让布局自身表达信息层级，去除冗余次级标签、面包屑导航与内部 ID 展示；业务代码只用语义 token，不写颜色字面量。
 
 ## Colors
 
@@ -777,11 +777,11 @@ CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、�
 
 ## Typography
 
-UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `@fontsource` 随前端产物自托管。中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`。最小字号 10.5px（`mono-caps`）。ID、端口、版本号、种子、host 一律用 mono 字体。生成器从 `body-md` 与 `mono-md` 派生字体栈，并将 `fontSize`、`fontWeight`、`lineHeight` 与 `letterSpacing` 统一落到 Tailwind 4 `--text-*` 变量体系。
+UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `@fontsource` 随前端产物自托管。中文回退栈 `"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif`。最小字号 10.5px（`mono-caps`）。端口、版本号、种子、host 一律用 mono 字体；不向用户展示内部环境编号（`#0001`）、环境 ID 或字体集 SHA256 哈希。生成器从 `body-md` 与 `mono-md` 派生字体栈，并将 `fontSize`、`fontWeight`、`lineHeight` 与 `letterSpacing` 统一落到 Tailwind 4 `--text-*` 变量体系。
 
 ## Layout
 
-间距基准 4px（`xs` 到 `2xl`）。侧栏默认 232px，可拖宽 200–360px，折叠为 72px 图标栏，状态存 `cbrowser.sidebar.width` 与 `cbrowser.sidebar.collapsed`。页面内容最大宽度 1600px，内边距 24px（窄屏 16px）。控件高度常规 36px、小号 30px，表格行高 56px。桌面优先（≥1024px），窄屏侧栏改抽屉。动效 160–200ms ease-out，遵守 `prefers-reduced-motion`。
+间距基准 4px（`xs` 到 `2xl`）。左侧栏顶部放主导航（环境管理 / 代理管理 / 工作台），左下角固定放置「设置」入口（主题切换与语言切换收敛于设置页内）；侧栏默认 232px，可拖宽 200–360px（双击分隔条恢复默认宽度），折叠为 72px 图标栏（折叠态隐藏折叠按钮，点击左上角应用图标即可展开），状态存 `cbrowser.sidebar.width` 与 `cbrowser.sidebar.collapsed`。常规管理页面最大宽度 1600px；工作台会话页最大化浏览器画面区（仅保留 `xs` 4px 边距），右侧详情面板默认收起。控件高度常规 36px、小号 30px，表格行高 56px。所有列表/表格视图均提供图标化的列表/卡片视图切换按钮。桌面优先（≥1024px），窄屏侧栏改抽屉。动效 160–200ms ease-out，遵守 `prefers-reduced-motion`。
 
 ## Elevation & Depth
 
@@ -860,7 +860,7 @@ UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `
 
 ## Components
 
-组件按 4.2 成对定义：按钮族（`button-primary`、`button-secondary`、`button-ghost`、`button-danger`、`button-connect`、`button-stop` 及 hover/disabled/小号变体）、`icon-button`、`input`、`select`、`search-field`、`checkbox`、`switch`、`nav-item`、`nav-item-active`、`sidebar`、`table-header`、`table-row`、`table-row-selected`、`card`、`environment-card`、四态 `status-badge`、`group-chip`、`protocol-chip`、`region-code`、`modal`、`popover`、`menu-item`、`toast`、`tooltip`、`empty-state`、`banner-warning`、`banner-danger`、`session-header`、`session-stage`、`session-details-panel`、`brand-mark`，以及分组色板 `group-swatch-*` 与纯色标记 `divider` / `scrollbar-thumb` / `modal-backdrop` / `focus-ring` / `danger-dot` / `warning-dot`。Dialog、DropdownMenu、Popover、Tooltip 基于 Radix 原语，Toast 全局单实例。
+组件按 4.2 成对定义：按钮族（`button-primary`、`button-secondary`、`button-ghost`、`button-danger`、`button-connect`、`button-stop` 及 hover/disabled/小号变体）、`icon-button`、`input`、`select`、`search-field`、`checkbox`、`switch`、`nav-item`、`nav-item-active`、`sidebar`、`table-header`、`table-row`、`table-row-selected`、`card`、`environment-card`、四态 `status-badge`、`group-chip`、`protocol-chip`、`region-code`、`modal`、`popover`、`menu-item`、`toast`、`tooltip`、`empty-state`、`banner-warning`、`banner-danger`、`session-header`、`session-stage`、`session-details-panel`、`brand-mark`，以及分组色板 `group-swatch-*` 与纯色标记 `divider` / `scrollbar-thumb` / `modal-backdrop` / `focus-ring` / `danger-dot` / `warning-dot`。Dialog、DropdownMenu、Popover、Tooltip 基于 Radix 原语，Toast 全局单实例。数字输入框隐藏浏览器原生加减微调按钮以适配深浅色模式。
 
 组件尺寸规格（控件高度、浮层宽度、图标尺寸等）写在 components 条目的 `height` / `width` / `size` 字段（官方子 token），与模式无关、成对条目取值相同；生成器导出 `--component-<name>-<prop>` 组件级变量（圆角同时导出 `-radius`），业务代码引用变量，不写数值尺寸。图标尺寸阶梯为仅尺寸条目 `icon-xs`（12）/ `icon-sm`（14）/ `icon-md`（16）/ `icon-lg`（20）/ `icon-xl`（24）/ `icon-2xl`（32）/ `icon-3xl`（48）。`brand-swatch-gradient-*` 与 `favicon-light/dark` 为品牌 token 的登记条目，使品牌色被组件引用。
 
@@ -937,7 +937,7 @@ UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `
 
 ## Do's and Don'ts
 
-不绘制任何模拟浏览器框；会话画面区只承载 Selkies iframe。每个视图最多一个 `button-primary`。状态必须有文字或图标，不能只靠颜色。ID、端口、版本号、种子、host 一律 mono 字体。两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。不引用外部字体或图标 CDN。不使用 `DESIGN.md` 之外的颜色值；业务代码只用语义 token。会话页快捷键不得占用 Esc，以及会转发给远端浏览器的常用组合键。
+不绘制任何模拟浏览器框；会话画面区只承载 Selkies iframe 并最大化可视区域。每个视图最多一个 `button-primary`。状态必须有文字或图标，不能只靠颜色；文案严格跟随当前界面语言（中文模式下不泄露 `running`、`ready`、`windows` 等英文机器值）。不向用户展示内部 ID（`#0001`、Profile ID、字体集 SHA256 哈希）；备注与种子范围通过感叹号图标悬浮 Tooltip 呈现。两种模式下所有文字与背景组合达 WCAG AA（正文 4.5:1）。不引用外部字体或图标 CDN。不使用 `DESIGN.md` 之外的颜色值；业务代码只用语义 token。会话页快捷键不得占用 Esc，以及会转发给远端浏览器的常用组合键。
 
 ## Container sizes
 
