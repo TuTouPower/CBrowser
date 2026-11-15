@@ -216,13 +216,16 @@ describe("auth guard and session expiry", () => {
     expect(sseClient.stop).toHaveBeenCalled();
   });
 
-  it("logs out through useAuth, stops SSE and redirects to /login", async () => {
+  it("logs out through Settings page useAuth, stops SSE and redirects to /login", async () => {
     const api = mockApi(true);
     const sseClient = makeFakeSse();
     const { router } = renderApp(["/?profileId=p1"], sseClient);
 
+    // UI redesign (Patch 1) moved Log out from the sidebar footer into SettingsPage.
     await screen.findByTestId("sidebar");
-    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    fireEvent.click(screen.getByTestId("sidebar-settings-link"));
+    await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
+    fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
     expect(api.state.authenticated).toBe(false);

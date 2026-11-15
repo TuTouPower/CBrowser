@@ -1,12 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
 import { I18nProvider } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type { ApiClient } from "../../shared/api/client";
+
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ logout: vi.fn(async () => undefined) }),
+}));
 
 /**
  * t054: the Settings network section is read-only. It shows the current
@@ -24,7 +29,9 @@ function renderWithProviders(client: ApiClient) {
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <ApiClientContext.Provider value={client}>
-            <SettingsPage />
+            <MemoryRouter>
+              <SettingsPage />
+            </MemoryRouter>
           </ApiClientContext.Provider>
         </QueryClientProvider>
       </ThemeProvider>

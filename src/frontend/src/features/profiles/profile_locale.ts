@@ -129,7 +129,40 @@ export function timezoneForProxy(
   if (cc === "US") {
     return "America/Los_Angeles";
   }
-  return null;
+  const COUNTRY_TIMEZONES: Readonly<Record<string, string>> = {
+    CA: "America/Toronto",
+    NL: "Europe/Amsterdam",
+    CH: "Europe/Zurich",
+    SE: "Europe/Stockholm",
+    PL: "Europe/Warsaw",
+    IT: "Europe/Rome",
+    ES: "Europe/Madrid",
+    RU: "Europe/Moscow",
+    TR: "Europe/Istanbul",
+    IN: "Asia/Kolkata",
+    AE: "Asia/Dubai",
+    MY: "Asia/Kuala_Lumpur",
+    TH: "Asia/Bangkok",
+    VN: "Asia/Ho_Chi_Minh",
+    ID: "Asia/Jakarta",
+    PH: "Asia/Manila",
+    NZ: "Pacific/Auckland",
+    BR: "America/Sao_Paulo",
+  };
+  return COUNTRY_TIMEZONES[cc] ?? null;
+}
+
+export function isCjkFontSet(
+  item: Pick<FontSetInfo, "set_id" | "source" | "source_version">,
+): boolean {
+  const hay = `${item.set_id} ${item.source ?? ""} ${item.source_version ?? ""}`.toLowerCase();
+  return (
+    hay.includes("cjk") ||
+    hay.includes("office") ||
+    hay.includes("zh") ||
+    hay.includes("yahei") ||
+    hay.includes("pingfang")
+  );
 }
 
 export function selectFontSetForLocaleAndPlatform(
@@ -144,20 +177,25 @@ export function selectFontSetForLocaleAndPlatform(
   if (candidates.length === 0) {
     return defaultFontSetId[platform] ?? null;
   }
+  const preferredDefaultId = defaultFontSetId[platform];
+  const backendDefault = preferredDefaultId
+    ? candidates.find((item) => item.set_id === preferredDefaultId)
+    : undefined;
+
   if (locale === "zh-CN") {
-    const cjk = candidates.find((item) => {
-      const hay = `${item.set_id} ${item.source ?? ""} ${item.source_version ?? ""}`.toLowerCase();
-      return hay.includes("cjk") || hay.includes("office") || hay.includes("zh") || hay.includes("yahei") || hay.includes("pingfang");
-    });
+    if (backendDefault && isCjkFontSet(backendDefault)) {
+      return backendDefault.set_id;
+    }
+    const cjk = candidates.find((item) => isCjkFontSet(item));
     if (cjk) return cjk.set_id;
   } else if (locale === "en-US") {
-    const core = candidates.find((item) => {
-      const hay = `${item.set_id} ${item.source ?? ""} ${item.source_version ?? ""}`.toLowerCase();
-      return !hay.includes("cjk") && !hay.includes("office");
-    });
+    if (backendDefault && !isCjkFontSet(backendDefault)) {
+      return backendDefault.set_id;
+    }
+    const core = candidates.find((item) => !isCjkFontSet(item));
     if (core) return core.set_id;
   }
-  return defaultFontSetId[platform] ?? candidates[0]?.set_id ?? null;
+  return backendDefault?.set_id ?? candidates[0]?.set_id ?? null;
 }
 
 let cachedTimezones: readonly string[] | null = null;

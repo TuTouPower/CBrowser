@@ -243,23 +243,36 @@ export function ProfileForm({
     [platformFontSets],
   );
 
+  const timezoneManualRef = useRef(false);
+  const localeManualRef = useRef(false);
   const fontSetUserChosenRef = useRef(false);
   const defaultFontSetAppliedRef = useRef<string | null>(null);
+  const [manualOverrides, setManualOverrides] = useState({
+    timezone: false,
+    locale: false,
+    fontSet: false,
+  });
 
   useEffect(() => {
     if (mode !== "create" || fontSetUserChosenRef.current) return;
     if (!fontSetsData) return;
     if (defaultFontSetAppliedRef.current === platform) return;
     defaultFontSetAppliedRef.current = platform;
-    const fallback = defaultFontSetId[platform] ?? null;
-    setValues(
-      (prev) => ({ ...prev, font_set_id: fallback }) as ProfileFormValues,
-    );
-  }, [mode, platform, fontSetsData, defaultFontSetId]);
+    setValues((prev) => {
+      const aligned = selectFontSetForLocaleAndPlatform(
+        fontSets,
+        platform,
+        prev.locale,
+        defaultFontSetId,
+      );
+      return { ...prev, font_set_id: aligned } as ProfileFormValues;
+    });
+  }, [mode, platform, fontSets, fontSetsData, defaultFontSetId]);
 
   const selectedFontSet = platformFontSets.find(
     (fontSet) => fontSet.set_id === values.font_set_id,
   );
+  const selectedProxy = proxies.find((item) => item.id === values.proxy_id);
   const missingFontSet =
     values.font_set_id != null && selectedFontSet === undefined;
   const inconsistent =
@@ -278,7 +291,7 @@ export function ProfileForm({
     { value: "__none__", label: t("formFontSetNone") },
     ...sortedFontSets.map((fontSet) => ({
       value: fontSet.set_id,
-      label: formatFontSetDisplayName(fontSet, t),
+      label: `${formatFontSetDisplayName(fontSet, t)} · ${fontSet.set_id.slice(0, 8)}`,
     })),
   ];
   const localeOptions: SelectOption[] = [
@@ -438,20 +451,33 @@ export function ProfileForm({
                 const nextProxyId = value === "__direct__" ? null : value;
                 const matchedProxy = proxies.find((item) => item.id === nextProxyId);
                 const inferredTz = timezoneForProxy(matchedProxy);
+                if (inferredTz != null) {
+                  timezoneManualRef.current = false;
+                  localeManualRef.current = false;
+                  fontSetUserChosenRef.current = false;
+                  setManualOverrides({
+                    timezone: false,
+                    locale: false,
+                    fontSet: false,
+                  });
+                }
                 setValues((prev) => {
-                  const nextTz = inferredTz ?? prev.timezone ?? null;
+                  const nextTz =
+                    inferredTz ??
+                    (timezoneManualRef.current ? prev.timezone : null);
                   const nextLocale =
                     inferredTz != null
                       ? localeForTimezone(inferredTz)
                       : prev.locale;
-                  const nextFontSetId = fontSetUserChosenRef.current
-                    ? prev.font_set_id
-                    : selectFontSetForLocaleAndPlatform(
-                        fontSets,
-                        normalizePlatform(prev.fingerprint_platform),
-                        nextLocale,
-                        defaultFontSetId,
-                      );
+                  const nextFontSetId =
+                    inferredTz == null && fontSetUserChosenRef.current
+                      ? prev.font_set_id
+                      : selectFontSetForLocaleAndPlatform(
+                          fontSets,
+                          normalizePlatform(prev.fingerprint_platform),
+                          nextLocale,
+                          defaultFontSetId,
+                        );
                   return {
                     ...prev,
                     proxy_id: nextProxyId,
@@ -478,23 +504,25 @@ export function ProfileForm({
               ariaLabel={t("formTimezone")}
               value={values.timezone ?? null}
               onValueChange={(timezone) => {
+                timezoneManualRef.current = true;
+                setManualOverrides((prev) => ({ ...prev, timezone: true }));
                 setValues((prev) => {
-                  const locale =
-                    timezone == null
-                      ? prev.locale
-                      : localeForTimezone(timezone);
+                  const nextLocale =
+                    !localeManualRef.current && timezone != null
+                      ? localeForTimezone(timezone)
+                      : prev.locale;
                   const nextFontSetId = fontSetUserChosenRef.current
                     ? prev.font_set_id
                     : selectFontSetForLocaleAndPlatform(
                         fontSets,
                         normalizePlatform(prev.fingerprint_platform),
-                        locale,
+                        nextLocale,
                         defaultFontSetId,
                       );
                   return {
                     ...prev,
                     timezone,
-                    locale,
+                    locale: nextLocale,
                     font_set_id: nextFontSetId,
                   } as ProfileFormValues;
                 });
@@ -507,6 +535,8 @@ export function ProfileForm({
                 value={values.locale ?? "en-US"}
                 onValueChange={(value) => {
                   const nextLocale = value === "zh-CN" ? "zh-CN" : "en-US";
+                  localeManualRef.current = true;
+                  setManualOverrides((prev) => ({ ...prev, locale: true }));
                   setValues((prev) => {
                     const nextFontSetId = fontSetUserChosenRef.current
                       ? prev.font_set_id
@@ -516,10 +546,9 @@ export function ProfileForm({
                           nextLocale,
                           defaultFontSetId,
                         );
-                    const nextTimezone =
-                      prev.timezone != null
-                        ? timezoneForLocale(nextLocale, prev.timezone)
-                        : prev.timezone;
+                    const nextTimezone = timezoneManualRef.current
+                      ? prev.timezone
+                      : timezoneForLocale(nextLocale, prev.timezone);
                     return {
                       ...prev,
                       locale: nextLocale,
@@ -534,6 +563,94 @@ export function ProfileForm({
             </div>
           </Row>
         </div>
+        {(() => {
+          const proxyInferredTz = timezoneForProxy(selectedProxy);
+          const proxyRegion =
+            selectedProxy?.country_code ||
+            selectedProxy?.region_label ||
+            selectedProxy?.name ||
+            "";
+          const activeLocale = values.locale === "zh-CN" ? "zh-CN" : "en-US";
+          const localeText =
+            activeLocale === "zh-CN"
+              ? t("formLocaleChinese")
+              : t("formLocaleEnglish");
+          const fontRule =
+            activeLocale === "zh-CN"
+              ? t("formAlignFontsZh")
+              : t("formAlignFontsEn");
+          const tzText = values.timezone ?? t("formTimezoneAuto");
+          const hasOverrides =
+            manualOverrides.timezone ||
+            manualOverrides.locale ||
+            manualOverrides.fontSet;
+          if (!proxyInferredTz && !values.timezone && !hasOverrides) {
+            return null;
+          }
+          return (
+            <div
+              data-testid="profile-form-alignment-summary"
+              className="flex flex-wrap items-center justify-between gap-sm rounded-md border border-outline bg-surface-subtle px-sm py-xs font-ui text-label-sm text-on-surface-muted"
+            >
+              <span>
+                {proxyInferredTz
+                  ? t("formAlignProxySummary", {
+                      region: proxyRegion,
+                      timezone: tzText,
+                      locale: localeText,
+                      fontRule,
+                    })
+                  : t("formAlignLocaleSummary", {
+                      timezone: tzText,
+                      locale: localeText,
+                      fontRule,
+                    })}
+              </span>
+              {hasOverrides && (
+                <span className="flex items-center gap-sm">
+                  <span>{t("formAlignManualNote")}</span>
+                  <button
+                    type="button"
+                    data-testid="profile-form-reset-alignment"
+                    onClick={() => {
+                      timezoneManualRef.current = false;
+                      localeManualRef.current = false;
+                      fontSetUserChosenRef.current = false;
+                      setManualOverrides({
+                        timezone: false,
+                        locale: false,
+                        fontSet: false,
+                      });
+                      setValues((prev) => {
+                        const resetTz = proxyInferredTz ?? null;
+                        const resetLocale =
+                          proxyInferredTz != null
+                            ? localeForTimezone(proxyInferredTz)
+                            : (DEFAULT_PROFILE_CREATE_VALUES.locale ?? "en-US");
+                        const resetFontSetId =
+                          selectFontSetForLocaleAndPlatform(
+                            fontSets,
+                            normalizePlatform(prev.fingerprint_platform),
+                            resetLocale,
+                            defaultFontSetId,
+                          );
+                        return {
+                          ...prev,
+                          timezone: resetTz,
+                          locale: resetLocale,
+                          font_set_id: resetFontSetId,
+                        } as ProfileFormValues;
+                      });
+                    }}
+                    className="cursor-pointer font-ui text-label-sm text-primary hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  >
+                    {t("formAlignReset")}
+                  </button>
+                </span>
+              )}
+            </div>
+          );
+        })()}
       </Section>
 
       <Section title={t("formSectionFingerprint")}>
@@ -545,6 +662,7 @@ export function ProfileForm({
                 onValueChange={(value) => {
                   const nextPlatform = normalizePlatform(value);
                   fontSetUserChosenRef.current = false;
+                  setManualOverrides((prev) => ({ ...prev, fontSet: false }));
                   defaultFontSetAppliedRef.current = nextPlatform;
                   setValues((prev) => {
                     const nextFontSetId = selectFontSetForLocaleAndPlatform(
@@ -584,10 +702,12 @@ export function ProfileForm({
                 value={values.font_set_id ?? "__none__"}
                 onValueChange={(value) => {
                   fontSetUserChosenRef.current = true;
+                  setManualOverrides((prev) => ({ ...prev, fontSet: true }));
                   setField("font_set_id", value === "__none__" ? null : value);
                 }}
                 onOptionSelect={() => {
                   fontSetUserChosenRef.current = true;
+                  setManualOverrides((prev) => ({ ...prev, fontSet: true }));
                 }}
                 options={fontSetOptions}
                 ariaLabel={t("formFontSet")}

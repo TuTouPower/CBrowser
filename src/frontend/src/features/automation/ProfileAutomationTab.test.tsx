@@ -124,7 +124,8 @@ describe('ProfileAutomationTab', () => {
       /^wss?:\/\/.+\/api\/v1\/automation\/profiles\/p1\/cdp$/,
     );
     const status = view.getByTestId('automation-status');
-    expect(status).toHaveTextContent('running');
+    // UI redesign (Patch 1) standardized runtime status labels to Title Case ("Running").
+    expect(status).toHaveTextContent('Running');
     expect(status).toHaveTextContent('i1');
     expect(status).toHaveTextContent('Configured');
     expect(view.getByText(/Authorization: Bearer/)).toBeInTheDocument();

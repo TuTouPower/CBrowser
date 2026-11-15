@@ -609,10 +609,12 @@ async def test_frontend_session_freeze_resume_and_diagnostics(
             title_text = await pageUnready.inner_text(
                 '[data-testid="sess-stage-title"]'
             )
+            # UI terminology redesign (1223182) renamed "运行时未就绪"/"检查运行时状态"
+            # to "环境未就绪"/"检查运行状态".
             assert (
-                "运行时未就绪" in title_text
+                "环境未就绪" in title_text
                 or "信令连接失败" in title_text
-                or "检查运行时状态" in title_text
+                or "检查运行状态" in title_text
             ), f"Diagnostic title unexpected: {title_text}"
 
             # The old "reconnect / view-status buttons must be present"
@@ -679,10 +681,12 @@ async def test_frontend_session_unready_waiting_stage_has_no_action_buttons(
         title_text = await page.inner_text(
             '[data-testid="sess-stage-title"]'
         )
+        # UI terminology redesign (1223182) renamed "运行时未就绪"/"检查运行时状态"
+        # to "环境未就绪"/"检查运行状态".
         assert (
-            "运行时未就绪" in title_text
+            "环境未就绪" in title_text
             or "信令连接失败" in title_text
-            or "检查运行时状态" in title_text
+            or "检查运行状态" in title_text
         ), f"Diagnostic title unexpected: {title_text}"
 
         action_testids = await page.locator(

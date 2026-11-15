@@ -1,12 +1,17 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SettingsPage } from "./SettingsPage";
 import { I18nProvider } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type { ApiClient } from "../../shared/api/client";
+
+vi.mock("../auth/useAuth", () => ({
+  useAuth: () => ({ logout: vi.fn(async () => undefined) }),
+}));
 
 // t054: the network contract cases (load/save through the network domain
 // method) are deleted with the runtime network surface; only the shared
@@ -33,7 +38,9 @@ function renderPage(client: ApiClient) {
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
           <ApiClientContext.Provider value={client}>
-            <SettingsPage />
+            <MemoryRouter>
+              <SettingsPage />
+            </MemoryRouter>
           </ApiClientContext.Provider>
         </QueryClientProvider>
       </ThemeProvider>

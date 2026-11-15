@@ -907,7 +907,8 @@ async def test_ac007_lifecycle_resume_and_isolated_media_diagnostics(
         stage_title = await page.inner_text(
             '[data-testid="sess-stage-panel"]'
         )
-        assert "运行时未就绪" in stage_title
+        # UI terminology redesign (1223182) renamed "运行时未就绪" -> "环境未就绪".
+        assert "环境未就绪" in stage_title
         assert (
             await page.query_selector('[data-testid="sess-stage-action-launch"]') is not None
         )

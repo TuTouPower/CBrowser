@@ -599,6 +599,147 @@ describe("ProfileForm", () => {
     );
   });
 
+  it("aligns timezone, language, and non-CJK font pack when selecting a proxy, keeps manual overrides, and resets alignment on request", async () => {
+    const winCore = fontSet({
+      set_id: "win-core-01",
+      platform: "windows",
+      source: "windows",
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    const winCjk = fontSet({
+      set_id: "win-cjk-02",
+      platform: "windows",
+      source: "office-cjk",
+      created_at: "2026-02-01T00:00:00Z",
+    });
+    const usProxy: ProxyResponse = {
+      ...proxy(),
+      id: "px-us",
+      name: "US West Node",
+      country_code: "US",
+      region_label: "Los Angeles",
+    };
+    const hkProxy: ProxyResponse = {
+      ...proxy(),
+      id: "px-hk",
+      name: "HK Node",
+      country_code: "HK",
+      region_label: "Hong Kong",
+    };
+    const onSubmit = vi.fn(async () => undefined);
+    renderForm({
+      mode: "create",
+      stub: makeStub({
+        proxies: [usProxy, hkProxy],
+        fontSets: [winCjk, winCore],
+        defaultFontSetId: { windows: "win-core-01", macos: null },
+      }),
+      onSubmit,
+    });
+
+    await screen.findByTestId("profile-form-fontset-option-win-core-01");
+
+    // 1. Pick US proxy -> US timezone, en-US locale, core English font pack (CJK excluded)
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: "US West Node" }),
+    );
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "America/Los_Angeles",
+    );
+    expect(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
+        .textContent,
+    ).toContain(en.formLocaleEnglish);
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe("win-core-01");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsEn);
+
+    // 2. Switch to HK proxy -> Hong Kong timezone, zh-CN locale, CJK font pack
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "HK Node" }));
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Asia/Hong_Kong",
+    );
+    expect(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
+        .textContent,
+    ).toContain(en.formLocaleChinese);
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe("win-cjk-02");
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignFontsZh);
+
+    // 3. Switch back to US proxy, then manually override locale to zh-CN
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-proxy")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: "US West Node" }),
+    );
+    fireEvent.click(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox"),
+    );
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    expect(
+      screen.getByTestId("profile-form-alignment-summary").textContent,
+    ).toContain(en.formAlignManualNote);
+
+    // 4. Reset alignment restores proxy defaults (US timezone + en-US + win-core-01)
+    fireEvent.click(screen.getByTestId("profile-form-reset-alignment"));
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "America/Los_Angeles",
+    );
+    expect(
+      within(screen.getByTestId("profile-form-locale")).getByRole("combobox")
+        .textContent,
+    ).toContain(en.formLocaleEnglish);
+    expect(
+      screen.getByTestId("profile-form-fontset-selected").textContent,
+    ).toBe("win-core-01");
+
+    fireEvent.change(screen.getByTestId("profile-form-name"), {
+      target: { value: "US Env" },
+    });
+    fireEvent.click(screen.getByTestId("profile-form-submit"));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        proxy_id: "px-us",
+        timezone: "America/Los_Angeles",
+        locale: "en-US",
+        font_set_id: "win-core-01",
+      }),
+    );
+  });
+
+  it("aligns timezone to Asia/Shanghai when locale is switched on an unassigned form", async () => {
+    const onSubmit = vi.fn(async () => undefined);
+    renderForm({ mode: "create", stub: makeStub(), onSubmit });
+
+    const localeBox = within(
+      screen.getByTestId("profile-form-locale"),
+    ).getByRole("combobox");
+    fireEvent.click(localeBox);
+    fireEvent.click(
+      await screen.findByRole("option", { name: en.formLocaleChinese }),
+    );
+    expect(screen.getByTestId("profile-form-timezone")).toHaveValue(
+      "Asia/Shanghai",
+    );
+  });
+
   // t058 A24: the two onDirtyRuntimeConfig cases below were deleted with
   // the prop (ConfigTab no longer splits the submit by dirty class; the
   // diff carries it). The classification itself is covered by

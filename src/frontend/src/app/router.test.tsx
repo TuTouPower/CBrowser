@@ -236,14 +236,21 @@ describe("Application Router (plan 5.1)", () => {
     view.unmount();
   });
 
-  it("renders navigation as real anchors", async () => {
+  it("renders streamlined sidebar navigation and footer settings as real anchors", async () => {
+    // UI redesign (Patch 1) placed 3 primary views in <nav> and /settings in the sidebar footer.
     const view = renderWithRouter(["/"]);
-    await view.findByTestId("sidebar");
-    const links = view.container.querySelectorAll("nav a[href]");
-    expect(links.length).toBeGreaterThanOrEqual(4);
-    for (const link of links) {
+    const sidebar = await view.findByTestId("sidebar");
+    const navLinks = view.container.querySelectorAll("nav a[href]");
+    expect(navLinks.length).toBe(3);
+    const sidebarLinks = sidebar.querySelectorAll("a[href]");
+    expect(sidebarLinks.length).toBeGreaterThanOrEqual(4);
+    for (const link of sidebarLinks) {
       expect(link.getAttribute("href")).toBeTruthy();
     }
+    expect(view.getByTestId("sidebar-settings-link")).toHaveAttribute(
+      "href",
+      "/settings",
+    );
     view.unmount();
   });
 
