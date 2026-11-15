@@ -17,10 +17,11 @@ def browser_volumes(
     gate: Path,
     engine_cache: Path,
     geoip_cache: Path,
+    credentials_path: Path | None = None,
 ) -> dict[str, dict[str, Any]]:
     upload_dir = dirs.get("uploads") or dirs["exchange"].parent / "uploads"
     preview_dir = dirs.get("preview") or dirs["profile"].parent / "preview"
-    return {
+    volumes: dict[str, dict[str, Any]] = {
         str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
         str(dirs["profile"]): {
             "bind": f"/data/profiles/{profile_id}/profile",
@@ -42,6 +43,12 @@ def browser_volumes(
             "mode": "ro",
         },
     }
+    if credentials_path is not None:
+        volumes[str(credentials_path)] = {
+            "bind": "/run/cbrowser/proxy_credentials.json",
+            "mode": "ro",
+        }
+    return volumes
 
 
 def stream_volumes(
@@ -63,25 +70,6 @@ def stream_volumes(
             "bind": "/tmp/selkies_credentials.json",
             "mode": "ro",
         },
-    }
-
-
-def proxy_forwarder_volumes(
-    *,
-    gate: Path,
-    creds_file: Path,
-) -> dict[str, dict[str, str]]:
-    """Volumes for the proxy auth-forwarder container (t065).
-
-    Exactly two mounts: the policy gate (read-only) and the upstream
-    credentials file (read-only, from the Profile secret dir). The
-    credentials file is mounted here and nowhere else in the sandbox:
-    the Browser container never sees it, neither as a dedicated bind nor
-    through the runtime parent directory (which does not contain it).
-    """
-    return {
-        str(gate): {"bind": "/run/cbrowser_policy", "mode": "ro"},
-        str(creds_file): {"bind": "/run/cbrowser/proxy_credentials.json", "mode": "ro"},
     }
 
 

@@ -290,6 +290,7 @@ def run_docker_container(
     host_events_dir: Path | None = None,
     host_uploads_dir: Path | None = None,
     display: str = ":99",
+    credentials_file: Path | None = None,
 ) -> str:
     """Run an isolated Browser Runtime container with canonical data layout."""
     if ACTIVE_TEST_NETWORK is None:
@@ -390,6 +391,8 @@ def run_docker_container(
         f"{host_runtime_dir}:/run/cbrowser/runtime",
         "-v",
         f"{host_runtime_dir}/x11:/tmp/.X11-unix",
+        *(["-v", f"{credentials_file}:/run/cbrowser/proxy_credentials.json:ro"]
+          if credentials_file is not None else []),
         "-v",
         f"{host_runtime_dir}/pulse:/pulse",
         "-v",
@@ -3220,23 +3223,26 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
     snapshot_payload["proxy_credential_revision"] = 1
     snap_file.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
 
-    endpoint_file = runtime_dir / "proxy_forwarder.json"
-    endpoint_file.write_text(
+    creds_file = runtime_dir / "proxy_credentials.json"
+    creds_file.write_text(
         json.dumps(
             {
                 "scheme": "http",
                 "host": proxy_name,
                 "port": 18080,
+                "username": "t035",
+                "password": "t035pw",
                 "credential_revision": 1,
             }
         ),
         encoding="utf-8",
     )
-    os.chmod(endpoint_file, 0o644)
+    os.chmod(creds_file, 0o644)
 
     cid = run_docker_container(
         c_name, profile_dir, runtime_dir, exchange, snap_file,
         profile_id, f"inst_t035_{run_id}",
+        credentials_file=creds_file,
     )
     assert cid
     try:

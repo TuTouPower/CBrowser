@@ -14,14 +14,11 @@ wholesale, not rewritten to match the new output.  Coverage for the new
 semantics (baseline in the manifest, old-generation DB/release refusal,
 same-generation publish and rollback) is added at the end of this file.
 
-t065: ``test_deploy_success_builds_once_and_pins_everything`` was deleted
-wholesale (not edited in place) because t065 adds a sixth release image
-(``cbrowser-proxy-forwarder``) and records it in the manifest: its
-5-image count, 5-dockerfile list and 6-key manifest assertions are the
-old contract. Its replacement is
-``test_t065_deploy_success_builds_six_images_once_and_pins_proxy_forwarder``
-below, which re-asserts the whole contract (build-once, pinned manifest,
-release env, pointer, compose log, no secrets) for the 6-image set.
+The release builds five runtime images (api/browser/stream/supervisor/
+gateway) plus the fixed Caddy image, and records six image IDs in the
+manifest. ``test_deploy_success_builds_five_runtime_images_once_and_pins``
+re-asserts the whole contract (build-once, pinned manifest, release env,
+pointer, compose log, no secrets) for that image set.
 """
 
 from __future__ import annotations
@@ -384,26 +381,23 @@ def _builds(repo: Path) -> list[str]:
     ]
 
 
-def test_t065_deploy_success_builds_six_images_once_and_pins_proxy_forwarder(
+def test_deploy_success_builds_five_runtime_images_once_and_pins(
     tmp_path: Path,
 ) -> None:
-    # t065 replacement for test_deploy_success_builds_once_and_pins_everything
-    # (deleted wholesale: its 5-image contract is superseded by the sixth
-    # release image, cbrowser-proxy-forwarder, built once and pinned in the
-    # manifest and release env like the other five).
+    # Five runtime images are built exactly once and pinned in the
+    # manifest and release env; Caddy is the sixth fixed image.
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)
     result = _deploy(repo, bin_dir, "rel-001")
     assert result.returncode == 0, result.stderr
 
     builds = _builds(repo)
-    assert len(builds) == 6, builds
+    assert len(builds) == 5, builds
     dockerfiles = sorted(line.rsplit("dockerfile=", 1)[1] for line in builds)
     assert dockerfiles == [
         "config/docker/api_runtime/Dockerfile",
         "config/docker/browser_runtime/Dockerfile",
         "config/docker/gateway_runtime/Dockerfile",
-        "config/docker/proxy_forwarder_runtime/Dockerfile",
         "config/docker/stream_runtime/Dockerfile",
         "config/docker/supervisor_runtime/Dockerfile",
     ]
@@ -414,7 +408,6 @@ def test_t065_deploy_success_builds_six_images_once_and_pins_proxy_forwarder(
         "browser",
         "caddy",
         "gateway",
-        "proxy-forwarder",
         "stream",
         "supervisor",
     ]
@@ -423,10 +416,6 @@ def test_t065_deploy_success_builds_six_images_once_and_pins_proxy_forwarder(
         (ROOT / "config/docker/api_runtime/Dockerfile").read_bytes()
     ).hexdigest()
     assert manifest["images"]["api"] == expected_api
-    expected_forwarder = "sha256:" + hashlib.sha256(
-        (ROOT / "config/docker/proxy_forwarder_runtime/Dockerfile").read_bytes()
-    ).hexdigest()
-    assert manifest["images"]["proxy-forwarder"] == expected_forwarder
     assert manifest["compose_sha256"] == hashlib.sha256(
         (ROOT / "compose.yaml").read_bytes()
     ).hexdigest()
@@ -441,7 +430,6 @@ def test_t065_deploy_success_builds_six_images_once_and_pins_proxy_forwarder(
         "CBROWSER_SUPERVISOR_IMAGE",
         "CBROWSER_BROWSER_IMAGE",
         "CBROWSER_STREAM_IMAGE",
-        "CBROWSER_PROXY_FORWARDER_IMAGE",
         "CBROWSER_CADDY_IMAGE",
     ):
         assert f"{var}=sha256:" in env_text
