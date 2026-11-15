@@ -1972,6 +1972,7 @@ with path.open('w') as output:
                     "role": "browser",
                     "allowed_tcp": allowed_tcp,
                     "allowed_udp": allowed_udp,
+                    "proxy_enforced": bool(upstream_url),
                 },
                 gate,
                 runtime_instance_id,

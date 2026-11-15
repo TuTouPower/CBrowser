@@ -4,6 +4,8 @@
 
 单机 Docker 中，每个 Profile 使用独立 Browser/Stream Runtime；外部官方 Google Chrome 页面通过 Selkies WebRTC 接收画面和音频、提交原生输入。t004 提供 Stream 组件，t006 交付 Gateway，t007 交付前端会话与 Selkies token；部署与旧入口切换由后续 task 完成。
 
+上游 Selkies 2.2.1 默认以 WebSocket 传输，WebRTC 是显式开启的 opt-in；本部署以 `SELKIES_MODE=webrtc` + `SELKIES_WEBRTC_ICE_LITE=true` 强制开启。「同机直连不部署 TURN」是当前拓扑结论，不是协议前提：跨机、非 host 网络或公网时官方注明 WebRTC 需要 TURN，须按条件启用 coTURN，不把无 TURN 写成架构前提。
+
 ## 显示、页面与策略
 
 - 远端显示尺寸由 Profile 配置决定（默认1920×1080），DPR 固定 1，Xvfb :99 / Openbox。不同页面尺寸、连接顺序和客户端 resize 不改变远端几何。运行中修改尺寸只保存新配置版本，页面提示待应用，用户明确“应用并重启”后新实例才以新尺寸运行。
@@ -99,6 +101,7 @@ Stream 只访问对应 Profile 的 X11、Xauthority、Pulse 和媒体网络，�
 - 服务端 Selkies 以受控构建包运行：固定上游 2.2.1 wheel＋构建期显式补丁（身份清单 `config/selkies/selkies_controlled_build.json`，ADR 034）。采集策略服务经构建期工厂钩子（`SELKIES_WEBRTC_SERVICE_FACTORY` → `cbrowser.stream_agent.policy:create_policy_service`）在启动时构造，仍经官方 HELLO / client_tab_id / resume_key 建立会话；运行时不替换上游模块、不解析上游源码、不校验私有 ABI。
 - 帧率仲裁语义不变：按 active_peers 与媒体 consumer 信号在静止 8 FPS、运动/输入 30 FPS 间仲裁，零 consumer 暂停可恢复，单个 consumer 暂停不压低其他 consumer。
 - X11 键盘行为（named spare 过滤、text_room 整池回退、prebind 容量保护与绑定后 keymap reload/settle）由受控包内实现，中文 IME、普通键盘、剪贴板与复制标签隔离、viewer resume 行为与 t063 前一致；真实链断言见 `tests/e2e/test_stream_x11_keymap_e2e.py`（含受控版本号断言）。
+
 ## viewer 身份单一通道（t069）
 
 - selkies 查看器身份只有一个文档化来源：宿主页生成的 iframe URL 查询参数 `profileId`。entry 缺失/为空即抛错；未文档化的 `profile_id` 参数出现即抛错；适配器安装要求非空安装期 id，检测到 `__CBROWSER_PROFILE_ID__` 全局注入即拒绝；WebSocket 信令 shim 只用安装期 id，不再回读页面 URL 或全局变量，不存在 "default" 身份。
