@@ -1,18 +1,26 @@
 import { Link } from "react-router";
+import { AlertCircle, Pencil, Trash2, Zap } from "lucide-react";
 import { useI18n } from "../../i18n";
 import type { ProxyResponse } from "../../shared/api/types";
 import {
-  Button,
+  IconButton,
   MonoValue,
   ProtocolChip,
   RegionCode,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  Tooltip,
 } from "../../shared/ui";
+
+export interface ProxySpeedResult {
+  status: "testing" | "ok" | "failed";
+  ms?: number;
+}
 
 export interface ProxyTableProps {
   proxies: ProxyResponse[];
@@ -20,6 +28,7 @@ export interface ProxyTableProps {
   onDelete: (proxy: ProxyResponse) => void;
   onProbe: (proxy: ProxyResponse) => void;
   probingId?: string | null;
+  speedResults?: Record<string, ProxySpeedResult>;
 }
 
 export function ProxyTable({
@@ -28,6 +37,7 @@ export function ProxyTable({
   onDelete,
   onProbe,
   probingId,
+  speedResults = {},
 }: ProxyTableProps) {
   const { t } = useI18n();
 
@@ -42,7 +52,6 @@ export function ProxyTable({
             <TableHead>{t("proxyColName")}</TableHead>
             <TableHead>{t("proxyColScheme")}</TableHead>
             <TableHead>{t("proxyColAddress")}</TableHead>
-            <TableHead>{t("proxyColAuth")}</TableHead>
             <TableHead>{t("proxyColRegion")}</TableHead>
             <TableHead>{t("proxyColUsedBy")}</TableHead>
             <TableHead>{t("proxyColActions")}</TableHead>
@@ -52,17 +61,32 @@ export function ProxyTable({
           {proxies.map((proxy) => {
             const id = proxy.id;
             const blocked = proxy.used_by_count > 0;
+            const speed = speedResults[id];
+            const isTesting =
+              probingId === id ||
+              speed?.status === "testing" ||
+              proxy.observation_status === "pending";
+
             return (
               <TableRow key={id} data-testid={`proxy-row-${id}`}>
                 <TableCell>
-                  <div className="flex flex-col gap-xs">
+                  <div className="flex items-center gap-xs">
                     <span className="font-ui text-body-md text-on-surface">
                       {proxy.name}
                     </span>
                     {proxy.notes && (
-                      <span className="font-ui text-label-sm text-on-surface-muted">
-                        {proxy.notes}
-                      </span>
+                      <Tooltip content={proxy.notes}>
+                        <span
+                          data-testid={`proxy-note-trigger-${id}`}
+                          aria-label={proxy.notes}
+                          className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+                        >
+                          <AlertCircle
+                            aria-hidden="true"
+                            className="size-(--component-icon-sm-size)"
+                          />
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
                 </TableCell>
@@ -73,13 +97,8 @@ export function ProxyTable({
                   <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 </TableCell>
                 <TableCell>
-                  <span className="font-ui text-body-sm text-on-surface">
-                    {proxy.has_password ? t("proxyAuthYes") : t("proxyAuthNo")}
-                  </span>
-                </TableCell>
-                <TableCell>
                   <div className="flex flex-wrap items-center gap-sm">
-                    {proxy.observation_status === "pending" ? (
+                    {isTesting ? (
                       <span className="font-ui text-body-sm text-on-surface-muted">
                         {t("proxyCountryProbing")}
                       </span>
@@ -95,6 +114,19 @@ export function ProxyTable({
                         {proxy.region_label}
                       </span>
                     )}
+                    {speed?.status === "ok" && (
+                      <StatusBadge
+                        tone="running"
+                        label={
+                          speed.ms != null
+                            ? `${t("proxyAvailable")} · ${speed.ms}ms`
+                            : t("proxyAvailable")
+                        }
+                      />
+                    )}
+                    {speed?.status === "failed" && (
+                      <StatusBadge tone="error" label={t("proxyProbeFailed")} />
+                    )}
                   </div>
                 </TableCell>
                 <TableCell>
@@ -109,47 +141,59 @@ export function ProxyTable({
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-xs">
-                    <Button
+                    <IconButton
                       data-testid={`proxy-probe-${id}`}
-                      size="sm"
-                      disabled={probingId === id}
+                      label={t("proxyProbe")}
+                      disabled={isTesting}
                       onClick={() => onProbe(proxy)}
                     >
-                      {t("proxyProbe")}
-                    </Button>
-                    <Button
+                      <Zap
+                        aria-hidden="true"
+                        className="size-(--component-icon-md-size)"
+                      />
+                    </IconButton>
+                    <IconButton
                       data-testid={`proxy-edit-${id}`}
-                      size="sm"
+                      label={t("proxyEdit")}
                       onClick={() => onEdit(proxy)}
                     >
-                      {t("proxyEdit")}
-                    </Button>
+                      <Pencil
+                        aria-hidden="true"
+                        className="size-(--component-icon-md-size)"
+                      />
+                    </IconButton>
                     {blocked ? (
-                      <span className="inline-flex flex-wrap items-center gap-xs">
-                        <Button
-                          data-testid={`proxy-delete-${id}`}
-                          size="sm"
-                          variant="danger"
-                          disabled
-                        >
-                          {t("proxyDelete")}
-                        </Button>
-                        <span
-                          data-testid={`proxy-delete-blocked-${id}`}
-                          className="font-ui text-label-sm text-on-surface-muted"
-                        >
-                          {t("proxyDeleteBlocked")}
+                      <Tooltip content={t("proxyDeleteBlocked")}>
+                        <span className="inline-flex items-center gap-xs">
+                          <IconButton
+                            data-testid={`proxy-delete-${id}`}
+                            label={t("proxyDelete")}
+                            disabled
+                          >
+                            <Trash2
+                              aria-hidden="true"
+                              className="size-(--component-icon-md-size)"
+                            />
+                          </IconButton>
+                          <span
+                            data-testid={`proxy-delete-blocked-${id}`}
+                            className="sr-only"
+                          >
+                            {t("proxyDeleteBlocked")}
+                          </span>
                         </span>
-                      </span>
+                      </Tooltip>
                     ) : (
-                      <Button
+                      <IconButton
                         data-testid={`proxy-delete-${id}`}
-                        size="sm"
-                        variant="danger"
+                        label={t("proxyDelete")}
                         onClick={() => onDelete(proxy)}
                       >
-                        {t("proxyDelete")}
-                      </Button>
+                        <Trash2
+                          aria-hidden="true"
+                          className="size-(--component-icon-md-size)"
+                        />
+                      </IconButton>
                     )}
                   </div>
                 </TableCell>
