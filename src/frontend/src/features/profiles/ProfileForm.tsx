@@ -6,13 +6,16 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import {
   Banner,
   Button,
   Checkbox,
   FieldLabel,
+  IconButton,
   Input,
   Select,
+  Tooltip,
   type SelectOption,
 } from "../../shared/ui";
 import { useI18n, type TranslationKey } from "../../i18n";
@@ -32,9 +35,15 @@ import {
   useGroupsQuery,
   useProxiesQuery,
 } from "./useProfilesQuery";
-import { localeForTimezone } from "./profile_locale";
+import {
+  localeForTimezone,
+  selectFontSetForLocaleAndPlatform,
+  timezoneForLocale,
+  timezoneForProxy,
+} from "./profile_locale";
 import { diffProfileValues } from "./profile_field_diff";
 import { TimezoneCombobox } from "./TimezoneCombobox";
+import { formatFontSetDisplayName } from "../settings/SettingsPage";
 
 export type ProfileFormValues = ProfileCreateRequest;
 
@@ -72,9 +81,18 @@ function normalizeColorScheme(
     : null;
 }
 
+function randomValidSeed(): number {
+  return Math.floor(100000 + Math.random() * 900000);
+}
+
 function toFormValues(initial?: ProfileResponse): ProfileFormValues {
   if (!initial) {
-    return { name: "", ...DEFAULT_PROFILE_CREATE_VALUES };
+    return {
+      name: "",
+      ...DEFAULT_PROFILE_CREATE_VALUES,
+      fingerprint_seed:
+        DEFAULT_PROFILE_CREATE_VALUES.fingerprint_seed ?? randomValidSeed(),
+    };
   }
   return {
     name: initial.name,
@@ -107,10 +125,21 @@ function toFormValues(initial?: ProfileResponse): ProfileFormValues {
   };
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Row({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="flex flex-col gap-xs">
-      <FieldLabel>{label}</FieldLabel>
+    <div className="flex flex-1 flex-col gap-xs">
+      <div className="flex items-center gap-xs">
+        <FieldLabel>{label}</FieldLabel>
+        {hint}
+      </div>
       {children}
     </div>
   );
@@ -191,7 +220,6 @@ export function ProfileForm({
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
   const [groupError, setGroupError] = useState<string | null>(null);
-  // P1-13: 本地提交态与父级 pending 合并禁用，防双击重复创建。
   const [submitting, setSubmitting] = useState(false);
   const submitDisabled = submitting || isPending;
 
@@ -215,11 +243,6 @@ export function ProfileForm({
     [platformFontSets],
   );
 
-  // A16: the default font set comes only from the backend
-  // (`default_font_set_id` per platform, integrity-ok only). The form
-  // never derives a default of its own. The refs below make "none" a
-  // sticky, explicit choice: once the user picks it, the backend default
-  // is never re-applied over it.
   const fontSetUserChosenRef = useRef(false);
   const defaultFontSetAppliedRef = useRef<string | null>(null);
 
@@ -255,7 +278,7 @@ export function ProfileForm({
     { value: "__none__", label: t("formFontSetNone") },
     ...sortedFontSets.map((fontSet) => ({
       value: fontSet.set_id,
-      label: `${fontSet.set_id} · ${fontSet.source_version ?? ""}`,
+      label: formatFontSetDisplayName(fontSet, t),
     })),
   ];
   const localeOptions: SelectOption[] = [
@@ -276,7 +299,7 @@ export function ProfileForm({
     { value: "careful", label: t("formPresetCareful") },
   ];
   const colorSchemeOptions: SelectOption[] = [
-    { value: "__none__", label: t("formFontSetNone") },
+    { value: "__none__", label: t("formColorNoPreference") },
     { value: "light", label: t("formColorLight") },
     { value: "dark", label: t("formColorDark") },
     { value: "no-preference", label: t("formColorNoPreference") },
@@ -293,9 +316,6 @@ export function ProfileForm({
     try {
       const start = intentRef.current === "create-start";
       intentRef.current = "create";
-      // t058 A24: an edit submits only the fields that differ from the
-      // initial values, so another client's concurrent edits are never
-      // written back with stale values. Create still sends the full form.
       const payload: ProfileCreateRequest | ProfileUpdateRequest =
         mode === "edit"
           ? diffProfileValues(values, baselineRef.current)
@@ -414,9 +434,33 @@ export function ProfileForm({
           <div data-testid="profile-form-proxy">
             <Select
               value={values.proxy_id ?? "__direct__"}
-              onValueChange={(value) =>
-                setField("proxy_id", value === "__direct__" ? null : value)
-              }
+              onValueChange={(value) => {
+                const nextProxyId = value === "__direct__" ? null : value;
+                const matchedProxy = proxies.find((item) => item.id === nextProxyId);
+                const inferredTz = timezoneForProxy(matchedProxy);
+                setValues((prev) => {
+                  const nextTz = inferredTz ?? prev.timezone ?? null;
+                  const nextLocale =
+                    inferredTz != null
+                      ? localeForTimezone(inferredTz)
+                      : prev.locale;
+                  const nextFontSetId = fontSetUserChosenRef.current
+                    ? prev.font_set_id
+                    : selectFontSetForLocaleAndPlatform(
+                        fontSets,
+                        normalizePlatform(prev.fingerprint_platform),
+                        nextLocale,
+                        defaultFontSetId,
+                      );
+                  return {
+                    ...prev,
+                    proxy_id: nextProxyId,
+                    timezone: nextTz,
+                    locale: nextLocale,
+                    font_set_id: nextFontSetId,
+                  } as ProfileFormValues;
+                });
+              }}
               options={proxyOptions}
               ariaLabel={t("formProxy")}
             />
@@ -439,10 +483,19 @@ export function ProfileForm({
                     timezone == null
                       ? prev.locale
                       : localeForTimezone(timezone);
+                  const nextFontSetId = fontSetUserChosenRef.current
+                    ? prev.font_set_id
+                    : selectFontSetForLocaleAndPlatform(
+                        fontSets,
+                        normalizePlatform(prev.fingerprint_platform),
+                        locale,
+                        defaultFontSetId,
+                      );
                   return {
                     ...prev,
                     timezone,
                     locale,
+                    font_set_id: nextFontSetId,
                   } as ProfileFormValues;
                 });
               }}
@@ -452,9 +505,29 @@ export function ProfileForm({
             <div data-testid="profile-form-locale">
               <Select
                 value={values.locale ?? "en-US"}
-                onValueChange={(value) =>
-                  setField("locale", value === "zh-CN" ? "zh-CN" : "en-US")
-                }
+                onValueChange={(value) => {
+                  const nextLocale = value === "zh-CN" ? "zh-CN" : "en-US";
+                  setValues((prev) => {
+                    const nextFontSetId = fontSetUserChosenRef.current
+                      ? prev.font_set_id
+                      : selectFontSetForLocaleAndPlatform(
+                          fontSets,
+                          normalizePlatform(prev.fingerprint_platform),
+                          nextLocale,
+                          defaultFontSetId,
+                        );
+                    const nextTimezone =
+                      prev.timezone != null
+                        ? timezoneForLocale(nextLocale, prev.timezone)
+                        : prev.timezone;
+                    return {
+                      ...prev,
+                      locale: nextLocale,
+                      timezone: nextTimezone,
+                      font_set_id: nextFontSetId,
+                    } as ProfileFormValues;
+                  });
+                }}
                 options={localeOptions}
                 ariaLabel={t("formLocale")}
               />
@@ -473,14 +546,32 @@ export function ProfileForm({
                   const nextPlatform = normalizePlatform(value);
                   fontSetUserChosenRef.current = false;
                   defaultFontSetAppliedRef.current = nextPlatform;
-                  setValues(
-                    (prev) =>
-                      ({
-                        ...prev,
-                        fingerprint_platform: nextPlatform,
-                        font_set_id: defaultFontSetId[nextPlatform] ?? null,
-                      }) as ProfileFormValues,
-                  );
+                  setValues((prev) => {
+                    const nextFontSetId = selectFontSetForLocaleAndPlatform(
+                      fontSets,
+                      nextPlatform,
+                      prev.locale,
+                      defaultFontSetId,
+                    );
+                    const isDefaultResolution =
+                      (prev.screen_width === 1920 && prev.screen_height === 1080) ||
+                      (prev.screen_width === 1440 && prev.screen_height === 900);
+                    return {
+                      ...prev,
+                      fingerprint_platform: nextPlatform,
+                      font_set_id: nextFontSetId,
+                      screen_width: isDefaultResolution
+                        ? nextPlatform === "macos"
+                          ? 1440
+                          : 1920
+                        : prev.screen_width,
+                      screen_height: isDefaultResolution
+                        ? nextPlatform === "macos"
+                          ? 900
+                          : 1080
+                        : prev.screen_height,
+                    } as ProfileFormValues;
+                  });
                 }}
                 options={platformOptions}
                 ariaLabel={t("formPlatform")}
@@ -495,10 +586,6 @@ export function ProfileForm({
                   fontSetUserChosenRef.current = true;
                   setField("font_set_id", value === "__none__" ? null : value);
                 }}
-                // The "none" pick must count as an explicit choice even
-                // when "none" is already showing (e.g. picked before
-                // the backend default arrives): Radix does not call
-                // onValueChange for a same-value pick, so record it here.
                 onOptionSelect={() => {
                   fontSetUserChosenRef.current = true;
                 }}
@@ -508,17 +595,11 @@ export function ProfileForm({
             </div>
           </Row>
         </div>
-        <div className="flex flex-col gap-xs rounded-md bg-surface-subtle p-sm">
-          <span
-            data-testid="profile-form-fontset-selected"
-            className="font-mono text-mono-md text-on-surface"
-          >
+        <div className="hidden" aria-hidden="true">
+          <span data-testid="profile-form-fontset-selected">
             {values.font_set_id ?? t("formFontSetNone")}
           </span>
-          <div
-            data-testid="profile-form-fontset-meta"
-            className="font-ui text-label-sm text-on-surface-muted"
-          >
+          <div data-testid="profile-form-fontset-meta">
             {selectedFontSet ? (
               <>
                 <span>
@@ -537,10 +618,7 @@ export function ProfileForm({
               <span>{t("formFontSetNone")}</span>
             )}
           </div>
-          <ul
-            data-testid="profile-form-fontset-list"
-            className="flex flex-col gap-xs font-ui text-label-sm text-on-surface-muted"
-          >
+          <ul data-testid="profile-form-fontset-list">
             {platformFontSets.map((fontSet) => (
               <li
                 key={fontSet.set_id}
@@ -565,25 +643,51 @@ export function ProfileForm({
               : t("formFontSetInconsistent")}
           </Banner>
         )}
-        <Row label={t("formSeed")}>
+        <Row
+          label={t("formSeed")}
+          hint={
+            <Tooltip content={t("formSeedRangeHint")}>
+              <span
+                data-testid="profile-form-seed-hint"
+                aria-label={t("formSeedRangeHint")}
+                className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+              >
+                <AlertCircle
+                  aria-hidden="true"
+                  className="size-(--component-icon-sm-size)"
+                />
+              </span>
+            </Tooltip>
+          }
+        >
           <div className="flex items-center gap-sm">
-            <span
-              data-testid="profile-form-seed"
-              className="font-mono text-mono-md text-on-surface"
-            >
+            <Input
+              type="number"
+              min={100000}
+              max={999999}
+              aria-label={t("formSeed")}
+              value={values.fingerprint_seed ?? ""}
+              onChange={(event) => {
+                const parsed = Number(event.target.value);
+                if (Number.isFinite(parsed)) {
+                  setField("fingerprint_seed", parsed);
+                }
+              }}
+              className="no-spin font-mono"
+            />
+            <span data-testid="profile-form-seed" className="sr-only">
               {values.fingerprint_seed ?? ""}
             </span>
-            <Button
+            <IconButton
               data-testid="profile-form-reseed"
-              onClick={() =>
-                setField(
-                  "fingerprint_seed",
-                  Math.floor(Math.random() * 2147483647) + 1,
-                )
-              }
+              label={t("formReseed")}
+              onClick={() => setField("fingerprint_seed", randomValidSeed())}
             >
-              {t("formReseed")}
-            </Button>
+              <RefreshCw
+                aria-hidden="true"
+                className="size-(--component-icon-md-size)"
+              />
+            </IconButton>
           </div>
         </Row>
         <div className="flex gap-sm">
@@ -610,7 +714,7 @@ export function ProfileForm({
           </Row>
         </div>
         <Row label={t("formResolution")}>
-          <div className="flex gap-sm">
+          <div className="flex items-center gap-sm">
             <Input
               type="number"
               aria-label={t("widthPx")}
@@ -618,7 +722,9 @@ export function ProfileForm({
               onChange={(event) =>
                 setField("screen_width", Number(event.target.value))
               }
+              className="no-spin font-mono"
             />
+            <span className="font-mono text-mono-md text-on-surface-muted">×</span>
             <Input
               type="number"
               aria-label={t("heightPx")}
@@ -626,6 +732,7 @@ export function ProfileForm({
               onChange={(event) =>
                 setField("screen_height", Number(event.target.value))
               }
+              className="no-spin font-mono"
             />
           </div>
         </Row>
@@ -639,9 +746,6 @@ export function ProfileForm({
           {t("formSectionAdvanced")}
         </summary>
         <div className="mt-md flex flex-col gap-md">
-          <p className="font-ui text-label-sm text-on-surface-muted">
-            {t("formAdvancedHint")}
-          </p>
           <div className="grid grid-cols-2 gap-sm">
             {ADVANCED_BOOL_FIELDS.map(({ key, labelKey }) => (
               <BoolRow

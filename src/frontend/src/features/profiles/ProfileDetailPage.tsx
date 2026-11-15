@@ -1,5 +1,6 @@
 import { Link, useLocation, useParams } from "react-router";
-import { Banner, Button, GroupChip, StatusBadge } from "../../shared/ui";
+import { AlertCircle } from "lucide-react";
+import { Banner, Button, GroupChip, StatusBadge, Tooltip } from "../../shared/ui";
 import { useI18n, type TranslationKey } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import {
@@ -50,8 +51,6 @@ export function ProfileDetailPage() {
   const observed = runtime?.observed_state ?? "stopped";
   const status = statusDescriptor(observed);
   const group = groups?.find((item) => item.id === profile?.group_id);
-  // P2: runtime 失败不阻塞配置页；仅 profile 失败才整页错误，runtime
-  // 失败降级为顶栏 Banner，配置/文件/自动化/维护仍可访问。
   const profileLoadError = profileQuery.isError
     ? (profileQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
@@ -94,17 +93,25 @@ export function ProfileDetailPage() {
       className="flex flex-col gap-lg p-lg"
     >
       <header className="flex flex-wrap items-center gap-md">
-        <h1 className="font-ui text-headline-md text-on-surface">
-          {profile?.display_number != null && (
-            <span
-              data-testid="profile-detail-number"
-              className="mr-xs text-on-surface-muted"
-            >
-              #{String(profile.display_number).padStart(4, "0")}
-            </span>
+        <div className="flex items-center gap-xs">
+          <h1 className="font-ui text-headline-md text-on-surface">
+            {profile?.name ?? ""}
+          </h1>
+          {profile?.notes && (
+            <Tooltip content={profile.notes}>
+              <span
+                data-testid="profile-detail-note-trigger"
+                aria-label={profile.notes}
+                className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+              >
+                <AlertCircle
+                  aria-hidden="true"
+                  className="size-(--component-icon-md-size)"
+                />
+              </span>
+            </Tooltip>
           )}
-          {profile?.name ?? ""}
-        </h1>
+        </div>
         <div data-testid="profile-detail-status">
           <StatusBadge tone={status.tone} label={t(status.label)} />
         </div>

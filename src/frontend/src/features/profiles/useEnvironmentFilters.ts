@@ -7,12 +7,14 @@ import type {
 } from "../../shared/api/types";
 
 export type EnvironmentStatusFilter = "all" | "running" | "stopped" | "error";
+export type EnvironmentPlatformFilter = "all" | "windows" | "macos";
 export type EnvironmentSort = "manual" | "name" | "recent" | "created";
 
 export interface EnvironmentFilters {
   q: string;
   status: EnvironmentStatusFilter;
   group: string;
+  platform: EnvironmentPlatformFilter;
   proxy: string;
   sort: EnvironmentSort;
 }
@@ -26,6 +28,7 @@ const DEFAULTS: EnvironmentFilters = {
   q: "",
   status: "all",
   group: "all",
+  platform: "all",
   proxy: "all",
   sort: "manual",
 };
@@ -36,10 +39,19 @@ const STATUS_VALUES: EnvironmentStatusFilter[] = [
   "stopped",
   "error",
 ];
+const PLATFORM_VALUES: EnvironmentPlatformFilter[] = [
+  "all",
+  "windows",
+  "macos",
+];
 const SORT_VALUES: EnvironmentSort[] = ["manual", "name", "recent", "created"];
 
 function isStatus(value: string | null): value is EnvironmentStatusFilter {
   return value !== null && STATUS_VALUES.includes(value as EnvironmentStatusFilter);
+}
+
+function isPlatform(value: string | null): value is EnvironmentPlatformFilter {
+  return value !== null && PLATFORM_VALUES.includes(value as EnvironmentPlatformFilter);
 }
 
 function isSort(value: string | null): value is EnvironmentSort {
@@ -55,11 +67,13 @@ export function useEnvironmentFilters(): {
 
   const filters = useMemo<EnvironmentFilters>(() => {
     const status = searchParams.get("status");
+    const platform = searchParams.get("platform");
     const sort = searchParams.get("sort");
     return {
       q: searchParams.get("q") ?? "",
       status: isStatus(status) ? status : "all",
       group: searchParams.get("group") ?? "all",
+      platform: isPlatform(platform) ? platform : "all",
       proxy: searchParams.get("proxy") ?? "all",
       sort: isSort(sort) ? sort : "manual",
     };
@@ -93,6 +107,7 @@ export function isFiltered(filters: EnvironmentFilters): boolean {
     filters.q !== "" ||
     filters.status !== "all" ||
     filters.group !== "all" ||
+    filters.platform !== "all" ||
     filters.proxy !== "all"
   );
 }
@@ -138,7 +153,16 @@ export function filterEnvironmentRows<T extends FilterableEnvironmentRow>(
     ) {
       return false;
     }
-    if (filters.proxy !== "all" && row.profile.proxy_id !== filters.proxy) {
+    const rowPlatform = row.profile.fingerprint_platform ?? "windows";
+    if (filters.platform !== "all" && rowPlatform !== filters.platform) {
+      return false;
+    }
+    if (filters.proxy === "direct") {
+      if (row.profile.proxy_id != null) return false;
+    } else if (
+      filters.proxy !== "all" &&
+      row.profile.proxy_id !== filters.proxy
+    ) {
       return false;
     }
     if (query) {

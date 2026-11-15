@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { AlertCircle } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { Checkbox, GroupChip, StatusBadge } from "../../shared/ui";
+import { Checkbox, GroupChip, StatusBadge, Tooltip } from "../../shared/ui";
 import { formatRelativeTime } from "./formatRelativeTime";
 import {
   DirectNetwork,
   EnvironmentRowActions,
+  formatPlatformLabel,
   PlatformIcon,
   ProxyNetwork,
   statusDescriptor,
@@ -38,6 +40,13 @@ export function EnvironmentCard({
     failedCapturedAt !== capturedAt
       ? `/api/v1/profiles/${id}/preview?v=${encodeURIComponent(capturedAt)}`
       : null;
+  const platformLabel = formatPlatformLabel(
+    row.profile.fingerprint_platform,
+    t,
+  );
+  const tzLabel =
+    row.profile.timezone ||
+    (row.profile.geoip ? t("envGeoipFollowProxy") : "");
 
   return (
     <div
@@ -60,15 +69,25 @@ export function EnvironmentCard({
         ) : null}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-sm">
-        <span className="flex items-baseline gap-xs font-ui text-body-md text-on-surface">
-          <span
-            data-testid={`env-number-${id}`}
-            className="text-on-surface-muted"
-          >
-            #{String(row.profile.display_number).padStart(4, "0")}
+        <div className="flex items-center gap-xs">
+          <span className="font-ui text-body-md text-on-surface">
+            {row.profile.name}
           </span>
-          {row.profile.name}
-        </span>
+          {row.profile.notes && (
+            <Tooltip content={row.profile.notes}>
+              <span
+                data-testid={`env-note-trigger-${id}`}
+                aria-label={row.profile.notes}
+                className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+              >
+                <AlertCircle
+                  aria-hidden="true"
+                  className="size-(--component-icon-sm-size)"
+                />
+              </span>
+            </Tooltip>
+          )}
+        </div>
         <span data-testid={`env-select-${id}`}>
           <Checkbox
             checked={selected}
@@ -97,11 +116,11 @@ export function EnvironmentCard({
       <div className="flex flex-wrap items-center gap-sm">
         <PlatformIcon platform={row.profile.fingerprint_platform} />
         <span className="font-ui text-label-sm text-on-surface-muted">
-          {row.profile.fingerprint_platform ?? "windows"}
+          {platformLabel}
         </span>
-        {row.profile.geoip && (
+        {tzLabel && (
           <span className="font-ui text-label-sm text-on-surface-muted">
-            {t("envGeoipFollowProxy")}
+            · {tzLabel}
           </span>
         )}
       </div>

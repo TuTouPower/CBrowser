@@ -1,3 +1,4 @@
+import { FolderCog, LayoutGrid, List, Plus } from "lucide-react";
 import { useI18n } from "../../i18n";
 import type { GroupResponse, ProxyResponse } from "../../shared/api/types";
 import {
@@ -9,6 +10,7 @@ import {
 import {
   isFiltered,
   type EnvironmentFilters,
+  type EnvironmentPlatformFilter,
   type EnvironmentSort,
   type EnvironmentStatusFilter,
   type SetEnvironmentFilter,
@@ -54,8 +56,14 @@ export function EnvironmentListToolbar({
     ...groups.map((item) => ({ value: item.id, label: item.name })),
     { value: MANAGE_GROUPS_VALUE, label: t("envManageGroups") },
   ];
+  const platformOptions: SelectOption[] = [
+    { value: "all", label: t("envFilterAllPlatforms") },
+    { value: "windows", label: t("formPlatformWindows") },
+    { value: "macos", label: t("formPlatformMacos") },
+  ];
   const proxyOptions: SelectOption[] = [
     { value: "all", label: t("envFilterProxy") },
+    { value: "direct", label: t("envDirect") },
     ...proxies.map((item) => ({ value: item.id, label: item.name })),
   ];
   const sortOptions: SelectOption[] = [
@@ -66,22 +74,7 @@ export function EnvironmentListToolbar({
   ];
 
   return (
-    <div className="flex flex-col gap-md">
-      <div className="flex flex-wrap items-center justify-between gap-md">
-        <h1
-          data-testid="env-title"
-          className="font-ui text-headline-md text-on-surface"
-        >
-          {t("envTitle")}
-        </h1>
-        <Button
-          data-testid="env-new"
-          variant="primary"
-          onClick={onNew}
-        >
-          {t("envNew")}
-        </Button>
-      </div>
+    <div className="flex flex-wrap items-center justify-between gap-sm">
       <div className="flex flex-wrap items-center gap-sm">
         <SearchField
           data-testid="env-search"
@@ -108,6 +101,16 @@ export function EnvironmentListToolbar({
           }}
           options={groupOptions}
         />
+        <div data-testid="env-platform-filter">
+          <Select
+            ariaLabel={t("envFilterPlatform")}
+            value={filters.platform ?? "all"}
+            onValueChange={(value) =>
+              setFilter("platform", value as EnvironmentPlatformFilter)
+            }
+            options={platformOptions}
+          />
+        </div>
         <Select
           ariaLabel={t("envFilterProxy")}
           value={filters.proxy}
@@ -131,24 +134,57 @@ export function EnvironmentListToolbar({
             {t("envClearFilters")}
           </Button>
         )}
-        <div className="ml-auto flex items-center gap-xs">
-          <Button
+      </div>
+
+      <div className="ml-auto flex items-center gap-sm">
+        <Button
+          data-testid="env-manage-groups"
+          variant="secondary"
+          onClick={onManageGroups}
+        >
+          <FolderCog aria-hidden="true" className="size-(--component-icon-md-size)" />
+          <span>{t("envManageGroups")}</span>
+        </Button>
+
+        <div className="flex items-center gap-2xs rounded-md border border-outline bg-surface p-2xs">
+          <button
+            type="button"
             data-testid="env-layout-list"
-            size="sm"
-            variant={layout === "list" ? "primary" : "secondary"}
+            aria-label={t("envLayoutList")}
+            title={t("envLayoutList")}
             onClick={() => setLayout("list")}
+            className={`inline-flex size-(--container-control-sm) items-center justify-center rounded-sm transition-colors ${
+              layout === "list"
+                ? "bg-accent text-on-accent"
+                : "text-on-surface-muted hover:bg-surface-hover hover:text-on-surface"
+            }`}
           >
-            {t("envLayoutList")}
-          </Button>
-          <Button
+            <List aria-hidden="true" className="size-(--component-icon-md-size)" />
+          </button>
+          <button
+            type="button"
             data-testid="env-layout-card"
-            size="sm"
-            variant={layout === "card" ? "primary" : "secondary"}
+            aria-label={t("envLayoutCard")}
+            title={t("envLayoutCard")}
             onClick={() => setLayout("card")}
+            className={`inline-flex size-(--container-control-sm) items-center justify-center rounded-sm transition-colors ${
+              layout === "card"
+                ? "bg-accent text-on-accent"
+                : "text-on-surface-muted hover:bg-surface-hover hover:text-on-surface"
+            }`}
           >
-            {t("envLayoutCard")}
-          </Button>
+            <LayoutGrid aria-hidden="true" className="size-(--component-icon-md-size)" />
+          </button>
         </div>
+
+        <Button
+          data-testid="env-new"
+          variant="primary"
+          onClick={onNew}
+        >
+          <Plus aria-hidden="true" className="size-(--component-icon-md-size)" />
+          <span>{t("envNew")}</span>
+        </Button>
       </div>
     </div>
   );

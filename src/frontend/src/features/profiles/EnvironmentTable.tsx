@@ -1,4 +1,4 @@
-import { AppWindow, Laptop, Monitor } from "lucide-react";
+import { AlertCircle, AppWindow, Laptop, Monitor } from "lucide-react";
 import { useI18n, type TranslationKey } from "../../i18n";
 import type {
   GroupResponse,
@@ -10,8 +10,6 @@ import {
   Button,
   Checkbox,
   GroupChip,
-  ProtocolChip,
-  RegionCode,
   StatusBadge,
   Table,
   TableBody,
@@ -20,7 +18,6 @@ import {
   TableHeader,
   TableRow,
   Tooltip,
-  WarningIcon,
   type StatusTone,
 } from "../../shared/ui";
 import { formatRelativeTime } from "./formatRelativeTime";
@@ -70,6 +67,15 @@ export function PlatformIcon({
   return <Icon aria-hidden="true" className="size-(--component-icon-md-size) text-on-surface-muted" />;
 }
 
+export function formatPlatformLabel(
+  platform: string | null | undefined,
+  t: (key: TranslationKey) => string,
+): string {
+  return platform === "macos"
+    ? t("formPlatformMacos")
+    : t("formPlatformWindows");
+}
+
 export function EnvironmentRowActions({
   row,
   onAction,
@@ -117,27 +123,18 @@ export function DirectNetwork({ id }: { id: string }) {
   return (
     <span
       data-testid={`env-direct-${id}`}
-      className="inline-flex flex-wrap items-center gap-xs"
+      className="font-ui text-body-sm text-on-surface-muted"
     >
-      <WarningIcon className="text-warning" />
-      <span className="font-ui text-body-sm text-warning">{t("envDirect")}</span>
-      <span
-        data-testid={`env-direct-warning-${id}`}
-        className="font-ui text-label-sm text-on-surface-muted"
-      >
-        {t("envDirectWarning")}
-      </span>
+      {t("envDirect")}
     </span>
   );
 }
 
 export function ProxyNetwork({ proxy }: { proxy: ProxyResponse }) {
   return (
-    <div className="flex flex-wrap items-center gap-sm">
-      <span className="font-ui text-body-sm text-on-surface">{proxy.name}</span>
-      <ProtocolChip protocol={proxy.scheme} />
-      {proxy.country_code && <RegionCode code={proxy.country_code} />}
-    </div>
+    <span className="font-ui text-body-sm text-on-surface">
+      {proxy.name}
+    </span>
   );
 }
 
@@ -192,6 +189,13 @@ export function EnvironmentTable({
             const errorReason =
               row.runtime?.last_coordinator_error ?? row.profile.name;
             const running = observed === "running";
+            const platformLabel = formatPlatformLabel(
+              row.profile.fingerprint_platform,
+              t,
+            );
+            const tzLabel =
+              row.profile.timezone ||
+              (row.profile.geoip ? t("envGeoipFollowProxy") : "");
             return (
               <TableRow
                 key={id}
@@ -208,20 +212,23 @@ export function EnvironmentTable({
                   </span>
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-col gap-xs">
-                    <span className="flex items-baseline gap-xs font-ui text-body-md text-on-surface">
-                      <span
-                        data-testid={`env-number-${id}`}
-                        className="text-on-surface-muted"
-                      >
-                        #{String(row.profile.display_number).padStart(4, "0")}
-                      </span>
+                  <div className="flex items-center gap-xs">
+                    <span className="font-ui text-body-md text-on-surface">
                       {row.profile.name}
                     </span>
                     {row.profile.notes && (
-                      <span className="font-ui text-label-sm text-on-surface-muted">
-                        {row.profile.notes}
-                      </span>
+                      <Tooltip content={row.profile.notes}>
+                        <span
+                          data-testid={`env-note-trigger-${id}`}
+                          aria-label={row.profile.notes}
+                          className="inline-flex cursor-help items-center text-on-surface-muted hover:text-on-surface"
+                        >
+                          <AlertCircle
+                            aria-hidden="true"
+                            className="size-(--component-icon-sm-size)"
+                          />
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
                 </TableCell>
@@ -245,11 +252,11 @@ export function EnvironmentTable({
                   <div className="flex flex-wrap items-center gap-sm">
                     <PlatformIcon platform={row.profile.fingerprint_platform} />
                     <span className="font-ui text-body-sm text-on-surface">
-                      {row.profile.fingerprint_platform ?? "windows"}
+                      {platformLabel}
                     </span>
-                    {row.profile.geoip && (
+                    {tzLabel && (
                       <span className="font-ui text-label-sm text-on-surface-muted">
-                        {t("envGeoipFollowProxy")}
+                        · {tzLabel}
                       </span>
                     )}
                   </div>
@@ -270,14 +277,6 @@ export function EnvironmentTable({
                       </Tooltip>
                     ) : (
                       <StatusBadge tone={status.tone} label={t(status.label)} />
-                    )}
-                    {observed === "error" && (
-                      <span
-                        data-testid={`env-error-reason-${id}`}
-                        className="font-ui text-label-sm text-on-surface-muted"
-                      >
-                        {t("envErrorReason", { name: errorReason })}
-                      </span>
                     )}
                   </div>
                 </TableCell>
