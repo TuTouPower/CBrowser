@@ -7,3 +7,4 @@
 - 现状：有效（CloakBrowser 0.6.4 / Chromium 146 现行能力，ADR 023 依据）
 - 采纳：t035（无后续 tid）。
 - 现状补充：拆除外置认证转发器后，该能力成为 Browser 直连上游代理、凭据直接用于 `--proxy-server` 的依据（ADR 037）；`credential_revision` 失败封闭不变。
+- 边界补充（2026-11-15 终局门禁实测）：内联凭据**只对 `socks5://` 成立**。`--proxy-server=http://user:pass@host:port` 时引擎把 `user:pass@host` 整段当作主机名，DNS 解析失败、连 TCP 都不发起（recording proxy 日志为空；去掉 userinfo 后同一代理立刻收到 `PROXY_GET`）；加 407 `Proxy-Authenticate` 挑战亦不重试。故 HTTP/HTTPS 上游若要带凭据，须由上游接受无凭据访问或改用 `socks5`，不能依赖 URL userinfo；`tests/e2e/test_browser_runtime_e2e.py::test_t035_proxy_outbound_and_cdp_browser_version` 以无凭据配置验 egress，内联凭据的 URL 拼装与编码由 `tests/unit/test_t035_proxy_runtime.py` 覆盖。
