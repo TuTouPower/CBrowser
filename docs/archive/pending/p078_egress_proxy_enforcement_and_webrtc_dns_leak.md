@@ -21,3 +21,9 @@ p041 写「Docker 版由每环境防火墙保证只走代理」并列出 `disabl
 1. 代理进程被 kill 后 Browser 角色不通公网，且不回退宿主 IP 直连。
 2. 检测页无 `srflx` 真实出口候选、无 DNS/QUIC 直出；解析归属与出口 IP 一致。
 3. 两个未配代理 Profile 不共享可关联的出口身份；真链 E2E 覆盖强制代理与无代理两种 Profile。
+
+## 复核（2026-11-15，实现撤销）
+
+上一节裁决落地的 `NetworkPolicySpec.proxy_enforced` + Browser 出口尾部 DROP 已在同日撤销（提交 `047b4d1`）。原因：真链 E2E `test_proxy_library_e2e.py::test_ac008_proxy_library_outbound_via_ui` 单跑稳定失败——Browser 容器日志停在 `Launching CloakBrowser`，`runner_info.json` 20 秒内未落盘，超过 Supervisor 30 秒 readiness 窗口（`Timed out waiting for current Browser instance readiness`）。出口全 DROP 把引擎启动链路本身也断了，属真回归，按开发铁律撤销。
+
+结论不变：`--proxy-server` 是 Chromium 进程级 fail-closed 契约，代理不可达即 `ERR_PROXY_CONNECTION_FAILED`，页面直接打不开，不会自动降级为宿主真实 IP 直连；用户裁决「配了代理但代理挂了不能暴露真实 IP，直接断掉报错」由现状满足。未配代理的环境用本机真实 IP 是预期行为。不再在 iptables 层叠加「只放代理端点」的收紧，也不做 watchdog / srflx / QUIC / DNS 单独拦截那套。
