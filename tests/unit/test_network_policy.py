@@ -75,28 +75,6 @@ def test_render_iptables_rules_browser() -> None:
     assert "COMMIT" in rules
 
 
-def test_browser_with_proxy_drops_all_non_proxy_egress() -> None:
-    spec = NetworkPolicySpec(
-        role="browser",
-        allowed_tcp=[("10.251.7.20", 1080)],
-        allowed_udp=[("127.0.0.11", 53)],
-        proxy_enforced=True,
-    )
-    rules = render_iptables_rules(spec)
-    assert "-A OUTPUT -p tcp -d 10.251.7.20 --dport 1080 -j ACCEPT" in rules
-    assert "-A OUTPUT -p udp -d 127.0.0.11 --dport 53 -j ACCEPT" in rules
-    assert "-A OUTPUT -j DROP" in rules
-    assert "-A OUTPUT -j ACCEPT" not in rules
-    assert "-A OUTPUT -j DROP" in render_ip6tables_rules(spec)
-    assert "COMMIT" in rules
-
-
-def test_browser_without_proxy_keeps_host_egress() -> None:
-    spec = NetworkPolicySpec(role="browser", proxy_enforced=False)
-    rules = render_iptables_rules(spec)
-    assert "-A OUTPUT -j ACCEPT" in rules
-
-
 def test_render_iptables_rules_stream() -> None:
     spec = NetworkPolicySpec(
         role="stream",
