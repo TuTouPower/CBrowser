@@ -18,12 +18,10 @@ from cbrowser.domain.models import ConfigVersionSnapshot, ProfileConfig
 from cbrowser.api.internal_supervisor import get_proxy_credentials
 from cbrowser.runtime_agent.runner import (
     PROXY_CREDENTIALS_CHANGED,
-    PROXY_HTTP_AUTH_UNSUPPORTED,
     ProxyCredentialsChangedError as RunnerProxyChanged,
-    ProxyHttpAuthUnsupportedError,
-    build_proxy_server_arg,
-    resolve_proxy_server_arg,
+    resolve_browser_egress_plan,
 )
+from cbrowser.shared.egress_plan import format_proxy_url
 from cbrowser.supervisor.core import (
     PROXY_CREDENTIALS_CHANGED as SUP_PROXY_CHANGED,
     ProxyCredentialsChangedError as SupervisorProxyChanged,
@@ -74,17 +72,17 @@ def _core_with_response(payload: dict, status: int = 200) -> SupervisorCore:
     return core
 
 
-# ---- --proxy-server construction (AC-008) --------------------------------
+# ---- SDK proxy= URL construction (replaced manual --proxy-server, s022/d046) ---
 
 
-def test_authenticated_socks5_proxy_server_arg() -> None:
-    assert build_proxy_server_arg(CREDS) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
+def test_authenticated_socks5_proxy_url() -> None:
+    assert format_proxy_url(CREDS) == (
+        "socks5://user:s3cr3t@proxy.example.com:1080"
     )
 
 
-def test_no_auth_http_proxy_server_arg() -> None:
-    assert build_proxy_server_arg(
+def test_no_auth_http_proxy_url() -> None:
+    assert format_proxy_url(
         {
             "scheme": "http",
             "host": "10.0.0.5",
@@ -93,39 +91,31 @@ def test_no_auth_http_proxy_server_arg() -> None:
             "password": None,
             "credential_revision": 1,
         }
-    ) == "--proxy-server=http://10.0.0.5:8080"
+    ) == "http://10.0.0.5:8080"
 
 
+# Note: the legacy test_authenticated_http_https_proxy_is_refused was removed because
+# s022/d046 proved 75911f0's restriction only applied to manual --proxy-server=;
+# official SDK proxy= natively supports HTTP and HTTPS authentication (all schemes).
 @pytest.mark.parametrize("scheme", ["http", "https"])
-@pytest.mark.parametrize(
-    "auth",
-    [
-        {"username": "user", "password": "s3cr3t"},
-        {"username": "user", "password": None},
-        {"username": None, "password": "s3cr3t"},
-    ],
-)
-def test_authenticated_http_https_proxy_is_refused(scheme: str, auth: dict) -> None:
-    with pytest.raises(ProxyHttpAuthUnsupportedError) as exc:
-        build_proxy_server_arg(
-            {
-                "scheme": scheme,
-                "host": "10.0.0.5",
-                "port": 8080,
-                "credential_revision": 1,
-                **auth,
-            }
-        )
-    assert str(exc.value) == PROXY_HTTP_AUTH_UNSUPPORTED
-    assert "user" not in str(exc.value)
-    assert "s3cr3t" not in str(exc.value)
+def test_authenticated_http_https_proxy_url_is_supported(scheme: str) -> None:
+    assert format_proxy_url(
+        {
+            "scheme": scheme,
+            "host": "10.0.0.5",
+            "port": 8080,
+            "username": "user",
+            "password": "s3cr3t",
+            "credential_revision": 1,
+        }
+    ) == f"{scheme}://user:s3cr3t@10.0.0.5:8080"
 
 
 def test_supported_proxy_shapes_are_unchanged() -> None:
-    assert build_proxy_server_arg(CREDS) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
+    assert format_proxy_url(CREDS) == (
+        "socks5://user:s3cr3t@proxy.example.com:1080"
     )
-    assert build_proxy_server_arg(
+    assert format_proxy_url(
         {
             "scheme": "http",
             "host": "10.0.0.5",
@@ -134,8 +124,8 @@ def test_supported_proxy_shapes_are_unchanged() -> None:
             "password": None,
             "credential_revision": 1,
         }
-    ) == "--proxy-server=http://10.0.0.5:8080"
-    assert build_proxy_server_arg(
+    ) == "http://10.0.0.5:8080"
+    assert format_proxy_url(
         {
             "scheme": "https",
             "host": "10.0.0.5",
@@ -144,8 +134,8 @@ def test_supported_proxy_shapes_are_unchanged() -> None:
             "password": None,
             "credential_revision": 1,
         }
-    ) == "--proxy-server=https://10.0.0.5:8443"
-    assert build_proxy_server_arg(
+    ) == "https://10.0.0.5:8443"
+    assert format_proxy_url(
         {
             "scheme": "socks5",
             "host": "10.0.0.5",
@@ -154,11 +144,11 @@ def test_supported_proxy_shapes_are_unchanged() -> None:
             "password": None,
             "credential_revision": 1,
         }
-    ) == "--proxy-server=socks5://10.0.0.5:1080"
+    ) == "socks5://10.0.0.5:1080"
 
 
 def test_special_chars_are_percent_encoded() -> None:
-    arg = build_proxy_server_arg(
+    arg = format_proxy_url(
         {
             "scheme": "socks5",
             "host": "2001:db8::1",
@@ -186,7 +176,7 @@ def test_special_chars_are_percent_encoded() -> None:
 )
 def test_invalid_credentials_fail_closed_without_secret(bad) -> None:
     with pytest.raises(RunnerProxyChanged) as exc:
-        build_proxy_server_arg(bad)
+        format_proxy_url(bad)
     assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
     assert "s3cr3t" not in str(exc.value)
     assert "pw" not in str(exc.value)
@@ -199,31 +189,30 @@ def test_credentials_revision_mismatch_fails_closed(tmp_path: Path) -> None:
     path = tmp_path / "proxy_credentials.json"
     _write_creds(path, credential_revision=3)
     with pytest.raises(RunnerProxyChanged) as exc:
-        resolve_proxy_server_arg(_config("px1"), _snapshot(2), path)
+        resolve_browser_egress_plan(_config("px1"), _snapshot(2), path)
     assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
     assert "s3cr3t" not in str(exc.value)
 
 
-def test_matching_revision_returns_proxy_arg(tmp_path: Path) -> None:
+def test_matching_revision_returns_proxy_plan(tmp_path: Path) -> None:
     path = tmp_path / "proxy_credentials.json"
     _write_creds(path)
-    assert resolve_proxy_server_arg(_config("px1"), _snapshot(2), path) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
-    )
+    plan = resolve_browser_egress_plan(_config("px1"), _snapshot(2), path)
+    assert plan.proxy_url == "socks5://user:s3cr3t@proxy.example.com:1080"
+    assert plan.proxy_enforced is True
 
 
 def test_no_proxy_id_never_injects_proxy(tmp_path: Path) -> None:
-    assert (
-        resolve_proxy_server_arg(
-            _config(None), _snapshot(None), tmp_path / "missing.json"
-        )
-        is None
+    plan = resolve_browser_egress_plan(
+        _config(None), _snapshot(None), tmp_path / "missing.json"
     )
+    assert plan.proxy_url is None
+    assert plan.proxy_enforced is False
 
 
 def test_missing_credentials_file_fails_closed(tmp_path: Path) -> None:
     with pytest.raises(RunnerProxyChanged) as exc:
-        resolve_proxy_server_arg(
+        resolve_browser_egress_plan(
             _config("px1"), _snapshot(2), tmp_path / "proxy_credentials.json"
         )
     assert str(exc.value) == PROXY_CREDENTIALS_CHANGED
@@ -233,7 +222,7 @@ def test_corrupt_credentials_file_fails_closed(tmp_path: Path) -> None:
     path = tmp_path / "proxy_credentials.json"
     path.write_text("not-json", encoding="utf-8")
     with pytest.raises(RunnerProxyChanged):
-        resolve_proxy_server_arg(_config("px1"), _snapshot(2), path)
+        resolve_browser_egress_plan(_config("px1"), _snapshot(2), path)
 
 
 # ---- Supervisor fail-closed paths (AC-007) --------------------------------
@@ -444,8 +433,8 @@ def test_supervisor_written_credentials_are_accepted_by_runner(
     )
     assert (creds_path.stat().st_mode & 0o777) == 0o600
     snapshot = _snapshot(2)
-    assert resolve_proxy_server_arg(_config("px1"), snapshot, creds_path) == (
-        "--proxy-server=socks5://user:s3cr3t@proxy.example.com:1080"
+    assert resolve_browser_egress_plan(_config("px1"), snapshot, creds_path).proxy_url == (
+        "socks5://user:s3cr3t@proxy.example.com:1080"
     )
 
 
@@ -598,6 +587,7 @@ async def test_browser_container_mounts_credentials_read_only_and_resolves_egres
     )
     policy = adapter._install_network_policy.call_args.args[1]
     assert policy["role"] == "browser"
+    assert policy["proxy_enforced"] is True
     assert policy["allowed_udp"] == [("127.0.0.11", 53)]
     assert adapter.client.containers.run.call_args.kwargs["extra_hosts"] is None
 
@@ -722,11 +712,11 @@ async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
     assert snapshot["proxy_credential_revision"] == 2
     creds = validator.get_secret_dir("p1") / "proxy_credentials.json"
     assert (creds.stat().st_mode & 0o777) == 0o600
-    assert resolve_proxy_server_arg(
+    assert resolve_browser_egress_plan(
         ProfileConfig(name="p1", proxy_id="px1"),
         ConfigVersionSnapshot.model_validate(snapshot),
         creds,
-    ) == "--proxy-server=socks5://u:pw@proxy.example.com:1080"
+    ).proxy_url == "socks5://u:pw@proxy.example.com:1080"
 
 
 async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) -> None:

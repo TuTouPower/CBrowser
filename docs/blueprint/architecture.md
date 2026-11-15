@@ -101,7 +101,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 |**Control API**|`cbrowser-api` 容器（常驻）|HTTP 接口、用户鉴权、Profile CRUD、Artifact 文件服务；viewer 握手时经内部边缘解析端点复用 `AuthService.authorize_viewer` 作唯一会话/Origin/Profile 判定，并签发短期 viewer grant。**系统唯一 SQLite 写入者**（开启 WAL 模式，`busy_timeout=5000`）。**严格禁止挂载 Docker Socket**，禁止直接访问 Browser Runtime 私有网络|
 |**Runtime Supervisor**|`cbrowser-supervisor` 容器（常驻）|**宿主机唯一持有 Docker Socket 的服务**。仅响应内部受限认证 RPC，负责 Profile 双容器生命周期、网络与 UDP 端口分配；通过受控 UDS 代理 CDP 与事件回传。**严格禁止读写或挂载 SQLite**|
 |**Stream Gateway**|`cbrowser-stream-gateway` 容器（常驻）|独立信令网关。维护 Stream Agent 动态注册表；viewer 握手只在本地验证 API 签发的短期 grant、Profile 绑定与 Origin，不接收或解析管理会话 Cookie；为每个外部 ViewerConnection 建立隔离信令隧道双向转发 SDP 与 ICE；进程异常重启不影响底层浏览器进程运行|
-|**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`；代理凭据文件以只读挂载进本容器，CloakBrowser 以含凭据的 `--proxy-server` 直连上游代理（ADR 037）|
+|**Browser Runtime**|`browser-runtime-{id}` 容器（动态）|特定 Profile 的核心运行沙箱。以非 root 运行真实 CloakBrowser、Xvfb、Openbox、PulseAudio 服务（48000 Hz）与 Browser Agent。作为 IPC 供体显式开启 `HostConfig.IpcMode=shareable` 与 1 GiB `/dev/shm`；代理凭据文件以只读挂载进本容器，CloakBrowser 通过 SDK `proxy=`、WebRTC/QUIC 加固参数及有代理 `OUTPUT -j DROP` 网络策略直连上游代理（ADR 038）|
 |**Stream Runtime**|`stream-runtime-{id}` 容器（动态）|特定 Profile 的远程显示沙箱。加入对应 Browser Runtime 的专属 IPC 命名空间，通过 XShm 共享内存捕获画面；负责音频/视频编码与 WebRTC 传输；分配独立 UDP mux 端口。**严格禁止挂载浏览器用户数据目录**|
 |**Browser Agent**|Browser 容器内守护进程|通过专属挂载目录的 `agent.sock`（UDS）暴露受控 RPC：监听 CDP 下载事件、代理授权 CDP 流、上报正常退出事件并自动恢复默认下载策略|
 |**Stream Agent**|Stream 容器内守护进程|向 Gateway 主动注册并保持长连接心跳；执行 Profile 级 8/30 FPS 自适应与页面可见性仲裁（全后台暂停捕获，前台恢复）|

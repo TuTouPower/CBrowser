@@ -95,7 +95,7 @@ Gateway 与 Supervisor 的双向依赖已删除：端点/Origin、Agent 凭证�
 
 验证分为单元/真实 HTTP、独立 Supervisor 与 API 进程、完整 Docker 容器图、网络内核正负对照、CPU 采样和官方 Chrome 实际帧数。各层证据不互相替代。完整部署和容量/P95/8小时/1000次输入验收仍按架构计划后续阶段执行；公网与原生 Linux x86_64 仅两项记为 USER_WAIVED。
 
-## 代理凭据与直连启动（ADR 037）
+## 代理凭据与直连启动（ADR 037 / ADR 038）
 
 - 有代理的 Profile 启动时，Supervisor 把 `proxy_credentials.json`（0600，secret 目录）以只读挂载进 Browser；Runner 校验绑定快照的 `credential_revision`，不符即失败封闭、Browser 不启动。凭据文件缺失、字段非法或修订漂移都不猜默认值。
-- Browser 直接以凭据拼装 `--proxy-server` 连接上游代理，启动顺序为网络 → Browser → Stream；无独立凭据容器，无凭据相关的 readiness 检查或 reconcile 替换分支。停止与 teardown 只清理 Browser/Stream 两个沙箱容器。
+- Browser 与 Supervisor 共享同一出站规划 `cbrowser/shared/egress_plan.py`：Browser 将规范化代理 URL 传入 CloakBrowser SDK `proxy=`（支持 `http`/`https`/`socks5` 认证与 `geoip=True` 同路路由，ADR 038 替代 ADR 037 手写 `--proxy-server`）并启用 QUIC/WebRTC 加固参数；Supervisor 对有代理 Browser 强制施加双栈 `OUTPUT -j DROP`（`proxy_enforced=True`），启动顺序为网络 → Browser → Stream，巡检发现策略退化即 `fail_close_container`。无独立凭据容器，停止与 teardown 只清理 Browser/Stream 两个沙箱容器。

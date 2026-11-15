@@ -60,6 +60,12 @@ from cbrowser.supervisor.container_spec import (
     x11_helper_labels,
 )
 from cbrowser.shared.atomic_write import atomic_write_text
+from cbrowser.shared.egress_plan import (
+    ProfileEgressPlan,
+    derive_supervisor_egress_plan,
+    parse_upstream_endpoint,
+    probe_egress_plan,
+)
 from cbrowser.supervisor.gate_identity import gate_labels
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
 from cbrowser.supervisor.network_spec import (
@@ -90,36 +96,26 @@ from docker.errors import DockerException, NotFound
 logger = logging.getLogger("cbrowser.supervisor.docker_adapter")
 
 PROXY_CREDENTIALS_FILENAME = "proxy_credentials.json"
-_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
 
 def proxy_endpoint_from_credentials(creds_path: Path) -> str | None:
-    """Build the proxy URL used for Browser egress policy resolution.
+    """Build the credentialless proxy URL used for Browser egress policy resolution."""
+    parsed = parse_upstream_endpoint(creds_path)
+    return parsed[0] if parsed is not None else None
 
-    The old ``config.proxy`` field no longer exists; the connection parameters
-    now live in the mounted credentials file. Returns ``None`` when there is
-    no proxy or the file is unusable, which yields an empty ``allowed_tcp``.
-    """
+
+def _snapshot_has_proxy(snapshot_path: Path) -> bool | None:
+    """Read whether the frozen runtime config snapshot binds a proxy."""
     try:
-        creds = json.loads(creds_path.read_text(encoding="utf-8"))
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(creds, dict):
+    if not isinstance(payload, dict):
         return None
-    scheme = creds.get("scheme")
-    host = creds.get("host")
-    port = creds.get("port")
-    if (
-        isinstance(scheme, str)
-        and scheme in _PROXY_SCHEMES
-        and isinstance(host, str)
-        and host
-        and type(port) is int
-        and 1 <= port <= 65535
-    ):
-        netloc_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
-        return f"{scheme}://{netloc_host}:{port}"
-    return None
+    config = payload.get("config")
+    if not isinstance(config, dict):
+        return None
+    return bool(config.get("proxy_id"))
 
 
 def _udp_mux_helper_environment() -> dict[str, str]:
@@ -681,6 +677,26 @@ class DockerAdapter:
                 "Egress probe helper creation failed: " + detail
             ) from None
 
+    def _policy_from_egress_plan(
+        self, container: Any, plan: ProfileEgressPlan
+    ) -> dict[str, Any]:
+        """Resolve upstream TCP endpoints inside ``container`` and render the policy spec."""
+        allowed_tcp = (
+            self._resolved_endpoint(container, plan.upstream_url)
+            if plan.upstream_url is not None
+            else []
+        )
+        return plan.to_network_policy_spec(allowed_tcp)
+
+    def _browser_egress_policy(
+        self, container: Any, *, has_proxy: bool, creds_file: Path
+    ) -> dict[str, Any]:
+        """Derive the unified Browser netfilter spec from proxy binding and credentials."""
+        plan = derive_supervisor_egress_plan(
+            has_proxy=has_proxy, creds_path=creds_file
+        )
+        return self._policy_from_egress_plan(container, plan)
+
     def _install_probe_network_policy(
         self,
         helper,
@@ -688,17 +704,15 @@ class DockerAdapter:
         gate: Path,
         probe_id: str,
     ) -> None:
-        """Browser-role policy that allows only the (mapped) proxy endpoint."""
-        host_for_policy = runtime_endpoint.host
-        if ":" in host_for_policy and not host_for_policy.startswith("["):
-            host_for_policy = f"[{host_for_policy}]"
-        allowed = self._resolved_endpoint(
-            helper,
-            f"{runtime_endpoint.scheme}://{host_for_policy}:{runtime_endpoint.port}",
+        """Enforce strict proxy-only Browser policy matching live runtime egress."""
+        plan = probe_egress_plan(
+            runtime_endpoint.scheme,
+            runtime_endpoint.host,
+            runtime_endpoint.port,
         )
         self._install_network_policy(
             helper,
-            {"role": "browser", "allowed_tcp": allowed},
+            self._policy_from_egress_plan(helper, plan),
             gate,
             f"probe-{probe_id}",
             "browser",
@@ -1901,16 +1915,14 @@ with path.open('w') as output:
                     "bind": str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
                     "mode": "ro",
                 }
-        # The Browser connects directly to the upstream proxy: the
-        # credentials file (Profile secret dir) is mounted read-only into
-        # the Browser, and the Runner builds --proxy-server from it. The
-        # egress policy admits only the credentialless upstream endpoint
-        # (resolved from inside this container) plus Docker DNS. A missing
-        # or unreadable credentials file leaves the TCP allow-list empty
-        # and the Runner independently fails closed before launch.
-        upstream_url = (
-            proxy_endpoint_from_credentials(creds_file) if has_proxy else None
+        # The Browser connects directly to the upstream proxy via SDK ``proxy=``:
+        # the credentials file (Profile secret dir) is mounted read-only into
+        # the Browser. The egress plan derives both host-gateway injection and
+        # the strict OUTPUT DROP allowlist from the same model.
+        egress_plan = derive_supervisor_egress_plan(
+            has_proxy=has_proxy, creds_path=creds_file
         )
+        upstream_url = egress_plan.upstream_url
         upstream_host = urlsplit(upstream_url).hostname if upstream_url else None
         extra_hosts = (
             {HOST_GATEWAY_HOSTNAME: "host-gateway"}
@@ -1957,22 +1969,13 @@ with path.open('w') as output:
                     deployment_id=self.deployment_instance_id,
                 )),
             )
-            allowed_tcp = (
-                await asyncio.to_thread(
-                    self._resolved_endpoint, container, upstream_url
-                )
-                if upstream_url
-                else []
+            browser_policy = await asyncio.to_thread(
+                self._policy_from_egress_plan, container, egress_plan
             )
-            allowed_udp = [("127.0.0.11", 53)] if upstream_url else []
             await asyncio.to_thread(
                 self._install_network_policy,
                 container,
-                {
-                    "role": "browser",
-                    "allowed_tcp": allowed_tcp,
-                    "allowed_udp": allowed_udp,
-                },
+                browser_policy,
                 gate,
                 runtime_instance_id,
                 "browser",
@@ -2479,28 +2482,20 @@ with path.open('w') as output:
     def browser_policy_spec(
         self, profile_id: str, container: Any
     ) -> dict[str, Any]:
-        """Expected live Browser netfilter spec for convergence checks.
-
-        Rebuilt from the same inputs as startup application: the
-        credentialless upstream endpoint derived from the Profile secret
-        credentials file, resolved from inside the Browser container,
-        plus Docker DNS. A missing or unreadable credentials file yields
-        an empty allow-list and the Runner independently fails closed.
-        """
+        """Expected live Browser netfilter spec derived from the unified egress model."""
         creds_file = (
             self.validator.get_secret_dir(profile_id) / PROXY_CREDENTIALS_FILENAME
         )
-        upstream = proxy_endpoint_from_credentials(creds_file)
-        allowed_tcp = (
-            self._resolved_endpoint(container, upstream) if upstream else []
+        snapshot_file = (
+            self.validator.get_runtime_dir(profile_id) / "snapshot.json"
         )
-        allowed_udp = [("127.0.0.11", 53)] if upstream else []
-        return {
-            "role": "browser",
-            "allowed_tcp": allowed_tcp,
-            "allowed_udp": allowed_udp,
-            "udp_mux_port": None,
-        }
+        snap_has_proxy = _snapshot_has_proxy(snapshot_file)
+        has_proxy = (
+            snap_has_proxy if snap_has_proxy is not None else creds_file.is_file()
+        )
+        return self._browser_egress_policy(
+            container, has_proxy=has_proxy, creds_file=creds_file
+        )
 
     def _run_policy_helper(self, container: Any, command: list[str]) -> int:
         """Run the policy module in the target namespace; return its exit code."""

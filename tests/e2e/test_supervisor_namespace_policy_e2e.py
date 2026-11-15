@@ -599,3 +599,190 @@ def test_wait_for_server_ready_times_out(monkeypatch) -> None:
     monkeypatch.setattr(time, "monotonic", lambda: next(clock))
     with pytest.raises(TimeoutError, match="did not become READY"):
         _wait_for_server_ready(SilentContainer())  # type: ignore[arg-type]
+
+
+def _run_udp_probe(
+    container: docker.models.containers.Container,
+    host: str,
+    port: int,
+    payload: bytes = b"STUN_PROBE",
+) -> tuple[int, str]:
+    """Attempt a single UDP send inside the target container."""
+    py_code = (
+        "import socket, sys\n"
+        "host, port, data = sys.argv[1], int(sys.argv[2]), sys.argv[3].encode('utf-8')\n"
+        "try:\n"
+        "    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        "    s.settimeout(0.5)\n"
+        "    s.sendto(data, (host, port))\n"
+        "    s.close()\n"
+        "    sys.stdout.write('SENT')\n"
+        "    sys.exit(0)\n"
+        "except Exception as e:\n"
+        "    sys.stderr.write(f'ERR:{type(e).__name__}:{e}')\n"
+        "    sys.exit(1)\n"
+    )
+    res = container.exec_run(
+        ["python3", "-c", py_code, host, str(port), payload.decode("utf-8")],
+        user="1000:1000",
+    )
+    return res.exit_code, res.output.decode("utf-8", errors="replace")
+
+
+def test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp(
+    docker_client: docker.DockerClient,
+    policy_helper_image: str,
+    runtime_target_image: str,
+    resource_tracker: Any,
+) -> None:
+    """p102/d047 E2E: when proxy_enforced=True (proxied Browser or egress probe),
+    dual-stack filter rules end in OUTPUT -j DROP instead of OUTPUT -j ACCEPT.
+    Only the resolved proxy TCP endpoint is reachable; direct public IPv4 egress
+    (1.1.1.1:80), unauthorized IPv6 ULA peers, external DNS (8.8.8.8:53/udp),
+    and WebRTC-like STUN UDP (port 3478) are all blocked at the kernel layer.
+    """
+    from cbrowser.shared.egress_plan import probe_egress_plan
+
+    prefix = f"t102-strict-{uuid.uuid4().hex[:8]}"
+
+    server_script = (
+        "import socket, threading, sys\n"
+        "def serve_tcp(port, msg):\n"
+        "    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+        "    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+        "    s.bind(('0.0.0.0', port))\n"
+        "    s.listen(5)\n"
+        "    while True:\n"
+        "        conn, _ = s.accept()\n"
+        "        _ = conn.recv(1024)\n"
+        "        conn.sendall(msg.encode('utf-8'))\n"
+        "        conn.close()\n"
+        "def serve_udp(port):\n"
+        "    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n"
+        "    s.bind(('0.0.0.0', port))\n"
+        "    while True:\n"
+        "        data, addr = s.recvfrom(2048)\n"
+        "        sys.stdout.write(f'UDP_RECV:{port}:{len(data)}\\n')\n"
+        "        sys.stdout.flush()\n"
+        "threading.Thread(target=serve_tcp, args=(8888, 'PROXY_PONG'), daemon=True).start()\n"
+        "threading.Thread(target=serve_tcp, args=(9999, 'OTHER_PONG'), daemon=True).start()\n"
+        "threading.Thread(target=serve_udp, args=(3478,), daemon=True).start()\n"
+        "sys.stdout.write('READY\\n')\n"
+        "sys.stdout.flush()\n"
+        "import time\n"
+        "while True: time.sleep(1)\n"
+    )
+    idle_script = "import time; [time.sleep(1) for _ in iter(int, 1)]"
+
+    primary_net = resource_tracker.register_network(
+        docker_client.networks.create(
+            name=f"{prefix}-net",
+            driver="bridge",
+            enable_ipv6=True,
+            ipam=docker.types.IPAMConfig(
+                pool_configs=[
+                    docker.types.IPAMPool(
+                        subnet=f"fdcb:{uuid.uuid4().hex[:4]}:{uuid.uuid4().hex[:4]}::/64"
+                    ),
+                ]
+            ),
+            check_duplicate=True,
+        )
+    )
+
+    def _spawn(name_suffix: str, script: str) -> docker.models.containers.Container:
+        c = resource_tracker.register_container(
+            docker_client.containers.create(
+                image=runtime_target_image,
+                name=f"{prefix}-{name_suffix}",
+                entrypoint=["python3", "-u", "-c", script],
+                command=[],
+                network=primary_net.name,
+                user="1000:1000",
+                read_only=True,
+                cap_drop=["ALL"],
+                tmpfs={"/tmp": "rw,noexec,nosuid,size=16m"},
+                detach=True,
+            )
+        )
+        c.start()
+        return c
+
+    target_a = _spawn("target-a", idle_script)
+    peer_b = _spawn("peer-b", server_script)
+    proxy_c = _spawn("proxy-c", server_script)
+
+    _wait_for_server_ready(peer_b)
+    _wait_for_server_ready(proxy_c)
+    peer_b.reload()
+    proxy_c.reload()
+
+    ip_b = peer_b.attrs["NetworkSettings"]["Networks"][primary_net.name]["IPAddress"]
+    ip_c = proxy_c.attrs["NetworkSettings"]["Networks"][primary_net.name]["IPAddress"]
+    v6_b = peer_b.attrs["NetworkSettings"]["Networks"][primary_net.name].get("GlobalIPv6Address")
+    v6_c = proxy_c.attrs["NetworkSettings"]["Networks"][primary_net.name].get("GlobalIPv6Address")
+    assert v6_b and v6_c
+
+    import socket as _socket
+
+    try:
+        with _socket.create_connection(("1.1.1.1", 80), timeout=3.0):
+            pass
+    except OSError as exc:
+        pytest.fail(f"host cannot reach 1.1.1.1:80 baseline ({exc})")
+
+    # Build NetworkPolicySpec from the exact unified probe/proxied plan helper.
+    spec = NetworkPolicySpec.model_validate(
+        probe_egress_plan("http", ip_c, 8888).to_network_policy_spec(
+            allowed_tcp=[(ip_c, 8888)]
+        )
+    )
+    assert spec.proxy_enforced is True
+
+    helper = resource_tracker.register_container(
+        docker_client.containers.create(
+            image=policy_helper_image,
+            name=f"{prefix}-helper",
+            entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
+            command=[spec.model_dump_json()],
+            network_mode=f"container:{target_a.id}",
+            cap_drop=["ALL"],
+            cap_add=["NET_ADMIN"],
+            security_opt=["no-new-privileges:true"],
+            read_only=True,
+            tmpfs={"/run": "rw,noexec,nosuid,size=16m"},
+            detach=True,
+        )
+    )
+    helper.start()
+    res_helper = helper.wait(timeout=15)
+    helper_logs = helper.logs().decode("utf-8", errors="replace")
+    assert res_helper.get("StatusCode") == 0, f"Policy helper failed: {helper_logs}"
+    helper.remove(force=True)
+
+    # 1. Allowed proxy TCP works.
+    code_ok, out_ok = _run_python_probe(target_a, ip_c, 8888)
+    assert code_ok == 0 and "PROXY_PONG" in out_ok, out_ok
+
+    # 2. Unlisted port on proxy host & unauthorized peer (IPv4 + IPv6) blocked.
+    code_9999, _ = _run_python_probe(target_a, ip_c, 9999, timeout=0.8)
+    assert code_9999 != 0
+    code_b4, _ = _run_python_probe(target_a, ip_b, 8888, timeout=0.8)
+    assert code_b4 != 0
+    code_b6, _ = _run_python_probe(target_a, v6_b, 8888, timeout=0.8, family=6)
+    assert code_b6 != 0
+    code_c6, _ = _run_python_probe(target_a, v6_c, 8888, timeout=0.8, family=6)
+    assert code_c6 != 0
+
+    # 3. Direct public IPv4 egress blocked (the exact hole p102/d047 closed).
+    code_pub, out_pub = _run_python_probe(
+        target_a, "1.1.1.1", 80, send_payload=b"HEAD / HTTP/1.0\r\n\r\n", timeout=1.2
+    )
+    assert code_pub != 0, f"proxy_enforced failed to block direct public IPv4: {out_pub}"
+
+    # 4. WebRTC STUN-like UDP & external DNS UDP rejected by netfilter OUTPUT DROP.
+    code_udp_stun, out_udp_stun = _run_udp_probe(target_a, ip_b, 3478)
+    assert code_udp_stun != 0, f"STUN UDP unexpectedly succeeded: {out_udp_stun}"
+    code_udp_dns, out_udp_dns = _run_udp_probe(target_a, "8.8.8.8", 53)
+    assert code_udp_dns != 0, f"External DNS UDP unexpectedly succeeded: {out_udp_dns}"
+    assert "UDP_RECV" not in peer_b.logs().decode("utf-8", errors="replace")

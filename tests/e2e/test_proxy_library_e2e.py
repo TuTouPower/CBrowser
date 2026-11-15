@@ -11,8 +11,9 @@ listening on an OS-assigned port; the Browser container reaches it through
 network and no extra container/network attachment is required.  The Browser
 connects directly to the upstream proxy: the Supervisor writes the upstream
 credentials (with the frozen revision) to the Profile secret dir and mounts
-them read-only into the Browser container, which builds ``--proxy-server``
-from them (Chromium 146 native inline-credential support, d031).
+them read-only into the Browser container, which passes the normalized proxy
+URL to CloakBrowser SDK ``proxy=`` (d046) alongside WebRTC/QUIC hardening flags
+and strict netfilter ``OUTPUT -j DROP`` (d047).
 """
 
 from __future__ import annotations
@@ -182,6 +183,14 @@ async def _create_profile_with_proxy_via_ui(
     await page.fill('[data-testid="profile-form-name"]', profile_name)
     await page.locator('[data-testid="profile-form-proxy"] button').click()
     await page.get_by_role("option", name=proxy_name, exact=True).click()
+    # Offline recording_proxy does not tunnel HTTPS CONNECT to public GeoIP APIs.
+    # Because BrowserRunner routes geoip=True through SDK proxy= (d046), keep this
+    # offline test hermetic by disabling remote GeoIP lookup in the form.
+    geoip_checkbox = page.get_by_role(
+        "checkbox", name=re.compile(r"Use proxy geolocation|使用代理地理位置")
+    )
+    if await geoip_checkbox.is_checked():
+        await geoip_checkbox.uncheck()
     await page.click('[data-testid="profile-form-submit"]')
     await page.wait_for_selector(
         '[data-testid="env-new-dialog"]', state="detached", timeout=15000

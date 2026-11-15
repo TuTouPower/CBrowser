@@ -12,7 +12,6 @@ import subprocess
 import time
 import urllib.request
 import uuid
-from urllib.parse import quote
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -24,9 +23,17 @@ from cbrowser.engine_artifacts import (
     enforce_pinned_engine_env,
     verify_extracted_engine_cache,
 )
+from cbrowser.launch_args import validate_launch_args
+from cbrowser.shared.egress_plan import (
+    PROXY_CREDENTIALS_CHANGED,
+    ProfileEgressPlan,
+    ProxyCredentialsChangedError,
+    resolve_runtime_egress_plan,
+)
 from cloakbrowser import launch_persistent_context_async
 from cloakbrowser.browser import seed_widevine_hint
 
+from .cdp_guard import CdpGuard
 from .event_storage import EventStorage, atomic_write_json
 from .fontconfig import (
     FONT_SET_UNAVAILABLE,
@@ -39,122 +46,24 @@ from .profile_defaults import (
     run_search_defaults_initialization,
 )
 from .protocol import RuntimeEventRecord, RuntimeStateRecord
-from cbrowser.launch_args import validate_launch_args
-
 from .security import validate_runtime_id
-from .cdp_guard import CdpGuard
 
 logger = logging.getLogger("cbrowser.runtime_agent.runner")
 
-
-PROXY_CREDENTIALS_CHANGED = "proxy_credentials_changed"
-PROXY_HTTP_AUTH_UNSUPPORTED = "proxy_http_auth_unsupported"
 PROXY_CREDENTIALS_PATH = Path("/run/cbrowser/proxy_credentials.json")
-_PROXY_SCHEMES = frozenset({"http", "https", "socks5"})
 
 
-class ProxyCredentialsChangedError(RuntimeError):
-    """Fail closed when runtime proxy credentials are missing or stale.
-
-    The message is a fixed, non-sensitive reason string: the password is
-    never embedded in an exception, log line, or reported runtime state.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(PROXY_CREDENTIALS_CHANGED)
-
-
-class ProxyHttpAuthUnsupportedError(RuntimeError):
-    """Fail closed when an HTTP/HTTPS upstream carries inline credentials.
-
-    Chromium does not accept userinfo in an ``http://``/``https://``
-    ``--proxy-server`` URL: the engine rejects it with
-    ``ERR_NO_SUPPORTED_PROXIES`` and never opens a TCP connection to the
-    upstream (real 407 authenticated-proxy probe, 2026-11-15). Emitting such
-    a launch argument would silently start a browser that cannot reach the
-    proxy, so the Runner refuses to launch with a fixed reason string. The
-    message carries no credentials.
-    """
-
-    def __init__(self) -> None:
-        super().__init__(PROXY_HTTP_AUTH_UNSUPPORTED)
-
-
-def build_proxy_server_arg(credentials: dict[str, Any]) -> str:
-    """Build ``--proxy-server=...`` from validated proxy credentials.
-
-    Inline ``user:pass@`` credentials are supported only for ``socks5``
-    (d031). Chromium does not accept userinfo in an ``http://``/``https://``
-    proxy URL, so an HTTP/HTTPS upstream carrying credentials is rejected
-    with ``ProxyHttpAuthUnsupportedError`` rather than silently producing an
-    unusable launch argument; use ``socks5`` or make the upstream
-    credential-free. Credentials are percent-encoded so special characters
-    cannot break URL parsing, and never appear in an error or log message.
-    """
-    if not isinstance(credentials, dict):
-        raise ProxyCredentialsChangedError()
-    scheme = credentials.get("scheme")
-    host = credentials.get("host")
-    port = credentials.get("port")
-    if scheme not in _PROXY_SCHEMES or not isinstance(host, str) or not host:
-        raise ProxyCredentialsChangedError()
-    if any(ch in host for ch in ("@", "/", " ", "\\", "?", "#")):
-        raise ProxyCredentialsChangedError()
-    if type(port) is not int or not 1 <= port <= 65535:
-        raise ProxyCredentialsChangedError()
-    username = credentials.get("username")
-    password = credentials.get("password")
-    if username is not None and not isinstance(username, str):
-        raise ProxyCredentialsChangedError()
-    if password is not None and not isinstance(password, str):
-        raise ProxyCredentialsChangedError()
-    if scheme in {"http", "https"} and (
-        username is not None or password is not None
-    ):
-        raise ProxyHttpAuthUnsupportedError()
-    if username is None and password is not None:
-        raise ProxyCredentialsChangedError()
-    userinfo = ""
-    if username is not None:
-        encoded_user = quote(username, safe="")
-        if password is not None:
-            userinfo = f"{encoded_user}:{quote(password, safe='')}@"
-        else:
-            userinfo = f"{encoded_user}@"
-    netloc_host = f"[{host}]" if ":" in host and not host.startswith("[") else host
-    return f"--proxy-server={scheme}://{userinfo}{netloc_host}:{port}"
-
-
-def resolve_proxy_server_arg(
+def resolve_browser_egress_plan(
     config: ProfileConfig,
     snapshot: ConfigVersionSnapshot,
-    credentials_path: Path,
-) -> str | None:
-    """Return the proxy launch arg, or fail closed on an unusable proxy binding.
-
-    A profile without a proxy id gets no proxy argument. Otherwise the
-    mounted credentials file must exist, be well-formed, and carry the
-    frozen credential revision from the bound config snapshot; any drift
-    is a fail-closed ``proxy_credentials_changed`` error. Inline URL
-    credentials are valid only for ``socks5``: an HTTP/HTTPS upstream with
-    credentials is refused with ``proxy_http_auth_unsupported`` (use
-    ``socks5`` or a credential-free upstream), never downgraded. Credentials
-    never reach a log line, exception message, or reported state.
-    """
-    if not config.proxy_id:
-        return None
-    try:
-        credentials = json.loads(credentials_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        raise ProxyCredentialsChangedError() from None
-    if not isinstance(credentials, dict):
-        raise ProxyCredentialsChangedError()
-    revision = credentials.get("credential_revision")
-    if type(revision) is not int:
-        raise ProxyCredentialsChangedError()
-    if revision != snapshot.proxy_credential_revision:
-        raise ProxyCredentialsChangedError()
-    return build_proxy_server_arg(credentials)
+    credentials_path: Path = PROXY_CREDENTIALS_PATH,
+) -> ProfileEgressPlan:
+    """Resolve the Profile egress plan from frozen snapshot and credentials file."""
+    return resolve_runtime_egress_plan(
+        config.proxy_id,
+        snapshot.proxy_credential_revision,
+        credentials_path,
+    )
 
 
 def load_config_snapshot(
@@ -519,8 +428,8 @@ class BrowserRunner:
         # the runner's own environment.
         env.pop("FONTCONFIG_FILE", None)
         # Strip ambient container/daemon proxy variables (e.g. OrbStack transparent
-        # proxy injection) so a Profile only ever uses the explicit --proxy-server
-        # flag resolved from its own proxy binding, never an ambient host proxy.
+        # proxy injection) so a Profile only ever uses the explicit egress plan
+        # passed through CloakBrowser SDK ``proxy=``, never an ambient host proxy.
         for proxy_var in (
             "HTTP_PROXY",
             "HTTPS_PROXY",
@@ -590,10 +499,10 @@ class BrowserRunner:
                 return
             raise RuntimeError("Runtime instance is already initialized")
 
-        # Resolve the proxy launch argument before starting any subsystem.
+        # Resolve the unified egress plan before starting any subsystem.
         # A missing file, malformed credentials or a stale credential
         # revision fails closed without launching the browser (AC-007/008).
-        proxy_arg = resolve_proxy_server_arg(
+        egress_plan = resolve_browser_egress_plan(
             cfg,
             self.snapshot,
             PROXY_CREDENTIALS_PATH,
@@ -703,8 +612,7 @@ class BrowserRunner:
             extra_args.append("--restore-last-session")
 
         extra_args.extend(safe_user_args)
-        if proxy_arg is not None:
-            extra_args.append(proxy_arg)
+        extra_args.extend(egress_plan.extra_browser_args)
 
         logger.info(
             "Launching CloakBrowser (profile=%s, instance=%s)...",
@@ -723,6 +631,7 @@ class BrowserRunner:
             self.browser_context = await launch_persistent_context_async(
                 user_data_dir=str(self.user_data_dir),
                 headless=False,
+                proxy=egress_plan.proxy_url,
                 args=extra_args,
                 timezone=cfg.timezone,
                 locale=cfg.locale,
@@ -1171,7 +1080,7 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except (ProxyCredentialsChangedError, ProxyHttpAuthUnsupportedError) as exc:
+    except ProxyCredentialsChangedError as exc:
         logger.error("Browser Runner refused to launch: %s", exc)
         raise SystemExit(1) from None
     except FontConfigUnavailableError:

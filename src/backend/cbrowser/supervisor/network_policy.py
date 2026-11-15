@@ -88,6 +88,7 @@ class NetworkPolicySpec(BaseModel):
     allowed_tcp: list[tuple[str, int]] = Field(default_factory=list)
     allowed_udp: list[tuple[str, int]] = Field(default_factory=list)
     udp_mux_port: int | None = Field(default=None, ge=UDP_MUX_MIN, le=UDP_MUX_MAX)
+    proxy_enforced: bool = False
 
     @field_validator("allowed_tcp", "allowed_udp", mode="before")
     @classmethod
@@ -135,7 +136,7 @@ def _render_output_tail(spec: NetworkPolicySpec, version: int) -> list[str]:
     for net in blocked:
         lines.append(f"-A OUTPUT -d {net} -j DROP")
 
-    if spec.role == "browser":
+    if spec.role == "browser" and not spec.proxy_enforced:
         lines.append("-A OUTPUT -j ACCEPT")
     else:
         lines.append("-A OUTPUT -j DROP")

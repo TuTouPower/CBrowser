@@ -183,7 +183,9 @@ def test_probe_helper_uses_browser_policy_and_returns_observation(tmp_path):
     policy = _probe_kwargs(calls, "network_policy")
     policy_doc = json.loads(policy["command"][0])
     assert policy_doc["role"] == "browser"
+    assert policy_doc["proxy_enforced"] is True
     assert policy_doc["allowed_tcp"] == [["93.184.216.34", 8080]]
+    assert policy_doc["allowed_udp"] == [["127.0.0.11", 53]]
     # Cleanup: helper container and probe network are removed.
     assert all(c.removed for c in fake.containers.created)
     assert all(n.removed for n in fake.networks.created)

@@ -3161,7 +3161,8 @@ class _T035RecordingProxyHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         print(f"PROXY_GET {self.path}", flush=True)
         try:
-            with urllib.request.urlopen(self.path, timeout=5.0) as resp:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+            with opener.open(self.path, timeout=5.0) as resp:
                 body = resp.read()
             self.send_response(resp.status)
             self.send_header("Content-Length", str(len(body)))
@@ -3185,13 +3186,9 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
     reports CDP ``Browser.getVersion`` fields over UDS health.  The snapshot
     carries ``proxy_credential_revision`` and the mounted credentials file
     must agree, so this also exercises the fail-closed credential path.
-
-    Egress uses a credentialless upstream: Chromium 146 does not accept
-    ``user:pass@`` in an ``http://`` --proxy-server URL (it treats the
-    userinfo as part of the hostname, so no TCP connection is made; d031
-    only proves inline credentials for socks5). Inline-credential URL
-    construction, percent-encoding and fail-closed revision checking are
-    covered by tests/unit/test_t035_proxy_runtime.py instead.
+    Authenticated HTTP/HTTPS/SOCKS5 proxy URL construction via CloakBrowser
+    SDK ``proxy=`` (d046) is tested both in unit tests and in
+    ``test_p102_authenticated_proxy_sdk_hardening_e2e`` below.
     """
     if ACTIVE_TEST_NETWORK is None:
         raise RuntimeError("Docker HTTP fixture network is not initialized")
@@ -3297,6 +3294,297 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
         )
     except Exception:
         save_container_failure_log(c_name, "t035_proxy_outbound")
+        raise
+    finally:
+        stop_and_rm_container(c_name)
+        stop_and_rm_container(proxy_name)
+        shutil.rmtree(dir_work, ignore_errors=True)
+
+
+def _p102_auth_proxy_script(scheme: str, expected_user: str, expected_pass: str) -> str:
+    if scheme == "http":
+        return f"""
+import base64, urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+EXPECTED = "Basic " + base64.b64encode(({expected_user!r} + ":" + {expected_pass!r}).encode("utf-8")).decode("ascii")
+
+class AuthProxy(BaseHTTPRequestHandler):
+    def do_GET(self):
+        auth = self.headers.get("Proxy-Authorization", "")
+        if auth != EXPECTED:
+            print(f"AUTH_REJECT {{auth!r}}", flush=True)
+            self.send_response(407)
+            self.send_header("Proxy-Authenticate", 'Basic realm="p102"')
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        print(f"AUTH_OK {{self.path}}", flush=True)
+        try:
+            opener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))
+            with opener.open(self.path, timeout=5.0) as resp:
+                body = resp.read()
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.headers.get("Content-Type", "text/html"))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(str(exc).encode())
+
+    def do_CONNECT(self):
+        self.send_response(405)
+        self.end_headers()
+
+    def log_message(self, *args):
+        return
+
+print("PROXY_READY", flush=True)
+ThreadingHTTPServer(("0.0.0.0", 18080), AuthProxy).serve_forever()
+"""
+    return f"""
+import socket, struct, threading
+
+EXPECTED_USER = {expected_user!r}
+EXPECTED_PASS = {expected_pass!r}
+
+def recv_exact(conn, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = conn.recv(n - len(buf))
+        if not chunk:
+            raise EOFError("short read")
+        buf += chunk
+    return buf
+
+def relay(a, b):
+    def pump(src, dst):
+        try:
+            while True:
+                data = src.recv(65536)
+                if not data:
+                    break
+                dst.sendall(data)
+        except OSError:
+            pass
+        finally:
+            try:
+                dst.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+    t1 = threading.Thread(target=pump, args=(a, b), daemon=True)
+    t2 = threading.Thread(target=pump, args=(b, a), daemon=True)
+    t1.start(); t2.start()
+    t1.join(); t2.join()
+
+def handle(conn):
+    remote = None
+    try:
+        ver, nmethods = recv_exact(conn, 2)
+        methods = recv_exact(conn, nmethods)
+        if ver != 5 or 2 not in methods:
+            conn.sendall(b"\\x05\\xff")
+            return
+        conn.sendall(b"\\x05\\x02")
+        sub_ver, ulen = recv_exact(conn, 2)
+        user = recv_exact(conn, ulen).decode("utf-8", errors="replace")
+        plen = recv_exact(conn, 1)[0]
+        passwd = recv_exact(conn, plen).decode("utf-8", errors="replace")
+        if sub_ver != 1 or user != EXPECTED_USER or passwd != EXPECTED_PASS:
+            print(f"AUTH_REJECT {{user!r}}", flush=True)
+            conn.sendall(b"\\x01\\x01")
+            return
+        conn.sendall(b"\\x01\\x00")
+        hdr = recv_exact(conn, 4)
+        cmd, atyp = hdr[1], hdr[3]
+        if atyp == 1:
+            host = socket.inet_ntoa(recv_exact(conn, 4))
+        elif atyp == 3:
+            dlen = recv_exact(conn, 1)[0]
+            host = recv_exact(conn, dlen).decode("utf-8")
+        elif atyp == 4:
+            host = socket.inet_ntop(socket.AF_INET6, recv_exact(conn, 16))
+        else:
+            conn.sendall(b"\\x05\\x08\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00")
+            return
+        port = struct.unpack("!H", recv_exact(conn, 2))[0]
+        if cmd != 1:
+            conn.sendall(b"\\x05\\x07\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00")
+            return
+        remote = socket.create_connection((host, port), timeout=5.0)
+        conn.sendall(b"\\x05\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00")
+        print(f"AUTH_OK {{host}}:{{port}}", flush=True)
+        relay(conn, remote)
+    except Exception:
+        pass
+    finally:
+        for s in (remote, conn):
+            if s is not None:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(("0.0.0.0", 18080))
+srv.listen(64)
+print("PROXY_READY", flush=True)
+while True:
+    c, _ = srv.accept()
+    threading.Thread(target=handle, args=(c,), daemon=True).start()
+"""
+
+
+@pytest.mark.parametrize("scheme", ["http", "socks5"])
+@pytest.mark.asyncio
+async def test_p102_authenticated_proxy_sdk_hardening_e2e(
+    http_server: str, scheme: str
+) -> None:
+    """p102 E2E: BrowserRunner passes URL-encoded proxy URLs into CloakBrowser
+    SDK ``proxy=`` for both authenticated HTTP (special chars in password) and
+    authenticated SOCKS5, alongside QUIC and WebRTC hardening flags (d046/d047).
+    """
+    if ACTIVE_TEST_NETWORK is None:
+        raise RuntimeError("Docker HTTP fixture network is not initialized")
+    run_id = uuid.uuid4().hex[:8]
+    c_name = f"cbrowser-p102-auth-{scheme}-{run_id}"
+    proxy_name = f"cbrowser-p102-proxy-{scheme}-{run_id}"
+    profile_id = f"profile_p102_{scheme}"
+    dir_work = SCRATCH_ROOT / f"p102_{scheme}_{run_id}"
+    runtime_dir = dir_work / "runtime"
+    profile_dir = dir_work / "profile"
+    exchange = dir_work / "exchange"
+    snap_file = dir_work / "snapshot.json"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+
+    test_user = "p102user"
+    test_pass = "s3cr@t%!"
+    proxy_script = _p102_auth_proxy_script(scheme, test_user, test_pass)
+    subprocess.run(
+        [
+            "docker", "run", "-d", "--name", proxy_name,
+            "--network", ACTIVE_TEST_NETWORK,
+            "--label", "cbrowser.task=p102",
+            "--entrypoint", "python3", IMAGE_TAG,
+            "-u", "-c", proxy_script,
+        ],
+        check=True, capture_output=True, text=True, timeout=30.0,
+    )
+
+    ready_deadline = time.monotonic() + 15.0
+    while time.monotonic() < ready_deadline:
+        logs = subprocess.run(
+            ["docker", "logs", proxy_name],
+            check=False, capture_output=True, text=True,
+        )
+        if "PROXY_READY" in (logs.stdout + logs.stderr):
+            break
+        await asyncio.sleep(0.2)
+    else:
+        stop_and_rm_container(proxy_name)
+        pytest.fail(f"Mock {scheme} auth proxy {proxy_name} did not become ready")
+
+    create_snapshot_file(
+        snap_file, profile_id=profile_id, version=1, proxy_id=f"px_{scheme}"
+    )
+    snapshot_payload = json.loads(snap_file.read_text(encoding="utf-8"))
+    snapshot_payload["proxy_credential_revision"] = 3
+    snap_file.write_text(json.dumps(snapshot_payload, indent=2), encoding="utf-8")
+
+    creds_file = runtime_dir / "proxy_credentials.json"
+    creds_file.write_text(
+        json.dumps(
+            {
+                "scheme": scheme,
+                "host": proxy_name,
+                "port": 18080,
+                "username": test_user,
+                "password": test_pass,
+                "credential_revision": 3,
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(creds_file, 0o644)
+
+    cid = run_docker_container(
+        c_name, profile_dir, runtime_dir, exchange, snap_file,
+        profile_id, f"inst_p102_{run_id}",
+        credentials_file=creds_file,
+    )
+    assert cid
+    try:
+        wait_for_uds_ready(c_name)
+
+        # Verify hardening CLI flags are active on Chromium and raw secret userinfo
+        # is not injected by our code into a manual --proxy-server= flag.
+        cmdline_proc = subprocess.run(
+            [
+                "docker", "exec", c_name, "python3", "-c",
+                "import glob, pathlib\n"
+                "cmds = []\n"
+                "for p in glob.glob('/proc/[0-9]*/cmdline'):\n"
+                "    try:\n"
+                "        raw = pathlib.Path(p).read_bytes().replace(b'\\x00', b' ').decode('utf-8', 'ignore')\n"
+                "    except OSError:\n"
+                "        continue\n"
+                "    if 'chrome' in raw:\n"
+                "        cmds.append(raw)\n"
+                "print('\\n'.join(cmds))\n",
+            ],
+            check=True, capture_output=True, text=True, timeout=15.0,
+        )
+        chrome_cmds = cmdline_proc.stdout
+        assert "--disable-quic" in chrome_cmds, chrome_cmds
+        assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in chrome_cmds, chrome_cmds
+        assert "s3cr@t%!" not in chrome_cmds
+
+        cdp = exec_uds_cdp(
+            c_name,
+            f"""
+            targets = await send_cmd(ws, 1, "Target.getTargets")
+            pages = [t for t in targets["result"]["targetInfos"] if t["type"] == "page"]
+            target_id = pages[0]["targetId"]
+            attach = await send_cmd(ws, 2, "Target.attachToTarget", {{"targetId": target_id, "flatten": True}})
+            s = attach["result"]["sessionId"]
+            await send_cmd(ws, 3, "Page.enable", session_id=s)
+            await send_cmd(ws, 4, "Page.navigate", {{"url": "{http_server}/audio_test.html?freq=440"}}, session_id=s)
+            for _ in range(30):
+                ev = await send_cmd(ws, 5, "Runtime.evaluate", {{"expression": "document.body ? document.body.innerText : ''", "returnByValue": True}}, session_id=s)
+                text = ev.get("result", {{}}).get("result", {{}}).get("value", "") or ""
+                if "Audio Running 440Hz" in text:
+                    break
+                await asyncio.sleep(0.2)
+            print("RESULT:" + json.dumps({{"body": text}}))
+            """,
+        )
+        assert "Audio Running 440Hz" in cdp.get("body", ""), cdp
+
+        deadline = time.monotonic() + 20.0
+        matched = False
+        proxy_out = ""
+        while time.monotonic() < deadline:
+            logs = subprocess.run(
+                ["docker", "logs", proxy_name],
+                check=False, capture_output=True, text=True,
+            )
+            proxy_out = logs.stdout + logs.stderr
+            has_ok = "AUTH_OK" in proxy_out
+            bad_auth = (
+                "AUTH_REJECT 'Basic" in proxy_out
+                if scheme == "http"
+                else "AUTH_REJECT" in proxy_out
+            )
+            if has_ok and not bad_auth:
+                matched = True
+                break
+            await asyncio.sleep(0.3)
+        assert matched, f"{scheme} auth proxy logs unexpected: {proxy_out!r}"
+    except Exception:
+        save_container_failure_log(c_name, f"p102_auth_{scheme}")
         raise
     finally:
         stop_and_rm_container(c_name)

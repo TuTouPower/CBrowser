@@ -6,7 +6,7 @@
 - 根因：Profile 出口与浏览器启动契约分散。第一层，业务手工拼接代理 CLI，绕过官方 SDK 对代理、认证、GeoIP 与 WebRTC 的协调；第二层，启动、复核、恢复和 probe 分别重建出口策略，缺少统一的出口计划输入，易产生分歧；第三层，各层测试单独通过，却缺少“同一出口计划贯穿浏览器、辅助查询与网络边界”的端到端不变量。不能只补一处参数或一个布尔值后宣称根因闭环。
 - 测试缺口：现有代理 URL 拼装、规则渲染、locale 参数传递、HTTP 代理 E2E 各自通过，但没有覆盖 SDK 代理输入与自动探测、启动与复核规则等价、探针真实网络约束以及网页 UDP/DNS 实际出口，详见测试缺口与验收矩阵。
 - 线索：`.scratch/proxy_privacy_sdk_repro/reproduce.py`、`results.json`，以及同目录 `sdk_auth_branch_probe.py`、`sdk_auth_branch_results.json`；离线 SDK helper、认证分派与生产策略表达式复现，无 Docker 操作、真实浏览器启动、真实凭据或外网请求。
-- 处理：未开
+- 处理：main；resolution=resolved；reason=已完成 Spike s022（linux-arm64 / cloakbrowser 0.6.4 + chromium-146.0.7680.177.3；linux-x64 146.0.7680.177.5 记为 NOT_RUN / USER_WAIVED）并沉淀 d046/d047 与 ADR 038；落地 EgressPlan、BrowserRunner SDK proxy= 集成及 --disable-quic/--force-webrtc-ip-handling-policy=disable_non_proxied_udp，统一 startup/review/probe 双栈 proxy_enforced=True 并补全单测与 E2E；全量门禁与 E2E 已通过（all_passed=true）。
 - 核对时间：2026-11-15T18:15:21+08:00。
 - 核对基线：`60190da02dfff4a9edc90f959018ff633d1e779b`；CloakBrowser SDK `0.6.4`；Linux arm64 引擎 `146.0.7680.177.3`、Linux x64 引擎 `146.0.7680.177.5`，以 `src/backend/cbrowser/engine_artifacts.py` 为准。
 - 关联：`docs/archive/pending/p078_egress_proxy_enforcement_and_webrtc_dns_leak.md`、`docs/findings/d031_authenticated_socks5_supported.md`、`docs/archive/pending/p060_proxy_link_first_egress_identity.md`。

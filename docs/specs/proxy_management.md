@@ -58,10 +58,10 @@
 - **分组与代理写操作幂等（A23）**：group / proxy 的 create / update / delete 支持 `Idempotency-Key` / `X-Operation-ID` / `operation_id`，与 Profile 同一审计语义（同一键 + 同一目标 + 同一载荷重放既有结果；键复用于不同目标 / 动作 / 载荷返回 409 `idempotency_conflict`）。重放不重复触发探测等副作用。`POST /groups/reorder` 不带幂等键。
 - **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`（`entity_id` 为变更实体、重排时为 null），前端使对应列表查询与 Profile 列表查询失效重取；手动探测不发事件。
 
-## 9. 运行时凭据与代理直连（ADR 037）
+## 9. 运行时凭据与 SDK 代理直连（ADR 037 / ADR 038）
 
 - 凭据文件唯一为 `proxy_credentials.json`：Supervisor 写 Profile secret 目录（`data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`，0600，chown runtime_uid:runtime_gid），字段 `{scheme,host,port,username,password,credential_revision}`；仅以只读 bind 挂进 Browser 容器 `/run/cbrowser/proxy_credentials.json`。升级前写在 runtime 目录的旧凭据文件在每次 `start_profile` 无条件删除（`unlink(missing_ok=True)`，旧版遗留清理）。
-- Runner 读凭据文件并拼装 `--proxy-server=scheme://user:pass@host:port`：内联 `user:pass@` 凭据**仅 `socks5` 成立**（d031 + 真 407 认证代理实测复核），userinfo 以 `urllib.parse.quote(s, safe="")` 编码防注入；无用户名/密码时省略认证段，无 `proxy_id` 时不设代理。**`http` / `https` 上游不支持带用户名密码**：引擎拒绝带 userinfo 的 `--proxy-server`（`ERR_NO_SUPPORTED_PROXIES`，连代理 TCP 都不发起），属引擎限制；配置此类上游时 Runner 以固定错误码 `proxy_http_auth_unsupported` 明确拒绝启动，不静默生成不可用参数、不降级。带认证上游请用 `socks5`，或让 HTTP/HTTPS 上游免认证。凭据绝不进日志、异常消息与上报状态。
+- Runner 通过统一出站规划 `cbrowser/shared/egress_plan.py`（`resolve_runtime_egress_plan`）读取凭据文件并生成规范化代理 URL（IPv6 字面量自动加方括号、userinfo 以 `urllib.parse.quote(s, safe="")` 百分号编码），传给 CloakBrowser SDK `launch_persistent_context_async(proxy=...)`（`d046`）：`http`、`https`（含 TLS-to-proxy）与 `socks5` 全部统一支持用户名/密码认证（包括含 `@`/`%`/`!` 等特殊字符密码）与 `geoip=True` 同路代理探测；原手工拼装 `--proxy-server=` 及 `proxy_http_auth_unsupported` 拒绝分支已彻底删除。有代理时统一注入 `--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`（无 `proxy_id` 时 `proxy=None` 且不注入代理加固参数）。凭据绝不进日志、异常消息与上报状态。
 - 校验与失败封闭：读文件/字段校验（scheme ∈ {http,https,socks5}、bare 主机名、port 1..65535、整型 `credential_revision`）或 `credential_revision` 与绑定快照不符，任一异常即 `ProxyCredentialsChangedError()`，固定消息 `PROXY_CREDENTIALS_CHANGED`。
-- 网络策略：Browser 出站只放上游端点（`scheme://host:port`，不含凭据，容器内 `_resolved_endpoint` 解析）＋ Docker DNS（127.0.0.11:53/udp）以解析上游域名，OUTPUT 默认 DROP；loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
-- 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理或凭据异常即失败封闭、Browser 不启动。
+- 网络策略（`proxy_enforced=True`）：有代理 Browser 与出口探测 helper 均通过同一出站规划设置 `proxy_enforced=True`（IPv4/IPv6 `OUTPUT` 尾规则均为 `-A OUTPUT -j DROP`），仅放行上游代理解析地址:端口（`scheme://host:port`，容器内 `_resolved_endpoint` 解析，域名代理时仅附加 Docker DNS `127.0.0.11:53/udp`）；严禁 WebRTC UDP、QUIC、外部 DNS 与直连公网逃逸（`d047`）。loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
+- 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理凭据或凭据异常即失败封闭、Browser 不启动，巡检 `browser_policy_spec` 漂移触发 `fail_close_container`。
