@@ -1,9 +1,9 @@
 # p102 统一 Profile 出口与浏览器启动契约，先以 spike 验证代理隐私能力
 
 - 来源：2026-11-15 用户讨论代理泄露与浏览器环境真实性后，明确要求“记录一个 pending，详细写”；随后要求更新架构根因，并明确询问是否应先执行 spike。继承单人、单机 Docker 产品范围。
-- 现象：BrowserRunner 将代理仅作为 Chromium `--proxy-server` 参数传入，没有传给 CloakBrowser SDK 的 `proxy=`；浏览器联网配置与 SDK GeoIP/WebRTC 自动配置使用不同输入。另确认已配代理 Browser 的启动策略与运行期复核策略不一致，出口探针策略也未继承代理强制标记。
+- 现象：BrowserRunner 将代理仅作为 Chromium `--proxy-server` 参数传入，没有传给 CloakBrowser SDK 的 `proxy=`；浏览器联网配置与 SDK GeoIP/WebRTC 自动配置使用不同输入。曾尝试用 `proxy_enforced` 强制已配代理 Browser 出口收紧（`f04293f`），当日因破坏引擎启动 readiness 撤销（`047b4d1`），该机制不复存在。
 - 影响：已配代理环境可能无法正确生成代理出口对应的 GeoIP/WebRTC 配置，出现启动失败、指纹与实际出口不一致等问题；运行期策略复核可能将正常的受限策略判为漂移并执行 fail-closed。网页 WebRTC、QUIC、DNS 是否实际绕过代理，尚无本次真实引擎抓包证据，不能写成已确认泄露。
-- 根因：Profile 出口与浏览器启动契约分散。第一层，业务手工拼接代理 CLI，绕过官方 SDK 对代理、认证、GeoIP 与 WebRTC 的协调；第二层，启动、复核、恢复和 probe 分别重建出口策略，结合 `proxy_enforced=False` 宽松默认造成输入分歧；第三层，各层测试单独通过，却缺少“同一出口计划贯穿浏览器、辅助查询与网络边界”的端到端不变量。不能只补一处参数或一个布尔值后宣称根因闭环。
+- 根因：Profile 出口与浏览器启动契约分散。第一层，业务手工拼接代理 CLI，绕过官方 SDK 对代理、认证、GeoIP 与 WebRTC 的协调；第二层，启动、复核、恢复和 probe 分别重建出口策略，缺少统一的出口计划输入，易产生分歧；第三层，各层测试单独通过，却缺少“同一出口计划贯穿浏览器、辅助查询与网络边界”的端到端不变量。不能只补一处参数或一个布尔值后宣称根因闭环。
 - 测试缺口：现有代理 URL 拼装、规则渲染、locale 参数传递、HTTP 代理 E2E 各自通过，但没有覆盖 SDK 代理输入与自动探测、启动与复核规则等价、探针真实网络约束以及网页 UDP/DNS 实际出口，详见测试缺口与验收矩阵。
 - 线索：`.scratch/proxy_privacy_sdk_repro/reproduce.py`、`results.json`，以及同目录 `sdk_auth_branch_probe.py`、`sdk_auth_branch_results.json`；离线 SDK helper、认证分派与生产策略表达式复现，无 Docker 操作、真实浏览器启动、真实凭据或外网请求。
 - 处理：未开
@@ -17,7 +17,7 @@
 
 安全与真实性分别验证：页面显示代理 IP 不等于真实数据包经过代理；“未发现真实 IP”也不能单独证明浏览器行为自然。不能通过只改检测页可见值、无条件删除 WebRTC API 或统一关闭 QUIC 宣称完成目标。
 
-本条沿用 `p078` 已归档裁决与 `f04293f` 出口限制，不修改归档记录，不重新要求未配代理环境使用不同出口。未配代理环境使用本机真实 IP 属预期行为；多个未配代理 Profile 共用宿主出口也不属于本条缺陷。
+本条沿用 `p078` 已归档裁决，不修改归档记录，不重新要求未配代理环境使用不同出口。未配代理环境使用本机真实 IP 属预期行为；多个未配代理 Profile 共用宿主出口也不属于本条缺陷。`f04293f` 引入的 `proxy_enforced` iptables 出口收紧已撤销（`047b4d1`），现行出口边界依赖 Chromium `--proxy-server` 的 fail-closed 语义，不再在 iptables 层叠加收紧。
 
 不在范围：独立桌面 app、Mihomo 节点管理、全局 VPN、多人协作、跨环境剪贴板、标签页管理、强制一 Profile 一公网 IP、为未配置代理环境自动购买或分配代理。不预设 TUN、sidecar、透明转发器或 watchdog 为必选实现，由 spike 证据决定是否需要；不将容器数量作为先决约束，优先保证职责清晰、出口可验证与实现最简。
 
@@ -35,7 +35,8 @@
 |`eb5ccfb`|引入认证转发器，SDK `proxy=` 仍未恢复|改变代理网络路径，但未解决官方 SDK 协调入口缺失|
 |`c1df58a`|删除认证转发器，继续手工 CLI，仍未传 SDK `proxy=`；将 d031 的 SOCKS5 认证能力用于解释 HTTP/HTTPS 内联认证|SOCKS5 实测结论不能泛化为所有协议、平台与 build；需要回到官方 SDK 的精确版本分派|
 |`75911f0`|统一拒绝带认证 HTTP/HTTPS 上游|当前失败封闭保护，真实新路径验证前保留；不能把手工内联失败等同官方 SDK 所有认证路径永久不支持|
-|`f04293f`|新增代理态默认拒绝，只在 startup 传 `proxy_enforced`|收紧方向符合 p078 裁决，但遗漏 review/probe，暴露策略构建多处复制问题|
+|`f04293f`|新增代理态默认拒绝，只在 startup 传 `proxy_enforced`|收紧方向符合 p078 裁决，但遗漏 review/probe；实为破坏引擎启动链路（readiness 超窗），已在同日后撤回|
+|`047b4d1`|撤销 `proxy_enforced`，恢复 browser 出口尾部 ACCEPT|实测出口全 DROP 断掉引擎启动所需链路；出口边界回归依赖 `--proxy-server` fail-closed，本条后续方案不得再以裸布尔值拼装切口|
 |`60190da`|按单人单机产品裁决归档 p078 等条目|本条继承“无代理可直连、有代理不可旁路”边界，不复活已裁减范围|
 
 ## 已确认事实与复现
@@ -66,20 +67,22 @@
 
 真实 SDK `_resolve_webrtc_args()` 在 `proxy=None` 时删除 `--fingerprint-webrtc-ip=auto`，不查询代理出口；正确传 `proxy=` 的对照可解析该参数。另经 `src/backend/cbrowser/launch_args.py` 实际校验，当前用户参数白名单拒绝此 flag。因此这是 SDK 接入契约线索，不能误报为所有现有 Profile 都会触发的独立 bug，也不能直接让用户在高级参数中填写它作为解决方案。
 
-### 3. 启动策略与运行期复核不一致
+### 3. 启动策略与运行期复核不一致（`proxy_enforced` 路径已撤销）
 
-- `src/backend/cbrowser/supervisor/docker_adapter.py:1967` 为已配代理 Browser 生成代理 TCP 端点及 Docker DNS 允许项；启动传 `proxy_enforced=bool(upstream_url)`。
-- `docker_adapter.py:2480` 的 `browser_policy_spec()` 重建复核策略时，未传 `proxy_enforced`，按 `NetworkPolicySpec` 默认取 `False`。
-- `src/backend/cbrowser/supervisor/network_policy.py:139` 在 browser 且 `proxy_enforced=False` 时生成公网尾部 ACCEPT；为 `True` 时生成尾部 DROP。两种值在 IPv4、IPv6 都影响规则。
-- `network_policy.py:444` 的 `verify_policy()` 对实时规则与期望规则做全等比较；`supervisor/core.py:615` 的巡检路径在不匹配时调用 `fail_close_container()`，并标记 `browser_policy_drift`；`core.py:1060` 的 readiness 路径也使用该策略。
+以下为 `f04293f` 时期的复现事实，`047b4d1` 撤销 `proxy_enforced` 后相关代码分支已删除，问题不复现，但「生命周期各路径分别重建策略」的根因仍在，本条后续方案须以此为前提：
 
-复现脚本从生产 `start_browser_container()` 提取并执行实际策略字典表达式，再调用真实 `browser_policy_spec()`、渲染器与 verifier，mock 规则读取为启动策略渲染结果。结果：启动 `True`、复核 `False`，IPv4/IPv6 均不相等，verifier 返回 `False`。
+- `docker_adapter.py` 为已配代理 Browser 生成代理 TCP 端点及 Docker DNS 允许项；曾启动传 `proxy_enforced=bool(upstream_url)`（已删除）。
+- `browser_policy_spec()` 重建复核策略时曾未传 `proxy_enforced`，按默认取 `False`（已随字段删除）。
+- `network_policy.py` 曾在 browser 且 `proxy_enforced=False` 时生成公网尾部 ACCEPT、为 `True` 时生成尾部 DROP（已恢复为 browser 一律尾部 ACCEPT）。
+- `verify_policy()` 对实时规则与期望规则做全等比较；`supervisor/core.py:615` 的巡检路径在不匹配时调用 `fail_close_container()`，并标记 `browser_policy_drift`；`core.py:1060` 的 readiness 路径也使用该策略。
 
-分类：已确认规则不一致与 verifier 拒绝。真实 Docker 巡检是否已经触发误关闭，本次未启动容器验证；不能把代码路径推断冒充现场故障记录。
+复现脚本曾从生产 `start_browser_container()` 提取策略字典表达式，再调用 `browser_policy_spec()`、渲染器与 verifier，得出 startup `True`/复核 `False` 不一致。该差异已随字段撤销消失。
 
-### 4. 出口探针尚未继承强制代理标记
+分类：历史复现已失效；遗留的是「各生命周期路径缺少统一出口计划」的结构性缺口，仍需本条 spike 与正式实现覆盖。
 
-`docker_adapter.py:684` 的 `_install_probe_network_policy()` 只传 browser role 与代理 `allowed_tcp`，遗漏 `proxy_enforced`。真实方法捕获及渲染结果确认该 helper 的默认策略仍允许未被私网拒绝规则覆盖的公网出口，与已配代理 Browser 的限制不等价。
+### 4. 出口探针尚未继承代理态出口约束（`proxy_enforced` 路径已撤销）
+
+`f04293f` 时期 `_install_probe_network_policy()` 只传 browser role 与代理 `allowed_tcp`，遗漏 `proxy_enforced`，导致探针策略比 Browser 宽松。`047b4d1` 撤销 `proxy_enforced` 后二者同为 browser 尾部 ACCEPT，表面一致；但结构性缺口仍在：probe 与 Browser 各自由不同 helper 派生策略，缺少同一出口计划约束，未来启用任何代理态收紧时仍可能再次分歧。
 
 现有 probe helper 自身仍显式使用代理发请求，策略较宽不等于已证明其请求必然直连。修复需覆盖“探针与 Browser 同网络视角”的既有要求，避免探针成功而 Browser 实际失败。
 
@@ -123,7 +126,7 @@ Star 数量、宣传截图、检测页评分均不能当作安全审计或真实
 3. SOCKS5 UDP relay 可用、不可用、端口变化以及拒绝 UDP 时，QUIC/HTTP3 的真实连接、HTTP/2 回退与错误表现。能力不足时允许受控降级，禁止以降级为理由开放直连。
 4. Browser DNS、Docker 内置 resolver、宿主转发、预解析、DoH、代理端解析的实际路径。DNS 检测页通常显示递归解析器出口，不能仅凭该值断言网站看到宿主真实 IP；解析器与网页出口也不必字面相同。
 5. IPv6 是否具有未受同等约束的出口，代理域名多地址与地址变化时策略是否仍准确且失败封闭。
-6. 当前已配代理策略被巡检错误判漂移后的实际处理，以及启动、恢复附着、readiness、probe 各路径行为是否一致。
+6. 未来启用任何代理态出口收紧后，巡检是否正确判定策略漂移，以及启动、恢复附着、readiness、probe 各路径行为是否一致（现状 `proxy_enforced` 已撤销，无额外收紧）。
 7. 网页 WebRTC 与 Selkies 画面传输分别验证。二者运行于独立 Browser/Stream 容器；网页隐私修复不得误伤 Selkies 媒体与现有远程控制。
 
 ## 架构原则已明确，具体实现待 spike
@@ -187,8 +190,8 @@ Star 数量、宣传截图、检测页评分均不能当作安全审计或真实
 |`tests/unit/test_t035_proxy_runtime.py`|代理 URL 拼装、编码、认证限制、凭据版本等|未验证 SDK `proxy=` 与浏览器参数一致；补触达真实 Runner SDK 调用边界及 SDK 自动探测输入的单测|
 |`tests/unit/test_t053_fontconfig_locale.py`|捕获 SDK launch kwargs，验证 locale/timezone/GeoIP 与 fontconfig 传递|捕获存在，但断言围绕语言，SDK 被替身截断；补有代理组合及 helper 契约，不应声称完全没有 SDK 参数测试|
 |`tests/e2e/test_browser_runtime_e2e.py` 的 t035 代理测试|受控 HTTP 代理实际转发、CDP 版本等|`create_snapshot_file()` 默认 `geoip=False`，t035 未覆盖开启自动 GeoIP；未覆盖 UDP/STUN/DNS，也未证明整个 Supervisor 巡检链|
-|`tests/unit/test_network_policy.py`|代理态尾部 DROP、无代理态 ACCEPT、IPv6 渲染等|仅检查构造 spec 的渲染结果，未从真实 startup/review/probe 方法取输入做等价验证|
-|`tests/unit/test_t026_network_policy_verify.py`|实时规则比较、规范化与 fail-closed|Browser spec 未启用代理强制模式；缺“实际已装代理策略应通过复核”的回归|
+|`tests/unit/test_network_policy.py`|browser 出口尾部 ACCEPT、其他 role 尾部 DROP、IPv6 渲染等|仅检查构造 spec 的渲染结果，未从真实 startup/review/probe 方法取输入做等价验证；`proxy_enforced` 相关两例已随撤销删除|
+|`tests/unit/test_t026_network_policy_verify.py`|实时规则比较、规范化与 fail-closed|缺“生命周期各路径派生策略等价”的回归|
 |`tests/unit/test_t026_supervisor_convergence.py` 等|策略不匹配触发收敛处理|double 只按 role 返回预设结果，未连接真实 adapter 策略、真实 renderer 与 verifier|
 |`tests/unit/test_t052_supervisor_probe.py`|helper 创建、代理允许项、执行与清理|断言 `allowed_tcp`，未断言默认拒绝、IPv6 或与 Browser 策略等价；需补探针旁路负例|
 
@@ -226,7 +229,7 @@ Star 数量、宣传截图、检测页评分均不能当作安全审计或真实
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -B .scratch/proxy_privacy_sdk_repro/reproduce.py
 ```
 
-脚本禁止 socket connect 与 DNS 查询，mock SDK 的出口服务，读取真实 SDK helper、真实启动策略表达式与 adapter 复核/probe 方法。结果写入 `.scratch/proxy_privacy_sdk_repro/results.json`，应包含：SDK `0.6.4`、6 个 GeoIP/显式字段组合、`proxy` keyword 缺失、auto flag 与白名单对照、两族 startup/review 不相等、probe 默认 ACCEPT、Docker DNS/loopback 允许项，以及 `live_browser_leak_verified=false`。
+脚本禁止 socket connect 与 DNS 查询，mock SDK 的出口服务，读取真实 SDK helper、真实启动策略表达式与 adapter 复核/probe 方法。结果写入 `.scratch/proxy_privacy_sdk_repro/results.json`，应包含：SDK `0.6.4`、6 个 GeoIP/显式字段组合、`proxy` keyword 缺失、auto flag 与白名单对照、Docker DNS/loopback 允许项，以及 `live_browser_leak_verified=false`。`proxy_enforced` 的 startup/review 不等与 probe 默认 ACCEPT 属撤销前复现，`047b4d1` 后不再复现。
 
 SDK 认证分派新增离线对照：
 
