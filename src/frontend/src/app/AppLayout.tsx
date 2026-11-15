@@ -4,25 +4,19 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router";
+import { Link, Outlet, useLocation } from "react-router";
 import {
   Globe2,
-  Languages,
   Layers,
-  LogOut,
   Menu,
   MonitorPlay,
-  PanelLeft,
   PanelLeftClose,
   Settings as SettingsIcon,
-  SunMoon,
   X,
 } from "lucide-react";
 import { useApiClient } from "../shared/api/client_context";
-import { useAuth } from "../features/auth/useAuth";
 import { useI18n } from "../i18n";
-import { useTheme, type ThemePreference } from "../theme";
-import { Banner, Button, DropdownMenu, IconButton } from "../shared/ui";
+import { Banner, IconButton } from "../shared/ui";
 import { useRuntimeSnapshot } from "./useRuntimeSnapshot";
 import { useSessionFocus } from "../features/browser-session/session_focus";
 
@@ -79,20 +73,17 @@ function useNarrowLayout(): boolean {
 }
 
 export function AppLayout() {
-  const { t, locale, setLocale } = useI18n();
-  const { preference, setPreference } = useTheme();
-  const { logout } = useAuth();
+  const { t } = useI18n();
   const client = useApiClient();
-  const navigate = useNavigate();
   const location = useLocation();
   const narrow = useNarrowLayout();
   const { focusMode } = useSessionFocus();
-  const isSessionPage = /^\/session\/[^/]+$/.test(location.pathname);
+  const isSessionPage = /^\/session(\/[^/]+)?$/.test(location.pathname);
 
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [width, setWidth] = useState(readWidth);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const { runningCount, coordinatorError } = useRuntimeSnapshot(client);
+  const { coordinatorError } = useRuntimeSnapshot(client);
 
   useEffect(() => {
     try {
@@ -140,15 +131,6 @@ export function AppLayout() {
     window.addEventListener("pointerup", onUp);
   };
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch {
-      // Auth state is cleared locally; the route guard performs the redirect.
-    }
-    navigate("/login");
-  };
-
   let sessionTarget: string | null = null;
   try {
     sessionTarget = sessionStorage.getItem(SESSION_TARGET_KEY);
@@ -163,40 +145,47 @@ export function AppLayout() {
     { to: "/", label: t("navEnvironments"), icon: Layers, key: "navEnvironments" },
     { to: "/proxies", label: t("navProxies"), icon: Globe2, key: "navProxies" },
     { to: sessionPath, label: t("navSessions"), icon: MonitorPlay, key: "navSessions" },
-    { to: "/settings", label: t("navSettings"), icon: SettingsIcon, key: "navSettings" },
   ];
 
-  const themeItems = [
-    { label: t("themeSystem"), value: "system" as ThemePreference },
-    { label: t("themeLight"), value: "light" as ThemePreference },
-    { label: t("themeDark"), value: "dark" as ThemePreference },
-  ];
+  const settingsActive = location.pathname.startsWith("/settings");
 
   const sidebarContent: ReactNode = (
     <div className="flex h-full flex-col bg-sidebar text-on-surface">
-      <div className="flex h-(--component-app-height) shrink-0 items-center justify-between gap-sm border-b border-outline px-md">
-        <Link to="/" className="flex items-center gap-sm overflow-hidden">
-          <img src="/menubar-icon.svg" alt="" className="size-(--component-icon-lg-size) shrink-0" />
-          {!collapsed && (
+      <div
+        className={`flex h-(--component-app-height) shrink-0 items-center border-b border-outline px-md ${
+          collapsed && !narrow ? "justify-center" : "justify-between gap-sm"
+        }`}
+      >
+        {collapsed && !narrow ? (
+          <button
+            type="button"
+            data-testid="sidebar-brand-expand"
+            aria-label={t("sidebarExpand")}
+            title={t("sidebarExpand")}
+            onClick={() => setCollapsed(false)}
+            className="flex size-(--component-icon-button-height) items-center justify-center rounded-md text-on-surface hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            <img src="/menubar-icon.svg" alt="" className="size-(--component-icon-lg-size) shrink-0" />
+          </button>
+        ) : (
+          <Link to="/" className="flex items-center gap-sm overflow-hidden">
+            <img src="/menubar-icon.svg" alt="" className="size-(--component-icon-lg-size) shrink-0" />
             <span className="truncate font-ui text-title-sm tracking-wide">CBrowser</span>
-          )}
-        </Link>
+          </Link>
+        )}
         {narrow ? (
           <IconButton label={t("closeNavigation")} onClick={() => setDrawerOpen(false)}>
             <X aria-hidden="true" className="size-(--component-icon-md-size)" />
           </IconButton>
-        ) : (
+        ) : !collapsed ? (
           <IconButton
-            label={collapsed ? t("sidebarExpand") : t("sidebarCollapse")}
-            onClick={() => setCollapsed(!collapsed)}
+            data-testid="sidebar-collapse-btn"
+            label={t("sidebarCollapse")}
+            onClick={() => setCollapsed(true)}
           >
-            {collapsed ? (
-              <PanelLeft aria-hidden="true" className="size-(--component-icon-md-size)" />
-            ) : (
-              <PanelLeftClose aria-hidden="true" className="size-(--component-icon-md-size)" />
-            )}
+            <PanelLeftClose aria-hidden="true" className="size-(--component-icon-md-size)" />
           </IconButton>
-        )}
+        ) : null}
       </div>
 
       <nav aria-label={t("openNavigation")} className="flex-1 overflow-y-auto p-sm">
@@ -204,7 +193,9 @@ export function AppLayout() {
           {navItems.map((item) => {
             const active = item.key === "navEnvironments"
               ? location.pathname === "/" || location.pathname.startsWith("/profiles/")
-              : location.pathname.startsWith(item.to);
+              : item.key === "navSessions"
+                ? location.pathname.startsWith("/session")
+                : location.pathname.startsWith(item.to);
             const Icon = item.icon;
             return (
               <li key={item.key}>
@@ -213,10 +204,12 @@ export function AppLayout() {
                   aria-current={active ? "page" : undefined}
                   title={collapsed ? item.label : undefined}
                   onClick={() => setDrawerOpen(false)}
-                  className="flex h-(--component-nav-item-height) items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface"
+                  className={`flex h-(--component-nav-item-height) items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface ${
+                    collapsed && !narrow ? "justify-center" : ""
+                  }`}
                 >
                   <Icon aria-hidden="true" className="size-(--component-icon-md-size) shrink-0" />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
+                  {(!collapsed || narrow) && <span className="truncate">{item.label}</span>}
                 </Link>
               </li>
             );
@@ -225,38 +218,19 @@ export function AppLayout() {
       </nav>
 
       <div className="shrink-0 border-t border-outline p-sm">
-        <div
-          data-testid="running-count"
-          className="mb-sm flex items-center gap-sm rounded-md bg-surface-subtle px-sm py-sm font-ui text-label-sm text-on-surface"
+        <Link
+          to="/settings"
+          data-testid="sidebar-settings-link"
+          aria-current={settingsActive ? "page" : undefined}
+          title={collapsed ? t("navSettings") : undefined}
+          onClick={() => setDrawerOpen(false)}
+          className={`flex h-(--component-nav-item-height) items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface ${
+            collapsed && !narrow ? "justify-center" : ""
+          }`}
         >
-          <span className="size-(--component-group-chip-size) shrink-0 rounded-full bg-accent" aria-hidden="true" />
-          {!collapsed && <span className="truncate">{t("runningProfiles", { count: runningCount })}</span>}
-        </div>
-        <div className="flex items-center justify-between gap-xs">
-          <DropdownMenu
-            ariaLabel={t("switchTheme")}
-            trigger={
-              <IconButton label={t("switchTheme")}>
-                <SunMoon aria-hidden="true" className="size-(--component-icon-md-size)" />
-              </IconButton>
-            }
-            items={themeItems.map((item) => ({
-              label: `${preference === item.value ? "• " : ""}${item.label}`,
-              onSelect: () => setPreference(item.value),
-            }))}
-          />
-          <Button
-            size="sm"
-            aria-label={t("switchLanguage")}
-            onClick={() => setLocale(locale === "en" ? "zh" : "en")}
-          >
-            <Languages aria-hidden="true" className="size-(--component-icon-sm-size)" />
-            {!collapsed && <span className="uppercase">{locale}</span>}
-          </Button>
-          <IconButton label={t("logOut")} onClick={handleLogout}>
-            <LogOut aria-hidden="true" className="size-(--component-icon-md-size)" />
-          </IconButton>
-        </div>
+          <SettingsIcon aria-hidden="true" className="size-(--component-icon-md-size) shrink-0" />
+          {(!collapsed || narrow) && <span className="truncate">{t("navSettings")}</span>}
+        </Link>
       </div>
     </div>
   );
@@ -306,6 +280,7 @@ export function AppLayout() {
               aria-orientation="vertical"
               tabIndex={0}
               onPointerDown={startResize}
+              onDoubleClick={() => setWidth(DEFAULT_WIDTH)}
               onKeyDown={(event) => {
                 if (event.key === "ArrowLeft") setWidth(clampWidth(width - 8));
                 if (event.key === "ArrowRight") setWidth(clampWidth(width + 8));
@@ -321,11 +296,11 @@ export function AppLayout() {
           className={
             isSessionPage
               ? "flex min-h-none flex-1 flex-col"
-              : "mx-auto flex min-h-none w-full max-w-page flex-1 flex-col px-lg py-lg"
+              : "mx-auto flex min-h-none w-full max-w-page flex-1 flex-col px-lg py-md"
           }
         >
           {coordinatorError && (
-            <div className="mb-md" data-testid="runtime-coordinator-error-slot">
+            <div className="mb-sm" data-testid="runtime-coordinator-error-slot">
               <Banner tone="warning" testId="runtime-coordinator-error">
                 {t("runtimeCoordinatorError", { error: coordinatorError })}
               </Banner>

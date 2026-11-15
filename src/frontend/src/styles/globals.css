@@ -21,6 +21,7 @@
 
   ::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -33,12 +34,16 @@
     background: var(--color-on-surface-subtle);
   }
 
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button,
   input[type="number"].no-spin::-webkit-inner-spin-button,
   input[type="number"].no-spin::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
   }
+  input[type="number"],
   input[type="number"].no-spin {
     -moz-appearance: textfield;
+    appearance: textfield;
   }
 }
