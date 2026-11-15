@@ -3184,7 +3184,15 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
     makes browser egress traverse a local recording proxy, and the Runner
     reports CDP ``Browser.getVersion`` fields over UDS health.  The snapshot
     carries ``proxy_credential_revision`` and the mounted credentials file
-    must agree, so this also exercises the fail-closed credential path."""
+    must agree, so this also exercises the fail-closed credential path.
+
+    Egress uses a credentialless upstream: Chromium 146 does not accept
+    ``user:pass@`` in an ``http://`` --proxy-server URL (it treats the
+    userinfo as part of the hostname, so no TCP connection is made; d031
+    only proves inline credentials for socks5). Inline-credential URL
+    construction, percent-encoding and fail-closed revision checking are
+    covered by tests/unit/test_t035_proxy_runtime.py instead.
+    """
     if ACTIVE_TEST_NETWORK is None:
         raise RuntimeError("Docker HTTP fixture network is not initialized")
     run_id = uuid.uuid4().hex[:8]
@@ -3230,8 +3238,6 @@ async def test_t035_proxy_outbound_and_cdp_browser_version(
                 "scheme": "http",
                 "host": proxy_name,
                 "port": 18080,
-                "username": "t035",
-                "password": "t035pw",
                 "credential_revision": 1,
             }
         ),

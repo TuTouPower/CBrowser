@@ -809,12 +809,21 @@ def cleanup_prefixed_resources(docker_client: Any, prefix: str) -> None:
             continue
 
         containers_attached = getattr(n, "attrs", {}).get("Containers") or {}
+        network_gone = False
         for _ in range(20):
             if not containers_attached:
                 break
             time.sleep(0.25)
-            n.reload()
+            try:
+                n.reload()
+            except docker.errors.NotFound:
+                # Another teardown step already removed this network: it is
+                # clean by definition, not an error.
+                network_gone = True
+                break
             containers_attached = getattr(n, "attrs", {}).get("Containers") or {}
+        if network_gone:
+            continue
         if containers_attached:
             errors.append(f"network_not_empty({n_name})")
             continue
