@@ -441,6 +441,7 @@
     - **删除面**：`src/backend/cbrowser/stream_agent/x11_keymap.py` 整体删除；`agent.py` 不再替换上游模块全局、不再安装键盘 hook；启动路径不再解析上游 AST/`getsource`、不读取私有属性清单；`tests/unit/test_stream_keymap_abi.py` 整体删除（守护对象即被删门禁），t043 的版本门禁断言随之移除，钉版一致性改由受控构建身份测试守护。
 - 复查条件：Selkies 升级时先按 s020 流程复核扩展面（若新版本出现公开工厂/注册钩子则优先迁移并删除对应补丁）、再核对两份补丁锚点并复跑行为等价与受控构建门禁；锚点不命中即构建失败，按 t043 契约停止并报告，不静默放行。本条取代 ADR 022 中 `x11_keymap` 版本门禁与 t022 适配层的现行做法，ADR 022 的版本升级结论（2.2.1 钉版）不变。
 - 替代：无。
+
 ## 035 控制面遗留兼容清零：严格契约、单一归属与单一校验（2026-11-14，t069）
 
 - 背景：t056 统一错误形状、t051 部署实例身份、t054 部署期网络配置落地后，消费侧仍留有混版本兼容：下游错误解析在三处各自保留 `detail`/裸文本兜底；observed-state 422 时去字段降级重发；网络/容器归属在缺部署身份时回退名称/前缀认领，deploy.sh 对「标签缺失但 compose project 匹配」有删除豁免；`launch_args` 持久化加载走静默过滤而创建/更新走严格校验，双轨并存；viewer 身份有 URL 双参数名、全局注入与 "default" 四路来源。这些回退让错误被当成功、异部署资源被误删、非法存量被掩盖。
@@ -457,52 +458,64 @@
 - 复查条件：任一服务出现新的错误响应生产者时，先核其输出是否为 `ErrorResponse` 单一形状；新增部署资源类型时，认领逻辑必须复用 instance-id 单一证据，不得新设名称/前缀回退。
 - 替代：无（收尾 t056/t051 两条契约的消费侧兼容残留）。
 
-## 036 代理凭据隔离：Browser 永不见凭据，认证由独立转发器注入（2026-11-14，t065）
+## 036 代理凭据隔离：Browser 永不见凭据，认证由独立转发器注入（2026-11-14，t065）（已废弃，见 ADR 037）
 
 - 背景：代理凭据同时出现在 Runner 的 `--proxy-server`（内联 userinfo，
-  `argv`/`/proc` 可见）和 Browser 可读的 `proxy_credentials.json`；
-  `docker_adapter.py` 除凭据 ro bind 外还挂整个 runtime 目录——ro 只防写
-  不防读（来源审阅 p082）。spike s021 逐协议验证转发器可行（见
-  `docs/spikes/s021_proxy_auth_forwarder_topology/report.md`）。
+    `argv`/`/proc` 可见）和 Browser 可读的 `proxy_credentials.json`；
+    `docker_adapter.py` 除凭据 ro bind 外还挂整个 runtime 目录——ro 只防写
+    不防读（来源审阅 p082）。spike s021 逐协议验证转发器可行（见
+    `docs/spikes/s021_proxy_auth_forwarder_topology/report.md`）。
 - 选项：① Browser 内多 UID 隔离（拒绝：同一容器内秘密仍可读，不满足
-  「秘密不可读」）；② 凭据继续放 runtime 目录但改挂载为 tmpfs/只读
-  （拒绝：只防写不防读，隔离失败的根因未动）；③ 每 Profile 一个独立
-  认证转发器容器，凭据只进 secret 目录与转发器，Browser 只连无凭据的
-  本地端点（本条采用）。
+    「秘密不可读」）；② 凭据继续放 runtime 目录但改挂载为 tmpfs/只读
+    （拒绝：只防写不防读，隔离失败的根因未动）；③ 每 Profile 一个独立
+    认证转发器容器，凭据只进 secret 目录与转发器，Browser 只连无凭据的
+    本地端点（本条采用）。
 - 结论：采用选项 3。
     - **秘密落点唯一**：凭据文件只写 `data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`
-      （0600），只以 ro 挂载进转发器容器；Browser 的任何挂载源（runtime
-      目录及其父目录）都不含凭据文件。升级前写在 runtime 目录的旧凭据
-      文件在每次 `start_profile` 写端点时无条件删除（`unlink(missing_ok=True)`），
-      不依赖“忽略”——被 rw 挂载的父目录里留有旧文件即仍可读。
+        （0600），只以 ro 挂载进转发器容器；Browser 的任何挂载源（runtime
+        目录及其父目录）都不含凭据文件。升级前写在 runtime 目录的旧凭据
+        文件在每次 `start_profile` 写端点时无条件删除（`unlink(missing_ok=True)`），
+        不依赖“忽略”——被 rw 挂载的父目录里留有旧文件即仍可读。
     - **转发器**：`src/backend/cbrowser/proxy_forwarder/`（stdlib only，
-      监听 18080，镜像 `config/docker/proxy_forwarder_runtime/`，deploy.sh
-      构建并以 `CBROWSER_PROXY_FORWARDER_IMAGE` 不可变 id 传入 Supervisor）。
-      HTTP/HTTPS 上游走 CONNECT 隧道＋注入 Proxy-Authorization（407 即
-      失败封闭）、absolute-form 直发；SOCKS5 上游走用户名/密码认证、目标
-      域名以 domain 地址直通（远端 DNS，本地永不解析目标名）。任何上游
-      不可达/407/认证失败/畸形客户端请求均关闭连接、无响应体、无直连尝试；
-      日志经 `cbrowser.redact`，永不记密码/Basic token。
+        监听 18080，镜像 `config/docker/proxy_forwarder_runtime/`，deploy.sh
+        构建并以 `CBROWSER_PROXY_FORWARDER_IMAGE` 不可变 id 传入 Supervisor）。
+        HTTP/HTTPS 上游走 CONNECT 隧道＋注入 Proxy-Authorization（407 即
+        失败封闭）、absolute-form 直发；SOCKS5 上游走用户名/密码认证、目标
+        域名以 domain 地址直通（远端 DNS，本地永不解析目标名）。任何上游
+        不可达/407/认证失败/畸形客户端请求均关闭连接、无响应体、无直连尝试；
+        日志经 `cbrowser.redact`，永不记密码/Basic token。
     - **无凭据端点**：Supervisor 在 runtime 目录写 `proxy_forwarder.json`
-      （scheme 恒 http、转发器容器 hostname、端口 18080、冻结
-      credential_revision，无秘密）；Runner 只读该文件、修订号漂移即
-      `proxy_credentials_changed` 失败封闭，`--proxy-server` 不再含
-      userinfo；`build_proxy_server_arg`（内联凭据构造）整体删除。
+        （scheme 恒 http、转发器容器 hostname、端口 18080、冻结
+        credential_revision，无秘密）；Runner 只读该文件、修订号漂移即
+        `proxy_credentials_changed` 失败封闭，`--proxy-server` 不再含
+        userinfo；`build_proxy_server_arg`（内联凭据构造）整体删除。
     - **网络策略**：转发器角色 `proxy-forwarder`（`NetworkPolicySpec`
-      新增 `input_tcp_ports`）：入站只允 18080，出站只允上游端点（IP
-      字面量，容器内 Docker DNS 预解析）＋ Docker DNS（127.0.0.11:53/udp）；
-      OUTPUT 默认 DROP。Browser 的代理出站只允转发器端点；loopback
-      上游的 host-gateway 映射与 `extra_hosts` 改由转发器承担，Browser
-      不再获得该映射。
+        新增 `input_tcp_ports`）：入站只允 18080，出站只允上游端点（IP
+        字面量，容器内 Docker DNS 预解析）＋ Docker DNS（127.0.0.11:53/udp）；
+        OUTPUT 默认 DROP。Browser 的代理出站只允转发器端点；loopback
+        上游的 host-gateway 映射与 `extra_hosts` 改由转发器承担，Browser
+        不再获得该映射。
     - **生命周期**：启动顺序为网络 → 转发器 → Browser → Stream；
-      转发器缺失/退出时 reconcile 只重建转发器（`_replace_proxy_forwarder_only`，
-      与 Stream 替换同型预算）；readiness 增加 `proxy-forwarder` 检查与
-      转发器策略复核；teardown 与 `_confirm_sandbox_gone` 计入转发器；
-      启动 gate 的 `--role` 接受 `proxy-forwarder`。
+        转发器缺失/退出时 reconcile 只重建转发器（`_replace_proxy_forwarder_only`，
+        与 Stream 替换同型预算）；readiness 增加 `proxy-forwarder` 检查与
+        转发器策略复核；teardown 与 `_confirm_sandbox_gone` 计入转发器；
+        启动 gate 的 `--role` 接受 `proxy-forwarder`。
     - **未能验证**：AC-001～004 的真实 Docker/Chrome/引擎拓扑验收（凭据
-      全路径不可读、三协议上游认证、故障封闭、性能基线对比）需真实部署
-      环境，云端顺延 pending p098 登记。
+        全路径不可读、三协议上游认证、故障封闭、性能基线对比）需真实部署
+        环境，云端顺延 pending p098 登记。
 - 复查条件：新增出站协议或上游认证方式时，先按 s021 流程在转发器层
-  验证失败封闭语义，再改 `UpstreamConfig` 白名单；任何一方重新引入
-  Browser 可读凭据（argv、环境、挂载、日志）即违反本决策。
+    验证失败封闭语义，再改 `UpstreamConfig` 白名单；任何一方重新引入
+    Browser 可读凭据（argv、环境、挂载、日志）即违反本决策。
 - 替代：无（p082 的封闭要求无兼容路径）。
+
+## 037 拆除外置认证转发器，Browser 直连上游代理并使用凭据（2026-11-15）
+
+- 背景：ADR 036 以「Browser 永不见凭据」为安全前提，为每 Profile 引入独立认证转发器容器与镜像，由转发器持有 `proxy_credentials.json`、注入上游认证，Browser 只连无凭据本地端点。Chromium 146 原生支持 `--proxy-server=scheme://user:pass@host:port`（d031），该前提与额外容器不再必要。
+- 裁决：删除 t065 外置认证转发器，零兼容层、不留旧路径。凭据由 Browser 直接使用——Supervisor 把 `proxy_credentials.json`（0600，Profile secret 目录）以只读挂载进 Browser 容器，Runner 读文件拼装含凭据的 `--proxy-server`；`credential_revision` 漂移仍失败封闭。
+- 理由：带认证 HTTP/HTTPS/SOCKS5 已由引擎原生支持（d031），转发器仅为注入认证而存在；去除后每 Profile 回到两个沙箱容器（browser/stream），省去第三个容器、独立镜像、编排与网络策略分支。
+- 影响面：
+    - **删除**：`proxy_forwarder` 包与 `config/docker/proxy_forwarder_runtime/` 镜像、转发器容器及 `proxy-forwarder` role/label/策略/就绪/reconcile 分支、`CBROWSER_PROXY_FORWARDER_IMAGE` 注入、`proxy_forwarder.json` 端点文件与相关测试。
+    - **安全模型变更**：原「Browser 永不见凭据 / 凭据只存在转发器容器内」已废弃；凭据以 0600 只读文件挂进 Browser、经 `--proxy-server` 使用，绝不进日志、异常消息与上报状态。loopback→`host.docker.internal` 映射与 `extra_hosts` 归 Browser，Browser 出站只放行不含凭据的上游端点，Docker DNS 解析保留。
+    - **spec 同步**：`docs/specs/proxy_management.md` 第 9 节、`docs/specs/runtime_lifecycle.md` 及 `docs/blueprint/architecture.md` / `security.md` / `supervisor.md` 的转发器现行描述改为直连；ADR 036 保留为历史并标注废弃。
+- 复查条件：Chromium 主版本升级后按 d031 复查带认证代理能力；若原生支持翻转，重引入隔离层须另立 ADR，不回退转发器旧路径。
+- 替代：保留 ADR 036 转发器（拒绝：无保留必要，违背零兼容层）。

@@ -58,10 +58,10 @@
 - **分组与代理写操作幂等（A23）**：group / proxy 的 create / update / delete 支持 `Idempotency-Key` / `X-Operation-ID` / `operation_id`，与 Profile 同一审计语义（同一键 + 同一目标 + 同一载荷重放既有结果；键复用于不同目标 / 动作 / 载荷返回 409 `idempotency_conflict`）。重放不重复触发探测等副作用。`POST /groups/reorder` 不带幂等键。
 - **引用变更事件（A31）**：分组或代理写成功后服务端经 SSE 推送 `groups_changed` / `proxies_changed`（`entity_id` 为变更实体、重排时为 null），前端使对应列表查询与 Profile 列表查询失效重取；手动探测不发事件。
 
-## 9. 运行时凭据隔离与认证转发（t065）
+## 9. 运行时凭据与代理直连（ADR 037）
 
-- 凭据只写 Profile secret 目录（`data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`，0600），只以 ro 挂载进每 Profile 一个的认证转发器容器；Browser 的任何挂载源都不含凭据文件。升级前写在 runtime 目录的旧凭据文件在每次 `start_profile` 写端点时无条件删除（`unlink(missing_ok=True)`），不依赖“忽略”——被 rw 挂载的父目录里留有旧文件即仍可读。
-- 转发器（`src/backend/cbrowser/proxy_forwarder/`，stdlib only，监听 18080）：HTTP/HTTPS 上游走 CONNECT 隧道＋注入 Proxy-Authorization（407 即失败封闭；`https` 上游先以默认验证上下文包 TLS，方括号 IPv6 目标 CONNECT 行带括号）；absolute-form 直发（HTTP 上游先读响应头，非 2xx 即关连接、不透传响应体）；SOCKS5 上游走用户名/密码认证、目标域名以 domain 地址直通（远端 DNS，本地永不解析目标名）、IPv6 字面目标以 ATYP 0x04 编码。用户名无密码时 Basic 仍带冒号（RFC 7617）。上游不可达/407/认证失败/畸形客户端请求（含超 64 KiB 请求头）均关闭连接、无响应体、无直连尝试；日志永不含密码/Basic token。
-- Supervisor 在 runtime 目录写无凭据端点文件 `proxy_forwarder.json`（scheme 恒 http、转发器容器 hostname、端口 18080、冻结 credential_revision）；Runner 只读该文件、修订号漂移即 `proxy_credentials_changed` 失败封闭，`--proxy-server` 为 `http://<转发器容器名>:18080`，不含 userinfo。内联凭据构造 `build_proxy_server_arg` 已删除。
-- 网络策略：转发器入站只允 18080，出站只允上游端点（IP 字面量，容器内 Docker DNS 预解析）＋ Docker DNS（127.0.0.11:53/udp），OUTPUT 默认 DROP；Browser 的代理出站只允转发器端点。loopback 上游的 host-gateway 映射与 `extra_hosts` 由转发器承担。
-- 启动顺序为网络 → 转发器 → Browser → Stream；转发器缺失/退出时只重建转发器，Browser 不动。真实部署链验收（凭据全路径不可读、三协议上游认证、故障封闭、性能基线对比）顺延 pending p098，云端未验、不冒充已验。
+- 凭据文件唯一为 `proxy_credentials.json`：Supervisor 写 Profile secret 目录（`data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`，0600，chown runtime_uid:runtime_gid），字段 `{scheme,host,port,username,password,credential_revision}`；仅以只读 bind 挂进 Browser 容器 `/run/cbrowser/proxy_credentials.json`。升级前写在 runtime 目录的旧凭据文件在每次 `start_profile` 无条件删除（`unlink(missing_ok=True)`，旧版遗留清理）。
+- Runner 读凭据文件并拼装 `--proxy-server=scheme://user:pass@host:port`（Chromium 146 原生支持带认证 HTTP/HTTPS/SOCKS5，d031），userinfo 以 `urllib.parse.quote(s, safe="")` 编码防注入；无用户名/密码时省略认证段，无 `proxy_id` 时不设代理。凭据绝不进日志、异常消息与上报状态。
+- 校验与失败封闭：读文件/字段校验（scheme ∈ {http,https,socks5}、bare 主机名、port 1..65535、整型 `credential_revision`）或 `credential_revision` 与绑定快照不符，任一异常即 `ProxyCredentialsChangedError()`，固定消息 `PROXY_CREDENTIALS_CHANGED`。
+- 网络策略：Browser 出站只放上游端点（`scheme://host:port`，不含凭据，容器内 `_resolved_endpoint` 解析）＋ Docker DNS（127.0.0.11:53/udp）以解析上游域名，OUTPUT 默认 DROP；loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
+- 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理或凭据异常即失败封闭、Browser 不启动。

@@ -6,3 +6,4 @@
 - 复查条件：Chromium 主版本或 `fingerprint_platform` 升级后重跑 s013。
 - 现状：有效（CloakBrowser 0.6.4 / Chromium 146 现行能力，ADR 023 依据）
 - 采纳：t035（无后续 tid）。
+- 现状补充：拆除外置认证转发器后，该能力成为 Browser 直连上游代理、凭据直接用于 `--proxy-server` 的依据（ADR 037）；`credential_revision` 失败封闭不变。
