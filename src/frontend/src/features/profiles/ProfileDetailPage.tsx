@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
 import { AlertCircle } from "lucide-react";
 import { Banner, Button, GroupChip, StatusBadge, Tooltip } from "../../shared/ui";
@@ -11,6 +12,7 @@ import {
   useStopProfileMutation,
 } from "./useProfilesQuery";
 import { ConfigTab } from "./ConfigTab";
+import { ProfileEditDialog } from "./ProfileEditDialog";
 import { SharedProfileBanners } from "./SharedProfileBanners";
 import { MaintenanceTab } from "./MaintenanceTab";
 import { ProfileFilesTab } from "../artifacts/ProfileFilesTab";
@@ -37,6 +39,7 @@ export function ProfileDetailPage() {
   const profile = profileQuery.data;
   const runtime = runtimeQuery.data;
   const groups = groupsQuery.data;
+  const [editOpen, setEditOpen] = useState(false);
   const startMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
 
@@ -145,6 +148,12 @@ export function ProfileDetailPage() {
         >
           {t("detailStop")}
         </Button>
+        <Button
+          data-testid="profile-detail-edit"
+          onClick={() => setEditOpen(true)}
+        >
+          {t("detailEditParams")}
+        </Button>
       </header>
       {controlError && (
         <Banner tone="danger" testId="profile-detail-control-error">
@@ -194,6 +203,11 @@ export function ProfileDetailPage() {
           )}
         </>
       )}
+      <ProfileEditDialog
+        open={editOpen}
+        profile={profile ?? null}
+        onOpenChange={setEditOpen}
+      />
     </div>
   );
 }

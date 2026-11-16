@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -529,5 +529,41 @@ describe("public source collection scope", () => {
     writeFileSync(join(tmp, "theme_boot.js"), "void 0;");
     const paths = collectPublicSources(tmp, "public").map((source) => source.path);
     expect(paths).toEqual(["public/logo.svg", "public/theme_boot.js"]);
+  });
+});
+
+// t073 AC-002/006: success 语义色、深色徽标对比度与宽弹窗尺寸 token。
+describe("t073 design system tokens", () => {
+  const findDesignMd = () => {
+    let dir = process.cwd();
+    for (let i = 0; i < 6; i += 1) {
+      const candidate = join(dir, "DESIGN.md");
+      if (existsSync(candidate)) return candidate;
+      dir = join(dir, "..");
+    }
+    throw new Error("DESIGN.md not found from cwd");
+  };
+  const realDesign = readFileSync(findDesignMd(), "utf8");
+
+  it("DESIGN.md 定义成对 success 语义色且生成器产出 --color-*", () => {
+    expect(realDesign).toContain("light-success:");
+    expect(realDesign).toContain("dark-success:");
+    expect(realDesign).toContain("light-success-soft:");
+    expect(realDesign).toContain("dark-success-soft:");
+    const css = validateAndGenerate(realDesign);
+    expect(css).toContain("--color-success: ");
+    expect(css).toContain("--color-success-soft: ");
+  });
+
+  it("深色 success 徽标与全部声明对通过 WCAG 对比度门禁", () => {
+    expect(() => validateAndGenerate(realDesign)).not.toThrow();
+  });
+
+  it("生成 dialog-sm/md/lg/xl 容器 token 与 max-h 工具类", () => {
+    const css = validateAndGenerate(realDesign);
+    for (const name of ["dialog-sm", "dialog-md", "dialog-lg", "dialog-xl"]) {
+      expect(css).toContain(`--container-${name}:`);
+      expect(css).toContain(`.max-h-${name}`);
+    }
   });
 });

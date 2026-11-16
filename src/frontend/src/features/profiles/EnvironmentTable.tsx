@@ -1,4 +1,16 @@
-import { AlertCircle, AppWindow, Laptop, Monitor } from "lucide-react";
+import {
+  AlertCircle,
+  AppWindow,
+  Copy,
+  ExternalLink,
+  Laptop,
+  Monitor,
+  Pencil,
+  Play,
+  SlidersHorizontal,
+  Square,
+  Trash2,
+} from "lucide-react";
 import { useI18n, type TranslationKey } from "../../i18n";
 import type {
   GroupResponse,
@@ -10,6 +22,7 @@ import {
   Button,
   Checkbox,
   GroupChip,
+  IconButton,
   StatusBadge,
   Table,
   TableBody,
@@ -33,6 +46,7 @@ export type EnvironmentAction =
   | "open"
   | "start"
   | "stop"
+  | "details"
   | "edit"
   | "duplicate"
   | "delete";
@@ -85,35 +99,86 @@ export function EnvironmentRowActions({
 }) {
   const { t } = useI18n();
   const observed = row.runtime?.observed_state ?? "stopped";
-  const running = observed === "running" || observed === "starting";
+  const running = observed === "running";
+  const starting = observed === "starting";
   const stopping = observed === "stopping";
-  const actions: Array<{
-    key: EnvironmentAction;
-    label: string;
-    disabled?: boolean;
-  }> = [
-    { key: "open", label: t("envOpen") },
-    { key: "start", label: t("envStart"), disabled: running },
-    { key: "stop", label: t("envStop"), disabled: stopping },
-    { key: "edit", label: t("envEdit") },
-    { key: "duplicate", label: t("envDuplicate") },
-    { key: "delete", label: t("envDelete") },
-  ];
+  const transitional = starting || stopping;
+  const canStop = running || starting;
+  const id = row.profile.id;
+  const iconClass = "size-(--component-icon-sm-size)";
 
   return (
     <div className="flex flex-wrap items-center gap-xs">
-      {actions.map((action) => (
+      {running ? (
         <Button
-          key={action.key}
           size="sm"
-          variant={action.key === "delete" ? "danger" : "ghost"}
-          disabled={action.disabled}
-          data-testid={`env-action-${action.key}-${row.profile.id}`}
-          onClick={() => onAction(action.key, row)}
+          variant="primary"
+          data-testid={`env-action-open-${id}`}
+          onClick={() => onAction("open", row)}
         >
-          {action.label}
+          <ExternalLink aria-hidden="true" className={iconClass} />
+          {t("envOpen")}
         </Button>
-      ))}
+      ) : (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={transitional}
+          data-testid={`env-action-start-${id}`}
+          onClick={() => onAction("start", row)}
+        >
+          <Play aria-hidden="true" className={iconClass} />
+          {t("envStart")}
+        </Button>
+      )}
+
+      <IconButton
+        label={t("envDetails")}
+        title={t("envDetails")}
+        data-testid={`env-action-details-${id}`}
+        onClick={() => onAction("details", row)}
+      >
+        <SlidersHorizontal aria-hidden="true" className={iconClass} />
+      </IconButton>
+      <IconButton
+        label={t("envEdit")}
+        title={t("envEdit")}
+        data-testid={`env-action-edit-${id}`}
+        onClick={() => onAction("edit", row)}
+      >
+        <Pencil aria-hidden="true" className={iconClass} />
+      </IconButton>
+      <IconButton
+        label={t("envDuplicate")}
+        title={t("envDuplicate")}
+        data-testid={`env-action-copy-${id}`}
+        onClick={() => onAction("duplicate", row)}
+      >
+        <Copy aria-hidden="true" className={iconClass} />
+      </IconButton>
+      {canStop ? (
+        <IconButton
+          variant="warning"
+          label={t("envStop")}
+          title={t("envStop")}
+          disabled={stopping}
+          data-testid={`env-action-stop-${id}`}
+          onClick={() => onAction("stop", row)}
+        >
+          <Square aria-hidden="true" className={iconClass} />
+        </IconButton>
+      ) : (
+        <IconButton
+          variant="danger"
+          label={t("envDelete")}
+          title={t("envDelete")}
+          disabled={stopping}
+          data-testid={`env-action-delete-${id}`}
+          onClick={() => onAction("delete", row)}
+        >
+          <Trash2 aria-hidden="true" className={iconClass} />
+        </IconButton>
+      )}
     </div>
   );
 }
@@ -193,9 +258,7 @@ export function EnvironmentTable({
               row.profile.fingerprint_platform,
               t,
             );
-            const tzLabel =
-              row.profile.timezone ||
-              (row.profile.geoip ? t("envGeoipFollowProxy") : "");
+            const tzLabel = row.profile.timezone || "";
             return (
               <TableRow
                 key={id}

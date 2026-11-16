@@ -49,6 +49,7 @@
 - 剪贴板权限提示（`ClipboardPermissionHint`）、音频状态与诊断浮层按设计系统重建、行为语义不变：剪贴板只探测权限不读写本机剪贴板，音频经官方 `pipelineControl` 的 `STOP_AUDIO` / `START_AUDIO`，诊断取自 `RTCPeerConnection` 状态与 `getStats()`（t039）。
 - 旧会话页组件（`BrowserSessionPage` / `BrowserSessionView` / `BrowserSessionMount` 及旧测试）整体删除；`data-testid` 全部改 `sess-*` 结构（旧 `browser-session-*` / `session-*` / `diag-*` 弃用），会话 E2E 与组件测试选择器同步改写（t039）。
 - 旧页面全部替换后启用全局颜色门禁：`npm run design:lint` 的 `--lint` 经 `runLintSources(sources)` 同时跑尺寸断言与颜色断言，扫描前端源码颜色字面量与默认调色板类发现即失败、无豁免（见 testing.md「t039 全局颜色门禁」）。
+- t073：工作台顶栏状态徽标直接显示带主语的本地化文案（`sessHeaderEnv*` / `sessHeaderTransport*`），不再用 `sr-only` 隐藏主语；`SessionDetailsPanel` 左列短词仍用 `sessTransport` / `transportState*` 不受影响。`status-badge-running-*` 指向 success 语义色，环境切换器 running 圆点改 `bg-success`，深色顶栏上彩色文字与语义描边通过 WCAG AA。`SearchField` 改 Flex 组合（外层容器承载边框 / 聚焦高亮，内部图标槽 + 无边框 input），从架构上根除图标与文本重叠。
 
 SSE 消费契约（t022）：快照帧为订阅私有数据，携带 live 基点事件 id（快照时刻最后一条实时事件序号），不进入共享历史；重连以基点 id 经 Last-Event-ID 续传，服务端回放基点之后的实时事件，无缺口无倒退；窗口不足时服务端以全量快照显式重建。Profile 详情页呈现独立的默认搜索初始化状态：`search_defaults.state == "failed"` 时显示与浏览器可用性分离的失败提示与重试按钮（调用 `POST /profiles/{id}/runtime/search-defaults/retry`），不要求重启浏览器。
 
@@ -70,6 +71,7 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - 应用外壳：导航侧栏顶部为主导航（环境管理 / 代理管理 / 工作台），底部左下角固定放置「设置」入口（主题切换、语言切换与退出登录统一收纳于设置页内）；侧栏可折叠为 72px 图标栏（折叠态隐藏折叠按钮，点击左上角品牌图标展开）、200–360px 拖宽（双击重置默认宽度），状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
 - 基础组件在 `src/frontend/src/shared/ui/`：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语。
 - 登录页与设置页按设计系统重做；设置页平台字体区块展示人类可读字体包名称与本地化平台名称，完整性不一致显示告警。
+- t073：`Colors` 新增成对 `light/dark-success` 与 `light/dark-success-soft`，`Contrast` 表声明 success 对各类 surface 的 text（≥4.5:1）与 graphic（≥3.0:1）校验行；`status-badge-running/transition/error` 的 `textColor` 改指 `*-success` / `*-warning` / `*-danger` 彩色语义文字并加语义描边，`stopped` 保持中性。`Container sizes` 新增 `dialog-sm/md/lg/xl` 梯度（生成器产出 `--container-*` 与 `max-w-dialog-*`）。`Dialog` 新增 `size` prop 与 header 固定、body 内部平滑滚动；`IconButton` 新增 `variant="danger" | "warning"`；基础组件只用语义 token。
 
 ## 7. 环境管理界面（t037+）
 
@@ -77,6 +79,7 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - 数据装配：`ProfileResponse` 只含 `group_id` / `proxy_id`，列表的分组名、代理列（仅显示代理名或「直连」）、备注 Tooltip 图标与本地化平台/时区由 `useGroupsQuery` / `useProxiesQuery` 与 `useProfilesQuery` 客户端 join；五态与 last activity 来自 `ProfileRuntimeResponse`（`useProfileRuntimeQuery` / `useRuntimeSnapshot` 与 SSE 缓存）。不向用户展示 `#0001` 内部显示编号。
 - `useEnvironmentFilters`（支持搜索、状态、分组、系统平台 `windows`/`macos`、代理 `direct`/具体代理与排序，同步 URL 查询参数）、`useEnvironmentLayout`（localStorage，由图标按钮切换列表/卡片视图）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；「分组管理」作为独立按钮置于工具栏右侧。
 - 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；种子范围（`100000 – 999999`）通过感叹号图标悬浮 Tooltip 展示，重摇种子使用图标化刷新按钮；选择代理、切换语言或切换系统平台时自动对齐对应的时区、语言、平台字体包（展示可读名称而非 SHA256 哈希）与默认分辨率。
+- t073：环境列表与卡片仅在 `profile.timezone` 显式非空时显示时区，隐藏默认 / 自动匹配时区；`env-running-count` 改为带标签的 `runningProfiles` 文案与绿色运行圆点，不再渲染裸数字。`EnvironmentRowActions` 每行仅 1 个带文字主按钮（运行中蓝色「打开」、非运行「启动」），详情 / 编辑 / 复制 / 停止 / 删除收敛为带 `aria-label` 与 `title` 的纯图标按钮，运行态显示 warning 停止、非运行态显示 danger 红色删除。新建 `ProfileCreateDialog` 与编辑 `ProfileEditDialog` 统一用 `Dialog size="lg"` 宽弹窗 + `ProfileForm` 多列布局，编辑走 `diffProfileValues` 差分更新；列表行「编辑」直接唤起编辑弹窗，「配置详情」跳转 `/profiles/:id/config`，详情页页头也提供编辑入口。
 
 ## 8. 代理管理界面（t038+）
 

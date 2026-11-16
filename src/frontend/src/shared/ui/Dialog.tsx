@@ -3,6 +3,15 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "./cn";
 
+export type DialogSize = "sm" | "md" | "lg" | "xl";
+
+const DIALOG_SIZES: Record<DialogSize, string> = {
+  sm: "max-w-dialog-sm",
+  md: "max-w-dialog",
+  lg: "max-w-dialog-lg",
+  xl: "max-w-dialog-xl",
+};
+
 export function Dialog({
   trigger,
   title,
@@ -10,6 +19,7 @@ export function Dialog({
   open,
   onOpenChange,
   contentClassName,
+  size = "md",
 }: {
   trigger: ReactNode;
   title: string;
@@ -17,6 +27,7 @@ export function Dialog({
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   contentClassName?: string;
+  size?: DialogSize;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -27,15 +38,15 @@ export function Dialog({
           aria-modal="true"
           aria-describedby={undefined}
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-dialog-width max-w-dialog -translate-x-1/2 -translate-y-1/2 rounded-xl border border-outline bg-surface-raised p-lg text-on-surface shadow-xl",
-            "focus:outline-none",
+            "fixed left-1/2 top-1/2 z-50 flex max-h-dialog-height w-dialog-width -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-outline bg-surface-raised p-lg text-on-surface shadow-xl focus:outline-none",
+            DIALOG_SIZES[size],
             contentClassName,
           )}
         >
-          <DialogPrimitive.Title className="font-ui text-headline-md">
+          <DialogPrimitive.Title className="shrink-0 font-ui text-headline-md">
             {title}
           </DialogPrimitive.Title>
-          <div className="mt-md">{children}</div>
+          <div className="mt-md flex-1 overflow-y-auto">{children}</div>
           <DialogPrimitive.Close asChild>
             <button
               type="button"

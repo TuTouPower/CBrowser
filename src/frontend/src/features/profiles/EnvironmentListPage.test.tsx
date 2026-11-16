@@ -380,7 +380,10 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(p2.textContent).not.toContain(en.envGeoipFollowProxy);
   });
 
-  it("shows direct proxy label and geoip follow-proxy hint", async () => {
+  // t073 AC-004: 未显式设置时区时不再打印默认/自动匹配时区提示。
+  // 旧用例断言 geoip 环境显示 envGeoipFollowProxy，锁定了默认时区噪音，
+  // 故整体替换为新语义用例（非就地改预期）。
+  it("shows direct proxy label and hides default timezone hint", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     const direct = screen.getByTestId("env-direct-p2");
@@ -388,7 +391,18 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(screen.queryByTestId("env-direct-p1")).toBeNull();
 
     const p1 = screen.getByTestId("env-row-p1");
-    expect(p1.textContent).toContain(en.envGeoipFollowProxy);
+    expect(p1.textContent).not.toContain(en.envGeoipFollowProxy);
+  });
+
+  it("仅显式设置的自定义时区出现在环境行中（AC-004）", async () => {
+    stub = makeStub({
+      profiles: [profile({ id: "p1", timezone: "Asia/Shanghai" })],
+    });
+    renderPage();
+    await screen.findByTestId("env-table");
+    expect(screen.getByTestId("env-row-p1").textContent).toContain(
+      "Asia/Shanghai",
+    );
   });
 
   it("renders all five status tones with text and an error reason tooltip", async () => {
@@ -605,7 +619,14 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
     expect(screen.getByTestId("env-status-p1").textContent).toContain(
       en.statusRunning,
     );
-    expect(screen.getByTestId("env-running-count").textContent).toContain("1");
+    // t073 AC-004: 旧用例用 .toContain("1")/("0") 弱断言锁定裸数字渲染，
+    // 漏检无标签计数，故整体替换为带标签且非纯数字的严格断言。
+    expect(screen.getByTestId("env-running-count").textContent).toContain(
+      en.runningProfiles.replace("{count}", "1"),
+    );
+    expect(
+      screen.getByTestId("env-running-count").textContent,
+    ).not.toMatch(/^\s*\d+\s*$/);
 
     const next = runtime("p1", "error", {
       last_coordinator_error: "sse failure",
@@ -625,7 +646,7 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
     );
     await waitFor(() =>
       expect(screen.getByTestId("env-running-count").textContent).toContain(
-        "0",
+        en.runningProfiles.replace("{count}", "0"),
       ),
     );
   });
@@ -736,5 +757,78 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     await waitFor(() => expect(checkedState("p1")).toBe("false"));
     expect(checkedState("p2")).toBe("true");
     expect(screen.getByTestId("env-batch-bar").textContent).toContain("1");
+  });
+});
+
+// t073 AC-005/006: 图标化操作栏、红色删除、宽编辑弹窗与差分更新。
+describe("EnvironmentListPage t073 操作栏与宽编辑弹窗", () => {
+  it("运行行仅 1 个带文字主按钮，次级操作为图标按钮，停止为 warning", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+
+    const row = screen.getByTestId("env-row-p1");
+    const textButtons = within(row)
+      .getAllByRole("button")
+      .filter((button) => (button.textContent ?? "").trim().length > 0);
+    expect(textButtons).toHaveLength(1);
+    expect(textButtons[0]!.textContent).toContain(en.envOpen);
+    expect(screen.getByTestId("env-action-details-p1")).toHaveAttribute(
+      "aria-label",
+      en.envDetails,
+    );
+    expect(screen.getByTestId("env-action-edit-p1")).toHaveAttribute(
+      "aria-label",
+      en.envEdit,
+    );
+    expect(screen.getByTestId("env-action-copy-p1")).toHaveAttribute(
+      "aria-label",
+      en.envDuplicate,
+    );
+    expect(screen.getByTestId("env-action-stop-p1").className).toContain(
+      "text-warning",
+    );
+    expect(screen.queryByTestId("env-action-delete-p1")).toBeNull();
+  });
+
+  it("停止行显示红色 danger 删除图标按钮，主按钮为启动", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+
+    const row = screen.getByTestId("env-row-p2");
+    const textButtons = within(row)
+      .getAllByRole("button")
+      .filter((button) => (button.textContent ?? "").trim().length > 0);
+    expect(textButtons).toHaveLength(1);
+    expect(textButtons[0]!.textContent).toContain(en.envStart);
+    expect(screen.getByTestId("env-action-delete-p2").className).toContain(
+      "text-danger",
+    );
+    expect(screen.queryByTestId("env-action-stop-p2")).toBeNull();
+  });
+
+  it("点击编辑弹出宽弹窗，保存走差分更新", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+    fireEvent.click(screen.getByTestId("env-action-edit-p1"));
+
+    const dialog = await screen.findByTestId("env-edit-dialog");
+    expect(dialog.closest('[role="dialog"]')?.className).toContain(
+      "max-w-dialog-lg",
+    );
+    fireEvent.change(within(dialog).getByTestId("profile-form-name"), {
+      target: { value: "Alpha renamed" },
+    });
+    fireEvent.click(within(dialog).getByTestId("profile-form-submit"));
+
+    await waitFor(() =>
+      expect(stub.spies.profiles.update).toHaveBeenCalledTimes(1),
+    );
+    const calls = (
+      stub.spies.profiles.update as unknown as {
+        mock: { calls: unknown[][] };
+      }
+    ).mock.calls;
+    expect(calls[0]![1]).toMatchObject({ name: "Alpha renamed" });
+    expect(Object.keys(calls[0]![1] as object)).toEqual(["name"]);
   });
 });

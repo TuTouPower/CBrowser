@@ -1,0 +1,14 @@
+{
+  "tid": "t073",
+  "attempt": 1,
+  "execution_id": "ddb7b1fe95784efbbe7586eceb77d872",
+  "status": "done",
+  "branch": "t073_frontend_design_system_env_and_session_ui",
+  "base_sha": "04ff5c5af5439d1182642798be887abc8447ec0d",
+  "tests": "`npm test --prefix src/frontend`（含 `test:types`）84 files / 659 tests 全绿；`npm run design:lint` 0 error / 0 warning、97 源码 + 7 public 干净；`npm run design:check` up to date；`npm run build --prefix src/frontend` 成功；全量门禁 `scripts/run_gates.sh` 通过（contract 257 / unit 2199 / integration 187 / frontend_test 659 / frontend_build）。",
+  "blackbox": "NOT_RUN。`CBROWSER_E2E_REQUIRED=1 pytest tests/e2e --collect-only` 实测在收集期失败并列出 13 项缺项（API / Caddy / Gateway / network-policy / Runtime / Stream / Supervisor 不可变 `sha256` 镜像 ID、Linux 引擎缓存、GeoIP 缓存、字体目录），属 t032 目标环境部署级活动，本会话未配置。按 `testing.md` `verification_notes` 的 NOT_RUN / USER_WAIVED 口径与 t073 spec 测试策略「若宿主 Playwright 环境就绪」条件，不执行真实 Docker / Chrome E2E，不记为已验；证据在 `.scratch/e2e_preflight_t073.log`。替代验收：`DESIGN.md` Contrast 表经 `design:tokens` 逐对计算 WCAG AA（text 4.5:1 / graphic 3.0:1）、`design:lint` / `design:check` 校验语义色与容器 token 产物、Vitest UI 原语与页面组件断言（Flex 不重叠、绿色语义类、带主语文案、带标签计数、图标化操作栏、宽弹窗差分更新）触达全部 6 条 AC。",
+  "review": "single 级，Round 1 PASS（2 minor）+ Round 2 PASS（0 finding）；`check_review_status.py` overall=PASS / review_scope=ok / ac_review=ok；`review_general.md` 指纹 `b547703abe202511`。",
+  "review_scope": "b547703abe202511",
+  "pending": [],
+  "findings": []
+}

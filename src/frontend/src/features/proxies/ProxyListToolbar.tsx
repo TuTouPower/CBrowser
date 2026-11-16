@@ -63,6 +63,7 @@ export function ProxyListToolbar({
           placeholder={t("proxySearch")}
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
+          containerClassName="w-(--component-search-field-width)"
         />
         <div data-testid="proxy-scheme-filter">
           <Select

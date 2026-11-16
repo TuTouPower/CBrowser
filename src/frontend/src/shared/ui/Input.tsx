@@ -32,15 +32,23 @@ export function SearchField({
   ...rest
 }: SearchFieldProps) {
   return (
-    <div className={cn("relative", containerClassName)}>
+    <div
+      className={cn(
+        "flex h-(--component-input-height) items-center gap-sm rounded-md border border-outline bg-surface px-md transition-colors focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus",
+        containerClassName,
+      )}
+    >
       <Search
         aria-hidden="true"
-        className="pointer-events-none absolute left-md top-1/2 size-(--component-icon-md-size) -translate-y-1/2 text-on-surface-muted"
+        className="size-(--component-icon-md-size) shrink-0 text-on-surface-muted"
       />
-      <Input
-        label={label}
+      <input
+        aria-label={label}
         type="search"
-        className={cn("pl-xl", className)}
+        className={cn(
+          "flex-1 overflow-hidden bg-transparent font-ui text-body-md text-on-surface placeholder:text-on-surface-subtle focus:outline-none disabled:opacity-50",
+          className,
+        )}
         {...rest}
       />
     </div>

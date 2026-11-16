@@ -43,6 +43,10 @@ colors:
   dark-warning: "#F7B53C"
   light-warning-soft: "#FDF1DC"
   dark-warning-soft: "#33270F"
+  light-success: "#0E6B32"
+  dark-success: "#34D399"
+  light-success-soft: "#E6F7ED"
+  dark-success-soft: "#112E22"
   light-overlay: "#0B12208C"
   dark-overlay: "#05070AC7"
   light-focus: "#2F66E0"
@@ -487,33 +491,33 @@ components:
     rounded: "{rounded.md}"
     padding: "{spacing.md}"
   status-badge-running-light:
-    backgroundColor: "{colors.light-accent-soft}"
-    textColor: "{colors.light-on-surface}"
+    backgroundColor: "{colors.light-success-soft}"
+    textColor: "{colors.light-success}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-running-dark:
-    backgroundColor: "{colors.dark-accent-soft}"
-    textColor: "{colors.dark-on-surface}"
+    backgroundColor: "{colors.dark-success-soft}"
+    textColor: "{colors.dark-success}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-transition-light:
     backgroundColor: "{colors.light-warning-soft}"
-    textColor: "{colors.light-on-surface}"
+    textColor: "{colors.light-warning}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-transition-dark:
     backgroundColor: "{colors.dark-warning-soft}"
-    textColor: "{colors.dark-on-surface}"
+    textColor: "{colors.dark-warning}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-error-light:
     backgroundColor: "{colors.light-danger-soft}"
-    textColor: "{colors.light-on-surface}"
+    textColor: "{colors.light-danger}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-error-dark:
     backgroundColor: "{colors.dark-danger-soft}"
-    textColor: "{colors.dark-on-surface}"
+    textColor: "{colors.dark-danger}"
     rounded: "{rounded.sm}"
     padding: "{spacing.md}"
   status-badge-stopped-light:
@@ -882,6 +886,14 @@ UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `
 |{colors.light-accent}|{colors.light-surface-subtle}|text|
 |{colors.dark-accent}|{colors.dark-surface}|text|
 |{colors.dark-accent}|{colors.dark-surface-subtle}|text|
+|{colors.light-success}|{colors.light-background}|text|
+|{colors.light-success}|{colors.light-surface}|text|
+|{colors.light-success}|{colors.light-surface-raised}|text|
+|{colors.light-success}|{colors.light-surface-subtle}|text|
+|{colors.dark-success}|{colors.dark-background}|text|
+|{colors.dark-success}|{colors.dark-surface}|text|
+|{colors.dark-success}|{colors.dark-surface-raised}|text|
+|{colors.dark-success}|{colors.dark-surface-subtle}|text|
 |{colors.light-warning}|{colors.light-background}|graphic|
 |{colors.light-warning}|{colors.light-surface}|graphic|
 |{colors.dark-warning}|{colors.dark-background}|graphic|
@@ -898,6 +910,14 @@ UI 字体 Inter Variable，技术数据字体 JetBrains Mono Variable，均经 `
 |{colors.dark-accent}|{colors.dark-background}|graphic|
 |{colors.dark-accent}|{colors.dark-surface}|graphic|
 |{colors.dark-accent}|{colors.dark-stage}|graphic|
+|{colors.light-success}|{colors.light-background}|graphic|
+|{colors.light-success}|{colors.light-surface}|graphic|
+|{colors.light-success}|{colors.light-surface-raised}|graphic|
+|{colors.light-success}|{colors.light-stage}|graphic|
+|{colors.dark-success}|{colors.dark-background}|graphic|
+|{colors.dark-success}|{colors.dark-surface}|graphic|
+|{colors.dark-success}|{colors.dark-surface-raised}|graphic|
+|{colors.dark-success}|{colors.dark-stage}|graphic|
 |{colors.light-focus}|{colors.light-background}|graphic|
 |{colors.light-focus}|{colors.light-surface}|graphic|
 |{colors.dark-focus}|{colors.dark-background}|graphic|
@@ -951,6 +971,10 @@ tokens instead. The generator emits them into the independent
 |token|value|
 |---|---|
 |dialog|32rem|
+|dialog-sm|24rem|
+|dialog-md|32rem|
+|dialog-lg|44rem|
+|dialog-xl|56rem|
 |dialog-width|calc(100% - 2rem)|
 |dialog-height|90vh|
 |panel|28rem|

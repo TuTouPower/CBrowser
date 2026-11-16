@@ -1,7 +1,18 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { Button, Dialog, DropdownMenu, Popover, ToastProvider, Tooltip, useToast } from "./index";
+import {
+  Button,
+  Dialog,
+  DropdownMenu,
+  IconButton,
+  Popover,
+  SearchField,
+  StatusBadge,
+  ToastProvider,
+  Tooltip,
+  useToast,
+} from "./index";
 
 beforeAll(() => {
   class ResizeObserverStub {
@@ -129,5 +140,84 @@ describe("Toast", () => {
     await waitFor(() => expect(screen.getByTestId("toast-item")).toHaveTextContent("second"));
     expect(screen.getAllByTestId("toast-viewport")).toHaveLength(1);
     expect(screen.getAllByTestId("toast-item")).toHaveLength(1);
+  });
+});
+
+// t073 AC-001/002/005/006: Flex 搜索框、彩色状态徽标、危险图标按钮与尺寸弹窗。
+describe("t073 UI primitives", () => {
+  it("SearchField 用 Flex 组合根除图标文字重叠，data-testid 落在 input", () => {
+    render(
+      <SearchField
+        label="Search"
+        data-testid="env-search"
+        placeholder="Find"
+        containerClassName="w-(--component-search-field-width)"
+      />,
+    );
+    const input = screen.getByTestId("env-search") as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    expect(input).toHaveAttribute("aria-label", "Search");
+    expect(input).toHaveAttribute("placeholder", "Find");
+    const container = input.parentElement as HTMLElement;
+    expect(container.className).toContain("flex");
+    expect(container.className).toContain("items-center");
+    expect(container.className).not.toContain("relative");
+    expect(container.className).not.toContain("pl-xl");
+    // t073_gen_f002: 基础类不得含 w-full，否则纯 join 的 cn() 会覆盖容器宽度约束。
+    expect(container.className).not.toContain("w-full");
+    expect(container.className).toContain("w-(--component-search-field-width)");
+    const icon = container.querySelector("svg");
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute("class") ?? "").toContain("shrink-0");
+    expect(icon?.getAttribute("class") ?? "").not.toContain("absolute");
+  });
+
+  it.each([
+    ["running", "bg-success-soft", "text-success", "border-success"],
+    ["transition", "bg-warning-soft", "text-warning", "border-warning"],
+    ["error", "bg-danger-soft", "text-danger", "border-danger"],
+  ] as const)(
+    "StatusBadge %s 使用彩色语义文字与描边，不再用 accent-soft/on-surface",
+    (tone, background, foreground, border) => {
+      render(<StatusBadge tone={tone} label="state" />);
+      const badge = screen.getByText("state");
+      expect(badge.className).toContain(background);
+      expect(badge.className).toContain(foreground);
+      expect(badge.className).toContain(border);
+      expect(badge.className).not.toContain("bg-accent-soft");
+      expect(badge.className).not.toContain("text-on-surface");
+    },
+  );
+
+  it("IconButton danger/warning 变体使用语义色", () => {
+    const { rerender } = render(
+      <IconButton label="del" variant="danger">x</IconButton>,
+    );
+    expect(screen.getByRole("button", { name: "del" }).className).toContain(
+      "text-danger",
+    );
+    rerender(<IconButton label="stop" variant="warning">x</IconButton>);
+    expect(screen.getByRole("button", { name: "stop" }).className).toContain(
+      "text-warning",
+    );
+  });
+
+  it.each([
+    ["sm", "max-w-dialog-sm"],
+    ["md", "max-w-dialog"],
+    ["lg", "max-w-dialog-lg"],
+    ["xl", "max-w-dialog-xl"],
+  ] as const)("Dialog size=%s 映射语义容器类并支持内部滚动", async (size, cls) => {
+    render(
+      <Dialog trigger={<Button>Open</Button>} title="T" size={size}>
+        <div>body</div>
+      </Dialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.className.split(/\s+/)).toContain(cls);
+    expect(dialog.className).toContain("max-h-dialog-height");
+    expect(dialog.className).toContain("flex-col");
+    expect(dialog.querySelector(".overflow-y-auto")).not.toBeNull();
   });
 });
