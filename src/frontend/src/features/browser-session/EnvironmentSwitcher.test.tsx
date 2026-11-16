@@ -15,6 +15,7 @@ import type {
 } from "../../shared/api/types";
 import {
   EnvironmentSwitcher,
+  statusDotClass,
   type EnvironmentSwitcherProps,
 } from "./EnvironmentSwitcher";
 import {
@@ -283,5 +284,24 @@ describe("EnvironmentSwitcher", () => {
       ),
     );
     expect(screen.queryByTestId(SESS_SWITCHER_SEARCH)).toBeNull();
+  });
+
+  // t073 AC-002: running 状态圆点改用绿色 success，旧版 bg-accent 为蓝色。
+  it("statusDotClass running 返回绿色 success 而非蓝色 accent", () => {
+    expect(statusDotClass("running")).toContain("bg-success");
+    expect(statusDotClass("running")).not.toContain("bg-accent");
+  });
+
+  it("运行中环境的触发器圆点渲染 bg-success", async () => {
+    const props = fixture();
+    renderSwitcher(props, makeStub({ p1: runtime("p1", "running") }));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("sess-switcher-trigger-dot").className,
+      ).toContain("bg-success"),
+    );
+    expect(
+      screen.getByTestId("sess-switcher-trigger-dot").className,
+    ).not.toContain("bg-accent");
   });
 });

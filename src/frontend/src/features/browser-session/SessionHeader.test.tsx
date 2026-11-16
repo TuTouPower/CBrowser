@@ -213,31 +213,48 @@ beforeEach(() => {
 });
 
 describe("SessionHeader", () => {
-  it("显示 observed state 与 transport 文案，状态以文字呈现", () => {
+  // t073 AC-002/AC-003: 顶栏改为直接可见、带主语的本地化状态文案并接入
+  // success 绿色语义样式。旧用例断言 sr-only 的 "State"/"Transport" 与裸词
+  // "Running"/"Ready"，锁定了隐藏主语缺陷，故整体替换为新语义用例
+  //（禁止就地把旧预期改成当前实现的输出）。
+  it("顶栏状态徽标直接显示带主语的本地化文案，无 sr-only 隐藏主语", () => {
     renderHeader(fixture());
 
     const header = screen.getByTestId(SESS_HEADER);
-    expect(within(header).getByText(en.sessObservedState)).toBeInTheDocument();
     expect(
-      within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(en.sessRunning),
-    ).toBeInTheDocument();
-    expect(within(header).getByText(en.sessTransport)).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
-        en.transportStateReady,
+      within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
+        en.sessHeaderEnvRunning,
       ),
     ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
+        en.sessHeaderTransportReady,
+      ),
+    ).toBeInTheDocument();
+    expect(within(header).queryByText(en.sessObservedState)).toBeNull();
+    expect(within(header).queryByText(en.sessTransport)).toBeNull();
+    expect(header.querySelectorAll(".sr-only")).toHaveLength(0);
   });
 
-  // t061 AC-004: the badge renders the localized label for each
-  // transport state, never the raw machine value (the pre-t061 suite
-  // asserted the raw values verbatim).
+  it("运行中徽标使用绿色 success 语义样式，不再使用蓝色", () => {
+    renderHeader(fixture());
+
+    const badge = within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
+      en.sessHeaderEnvRunning,
+    );
+    expect(badge.className).toContain("bg-success-soft");
+    expect(badge.className).toContain("text-success");
+    expect(badge.className).toContain("border-success");
+    expect(badge.className).not.toContain("bg-accent-soft");
+    expect(badge.className).not.toContain("text-on-surface");
+  });
+
   it.each([
-    ["ready", en.transportStateReady],
-    ["recovering", en.transportStateRecovering],
-    ["failed", en.transportStateFailed],
-    ["unknown", en.transportStateUnknown],
-  ] as const)("transport 状态 %s 显示本地化文案", (transportState, label) => {
+    ["ready", en.sessHeaderTransportReady],
+    ["recovering", en.sessHeaderTransportRecovering],
+    ["failed", en.sessHeaderTransportFailed],
+    ["unknown", en.sessHeaderTransportUnknown],
+  ] as const)("transport 状态 %s 显示带主语的本地化文案", (transportState, label) => {
     const props = fixture({
       runtime: runtime("p1", "running", {
         transport: {
@@ -260,24 +277,30 @@ describe("SessionHeader", () => {
     ).toBeNull();
   });
 
-  it("中文界面下 transport 显示中文文案（AC-004）", () => {
+  it("中文界面顶栏显示带主语的中文文案（AC-003）", () => {
     localStorage.setItem("cbrowser.locale", "zh");
     renderHeader(fixture());
 
     expect(
-      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
-        zh.transportStateReady,
+      within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
+        zh.sessHeaderEnvRunning,
       ),
     ).toBeInTheDocument();
-    expect(zh.transportStateReady).toBe("正常");
+    expect(
+      within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
+        zh.sessHeaderTransportReady,
+      ),
+    ).toBeInTheDocument();
+    expect(zh.sessHeaderEnvRunning).toBe("环境运行中");
+    expect(zh.sessHeaderTransportReady).toBe("数据传输正常");
   });
 
   it.each([
-    ["recovering", zh.transportStateRecovering],
-    ["failed", zh.transportStateFailed],
-    ["unknown", zh.transportStateUnknown],
+    ["recovering", zh.sessHeaderTransportRecovering],
+    ["failed", zh.sessHeaderTransportFailed],
+    ["unknown", zh.sessHeaderTransportUnknown],
   ] as const)(
-    "中文界面下 transport 状态 %s 显示中文文案（AC-004）",
+    "中文界面 transport 状态 %s 显示带主语的中文文案（AC-003）",
     (transportState, label) => {
       localStorage.setItem("cbrowser.locale", "zh");
       const props = fixture({
@@ -298,7 +321,7 @@ describe("SessionHeader", () => {
     },
   );
 
-  it("未知或缺失的 transport 值回落本地化 unknown，不泄漏原始机器码", () => {
+  it("未知或缺失的 transport 值回落带主语的本地化 unknown，不泄漏原始机器码", () => {
     const props = fixture({
       runtime: runtime("p1", "running", {
         transport: {
@@ -312,19 +335,23 @@ describe("SessionHeader", () => {
     renderHeader(props);
 
     const badge = screen.getByTestId(TRANSPORT_STATE_ID);
-    expect(within(badge).getByText(en.transportStateUnknown)).toBeInTheDocument();
+    expect(
+      within(badge).getByText(en.sessHeaderTransportUnknown),
+    ).toBeInTheDocument();
     expect(within(badge).queryByText("half_open")).toBeNull();
   });
 
-  it("runtime 为空时 observed 回落 stopped、transport 回落 unknown，无待应用标记", () => {
+  it("runtime 为空时 observed 回落带主语的 stopped、transport 回落带主语的 unknown，无待应用标记", () => {
     renderHeader(fixture({ runtime: null }));
 
     expect(
-      within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(en.sessStopped),
+      within(screen.getByTestId(OBSERVED_STATE_ID)).getByText(
+        en.sessHeaderEnvStopped,
+      ),
     ).toBeInTheDocument();
     expect(
       within(screen.getByTestId(TRANSPORT_STATE_ID)).getByText(
-        en.transportStateUnknown,
+        en.sessHeaderTransportUnknown,
       ),
     ).toBeInTheDocument();
     expect(screen.queryByTestId(APPLY_PENDING_ID)).toBeNull();

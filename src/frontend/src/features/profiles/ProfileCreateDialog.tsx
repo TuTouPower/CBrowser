@@ -141,7 +141,7 @@ export function ProfileCreateDialog({
       title={t("envNew")}
       open={open}
       onOpenChange={handleOpenChange}
-      contentClassName="max-h-dialog-height overflow-y-auto"
+      size="lg"
     >
       <div data-testid="env-new-dialog" className="flex flex-col gap-md">
         {createError ? (

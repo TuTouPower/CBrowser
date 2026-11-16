@@ -469,7 +469,6 @@ export function ProxyFormDialog(props: ProxyFormDialogProps): JSX.Element {
         if (!next) clearLocalState();
         onOpenChange(next);
       }}
-      contentClassName="max-h-dialog-height overflow-y-auto"
     >
       <div data-testid="proxy-form-dialog" className="flex flex-col gap-md">
         <form onSubmit={handleSubmit} className="flex flex-col gap-md" noValidate>

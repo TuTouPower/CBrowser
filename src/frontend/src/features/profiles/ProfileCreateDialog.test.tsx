@@ -177,6 +177,18 @@ function renderDialog(
 }
 
 describe("ProfileCreateDialog", () => {
+  // t073 AC-006: 新建弹窗升级为 size="lg" 宽容器，幂等状态机保持原样。
+  it("uses the wide lg dialog container", async () => {
+    const stub = makeStub();
+    const onOpenChange = vi.fn();
+    renderDialog(stub, onOpenChange);
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.className).toContain("max-w-dialog-lg");
+    expect(dialog.className).toContain("max-h-dialog-height");
+    expect(await screen.findByTestId("env-new-dialog")).toBeInTheDocument();
+  });
+
   it("creates a profile from the form", async () => {
     const stub = makeStub();
     const onOpenChange = vi.fn();

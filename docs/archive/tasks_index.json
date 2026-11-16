@@ -994,6 +994,22 @@
             "conflicts_with": "t068",
             "note": "从 t068 分出 p086；默认不外发流量，产品与站点策略未确认，保留 BLOCKING; dropped: 用户明确不做 Persona、预热及自检；取消整项范围，不转 pending，不实施",
             "dir": "docs/archive/tasks/t072_profile_warmup_selfcheck"
+        },
+        {
+            "tid": "t073",
+            "slug": "frontend_design_system_env_and_session_ui",
+            "title": "设计系统与工作台/环境管理重构（绿色状态、防重叠搜索、图标按钮与宽编辑弹窗）",
+            "status": "done",
+            "branch": "t073_frontend_design_system_env_and_session_ui",
+            "worktree": "",
+            "review_level": "single",
+            "review_limit": "5",
+            "verify_limit": "5",
+            "diff_anchor": "04ff5c5af5439d1182642798be887abc8447ec0d",
+            "depends_on": "",
+            "conflicts_with": "",
+            "note": "聚合 p103、p107、p108、p109 及 p105（容器尺寸与环境新建/编辑宽弹窗）；纯前端与 DESIGN.md，解锁下游 t074",
+            "dir": "docs/archive/tasks/t073_frontend_design_system_env_and_session_ui"
         }
     ]
 }

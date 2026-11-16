@@ -6,19 +6,19 @@ export type StatusTone = "running" | "transition" | "error" | "stopped";
 
 const TONES: Record<StatusTone, { className: string; icon: ReactNode }> = {
   running: {
-    className: "bg-accent-soft text-on-surface",
+    className: "border border-success bg-success-soft text-success",
     icon: <CircleCheck aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
   transition: {
-    className: "bg-warning-soft text-on-surface",
+    className: "border border-warning bg-warning-soft text-warning",
     icon: <LoaderCircle aria-hidden="true" className="size-(--component-icon-xs-size) animate-pulse" />,
   },
   error: {
-    className: "bg-danger-soft text-on-surface",
+    className: "border border-danger bg-danger-soft text-danger",
     icon: <CircleX aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
   stopped: {
-    className: "bg-surface-subtle text-on-surface-muted",
+    className: "border border-outline bg-surface-subtle text-on-surface-muted",
     icon: <MinusCircle aria-hidden="true" className="size-(--component-icon-xs-size)" />,
   },
 };

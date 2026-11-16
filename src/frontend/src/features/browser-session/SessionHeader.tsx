@@ -7,7 +7,7 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { useI18n } from "../../i18n";
+import { useI18n, type TranslationKey } from "../../i18n";
 import type {
   GroupResponse,
   ProfileResponse,
@@ -22,7 +22,6 @@ import {
 } from "../../shared/ui";
 import { EnvironmentSwitcher } from "./EnvironmentSwitcher";
 import {
-  transportStateLabelKey,
   transportStateTone,
 } from "./transport_state";
 import {
@@ -63,15 +62,30 @@ function observedStatus(
 ): { tone: StatusTone; label: string } {
   switch (observed) {
     case "running":
-      return { tone: "running", label: t("sessRunning") };
+      return { tone: "running", label: t("sessHeaderEnvRunning") };
     case "starting":
-      return { tone: "transition", label: t("statusStarting") };
+      return { tone: "transition", label: t("sessHeaderEnvStarting") };
     case "stopping":
-      return { tone: "transition", label: t("statusStopping") };
+      return { tone: "transition", label: t("sessHeaderEnvStopping") };
     case "error":
-      return { tone: "error", label: t("statusError") };
+      return { tone: "error", label: t("sessHeaderEnvError") };
     default:
-      return { tone: "stopped", label: t("sessStopped") };
+      return { tone: "stopped", label: t("sessHeaderEnvStopped") };
+  }
+}
+
+function headerTransportLabelKey(
+  state: string | null | undefined,
+): TranslationKey {
+  switch (state) {
+    case "ready":
+      return "sessHeaderTransportReady";
+    case "recovering":
+      return "sessHeaderTransportRecovering";
+    case "failed":
+      return "sessHeaderTransportFailed";
+    default:
+      return "sessHeaderTransportUnknown";
   }
 }
 
@@ -112,15 +126,13 @@ export function SessionHeader(props: SessionHeaderProps): JSX.Element {
       />
 
       <div data-testid={OBSERVED_STATE_ID} className="flex items-center gap-xs">
-        <span className="sr-only">{t("sessObservedState")}</span>
         <StatusBadge tone={observed.tone} label={observed.label} />
       </div>
 
       <div data-testid={TRANSPORT_STATE_ID} className="flex items-center gap-xs">
-        <span className="sr-only">{t("sessTransport")}</span>
         <StatusBadge
           tone={transportStateTone(transportState)}
-          label={t(transportStateLabelKey(transportState))}
+          label={t(headerTransportLabelKey(transportState))}
         />
       </div>
 
