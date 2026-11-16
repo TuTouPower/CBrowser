@@ -32,6 +32,8 @@ from cbrowser.domain.models import (
     ProfileRuntime,
     ProxyResponse,
     RuntimeEvent,
+    UserSettingsResponse,
+    UserSettingsUpdateRequest,
     utc_now_iso,
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
@@ -1325,10 +1327,17 @@ class ProfileRepository:
             credential_revision=m.credential_revision,
             proxy_url=endpoint.redacted_link(),
             country_code=observation.country_code if observation else None,
+            country_name=observation.country_name if observation else None,
+            city=observation.city if observation else None,
             egress_ip=observation.egress_ip if observation else None,
             observation_status=observation.status if observation else "unknown",  # type: ignore[arg-type]
+            latency_ms=observation.latency_ms if observation else None,
+            observation_error_code=observation.error_code if observation else None,
             observed_at=observation.observed_at.isoformat()
             if observation and observation.observed_at
+            else None,
+            expires_at=observation.expires_at.isoformat()
+            if observation and observation.expires_at
             else None,
             region_label=m.region_label,
             notes=m.notes,
@@ -1349,6 +1358,9 @@ class ProfileRepository:
             perspective=m.perspective,
             egress_ip=m.egress_ip,
             country_code=m.country_code,
+            country_name=m.country_name,
+            city=m.city,
+            latency_ms=m.latency_ms,
             source=m.source,
             status=m.status,  # type: ignore[arg-type]
             error_code=m.error_code,
@@ -1598,6 +1610,9 @@ class ProfileRepository:
             perspective=observation.perspective,
             egress_ip=observation.egress_ip,
             country_code=observation.country_code,
+            country_name=observation.country_name,
+            city=observation.city,
+            latency_ms=observation.latency_ms,
             source=observation.source,
             status=observation.status,
             error_code=observation.error_code,
@@ -1616,6 +1631,37 @@ class ProfileRepository:
         async with self._session_maker() as session, write_transaction(session):
             session.add(model)
         return observation
+
+    _SETTING_KEYS = {"theme": "ui.theme", "locale": "ui.locale"}
+
+    async def get_settings(self) -> UserSettingsResponse:
+        async with self._session_maker() as session:
+            stmt = select(SettingModel).where(
+                SettingModel.key.in_(tuple(self._SETTING_KEYS.values()))
+            )
+            rows = (await session.execute(stmt)).scalars().all()
+        values = {row.key: row.value for row in rows}
+        theme = values.get("ui.theme", "dark")
+        locale = values.get("ui.locale", "zh")
+        return UserSettingsResponse(
+            theme=theme if theme in ("system", "light", "dark") else "dark",  # type: ignore[arg-type]
+            locale=locale if locale in ("en", "zh") else "zh",  # type: ignore[arg-type]
+        )
+
+    async def update_settings(
+        self, payload: UserSettingsUpdateRequest
+    ) -> UserSettingsResponse:
+        current = await self.get_settings()
+        theme = payload.theme if payload.theme is not None else current.theme
+        locale = payload.locale if payload.locale is not None else current.locale
+        async with self._session_maker() as session, write_transaction(session):
+            for key, value in (("ui.theme", theme), ("ui.locale", locale)):
+                model = await session.get(SettingModel, key)
+                if model is None:
+                    session.add(SettingModel(key=key, value=value))
+                else:
+                    model.value = value
+        return UserSettingsResponse(theme=theme, locale=locale)
 
     async def get_egress_observations(
         self, proxy_id: str

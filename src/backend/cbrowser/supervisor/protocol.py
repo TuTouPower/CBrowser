@@ -99,6 +99,9 @@ class EgressProbeResponse(BaseModel):
     status: Literal["ok", "failed"]
     egress_ip: str | None = None
     country_code: str | None = None
+    country_name: str | None = None
+    city: str | None = None
+    latency_ms: int | None = None
     error_code: str | None = None
 
 

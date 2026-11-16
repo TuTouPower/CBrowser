@@ -7,6 +7,7 @@ import { ToastProvider } from "../shared/ui";
 import { defaultApiClient, ApiClient, shouldRetryRequest } from "../shared/api/client";
 import { ApiClientContext } from "../shared/api/client_context";
 import { SessionFocusProvider } from "../features/browser-session/session_focus";
+import { SettingsSync } from "./SettingsSync";
 import { defaultSseClient, ProfileEventsClient } from "../shared/api/sse";
 import { useProfileEventsSync } from "../features/profiles/useProfilesQuery";
 
@@ -69,20 +70,21 @@ export function AppProviders({
 
   return (
     <QueryClientProvider client={queryClient}>
-      <I18nProvider>
-        <ThemeProvider>
-          <ToastProvider>
-            <ApiClientContext.Provider value={apiClient}>
-              <AuthProvider client={apiClient}>
+      <ApiClientContext.Provider value={apiClient}>
+        <AuthProvider client={apiClient}>
+          <I18nProvider>
+            <ThemeProvider>
+              <ToastProvider>
+                <SettingsSync />
                 <SessionFocusProvider>
                   <AuthenticatedSseBridge sseClient={sseClient} />
                   {children}
                 </SessionFocusProvider>
-              </AuthProvider>
-            </ApiClientContext.Provider>
-          </ToastProvider>
-        </ThemeProvider>
-      </I18nProvider>
+              </ToastProvider>
+            </ThemeProvider>
+          </I18nProvider>
+        </AuthProvider>
+      </ApiClientContext.Provider>
     </QueryClientProvider>
   );
 }

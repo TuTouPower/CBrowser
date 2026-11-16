@@ -150,9 +150,22 @@ export function SessionDetailsPanel(props: SessionDetailsPanelProps): JSX.Elemen
     runtime !== null && runtime.config_version !== profile.current_config_version;
   const proxySummary = proxy ? proxy.name : t("envDirect");
   const proxyEndpoint = proxy ? `${proxy.host}:${proxy.port}` : "-";
-  const proxyRegion = proxy
-    ? `${proxy.observation_status === "pending" ? t("proxyCountryProbing") : (proxy.country_code ?? t("proxyCountryUnknown"))} · ${display(proxy.region_label)}`
-    : "-";
+  const proxyRegion = (() => {
+    if (!proxy) return "-";
+    if (proxy.observation_status === "pending") return t("proxyCountryProbing");
+    if (proxy.observation_status === "failed") {
+      return proxy.observation_error_code ?? t("proxyProbeFailed");
+    }
+    if (proxy.observation_status === "ok") {
+      const place = [proxy.country_name ?? proxy.country_code, proxy.city]
+        .filter(Boolean)
+        .join(" · ");
+      const latency =
+        proxy.latency_ms != null ? ` · ${proxy.latency_ms}ms` : "";
+      return `${place || t("proxyCountryUnknown")}${latency}`;
+    }
+    return t("proxyCountryUnknown");
+  })();
   const platformLabel = formatPlatformLabel(profile.fingerprint_platform, t);
   const fontSetLabel = fontSet
     ? formatFontSetDisplayName(fontSet, t)

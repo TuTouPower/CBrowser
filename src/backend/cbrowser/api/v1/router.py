@@ -13,6 +13,7 @@ from cbrowser.adapters.database.repository import (
 from cbrowser.api.v1.deps import get_profile_service
 from cbrowser.api.v1.groups_router import group_router
 from cbrowser.api.v1.proxies_router import proxy_router
+from cbrowser.api.v1.settings_router import settings_router
 from cbrowser.api.runtime_coordinator import RuntimeEventBroadcaster
 from cbrowser.preview import PreviewPolicy, clear_preview, write_policy
 from cbrowser.api.v1.control_router import (
@@ -977,3 +978,4 @@ async def report_runtime_event(
 v1_router.include_router(profile_router)
 v1_router.include_router(group_router)
 v1_router.include_router(proxy_router)
+v1_router.include_router(settings_router)

@@ -28,6 +28,9 @@ logger = logging.getLogger("cbrowser.services.egress_probe")
 class EgressProbeResult:
     egress_ip: str
     country_code: str | None
+    country_name: str | None = None
+    city: str | None = None
+    latency_ms: int | None = None
 
 
 class EgressProbeRunner(Protocol):
@@ -148,5 +151,9 @@ class SupervisorEgressProbeRunner:
                 "Supervisor probe failed",
             )
         return EgressProbeResult(
-            egress_ip=data["egress_ip"], country_code=data.get("country_code")
+            egress_ip=data["egress_ip"],
+            country_code=data.get("country_code"),
+            country_name=data.get("country_name"),
+            city=data.get("city"),
+            latency_ms=data.get("latency_ms"),
         )

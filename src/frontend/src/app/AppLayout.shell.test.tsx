@@ -65,6 +65,13 @@ function renderShell() {
       getRuntime: vi.fn(async (id: string) => runtimeFor(id)),
       update: vi.fn(async () => PROFILES[0]),
     },
+    health: { check: vi.fn(async () => undefined) },
+    fontSets: {
+      list: vi.fn(async () => ({
+        items: [],
+        default_font_set_id: { windows: null, macos: null },
+      })),
+    },
   } as unknown as ApiClient;
   const view = render(
     <QueryClientProvider client={queryClient}>
@@ -148,12 +155,8 @@ describe("AppLayout shell contract (t036+)", () => {
     );
   });
 
-  it("places settings at the bottom-left footer and surfaces coordinator banner from SSE runtime data", async () => {
+  it("surfaces coordinator banner from SSE runtime data", async () => {
     const view = renderShell();
-    expect(await view.findByTestId("sidebar-settings-link")).toHaveAttribute(
-      "href",
-      "/settings",
-    );
     await waitFor(() =>
       expect(view.client.profiles.getRuntime).toHaveBeenCalledTimes(2),
     );
@@ -167,5 +170,15 @@ describe("AppLayout shell contract (t036+)", () => {
     const banner = await view.findByTestId("runtime-coordinator-error");
     expect(banner).toHaveAttribute("role", "alert");
     expect(banner).toHaveTextContent("coordinator unreachable");
+  });
+
+  it("opens the settings wide dialog from the sidebar footer without navigating", async () => {
+    const view = renderShell();
+    const trigger = await view.findByTestId("sidebar-settings-link");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger).not.toHaveAttribute("href");
+    expect(view.queryByTestId("settings-dialog")).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(await view.findByTestId("settings-dialog")).toBeInTheDocument();
   });
 });

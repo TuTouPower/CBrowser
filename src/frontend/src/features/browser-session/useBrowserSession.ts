@@ -56,7 +56,17 @@ export function useBrowserSession(
     options.errorMessage || null
   );
   const [reloadKey, setReloadKey] = useState<number>(0);
-  const [audioMuted, setAudioMuted] = useState<boolean>(false);
+  // Per-tab isolated mute preference (t074 AC-002): sessionStorage is
+  // already private to this browser tab, so two tabs on the same Profile
+  // never share the value; refreshing this tab keeps it.
+  const audioMutedKey = `cbrowser.session.audio_muted.${profileId}`;
+  const [audioMuted, setAudioMuted] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(audioMutedKey) === "true";
+    } catch {
+      return false;
+    }
+  });
   const [diagData, setDiagData] = useState<SessionDiagnosticsData>({
     stage: options.initialStage || "checking_runtime",
     profileId,
@@ -72,7 +82,7 @@ export function useBrowserSession(
   const apiClientRef = useRef<ApiClient>(options.apiClient || defaultApiClient);
   apiClientRef.current = options.apiClient || defaultApiClient;
   const mountedRef = useRef<boolean>(true);
-  const audioMutedRef = useRef<boolean>(false);
+  const audioMutedRef = useRef<boolean>(audioMuted);
   const stageRef = useRef<SessionStage>(
     options.initialStage || "checking_runtime"
   );
@@ -275,8 +285,13 @@ export function useBrowserSession(
     const nextMuted = !audioMutedRef.current;
     audioMutedRef.current = nextMuted;
     setAudioMuted(nextMuted);
+    try {
+      sessionStorage.setItem(audioMutedKey, nextMuted ? "true" : "false");
+    } catch {
+      // Storage unavailable: keep the in-memory state for this session.
+    }
     applyAudioState(!nextMuted);
-  }, [applyAudioState]);
+  }, [applyAudioState, audioMutedKey]);
 
   const reconnect = useCallback(() => {
     clearAllTimers();

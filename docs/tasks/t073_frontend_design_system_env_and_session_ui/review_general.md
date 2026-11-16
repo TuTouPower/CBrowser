@@ -3,7 +3,7 @@
 - task：`t073_frontend_design_system_env_and_session_ui`
 - spec：`docs/tasks/t073_frontend_design_system_env_and_session_ui/task.md`
 - diff_anchor：`04ff5c5af5439d1182642798be887abc8447ec0d`
-- target：`git -C '/Users/karson/kar/code/CBrowser_t073' diff 04ff5c5af5439d1182642798be887abc8447ec0d`
+- target：`git -C '../CBrowser_t073' diff 04ff5c5af5439d1182642798be887abc8447ec0d`
 - round：1
 - reviewed_at：2026-11-16T10:48:00+08:00
 
@@ -60,7 +60,7 @@ verdict: PASS
 
 reviewed_scope: b547703abe202511
 
-独立复核方式（不采信实施侧自述）：不带 `-C` 的 `git rev-parse --show-toplevel` 落点校验通过（= `/Users/karson/kar/code/CBrowser_t073`）；跑 `git -C ... diff 04ff5c5af5439d1182642798be887abc8447ec0d`（含 5 文件聚焦 diff）与 `status --short`；逐行读修复后的 `Input.tsx` / `ProxyListToolbar.tsx` / `ProfileEditDialog.tsx` / `ui.test.tsx` / `ProfileEditDialog.test.tsx`，并读 3 处 SearchField 调用、2 处 ProfileEditDialog 宿主与 `Dialog.tsx` 透传；独立重跑 `npm test --prefix src/frontend`（含 test:types，84 files / 659 tests 全绿）、`npm run design:lint --prefix src/frontend`（0 error / 0 warning，97 源码 + 7 public）、`npm run design:check --prefix src/frontend`（css up to date）。
+独立复核方式（不采信实施侧自述）：不带 `-C` 的 `git rev-parse --show-toplevel` 落点校验通过（= `../CBrowser_t073`）；跑 `git -C ... diff 04ff5c5af5439d1182642798be887abc8447ec0d`（含 5 文件聚焦 diff）与 `status --short`；逐行读修复后的 `Input.tsx` / `ProxyListToolbar.tsx` / `ProfileEditDialog.tsx` / `ui.test.tsx` / `ProfileEditDialog.test.tsx`，并读 3 处 SearchField 调用、2 处 ProfileEditDialog 宿主与 `Dialog.tsx` 透传；独立重跑 `npm test --prefix src/frontend`（含 test:types，84 files / 659 tests 全绿）、`npm run design:lint --prefix src/frontend`（0 error / 0 warning，97 源码 + 7 public）、`npm run design:check --prefix src/frontend`（css up to date）。
 
 ### 前轮 finding 复核结论
 

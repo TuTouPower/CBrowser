@@ -83,9 +83,11 @@
 
 - 密码只以只写秘密存在于值对象中：`ProxyEndpoint` 的 `__repr__` / `__str__`、指纹（sha256 的 scheme/host/port/username，不含密码）、日志与观测记录均不含密码。凭据只经两条内部路径流转：API → Supervisor 的内部端点 `GET /api/v1/internal/supervisor/proxies/{id}/credentials`（service-plane Bearer，不进 OpenAPI）；Supervisor → Browser 的 0600 凭证文件 `proxy_credentials.json`（落 Profile secret 目录，以只读挂载进 Browser 容器 `/run/cbrowser/proxy_credentials.json`，其它容器不挂载）。Browser 直接读该凭据，由统一出站规划 `cbrowser/shared/egress_plan.py` 规范化代理 URL 并传入 CloakBrowser SDK `proxy=`（支持 `http`/`https`/`socks5` 认证，ADR 038，替代 ADR 037 手写 `--proxy-server`），同时对有代理 Browser 与出口探测 helper 统一施加 `proxy_enforced=True`（IPv4/IPv6 `OUTPUT -j DROP`，仅放行代理 TCP 与域名代理所需 Docker DNS UDP/53）；绑定快照的 `credential_revision` 漂移即失败封闭；凭据绝不进日志、异常消息与上报状态。出口探测 helper 仍是唯一例外——它是一次性短生命周期容器，直接收凭据执行探测（见 t052 节）。
 
-- 探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID：任何非空请求体（除 `{}` 外）返回 422；服务端加载已存端点与凭据执行，调用方无法指定 host、port、scheme 或 username，因而无法把已存密码发往另一主机（SSRF + 凭据外送的负向路径由集成测试覆盖）。探测 helper 只向 stdout 打印一行 JSON（出口 IP 与国家，或错误码），密码不打印、不记日志。
+- 探测接口 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID：任何非空请求体（除 `{}` 外）返回 422；服务端加载已存端点与凭据执行，调用方无法指定 host、port、scheme 或 username，因而无法把已存密码发往另一主机（SSRF + 凭据外送的负向路径由集成测试覆盖）。探测 helper 只向 stdout 打印一行完整观测 JSON（出口 IP、国家码 / 国家名、城市、毫秒延迟；失败时 `{"error_code": ...}` 并以 exit 1 退出），密码不打印、不记日志。
 
-- 出口 IP 回显只发一次 HTTPS GET 取自身出口 IP（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`），不带凭据与身份信息；国家判定只用本机 GeoLite2 数据库，出口 IP 不发往第三方地理库。探测的 HTTP 客户端显式 `trust_env=False`，宿主环境变量中的代理不得劫持探测路径。
+- 出口 IP 回显只发一次 HTTPS GET 取自身出口 IP（复用 cloakbrowser SDK 的 `api.ipify.org` / `checkip.amazonaws.com` / `ifconfig.me/ip`），不带凭据与身份信息；国家 / 城市主链为本地 `GeoLite2-City.mmdb` 完整读取 `country.names` / `city.names`。t074 起允许在线只读 HTTPS IP 地理服务（`shared/egress.py` 的 `GEO_SERVICE_URLS` 固定白名单）仅作可选城市补充：须跟随 307、对 429 / TLS 失败 / 超时回落本地结果，绝不覆盖有效本地结果或伪造位置（d048）；这些请求无凭据、`httpx.Client(trust_env=False)`、每请求新建短生命周期 client（禁跨请求 keep-alive 复用），私有 / 保留 / 回环地址仍 `ipaddress` fail-closed 阻断（d049）。探测的 HTTP 客户端显式 `trust_env=False`，宿主环境变量中的代理不得劫持探测路径。
+
+- t074 新增 `GET /api/v1/settings` / `PATCH /api/v1/settings`：与其它 `/api/v1` 一致需有效会话，写方法另需 `X-CSRF-Token` 与会话绑定值一致且 `Origin` 在部署端口派生白名单内；只读写 `ui.theme` / `ui.locale` 两个键，未知键 422，不接收任意系统配置。
 
 - 受管部署中 Supervisor 以 root 创建 Profile 数据目录后立即 `chown 1000:1000`：`profiles/<id>/profile`、`runtime/<id>`、`runtime-events/<id>`、`artifacts/<id>/downloads`、`artifacts/<id>/uploads`、`runtime/<id>/pulse` 为 0750；`runtime/<id>/x11` 为 0750（Browser/Stream 同为 uid 1000）。engine-cache/geoip 只读挂载且由宿主维护，不随 Profile 写入。
 

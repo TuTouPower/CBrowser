@@ -7,18 +7,23 @@ import {
   Select,
   type SelectOption,
 } from "../../shared/ui";
+import type { ProxySchemeFilter } from "./useProxyFilters";
+import type { ProxyLayout } from "./useProxyLayout";
 
-export type ProxySchemeFilter = "all" | "http" | "https" | "socks5";
-export type ProxyLayout = "list" | "card";
+export type { ProxySchemeFilter } from "./useProxyFilters";
+export type { ProxyLayout } from "./useProxyLayout";
 
 export interface ProxyListToolbarProps {
   query: string;
   onQueryChange: (value: string) => void;
   scheme: ProxySchemeFilter;
   onSchemeChange: (value: ProxySchemeFilter) => void;
-  region?: string;
-  onRegionChange?: (value: string) => void;
-  regions?: Array<{ value: string; label: string }>;
+  country: string;
+  onCountryChange: (value: string) => void;
+  countries: Array<{ value: string; label: string }>;
+  city: string;
+  onCityChange: (value: string) => void;
+  cities: Array<{ value: string; label: string }>;
   layout?: ProxyLayout;
   onLayoutChange?: (layout: ProxyLayout) => void;
   onProbeAll?: () => void;
@@ -31,9 +36,12 @@ export function ProxyListToolbar({
   onQueryChange,
   scheme,
   onSchemeChange,
-  region = "all",
-  onRegionChange,
-  regions = [],
+  country,
+  onCountryChange,
+  countries,
+  city,
+  onCityChange,
+  cities,
   layout = "list",
   onLayoutChange,
   onProbeAll,
@@ -49,9 +57,14 @@ export function ProxyListToolbar({
     { value: "socks5", label: "SOCKS5" },
   ];
 
-  const regionOptions: SelectOption[] = [
-    { value: "all", label: t("proxyFilterAllRegions") },
-    ...regions,
+  const countryOptions: SelectOption[] = [
+    { value: "all", label: t("proxyFilterAllCountries") },
+    ...countries,
+  ];
+
+  const cityOptions: SelectOption[] = [
+    { value: "all", label: t("proxyFilterAllCities") },
+    ...cities,
   ];
 
   return (
@@ -75,16 +88,22 @@ export function ProxyListToolbar({
             options={schemeOptions}
           />
         </div>
-        {onRegionChange && (
-          <div data-testid="proxy-region-filter">
-            <Select
-              ariaLabel={t("proxyFilterRegion")}
-              value={region}
-              onValueChange={onRegionChange}
-              options={regionOptions}
-            />
-          </div>
-        )}
+        <div data-testid="proxy-country-filter">
+          <Select
+            ariaLabel={t("proxyFilterCountry")}
+            value={country}
+            onValueChange={onCountryChange}
+            options={countryOptions}
+          />
+        </div>
+        <div data-testid="proxy-city-filter">
+          <Select
+            ariaLabel={t("proxyFilterCity")}
+            value={city}
+            onValueChange={onCityChange}
+            options={cityOptions}
+          />
+        </div>
       </div>
 
       <div className="ml-auto flex items-center gap-sm">

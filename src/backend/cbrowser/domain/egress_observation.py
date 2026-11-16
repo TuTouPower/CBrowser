@@ -29,6 +29,9 @@ class EgressObservation:
     perspective: str = OBSERVATION_PERSPECTIVE
     egress_ip: str | None = None
     country_code: str | None = None
+    country_name: str | None = None
+    city: str | None = None
+    latency_ms: int | None = None
     source: str = "supervisor_probe"
     status: str = "ok"  # pending | ok | failed
     error_code: str | None = None

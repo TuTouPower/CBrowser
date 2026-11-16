@@ -1,0 +1,85 @@
+{
+  "argv": [],
+  "creds_in_argv": false,
+  "creds_from_env_only": true,
+  "private_guard": [
+    {
+      "host": "127.0.0.1",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "10.0.0.1",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "192.168.1.1",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "169.254.169.254",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "::1",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "0.0.0.0",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "224.0.0.1",
+      "rejected": "private_or_reserved"
+    },
+    {
+      "host": "evil.example.com",
+      "rejected": "not_in_allowlist"
+    }
+  ],
+  "allowlist_ok": [
+    {
+      "port": 21000,
+      "host": "api.ipify.org",
+      "http": 200,
+      "rtt_ms": 458.4,
+      "body": "212.107.28.52"
+    },
+    {
+      "port": 21000,
+      "host": "api.ipify.org",
+      "http": 200,
+      "rtt_ms": 391.3,
+      "body": "212.107.28.52"
+    },
+    {
+      "port": 21000,
+      "host": "api.ipify.org",
+      "http": 200,
+      "rtt_ms": 390.6,
+      "body": "212.107.28.52"
+    }
+  ],
+  "hot_swap": [
+    {
+      "port": 21000,
+      "host": "api.ipify.org",
+      "http": 200,
+      "rtt_ms": 427.2,
+      "body": "212.107.28.52"
+    },
+    {
+      "port": 21003,
+      "host": "api.ipify.org",
+      "http": 200,
+      "rtt_ms": 520.8,
+      "body": "104.249.174.133"
+    }
+  ],
+  "reject_outside": {
+    "port": 21000,
+    "host": "evil.example.com",
+    "rejected": "not_in_allowlist",
+    "http": null
+  },
+  "total_wall_ms": 2195.1
+}

@@ -2479,9 +2479,9 @@ class SupervisorCore:
         API accepts only the proxy id.  The endpoint fingerprint in the
         payload must match the endpoint, or the probe is refused.  The
         result is always a dict — ``{"status": "ok", "egress_ip",
-        "country_code"}`` or ``{"status": "failed", "error_code"}`` — so
-        the API can record a failed observation instead of failing the
-        request.
+        "country_code", "country_name", "city", "latency_ms"}`` or
+        ``{"status": "failed", "error_code"}`` — so the API can record a
+        failed observation instead of failing the request.
         """
         try:
             endpoint = ProxyEndpoint(
@@ -2500,7 +2500,7 @@ class SupervisorCore:
             "credential_revision": payload.get("credential_revision"),
         }
         try:
-            egress_ip, country = await asyncio.to_thread(
+            outcome = await asyncio.to_thread(
                 self.docker.run_egress_probe,
                 proxy_id=proxy_id,
                 endpoint=endpoint,
@@ -2519,8 +2519,11 @@ class SupervisorCore:
             return {"status": "failed", "error_code": "probe_failed"}
         return {
             "status": "ok",
-            "egress_ip": egress_ip,
-            "country_code": country,
+            "egress_ip": outcome.egress_ip,
+            "country_code": outcome.country_code,
+            "country_name": outcome.country_name,
+            "city": outcome.city,
+            "latency_ms": outcome.latency_ms,
         }
 
     def _write_proxy_credentials(

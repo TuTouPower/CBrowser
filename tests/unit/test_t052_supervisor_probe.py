@@ -25,6 +25,7 @@ from cbrowser.supervisor.docker_adapter import (
     DockerAdapter,
     DockerSandboxError,
     EgressProbeFailure,
+    EgressProbeOutcome,
     LoopbackMappingError,
 )
 from cbrowser.supervisor.path_validator import PathValidator
@@ -157,15 +158,19 @@ def _probe_kwargs(calls, entrypoint_part):
     raise AssertionError(f"no run call with entrypoint {entrypoint_part}")
 
 
-def test_probe_helper_uses_browser_policy_and_returns_observation(tmp_path):
+def test_probe_helper_uses_browser_policy_and_returns_full_observation(tmp_path):
+    """Replaces ``..._returns_observation``: t074 returns a structured
+    EgressProbeOutcome with country/city/latency instead of a 2-tuple."""
     adapter, fake, calls, _root = _adapter(tmp_path)
     endpoint = parse_proxy_link("http://user:pw@proxy.example.com:8080")
-    egress_ip, country = adapter.run_egress_probe(
+    outcome = adapter.run_egress_probe(
         proxy_id="px-1",
         endpoint=endpoint,
         credentials={"password": "pw", "credential_revision": 1},
     )
-    assert (egress_ip, country) == ("203.0.113.7", "JP")
+    assert outcome.egress_ip == "203.0.113.7"
+    assert outcome.country_code == "JP"
+    assert outcome.latency_ms >= 1
 
     probe = _probe_kwargs(calls, "time.sleep")
     assert probe["network"].startswith("cbrowser-t005-probe-net-")
@@ -192,14 +197,16 @@ def test_probe_helper_uses_browser_policy_and_returns_observation(tmp_path):
 
 
 def test_probe_helper_maps_loopback_to_host_gateway(tmp_path):
+    """Loopback mapping unchanged; t074 returns a structured outcome."""
     adapter, fake, calls, _root = _adapter(tmp_path)
     endpoint = parse_proxy_link("http://user:pw@127.0.0.1:7890")
-    egress_ip, country = adapter.run_egress_probe(
+    outcome = adapter.run_egress_probe(
         proxy_id="px-1",
         endpoint=endpoint,
         credentials={"password": "pw", "credential_revision": 2},
     )
-    assert (egress_ip, country) == ("203.0.113.7", "JP")
+    assert outcome.egress_ip == "203.0.113.7"
+    assert outcome.country_code == "JP"
     probe = _probe_kwargs(calls, "time.sleep")
     assert probe["extra_hosts"] == {"host.docker.internal": "host-gateway"}
     policy = _probe_kwargs(calls, "network_policy")
@@ -229,6 +236,40 @@ def test_probe_helper_reports_error_code(tmp_path):
             credentials={"password": None, "credential_revision": 1},
         )
     assert excinfo.value.code == "geoip_db_missing"
+
+
+def test_probe_helper_exit_1_json_error_code_is_preserved(tmp_path):
+    """t074 AC-004: exit_code=1 with a structured JSON error_code must
+    surface EgressProbeFailure(code). The old code raised a generic
+    DockerSandboxError here, which core.py collapsed to "probe_failed"."""
+    adapter, fake, _calls, _root = _adapter(tmp_path)
+    endpoint = parse_proxy_link("http://proxy.example.com:8080")
+    original_run = fake.containers.run
+
+    def run_with_exit_1(image, **kwargs):
+        container = original_run(image, **kwargs)
+        if container.kind == "probe":
+            real_exec = container.exec_run
+
+            def _fail(cmd, user=None):
+                if "egress_probe" in " ".join(str(part) for part in cmd):
+                    return _ExecResult(
+                        1,
+                        json.dumps({"error_code": "echo_unreachable"}).encode(),
+                    )
+                return real_exec(cmd, user=user)
+
+            container.exec_run = _fail
+        return container
+
+    fake.containers.run = run_with_exit_1
+    with pytest.raises(EgressProbeFailure) as excinfo:
+        adapter.run_egress_probe(
+            proxy_id="px-1",
+            endpoint=endpoint,
+            credentials={"password": None, "credential_revision": 1},
+        )
+    assert excinfo.value.code == "echo_unreachable"
 
 
 def test_probe_helper_crash_is_docker_error(tmp_path):
@@ -458,9 +499,19 @@ async def test_core_probe_refuses_fingerprint_mismatch():
 
 
 @pytest.mark.asyncio
-async def test_core_probe_returns_observation_on_success():
+async def test_core_probe_returns_full_observation_on_success():
+    """Replaces ``..._observation_on_success``: t074 propagates the full
+    structured outcome (country_name/city/latency_ms)."""
     docker = SimpleNamespace(
-        run_egress_probe=MagicMock(return_value=("203.0.113.7", "JP"))
+        run_egress_probe=MagicMock(
+            return_value=EgressProbeOutcome(
+                egress_ip="203.0.113.7",
+                country_code="JP",
+                country_name="Japan",
+                city="Tokyo",
+                latency_ms=42,
+            )
+        )
     )
     core = _stub_core(docker)
     endpoint = parse_proxy_link("http://user:pw@proxy.example.com:8080")
@@ -480,6 +531,9 @@ async def test_core_probe_returns_observation_on_success():
         "status": "ok",
         "egress_ip": "203.0.113.7",
         "country_code": "JP",
+        "country_name": "Japan",
+        "city": "Tokyo",
+        "latency_ms": 42,
     }
 
 

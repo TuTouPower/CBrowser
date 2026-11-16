@@ -19,7 +19,7 @@
 
 ## 2. 核心数据表结构 (SQLAlchemy 2.0 + Alembic)
 
-迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。t056 追加增量迁移 `0009_profile_display_number_not_null.py`（revision `796adb0bf159`）：`display_number` 改为 NOT NULL。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
+迁移以 t035 的单 baseline 修订 `b7e1c9d4a2f3` 为起点（t035 AC-001）；空库 `alembic upgrade head` 后 schema 与 ORM autogenerate 无差异。t041 在 baseline 之上追加增量迁移 `0002_fingerprint_platform.py`：新增 `fingerprint_platform` / `font_set_id` 两列并删除 `font_bundle` 列。t056 追加增量迁移 `0009_profile_display_number_not_null.py`（revision `796adb0bf159`）：`display_number` 改为 NOT NULL。t074 追加增量迁移 `0010_proxy_observation_city_latency.py`（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`）：为 `proxy_egress_observations` 增 `country_name` / `city`（String(128), nullable）与 `latency_ms`（Integer, nullable），`downgrade()` 与其它修订一致抛 unsupported-downgrade。旧 schema 代（0001-0009）数据库在 API 启动与部署时失败封闭并输出重建指引，不自动升级、不修改该库（ADR 023）。系统数据库不包含任何独占控制租约（`leases`）或持久 `ViewerConnection`：
 
 - **只进不退（t056 A60）**：全部修订的 `downgrade()` 一律抛明确的 unsupported-downgrade 错误，不再提供回退路径；`0004_preview_backoff.py` 的「列已存在则跳过」分支与 `0003_network_transaction.py` 的历史混合形态补丁分支已删除（升级输出结构不变）。
 - **旧库守卫（t056 A29）**：数据库含业务表、但 `alembic_version` 表缺失 / 无行 / 版本号为空时，API 启动拒绝并抛 `LegacySchemaError` 附重建指引，不静默升级、不猜测版本。
@@ -42,7 +42,7 @@
 06. `artifacts`：
     - 字段：`id`, `profile_id`, `name`, `size`, `kind`, `state`, `content_type`, `picker_name`, `sha256`, `storage_path`, `delete_requested_at`, `created_at`。
     - 存储 Profile 关联文件的元数据索引，二进制文件存放在对应文件卷。`delete_requested_at` 是持久化删除意图：先落意图、再删文件、最后删行；服务启动时续跑未完成意图。
-07. `settings`：`key` (PK), `value`, `updated_at`；系统级键值配置。
+07. `settings`：`key` (PK), `value`, `updated_at`；系统级键值配置。t074 起实际读写：键 `ui.theme` / `ui.locale`，`repository.get_settings()` / `update_settings()` 以 `BEGIN IMMEDIATE` 单写者事务读写；`GET /api/v1/settings` 返回 `UserSettingsResponse`（`extra="forbid"` 更新请求、默认值 theme=`dark` / locale=`zh`），`PATCH /api/v1/settings` 受会话鉴权 + CSRF 保护。
 08. `runtime_events`：
     - 字段：`event_id` (PK), `profile_id`, `runtime_instance_id`, `event_type`, `exit_code`, `exit_reason`, `config_version`, `payload`, `created_at`。
     - 持久化运行期退出/生命周期事件，通过 `event_id` 主键执行物理去重；随 Profile 级联删除，审计总账由独立 `audit_events` 承担。

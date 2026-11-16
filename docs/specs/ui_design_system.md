@@ -34,7 +34,7 @@
 ### 2.5 登录页与设置页
 
 - 登录页按设计系统换皮，鉴权、登录跳转（含 `next` 目标）、语言切换行为不变。
-- 设置页：外观（主题三态）、语言（en / zh）、控制 API 状态与退出登录、只读网络访问信息、平台字体区块（数据来自 `GET /api/v1/font-sets`，展示人类可读字体包名称、本地化平台名称、来源版本、完整性与使用环境数；完整性不一致的字体集显示告警）。
+- 设置入口（t074 起为侧栏按钮触发的 `SettingsDialog` 宽弹窗，不再是 `/settings` 独立窄页）：外观（主题三态）、语言（en / zh）、控制 API 健康状态与退出登录、只读网络访问信息、平台字体区块（数据来自 `GET /api/v1/font-sets`，展示人类可读字体包名称与本地化平台名称；默认隐去 `source_version` 技术哈希，仅完整性不一致时展开 `problems` 明细）。
 - 新增与改动文案 en / zh 同步补键，键集由 en 字典派生、zh 编译期对齐；严格杜绝中文界面下暴露英文枚举值。
 
 ### 2.6 设计门禁扩展（t059）
@@ -45,6 +45,12 @@
 - 颜色范围：品牌 token `brand-gradient-start/mid/end`（模式无关）与 `light/dark-brand-ink` 登记入 DESIGN.md；生成器按 token 生成 `public/` 的 logo 与 favicon 五件资产（几何保持原文件、仅颜色取 token 值），`design:check` 校验其新鲜度。颜色扫描扩展到 `public/**/*.{svg,html,js}` 与 `index.html`：`src` 字面量全禁，`public` 字面量必须是 token 值（`public/selkies/` 为 .gitignore 的官方 Selkies vendor 投放目录、自有品牌色，不在扫描内）。
 - 组件尺寸规格：components 条目以官方 `height` / `width` / `size` 字段登记尺寸（成对条目同值，生成器 counterpart 断言），导出 `--component-<name>-radius/-height/-width/-size` 变量，React 以 Tailwind 变量简写类消费；图标尺寸阶梯为仅尺寸条目 `icon-xs`（12）/ `icon-sm`（14）/ `icon-md`（16）/ `icon-lg`（20）/ `icon-xl`（24）/ `icon-2xl`（32）/ `icon-3xl`（48）。
 - 尺寸 / 间距数值类全禁：源码扫描禁止 p/m/gap/space/w/h/min/max/size/inset/定位/translate 族的数值型类与非 token 任意值（任意值仅允许 `var(--…)` 与 calc/min/max/clamp 组合）；零值与 2px 用 spacing token `none` / `2xs`；布局尺寸走 Container sizes（新增 `dropdown-list`、`badge`、`table-select`、`swatch`）。
+
+### 2.7 系统设置宽弹窗与偏好持久化（t074）
+
+- 侧栏左下角「设置」由 `<Link to="/settings">` 改为 `<button>`，直接在 `AppLayout` 内打开 `SettingsDialog`（`Dialog size="lg"`，两列网格分块），不导航、不离开当前页面上下文；`/settings` 路由改为 `<Navigate to="/" replace />`。弹窗收敛主题 / 语言 / 健康状态 / 退出登录 / 只读网络访问摘要 / 平台字体包，信息分区清晰，默认不堆砌 `source_version` 哈希。
+- `theme` / `locale` 持久化于控制面 `settings` 表，经 `GET /api/v1/settings` / `PATCH /api/v1/settings` 读写；`SettingsSync` 置于 `AppProviders` 内（在 `I18nProvider` / `ThemeProvider` 之外）负责登录后 hydrate 与后续写服务端，两个 provider 保持独立、不依赖 auth 与 API client；`localStorage` 仅作 `theme_boot.js` 首帧防闪烁镜像，清缓存或重新登录后偏好保持。
+- 工作台 `audioMuted` 持久化到 `sessionStorage` 的 `cbrowser.session.audio_muted.${profileId}`，刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
 
 ## 3. 验收标准（摘要）
 

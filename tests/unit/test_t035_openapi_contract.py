@@ -21,6 +21,7 @@ PUBLIC_GROUPS = {
     "groups",
     "profiles",
     "proxies",
+    "settings",  # t074: /api/v1/settings is a new resource-scoped group
 }
 
 

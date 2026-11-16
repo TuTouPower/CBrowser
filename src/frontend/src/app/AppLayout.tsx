@@ -19,6 +19,7 @@ import { useI18n } from "../i18n";
 import { Banner, IconButton } from "../shared/ui";
 import { useRuntimeSnapshot } from "./useRuntimeSnapshot";
 import { useSessionFocus } from "../features/browser-session/session_focus";
+import { SettingsDialog } from "../features/settings/SettingsDialog";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 360;
@@ -147,7 +148,7 @@ export function AppLayout() {
     { to: sessionPath, label: t("navSessions"), icon: MonitorPlay, key: "navSessions" },
   ];
 
-  const settingsActive = location.pathname.startsWith("/settings");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const sidebarContent: ReactNode = (
     <div className="flex h-full flex-col bg-sidebar text-on-surface">
@@ -218,19 +219,22 @@ export function AppLayout() {
       </nav>
 
       <div className="shrink-0 border-t border-outline p-sm">
-        <Link
-          to="/settings"
+        <button
+          type="button"
           data-testid="sidebar-settings-link"
-          aria-current={settingsActive ? "page" : undefined}
+          aria-current={settingsOpen ? "page" : undefined}
           title={collapsed ? t("navSettings") : undefined}
-          onClick={() => setDrawerOpen(false)}
+          onClick={() => {
+            setDrawerOpen(false);
+            setSettingsOpen(true);
+          }}
           className={`flex h-(--component-nav-item-height) items-center gap-md rounded-md px-sm font-ui text-label-md text-on-surface-muted hover:bg-surface-hover hover:text-on-surface aria-[current=page]:bg-accent-soft aria-[current=page]:text-on-surface ${
             collapsed && !narrow ? "justify-center" : ""
           }`}
         >
           <SettingsIcon aria-hidden="true" className="size-(--component-icon-md-size) shrink-0" />
           {(!collapsed || narrow) && <span className="truncate">{t("navSettings")}</span>}
-        </Link>
+        </button>
       </div>
     </div>
   );
@@ -311,6 +315,8 @@ export function AppLayout() {
           </div>
         </div>
       </main>
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

@@ -24,6 +24,8 @@ export type ProxyUpdateRequest = Schemas["ProxyUpdateRequest"];
 export type FontSetInfo = Schemas["FontSetInfo"];
 export type FontSetIntegrity = Schemas["FontSetIntegrity"];
 export type FontSetListResponse = Schemas["FontSetListResponse"];
+export type UserSettingsResponse = Schemas["UserSettingsResponse"];
+export type UserSettingsUpdateRequest = Schemas["UserSettingsUpdateRequest"];
 
 export type ApiPaths = paths;
 

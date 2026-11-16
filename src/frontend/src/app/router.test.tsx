@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { render, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, within, fireEvent, waitFor, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { routes } from "./router";
@@ -219,7 +219,10 @@ describe("Application Router (plan 5.1)", () => {
     }
 
     const settings = renderWithRouter(["/settings"]);
-    expect(await settings.findByTestId("settings-page")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(settings.router.state.location.pathname).toBe("/"),
+    );
+    expect(settings.queryByTestId("settings-page")).not.toBeInTheDocument();
     settings.unmount();
   }, 20000);
 
@@ -236,8 +239,10 @@ describe("Application Router (plan 5.1)", () => {
     view.unmount();
   });
 
-  it("renders streamlined sidebar navigation and footer settings as real anchors", async () => {
-    // UI redesign (Patch 1) placed 3 primary views in <nav> and /settings in the sidebar footer.
+  it("renders streamlined sidebar navigation and a settings dialog trigger", async () => {
+    // t074: settings moved from a standalone /settings anchor into a wide
+    // dialog, so the footer trigger is a button and the 3 primary views
+    // remain real anchors.
     const view = renderWithRouter(["/"]);
     const sidebar = await view.findByTestId("sidebar");
     const navLinks = view.container.querySelectorAll("nav a[href]");
@@ -247,10 +252,12 @@ describe("Application Router (plan 5.1)", () => {
     for (const link of sidebarLinks) {
       expect(link.getAttribute("href")).toBeTruthy();
     }
-    expect(view.getByTestId("sidebar-settings-link")).toHaveAttribute(
-      "href",
-      "/settings",
-    );
+    const trigger = view.getByTestId("sidebar-settings-link");
+    expect(trigger.tagName).toBe("BUTTON");
+    expect(trigger).not.toHaveAttribute("href");
+    expect(view.container.querySelector('[data-testid="settings-dialog"]')).toBeNull();
+    fireEvent.click(trigger);
+    expect(await screen.findByTestId("settings-dialog")).toBeInTheDocument();
     view.unmount();
   });
 

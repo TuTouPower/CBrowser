@@ -82,6 +82,9 @@ class ProxyEgressObservationModel(Base):
     perspective: Mapped[str] = mapped_column(String(32), default="browser", nullable=False)
     egress_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     country_code: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    country_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[str] = mapped_column(
         String(64), default="supervisor_probe", nullable=False
     )

@@ -195,6 +195,17 @@ class EgressProbeFailure(Exception):
 
 
 @dataclass(frozen=True)
+class EgressProbeOutcome:
+    """Full observation returned by one probe (t074)."""
+
+    egress_ip: str
+    country_code: str | None
+    country_name: str | None
+    city: str | None
+    latency_ms: int
+
+
+@dataclass(frozen=True)
 class StreamResidue:
     profile_id: str
     runtime_instance_id: str
@@ -517,15 +528,17 @@ class DockerAdapter:
         credentials: dict[str, Any],
         echo_urls: tuple[str, ...] | list[str] | None = None,
         timeout: float = 90.0,
-    ) -> tuple[str, str | None]:
+    ) -> EgressProbeOutcome:
         """Run one egress probe in a short-lived helper container (t052).
 
         The helper shares the Browser's network posture: its own bridge
         network, a browser-role policy that allows only the (mapped)
         proxy endpoint, and the same proxy parameters the Browser would
         use.  It fetches an IP-echo endpoint through the proxy and
-        resolves the country against the local GeoLite2 database, then
-        prints one JSON object.  Returns ``(egress_ip, country_code)``.
+        resolves country/city against the local GeoLite2 database, then
+        prints one JSON object.  ``latency_ms`` is measured inside the
+        helper around the probe HTTP request only — container/network/
+        policy setup and teardown are excluded (t074 / AC-004).
 
         Raises :class:`EgressProbeFailure` when the helper ran and
         reported a probe error (recorded as a failed observation),
@@ -770,11 +783,22 @@ class DockerAdapter:
                 + docker_error_detail(error["error"])
             ) from None
         if outcome.get("exit_code") != 0:
+            output = outcome.get("output") or ""
+            # A non-zero exit carrying a structured JSON error_code is a
+            # probe verdict (EgressProbeFailure), not a transport failure.
+            # The old code discarded this and collapsed every helper
+            # failure to a generic "probe_failed" (t074 / p110).
+            try:
+                payload = json.loads(output.strip())
+                if isinstance(payload, dict) and "error_code" in payload:
+                    return output
+            except ValueError:
+                pass
             raise DockerSandboxError("Egress probe helper failed")
         return outcome.get("output") or ""
 
     @staticmethod
-    def _parse_probe_output(output: str) -> tuple[str, str | None]:
+    def _parse_probe_output(output: str) -> EgressProbeOutcome:
         """One JSON line from the helper: a reported error_code becomes
         an EgressProbeFailure (recorded as a failed observation); a
         malformed line is a DockerSandboxError."""
@@ -796,7 +820,16 @@ class DockerAdapter:
                 "Egress probe helper returned no egress IP"
             )
         country = payload.get("country_code")
-        return egress_ip, country if isinstance(country, str) else None
+        country_name = payload.get("country_name")
+        city = payload.get("city")
+        latency = payload.get("latency_ms")
+        return EgressProbeOutcome(
+            egress_ip=egress_ip,
+            country_code=country if isinstance(country, str) else None,
+            country_name=country_name if isinstance(country_name, str) else None,
+            city=city if isinstance(city, str) else None,
+            latency_ms=latency if isinstance(latency, int) and latency > 0 else 1,
+        )
 
     @staticmethod
     def _cleanup_probe_resources(helper, network, probe_dir: Path) -> None:

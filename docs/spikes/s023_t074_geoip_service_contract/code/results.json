@@ -1,0 +1,298 @@
+{
+  "matrix": [
+    {
+      "port": 21000,
+      "service": "ipwho.is",
+      "http": null,
+      "rtt_ms": 145.6,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21000,
+      "service": "api.ip.sb",
+      "http": null,
+      "rtt_ms": 112.0,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21000,
+      "service": "freeipapi",
+      "http": 200,
+      "rtt_ms": 646.1,
+      "json_ok": true,
+      "ip": "212.107.28.52",
+      "country_code": "HK",
+      "country_name": "Hong Kong",
+      "city": "Hong Kong"
+    },
+    {
+      "port": 21000,
+      "service": "ipify",
+      "http": 200,
+      "rtt_ms": 473.2,
+      "json_ok": true,
+      "ip": "212.107.28.52",
+      "kind": "plain_ip_echo"
+    },
+    {
+      "port": 21001,
+      "service": "ipwho.is",
+      "http": null,
+      "rtt_ms": 158.1,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21001,
+      "service": "api.ip.sb",
+      "http": null,
+      "rtt_ms": 146.7,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21001,
+      "service": "freeipapi",
+      "http": 200,
+      "rtt_ms": 749.7,
+      "json_ok": true,
+      "ip": "212.107.30.203",
+      "country_code": "JP",
+      "country_name": "Japan",
+      "city": "Setagaya City (Kitazawa)"
+    },
+    {
+      "port": 21001,
+      "service": "ipify",
+      "http": 200,
+      "rtt_ms": 423.0,
+      "json_ok": true,
+      "ip": "212.107.30.203",
+      "kind": "plain_ip_echo"
+    },
+    {
+      "port": 21003,
+      "service": "ipwho.is",
+      "http": null,
+      "rtt_ms": 336.0,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21003,
+      "service": "api.ip.sb",
+      "http": null,
+      "rtt_ms": 318.5,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21003,
+      "service": "freeipapi",
+      "http": 200,
+      "rtt_ms": 1189.9,
+      "json_ok": true,
+      "ip": "104.249.174.133",
+      "country_code": "US",
+      "country_name": "United States",
+      "city": "Seattle"
+    },
+    {
+      "port": 21003,
+      "service": "ipify",
+      "http": 200,
+      "rtt_ms": 580.2,
+      "json_ok": true,
+      "ip": "104.249.174.133",
+      "kind": "plain_ip_echo"
+    },
+    {
+      "port": 21013,
+      "service": "ipwho.is",
+      "http": null,
+      "rtt_ms": 129.3,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21013,
+      "service": "api.ip.sb",
+      "http": null,
+      "rtt_ms": 120.4,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21013,
+      "service": "freeipapi",
+      "http": 200,
+      "rtt_ms": 629.3,
+      "json_ok": true,
+      "ip": "103.156.242.195",
+      "country_code": "TW",
+      "country_name": "Taiwan",
+      "city": "Taipei"
+    },
+    {
+      "port": 21013,
+      "service": "ipify",
+      "http": 200,
+      "rtt_ms": 428.2,
+      "json_ok": true,
+      "ip": "103.156.242.195",
+      "kind": "plain_ip_echo"
+    },
+    {
+      "port": 21062,
+      "service": "ipwho.is",
+      "http": null,
+      "rtt_ms": 459.6,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21062,
+      "service": "api.ip.sb",
+      "http": null,
+      "rtt_ms": 459.0,
+      "error": "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+    },
+    {
+      "port": 21062,
+      "service": "freeipapi",
+      "http": 200,
+      "rtt_ms": 1766.0,
+      "json_ok": true,
+      "ip": "82.26.25.181",
+      "country_code": "GB",
+      "country_name": "United Kingdom",
+      "city": "London"
+    },
+    {
+      "port": 21062,
+      "service": "ipify",
+      "http": 200,
+      "rtt_ms": 793.7,
+      "json_ok": true,
+      "ip": "82.26.25.181",
+      "kind": "plain_ip_echo"
+    }
+  ],
+  "by_service": {
+    "ipwho.is": {
+      "ok": 0,
+      "total": 5,
+      "http_codes": [
+        null
+      ],
+      "rtt_median_ms": null,
+      "rtt_min_ms": null,
+      "rtt_max_ms": null,
+      "sample": null,
+      "failures": [
+        "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)",
+        "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+      ]
+    },
+    "api.ip.sb": {
+      "ok": 0,
+      "total": 5,
+      "http_codes": [
+        null
+      ],
+      "rtt_median_ms": null,
+      "rtt_min_ms": null,
+      "rtt_max_ms": null,
+      "sample": null,
+      "failures": [
+        "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)",
+        "ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1147)"
+      ]
+    },
+    "freeipapi": {
+      "ok": 5,
+      "total": 5,
+      "http_codes": [
+        200
+      ],
+      "rtt_median_ms": 749.7,
+      "rtt_min_ms": 629.3,
+      "rtt_max_ms": 1766.0,
+      "sample": {
+        "port": 21000,
+        "service": "freeipapi",
+        "http": 200,
+        "rtt_ms": 646.1,
+        "json_ok": true,
+        "ip": "212.107.28.52",
+        "country_code": "HK",
+        "country_name": "Hong Kong",
+        "city": "Hong Kong"
+      },
+      "failures": []
+    },
+    "ipify": {
+      "ok": 5,
+      "total": 5,
+      "http_codes": [
+        200
+      ],
+      "rtt_median_ms": 473.2,
+      "rtt_min_ms": 423.0,
+      "rtt_max_ms": 793.7,
+      "sample": {
+        "port": 21000,
+        "service": "ipify",
+        "http": 200,
+        "rtt_ms": 473.2,
+        "json_ok": true,
+        "ip": "212.107.28.52",
+        "kind": "plain_ip_echo"
+      },
+      "failures": []
+    }
+  },
+  "burst": [
+    {
+      "http": 200,
+      "rtt_ms": 440.3
+    },
+    {
+      "http": 200,
+      "rtt_ms": 478.4
+    },
+    {
+      "http": 200,
+      "rtt_ms": 390.9
+    },
+    {
+      "http": 200,
+      "rtt_ms": 439.1
+    },
+    {
+      "http": 200,
+      "rtt_ms": 459.1
+    },
+    {
+      "http": 200,
+      "rtt_ms": 459.3
+    },
+    {
+      "http": 200,
+      "rtt_ms": 439.7
+    },
+    {
+      "http": 200,
+      "rtt_ms": 476.4
+    },
+    {
+      "http": 200,
+      "rtt_ms": 442.5
+    },
+    {
+      "http": 200,
+      "rtt_ms": 459.7
+    },
+    {
+      "http": 200,
+      "rtt_ms": 460.3
+    },
+    {
+      "http": 200,
+      "rtt_ms": 400.1
+    }
+  ]
+}
