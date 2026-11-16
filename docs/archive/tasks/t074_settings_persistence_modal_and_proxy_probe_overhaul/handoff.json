@@ -1,0 +1,19 @@
+{
+  "tid": "t074",
+  "attempt": 2,
+  "execution_id": "bfe9e8f3cea946b985e8f5a5e92b6774",
+  "status": "done",
+  "branch": "t074_settings_persistence_modal_and_proxy_probe_overhaul",
+  "base_sha": "4bd5358b83377210899a3dbaaa204117e3126d36",
+  "tests": "前端 `npm run test:types --prefix src/frontend` 与 Vitest 84 files / 665 tests 全绿；后端 `tests/unit` 2264 passed / 5 skipped、`tests/integration` 197 passed / 18 skipped；全量门禁 `scripts/run_gates.sh`（`.scratch/t074_step356/gate_evidence/manifest.json`，`run_id=dd53c7d1cc09443f9c57e5ba6d303824`）9 suite 全部 exit 0 / `all_passed=true`：`protocol_drift_check`、`requirements_check`、`contract`、`unit`、`integration`、`design_lint`、`design_check`、`frontend_test`、`frontend_build`。全部输出写日志到 `.scratch/t074_step356/logs/`。",
+  "blackbox": "NOT_RUN / USER_WAIVED。按 `docs/blueprint/testing.md` `verification_notes` 与 t066 `[deploy]` 顺延口径，AC-006 要求的真实重部署端到端（真实可用/不可用代理单条与批量测速、毫秒级延迟、准确国家城市、红色失败原因、刷新持久化、容器隔离与私有地址阻断、宽弹窗人工布局核对）本会话未配置正式部署环境，顺延 `docs/pending/todo/p112_t074_deploy_proxy_probe_e2e.md` 并如实记录，不以本机门禁或 spike 原型冒充已验。替代验收：s023 用 5 个真实代理出口实测三家 GeoIP 服务 / 429 限流 / 本地 mmdb 兜底（`docs/spikes/s023_t074_geoip_service_contract/code/results.json`）、s024 用真实 `cbrowser-api` Docker 容器原型实测私有地址拦截 / 热切换双出口 / 390–520ms 网络 RTT / 凭据不进 argv（`docs/spikes/s024_t074_lightweight_probe_isolation/code/results.json`）；全量门禁 + 受控 HTTPS GeoIP 夹具单测/集成测试触达 AC-001..005。",
+  "review": "full 级双路独立 reviewer Round 1 均 `PASS`、零 finding；`md_kx` 格式规范化（仅格式、无内容变化）后 Round 2 双路各自复算指纹并追加确认段，仍 `PASS`、零新 finding；`check_review_status.py` `overall=PASS` / `review_scope=ok` / `ac_review=ok` / `round=2` / `next_action=finalize`，`reviewed_scope` 指纹 `6343a38bcc6ebd1f`；报告见 `review_code.md` / `review_test.md`。",
+  "review_scope": "6343a38bcc6ebd1f",
+  "pending": [
+    "p112"
+  ],
+  "findings": [
+    "d048",
+    "d049"
+  ]
+}

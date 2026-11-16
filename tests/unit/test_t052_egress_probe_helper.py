@@ -83,10 +83,16 @@ def stub_geoip2(monkeypatch, tmp_path):
     class FakeCountry:
         def __init__(self, code):
             self.iso_code = code
+            self.name = "Japan" if code == "JP" else "United States"
+
+    class FakeCityRecord:
+        def __init__(self, code):
+            self.name = "Tokyo" if code == "JP" else None
 
     class FakeCity:
         def __init__(self, code):
             self.country = FakeCountry(code)
+            self.city = FakeCityRecord(code)
 
     class FakeReader:
         def __init__(self, path):
@@ -130,9 +136,12 @@ def _credentials_file(tmp_path, proxy_port, password="s3cret-pw"):
     return path
 
 
-def test_helper_prints_egress_and_country(
+def test_helper_prints_full_observation(
     proxy_fixture, stub_geoip2, tmp_path, capsys
 ):
+    """Replaces ``test_helper_prints_egress_and_country``: t074 emits the
+    full observation (country_name/city/latency_ms); the old two-field
+    assertion would lock an obsolete output contract."""
     creds = _credentials_file(tmp_path, proxy_fixture["proxy_port"])
     rc = main(
         [
@@ -147,7 +156,11 @@ def test_helper_prints_egress_and_country(
     assert rc == 0
     out = capsys.readouterr().out
     payload = json.loads(out)
-    assert payload == {"egress_ip": "203.0.113.7", "country_code": "JP"}
+    assert payload["egress_ip"] == "203.0.113.7"
+    assert payload["country_code"] == "JP"
+    assert payload["country_name"] == "Japan"
+    assert payload["city"] == "Tokyo"
+    assert isinstance(payload["latency_ms"], int) and payload["latency_ms"] >= 1
     # Byte-level: the password never appears in the helper's stdout.
     assert b"s3cret-pw" not in out.encode("utf-8")
 

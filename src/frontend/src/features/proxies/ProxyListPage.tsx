@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import { AlertCircle, Pencil, Trash2, Zap } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { ApiError } from "../../shared/api/client";
 import { useApiClient } from "../../shared/api/client_context";
-import type { ProxyResponse } from "../../shared/api/types";
+import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
 import {
   Banner,
   Button,
@@ -13,44 +13,50 @@ import {
   MonoValue,
   ProtocolChip,
   RegionCode,
-  StatusBadge,
   Tooltip,
   useToast,
 } from "../../shared/ui";
 import {
   useDeleteProxyMutation,
   useProbeProxyMutation,
+  useProfilesQuery,
   useProxiesQuery,
 } from "../profiles/useProfilesQuery";
 import { ProxyFormDialog } from "./ProxyFormDialog";
+import { ProxyListToolbar } from "./ProxyListToolbar";
+import { ProxyTable } from "./ProxyTable";
+import { ProxyUsedByPopover } from "./ProxyUsedByPopover";
 import {
-  ProxyListToolbar,
-  type ProxyLayout,
-  type ProxySchemeFilter,
-} from "./ProxyListToolbar";
-import { ProxyTable, type ProxySpeedResult } from "./ProxyTable";
+  useProxyFilters,
+  type ProxyFilters,
+} from "./useProxyFilters";
+import { useProxyLayout } from "./useProxyLayout";
 
 export function filterProxies(
   proxies: ProxyResponse[],
-  query: string,
-  scheme: ProxySchemeFilter,
-  region = "all",
+  filters: ProxyFilters,
 ): ProxyResponse[] {
-  const q = query.trim().toLowerCase();
+  const q = filters.q.trim().toLowerCase();
   return proxies.filter((proxy) => {
-    if (scheme !== "all" && proxy.scheme !== scheme) return false;
-    if (region !== "all") {
-      const proxyRegion = (
-        proxy.country_code ||
-        proxy.region_label ||
-        ""
-      ).trim();
-      if (proxyRegion !== region) return false;
+    if (filters.scheme !== "all" && proxy.scheme !== filters.scheme) {
+      return false;
+    }
+    if (filters.country !== "all") {
+      const country = (proxy.country_name || proxy.country_code || "").trim();
+      if (country !== filters.country) return false;
+    }
+    if (filters.city !== "all") {
+      const city = (proxy.city || "").trim();
+      if (city !== filters.city) return false;
     }
     if (!q) return true;
-    return [proxy.name, proxy.host, proxy.region_label ?? ""].some((value) =>
-      value.toLowerCase().includes(q),
-    );
+    return [
+      proxy.name,
+      proxy.host,
+      proxy.country_name ?? "",
+      proxy.city ?? "",
+      proxy.region_label ?? "",
+    ].some((value) => value.toLowerCase().includes(q));
   });
 }
 
@@ -67,39 +73,84 @@ function proxyInUseCount(error: unknown): number | null {
   return null;
 }
 
+function ProxyStatusText({ proxy }: { proxy: ProxyResponse }) {
+  const { t } = useI18n();
+  if (proxy.observation_status === "pending") {
+    return (
+      <span className="font-ui text-body-sm text-on-surface-muted">
+        {t("proxyStatusPending")}
+      </span>
+    );
+  }
+  if (proxy.observation_status === "ok") {
+    return (
+      <span className="font-ui text-body-sm text-success">
+        {proxy.latency_ms != null ? `${proxy.latency_ms}ms` : t("proxyAvailable")}
+      </span>
+    );
+  }
+  if (proxy.observation_status === "failed") {
+    return (
+      <span className="font-ui text-body-sm text-danger">
+        {proxy.observation_error_code ?? t("proxyProbeFailed")}
+      </span>
+    );
+  }
+  return (
+    <span className="font-ui text-body-sm text-on-surface-muted">
+      {t("proxyStatusUnknown")}
+    </span>
+  );
+}
+
+function usedByLabel(
+  count: number,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  return count === 1
+    ? t("proxyUsedByCountOne")
+    : t("proxyUsedByCount", { count });
+}
+
 export function ProxyListPage() {
   const { t } = useI18n();
   const client = useApiClient();
+  const navigate = useNavigate();
   const toast = useToast();
   const proxiesQuery = useProxiesQuery(client);
+  const profilesQuery = useProfilesQuery(client);
   const proxies = proxiesQuery.data ?? [];
   const deleteMutation = useDeleteProxyMutation(client);
   const probeMutation = useProbeProxyMutation(client);
+  const { filters, setFilter, setFilters } = useProxyFilters();
+  const [layout, setLayout] = useProxyLayout();
+
   const [probingId, setProbingId] = useState<string | null>(null);
   const [probingAll, setProbingAll] = useState(false);
-  const [speedResults, setSpeedResults] = useState<
-    Record<string, ProxySpeedResult>
-  >({});
-
-  const [query, setQuery] = useState("");
-  const [scheme, setScheme] = useState<ProxySchemeFilter>("all");
-  const [region, setRegion] = useState("all");
-  const [layout, setLayout] = useState<ProxyLayout>("list");
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ProxyResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ProxyResponse | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [usedByTarget, setUsedByTarget] = useState<{
+    profiles: ProfileResponse[];
+  } | null>(null);
 
-  const regionOptions = useMemo(() => {
+  const usedByProfiles = useMemo(() => {
+    const grouped: Record<string, ProfileResponse[]> = {};
+    for (const profile of profilesQuery.data ?? []) {
+      if (!profile.proxy_id) continue;
+      (grouped[profile.proxy_id] ??= []).push(profile);
+    }
+    return grouped;
+  }, [profilesQuery.data]);
+
+  const countryOptions = useMemo(() => {
     const map = new Map<string, string>();
     for (const proxy of proxies) {
-      const key = (proxy.country_code || proxy.region_label || "").trim();
-      if (!key) continue;
-      const label =
-        proxy.country_code && proxy.region_label
-          ? `${proxy.country_code} · ${proxy.region_label}`
-          : key;
-      if (!map.has(key)) map.set(key, label);
+      const key = (proxy.country_name || proxy.country_code || "").trim();
+      if (!key || !map.has(key)) {
+        if (key) map.set(key, key);
+      }
     }
     return Array.from(map.entries()).map(([value, label]) => ({
       value,
@@ -107,7 +158,22 @@ export function ProxyListPage() {
     }));
   }, [proxies]);
 
-  const visible = filterProxies(proxies, query, scheme, region);
+  // City options follow the selected country (t074 AC-005 linked filters).
+  const cityOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const proxy of proxies) {
+      const country = (proxy.country_name || proxy.country_code || "").trim();
+      if (filters.country !== "all" && country !== filters.country) continue;
+      const city = (proxy.city || "").trim();
+      if (city && !map.has(city)) map.set(city, city);
+    }
+    return Array.from(map.entries()).map(([value, label]) => ({
+      value,
+      label,
+    }));
+  }, [proxies, filters.country]);
+
+  const visible = filterProxies(proxies, filters);
   const loadError = proxiesQuery.isError
     ? (proxiesQuery.error?.message ?? t("runtimeStateUnknown"))
     : null;
@@ -151,29 +217,21 @@ export function ProxyListPage() {
   };
 
   const handleProbe = (proxy: ProxyResponse) => {
-    const startedAt = Date.now();
     setProbingId(proxy.id);
-    setSpeedResults((prev) => ({
-      ...prev,
-      [proxy.id]: { status: "testing" },
-    }));
     probeMutation.mutate(proxy.id, {
-      onSuccess: () => {
-        const elapsed = Math.max(12, Date.now() - startedAt);
-        setSpeedResults((prev) => ({
-          ...prev,
-          [proxy.id]: { status: "ok", ms: elapsed },
-        }));
-        toast.show(t("proxyProbeSuccess"));
+      onSuccess: (updated: ProxyResponse) => {
         setProbingId(null);
+        // HTTP 200 with observation_status=failed is a real failure
+        // (t074 AC-004): never report success for it.
+        if (updated.observation_status === "failed") {
+          toast.show(t("proxyProbeFailed"));
+          return;
+        }
+        toast.show(t("proxyProbeSuccess"));
       },
       onError: (error: Error) => {
-        setSpeedResults((prev) => ({
-          ...prev,
-          [proxy.id]: { status: "failed" },
-        }));
-        toast.show(`${t("proxyProbeFailed")}: ${error.message}`);
         setProbingId(null);
+        toast.show(`${t("proxyProbeFailed")}: ${error.message}`);
       },
     });
   };
@@ -181,43 +239,51 @@ export function ProxyListPage() {
   const handleProbeAll = async () => {
     if (visible.length === 0 || probingAll) return;
     setProbingAll(true);
-    setSpeedResults((prev) => {
-      const next = { ...prev };
-      for (const item of visible) {
-        next[item.id] = { status: "testing" };
-      }
-      return next;
-    });
+    let failed = 0;
     for (const item of visible) {
-      const startedAt = Date.now();
       try {
-        await probeMutation.mutateAsync(item.id);
-        const elapsed = Math.max(12, Date.now() - startedAt);
-        setSpeedResults((prev) => ({
-          ...prev,
-          [item.id]: { status: "ok", ms: elapsed },
-        }));
+        const updated = await probeMutation.mutateAsync(item.id);
+        if (updated.observation_status === "failed") failed += 1;
       } catch {
-        setSpeedResults((prev) => ({
-          ...prev,
-          [item.id]: { status: "failed" },
-        }));
+        failed += 1;
       }
     }
     setProbingAll(false);
+    if (failed > 0) {
+      toast.show(`${t("proxyProbeFailed")} · ${failed}`);
+      return;
+    }
     toast.show(t("proxyProbeAllSuccess", { count: visible.length }));
+  };
+
+  const onUsedBySingle = (profile: ProfileResponse) => {
+    navigate(`/profiles/${encodeURIComponent(profile.id)}/config`);
+  };
+
+  const onUsedByMany = (
+    _proxy: ProxyResponse,
+    profiles: ProfileResponse[],
+  ) => {
+    setUsedByTarget({ profiles });
+  };
+
+  const onCountryChange = (value: string) => {
+    setFilters({ country: value, city: "all" });
   };
 
   return (
     <div data-testid="proxy-list-page" className="flex flex-col gap-md">
       <ProxyListToolbar
-        query={query}
-        onQueryChange={setQuery}
-        scheme={scheme}
-        onSchemeChange={setScheme}
-        region={region}
-        onRegionChange={setRegion}
-        regions={regionOptions}
+        query={filters.q}
+        onQueryChange={(value) => setFilter("q", value)}
+        scheme={filters.scheme}
+        onSchemeChange={(value) => setFilter("scheme", value)}
+        country={filters.country}
+        onCountryChange={onCountryChange}
+        countries={countryOptions}
+        city={filters.city}
+        onCityChange={(value) => setFilter("city", value)}
+        cities={cityOptions}
         layout={layout}
         onLayoutChange={setLayout}
         onProbeAll={() => void handleProbeAll()}
@@ -297,11 +363,10 @@ export function ProxyListPage() {
           {visible.map((proxy) => {
             const id = proxy.id;
             const blocked = proxy.used_by_count > 0;
-            const speed = speedResults[id];
             const isTesting =
-              probingId === id ||
-              speed?.status === "testing" ||
-              proxy.observation_status === "pending";
+              probingId === id || proxy.observation_status === "pending";
+            const usedBy = usedByProfiles[id] ?? [];
+            const count = proxy.used_by_count;
             return (
               <div
                 key={id}
@@ -331,42 +396,44 @@ export function ProxyListPage() {
                 </div>
                 <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 <div className="flex flex-wrap items-center gap-sm">
-                  {isTesting ? (
-                    <span className="font-ui text-body-sm text-on-surface-muted">
-                      {t("proxyCountryProbing")}
-                    </span>
-                  ) : proxy.country_code ? (
+                  {proxy.country_code ? (
                     <RegionCode code={proxy.country_code} />
-                  ) : (
-                    <span className="font-ui text-body-sm text-on-surface-muted">
-                      {t("proxyCountryUnknown")}
-                    </span>
-                  )}
-                  {proxy.region_label && (
-                    <span className="font-ui text-body-sm text-on-surface">
-                      {proxy.region_label}
-                    </span>
-                  )}
-                  {speed?.status === "ok" && (
-                    <StatusBadge
-                      tone="running"
-                      label={
-                        speed.ms != null
-                          ? `${t("proxyAvailable")} · ${speed.ms}ms`
-                          : t("proxyAvailable")
-                      }
-                    />
-                  )}
+                  ) : null}
+                  <span className="font-ui text-body-sm text-on-surface">
+                    {proxy.country_name ?? proxy.country_code ?? "—"}
+                  </span>
+                  <span className="font-ui text-body-sm text-on-surface-muted">
+                    {proxy.city ?? "—"}
+                  </span>
+                  <ProxyStatusText proxy={proxy} />
                 </div>
                 <div className="flex items-center justify-between gap-sm border-t border-outline pt-sm">
-                  <Link
-                    to={`/?proxy=${encodeURIComponent(id)}`}
-                    data-testid={`proxy-used-by-${id}`}
-                    className="inline-flex items-center gap-xs font-ui text-body-sm text-accent hover:underline"
-                  >
-                    <MonoValue>{proxy.used_by_count}</MonoValue>
-                    <span>{t("proxyUsedByLink")}</span>
-                  </Link>
+                  {count === 0 || usedBy.length === 0 ? (
+                    <span
+                      data-testid={`proxy-used-by-${id}`}
+                      className="font-ui text-body-sm text-on-surface-muted"
+                    >
+                      {usedByLabel(count, t)}
+                    </span>
+                  ) : usedBy.length === 1 ? (
+                    <button
+                      type="button"
+                      data-testid={`proxy-used-by-${id}`}
+                      onClick={() => onUsedBySingle(usedBy[0]!)}
+                      className="font-ui text-body-sm text-accent hover:underline"
+                    >
+                      {usedByLabel(count, t)}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`proxy-used-by-${id}`}
+                      onClick={() => onUsedByMany(proxy, usedBy)}
+                      className="font-ui text-body-sm text-accent hover:underline"
+                    >
+                      {usedByLabel(count, t)}
+                    </button>
+                  )}
                   <div className="flex items-center gap-xs">
                     <IconButton
                       data-testid={`proxy-probe-${id}`}
@@ -390,6 +457,7 @@ export function ProxyListPage() {
                       />
                     </IconButton>
                     <IconButton
+                      variant="danger"
                       data-testid={`proxy-delete-${id}`}
                       label={t("proxyDelete")}
                       disabled={blocked}
@@ -409,11 +477,13 @@ export function ProxyListPage() {
       ) : (
         <ProxyTable
           proxies={visible}
+          usedByProfiles={usedByProfiles}
           onEdit={openEdit}
           onDelete={requestDelete}
           onProbe={handleProbe}
           probingId={probingId}
-          speedResults={speedResults}
+          onUsedBySingle={onUsedBySingle}
+          onUsedByMany={onUsedByMany}
         />
       )}
 
@@ -422,6 +492,17 @@ export function ProxyListPage() {
         onOpenChange={setFormOpen}
         proxy={editing}
       />
+
+      {usedByTarget && (
+        <ProxyUsedByPopover
+          profiles={usedByTarget.profiles}
+          open={usedByTarget.profiles.length > 0}
+          onOpenChange={(open) => {
+            if (!open) setUsedByTarget(null);
+          }}
+          onOpenProfile={onUsedBySingle}
+        />
+      )}
     </div>
   );
 }

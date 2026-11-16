@@ -1,17 +1,17 @@
 # 代理库界面
 
-需求级 spec，累积 t038、t052、t065 及单用户代理界面精简与测速重构。权威交互与视觉约束见 `DESIGN.md` 与 `docs/blueprint/frontend.md` 第 8 节；后端代理 API 契约见 `docs/specs/profile_management.md`（t035 分组库 / 代理库 / 配置版本三分）。本文定义界面行为契约。
+需求级 spec，累积 t038、t052、t065、t074 及单用户代理界面精简与测速重构（t074 起列表列、筛选、使用环境与测速口径以 §10 为准）。权威交互与视觉约束见 `DESIGN.md` 与 `docs/blueprint/frontend.md` 第 8 节；后端代理 API 契约见 `docs/specs/profile_management.md`（t035 分组库 / 代理库 / 配置版本三分）。本文定义界面行为契约。
 
-## 1. 列表、卡片视图与测速（t038，t052+）
+## 1. 列表、卡片视图与测速（t038，t052+；t074 重写见 §10）
 
-- `/proxies` 代理管理页面支持列表（6 列）与卡片网格两种视图，由工具栏右侧图标按钮切换：列表列包含名称（备注以感叹号图标悬浮 Tooltip 展示）、协议、地址（`host:port`，mono）、位置（国家码 + 地区标签 + 可用性与延迟徽标，无有效观测时显示「未知」）、使用环境数、操作（闪电测速 / 编辑 / 删除图标按钮）。**不展示「认证」列**，避免向用户暴露冗余认证方式细节。
-- 工具栏：搜索（名称、host、地区标签，大小写不敏感）、协议筛选（http / https / socks5 / 全部协议）、位置筛选（按国家码或地区标签过滤）、右上角批量闪电测速按钮（`Zap` 图标，一键测试当前列表全部代理可用性与延迟）、列表/卡片图标切换器、主按钮「添加代理」。搜索、协议筛选与位置筛选可自由组合；结果随输入即时更新；全量客户端过滤、无分页。
+- t074 起 `/proxies` 支持列表（8 列）与卡片网格两种视图，由工具栏右侧图标按钮切换；列定义见 §10。旧「6 列 / 位置列 / 使用环境数链接」描述已废弃。
+- 工具栏：搜索（名称、host、国家名、城市、地区标签，大小写不敏感）、协议筛选、独立国家筛选与城市筛选（联动去重）、批量闪电测速按钮（`Zap` 图标）、列表/卡片图标切换器、主按钮「添加代理」。筛选条件 `q` / `scheme` / `country` / `city` 存 URL SearchParams（`useProxyFilters`）、视图布局存 `localStorage`（`useProxyLayout`），刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须单次原子提交。
 - 空列表显示空状态。每视图最多一个主按钮。
-- 单行/单卡片闪电测速按钮（`Zap` 图标）调用 `POST /api/v1/proxies/{id}/probe`（只接受代理 ID，无 body），记录测速耗时并展示「可用 · XXms」状态徽标，成功 toast 提示测速完成并刷新列表，失败 toast 提示测速失败与错误信息。
+- 单条 / 批量测速调用 `POST /api/v1/proxies/{id}/probe`（只接受代理 ID，无 body）+ `useProbeProxyMutation`；**彻底删除组件 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。后端 `observation_status === "failed"` 即使 HTTP 200 也标红并提示错误 toast、不误报成功；`ok` 提示成功。
 
 ## 2. 添加 / 编辑（t052，替代 t038 同节）
 
-- 默认只显示「代理链接」「备注」与只读位置状态（有有效观测显示国家码 + 出口 IP，无有效观测显示「未知」）；高级设置默认折叠，展开后可编辑名称、协议、地址、端口、用户名、只写密码、地区标签；**没有国家输入**。
+- 默认只显示「代理链接」「备注」与只读观测区（国家 / 城市 / 出口 IP / 毫秒延迟 / 失败原因；无有效观测显示「未测速」）；高级设置默认折叠，展开后可编辑名称、协议、地址、端口、用户名、只写密码、地区标签；**没有国家输入**。
 - 链接是唯一录入：`ProxyCreateRequest.proxy_url` / `ProxyUpdateRequest.proxy_url`。四种格式：标准 URL `scheme://user:pass@host:port`、无协议 `host:port`（默认 http）、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单、IPv6 必须括号、端口 1..65535、密码 percent-decode 且非法转义报错。解析器与后端 `domain/proxy_endpoint.py` 逐项对齐（错误码一致），前端实现见 `features/proxies/parseProxyUrl.ts`。
 - 链接与高级字段双向同步、始终一致：链接解析成功即同步高级字段，高级字段修改即重序列化链接。非法链接显示字段级错误，**已解析结果保持不变**。链接输入框失焦时显示脱敏链接（不含密码），聚焦编辑时显示完整链接。
 - 名称未手动填写时由 `host:port`（IPv6 加括号）派生；手动修改后不被后续解析覆盖。创建时 name 为空则省略该键，后端派生。
@@ -30,7 +30,7 @@
 
 - `used_by_count > 0` 时代理删除按钮禁用并提示先改绑。
 - 后端删除返回 409 时响应体为统一 `ErrorResponse`：`{"error":"proxy_in_use","message":"Conflict","details":{"used_by_count":N},"retryable":false}`；前端以 `errorCode === "proxy_in_use"` 判码、从 `ApiError.details` 取引用数并展示。
-- 使用环境数为链接，跳 `/?proxy=<id>`；环境列表的 `useEnvironmentFilters` 已支持 `proxy` URL 参数按代理筛选。
+- 使用环境列（t074）只渲染 `0 个` / `1 个` / `2 个` 等计数，不含「查看环境」文案：`0` 不可点；`1` 点击直接经 `useNavigate` 进入对应环境配置页；`>=2` 点击先开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数按 `useProfilesQuery` 的 `proxy_id` 客户端分组。旧 `<Link to={"/?proxy=" + id}>` 跳转行为已删除。
 
 ## 5. 带认证 SOCKS5（t038 / AC-007）
 
@@ -40,7 +40,7 @@
 ## 6. 文案与测试（t038+）
 
 - en / zh 文案键同步补入 `i18n.tsx`，键集相等与双语文案非空由 `i18n.test.tsx` 兜底。
-- Vitest 在 ApiClient 边界注入每例独立 stub、走真实 hooks；链接解析用表驱动纯函数测试（与后端矩阵对齐）；页面测试覆盖 6 列展示（不含认证列）、搜索 + 协议 + 位置筛选组合、列表/卡片切换、密码不残留、409 引用数、使用环境数跳转、单条与批量闪电测速调用及 toast。
+- Vitest 在 ApiClient 边界注入每例独立 stub、走真实 hooks；链接解析用表驱动纯函数测试（与后端矩阵对齐）；t074 页面测试覆盖 8 列展示（无认证列 / 无混合位置列）、国家与城市独立筛选及 URL 持久化、列表/卡片切换、密码不残留、409 引用数、`ok` 绿色延迟 / `failed` 红色错误码、HTTP 200 返回 `failed` 不误报成功、`0` / `1` / `2+` 使用环境三态交互、单条与批量闪电测速调用及 toast。
 - 真实栈 E2E（无头 Chrome）覆盖「UI 新建代理 → 环境引用该代理 → 启动 → 浏览器出站经该代理」，用本地记录代理不依赖公网。
 
 ## 7. 出口观测与探测（t052）
@@ -50,6 +50,7 @@
 - 探测在 Browser 同视角执行：Supervisor 的短生命周期 helper（Browser 镜像、browser-role 网络策略、0600 凭证文件）访问 IP 回显端点取出口 IP，本机 GeoLite2 判定国家；出口 IP 不发往第三方地理库。手动探测 `POST /api/v1/proxies/{id}/probe` 只接受代理 ID，任何非空请求体（除 `{}` 外）返回 422。
 - 宿主本机端点（`127.0.0.0/8` / `localhost` / `::1`）由 Supervisor 映射为 `host.docker.internal` 并单端口放行；映射失败时启动与探测在执行前明确报错并给出处置提示，不出现启动成功但无法联网。
 - 观测记录只追加历史行（`proxy_egress_observations`）；`GET /api/v1/proxies` 与单条响应均返回当前有效观测派生值。
+- **t074 观测扩展**：迁移 `0010`（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`，只进不退）为 `proxy_egress_observations` 增 `country_name` / `city` / `latency_ms`；`EgressObservation`、`EgressProbeResult`、Supervisor `EgressProbeResponse` 与 `ProxyResponse` 统一暴露 `observation_status`（`unknown` / `pending` / `ok` / `failed`）、`latency_ms`、`egress_ip`、`country_code`、`country_name`、`city`、`observation_error_code`（脱敏）、`observed_at`、`expires_at`。`latency_ms` 只由 helper 内 `time.monotonic()` 包裹经代理的实际 HTTP 往返，不含容器 / 网络 / 策略建立与销毁；`docker_adapter._exec_probe_helper` 在 `exit_code=1` 且 stdout 为含 `error_code` 的合法 JSON 时保留具体错误码落 `failed` 观测，不再退化成通用 `probe_failed`。主链为 IP 回显 + 本地 `GeoLite2-City.mmdb` 完整读取 `country.names` / `city.names`；在线只读 HTTPS Geo 服务（`GEO_SERVICE_URLS` 白名单）仅作可选城市补充，处理 307 / 429 / TLS 失败并回落，绝不伪造位置（d048 / d049）。端点 / 凭据变更或 TTL 过期时旧位置与延迟立即失效。
 
 ## 8. 密码变更影响集、幂等与引用事件（t056）
 
@@ -64,3 +65,12 @@
 - 校验与失败封闭：读文件/字段校验（scheme ∈ {http,https,socks5}、bare 主机名、port 1..65535、整型 `credential_revision`）或 `credential_revision` 与绑定快照不符，任一异常即 `ProxyCredentialsChangedError()`，固定消息 `PROXY_CREDENTIALS_CHANGED`。
 - 网络策略（`proxy_enforced=True`）：有代理 Browser 与出口探测 helper 均通过同一出站规划设置 `proxy_enforced=True`（IPv4/IPv6 `OUTPUT` 尾规则均为 `-A OUTPUT -j DROP`），仅放行上游代理解析地址:端口（`scheme://host:port`，容器内 `_resolved_endpoint` 解析，域名代理时仅附加 Docker DNS `127.0.0.11:53/udp`）；严禁 WebRTC UDP、QUIC、外部 DNS 与直连公网逃逸（`d047`）。loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
 - 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理凭据或凭据异常即失败封闭、Browser 不启动，巡检 `browser_policy_spec` 漂移触发 `fail_close_container`。
+
+## 10. t074 系统设置持久化、宽弹窗与代理列表交互全量重构
+
+- **设置全栈持久化**：新增 `UserSettingsResponse`（`theme: Literal["system","light","dark"]`、`locale: Literal["en","zh"]`，默认 `dark` / `zh`）与 `UserSettingsUpdateRequest`（`extra="forbid"`，未知键 422）；`repository.get_settings()` / `update_settings()` 以 `BEGIN IMMEDIATE` 单写者事务读写 `settings` 表键 `ui.theme` / `ui.locale`；`GET /api/v1/settings`（会话鉴权）与 `PATCH /api/v1/settings`（会话鉴权 + `require_csrf_and_origin`）。前端 `SettingsSync` 在登录后 hydrate、后续变更写服务端；未登录页只读写本地不发 401；清缓存或重新登录后保持。
+- **设置宽弹窗**：`SettingsDialog` 复用 t073 `<Dialog size="lg">`，由 `AppLayout` 侧栏「设置」按钮直接打开，不离开当前页面上下文；旧 `/settings` 窄页改为 `<Navigate to="/" replace />`。弹窗分三块：外观与语言、Control API 健康状态 + 退出登录 + 只读网络访问摘要、平台字体包卡片（默认隐去 `source_version`，仅完整性异常展开 `problems`）。`I18nProvider` / `ThemeProvider` 保持不依赖 auth 与 API client。
+- **会话静音持久化**：`useBrowserSession` 的 `audioMuted` 存按标签页隔离的 `sessionStorage`（`cbrowser.session.audio_muted.${profileId}`），刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
+- **代理列表 8 列**：名称 | 协议 | 地址 | 国家 | 城市 | 状态 | 使用环境 | 操作；卡片视图同构。状态列 `pending` 显示探测中、`ok` 仅以绿色语义文字显示 `{latency_ms}ms`（无延迟显示「可用」）、`failed` 以红色语义文字显示脱敏 `observation_error_code`、`unknown` 显示中性未测速提示；删除按钮用 `IconButton variant="danger"`。`ProxyFormDialog` 升级 `Dialog size="lg"`，`SessionDetailsPanel` 同步适配国家 / 城市 / 延迟 / 失败态。
+- **筛选与交互持久化**：`useProxyFilters`（URL SearchParams 存 `q` / `scheme` / `country` / `city`）与 `useProxyLayout`（`localStorage` 存 `list` / `card`）；国家与城市为独立筛选且联动去重，切换国家时原子重置城市（单次 `setFilters` 提交）。使用环境 `0` 禁点 / `1` 点击直进环境配置页 / `>=2` 点击先弹 `ProxyUsedByPopover` 再点选进入。
+- **待部署验证**：真实部署下在线 Geo 服务在线率、城市主观准确度、可用/不可用代理端到端毫秒级延迟与红色失败原因、刷新持久化、容器隔离与私有地址阻断边界，按 AC-006 `[deploy]` 顺延，不以本机门禁或 spike 原型冒充已验。

@@ -162,22 +162,6 @@
             "conflicts_with": "",
             "note": "来源 review_20261110_200842 adoption_decision A9 A45-A54 A56",
             "dir": "docs/tasks/t060_gate_infra_and_privacy"
-        },
-        {
-            "tid": "t074",
-            "slug": "settings_persistence_modal_and_proxy_probe_overhaul",
-            "title": "系统设置持久化弹窗化与代理轻量测速/国家城市/列表交互全栈重构",
-            "status": "backlog",
-            "branch": "",
-            "worktree": "",
-            "review_level": "full",
-            "review_limit": "5",
-            "verify_limit": "5",
-            "diff_anchor": "",
-            "depends_on": "t073",
-            "conflicts_with": "",
-            "note": "聚合 p104、p105（设置弹窗/代理表单）、p106、p110、p111；涵盖 settings API、0010 迁移、轻量测速、GeoIP 国家城市服务与代理列表/筛选持久化重构",
-            "dir": "docs/tasks/t074_settings_persistence_modal_and_proxy_probe_overhaul"
         }
     ]
 }

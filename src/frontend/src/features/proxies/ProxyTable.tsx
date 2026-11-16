@@ -1,13 +1,16 @@
-import { Link } from "react-router";
-import { AlertCircle, Pencil, Trash2, Zap } from "lucide-react";
+import {
+  AlertCircle,
+  Pencil,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { useI18n } from "../../i18n";
-import type { ProxyResponse } from "../../shared/api/types";
+import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
 import {
   IconButton,
   MonoValue,
   ProtocolChip,
   RegionCode,
-  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -17,27 +20,35 @@ import {
   Tooltip,
 } from "../../shared/ui";
 
-export interface ProxySpeedResult {
-  status: "testing" | "ok" | "failed";
-  ms?: number;
-}
-
 export interface ProxyTableProps {
   proxies: ProxyResponse[];
+  usedByProfiles: Record<string, ProfileResponse[]>;
   onEdit: (proxy: ProxyResponse) => void;
   onDelete: (proxy: ProxyResponse) => void;
   onProbe: (proxy: ProxyResponse) => void;
   probingId?: string | null;
-  speedResults?: Record<string, ProxySpeedResult>;
+  onUsedBySingle: (profile: ProfileResponse) => void;
+  onUsedByMany: (proxy: ProxyResponse, profiles: ProfileResponse[]) => void;
+}
+
+function usedByLabel(
+  count: number,
+  t: ReturnType<typeof useI18n>["t"],
+): string {
+  return count === 1
+    ? t("proxyUsedByCountOne")
+    : t("proxyUsedByCount", { count });
 }
 
 export function ProxyTable({
   proxies,
+  usedByProfiles,
   onEdit,
   onDelete,
   onProbe,
   probingId,
-  speedResults = {},
+  onUsedBySingle,
+  onUsedByMany,
 }: ProxyTableProps) {
   const { t } = useI18n();
 
@@ -52,7 +63,9 @@ export function ProxyTable({
             <TableHead>{t("proxyColName")}</TableHead>
             <TableHead>{t("proxyColScheme")}</TableHead>
             <TableHead>{t("proxyColAddress")}</TableHead>
-            <TableHead>{t("proxyColRegion")}</TableHead>
+            <TableHead>{t("proxyColCountry")}</TableHead>
+            <TableHead>{t("proxyColCity")}</TableHead>
+            <TableHead>{t("proxyColStatus")}</TableHead>
             <TableHead>{t("proxyColUsedBy")}</TableHead>
             <TableHead>{t("proxyColActions")}</TableHead>
           </TableRow>
@@ -61,11 +74,11 @@ export function ProxyTable({
           {proxies.map((proxy) => {
             const id = proxy.id;
             const blocked = proxy.used_by_count > 0;
-            const speed = speedResults[id];
             const isTesting =
-              probingId === id ||
-              speed?.status === "testing" ||
-              proxy.observation_status === "pending";
+              probingId === id || proxy.observation_status === "pending";
+            const usedBy = usedByProfiles[id] ?? [];
+            const count = proxy.used_by_count;
+            const label = usedByLabel(count, t);
 
             return (
               <TableRow key={id} data-testid={`proxy-row-${id}`}>
@@ -97,47 +110,74 @@ export function ProxyTable({
                   <MonoValue>{`${proxy.host}:${proxy.port}`}</MonoValue>
                 </TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap items-center gap-sm">
-                    {isTesting ? (
-                      <span className="font-ui text-body-sm text-on-surface-muted">
-                        {t("proxyCountryProbing")}
-                      </span>
-                    ) : proxy.country_code ? (
+                  <div className="flex items-center gap-xs">
+                    {proxy.country_code ? (
                       <RegionCode code={proxy.country_code} />
-                    ) : (
-                      <span className="font-ui text-body-sm text-on-surface-muted">
-                        {t("proxyCountryUnknown")}
-                      </span>
-                    )}
-                    {proxy.region_label && (
-                      <span className="font-ui text-body-sm text-on-surface">
-                        {proxy.region_label}
-                      </span>
-                    )}
-                    {speed?.status === "ok" && (
-                      <StatusBadge
-                        tone="running"
-                        label={
-                          speed.ms != null
-                            ? `${t("proxyAvailable")} · ${speed.ms}ms`
-                            : t("proxyAvailable")
-                        }
-                      />
-                    )}
-                    {speed?.status === "failed" && (
-                      <StatusBadge tone="error" label={t("proxyProbeFailed")} />
-                    )}
+                    ) : null}
+                    <span className="font-ui text-body-sm text-on-surface">
+                      {proxy.country_name ?? proxy.country_code ?? "—"}
+                    </span>
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Link
-                    to={`/?proxy=${encodeURIComponent(id)}`}
-                    data-testid={`proxy-used-by-${id}`}
-                    className="inline-flex items-center gap-sm font-ui text-body-sm text-accent hover:underline"
-                  >
-                    <MonoValue>{proxy.used_by_count}</MonoValue>
-                    <span>{t("proxyUsedByLink")}</span>
-                  </Link>
+                  <span className="font-ui text-body-sm text-on-surface">
+                    {proxy.city ?? "—"}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  {proxy.observation_status === "pending" ? (
+                    <span className="font-ui text-body-sm text-on-surface-muted">
+                      {t("proxyStatusPending")}
+                    </span>
+                  ) : proxy.observation_status === "ok" ? (
+                    <span
+                      data-testid={`proxy-status-${id}`}
+                      className="font-ui text-body-sm text-success"
+                    >
+                      {proxy.latency_ms != null
+                        ? `${proxy.latency_ms}ms`
+                        : t("proxyAvailable")}
+                    </span>
+                  ) : proxy.observation_status === "failed" ? (
+                    <span
+                      data-testid={`proxy-status-${id}`}
+                      className="font-ui text-body-sm text-danger"
+                    >
+                      {proxy.observation_error_code ?? t("proxyProbeFailed")}
+                    </span>
+                  ) : (
+                    <span className="font-ui text-body-sm text-on-surface-muted">
+                      {t("proxyStatusUnknown")}
+                    </span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  {count === 0 || usedBy.length === 0 ? (
+                    <span
+                      data-testid={`proxy-used-by-${id}`}
+                      className="font-ui text-body-sm text-on-surface-muted"
+                    >
+                      {label}
+                    </span>
+                  ) : usedBy.length === 1 ? (
+                    <button
+                      type="button"
+                      data-testid={`proxy-used-by-${id}`}
+                      onClick={() => onUsedBySingle(usedBy[0]!)}
+                      className="font-ui text-body-sm text-accent hover:underline"
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid={`proxy-used-by-${id}`}
+                      onClick={() => onUsedByMany(proxy, usedBy)}
+                      className="font-ui text-body-sm text-accent hover:underline"
+                    >
+                      {label}
+                    </button>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-wrap items-center gap-xs">
@@ -166,6 +206,7 @@ export function ProxyTable({
                       <Tooltip content={t("proxyDeleteBlocked")}>
                         <span className="inline-flex items-center gap-xs">
                           <IconButton
+                            variant="danger"
                             data-testid={`proxy-delete-${id}`}
                             label={t("proxyDelete")}
                             disabled
@@ -185,6 +226,7 @@ export function ProxyTable({
                       </Tooltip>
                     ) : (
                       <IconButton
+                        variant="danger"
                         data-testid={`proxy-delete-${id}`}
                         label={t("proxyDelete")}
                         onClick={() => onDelete(proxy)}

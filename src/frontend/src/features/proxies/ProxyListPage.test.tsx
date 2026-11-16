@@ -7,14 +7,14 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider, en } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
 import { ApiError, type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
-import type { ProxyResponse } from "../../shared/api/types";
+import type { ProfileResponse, ProxyResponse } from "../../shared/api/types";
 import { filterProxies, ProxyListPage } from "./ProxyListPage";
 
 beforeAll(() => {
@@ -91,6 +91,8 @@ function fixture(): ProxyResponse[] {
       has_password: true,
       credential_revision: 2,
       country_code: "DE",
+      country_name: "Germany",
+      city: "Berlin",
       region_label: "Berlin",
       notes: "primary",
       used_by_count: 0,
@@ -137,7 +139,10 @@ function makeStub(proxies: ProxyResponse[] = fixture()) {
       remove: mockFn(async () => undefined),
       probe: mockFn(async () => proxies[0]!),
     },
-    profiles: { list: mockFn(async () => []) },
+    profiles: {
+      list: mockFn(async () => []),
+      getRuntime: mockFn(async () => ({ observed_state: "stopped" })),
+    },
     groups: { list: mockFn(async () => []) },
     fontSets: { list: mockFn(async () => ({ items: [], default_font_set_id: { windows: null, macos: null } })) },
   };
@@ -170,10 +175,46 @@ function renderPage() {
   );
 }
 
+function renderPageWithProfileRoute(initialEntries = ["/proxies"]) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <I18nProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <ApiClientContext.Provider value={stub.client}>
+              <MemoryRouter initialEntries={initialEntries}>
+                <Routes>
+                  <Route path="/proxies" element={<ProxyListPage />} />
+                  <Route
+                    path="/profiles/:profileId/config"
+                    element={<div data-testid="profile-detail-stub" />}
+                  />
+                </Routes>
+              </MemoryRouter>
+            </ApiClientContext.Provider>
+          </ToastProvider>
+        </ThemeProvider>
+      </I18nProvider>
+    </QueryClientProvider>,
+  );
+}
+
 function rowIds(): string[] {
   return Array.from(
     document.querySelectorAll('[data-testid^="proxy-row-"]'),
   ).map((node) => node.getAttribute("data-testid") ?? "");
+}
+
+async function chooseOption(testId: string, label: string) {
+  const filter = screen.getByTestId(testId);
+  fireEvent.click(within(filter).getByRole("combobox"));
+  fireEvent.click(await screen.findByRole("option", { name: label }));
 }
 
 async function chooseScheme(label: string) {
@@ -188,32 +229,36 @@ beforeEach(() => {
 });
 
 describe("ProxyListPage AC-001 列展示", () => {
-  it("renders six columns (name, protocol, address, location, used-by, actions) without an Auth column", async () => {
+  it("renders eight independent columns and separate country/city/status cells", async () => {
     renderPage();
     await screen.findByTestId("proxy-table");
-    expect(document.querySelectorAll("thead th")).toHaveLength(6);
+    expect(document.querySelectorAll("thead th")).toHaveLength(8);
     for (const key of [
       "proxyColName",
       "proxyColScheme",
       "proxyColAddress",
-      "proxyColRegion",
+      "proxyColCountry",
+      "proxyColCity",
+      "proxyColStatus",
       "proxyColUsedBy",
       "proxyColActions",
     ] as const) {
       expect(screen.getByText(en[key])).toBeInTheDocument();
     }
-    expect(screen.queryByText(en.proxyColAuth)).toBeNull();
+    expect(screen.queryByText(en.proxyColRegion)).toBeNull();
 
     const px1 = screen.getByTestId("proxy-row-px1");
     expect(px1.textContent).toContain("US Proxy");
     expect(px1.textContent).toContain("socks5");
     expect(px1.textContent).toContain("1.2.3.4:1080");
     expect(px1.textContent).toContain("US");
-    expect(px1.textContent).toContain("California");
-    expect(px1.textContent).toContain("2");
+    expect(within(px1).getByTestId("proxy-status-px1")).toHaveTextContent(
+      en.proxyAvailable,
+    );
 
     const px2 = screen.getByTestId("proxy-row-px2");
     expect(px2.textContent).toContain("10.0.0.1:8080");
+    expect(px2.textContent).toContain("Germany");
     expect(px2.textContent).toContain("Berlin");
     expect(px2.textContent).toContain("DE");
     expect(screen.getByTestId("proxy-note-trigger-px2")).toHaveAttribute(
@@ -291,20 +336,61 @@ describe("ProxyListPage 搜索、协议与位置筛选", () => {
     await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
   });
 
-  it("filterProxies combines scheme, region and query", () => {
+  it("filterProxies combines scheme, country, city and query", () => {
+    // Replaces the old "region" assertion: t074 splits location into
+    // independent country/city filters persisted in URL search params.
     const proxies = fixture();
+    const base = {
+      q: "",
+      scheme: "all" as const,
+      country: "all",
+      city: "all",
+    };
     expect(
-      filterProxies(proxies, "proxy", "all").map((item) => item.id),
+      filterProxies(proxies, { ...base, q: "proxy" }).map((item) => item.id),
     ).toEqual(["px1", "px2", "px3"]);
     expect(
-      filterProxies(proxies, "proxy", "http").map((item) => item.id),
+      filterProxies(proxies, {
+        ...base,
+        q: "proxy",
+        scheme: "http",
+      }).map((item) => item.id),
     ).toEqual(["px2"]);
     expect(
-      filterProxies(proxies, "", "all", "DE").map((item) => item.id),
+      filterProxies(proxies, { ...base, country: "Germany" }).map(
+        (item) => item.id,
+      ),
     ).toEqual(["px2"]);
     expect(
-      filterProxies(proxies, "", "socks5").map((item) => item.id),
+      filterProxies(proxies, { ...base, city: "Berlin" }).map((item) => item.id),
+    ).toEqual(["px2"]);
+    expect(
+      filterProxies(proxies, { ...base, scheme: "socks5" }).map(
+        (item) => item.id,
+      ),
     ).toEqual(["px1", "px4"]);
+  });
+
+  it("restores q/scheme/country/city from URL search params on reload", async () => {
+    renderPageWithProfileRoute([
+      "/proxies?q=EU&scheme=http&country=Germany&city=Berlin",
+    ]);
+    await screen.findByTestId("proxy-table");
+    await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
+  });
+
+  it("filters independently by country and city through linked toolbar selects", async () => {
+    renderPage();
+    await screen.findByTestId("proxy-table");
+
+    await chooseOption("proxy-country-filter", "Germany");
+    await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
+
+    await chooseOption("proxy-city-filter", "Berlin");
+    await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px2"]));
+
+    await chooseOption("proxy-country-filter", "US");
+    await waitFor(() => expect(rowIds()).toEqual(["proxy-row-px1"]));
   });
 });
 
@@ -386,39 +472,87 @@ describe("ProxyListPage AC-005 删除保护", () => {
   });
 });
 
-describe("ProxyListPage AC-006 使用环境数链接", () => {
-  it("links to the environment list with ?proxy=<id>", async () => {
+describe("ProxyListPage AC-005 使用环境 0/1/2+ 交互", () => {
+  function withProfiles() {
+    const profiles = [
+      { id: "p1", name: "Alpha", proxy_id: "px4" } as ProfileResponse,
+      { id: "p2", name: "Beta", proxy_id: "px1" } as ProfileResponse,
+      { id: "p3", name: "Gamma", proxy_id: "px1" } as ProfileResponse,
+    ];
+    stub = makeStub(fixture());
+    stub.spies.profiles.list.mockImplementation(async () => profiles);
+  }
+
+  it("renders 0 as a non-interactive span and 1/2+ as buttons with counts only", async () => {
+    withProfiles();
     renderPage();
     await screen.findByTestId("proxy-table");
-    expect(screen.getByTestId("proxy-used-by-px1").getAttribute("href")).toContain(
-      "?proxy=px1",
+
+    const zero = screen.getByTestId("proxy-used-by-px2");
+    expect(zero.tagName).toBe("SPAN");
+    expect(zero).not.toHaveAttribute("href");
+    expect(zero).toHaveTextContent(
+      en.proxyUsedByCount.replace("{count}", "0"),
     );
-    expect(screen.getByTestId("proxy-used-by-px3").getAttribute("href")).toContain(
-      "?proxy=px3",
+
+    const one = screen.getByTestId("proxy-used-by-px4");
+    expect(one.tagName).toBe("BUTTON");
+    expect(one).toHaveTextContent(en.proxyUsedByCountOne);
+
+    const many = screen.getByTestId("proxy-used-by-px1");
+    expect(many.tagName).toBe("BUTTON");
+    expect(many).toHaveTextContent(
+      en.proxyUsedByCount.replace("{count}", "2"),
     );
   });
 
-  it("encodes the id in the used-by link", async () => {
-    stub = makeStub([proxy({ id: "px/a b" })]);
-    renderPage();
+  it("navigates directly into the single environment for 1 used-by", async () => {
+    withProfiles();
+    renderPageWithProfileRoute();
     await screen.findByTestId("proxy-table");
-    const href = screen
-      .getByTestId("proxy-used-by-px/a b")
-      .getAttribute("href");
-    expect(href).toContain("?proxy=");
-    expect(href).not.toContain(" ");
+    fireEvent.click(screen.getByTestId("proxy-used-by-px4"));
+    expect(await screen.findByTestId("profile-detail-stub")).toBeInTheDocument();
+  });
+
+  it("opens a popover listing every environment for 2+ used-by", async () => {
+    withProfiles();
+    renderPageWithProfileRoute();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-used-by-px1"));
+
+    expect(
+      await screen.findByTestId("proxy-used-by-popover"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("proxy-used-by-item-p2")).toHaveTextContent(
+      "Beta",
+    );
+    expect(screen.getByTestId("proxy-used-by-item-p3")).toHaveTextContent(
+      "Gamma",
+    );
+
+    fireEvent.click(screen.getByTestId("proxy-used-by-item-p2"));
+    expect(await screen.findByTestId("profile-detail-stub")).toBeInTheDocument();
   });
 });
 
 describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
-  it("shows unknown country when there is no valid observation", async () => {
+  it("shows a neutral not-probed status when observation_status is unknown", async () => {
+    stub = makeStub([
+      proxy({
+        id: "px7",
+        name: "Unprobed Proxy",
+        country_code: null,
+        observation_status: "unknown",
+        region_label: null,
+      }),
+    ]);
     renderPage();
     await screen.findByTestId("proxy-table");
-    const px4 = screen.getByTestId("proxy-row-px4");
-    expect(within(px4).getByText(en.proxyCountryUnknown)).toBeInTheDocument();
+    const px7 = screen.getByTestId("proxy-row-px7");
+    expect(within(px7).getByText(en.proxyStatusUnknown)).toBeInTheDocument();
   });
 
-  it("shows testing status while the observation is pending", async () => {
+  it("shows a probing status while the observation is pending", async () => {
     stub = makeStub([
       proxy({
         id: "px9",
@@ -431,10 +565,54 @@ describe("ProxyListPage 闪电测速与可用性检测 (t052+)", () => {
     renderPage();
     await screen.findByTestId("proxy-table");
     const px9 = screen.getByTestId("proxy-row-px9");
-    expect(within(px9).getByText(en.proxyCountryProbing)).toBeInTheDocument();
+    expect(within(px9).getByText(en.proxyStatusPending)).toBeInTheDocument();
     expect(
-      within(px9).queryByText(en.proxyCountryUnknown),
+      within(px9).queryByText(en.proxyStatusUnknown),
     ).not.toBeInTheDocument();
+  });
+
+  it("renders successful latency in green and failed error code in red", async () => {
+    stub = makeStub([
+      proxy({
+        id: "ok1",
+        observation_status: "ok",
+        latency_ms: 128,
+        country_name: "United States",
+        city: "Los Angeles",
+      }),
+      proxy({
+        id: "bad1",
+        observation_status: "failed",
+        observation_error_code: "proxy_auth_failed",
+      }),
+    ]);
+    renderPage();
+    await screen.findByTestId("proxy-table");
+
+    const ok = screen.getByTestId("proxy-status-ok1");
+    expect(ok).toHaveTextContent("128ms");
+    expect(ok.className).toContain("text-success");
+
+    const bad = screen.getByTestId("proxy-status-bad1");
+    expect(bad).toHaveTextContent("proxy_auth_failed");
+    expect(bad.className).toContain("text-danger");
+  });
+
+  it("does not report success when HTTP 200 returns observation_status=failed", async () => {
+    stub.spies.proxies.probe.mockResolvedValueOnce(
+      proxy({
+        id: "px4",
+        observation_status: "failed",
+        observation_error_code: "proxy_unreachable",
+      }),
+    );
+    renderPage();
+    await screen.findByTestId("proxy-table");
+    fireEvent.click(screen.getByTestId("proxy-probe-px4"));
+
+    expect(await screen.findByTestId("toast-item")).toHaveTextContent(
+      en.proxyProbeFailed,
+    );
   });
 
   it("calls proxies.probe(id) on single speed test and toasts success", async () => {

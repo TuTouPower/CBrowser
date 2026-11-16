@@ -4,7 +4,7 @@
 
 ## 1. 外壳与数据
 
-- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境管理）、`/session`（工作台入口）、`/session/:profileId`（工作台会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`（代理管理）、`/settings`（设置）；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。t039 已启用全局颜色门禁（见 testing.md）。
+- 路由（React Router 8 单包，`app/router.tsx`，plan 5.1 / t036）：`/login`、`/`（环境管理）、`/session`（工作台入口）、`/session/:profileId`（工作台会话页，目标由 path param 决定）、`/profiles/:profileId`（重定向到 `config`）、`/profiles/:profileId/{config,files,automation,maintenance}`、`/proxies`（代理管理）、`/settings`（t074 起 `<Navigate to="/" replace />` 旧链接回落，设置改为 `AppLayout` 内宽弹窗）；旧路由 `/?profileId=`、`/profiles/new`、`/automation/:profileId` 直接删除（`/profiles/new` 显式置于 `:profileId` 之前并回落首页 catch-all），导航与环境链接均为真实 `<a href>`；会话失效（401）或登出时跳转 `/login`。t039 已启用全局颜色门禁（见 testing.md）。
 - API 客户端（`shared/api/client.ts`）使用 `openapi-typescript` 从 `schemas/openapi/cbrowser_v1.json` 生成的类型（`npm run generate:api`，产物 `shared/api/generated/`），禁止手写与后端重复的响应类型。写方法带 `X-CSRF-Token`（取 `cbrowser_csrf` Cookie）；运行意愿为 `PATCH /api/v1/profiles/{id}/runtime/desired-state`。普通请求默认 30s、上传 5min、长操作 2min 超时；出站三入口（ApiClient 请求、SSE 连接、Artifact 下载链接）统一按最终解析 URL 做同源判定，跨源（含反斜杠/协议相对变体）在附带凭据前拒绝，客户端无可配置的跨源基地址（无 baseUrl/url 配置项，测试以同源夹具接入）；`ApiError` 携带 `errorCode`、`retryable` 与 `details`（统一错误契约，见 conventions.md §7；旧 `detail` 字段已删除）。登出请求失败时本地认证状态与内存 CSRF token 一律清除，各注销调用点显式处置 logout 的 rejection，不产生 unhandled rejection。请求取消分两种语义：调用方外部取消产生不可重试的 `cancelled` 错误，内部超时产生可重试的 `timeout` 错误，请求结束后必须释放外部信号监听。页面与布局经 `ApiClientContext`（`shared/api/client_context.tsx`）取得 `AppProviders` 下发的客户端实例并透传给数据 hooks，禁止在组件中直接引用单例；写操作的幂等键（`Idempotency-Key`）在每次 `mutate`/`mutateAsync` 调用边界生成、该次逻辑动作的自动重试全程复用同一键，复合动作（如应用显示设置的 stop→start）由单次动作键派生各自的操作键；**例外：Profile 创建的幂等键绑定到当前打开的创建弹窗**（见第 7 节），关闭重开复用同一键直至创建成功。SSE 遇 401 停止重连并触发登出，流结束时 flush 解码器残留事件。
 - 服务器状态由 TanStack Query 5 管理。SSE 事件 id 为 `<epoch>:<seq>`（epoch 为 API 进程随机值）：同 epoch 且在历史窗口内的 `Last-Event-ID` 只补发缺失事件，其余情况（API 重启、旧格式、超窗口）发送完整初始快照。运行状态经 `GET /api/v1/events`（SSE，事件 `runtime_state`，fetch 流式读取以携带 Cookie）增量合并进查询缓存（含 `last_coordinator_error`）并使 Profile 列表查询失效重取；断线自动重连，前端不保存任何控制状态。SSE 事件类型即生成的 `ProfileRuntimeStatusEvent`：投递前逐字段验证核心字段与状态枚举，畸形或未知事件只进错误通道不投递；连接以代次（generation）隔离，重复 `start` 不新增连接，旧代次不得投递、报错或重连，`stop` 后不得重连。引用数据变更事件（t056 A31）：分组或代理写成功后服务端经同一 SSE 流推送 `groups_changed` / `proxies_changed`（`entity_id` 为变更实体、无实体时为 null），前端使对应列表查询与 Profile 列表查询失效重取；探测不发事件。
 - 运行协调错误（Supervisor 未配置或不可达）经 `useRuntimeSnapshot` 聚合 runtime 查询缓存（随 SSE 更新），在外壳主内容顶部以 `runtime-coordinator-error` 警示横幅（`Banner`）显式展示，运行意愿保持不变。
@@ -67,10 +67,10 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - 设计权威：仓库根 `DESIGN.md`（google-labs-code/design.md alpha 格式，YAML front matter）。章节顺序 Overview / Colors（含 `### Modes`）/ Typography / Layout / Elevation & Depth / Shapes / Components / Contrast / Do's and Don'ts。`primary` 与 `brand-*`（logo 渐变三色与 `brand-ink` 墨色）为品牌色，其余颜色角色以 `light-*` / `dark-*` 成对出现且角色集合相同，组件以 `<component>-light` / `<component>-dark` 成对定义；字体、间距、圆角与模式无关只定义一次。Shapes 正文含逐 component 的圆角映射表，Contrast 正文含 components 之外文字 / 图形角色对声明表，两表均为机读门禁输入。组件尺寸规格（控件高度、浮层宽度、图标尺寸阶梯 `icon-xs`–`icon-3xl` 等）写在 components 条目的官方 `height` / `width` / `size` 字段。业务代码只用语义 token，不写颜色字面量。
 - 生成与门禁：`npm run design:tokens` 调用 `@google/design.md@0.4.0` 的 `lint()` 读取 `DESIGN.md`，校验角色集合相等、无未解析引用、颜色 token 只能是 `primary`、`brand-*` 或带模式前缀、字体栈由 `body-md` 与 `mono-md` 派生，确定性生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme` 以亮色为默认值、`.dark` 覆盖全部颜色与阴影变量，另含字号、字重、行高、字距、圆角、间距与阴影变量），并按品牌 token 生成 `public/` 下 logo 与 favicon 五件资产（几何不变、仅颜色取 token 值）；产物入库。
 - Tailwind 4：`@tailwindcss/vite` 插件，删除 PostCSS / autoprefixer / `tailwind.config.ts`；`@theme` 以 `--color-*: initial` 重置默认调色板，只暴露设计 token。Inter Variable 与 JetBrains Mono Variable 经 `@fontsource` 自托管，中文回退栈按 4.4 节，产物不引用外部字体 / 图标 CDN。
-- 主题运行时：偏好 `system` / `light` / `dark`，默认 `dark`，存 `localStorage` 的 `cbrowser.theme`；`public/theme_boot.js` 为 `<head>` 中外链经典脚本，首帧前设置 `<html>` 的 `dark` / `light` class 与 `color-scheme`，页面不含内联脚本；`system` 模式监听 `prefers-color-scheme` 变化。UI 主题与 Profile 的 `color_scheme` 互不影响。
-- 应用外壳：导航侧栏顶部为主导航（环境管理 / 代理管理 / 工作台），底部左下角固定放置「设置」入口（主题切换、语言切换与退出登录统一收纳于设置页内）；侧栏可折叠为 72px 图标栏（折叠态隐藏折叠按钮，点击左上角品牌图标展开）、200–360px 拖宽（双击重置默认宽度），状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
+- 主题运行时：偏好 `system` / `light` / `dark`，默认 `dark`；`public/theme_boot.js` 为 `<head>` 中外链经典脚本，首帧前设置 `<html>` 的 `dark` / `light` class 与 `color-scheme`，页面不含内联脚本；`system` 模式监听 `prefers-color-scheme` 变化。UI 主题与 Profile 的 `color_scheme` 互不影响。t074 起权威值持久化于控制面 `settings` 表（`ui.theme` / `ui.locale`，经 `/api/v1/settings` 同步），`localStorage` 的 `cbrowser.theme` / `cbrowser.locale` 降级为首帧防闪烁镜像（见 §9）。
+- 应用外壳：导航侧栏顶部为主导航（环境管理 / 代理管理 / 工作台），底部左下角「设置」按钮直接打开 `SettingsDialog` 宽弹窗（不离开当前页面上下文）；侧栏可折叠为 72px 图标栏（折叠态隐藏折叠按钮，点击左上角品牌图标展开）、200–360px 拖宽（双击重置默认宽度），状态存 `cbrowser.sidebar.width` / `cbrowser.sidebar.collapsed`；窄屏（\<1024px）改抽屉。Runtime Coordinator 错误用全局警示横幅；保留 iframe 焦点守卫（宿主外部点击时 `blur()` iframe）。
 - 基础组件在 `src/frontend/src/shared/ui/`：按钮族（primary / secondary / ghost / danger / connect / stop 及 hover / disabled / 小号）、IconButton、Input、Select、SearchField、Checkbox、Switch、StatusBadge、GroupChip、ProtocolChip、RegionCode、Table 原语、EmptyState、Banner、Toast（全局单实例）；Dialog / DropdownMenu / Popover / Tooltip 基于 Radix 原语。
-- 登录页与设置页按设计系统重做；设置页平台字体区块展示人类可读字体包名称与本地化平台名称，完整性不一致显示告警。
+- 登录页按设计系统重做；t074 设置改为宽弹窗（§9），平台字体区块展示人类可读字体包名称与本地化平台名称，完整性不一致时展开异常明细。
 - t073：`Colors` 新增成对 `light/dark-success` 与 `light/dark-success-soft`，`Contrast` 表声明 success 对各类 surface 的 text（≥4.5:1）与 graphic（≥3.0:1）校验行；`status-badge-running/transition/error` 的 `textColor` 改指 `*-success` / `*-warning` / `*-danger` 彩色语义文字并加语义描边，`stopped` 保持中性。`Container sizes` 新增 `dialog-sm/md/lg/xl` 梯度（生成器产出 `--container-*` 与 `max-w-dialog-*`）。`Dialog` 新增 `size` prop 与 header 固定、body 内部平滑滚动；`IconButton` 新增 `variant="danger" | "warning"`；基础组件只用语义 token。
 
 ## 7. 环境管理界面（t037+）
@@ -81,17 +81,19 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；种子范围（`100000 – 999999`）通过感叹号图标悬浮 Tooltip 展示，重摇种子使用图标化刷新按钮；选择代理、切换语言或切换系统平台时自动对齐对应的时区、语言、平台字体包（展示可读名称而非 SHA256 哈希）与默认分辨率。
 - t073：环境列表与卡片仅在 `profile.timezone` 显式非空时显示时区，隐藏默认 / 自动匹配时区；`env-running-count` 改为带标签的 `runningProfiles` 文案与绿色运行圆点，不再渲染裸数字。`EnvironmentRowActions` 每行仅 1 个带文字主按钮（运行中蓝色「打开」、非运行「启动」），详情 / 编辑 / 复制 / 停止 / 删除收敛为带 `aria-label` 与 `title` 的纯图标按钮，运行态显示 warning 停止、非运行态显示 danger 红色删除。新建 `ProfileCreateDialog` 与编辑 `ProfileEditDialog` 统一用 `Dialog size="lg"` 宽弹窗 + `ProfileForm` 多列布局，编辑走 `diffProfileValues` 差分更新；列表行「编辑」直接唤起编辑弹窗，「配置详情」跳转 `/profiles/:id/config`，详情页页头也提供编辑入口。
 
-## 8. 代理管理界面（t038+）
+## 8. 代理管理界面（t038+；t074 重写）
 
-- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载；`ProxyListToolbar` 提供搜索（名称 / host / 地区标签，大小写不敏感）、协议筛选（http / https / socks5）与位置筛选可组合，右侧提供批量闪电测速按钮（`Zap` 图标）、图标化列表/卡片视图切换器与「添加代理」主按钮。
-- `ProxyTable` 展示 6 列 = 名称（备注以感叹号图标悬浮 Tooltip 展示）/ 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 位置（`RegionCode` + 地区标签 + 测速可用性与延迟徽标）/ 使用环境数 / 操作（闪电测速 `Zap` 图标按钮 / 编辑图标按钮 / 删除图标按钮），**不展示认证列**。
-- 使用环境数为 `<Link to={"/?proxy=" + id}>`：`useEnvironmentFilters` 已读 `proxy` URL 参数，环境列表直接按代理筛选。
-- 添加 / 编辑用受控 `Dialog`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读位置状态；高级设置默认折叠，链接与高级字段由同一端点值对象双向同步。
-- 单条与批量闪电测速调用 `ApiClient.proxies.probe`（`POST /api/v1/proxies/{id}/probe`，无 body）+ `useProbeProxyMutation`，测速完成后展示可用状态与延迟毫秒数并弹出 toast。
+- `/proxies` 由 `features/proxies/ProxyListPage.tsx` 承载；`ProxyListToolbar` 提供搜索（名称 / host / 国家名 / 城市 / 地区标签，大小写不敏感）、协议筛选（http / https / socks5）与**独立「国家筛选」「城市筛选」**（城市选项随所选国家联动去重），右侧提供批量闪电测速按钮（`Zap` 图标）、图标化列表/卡片视图切换器与「添加代理」主按钮。`useProxyFilters` 把 `q` / `scheme` / `country` / `city` 存 URL SearchParams、`useProxyLayout` 把 `list` / `card` 存 `localStorage`，刷新后筛选、视图、国家、城市、延迟、状态全部保留；联动筛选须在一次 `setFilters({country, city})` 内原子提交，两次 `setSearchParams` 会同 tick 互相覆盖。
+- `ProxyTable` / 卡片展示 **8 列** = 名称（备注以感叹号图标悬浮 Tooltip 展示）/ 协议（`ProtocolChip`）/ 地址（`MonoValue` 的 `host:port`）/ 国家 / 城市 / 状态 / 使用环境 / 操作，**不展示认证列**，也不再把「位置 + 状态」混为一列。状态列：`pending` 显示探测中；`ok` 仅以绿色语义文字显示 `{latency_ms}ms`（无延迟显示「可用」），不显示额外状态数字；`failed` 以红色语义文字显示脱敏 `observation_error_code`；`unknown` 显示中性未测速提示。删除按钮用 t073 的 `IconButton variant="danger"`。
+- 使用环境列只渲染 `0 个` / `1 个` / `2 个` 等计数（去掉「查看环境」文案）：`0` 为不可点 `<span>`；`1` 点击经 `useNavigate` 直接进入对应环境配置页；`>=2` 点击先打开 `ProxyUsedByPopover` 列出全部环境（含名称与绿/灰运行点）再点选进入。计数按 `useProfilesQuery` 的 `proxy_id` 客户端分组。
+- 添加 / 编辑用 `Dialog size="lg"`（`ProxyFormDialog`），默认只显示「代理链接」「备注」与只读观测区（国家 / 城市 / 出口 IP / 延迟 / 失败原因）；高级设置默认折叠，链接与高级字段由同一端点值对象双向同步。`SessionDetailsPanel` 的代理位置同步展示国家 · 城市 · 延迟与失败态。
+- 单条与批量闪电测速调用 `ApiClient.proxies.probe`（`POST /api/v1/proxies/{id}/probe`，无 body）+ `useProbeProxyMutation`；**彻底删除 `speedResults` state 与 `Date.now() - startedAt` 伪测速**，延迟只取后端持久化的 `ProxyResponse.latency_ms`。`observation_status === "failed"` 即使 HTTP 200 也提示错误 toast、不误报成功；`ok` 显示成功 toast。批量测速按后端结果汇总失败数。
 
-## 9. 网络访问与设置（t042；t054 重写为只读）
+## 9. 网络访问与设置（t042；t054 只读；t074 改为宽弹窗）
 
-- 设置页 `/settings` 的「网络访问 (Network Access)」区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改。
+- t074 起 `/settings` 不再是独立窄页：侧栏「设置」按钮直接打开 `SettingsDialog`（`Dialog size="lg"`，`AppLayout` 内），不离开当前页面上下文；旧 `/settings` 路由 `<Navigate to="/" replace />`。弹窗分三大块：外观（主题 `system`/`light`/`dark`）与界面语言（`en`/`zh`）；Control API 健康状态 + 退出登录 + 只读网络访问摘要；平台字体包清爽卡片（默认隐去 `source_version` 技术哈希，仅完整性异常时展开 `problems`）。网络访问区块只读：显示当前访问地址与端口（取 `window.location`），并注明网络配置在部署期确定、运行期不可更改。
+- 偏好持久化：`theme` / `locale` 经 `GET /api/v1/settings` 与 `PATCH /api/v1/settings` 读写控制面数据库（`settings` 表）；`AppProviders` 内 `SettingsSync` 在登录后 hydrate、后续变更写服务端（`I18nProvider` / `ThemeProvider` 保持不依赖 auth 与 API client）。未登录页（`/login`）只读写本地，不发 401 请求。清缓存或重新登录后偏好保持。
+- 会话静音：`useBrowserSession` 的 `audioMuted` 持久化到按标签页隔离的 `sessionStorage`（key `cbrowser.session.audio_muted.${profileId}`），刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
 
 ## 10. 前端状态一致性（t058）
 

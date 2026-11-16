@@ -5,7 +5,6 @@ import { RouteErrorBoundary } from "./ErrorBoundary";
 import { RequireAuth } from "./RequireAuth";
 import { SessionPage } from "../features/browser-session/SessionPage";
 import { SessionEntryPage } from "../features/browser-session/SessionEntryPage";
-import { SettingsPage } from "../features/settings/SettingsPage";
 import { EnvironmentListPage } from "../features/profiles/EnvironmentListPage";
 import { ProfileDetailPage } from "../features/profiles/ProfileDetailPage";
 import { ProxyListPage } from "../features/proxies/ProxyListPage";
@@ -105,10 +104,13 @@ export const routes: RouteObject[] = [
         ),
       },
       {
+        // t074: settings is now a wide dialog opened from the sidebar,
+        // not a standalone narrow page. Legacy /settings links return to
+        // the environment list without leaving the work context.
         path: "settings",
         element: (
           <RouteErrorBoundary>
-            <SettingsPage />
+            <Navigate to="/" replace />
           </RouteErrorBoundary>
         ),
       },

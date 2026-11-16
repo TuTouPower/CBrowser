@@ -143,14 +143,35 @@ class ProxyResponse(BaseModel):
     credential_revision: int = 1
     proxy_url: str
     country_code: str | None = None
+    country_name: str | None = None
+    city: str | None = None
     egress_ip: str | None = None
     observation_status: Literal["unknown", "pending", "ok", "failed"] = "unknown"
+    latency_ms: int | None = None
+    observation_error_code: str | None = None
     observed_at: str | None = None
+    expires_at: str | None = None
     region_label: str | None = None
     notes: str | None = None
     used_by_count: int = 0
     created_at: str
     updated_at: str
+
+
+class UserSettingsResponse(BaseModel):
+    """Server-persisted UI preferences (t074)."""
+
+    model_config = ConfigDict(extra="forbid")
+    theme: Literal["system", "light", "dark"] = "dark"
+    locale: Literal["en", "zh"] = "zh"
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    """Partial update; unknown keys are rejected with 422 (t074)."""
+
+    model_config = ConfigDict(extra="forbid")
+    theme: Literal["system", "light", "dark"] | None = None
+    locale: Literal["en", "zh"] | None = None
 
 
 class ProxyCreateRequest(BaseModel):

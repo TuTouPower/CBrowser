@@ -440,30 +440,69 @@ export function ProxyFormDialog(props: ProxyFormDialogProps): JSX.Element {
     );
   };
 
-  const countryStatus =
-    proxy?.observation_status === "pending" ? (
-      <span className="font-ui text-body-sm text-on-surface">
-        {t("proxyCountryProbing")}
-      </span>
-    ) : proxy?.country_code ? (
-      <span className="flex flex-wrap items-center gap-sm">
-        <RegionCode code={proxy.country_code} />
-        {proxy.egress_ip && (
-          <span className="font-ui text-body-sm text-on-surface">
-            {proxy.egress_ip}
-          </span>
-        )}
-      </span>
-    ) : (
+  const countryStatus = (() => {
+    if (!proxy) {
+      return (
+        <span className="font-ui text-body-sm text-on-surface">
+          {t("proxyCountryUnknown")}
+        </span>
+      );
+    }
+    if (proxy.observation_status === "pending") {
+      return (
+        <span className="font-ui text-body-sm text-on-surface">
+          {t("proxyCountryProbing")}
+        </span>
+      );
+    }
+    if (proxy.observation_status === "failed") {
+      return (
+        <span className="font-ui text-body-sm text-danger">
+          {proxy.observation_error_code ?? t("proxyProbeFailed")}
+        </span>
+      );
+    }
+    if (proxy.observation_status === "ok") {
+      return (
+        <span className="flex flex-wrap items-center gap-sm">
+          {proxy.country_code ? (
+            <RegionCode code={proxy.country_code} />
+          ) : null}
+          {proxy.country_name && (
+            <span className="font-ui text-body-sm text-on-surface">
+              {proxy.country_name}
+            </span>
+          )}
+          {proxy.city && (
+            <span className="font-ui text-body-sm text-on-surface">
+              {proxy.city}
+            </span>
+          )}
+          {proxy.egress_ip && (
+            <span className="font-ui text-body-sm text-on-surface">
+              {proxy.egress_ip}
+            </span>
+          )}
+          {proxy.latency_ms != null && (
+            <span className="font-ui text-body-sm text-success">
+              {`${proxy.latency_ms}ms`}
+            </span>
+          )}
+        </span>
+      );
+    }
+    return (
       <span className="font-ui text-body-sm text-on-surface">
         {t("proxyCountryUnknown")}
       </span>
     );
+  })();
 
   return (
     <Dialog
       trigger={<span />}
       title={isEdit ? t("proxyEdit") : t("proxyAdd")}
+      size="lg"
       open={open}
       onOpenChange={(next) => {
         if (!next) clearLocalState();

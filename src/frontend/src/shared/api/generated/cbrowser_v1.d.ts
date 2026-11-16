@@ -327,6 +327,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Settings */
+        get: operations["get_settings_api_v1_settings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Settings */
+        patch: operations["update_settings_api_v1_settings_patch"];
+        trace?: never;
+    };
     "/api/v1/font-sets": {
         parameters: {
             query?: never;
@@ -1477,6 +1495,10 @@ export interface components {
             proxy_url: string;
             /** Country Code */
             country_code?: string | null;
+            /** Country Name */
+            country_name?: string | null;
+            /** City */
+            city?: string | null;
             /** Egress Ip */
             egress_ip?: string | null;
             /**
@@ -1485,8 +1507,14 @@ export interface components {
              * @enum {string}
              */
             observation_status: "unknown" | "pending" | "ok" | "failed";
+            /** Latency Ms */
+            latency_ms?: number | null;
+            /** Observation Error Code */
+            observation_error_code?: string | null;
             /** Observed At */
             observed_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
             /** Region Label */
             region_label?: string | null;
             /** Notes */
@@ -1609,6 +1637,34 @@ export interface components {
             last_error_at?: string | null;
             /** Rejection Code */
             rejection_code?: string | null;
+        };
+        /**
+         * UserSettingsResponse
+         * @description Server-persisted UI preferences (t074).
+         */
+        UserSettingsResponse: {
+            /**
+             * Theme
+             * @default dark
+             * @enum {string}
+             */
+            theme: "system" | "light" | "dark";
+            /**
+             * Locale
+             * @default zh
+             * @enum {string}
+             */
+            locale: "en" | "zh";
+        };
+        /**
+         * UserSettingsUpdateRequest
+         * @description Partial update; unknown keys are rejected with 422 (t074).
+         */
+        UserSettingsUpdateRequest: {
+            /** Theme */
+            theme?: ("system" | "light" | "dark") | null;
+            /** Locale */
+            locale?: ("en" | "zh") | null;
         };
         /** ValidationErrorDetail */
         ValidationErrorDetail: {
@@ -3492,6 +3548,113 @@ export interface operations {
             };
             /** @description Resource not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_settings_api_v1_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Service unavailable or database busy */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_settings_api_v1_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSettingsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authorization or CSRF check failed */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

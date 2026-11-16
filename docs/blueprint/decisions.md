@@ -363,7 +363,12 @@
     - **loopback 映射**：`127.0.0.0/8` / `localhost` / `::1` 端点在库与指纹中保持原样，交给容器前映射为 `host.docker.internal` 并加 `extra_hosts={"host.docker.internal": "host-gateway"}`；网络策略只放行映射地址与该代理端口。映射失败时启动与探测在执行前以 `LoopbackMappingError` 明确报错并给出处置提示，绝不出现启动成功但无法联网。
     - **前端**：弹窗默认只显示代理链接、备注与只读国家状态，高级设置默认折叠；链接与高级字段双向同步；失焦显示脱敏链接；编辑端点而密码框留空时拦截提交（防静默清除已存密码）。
 - 复查条件：真实 Docker（OrbStack）上的 helper 启动、host-gateway 映射与策略放行须在用户机实测（本机无 Docker，fake-docker 单元测试不能代替；t052 AC-010/AC-011 真实部分与 AC-012）；`GeoLite2-City.mmdb` 在真实部署 engine-cache 中的存在性同样待用户机验证；IP 回显服务不可用时探测记 failed，不降级猜测。
-- 替代：选项 1 保留模型错误与视角错误；选项 3（egress broker / 内置 mihomo）属 p038，保持 parked。不做连通性与延迟检测（p040 剩余部分保持 parked）、不做保存前草稿探测、不允许人工声明国家。
+- 替代：选项 1 保留模型错误与视角错误；选项 3（egress broker / 内置 mihomo）属 p038，保持 parked。不做保存前草稿探测、不允许人工声明国家。
+- t074 修订（2026-11-16，设置持久化与代理观测全栈重构）：ADR 029 主体结论（链接唯一录入、国家为 Browser 同视角观测、loopback 映射、探测接口只收 ID、密码不进响应）一律不变；本次只扩展观测数据、计时口径、错误码透传与 GeoIP 服务策略，删除「不做连通性与延迟检测」的旧限定。
+    - **准确延迟**：新增 `latency_ms`，只由 helper 内 `shared/egress.py` 的 `time.monotonic()` 包裹「经代理发起探测 HTTP 请求至收到完整响应」，不含容器/网络/策略建立与销毁；`docker_adapter` 每次测速仍新建/销毁 helper 与专用 bridge（s024 实测容器周期 2195.1ms、网络 RTT 390–520ms），不池化容器，避免内核白名单按代理累积。
+    - **国家 + 城市 + 结构化失败**：只进不退增量迁移 `0010`（revision `8c3f1d0a7b92`，`down_revision=796adb0bf159`）为 `proxy_egress_observations` 增 `country_name` / `city` / `latency_ms`；`EgressObservation`、`ProxyResponse`、Supervisor 协议统一暴露 `observation_status`、`latency_ms`、`egress_ip`、`country_code`、`country_name`、`city`、`observation_error_code`（脱敏）、`observed_at`、`expires_at`。`docker_adapter._exec_probe_helper` 在 helper `exit_code != 0` 且 stdout 为含 `error_code` 的合法 JSON 时仍交由 `_parse_probe_output` 落 `failed` 观测并保留具体错误码，不再退化为通用 `probe_failed`。
+    - **GeoIP 主链**：s023（d048）实测 `ipwho.is` / `api.ip.sb/geoip` 经 5 个真实出口全部 TLS 失败、`freeipapi.com` 需跟随 307 且同出口连续第 10 次起 429；定型为「IP 回显 + 本地 `GeoLite2-City.mmdb` 完整读取 `country.names` / `city.names` 主链，在线只读 HTTPS Geo 服务仅作可选城市补充，处理 307 / 429 / TLS 失败回落，绝不覆盖有效本地结果或伪造位置」。在线服务为固定白名单 HTTPS 只读端点、无凭据、`httpx.Client(trust_env=False)`、每请求短生命周期 client，私有/保留/回环 `ipaddress` fail-closed 守卫不放宽（d049）。
+    - **复查条件**：真实部署下在线 Geo 服务在线率、城市主观准确度、可用/不可用代理端到端毫秒级延迟与红色失败原因、刷新持久化、容器隔离与私有地址阻断边界，按 AC-006 `[deploy]` 顺延验证，不在本会话冒充已验（见 `docs/pending/`）。
 
 ## 030 英文 Profile 裁剪中文字体（2026-11-11，t053）
 

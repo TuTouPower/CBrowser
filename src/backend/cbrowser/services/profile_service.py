@@ -30,6 +30,8 @@ from cbrowser.domain.models import (
     ProfileConfig,
     ProfileRuntime,
     RuntimeEvent,
+    UserSettingsResponse,
+    UserSettingsUpdateRequest,
     derive_fingerprint_seed,
     generate_fingerprint_seed,
 )
@@ -289,6 +291,14 @@ class ProfileService:
         self._locks = ProfileLockRegistry()
         self._egress_probe_runner = egress_probe_runner
         self._probe_tasks: set[asyncio.Task] = set()
+
+    async def get_settings(self) -> UserSettingsResponse:
+        return await self._repo.get_settings()
+
+    async def update_settings(
+        self, payload: UserSettingsUpdateRequest
+    ) -> UserSettingsResponse:
+        return await self._repo.update_settings(payload)
 
     def set_egress_probe_runner(self, runner: EgressProbeRunner | None) -> None:
         """Wire the probe runner after construction (the Supervisor client
@@ -1112,6 +1122,9 @@ class ProfileService:
                         credential_revision=revision,
                         egress_ip=result.egress_ip,
                         country_code=result.country_code,
+                        country_name=result.country_name,
+                        city=result.city,
+                        latency_ms=result.latency_ms,
                         status="ok",
                         observed_at=completed_at,
                         expires_at=completed_at

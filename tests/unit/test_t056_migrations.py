@@ -4,9 +4,11 @@ downgrade throws).
 
 The t056 golden schema file (tests/unit/data/t056_fresh_schema_before.txt)
 is the fresh-DB ``sqlite_master`` dump taken before these changes; the
-AC-013 test asserts the only structural difference after them is the
+AC-013 test asserts the only structural differences after them are the
 intended display_number NOT NULL change (plus a foreign-key clause
-reorder emitted by the batch table rebuild, which carries no meaning).
+reorder emitted by the batch table rebuild, which carries no meaning) and
+the t074 0010 country_name/city/latency_ms columns on
+proxy_egress_observations.
 """
 
 from __future__ import annotations
@@ -318,12 +320,15 @@ def test_every_revision_downgrade_raises(tmp_path: Path) -> None:
             module.downgrade()
 
 
-def test_fresh_db_schema_matches_before_except_display_number(
+def test_fresh_db_schema_matches_golden_except_intended_changes(
     tmp_path: Path,
 ) -> None:
-    """A60 / AC-013: a fresh database upgraded to head has the same
-    structure as before these changes, except the intended A21 change
-    (display_number becomes NOT NULL)."""
+    """Replaces ``test_fresh_db_schema_matches_before_except_display_number``:
+    t074 0010 adds country_name/city/latency_ms to proxy_egress_observations,
+    so the old "only display_number differs" assertion is obsolete. New
+    semantic: the only structural deltas vs the golden pre-change dump are
+    the A21 display_number NOT NULL change and the t074 0010 columns; no
+    pre-existing column is dropped."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -333,7 +338,10 @@ def test_fresh_db_schema_matches_before_except_display_number(
     after = _dump_schema(db)
     assert set(after) == set(before)
     for key in before:
-        if key == ("table", "profiles"):
+        if key in (
+            ("table", "profiles"),
+            ("table", "proxy_egress_observations"),
+        ):
             continue
         assert after[key] == before[key], key
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
@@ -344,6 +352,19 @@ def test_fresh_db_schema_matches_before_except_display_number(
     assert sorted(set(before_lines) - set(after_lines)) == [
         "display_number INTEGER"
     ]
+    obs_sql = after[("table", "proxy_egress_observations")]
+    for column in (
+        "country_name VARCHAR(128)",
+        "city VARCHAR(128)",
+        "latency_ms INTEGER",
+    ):
+        assert column in obs_sql, column
+    for kept in (
+        "egress_ip VARCHAR(64)",
+        "country_code VARCHAR(2)",
+        "error_code VARCHAR(64)",
+    ):
+        assert kept in obs_sql, kept
 
 
 # ---------------------------------------------------------------- A21

@@ -17,6 +17,8 @@ import type {
   ProxyCreateRequest,
   ProxyUpdateRequest,
   FontSetListResponse,
+  UserSettingsResponse,
+  UserSettingsUpdateRequest,
 } from "./types";
 import { resolveSameOriginUrl } from "./same_origin";
 
@@ -516,6 +518,18 @@ export class ApiClient {
         `/api/v1/proxies/${encodeURIComponent(proxyId)}/probe`,
         { method: "POST" },
       );
+    },
+  };
+
+  readonly settings = {
+    get: async (): Promise<UserSettingsResponse> => {
+      return this.request<UserSettingsResponse>("/api/v1/settings");
+    },
+    update: async (data: UserSettingsUpdateRequest): Promise<UserSettingsResponse> => {
+      return this.request<UserSettingsResponse>("/api/v1/settings", {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      });
     },
   };
 

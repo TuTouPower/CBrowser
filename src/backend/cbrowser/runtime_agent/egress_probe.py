@@ -8,11 +8,12 @@ shares the Browser's network policy and proxy parameters:
         --geoip-db /data/engine-cache/geoip/GeoLite2-City.mmdb \
         --echo-url https://api.ipify.org
 
-It prints exactly one JSON object to stdout — ``{"egress_ip", "country_code"}``
-on success or ``{"error_code"}`` on failure — and nothing else.  The
-password is read from the credentials file and never printed, logged or
-echoed.  Exit code 0 means the probe produced an observation; 1 means it
-did not (the caller records a failed observation with the error code).
+It prints exactly one JSON object to stdout — ``{"egress_ip",
+"country_code", "country_name", "city", "latency_ms"}`` on success or
+``{"error_code"}`` on failure — and nothing else.  The password is read
+from the credentials file and never printed, logged or echoed.  Exit
+code 0 means the probe produced an observation; 1 means it did not (the
+caller records a failed observation with the error code).
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ from cbrowser.shared.egress import (
     ECHO_URLS,
     EgressProbeError,
     GeoIpLookup,
-    probe_egress,
+    probe_egress_detail,
 )
 from cbrowser.domain.proxy_endpoint import ProxyEndpoint
 
@@ -66,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     echo_urls = tuple(args.echo_url) if args.echo_url else ECHO_URLS
     try:
-        egress_ip, country = probe_egress(
+        detail = probe_egress_detail(
             endpoint.proxy_url(),
             echo_urls=echo_urls,
             geoip=GeoIpLookup(db_path=args.geoip_db),
@@ -75,7 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     except EgressProbeError as exc:
         _emit({"error_code": exc.code})
         return 1
-    _emit({"egress_ip": egress_ip, "country_code": country})
+    _emit(
+        {
+            "egress_ip": detail.egress_ip,
+            "country_code": detail.country_code,
+            "country_name": detail.country_name,
+            "city": detail.city,
+            "latency_ms": detail.latency_ms,
+        }
+    )
     return 0
 
 

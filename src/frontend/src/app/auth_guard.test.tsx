@@ -122,6 +122,13 @@ function mockApi(authenticated: boolean): MockedApi {
         return RUNTIME;
       }),
     },
+    proxies: { list: vi.fn(async () => []) },
+    fontSets: {
+      list: vi.fn(async () => ({
+        items: [],
+        default_font_set_id: { windows: null, macos: null },
+      })),
+    },
   } as unknown as ApiClient;
 
   currentApi = {
@@ -216,16 +223,18 @@ describe("auth guard and session expiry", () => {
     expect(sseClient.stop).toHaveBeenCalled();
   });
 
-  it("logs out through Settings page useAuth, stops SSE and redirects to /login", async () => {
+  it("logs out through the settings dialog useAuth, stops SSE and redirects to /login", async () => {
     const api = mockApi(true);
     const sseClient = makeFakeSse();
     const { router } = renderApp(["/?profileId=p1"], sseClient);
 
-    // UI redesign (Patch 1) moved Log out from the sidebar footer into SettingsPage.
+    // t074: settings is a wide dialog, not a /settings route. Opening it
+    // must not leave the current page context.
     await screen.findByTestId("sidebar");
     fireEvent.click(screen.getByTestId("sidebar-settings-link"));
-    await waitFor(() => expect(router.state.location.pathname).toBe("/settings"));
-    fireEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    expect(await screen.findByTestId("settings-dialog")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/");
+    fireEvent.click(screen.getByTestId("settings-logout"));
 
     await waitFor(() => expect(router.state.location.pathname).toBe("/login"));
     expect(api.state.authenticated).toBe(false);
@@ -253,9 +262,9 @@ describe("auth guard and session expiry", () => {
 
   it("redirects authenticated visitors away from /login to the target or root", async () => {
     mockApi(true);
-    const withTarget = renderApp(["/login?next=%2Fsettings"]);
+    const withTarget = renderApp(["/login?next=%2Fproxies"]);
     await waitFor(() =>
-      expect(withTarget.router.state.location.pathname).toBe("/settings"),
+      expect(withTarget.router.state.location.pathname).toBe("/proxies"),
     );
     cleanup();
 

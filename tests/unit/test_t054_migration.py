@@ -23,10 +23,11 @@ from cbrowser.adapters.database.migrations import (
 
 REVISION_0007 = "1a8db6b91744"
 REVISION_0008 = "3751fed02a4a"
-# t056 adds 0009 (display_number NOT NULL) as the new head; the 0008
-# assertions below still target 0008 as the revision that deletes the
-# network rows.
-REVISION_0009 = "796adb0bf159"
+# t056 adds 0009 (display_number NOT NULL); t074 adds 0010
+# (country_name/city/latency_ms on proxy_egress_observations), which is
+# the current single head. The 0008 assertions below still target 0008 as
+# the revision that deletes the network rows.
+REVISION_0010 = "8c3f1d0a7b92"
 
 NETWORK_KEYS = (
     "network.pending_config",
@@ -49,8 +50,10 @@ def _revision_of_head(tmp_path: Path) -> str:
     return heads[0]
 
 
-def test_head_is_0009_and_single(tmp_path: Path) -> None:
-    assert _revision_of_head(tmp_path) == REVISION_0009
+def test_head_is_0010_and_single(tmp_path: Path) -> None:
+    """Replaces ``test_head_is_0009_and_single``: t074 0010 is the new
+    single head; asserting 0009 would lock an obsolete migration head."""
+    assert _revision_of_head(tmp_path) == REVISION_0010
 
 
 def test_upgrade_deletes_all_network_settings_rows(tmp_path: Path) -> None:
