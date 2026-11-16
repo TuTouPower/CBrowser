@@ -17,6 +17,7 @@ import {
 } from "./EnvironmentTable";
 import { GroupManagerDialog } from "./GroupManagerDialog";
 import { ProfileCreateDialog } from "./ProfileCreateDialog";
+import { ProfileEditDialog } from "./ProfileEditDialog";
 import { useBatchActions } from "./useBatchActions";
 import {
   filterEnvironmentRows,
@@ -45,6 +46,7 @@ export function EnvironmentListPage() {
   const [layout, setLayout] = useEnvironmentLayout();
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<EnvironmentRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
   // P2: 单删 / 批量删除二次确认，避免误触。
@@ -153,8 +155,11 @@ export function EnvironmentListPage() {
         case "stop":
           stopMutation.mutate(id, { onError });
           break;
-        case "edit":
+        case "details":
           navigate(`/profiles/${id}/config`);
+          break;
+        case "edit":
+          setEditingRow(row);
           break;
         case "duplicate":
           duplicateMutation.mutate(
@@ -252,9 +257,13 @@ export function EnvironmentListPage() {
       )}
       <div
         data-testid="env-running-count"
-        className="font-ui text-label-sm text-on-surface-muted"
+        className="inline-flex items-center gap-xs font-ui text-label-sm text-on-surface-muted"
       >
-        {snapshot.runningCount}
+        <span
+          aria-hidden="true"
+          className="size-(--component-group-chip-size) rounded-full bg-success"
+        />
+        {t("runningProfiles", { count: snapshot.runningCount })}
       </div>
 
       {profilesQuery.isPending ? (
@@ -349,6 +358,13 @@ export function EnvironmentListPage() {
       )}
 
       <ProfileCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <ProfileEditDialog
+        open={editingRow !== null}
+        profile={editingRow?.profile ?? null}
+        onOpenChange={(open) => {
+          if (!open) setEditingRow(null);
+        }}
+      />
       <GroupManagerDialog open={groupsOpen} onOpenChange={setGroupsOpen} />
       {pendingDeleteRow && (
         <div

@@ -44,9 +44,7 @@ export function EnvironmentCard({
     row.profile.fingerprint_platform,
     t,
   );
-  const tzLabel =
-    row.profile.timezone ||
-    (row.profile.geoip ? t("envGeoipFollowProxy") : "");
+  const tzLabel = row.profile.timezone || "";
 
   return (
     <div

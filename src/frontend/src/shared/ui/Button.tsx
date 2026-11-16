@@ -53,13 +53,23 @@ export function Button({
   );
 }
 
+export type IconButtonVariant = "ghost" | "danger" | "warning";
+
+const ICON_VARIANTS: Record<IconButtonVariant, string> = {
+  ghost: "bg-surface text-on-surface hover:bg-surface-hover",
+  danger: "bg-surface text-danger hover:bg-danger-soft focus-visible:outline-danger",
+  warning: "bg-surface text-warning hover:bg-warning-soft focus-visible:outline-warning",
+};
+
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   children: ReactNode;
+  variant?: IconButtonVariant;
 }
 
 export function IconButton({
   label,
+  variant = "ghost",
   type = "button",
   className,
   children,
@@ -70,7 +80,8 @@ export function IconButton({
       type={type}
       aria-label={label}
       className={cn(
-        "inline-flex h-(--component-icon-button-height) w-(--component-icon-button-width) items-center justify-center rounded-md bg-surface text-on-surface hover:bg-surface-hover",
+        "inline-flex h-(--component-icon-button-height) w-(--component-icon-button-width) items-center justify-center rounded-md disabled:cursor-not-allowed disabled:opacity-50",
+        ICON_VARIANTS[variant],
         FOCUS,
         className,
       )}

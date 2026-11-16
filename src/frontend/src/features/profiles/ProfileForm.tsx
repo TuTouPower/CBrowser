@@ -172,7 +172,9 @@ function Section({
   return (
     <section className="flex flex-col gap-md rounded-md border border-outline bg-surface p-md">
       <h2 className="font-ui text-headline-md text-on-surface">{title}</h2>
-      {children}
+      <div className="grid grid-cols-1 gap-md md:grid-cols-2 lg:grid-cols-3">
+        {children}
+      </div>
     </section>
   );
 }

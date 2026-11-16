@@ -28,6 +28,8 @@
   --color-overlay: #0b12208c;
   --color-sidebar: #f1f4f9;
   --color-stage: #dde3ec;
+  --color-success: #0e6b32;
+  --color-success-soft: #e6f7ed;
   --color-surface: #ffffff;
   --color-surface-hover: #e9edf4;
   --color-surface-raised: #ffffff;
@@ -82,6 +84,10 @@
   --shadow-lg: 0 12px 38px rgba(20, 30, 60, 0.2);
   --shadow-xl: 0 20px 60px -12px rgba(23, 33, 68, 0.28);
   --container-dialog: 32rem;
+  --container-dialog-sm: 24rem;
+  --container-dialog-md: 32rem;
+  --container-dialog-lg: 44rem;
+  --container-dialog-xl: 56rem;
   --container-dialog-width: calc(100% - 2rem);
   --container-dialog-height: 90vh;
   --container-panel: 28rem;
@@ -194,6 +200,18 @@
   .h-dialog { height: var(--container-dialog); }
   .max-h-dialog { max-height: var(--container-dialog); }
   .min-h-dialog { min-height: var(--container-dialog); }
+  .h-dialog-sm { height: var(--container-dialog-sm); }
+  .max-h-dialog-sm { max-height: var(--container-dialog-sm); }
+  .min-h-dialog-sm { min-height: var(--container-dialog-sm); }
+  .h-dialog-md { height: var(--container-dialog-md); }
+  .max-h-dialog-md { max-height: var(--container-dialog-md); }
+  .min-h-dialog-md { min-height: var(--container-dialog-md); }
+  .h-dialog-lg { height: var(--container-dialog-lg); }
+  .max-h-dialog-lg { max-height: var(--container-dialog-lg); }
+  .min-h-dialog-lg { min-height: var(--container-dialog-lg); }
+  .h-dialog-xl { height: var(--container-dialog-xl); }
+  .max-h-dialog-xl { max-height: var(--container-dialog-xl); }
+  .min-h-dialog-xl { min-height: var(--container-dialog-xl); }
   .h-dialog-width { height: var(--container-dialog-width); }
   .max-h-dialog-width { max-height: var(--container-dialog-width); }
   .min-h-dialog-width { min-height: var(--container-dialog-width); }
@@ -264,6 +282,8 @@
   --color-overlay: #05070ac7;
   --color-sidebar: #090b10;
   --color-stage: #07080a;
+  --color-success: #34d399;
+  --color-success-soft: #112e22;
   --color-surface: #1f232c;
   --color-surface-hover: #363c48;
   --color-surface-raised: #2b313c;

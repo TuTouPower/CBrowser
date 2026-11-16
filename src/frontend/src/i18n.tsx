@@ -313,6 +313,8 @@ export const en = {
   envEdit: "Edit",
   envDuplicate: "Duplicate",
   envDelete: "Delete",
+  envDetails: "Config details",
+  detailEditParams: "Edit parameters",
   envUngrouped: "-",
   envErrorReason: "Reason: {name}",
   statusStarting: "Starting",
@@ -515,6 +517,15 @@ export const en = {
   transportStateRecovering: "Recovering",
   transportStateFailed: "Failed",
   transportStateUnknown: "Unknown",
+  sessHeaderEnvRunning: "Env Running",
+  sessHeaderEnvStarting: "Env Starting",
+  sessHeaderEnvStopping: "Env Stopping",
+  sessHeaderEnvError: "Env Error",
+  sessHeaderEnvStopped: "Env Stopped",
+  sessHeaderTransportReady: "Data Ready",
+  sessHeaderTransportRecovering: "Data Recovering",
+  sessHeaderTransportFailed: "Data Failed",
+  sessHeaderTransportUnknown: "Data Unknown",
 
   // Network access (t054): read-only. The port is fixed at deploy time;
   // there is no LAN mode, no apply flow, and no root-CA download anymore.
@@ -809,6 +820,8 @@ export const zh = {
   envEdit: "编辑",
   envDuplicate: "复制",
   envDelete: "删除",
+  envDetails: "配置详情",
+  detailEditParams: "编辑参数",
   envUngrouped: "—",
   envErrorReason: "原因：{name}",
   statusStarting: "启动中",
@@ -1010,6 +1023,15 @@ export const zh = {
   transportStateRecovering: "恢复中",
   transportStateFailed: "失败",
   transportStateUnknown: "未知",
+  sessHeaderEnvRunning: "环境运行中",
+  sessHeaderEnvStarting: "环境启动中",
+  sessHeaderEnvStopping: "环境停止中",
+  sessHeaderEnvError: "环境异常",
+  sessHeaderEnvStopped: "环境已停止",
+  sessHeaderTransportReady: "数据传输正常",
+  sessHeaderTransportRecovering: "数据传输恢复中",
+  sessHeaderTransportFailed: "数据传输失败",
+  sessHeaderTransportUnknown: "数据传输未知",
 
   // Network access (t054): read-only. The port is fixed at deploy time;
   // there is no LAN mode, no apply flow, and no root-CA download anymore.

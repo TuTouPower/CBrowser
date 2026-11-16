@@ -60,7 +60,7 @@ export function currentStatus(
 export function statusDotClass(tone: StatusTone): string {
   switch (tone) {
     case "running":
-      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-accent";
+      return "size-(--component-group-chip-size) shrink-0 rounded-full bg-success";
     case "transition":
       return "size-(--component-group-chip-size) shrink-0 rounded-full bg-warning";
     case "error":
