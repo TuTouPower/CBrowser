@@ -54,3 +54,11 @@
 - 已验（间接）：gate4 `test_supervisor_orphan_helpers_e2e.py`、`test_supervisor_reconciliation_e2e.py`、`test_supervisor_container_graph_e2e.py::test_authoritative_gateway_port_credentials_and_instance_fenced_lifecycle` 全绿，覆盖 AC-005 的「残留 runtime 实例绑定时拒绝、viewer 连接不触发停止/清理」的拓扑前提部分。
 - 卡点：AC-001（Cookie/localStorage/IndexedDB/书签 + 代理/分辨率/时区/语言/指纹改存重启）、AC-003（两态 clone 往返、源 Profile 不受影响）、AC-004（reset 全清 + 目录替换失败成套恢复）、AC-005（启动与 clone/reset/备份恢复交错真实拓扑）、AC-011（`deploy.sh env-backup` → 改状态 → `env-restore` 往返 + named volume DB）五项均需隔离实例内真实 Profile 数据与生产栈；本批未启动，未验。
 - findings 现状：`python3 .repo_template/scripts/findings.py list` 显示 `d037` 各 2 条（`d037_dockerignore_leaf_allowlists` / `d037_sqlite_extended_error_codes_and_log_safety`）、`d038` 各 2 条（`d038_deterministic_deployment_identity_and_media_pools` / `d038_target_engine_tab_visibility_unreliable`）；编号重复导致 `findings.py new` 拒绝分配新号，t066 task.md 已回填的两条 spike 结论无法正式登记。按批次口径：工具链缺陷，不在本批修复范围，仅说明现状。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；f2/f3 真实引擎并发实测、env-backup → env-restore 往返属终局已验，不重复；未启动生产栈、未跑真实 Browser；基线 `main` @ `ae02d42`。
+- 静态核对：`scripts/deploy.sh` 的 `env-backup`（:1045 / `cmd_env_backup`、:1132 入口）与 `env-restore`（:1077 / `cmd_env_restore`、:1133 入口）仍在；`scripts/db_backup.py` / `scripts/db_restore.py` 存在；`findings.py list` 含 `d044_engine_oscrypt_no_portable_key_root` 与 `d045_db_restore_unvalidated_overwrite`（findings 补录闭环仍成立，无重号）。
+- 定向实测：`p093_t066`（`test_t066_restore_point.py` + `test_t066_profile_state_guards.py` + `test_t066_deploy_restore_point_wiring.py`）→ `26 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p093_t066.log`。
+- 结论：恢复点与 Profile 状态守卫单测在当前主线仍成立；全部 [deploy] AC 切片的终局裁定不变。
+- 证据留存：`.scratch/terminal_deploy_slices/p093_*.log` / `.json`（env_roundtrip、state、ac003、ac005）仍在；gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

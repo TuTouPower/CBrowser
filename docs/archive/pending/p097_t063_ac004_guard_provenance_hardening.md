@@ -17,3 +17,11 @@
 - 判定：`tests/unit/test_t063_patched_keyboard_behavior.py` 的 AC-004 AST 守护升级为导入溯源判定（收集 selkies 导入绑定名、任意深度属性赋值与 setattr 判违规、补四种拼写注入试探用例），属测试基础设施增强，不属带 Docker/真实 Chrome 的本地验证事项；本批次不授权改测试源码。
 - 现状：gate4 `unit 2243/0` 全绿，现有守护当前零误报、stream_agent 包无实际违规；四种拼写漏网（全点路径 / from-import 别名 / 直接属性 / `setattr`）仍存在，需独立 task 处理误报边界后方可升级。
 - 卡点：无本地环境卡点，纯属工作量与立项顺序。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；本项为测试基础设施增强，不属带 Docker/真实 Chrome 的验证范畴；基线 `main` @ `ae02d42`。
+- 静态核对：`tests/unit/test_t063_patched_keyboard_behavior.py` 的 `_selkies_root_names`（:378）/ `_is_selkies_attribute_write`（:396）/ `_selkies_guard_violations`（:420）仍在；四种漏网拼写注入试探、「含 selkies 子串但无导入不误报」反证与真实 `stream_agent` 包零违规扫描（约 :499-:544）均在；原有 `inspect` 禁用与私有 ABI gate 检查保留。
+- 定向实测：`p097_t063_guard` → `19 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p097_t063_guard.log`。
+- 结论：导入溯源守护与零误报在当前主线仍成立；裁定闭环。
+- 证据留存：gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

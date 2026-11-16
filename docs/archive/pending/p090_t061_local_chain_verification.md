@@ -26,3 +26,11 @@
 - 门禁：`.scratch/local_verify_terminal_gate4/`（WORKERS=1、CBROWSER_RUN_E2E=1、CBROWSER_REQUIRE_REAL_ENGINE=1），12/13 套件 exit 0；e2e 104 用例 99 passed / 3 failed / 2 skipped；提交 `da2974d` / `ee94faf`。
 - 已验：真实 Caddy+Docker+Chrome 拓扑下 viewer 生命周期链可用——`test_frontend_app_e2e.py` 6 例、`test_frontend_media_e2e.py` 4 例全绿，`test_frontend_session_e2e.py` 3 例中 2 例绿；首帧/重连/双标签/输入静音/诊断浮层均有真实浏览器断言。
 - 卡点：AC-006「信令 WS 异常关闭 5 秒恢复且不重建 iframe/Browser/已有网页」、AC-008「全部 viewer 断开后长期保留且活跃 consumer 暂停/恢复」、AC-001「关闭详情后面板宽度实测归零、顶栏唯一开关定位与刷新保持」三项无直接断言与留证，需专门 deploy 场景用例 + 真实 Chrome 布局测量。本批未启动 `scripts/deploy.sh` 生产栈（此前重跑被中止），不冒充已验。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按用户选定「按现状做本地复核」；gate5 已验证的真实部署栈 / E2E 切片不重复执行，未重建生产栈、未跑 `CBROWSER_RUN_E2E=1`。基线 `main` @ `ae02d42`（工作区干净；Node 26.13.0 / Python 3.15.2 / Docker 29.4.0）。
+- 静态核对：`SessionDetailsPanel.test.tsx:224` 面板内无第二开关、`SessionHeader.tsx:184` 唯一 `SESS_DETAILS_TOGGLE`、`SessionPage.test.tsx` 引用同一开关；`useBrowserSession.wsRecovery.test.tsx` 仍在（t061 AC-006 恢复状态机）。
+- 定向实测：`p090_frontend`（Vitest 5 文件）→ `61 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p090_frontend.log`。
+- 结论：AC-001 真实 Chrome 面板宽度实测属 gate5 已验切片，不重复；行为层单测在当前主线仍成立；「AC-006 / AC-008 不另写注入式脚本」最终裁定不变。
+- 证据留存：gate5 / gate4 原始目录 `.scratch/local_verify_terminal_gate5/` / `gate4/` 已不存在（未归档、易失）；本项引用的 `.scratch/terminal_deploy_slices/p090_p100_real_profile.log`、`p090_layout.log` 仍在。本轮逐项结果与易失证据清单固化于 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

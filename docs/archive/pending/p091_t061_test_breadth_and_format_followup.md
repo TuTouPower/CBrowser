@@ -19,3 +19,11 @@
 - 判定：本项是代码/测试实现增强（`SessionDetailsPanel.tsx` 缩进对齐、AC-004 中文 transport 三态与兜底断言、AC-007「失败原因不含凭据」显式断言），不属「带 Docker/真实 Chrome 的本地验证」范畴，本批次不授权改产品/测试源码凑覆盖。
 - 现状：gate4 `frontend_test=0`、`design_check=0`、`unit 2243/0` 全绿，但仅说明现有断言通过，不等于 AC-004/007 的断言广度已补齐。
 - 卡点：无本地环境卡点，纯属工作量与立项顺序；按 specs driven 拆 task 后实施。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；不重跑 gate5 已验证的真实部署栈 / E2E；基线 `main` @ `ae02d42`（工作区干净）。
+- 静态核对：`SessionHeader.test.tsx:254-256`（en 三态）与 `:299-301`（zh recovering/failed/unknown 三态）顶栏断言仍在（t073 把顶栏标签换成 `sessHeader*` 带主语 key，三态覆盖保留）；`SessionDetailsPanel.test.tsx` transport 缺失 / 枚举外值回落断言仍在；`useBrowserSession.transportRecovery.test.tsx:102` AC-007「失败原因不含凭据」显式断言仍在；`SessionDetailsPanel.tsx` 内容块缩进为对齐后的结构。
+- 定向实测：`p091_frontend`（Vitest 4 文件）→ `59 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p091_frontend.log`。
+- 结论：本项代码/测试修复在 `ae02d42` 上仍成立；本项本就不属带 Docker/真实 Chrome 的验证范畴，裁定不变。
+- 证据留存：gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

@@ -38,3 +38,11 @@
 
 - 已验：`ee94faf` 同步 t065 契约后 `test_browser_runtime_e2e.py::test_t035_proxy_outbound_and_cdp_browser_version` 单跑通过（夹具改写 `proxy_forwarder.json`：`scheme=http`、bare host、`port=18080`、`credential_revision` 等于 snapshot、权限 0644；旧 `proxy_credentials.json` 已无人读）；`test_proxy_library_e2e.py::test_ac008_proxy_library_outbound_via_ui` 单跑通过（根因是 Supervisor 容器 env 缺 `CBROWSER_PROXY_FORWARDER_IMAGE`，`docker_adapter.py:2293` fail-closed → 4 次重试 `restart_blocked`；`frontend_app_probe/harness.py` 补注入后 browser/proxy-forwarder/stream 容器均起、PROXY_GET 命中）。gate4 `unit 2243/0`、`integration 208/0`、`image_packages=0` 含 t065 相关用例全绿。
 - 卡点：AC-001（运行中 Browser 容器内 argv/proc/env/日志/全部可读挂载确认凭据无处可读）、AC-002（HTTP/HTTPS CONNECT/SOCKS5 三协议上游认证成功 + 407/错密码失败封闭）、AC-003（上游不可达/转发器退出时 Browser 无响应体、无直连源站、reconcile 仅 `_replace_proxy_forwarder_only`）、AC-004（首包延迟/407 往返/认证成功率基线对比与噪声判定）均需隔离部署栈与真实上游代理；本批未启动生产栈，未验。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；`resolution=obsolete` 用户裁决（删除外置认证转发器）属终局结论，本轮只核裁决是否仍成立，不重建已消失的验收对象、不跑上游代理链；基线 `main` @ `ae02d42`。
+- 静态核对：全仓 `src/` / `scripts/` / `config/` 扫描 `_replace_proxy_forwarder_only`、`CBROWSER_PROXY_FORWARDER_IMAGE`、`proxy_forwarder` **零命中**（转发器容器 / 镜像 / 编排 / reconcile 分支确已删除）；`credential_revision` 失败封闭仍在（`supervisor/core.py:2439`、`shared/egress_plan.py:144-157` 等）；`tests/unit/test_t035_proxy_runtime.py` 存在。
+- 定向实测：`p098_t035` → `33 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p098_t035.log`。
+- 结论：AC-001~004 的验收对象在当前主线未复现，`obsolete` 裁定仍成立；不补验。
+- 证据留存：gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

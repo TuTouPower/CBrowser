@@ -24,3 +24,12 @@
 
 - 已验：Stream 镜像按 `8c1148c` 重建（`sha256:abb332a6...`），镜像内 `importlib.metadata.version("selkies")` = `2.2.1+cbrowser.1`、`selkies/cbrowser_build.json` 戳与 `config/selkies/selkies_controlled_build.json` 一致；gate4 `image_packages=0`、`test_stream_selkies_tokens_e2e.py` 通过（WebRTC 首帧经官方 HELLO/client_tab_id/resume_key 建立、viewer 解码成功）、`tests/e2e/test_stream_x11_keymap_e2e.py` 1 例通过（受控版本号与绑定保持、按住槽不重绑）。
 - 历史卡点（已由上方「开发铁律重判」推翻，仅留记录）：gate4 阶段曾将 AC-002/003 列为待补验，重判后不再补验。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；AC-001 Stream 镜像重建 / 版本戳 / 首帧与 keymap E2E 属 gate5 已验，不重复；未重建镜像、未跑 WebRTC 链；基线 `main` @ `ae02d42`。
+- 静态核对：`config/selkies/selkies_controlled_build.json` 存在；`tests/unit/test_t063_selkies_controlled_build.py` 的受控构建 / 身份一致性断言仍在。
+- 定向实测：`p096_t063_control` → `10 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p096_t063_control.log`。
+- 复核发现（仅记录，不改归档历史正文、不改代码）：归档「全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑」的措辞在当前源码不够精确 —— `src/backend/cbrowser/stream_agent/policy.py:578` 存在 `active_peers`，但语义是「无活跃 viewer → 暂停采集」的可见性仲裁（`reconcile_capture_state`），不是「静止 8 / 运动 30 FPS」帧率仲裁；全仓仍无 8/30 数值仲裁逻辑。gate5 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 覆盖的正是前者。
+- 结论：AC-002 核心判定（8/30 属 Selkies 上游策略、非 CBrowser 实现）与 AC-003 重判裁定仍成立，仅上方措辞按此细化；不重跑注入式脚本。
+- 证据留存：gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

@@ -18,3 +18,11 @@
 
 - 已验：按 `8c1148c` 源码重建全部 verify 镜像（api/gateway/supervisor/browser/stream + caddy/proxy-forwarder/probe/invalid-policy，均固定 sha256）；gate4 `image_packages=0`（5 运行镜像 pip 包与 uv.lock 对齐，含受控 `selkies==2.2.1+cbrowser.1`）、`real_engine 2 passed`、`unit 2243/0`、`integration 208/0`；E2E 全量拓扑中 api/gateway/supervisor/browser/stream 容器均真实启动并 readiness 通过（Gateway 删 domain/Supervisor 删 Gateway 整包后无导入失败，Browser 带 shared 整包启动正常）。
 - 卡点：AC-008 要求「默认端口 8005 与一组非默认控制端口各跑一次完整部署，CLI/runner/compose/控制客户端行为一致」，需两次 `scripts/deploy.sh` 部署；本批未启动生产栈，未验。本项第 3 条「与 t068/e2e 修复线合入顺序由主会话安排」已由 `da2974d`/`ee94faf` 在终局门禁中完成合入，不授权跳过。
+
+## 主线 ae02d42 本地复核（2026-11-16）
+
+- 口径：按「按现状做本地复核」；gate5 已验证的真实部署 + 全镜像重建 + 非默认端口 56662 全链实测不重复，未重建镜像、未跑 `deploy.sh deploy`；基线 `main` @ `ae02d42`。
+- 静态核对：`bash scripts/generate_requirements.sh --check` 六组（api / gateway / supervisor / browser / stream / gate）全部 `requirements ok`；`config/docker/*/Dockerfile` 六份存在。
+- 定向实测：`p092_t062`（`test_t062_boundaries.py` + `test_t062_image_closure.py` + `test_t062_shared_rules.py`）→ `19 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p092_t062.log`。
+- 结论：t062 中立包 / 镜像边界的云端可验部分在当前主线仍成立；AC-005 / AC-008 的真实部署链属 gate5 已验，不重复；裁定闭环。
+- 证据留存：`.scratch/terminal_deploy_slices/p092_nondefault_port.log` 仍在；gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。
