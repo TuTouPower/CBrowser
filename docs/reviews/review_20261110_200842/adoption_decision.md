@@ -481,7 +481,7 @@ docs/reviews/review_20261110_200842
 ### A57. p068 根因表述强于证据，p059 对 Browser 路径失实
 
 - 来源：review_intensive
-- 位置：`docs/tasks/t051_runtime_deploy_reliability/task.md`「背景」第 1、3 条
+- 位置：`docs/archive/tasks/t051_runtime_deploy_reliability/task.md`「背景」第 1、3 条
 - 优先级：MEDIUM
 - 详细判断理由：p068 当前只有日志文案，没有扩展错误码，「已定位 shm mmap」是推测。用户已裁决将 DB 移入 named volume（存储方案不重开），但 task 背景应如实表述证据强度，并把扩展错误码采集作为首要可观测项。p059 部分 t051 背景已按实际写明（Browser 主路径保留未脱敏的 `{e}`）。两份 pending 已归档，按 archive 只准新增的规则不改原文，只在现行 task 中修正。
 - 修复说明：t051 背景第 1 条改为「高度疑似 WAL `-shm` 跨 VM bind mount 失稳（日志仅有 `disk I/O error`，未记录扩展错误码，尚未区分 IOERR_SHMMAP 与 IOERR_READ/WRITE）」，并注明迁移 named volume 依据为 SQLite WAL 同机共享内存要求与用户裁决；上下文区补一句「AC-007 的扩展错误码日志用于下一次故障时定性」。

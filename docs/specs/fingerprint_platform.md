@@ -2,7 +2,7 @@
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
+本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/archive/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
 
 ## 2. 行为契约
 
@@ -36,9 +36,11 @@
 ### 2.6 字体目录作为独立部署输入（t051）
 
 - 字体目录是独立部署输入，不再经 `${CBROWSER_DATA_ROOT}/fonts` 派生：compose 以 `${CBROWSER_FONTS_DIR}:/fonts:ro` 只读挂载（API 与 Supervisor 容器内 `CBROWSER_FONTS_DIR=/fonts`），`CBROWSER_FONTS_DIR` 写入 release env。默认部署时 `CBROWSER_FONTS_DIR` 指向主仓 `data/fonts`。
+
 - 部署时字体 preflight 只警告、永不阻塞：字体目录缺失或无有效字体集时，部署输出可执行提示（如何导入字体集），部署继续；`GET /api/v1/font-sets` 的返回以实际导入的字体集为准。
 
 - 平台字体只从官方渠道取得：macOS 取本机 `/System/Library/Fonts`、`Supplemental`、`/Library/Fonts` 与 `/System/Library/AssetsV2/` 下的苹方资源；Windows 取微软官方 Windows 11 企业评估版 ISO，经 `7zz` 从 `sources/install.wim` 提取 `Windows/Fonts`。不使用第三方字体站或 GitHub 镜像。
+
 - 字体不进入任何镜像层与 git 仓库，部署 / 发布脚本不复制字体目录；系统不提供字体集删除功能（AC-008）。
 
 ### 2.7 语言分流与字体集链路收紧（t053）

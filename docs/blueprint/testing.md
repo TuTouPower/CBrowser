@@ -355,7 +355,7 @@ bash scripts/run_automation_probe.sh
 
 ## t051 运行时与部署可靠性验收映射
 
-下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
+下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/archive/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
 
 |AC|行为|测试 / 证据|
 |---|---|---|
