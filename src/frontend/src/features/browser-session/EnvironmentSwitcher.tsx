@@ -1,13 +1,11 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
 import { ChevronDown } from "lucide-react";
-import { useQueries } from "@tanstack/react-query";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
   GroupResponse,
   ProfileResponse,
-  ProfileRuntimeResponse,
 } from "../../shared/api/types";
 import {
   Popover,
@@ -16,7 +14,8 @@ import {
   type StatusTone,
 } from "../../shared/ui";
 import {
-  profileKeys,
+  useProfileRuntimeQuery,
+  useRuntimeSummaryQuery,
 } from "../profiles/useProfilesQuery";
 import {
   SESS_SWITCHER_GROUP,
@@ -81,22 +80,21 @@ export function EnvironmentSwitcher({
   const [open, setOpen] = useState(false);
 
   const current = profiles.find((profile) => profile.id === currentProfileId);
-  const itemRuntimes = useQueries({
-    queries: profiles.map((profile) => ({
-      queryKey: profileKeys.runtime(profile.id),
-      queryFn: () => client.profiles.getRuntime(profile.id),
-      enabled: profiles.length > 0,
-      staleTime: 5000,
-    })),
-  });
+  // t076 AC-002 (p121): a closed switcher issues no per-profile runtime
+  // requests. The trigger only needs the current profile (one read);
+  // the item list reads one batched summary, and only while open.
+  const { data: currentRuntime } = useProfileRuntimeQuery(
+    currentProfileId,
+    client,
+  );
+  const { data: summary } = useRuntimeSummaryQuery(client, { enabled: open });
   const observedById = new Map<string, string | undefined>();
-  profiles.forEach((profile, index) => {
-    observedById.set(
-      profile.id,
-      (itemRuntimes[index]?.data as ProfileRuntimeResponse | undefined)
-        ?.observed_state,
-    );
-  });
+  for (const entry of summary?.entries ?? []) {
+    observedById.set(entry.profile_id, entry.observed_state);
+  }
+  if (currentRuntime) {
+    observedById.set(currentProfileId, currentRuntime.observed_state);
+  }
 
   const currentItemStatus = currentStatus(
     observedById.get(currentProfileId),

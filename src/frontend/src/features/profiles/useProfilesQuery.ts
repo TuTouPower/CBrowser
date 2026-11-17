@@ -2,17 +2,26 @@ import { useEffect } from "react";
 import {
   useQuery,
   useQueryClient,
+  type QueryClient,
   type UseQueryResult,
   type UseMutationResult,
 } from "@tanstack/react-query";
 import { defaultApiClient, ApiClient } from "../../shared/api/client";
 import { useActionKeyMutation } from "../../shared/api/action_key_mutation";
 import type {
+  CandidateEntry,
+  ProfileCollectionPage,
   ProfileControlStateData,
   ProfileResponse,
   ProfileCreateRequest,
   ProfileUpdateRequest,
   ProfileRuntimeResponse,
+  ProxyCollectionPage,
+  ProxyCandidateEntry,
+  ProxyCountryRange,
+  ProxyUsedByResponse,
+  RuntimeSummaryResponse,
+  RuntimeSummaryEntry,
   GroupResponse,
   GroupCreateRequest,
   GroupUpdateRequest,
@@ -28,7 +37,38 @@ export const profileKeys = {
   lists: () => [...profileKeys.all, "list"] as const,
   detail: (id: string) => [...profileKeys.all, "detail", id] as const,
   runtime: (id: string) => [...profileKeys.all, "runtime", id] as const,
+  runtimeSummary: () => [...profileKeys.all, "runtime-summary"] as const,
+  collection: (params: object) =>
+    [...profileKeys.all, "collection", params] as const,
+  /** t076 review f003: prefix covering every collection page. */
+  collectionPrefix: () => [...profileKeys.all, "collection"] as const,
 };
+
+/** t076 review f003: collection pages live under a separate key
+ * prefix from the legacy full list, so every lists() invalidation
+ * must also invalidate the collection prefix — otherwise a mutation
+ * succeeds and the paged list keeps showing the deleted/created row
+ * until the next focus refetch. */
+export function invalidateProfileLists(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+  queryClient.invalidateQueries({
+    queryKey: profileKeys.collectionPrefix(),
+  });
+}
+
+export function invalidateGroupLists(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+  queryClient.invalidateQueries({
+    queryKey: groupKeys.collectionPrefix(),
+  });
+}
+
+export function invalidateProxyLists(queryClient: QueryClient): void {
+  queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+  queryClient.invalidateQueries({
+    queryKey: proxyKeys.collectionPrefix(),
+  });
+}
 
 export function useProfilesQuery(
   client: ApiClient = defaultApiClient,
@@ -36,6 +76,144 @@ export function useProfilesQuery(
   return useQuery({
     queryKey: profileKeys.lists(),
     queryFn: () => client.profiles.list(),
+  });
+}
+
+export interface ProfilesCollectionParams {
+  search?: string;
+  group_id?: string;
+  proxy_id?: string;
+  status?: string;
+  platform?: string;
+  sort?: "default" | "manual" | "name" | "recent" | "created";
+  page?: number;
+  page_size?: number;
+}
+
+/** t076 AC-001: bounded server-side profile page. */
+export function useProfilesCollectionQuery(
+  params: ProfilesCollectionParams,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProfileCollectionPage, Error> {
+  return useQuery({
+    queryKey: profileKeys.collection(params),
+    queryFn: () => client.profiles.listCollection(params),
+  });
+}
+
+/** t076 review f008: walk every page of a profile collection query
+ * until the server total is collected. One page can never stand in
+ * for "all matching rows": the entry page has no pager, and even an
+ * exact-status page is capped at 100 rows. The loop stops on the
+ * server total, or on an empty page if the total ever disagrees.
+ * The key stays under the collection prefix so list invalidations
+ * refetch it. */
+export function useAllProfilesCollectionQuery(
+  params: Omit<ProfilesCollectionParams, "page">,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProfileResponse[], Error> {
+  return useQuery({
+    queryKey: [...profileKeys.collection(params), "all-pages"] as const,
+    queryFn: async () => {
+      const items: ProfileResponse[] = [];
+      let page = 1;
+      for (;;) {
+        const chunk = await client.profiles.listCollection({
+          ...params,
+          page,
+          page_size: params.page_size ?? 100,
+        });
+        // CollectionPage.items is optional in the generated type (the
+        // field carries a server default), so an absent page is an
+        // empty page, not a crash.
+        const pageItems = chunk.items ?? [];
+        items.push(...pageItems);
+        if (
+          pageItems.length === 0 ||
+          page * chunk.page_size >= chunk.total
+        ) {
+          break;
+        }
+        page += 1;
+      }
+      return items;
+    },
+  });
+}
+
+/** t076 AC-002: one batched runtime read for all profiles. */
+export function useRuntimeSummaryQuery(
+  client: ApiClient = defaultApiClient,
+  options: { enabled?: boolean } = {},
+): UseQueryResult<RuntimeSummaryResponse, Error> {
+  return useQuery({
+    queryKey: profileKeys.runtimeSummary(),
+    queryFn: () => client.profiles.getRuntimeSummary(),
+    enabled: options.enabled ?? true,
+  });
+}
+
+/** t076 AC-006: bounded profile name search. */
+export function useProfileCandidatesQuery(
+  search: string,
+  limit = 20,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<CandidateEntry[], Error> {
+  return useQuery({
+    queryKey: [...profileKeys.all, "candidates", search, limit] as const,
+    queryFn: () => client.profiles.listCandidates(search, limit),
+  });
+}
+
+/** t076 review f006: bounded group name search, for filter options
+ * and move menus that must not fetch the whole group table. */
+export function useGroupCandidatesQuery(
+  search: string,
+  limit = 50,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<CandidateEntry[], Error> {
+  return useQuery({
+    queryKey: [...groupKeys.all, "candidates", search, limit] as const,
+    queryFn: () => client.groups.listCandidates(search, limit),
+  });
+}
+
+/** t076 review f006: bounded proxy name search, for filter options
+ * that must not fetch the whole proxy table. */
+export function useProxyCandidatesQuery(
+  search: string,
+  limit = 50,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyCandidateEntry[], Error> {
+  return useQuery({
+    queryKey: [...proxyKeys.all, "candidates", search, limit] as const,
+    queryFn: () => client.proxies.listCandidates(search, limit),
+  });
+}
+
+/** t076 review f006: one group by id — echoes a selected filter
+ * value that falls outside the bounded candidate page. */
+export function useGroupQuery(
+  groupId: string | null | undefined,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<GroupResponse, Error> {
+  return useQuery({
+    queryKey: [...groupKeys.all, "detail", groupId || ""] as const,
+    queryFn: () => client.groups.get(groupId!),
+    enabled: Boolean(groupId),
+  });
+}
+
+/** t076 review f006: one proxy by id — echoes a selected filter
+ * value that falls outside the bounded candidate page. */
+export function useProxyQuery(
+  proxyId: string | null | undefined,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyResponse, Error> {
+  return useQuery({
+    queryKey: [...proxyKeys.all, "detail", proxyId || ""] as const,
+    queryFn: () => client.proxies.get(proxyId!),
+    enabled: Boolean(proxyId),
   });
 }
 
@@ -71,7 +249,7 @@ export function useCreateProfileMutation(
       mutationFn: ({ input, actionKey }) =>
         client.profiles.create(input, actionKey),
       onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+        invalidateProfileLists(queryClient);
       },
     },
     keyOptions,
@@ -95,7 +273,7 @@ export function useUpdateProfileMutation(
         queryKey: profileKeys.detail(input.id),
       });
       queryClient.setQueryData(profileKeys.detail(input.id), data);
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -108,7 +286,7 @@ export function useDeleteProfileMutation(
     mutationFn: ({ input, actionKey }) =>
       client.profiles.delete(input, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -129,7 +307,7 @@ export function useDuplicateProfileMutation(
         actionKey,
       ),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -142,7 +320,7 @@ export function useResetProfileMutation(
     mutationFn: ({ input, actionKey }) =>
       client.profiles.reset(input, actionKey),
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(data.id) });
       queryClient.invalidateQueries({ queryKey: profileKeys.runtime(data.id) });
     },
@@ -199,7 +377,7 @@ export function useSetDesiredStateMutation(
       client.profiles.setDesiredState(input.id, input.state, actionKey),
     onSuccess: (data, { input }) => {
       queryClient.setQueryData(profileKeys.runtime(input.id), data);
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -248,7 +426,7 @@ export function useStopProfileMutation(
       client.profiles.stop(input, actionKey),
     onSuccess: (data, { input }) => {
       queryClient.setQueryData(profileKeys.runtime(input), data);
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -400,10 +578,26 @@ export function useApplyDisplaySettingsMutation(
     },
     onSuccess: (data, { input: id }) => {
       queryClient.setQueryData(profileKeys.runtime(id), data);
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProfileLists(queryClient);
       queryClient.invalidateQueries({ queryKey: profileKeys.detail(id) });
     },
   });
+}
+
+/** Fields shared by one per-profile runtime response and one
+ * batched summary entry — an SSE runtime event merges into both from
+ * the same fields (t076 review f001/f002). */
+interface RuntimeSharedFields {
+  desired_state: "stopped" | "running";
+  observed_state: "stopped" | "starting" | "running" | "stopping" | "error";
+  runtime_instance_id?: string | null;
+  config_version: number;
+  failure_count: number;
+  restart_blocked: boolean;
+  last_started_at?: string | null;
+  last_stopped_at?: string | null;
+  last_coordinator_error?: string | null;
+  updated_at: string;
 }
 
 export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
@@ -411,49 +605,169 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
 
   useEffect(() => {
     const unsubscribe = sseClient.onEvent((event) => {
-      queryClient.setQueryData(
+      const old = queryClient.getQueryData<ProfileRuntimeResponse>(
         profileKeys.runtime(event.profile_id),
-        (old: ProfileRuntimeResponse | undefined) => {
-          // Events carry no config_version: never synthesize a runtime entry.
-          if (!old) return undefined;
-          return {
-            ...old,
-            desired_state: event.desired_state ?? old.desired_state,
-            observed_state: event.observed_state ?? old.observed_state,
-            runtime_instance_id:
-              event.runtime_instance_id !== undefined
-                ? event.runtime_instance_id
-                : old.runtime_instance_id,
-            failure_count: event.failure_count ?? old.failure_count,
-            restart_blocked: event.restart_blocked ?? old.restart_blocked,
-            last_coordinator_error:
-              event.last_coordinator_error !== undefined
-                ? event.last_coordinator_error
-                : old.last_coordinator_error,
-            search_defaults:
-              event.search_defaults !== undefined
-                ? event.search_defaults
-                : old.search_defaults,
-            transport:
-              event.transport !== undefined
-                ? event.transport
-                : old.transport,
-            control:
-              // t031 (review f006): SSE is normally ordered, but a
-              // delayed or replayed event must not overwrite newer
-              // generation state: only apply control at or above the
-              // cached generation.
-              event.control != null &&
-              (old.control == null ||
-                event.control.generation >= old.control.generation)
-                ? event.control
-                : old.control,
-            updated_at: event.updated_at ?? old.updated_at,
-          };
-        },
       );
-      queryClient.invalidateQueries({ queryKey: profileKeys.runtime(event.profile_id) });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      const summary = queryClient.getQueryData<RuntimeSummaryResponse>(
+        profileKeys.runtimeSummary(),
+      );
+      const summaryEntry = summary?.entries.find(
+        (entry) => entry.profile_id === event.profile_id,
+      );
+      // t076 review f001: the summary update is decoupled from the
+      // per-profile runtime cache. List/entry pages read only the
+      // batched summary, so on first open the runtime cache is empty
+      // and the old early return discarded every event. The runtime
+      // entry itself is still never synthesized from an event.
+      // t076 review f009: each cache fences by its OWN version and
+      // instance. The two caches usually disagree on version (the
+      // summary is refetched on every list focus/remount; the runtime
+      // cache only on a detail visit), so one fence taken from
+      // whichever cache exists first lets a late event roll the newer
+      // cache back to old data. An event below a cache's version, or
+      // from a different instance at the same version, skips that
+      // cache only and may still update the other one.
+      if (!old && !summaryEntry) return;
+      const fenceAllows = (cached: {
+        config_version: number;
+        runtime_instance_id?: string | null;
+      }): boolean => {
+        // Events without a version predate the fence and are treated
+        // as current for this cache.
+        const eventVersion = event.config_version ?? cached.config_version;
+        if (eventVersion < cached.config_version) return false;
+        if (
+          eventVersion === cached.config_version &&
+          event.runtime_instance_id != null &&
+          cached.runtime_instance_id != null &&
+          event.runtime_instance_id !== cached.runtime_instance_id
+        ) {
+          return false;
+        }
+        return true;
+      };
+      const runtimeAllowed = old ? fenceAllows(old) : false;
+      const summaryAllowed = summaryEntry ? fenceAllows(summaryEntry) : false;
+      if (!runtimeAllowed && !summaryAllowed) return;
+      // t076 review f002: the event's start/stop timestamps, failure
+      // count, restart flag and updated timestamp travel into both
+      // caches; a time-only event is a real change, not a duplicate.
+      // A field the event omits keeps the cached value.
+      const mergeShared = <T extends RuntimeSharedFields>(base: T): T => ({
+        ...base,
+        desired_state: event.desired_state ?? base.desired_state,
+        observed_state: event.observed_state ?? base.observed_state,
+        runtime_instance_id:
+          event.runtime_instance_id !== undefined
+            ? event.runtime_instance_id
+            : base.runtime_instance_id,
+        config_version: event.config_version ?? base.config_version,
+        failure_count: event.failure_count ?? base.failure_count,
+        restart_blocked: event.restart_blocked ?? base.restart_blocked,
+        last_started_at:
+          event.last_started_at !== undefined
+            ? event.last_started_at
+            : base.last_started_at,
+        last_stopped_at:
+          event.last_stopped_at !== undefined
+            ? event.last_stopped_at
+            : base.last_stopped_at,
+        last_coordinator_error:
+          event.last_coordinator_error !== undefined
+            ? event.last_coordinator_error
+            : base.last_coordinator_error,
+        updated_at: event.updated_at ?? base.updated_at,
+      });
+      const sharedChanged = (
+        next: RuntimeSharedFields,
+        base: RuntimeSharedFields,
+      ): boolean =>
+        next.observed_state !== base.observed_state ||
+        next.desired_state !== base.desired_state ||
+        next.runtime_instance_id !== base.runtime_instance_id ||
+        next.config_version !== base.config_version ||
+        next.failure_count !== base.failure_count ||
+        next.restart_blocked !== base.restart_blocked ||
+        next.last_started_at !== base.last_started_at ||
+        next.last_stopped_at !== base.last_stopped_at ||
+        next.last_coordinator_error !== base.last_coordinator_error ||
+        next.updated_at !== base.updated_at;
+      // Per-profile runtime entry: update in place when cached, never
+      // synthesize one from an event — and only when this cache's own
+      // fence let the event through (t076 review f009).
+      let nextRuntime: ProfileRuntimeResponse | undefined;
+      let runtimeChanged = false;
+      if (old && runtimeAllowed) {
+        nextRuntime = {
+          ...mergeShared(old),
+          search_defaults:
+            event.search_defaults !== undefined
+              ? event.search_defaults
+              : old.search_defaults,
+          transport:
+            event.transport !== undefined
+              ? event.transport
+              : old.transport,
+          control:
+            // t031 (review f006): SSE is normally ordered, but a
+            // delayed or replayed event must not overwrite newer
+            // generation state: only apply control at or above the
+            // cached generation.
+            event.control != null &&
+            (old.control == null ||
+              event.control.generation >= old.control.generation)
+              ? event.control
+              : old.control,
+        };
+        runtimeChanged =
+          sharedChanged(nextRuntime, old) ||
+          nextRuntime.control !== old.control ||
+          nextRuntime.search_defaults !== old.search_defaults ||
+          nextRuntime.transport !== old.transport;
+      }
+      // Batched summary entry: the same merge, the same duplicate
+      // guard — list/entry pages stay correct without a refetch —
+      // and only when this entry's own fence let the event through
+      // (t076 review f009).
+      let nextEntry: RuntimeSummaryEntry | undefined;
+      let entryChanged = false;
+      if (summaryEntry && summaryAllowed) {
+        nextEntry = mergeShared(summaryEntry);
+        entryChanged = sharedChanged(nextEntry, summaryEntry);
+      }
+      // t076 AC-003: a duplicate/replayed event that changes nothing
+      // has no side effects — in particular it must not trigger a
+      // full list refetch.
+      if (!runtimeChanged && !entryChanged) return;
+      if (nextRuntime && runtimeChanged) {
+        queryClient.setQueryData(
+          profileKeys.runtime(event.profile_id),
+          nextRuntime,
+        );
+      }
+      if (summary && nextEntry && entryChanged) {
+        queryClient.setQueryData<RuntimeSummaryResponse>(
+          profileKeys.runtimeSummary(),
+          {
+            ...summary,
+            entries: summary.entries.map((entry) =>
+              entry.profile_id === event.profile_id ? nextEntry! : entry,
+            ),
+            running_count: summary.entries.reduce(
+              (count, entry) =>
+                count +
+                (entry.profile_id === event.profile_id
+                  ? nextEntry!.observed_state === "running"
+                    ? 1
+                    : 0
+                  : entry.observed_state === "running"
+                    ? 1
+                    : 0),
+              0,
+            ),
+          },
+        );
+      }
     });
 
     const unsubscribePreview: (() => void) | undefined =
@@ -464,11 +778,28 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
         const listed = queryClient
           .getQueryData<ProfileResponse[]>(profileKeys.lists())
           ?.find((item) => item.id === event.profile_id);
-        if (detail?.capture_preview === false || listed?.capture_preview === false) return;
-        const profile = detail ?? listed;
+        // List pages read the collection pages now, so the legacy full
+        // list is usually empty there — consult the cached collection
+        // pages for the preview policy as well.
+        const inCollection = queryClient
+          .getQueriesData<ProfileCollectionPage>({
+            queryKey: profileKeys.collectionPrefix(),
+          })
+          .flatMap(([, page]) => page?.items ?? [])
+          .find((item) => item.id === event.profile_id);
+        if (
+          detail?.capture_preview === false ||
+          listed?.capture_preview === false ||
+          inCollection?.capture_preview === false
+        )
+          return;
+        const profile = detail ?? listed ?? inCollection;
         if (profile?.capture_preview !== true) return;
         const captured = Date.parse(event.captured_at);
         if (!Number.isFinite(captured)) return;
+        // t076 review f002: a preview capture also moves the summary
+        // entry the list rows render, under the same "captured time
+        // never goes backwards" fence as the runtime entry.
         queryClient.setQueryData(
           profileKeys.runtime(event.profile_id),
           (old: ProfileRuntimeResponse | undefined) => {
@@ -480,6 +811,29 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
             return { ...old, preview_captured_at: event.captured_at };
           },
         );
+        queryClient.setQueryData<RuntimeSummaryResponse>(
+          profileKeys.runtimeSummary(),
+          (summary) => {
+            if (!summary) return summary;
+            const entry = summary.entries.find(
+              (item) => item.profile_id === event.profile_id,
+            );
+            if (!entry) return summary;
+            const previous = entry.preview_captured_at
+              ? Date.parse(entry.preview_captured_at)
+              : NaN;
+            if (Number.isFinite(previous) && captured <= previous)
+              return summary;
+            return {
+              ...summary,
+              entries: summary.entries.map((item) =>
+                item.profile_id === event.profile_id
+                  ? { ...item, preview_captured_at: event.captured_at }
+                  : item,
+              ),
+            };
+          },
+        );
       });
 
     // t056 A31: another client's group/proxy write arrives as a
@@ -488,11 +842,11 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
     const unsubscribeReference: (() => void) | undefined =
       sseClient.onReferenceEvent?.((event) => {
         if (event.event === "groups_changed") {
-          queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+          invalidateGroupLists(queryClient);
         } else {
-          queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
+          invalidateProxyLists(queryClient);
         }
-        queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+        invalidateProfileLists(queryClient);
       });
 
     sseClient.start();
@@ -510,11 +864,21 @@ export function useProfileEventsSync(sseClient: ProfileEventsClient): void {
 export const groupKeys = {
   all: ["groups"] as const,
   lists: () => [...groupKeys.all, "list"] as const,
+  collection: (params: object) =>
+    [...groupKeys.all, "collection", params] as const,
+  /** t076 review f003: prefix covering every collection page. */
+  collectionPrefix: () => [...groupKeys.all, "collection"] as const,
 };
 
 export const proxyKeys = {
   all: ["proxies"] as const,
   lists: () => [...proxyKeys.all, "list"] as const,
+  usedBy: (id: string) => [...proxyKeys.all, "used-by", id] as const,
+  collection: (params: object) =>
+    [...proxyKeys.all, "collection", params] as const,
+  countries: () => [...proxyKeys.all, "countries"] as const,
+  /** t076 review f003: prefix covering every collection page. */
+  collectionPrefix: () => [...proxyKeys.all, "collection"] as const,
 };
 
 export const fontSetKeys = {
@@ -540,6 +904,51 @@ export function useProxiesQuery(
   });
 }
 
+export interface ProxiesCollectionParams {
+  search?: string;
+  country_code?: string;
+  city?: string;
+  scheme?: string;
+  sort?: "default" | "name";
+  page?: number;
+  page_size?: number;
+}
+
+/** t076 AC-001/AC-006: bounded server-side proxy page. */
+export function useProxiesCollectionQuery(
+  params: ProxiesCollectionParams,
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyCollectionPage, Error> {
+  return useQuery({
+    queryKey: proxyKeys.collection(params),
+    queryFn: () => client.proxies.listCollection(params),
+  });
+}
+
+/** t076 AC-006: stable country -> city ranges for the linked filters. */
+export function useProxyCountriesQuery(
+  client: ApiClient = defaultApiClient,
+): UseQueryResult<ProxyCountryRange[], Error> {
+  return useQuery({
+    queryKey: proxyKeys.countries(),
+    queryFn: () => client.proxies.listCountries(),
+  });
+}
+
+/** t076 AC-004: used-by detail (same union as the count), fetched only
+ * when the user opens it. */
+export function useProxyUsedByQuery(
+  proxyId: string | null | undefined,
+  client: ApiClient = defaultApiClient,
+  options: { enabled?: boolean } = {},
+): UseQueryResult<ProxyUsedByResponse, Error> {
+  return useQuery({
+    queryKey: proxyKeys.usedBy(proxyId || ""),
+    queryFn: () => client.proxies.getUsedBy(proxyId!),
+    enabled: Boolean(proxyId) && (options.enabled ?? true),
+  });
+}
+
 export function useFontSetsQuery(
   client: ApiClient = defaultApiClient,
 ): UseQueryResult<FontSetListResponse, Error> {
@@ -556,8 +965,8 @@ export function useCreateGroupMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) => client.groups.create(input, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateGroupLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -574,8 +983,8 @@ export function useUpdateGroupMutation(
     mutationFn: ({ input, actionKey }) =>
       client.groups.update(input.groupId, input.data, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateGroupLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -587,8 +996,8 @@ export function useDeleteGroupMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) => client.groups.remove(input, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateGroupLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -601,7 +1010,7 @@ export function useReorderGroupsMutation(
     mutationFn: ({ input, actionKey }) =>
       client.groups.reorder({ ordered_ids: input.orderedIds }, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: groupKeys.lists() });
+      invalidateGroupLists(queryClient);
     },
   });
 }
@@ -613,8 +1022,8 @@ export function useCreateProxyMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) => client.proxies.create(input, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProxyLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -631,8 +1040,8 @@ export function useUpdateProxyMutation(
     mutationFn: ({ input, actionKey }) =>
       client.proxies.update(input.proxyId, input.data, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProxyLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -644,8 +1053,8 @@ export function useDeleteProxyMutation(
   return useActionKeyMutation({
     mutationFn: ({ input, actionKey }) => client.proxies.remove(input, actionKey),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProxyLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }
@@ -657,8 +1066,8 @@ export function useProbeProxyMutation(
   return useActionKeyMutation({
     mutationFn: ({ input }) => client.proxies.probe(input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: proxyKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: profileKeys.lists() });
+      invalidateProxyLists(queryClient);
+      invalidateProfileLists(queryClient);
     },
   });
 }

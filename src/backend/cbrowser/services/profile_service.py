@@ -25,10 +25,17 @@ from cbrowser.domain.egress_observation import (
     EgressObservation,
 )
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     ConfigVersionSnapshot,
     Profile,
     ProfileConfig,
+    ProfileResponse,
     ProfileRuntime,
+    ProxyCandidateEntry,
+    ProxyCountryRange,
+    ProxyResponse,
+    ProxyUsedByEntry,
     RuntimeEvent,
     UserSettingsResponse,
     UserSettingsUpdateRequest,
@@ -491,6 +498,51 @@ class ProfileService:
         except DBAPIError as e:
             self._handle_db_error(e)
 
+    async def list_profiles_page(
+        self,
+        *,
+        search: str | None = None,
+        group_id: str | None = None,
+        proxy_id: str | None = None,
+        status: str | None = None,
+        platform: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ) -> CollectionPage[ProfileResponse]:
+        """t076 AC-001: bounded server-side profile page."""
+        try:
+            result = await self._repo.list_profiles_page(
+                search=search,
+                group_id=group_id,
+                proxy_id=proxy_id,
+                status=status,
+                platform=platform,
+                sort=sort,
+                page=page,
+                page_size=page_size,
+            )
+        except DBAPIError as e:
+            self._handle_db_error(e)
+        return CollectionPage(
+            items=[ProfileResponse.from_domain(p) for p in result.items],
+            total=result.total,
+            page=result.page,
+            page_size=result.page_size,
+        )
+
+    async def list_profile_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        return await self._repo.list_profile_candidates(search, limit)
+
+    async def list_runtimes(self) -> list[ProfileRuntime]:
+        """t076 AC-002: every runtime row in one batched read."""
+        try:
+            return await self._repo.list_runtimes()
+        except DBAPIError as e:
+            self._handle_db_error(e)
+
     async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         return await self._repo.font_set_usage_counts()
 
@@ -897,6 +949,29 @@ class ProfileService:
     async def list_groups(self):
         return await self._repo.list_groups()
 
+    async def get_group(self, group_id: str):
+        """One group by id (t076 review f006: the list toolbar shows
+        the selected filter value even when it falls outside the first
+        bounded candidate page)."""
+        return await self._repo.get_group(group_id)
+
+    async def list_groups_page(
+        self,
+        *,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ):
+        """t076 AC-001: bounded server-side group page."""
+        return await self._repo.list_groups_page(
+            search=search, page=page, page_size=page_size
+        )
+
+    async def list_group_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        return await self._repo.list_group_candidates(search, limit)
+
     async def create_group(self, req, *, operation_id: str | None = None):
         return await self._repo.create_group(
             req.name, req.color, req.sort_order, operation_id=operation_id
@@ -956,6 +1031,45 @@ class ProfileService:
 
     async def list_proxies(self):
         return await self._repo.list_proxies()
+
+    async def list_proxies_page(
+        self,
+        *,
+        search: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        scheme: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ):
+        """t076 AC-001/AC-006: bounded server-side proxy page."""
+        return await self._repo.list_proxies_page(
+            search=search,
+            country_code=country_code,
+            city=city,
+            scheme=scheme,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def list_proxy_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[ProxyCandidateEntry]:
+        return await self._repo.list_proxy_candidates(search, limit)
+
+    async def proxy_country_ranges(self) -> list[ProxyCountryRange]:
+        return await self._repo.proxy_country_ranges()
+
+    async def get_proxy_used_by(
+        self, proxy_id: str
+    ) -> list[ProxyUsedByEntry] | None:
+        """t076 AC-004: used-by detail in the same union as the count."""
+        proxy = await self._repo.get_proxy(proxy_id)
+        if proxy is None:
+            return None
+        return await self._repo.get_proxy_used_by(proxy_id)
 
     async def get_proxy(self, proxy_id: str):
         return await self._repo.get_proxy(proxy_id)

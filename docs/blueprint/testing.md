@@ -111,7 +111,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 项目涉及 OpenAPI 导出及前端类型。
 
 - 触发路径：`src/backend/cbrowser/api/`、`src/backend/cbrowser/domain/models.py`、`scripts/export_openapi.py`。
-- 生成命令：在 `scripts/run_gates.sh` 设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。
+- 生成命令：在 `scripts/run_gates.sh` 设置的 TMPDIR / UV_CACHE_DIR 下，运行 `PYTHONPATH=src/backend uv run --no-project --python ">=3.12" --with fastapi --with pydantic --with "sqlalchemy[asyncio]" --with aiosqlite --with alembic --with argon2-cffi --with httpx python scripts/export_openapi.py`，输出 `schemas/openapi/cbrowser_v1.json`。（`--with httpx` 必需：应用导入链依赖 httpx，缺它导出报 `ModuleNotFoundError: No module named 'httpx'`；t076 补。）
 - 验证命令：`scripts/run_gates.sh` 的 unit 层运行 `test_exported_openapi_schema_matches_live_app` 深度比较导出与实际应用；integration 层使用导出 JSON schema 校验真实 HTTP 响应。
 - 合并后动作：运行上述验证，确认导出文件随接口实现一同合入。OpenAPI 变更后必须 `npm run generate:api --prefix src/frontend` 重生成 `src/frontend/src/shared/api/generated/cbrowser_v1.d.ts`，禁止手写补充类型。
 - migration 窗口：t002 仅对全新隔离数据库执行 Alembic upgrade head；现有用户库迁移由 t010 验收，不在导出命令中执行迁移。
@@ -122,6 +122,12 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 - 控制 API 与文件交换的验收必须走真实入口：内部面用真实 HTTP（服务令牌矩阵、未配置 503），协议用导出文档的消息入口逐条校验，文件用例覆盖故障注入（删除中途失败后意图保留、跨重启续跑）与幂等重放（同 operation_id 并发/删后重放）。
 - 密码等慢操作须有事件循环不阻塞探针（慢哈希期间 ticker 推进断言），不接受仅测返回值的覆盖。
 - 政策变更类断言（如内容类型由拒绝改为放行）必须整体替换旧测试并在测试内注明裁决来源，禁止就地把旧预期改成实现输出。
+
+## 集合 0/1/100/1000 矩阵与计数证据（t076）
+
+- 集合查询按 0/1/100/1000 规模矩阵验证：空集与单项、100 代理（SELECT 数与 20 代理规模相等）/120 环境分页无重复遗漏、1000 代理下 `list_proxies` SELECT 数恒定（≤8）/1000 环境分页、搜索与候选无截断。证据：`tests/unit/test_t076_collection_queries.py`（SQLAlchemy 语句计数）与 `tests/integration/test_t076_collection_api.py`（真实 HTTP）。
+- 计数只统计被测调用本身，夹具造数阶段排除在计数之外；同一 QueryClient 的请求去重不可被重复统计。前端以 Vitest 断言列表页只发一次批量摘要、不发逐环境 runtime 请求（`EnvironmentListPage.test.tsx`、`ProxyListPage.test.tsx`、`SessionEntryPage.test.tsx` 的集合分页用例）。
+- 证据边界：云端无 Docker/Chrome/GPU，真实运行实例的完整 API/SSE/Browser 链路验证（t076 AC-008）不在云端门禁内，登记 pending 待 Mac 补验，不得用 mock、skip 或历史结果代替。
 
 ## 门禁类别清单
 

@@ -1,7 +1,7 @@
 ---
 slug: gate_verification
 status: active
-tasks: [baseline]
+tasks: [baseline, t076]
 ---
 # 门禁与验证体系
 
@@ -67,8 +67,7 @@ tasks: [baseline]
 
 ## 11. 门禁与隐私边界（t060）
 
-- venv 检查、重建和安装持排他 preparation 锁；测试期持共享运行锁。并发热门禁可同时完成，任何重建不能破坏运行读者。
-- 同 checkout 互斥使用生成产物，不同 worktree 继续并发共享 venv。测试容器不继承宿主 Docker 配置代理；内部流量直连隔离网络。
+- venv 检查、重建和安装持排他 preparation 锁；测试期持共享运行锁。并发热门禁可同时完成，任何重建不能破坏运行读者。- 同 checkout 互斥使用生成产物，不同 worktree 继续并发共享 venv。测试容器不继承宿主 Docker 配置代理；内部流量直连隔离网络。
 - 每轮 run_id 贯穿 CLI / SDK / Supervisor 创建的容器与网络。启动清理只删除已登记且租约结束的运行资源，Docker 归属查询失败不得回退到名称匹配。
 - protocol drift 检查作为首个 evidence suite；失败仍生成完整 manifest。pytest / Vitest 收集下限见 testing.md，低于基线、报告缺失或损坏即失败。完整门禁缺少任一运行镜像时 image_packages 为 skipped 且总失败。
 - E2E 必跑模式按模块镜像 marker 并集检查，未声明的用例仍按全部前置检查；Browser / Stream 停止观测须分别为不存在，Docker API 异常单列为错误。
@@ -76,3 +75,8 @@ tasks: [baseline]
 - Node engines 的 `>` 严格拒绝相等版本；镜像 requirements marker 不可解析时失败，marker 环境全部取目标镜像。
 - 五个镜像构建上下文排除 bytecode；Supervisor services 仅准入实际 COPY 的文件。Artifact 转发保留宿主绝对路径输入中的相对子目录，并拒绝越界。
 - 当前 tracked 树及新文件不含开发者家路径与凭据；历史文档原位改写为占位符，删除隐私豁免机制，不改写 Git 历史。交接只保留最新一节，branch 与 head_commit 记录写入时真实值。
+
+## 12. 集合规模矩阵与计数证据（t076）
+
+- 集合查询按 0/1/100/1000 规模矩阵验证：空集与单项、100 代理/120 环境分页无重复遗漏、1000 代理下 `list_proxies` SELECT 数恒定（≤8，与 20 代理规模相等）、1000 环境分页/搜索/候选无截断；证据为 SQLAlchemy 语句计数与 HTTP 层测试（`tests/unit/test_t076_collection_queries.py`、`tests/integration/test_t076_collection_api.py`）。
+- 集合 SQL/HTTP 计数只统计被测调用本身，夹具造数阶段排除在计数之外；同一 QueryClient 的请求去重不可被重复统计。真实运行实例的完整 API/SSE/Browser 链路验证（AC-008）云端不可验，登记 pending 待 Mac 补验，不得用 mock 或历史结果代替。

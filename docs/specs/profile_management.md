@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline]
+tasks: [baseline, t076]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -16,6 +16,12 @@ tasks: [baseline]
 
 - Profile 列表、创建、编辑（名称、屏幕尺寸、备注）与设置均通过 `/api/v1` 完成，前端类型由 OpenAPI 生成。
 - 运行状态由服务端 SSE 推送，断线自动重连；前端不保存控制状态，重连后以服务端状态为准。
+
+## 集合读取与运行摘要（t076）
+
+- 列表不再拉全量再客户端拼装：`GET /api/v1/profiles/collection`（搜索 / 分组 / 代理 / 状态 / 平台 / 排序 `default|manual|name|recent|created`，分页 `page_size` 服务端钳制 1..100，总数计全量筛选集）、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection`，有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。排序默认稳定（`sort_order`、`created_at`、`id`），分页无重复遗漏。
+- 运行状态只读一次批量摘要：`GET /api/v1/profiles/runtime-summary` 返回全部环境 `desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停时间 / 预览捕获时间 / 协调器错误与运行总数；列表、卡片、工作台入口与关闭的切换器都只读它，不再按环境逐个发 runtime 请求。单环境详情仍按需读 `GET /api/v1/profiles/{id}/runtime`。
+- SSE `runtime_state` 事件带 `config_version` 围栏：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新 runtime 缓存与摘要缓存。`GET /api/v1/proxies/{id}/used-by` 返回当前配置 ∪ 运行绑定版本的并集明细（每项标 `current` / `bound` / `both`），计数、导航与删除保护用同一口径。
 
 ## 启动参数校验与 PATCH 三态（t021）
 

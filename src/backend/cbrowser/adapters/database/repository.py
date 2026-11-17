@@ -25,12 +25,18 @@ from cbrowser.domain.egress_observation import (
     observation_is_current,
 )
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     ConfigVersionSnapshot,
     GroupResponse,
     Profile,
     ProfileConfig,
     ProfileRuntime,
+    ProxyCandidateEntry,
+    ProxyCountryRange,
     ProxyResponse,
+    ProxyUsedByEntry,
+    ProxyUsedByResponse,
     RuntimeEvent,
     UserSettingsResponse,
     UserSettingsUpdateRequest,
@@ -42,7 +48,7 @@ from cbrowser.domain.runtime_policy import (
     AUTO_RETRY_DELAYS,
     BLOCK_AFTER_RUNTIME_FAILURES,
 )
-from sqlalchemy import func, select, text
+from sqlalchemy import func, or_, select, text, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -372,6 +378,227 @@ class ProfileRepository:
             result = await session.execute(stmt)
             models = result.scalars().all()
             return [self._to_domain_profile(m) for m in models]
+
+    @staticmethod
+    def _escape_like(term: str) -> str:
+        """Escape LIKE wildcards so a search term matches literally
+        (t076 review f007): ``%``/``_`` in the term must not act as
+        wildcards. The backslash itself is escaped first so a literal
+        backslash in the term survives. Callers pass ``escape="\\\\"``
+        to ``ilike``."""
+        return (
+            term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+
+    @staticmethod
+    def _clamp_page(page: int, page_size: int) -> tuple[int, int]:
+        """t076 AC-001: page sizes are bounded (1..100) so an out-of-range
+        request can never silently return the whole collection."""
+        return max(1, page), min(100, max(1, page_size))
+
+    async def list_profiles_page(
+        self,
+        *,
+        search: str | None = None,
+        group_id: str | None = None,
+        proxy_id: str | None = None,
+        status: str | None = None,
+        platform: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ) -> CollectionPage[Profile]:
+        """Bounded, server-filtered profile page (t076 AC-001/AC-007).
+
+        Search/sort run against the full filtered set in the database;
+        the stable order (sort_order, created_at desc, id) makes pages
+        disjoint and gap-free.  ``group_id="ungrouped"`` / ``proxy_id=
+        "direct"`` select the no-group / no-proxy sentinels the list UI
+        offers; ``status`` buckets the runtime observed state
+        (running = running/starting, stopped = stopped/stopping,
+        error = error) via the runtime row, so the status filter also
+        applies to the whole set, not just the loaded page.
+        ``running_exact`` matches only observed_state="running" (t076
+        review f008): the entry page needs exactly the running rows,
+        and a bucket page can be crowded out by starting rows.
+        """
+        page, page_size = self._clamp_page(page, page_size)
+        async with self._session_maker() as session:
+            base = select(ProfileModel)
+            if search:
+                term = f"%{self._escape_like(search)}%"
+                proxy_name_ids = select(ProxyModel.id).where(
+                    ProxyModel.name.ilike(term, escape="\\")
+                )
+                base = base.where(
+                    or_(
+                        ProfileModel.name.ilike(term, escape="\\"),
+                        ProfileModel.notes.ilike(term, escape="\\"),
+                        ProfileModel.proxy_id.in_(proxy_name_ids),
+                    )
+                )
+            if group_id is not None and group_id != "all":
+                if group_id == "ungrouped":
+                    base = base.where(ProfileModel.group_id.is_(None))
+                else:
+                    base = base.where(ProfileModel.group_id == group_id)
+            if proxy_id is not None and proxy_id != "all":
+                if proxy_id == "direct":
+                    base = base.where(ProfileModel.proxy_id.is_(None))
+                else:
+                    base = base.where(ProfileModel.proxy_id == proxy_id)
+            if platform is not None and platform != "all":
+                base = base.where(
+                    ProfileModel.fingerprint_platform == platform
+                )
+            joined_runtime = False
+            if status is not None:
+                buckets = {
+                    "running": ("running", "starting"),
+                    "running_exact": ("running",),
+                    "stopped": ("stopped", "stopping"),
+                    "error": ("error",),
+                }
+                states = buckets.get(status)
+                if states is not None:
+                    base = base.join(
+                        ProfileRuntimeModel,
+                        ProfileRuntimeModel.profile_id == ProfileModel.id,
+                    ).where(ProfileRuntimeModel.observed_state.in_(states))
+                    joined_runtime = True
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(base.subquery())
+                )
+            ).scalar_one()
+            if sort == "name":
+                order = [ProfileModel.name.asc(), ProfileModel.id.asc()]
+            elif sort == "recent":
+                # SQLite multi-arg max() is NULL if any arg is NULL, so
+                # coalesce each side to '' first (below any timestamp).
+                order = [
+                    func.max(
+                        func.coalesce(
+                            ProfileRuntimeModel.last_started_at, ""
+                        ),
+                        func.coalesce(
+                            ProfileRuntimeModel.last_stopped_at, ""
+                        ),
+                    ).desc(),
+                    ProfileModel.id.asc(),
+                ]
+                if not joined_runtime:
+                    base = base.outerjoin(
+                        ProfileRuntimeModel,
+                        ProfileRuntimeModel.profile_id == ProfileModel.id,
+                    )
+            elif sort == "created":
+                order = [
+                    ProfileModel.created_at.desc(),
+                    ProfileModel.id.asc(),
+                ]
+            else:
+                order = [
+                    ProfileModel.sort_order.asc(),
+                    ProfileModel.created_at.desc(),
+                    ProfileModel.id.asc(),
+                ]
+            models = (
+                await session.execute(
+                    base.order_by(*order)
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).scalars().all()
+            items = [self._to_domain_profile(m) for m in models]
+            # t076 review f006: one bounded lookup per referenced table
+            # fills the row display names, so the list page never fetches
+            # the whole group/proxy tables to name a row.
+            group_ids = {m.group_id for m in models if m.group_id}
+            proxy_ids = {m.proxy_id for m in models if m.proxy_id}
+            group_names: dict[str, tuple[str, str]] = {}
+            if group_ids:
+                group_names = {
+                    gid: (name, color)
+                    for gid, name, color in (
+                        await session.execute(
+                            select(
+                                ProfileGroupModel.id,
+                                ProfileGroupModel.name,
+                                ProfileGroupModel.color,
+                            ).where(ProfileGroupModel.id.in_(group_ids))
+                        )
+                    ).all()
+                }
+            proxy_names: dict[str, str] = {}
+            if proxy_ids:
+                proxy_names = dict(
+                    (
+                        await session.execute(
+                            select(ProxyModel.id, ProxyModel.name).where(
+                                ProxyModel.id.in_(proxy_ids)
+                            )
+                        )
+                    ).all()
+                )
+            for item in items:
+                gid = item.config.group_id
+                if gid is not None and gid in group_names:
+                    item.group_name, item.group_color = group_names[gid]
+                pid = item.config.proxy_id
+                if pid is not None and pid in proxy_names:
+                    item.proxy_name = proxy_names[pid]
+            return CollectionPage(
+                items=items,
+                total=total,
+                page=page,
+                page_size=page_size,
+            )
+
+    async def list_profile_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        """Bounded name search over profiles (t076 AC-006)."""
+        limit = min(50, max(1, limit))
+        async with self._session_maker() as session:
+            stmt = select(ProfileModel.id, ProfileModel.name)
+            if search:
+                stmt = stmt.where(
+                    ProfileModel.name.ilike(
+                        f"%{self._escape_like(search)}%", escape="\\"
+                    )
+                )
+            rows = (
+                await session.execute(
+                    stmt.order_by(ProfileModel.name.asc(), ProfileModel.id.asc())
+                    .limit(limit)
+                )
+            ).all()
+            return [CandidateEntry(id=r[0], name=r[1]) for r in rows]
+
+    async def list_runtimes(self) -> list[ProfileRuntime]:
+        """Every profile's runtime row in one SELECT (t076 AC-002)."""
+        async with self._session_maker() as session:
+            models = (
+                await session.execute(
+                    select(ProfileRuntimeModel).order_by(
+                        ProfileRuntimeModel.profile_id.asc()
+                    )
+                )
+            ).scalars().all()
+            if not models:
+                return []
+            numbers = dict(
+                (
+                    await session.execute(
+                        select(ProfileModel.id, ProfileModel.display_number)
+                    )
+                ).all()
+            )
+            return [
+                self._to_domain_runtime(m, display_number=numbers[m.profile_id])
+                for m in models
+            ]
 
     async def font_set_usage_counts(self) -> dict[tuple[str, str], int]:
         """Count profiles bound to each non-empty font set id (t041 AC-002).
@@ -1118,6 +1345,68 @@ class ProfileRepository:
             result = await session.execute(stmt)
             return [self._to_domain_group(m) for m in result.scalars().all()]
 
+    async def list_groups_page(
+        self,
+        *,
+        search: str | None = None,
+        page: int = 1,
+        page_size: int = 50,
+    ) -> CollectionPage[GroupResponse]:
+        """Bounded, server-filtered group page (t076 AC-001/AC-007)."""
+        page, page_size = self._clamp_page(page, page_size)
+        async with self._session_maker() as session:
+            base = select(ProfileGroupModel)
+            if search:
+                base = base.where(
+                    ProfileGroupModel.name.ilike(
+                        f"%{self._escape_like(search)}%", escape="\\"
+                    )
+                )
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(base.subquery())
+                )
+            ).scalar_one()
+            models = (
+                await session.execute(
+                    base.order_by(
+                        ProfileGroupModel.sort_order.asc(),
+                        ProfileGroupModel.created_at.asc(),
+                        ProfileGroupModel.id.asc(),
+                    )
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).scalars().all()
+            return CollectionPage(
+                items=[self._to_domain_group(m) for m in models],
+                total=total,
+                page=page,
+                page_size=page_size,
+            )
+
+    async def list_group_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[CandidateEntry]:
+        """Bounded name search over groups (t076 AC-006)."""
+        limit = min(50, max(1, limit))
+        async with self._session_maker() as session:
+            stmt = select(ProfileGroupModel.id, ProfileGroupModel.name)
+            if search:
+                stmt = stmt.where(
+                    ProfileGroupModel.name.ilike(
+                        f"%{self._escape_like(search)}%", escape="\\"
+                    )
+                )
+            rows = (
+                await session.execute(
+                    stmt.order_by(
+                        ProfileGroupModel.name.asc(), ProfileGroupModel.id.asc()
+                    ).limit(limit)
+                )
+            ).all()
+            return [CandidateEntry(id=r[0], name=r[1]) for r in rows]
+
     async def get_group(self, group_id: str) -> GroupResponse | None:
         """One group by id (t056 A28: reference validation)."""
         async with self._session_maker() as session:
@@ -1462,65 +1751,166 @@ class ProfileRepository:
             )
         return result
 
-    async def _proxy_used_by_current(
-        self, session: AsyncSession, proxy_id: str
-    ) -> set[str]:
-        """Profiles whose CURRENT config references the proxy."""
-        current = (
-            await session.execute(
-                select(ProfileModel.id).where(ProfileModel.proxy_id == proxy_id)
-            )
-        ).scalars().all()
-        return set(current)
+    async def _proxy_reference_map(
+        self, session: AsyncSession, proxy_ids: set[str] | None = None
+    ) -> dict[str, dict[str, str]]:
+        """Batch proxy -> {profile_id: kind} for ALL proxies at once (t076
+        AC-004/AC-005).
 
-    async def _proxy_used_by_bound(
-        self, session: AsyncSession, proxy_id: str
-    ) -> set[str]:
-        """Profiles whose RUNNING bound version snapshot references the proxy."""
-        result: set[str] = set()
+        Old shape: ``list_proxies`` called ``_proxy_used_by`` per proxy,
+        which re-scanned every runtime row and re-queried every bound
+        version per proxy — 2 + P x (2 + R) SELECTs (p121).  This runs
+        exactly three SELECTs no matter how many proxies or bindings
+        exist: current references, all runtime rows, and the bound
+        config versions for those runtimes in one ``IN`` query.  The
+        union semantics are unchanged: a bound-only reference still
+        counts and still blocks deletion; a profile referencing the
+        same proxy both ways appears once with kind ``both``.
+        """
+        result: dict[str, dict[str, str]] = {}
+
+        def _mark(proxy_id: str | None, profile_id: str, kind: str) -> None:
+            if not proxy_id:
+                return
+            if proxy_ids is not None and proxy_id not in proxy_ids:
+                return
+            per_proxy = result.setdefault(proxy_id, {})
+            prev = per_proxy.get(profile_id)
+            if prev is None:
+                per_proxy[profile_id] = kind
+            elif prev != kind:
+                per_proxy[profile_id] = "both"
+
+        current_rows = (
+            await session.execute(
+                select(ProfileModel.id, ProfileModel.proxy_id).where(
+                    ProfileModel.proxy_id.is_not(None)
+                )
+            )
+        ).all()
+        for profile_id, proxy_id in current_rows:
+            _mark(proxy_id, profile_id, "current")
+
         runtimes = (
             await session.execute(select(ProfileRuntimeModel))
         ).scalars().all()
-        for rt in runtimes:
-            version = (
+        if runtimes:
+            versions = (
                 await session.execute(
                     select(ProfileConfigVersionModel).where(
-                        ProfileConfigVersionModel.profile_id == rt.profile_id,
-                        ProfileConfigVersionModel.version == rt.config_version,
+                        tuple_(
+                            ProfileConfigVersionModel.profile_id,
+                            ProfileConfigVersionModel.version,
+                        ).in_(
+                            [(rt.profile_id, rt.config_version) for rt in runtimes]
+                        )
                     )
                 )
-            ).scalar_one_or_none()
-            if version is None:
-                continue
-            parsed = json.loads(version.snapshot)
-            cfg = parsed.get("config", parsed) if isinstance(parsed, dict) else parsed
-            if isinstance(cfg, dict) and cfg.get("proxy_id") == proxy_id:
-                result.add(rt.profile_id)
+            ).scalars().all()
+            for version in versions:
+                parsed = json.loads(version.snapshot)
+                cfg = (
+                    parsed.get("config", parsed)
+                    if isinstance(parsed, dict)
+                    else parsed
+                )
+                if isinstance(cfg, dict):
+                    _mark(cfg.get("proxy_id"), version.profile_id, "bound")
         return result
 
+    async def _proxy_used_by_current(
+        self,
+        session: AsyncSession,
+        proxy_id: str,
+        refs: dict[str, dict[str, str]] | None = None,
+    ) -> set[str]:
+        """Profiles whose CURRENT config references the proxy.
+
+        t076 review f005: pass an already-computed reference map to
+        share one map across the callers of a single request instead
+        of re-scanning the whole map per helper."""
+        if refs is None:
+            refs = await self._proxy_reference_map(session, {proxy_id})
+        return {
+            pid
+            for pid, kind in refs.get(proxy_id, {}).items()
+            if kind in ("current", "both")
+        }
+
+    async def _proxy_used_by_bound(
+        self,
+        session: AsyncSession,
+        proxy_id: str,
+        refs: dict[str, dict[str, str]] | None = None,
+    ) -> set[str]:
+        """Profiles whose RUNNING bound version snapshot references the proxy."""
+        if refs is None:
+            refs = await self._proxy_reference_map(session, {proxy_id})
+        return {
+            pid
+            for pid, kind in refs.get(proxy_id, {}).items()
+            if kind in ("bound", "both")
+        }
+
     async def _proxy_used_by(
-        self, session: AsyncSession, proxy_id: str
+        self,
+        session: AsyncSession,
+        proxy_id: str,
+        refs: dict[str, dict[str, str]] | None = None,
     ) -> list[str]:
         """Profiles whose current config OR runtime-bound version reference it.
 
         Union semantics are kept for delete-refusal and the used_by count:
         a bound-only reference still blocks deletion (t056 A17).
         """
-        result = await self._proxy_used_by_current(session, proxy_id)
-        result |= await self._proxy_used_by_bound(session, proxy_id)
-        return sorted(result)
+        if refs is None:
+            refs = await self._proxy_reference_map(session, {proxy_id})
+        return sorted(refs.get(proxy_id, {}))
 
     async def _proxy_used_by_bound_only(
-        self, session: AsyncSession, proxy_id: str
+        self,
+        session: AsyncSession,
+        proxy_id: str,
+        refs: dict[str, dict[str, str]] | None = None,
     ) -> list[str]:
         """Profiles whose ONLY reference is in a running bound version.
 
         t056 A17: a password change on this proxy sends these profiles a
         runtime event only — no new config version.
         """
-        bound = await self._proxy_used_by_bound(session, proxy_id)
-        current = await self._proxy_used_by_current(session, proxy_id)
-        return sorted(bound - current)
+        if refs is None:
+            refs = await self._proxy_reference_map(session, {proxy_id})
+        return sorted(
+            pid
+            for pid, kind in refs.get(proxy_id, {}).items()
+            if kind == "bound"
+        )
+
+    async def get_proxy_used_by(self, proxy_id: str) -> list[ProxyUsedByEntry]:
+        """Used-by detail with kind labels, from the same union the count
+        and delete protection use (t076 AC-004)."""
+        async with self._session_maker() as session:
+            refs = await self._proxy_reference_map(session, {proxy_id})
+            per_proxy = refs.get(proxy_id, {})
+            if not per_proxy:
+                return []
+            names = dict(
+                (
+                    await session.execute(
+                        select(ProfileModel.id, ProfileModel.name).where(
+                            ProfileModel.id.in_(list(per_proxy))
+                        )
+                    )
+                ).all()
+            )
+            return [
+                ProxyUsedByEntry(
+                    profile_id=pid,
+                    name=names.get(pid, pid),
+                    kind=kind,  # type: ignore[arg-type]
+                )
+                for pid, kind in sorted(per_proxy.items())
+            ]
 
     async def list_proxies(self) -> list[ProxyResponse]:
         async with self._session_maker() as session:
@@ -1528,10 +1918,11 @@ class ProfileRepository:
                 await session.execute(select(ProxyModel))
             ).scalars().all()
             observations = await self._current_observations(session, models)
+            refs = await self._proxy_reference_map(session)
             return [
                 self._to_domain_proxy(
                     m,
-                    len(await self._proxy_used_by(session, m.id)),
+                    len(refs.get(m.id, {})),
                     observations[m.id],
                 )
                 for m in models
@@ -1547,6 +1938,202 @@ class ProfileRepository:
                 len(await self._proxy_used_by(session, proxy_id)),
                 await self._current_observation(session, m),
             )
+
+    def _latest_observation_geo_subquery(self):
+        """Latest non-expired observation geo per proxy (t076 AC-006).
+
+        Same recency order as ``_current_observations``; an expired ok
+        row does not define the proxy's country.  The fingerprint /
+        revision match that ``_visible_observation`` applies to the
+        displayed value is not re-checked here: the filter narrows by
+        the latest recorded egress geography, the page item still shows
+        the authoritative (possibly unknown) observation.
+        """
+        ranked = (
+            select(
+                ProxyEgressObservationModel.proxy_id,
+                ProxyEgressObservationModel.country_code,
+                ProxyEgressObservationModel.country_name,
+                ProxyEgressObservationModel.city,
+                func.row_number()
+                .over(
+                    partition_by=ProxyEgressObservationModel.proxy_id,
+                    order_by=[
+                        ProxyEgressObservationModel.observed_at.desc(),
+                        ProxyEgressObservationModel.created_at.desc(),
+                        ProxyEgressObservationModel.id.desc(),
+                    ],
+                )
+                .label("rn"),
+            )
+            .where(
+                ProxyEgressObservationModel.country_code.is_not(None),
+                or_(
+                    ProxyEgressObservationModel.status != "ok",
+                    ProxyEgressObservationModel.expires_at.is_(None),
+                    ProxyEgressObservationModel.expires_at > utc_now_iso(),
+                ),
+            )
+            .subquery()
+        )
+        return (
+            select(
+                ranked.c.proxy_id,
+                ranked.c.country_code,
+                ranked.c.country_name,
+                ranked.c.city,
+            )
+            .where(ranked.c.rn == 1)
+            .subquery()
+        )
+
+    async def list_proxies_page(
+        self,
+        *,
+        search: str | None = None,
+        country_code: str | None = None,
+        city: str | None = None,
+        scheme: str | None = None,
+        sort: str = "default",
+        page: int = 1,
+        page_size: int = 50,
+    ) -> CollectionPage[ProxyResponse]:
+        """Bounded, server-filtered proxy page (t076 AC-001/AC-006)."""
+        page, page_size = self._clamp_page(page, page_size)
+        async with self._session_maker() as session:
+            base = select(ProxyModel)
+            if search:
+                term = f"%{self._escape_like(search)}%"
+                geo = self._latest_observation_geo_subquery()
+                geo_match = select(geo.c.proxy_id).where(
+                    or_(
+                        geo.c.country_name.ilike(term, escape="\\"),
+                        geo.c.city.ilike(term, escape="\\"),
+                    )
+                )
+                base = base.where(
+                    or_(
+                        ProxyModel.name.ilike(term, escape="\\"),
+                        ProxyModel.host.ilike(term, escape="\\"),
+                        ProxyModel.region_label.ilike(term, escape="\\"),
+                        ProxyModel.id.in_(geo_match),
+                    )
+                )
+            if scheme is not None:
+                base = base.where(ProxyModel.scheme == scheme)
+            if country_code is not None or city is not None:
+                geo = self._latest_observation_geo_subquery()
+                geo_filter = select(geo.c.proxy_id)
+                if country_code is not None:
+                    geo_filter = geo_filter.where(
+                        geo.c.country_code == country_code
+                    )
+                if city is not None:
+                    geo_filter = geo_filter.where(geo.c.city == city)
+                base = base.where(ProxyModel.id.in_(geo_filter))
+            total = (
+                await session.execute(
+                    select(func.count()).select_from(base.subquery())
+                )
+            ).scalar_one()
+            order = (
+                [ProxyModel.name.asc(), ProxyModel.id.asc()]
+                if sort == "name"
+                else [ProxyModel.created_at.desc(), ProxyModel.id.asc()]
+            )
+            models = (
+                await session.execute(
+                    base.order_by(*order)
+                    .offset((page - 1) * page_size)
+                    .limit(page_size)
+                )
+            ).scalars().all()
+            observations = await self._current_observations(session, models)
+            refs = await self._proxy_reference_map(
+                session, {m.id for m in models}
+            )
+            return CollectionPage(
+                items=[
+                    self._to_domain_proxy(
+                        m, len(refs.get(m.id, {})), observations[m.id]
+                    )
+                    for m in models
+                ],
+                total=total,
+                page=page,
+                page_size=page_size,
+            )
+
+    async def list_proxy_candidates(
+        self, search: str = "", limit: int = 20
+    ) -> list[ProxyCandidateEntry]:
+        """Bounded name/host search over proxies (t076 AC-006)."""
+        limit = min(50, max(1, limit))
+        async with self._session_maker() as session:
+            stmt = select(ProxyModel)
+            if search:
+                term = f"%{self._escape_like(search)}%"
+                stmt = stmt.where(
+                    or_(
+                        ProxyModel.name.ilike(term, escape="\\"),
+                        ProxyModel.host.ilike(term, escape="\\"),
+                    )
+                )
+            models = (
+                await session.execute(
+                    stmt.order_by(ProxyModel.name.asc(), ProxyModel.id.asc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            observations = await self._current_observations(session, models)
+            out: list[ProxyCandidateEntry] = []
+            for m in models:
+                obs = observations[m.id]
+                out.append(
+                    ProxyCandidateEntry(
+                        id=m.id,
+                        name=m.name,
+                        country_code=obs.country_code if obs else None,
+                        country_name=obs.country_name if obs else None,
+                        city=obs.city if obs else None,
+                    )
+                )
+            return out
+
+    async def proxy_country_ranges(self) -> list[ProxyCountryRange]:
+        """Country -> sorted city ranges from observations (t076 AC-006).
+
+        t076 review f004: aggregate over the same "latest and still
+        valid" rows the collection filter uses
+        (``_latest_observation_geo_subquery``), so a country whose
+        latest ok observation expired no longer offers a dead option
+        that filters to zero rows."""
+        async with self._session_maker() as session:
+            geo = self._latest_observation_geo_subquery()
+            rows = (
+                await session.execute(
+                    select(
+                        geo.c.country_code,
+                        geo.c.country_name,
+                        geo.c.city,
+                    )
+                )
+            ).all()
+        by_code: dict[str, ProxyCountryRange] = {}
+        for code, name, city in rows:
+            entry = by_code.setdefault(
+                code,
+                ProxyCountryRange(
+                    country_code=code, country_name=name, cities=[]
+                ),
+            )
+            if entry.country_name is None and name:
+                entry.country_name = name
+            if city and city not in entry.cities:
+                entry.cities.append(city)
+        for entry in by_code.values():
+            entry.cities.sort()
+        return [by_code[k] for k in sorted(by_code)]
 
     async def get_proxy_credentials(self, proxy_id: str) -> dict[str, Any] | None:
         """Raw connection + credentials for the Supervisor's Browser sandbox.
@@ -1687,8 +2274,13 @@ class ProfileRepository:
         new version for anyone.
         """
         async with self._session_maker() as session:
-            current = sorted(await self._proxy_used_by_current(session, proxy_id))
-            bound_only = await self._proxy_used_by_bound_only(session, proxy_id)
+            refs = await self._proxy_reference_map(session)
+            current = sorted(
+                await self._proxy_used_by_current(session, proxy_id, refs)
+            )
+            bound_only = await self._proxy_used_by_bound_only(
+                session, proxy_id, refs
+            )
         return current, bound_only
 
     async def create_proxy(
@@ -1806,14 +2398,25 @@ class ProfileRepository:
                     model = await session.get(ProxyModel, proxy_id)
                     if model is None:
                         return None, [], []
+                    refs = await self._proxy_reference_map(session)
                     return (
                         self._to_domain_proxy(
                             model,
-                            len(await self._proxy_used_by(session, proxy_id)),
+                            len(
+                                await self._proxy_used_by(
+                                    session, proxy_id, refs
+                                )
+                            ),
                             await self._current_observation(session, model),
                         ),
-                        sorted(await self._proxy_used_by_current(session, proxy_id)),
-                        await self._proxy_used_by_bound_only(session, proxy_id),
+                        sorted(
+                            await self._proxy_used_by_current(
+                                session, proxy_id, refs
+                            )
+                        ),
+                        await self._proxy_used_by_bound_only(
+                            session, proxy_id, refs
+                        ),
                     )
                 model = await session.get(ProxyModel, proxy_id)
                 if model is None:
@@ -1832,11 +2435,17 @@ class ProfileRepository:
                 versioned: list[str] = []
                 runtime_only: list[str] = []
                 if connection_changed:
+                    # t076 review f005: one reference map for both
+                    # impact lists — the old shape re-scanned the whole
+                    # map once per helper.
+                    refs = await self._proxy_reference_map(session)
                     versioned = sorted(
-                        await self._proxy_used_by_current(session, proxy_id)
+                        await self._proxy_used_by_current(
+                            session, proxy_id, refs
+                        )
                     )
                     runtime_only = await self._proxy_used_by_bound_only(
-                        session, proxy_id
+                        session, proxy_id, refs
                     )
                     for pid in versioned:
                         p_model = await session.get(ProfileModel, pid)
@@ -1904,16 +2513,25 @@ class ProfileRepository:
                 if audit is not None:
                     model = await session.get(ProxyModel, proxy_id)
                     if model is not None:
+                        refs = await self._proxy_reference_map(session)
                         return (
                             self._to_domain_proxy(
                                 model,
-                                len(await self._proxy_used_by(session, proxy_id)),
+                                len(
+                                    await self._proxy_used_by(
+                                        session, proxy_id, refs
+                                    )
+                                ),
                                 await self._current_observation(session, model),
                             ),
                             sorted(
-                                await self._proxy_used_by_current(session, proxy_id)
+                                await self._proxy_used_by_current(
+                                    session, proxy_id, refs
+                                )
                             ),
-                            await self._proxy_used_by_bound_only(session, proxy_id),
+                            await self._proxy_used_by_bound_only(
+                                session, proxy_id, refs
+                            ),
                         )
                     return None, [], []
             raise ValueError("proxy name already exists") from exc

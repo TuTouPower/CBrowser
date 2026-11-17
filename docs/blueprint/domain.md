@@ -54,6 +54,13 @@
 - **配置版本三分**：修改分为「元数据」（`name` / `notes` / `sort_order` / `group_id`，即时生效且不生成新版本）、「即时策略」（`capture_preview`，不生成新版本）、「运行配置」（其余字段；值变化才生成新版本，运行中产生待应用版本）。提交与当前值相同的运行配置也不生成。
 - **代理连接变更的联动（t056 A17 修订）**：`update_proxy` 改连接字段（scheme/host/port/username/password）时，在同一事务内只为**当前配置**引用它的 Profile 生成新版本并广播 SSE；只改 name/region/notes 不生成。仅被运行中绑定版本引用（当前配置已改绑他处）的 Profile 不生成新版本，只收到运行事件。快照中的 `proxy_credential_revision` 与代理库 `credential_revision` 对齐，Runner 据此判定凭据是否变更并失败封闭 `proxy_credentials_changed`。**冻结修订取实际引用者**：绑定快照冻结的修订号取该快照实际引用的代理的当前修订，不是被改代理的修订；凭据变更后旧绑定版本重启仍按冻结修订校验、失败封闭，应用新版本后启动成功。
 
+## 集合查询与代理引用并集（t076）
+
+- **集合投影**：环境 / 代理 / 分组列表由服务端集合页提供（搜索、筛选、稳定排序、总数、有界分页）；`CollectionPage` 的 `total` 计全量筛选集，`page_size` 钳制 1..100。有界候选按名称检索，`limit` 钳制 1..50；国家→城市范围以后端聚合为准，键为稳定国家代码，聚合口径与集合筛选一致：每代理只取最新且仍有效的观测（过期 ok 行不计入），不聚历史行。
+- **代理引用并集**：一个代理的使用环境 = 当前配置引用 ∪ 运行绑定版本引用，按环境去重，每项标 `current` / `bound` / `both`；计数、明细、导航与删除保护用同一语义。仅被运行绑定版本占用的环境仍计入并阻止删除；运行绑定解除（运行行删除）后即释放。引用聚合一次取 3 条 SELECT，不随规模增长；不通过删除运行绑定引用减少查询。
+- **运行摘要**：`RuntimeSummaryEntry` 是列表渲染所需的运行状态投影（含启停/预览捕获时间与协调器错误），由 `GET /api/v1/profiles/runtime-summary` 一次聚合返回；SSE 事件带 `config_version` 围栏，旧版本/旧实例事件不得覆盖新实例。
+- **集合选择范围**：批量操作目标按稳定 ID 与明确目标快照确定；表头全选只选当前页（`toggleAll` 为当前页语义），不以 DOM 行号或当前页数组下标作为身份。
+
 ## 代理链接录入与出口观测（t052）
 
 - **链接为唯一录入**：`ProxyCreateRequest` / `ProxyUpdateRequest` 只接受 `proxy_url`（`extra="forbid"`，平铺字段与 `country_code` 一律 422）。四种格式：标准 URL `scheme://user:pass@host:port`、无协议 `host:port`（默认 http）、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单 http/https/socks5、IPv6 必须括号、端口 1..65535、密码 percent-decode 且非法转义报错；裸 IPv6 与三段无协议形式判 ambiguous。`ProxyResponse` 返回脱敏链接（不含密码）与派生只读字段（scheme/host/port/username），密码永不进响应。

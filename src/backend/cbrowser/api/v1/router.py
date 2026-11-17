@@ -27,6 +27,8 @@ from cbrowser.api.v1.runtime_views import (
 )
 from cbrowser.auth.dependencies import require_csrf_and_origin, require_user_session
 from cbrowser.domain.models import (
+    CandidateEntry,
+    CollectionPage,
     ConfigVersionResponse,
     ErrorResponse,
     ProfileConfig,
@@ -44,6 +46,8 @@ from cbrowser.domain.models import (
     RuntimeEventResponse,
     RuntimeInstanceBindRequest,
     RuntimeObservedReportRequest,
+    RuntimeSummaryEntry,
+    RuntimeSummaryResponse,
     ValidationErrorResponse,
 )
 from cbrowser.services.profile_service import (
@@ -201,6 +205,7 @@ async def subscribe_runtime_events(
                         desired_state=rt.desired_state,
                         observed_state=rt.observed_state,
                         runtime_instance_id=rt.runtime_instance_id,
+                        config_version=rt.config_version,
                         failure_count=rt.failure_count,
                         restart_blocked=rt.restart_blocked,
                         last_started_at=rt.last_started_at,
@@ -331,6 +336,98 @@ async def list_profiles(
 ):
     profiles = await service.list_profiles()
     return [ProfileResponse.from_domain(p) for p in profiles]
+
+
+@profile_router.get(
+    "/profiles/collection",
+    response_model=CollectionPage[ProfileResponse],
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "Database busy (retryable)",
+        },
+    },
+)
+async def list_profiles_collection(
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    search: Annotated[str | None, Query(max_length=255)] = None,
+    group_id: Annotated[str | None, Query()] = None,
+    proxy_id: Annotated[str | None, Query()] = None,
+    status: Annotated[str | None, Query(pattern="^(all|running|running_exact|stopped|error)$")] = None,
+    platform: Annotated[str | None, Query(pattern="^(all|windows|macos)$")] = None,
+    sort: Annotated[str, Query(pattern="^(default|manual|name|recent|created)$")] = "default",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=1000)] = 50,
+):
+    """t076 AC-001: bounded server-side profile page (search/filter/sort
+    run against the full set; page_size is clamped to 1..100)."""
+    return await service.list_profiles_page(
+        search=search,
+        group_id=group_id,
+        proxy_id=proxy_id,
+        status=status,
+        platform=platform,
+        sort=sort,
+        page=page,
+        page_size=page_size,
+    )
+
+
+@profile_router.get(
+    "/profiles/candidates",
+    response_model=list[CandidateEntry],
+)
+async def list_profile_candidates(
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+    search: Annotated[str, Query(max_length=255)] = "",
+    limit: Annotated[int, Query(ge=1, le=500)] = 20,
+):
+    """t076 AC-006: bounded name search over profiles."""
+    return await service.list_profile_candidates(search=search, limit=limit)
+
+
+@profile_router.get(
+    "/profiles/runtime-summary",
+    response_model=RuntimeSummaryResponse,
+)
+async def get_runtime_summary(
+    request: Request,
+    service: Annotated[ProfileService, Depends(get_profile_service)],
+):
+    """t076 AC-002: one batched read of every profile's runtime state.
+
+    List pages consume this single payload instead of issuing one
+    runtime HTTP request per profile.
+    """
+    runtimes = await service.list_runtimes()
+    coordinator = getattr(request.app.state, "coordinator", None)
+    entries = [
+        RuntimeSummaryEntry(
+            profile_id=rt.profile_id,
+            desired_state=rt.desired_state,
+            observed_state=rt.observed_state,
+            config_version=rt.config_version,
+            runtime_instance_id=rt.runtime_instance_id,
+            failure_count=rt.failure_count,
+            restart_blocked=rt.restart_blocked,
+            last_started_at=rt.last_started_at,
+            last_stopped_at=rt.last_stopped_at,
+            preview_captured_at=rt.preview_captured_at,
+            last_coordinator_error=(
+                coordinator.get_last_error(rt.profile_id, runtime=rt)
+                if coordinator is not None
+                else None
+            ),
+            updated_at=rt.updated_at,
+        )
+        for rt in runtimes
+    ]
+    return RuntimeSummaryResponse(
+        entries=entries,
+        running_count=sum(
+            1 for e in entries if e.observed_state == "running"
+        ),
+    )
 
 
 @profile_router.get(

@@ -120,12 +120,65 @@ function makeStub(
   profiles: ProfileResponse[],
   runtimes: Record<string, ProfileRuntimeResponse>,
 ): ApiClient {
+  const summary = {
+    entries: Object.values(runtimes).map((entry) => ({
+      profile_id: entry.profile_id,
+      desired_state: entry.desired_state,
+      observed_state: entry.observed_state,
+      config_version: entry.config_version,
+      runtime_instance_id: entry.runtime_instance_id,
+      failure_count: entry.failure_count,
+      restart_blocked: entry.restart_blocked,
+      last_started_at: entry.last_started_at ?? null,
+      last_stopped_at: entry.last_stopped_at ?? null,
+      preview_captured_at: null,
+      last_coordinator_error: entry.last_coordinator_error ?? null,
+      updated_at: entry.updated_at,
+    })),
+    running_count: Object.values(runtimes).filter(
+      (entry) => entry.observed_state === "running",
+    ).length,
+  };
   return {
     profiles: {
       list: vi.fn(async () => profiles),
+      // t076 review f006: the page reads the bounded collection page
+      // (server-filtered to running) instead of the whole table; the
+      // stub emulates the server status bucket and server paging.
+      // t076 review f008: status="running_exact" matches only
+      // observed running, and pages are offset server-side.
+      listCollection: vi.fn(async (params: Record<string, unknown>) => {
+        const bucket = (observed: string) =>
+          observed === "error"
+            ? "error"
+            : observed === "running" || observed === "starting"
+              ? "running"
+              : "stopped";
+        const observedOf = (item: ProfileResponse) =>
+          (runtimes[item.id] ?? runtime(item.id, "stopped")).observed_state;
+        const items =
+          params.status === "running_exact"
+            ? profiles.filter((item) => observedOf(item) === "running")
+            : params.status === "running"
+              ? profiles.filter(
+                  (item) => bucket(observedOf(item)) === "running",
+                )
+              : profiles;
+        const page = (params.page as number | undefined) ?? 1;
+        const pageSize = (params.page_size as number | undefined) ?? 100;
+        return {
+          items: items.slice((page - 1) * pageSize, page * pageSize),
+          total: items.length,
+          page,
+          page_size: pageSize,
+        };
+      }),
+      // t076 AC-002: the page reads the batched summary, never the
+      // per-profile endpoint; keep the stub for other consumers.
       getRuntime: vi.fn(
         async (id: string) => runtimes[id] ?? runtime(id, "stopped"),
       ),
+      getRuntimeSummary: vi.fn(async () => summary),
     },
   } as unknown as ApiClient;
 }
@@ -197,5 +250,88 @@ describe("SessionEntryPage", () => {
       en.sessEntryHint,
     );
     expect(screen.queryAllByTestId(SESS_ENTRY_LINK)).toHaveLength(0);
+  });
+
+  // t076 review f008: 105 truly-running environments plus 10
+  // starting ones fill the running bucket (115 rows) past one 100-row
+  // page. A page-1-only read of the bucket would show 90 running
+  // rows (the first 100 bucket rows hold 90 running + 10 starting);
+  // an exact-status read of page 1 only would show 100. All 105
+  // running rows must appear, and no starting row may.
+  it("lists every running environment when the running bucket exceeds one page", async () => {
+    const profiles: ProfileResponse[] = [];
+    const runtimes: Record<string, ProfileRuntimeResponse> = {};
+    for (let i = 0; i < 90; i++) {
+      const id = `p-run-${String(i).padStart(3, "0")}`;
+      profiles.push(profile({ id, name: `run-${i}` }));
+      runtimes[id] = runtime(id, "running");
+    }
+    for (let i = 0; i < 10; i++) {
+      const id = `p-start-${String(i).padStart(3, "0")}`;
+      profiles.push(profile({ id, name: `start-${i}` }));
+      runtimes[id] = runtime(id, "starting");
+    }
+    for (let i = 90; i < 105; i++) {
+      const id = `p-run-${String(i).padStart(3, "0")}`;
+      profiles.push(profile({ id, name: `run-${i}` }));
+      runtimes[id] = runtime(id, "running");
+    }
+    const client = makeStub(profiles, runtimes);
+    renderPage(client);
+
+    const links = await screen.findAllByTestId(SESS_ENTRY_LINK);
+    expect(links).toHaveLength(105);
+    expect(
+      links.some(
+        (link) => link.getAttribute("href") === "/session/p-run-104",
+      ),
+    ).toBe(true);
+    expect(screen.queryByText("start-0")).toBeNull();
+    const calls = vi.mocked(client.profiles.listCollection).mock.calls;
+    expect(calls.length).toBe(2);
+    expect(
+      calls.every(
+        (call) =>
+          (call[0] as Record<string, unknown>).status === "running_exact",
+      ),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) => (call[0] as Record<string, unknown>).page === 2,
+      ),
+    ).toBe(true);
+  });
+
+  // t076 review test f011: exactly one 100-row page of running
+  // environments — `page * page_size >= total` already holds on the
+  // first page, so the walk must stop after exactly 1 request (a
+  // `>`-instead-of-`>=` termination bug would fetch a second, empty
+  // page). All 100 rows must appear.
+  it("lists every running environment when the total is exactly one page", async () => {
+    const profiles: ProfileResponse[] = [];
+    const runtimes: Record<string, ProfileRuntimeResponse> = {};
+    for (let i = 0; i < 100; i++) {
+      const id = `p-run-${String(i).padStart(3, "0")}`;
+      profiles.push(profile({ id, name: `run-${i}` }));
+      runtimes[id] = runtime(id, "running");
+    }
+    const client = makeStub(profiles, runtimes);
+    renderPage(client);
+
+    const links = await screen.findAllByTestId(SESS_ENTRY_LINK);
+    expect(links).toHaveLength(100);
+    expect(
+      links.some(
+        (link) => link.getAttribute("href") === "/session/p-run-099",
+      ),
+    ).toBe(true);
+    const calls = vi.mocked(client.profiles.listCollection).mock.calls;
+    expect(calls.length).toBe(1);
+    expect(
+      calls.every(
+        (call) =>
+          (call[0] as Record<string, unknown>).status === "running_exact",
+      ),
+    ).toBe(true);
   });
 });
