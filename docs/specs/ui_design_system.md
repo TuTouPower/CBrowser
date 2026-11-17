@@ -2,7 +2,7 @@
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约、t059 交付的「设计系统门禁扩展：圆角一致性、颜色范围、对比度三类全覆盖与尺寸全面 token 化」契约，以及单用户极简界面重构契约（去除冗余副标题与内部 ID、左下角设置入口、折叠态点击应用图标展开、全表格图标化列表/卡片视图切换、数字输入框暗色模式适配）。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`、`docs/archive/tasks/t059_design_token_gates/task.md`。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。
+本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约、t059 交付的「设计系统门禁扩展：圆角一致性、颜色范围、对比度三类全覆盖与尺寸全面 token 化」契约，以及单用户极简界面重构契约（去除冗余副标题与内部 ID、左下角设置入口、折叠态点击应用图标展开、全表格图标化列表/卡片视图切换、数字输入框暗色模式适配）。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`、`docs/archive/tasks/t059_design_token_gates/task.md`。证据：正式 spike `docs/archive/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。
 
 ## 2. 行为契约
 

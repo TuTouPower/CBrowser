@@ -262,7 +262,7 @@
 
 ## 022 Selkies 升级至 2.2.1 与契约适配（2026-11-05，t043）
 
-- 背景：D10 要求 Selkies 升到当前最新 2.x；t034 已把运行时底座升到 Python 3.15 / trixie，但刻意把 Selkies 拆到 t043 以保留独立回退边界。正式 spike `docs/spikes/s012_selkies_2_2_upgrade_contract/report.md` 与 finding `docs/findings/d030_selkies_2_2_1_upgrade_contract.md` 以官方 wheel 源码逐项比对 2.1.0 → 2.2.1。
+- 背景：D10 要求 Selkies 升到当前最新 2.x；t034 已把运行时底座升到 Python 3.15 / trixie，但刻意把 Selkies 拆到 t043 以保留独立回退边界。正式 spike `docs/archive/spikes/s012_selkies_2_2_upgrade_contract/report.md` 与 finding `docs/findings/d030_selkies_2_2_1_upgrade_contract.md` 以官方 wheel 源码逐项比对 2.1.0 → 2.2.1。
 - 选项：升到 2.2.1；或发现不可适配破坏变化时停止报告用户并保留 2.1.0。
 - 结论：采用 2.2.1（PyPI 最新 2.x，METADATA 声明支持 Python 3.15）。比对结论：Python 模块清单相同；`webrtc_signaling_server.py` 的 HELLO / client_tab_id / resume_key / resume 语义不变；`_XTestKeyboard` 私有 ABI（4 方法签名、`_BIND_SETTLE_S`、6 个实例属性）AST 校验全部一致；Web 客户端 `selkies-core.js` 从 `src/` 移到根但协议字符串上下文逐字相同，`adapter.ts` 的 WebSocket hook 有效——**无不可适配的破坏性变化**。适配点：Web 客户端文件清单与 SHA 清单重生（2018 行）、index.html 新增 `__SELKIES_DEFER_INITIALIZATION` / modulepreload / 末尾 `selkies-core.js` module（vendor 注入 marker 改通用「首个 module tag」而非写死 2.1.0 bundle 名，IIFE adapter 仍在 head 首位）、pixelflux 2.2.3 / pcmflux 2.2.1 随 `uv.lock` 联动、`x11_keymap` 的 `SUPPORTED_SELKIES_VERSION=2.2.1` 版本门禁（ABI 校验本身不变）。ADR 002 / 013 的历史「2.1.0 固定」表述按 ADR 传播约定由本条更新现行文档面，历史条目原文不改。
 - 复查条件：后续 2.x 升级沿用同一 spike（协议字符串、私有 ABI AST、Web 客户端文件清单/注入顺序、原生依赖）与 Stream/会话 E2E 差异探针；任一不可适配变化按 t043 契约停止报告用户，不自行保留旧版。
@@ -437,7 +437,7 @@
 
 ## 034 Selkies 扩展改为受控构建包，删除运行时补丁与私有 ABI 门禁（2026-11-14，t063）
 
-- 背景：t022/t043 以来的现行实现靠三件运行时手段接入 Selkies 私有面：Stream Agent 启动时替换 `selkies.__main__.WebRTCService` 模块全局、动态子类并把 wrapper 焊到 `_XTestKeyboard` 私有方法上（`cbrowser.stream_agent.x11_keymap`）、启动期以 AST/`inspect.getsource` 校验私有 ABI 与实例属性清单并以 `SUPPORTED_SELKIES_VERSION` 硬编码锁版本。正式 spike `docs/spikes/s020_selkies_221_extension_points/report.md` 逐文件核查钉版 2.2.1 wheel 后确认：服务类在 `selkies/__main__.py` 的 `run()` 内硬编码构造、键盘在 name-mangled 私有方法内直接实例化，全包无 entry point/factory/settings 扩展钩子；许可证为 MPL-2.0，允许修改与再分发。
+- 背景：t022/t043 以来的现行实现靠三件运行时手段接入 Selkies 私有面：Stream Agent 启动时替换 `selkies.__main__.WebRTCService` 模块全局、动态子类并把 wrapper 焊到 `_XTestKeyboard` 私有方法上（`cbrowser.stream_agent.x11_keymap`）、启动期以 AST/`inspect.getsource` 校验私有 ABI 与实例属性清单并以 `SUPPORTED_SELKIES_VERSION` 硬编码锁版本。正式 spike `docs/archive/spikes/s020_selkies_221_extension_points/report.md` 逐文件核查钉版 2.2.1 wheel 后确认：服务类在 `selkies/__main__.py` 的 `run()` 内硬编码构造、键盘在 name-mangled 私有方法内直接实例化，全包无 entry point/factory/settings 扩展钩子；许可证为 MPL-2.0，允许修改与再分发。
 - 选项：① 继续运行时补丁＋ABI 门禁（拒绝：全局状态替换与上游源码扫描本身就是要消除的脆弱面）；② 完整上游源码 vendoring 进业务树（拒绝：升级与审计成本失控，契约明令不平铺）；③ 固定上游 wheel＋构建期最小显式补丁的受控包（本条采用）。
 - 结论：采用选项 3。
     - **受控包身份**：版本 `2.2.1+cbrowser.1`；身份清单 `config/selkies/selkies_controlled_build.json` 记录上游版本/文件名/SHA256/URL/许可证、补丁序列（`config/selkies/patches/` 两份：`__main__` 服务工厂钩子、`input_handler` 键盘三行为）及各自 SHA256 与目标、最终包 SHA256，并登记 Web 客户端清单哈希声明两端同源（客户端仍由 `scripts/vendor_selkies_web.py` 从同一钉版 wheel 抽取）。构建脚本 `scripts/build_selkies_controlled.py` 以精确上下文 unified diff 应用器（零 fuzz）打补丁、确定性重打包（固定时间戳/权限、RECORD 再生、包内 `selkies/cbrowser_build.json` 构建戳），同输入同字节；哈希或上下文任一漂移失败封闭。Stream 镜像在 builder 阶段构建受控包、校验安装戳后替换官方包。
@@ -469,7 +469,7 @@
     `argv`/`/proc` 可见）和 Browser 可读的 `proxy_credentials.json`；
     `docker_adapter.py` 除凭据 ro bind 外还挂整个 runtime 目录——ro 只防写
     不防读（来源审阅 p082）。spike s021 逐协议验证转发器可行（见
-    `docs/spikes/s021_proxy_auth_forwarder_topology/report.md`）。
+    `docs/archive/spikes/s021_proxy_auth_forwarder_topology/report.md`）。
 - 选项：① Browser 内多 UID 隔离（拒绝：同一容器内秘密仍可读，不满足
     「秘密不可读」）；② 凭据继续放 runtime 目录但改挂载为 tmpfs/只读
     （拒绝：只防写不防读，隔离失败的根因未动）；③ 每 Profile 一个独立

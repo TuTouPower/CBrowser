@@ -339,7 +339,7 @@ bash scripts/run_automation_probe.sh
 
 ## t041 指纹平台与平台字体集验收映射
 
-下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
+下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/archive/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
 
 |AC|行为|测试 / 证据|
 |---|---|---|
@@ -496,7 +496,7 @@ bash scripts/run_automation_probe.sh
 
 ## SDK 代理集成、隐私防护与有代理 DROP 封闭验证（p102 / s022）
 
-- 正式 spike `s022`（`docs/spikes/s022_proxy_sdk_privacy_egress/report.md`）在 macOS OrbStack Linux aarch64 隔离网络命名空间内以真实 `cloakbrowser==0.6.4` + `chromium-146.0.7680.177.3/chrome` 验证：`launch_persistent_context_async(proxy=...)` 统一支持带认证 `http://`、`https://`（TLS-to-proxy）、`socks5://`、`http://[fd00::]:port`（IPv6）及 `geoip=True` 同路路由，并沉淀为 `d046` / `d047` 与 ADR 038。
+- 正式 spike `s022`（`docs/archive/spikes/s022_proxy_sdk_privacy_egress/report.md`）在 macOS OrbStack Linux aarch64 隔离网络命名空间内以真实 `cloakbrowser==0.6.4` + `chromium-146.0.7680.177.3/chrome` 验证：`launch_persistent_context_async(proxy=...)` 统一支持带认证 `http://`、`https://`（TLS-to-proxy）、`socks5://`、`http://[fd00::]:port`（IPv6）及 `geoip=True` 同路路由，并沉淀为 `d046` / `d047` 与 ADR 038。
 - 回归覆盖：
     - **unit**（`tests/unit/test_egress_plan_and_runner_sdk.py`、`test_t035_proxy_runtime.py`、`test_network_policy.py`、`test_t052_supervisor_probe.py`）：统一规划 `ProfileEgressPlan` 在运行/Supervisor/探针三端一致性、`--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 参数注入、`proxy=` URL 规范化编码、失败封闭凭据校验、`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 规则渲染与 `SupervisorCore` 策略漂移 `fail_close_container` 触发。
     - **真实 Docker E2E**：`tests/e2e/test_browser_runtime_e2e.py::test_p102_authenticated_proxy_sdk_hardening_e2e`（真 HTTP Basic + 特殊字符密码及真 RFC 1929 SOCKS5 代理 + `BrowserRunner` CLI 旗标验证）、`tests/e2e/test_supervisor_namespace_policy_e2e.py::test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp`（真内核双栈 `proxy_enforced=True` 阻断 `1.1.1.1:80`、IPv6 越权与 STUN/DNS UDP 旁路 + `probe_egress_plan` 对齐）。
