@@ -307,6 +307,9 @@ def create_control_app(
             status=result["status"],  # type: ignore[arg-type]
             egress_ip=result.get("egress_ip"),
             country_code=result.get("country_code"),
+            country_name=result.get("country_name"),
+            city=result.get("city"),
+            latency_ms=result.get("latency_ms"),
             error_code=result.get("error_code"),
         )
 

@@ -2,6 +2,7 @@
 
 import secrets
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -86,3 +87,47 @@ def test_cdp_websocket_authenticates_before_accept(tmp_path):
             ):
                 pass
     assert excinfo.value.code == 4401
+
+
+@pytest.mark.asyncio
+async def test_probe_response_exposes_full_observation_fields(tmp_path):
+    token = secrets.token_urlsafe(32)
+    key = tmp_path / "key"
+    key.write_text(token)
+    key.chmod(0o600)
+    core = SimpleNamespace(
+        probe_proxy_egress=AsyncMock(
+            return_value={
+                "status": "ok",
+                "egress_ip": "203.0.113.7",
+                "country_code": "JP",
+                "country_name": "Japan",
+                "city": "Tokyo",
+                "latency_ms": 128,
+            }
+        )
+    )
+    app = create_control_app(core, key)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://supervisor"
+    ) as client:
+        response = await client.post(
+            "/supervisor/v1/proxies/px-1/probe",
+            headers={"Authorization": "Bearer " + token},
+            json={
+                "scheme": "http",
+                "host": "proxy.example.com",
+                "port": 8080,
+                "username": None,
+                "password": None,
+                "credential_revision": 1,
+                "endpoint_fingerprint": "0" * 64,
+            },
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["egress_ip"] == "203.0.113.7"
+    assert body["country_code"] == "JP"
+    assert body["country_name"] == "Japan"
+    assert body["city"] == "Tokyo"
+    assert body["latency_ms"] == 128
