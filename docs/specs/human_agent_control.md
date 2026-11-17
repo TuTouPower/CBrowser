@@ -1,3 +1,8 @@
+---
+slug: human_agent_control
+status: active
+tasks: [baseline]
+---
 # 真人优先的 Agent 控制权与安全交接（t031）
 
 来源：p029；承接 t030 AC-006 deferral 的常驻 Agent 分支与 setAutoAttach

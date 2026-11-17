@@ -12,3 +12,7 @@ docs/archive/tasks_index.json
 docs/**/handoff.json
 .opencode/package.json
 .opencode/package-lock.json
+
+# 同步自模板（repo-template-sync）：模板自有/本地生成路径不受消费仓 format 门禁约束；
+# /.repo_template/ 根锚定整目录归模板所有；目录外生成点（handoff.json / .opencode/package*.json）按需生成，不存在时仅为预留
+/.repo_template/

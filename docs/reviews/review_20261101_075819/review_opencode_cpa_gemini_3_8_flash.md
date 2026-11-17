@@ -359,145 +359,145 @@ ______________________________________________________________________
 |8|A|24|`config/docker/supervisor_runtime/Dockerfile`|已审|L1-L24 全量|包含 iptables 依赖，Docker SDK 与 FastAPI 运行基线|
 |9|A|8|`config/docker/supervisor_runtime/Dockerfile.dockerignore`|已审|L1-L8 全量|排除开发临时产物|
 |10|M|524|`docs/archive/handoff.md`|已审 (历史)|结构与历史追溯|保留历次阶段性交接归档，时间线完整|
-|11|A|5|`docs/archive/pending/p002_policy_failure_test_conditional_asserts.md`|已审 (归档)|L1-L5 全量|t005 闭环技术债：去除被 if 包裹的条件断言|
-|12|A|5|`docs/archive/pending/p003_api_supervisor_start_wiring.md`|已审 (归档)|L1-L5 全量|t007 闭环技术债：API Runtime Coordinator 驱动 Supervisor 启停|
-|13|A|5|`docs/archive/pending/p004_selkies_profile_tokens.md`|已审 (归档)|L1-L5 全量|t007 闭环技术债：Selkies Token 安全模式与代注入|
+|11|A|5|`docs/pending/p002_policy_failure_test_conditional_asserts.md`|已审 (归档)|L1-L5 全量|t005 闭环技术债：去除被 if 包裹的条件断言|
+|12|A|5|`docs/pending/p003_api_supervisor_start_wiring.md`|已审 (归档)|L1-L5 全量|t007 闭环技术债：API Runtime Coordinator 驱动 Supervisor 启停|
+|13|A|5|`docs/pending/p004_selkies_profile_tokens.md`|已审 (归档)|L1-L5 全量|t007 闭环技术债：Selkies Token 安全模式与代注入|
 |14|R100|35|`docs/archive/specs/chrome_external_tabs.md`|已审 (归档)|L1-L35 全量|废弃的外部标签栏 spec，移入 archive 符合规范|
-|15|A|45|`docs/archive/spikes/s001_selkies_runtime/blackbox_review.md`|已审 (归档)|L1-L45 全量|独立 Gemini 黑盒复查 s001 结果记录|
-|16|A|31|`docs/archive/spikes/s001_selkies_runtime/code/Dockerfile.spike-browser`|已审 (归档)|L1-L31 全量|s001 Browser 验证镜像 Dockerfile|
-|17|A|25|`docs/archive/spikes/s001_selkies_runtime/code/Dockerfile.spike-stream`|已审 (归档)|L1-L25 全量|s001 Stream 验证镜像 Dockerfile|
-|18|A|45|`docs/archive/spikes/s001_selkies_runtime/code/entry_browser_full.sh`|已审 (归档)|L1-L45 全量|s001 浏览器入口启动脚本|
-|19|A|24|`docs/archive/spikes/s001_selkies_runtime/code/gen_wav.py`|已审 (归档)|L1-L24 全量|音频测试正弦波生成脚本|
-|20|A|200|`docs/archive/spikes/s001_selkies_runtime/code/run_spike.sh`|已审 (归档)|L1-L200 全量|s001 双容器运行时执行脚本|
-|21|A|35|`docs/archive/spikes/s001_selkies_runtime/code/test_cloak_loop.py`|已审 (归档)|L1-L35 全量|浏览器常驻测试循环脚本|
-|22|A|65|`docs/archive/spikes/s001_selkies_runtime/code/test_mitshm.c`|已审 (归档)|L1-L65 全量|MIT-SHM C 语言共享内存探测代码|
-|23|A|45|`docs/archive/spikes/s001_selkies_runtime/first_review.md`|已审 (归档)|L1-L45 全量|s001 初版审查记录|
-|24|A|15|`docs/archive/spikes/s001_selkies_runtime/image_manifest.json`|已审 (归档)|L1-L15 全量|s001 基础镜像 SHA 清单|
-|25|A|65|`docs/archive/spikes/s001_selkies_runtime/report.md`|已审 (归档)|L1-L65 全量|s001 核心实验报告|
-|26|A|203|`docs/archive/spikes/s002_selkies_protocol/code/datachannel_restart_probe.py`|已审 (归档)|L1-L203 全量|s002 DataChannel 跨代连续性探针|
-|27|A|150|`docs/archive/spikes/s002_selkies_protocol/code/ice_restart_probe.py`|已审 (归档)|L1-L150 全量|s002 ICE restart 原生支持缺口探针|
-|28|A|189|`docs/archive/spikes/s002_selkies_protocol/code/turn_auth_probe.py`|已审 (归档)|L1-L189 全量|s002 coturn REST HMAC 探针|
-|29|A|203|`docs/archive/spikes/s002_selkies_protocol/report.md`|已审 (归档)|L1-L203 全量|s002 协议分析与缺口报告 (d003)|
-|30|A|45|`docs/archive/spikes/s003_selkies_control/blackbox_review.md`|已审 (归档)|L1-L45 全量|s003 独立黑盒审查记录|
-|31|A|85|`docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py`|已审 (归档)|L1-L85 全量|s003 容器 UDS Agent 原型|
-|32|A|95|`docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py`|已审 (归档)|L1-L95 全量|s003 容器 CDP 探针|
-|33|A|120|`docs/archive/spikes/s003_selkies_control/code/container_uds/run_cross_container.py`|已审 (归档)|L1-L120 全量|s003 跨容器 UDS 运行脚本|
-|34|A|75|`docs/archive/spikes/s003_selkies_control/code/container_uds/supervisor_client.py`|已审 (归档)|L1-L75 全量|s003 Supervisor 客户端原型|
-|35|A|80|`docs/archive/spikes/s003_selkies_control/code/container_uds/supervisor_override_control.py`|已审 (归档)|L1-L80 全量|s003 策略覆盖控制代码|
-|36|A|110|`docs/archive/spikes/s003_selkies_control/code/recovery_probe/container_agent.py`|已审 (归档)|L1-L110 全量|s003 恢复探针 Agent 进程|
-|37|A|95|`docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py`|已审 (归档)|L1-L95 全量|s003 恢复角色定义|
-|38|A|145|`docs/archive/spikes/s003_selkies_control/code/recovery_probe/test_orchestration.py`|已审 (归档)|L1-L145 全量|s003 真实进程恢复编排测试|
-|39|A|185|`docs/archive/spikes/s003_selkies_control/code/test_cdp_real.py`|已审 (归档)|L1-L185 全量|s003 真实 CDP 下载与自动恢复探针|
-|40|A|45|`docs/archive/spikes/s003_selkies_control/code_review.md`|已审 (归档)|L1-L45 全量|s003 代码评审记录|
-|41|A|65|`docs/archive/spikes/s003_selkies_control/container_download_report.md`|已审 (归档)|L1-L65 全量|s003 容器下载捕获报告|
-|42|A|45|`docs/archive/spikes/s003_selkies_control/container_download_review.md`|已审 (归档)|L1-L45 全量|s003 容器下载评审报告|
-|43|A|55|`docs/archive/spikes/s003_selkies_control/recovery_review.md`|已审 (归档)|L1-L55 全量|s003 进程恢复评审报告|
-|44|A|90|`docs/archive/spikes/s003_selkies_control/report.md`|已审 (归档)|L1-L90 全量|s003 核心实验报告|
-|45|A|45|`docs/archive/spikes/s004_media_connections/blackbox_review.md`|已审 (归档)|L1-L45 全量|s004 独立黑盒审查记录|
-|46|A|45|`docs/archive/spikes/s004_media_connections/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s004 Browser 容器入口|
-|47|A|40|`docs/archive/spikes/s004_media_connections/code/entrypoint_stream.sh`|已审 (归档)|L1-L40 全量|s004 Stream 容器入口|
-|48|A|280|`docs/archive/spikes/s004_media_connections/code/media_e2e_probe.py`|已审 (归档)|L1-L280 全量|s004 多页面媒体并发探针|
-|49|A|55|`docs/archive/spikes/s004_media_connections/code/start_containers.sh`|已审 (归档)|L1-L55 全量|s004 启动容器脚本|
-|50|A|20|`docs/archive/spikes/s004_media_connections/code/stop_containers.sh`|已审 (归档)|L1-L20 全量|s004 停止容器脚本|
-|51|A|68|`docs/archive/spikes/s004_media_connections/report.md`|已审 (归档)|L1-L68 全量|s004 核心实验报告 (d007)|
-|52|A|45|`docs/archive/spikes/s005_capture_policy/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s005 Browser 入口|
-|53|A|65|`docs/archive/spikes/s005_capture_policy/code/entrypoint_stream.py`|已审 (归档)|L1-L65 全量|s005 Stream 入口|
-|54|A|185|`docs/archive/spikes/s005_capture_policy/code/live_policy_agent.py`|已审 (归档)|L1-L185 全量|s005 自适应帧率仲裁器原型|
-|55|A|195|`docs/archive/spikes/s005_capture_policy/code/native_visibility_e2e.py`|已审 (归档)|L1-L195 全量|s005 原生可见性 E2E 探针|
-|56|A|160|`docs/archive/spikes/s005_capture_policy/code/revision_03/test_e2e_real_pipeline.py`|已审 (归档)|L1-L160 全量|s005 旧版管线测试快照 (退役)|
-|57|A|210|`docs/archive/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py`|已审 (归档)|L1-L210 全量|s005 真实管线测试|
-|58|A|35|`docs/archive/spikes/s005_capture_policy/code/test_page.html`|已审 (归档)|L1-L35 全量|s005 动画与输入测试页面|
-|59|A|55|`docs/archive/spikes/s005_capture_policy/independent_review.md`|已审 (归档)|L1-L55 全量|s005 初审记录|
-|60|A|65|`docs/archive/spikes/s005_capture_policy/independent_review_r4.md`|已审 (归档)|L1-L65 全量|s005 R4 终审记录|
-|61|A|55|`docs/archive/spikes/s005_capture_policy/report.md`|已审 (归档)|L1-L55 全量|s005 核心实验报告 (d013)|
-|62|A|75|`docs/archive/spikes/s005_capture_policy/report_v1.md`|已审 (归档)|L1-L75 全量|s005 初版报告快照|
-|63|A|45|`docs/archive/spikes/s006_gateway_media_recovery/code/media_fixture/entry_browser_full.sh`|已审 (归档)|L1-L45 全量|s006 浏览器夹具入口|
-|64|A|24|`docs/archive/spikes/s006_gateway_media_recovery/code/media_fixture/gen_wav.py`|已审 (归档)|L1-L24 全量|s006 音频夹具生成|
-|65|A|35|`docs/archive/spikes/s006_gateway_media_recovery/code/media_fixture/test_cloak_loop.py`|已审 (归档)|L1-L35 全量|s006 循环测试脚本|
-|66|A|195|`docs/archive/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py`|已审 (归档)|L1-L195 全量|s006 网关核心原型|
-|67|A|145|`docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_agent_client.py`|已审 (归档)|L1-L145 全量|s006 Agent 客户端原型|
-|68|A|110|`docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py`|已审 (归档)|L1-L110 全量|s006 网关服务端原型|
-|69|A|230|`docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py`|已审 (归档)|L1-L230 全量|s006 验证主执行脚本|
-|70|A|55|`docs/archive/spikes/s006_gateway_media_recovery/independent_review.md`|已审 (归档)|L1-L55 全量|s006 独立评审记录|
-|71|A|64|`docs/archive/spikes/s006_gateway_media_recovery/report.md`|已审 (归档)|L1-L64 全量|s006 核心实验报告 (d008)|
-|72|A|35|`docs/archive/spikes/s007_profile_isolation/code/Dockerfile.isolation-browser`|已审 (归档)|L1-L35 全量|s007 隔离 Browser 镜像 Dockerfile|
-|73|A|30|`docs/archive/spikes/s007_profile_isolation/code/Dockerfile.isolation-stream`|已审 (归档)|L1-L30 全量|s007 隔离 Stream 镜像 Dockerfile|
-|74|A|340|`docs/archive/spikes/s007_profile_isolation/code/audio_analyzer.py`|已审 (归档)|L1-L340 全量|s007 音频分析工具代码|
-|75|A|145|`docs/archive/spikes/s007_profile_isolation/code/browser_runner.py`|已审 (归档)|L1-L145 全量|s007 浏览器运行器原型|
-|76|A|45|`docs/archive/spikes/s007_profile_isolation/code/entry_browser.sh`|已审 (归档)|L1-L45 全量|s007 Browser 容器入口|
-|77|A|45|`docs/archive/spikes/s007_profile_isolation/code/entry_stream.sh`|已审 (归档)|L1-L45 全量|s007 Stream 容器入口|
-|78|A|65|`docs/archive/spikes/s007_profile_isolation/code/fixture/test_mitshm.c`|已审 (归档)|L1-L65 全量|s007 MIT-SHM 测试 C 源码|
-|79|A|210|`docs/archive/spikes/s007_profile_isolation/code/run_isolation_probe.py`|已审 (归档)|L1-L210 全量|s007 隔离探针执行脚本|
-|80|A|120|`docs/archive/spikes/s007_profile_isolation/code/test_cross_ipc.py`|已审 (归档)|L1-L120 全量|s007 跨 IPC 测试脚本|
-|81|A|65|`docs/archive/spikes/s007_profile_isolation/independent_review_final.md`|已审 (归档)|L1-L65 全量|s007 终审报告|
-|82|A|55|`docs/archive/spikes/s007_profile_isolation/independent_review_r3.md`|已审 (归档)|L1-L55 全量|s007 R3 评审报告|
-|83|A|55|`docs/archive/spikes/s007_profile_isolation/independent_review_r4.md`|已审 (归档)|L1-L55 全量|s007 R4 评审报告|
-|84|A|51|`docs/archive/spikes/s007_profile_isolation/report.md`|已审 (归档)|L1-L51 全量|s007 核心实验报告 (d011)|
-|85|A|45|`docs/archive/spikes/s008_turn_generation_media/code/media_fixture/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s008 Browser 入口|
-|86|A|25|`docs/archive/spikes/s008_turn_generation_media/code/probe_work/cleanup.sh`|已审 (归档)|L1-L25 全量|s008 清理脚本|
-|87|A|45|`docs/archive/spikes/s008_turn_generation_media/code/probe_work/start_coturn.sh`|已审 (归档)|L1-L45 全量|s008 启动 coturn 脚本|
-|88|A|195|`docs/archive/spikes/s008_turn_generation_media/code/stage2_adapter.py`|已审 (归档)|L1-L195 全量|s008 阶段二适配器|
-|89|A|165|`docs/archive/spikes/s008_turn_generation_media/code/stage2_adversarial_probe.py`|已审 (归档)|L1-L165 全量|s008 对抗性注入探针|
-|90|A|55|`docs/archive/spikes/s008_turn_generation_media/code/stage2_containers.sh`|已审 (归档)|L1-L55 全量|s008 容器启动脚本|
-|91|A|240|`docs/archive/spikes/s008_turn_generation_media/code/stage2_media_restart_probe.py`|已审 (归档)|L1-L240 全量|s008 媒体重启探针|
-|92|A|45|`docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_entrypoint.sh`|已审 (归档)|L1-L45 全量|s008 Stream 入口|
-|93|A|110|`docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_runner.py`|已审 (归档)|L1-L110 全量|s008 Stream 运行器|
-|94|A|45|`docs/archive/spikes/s008_turn_generation_media/independent_review_failed.md`|已审 (归档)|L1-L45 全量|s008 失败负例审查报告|
-|95|A|65|`docs/archive/spikes/s008_turn_generation_media/independent_review_final.md`|已审 (归档)|L1-L65 全量|s008 终审报告|
-|96|A|55|`docs/archive/spikes/s008_turn_generation_media/independent_review_generation.md`|已审 (归档)|L1-L55 全量|s008 换代机制评审|
-|97|A|55|`docs/archive/spikes/s008_turn_generation_media/independent_review_split.md`|已审 (归档)|L1-L55 全量|s008 拓扑拆分评审|
-|98|A|68|`docs/archive/spikes/s008_turn_generation_media/report.md`|已审 (归档)|L1-L68 全量|s008 核心实验报告 (d012)|
-|99|A|65|`docs/archive/spikes/s008_turn_generation_media/report_same_url.md`|已审 (归档)|L1-L65 全量|s008 同 URL 实验报告快照|
-|100|A|45|`docs/archive/spikes/s009_native_ime_input/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s009 Browser 入口|
-|101|A|40|`docs/archive/spikes/s009_native_ime_input/code/entrypoint_stream.sh`|已审 (归档)|L1-L40 全量|s009 Stream 入口|
-|102|A|95|`docs/archive/spikes/s009_native_ime_input/code/extra_harness.py`|已审 (归档)|L1-L95 全量|s009 额外测试框架|
-|103|A|185|`docs/archive/spikes/s009_native_ime_input/code/ime_native_probe.py`|已审 (归档)|L1-L185 全量|s009 原生 IME 探针|
-|104|A|110|`docs/archive/spikes/s009_native_ime_input/code/investigate_compositionend.py`|已审 (归档)|L1-L110 全量|s009 compositionend 事件调查|
-|105|A|55|`docs/archive/spikes/s009_native_ime_input/code/start_containers.sh`|已审 (归档)|L1-L55 全量|s009 启动容器脚本|
-|106|A|20|`docs/archive/spikes/s009_native_ime_input/code/stop_containers.sh`|已审 (归档)|L1-L20 全量|s009 停止容器脚本|
-|107|A|75|`docs/archive/spikes/s009_native_ime_input/code/test_blank_cdp.py`|已审 (归档)|L1-L75 全量|s009 空白页 CDP 测试|
-|108|A|130|`docs/archive/spikes/s009_native_ime_input/code/verify_extra_harness.py`|已审 (归档)|L1-L130 全量|s009 验证额外框架脚本|
-|109|A|55|`docs/archive/spikes/s009_native_ime_input/independent_review.md`|已审 (归档)|L1-L55 全量|s009 独立评审记录|
-|110|A|57|`docs/archive/spikes/s009_native_ime_input/report.md`|已审 (归档)|L1-L57 全量|s009 核心实验报告 (d014)|
-|111|A|165|`docs/archive/spikes/s010_cloakbrowser_exit_observation/code/probe.py`|已审 (归档)|L1-L165 全量|s010 退出状态与子进程观测探针|
-|112|A|57|`docs/archive/spikes/s010_cloakbrowser_exit_observation/report.md`|已审 (归档)|L1-L57 全量|s010 核心实验报告 (d016)|
-|113|A|15|`docs/archive/tasks/t001_v2_runtime_validation/handoff.json`|已审 (归档)|L1-L15 全量|t001 交接元数据|
-|114|A|174|`docs/archive/tasks/t001_v2_runtime_validation/note.md`|已审 (归档)|L1-L174 全量|t001 实施过程全账|
-|115|A|85|`docs/archive/tasks/t001_v2_runtime_validation/review_code.md`|已审 (归档)|L1-L85 全量|t001 代码评审报告|
-|116|A|95|`docs/archive/tasks/t001_v2_runtime_validation/review_test.md`|已审 (归档)|L1-L95 全量|t001 测试评审报告|
-|117|A|45|`docs/archive/tasks/t001_v2_runtime_validation/scope_adjustment.md`|已审 (归档)|L1-L45 全量|t001 范围调整记录（豁免公网与原生 x86）|
-|118|A|82|`docs/archive/tasks/t001_v2_runtime_validation/task.md`|已审 (归档)|L1-L82 全量|t001 任务书规范|
-|119|A|65|`docs/archive/tasks/t001_v2_runtime_validation/validation_matrix.md`|已审 (归档)|L1-L65 全量|t001 验证矩阵核对|
-|120|A|15|`docs/archive/tasks/t002_v2_backend_foundation/handoff.json`|已审 (归档)|L1-L15 全量|t002 交接元数据|
-|121|A|172|`docs/archive/tasks/t002_v2_backend_foundation/note.md`|已审 (归档)|L1-L172 全量|t002 实施过程全账|
-|122|A|95|`docs/archive/tasks/t002_v2_backend_foundation/review_code.md`|已审 (归档)|L1-L95 全量|t002 代码评审报告|
-|123|A|110|`docs/archive/tasks/t002_v2_backend_foundation/review_test.md`|已审 (归档)|L1-L110 全量|t002 测试评审报告|
-|124|A|80|`docs/archive/tasks/t002_v2_backend_foundation/task.md`|已审 (归档)|L1-L80 全量|t002 任务书规范|
-|125|A|15|`docs/archive/tasks/t003_v2_browser_runtime/handoff.json`|已审 (归档)|L1-L15 全量|t003 交接元数据|
-|126|A|97|`docs/archive/tasks/t003_v2_browser_runtime/note.md`|已审 (归档)|L1-L97 全量|t003 实施过程全账|
-|127|A|95|`docs/archive/tasks/t003_v2_browser_runtime/review_code.md`|已审 (归档)|L1-L95 全量|t003 代码评审报告|
-|128|A|115|`docs/archive/tasks/t003_v2_browser_runtime/review_test.md`|已审 (归档)|L1-L115 全量|t003 测试评审报告|
-|129|A|76|`docs/archive/tasks/t003_v2_browser_runtime/task.md`|已审 (归档)|L1-L76 全量|t003 任务书规范|
-|130|A|15|`docs/archive/tasks/t004_v2_stream_runtime/handoff.json`|已审 (归档)|L1-L15 全量|t004 交接元数据|
-|131|A|155|`docs/archive/tasks/t004_v2_stream_runtime/note.md`|已审 (归档)|L1-L155 全量|t004 实施过程全账|
-|132|A|110|`docs/archive/tasks/t004_v2_stream_runtime/review_code.md`|已审 (归档)|L1-L110 全量|t004 代码评审报告|
-|133|A|120|`docs/archive/tasks/t004_v2_stream_runtime/review_test.md`|已审 (归档)|L1-L120 全量|t004 测试评审报告|
-|134|A|77|`docs/archive/tasks/t004_v2_stream_runtime/task.md`|已审 (归档)|L1-L77 全量|t004 任务书规范|
-|135|A|15|`docs/archive/tasks/t005_v2_supervisor/handoff.json`|已审 (归档)|L1-L15 全量|t005 交接元数据|
-|136|A|158|`docs/archive/tasks/t005_v2_supervisor/note.md`|已审 (归档)|L1-L158 全量|t005 实施过程全账|
-|137|A|115|`docs/archive/tasks/t005_v2_supervisor/review_code.md`|已审 (归档)|L1-L115 全量|t005 代码评审报告|
-|138|A|125|`docs/archive/tasks/t005_v2_supervisor/review_test.md`|已审 (归档)|L1-L125 全量|t005 测试评审报告|
-|139|A|84|`docs/archive/tasks/t005_v2_supervisor/task.md`|已审 (归档)|L1-L84 全量|t005 任务书规范|
-|140|A|15|`docs/archive/tasks/t006_v2_gateway_auth_rtc/handoff.json`|已审 (归档)|L1-L15 全量|t006 交接元数据|
-|141|A|162|`docs/archive/tasks/t006_v2_gateway_auth_rtc/note.md`|已审 (归档)|L1-L162 全量|t006 实施过程全账|
-|142|A|120|`docs/archive/tasks/t006_v2_gateway_auth_rtc/review_code.md`|已审 (归档)|L1-L120 全量|t006 代码评审报告|
-|143|A|130|`docs/archive/tasks/t006_v2_gateway_auth_rtc/review_test.md`|已审 (归档)|L1-L130 全量|t006 测试评审报告|
-|144|A|82|`docs/archive/tasks/t006_v2_gateway_auth_rtc/task.md`|已审 (归档)|L1-L82 全量|t006 任务书规范|
-|145|A|15|`docs/archive/tasks/t007_v2_frontend_sessions/handoff.json`|已审 (归档)|L1-L15 全量|t007 交接元数据|
-|146|A|162|`docs/archive/tasks/t007_v2_frontend_sessions/note.md`|已审 (归档)|L1-L162 全量|t007 实施过程全账|
-|147|A|135|`docs/archive/tasks/t007_v2_frontend_sessions/review_code.md`|已审 (归档)|L1-L135 全量|t007 代码评审报告|
-|148|A|145|`docs/archive/tasks/t007_v2_frontend_sessions/review_test.md`|已审 (归档)|L1-L145 全量|t007 测试评审报告|
-|149|A|92|`docs/archive/tasks/t007_v2_frontend_sessions/task.md`|已审 (归档)|L1-L92 全量|t007 任务书规范|
+|15|A|45|`docs/spikes/s001_selkies_runtime/blackbox_review.md`|已审 (归档)|L1-L45 全量|独立 Gemini 黑盒复查 s001 结果记录|
+|16|A|31|`docs/spikes/s001_selkies_runtime/code/Dockerfile.spike-browser`|已审 (归档)|L1-L31 全量|s001 Browser 验证镜像 Dockerfile|
+|17|A|25|`docs/spikes/s001_selkies_runtime/code/Dockerfile.spike-stream`|已审 (归档)|L1-L25 全量|s001 Stream 验证镜像 Dockerfile|
+|18|A|45|`docs/spikes/s001_selkies_runtime/code/entry_browser_full.sh`|已审 (归档)|L1-L45 全量|s001 浏览器入口启动脚本|
+|19|A|24|`docs/spikes/s001_selkies_runtime/code/gen_wav.py`|已审 (归档)|L1-L24 全量|音频测试正弦波生成脚本|
+|20|A|200|`docs/spikes/s001_selkies_runtime/code/run_spike.sh`|已审 (归档)|L1-L200 全量|s001 双容器运行时执行脚本|
+|21|A|35|`docs/spikes/s001_selkies_runtime/code/test_cloak_loop.py`|已审 (归档)|L1-L35 全量|浏览器常驻测试循环脚本|
+|22|A|65|`docs/spikes/s001_selkies_runtime/code/test_mitshm.c`|已审 (归档)|L1-L65 全量|MIT-SHM C 语言共享内存探测代码|
+|23|A|45|`docs/spikes/s001_selkies_runtime/first_review.md`|已审 (归档)|L1-L45 全量|s001 初版审查记录|
+|24|A|15|`docs/spikes/s001_selkies_runtime/image_manifest.json`|已审 (归档)|L1-L15 全量|s001 基础镜像 SHA 清单|
+|25|A|65|`docs/spikes/s001_selkies_runtime/report.md`|已审 (归档)|L1-L65 全量|s001 核心实验报告|
+|26|A|203|`docs/spikes/s002_selkies_protocol/code/datachannel_restart_probe.py`|已审 (归档)|L1-L203 全量|s002 DataChannel 跨代连续性探针|
+|27|A|150|`docs/spikes/s002_selkies_protocol/code/ice_restart_probe.py`|已审 (归档)|L1-L150 全量|s002 ICE restart 原生支持缺口探针|
+|28|A|189|`docs/spikes/s002_selkies_protocol/code/turn_auth_probe.py`|已审 (归档)|L1-L189 全量|s002 coturn REST HMAC 探针|
+|29|A|203|`docs/spikes/s002_selkies_protocol/report.md`|已审 (归档)|L1-L203 全量|s002 协议分析与缺口报告 (d003)|
+|30|A|45|`docs/spikes/s003_selkies_control/blackbox_review.md`|已审 (归档)|L1-L45 全量|s003 独立黑盒审查记录|
+|31|A|85|`docs/spikes/s003_selkies_control/code/container_uds/browser_agent.py`|已审 (归档)|L1-L85 全量|s003 容器 UDS Agent 原型|
+|32|A|95|`docs/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py`|已审 (归档)|L1-L95 全量|s003 容器 CDP 探针|
+|33|A|120|`docs/spikes/s003_selkies_control/code/container_uds/run_cross_container.py`|已审 (归档)|L1-L120 全量|s003 跨容器 UDS 运行脚本|
+|34|A|75|`docs/spikes/s003_selkies_control/code/container_uds/supervisor_client.py`|已审 (归档)|L1-L75 全量|s003 Supervisor 客户端原型|
+|35|A|80|`docs/spikes/s003_selkies_control/code/container_uds/supervisor_override_control.py`|已审 (归档)|L1-L80 全量|s003 策略覆盖控制代码|
+|36|A|110|`docs/spikes/s003_selkies_control/code/recovery_probe/container_agent.py`|已审 (归档)|L1-L110 全量|s003 恢复探针 Agent 进程|
+|37|A|95|`docs/spikes/s003_selkies_control/code/recovery_probe/roles.py`|已审 (归档)|L1-L95 全量|s003 恢复角色定义|
+|38|A|145|`docs/spikes/s003_selkies_control/code/recovery_probe/test_orchestration.py`|已审 (归档)|L1-L145 全量|s003 真实进程恢复编排测试|
+|39|A|185|`docs/spikes/s003_selkies_control/code/test_cdp_real.py`|已审 (归档)|L1-L185 全量|s003 真实 CDP 下载与自动恢复探针|
+|40|A|45|`docs/spikes/s003_selkies_control/code_review.md`|已审 (归档)|L1-L45 全量|s003 代码评审记录|
+|41|A|65|`docs/spikes/s003_selkies_control/container_download_report.md`|已审 (归档)|L1-L65 全量|s003 容器下载捕获报告|
+|42|A|45|`docs/spikes/s003_selkies_control/container_download_review.md`|已审 (归档)|L1-L45 全量|s003 容器下载评审报告|
+|43|A|55|`docs/spikes/s003_selkies_control/recovery_review.md`|已审 (归档)|L1-L55 全量|s003 进程恢复评审报告|
+|44|A|90|`docs/spikes/s003_selkies_control/report.md`|已审 (归档)|L1-L90 全量|s003 核心实验报告|
+|45|A|45|`docs/spikes/s004_media_connections/blackbox_review.md`|已审 (归档)|L1-L45 全量|s004 独立黑盒审查记录|
+|46|A|45|`docs/spikes/s004_media_connections/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s004 Browser 容器入口|
+|47|A|40|`docs/spikes/s004_media_connections/code/entrypoint_stream.sh`|已审 (归档)|L1-L40 全量|s004 Stream 容器入口|
+|48|A|280|`docs/spikes/s004_media_connections/code/media_e2e_probe.py`|已审 (归档)|L1-L280 全量|s004 多页面媒体并发探针|
+|49|A|55|`docs/spikes/s004_media_connections/code/start_containers.sh`|已审 (归档)|L1-L55 全量|s004 启动容器脚本|
+|50|A|20|`docs/spikes/s004_media_connections/code/stop_containers.sh`|已审 (归档)|L1-L20 全量|s004 停止容器脚本|
+|51|A|68|`docs/spikes/s004_media_connections/report.md`|已审 (归档)|L1-L68 全量|s004 核心实验报告 (d007)|
+|52|A|45|`docs/spikes/s005_capture_policy/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s005 Browser 入口|
+|53|A|65|`docs/spikes/s005_capture_policy/code/entrypoint_stream.py`|已审 (归档)|L1-L65 全量|s005 Stream 入口|
+|54|A|185|`docs/spikes/s005_capture_policy/code/live_policy_agent.py`|已审 (归档)|L1-L185 全量|s005 自适应帧率仲裁器原型|
+|55|A|195|`docs/spikes/s005_capture_policy/code/native_visibility_e2e.py`|已审 (归档)|L1-L195 全量|s005 原生可见性 E2E 探针|
+|56|A|160|`docs/spikes/s005_capture_policy/code/revision_03/test_e2e_real_pipeline.py`|已审 (归档)|L1-L160 全量|s005 旧版管线测试快照 (退役)|
+|57|A|210|`docs/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py`|已审 (归档)|L1-L210 全量|s005 真实管线测试|
+|58|A|35|`docs/spikes/s005_capture_policy/code/test_page.html`|已审 (归档)|L1-L35 全量|s005 动画与输入测试页面|
+|59|A|55|`docs/spikes/s005_capture_policy/independent_review.md`|已审 (归档)|L1-L55 全量|s005 初审记录|
+|60|A|65|`docs/spikes/s005_capture_policy/independent_review_r4.md`|已审 (归档)|L1-L65 全量|s005 R4 终审记录|
+|61|A|55|`docs/spikes/s005_capture_policy/report.md`|已审 (归档)|L1-L55 全量|s005 核心实验报告 (d013)|
+|62|A|75|`docs/spikes/s005_capture_policy/report_v1.md`|已审 (归档)|L1-L75 全量|s005 初版报告快照|
+|63|A|45|`docs/spikes/s006_gateway_media_recovery/code/media_fixture/entry_browser_full.sh`|已审 (归档)|L1-L45 全量|s006 浏览器夹具入口|
+|64|A|24|`docs/spikes/s006_gateway_media_recovery/code/media_fixture/gen_wav.py`|已审 (归档)|L1-L24 全量|s006 音频夹具生成|
+|65|A|35|`docs/spikes/s006_gateway_media_recovery/code/media_fixture/test_cloak_loop.py`|已审 (归档)|L1-L35 全量|s006 循环测试脚本|
+|66|A|195|`docs/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py`|已审 (归档)|L1-L195 全量|s006 网关核心原型|
+|67|A|145|`docs/spikes/s006_gateway_media_recovery/code/probe/run_agent_client.py`|已审 (归档)|L1-L145 全量|s006 Agent 客户端原型|
+|68|A|110|`docs/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py`|已审 (归档)|L1-L110 全量|s006 网关服务端原型|
+|69|A|230|`docs/spikes/s006_gateway_media_recovery/code/probe/run_verification.py`|已审 (归档)|L1-L230 全量|s006 验证主执行脚本|
+|70|A|55|`docs/spikes/s006_gateway_media_recovery/independent_review.md`|已审 (归档)|L1-L55 全量|s006 独立评审记录|
+|71|A|64|`docs/spikes/s006_gateway_media_recovery/report.md`|已审 (归档)|L1-L64 全量|s006 核心实验报告 (d008)|
+|72|A|35|`docs/spikes/s007_profile_isolation/code/Dockerfile.isolation-browser`|已审 (归档)|L1-L35 全量|s007 隔离 Browser 镜像 Dockerfile|
+|73|A|30|`docs/spikes/s007_profile_isolation/code/Dockerfile.isolation-stream`|已审 (归档)|L1-L30 全量|s007 隔离 Stream 镜像 Dockerfile|
+|74|A|340|`docs/spikes/s007_profile_isolation/code/audio_analyzer.py`|已审 (归档)|L1-L340 全量|s007 音频分析工具代码|
+|75|A|145|`docs/spikes/s007_profile_isolation/code/browser_runner.py`|已审 (归档)|L1-L145 全量|s007 浏览器运行器原型|
+|76|A|45|`docs/spikes/s007_profile_isolation/code/entry_browser.sh`|已审 (归档)|L1-L45 全量|s007 Browser 容器入口|
+|77|A|45|`docs/spikes/s007_profile_isolation/code/entry_stream.sh`|已审 (归档)|L1-L45 全量|s007 Stream 容器入口|
+|78|A|65|`docs/spikes/s007_profile_isolation/code/fixture/test_mitshm.c`|已审 (归档)|L1-L65 全量|s007 MIT-SHM 测试 C 源码|
+|79|A|210|`docs/spikes/s007_profile_isolation/code/run_isolation_probe.py`|已审 (归档)|L1-L210 全量|s007 隔离探针执行脚本|
+|80|A|120|`docs/spikes/s007_profile_isolation/code/test_cross_ipc.py`|已审 (归档)|L1-L120 全量|s007 跨 IPC 测试脚本|
+|81|A|65|`docs/spikes/s007_profile_isolation/independent_review_final.md`|已审 (归档)|L1-L65 全量|s007 终审报告|
+|82|A|55|`docs/spikes/s007_profile_isolation/independent_review_r3.md`|已审 (归档)|L1-L55 全量|s007 R3 评审报告|
+|83|A|55|`docs/spikes/s007_profile_isolation/independent_review_r4.md`|已审 (归档)|L1-L55 全量|s007 R4 评审报告|
+|84|A|51|`docs/spikes/s007_profile_isolation/report.md`|已审 (归档)|L1-L51 全量|s007 核心实验报告 (d011)|
+|85|A|45|`docs/spikes/s008_turn_generation_media/code/media_fixture/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s008 Browser 入口|
+|86|A|25|`docs/spikes/s008_turn_generation_media/code/probe_work/cleanup.sh`|已审 (归档)|L1-L25 全量|s008 清理脚本|
+|87|A|45|`docs/spikes/s008_turn_generation_media/code/probe_work/start_coturn.sh`|已审 (归档)|L1-L45 全量|s008 启动 coturn 脚本|
+|88|A|195|`docs/spikes/s008_turn_generation_media/code/stage2_adapter.py`|已审 (归档)|L1-L195 全量|s008 阶段二适配器|
+|89|A|165|`docs/spikes/s008_turn_generation_media/code/stage2_adversarial_probe.py`|已审 (归档)|L1-L165 全量|s008 对抗性注入探针|
+|90|A|55|`docs/spikes/s008_turn_generation_media/code/stage2_containers.sh`|已审 (归档)|L1-L55 全量|s008 容器启动脚本|
+|91|A|240|`docs/spikes/s008_turn_generation_media/code/stage2_media_restart_probe.py`|已审 (归档)|L1-L240 全量|s008 媒体重启探针|
+|92|A|45|`docs/spikes/s008_turn_generation_media/code/stage2_stream_entrypoint.sh`|已审 (归档)|L1-L45 全量|s008 Stream 入口|
+|93|A|110|`docs/spikes/s008_turn_generation_media/code/stage2_stream_runner.py`|已审 (归档)|L1-L110 全量|s008 Stream 运行器|
+|94|A|45|`docs/spikes/s008_turn_generation_media/independent_review_failed.md`|已审 (归档)|L1-L45 全量|s008 失败负例审查报告|
+|95|A|65|`docs/spikes/s008_turn_generation_media/independent_review_final.md`|已审 (归档)|L1-L65 全量|s008 终审报告|
+|96|A|55|`docs/spikes/s008_turn_generation_media/independent_review_generation.md`|已审 (归档)|L1-L55 全量|s008 换代机制评审|
+|97|A|55|`docs/spikes/s008_turn_generation_media/independent_review_split.md`|已审 (归档)|L1-L55 全量|s008 拓扑拆分评审|
+|98|A|68|`docs/spikes/s008_turn_generation_media/report.md`|已审 (归档)|L1-L68 全量|s008 核心实验报告 (d012)|
+|99|A|65|`docs/spikes/s008_turn_generation_media/report_same_url.md`|已审 (归档)|L1-L65 全量|s008 同 URL 实验报告快照|
+|100|A|45|`docs/spikes/s009_native_ime_input/code/entrypoint_browser.sh`|已审 (归档)|L1-L45 全量|s009 Browser 入口|
+|101|A|40|`docs/spikes/s009_native_ime_input/code/entrypoint_stream.sh`|已审 (归档)|L1-L40 全量|s009 Stream 入口|
+|102|A|95|`docs/spikes/s009_native_ime_input/code/extra_harness.py`|已审 (归档)|L1-L95 全量|s009 额外测试框架|
+|103|A|185|`docs/spikes/s009_native_ime_input/code/ime_native_probe.py`|已审 (归档)|L1-L185 全量|s009 原生 IME 探针|
+|104|A|110|`docs/spikes/s009_native_ime_input/code/investigate_compositionend.py`|已审 (归档)|L1-L110 全量|s009 compositionend 事件调查|
+|105|A|55|`docs/spikes/s009_native_ime_input/code/start_containers.sh`|已审 (归档)|L1-L55 全量|s009 启动容器脚本|
+|106|A|20|`docs/spikes/s009_native_ime_input/code/stop_containers.sh`|已审 (归档)|L1-L20 全量|s009 停止容器脚本|
+|107|A|75|`docs/spikes/s009_native_ime_input/code/test_blank_cdp.py`|已审 (归档)|L1-L75 全量|s009 空白页 CDP 测试|
+|108|A|130|`docs/spikes/s009_native_ime_input/code/verify_extra_harness.py`|已审 (归档)|L1-L130 全量|s009 验证额外框架脚本|
+|109|A|55|`docs/spikes/s009_native_ime_input/independent_review.md`|已审 (归档)|L1-L55 全量|s009 独立评审记录|
+|110|A|57|`docs/spikes/s009_native_ime_input/report.md`|已审 (归档)|L1-L57 全量|s009 核心实验报告 (d014)|
+|111|A|165|`docs/spikes/s010_cloakbrowser_exit_observation/code/probe.py`|已审 (归档)|L1-L165 全量|s010 退出状态与子进程观测探针|
+|112|A|57|`docs/spikes/s010_cloakbrowser_exit_observation/report.md`|已审 (归档)|L1-L57 全量|s010 核心实验报告 (d016)|
+|113|A|15|`docs/tasks/t001_v2_runtime_validation/handoff.json`|已审 (归档)|L1-L15 全量|t001 交接元数据|
+|114|A|174|`docs/tasks/t001_v2_runtime_validation/note.md`|已审 (归档)|L1-L174 全量|t001 实施过程全账|
+|115|A|85|`docs/tasks/t001_v2_runtime_validation/review_code.md`|已审 (归档)|L1-L85 全量|t001 代码评审报告|
+|116|A|95|`docs/tasks/t001_v2_runtime_validation/review_test.md`|已审 (归档)|L1-L95 全量|t001 测试评审报告|
+|117|A|45|`docs/tasks/t001_v2_runtime_validation/scope_adjustment.md`|已审 (归档)|L1-L45 全量|t001 范围调整记录（豁免公网与原生 x86）|
+|118|A|82|`docs/tasks/t001_v2_runtime_validation/task.md`|已审 (归档)|L1-L82 全量|t001 任务书规范|
+|119|A|65|`docs/tasks/t001_v2_runtime_validation/validation_matrix.md`|已审 (归档)|L1-L65 全量|t001 验证矩阵核对|
+|120|A|15|`docs/tasks/t002_v2_backend_foundation/handoff.json`|已审 (归档)|L1-L15 全量|t002 交接元数据|
+|121|A|172|`docs/tasks/t002_v2_backend_foundation/note.md`|已审 (归档)|L1-L172 全量|t002 实施过程全账|
+|122|A|95|`docs/tasks/t002_v2_backend_foundation/review_code.md`|已审 (归档)|L1-L95 全量|t002 代码评审报告|
+|123|A|110|`docs/tasks/t002_v2_backend_foundation/review_test.md`|已审 (归档)|L1-L110 全量|t002 测试评审报告|
+|124|A|80|`docs/tasks/t002_v2_backend_foundation/task.md`|已审 (归档)|L1-L80 全量|t002 任务书规范|
+|125|A|15|`docs/tasks/t003_v2_browser_runtime/handoff.json`|已审 (归档)|L1-L15 全量|t003 交接元数据|
+|126|A|97|`docs/tasks/t003_v2_browser_runtime/note.md`|已审 (归档)|L1-L97 全量|t003 实施过程全账|
+|127|A|95|`docs/tasks/t003_v2_browser_runtime/review_code.md`|已审 (归档)|L1-L95 全量|t003 代码评审报告|
+|128|A|115|`docs/tasks/t003_v2_browser_runtime/review_test.md`|已审 (归档)|L1-L115 全量|t003 测试评审报告|
+|129|A|76|`docs/tasks/t003_v2_browser_runtime/task.md`|已审 (归档)|L1-L76 全量|t003 任务书规范|
+|130|A|15|`docs/tasks/t004_v2_stream_runtime/handoff.json`|已审 (归档)|L1-L15 全量|t004 交接元数据|
+|131|A|155|`docs/tasks/t004_v2_stream_runtime/note.md`|已审 (归档)|L1-L155 全量|t004 实施过程全账|
+|132|A|110|`docs/tasks/t004_v2_stream_runtime/review_code.md`|已审 (归档)|L1-L110 全量|t004 代码评审报告|
+|133|A|120|`docs/tasks/t004_v2_stream_runtime/review_test.md`|已审 (归档)|L1-L120 全量|t004 测试评审报告|
+|134|A|77|`docs/tasks/t004_v2_stream_runtime/task.md`|已审 (归档)|L1-L77 全量|t004 任务书规范|
+|135|A|15|`docs/tasks/t005_v2_supervisor/handoff.json`|已审 (归档)|L1-L15 全量|t005 交接元数据|
+|136|A|158|`docs/tasks/t005_v2_supervisor/note.md`|已审 (归档)|L1-L158 全量|t005 实施过程全账|
+|137|A|115|`docs/tasks/t005_v2_supervisor/review_code.md`|已审 (归档)|L1-L115 全量|t005 代码评审报告|
+|138|A|125|`docs/tasks/t005_v2_supervisor/review_test.md`|已审 (归档)|L1-L125 全量|t005 测试评审报告|
+|139|A|84|`docs/tasks/t005_v2_supervisor/task.md`|已审 (归档)|L1-L84 全量|t005 任务书规范|
+|140|A|15|`docs/tasks/t006_v2_gateway_auth_rtc/handoff.json`|已审 (归档)|L1-L15 全量|t006 交接元数据|
+|141|A|162|`docs/tasks/t006_v2_gateway_auth_rtc/note.md`|已审 (归档)|L1-L162 全量|t006 实施过程全账|
+|142|A|120|`docs/tasks/t006_v2_gateway_auth_rtc/review_code.md`|已审 (归档)|L1-L120 全量|t006 代码评审报告|
+|143|A|130|`docs/tasks/t006_v2_gateway_auth_rtc/review_test.md`|已审 (归档)|L1-L130 全量|t006 测试评审报告|
+|144|A|82|`docs/tasks/t006_v2_gateway_auth_rtc/task.md`|已审 (归档)|L1-L82 全量|t006 任务书规范|
+|145|A|15|`docs/tasks/t007_v2_frontend_sessions/handoff.json`|已审 (归档)|L1-L15 全量|t007 交接元数据|
+|146|A|162|`docs/tasks/t007_v2_frontend_sessions/note.md`|已审 (归档)|L1-L162 全量|t007 实施过程全账|
+|147|A|135|`docs/tasks/t007_v2_frontend_sessions/review_code.md`|已审 (归档)|L1-L135 全量|t007 代码评审报告|
+|148|A|145|`docs/tasks/t007_v2_frontend_sessions/review_test.md`|已审 (归档)|L1-L145 全量|t007 测试评审报告|
+|149|A|92|`docs/tasks/t007_v2_frontend_sessions/task.md`|已审 (归档)|L1-L92 全量|t007 任务书规范|
 |150|M|24|`docs/archive/tasks_index.json`|已审 (归档)|JSON 结构核验|归档任务索引元数据|
 |151|M|194|`docs/blueprint/architecture.md`|已审|L1-L194 全量|核心架构定义，三态划分严谨，明确环境豁免|
 |152|A|67|`docs/blueprint/browser_runtime.md`|已审|L1-L67 全量|Browser Runtime 容器沙箱规范|

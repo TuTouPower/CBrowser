@@ -40,14 +40,14 @@
 
 ## evidence
 
-- docs/archive/pending/p011_t007_test_minor_followups.md:9 — resolution=resolved 的同一行 reason 承认 f012「不在本轮文件所有权内」未做
-- docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5 与 docs/archive/pending/p005_t006_review_minors.md:11 — 两条 resolution reason 逐字相同
+- docs/pending/p011_t007_test_minor_followups.md:9 — resolution=resolved 的同一行 reason 承认 f012「不在本轮文件所有权内」未做
+- docs/pending/p001_supervisor_recovery_tick_complexity.md:5 与 docs/pending/p005_t006_review_minors.md:11 — 两条 resolution reason 逐字相同
 - docs/archive/specs/chrome_external_tabs.md:31-35 — 五条 AC 全部未勾选，文件内无废弃/替代标记
 - docs/archive/handoff.md:100,164,217 — 本机绝对路径 <home>/kar/code/...；全文共 32 处；:33,45,64 含 OpenCode session id 与 PID；:250,278,289 仅提及管理员密码文件路径（无值）
 - docs/archive/handoff.md:437,1121,1163,1203,1240,1276 — 归档内多节标题仍为「# 项目交接记录（最新）」
-- docs/archive/tasks/t013_v2_profile_copy_reset/note.md:98 — 收尾报告写 reviewed_scope=68994e2bb7fa7d48，而两份 review 的 Round 5 终局指纹为 3b90f37ed20afe31
-- docs/archive/tasks/t014_v2_clipboard_input/note.md:78-86 — 收尾报告仍为未填写的模板占位（「全部满足 / 未满足」「待执行时填写」）
-- docs/archive/tasks/t008_v2_artifacts_automation/note.md:76 — t008_test_f009 撤回理由含「避免终审后改测导致 scope 失效」
+- docs/tasks/t013_v2_profile_copy_reset/note.md:98 — 收尾报告写 reviewed_scope=68994e2bb7fa7d48，而两份 review 的 Round 5 终局指纹为 3b90f37ed20afe31
+- docs/tasks/t014_v2_clipboard_input/note.md:78-86 — 收尾报告仍为未填写的模板占位（「全部满足 / 未满足」「待执行时填写」）
+- docs/tasks/t008_v2_artifacts_automation/note.md:76 — t008_test_f009 撤回理由含「避免终审后改测导致 scope 失效」
 - docs/tasks/t009_v2_full_acceptance/task.md:27,44（live 侧存在性核对）— p015 transferred 的承接清单真实存在；docs/pending/todo/ 仅有 p014、docs/pending/parked/ 为空 — p011 的 f012 余项在 live 侧无任何在册跟踪
 - docs/specs_index.md（live）全文无 chrome_external_tabs 条目 — 索引侧已摘除，仅归档文件本身缺废弃标记
 
@@ -60,14 +60,14 @@
 
 ## Findings
 
-- [Medium][95] docs/archive/pending/p011_t007_test_minor_followups.md:9-9 — p011 标 resolution=resolved 归档，但其 reason 自认三子项之一（f012）未做且 live 侧无任何承接
+- [Medium][95] docs/pending/p011_t007_test_minor_followups.md:9-9 — p011 标 resolution=resolved 归档，但其 reason 自认三子项之一（f012）未做且 live 侧无任何承接
 
     - ID: f_archive_tasks_01; verification: static
     - Evidence: p011 处理行：resolution=resolved；reason 写明 A28 只补齐 f011（SSE 失效重取 Vitest）与 f013（audio_status 透传），并明说「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」; p011 正文（:8）原计划为「下次改前端会话或 SSE 的 task 内补齐」，属开放式后续安排，与 resolved 终局状态矛盾; 存在性核对：live docs/pending/todo/ 只有 p014_v2_upload_picker_access.md，docs/pending/parked/ 为空，f012 余项（session E2E 接受 created 状态、宜收紧为 running）在 live 侧无 pending/task 在册跟踪
     - Impact: 归档读者会认为 t007 三项测试遗留全部闭环，实际 f012 的弱断言（关闭页面后容器状态接受 created，无法区分未停止与被重建）在记录层面被静默丢弃，违反「pending 已闭环才迁入归档」的纪律。
     - Fix: 把 p011 的 resolution 改为 partial 并在 reason 中明确剩余项，或在 live docs/pending/todo/ 重新登记 f012 余项并在 p011 中留指针。
 
-- [Low][90] docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5-5; docs/archive/pending/p005_t006_review_minors.md:11-11 — p001 与 p005 的 resolution reason 逐字相同，p001 的闭环理由以 p005 为主语，且 p005 未交代其 test_f001 子项
+- [Low][90] docs/pending/p001_supervisor_recovery_tick_complexity.md:5-5; docs/pending/p005_t006_review_minors.md:11-11 — p001 与 p005 的 resolution reason 逐字相同，p001 的闭环理由以 p005 为主语，且 p005 未交代其 test_f001 子项
 
     - ID: f_archive_tasks_02; verification: static
     - Evidence: 两文件处理行 reason 完全一致：「A25 完成结构性拆分：recovery tick 按 observe/classify/schedule 拆分；docker_adapter 提取…；p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」; p001 文件内出现以 p005 为主语的闭环理由，p001 自身的 tick 拆分虽被同一句覆盖，但形式上是复制粘贴而非逐项销账; p005 正文含五个子项（code_f001–f004 与 test_f001 四个 Supervisor E2E 内联重复 coturn 启动代码抽夹具），reason 只枚举 f001/f002/f003 与「复杂度项」，test_f001 无任何交代
@@ -88,21 +88,21 @@
     - Impact: 仓库源头是公开 fork（CloakHQ/CloakBrowser-Manager），归档文档随仓公开时会带出开发者本机用户名、目录布局与历史会话标识；无凭据值泄露，故定级 Low。
     - Fix: 归档前对 handoff 做一次脱敏（本机路径改相对/占位、session id 与 PID 删除），或在仓库发布策略中明确接受该暴露并记录。
 
-- [Low][95] docs/archive/tasks/t014_v2_clipboard_input/note.md:78-86 — t014 已 dropped 归档，但 note.md 收尾报告仍是未填写的模板占位，终局结果只存在于 front matter 与索引
+- [Low][95] docs/tasks/t014_v2_clipboard_input/note.md:78-86 — t014 已 dropped 归档，但 note.md 收尾报告仍是未填写的模板占位，终局结果只存在于 front matter 与索引
 
     - ID: f_archive_tasks_05; verification: static
     - Evidence: 收尾报告「结果：全部满足 / 未满足」「测试/黑盒/review：待执行时填写」「结果摘要：待执行时填写」均为模板原文，未按 drop 实际结果回填; t014 的实际终局（AC-001/005 随 e7f58ce 合入、AC-002/003/004 转 t009、用户 drop 决定）只记录在 front matter 的 note 字段与 tasks_index.json 的 note 字段；且 t014 无 handoff.json; 对照：其余归档 task（t001–t008、t013）的收尾报告均已回填验收/测试/review 三项
     - Impact: 按统一收尾格式阅读归档时，t014 看起来像从未执行完的半成品，drop 的事实与去向需要跨 front matter 和索引拼接才能还原。
     - Fix: 回填 t014 收尾报告：结果写 dropped 及用户决定日期、三项验证写已合入部分的评审结论（review 两轮记录在 review_code/review_test.md）、遗留只写 p015/t009 引用。
 
-- [Low][90] docs/archive/tasks/t013_v2_profile_copy_reset/note.md:98-98 — t013 收尾报告引用的 reviewed_scope 是 Round 4 的旧指纹，与两份 review 的 Round 5 终局指纹不一致
+- [Low][90] docs/tasks/t013_v2_profile_copy_reset/note.md:98-98 — t013 收尾报告引用的 reviewed_scope 是 Round 4 的旧指纹，与两份 review 的 Round 5 终局指纹不一致
 
     - ID: f_archive_tasks_06; verification: static
     - Evidence: note.md:98 写「reviewed_scope=68994e2bb7fa7d48」（Round 4 指纹）; review_code.md 与 review_test.md 的 Round 5 终局 verdict 均绑定 reviewed_scope 3b90f37ed20afe31；test reviewer Round 5 明确指出 note 收尾报告仍写旧指纹、建议同步，未见后续修正
     - Impact: 归档收尾摘要指向已被取代的评审范围，按该指纹回查会得到与最终交付不一致的评审绑定，削弱归档证据链的精确性。
     - Fix: 把 note.md 收尾报告的 reviewed_scope 更新为 3b90f37ed20afe31 并注明 Round 5 终局。
 
-- [Low][80] docs/archive/tasks/t008_v2_artifacts_automation/note.md:76-76 — t008_test_f009 的撤回理由含流程便利因素（避免终审后改测使 scope 失效），其测试缺口无后续跟踪
+- [Low][80] docs/tasks/t008_v2_artifacts_automation/note.md:76-76 — t008_test_f009 的撤回理由含流程便利因素（避免终审后改测使 scope 失效），其测试缺口无后续跟踪
 
     - ID: f_archive_tasks_07; verification: static
     - Evidence: note Round 2 处置表：t008_test_f009 状态=撤回，理由为「255 字符截断属防御性边界；已有 4xx 重试与 API schema 覆盖，单独单测收益低，且避免终审后改测导致 scope 失效」; 该 finding 由 test reviewer 在 Round 3 提出（长文件名截断无测试，截断被移除时 422 会被永久标记 processed 而丢下载），撤回后既未补测，也未登记 pending 或 follow-up; 对照同簿其他遗留均有明确去向（p014），此项是唯一以撤回形式消失且无承接者的测试缺口

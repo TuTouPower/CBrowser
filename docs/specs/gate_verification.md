@@ -1,3 +1,8 @@
+---
+slug: gate_verification
+status: active
+tasks: [baseline]
+---
 # 门禁与验证体系
 
 需求级 spec，累积 t044、t045、t046、t060。权威入口为 `docs/blueprint/testing.md` 的 `doctor_cmd` / `test_cmd` / `blackbox_verify` 章节命令；本文定义行为契约。

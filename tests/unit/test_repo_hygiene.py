@@ -157,8 +157,9 @@ def test_container_prefix_exemption_respects_segment_boundary():
     assert find_developer_path_leaks(f"path {evil2} end") == [evil2]
 
 
-def test_archived_spikes_have_read_only_notice():
-    readme = ROOT / "docs/archive/spikes/README.md"
-    assert readme.is_file()
-    text = readme.read_text(encoding="utf-8")
-    assert ".scratch" in text and "probe_work" in text
+def test_completed_spike_sources_have_read_only_notice():
+    text = (ROOT / "docs/blueprint/conventions.md").read_text(encoding="utf-8")
+    assert "docs/spikes/" in text
+    assert "completed" in text and "superseded" in text
+    assert ".scratch/" in text and "probe_work/" in text
+    assert "不得入库" in text

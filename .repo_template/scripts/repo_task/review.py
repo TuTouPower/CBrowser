@@ -1,11 +1,14 @@
 """Shared review evidence parser for the worktree checker and committed handoff gate."""
 
-from __future__ import annotations
 import re
 from pathlib import Path
 
-from .context import PROGRESS_FILE, TaskDataError
-from .documents import extract_ac_statuses, parse_front_matter as _parse_front_matter
+from .context import FenceState, PROGRESS_FILE, TaskDataError
+from .documents import (
+    _INDENTED_CODE_RE,
+    extract_ac_statuses,
+    parse_front_matter as _parse_front_matter,
+)
 
 VERDICT_RE = re.compile(r"^verdict:\s*(PASS|FAIL)\s*$", re.MULTILINE)
 # 行首容忍照抄环节常见的轻量 markdown 修饰（反引号 / 加粗 / 列表前缀），
@@ -18,9 +21,6 @@ REVIEW_SCOPE_RE = re.compile(
 REVIEW_SCOPE_HINT_RE = re.compile(r"reviewed_scope", re.IGNORECASE)
 ROUND_HEADER_RE = re.compile(r"^##\s+Round\s+([0-9]+)(?:\s|$)", re.MULTILINE)
 H2_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$")
-FENCE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})")
-# 闭栏须为裸围栏（无 info string）；fence 内带 info 的围栏行是内容，不是提前闭栏。
-FENCE_CLOSE_RE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*$")
 FINDING_RE = re.compile(r"^(t[0-9]+)_(?:code|test|gen)_f[0-9]+$")
 # AC 复验行（J2/J3）：`- AC-NNN：TICK-VALID|TICK-VOID，re_verified|trust_prior。<证据>`。
 # 冒号、逗号接受全角与半角；允许 AC 编号与标签带反引号 / 加粗修饰；证据文字不解析。
@@ -48,26 +48,18 @@ def read(path: Path) -> str:
 
 
 def visible_markdown_lines(text: str) -> list[str]:
-    """移除 fenced code 与 blockquote，保留可参与结构解析的正文行。
+    """移除 fenced code、缩进代码块与 blockquote，保留可参与结构解析的正文行。
 
-    围栏规则与 repo_task.documents 一致：开栏可带 info string，闭栏须为裸围栏
-    且宽度 >= 开栏；fence 内带 info string 的围栏行是内容，不提前闭合代码块。
+    围栏规则统一委托 ctx.FenceState（与 documents/render_review_prompts 同源）；
+    缩进代码块（行首 4 空格或制表符）与 documents._strip_code_blocks 同口径跳过，
+    其中的 AC/verdict/scope 示例不得被采信。
     """
     lines = []
-    fence_marker = None
+    fence = FenceState()
     for line in text.splitlines():
-        if fence_marker is not None:
-            close = FENCE_CLOSE_RE.match(line)
-            if (
-                close
-                and close.group(1)[0] == fence_marker[0]
-                and len(close.group(1)) >= fence_marker[1]
-            ):
-                fence_marker = None
+        if fence.feed(line):
             continue
-        fence = FENCE_RE.match(line)
-        if fence:
-            fence_marker = (fence.group(1)[0], len(fence.group(1)))
+        if _INDENTED_CODE_RE.match(line):
             continue
         if line.lstrip().startswith(">"):
             continue
@@ -76,16 +68,35 @@ def visible_markdown_lines(text: str) -> list[str]:
 
 
 def extract_verdicts(path: Path) -> list[str]:
+    """全文 verdict 序列（供回归轮次统计）；门禁判定另见 last_round_text。"""
     text = "\n".join(visible_markdown_lines(read(path)))
     return VERDICT_RE.findall(text)
 
 
+def last_round_lines(path: Path) -> list[str]:
+    """最后一个 `## Round N` 之后的可见正文行（含该标题行）；无 Round 标题则全文。
+
+    verdict / scope / AC 三类证据必须来自同一完整轮次，避免新一轮只写了
+    scope 与 AC、未写 verdict 时继承上一轮 PASS。
+    """
+    lines = visible_markdown_lines(read(path))
+    start = 0
+    for index, line in enumerate(lines):
+        if ROUND_HEADER_RE.match(line):
+            start = index
+    return lines[start:]
+
+
+def last_round_text(path: Path) -> str:
+    return "\n".join(last_round_lines(path))
+
+
 def parse_front_matter(path: Path) -> dict:
-    """front matter 解析统一委托 repo_task.documents；缺失或非法返回 {}（宽容语义）。"""
+    """front matter 解析统一委托 repo_task.documents；缺失或非法抛出 ReviewDataError（A05）。"""
     try:
         fm, _ = _parse_front_matter(path)
-    except (OSError, TaskDataError):
-        return {}
+    except (OSError, TaskDataError) as error:
+        raise ReviewDataError(f"{path}: {error}") from error
     return fm
 
 
@@ -270,19 +281,17 @@ def reported_findings(task_tid: str, *paths: Path) -> set[str]:
 
 
 def reviewed_scope(path: Path) -> str | None:
-    """报告可见正文最后一条 `reviewed_scope:` 指纹（对应最后 verdict 的被审 diff）。
+    """最后一轮可见正文的最后一条 `reviewed_scope:` 指纹。
 
     只在可见行上扫描（与 verdict/文档校验一致）；fenced 示例里的 scope 不算声明。
     """
-    text = "\n".join(visible_markdown_lines(read(path)))
-    scopes = REVIEW_SCOPE_RE.findall(text)
+    scopes = REVIEW_SCOPE_RE.findall(last_round_text(path))
     return scopes[-1] if scopes else None
 
 
 def reviewed_scope_hint(path: Path) -> bool:
-    """报告可见正文提及 reviewed_scope 但宽容正则提取不到 → 写了但格式错。"""
-    text = "\n".join(visible_markdown_lines(read(path)))
-    return REVIEW_SCOPE_HINT_RE.search(text) is not None
+    """最后一轮提及 reviewed_scope 但宽容正则提取不到 → 写了但格式错。"""
+    return REVIEW_SCOPE_HINT_RE.search(last_round_text(path)) is not None
 
 
 
@@ -293,16 +302,12 @@ def parse_ac_review(path: Path) -> tuple[bool, list[tuple[str, str, str]], list[
     只扫可见行：fenced 示例与引用块不计入。小节为标题以「AC 复验方式」起头的 H2–H6，
     止于下一个同级或更高级标题；`## Round N` 同样截断小节。
     """
-    lines = visible_markdown_lines(read(path))
-    start = 0
-    for index, line in enumerate(lines):
-        if ROUND_HEADER_RE.match(line):
-            start = index
+    lines = last_round_lines(path)
     found = False
     rows: list[tuple[str, str, str]] = []
     bad: list[str] = []
     depth = 0
-    for line in lines[start:]:
+    for line in lines:
         heading = MD_HEADING_RE.match(line)
         if heading:
             level = len(heading.group(1))
@@ -386,7 +391,8 @@ def evaluate_review(
     result = {"review_level": level}
     verdicts = []
     for name, report in zip(names, reports):
-        values = extract_verdicts(report)
+        # 只采信最后一轮的 verdict：新一轮未写 verdict 时不得继承上一轮 PASS。
+        values = VERDICT_RE.findall(last_round_text(report))
         verdict = values[-1] if values else "MISSING"
         verdicts.append(verdict)
         result[f"{name}_verdict"] = verdict
@@ -421,7 +427,9 @@ def evaluate_review(
         scope_status = "stale"
     else:
         scope_status = "ok"
-    if overall == "PASS" and (missing or scope_status != "ok" or ac_state == "incomplete"):
+    if overall == "PASS" and (
+        missing or scope_status != "ok" or ac_state == "incomplete"
+    ):
         overall = "INCOMPLETE"
     result.update(
         overall=overall, review_scope=scope_status, ac_review=ac_state,

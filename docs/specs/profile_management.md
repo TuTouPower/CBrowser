@@ -1,3 +1,8 @@
+---
+slug: profile_management
+status: active
+tasks: [baseline]
+---
 # 需求规范：Profile 管理与外部标签页
 
 本文描述 t007 交付的前端 Profile 管理、页面独立选择与运行意愿行为，取代旧 `chrome_external_tabs`（控制租约模型已废弃，见 docs/archive/specs/）。文件/自动化页面由 t008、复制/重置由 t013 补充；生效状态以 specs_index 为准。

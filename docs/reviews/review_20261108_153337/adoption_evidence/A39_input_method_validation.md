@@ -35,8 +35,8 @@
 |R-3|平台：容器内 Chromium 为 Linux X11 / Xvfb；不因宿主为 Mac 获得 Windows API；唯一官方外部标签页客户端为 Google Chrome|R17 921 行、AGENTS.md|静态证据|
 |R-4|固定依赖：`selkies==2.2.1` 锁定；Selkies 私有 API 只经 `x11_keymap` 适配层访问，安装期校验完整私有面，结构 / 签名不符报 unsupported ABI|`docs/blueprint/stream_runtime.md:47`、`uv.lock:1317-1344`|静态证据|
 |R-5|历史事实：官方 `co,end` 经 input channel 到真实 DOM，容器 clipboard 哨兵不变；Xvfb 下按 XKB 名称过滤 spare 后双 Chrome 连续 8 次提交、124 汉字严格匹配远端 DOM，独立冻结复验两轮通过|`docs/findings/d014_native_ime_commit_path.md`、`docs/findings/d017_native_xkb_named_spares.md`|静态证据（历史记录，非本轮实验）|
-|R-6|历史边界：d014 明确「少量 CDP fixture 不等于 OS 候选窗、1000 次 IME / clipboard、受控 / 富文本或双页长期验收」；t001 记录末尾 `compositionend` 的 `isTrusted=false` 来源未定位、撤回「官方客户端合成」未经源码证实推断，且不称 1000 次 / OS 候选窗 / 完整剪贴板通过|d014 6 行、`docs/archive/tasks/t001_v2_runtime_validation/progress.md:101`|静态证据|
-|R-7|性能 / 压力：P95、1000 次输入、8 小时稳定性须实测，当前不作性能承诺；t009 AC-003 改为真实 Chrome 手动清单、自动化 1000 次 / 剪贴板压测取消|`stream_runtime.md:45`、`docs/archive/tasks/t009_v2_full_acceptance/task.md:37,42`|静态证据；运行测量 NOT_RUN|
+|R-6|历史边界：d014 明确「少量 CDP fixture 不等于 OS 候选窗、1000 次 IME / clipboard、受控 / 富文本或双页长期验收」；t001 记录末尾 `compositionend` 的 `isTrusted=false` 来源未定位、撤回「官方客户端合成」未经源码证实推断，且不称 1000 次 / OS 候选窗 / 完整剪贴板通过|d014 6 行、`docs/tasks/t001_v2_runtime_validation/progress.md:101`|静态证据|
+|R-7|性能 / 压力：P95、1000 次输入、8 小时稳定性须实测，当前不作性能承诺；t009 AC-003 改为真实 Chrome 手动清单、自动化 1000 次 / 剪贴板压测取消|`stream_runtime.md:45`、`docs/tasks/t009_v2_full_acceptance/task.md:37,42`|静态证据；运行测量 NOT_RUN|
 
 ### 1.2 可变更旧设计约束（候选比较前不预设胜负）
 

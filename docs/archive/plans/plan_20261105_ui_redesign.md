@@ -19,7 +19,7 @@
 
 - 会话页内的模拟浏览器框（标签栏、地址栏、书签、缩放）：违反 ADR 003、ADR 006，远端 CloakBrowser 原生标签与地址栏即为唯一浏览器界面。
 - 命令面板。
-- 代理连通性与出口 IP 检测：已暂搁为 `docs/pending/parked/p040_proxy_connectivity_exit_ip_check.md`。
+- 代理连通性与出口 IP 检测：已暂搁为 `docs/pending/p040_proxy_connectivity_exit_ip_check.md`。
 - 同窗口多会话分屏：已暂搁为 p039。
 - 独立桌面应用打包（不依赖 Docker）：已暂搁为 p041。
 - 运行 Profile 数量的容量实测与容器资源上限：用户不要求；软件层面不设数量上限（第 6.10 节）。
@@ -45,7 +45,7 @@
 |D9|旧数据|没有正式上线与旧用户；schema 直接重写 baseline，不写数据迁移与兼容层，也不迁移用户测试数据（用户 2026-11-05 修订）|
 |D10|技术底层|默认升级到最新版本，包括大版本|
 |D11|命令面板、容量实测|不做|
-|D12|部署形态|当前只做 Docker 版；将来独立桌面应用与 Docker 版并存（`docs/pending/parked/p041_standalone_desktop_app.md`）。本方案的新增功能在两种形态下实现成本相当时，选择不依赖 Docker 或 Linux 的做法|
+|D12|部署形态|当前只做 Docker 版；将来独立桌面应用与 Docker 版并存（`docs/pending/p041_standalone_desktop_app.md`）。本方案的新增功能在两种形态下实现成本相当时，选择不依赖 Docker 或 Linux 的做法|
 |D13|删除运行中 Profile|非 stopped 状态删除返回 409 `profile_running`；界面对运行中禁用删除，批量删除中的运行项计入失败（用户 2026-11-05）|
 |D14|局域网访问协议|只提供 HTTPS；局域网设备安装 Caddy 本地根证书，会话页始终处于安全上下文，复制标签页的 Web Locks 机制不变（用户 2026-11-05，取代先前的「局域网 HTTP 会话降级」；随 p037 由 t042 实现）|
 |D15|字体集绑定|字体导入为不可变、按内容寻址的字体集（manifest 含来源、系统版本、文件哈希）；Profile 运行配置绑定字体集，新字体集只用于新建或显式切换，指纹跨时间稳定（用户 2026-11-05）|

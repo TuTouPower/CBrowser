@@ -1,3 +1,8 @@
+---
+slug: storage_and_artifacts
+status: active
+tasks: [baseline]
+---
 # 需求规范：数据持久化、迁移与文件交换 (storage_and_artifacts)
 
 ## 1. 业务目标与适用范围

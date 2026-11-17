@@ -58,7 +58,7 @@ for a in "$@"; do
     --junitxml=*)
       f="${a#--junitxml=}"
       mkdir -p "$(dirname "$f")"
-      "$GATE_STUB_REAL_PY" -c 'import sys,os; from pathlib import Path; n=1700 if "tests/unit" in sys.argv[2] else 258 if ".repo_template" in sys.argv[2] else 196 if "tests/integration" in sys.argv[2] else 100; n=int(os.environ.get("GATE_STUB_CASE_COUNT",n)); Path(sys.argv[1]).write_text("<testsuites><testsuite tests=\"%d\">"%n+"<testcase name=\"stub\"/>"*n+"</testsuite></testsuites>")' "$f" "$*"
+      "$GATE_STUB_REAL_PY" -c 'import sys,os; from pathlib import Path; n=1700 if "tests/unit" in sys.argv[2] else 389 if ".repo_template" in sys.argv[2] else 196 if "tests/integration" in sys.argv[2] else 100; n=int(os.environ.get("GATE_STUB_CASE_COUNT",n)); Path(sys.argv[1]).write_text("<testsuites><testsuite tests=\"%d\">"%n+"<testcase name=\"stub\"/>"*n+"</testsuite></testsuites>")' "$f" "$*"
       ;;
   esac
 done

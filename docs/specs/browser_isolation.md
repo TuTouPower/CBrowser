@@ -1,3 +1,8 @@
+---
+slug: browser_isolation
+status: active
+tasks: [baseline, t003, t041, t051]
+---
 # 需求规范：浏览器沙箱与数据隔离 (browser_isolation)
 
 ## 1. 业务目标与适用范围

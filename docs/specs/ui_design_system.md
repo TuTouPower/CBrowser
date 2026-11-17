@@ -1,8 +1,13 @@
+---
+slug: ui_design_system
+status: active
+tasks: [baseline]
+---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约、t059 交付的「设计系统门禁扩展：圆角一致性、颜色范围、对比度三类全覆盖与尺寸全面 token 化」契约，以及单用户极简界面重构契约（去除冗余副标题与内部 ID、左下角设置入口、折叠态点击应用图标展开、全表格图标化列表/卡片视图切换、数字输入框暗色模式适配）。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`、`docs/archive/tasks/t059_design_token_gates/task.md`。证据：正式 spike `docs/archive/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。
+本 spec 累积 t036 / t047 交付的「以 `DESIGN.md` 为唯一设计权威 + 亮暗双模式 + 导航侧栏应用外壳 + omni 冷灰与 Inter 字体系统」契约、t059 交付的「设计系统门禁扩展：圆角一致性、颜色范围、对比度三类全覆盖与尺寸全面 token 化」契约，以及单用户极简界面重构契约（去除冗余副标题与内部 ID、左下角设置入口、折叠态点击应用图标展开、全表格图标化列表/卡片视图切换、数字输入框暗色模式适配）。关联 task：`docs/tasks/t036_design_system_app_shell/task.md`、`docs/tasks/t047_ui_theme_omni_restyle/task.md`、`docs/tasks/t059_design_token_gates/task.md`。证据：正式 spike `docs/spikes/s015_design_system_toolchain/report.md`、finding `d034`（工具链版本与双模式写法契约）、`docs/plan_20261105_ui_redesign.md` 第 4 / 5.1 / 5.2 / 5.9 / 5.10 节。
 
 ## 2. 行为契约
 
@@ -67,7 +72,7 @@
 - [x] AC-009：产物无外部字体 / 图标 CDN，字体文件自托管随产物分发。
 - [x] AC-010：登录 / 设置页重做后鉴权、跳转、语言、系统信息与平台字体区块（含可读字体包名称与完整性告警）语义由测试覆盖。
 
-t059 的完整 AC 与可测试性声明见 `docs/archive/tasks/t059_design_token_gates/task.md`，摘要：
+t059 的完整 AC 与可测试性声明见 `docs/tasks/t059_design_token_gates/task.md`，摘要：
 
 - [x] t059 AC-001：圆角一致性门禁（Shapes 表与 components 定义逐项断言），DESIGN 与实现全量改齐。
 - [x] t059 AC-002：品牌 token 登记、logo/favicon 五件资产生成器生成并校验新鲜度，颜色扫描扩展至 `public/` 与 `index.html`。

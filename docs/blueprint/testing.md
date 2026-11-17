@@ -19,7 +19,7 @@ project_configured
     - 严格禁止在业务代码或测试中就地弱化断言，禁止引入隐式不可见的环境改动；
 4. **容器黑盒与健康检查**：通过 curl 检查运行中的容器健康探针 `http://127.0.0.1:56661/api/health`，并支持通过 ego-browser 执行端到端网页交互自动化验证；
 5. **专项运行时技术验证探针规范**：
-    - 规则与前置：严禁就地修改或运行 `docs/archive/spikes/` 下的代码；必须将归档脚本复制到自身专属的 `.scratch/<probe_name>/` 目录下执行；
+    - 规则与前置：严禁就地修改或运行 `docs/spikes/` 中已完成或已替代 spike 的代码；必须将历史脚本复制到自身专属的 `.scratch/<probe_name>/` 目录下执行；
     - 命名冲突防御：运行容器必须使用专属防冲突前缀（如 `probe-t001-*`），探针执行结束后必须执行清理，彻底销毁临时容器、网络与独立卷；
     - 独立执行：无需也不能编写庞大的全量探针大一统运行脚本（No giant all-probes runner needed），各技术专题保持完全独立的测试入口；
 6. **环境基准与豁免声明**：
@@ -90,7 +90,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 
 ## 专项技术验证探针
 
-代码为不可变归档快照，先完整复制到专属scratch再运行；下表列出入口和依赖，具体正负例与清理契约见各spike报告。固定前缀/端口同一时刻只能运行一份，不能只改容器名忽略脚本内部引用。归档历史报告里的旧docs/spikes路径按docs/archive/spikes读取。
+代码为不可变归档快照，先完整复制到专属scratch再运行；下表列出入口和依赖，具体正负例与清理契约见各spike报告。固定前缀/端口同一时刻只能运行一份，不能只改容器名忽略脚本内部引用。spike 统一位于 `docs/spikes/`，生命周期由报告 front matter 表达。
 
 |专题|归档代码目录|入口与宿主依赖|资源范围|
 |---|---|---|---|
@@ -128,7 +128,7 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 |类别|必须覆盖|常见盲区|
 |---|---|---|
 |**单元测试**|pytest 后端业务测试与前端 Vitest（Node 26 LTS，无需 `NODE_OPTIONS` 变通）；数量以实际输出为准|mock 掉真实逻辑、在业务代码中弱化测试断言|
-|**契约测试**|pytest 模板轻量契约测试（`-m contract`）；数量以实际输出为准|路径或状态机格式不匹配、specs_index 缺失条目|
+|**契约测试**|pytest 模板轻量契约测试（`-m contract`）；数量以实际输出为准|路径、实体状态或 spec front matter 不符合契约|
 |**文档格式**|`python3 .repo_template/scripts/md_format.py --check`|Markdown 表格未 compact 或标题语法错误|
 |**容器黑盒**|容器健康检查探针与本地技术验证专项探针|只看进程存活、未验证实际双向媒体与数据完整性|
 
@@ -339,7 +339,7 @@ bash scripts/run_automation_probe.sh
 
 ## t041 指纹平台与平台字体集验收映射
 
-下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/archive/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
+下表把 t041 的 AC-001~009 映射到测试与证据入口；契约全文见 `docs/tasks/t041_fingerprint_platform_fonts/task.md`，需求级 spec 见 `docs/specs/fingerprint_platform.md`。证据引用：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032` / `d033`。
 
 |AC|行为|测试 / 证据|
 |---|---|---|
@@ -355,7 +355,7 @@ bash scripts/run_automation_probe.sh
 
 ## t051 运行时与部署可靠性验收映射
 
-下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/archive/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
+下表把 t051 的 AC-001~021 映射到测试与证据入口；契约全文见 `docs/tasks/t051_runtime_deploy_reliability/task.md`，需求级 spec 见 `docs/specs/runtime_lifecycle.md` / `release_deployment.md` / `fingerprint_platform.md` / `access_control.md`。本机无 Docker、无真实部署环境：AC-013 真实部署、AC-014 双实例真实 Docker、AC-015 真实 Docker 挂起三项按链口径跳过按 pass 计，替代验证见表内，真实环境验证须在用户机按 t032 演练补验，不得记为已验。
 
 |AC|行为|测试 / 证据|
 |---|---|---|
@@ -437,7 +437,7 @@ bash scripts/run_automation_probe.sh
 
 |suite|最小用例数|计数来源|
 |---|---|---|
-|contract|258|pytest JUnit|
+|contract|389|pytest JUnit|
 |unit|1654|并行与 serial 合并 JUnit|
 |integration|196|并行与 serial 合并 JUnit|
 |frontend_test|499|Vitest JSON|
@@ -496,7 +496,7 @@ bash scripts/run_automation_probe.sh
 
 ## SDK 代理集成、隐私防护与有代理 DROP 封闭验证（p102 / s022）
 
-- 正式 spike `s022`（`docs/archive/spikes/s022_proxy_sdk_privacy_egress/report.md`）在 macOS OrbStack Linux aarch64 隔离网络命名空间内以真实 `cloakbrowser==0.6.4` + `chromium-146.0.7680.177.3/chrome` 验证：`launch_persistent_context_async(proxy=...)` 统一支持带认证 `http://`、`https://`（TLS-to-proxy）、`socks5://`、`http://[fd00::]:port`（IPv6）及 `geoip=True` 同路路由，并沉淀为 `d046` / `d047` 与 ADR 038。
+- 正式 spike `s022`（`docs/spikes/s022_proxy_sdk_privacy_egress/report.md`）在 macOS OrbStack Linux aarch64 隔离网络命名空间内以真实 `cloakbrowser==0.6.4` + `chromium-146.0.7680.177.3/chrome` 验证：`launch_persistent_context_async(proxy=...)` 统一支持带认证 `http://`、`https://`（TLS-to-proxy）、`socks5://`、`http://[fd00::]:port`（IPv6）及 `geoip=True` 同路路由，并沉淀为 `d046` / `d047` 与 ADR 038。
 - 回归覆盖：
     - **unit**（`tests/unit/test_egress_plan_and_runner_sdk.py`、`test_t035_proxy_runtime.py`、`test_network_policy.py`、`test_t052_supervisor_probe.py`）：统一规划 `ProfileEgressPlan` 在运行/Supervisor/探针三端一致性、`--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` 参数注入、`proxy=` URL 规范化编码、失败封闭凭据校验、`proxy_enforced=True` 双栈 `OUTPUT -j DROP` 规则渲染与 `SupervisorCore` 策略漂移 `fail_close_container` 触发。
     - **真实 Docker E2E**：`tests/e2e/test_browser_runtime_e2e.py::test_p102_authenticated_proxy_sdk_hardening_e2e`（真 HTTP Basic + 特殊字符密码及真 RFC 1929 SOCKS5 代理 + `BrowserRunner` CLI 旗标验证）、`tests/e2e/test_supervisor_namespace_policy_e2e.py::test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp`（真内核双栈 `proxy_enforced=True` 阻断 `1.1.1.1:80`、IPv6 越权与 STUN/DNS UDP 旁路 + `probe_egress_plan` 对齐）。

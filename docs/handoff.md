@@ -1,20 +1,14 @@
 # 项目交接记录（最新）
 
-## 2026-11-17T13:52:00+08:00 t074 合入、仓库整理与真实部署补验
+本文件只维护当前有效上下文，历史由 Git 保存。
 
-### 状态与工作区
+## 2026-11-17T18:51:04+08:00 模板升级与消费仓对齐
 
-- branch `main`；写入时 head_commit `8e1bd9b6d1293a3cb9e5e78237a742fdfd706b72`。此处记录写入时 HEAD，后续提交由提交自身记录。
-- t074 已 done 并合入 main（merge `012a230`），origin/main 与本地一致；`task.py ps` 无在飞、`effective-status` 无 backlog/active、`plan` 无可推荐链、`pending.py list` 无 todo。
-- 已闭环：`p112` 归档（`transferred`，t074 AC-006 `[deploy]` 顺延转部署阶段现场验收）；t051–t060 历史 done task 目录迁入 `docs/archive/tasks/`（commit `4ba1c28`）；`docs/handoff.md` 过时段落与 s011–s024 完结 spike 迁入 `docs/archive/`（commit `8e1bd9b`）。
-- 真实部署：`deploy.sh` 两次发布均 readiness-verified，current release `20261117133551-8e1bd9b`，DB stamp `8c3f1d0a7b92`（0010）；通过 API 导入 88 个 mihomo 真实节点（85 created / 1 updated / 2 skipped / 0 failed）。
-
-### 门禁与交付
-
-- 合入后全量门禁 9 suite `all_passed=true`（`.scratch/t074_step356/gate_evidence_merge_r4`）；归档整理后 9 suite 全绿（`gate_evidence_hygiene_r3`）；Supervisor 响应字段修复后 9 suite 全绿（`.scratch/deploy_t074/gate_evidence_fix`）。均用 `CBROWSER_GATE_WORKERS=1` 规避高负载下的时序 flake。
-- t074 full 级双路独立 review Round 2 PASS，scope `6343a38bcc6ebd1f`；AC-001..005 `re_verified`，原 AC-006 `[deploy]` `trust_prior`。
-- 冒烟发现并修复：`control_server.py:probe_proxy` 漏传 `country_name` / `city` / `latency_ms`，导致首次部署的观测三字段为 NULL；补字段 + 红灯测试后二次部署验证通过。
-- AC-006 真实部署端到端已于本次补验完成（84/88 ok、延迟 418–7349 ms 中位 592、国家名/城市 84/84 填充、4 个 `echo_unreachable` 失败态、刷新持久化稳定、临时不可用代理验证错误码透传）；详见 `docs/archive/verification/t074_deploy_import_20261117.md`。
-- 证据留存：主仓忽略目录 `.scratch/t074_step356/` 与 `.scratch/deploy_t074/`（门禁日志、review prompts、gate manifests、部署/导入/验证记录）。
-- 剩余风险：0010 升版后 0009 release 的 `rollback` 被文档规则拒绝，本次未创建环境恢复点；4 个节点当前不可达属真实网络状况。
-- parked 8 条（p031/p038/p039/p040/p041/p043/p045/p053）为用户确认暂搁，按约定保留不迁 archive。
+- 当前焦点：模板已对齐 `452c075de2fb54d4d5e846ea84bce61d2c8d7f1f`，收口旧目录、独立评审勘误及门禁适配；全部保留为未提交 diff。
+- branch：`main`。
+- head_commit：`e0bc8d5faf88e915bb0d0d6055b870d66d02584e`；本轮未创建 commit、未 push，模板源未修改。
+- 已完成：74 个 task、112 条 pending、24 个 spike 原位状态模型迁移；38 条 ADR 拆分；19 份 spec 使用 front matter；review 保留最近 5 组；ledger、goal 快照与 sync_state 迁入 Git common dir。独立勘误已并入所属 review 的 `adoption_decision.md`；退役空目录已移除。模板契约 388 passed / 1 skipped，相关项目测试 51 passed，契约计数基线已对齐 389。
+- 部署上下文：t074 已合入 main（`012a230`），AC-006 真实部署补验见 `docs/archive/verification/t074_deploy_import_20261117.md`；本轮没有部署操作，未重新核验线上状态。
+- 未完成：消费仓全量业务门禁和真实 Docker/Chrome 验证尚未重跑。
+- 陷阱：同步事务保持 `applied`，备份在 Git common dir 的 `repo_template/sync_transaction/`；未提交状态不执行 `transaction accept`。旧 task、pending、spike、spec、review 不再归档，不能重建旧目录。部署记录中的回退限制与节点不可达情况未在本轮复验。
+- 下一步：按用户明确指令处理现有 diff，不自动提交。8 条 parked pending 保持原位暂搁。

@@ -211,7 +211,7 @@ ______________________________________________________________________
 
 ### CT-6 [Medium] `v2_runtime_validation` 仍称刷新保留 `resume_key`，与 t007 修订冲突
 
-- 位置：`docs/specs/v2_runtime_validation.md:34`（“刷新时…保留原有 ID 与 resume_key”）；`docs/archive/tasks/t007_v2_frontend_sessions/task.md` 上下文区（官方客户端刷新生成新 resume_key，仅连接内重连保留）；`docs/blueprint/frontend.md` 已写新语义。
+- 位置：`docs/specs/v2_runtime_validation.md:34`（“刷新时…保留原有 ID 与 resume_key”）；`docs/tasks/t007_v2_frontend_sessions/task.md` 上下文区（官方客户端刷新生成新 resume_key，仅连接内重连保留）；`docs/blueprint/frontend.md` 已写新语义。
 - 影响：生效 spec 与当前前端/测试矛盾，验收和排障可能误判。
 - 修复建议：更新 t001 spec 的 2.2，区分刷新与连接内重连。
 - 置信度：95

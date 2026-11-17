@@ -1,3 +1,8 @@
+---
+slug: runtime_persistence
+status: active
+tasks: [baseline]
+---
 # 需求规范：运行时状态与持久化契约 (runtime_persistence)
 
 ## 1. 业务目标与适用范围
@@ -126,5 +131,5 @@ PYTHONPATH=src/backend uv run --no-project --with pytest --with pytest-asyncio -
 
 本节不复制验收状态，避免与历史记录产生第二份可漂移的勾选。AC-001 ~ AC-006 的验收证据以已归档 task 与独立 review 为准：
 
-- t002 的六项 AC 在 `docs/archive/tasks/t002_v2_backend_foundation/task.md` 中由实施与独立 review 复核后勾选；正式 review 结论见同目录 `review_code.md` 与 `review_test.md`。
+- t002 的六项 AC 在 `docs/tasks/t002_v2_backend_foundation/task.md` 中由实施与独立 review 复核后勾选；正式 review 结论见同目录 `review_code.md` 与 `review_test.md`。
 - 本 spec 的后续修订（`failure_count=4`、`tags` 三态、删除 Profile 时级联删除 `runtime_events` 而保留 `audit_events`）属于 review `review_20261101_075819` 的 A12/A26/D1 契约同步，实现与验收由对应修复 task 及其 review 证据承担，不回填为 t002 历史通过。

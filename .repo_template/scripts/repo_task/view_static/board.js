@@ -723,10 +723,14 @@ function buildChainCard(chain) {
   });
   card.appendChild(tasks);
 
-  var stop = chain.stop_reason
-    || (window.ChainPlan ? window.ChainPlan.chainStopInfo(chain, plan, model) : '');
-  if (stop) {
-    card.appendChild(el('footer', { class: 'chain-card-foot' }, [stop]));
+  // 停止原因只来自服务端模型：缺字段是接口错误，空字符串按正常值渲染，不做客户端补算。
+  if (!Object.prototype.hasOwnProperty.call(chain, 'stop_reason')
+      || typeof chain.stop_reason !== 'string') {
+    card.appendChild(el('footer', { class: 'chain-card-foot' }, [
+      '接口错误：链缺少 stop_reason 字段',
+    ]));
+  } else if (chain.stop_reason) {
+    card.appendChild(el('footer', { class: 'chain-card-foot' }, [chain.stop_reason]));
   }
   return card;
 }
@@ -851,6 +855,12 @@ function closeSheet() {
 }
 
 var sheetDocCache = {};
+var sheetDocRequestSeq = 0;
+
+function activeDocTab() {
+  var active = document.querySelector('.tab-item.active');
+  return active ? active.getAttribute('data-doc') : null;
+}
 
 function setSheetTab(tab) {
   var tabs = document.querySelectorAll('.tab-item');
@@ -915,8 +925,16 @@ function renderSheetDoc(doc) {
   var n = nodes.get(state.selectedId);
   var body = $('sheet-body');
   if (!n) return;
-  body.textContent = '';
   var cacheKey = n.id + '/' + doc;
+  var seq = ++sheetDocRequestSeq;
+  // 请求身份校验统一在此：切换任务、切回详情或切换标签后，旧请求的成功与
+  // 失败回调都不得再改动当前详情区。
+  function stale() {
+    return seq !== sheetDocRequestSeq ||
+      state.selectedId !== n.id ||
+      activeDocTab() !== doc;
+  }
+  body.textContent = '';
   if (sheetDocCache[cacheKey]) {
     body.appendChild(el('pre', null, [sheetDocCache[cacheKey]]));
     return;
@@ -930,10 +948,12 @@ function renderSheetDoc(doc) {
     })
     .then(function (text) {
       sheetDocCache[cacheKey] = text;
+      if (stale()) return;
       body.textContent = '';
       body.appendChild(el('pre', null, [text]));
     })
     .catch(function (err) {
+      if (stale()) return;
       body.textContent = '';
       body.appendChild(el('p', { class: 'doc-error' }, ['加载失败:' + err.message]));
     });

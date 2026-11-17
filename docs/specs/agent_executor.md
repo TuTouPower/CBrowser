@@ -1,3 +1,8 @@
+---
+slug: agent_executor
+status: active
+tasks: [baseline]
+---
 # Agent 执行器（t030）
 
 版本：执行器规约 v1；CLI 动作程序 `version` 必须为 1；实现见

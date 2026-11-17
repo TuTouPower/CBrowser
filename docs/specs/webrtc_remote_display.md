@@ -1,3 +1,8 @@
+---
+slug: webrtc_remote_display
+status: active
+tasks: [baseline, t004, t006, t007, t014, t015, t019, t022, t023, t024, t026, t043, t039, t042, t054, t058, t061, t064, t063, t069]
+---
 # 需求规范：WebRTC 远程画面传输与输入
 
 ## 适用范围

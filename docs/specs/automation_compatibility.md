@@ -1,3 +1,8 @@
+---
+slug: automation_compatibility
+status: active
+tasks: [baseline]
+---
 # 需求规范：自动化兼容性基线（t029 探针结论）
 
 本文记录 t029 探针在云端取得的实测基线：目标引擎为 `cloakbrowser==0.6.4` 下载的 CloakBrowser linux-x64 二进制（146.0.7680.177.5），生产 launch args、固定 seed 290029、视口 1280x800、Xvfb 有头；普通 Chromium（Chrome for Testing 156）只用于验证探针机制与链路语义，不作为目标引擎结论。真实 arm64 镜像、容器化 X11/Stream 与真实 Mac Chrome Viewer 的复核由 t032 用同一探针执行，结论冲突时以 t032 为准。

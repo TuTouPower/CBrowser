@@ -16,7 +16,7 @@ metadata:
 
 3. 统一解析产物根：若 `<checkout>/.repo_template/scripts/task.py` 存在，product=checkout；否则若 `<checkout>/repo/.repo_template/scripts/task.py` 存在，product=checkout/repo；都无则停止。保存真实 consumer、checkout、product 与完整来源 SHA。本机来源必须 clean；不在来源工作区替用户切分支或丢弃改动，指定旧 ref 时另建隔离 checkout。向用户明确展示解析出的来源身份、完整来源 SHA 与产品根路径，取得用户确认授权后再继续运行后续工具链。
 
-4. 后续始终运行来源脚本，目标显式传入，source 保留原始 URL/来源身份，checkout 指向本轮固定 checkout。例如：
+4. 后续始终运行来源脚本，目标显式传入，source 保留原始 URL/来源身份，checkout 指向本次同步固定的 checkout。例如：
 
     ```bash
     python3 "$product/.repo_template/scripts/repo_sync.py" \
@@ -25,6 +25,6 @@ metadata:
 
     `consumer`、`product`、`checkout` 均为已核实实际路径，`source` 保留用户给定 URL 或来源路径。此时不 init、不改消费仓脚本或入口。脚本将来源身份与 resolved_checkout 分开保存；可共享且无凭据 URL 自动进入 manifest，本机路径不入库。
 
-5. 直接读取 `$product/.repo_template/skills/repo-template-sync-core/SKILL.md`，传入同一来源 SHA、脚本路径与 consumer，按 core 执行 status/plan、裁定、apply、验证和提交审批。apply 前再次核对来源 SHA 未变化。
+5. 直接读取 `$product/.repo_template/skills/repo-template-sync-core/SKILL.md`，传入同一来源 SHA、脚本路径与 consumer，按 core 执行 status/plan、裁定、apply、验证和提交审批。apply 前再次核对来源 SHA 未变化且工作区与暂存区全净。迁移与同步共用一个事务，保留完整 diff；每轮单独批准后只提交一个 commit，再立即 accept。拒绝时仅在提交前整体 rollback；提交后 revert 不恢复 common 状态。
 
-准备中止仅留下 `.scratch/` 缓存，无消费资产混合版本。禁止在模板源自身执行同步。来源信任与执行授权沿用用户本轮请求；共享文件裁定不明时停止。
+准备中止仅留下 `.scratch/` 缓存，无消费资产混合版本。禁止在模板源自身执行同步。来源信任与执行授权沿用用户当前请求；共享文件裁定不明时停止。

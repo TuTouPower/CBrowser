@@ -78,7 +78,7 @@
     - Impact: 自动化脚本解析元数据时会将已废弃技术事实（coturn）误判为现行有效
     - Fix: 补齐 d030/d031 现状元数据，并将 d009 等更正为已由 ADR 013 替代
 
-- [Low][85] docs/pending/parked/p031_domain_learnings_site_skills.md:49 — 暂搁待办 p031 中引用了已闭环条目的失效相对路径，产生死链
+- [Low][85] docs/pending/p031_domain_learnings_site_skills.md:49 — 暂搁待办 p031 中引用了已闭环条目的失效相对路径，产生死链
 
     - ID: f_docs_parked_p031_dead_link; verification: static
     - Evidence: p031 链接了 ../todo/p030\_...，而 p030 等文件已完成并迁移到 docs/archive/pending/

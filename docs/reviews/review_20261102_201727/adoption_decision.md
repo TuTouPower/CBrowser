@@ -8,9 +8,9 @@ docs/reviews/review_20261102_201727
 
 - 已读：根目录全部 41 份 bundle 逐份通读——bundle_repository_summary.md、bundle_cross_validation.md、bundle_global_strategy.md、bundle_global_architecture.md、bundle_global_system_properties.md、bundle_global_evolution.md、bundle_followup_q_architecture_01..04.md、bundle_followup_q_evolution_01..03.md、bundle_followup_q_strategy_01..03.md、bundle_followup_q_system_properties_01..03.md、bundle_local_archive_spikes.md、bundle_local_archive_tasks.md、bundle_local_backend_api_auth.md、bundle_local_backend_core.md、bundle_local_backend_runtime_adapters.md、bundle_local_backend_stream_gateway.md、bundle_local_backend_supervisor.md、bundle_local_backend_tests.md、bundle_local_contracts_deploy.md、bundle_local_docs_current.md、bundle_local_frontend_features.md、bundle_local_frontend_shell.md、bundle_local_repo_ops.md、bundle_local_template_scripts_ops.md、bundle_local_template_scripts_state.md、bundle_local_template_support.md、bundle_local_template_tests.md、bundle_local_tests_e2e_stream_frontend.md、bundle_local_tests_e2e_supervisor.md、bundle_local_tests_integration_fixtures.md、bundle_local_tests_unit_stream_api.md、bundle_local_tests_unit_supervisor_runtime.md；review_intensive.md 作索引与计数交叉核对（362 条与 bundle 逐条提取一致）。
 - 缺失：无（intensive 路聚合与 bundle 齐全；本目录无多模型路报告）。
-- 合并说明：见文末「附：finding → 决策映射」。原始 finding 362 条（Critical 1 / High 32 / Medium 112 / Low 173 / Info 44）→ 54 个决策项（A 48 / R 6；D1–D8 经用户决策转为 A41–A48）。归并规则：同一缺陷在生产代码与其测试缺口两侧各有一条时合并为一项；全局组合型结论（global\_\*）映射到其构成项；同一区域、同一修复方向的项按族归并。交叉证伪（bundle_cross_validation）抽查 30 条全部 agree，无 CHALLENGED/PARTIAL 需降级。
+- 合并说明：见文末「附：finding → 决策映射」。原始 finding 362 条（Critical 1 / High 32 / Medium 112 / Low 173 / Info 44）→ 54 个决策项（A 48 / R 6；D1–D8 经用户决策转为 A41–A48）。归并规则：同一缺陷在生产代码与其测试缺口两侧各有一条时合并为一项；全局组合型结论（global\_\*）映射到其构成项；同一区域、同一修复方向的项按族归并。交叉证伪（bundle_cross_validation）抽查 33 条全部 agree，无 CHALLENGED/PARTIAL 需降级。
 - 决策标准（用户 2026-11-02 指定）：追求最好的架构与设计、最少的技术债，不考虑开发时间与改动大小。据此，“改动成本高、收益低”不再作为不采纳理由；不采纳只保留三类：项目规则禁止（归档只准新增）、代码将被整体删除（legacy 随 t011）、设计上不应改（附具体设计理由）。部署包络仍为单机单人（已记录的用户决定），它决定需求范围，不降低质量标准。
-- 基线与现场：审阅基线 HEAD 5136766。此后 main 新增 8ccb9ae（Browser Runtime 镜像加 GTK、文件对话框书签、`--disable-gtk-ime`），与本文各项无冲突。2026-11-02 实测：在跑的旧版容器 `cbrowser`（compose 启动，数据卷 `~/.cbrowser`）端口发布在 `0.0.0.0:56661`、`AUTH_TOKEN` 已设置；未带凭据请求 `/%2e%2e/%2e%2e/%2e%2e/etc/hostname` 返回 200，路径穿越在现网可利用。
+- 基线与现场：审阅基线 HEAD 5136766。此后 main 新增 8ccb9ae（Browser Runtime 镜像加 GTK、文件对话框书签、`--disable-gtk-ime`），与本文各项无冲突。2026-11-02 实测：在跑的旧版容器 `cbrowser`（compose 启动，数据卷 `~/.cbrowser`）端口发布在 `0.0.0.0:56661`、`AUTH_TOKEN` 已设置；当时记录声称未带凭据请求 `/%2e%2e/%2e%2e/%2e%2e/etc/hostname` 返回 200，但未留存独立日志或脚本，实测等级为未知；有证据支撑的等级为按源码逐跳静态确认。
 
 ## 统计
 
@@ -412,7 +412,7 @@ docs/reviews/review_20261102_201727
 - 来源：bundle_global_system_properties, bundle_followup_q_system_properties_02, bundle_local_contracts_deploy, bundle_local_backend_core, bundle_global_strategy, bundle_cross_validation
 - 位置：compose.yaml:10-17；src/backend/main.py:116-165,1835-1843,1301,1399,1221-1236；README.md:40；.env.example:15-16
 - 优先级：CRITICAL
-- 详细判断理由：唯一部署形态是 legacy 单容器，端口发布到 0.0.0.0；`AUTH_TOKEN` 留空时全部 API 无认证。你的现网容器已设置 token，所以“无认证控制面”这一半对你不成立；但 SPA 兜底路由的路径穿越绕过 token（非 `/api/` 路径不鉴权），已实测可从本机读取容器内文件，局域网同样可达，可读 `/data` 下各 Profile 的 Cookie、`profiles.db`、`settings.json`。另有剪贴板正文前 60 字符写入 manager.log、只有 shutdown 做同源校验等问题。legacy 代码将由 t011 整体删除；若现在从源码重建 legacy 镜像，会把 v2 前端打进只跑旧后端的镜像，界面不可用（A27），所以 legacy 代码修复实际无法部署。涉及在跑服务与访问方式，需你决定。
+- 详细判断理由：唯一部署形态是 legacy 单容器，端口发布到 0.0.0.0；`AUTH_TOKEN` 留空时全部 API 无认证。你的现网容器已设置 token，所以“无认证控制面”这一半对你不成立；但 SPA 兜底路由的路径穿越绕过 token（非 `/api/` 路径不鉴权），源码逐跳静态确认可达；读取容器文件及局域网实测未留存独立证据，核实等级为未知，可读 `/data` 下各 Profile 的 Cookie、`profiles.db`、`settings.json`。另有剪贴板正文前 60 字符写入 manager.log、只有 shutdown 做同源校验等问题。legacy 代码将由 t011 整体删除；若现在从源码重建 legacy 镜像，会把 v2 前端打进只跑旧后端的镜像，界面不可用（A27），所以 legacy 代码修复实际无法部署。涉及在跑服务与访问方式，需你决定。
 - 修复说明：（用户决策 A）运维缓解：compose.yaml 端口改为 `127.0.0.1:${CBROWSER_PORT:-56661}:8080`，用 `docker compose up -d --no-build` 以现有镜像重建容器（数据卷不变）；README 与 .env.example 把 AUTH_TOKEN 标为必填。legacy 代码不改，由 t011 删除。
 - 用户决策：A（原 D1，2026-11-02 用户在对话中确认）
 
@@ -496,3 +496,57 @@ docs/reviews/review_20261102_201727
 - bundle_local_tests_integration_fixtures.md：L62 01[H]→A22；L68 02[M]→A36；L74 03[M]→A27；L80 04[M]→A37；L86 05[M]→A37；L92 06[M]→A38；L98 07[M]→A38；L104 08[M]→A27；L110 09[M]→A22；L116 10[L]→A36；L122 11[L]→A37；L128 12[L]→A38；L134 13[L]→A36；L140 14[L]→A20
 - bundle_local_tests_unit_stream_api.md：L55 01[M]→A24；L61 02[M]→A24；L67 03[M]→A39；L73 04[M]→A39；L79 05[L]→A39；L85 06[L]→A39；L91 07[L]→A33；L97 08[L]→A24；L103 09[L]→A39；L109 10[L]→A24；L115 11[L]→A24；L121 12[L]→A39；L127 13[L]→A24；L133 14[I]→A39；L139 15[I]→A39；L145 16[I]→A39
 - bundle_local_tests_unit_supervisor_runtime.md：L55 01[M]→A23；L61 02[M]→A39；L67 03[M]→A39；L73 04[M]→A39；L79 05[L]→A24；L85 06[L]→A39；L91 07[L]→A39；L97 08[L]→A39；L103 09[L]→A24；L109 10[L]→A39；L115 11[L]→A24；L121 12[L]→A39
+
+## 事实复核与验收口径
+
+复核于 2026-11-04，出处为 t024 / 采纳项 A38，源自第二轮审阅的 f_archive_reviews_01..06。以下记录说明该次复核的证据与事实口径，不代表当前 task、pending 或运行环境状态。跨轮引用使用「报告路径 + finding ID」。
+
+### 1. 交叉证伪计数：33（不是 30）
+
+`docs/reviews/review_20261102_201727/bundle_cross_validation.md` 实际列出 **33** 条逐条证伪记录（`^- f_` 行计数 = 33），全部 agree；同文件 sha256 `e43b2d1e990230c3754a09b4a6b7b82ed2f2b83efa8691afb7ddae16720d667c`。同轮 `adoption_decision.md` 卷首称 33 条、「合并说明」第 1 条称 30 条 —— 以 bundle 原件为准：**33 条**，30 为笔误。
+
+### 2. adoption 附表映射复算：全量 362；A13 共 5 条
+
+对 `docs/reviews/review_20261102_201727/adoption_decision.md` 文末「附：finding → 决策映射」逐行复算（口径：`NN[等级]→X` 为主映射，「（组合：…）」为组合提及）：
+
+- 主映射总条数 = **362**，与该文件自述的原始 finding 总数（362）一致，附表为全量映射、非子集。
+- 指向 A13 的主映射 = **4** 条，另有 **1** 条在组合提及中包含 A13，共 **5** 条。
+- 第二轮 `f_archive_reviews_04` 所述「A13 自称覆盖 6 条、附表实际映射 ≥8 条」在本文件无法复现：本文件 A13 节未自称覆盖条数，其列名的 `f_backend_core_04`、`f_backend_core_12` 在本文件附表中并非映射到 A13（请以报告路径 + finding ID 在 `docs/reviews/review_20261102_201727/bundle_local_backend_core.md` 与附表 backend_core 节逐条复核）。该 finding 的计数口径标**未知**，不作为销账依据。
+- 「62 条子项」一语在本文件全文无出处，标**未知**；本文件的归并口径为「362 条 → 54 个决策项（A 48 / R 6）」。
+
+### 3. serve_spa 路径穿越的核实等级：静态确认（static）
+
+同一结论在记录内有三档表述，以最高有证据支撑的一档为准：
+
+- `docs/reviews/review_20261102_201727/bundle_local_backend_core.md` 的 `f_backend_core_01`：suspected。
+- `docs/reviews/review_20261102_201727/bundle_followup_q_system_properties_02.md`：按源码逐跳**静态可达性确认**。
+- `adoption_decision.md` 中「未带凭据请求返回 200 并读出容器 hostname」的实测陈述仅见于该决策文档，无独立证据（日志/脚本）留存，该部分标**未知**，不得作为 reproduced 依据引用。
+- 第二轮审阅（`docs/reviews/review_20261103_185924`）已按钉版 Starlette/uvicorn 源码复核，维持静态确认口径。legacy 已冻结并将由 t010 删除下线，本条仅作历史事实。
+
+### 4. 证据截断来源（4 份 bundle 的 viewfix 段落）
+
+下列文件的补审（viewfix）段落在词中/句中截断，引用其结论时须注明证据不完整；下列 sha256 记录 2026-11-04 复核时的字节，后续内容或格式变化不沿用这些指纹：
+
+|文件|sha256|
+|---|---|
+|`docs/reviews/review_20261102_201727/bundle_local_backend_core.md`|`44a1cce326d12a76cd734b388ac7fa3f95fc2d87c5f2efc01d3b48cbab7123d5`|
+|`docs/reviews/review_20261102_201727/bundle_local_backend_supervisor.md`|`b22eb31c140703c1e664e446c2ed53f28bb1f9d209cd6da7fd0a1849cc656d0e`|
+|`docs/reviews/review_20261102_201727/bundle_local_backend_runtime_adapters.md`|`15ba1d968473ca184d5a732f9deab3988854c95dc73c0a7ab486fac11a6f680c`|
+|`docs/reviews/review_20261102_201727/bundle_local_backend_stream_gateway.md`|`2f5bb89a77f99e7624cb8a3ec9ebca5354ac7698e6304d4f8f887ba841382092`|
+
+### 5. 用语说明：Gaps 与 Limitations
+
+第二轮审阅报告中的 **Gaps** 指**单元覆盖缺口**（哪些单元/文件未被该轮审阅覆盖），**Limitations** 指**方法限制**（审阅方法本身的边界，如静态分析、无真实环境执行）；两者不可混用为「未完成事项」。
+
+### 6. 历史 task 的替代关系（原 AC 不改）
+
+- `docs/tasks/t009_v2_full_acceptance/task.md` 的 AC-005 中 coturn/凭证切换项：其机制已由 ADR 013（同机直连）整体删除，现行验收口径为同机直连（t015 落地、t019 以 ICE-lite 收敛默认连接路径）；t009 原 AC 文本不改，本条即替代关系说明。
+- 截至复核时，t010/t012 的未竟事项按当时交接快照与 pending 记录承接；当前 task 与 pending 以各自 front matter 为准，不以历史 task 的原始勾选推断完成状态；历史上以 trust_prior / NOT_RUN 记账的验收项不因后续 task 的通过而回溯改写为当时已执行。
+
+### 7. s011 合成证据与外部 fixture 依赖范围
+
+ADR 013 所据的 s011/d026 验证在本机真实 Chrome + OrbStack 上完成，其中的 visibility 暂停/恢复证据由**合成页面脚本**触发可见性变化，不是真实用户切换标签的可见性事件；且该验证依赖本机 Chrome 与 OrbStack 这一**外部 fixture**，不可在其他环境原样复跑。当前仍有意义的媒体/真实可见性场景由现行 stream 与 frontend 套件承接，其真实环境执行义务见 p026（未验收）。
+
+### 8. 冻结 benchmark 旁注
+
+2026-10-27 benchmark 历史报告的通过结论（原报告按 review 保留策略退出当前树，可从 Git 历史查阅）是其时点（2026-10-27）的历史记录；现行手动输入/剪贴板验收口径以 ADR 012 与现行 specs/blueprint 为准，不以该 benchmark 的通过替代现行验收。

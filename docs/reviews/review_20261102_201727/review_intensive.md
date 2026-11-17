@@ -733,25 +733,25 @@
         - Impact: The documented fixture contract does not describe the container deployment that blackbox tests actually run, and startup failures are reported far from their cause.
         - Fix: Give the fixture an explicit host parameter and a start_in_loop/run-standalone entry used by the container script; check the ready_event result in start() and raise with the bind error; update gateway_contract.md to describe the container binding.
         - Verification: static
-- [Medium][90] docs/archive/spikes/s005_capture_policy/code/entrypoint_browser.sh:7-7 — Archived container entrypoints disable access control on X11, PulseAudio and Selkies surfaces
+- [Medium][90] docs/spikes/s005_capture_policy/code/entrypoint_browser.sh:7-7 — Archived container entrypoints disable access control on X11, PulseAudio and Selkies surfaces
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_01)
     - f_archive_spikes_01: s005 code/entrypoint_browser.sh:7 starts Xvfb with -listen tcp -ac (X11 over TCP with access control disabled).; PulseAudio auth-anonymous=1 in s001 code/entry_browser_full.sh:11, s004 code/entrypoint_browser.sh:11, s008 code/media_fixture/entrypoint_browser.sh:11 and s009 code/entrypoint_browser.sh:11.; Xvfb -ac (no -listen tcp) in s008 code/media_fixture/entrypoint_browser.sh:17 and s009 code/entrypoint_browser.sh:17.; Selkies --enable-basic-auth=false in s001 code/run_spike.sh:231, s004 code/entrypoint_stream.sh:28, s008 code/stage2_stream_entrypoint.sh:28 and s009 code/entrypoint_stream.sh:28, several bound to 0.0.0.0 inside the spike topology.; Cross-check of current tree: the PulseAudio anonymous pattern did not propagate (src/backend/cbrowser/runtime_agent/runner.py uses auth-anonymous=0), but --enable-basic-auth=false does appear in the current stream entrypoint (config/docker/stream_runtime/entrypoint.sh:197), there compensated by a 127.0.0.1 bind.
         - Impact: The spike reports disclose that root/anonymous fixtures are not production acceptance, but the scripts themselves carry no warning header; anyone reusing an archived entrypoint as a runtime starting point inherits unauthenticated screen capture, input injection and audio access on any network that can reach the service.
         - Fix: Add a prominent archive-only warning header to each affected entrypoint stating the disabled controls and the production replacements (Xauthority, auth-anonymous=0, gateway auth), or strip the dangerous flags from the archived copies and note the change in the spike report.
         - Verification: static
-- [Medium][85] docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:342-351 — Archived spike code exposes unauthenticated control planes that mutate live media sessions
+- [Medium][85] docs/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:342-351 — Archived spike code exposes unauthenticated control planes that mutate live media sessions
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_02)
     - f_archive_spikes_02: s008 stage2_stream_runner.py:342-351 starts an auxiliary HTTP server on 0.0.0.0:18092 with no authentication; POST /restart_ice (handler at :284-339) accepts caller-supplied ICE servers including TURN credentials and forces renegotiation on a live peer.; s005 code/live_policy_agent.py:284-321 serves a control socket at /tmp/capture_policy_agent.sock with no authentication, accepts forged input-activity records and returns state including peer details and the full action history; the s005 v1 independent review already flagged that tests used it to bypass the real DataChannel.; A safer pattern exists in the same archive: s003 supervisor control requires a token (code/recovery_probe/roles.py), so the unauthenticated variants are not the archive norm.
         - Impact: These prototypes mirror the shape of the production supervisor/gateway control surfaces; copied forward, any local process (or any host that can reach a published port) could restart ICE with attacker-chosen TURN servers or forge capture-policy input state.
         - Fix: Mark both files as archive-only prototypes and either remove the control listeners from the archived copies or gate them behind the token pattern used by s003; at minimum add a header stating the endpoints are unauthenticated by design and must not be reused.
         - Verification: static
-- [Medium][90] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:35-35 — Archived harnesses write live secrets into their own source directory, and those paths are not gitignored
+- [Medium][90] docs/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:35-35 — Archived harnesses write live secrets into their own source directory, and those paths are not gitignored
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_03)
     - f_archive_spikes_03: s006 run_verification.py:35 sets TOKEN_FILE to agent_token.secret inside the probe directory and :139-141 writes a fresh agent token there on every run.; s008 code/probe_work/start_coturn.sh:14-30 generates a random TURN shared secret and writes turn_secret.txt plus a turnserver.conf containing the static-auth-secret into probe_work/ inside the code tree (both chmod 600).; git check-ignore returns no match for agent_token.secret, turn_secret.txt or turnserver.conf, so an in-tree run leaves real secrets as untracked-but-committable files.; Mitigation on record: spike reports instruct copying code to an independent scratch directory before running, and s002 documents its TURN secret file as local-only 0600, never committed or printed.
         - Impact: A single in-tree verification run followed by a bulk git add would commit a live TURN shared secret or gateway agent token to a public repository; the archive instructions reduce but do not eliminate the risk because the scripts default to writing beside themselves.
         - Fix: Add the three generated filenames to .gitignore (or relocate the write paths to a TMPDIR/scratch env var with a hard failure when run inside the repo tree) and note the generated files in the spike reports.
         - Verification: static
-- [Medium][95] docs/archive/pending/p011_t007_test_minor_followups.md:9-9 — p011 标 resolution=resolved 归档，但其 reason 自认三子项之一（f012）未做且 live 侧无任何承接
+- [Medium][95] docs/pending/p011_t007_test_minor_followups.md:9-9 — p011 标 resolution=resolved 归档，但其 reason 自认三子项之一（f012）未做且 live 侧无任何承接
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_01)
     - f_archive_tasks_01: p011 处理行：resolution=resolved；reason 写明 A28 只补齐 f011（SSE 失效重取 Vitest）与 f013（audio_status 透传），并明说「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」; p011 正文（:8）原计划为「下次改前端会话或 SSE 的 task 内补齐」，属开放式后续安排，与 resolved 终局状态矛盾; 存在性核对：live docs/pending/todo/ 只有 p014_v2_upload_picker_access.md，docs/pending/parked/ 为空，f012 余项（session E2E 接受 created 状态、宜收紧为 running）在 live 侧无 pending/task 在册跟踪
         - Impact: 归档读者会认为 t007 三项测试遗留全部闭环，实际 f012 的弱断言（关闭页面后容器状态接受 created，无法区分未停止与被重建）在记录层面被静默丢弃，违反「pending 已闭环才迁入归档」的纪律。
@@ -1741,43 +1741,43 @@
         - Impact: A developer who changed frontend sources without rebuilding gets green E2E results for code that is not what they edited — a false-confidence oracle for the frontend lane (the app-probe variant raises on missing build but has the same staleness blind spot).
         - Fix: Either always rebuild in the harness, or record and compare a source hash/mtime manifest and rebuild when stale; adjust the docstring to match the actual guarantee.
         - Verification: static
-- [Low][95] docs/archive/spikes/s001_selkies_runtime/blackbox_review.md:4-4 — Archived reviews in a public repository contain the developer’s personal host paths and username
+- [Low][95] docs/spikes/s001_selkies_runtime/blackbox_review.md:4-4 — Archived reviews in a public repository contain the developer’s personal host paths and username
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_04)
     - f_archive_spikes_04: Absolute macOS home-directory paths containing the account username appear at s001 blackbox_review.md:4, s004 blackbox_review.md:6, s005 independent_review.md:5, s005 independent_review_r4.md:33 and :56, s006 independent_review.md:4, s008 independent_review_split.md:33, :34 and :37, s009 independent_review.md:18.; The paths also disclose the local directory layout (project checkout and nested .scratch review workspaces).; Internal test-network addressing (dedicated Docker subnet host 172.29.0.10:3478) is printed in s002 report.md:189 and throughout the s008 evidence sections.
         - Impact: Low-grade privacy exposure: the username and workstation layout of the developer are permanently published in git history, useful for targeted phishing or social engineering; the internal addresses are experiment-scoped and low sensitivity.
         - Fix: Scrub the username-bearing path prefixes to a placeholder (e.g. $HOME or <workspace>) in the archived review files; accept that history rewrite is out of scope and treat this as a going-forward redaction plus a note in the archive.
         - Verification: static
-- [Low][90] docs/archive/spikes/s001_selkies_runtime/report.md:44-44 — Reproduction instructions in archived reports still reference pre-archive docs/spikes/ paths that no longer exist
+- [Low][90] docs/spikes/s001_selkies_runtime/report.md:44-44 — Reproduction instructions in archived reports still reference pre-archive docs/spikes/ paths that no longer exist
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_05)
     - f_archive_spikes_05: Re-run commands citing docs/spikes/... appear at s001 report.md:44, s002 report.md:30 and :199, s003 report.md:34 and :57, s003 container_download_report.md:26, s004 report.md:41, s005 report_v1.md:39 and s006 report.md:38.; The material now lives under docs/archive/spikes/; the referenced docs/spikes/ paths do not exist in the tree.; Newer reports (s007-s010) were written with archive-aware instructions, so the stale paths are confined to the earlier spikes.
         - Impact: A reader or agent following an archived report verbatim hits missing paths and may conclude the spike is unreproducible or improvise an in-tree run, which interacts with the secret-writing hazard in f_archive_spikes_03.
         - Fix: Append an archive errata note to each affected report giving the current docs/archive/spikes/ location (archive rules allow additions) rather than editing the historical command text.
         - Verification: static
-- [Low][90] docs/archive/spikes/s005_capture_policy/independent_review_r4.md:20-20 — Archived reviews cite review artifacts that were never archived, breaking the hash-manifest audit trail
+- [Low][90] docs/spikes/s005_capture_policy/independent_review_r4.md:20-20 — Archived reviews cite review artifacts that were never archived, breaking the hash-manifest audit trail
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_06)
     - f_archive_spikes_06: s005 independent_review_r4.md:20 includes a file named previous_review_r3.md in its SHA-256 manifest, but the s005 directory contains only independent_review.md and independent_review_r4.md.; s006 independent_review.md:19-20 states that review_launcher_only.md and review_cmdline_failure.md are retained, but neither exists in the s006 directory.; Directory listings of both spike folders confirm the absences; the missing files are the prior-round reviews the manifests rely on for continuity.
         - Impact: The multi-round review chain cannot be fully audited from the archive: a verifier cannot confirm what the missing rounds said or that the frozen hashes cover the complete record.
         - Fix: Add an archive note to both spikes recording that the cited files exist only in the original scratch workspace (or were not preserved), so the gap is explicit rather than discoverable only by failed lookup.
         - Verification: static
-- [Low][85] docs/archive/spikes/s008_turn_generation_media/report_same_url.md:1-1 — Two archived reports lack the archive scope banner, including a superseded near-duplicate report
+- [Low][85] docs/spikes/s008_turn_generation_media/report_same_url.md:1-1 — Two archived reports lack the archive scope banner, including a superseded near-duplicate report
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_07)
     - f_archive_spikes_07: Eight of the ten spike report.md files open with the “范围更新” banner declaring the snapshot status and pointing to t001/scope_adjustment.md and the architecture plan for current gates.; s008 report_same_url.md has no banner and no superseded marking anywhere, yet is a near-duplicate of report.md describing the replaced same-URL/same-credential topology; s008 report.md:35-37 records that this fixture was wholly replaced and its history report retained.; s010 report.md also has no banner (mitigated by strong in-body scoping: the 5 checks are explicitly not the formal six-AC acceptance).; There is no index or README at docs/archive/spikes/ level explaining the banner convention.
         - Impact: A reader or agent landing on report_same_url.md first can mistake a superseded topology’s conclusions for current results, since nothing in the file itself signals that it is history.
         - Fix: Prepend the standard scope banner (or a one-line superseded-by pointer to report.md) to report_same_url.md and s010 report.md as archive additions.
         - Verification: static
-- [Low][95] docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:1-1 — Whole spike files are duplicated across and within spikes, so fixes never propagate between copies
+- [Low][95] docs/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:1-1 — Whole spike files are duplicated across and within spikes, so fixes never propagate between copies
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_08)
     - f_archive_spikes_08: s003 container_uds/container_cdp_probe.py differs from s003 code/test_cdp_real.py in only 3 places (extra glob import, glob-based Chrome path, --no-sandbox); the rest is identical.; s006 code/media_fixture/{entry_browser_full.sh, test_cloak_loop.py, gen_wav.py} are byte-identical to the s001 files of the same names (disclosed as fixture copying in s006 report.md:22).; s007 code/fixture/test_mitshm.c is byte-identical to s001 code/test_mitshm.c (verified by diff).; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh carry the same SHA-256 in both spikes’ independent reviews (dcbc7d70...), i.e. another verbatim cross-spike copy.; s009 ime_native_probe.py and extra_harness.py duplicate the remote_value() CDP helper verbatim.
         - Impact: Corrections applied to one copy (e.g. the Xvfb/PulseAudio hardening relevant to f_archive_spikes_01, or assertion fixes) silently leave the other copies stale, and hash manifests in reviews pin different copies inconsistently.
         - Fix: Record the duplication explicitly in the affected spike reports (source of truth copy per file) so future readers patch all copies; no code change needed inside the archive itself.
         - Verification: static
-- [Low][90] docs/archive/spikes/s007_profile_isolation/code/entry_browser.sh:9-9 — Hard-coded test secrets and token-via-argv patterns persist in archived scripts
+- [Low][90] docs/spikes/s007_profile_isolation/code/entry_browser.sh:9-9 — Hard-coded test secrets and token-via-argv patterns persist in archived scripts
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_09)
     - f_archive_spikes_09: s007 code/entry_browser.sh:9 embeds a hard-coded default profile secret literal passed to the browser runner (kind: plaintext fixture sentinel, value not reproduced here).; s007 code/run_isolation_probe.py:250 and :297 embed plaintext per-profile sentinel secret literals and pass them as container command arguments, making them visible via docker inspect and process listings.; s003 code/recovery_probe/roles.py:26 compares the supervisor token with a non-constant-time != and the token is passed via --token command-line arguments in test_orchestration.py:85 and :112.; All are experiment fixtures rather than production credentials, and the s007 sentinels exist to prove cross-profile non-leakage.
         - Impact: Low direct risk, but the archive normalizes embedding secrets in scripts and argv; copied into production-adjacent tooling the same shapes leak through process lists and inspect output.
         - Fix: Note in the s007/s003 reports that the literals are deliberate fixtures and that the production pattern is the 0600 file / env channel already used by the TURN spikes.
         - Verification: static
-- [Low][90] docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5-5; docs/archive/pending/p005_t006_review_minors.md:11-11 — p001 与 p005 的 resolution reason 逐字相同，p001 的闭环理由以 p005 为主语，且 p005 未交代其 test_f001 子项
+- [Low][90] docs/pending/p001_supervisor_recovery_tick_complexity.md:5-5; docs/pending/p005_t006_review_minors.md:11-11 — p001 与 p005 的 resolution reason 逐字相同，p001 的闭环理由以 p005 为主语，且 p005 未交代其 test_f001 子项
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_02)
     - f_archive_tasks_02: 两文件处理行 reason 完全一致：「A25 完成结构性拆分：recovery tick 按 observe/classify/schedule 拆分；docker_adapter 提取…；p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」; p001 文件内出现以 p005 为主语的闭环理由，p001 自身的 tick 拆分虽被同一句覆盖，但形式上是复制粘贴而非逐项销账; p005 正文含五个子项（code_f001–f004 与 test_f001 四个 Supervisor E2E 内联重复 coturn 启动代码抽夹具），reason 只枚举 f001/f002/f003 与「复杂度项」，test_f001 无任何交代
         - Impact: 归档闭环理由不可逐项审计：无法从记录判断 p005 的 test_f001 是否已处理，也削弱其余 adoption 引用型闭环（A5/A8/A28）的可信度。
@@ -1795,19 +1795,19 @@
         - Impact: 仓库源头是公开 fork（CloakHQ/CloakBrowser-Manager），归档文档随仓公开时会带出开发者本机用户名、目录布局与历史会话标识；无凭据值泄露，故定级 Low。
         - Fix: 归档前对 handoff 做一次脱敏（本机路径改相对/占位、session id 与 PID 删除），或在仓库发布策略中明确接受该暴露并记录。
         - Verification: static
-- [Low][95] docs/archive/tasks/t014_v2_clipboard_input/note.md:78-86 — t014 已 dropped 归档，但 note.md 收尾报告仍是未填写的模板占位，终局结果只存在于 front matter 与索引
+- [Low][95] docs/tasks/t014_v2_clipboard_input/note.md:78-86 — t014 已 dropped 归档，但 note.md 收尾报告仍是未填写的模板占位，终局结果只存在于 front matter 与索引
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_05)
     - f_archive_tasks_05: 收尾报告「结果：全部满足 / 未满足」「测试/黑盒/review：待执行时填写」「结果摘要：待执行时填写」均为模板原文，未按 drop 实际结果回填; t014 的实际终局（AC-001/005 随 e7f58ce 合入、AC-002/003/004 转 t009、用户 drop 决定）只记录在 front matter 的 note 字段与 tasks_index.json 的 note 字段；且 t014 无 handoff.json; 对照：其余归档 task（t001–t008、t013）的收尾报告均已回填验收/测试/review 三项
         - Impact: 按统一收尾格式阅读归档时，t014 看起来像从未执行完的半成品，drop 的事实与去向需要跨 front matter 和索引拼接才能还原。
         - Fix: 回填 t014 收尾报告：结果写 dropped 及用户决定日期、三项验证写已合入部分的评审结论（review 两轮记录在 review_code/review_test.md）、遗留只写 p015/t009 引用。
         - Verification: static
-- [Low][90] docs/archive/tasks/t013_v2_profile_copy_reset/note.md:98-98 — t013 收尾报告引用的 reviewed_scope 是 Round 4 的旧指纹，与两份 review 的 Round 5 终局指纹不一致
+- [Low][90] docs/tasks/t013_v2_profile_copy_reset/note.md:98-98 — t013 收尾报告引用的 reviewed_scope 是 Round 4 的旧指纹，与两份 review 的 Round 5 终局指纹不一致
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_06)
     - f_archive_tasks_06: note.md:98 写「reviewed_scope=68994e2bb7fa7d48」（Round 4 指纹）; review_code.md 与 review_test.md 的 Round 5 终局 verdict 均绑定 reviewed_scope 3b90f37ed20afe31；test reviewer Round 5 明确指出 note 收尾报告仍写旧指纹、建议同步，未见后续修正
         - Impact: 归档收尾摘要指向已被取代的评审范围，按该指纹回查会得到与最终交付不一致的评审绑定，削弱归档证据链的精确性。
         - Fix: 把 note.md 收尾报告的 reviewed_scope 更新为 3b90f37ed20afe31 并注明 Round 5 终局。
         - Verification: static
-- [Low][80] docs/archive/tasks/t008_v2_artifacts_automation/note.md:76-76 — t008_test_f009 的撤回理由含流程便利因素（避免终审后改测使 scope 失效），其测试缺口无后续跟踪
+- [Low][80] docs/tasks/t008_v2_artifacts_automation/note.md:76-76 — t008_test_f009 的撤回理由含流程便利因素（避免终审后改测使 scope 失效），其测试缺口无后续跟踪
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_07)
     - f_archive_tasks_07: note Round 2 处置表：t008_test_f009 状态=撤回，理由为「255 字符截断属防御性边界；已有 4xx 重试与 API schema 覆盖，单独单测收益低，且避免终审后改测导致 scope 失效」; 该 finding 由 test reviewer 在 Round 3 提出（长文件名截断无测试，截断被移除时 422 会被永久标记 processed 而丢下载），撤回后既未补测，也未登记 pending 或 follow-up; 对照同簿其他遗留均有明确去向（p014），此项是唯一以撤回形式消失且无承接者的测试缺口
         - Impact: 撤回在此被用作绕开终审后 scope 冻结的出口，而非问题不成立的裁决；缺口本身（截断逻辑无回归测试）在记录层面不再可见。
@@ -2125,19 +2125,19 @@
         - Impact: 套件变慢或媒体延迟劣化时没有信号，维护者只能凭经验判断某次门禁慢是正常还是回归
         - Fix: 为 first-frame 与输入延迟设宽松上限断言（如取历史 p95 的 2 倍）；在 testing.md 门禁说明中登记各重型文件的预期时长区间
         - Verification: static
-- [Info][95] docs/archive/spikes/s002_selkies_protocol/report.md:98-98 — Encoding corruption (mojibake) is baked into several archived documents
+- [Info][95] docs/spikes/s002_selkies_protocol/report.md:98-98 — Encoding corruption (mojibake) is baked into several archived documents
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_10)
     - f_archive_spikes_10: Replacement/garbled characters appear at s002 report.md:98 and :189, s003 container_download_review.md:96, s004 blackbox_review.md:101, s005 independent_review.md:99 and s007 independent_review_r4.md:299.; The corruption sits inside otherwise load-bearing evidence text (addresses, verdict sentences), indicating the agent reports were copied into the archive through a lossy encoding step.
         - Impact: Cosmetic to mildly confusing; a small number of evidence strings are not fully legible, weakening the archive’s value as a verbatim record.
         - Fix: Leave the historical text as-is (archive is append-only) and, if the original scratch reports survive, append corrected copies; otherwise note the known-corrupt lines in the affected reports.
         - Verification: static
-- [Info][90] docs/archive/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:2-2 — Overstated wording inside archived code contradicts the caution of the spike reports
+- [Info][90] docs/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:2-2 — Overstated wording inside archived code contradicts the caution of the spike reports
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_11)
     - f_archive_spikes_11: s005 test_e2e_real_pipeline.py:2 and native_visibility_e2e.py:2 describe themselves as “Production-grade” in docstrings.; s003 code/test_cdp_real.py:388 prints “Recovery is 100% genuine!” while s003 report.md:51 explicitly declines “100%/彻底根除” wording.; s005 code/revision_03/test_e2e_real_pipeline.py tail (:946) summarizes “ALL 9 ... PASSED” although the retired file contains 10 scenarios including the removed Scenario 10.; s007 code/run_isolation_probe.py:13 docstring still describes Revision-2 paplay audio generation although the frozen R5 code uses browser WebAudio; s010 code/probe.py:3 names itself probe_v2.py inside a file archived as probe.py.
         - Impact: Anyone reading code before reports (the common agent workflow) receives stronger claims than the project actually adopted; the reports’ corrections only help if they are read first.
         - Fix: Rely on the existing report banners; optionally append a one-line archive note to the s005 and s003 reports listing the disclaimed in-code phrases.
         - Verification: static
-- [Info][75] docs/archive/spikes/s007_profile_isolation/independent_review_r3.md:93-93 — Archived s007 reviews assert a “no exclusive lease” architecture invariant that current project documents no longer state
+- [Info][75] docs/spikes/s007_profile_isolation/independent_review_r3.md:93-93 — Archived s007 reviews assert a “no exclusive lease” architecture invariant that current project documents no longer state
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_12)
     - f_archive_spikes_12: s007 independent_review_r3.md:93, independent_review_r4.md:315 and independent_review_final.md (§五) present “无独占租约机制 / 杜绝独占租约设计” as a standing CBrowser architecture property.; The current repo AGENTS.md describes the system as built on strict Profile isolation with control-lease management (控制租约管理), i.e. leases are part of the current architecture vocabulary.; The archived claim is not marked as time-scoped to the v2 spike phase.
         - Impact: A reader mining the archive for architecture constraints could adopt a superseded invariant and misjudge current lease-related design or review decisions.

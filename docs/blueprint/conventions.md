@@ -9,7 +9,7 @@
 - **后端**：Python 3.15+，使用 `uv` 管理虚拟环境与依赖；依赖唯一锁定来源为根 `pyproject.toml` + `uv.lock`，各镜像与门禁的 requirements 由 `scripts/generate_requirements.sh` 按依赖组 `uv export` 生成，禁止手写并行依赖清单（t034）；Web 框架使用 FastAPI 与 Pydantic v2；ORM 统一使用 SQLAlchemy 2.1 异步/强类型语法；数据库迁移使用 Alembic。全部 Python 镜像基于 `python:3.15-slim-trixie` digest 固定，辅助阶段基于 `debian:trixie-slim` digest 固定；Caddy 基于 2.x digest 固定。
 - **本地工具版本**：`.mise.toml` 固定 Node 26.13.0 与 Python 3.15.2；门禁与镜像主次版本一致。
 - **前端**：TypeScript 5.9 + React 19.3，构建工具 Vite 8（Rolldown）；状态管理 TanStack Query 5，路由 `react-router` 8 单包（不再用 `react-router-dom`）；禁止前端手写与后端重复的 API 契约，统一通过 OpenAPI 生成类型。宿主构建 Node 固定 26 LTS（`.mise.toml`），`engines.node=">=26.0.0 <27"`。
-- **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions.md`「前端工具链目标版本（t033）」。
+- **TypeScript 版本例外**：因 `openapi-typescript@7.13.0` 的 peer 仍为 `typescript@^5.x`，TypeScript 不用最新 7.x，固定当前最高 5.x（5.9.3）；复查条件见 `docs/blueprint/decisions/20261105_node_lts.md`「前端工具链目标版本（t033）」。
 - **远程显示**：Selkies 2.2.1 官方稳定发布版本（t043 由 2.1.0 升级，ADR 022），纯 WebRTC 传输，不保留任何旧 RFB/VNC 链路；官方 Web 客户端由 `scripts/vendor_selkies_web.py` 按固定 wheel SHA256 解出，`config/selkies/selkies_web_sha256.txt` 由对应版本 wheel 生成。
 - **容器与部署**：生产运行平台为 Linux Docker；本地开发验证支持 macOS (OrbStack)。
 
@@ -30,7 +30,7 @@
 ## 3. 路径与隐私规范
 
 - 当前全部 tracked 文本与未跟踪且未忽略的新文件（含归档）不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
-- 归档 spike 只作历史证据，不在仓库内运行；先复制到 `.scratch/`，探针秘密与工作目录不得入库。
+- `docs/spikes/` 中状态为 `completed` / `superseded` 的 spike 只作历史证据，不在仓库内运行；先完整复制到 `.scratch/<probe_name>/`，按报告的依赖与清理契约执行。旧 harness 可能关闭 X11/PulseAudio/Selkies 鉴权，只允许在隔离探针网络与临时容器中运行；探针秘密及 `probe_work/` 工作目录不得入库。
 - **产品无代际标识（t051）**：默认数据根、现行文档、源码与脚本不得出现产品代际自指，模式清单见 `tests/unit/test_t051_generation_hygiene.py` 的 `PATTERNS`；例外仅 `scripts/deploy.sh` 的旧库探测（AC-004，须写出真实旧路径）与对应断言。协议版本（Stream/Agent `version="v2"`）、库版本（Pydantic v2、SQLAlchemy 2.x）、API `version="2.0.0"` 与 SemVer 发布头不在此限。
 - **部署身份与前缀（t051）**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），由 deploy.sh 与 Supervisor 启动在任何 Docker 操作前校验；默认部署前缀为 `cbrowser-t005`（编译内既定标识，不在校验之列，DockerAdapter 构造不校验）；部署身份为确定性 `instance_id`，归属判定只凭 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id（该键即部署身份键；运行时实例 id 写入容器运行时配置，不走标签）。
 
@@ -46,7 +46,7 @@
 
 ## 5. 原子写原则
 
-写权威/派生状态数据（`note.md` front matter、`docs/tasks_index.json`、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
+写权威状态数据（`progress.md` front matter、`docs/pending/`、状态缓存等）必须走 tmp 文件 + fsync + `os.replace` 原子写，防止并发或异常断电导致文件损坏。
 公共 helper：`from repo_task.documents import atomic_write_text`。
 后端运行时同理且只有一份实现：`from cbrowser.shared.atomic_write import atomic_write_text`（独占临时文件 + fsync + replace + 目录 fsync；失败不破坏旧文件、不误删他人暂存）。禁止在服务包内再写原子写变体；无法整载荷落盘的流式写（如 artifact 上传）为例外，但必须满足同一耐久契约（fsync + replace + 目录 fsync）。
 
@@ -65,3 +65,8 @@
 - **限流与冲突**：限流、冲突等业务错误同样走本形状（`proxy_in_use` 的 `used_by_count`、幂等冲突的 `idempotency_conflict` 均在 `details` 内）。
 - **下游错误透传（t069 严格化）**：控制面只认本形状。Runtime Coordinator 记录的下游错误仅当响应体是合法 `ErrorResponse` 时保留其 `error` 与 `message`（格式 `"<error>: <message>"`），以 `last_coordinator_error` 呈现；旧形状 `detail`、纯文本体与缺字段响应一律判为协议错误，记稳定标记 `protocol_error: downstream response is not a valid ErrorResponse`，绝不作为合法业务结果解析。Supervisor 查 Gateway 可见性、agent_executor 控制调用同样只认本形状（非规范 503 判未知、非规范 409 抛 `control_protocol_error`）。解析实现唯一落点 `cbrowser/shared/error_response.py`，禁止各消费方自设兜底。
 - **契约来源**：OpenAPI（`schemas/openapi/`）与前端生成类型（`src/frontend/src/shared/api/generated/`）由脚本重新生成，禁止手改；前端 `ApiError` 的旧 `detail` 字段已改为 `details`。
+
+## 8. ADR 与评审维护
+
+- 评审结论、采纳决策与事实复核保留在对应 `docs/reviews/review_*/` 的现有文档内；直接修正错误事实，并在同文保留证据、复核时间与核实等级，不另建游离的勘误文件。跨轮引用使用「报告路径 + finding ID」，不使用裸编号。
+- 新增或替代 ADR 时，同一变更须同步更新受影响的 blueprint、生效 spec 与 findings；`docs/handoff.md` 只维护当前焦点和未完成事项。已完成 task 的原 AC 保留为历史契约，替代关系由新 ADR 记录，不回写历史验收结果。

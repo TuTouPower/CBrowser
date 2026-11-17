@@ -10,7 +10,7 @@ from pathlib import Path
 
 # Reviewed baselines; maintained with docs/blueprint/testing.md.
 MINIMUM_CASES = {
-    "contract": 258,
+    "contract": 389,
     "unit": 1654,
     "integration": 196,
     "e2e": 105,

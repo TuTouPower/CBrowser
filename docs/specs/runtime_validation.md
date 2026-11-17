@@ -1,3 +1,8 @@
+---
+slug: runtime_validation
+status: active
+tasks: [baseline]
+---
 # 需求规范：运行时技术验证契约 (runtime_validation)
 
 ## 1. 业务目标与适用范围
@@ -123,14 +128,14 @@
 
 |验证专题|对应归档目录|关联 Finding|验证结论与证据强度|
 |---|---|---|---|
-|容器沙箱、IPC 与 MIT-SHM|`docs/archive/spikes/s001_selkies_runtime/`<br>`docs/archive/spikes/s007_profile_isolation/`|d004, d011|实测通过：非 root、只读 rootfs、shareable IPC 与 XShm 画面捕获，Pulse 48000 Hz 音频误差 ≤ 1%|
-|多页面并发连接与页面身份|`docs/archive/spikes/s004_media_connections/`|d007|实测通过：双 Chrome 页面同时 1080p 解码、并发交错输入、Web Locks 防复制页冲突|
-|动态帧率与页面可见性仲裁|`docs/archive/spikes/s005_capture_policy/`|d005, d013|实测通过：单一仲裁锁、8/30 FPS 自适应、全后台暂停捕获、前台恢复重建画面|
-|信令网关与进程存活恢复|`docs/archive/spikes/s006_gateway_media_recovery/`|d008|实测通过：Gateway 动态 Agent 隧道、Gateway SIGKILL 重启后浏览器主进程保持存活|
-|CDP 本地控制与下载捕获|`docs/archive/spikes/s003_selkies_control/`|d002|实测通过：跨容器 UDS 代理 CDP，下载自动捕获，外部断开后下载策略自动恢复|
-|退出事件落盘与单写者恢复|`docs/archive/spikes/s003_selkies_control/`|d006|实测通过：API 离线落盘退出事件，Supervisor 重启重放，防误重启自愈|
-|TURN 鉴权与 ICE 代换代|`docs/archive/spikes/s002_selkies_protocol/`<br>`docs/archive/spikes/s008_turn_generation_media/`|d003, d009, d010, d012|本地实测通过：HMAC-SHA1 鉴权、分离 RTC 配置、私有适配器实现同 PC 换代接管媒体；公网豁免|
-|原生 IME 组合输入|`docs/archive/spikes/s009_native_ime_input/`|d014|实测通过：官方 input channel 配合 XTest 提交中文/标点/Emoji，容器剪贴板保持不变|
+|容器沙箱、IPC 与 MIT-SHM|`docs/spikes/s001_selkies_runtime/`<br>`docs/spikes/s007_profile_isolation/`|d004, d011|实测通过：非 root、只读 rootfs、shareable IPC 与 XShm 画面捕获，Pulse 48000 Hz 音频误差 ≤ 1%|
+|多页面并发连接与页面身份|`docs/spikes/s004_media_connections/`|d007|实测通过：双 Chrome 页面同时 1080p 解码、并发交错输入、Web Locks 防复制页冲突|
+|动态帧率与页面可见性仲裁|`docs/spikes/s005_capture_policy/`|d005, d013|实测通过：单一仲裁锁、8/30 FPS 自适应、全后台暂停捕获、前台恢复重建画面|
+|信令网关与进程存活恢复|`docs/spikes/s006_gateway_media_recovery/`|d008|实测通过：Gateway 动态 Agent 隧道、Gateway SIGKILL 重启后浏览器主进程保持存活|
+|CDP 本地控制与下载捕获|`docs/spikes/s003_selkies_control/`|d002|实测通过：跨容器 UDS 代理 CDP，下载自动捕获，外部断开后下载策略自动恢复|
+|退出事件落盘与单写者恢复|`docs/spikes/s003_selkies_control/`|d006|实测通过：API 离线落盘退出事件，Supervisor 重启重放，防误重启自愈|
+|TURN 鉴权与 ICE 代换代|`docs/spikes/s002_selkies_protocol/`<br>`docs/spikes/s008_turn_generation_media/`|d003, d009, d010, d012|本地实测通过：HMAC-SHA1 鉴权、分离 RTC 配置、私有适配器实现同 PC 换代接管媒体；公网豁免|
+|原生 IME 组合输入|`docs/spikes/s009_native_ime_input/`|d014|实测通过：官方 input channel 配合 XTest 提交中文/标点/Emoji，容器剪贴板保持不变|
 
 ## 5. 局限性与非生产声明
 

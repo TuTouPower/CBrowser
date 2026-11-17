@@ -1,3 +1,8 @@
+---
+slug: access_control
+status: active
+tasks: [baseline]
+---
 # 需求规范：访问控制与自动化凭证
 
 本文描述 t006 交付的用户鉴权、Viewer 授权与自动化凭证行为。前端登录界面与登录守卫由 t007 交付（见 profile_management），CDP 代理入口由 t008 对接；生效状态以 specs_index 为准。

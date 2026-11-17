@@ -551,7 +551,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2�
 ### A33. 修正现行文档入口、死链和用户可执行指引
 
 - 来源：bundle_local_specs_blueprint_docs
-- 位置：docs/blueprint/frontend.md:7,13；docs/pending/parked/p031_domain_learnings_site_skills.md:49；assets/skills/cbrowser-agent/SKILL.md:22
+- 位置：docs/blueprint/frontend.md:7,13；docs/pending/p031_domain_learnings_site_skills.md:49；assets/skills/cbrowser-agent/SKILL.md:22
 - 优先级：LOW
 - 结论：采纳
 - 覆盖：`f_docs_frontend_router_contradiction`, `f_docs_parked_p031_dead_link`, `f_docs_skill_task_id_leak`

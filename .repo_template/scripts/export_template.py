@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Export only a committed product tree; never copy a developer worktree."""
 
+from _runtime import require_python, run
+
+require_python()
+
 import argparse
 import io
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
@@ -34,18 +39,15 @@ def is_non_distributable(name: str) -> bool:
         if part.startswith(_NON_DISTRIBUTABLE_PREFIXES):
             return True
     posix = path.as_posix()
-    return (
-        posix.startswith("docs/runtime/")
-        or posix.startswith(".claude/state/")
-        or posix == ".repo_template/sync_state.json"
-    )
+    return posix.startswith(".claude/state/")
 
 
 def _extract_product(stream, destination):
-    """Extract the Git archive subset safely using only Python 3.9 APIs.
+    """解包归档：先校验全部成员，再写普通文件/目录，最后按原始 linkname 写软链。
 
-    Validate every member first, write regular files/directories, then create
-    symlinks. No write ever traverses an archive-provided symlink.
+    tarfile.data_filter 会规范化 linkname（把 `dir/../file` 改成 `file`），改变
+    经符号链接解析后的实际目标，故不用于落盘；软链边界以 resolve 后的真实路径
+    校验。staging 原子性由调用方保证。
     """
     members = stream.getmembers()
     entries = {}
@@ -125,18 +127,62 @@ def export_template(source: Path, target: Path, ref: str = "HEAD") -> None:
             shutil.rmtree(staging)
 
 
+def bootstrap(source: Path, target: Path, ref: str) -> bool:
+    export_template(source, target, ref)
+    try:
+        if not (target / ".git").exists():
+            subprocess.run(["git", "-C", str(target), "init", "-b", "main"], check=True)
+        script = target / ".repo_template/scripts/repo_sync.py"
+        # install-hooks 的退出码即安装结果的唯一判据：0 已装、2 未安装需人工
+        # 接入（记未完成并继续 init）、其它一律抛错停止。
+        result = subprocess.run([sys.executable, str(script), "install-hooks"], cwd=target)
+        if result.returncode == 0:
+            hooks_installed = True
+        elif result.returncode == 2:
+            hooks_installed = False
+        else:
+            raise ValueError(
+                f"install-hooks 失败（退出码 {result.returncode}）；已完成导出/初始化部分，"
+                "请检查现场后人工完成剩余步骤，或删除目标目录重来"
+            )
+        subprocess.run(
+            [sys.executable, str(script), "init", "--source", str(source.resolve())],
+            cwd=target, check=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise ValueError(
+            f"bootstrap 在步骤中失败（{error}）；已完成导出/初始化部分，"
+            "请检查现场后人工完成剩余步骤，或删除目标目录重来"
+        ) from error
+    return hooks_installed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--ref", default="HEAD")
+    parser.add_argument("--bootstrap", action="store_true", help="导出后 git init、安装 hooks、登记来源")
     args = parser.parse_args()
+    hooks_installed = True
     try:
-        export_template(args.source, args.target, args.ref)
+        if args.bootstrap:
+            hooks_installed = bootstrap(args.source, args.target, args.ref)
+        else:
+            export_template(args.source, args.target, args.ref)
     except (OSError, ValueError, subprocess.CalledProcessError, tarfile.TarError) as error:
         parser.exit(1, f"导出失败：{error}\n")
-    print(f"已从 Git commit 导出：{args.target}；下一步完成 README 初始化与 doctor/contract")
+    print(f"已从 Git commit 导出：{args.target}")
+    if args.bootstrap:
+        if hooks_installed:
+            print("bootstrap 完成；下一步填写 docs/blueprint/testing.md 并运行 repo_sync.py healthcheck")
+        else:
+            print(
+                "bootstrap 未完成：hooks 未接入（已导出、git init 并登记来源）；"
+                "请按上方片段人工接入 hooks，再填写 docs/blueprint/testing.md "
+                "并运行 repo_sync.py healthcheck"
+            )
 
 
 if __name__ == "__main__":
-    main()
+    run(main)

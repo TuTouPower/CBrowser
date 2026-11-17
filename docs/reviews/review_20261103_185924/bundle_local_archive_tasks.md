@@ -45,56 +45,56 @@
 
 ## Findings
 
-- [Medium][95] docs/archive/tasks/t018_v2_test_gates_hygiene/task.md:43 — t018 的 AC-004 在从未执行其自声明必需验证的情况下打勾关闭（trust_prior）
+- [Medium][95] docs/tasks/t018_v2_test_gates_hygiene/task.md:43 — t018 的 AC-004 在从未执行其自声明必需验证的情况下打勾关闭（trust_prior）
 
     - ID: f_archive_tasks_01; verification: static
     - Evidence: task.md 可测试性声明（:43）：「AC-004 的单次资源隔离需真实 Docker 跑一轮门禁验证」；AC-004 本体（:30）已勾 [x]。; note.md 收尾报告（:135）：「结果：全部满足；AC-004 为 trust_prior（真实 Docker 单次门禁未在本环境执行）」；黑盒栏：「默认 E2E 19 passed / 62 skipped……完整 Docker/Chrome E2E 未执行」。; handoff.json blackbox：「Full Docker/Chrome E2E not executed in this environment; AC-004 relies on static checks and prior implementation evidence (trust_prior)」；必需模式仅做了 collection 检查（exit 2 列出 9 个缺失前置），从未绿跑。; 对照同仓兄弟任务的一贯口径（如 t003/t005 task.md：「缺失时保持未通过，不用模拟替代」），AC-004 应保持未勾并单列未运行，而非计入「全部满足」。
     - Impact: t018 是后续所有任务的门禁基线任务，其 AC-004（端口/显示号/容器名派生、仅回环绑定、单次门禁资源隔离）恰是防测试互相污染的核心保证；以 trust_prior 打勾使「门禁可信」的根声明有一条未经实测，后续任务引用该基线时证据强度被高估。披露是诚实的，但勾选与结论口径不符。
     - Fix: 将 AC-004 改回未勾并标注 NOT_RUN（或在真实 Docker 环境补跑一轮 run_gates.sh 必需模式后补记证据再勾）；收尾结论改为「AC-004 未验证」而非「全部满足」。
 
-- [Medium][90] docs/archive/tasks/t018_v2_test_gates_hygiene/note.md:53 — t018 的 Review 处置表退化为样板文本，且 19 轮审查超出记录上限 5 轮无授权留痕、attempt 2 无记录
+- [Medium][90] docs/tasks/t018_v2_test_gates_hygiene/note.md:53 — t018 的 Review 处置表退化为样板文本，且 19 轮审查超出记录上限 5 轮无授权留痕、attempt 2 无记录
 
     - ID: f_archive_tasks_02; verification: static
     - Evidence: note.md 的处置表（:53 起「Round 19」）约 68 行中，除 f017/f029 撤回与 test_f021 遗留外，其余每行 severity 均为模板字面量「critical/important/minor」、rationale 均为同一句「Round 19 全量 diff 复核通过」、fix_ref 均为「b02df0b」；Rounds 1-18 在账本中没有任何处置行。; note.md front matter（:9-10）与 tasks_index.json 均记录 review_limit=5、verify_limit=5；review_code.md 实际有 Round 13/16/17/18/19 等共 16 个 Round 节，最终 Round 19 PASS。账本全文未记录上限上调或用户批准（对照 t016 在 tasks_index 中显式记录「review_limit: 5->6」及理由）。; handoff.json（:3）显示 attempt=2，而 note.md 通篇没有 attempt 1 的任何记录或重启说明。; 细节并未丢失：review_code.md/review_test.md 内有逐条真实 severity 与逐轮 verdict（含多轮 FAIL），故这是账本层处置记录失效，而非审查本身缺失。
     - Impact: note.md 处置表是 finish 门禁与后续读者核对「每个 finding 如何关闭」的第一入口；t018 的表无法回答任何单条 finding 的 severity 与关闭方式，且预算/attempt 账目与实际不符，削弱整套任务账本制度的可审计性。
     - Fix: 按 review_code/review_test 原文为 t018 补齐逐条处置行（真实 severity、各自 rationale 与 fix_ref）；在 note 中补记 review_limit 上调的批准依据与 attempt 2 的起因（若确无批准，应如实记录为流程偏差）。
 
-- [Low][90] docs/archive/tasks/t015_v2_media_link_simplification/note.md:58 — t015 两条 test finding 在处置表标「已修」，但测试审查者连续三轮记录残余未消除且无后续去向
+- [Low][90] docs/tasks/t015_v2_media_link_simplification/note.md:58 — t015 两条 test finding 在处置表标「已修」，但测试审查者连续三轮记录残余未消除且无后续去向
 
     - ID: f_archive_tasks_03; verification: static
     - Evidence: note.md 处置表（:58-59）：t015_test_f005、t015_test_f006 均标「已修」。; review_test.md Round 3（:163-164）、Round 4（:231）、Round 5（:277-278）反复记录：「t015_test_f005 minor 残余仍在……只断言重启发生且首次退避为 [1.0]，未断言错误日志与 2/4/8 秒递增退避」「t015_test_f006 minor 残余仍在……未覆盖 timeout 完成路径」，且 Round 3 前轮复核（:196）明言「f005、f006 主体已修，minor 残余仍在」。; t015 唯一的遗留 pending p016 只承接 f007/f012/f013；live p017/p018/p019 分别是 t016/t017/t018 的余项，均不承接这两条残余。
     - Impact: 两处测试覆盖深度缺口（退避日志与递增间隔断言、超时完成路径断言）被账面关闭后无任何在册跟踪，后续触及 Stream 监督循环或会话超时逻辑时不会再被提醒补测。
     - Fix: 将两条残余改记为遗留并登记到 live pending（或在 note 处置表中把状态改为「主体已修，残余遗留」并指向承接项）。
 
-- [Low][95] docs/archive/tasks/t015_v2_media_link_simplification/note.md:105 — t015 的 note 收尾与 handoff.json 仍称「Round 2 PASS」，与实际 6/5 轮、且 Round 3 曾推翻该 PASS 的过程不符
+- [Low][95] docs/tasks/t015_v2_media_link_simplification/note.md:105 — t015 的 note 收尾与 handoff.json 仍称「Round 2 PASS」，与实际 6/5 轮、且 Round 3 曾推翻该 PASS 的过程不符
 
     - ID: f_archive_tasks_04; verification: static
     - Evidence: note.md 收尾报告（:105）：「review：full code/test 两路 Round 2 均 PASS」；handoff.json（:10）：「Full code/test review Round 2 PASS both axes」。; review_code.md Round 3 发现 post-Round-2 修复引入 critical 回归（Stream 镜像漏 COPY secret_files.py，Agent 启动即失败），总体判断 FAIL 并明言「Round 2 的 PASS 不再成立」（:240）；其后经 Round 4-6（code）与 Round 3-5（test）复审才最终 PASS，处置表亦延伸到 Round 5/6。; 最终关闭本身有 Round 6/Round 5 PASS 支撑，不是无证关闭；问题仅在两处摘要记录停留在 Round 2。
     - Impact: 收尾报告与 handoff.json 是归档后最先被查阅的两处摘要，读者会误以为 t015 只经两轮审查且无 critical 回归史，低估该任务实际的风险与修复过程。
     - Fix: 将 note 收尾与 handoff.json 的 review 字段更正为最终轮次与 scope（code Round 6 / test Round 5 PASS，并注明 Round 3 曾因镜像回归 FAIL）。
 
-- [Low][90] docs/archive/pending/p011_t007_test_minor_followups.md:9 — p011 以 resolved 关闭，但其 f012 子项自认未做且在 live 文档中无任何承接
+- [Low][90] docs/pending/p011_t007_test_minor_followups.md:9 — p011 以 resolved 关闭，但其 f012 子项自认未做且在 live 文档中无任何承接
 
     - ID: f_archive_tasks_05; verification: static
     - Evidence: p011 处置行（:9）：resolution=resolved，reason 末尾明言「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」——即三条子项中 f011/f013 已做、f012 未做。; 对照 live 状态：docs/tasks/、docs/pending/todo/p016-p019、docs/handoff.md 中均无 t007_test_f012 的任何引用（本次 grep 核实）；该子项针对的宽松断言字符串在当前 tests/e2e/test_frontend_session_e2e.py 中已不存在（文件其后被改写），但无任何账本把这一消失与 f012 关联，属无声 moot。
     - Impact: 归档 pending 的 resolved 语义被稀释：子项未完成时应保持开放或拆分登记；现在的记录使「p011 全部关闭」与事实不符，且 f012 是已做、被他处覆盖还是被放弃，三种可能都无从判定。
     - Fix: 在 p011 记录中补注 f012 的最终去向（若已被后续改写覆盖，注明覆盖提交/任务；若放弃，注明决策），或将其重新登记为 live pending。
 
-- [Low][95] docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5 — p001 的关闭理由与 p005 逐字相同，是以 p005 为主语的批量关闭文本
+- [Low][95] docs/pending/p001_supervisor_recovery_tick_complexity.md:5 — p001 的关闭理由与 p005 逐字相同，是以 p005 为主语的批量关闭文本
 
     - ID: f_archive_tasks_06; verification: static
     - Evidence: p001（:5）与 p005（:11）的「处理」行逐字一致，文本主语是「p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」；p001 本体是 RecoveryCoordinator.tick 复杂度（t005_code_f001），其关闭理由没有一条以自身为对象陈述证据。; 实体结论经本次对照当前代码属实：recovery_coordinator.py 已拆出 \_observe_profiles/\_scan_containers/\_classify_abnormal_exits/\_schedule_retries，container_spec.py/volume_spec.py/network_spec.py 已提取，stream_agent/messaging.py 存在——故这是记录质量问题，不是虚假关闭。
     - Impact: 批量粘贴的关闭理由使单项审计时无法从 p001 自身记录确认其关闭依据；若 A25 的某一子项日后被发现未落地，无法从记录区分受影响的是 p001 还是 p005。
     - Fix: 为 p001 补写以自身为对象的关闭说明（tick 拆分的具体方法与所在文件），与 p005 的记录脱钩。
 
-- [Low][90] docs/archive/tasks/t006_v2_gateway_auth_rtc/note.md:147 — t006 的 AC-001 在其 master-token 条款为空满足时整条打勾关闭
+- [Low][90] docs/tasks/t006_v2_gateway_auth_rtc/note.md:147 — t006 的 AC-001 在其 master-token 条款为空满足时整条打勾关闭
 
     - ID: f_archive_tasks_07; verification: static
     - Evidence: note.md AC 证据节（:119）：「『master token 不返回前端』：当前 Stream 未配置任何 Selkies token，属空满足，见 p004（t007 前定案）」；收尾报告（:147）自认「AC-001 的 master token 条款为空满足」，而 task.md 中 AC-001 已勾 [x]、结论为「全部满足」。; 该条款的真实交付在下一个任务：p004 由 t007 AC-010 完成（Selkies master/controller token，d024），p004 已归档 resolved——最终结果无缺口，问题在 t006 关闭时点的勾选口径。
     - Impact: AC 勾选语义被稀释为「本任务内能做的都做了」；若 p004 未被 t007 承接，这条安全条款（master token 不得出现在前端）会无声丢失。当时靠 p004 登记兜底，未造成实际遗漏。
     - Fix: 口径上应将此类 AC 标为部分满足并在 task.md 行内注明条款转 p004，而非整条打勾后仅在 note 中说明。
 
-- [Low][95] docs/archive/tasks/t011_v2_remove_legacy/note.md:46 — 两个 dropped 任务的自有账本仍是未填写的模板，t014 还缺 handoff.json
+- [Low][95] docs/tasks/t011_v2_remove_legacy/note.md:46 — 两个 dropped 任务的自有账本仍是未填写的模板，t014 还缺 handoff.json
 
     - ID: f_archive_tasks_08; verification: static
     - Evidence: t011 note.md 收尾报告仍为模板原文（:46「结果：全部满足 / 未满足」、测试/黑盒/review 均为「待执行时填写」），处置表只剩模板示例行；其 drop 依据只在 front matter 的 note 字段「merged into t010」与 tasks_index.json 中。实体承接是完整的：live t010 task.md 已把 t011 的 AC-001~004 编为 AC-006~009 并标注 adoption 来源。; t014 note.md 收尾报告同样为模板原文（:78），且 t014 是 16 个归档任务中唯一没有 handoff.json 的；其 drop 决策记录在 front matter note、tasks_index.json、archive handoff.md 与 p015→live t009 AC-003 中，链条完整但本账本内无一字收尾。
@@ -115,7 +115,7 @@
     - Impact: 只读归档 spec 的人无法判断它是未完成的需求还是已被替代的历史设计，可能被误当作待实现契约引用。
     - Fix: 在 spec 文首补一行 superseded 标注，指向 t007 与现行 webrtc_remote_display spec。
 
-- [Info][95] docs/archive/tasks/t008_v2_artifacts_automation/note.md:41 — 多份归档账本保留模板示例行，污染 finding id 空间
+- [Info][95] docs/tasks/t008_v2_artifacts_automation/note.md:41 — 多份归档账本保留模板示例行，污染 finding id 空间
 
     - ID: f_archive_tasks_11; verification: static
     - Evidence: t008 note.md（:41）与 t013 note.md（:39）的 Review 处置表中都保留着模板示例行「t000_code_f001 | critical/important/minor | 已修/遗留/撤回 | 一句话 | 文件:行 / pNNN / tid」；t011/t014 的账本中亦然（见 f_archive_tasks_08）。

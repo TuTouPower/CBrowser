@@ -1,3 +1,8 @@
+---
+slug: runtime_lifecycle
+status: active
+tasks: [baseline]
+---
 # 需求规范：Runtime 生命周期协调
 
 本文描述 t005 实现行为，运行意愿协调由 t007 补充。入口鉴权、正式 Gateway、最终 Compose 与用户数据迁移仍由后续 task 交付；生效状态以 specs_index 和最终 task 验收为准。

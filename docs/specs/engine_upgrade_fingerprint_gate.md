@@ -1,3 +1,8 @@
+---
+slug: engine_upgrade_fingerprint_gate
+status: active
+tasks: [baseline]
+---
 # 需求规范：引擎制品固定与本地指纹升级门禁 (engine_upgrade_fingerprint_gate)
 
 累积 t068 交付的引擎升级工程回归门禁契约。完整实测数据见

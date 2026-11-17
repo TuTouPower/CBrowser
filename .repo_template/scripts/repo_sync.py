@@ -3,7 +3,7 @@
 
 把 repo-template-sync skill 中可机械化对齐的部分下沉到脚本执行：硬同步清单
 树对树覆盖、skill 整目录覆盖、软链建修、.gitignore / .prettierignore / MCP 机械合并、
-sync_state.json 字段级原子更新、差异评估与修改路径清单输出。
+Git common dir 状态字段级原子更新、差异评估与修改路径清单输出。
 
 非机械化裁定（AGENTS.md 等共享文稿的语义合并）由脚本给出
 分类与差异摘要，agent 审查后通过 `--decision UNIT:DISPOSITION` 决策，apply
@@ -18,10 +18,17 @@ sync_state.json 字段级原子更新、差异评估与修改路径清单输出�
   python3 .repo_template/scripts/repo_sync.py prompt add --text "..." [--tags a,b]
   python3 .repo_template/scripts/repo_sync.py prompt revoke --id N
   python3 .repo_template/scripts/repo_sync.py link-skills
-  python3 .repo_template/scripts/repo_sync.py install-hooks [--force | --statusline]
+  python3 .repo_template/scripts/repo_sync.py install-hooks
+  python3 .repo_template/scripts/repo_sync.py healthcheck
 
-本脚本处理模板工具链与模板侧资产，并在 apply 时强制迁移 active/backlog task 的 workflow schema；不碰业务代码。禁止自动 commit——写盘与 state 更新完成后由 agent 走审批门禁。
+本脚本处理模板工具链与模板侧资产。status/plan 只读展示迁移与数据阻断项；
+apply 在单个持久文件事务内迁移、同步、格式化并校验，失败整体回滚。
+禁止自动 commit——写盘与 state 更新完成后由 agent 走审批门禁。
 """
+
+from _runtime import require_python, run
+
+require_python()
 
 import sys
 from pathlib import Path
@@ -34,7 +41,4 @@ if _SCRIPT_DIR not in sys.path:
 from template_sync.cli import main  # noqa: E402
 
 if __name__ == "__main__":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-    main()
+    run(main)

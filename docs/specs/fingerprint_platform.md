@@ -1,8 +1,13 @@
+---
+slug: fingerprint_platform
+status: active
+tasks: [baseline]
+---
 # 需求规范：指纹平台与平台字体集 (fingerprint_platform)
 
 ## 1. 业务目标与适用范围
 
-本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/archive/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）。证据：正式 spike `docs/archive/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
+本 spec 累积 t041 交付的指纹平台选择与平台专有字体集隔离契约，以及 t053 交付的语言分流与字体集链路收紧。Profile 可选 `windows` / `macos` 指纹平台并绑定同平台的不可变字体集；平台专有字体只从官方渠道取得、只在运行时只读挂载，不进镜像与仓库。基础开源字体进入 Browser 镜像满足 CloakBrowser 安装要求，但不进入指纹 Profile 的 fontconfig 白名单；Profile 可见集合只含绑定的平台字体集，避免 Linux 专属字体形成平台指纹矛盾（用户 2026-11-06 裁决）。关联 task：`docs/tasks/t041_fingerprint_platform_fonts/task.md`（AC-001~009）、`docs/tasks/t053_profile_locale_fonts_defaults/task.md`（AC-001~015）。证据：正式 spike `docs/spikes/s014_fingerprint_platform_fonts/report.md`、findings `d032`（UA-CH architecture 裁决）与 `d033`（字体集隔离实测）、`docs/plan_20261105_ui_redesign.md` 6.8 节。
 
 ## 2. 行为契约
 

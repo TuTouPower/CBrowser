@@ -40,7 +40,7 @@
 - 可用代理：88 个节点中 84 个 `ok`；`latency_ms` 418–7349 ms、中位 592 ms，仅 helper 内经代理的 HTTP 往返，不含容器/网络/策略建立与销毁；`country_name` 与 `city` 84/84 填充，覆盖 29 个国家码。
 - 不可用代理：4 个节点 `failed` 且带结构化 `echo_unreachable`（非通用 `probe_failed`）；另建临时 `http://127.0.0.1:21999` → `failed` + `echo_unreachable`，验证 `exit_code=1` JSON 错误码透传与红色失败态，随后删除（204）。
 - 刷新持久化：84 个 `ok` 代理间隔 4 秒两次 `GET /api/v1/proxies`，`observation_status` / `egress_ip` / `country_code` / `country_name` / `city` / `latency_ms` 全部稳定。
-- 隔离边界：沿用 `docs/archive/spikes/s024_t074_lightweight_probe_isolation/` 的真实 Docker 容器原型结论（私有/保留地址 fail-closed、精确动态白名单、凭据不进 argv）；本次未重跑内核负例，如实记录，不冒充已验。
+- 隔离边界：沿用 `docs/spikes/s024_t074_lightweight_probe_isolation/` 的真实 Docker 容器原型结论（私有/保留地址 fail-closed、精确动态白名单、凭据不进 argv）；本次未重跑内核负例，如实记录，不冒充已验。
 - 证据：`.scratch/deploy_t074/verification.json`、`verify.log`、`deploy.log`、`deploy_r2.log`、`gate_fix.log`。
 
 ## 剩余风险

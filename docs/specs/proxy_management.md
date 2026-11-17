@@ -1,3 +1,8 @@
+---
+slug: proxy_management
+status: active
+tasks: [baseline]
+---
 # 代理库界面
 
 需求级 spec，累积 t038、t052、t065、t074 及单用户代理界面精简与测速重构（t074 起列表列、筛选、使用环境与测速口径以 §10 为准）。权威交互与视觉约束见 `DESIGN.md` 与 `docs/blueprint/frontend.md` 第 8 节；后端代理 API 契约见 `docs/specs/profile_management.md`（t035 分组库 / 代理库 / 配置版本三分）。本文定义界面行为契约。

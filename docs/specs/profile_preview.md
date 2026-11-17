@@ -1,6 +1,11 @@
+---
+slug: profile_preview
+status: active
+tasks: [baseline]
+---
 # 需求规范：环境实时缩略图 (profile_preview)
 
-需求级 spec，累积 t040 / t057。契约来源 `docs/archive/plans/plan_20261105_ui_redesign.md` 第 6.7 节 / WP13，关联 task `docs/archive/tasks/t040_environment_preview_thumbnails/task.md`（AC-001~007）。交互与视觉约束见 `DESIGN.md` 与 `docs/blueprint/frontend.md`，采集与隔离见 `docs/blueprint/browser_runtime.md` / `supervisor.md` / `security.md`。CDP 行为依据 spike `docs/archive/spikes/s016_cdp_active_tab_capture_probe/report.md` 与 finding `docs/findings/d035_cdp_active_tab_capture_screenshot.md`。
+需求级 spec，累积 t040 / t057。契约来源 `docs/archive/plans/plan_20261105_ui_redesign.md` 第 6.7 节 / WP13，关联 task `docs/tasks/t040_environment_preview_thumbnails/task.md`（AC-001~007）。交互与视觉约束见 `DESIGN.md` 与 `docs/blueprint/frontend.md`，采集与隔离见 `docs/blueprint/browser_runtime.md` / `supervisor.md` / `security.md`。CDP 行为依据 spike `docs/spikes/s016_cdp_active_tab_capture_probe/report.md` 与 finding `docs/findings/d035_cdp_active_tab_capture_screenshot.md`。
 
 ## 1. 范围
 
@@ -82,7 +87,7 @@
 
 ## 7. 依据
 
-- `docs/archive/spikes/s016_cdp_active_tab_capture_probe/report.md`：真实 Chromium 146 引擎 headless 与容器 Xvfb 两组实测，`Target.getTargets` 无 active 字段、`Page.captureScreenshot` 对可见性 / 焦点 / 活动标签无影响、只截 viewport。
+- `docs/spikes/s016_cdp_active_tab_capture_probe/report.md`：真实 Chromium 146 引擎 headless 与容器 Xvfb 两组实测，`Target.getTargets` 无 active 字段、`Page.captureScreenshot` 对可见性 / 焦点 / 活动标签无影响、只截 viewport。
 - `docs/findings/d035_cdp_active_tab_capture_screenshot.md`：活动标签须产品自维护、截图无副作用、480px 缩放与 JPEG q70 由产品侧处理。Chromium 主版本升级或改用真实宿主窗口时重跑 s016 复核。
 
 ### t057完整性与隐私验收

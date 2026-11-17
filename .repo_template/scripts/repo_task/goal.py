@@ -2,7 +2,7 @@
 
 goal 模式的提示词必须是可机器判定的终态，而不是过程指令。本模块提供一对命令：
 
-- ``goal``：查看或冻结 ``docs/runtime/goal_queue.json``（已 gitignore，仅主仓）。
+- ``goal``：查看或冻结 ``Git common dir/repo_template/goal_queue.json``（已 gitignore，仅主仓）。
   无参且已有快照时只读展示，不改顺序；首次无快照才按 backlog ∪ active 依赖拓扑冻结。
   重建须显式 tid 或 ``--reset``；显式 tid 覆盖且与旧队列不一致时须确认（或 ``--yes``），
   ``--reset`` 直接覆盖免确认。
@@ -23,6 +23,7 @@ goal 模式的提示词必须是可机器判定的终态，而不是过程指令
 """
 
 import json
+from pathlib import Path
 import os
 import sys
 from datetime import datetime
@@ -38,14 +39,16 @@ from .monitoring import verify_integrate_ready
 from .plan import build_execution_plan, group_queue
 from .store import discover_effective_tasks, scan_tasks
 
-QUEUE_PATH = ctx.RUNTIME_DIR / "goal_queue.json"
+def queue_path(repo) -> Path:
+    return repo.goal_path
 
+SNAPSHOT_VERSION = 2
 CLOSED_STATES = {"closed", "integrated"}
 STOP_STATES = {"blocked", "failed", "dropped"}
 
 GOAL_LINE_TEMPLATE = (
     '/goal 按 task-run skill 链式串行执行冻结队列 [{queue}]'
-    "（快照 docs/runtime/goal_queue.json，禁止变更队列成员）。"
+    "（快照 Git common dir/repo_template/goal_queue.json，禁止变更队列成员）。"
     "队列执行授权已给出：禁止逐 task 征求确认、禁止进入 plan mode；"
     "停止条件仅限 task-run skill「停止条件」列举项；attempt report=blocked 只停所在链："
     "按 skill 跳过该链后续成员并继续其它链。"
@@ -57,8 +60,8 @@ GOAL_LINE_TEMPLATE = (
 )
 
 
-def _compute_queue(args) -> list[str]:
-    effective = discover_effective_tasks()
+def _compute_queue(args, repo) -> list[str]:
+    effective = discover_effective_tasks(repo=repo)
     if args.tids:
         queue = []
         seen = set()
@@ -72,12 +75,12 @@ def _compute_queue(args) -> list[str]:
             if task is None:
                 raise ctx.TaskDataError(f"{tid} 不存在")
             status = task["status"]
-            if status in ctx.ARCHIVED_STATUSES:
+            if status in ctx.TERMINAL_STATUSES:
                 raise ctx.TaskDataError(f"{tid} 已是终态（{status}）；done/dropped 永不入队")
             queue.append(tid)
-        build_execution_plan(mode="serial", queue=queue)
+        build_execution_plan(mode="serial", queue=queue, repo=repo)
         return queue
-    plan = build_execution_plan(mode="serial")
+    plan = build_execution_plan(mode="serial", repo=repo)
     return [tid for chain in plan["chains"] for tid in chain["taskIds"]]
 
 
@@ -93,42 +96,42 @@ def _print_goal_line(queue: list[str]) -> None:
     print("```")
 
 
-def _stale_members(queue: list[str]) -> list[str]:
-    statuses = {task["tid"]: task["status"] for task in scan_tasks()}
+def _stale_members(queue: list[str], repo) -> list[str]:
+    statuses = {task["tid"]: task["status"] for task in scan_tasks(repo=repo)}
     stale = []
     for tid in queue:
         status = statuses.get(tid)
-        if status is None or status in ctx.ARCHIVED_STATUSES:
+        if status is None or status in ctx.TERMINAL_STATUSES:
             stale.append(tid)
     return stale
 
 
-def _show_snapshot(snapshot: dict) -> None:
+def _show_snapshot(snapshot: dict, repo) -> None:
     queue = snapshot["queue"]
     created_at = snapshot.get("created_at") or "未知"
     print(f"当前冻结队列：{_format_queue(queue)}")
     print(f"冻结时间：{created_at}")
-    print(f"快照：{ctx._rel(QUEUE_PATH)}（只读展示；重建默认队列用 --reset，指定顺序用显式 tid）")
-    stale = _stale_members(queue)
+    print(f"快照：{repo.rel(queue_path(repo))}（只读展示；重建默认队列用 --reset，指定顺序用显式 tid）")
+    stale = _stale_members(queue, repo)
     if stale:
         print(
-            f"注意：队列含已归档或不存在成员（{_format_queue(stale)}），"
+            f"注意：队列含已闭环或不存在成员（{_format_queue(stale)}），"
             "/goal 行不可直接执行"
         )
     print()
     _print_goal_line(queue)
 
 
-def _write_snapshot(queue: list[str], edges: list[dict]) -> dict:
+def _write_snapshot(queue: list[str], edges: list[dict], repo) -> dict:
     snapshot = {
-        "version": 1,
+        "version": SNAPSHOT_VERSION,
         "created_at": datetime.now(ctx.TZ_CN).isoformat(timespec="seconds"),
         "queue": queue,
         "edges": edges,
     }
     # 临时文件 + fsync + os.replace 原子写，防并发/崩溃截断（F41/RT-007）
     atomic_write_text(
-        QUEUE_PATH,
+        queue_path(repo),
         json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
     )
     return snapshot
@@ -162,38 +165,52 @@ def _confirm_overwrite(
         sys.exit("goal aborted: 保留已冻结队列")
 
 
-def _clear_snapshot() -> None:
-    if QUEUE_PATH.exists():
-        QUEUE_PATH.unlink()
+def _clear_snapshot(repo) -> None:
+    if queue_path(repo).exists():
+        queue_path(repo).unlink()
         print("旧队列快照已清除。")
     print("队列为空：没有 backlog/active task；不生成 goal。")
 
 
 @control_locked
 def cmd_goal(args) -> None:
-    require_primary_worktree()
+    repo = args.repo
+    require_primary_worktree(repo=repo)
+    clear = bool(getattr(args, "clear", False))
     reset = bool(getattr(args, "reset", False))
     yes = bool(getattr(args, "yes", False))
     explicit = bool(args.tids)
-    if reset and explicit:
-        sys.exit("goal --reset 与显式 tid 互斥")
+    if sum([clear, reset, explicit]) > 1:
+        sys.exit("goal --reset、--clear 与显式 tid 互斥")
+    if clear:
+        path = queue_path(repo)
+        if path.is_symlink():
+            sys.exit(f"队列快照 {repo.rel(path)} 是软链，拒绝删除")
+        if path.is_dir():
+            sys.exit(f"队列快照 {repo.rel(path)} 是目录，拒绝删除")
+        if path.exists():
+            path.unlink()
+            print("队列快照已清除。")
+        else:
+            print("队列快照不存在，无需清除。")
+        return
 
     existing = None
-    if QUEUE_PATH.is_file():
+    if queue_path(repo).exists() or queue_path(repo).is_symlink():
         try:
-            existing = _read_snapshot()
+            existing = _read_snapshot(repo)
         except ctx.TaskDataError as error:
-            if not reset and not explicit:
+            if not reset:
                 sys.exit(str(error))
             existing = None
 
     if not reset and not explicit:
         if existing is not None:
-            _show_snapshot(existing)
+            _show_snapshot(existing, repo)
             return
 
     try:
-        queue = _compute_queue(args)
+        queue = _compute_queue(args, repo)
     except ctx.TaskDataError as error:
         sys.exit(str(error))
 
@@ -206,93 +223,103 @@ def cmd_goal(args) -> None:
         )
 
     if not queue:
-        _clear_snapshot()
+        _clear_snapshot(repo)
         return
 
-    snapshot = _write_snapshot(queue, _queue_edges(queue, scan_tasks()))
+    snapshot = _write_snapshot(queue, _queue_edges(queue, scan_tasks(repo=repo)), repo)
     action = "队列已重新冻结" if existing is not None else "队列已冻结"
     print(f"{action}：{_format_queue(queue)}")
     print(f"冻结时间：{snapshot['created_at']}")
-    print(f"快照：{ctx._rel(QUEUE_PATH)}（goal 模式同时只服务一个队列）")
+    print(f"快照：{repo.rel(queue_path(repo))}（goal 模式同时只服务一个队列）")
     print()
     _print_goal_line(queue)
 
 
-def _snapshot_error(detail: str) -> ctx.TaskDataError:
+def _snapshot_error(detail: str, repo) -> ctx.TaskDataError:
     return ctx.TaskDataError(
-        f"队列快照 {ctx._rel(QUEUE_PATH)} 结构非法（{detail}）；"
-        "重新运行 task.py goal --reset"
+        f"队列快照 {repo.rel(queue_path(repo))} 结构非法（{detail}）；"
+        "若为旧版快照请运行 repo_sync.py apply 迁移，或重新运行 task.py goal --reset / --clear"
     )
 
 
-def _parse_edges(value: object, queue: list[str]) -> list[dict]:
+def _parse_edges(value: object, queue: list[str], repo) -> list[dict]:
     if not isinstance(value, list):
-        raise _snapshot_error("缺少 edges")
+        raise _snapshot_error("缺少 edges", repo)
     members = set(queue)
     edges = []
     for edge in value:
         if not isinstance(edge, dict):
-            raise _snapshot_error("edges 成员须为对象")
+            raise _snapshot_error("edges 成员须为对象", repo)
         kind = edge.get("type")
         src = edge.get("from")
         dst = edge.get("to")
         if kind not in ("dep", "conflict"):
-            raise _snapshot_error(f"edges.type 非法：{kind!r}")
+            raise _snapshot_error(f"edges.type 非法：{kind!r}", repo)
         if not all(
             isinstance(tid, str) and ctx.TID_RE.fullmatch(tid) for tid in (src, dst)
         ):
-            raise _snapshot_error("edges.from/to 非法")
+            raise _snapshot_error("edges.from/to 非法", repo)
         if src not in members or dst not in members:
-            raise _snapshot_error(f"edges 引用队列外成员：{src} -> {dst}")
+            raise _snapshot_error(f"edges 引用队列外成员：{src} -> {dst}", repo)
         edges.append({"type": kind, "from": src, "to": dst})
     return edges
 
 
-def _parse_snapshot(data: object) -> dict:
+def _parse_snapshot(data: object, repo) -> dict:
     if not isinstance(data, dict):
-        raise _snapshot_error("快照须为对象")
+        raise _snapshot_error("快照须为对象", repo)
+    version = data.get("version")
+    if type(version) is not int or version != SNAPSHOT_VERSION:
+        raise _snapshot_error(
+            f"版本不受支持（{version!r}，当前要求 {SNAPSHOT_VERSION}）", repo
+        )
     queue = data.get("queue")
     if (
         not isinstance(queue, list)
         or not queue
         or not all(isinstance(tid, str) and ctx.TID_RE.fullmatch(tid) for tid in queue)
+        or len(set(queue)) != len(queue)
     ):
-        raise _snapshot_error("queue 非法")
+        raise _snapshot_error("queue 非法", repo)
     created_at = data.get("created_at")
     if created_at is not None and not isinstance(created_at, str):
         created_at = None
     return {
-        "version": data.get("version", 1),
+        "version": SNAPSHOT_VERSION,
         "created_at": created_at or "",
         "queue": queue,
-        "edges": _parse_edges(data.get("edges"), queue),
+        "edges": _parse_edges(data.get("edges"), queue, repo),
     }
 
 
-def _read_snapshot() -> dict:
+def _read_snapshot(repo) -> dict:
+    path = queue_path(repo)
+    if path.is_symlink():
+        raise _snapshot_error("快照路径不得为软链", repo)
     try:
-        data = json.loads(QUEUE_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ctx.TaskDataError(
-            f"队列快照 {ctx._rel(QUEUE_PATH)} 不存在；先运行 task.py goal 冻结队列"
+            f"队列快照 {repo.rel(path)} 不存在；先运行 task.py goal 冻结队列"
         ) from None
     except (json.JSONDecodeError, UnicodeDecodeError, OSError) as error:
         raise ctx.TaskDataError(
-            f"队列快照 {ctx._rel(QUEUE_PATH)} 损坏（{error}）；重新运行 task.py goal --reset"
+            f"队列快照 {repo.rel(path)} 损坏（{error}）；重新运行 task.py goal --reset / --clear"
         ) from None
-    return _parse_snapshot(data)
+    return _parse_snapshot(data, repo)
 
 
-def _load_snapshot() -> dict:
-    if not QUEUE_PATH.is_file():
+def _load_snapshot(repo) -> dict:
+    path = queue_path(repo)
+    if not (path.exists() or path.is_symlink()):
         raise ctx.TaskDataError(
-            f"队列快照 {ctx._rel(QUEUE_PATH)} 不存在；先运行 task.py goal 冻结队列"
+            f"队列快照 {repo.rel(path)} 不存在；先运行 task.py goal 冻结队列"
         )
-    return _read_snapshot()
+    return _read_snapshot(repo)
 
 
-def _worktree_registered(tid: str, registered: dict[str, str]) -> bool:
-    path = str((ctx.REPO_ROOT / ctx.worktree_rel_path(tid)).resolve())
+def _worktree_registered(tid: str, registered: dict[str, str], repo) -> bool:
+    path = str((repo.primary_root / repo.worktree_rel(tid)).resolve())
     return path in registered
 
 
@@ -301,10 +328,11 @@ def _classify(
     events: list[dict],
     main_statuses: dict[str, str],
     registered: dict[str, str],
+    repo,
 ) -> tuple[str, str]:
     main_status = main_statuses.get(tid)
     if main_status == "done":
-        return "integrated", "主干已归档"
+        return "integrated", "主干已 done（原位保留，未迁移）"
     if main_status == "dropped":
         return "dropped", "已 dropped；队列快照过期，重新 task.py goal --reset"
     records = attempts_for_tid(tid, events)
@@ -323,11 +351,11 @@ def _classify(
         return "failed", f"class={fail_class} {report.get('reason', '')}".strip()
     if record["terminal_status"] == "completed" and report.get("status") == "done":
         verdict, _kind, detail = verify_integrate_ready(
-            tid, record["attempt"], record["execution_id"]
+            tid, record["attempt"], record["execution_id"], repo=repo
         )
         if verdict != "ready":
             return "unverified", detail
-        if _worktree_registered(tid, registered):
+        if _worktree_registered(tid, registered, repo):
             return "cleanup_pending", "worktree 仍登记，exact cleanup 未完成"
         return "closed", "执行闭环（terminal+report+handoff+cleanup）"
     return "incomplete", (
@@ -380,19 +408,20 @@ def _stops_with_skipped(
 
 
 def cmd_goal_check(args) -> None:
-    require_primary_worktree()
+    repo = args.repo
+    require_primary_worktree(repo=repo)
     try:
-        snapshot = _load_snapshot()
+        snapshot = _load_snapshot(repo)
     except ctx.TaskDataError as error:
         sys.exit(str(error))
     queue = snapshot["queue"]
     edges = snapshot["edges"]
-    events = ledger_read()
-    main_statuses = {task["tid"]: task["status"] for task in scan_tasks()}
-    registered = worktree_paths()
+    events = ledger_read(repo=repo)
+    main_statuses = {task["tid"]: task["status"] for task in scan_tasks(repo=repo)}
+    registered = worktree_paths(repo=repo)
     rows = []
     for tid in queue:
-        state, note = _classify(tid, events, main_statuses, registered)
+        state, note = _classify(tid, events, main_statuses, registered, repo)
         rows.append((tid, state, note))
         line = f"{tid} {state}"
         if note:

@@ -91,13 +91,13 @@
         - Impact: 归档 bundle 是该轮审阅唯一入库的证据形态；被截断的恰是四个单元 tests 视角的补审结论，读者无法从入库记录得知补审的完整覆盖结论，只能看到半截陈述。这类静默截断与文档集自述的「证据链完整可核」定位不符，且无任何截断标记提示读者。
         - Fix: 定位渲染截断成因（渲染器字段长度上限或源 JSON 截断），在后续轮次的 bundle 渲染中对超长 evidence 做完整输出或显式标注「（截断，见 \_meta 源文件）」；本轮记录可追加勘误说明列明受影响的四个单元。
         - Verification: static
-- [Medium][90] docs/archive/spikes/s001_selkies_runtime/code/run_spike.sh:231 — Spike entry scripts disable display/stream/audio authentication with no in-file warning
+- [Medium][90] docs/spikes/s001_selkies_runtime/code/run_spike.sh:231 — Spike entry scripts disable display/stream/audio authentication with no in-file warning
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_01)
     - f_archive_spikes_01: s001 run_spike.sh:231 Selkies --enable-basic-auth=false; s004 entrypoint_stream.sh:28, s008 stage2_stream_entrypoint.sh:28, s009 entrypoint_stream.sh:28 repeat the flag, the latter three with --addr 0.0.0.0; Xvfb with access control disabled: s005 entrypoint_browser.sh:7 '-listen tcp -ac' (TCP-listening, the strongest form), s004 entrypoint_browser.sh:17 and s008/s009 entrypoint_browser.sh:17 '-ac'; PulseAudio auth-anonymous=1: s001 entry_browser_full.sh:11, s006 media_fixture/entry_browser_full.sh:11, s008/s009 entrypoint_browser.sh:11; s006 run_verification.py starts its stream container with --enable-basic-auth=false; The only warning lives in docs/archive/spikes/README.md; no individual script carries a danger header, and host-side loopback port binding is the only containment if a script is copied out alone
         - Impact: Anyone reusing a single entry script as a runtime starting point (the natural copy-paste path) inherits an unauthenticated screen/input/audio endpoint; the s005 variant additionally exposes X11 over TCP inside any shared container network.
         - Fix: Add a short danger header to each affected entry script (or a shared sourced guard) stating it must only run inside the spike's isolated network, mirroring the archive README warning.
         - Verification: static
-- [Medium][90] docs/archive/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:139 — Spike control planes accept unauthenticated state-changing commands
+- [Medium][90] docs/spikes/s008_turn_generation_media/code/stage2_stream_runner.py:139 — Spike control planes accept unauthenticated state-changing commands
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_02)
     - f_archive_spikes_02: s008 stage2_stream_runner.py:139 binds an auxiliary HTTP server to 0.0.0.0:18092; handle_restart_ice (line 74) takes caller-supplied client_peer_id, ICE servers and credentials and forces a renegotiation - no authentication or allowlist anywhere in the file; s003 container_uds/container_cdp_probe.py RealCdpAgentUdsProxy forwards arbitrary CDP methods (incl. Browser.close, Browser.setDownloadBehavior) from any client of agent.sock; the same class is duplicated in code/test_cdp_real.py; s005 live_policy_agent.py:48 control UDS /tmp/capture_policy_agent.sock accepts record_input and full get_state (peer details + action history) from any local process; container_download_review.md S3.3 self-acknowledges the s003 limitation, but the code itself carries no warning; host publication is loopback-only in the launcher scripts, yet any peer container on the experiment network can reach these endpoints
         - Impact: Within the experiment network (or any future reuse), an unauthenticated peer can hijack/close browser sessions, force ICE restarts with attacker-chosen TURN servers, or inject fake input activity into the capture policy.
@@ -109,13 +109,13 @@
         - Impact: The chain is proven only from the visibilitychange event inward; a genuinely backgrounded tab (browser throttling, real hidden state, OS-level occlusion) is not covered, yet s011's adoption (t015, removing TURN) cites the full scenario matrix as closed.
         - Fix: Repeat the visibility phase with real tab switching/minimization (as in s005's native suite) or amend the report to state the visibility signal was simulated.
         - Verification: static
-- [Medium][95] docs/archive/tasks/t018_v2_test_gates_hygiene/task.md:43 — t018 的 AC-004 在从未执行其自声明必需验证的情况下打勾关闭（trust_prior）
+- [Medium][95] docs/tasks/t018_v2_test_gates_hygiene/task.md:43 — t018 的 AC-004 在从未执行其自声明必需验证的情况下打勾关闭（trust_prior）
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_01)
     - f_archive_tasks_01: task.md 可测试性声明（:43）：「AC-004 的单次资源隔离需真实 Docker 跑一轮门禁验证」；AC-004 本体（:30）已勾 [x]。; note.md 收尾报告（:135）：「结果：全部满足；AC-004 为 trust_prior（真实 Docker 单次门禁未在本环境执行）」；黑盒栏：「默认 E2E 19 passed / 62 skipped……完整 Docker/Chrome E2E 未执行」。; handoff.json blackbox：「Full Docker/Chrome E2E not executed in this environment; AC-004 relies on static checks and prior implementation evidence (trust_prior)」；必需模式仅做了 collection 检查（exit 2 列出 9 个缺失前置），从未绿跑。; 对照同仓兄弟任务的一贯口径（如 t003/t005 task.md：「缺失时保持未通过，不用模拟替代」），AC-004 应保持未勾并单列未运行，而非计入「全部满足」。
         - Impact: t018 是后续所有任务的门禁基线任务，其 AC-004（端口/显示号/容器名派生、仅回环绑定、单次门禁资源隔离）恰是防测试互相污染的核心保证；以 trust_prior 打勾使「门禁可信」的根声明有一条未经实测，后续任务引用该基线时证据强度被高估。披露是诚实的，但勾选与结论口径不符。
         - Fix: 将 AC-004 改回未勾并标注 NOT_RUN（或在真实 Docker 环境补跑一轮 run_gates.sh 必需模式后补记证据再勾）；收尾结论改为「AC-004 未验证」而非「全部满足」。
         - Verification: static
-- [Medium][90] docs/archive/tasks/t018_v2_test_gates_hygiene/note.md:53 — t018 的 Review 处置表退化为样板文本，且 19 轮审查超出记录上限 5 轮无授权留痕、attempt 2 无记录
+- [Medium][90] docs/tasks/t018_v2_test_gates_hygiene/note.md:53 — t018 的 Review 处置表退化为样板文本，且 19 轮审查超出记录上限 5 轮无授权留痕、attempt 2 无记录
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_02)
     - f_archive_tasks_02: note.md 的处置表（:53 起「Round 19」）约 68 行中，除 f017/f029 撤回与 test_f021 遗留外，其余每行 severity 均为模板字面量「critical/important/minor」、rationale 均为同一句「Round 19 全量 diff 复核通过」、fix_ref 均为「b02df0b」；Rounds 1-18 在账本中没有任何处置行。; note.md front matter（:9-10）与 tasks_index.json 均记录 review_limit=5、verify_limit=5；review_code.md 实际有 Round 13/16/17/18/19 等共 16 个 Round 节，最终 Round 19 PASS。账本全文未记录上限上调或用户批准（对照 t016 在 tasks_index 中显式记录「review_limit: 5->6」及理由）。; handoff.json（:3）显示 attempt=2，而 note.md 通篇没有 attempt 1 的任何记录或重启说明。; 细节并未丢失：review_code.md/review_test.md 内有逐条真实 severity 与逐轮 verdict（含多轮 FAIL），故这是账本层处置记录失效，而非审查本身缺失。
         - Impact: note.md 处置表是 finish 门禁与后续读者核对「每个 finding 如何关闭」的第一入口；t018 的表无法回答任何单条 finding 的 severity 与关闭方式，且预算/attempt 账目与实际不符，削弱整套任务账本制度的可审计性。
@@ -505,139 +505,139 @@
         - Impact: 在漏洞仍可利用的窗口内，公开记录等于向任何仓库读者提供了现成的未授权文件读取入口与「已验证可用」的背书；对默认部署在局域网的身份存储应用，这缩短了从发现到利用的距离。定级 Low 是因为利用仍需能触达部署所在网络。
         - Fix: 后续轮次的决策/基线文档对未修复漏洞只记录验证结论与环境，不写可照抄的完整利用路径；确需留存复现细节时放不入库的过程区（\_meta），修复落地后再补入公开记录。
         - Verification: static
-- [Low][85] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:26 — Bearer tokens compared with plain string equality; one session token passed via process argv
+- [Low][85] docs/spikes/s003_selkies_control/code/recovery_probe/roles.py:26 — Bearer tokens compared with plain string equality; one session token passed via process argv
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_03)
     - f_archive_spikes_03: roles.py:26 'if auth != f"Bearer {self.auth_token}"' - non-constant-time comparison (same pattern in s006 gateway_core.py:86 and s011 GatewayMockServer.handle_agent_register); s003 recovery_probe/test_orchestration.py generates the session token with secrets.token_hex and passes it to the API/Supervisor subprocesses as a --token command-line argument, visible in the host process list; Contrast: s006/s008 runners read tokens from files instead of argv, showing the safer pattern was known in the same unit
         - Impact: Timing side channel on token checks (minor on loopback) and token disclosure to any local process listing during the s003 recovery runs.
         - Fix: Use hmac.compare_digest for token checks and pass tokens via file or environment, as the s006/s008 harnesses already do.
         - Verification: static
-- [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:140 — Run secrets persist in the probe working tree; s006 token file gets default permissions and is never deleted
+- [Low][85] docs/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:140 — Run secrets persist in the probe working tree; s006 token file gets default permissions and is never deleted
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_04)
     - f_archive_spikes_04: run_verification.py:35,140 writes agent_token.secret into the probe directory with plain open('w') (umask-default permissions, no chmod 0600) and cleanup_all() never removes it; s008 probe_work/start_coturn.sh writes turn_secret.txt and turnserver.conf (both chmod 600) into code/probe_work/, but probe_work/cleanup.sh removes only containers/volumes/networks, leaving both secret files in any copied tree indefinitely; Verified in this review via git check-ignore: both locations are gitignored (docs/archive/spikes/\*\*/probe_work/ and \*\*/\*.secret), so the exposure is local-disk persistence, not repository leakage
         - Impact: Copied scratch trees accumulate live TURN/agent secrets on disk beyond the run; the s006 token is additionally readable by other local users due to default permissions.
         - Fix: chmod 0600 the s006 token file and delete secret files in each spike's cleanup path.
         - Verification: static
-- [Low][80] docs/archive/spikes/s007_profile_isolation/code/entry_browser.sh:47 — s007 Xauthority and PulseAudio cookies are world-readable inside the shared volumes
+- [Low][80] docs/spikes/s007_profile_isolation/code/entry_browser.sh:47 — s007 Xauthority and PulseAudio cookies are world-readable inside the shared volumes
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_05)
     - f_archive_spikes_05: entry_browser.sh writes the random Pulse cookie (dd from /dev/urandom) and chmod 644; the X11 cookie.hex and Xauthority file are likewise chmod 644 in the shared /tmp/.X11-unix volume; The spike's own analysis names the Xauthority cookie a primary defense layer, with real isolation resting on volume separation; any process that gains read access to the volume obtains both cookies; The stream side does better: entry_stream.sh builds its derived xauth with chmod 600
         - Impact: Weakens the cookie layer of the defense-in-depth the spike sets out to demonstrate; a read-only leak of the X11 volume exposes the exact credential the design relies on.
         - Fix: chmod 600 the cookie files and rely on the shared group/UID (1000) for the stream container's read access, or pass the cookie through the already-600 stream xauth path only.
         - Verification: static
-- [Low][85] docs/archive/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:83 — s003 CDP-over-UDS proxy: orphaned listener task, unlocked re-arm race, unbounded event buffer
+- [Low][85] docs/spikes/s003_selkies_control/code/container_uds/container_cdp_probe.py:83 — s003 CDP-over-UDS proxy: orphaned listener task, unlocked re-arm race, unbounded event buffer
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_06)
     - f_archive_spikes_06: container_cdp_probe.py:83 start() creates the \_listen_agent_events task without storing a reference, so close() cannot cancel it (same code duplicated in code/test_cdp_real.py); Any client disconnect triggers an unconditional re-arm of Browser.setDownloadBehavior with no lock; concurrent clients race on a browser-global setting (partially self-acknowledged in container_download_review.md S3.2); download_events is an in-memory list appended for the process lifetime with no bound or persistence
         - Impact: Leaked asyncio tasks after shutdown, cross-client interference on download behavior, and slow memory growth in long sessions - the class is a stated prototype for the production control plane.
         - Fix: Store and cancel the listener task, serialize re-arm under a lock scoped per browser, and cap or stream the event buffer.
         - Verification: static
-- [Low][80] docs/archive/spikes/s003_selkies_control/code/recovery_probe/roles.py:1 — s003 recovery roles: unbounded request body, silent no-op success, unlocked shared event file
+- [Low][80] docs/spikes/s003_selkies_control/code/recovery_probe/roles.py:1 — s003 recovery roles: unbounded request body, silent no-op success, unlocked shared event file
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_07)
     - f_archive_spikes_07: roles.py ApiHttpHandler.do_POST reads the request body using the client-supplied Content-Length with no size cap; Exit events for unknown profiles UPDATE zero rows yet the API still reports the event as applied; logging can also report new_desired when the profile row is None; container_agent.py and roles.py both read/delete the shared events.jsonl without any file lock (race self-acknowledged in recovery_review.md S3.4), and queue draining leaves a 0-byte file that makes orchestration tests wait (self-acknowledged S3)
         - Impact: Memory exhaustion via oversized POSTs, false-positive recovery signals for missing profiles, and lost/duplicated exit events under concurrent access - in the spike whose subject is crash recovery correctness.
         - Fix: Cap body size, return an error when an event matches no profile row, and take an flock around events.jsonl read/delete.
         - Verification: static
-- [Low][70] docs/archive/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py:198 — s006 gateway: viewer registration race and one malformed frame tears down the agent
+- [Low][70] docs/spikes/s006_gateway_media_recovery/code/probe/gateway_core.py:198 — s006 gateway: viewer registration race and one malformed frame tears down the agent
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_08)
     - f_archive_spikes_08: handle_viewer_signal checks profile_id in self.registered_agents and later does self.profile_viewers[profile_id].add(conn_id) without holding self.\_lock; the agent handler's finally block pops profile_viewers[profile_id] on deregistration, so an interleaved deregistration makes the viewer path raise KeyError; In handle_agent_register's multiplex loop, json.loads(msg.data) is unguarded: one malformed text frame from the agent raises into the outer except and deregisters the whole agent, dropping all its viewers
         - Impact: Spurious 500s and full agent teardown from a single bad frame or an unlucky registration/deregistration interleave - in the component whose recovery behavior is the spike's subject.
         - Fix: Hold the gateway lock across the check-and-register sequence (or use setdefault), and drop malformed frames with a warning instead of tearing down the registration.
         - Verification: suspected
-- [Low][75] docs/archive/spikes/s008_turn_generation_media/code/stage2_adapter.py:92 — s008 adapter: failed prepare_restart leaves the transport monitor-less and leaks the new gatherer; runtime invariants use assert
+- [Low][75] docs/spikes/s008_turn_generation_media/code/stage2_adapter.py:92 — s008 adapter: failed prepare_restart leaves the transport monitor-less and leaks the new gatherer; runtime invariants use assert
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_09)
     - f_archive_spikes_09: prepare_restart cancels \_RTCIceTransport\_\_monitor_task and clears \_\_start BEFORE gather(); when gather() raises (exactly the adversarial server-bad path), the new gatherer's connection is never closed and the old transport keeps running without its monitor task; independent_review_failed.md S4.6 already noted missing try/finally resource回收 for intermediate gatherers; the current code still raises without closing gatherer.\_connection; Operational invariants are enforced with assert (restart_pending guard in prepare_restart; send_rejected assertion in start()), which vanish under python -O
         - Impact: After a rejected generation the transport is left in a degraded, partially-dismantled state even though old media keeps flowing - the failure mode the adversarial suite exercises most.
         - Fix: Wrap gather in try/finally that closes the new gatherer on failure and restores the monitor, and replace operational asserts with explicit exceptions.
         - Verification: static
-- [Low][75] docs/archive/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:86 — UDS state queries truncate at 16 KiB while the returned action history grows unboundedly
+- [Low][75] docs/spikes/s005_capture_policy/code/test_e2e_real_pipeline.py:86 — UDS state queries truncate at 16 KiB while the returned action history grows unboundedly
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_10)
     - f_archive_spikes_10: query_uds_state() in s005 test_e2e_real_pipeline.py and native_visibility_e2e.py (and the same helper pattern in s006) does a single s.recv(16384) and json.loads on the result - no framing loop; live_policy_agent.py get_state embeds the full \_action_history, which is append-only for the process lifetime (log_pipeline_action), so long runs can exceed 16 KiB and make state queries fail spuriously
         - Impact: False test failures (or misleading state) in long sessions, plus steady memory growth in the policy agent.
         - Fix: Read until newline with a buffered reader on the client side and cap/ring-buffer the action history server-side.
         - Verification: static
-- [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:268 — s006 verification contains weak or logically-implied checks presented as independent items
+- [Low][85] docs/spikes/s006_gateway_media_recovery/code/probe/run_verification.py:268 — s006 verification contains weak or logically-implied checks presented as independent items
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_12)
     - f_archive_spikes_12: independent_agent_registered is marked PASS from agent_proc.poll() is None after a 2s sleep - process liveness, not a registration handshake (registration is only proven indirectly by later steps); Step 5's wrong-port negative re-evaluates the already-known candidate ports against 9999; once the strict 30007 check in Step 4 has passed, Step 5 cannot fail - it never exercises a validator function with a wrong expectation; Step 9 computes has_hello but the pass condition omits HELLO/SESSION despite the adjacent comment claiming they are required
         - Impact: The 12-item matrix overstates the independence of three checks; a registration failure mode that keeps the process alive would be misreported at its own line item.
         - Fix: Assert registration via the gateway's registered state, implement the port check as a callable validator and test it with a wrong expectation, and include HELLO in the trajectory gate or fix the comment.
         - Verification: static
-- [Low][85] docs/archive/spikes/s001_selkies_runtime/code/test_mitshm.c:1 — Low-level capture positive checks assert success codes, not captured content
+- [Low][85] docs/spikes/s001_selkies_runtime/code/test_mitshm.c:1 — Low-level capture positive checks assert success codes, not captured content
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_13)
     - f_archive_spikes_13: test_mitshm.c positive path (s001 original; s007 fixture/test_mitshm.c copy) prints three sample pixel bytes without validating them - a black or frozen frame passes; s001 first_review.md S2.3 criticized only the negative path and the positive path was never strengthened; s007 run_isolation_probe.py pixelflux stage asserts >=8 callback frames and PNG size >5000 bytes, not that frame contents change; Partial compensation exists at higher levels (s007 screenshot color analysis, s004 DOM oracles), so the gap is confined to the low-level probes
         - Impact: A capture pipeline returning stale/blank frames satisfies the low-level gates these spikes use as building-block evidence.
         - Fix: Validate a known on-screen pattern (e.g. the fixture page's background color) inside the SHM/pixelflux positive checks, as the screenshot stage already does.
         - Verification: static
-- [Low][90] docs/archive/spikes/s009_native_ime_input/code/test_blank_cdp.py:1 — Observation-only scripts exit 0 with no assertions and no in-file warning
+- [Low][90] docs/spikes/s009_native_ime_input/code/test_blank_cdp.py:1 — Observation-only scripts exit 0 with no assertions and no in-file warning
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_14)
     - f_archive_spikes_14: test_blank_cdp.py only prints the blank-page CDP event list; investigate_compositionend.py only writes a trace JSON - neither contains any assertion, so exit 0 means only 'ran'; The s009 report does warn that test_blank_cdp's exit 0 must not substitute for end-to-end validation, but neither script carries that warning in its own header
         - Impact: Anyone running the s009 command list mechanically can read two green exits as verification results.
         - Fix: Add an 'observation only - no assertions' header to both scripts, matching the report's own caveat.
         - Verification: static
-- [Low][85] docs/archive/spikes/s010_cloakbrowser_exit_observation/code/probe.py:500 — s010 owner-loss check asserts the outcome its own criteria say must not be presupposed
+- [Low][85] docs/spikes/s010_cloakbrowser_exit_observation/code/probe.py:500 — s010 owner-loss check asserts the outcome its own criteria say must not be presupposed
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_15)
     - f_archive_spikes_15: The report's success criteria state the owner-loss run must record the timeline '不预设Chrome存活或终止' (without presupposing whether Chrome survives); probe.py check 5 hard-asserts timeline[-1]['chrome_state'] == 'gone' and wrapper status 'exited' - if a future SDK/Chrome build let Chrome survive owner loss, the suite would report FAIL instead of characterizing the new behavior
         - Impact: The characterization probe is coupled to one observed outcome, so a legitimate upstream behavior change masquerades as a regression.
         - Fix: Record survival vs exit as the check's measured result and gate only on timeline completeness and identity matching.
         - Verification: static
-- [Low][90] docs/archive/spikes/s008_turn_generation_media/report_same_url.md:1 — s008 keeps two same-title reports that both claim to describe the final code
+- [Low][90] docs/spikes/s008_turn_generation_media/report_same_url.md:1 — s008 keeps two same-title reports that both claim to describe the final code
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_16)
     - f_archive_spikes_16: report_same_url.md has no range-update or superseded header and states the code is the '最终R3' per independent_review_final.md; report.md (with the range-update header) states the current code is the split-topology nine sources per independent_review_split.md and that the same-URL fixture was wholly replaced; A reader landing on report_same_url.md first receives a stale finality claim; only report.md explains the replacement
         - Impact: Conflicting currency claims for the same spike undermine the otherwise consistent three-state documentation discipline in this archive.
         - Fix: Add the standard range-update/superseded header to report_same_url.md pointing at report.md as the current report.
         - Verification: static
-- [Low][90] docs/archive/spikes/s007_profile_isolation/code/run_isolation_probe.py:3 — Stale revision and design descriptions inside spike code
+- [Low][90] docs/spikes/s007_profile_isolation/code/run_isolation_probe.py:3 — Stale revision and design descriptions inside spike code
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_17)
     - f_archive_spikes_17: run_isolation_probe.py module docstring still says 'Revision 2' and 'audio tone generation (440Hz vs 880Hz via paplay)' - paplay was removed in R3 and the current suite is R5 WebAudio; its generated-report template is likewise titled 'Revision 2'; s005 code/revision_03/test_e2e_real_pipeline.py still titles itself 'Production-grade Real End-to-End Test Suite' with no in-file retired marker (retirement is documented only in the parent report and directory name); s010 code/probe.py docstring calls the file 'probe_v2.py' and says probe.py 'remains intact', a leftover from its scratch origin
         - Impact: Readers of the code snapshots get a wrong revision/design picture without opening the sibling reports.
         - Fix: Refresh the docstrings/titles to the frozen revision, or add a one-line 'snapshot of revision N, see report.md' header.
         - Verification: static
-- [Low][85] docs/archive/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py:37 — s006 gateway static proxy serves the Selkies UI without auth, strips CSP, and hardcodes one profile
+- [Low][85] docs/spikes/s006_gateway_media_recovery/code/probe/run_gateway_server.py:37 — s006 gateway static proxy serves the Selkies UI without auth, strips CSP, and hardcodes one profile
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_18)
     - f_archive_spikes_18: static_proxy forwards every path to the Selkies origin with no authentication check and deletes Content-Security-Policy (plus Content-Encoding/Transfer-Encoding) from responses before returning them; The injected WebSocket rewrite always targets '/stream/test-profile/signal' regardless of which profile a viewer asked for, so the proxy is silently single-profile; Mitigation in place: the runner binds 127.0.0.1 by default
         - Impact: If the pattern is carried toward production, viewers get the streaming UI with weakened browser-side protections and multi-profile routing breaks silently.
         - Fix: Keep the CSP header (adjust only what the injection strictly requires), derive the profile path from the request, and note the proxy is fixture-only.
         - Verification: static
-- [Low][90] docs/archive/spikes/s003_selkies_control/code/test_cdp_real.py:1 — Substantial code duplicated across spikes, so fixes cannot propagate
+- [Low][90] docs/spikes/s003_selkies_control/code/test_cdp_real.py:1 — Substantial code duplicated across spikes, so fixes cannot propagate
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_19)
     - f_archive_spikes_19: RealCdpAgentUdsProxy (~200 lines) exists in near-identical copies in s003 code/test_cdp_real.py and code/container_uds/container_cdp_probe.py; The media fixture trio entry_browser_full.sh / gen_wav.py / test_cloak_loop.py is copied from s001 into s006 code/media_fixture/; s008 code/media_fixture/entrypoint_browser.sh and s009 code/entrypoint_browser.sh are byte-identical (both spikes' reviews record the same SHA256 dcbc7d70...); test_mitshm.c is copied from s001 into s007 code/fixture/ with the denied-mode extension
         - Impact: Snapshot duplication is expected in an archive, but identical harness files across four spikes mean a hazard fix (e.g. the auth flags in f_archive_spikes_01) must be applied in every copy and can silently diverge.
         - Fix: No restructuring needed for the archive; record the duplication in the archive README so future fixture work starts from one canonical copy.
         - Verification: static
-- [Low][80] docs/archive/spikes/s003_selkies_control/code/container_uds/browser_agent.py:1 — Prototype-grade resource churn: 50 ms fsync status writes, per-request HTTP sessions, unbounded packet queue
+- [Low][80] docs/spikes/s003_selkies_control/code/container_uds/browser_agent.py:1 — Prototype-grade resource churn: 50 ms fsync status writes, per-request HTTP sessions, unbounded packet queue
     - Sources: bundle_local_archive_spikes.md (f_archive_spikes_20)
     - f_archive_spikes_20: s003 browser_agent.py rewrites status.json (including a download_events snapshot) and fsyncs it every 50 ms for the whole session; s006 run_gateway_server.py static_proxy constructs a new aiohttp ClientSession for every proxied request; s008 stage2_adapter.py self.packets is an asyncio.Queue with no maxsize between the ICE pumps and the DTLS consumer
         - Impact: Write amplification and connection churn in harnesses whose performance characteristics inform production design; unbounded queue growth if the consumer stalls.
         - Fix: Throttle status writes or write on change, reuse one ClientSession per process, and bound the adapter queue with a drop/close policy.
         - Verification: static
-- [Low][90] docs/archive/tasks/t015_v2_media_link_simplification/note.md:58 — t015 两条 test finding 在处置表标「已修」，但测试审查者连续三轮记录残余未消除且无后续去向
+- [Low][90] docs/tasks/t015_v2_media_link_simplification/note.md:58 — t015 两条 test finding 在处置表标「已修」，但测试审查者连续三轮记录残余未消除且无后续去向
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_03)
     - f_archive_tasks_03: note.md 处置表（:58-59）：t015_test_f005、t015_test_f006 均标「已修」。; review_test.md Round 3（:163-164）、Round 4（:231）、Round 5（:277-278）反复记录：「t015_test_f005 minor 残余仍在……只断言重启发生且首次退避为 [1.0]，未断言错误日志与 2/4/8 秒递增退避」「t015_test_f006 minor 残余仍在……未覆盖 timeout 完成路径」，且 Round 3 前轮复核（:196）明言「f005、f006 主体已修，minor 残余仍在」。; t015 唯一的遗留 pending p016 只承接 f007/f012/f013；live p017/p018/p019 分别是 t016/t017/t018 的余项，均不承接这两条残余。
         - Impact: 两处测试覆盖深度缺口（退避日志与递增间隔断言、超时完成路径断言）被账面关闭后无任何在册跟踪，后续触及 Stream 监督循环或会话超时逻辑时不会再被提醒补测。
         - Fix: 将两条残余改记为遗留并登记到 live pending（或在 note 处置表中把状态改为「主体已修，残余遗留」并指向承接项）。
         - Verification: static
-- [Low][95] docs/archive/tasks/t015_v2_media_link_simplification/note.md:105 — t015 的 note 收尾与 handoff.json 仍称「Round 2 PASS」，与实际 6/5 轮、且 Round 3 曾推翻该 PASS 的过程不符
+- [Low][95] docs/tasks/t015_v2_media_link_simplification/note.md:105 — t015 的 note 收尾与 handoff.json 仍称「Round 2 PASS」，与实际 6/5 轮、且 Round 3 曾推翻该 PASS 的过程不符
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_04)
     - f_archive_tasks_04: note.md 收尾报告（:105）：「review：full code/test 两路 Round 2 均 PASS」；handoff.json（:10）：「Full code/test review Round 2 PASS both axes」。; review_code.md Round 3 发现 post-Round-2 修复引入 critical 回归（Stream 镜像漏 COPY secret_files.py，Agent 启动即失败），总体判断 FAIL 并明言「Round 2 的 PASS 不再成立」（:240）；其后经 Round 4-6（code）与 Round 3-5（test）复审才最终 PASS，处置表亦延伸到 Round 5/6。; 最终关闭本身有 Round 6/Round 5 PASS 支撑，不是无证关闭；问题仅在两处摘要记录停留在 Round 2。
         - Impact: 收尾报告与 handoff.json 是归档后最先被查阅的两处摘要，读者会误以为 t015 只经两轮审查且无 critical 回归史，低估该任务实际的风险与修复过程。
         - Fix: 将 note 收尾与 handoff.json 的 review 字段更正为最终轮次与 scope（code Round 6 / test Round 5 PASS，并注明 Round 3 曾因镜像回归 FAIL）。
         - Verification: static
-- [Low][90] docs/archive/pending/p011_t007_test_minor_followups.md:9 — p011 以 resolved 关闭，但其 f012 子项自认未做且在 live 文档中无任何承接
+- [Low][90] docs/pending/p011_t007_test_minor_followups.md:9 — p011 以 resolved 关闭，但其 f012 子项自认未做且在 live 文档中无任何承接
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_05)
     - f_archive_tasks_05: p011 处置行（:9）：resolution=resolved，reason 末尾明言「f012 的 test_frontend_session_e2e 状态断言不在本轮文件所有权内」——即三条子项中 f011/f013 已做、f012 未做。; 对照 live 状态：docs/tasks/、docs/pending/todo/p016-p019、docs/handoff.md 中均无 t007_test_f012 的任何引用（本次 grep 核实）；该子项针对的宽松断言字符串在当前 tests/e2e/test_frontend_session_e2e.py 中已不存在（文件其后被改写），但无任何账本把这一消失与 f012 关联，属无声 moot。
         - Impact: 归档 pending 的 resolved 语义被稀释：子项未完成时应保持开放或拆分登记；现在的记录使「p011 全部关闭」与事实不符，且 f012 是已做、被他处覆盖还是被放弃，三种可能都无从判定。
         - Fix: 在 p011 记录中补注 f012 的最终去向（若已被后续改写覆盖，注明覆盖提交/任务；若放弃，注明决策），或将其重新登记为 live pending。
         - Verification: static
-- [Low][95] docs/archive/pending/p001_supervisor_recovery_tick_complexity.md:5 — p001 的关闭理由与 p005 逐字相同，是以 p005 为主语的批量关闭文本
+- [Low][95] docs/pending/p001_supervisor_recovery_tick_complexity.md:5 — p001 的关闭理由与 p005 逐字相同，是以 p005 为主语的批量关闭文本
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_06)
     - f_archive_tasks_06: p001（:5）与 p005（:11）的「处理」行逐字一致，文本主语是「p005 的 f001/f002/f003 与复杂度项均已在 main 闭环」；p001 本体是 RecoveryCoordinator.tick 复杂度（t005_code_f001），其关闭理由没有一条以自身为对象陈述证据。; 实体结论经本次对照当前代码属实：recovery_coordinator.py 已拆出 \_observe_profiles/\_scan_containers/\_classify_abnormal_exits/\_schedule_retries，container_spec.py/volume_spec.py/network_spec.py 已提取，stream_agent/messaging.py 存在——故这是记录质量问题，不是虚假关闭。
         - Impact: 批量粘贴的关闭理由使单项审计时无法从 p001 自身记录确认其关闭依据；若 A25 的某一子项日后被发现未落地，无法从记录区分受影响的是 p001 还是 p005。
         - Fix: 为 p001 补写以自身为对象的关闭说明（tick 拆分的具体方法与所在文件），与 p005 的记录脱钩。
         - Verification: static
-- [Low][90] docs/archive/tasks/t006_v2_gateway_auth_rtc/note.md:147 — t006 的 AC-001 在其 master-token 条款为空满足时整条打勾关闭
+- [Low][90] docs/tasks/t006_v2_gateway_auth_rtc/note.md:147 — t006 的 AC-001 在其 master-token 条款为空满足时整条打勾关闭
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_07)
     - f_archive_tasks_07: note.md AC 证据节（:119）：「『master token 不返回前端』：当前 Stream 未配置任何 Selkies token，属空满足，见 p004（t007 前定案）」；收尾报告（:147）自认「AC-001 的 master token 条款为空满足」，而 task.md 中 AC-001 已勾 [x]、结论为「全部满足」。; 该条款的真实交付在下一个任务：p004 由 t007 AC-010 完成（Selkies master/controller token，d024），p004 已归档 resolved——最终结果无缺口，问题在 t006 关闭时点的勾选口径。
         - Impact: AC 勾选语义被稀释为「本任务内能做的都做了」；若 p004 未被 t007 承接，这条安全条款（master token 不得出现在前端）会无声丢失。当时靠 p004 登记兜底，未造成实际遗漏。
         - Fix: 口径上应将此类 AC 标为部分满足并在 task.md 行内注明条款转 p004，而非整条打勾后仅在 note 中说明。
         - Verification: static
-- [Low][95] docs/archive/tasks/t011_v2_remove_legacy/note.md:46 — 两个 dropped 任务的自有账本仍是未填写的模板，t014 还缺 handoff.json
+- [Low][95] docs/tasks/t011_v2_remove_legacy/note.md:46 — 两个 dropped 任务的自有账本仍是未填写的模板，t014 还缺 handoff.json
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_08)
     - f_archive_tasks_08: t011 note.md 收尾报告仍为模板原文（:46「结果：全部满足 / 未满足」、测试/黑盒/review 均为「待执行时填写」），处置表只剩模板示例行；其 drop 依据只在 front matter 的 note 字段「merged into t010」与 tasks_index.json 中。实体承接是完整的：live t010 task.md 已把 t011 的 AC-001~004 编为 AC-006~009 并标注 adoption 来源。; t014 note.md 收尾报告同样为模板原文（:78），且 t014 是 16 个归档任务中唯一没有 handoff.json 的；其 drop 决策记录在 front matter note、tasks_index.json、archive handoff.md 与 p015→live t009 AC-003 中，链条完整但本账本内无一字收尾。
         - Impact: 归档账本自身不自洽：只读 archive 的人无法从 t011/t014 的 note.md 得知任务终局与决策，必须跨查 index、handoff 与 live 任务才能拼出，与「note.md 为任务过程总账」的定位不符。
@@ -1531,7 +1531,7 @@
         - Impact: 只读归档 spec 的人无法判断它是未完成的需求还是已被替代的历史设计，可能被误当作待实现契约引用。
         - Fix: 在 spec 文首补一行 superseded 标注，指向 t007 与现行 webrtc_remote_display spec。
         - Verification: static
-- [Info][95] docs/archive/tasks/t008_v2_artifacts_automation/note.md:41 — 多份归档账本保留模板示例行，污染 finding id 空间
+- [Info][95] docs/tasks/t008_v2_artifacts_automation/note.md:41 — 多份归档账本保留模板示例行，污染 finding id 空间
     - Sources: bundle_local_archive_tasks.md (f_archive_tasks_11)
     - f_archive_tasks_11: t008 note.md（:41）与 t013 note.md（:39）的 Review 处置表中都保留着模板示例行「t000_code_f001 | critical/important/minor | 已修/遗留/撤回 | 一句话 | 文件:行 / pNNN / tid」；t011/t014 的账本中亦然（见 f_archive_tasks_08）。
         - Impact: 纯文档卫生问题：自动解析处置表的工具会读到一条不存在的 finding；也反映收尾时未做账本清理。
