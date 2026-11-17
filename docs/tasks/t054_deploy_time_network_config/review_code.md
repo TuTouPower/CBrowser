@@ -3,7 +3,7 @@
 - task：`t054_deploy_time_network_config`
 - spec：`docs/archive/tasks/t054_deploy_time_network_config/task.md`
 - diff_anchor：`e9320341a8b5c93d136fca64b1aad25825ec2898`
-- target：`git -C '<home>/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
+- target：`git -C '<home>/workspace/cbrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
 - round：1
 - reviewed_at：2026-11-11T19:18:40+08:00
 

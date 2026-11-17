@@ -1,6 +1,6 @@
 # 012 剪贴板开启时采用 Selkies seamless 双向自动同步（2026-11-02T20:09:33+08:00）
 
-- 背景：t014 为保护本机原剪贴板锁定 `clipboard_seamless=false|locked`，结果本机与远程浏览器之间不能直接 Cmd+C/V，只能经 Selkies 侧栏剪贴板框手动搬运。CBrowser 仅供单一用户在本机使用。
+- 背景：t014 为保护本机原剪贴板锁定 `clipboard_seamless=false|locked`，结果本机与远程浏览器之间不能直接 Cmd+C/V，只能经 Selkies 侧栏剪贴板框手动搬运。cbrowser 仅供单一用户在本机使用。
 - 选项：
     1. 保持 seamless 关闭，只经侧栏剪贴板框显式传输。
     2. Profile `clipboard_sync` 开启时使用 Selkies seamless 双向自动同步，服务端锁定。

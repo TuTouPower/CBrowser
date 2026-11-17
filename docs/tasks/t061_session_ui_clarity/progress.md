@@ -34,7 +34,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 合并确认：用户已明确批准 t067 合入 t061；会话视觉 AC-001..005 保留，t067 AC-001/006/008 分别映射到本 task AC-006/007/008；其余已取消功能不并入。
 
-- 2026-11-13 云端实施（attempt 1，worktree CBrowser_t061，基线 c5f8329 含 364d191）：
+- 2026-11-13 云端实施（attempt 1，worktree cbrowser_t061，基线 c5f8329 含 364d191）：
 
     - SPIKE 已结（结论回填 task.md 未知契约）：真实 hook + 可控 timer 复现成功——已连接后异常 WS 关闭、stats 恒健康且 ConnectionSnapshot 不变时，5 秒恢复检查的健康分支无动作、诊断源因快照不变不发信号，阶段永久卡 reconnecting（`useBrowserSession.wsRecovery.test.tsx` 首跑 1 failed/3 passed，失败点与预测一致）。根因是恢复检查缺健康收敛出口，不是 timeout 或 fence 失效；不健康、迟到 generation、后端停止三个负向分支现行行为均正确。
     - AC-006：`useBrowserSession.ts` 的 5 秒恢复检查补健康收敛——stats.connected 且当前有效阶段仍为 reconnecting 时 setStage("connected") 并清错误文案；检查入口新增一道 generation fence（stats 返回后的一道为基线既有，两道在交付代码中均在位）；不健康沿用既有 reconnect 重建；不触碰 adapter 的 resume_key/client_tab_id 语义。修复后 wsRecovery 4/4 通过。

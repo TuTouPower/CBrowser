@@ -3,7 +3,7 @@
 - task：`t074_settings_persistence_modal_and_proxy_probe_overhaul`
 - spec：`docs/tasks/t074_settings_persistence_modal_and_proxy_probe_overhaul/task.md`
 - diff_anchor：`4bd5358b83377210899a3dbaaa204117e3126d36`
-- target：`git -C '../CBrowser_t074' diff 4bd5358b83377210899a3dbaaa204117e3126d36`
+- target：`git -C '../cbrowser_t074' diff 4bd5358b83377210899a3dbaaa204117e3126d36`
 - round：1
 - reviewed_at：2026-11-16T19:10:00+08:00
 

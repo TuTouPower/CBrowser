@@ -34,12 +34,12 @@ _GRANT_VERSION = 1
 
 #: Header carrying the deployment edge-proof secret on Caddy's
 #: forward_auth subrequest to the API resolver (Caddy -> API hop).
-EDGE_PROOF_HEADER = "X-CBrowser-Edge-Proof"
+EDGE_PROOF_HEADER = "X-cbrowser-Edge-Proof"
 #: Header naming the profile the API authorized; Caddy copies it from
 #: the resolver response onto the proxied handshake (API -> Gateway hop).
-AUTHORIZED_PROFILE_HEADER = "X-CBrowser-Authorized-Profile"
+AUTHORIZED_PROFILE_HEADER = "X-cbrowser-Authorized-Profile"
 #: Header carrying the viewer grant itself (API -> Gateway hop).
-VIEWER_GRANT_HEADER = "X-CBrowser-Viewer-Grant"
+VIEWER_GRANT_HEADER = "X-cbrowser-Viewer-Grant"
 
 
 @dataclass(frozen=True)

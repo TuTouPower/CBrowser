@@ -1,4 +1,4 @@
-# CBrowser v2 WebRTC Media E2E Tech Validation Independent Review
+# cbrowser v2 WebRTC Media E2E Tech Validation Independent Review
 
 - **Reviewer**: Independent Blackbox Reviewer / Architecture Auditor
 - **Model**: `cpa/gemini-3.8-flash`

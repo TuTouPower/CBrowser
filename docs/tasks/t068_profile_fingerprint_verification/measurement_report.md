@@ -2,7 +2,7 @@
 
 本文件是入库的可定位结论摘要。完整机器可读证据位于本 worktree 忽略目录
 `.scratch/t068/evidence/`（`finish` 前已生成，流程清理前按先例复制到同级
-`CBrowser_t068_evidence/.scratch/t068/` 保留）。
+`cbrowser_t068_evidence/.scratch/t068/` 保留）。
 
 ## 1. 环境与制品身份（AC-003）
 
@@ -15,7 +15,7 @@
     `MKFKwIhUcKWq5xTuNA0Ovg99njcDEcEJvmWYYhApvaU=` 对
     `chromium-v146.0.7680.177.3/SHA256SUMS` + `SHA256SUMS.sig` 验签，
     `version=` 绑定 + 压缩包 SHA-256 `8b71ce53…`（实测 `Ed25519 verified OK`）。
-- 解压后完整性：上游无 per-file 签名，`ensure_binary()` 命中缓存即不校验；CBrowser 在
+- 解压后完整性：上游无 per-file 签名，`ensure_binary()` 命中缓存即不校验；cbrowser 在
     `deploy.sh` / Supervisor `cache_init` / `BrowserRunner` 三处以仓库清单校验
     15 个文件 SHA-256 + ELF machine + `--version`，并强制
     `CLOAKBROWSER_AUTO_UPDATE=false`、拒绝 `CLOAKBROWSER_DOWNLOAD_URL` /

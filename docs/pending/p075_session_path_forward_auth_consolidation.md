@@ -23,7 +23,7 @@ fix_ref: "t064"
 
 ## 结构性差异（不可整条照搬）
 
-SealSkin 不暴露的是 HTTP 端口；CBrowser 的 WebRTC 媒体必须把 UDP mux 发布到 `127.0.0.1`，把 DTLS-SRTP/UDP 塞进 `forward_auth` 会破坏媒体路径。「零宿主端口」只适用于 HTTP 部分。
+SealSkin 不暴露的是 HTTP 端口；cbrowser 的 WebRTC 媒体必须把 UDP mux 发布到 `127.0.0.1`，把 DTLS-SRTP/UDP 塞进 `forward_auth` 会破坏媒体路径。「零宿主端口」只适用于 HTTP 部分。
 
 ## 验收
 

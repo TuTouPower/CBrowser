@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import mihomo one-to-one node listeners into the CBrowser proxy library."""
+"""Import mihomo one-to-one node listeners into the cbrowser proxy library."""
 
 from __future__ import annotations
 

@@ -22,7 +22,7 @@ tasks: [baseline]
     `146.0.7680.177.3`，含 `chrome` 与 14 个运行时文件的 SHA-256、ELF machine、
     `--version` 期望值、压缩包 SHA-256 与信任来源。
 - 信任来源分层：下载层为 `cloakbrowser==0.6.4` 内硬编码 Ed25519 公钥验签
-    `SHA256SUMS.sig` + `version=` 绑定 + 压缩包 SHA-256；解压层为 CBrowser 仓库
+    `SHA256SUMS.sig` + `version=` 绑定 + 压缩包 SHA-256；解压层为 cbrowser 仓库
     per-file SHA-256 清单（上游无解压产物签名，如实说明，不伪造 Ed25519 覆盖解压件）。
 - `deploy.sh` 发布前校验引擎缓存（含 release manifest 的 `engine` 块与
     `CLOAKBROWSER_AUTO_UPDATE=false`）；Supervisor `cache_init` helper 在容器内

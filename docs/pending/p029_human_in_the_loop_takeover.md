@@ -15,7 +15,7 @@ fix_ref: "t031"
 ## 分析基线
 
 - 分析时间：2026-11-04T00:00:12+08:00。
-- CBrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
+- cbrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
 - 证据范围：源码、现行文档与 backlog 静态核对；未运行测试、复现实验或外部站点验证。
 - 以下方案与验证条件均为分析建议，决策待定；原处理状态和目录归属保持不变。
 
@@ -26,7 +26,7 @@ fix_ref: "t031"
 - 新模型若只仲裁“外部自动化与真人”，可与多个真人 Viewer 并存；若同时限制真人 Viewer，则改变现行并发输入契约，必须明确替代关系。
 - 自动化通路当前原样透传 CDP。Supervisor 能观察外部 CDP，却不在全部 WebRTC 输入数据路径上；仅在 Supervisor 修改状态不能自动完成真人输入抢占。
 - ADR 006 要求操控页纯画面、管理收纳 /manage。页头/侧栏状态展示需明确落点，不能仅声明“不违背”就视为已协调。
-- Ego 的 task.handOff 调用闭源 ego.handOffTaskSpace；开源 harness 只展示接口和本地 gate/ledger 协作，不能证明 CBrowser 已有等价强制能力。
+- Ego 的 task.handOff 调用闭源 ego.handOffTaskSpace；开源 harness 只展示接口和本地 gate/ledger 协作，不能证明 cbrowser 已有等价强制能力。
 
 参考：[现行 ADR](../blueprint/decisions.md)、[架构对象与输入模型](../blueprint/architecture.md)、[自动化契约](../blueprint/automation.md)。
 

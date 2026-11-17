@@ -1,4 +1,4 @@
-# CBrowser v2 (t001–t007) 累计改动全量独立审阅报告
+# cbrowser v2 (t001–t007) 累计改动全量独立审阅报告
 
 - **审阅员模型**：cpa/gemini-3.8-flash (OpenCode)
 - **Provider**：Google / CPA

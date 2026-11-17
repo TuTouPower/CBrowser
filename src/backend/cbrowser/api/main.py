@@ -1,4 +1,4 @@
-"""Production entrypoint for CBrowser Control API."""
+"""Production entrypoint for cbrowser Control API."""
 
 from __future__ import annotations
 

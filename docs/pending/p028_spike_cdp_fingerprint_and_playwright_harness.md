@@ -14,13 +14,13 @@ reason: "已核实范围并转交 t029 云端候选兼容研究及目标探针�
 ## 分析基线
 
 - 分析时间：2026-11-04T00:00:12+08:00。
-- CBrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
+- cbrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
 - 证据范围：源码、现行文档与 backlog 静态核对；未运行测试、复现实验或外部站点验证。
 - 以下方案与验证条件均为分析建议，决策待定；原处理状态和目录归属保持不变。
 
 ## 当前基础与 Ego 借鉴边界
 
-- CBrowser 已有认证 CDP 通路：外部客户端 → API 自动化入口 → Supervisor → Browser Agent UDS → Chrome loopback；凭证为限定 Profile 的 cbat\_ token，不需要先新建另一套直连端口。
+- cbrowser 已有认证 CDP 通路：外部客户端 → API 自动化入口 → Supervisor → Browser Agent UDS → Chrome loopback；凭证为限定 Profile 的 cbat\_ token，不需要先新建另一套直连端口。
 - Browser runner 已通过 CloakBrowser SDK 启动 persistent context，Browser Agent 也已有常驻 CDP 连接。因此实验基线应是现行运行时，不应假设当前完全没有 Playwright/CDP。
 - 既有 UDS/下载证据只支持对应链路能力，不能证明 Playwright connectOverCDP 兼容、指纹无变化或 XTEST 精度。
 - Ego 参考版本：12407167f84a58af24044f072868051952131491。其 AGENTS.md 明确仓库提供开源 harness，浏览器本体与 globalThis.ego 原生绑定不在开源范围；控制权、snapshot 等能力不能直接照搬。

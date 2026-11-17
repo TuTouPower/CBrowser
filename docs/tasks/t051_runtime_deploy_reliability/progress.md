@@ -36,7 +36,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 - `ProfileService._handle_db_error`（`services/profile_service.py:334`）：只识别 `SQLITE_BUSY`/`SQLITE_LOCKED`（主码 5/6）属实。
 - `LoginPage.tsx`：实际路径为 `src/frontend/src/features/auth/LoginPage.tsx:30`，`setError(err.message)` 直接透传属实。
 - `scripts/redact_evidence.py`：仅 Bearer、`cbrowser_session` cookie、token/password/secret 键值三类规则属实；无 URL userinfo、其它 cookie 名、含空格完整引号值、家目录路径规则。
-- `.env.example:1`：`# CBrowser v2 deployment.` 属实；`0001_baseline_v2.py` 存在，revision `b7e1c9d4a2f3` 属实。
+- `.env.example:1`：`# cbrowser v2 deployment.` 属实；`0001_baseline_v2.py` 存在，revision `b7e1c9d4a2f3` 属实。
 - E2E/夹具宿主读库位点：`tests/e2e/conftest.py`、`test_supervisor_recovery_e2e.py`、`test_artifact_delete_resume_e2e.py`、`test_supervisor_container_graph_e2e.py`、`tests/fixtures/*` 均含 `cbrowser.db`/`CBROWSER_DB_PATH` 引用属实；其中多数已用 tmp 路径，仅 `tests/fixtures/gateway_probe/topology.py:474` 的容器内 `/data/cbrowser.db` 需随新拓扑调整。
 - 未能本地核实（环境缺口，非虚假引用）：`data/fonts` 有 windows/macos 两组、`data/v2/fonts` 为空——本机主仓与 worktree 均无 `data/` 目录（gitignore 的运行数据，只在用户机存在）；字体相关断言改用夹具字体集验证。
 - 已归档来源：p059/p063/p066/p068 在 base 已处于 `docs/archive/pending/`（18e343f 转办时归档），闭环后无需也不得再执行 `pending.py archive`（来源不在 todo/parked 中）；收尾以本记录为准。

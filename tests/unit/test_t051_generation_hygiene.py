@@ -45,7 +45,7 @@ PATTERNS = [
     "data/v2",
     "baseline_v2",
     "test-v2",
-    "CBrowser v2",
+    "cbrowser v2",
     "v2 deployment",
     "v2 五服务",
     "v2 架构",
@@ -56,7 +56,7 @@ PATTERNS = [
     "v2 Profile",
     "v2 用户",
     "API v2",
-    "for CBrowser v2",
+    "for cbrowser v2",
 ]
 
 SCAN_TARGETS = [

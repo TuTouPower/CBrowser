@@ -164,8 +164,8 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
             # request with only forged grant context is still rejected.
             forged_headers = {
                 "Origin": harness.origin,
-                "X-CBrowser-Authorized-Profile": valid_profile_id,
-                "X-CBrowser-Viewer-Grant": "forged-grant",
+                "X-cbrowser-Authorized-Profile": valid_profile_id,
+                "X-cbrowser-Viewer-Grant": "forged-grant",
             }
             resp_forged = await session.get(http_url, headers=forged_headers)
             assert resp_forged.status == 401
@@ -183,7 +183,7 @@ async def test_ac001_https_login_cookie_flags_csrf_and_viewer_ws_gates(
                     "Origin": harness.origin,
                     "Cookie": f"cbrowser_session={auth_cookie_val}",
                     "X-Forwarded-Uri": f"/stream/{valid_profile_id}/signal",
-                    "X-CBrowser-Edge-Proof": harness.keys["edge_proof"],
+                    "X-cbrowser-Edge-Proof": harness.keys["edge_proof"],
                 },
             )
             assert resp_edge_external.status == 404

@@ -2,7 +2,7 @@
 
 # 架构
 
-CBrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.2.1 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。
+cbrowser 是面向隐私浏览器与多身份隔离的远程浏览器管理系统。采用单机 Docker 架构，以 Google Chrome 作为唯一官方支持的外部标签页客户端，通过 Selkies 2.2.1 WebRTC 实现低延迟远程画面传输，由独立的 Docker 容器沙箱实现严格的 Profile 隔离。
 
 ## 1. 现状与演进状态说明
 
@@ -87,7 +87,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 3.2 部署身份、数据库位置与发布指针（t051）
 
-部署身份确定性派生：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`，媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；两者写入 release env 与 manifest。归属判定以 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id 为唯一依据（该键即部署身份键，AC-021）；每轮唯一的运行时实例 id 不走标签，写入容器运行时配置（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取。project 名豁免已删除。控制面数据库在 named volume `db`（`/data/db/cbrowser.db`），字体为独立部署输入（`${CBROWSER_FONTS_DIR}:/fonts:ro`）。发布指针为单一 JSON 文件 `config/deploy/release_pointer.json`（`{"current": …, "previous": …|null}`），原子写含文件与父目录 fsync。部署前对数据库做在线备份并记入 manifest，`deploy.sh restore` 可恢复。细节见 ADR 028。
+首次部署身份确定性派生：`instance_id = sha256("cbrowser-instance-v1\0<prefix>\0<data_root>")[:32]`，媒体子网池按 `pool_index = sha256(identity) mod 64` 得 `10.{192+index}.0.0/16`；两者写入 release env 与 manifest。归属判定以 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id 为唯一依据（该键即部署身份键，AC-021）；每轮唯一的运行时实例 id 不走标签，写入容器运行时配置（Stream 环境变量 `CBROWSER_RUNTIME_INSTANCE_ID`、gated entrypoint `--instance-id`、Browser 命令 `--runtime-instance-id`），扫描/查找/回收经 `container_runtime_instance_id` 从配置读取。project 名豁免已删除。控制面数据库在 named volume `db`（`/data/db/cbrowser.db`），字体为独立部署输入（`${CBROWSER_FONTS_DIR}:/fonts:ro`）。发布指针为单一 JSON 文件 `config/deploy/release_pointer.json`（`{"current": …, "previous": …|null}`），原子写含文件与父目录 fsync。部署前对数据库做在线备份并记入 manifest，`deploy.sh restore` 可恢复。细节见 ADR 028。同一 prefix 再次部署且 release 记录的数据根与当前数据根指向同一文件系统目录时，复用该 release 的部署身份、媒体池与 edge 子网；macOS 目录大小写改名不会改变资源归属。
 
 ### 3.3 环境恢复点（t066）
 
@@ -173,7 +173,7 @@ Google Chrome Stable（宿主机同一 Mac 客户端）
 
 ### 5.7 Viewer 边缘授权与 CDP 边界（t064）
 
-- viewer 授权分两跳且秘密不共用：Caddy 对 `/stream/{profileId}/signal` 删除客户端自带的 `X-CBrowser-Authorized-Profile` 与 `X-CBrowser-Viewer-Grant`，再以 `edge_proof_key` 向 API 的 `GET /api/v1/internal/edge/viewer-authorize` 发起 `forward_auth`；API 校验边缘证明与转发 URI 后，由 `AuthService.authorize_viewer` 唯一判定会话、Origin 与 Profile，并以 `viewer_grant_key` 签发 60 秒 HMAC grant。grant claims 仅含版本、Profile、随机 grant id 与到期时间，不含会话标识。
+- viewer 授权分两跳且秘密不共用：Caddy 对 `/stream/{profileId}/signal` 删除客户端自带的 `X-cbrowser-Authorized-Profile` 与 `X-cbrowser-Viewer-Grant`，再以 `edge_proof_key` 向 API 的 `GET /api/v1/internal/edge/viewer-authorize` 发起 `forward_auth`；API 校验边缘证明与转发 URI 后，由 `AuthService.authorize_viewer` 唯一判定会话、Origin 与 Profile，并以 `viewer_grant_key` 签发 60 秒 HMAC grant。grant claims 仅含版本、Profile、随机 grant id 与到期时间，不含会话标识。
 - Caddy 只把 API 回注的 authorized Profile 与 grant 复制到待代理握手，并删除整个 Cookie 头；Gateway 使用同一 `cbrowser/shared/viewer_grants.py` 在本地验签、验期与验 Profile 绑定，再检查 Agent 与 runtime 就绪。每次新握手都重走 `forward_auth`，登出或撤销在下一次握手生效。直连 Gateway、伪造授权头或只有 Cookie 的请求都没有有效 grant，不能越权。
 - 边缘解析端点只存在于内部 schema 与服务网络：渲染后的 Caddyfile 对外部 `/api/v1/internal/*` 显式 404，Caddy 的 `forward_auth` 子请求直达 API upstream、不重入外部站点路由。`/stream/agent/register` 不套用 viewer 授权，继续使用独立 Agent 凭证与 API runtime 绑定校验。
 - CDP 本体只由 Browser 容器以临时端口监听 `127.0.0.1`，端口不发布且不向普通 viewer 披露。唯一外部自动化入口仍是带 automation token 与控制权围栏的 `/api/v1/automation/profiles/{profileId}/cdp`；管理会话经专用 Automation 状态端点才可看到 `cdp_ws_path`，普通 Profile 响应不含该字段或 token。引擎内以域名 Host 发起的回环请求（DNS rebinding 的可观察形态）与跨 Origin CDP WebSocket 必须由真实引擎负向测试拒绝。

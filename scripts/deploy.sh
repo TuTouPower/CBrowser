@@ -1,5 +1,5 @@
 #!/bin/bash
-# CBrowser release deployment (t027, t051).
+# cbrowser release deployment (t027, t051).
 #
 # Replaces the historical "build twice, overwrite compose.env, restart
 # Caddy unconditionally, print the admin password" flow with immutable
@@ -118,7 +118,7 @@ fi
 # in place.  Kept in sync with the API-side constant in
 # cbrowser/adapters/database/migrations.py.
 BASELINE_REVISION="b7e1c9d4a2f3"
-REBUILD_GUIDANCE="This database was created by a retired CBrowser schema generation (0001-0009). Rebuild the data directory from scratch: stop the stack, move the old data root aside, then start with an empty data directory so the baseline schema is created fresh. No in-place data migration is provided (project decision: no formal users before t035)."
+REBUILD_GUIDANCE="This database was created by a retired cbrowser schema generation (0001-0009). Rebuild the data directory from scratch: stop the stack, move the old data root aside, then start with an empty data directory so the baseline schema is created fresh. No in-place data migration is provided (project decision: no formal users before t035)."
 
 export CBROWSER_COMPOSE_PROJECT="$PROJECT"
 export CBROWSER_PREFIX="$PREFIX"
@@ -146,11 +146,36 @@ derive_instance_identity() {
   # The material string is the contract: tests and the Supervisor side
   # must reproduce it byte for byte.
   local out
-  out="$(python3 - "$PREFIX" "$DATA_ROOT" <<'PY'
+  out="$(python3 - "$PREFIX" "$DATA_ROOT" "$POINTER_FILE" "$RELEASES_DIR" <<'PY'
 import hashlib
+import json
+from pathlib import Path
 import sys
 
-prefix, data_root = sys.argv[1], sys.argv[2]
+prefix, data_root, pointer_file, releases_dir = sys.argv[1:]
+# A case-only checkout rename on macOS still refers to the same data
+# directory. Keep its deployed identity and subnet assignments so the
+# Supervisor continues to own existing Profile containers and networks.
+pointer = Path(pointer_file)
+if pointer.is_file():
+    try:
+        current = json.loads(pointer.read_text()).get("current")
+    except json.JSONDecodeError:
+        current = None
+    if current:
+        env_file = Path(releases_dir) / f"{current}.env"
+        deployed = dict(
+            line.split("=", 1) for line in env_file.read_text().splitlines()
+            if "=" in line and not line.startswith("#")
+        )
+        old_root = Path(deployed["CBROWSER_DATA_ROOT"])
+        if (deployed["CBROWSER_PREFIX"] == prefix
+                and old_root.exists() and Path(data_root).exists()
+                and old_root.samefile(data_root)):
+            print(deployed["CBROWSER_INSTANCE_ID"])
+            print(deployed["CBROWSER_MEDIA_SUBNET_POOL"])
+            print(deployed["CBROWSER_EDGE_SUBNET"])
+            sys.exit(0)
 material = ("cbrowser-instance-v1\0" + prefix + "\0" + data_root).encode()
 digest = hashlib.sha256(material).hexdigest()
 print(digest[:32])

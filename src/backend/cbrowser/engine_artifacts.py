@@ -6,7 +6,7 @@ only the downloadable archive manifest (``SHA256SUMS`` + detached Ed25519
 once extracted into ``engine-cache``, upstream leaves no per-file manifest or
 signature and ``ensure_binary()`` trusts any existing executable ``chrome``.
 
-This module is the single source of truth for CBrowser's approved engine
+This module is the single source of truth for cbrowser's approved engine
 artifacts and integrity enforcement across ``deploy.sh``, Supervisor ``cache_init``,
 and ``BrowserRunner``.
 """
@@ -35,7 +35,7 @@ UPSTREAM_SIGNING_PUBKEYS: tuple[str, ...] = (
 TRUST_SOURCE_ARM64 = (
     "Ed25519 detached signature (SHA256SUMS.sig) verified against "
     "cloakbrowser==0.6.4 BINARY_SIGNING_PUBKEYS for archive download + "
-    "CBrowser repository SHA-256 manifest for extracted runtime files"
+    "cbrowser repository SHA-256 manifest for extracted runtime files"
 )
 
 TRUST_SOURCE_X64_ARCHIVE_ONLY = (

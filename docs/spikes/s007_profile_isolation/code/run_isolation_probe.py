@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 run_isolation_probe.py
-Master execution suite for CBrowser v2 Real Dual-Profile Security Isolation Spike (Revision 2).
+Master execution suite for cbrowser v2 Real Dual-Profile Security Isolation Spike (Revision 2).
 Validates:
 - 4-container dual-profile topology (Browser A + Stream A, Browser B + Stream B)
 - All 4 containers running with non-root UID 1000:1000 & Read-only rootfs (no-new-privileges)
@@ -264,7 +264,7 @@ def main():
             "-v", f"{VOL_A_PROF}:/data/profile",
             "-v", f"{SCRATCH_DIR}:/app_probe:ro",
             IMAGE_BROWSER,
-            "/app_probe/entry_browser.sh", "A", ":91", "440.0", "CBrowser Cloak Profile A 1080p", "#102040", secret_a
+            "/app_probe/entry_browser.sh", "A", ":91", "440.0", "cbrowser Cloak Profile A 1080p", "#102040", secret_a
         ])
 
         # Stream A (Read-only, tmpfs /tmp, HOME=/tmp, non-root 1000:1000)
@@ -311,7 +311,7 @@ def main():
             "-v", f"{VOL_B_PROF}:/data/profile",
             "-v", f"{SCRATCH_DIR}:/app_probe:ro",
             IMAGE_BROWSER,
-            "/app_probe/entry_browser.sh", "B", ":92", "880.0", "CBrowser Cloak Profile B 1080p", "#402010", secret_b
+            "/app_probe/entry_browser.sh", "B", ":92", "880.0", "cbrowser Cloak Profile B 1080p", "#402010", secret_b
         ])
 
         # Stream B (Read-only, tmpfs /tmp, HOME=/tmp, non-root 1000:1000)
@@ -365,8 +365,8 @@ def main():
             "docker", "exec", "-e", "DISPLAY=:91", "-e", "XAUTHORITY=/tmp/.X11-unix/Xauthority",
             CONT_BROWSER_A, "xwininfo", "-root", "-tree"
         ]).stdout
-        assert "CBrowser Cloak Profile A 1080p" in win_out_a, "Profile A window title not found in X11 tree!"
-        log("Profile A: Found X11 window 'CBrowser Cloak Profile A 1080p'")
+        assert "cbrowser Cloak Profile A 1080p" in win_out_a, "Profile A window title not found in X11 tree!"
+        log("Profile A: Found X11 window 'cbrowser Cloak Profile A 1080p'")
 
         # 2. Kernel TCP Port Audit via /proc/net/tcp
         port_audit_a = check_proc_net_tcp(CONT_BROWSER_A, ":91")
@@ -379,7 +379,7 @@ def main():
         log(f"Profile A DOM Metrics: {metrics_a}")
         assert metrics_a["devicePixelRatio"] == 1, "Profile A DPR is not 1"
         assert metrics_a["innerWidth"] > 1800, "Profile A innerWidth too small"
-        assert metrics_a["title"] == "CBrowser Cloak Profile A 1080p", "Profile A DOM title mismatch"
+        assert metrics_a["title"] == "cbrowser Cloak Profile A 1080p", "Profile A DOM title mismatch"
         assert metrics_a["profileIdText"] == "A", "Profile A DOM profileId mismatch"
         assert metrics_a["backgroundColor"] == "rgb(16, 32, 64)", f"Profile A DOM backgroundColor mismatch: {metrics_a['backgroundColor']}"
         assert metrics_a.get("audioContextState") == "running", f"Profile A AudioContext not running: {metrics_a.get('audioContextState')}"
@@ -475,8 +475,8 @@ def main():
             "docker", "exec", "-e", "DISPLAY=:92", "-e", "XAUTHORITY=/tmp/.X11-unix/Xauthority",
             CONT_BROWSER_B, "xwininfo", "-root", "-tree"
         ]).stdout
-        assert "CBrowser Cloak Profile B 1080p" in win_out_b, "Profile B window title not found in X11 tree!"
-        log("Profile B: Found X11 window 'CBrowser Cloak Profile B 1080p'")
+        assert "cbrowser Cloak Profile B 1080p" in win_out_b, "Profile B window title not found in X11 tree!"
+        log("Profile B: Found X11 window 'cbrowser Cloak Profile B 1080p'")
 
         # 2. Kernel TCP Port Audit via /proc/net/tcp
         port_audit_b = check_proc_net_tcp(CONT_BROWSER_B, ":92")
@@ -489,7 +489,7 @@ def main():
         log(f"Profile B DOM Metrics: {metrics_b}")
         assert metrics_b["devicePixelRatio"] == 1, "Profile B DPR is not 1"
         assert metrics_b["innerWidth"] > 1800, "Profile B innerWidth too small"
-        assert metrics_b["title"] == "CBrowser Cloak Profile B 1080p", "Profile B DOM title mismatch"
+        assert metrics_b["title"] == "cbrowser Cloak Profile B 1080p", "Profile B DOM title mismatch"
         assert metrics_b["profileIdText"] == "B", "Profile B DOM profileId mismatch"
         assert metrics_b["backgroundColor"] == "rgb(64, 32, 16)", f"Profile B DOM backgroundColor mismatch: {metrics_b['backgroundColor']}"
         assert metrics_b.get("audioContextState") == "running", f"Profile B AudioContext not running: {metrics_b.get('audioContextState')}"
@@ -848,10 +848,10 @@ def write_report(results, inspect_data, elapsed):
 
     hashes_md = "\n".join([f"- `{f}`: `{h}`" for f, h in hashes.items()])
 
-    content = f"""# CBrowser v2 双Profile安全隔离技术Spike报告（修正版 Revision 2）
+    content = f"""# cbrowser v2 双Profile安全隔离技术Spike报告（修正版 Revision 2）
 
 ## 1. 实验目标与背景
-本 Spike 针对 CBrowser v2 架构规范第 4 章（X11、IPC 和容器隔离）、第 5 章（音频架构）及 `t001 AC001` 中关于不同 Profile 安全隔离的技术契约，在 `.scratch/isolation_probe` 中对 4 容器真实双 Profile 沙箱拓扑进行黑盒执行与安全边界验证。
+本 Spike 针对 cbrowser v2 架构规范第 4 章（X11、IPC 和容器隔离）、第 5 章（音频架构）及 `t001 AC001` 中关于不同 Profile 安全隔离的技术契约，在 `.scratch/isolation_probe` 中对 4 容器真实双 Profile 沙箱拓扑进行黑盒执行与安全边界验证。
 
 实验严格遵循：
 - 不修改生产代码与配置；
@@ -889,7 +889,7 @@ def write_report(results, inspect_data, elapsed):
 ## 3. 正向链路验证结果 (Profile A & Profile B)
 
 ### 3.1 Profile A 正向链路
-- **CloakBrowser 运行**: 成功以 UID 1000 在只读 rootfs 下启动，加载特异页面（Title: `CBrowser Cloak Profile A 1080p`）。
+- **CloakBrowser 运行**: 成功以 UID 1000 在只读 rootfs 下启动，加载特异页面（Title: `cbrowser Cloak Profile A 1080p`）。
 - **内核网络端口审查 (`/proc/net/tcp`)**:
   - CDP 监听: 严格绑定 `127.0.0.1:9222`（十六进制 `0100007F:2406`，状态 `0A` LISTEN）。
   - Xvfb 监听: 端口 6091 (`17CB`) 在内核监听列表中**完全不存在**，验证 `-nolisten tcp` 真实生效。
@@ -916,7 +916,7 @@ def write_report(results, inspect_data, elapsed):
   - 负例门禁验证: 异频（880Hz）断言通过；本轮真实48000Hz PCM故意声明为44100Hz时被1%门禁拒绝，校准状态：{results["profile_a"]["rate_mismatch_control"]}。不依赖历史二进制产物。
 
 ### 3.2 Profile B 正向链路
-- **CloakBrowser 运行**: 成功以 UID 1000 在只读 rootfs 下启动，加载特异页面（Title: `CBrowser Cloak Profile B 1080p`）。
+- **CloakBrowser 运行**: 成功以 UID 1000 在只读 rootfs 下启动，加载特异页面（Title: `cbrowser Cloak Profile B 1080p`）。
 - **内核网络端口审查 (`/proc/net/tcp`)**:
   - CDP 监听: 严格绑定 `127.0.0.1:9222`（十六进制 `0100007F:2406`，状态 `0A` LISTEN）。
   - Xvfb 监听: 端口 6092 (`17CC`) 在内核监听列表中**完全不存在**，验证 `-nolisten tcp` 真实生效。
@@ -1021,9 +1021,9 @@ def write_report(results, inspect_data, elapsed):
 ## 8. 生产准入状态声明
 1. **本 Spike 技术定位**:
    - 本次实验在 `.scratch/isolation_probe` 中实证了多 Profile 沙箱在 Linux 内核层（UID、RO Rootfs、IPC、Volume、Network）的边界有效性，并纠正了此前白屏与推论偏差；
-   - **生产准入与架构冻结仍受 CBrowser 全 17 项生产门禁约束**，包含公网 STUN/TURN NAT 穿透、WebRTC 实时信令对接、生产反向代理网关编排等。
+   - **生产准入与架构冻结仍受 cbrowser 全 17 项生产门禁约束**，包含公网 STUN/TURN NAT 穿透、WebRTC 实时信令对接、生产反向代理网关编排等。
 2. **生命周期机制规范**:
-   - CBrowser v2 明确无独占租约机制，采用独立的沙箱容器实例与动态容器生命周期管理。
+   - cbrowser v2 明确无独占租约机制，采用独立的沙箱容器实例与动态容器生命周期管理。
 
 ---
 

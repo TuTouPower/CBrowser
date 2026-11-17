@@ -1,4 +1,4 @@
-# CBrowser t001–t007 累计改动独立审阅（opencode 路，最终稿）
+# cbrowser t001–t007 累计改动独立审阅（opencode 路，最终稿）
 
 - 模型：`opencode-go/deepseek-v4.1-flash`
 - Provider：opencode-go

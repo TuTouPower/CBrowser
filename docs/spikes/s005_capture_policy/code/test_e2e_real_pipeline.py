@@ -716,7 +716,7 @@ async def main():
             test_results["Scenario_9_Protocol_Armor"] = "PASS"
 
             # Note: Old Scenario 10 (testing unadapted stock Selkies client via Playwright) has been archived in revision_03.
-            # Real Native Visibility E2E is verified by native_visibility_e2e.py with the CBrowser Visibility Adapter.
+            # Real Native Visibility E2E is verified by native_visibility_e2e.py with the cbrowser Visibility Adapter.
             await context.close()
             await browser.close()
 

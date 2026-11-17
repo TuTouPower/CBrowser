@@ -34,7 +34,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 用户最新裁决：Persona/预热/用户自检取消，t071/t072 已 dropped，不转 pending；保留引擎升级工程门禁。
 
-- 2026-11-13T20:36:00+08:00：进入 worktree `../CBrowser_t068`（分支 `t068_profile_fingerprint_verification`，基线 `main=c5f8329`，owner `muse-cloud-t068`，attempt 1，`execution_id=f08a59e0fe66490a8d076e9a72de4a85`）。`preflight t068 --owner-id muse-cloud-t068` 返回 `PASS（1 条警告：2 项 UNVERIFIED-SPIKE）`；`doctor_cmd`（`pytest .repo_template/tests -q --collect-only -m contract` 收集 258 项 + `md_kx`）通过。
+- 2026-11-13T20:36:00+08:00：进入 worktree `../cbrowser_t068`（分支 `t068_profile_fingerprint_verification`，基线 `main=c5f8329`，owner `muse-cloud-t068`，attempt 1，`execution_id=f08a59e0fe66490a8d076e9a72de4a85`）。`preflight t068 --owner-id muse-cloud-t068` 返回 `PASS（1 条警告：2 项 UNVERIFIED-SPIKE）`；`doctor_cmd`（`pytest .repo_template/tests -q --collect-only -m contract` 收集 258 项 + `md_kx`）通过。
 
 - 工具链异常记录（不静默绕过，不改工具链）：尝试执行 `python3 .repo_template/scripts/findings.py new` 登记技术发现时失败退出，原因为基线分支 `main` 已存在历史重复编号（`d037` 同时存在 `d037_dockerignore_leaf_allowlists.md` 与 `d037_sqlite_extended_error_codes_and_log_safety.md`；`d038` 同时存在 `d038_deterministic_deployment_identity_and_media_pools.md` 与 `d038_target_engine_tab_visibility_unreliable.md`），触发 `_id_scan.py` 全仓重复校验拒绝分配新号。按仓规不手工绕过建 `dNNN` 文件，临时实验材料保留在 `.scratch/`，结论已完整回填 `task.md` 未知契约清单，并将在最终消息中如实向用户报告。
 

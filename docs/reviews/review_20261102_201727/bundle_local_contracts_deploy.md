@@ -99,7 +99,7 @@
 - [Medium][82] DOCKER_DEPLOYMENT.md:9-30 — 部署文档把 legacy 单容器形态表述为'当前实际架构'，与 schemas/呈现的 v2 契约并存且无状态区分
 
     - ID: f_contracts_deploy_06; verification: static
-    - Evidence: DOCKER_DEPLOYMENT.md:9 自称记录'当前 CBrowser 的实际容器化部署架构'，内容为单容器 + legacy /api/\* + /api/health（:90）; schemas/openapi/cbrowser_v1.json 的 info.version 为 2.0.0、健康检查在 /api/v1/health；config/docker/ 下另有四个 v2 runtime 镜像，但 compose.yaml 完全不引用它们，config/caddy、config/coturn 只有 .gitkeep 占位; docs/tasks/t012_v2_docker_release/task.md 表明五服务正式 compose、Caddy/coturn 配置与完整部署文档是未实施的未来任务；docs/handoff.md:22 亦确认 v2 栈未运行; 文档未在任何位置标注'当前为 legacy 形态、v2 部署待 t012'的状态说明（文档规范的三态划分缺失）
+    - Evidence: DOCKER_DEPLOYMENT.md:9 自称记录'当前 cbrowser 的实际容器化部署架构'，内容为单容器 + legacy /api/\* + /api/health（:90）; schemas/openapi/cbrowser_v1.json 的 info.version 为 2.0.0、健康检查在 /api/v1/health；config/docker/ 下另有四个 v2 runtime 镜像，但 compose.yaml 完全不引用它们，config/caddy、config/coturn 只有 .gitkeep 占位; docs/tasks/t012_v2_docker_release/task.md 表明五服务正式 compose、Caddy/coturn 配置与完整部署文档是未实施的未来任务；docs/handoff.md:22 亦确认 v2 栈未运行; 文档未在任何位置标注'当前为 legacy 形态、v2 部署待 t012'的状态说明（文档规范的三态划分缺失）
     - Impact: 读者无法判断部署时应以哪套契约/镜像为准：按 schemas 与 v2 镜像准备会发现没有编排入口，按部署文档操作得到的却是没有 /api/v1 的旧应用；两套事实互相矛盾且都不声明状态。
     - Fix: 在 DOCKER_DEPLOYMENT.md 开头加状态段：当前正式部署=legacy 单容器（对应 legacy API），v2 五服务部署未落地（指向 t012 与 blueprint）；schemas 的 README/索引位置同步标注 v2 契约的生效状态。
 

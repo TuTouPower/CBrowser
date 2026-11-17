@@ -38,6 +38,6 @@
 [
   "静态审阅：未实际运行 task.py finish、repo_sync 或契约套件，『finish 时 specs_index 校验真实触发』『run_checks 经 repo_sync 可正常执行』均为代码路径推断，无运行记录佐证（仓内亦未检索到门禁运行日志类工件）。",
   "skill 层（.repo_template/skills/*/SKILL.md）可能以流程文本要求 agent 手动执行 test_cmd 并记录验证证据；本精查核对的是脚本/CI/hook 的机械接线，skill 文本级要求未逐份通读，故 finding 01 表述限于『无机械执行/校验路径』，不否定流程文本层面的要求存在。",
-  "其他消费仓可能以 sync_state.json 定制 testing.md 并自建 CI 接线；本结论仅限 CBrowser 本仓当前 HEAD。"
+  "其他消费仓可能以 sync_state.json 定制 testing.md 并自建 CI 接线；本结论仅限 cbrowser 本仓当前 HEAD。"
 ]
 ```

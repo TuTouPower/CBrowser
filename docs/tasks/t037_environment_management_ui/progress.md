@@ -24,7 +24,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-06：`run-begin t037 --base t044_e2e_parallel_execution`（diff_anchor `05dda065aa237f9e32c3507f6f6a65f47a185205`，owner_id `f92f98dd7e464ac98d3231ff465ea3cf`），`preflight t037` = PASS。worktree `../CBrowser_t037` 已软链 `.env` 与 `data/fonts`（t044 导入的持久字体集可复用）。用户裁决「继续跑 t037」，整链完成需多次会话，宿主压缩上下文后按本文件继续。
+- 2026-11-06：`run-begin t037 --base t044_e2e_parallel_execution`（diff_anchor `05dda065aa237f9e32c3507f6f6a65f47a185205`，owner_id `f92f98dd7e464ac98d3231ff465ea3cf`），`preflight t037` = PASS。worktree `../cbrowser_t037` 已软链 `.env` 与 `data/fonts`（t044 导入的持久字体集可复用）。用户裁决「继续跑 t037」，整链完成需多次会话，宿主压缩上下文后按本文件继续。
 - 代码地图（explore 子代理结论）：领域层（`useProfilesQuery.ts` 448 行、`scopeMutationToProfile`、SSE `useProfileEventsSync`、`useApplyDisplaySettingsMutation` 阶段跟踪、`useActionKeyMutation` 幂等键）、t036 设计系统组件族（`shared/ui/`，含 `StatusBadge` 4 tone、`GroupHue`/`GroupChip` 8 色）齐备；缺口是列表页/卡片/工具栏/批量条/新建弹窗/共用表单/四标签详情/分组弹窗全部页面组件，`ApiClient` 缺 `groups`/`proxies`/`fontSets` 三个命名空间。旧组件 `ProfileNewPage.tsx`/`ProfileDetailPage.tsx`/`ProfileFilesPage.tsx`/`ProfileAutomationPage.tsx` 含硬编码颜色，按 D16 删除重建。数据 join：`ProfileResponse` 只有 `group_id`/`proxy_id`，分组名/代理名/地区须查 `/groups`、`/proxies` 后 join；五态与 last activity 来自 `runtime`。
 - 实施计划（分块，文件边界不重叠；`[步骤] → 验证：[检查方式]`）：
     1. 基础设施：i18n `en`/`zh` 同步补键、`client.ts` 加 groups/proxies/fontSets 命名空间、`types.ts` 加类型别名并扩展 `DEFAULT_PROFILE_CREATE_VALUES`、`useProfilesQuery.ts` 追加 groups/proxies/fontSets hooks → 验证：`npm run test:types` + 既有 Vitest 全绿。

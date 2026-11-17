@@ -7,7 +7,7 @@ tasks: [baseline]
 
 ## 1. 业务目标与适用范围
 
-本文档定义 CBrowser 架构重构前在 t001 阶段完成的底层运行时核心技术可观察行为契约、实测验证证据、范围豁免及技术局限性。
+本文档定义 cbrowser 架构重构前在 t001 阶段完成的底层运行时核心技术可观察行为契约、实测验证证据、范围豁免及技术局限性。
 
 **边界声明**（t001 时点）：本文档属于技术可行性验证契约，是对底层通信、媒体捕获、容器边界与控制协议实际可达成行为的权威规范；**当时不构成生产系统已实现上述组件的声明**。当时生产代码仍保持旧单容器与 VNC/RFB 链路基线，正式生产组件（`cbrowser-api` v1、`cbrowser-supervisor`、`cbrowser-stream-gateway` 等）在后续独立 task（t002+）中分步实施。现行实现状态以现行蓝图与生效 spec 为准。
 
@@ -88,7 +88,7 @@ tasks: [baseline]
     - Browser Agent 监听 CDP 下载事件，浏览器将下载文件落盘至 `/exchange/downloads/`（映射到宿主 `/data/artifacts/{profileId}/downloads/`）；
     - 外部 CDP 自动化客户端断开后，Browser Agent 自动重置并恢复默认下载捕获设置，确保后续文件下载继续被系统正常捕获入库（s003, d002）。
 - **正常退出事件落盘与单写者状态恢复**：
-    - CBrowser API 为 SQLite 唯一写入者（WAL 模式，`busy_timeout=5000`）；Supervisor 严禁直接读写业务数据库；
+    - cbrowser API 为 SQLite 唯一写入者（WAL 模式，`busy_timeout=5000`）；Supervisor 严禁直接读写业务数据库；
     - 用户在浏览器内直接点击关闭或触发正常退出时，Browser Agent 将包含唯一 `event_id` 与实例标识的退出事件落盘写入持久化队列；
     - API 离线或 Supervisor 重启时，已落盘事件在恢复后被可靠消费并收敛为 `desired_state=stopped`；多轮 reconcile 不会误将已正常关闭的浏览器重新启动（s003, d006）。
 
@@ -120,7 +120,7 @@ tasks: [baseline]
 - **容器运行引擎**：OrbStack Linux aarch64，Docker Engine 29.4.0；
 - **容器资源配额**：实测 `docker info` 分配 10 CPU，内存配额约 15.66 GiB（`16,819,609,600 bytes`）；严格按此配额规划，禁止将宿主 64 GiB 全部计入容器预算；
 - **媒体算力预算**：容器内 WebRTC 视频编码按 CPU 纯软件编码基准规划，宿主机 Apple GPU 不计入容器编码加速预算；
-- **访问端与网络路径**：同一台 Mac 上的 Google Chrome Stable，经本机回环/容器网络访问本地 CBrowser 服务；不依赖公网 NAT 穿透。
+- **访问端与网络路径**：同一台 Mac 上的 Google Chrome Stable，经本机回环/容器网络访问本地 cbrowser 服务；不依赖公网 NAT 穿透。
 
 ## 4. 可复现归档证据与发现映射
 

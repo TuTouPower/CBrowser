@@ -1,4 +1,4 @@
-"""Data models and protocols for CBrowser Supervisor Internal Control Server."""
+"""Data models and protocols for cbrowser Supervisor Internal Control Server."""
 
 from __future__ import annotations
 

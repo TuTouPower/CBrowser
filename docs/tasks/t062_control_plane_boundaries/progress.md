@@ -30,7 +30,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 调度字段经 task.py edit 写入；plan 的 runnable 只指依赖/冲突候选，不代表产品 BLOCKING 已解决。
 
-- 2026-11-13 云端执行（worktree `CBrowser_t062`，基线 main `c5f8329`，preflight PASS、1 条 SPIKE 警告待回填）。用户已授权与本地 t068 强行并发，合入成本由主会话承担；本 task 避开 t068 核心文件面（指纹/引擎探针与测量报告），只可能触及 runtime_agent 的 import 行与原子写调用（egress_probe/event_storage/fontconfig），不改其行为。
+- 2026-11-13 云端执行（worktree `cbrowser_t062`，基线 main `c5f8329`，preflight PASS、1 条 SPIKE 警告待回填）。用户已授权与本地 t068 强行并发，合入成本由主会话承担；本 task 避开 t068 核心文件面（指纹/引擎探针与测量报告），只可能触及 runtime_agent 的 import 行与原子写调用（egress_probe/event_storage/fontconfig），不改其行为。
 
 - 设计（中立归属 = 既有 `cbrowser/shared/` 包，零业务包依赖）：
 

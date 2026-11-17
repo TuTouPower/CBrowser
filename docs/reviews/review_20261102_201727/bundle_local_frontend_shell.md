@@ -172,7 +172,7 @@
 - [Info][90] src/frontend/src/i18n.tsx:690-706 — locale 切换不回写 document.lang 且存储键保留上游 cbm 前缀，文档/无障碍一致性小缺口
 
     - ID: f_frontend_shell_16; verification: static
-    - Evidence: index.html:2 硬编码 <html lang="en">，i18n.tsx 的 I18nProvider（:713-731）切换 locale 时只写 localStorage 与 context，未同步 document.documentElement.lang，zh 界面下屏幕阅读器仍按 en 发音规则处理; STORAGE_KEY 为 "cbm.locale"（i18n.tsx:690），cbm 是上游 CloakBrowser-Manager 的缩写，本仓已更名 CBrowser，键名属上游残留（更改键名需考虑老用户已存偏好的迁移，故仅记录）; 正面事实：en/zh 字典 291 键静态比对完全对齐，t() 有 en 回退与 {param} 插值，localStorage 检测有 navigator.language 兜底，本项仅为边角一致性问题
+    - Evidence: index.html:2 硬编码 <html lang="en">，i18n.tsx 的 I18nProvider（:713-731）切换 locale 时只写 localStorage 与 context，未同步 document.documentElement.lang，zh 界面下屏幕阅读器仍按 en 发音规则处理; STORAGE_KEY 为 "cbm.locale"（i18n.tsx:690），cbm 是上游 CloakBrowser-Manager 的缩写，本仓已更名 cbrowser，键名属上游残留（更改键名需考虑老用户已存偏好的迁移，故仅记录）; 正面事实：en/zh 字典 291 键静态比对完全对齐，t() 有 en 回退与 {param} 插值，localStorage 检测有 navigator.language 兜底，本项仅为边角一致性问题
     - Impact: 影响轻微：无障碍朗读语言不准、品牌更名残留一处内部键名；无功能影响
     - Fix: 在 I18nProvider 中以 useEffect 同步 document.documentElement.lang = locale === "zh" ? "zh-CN" : "en"；cbm.locale 键名如要更名应做读旧写新的兼容迁移，否则保留并在代码注释中标明其历史来源
 

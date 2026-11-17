@@ -1,4 +1,4 @@
-# CBrowser v2 双 Profile 隔离技术 Spike (Revision 4) 独立复核报告
+# cbrowser v2 双 Profile 隔离技术 Spike (Revision 4) 独立复核报告
 
 - **复核环境**: Darwin arm64 (OrbStack Docker backend, Linux 内核沙箱)
 - **复核模型**: Gemini `cpa/gemini-3.8-flash` (独立四审 Reviewer)
@@ -84,7 +84,7 @@ ______________________________________________________________________
 
     Sink #0
         Name: cbrowser_sink
-        Description: CBrowser_Virtual_Sink
+        Description: cbrowser_Virtual_Sink
         Sample Specification: s16le 2ch 48000Hz
         State: RUNNING
     ```
@@ -222,7 +222,7 @@ ______________________________________________________________________
 2. **生产准入边界强调 (Production Non-Bypass)**:
     - **原始 PCM 采集绝不等于 WebRTC 生产管道就绪**: 生产客户端依赖 WebRTC 实时音视频流、ICE/STUN/TURN NAT 中继、动态带宽自适应与 Opus 编码传输（由后续 `s004` 等 spike 验证）；
     - **全 17 门禁保持约束**: 本隔离验证不能豁免公网 TLS、Caddy 反向代理网关编排、动态生命周期监控等全 17 项生产质量门禁；
-    - **无租约架构**: CBrowser v2 始终保持单沙箱多容器动态生命周期，杜绝独占租约设计。
+    - **无租约架构**: cbrowser v2 始终保持单沙箱多容器动态生命周期，杜绝独占租约设计。
 
 ______________________________________________________________________
 

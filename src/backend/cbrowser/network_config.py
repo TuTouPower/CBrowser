@@ -58,7 +58,7 @@ def generate_caddyfile(
     fingerprint would not change with the port (AC-006).
     """
     _validate_port(https_port)
-    caddyfile = f"""# CBrowser deploy Caddyfile — https_port {https_port} (rendered by deploy.sh; do not edit)
+    caddyfile = f"""# cbrowser deploy Caddyfile — https_port {https_port} (rendered by deploy.sh; do not edit)
 {{
     admin off
     auto_https disable_redirects
@@ -91,8 +91,8 @@ https://127.0.0.1, https://localhost {{
     # before the request reaches the Gateway.
     handle /stream/*/signal {{
         route {{
-            request_header -X-CBrowser-Authorized-Profile
-            request_header -X-CBrowser-Viewer-Grant
+            request_header -X-cbrowser-Authorized-Profile
+            request_header -X-cbrowser-Viewer-Grant
 
             forward_auth {api_upstream} {{
                 uri /api/v1/internal/edge/viewer-authorize
@@ -102,8 +102,8 @@ https://127.0.0.1, https://localhost {{
                 header_up -Sec-WebSocket-Key
                 header_up -Sec-WebSocket-Version
                 header_up -Sec-WebSocket-Protocol
-                header_up X-CBrowser-Edge-Proof "{{env.CBROWSER_EDGE_PROOF_SECRET}}"
-                copy_headers X-CBrowser-Authorized-Profile X-CBrowser-Viewer-Grant
+                header_up X-cbrowser-Edge-Proof "{{env.CBROWSER_EDGE_PROOF_SECRET}}"
+                copy_headers X-cbrowser-Authorized-Profile X-cbrowser-Viewer-Grant
             }}
 
             reverse_proxy {gateway_upstream} {{

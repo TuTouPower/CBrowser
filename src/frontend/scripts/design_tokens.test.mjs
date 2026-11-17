@@ -16,7 +16,7 @@ import {
 } from "./design_tokens.mjs";
 
 const VALID_SOURCE = `---
-name: CBrowser Test Design
+name: cbrowser Test Design
 colors:
   primary: "#006EDC"
   light-background: "#F0F5F1"

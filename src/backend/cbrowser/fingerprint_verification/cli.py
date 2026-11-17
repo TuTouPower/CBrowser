@@ -18,7 +18,7 @@ from .probe_collector import measure_profile_with_browser_runner
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="CBrowser local fingerprint baseline & engine upgrade regression gate"
+        description="cbrowser local fingerprint baseline & engine upgrade regression gate"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 

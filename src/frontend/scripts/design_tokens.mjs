@@ -485,7 +485,7 @@ export function collectPublicSources(dirPath, baseRel) {
     if (entry.isDirectory()) {
       // public/selkies is a gitignored vendor drop populated by the build
       // (official Selkies web assets); its colors are Selkies' own branding,
-      // not CBrowser design tokens, so it stays out of the color scan.
+      // not cbrowser design tokens, so it stays out of the color scan.
       if (entry.name === "selkies") continue;
       out.push(...collectPublicSources(full, rel));
     } else if (/\.(svg|html|js)$/.test(entry.name)) {

@@ -142,7 +142,7 @@ tasks: [baseline]
     `setGeolocationOverride`、`setTouchEmulationEnabled`、
     `setFocusEmulationEnabled`、`setEmulatedMedia`）、
     `Network.emulateNetworkConditions`。拒绝返回带原 id 与原 sessionId 的
-    稳定 CDP 错误（code -32000，message 含 `CBrowser tunnel:`），不转发。
+    稳定 CDP 错误（code -32000，message 含 `cbrowser tunnel:`），不转发。
 - `Page.addScriptToEvaluateOnNewDocument` 按会话登记，断开时经同一
     chrome_ws 以 sessionId 尽力清除（平拒会破坏 Playwright utility 注入，
     t029 L5 已证实其存在；登记 + 清理达到“不断开不残留”）。

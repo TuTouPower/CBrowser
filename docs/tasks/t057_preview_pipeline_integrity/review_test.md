@@ -3,7 +3,7 @@
 - task：`t057_preview_pipeline_integrity`
 - spec：`docs/archive/tasks/t057_preview_pipeline_integrity/task.md`
 - diff_anchor：`ff253095dec4ba070c22d69e221730db383ec30b`
-- target：CBrowser_t057 内 `git diff ff253095dec4ba070c22d69e221730db383ec30b`
+- target：cbrowser_t057 内 `git diff ff253095dec4ba070c22d69e221730db383ec30b`
 - round：1（预审历史）
 - reviewed_at：2026-11-12T09:39:59+08:00 起
 

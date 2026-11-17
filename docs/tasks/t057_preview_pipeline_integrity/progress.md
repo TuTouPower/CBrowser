@@ -141,7 +141,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 - 用户已确认整张Profile浏览器画面含标签栏/地址栏；task、spec和blueprint已同步，不采集宿主桌面。
 - 用户追加授权d041两条策略helper路径修复；create后即持有句柄，start失败仍执行原finally。真实Docker复现先红残留1、后绿残留0；原失败E2E已通过。
 - 分支t057_preview_pipeline_integrity，base与diff_anchor为t060完成提交ff253095；不合入main、不改t056/t060分支。
-- 引用审计、TDD红绿、真实引擎、Docker构建与review复现证据当前位于本worktree的.scratch/t057，finish后流程清理前将完整移至同级CBrowser_t057_evidence/.scratch/t057保留；旧缺失引用已按实际归档位置修正，未虚构提交或文件。
+- 引用审计、TDD红绿、真实引擎、Docker构建与review复现证据当前位于本worktree的.scratch/t057，finish后流程清理前将完整移至同级cbrowser_t057_evidence/.scratch/t057保留；旧缺失引用已按实际归档位置修正，未虚构提交或文件。
 - 环境跳过：integration宿主18项因无Xvfb或独立Playwright Chromium跳过，已在容器用独立Chromium156与目标引擎146补验18 passed；E2E默认2项t032 probe通过独立real_engine补验2 passed；contract1项因项目显式验证策略而不适用，不冒充执行通过。
 - 用户明确不重复全量，故不将定向复验视作一轮新的全量通过；本轮未放宽超时、未替换故障镜像、未跳过失败用例。
 

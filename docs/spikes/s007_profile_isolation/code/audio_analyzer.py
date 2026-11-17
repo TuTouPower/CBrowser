@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 audio_analyzer.py
-Strict, standalone sample-spec-aware audio PCM analyzer for CBrowser v2 isolation probe.
+Strict, standalone sample-spec-aware audio PCM analyzer for cbrowser v2 isolation probe.
 Performs:
 - Raw S16LE stereo PCM decoding
 - Non-zero byte and RMS silence validation

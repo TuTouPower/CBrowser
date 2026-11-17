@@ -2,7 +2,7 @@
 
 ## responsibilities
 
-- Define the machine-readable contracts between CBrowser's services: two OpenAPI documents (public v1 and internal) and three protocol JSON Schemas (runtime agent, supervisor, stream).
+- Define the machine-readable contracts between cbrowser's services: two OpenAPI documents (public v1 and internal) and three protocol JSON Schemas (runtime agent, supervisor, stream).
 - Define how the system is deployed: compose.yaml for the legacy single-container service, five Dockerfiles for the legacy and v2 runtime images, entrypoint scripts, and locked Python requirements per runtime.
 - Provide the tooling that keeps contracts and assets honest: four schema export scripts, the Selkies vendoring script with its checksum manifest, the frontend dist verifier/build-stamp scripts, and the local gate runner run_gates.sh.
 - Document deployment (DOCKER_DEPLOYMENT.md) and the environment template (.env.example, duplicated under config/).

@@ -1,4 +1,4 @@
-"""Auth package for CBrowser."""
+"""Auth package for cbrowser."""
 
 from cbrowser.auth.rate_limiter import LoginRateLimiter
 from cbrowser.auth.service import AuthService

@@ -1,5 +1,5 @@
 ---
-name: CBrowser Spike
+name: cbrowser Spike
 colors:
   primary: "#006EDC"
   light-background: "#F0F5F1"
@@ -67,7 +67,7 @@ components:
 
 ## Overview
 
-CBrowser design system spike.
+cbrowser design system spike.
 
 ## Colors
 

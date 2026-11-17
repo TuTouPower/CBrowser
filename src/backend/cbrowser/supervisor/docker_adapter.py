@@ -1,4 +1,4 @@
-"""Docker Adapter for CBrowser Runtime Supervisor."""
+"""Docker Adapter for cbrowser Runtime Supervisor."""
 
 from __future__ import annotations
 

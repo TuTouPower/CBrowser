@@ -42,7 +42,7 @@
     "counterevidence": "若仓内材料显示存在多个活跃消费仓且同步关系在册，则体量按平台投资计，f_global_strategy_03 的体量论据撤销（其漂移与维护流论据仍独立成立）",
     "evidence_needed": "仓内可核对的消费/同步记录：.repo_template/docs 中关于消费仓与同步关系的说明、repo_sync 的 last_synced_commit 来源记录、usage.md 中对宿主仓数量的表述",
     "id": "q_strategy_01",
-    "question": ".repo_template 工具链目前有几个活跃消费仓、分摊关系如何？其 27.5k 行体量是跨仓平台投资，还是实际只服务 CBrowser 一个仓？",
+    "question": ".repo_template 工具链目前有几个活跃消费仓、分摊关系如何？其 27.5k 行体量是跨仓平台投资，还是实际只服务 cbrowser 一个仓？",
     "units": [
       "template_support",
       "template_scripts_ops",
@@ -91,7 +91,7 @@
 {
   "q_strategy_01": {
     "followup_sha256": "792503112dce2d04dff19b698417e376c7f6e0f2ba131f6bbefc1d0ce373b944",
-    "reason": "采用精查证据：仓内只能证明工具链按跨仓平台形态设计（模板源头是仓外独立仓，蓝图记为本地 ../repo_template，消费机制靠显式传参）、CBrowser 自我定位为消费仓之一（AGENTS.md 模板声明），但仓内从未枚举、命名或计数任何消费仓；且 usage.md 规定的可审计同步记录（应入库的 .repo_template/sync_manifest.json、本机 sync_state.json 中的 last_synced_commit）在 CBrowser 自身全部缺失，.repo_template 在全部 git 历史中只有一个导入提交（524e34e）此后零同步提交。对 f_global_strategy_03 的影响须分两半看：其体量论据（.repo_template 27.5k 行、治理与文档合计约为产品本体 1.7 倍，若实际只服务单仓则属过度投入）随本问悬置——既不能按多仓平台投资撤销，也不能按单仓服务坐实，定论需仓外证据（模板源仓的消费/同步记录或各候选消费仓各自的 sync_manifest.json）；但该 finding 的漂移与维护流论据独立成立、维持不变：handoff 过期一整轮、findings 登记未随 ADR 013 修订、blueprint 与 ADR 014 直接冲突、归档层口径矛盾、t018 处置表退化为样板文本、工具链自身的破坏性缺陷，全部为仓内证据，不依赖分摊答案；且同步记录链在本仓自身断裂（规定应入库的 manifest 与本机 state 皆不存在）本身即是维护流跟不上的新增一例，反而加强漂移一侧。不影响本路其他 finding：f_global_strategy_01、f_global_strategy_02、f_global_strategy_04 均不以分摊事实为据。",
+    "reason": "采用精查证据：仓内只能证明工具链按跨仓平台形态设计（模板源头是仓外独立仓，蓝图记为本地 ../repo_template，消费机制靠显式传参）、cbrowser 自我定位为消费仓之一（AGENTS.md 模板声明），但仓内从未枚举、命名或计数任何消费仓；且 usage.md 规定的可审计同步记录（应入库的 .repo_template/sync_manifest.json、本机 sync_state.json 中的 last_synced_commit）在 cbrowser 自身全部缺失，.repo_template 在全部 git 历史中只有一个导入提交（524e34e）此后零同步提交。对 f_global_strategy_03 的影响须分两半看：其体量论据（.repo_template 27.5k 行、治理与文档合计约为产品本体 1.7 倍，若实际只服务单仓则属过度投入）随本问悬置——既不能按多仓平台投资撤销，也不能按单仓服务坐实，定论需仓外证据（模板源仓的消费/同步记录或各候选消费仓各自的 sync_manifest.json）；但该 finding 的漂移与维护流论据独立成立、维持不变：handoff 过期一整轮、findings 登记未随 ADR 013 修订、blueprint 与 ADR 014 直接冲突、归档层口径矛盾、t018 处置表退化为样板文本、工具链自身的破坏性缺陷，全部为仓内证据，不依赖分摊答案；且同步记录链在本仓自身断裂（规定应入库的 manifest 与本机 state 皆不存在）本身即是维护流跟不上的新增一例，反而加强漂移一侧。不影响本路其他 finding：f_global_strategy_01、f_global_strategy_02、f_global_strategy_04 均不以分摊事实为据。",
     "result": "insufficient"
   },
   "q_strategy_02": {
@@ -106,7 +106,7 @@
   },
   "q_strategy_04": {
     "followup_sha256": "4347c470e7133bf3c530952cd79c8234c877a13c3e7dcd266385d07d9381d82e",
-    "reason": "采用精查证据：仓内不存在任何支撑五服务拓扑与约 40k 行测试投入的部署规模记录——没有 profile 总数、没有作为需求的并发会话上限、没有使用者人数的成文数值；仓内唯一的规模定性记录恰为反面，ADR 013 明文单机单人包络（『CBrowser 的唯一目标是同一台 Mac 上的单一用户』，多主机场景被定性为未存在的场景而拒绝为其付费），AGENTS.md 的『单机 Docker 管理系统』、architecture.md 的『单机 Docker 架构』、ADR 004 以单机为前提的 SQLite 选型，口径一致；对 README 与现行文档以『多用户/多人/团队/multi-user/tenant』检索零命中。仓内仅有的规模数值是 t009/v2 计划的容量探边界目标（1/3/10 活跃流、10 个 Profile，在本机 Mac/OrbStack 上找边界），属验收探针而非部署规模需求，且 t009 的 AC-001/AC-002 至今未勾选、未执行，未落定为规模事实；本问预设的反证（仓内成文目标包含多用户或显著并发规模）未出现。据此，本视角多项以单机单人为前提的配比判断——f_global_strategy_01 的交付倒挂、f_global_strategy_02 的验证投入与已交付风险成反比、f_global_strategy_03 的治理体量相对单人维护的负担——前提成立，全部维持，无需按更大规模重估。附带观察（不改变裁决、不另立 finding）：t009 task.md 引用的 docs/specs/v2_acceptance.md 在仓内不存在，容量验收的成文落点缺失，可并入 f_global_strategy_03 的文档漂移例证范围。",
+    "reason": "采用精查证据：仓内不存在任何支撑五服务拓扑与约 40k 行测试投入的部署规模记录——没有 profile 总数、没有作为需求的并发会话上限、没有使用者人数的成文数值；仓内唯一的规模定性记录恰为反面，ADR 013 明文单机单人包络（『cbrowser 的唯一目标是同一台 Mac 上的单一用户』，多主机场景被定性为未存在的场景而拒绝为其付费），AGENTS.md 的『单机 Docker 管理系统』、architecture.md 的『单机 Docker 架构』、ADR 004 以单机为前提的 SQLite 选型，口径一致；对 README 与现行文档以『多用户/多人/团队/multi-user/tenant』检索零命中。仓内仅有的规模数值是 t009/v2 计划的容量探边界目标（1/3/10 活跃流、10 个 Profile，在本机 Mac/OrbStack 上找边界），属验收探针而非部署规模需求，且 t009 的 AC-001/AC-002 至今未勾选、未执行，未落定为规模事实；本问预设的反证（仓内成文目标包含多用户或显著并发规模）未出现。据此，本视角多项以单机单人为前提的配比判断——f_global_strategy_01 的交付倒挂、f_global_strategy_02 的验证投入与已交付风险成反比、f_global_strategy_03 的治理体量相对单人维护的负担——前提成立，全部维持，无需按更大规模重估。附带观察（不改变裁决、不另立 finding）：t009 task.md 引用的 docs/specs/v2_acceptance.md 在仓内不存在，容量验收的成文落点缺失，可并入 f_global_strategy_03 的文档漂移例证范围。",
     "result": "confirmed"
   }
 }

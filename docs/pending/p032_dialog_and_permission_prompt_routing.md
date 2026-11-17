@@ -14,16 +14,16 @@ reason: "已核实范围并转交：t030 基础 Dialog 分流、pending 命令�
 ## 分析基线
 
 - 分析时间：2026-11-04T00:00:12+08:00。
-- CBrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
+- cbrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
 - 证据范围：源码、现行文档与 backlog 静态核对；未运行测试、复现实验或外部站点验证。
 - 以下方案与验证条件均为分析建议，决策待定；原处理状态和目录归属保持不变。
 
 ## 当前情况与 Ego 证据边界
 
-- CBrowser 当前 CDP 代理主要原样透传，没有据此形成完整 Dialog 路由、跨 CLI 调用状态恢复或权限提示交接契约。
+- cbrowser 当前 CDP 代理主要原样透传，没有据此形成完整 Dialog 路由、跨 CLI 调用状态恢复或权限提示交接契约。
 - Ego 文档记录 alert/confirm/prompt 的实际回归及 beforeunload 尚存缺口，并描述调用退出后 Dialog 残留、下一调用 Page.enable 等命令超时的问题。
-- 上述属于特定 Ego 版本与其原生桥接行为，不能推定 CBrowser/Chromium 所有命令在所有场景都会挂起；需要在目标引擎和会话拓扑下复现。
-- Ego 的文档可提供故障模型和验收案例，不能作为 CBrowser 已验证事实。
+- 上述属于特定 Ego 版本与其原生桥接行为，不能推定 cbrowser/Chromium 所有命令在所有场景都会挂起；需要在目标引擎和会话拓扑下复现。
+- Ego 的文档可提供故障模型和验收案例，不能作为 cbrowser 已验证事实。
 
 参考：[Browser Agent](../../src/backend/cbrowser/runtime_agent/agent.py)、[CDP manager](../../src/backend/cbrowser/runtime_agent/cdp_proxy.py)、[现行自动化链路](../blueprint/automation.md)。
 

@@ -39,7 +39,7 @@ docs/reviews/review_20261108_153337
 用户本轮明确要求核对 Weblink 并把适用方向写入 adoption。本节为原始审阅之后的独立补充证据，不伪装成 bundle finding，也不修改原始报告。
 
 - Weblink 基线：默认分支 `public` 的提交 `6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed`；以下源码均按此提交读取。
-- CBrowser 基线：仍为本轮审阅 HEAD；本次只读源码与锁定依赖，未运行 Weblink、未启动真实录制或输入改造，不以静态分析宣称端到端 PASS。
+- cbrowser 基线：仍为本轮审阅 HEAD；本次只读源码与锁定依赖，未运行 Weblink、未启动真实录制或输入改造，不以静态分析宣称端到端 PASS。
 
 |证据|已核对来源|用途与限制|
 |---|---|---|
@@ -703,7 +703,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2�
 
 ### A40. 会话诊断采样独立于页面渲染，只让展示叶子订阅
 
-- 来源：本轮 Weblink 外部补充评估 W6/W12、CBrowser 现状 C1、React 官方订阅契约 P1。
+- 来源：本轮 Weblink 外部补充评估 W6/W12、cbrowser 现状 C1、React 官方订阅契约 P1。
 - 位置：`src/frontend/src/features/browser-session/useBrowserSession.ts:386-465`、`SessionPage.tsx:158,194,280-288`、`types.ts`、`audio_status.ts`；对照 W6。
 - 优先级：MEDIUM
 - 结论：采纳
@@ -725,7 +725,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2�
 
 ### A41. 借鉴有界编码包录制旁路，先验证免重编码能力
 
-- 来源：本轮 Weblink 外部补充评估 W7–W11，CBrowser 固定依赖与存储/策略证据 C2/C3/C5，容器封装参考 P2/P3。
+- 来源：本轮 Weblink 外部补充评估 W7–W11，cbrowser 固定依赖与存储/策略证据 C2/C3/C5，容器封装参考 P2/P3。
 - 位置：固定 Selkies 2.2.1 wheel 的 `webrtc_media_pipeline.py`、`webrtc/codecs/base.py`、`webrtc/rtcrtpsender.py`；本仓 `stream_agent/policy.py`、`supervisor/volume_spec.py`、Artifact 导入与配额链路。
 - 优先级：MEDIUM
 - 结论：采纳
@@ -915,7 +915,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2�
 ### R17. 不把 Windows Unicode 注入当成 Linux X11 的现成修复
 
 - 来源：本轮 Weblink 外部补充评估 W4/W5、C4、Windows 文档 P4、CDP 接口 P5。
-- 位置：Weblink `crates/desktop-input/src/windows/text.rs`、`windows/device.rs`；CBrowser Linux Xvfb/Chromium 输入边界。
+- 位置：Weblink `crates/desktop-input/src/windows/text.rs`、`windows/device.rs`；cbrowser Linux Xvfb/Chromium 输入边界。
 - 优先级：MEDIUM
 - 结论：不采纳
 - 详细判断理由：EM_REPLACESEL 依赖特定 Win32 Edit/RichEdit 控件，KEYEVENTF_UNICODE 依赖 Windows 的 VK_PACKET/消息翻译；容器内 Chromium 使用 Linux X11，不因宿主是 Mac 而获得这些 API。用户材料准确展示一种 Windows 设计，但没有提供能在本项目直接用的 Linux 后端。也不能把“前端发送整段文字”误当成远端已经能直接插入文字的证明。
@@ -924,7 +924,7 @@ R15/R16 为用户明确暂缓，不是误报或问题闭环。原 A1–A34、R2�
 
 ### R18. 不采纳 appsink 直连、固定下载路径与零 CPU 的字面录制方案
 
-- 来源：本轮用户提案、Weblink W7–W11、CBrowser C2/C3/C5、封装参考 P2/P3。
+- 来源：本轮用户提案、Weblink W7–W11、cbrowser C2/C3/C5、封装参考 P2/P3。
 - 位置：固定 Selkies 2.2.1 WebRTC 编码回调、Stream volume 及 Artifact 管理链路。
 - 优先级：MEDIUM
 - 结论：不采纳

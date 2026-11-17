@@ -18,7 +18,7 @@ export default defineConfig({
           import.meta.url
         )
       ),
-      name: "CBrowserSelkiesAdapter",
+      name: "cbrowserSelkiesAdapter",
       formats: ["iife"],
       fileName: () => "selkies_adapter.js",
     },

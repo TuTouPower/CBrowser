@@ -98,7 +98,7 @@ def prepare_frontend_host(dest_dir: Path) -> Path:
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CBrowser Browser Session</title>
+  <title>cbrowser Browser Session</title>
   {css_tag}
   <style>
     html, body, #root {{

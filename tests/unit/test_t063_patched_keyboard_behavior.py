@@ -26,7 +26,7 @@ import pytest
 from scripts import build_selkies_controlled as build_module
 from scripts import vendor_selkies_web as vendor_module
 
-REPO_ROOT = Path.home() / "kar" / "code" / "CBrowser"
+REPO_ROOT = Path.home() / "kar" / "code" / "cbrowser"
 MANIFEST_PATH = REPO_ROOT / "config" / "selkies" / "selkies_controlled_build.json"
 PATCHES_DIR = REPO_ROOT / "config" / "selkies" / "patches"
 WHEEL_CACHE = Path(

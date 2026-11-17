@@ -7,7 +7,7 @@ tasks: [baseline, t003, t041, t051]
 
 ## 1. 业务目标与适用范围
 
-本文档规定 CBrowser Profile 容器化沙箱隔离与数据隔离契约。t003 实现 Browser Runtime；Stream、Supervisor 编排及正式部署由后续 task 集成，以下完整双容器拓扑是目标契约。
+本文档规定 cbrowser Profile 容器化沙箱隔离与数据隔离契约。t003 实现 Browser Runtime；Stream、Supervisor 编排及正式部署由后续 task 集成，以下完整双容器拓扑是目标契约。
 系统为每个浏览器 Profile 分配独立的沙箱环境（同 Profile 双容器：Browser Runtime 与 Stream Runtime），杜绝不同身份之间的进程、内存、网络、调试端口与存储冲突。
 
 ## 2. 行为契约

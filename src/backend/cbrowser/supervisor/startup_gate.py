@@ -1,4 +1,4 @@
-"""CBrowser runtime startup gate.
+"""cbrowser runtime startup gate.
 
 Waits boundedly for sibling ready.json matching instance_id and role,
 validates marker payload, then os.execv the target application entrypoint.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
     parser = argparse.ArgumentParser(
-        description="CBrowser runtime startup gate",
+        description="cbrowser runtime startup gate",
         prog="startup_gate",
     )
     parser.add_argument(

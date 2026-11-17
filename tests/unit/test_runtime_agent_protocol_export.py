@@ -65,7 +65,7 @@ def test_internal_openapi_export_matches_checked_in_file():
     # The edge proof requirement is declared, not implicit: the resolver
     # only answers Caddy's forward_auth, which presents this header.
     edge_params = {(p["name"], p["in"]) for p in edge.get("parameters", [])}
-    assert ("X-CBrowser-Edge-Proof", "header") in edge_params
+    assert ("X-cbrowser-Edge-Proof", "header") in edge_params
     ingest = live["paths"]["/api/v1/internal/supervisor/artifacts/downloads"]["post"]
     assert ingest["security"] == [{"SupervisorServiceBearer": []}]
 

@@ -1,6 +1,6 @@
-# CBrowser v2.3：最终技术架构修订与实施方案
+# cbrowser v2.3：最终技术架构修订与实施方案
 
-**目标：** 对现有 CBrowser 仓库进行完整架构重构，保留 CloakBrowser 引擎和核心业务能力，采用当前电脑上的Docker Compose/OrbStack单机部署，通过同一台Mac的Google Chrome Stable访问使用；公网和远程服务器不是本次交付目标。
+**目标：** 对现有 cbrowser 仓库进行完整架构重构，保留 CloakBrowser 引擎和核心业务能力，采用当前电脑上的Docker Compose/OrbStack单机部署，通过同一台Mac的Google Chrome Stable访问使用；公网和远程服务器不是本次交付目标。
 
 **架构基准：** Profile、BrowserRuntime、ViewerConnection 三者分离。一个 Profile 对应一个真实浏览器运行实例，一个 Profile 可以同时拥有多个 ViewerConnection。
 
@@ -21,7 +21,7 @@ ______________________________________________________________________
 
 外部调研意见（16 个远程桌面/WebRTC 项目对照）经 Selkies 2.1.0 固定源码与已验证发现（d007、d013、d014、d017）复核后，按以下范围修订本文：
 
-- 采纳：页面可见性只用 Selkies 原生每 Peer `STOP_VIDEO`/`START_VIDEO`，Gateway 不再聚合可见性与活动，Supervisor 前台状态改由 Agent 上报（第9章）；剪贴板与会话内文件传输改为显式配置 Selkies 策略，文件只走 Artifact Service（8.1、8.4）；CBrowser 自有内部协议独立 schema 与版本（7.5）；下载捕获增加目录对账兜底（11.3）；前端处理页面冻结/恢复并显示连接诊断，不显示无解释黑屏（13.4）。
+- 采纳：页面可见性只用 Selkies 原生每 Peer `STOP_VIDEO`/`START_VIDEO`，Gateway 不再聚合可见性与活动，Supervisor 前台状态改由 Agent 上报（第9章）；剪贴板与会话内文件传输改为显式配置 Selkies 策略，文件只走 Artifact Service（8.1、8.4）；cbrowser 自有内部协议独立 schema 与版本（7.5）；下载捕获增加目录对账兜底（11.3）；前端处理页面冻结/恢复并显示连接诊断，不显示无解释黑屏（13.4）。
 - 已在本文中、无需改动：Selkies 为核心、`client_tab_id` 多页面、每 Profile 共享编码管线、每 Profile 一个 UDP mux 端口、双容器 + 同 Profile IPC/X11/Pulse 卷、原生 IME 与 XTest、CDP 仅内部、不用 noVNC/KasmVNC。调研中“原计划 → 新决定”表的多数“原计划”项并非 v2.3 内容。
 - 不采纳：下载捕获改为文件系统监控优先（CDP 事件给出明确完成状态，d002 已验证，文件监控只作兜底）；`/dev/shm` 改为 2 GiB（1 GiB 已在 d004 及 t004/t005 实测通过，由 t009 压测记录峰值后再定）；启用 Selkies WebSocket 双模式备用（本次本机部署不需要，增加一倍测试矩阵）；Selkies 与 KasmVNC 对比基准（引擎已定案并实现，不再回头比选）。
 
@@ -91,7 +91,7 @@ Selkies 固定到官方 2.1.0 发布版本，对应提交 `6ee68a7a815956e6745e9
 
 ## 1.2 明确删除的设计
 
-01. 不实现 CBrowser 自己的外部 Chrome 标签栏。
+01. 不实现 cbrowser 自己的外部 Chrome 标签栏。
 02. 不实现独占控制租约、租约代次、控制权接管或等待释放。
 03. 不引入 Redis。
 04. 不使用 noVNC 作为正式远程显示客户端。
@@ -122,7 +122,7 @@ ______________________________________________________________________
 
 ### ViewerConnection
 
-代表一个外部 CBrowser 页面与一个 BrowserRuntime 之间的远程显示和输入连接。
+代表一个外部 cbrowser 页面与一个 BrowserRuntime 之间的远程显示和输入连接。
 
 对象关系：
 
@@ -142,7 +142,7 @@ ViewerConnection 不代表浏览器所有权，不具有独占控制权。
 
 ## 2.2 外部 Chrome 标签页
 
-每个外部 Chrome 标签页打开的都是 CBrowser 页面。页面可以选择任何 Profile，并随时切换操控目标。
+每个外部 Chrome 标签页打开的都是 cbrowser 页面。页面可以选择任何 Profile，并随时切换操控目标。
 
 例如：
 
@@ -158,7 +158,7 @@ A 和 C 看到的是同一个真实浏览器窗口。A 创建内部标签页后�
 
 内部标签页、地址栏、导航按钮和网页内容全部来自真实的 CloakBrowser 窗口。
 
-CBrowser 不仿制内部标签栏，不通过 CDP 绘制浏览器 UI，不将内部标签页建模为 React 路由。
+cbrowser 不仿制内部标签栏，不通过 CDP 绘制浏览器 UI，不将内部标签页建模为 React 路由。
 
 ## 2.4 连接身份与权限的区别
 
@@ -267,7 +267,7 @@ ______________________________________________________________________
 
 Selkies 的音频配置必须显式定义，不依赖默认值。
 
-CBrowser 保留远程浏览器音频能力，采用每 Profile 独立的虚拟 PulseAudio 服务。
+cbrowser 保留远程浏览器音频能力，采用每 Profile 独立的虚拟 PulseAudio 服务。
 
 - Browser Runtime 启动虚拟 PulseAudio 服务。
 - CloakBrowser 将声音输出到虚拟音频设备。
@@ -343,7 +343,7 @@ Browser Runtime 将对应目录挂载到：
 6. API 写入 Artifact 元数据。
 7. 下载文件正式出现在管理页面。
 
-外部 CDP 自动化客户端修改下载行为后断开连接时，必须恢复 CBrowser 的下载捕获机制，保留现有仓库的下载重启逻辑。
+外部 CDP 自动化客户端修改下载行为后断开连接时，必须恢复 cbrowser 的下载捕获机制，保留现有仓库的下载重启逻辑。
 
 ______________________________________________________________________
 
@@ -418,7 +418,7 @@ Gateway 重启不会停止浏览器。Agent 重新注册后，外部页面可以
 
 > **已被 ADR 013 替代（t024 标注）**：本节与 TURN/coturn/凭证轮换/ICE 代次有关的内容已不适用于现行实现（同机直连），仅作历史方案保留；现行口径见 ADR 013 与 stream_runtime.md。
 
-CBrowser 只定义自己的内部协议，每种协议有独立 schema、版本字段和运行时校验，不合并为一个通用 WebSocket JSON 处理器：
+cbrowser 只定义自己的内部协议，每种协议有独立 schema、版本字段和运行时校验，不合并为一个通用 WebSocket JSON 处理器：
 
 |协议|两端|职责|
 |---|---|---|
@@ -427,7 +427,7 @@ CBrowser 只定义自己的内部协议，每种协议有独立 schema、版本�
 |生命周期 RPC|API ↔ Supervisor|期望状态、实际状态、运行事件、配置快照|
 |会话授权|API ↔ Gateway|登录会话与 Profile 访问校验、运行时状态|
 
-媒体、输入、IME、剪贴板沿用 Selkies 2.1.0 官方协议，CBrowser 不另定义。文件内容只经 Artifact Service 的 HTTP 接口传输，不进入信令或 JSON 消息。
+媒体、输入、IME、剪贴板沿用 Selkies 2.1.0 官方协议，cbrowser 不另定义。文件内容只经 Artifact Service 的 HTTP 接口传输，不进入信令或 JSON 消息。
 
 ______________________________________________________________________
 
@@ -463,7 +463,7 @@ SELKIES_FILE_TRANSFERS=none
 
 官方实现将页面 ID 保存在 `sessionStorage`，刷新页面后保留 ID，不同页面通常拥有独立 ID。
 
-CBrowser 的客户端适配层必须：
+cbrowser 的客户端适配层必须：
 
 - 保留官方 `client_tab_id` 发送逻辑。
 - 保留官方 `resume_key` 重连逻辑。
@@ -485,7 +485,7 @@ CBrowser 的客户端适配层必须：
 
 > 已被 2026-11-02 用户决定替代：见文首“用户决定”与 decisions 012；以下原文仅作历史参考。
 
-剪贴板传输使用 Selkies 官方剪贴板消息，CBrowser 不实现自己的同步协议。
+剪贴板传输使用 Selkies 官方剪贴板消息，cbrowser 不实现自己的同步协议。
 
 - Profile 的 `clipboard_sync` 映射到 Selkies `enable_clipboard`：开启为 `true`，关闭为 `false`；`in`/`out` 单向模式保留为后续可选值，本次不暴露。
 - `enable_binary_clipboard=false`，本次只支持纯文本。
@@ -644,7 +644,7 @@ Stream Runtime 通过自己所在的 Profile 网络访问 coturn。外部 Chrome
 
 Selkies 默认的 RTC 配置不能直接满足所有部署拓扑。
 
-CBrowser 增加 `RtcConfigService`，分别为：
+cbrowser 增加 `RtcConfigService`，分别为：
 
 - 外部 Chrome 客户端。
 - 对应的 Stream Runtime。
@@ -709,7 +709,7 @@ Browser Agent 不接受任意 shell 命令，不提供通用文件系统访问�
 ```text
 自动化客户端
     ↓
-CBrowser API 鉴权与授权
+cbrowser API 鉴权与授权
     ↓
 Supervisor 内部 CDP 流代理
     ↓
@@ -732,7 +732,7 @@ Browser Agent 监听 CDP 下载事件，记录下载完成、路径、文件大�
 
 Agent 通过 Unix Socket 将事件发送给 Supervisor，Supervisor 再通过经过认证的 RPC 转发给 API。
 
-外部 CDP 自动化客户端断开后，Browser Agent 恢复 CBrowser 的下载捕获设置，避免外部自动化改变下载策略后使 Artifact 管理失效。
+外部 CDP 自动化客户端断开后，Browser Agent 恢复 cbrowser 的下载捕获设置，避免外部自动化改变下载策略后使 Artifact 管理失效。
 
 CDP 下载事件是主来源。Browser Agent 启动或 CDP 会话重建后扫描 `/exchange/downloads/` 一次，对没有完成事件的已完成文件（排除 `.crdownload` 等临时文件）补发下载事件，API 按路径与校验和去重。目录扫描只做对账兜底，不替代 CDP 事件。
 
@@ -742,7 +742,7 @@ ______________________________________________________________________
 
 ## 12.1 数据库写入归属
 
-**CBrowser API 是唯一 SQLite 写入者。**
+**cbrowser API 是唯一 SQLite 写入者。**
 
 Supervisor 不挂载 SQLite 数据库文件，不直接更新 `desired_state`、`observed_state` 或其他业务表。
 
@@ -1200,7 +1200,7 @@ ______________________________________________________________________
 
 # 最终结论
 
-CBrowser v2.3 继续采用 Profile、BrowserRuntime、ViewerConnection 三者独立的模型，不恢复独占租约，也不引入 Redis。
+cbrowser v2.3 继续采用 Profile、BrowserRuntime、ViewerConnection 三者独立的模型，不恢复独占租约，也不引入 Redis。
 
 正式架构保留两个运行容器，并通过同 Profile 的 IPC 命名空间和 X11 Socket 连接显示；Stream Gateway 通过 Agent 隧道路由信令；CDP 和下载捕获通过受控 Unix Domain Socket 与 Supervisor 连接；API 是唯一 SQLite 写入者；共享编码器的捕获与帧率由 Stream Agent 依据 Selkies 原生每 Peer 暂停、本地输入和画面运动统一仲裁。Selkies 已实现的多页面、每 Peer 暂停、IME、输入和剪贴板传输直接复用，不重复开发。
 

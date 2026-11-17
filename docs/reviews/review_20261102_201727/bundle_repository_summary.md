@@ -1,10 +1,10 @@
-# CBrowser 全仓汇总（intensive-review synthesis）
+# cbrowser 全仓汇总（intensive-review synthesis）
 
 基线：HEAD `5136766aceb2a7bb5a7b6c766e1d4f29b36439d5`；盘点 782 个文本文件 / 160,799 行；22 个语义单元、八视角全覆盖（4 个单元的 tests 视角经定向补审后完成）；局部 findings 共 325 条（Critical 0 / High 21 / Medium 92 / Low 167 / Info 45，以聚合结果为准）。本汇总由主会话在通读全部局部 summary 与关键 findings 后形成，供四路全局审阅使用；静态审阅，未运行任何代码/测试/构建。
 
 ## 1. 这个仓库实际是什么
 
-CBrowser 是从 CloakHQ/CloakBrowser-Manager fork 的多身份/隐私隔离浏览器管理系统，当前处于 v2 重构中途。仓库里同时存在三层东西，理解全仓问题的关键是分清它们：
+cbrowser 是从 CloakHQ/CloakBrowser-Manager fork 的多身份/隐私隔离浏览器管理系统，当前处于 v2 重构中途。仓库里同时存在三层东西，理解全仓问题的关键是分清它们：
 
 1. **legacy 栈（仍是部署现实）**：`src/backend/` 的单体 FastAPI 应用（backend.main：profile CRUD、launch/stop、VNC/CDP 代理、剪贴板、SPA 托管、profiles.db 手写 sqlite），前端 `src/frontend/src/App.tsx + components/*` 的 v1 界面，以及根 `compose.yaml` + `config/docker/Dockerfile` 的单容器部署。Docker 入口实际执行的仍是这套（entrypoint 执行 `uvicorn backend.main:app`）。
 2. **v2 栈（新架构，主体已实现但未接管部署）**：`src/backend/cbrowser/` 包——API 控制面（会话认证 Argon2、CSRF/Origin、内部 supervisor/gateway RPC）、Supervisor（唯一持 Docker Socket、双容器生命周期、对账/恢复、网络策略、资源监管）、Browser Runtime Agent（UDS、CDP 隧道、下载事件）、Stream Agent + Gateway（Selkies WebRTC 信令、ICE 代次轮换、TURN REST 凭证）、SQLAlchemy/Alembic 数据层（cbrowser.db、不可变配置版本快照）。四个 v2 runtime 镜像 digest 钉版、版本锁定。前端 v2（`app/` 路由 + `features/` + `shared/api`）与 v1 并存于同一源码树。

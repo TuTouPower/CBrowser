@@ -1165,7 +1165,7 @@ class StreamAgent:
 def run_standalone_service() -> None:
     """Main standalone entrypoint for StreamAgent."""
     setup_service_logging()
-    logger.info("Initializing CBrowser StreamAgent Standalone Service...")
+    logger.info("Initializing cbrowser StreamAgent Standalone Service...")
 
     # Load configuration
     try:

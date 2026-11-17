@@ -512,7 +512,7 @@ async def test_executor_cli_chromium_end_to_end() -> None:
             # The user page and browser survive the whole session.
             assert _pid_alive(pid)
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
         finally:
             await chain.stop()
@@ -692,7 +692,7 @@ async def test_executor_dialog_pending_and_legacy() -> None:
             }
             assert run["results"][2]["result"]["nodes"]
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
         finally:
             await chain.stop()
@@ -855,7 +855,7 @@ async def test_tunnel_rejections_and_session_download_capture() -> None:
             await chain.start(browser_ws_url=devtools_ws_url(root / "profile"), display=":143")
 
             # Raw client: every destructive command class gets a stable
-            # CBrowser error and the browser survives.
+            # cbrowser error and the browser survives.
             async with websockets.connect(
                 f"ws://127.0.0.1:{chain.api_port}"
                 "/api/v1/automation/profiles/p1/cdp",
@@ -874,10 +874,10 @@ async def test_tunnel_rejections_and_session_download_capture() -> None:
                     resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
                     assert resp["id"] == msg_id
                     assert resp["error"]["code"] == -32000
-                    assert "CBrowser tunnel" in resp["error"]["message"]
+                    assert "cbrowser tunnel" in resp["error"]["message"]
             assert _pid_alive(pid)
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
 
             # Executor session download still lands in Agent capture.

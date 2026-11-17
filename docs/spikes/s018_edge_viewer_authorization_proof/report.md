@@ -34,7 +34,7 @@ viewer 握手（`GET /stream/{profileId}/signal`）的控制面授权应以何�
 
 - 方案 B 与 task 非范围冲突：官方客户端经 `/selkies/` 同源 iframe 建联，表达式语义要求保留（task.md 非范围明示不改同源官方客户端）；B 要求前端在建联前多一步取令牌并把令牌带进 WS（URL 查询或子协议头），令牌进 URL 会落入访问日志，且改变官方客户端的连接发起方式。
 - 方案 A 下 Cookie 只到边缘与 API：Caddy 对 signal 路由删除待代理请求的整个 `Cookie` 头（该路由无任何合法 Cookie 用途），Gateway 收到的请求中不存在 `cbrowser_session`，可由 Caddyfile 渲染契约测试与 Gateway 集成测试（带 Cookie 无证明头仍 401）双向验证。
-- 来源认证分两跳、互不共用秘密：第一跳 Caddy→API 以部署秘密 `edge_proof_key` 呈现 `X-CBrowser-Edge-Proof` 头（Caddy 经进程环境变量持有，API 经秘密文件校验），且 Caddy 站点路由对外部请求显式 404 `/api/v1/internal/*`，解析端点在外部 listener 不可达；直达 API 的伪造调用缺证明头恒 403。第二跳 API→Gateway 为短期授权凭证（grant）：API 在校验会话/Origin/Profile 后以 `viewer_grant_key`（API 与 Gateway 共享的秘密文件）签发 HMAC 凭证，claims 仅含版本、profile_id、到期时间与随机 grant id，不含会话标识原文；Gateway 以同一秘密校验签名、到期与路径 Profile 一致性。内网直连 Gateway 者无密钥可伪造，伪造/过期/跨 Profile 在 Gateway 本地恒拒。
+- 来源认证分两跳、互不共用秘密：第一跳 Caddy→API 以部署秘密 `edge_proof_key` 呈现 `X-cbrowser-Edge-Proof` 头（Caddy 经进程环境变量持有，API 经秘密文件校验），且 Caddy 站点路由对外部请求显式 404 `/api/v1/internal/*`，解析端点在外部 listener 不可达；直达 API 的伪造调用缺证明头恒 403。第二跳 API→Gateway 为短期授权凭证（grant）：API 在校验会话/Origin/Profile 后以 `viewer_grant_key`（API 与 Gateway 共享的秘密文件）签发 HMAC 凭证，claims 仅含版本、profile_id、到期时间与随机 grant id，不含会话标识原文；Gateway 以同一秘密校验签名、到期与路径 Profile 一致性。内网直连 Gateway 者无密钥可伪造，伪造/过期/跨 Profile 在 Gateway 本地恒拒。
 - 重放与时效：grant 有效期 60 秒且绑定单一 Profile，重放窗口与权力均严格小于会话 Cookie 本身（长期、跨 Profile 通用）；每次握手（含重连）都重走 forward_auth → API 按当前会话状态重新判定，退出登录/会话撤销在下一次握手立即生效，已建立连接不受影响（与现行 authorize_viewer 的握手期语义一致）。
 - 撤销/到期的判定点唯一：会话有效性只由 API 的 `AuthService.authorize_viewer` 判定（现行逻辑复用，不复制第二份）；Gateway 不再经内部端点转发 Cookie，旧端点与 `GatewayApiClient.authorize_viewer` 随本方案删除。
 

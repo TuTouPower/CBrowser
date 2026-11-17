@@ -1,4 +1,4 @@
-"""FastAPI /api/v1 router for CBrowser."""
+"""FastAPI /api/v1 router for cbrowser."""
 
 from __future__ import annotations
 

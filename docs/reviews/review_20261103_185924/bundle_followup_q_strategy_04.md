@@ -12,8 +12,8 @@ No findings.
 
 ```json
 [
-  "docs/blueprint/decisions.md:120-127（ADR 013）：标题即「单机单人部署包络与同机直连媒体链路」；背景原文「CBrowser 的唯一目标是同一台 Mac 上的单一用户」；选项 1 把 coturn/TURN/ICE 接管定性为「继续为未存在的多主机场景付费」并被否决；结论明示公网、NAT 穿透不在需求范围",
-  "AGENTS.md:3：项目定义原文「CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统」——无用户数、无并发规模表述",
+  "docs/blueprint/decisions.md:120-127（ADR 013）：标题即「单机单人部署包络与同机直连媒体链路」；背景原文「cbrowser 的唯一目标是同一台 Mac 上的单一用户」；选项 1 把 coturn/TURN/ICE 接管定性为「继续为未存在的多主机场景付费」并被否决；结论明示公网、NAT 穿透不在需求范围",
+  "AGENTS.md:3：项目定义原文「cbrowser 是面向隐私浏览器与多身份隔离的单机 Docker 管理系统」——无用户数、无并发规模表述",
   "docs/blueprint/architecture.md:5：「采用单机 Docker 架构」，全文无部署规模数值",
   "docs/blueprint/decisions.md:34-40（ADR 004）：SQLite 选型以单机为前提，「性能与并发满足单机高可用需求」，未给任何并发或数据量数值",
   "docs/tasks/t009_v2_full_acceptance/task.md:25（AC-001）：仓内唯一的规模数值——「按当前Mac/OrbStack实际配额逐级运行1/3/10活跃流及10Profile九后台一前台，记录真实硬件、成功容量和资源限制」，是容量边界探测而非规模需求；该 AC 与 AC-002（8 小时压力，:26）均仍为未勾选状态，未执行",

@@ -18,7 +18,7 @@ from alembic.script import ScriptDirectory
 # state; after the first deploy the live database sits at the chain head.
 BASELINE_REVISION = "b7e1c9d4a2f3"
 REBUILD_GUIDANCE = (
-    "This database was created by a retired CBrowser schema generation "
+    "This database was created by a retired cbrowser schema generation "
     "(0001-0009). Rebuild the data directory from scratch: stop the stack, "
     "move the old data root aside, then start with an empty data directory "
     "so the baseline schema is created fresh. No in-place data migration "

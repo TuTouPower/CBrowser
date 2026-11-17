@@ -23,10 +23,10 @@ import types
 import zipfile
 from pathlib import Path
 
-WHEEL = Path.home() / "workspace/CBrowser/.scratch/selkies_wheels/selkies-2.2.1-py3-none-any.whl"
+WHEEL = Path.home() / "workspace/cbrowser/.scratch/selkies_wheels/selkies-2.2.1-py3-none-any.whl"
 PATCHED = Path("/tmp/spike_patches/selkies_input_handler.py.patched")
 PATCHED_MAIN = Path("/tmp/spike_patches/selkies___main__.py.patched")
-REPO_SRC = Path.home() / "workspace/CBrowser_t063/src/backend"
+REPO_SRC = Path.home() / "workspace/cbrowser_t063/src/backend"
 TMPMOD = Path("/tmp/spike_kb")
 TEXT_SPARES = (*range(191, 203), 97, 132)
 

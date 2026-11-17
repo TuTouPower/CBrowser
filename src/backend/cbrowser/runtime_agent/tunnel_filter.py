@@ -71,7 +71,7 @@ def _error_response(msg: dict[str, Any], reason: str) -> dict[str, Any] | None:
         return None
     resp: dict[str, Any] = {
         "id": msg["id"],
-        "error": {"code": -32000, "message": f"CBrowser tunnel: {reason}"},
+        "error": {"code": -32000, "message": f"cbrowser tunnel: {reason}"},
     }
     if "sessionId" in msg:
         resp["sessionId"] = msg["sessionId"]

@@ -123,7 +123,7 @@
 
     - ID: f_backend_stream_gateway_08; verification: static
     - Evidence: generate_generation 以 role='client' + profile_id 生成唯一一对 TURN REST 凭证，写入 client_rtc_config 后经 Gateway rtc_config 首帧下发给该 Profile 的每一个 Viewer（server.py:571-577）; username 仅含 <expiry>:client-\<profile_id>，不含用户/Viewer 维度；默认 credential_lifetime_sec=24\*3600（gateway/config.py:40）; coturn REST 凭证的语义即持证者可在有效期内从任意网络位置使用 TURN 中继（与是否仍在观看该 Profile 无关）
-    - Impact: 任一被授权看过某 Profile 的用户都能提取该凭证，在最长 24h 内脱离 CBrowser 独立消耗 coturn 中继带宽；凭证吊销只能等代次轮换/过期，无法按用户收回。多 Viewer 共享同一凭证也使滥用无法归因到具体用户。
+    - Impact: 任一被授权看过某 Profile 的用户都能提取该凭证，在最长 24h 内脱离 cbrowser 独立消耗 coturn 中继带宽；凭证吊销只能等代次轮换/过期，无法按用户收回。多 Viewer 共享同一凭证也使滥用无法归因到具体用户。
     - Fix: 可接受的设计取舍需在 security 文档中显式记录；若要收敛，可缩短默认 lifetime 并依靠现有轮换机制，或在 API 授权时按会话签发独立 role 后缀的凭证（需 coturn 侧用户名规则配合，属跨单元改造）。
 
 - [Low][70] src/backend/cbrowser/stream_agent/ice_transport.py:85-140 — ABI 守卫在每个 ICE transport 构造与每次 restart 定位时全量实例化样例 PeerConnection

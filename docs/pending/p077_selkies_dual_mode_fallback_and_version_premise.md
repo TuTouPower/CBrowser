@@ -8,7 +8,7 @@ reason: "用户裁决：只在 AGENTS.md 与 docs/specs/webrtc_remote_display.md
 # p077 核验 Selkies 版本前提并启用双模回退
 
 - 来源：2026-11-13 同类项目技术调研（`.scratch/reports/隐私浏览器同类项目技术调研.md` P0-5、结论先行 1），依据 Selkies 官方 README 与 2.2.1 release notes
-- 内容：上游 `selkies-project/selkies` README 明写「It streams over plain WebSockets by default, with WebRTC available as an opt-in transport」；2.2.1 release notes 同样把 WebSocket 称作 default 并注明「WebRTC behind NAT may still need a STUN/TURN server; the default WebSocket transport does not」。CBrowser 靠 `SELKIES_MODE=webrtc` + `SELKIES_WEBRTC_ICE_LITE=true` 强制 opt-in、`CBROWSER_WEBRTC_PUBLIC_IP=127.0.0.1` 同机直连无 TURN（`docs/specs/webrtc_remote_display.md`）。项目文档把 opt-in 表述成「Selkies 2.2.1 官方 WebRTC 远程捕获传输协议栈」，口径不精确、会误导后续升级决策；「无 TURN」应写成当前同机拓扑结论，而非协议前提。本次为只读调研，未授权改生产代码。
+- 内容：上游 `selkies-project/selkies` README 明写「It streams over plain WebSockets by default, with WebRTC available as an opt-in transport」；2.2.1 release notes 同样把 WebSocket 称作 default 并注明「WebRTC behind NAT may still need a STUN/TURN server; the default WebSocket transport does not」。cbrowser 靠 `SELKIES_MODE=webrtc` + `SELKIES_WEBRTC_ICE_LITE=true` 强制 opt-in、`CBROWSER_WEBRTC_PUBLIC_IP=127.0.0.1` 同机直连无 TURN（`docs/specs/webrtc_remote_display.md`）。项目文档把 opt-in 表述成「Selkies 2.2.1 官方 WebRTC 远程捕获传输协议栈」，口径不精确、会误导后续升级决策；「无 TURN」应写成当前同机拓扑结论，而非协议前提。本次为只读调研，未授权改生产代码。
 - 处理：f04293f；resolution=obsolete；reason=用户裁决：只在 AGENTS.md 与 docs/specs/webrtc_remote_display.md 订正 Selkies 口径（上游默认 WebSocket、WebRTC 为显式开启、无 TURN 是当前同机拓扑结论）。双模回退、TURN/coTURN 按单人同机裁决不做；上游 main 版本代际差异不再复核
 - 时间：2026-11-13T19:16:54+08:00
 - 关联：p072（todo，Selkies 私有 ABI 重构；本条不重复其升级适配层范围）、p020（archive，ICE/TURN 5 秒延迟已闭环 t019）、p054（archive，Selkies wheel 缓存）

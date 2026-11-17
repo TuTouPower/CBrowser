@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Environment restore points for CBrowser (t066).
+"""Environment restore points for cbrowser (t066).
 
 One restore point is a *set*: the control-plane database (named volume)
 plus every Profile's browser user data directory, captured at a single

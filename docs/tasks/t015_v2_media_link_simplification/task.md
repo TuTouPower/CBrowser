@@ -2,7 +2,7 @@
 
 ## 背景
 
-2026-11-02 intensive review（docs/reviews/review_20261102_201727）确认 CBrowser 的部署包络是单机单人、同机 Chrome 访问，但媒体链路仍按多主机流媒体服务维护：coturn、TURN 凭证 24h/12h 轮换、同 PeerConnection 的 ICE 代次接管，后者依赖给 Selkies 2.1.0 私有 ABI 打补丁，并且是多条缺陷的来源。用户决策采纳 A42（证据门控的简化）及媒体链路相关的 A8、A9、A10、A11、A12、A16、A18、A26、A30、A34、A47。目标是最好的架构与最少的技术债，不考虑工作量。
+2026-11-02 intensive review（docs/reviews/review_20261102_201727）确认 cbrowser 的部署包络是单机单人、同机 Chrome 访问，但媒体链路仍按多主机流媒体服务维护：coturn、TURN 凭证 24h/12h 轮换、同 PeerConnection 的 ICE 代次接管，后者依赖给 Selkies 2.1.0 私有 ABI 打补丁，并且是多条缺陷的来源。用户决策采纳 A42（证据门控的简化）及媒体链路相关的 A8、A9、A10、A11、A12、A16、A18、A26、A30、A34、A47。目标是最好的架构与最少的技术债，不考虑工作量。
 
 ## 契约区
 

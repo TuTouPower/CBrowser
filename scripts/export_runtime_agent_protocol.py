@@ -43,7 +43,7 @@ def _entry_index_document(union_schema: dict, message_names: list[str]) -> dict:
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "BrowserAgentProtocol",
         "description": (
-            "Cross-service Unix Domain Socket contract for CBrowser Runtime Agent"
+            "Cross-service Unix Domain Socket contract for cbrowser Runtime Agent"
         ),
         "version": "2.0.0",
         "messages": {

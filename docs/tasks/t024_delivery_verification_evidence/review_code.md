@@ -3,7 +3,7 @@
 - task：`t024_delivery_verification_evidence`
 - spec：`docs/tasks/t024_delivery_verification_evidence/task.md`
 - diff_anchor：`597c09aff927c8cc54f72bfc405ac0336d58e22e`
-- target：`git -C '<home>/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
+- target：`git -C '<home>/workspace/cbrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
 - round：1
 - reviewed_at：2026-11-04T06:07:15+08:00
 

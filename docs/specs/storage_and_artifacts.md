@@ -7,7 +7,7 @@ tasks: [baseline]
 
 ## 1. 业务目标与适用范围
 
-本文档规定 CBrowser 的 SQLite WAL 数据库持久化、Alembic 迁移机制、历史数据平滑升级以及容器文件交换（Exchange）与下载捕获契约。
+本文档规定 cbrowser 的 SQLite WAL 数据库持久化、Alembic 迁移机制、历史数据平滑升级以及容器文件交换（Exchange）与下载捕获契约。
 
 ## 2. 行为契约
 

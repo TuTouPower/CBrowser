@@ -12,7 +12,7 @@
 
 ## Global conclusions
 
-- strategy: 从战略适配视角评估：CBrowser 聚焦单机 Docker 沙箱与低延迟直连 WebRTC，彻底去除 TURN/coturn 与分布式依赖，架构战略定位精准，技术复杂度与单机隐私隔离目标高度匹配。核心矛盾在于测试工程与环境依赖存在平台特化倾向（macOS 路径硬编码），需在后续演进中解耦以支持标准 Linux CI。
+- strategy: 从战略适配视角评估：cbrowser 聚焦单机 Docker 沙箱与低延迟直连 WebRTC，彻底去除 TURN/coturn 与分布式依赖，架构战略定位精准，技术复杂度与单机隐私隔离目标高度匹配。核心矛盾在于测试工程与环境依赖存在平台特化倾向（macOS 路径硬编码），需在后续演进中解耦以支持标准 Linux CI。
 - architecture: 从整体架构视角评估：单一写入者 SQLite（API 独占）、单一 Docker 控制者（Supervisor 独占）与不可变配置版本链（ADR 023）执行严密，职责清晰。但在横向通信与网络重构协同上，API 路由前缀、网关配置与部署脚本之间存在多处未对齐裂痕，且局域网重构缺乏跨容器分布式原子性保证。
 - system_properties: 从系统整体性质（安全、可靠性、一致性）评估：系统在沙箱权限剥离（0750/0600、只读 rootfs、cap_drop ALL、iptables 私网阻断）方面表现优异，符合隐私沙箱高强度隔离设计。但在反向代理穿透防护与故障清理时序上存在系统级漏洞：网关与控制面限速误用反代 IP 导致连带 DoS 风险，容器清理异常未阻断端口释放导致跨 Profile 端口污染风险。
 - evolution: 从演进与长期成本视角评估：单 baseline Alembic 持久化重构（ADR 023）、全量不可变发布（deploy_v2.sh）与设计系统 Token 自动化编译门禁表现卓越，为长期演进奠定了极佳基础。主要演进负债集中在跨服务协议 Schema 导出缺乏自动化 CI 守护，以及历史审查与调研资产缺乏自动化归档流转机制。
@@ -225,7 +225,7 @@
         - Verification: static
 - [Medium][95] src/frontend/src/i18n.tsx:924,937-941,968; src/frontend/src/i18n.test.tsx:33-42 — 违反零兼容负担铁律：保留上游旧仓 cbm.locale 存储键迁移兼容逻辑与无用测试
     - Sources: bundle_local_frontend_core_shared.md (f_frontend_legacy_cbm_locale_key)
-    - f_frontend_legacy_cbm_locale_key: i18n.tsx:924 定义了 LEGACY_STORAGE_KEY = 'cbm.locale'，并在 937-941 行实现读旧写新并删除旧键的兼容迁移逻辑; i18n.test.tsx:33 为该兼容逻辑单独编写了单元测试; cbm 为上游已废弃项目 CloakBrowser-Manager 的历史缩写，CBrowser 作为破坏性重构项目，严禁背负旧系统兼容包袱
+    - f_frontend_legacy_cbm_locale_key: i18n.tsx:924 定义了 LEGACY_STORAGE_KEY = 'cbm.locale'，并在 937-941 行实现读旧写新并删除旧键的兼容迁移逻辑; i18n.test.tsx:33 为该兼容逻辑单独编写了单元测试; cbm 为上游已废弃项目 CloakBrowser-Manager 的历史缩写，cbrowser 作为破坏性重构项目，严禁背负旧系统兼容包袱
         - Impact: 在核心基础设施中引入不必要的历史迁移兼容逻辑，违背零兼容负担原则
         - Fix: 彻底删除 LEGACY_STORAGE_KEY 及所有相关的旧键读取和清理代码，清理对应单元测试
         - Verification: static

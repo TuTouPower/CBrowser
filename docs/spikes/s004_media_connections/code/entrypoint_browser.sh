@@ -53,7 +53,7 @@ cat << "EOF" > /tmp/test_page.html
 <div id="container">
   <canvas id="c" width="1920" height="1080"></canvas>
   <div id="ui">
-    <h1>CBrowser v2 Verification Hub</h1>
+    <h1>cbrowser v2 Verification Hub</h1>
     <div class="status" id="audio-status">Audio: Initializing...</div>
     <div class="status" id="frame-status">Frame: 0</div>
     <input id="spike-input" autofocus placeholder="Target input for WebRTC clients..." />

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_spike.sh - CBrowser v2 Runtime Spike Reproduction Suite (Strict Verification)
+# run_spike.sh - cbrowser v2 Runtime Spike Reproduction Suite (Strict Verification)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,7 +10,7 @@ LOG_FILE="${WORK_DIR}/reproduce.log"
 exec > >(tee -a "${LOG_FILE}") 2>&1
 
 echo "=========================================================="
-echo " Starting CBrowser v2 Runtime Spike Test Suite (Iteration 2)"
+echo " Starting cbrowser v2 Runtime Spike Test Suite (Iteration 2)"
 echo " Date: $(date)"
 echo " Log file: ${LOG_FILE}"
 echo "=========================================================="
@@ -67,9 +67,9 @@ echo "PASS: Xvfb screen geometry verified at 1920x1080."
 python3 -c "
 import subprocess, re
 out = subprocess.check_output(['docker', 'exec', '-e', 'DISPLAY=:99', '${BROWSER_CONT}', 'xwininfo', '-root', '-tree']).decode('utf-8')
-print('X11 Window Tree snippet:\n' + '\n'.join([line for line in out.splitlines() if 'Chromium' in line or 'CBrowser' in line]))
-match = re.search(r'(0x[0-9a-fA-F]+)\s+\"([^\"]*CBrowser Cloak 1080p[^\"]*)\"', out)
-assert match, 'CloakBrowser window with title CBrowser Cloak 1080p not found!'
+print('X11 Window Tree snippet:\n' + '\n'.join([line for line in out.splitlines() if 'Chromium' in line or 'cbrowser' in line]))
+match = re.search(r'(0x[0-9a-fA-F]+)\s+\"([^\"]*cbrowser Cloak 1080p[^\"]*)\"', out)
+assert match, 'CloakBrowser window with title cbrowser Cloak 1080p not found!'
 wid = match.group(1)
 win_info = subprocess.check_output(['docker', 'exec', '-e', 'DISPLAY=:99', '${BROWSER_CONT}', 'xwininfo', '-id', wid]).decode('utf-8')
 print(f'Window Info for {wid}:\n{win_info}')

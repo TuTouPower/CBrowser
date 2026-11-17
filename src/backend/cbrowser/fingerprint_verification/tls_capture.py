@@ -354,7 +354,7 @@ async function collectContext(ctxName) {
       ctx.textBaseline = "top";
       ctx.font = '14px "Arial", "Microsoft YaHei", "PingFang SC", sans-serif';
       ctx.fillStyle = "#f60"; ctx.fillRect(10, 5, 62, 20);
-      ctx.fillStyle = "#069"; ctx.fillText("CBrowser-FP-probe-中文", 2, 15);
+      ctx.fillStyle = "#069"; ctx.fillText("cbrowser-FP-probe-中文", 2, 15);
       const dataUrl = canvas.toDataURL();
       let h = 0x811c9dc5;
       for (let i = 0; i < dataUrl.length; i++) {
@@ -368,7 +368,7 @@ async function collectContext(ctxName) {
       ctx.textBaseline = "top";
       ctx.font = '14px "Arial", "Microsoft YaHei", "PingFang SC", sans-serif';
       ctx.fillStyle = "#f60"; ctx.fillRect(10, 5, 62, 20);
-      ctx.fillStyle = "#069"; ctx.fillText("CBrowser-FP-probe-中文", 2, 15);
+      ctx.fillStyle = "#069"; ctx.fillText("cbrowser-FP-probe-中文", 2, 15);
       const img = ctx.getImageData(0, 0, 240, 50).data;
       let h = 0x811c9dc5;
       for (let i = 0; i < img.length; i++) {

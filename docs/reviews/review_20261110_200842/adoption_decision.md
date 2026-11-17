@@ -467,7 +467,7 @@ docs/reviews/review_20261110_200842
 - 来源：review_intensive
 - 位置：`.env.example:1`、`docs/blueprint/gateway.md:3`、`persistence.md:5`、`security.md:3`、`docs/specs/browser_isolation.md:5`、`profile_management.md:3`、`src/backend/cbrowser/` 下 8 处 docstring
 - 优先级：LOW
-- 详细判断理由：已抽验 `.env.example` 首行仍为 `# CBrowser v2 deployment.`；清理靠逐文件名单，缺少守卫，同类残留会持续新增。
+- 详细判断理由：已抽验 `.env.example` 首行仍为 `# cbrowser v2 deployment.`；清理靠逐文件名单，缺少守卫，同类残留会持续新增。
 - 修复说明：删除上述现行面的 v2 自称；`deploy.sh` 默认数据根由 `data/v2` 改为无代际名（如 `data/instance`），不做旧路径兼容（本机旧目录改名保留，不迁移内容）；`0001_baseline_v2.py` 改文件名，revision id 不变（不改写已部署 revision 的结构身份）。增加 hygiene 测试，禁止现行文档、源码、脚本中出现产品代际标识，不设例外。注：t051 同改 deploy.sh 与数据挂载，实施时合并。
 
 ### A56. docs/handoff.md 过期

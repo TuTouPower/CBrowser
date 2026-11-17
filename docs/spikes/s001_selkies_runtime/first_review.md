@@ -1,4 +1,4 @@
-# CBrowser v2 Runtime Spike (项1-5、12) 独立审查报告
+# cbrowser v2 Runtime Spike (项1-5、12) 独立审查报告
 
 ## 1. 核心判定
 

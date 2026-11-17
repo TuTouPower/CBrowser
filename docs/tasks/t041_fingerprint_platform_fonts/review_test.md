@@ -3,13 +3,13 @@
 - task：`t041_fingerprint_platform_fonts`
 - spec：`docs/tasks/t041_fingerprint_platform_fonts/task.md`
 - diff_anchor：`c30cf20e162f4a39226740b5073c7fbf8c2c0583`
-- target：`git -C '../CBrowser_t041' diff c30cf20e162f4a39226740b5073c7fbf8c2c0583`
+- target：`git -C '../cbrowser_t041' diff c30cf20e162f4a39226740b5073c7fbf8c2c0583`
 - round：1
 - reviewed_at：2026-11-06T11:31:04+08:00
 
 reviewed_scope: 95e64468fda0d84a
 
-落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 输出精确等于 `../CBrowser_t041`。审查对象为相对 `c30cf20e162f4a39226740b5073c7fbf8c2c0583` 的 76 个已暂存交付改动（`git status --short` 全为 `A`/`M`/`D`）与 1 个 `??` 未跟踪文件 `docs/tasks/t041_fingerprint_platform_fonts/review_code.md`（review 流程文件，由 `REVIEW_PROCESS_FILES` 排除、不计入指纹）；7 个新增测试文件均已 `git add`、出现在 `git diff` 内并直接 read 全文，4 个整篇删除文件读 anchor 版核对，修改过的旧测试逐行读 diff。全量 `git diff` 7117 行导出外部临时目录逐段扫描。`review_scope_fingerprint` 写前、写后各独立重算一次均 = `d84f21b26d322fa2`，与 prompt 锚点及 code review 一致。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
+落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 输出精确等于 `../cbrowser_t041`。审查对象为相对 `c30cf20e162f4a39226740b5073c7fbf8c2c0583` 的 76 个已暂存交付改动（`git status --short` 全为 `A`/`M`/`D`）与 1 个 `??` 未跟踪文件 `docs/tasks/t041_fingerprint_platform_fonts/review_code.md`（review 流程文件，由 `REVIEW_PROCESS_FILES` 排除、不计入指纹）；7 个新增测试文件均已 `git add`、出现在 `git diff` 内并直接 read 全文，4 个整篇删除文件读 anchor 版核对，修改过的旧测试逐行读 diff。全量 `git diff` 7117 行导出外部临时目录逐段扫描。`review_scope_fingerprint` 写前、写后各独立重算一次均 = `d84f21b26d322fa2`，与 prompt 锚点及 code review 一致。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
 
 ## Findings
 
@@ -61,7 +61,7 @@ verdict: PASS
 ## 第 2 轮复核（scope 重绑定）
 
 - reviewed_at：2026-11-06T12:23:01+08:00
-- scope 重绑定：`d84f21b26d322fa2` → `95e64468fda0d84a`。原因：Round 1 三条 minor 修复改变交付内容 —— `test_api_models_and_sse.py` 补回 17 键全等断言、`progress.md` 补逐用例处置登记与 Review 处置表；code 轴 f001/f002 的 `browser_isolation.md` 2.4 / `supervisor.md` / `fontconfig.py` / `agent.py` / `test_fontconfig.py` docstring 修复；spike `s014/report.md` 去家路径 + `review_privacy_allowlist.txt` 补 t041 两路 review 报告当前/归档路径共 4 条 fingerprint。独立重算 `review_scope_fingerprint('c30cf20e162f4a39226740b5073c7fbf8c2c0583','docs/tasks/t041_fingerprint_platform_fonts')` 写前、写后各一次均 = `95e64468fda0d84a`，与 code 轴 Round 2 头部及本轮 prompt 锚点一致；review 报告由 `REVIEW_PROCESS_FILES` 排除、不计入指纹，故本轮只改本报告不扰动 scope。落点校验通过（不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../CBrowser_t041`）。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
+- scope 重绑定：`d84f21b26d322fa2` → `95e64468fda0d84a`。原因：Round 1 三条 minor 修复改变交付内容 —— `test_api_models_and_sse.py` 补回 17 键全等断言、`progress.md` 补逐用例处置登记与 Review 处置表；code 轴 f001/f002 的 `browser_isolation.md` 2.4 / `supervisor.md` / `fontconfig.py` / `agent.py` / `test_fontconfig.py` docstring 修复；spike `s014/report.md` 去家路径 + `review_privacy_allowlist.txt` 补 t041 两路 review 报告当前/归档路径共 4 条 fingerprint。独立重算 `review_scope_fingerprint('c30cf20e162f4a39226740b5073c7fbf8c2c0583','docs/tasks/t041_fingerprint_platform_fonts')` 写前、写后各一次均 = `95e64468fda0d84a`，与 code 轴 Round 2 头部及本轮 prompt 锚点一致；review 报告由 `REVIEW_PROCESS_FILES` 排除、不计入指纹，故本轮只改本报告不扰动 scope。落点校验通过（不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../cbrowser_t041`）。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
 
 ### 前轮 finding 复核
 

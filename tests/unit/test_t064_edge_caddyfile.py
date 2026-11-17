@@ -36,20 +36,20 @@ def test_signal_route_resolves_at_the_edge_and_strips_the_cookie() -> None:
     # the API-issued context immediately after it is copied in. Inside
     # route, declaration order is execution order.
     assert "route {" in signal
-    assert signal.index("request_header -X-CBrowser-Viewer-Grant") < signal.index(
+    assert signal.index("request_header -X-cbrowser-Viewer-Grant") < signal.index(
         "forward_auth"
     )
     assert signal.index("forward_auth") < signal.index("reverse_proxy")
     # Client-forged authorization context is deleted before resolution.
-    assert "request_header -X-CBrowser-Authorized-Profile" in signal
-    assert "request_header -X-CBrowser-Viewer-Grant" in signal
+    assert "request_header -X-cbrowser-Authorized-Profile" in signal
+    assert "request_header -X-cbrowser-Viewer-Grant" in signal
     # Resolution happens at the API with the edge proof; only the
     # placeholder is rendered, never a secret value.
     assert "forward_auth http://api:8000" in signal
     assert "uri /api/v1/internal/edge/viewer-authorize" in signal
-    assert 'header_up X-CBrowser-Edge-Proof "{env.CBROWSER_EDGE_PROOF_SECRET}"' in signal
+    assert 'header_up X-cbrowser-Edge-Proof "{env.CBROWSER_EDGE_PROOF_SECRET}"' in signal
     assert (
-        "copy_headers X-CBrowser-Authorized-Profile X-CBrowser-Viewer-Grant"
+        "copy_headers X-cbrowser-Authorized-Profile X-cbrowser-Viewer-Grant"
         in signal
     )
     # The Gateway never receives the session cookie on this route.

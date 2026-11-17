@@ -37,7 +37,7 @@
 - [Medium][95] docs/handoff.md:5,9,26,29,31 — handoff.md 已整体过期一轮：仍称下一步 t015、head fc38a1d、pending 为空
 
     - ID: f_docs_current_01; verification: static
-    - Evidence: docs/handoff.md:5 最新一节日期 2026-11-02T21:55，标题称『下一步 t015』；:9 交出 head_commit 为 fc38a1d；:26 队列为 t015 → t016 → t017 → t018 → t012 → t009 → t010；:31 称 docs/pending/todo/ 为空。; docs/specs_index.md 显示 t015 已更新 webrtc_remote_display（2026-11-02T23:30）、t016 已更新 storage_and_artifacts 与 runtime_persistence（2026-11-03T03:00）、t017 已更新 profile_management（2026-11-03T05:15），即 t015–t018 均已实际执行。; docs/pending/todo/ 现有 p016、p017、p018、p019 四个文件，与 handoff:31『为空』直接矛盾；当前仓库 HEAD 为 b473408，远在 fc38a1d 之后。; docs/handoff.md:3 自述『本文件只保留当前有效一节』，CBrowser AGENTS.md 亦规定 handoff 只保留当前有效一节。
+    - Evidence: docs/handoff.md:5 最新一节日期 2026-11-02T21:55，标题称『下一步 t015』；:9 交出 head_commit 为 fc38a1d；:26 队列为 t015 → t016 → t017 → t018 → t012 → t009 → t010；:31 称 docs/pending/todo/ 为空。; docs/specs_index.md 显示 t015 已更新 webrtc_remote_display（2026-11-02T23:30）、t016 已更新 storage_and_artifacts 与 runtime_persistence（2026-11-03T03:00）、t017 已更新 profile_management（2026-11-03T05:15），即 t015–t018 均已实际执行。; docs/pending/todo/ 现有 p016、p017、p018、p019 四个文件，与 handoff:31『为空』直接矛盾；当前仓库 HEAD 为 b473408，远在 fc38a1d 之后。; docs/handoff.md:3 自述『本文件只保留当前有效一节』，cbrowser AGENTS.md 亦规定 handoff 只保留当前有效一节。
     - Impact: 接手者按 handoff 会误判项目状态：以为 t015 未开始、队列未动、pending 为空，从而重复规划或漏掉 p016–p019 的未开清理项；交接文档作为当前状态单一入口失效。
     - Fix: 按约定将本节追加到 docs/archive/handoff.md 并写入当前有效一节：更新 head_commit、已完成 t015–t018 的收尾状态、当前队列（t012 → t009 → t010）与 pending 现有 p016–p019。
 

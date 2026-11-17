@@ -3,7 +3,7 @@
 - task：`t021_control_api_artifact_contracts`
 - spec：`docs/tasks/t021_control_api_artifact_contracts/task.md`
 - diff_anchor：`a644f7c3df22c65482cca22b2f10e3b507bc21c4`
-- target：`git -C ~/workspace/CBrowser_t021 diff a644f7c3df22c65482cca22b2f10e3b507bc21c4`
+- target：`git -C ~/workspace/cbrowser_t021 diff a644f7c3df22c65482cca22b2f10e3b507bc21c4`
 - round：1
 - reviewed_at：2026-11-04T02:20:19+08:00
 

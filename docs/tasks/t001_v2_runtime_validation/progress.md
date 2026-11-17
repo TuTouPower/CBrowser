@@ -88,7 +88,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 原可见性agent越界写入宿主/tmp/run_probe_inspect.py、/tmp/run_probe_inspect_2.py、/tmp/run_probe_inspect_3.py、/tmp/run_probe_inspect_4.py、/tmp/run_probe_inspect_5.py。已告知用户，SIGINT确认原71313 terminal exit130，保留这5文件未越权删除；后续新执行明确唯一宿主写目录并设置TMPDIR。停止旧TURN42253 exit130用于交付主控已验证的标准SDP适配器和明确媒体接入任务，不是因观察超时误判停止。
 
-- 新可见性执行已完成真实原生Chrome7场景exit0，新增薄CBrowser visibility adapter监听实际document.visibilitychange并发送官方STOP/START；不改hidden/HELLO/pageTabId/resume_key。最终6源冻结后独立Gemini正在串行复核旧完整策略与新原生Visibility，未提前勾AC-003。TURN媒体和隔离修正版并行继续。
+- 新可见性执行已完成真实原生Chrome7场景exit0，新增薄cbrowser visibility adapter监听实际document.visibilitychange并发送官方STOP/START；不改hidden/HELLO/pageTabId/resume_key。最终6源冻结后独立Gemini正在串行复核旧完整策略与新原生Visibility，未提前勾AC-003。TURN媒体和隔离修正版并行继续。
 
 - 2026-10-27T14:50:34+08:00：前轮已取得独立TURN对抗证据：正常套件exit0，但第二轮无效凭证、新代0 relay candidate时旧媒体仍满足原成功条件，独立review明确FAIL。原成功结论拒绝；作者正在修正为等待新代commit、关闭旧连接后再取媒体增量基线，并要求无效凭证负例非零退出。不是原SDK原生支持结论，AC-004不变。
 

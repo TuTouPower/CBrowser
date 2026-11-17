@@ -1,4 +1,4 @@
-"""Stream Gateway service for CBrowser."""
+"""Stream Gateway service for cbrowser."""
 
 from typing import TYPE_CHECKING
 

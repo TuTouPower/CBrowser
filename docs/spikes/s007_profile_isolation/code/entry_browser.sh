@@ -4,7 +4,7 @@ set -euo pipefail
 PROFILE_ID="${1:-A}"
 DISPLAY_NUM="${2:-:91}"
 FREQ="${3:-440.0}"
-TITLE="${4:-CBrowser Profile $PROFILE_ID}"
+TITLE="${4:-cbrowser Profile $PROFILE_ID}"
 BG_COLOR="${5:-#112233}"
 SECRET="${6:-PROFILE_${PROFILE_ID}_DEFAULT_SECRET}"
 
@@ -29,7 +29,7 @@ EOF
 
 cat << EOF > /tmp/pulse.pa
 load-module module-native-protocol-unix auth-anonymous=0 auth-cookie=$PULSE_COOKIE_PATH socket=$PULSE_SOCK_PATH
-load-module module-null-sink sink_name=cbrowser_sink rate=48000 format=s16le channels=2 sink_properties=device.description="CBrowser_Virtual_Sink"
+load-module module-null-sink sink_name=cbrowser_sink rate=48000 format=s16le channels=2 sink_properties=device.description="cbrowser_Virtual_Sink"
 set-default-sink cbrowser_sink
 EOF
 

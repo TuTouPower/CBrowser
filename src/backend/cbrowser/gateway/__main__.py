@@ -1,4 +1,4 @@
-"""Standalone CLI entrypoint for CBrowser Stream Gateway."""
+"""Standalone CLI entrypoint for cbrowser Stream Gateway."""
 
 import logging
 import sys
@@ -16,7 +16,7 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    logger.info("Initializing CBrowser Stream Gateway Service...")
+    logger.info("Initializing cbrowser Stream Gateway Service...")
 
     try:
         config = GatewayConfig.from_env()

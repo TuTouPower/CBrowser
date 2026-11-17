@@ -6,14 +6,14 @@ This endpoint is the single place where the management session cookie is
 resolved into a Gateway-bound authorization context:
 
 - the caller must prove it is the deployment edge by presenting the
-  ``edge_proof_key`` secret (``X-CBrowser-Edge-Proof``); the path is also
+  ``edge_proof_key`` secret (``X-cbrowser-Edge-Proof``); the path is also
   refused on the external listener by the rendered Caddyfile, so a direct
   external call fails on the proof even if it somehow routed here;
 - session validity, Origin and Profile binding are decided by
   ``AuthService.authorize_viewer`` — the same single decision point the
   retired Gateway-relayed flow used;
-- on success the response carries ``X-CBrowser-Authorized-Profile`` and a
-  short-lived ``X-CBrowser-Viewer-Grant`` for Caddy to copy onto the
+- on success the response carries ``X-cbrowser-Authorized-Profile`` and a
+  short-lived ``X-cbrowser-Viewer-Grant`` for Caddy to copy onto the
   proxied handshake. The Gateway verifies the grant locally; the session
   cookie never reaches it.
 """
@@ -62,7 +62,7 @@ async def edge_viewer_authorize(
     request: Request,
     auth_service: Annotated[AuthService, Depends(get_auth_service)],
     presented_proof: Annotated[
-        str | None, Header(alias=EDGE_PROOF_HEADER)
+        str | None, Header(alias=EDGE_PROOF_HEADER, title=EDGE_PROOF_HEADER)
     ] = None,
 ) -> Response:
     edge_proof: SecretStr | None = getattr(request.app.state, "edge_proof", None)

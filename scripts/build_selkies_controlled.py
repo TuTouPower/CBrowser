@@ -3,7 +3,7 @@
 
 Route decided by spike s020 and adopted in t063: selkies 2.2.1 exposes no
 public extension point for the WebRTC service class or the X11 keyboard,
-so CBrowser ships a *controlled build* of the pinned upstream wheel --
+so cbrowser ships a *controlled build* of the pinned upstream wheel --
 the pristine wheel (SHA256 pinned by the committed identity manifest)
 plus an ordered series of small, explicit, build-time patches under
 ``config/selkies/patches/``.  No upstream source is vendored into the

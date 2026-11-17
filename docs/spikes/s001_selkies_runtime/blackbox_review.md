@@ -1,4 +1,4 @@
-# 独立黑盒验证报告：CBrowser v2 Runtime Spike 运行环境原型
+# 独立黑盒验证报告：cbrowser v2 Runtime Spike 运行环境原型
 
 - **测试执行时间**：2026-10-27T01:57:21+08:00
 - **工作目录**：`<repo>/.scratch/v2_orchestration/review/.scratch/runtime_reproduce`

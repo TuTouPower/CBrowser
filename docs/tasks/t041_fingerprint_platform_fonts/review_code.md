@@ -3,13 +3,13 @@
 - task：`t041_fingerprint_platform_fonts`
 - spec：`docs/tasks/t041_fingerprint_platform_fonts/task.md`
 - diff_anchor：`c30cf20e162f4a39226740b5073c7fbf8c2c0583`
-- target：`git -C '../CBrowser_t041' diff c30cf20e162f4a39226740b5073c7fbf8c2c0583`
+- target：`git -C '../cbrowser_t041' diff c30cf20e162f4a39226740b5073c7fbf8c2c0583`
 - round：1
 - reviewed_at：2026-11-06T11:08:18+08:00
 
 reviewed_scope: 95e64468fda0d84a
 
-落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../CBrowser_t041`。审查对象为相对 `c30cf20e162f4a39226740b5073c7fbf8c2c0583` 的 76 个已暂存交付改动（`git status --short` 全为 `A`/`M`/`D`，无 `??` 未跟踪交付文件；全量 `git diff` 7117 行导出到外部临时目录逐段读取）、删除文件（4 个以 `font_bundle` 为核心的测试文件）与全部新增源码/文档（直接 read 覆盖）。`review_scope_fingerprint` 写前、写后各独立重算一次均 = `d84f21b26d322fa2`（review 报告本身由 `REVIEW_PROCESS_FILES` 排除，不计入指纹）。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
+落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../cbrowser_t041`。审查对象为相对 `c30cf20e162f4a39226740b5073c7fbf8c2c0583` 的 76 个已暂存交付改动（`git status --short` 全为 `A`/`M`/`D`，无 `??` 未跟踪交付文件；全量 `git diff` 7117 行导出到外部临时目录逐段读取）、删除文件（4 个以 `font_bundle` 为核心的测试文件）与全部新增源码/文档（直接 read 覆盖）。`review_scope_fingerprint` 写前、写后各独立重算一次均 = `d84f21b26d322fa2`（review 报告本身由 `REVIEW_PROCESS_FILES` 排除，不计入指纹）。按约束未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`。
 
 独立轻量复验：`git rev-parse --show-toplevel`；`git status --short`；`git diff --stat`（76 文件 / 4424+ / 1284-）；`git diff --check`（exit 0 干净）；定向 pytest 4 文件 34 passed（`.scratch/gate_scratch/venv/bin/python`，`PYTHONPATH=src/backend`，`test_control_migration.py` 含 `test_upgrade_head_matches_orm_metadata` 实跑 `alembic command.check`、`test_fontconfig.py` 两分支与空集合、`test_font_sets.py` 内容寻址/manifest sha256/路径穿越/不覆盖/CLI、`test_font_sets_api.py` 默认绑定/422/配置版本/used_by_count）；逐段通读 `0002` 迁移、`font_sets/manifest.py`、`font_sets_router.py`、`profile_service.py`、`router.py`、`fontconfig.py`、`runner.py`、`agent.py`、`runtime_coordinator.py`、`runtime_views.py`、`domain/models.py`、`supervisor/core.py`（失败封闭调用点 2055 在容器创建 2104 之前）、`docker_adapter.py`、`app.py`、`compose.yaml`、Dockerfile、`Dockerfile.dockerignore`、`deploy_v2.sh`、`.worktreeinclude`、ADR 024 与 6 份 blueprint/spec、findings `d032`/`d033`、`p045`、spike `s014/report.md`、专项 E2E 与 6 份新增测试；静态扫描全仓 `font_bundle` 残留、危险模式（`+` 行）、绝对路径家目录、OpenAPI/前端字段、`deploy_v2.sh` 字体复制；E2E 撤回核实（`git diff --name-only` 对 topology/standalone/runtime_profile_defaults = `NO_CHANGE`，当前文件无字体接线，专项 E2E 6 处显式 skip）；门禁证据 `.scratch/evidence_t041_final4/manifest.json`（`all_passed=true`、六 suite `exit_code=0`、`suites.tsv` 全 0、E2E junit `tests=102 errors=0 failures=0 skipped=2`、日志 `100 passed, 2 skipped`）只读取未重跑。
 
@@ -76,7 +76,7 @@ verdict: PASS
 
 reviewed_scope: 95e64468fda0d84a
 
-- 落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../CBrowser_t041`。`review_scope_fingerprint` 独立重算写前、写后各一次均 = `95e64468fda0d84a`，由 `d84f21b26d322fa2` 重绑定（review 报告本身由 `REVIEW_PROCESS_FILES` 排除、不计入指纹）。本轮只改本报告，未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`；Round 1 本就 PASS，本轮为 scope 重绑定 + 修复复核，不涉及 FAIL→PASS 翻转。按 `ROUND_HEADER_RE` 只识别 `## Round N` 英文标题，本中文标题不触发「最后一轮」截断，`parse_ac_review` 全文解析，故沿用 Round 1 `### AC 复验方式` 小节的 9 条 AC 行、不重复列出（重列会造成 AC 行重复判 `incomplete`）。
+- 落点校验通过：不带 `-C` 的 `git rev-parse --show-toplevel` 精确等于 `../cbrowser_t041`。`review_scope_fingerprint` 独立重算写前、写后各一次均 = `95e64468fda0d84a`，由 `d84f21b26d322fa2` 重绑定（review 报告本身由 `REVIEW_PROCESS_FILES` 排除、不计入指纹）。本轮只改本报告，未跑 Docker E2E / 完整门禁 / `scripts/run_gates.sh`；Round 1 本就 PASS，本轮为 scope 重绑定 + 修复复核，不涉及 FAIL→PASS 翻转。按 `ROUND_HEADER_RE` 只识别 `## Round N` 英文标题，本中文标题不触发「最后一轮」截断，`parse_ac_review` 全文解析，故沿用 Round 1 `### AC 复验方式` 小节的 9 条 AC 行、不重复列出（重列会造成 AC 行重复判 `incomplete`）。
 - 交付内容变化原因（以 `git diff`（工作区 vs index）与当前文件为准，不采信处置表自称）：Round 1 两条 code minor + 一条 test minor 的修复改变 9 个 `MM`/`AM` 文件 ——
     - `docs/specs/browser_isolation.md` 2.4 两行按绑定集 / null 两分支改写；`docs/blueprint/supervisor.md` null 段补「回退基础字体可见 + `missing_fonts` 标记」。
     - `src/backend/cbrowser/runtime_agent/fontconfig.py` 模块 / `build_fontconfig_xml` / `prepare_profile_fontconfig` 三处 docstring、`runtime_agent/agent.py` 返回值 docstring、`tests/unit/test_fontconfig.py` 用例 docstring 同步为两分支语义。

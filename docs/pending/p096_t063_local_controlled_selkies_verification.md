@@ -12,12 +12,12 @@ reason: "按开发铁律重判：AC-001 实测闭环"
     1. AC-001：以当前源码重建 Stream 镜像（builder 阶段构建受控包并校验安装戳），WebRTC 首帧经官方 HELLO/client_tab_id/resume_key 建立；启动路径无运行时全局替换（镜像内 `importlib.metadata.version("selkies")` 应为 `2.2.1+cbrowser.1`，包内 `selkies/cbrowser_build.json` 戳与清单一致）。
     2. AC-002：按 active_peers/媒体 consumer 信号仲裁静止 8 FPS、运动/输入 30 FPS、零 consumer 暂停可恢复、单个 consumer 暂停不压低其他 consumer。
     3. AC-003：中文 IME、普通键盘、剪贴板与复制标签隔离、viewer resume 保持既有行为；并跑 `tests/e2e/test_stream_x11_keymap_e2e.py`（探针已断言受控版本号与绑定保持、按住槽不重绑）。
-- 处理：764fed0；resolution=resolved；reason=按开发铁律重判：AC-001 实测闭环；AC-002 帧率仲裁是 Selkies 上游策略而非 CBrowser 实现且行为层已由 gate5 media E2E 覆盖、精确 8/30 数值属伪精确；AC-003 剪贴板/标签隔离已有单测与 E2E 覆盖，再写注入脚本属重复劳动
+- 处理：764fed0；resolution=resolved；reason=按开发铁律重判：AC-001 实测闭环；AC-002 帧率仲裁是 Selkies 上游策略而非 cbrowser 实现且行为层已由 gate5 media E2E 覆盖、精确 8/30 数值属伪精确；AC-003 剪贴板/标签隔离已有单测与 E2E 覆盖，再写注入脚本属重复劳动
 - 时间：2026-11-15T00:00:00+08:00
 
 ## 开发铁律重判（2026-11-15，最终）
 
-- AC-002「静止 8 / 运动 30 FPS 帧率仲裁」**不是 CBrowser 实现**，是 Selkies 上游采集策略，CBrowser 仅通过受控包继承；全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑。gate5 的 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 已实测 `unpaused_video_consumers` 2→1→0→1、前台帧率下限 20 FPS（3 s ≥60 帧）、隐藏页 0 帧、全隐藏采集暂停、恢复后继续解码，全部通过。精确 8/30 数值在 macOS 无 GPU 软件编码下测不准，写死数值断言属伪精确。
+- AC-002「静止 8 / 运动 30 FPS 帧率仲裁」**不是 cbrowser 实现**，是 Selkies 上游采集策略，cbrowser 仅通过受控包继承；全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑。gate5 的 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 已实测 `unpaused_video_consumers` 2→1→0→1、前台帧率下限 20 FPS（3 s ≥60 帧）、隐藏页 0 帧、全隐藏采集暂停、恢复后继续解码，全部通过。精确 8/30 数值在 macOS 无 GPU 软件编码下测不准，写死数值断言属伪精确。
 - AC-003 中文 IME / 普通键盘 / 剪贴板 / 复制标签隔离 / viewer resume：剪贴板是真实功能（`ClipboardPermissionHint.tsx`、`clipboard_bridge`、iframe `allow="clipboard-read; clipboard-write"`），已有 `ClipboardPermissionHint.test.tsx`、`SessionDetailsPanel.test.tsx` 单测与 gate5 `test_frontend_session_dual_tab_identity_refresh_copy_no_kick_and_close`、`test_ac005_remote_tab_switch_is_visible_on_both_pages` 真实 E2E 覆盖；`test_stream_x11_keymap_e2e.py` 亦通过（受控版本绑定保持、按住槽不重绑）。
 - 结论：行为层已被单测 + gate5 E2E 覆盖，再写一套注入式 [deploy] 补验脚本是重复劳动、不产生新信息；按「简洁优先」，本项归档。
 
@@ -38,5 +38,5 @@ reason: "按开发铁律重判：AC-001 实测闭环"
 - 静态核对：`config/selkies/selkies_controlled_build.json` 存在；`tests/unit/test_t063_selkies_controlled_build.py` 的受控构建 / 身份一致性断言仍在。
 - 定向实测：`p096_t063_control` → `10 passed / EXIT=0`；日志 `.scratch/p090_p098_reverify_20261116/logs/p096_t063_control.log`。
 - 复核发现（仅记录，不改归档历史正文、不改代码）：归档「全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑」的措辞在当前源码不够精确 —— `src/backend/cbrowser/stream_agent/policy.py:578` 存在 `active_peers`，但语义是「无活跃 viewer → 暂停采集」的可见性仲裁（`reconcile_capture_state`），不是「静止 8 / 运动 30 FPS」帧率仲裁；全仓仍无 8/30 数值仲裁逻辑。gate5 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 覆盖的正是前者。
-- 结论：AC-002 核心判定（8/30 属 Selkies 上游策略、非 CBrowser 实现）与 AC-003 重判裁定仍成立，仅上方措辞按此细化；不重跑注入式脚本。
+- 结论：AC-002 核心判定（8/30 属 Selkies 上游策略、非 cbrowser 实现）与 AC-003 重判裁定仍成立，仅上方措辞按此细化；不重跑注入式脚本。
 - 证据留存：gate5 / gate4 原始目录已缺失；汇总见 `docs/archive/verification/p090_p098_local_reverify_20261116.md`。

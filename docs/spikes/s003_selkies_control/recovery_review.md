@@ -1,4 +1,4 @@
-# CBrowser v2 Recovery 原型黑盒重跑与架构审查报告
+# cbrowser v2 Recovery 原型黑盒重跑与架构审查报告
 
 ## 1. 黑盒重跑执行证据 (Exit Code & Status)
 

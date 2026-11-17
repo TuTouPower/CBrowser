@@ -32,7 +32,7 @@ async def main():
     )
     print("[test_cloak_loop] Browser window launched with no_viewport=True!")
     page = context.pages[0] if context.pages else await context.new_page()
-    await page.goto("data:text/html,<html><head><title>CBrowser Cloak 1080p</title></head><body style='background:%23224466;color:white;font-family:sans-serif;'><h1>CBrowser Cloak 1920x1080 Verified</h1><p>Real browser UI with Address bar & Tabs visible.</p></body></html>")
+    await page.goto("data:text/html,<html><head><title>cbrowser Cloak 1080p</title></head><body style='background:%23224466;color:white;font-family:sans-serif;'><h1>cbrowser Cloak 1920x1080 Verified</h1><p>Real browser UI with Address bar & Tabs visible.</p></body></html>")
     print("[test_cloak_loop] Navigation complete.")
 
     # Record innerWidth, innerHeight, devicePixelRatio from page execution

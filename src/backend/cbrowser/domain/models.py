@@ -1,4 +1,4 @@
-"""Domain models and DTOs for CBrowser."""
+"""Domain models and DTOs for cbrowser."""
 
 from __future__ import annotations
 

@@ -40,7 +40,7 @@ tasks: [baseline]
 
 ## Viewer 边缘授权与 CDP 边界（t064）
 
-- `/stream/{profileId}/signal` 的会话判定移到 Caddy 边缘：Caddy 删除客户端伪造的 `X-CBrowser-Authorized-Profile` 与 `X-CBrowser-Viewer-Grant`，以独立边缘证明调用 API `GET /api/v1/internal/edge/viewer-authorize`；API 复用 `AuthService.authorize_viewer` 判定会话、Origin 与 Profile 后，签发 60 秒、仅绑定该 Profile 且不含会话标识的 HMAC viewer grant。
+- `/stream/{profileId}/signal` 的会话判定移到 Caddy 边缘：Caddy 删除客户端伪造的 `X-cbrowser-Authorized-Profile` 与 `X-cbrowser-Viewer-Grant`，以独立边缘证明调用 API `GET /api/v1/internal/edge/viewer-authorize`；API 复用 `AuthService.authorize_viewer` 判定会话、Origin 与 Profile 后，签发 60 秒、仅绑定该 Profile 且不含会话标识的 HMAC viewer grant。
 - Caddy 只复制 API 回注的授权上下文，并删除待代理请求的 Cookie；Gateway 先验 Origin，再在本地验 grant 的签名、到期、Profile 绑定与 authorized Profile 头一致性，最后验 Agent 和 runtime 就绪。Gateway 不接收或解析 `cbrowser_session`；每次新握手重新走边缘解析，登出与撤销在下一次握手生效。原 Gateway 中转的 `POST /api/v1/internal/gateway/viewer-authorize` 已删除。
 - 外部 listener 对 `/api/v1/internal/*` 一律 404。直连 Gateway、伪造授权头、跨 Profile grant 与非法 Origin 均不能建立 viewer 连接。`/stream/agent/register` 不套 viewer 授权，继续使用独立 Agent 凭证。
 - 管理会话 Cookie 保持 `Path=/`，不改为 signal 路径 Cookie。普通 Profile detail/list 不含 `cdp_ws_path` 或 automation token；`cdp_ws_path` 只由专用 `GET /api/v1/profiles/{profileId}/automation` 返回，实际 CDP 连接仍要求 automation token 与控制权围栏。Browser CDP 只监听容器回环临时端口；真实引擎拒绝域名 Host 的回环发现请求与跨 Origin CDP WebSocket。

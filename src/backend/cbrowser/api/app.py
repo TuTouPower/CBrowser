@@ -1,4 +1,4 @@
-"""FastAPI Application factory for CBrowser."""
+"""FastAPI Application factory for cbrowser."""
 
 from __future__ import annotations
 
@@ -367,7 +367,7 @@ def create_app(
             await engine.dispose()
 
     app = FastAPI(
-        title="CBrowser Control API",
+        title="cbrowser Control API",
         version="2.0.0",
         description=(
             "Minimal coherent Control API for profile lifecycle and runtime "

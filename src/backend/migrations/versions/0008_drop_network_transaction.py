@@ -26,7 +26,7 @@ branch_labels: str | None = None
 depends_on: str | None = None
 
 _UNSUPPORTED_DOWNGRADE = (
-    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Downgrade is not supported: cbrowser migrations only move forward. "
     "Roll back with a release rollback and a data-directory rebuild instead."
 )
 

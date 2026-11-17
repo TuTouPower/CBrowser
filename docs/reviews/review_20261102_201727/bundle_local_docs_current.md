@@ -90,7 +90,7 @@
 - [Medium][88] CHANGELOG.md:3-8 — CHANGELOG 自称记录全部重要变更，但最新条目停在旧版 0.1.9（2026-10-16），整个 v2 重构无记录
 
     - ID: f_docs_current_05; verification: static
-    - Evidence: CHANGELOG.md:3 声明『All notable changes to CBrowser are documented here』; CHANGELOG.md:8 最新条目为 ## [0.1.9] - 2026-10-16，内容为旧版原生/VNC 时代的 fork 变更；无 Unreleased 节; 2026-10-27 至 2026-11-02 的 v2 重构（t001–t008 合入 main、t014 剪贴板 seamless 等）在 CHANGELOG 中零记录
+    - Evidence: CHANGELOG.md:3 声明『All notable changes to cbrowser are documented here』; CHANGELOG.md:8 最新条目为 ## [0.1.9] - 2026-10-16，内容为旧版原生/VNC 时代的 fork 变更；无 Unreleased 节; 2026-10-27 至 2026-11-02 的 v2 重构（t001–t008 合入 main、t014 剪贴板 seamless 等）在 CHANGELOG 中零记录
     - Impact: 发布与回溯时 CHANGELOG 呈现为现行记录实则停更，读者会误判当前版本与能力边界。
     - Fix: 补 Unreleased 节记录 v2 阶段变更，或在文件头明确声明其仅覆盖 0.1.x 旧版发布、v2 变更以 blueprint/handoff 为准。
 

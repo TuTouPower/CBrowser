@@ -1,5 +1,5 @@
 ---
-name: CBrowser Design System
+name: cbrowser Design System
 colors:
   primary: "#2F66E0"
   brand-gradient-start: "#00F0FF"
@@ -767,7 +767,7 @@ components:
 
 ## Overview
 
-CBrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。面向单用户极简高效体验，采用冷灰基调、Inter 字体、高字重标题与柔和阴影，让布局自身表达信息层级，去除冗余次级标签、面包屑导航与内部 ID 展示；业务代码只用语义 token，不写颜色字面量。
+cbrowser 的 UI 设计权威。`DESIGN.md` 是唯一颜色、字体、间距、圆角与组件来源；`npm run design:tokens` 从本文件生成 `src/frontend/src/styles/design_tokens.css`（Tailwind 4 `@theme`）。面向单用户极简高效体验，采用冷灰基调、Inter 字体、高字重标题与柔和阴影，让布局自身表达信息层级，去除冗余次级标签、面包屑导航与内部 ID 展示；业务代码只用语义 token，不写颜色字面量。
 
 ## Colors
 

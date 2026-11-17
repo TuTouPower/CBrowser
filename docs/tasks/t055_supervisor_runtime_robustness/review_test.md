@@ -3,7 +3,7 @@
 - task：`t055_supervisor_runtime_robustness`
 - spec：`docs/archive/tasks/t055_supervisor_runtime_robustness/task.md`
 - diff_anchor：`1c0963845705e355ccdd7e1c3963533c9df7437a`
-- target：`git -C '<home>/workspace/CBrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
+- target：`git -C '<home>/workspace/cbrowser_t055' diff 1c0963845705e355ccdd7e1c3963533c9df7437a`
 - round：1
 - reviewed_at：2026-11-11T23:12:33+08:00
 

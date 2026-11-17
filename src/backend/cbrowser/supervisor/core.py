@@ -1,4 +1,4 @@
-"""CBrowser Runtime Supervisor Core Coordinator.
+"""cbrowser Runtime Supervisor Core Coordinator.
 
 AC-001 - AC-006:
 - Sole Docker socket holder.

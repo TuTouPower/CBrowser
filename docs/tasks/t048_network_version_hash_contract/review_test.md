@@ -9,7 +9,7 @@
 
 reviewed_scope: a4af68f340690971
 
-独立复验命令（均在 `CBrowser_t048` 下，`TMPDIR=/tmp/t048 PYTHONPATH=src/backend`，解释器
+独立复验命令（均在 `cbrowser_t048` 下，`TMPDIR=/tmp/t048 PYTHONPATH=src/backend`，解释器
 `<gate venv>/bin/python`）：
 
 - 定向：`pytest tests/unit/test_network_config.py tests/unit/test_a24_network_config_cli.py tests/unit/test_network_repository.py tests/unit/test_network_service.py tests/integration/test_a35_recovery.py tests/integration/test_ac007_origin_whitelist_sync.py -q` → `40 passed`。

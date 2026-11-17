@@ -40,7 +40,7 @@ _RUNTIME_COLUMNS: tuple[tuple[str, sa.Column], ...] = (
 )
 
 _UNSUPPORTED_DOWNGRADE = (
-    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Downgrade is not supported: cbrowser migrations only move forward. "
     "Roll back with a release rollback and a data-directory rebuild instead."
 )
 

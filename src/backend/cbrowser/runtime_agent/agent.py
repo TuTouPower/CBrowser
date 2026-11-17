@@ -121,7 +121,7 @@ def create_agent_app(
                 await asyncio.gather(task, return_exceptions=True)
 
     app = FastAPI(
-        title="CBrowser Runtime Agent",
+        title="cbrowser Runtime Agent",
         version="2.0.0",
         description="Controlled UDS Agent for Browser Runtime lifecycle",
         lifespan=lifespan,

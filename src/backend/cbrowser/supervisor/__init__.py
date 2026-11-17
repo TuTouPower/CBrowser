@@ -1,1 +1,1 @@
-# CBrowser Supervisor Package
+# cbrowser Supervisor Package

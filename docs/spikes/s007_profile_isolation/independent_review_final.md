@@ -1,4 +1,4 @@
-# CBrowser v2 双 Profile 隔离技术 Spike (Revision 5) 独立复核报告
+# cbrowser v2 双 Profile 隔离技术 Spike (Revision 5) 独立复核报告
 
 - **复核环境**: Darwin arm64 (OrbStack Docker backend, Linux 内核沙箱)
 - **复核模型**: Gemini `cpa/gemini-3.8-flash` (独立五审 Reviewer)
@@ -129,7 +129,7 @@ ______________________________________________________________________
 2. **生产质量全 17 门禁保持约束**:
     - 本测试属于单机沙箱隔离 spike，绝不代表 WebRTC 生产链路就绪；
     - 生产环境仍必须完整打通 ICE/STUN/TURN NAT 穿透、Opus 编码、生产 Caddy 网关以及动态生命周期管理等全 17 项生产质量门禁；
-    - CBrowser 架构始终坚持单沙箱多容器动态生命周期，杜绝独占租约设计。
+    - cbrowser 架构始终坚持单沙箱多容器动态生命周期，杜绝独占租约设计。
 
 ______________________________________________________________________
 

@@ -3,7 +3,7 @@
 - task：`t054_deploy_time_network_config`
 - spec：`docs/archive/tasks/t054_deploy_time_network_config/task.md`
 - diff_anchor：`e9320341a8b5c93d136fca64b1aad25825ec2898`
-- target：`git -C '<home>/workspace/CBrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
+- target：`git -C '<home>/workspace/cbrowser_t054' diff e9320341a8b5c93d136fca64b1aad25825ec2898`
 - round：1
 - reviewed_at：2026-11-11T19:31:42+08:00
 
@@ -11,7 +11,7 @@
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/cbrowser_t054`。
 - 11 个新交付文件派审前未执行 `git add -N`，不在 `git diff e932034` 输出中（`scripts/check_edge_subnet.py`、`src/backend/cbrowser/shared/__init__.py`、`src/backend/migrations/versions/0008_drop_network_transaction.py`、8 个 `test_t054_*` 测试文件）；本审阅直接读盘核查全部 11 个文件，并以范围指纹验证内容自派发后未变（见结论段）。`git status` 另有 `review_code.md`（代码路报告，流程文件，不计入指纹）。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0）：
     - 新 t054 测试集（8 文件）：**38 passed**。
@@ -93,7 +93,7 @@ verdict: FAIL
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/cbrowser_t054`。
 - 本轮为 Round 1 修复复审：逐条复核 test f001–f004 是否真修（diff/代码/实跑，不采信处置表自述），并扫描修复 diff 引入的新问题。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
     - Round 1 修复相关测试（t027 新 5 例 + `test_t054_check_edge_subnet.py` 5 例 + `test_t054_shared_client_ip.py` 全文件 8 例）：**18 passed**。
@@ -160,7 +160,7 @@ verdict: FAIL
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/cbrowser_t054`。
 - 本轮为 Round 2 修复复审：逐条复核 test f005 是否真修（diff/代码/实跑，不采信处置表自述），复核 Round 1 的 f001–f004 是否仍消除，并扫描 f005 修复 diff 引入的新问题。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
     - f005 相关测试（t027 全文件 59 例 + `test_t054_check_edge_subnet.py` 9 例 + `test_t054_shared_client_ip.py` 8 例）：**76 passed**。
@@ -223,7 +223,7 @@ verdict: PASS
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/cbrowser_t054`。
 - 本轮为 Round 3 code f003 修复复审：`scripts/check_edge_subnet.py` 的 `main()` 圈复杂度约 23 → 拆分为 `_parse_args(argv)` 与 `_classify_overlaps(...)`；修复方未新增测试，称 9 例既有单测经 `main()` 覆盖抽出的分支、行为未变。本审阅不采信该自述，逐项实测核实。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
     - `test_t054_check_edge_subnet.py` 9 例：**9 passed**。
@@ -288,7 +288,7 @@ verdict: PASS
 
 ### 审阅输入说明
 
-- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/CBrowser_t054`。
+- 仓库落点校验通过：`git rev-parse --show-toplevel` == `<home>/workspace/cbrowser_t054`。
 - 本轮为 Round 4 test f006 修复复审（最后一轮，max_review_round=5）：`tests/unit/test_t054_check_edge_subnet.py` 新增 1 例参数化测试 `test_parse_args_usage_errors_return_two`（:253），4 个入参覆盖 `_parse_args` 的 4 种 `_UsageError` 情形，各断言 exit 2 且 stderr 含 usage 文本，并以 guard 断言解析失败前不触 subprocess；修复方称未改任何生产代码。本审阅不采信该自述，逐项实测核实。
 - 独立实跑（验证 venv `~/workspace/.cb-venv-t051/bin/python`，`PYTHONPATH=src/backend:tests`；前端 Node 26.13.0，`src/frontend` 内 `npm test`）：
     - `test_t054_check_edge_subnet.py`：**13 passed**（9 既有 + 4 新增）。

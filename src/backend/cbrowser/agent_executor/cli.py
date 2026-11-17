@@ -296,7 +296,7 @@ def load_token(args: argparse.Namespace) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="CBrowser agent executor: run a JSON action program "
+        description="cbrowser agent executor: run a JSON action program "
         "over the authenticated automation tunnel."
     )
     parser.add_argument("--endpoint", required=True, help="Automation WS URL")

@@ -1,8 +1,8 @@
-# CBrowser 全仓汇总（review_20261103_185924）
+# cbrowser 全仓汇总（review_20261103_185924）
 
 ## 目标、范围与约束
 
-- 审阅对象：CBrowser 仓库在 HEAD `b47340828820960adc6725407df72c6e11ee348c`（2026-11-03）的工作树快照。
+- 审阅对象：cbrowser 仓库在 HEAD `b47340828820960adc6725407df72c6e11ee348c`（2026-11-03）的工作树快照。
 - 范围：全仓重审。盘点 822 个文本文件、176,080 行（排除本轮 OUTDIR 自身与上轮归档的 `_meta/`），按职责与行为链分为 22 个审阅单元，每单元八视角（contracts / correctness / design / documentation / performance / robustness / security / tests）静态细查。
 - 方法约束：全程静态审阅——不运行代码、测试、构建或 Docker，不使用浏览器。所有 finding 的 verification 均为 static 或 suspected；运行期结论不在本轮证据内。
 - 产品目标（据仓内文档）：多身份 / 隐私隔离的浏览器配置（profile）管理系统，单机单人部署包络（ADR 013）；公网穿透与原生 Linux x86_64 验证为 NOT_RUN / USER_WAIVED，多处文档如实单列。

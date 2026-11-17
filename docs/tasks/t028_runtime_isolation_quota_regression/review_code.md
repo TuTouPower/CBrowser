@@ -3,7 +3,7 @@
 - task：`t028_runtime_isolation_quota_regression`
 - spec：`docs/tasks/t028_runtime_isolation_quota_regression/task.md`
 - diff_anchor：`2bbce465d16d958866691dd97bdbfd1cd7693616`
-- target：`git diff 2bbce465d16d958866691dd97bdbfd1cd7693616`（仓库 CBrowser_t028，分支 t028_runtime_isolation_quota_regression）
+- target：`git diff 2bbce465d16d958866691dd97bdbfd1cd7693616`（仓库 cbrowser_t028，分支 t028_runtime_isolation_quota_regression）
 - round：1
 - reviewed_at：2026-11-04T12:44:13+08:00
 

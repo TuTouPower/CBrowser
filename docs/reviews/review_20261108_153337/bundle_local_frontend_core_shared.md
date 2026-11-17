@@ -85,7 +85,7 @@
 - [Medium][95] src/frontend/src/i18n.tsx:924,937-941,968; src/frontend/src/i18n.test.tsx:33-42 — 违反零兼容负担铁律：保留上游旧仓 cbm.locale 存储键迁移兼容逻辑与无用测试
 
     - ID: f_frontend_legacy_cbm_locale_key; verification: static
-    - Evidence: i18n.tsx:924 定义了 LEGACY_STORAGE_KEY = 'cbm.locale'，并在 937-941 行实现读旧写新并删除旧键的兼容迁移逻辑; i18n.test.tsx:33 为该兼容逻辑单独编写了单元测试; cbm 为上游已废弃项目 CloakBrowser-Manager 的历史缩写，CBrowser 作为破坏性重构项目，严禁背负旧系统兼容包袱
+    - Evidence: i18n.tsx:924 定义了 LEGACY_STORAGE_KEY = 'cbm.locale'，并在 937-941 行实现读旧写新并删除旧键的兼容迁移逻辑; i18n.test.tsx:33 为该兼容逻辑单独编写了单元测试; cbm 为上游已废弃项目 CloakBrowser-Manager 的历史缩写，cbrowser 作为破坏性重构项目，严禁背负旧系统兼容包袱
     - Impact: 在核心基础设施中引入不必要的历史迁移兼容逻辑，违背零兼容负担原则
     - Fix: 彻底删除 LEGACY_STORAGE_KEY 及所有相关的旧键读取和清理代码，清理对应单元测试
 

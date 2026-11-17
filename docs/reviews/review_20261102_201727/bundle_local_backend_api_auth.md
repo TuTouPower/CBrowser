@@ -2,7 +2,7 @@
 
 ## responsibilities
 
-- 实现事实：本单元是 CBrowser v2 的 HTTP 控制面与身份域——FastAPI 应用工厂与异常信封（api/app.py）、公开 v1 路由（profiles/versions/runtime/artifacts/automation/auth）、两条内部服务 RPC 面（supervisor、gateway）、管理员会话认证（Argon2 口令校验、登录限流、会话签发/校验/吊销）、CSRF+Origin 写请求守卫、自动化令牌（cbat\_ 前缀）全生命周期、Viewer/Automation 授权裁决、运行时协调器（向 Supervisor 收敛 desired/observed 状态）与 SSE 事件广播、领域 DTO 与运行时重试策略常量。
+- 实现事实：本单元是 cbrowser v2 的 HTTP 控制面与身份域——FastAPI 应用工厂与异常信封（api/app.py）、公开 v1 路由（profiles/versions/runtime/artifacts/automation/auth）、两条内部服务 RPC 面（supervisor、gateway）、管理员会话认证（Argon2 口令校验、登录限流、会话签发/校验/吊销）、CSRF+Origin 写请求守卫、自动化令牌（cbat\_ 前缀）全生命周期、Viewer/Automation 授权裁决、运行时协调器（向 Supervisor 收敛 desired/observed 状态）与 SSE 事件广播、领域 DTO 与运行时重试策略常量。
 - 文档声明（AGENTS.md，未在本单元内核实）：系统为单机 Docker 部署、Caddy 承担 TLS 与反向代理、Chrome 为唯一官方外部客户端；本单元代码仅能印证 API 默认绑定 127.0.0.1（api/main.py:16-18），网关侧行为不在本单元范围。
 - 实现事实（正向）：口令用 Argon2 校验且无管理员时执行 dummy verify 防时序攻击（auth/service.py:128-136）；会话与自动化令牌均只存 SHA-256 哈希（service.py:143-165、212-244）；服务令牌比较用 hmac.compare_digest（internal_gateway.py:33-42、internal_supervisor.py:30-44）；会话 Cookie 为 HttpOnly+Secure+SameSite=Strict（api/v1/auth_router.py:87-94）；校验错误响应剥离原始输入值防秘密回显（api/app.py:262-282）。
 

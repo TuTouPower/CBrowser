@@ -2,7 +2,7 @@
 
 # 约定（项目级）
 
-模板流程的编号与 Markdown 格式见 `.repo_template/docs/usage.md`「命名与格式」。本文定义 CBrowser 项目特有的技术栈约定、代码规范与 schema 落点。
+模板流程的编号与 Markdown 格式见 `.repo_template/docs/usage.md`「命名与格式」。本文定义 cbrowser 项目特有的技术栈约定、代码规范与 schema 落点。
 
 ## 1. 技术栈与工具链约定
 
@@ -32,7 +32,7 @@
 - 当前全部 tracked 文本与未跟踪且未忽略的新文件（含归档）不得出现开发者家目录绝对路径（`/Users/<name>/`、`/home/<name>/`）；容器内固定用户（`cbrowser`/`appuser`/`selkies` 等）与 `/tmp` 路径不受限。该约定由 `tests/unit/test_repo_hygiene.py` 守护。
 - `docs/spikes/` 中状态为 `completed` / `superseded` 的 spike 只作历史证据，不在仓库内运行；先完整复制到 `.scratch/<probe_name>/`，按报告的依赖与清理契约执行。旧 harness 可能关闭 X11/PulseAudio/Selkies 鉴权，只允许在隔离探针网络与临时容器中运行；探针秘密及 `probe_work/` 工作目录不得入库。
 - **产品无代际标识（t051）**：默认数据根、现行文档、源码与脚本不得出现产品代际自指，模式清单见 `tests/unit/test_t051_generation_hygiene.py` 的 `PATTERNS`；例外仅 `scripts/deploy.sh` 的旧库探测（AC-004，须写出真实旧路径）与对应断言。协议版本（Stream/Agent `version="v2"`）、库版本（Pydantic v2、SQLAlchemy 2.x）、API `version="2.0.0"` 与 SemVer 发布头不在此限。
-- **部署身份与前缀（t051）**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），由 deploy.sh 与 Supervisor 启动在任何 Docker 操作前校验；默认部署前缀为 `cbrowser-t005`（编译内既定标识，不在校验之列，DockerAdapter 构造不校验）；部署身份为确定性 `instance_id`，归属判定只凭 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id（该键即部署身份键；运行时实例 id 写入容器运行时配置，不走标签）。
+- **部署身份与前缀（t051）**：部署输入的资源 prefix 须匹配 `^[a-z0-9][a-z0-9_]*$`（不含连字符），由 deploy.sh 与 Supervisor 启动在任何 Docker 操作前校验；默认部署前缀为 `cbrowser-t005`（编译内既定标识，不在校验之列，DockerAdapter 构造不校验）；首次部署身份为确定性 `instance_id`，同一 prefix 与同一实际数据目录的后续部署复用当前 release 身份，归属判定只凭 `com.cbrowser.instance-id` 标签值 == 本实例 instance_id（该键即部署身份键；运行时实例 id 写入容器运行时配置，不走标签）。
 
 ## 4. 编码与安全规范
 

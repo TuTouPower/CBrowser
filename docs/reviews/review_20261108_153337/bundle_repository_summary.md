@@ -1,10 +1,10 @@
-# CBrowser 全仓架构与实现认知汇总报告 (Repository Summary)
+# cbrowser 全仓架构与实现认知汇总报告 (Repository Summary)
 
 ## 1. 目标、范围、约束与未知前提
 
 ### 1.1 核心目标
 
-CBrowser 是面向隐私浏览器与多身份隔离的单机 Docker 容器化管理系统。系统以 Google Chrome 作为唯一官方支持的外部客户端，采用 Selkies WebRTC 传输低延迟远程画面（基于同机直连，完全去除 TURN/coturn），由独立 Docker 容器沙箱实现严格的 Profile 隔离与页面连接管理。
+cbrowser 是面向隐私浏览器与多身份隔离的单机 Docker 容器化管理系统。系统以 Google Chrome 作为唯一官方支持的外部客户端，采用 Selkies WebRTC 传输低延迟远程画面（基于同机直连，完全去除 TURN/coturn），由独立 Docker 容器沙箱实现严格的 Profile 隔离与页面连接管理。
 
 ### 1.2 审阅范围
 
@@ -158,7 +158,7 @@ ______________________________________________________________________
 1. **偷留旧路由兼容层并隐藏文档 (`f_backend_core_legacy_cdp_router`)**：
     `app.py:418` 偷偷挂载了 `legacy_cdp_router`（映射 `/api/profiles/{id}/cdp`），并通过 `include_in_schema=False` 刻意在 OpenAPI Schema 中隐瞒。这是典型的“背负历史兼容包袱”、“未彻底切断旧路径”的违背铁律行为。
 2. **保留上游旧项目 localStorage 存储键迁移代码 (`f_frontend_legacy_cbm_locale_key`)**：
-    `i18n.tsx:924` 依然保留了针对旧仓 `CloakHQ/CloakBrowser-Manager` 的 `cbm.locale` 历史存储键迁移逻辑与单元测试。CBrowser 是全新破坏性重构系统，无须承担上游历史兼容负担。
+    `i18n.tsx:924` 依然保留了针对旧仓 `CloakHQ/CloakBrowser-Manager` 的 `cbm.locale` 历史存储键迁移逻辑与单元测试。cbrowser 是全新破坏性重构系统，无须承担上游历史兼容负担。
 3. **运行时 AST 源码反射与猴子补丁 (`f_stream_agent_x11_keymap_monkeypatch`)**：
     `x11_keymap.py` 为了解决上游 Selkies 2.2.1 丢键问题，未选择定制 wheel 或向上游修复根因，而是在运行时通过 Python `ast` 模块反编译上游内部类 `__init__` 进行私有属性嗅探，并在内存中动态替换私有方法。属于严重违背“拒绝妥协”的打补丁行为。
 4. **使用 /proc/self/fd 魔法路径规避 socket 长度限制 (`f_supervisor_sun_path_proc_fd_hack`)**：

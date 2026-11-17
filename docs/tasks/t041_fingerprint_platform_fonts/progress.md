@@ -24,7 +24,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 创建期不预测实施步骤。只记有追溯价值的内容；无事项时写“无”。
 
-- 2026-11-06：承接队列（t033 / t034 / t043 / t035 均 done 待整链 merge），`run-begin t041 --base t035_profile_domain_model_rebuild` 完成：status=active、worktree `../CBrowser_t041`、diff_anchor `c30cf20e162f4a39226740b5073c7fbf8c2c0583`、owner_id `opencode_t032_queue_20261105`、execution_id `dc7e6f45557f49b383a4785a54369d76`。`preflight t041 --owner-id ...` = PASS（1 条警告：4 项 UNVERIFIED-SPIKE 须先做正式 spike 并回填结论）。
+- 2026-11-06：承接队列（t033 / t034 / t043 / t035 均 done 待整链 merge），`run-begin t041 --base t035_profile_domain_model_rebuild` 完成：status=active、worktree `../cbrowser_t041`、diff_anchor `c30cf20e162f4a39226740b5073c7fbf8c2c0583`、owner_id `opencode_t032_queue_20261105`、execution_id `dc7e6f45557f49b383a4785a54369d76`。`preflight t041 --owner-id ...` = PASS（1 条警告：4 项 UNVERIFIED-SPIKE 须先做正式 spike 并回填结论）。
 
 - 正式 spike `docs/spikes/s014_fingerprint_platform_fonts/`（report.md 已写阶段记录）已建。本机核实：`/System/Library/Fonts` 83 / `Supplemental` 290 / `/Library/Fonts` 1 / `AssetsV2` 70 个资源；冬青黑体、宋体、Apple 系列字体确认存在；`/opt/homebrew/bin/7zz` 26.03 可用；gate venv 的 cloakbrowser 0.6.4 本机引擎为 145 且二进制未装，故 146 内核实测须在 Linux arm64 Docker 容器用 `.scratch/t032/data/engine-cache/chromium-146.0.7680.177.3`（沿用 s013 探针容器方法）。
 
@@ -42,7 +42,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 2026-11-06（spike 完成）：s014 `report.md` 定稿（决定：是），4 项 UNVERIFIED-SPIKE 全部回填 `task.md` 为结论与验证方式。真实引擎 canvas 测宽的离线字体探测页 E2E 留待实现阶段按 AC-005 交付。接下来进入 9 条 AC 实现：导入工具/内容寻址 manifest、`GET /api/v1/font-sets`、增量迁移加 `fingerprint_platform`/`font_set_id` 并删 `font_bundle`、Runner/Supervisor/fontconfig 隔离、失败封闭、runtime 状态字段、镜像与仓库卫生、long-term 文档。
 
-- 2026-11-06（监督：ac009 协调类 integration 时序回归对比实验）：监督指出 t035 起 ac009 用例反复「单跑通过、全量失败」（t035 最终门禁 `test_ac009_supervisor_unreachable_intent_preserved_and_recovers`、t041 全量 integration `test_ac009_api_supervisor_start_and_stop_coordination`），而 t034/t043 门禁 integration 全绿，t035 改过 `runtime_coordinator.py`，要求不再按负载偶发登记。按 `.scratch/t041/ac009_experiment.py` 在 **t043 分支 tip（detached `eeffb89`，新建临时 worktree `../CBrowser_t043_baseline`）** 与 **t041 worktree** 各跑：目标文件单跑 12 次、全量 integration 3 次、3 个目标文件进程并发 3 轮（9 进程）、以及门禁式前置负载（unit 全量 → integration 全量）1 次，共每版 19 次目标运行。两版测试文件 `diff -q` 一致（t035 未改该文件），对比公平。
+- 2026-11-06（监督：ac009 协调类 integration 时序回归对比实验）：监督指出 t035 起 ac009 用例反复「单跑通过、全量失败」（t035 最终门禁 `test_ac009_supervisor_unreachable_intent_preserved_and_recovers`、t041 全量 integration `test_ac009_api_supervisor_start_and_stop_coordination`），而 t034/t043 门禁 integration 全绿，t035 改过 `runtime_coordinator.py`，要求不再按负载偶发登记。按 `.scratch/t041/ac009_experiment.py` 在 **t043 分支 tip（detached `eeffb89`，新建临时 worktree `../cbrowser_t043_baseline`）** 与 **t041 worktree** 各跑：目标文件单跑 12 次、全量 integration 3 次、3 个目标文件进程并发 3 轮（9 进程）、以及门禁式前置负载（unit 全量 → integration 全量）1 次，共每版 19 次目标运行。两版测试文件 `diff -q` 一致（t035 未改该文件），对比公平。
 
     - **结果**：`t043_tip` 单跑 0/12、全量 ac009 0/3、并发 0/9、门禁式负载 0/1；`t041` 单跑 0/12、全量 ac009 0/3、并发 0/9、门禁式负载 0/1。**两版失败率均为 0/19，无差异**。原始数据 `.scratch/t041/ac009_experiment.json`。
     - 结论：对比实验**不支持**「t035 引入 ac009 时序回归」；历史各 1 次失败在 38 次对照运行中未复现，属有败率数据支撑的低频门禁负载时序项，按监督第 3 点如实登记（不归因 t035、不修代码、不冒充 t032 已登记遗留）。临时 worktree 已按 `git worktree remove --force` + `git worktree prune` 规范清理。若后续完整门禁再现，按当时日志重新定性。

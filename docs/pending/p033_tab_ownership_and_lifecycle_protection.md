@@ -14,13 +14,13 @@ reason: "已核实范围并转交：t030 页面来源/管理/清理权限分离�
 ## 分析基线
 
 - 分析时间：2026-11-04T00:00:12+08:00。
-- CBrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
+- cbrowser 基线：main@bba5412b623729e3fb44d5c8b9d2ef150fb60604；工作区含既有前端未提交改动。
 - 证据范围：源码、现行文档与 backlog 静态核对；未运行测试、复现实验或外部站点验证。
 - 以下方案与验证条件均为分析建议，决策待定；原处理状态和目录归属保持不变。
 
 ## 当前边界与 Ego 借鉴
 
-- CBrowser 当前区分 Profile、BrowserRuntime 与 ViewerConnection；本条管理的是容器内 CloakBrowser 的内部 Tab，不是外部 Chrome 操控页。
+- cbrowser 当前区分 Profile、BrowserRuntime 与 ViewerConnection；本条管理的是容器内 CloakBrowser 的内部 Tab，不是外部 Chrome 操控页。
 - 关闭外部 ViewerConnection 不应关闭 BrowserRuntime；同样，执行器连接退出不应隐式停止 Profile。
 - 原登记使用 openedBy: agent | user，但实际来源可能未知；不能把无法证明来源的页面默认归为 Agent。
 - Ego 区分 managed/unmanaged 页面并保留 openedBy；adopt 沿用页面原始来源，finish 批量清理只选择 openedBy 为 agent 的页面。

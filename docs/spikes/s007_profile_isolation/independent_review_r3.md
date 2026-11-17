@@ -1,4 +1,4 @@
-# CBrowser v2 双 Profile 隔离技术 Spike (Revision 3) 独立复核报告
+# cbrowser v2 双 Profile 隔离技术 Spike (Revision 3) 独立复核报告
 
 - **复核环境**: Darwin arm64 (OrbStack Docker backend, Linux 内核沙箱)
 - **复核模型**: Gemini `cpa/gemini-3.8-flash` (独立三审 Reviewer)
@@ -80,8 +80,8 @@ ______________________________________________________________________
 ## 四、渲染质量与日志脱敏复核 (Visual & Secret Masking)
 
 1. **真实 UI 渲染复核**:
-    - `screenshot_a.png` (深蓝主题 `#102040`, Profile Identifier `A`, 标题 `CBrowser Cloak Profile A 1080p`)；
-    - `screenshot_b.png` (深红棕主题 `#402010`, Profile Identifier `B`, 标题 `CBrowser Cloak Profile B 1080p`)；
+    - `screenshot_a.png` (深蓝主题 `#102040`, Profile Identifier `A`, 标题 `cbrowser Cloak Profile A 1080p`)；
+    - `screenshot_b.png` (深红棕主题 `#402010`, Profile Identifier `B`, 标题 `cbrowser Cloak Profile B 1080p`)；
     - 两张截图均为真实 Chromium 1080p 窗口，非白屏、非透明，背景主色匹配率 >67%，非白色像素占比 >88%，DOM 与截图色彩高度吻合。
 2. **凭据安全与日志脱敏**:
     - `reproduce.log` 中所有 32 位及以上十六进制 Cookie、容器 64 位 SHA256 ID、镜像 Digest 均被精准脱敏为 `[REDACTED_COOKIE_HEX]`；无任何私钥、Cookie 明文泄露。
@@ -93,7 +93,7 @@ ______________________________________________________________________
 1. **技术范围**: 本次 Spike 仅在单机 Docker 模拟环境（Xvfb / PulseAudio 虚拟声卡）下验证了 Linux 容器内核层（UID、只读 rootfs、IPC 隔离、卷隔离、网络端口）的安全隔离边界。
 2. **非生产冻结**:
     - 原始 PCM 采样与虚拟声卡验证**绝不等于 WebRTC 生产端到端媒体管道已就绪**（WebRTC 音画流传输、STUN/TURN NAT 穿透由 `s004` spike 单独验证）；
-    - 本技术验证通过**不豁免 CBrowser 全 17 项生产门禁**；
+    - 本技术验证通过**不豁免 cbrowser 全 17 项生产门禁**；
     - 系统采用独立沙箱容器与动态生命周期，无独占租约机制。
 
 ______________________________________________________________________

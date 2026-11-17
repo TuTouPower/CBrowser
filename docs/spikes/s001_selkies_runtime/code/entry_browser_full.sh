@@ -9,7 +9,7 @@ mkdir -p /pulse-socket ~/.config/pulse ~/.config/openbox
 chmod 777 /pulse-socket
 cat << 'PULSE_EOF' > /tmp/pulse-default.pa
 load-module module-native-protocol-unix auth-anonymous=1 socket=/pulse-socket/pulse-socket
-load-module module-null-sink sink_name=cbrowser_sink sink_properties=device.description="CBrowser_Virtual_Sink"
+load-module module-null-sink sink_name=cbrowser_sink sink_properties=device.description="cbrowser_Virtual_Sink"
 set-default-sink cbrowser_sink
 PULSE_EOF
 

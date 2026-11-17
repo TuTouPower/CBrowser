@@ -140,7 +140,7 @@ Weblink 基线为提交 `6459eb2a9fe7945cdeb88948b5f3cb7e85ea47ed`（41 行）�
 |`co,end` 服务端分支|`msg_type == "co" and toks[1] == "end"` → `text_to_type = msg[7:]`；Wayland 走 `_keyboard_enqueue(("co_end", text_to_type))`；X11 走 `_type_text_xtest(...)`，失败才 `xdotool type -- text_to_type`|`:9667-9686`（C4 9667-9686）|
 |服务端内部 `co,end` 再投递|auto-repeat / atomic keysym 回退路径在服务端调用 `self.on_message(f"co,end,{char_to_type}")`|`:5716`、`:9217`|
 |按键 / Unicode 注入链|XTEST 原子重复失败后回退 `co,end`；keysym → `U{unicode_codepoint:04X}` 传给 xdotool；`_type_keysym_fallback` 降级：Wayland virtual-keyboard → clipboard paste，X11 XTEST shim → xdotool key → xdotool type|`:5659`、`:6026`、`:6471-6489`、`:6498-6562`|
-|Wayland clipboard 回退|上游 `_type_keysym_fallback` 在 Wayland 分支含 `_inject_text_via_clipboard`；CBrowser 为 X11 / Xvfb，该分支不激活；这不等同于当前「不用剪贴板提交」规约被违反，也不授权改规约|`:6477-6488`、R-1 / C-1|
+|Wayland clipboard 回退|上游 `_type_keysym_fallback` 在 Wayland 分支含 `_inject_text_via_clipboard`；cbrowser 为 X11 / Xvfb，该分支不激活；这不等同于当前「不用剪贴板提交」规约被违反，也不授权改规约|`:6477-6488`、R-1 / C-1|
 |二进制剪贴板设置|`_ebc` 消息开关 `enable_binary_clipboard`|`:9687-9693`|
 
 状态：**静态证据**；「服务端接收完整文字后进入 XTest / xdotool」由 9667-9686 行确认（C4, 62 行）。真实提交结果 NOT_RUN。
@@ -220,7 +220,7 @@ d014 / d017 记录了特定环境下官方 `co,end` → XTest 提交中文 / 标
 |K5|wheel XTEST / xdotool / Wayland virtual-keyboard / clipboard paste|静态确认 Linux 注入链与 Unicode keysym 处理；真实验证 NOT_RUN|clipboard paste 触碰剪贴板并受 C-1 约束；焦点前后校验 / 超时不重放为借鉴项|地址栏 / 富文本 / 隐私事件差异|在隔离 X11 / Xvfb 环境逐项验证|
 |K6|CDP `Input.insertText`（P5 仅记录接口存在）|**不适用原因**：目标引擎 / 地址栏 / 富文本 / 隐私影响均未验证，不能据接口存在下结论|浏览器 CDP 权限模型未评估|全部|条件方案；需先验证目标引擎与权限评估|
 |K7|上游源码 / 派生包|静态确认本仓无派生流水线；若胜出须补全 §2.1|修 / 不修取决于上游语义|构建 / 分发 / 锁 / 回滚全链|条件方案；本轮不执行构建或外部发布|
-|K8|剪贴板对照|静态确认上游 Wayland 回退含 clipboard paste，但 CBrowser X11 分支不激活；当前规约仍生效|触碰剪贴板；改规约须列副作用 + 用户策略决策（687 行）|纯文本 round-trip / 截断 / 重复 / 跨 Profile 隔离（t014 历史缺口）|条件方案；不把未批准变更当成已允许|
+|K8|剪贴板对照|静态确认上游 Wayland 回退含 clipboard paste，但 cbrowser X11 分支不激活；当前规约仍生效|触碰剪贴板；改规约须列副作用 + 用户策略决策（687 行）|纯文本 round-trip / 截断 / 重复 / 跨 Profile 隔离（t014 历史缺口）|条件方案；不把未批准变更当成已允许|
 
 **总判定**：本轮只交付中立对照框架、静态证据与验证矩阵；**未选定任何候选，未证明端到端输入通过，未记 A39 完成**。能说明不适用原因（K6、K8 的规约冲突、W4/W5 的不可移植性）也是有效研究结论（700 行）。
 

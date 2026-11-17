@@ -56,7 +56,7 @@ backstop 确认项。决策见 ADR 019（`docs/blueprint/decisions.md`）。
     前进、best-effort 经 UDS /control 向 Agent 发 release_attendant），再关
     API 代理 websocket；API 层隧道先于 SSE 发布关闭。
 - 竞态守卫：消息处理校验隧道代次与当前代次，不一致即丢弃/拒绝；API
-    转发握手带 `X-CBrowser-Control-Generation`，Supervisor 对不高于围栏
+    转发握手带 `X-cbrowser-Control-Generation`，Supervisor 对不高于围栏
     的转发代次以 4403 拒绝；无该头视为基础设施直连调用（Supervisor token
     即服务间凭证），放行并记日志。
 - Supervisor 不可达时接管仍提交（API 为准），记录置

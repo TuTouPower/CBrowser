@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to CBrowser are documented here.
+All notable changes to cbrowser are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Community fork: English / 中文 UI language switch.** Top-bar EN/中文 toggle and a Language setting; preference is stored locally. Default follows the browser locale (`zh*` → Chinese, otherwise English). Based on upstream CloakBrowser Manager 0.1.8, rebranded to CBrowser.
+- **Community fork: English / 中文 UI language switch.** Top-bar EN/中文 toggle and a Language setting; preference is stored locally. Default follows the browser locale (`zh*` → Chinese, otherwise English). Based on upstream CloakBrowser Manager 0.1.8, rebranded to cbrowser.
 
 ### Notes
 

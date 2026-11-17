@@ -87,7 +87,7 @@
 - [Medium][90] tests/e2e/test_stream_selkies_tokens_e2e.py:327-340 — AC-010 的 Agent token 注入由测试内仿真函数完成，且 viewer 冒充 controller 的'被降级'断言缺失
 
     - ID: f_tests_e2e_stream_frontend_05; verification: static
-    - Evidence: agent_forward_hello 注释自述 'Emulates StreamAgent upstream worker HELLO token injection'，注入逻辑是测试本地 dict 拼接，未经真实 Stream Agent 代码路径; 同文件前两个用例以测试自带 bootstrap 脚本（:53-85）直接拉起上游 selkies.settings/stream_server，验证的多为上游 Selkies 行为而非 CBrowser 组件; Case D（:271-287）声称 viewer token 冒充 controller 应 'Accepted but coerced'，实际只断言回复以 HELLO 开头，未校验服务端回告的 role/slot 是否已被降为 viewer
+    - Evidence: agent_forward_hello 注释自述 'Emulates StreamAgent upstream worker HELLO token injection'，注入逻辑是测试本地 dict 拼接，未经真实 Stream Agent 代码路径; 同文件前两个用例以测试自带 bootstrap 脚本（:53-85）直接拉起上游 selkies.settings/stream_server，验证的多为上游 Selkies 行为而非 cbrowser 组件; Case D（:271-287）声称 viewer token 冒充 controller 应 'Accepted but coerced'，实际只断言回复以 HELLO 开头，未校验服务端回告的 role/slot 是否已被降为 viewer
     - Impact: 真实 Agent 的注入实现损坏（漏注入/注入错 token）时本组用例不报；viewer 越权未被降级这类安全回归可无声通过
     - Fix: 注入用例改为经真实 Stream Agent 容器建立观看者连接（gateway 拓扑用例已具备条件），或在断言中解析 HELLO server 回告并断言 role 被强制为 viewer
 

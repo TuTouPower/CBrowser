@@ -3,7 +3,7 @@
 - task：`t024_delivery_verification_evidence`
 - spec：`docs/tasks/t024_delivery_verification_evidence/task.md`
 - diff_anchor：`597c09aff927c8cc54f72bfc405ac0336d58e22e`
-- target：`git -C '<home>/workspace/CBrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
+- target：`git -C '<home>/workspace/cbrowser_t024' diff 597c09aff927c8cc54f72bfc405ac0336d58e22e`
 - round：1
 - reviewed_at：2026-11-04T05:59:15+08:00
 
@@ -192,7 +192,7 @@ verdict: PASS
 ## Round 3 (2026-11-04T06:27:12+08:00)
 
 - round：3（定向复审）
-- 复审范围：仅 Round 2 之后两处增量——(1) t024_test_f011 修复（`tests/unit/test_docker_doubles_contract.py` 集合语义双侧对照）；(2) code 侧未进表观察增量（`tests/unit/test_stream_ice_config.py` 的 CWD 相对路径改 `__file__` 锚定）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/CBrowser_t024`。
+- 复审范围：仅 Round 2 之后两处增量——(1) t024_test_f011 修复（`tests/unit/test_docker_doubles_contract.py` 集合语义双侧对照）；(2) code 侧未进表观察增量（`tests/unit/test_stream_ice_config.py` 的 CWD 相对路径改 `__file__` 锚定）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/cbrowser_t024`。
 
 reviewed_scope: 80f9ed5b1772c829
 
@@ -227,7 +227,7 @@ verdict: PASS
 ## Round 4 (2026-11-04T06:31:21+08:00)
 
 - round：4（recovery 定向复审）
-- 复审范围：仅 Round 3 双路 PASS（reviewed_scope `80f9ed5b1772c829`）之后的三项流程性增量——(1) `tests/unit/review_privacy_allowlist.txt` 追加 4 条 t024 review 报告登记；(2) `note.md` 的 Review 处置改为检查器要求的表格格式；(3) `task.py finish` 把任务目录归档到 `docs/archive/tasks/t024_delivery_verification_evidence/`（review 报告随之移动）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/CBrowser_t024`。本轮不重开全量评审，交付语义沿 Round 3 结论。
+- 复审范围：仅 Round 3 双路 PASS（reviewed_scope `80f9ed5b1772c829`）之后的三项流程性增量——(1) `tests/unit/review_privacy_allowlist.txt` 追加 4 条 t024 review 报告登记；(2) `note.md` 的 Review 处置改为检查器要求的表格格式；(3) `task.py finish` 把任务目录归档到 `docs/archive/tasks/t024_delivery_verification_evidence/`（review 报告随之移动）。落点校验：`git rev-parse --show-toplevel`（不带 `-C`，workdir 为仓库根）输出精确等于 `<home>/workspace/cbrowser_t024`。本轮不重开全量评审，交付语义沿 Round 3 结论。
 
 reviewed_scope: 831bbb2a2638ea28
 

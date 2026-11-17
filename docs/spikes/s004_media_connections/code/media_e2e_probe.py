@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CBrowser v2.3 - WebRTC Media E2E Tech Validation (Chapter 18: Items 6-10, 12)
+cbrowser v2.3 - WebRTC Media E2E Tech Validation (Chapter 18: Items 6-10, 12)
 Strict Suite v4 complying with all reviewer mandates:
 - Single Chrome Context (Unified User Session, dual tabs)
 - 1920x1080 fixed resolution assertion & external viewport resize resistance
@@ -295,7 +295,7 @@ async def run_suite_v4():
     }
 
     print("=====================================================================")
-    print("  Starting CBrowser v2 WebRTC Media Tech Validation (Suite v4 Strict)")
+    print("  Starting cbrowser v2 WebRTC Media Tech Validation (Suite v4 Strict)")
     print("=====================================================================")
 
     subprocess.run(f"rm -rf {PROFILE_DIR}", shell=True)

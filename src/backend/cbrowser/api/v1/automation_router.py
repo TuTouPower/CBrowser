@@ -180,7 +180,7 @@ async def automation_cdp(websocket: WebSocket, profile_id: str):
         if control_generation is not None:
             # The Supervisor rejects forwarded handshakes at or below
             # its fenced generation (stale API processes after takeover).
-            forward_headers["X-CBrowser-Control-Generation"] = str(
+            forward_headers["X-cbrowser-Control-Generation"] = str(
                 control_generation
             )
         upstream = await websockets.connect(

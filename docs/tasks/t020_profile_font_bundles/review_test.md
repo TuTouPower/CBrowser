@@ -3,7 +3,7 @@
 - task：`t020_profile_font_bundles`
 - spec：`docs/tasks/t020_profile_font_bundles/task.md`
 - diff_anchor：`30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
-- target：`git -C '<home>/workspace/CBrowser_t020' diff 30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
+- target：`git -C '<home>/workspace/cbrowser_t020' diff 30f5078d597d6f8c0b1e73986339e22ab7a1aafc`
 - round：1
 - reviewed_at：2026-11-04T01:09:39+08:00
 
@@ -44,7 +44,7 @@ reviewed_scope: 5f0d2fda8efbde6b
     - AC-006：`re_verified`。独立复跑前端测试 3 条全过（Detail 回显 `wqy-zenhei`、三档 options 全集、改选后提交 payload；New 默认 `none`、选档后提交 payload），integration 复证 API 返回与保存值一致；保存后前端重渲染一环的胶水缺口见 f002（minor，不推翻本条主体证据）。
     - coverage = 2 / 6
     - 建议合并前人工抽查 trust_prior 项（AC-001 镜像条款、AC-003、AC-004、AC-005 隔离条款），并在真实环境优先执行 p022 留存 evidence 后再对外宣称该四项已实测。
-- reviewer 独立复跑结果：后端新增测试按任务给定命令复跑，`tests/unit/test_font_bundles.py`（20 条）+ `tests/integration/test_profile_font_bundle_api.py`（4 条）共 **24 passed**；全量 `tests/unit` 为 **573 passed / 2 failed**，两条失败即 note 点名的存量基线（`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths`、`test_runtime_persistence_guards.py::test_terminal_storage_failure_propagates_instead_of_reporting_saved`），审查侧另在干净主干 `~/workspace/CBrowser`（c7ec89b）单独复跑该两条、同为 2 failed，证实零新增失败、note 基线声明属实。前端按给定命令复跑 **3 passed**（2 文件）。e2e collect-only 5 条正常、未执行（环境不具备，与 note 一致）。note 中其余门禁声明（模板契约、前端全量、build 等）不在本 reviewer 复跑范围内，未独立核对。
+- reviewer 独立复跑结果：后端新增测试按任务给定命令复跑，`tests/unit/test_font_bundles.py`（20 条）+ `tests/integration/test_profile_font_bundle_api.py`（4 条）共 **24 passed**；全量 `tests/unit` 为 **573 passed / 2 failed**，两条失败即 note 点名的存量基线（`test_repo_hygiene.py::test_tracked_files_do_not_leak_developer_home_paths`、`test_runtime_persistence_guards.py::test_terminal_storage_failure_propagates_instead_of_reporting_saved`），审查侧另在干净主干 `~/workspace/cbrowser`（c7ec89b）单独复跑该两条、同为 2 failed，证实零新增失败、note 基线声明属实。前端按给定命令复跑 **3 passed**（2 文件）。e2e collect-only 5 条正常、未执行（环境不具备，与 note 一致）。note 中其余门禁声明（模板契约、前端全量、build 等）不在本 reviewer 复跑范围内，未独立核对。
 - 本轮新发现：2 条（minor 2；critical/important 0）
 - 未进表的提示：e2e isolation 场景在单个容器内以双 runner（双 display、独立 run_dir 与 per-process `FONTCONFIG_FILE`）验证隔离，与 AC-005 字面「各自 Browser 容器」拓扑不同；生产拓扑（每 Profile 独立容器）隔离强度只增不减，且单容器双进程恰是对 env 级隔离机制的更严苛测法，不构成证据缺口，仅记录拓扑差异。runner 的 `start()` 内调用 `prepare_profile_fontconfig(run_dir, cfg.font_bundle)` 的胶水行无 unit 直接断言，由 e2e render 场景覆盖（trust_prior 同批），机制两端均已 unit 复验，不单独成条。
 - 总体判断：可自动复验的证据链（AC-002、AC-006 及各 trust_prior 条款的机制半）扎实、与 note 声明逐项一致，突变抽查整体可证伪；黑盒条款的跳过披露属实、按所有者既定口径计 pass 且债务已由 p022 完整追踪，无未解决的 critical/important，给予 PASS。本 PASS 不是黑盒已执行的证据声明；AC-001 镜像条款与 AC-003/AC-004/AC-005 渲染条款的 trust_prior 状态与 p022 未开状态须原样保留至真实环境执行回填。

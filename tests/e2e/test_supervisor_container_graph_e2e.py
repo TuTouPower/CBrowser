@@ -522,8 +522,8 @@ sys.stdout.write(json.dumps(result))
                 headers={
                     "Origin": auth_ctx.allowed_origin,
                     "Cookie": auth_headers["Cookie"],
-                    "X-CBrowser-Authorized-Profile": target,
-                    "X-CBrowser-Viewer-Grant": ViewerGrantAuthority(
+                    "X-cbrowser-Authorized-Profile": target,
+                    "X-cbrowser-Viewer-Grant": ViewerGrantAuthority(
                         keys["viewer_grant"]
                     ).mint(target),
                 },

@@ -25,7 +25,7 @@
 
 ## 复核发现（如实记录，未修）
 
-- p096 措辞：归档「全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑」在当前源码不够精确 —— `src/backend/cbrowser/stream_agent/policy.py:578` 存在 `active_peers`，语义是「无活跃 viewer → 暂停采集」的可见性仲裁（`reconcile_capture_state`），不是「静止 8 / 运动 30 FPS」帧率仲裁；全仓仍无 8/30 数值仲裁逻辑。gate5 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 覆盖的正是前者。AC-002 核心判定（8/30 属 Selkies 上游策略、非 CBrowser 实现）不变，仅措辞按此细化；未改归档历史正文、未改代码。
+- p096 措辞：归档「全仓检索确认后端无 `active_peers` / `fps` 仲裁逻辑」在当前源码不够精确 —— `src/backend/cbrowser/stream_agent/policy.py:578` 存在 `active_peers`，语义是「无活跃 viewer → 暂停采集」的可见性仲裁（`reconcile_capture_state`），不是「静止 8 / 运动 30 FPS」帧率仲裁；全仓仍无 8/30 数值仲裁逻辑。gate5 `test_frontend_media_e2e.py::test_ac004_visibility_stop_start_through_full_app` 覆盖的正是前者。AC-002 核心判定（8/30 属 Selkies 上游策略、非 cbrowser 实现）不变，仅措辞按此细化；未改归档历史正文、未改代码。
 - p091 细节：t073 把顶栏状态标签换成 `sessHeader*` 带主语 key，p091 补的中文 recovering/failed/unknown 三态覆盖仍保留（`SessionHeader.test.tsx:299-301`）。
 - 9 项归档状态与最终裁定在 `ae02d42` 上均仍成立，无新增阻塞项。
 

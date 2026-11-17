@@ -136,7 +136,7 @@ async def test_a12_concurrent_commands_keep_distinguishable_errors() -> None:
         inbound=[
             {
                 "id": 1,
-                "error": {"message": "CBrowser tunnel: blocked", "code": -32000},
+                "error": {"message": "cbrowser tunnel: blocked", "code": -32000},
             }
         ]
     )

@@ -3,7 +3,7 @@
 - task：`t026_runtime_infrastructure_reconciliation`
 - spec：`docs/tasks/t026_runtime_infrastructure_reconciliation/task.md`
 - diff_anchor：`c2bd696bf7b2ca869642abb3cf0ea2dc4f6382b3`
-- target：`git -C 'CBrowser_t026' diff c2bd696bf7b2ca869642abb3cf0ea2dc4f6382b3`
+- target：`git -C 'cbrowser_t026' diff c2bd696bf7b2ca869642abb3cf0ea2dc4f6382b3`
 - round：1
 - reviewed_at：2026-11-04T10:07:42+08:00
 

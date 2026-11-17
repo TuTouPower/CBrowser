@@ -1,4 +1,4 @@
-"""CBrowser baseline schema (t035).
+"""cbrowser baseline schema (t035).
 
 Single baseline revision replacing the 0001-0009 chain.  The revision id
 is deliberately new: any database stamped with an old revision belongs to
@@ -232,7 +232,7 @@ def upgrade() -> None:
 
 
 _UNSUPPORTED_DOWNGRADE = (
-    "Downgrade is not supported: CBrowser migrations only move forward. "
+    "Downgrade is not supported: cbrowser migrations only move forward. "
     "Roll back with a release rollback and a data-directory rebuild instead."
 )
 

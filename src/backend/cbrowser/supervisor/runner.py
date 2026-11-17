@@ -562,7 +562,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="CBrowser Runtime Supervisor")
+    parser = argparse.ArgumentParser(description="cbrowser Runtime Supervisor")
     parser.add_argument(
         "--api-url", default=os.getenv("CBROWSER_API_URL", "http://127.0.0.1:8000")
     )

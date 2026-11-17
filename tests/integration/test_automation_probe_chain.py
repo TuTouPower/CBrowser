@@ -316,7 +316,7 @@ def _pid_alive(pid: int) -> bool:
 
 def _assert_matrix_output(payload: dict) -> None:
     assert payload["contexts"] == 1
-    assert payload["popup"]["title"] == "CBrowser Probe Popup"
+    assert payload["popup"]["title"] == "cbrowser Probe Popup"
     assert payload["pages_after_popup_close"] >= 1
     assert payload["frame_found"] is True
     assert "pointerdown" in payload["frame_click_events"]
@@ -390,7 +390,7 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
                 )
                 if not no_defaults:
                     assert rc != 0, "no_defaults=False connect must be refused"
-                    assert "CBrowser tunnel" in stderr
+                    assert "cbrowser tunnel" in stderr
                     assert "Browser.setDownloadBehavior" in stderr
                     # Nothing was clicked (connect failed first), so no
                     # download may have been captured.
@@ -401,7 +401,7 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
                     }
                     assert _pid_alive(int(runner.chrome_pid))
                     assert await page.evaluate("() => document.title") == (
-                        "CBrowser Probe Main"
+                        "cbrowser Probe Main"
                     )
                     continue
                 assert rc == 0, stderr
@@ -419,7 +419,7 @@ async def test_probe_chain_target_engine_matrix_and_disconnect() -> None:
                 outcomes[str(no_defaults)] = payload
                 assert _pid_alive(int(runner.chrome_pid))
                 assert await page.evaluate("() => document.title") == (
-                    "CBrowser Probe Main"
+                    "cbrowser Probe Main"
                 )
 
             methods = bridge.client_methods()
@@ -685,7 +685,7 @@ async def test_probe_chain_dialog_contract() -> None:
             evidence["after_vanished_session"] = new_session
             # The Profile must not be wedged for the user either way.
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
 
             rc, beforeunload, stderr = await dialog(
@@ -831,7 +831,7 @@ async def test_probe_target_engine_dialog_contract() -> None:
             }
             evidence["after_vanished_session"] = new_session
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
 
             rc, beforeunload, stderr = await dialog(
@@ -946,7 +946,7 @@ async def test_probe_chain_client_killed_mid_connection_survival() -> None:
             await asyncio.sleep(1)
             assert _pid_alive(pid), "browser died with the killed client"
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
         finally:
             if proc is not None and proc.poll() is None:
@@ -1010,7 +1010,7 @@ async def test_probe_chain_external_browser_close_rejected() -> None:
                 rejected = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
                 assert rejected["id"] == 2
                 assert rejected["error"]["code"] == -32000
-                assert "CBrowser tunnel" in rejected["error"]["message"]
+                assert "cbrowser tunnel" in rejected["error"]["message"]
             pid = int(runner.chrome_pid)
             # Poll liveness instead of a fixed sleep: a rejected close
             # either takes effect immediately or not at all, so repeated
@@ -1023,7 +1023,7 @@ async def test_probe_chain_external_browser_close_rejected() -> None:
                 )
                 await asyncio.sleep(0.1)
             assert await page.evaluate("() => document.title") == (
-                "CBrowser Probe Main"
+                "cbrowser Probe Main"
             )
             stopped = [
                 candidate

@@ -8,7 +8,7 @@ sid: "s020"
 
 ## 问题
 
-t063 未知契约：selkies 2.2.1 是否提供公开扩展点，使 CBrowser 的采集策略（WebRTC 服务行为）与 X11 键盘映射（named spares / text_room / prebind 刷新）无需运行时全局替换、动态补丁与私有 ABI 扫描即可接入；若不存在，受控包路线（固定上游 wheel + 构建期显式补丁）是否可行：补丁可否精确锚定、行为可否与现行运行时补丁等价、最终制品可否确定性重建。另核许可证是否允许修改与再分发。
+t063 未知契约：selkies 2.2.1 是否提供公开扩展点，使 cbrowser 的采集策略（WebRTC 服务行为）与 X11 键盘映射（named spares / text_room / prebind 刷新）无需运行时全局替换、动态补丁与私有 ABI 扫描即可接入；若不存在，受控包路线（固定上游 wheel + 构建期显式补丁）是否可行：补丁可否精确锚定、行为可否与现行运行时补丁等价、最终制品可否确定性重建。另核许可证是否允许修改与再分发。
 
 ## 成功判据
 
@@ -26,7 +26,7 @@ t063 未知契约：selkies 2.2.1 是否提供公开扩展点，使 CBrowser 的
 
 - **无公开扩展点**：`selkies/__main__.py:173` 在 `run()` 内硬编码 `server.register_service("webrtc", WebRTCService(server))`，类为模块级直接导入（同文件 37 行）；全包无 entry points 插件机制（dist-info `entry_points.txt` 仅 console_scripts 与 jupyter_serverproxy_servers）、无服务工厂/注册钩子，settings 无服务类配置项。现行代码只能靠替换模块全局变量接入。
 - **键盘无公开工厂**：`_XTestKeyboard` 为私有类，在 `input_handler.py:4854` 的 name-mangled 私有方法 `__keyboard_connect` 内直接实例化（`self.keyboard = _XTestKeyboard(self.xdisplay)`），无工厂、无注册表、无公开别名。
-- **上游钩子方法本身是设计内覆写点**：`webrtc_mode.WebRTCService` 自身定义 `handle_session_start`、`setup_callbacks`、`_on_peer_data_message`、`handle_peer_gone`、`handle_video_consumer_active`、`handle_consumers_changed`、`_resume_display_capture` 并在 `setup_callbacks` 内把 rtc_app 回调指向这些方法；CBrowser 策略子类覆写的正是这组成员。故策略以自有源码中的具名子类覆写公开服务类是成立的，须去除的是运行时全局替换与键盘运行时补丁/ABI 扫描。
+- **上游钩子方法本身是设计内覆写点**：`webrtc_mode.WebRTCService` 自身定义 `handle_session_start`、`setup_callbacks`、`_on_peer_data_message`、`handle_peer_gone`、`handle_video_consumer_active`、`handle_consumers_changed`、`_resume_display_capture` 并在 `setup_callbacks` 内把 rtc_app 回调指向这些方法；cbrowser 策略子类覆写的正是这组成员。故策略以自有源码中的具名子类覆写公开服务类是成立的，须去除的是运行时全局替换与键盘运行时补丁/ABI 扫描。
 - **许可证**：dist-info METADATA 为 `License-Expression: MPL-2.0`，允许修改与再分发（保留许可证与 dist-info 即可），受控构建路线无许可证障碍。
 - **补丁锚定**：两文件共 8 处替换锚点在钉版源码各出现恰好一次（生成脚本断言计数 != 1 即中止）；补丁后两文件 py_compile 通过。
 - **行为等价**（verify_behavior.py 全部断言通过）：evdev 与非 evdev 两种键码体系下 spare 池均为 [191, 192, 193, 210, 211]（未命名 194/212 被滤除）、`_text_codes` 分别为 0 与 3，与 wrapper 侧逐项一致；text_room 分别为 4 与 2，一致；prebind 绑定同一 overlay（键 0x4E00/0x4E01）、双方各恰好一次 xkbcomp 重载、settle 截止不早于 +25ms；4/5 池槽被按住时双方均拒绝（False、零绑定、零重载）。

@@ -3,7 +3,7 @@
 - task：`t051_runtime_deploy_reliability`
 - spec：`docs/archive/tasks/t051_runtime_deploy_reliability/task.md`
 - diff_anchor：`3331ed3c12518849a416a0c74b6c844f033fc8c7`
-- target：`git -C '<home>/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
+- target：`git -C '<home>/workspace/cbrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
 - round：1
 - reviewed_at：2026-11-11T09:02:06+08:00
 
@@ -83,7 +83,7 @@ reviewed_scope: a7d514f293a543a8
 - AC-016：TICK-VALID，re_verified。deploy.sh 在任何 Docker 操作前以 `^[a-z0-9][a-z0-9_]*$` 校验 prefix；runner main 在持锁与任何 Docker 调用前校验显式提供的前缀。
 - AC-017：TICK-VALID，re_verified。单一 JSON 指针文件；`atomic_write_text` 经查证含文件 fsync、rename 与父目录 fsync；`activate_release` 一次写出 current+previous。
 - AC-018：TICK-VALID，re_verified。`db_inspect.py` 不可读库返回非零；deploy 与 rollback 的 stamp 检查均 fail-closed 且在启动/替换容器前。
-- AC-019：TICK-VALID，re_verified。grep 全仓 src/scripts/docs/blueprint/docs/specs 无残留「CBrowser v2」自指；迁移文件改名、revision `b7e1c9d4a2f3` 不变。
+- AC-019：TICK-VALID，re_verified。grep 全仓 src/scripts/docs/blueprint/docs/specs 无残留「cbrowser v2」自指；迁移文件改名、revision `b7e1c9d4a2f3` 不变。
 - AC-020：TICK-VALID，re_verified。探针验证 URL 内嵌凭据、任意 cookie 值、含空格的引号敏感值、家目录路径均输出脱敏占位。
 - AC-021：TICK-VOID，re_verified。异 project 伪造拒绝与 Supervisor 三处扫描过滤已实现，但 deploy.sh 同 project 容器标签不符不拒绝，且生产 Supervisor 收不到 `CBROWSER_INSTANCE_ID`，`_owns_deployment` 恒为 True。
 
@@ -96,7 +96,7 @@ verdict: FAIL
 - task：`t051_runtime_deploy_reliability`
 - spec：`docs/archive/tasks/t051_runtime_deploy_reliability/task.md`
 - diff_anchor：`3331ed3c12518849a416a0c74b6c844f033fc8c7`
-- target：`git -C '<home>/workspace/CBrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
+- target：`git -C '<home>/workspace/cbrowser_t051' diff 3331ed3c12518849a416a0c74b6c844f033fc8c7`
 - round：2
 - reviewed_at：2026-11-11T09:38:34+08:00
 

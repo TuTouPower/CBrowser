@@ -171,7 +171,7 @@ export function AppLayout() {
         ) : (
           <Link to="/" className="flex items-center gap-sm overflow-hidden">
             <img src="/menubar-icon.svg" alt="" className="size-(--component-icon-lg-size) shrink-0" />
-            <span className="truncate font-ui text-title-sm tracking-wide">CBrowser</span>
+            <span className="truncate font-ui text-title-sm tracking-wide">cbrowser</span>
           </Link>
         )}
         {narrow ? (
@@ -249,7 +249,7 @@ export function AppLayout() {
             <IconButton label={t("openNavigation")} onClick={() => setDrawerOpen(true)}>
               <Menu aria-hidden="true" className="size-(--component-icon-md-size)" />
             </IconButton>
-            <span className="font-ui text-title-sm">CBrowser</span>
+            <span className="font-ui text-title-sm">cbrowser</span>
           </div>
           {drawerOpen && (
             <div className={`fixed inset-none z-40 flex${focusMode ? " hidden" : ""}`} data-testid="sidebar-drawer">

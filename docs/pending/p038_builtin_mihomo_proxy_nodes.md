@@ -7,13 +7,13 @@ reason: "用户指定暂搁，待确认代理来源与优先级后再评估"
 # p038 内置 mihomo 作为 Profile 代理节点来源
 
 - 来源：用户提出
-- 内容：内置 mihomo，用户上传自有配置或导入订阅链接，由 mihomo 向 CBrowser 提供多个代理端口，供各 Profile 使用。现有能力为 `Profile.proxy` 单 URL 字段，外部自建 mihomo 填 `socks5://host:port` 大概率已可用（未验证）；内置价值在协议桥接、SOCKS5 认证转换与节点管理体验。
+- 内容：内置 mihomo，用户上传自有配置或导入订阅链接，由 mihomo 向 cbrowser 提供多个代理端口，供各 Profile 使用。现有能力为 `Profile.proxy` 单 URL 字段，外部自建 mihomo 填 `socks5://host:port` 大概率已可用（未验证）；内置价值在协议桥接、SOCKS5 认证转换与节点管理体验。
 - 处理：不办
 
 ## 分析基线
 
 - 分析时间：2026-11-04T23:47:58+08:00。
-- CBrowser 基线：main@ec02e2b0ea9d2b6840a68733a015b4480a6051dd。
+- cbrowser 基线：main@ec02e2b0ea9d2b6840a68733a015b4480a6051dd。
 - 证据范围：源码与现行 blueprint 静态核对；未运行测试、未部署 mihomo、未验证外部 mihomo 经网络策略例外的可达性。
 - 以下方案均为分析建议，决策待定。
 
@@ -30,7 +30,7 @@ reason: "用户指定暂搁，待确认代理来源与优先级后再评估"
 
 ## 设计约束（候选）
 
-1. 用户配置与订阅只作数据源：仅提取 `proxies`（或 proxy-providers 解析结果），丢弃 `external-controller`、`tun`、`dns`、rules、远程 rule-providers 等；运行配置由 CBrowser 生成。
+1. 用户配置与订阅只作数据源：仅提取 `proxies`（或 proxy-providers 解析结果），丢弃 `external-controller`、`tun`、`dns`、rules、远程 rule-providers 等；运行配置由 cbrowser 生成。
 2. listener 只绑定单个具体节点，禁止绑定 url-test/fallback/select 等策略组，避免会话中途出口 IP 变化导致身份关联。
 3. 每 Profile 一个专属 listener 端口；网络策略只放行本 Profile 端口，防止跨 Profile 借用出口。
 4. fail-closed：mihomo 不可用或订阅刷新后节点消失时 Profile 拒绝启动，禁止回退直连。

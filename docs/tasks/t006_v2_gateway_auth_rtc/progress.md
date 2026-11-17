@@ -49,7 +49,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 - 用户批准按开源调研复核修订计划：可见性只走 Selkies 原生每 Peer STOP_VIDEO/START_VIDEO（源码 webrtc_mode.py handle_video_consumer_active），Gateway 不采集页面可见性/活动。AC-007 已就地改写为新语义；范围同步。
 - `docs/v2_architecture_plan.md` 按用户要求从 main 原样同步进本 WT（与 main 修订提交内容逐字节一致，integrate 时双方同改无冲突），使实施与 review 以修订后 9.3 为准。
-- E2E lane 已 retire（worktree 干净、无交付；证据备份 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_e2e/`）。
+- E2E lane 已 retire（worktree 干净、无交付；证据备份 `.scratch/v2_orchestration/retired_worktrees/cbrowser_t006_e2e/`）。
 - 恢复实施时待办（尚未改代码）：删除 `gateway/activity.py` 与页面 `cbrowser: activity` 控制帧、Gateway→Agent `VISIBILITY_UPDATE` 下发与 Agent 处理分支、`AgentAction.VISIBILITY_UPDATE` 及 schema 重导出、`test_gateway_activity.py` 整项删除并说明；AgentHeartbeatPayload 增加未暂停视频 consumer 数与捕获状态；Gateway 内部 visibility 端点改读 Agent 最近上报值（Supervisor gateway_client 契约不变）；同步改写 `docs/blueprint/gateway.md`「连接活动表与聚合需求」、`docs/specs/webrtc_remote_display.md` 第23行、`docs/blueprint/stream_runtime.md`「共享策略由认证 Gateway 消息驱动」。先 RED 后 GREEN。
 
 #### 2026-10-30T21:02:22+08:00 会话接管与计划修订 9.3 实施
@@ -86,7 +86,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 #### 2026-10-31T07:58:06+08:00 E2E lane 合入与主控加强
 
-- E2E lane `t006_e2e2`（session ses_e73140c3bffezl2ty40n3Td8YL，r1–r6）交付 `tests/e2e/test_gateway_ac00{1,3,5,7}_*_e2e.py` 与 `tests/fixtures/gateway_probe/`；lane 已 retire，证据备份 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_e2e2/`。lane 自报全部通过，主控不采信，以门禁复跑为准。
+- E2E lane `t006_e2e2`（session ses_e73140c3bffezl2ty40n3Td8YL，r1–r6）交付 `tests/e2e/test_gateway_ac00{1,3,5,7}_*_e2e.py` 与 `tests/fixtures/gateway_probe/`；lane 已 retire，证据备份 `.scratch/v2_orchestration/retired_worktrees/cbrowser_t006_e2e2/`。lane 自报全部通过，主控不采信，以门禁复跑为准。
 - 用户 2026-10-31 要求测试不得弹出浏览器窗口：全部 Gateway E2E 为无头官方 Chrome。无头 Chrome 156 切标签/最小化不改变 `document.visibilityState`（主控实测），AC-007 改为页面内覆盖可见性并派发 `visibilitychange`，由官方客户端发 STOP_VIDEO/START_VIDEO；“浏览器真实标签切换发出事件”不在本 task 重证（沿用 d013/s005 headful 实证）。
 - AC-005 负例改为新代客户端 TURN 凭证在测试页内置坏，coturn 401 拒绝、旧代继续出帧，新代不得提交（原计划的 coturn total-quota 方案未采用）；`test_ac005_negative_turn_failure_exit_code` 以子进程运行负例并断言非零退出。
 - 主控加强（合入后）：AC-007 的 STOP/START 钩子与恢复日志只取动作之后的新增日志并要求精确行，恢复必须 `keyFramesDecoded` 增加；AC-005 coturn 拒绝证据只认 401，新代音频能量增量须 > 0；正式 Gateway 镜像改由 `CBROWSER_GATEWAY_IMAGE` 提供（与 Supervisor 用 Gateway 夹具镜像区分）；修 Ruff。Gateway/coturn 测试容器保留 `com.cbrowser.managed-by=supervisor` 标签，这是 Supervisor 基础设施容器校验（`_validate_infra_container`）的契约要求，与 t005 容器图测试一致。
@@ -103,13 +103,13 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 
 #### 2026-10-31T11:12:19+08:00 supfix lane 合入（Supervisor 生命周期回归）
 
-- Gemini lane `t006_supfix`（session ses_e70a63f01ffeR7qLMV1A8vV5Pl，已 retire，证据 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_supfix/`）：`SupervisorCore` 去掉 gateway/coturn 成对约束，coturn 为启动 Runtime 的必需基础设施，未配置时在分配端口、建网络之前抛 `DockerSandboxError` 并走既有失败上报；`attach_profile_infrastructure` 允许仅 coturn（Stream 仍用配置的 gateway_url）。RED 4 failed → GREEN 4 passed（`tests/unit/test_supervisor_infrastructure_config.py`）；t005 生命周期 E2E 补真实 coturn 容器与漏掉的登录头，未改任何断言；`SupervisorGatewayFixture` 改为在独立线程事件循环中运行，避免子进程同步等待阻塞夹具。lane 自报 unit+integration 301、生命周期 6 passed，以主控门禁复跑为准。
+- Gemini lane `t006_supfix`（session ses_e70a63f01ffeR7qLMV1A8vV5Pl，已 retire，证据 `.scratch/v2_orchestration/retired_worktrees/cbrowser_t006_supfix/`）：`SupervisorCore` 去掉 gateway/coturn 成对约束，coturn 为启动 Runtime 的必需基础设施，未配置时在分配端口、建网络之前抛 `DockerSandboxError` 并走既有失败上报；`attach_profile_infrastructure` 允许仅 coturn（Stream 仍用配置的 gateway_url）。RED 4 failed → GREEN 4 passed（`tests/unit/test_supervisor_infrastructure_config.py`）；t005 生命周期 E2E 补真实 coturn 容器与漏掉的登录头，未改任何断言；`SupervisorGatewayFixture` 改为在独立线程事件循环中运行，避免子进程同步等待阻塞夹具。lane 自报 unit+integration 301、生命周期 6 passed，以主控门禁复跑为准。
 - 主控复核：回退 lane 把 `disconnect_viewers` 捕获范围由 `TransportError` 放宽为 `RequestError` 的计划外改动（超时本已属 TransportError）；格式化 3 个文件。各测试文件内 coturn 启动代码重复（minor，留评审）。
 
 #### 2026-10-31T13:04:33+08:00 relay lane 合入（relay-only 初始连接双端 relay）
 
 - 主控核对门禁 round6 原始证据发现：relay-only 下第 1 代初始连接选中对为 prflx↔srflx（192.168.172.4:30000），只有重启后的新代 relay↔relay；lane 测试初始判据只要求“连通且出帧”而掩盖。原因：Stream 侧 rtc_config 不携带仅 relay 意图；`SELKIES_TURN_HOST` 也被 Selkies 自身读取并启动其 RTC 配置/监控；测试页适配层未在官方 `setConfiguration` 后保持 Gateway 策略。
-- Gemini lane `t006_relay`（已 retire，证据 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_relay/`）：`RtcGeneration/RtcConfigPayload.relay_only`（relay-only 模式下 Gateway 首发与每代下发均置真）；`ice_transport.set_relay_only` 使此后新建 PeerConnection 只收集/使用 relay 候选，无 relay 候选显式失败；真实 SDK `test_gateway_rtc_config_relay_only_restricts_candidates`；测试页包装 `setConfiguration` 保持 Gateway 配置；AC-005 初始判据恢复双端 relay；证据目录改为 pytest 临时目录。RED 6 failed → GREEN。lane 自报 Gateway E2E 5 passed、第 1 代 relay↔relay。
+- Gemini lane `t006_relay`（已 retire，证据 `.scratch/v2_orchestration/retired_worktrees/cbrowser_t006_relay/`）：`RtcGeneration/RtcConfigPayload.relay_only`（relay-only 模式下 Gateway 首发与每代下发均置真）；`ice_transport.set_relay_only` 使此后新建 PeerConnection 只收集/使用 relay 候选，无 relay 候选显式失败；真实 SDK `test_gateway_rtc_config_relay_only_restricts_candidates`；测试页包装 `setConfiguration` 保持 Gateway 配置；AC-005 初始判据恢复双端 relay；证据目录改为 pytest 临时目录。RED 6 failed → GREEN。lane 自报 Gateway E2E 5 passed、第 1 代 relay↔relay。
 - 主控复核清理：lane 在 agent.py 三处（含吞异常的 `mon_hmac_turn.stop()`）关闭 Selkies 自带 RTC 监控，改为 Policy 服务子类在 `initialize_components()` 末尾清空 `monitoring_utils_used` 并覆盖 `mon_rtc_config` 忽略监控回写；去掉 `getattr(TransportPolicy, "RELAY", "relay")` 与 `inspect.isawaitable` 兼容写法；还原被 `ruff format` 误改的 `tests/fixtures/supervisor_recovery_probe/gateway_contract.md`。整项删除 lane 新写的 `tests/unit/test_stream_ice_transport.py::test_generation_ice_transport_relay_only_initial_pc`：它以 MagicMock 代替 SDK 构造 `GenerationIceTransport`，并迫使生产代码保留兼容占位写法；同一行为由 Stream 镜像内真实 SDK 测试 `tests/e2e/test_stream_rtc_config_e2e.py::test_gateway_rtc_config_relay_only_restricts_candidates` 证明。
 
 #### 2026-10-31T13:32:31+08:00 门禁 round7 与 AC 实证打勾
@@ -146,7 +146,7 @@ front matter 只经 `task.py` 修改；reviewer 只写对应 `review_*.md`。
 - task：[`task.md`](task.md)
 - 结果：全部满足（AC-001 的 master token 条款为空满足，见 p004；AC-006 的真实 CDP 代理入口属 t008 AC-002）
 - 测试：主控门禁 round7（`.scratch/t006_gates/round7/`）+ round7b Gateway E2E 复跑全部通过：contract 169、legacy 384、unit+integration 305、runtime 13、stream 14（含真实 SDK 提交/RTC 配置/relay-only）、Supervisor 生命周期 6、启动恢复 2、容器图等 8、网络策略 5、资源 5、Gateway E2E 5；schema 导出一致；Ruff 保持 main 基线 16 项。
-- 黑盒：独立 Gemini 黑盒（session 见 `.scratch/v2_orchestration/t006_blackbox_r1.jsonl`），在逐字节等同候选（98 文件 SHA 一致）的验证 worktree 自建全部镜像，文档门禁同数通过，7 条 AC 均有自写探针正负例（含 Gateway SIGKILL 退避 1.0/2.0 秒、过期实例 1008、未就绪 503 对照、提交顺序、自动化凭证撤销/越权/审计），无残留资源；报告备份 `.scratch/v2_orchestration/retired_worktrees/CBrowser_t006_blackbox/`。
+- 黑盒：独立 Gemini 黑盒（session 见 `.scratch/v2_orchestration/t006_blackbox_r1.jsonl`），在逐字节等同候选（98 文件 SHA 一致）的验证 worktree 自建全部镜像，文档门禁同数通过，7 条 AC 均有自写探针正负例（含 Gateway SIGKILL 退避 1.0/2.0 秒、过期实例 1008、未就绪 503 对照、提交顺序、自动化凭证撤销/越权/审计），无残留资源；报告备份 `.scratch/v2_orchestration/retired_worktrees/cbrowser_t006_blackbox/`。
 - review：Full Round 1 code/test 两路 PASS（reviewed_scope 8a0b74f272c14c47），5 个 minor 遗留 p005，零 blocking。
 - AC 判定：见 `task.md` 行内打勾；证据清单见本文件「门禁 round7 与 AC 实证打勾」。
 

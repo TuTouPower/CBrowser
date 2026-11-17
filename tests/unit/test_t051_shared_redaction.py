@@ -116,9 +116,9 @@ _LINUX_HOME = "/home/" + "kar" + "son"
         ),
         # Home directory paths.
         (
-            f"open {_MAC_HOME}/kar/code/CBrowser/data/fonts failed",
+            f"open {_MAC_HOME}/kar/code/cbrowser/data/fonts failed",
             [_MAC_HOME],
-            ["<home>/kar/code/CBrowser/data/fonts"],
+            ["<home>/kar/code/cbrowser/data/fonts"],
         ),
         (
             f"open {_LINUX_HOME}/data/cbrowser.db failed",

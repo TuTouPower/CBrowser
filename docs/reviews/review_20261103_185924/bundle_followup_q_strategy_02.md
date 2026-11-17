@@ -18,7 +18,7 @@ No findings.
   "docs/blueprint/architecture.md:158-159（§6 安全矩阵）：API→Supervisor 为「内部受限认证 RPC」，「API 绝不持有 Docker Socket」；Supervisor→Docker Engine 为宿主唯一持 socket 服务",
   "docs/blueprint/security.md:36（威胁模型一节）：成文威胁模型假设与目标——阻止跨 Profile 访问、阻止 Browser 读取 Agent/Selkies 凭证、阻止未受策略保护的沙箱长期运行",
   "docs/blueprint/decisions.md ADR 010：Gateway 不持久化状态、不访问数据库，注册时查询 API 持久绑定判定实例，「实例真相只有 API 一处」——Gateway 与 API 分离的成文理由",
-  "docs/blueprint/decisions.md:122,124（ADR 013）与 architecture.md §7.1：单机单人包络成文（「CBrowser 的唯一目标是同一台 Mac 上的单一用户」，部署基准定案为开发者个人电脑），且 ADR 013 曾以「继续为未存在的多主机场景付费」为由删除 TURN 全套机制并收缩 Gateway 职责——成本意识在媒体面有实际执行记录",
+  "docs/blueprint/decisions.md:122,124（ADR 013）与 architecture.md §7.1：单机单人包络成文（「cbrowser 的唯一目标是同一台 Mac 上的单一用户」，部署基准定案为开发者个人电脑），且 ADR 013 曾以「继续为未存在的多主机场景付费」为由删除 TURN 全套机制并收缩 Gateway 职责——成本意识在媒体面有实际执行记录",
   "成本侧缺口（定点检索实测）：对 architecture.md、decisions.md、security.md、supervisor.md、gateway.md 检索「成本|进程数|运维|复杂度」，仅命中 decisions.md:18（RFB 维护负担，与本拆分无关）与 decisions.md:40（ADR 004 选 SQLite 的「极简运维」）；无任何条目盘点常驻进程数或服务间令牌清单的长期维护成本",
   "docs/blueprint/security.md:8：令牌面规模本身有据可查——CBROWSER_SUPERVISOR_TOKEN_FILE、CBROWSER_GATEWAY_TOKEN_FILE、CBROWSER_GATEWAY_API_TOKEN_FILE、CBROWSER_AGENT_KEY_FILE 四个服务间凭证文件（用途单一不可互换），其存在与隔离规则成文，但其长期成本未被任何文档权衡"
 ]

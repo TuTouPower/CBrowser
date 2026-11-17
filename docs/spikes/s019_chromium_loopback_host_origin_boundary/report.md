@@ -25,7 +25,7 @@ sid: "s019"
 - 代码/配置走读（云端可验部分）：
     - 浏览器启动参数：`src/backend/cbrowser/runtime_agent/runner.py` 固定 `--remote-debugging-port=0`（内核随机临时端口）与 `--remote-debugging-address=127.0.0.1`；全仓 `src/` 无 `--remote-allow-origins`（grep 零命中），即引擎保持默认 Origin 允许名单为空。
     - 端口发布面：Browser 容器对外仅发布媒体 UDP mux 端口（`docs/blueprint/architecture.md` §6 端口矩阵：CDP 仅监听回环、禁止外部网络直达）；CDP 端口不出现在任何 compose/容器 PortBindings 发布中，调试端口号只存在于容器内 runner 元数据，不进入任何页面可读状态或 API 响应。
-    - 唯一外部 CDP 入口：`src/backend/cbrowser/api/v1/automation_router.py` 的 `/api/v1/automation/profiles/{profile_id}/cdp`，须 automation token 鉴权（`AuthService.authorize_automation`）＋ t031 控制权 claim/代次围栏；再经 Supervisor `cdp_proxy`（`src/backend/cbrowser/supervisor/control_server.py`）的 supervisor token 与 `X-CBrowser-Control-Generation` 围栏校验后才代理到 Agent UDS。
+    - 唯一外部 CDP 入口：`src/backend/cbrowser/api/v1/automation_router.py` 的 `/api/v1/automation/profiles/{profile_id}/cdp`，须 automation token 鉴权（`AuthService.authorize_automation`）＋ t031 控制权 claim/代次围栏；再经 Supervisor `cdp_proxy`（`src/backend/cbrowser/supervisor/control_server.py`）的 supervisor token 与 `X-cbrowser-Control-Generation` 围栏校验后才代理到 Agent UDS。
     - viewer 侧泄漏面：普通 viewer 可见的 Profile/runtime 响应不含 cdp 字段；`cdp_ws_path` 仅由要求管理会话的 `GET /api/v1/profiles/{profile_id}/automation` 返回（task.md 非范围确认的管理 UI 现行功能）。
 - 引擎内建防线（待真实引擎复验）：Chromium DevTools 默认拒绝带非允许 Origin 的页面发起的 WebSocket 连接（无 `--remote-allow-origins` 即全部页面 Origin 被拒）；DevTools HTTP 端点对非 loopback Host 头有 DNS rebinding 校验。此二项为本 spike 的引擎级复验对象，本轮云端无 Docker/引擎，不冒充已实测。
 

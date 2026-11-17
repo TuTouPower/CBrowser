@@ -516,6 +516,23 @@ def test_repeat_deploy_same_config_is_idempotent(tmp_path: Path) -> None:
     assert _pointer(repo, "previous_release") == "rel-001"
 
 
+def test_redeploy_same_data_directory_preserves_identity(tmp_path: Path) -> None:
+    repo = _make_fake_repo(tmp_path)
+    bin_dir = _make_fake_bin(tmp_path)
+    first = _deploy(repo, bin_dir, "rel-001")
+    assert first.returncode == 0, first.stderr
+    original = _manifest(repo, "rel-001")["instance"]
+    alias = repo / "same_data"
+    alias.symlink_to(repo / "data" / "instance", target_is_directory=True)
+
+    renamed = _deploy(repo, bin_dir, "rel-002", CBROWSER_DATA_ROOT=str(alias))
+
+    assert renamed.returncode == 0, renamed.stderr
+    assert _manifest(repo, "rel-002")["instance"] == original
+    recorded = (repo / "config/deploy/releases/rel-002.env").read_text()
+    assert f"CBROWSER_DATA_ROOT={alias}" in recorded
+
+
 def test_prefix_conflict_refused_before_build(tmp_path: Path) -> None:
     repo = _make_fake_repo(tmp_path)
     bin_dir = _make_fake_bin(tmp_path)

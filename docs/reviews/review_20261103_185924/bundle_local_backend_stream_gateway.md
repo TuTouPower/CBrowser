@@ -27,7 +27,7 @@
 - cbrowser.secret_files.read_secret_file（单元外，未审）：密钥文件读取与最小 32 字节校验
 - cbrowser.supervisor.agent_credentials.AgentCredentials（单元外，未审）：Agent 注册凭据验证
 - Selkies 2.1.0 SDK（单元外）：WebRTCService、selkies.__main__、input_handler.\_XTestKeyboard、peer_manager/display_pipelines 等内部结构被策略子类与 agent 直接依赖
-- CBrowser API 服务（单元外）：runtime 绑定与 viewer 授权的权威来源
+- cbrowser API 服务（单元外）：runtime 绑定与 viewer 授权的权威来源
 - 系统工具 /usr/bin/xkbcomp 与 X11 DISPLAY（x11_keymap）
 
 ## flows

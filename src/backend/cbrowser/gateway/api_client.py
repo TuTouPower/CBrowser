@@ -1,4 +1,4 @@
-"""Internal HTTP client for Gateway -> CBrowser API authorization."""
+"""Internal HTTP client for Gateway -> cbrowser API authorization."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ logger = logging.getLogger("cbrowser.gateway.api_client")
 
 
 class GatewayApiClient:
-    """Invokes CBrowser internal API endpoints for authorization and runtime state."""
+    """Invokes cbrowser internal API endpoints for authorization and runtime state."""
 
     def __init__(self, base_url: str, token_file: Path | str) -> None:
         try:

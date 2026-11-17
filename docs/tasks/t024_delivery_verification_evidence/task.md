@@ -10,7 +10,7 @@
 
 - 产品 Dockerfile/entrypoint/requirements、门禁锁定依赖、前端构建 stamp 与实际消费点。
 - 产品 tests/fixtures、unit/integration/E2E 的真实链路、确定性等待、权限/前提与性能/证据完整性。
-- 生效 blueprint/spec/handoff 与独立产品历史勘误；CBrowser 自有 tests/unit/test_repo_hygiene.py 的隐私边界（即使 finding 来源名含 template，也不修改模板工具链）。
+- 生效 blueprint/spec/handoff 与独立产品历史勘误；cbrowser 自有 tests/unit/test_repo_hygiene.py 的隐私边界（即使 finding 来源名含 template，也不修改模板工具链）。
 
 ### 非范围
 
@@ -43,7 +43,7 @@
 - [x] AC-014（A43）：产品测试共享 fixture 与真实 DockerAdapter 的行为契约相符，各故障仍能独立注入；测试不修改进程全局时钟、不穿透无关私有布局，资源等待使用 deadline 与最后观测，端口竞争重建不吞产品失败。
 - [x] AC-015（A50）：从当前源冷构建的 Stream 运行镜像不包含编译器与开发头文件，仍通过真实音视频、输入、剪贴板与动态库加载验证；共用协议依赖从唯一约束产生，各服务完整锁可重建且平台差异有明确依据。
 - [x] AC-016（A51）：构建戳生成与校验对必需输入、文件集合和允许环境值一致；必需输入缺失不能生成 stamp，新增/删除影响构建的文件或变更声明环境使旧产物过期，扫描不读取未声明私密环境文件。
-- [x] AC-017（A52）：CBrowser 自有路径隐私守卫识别 macOS/Linux/Windows 开发者路径及候选文本后段泄漏，固定容器路径有精确例外；只有已批准具体历史文件/内容被豁免，新增归档或新增泄漏不能继承目录级豁免，存量原文保持不变。
+- [x] AC-017（A52）：cbrowser 自有路径隐私守卫识别 macOS/Linux/Windows 开发者路径及候选文本后段泄漏，固定容器路径有精确例外；只有已批准具体历史文件/内容被豁免，新增归档或新增泄漏不能继承目录级豁免，存量原文保持不变。
 - [x] AC-018（A53）：性能证据保存完整样本且继续执行原首帧/输入/SQLite 等待预算；缓冲溢出可观察，丢失关键证据明确失败；vendor pin 报警与实际 manifest 完整性校验共同运行，不以放宽门槛或缺正向基线通过。
 
 ### 可测试性声明

@@ -1,6 +1,6 @@
 # cbrowser-agent 执行器（薄入口）
 
-用 CBrowser 受控浏览器执行页面动作时，走宿主 CLI `cbrowser-agent`，
+用 cbrowser 受控浏览器执行页面动作时，走宿主 CLI `cbrowser-agent`，
 不要直接拼 CDP、不要用 Playwright 直连浏览器、不要发 `Browser.close`。
 
 ## 调用前核对（版本匹配）

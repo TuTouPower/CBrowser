@@ -137,7 +137,7 @@
 - [Info][75] docs/spikes/s007_profile_isolation/independent_review_r3.md:93-93 — Archived s007 reviews assert a “no exclusive lease” architecture invariant that current project documents no longer state
 
     - ID: f_archive_spikes_12; verification: suspected
-    - Evidence: s007 independent_review_r3.md:93, independent_review_r4.md:315 and independent_review_final.md (§五) present “无独占租约机制 / 杜绝独占租约设计” as a standing CBrowser architecture property.; The current repo AGENTS.md describes the system as built on strict Profile isolation with control-lease management (控制租约管理), i.e. leases are part of the current architecture vocabulary.; The archived claim is not marked as time-scoped to the v2 spike phase.
+    - Evidence: s007 independent_review_r3.md:93, independent_review_r4.md:315 and independent_review_final.md (§五) present “无独占租约机制 / 杜绝独占租约设计” as a standing cbrowser architecture property.; The current repo AGENTS.md describes the system as built on strict Profile isolation with control-lease management (控制租约管理), i.e. leases are part of the current architecture vocabulary.; The archived claim is not marked as time-scoped to the v2 spike phase.
     - Impact: A reader mining the archive for architecture constraints could adopt a superseded invariant and misjudge current lease-related design or review decisions.
     - Fix: Treat the claim as historical to the spike phase; if the blueprint still needs the distinction (exclusive vs managed leases), record it in docs/blueprint/decisions.md rather than in archived reviews.
 

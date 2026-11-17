@@ -48,7 +48,7 @@
 
 - 控制权状态由 API 唯一写入（`profile_controls`）；接管时 API 与
     Supervisor 各自关闭已登记的活动隧道并以单调代次围栏拒旧代次重连
-    （转发握手带 `X-CBrowser-Control-Generation`，不高于围栏者 4403 拒绝）。
+    （转发握手带 `X-cbrowser-Control-Generation`，不高于围栏者 4403 拒绝）。
 - Agent UDS 层为本地信任边界（0660 socket + Supervisor 管理的 runtime
     目录）：UDS 直连客户端不在强制范围内（与直接访问 runtime 目录等价）；
     控制强制经 CLI 会话生命周期 + 接管级联（Supervisor 关闭隧道端点 →
@@ -134,7 +134,7 @@
 
 - `cloakbrowser==0.6.4`（ADR 021）只对下载压缩包的 `SHA256SUMS` + 分离
     `SHA256SUMS.sig` 做 Ed25519 验签（包内硬编码公钥），解压后目录无上游签名；
-    因此 CBrowser 不宣称对解压引擎文件有 Ed25519 覆盖，信任根如实拆为
+    因此 cbrowser 不宣称对解压引擎文件有 Ed25519 覆盖，信任根如实拆为
     「下载层 Ed25519 签名 + 仓库 per-file SHA-256 清单」。
 - `ensure_binary()` 命中已有可执行 `chrome` 即跳过完整性校验；故
     `cbrowser.engine_artifacts.verify_extracted_engine_cache` 在

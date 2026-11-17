@@ -508,7 +508,7 @@ reviewed_scope: 0bb96e6d2f5a5fcd
 - `t018_code_f022`：已消除。`docs/blueprint/testing.md:45` 恢复模板契约命令；实跑 `pytest .repo_template/tests -q -m contract` 169 passed，`scripts/run_gates.sh` 全绿。
 - `t018_code_f023`：已消除。`git diff --check 5a3da225... -- . ':(exclude)docs/archive/**'` exit 0。
 - `t018_code_f024`：仍存在。`scripts/verify_frontend_dist.py:30-36` 的 `frontend_source_hash` 候选仍缺 `src/frontend/postcss.config.js`。
-- `t018_code_f025`：仍存在（按新 AC-004 重述）。`tests/e2e/test_supervisor_core_e2e.py:141,191,221`、`test_supervisor_recovery_e2e.py:563-586`、`test_supervisor_startup_recovery_e2e.py:187,361`、`test_supervisor_policy_failure_e2e.py:115` 仍固定使用 `PortAllocator(min_port=30000, ...)` 并断言 30000/30001；`src/backend/cbrowser/supervisor/container_spec.py:156-157` 的 `stream_ports()` 把该 UDP 端口发布到宿主 `127.0.0.1:{port}`。若 Docker 宿主已有服务占用 30000/30001（例如本机正在运行 CBrowser），单次门禁会因端口已占用失败；端口也未按运行派生或由系统分配。AC-004 两个分句均不满足。
+- `t018_code_f025`：仍存在（按新 AC-004 重述）。`tests/e2e/test_supervisor_core_e2e.py:141,191,221`、`test_supervisor_recovery_e2e.py:563-586`、`test_supervisor_startup_recovery_e2e.py:187,361`、`test_supervisor_policy_failure_e2e.py:115` 仍固定使用 `PortAllocator(min_port=30000, ...)` 并断言 30000/30001；`src/backend/cbrowser/supervisor/container_spec.py:156-157` 的 `stream_ports()` 把该 UDP 端口发布到宿主 `127.0.0.1:{port}`。若 Docker 宿主已有服务占用 30000/30001（例如本机正在运行 cbrowser），单次门禁会因端口已占用失败；端口也未按运行派生或由系统分配。AC-004 两个分句均不满足。
 - `t018_code_f026`：仍存在。`docs/blueprint/testing.md:91-92` 仍写「在上述 test_cmd 已设置的 TMPDIR / UV_CACHE_DIR 下」「test_cmd 中 `tests/unit`……blackbox_verify 中 `tests/integration`」，对应章节已无这些命令。
 
 ### 本轮新发现：0 条

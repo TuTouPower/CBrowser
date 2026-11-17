@@ -1,4 +1,4 @@
-"""Authentication and Automation Token Router for CBrowser API v1."""
+"""Authentication and Automation Token Router for cbrowser API v1."""
 
 from __future__ import annotations
 

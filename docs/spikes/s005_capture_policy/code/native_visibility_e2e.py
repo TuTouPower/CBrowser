@@ -1,11 +1,11 @@
 """
 Production-grade Real Native Chrome Page Visibility End-to-End Suite.
 
-Validates Native Chrome Page Visibility with Thin CBrowser Visibility Adapter:
+Validates Native Chrome Page Visibility with Thin cbrowser Visibility Adapter:
 - Subprocess isolated Google Chrome with own profile in tmp/
 - CDP direct communication via websockets
 - Two real tabs in the same window (Target.createTarget with newWindow=False)
-- Thin CBrowser Visibility Adapter listening to real document.visibilitychange
+- Thin cbrowser Visibility Adapter listening to real document.visibilitychange
 - Validates:
   1. 2 Real PCs, real doc.hidden corresponds to active_peers == 1
   2. Continuous animation: foreground tab decoded ~30fps, background tab stops (delta=0)
@@ -94,7 +94,7 @@ with connect(page['webSocketDebuggerUrl']) as ws:
     out = subprocess.check_output(cmd, text=True).strip()
     return out
 
-# Thin CBrowser Visibility Adapter to inject into native Chrome pages
+# Thin cbrowser Visibility Adapter to inject into native Chrome pages
 CBROWSER_VISIBILITY_ADAPTER_JS = """
 (() => {
     window.__SELKIES_STREAMING_MODE__ = 'webrtc';
@@ -106,9 +106,9 @@ CBROWSER_VISIBILITY_ADAPTER_JS = """
         const msg = document.hidden ? 'STOP_VIDEO' : 'START_VIDEO';
         try {
             dc.send(msg);
-            console.log('[CBrowser Adapter] Sent ' + msg + ' on ' + dc.label + ' (hidden=' + document.hidden + ')');
+            console.log('[cbrowser Adapter] Sent ' + msg + ' on ' + dc.label + ' (hidden=' + document.hidden + ')');
         } catch (e) {
-            console.error('[CBrowser Adapter] Send error on ' + dc.label + ':', e);
+            console.error('[cbrowser Adapter] Send error on ' + dc.label + ':', e);
         }
     }
 
@@ -116,7 +116,7 @@ CBROWSER_VISIBILITY_ADAPTER_JS = """
         if (!dc) return;
         // Strictly only handle official label === 'input' channel
         if (dc.label !== 'input') {
-            console.log('[CBrowser Adapter] Skipping non-input channel label=' + dc.label);
+            console.log('[cbrowser Adapter] Skipping non-input channel label=' + dc.label);
             return;
         }
         if (window.__inputDataChannels.includes(dc)) return;
@@ -124,7 +124,7 @@ CBROWSER_VISIBILITY_ADAPTER_JS = """
         window.__activeInputDC = dc;
 
         const onOpen = () => {
-            console.log('[CBrowser Adapter] Input DataChannel open (label=' + dc.label + '), hidden=' + document.hidden);
+            console.log('[cbrowser Adapter] Input DataChannel open (label=' + dc.label + '), hidden=' + document.hidden);
             notifyVisibility(dc);
         };
 
@@ -161,7 +161,7 @@ CBROWSER_VISIBILITY_ADAPTER_JS = """
 
     // Real document visibilitychange listener
     document.addEventListener('visibilitychange', () => {
-        console.log('[CBrowser Adapter] document.visibilitychange event: hidden=' + document.hidden + ', state=' + document.visibilityState);
+        console.log('[cbrowser Adapter] document.visibilitychange event: hidden=' + document.hidden + ', state=' + document.visibilityState);
         for (const dc of window.__inputDataChannels) {
             notifyVisibility(dc);
         }
@@ -344,7 +344,7 @@ async def run_scenario():
             log_print(f"Tab 1 Window: {w1['windowId']}, Tab 2 Window: {w2['windowId']}")
             assert w1["windowId"] == w2["windowId"], f"Tabs must be in the same window! {w1['windowId']} vs {w2['windowId']}"
 
-            # Inject CBrowser visibility adapter on both tabs before navigating
+            # Inject cbrowser visibility adapter on both tabs before navigating
             await cdp_send("Page.enable", session=s1_id)
             await cdp_send("Runtime.enable", session=s1_id)
             await cdp_send("Page.addScriptToEvaluateOnNewDocument", {"source": CBROWSER_VISIBILITY_ADAPTER_JS}, session=s1_id)

@@ -66,7 +66,7 @@ def free_port() -> int:
 # ---------------------------------------------------------------------------
 
 _MAIN_HTML = """<!doctype html>
-<title>CBrowser Probe Main</title>
+<title>cbrowser Probe Main</title>
 <h1>Probe Main</h1>
 <button id="popup-btn" type="button">Open popup</button>
 <a id="download-link" href="/download">Download probe file</a>
@@ -131,7 +131,7 @@ document.getElementById("bu-toggle").addEventListener("change", (ev) => {
 """
 
 _FRAME_HTML = """<!doctype html>
-<title>CBrowser Probe Frame</title>
+<title>cbrowser Probe Frame</title>
 <h2>Probe Frame</h2>
 <div id="frame-pad" style="width:200px;height:100px;background:#884466">Frame pad</div>
 <input id="frame-input" type="text" autocomplete="off">
@@ -152,8 +152,8 @@ for (const name of ["pointerdown","pointerup","click","keydown"]) {
 </script>
 """
 
-_POPUP_HTML = "<!doctype html><title>CBrowser Probe Popup</title><h1>Probe Popup</h1>\n"
-_OTHER_HTML = "<!doctype html><title>CBrowser Probe Other</title><h1>Probe Other</h1>\n"
+_POPUP_HTML = "<!doctype html><title>cbrowser Probe Popup</title><h1>Probe Popup</h1>\n"
+_OTHER_HTML = "<!doctype html><title>cbrowser Probe Other</title><h1>Probe Other</h1>\n"
 
 _DOWNLOAD_BODY = b"cbrowser-probe-download\n"
 
@@ -614,7 +614,7 @@ class CdpBridge:
                 ws_url = f"ws://127.0.0.1:{bridge._ws_port}/cdp"
                 if self.path.startswith("/json/version"):
                     payload: Any = {
-                        "Browser": "CBrowserProbeBridge",
+                        "Browser": "cbrowserProbeBridge",
                         "webSocketDebuggerUrl": ws_url,
                     }
                 elif self.path.startswith("/json/list"):
@@ -622,7 +622,7 @@ class CdpBridge:
                         {
                             "id": "probe-page",
                             "type": "page",
-                            "title": "CBrowser Probe",
+                            "title": "cbrowser Probe",
                             "url": "about:blank",
                             "webSocketDebuggerUrl": ws_url,
                         }

@@ -2,7 +2,7 @@
 
 ## responsibilities
 
-- task.py + repo_task/ 是 task 状态机唯一实现：note.md front matter 为状态权威（与 CBrowser AGENTS.md 写权表一致），提供 add/edit/start/preflight/finish/drop/rewind/purge、attempt 精确身份生命周期（reserve/claim/terminal/report）、调度图（depends_on 硬边、conflicts_with 无向提示）、plan/view 看板、integrate/integrate-chain 原生 Git 合并门禁、goal 队列冻结与终态判定、recovery 只读诊断。
+- task.py + repo_task/ 是 task 状态机唯一实现：note.md front matter 为状态权威（与 cbrowser AGENTS.md 写权表一致），提供 add/edit/start/preflight/finish/drop/rewind/purge、attempt 精确身份生命周期（reserve/claim/terminal/report）、调度图（depends_on 硬边、conflicts_with 无向提示）、plan/view 看板、integrate/integrate-chain 原生 Git 合并门禁、goal 队列冻结与终态判定、recovery 只读诊断。
 - 派生索引 docs/tasks_index.json 与 docs/archive/tasks_index.json 由 store.rebuild_index 从 note.md 扫描重建（原子写），与 AGENTS.md『派生 index 在集成时进入同一 merge commit』约定一致。
 - pending.py / findings.py / spikes.py 管理 pNNN/dNNN/sNNN 一条目一文件总账：编号分配委托 \_id_scan（跨单元）在 git 公共目录锁内完成，状态由所在目录表达，迁移用 git mv + 失败回滚。
 - repo_state.py 提供完整工作树 vs baseline 的只读取数（deliverable / changed-files / added-lines），供收尾清洁度与交付核对；track_worktree.py 是状态行 hook 的 worktree 标记/写入器。

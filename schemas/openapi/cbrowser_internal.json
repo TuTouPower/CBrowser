@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "CBrowser Control API",
+    "title": "cbrowser Control API",
     "description": "Minimal coherent Control API for profile lifecycle and runtime convergence.",
     "version": "2.0.0"
   },
@@ -6044,7 +6044,7 @@
         "operationId": "edge_viewer_authorize_api_v1_internal_edge_viewer_authorize_get",
         "parameters": [
           {
-            "name": "X-CBrowser-Edge-Proof",
+            "name": "X-cbrowser-Edge-Proof",
             "in": "header",
             "required": false,
             "schema": {
@@ -6056,7 +6056,7 @@
                   "type": "null"
                 }
               ],
-              "title": "X-Cbrowser-Edge-Proof"
+              "title": "X-cbrowser-Edge-Proof"
             }
           }
         ],

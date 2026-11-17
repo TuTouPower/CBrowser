@@ -21,7 +21,7 @@ class CdpError(Exception):
 
 
 class TunnelRejectedError(CdpError):
-    """The tunnel filter refused a command (stable CBrowser error)."""
+    """The tunnel filter refused a command (stable cbrowser error)."""
 
 
 class CdpTimeoutError(CdpError):
@@ -162,7 +162,7 @@ class CdpClient:
             return None
         error = resp["error"] or {}
         message = str(error.get("message", "CDP error"))
-        if message.startswith("CBrowser tunnel:"):
+        if message.startswith("cbrowser tunnel:"):
             return TunnelRejectedError(message, error.get("code"))
         return CdpError(message, error.get("code"))
 

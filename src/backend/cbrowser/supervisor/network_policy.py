@@ -1,4 +1,4 @@
-"""CBrowser Network Policy Specification and In-Namespace Installer.
+"""cbrowser Network Policy Specification and In-Namespace Installer.
 
 AC / Implementation Contract:
 - NetworkPolicySpec: strict Pydantic model (role, allowed_tcp, allowed_udp).

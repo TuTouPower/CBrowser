@@ -2,7 +2,7 @@
 
 ## 范围与授权
 
-- 用户授权：重新部署、把 `../temp123/mihomo_proxy` 的 88 个真实节点通过 API 导入 CBrowser 代理管理、提交并 push。
+- 用户授权：重新部署、把 `../temp123/mihomo_proxy` 的 88 个真实节点通过 API 导入 cbrowser 代理管理、提交并 push。
 - 部署前置按用户裁决选择「直接部署，仅用 `deploy.sh` 自带数据库单件备份」：未停止 `cbrowser-0021` Profile、未创建环境恢复点。
 - 已知回退限制：0010 升版后 `rollback` 到 0009 release 会被文档规则拒绝（migration_version 不匹配）。
 

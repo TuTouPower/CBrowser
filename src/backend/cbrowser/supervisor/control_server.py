@@ -1,4 +1,4 @@
-"""FastAPI Internal Control Server for CBrowser Supervisor.
+"""FastAPI Internal Control Server for cbrowser Supervisor.
 
 AC-003:
 - Authenticated HTTP control plane using Bearer token from external token file.
@@ -103,7 +103,7 @@ def create_control_app(
     core: SupervisorCore,
     token_file: Path | str,
 ) -> FastAPI:
-    app = FastAPI(title="CBrowser Supervisor Control API", version="1.0.0")
+    app = FastAPI(title="cbrowser Supervisor Control API", version="1.0.0")
 
     # t056 A15: the Supervisor answers failures in the same ErrorResponse
     # shape as the API, so the Coordinator can parse and preserve the

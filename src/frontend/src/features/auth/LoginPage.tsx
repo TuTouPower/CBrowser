@@ -70,7 +70,7 @@ export function LoginPage() {
           <div className="mb-md flex h-badge w-badge items-center justify-center rounded-full bg-accent-soft text-on-surface">
             <Lock aria-hidden="true" className="size-(--component-icon-xl-size)" />
           </div>
-          <h1 className="font-ui text-headline-lg text-on-surface">CBrowser</h1>
+          <h1 className="font-ui text-headline-lg text-on-surface">cbrowser</h1>
           <p className="mt-sm font-ui text-body-sm text-on-surface-muted">
             {t("enterAccessToken")}
           </p>
