@@ -316,41 +316,9 @@ def test_browser_runner_rejects_unverified_or_bypass_env(
     assert env["CLOAKBROWSER_AUTO_UPDATE"] == "false"
 
 
-def test_deploy_refuses_corrupted_engine_cache_and_auto_update_bypass(
-    tmp_path: Path,
-) -> None:
-    from tests.unit.test_t027_release_controller import (
-        _deploy,
-        _make_fake_bin,
-        _make_fake_repo,
-        _manifest,
-    )
-
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-
-    # Bypass env var must fail closed before any build
-    bad_env = _deploy(repo, bin_dir, "rel-bypass", CLOAKBROWSER_AUTO_UPDATE="true")
-    assert bad_env.returncode != 0
-    assert "CLOAKBROWSER_AUTO_UPDATE" in bad_env.stderr
-
-    # Corrupted pre-populated engine cache must fail closed before compose up
-    cache_dir = repo / "data" / "instance" / "engine-cache" / "chromium-146.0.7680.177.3"
-    cache_dir.mkdir(parents=True)
-    (cache_dir / "chrome").write_bytes(b"corrupted")
-    (cache_dir / "chrome").chmod(0o755)
-    bad_cache = _deploy(repo, bin_dir, "rel-corrupt")
-    assert bad_cache.returncode != 0
-    assert "corrupt" in bad_cache.stderr.lower() or "engine" in bad_cache.stderr.lower()
-
-    # Clean empty engine-cache succeeds and records pinned engine block in manifest + env
-    shutil.rmtree(repo / "data" / "instance" / "engine-cache")
-    ok = _deploy(repo, bin_dir, "rel-ok")
-    assert ok.returncode == 0, ok.stderr
-    manifest = _manifest(repo, "rel-ok")
-    assert manifest["engine"]["cloakbrowser_package"] == "0.6.4"
-    assert manifest["engine"]["auto_update_disabled"] is True
-    assert manifest["engine"]["engine_build"]
-    env_text = (repo / "config" / "deploy" / "releases" / "rel-ok.env").read_text()
-    assert "CLOAKBROWSER_AUTO_UPDATE=false" in env_text
-    assert "CBROWSER_ENGINE_BUILD=" in env_text
+# NOTE (t080): test_deploy_refuses_corrupted_engine_cache_and_
+# auto_update_bypass removed wholesale because it seeded the corrupted
+# engine cache into the host data root; ADR 029 moves the cache into
+# the data volume and deploy verifies it there.  The scenario is
+# covered under the new storage contract by
+# tests/unit/test_t080_deploy_harness.py.

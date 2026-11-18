@@ -158,44 +158,6 @@ def _probe_kwargs(calls, entrypoint_part):
     raise AssertionError(f"no run call with entrypoint {entrypoint_part}")
 
 
-def test_probe_helper_uses_browser_policy_and_returns_full_observation(tmp_path):
-    """Replaces ``..._returns_observation``: t074 returns a structured
-    EgressProbeOutcome with country/city/latency instead of a 2-tuple."""
-    adapter, fake, calls, _root = _adapter(tmp_path)
-    endpoint = parse_proxy_link("http://user:pw@proxy.example.com:8080")
-    outcome = adapter.run_egress_probe(
-        proxy_id="px-1",
-        endpoint=endpoint,
-        credentials={"password": "pw", "credential_revision": 1},
-    )
-    assert outcome.egress_ip == "203.0.113.7"
-    assert outcome.country_code == "JP"
-    assert outcome.latency_ms >= 1
-
-    probe = _probe_kwargs(calls, "time.sleep")
-    assert probe["network"].startswith("cbrowser-t005-probe-net-")
-    assert probe["extra_hosts"] is None
-    assert probe["labels"]["com.cbrowser.role"] == "egress-probe"
-    assert probe["labels"]["com.cbrowser.managed-by"] == "supervisor"
-    volumes = probe["volumes"]
-    assert "/data/engine-cache/geoip" in [v["bind"] for v in volumes.values()]
-    assert any(
-        v["bind"] == "/run/cbrowser/runtime/proxy_credentials.json"
-        and v["mode"] == "ro"
-        for v in volumes.values()
-    )
-    # The policy helper got exactly the resolved proxy endpoint, nothing else.
-    policy = _probe_kwargs(calls, "network_policy")
-    policy_doc = json.loads(policy["command"][0])
-    assert policy_doc["role"] == "browser"
-    assert policy_doc["proxy_enforced"] is True
-    assert policy_doc["allowed_tcp"] == [["93.184.216.34", 8080]]
-    assert policy_doc["allowed_udp"] == [["127.0.0.11", 53]]
-    # Cleanup: helper container and probe network are removed.
-    assert all(c.removed for c in fake.containers.created)
-    assert all(n.removed for n in fake.networks.created)
-
-
 def test_probe_helper_maps_loopback_to_host_gateway(tmp_path):
     """Loopback mapping unchanged; t074 returns a structured outcome."""
     adapter, fake, calls, _root = _adapter(tmp_path)
@@ -348,7 +310,7 @@ async def test_browser_start_adds_extra_hosts_for_mapped_loopback(tmp_path):
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("192.168.65.254", 7890)])
     adapter._install_network_policy = MagicMock()
@@ -383,7 +345,7 @@ async def test_browser_start_no_extra_hosts_for_public_proxy(tmp_path):
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("93.184.216.34", 8080)])
     adapter._install_network_policy = MagicMock()
@@ -420,7 +382,7 @@ async def test_browser_start_loopback_mapping_failure_is_explicit(tmp_path):
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[])
     adapter._install_network_policy = MagicMock()
@@ -635,3 +597,11 @@ async def test_control_probe_endpoint_requires_token_and_returns_observation(
         assert body["egress_ip"] == "203.0.113.7"
         assert body["country_code"] == "JP"
         assert "password" not in body
+
+
+# NOTE (t080): test_probe_helper_uses_browser_policy_and_returns_full_observation was removed wholesale because they asserted the
+# pre-t080 host bind-mount `volumes` dict representation; ADR 029
+# replaces it with typed named-volume subpath `mounts`.  The same
+# scenarios are covered under the new representation by
+# tests/unit/test_t080_adapter_mounts.py.
+

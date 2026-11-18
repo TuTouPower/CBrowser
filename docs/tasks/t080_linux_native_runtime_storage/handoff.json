@@ -1,0 +1,20 @@
+{
+  "tid": "t080",
+  "attempt": 1,
+  "execution_id": "56c2816835b54e61b850a6d79357452c",
+  "status": "done",
+  "branch": "t080_linux_native_runtime_storage",
+  "base_sha": "dffadb298c123ae77a8e8b1f224731ba59030076",
+  "spec_source_sha": "dffadb298c123ae77a8e8b1f224731ba59030076",
+  "tests": "全量门禁（.scratch/t080_gate_evidence_final）protocol_drift_check、requirements_check、contract（388 passed）、design_lint、design_check、frontend_build 全 exit 0；unit 失败/错误全部为纯净基线族（t063 平台类、t068 arm64 批准清单），integration 与 frontend_test 各 1 条并发负载超时、单独复跑全过；t080 五个测试文件 55 passed。",
+  "blackbox": "云端无 Docker Engine，真实部署黑盒不可执行；deploy harness 在 fake docker 下覆盖回退/sha 拒绝/指纹/字体预检/卷内缓存校验场景（7 passed），真实黑盒演练登记 p127/p129 本地补验。",
+  "review": "代码审阅 6 轮（f001–f011 全部已修，round 6 PASS）、测试审阅 3 轮（test_f001–f003 全部已修，round 3 PASS），review-status overall=PASS（指纹 c2fd594e7f30587d）；处置表 14 行均为已修。",
+  "review_scope": "c2fd594e7f30587d",
+  "pending": [
+    "p127",
+    "p129"
+  ],
+  "findings": [
+    "d050"
+  ]
+}

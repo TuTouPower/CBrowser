@@ -84,6 +84,7 @@ from cbrowser.supervisor.path_validator import (
     prepare_socket_dir,
     validate_socket_deployment,
 )
+from cbrowser.supervisor.storage_layout import MountPlanner
 from cbrowser.supervisor.volume_spec import (
     SINGLETON_LOCK_NAMES,
     browser_volumes,
@@ -277,6 +278,15 @@ class DockerAdapter:
         expected_binary_sha256: str | None = None,
     ):
         self.validator = path_validator
+        # t080 / ADR 029: typed volume-subpath mount planning.  The local
+        # roots are pure container-internal logical paths; the planner
+        # fails closed for any source outside the managed volumes.
+        self.mount_planner = MountPlanner(
+            resource_prefix=resource_prefix,
+            data_root=self.validator.data_root,
+            socket_root=self.validator.socket_root,
+            fonts_root=os.environ.get("CBROWSER_FONTS_DIR", "/fonts"),
+        )
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
         self.geoip_cache = self.validator.validate_safe_path(
             geoip_cache_dir or self.engine_cache / "geoip"
@@ -656,16 +666,16 @@ class DockerAdapter:
                 network=net_name,
                 extra_hosts=extra_hosts,
                 tmpfs={"/tmp": "rw,nosuid,nodev,size=4m"},
-                volumes={
-                    str(creds_file): {
-                        "bind": "/run/cbrowser/runtime/proxy_credentials.json",
-                        "mode": "ro",
-                    },
-                    str(self.geoip_cache): {
-                        "bind": "/data/engine-cache/geoip",
-                        "mode": "ro",
-                    },
-                },
+                mounts=self.mount_planner.mounts_for(
+                    [
+                        (
+                            creds_file,
+                            "/run/cbrowser/runtime/proxy_credentials.json",
+                            "ro",
+                        ),
+                        (self.geoip_cache, "/data/engine-cache/geoip", "ro"),
+                    ]
+                ),
                 labels=probe_helper_labels(
                     self.resource_prefix,
                     deployment_id=self.deployment_instance_id,
@@ -1125,7 +1135,8 @@ with path.open('w') as output:
                 cap_add=["DAC_OVERRIDE", "FOWNER"],
                 security_opt=["no-new-privileges:true"],
                 tmpfs={"/tmp": "rw,size=512m", "/home/cbrowser": "rw,size=64m"},
-                volumes=cache_init_volumes(
+                mounts=cache_init_volumes(
+                    planner=self.mount_planner,
                     engine_cache=self.engine_cache,
                     geoip_cache=self.geoip_cache,
                 ),
@@ -1328,7 +1339,7 @@ with path.open('w') as output:
                 name=f"{self.resource_prefix}-x11-{uuid.uuid4().hex[:12]}",
                 entrypoint="chmod",
                 command=["0750", "/x11"],
-                volumes={str(x11_dir): {"bind": "/x11", "mode": "rw"}},
+                mounts=[self.mount_planner.mount(x11_dir, "/x11", "rw")],
                 user="0:0",
                 detach=True,
                 read_only=True,
@@ -1922,7 +1933,8 @@ with path.open('w') as output:
         has_proxy = isinstance(snapshot.get("config"), dict) and bool(
             snapshot["config"].get("proxy_id")
         )
-        volumes = browser_volumes(
+        mounts = browser_volumes(
+            planner=self.mount_planner,
             profile_id=profile_id,
             dirs=dirs,
             gate=gate,
@@ -1931,7 +1943,9 @@ with path.open('w') as output:
             credentials_path=creds_file if has_proxy else None,
         )
         socket_dir = self.prepare_agent_socket_dir(profile_id, runtime_instance_id)
-        volumes[str(socket_dir)] = {"bind": str(socket_dir), "mode": "rw"}
+        mounts.append(
+            self.mount_planner.mount(socket_dir, str(socket_dir), "rw")
+        )
         cfg = snapshot.get("config")
         if isinstance(cfg, dict):
             font_set_id = cfg.get("font_set_id")
@@ -1943,11 +1957,14 @@ with path.open('w') as output:
                 and platform in ("windows", "macos")
                 and fonts_root
             ):
-                host_font_dir = Path(fonts_root) / platform / font_set_id
-                volumes[str(host_font_dir)] = {
-                    "bind": str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
-                    "mode": "ro",
-                }
+                font_dir = Path(fonts_root) / platform / font_set_id
+                mounts.append(
+                    self.mount_planner.mount(
+                        font_dir,
+                        str(FONT_SET_MOUNT_ROOT / platform / font_set_id),
+                        "ro",
+                    )
+                )
         # The Browser connects directly to the upstream proxy via SDK ``proxy=``:
         # the credentials file (Profile secret dir) is mounted read-only into
         # the Browser. The egress plan derives both host-gateway injection and
@@ -1990,7 +2007,7 @@ with path.open('w') as output:
                     "/tmp": "rw,exec,nosuid,nodev,size=512m",
                     "/home/cbrowser": "rw,mode=0755,size=64m",
                 },
-                volumes=volumes,
+                mounts=mounts,
                 environment=self._agent_socket_environment(
                     profile_id, runtime_instance_id
                 ),
@@ -2129,7 +2146,8 @@ with path.open('w') as output:
         gate = self._prepare_policy_gate(profile_id, runtime_instance_id, "stream")
         allowed_tcp: list[tuple[str, int]] = []
         allowed_udp: list[tuple[str, int]] = []
-        volumes = stream_volumes(
+        mounts = stream_volumes(
+            planner=self.mount_planner,
             gate=gate,
             x11_socket=x11_socket,
             xauth_file=xauth_file,
@@ -2205,7 +2223,7 @@ with path.open('w') as output:
                 ports=ports,
                 restart_policy={"Name": "no"},
                 tmpfs={"/tmp": "rw,exec,nosuid,nodev,size=256m"},
-                volumes=volumes,
+                mounts=mounts,
                 environment=env,
                 labels=gate_labels(stream_labels(
                     self.resource_prefix,

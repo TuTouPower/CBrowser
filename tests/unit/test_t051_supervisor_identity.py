@@ -213,7 +213,7 @@ async def test_browser_start_carries_instance_id_and_numbered_service(
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[])
     adapter._install_network_policy = MagicMock()

@@ -23,11 +23,7 @@ from cbrowser.stream_agent.policy_rules import (
 )
 from cbrowser.supervisor.container_spec import (
     browser_command,
-    browser_labels,
     gated_entrypoint,
-    stream_environment,
-    stream_labels,
-    stream_ports,
 )
 from cbrowser.supervisor.network_spec import (
     browser_network_name,
@@ -50,7 +46,6 @@ from cbrowser.supervisor.recovery_rules import (
     stream_missing,
     terminal_observation,
 )
-from cbrowser.supervisor.volume_spec import browser_volumes, stream_volumes
 
 
 def test_recovery_container_indexing_and_liveness() -> None:
@@ -175,108 +170,16 @@ def test_container_spec_entrypoint_and_browser_arguments() -> None:
     assert command[-1] == ":99"
 
 
-def test_container_spec_browser_volumes_and_labels(tmp_path: Path) -> None:
-    dirs = {
-        name: tmp_path / name
-        for name in (
-            "profile",
-            "events",
-            "exchange",
-            "uploads",
-            "runtime",
-            "x11",
-            "pulse",
-        )
-    }
-    gate = tmp_path / "gate"
-    engine = tmp_path / "engine"
-    geoip = tmp_path / "geoip"
-
-    volumes = browser_volumes(
-        profile_id="p1",
-        dirs=dirs,
-        gate=gate,
-        engine_cache=engine,
-        geoip_cache=geoip,
-    )
-
-    assert volumes[str(gate)] == {"bind": "/run/cbrowser_policy", "mode": "ro"}
-    assert volumes[str(dirs["profile"])] == {
-        "bind": "/data/profiles/p1/profile",
-        "mode": "rw",
-    }
-    assert volumes[str(dirs["exchange"])] == {
-        "bind": "/exchange/downloads",
-        "mode": "rw",
-    }
-    assert volumes[str(dirs["uploads"])] == {
-        "bind": "/exchange/uploads",
-        "mode": "rw",
-    }
-    assert volumes[str(engine)] == {"bind": "/data/engine-cache", "mode": "ro"}
-    assert volumes[str(geoip)] == {
-        "bind": "/data/engine-cache/geoip",
-        "mode": "ro",
-    }
-    labels = browser_labels("cb", "p1", 3, 1)
-    # t050 adds the sandbox grouping labels; the ownership contract below
-    # is unchanged and remains the source of truth.
-    assert labels.pop("com.docker.compose.project") == "cb-profiles"
-    assert labels.pop("com.cbrowser.profile-number") == "0001"
-    # t051 AC-012: the compose service carries the zero-padded profile
-    # number (was the bare role "browser" before t051).
-    assert labels.pop("com.docker.compose.service") == "0001-browser"
-    # No deployment identity configured: no instance-id label (that key
-    # carries the deployment instance id only); runtime ids are never
-    # labels.
-    assert labels == {
-        "com.cbrowser.managed-by": "supervisor",
-        "com.cbrowser.profile-id": "p1",
-        "com.cbrowser.role": "browser",
-        "com.cbrowser.network-policy": "v1",
-        "com.cbrowser.config-version": "3",
-        "com.cbrowser.prefix": "cb",
-    }
-
-
-def test_container_spec_stream_specs(tmp_path: Path) -> None:
-    volumes = stream_volumes(
-        gate=tmp_path / "gate",
-        x11_socket=tmp_path / "X99",
-        xauth_file=tmp_path / "Xauthority",
-        pulse_dir=tmp_path / "pulse",
-        secret_file=tmp_path / "secret",
-        selkies_file=tmp_path / "selkies",
-    )
-    assert volumes[str(tmp_path / "gate")] == {
-        "bind": "/run/cbrowser_policy",
-        "mode": "ro",
-    }
-    assert volumes[str(tmp_path / "secret")] == {
-        "bind": "/tmp/secret.txt",
-        "mode": "ro",
-    }
-
-    # t054: stream_environment no longer takes public_ip; the WebRTC
-    # public IP is hardcoded to loopback (no LAN advertisement anymore).
-    env = stream_environment(
-        display=":99",
-        profile_id="p1",
-        runtime_instance_id="i1",
-        gateway_url="ws://gateway:8080/stream",
-        config_version="3",
-        udp_mux_port=30006,
-        screen_width=1280,
-        screen_height=720,
-    )
-    assert env["CBROWSER_WEBRTC_PUBLIC_IP"] == "127.0.0.1"
-    assert env["CBROWSER_CONFIG_VERSION"] == "3"
-    assert env["CBROWSER_SCREEN_WIDTH"] == "1280"
-    assert env["CBROWSER_SCREEN_HEIGHT"] == "720"
-    for removed in ("SELKIES_STUN_HOST", "SELKIES_TURN_HOST", "SELKIES_TURN_PORT"):
-        assert removed not in env
-    assert stream_ports(30006) == {"30006/udp": ("127.0.0.1", 30006)}
-    assert stream_labels("cb", "p1", "3", 1)["com.cbrowser.role"] == "stream"
+# NOTE (t080): test_container_spec_browser_volumes_and_labels and
+# test_container_spec_stream_specs removed wholesale because the host
+# bind-mount volume-dict contract they asserted was replaced by typed
+# named-volume subpath mounts (ADR 029); the new mount semantics are
+# covered by tests/unit/test_t080_storage_layout.py, and the label
+# contracts remain covered by tests/unit/test_t050_sandbox_grouping.py.
+# The stream_specs port-mapping assertion (stream_ports, unrelated to
+# mounts) is carried by test_stream_ports_map_udp_mux_to_loopback in
+# tests/unit/test_t080_adapter_mounts.py (added at test review round 1,
+# t080_test_f003, after the reviewer found it had no coverage).
 
 
 # NOTE (t068): test_container_spec_cache_specs removed wholesale because

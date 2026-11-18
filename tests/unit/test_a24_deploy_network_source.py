@@ -38,14 +38,12 @@ def test_no_grep_bind_host_parsing():
     assert "cut -d'\"' -f4" not in text
 
 
-def test_calls_python_network_entrypoint():
-    text = _text()
-    assert "-m cbrowser.network_config_cli" in text
-    # t054: the only operation is `render`.
-    assert 'render --network-dir "$DATA_ROOT/network"' in text
-    assert 'eval "$(network_config render' in text
-    assert 'init --network-dir' not in text
-    assert 'read --network-dir' not in text
+# NOTE (t080): test_calls_python_network_entrypoint removed wholesale
+# because it asserted the render target "$DATA_ROOT/network"; ADR 029
+# renders into a scratch directory and copies the product into the
+# data volume.  Its still-valid assertions (python entrypoint, eval
+# form, no init/read operations) are carried into
+# tests/unit/test_t080_deploy_wiring.py.
 
 
 def test_authoritative_values_reexported():

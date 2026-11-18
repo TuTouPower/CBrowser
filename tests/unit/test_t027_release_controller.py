@@ -253,7 +253,7 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "scripts" / "supervisor_readiness_probe.py",
         repo / "scripts" / "supervisor_readiness_probe.py",
     )
-    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py"):
+    for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py", "deploy_volume_ops.py"):
         shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
     _copy_tree(ROOT / "config" / "docker", repo / "config" / "docker")
@@ -684,58 +684,21 @@ def test_deploy_still_refuses_foreign_overlap_when_own_network_exists(
     assert _builds(repo) == []
 
 
-def test_rollback_restores_target_port_not_current_port(
-    tmp_path: Path,
-) -> None:
-    """t054 R1 test f002: rollback re-renders the Caddyfile from the
-    TARGET release's recorded port. Deploying rel-001 at 56661 and
-    rel-002 at 56662, then rolling back, must serve 56661 — a rollback
-    that reused the current port would serve 56662 and fail here."""
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    assert _deploy(
-        repo, bin_dir, "rel-001", CBROWSER_HTTPS_PORT="56661"
-    ).returncode == 0
-    assert _deploy(
-        repo, bin_dir, "rel-002", CBROWSER_HTTPS_PORT="56662"
-    ).returncode == 0
-    result = _run(repo, bin_dir, "rollback")
-    assert result.returncode == 0, result.stderr
-    assert _pointer(repo, "current_release") == "rel-001"
-    caddyfile = repo / "data" / "instance" / "network" / "Caddyfile"
-    first_line = caddyfile.read_text(encoding="utf-8").splitlines()[0]
-    assert "https_port 56661" in first_line
-    assert "56662" not in first_line
-    rendered_sha = hashlib.sha256(caddyfile.read_bytes()).hexdigest()
-    assert rendered_sha == _manifest(repo, "rel-001")["caddyfile_sha256"]
-
-
-def test_rollback_refuses_on_caddyfile_sha_mismatch_without_touching_disk(
-    tmp_path: Path,
-) -> None:
-    """t054 R1 test f002: a target manifest whose caddyfile_sha256 does
-    not match the re-rendered Caddyfile refuses the rollback AND leaves
-    the on-disk Caddyfile and the release pointer untouched."""
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    assert _deploy(
-        repo, bin_dir, "rel-001", CBROWSER_HTTPS_PORT="56661"
-    ).returncode == 0
-    assert _deploy(
-        repo, bin_dir, "rel-002", CBROWSER_HTTPS_PORT="56662"
-    ).returncode == 0
-    caddyfile = repo / "data" / "instance" / "network" / "Caddyfile"
-    before = caddyfile.read_bytes()
-    assert b"https_port 56662" in before.splitlines()[0]
-    manifest_path = repo / "config" / "deploy" / "releases" / "rel-001.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["caddyfile_sha256"] = "0" * 64
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    result = _run(repo, bin_dir, "rollback")
-    assert result.returncode != 0
-    assert "caddyfile_sha256" in result.stderr
-    assert caddyfile.read_bytes() == before
-    assert _pointer(repo, "current_release") == "rel-002"
+# NOTE (t080): test_rollback_restores_target_port_not_current_port,
+# test_rollback_refuses_on_caddyfile_sha_mismatch_without_touching_disk,
+# test_caddy_fingerprints_recorded_and_change_sensitive,
+# test_compose_yaml_t051_db_fonts_labels_contract,
+# test_fonts_preflight_warns_and_continues and
+# test_fonts_preflight_ok_with_valid_set removed wholesale because
+# ADR 029 moves the rendered Caddyfile, the font sets and the compose
+# storage wiring from host directories into named volumes; their
+# scenarios are covered under the new storage contract by
+# tests/unit/test_t080_deploy_harness.py.  One assertion does not
+# carry over literally (declared at test review round 1,
+# t080_test_f003): the old warns-and-continues test also asserted the
+# "fonts directory" message, which belongs to the host-directory
+# scenario; under the volume scenario the replacement asserts the
+# applicable "no valid font set found" warning instead.
 
 
 def test_rollback_success_redeploys_previous_and_verifies(tmp_path: Path) -> None:
@@ -904,75 +867,6 @@ def test_instance_identity_parameterized_and_independent(
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
     assert _pointer(repo, "current_release") == "rel-001"
     assert _pointer_file(repo, deploy_dir_b).get("current") == "b-001"
-
-
-def test_caddy_fingerprints_recorded_and_change_sensitive(
-    tmp_path: Path,
-) -> None:
-    """AC-005 / test f002: the release env carries the real Caddyfile and
-    frontend fingerprints. t054: the fingerprint hashes the RENDERED
-    Caddyfile product, not the generator source — a comment appended to
-    the generator leaves the fingerprint unchanged, while a port change
-    (which re-renders the product) changes exactly that fingerprint and
-    image IDs stay stable."""
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    assert _deploy(repo, bin_dir, "rel-001").returncode == 0
-
-    def _env(release_id: str) -> dict[str, str]:
-        text = (
-            repo / "config" / "deploy" / "releases" / f"{release_id}.env"
-        ).read_text(encoding="utf-8")
-        return dict(
-            line.split("=", 1) for line in text.splitlines() if "=" in line
-        )
-
-    def _rendered_caddy_sha(env: dict[str, str]) -> str:
-        caddyfile = Path(env["CBROWSER_DATA_ROOT"]) / "network" / "Caddyfile"
-        return hashlib.sha256(caddyfile.read_bytes()).hexdigest()
-
-    env1 = _env("rel-001")
-    assert env1["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env1)
-    dist = repo / "src" / "frontend" / "dist"
-    listing = "".join(
-        f"{path.relative_to(dist)} {hashlib.sha256(path.read_bytes()).hexdigest()}\n"
-        for path in sorted(dist.rglob("*"))
-        if path.is_file()
-    )
-    expected_frontend = hashlib.sha256(listing.encode()).hexdigest()
-    assert env1["CBROWSER_FRONTEND_SHA256"] == expected_frontend
-
-    # A generator-source change that renders the same product must NOT
-    # change the fingerprint. The fake tree's network_config.py is the
-    # generator the deploy renders with when it leads PYTHONPATH (the
-    # fake tree stays a namespace package, so the rest still resolves
-    # from the real tree).
-    net_config = repo / "src" / "backend" / "cbrowser" / "network_config.py"
-    net_config.write_text(
-        net_config.read_text(encoding="utf-8") + "\n# drill change\n",
-        encoding="utf-8",
-    )
-    fake_pythonpath = (
-        f"{repo / 'src' / 'backend'}:{ROOT / 'src' / 'backend'}"
-    )
-    result = _deploy(
-        repo, bin_dir, "rel-002", PYTHONPATH=fake_pythonpath
-    )
-    assert result.returncode == 0, result.stderr
-    env2 = _env("rel-002")
-    assert env2["CBROWSER_CADDYFILE_SHA256"] == env1["CBROWSER_CADDYFILE_SHA256"]
-    assert env2["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env2)
-    assert env2["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
-    assert env2["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
-
-    # A port change re-renders the product and MUST change the fingerprint.
-    result = _deploy(repo, bin_dir, "rel-003", CBROWSER_HTTPS_PORT="56662")
-    assert result.returncode == 0, result.stderr
-    env3 = _env("rel-003")
-    assert env3["CBROWSER_CADDYFILE_SHA256"] != env1["CBROWSER_CADDYFILE_SHA256"]
-    assert env3["CBROWSER_CADDYFILE_SHA256"] == _rendered_caddy_sha(env3)
-    assert env3["CBROWSER_FRONTEND_SHA256"] == env1["CBROWSER_FRONTEND_SHA256"]
-    assert env3["CBROWSER_API_IMAGE"] == env1["CBROWSER_API_IMAGE"]
 
 
 def test_rollback_preserves_profile_data_and_database(tmp_path: Path) -> None:
@@ -1163,51 +1057,6 @@ def test_compose_yaml_release_contract() -> None:
     assert "CBROWSER_COMPOSE_PROJECT" in text
     assert "container_name: ${CBROWSER_PREFIX:-cbrowser}-api" in text
     assert "com.cbrowser.prefix: ${CBROWSER_PREFIX:-cbrowser}" in text
-
-
-def test_compose_yaml_t051_db_fonts_labels_contract() -> None:
-    """t051 AC-001/AC-009/AC-010/AC-021: DB named volume, independent fonts
-    dir, deployment labels on every control-plane service."""
-    text = (ROOT / "compose.yaml").read_text(encoding="utf-8")
-    # DB lives in a named volume, not the DATA_ROOT bind mount.
-    assert "  db:\n    name: ${CBROWSER_PREFIX:-cbrowser}-db" in text
-    assert "/data/cbrowser.db" not in text
-    assert "/data/db/cbrowser.db" in text
-    api_block = _service_block(text, "api")
-    assert "db:/data/db" in api_block
-    assert "CBROWSER_DB_PATH: /data/db/cbrowser.db" in api_block
-    # Fonts are an independent deploy input, mounted at /fonts:ro.
-    assert "CBROWSER_DATA_ROOT}/fonts" not in text
-    for service in ("api", "supervisor"):
-        block = _service_block(text, service)
-        assert "${CBROWSER_FONTS_DIR:?set CBROWSER_FONTS_DIR}:/fonts:ro" in block
-        assert "CBROWSER_FONTS_DIR: /fonts" in block
-    # Deployment identity labels on every control-plane service.
-    for service in ("api", "gateway", "supervisor", "caddy"):
-        block = _service_block(text, service)
-        assert (
-            "com.cbrowser.instance-id: ${CBROWSER_INSTANCE_ID:?" in block
-        ), service
-        assert (
-            "com.cbrowser.media-subnet-pool: ${CBROWSER_MEDIA_SUBNET_POOL:?"
-            in block
-        ), service
-    # The Supervisor container must also receive the deployment identity
-    # and media pool as environment (t051 review f002): the runner main
-    # and DockerAdapter env fallbacks (CBROWSER_INSTANCE_ID /
-    # CBROWSER_MEDIA_SUBNET_POOL) only take effect when compose actually
-    # passes them into the container.  CBROWSER_DOCKER_NETWORK_TIMEOUT
-    # is deliberately not passed: deploy.sh does not write it to the
-    # release env, so there is no value to forward.
-    supervisor_block = _service_block(text, "supervisor")
-    assert (
-        "CBROWSER_INSTANCE_ID: ${CBROWSER_INSTANCE_ID:?run scripts/deploy.sh first}"
-        in supervisor_block
-    )
-    assert (
-        "CBROWSER_MEDIA_SUBNET_POOL: ${CBROWSER_MEDIA_SUBNET_POOL:?run scripts/deploy.sh first}"
-        in supervisor_block
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -1738,26 +1587,6 @@ def _valid_font_set(root: Path) -> None:
         ]
     }
     (set_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-
-
-def test_fonts_preflight_warns_and_continues(tmp_path: Path) -> None:
-    """AC-009/AC-010: a missing fonts directory warns but never blocks."""
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    result = _deploy(repo, bin_dir, "rel-001")
-    assert result.returncode == 0, result.stderr
-    assert "WARNING" in result.stdout
-    assert "fonts directory" in result.stdout
-
-
-def test_fonts_preflight_ok_with_valid_set(tmp_path: Path) -> None:
-    repo = _make_fake_repo(tmp_path)
-    bin_dir = _make_fake_bin(tmp_path)
-    _valid_font_set(repo / "data" / "fonts")
-    result = _deploy(repo, bin_dir, "rel-001")
-    assert result.returncode == 0, result.stderr
-    assert "font sets ok" in result.stdout
-    assert "windows/set-1" in result.stdout
 
 
 def test_instance_identity_deterministic_across_releases(

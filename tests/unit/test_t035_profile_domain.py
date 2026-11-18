@@ -360,11 +360,15 @@ async def test_delete_profile_removes_private_directories(
         directory = tmp_path / sub / profile.id
         directory.mkdir(parents=True)
         (directory / "marker").write_text("x", encoding="utf-8")
+    secrets = tmp_path / "runtime" / ".secrets" / profile.id
+    secrets.mkdir(parents=True)
+    (secrets / "marker").write_text("x", encoding="utf-8")
 
     assert await service.delete_profile(profile.id) is True
     assert await repo.get_profile(profile.id) is None
     for sub in ("profiles", "runtime", "runtime-events"):
         assert not (tmp_path / sub / profile.id).exists()
+    assert not secrets.exists()
 
 
 @pytest.mark.asyncio

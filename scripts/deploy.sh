@@ -54,7 +54,17 @@
 #
 # Instance identity is parameterized (project, prefix, data root,
 # secrets dir, HTTPS port) so a second isolated instance can coexist on
-# the same Docker daemon (used by t032).  The deployment instance id is
+# the same Docker daemon (used by t032).
+#
+# t080 / ADR 029: formal runtime storage is the per-prefix named volumes
+# (<prefix>-db / -data / -fonts / -runtime, see compose.yaml).  The
+# CBROWSER_DATA_ROOT string remains the instance-identity material and
+# the Supervisor's container-internal mount path for the data volume;
+# it no longer names a host directory holding live data.  Legacy host
+# data/fonts trees are migration sources for
+# scripts/storage_migration.py only — deploy never moves them.  Release
+# env/manifest records carry the volume identities (CBROWSER_*_VOLUME /
+# "storage_volumes").  The deployment instance id is
 # derived deterministically from (prefix, data root) and written to the
 # com.cbrowser.instance-id label on every control-plane service,
 # sandbox, helper and network: it is the sole ownership test for the
@@ -131,6 +141,27 @@ db_volume_name() {
   # The named volume holding the control-plane database; must match the
   # `db` volume name in compose.yaml.
   printf '%s-db' "$PREFIX"
+}
+
+# t080 / ADR 029: the remaining named volumes; names must match
+# compose.yaml.  Release records carry these volume identities instead
+# of host data/fonts paths (the host directories survive only as
+# migration sources for scripts/storage_migration.py).
+data_volume_name() { printf '%s-data' "$PREFIX"; }
+fonts_volume_name() { printf '%s-fonts' "$PREFIX"; }
+runtime_volume_name() { printf '%s-runtime' "$PREFIX"; }
+
+copy_into_data_volume() {
+  # copy_into_data_volume <api-image> <host-file> <volume-relative-dir>
+  # Copy one host file into the data volume via a throwaway container;
+  # the host never writes into a volume directly.
+  local api_image="$1" host_file="$2" volume_dir="$3"
+  docker run --rm \
+    -v "$(data_volume_name):/data" \
+    -v "$(dirname "$host_file"):/src:ro" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/deploy_volume_ops.py copy-into \
+      --source "/src/$(basename "$host_file")" --dest-dir "/data/$volume_dir"
 }
 
 derive_instance_identity() {
@@ -383,10 +414,46 @@ check_legacy_host_database() {
   done
 }
 
+init_storage_volumes() {
+  # t080 / ADR 029: create the frozen volume layouts inside the named
+  # volumes via a throwaway API container and stamp each volume root
+  # with its identity marker (the migration ownership check verifies
+  # it).  Idempotent: existing content is never removed, only missing
+  # directories are created.  The data volume's own runtime/ and
+  # control/gates/ directories are legacy shadows: the Supervisor sees
+  # the runtime volume there, and the API mounts the runtime volume at
+  # /data/runtime, so neither service reads the shadow copies.
+  local api_image="$1"
+  docker run --rm \
+    -v "$(data_volume_name):/data" \
+    -v "$(runtime_volume_name):/runtime" \
+    -v "$(fonts_volume_name):/fonts-vol" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/deploy_volume_ops.py init-layout \
+      --data-root /data --runtime-root /runtime \
+      --fonts-root /fonts-vol --prefix "$PREFIX"
+}
+
+check_legacy_host_storage() {
+  # t080: host directories from the pre-volume layout are migration
+  # sources only.  When they still hold Profile data, name the
+  # migration tool; deploy never moves or deletes those bytes itself.
+  if [ -d "$DATA_ROOT/profiles" ] && [ -n "$(ls -A "$DATA_ROOT/profiles" 2>/dev/null)" ]; then
+    echo "NOTE: legacy host data root $DATA_ROOT still holds Profile data."
+    echo "  Formal runtime storage is now the named volumes ($(data_volume_name), $(fonts_volume_name), $(runtime_volume_name))."
+    echo "  The host tree was NOT moved or deleted. Migrate it with scripts/storage_migration.py (inventory first, then run) before relying on this deployment's data."
+  fi
+}
+
 check_font_sets_preflight() {
-  # AC-009/AC-010: warn (never block) when the fonts directory is missing
+  # AC-009/AC-010: warn (never block) when the fonts volume is missing
   # or holds no valid set; the deploy continues on the built-in fonts.
-  python3 "$ROOT/scripts/check_font_sets.py" --fonts-dir "$FONTS_DIR" || true
+  # t080: the check runs inside the API image against the fonts volume.
+  local api_image="$1"
+  docker run --rm \
+    -v "$(fonts_volume_name):/fonts:ro" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/check_font_sets.py --fonts-dir /fonts || true
 }
 
 check_engine_artifact_preflight() {
@@ -406,18 +473,26 @@ check_engine_artifact_preflight() {
   CBROWSER_ENGINE_TRUST_SOURCE="${CBROWSER_ENGINE_TRUST_SOURCE:-}"
   CBROWSER_CLOAKBROWSER_PACKAGE="${CBROWSER_CLOAKBROWSER_PACKAGE:-}"
   CLOAKBROWSER_AUTO_UPDATE="${CLOAKBROWSER_AUTO_UPDATE:-false}"
-  if [ -d "$DATA_ROOT/engine-cache" ]; then
-    if ! PYTHONPATH="$ROOT/src/backend${PYTHONPATH:+:$PYTHONPATH}" \
-        "$NET_CONFIG_PY" -m cbrowser.engine_artifacts verify-cache \
-        --cache-dir "$DATA_ROOT/engine-cache" --allow-empty --no-version-probe >/dev/null; then
-      echo "Refusing to start: engine cache verification failed at $DATA_ROOT/engine-cache." >&2
-      exit 1
-    fi
-  fi
   export CBROWSER_ENGINE_PLATFORM CBROWSER_ENGINE_BUILD CBROWSER_ENGINE_VERSION \
     CBROWSER_ENGINE_ARCHIVE_SHA256 CBROWSER_ENGINE_BINARY_SHA256 \
     CBROWSER_ENGINE_INTEGRITY_MECHANISM CBROWSER_ENGINE_TRUST_SOURCE \
     CBROWSER_CLOAKBROWSER_PACKAGE CLOAKBROWSER_AUTO_UPDATE
+}
+
+check_engine_cache_in_volume() {
+  # t080: the engine cache lives in the data volume; verification runs
+  # inside the API image with the volume mounted (the host no longer
+  # holds a cache directory to inspect), reusing the same CLI the host
+  # preflight used before the storage migration.
+  local api_image="$1"
+  if ! docker run --rm \
+    -v "$(data_volume_name):/data" \
+    -v "$ROOT/scripts:/scripts:ro" \
+    "$api_image" python3 /scripts/deploy_volume_ops.py verify-engine-cache \
+      --cache-dir /data/engine-cache >/dev/null; then
+    echo "Refusing to start: engine cache verification failed in volume $(data_volume_name)." >&2
+    exit 1
+  fi
 }
 
 backup_database() {
@@ -708,6 +783,8 @@ load_release_identity() {
       CBROWSER_EDGE_SUBNET=*|CBROWSER_TRUSTED_PROXY_CIDRS=*|\
       CBROWSER_DATA_ROOT=*|CBROWSER_SECRETS_DIR=*|\
       CBROWSER_INSTANCE_ID=*|CBROWSER_MEDIA_SUBNET_POOL=*|CBROWSER_FONTS_DIR=*|\
+      CBROWSER_DB_VOLUME=*|CBROWSER_DATA_VOLUME=*|\
+      CBROWSER_FONTS_VOLUME=*|CBROWSER_RUNTIME_VOLUME=*|\
       CBROWSER_ENGINE_BUILD=*|CBROWSER_ENGINE_VERSION=*|\
       CBROWSER_ENGINE_BINARY_SHA256=*|CLOAKBROWSER_AUTO_UPDATE=*)
         key="${line%%=*}"
@@ -766,10 +843,12 @@ build_and_record_release() {
   local compose_sha caddyfile_sha frontend_sha migration
   compose_sha="$(sha256_of_file "$ROOT/compose.yaml")"
   # t054: the fingerprint hashes the FINAL Caddyfile product rendered for
-  # this deploy (data root), never the generator source: a generator
-  # change that renders the same file leaves the fingerprint unchanged,
-  # while a port change re-renders and changes it.
-  caddyfile_sha="$(sha256_of_file "$DATA_ROOT/network/Caddyfile")"
+  # this deploy, never the generator source: a generator change that
+  # renders the same file leaves the fingerprint unchanged, while a port
+  # change re-renders and changes it.  t080: the render output's
+  # CADDYFILE_SHA256 is authoritative (the file now lives in the data
+  # volume, not under a host data root).
+  caddyfile_sha="${CADDYFILE_SHA256:?render the Caddyfile before recording the release}"
   frontend_sha="$(frontend_fingerprint)"
   migration="$(migration_head)"
 
@@ -783,6 +862,10 @@ CBROWSER_TRUSTED_PROXY_CIDRS=$CBROWSER_EDGE_SUBNET
 CBROWSER_DATA_ROOT=$DATA_ROOT
 CBROWSER_SECRETS_DIR=$SECRETS_DIR
 CBROWSER_FONTS_DIR=$FONTS_DIR
+CBROWSER_DB_VOLUME=$(db_volume_name)
+CBROWSER_DATA_VOLUME=$(data_volume_name)
+CBROWSER_FONTS_VOLUME=$(fonts_volume_name)
+CBROWSER_RUNTIME_VOLUME=$(runtime_volume_name)
 CBROWSER_INSTANCE_ID=$CBROWSER_INSTANCE_ID
 CBROWSER_MEDIA_SUBNET_POOL=$CBROWSER_MEDIA_SUBNET_POOL
 CBROWSER_API_IMAGE=$api_id
@@ -839,7 +922,8 @@ print(json.dumps({
   "migration_version": "$migration",
   "database_backup": $database_backup_json,
   "capabilities": {"readiness": true, "reconcile_all": true},
-  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT, "instance_id": "$CBROWSER_INSTANCE_ID", "media_subnet_pool": "$CBROWSER_MEDIA_SUBNET_POOL", "edge_subnet": "$CBROWSER_EDGE_SUBNET"}
+  "instance": {"project": "$PROJECT", "prefix": "$PREFIX", "https_port": $HTTPS_PORT, "instance_id": "$CBROWSER_INSTANCE_ID", "media_subnet_pool": "$CBROWSER_MEDIA_SUBNET_POOL", "edge_subnet": "$CBROWSER_EDGE_SUBNET"},
+  "storage_volumes": {"db": "$(db_volume_name)", "data": "$(data_volume_name)", "fonts": "$(fonts_volume_name)", "runtime": "$(runtime_volume_name)"}
 }
 JSON
 }
@@ -848,6 +932,11 @@ cmd_deploy() {
   check_prerequisites
   check_engine_artifact_preflight
   derive_instance_identity
+  # t080: the host data root remains the instance-identity anchor (its
+  # existence is what derive_instance_identity's same-directory reuse
+  # checks); only the empty root is created here — all data lives in
+  # the named volumes, never in this directory.
+  mkdir -p "$DATA_ROOT"
   check_prefix_conflict
   check_edge_subnet_conflict
 
@@ -867,17 +956,26 @@ cmd_deploy() {
   # is started and no pointer moves before the checks below pass.
   build_api_image "$release_id"
   check_database_schema_generation "$API_IMAGE_ID"
+  check_engine_cache_in_volume "$API_IMAGE_ID"
   check_legacy_host_database
-  check_font_sets_preflight
+  check_legacy_host_storage
+  check_font_sets_preflight "$API_IMAGE_ID"
   backup_database "$API_IMAGE_ID"
 
   ensure_internal_secrets
-  mkdir -p "$DATA_ROOT"/{profiles,runtime,runtime-events,artifacts,spool,control,engine-cache/geoip}
+  init_storage_volumes "$API_IMAGE_ID"
 
   # t054: render the Caddyfile for the deploy port (the only network
   # configuration step) and export the derived trusted proxy CIDRs
   # (the edge subnet) for API + Gateway. No bind host: loopback only.
-  eval "$(network_config render --network-dir "$DATA_ROOT/network" --https-port "$HTTPS_PORT")"
+  # t080: render into a scratch directory; the rendered file is
+  # fingerprinted (CADDYFILE_SHA256 from the render output) and copied
+  # into the data volume's network subtree — Caddy reads it from there.
+  local rendered_network_dir
+  rendered_network_dir="$(mktemp -d)"
+  eval "$(network_config render --network-dir "$rendered_network_dir" --https-port "$HTTPS_PORT")"
+  copy_into_data_volume "$API_IMAGE_ID" "$rendered_network_dir/Caddyfile" "network"
+  rm -rf "$rendered_network_dir"
   export CBROWSER_HTTPS_PORT="$HTTPS_PORT"
   export CBROWSER_TRUSTED_PROXY_CIDRS="$CBROWSER_EDGE_SUBNET"
 
@@ -919,6 +1017,7 @@ cmd_rollback() {
     exit 1
   fi
   check_database_schema_generation "$target_api"
+  check_engine_cache_in_volume "$target_api"
   local current
   current="$(read_pointer "$POINTER_FILE")"
   if [ -z "$current" ] || [ ! -f "$RELEASES_DIR/$current.json" ]; then
@@ -1013,8 +1112,9 @@ cmd_rollback() {
     echo "Refusing rollback: re-rendered Caddyfile sha256 $rendered_caddy_sha != target manifest caddyfile_sha256 $target_caddy_sha." >&2
     exit 1
   fi
-  mkdir -p "$DATA_ROOT/network"
-  cp "$tmp_network_dir/Caddyfile" "$DATA_ROOT/network/Caddyfile"
+  # t080: the validated Caddyfile is copied into the data volume's
+  # network subtree (Caddy's only source), not a host data root.
+  copy_into_data_volume "$target_api" "$tmp_network_dir/Caddyfile" "network"
   rm -rf "$tmp_network_dir"
 
   deploy_up_and_verify "$target"
@@ -1088,7 +1188,7 @@ cmd_env_backup() {
   point_name="$(basename "$point_dir")"
   docker run --rm \
     -v "$(db_volume_name):/db" \
-    -v "$DATA_ROOT:/data" \
+    -v "$(data_volume_name):/data" \
     -v "$SECRETS_DIR:/secrets:ro" \
     -v "$(dirname "$point_dir"):/points" \
     -v "$ROOT/scripts:/scripts:ro" \
@@ -1129,13 +1229,13 @@ cmd_env_restore() {
   point_name="$(basename "$point_abs")"
   docker run --rm \
     -v "$(db_volume_name):/db" \
-    -v "$DATA_ROOT:/data" \
+    -v "$(data_volume_name):/data" \
     -v "$(dirname "$point_abs"):/points:ro" \
     -v "$ROOT/scripts:/scripts:ro" \
     "$api_image" python3 /scripts/restore_point.py restore \
       --point "/points/$point_name" --db /db/cbrowser.db \
       --data-root /data --journal /data/restore-journal.json
-  echo "Environment restored from $point_dir into volume $(db_volume_name) and $DATA_ROOT."
+  echo "Environment restored from $point_dir into volumes $(db_volume_name) and $(data_volume_name)."
   echo "Re-deploy to start the stack against the restored environment."
 }
 

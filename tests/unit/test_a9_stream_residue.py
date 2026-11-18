@@ -57,7 +57,7 @@ def _stage(adapter, mock_client, tmp_path):
     }
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(
-        return_value=tmp_path / "stream_gate"
+        return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "stream"
     )
     adapter._resolved_endpoint = MagicMock(
         return_value=[("127.0.0.1", 18097)]

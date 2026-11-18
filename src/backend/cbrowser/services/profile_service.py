@@ -578,6 +578,15 @@ class ProfileService:
                         await asyncio.to_thread(
                             self._remove_profile_directory, target, profile_id
                         )
+                    # t080: the per-Profile secret directory lives under
+                    # runtime/.secrets (runtime volume); it is private
+                    # credential material and is removed with the Profile.
+                    secrets = (
+                        self._data_root / "runtime" / ".secrets" / profile_id
+                    )
+                    await asyncio.to_thread(
+                        self._remove_profile_directory, secrets, profile_id
+                    )
                 await self._clear_preview_state(profile_id)
                 return True
         except DBAPIError as e:

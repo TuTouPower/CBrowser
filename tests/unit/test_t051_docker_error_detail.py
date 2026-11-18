@@ -65,7 +65,7 @@ async def test_browser_start_failure_keeps_docker_detail_redacted(tmp_path: Path
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[])
     adapter._install_network_policy = MagicMock()
@@ -111,7 +111,7 @@ async def test_stream_start_failure_keeps_docker_detail_redacted(tmp_path: Path)
         }
     }
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     client.containers.run.side_effect = DockerException(DETAIL)
 
     with pytest.raises(DockerSandboxError) as caught:
@@ -151,7 +151,7 @@ async def test_stream_residue_error_keeps_docker_detail(tmp_path: Path) -> None:
         }
     }
     adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "gate")
+    adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     container = MagicMock()
     container.id = "stream-container-id"
     container.name = adapter.get_stream_container_name("p1")
@@ -204,7 +204,7 @@ def test_x11_helper_failure_keeps_docker_detail(tmp_path: Path) -> None:
         "permission denied while trying to connect to the Docker daemon"
     )
     with pytest.raises(DockerSandboxError) as caught:
-        adapter.setup_x11_permissions(tmp_path / "x11")
+        adapter.setup_x11_permissions(tmp_path / "data" / "runtime" / "p1" / "x11")
     assert "permission denied" in str(caught.value)
 
 

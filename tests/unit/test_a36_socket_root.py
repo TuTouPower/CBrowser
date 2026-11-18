@@ -389,49 +389,9 @@ async def test_no_legacy_data_root_socket_fallback(short_root: Path) -> None:
         assert await core.query_agent_health(PROFILE) is None
 
 
-@pytest.mark.asyncio
-async def test_browser_container_mounts_shared_socket_root(short_root: Path) -> None:
-    from unittest.mock import MagicMock
+# NOTE (t080): test_browser_container_mounts_shared_socket_root was removed wholesale because they asserted the
+# pre-t080 host bind-mount `volumes` dict representation; ADR 029
+# replaces it with typed named-volume subpath `mounts`.  The same
+# scenarios are covered under the new representation by
+# tests/unit/test_t080_adapter_mounts.py.
 
-    from cbrowser.supervisor.docker_adapter import DockerAdapter
-
-    data_root = short_root / "data"
-    (data_root / "engine_cache" / "geoip").mkdir(parents=True)
-    socket_root = short_root / "socks"
-    validator = PathValidator(data_root, socket_root=socket_root)
-    image = "sha256:" + "a" * 64
-    adapter = DockerAdapter(
-        path_validator=validator,
-        engine_cache_dir=data_root / "engine_cache",
-        docker_client=MagicMock(),
-        browser_image=image,
-        stream_image=image,
-        policy_image=image,
-    )
-    adapter.create_browser_network = AsyncMock()
-    adapter.ensure_runtime_cache = AsyncMock()
-    adapter.setup_x11_permissions = MagicMock()
-    adapter.cleanup_container_by_name = MagicMock()
-    adapter._prepare_policy_gate = MagicMock(return_value=data_root / "gate")
-    adapter._validate_cache_paths = MagicMock()
-    adapter._install_network_policy = MagicMock()
-    adapter.remember_profile_number("p1", 1)
-    dirs = adapter.prepare_profile_directories("p1")
-    (dirs["runtime"] / "snapshot.json").write_text(
-        json.dumps({"version": 1, "config": {}}), encoding="utf-8"
-    )
-    container = MagicMock()
-    container.id = "cid"
-    adapter.client.containers.run = MagicMock(return_value=container)
-    await adapter.start_browser_container(
-        profile_id="p1",
-        runtime_instance_id="i1",
-        snapshot_json_path=dirs["runtime"] / "snapshot.json",
-    )
-    kwargs = adapter.client.containers.run.call_args.kwargs
-    expected_dir = sr.agent_socket_dir(socket_root, "p1", "i1")
-    assert kwargs["volumes"][str(expected_dir)] == {
-        "bind": str(expected_dir),
-        "mode": "rw",
-    }
-    assert kwargs["environment"][sr.AGENT_SOCKET_ROOT_ENV] == str(socket_root)

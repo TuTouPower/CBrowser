@@ -29,9 +29,13 @@ Browser 只加入所属 egress bridge；Stream 只加入所属媒体 bridge。�
 
 ## 平台字体集只读挂载与失败封闭（t041）
 
-平台专有字体集不属于任何镜像，只存于宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，经 `.worktreeinclude` 供各 worktree 共享同一份。Supervisor 按 Profile 绑定的配置版本快照，只把该字体集目录只读挂载进 Browser 容器的 `/run/cbrowser/fonts/{platform}/{set_id}`，挂载点位于 fontconfig 默认扫描路径之外；不挂载整个字体根目录，也不把字体集挂给 Stream 容器。
+平台专有字体集不属于任何镜像，只存于宿主 `CBROWSER_FONTS_DIR/{platform}/{set_id}/`，经 `.worktreeinclude` 供各 worktree 共享同一份。Supervisor 按 Profile 绑定的配置版本快照，只把该字体集目录只读挂载进 Browser 容器的 `/run/cbrowser/fonts/{platform}/{set_id}`，挂载点位于 fontconfig 默认扫描路径之外；不挂载整个字体根目录，也不把字体集挂给 Stream 容器。（t080 修订：正式运行的字体资产改存 fonts named volume，Supervisor 以 volume subpath `<platform>/<set_id>` 只读挂载；宿主字体目录仅作导入源，见下节。挂载范围与失败封闭口径不变。）
 
 启动前按绑定快照校验字体集存在且文件与 `manifest.json`（来源、来源系统版本、逐文件 sha256）一致：缺失或不一致即启动失败封闭并报告 `font_set_unavailable`，不降级为无字体启动。`font_set_id` 为 null 时不做挂载，回退镜像内基础开源字体可见、正常启动，由 runtime 状态报告平台字体未配置并在 `missing_fonts` 标明当前暴露 Linux 基础字体。字体集本身不在本系统内删除。
+
+## Linux 原生卷与 typed mount（t080）
+
+Supervisor 创建的一切数据挂载都是 named volume 的精确 subpath typed mount（ADR 029）：`storage_layout.MountPlanner` 把经 PathValidator 校验的本地逻辑路径解析为 `(volume, subpath, target, read_only)`，`volume_spec` 只构造 Mount 列表；本地路径落在受管根（data 卷、runtime 卷的 runtime/gates/sockets 子树、fonts 卷）之外、或指向卷根目录本身时构造期拒绝（fail-closed），不存在宿主 bind 回退，也不依赖 daemon 的私有卷物理路径。Browser 的挂载集合、Stream 的零 Profile/Artifact/字体集合、cache-init 与探针 helper 的最小集合均以此为准（单元覆盖见 `tests/unit/test_t080_storage_layout.py`）。runtime 卷不随 Supervisor 重启清空；stale socket/gate 仍按所有权标签、实例 id 与活跃性证据清理（既有 socket_root 清理契约不变）。Supervisor 仍是唯一 Docker Socket 持有者；卷拓扑与逻辑路径契约见 `architecture.md` 3.4。
 
 ## 生命周期与恢复
 

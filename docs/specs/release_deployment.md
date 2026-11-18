@@ -1,7 +1,7 @@
 ---
 slug: release_deployment
 status: active
-tasks: [baseline]
+tasks: [baseline, t080]
 ---
 # 需求规范：Release 发布与回退
 
