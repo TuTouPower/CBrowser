@@ -1,4 +1,9 @@
-"""0013: profile runtime identity unification (t075).
+"""0013 (branch numbering): profile runtime identity unification (t075).
+
+Rechained on main after the t075 merge: t083's 0013
+(runtime_state_revision) already occupies the post-0012 slot, so
+this migration follows it (logically 0014). The revision id is
+unchanged.
 
 The profile configuration converges to one identity shape:
 
@@ -50,7 +55,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d75a0013f001"
-down_revision: str | None = "c81f0a11b001"
+down_revision: str | None = "d83a2c12b083"
 branch_labels: str | None = None
 depends_on: str | None = None
 
