@@ -47,7 +47,24 @@ def _adapter(tmp_path: Path, client=None) -> DockerAdapter:
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
+
+
+def _stub_agent(adapter) -> None:
+    """t082: stub the Policy Agent seam (in-process rig) like the
+    install seam; lifecycle coverage lives in
+    test_t082_adapter_policy_agents."""
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    rig = PolicyAgentTestRig()
+    rig.executor.resolutions.update(
+        {"proxy.example.com": ["93.184.216.34"],
+         "host.docker.internal": ["192.168.65.254"]}
+    )
+    rig.install_on(adapter)
+    rig.stub_ensure(adapter)
+    adapter._test_rig = rig  # type: ignore[attr-defined]
 
 
 def _gate(root: Path, role: str) -> Path:
@@ -70,6 +87,7 @@ async def test_browser_container_mounts_shared_socket_root(tmp_path: Path) -> No
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
@@ -78,6 +96,7 @@ async def test_browser_container_mounts_shared_socket_root(tmp_path: Path) -> No
     adapter._prepare_policy_gate = MagicMock(return_value=data_root / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
     adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
@@ -114,7 +133,9 @@ async def test_browser_container_mounts_never_include_secret_directory(
     dirs = adapter.prepare_profile_directories("p1")
     snapshot_path = dirs["runtime"] / "snapshot.json"
     snapshot_path.write_text(json.dumps({"version": 1, "config": {}}), encoding="utf-8")
-    adapter.client.containers.run.return_value = MagicMock()
+    _c = MagicMock()
+    _c.id = "cid-run"
+    adapter.client.containers.run.return_value = _c
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
@@ -125,6 +146,7 @@ async def test_browser_container_mounts_never_include_secret_directory(
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[])
     adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
 
     await adapter.start_browser_container(
         profile_id="p1",
@@ -164,13 +186,16 @@ async def _start_stream(adapter: DockerAdapter, tmp_path: Path):
             "Labels": {"com.cbrowser.config-version": "1"},
         }
     }
-    adapter.client.containers.run.return_value = MagicMock()
+    stream_container = MagicMock()
+    stream_container.id = "cid-stream"
+    adapter.client.containers.run.return_value = stream_container
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(
         return_value=_gate(tmp_path / "data", "stream")
     )
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
     adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
     await adapter.start_stream_container(
         profile_id="p1",
         runtime_instance_id="inst_1",
@@ -222,6 +247,7 @@ async def test_browser_container_mounts_credentials_read_only_and_resolves_egres
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
@@ -229,8 +255,11 @@ async def test_browser_container_mounts_credentials_read_only_and_resolves_egres
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
     adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("1.2.3.4", 1080)])
+    # t082: resolution seam is the Policy Agent resolve; the stub
+    # records the URL and returns the same fixed answer as before.
+    adapter._resolve_via_agent = MagicMock(return_value=[("1.2.3.4", 1080)])
     adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
     adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
@@ -258,7 +287,7 @@ async def test_browser_container_mounts_credentials_read_only_and_resolves_egres
         == ".secrets/p1/proxy_credentials.json"
     )
     assert creds_mount["ReadOnly"] is True
-    assert adapter._resolved_endpoint.call_args.args[1] == (
+    assert adapter._resolve_via_agent.call_args.args[1] == (
         "socks5://proxy.example.com:1080"
     )
     policy = adapter._install_network_policy.call_args.args[1]
@@ -281,6 +310,7 @@ async def _start_browser_with_config(tmp_path: Path, config: dict) -> list:
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
@@ -289,6 +319,7 @@ async def _start_browser_with_config(tmp_path: Path, config: dict) -> list:
     adapter._prepare_policy_gate = MagicMock(return_value=root / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._install_network_policy = MagicMock()
+    _stub_agent(adapter)
     adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     (dirs["runtime"] / "snapshot.json").write_text(
@@ -393,11 +424,14 @@ def test_probe_helper_uses_browser_policy_and_returns_full_observation(
     assert creds_mount["VolumeOptions"]["Subpath"].endswith(
         "/proxy_credentials.json"
     )
-    policy = _probe_kwargs(calls, "network_policy")
-    policy_doc = json.loads(policy["command"][0])
-    assert policy_doc["role"] == "browser"
-    assert policy_doc["proxy_enforced"] is True
-    assert policy_doc["allowed_tcp"] == [["93.184.216.34", 8080]]
-    assert policy_doc["allowed_udp"] == [["127.0.0.11", 53]]
+    agent_kwargs = _probe_kwargs(calls, "policy_agent")
+    assert agent_kwargs["network_mode"] == "container:fake-probe-id"
+    installed = adapter._test_rig.executor.installed  # type: ignore[attr-defined]
+    assert len(installed) == 1
+    policy_doc = installed[0][0]
+    assert policy_doc.role == "browser"
+    assert policy_doc.proxy_enforced is True
+    assert policy_doc.allowed_tcp == [("93.184.216.34", 8080)]
+    assert policy_doc.allowed_udp == [("127.0.0.11", 53)]
     assert all(c.removed for c in fake.containers.created)
     assert all(n.removed for n in fake.networks.created)

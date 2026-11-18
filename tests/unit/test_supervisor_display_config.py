@@ -30,6 +30,7 @@ def _adapter(tmp_path: Path) -> tuple[DockerAdapter, dict[str, Path], Path]:
     }
     mock_client.containers.get.side_effect = docker.errors.NotFound("Not found")
     mock_container = MagicMock()
+    mock_container.id = "cid-stream"
     mock_container.name = "t007-display-stream"
     mock_client.containers.run.return_value = mock_container
 
@@ -40,7 +41,14 @@ def _adapter(tmp_path: Path) -> tuple[DockerAdapter, dict[str, Path], Path]:
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
+    # t082: stub the Policy Agent lifecycle (in-process rig).
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter._install_network_policy = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
     adapter.remember_profile_number("p2", 1)

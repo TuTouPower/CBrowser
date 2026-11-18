@@ -139,6 +139,7 @@ services:
       CBROWSER_GATEWAY_TOKEN_FILE: /run/secrets/gateway_key
       CBROWSER_DATA_ROOT: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}
       CBROWSER_SOCKET_ROOT: ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}
+      CBROWSER_POLICY_AGENT_ROOT: ${CBROWSER_POLICY_AGENT_ROOT:-/run/cb/policy-agents}
       CBROWSER_ENGINE_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache
       CBROWSER_GEOIP_CACHE: ${CBROWSER_DATA_ROOT:?set CBROWSER_DATA_ROOT}/engine-cache/geoip
       CLOAKBROWSER_AUTO_UPDATE: "false"
@@ -170,6 +171,11 @@ services:
         target: ${CBROWSER_SOCKET_ROOT:-/run/cb/socks}
         volume:
           subpath: sockets
+      - type: volume
+        source: runtime
+        target: ${CBROWSER_POLICY_AGENT_ROOT:-/run/cb/policy-agents}
+        volume:
+          subpath: policy-agents
       - fonts:/fonts:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/supervisor_key:/run/secrets/supervisor_key:ro
       - ${CBROWSER_SECRETS_DIR:?set CBROWSER_SECRETS_DIR}/agent_key:/run/secrets/agent_key:ro

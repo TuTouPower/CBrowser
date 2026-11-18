@@ -48,6 +48,7 @@ def _adapter(tmp_path: Path, client) -> DockerAdapter:
         browser_image=BROWSER,
         stream_image=STREAM,
         policy_image=BROWSER,
+        deployment_instance_id="dep-test",
     )
 
 
@@ -65,6 +66,12 @@ async def test_browser_start_failure_keeps_docker_detail_redacted(tmp_path: Path
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
+    # t082: stub the Policy Agent lifecycle (in-process rig).
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[])
@@ -111,6 +118,12 @@ async def test_stream_start_failure_keeps_docker_detail_redacted(tmp_path: Path)
         }
     }
     adapter.cleanup_container_by_name = MagicMock()
+    # t082: stub the Policy Agent lifecycle (in-process rig).
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     client.containers.run.side_effect = DockerException(DETAIL)
 
@@ -151,6 +164,12 @@ async def test_stream_residue_error_keeps_docker_detail(tmp_path: Path) -> None:
         }
     }
     adapter.cleanup_container_by_name = MagicMock()
+    # t082: stub the Policy Agent lifecycle (in-process rig).
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     container = MagicMock()
     container.id = "stream-container-id"
@@ -256,23 +275,17 @@ def test_policy_install_failure_keeps_docker_detail_redacted(tmp_path: Path) -> 
     container = SimpleNamespace(id="browser-id", labels={})
     with pytest.raises(DockerSandboxError) as caught:
         adapter._install_network_policy(
-            container, {"role": "browser", "allowed_tcp": []}, gate, "inst_1", "browser"
+            container,
+            {"role": "browser", "allowed_tcp": []},
+            gate,
+            "inst_1",
+            "browser",
+            profile_id="p1",
+            config_version=1,
         )
     message = str(caught.value)
     assert "iptables failed" in message
     assert "proxy-user" not in message and "s3cret" not in message
-
-
-def test_policy_helper_run_failure_keeps_docker_detail(tmp_path: Path) -> None:
-    client = MagicMock()
-    adapter = _adapter(tmp_path, client)
-    client.containers.create.side_effect = DockerException(
-        "helper image not found: no such image sha256:deadbeef"
-    )
-    container = SimpleNamespace(id="browser-id", labels={})
-    with pytest.raises(DockerSandboxError) as caught:
-        adapter._run_policy_helper(container, ["iptables", "-L"])
-    assert "no such image" in str(caught.value)
 
 
 def test_media_network_inspect_failure_keeps_docker_detail(tmp_path: Path) -> None:

@@ -230,15 +230,43 @@ def container_event_triggers_scan(event: Any, prefix: str) -> bool:
     return attributes.get("com.cbrowser.role") in _CONVERGENCE_ROLES
 
 
+def policy_agent_event_profile(event: Any, prefix: str) -> str | None:
+    """Profile id for a Policy Agent lifecycle event, else None (t082).
+
+    Agent events never wake the full business scan (p057
+    anti-self-excitation): they schedule a targeted repair of the one
+    affected Profile's Agents instead.
+    """
+    if not isinstance(event, dict):
+        return None
+    if event.get("Type") not in (None, "container"):
+        return None
+    action = str(event.get("Action") or event.get("status") or "")
+    if action.split(":", 1)[0] not in _TOPOLOGY_CONTAINER_ACTIONS:
+        return None
+    attributes = (event.get("Actor") or {}).get("Attributes") or {}
+    if attributes.get("com.cbrowser.prefix") != prefix:
+        return None
+    if attributes.get("com.cbrowser.role") != "network-policy-agent":
+        return None
+    profile_id = attributes.get("com.cbrowser.profile-id")
+    return profile_id if isinstance(profile_id, str) and profile_id else None
+
+
 def _pump_container_events(
     stream: Any,
     prefix: str,
     on_match: Any,
     stop_event: threading.Event,
+    on_agent_match: Any = None,
 ) -> None:
     for event in stream:
         if container_event_triggers_scan(event, prefix):
             on_match()
+        elif on_agent_match is not None:
+            profile_id = policy_agent_event_profile(event, prefix)
+            if profile_id is not None:
+                on_agent_match(profile_id)
         if stop_event.is_set():
             break
 
@@ -298,6 +326,7 @@ def _watch_container_events(
     register_stream: Any,
     wake: Any,
     close_stream: Any,
+    on_agent_match: Any = None,
 ) -> None:
     """Container watcher, symmetric with ``_watch_network_events``.
 
@@ -323,7 +352,7 @@ def _watch_container_events(
             close_stream()
             return
         logger.info("Docker events stream subscribed for prefix=%s", prefix)
-        _pump_container_events(stream, prefix, wake, stop_event)
+        _pump_container_events(stream, prefix, wake, stop_event, on_agent_match)
     except Exception as exc:  # noqa: BLE001 - docker events watching loop error isolated and logged
         logger.warning(
             "Docker event stream stopped: error_type=%s", type(exc).__name__
@@ -415,6 +444,13 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
 
     metrics = StageMetrics()
     scan_wakeup = asyncio.Event()
+    # t082: Policy Agent events schedule targeted repairs only.
+    policy_agent_wakeup = asyncio.Event()
+    pending_agent_profiles: set[str] = set()
+
+    def _on_policy_agent_event(profile_id: str) -> None:
+        pending_agent_profiles.add(profile_id)
+        loop.call_soon_threadsafe(policy_agent_wakeup.set)
 
     def watch_docker_events() -> None:
         def _register(stream: Any) -> None:
@@ -430,6 +466,7 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                 _register,
                 lambda: loop.call_soon_threadsafe(scan_wakeup.set),
                 _close_container_stream_sync,
+                _on_policy_agent_event,
             )
         finally:
             # t055 A13: the container watcher closes only its own stream.
@@ -476,6 +513,12 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                 started = time.monotonic()
                 await download_forwarder.forward_pending()
                 metrics.record("downloads", time.monotonic() - started)
+                if policy_agent_wakeup.is_set():
+                    policy_agent_wakeup.clear()
+                    repair_profiles = sorted(pending_agent_profiles)
+                    pending_agent_profiles.clear()
+                    for repair_profile in repair_profiles:
+                        await core.note_policy_agent_event(repair_profile)
                 now = time.monotonic()
                 if scan_wakeup.is_set() or now - last_scan >= 30.0:
                     scan_wakeup.clear()

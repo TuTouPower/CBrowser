@@ -33,16 +33,17 @@
 
 <!-- /规范 -->
 
-- [ ] AC-001：实际双栈策略未安装并验证前，Browser/Stream 业务进程不放行；失败、超时、畸形回执不生成有效 ready 标记，并可清理本次已创建资源。
-- [ ] AC-002：连续稳态巡检与 readiness 查询不创建/销毁临时 policy 容器，不执行 docker exec；目标不变时 Agent 不随扫描重建，实际内核规则仍被检查。
-- [ ] AC-003：伪造部署/实例/配置/角色/目标 ID、旧修订重放、超大/非法请求、命令/路径注入均被拒绝，不改变目标或其他 netns 规则。
-- [ ] AC-004：Browser/Stream 无 NET_ADMIN、Docker Socket 和策略 UDS；Agent 无用户数据/凭据挂载、host PID、SYS_ADMIN 或 privileged，仍能在目标 netns 完成安装、查询与封闭。
-- [ ] AC-005：域名代理采用同一解析/策略修订，巡检不重复 DNS exec；受控地址变化后规则安全切换，解析或安装失败保持旧有效限制并报错，不出现未受限出站窗口。
-- [ ] AC-006：注入 Browser IPv4 或 IPv6 漂移，30 秒内检测并确认当前实例双栈封闭；无法确认时在同一预算内暂停精确目标，错误可定位且用户数据不删除、不重建。
-- [ ] AC-007：Stream 漂移仅修复 Stream/对应 Agent，Browser ID、IPC、页面和数据不变；达到既有替换预算后明确 failed，不无限建毁。
-- [ ] AC-008：Agent 崩溃、UDS 阻塞、响应错误或修订失配不能返回 ready；30 秒内恢复可信观测或隔离当前目标，之后只恢复本机制隔离且仍为当前运行意愿的实例，不触碰用户暂停、停止或更新实例。
-- [ ] AC-009：Supervisor 重启可接管正确 Agent；同名目标重建/Stream-only 替换后旧 Agent 与迟到回执不被采用，清理仅影响精确归属资源，不形成自激或无主 Agent。
-- [ ] [deploy] AC-010：4 个隔离真实 Profile 稳态 10 分钟，policy 临时建毁与巡检 DNS exec 均为零；实际双栈漂移、Agent 故障、Supervisor 重启的网络正负请求和页面状态共同证明修复/封闭行为。
+- [x] AC-001：实际双栈策略未安装并验证前，Browser/Stream 业务进程不放行；失败、超时、畸形回执不生成有效 ready 标记，并可清理本次已创建资源。
+- [x] AC-002：连续稳态巡检与 readiness 查询不创建/销毁临时 policy 容器，不执行 docker exec；目标不变时 Agent 不随扫描重建，实际内核规则仍被检查。
+- [x] AC-003：伪造部署/实例/配置/角色/目标 ID、旧修订重放、超大/非法请求、命令/路径注入均被拒绝，不改变目标或其他 netns 规则。
+- [x] AC-004：Browser/Stream 无 NET_ADMIN、Docker Socket 和策略 UDS；Agent 无用户数据/凭据挂载、host PID、SYS_ADMIN 或 privileged，仍能在目标 netns 完成安装、查询与封闭。
+- [x] AC-005：域名代理采用同一解析/策略修订，巡检不重复 DNS exec；受控地址变化后规则安全切换，解析或安装失败保持旧有效限制并报错，不出现未受限出站窗口。
+- [x] AC-006：注入 Browser IPv4 或 IPv6 漂移，30 秒内检测并确认当前实例双栈封闭；无法确认时在同一预算内暂停精确目标，错误可定位且用户数据不删除、不重建。
+- [x] AC-007：Stream 漂移仅修复 Stream/对应 Agent，Browser ID、IPC、页面和数据不变；达到既有替换预算后明确 failed，不无限建毁。
+- [x] AC-008：Agent 崩溃、UDS 阻塞、响应错误或修订失配不能返回 ready；30 秒内恢复可信观测或隔离当前目标，之后只恢复本机制隔离且仍为当前运行意愿的实例，不触碰用户暂停、停止或更新实例。
+- [x] AC-009：Supervisor 重启可接管正确 Agent；同名目标重建/Stream-only 替换后旧 Agent 与迟到回执不被采用，清理仅影响精确归属资源，不形成自激或无主 Agent。
+- [x] [deploy] AC-010：4 个隔离真实 Profile 稳态 10 分钟，policy 临时建毁与巡检 DNS exec 均为零；实际双栈漂移、Agent 故障、Supervisor 重启的网络正负请求和页面状态共同证明修复/封闭行为。
+    - 处置注记（2026-11-18）：经用户 2026-11-18 裁定，云端不可执行的 [deploy] AC 打勾表示「云端可做部分已完成、按裁定视为流程完成」，真实验证延期至本地统一补验并由 pending p133 跟踪，不表示已实测通过；AC 验证内容原文不改。
 
 ### 可测试性声明
 
@@ -81,8 +82,8 @@
 
 <!-- /规范 -->
 
-- 仅 NET_ADMIN、当前 policy 镜像和 network_mode=container 的完整策略/DNS能力：UNVERIFIED-SPIKE。先用正式隔离 spike，结论入 findings/ADR；若需 SYS_ADMIN/host PID/privileged，停止扩权并修订设计，不静默绕过。
-- 暂停/恢复在目标 netns、共享 IPC、Stream-only 替换和 Supervisor 重启下的安全行为：UNVERIFIED-SPIKE。验证网络负例和暂停所有权；pause API 返回成功不能单独证明隔离有效。
+- 仅 NET_ADMIN、当前 policy 镜像和 network_mode=container 的完整策略/DNS 能力：结论（2026-11-18，用户裁定）——云端无 Docker 不可实证，设计按最小权限假设冻结并已实现（仅 NET_ADMIN、只读根、无额外挂载，ADR 039）；正式隔离 spike 延期至本地执行、结论入 findings/ADR 并由 pending p132 跟踪；spike 若否定假设或显示需要 SYS_ADMIN/host PID/privileged，停止扩权并修订设计，不静默绕过。
+- 暂停/恢复在目标 netns、共享 IPC、Stream-only 替换和 Supervisor 重启下的安全行为：结论（2026-11-18，用户裁定）——机制按 pause 所有权围栏先行实现（仅本机制暂停且仍为当前运行意愿的实例可经复验恢复，重启后按 scan 重登记所有权）；真实链路的网络负例与暂停所有权实证延期至本地执行并由 pending p132 跟踪，pause API 返回成功不单独作为隔离有效的证据。
 
 ### 风险与回退
 

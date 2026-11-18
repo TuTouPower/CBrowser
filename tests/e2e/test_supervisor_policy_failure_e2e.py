@@ -1,7 +1,8 @@
 """Production-grade Kernel E2E Failure Blackbox Test for Network Policy.
 
 Contract invariants:
-1. When policy installation helper fails:
+1. When Policy Agent creation/installation fails (here: the policy
+   image is invalid, so the target's Agent never becomes healthy):
    - DockerAdapter raises DockerSandboxError.
    - Startup gate ready.json marker is NEVER created.
    - Target business processes inside container are NEVER executed.

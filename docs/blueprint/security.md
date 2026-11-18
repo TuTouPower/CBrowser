@@ -113,6 +113,13 @@
 
 撤销与清除语义：关闭 `capture_preview` 即时停止采集、删除已有预览、接口随即 404，不需重启或应用配置；采集、落盘、通知、读取四环节以策略代次 + `runtime_instance_id` 围栏，关闭时截图正在进行、旧代次通知迟到、reset 后旧实例回传等迟到写入一律丢弃并清理残留，预览不会重新出现；reset / delete 清除预览目录与 `preview_captured_at`，Profile 停止保留最后一帧，「含浏览器状态」复制不复制预览。
 
+## Policy Agent 执行边界（t082，ADR 039）
+
+- 网络策略的执行面收敛为每目标 netns 一个常驻 Policy Agent：仅 `NET_ADMIN`、只读根、`cap_drop ALL`、no-new-privileges；不挂 Docker Socket、宿主目录、Profile 数据与凭据，唯一挂载是 runtime 卷内自身 slot 的 socket 目录。Agent 镜像与 Supervisor 同为不可变 policy 镜像。
+- 身份在创建时以环境变量与容器标签双写绑定（deployment、profile、runtime instance、config version、role、目标容器 id），进程内只读创建环境、运行期不可变；协议每请求携带完整身份，任一字段不符即拒绝（`identity_mismatch`），不存在「同一 Agent 服务多目标」的路径。
+- 协议输入面最小化：`resolve` 只接受裸 hostname + port（拒绝 URL、凭据、路径与注入字符），代理 URL 与凭据永不进入 Agent；消息 64 KiB 上限、换行分隔、一请求一连接，畸形与超大请求以类型化错误拒绝且不回显请求内容。
+- 策略变更受修订围栏约束：旧修订重放、同修订异 spec 拒绝；全量替换先备份双族规则、失败回滚、回滚失败才失败封闭。失败封闭须 Agent 确认才算成立，未确认时核心以暂停精确目标隔离兜底，不把未证实的封闭当作已缓解。
+
 ## 验证边界
 
 单元与真实 HTTP/WS 集成测试覆盖凭证校验、会话与 CSRF、限速、审计脱敏和 Gateway 控制面；t064 另以 Caddyfile 渲染契约、API 边缘解析集成、Gateway grant 集成分别守住 Cookie 剥离、伪造头、跨 Profile、登出撤销与外部解析端点 404。真实 HTTPS、Chrome Cookie 属性、真实 Caddy 边缘链、首帧/重连与真实引擎 CDP Host/Origin 负向例由 Docker E2E 验证，不能以 mock 或渲染契约替代。公网 TLS 证书与公网穿透属 USER_WAIVED 范围外，本机以 Caddy 内部 CA 验证。

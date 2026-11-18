@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,7 +53,8 @@ from cbrowser.supervisor.container_spec import (
     cache_init_labels,
     container_runtime_instance_id,
     gated_entrypoint,
-    policy_helper_labels,
+    policy_agent_environment,
+    policy_agent_labels,
     probe_helper_labels,
     stream_environment,
     stream_labels,
@@ -68,6 +70,15 @@ from cbrowser.shared.egress_plan import (
 )
 from cbrowser.supervisor.gate_identity import gate_labels
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
+from cbrowser.supervisor.policy_agent_client import (
+    PolicyAgentClient,
+    PolicyAgentRejected,
+    PolicyAgentUnavailable,
+)
+from cbrowser.supervisor.policy_agent_protocol import (
+    PolicyAgentIdentity,
+    policy_spec_digest,
+)
 from cbrowser.supervisor.network_spec import (
     browser_network_name,
     endpoint_port,
@@ -257,6 +268,21 @@ class _CacheGeneration:
     entry_count: int
 
 
+@dataclass
+class _PolicyAgentHandle:
+    """Supervisor-side record of one target's persistent Policy Agent."""
+
+    identity: PolicyAgentIdentity
+    client: PolicyAgentClient
+    agent_container_id: str
+    spec: NetworkPolicySpec | None = None
+    digest: str | None = None
+    revision: int = 0
+    upstream_url: str | None = None
+    pending_spec: NetworkPolicySpec | None = None
+    pending_upstream_url: str | None = None
+
+
 class DockerAdapter:
     def __init__(
         self,
@@ -281,12 +307,22 @@ class DockerAdapter:
         # t080 / ADR 029: typed volume-subpath mount planning.  The local
         # roots are pure container-internal logical paths; the planner
         # fails closed for any source outside the managed volumes.
+        # t082 / ADR 039: Policy Agent control root.  Production points
+        # it at a short path (sun_path bound) via compose; the default
+        # keeps it under the managed control tree.
+        self.policy_agent_root = Path(
+            os.environ.get("CBROWSER_POLICY_AGENT_ROOT")
+            or (self.validator.data_root / "control" / "policy-agents")
+        )
         self.mount_planner = MountPlanner(
             resource_prefix=resource_prefix,
             data_root=self.validator.data_root,
             socket_root=self.validator.socket_root,
             fonts_root=os.environ.get("CBROWSER_FONTS_DIR", "/fonts"),
+            policy_agent_root=self.policy_agent_root,
         )
+        self._policy_agents: dict[str, _PolicyAgentHandle] = {}
+        self._policy_agent_client_factory = PolicyAgentClient
         self.engine_cache = self.validator.validate_safe_path(engine_cache_dir)
         self.geoip_cache = self.validator.validate_safe_path(
             geoip_cache_dir or self.engine_cache / "geoip"
@@ -402,7 +438,434 @@ class DockerAdapter:
     def _gated_entrypoint(instance_id: str, role: str) -> list[str]:
         return gated_entrypoint(instance_id, role)
 
-    def _resolved_endpoint(self, container: Any, url: str) -> list[tuple[str, int]]:
+    # ---------------- t082: persistent Policy Agents ----------------
+
+    @staticmethod
+    def _policy_agent_slot(profile_id: str, instance_id: str, role: str) -> str:
+        digest = hashlib.sha256(
+            f"{profile_id}\0{instance_id}\0{role}".encode("utf-8")
+        ).hexdigest()
+        return digest[:20]
+
+    def _policy_agent_name(self, slot: str) -> str:
+        return f"{self.resource_prefix}-policy-agent-{slot}"
+
+    def _policy_agent_socket_path(
+        self, profile_id: str, instance_id: str, role: str
+    ) -> Path:
+        slot = self._policy_agent_slot(profile_id, instance_id, role)
+        return self.policy_agent_root / slot / "agent.sock"
+
+    def _policy_agent_identity(
+        self,
+        profile_id: str,
+        instance_id: str,
+        config_version: Any,
+        role: str,
+        target_container_id: str,
+    ) -> PolicyAgentIdentity:
+        if not self.deployment_instance_id:
+            raise DockerSandboxError(
+                "Deployment instance identity is required for Policy Agents"
+            )
+        version = _parse_config_version(str(config_version))
+        if version is None:
+            raise DockerSandboxError("Invalid config version for Policy Agent")
+        if role not in ("browser", "stream"):
+            raise DockerSandboxError("Invalid role for Policy Agent")
+        return PolicyAgentIdentity(
+            deployment_id=self.deployment_instance_id,
+            profile_id=profile_id,
+            runtime_instance_id=instance_id,
+            config_version=version,
+            role=role,  # type: ignore[arg-type]
+            target_container_id=target_container_id,
+        )
+
+    def _policy_agent_client(
+        self, identity: PolicyAgentIdentity
+    ) -> PolicyAgentClient:
+        socket_path = self._policy_agent_socket_path(
+            identity.profile_id, identity.runtime_instance_id, identity.role
+        )
+        return self._policy_agent_client_factory(socket_path, identity)
+
+    def _scan_policy_agent_containers(self) -> list[Any]:
+        try:
+            containers = self.client.containers.list(
+                all=True,
+                filters={
+                    "label": [
+                        f"com.cbrowser.prefix={self.resource_prefix}",
+                        "com.cbrowser.role=network-policy-agent",
+                    ]
+                },
+            )
+        except DockerException as exc:
+            raise DockerSandboxError(
+                "Policy agent scan failed: " + docker_error_detail(exc)
+            ) from None
+        return [
+            container
+            for container in containers
+            if (container.labels or {}).get("com.cbrowser.managed-by")
+            == "supervisor"
+            and self._owns_deployment(container.labels or {})
+        ]
+
+    @staticmethod
+    def _agent_labels_match(
+        labels: dict[str, Any], identity: PolicyAgentIdentity
+    ) -> bool:
+        return (
+            labels.get("com.cbrowser.profile-id") == identity.profile_id
+            and labels.get("com.cbrowser.runtime-instance-id")
+            == identity.runtime_instance_id
+            and labels.get("com.cbrowser.config-version")
+            == str(identity.config_version)
+            and labels.get("com.cbrowser.target-role") == identity.role
+            and labels.get("com.cbrowser.target-container-id")
+            == identity.target_container_id
+        )
+
+    def _adopt_policy_agent(
+        self, agent_container: Any, identity: PolicyAgentIdentity
+    ) -> _PolicyAgentHandle | None:
+        """Adopt an existing Agent container after a health/identity check."""
+        client = self._policy_agent_client(identity)
+        try:
+            health = client.health()
+        except (PolicyAgentUnavailable, PolicyAgentRejected):
+            return None
+        echoed = health.get("identity") or {}
+        if echoed != identity.model_dump(mode="json"):
+            return None
+        handle = _PolicyAgentHandle(
+            identity=identity,
+            client=client,
+            agent_container_id=agent_container.id,
+            digest=health.get("spec_digest"),
+            revision=int(health.get("policy_revision") or 0),
+        )
+        self._policy_agents[identity.target_container_id] = handle
+        return handle
+
+    def ensure_policy_agent(
+        self,
+        target: Any,
+        *,
+        profile_id: str,
+        instance_id: str,
+        config_version: Any,
+        role: str,
+    ) -> _PolicyAgentHandle:
+        """Return the target's live Policy Agent, adopting or creating it.
+
+        An Agent is created once per (profile, instance, role) and then
+        reused for the target's whole lifetime; steady-state policy
+        work never creates another container.
+        """
+        identity = self._policy_agent_identity(
+            profile_id, instance_id, config_version, role, target.id
+        )
+        handle = self._policy_agents.get(target.id)
+        if handle is not None and handle.identity == identity:
+            try:
+                handle.client.health()
+                return handle
+            except (PolicyAgentUnavailable, PolicyAgentRejected):
+                self._policy_agents.pop(target.id, None)
+                handle = None
+        name = self._policy_agent_name(
+            self._policy_agent_slot(profile_id, instance_id, role)
+        )
+        existing = None
+        try:
+            existing = self.client.containers.get(name)
+        except NotFound:
+            existing = None
+        except DockerException as exc:
+            raise DockerSandboxError(
+                "Policy agent lookup failed: " + docker_error_detail(exc)
+            ) from None
+        if existing is not None:
+            labels = existing.labels or {}
+            if self._agent_labels_match(labels, identity):
+                adopted = self._adopt_policy_agent(existing, identity)
+                if adopted is not None:
+                    return adopted
+            # Owned but stale/unhealthy: it serves a dead binding, so it
+            # is removed before its replacement is created.
+            self._remove_policy_agent_container(existing)
+        return self._create_policy_agent(target, identity)
+
+    def _create_policy_agent(
+        self, target: Any, identity: PolicyAgentIdentity
+    ) -> _PolicyAgentHandle:
+        if not self.policy_image or not (
+            self.policy_image.startswith("sha256:")
+            or "@sha256:" in self.policy_image
+        ):
+            raise DockerSandboxError(
+                "Explicit immutable network policy image is required"
+            )
+        slot = self._policy_agent_slot(
+            identity.profile_id, identity.runtime_instance_id, identity.role
+        )
+        slot_dir = self.policy_agent_root / slot
+        slot_dir.mkdir(parents=True, exist_ok=True)
+        # No live Agent owns this slot (ensure path verified); a socket
+        # file here is a dead predecessor's residue.
+        (slot_dir / "agent.sock").unlink(missing_ok=True)
+        name = self._policy_agent_name(slot)
+        agent = None
+        try:
+            agent = self.client.containers.create(
+                self.policy_image,
+                entrypoint=["python3", "-m", "cbrowser.supervisor.policy_agent"],
+                name=name,
+                detach=True,
+                user="0:0",
+                read_only=True,
+                cap_drop=["ALL"],
+                cap_add=["NET_ADMIN"],
+                security_opt=["no-new-privileges:true"],
+                network_mode=f"container:{target.id}",
+                environment={
+                    **policy_agent_environment(
+                        deployment_id=identity.deployment_id,
+                        profile_id=identity.profile_id,
+                        runtime_instance_id=identity.runtime_instance_id,
+                        config_version=identity.config_version,
+                        role=identity.role,
+                        target_container_id=identity.target_container_id,
+                    ),
+                    **_udp_mux_helper_environment(),
+                },
+                tmpfs={"/tmp": "rw,nosuid,nodev,size=4m"},
+                mounts=[
+                    self.mount_planner.mount(
+                        slot_dir, "/run/cbrowser_policy_agent", "rw"
+                    )
+                ],
+                labels=policy_agent_labels(
+                    self.resource_prefix,
+                    identity.profile_id,
+                    identity.runtime_instance_id,
+                    identity.config_version,
+                    identity.role,
+                    identity.target_container_id,
+                    deployment_id=self.deployment_instance_id,
+                ),
+            )
+            agent.start()
+        except DockerException as exc:
+            if agent is not None:
+                try:
+                    agent.remove(force=True)
+                except Exception:  # noqa: BLE001 - startup failure path
+                    pass
+            raise DockerSandboxError(
+                "Policy agent creation failed: " + docker_error_detail(exc)
+            ) from None
+        client = self._policy_agent_client(identity)
+        deadline = time.monotonic() + 15.0
+        while True:
+            try:
+                health = client.health()
+                if (health.get("identity") or {}) == identity.model_dump(
+                    mode="json"
+                ):
+                    break
+            except (PolicyAgentUnavailable, PolicyAgentRejected):
+                pass
+            if time.monotonic() >= deadline:
+                logger.error(
+                    "Policy agent did not become healthy: profile=%s "
+                    "role=%s output=%s",
+                    identity.profile_id,
+                    identity.role,
+                    _helper_log_tail(agent),
+                )
+                try:
+                    agent.remove(force=True)
+                except Exception:  # noqa: BLE001 - startup failure path
+                    pass
+                raise DockerSandboxError("Policy agent failed to start")
+            time.sleep(0.2)
+        handle = _PolicyAgentHandle(
+            identity=identity, client=client, agent_container_id=agent.id
+        )
+        self._policy_agents[identity.target_container_id] = handle
+        return handle
+
+    def _remove_policy_agent_container(self, agent_container: Any) -> None:
+        labels = agent_container.labels or {}
+        if (
+            labels.get("com.cbrowser.prefix") != self.resource_prefix
+            or labels.get("com.cbrowser.managed-by") != "supervisor"
+            or labels.get("com.cbrowser.role") != "network-policy-agent"
+            or not self._owns_deployment(labels)
+        ):
+            logger.warning(
+                "Policy agent identity mismatch retained: container=%s",
+                getattr(agent_container, "id", None),
+            )
+            return
+        target_id = labels.get("com.cbrowser.target-container-id")
+        if target_id:
+            self._policy_agents.pop(target_id, None)
+        try:
+            agent_container.remove(force=True)
+        except NotFound:
+            pass
+        except DockerException as exc:
+            logger.warning(
+                "Policy agent removal failed: error_type=%s",
+                type(exc).__name__,
+            )
+            return
+        profile_id = labels.get("com.cbrowser.profile-id")
+        instance_id = labels.get("com.cbrowser.runtime-instance-id")
+        role = labels.get("com.cbrowser.target-role")
+        if profile_id and instance_id and role:
+            slot_dir = self.policy_agent_root / self._policy_agent_slot(
+                profile_id, instance_id, role
+            )
+            shutil.rmtree(slot_dir, ignore_errors=True)
+
+    def _remove_policy_agents_for_profile(self, profile_id: str) -> None:
+        for agent_container in self._scan_policy_agent_containers():
+            labels = agent_container.labels or {}
+            if labels.get("com.cbrowser.profile-id") == profile_id:
+                self._remove_policy_agent_container(agent_container)
+
+    def _remove_policy_agents_for_target(self, target_container_id: str) -> None:
+        for agent_container in self._scan_policy_agent_containers():
+            labels = agent_container.labels or {}
+            if labels.get("com.cbrowser.target-container-id") == target_container_id:
+                self._remove_policy_agent_container(agent_container)
+
+    def repair_policy_agent(
+        self,
+        target: Any,
+        *,
+        profile_id: str,
+        instance_id: str,
+        config_version: Any,
+        role: str,
+    ) -> _PolicyAgentHandle:
+        """Rebuild the target's Agent (never the target itself)."""
+        self._policy_agents.pop(target.id, None)
+        self._remove_policy_agents_for_target(target.id)
+        return self.ensure_policy_agent(
+            target,
+            profile_id=profile_id,
+            instance_id=instance_id,
+            config_version=config_version,
+            role=role,
+        )
+
+    def _identity_for_target(self, target: Any) -> PolicyAgentIdentity | None:
+        labels = target.labels or {}
+        profile_id = labels.get("com.cbrowser.profile-id")
+        role = labels.get("com.cbrowser.role")
+        instance_id = container_runtime_instance_id(target)
+        config_version = labels.get("com.cbrowser.config-version")
+        if (
+            not profile_id
+            or role not in ("browser", "stream")
+            or not instance_id
+            or config_version is None
+            or not self.deployment_instance_id
+        ):
+            return None
+        try:
+            return self._policy_agent_identity(
+                profile_id, instance_id, config_version, role, target.id
+            )
+        except DockerSandboxError:
+            return None
+
+    def _handle_for_container(self, target: Any) -> _PolicyAgentHandle | None:
+        """The target's Agent handle, adopting an existing Agent if needed."""
+        handle = self._policy_agents.get(target.id)
+        if handle is not None:
+            return handle
+        identity = self._identity_for_target(target)
+        if identity is None:
+            return None
+        for agent_container in self._scan_policy_agent_containers():
+            labels = agent_container.labels or {}
+            if labels.get(
+                "com.cbrowser.target-container-id"
+            ) == target.id and self._agent_labels_match(labels, identity):
+                return self._adopt_policy_agent(agent_container, identity)
+        return None
+
+    def ensure_policy_agent_for_container(
+        self, target: Any
+    ) -> _PolicyAgentHandle:
+        """Ensure (adopt or create) the Agent for a labelled target."""
+        identity = self._identity_for_target(target)
+        if identity is None:
+            raise DockerSandboxError(
+                "Target container lacks a usable Policy Agent identity"
+            )
+        return self.ensure_policy_agent(
+            target,
+            profile_id=identity.profile_id,
+            instance_id=identity.runtime_instance_id,
+            config_version=identity.config_version,
+            role=identity.role,
+        )
+
+    def _cleanup_orphan_policy_agents(self) -> None:
+        """Reap Agents whose target is gone or whose binding went stale.
+
+        Runs once at Supervisor startup alongside the helper reaper.
+        An Agent whose target still exists with a matching identity is
+        left running for core takeover; anything else owned is removed
+        with its control slot.
+        """
+        for agent_container in self._scan_policy_agent_containers():
+            labels = agent_container.labels or {}
+            name = getattr(agent_container, "name", "") or ""
+            slot = self._policy_agent_slot(
+                labels.get("com.cbrowser.profile-id") or "",
+                labels.get("com.cbrowser.runtime-instance-id") or "",
+                labels.get("com.cbrowser.target-role") or "",
+            )
+            if name != self._policy_agent_name(slot):
+                logger.warning(
+                    "Orphan policy agent identity mismatch retained: name=%s",
+                    name,
+                )
+                continue
+            target_id = labels.get("com.cbrowser.target-container-id")
+            target = None
+            if target_id:
+                try:
+                    target = self.client.containers.get(target_id)
+                except NotFound:
+                    target = None
+                except DockerException:
+                    continue
+            identity = self._identity_for_target(target) if target else None
+            if identity is None or not self._agent_labels_match(labels, identity):
+                self._remove_policy_agent_container(agent_container)
+
+
+    def _resolve_via_agent(
+        self, handle: _PolicyAgentHandle, url: str
+    ) -> list[tuple[str, int]]:
+        """Resolve ``url``'s endpoint from the target namespace's view.
+
+        The Policy Agent lives in the target's netns, so its resolver
+        sees exactly the DNS the target sees -- with no docker exec
+        into the gated business container.  IP literals never reach
+        the Agent (they resolve to themselves).
+        """
         parsed = urlsplit(url if "://" in url else "http://" + url)
         if not parsed.hostname:
             raise DockerSandboxError("Network endpoint hostname is required")
@@ -413,27 +876,33 @@ class DockerAdapter:
             return [(str(ipaddress.ip_address(parsed.hostname)), port)]
         except ValueError:
             pass
-        # Resolve with Docker DNS in the gated runtime, not the Mac namespace.
-        # The fixed bootstrap performs DNS only; business processes remain gated.
-        script = (
-            "import json,socket,sys; "
-            "sys.stdout.write(json.dumps(sorted({x[4][0] for x in "
-            "socket.getaddrinfo(sys.argv[1], int(sys.argv[2]), "
-            "type=socket.SOCK_STREAM)})))"
-        )
-        result = container.exec_run(
-            ["python3", "-I", "-S", "-c", script, parsed.hostname, str(port)],
-            user="1000:1000",
-        )
-        if result.exit_code != 0:
-            raise DockerSandboxError("Runtime endpoint DNS resolution failed")
         try:
-            addresses = json.loads(result.output)
-            if not addresses or not isinstance(addresses, list):
-                raise ValueError("Empty address set")
-            return [(str(ipaddress.ip_address(address)), port) for address in addresses]
-        except (ValueError, TypeError):
-            raise DockerSandboxError("Invalid runtime DNS response") from None
+            return handle.client.resolve(parsed.hostname, port)
+        except (PolicyAgentUnavailable, PolicyAgentRejected) as exc:
+            raise DockerSandboxError(
+                "Runtime endpoint DNS resolution failed"
+            ) from None
+
+    def _resolved_endpoint(self, container: Any, url: str) -> list[tuple[str, int]]:
+        parsed = urlsplit(url if "://" in url else "http://" + url)
+        if not parsed.hostname:
+            raise DockerSandboxError("Network endpoint hostname is required")
+        try:
+            ipaddress.ip_address(parsed.hostname)
+            port = parsed.port or endpoint_port(parsed.scheme)
+            if port is None:
+                raise DockerSandboxError(
+                    "Network endpoint requires an explicit port"
+                )
+            return [(str(ipaddress.ip_address(parsed.hostname)), port)]
+        except ValueError:
+            pass
+        handle = self._handle_for_container(container)
+        if handle is None:
+            raise DockerSandboxError(
+                "Runtime endpoint DNS resolution failed: policy agent unavailable"
+            )
+        return self._resolve_via_agent(handle, url)
 
     def _install_network_policy(
         self,
@@ -442,88 +911,68 @@ class DockerAdapter:
         gate: Path,
         instance_id: str,
         role: str,
+        *,
+        profile_id: str | None = None,
+        config_version: Any = None,
     ) -> None:
+        """Install ``policy`` through the target's persistent Policy Agent.
+
+        The gate's ready marker is written only after the Agent has
+        applied the spec in the target namespace and verified it
+        there; any failure leaves the gate closed and raises.
+        """
         validated_policy = NetworkPolicySpec.model_validate(policy)
-        helper = None
-        cleanup_error = None
-        try:
-            try:
-                helper = self.client.containers.create(
-                    self.policy_image,
-                    entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-                    command=[validated_policy.model_dump_json()],
-                    name=f"{self.resource_prefix}-policy-{uuid.uuid4().hex[:12]}",
-                    detach=True,
-                    user="0:0",
-                    read_only=True,
-                    cap_drop=["ALL"],
-                    cap_add=["NET_ADMIN"],
-                    security_opt=["no-new-privileges:true"],
-                    network_mode=f"container:{container.id}",
-                    environment=_udp_mux_helper_environment(),
-                    tmpfs={
-                        "/run": "rw,nosuid,nodev,size=4m",
-                        "/tmp": "rw,nosuid,nodev,size=4m",
-                    },
-                    labels=gate_labels(policy_helper_labels(
-                        self.resource_prefix,
-                        deployment_id=self.deployment_instance_id,
-                    )),
-                )
-                helper.start()
-            except DockerSandboxError:
-                raise
-            except (requests.exceptions.RequestException, DockerException) as exc:
-                # AC-011: a helper container that fails to START keeps the
-                # redacted Docker root cause -- a Docker API error has known
-                # shapes and the shared rules cover its credential forms.
-                raise DockerSandboxError(
-                    "Runtime network policy installation failed: "
-                    + docker_error_detail(exc)
-                ) from None
-            except Exception as exc:  # noqa: BLE001 - any SDK/transport error maps to one redacted outcome
-                raise DockerSandboxError(
-                    "Runtime network policy installation failed: "
-                    + docker_error_detail(exc)
-                ) from None
-            try:
-                result = helper.wait(timeout=30)
-                if result.get("StatusCode") != 0:
-                    # t055 A4: capture the helper output BEFORE the finally
-                    # below removes the helper; the log carries a truncated,
-                    # redacted summary, never raw output.
-                    logger.error(
-                        "Network policy installation failed: exit=%s helper_output=%s",
-                        result.get("StatusCode"),
-                        _helper_log_tail(helper),
-                    )
-                    raise DockerSandboxError(
-                        "Runtime network policy installation failed"
-                    )
-            except DockerSandboxError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - A11: wait/transport errors stay redacted
-                # A11: a helper wait timeout or transport error must stay
-                # redacted -- its text is transport-level and can carry
-                # arbitrary URLs, so only the type name is reported, never
-                # the text.
-                raise DockerSandboxError(
-                    "Runtime network policy installation failed: " + type(exc).__name__
-                ) from None
-        finally:
-            if helper is not None:
-                try:
-                    helper.remove(force=True)
-                except Exception as exc:  # noqa: BLE001 - cleanup never masks the primary outcome
-                    cleanup_error = exc
-                    logger.warning(
-                        "Failed to remove network policy helper: error_type=%s",
-                        type(exc).__name__,
-                    )
-        if cleanup_error is not None:
+        if not self.policy_image or not (
+            self.policy_image.startswith("sha256:")
+            or "@sha256:" in self.policy_image
+        ):
             raise DockerSandboxError(
-                "Runtime network policy helper cleanup failed"
+                "Explicit immutable network policy image is required"
+            )
+        resolved_profile = (
+            profile_id
+            or (container.labels or {}).get("com.cbrowser.profile-id")
+            or instance_id
+        )
+        resolved_version: Any = config_version
+        if resolved_version is None:
+            resolved_version = (container.labels or {}).get(
+                "com.cbrowser.config-version", 0
+            )
+        handle = self.ensure_policy_agent(
+            container,
+            profile_id=resolved_profile,
+            instance_id=instance_id,
+            config_version=resolved_version,
+            role=role,
+        )
+        digest = policy_spec_digest(validated_policy)
+        revision = (
+            handle.revision
+            if handle.revision >= 1 and handle.digest == digest
+            else handle.revision + 1
+        )
+        try:
+            handle.client.install(validated_policy, revision)
+        except PolicyAgentRejected as exc:
+            raise DockerSandboxError(
+                "Runtime network policy installation failed: "
+                + exc.error_code
             ) from None
+        except PolicyAgentUnavailable:
+            raise DockerSandboxError(
+                "Runtime network policy installation failed: agent unavailable"
+            ) from None
+        handle.spec = validated_policy
+        handle.digest = digest
+        handle.revision = revision
+        if (
+            handle.pending_spec is not None
+            and policy_spec_digest(handle.pending_spec) == digest
+        ):
+            handle.upstream_url = handle.pending_upstream_url
+        handle.pending_spec = None
+        handle.pending_upstream_url = None
         atomic_write_text(
             gate / "ready.json",
             json.dumps({"instance_id": instance_id, "role": role, "status": "ready"}),
@@ -586,6 +1035,7 @@ class DockerAdapter:
             )
             return self._parse_probe_output(output)
         finally:
+            self._remove_policy_agents_for_profile(f"probe-{probe_id}")
             self._cleanup_probe_resources(helper, network, probe_dir)
 
     @staticmethod
@@ -701,15 +1151,79 @@ class DockerAdapter:
             ) from None
 
     def _policy_from_egress_plan(
-        self, container: Any, plan: ProfileEgressPlan
+        self,
+        container: Any,
+        plan: ProfileEgressPlan,
+        *,
+        for_install: bool = False,
     ) -> dict[str, Any]:
-        """Resolve upstream TCP endpoints inside ``container`` and render the policy spec."""
-        allowed_tcp = (
-            self._resolved_endpoint(container, plan.upstream_url)
-            if plan.upstream_url is not None
+        """Derive the Browser policy spec under the frozen-resolution rule.
+
+        One resolution per policy revision, shared by install and by
+        every later inspection: while the upstream endpoint is
+        unchanged, the frozen spec is returned without any DNS work.
+        A changed upstream is a refresh transaction -- resolve once
+        through the Agent, install the new revision (the Agent keeps
+        the old rules in force if the install fails), and only then
+        freeze the new spec.  ``for_install`` derives the spec for a
+        startup install without applying the refresh itself.
+        """
+        handle = self._handle_for_container(container)
+        if handle is None:
+            # First derivation for a target whose Agent this process
+            # has not adopted yet (e.g. after a Supervisor restart):
+            # adopt or recreate the Agent, never fall back to exec.
+            try:
+                handle = self.ensure_policy_agent_for_container(container)
+            except DockerSandboxError:
+                raise DockerSandboxError(
+                    "Runtime network policy derivation failed: "
+                    "policy agent unavailable"
+                ) from None
+        upstream = plan.upstream_url
+        if for_install:
+            resolved = (
+                self._resolve_via_agent(handle, upstream)
+                if upstream is not None
+                else []
+            )
+            spec_dict = plan.to_network_policy_spec(resolved)
+            handle.pending_spec = NetworkPolicySpec.model_validate(spec_dict)
+            handle.pending_upstream_url = upstream
+            return spec_dict
+        if upstream == handle.upstream_url and handle.spec is not None:
+            return handle.spec.model_dump()
+        resolved = (
+            self._resolve_via_agent(handle, upstream)
+            if upstream is not None
             else []
         )
-        return plan.to_network_policy_spec(allowed_tcp)
+        spec = NetworkPolicySpec.model_validate(
+            plan.to_network_policy_spec(resolved)
+        )
+        digest = policy_spec_digest(spec)
+        if handle.revision >= 1 and digest == handle.digest:
+            # Same effective rules (e.g. first derivation after an
+            # Agent takeover): freeze the records, install nothing.
+            handle.spec = spec
+            handle.upstream_url = upstream
+            return spec.model_dump()
+        revision = handle.revision + 1
+        try:
+            handle.client.install(spec, revision)
+        except PolicyAgentRejected as exc:
+            raise DockerSandboxError(
+                "Runtime network policy refresh failed: " + exc.error_code
+            ) from None
+        except PolicyAgentUnavailable:
+            raise DockerSandboxError(
+                "Runtime network policy refresh failed: agent unavailable"
+            ) from None
+        handle.spec = spec
+        handle.digest = digest
+        handle.revision = revision
+        handle.upstream_url = upstream
+        return spec.model_dump()
 
     def _browser_egress_policy(
         self, container: Any, *, has_proxy: bool, creds_file: Path
@@ -733,12 +1247,21 @@ class DockerAdapter:
             runtime_endpoint.host,
             runtime_endpoint.port,
         )
+        self.ensure_policy_agent(
+            helper,
+            profile_id=f"probe-{probe_id}",
+            instance_id=f"probe-{probe_id}",
+            config_version=1,
+            role="browser",
+        )
         self._install_network_policy(
             helper,
-            self._policy_from_egress_plan(helper, plan),
+            self._policy_from_egress_plan(helper, plan, for_install=True),
             gate,
             f"probe-{probe_id}",
             "browser",
+            profile_id=f"probe-{probe_id}",
+            config_version=1,
         )
 
     @staticmethod
@@ -986,6 +1509,7 @@ class DockerAdapter:
         All candidates are validated before removing any container.
         """
         await asyncio.to_thread(self._cleanup_orphan_helpers)
+        await asyncio.to_thread(self._cleanup_orphan_policy_agents)
 
     def _owns_deployment(self, labels: dict[str, Any]) -> bool:
         """Deployment ownership test (A59/AC-021, strict t069).
@@ -2019,8 +2543,19 @@ with path.open('w') as output:
                     deployment_id=self.deployment_instance_id,
                 )),
             )
+            await asyncio.to_thread(
+                self.ensure_policy_agent,
+                container,
+                profile_id=profile_id,
+                instance_id=runtime_instance_id,
+                config_version=snapshot["version"],
+                role="browser",
+            )
             browser_policy = await asyncio.to_thread(
-                self._policy_from_egress_plan, container, egress_plan
+                self._policy_from_egress_plan,
+                container,
+                egress_plan,
+                for_install=True,
             )
             await asyncio.to_thread(
                 self._install_network_policy,
@@ -2029,6 +2564,8 @@ with path.open('w') as output:
                 gate,
                 runtime_instance_id,
                 "browser",
+                profile_id=profile_id,
+                config_version=snapshot["version"],
             )
             return container
         except DockerException as e:
@@ -2233,6 +2770,14 @@ with path.open('w') as output:
                     deployment_id=self.deployment_instance_id,
                 )),
             )
+            await asyncio.to_thread(
+                self.ensure_policy_agent,
+                container,
+                profile_id=profile_id,
+                instance_id=runtime_instance_id,
+                config_version=config_version,
+                role="stream",
+            )
             allowed_tcp.extend(
                 await asyncio.to_thread(
                     self._resolved_endpoint, container, resolved_gateway_url
@@ -2250,10 +2795,13 @@ with path.open('w') as output:
                 gate,
                 runtime_instance_id,
                 "stream",
+                profile_id=profile_id,
+                config_version=config_version,
             )
             return container
         except Exception as exc:  # noqa: BLE001 - initialization failure is owned by the creator
             if container is not None:
+                self._remove_policy_agents_for_target(container.id)
                 residue = self._reclaim_created_stream(
                     container, profile_id, runtime_instance_id
                 )
@@ -2443,6 +2991,8 @@ with path.open('w') as output:
         b_name = self.get_browser_container_name(profile_id)
         net_name = self.get_network_name(profile_id)
 
+        self._remove_policy_agents_for_profile(profile_id)
+
         self.cleanup_container_by_name(s_name)
         self.cleanup_container_by_name(b_name)
         self.cleanup_network_by_name(net_name)
@@ -2548,91 +3098,104 @@ with path.open('w') as output:
             container, has_proxy=has_proxy, creds_file=creds_file
         )
 
-    def _run_policy_helper(self, container: Any, command: list[str]) -> int:
-        """Run the policy module in the target namespace; return its exit code."""
-        if not self.policy_image or not (
-            self.policy_image.startswith("sha256:") or "@sha256:" in self.policy_image
-        ):
-            raise DockerSandboxError(
-                "Explicit immutable network policy image is required"
-            )
-        helper = None
-        try:
-            helper = self.client.containers.create(
-                self.policy_image,
-                entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-                command=command,
-                name=f"{self.resource_prefix}-policy-{uuid.uuid4().hex[:12]}",
-                detach=True,
-                user="0:0",
-                read_only=True,
-                cap_drop=["ALL"],
-                cap_add=["NET_ADMIN"],
-                security_opt=["no-new-privileges:true"],
-                network_mode=f"container:{container.id}",
-                environment=_udp_mux_helper_environment(),
-                tmpfs={
-                    "/run": "rw,nosuid,nodev,size=4m",
-                    "/tmp": "rw,nosuid,nodev,size=4m",
-                },
-                labels=gate_labels(policy_helper_labels(
-                    self.resource_prefix,
-                    deployment_id=self.deployment_instance_id,
-                )),
-            )
-            helper.start()
-            result = helper.wait(timeout=30)
-            status_code = int(result.get("StatusCode", -1))
-            if status_code != 0:
-                logger.warning(
-                    "Network policy helper exit=%s output=%s",
-                    status_code,
-                    _helper_log_tail(helper),
-                )
-            return status_code
-        except DockerException as exc:
-            raise DockerSandboxError(
-                "Runtime network policy helper failed: " + docker_error_detail(exc)
-            ) from None
-        finally:
-            if helper is not None:
-                try:
-                    helper.remove(force=True)
-                except Exception as exc:  # noqa: BLE001 - cleanup never masks the primary outcome
-                    # t055 A4: a cleanup failure must not overwrite the
-                    # exit code the caller is about to receive.
-                    logger.warning(
-                        "Failed to remove network policy helper: error_type=%s",
-                        type(exc).__name__,
-                    )
-
     def verify_container_policy(
         self, container: Any, policy: dict[str, Any]
     ) -> bool:
-        """True only when the container's live netns rules equal the spec.
+        """True only when the target's live netns rules equal the spec.
 
-        Exit 0 from the helper means an exact match, 4 a definite
-        mismatch; anything else is an adapter error, never a silent pass.
+        The check runs inside the target's persistent Policy Agent and
+        is attested against the applied policy revision; no container
+        is created and nothing is exec'd.  An unreachable or refusing
+        Agent is an adapter error, never a silent pass.
         """
         validated = NetworkPolicySpec.model_validate(policy)
-        code = self._run_policy_helper(
-            container, ["verify", validated.model_dump_json()]
-        )
-        if code == 0:
-            return True
-        if code == 4:
-            return False
-        raise DockerSandboxError(
-            f"Runtime network policy verification failed: exit={code}"
-        )
+        handle = self._handle_for_container(container)
+        if handle is None or handle.revision < 1:
+            raise DockerSandboxError(
+                "Runtime network policy verification failed: policy agent unavailable"
+            )
+        try:
+            return handle.client.inspect(validated, handle.revision)
+        except PolicyAgentRejected as exc:
+            raise DockerSandboxError(
+                "Runtime network policy verification failed: " + exc.error_code
+            ) from None
+        except PolicyAgentUnavailable:
+            raise DockerSandboxError(
+                "Runtime network policy verification failed: agent unavailable"
+            ) from None
 
     def fail_close_container(self, container: Any) -> None:
-        """Replace the container's rules with DROP-everything (AC-005)."""
-        code = self._run_policy_helper(container, ["fail-closed"])
-        if code != 0:
+        """Replace the container's rules with DROP-everything (AC-005).
+
+        Returns only when the Agent confirms the live rules are the
+        fail-closed set; an unconfirmed closure raises so the caller
+        can escalate to pausing the exact target.
+        """
+        handle = self._handle_for_container(container)
+        if handle is None:
             raise DockerSandboxError(
-                f"Runtime fail-closed installation failed: exit={code}"
+                "Runtime fail-closed installation failed: policy agent unavailable"
             )
+        try:
+            confirmed = handle.client.fail_close()
+        except (PolicyAgentRejected, PolicyAgentUnavailable) as exc:
+            raise DockerSandboxError(
+                "Runtime fail-closed installation failed"
+            ) from None
+        if not confirmed:
+            raise DockerSandboxError(
+                "Runtime fail-closed installation was not confirmed"
+            )
+
+    def reinstall_container_policy(
+        self, container: Any, policy: dict[str, Any]
+    ) -> None:
+        """Re-apply the desired spec as a new revision through the Agent.
+
+        Used by the Supervisor's isolation recovery: a target paused
+        because its rules could not be confirmed gets the current
+        desired policy reinstalled (Agent-side replace with rollback),
+        after which a fresh inspection decides whether it may resume.
+        """
+        validated = NetworkPolicySpec.model_validate(policy)
+        handle = self._handle_for_container(container)
+        if handle is None:
+            raise DockerSandboxError(
+                "Runtime network policy reinstall failed: policy agent unavailable"
+            )
+        revision = handle.revision + 1
+        try:
+            handle.client.install(validated, revision)
+        except PolicyAgentRejected as exc:
+            raise DockerSandboxError(
+                "Runtime network policy reinstall failed: " + exc.error_code
+            ) from None
+        except PolicyAgentUnavailable:
+            raise DockerSandboxError(
+                "Runtime network policy reinstall failed: agent unavailable"
+            ) from None
+        handle.spec = validated
+        handle.digest = policy_spec_digest(validated)
+        handle.revision = revision
+
+    def pause_container(self, container: Any) -> None:
+        """Pause one exact container (t082 security isolation)."""
+        try:
+            container.pause()
+        except DockerException as exc:
+            raise DockerSandboxError(
+                "Container pause failed: " + docker_error_detail(exc)
+            ) from None
+
+    def unpause_container(self, container: Any) -> None:
+        """Resume one exact container previously paused by the Supervisor."""
+        try:
+            container.unpause()
+        except DockerException as exc:
+            raise DockerSandboxError(
+                "Container unpause failed: " + docker_error_detail(exc)
+            ) from None
 
     def get_profile_containers(self, profile_id: str) -> dict[str, Any]:
         """Live Browser/Stream container objects for one Profile.

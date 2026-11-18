@@ -1,0 +1,18 @@
+{
+  "tid": "t082",
+  "attempt": 1,
+  "execution_id": "1f3590d5e7684850a7900bf9b0b20e91",
+  "status": "done",
+  "branch": "t082_persistent_namespace_policy_agents",
+  "base_sha": "c2d7c892b08ab2df34465b6b08620cc2d43de0d2",
+  "spec_source_sha": "ab3bd3c6e9ae8d0a1de2ba72b1880d9d62f6438a",
+  "tests": "t082 新测 30 条全绿（协议/状态机 10、适配器生命周期 10、核心收敛 10）；受影响既有套件（t052 probe、t080 mounts、egress parity、t026 收敛、network_policy 相关）适配后全绿；全量门禁实数见收尾时日志（老基线逐项点名于汇报）。",
+  "blackbox": "e2e 三文件已改由 Policy Agent 驱动并可收集（7 测），云端无 Docker 未实跑，归 p133 本地执行。",
+  "review": "见 review_code.md / review_test.md（full 级双轴）。",
+  "review_scope": "a370c42e621635ab",
+  "pending": [
+    "p132",
+    "p133"
+  ],
+  "findings": []
+}

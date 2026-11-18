@@ -110,18 +110,6 @@ def test_install_fail_closed_raises_on_single_family_failure(monkeypatch):
         np_module.install_fail_closed()
 
 
-def test_fail_closed_cli_exits_3_on_restore_failure(monkeypatch):
-    import subprocess as _sp
-
-    def _failing_run(*args, **kwargs):
-        return _sp.CompletedProcess(args, 1, stdout=b"", stderr=b"denied")
-
-    monkeypatch.setattr(np_module.subprocess, "run", _failing_run)
-    with pytest.raises(SystemExit) as excinfo:
-        np_module.main(["fail-closed"])
-    assert excinfo.value.code == 3
-
-
 def test_canonicalized_dump_matches_rendered_stream_spec():
     """A canonicalized sample derived from the current stream renderer checks
     that implicit protocol modules, /32 hosts, clause order and conntrack state
