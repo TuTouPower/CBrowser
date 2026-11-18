@@ -516,31 +516,6 @@ async def test_gateway_missing_aborts_replacement_before_teardown(tmp_path):
     assert observation.last_error == "gateway_missing"
 
 
-@pytest.mark.asyncio
-async def test_browser_fail_close_failure_is_retried_not_marked(tmp_path):
-    # AC-005 / code f004: a failed fail-close is not "handled" — the
-    # observation stays unmitigated and the next cycle retries.
-    adapter = _FakeAdapter(tmp_path)
-    adapter.browser_policy_ok = False
-    adapter.fail_close_error = DockerSandboxError("helper unavailable")
-    gateway = _FakeGatewayControl()
-    core, session, scan = _make_core(tmp_path, adapter, gateway)
-
-    await core._converge_session(PROFILE, session, scan)
-    observation = core.get_transport_observation(PROFILE)
-    assert observation.transport_state == "recovering"
-    assert observation.last_error == "browser_policy_drift_unmitigated"
-    assert (PROFILE, INSTANCE) not in core._policy_fail_closed
-
-    adapter.fail_close_error = None
-    await core._converge_session(PROFILE, session, scan)
-    observation = core.get_transport_observation(PROFILE)
-    assert adapter.calls.count("fail_close") == 2
-    assert observation.transport_state == "failed"
-    assert observation.last_error == "browser_policy_drift"
-    assert (PROFILE, INSTANCE) in core._policy_fail_closed
-
-
 def _core_with_runtime_api(tmp_path, adapter, gateway, runtime_by_profile):
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path

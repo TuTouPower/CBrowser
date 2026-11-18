@@ -1,7 +1,7 @@
 ---
 slug: proxy_management
 status: active
-tasks: [baseline]
+tasks: [baseline, t082]
 ---
 # 代理库界面
 
@@ -68,7 +68,7 @@ tasks: [baseline]
 - 凭据文件唯一为 `proxy_credentials.json`：Supervisor 写 Profile secret 目录（`data_root/runtime/.secrets/{profile_id}/proxy_credentials.json`，0600，chown runtime_uid:runtime_gid），字段 `{scheme,host,port,username,password,credential_revision}`；仅以只读 bind 挂进 Browser 容器 `/run/cbrowser/proxy_credentials.json`。升级前写在 runtime 目录的旧凭据文件在每次 `start_profile` 无条件删除（`unlink(missing_ok=True)`，旧版遗留清理）。
 - Runner 通过统一出站规划 `cbrowser/shared/egress_plan.py`（`resolve_runtime_egress_plan`）读取凭据文件并生成规范化代理 URL（IPv6 字面量自动加方括号、userinfo 以 `urllib.parse.quote(s, safe="")` 百分号编码），传给 CloakBrowser SDK `launch_persistent_context_async(proxy=...)`（`d046`）：`http`、`https`（含 TLS-to-proxy）与 `socks5` 全部统一支持用户名/密码认证（包括含 `@`/`%`/`!` 等特殊字符密码）与 `geoip=True` 同路代理探测；原手工拼装 `--proxy-server=` 及 `proxy_http_auth_unsupported` 拒绝分支已彻底删除。有代理时统一注入 `--disable-quic` 与 `--force-webrtc-ip-handling-policy=disable_non_proxied_udp`（无 `proxy_id` 时 `proxy=None` 且不注入代理加固参数）。凭据绝不进日志、异常消息与上报状态。
 - 校验与失败封闭：读文件/字段校验（scheme ∈ {http,https,socks5}、bare 主机名、port 1..65535、整型 `credential_revision`）或 `credential_revision` 与绑定快照不符，任一异常即 `ProxyCredentialsChangedError()`，固定消息 `PROXY_CREDENTIALS_CHANGED`。
-- 网络策略（`proxy_enforced=True`）：有代理 Browser 与出口探测 helper 均通过同一出站规划设置 `proxy_enforced=True`（IPv4/IPv6 `OUTPUT` 尾规则均为 `-A OUTPUT -j DROP`），仅放行上游代理解析地址:端口（`scheme://host:port`，容器内 `_resolved_endpoint` 解析，域名代理时仅附加 Docker DNS `127.0.0.11:53/udp`）；严禁 WebRTC UDP、QUIC、外部 DNS 与直连公网逃逸（`d047`）。loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
+- 网络策略（`proxy_enforced=True`）：有代理 Browser 与出口探测 helper 均通过同一出站规划设置 `proxy_enforced=True`（IPv4/IPv6 `OUTPUT` 尾规则均为 `-A OUTPUT -j DROP`），仅放行上游代理解析地址:端口（`scheme://host:port`，由目标 Policy Agent 在其 netns 内解析，域名代理时仅附加 Docker DNS `127.0.0.11:53/udp`）；严禁 WebRTC UDP、QUIC、外部 DNS 与直连公网逃逸（`d047`）。loopback 上游映射为 `host.docker.internal` 并加 `extra_hosts`，归 Browser 承担。
 - 每 Profile 只有两个沙箱容器（browser/stream），启动顺序为网络 → Browser → Stream；无代理凭据或凭据异常即失败封闭、Browser 不启动，巡检 `browser_policy_spec` 漂移触发 `fail_close_container`。
 
 ## 10. t074 系统设置持久化、宽弹窗与代理列表交互全量重构

@@ -22,6 +22,8 @@ VOLUME_KINDS = ("db", "data", "fonts", "runtime")
 # Subpath prefixes inside the runtime volume (ADR 029 frozen layout).
 RUNTIME_GATES_PREFIX = "gates"
 RUNTIME_SOCKETS_PREFIX = "sockets"
+# t082 / ADR 039: Policy Agent control slots (Supervisor + owning Agent only).
+RUNTIME_POLICY_AGENTS_PREFIX = "policy-agents"
 
 
 def volume_name(resource_prefix: str, kind: str) -> str:
@@ -52,6 +54,7 @@ class MountPlanner:
         data_root: Path | str,
         socket_root: Path | str,
         fonts_root: Path | str,
+        policy_agent_root: Path | str | None = None,
     ) -> None:
         self.resource_prefix = resource_prefix
         self.data_root = Path(data_root).resolve()
@@ -59,6 +62,11 @@ class MountPlanner:
         self.fonts_root = Path(fonts_root).resolve()
         self.runtime_root = self.data_root / "runtime"
         self.gates_root = self.data_root / "control" / "gates"
+        self.policy_agent_root = (
+            Path(policy_agent_root).resolve()
+            if policy_agent_root is not None
+            else self.data_root / "control" / "policy-agents"
+        )
 
     def volume(self, kind: str) -> str:
         return volume_name(self.resource_prefix, kind)
@@ -73,6 +81,7 @@ class MountPlanner:
         resolved = Path(source).resolve()
         candidates: list[tuple[Path, str, str]] = [
             (self.gates_root, "runtime", RUNTIME_GATES_PREFIX),
+            (self.policy_agent_root, "runtime", RUNTIME_POLICY_AGENTS_PREFIX),
             (self.runtime_root, "runtime", ""),
             (self.socket_root, "runtime", RUNTIME_SOCKETS_PREFIX),
             (self.fonts_root, "fonts", ""),

@@ -50,6 +50,9 @@ class _FakeContainer:
         self.calls = calls
         self.probe_result = probe_result
         self.removed = False
+        self.name = f"fake-{kind}"
+        self.labels: dict = {}
+        self.status = "running"
 
     def exec_run(self, cmd, user=None):
         self.calls.append({"exec": list(cmd), "user": user})
@@ -94,20 +97,30 @@ class _FakeContainers:
     def run(self, image, **kwargs):
         self.calls.append({"run": kwargs})
         entrypoint = kwargs.get("entrypoint") or []
-        if any("network_policy" in str(part) for part in entrypoint):
-            container = _FakeContainer("policy", self.calls)
+        if any("policy_agent" in str(part) for part in entrypoint):
+            container = _FakeContainer("policy-agent", self.calls)
         else:
             if self.fail_create is not None:
                 raise self.fail_create
             container = _FakeContainer("probe", self.calls)
+        container.name = kwargs.get("name") or container.name
+        container.labels = dict(kwargs.get("labels") or {})
         self.created.append(container)
         return container
 
     def create(self, image, **kwargs):
-        # Policy helpers are launched via create()+start() since the t057
-        # leak fix; record the launch exactly like run() so the call-shape
-        # assertions in this file are unchanged.
+        # Policy Agents are launched via create()+start(); record the
+        # launch exactly like run() so call-shape assertions see them.
         return self.run(image, **kwargs)
+
+    def get(self, name):
+        for container in self.created:
+            if container.name == name and not container.removed:
+                return container
+        raise docker.errors.NotFound(f"no such container: {name}")
+
+    def list(self, all=False, filters=None):
+        return [c for c in self.created if all or not c.removed]
 
 
 class _FakeNetworks:
@@ -143,7 +156,16 @@ def _adapter(tmp_path: Path, client=None):
         browser_image=_SHA,
         stream_image=_SHA,
         policy_image=_SHA,
+        deployment_instance_id="dep-test",
     )
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    rig = PolicyAgentTestRig()
+    rig.executor.resolutions.update(
+        {host: [ip] for host, ip in DNS_MAP.items()}
+    )
+    rig.install_on(adapter)
+    adapter._test_rig = rig  # type: ignore[attr-defined]
     return adapter, fake, calls, root
 
 
@@ -171,11 +193,16 @@ def test_probe_helper_maps_loopback_to_host_gateway(tmp_path):
     assert outcome.country_code == "JP"
     probe = _probe_kwargs(calls, "time.sleep")
     assert probe["extra_hosts"] == {"host.docker.internal": "host-gateway"}
-    policy = _probe_kwargs(calls, "network_policy")
-    policy_doc = json.loads(policy["command"][0])
+    # t082: the probe policy is installed by a one-shot Policy Agent
+    # joining the helper's namespace, speaking the same protocol.
+    agent_kwargs = _probe_kwargs(calls, "policy_agent")
+    assert agent_kwargs["network_mode"] == "container:fake-probe-id"
+    assert agent_kwargs["cap_add"] == ["NET_ADMIN"]
+    installed = adapter._test_rig.executor.installed  # type: ignore[attr-defined]
+    assert len(installed) == 1
     # Only the mapped host-gateway address + the proxy port is allowed;
     # no other private address is opened (AC-010 negative half).
-    assert policy_doc["allowed_tcp"] == [["192.168.65.254", 7890]]
+    assert installed[0][0].allowed_tcp == [("192.168.65.254", 7890)]
 
 
 def test_probe_helper_reports_error_code(tmp_path):
@@ -285,6 +312,10 @@ def test_loopback_mapping_failure_is_explicit(tmp_path):
 
 
 def _stage_browser(adapter, tmp_path, creds: dict):
+    # t082: the Policy Agent seam is stubbed here like the install seam
+    # (in-process rig); agent lifecycle coverage lives in
+    # test_t082_adapter_policy_agents.
+    adapter._test_rig.stub_ensure(adapter)  # type: ignore[attr-defined]
     adapter.remember_profile_number("p1", 1)
     dirs = adapter.prepare_profile_directories("p1")
     snapshot_path = dirs["runtime"] / "snapshot.json"
@@ -305,14 +336,15 @@ async def test_browser_start_adds_extra_hosts_for_mapped_loopback(tmp_path):
     adapter, _fake, _calls, _root = _adapter(tmp_path)
     mock_client = MagicMock()
     adapter.client = mock_client
-    mock_client.containers.run.return_value = MagicMock()
+    browser_container = MagicMock()
+    browser_container.id = "cid-browser"
+    mock_client.containers.run.return_value = browser_container
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("192.168.65.254", 7890)])
     adapter._install_network_policy = MagicMock()
     _dirs, snapshot_path = _stage_browser(
         adapter,
@@ -340,14 +372,15 @@ async def test_browser_start_no_extra_hosts_for_public_proxy(tmp_path):
     adapter, _fake, _calls, _root = _adapter(tmp_path)
     mock_client = MagicMock()
     adapter.client = mock_client
-    mock_client.containers.run.return_value = MagicMock()
+    browser_container = MagicMock()
+    browser_container.id = "cid-browser"
+    mock_client.containers.run.return_value = browser_container
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
     adapter.cleanup_container_by_name = MagicMock()
     adapter._prepare_policy_gate = MagicMock(return_value=tmp_path / "data" / "control" / "gates" / "p1" / "inst" / "gate")
     adapter._validate_cache_paths = MagicMock()
-    adapter._resolved_endpoint = MagicMock(return_value=[("93.184.216.34", 8080)])
     adapter._install_network_policy = MagicMock()
     _dirs, snapshot_path = _stage_browser(
         adapter,

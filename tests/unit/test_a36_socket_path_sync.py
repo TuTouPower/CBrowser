@@ -144,7 +144,15 @@ async def test_browser_container_config_env_exposes_full_agent_socket_path(
         browser_image=image,
         stream_image=image,
         policy_image=image,
+        deployment_instance_id="dep-test",
     )
+    # t082: policy installation runs through the target's Policy
+    # Agent; stub its creation with the in-process rig.
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter.create_browser_network = AsyncMock()
     adapter.ensure_runtime_cache = AsyncMock()
     adapter.setup_x11_permissions = MagicMock()
@@ -196,7 +204,9 @@ async def test_stream_container_config_env_exposes_full_agent_socket_path(
         }
     }
     mock_client.containers.get.side_effect = docker.errors.NotFound("Not found")
-    mock_client.containers.run.return_value = MagicMock()
+    _stream_container = MagicMock()
+    _stream_container.id = "cid-stream"
+    mock_client.containers.run.return_value = _stream_container
     adapter = DockerAdapter(
         path_validator=PathValidator(root),
         engine_cache_dir=engine,
@@ -204,7 +214,13 @@ async def test_stream_container_config_env_exposes_full_agent_socket_path(
         browser_image="sha256:" + "a" * 64,
         stream_image="sha256:" + "b" * 64,
         policy_image="sha256:" + "a" * 64,
+        deployment_instance_id="dep-test",
     )
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     adapter._install_network_policy = MagicMock()
     adapter._resolved_endpoint = MagicMock(return_value=[("127.0.0.1", 18097)])
     adapter.cleanup_container_by_name = MagicMock()
@@ -324,7 +340,15 @@ def test_recovery_supervisor_socket_root_keeps_agent_socket_path_bounded(
         browser_image=image,
         stream_image=image,
         policy_image=image,
+        deployment_instance_id="dep-test",
     )
+    # t082: policy installation runs through the target's Policy
+    # Agent; stub its creation with the in-process rig.
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     env = adapter._agent_socket_environment(PROFILE, INSTANCE)
     assert set(env) == {
         sr.AGENT_SOCKET_ROOT_ENV,

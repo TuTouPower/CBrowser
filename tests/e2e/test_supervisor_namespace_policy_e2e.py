@@ -7,21 +7,26 @@ Contract invariants:
    - Rejects mismatched instance_id, mismatched role, or status != 'ready'.
    - Successfully executes application command ONLY when valid marker arrives.
 2. Kernel Network Policy Application & Isolation:
-   - Uses CBROWSER_SUPERVISOR_TEST_IMAGE as immutable policy helper.
+   - Uses CBROWSER_SUPERVISOR_TEST_IMAGE as the immutable Policy Agent
+     image (t082: one persistent Agent per target netns replaces the
+     one-shot policy helper).
    - Uses CBROWSER_RUNTIME_TEST_IMAGE as Python raw server/client target.
    - Target containers run as UID 1000:1000, read_only=True, cap_drop=['ALL'].
-   - Helper container runs with cap_drop=['ALL'], cap_add=['NET_ADMIN'],
-     security_opt=['no-new-privileges:true'], read_only=True,
-     tmpfs={'/run': 'rw,noexec,nosuid,size=16m'},
-     network_mode='container:<target_id>'.
-   - Helper entrypoint is explicitly
-     ['python3', '-m', 'cbrowser.supervisor.network_policy'].
+   - Policy Agent container runs with cap_drop=['ALL'],
+     cap_add=['NET_ADMIN'], security_opt=['no-new-privileges:true'],
+     read_only=True, network_mode='container:<target_id>', and only
+     its own socket directory bind-mounted at
+     /run/cbrowser_policy_agent.
+   - Agent entrypoint is explicitly
+     ['python3', '-m', 'cbrowser.supervisor.policy_agent']; the test
+     drives it through the production PolicyAgentClient over the
+     bind-mounted Unix socket.
+   - Policy persistence after the Agent exits and is removed.
    - Positive same-peer communication to explicitly allowed TCP endpoint.
    - Negative same-peer blocked port (listening raw socket, but not in policy).
    - Negative cross-peer / blocked bridge communication.
    - Negative other-bridge communication (isolated network).
    - IPv4 public egress verified reachable (e.g. 1.1.1.1:80).
-   - Policy persistence after helper exits and is removed.
    - Non-modified namespaces remain unaffected.
    - Real dual-stack / ULA IPv6 fail-closed verification.
 3. Clean-up & Tracking:
@@ -44,7 +49,10 @@ import docker
 import pytest
 
 from e2e_env import require_e2e_env
+from cbrowser.supervisor.container_spec import policy_agent_environment
 from cbrowser.supervisor.network_policy import NetworkPolicySpec
+from cbrowser.supervisor.policy_agent_client import PolicyAgentClient
+from cbrowser.supervisor.policy_agent_protocol import PolicyAgentIdentity
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
@@ -312,11 +320,78 @@ def _run_python_probe(
     return res.exit_code, res.output.decode("utf-8", errors="replace")
 
 
+def _start_policy_agent(
+    docker_client: docker.DockerClient,
+    resource_tracker: Any,
+    image: str,
+    prefix: str,
+    target: docker.models.containers.Container,
+    socket_root: Path,
+) -> PolicyAgentClient:
+    """Start the target's persistent Policy Agent and return its client.
+
+    Mirrors the production creation shape (docker_adapter): policy
+    image, NET_ADMIN only, read-only root, the target's netns, and a
+    single bind mount carrying only this Agent's socket directory.
+    """
+    socket_dir = socket_root / f"agent-{prefix}"
+    socket_dir.mkdir(parents=True, exist_ok=True)
+    identity = PolicyAgentIdentity(
+        deployment_id="e2e",
+        profile_id=f"e2e-{prefix}",
+        runtime_instance_id="e2e-inst",
+        config_version=1,
+        role="browser",
+        target_container_id=target.id,
+    )
+    agent = resource_tracker.register_container(
+        docker_client.containers.create(
+            image=image,
+            name=f"{prefix}-policy-agent",
+            entrypoint=["python3", "-m", "cbrowser.supervisor.policy_agent"],
+            command=[],
+            network_mode=f"container:{target.id}",
+            cap_drop=["ALL"],
+            cap_add=["NET_ADMIN"],
+            security_opt=["no-new-privileges:true"],
+            read_only=True,
+            environment=policy_agent_environment(
+                deployment_id=identity.deployment_id,
+                profile_id=identity.profile_id,
+                runtime_instance_id=identity.runtime_instance_id,
+                config_version=identity.config_version,
+                role=identity.role,
+                target_container_id=identity.target_container_id,
+            ),
+            volumes={
+                str(socket_dir): {
+                    "bind": "/run/cbrowser_policy_agent",
+                    "mode": "rw",
+                }
+            },
+            detach=True,
+        )
+    )
+    agent.start()
+    socket_path = socket_dir / "agent.sock"
+    deadline = time.monotonic() + 15.0
+    while not socket_path.exists():
+        if time.monotonic() > deadline:
+            logs = agent.logs().decode("utf-8", errors="replace")
+            raise TimeoutError(f"Policy Agent socket never appeared: {logs}")
+        time.sleep(0.05)
+    client = PolicyAgentClient(socket_path, identity, timeout=10.0)
+    health = client.health()
+    assert health.get("identity") == identity.model_dump(mode="json")
+    return client
+
+
 def test_kernel_network_policy_real_netns(
     docker_client: docker.DockerClient,
     policy_helper_image: str,
     runtime_target_image: str,
     resource_tracker: Any,
+    tmp_path: Path,
 ) -> None:
     """Verify kernel network policy in dual-stack netns."""
     prefix = f"t005-nsbb-{uuid.uuid4().hex[:8]}"
@@ -473,29 +548,17 @@ def test_kernel_network_policy_real_netns(
         allowed_tcp=[(ip_c, 8888)],
         allowed_udp=[],
     )
-    spec_json = spec.model_dump_json()
 
-    helper = resource_tracker.register_container(
-        docker_client.containers.create(
-            image=policy_helper_image,
-            name=f"{prefix}-helper",
-            entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-            command=[spec_json],
-            network_mode=f"container:{target_a.id}",
-            cap_drop=["ALL"],
-            cap_add=["NET_ADMIN"],
-            security_opt=["no-new-privileges:true"],
-            read_only=True,
-            tmpfs={"/run": "rw,noexec,nosuid,size=16m"},
-            detach=True,
-        )
+    agent_client = _start_policy_agent(
+        docker_client,
+        resource_tracker,
+        policy_helper_image,
+        prefix,
+        target_a,
+        tmp_path,
     )
-    helper.start()
-    res_helper = helper.wait(timeout=15)
-    helper_logs = helper.logs().decode("utf-8", errors="replace")
-    assert res_helper.get("StatusCode") == 0, f"Policy helper failed: {helper_logs}"
-
-    helper.remove(force=True)
+    agent_client.install(spec, 1)
+    assert agent_client.inspect(spec, 1) is True
 
     # 1. Positive case: Target C port 8888 allowed
     code_c_allowed, out_c_allowed = _run_python_probe(target_a, ip_c, 8888)
@@ -568,8 +631,17 @@ def test_kernel_network_policy_real_netns(
     # 8. Verify other namespace (Target B) was NOT modified
     code_b_to_c, out_b_to_c = _run_python_probe(target_b, ip_c, 9999, timeout=1.5)
     assert code_b_to_c == 0 and "OTHER_PONG" in out_b_to_c, (
-        f"Target B namespace was modified by helper! Out: {out_b_to_c}"
+        f"Target B namespace was modified by the Agent! Out: {out_b_to_c}"
     )
+
+    # 9. The rules live in the target netns, not in the Agent process:
+    # removing the Agent changes nothing about enforcement.
+    agent_container = docker_client.containers.get(f"{prefix}-policy-agent")
+    agent_container.remove(force=True)
+    code_after, out_after = _run_python_probe(target_a, ip_c, 8888)
+    assert code_after == 0 and "PROXY_PONG" in out_after, out_after
+    code_blocked_after, _ = _run_python_probe(target_a, ip_c, 9999, timeout=1.0)
+    assert code_blocked_after != 0
 
 
 def test_wait_for_server_ready_polls_until_log_marker() -> None:
@@ -634,6 +706,7 @@ def test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp(
     policy_helper_image: str,
     runtime_target_image: str,
     resource_tracker: Any,
+    tmp_path: Path,
 ) -> None:
     """p102/d047 E2E: when proxy_enforced=True (proxied Browser or egress probe),
     dual-stack filter rules end in OUTPUT -j DROP instead of OUTPUT -j ACCEPT.
@@ -739,26 +812,16 @@ def test_kernel_proxy_enforced_blocks_public_egress_and_non_proxy_udp(
     )
     assert spec.proxy_enforced is True
 
-    helper = resource_tracker.register_container(
-        docker_client.containers.create(
-            image=policy_helper_image,
-            name=f"{prefix}-helper",
-            entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-            command=[spec.model_dump_json()],
-            network_mode=f"container:{target_a.id}",
-            cap_drop=["ALL"],
-            cap_add=["NET_ADMIN"],
-            security_opt=["no-new-privileges:true"],
-            read_only=True,
-            tmpfs={"/run": "rw,noexec,nosuid,size=16m"},
-            detach=True,
-        )
+    agent_client = _start_policy_agent(
+        docker_client,
+        resource_tracker,
+        policy_helper_image,
+        prefix,
+        target_a,
+        tmp_path,
     )
-    helper.start()
-    res_helper = helper.wait(timeout=15)
-    helper_logs = helper.logs().decode("utf-8", errors="replace")
-    assert res_helper.get("StatusCode") == 0, f"Policy helper failed: {helper_logs}"
-    helper.remove(force=True)
+    agent_client.install(spec, 1)
+    assert agent_client.inspect(spec, 1) is True
 
     # 1. Allowed proxy TCP works.
     code_ok, out_ok = _run_python_probe(target_a, ip_c, 8888)

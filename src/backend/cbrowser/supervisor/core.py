@@ -294,6 +294,14 @@ class SupervisorCore:
         self._stream_replace_attempts: dict[str, list[float]] = {}
         self._pending_stream_residue: dict[str, StreamResidue] = {}
         self._policy_fail_closed: set[tuple[str, str]] = set()
+        # t082: security-isolation ownership.  _policy_paused records
+        # only targets THIS mechanism paused (profile, instance); only
+        # those may be resumed, and only while they are still the
+        # current desired=running instance with re-verified rules.
+        # _policy_unknown_since arms the 30 s isolation budget per
+        # (profile, instance, role) while policy state is unconfirmed.
+        self._policy_paused: dict[tuple[str, str], float] = {}
+        self._policy_unknown_since: dict[tuple[str, str, str], float] = {}
         self._unprotected_since: dict[str, float] = {}
         self._event_cursors: dict[str, dict[str, list]] = self._load_event_cursors()
         self._event_cursor_file = (
@@ -356,6 +364,10 @@ class SupervisorCore:
     )
     _STREAM_REPLACE_WINDOW_SEC = 300.0
     _STREAM_REPLACE_MAX = 3
+    # t082: drift detection and security isolation share one 30 s
+    # budget: unconfirmed policy state older than this isolates the
+    # exact target (Browser: pause; Stream: bounded replacement).
+    _POLICY_ISOLATION_BUDGET_SEC = 30.0
     # A registered-then-unregistered transition is a recovery transient
     # until proven otherwise: after a Gateway outage/restart the healthy
     # Stream agent backs off up to 30s before re-registering, so an
@@ -484,6 +496,188 @@ class SupervisorCore:
         )
         return MediaAttachmentOutcome(MEDIA_ATTACH_OK, media=media)
 
+
+    # ---------------- t082: policy verification, isolation, resume --------
+
+    async def _verify_with_agent_recovery(
+        self,
+        profile_id: str,
+        instance_id: str,
+        role: str,
+        container: Any,
+        spec: dict[str, Any],
+    ) -> bool:
+        """Verify policy through the target's Policy Agent.
+
+        An unavailable Agent is repaired in place (the Agent container
+        is rebuilt, never the target) and the verification retried
+        once.  While confirmation is outstanding the per-target
+        isolation budget clock runs; the caller decides isolation when
+        :meth:`_policy_unknown_expired` fires.  Raises
+        DockerSandboxError when the state stays unconfirmed.
+        """
+        key = (profile_id, instance_id, role)
+        try:
+            result = await asyncio.to_thread(
+                self.docker.verify_container_policy, container, spec
+            )
+            self._policy_unknown_since.pop(key, None)
+            return result
+        except DockerSandboxError:
+            self._policy_unknown_since.setdefault(key, time.monotonic())
+            repair = getattr(
+                self.docker, "ensure_policy_agent_for_container", None
+            )
+            if repair is not None:
+                try:
+                    await asyncio.to_thread(repair, container)
+                    result = await asyncio.to_thread(
+                        self.docker.verify_container_policy, container, spec
+                    )
+                    self._policy_unknown_since.pop(key, None)
+                    return result
+                except DockerSandboxError:
+                    pass
+            raise
+
+    def _policy_unknown_expired(
+        self, profile_id: str, instance_id: str, role: str
+    ) -> bool:
+        since = self._policy_unknown_since.get((profile_id, instance_id, role))
+        return (
+            since is not None
+            and (time.monotonic() - since) >= self._POLICY_ISOLATION_BUDGET_SEC
+        )
+
+    async def _isolate_browser(
+        self, profile_id: str, instance_id: str, browser_c: Any, error: str
+    ) -> None:
+        """Pause the exact Browser target and record mechanism ownership.
+
+        Only targets recorded here may ever be resumed by this
+        mechanism; user pauses, stops and replacements are never
+        touched (their (profile, instance) keys are never recorded).
+        """
+        pause = getattr(self.docker, "pause_container", None)
+        if pause is not None:
+            try:
+                await asyncio.to_thread(pause, browser_c)
+            except DockerSandboxError:
+                pause = None
+        if pause is None:
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="browser_policy_isolation_failed",
+                last_error_at=self._now_iso(),
+            )
+            return
+        self._policy_paused[(profile_id, instance_id)] = time.monotonic()
+        logger.warning(
+            "Browser isolated by policy mechanism: profile=%s instance=%s "
+            "reason=%s",
+            profile_id,
+            instance_id,
+            error,
+        )
+        self._update_transport(
+            profile_id,
+            transport_state="failed",
+            last_error=error,
+            last_error_at=self._now_iso(),
+        )
+
+    async def _attempt_policy_resume(
+        self,
+        profile_id: str,
+        session: ActiveSession,
+        browser_c: Any,
+        browser_spec: dict[str, Any],
+    ) -> bool:
+        """Try to resume a target this mechanism paused.
+
+        Resume requires the live rules to verify against the current
+        desired spec (one reinstall attempt is made when they do not);
+        the caller guarantees the session is still the paused instance
+        with desired=running.  Anything else stays paused.
+        """
+        instance_id = session.runtime_instance_id
+        try:
+            verified = await asyncio.to_thread(
+                self.docker.verify_container_policy, browser_c, browser_spec
+            )
+        except DockerSandboxError:
+            verified = False
+        if not verified:
+            reinstall = getattr(
+                self.docker, "reinstall_container_policy", None
+            )
+            if reinstall is not None:
+                try:
+                    await asyncio.to_thread(reinstall, browser_c, browser_spec)
+                    verified = await asyncio.to_thread(
+                        self.docker.verify_container_policy,
+                        browser_c,
+                        browser_spec,
+                    )
+                except DockerSandboxError:
+                    verified = False
+        if not verified:
+            self._update_transport(
+                profile_id,
+                transport_state="failed",
+                last_error="browser_policy_isolated",
+                last_error_at=self._now_iso(),
+            )
+            return False
+        try:
+            await asyncio.to_thread(self.docker.unpause_container, browser_c)
+        except DockerSandboxError:
+            self._update_transport(
+                profile_id,
+                transport_state="recovering",
+                last_error="browser_policy_resume_failed",
+                last_error_at=self._now_iso(),
+            )
+            return False
+        self._policy_paused.pop((profile_id, instance_id), None)
+        self._policy_unknown_since.pop((profile_id, instance_id, "browser"), None)
+        logger.info(
+            "Browser resumed after policy re-verification: profile=%s "
+            "instance=%s",
+            profile_id,
+            instance_id,
+        )
+        return True
+
+    async def note_policy_agent_event(self, profile_id: str) -> None:
+        """Targeted Policy Agent repair after an Agent lifecycle event.
+
+        Agent events never wake the full business scan (that would be
+        self-exciting); they repair only the affected Profile's Agents.
+        """
+        session = self._sessions.get(profile_id)
+        if session is None or self.is_profile_locked(profile_id):
+            return
+        ensure = getattr(self.docker, "ensure_policy_agent_for_container", None)
+        if ensure is None:
+            return
+        objects = await asyncio.to_thread(
+            self.docker.get_profile_containers, profile_id
+        )
+        for role in ("browser", "stream"):
+            container = objects.get(role)
+            if container is None:
+                continue
+            try:
+                await asyncio.to_thread(ensure, container)
+            except DockerSandboxError:
+                logger.warning(
+                    "Policy agent targeted repair failed: profile=%s role=%s",
+                    profile_id,
+                    role,
+                )
+
     async def _converge_session(
         self,
         profile_id: str,
@@ -582,16 +776,38 @@ class SupervisorCore:
             plan, self.gateway_port, session.udp_mux_port
         )
         try:
-            stream_policy_ok = await asyncio.to_thread(
-                self.docker.verify_container_policy, stream_c, stream_spec
+            stream_policy_ok = await self._verify_with_agent_recovery(
+                profile_id, instance_id, "stream", stream_c, stream_spec
             )
         except DockerSandboxError:
-            self._update_transport(
-                profile_id,
-                transport_state="recovering",
-                last_error="policy_verify_unavailable",
-                last_error_at=self._now_iso(),
-            )
+            if self._policy_unknown_expired(profile_id, instance_id, "stream"):
+                # Isolation for a Stream is its bounded replacement:
+                # the replacement rebuilds the Stream and its Agent,
+                # the Browser is never touched.
+                if self._stream_replacement_allowed(profile_id, instance_id):
+                    logger.warning(
+                        "Stream-only replacement: stream_policy_agent_"
+                        "unavailable profile=%s instance=%s",
+                        profile_id,
+                        instance_id,
+                    )
+                    await self._replace_stream_only(
+                        profile_id, session, rebuild_network=False
+                    )
+                else:
+                    self._update_transport(
+                        profile_id,
+                        transport_state="failed",
+                        last_error="stream_policy_agent_unavailable",
+                        last_error_at=self._now_iso(),
+                    )
+            else:
+                self._update_transport(
+                    profile_id,
+                    transport_state="recovering",
+                    last_error="policy_verify_unavailable",
+                    last_error_at=self._now_iso(),
+                )
             return
         if not stream_policy_ok:
             if self._stream_replacement_allowed(profile_id, instance_id):
@@ -615,47 +831,79 @@ class SupervisorCore:
         browser_spec = await asyncio.to_thread(
             self.docker.browser_policy_spec, profile_id, browser_c
         )
-        try:
-            browser_policy_ok = await asyncio.to_thread(
-                self.docker.verify_container_policy, browser_c, browser_spec
-            )
-        except DockerSandboxError:
-            self._update_transport(
-                profile_id,
-                transport_state="recovering",
-                last_error="policy_verify_unavailable",
-                last_error_at=self._now_iso(),
-            )
-            return
-        if not browser_policy_ok:
-            key = (profile_id, instance_id)
-            if key not in self._policy_fail_closed:
-                try:
-                    await asyncio.to_thread(
-                        self.docker.fail_close_container, browser_c
+        if (profile_id, instance_id) in self._policy_paused:
+            # This mechanism paused the target: only a re-verified,
+            # still-current instance resumes, and nothing else in the
+            # convergence pass applies while it stays isolated.
+            if session.desired_state != "running":
+                # AC-008: an instance whose current intent is not
+                # running is never resumed by this mechanism.
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="browser_policy_isolated",
+                    last_error_at=self._now_iso(),
+                )
+                return
+            if not await self._attempt_policy_resume(
+                profile_id, session, browser_c, browser_spec
+            ):
+                return
+        else:
+            try:
+                browser_policy_ok = await self._verify_with_agent_recovery(
+                    profile_id, instance_id, "browser", browser_c, browser_spec
+                )
+            except DockerSandboxError:
+                if self._policy_unknown_expired(
+                    profile_id, instance_id, "browser"
+                ):
+                    await self._isolate_browser(
+                        profile_id,
+                        instance_id,
+                        browser_c,
+                        "browser_policy_unverifiable",
                     )
-                except DockerSandboxError:
-                    # Not marked as handled: the Browser is still
-                    # unmitigated, so the next cycle retries and the
-                    # observation must not claim a completed fail-close.
-                    logger.warning(
-                        "Browser fail-close failed: profile=%s", profile_id
-                    )
+                else:
                     self._update_transport(
                         profile_id,
                         transport_state="recovering",
-                        last_error="browser_policy_drift_unmitigated",
+                        last_error="policy_verify_unavailable",
                         last_error_at=self._now_iso(),
                     )
-                    return
-                self._policy_fail_closed.add(key)
-            self._update_transport(
-                profile_id,
-                transport_state="failed",
-                last_error="browser_policy_drift",
-                last_error_at=self._now_iso(),
-            )
-            return
+                return
+            if not browser_policy_ok:
+                key = (profile_id, instance_id)
+                if key not in self._policy_fail_closed:
+                    try:
+                        await asyncio.to_thread(
+                            self.docker.fail_close_container, browser_c
+                        )
+                    except DockerSandboxError:
+                        # The drift is confirmed but the closure is
+                        # not: isolate the exact target by pausing it
+                        # inside the same budget instead of leaving an
+                        # unmitigated Browser running (t082 AC-006).
+                        logger.warning(
+                            "Browser fail-close failed; isolating: "
+                            "profile=%s",
+                            profile_id,
+                        )
+                        await self._isolate_browser(
+                            profile_id,
+                            instance_id,
+                            browser_c,
+                            "browser_policy_drift",
+                        )
+                        return
+                    self._policy_fail_closed.add(key)
+                self._update_transport(
+                    profile_id,
+                    transport_state="failed",
+                    last_error="browser_policy_drift",
+                    last_error_at=self._now_iso(),
+                )
+                return
         if self.gateway_control is None:
             self._update_transport(profile_id, transport_state="unknown")
             return
@@ -1364,6 +1612,32 @@ class SupervisorCore:
                 # never overwrite an error observation from the Agent.
                 if any(item["status"] != "running" for item in (b_c, s_c)):
                     if (
+                        (pid, b_inst) in self._policy_paused
+                        and b_c["status"] == "paused"
+                        and s_c["status"] == "running"
+                    ):
+                        # t082: this mechanism paused the Browser for
+                        # policy isolation.  Convergence owns its
+                        # verified resume; the pause is not a container
+                        # exit and must never be reported as one.
+                        await self._converge_session(pid, session, roles)
+                        return
+                    if (
+                        (pid, b_inst) in self._policy_paused
+                        and b_c["status"] == "paused"
+                        and s_c["status"] != "running"
+                        and self._stream_replacement_allowed(pid, b_inst)
+                    ):
+                        # t082: while the Browser is policy-isolated,
+                        # a lost Stream is still repaired Stream-only
+                        # (bounded by the same replacement budget);
+                        # the Browser stays paused and resumes through
+                        # the verified path once the pair is whole.
+                        await self._replace_stream_only(
+                            pid, session, rebuild_network=False
+                        )
+                        return
+                    if (
                         b_c["status"] == "running"
                         and s_c["status"] != "running"
                         and self._stream_replacement_allowed(pid, b_inst)
@@ -1405,14 +1679,23 @@ class SupervisorCore:
             if desired == "running" and any(
                 item["status"] != "running" for item in (b_c, s_c)
             ):
-                await self.report_terminal_observation(
-                    pid,
-                    b_inst,
-                    int(rt.get("config_version", b_c.get("config_version", 1))),
-                    observed_state="error",
-                    reason="container_exit",
-                )
-                return
+                if not (
+                    b_c["status"] == "paused" and s_c["status"] == "running"
+                ):
+                    await self.report_terminal_observation(
+                        pid,
+                        b_inst,
+                        int(rt.get("config_version", b_c.get("config_version", 1))),
+                        observed_state="error",
+                        reason="container_exit",
+                    )
+                    return
+                # t082: a paused Browser with a running Stream and no
+                # tracked session is a policy isolation whose owner
+                # process is gone.  Fall through to the restore flow
+                # below, which re-registers the isolation ownership
+                # and resumes only after re-verification — the pause
+                # is never reported as a container exit.
 
             if desired == "stopped":
                 logger.info(
@@ -1551,6 +1834,15 @@ class SupervisorCore:
                 # Same pass convergence: the restored session immediately
                 # converges transport topology (Gateway re-attachment)
                 # rather than waiting for a later cycle.
+                if b_c.get("status") == "paused":
+                    # t082: nothing but this mechanism pauses a Browser
+                    # (stop flows stop/remove containers; user intent
+                    # arrives via the API, never as a docker pause).  A
+                    # Browser found paused at restore time is an
+                    # isolation whose ownership died with the previous
+                    # Supervisor process: re-register it so convergence
+                    # resumes it only after re-verification.
+                    self._policy_paused[(pid, b_inst)] = time.monotonic()
                 session = self._sessions[pid]
                 await self._converge_session(pid, session, roles)
         elif resp.status_code == 404:

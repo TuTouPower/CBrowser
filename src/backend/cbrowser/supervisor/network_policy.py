@@ -3,7 +3,10 @@
 AC / Implementation Contract:
 - NetworkPolicySpec: strict Pydantic model (role, allowed_tcp, allowed_udp).
 - Endpoints are IP literals + port only. Extra fields forbidden.
-- Ephemeral netns execution: python -m cbrowser.supervisor.network_policy <JSON>
+- Executed inside the target namespace by the persistent Policy Agent
+  (t082, ADR 039): cbrowser.supervisor.policy_agent drives apply /
+  verify / fail-closed through the bounded UDS protocol; this module is
+  the rule library (spec, rendering, live comparison, installers).
 - Applies to current container namespace only via subprocess argv arrays.
 - IPv4 & IPv6 fail-closed:
   Browser: incoming new connections denied (loopback & established permitted).
@@ -22,7 +25,6 @@ import ipaddress
 import json
 import logging
 import subprocess
-import sys
 from typing import Any, Literal
 
 from cbrowser.udp_mux import udp_mux_bounds
@@ -343,6 +345,69 @@ def apply_policy(spec: NetworkPolicySpec) -> None:
             )
 
 
+def replace_policy(spec: NetworkPolicySpec) -> None:
+    """Replace the namespace's whole filter table with ``spec`` (t082).
+
+    Used by the Policy Agent for a policy refresh.  The current tables
+    are captured first; the rendered ruleset is then restored without
+    ``--noflush`` so each family is flushed and replaced atomically --
+    no window with the old and new ACCEPT rules coexisting, and none
+    unfiltered.  On any failure the captured tables are restored, so a
+    failed refresh keeps the previously valid limits in force; only if
+    the rollback itself fails does the namespace fail closed.
+    """
+    backups: dict[str, bytes] = {}
+    for family in ("ipv4", "ipv6"):
+        result = subprocess.run(
+            [_save_tool(family), "-t", "filter"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise NetworkPolicyError(
+                family=family,
+                tool=_save_tool(family),
+                exit_code=result.returncode,
+                stderr=_bounded_stderr(result.stderr or b""),
+            )
+        backups[family] = result.stdout
+    rendered = {
+        "ipv4": render_iptables_rules(spec),
+        "ipv6": render_ip6tables_rules(spec),
+    }
+    for family in ("ipv4", "ipv6"):
+        tool = _FAMILY_TOOLS[family]
+        result = subprocess.run(
+            [tool, "-w", "5"],
+            input=rendered[family].encode("utf-8"),
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            rollback_failed = False
+            for backup_family in ("ipv4", "ipv6"):
+                restored = subprocess.run(
+                    [_FAMILY_TOOLS[backup_family], "-w", "5"],
+                    input=backups[backup_family],
+                    capture_output=True,
+                    timeout=10,
+                    check=False,
+                )
+                if restored.returncode != 0:
+                    rollback_failed = True
+            if rollback_failed:
+                for fallback_family in ("ipv4", "ipv6"):
+                    _install_fail_closed(fallback_family)
+            raise NetworkPolicyError(
+                family=family,
+                tool=tool,
+                exit_code=result.returncode,
+                stderr=_bounded_stderr(result.stderr or b""),
+            )
+
+
 _IMPLICIT_PROTOCOL_MODULES = frozenset({"tcp", "udp", "icmp", "icmp6"})
 
 
@@ -450,6 +515,20 @@ def verify_policy(spec: NetworkPolicySpec) -> bool:
     return True
 
 
+def verify_fail_closed() -> bool:
+    """True only when both families hold exactly the fail-closed ruleset.
+
+    The Policy Agent (t082) confirms a fail-close through this check
+    before reporting it: an exit-0 restore alone is not proof the live
+    rules are the DROP-everything set.
+    """
+    expected = parse_filter_rules(_fail_closed_rules())
+    for family in ("ipv4", "ipv6"):
+        if current_filter_rules(family) != expected:
+            return False
+    return True
+
+
 def install_fail_closed() -> None:
     """Replace both families with the DROP-everything ruleset.
 
@@ -488,67 +567,3 @@ def install_fail_closed() -> None:
             )
 
 
-def main(argv: list[str] | None = None) -> None:
-    if argv is None:
-        argv = sys.argv[1:]
-    mode = "apply"
-    if argv and argv[0] in ("verify", "fail-closed"):
-        mode = argv[0]
-        argv = argv[1:]
-    if mode == "fail-closed":
-        if argv:
-            sys.stderr.write(
-                "Usage: python -m cbrowser.supervisor.network_policy fail-closed\n"
-            )
-            sys.exit(1)
-        try:
-            install_fail_closed()
-        except Exception as exc:  # noqa: BLE001 - fail-closed install failure exits with code 3
-            logger.error(
-                "Fail-closed installation failed: error_type=%s", type(exc).__name__
-            )
-            sys.exit(3)
-        return
-    if len(argv) != 1:
-        sys.stderr.write(
-            "Usage: python -m cbrowser.supervisor.network_policy "
-            "[verify|fail-closed] <POLICY_JSON>\n"
-        )
-        sys.exit(1)
-
-    try:
-        raw_json = argv[0]
-        data = json.loads(raw_json)
-        spec = NetworkPolicySpec.model_validate(data)
-    except Exception as exc:  # noqa: BLE001 - CLI argument json decode or schema validation error exits with code 2
-        logger.error("Invalid policy spec: error_type=%s", type(exc).__name__)
-        sys.exit(2)
-
-    if mode == "verify":
-        try:
-            matched = verify_policy(spec)
-        except Exception as exc:  # noqa: BLE001 - verification tooling failure exits with code 3
-            logger.error(
-                "Policy verification failed: error_type=%s", type(exc).__name__
-            )
-            sys.exit(3)
-        sys.exit(0 if matched else 4)
-
-    try:
-        apply_policy(spec)
-    except NetworkPolicyError as exc:
-        logger.error(
-            "Policy installation failed: family=%s tool=%s exit_code=%s stderr=%s",
-            exc.family,
-            exc.tool,
-            exc.exit_code,
-            exc.stderr,
-        )
-        sys.exit(3)
-    except Exception as exc:  # noqa: BLE001 - iptables policy installation failure exits with code 3
-        logger.error("Policy installation failed: error_type=%s", type(exc).__name__)
-        sys.exit(3)
-
-
-if __name__ == "__main__":
-    main()

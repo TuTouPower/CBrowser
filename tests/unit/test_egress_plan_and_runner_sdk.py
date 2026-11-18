@@ -340,8 +340,25 @@ def test_start_and_browser_policy_spec_parity_for_proxied_and_direct(
         docker_client=MagicMock(),
         browser_image="sha256:" + "a" * 64,
         stream_image="sha256:" + "b" * 64,
+        deployment_instance_id="dep-test",
     )
-    adapter._resolved_endpoint = MagicMock(return_value=[("203.0.113.50", 18080)])
+    # t082: derivation runs through the target's Policy Agent; the
+    # upstream here is an IP literal, so no resolution is needed and
+    # the in-process rig only records installs.
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    rig = PolicyAgentTestRig()
+    rig.install_on(adapter)
+    container = MagicMock()
+    container.id = "cid-parity"
+    rig.stub_ensure(adapter)
+    adapter.ensure_policy_agent(
+        container,
+        profile_id="p_parity",
+        instance_id="i_parity",
+        config_version=1,
+        role="browser",
+    )
 
     runtime_dir = adapter.validator.get_runtime_dir("p_parity")
     runtime_dir.mkdir(parents=True, exist_ok=True)
@@ -364,9 +381,9 @@ def test_start_and_browser_policy_spec_parity_for_proxied_and_direct(
         },
     )
 
-    spec_from_verify = adapter.browser_policy_spec("p_parity", MagicMock())
+    spec_from_verify = adapter.browser_policy_spec("p_parity", container)
     spec_from_start = adapter._browser_egress_policy(
-        MagicMock(), has_proxy=True, creds_file=creds
+        container, has_proxy=True, creds_file=creds
     )
     assert spec_from_verify == spec_from_start
     assert spec_from_verify == {
@@ -383,9 +400,9 @@ def test_start_and_browser_policy_spec_parity_for_proxied_and_direct(
         encoding="utf-8",
     )
     creds.unlink()
-    direct_verify = adapter.browser_policy_spec("p_parity", MagicMock())
+    direct_verify = adapter.browser_policy_spec("p_parity", container)
     direct_start = adapter._browser_egress_policy(
-        MagicMock(), has_proxy=False, creds_file=creds
+        container, has_proxy=False, creds_file=creds
     )
     assert direct_verify == direct_start
     assert direct_verify["proxy_enforced"] is False
@@ -421,8 +438,8 @@ async def test_supervisor_core_proxied_policy_drift_triggers_fail_close(
         docker_client=MagicMock(),
         browser_image="sha256:" + "a" * 64,
         stream_image="sha256:" + "b" * 64,
+        deployment_instance_id="dep-test",
     )
-    adapter._resolved_endpoint = MagicMock(return_value=[("203.0.113.50", 18080)])
 
     profile_id = "p_drift"
     instance_id = "inst_drift"
@@ -445,6 +462,44 @@ async def test_supervisor_core_proxied_policy_drift_triggers_fail_close(
             "password": "p",
             "credential_revision": 1,
         },
+    )
+
+    # t082: seed the Browser's Policy Agent handle as startup left it
+    # (policy installed at revision 1), so browser_policy_spec returns
+    # the frozen spec; the drift below is in the live rules only.
+    from cbrowser.shared.egress_plan import derive_supervisor_egress_plan
+    from cbrowser.supervisor.docker_adapter import _PolicyAgentHandle
+    from cbrowser.supervisor.network_policy import NetworkPolicySpec as _Spec
+    from cbrowser.supervisor.policy_agent_protocol import (
+        PolicyAgentIdentity as _Identity,
+        policy_spec_digest as _digest,
+    )
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _plan = derive_supervisor_egress_plan(
+        has_proxy=True, creds_path=secret_dir / "proxy_credentials.json"
+    )
+    _spec = _Spec.model_validate(
+        _plan.to_network_policy_spec([("203.0.113.50", 18080)])
+    )
+    _identity = _Identity(
+        deployment_id="dep-test",
+        profile_id=profile_id,
+        runtime_instance_id="inst_drift",
+        config_version=1,
+        role="browser",
+        target_container_id="c_browser",
+    )
+    adapter._policy_agents["c_browser"] = _PolicyAgentHandle(
+        identity=_identity,
+        client=_rig.factory(None, _identity),
+        agent_container_id="agent-drift",
+        spec=_spec,
+        digest=_digest(_spec),
+        revision=1,
+        upstream_url=_plan.upstream_url,
     )
 
     plan = plan_for_subnet(ipaddress.ip_network("10.251.7.0/24"))

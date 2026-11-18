@@ -8,6 +8,13 @@ import docker
 import pytest
 
 from e2e_env import require_e2e_env
+from cbrowser.supervisor.container_spec import policy_agent_environment
+from cbrowser.supervisor.network_policy import NetworkPolicySpec
+from cbrowser.supervisor.policy_agent_client import (
+    PolicyAgentClient,
+    PolicyAgentRejected,
+)
+from cbrowser.supervisor.policy_agent_protocol import PolicyAgentIdentity
 
 pytestmark = [pytest.mark.serial, pytest.mark.e2e_images('CBROWSER_RUNTIME_TEST_IMAGE', 'CBROWSER_SUPERVISOR_TEST_IMAGE')]
 
@@ -98,46 +105,71 @@ sys.stdout.write(json.dumps(result))
         before = observe()
         assert before["echo_ok"] is True
         assert before["tcp_response"] == "PONG"
-        policy = {"role": "browser", "allowed_tcp": [[peer_ip, 18888]]}
-        helper = client.containers.create(
+        policy = NetworkPolicySpec(
+            role="browser", allowed_tcp=[(peer_ip, 18888)]
+        )
+        # t082: the persistent Policy Agent owns installation.  Start
+        # it in the target's netns and install revision 1 over UDS.
+        identity = PolicyAgentIdentity(
+            deployment_id="e2e",
+            profile_id="e2e-" + prefix,
+            runtime_instance_id="e2e-inst",
+            config_version=1,
+            role="browser",
+            target_container_id=target.id,
+        )
+        socket_dir = tmp_path / "policy-agent"
+        socket_dir.mkdir(parents=True, exist_ok=True)
+        agent = client.containers.create(
             images[names[1]],
-            entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-            command=[json.dumps(policy)],
-            name=prefix + "-policy",
+            entrypoint=["python3", "-m", "cbrowser.supervisor.policy_agent"],
+            name=prefix + "-policy-agent",
             network_mode="container:" + target.id,
             user="0:0",
             read_only=True,
             cap_drop=["ALL"],
             cap_add=["NET_ADMIN"],
             security_opt=["no-new-privileges:true"],
-            tmpfs={"/run": "rw,size=4m"},
+            environment=policy_agent_environment(
+                deployment_id=identity.deployment_id,
+                profile_id=identity.profile_id,
+                runtime_instance_id=identity.runtime_instance_id,
+                config_version=identity.config_version,
+                role=identity.role,
+                target_container_id=identity.target_container_id,
+            ),
+            volumes={
+                str(socket_dir): {
+                    "bind": "/run/cbrowser_policy_agent",
+                    "mode": "rw",
+                }
+            },
             labels={"com.cbrowser.prefix": prefix},
         )
-        created.append(helper)
-        helper.start()
-        assert helper.wait(timeout=20)["StatusCode"] == 0, helper.logs().decode()
-        helper.remove()
-        created.remove(helper)
-        # A second installer must refuse an already configured namespace.
-        conflicting = client.containers.create(
-            images[names[1]],
-            entrypoint=["python3", "-m", "cbrowser.supervisor.network_policy"],
-            command=[json.dumps(policy)],
-            name=prefix + "-conflict",
-            network_mode="container:" + target.id,
-            user="0:0",
-            read_only=True,
-            cap_drop=["ALL"],
-            cap_add=["NET_ADMIN"],
-            security_opt=["no-new-privileges:true"],
-            tmpfs={"/run": "rw,size=4m"},
-            labels={"com.cbrowser.prefix": prefix},
+        created.append(agent)
+        agent.start()
+        socket_path = socket_dir / "agent.sock"
+        for _ in range(150):
+            if socket_path.exists():
+                break
+            await asyncio.sleep(0.1)
+        else:
+            pytest.fail("Policy Agent socket never appeared: " + agent.logs().decode())
+        agent_client = PolicyAgentClient(socket_path, identity, timeout=10.0)
+        agent_client.install(policy, 1)
+        assert agent_client.inspect(policy, 1) is True
+        # The revision fence replaces the old one-shot installer's
+        # refusal: a conflicting spec at the applied revision, and any
+        # replayed older revision, are both rejected and change
+        # nothing.
+        conflicting_policy = NetworkPolicySpec(
+            role="browser", allowed_tcp=[(peer_ip, 19999)]
         )
-        created.append(conflicting)
-        conflicting.start()
-        assert conflicting.wait(timeout=20)["StatusCode"] == 3
-        conflicting.remove()
-        created.remove(conflicting)
+        with pytest.raises(PolicyAgentRejected):
+            agent_client.install(conflicting_policy, 1)
+        with pytest.raises(PolicyAgentRejected):
+            agent_client.install(policy, 0)
+        assert agent_client.inspect(policy, 1) is True
         after = observe()
         (tmp_path / "ipv6_policy_proof.json").write_text(
             json.dumps({"before": before, "after": after}, indent=2)

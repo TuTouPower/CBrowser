@@ -203,6 +203,59 @@ def policy_helper_labels(
     }
 
 
+def policy_agent_labels(
+    prefix: str,
+    profile_id: str,
+    runtime_instance_id: str,
+    config_version: Any,
+    role: str,
+    target_container_id: str,
+    deployment_id: str | None = None,
+) -> dict[str, str]:
+    """Labels for a persistent Policy Agent (t082, ADR 039).
+
+    Unlike the one-shot helpers, an Agent is bound to one exact target:
+    profile, runtime instance, config version, role and the target's
+    Docker container ID are all labels, so scans, takeover and orphan
+    cleanup can verify the full identity before adopting or removing
+    anything.
+    """
+    return {
+        "com.cbrowser.prefix": prefix,
+        "com.cbrowser.managed-by": "supervisor",
+        "com.cbrowser.role": "network-policy-agent",
+        "com.cbrowser.profile-id": profile_id,
+        "com.cbrowser.runtime-instance-id": runtime_instance_id,
+        "com.cbrowser.config-version": str(config_version),
+        "com.cbrowser.target-role": role,
+        "com.cbrowser.target-container-id": target_container_id,
+        **_instance_label(deployment_id),
+    }
+
+
+def policy_agent_environment(
+    *,
+    deployment_id: str,
+    profile_id: str,
+    runtime_instance_id: str,
+    config_version: Any,
+    role: str,
+    target_container_id: str,
+    socket_path: str = "/run/cbrowser_policy_agent/agent.sock",
+) -> dict[str, str]:
+    """Creation environment carrying the Agent's bound identity."""
+    return {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "CBROWSER_POLICY_AGENT_DEPLOYMENT_ID": deployment_id,
+        "CBROWSER_POLICY_AGENT_PROFILE_ID": profile_id,
+        "CBROWSER_POLICY_AGENT_RUNTIME_INSTANCE_ID": runtime_instance_id,
+        "CBROWSER_POLICY_AGENT_CONFIG_VERSION": str(config_version),
+        "CBROWSER_POLICY_AGENT_ROLE": role,
+        "CBROWSER_POLICY_AGENT_TARGET_CONTAINER_ID": target_container_id,
+        "CBROWSER_POLICY_AGENT_SOCKET": socket_path,
+    }
+
+
 def x11_helper_labels(
     prefix: str, deployment_id: str | None = None
 ) -> dict[str, str]:

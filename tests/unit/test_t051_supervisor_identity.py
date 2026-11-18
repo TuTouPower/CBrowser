@@ -223,7 +223,14 @@ async def test_browser_start_carries_instance_id_and_numbered_service(
         json.dumps({"version": 1, "config": {}}), encoding="utf-8"
     )
     created = MagicMock()
+    created.id = "cid-browser"
     client.containers.run.return_value = created
+    # t082: stub the Policy Agent lifecycle (in-process rig).
+    from tests.unit.policy_agent_test_support import PolicyAgentTestRig
+
+    _rig = PolicyAgentTestRig()
+    _rig.install_on(adapter)
+    _rig.stub_ensure(adapter)
     result = await adapter.start_browser_container(
         profile_id="p1",
         runtime_instance_id="inst_1",

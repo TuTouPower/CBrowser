@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PolicyAgentProtocol",
+  "description": "Cross-service Unix Domain Socket contract for the cbrowser per-namespace Policy Agent",
+  "version": "1.0.0",
+  "messages": {
+    "PolicyAgentIdentity": {
+      "$id": "#/$defs/PolicyAgentIdentity",
+      "$ref": "#/$defs/PolicyAgentIdentity"
+    },
+    "ResolveRequest": {
+      "$id": "#/$defs/ResolveRequest",
+      "$ref": "#/$defs/ResolveRequest"
+    },
+    "PolicyAgentRequest": {
+      "$id": "#/$defs/PolicyAgentRequest",
+      "$ref": "#/$defs/PolicyAgentRequest"
+    },
+    "PolicyAgentResponse": {
+      "$id": "#/$defs/PolicyAgentResponse",
+      "$ref": "#/$defs/PolicyAgentResponse"
+    }
+  },
+  "$defs": {
+    "NetworkPolicySpec": {
+      "additionalProperties": false,
+      "description": "Specification of network filtering policy for a container sandbox.",
+      "properties": {
+        "role": {
+          "enum": [
+            "browser",
+            "stream"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "allowed_tcp": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Allowed Tcp",
+          "type": "array"
+        },
+        "allowed_udp": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Allowed Udp",
+          "type": "array"
+        },
+        "udp_mux_port": {
+          "anyOf": [
+            {
+              "maximum": 30991,
+              "minimum": 30000,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Udp Mux Port"
+        },
+        "proxy_enforced": {
+          "default": false,
+          "title": "Proxy Enforced",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "NetworkPolicySpec",
+      "type": "object"
+    },
+    "PolicyAgentIdentity": {
+      "additionalProperties": false,
+      "description": "The exact target binding a Policy Agent serves.",
+      "properties": {
+        "deployment_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Deployment Id",
+          "type": "string"
+        },
+        "profile_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "runtime_instance_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Runtime Instance Id",
+          "type": "string"
+        },
+        "config_version": {
+          "minimum": 0,
+          "title": "Config Version",
+          "type": "integer"
+        },
+        "role": {
+          "enum": [
+            "browser",
+            "stream"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "target_container_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Target Container Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deployment_id",
+        "profile_id",
+        "runtime_instance_id",
+        "config_version",
+        "role",
+        "target_container_id"
+      ],
+      "title": "PolicyAgentIdentity",
+      "type": "object"
+    },
+    "PolicyAgentRequest": {
+      "additionalProperties": false,
+      "description": "One bounded request from the Supervisor to a Policy Agent.",
+      "properties": {
+        "request_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "op": {
+          "enum": [
+            "health",
+            "resolve",
+            "install",
+            "inspect",
+            "fail_close"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "identity": {
+          "$ref": "#/$defs/PolicyAgentIdentity"
+        },
+        "policy_revision": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policy Revision"
+        },
+        "spec": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NetworkPolicySpec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resolve": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResolveRequest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "request_id",
+        "op",
+        "identity"
+      ],
+      "title": "PolicyAgentRequest",
+      "type": "object"
+    },
+    "PolicyAgentResponse": {
+      "additionalProperties": false,
+      "description": "The Agent's answer; ``result`` is op-specific and credential-free.",
+      "properties": {
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "error_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Error Code"
+        },
+        "result": {
+          "additionalProperties": true,
+          "title": "Result",
+          "type": "object"
+        }
+      },
+      "required": [
+        "request_id",
+        "ok"
+      ],
+      "title": "PolicyAgentResponse",
+      "type": "object"
+    },
+    "ResolveRequest": {
+      "additionalProperties": false,
+      "description": "DNS resolution input: a bare hostname and port, nothing else.",
+      "properties": {
+        "hostname": {
+          "maxLength": 253,
+          "minLength": 1,
+          "title": "Hostname",
+          "type": "string"
+        },
+        "port": {
+          "maximum": 65535,
+          "minimum": 1,
+          "title": "Port",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hostname",
+        "port"
+      ],
+      "title": "ResolveRequest",
+      "type": "object"
+    }
+  }
+}
