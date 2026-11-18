@@ -333,8 +333,9 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
     named indexes, primary-key autoindex and the partial unique index
     that enforces one open intent per profile); t081 0012 extends the
     allowed deltas by exactly one more new table, ``font_set_assets``
-    (the font asset catalog); nothing else may appear and nothing
-    pre-existing may vanish."""
+    (the font asset catalog); t083 0013 extends them by exactly one new
+    column, ``profile_runtimes.state_revision``; nothing else may appear
+    and nothing pre-existing may vanish."""
     db = tmp_path / "fresh.db"
     run_database_migrations(db)
     before = {}
@@ -368,6 +369,7 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         if key in (
             ("table", "profiles"),
             ("table", "proxy_egress_observations"),
+            ("table", "profile_runtimes"),
         ):
             continue
         assert after[key] == before[key], key
@@ -384,6 +386,11 @@ def test_fresh_db_schema_matches_golden_except_intended_changes(
         "updated_at VARCHAR(64) NOT NULL",
     ):
         assert column in deletions_sql, column
+    runtime_sql = after[("table", "profile_runtimes")]
+    assert "state_revision INTEGER DEFAULT '0' NOT NULL" in runtime_sql
+    assert runtime_sql.replace(
+        ", state_revision INTEGER DEFAULT '0' NOT NULL", ""
+    ) == before[("table", "profile_runtimes")]
     before_lines = _normalized_sql_lines(before[("table", "profiles")])
     after_lines = _normalized_sql_lines(after[("table", "profiles")])
     assert sorted(set(after_lines) - set(before_lines)) == [

@@ -355,6 +355,8 @@ class ProfileRuntime(BaseModel):
     backoff_started_at: str | None = None
     next_retry_at: str | None = None
     preview_captured_at: str | None = None
+    # t083: monotonic per-Profile revision fencing state sync.
+    state_revision: int = 0
     updated_at: str
 
 

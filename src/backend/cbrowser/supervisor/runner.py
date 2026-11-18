@@ -51,6 +51,20 @@ logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger("cbrowser.supervisor.runner")
 
 
+def _scan_due(
+    state_cache, scan_wakeup: asyncio.Event, last_scan: float, now: float
+) -> bool:
+    """Whether the monitor loop owes a scan now.
+
+    A drained dirty set (pushed notice or completed snapshot) wakes
+    the scan immediately, so intent changes enter coordination within
+    the loop's cadence instead of waiting for the 30 s fallback.
+    """
+    if state_cache.drain_dirty():
+        scan_wakeup.set()
+    return scan_wakeup.is_set() or now - last_scan >= 30.0
+
+
 async def run_supervisor(
     api_url: str,
     data_root: Path,
@@ -519,8 +533,14 @@ async def serve_supervisor(core: SupervisorCore, host: str, port: int) -> None:
                     pending_agent_profiles.clear()
                     for repair_profile in repair_profiles:
                         await core.note_policy_agent_event(repair_profile)
+                # t083: pushed state notices (and completed snapshots)
+                # mark Profiles dirty; a dirty set wakes the scan so
+                # intent changes enter coordination within this loop's
+                # cadence instead of waiting for the 30 s fallback.
                 now = time.monotonic()
-                if scan_wakeup.is_set() or now - last_scan >= 30.0:
+                if _scan_due(
+                    core.state_cache, scan_wakeup, last_scan, now
+                ):
                     scan_wakeup.clear()
                     last_scan = now
                     started = time.monotonic()

@@ -253,6 +253,12 @@ def _make_fake_repo(tmp_path: Path, *, with_admin: bool = True) -> Path:
         ROOT / "scripts" / "supervisor_readiness_probe.py",
         repo / "scripts" / "supervisor_readiness_probe.py",
     )
+    # t083: deploy.sh also feeds the service readiness probe into the
+    # Supervisor container; the fake repo must carry it too.
+    shutil.copy(
+        ROOT / "scripts" / "service_readiness_probe.py",
+        repo / "scripts" / "service_readiness_probe.py",
+    )
     for script in ("db_inspect.py", "db_backup.py", "db_restore.py", "check_font_sets.py", "check_edge_subnet.py", "deploy_volume_ops.py"):
         shutil.copy(ROOT / "scripts" / script, repo / "scripts" / script)
     shutil.copy(ROOT / "compose.yaml", repo / "compose.yaml")
@@ -438,7 +444,11 @@ def test_deploy_success_builds_five_runtime_images_once_and_pins(
     assert _pointer(repo, "previous_release") == ""
 
     compose_log = _compose_log(repo)
-    assert "up -d --no-build --wait" in compose_log
+    # t083: no Compose healthchecks — up carries no --wait; deploy gates
+    # on the in-container service readiness probe instead (deadline 600).
+    assert "up -d --no-build" in compose_log
+    assert "--wait" not in compose_log
+    assert "exec -T supervisor python3 - wait 600" in compose_log
     assert "exec -T supervisor python3 - verify" in compose_log
     assert "restart" not in _docker_log(repo)
 
@@ -940,7 +950,10 @@ def test_deadlines_are_passed_to_compose_and_probe(tmp_path: Path) -> None:
     bin_dir = _make_fake_bin(tmp_path)
     assert _deploy(repo, bin_dir, "rel-001").returncode == 0
     log = _compose_log(repo)
-    assert "--wait-timeout 600" in log
+    # t083: the deploy deadline reaches the service readiness probe exec
+    # (was: compose up --wait-timeout); the verify deadline still reaches
+    # the Supervisor readiness probe.
+    assert "python3 - wait 600" in log
     assert "verify 300" in log
     assert (
         _deploy(
@@ -953,7 +966,7 @@ def test_deadlines_are_passed_to_compose_and_probe(tmp_path: Path) -> None:
         == 0
     )
     log = _compose_log(repo)
-    assert "--wait-timeout 42" in log
+    assert "python3 - wait 42" in log
     assert "verify 77" in log
 
 
@@ -1040,16 +1053,16 @@ def test_compose_yaml_release_contract() -> None:
     # IDs reach it through its environment, still release-pinned.
     for var in ("CBROWSER_BROWSER_IMAGE", "CBROWSER_STREAM_IMAGE"):
         assert f"{var}: ${{{var}:" in text, var
-    # Healthchecks are bound to their own service and its own health URL
-    # (test f006: no global substring/count-only assertions).
-    for service, url in (
-        ("api", "/api/v1/health"),
-        ("gateway", "/gateway/v1/health"),
-        ("supervisor", "/supervisor/v1/health"),
-    ):
+    # t083 supersedes the t027 healthcheck contract (ADR 040): Compose
+    # declares NO Docker healthchecks and no service_healthy conditions —
+    # health is observed by the services' own control components and the
+    # deploy-time readiness probe.  Per-service blocks are still checked
+    # individually (test f006: no global substring/count-only assertions).
+    for service in ("api", "gateway", "supervisor", "caddy"):
         block = _service_block(text, service)
-        assert "healthcheck:" in block, service
-        assert url in block, service
+        assert "healthcheck:" not in block, service
+    assert "service_healthy" not in text
+    assert "service_started" in text
     # The Caddy fingerprint carriers live on the caddy service (AC-005).
     caddy_block = _service_block(text, "caddy")
     assert "CBROWSER_CADDYFILE_SHA256" in caddy_block

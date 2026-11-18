@@ -869,10 +869,10 @@ async def get_profile_runtime(
     try:
         rt = await service.get_runtime(profile_id)
         coord = getattr(request.app.state, "coordinator", None)
-        if coord is not None and hasattr(coord, "refresh_search_defaults"):
-            await coord.refresh_search_defaults(profile_id)
-        if coord is not None and hasattr(coord, "refresh_transport"):
-            await coord.refresh_transport(profile_id)
+        # t083: this read is pure — it projects maintained observations
+        # only.  Transport/search-defaults refresh happens in the
+        # coordinator's bounded background loop, never synchronously
+        # on a GET (no downstream RPC, font hashing or Docker work).
         return await make_runtime_response(rt, coord)
     except ProfileNotFoundError:
         raise HTTPException(

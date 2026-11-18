@@ -15,7 +15,8 @@
 #             image IDs (api/browser/stream/supervisor/gateway) plus Caddy
 #             (six fixed images) plus the compose/Caddyfile/frontend
 #             fingerprints, the database migration version and the backup
-#             path in a release manifest, `up --wait` (never builds), then
+#             path in a release manifest, `up` (never builds), a
+#             deadline-bounded service readiness probe (t083), then
 #             verify through the Supervisor's single reconcile_all +
 #             readiness entry via `docker compose exec`.  The single JSON
 #             release pointer only moves after the readiness verification
@@ -708,6 +709,32 @@ probe_exec() {
   return "$rc"
 }
 
+service_probe_exec() {
+  # service_probe_exec <env_file> <deadline> : t083 service readiness
+  # probe inside the Supervisor container (Compose runs no Docker
+  # healthchecks anymore; deploy confirms real readiness itself, with
+  # one deadline, through the services' control components).
+  local env_file="$1"
+  local deadline="$2"
+  local out rc
+  set +e
+  out="$(compose_with "$env_file" exec -T supervisor python3 - wait "$deadline" \
+    < "$ROOT/scripts/service_readiness_probe.py")"
+  rc=$?
+  set -e
+  if [ -n "$out" ]; then
+    printf '%s\n' "$out"
+  fi
+  return "$rc"
+}
+
+wait_services_ready() {
+  # wait_services_ready <env_file> : 0 when API, Gateway and Supervisor
+  # all report ready within UP_WAIT_TIMEOUT; unknown or unreachable
+  # counts as not ready, never as started-equals-ready.
+  service_probe_exec "$1" "$UP_WAIT_TIMEOUT"
+}
+
 verify_readiness() {
   # verify_readiness <env_file> : 0 when every desired=running Profile is
   # converged per the Supervisor readiness report.
@@ -715,11 +742,17 @@ verify_readiness() {
 }
 
 deploy_up_and_verify() {
-  # deploy_up_and_verify <release_id> : up --wait + readiness gate.
+  # deploy_up_and_verify <release_id> : up + service readiness gate +
+  # Profile readiness gate (t083: no Compose healthchecks; readiness is
+  # confirmed by deadline-bounded probes, not by process start).
   local release_id="$1"
   local env_file="$RELEASES_DIR/$release_id.env"
-  if ! compose_with "$env_file" up -d --no-build --wait --wait-timeout "$UP_WAIT_TIMEOUT"; then
-    echo "compose up did not reach a healthy state within ${UP_WAIT_TIMEOUT}s (release $release_id)" >&2
+  if ! compose_with "$env_file" up -d --no-build; then
+    echo "compose up failed (release $release_id)" >&2
+    return 1
+  fi
+  if ! wait_services_ready "$env_file"; then
+    echo "services did not reach readiness within ${UP_WAIT_TIMEOUT}s (release $release_id)" >&2
     # Read-only per-Profile diagnostics for the failure report (single
     # readiness snapshot, no new reconcile, no polling); the deploy is a
     # failure regardless of what the probe returns here.

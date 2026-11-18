@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from cbrowser.domain.models import utc_now_iso
 from sqlalchemy import (
     Boolean,
@@ -14,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy import event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -274,6 +277,12 @@ class ProfileRuntimeModel(Base):
     backoff_started_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     next_retry_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preview_captured_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # t083: per-Profile monotonic revision fencing the Supervisor's
+    # minimal state protocol; incremented by the mapper event below on
+    # every ORM update of this row.
+    state_revision: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
     updated_at: Mapped[str] = mapped_column(
         String(64), default=utc_now_iso, onupdate=utc_now_iso, nullable=False
     )
@@ -281,6 +290,19 @@ class ProfileRuntimeModel(Base):
     profile: Mapped[ProfileModel] = relationship(
         "ProfileModel", back_populates="runtime"
     )
+
+
+@event.listens_for(ProfileRuntimeModel, "before_update", propagate=True)
+def _increment_runtime_state_revision(
+    mapper: Any, connection: Any, target: ProfileRuntimeModel
+) -> None:
+    """Every runtime row update advances its state revision (t083).
+
+    Centralised on the mapper so no repository write path can forget
+    the fence: bind, observed reports, desired-state changes and event
+    consumption all mutate this row through the ORM.
+    """
+    target.state_revision = (target.state_revision or 0) + 1
 
 
 class ArtifactModel(Base):

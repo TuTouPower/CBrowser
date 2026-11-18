@@ -49,6 +49,31 @@ async def _core(tmp_path, docker):
         if request.url.path.endswith("/observed"):
             observed.append(json.loads(request.content))
             return httpx.Response(200, json={})
+        # t083: intent is read through the minimal batch snapshot.
+        if request.url.path.endswith("/state/snapshot"):
+            state = {
+                "profile_id": "p1",
+                "display_number": 1,
+                "desired_state": "running",
+                "observed_state": "running",
+                "runtime_instance_id": "inst1",
+                "config_version": 1,
+                "failure_count": 0,
+                "restart_blocked": False,
+                "last_exit_event_id": None,
+                "backoff_started_at": None,
+                "next_retry_at": None,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "state_revision": 1,
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "unprotected-test-epoch",
+                    "profiles": [state],
+                    "next_cursor": None,
+                },
+            )
         return httpx.Response(
             200,
             json={

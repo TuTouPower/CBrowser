@@ -1,0 +1,22 @@
+{
+  "tid": "t083",
+  "attempt": 1,
+  "execution_id": "dd9c1d386ea149a1849fef720d3ab822",
+  "status": "done",
+  "branch": "t083_supervisor_state_reconciliation",
+  "base_sha": "12e3ac2c3066fb732c98ba9cc0bde5fd3abef133",
+  "spec_source_sha": "ab3bd3c6e9ae8d0a1de2ba72b1880d9d62f6438a",
+  "tests": "第 2 轮全量门禁（t083-gates-r2.log）：protocol/requirements/contract（389 条 0 失败）/design_lint/design_check/frontend_build/integration（228 条 0 失败）全 exit 0；unit 仅 15 条老基线（t063 ×12、t068 ×2、a16 ×1）；frontend_test 696/697，唯一失败为 t073 对话框用例 5 秒超时，串行单跑 8/8 通过，定性负载抖动",
+  "blackbox": "无（云端无 Docker/真实运行环境；真实 4 Profile 稳态与故障矩阵属 [deploy]，见 p134/p135）",
+  "review": "第 1 轮双路 FAIL（代码 7 finding、测试 7 finding，全部已修）；第 2 轮双路 PASS（代码 0 新 finding、测试 1 条 minor 新 finding f008，已修）；第 3 轮确认轮双路 PASS（0 新 finding）；review-status overall=PASS（round 3，指纹 09bf8dd004b53625）",
+  "review_scope": "dbbb76ad2624fe91",
+  "pending": [
+    "p126",
+    "p128",
+    "p130",
+    "p134",
+    "p135",
+    "p136"
+  ],
+  "findings": []
+}

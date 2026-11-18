@@ -984,6 +984,43 @@ class ProfileRepository:
                 m, display_number=profile.display_number
             )
 
+    async def list_runtimes_batch(
+        self, *, after_profile_id: str | None, limit: int
+    ) -> list[ProfileRuntime]:
+        """One keyset batch of runtimes for the Supervisor state snapshot.
+
+        A single SELECT joining the display number, ordered by
+        profile_id; the caller pages with ``after_profile_id`` so a
+        full alignment costs one SELECT per declared batch (t083).
+        """
+        async with self._session_maker() as session:
+            stmt = (
+                select(ProfileRuntimeModel, ProfileModel.display_number)
+                .join(
+                    ProfileModel,
+                    ProfileModel.id == ProfileRuntimeModel.profile_id,
+                )
+                .order_by(ProfileRuntimeModel.profile_id.asc())
+                .limit(limit)
+            )
+            if after_profile_id is not None:
+                stmt = stmt.where(
+                    ProfileRuntimeModel.profile_id > after_profile_id
+                )
+            rows = (await session.execute(stmt)).all()
+            result: list[ProfileRuntime] = []
+            for m, display_number in rows:
+                if display_number is None:
+                    raise RuntimeError(
+                        "Profile is missing its display number"
+                    )
+                result.append(
+                    self._to_domain_runtime(
+                        m, display_number=display_number
+                    )
+                )
+            return result
+
     async def bind_runtime_instance(
         self,
         profile_id: str,
@@ -1370,6 +1407,7 @@ class ProfileRepository:
             backoff_started_at=m.backoff_started_at,
             next_retry_at=m.next_retry_at,
             preview_captured_at=m.preview_captured_at,
+            state_revision=m.state_revision or 0,
             updated_at=m.updated_at,
         )
 

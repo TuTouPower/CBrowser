@@ -104,3 +104,7 @@ Agent `/health` 的 details 携带 `preview_captured_at`。Supervisor仅在校�
 ## 共享规则与控制端口权威（t062）
 
 Supervisor 消费的跨服务规则全部来自中立包 `cbrowser/shared/`：Gateway 端点与 Origin（`endpoints`）、Agent 凭证（`agent_credentials`）、原子写（`atomic_write`）、per-profile 锁注册表（`profile_locks`，核心与恢复协调器共用同一注册表与公开探查方法）、事件/工件投递分类（`delivery`，两个转发器同一分类函数）。控制面默认端口唯一权威为 `shared.endpoints.DEFAULT_SUPERVISOR_PORT`（8005）：runner 的 `--port` 默认值与容器内控制客户端的默认 URL 直接派生自该常量；compose 与就绪探针等非 Python 表面保留字面量，但由边界测试逐一与权威值对齐锁定，禁止出现不一致的字面量（历史 8091 分裂已消除）。Supervisor 镜像不再打包 Gateway 包，Gateway 镜像也不再借 Supervisor 文件；镜像闭包由 t062 闭包测试按 Dockerfile 组装验证。
+
+## 最小批量状态协调与健康责任（t083）
+
+Supervisor 对 API 意愿的唯一视图是最小批量状态协议（ADR 040）：`SupervisorStateCache` 以 30 秒兜底批量快照（键集分批、单飞、有界退避）+ API 推送的 StateChangeNotice（epoch + state_revision 双围栏）维护本地缓存；recovery 每秒 tick、周期 reconcile、readiness 与 control 操作（start 意图校验、status 读取）全部只读缓存，稳态 tick 零 HTTP。缓存权威 = 完整快照存在且最近成功接触在 40 秒窗口内；权威外协调暂停、readiness 显式未就绪（`api_state_unknown`），不撕容器、不猜状态。Profile 在权威快照中缺失即已删除，走孤儿沙箱清理；权威外缺失只保留并做媒体附着恢复。Supervisor 自身写（bind/observed/desired-state）成功后标记本地写失效，下一次读取先重同步，避免读到自己写前的一致性假象。健康观察归控制组件自身：Supervisor 观察 API/Gateway（状态快照与既有客户端），API coordinator 观察 Supervisor；Compose 不再有 Docker healthcheck，deploy 以 `scripts/service_readiness_probe.py` 在单一截止时间内确认三服务 readiness，未知即未就绪。

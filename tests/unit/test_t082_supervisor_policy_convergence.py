@@ -354,8 +354,32 @@ async def test_policy_agent_event_repairs_only_that_profile(tmp_path):
 def _core_with_runtime_api(tmp_path: Path, adapter: _FakeAdapter, runtime: dict):
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        if path.endswith(f"/profiles/{PROFILE}/runtime"):
-            return httpx.Response(200, json=runtime)
+        # t083: the Supervisor reads intent through the minimal batch
+        # snapshot; the per-profile runtime payload maps onto it.
+        if path.endswith("/state/snapshot"):
+            state = {
+                "profile_id": PROFILE,
+                "display_number": 1,
+                "desired_state": runtime["desired_state"],
+                "observed_state": runtime.get("observed_state", "running"),
+                "runtime_instance_id": runtime.get("runtime_instance_id"),
+                "config_version": runtime.get("config_version", 1),
+                "failure_count": runtime.get("failure_count", 0),
+                "restart_blocked": runtime.get("restart_blocked", False),
+                "last_exit_event_id": runtime.get("last_exit_event_id"),
+                "backoff_started_at": runtime.get("backoff_started_at"),
+                "next_retry_at": runtime.get("next_retry_at"),
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "state_revision": runtime.get("state_revision", 1),
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "t082-test-epoch",
+                    "profiles": [state],
+                    "next_cursor": None,
+                },
+            )
         return httpx.Response(404)
 
     api = httpx.AsyncClient(

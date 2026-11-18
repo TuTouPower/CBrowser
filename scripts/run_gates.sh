@@ -164,6 +164,7 @@ protocol_drift_check() {
   env PYTHONPATH=src/backend "$PY" scripts/export_supervisor_protocol.py --check \
     && env PYTHONPATH=src/backend "$PY" scripts/export_stream_protocol.py --check \
     && env PYTHONPATH=src/backend "$PY" scripts/export_policy_agent_protocol.py --check \
+    && env PYTHONPATH=src/backend "$PY" scripts/export_state_protocol.py --check \
     && npm run check:api --prefix src/frontend
 }
 

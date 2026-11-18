@@ -1125,6 +1125,17 @@ class ProfileService:
         except DBAPIError as e:
             self._handle_db_error(e)
 
+    async def list_runtime_batch(
+        self, *, after_profile_id: str | None, limit: int
+    ) -> list[ProfileRuntime]:
+        """One batch of the Supervisor state snapshot (t083)."""
+        try:
+            return await self._repo.list_runtimes_batch(
+                after_profile_id=after_profile_id, limit=limit
+            )
+        except DBAPIError as e:
+            self._handle_db_error(e)
+
     async def bind_runtime_instance(
         self,
         profile_id: str,

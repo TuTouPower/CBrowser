@@ -55,9 +55,28 @@ async def test_status_maps_malformed_api_payload_to_503(tmp_path):
     api = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="http://api"
     )
-    core = SimpleNamespace(
-        _sessions={}, _auth_headers=lambda: {}, api=api
-    )
+    # t083: status reads the state cache; a malformed snapshot payload
+    # leaves the cache unauthoritative, which maps to the same 503.
+    from cbrowser.shared.state_protocol import StateSnapshot
+    from cbrowser.supervisor.state_cache import SupervisorStateCache
+
+    async def _fetch(cursor, limit):
+        resp = await api.get("/api/v1/internal/supervisor/state/snapshot")
+        resp.raise_for_status()
+        return StateSnapshot.model_validate(resp.json())
+
+    cache = SupervisorStateCache(_fetch)
+
+    # t083_test_f005: drive the REAL production logic instead of a
+    # test-side copy of it.  A bare SupervisorCore instance carrying
+    # this cache resolves _state_entry (and _ensure_authoritative)
+    # from the class; get_status only needs _sessions + _state_entry,
+    # so no other production state is faked.
+    from cbrowser.supervisor.core import SupervisorCore
+
+    core = SupervisorCore.__new__(SupervisorCore)
+    core._sessions = {}
+    core.state_cache = cache
     app = create_control_app(core, key)
     try:
         async with httpx.AsyncClient(

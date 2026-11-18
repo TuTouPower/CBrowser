@@ -3,6 +3,16 @@
 import secrets
 
 
+def _snapshot_entry(client, prefix, profile_id, headers):
+    """One profile's minimal state from the t083 batch snapshot."""
+    resp = client.get(prefix + "/state/snapshot", headers=headers)
+    assert resp.status_code == 200
+    for entry in resp.json()["profiles"]:
+        if entry["profile_id"] == profile_id:
+            return entry
+    raise AssertionError(f"{profile_id} missing from state snapshot")
+
+
 
 
 def test_internal_supervisor_rpc_rejects_unauthorized_and_accepts_file_token(
@@ -75,10 +85,12 @@ def test_authenticated_rpc_replay_does_not_cancel_new_running_intent(supervisor_
     profile_id = created.json()["id"]
     prefix = "/api/v1/internal/supervisor"
     headers = {"Authorization": "Bearer " + token}
-    assert client.get(prefix + "/profiles").status_code == 401
-    profiles = client.get(prefix + "/profiles", headers=headers)
+    # t083: the old internal profile list route is gone; the minimal
+    # batch snapshot is the authenticated state read path.
+    assert client.get(prefix + "/state/snapshot").status_code == 401
+    profiles = client.get(prefix + "/state/snapshot", headers=headers)
     assert profiles.status_code == 200
-    assert profile_id in {item["id"] for item in profiles.json()}
+    assert profile_id in {item["profile_id"] for item in profiles.json()["profiles"]}
     snapshot = client.get(
         prefix + f"/profiles/{profile_id}/versions/1", headers=headers
     )
@@ -119,8 +131,8 @@ def test_authenticated_rpc_replay_does_not_cancel_new_running_intent(supervisor_
         },
     )
     assert observed.status_code == 200
-    stopped = client.get(prefix + f"/profiles/{profile_id}/runtime", headers=headers)
-    assert stopped.json()["desired_state"] == "stopped"
+    stopped = _snapshot_entry(client, prefix, profile_id, headers)
+    assert stopped["desired_state"] == "stopped"
     restarted = client.patch(
         desired_path,
         json={"desired_state": "running"},
@@ -129,6 +141,5 @@ def test_authenticated_rpc_replay_does_not_cancel_new_running_intent(supervisor_
     assert restarted.status_code == 200
     duplicate = client.post(prefix + "/runtimes/events", headers=headers, json=event)
     assert duplicate.status_code == 200
-    runtime = client.get(prefix + f"/profiles/{profile_id}/runtime", headers=headers)
-    assert runtime.status_code == 200
-    assert runtime.json()["desired_state"] == "running"
+    runtime = _snapshot_entry(client, prefix, profile_id, headers)
+    assert runtime["desired_state"] == "running"

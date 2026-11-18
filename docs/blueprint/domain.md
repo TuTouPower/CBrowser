@@ -108,3 +108,8 @@
 - **时区 → 语言规则**：中文地区时区集合 `{Asia/Shanghai, Asia/Chongqing, Asia/Urumqi, Asia/Harbin, Asia/Hong_Kong, Asia/Macau, Asia/Taipei}` → `zh-CN`，其余合法时区 → `en-US`；时区为空时语言保持当前值。规则由后端 `domain/profile_locale.py` 的 `locale_for_timezone` 定义，前端 `features/profiles/profile_locale.ts` 逐项镜像，两侧单测保证一致（同一规则来源的两种实现，不存在第三份真相）。
 - **新建默认值**：`humanize` 与 `portable_cookies` 默认开启；其余高级选项默认值不变——`transparent_proxy` / `auto_launch` 关闭，`allow_3p_cookies` / `set_google_default` / `clipboard_sync` / `restore_session` / `capture_preview` 开启。三端一致：后端 `ProfileConfig` / `ProfileCreateRequest` / `ProfileResponse`、ORM（Python 默认 + `server_default`）、前端 `DEFAULT_PROFILE_CREATE_VALUES`；由后端单测与前端提交单测固定。迁移 `0007` 只改 server default，不改写既有 Profile 的已存值。
 - **语言属运行配置**：`locale` 变更生成新 `ProfileConfigVersion`，重启后字体可见性与 `navigator.language` 按新语言生效。`geoip` 默认开启，但语言恒为显式值，不被出口 IP 推断覆盖（CloakBrowser 显式 `locale` 是否优先于出口 IP 推断，仍待真实引擎验证，见 t053 未知契约清单）。
+
+## 状态同步围栏与最小协调字段（t083）
+
+- **state_revision**：`profile_runtimes.state_revision` 为每 Profile 单调修订，ORM `before_update` 事件在任意运行时行更新时统一自增（迁移 0013），是 Supervisor 状态同步的版本围栏；与 API 进程 `api_epoch`（进程启动生成、随每份快照与通知携带）共同决定一份状态是否可信：跨 epoch 不比 revision、未完整读完的快照不是权威、迟到通知按 revision 丢弃。
+- **最小协调字段**：跨 API→Supervisor 的协调只允许 `SupervisorProfileState` 的字段集（意愿、绑定实例/配置版本、终态事件、重试/封锁、display_number、修订与更新时间）；字体覆盖、transport、search-defaults、control 与 UI 投影永不进入协调协议，观测新鲜度由缓存权威窗口（40 秒）与「未确认标未知」表达，读取路径不因观测缺失改写意愿。

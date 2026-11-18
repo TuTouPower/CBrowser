@@ -61,6 +61,17 @@ def _write_creds(path: Path, **overrides) -> None:
     path.chmod(0o600)
 
 
+def _bare_state_cache():
+    """A state cache for bare cores: fetch is never exercised by the
+    local-write invalidation hook these tests cover (t083)."""
+    from cbrowser.supervisor.state_cache import SupervisorStateCache
+
+    async def _fetch(_after: str | None, _limit: int) -> dict:
+        raise RuntimeError("not used")
+
+    return SupervisorStateCache(_fetch)
+
+
 def _core_with_response(payload: dict, status: int = 200) -> SupervisorCore:
     transport = httpx.MockTransport(
         lambda _req: httpx.Response(status, json=payload)
@@ -464,6 +475,7 @@ async def test_report_observed_running_carries_browser_version(
         core = SupervisorCore.__new__(SupervisorCore)
         core.api = api
         core._token_file = None
+        core.state_cache = _bare_state_cache()
         core.docker = SimpleNamespace(
             validator=SimpleNamespace(get_runtime_dir=lambda _p: runtime_dir)
         )
@@ -486,6 +498,7 @@ async def test_report_observed_non_running_omits_version_fields() -> None:
         core = SupervisorCore.__new__(SupervisorCore)
         core.api = api
         core._token_file = None
+        core.state_cache = _bare_state_cache()
         assert await core._report_observed("p1", "inst_1", "stopped", 1)
     assert "browser_product" not in posted[0]
     assert "browser_user_agent" not in posted[0]
@@ -516,6 +529,7 @@ async def test_report_observed_422_is_final_and_never_degrades(
         core = SupervisorCore.__new__(SupervisorCore)
         core.api = api
         core._token_file = None
+        core.state_cache = _bare_state_cache()
         core.docker = SimpleNamespace(
             validator=SimpleNamespace(get_runtime_dir=lambda _p: tmp_path)
         )
@@ -603,6 +617,31 @@ async def test_start_profile_with_proxy_end_to_end(tmp_path: Path) -> None:
     )
 
     def handler(req: httpx.Request) -> httpx.Response:
+        # t083: start intent is read through the minimal batch snapshot.
+        if req.url.path.endswith("/state/snapshot"):
+            state = {
+                "profile_id": "p1",
+                "display_number": 1,
+                "desired_state": "running",
+                "observed_state": "stopped",
+                "runtime_instance_id": None,
+                "config_version": 1,
+                "failure_count": 0,
+                "restart_blocked": False,
+                "last_exit_event_id": None,
+                "backoff_started_at": None,
+                "next_retry_at": None,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "state_revision": 1,
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "t035-test-epoch",
+                    "profiles": [state],
+                    "next_cursor": None,
+                },
+            )
         if "/proxies/" in req.url.path and req.url.path.endswith("/credentials"):
             return httpx.Response(
                 200,
@@ -687,6 +726,31 @@ async def test_start_profile_surfaces_proxy_credentials_changed(tmp_path: Path) 
     )
 
     def handler(req: httpx.Request) -> httpx.Response:
+        # t083: start intent is read through the minimal batch snapshot.
+        if req.url.path.endswith("/state/snapshot"):
+            state = {
+                "profile_id": "p1",
+                "display_number": 1,
+                "desired_state": "running",
+                "observed_state": "stopped",
+                "runtime_instance_id": None,
+                "config_version": 1,
+                "failure_count": 0,
+                "restart_blocked": False,
+                "last_exit_event_id": None,
+                "backoff_started_at": None,
+                "next_retry_at": None,
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "state_revision": 1,
+            }
+            return httpx.Response(
+                200,
+                json={
+                    "api_epoch": "t035-test-epoch",
+                    "profiles": [state],
+                    "next_cursor": None,
+                },
+            )
         if "/proxies/" in req.url.path and req.url.path.endswith("/credentials"):
             return httpx.Response(
                 200,
