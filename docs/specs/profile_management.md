@@ -1,7 +1,7 @@
 ---
 slug: profile_management
 status: active
-tasks: [baseline, t076]
+tasks: [baseline, t076, t078]
 ---
 # 需求规范：Profile 管理与外部标签页
 
@@ -22,6 +22,14 @@ tasks: [baseline, t076]
 - 列表不再拉全量再客户端拼装：`GET /api/v1/profiles/collection`（搜索 / 分组 / 代理 / 状态 / 平台 / 排序 `default|manual|name|recent|created`，分页 `page_size` 服务端钳制 1..100，总数计全量筛选集）、`GET /api/v1/proxies/collection`、`GET /api/v1/groups/collection`，有界候选 `…/candidates`（`limit` 钳制 1..50）与代理国家→城市范围 `GET /api/v1/proxies/countries`（键为稳定国家代码）。排序默认稳定（`sort_order`、`created_at`、`id`），分页无重复遗漏。
 - 运行状态只读一次批量摘要：`GET /api/v1/profiles/runtime-summary` 返回全部环境 `desired_state` / `observed_state` / `config_version` / 实例 / 失败计数 / 启停时间 / 预览捕获时间 / 协调器错误与运行总数；列表、卡片、工作台入口与关闭的切换器都只读它，不再按环境逐个发 runtime 请求。单环境详情仍按需读 `GET /api/v1/profiles/{id}/runtime`。
 - SSE `runtime_state` 事件带 `config_version` 围栏：旧版本或旧实例的迟到事件丢弃，重复/重放事件无副作用且不触发列表重取；有效事件原地更新 runtime 缓存与摘要缓存。`GET /api/v1/proxies/{id}/used-by` 返回当前配置 ∪ 运行绑定版本的并集明细（每项标 `current` / `bound` / `both`），计数、导航与删除保护用同一口径。
+
+## 删除生命周期（t078）
+
+- 删除是服务端持久化生命周期，不是单次请求：`POST /api/v1/profile-deletions` 以明确 ID 集合受理，逐目标返回操作回执（`batch_id` + 每目标 `stage`）；`GET /api/v1/profile-deletions/batches/{batch_id}` 与 `GET /api/v1/profile-deletions/{operation_id}` 查询进度，`POST /api/v1/profile-deletions/{operation_id}/retry` 重试失败目标。重复提交同一目标返回既有未终结意图，不产生重复删除。
+- 阶段为 `accepted → stopping → cleaning → done`，失败记 `failed` + `failed_stage` + 具体错误：stopping 阶段置停止意愿并等待写者消失（超时不删数据）；cleaning 阶段先复核停止时绑定的实例未被新实例替换（围栏），再依次清理 Artifact、Profile 目录、预览图与数据库行，任一步失败即整体失败、Profile 行保留。每步结果记入操作 `detail`，可追踪。
+- 服务重启后未终结意图自动恢复推进；已删除目标的迟到运行事件不能复活目标，清理后新绑定的实例不受影响。旧 `DELETE /api/v1/profiles/{id}` 收敛为同步驱动同一状态机：删除失败返回 409 并带失败阶段，不再以「运行中」拒绝删除。
+- 列表与卡片共用操作定义：停止与删除独立呈现，删除固定最右且 danger 样式，运行行删除表示「先停止再删除」；环境管理页头不再显示运行数量统计，表格不再有最后活跃列（相对时间仅卡片保留）。
+- 单项与批量删除共用居中模态：确认前不发请求，确认目标集合在打开时冻结（翻页/筛选不漂移），进度与逐项结果在弹窗内呈现，失败项保留阶段、错误与重试入口；成功项从选择中移除，失败项保留。批量不再逐个调用单删接口。
 
 ## 启动参数校验与 PATCH 三态（t021）
 

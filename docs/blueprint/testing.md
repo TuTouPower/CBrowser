@@ -129,6 +129,11 @@ CBROWSER_RUN_E2E=1 scripts/run_gates.sh
 - 计数只统计被测调用本身，夹具造数阶段排除在计数之外；同一 QueryClient 的请求去重不可被重复统计。前端以 Vitest 断言列表页只发一次批量摘要、不发逐环境 runtime 请求（`EnvironmentListPage.test.tsx`、`ProxyListPage.test.tsx`、`SessionEntryPage.test.tsx` 的集合分页用例）。
 - 证据边界：云端无 Docker/Chrome/GPU，真实运行实例的完整 API/SSE/Browser 链路验证（t076 AC-008）不在云端门禁内，登记 pending 待 Mac 补验，不得用 mock、skip 或历史结果代替。
 
+## 删除生命周期故障注入与真实删除验收（t078）
+
+- 阶段故障注入是删除验证的基本方法：单元层以假运行服务/文件系统注入停止超时、写者残留、实例被替换、Artifact/目录/预览清理失败，断言失败阶段准确、数据在停止失败时零删除、清理失败时数据库行保留（`tests/unit/test_t078_deletion_lifecycle.py`）；API 层以真实 HTTP + SQLite 验证受理/查询/重试/恢复与旧单删端点的新语义（`tests/integration/test_t078_deletion_api.py`）。前端以可推进阶段的删除 fake 验证确认前零请求、冻结目标集、部分失败保留与重试（`EnvironmentListPage.test.tsx`）。
+- 证据边界：云端无 Docker/Chrome，隔离真实运行环境的停止并删除、停止失败保留与中断恢复对照（t078 AC-007）不在云端门禁内，登记 pending p128 待 Mac 补验，不得用 mock、skip 或历史结果代替。
+
 ## 门禁类别清单
 
 |类别|必须覆盖|常见盲区|

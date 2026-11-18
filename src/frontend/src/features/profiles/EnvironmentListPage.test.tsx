@@ -13,7 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider, en } from "../../i18n";
 import { ThemeProvider } from "../../theme";
 import { ToastProvider } from "../../shared/ui";
-import { ApiError, type ApiClient } from "../../shared/api/client";
+import { type ApiClient } from "../../shared/api/client";
 import { ApiClientContext } from "../../shared/api/client_context";
 import type {
   GroupResponse,
@@ -173,7 +173,8 @@ interface StubOptions {
   groups?: GroupResponse[];
   proxies?: ProxyResponse[];
   runtimes?: Record<string, ProfileRuntimeResponse>;
-  deleteImpl?: (id: string) => Promise<void>;
+  /** t078: profile id -> stage at which its deletion operation fails. */
+  deletionFailAt?: Record<string, string>;
   updateImpl?: (id: string) => Promise<ProfileResponse>;
   setDesiredStateImpl?: (id: string) => Promise<ProfileRuntimeResponse>;
   stopImpl?: (id: string) => Promise<ProfileRuntimeResponse>;
@@ -200,6 +201,20 @@ function makeStub(options: StubOptions = {}) {
     Object.fromEntries(
       profiles.map((item) => [item.id, runtime(item.id, "running")]),
     );
+  const deletionOps = new Map<
+    string,
+    {
+      id: string;
+      profile_id: string;
+      stage: string;
+      failed_stage: string | null;
+      error: string | null;
+      retry_count: number;
+    }
+  >();
+  const deletionBatches = new Map<string, string[]>();
+  const deletionFailureConsumed = new Set<string>();
+  let deletionCounter = 0;
   const spies = {
     profiles: {
       list: mockFn(async () => profiles),
@@ -310,7 +325,75 @@ function makeStub(options: StubOptions = {}) {
           (async (id: string) =>
             profiles.find((item) => item.id === id) ?? profiles[0]!),
       ),
-      delete: mockFn(options.deleteImpl ?? (async () => undefined)),
+      delete: mockFn(async () => undefined),
+      // t078: deletion lifecycle fake — emulates the durable server
+      // contract: create returns accepted operations; each batch read
+      // advances non-terminal operations to their outcome (done, or
+      // failed once at the stage named by deletionFailAt); retry
+      // re-queues a failed operation, which then succeeds.
+      createDeletions: mockFn(async (ids: string[]) => {
+        deletionCounter += 1;
+        const batchId = `batch-${deletionCounter}`;
+        const operations = ids.map((id) => {
+          const op = {
+            id: `op-${id}`,
+            batch_id: batchId,
+            profile_id: id,
+            profile_name:
+              profiles.find((item) => item.id === id)?.name ?? id,
+            stage: "accepted",
+            failed_stage: null as string | null,
+            error: null as string | null,
+            retry_count: 0,
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          };
+          deletionOps.set(op.id, op);
+          return op;
+        });
+        deletionBatches.set(
+          batchId,
+          operations.map((op) => op.id),
+        );
+        // Snapshot copies: the real API returns fresh JSON per read;
+        // returning the mutated store objects would defeat React
+        // Query's structural sharing in tests.
+        return {
+          batch_id: batchId,
+          operations: operations.map((op) => ({ ...op })),
+        };
+      }),
+      getDeletionBatch: mockFn(async (batchId: string) => {
+        const operations = (deletionBatches.get(batchId) ?? []).map(
+          (opId) => {
+            const op = deletionOps.get(opId)!;
+            if (op.stage !== "done" && op.stage !== "failed") {
+              const failStage = options.deletionFailAt?.[op.profile_id];
+              if (failStage && !deletionFailureConsumed.has(op.id)) {
+                deletionFailureConsumed.add(op.id);
+                op.stage = "failed";
+                op.failed_stage = failStage;
+                op.error = "simulated deletion failure";
+              } else {
+                op.stage = "done";
+              }
+            }
+            return { ...op };
+          },
+        );
+        return { batch_id: batchId, operations };
+      }),
+      getDeletion: mockFn(
+        async (opId: string) => deletionOps.get(opId),
+      ),
+      retryDeletion: mockFn(async (opId: string) => {
+        const op = deletionOps.get(opId)!;
+        op.stage = op.failed_stage ?? "accepted";
+        op.failed_stage = null;
+        op.error = null;
+        op.retry_count += 1;
+        return op;
+      }),
       duplicate: mockFn(
         async (id: string) =>
           profiles.find((item) => item.id === id) ?? profiles[0]!,
@@ -478,17 +561,19 @@ beforeEach(() => {
 });
 
 describe("EnvironmentListPage AC-001 列展示", () => {
-  it("renders eight columns with name, note tooltip trigger, group, proxy and localized platform without exposing internal IDs", async () => {
+  // t078 AC-006: 旧用例断言八列含「最后活跃」表头，锁定了已按 p114
+  // 移除的相对时间列，故整体替换为七列新语义用例（非就地改预期）。
+  it("renders seven columns with name, note tooltip trigger, group, proxy and localized platform without exposing internal IDs", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     const heads = document.querySelectorAll("thead th");
-    expect(heads).toHaveLength(8);
+    expect(heads).toHaveLength(7);
     expect(screen.getByText(en.envColName)).toBeInTheDocument();
     expect(screen.getByText(en.envColGroup)).toBeInTheDocument();
     expect(screen.getByText(en.envColNetwork)).toBeInTheDocument();
     expect(screen.getByText(en.envColFingerprint)).toBeInTheDocument();
     expect(screen.getByText(en.envColStatus)).toBeInTheDocument();
-    expect(screen.getByText(en.envColLastActive)).toBeInTheDocument();
+    expect(screen.queryByText(en.envColLastActive)).toBeNull();
     expect(screen.getByText(en.envColActions)).toBeInTheDocument();
 
     const p1 = screen.getByTestId("env-row-p1");
@@ -573,23 +658,28 @@ describe("EnvironmentListPage AC-001 列展示", () => {
     expect(screen.queryByTestId("env-error-tooltip-s3")).toBeNull();
   });
 
-  it("shows running duration while running and relative stopped time otherwise", async () => {
+  // t078 AC-006: 旧用例断言表格行显示运行时长/相对停止时间，锁定了
+  // 已移除的最后活跃列，故整体替换：表格行不再出现相对时间文案，
+  // 卡片布局保留该信息（p114 只点名表格列与页头统计）。
+  it("hides relative activity time in table rows but keeps it on cards", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     const runningPrefix = en.envRunningFor.split("{time}")[0]!;
     const stoppedPrefix = en.envLastStopped.split("{time}")[0]!;
-    const stoppedSuffix = en.envLastStopped.split("{time}")[1]!;
-    expect(screen.getByTestId("env-row-p1").textContent).toContain(
+    expect(screen.getByTestId("env-row-p1").textContent).not.toContain(
       runningPrefix,
     );
-    expect(screen.getByTestId("env-row-p1").textContent).not.toContain(
+    expect(screen.getByTestId("env-row-p2").textContent).not.toContain(
       stoppedPrefix,
     );
-    expect(screen.getByTestId("env-row-p2").textContent).toContain(
-      stoppedPrefix,
+
+    fireEvent.click(screen.getByTestId("env-layout-card"));
+    await screen.findByTestId("env-card-grid");
+    expect(screen.getByTestId("env-card-p1").textContent).toContain(
+      runningPrefix,
     );
-    expect(screen.getByTestId("env-row-p2").textContent).toContain(
-      stoppedSuffix,
+    expect(screen.getByTestId("env-card-p2").textContent).toContain(
+      stoppedPrefix,
     );
   });
 });
@@ -742,20 +832,15 @@ describe("EnvironmentListPage AC-003 布局与卡片", () => {
 });
 
 describe("EnvironmentListPage AC-004 SSE 增量", () => {
-  it("refreshes row status and running count from a runtime cache update", async () => {
+  // t078 AC-006: 旧用例同时断言页头运行环境计数随缓存更新，该统计块
+  // 已按 p114 移除，故整体替换为仅行状态刷新的新语义用例。
+  it("refreshes row status from a runtime cache update", async () => {
     const { queryClient } = renderPage();
     await screen.findByTestId("env-table");
     expect(screen.getByTestId("env-status-p1").textContent).toContain(
       en.statusRunning,
     );
-    // t073 AC-004: 旧用例用 .toContain("1")/("0") 弱断言锁定裸数字渲染，
-    // 漏检无标签计数，故整体替换为带标签且非纯数字的严格断言。
-    expect(screen.getByTestId("env-running-count").textContent).toContain(
-      en.runningProfiles.replace("{count}", "1"),
-    );
-    expect(
-      screen.getByTestId("env-running-count").textContent,
-    ).not.toMatch(/^\s*\d+\s*$/);
+    expect(screen.queryByTestId("env-running-count")).toBeNull();
 
     const next = runtime("p1", "error", {
       last_coordinator_error: "sse failure",
@@ -795,11 +880,7 @@ describe("EnvironmentListPage AC-004 SSE 增量", () => {
     expect(screen.getByTestId("env-status-p1").textContent).not.toContain(
       en.statusRunning,
     );
-    await waitFor(() =>
-      expect(screen.getByTestId("env-running-count").textContent).toContain(
-        en.runningProfiles.replace("{count}", "0"),
-      ),
-    );
+    expect(screen.queryByTestId("env-running-count")).toBeNull();
   });
 });
 
@@ -903,33 +984,132 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     expect(new Set(keys).size).toBe(2);
   });
 
-  it("deletes each selected item with its own idempotency key", async () => {
+  // t078 AC-002/AC-005: 旧两条用例锁定「逐个 DELETE + 幂等键 + toast
+  // 汇总」的已废止批量删除语义，故整体替换为居中模态 + 持久化批量
+  // 删除端点的新语义用例（非就地改预期）。
+  it("deletes the confirmed set through one batch request after explicit confirmation", async () => {
     renderPage();
     await screen.findByTestId("env-table");
     selectRow("p1");
     selectRow("p2");
     await screen.findByTestId("env-batch-bar");
     fireEvent.click(screen.getByTestId("env-batch-delete"));
-    fireEvent.click(await screen.findByTestId("env-batch-delete-accept"));
+
+    // 确认前不发删除请求，弹窗内列出冻结的目标名称。
+    await screen.findByTestId("env-delete-dialog");
+    expect(stub.spies.profiles.createDeletions).not.toHaveBeenCalled();
+    expect(screen.getByTestId("env-delete-target-p1")).toBeInTheDocument();
+    expect(screen.getByTestId("env-delete-target-p2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("env-delete-accept"));
     await waitFor(() =>
-      expect(stub.spies.profiles.delete).toHaveBeenCalledTimes(2),
+      expect(stub.spies.profiles.createDeletions).toHaveBeenCalledTimes(1),
     );
-    const keys = stub.spies.profiles.delete.mock.calls.map((call) => call[1]);
-    expect(keys.every((key) => typeof key === "string" && key.length > 0)).toBe(
-      true,
+    // AC-005 严格集合：请求目标恰为确认的 {p1, p2}，未选中的 p3
+    // 不得混入（arrayContaining 无法发现多发，review f001）。
+    const requestedIds = stub.spies.profiles.createDeletions.mock
+      .calls[0]?.[0] as string[];
+    expect(requestedIds).toHaveLength(2);
+    expect([...requestedIds].sort()).toEqual(["p1", "p2"]);
+    expect(stub.spies.profiles.delete).not.toHaveBeenCalled();
+
+    // 服务端逐项完成后，弹窗显示已删除；关弹窗后选中态已清除
+    // （模态打开时背景 aria-hidden，role 查询不可用，故关后断言）。
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("env-delete-stage-p1").textContent,
+        ).toContain(en.envDeleteStageDone),
+      { timeout: 5000 },
     );
-    expect(new Set(keys).size).toBe(2);
+    fireEvent.click(screen.getByTestId("env-delete-close"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-delete-dialog")).toBeNull(),
+    );
+    expect(checkedState("p1")).toBe("false");
+    expect(checkedState("p2")).toBe("false");
   });
 
-  it("keeps failed items selected and reports the success/failure summary", async () => {
+  // t078 AC-001（review test f002）：删除入口须覆盖全部运行状态与
+  // 卡片布局，而非只有表格的 running/stopped 两行。
+  it("shows a rightmost danger delete entry in every runtime state and in card layout", async () => {
+    const base = fixture();
+    const profiles = [
+      ...base.profiles,
+      profile({ id: "p4", name: "Delta", sort_order: 3 }),
+      profile({ id: "p5", name: "Epsilon", sort_order: 4 }),
+    ];
+    const runtimes = {
+      ...base.runtimes,
+      p4: runtime("p4", "starting"),
+      p5: runtime("p5", "stopping"),
+    };
+    stub = makeStub({
+      profiles,
+      groups: base.groups,
+      proxies: base.proxies,
+      runtimes,
+    });
+    renderPage();
+    await screen.findByTestId("env-table");
+
+    for (const id of ["p1", "p2", "p3", "p4", "p5"]) {
+      const del = screen.getByTestId(`env-action-delete-${id}`);
+      expect(del.parentElement?.lastElementChild).toBe(del);
+    }
+    // 运行/启动中：删除 title 说明先停后删，停止入口可用。
+    expect(screen.getByTestId("env-action-delete-p1")).toHaveAttribute(
+      "title",
+      en.envDeleteHintRunning,
+    );
+    expect(screen.getByTestId("env-action-delete-p4")).toHaveAttribute(
+      "title",
+      en.envDeleteHintRunning,
+    );
+    expect(screen.getByTestId("env-action-stop-p4")).not.toBeDisabled();
+    // 停止中（过渡态）：启动被禁用并有状态，删除入口仍在。
+    expect(screen.getByTestId("env-action-start-p5")).toBeDisabled();
+    expect(screen.getByTestId("env-action-delete-p5")).toHaveAttribute(
+      "title",
+      en.envDelete,
+    );
+    // 异常态：无停止入口，删除入口仍在。
+    expect(screen.queryByTestId("env-action-stop-p3")).toBeNull();
+    expect(screen.getByTestId("env-action-delete-p3")).toBeInTheDocument();
+
+    // 卡片布局共用同一操作区，五种状态的删除入口都在。
+    fireEvent.click(screen.getByTestId("env-layout-card"));
+    await screen.findByTestId("env-card-grid");
+    for (const id of ["p1", "p2", "p3", "p4", "p5"]) {
+      expect(screen.getByTestId(`env-action-delete-${id}`)).toBeInTheDocument();
+    }
+  });
+
+  // t078 AC-002（review test f004）：删除弹窗层面的 Escape 关闭与
+  // 焦点回收，不只依赖共享 Dialog 的通用用例。
+  it("closes the delete dialog on Escape without sending a request", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+    fireEvent.click(screen.getByTestId("env-action-delete-p1"));
+    await screen.findByTestId("env-delete-dialog");
+    expect(stub.spies.profiles.createDeletions).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-delete-dialog")).toBeNull(),
+    );
+    expect(stub.spies.profiles.createDeletions).not.toHaveBeenCalled();
+    // 焦点不留在已卸载的弹窗内，回到文档层级。
+    expect(document.body.contains(document.activeElement)).toBe(true);
+    expect(
+      document.activeElement?.closest("[data-testid='env-delete-dialog']"),
+    ).toBeNull();
+  });
+
+  it("keeps failed targets selected with stage, error and a working retry", async () => {
     stub = makeStub({
       ...fixture(),
-      deleteImpl: async (id: string) => {
-        if (id === "p2") {
-          throw new ApiError("running", 409, undefined, "profile_running");
-        }
-        return undefined;
-      },
+      deletionFailAt: { p2: "cleaning" },
     });
     renderPage();
     await screen.findByTestId("env-table");
@@ -937,24 +1117,90 @@ describe("EnvironmentListPage AC-005 批量操作", () => {
     selectRow("p2");
     await screen.findByTestId("env-batch-bar");
     fireEvent.click(screen.getByTestId("env-batch-delete"));
-    fireEvent.click(await screen.findByTestId("env-batch-delete-accept"));
+    fireEvent.click(await screen.findByTestId("env-delete-accept"));
 
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("env-delete-stage-p2").textContent,
+        ).toContain(en.envDeleteStageFailed),
+      { timeout: 5000 },
+    );
+    expect(screen.getByTestId("env-delete-error-p2").textContent).toContain(
+      "simulated deletion failure",
+    );
+    expect(screen.getByTestId("env-delete-stage-p2").textContent).toContain(
+      en.envDeleteStageCleaning,
+    );
+
+    fireEvent.click(screen.getByTestId("env-delete-retry-p2"));
     await waitFor(() =>
-      expect(screen.getByTestId("toast-item").textContent).toContain(
-        en.envBatchResult
-          .replace("{success}", "1")
-          .replace("{failed}", "1"),
+      expect(stub.spies.profiles.retryDeletion).toHaveBeenCalledWith(
+        "op-p2",
       ),
     );
-    await waitFor(() => expect(checkedState("p1")).toBe("false"));
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("env-delete-stage-p2").textContent,
+        ).toContain(en.envDeleteStageDone),
+      { timeout: 5000 },
+    );
+    fireEvent.click(screen.getByTestId("env-delete-close"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-delete-dialog")).toBeNull(),
+    );
+    expect(checkedState("p1")).toBe("false");
+    expect(checkedState("p2")).toBe("false");
+  });
+
+  it("keeps failed targets selected after the dialog closes while succeeded ones clear", async () => {
+    stub = makeStub({
+      ...fixture(),
+      deletionFailAt: { p2: "stopping" },
+    });
+    renderPage();
+    await screen.findByTestId("env-table");
+    selectRow("p1");
+    selectRow("p2");
+    await screen.findByTestId("env-batch-bar");
+    fireEvent.click(screen.getByTestId("env-batch-delete"));
+    fireEvent.click(await screen.findByTestId("env-delete-accept"));
+    await waitFor(
+      () =>
+        expect(
+          screen.getByTestId("env-delete-stage-p2").textContent,
+        ).toContain(en.envDeleteStageFailed),
+      { timeout: 5000 },
+    );
+    fireEvent.click(screen.getByTestId("env-delete-close"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-delete-dialog")).toBeNull(),
+    );
+    expect(checkedState("p1")).toBe("false");
     expect(checkedState("p2")).toBe("true");
-    expect(screen.getByTestId("env-batch-bar").textContent).toContain("1");
+  });
+
+  it("sends nothing when the single-delete dialog is cancelled", async () => {
+    renderPage();
+    await screen.findByTestId("env-table");
+    fireEvent.click(screen.getByTestId("env-action-delete-p2"));
+    await screen.findByTestId("env-delete-dialog");
+    expect(screen.getByTestId("env-delete-target-p2")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("env-delete-cancel"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("env-delete-dialog")).toBeNull(),
+    );
+    expect(stub.spies.profiles.createDeletions).not.toHaveBeenCalled();
+    expect(stub.spies.profiles.delete).not.toHaveBeenCalled();
   });
 });
 
 // t073 AC-005/006: 图标化操作栏、红色删除、宽编辑弹窗与差分更新。
 describe("EnvironmentListPage t073 操作栏与宽编辑弹窗", () => {
-  it("运行行仅 1 个带文字主按钮，次级操作为图标按钮，停止为 warning", async () => {
+  // t078 AC-001: 旧用例断言运行行没有删除按钮（停止/删除互斥的已废止
+  // 语义），故整体替换为停止与删除并存、删除固定最右的新语义用例。
+  it("运行行仅 1 个带文字主按钮，停止与删除并存且删除固定最右为 danger", async () => {
     renderPage();
     await screen.findByTestId("env-table");
 
@@ -979,7 +1225,12 @@ describe("EnvironmentListPage t073 操作栏与宽编辑弹窗", () => {
     expect(screen.getByTestId("env-action-stop-p1").className).toContain(
       "text-warning",
     );
-    expect(screen.queryByTestId("env-action-delete-p1")).toBeNull();
+    const deleteButton = screen.getByTestId("env-action-delete-p1");
+    expect(deleteButton.className).toContain("text-danger");
+    expect(deleteButton).toHaveAttribute("title", en.envDeleteHintRunning);
+    // 删除是操作区最后一个按钮（最右）。
+    const rowButtons = within(row).getAllByRole("button");
+    expect(rowButtons[rowButtons.length - 1]).toBe(deleteButton);
   });
 
   it("停止行显示红色 danger 删除图标按钮，主按钮为启动", async () => {

@@ -1,7 +1,7 @@
 ---
 slug: ui_design_system
 status: active
-tasks: [baseline]
+tasks: [baseline, t078]
 ---
 # 需求规范：设计系统与应用外壳 (ui_design_system)
 
@@ -56,6 +56,12 @@ tasks: [baseline]
 - 侧栏左下角「设置」由 `<Link to="/settings">` 改为 `<button>`，直接在 `AppLayout` 内打开 `SettingsDialog`（`Dialog size="lg"`，两列网格分块），不导航、不离开当前页面上下文；`/settings` 路由改为 `<Navigate to="/" replace />`。弹窗收敛主题 / 语言 / 健康状态 / 退出登录 / 只读网络访问摘要 / 平台字体包，信息分区清晰，默认不堆砌 `source_version` 哈希。
 - `theme` / `locale` 持久化于控制面 `settings` 表，经 `GET /api/v1/settings` / `PATCH /api/v1/settings` 读写；`SettingsSync` 置于 `AppProviders` 内（在 `I18nProvider` / `ThemeProvider` 之外）负责登录后 hydrate 与后续写服务端，两个 provider 保持独立、不依赖 auth 与 API client；`localStorage` 仅作 `theme_boot.js` 首帧防闪烁镜像，清缓存或重新登录后偏好保持。
 - 工作台 `audioMuted` 持久化到 `sessionStorage` 的 `cbrowser.session.audio_muted.${profileId}`，刷新本标签页保持静音，双标签页打开同 Profile 互不串扰。
+
+### 2.8 破坏性操作确认与进度反馈（t078）
+
+- 破坏性批量/单项操作统一使用居中模态（共享 Dialog：焦点圈定、Escape 关闭、背景不可误操作），禁止用页面底部浮动条承载确认——长列表与低视口下确认与错误必须始终可见。
+- 确认阶段列明目标名称与不可撤销影响，确认前不发请求；执行阶段在同一模态内逐项呈现阶段与结果，失败项就地显示失败阶段、错误与重试入口，不用一次性 toast 代替结果留存。
+- 行操作区内破坏性入口固定最右并用 danger 样式，与其他动作独立呈现；过渡态不可用时以 title 说明原因，不以无解释的消失/置灰代替。
 
 ## 3. 验收标准（摘要）
 

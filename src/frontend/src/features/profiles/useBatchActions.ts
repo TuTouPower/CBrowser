@@ -4,13 +4,14 @@ import { useApiClient } from "../../shared/api/client_context";
 import { useToast } from "../../shared/ui";
 import type { EnvironmentRow } from "./EnvironmentTable";
 import {
-  useDeleteProfileMutation,
   useSetDesiredStateMutation,
   useStopProfileMutation,
   useUpdateProfileMutation,
 } from "./useProfilesQuery";
 
-export type BatchAction = "start" | "stop" | "moveToGroup" | "delete";
+/** t078: batch deletion no longer loops single DELETEs here; it goes
+ * through the deletion dialog and the durable batch endpoint. */
+export type BatchAction = "start" | "stop" | "moveToGroup";
 
 export interface BatchRunOptions {
   groupId?: string | null;
@@ -35,7 +36,6 @@ export function useBatchActions({
   const startMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
   const updateMutation = useUpdateProfileMutation(client);
-  const deleteMutation = useDeleteProfileMutation(client);
 
   const run = useCallback(
     async (action: BatchAction, options: BatchRunOptions = {}) => {
@@ -60,9 +60,6 @@ export function useBatchActions({
                   data: { group_id: options.groupId ?? null },
                 });
                 break;
-              case "delete":
-                await deleteMutation.mutateAsync(id);
-                break;
             }
             succeeded.push(id);
           } catch {
@@ -82,7 +79,6 @@ export function useBatchActions({
       startMutation,
       stopMutation,
       updateMutation,
-      deleteMutation,
       show,
       t,
     ],

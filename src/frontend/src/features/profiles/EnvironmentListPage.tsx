@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { useRuntimeSnapshot } from "../../app/useRuntimeSnapshot";
 import { useI18n } from "../../i18n";
 import { useApiClient } from "../../shared/api/client_context";
 import type {
@@ -10,6 +9,11 @@ import type {
 } from "../../shared/api/types";
 import { Banner, Button, useToast } from "../../shared/ui";
 import { BatchActionBar } from "./BatchActionBar";
+import {
+  DeleteEnvironmentsDialog,
+  deleteTargetsFromRows,
+  type DeleteDialogTarget,
+} from "./DeleteEnvironmentsDialog";
 import { EnvironmentCardGrid } from "./EnvironmentCardGrid";
 import { EnvironmentEmptyState } from "./EnvironmentEmptyState";
 import { EnvironmentListToolbar } from "./EnvironmentListToolbar";
@@ -28,13 +32,15 @@ import {
 } from "./useEnvironmentFilters";
 import { useEnvironmentLayout } from "./useEnvironmentLayout";
 import {
-  useDeleteProfileMutation,
+  useCreateDeletionsMutation,
+  useDeletionBatchQuery,
   useDuplicateProfileMutation,
   useGroupCandidatesQuery,
   useGroupQuery,
   useProfilesCollectionQuery,
   useProxyCandidatesQuery,
   useProxyQuery,
+  useRetryDeletionMutation,
   useRuntimeSummaryQuery,
   useSetDesiredStateMutation,
   useStopProfileMutation,
@@ -90,9 +96,13 @@ export function EnvironmentListPage() {
   const [editingRow, setEditingRow] = useState<EnvironmentRow | null>(null);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [moveMenuOpen, setMoveMenuOpen] = useState(false);
-  // P2: 单删 / 批量删除二次确认，避免误触。
-  const [pendingDeleteRow, setPendingDeleteRow] = useState<EnvironmentRow | null>(null);
-  const [confirmingBatchDelete, setConfirmingBatchDelete] = useState(false);
+  // t078: single/batch deletion share one centered modal; the target
+  // set is frozen here when the dialog opens.
+  const [deleteTargets, setDeleteTargets] =
+    useState<DeleteDialogTarget[] | null>(null);
+  const [deletionBatchId, setDeletionBatchId] = useState<string | null>(
+    null,
+  );
 
   const profilesQuery = useProfilesCollectionQuery(
     {
@@ -146,8 +156,6 @@ export function EnvironmentListPage() {
       ? [selectedProxyQuery.data]
       : []),
   ];
-  const snapshot = useRuntimeSnapshot(client);
-
   const summaryById = new Map(
     (summaryQuery.data?.entries ?? []).map((entry) => [
       entry.profile_id,
@@ -232,7 +240,36 @@ export function EnvironmentListPage() {
   const startMutation = useSetDesiredStateMutation(client);
   const stopMutation = useStopProfileMutation(client);
   const duplicateMutation = useDuplicateProfileMutation(client);
-  const deleteMutation = useDeleteProfileMutation(client);
+  const createDeletions = useCreateDeletionsMutation(client);
+  const deletionBatch = useDeletionBatchQuery(deletionBatchId, client);
+  const retryDeletion = useRetryDeletionMutation(client);
+
+  const openDeleteDialog = useCallback((rows: EnvironmentRow[]) => {
+    setDeletionBatchId(null);
+    setDeleteTargets(deleteTargetsFromRows(rows));
+  }, []);
+
+  // t078 AC-005: succeeded targets leave the selection as soon as the
+  // server reports them done; failed targets stay selected and keep
+  // their result in the dialog.
+  useEffect(() => {
+    const doneIds = (deletionBatch.data?.operations ?? [])
+      .filter((op) => op.stage === "done")
+      .map((op) => op.profile_id);
+    if (doneIds.length > 0) {
+      clearSelection(doneIds);
+    }
+  }, [deletionBatch.data, clearSelection]);
+
+  const confirmDelete = useCallback(() => {
+    if (!deleteTargets) return;
+    createDeletions.mutate(
+      deleteTargets.map((target) => target.id),
+      {
+        onSuccess: (data) => setDeletionBatchId(data.batch_id),
+      },
+    );
+  }, [createDeletions, deleteTargets]);
 
   const handleAction = useCallback(
     (action: EnvironmentAction, row: EnvironmentRow) => {
@@ -261,19 +298,18 @@ export function EnvironmentListPage() {
           );
           break;
         case "delete":
-          // P2: 单删需二次确认，实际删除走确认框。
-          setPendingDeleteRow(row);
+          // t078: 单删打开居中模态，确认前不发删除请求。
+          openDeleteDialog([row]);
           break;
       }
     },
     [
       navigate,
       toast,
-      clearSelection,
       startMutation,
       stopMutation,
       duplicateMutation,
-      deleteMutation,
+      openDeleteDialog,
     ],
   );
 
@@ -303,24 +339,6 @@ export function EnvironmentListPage() {
     if (proxiesQuery.isError) void proxiesQuery.refetch();
   };
 
-  const confirmSingleDelete = () => {
-    if (!pendingDeleteRow) return;
-    const id = pendingDeleteRow.profile.id;
-    const onError = (error: Error) => toast.show(error.message);
-    deleteMutation.mutate(id, {
-      onSuccess: () => {
-        clearSelection([id]);
-        setPendingDeleteRow(null);
-      },
-      onError,
-    });
-  };
-
-  const confirmBatchDelete = () => {
-    setConfirmingBatchDelete(false);
-    void run("delete");
-  };
-
   return (
     <div
       data-testid="env-list-page"
@@ -345,17 +363,6 @@ export function EnvironmentListPage() {
           </Button>
         </Banner>
       )}
-      <div
-        data-testid="env-running-count"
-        className="inline-flex items-center gap-xs font-ui text-label-sm text-on-surface-muted"
-      >
-        <span
-          aria-hidden="true"
-          className="size-(--component-group-chip-size) rounded-full bg-success"
-        />
-        {t("runningProfiles", { count: snapshot.runningCount })}
-      </div>
-
       {profilesQuery.isPending ? (
         <p className="font-ui text-body-md text-on-surface-muted">
           {t("loading")}
@@ -418,35 +425,13 @@ export function EnvironmentListPage() {
             onStart={() => void run("start")}
             onStop={() => void run("stop")}
             onMove={() => setMoveMenuOpen(true)}
-            onDelete={() => setConfirmingBatchDelete(true)}
+            onDelete={() =>
+              openDeleteDialog(
+                visibleRows.filter((row) => selected.has(row.profile.id)),
+              )
+            }
             pending={pending}
           />
-          {confirmingBatchDelete && (
-            <div
-              data-testid="env-batch-delete-confirm"
-              className="fixed bottom-2xl left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-sm rounded-lg border border-outline bg-surface-raised px-md py-sm shadow-lg"
-            >
-              <span className="font-ui text-body-sm text-on-surface">
-                {t("envBatchDeleteConfirm", { count: selected.size })}
-              </span>
-              <Button
-                data-testid="env-batch-delete-accept"
-                size="sm"
-                variant="danger"
-                disabled={pending}
-                onClick={confirmBatchDelete}
-              >
-                {t("envBatchDelete")}
-              </Button>
-              <Button
-                data-testid="env-batch-delete-cancel"
-                size="sm"
-                onClick={() => setConfirmingBatchDelete(false)}
-              >
-                {t("cancel")}
-              </Button>
-            </div>
-          )}
           {moveMenuOpen && (
             <div
               data-testid="env-move-menu"
@@ -483,32 +468,22 @@ export function EnvironmentListPage() {
         }}
       />
       <GroupManagerDialog open={groupsOpen} onOpenChange={setGroupsOpen} />
-      {pendingDeleteRow && (
-        <div
-          data-testid="env-delete-confirm"
-          className="fixed bottom-2xl left-1/2 z-40 flex -translate-x-1/2 flex-wrap items-center gap-sm rounded-lg border border-outline bg-surface-raised px-md py-sm shadow-lg"
-        >
-          <span className="font-ui text-body-sm text-on-surface">
-            {t("envDeleteConfirm", { name: pendingDeleteRow.profile.name })}
-          </span>
-          <Button
-            data-testid="env-delete-accept"
-            size="sm"
-            variant="danger"
-            disabled={deleteMutation.isPending}
-            onClick={confirmSingleDelete}
-          >
-            {t("envDelete")}
-          </Button>
-          <Button
-            data-testid="env-delete-cancel"
-            size="sm"
-            onClick={() => setPendingDeleteRow(null)}
-          >
-            {t("cancel")}
-          </Button>
-        </div>
-      )}
+      <DeleteEnvironmentsDialog
+        open={deleteTargets !== null}
+        targets={deleteTargets ?? []}
+        operations={
+          deletionBatchId
+            ? (deletionBatch.data?.operations ?? null)
+            : null
+        }
+        creating={createDeletions.isPending}
+        createError={createDeletions.error?.message ?? null}
+        onConfirm={confirmDelete}
+        onRetry={(operationId) => retryDeletion.mutate(operationId)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTargets(null);
+        }}
+      />
     </div>
   );
 }

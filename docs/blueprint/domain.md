@@ -61,6 +61,12 @@
 - **运行摘要**：`RuntimeSummaryEntry` 是列表渲染所需的运行状态投影（含启停/预览捕获时间与协调器错误），由 `GET /api/v1/profiles/runtime-summary` 一次聚合返回；SSE 事件带 `config_version` 围栏，旧版本/旧实例事件不得覆盖新实例。
 - **集合选择范围**：批量操作目标按稳定 ID 与明确目标快照确定；表头全选只选当前页（`toggleAll` 为当前页语义），不以 DOM 行号或当前页数组下标作为身份。
 
+## 删除意图与批量目标（t078）
+
+- **删除意图**：`ProfileDeletion` 是持久化实体（每目标一行）：`batch_id`（一次确认的批次）、`profile_id`、名称快照、`stage`（`accepted`/`stopping`/`cleaning`/`done`/`failed`）、`failed_stage`、`error`、`detail`（分步清理结果与停止时绑定实例快照）。同一 Profile 同时至多一个未终结意图（由数据库部分唯一索引强制）；重复受理返回既有意图（幂等），失败意图被再次确认即按 retry 从失败阶段恢复并归入新批次，已终结意图保留作审计。
+- **阶段规则**：stopping 只改运行意愿并等待写者消失，不动数据；cleaning 先做实例围栏复核（绑定实例与停止时快照不一致即失败），再按 Artifact→目录→预览→数据库行顺序清理，任一步失败整体失败且数据库行保留；失败只能经 retry 从失败阶段继续，不重复已完成步骤的破坏效果。
+- **批量目标**：批量删除的目标是确认时冻结的明确 ID 集合，逐项独立成败；成功项与失败项分别处置，部分失败不报全部成功。目标集合不由 DOM 位置、当前页或筛选状态推导。
+
 ## 代理链接录入与出口观测（t052）
 
 - **链接为唯一录入**：`ProxyCreateRequest` / `ProxyUpdateRequest` 只接受 `proxy_url`（`extra="forbid"`，平铺字段与 `country_code` 一律 422）。四种格式：标准 URL `scheme://user:pass@host:port`、无协议 `host:port`（默认 http）、`host:port:user:pass`、`user:pass@host:port`；scheme 白名单 http/https/socks5、IPv6 必须括号、端口 1..65535、密码 percent-decode 且非法转义报错；裸 IPv6 与三段无协议形式判 ambiguous。`ProxyResponse` 返回脱敏链接（不含密码）与派生只读字段（scheme/host/port/username），密码永不进响应。

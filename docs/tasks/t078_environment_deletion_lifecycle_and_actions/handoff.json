@@ -1,0 +1,18 @@
+{
+  "tid": "t078",
+  "attempt": 1,
+  "execution_id": "8ea825fd81cc4e0e9d59358ad187c65d",
+  "status": "done",
+  "branch": "t078_environment_deletion_lifecycle_and_actions",
+  "base_sha": "9c203a631e008e6d060161a2c41551b35635cfeb",
+  "spec_source_sha": "dffadb298c123ae77a8e8b1f224731ba59030076",
+  "tests": "全量门禁两轮（t078_gate5/6.log、t078_gate7.log 及 evidence 目录）：contract 388 过/1 跳；unit 2226 过、4 失败/10 错误与 t076 基线逐项一致；integration 216 过/7 跳、错误均为隔离 API 就绪窗口 flaky（逐条单跑通过）；frontend 681 过、失败均为负载超时 flaky（单跑通过）；protocol/requirements/design/frontend_build 全绿。相对基线无新增失败",
+  "blackbox": "云端无 Docker/Chrome，真实拓扑黑盒未跑；AC-007 已登记 p128 留待本地统一补验",
+  "review": "Round 1 双轴 FAIL（code 3 条、test 4 条）→ 全部修复并写入 Review 处置表 → Round 2 双轴 PASS（code 轴新出 minor f004 一条：并发双确认时先确认者批次轮询留空，删除不重复不丢失，遗留登记 p130；test 轴 0 条新 finding）",
+  "review_scope": "6e3f303e22a58022",
+  "pending": [
+    "p128",
+    "p130"
+  ],
+  "findings": []
+}

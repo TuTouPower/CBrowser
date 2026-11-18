@@ -80,6 +80,7 @@ SSE 按事件类型分发（t040）：`shared/api/sse.ts` 解析 `event:` 行按
 - `useEnvironmentFilters`（支持搜索、状态、分组、系统平台 `windows`/`macos`、代理 `direct`/具体代理与排序，同步 URL 查询参数）、`useEnvironmentLayout`（localStorage，由图标按钮切换列表/卡片视图）、`useBatchActions`（逐项 `mutateAsync` + `useActionKeyMutation` 自动独立幂等键）、`useGroupReorder`（`POST /groups/reorder`）为纯逻辑 / hooks 层；「分组管理」作为独立按钮置于工具栏右侧。
 - 共用 `ProfileForm`（`features/profiles/ProfileForm.tsx`）区分元数据字段与运行配置字段，驱动 `ConfigTab` 的待应用判据；种子范围（`100000 – 999999`）通过感叹号图标悬浮 Tooltip 展示，重摇种子使用图标化刷新按钮；选择代理、切换语言或切换系统平台时自动对齐对应的时区、语言、平台字体包（展示可读名称而非 SHA256 哈希）与默认分辨率。
 - t073：环境列表与卡片仅在 `profile.timezone` 显式非空时显示时区，隐藏默认 / 自动匹配时区；`env-running-count` 改为带标签的 `runningProfiles` 文案与绿色运行圆点，不再渲染裸数字。`EnvironmentRowActions` 每行仅 1 个带文字主按钮（运行中蓝色「打开」、非运行「启动」），详情 / 编辑 / 复制 / 停止 / 删除收敛为带 `aria-label` 与 `title` 的纯图标按钮，运行态显示 warning 停止、非运行态显示 danger 红色删除。新建 `ProfileCreateDialog` 与编辑 `ProfileEditDialog` 统一用 `Dialog size="lg"` 宽弹窗 + `ProfileForm` 多列布局，编辑走 `diffProfileValues` 差分更新；列表行「编辑」直接唤起编辑弹窗，「配置详情」跳转 `/profiles/:id/config`，详情页页头也提供编辑入口。
+- t078（取代 t073 的运行计数与行操作互斥口径）：环境管理页头不再渲染 `env-running-count`，表格删除最后活跃列（相对时间仅卡片保留）；`EnvironmentRowActions` 中停止与删除独立并存，删除在所有状态下固定最右、danger 样式，运行行删除的 title 说明「先停止再删除」、停止在 stopping 态禁用并以 title 说明。单项/批量删除共用 `DeleteEnvironmentsDialog` 居中模态（目标打开时冻结、确认前零请求、进度与逐项结果/失败阶段/重试在弹窗内），原 fixed-bottom 确认条删除；批量删除走 `POST /profile-deletions` 批次端点 + 批次轮询（`useDeletionBatchQuery`），不再逐个单删，完成项自动失效列表缓存并退出选择、失败项保留选择。
 
 ## 8. 代理管理界面（t038+；t074 重写）
 

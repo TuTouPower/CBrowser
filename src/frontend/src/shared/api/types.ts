@@ -5,6 +5,10 @@ export type Schemas = components["schemas"];
 export type ArtifactResponse = Schemas["ArtifactResponse"];
 export type AutomationEndpointResponse = Schemas["AutomationEndpointResponse"];
 export type ProfileResponse = Schemas["ProfileResponse"];
+export type ProfileDeletionOperation = Schemas["ProfileDeletionOperation"];
+export type ProfileDeletionBatchResponse =
+  Schemas["ProfileDeletionBatchResponse"];
+export type ProfileDeletionRequest = Schemas["ProfileDeletionRequest"];
 export type ProfileCreateRequest = Schemas["ProfileCreateRequest"];
 export type ProfileUpdateRequest = Schemas["ProfileUpdateRequest"];
 export type ProfileRuntimeResponse = Schemas["ProfileRuntimeResponse"];

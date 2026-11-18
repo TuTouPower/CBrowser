@@ -294,6 +294,14 @@ def create_app(
         # previous process exit; failures keep their intent for next time.
         await app.state.artifact_service.resume_pending_deletions()
 
+        # t078: profile deletions clean artifacts through the same
+        # service (outcomes are recorded on the deletion intent), and
+        # in-flight deletion intents resume after a restart.
+        service.set_artifact_cleaner(
+            app.state.artifact_service.remove_profile
+        )
+        await service.resume_pending_deletions()
+
         app.state.trusted_proxy_cidrs = parse_trusted_proxy_cidrs(
             os.environ.get("CBROWSER_TRUSTED_PROXY_CIDRS")
         )
